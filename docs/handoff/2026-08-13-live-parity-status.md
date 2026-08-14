@@ -402,3 +402,50 @@ the strategy close. Final pending orders and positions were zero.
 This is exact-wave Insights and causal round-trip evidence, not exhaustive
 coverage of every portfolio, deployment mode, indicator, DSL construct, or
 order boundary in `notes.txt`.
+
+## Order-Gateway Restart Evidence (2026-08-14)
+
+The exact testing image `8d5b0cdde48e956db155793106e4dcf74bb1418c` passed the
+order-bearing gateway restart runner at
+`/var/tmp/qkt-validation/order-restart-8d5b0cdd-20260814-runtime/evidence/result.json`.
+The bounded `0.01`-lot owner strategy opened a real EURUSD position, the local
+MT5 gateway container was restarted while the position was open, and the same
+strategy closed the persisted venue ticket after reconnect. The bundle records
+two accepted/fill-accounted orders, six stale events with six recoveries, zero
+dropped ticks, final flat state, zero pending orders, and deal-net equality with
+the account balance delta (`0.02`). This seals restart/reconnect ownership and
+accounting for this exact wave; it does not seal every order type or every replay
+mode.
+
+## Native Stop-Limit Boundary Evidence (2026-08-14)
+
+QKT commit `d60ff76f` changes the MT5 protocol capability set to advertise native
+`STOP_LIMIT` after the gateway support landed in mt5-gateway. Focused protocol,
+translator, and broker integration tests passed, and the change merged into
+`dev` as `a82a94d4` through PR #1015. A localhost QKT CLI probe using that build
+placed a bounded `BUY_STOP_LIMIT` (`retcode 10009`, ticket `3086018968`), showed
+the working order through the MT5 orders endpoint, and cancelled it through
+`qkt bot cancel`; the final account was unchanged and flat. The retained probe
+artifacts are at
+`/var/tmp/qkt-validation/qkt-stop-limit-native-d60ff76f-20260814`.
+
+The probe did not trigger a stop-limit into a fill, and therefore does not claim
+stop-limit trigger-to-fill or live-vs-backtest parity. A separate exact-image
+strategy run must still capture the trigger, fill, cancellation races/partial
+fills, and golden replay before this order boundary can be promoted to `main`.
+
+The temporary deployed-strategy probe at
+`/var/tmp/qkt-validation/strategy-stop-limit-native-d60ff76f-20260814` also
+confirmed warmup, DSL compilation, and live deployment. Its first stop-limit
+decision occurred during a measured stale-feed episode, so QKT rejected it
+before broker transport; the feed recovered and the account remained flat with
+no pending order. This is evidence that stale-order suppression is fail-closed,
+not evidence of uninterrupted feed health or a native stop-limit fill.
+
+A separate QKT CLI trigger observation at
+`/var/tmp/qkt-validation/qkt-stop-limit-trigger-d60ff76f-20260814` placed a
+native `BUY_STOP_LIMIT` at `1.15392` with `1.15382` stop-limit price and polled
+the real venue for 180 seconds. The market remained below the trigger, so no
+deal or position occurred; QKT cancelled ticket `3086032248` and the account
+finished unchanged and flat. This seals the resting-order/cancel boundary only;
+the trigger-to-fill path is still unsealed.
