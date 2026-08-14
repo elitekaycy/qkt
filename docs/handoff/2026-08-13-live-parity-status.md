@@ -487,6 +487,19 @@ for stop-limit trigger fills, cancellation/partial-fill races, risk/margin
 fixtures, portfolios/books, full indicator/math/DSL catalog, or Insights
 attribution.
 
+## Exact Testing-Image Higher-Timeframe Warmup (2026-08-14)
+
+Clean testing-worktree probes passed for both `EXNESS:EURUSD` and
+`EXNESS:GBPUSD` at `/var/tmp/qkt-validation/htf-47e6-clean-EURUSD/evidence/result.json`
+and `/var/tmp/qkt-validation/htf-47e6-clean-GBPUSD/evidence/result.json`.
+Both report testing SHA `47e64f9372a32e611c0680e99123763e743848e4`,
+`qktDirty: false`, nine probes, and zero final positions/orders. Every M15/H1/H4
+one-hour, one-day, and two-day request returned closed, aligned, unique bars.
+
+The attempted XAUUSD probe was not sealed: the local demo gateway returned no
+reviewed closed M15 one-hour bar set. This is classified as symbol/data
+availability, not a QKT warmup pass or code failure; XAUUSD remains unproven.
+
 ## Exact Testing-Image Read-Only Catalog (2026-08-14)
 
 The four-container catalog was rerun against the same testing image and local
