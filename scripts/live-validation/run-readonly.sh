@@ -90,9 +90,13 @@ expected_login="$(jq -r '.account.login' "$scenario/expected.json")"
 expected_server="$(jq -r '.account.server' "$scenario/expected.json")"
 expected_leverage="$(jq -r '.account.leverage' "$scenario/expected.json")"
 expected_balance="$(jq -r '.account.startingBalance' "$scenario/expected.json")"
+expected_symbol="$(jq -r '.armedScenario.symbol' "$scenario/expected.json")"
 config="$scenario/qkt.config.yaml"
 evidence="$scenario/evidence"
 run_started_ms="$(date +%s%3N)"
+
+[ "$expected_symbol" != "null" ] && [ -n "$expected_symbol" ] ||
+    fail "scenario does not declare an armed symbol"
 
 gateway_get() {
     local path="$1"
@@ -277,13 +281,14 @@ stream_candle_events="$(jq -r 'select(.eventType == "com.qkt.events.StreamCandle
 [ "$warmup_tick_events" -gt 0 ] || fail "audit journal did not retain warmup tick events"
 [ "$live_tick_events" -gt 0 ] || fail "audit journal did not retain live tick events"
 for timeframe in 1m 5m; do
-    jq -e --arg timeframe "$timeframe" '
+    jq -e --arg timeframe "$timeframe" --arg symbol "$expected_symbol" '
         select(
             .eventType == "com.qkt.events.StreamCandleEvent" and
             .timeframe == $timeframe and
-            .symbol == "EXNESS:EURUSD"
+            .symbol == $symbol
         )
-    ' "${audit_journals[@]}" >/dev/null || fail "audit journal did not retain an EXNESS:EURUSD $timeframe stream candle"
+    ' "${audit_journals[@]}" >/dev/null ||
+        fail "audit journal did not retain an $expected_symbol $timeframe stream candle"
 done
 
 qkt_commit="$(jq -r '.qktCommit' "$scenario/scenario.json")"
