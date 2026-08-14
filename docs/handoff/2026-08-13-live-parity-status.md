@@ -341,3 +341,14 @@ partial fills, every re-entry and halt/cooldown recovery variant, H1/H4 live
 boundary parity, portfolio/book isolation, QKT Insights attribution for this exact
 wave, and exhaustive live-vs-backtest coverage for every registered indicator,
 numeric function, DSL construct, order type, and strategy template/deployment mode.
+
+## Higher-Timeframe Warmup Probe (2026-08-14)
+
+The read-only exact-image probe at
+`/var/tmp/qkt-validation/htf-e271822d-1786665912` passed against the same local
+gateway and demo account. It exercised nine closed-bar warmup requests: M15 at
+1-hour/1-day/2-day windows, H1 at 1-hour/1-day/2-day windows, and H4 at
+4-hour/1-day/2-day windows. All bars were aligned, unique, and closed; the
+account remained unchanged with zero positions, pending orders, and venue deals.
+The probe is warmup/bar-ingest evidence only; it does not seal higher-timeframe
+strategy signal or live-vs-backtest order parity.
