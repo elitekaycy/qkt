@@ -381,3 +381,24 @@ The result reports `dailyLossPassed`, `drawdownPassed`, and `lossStreakPassed`
 as true while `marginFloorPassed` remains false. Margin-floor requires an
 owned live exposure and deterministic venue margin; it is still an explicit
 unsealed fixture rather than an inferred pass.
+
+## Exact-Image Insights Attribution (2026-08-14)
+
+The fixed exact testing image `8d5b0cdde48e956db155793106e4dcf74bb1418c`
+(OCI digest `sha256:3e7787c0751c862b0d8f6a039c042aa86515b09c4af5dfe142d6ad7333047bb9`)
+passed the local demo attribution runner at
+`/var/tmp/qkt-validation/insights-8d5b0cdd-20260814-final3`. The bundle covers
+an M1/M5 read-only sibling and one bounded `0.01`-lot armed strategy. It
+recorded warmups, live ticks, matched M1/M5 evaluations, a real entry and
+strategy-owned exit, and final flat reconciliation.
+
+Insights attribution sealed with two rule decisions, two decision-to-order
+links, two submitted/accepted/filled orders, two trades, two accounted fills,
+zero rejected events, zero dropped envelopes, and no duplicate event IDs. An
+intentional collector outage queued 330 envelopes; restart replay drained the
+journal. The open MT5 position was observed with the owning strategy before
+the strategy close. Final pending orders and positions were zero.
+
+This is exact-wave Insights and causal round-trip evidence, not exhaustive
+coverage of every portfolio, deployment mode, indicator, DSL construct, or
+order boundary in `notes.txt`.
