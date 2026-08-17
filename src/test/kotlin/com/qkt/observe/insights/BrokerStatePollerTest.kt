@@ -63,10 +63,17 @@ class BrokerStatePollerTest {
 
         override fun pendingOrders(): List<BrokerPendingOrder> = pending
 
+        val dealCalls = mutableListOf<Pair<Long, Long>>()
+        var failDeals: Boolean = false
+
         override fun deals(
             from: Long,
             to: Long,
-        ): List<BrokerDeal> = if (ignoreDealRange) allDeals else allDeals.filter { it.ts in from..to }
+        ): List<BrokerDeal> {
+            dealCalls.add(from to to)
+            check(!failDeals) { "deal fetch failed" }
+            return if (ignoreDealRange) allDeals else allDeals.filter { it.ts in from..to }
+        }
     }
 
     private fun deal(
@@ -475,6 +482,201 @@ class BrokerStatePollerTest {
         val all = collectBodies("deal-FAKE-close")
         val closeEntry = all.substringAfter("deal-FAKE-close").substringBefore("}}")
         assertThat(closeEntry).contains(""""strategyId":"hedge_straddle"""")
+    }
+
+    @Test
+    fun `dealless cycles advance the watermark instead of re-fetching the backfill window`() {
+        val firstNow = 1_700_000_000_000L
+        var now = firstNow
+        val broker = FakeBroker()
+        val poller =
+            BrokerStatePoller(
+                brokers = listOf(broker),
+                sink = sink,
+                attribution = TicketAttribution(),
+                deployedIds = { emptyList() },
+                backfillDays = 30L,
+                clock = { now },
+            )
+        poller.pollOnce()
+        assertThat(broker.dealCalls).hasSize(1)
+        assertThat(broker.dealCalls[0].first).isEqualTo(firstNow - 30L * 86_400_000L + 1)
+
+        now += 10_000L
+        poller.pollOnce()
+        // The second window starts at the previous cycle's grace edge, not back at the
+        // 30-day seed — a quiet account no longer re-fetches a month per cycle.
+        assertThat(broker.dealCalls).hasSize(2)
+        assertThat(broker.dealCalls[1].first).isEqualTo(firstNow - 5 * 60_000L + 1)
+    }
+
+    @Test
+    fun `a found deal newer than the grace edge keeps owning the watermark`() {
+        var now = 1_700_000_000_000L
+        val broker = FakeBroker()
+        broker.allDeals = listOf(deal("9", ts = now - 1_000L))
+        val poller =
+            BrokerStatePoller(
+                brokers = listOf(broker),
+                sink = sink,
+                attribution = TicketAttribution(),
+                deployedIds = { emptyList() },
+                backfillDays = 1L,
+                clock = { now },
+            )
+        poller.pollOnce()
+        val dealTs = now - 1_000L
+        now += 10_000L
+        poller.pollOnce()
+        assertThat(broker.dealCalls[1].first).isEqualTo(dealTs + 1)
+    }
+
+    @Test
+    fun `profile brokers sharing one venue account fetch and emit deals once per cycle`() {
+        val now = 1_700_000_000_000L
+        val first = FakeBroker()
+        val second = FakeBroker()
+        second.account = second.account!!.copy(broker = "FAKE2")
+        val shared = listOf(deal("7", ts = now - 1_000L))
+        first.allDeals = shared
+        second.allDeals = shared
+        val poller =
+            BrokerStatePoller(
+                brokers = listOf(first, second),
+                sink = sink,
+                attribution = TicketAttribution(),
+                deployedIds = { emptyList() },
+                backfillDays = 1L,
+                clock = { now },
+            )
+        poller.pollOnce()
+        assertThat(first.dealCalls).hasSize(1)
+        assertThat(second.dealCalls).isEmpty()
+        val bodies = collectBodies("deal-FAKE-7")
+        assertThat(Regex("\"deal-FAKE-7\"").findAll(bodies).count()).isEqualTo(1)
+        assertThat(bodies).doesNotContain("deal-FAKE2-7")
+    }
+
+    @Test
+    fun `brokers on different venue accounts fetch deals independently`() {
+        val now = 1_700_000_000_000L
+        val first = FakeBroker()
+        val second = FakeBroker()
+        second.account = second.account!!.copy(login = 999_111_222L)
+        val poller =
+            BrokerStatePoller(
+                brokers = listOf(first, second),
+                sink = sink,
+                attribution = TicketAttribution(),
+                deployedIds = { emptyList() },
+                backfillDays = 1L,
+                clock = { now },
+            )
+        poller.pollOnce()
+        assertThat(first.dealCalls).hasSize(1)
+        assertThat(second.dealCalls).hasSize(1)
+    }
+
+    @Test
+    fun `a failed deal fetch does not advance the watermark or lose deals`() {
+        val firstNow = 1_700_000_000_000L
+        var now = firstNow
+        val broker = FakeBroker()
+        broker.failDeals = true
+        val poller =
+            BrokerStatePoller(
+                brokers = listOf(broker),
+                sink = sink,
+                attribution = TicketAttribution(),
+                deployedIds = { emptyList() },
+                backfillDays = 1L,
+                clock = { now },
+            )
+        poller.pollOnce()
+        assertThat(broker.dealCalls).hasSize(1)
+
+        // A deal booked between the failed cycle and the retry must still be caught:
+        // the watermark stays at the seed, so the retry re-covers the full window.
+        broker.failDeals = false
+        broker.allDeals = listOf(deal("11", ts = now - 500L))
+        now += 10_000L
+        poller.pollOnce()
+        assertThat(broker.dealCalls[1].first).isEqualTo(broker.dealCalls[0].first)
+        assertThat(collectBodies("deal-FAKE-11")).contains("deal-FAKE-11")
+    }
+
+    @Test
+    fun `one broker's failed fetch defers the shared account to the next cycle`() {
+        val now = 1_700_000_000_000L
+        val first = FakeBroker()
+        val second = FakeBroker()
+        second.account = second.account!!.copy(broker = "FAKE2")
+        first.failDeals = true
+        val poller =
+            BrokerStatePoller(
+                brokers = listOf(first, second),
+                sink = sink,
+                attribution = TicketAttribution(),
+                deployedIds = { emptyList() },
+                backfillDays = 1L,
+                clock = { now },
+            )
+        poller.pollOnce()
+        // The account was claimed by the first broker before its fetch failed; the
+        // second must not double-claim within the same cycle. The retry happens next
+        // cycle with an unadvanced watermark, so nothing is lost.
+        assertThat(first.dealCalls).hasSize(1)
+        assertThat(second.dealCalls).isEmpty()
+        poller.pollOnce()
+        assertThat(first.dealCalls).hasSize(2)
+    }
+
+    @Test
+    fun `a deal booked late but inside the grace window is still emitted`() {
+        val firstNow = 1_700_000_000_000L
+        var now = firstNow
+        val broker = FakeBroker()
+        val poller =
+            BrokerStatePoller(
+                brokers = listOf(broker),
+                sink = sink,
+                attribution = TicketAttribution(),
+                deployedIds = { emptyList() },
+                backfillDays = 1L,
+                clock = { now },
+            )
+        poller.pollOnce()
+
+        // Booked retroactively with a timestamp one minute old — inside the 5-minute grace.
+        broker.allDeals = listOf(deal("12", ts = firstNow - 60_000L))
+        now += 10_000L
+        poller.pollOnce()
+        assertThat(collectBodies("deal-FAKE-12")).contains("deal-FAKE-12")
+    }
+
+    @Test
+    fun `a deal booked late beyond the grace window is dropped by contract`() {
+        val firstNow = 1_700_000_000_000L
+        var now = firstNow
+        val broker = FakeBroker()
+        val poller =
+            BrokerStatePoller(
+                brokers = listOf(broker),
+                sink = sink,
+                attribution = TicketAttribution(),
+                deployedIds = { emptyList() },
+                backfillDays = 1L,
+                clock = { now },
+            )
+        poller.pollOnce()
+
+        // Booked retroactively past the grace edge: the watermark has moved beyond its
+        // timestamp, so it is never fetched. This pins the documented grace trade-off.
+        broker.allDeals = listOf(deal("13", ts = firstNow - 6 * 60_000L))
+        now += 10_000L
+        poller.pollOnce()
+        val second = broker.dealCalls[1]
+        assertThat(second.first).isGreaterThan(firstNow - 6 * 60_000L)
     }
 
     @Test
