@@ -51,6 +51,7 @@ class ActionCompiler(
     private val exitExprCompiler = exitExprCompiler ?: exprCompiler.forExitHooks()
     private val orderTypeCompiler = OrderTypeCompiler(exprCompiler)
     private val childPriceResolver = ChildPriceResolver(exprCompiler)
+    private val childPriceFreezer = ChildPriceFreezer(exprCompiler)
     private val sizingCompiler = SizingCompiler(exprCompiler)
     private val latchCompiler = LatchCompiler(exprCompiler, sizingCompiler, ids)
 
@@ -432,6 +433,8 @@ class ActionCompiler(
 
         val compiledSL = opts.bracket?.stopLoss?.let { childPriceResolver.compileStopLoss(it) }
         val compiledTP = opts.bracket?.takeProfit?.let { childPriceResolver.compile(it, ChildKind.TAKE_PROFIT) }
+        val frozenSL = opts.bracket?.stopLoss?.let { childPriceFreezer.prepare(it) }
+        val frozenTP = opts.bracket?.takeProfit?.let { childPriceFreezer.prepare(it) }
         val compiledOcoLeg1 = opts.oco?.stop?.let { childPriceResolver.compile(it, ChildKind.STOP_LOSS) }
         val compiledOcoLeg2 = opts.oco?.limit?.let { childPriceResolver.compile(it, ChildKind.TAKE_PROFIT) }
         val staticStopDistance: BigDecimal? = resolveStaticStopDistance(opts.bracket?.stopLoss)
@@ -510,6 +513,10 @@ class ActionCompiler(
                 when {
                     opts.bracket != null -> {
                         val bracket = requireNotNull(resolvedBracket)
+                        // Frozen ASTs snapshot indicator subexpressions at entry so OrderManager's
+                        // fill-time re-anchor sees literal arithmetic only. The bracket prices
+                        // resolved above from the same context, so a null snapshot cannot happen
+                        // here; the elvis is a type-level fallback to those resolved prices.
                         OrderRequest.Bracket(
                             id = ids.next(),
                             symbol = symbol,
@@ -518,8 +525,8 @@ class ActionCompiler(
                             entry = entryReq,
                             takeProfit = bracket.takeProfit,
                             stopLoss = bracket.stopLoss,
-                            takeProfitAst = opts.bracket.takeProfit,
-                            stopLossAst = opts.bracket.stopLoss,
+                            takeProfitAst = frozenTP?.freeze(ctx),
+                            stopLossAst = frozenSL?.freeze(ctx),
                             timeInForce = tif,
                             timestamp = ts,
                         )
@@ -895,6 +902,8 @@ class ActionCompiler(
         val tif = TifTranslator.translate(opts.tif)
         val staticStopDistance = resolveStaticStopDistance(opts.bracket?.stopLoss)
         val compiledStopLoss = opts.bracket?.stopLoss?.let { childPriceResolver.compileStopLoss(it) }
+        val frozenOuterSL = opts.bracket?.stopLoss?.let { childPriceFreezer.prepare(it) }
+        val frozenOuterTP = opts.bracket?.takeProfit?.let { childPriceFreezer.prepare(it) }
         val plan = StackCompiler.compile(stackAst, opts.sizing, opts.bracket, side)
         // Pre-compile one CompiledSize per layer (they may share the same sizing AST for
         // StackSpacing, but compiling per-layer is cheap and avoids sharing mutable state).
@@ -935,7 +944,19 @@ class ActionCompiler(
                     val qty = compiledSizes[idx].evaluate(ctx, expectedEntry, runtimeStopDistance)
                     layer.copy(resolvedQuantity = qty)
                 }
-            val resolvedPlan = plan.copy(layers = resolvedLayers)
+            // Freeze indicator subexpressions in the outer bracket at fire time — layer
+            // fills resolve these ASTs against the fill price and understand literal
+            // arithmetic only. A null snapshot means the indicator is still warming up.
+            val frozenOuterBracket =
+                plan.outerBracket?.let { outer ->
+                    val sl = frozenOuterSL?.freeze(ctx)
+                    val tp = frozenOuterTP?.freeze(ctx)
+                    if ((outer.stopLoss != null && sl == null) || (outer.takeProfit != null && tp == null)) {
+                        return@stack emptyList()
+                    }
+                    outer.copy(stopLoss = sl, takeProfit = tp)
+                }
+            val resolvedPlan = plan.copy(layers = resolvedLayers, outerBracket = frozenOuterBracket)
             val totalQty = resolvedLayers.sumOf { it.resolvedQuantity!! }
 
             val req =
