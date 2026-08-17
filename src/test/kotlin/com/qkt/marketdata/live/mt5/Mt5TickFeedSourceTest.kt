@@ -109,6 +109,23 @@ class Mt5TickFeedSourceTest {
     }
 
     @Test
+    fun `prolonged-stale probing starts after threshold and fresh ticks recover normal cadence`() {
+        val controller =
+            ProlongedStaleProbeController(
+                normalPollIntervalMs = 10L,
+                staleAfterMs = 50L,
+                probePollIntervalMs = 100L,
+            )
+
+        assertThat(controller.sleepAfterRound(nowMs = 1_000L, hadFreshTick = false)).isEqualTo(10L)
+        assertThat(controller.sleepAfterRound(nowMs = 1_010L, hadFreshTick = true)).isEqualTo(10L)
+        assertThat(controller.sleepAfterRound(nowMs = 1_040L, hadFreshTick = false)).isEqualTo(10L)
+        assertThat(controller.sleepAfterRound(nowMs = 1_060L, hadFreshTick = false)).isEqualTo(100L)
+        assertThat(controller.sleepAfterRound(nowMs = 1_070L, hadFreshTick = true)).isEqualTo(10L)
+        assertThat(controller.sleepAfterRound(nowMs = 1_100L, hadFreshTick = false)).isEqualTo(10L)
+    }
+
+    @Test
     fun `falls back to bid-ask mid when last is zero`() {
         val server = MockWebServer()
         val counter = AtomicInteger(0)
