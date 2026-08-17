@@ -30,6 +30,11 @@ import okhttp3.OkHttpClient
  * ticking while any asset class is open — a 24/7 crypto calendar prevents the weekend FX skip.
  * Fetching an individually-closed symbol within an open round is harmless (its stale tick dedupes
  * by broker time and never re-emits).
+ *
+ * If the gateway keeps answering but all subscribed symbols repeat the same broker timestamp for
+ * [prolongedStaleAfterMs], the source switches from the normal cadence to [staleProbeSleepMs].
+ * A newer broker timestamp immediately restores normal polling. This reduces closed-market and
+ * weekend load without weakening the downstream stale-data order gate.
  */
 class Mt5TickFeedSource(
     private val baseUrl: String,
@@ -41,12 +46,21 @@ class Mt5TickFeedSource(
     private val symbolCalendars: SymbolCalendars? = null,
     private val outOfSessionSleepMs: Long = 60_000L,
     private val apiKey: String? = null,
+    private val prolongedStaleAfterMs: Long = DEFAULT_PROLONGED_STALE_AFTER_MS,
+    private val staleProbeSleepMs: Long = DEFAULT_STALE_PROBE_SLEEP_MS,
 ) : LiveTickSource {
     private val log = org.slf4j.LoggerFactory.getLogger(Mt5TickFeedSource::class.java)
     private val symbols: List<String> = symbolMap.keys.toList()
 
     private val running = AtomicBoolean(false)
     private var thread: Thread? = null
+
+    init {
+        require(pollIntervalMs > 0L) { "MT5 tick poll interval must be positive" }
+        require(outOfSessionSleepMs > 0L) { "MT5 out-of-session sleep must be positive" }
+        require(prolongedStaleAfterMs > 0L) { "MT5 prolonged-stale threshold must be positive" }
+        require(staleProbeSleepMs > 0L) { "MT5 stale probe sleep must be positive" }
+    }
 
     override fun start(
         onTick: (Tick) -> Unit,
@@ -69,6 +83,12 @@ class Mt5TickFeedSource(
         // successful round fires onReconnect and clears the budget.
         var consecutiveFailedRounds = 0
         var disconnected = false
+        val staleProbe =
+            ProlongedStaleProbeController(
+                normalPollIntervalMs = pollIntervalMs,
+                staleAfterMs = prolongedStaleAfterMs,
+                probePollIntervalMs = staleProbeSleepMs,
+            )
         thread =
             Thread({
                 try {
@@ -86,6 +106,7 @@ class Mt5TickFeedSource(
                             continue
                         }
                         var roundHadSuccess = false
+                        var roundHadFreshTick = false
                         val fetches: List<Future<Mt5TickClient.Mt5Tick>> =
                             symbols.map { sym ->
                                 fetchPool.submit(Callable { client.fetchOnce(sym, capturedAtMs = clock.now()) })
@@ -96,6 +117,7 @@ class Mt5TickFeedSource(
                                 roundHadSuccess = true
                                 val seen = lastBrokerMs[sym] ?: 0L
                                 if (tick.brokerTimeMs > seen) {
+                                    roundHadFreshTick = true
                                     if (!lastBrokerMs.containsKey(sym)) {
                                         val skewMs = tick.brokerTimeMs - clock.now()
                                         log.info(
@@ -134,6 +156,7 @@ class Mt5TickFeedSource(
                                 onError(e)
                             }
                         }
+                        val sleepMs = staleProbe.sleepAfterRound(clock.now(), roundHadFreshTick)
                         if (symbols.isNotEmpty()) {
                             if (roundHadSuccess) {
                                 consecutiveFailedRounds = 0
@@ -156,7 +179,7 @@ class Mt5TickFeedSource(
                             }
                         }
                         try {
-                            Thread.sleep(pollIntervalMs)
+                            Thread.sleep(sleepMs)
                         } catch (e: InterruptedException) {
                             Thread.currentThread().interrupt()
                             return@Thread
@@ -182,5 +205,33 @@ class Mt5TickFeedSource(
     private companion object {
         /** Fully-failed poll rounds before the source reports itself disconnected. */
         const val DISCONNECT_AFTER_FAILED_ROUNDS: Int = 5
+        const val DEFAULT_PROLONGED_STALE_AFTER_MS: Long = 5 * 60_000L
+        const val DEFAULT_STALE_PROBE_SLEEP_MS: Long = 60_000L
+    }
+}
+
+internal class ProlongedStaleProbeController(
+    private val normalPollIntervalMs: Long,
+    private val staleAfterMs: Long,
+    private val probePollIntervalMs: Long,
+) {
+    private var lastFreshAtMs: Long? = null
+
+    init {
+        require(normalPollIntervalMs > 0L) { "normal poll interval must be positive" }
+        require(staleAfterMs > 0L) { "stale-after interval must be positive" }
+        require(probePollIntervalMs > 0L) { "probe poll interval must be positive" }
+    }
+
+    fun sleepAfterRound(
+        nowMs: Long,
+        hadFreshTick: Boolean,
+    ): Long {
+        if (hadFreshTick) {
+            lastFreshAtMs = nowMs
+            return normalPollIntervalMs
+        }
+        val lastFresh = lastFreshAtMs ?: return normalPollIntervalMs
+        return if (nowMs - lastFresh >= staleAfterMs) probePollIntervalMs else normalPollIntervalMs
     }
 }
