@@ -29,6 +29,9 @@ case "$*" in
     "api repos/test/repo/compare/main...testing --jq .ahead_by")
         printf '%s\n' "${FAKE_AHEAD_BY:-1}"
         ;;
+    "api repos/test/repo/compare/main...testing --jq .files[].filename")
+        printf '%s\n' "${FAKE_CHANGED_FILES:-src/main/kotlin/com/qkt/app/Main.kt}"
+        ;;
     "pr list --repo test/repo --base main --head testing --state open --limit 1 --json url --jq .[0].url // empty")
         printf '%s\n' "${FAKE_PR_URL:-}"
         ;;
@@ -186,6 +189,30 @@ if run_subject FAKE_SOAK_MISSING=true > "$tmp_dir/missing-soak.out" 2>&1; then
     exit 1
 fi
 grep -q 'no successful paper-soak run exists for current testing' "$tmp_dir/missing-soak.out"
+
+# Docs-only promotions waive the paper soak: even with no soak run available, a
+# promotion whose whole main...testing delta is documentation still opens the PR.
+: > "$log_file"
+output="$(run_subject \
+    FAKE_CHANGED_FILES="$(printf 'docs/get-started/mt5-gateway.md\nREADME.md\nmkdocs.yml')" \
+    FAKE_SOAK_MISSING=true)"
+grep -q 'promotion PR: https://example.test/pull/1' <<< "$output"
+grep -q 'waiving paper soak' <<< "$output"
+grep -q '^pr create ' "$log_file"
+if grep -q 'workflow paper-soak.yml' "$log_file"; then
+    echo "docs-only promotion must not query the paper soak" >&2
+    exit 1
+fi
+
+# A single non-docs file in the delta reinstates the full soak gate.
+: > "$log_file"
+if run_subject \
+    FAKE_CHANGED_FILES="$(printf 'docs/x.md\nsrc/main/kotlin/com/qkt/app/Main.kt')" \
+    FAKE_SOAK_MISSING=true > "$tmp_dir/mixed-soak.out" 2>&1; then
+    echo "a non-docs file must reinstate the soak gate" >&2
+    exit 1
+fi
+grep -q 'no successful paper-soak run exists for current testing' "$tmp_dir/mixed-soak.out"
 
 if ! grep -q '^          ref: testing$' "$workflow"; then
     echo "promotion workflow must checkout the integration-tested testing ref" >&2
