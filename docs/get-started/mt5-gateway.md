@@ -14,6 +14,13 @@ it, how it logs into any broker headlessly, and how to verify it before you poin
 qkt at it. Once the gateway answers `"status":"ready"`, wire qkt to it with
 [Deploy MT5](deploy-mt5.md).
 
+!!! abstract "mt5-gateway project"
+    The gateway is a separate project with its own repo and docs:
+    **[GitHub](https://github.com/elitekaycy/mt5-gateway)** ·
+    **[Documentation](https://elitekaycy.github.io/mt5-gateway/)** ·
+    **[Docker Hub](https://hub.docker.com/r/elitekaycy/mt5-gateway-api)**.
+    This page is the qkt-focused quick path; the gateway docs are the full reference.
+
 !!! warning "It places real orders"
     The gateway can trade a real broker account. Test with a **demo** account
     first. Bind its ports to loopback and never expose them to the public internet.
