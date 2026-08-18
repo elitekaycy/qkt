@@ -487,12 +487,6 @@ object InsightsTranslate {
     ): InsightsEnvelope = marketDataLifecycle("stale", "marketdata.stale", source, listOf(symbol), ts, reason)
 
     /**
-     * Live venue account snapshot ("state.account"). Last-value semantics: the collector
-     * keeps only the newest per (instance, broker), so the id just needs to be unique
-     * per poll. Null fields (a venue that reports no margin) are omitted from the JSON
-     * by [InsightsEnvelope.toJson]'s map writer — the contract wants absent, not null.
-     */
-    /**
      * The instance's currently-deployed strategy roster, emitted once per poll cycle.
      * Lets the collector tell live members from strategy ids that only linger from a
      * prior bench topology (e.g. after a reshard), instead of showing every id ever seen.
@@ -511,6 +505,12 @@ object InsightsTranslate {
             payload = mapOf("strategies" to strategyIds.toList()),
         )
 
+    /**
+     * Live venue account snapshot ("state.account"). Last-value semantics: the collector
+     * keeps only the newest per (instance, broker), so the id just needs to be unique
+     * per poll. Null fields (a venue that reports no margin) are omitted from the JSON
+     * by [InsightsEnvelope.toJson]'s map writer — the contract wants absent, not null.
+     */
     fun stateAccount(
         ts: Long,
         s: BrokerAccountState,
