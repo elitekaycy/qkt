@@ -487,6 +487,25 @@ object InsightsTranslate {
     ): InsightsEnvelope = marketDataLifecycle("stale", "marketdata.stale", source, listOf(symbol), ts, reason)
 
     /**
+     * The instance's currently-deployed strategy roster, emitted once per poll cycle.
+     * Lets the collector tell live members from strategy ids that only linger from a
+     * prior bench topology (e.g. after a reshard), instead of showing every id ever seen.
+     * e.g. a 22-member bench emits {"strategies": ["forward_bench:s0", ...]} — 22 entries.
+     */
+    fun instanceRoster(
+        ts: Long,
+        strategyIds: Collection<String>,
+    ): InsightsEnvelope =
+        InsightsEnvelope(
+            id = "roster-$ts",
+            seq = 0,
+            ts = ts,
+            strategyId = null,
+            type = "instance.roster",
+            payload = mapOf("strategies" to strategyIds.toList()),
+        )
+
+    /**
      * Live venue account snapshot ("state.account"). Last-value semantics: the collector
      * keeps only the newest per (instance, broker), so the id just needs to be unique
      * per poll. Null fields (a venue that reports no margin) are omitted from the JSON

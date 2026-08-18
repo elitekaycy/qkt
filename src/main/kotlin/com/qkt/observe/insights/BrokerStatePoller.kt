@@ -83,6 +83,9 @@ class BrokerStatePoller(
      * consecutive-failure streak and never kills the thread.
      */
     internal fun pollOnce() {
+        // Announce the live roster first so the collector can retire strategy ids that a
+        // prior bench topology left behind, independent of any per-broker fetch outcome.
+        sink.offer(InsightsTranslate.instanceRoster(clock(), deployedIds()))
         // Accounts whose deals were already fetched this cycle — the first broker of each
         // account owns the fetch, the rest skip it (deal history is account-wide).
         val dealsFetched = mutableSetOf<String>()
