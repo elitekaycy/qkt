@@ -688,5 +688,65 @@ class LiveSessionBrokerCoverageTest {
         assertThat(persisted.legs.none { it.role == LegRole.STACK }).isTrue
         // Each adopted leg carries its real venue ticket, so CLOSE can target it by ticket.
         assertThat(persisted.legs.map { it.brokerTicket }).containsExactlyInAnyOrder("9001", "9002")
+        // Adopted legs keep the venue's open time, not the restart time — otherwise a
+        // holding_duration exit resets its clock on every restart and never fires.
+        assertThat(persisted.legs).allMatch { it.openedAt == 1_700_000_000_000L }
+    }
+
+    @Test
+    fun `adoption falls back to the session clock when the venue exposes no open time`() {
+        val strategy =
+            StubDslStrategy(
+                declaredStreams =
+                    mapOf("gold" to HubKey(broker = "EXNESS", symbol = "XAUUSD", timeframe = "5m")),
+            )
+        val persistor = NoopStatePersistor()
+        val factory: BrokerFactory = { bus, clock, priceTracker, _, _ ->
+            object : Broker by PaperBroker(bus, clock, priceTracker) {
+                override val supportsPositionTickets: Boolean = true
+
+                override fun getOpenPositions(): Map<String, List<com.qkt.positions.Position>> =
+                    mapOf(
+                        "EXNESS:XAUUSD" to
+                            listOf(
+                                com.qkt.positions.Position("EXNESS:XAUUSD", BigDecimal("0.13"), BigDecimal("4140")),
+                            ),
+                    )
+
+                override fun positionTickets(): List<BrokerPositionTicket> =
+                    listOf(
+                        com.qkt.broker.BrokerPositionTicket(
+                            ticket = "9001",
+                            symbol = "EXNESS:XAUUSD",
+                            side = Side.BUY,
+                            qty = BigDecimal("0.13"),
+                            entryPrice = BigDecimal("4140"),
+                            currentPrice = null,
+                            profit = null,
+                            swap = null,
+                            openedAt = null,
+                            comment = "",
+                        ),
+                    )
+            }
+        }
+        val session =
+            LiveSession(
+                strategies = listOf("alpha" to strategy),
+                source = EmptySource,
+                symbols = listOf("EXNESS:XAUUSD"),
+                clock = FixedClock(time = 1_700_000_100_000L),
+                brokerFactories = mapOf("exness" to factory),
+                persistor = persistor,
+                ignoreMismatches = true,
+            )
+
+        val handle = session.start()
+        handle.stop()
+        handle.awaitTermination(java.time.Duration.ofSeconds(2))
+
+        val persisted = persistor.loadLegBook("alpha", "EXNESS:XAUUSD")
+        assertThat(persisted).isNotNull
+        assertThat(persisted!!.legs.single().openedAt).isEqualTo(1_700_000_100_000L)
     }
 }

@@ -459,7 +459,10 @@ class LiveSession(
                                         side = t.side,
                                         quantity = t.qty.abs(),
                                         entryPrice = t.entryPrice,
-                                        openedAt = clock.now(),
+                                        // The venue's open time, so time-based exits like
+                                        // holding_duration survive a restart instead of
+                                        // restarting their clock at adoption.
+                                        openedAt = t.openedAt ?: clock.now(),
                                         role = com.qkt.positions.LegRole.INDEPENDENT,
                                         brokerTicket = t.ticket,
                                     )
