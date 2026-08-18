@@ -37,6 +37,34 @@ if [ "$ahead_by" = "0" ]; then
     exit 0
 fi
 
+# Docs-only fast lane: when every file the testing->main promotion carries is
+# documentation (docs/, any *.md, mkdocs.yml, requirements-docs.txt), the change
+# cannot alter runtime behavior, so the exact-image paper soak — release-grade
+# evidence tied to a versioned engine build — is not applicable and is waived.
+# The required CI checks (build, integration, runtime-smoke, build-and-push,
+# build-windows) still run on testing and still gate the promotion PR; only the
+# manual soak/attestation step is skipped. Any non-docs file flips this off and
+# the full soak gate below applies unchanged.
+docs_only=true
+changed_files="$($gh_bin api "repos/$repo/compare/main...testing" --jq '.files[].filename')"
+if [ -z "$changed_files" ]; then
+    docs_only=false
+fi
+while IFS= read -r changed_file; do
+    [ -z "$changed_file" ] && continue
+    case "$changed_file" in
+        docs/*|*.md|mkdocs.yml|requirements-docs.txt) : ;;
+        *) docs_only=false; break ;;
+    esac
+done <<< "$changed_files"
+
+if [ "$docs_only" = true ]; then
+    echo "docs-only promotion for $testing_sha: every changed file is documentation; waiving paper soak"
+    soak_url="waived — docs-only promotion (no runtime change)"
+    soak_image="n/a — docs-only promotion"
+    attestation_type="docs-only (soak waived)"
+else
+
 soak_runs="$($gh_bin run list \
     --repo "$repo" \
     --workflow paper-soak.yml \
@@ -70,6 +98,8 @@ python3 "$script_dir/verify-paper-soak-attestation.py" "$soak_attestation" \
     --expected-image-repository "ghcr.io/${repo%%/*}/qkt"
 soak_image="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["image"])' "$soak_attestation")"
 attestation_type="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8")).get("attestationType", "paper-soak"))' "$soak_attestation")"
+
+fi
 
 pr_url="$($gh_bin pr list \
     --repo "$repo" \
