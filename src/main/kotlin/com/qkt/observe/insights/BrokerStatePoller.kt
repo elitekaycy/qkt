@@ -28,6 +28,13 @@ class BrokerStatePoller(
     private val attribution: TicketAttribution,
     /** Currently-deployed strategy ids, for comment-prefix fallback attribution. */
     private val deployedIds: () -> Collection<String>,
+    /**
+     * This session's strategy ids in the exact form the dashboard keys on (the same
+     * ids [InsightsTranslate.strategyStarted] emits), announced each cycle as the live
+     * roster. Distinct from [deployedIds], which is the daemon-wide attribution set in
+     * DSL-name form. Empty by default → no roster is announced (older wiring).
+     */
+    private val rosterIds: () -> Collection<String> = { emptyList() },
     private val pollIntervalMs: Long = 10_000L,
     /** How far back the first cycle fetches deals; later cycles fetch only new ones. */
     private val backfillDays: Long = 30L,
@@ -85,7 +92,8 @@ class BrokerStatePoller(
     internal fun pollOnce() {
         // Announce the live roster first so the collector can retire strategy ids that a
         // prior bench topology left behind, independent of any per-broker fetch outcome.
-        sink.offer(InsightsTranslate.instanceRoster(clock(), deployedIds()))
+        // Each session announces its own ids; the collector unions them across sessions.
+        rosterIds().takeIf { it.isNotEmpty() }?.let { sink.offer(InsightsTranslate.instanceRoster(clock(), it)) }
         // Accounts whose deals were already fetched this cycle — the first broker of each
         // account owns the fetch, the rest skip it (deal history is account-wide).
         val dealsFetched = mutableSetOf<String>()
