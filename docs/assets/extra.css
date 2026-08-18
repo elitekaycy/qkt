@@ -1348,3 +1348,10 @@ body[data-md-color-primary] .md-content__inner:has(.qkt-hero) {
   .qkt-cmd__label { display: none; }
   .qkt-section__head { flex-wrap: wrap; }
 }
+
+/* --- header logo: keep the wordmark visible in both schemes ---------------
+   theme.logo (qkt-mark-light.svg) has dark ink, correct on the light header.
+   On the dark scheme that ink vanishes, so swap to the white mark. */
+[data-md-color-scheme="slate"] .md-logo img {
+  content: url("qkt-mark-dark.svg");
+}
