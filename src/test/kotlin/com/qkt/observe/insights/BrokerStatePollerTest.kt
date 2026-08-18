@@ -190,14 +190,16 @@ class BrokerStatePollerTest {
     }
 
     @Test
-    fun `each cycle emits the deployed strategy roster`() {
+    fun `each cycle announces this session's roster ids, not the attribution set`() {
         val now = 1_700_000_000_000L
         val poller =
             BrokerStatePoller(
                 brokers = listOf(FakeBroker()),
                 sink = sink,
                 attribution = TicketAttribution(),
-                deployedIds = { listOf("forward_bench:s0", "forward_bench:s1") },
+                // deployedIds is the DSL-name attribution set; rosterIds is the dashboard id form.
+                deployedIds = { listOf("gold_eur_rel2_evening_cont8") },
+                rosterIds = { listOf("forward_bench:s0", "forward_bench:s1") },
                 clock = { now },
             )
         poller.pollOnce()
@@ -206,6 +208,23 @@ class BrokerStatePollerTest {
             .contains("instance.roster")
             .contains("forward_bench:s0")
             .contains("forward_bench:s1")
+        assertThat(body).doesNotContain("gold_eur_rel2_evening_cont8")
+    }
+
+    @Test
+    fun `no roster is announced when this session has no roster ids`() {
+        val poller =
+            BrokerStatePoller(
+                brokers = listOf(FakeBroker()),
+                sink = sink,
+                attribution = TicketAttribution(),
+                deployedIds = { listOf("x") },
+                rosterIds = { emptyList() },
+                clock = { 1_700_000_000_000L },
+            )
+        poller.pollOnce()
+        // Give the sink a moment; the roster envelope must never appear.
+        assertThat(collectBodies("state.account")).doesNotContain("instance.roster")
     }
 
     @Test
