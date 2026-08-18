@@ -4,10 +4,8 @@
 
 | File | Use |
 |---|---|
-| `qkt-logo-dark.svg` | Wordmark for dark backgrounds (GitHub dark mode, terminals) |
-| `qkt-logo-light.svg` | Wordmark for light backgrounds (GitHub light mode, light Dokka theme) |
-| `qkt-mark-dark.svg` | Square `[k]` mark, dark variant — Dokka header, icons |
-| `qkt-mark-light.svg` | Square `[k]` mark, light variant |
+| `qkt-logo.svg` | Wordmark. Self-adapting — white ink on dark, dark ink on light, via an internal `prefers-color-scheme` media query. One file for every context. |
+| `qkt-mark.svg` | Square `[k]` mark. Self-adapting the same way — docs-site header, Dokka, icons. |
 | `favicon.svg` | Adaptive favicon — auto-switches via `prefers-color-scheme` |
 | `favicon.ico` | Multi-resolution `.ico` fallback (16×16 + 32×32) for older browsers |
 | `favicon-16.png`, `favicon-32.png` | Raw PNG favicons if you'd rather link them explicitly |
@@ -21,11 +19,9 @@
 qkt/
 ├── docs/
 │   └── assets/
-│       ├── qkt-logo-dark.svg
-│       ├── qkt-logo-light.svg
-│       ├── qkt-mark-dark.svg
-│       ├── qkt-mark-light.svg
-│       ├── logo-icon.svg          ← rename qkt-mark-dark.svg to this for Dokka
+│       ├── qkt-logo.svg           ← self-adapting wordmark
+│       ├── qkt-mark.svg           ← self-adapting square mark
+│       ├── logo-icon.svg          ← copy of qkt-mark.svg under the name Dokka expects
 │       ├── favicon.svg
 │       ├── favicon.ico
 │       ├── apple-touch-icon.png
@@ -34,7 +30,7 @@ qkt/
 ```
 
 `logo-icon.svg` is the specific filename Dokka looks for when replacing the
-default logo. Use a copy or a symlink.
+default logo. Use a copy or a symlink of `qkt-mark.svg`.
 
 ## 1 · README hero
 
@@ -42,16 +38,14 @@ Drop this at the very top of `README.md`, above the badges:
 
 ```markdown
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/qkt-logo-dark.svg">
-    <img alt="qkt" src="docs/assets/qkt-logo-light.svg" width="240">
-  </picture>
+  <img alt="qkt" src="docs/assets/qkt-logo.svg" width="240">
 </p>
 ```
 
-GitHub honors the `<picture>` tag — dark variant renders for users in dark mode,
-light otherwise. `width="240"` gives an 80px-tall mark; bump to 280–320 for a
-larger hero.
+`qkt-logo.svg` carries its own `prefers-color-scheme` media query, so a single
+`<img>` renders white ink in dark mode and dark ink in light mode — no
+`<picture>` and no second file. `width="240"` gives an 80px-tall mark; bump to
+280–320 for a larger hero.
 
 ## 2 · Dokka — replace the default logo
 
