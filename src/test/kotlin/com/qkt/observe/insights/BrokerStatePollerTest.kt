@@ -190,6 +190,25 @@ class BrokerStatePollerTest {
     }
 
     @Test
+    fun `each cycle emits the deployed strategy roster`() {
+        val now = 1_700_000_000_000L
+        val poller =
+            BrokerStatePoller(
+                brokers = listOf(FakeBroker()),
+                sink = sink,
+                attribution = TicketAttribution(),
+                deployedIds = { listOf("forward_bench:s0", "forward_bench:s1") },
+                clock = { now },
+            )
+        poller.pollOnce()
+        val body = collectBodies("instance.roster")
+        assertThat(body)
+            .contains("instance.roster")
+            .contains("forward_bench:s0")
+            .contains("forward_bench:s1")
+    }
+
+    @Test
     fun `poller rejects stale deals returned outside the requested millisecond range`() {
         var now = 1_700_000_000_000L
         val broker = FakeBroker()
