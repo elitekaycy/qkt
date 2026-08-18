@@ -22,7 +22,7 @@ not_in_nav: |
 theme:
   name: material
   custom_dir: overrides
-  logo: assets/qkt-mark-light.svg
+  logo: assets/qkt-mark.svg
   favicon: assets/favicon.svg
   palette:
     - media: "(prefers-color-scheme: dark)"

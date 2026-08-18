@@ -1,8 +1,5 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/qkt-logo-dark.svg">
-    <img alt="qkt" src="docs/assets/qkt-logo-light.svg" width="260">
-  </picture>
+  <img alt="qkt" src="docs/assets/qkt-logo.svg" width="260">
 </p>
 
 <h3 align="center">Write trading strategies in a SQL-like language.<br/>Backtest them deterministically — then run the same code live.</h3>
