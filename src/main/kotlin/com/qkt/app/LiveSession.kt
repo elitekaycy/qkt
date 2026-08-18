@@ -1841,6 +1841,7 @@ class LiveSession(
                         sink = insightsSink,
                         attribution = ticketAttribution,
                         deployedIds = { (strategies.map { it.first } + insightsDeployedIds()).distinct() },
+                        rosterIds = { strategies.map { it.first } },
                         pollIntervalMs = insightsStatePollMs,
                         backfillDays = insightsDealBackfillDays,
                         emitDeals = com.qkt.observe.insights.InsightsEventFamily.DEAL in insightsEvents,
