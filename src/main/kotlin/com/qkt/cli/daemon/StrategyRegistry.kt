@@ -1,6 +1,7 @@
 package com.qkt.cli.daemon
 
 import com.qkt.cli.daemon.portfolio.PortfolioSupervisor
+import com.qkt.risk.HaltScope
 import java.nio.file.Path
 import java.time.Duration
 import java.time.Instant
@@ -41,7 +42,7 @@ class StrategyRegistry(
         check(!portfolios.containsKey(name)) { "name '$name' is deployed as portfolio" }
         val old = handles[name] ?: error("strategy '$name' is not deployed")
         check(old.childMeta == null) { "strategy '$name' is a portfolio child; resync the parent portfolio" }
-        old.live.halt("operator resync")
+        old.live.halt("operator resync", HaltScope.TRANSIENT)
         handles.remove(name, old)
         old.close()
         val replacement = factory.create(name, file, ignoreMismatches)
@@ -110,7 +111,7 @@ class StrategyRegistry(
 
         portfolios.remove(name, old)
         old.children.forEach { handles.remove(it.name, it) }
-        old.children.forEach { it.live.halt("operator resync") }
+        old.children.forEach { it.live.halt("operator resync", HaltScope.TRANSIENT) }
         old.supervisor.stop()
         old.children.forEach { it.close() }
     }
@@ -141,7 +142,7 @@ class StrategyRegistry(
             check(conflictingChild == null) { "child name '${conflictingChild!!.name}' already in use" }
 
             old.supervisor.stop()
-            old.children.forEach { it.live.halt("operator resync") }
+            old.children.forEach { it.live.halt("operator resync", HaltScope.TRANSIENT) }
             oldStopped = true
             portfolios.remove(old.name)
             old.children.forEach { handles.remove(it.name) }
