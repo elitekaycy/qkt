@@ -9,6 +9,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -475,6 +476,8 @@ class MT5Client(
         resp.use {
             val raw = it.body?.string().orEmpty()
             if (!it.isSuccessful) {
+                val normalized = noChangesSuccess(ticket, raw)
+                if (normalized != null) return normalized
                 return MT5OrderResponse(
                     result = MT5OrderResult(retcode = -1, order = 0, deal = 0, price = BigDecimal.ZERO, comment = ""),
                     errorMessage = "HTTP ${it.code}: $raw",
@@ -482,6 +485,40 @@ class MT5Client(
             }
             return parseOrderResponse(raw)
         }
+    }
+
+    /**
+     * Normalizes a venue `NO_CHANGES` rejection of a protection modify into success:
+     * the position already carries exactly the requested SL/TP (e.g. a fill-anchored
+     * bracket update after a zero-slippage fill), so treating it as a failure would
+     * arm a redundant engine-held fallback stop next to live venue protection.
+     */
+    private fun noChangesSuccess(
+        ticket: Long,
+        raw: String,
+    ): MT5OrderResponse? {
+        val retcode =
+            runCatching {
+                json
+                    .parseToJsonElement(raw)
+                    .jsonObject["mt5_error"]
+                    ?.jsonObject
+                    ?.get("retcode")
+                    ?.jsonPrimitive
+                    ?.intOrNull
+            }.getOrNull()
+        if (retcode != MT5_TRADE_RETCODE_NO_CHANGES) return null
+        return MT5OrderResponse(
+            result =
+                MT5OrderResult(
+                    retcode = MT5_TRADE_RETCODE_DONE,
+                    order = ticket,
+                    deal = 0,
+                    price = BigDecimal.ZERO,
+                    comment = "no changes",
+                ),
+            errorMessage = null,
+        )
     }
 
     /** Modify an open position's SL/TP on OkHttp's dispatcher without blocking the caller. */
@@ -513,11 +550,27 @@ class MT5Client(
                 ) {
                     readCache?.clear()
                     response.use {
-                        onResult(parseAsyncMutationResponse(it))
+                        onResult(parseAsyncModifyResponse(ticket, it))
                     }
                 }
             },
         )
+    }
+
+    /** [parseAsyncMutationResponse] plus the NO_CHANGES-to-success modify normalization. */
+    private fun parseAsyncModifyResponse(
+        ticket: Long,
+        response: Response,
+    ): MT5OrderResponse {
+        val raw = response.body?.string().orEmpty()
+        if (!response.isSuccessful) {
+            noChangesSuccess(ticket, raw)?.let { return it }
+            return errorResponse("HTTP ${response.code}: $raw")
+        }
+        return runCatching { parseOrderResponse(raw) }
+            .getOrElse { error ->
+                errorResponse("invalid gateway response after send: ${error.message ?: error.javaClass.simpleName}")
+            }
     }
 
     private fun encodeModifyPosition(
