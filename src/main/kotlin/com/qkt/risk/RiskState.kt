@@ -24,7 +24,9 @@ import java.util.concurrent.atomic.AtomicBoolean
  *
  * Halts are first-class: a strategy halt suppresses that strategy's submissions
  * without affecting others; the global halt suppresses everything. Halts persist
- * until [clear]/[clearStrategy] is called by an operator.
+ * until [clear]/[clearStrategy] is called by an operator — except
+ * [HaltScope.TRANSIENT] halts, which are never written to the snapshot so a
+ * restart or resync replacement starts unhalted.
  */
 class RiskState(
     private val pnl: PnLProvider,
@@ -121,7 +123,10 @@ class RiskState(
         cancelWorkingOrders: Boolean = true,
     ) {
         if (halted) {
-            if (haltScope == HaltScope.DAILY && scope == HaltScope.PERSISTENT) {
+            val escalates =
+                (haltScope == HaltScope.DAILY && scope == HaltScope.PERSISTENT) ||
+                    (haltScope == HaltScope.TRANSIENT && scope != HaltScope.TRANSIENT)
+            if (escalates) {
                 haltReason = reason
                 haltScope = scope
                 haltEpochDay = epochDay()
@@ -233,14 +238,16 @@ class RiskState(
             epochDay = daily.epochDay,
             realizedToday = daily.global,
             perStrategyRealizedToday = daily.byStrategy,
-            halted = halted,
-            haltReason = haltReason,
+            halted = halted && haltScope != HaltScope.TRANSIENT,
+            haltReason = haltReason.takeUnless { haltScope == HaltScope.TRANSIENT },
             haltScope = haltScope.name,
             haltEpochDay = haltEpochDay,
             strategyHalts =
-                haltedStrategies.map { (id, info) ->
-                    com.qkt.persistence.PersistedStrategyHalt(id, info.reason, info.scope.name, info.epochDay)
-                },
+                haltedStrategies
+                    .filterValues { it.scope != HaltScope.TRANSIENT }
+                    .map { (id, info) ->
+                        com.qkt.persistence.PersistedStrategyHalt(id, info.reason, info.scope.name, info.epochDay)
+                    },
             globalRealizedTotal = pnl.realizedTotal(),
             dailyDrawdownEpochDay = dailyDrawdown.epochDay,
             globalDailyDrawdownRef = dailyDrawdown.globalRef,
@@ -287,7 +294,9 @@ class RiskState(
         anchorsDirty.set(false)
         val today = epochDay()
         val scope = runCatching { HaltScope.valueOf(persisted.haltScope) }.getOrDefault(HaltScope.PERSISTENT)
-        if (persisted.halted && (scope == HaltScope.PERSISTENT || persisted.haltEpochDay >= today)) {
+        val restorable =
+            scope != HaltScope.TRANSIENT && (scope == HaltScope.PERSISTENT || persisted.haltEpochDay >= today)
+        if (persisted.halted && restorable) {
             halted = true
             haltReason = persisted.haltReason
             haltScope = scope
@@ -295,7 +304,7 @@ class RiskState(
         }
         for (h in persisted.strategyHalts) {
             val hScope = runCatching { HaltScope.valueOf(h.scope) }.getOrDefault(HaltScope.PERSISTENT)
-            if (hScope == HaltScope.PERSISTENT || h.epochDay >= today) {
+            if (hScope != HaltScope.TRANSIENT && (hScope == HaltScope.PERSISTENT || h.epochDay >= today)) {
                 haltedStrategies[h.strategyId] = HaltInfo(h.reason, hScope, h.epochDay)
             }
         }

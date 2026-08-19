@@ -88,6 +88,21 @@ class RiskStatePersistenceTest {
     }
 
     @Test
+    fun `a transient drain halt suppresses trading but does not survive a restart`() {
+        val clock = TestClock(86_400_000L * 100 + 3_600_000L)
+        val persistor = NoopStatePersistor()
+        val first = riskState(clock, persistor)
+        first.halt("operator resync", scope = HaltScope.TRANSIENT)
+        assertThat(first.halted).isTrue()
+
+        // "Restart" the same day: a resync drain must not poison the replacement session.
+        val second = riskState(clock, persistor)
+        second.restore(persistor.loadRiskState("s1")!!)
+        assertThat(second.halted).isFalse()
+        assertThat(second.haltReason).isNull()
+    }
+
+    @Test
     fun `a persistent halt survives across days`() {
         val clock = TestClock(86_400_000L * 100)
         val persistor = NoopStatePersistor()
