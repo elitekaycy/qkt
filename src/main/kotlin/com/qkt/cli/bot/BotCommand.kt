@@ -18,7 +18,31 @@ class BotCommand(
     fun run(): Int {
         val verb = args.firstNonOption() ?: return help()
         val sub = Args(args.tokens.drop(1).toTypedArray())
+        // Session-first routing: when a run session is up, decision/data verbs go
+        // through its pipeline (risk, sim clock, report). With no session, every
+        // verb keeps today's direct venue behavior byte-identical.
+        val resolved = if (verb in SESSION_VERBS) resolveSession(sub) else null
+        // Live sessions route decisions and bar pulls through the pipeline, but
+        // account/positions stay venue truth (they include manual/off-session state).
+        val session =
+            resolved?.takeUnless { it.mode == "live" && verb in setOf("positions", "account") }
+        if (session != null) {
+            return botRun(sub.flag("json")) {
+                when (verb) {
+                    "buy" -> BotSessionVerbs.trade(session, sub, Side.BUY)
+                    "sell" -> BotSessionVerbs.trade(session, sub, Side.SELL)
+                    "next" -> BotSessionVerbs.next(session, sub)
+                    "quote" -> BotSessionVerbs.quote(session, sub)
+                    "bars" -> BotSessionVerbs.bars(session, sub)
+                    "positions" -> BotSessionVerbs.positions(session)
+                    "account" -> BotSessionVerbs.account(session)
+                    else -> error("verb '$verb' is not session-routable")
+                }
+            }
+        }
         return when (verb) {
+            "session" -> BotSessionCommand(sub).run()
+            "next" -> botFail(sub.flag("json"), "bot next needs a running session (qkt bot session start)")
             "buy" -> BotTradeCommand(sub, Side.BUY).run()
             "sell" -> BotTradeCommand(sub, Side.SELL).run()
             "close" -> BotCloseCommand(sub).run()
@@ -60,10 +84,24 @@ class BotCommand(
                 bot history   [--since <iso|Nd>] closed deals
                 bot eval "ema(21)" BROKER:SYMBOL --tf 1h [--count 500]
 
+            SESSION (stateful runs: risk from qkt.config.yaml, backtest reports)
+                bot session start --backtest --symbols BROKER:SYMBOL --tf 5m
+                    --from <date> --to <date> [--identities a,b] [--out runs/x]
+                bot session status | finish [--run <id>]
+                bot next BROKER:SYMBOL            pull next closed bar (advances sim clock)
+                buy/sell/quote/bars/positions/account route through a running session.
+
             Engine-managed shapes (trailing, stack, latch) are rejected — deploy a .qkt.
             """.trimIndent(),
         )
         return ExitCodes.SUCCESS
+    }
+
+    private fun resolveSession(sub: Args): BotSessionClient? = BotSessionClient.resolve(sub)
+
+    private companion object {
+        private val SESSION_VERBS =
+            setOf("buy", "sell", "next", "quote", "bars", "positions", "account")
     }
 }
 

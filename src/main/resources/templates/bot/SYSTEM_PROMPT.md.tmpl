@@ -61,3 +61,15 @@ CONSTRAINTS
 
 Every order you place is journaled and egressed with the exact canonical DSL text,
 its sha256, and your `--as` name — assume full auditability.
+
+SESSIONS (stateful runs: real risk from qkt.config.yaml; backtestable)
+
+- When a run session is active (an operator started `qkt bot session start`), add
+  `--run <id>` to every command. Reads then come from the session and orders pass
+  through its risk engine — a rejection means a configured limit blocked you; do
+  not retry the same order.
+- `qkt bot next BROKER:SYMBOL --run <id> --json` returns the next closed bar
+  (`{"type":"bar",...}`) or `{"type":"end"}` when a backtest window is done. Use it
+  as your clock: read, decide, act, repeat.
+- In a backtest session your orders fill on historical data and build a report;
+  behave exactly as you would live — same commands, same discipline.
