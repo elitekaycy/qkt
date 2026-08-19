@@ -11,7 +11,7 @@ import okhttp3.Response
 
 open class ControlClient(
     private val stateDir: StateDir,
-    private val http: OkHttpClient = OkHttpClient(),
+    private val http: OkHttpClient = defaultHttp(),
     private val explicitPort: Int? = null,
 ) {
     class NoDaemonRunningException(
@@ -248,5 +248,18 @@ open class ControlClient(
 
     companion object {
         private val JSON_MEDIA = "application/json".toMediaType()
+
+        /**
+         * Control calls are synchronous: deploy/resync of a multi-child portfolio holds one
+         * request open for minutes while the daemon swaps sessions. The stock 10s read timeout
+         * failed the CLI mid-operation while the daemon completed anyway, so reads wait up to
+         * 30 minutes; connecting to a dead daemon still fails fast.
+         */
+        fun defaultHttp(): OkHttpClient =
+            OkHttpClient
+                .Builder()
+                .connectTimeout(java.time.Duration.ofSeconds(10))
+                .readTimeout(java.time.Duration.ofMinutes(30))
+                .build()
     }
 }
