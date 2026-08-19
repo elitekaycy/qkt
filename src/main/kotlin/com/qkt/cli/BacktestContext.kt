@@ -129,6 +129,8 @@ class BacktestContext private constructor(
         executionConfig: ExecutionSimulationConfig = this.executionConfig,
         instruments: InstrumentRegistry = this.instruments,
         startingBalance: BigDecimal = this.startingBalance,
+        /** Explicit strategy instances (bot run sessions); null compiles [ast] as usual. */
+        strategies: List<Pair<String, com.qkt.strategy.Strategy>>? = null,
     ): Backtest {
         require(
             ast.streams.map { it.qktSymbol }.toSet() ==
@@ -139,7 +141,8 @@ class BacktestContext private constructor(
             "scenario strategy must declare the same streams as the base; the shared feed is keyed to them"
         }
         val strats =
-            strategiesOverride?.invoke(overrides)
+            strategies
+                ?: strategiesOverride?.invoke(overrides)
                 ?: listOf(ast.name to AstCompiler().compile(ast, overrides))
         val effectiveExecution =
             if (executionConfig == this.executionConfig && brokerKind != this.brokerKind) {
