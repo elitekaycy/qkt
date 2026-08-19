@@ -282,6 +282,15 @@ const val MT5_COMMENT_MAX_LENGTH: Int = 29
 /** MQL5 trade return code for a successful order (`TRADE_RETCODE_DONE`). */
 const val MT5_TRADE_RETCODE_DONE: Int = 10009
 
+/**
+ * MQL5 trade return code for a request that matches the current state
+ * (`TRADE_RETCODE_NO_CHANGES`), e.g. modifying a position's SL/TP to the values it
+ * already carries. For protection modifies this is idempotent success — the venue
+ * holds exactly the requested state — so the client normalizes it to
+ * [MT5_TRADE_RETCODE_DONE] rather than surfacing a spurious rejection.
+ */
+const val MT5_TRADE_RETCODE_NO_CHANGES: Int = 10025
+
 /** MQL5 `TRADE_RETCODE_PLACED` — the order was placed (pending accepted by the venue). */
 const val MT5_TRADE_RETCODE_PLACED: Int = 10008
 
