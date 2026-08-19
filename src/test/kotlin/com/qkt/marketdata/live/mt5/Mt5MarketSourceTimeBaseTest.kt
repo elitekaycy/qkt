@@ -160,6 +160,60 @@ class Mt5MarketSourceTimeBaseTest {
         )
     }
 
+    @Test
+    fun `tick just before a freshly closed bar end passes as a boundary race`() {
+        val server = MockWebServer().apply { start() }
+        try {
+            val range =
+                TimeRange(
+                    Instant.parse("2026-07-15T08:39:00Z"),
+                    Instant.parse("2026-07-15T08:44:01.531Z"),
+                )
+            // Bar closes at the minute boundary (…:40:00Z); the newest tick for a thin
+            // symbol printed 389ms earlier (…:39:59.611Z). This is a legitimate boundary
+            // race, not a multi-hour offset, so the deploy must proceed.
+            enqueueTimeResponses(
+                server,
+                barTime = "2026-07-15T11:39:00Z",
+                tickTime = "2026-07-15T11:39:59.611Z",
+            )
+            val source = source(server, range)
+
+            val bars = source.bars("TEST:EURUSD", TimeWindow.parse("1m"), range).toList()
+
+            assertThat(bars.single().endTime)
+                .isEqualTo(Instant.parse("2026-07-15T08:40:00Z").toEpochMilli())
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test
+    fun `tick a full window before the bar end still fails closed`() {
+        val server = MockWebServer().apply { start() }
+        try {
+            val range =
+                TimeRange(
+                    Instant.parse("2026-07-15T08:39:00Z"),
+                    Instant.parse("2026-07-15T08:44:01.531Z"),
+                )
+            // Tick is 61s behind the bar end — beyond one 1m window. That is a real
+            // time-base disagreement, not a boundary race, and must fail closed.
+            enqueueTimeResponses(
+                server,
+                barTime = "2026-07-15T11:39:00Z",
+                tickTime = "2026-07-15T11:38:59.000Z",
+            )
+            val source = source(server, range)
+
+            assertThatThrownBy { source.bars("TEST:EURUSD", TimeWindow.parse("1m"), range) }
+                .isInstanceOf(IllegalArgumentException::class.java)
+                .hasMessageContaining("MT5 time-base mismatch")
+        } finally {
+            server.shutdown()
+        }
+    }
+
     companion object {
         private val WINDOW = TimeWindow.parse("5m")
         private val RANGE =
