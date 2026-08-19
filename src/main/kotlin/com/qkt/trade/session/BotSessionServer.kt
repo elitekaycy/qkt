@@ -31,8 +31,20 @@ class BotSessionServer(
     private val session: BotRunSession,
     private val token: String,
     private val accountCurrency: String,
-    /** Called on `/finish`: write report artifacts and return their directory (or null). */
-    private val onFinish: (BacktestResult) -> String?,
+    /** Called on `/finish` with the backtest result (null live): write artifacts, return their dir. */
+    private val onFinish: (BacktestResult?) -> String?,
+    /**
+     * Point-in-time facts intents compile against. Backtest builds it from session
+     * state; live builds it from the venue gateway (contract size, volume steps).
+     * Null uses the backtest default (cursor quote + model equity).
+     */
+    private val quoteContextFor: ((String) -> BotQuoteContext)? = null,
+    /** Serialize engine-touching routes in backtest; live routes are queue/reads and can overlap. */
+    serverThreads: Int = 1,
+    /** When set, every next/bars/quote delivery is journaled here (what the agent saw). */
+    private val readsJournal: java.nio.file.Path? = null,
+    /** When set, intents are journaled/egressed (run-tagged) like one-shot bot commands. */
+    private val trail: com.qkt.trade.BotTrail? = null,
     bind: String = "127.0.0.1",
     port: Int = 0,
 ) : AutoCloseable {
@@ -48,7 +60,7 @@ class BotSessionServer(
 
     init {
         server.createContext("/") { ex -> handle(ex) }
-        server.executor = Executors.newSingleThreadExecutor()
+        server.executor = Executors.newFixedThreadPool(serverThreads)
     }
 
     fun start() {
@@ -87,7 +99,7 @@ class BotSessionServer(
             ex,
             200,
             """{"ok":true,"run":"${session.runId}","simNowMs":${session.simNowMs()},""" +
-                """"equity":${session.equity().toPlainString()},""" +
+                """"equity":${session.equity()?.toPlainString() ?: "null"},""" +
                 """"identities":[${session.identities().sorted().joinToString(",") { "\"$it\"" }}],""" +
                 """"finished":$finished}""",
         )
@@ -96,8 +108,10 @@ class BotSessionServer(
         val symbol = field(body(ex), "symbol")
         val bar = session.next(symbol)
         if (bar == null) {
+            journalRead("next", symbol, delivered = 0)
             respond(ex, 200, """{"ok":true,"type":"end"}""")
         } else {
+            journalRead("next", symbol, delivered = 1)
             respond(ex, 200, barJson(bar))
         }
     }
@@ -106,12 +120,15 @@ class BotSessionServer(
         val q = query(ex)
         val symbol = q["symbol"] ?: error("missing query param 'symbol'")
         val count = q["count"]?.toIntOrNull() ?: 100
-        respond(ex, 200, session.bars(symbol, count).joinToString(",", "[", "]") { barJson(it) })
+        val served = session.bars(symbol, count)
+        journalRead("bars", symbol, delivered = served.size)
+        respond(ex, 200, served.joinToString(",", "[", "]") { barJson(it) })
     }
 
     private fun quote(ex: HttpExchange) {
         val symbol = query(ex)["symbol"] ?: error("missing query param 'symbol'")
         val t = session.quote(symbol) ?: error("no quote yet for $symbol — call /next first")
+        journalRead("quote", symbol, delivered = 1)
         val bid = t.bid ?: t.price
         val ask = t.ask ?: t.price
         respond(
@@ -135,27 +152,22 @@ class BotSessionServer(
         val identity = field(obj, "identity")
         val source = field(obj, "source")
         val action = parseBotStrategy(source)
-        val tick =
-            session.quote(action.qktSymbol)
-                ?: error("no market data yet for ${action.qktSymbol} — call /next first")
-        val ctx =
-            BotQuoteContext(
-                bid = tick.bid ?: tick.price,
-                ask = tick.ask ?: tick.price,
-                equity = session.equity(),
-                balance = session.equity(),
-                contractSize = null,
-                accountCurrency = accountCurrency,
-                quoteCurrency = accountCurrency,
-                volumeMin = null,
-                volumeStep = null,
-                volumeMax = null,
-                digits = null,
-            )
+        val ctx = quoteContextFor?.invoke(action.qktSymbol) ?: defaultQuoteContext(action.qktSymbol)
         val ts = session.simNowMs()
         val id = "bot-${session.runId}-$identity-$ts-${intentSeq++}"
         val compiled = compileBotAction(action, ctx, id = id, timestamp = ts, strategyId = identity)
         session.submit(identity, Signal.Submit(compiled.request))
+        trail?.recordEvent(
+            identity,
+            "bot.session.intent",
+            mapOf(
+                "orderId" to id,
+                "symbol" to action.qktSymbol,
+                "sha256" to action.sha256,
+                "lots" to compiled.request.quantity.toPlainString(),
+                "simMs" to ts.toString(),
+            ),
+        )
         respond(
             ex,
             200,
@@ -174,8 +186,46 @@ class BotSessionServer(
         respond(
             ex,
             200,
-            """{"ok":true,"finished":true,"trades":${result.trades.size},""" +
+            """{"ok":true,"finished":true,"trades":${result?.trades?.size ?: "null"},""" +
                 """"reportDir":${reportDir?.let { "\"$it\"" } ?: "null"}}""",
+        )
+    }
+
+    /** Backtest intent context: cursor quote + model equity (no venue metadata). */
+    private fun defaultQuoteContext(symbol: String): BotQuoteContext {
+        val tick =
+            session.quote(symbol)
+                ?: error("no market data yet for $symbol — call /next first")
+        return BotQuoteContext(
+            bid = tick.bid ?: tick.price,
+            ask = tick.ask ?: tick.price,
+            equity = session.equity(),
+            balance = session.equity(),
+            contractSize = null,
+            accountCurrency = accountCurrency,
+            quoteCurrency = accountCurrency,
+            volumeMin = null,
+            volumeStep = null,
+            volumeMax = null,
+            digits = null,
+        )
+    }
+
+    @Synchronized
+    private fun journalRead(
+        verb: String,
+        symbol: String,
+        delivered: Int,
+    ) {
+        val path = readsJournal ?: return
+        val line =
+            """{"tsMs":${System.currentTimeMillis()},"simMs":${session.simNowMs()},""" +
+                """"verb":"$verb","symbol":"$symbol","delivered":$delivered}""" + "\n"
+        java.nio.file.Files.writeString(
+            path,
+            line,
+            java.nio.file.StandardOpenOption.CREATE,
+            java.nio.file.StandardOpenOption.APPEND,
         )
     }
 

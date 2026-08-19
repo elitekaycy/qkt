@@ -136,6 +136,9 @@ class BotSessionCliTest {
         assertThat(out.resolve("manifest.json")).exists()
         val trades = Files.readString(out.resolve("trades.csv"))
         assertThat(trades).contains("brain")
+        val reads = stateDir.resolve("state/bot/sessions/clitest/reads.jsonl")
+        assertThat(reads).exists()
+        assertThat(Files.readString(reads)).contains("\"verb\":\"next\"")
         assertThat(Files.exists(descriptor)).describedAs("descriptor removed on finish").isFalse()
     }
 

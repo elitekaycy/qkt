@@ -22,6 +22,9 @@ class BotSessionClient(
 
     val runId: String get() = descriptor.runId
 
+    /** `backtest` or `live` — some verbs stay venue-direct in live mode. */
+    val mode: String get() = descriptor.mode
+
     fun get(path: String): String = send(request(path).GET().build())
 
     fun post(
