@@ -170,3 +170,80 @@ Anything that needs a persistent engine to manage rejects with an error pointing
   validation, volume quantization, and sizing-currency guards.
 - **DAY time-in-force** becomes an explicit end-of-UTC-day expiration on the wire
   (MT5's gateway carries expiry only as an absolute deadline).
+
+## Run sessions — stateful trading and backtests through the bot surface
+
+A **run session** upgrades the one-shot verbs into a stateful lane: a foreground
+`qkt bot session start` process holds the real trading pipeline (risk rules from
+`qkt.config.yaml`, sizing, fills, insights identity) and the same `bot` verbs route
+to it automatically. Your external program pulls data and pushes orders; the session
+makes them real — against a historical replay (`--backtest`, producing the full
+`qkt backtest` report artifact set) or the live feed.
+
+```
+your program ──shell──▶ qkt bot next/buy/... ──HTTP──▶ session daemon
+                                                          │ TradingPipeline
+                                                          │ (risk, sizing, fills)
+                                                          ├─ backtest: replay + report
+                                                          └─ live: gateway + MT5 broker
+```
+
+### Lifecycle
+
+```bash
+# backtest over cached data (same store `qkt backtest` reads; fails closed on holes)
+qkt bot session start --backtest \
+  --symbols MT5:XAUUSD --tf 5m --from 2025-01-01 --to 2025-06-30 \
+  --identities mybrain --run demo --out runs/demo --json &
+
+qkt bot session status --run demo --json
+qkt bot session finish --run demo --json     # writes runs/demo/{result.json,trades.csv,...}
+
+# live: same command without --backtest/--from/--to
+qkt bot session start --symbols MT5:XAUUSD --tf 5m --identities mybrain --json &
+```
+
+Session resolution for every verb: `--run <id>` → `QKT_BOT_RUN` env → the single
+session under the state root (two or more running sessions require an explicit
+`--run`; that ambiguity fails closed). With **no** session running, every verb keeps
+its one-shot venue-direct behavior unchanged.
+
+### The client loop
+
+```bash
+qkt bot bars MT5:XAUUSD --count 200 --run demo --json   # warmup history for your model
+qkt bot next MT5:XAUUSD --run demo --json               # next closed bar; advances the sim clock
+qkt bot buy 0.5 MT5:XAUUSD --sl by:5 --tp rr:2 --as mybrain --run demo --json
+qkt bot positions --run demo --json
+```
+
+`next` is the clock: in a backtest it advances the replay to the next bar close
+(instantly) and returns `{"type":"end"}` when the window is exhausted; live it
+blocks until the real bar closes. Orders become pipeline signals — risk rules can
+reject them (the JSON reply is `queued`; a risk rejection appears in
+`rejections.csv` / the session journal). Reads never see past the replay cursor
+(no lookahead), and every read is journaled to the session's `reads.jsonl` so the
+report also records what the agent saw.
+
+In live mode `positions`/`account` intentionally stay venue-direct (broker truth
+includes state created outside the session); `next`/`bars`/`quote`/`buy`/`sell`
+route through the session.
+
+### Parity, identities, insights
+
+- The parity contract is structural: backtest and live share the pipeline; only
+  feed, clock, and broker differ. `BotSessionParityTest` pins that a session-driven
+  decision is byte-identical to the same scripted in-engine decision.
+- Declare identities at start (`--identities a,b`); each order's `--as` must be one
+  of them. The report splits per identity (`equity_<id>.csv`, per-strategy rows).
+- Insights envelopes from session activity carry `run=<run-id>` in the payload plus
+  the `--as` name as `strategyId`, so qkt-insights groups the campaign.
+
+### Known limitations (v1)
+
+- One timeframe per session (`--tf`); multi-tf sessions are future work.
+- `close`/`modify`/`cancel` are venue-direct only; in a backtest close a position by
+  submitting the opposite side.
+- Live sessions do not yet write a report on finish — insights is the live record.
+- Intent timing: an order submitted after `next` returns bar N executes on the first
+  tick after the tick that closed bar N (see the divergence catalog).
