@@ -139,6 +139,18 @@ class RiskStateTest {
     }
 
     @Test
+    fun `risk halt escalates an existing transient halt`() {
+        val (state, _) = newRiskState()
+        state.halt("operator resync", HaltScope.TRANSIENT)
+
+        state.halt("daily loss", HaltScope.DAILY)
+
+        assertThat(state.halted).isTrue
+        assertThat(state.haltReason).isEqualTo("daily loss")
+        assertThat(state.globalHaltScope()).isEqualTo(HaltScope.DAILY)
+    }
+
+    @Test
     fun `clearExpiredDailyHalts auto-resumes daily strategy halts but not persistent ones`() {
         val clock = FixedClock(0L)
         val (state, _) = newRiskState(clock)

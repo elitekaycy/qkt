@@ -135,6 +135,13 @@ class StrategyRegistryTest {
                         events.add("halt:$name:${file.fileName}:$reason")
                     }
 
+                    override fun halt(
+                        reason: String,
+                        scope: com.qkt.risk.HaltScope,
+                    ) {
+                        events.add("halt:$name:${file.fileName}:$reason:${scope.name}")
+                    }
+
                     override fun resume() {
                         events.add("resume:$name:${file.fileName}")
                     }
@@ -259,6 +266,13 @@ class StrategyRegistryTest {
 
                 override fun halt(reason: String) {
                     events.add("halt:$name:v$version:$reason")
+                }
+
+                override fun halt(
+                    reason: String,
+                    scope: com.qkt.risk.HaltScope,
+                ) {
+                    events.add("halt:$name:v$version:$reason:${scope.name}")
                 }
 
                 override fun resume() {
@@ -445,7 +459,7 @@ class StrategyRegistryTest {
         assertThat(registry.get("alpha")).isSameAs(replacement)
         assertThat(old.isRunning()).isFalse()
         assertThat(replacement.isRunning()).isTrue()
-        assertThat(events).contains("halt:alpha:alpha-v1.qkt:operator resync")
+        assertThat(events).contains("halt:alpha:alpha-v1.qkt:operator resync:TRANSIENT")
         assertThat(events).contains("stop:alpha:alpha-v1.qkt")
     }
 
@@ -464,7 +478,7 @@ class StrategyRegistryTest {
 
         assertThat(registry.get("alpha")).isNull()
         assertThat(old.isRunning()).isFalse()
-        assertThat(events).contains("halt:alpha:alpha-v1.qkt:operator resync")
+        assertThat(events).contains("halt:alpha:alpha-v1.qkt:operator resync:TRANSIENT")
         assertThat(events).contains("stop:alpha:alpha-v1.qkt")
         assertThat(events).doesNotContain("resume:alpha:alpha-v1.qkt")
     }
@@ -487,7 +501,7 @@ class StrategyRegistryTest {
         assertThat(registry.get("book/trend")).isSameAs(replacement.children.single())
         assertThat(old.children.single().isRunning()).isFalse()
         assertThat(replacement.children.single().isRunning()).isTrue()
-        assertThat(events).contains("halt:book/trend:v1:operator resync")
+        assertThat(events).contains("halt:book/trend:v1:operator resync:TRANSIENT")
         assertThat(events).contains("stop:book/trend:v1")
     }
 
@@ -512,7 +526,7 @@ class StrategyRegistryTest {
         assertThat(registry.get("book/meanrev")).isSameAs(external)
         assertThat(old.children.single().isRunning()).isTrue()
         assertThat(replacement.children.single().isRunning()).isFalse()
-        assertThat(events).doesNotContain("halt:book/trend:v1:operator resync")
+        assertThat(events).doesNotContain("halt:book/trend:v1:operator resync:TRANSIENT")
         assertThat(events).contains("stop:book/meanrev:v2")
     }
 }
