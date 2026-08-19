@@ -158,7 +158,7 @@ class BotSessionCommand(
         sub: Args,
         json: Boolean,
     ): Int {
-        val spec = parseStart(sub) { "live-${System.currentTimeMillis()}" }
+        val spec = parseStart(sub) { "live-${com.qkt.common.SystemClock().now()}" }
         val (symbols, _, window, runId, identities, historyBars) = spec
         val cfg = botConfig(sub)
         val profiles =
