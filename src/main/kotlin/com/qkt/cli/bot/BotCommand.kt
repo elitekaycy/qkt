@@ -21,7 +21,11 @@ class BotCommand(
         // Session-first routing: when a run session is up, decision/data verbs go
         // through its pipeline (risk, sim clock, report). With no session, every
         // verb keeps today's direct venue behavior byte-identical.
-        val session = if (verb in SESSION_VERBS) resolveSession(sub) else null
+        val resolved = if (verb in SESSION_VERBS) resolveSession(sub) else null
+        // Live sessions route decisions and bar pulls through the pipeline, but
+        // account/positions stay venue truth (they include manual/off-session state).
+        val session =
+            resolved?.takeUnless { it.mode == "live" && verb in setOf("positions", "account") }
         if (session != null) {
             return botRun(sub.flag("json")) {
                 when (verb) {

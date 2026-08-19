@@ -22,6 +22,7 @@ class BarHistory(
     private val counts = mutableMapOf<String, Long>()
 
     /** Appends one closed candle, evicting the oldest past [capacity]. O(1). */
+    @Synchronized
     fun record(candle: Candle) {
         val deque = bars.getOrPut(candle.symbol) { ArrayDeque(capacity) }
         if (deque.size == capacity) deque.removeFirst()
@@ -38,6 +39,7 @@ class BarHistory(
     }
 
     /** Newest [count] bars for [symbol], oldest-first; fewer if fewer have been seen. */
+    @Synchronized
     fun last(
         symbol: String,
         count: Int,
@@ -47,5 +49,6 @@ class BarHistory(
     }
 
     /** Total closed bars ever recorded for [symbol] (monotonic, unaffected by eviction). */
+    @Synchronized
     fun countFor(symbol: String): Long = counts[symbol] ?: 0L
 }

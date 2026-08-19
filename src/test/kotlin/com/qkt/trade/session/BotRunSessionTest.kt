@@ -32,7 +32,7 @@ class BotRunSessionTest {
             ).toEngine()
         return BotRunSession(
             runId = "test-run",
-            engine = engine,
+            backend = ReplayBotRunBackend(engine),
             bridges = bridges,
             history = history,
             recorder = recorder,
@@ -76,7 +76,7 @@ class BotRunSessionTest {
         s.submit("brain", Signal.Buy("XAUUSD", BigDecimal("1")))
         s.next("XAUUSD")
         s.next("XAUUSD")
-        val result = s.finish()
+        val result = s.finish() ?: error("backtest finish must return a result")
         assertThat(result.trades).isNotEmpty()
         assertThat(result.trades.map { it.strategyId }.distinct()).containsExactly("brain")
     }

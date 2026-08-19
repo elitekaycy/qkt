@@ -43,7 +43,7 @@ class BotSessionServerTest {
         val session =
             BotRunSession(
                 runId = "srv-test",
-                engine = engine,
+                backend = ReplayBotRunBackend(engine),
                 bridges = mapOf("brain" to bridge),
                 history = history,
                 recorder = recorder,

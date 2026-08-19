@@ -15,7 +15,7 @@ import com.qkt.strategy.StrategyContext
 class BotSessionRecorder(
     private val history: BarHistory,
 ) : Strategy {
-    private val ticks = mutableMapOf<String, Tick>()
+    private val ticks = java.util.concurrent.ConcurrentHashMap<String, Tick>()
 
     override fun onTick(
         tick: Tick,
