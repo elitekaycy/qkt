@@ -797,4 +797,50 @@ class MT5ClientTest {
         assertThat(acct.margin).isNull()
         assertThat(acct.profit).isNull()
     }
+
+    @Test
+    fun `modifyPosition treats venue NO_CHANGES as idempotent success`() {
+        server.enqueue(
+            MockResponse().setResponseCode(400).setBody(
+                """{"error": "Modify SL/TP failed: No changes", "error_type": "mt5_rejected", """ +
+                    """"mt5_error": {"comment": "No changes", "retcode": 10025, "retcode_name": "NO_CHANGES"}, """ +
+                    """"ok": false}""",
+            ),
+        )
+        val resp = client.modifyPosition(42L, sl = BigDecimal("1.17035"), tp = BigDecimal("1.16135"))
+        assertThat(resp.result.retcode).isEqualTo(MT5_TRADE_RETCODE_DONE)
+        assertThat(resp.errorMessage).isNull()
+    }
+
+    @Test
+    fun `modifyPositionAsync treats venue NO_CHANGES as idempotent success`() {
+        server.enqueue(
+            MockResponse().setResponseCode(400).setBody(
+                """{"error": "Modify SL/TP failed: No changes", "error_type": "mt5_rejected", """ +
+                    """"mt5_error": {"comment": "No changes", "retcode": 10025, "retcode_name": "NO_CHANGES"}, """ +
+                    """"ok": false}""",
+            ),
+        )
+        val results = java.util.concurrent.LinkedBlockingQueue<MT5OrderResponse>()
+        client.modifyPositionAsync(42L, sl = BigDecimal("1.17035")) { results.add(it) }
+        val resp =
+            results.poll(5, java.util.concurrent.TimeUnit.SECONDS)
+                ?: error("no async result")
+        assertThat(resp.result.retcode).isEqualTo(MT5_TRADE_RETCODE_DONE)
+        assertThat(resp.errorMessage).isNull()
+    }
+
+    @Test
+    fun `modifyPosition still rejects real venue errors`() {
+        server.enqueue(
+            MockResponse().setResponseCode(400).setBody(
+                """{"error": "Modify SL/TP failed: Invalid stops", "error_type": "mt5_rejected", """ +
+                    """"mt5_error": {"comment": "Invalid stops", "retcode": 10016}, """ +
+                    """"ok": false}""",
+            ),
+        )
+        val resp = client.modifyPosition(42L, sl = BigDecimal("1.0"))
+        assertThat(resp.result.retcode).isNotEqualTo(MT5_TRADE_RETCODE_DONE)
+        assertThat(resp.errorMessage).contains("HTTP 400")
+    }
 }
