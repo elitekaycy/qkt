@@ -306,6 +306,23 @@ qkt skill (no per-tick allocation on the empty path).
 - Stateless fallback: no session → today's direct-path behavior byte-
   unchanged (regression on existing bot tests).
 
+## Implementation notes (2026-08-19)
+
+- Live mode reuses `LiveSession` directly with bridge strategies; broker routing
+  for hand-written strategies falls back to the session's `BROKER:SYMBOL`
+  prefixes (LiveSession.buildBroker), verified by a real fill + close against a
+  local Exness gateway.
+- Live intents compile against venue point-in-time facts (`BotGateway.quoteContext`),
+  so sizing/quantization match the one-shot path; backtest intents compile against
+  the cursor quote + model equity.
+- In live sessions, `positions`/`account` intentionally stay venue-direct (broker
+  truth includes out-of-session state); `next`/`bars`/`quote`/`buy`/`sell` route
+  through the session.
+- v1 ships the pull primitive (`bot next`) only; the `stream` push form is
+  deferred. One timeframe per session. `--enforce-risk` stateless checks deferred.
+- Intent timing divergence (first tick after the bar-close tick) is pinned by
+  `BotSessionParityTest`.
+
 ## Open questions
 
 - Promote run id to a first-class `InsightsEnvelope` field (cross-repo with
