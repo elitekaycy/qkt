@@ -189,6 +189,7 @@ class BotSessionCommand(
                     }
             }
         val history = BarHistory(capacity = maxOf(historyBars, 1000))
+        seedLiveWarmup(cfg, symbols, window, historyBars, history)
         val recorder = BotSessionRecorder(history)
         val bridges = identities.associateWith { BotBridgeStrategy() }
         val strategies: List<Pair<String, com.qkt.strategy.Strategy>> =
@@ -304,6 +305,41 @@ class BotSessionCommand(
             trail.close()
         }
         return ExitCodes.SUCCESS
+    }
+
+    /**
+     * Live warmup: fetch the newest closed bars from the venue gateway (the same read
+     * the one-shot `bot bars` uses) so `bot bars --count N` serves full history at
+     * session start instead of growing one bar per live close. Bars are re-keyed to
+     * the session's qkt symbol (the gateway returns broker symbols) and the still-
+     * forming bar is dropped. Runs before the live feed starts, so seeded history
+     * always precedes live closes in the buffer. Best-effort: a gateway hiccup
+     * leaves the cache empty rather than blocking the session.
+     */
+    private fun seedLiveWarmup(
+        cfg: com.qkt.cli.Config,
+        symbols: List<String>,
+        window: TimeWindow,
+        historyBars: Int,
+        history: BarHistory,
+    ) {
+        val nowMs =
+            com.qkt.common
+                .SystemClock()
+                .now()
+        symbols.forEach { sym ->
+            val bars =
+                runCatching {
+                    com.qkt.trade.BotGateway
+                        .forSymbol(cfg, sym)
+                        .bars(sym, window, historyBars, nowMs)
+                }.getOrElse { e ->
+                    System.err.println("qkt bot: warmup fetch failed for $sym: ${e.message}")
+                    emptyList()
+                }
+            val closed = bars.filter { it.endTime <= nowMs }.map { it.copy(symbol = sym) }
+            history.seed(sym, closed)
+        }
     }
 
     /** Best-effort pre-window seed so `bot bars` has history at the first `next`. */
