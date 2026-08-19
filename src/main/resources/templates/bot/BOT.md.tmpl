@@ -5,6 +5,9 @@ the files an external decision source (AI agent, python model, human script) nee
 The `qkt.config.yaml` here is what `qkt bot` reads when run from this directory —
 its `risk:` block, broker profiles, and `insights:` egress all apply to bot trading.
 
+Wiring an AI agent: give it shell access with this directory as its working
+directory and paste `SYSTEM_PROMPT.md` into its system prompt (set its `--as` name).
+
 Two ways to trade through the bot surface:
 
 | Mode | Command shape | Risk engine | Backtestable |
