@@ -1,28 +1,117 @@
 # Bot CLI in this project
 
-This project was scaffolded with `--kind bot`: the standard MT5 compose
-stack plus the files an AI trading overlay needs. The `qkt.config.yaml` here is
-what `qkt bot` reads when run from this directory.
+This project was scaffolded with `--kind bot`: the standard MT5 compose stack plus
+the files an external decision source (AI agent, python model, human script) needs.
+The `qkt.config.yaml` here is what `qkt bot` reads when run from this directory —
+its `risk:` block, broker profiles, and `insights:` egress all apply to bot trading.
 
-## Wire an AI agent
+Two ways to trade through the bot surface:
 
-1. Bring the stack up (`make up`) and complete the one-time MT5 login (see README).
-2. Give your agent shell access with this directory as its working directory.
-3. Paste `SYSTEM_PROMPT.md` into the agent's system prompt and set its `--as` name.
+| Mode | Command shape | Risk engine | Backtestable |
+|---|---|---|---|
+| One-shot | `qkt bot buy ...` (no session) | venue-side only | no |
+| Run session | `qkt bot session start` + same verbs | full pipeline from `qkt.config.yaml` | yes — same reports as `qkt backtest` |
 
-## Smoke-test the surface by hand
+## One-shot verbs (no session)
 
 ```bash
 qkt bot account --json
 qkt bot quote MT5:XAUUSD --json
+qkt bot bars MT5:XAUUSD --tf 1h --count 100 --json
+qkt bot eval "ema(21)" MT5:XAUUSD --tf 1h --json
 qkt bot buy 0.01 MT5:XAUUSD --sl by:5 --tp by:10 --dry-run --json   # offline preview
 qkt bot buy 0.01 MT5:XAUUSD --sl by:5 --tp by:10 --as smoke --json  # real (demo!) order
 qkt bot positions --json
 qkt bot close MT5:XAUUSD --all --json
 ```
 
-Every trade is journaled under the qkt state directory (`bot/<as>/journal-*.jsonl`)
-and, when the `insights:` block is enabled, egressed to qkt-insights with the
-canonical DSL text and its sha256.
+## Run sessions — your logic, qkt's pipeline
+
+A session is a foreground process holding the real trading pipeline (risk rules,
+sizing, fills, insights identity). Your program pulls bars and pushes orders with
+plain `qkt bot` verbs; the session makes them real. The same client loop runs
+against a backtest or the live feed.
+
+### Backtest an external decision loop
+
+```bash
+# 1. start the session over cached historical data (fails closed if data missing)
+qkt bot session start --backtest \
+  --symbols MT5:XAUUSD --tf 5m \
+  --from 2025-01-01 --to 2025-06-30 \
+  --identities mybrain --run demo --out runs/demo --json &
+
+# 2. drive it — each `next` returns the next closed bar and advances the sim clock
+qkt bot bars MT5:XAUUSD --count 200 --run demo --json   # prime your model (warmup history)
+qkt bot next MT5:XAUUSD --run demo --json               # {"type":"bar",...} or {"type":"end"}
+qkt bot buy 0.5 MT5:XAUUSD --sl by:5 --tp rr:2 --as mybrain --run demo --json
+qkt bot positions --run demo --json                     # model truth at the sim cursor
+
+# 3. finish -> the standard backtest report lands in runs/demo/
+qkt bot session finish --run demo --json
+ls runs/demo   # result.json trades.csv equity_global.csv pnl_components.csv report.html ...
+```
+
+Risk rules from `qkt.config.yaml` (max_daily_loss, drawdown halts, pre-trade caps)
+veto orders exactly as they would a deployed strategy; rejections land in
+`rejections.csv`. Every read your program made is journaled to the session's
+`reads.jsonl` — the report captures what the agent saw, not just what it did.
+
+### The same loop, live
+
+```bash
+qkt bot session start --symbols MT5:XAUUSD --tf 5m \
+  --identities mybrain --run paperlive --json &
+# identical client loop: next / buy / sell; `next` now blocks until a real bar closes
+# positions/account stay venue truth; orders go through the pipeline's risk first
+qkt bot session finish --run paperlive --json
+```
+
+### Minimal python executor
+
+```python
+import json, subprocess
+
+def qkt(*args):
+    out = subprocess.run(["qkt", "bot", *args, "--run", "demo", "--json"],
+                         capture_output=True, text=True)
+    return json.loads(out.stdout)
+
+model_state = qkt("bars", "MT5:XAUUSD", "--count", "200")   # prime
+while (bar := qkt("next", "MT5:XAUUSD"))["type"] != "end":
+    if my_model.decide(bar) == "buy":
+        qkt("buy", "0.5", "MT5:XAUUSD", "--sl", "by:5", "--tp", "rr:2", "--as", "mybrain")
+```
+
+The same script backtests (session started with `--backtest`) or trades live
+(without) — that is the parity contract.
+
+### Multiple external strategies, one session
+
+Declare them at start (`--identities momentum,meanrev`) and tag every order with
+its `--as` name. The backtest report splits per identity
+(`equity_momentum.csv`, per-strategy rows in `trades.csv`); account-level risk
+sees the whole session.
+
+## qkt-insights
+
+The compose stack ships a qkt-insights service, disabled by default behind the
+`insights` compose profile (the "commented-off" service — nothing runs until you
+opt in):
+
+```bash
+docker compose --profile insights up -d          # enable the dashboard
+# then set insights.enabled: true in qkt.config.yaml (see the insights: block)
+```
+
+Once enabled, every bot command, order, and fill egresses with your `--as` name as
+its strategy id, and session activity additionally carries `run=<run-id>` in the
+payload so a whole campaign groups as one unit in the dashboard.
+
+## Journals and state
+
+- `state/bot/<as>/journal-*.jsonl` — every command/order/result, append-only.
+- `state/bot/sessions/<run>/` — live session descriptor + `reads.jsonl`.
+- Reports land wherever `--out` points (default `runs/<run-id>/`).
 
 Full reference: https://elitekaycy.github.io/qkt/reference/bot-cli/ (qkt {{QKT_VERSION}})
