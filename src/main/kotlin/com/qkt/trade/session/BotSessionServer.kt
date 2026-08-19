@@ -45,6 +45,7 @@ class BotSessionServer(
     private val readsJournal: java.nio.file.Path? = null,
     /** When set, intents are journaled/egressed (run-tagged) like one-shot bot commands. */
     private val trail: com.qkt.trade.BotTrail? = null,
+    private val clock: com.qkt.common.Clock = com.qkt.common.SystemClock(),
     bind: String = "127.0.0.1",
     port: Int = 0,
 ) : AutoCloseable {
@@ -219,7 +220,7 @@ class BotSessionServer(
     ) {
         val path = readsJournal ?: return
         val line =
-            """{"tsMs":${System.currentTimeMillis()},"simMs":${session.simNowMs()},""" +
+            """{"tsMs":${clock.now()},"simMs":${session.simNowMs()},""" +
                 """"verb":"$verb","symbol":"$symbol","delivered":$delivered}""" + "\n"
         java.nio.file.Files.writeString(
             path,
