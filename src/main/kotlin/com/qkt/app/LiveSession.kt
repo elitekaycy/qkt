@@ -528,6 +528,15 @@ class LiveSession(
                     .add(key.qktSymbol)
             }
         }
+        // Hand-written strategies (e.g. bot run-session bridges) declare no DSL streams;
+        // with factories configured, route by the session's BROKER:SYMBOL prefixes instead
+        // of silently paper-filling (the same #139 failure mode, one layer up).
+        if (brokerSymbols.isEmpty()) {
+            for (sym in symbols) {
+                val label = sym.substringBefore(':', "").lowercase()
+                if (label.isNotEmpty()) brokerSymbols.getOrPut(label) { mutableSetOf() }.add(sym)
+            }
+        }
         if (brokerSymbols.isEmpty()) return paperBroker
         // Fail fast if a strategy declares a broker prefix that has no configured factory.
         // Without this check, the old code path silently fell through to `paperBroker` for
