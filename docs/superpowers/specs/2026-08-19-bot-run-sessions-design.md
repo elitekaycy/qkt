@@ -221,10 +221,12 @@ Resolution order for every bot verb: `--run <id>` flag → `QKT_BOT_RUN` env →
 `session.json` discovered under the state root for the config resolved from
 cwd. If a session resolves, the verb is a thin HTTP client of it. If none
 resolves, behavior is exactly today's direct path (`BotGateway` straight to
-the venue) — zero disruption — with one addition: when a `--config` is
-present, the one-shot evaluates the config's point-in-time-checkable risk
-rules against venue truth (positions + today's deals) before placing, and
-reports which rules were checked and which are session-only. Stateless mode
+the venue) — byte-identical, since `--config` already exists for gateway
+resolution and must not change meaning. Stateless risk checking is opt-in
+via a new explicit `--enforce-risk` flag: the one-shot then evaluates the
+config's point-in-time-checkable risk rules against venue truth (positions +
+today's deals) before placing, and reports which rules were checked and
+which are session-only. Stateless mode
 is live-only and cannot backtest (nothing holds a replay cursor); the CLI
 says so if `--backtest`-ish flags appear without a session.
 
