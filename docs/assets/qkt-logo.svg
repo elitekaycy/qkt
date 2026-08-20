@@ -1,11 +1,19 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 200" role="img" aria-label="qkt">
   <title>qkt</title>
+  <style>
+    .bracket { stroke: #7c3aed; }
+    .letter  { stroke: #0d1117; }
+    @media (prefers-color-scheme: dark) {
+      .bracket { stroke: #a78bfa; }
+      .letter  { stroke: #e5e7eb; }
+    }
+  </style>
   <g fill="none" stroke-width="14">
-    <g stroke="#a78bfa" stroke-linejoin="miter">
+    <g class="bracket" stroke-linejoin="miter">
       <path d="M174 35H152v100h22"/>
       <path d="M427 35h22v100h-22"/>
     </g>
-    <g stroke="#e5e7eb" stroke-linecap="round" stroke-linejoin="round">
+    <g class="letter" stroke-linecap="round" stroke-linejoin="round">
       <circle cx="230" cy="100" r="35"/>
       <path d="M265 65v100"/>
       <path d="M293 35v100"/>

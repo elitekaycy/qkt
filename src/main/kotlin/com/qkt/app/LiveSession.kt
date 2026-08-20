@@ -459,7 +459,10 @@ class LiveSession(
                                         side = t.side,
                                         quantity = t.qty.abs(),
                                         entryPrice = t.entryPrice,
-                                        openedAt = clock.now(),
+                                        // The venue's open time, so time-based exits like
+                                        // holding_duration survive a restart instead of
+                                        // restarting their clock at adoption.
+                                        openedAt = t.openedAt ?: clock.now(),
                                         role = com.qkt.positions.LegRole.INDEPENDENT,
                                         brokerTicket = t.ticket,
                                     )
@@ -523,6 +526,15 @@ class LiveSession(
                 brokerSymbols
                     .getOrPut(key.broker.lowercase()) { mutableSetOf() }
                     .add(key.qktSymbol)
+            }
+        }
+        // Hand-written strategies (e.g. bot run-session bridges) declare no DSL streams;
+        // with factories configured, route by the session's BROKER:SYMBOL prefixes instead
+        // of silently paper-filling (the same #139 failure mode, one layer up).
+        if (brokerSymbols.isEmpty()) {
+            for (sym in symbols) {
+                val label = sym.substringBefore(':', "").lowercase()
+                if (label.isNotEmpty()) brokerSymbols.getOrPut(label) { mutableSetOf() }.add(sym)
             }
         }
         if (brokerSymbols.isEmpty()) return paperBroker
@@ -1838,6 +1850,7 @@ class LiveSession(
                         sink = insightsSink,
                         attribution = ticketAttribution,
                         deployedIds = { (strategies.map { it.first } + insightsDeployedIds()).distinct() },
+                        rosterIds = { strategies.map { it.first } },
                         pollIntervalMs = insightsStatePollMs,
                         backfillDays = insightsDealBackfillDays,
                         emitDeals = com.qkt.observe.insights.InsightsEventFamily.DEAL in insightsEvents,

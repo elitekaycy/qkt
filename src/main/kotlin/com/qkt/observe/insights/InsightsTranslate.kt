@@ -487,6 +487,25 @@ object InsightsTranslate {
     ): InsightsEnvelope = marketDataLifecycle("stale", "marketdata.stale", source, listOf(symbol), ts, reason)
 
     /**
+     * The instance's currently-deployed strategy roster, emitted once per poll cycle.
+     * Lets the collector tell live members from strategy ids that only linger from a
+     * prior bench topology (e.g. after a reshard), instead of showing every id ever seen.
+     * e.g. a 22-member bench emits {"strategies": ["forward_bench:s0", ...]} — 22 entries.
+     */
+    fun instanceRoster(
+        ts: Long,
+        strategyIds: Collection<String>,
+    ): InsightsEnvelope =
+        InsightsEnvelope(
+            id = "roster-$ts",
+            seq = 0,
+            ts = ts,
+            strategyId = null,
+            type = "instance.roster",
+            payload = mapOf("strategies" to strategyIds.toList()),
+        )
+
+    /**
      * Live venue account snapshot ("state.account"). Last-value semantics: the collector
      * keeps only the newest per (instance, broker), so the id just needs to be unique
      * per poll. Null fields (a venue that reports no margin) are omitted from the JSON
@@ -705,6 +724,62 @@ object InsightsTranslate {
                 mapOf(
                     "strategyId" to strategyId,
                     "flatten" to flatten,
+                    "ts" to ts,
+                ),
+        )
+
+    /** Announces a deployed portfolio book so Insights can retain book-level metadata. */
+    fun portfolioConfigured(
+        portfolioId: String,
+        ts: Long,
+        capital: BigDecimal?,
+    ): InsightsEnvelope =
+        InsightsEnvelope(
+            id = "portfolio-configured-$portfolioId-$ts",
+            seq = 0,
+            ts = ts,
+            strategyId = null,
+            type = "portfolio.configured",
+            payload = mapOf("portfolioId" to portfolioId, "capital" to capital, "ts" to ts),
+        )
+
+    /** Records the current child allocation weights for a portfolio book. */
+    fun portfolioAllocationUpdated(
+        portfolioId: String,
+        ts: Long,
+        allocations: Map<String, BigDecimal>,
+    ): InsightsEnvelope =
+        InsightsEnvelope(
+            id = "portfolio-allocation-$portfolioId-$ts",
+            seq = 0,
+            ts = ts,
+            strategyId = null,
+            type = "portfolio.allocation.updated",
+            payload = mapOf("portfolioId" to portfolioId, "allocations" to allocations, "ts" to ts),
+        )
+
+    /** Records an aggregated realized/unrealized equity sample for a portfolio book. */
+    fun portfolioEquityUpdated(
+        portfolioId: String,
+        ts: Long,
+        equity: BigDecimal,
+        realized: BigDecimal,
+        unrealized: BigDecimal,
+        perStrategy: Map<String, BigDecimal>,
+    ): InsightsEnvelope =
+        InsightsEnvelope(
+            id = "portfolio-equity-$portfolioId-$ts",
+            seq = 0,
+            ts = ts,
+            strategyId = null,
+            type = "portfolio.equity.updated",
+            payload =
+                mapOf(
+                    "portfolioId" to portfolioId,
+                    "equity" to equity,
+                    "realized" to realized,
+                    "unrealized" to unrealized,
+                    "perStrategy" to perStrategy,
                     "ts" to ts,
                 ),
         )

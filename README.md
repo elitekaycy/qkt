@@ -1,8 +1,5 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/qkt-logo-dark.svg">
-    <img alt="qkt" src="docs/assets/qkt-logo-light.svg" width="260">
-  </picture>
+  <img alt="qkt" src="docs/assets/qkt-logo.svg" width="260">
 </p>
 
 <h3 align="center">Write trading strategies in a SQL-like language.<br/>Backtest them deterministically — then run the same code live.</h3>
@@ -15,10 +12,17 @@
 </p>
 
 <p align="center">
-  <a href="https://elitekaycy.github.io/qkt/">Documentation</a> ·
-  <a href="QUICKSTART.md">Quickstart</a> ·
-  <a href="docs/phases/">What's inside</a> ·
-  <a href="#install">Install</a>
+  <a href="https://elitekaycy.github.io/qkt/"><img src="https://img.shields.io/badge/Visit%20Website-7C3AED?style=for-the-badge&logo=readthedocs&logoColor=white" alt="Visit Website"></a>
+  <a href="QUICKSTART.md"><img src="https://img.shields.io/badge/Quickstart-14161B?style=for-the-badge&logo=gnubash&logoColor=A78BFA" alt="Quickstart"></a>
+  <a href="#install"><img src="https://img.shields.io/badge/Install-14161B?style=for-the-badge&logo=docker&logoColor=A78BFA" alt="Install"></a>
+</p>
+
+<p align="center">
+  <sub><a href="docs/phases/">What's inside</a> · <a href="docs/parity/backtest-vs-live.md">Backtest↔live parity</a> · <a href="docs/research/index.md">Research workflow</a></sub>
+</p>
+
+<p align="center">
+  <img src="docs/assets/qkt-demo.gif" alt="Install qkt, start the MT5 gateway, scaffold a strategy, backtest it, and deploy it live — all from the terminal" width="880">
 </p>
 
 ---
@@ -56,6 +60,21 @@ That's a complete strategy: a 9/21 EMA crossover on 5-minute gold, one position 
 
 <sub>For the exhaustive, phase-by-phase feature list, see the collapsible section near the bottom or the <a href="docs/phases/">phase changelogs</a>.</sub>
 
+## How qkt compares
+
+Different tools optimize for different things. qkt's bet is a **declarative strategy language** where the *same file* you backtest is the file you run live.
+
+| | **qkt** | Backtrader | vectorbt | NautilusTrader |
+|---|:---:|:---:|:---:|:---:|
+| Strategy definition | SQL-like DSL (`.qkt`) | Python subclass | Vectorized arrays | Python subclass |
+| Same file backtest → live | ✅ one file | partial | research/backtest only | ✅ |
+| Engine model | event-driven | event-driven | vectorized | event-driven |
+| Deterministic by construction | ✅ injected clock/ids/seeds | — | n/a | ✅ |
+| Live brokers | MT5, Bybit | community adapters | — | multiple adapters |
+| Runtime | Kotlin / JVM | Python | Python | Python + Rust |
+
+If you want a full research SDK in Python, Nautilus and vectorbt are excellent. qkt trades that surface area for a small language that reads like the strategy in your head — and a hard guarantee that backtest and live are one pipeline, not two codebases.
+
 ## Install
 
 The GitHub release is the canonical stable distribution. A versioned image such as
@@ -91,8 +110,8 @@ Each release ships a bundled runtime, so qkt runs without a system JDK. Download
 
 ```bash
 tar xzf qkt-*-linux-x64.tar.gz
-./qkt/bin/qkt --version
-# add ./qkt/bin to your PATH to call `qkt` from anywhere
+export PATH="$PWD/qkt/bin:$PATH"     # add ./qkt/bin to your PATH to call `qkt` from anywhere
+qkt --version
 ```
 
 ### From source (any platform with JDK 21)

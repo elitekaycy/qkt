@@ -15,6 +15,11 @@ import org.slf4j.LoggerFactory
  * replace), one "state.orders" (full replace), and — when the DEAL family is enabled —
  * one "broker.deal" per locally-attributed deal booked since the previous cycle. Pollers
  * without deployed strategy ids keep account-level behavior and emit all deals.
+ *
+ * Deal history is fetched once per venue account per cycle, not once per broker: profile
+ * brokers sharing one MT5 login all see the same account-wide history, so the first
+ * broker of each account owns the fetch and the emitted envelopes (e.g. 22 profiles on
+ * one login -> one deals request per cycle instead of 22 duplicates).
  */
 class BrokerStatePoller(
     private val brokers: List<Broker>,
@@ -23,6 +28,13 @@ class BrokerStatePoller(
     private val attribution: TicketAttribution,
     /** Currently-deployed strategy ids, for comment-prefix fallback attribution. */
     private val deployedIds: () -> Collection<String>,
+    /**
+     * This session's strategy ids in the exact form the dashboard keys on (the same
+     * ids [InsightsTranslate.strategyStarted] emits), announced each cycle as the live
+     * roster. Distinct from [deployedIds], which is the daemon-wide attribution set in
+     * DSL-name form. Empty by default → no roster is announced (older wiring).
+     */
+    private val rosterIds: () -> Collection<String> = { emptyList() },
     private val pollIntervalMs: Long = 10_000L,
     /** How far back the first cycle fetches deals; later cycles fetch only new ones. */
     private val backfillDays: Long = 30L,
@@ -32,14 +44,25 @@ class BrokerStatePoller(
      * positions, and pending orders without the deal stream.
      */
     private val emitDeals: Boolean = true,
+    /**
+     * How far behind "now" the deal watermark may trail on a quiet account. Without this
+     * a dealless account never advances its watermark and re-fetches the whole backfill
+     * window every cycle; with it, late-booked deals within the grace are still caught.
+     */
+    private val dealGraceMs: Long = 5 * 60_000L,
     private val clock: () -> Long = System::currentTimeMillis,
 ) : AutoCloseable {
     private val log = LoggerFactory.getLogger(BrokerStatePoller::class.java)
     private val running = AtomicBoolean(false)
     private var thread: Thread? = null
 
-    /** Newest deal timestamp seen per broker; the next fetch starts just after it. */
-    private val lastDealTs = mutableMapOf<Broker, Long>()
+    /**
+     * Newest deal timestamp seen per venue account (`login@server`); the next fetch starts
+     * just after it. Keyed by account, not broker: many profile-brokers can share one MT5
+     * login, and deal history is account-wide — per-broker fetches would return the same
+     * deals N times and emit N duplicate envelopes under different profile prefixes.
+     */
+    private val lastDealTs = mutableMapOf<String, Long>()
     private val consecutiveFailures = mutableMapOf<Broker, Int>()
 
     /** Starts the polling thread. Idempotent — a second call is a no-op. */
@@ -67,8 +90,15 @@ class BrokerStatePoller(
      * consecutive-failure streak and never kills the thread.
      */
     internal fun pollOnce() {
+        // Announce the live roster first so the collector can retire strategy ids that a
+        // prior bench topology left behind, independent of any per-broker fetch outcome.
+        // Each session announces its own ids; the collector unions them across sessions.
+        rosterIds().takeIf { it.isNotEmpty() }?.let { sink.offer(InsightsTranslate.instanceRoster(clock(), it)) }
+        // Accounts whose deals were already fetched this cycle — the first broker of each
+        // account owns the fetch, the rest skip it (deal history is account-wide).
+        val dealsFetched = mutableSetOf<String>()
         for (broker in brokers) {
-            runCatching { pollBroker(broker) }
+            runCatching { pollBroker(broker, dealsFetched) }
                 .onSuccess { consecutiveFailures[broker] = 0 }
                 .onFailure { e ->
                     val failures = (consecutiveFailures[broker] ?: 0) + 1
@@ -80,7 +110,10 @@ class BrokerStatePoller(
         }
     }
 
-    private fun pollBroker(broker: Broker) {
+    private fun pollBroker(
+        broker: Broker,
+        dealsFetched: MutableSet<String>,
+    ) {
         val now = clock()
         // No account snapshot means no venue to report on (paper) or an unreadable
         // gateway — skip the whole broker rather than emit positions without context.
@@ -142,8 +175,9 @@ class BrokerStatePoller(
             ),
         )
 
-        if (emitDeals) {
-            var newest = lastDealTs.getOrPut(broker) { now - backfillDays * DAY_MS }
+        val accountKey = "${account.login}@${account.server}"
+        if (emitDeals && dealsFetched.add(accountKey)) {
+            var newest = lastDealTs.getOrPut(accountKey) { now - backfillDays * DAY_MS }
             val from = newest + 1
             for (d in broker.deals(from, now).filter { it.ts in from..now }) {
                 val strategyId =
@@ -154,7 +188,10 @@ class BrokerStatePoller(
                 }
                 if (d.ts > newest) newest = d.ts
             }
-            lastDealTs[broker] = newest
+            // A quiet account must still advance its watermark, or the whole backfill
+            // window is re-fetched every cycle forever. Found deals past the grace keep
+            // the larger value so nothing already seen is re-fetched.
+            lastDealTs[accountKey] = maxOf(newest, now - dealGraceMs)
         }
 
         // Prune only after the deal fetch: a position that closed since the last cycle

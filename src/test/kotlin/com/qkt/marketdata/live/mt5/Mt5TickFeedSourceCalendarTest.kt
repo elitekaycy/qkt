@@ -128,7 +128,10 @@ class Mt5TickFeedSourceCalendarTest {
                 )
             val captured = CopyOnWriteArrayList<Tick>()
             source.start(onTick = { captured.add(it) }, onError = {}, onDisconnect = {})
-            Thread.sleep(300L)
+            val deadline = System.currentTimeMillis() + 3_000L
+            while (captured.isEmpty() && System.currentTimeMillis() < deadline) {
+                Thread.sleep(20L)
+            }
             source.stop()
             assertThat(requestCount.get()).isPositive
             assertThat(captured).isNotEmpty

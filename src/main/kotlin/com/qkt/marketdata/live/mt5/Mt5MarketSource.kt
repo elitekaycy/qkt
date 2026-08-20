@@ -158,7 +158,12 @@ class Mt5MarketSource(
         val newestClosedBarEndMs = candles.maxOf { it.endTime }
         val barAgeMs = tick.brokerTimeMs - newestClosedBarEndMs
         val maxAgeMs = maxOf(window.durationMs * 3L, MIN_RECENT_BAR_AGE_MS)
-        require(barAgeMs in 0L..maxAgeMs) {
+        // Lower bound is one bar window below zero, not zero: a bar closes on the time
+        // boundary, so for a thin symbol the newest tick can legitimately predate the
+        // just-closed bar's end by up to one window (no tick has printed in the new bar
+        // yet). A genuine multi-hour time-base offset still lands far outside this band.
+        val minAgeMs = -window.durationMs
+        require(barAgeMs in minAgeMs..maxAgeMs) {
             "MT5 time-base mismatch for $bareSymbol: " +
                 "newest closed bar end=${Instant.ofEpochMilli(newestClosedBarEndMs)}, " +
                 "tick=${Instant.ofEpochMilli(tick.brokerTimeMs)}, deltaMs=$barAgeMs; " +

@@ -16,6 +16,12 @@ class BotTrail(
     stateRoot: Path,
     insights: InsightsConfig,
     private val clock: Clock,
+    /**
+     * Run-session id; when set, every envelope payload carries `run=<id>` so
+     * qkt-insights can group a whole session (reads, orders, fills) as one campaign.
+     * Null for plain one-shot commands — their envelopes are unchanged.
+     */
+    private val run: String? = null,
 ) : AutoCloseable {
     private val journal = OrderJournal(stateRoot.resolve("bot"), clock)
     private var seq = 0L
@@ -55,7 +61,7 @@ class BotTrail(
                 "source" to action.source.replace("\n", "\\n"),
             ),
         )
-        sink?.offer(botCommandEnvelope(asName, action, argv, clock.now(), seq++))
+        offer(botCommandEnvelope(asName, action, argv, clock.now(), seq++))
     }
 
     /** Records the compiled order about to be submitted. */
@@ -76,7 +82,7 @@ class BotTrail(
                 "tp" to order.takeProfit?.toPlainString(),
             ),
         )
-        sink?.offer(botOrderSubmitEnvelope(asName, order, clock.now(), seq++))
+        offer(botOrderSubmitEnvelope(asName, order, clock.now(), seq++))
     }
 
     /**
@@ -90,7 +96,7 @@ class BotTrail(
     ) {
         journal.append(asName, kind, fields)
         val ts = clock.now()
-        sink?.offer(
+        offer(
             com.qkt.observe.insights.InsightsEnvelope(
                 id = "bot-$kind-$ts-$seq",
                 seq = seq++,
@@ -120,7 +126,13 @@ class BotTrail(
                 "reason" to result.error,
             ),
         )
-        sink?.offer(botOrderResultEnvelope(asName, order, result, clock.now(), seq++))
+        offer(botOrderResultEnvelope(asName, order, result, clock.now(), seq++))
+    }
+
+    private fun offer(envelope: com.qkt.observe.insights.InsightsEnvelope) {
+        val tagged =
+            if (run == null) envelope else envelope.copy(payload = envelope.payload + ("run" to run))
+        sink?.offer(tagged)
     }
 
     override fun close() {
