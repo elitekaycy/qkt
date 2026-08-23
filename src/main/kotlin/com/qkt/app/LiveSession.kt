@@ -174,6 +174,9 @@ class LiveSession(
     private val insightsDeployedIds: () -> Collection<String> = { emptyList() },
     /** Broker state poller cadence (insights `state_poll_ms`); active when the STATE family is enabled. */
     private val insightsStatePollMs: Long = 10_000L,
+    private val insightsSharedDeals: com.qkt.observe.insights.SharedDealFetch =
+        com.qkt.observe.insights
+            .SharedDealFetch(),
     /** Days of broker deal history the state poller backfills at start (insights `deal_backfill_days`). */
     private val insightsDealBackfillDays: Long = 30L,
     /**
@@ -1852,6 +1855,7 @@ class LiveSession(
                         deployedIds = { (strategies.map { it.first } + insightsDeployedIds()).distinct() },
                         rosterIds = { strategies.map { it.first } },
                         pollIntervalMs = insightsStatePollMs,
+                        sharedDeals = insightsSharedDeals,
                         backfillDays = insightsDealBackfillDays,
                         emitDeals = com.qkt.observe.insights.InsightsEventFamily.DEAL in insightsEvents,
                     ).also { it.start() }
