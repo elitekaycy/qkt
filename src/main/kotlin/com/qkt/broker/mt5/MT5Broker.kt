@@ -365,6 +365,9 @@ class MT5Broker(
 
     override val supportsAccountEquity: Boolean = true
 
+    override fun marketOpen(nowMs: Long): Boolean =
+        profile.symbolCalendars.anyCalendarInSession(java.time.Instant.ofEpochMilli(nowMs))
+
     override val supportsMarginLevel: Boolean = true
 
     override fun accountEquity(): java.math.BigDecimal? =

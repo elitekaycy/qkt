@@ -25,6 +25,10 @@ internal class BrokerEquityMonitor(
 
     fun tick() {
         val now = clock.now()
+        // Equity cannot move while the venue is closed; keep the last sample instead of
+        // polling an idle account every few seconds all weekend. A session that starts
+        // closed still takes its first sample so drawdown controls have a basis.
+        if (lastSuccessAtMs != null && !broker.marketOpen(now)) return
         val observed = runCatching { broker.accountEquity() }.getOrNull()
         if (observed != null) {
             if (staleAlerted) {
