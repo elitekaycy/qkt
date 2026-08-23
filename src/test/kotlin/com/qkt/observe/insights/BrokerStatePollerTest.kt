@@ -84,6 +84,7 @@ class BrokerStatePollerTest {
         ts: Long,
         positionTicket: String? = null,
         comment: String? = null,
+        entry: String = "IN",
     ): BrokerDeal =
         BrokerDeal(
             broker = "FAKE",
@@ -92,7 +93,7 @@ class BrokerStatePollerTest {
             orderTicket = null,
             symbol = "FAKE:XAUUSD",
             side = Side.BUY,
-            entry = "IN",
+            entry = entry,
             qty = BigDecimal("0.01"),
             price = BigDecimal("2300.5"),
             profit = BigDecimal.ZERO,
@@ -428,6 +429,31 @@ class BrokerStatePollerTest {
         // The deal references position T1 → same owner-first priority.
         val dealEntry = all.substringAfter("deal-FAKE-9").substringBefore("}}")
         assertThat(dealEntry).contains(""""strategyId":"mapped_strat"""")
+    }
+
+    @Test
+    fun `backfilled close deal inherits its opening deal's comment attribution`() {
+        // After a restart the ticket map is empty; the venue overwrote the close comment.
+        val now = 1_700_000_000_000L
+        val broker = FakeBroker()
+        broker.allDeals =
+            listOf(
+                deal("open-9", ts = now - 5_000L, positionTicket = "P9", comment = "dsl-gold_ema_pullback--57"),
+                deal("close-9", ts = now - 1_000L, positionTicket = "P9", comment = "[tp 4526.32]", entry = "OUT"),
+            )
+        val poller =
+            BrokerStatePoller(
+                brokers = listOf(broker),
+                sink = sink,
+                attribution = TicketAttribution(),
+                deployedIds = { listOf("gold_ema_pullback") },
+                backfillDays = 1L,
+                clock = { now },
+            )
+        poller.pollOnce()
+        val all = collectBodies("deal-FAKE-open-9", "deal-FAKE-close-9")
+        val close = all.substringAfter("deal-FAKE-close-9").substringBefore("}}")
+        assertThat(close).contains(""""strategyId":"gold_ema_pullback"""")
     }
 
     @Test
