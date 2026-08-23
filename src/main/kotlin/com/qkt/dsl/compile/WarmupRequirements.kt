@@ -59,9 +59,11 @@ import com.qkt.dsl.ast.WhenThen
  *   prices, bracket/OCO child prices, stack specs — `BRACKET ... BY atr(...)` counts),
  *   and every `LET` expression, with strategy DEFAULTS merged in first.
  *
- * Chained indicators (e.g. `EMA(EMA(close, 9), 21)`) report the outer period only;
- * use an explicit `WARMUP N BARS` to override when the true warmup exceeds the
- * outer period.
+ * Chained and expression-fed indicators compose: `EMA(EMA(close, 9), 21)` needs 30
+ * bars because the outer window only starts filling once the inner one is defined.
+ * Across streams the outer span is converted into each inner stream's bars, so
+ * `percentile_rank(s.close / lag(o.close, 2), 5)` on a 1m `s` and 5m `o` needs 5
+ * bars of `s` and 4 of `o`.
  *
  * Lookback indices (`stream.close[N]`) are not yet derived — set explicit
  * `WARMUP N BARS` to cover them.
@@ -232,8 +234,24 @@ object WarmupRequirements {
             is IndicatorCall -> {
                 val alias = aliasFor(expr)
                 val period = registryWarmupBars(expr, alias) ?: numLitMax(expr)
-                if (alias != null && period != null) merge(out, alias, period)
-                expr.args.forEach { walkExpr(it, out) }
+                // An expression-fed window only starts filling once every indicator inside
+                // its series expression is defined: `percentile_rank(lag(o, 160) …, 160)`
+                // needs 161 + 160 closes on `o`, not the max of the two. The window advances
+                // on the primary alias's closes, so each inner stream must stay defined for
+                // the last `period` primary bars: its own depth plus that span in its bars.
+                val nested = mutableMapOf<String, Int>()
+                expr.args.forEach { walkExpr(it, nested) }
+                if (period == null) {
+                    nested.forEach { (innerAlias, innerBars) -> merge(out, innerAlias, innerBars) }
+                } else {
+                    val tf = timeframeMinutes.get()
+                    val primaryMinutes = alias?.let { tf[it] } ?: 1L
+                    for (innerAlias in nested.keys + listOfNotNull(alias)) {
+                        val innerMinutes = tf[innerAlias] ?: primaryMinutes
+                        val span = ((period * primaryMinutes + innerMinutes - 1) / innerMinutes).toInt()
+                        merge(out, innerAlias, (nested[innerAlias] ?: 0) + span)
+                    }
+                }
             }
             is BinaryOp -> {
                 walkExpr(expr.lhs, out)
