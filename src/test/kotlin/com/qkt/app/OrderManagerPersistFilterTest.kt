@@ -24,6 +24,7 @@ import org.junit.jupiter.api.Test
 class OrderManagerPersistFilterTest {
     private class RecordingPersistor : StatePersistor {
         val pendingSnapshots: MutableList<Map<String, OrderRequest>> = mutableListOf()
+        val pendingWritesByStrategy: MutableMap<String, Int> = mutableMapOf()
         var onSyncSave: (() -> Unit)? = null
 
         override fun saveLegBook(
@@ -49,6 +50,7 @@ class OrderManagerPersistFilterTest {
             orders: Map<String, OrderRequest>,
         ) {
             pendingSnapshots.add(orders.toMap())
+            pendingWritesByStrategy.merge(strategyId, 1, Int::plus)
         }
 
         override fun loadPendingOrders(strategyId: String): Map<String, OrderRequest> = emptyMap()
@@ -148,5 +150,24 @@ class OrderManagerPersistFilterTest {
         manager.submit(limit("limit-1", Side.BUY, "100"))
 
         assertThat(persistor.pendingSnapshots.last()).containsKey("limit-1")
+    }
+
+    @Test
+    fun `state change for one strategy does not rewrite another strategy's unchanged files`() {
+        val bus = EventBus(FixedClock(0L), MonotonicSequenceGenerator())
+        val clock = FixedClock(time = 0L)
+        val broker = FakeBroker(bus, clock, setOf(OrderTypeCapability.LIMIT))
+        val persistor = RecordingPersistor()
+        val om = OrderManager(broker, bus, MarketPriceTracker(), clock, persistor)
+
+        om.submit(limit("a1", Side.BUY, "100").copy(strategyId = "sA"))
+        om.submit(limit("b1", Side.BUY, "100").copy(strategyId = "sB"))
+        val writesBefore = persistor.pendingWritesByStrategy["sA"] ?: 0
+
+        broker.emitFill(broker.submits.first { it.id == "b1" }, price = Money.of("100"))
+        broker.emitFill(broker.submits.first { it.id == "b1" }, price = Money.of("100"))
+
+        assertThat(persistor.pendingWritesByStrategy["sA"]).isEqualTo(writesBefore)
+        assertThat(persistor.pendingSnapshots.last()).doesNotContainKey("b1")
     }
 }

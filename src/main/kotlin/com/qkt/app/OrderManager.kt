@@ -167,6 +167,12 @@ class OrderManager(
     private val emulatedOcoGroupByLeg: MutableMap<String, String> = mutableMapOf()
     private val engineHeldCloseTickets: MutableMap<String, String> = mutableMapOf()
 
+    /**
+     * Quantity the venue has closed against each attached-bracket entry, summed from
+     * position-close observations, so a partial close does not complete the wrapper early.
+     */
+    private val venueClosedQuantityByEntry: MutableMap<String, BigDecimal> = mutableMapOf()
+
     private data class OcoCompensation(
         val strategyId: String,
         val positionTicket: String,
@@ -246,6 +252,13 @@ class OrderManager(
 
     private val pendingPositionModifications: MutableMap<String, PendingPositionModification> = mutableMapOf()
     private val persistedStrategies = mutableSetOf<String>()
+
+    /**
+     * Last snapshot written per (strategy, file). [persistAll] runs on every order state
+     * change and walks every strategy that ever traded; without this, one fill re-fsyncs four
+     * unchanged files for each of them, and the next pre-submit drain waits on all of it.
+     */
+    private val lastPersisted: MutableMap<Pair<String, String>, Any> = mutableMapOf()
 
     /** Pre-fill ScaleOut wrappers keyed by basis id so their activation survives restart. */
     private val pendingScaleOutsByBasis: MutableMap<String, OrderRequest.ScaleOut> = mutableMapOf()
@@ -2654,19 +2667,37 @@ class OrderManager(
                         trailingStopsByStrategy.keys
                 ).toSet()
             for (sid in strategies) {
-                persistor.savePendingOrders(sid, pendingByStrategy[sid] ?: emptyMap())
-                persistor.saveBracketPairs(sid, pairsByStrategy[sid] ?: emptyList())
-                persistor.saveOcoLegs(sid, ocoLegsByStrategy[sid] ?: emptyList())
-                persistor.saveTrailingStops(sid, trailingStopsByStrategy[sid] ?: emptyList())
+                persistIfChanged(sid, PENDING_SLOT, pendingByStrategy[sid] ?: emptyMap(), persistor::savePendingOrders)
+                persistIfChanged(sid, PAIRS_SLOT, pairsByStrategy[sid] ?: emptyList(), persistor::saveBracketPairs)
+                persistIfChanged(sid, OCO_SLOT, ocoLegsByStrategy[sid] ?: emptyList(), persistor::saveOcoLegs)
+                persistIfChanged(
+                    sid,
+                    TRAILING_SLOT,
+                    trailingStopsByStrategy[sid] ?: emptyList(),
+                    persistor::saveTrailingStops,
+                )
             }
             trailingStateDirty = false
         }
+    }
+
+    private fun <T : Any> persistIfChanged(
+        strategyId: String,
+        slot: String,
+        value: T,
+        save: (String, T) -> Unit,
+    ) {
+        val key = strategyId to slot
+        if (lastPersisted[key] == value) return
+        lastPersisted[key] = value
+        save(strategyId, value)
     }
 
     private fun persistSubmissionIntent(strategyId: String) {
         if (strategyId.isBlank()) return
         persistedStrategies.add(strategyId)
         val active = recoveryPendingOrders(strategyId)
+        lastPersisted[strategyId to PENDING_SLOT] = active
         persistor.savePendingOrdersSync(strategyId, active)
     }
 
@@ -2882,6 +2913,7 @@ class OrderManager(
                 e.clientOrderId,
                 e.brokerOrderId,
             )
+            completeAttachedBracketOnVenueClose(e)
             return
         }
         preFillBrackets.remove(e.clientOrderId)
@@ -3012,6 +3044,45 @@ class OrderManager(
         }
         resolveOcoOnExecution(e.clientOrderId)
         ocoSiblingCancelStarted.remove(e.clientOrderId)
+    }
+
+    /**
+     * A venue-attached bracket has no resting exit orders — the venue closes the ticket when
+     * SL/TP is hit and reports it under the entry id. Once the closed quantity covers the fill,
+     * the bracket is done: release any engine-held stop armed against the ticket, cancel held
+     * children, and mark the wrapper terminal so it stops being persisted and can be reclaimed.
+     * A wrapper with a child still live on the venue is left alone; its own terminal event
+     * completes it.
+     */
+    private fun completeAttachedBracketOnVenueClose(e: BrokerEvent.OrderFilled) {
+        val entry = orders[e.clientOrderId] ?: return
+        if (entry.request !is OrderRequest.Bracket || entry.state != OrderState.FILLED) return
+        val filled = entry.cumulativeFilledQuantity.takeIf { it.signum() > 0 } ?: entry.request.quantity
+        val closed = (venueClosedQuantityByEntry[entry.id] ?: BigDecimal.ZERO) + e.quantity
+        if (closed < filled) {
+            venueClosedQuantityByEntry[entry.id] = closed
+            return
+        }
+        venueClosedQuantityByEntry.remove(entry.id)
+        val ticket = e.brokerOrderId ?: entry.brokerOrderId
+        if (ticket != null) {
+            val held = engineHeldCloseTickets.filterValues { it == ticket }.keys
+            for (id in held) {
+                val managed = orders[id] ?: continue
+                if (managed.state == OrderState.PENDING || managed.state == OrderState.CREATED) cancel(id)
+            }
+        }
+        val wrapperId = entry.parentClientOrderId ?: return
+        val wrapper = orders[wrapperId] ?: return
+        if (wrapper.state.isTerminal) return
+        for (childId in wrapper.childClientOrderIds) {
+            val child = orders[childId] ?: continue
+            if (child.state == OrderState.PENDING || child.state == OrderState.CREATED) cancel(childId)
+        }
+        val liveChild = wrapper.childClientOrderIds.any { orders[it]?.state?.isTerminal == false }
+        if (liveChild) return
+        update(wrapperId) { it.copy(state = OrderState.FILLED, lastUpdatedAt = clock.now()) }
+        exposureEntries.remove(wrapperId)
     }
 
     /** Cancel an OCO sibling exactly once, beginning with the first positive execution slice. */
@@ -3753,6 +3824,10 @@ class OrderManager(
         const val HALT_CANCEL_RETRY_MS = 1_000L
         const val HALT_CANCEL_MAX_RETRY_MS = 30_000L
         const val HALT_CANCEL_ALERT_ATTEMPTS = 3
+        const val PENDING_SLOT = "pending-orders"
+        const val PAIRS_SLOT = "bracket-pairs"
+        const val OCO_SLOT = "oco-legs"
+        const val TRAILING_SLOT = "trailing-stops"
     }
 
     private fun managedStopCloseTicket(request: OrderRequest): String? =
