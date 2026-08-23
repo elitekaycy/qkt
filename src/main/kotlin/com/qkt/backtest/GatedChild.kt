@@ -31,8 +31,18 @@ class GatedChild(
     private val hold: Boolean,
     private val gateFor: (String) -> Boolean,
     private val flattenSymbols: List<String>,
-) : DslCompiledStrategy by inner {
+) : DslCompiledStrategy by inner,
+    com.qkt.strategy.PerStreamWarmable {
     private var wasActive: Boolean = gateFor(strategyId)
+
+    /**
+     * Warmup seeding keys off [com.qkt.strategy.PerStreamWarmable], which the compiled child
+     * implements but the [DslCompiledStrategy] interface does not — so class delegation alone
+     * left every portfolio child unseeded in backtests while the daemon seeds each one. Pass the
+     * child's own requirements through so a PORTFOLIO backtest warms exactly like a live deploy.
+     */
+    override val perStreamWarmup: Map<com.qkt.strategy.WarmupStream, com.qkt.strategy.WarmupSpec>
+        get() = (inner as? com.qkt.strategy.PerStreamWarmable)?.perStreamWarmup ?: emptyMap()
 
     override fun onTick(
         tick: Tick,
