@@ -681,6 +681,7 @@ class MT5Client(
     /** Tolerant of missing fields like [parsePendingOrder] — one bad row must not kill a backfill. */
     private fun parseDeal(obj: JsonObject): MT5Deal {
         val rawTimeMs = obj["time_msc"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L
+        val timeMs = venueEpochToUtc(rawTimeMs)
         return MT5Deal(
             ticket = obj["ticket"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L,
             orderTicket = obj["order"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L,
@@ -696,10 +697,26 @@ class MT5Client(
             fee = obj["fee"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
             magic = obj["magic"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0,
             comment = obj["comment"]?.jsonPrimitive?.contentOrNull,
-            timeMs = rawTimeMs,
+            timeMs = timeMs,
             clientOrderId = obj["client_order_id"]?.jsonPrimitive?.contentOrNull,
             reason = obj["reason"]?.jsonPrimitive?.contentOrNull?.toIntOrNull(),
         )
+    }
+
+    /**
+     * The gateway returns MT5 epochs whose fields encode the broker's wall clock, not UTC
+     * (measured on IC Markets: deal `time_msc` runs exactly one server offset ahead of the
+     * engine's own fill timestamp for the same ticket). Every epoch that leaves this client
+     * is corrected here, once — the same translation the live tick feed applies — so deals,
+     * positions, pending orders, and ticks agree with the engine clock. Identity for UTC venues.
+     */
+    private fun venueEpochToUtc(epoch: Long): Long {
+        if (epoch <= 0L) return epoch
+        // Gateway fields mix second and millisecond epochs (`time` vs `time_msc`); keep the unit.
+        val seconds = epoch < EPOCH_MS_THRESHOLD
+        val ms = if (seconds) epoch * 1_000L else epoch
+        val utc = serverTimeZone.serverEpochToUtc(ms)
+        return if (seconds) utc / 1_000L else utc
     }
 
     private fun venueIso(utcMs: Long): String =
@@ -713,12 +730,13 @@ class MT5Client(
         val obj = json.parseToJsonElement(raw).jsonObject
         val rawTime = obj["time"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L
         val rawTimeMs = obj["time_msc"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: rawTime * 1_000L
+        val timeMs = venueEpochToUtc(rawTimeMs)
         return MT5Tick(
             symbol = brokerSymbol,
             bid = obj["bid"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
             ask = obj["ask"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
-            time = rawTime,
-            timeMs = rawTimeMs,
+            time = timeMs / 1_000L,
+            timeMs = timeMs,
         )
     }
 
@@ -751,12 +769,13 @@ class MT5Client(
         return rows.map { element ->
             val obj = element.jsonObject
             val time = obj["time"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L
+            val timeMs = venueEpochToUtc(obj["time_msc"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: time * 1_000L)
             MT5Tick(
                 symbol = brokerSymbol,
                 bid = obj["bid"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
                 ask = obj["ask"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
-                time = time,
-                timeMs = obj["time_msc"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: time * 1_000L,
+                time = timeMs / 1_000L,
+                timeMs = timeMs,
             )
         }
     }
@@ -1004,9 +1023,7 @@ class MT5Client(
     }
 
     private fun parsePosition(obj: JsonObject): MT5Position {
-        // MT5 time_msc fields are Unix epoch milliseconds. The displayed broker timezone must
-        // never be subtracted from an epoch value; doing so corrupts recovered durations.
-        val rawTime = obj["time_msc"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L
+        val rawTime = venueEpochToUtc(obj["time_msc"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L)
         return MT5Position(
             ticket = obj["ticket"]!!.jsonPrimitive.content.toLong(),
             symbol = obj["symbol"]!!.jsonPrimitive.content,
@@ -1032,8 +1049,8 @@ class MT5Client(
      * snapshot rather than killing the thread and missing all subsequent events.
      */
     private fun parsePendingOrder(obj: JsonObject): MT5PendingOrder {
-        val rawTime = obj["time_setup"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L
-        val rawExp = obj["time_expiration"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L
+        val rawTime = venueEpochToUtc(obj["time_setup"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L)
+        val rawExp = venueEpochToUtc(obj["time_expiration"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L)
         return MT5PendingOrder(
             ticket = obj["ticket"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L,
             symbol = obj["symbol"]?.jsonPrimitive?.contentOrNull ?: "",
@@ -1051,6 +1068,9 @@ class MT5Client(
     }
 
     companion object {
+        /** Epochs below this are seconds, not milliseconds (100_000_000_000 ms is 1973). */
+        private const val EPOCH_MS_THRESHOLD = 100_000_000_000L
+
         private const val MAX_CAPTURE_BODY_BYTES = 64L * 1024L
         private val JSON_MEDIA = "application/json".toMediaType()
 

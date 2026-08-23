@@ -822,6 +822,7 @@ class LiveSession(
     private fun wireInsights(
         bus: EventBus,
         sink: com.qkt.observe.insights.InsightsSink,
+        prices: com.qkt.marketdata.MarketPriceProvider,
     ) {
         val t = com.qkt.observe.insights.InsightsTranslate
         if (com.qkt.observe.insights.InsightsEventFamily.SIGNAL in insightsEvents) {
@@ -829,7 +830,12 @@ class LiveSession(
             bus.subscribe<com.qkt.events.RuleDecisionEvent> { e -> sink.offer(t.fromRuleDecision(e)) }
         }
         if (com.qkt.observe.insights.InsightsEventFamily.ORDER in insightsEvents) {
-            bus.subscribe<com.qkt.events.OrderEvent> { e -> sink.offer(t.fromOrderSubmit(e)) }
+            bus.subscribe<com.qkt.events.OrderEvent> { e ->
+                // The sided execution price the engine saw at submission: the slippage
+                // baseline for market entries, which carry no price of their own.
+                val reference = prices.executionPrice(e.request.symbol, e.request.side)
+                sink.offer(t.fromOrderSubmit(e, reference))
+            }
             bus.subscribe<com.qkt.events.DecisionOrderLinkedEvent> { e ->
                 sink.offer(t.fromDecisionOrderLinked(e))
             }
@@ -1351,7 +1357,7 @@ class LiveSession(
         bus.subscribe<BrokerEvent.OrderFilled> { e ->
             ticketAttribution.record(e.brokerOrderId, e.strategyId)
         }
-        insightsSink?.let { sink -> wireInsights(bus, sink) }
+        insightsSink?.let { sink -> wireInsights(bus, sink, priceTracker) }
         // Restore OCO legs from the persistor and reconcile them against venue truth so
         // any sibling whose pair filled during downtime is cancelled before ticks flow.
         pipeline.orderManager.restore(strategies.map { it.first })
