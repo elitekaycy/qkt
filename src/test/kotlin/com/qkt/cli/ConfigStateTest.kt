@@ -107,4 +107,38 @@ class ConfigStateTest {
 
         assertThat(root.resolve("hedge-straddle").resolve("bracket-pairs.json")).exists()
     }
+
+    @Test
+    fun `journal retention defaults to fourteen days and accepts zero`(
+        @TempDir tmp: Path,
+    ) {
+        val cfg = tmp.resolve("qkt.config.yaml")
+        Files.writeString(cfg, "source: tv\n")
+        assertThat(Config.load(cfg).journalRetentionDays).isEqualTo(14)
+
+        Files.writeString(
+            cfg,
+            """
+            state:
+              journal_retention_days: 0
+            """.trimIndent(),
+        )
+        assertThat(Config.load(cfg).journalRetentionDays).isZero()
+    }
+
+    @Test
+    fun `journal retention rejects a negative value`(
+        @TempDir tmp: Path,
+    ) {
+        val cfg = tmp.resolve("qkt.config.yaml")
+        Files.writeString(
+            cfg,
+            """
+            state:
+              journal_retention_days: -1
+            """.trimIndent(),
+        )
+        org.junit.jupiter.api
+            .assertThrows<IllegalArgumentException> { Config.load(cfg).journalRetentionDays }
+    }
 }
