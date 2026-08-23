@@ -243,6 +243,9 @@ class DaemonCommand(
                     retentionDays = cfg.journalRetentionDays,
                     clock = com.qkt.common.SystemClock(),
                 ).also { it.start() }
+        val insightsSharedDeals =
+            com.qkt.observe.insights
+                .SharedDealFetch()
         val mt5ReadCaches =
             mt5Profiles
                 .map { profile -> profile.gatewayUrl to profile.apiKey }
@@ -370,6 +373,7 @@ class DaemonCommand(
                             .orEmpty()
                     },
                     insightsStatePollMs = cfg.insights.statePollMs,
+                    insightsSharedDeals = insightsSharedDeals,
                     insightsDealBackfillDays = cfg.insights.dealBackfillDays,
                     marketDataGateConfig = cfg.marketData,
                 ),
@@ -428,6 +432,7 @@ class DaemonCommand(
                             .orEmpty()
                     },
                     insightsStatePollMs = cfg.insights.statePollMs,
+                    insightsSharedDeals = insightsSharedDeals,
                     insightsDealBackfillDays = cfg.insights.dealBackfillDays,
                     marketDataGateConfig = cfg.marketData,
                 )

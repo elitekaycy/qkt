@@ -99,6 +99,9 @@ class PortfolioDeployer(
     private val insightsEvents: Set<com.qkt.observe.insights.InsightsEventFamily> = emptySet(),
     private val insightsDeployedIds: () -> Collection<String> = { emptyList() },
     private val insightsStatePollMs: Long = 10_000L,
+    private val insightsSharedDeals: com.qkt.observe.insights.SharedDealFetch =
+        com.qkt.observe.insights
+            .SharedDealFetch(),
     private val insightsDealBackfillDays: Long = 30L,
     /** Market-data gate thresholds (the `market_data:` config block) passed to every child session. */
     private val marketDataGateConfig: com.qkt.marketdata.MarketDataGateConfig =
@@ -565,6 +568,7 @@ class PortfolioDeployer(
                 insightsEvents = insightsEvents,
                 insightsDeployedIds = insightsDeployedIds,
                 insightsStatePollMs = insightsStatePollMs,
+                insightsSharedDeals = insightsSharedDeals,
                 insightsDealBackfillDays = insightsDealBackfillDays,
                 marketDataGateConfig = marketDataGateConfig,
                 insightsStrategyMetadata =

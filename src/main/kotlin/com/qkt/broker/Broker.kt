@@ -124,6 +124,13 @@ interface Broker {
     val supportsAccountEquity: Boolean get() = false
 
     /**
+     * Whether any session this venue trades is open at [nowMs] per its calendar. Pollers whose
+     * only job is to refresh venue state (equity, insights snapshots) back off while closed —
+     * nothing changes over a weekend except the bill for asking. Defaults to always open.
+     */
+    fun marketOpen(nowMs: Long): Boolean = true
+
+    /**
      * Phase 38: when true, this broker submits GTD orders with a venue-side expiration and
      * the venue self-cancels at the deadline; the engine's deadline-sweep in
      * [com.qkt.app.OrderManager] skips orders routed through this broker. When false
