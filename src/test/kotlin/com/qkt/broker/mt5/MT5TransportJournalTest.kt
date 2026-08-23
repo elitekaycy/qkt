@@ -12,7 +12,7 @@ import org.junit.jupiter.api.io.TempDir
 
 class MT5TransportJournalTest {
     @Test
-    fun `client records request and response without authentication secret`(
+    fun `successful snapshot read keeps the exchange but elides the body`(
         @TempDir tmp: Path,
     ) {
         val server = MockWebServer()
@@ -43,8 +43,36 @@ class MT5TransportJournalTest {
             .contains("\"method\":\"GET\"")
             .contains("\"path\":\"/account\"")
             .contains("\"responseCode\":200")
-            .contains("\\\"currency\\\":\\\"USD\\\"")
+            .contains("\"responseBytes\":")
+            .doesNotContain("responseBody")
             .doesNotContain("do-not-record-this")
+    }
+
+    @Test
+    fun `failed read keeps the response body for diagnosis`(
+        @TempDir tmp: Path,
+    ) {
+        val server = MockWebServer()
+        repeat(4) { server.enqueue(MockResponse().setResponseCode(500).setBody("""{"error":"terminal gone"}""")) }
+        server.start()
+        val journal = MT5TransportJournal(tmp, "demo", FixedClock(1_700_000_000_000L))
+        try {
+            val client =
+                MT5Client(
+                    gatewayUrl = server.url("/").toString().removeSuffix("/"),
+                    serverTimeZone = MT5ServerTimeZone.UTC,
+                    transportJournal = journal,
+                )
+            runCatching { client.getAccount() }
+        } finally {
+            journal.close()
+            server.shutdown()
+        }
+
+        val line = Files.readString(tmp.resolve("demo/transport-2023-11-14.jsonl"))
+        assertThat(line)
+            .contains("\"responseCode\":500")
+            .contains("terminal gone")
     }
 
     @Test
@@ -87,5 +115,7 @@ class MT5TransportJournalTest {
         assertThat(line)
             .contains("\"idempotencyKey\":\"mt5-placement-1\"")
             .contains("\"engineOrderId\":\"dsl-alpha--1\"")
+            .contains("\"requestBody\":")
+            .contains("\\\"retcode\\\":10009")
     }
 }
