@@ -89,9 +89,18 @@ object InsightsTranslate {
         return envelope(e.sequenceId, e.timestamp, strategyId, type, payload)
     }
 
-    fun fromOrderSubmit(e: OrderEvent): InsightsEnvelope {
+    /**
+     * Translate an order submission. [referencePrice] is the sided execution price the
+     * engine saw when it submitted — ask for BUY, bid for SELL — so fills can be measured
+     * against it; null when no quote was available.
+     */
+    fun fromOrderSubmit(
+        e: OrderEvent,
+        referencePrice: java.math.BigDecimal? = null,
+    ): InsightsEnvelope {
         val payload = OrderRequestEvidence.payload(e.request).toMutableMap()
         payload["orderSchemaVersion"] = OrderRequestEvidence.SCHEMA_VERSION
+        referencePrice?.let { payload["referencePrice"] = it }
         if (e.request is OrderRequest.Bracket) {
             payload["planOrderId"] = e.request.id
             payload["orderId"] = e.request.entry.id
