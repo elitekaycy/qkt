@@ -53,6 +53,9 @@ class BrokerStatePollerTest {
         var allDeals: List<BrokerDeal> = emptyList()
         var pending: List<BrokerPendingOrder> = emptyList()
         var ignoreDealRange: Boolean = false
+        var open: Boolean = true
+
+        override fun marketOpen(nowMs: Long): Boolean = open
 
         override fun accountState(): BrokerAccountState? {
             accountReads.incrementAndGet()
@@ -152,6 +155,64 @@ class BrokerStatePollerTest {
             if (markers.all { bodies.contains(it) }) break
         }
         return bodies.toString()
+    }
+
+    @Test
+    fun `closed market polls once per closed interval instead of every cycle`() {
+        var now = 1_700_000_000_000L
+        val broker = FakeBroker()
+        val poller =
+            BrokerStatePoller(
+                brokers = listOf(broker),
+                sink = sink,
+                attribution = TicketAttribution(),
+                deployedIds = { emptyList() },
+                clock = { now },
+                closedPollIntervalMs = 60_000L,
+            )
+        poller.pollOnce()
+        assertThat(broker.accountReads.get()).isEqualTo(1)
+
+        broker.open = false
+        repeat(5) {
+            now += 10_000L
+            poller.pollOnce()
+        }
+        // One closed-interval heartbeat (at +60s) on top of the open read.
+        assertThat(broker.accountReads.get()).isEqualTo(2)
+
+        broker.open = true
+        now += 10_000L
+        poller.pollOnce()
+        assertThat(broker.accountReads.get()).isEqualTo(3)
+    }
+
+    @Test
+    fun `sessions sharing an account share one deal fetch per cycle`() {
+        val now = 1_700_000_000_000L
+        val shared = SharedDealFetch()
+        val brokerA = FakeBroker()
+        val brokerB = FakeBroker()
+        brokerA.allDeals = listOf(deal("1", ts = now - 2_000L))
+        brokerB.allDeals = brokerA.allDeals
+
+        fun poller(broker: FakeBroker) =
+            BrokerStatePoller(
+                brokers = listOf(broker),
+                sink = sink,
+                attribution = TicketAttribution(),
+                deployedIds = { emptyList() },
+                backfillDays = 1L,
+                clock = { now },
+                sharedDeals = shared,
+            )
+
+        poller(brokerA).pollOnce()
+        poller(brokerB).pollOnce()
+
+        assertThat(brokerA.dealCalls).hasSize(1)
+        assertThat(brokerB.dealCalls).isEmpty()
+        assertThat(collectBodies("deal-FAKE-1")).contains("deal-FAKE-1")
     }
 
     @Test

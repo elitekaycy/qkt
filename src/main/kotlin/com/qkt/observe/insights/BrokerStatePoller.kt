@@ -51,10 +51,19 @@ class BrokerStatePoller(
      */
     private val dealGraceMs: Long = 5 * 60_000L,
     private val clock: () -> Long = System::currentTimeMillis,
+    /**
+     * Deal history is account-wide, but every live session runs its own poller; sharing
+     * one fetch per account per cycle across sessions keeps N sessions from issuing N
+     * identical `history_deals_get` calls. Each session still attributes from its own map.
+     */
+    private val sharedDeals: SharedDealFetch = SharedDealFetch(),
+    /** Cadence while every broker reports its market closed; venue state cannot change. */
+    private val closedPollIntervalMs: Long = 5 * 60_000L,
 ) : AutoCloseable {
     private val log = LoggerFactory.getLogger(BrokerStatePoller::class.java)
     private val running = AtomicBoolean(false)
     private var thread: Thread? = null
+    private var lastClosedPollMs: Long? = null
 
     /**
      * Newest deal timestamp seen per venue account (`login@server`); the next fetch starts
@@ -90,6 +99,14 @@ class BrokerStatePoller(
      * consecutive-failure streak and never kills the thread.
      */
     internal fun pollOnce() {
+        val now = clock()
+        if (brokers.none { it.marketOpen(now) }) {
+            val last = lastClosedPollMs
+            if (last != null && now - last < closedPollIntervalMs) return
+            lastClosedPollMs = now
+        } else {
+            lastClosedPollMs = null
+        }
         // Announce the live roster first so the collector can retire strategy ids that a
         // prior bench topology left behind, independent of any per-broker fetch outcome.
         // Each session announces its own ids; the collector unions them across sessions.
@@ -179,7 +196,8 @@ class BrokerStatePoller(
         if (emitDeals && dealsFetched.add(accountKey)) {
             var newest = lastDealTs.getOrPut(accountKey) { now - backfillDays * DAY_MS }
             val from = newest + 1
-            for (d in broker.deals(from, now).filter { it.ts in from..now }) {
+            val fetched = sharedDeals.deals(this, accountKey, from, now) { f, t -> broker.deals(f, t) }
+            for (d in fetched.filter { it.ts in from..now }) {
                 val strategyId =
                     attribution.ownerOf(d.positionTicket ?: d.dealTicket)
                         ?: attribution.fromComment(d.comment, deployed)
