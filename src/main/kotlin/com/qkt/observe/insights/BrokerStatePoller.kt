@@ -201,6 +201,11 @@ class BrokerStatePoller(
                 val strategyId =
                     attribution.ownerOf(d.positionTicket ?: d.dealTicket)
                         ?: attribution.fromComment(d.comment, deployed)
+                // The venue overwrites a closing deal's comment ("[tp 4332.689]"), so a close
+                // fetched after a restart or during backfill has no comment to attribute by.
+                // Its opening deal on the same position does; remember that owner so the
+                // close that follows in this very fetch resolves through the ticket map.
+                if (strategyId != null && d.entry == "IN") attribution.record(d.positionTicket, strategyId)
                 if (deployed.isEmpty() || strategyId in deployed) {
                     sink.offer(InsightsTranslate.brokerDeal(d, strategyId))
                 }
