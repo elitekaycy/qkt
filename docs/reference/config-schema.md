@@ -282,6 +282,7 @@ Controls engine state persistence.
 |---|---|---|---|---|
 | `state.enabled` | boolean | `true` | daemon and live sessions | `false` disables restart recovery and fails production preflight. |
 | `state.async` | boolean | `false` | state persistor | `true` moves persistence writes to a background thread. |
+| `state.journal_retention_days` | integer | `14` | daemon | Day-files of the engine audit journal and MT5 transport journal older than this many UTC days are deleted at daemon start and once a day. `0` keeps everything. |
 
 State root is not set in config. Use `--state-dir` or `QKT_STATE_DIR` for commands that support state directories.
 
