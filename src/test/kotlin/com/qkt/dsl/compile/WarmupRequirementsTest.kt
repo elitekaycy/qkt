@@ -197,7 +197,9 @@ class WarmupRequirementsTest {
     }
 
     @Test
-    fun `nested indicator reports the outer period only`() {
+    fun `chained indicators compose the inner depth onto the outer period`() {
+        // ema(9) is undefined for its first 9 closes, so the outer ema(21) only starts
+        // filling on bar 10: the true requirement is 30, not the outer period alone.
         val s =
             ast(
                 """
@@ -208,7 +210,7 @@ class WarmupRequirementsTest {
                   WHEN ema(ema(g.close, 9), 21) > g.close THEN FLATTEN
                 """.trimIndent(),
             )
-        assertThat(WarmupRequirements.compute(s)).containsExactly(java.util.Map.entry("g", 21))
+        assertThat(WarmupRequirements.compute(s)).containsExactly(java.util.Map.entry("g", 30))
     }
 
     @Test
@@ -243,5 +245,49 @@ class WarmupRequirementsTest {
                 """.trimIndent(),
             )
         assertThat(WarmupRequirements.compute(s)).containsExactly(java.util.Map.entry("g", 100))
+    }
+
+    @Test
+    fun `nested indicators inside an expression-fed series add their depth to the outer window`() {
+        // bot2's s5 shape: a 160-bar percentile over an expression that itself needs lag(.., 160)
+        // on both streams. The window cannot start filling until the lags are defined, so the
+        // true requirement is 160 + 161 on every stream the inner expression reads — declaring
+        // WARMUP 260 left that child cold for 60 live bars after deploy.
+        val s =
+            (
+                Dsl.parse(
+                    """
+                    STRATEGY t VERSION 1
+                    SYMBOLS
+                      gold = EXNESS:XAUUSD EVERY 1h,
+                      silver = EXNESS:XAGUSD EVERY 1h
+                    RULES
+                      WHEN percentile_rank(((gold.close/lag(gold.close,80))/(silver.close/lag(silver.close,80))-1)-((lag(gold.close,80)/lag(gold.close,160))/(lag(silver.close,80)/lag(silver.close,160))-1),160) <= 0.05
+                      THEN FLATTEN
+                    """.trimIndent(),
+                ) as ParseResult.Success
+            ).value
+        val req = WarmupRequirements.compute(s)
+        assertThat(req["gold"]).isGreaterThanOrEqualTo(320)
+        assertThat(req["silver"]).isGreaterThanOrEqualTo(320)
+    }
+
+    @Test
+    fun `cross-timeframe nesting converts the outer span into the slow stream's bars`() {
+        // The outer window advances on the 1m primary; lag(o, 2) on the 5m stream needs
+        // 3 closes and must then stay defined for 5 primary minutes = one more 5m bar.
+        val s =
+            ast(
+                """
+                STRATEGY t VERSION 1
+                SYMBOLS
+                  s = X:A EVERY 1m,
+                  o = X:B EVERY 5m
+                RULES
+                  WHEN percentile_rank(s.close / lag(o.close, 2), 5) >= 0 THEN FLATTEN
+                """.trimIndent(),
+            )
+        assertThat(WarmupRequirements.compute(s))
+            .containsExactlyInAnyOrderEntriesOf(mapOf("s" to 5, "o" to 4))
     }
 }
