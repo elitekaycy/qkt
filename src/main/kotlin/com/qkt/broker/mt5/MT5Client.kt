@@ -69,21 +69,27 @@ class MT5Client(
                                     request = request,
                                     responseCode = null,
                                     responseBody = null,
+                                    responseBytes = null,
                                     error = error.message ?: error.javaClass.simpleName,
                                     startedNs = startedNs,
                                 )
                                 throw error
                             }
+                        // A successful snapshot read (account, positions, orders, deals) is
+                        // re-polled every second and its body is venue state the engine already
+                        // projects elsewhere; journaling it was ~99% of transport volume. Keep
+                        // the exchange, drop the body. Mutations and failures keep everything.
+                        val elideBody = request.method == "GET" && response.isSuccessful
                         recordTransportExchange(
                             request = request,
                             responseCode = response.code,
                             responseBody =
-                                runCatching {
-                                    response
-                                        .peekBody(
-                                            MAX_CAPTURE_BODY_BYTES,
-                                        ).string()
-                                }.getOrNull(),
+                                if (elideBody) {
+                                    null
+                                } else {
+                                    runCatching { response.peekBody(MAX_CAPTURE_BODY_BYTES).string() }.getOrNull()
+                                },
+                            responseBytes = if (elideBody) response.body?.contentLength() else null,
                             error = null,
                             startedNs = startedNs,
                         )
@@ -96,6 +102,7 @@ class MT5Client(
         request: okhttp3.Request,
         responseCode: Int?,
         responseBody: String?,
+        responseBytes: Long?,
         error: String?,
         startedNs: Long,
     ) {
@@ -110,6 +117,7 @@ class MT5Client(
                 requestBody = captureRequestBody(request),
                 responseCode = responseCode,
                 responseBody = responseBody,
+                responseBytes = responseBytes,
                 error = error,
                 durationMs = (monotonicNanos() - startedNs) / 1_000_000L,
                 idempotencyKey = request.header("Idempotency-Key"),
