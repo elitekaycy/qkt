@@ -1120,6 +1120,9 @@ class LiveSession(
                 minStaleAgeMs = marketDataGateConfig.minStaleAgeMs,
                 outlierSigma = marketDataGateConfig.outlierSigma,
                 maxClockSkewMs = marketDataGateConfig.maxClockSkewMs,
+                scheduledBreak = { symbol, nowMs ->
+                    builtBrokers.ifEmpty { listOf(broker) }.any { it.scheduledBreak(symbol, nowMs) }
+                },
                 onUnhealthy = { symbol, reason ->
                     if (NotifyEventKind.STRATEGY_ERROR in notifyEvents) {
                         for ((strategyId, _) in strategies) {

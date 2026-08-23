@@ -32,6 +32,12 @@ class MarketDataGate(
     private val maxClockSkewMs: Long = DEFAULT_MAX_CLOCK_SKEW_MS,
     /** Invoked once per unhealthy transition; recovery permits a later transition to alert again. */
     private val onUnhealthy: (symbol: String, reason: String) -> Unit = { _, _ -> },
+    /**
+     * Whether [symbol] is inside a venue-scheduled pause at the given time. A quote gap that
+     * starts inside a pause is reported as PAUSED (info, no unhealthy alert) instead of STALE;
+     * new orders are suppressed either way. Defaults to never paused.
+     */
+    private val scheduledBreak: (symbol: String, nowMs: Long) -> Boolean = { _, _ -> false },
 ) {
     private val log = LoggerFactory.getLogger(MarketDataGate::class.java)
 
@@ -45,6 +51,7 @@ class MarketDataGate(
         var windowHead = 0
         var windowSize = 0
         var staleAlerted = false
+        var pausedAlerted = false
         var lastSkewMs = 0L
         var skewAlerted = false
         var rejectedOutlierRun = 0
@@ -132,6 +139,13 @@ class MarketDataGate(
         touch(state, now)
         state.push(price)
         state.clearRejectedOutliers()
+        if (state.pausedAlerted) {
+            state.pausedAlerted = false
+            // The pause gap would otherwise sit in the smoothed inter-tick gap for the next
+            // hour and lift the stale threshold; restart the estimate from the live cadence.
+            state.ewmaGapMs = 0.0
+            log.info("market data for {} resumed after scheduled break", tick.symbol)
+        }
         if (state.staleAlerted) {
             state.staleAlerted = false
             log.info("market data for {} healthy again", tick.symbol)
@@ -237,9 +251,22 @@ class MarketDataGate(
             return false
         }
         val threshold = staleThresholdMs(state)
-        val age = clock.now() - state.lastSeenMs
+        val now = clock.now()
+        val age = now - state.lastSeenMs
         val healthy = age <= threshold
+        if (!healthy && !state.staleAlerted && scheduledBreak(symbol, now)) {
+            if (!state.pausedAlerted) {
+                state.pausedAlerted = true
+                log.info(
+                    "market data for {} PAUSED: scheduled break, quote age {}ms — suppressing new orders",
+                    symbol,
+                    age,
+                )
+            }
+            return false
+        }
         if (!healthy && !state.staleAlerted) {
+            // A gap that outlives its scheduled break is a feed fault after all.
             state.staleAlerted = true
             log.error(
                 "market data for {} STALE: age {}ms exceeds threshold {}ms — suppressing new orders",

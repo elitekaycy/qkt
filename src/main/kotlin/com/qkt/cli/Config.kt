@@ -459,8 +459,22 @@ data class Config(
                 .mapNotNull { (name, cfg) ->
                     val block =
                         (cfg as? Map<String, Any?>)?.get("calendars") as? Map<String, Any?> ?: return@mapNotNull null
-                    name to block.map { (pattern, cal) -> pattern to (cal?.toString() ?: "") }
+                    name to block.map { (pattern, cal) -> pattern to calendarSpec(cal) }
                 }.toMap()
+        }
+
+        /**
+         * A calendar rule value is either a name (`fx`, `crypto`, `nyse`), a sentence with a
+         * daily pause (`fx pause 17:00-18:00 America/New_York`), or the same spelled out as a
+         * map `{ base: fx, pause: 17:00-18:00, zone: America/New_York }`. The map form is
+         * flattened to the sentence so the profile loader sees one shape.
+         */
+        private fun calendarSpec(raw: Any?): String {
+            val block = raw as? Map<*, *> ?: return raw?.toString() ?: ""
+            val base = block["base"]?.toString() ?: error("calendar rule map needs 'base' (fx|crypto|nyse)")
+            val pause = block["pause"]?.toString() ?: return base
+            val zone = block["zone"]?.toString()
+            return listOfNotNull(base, "pause", pause, zone).joinToString(" ")
         }
 
         /** A nested `string → string` block under each broker (e.g. `aliases`). */
