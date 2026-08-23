@@ -893,6 +893,14 @@ class InsightsTranslateTest {
         @Suppress("UNCHECKED_CAST")
         val slAst = env.payload["stopLossAst"] as Map<String, Any?>
         assertThat(slAst).containsEntry("type", "By")
+        assertThat(env.payload).doesNotContainKey("referencePrice")
+
+        val priced =
+            InsightsTranslate.fromOrderSubmit(
+                OrderEvent(bracket, timestamp = 1L, sequenceId = 13L),
+                referencePrice = BigDecimal("2350.25"),
+            )
+        assertThat(priced.payload).containsEntry("referencePrice", BigDecimal("2350.25"))
     }
 
     @Test

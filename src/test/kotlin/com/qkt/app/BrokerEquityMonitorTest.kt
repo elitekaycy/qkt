@@ -61,7 +61,54 @@ class BrokerEquityMonitorTest {
         assertThat(equity.get()).isEqualByComparingTo("9000")
     }
 
-    private fun broker(equity: () -> BigDecimal?): Broker =
+    @Test
+    fun `closed market keeps the last sample instead of polling`() {
+        val clock = FixedClock(0L)
+        var reads = 0
+        var open = true
+        val broker =
+            broker(marketOpen = { open }) {
+                reads++
+                BigDecimal("10000")
+            }
+        val equity = AtomicReference<BigDecimal?>(null)
+        val monitor = BrokerEquityMonitor(broker, clock, equity, 15_000L) { _, _ -> }
+
+        monitor.tick()
+        open = false
+        repeat(5) {
+            clock.time += 5_000L
+            monitor.tick()
+        }
+
+        assertThat(reads).isEqualTo(1)
+        assertThat(equity.get()).isEqualByComparingTo("10000")
+
+        open = true
+        monitor.tick()
+        assertThat(reads).isEqualTo(2)
+    }
+
+    @Test
+    fun `closed market still takes the first sample`() {
+        val equity = AtomicReference<BigDecimal?>(null)
+        val monitor =
+            BrokerEquityMonitor(
+                broker(marketOpen = { false }) { BigDecimal("9000") },
+                FixedClock(0L),
+                equity,
+                15_000L,
+            ) { _, _ -> }
+
+        monitor.tick()
+
+        assertThat(equity.get()).isEqualByComparingTo("9000")
+    }
+
+    private fun broker(
+        marketOpen: () -> Boolean = { true },
+        equity: () -> BigDecimal?,
+    ): Broker =
         object : Broker {
             override val name = "equity-test"
             override val capabilities: Set<OrderTypeCapability> = emptySet()
@@ -72,5 +119,7 @@ class BrokerEquityMonitorTest {
             override fun cancel(orderId: String) = Unit
 
             override fun accountEquity(): BigDecimal? = equity()
+
+            override fun marketOpen(nowMs: Long): Boolean = marketOpen()
         }
 }
