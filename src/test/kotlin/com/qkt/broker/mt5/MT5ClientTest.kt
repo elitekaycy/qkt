@@ -230,7 +230,10 @@ class MT5ClientTest {
     }
 
     @Test
-    fun `getPositions preserves raw UTC epoch time_msc`() {
+    fun `getPositions converts the venue wall-clock epoch to utc`() {
+        // The gateway stamps time_msc with the broker's wall clock (UTC+2 for this client);
+        // measured live on IC Markets, positions and deals run exactly one server offset
+        // ahead of the engine's own event for the same ticket.
         val serverEpochMs = 1_700_000_000_000L
         server.enqueue(
             MockResponse().setBody(
@@ -240,7 +243,7 @@ class MT5ClientTest {
         val positions = client.getPositions(magic = 10001)!!
         assertThat(positions).hasSize(1)
         assertThat(positions[0].ticket).isEqualTo(1L)
-        assertThat(positions[0].openTime).isEqualTo(serverEpochMs)
+        assertThat(positions[0].openTime).isEqualTo(serverEpochMs - 2 * 3_600_000L)
         assertThat(positions[0].clientOrderId).isEqualTo("placement-1")
         val recorded = server.takeRequest()
         assertThat(recorded.path).isEqualTo("/get_positions?magic=10001")
@@ -340,7 +343,7 @@ class MT5ClientTest {
     }
 
     @Test
-    fun `getTick hits symbol_info_tick and preserves epoch time`() {
+    fun `getTick hits symbol_info_tick and converts the venue epoch to utc`() {
         val serverEpoch = 1_700_000_000L
         val serverEpochMs = 1_700_000_000_123L
         server.enqueue(
@@ -351,14 +354,14 @@ class MT5ClientTest {
         val tick = client.getTick("XAUUSDm")!!
         assertThat(tick.bid).isEqualByComparingTo("4561.510")
         assertThat(tick.ask).isEqualByComparingTo("4561.818")
-        assertThat(tick.time).isEqualTo(serverEpoch)
-        assertThat(tick.timeMs).isEqualTo(serverEpochMs)
+        assertThat(tick.time).isEqualTo(serverEpoch - 2 * 3600L)
+        assertThat(tick.timeMs).isEqualTo(serverEpochMs - 2 * 3_600_000L)
         val recorded = server.takeRequest()
         assertThat(recorded.path).isEqualTo("/symbol_info_tick/XAUUSDm")
     }
 
     @Test
-    fun `getTicksRange preserves millisecond timestamps and bid ask`() {
+    fun `getTicksRange converts millisecond timestamps to utc and keeps bid ask`() {
         server.enqueue(
             MockResponse().setBody(
                 """{"ok":true,"data":[{"bid":"1.10001","ask":"1.10009","time":1700000000,"time_msc":1700000000123}]}""",
@@ -370,7 +373,7 @@ class MT5ClientTest {
         assertThat(ticks).hasSize(1)
         assertThat(ticks.single().bid).isEqualByComparingTo("1.10001")
         assertThat(ticks.single().ask).isEqualByComparingTo("1.10009")
-        assertThat(ticks.single().timeMs).isEqualTo(1_700_000_000_123L)
+        assertThat(ticks.single().timeMs).isEqualTo(1_700_000_000_123L - 2 * 3_600_000L)
         assertThat(server.takeRequest().path)
             .startsWith("/copy_ticks_range?symbol=EURUSDm")
             .contains("from_date=2023-11-14T22%3A13%3A20Z")
@@ -432,6 +435,54 @@ class MT5ClientTest {
         assertThat(clientB.getPendingOrders(magic = 10002)!!.map { it.ticket }).containsExactly(8L)
         assertThat(server.requestCount).isEqualTo(1)
         assertThat(server.takeRequest().path).isEqualTo("/orders")
+    }
+
+    @Test
+    fun `getDeals converts venue epochs so a deal lands inside the utc window it was asked for`() {
+        val nowUtc = 1_700_000_000_000L
+        val serverStamped = nowUtc + 2 * 3_600_000L
+        server.enqueue(
+            MockResponse().setBody(
+                """[{"ticket":9,"order":8,"position_id":7,"symbol":"XAUUSDm","type":1,"entry":1,"volume":"0.1","price":"2000","profit":"5","commission":"0","swap":"0","fee":"0","magic":10001,"comment":"[tp 2000]","time":${serverStamped / 1000},"time_msc":$serverStamped}]""",
+            ),
+        )
+        val deals = client.getDeals(nowUtc - 60_000L, nowUtc)!!
+        assertThat(deals).hasSize(1)
+        assertThat(deals[0].timeMs).isEqualTo(nowUtc)
+        assertThat(deals[0].timeMs).isBetween(nowUtc - 60_000L, nowUtc)
+        // The request window itself is still expressed in venue time on the wire.
+        assertThat(server.takeRequest().path).contains("to_date=2023-11-15T00")
+    }
+
+    @Test
+    fun `pending order setup and expiration epochs keep their unit after conversion`() {
+        val serverSeconds = 1_700_000_000L
+        server.enqueue(
+            MockResponse().setBody(
+                """[{"ticket":3,"symbol":"EURUSDm","type":"BUY_LIMIT","volume":"0.1","price_open":"1.1","sl":"0","tp":"0","magic":10001,"time_setup":$serverSeconds,"time_expiration":${serverSeconds + 3600},"comment":"c"}]""",
+            ),
+        )
+        val orders = client.getPendingOrders(magic = 10001)!!
+        assertThat(orders).hasSize(1)
+        assertThat(orders[0].timeSetup).isEqualTo(serverSeconds - 2 * 3600L)
+        assertThat(orders[0].timeExpiration).isEqualTo(serverSeconds + 3600L - 2 * 3600L)
+    }
+
+    @Test
+    fun `utc venue epochs are untouched`() {
+        val utcClient =
+            MT5Client(
+                gatewayUrl = server.url("/").toString().trimEnd('/'),
+                serverTimeZone = MT5ServerTimeZone.UTC,
+                retryAttempts = 0,
+            )
+        val epochMs = 1_700_000_000_000L
+        server.enqueue(
+            MockResponse().setBody(
+                """[{"ticket":1,"symbol":"EURUSDm","type":0,"volume":"0.1","price_open":"1.1","sl":"0","tp":"0","profit":"0","magic":10001,"time_msc":$epochMs,"comment":"x"}]""",
+            ),
+        )
+        assertThat(utcClient.getPositions(magic = 10001)!![0].openTime).isEqualTo(epochMs)
     }
 
     private fun cachedClient(readCache: MT5ReadCache): MT5Client =
@@ -745,7 +796,7 @@ class MT5ClientTest {
         assertThat(opened.entry).isEqualTo(0)
         assertThat(opened.volume).isEqualByComparingTo("0.01")
         assertThat(opened.price).isEqualByComparingTo("2300.5")
-        assertThat(opened.timeMs).isEqualTo(1_700_040_000_000L)
+        assertThat(opened.timeMs).isEqualTo(1_700_040_000_000L - 2 * 3_600_000L)
         val closed = deals[1]
         assertThat(closed.entry).isEqualTo(1)
         assertThat(closed.profit).isEqualByComparingTo("9.7")
@@ -755,7 +806,7 @@ class MT5ClientTest {
         assertThat(closed.magic).isEqualTo(10001)
         assertThat(closed.comment).isEqualTo("dsl-hedge_straddle")
         assertThat(closed.reason).isEqualTo(5)
-        assertThat(closed.timeMs).isEqualTo(1_700_050_000_000L)
+        assertThat(closed.timeMs).isEqualTo(1_700_050_000_000L - 2 * 3_600_000L)
         val recorded = server.takeRequest()
         assertThat(recorded.method).isEqualTo("GET")
         // Range bounds go on the wire as venue-clock ISO instants (UTC + 2h offset).
