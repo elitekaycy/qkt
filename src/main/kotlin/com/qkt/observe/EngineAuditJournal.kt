@@ -165,12 +165,23 @@ class EngineAuditJournal(
                 if (event is FillAccountedEvent) appendAccountedFill(event)
                 if (event is BrokerEvent.OrderFilled) appendFill(event)
                 if (event is BrokerEvent.OrderPartiallyFilled) appendPartialFill(event)
-                append(",\"payload\":").append(jsonString(event.toString()))
+                // Ticks and candles are fully described by their structured block and make
+                // up ~99% of lines; the stringified payload doubled every one of them.
+                if (!hasCompleteStructuredBlock(event)) {
+                    append(",\"payload\":").append(jsonString(event.toString()))
+                }
                 append("}\n")
             }
         val bytes = line.toByteArray(StandardCharsets.UTF_8)
         writeLine(Line(eventDay(event), bytes))
     }
+
+    private fun hasCompleteStructuredBlock(event: Event): Boolean =
+        event is TickEvent ||
+            event is WarmupTickEvent ||
+            event is CandleEvent ||
+            event is StreamCandleEvent ||
+            event is StrategyCandleEvaluatedEvent
 
     private fun eventDay(event: Event): LocalDate =
         Instant
