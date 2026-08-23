@@ -209,6 +209,21 @@ data class Config(
         get() = state["async"]?.lowercase() == "true"
 
     /**
+     * Effective `state.journal_retention_days`: day-files of the engine audit journal and the
+     * MT5 transport journal older than this many UTC days are deleted by the daemon. Defaults
+     * to 14. `0` keeps every file forever.
+     */
+    val journalRetentionDays: Int
+        get() {
+            val raw = state["journal_retention_days"] ?: return DEFAULT_JOURNAL_RETENTION_DAYS
+            val parsed = raw.toIntOrNull()
+            require(parsed != null && parsed >= 0) {
+                "state.journal_retention_days must be a non-negative integer; got '$raw'"
+            }
+            return parsed
+        }
+
+    /**
      * Returns the [com.qkt.persistence.StatePersistor] for this config, writing under
      * [stateRoot]. Layered by flag:
      *   - `state.enabled = false`              → [com.qkt.persistence.NoopStatePersistor].
@@ -241,6 +256,9 @@ data class Config(
          * an explicit `risk.max_daily_loss` in `qkt.config.yaml`.
          */
         val DEFAULT_MAX_DAILY_LOSS: BigDecimal = BigDecimal("1000")
+
+        /** Default `state.journal_retention_days`: two weeks covers a parity-attestation window. */
+        const val DEFAULT_JOURNAL_RETENTION_DAYS: Int = 14
 
         /** Default per-order quantity cap; see [com.qkt.risk.rules.PreTradeControls]. */
         val DEFAULT_MAX_ORDER_QTY: BigDecimal =

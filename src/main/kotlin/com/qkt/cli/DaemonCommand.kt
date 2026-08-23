@@ -232,6 +232,20 @@ class DaemonCommand(
                         com.qkt.common.SystemClock(),
                     )
             }
+        val journalRetention =
+            com.qkt.observe
+                .JournalRetention(
+                    roots =
+                        listOf(
+                            stateDir.stateRoot.resolve("audit-journal"),
+                            stateDir.stateRoot.resolve("mt5-transport-journal"),
+                        ),
+                    retentionDays = cfg.journalRetentionDays,
+                    clock = com.qkt.common.SystemClock(),
+                ).also { it.start() }
+        val insightsSharedDeals =
+            com.qkt.observe.insights
+                .SharedDealFetch()
         val mt5ReadCaches =
             mt5Profiles
                 .map { profile -> profile.gatewayUrl to profile.apiKey }
@@ -359,6 +373,7 @@ class DaemonCommand(
                             .orEmpty()
                     },
                     insightsStatePollMs = cfg.insights.statePollMs,
+                    insightsSharedDeals = insightsSharedDeals,
                     insightsDealBackfillDays = cfg.insights.dealBackfillDays,
                     marketDataGateConfig = cfg.marketData,
                 ),
@@ -417,6 +432,7 @@ class DaemonCommand(
                             .orEmpty()
                     },
                     insightsStatePollMs = cfg.insights.statePollMs,
+                    insightsSharedDeals = insightsSharedDeals,
                     insightsDealBackfillDays = cfg.insights.dealBackfillDays,
                     marketDataGateConfig = cfg.marketData,
                 )
@@ -511,6 +527,7 @@ class DaemonCommand(
             runCatching { registry.stopAll() }
             runCatching { statePersistor.close() }
             mt5TransportJournals.values.forEach { runCatching { it.close() } }
+            runCatching { journalRetention.close() }
             runCatching { bybitClient?.close() }
             runCatching { notifier.close() }
             runCatching { insightsSink?.close() }

@@ -235,6 +235,26 @@ class EngineAuditJournalTest {
             .contains("\"strategyPositionBefore\":{\"symbol\":\"EXNESS:XAUUSD\",\"quantity\":\"0.10000000\"")
             .contains("\"fill\":{\"side\":\"BUY\"")
             .contains("\"brokerOrderId\":\"b-1\"")
+        val lines = text.lines().filter { it.isNotBlank() }
+        // Ticks and candles carry a complete structured block, so the stringified payload is
+        // omitted for them; every other event still records it.
+        for (line in lines) {
+            val structured =
+                listOf(
+                    "TickEvent",
+                    "WarmupTickEvent",
+                    "CandleEvent",
+                    "StreamCandleEvent",
+                    "StrategyCandleEvaluatedEvent",
+                ).any { line.contains("\"eventType\":\"com.qkt.events.$it\"") }
+            if (structured) {
+                assertThat(
+                    line,
+                ).doesNotContain("\"payload\":")
+            } else {
+                assertThat(line).contains("\"payload\":")
+            }
+        }
     }
 
     @Test
