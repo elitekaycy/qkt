@@ -4,6 +4,7 @@ import com.qkt.broker.mt5.MT5AccountVerifier
 import com.qkt.broker.mt5.MT5Client
 import com.qkt.broker.mt5.MT5ReadCache
 import com.qkt.broker.mt5.MT5TradeMode
+import com.qkt.cli.daemon.AutoDeployRetrier
 import com.qkt.cli.daemon.CommandChannel
 import com.qkt.cli.daemon.ControlClient
 import com.qkt.cli.daemon.ControlPlane
@@ -436,6 +437,11 @@ class DaemonCommand(
                     insightsDealBackfillDays = cfg.insights.dealBackfillDays,
                     marketDataGateConfig = cfg.marketData,
                 )
+        val autoDeployRetrier =
+            AutoDeployRetrier(
+                deploy = { name, file -> deployLoadDirFile(name, file, registry, portfolioDeployer) },
+                alreadyDeployed = { name -> registry.get(name) != null || registry.getPortfolio(name) != null },
+            )
         val plane =
             ControlPlane(
                 registry = registry,
@@ -448,6 +454,7 @@ class DaemonCommand(
                 notifierMetrics = notifier.metrics,
                 promotionGates = cfg.promotionGateConfig,
                 controlToken = controlToken.value,
+                pendingAutoDeploys = { autoDeployRetrier.pending() },
             )
         plane.start()
         instanceLock.writeControlPort(plane.boundPort)
@@ -469,16 +476,24 @@ class DaemonCommand(
             }
         }
 
-        loadDirIfRequested(args.option("load-dir"), registry, portfolioDeployer) { name, message ->
-            if (NotifyEventKind.STRATEGY_ERROR in notifyEventKinds) {
-                notifier.notify(
-                    NotificationEvent.StrategyError(
-                        strategyId = name,
-                        message = message,
-                        timestamp = Instant.now().toEpochMilli(),
-                    ),
-                )
+        val failedAutoDeploys =
+            loadDirIfRequested(args.option("load-dir"), registry, portfolioDeployer) { name, message ->
+                if (NotifyEventKind.STRATEGY_ERROR in notifyEventKinds) {
+                    notifier.notify(
+                        NotificationEvent.StrategyError(
+                            strategyId = name,
+                            message = message,
+                            timestamp = Instant.now().toEpochMilli(),
+                        ),
+                    )
+                }
             }
+        for (failure in failedAutoDeploys) autoDeployRetrier.schedule(failure.name, failure.file, failure.message)
+        if (failedAutoDeploys.isNotEmpty()) {
+            println(
+                "[INFO] ${failedAutoDeploys.size} auto-deploy(s) pending retry; /health reports degraded until they land",
+            )
+            autoDeployRetrier.start()
         }
 
         println("[INFO] daemon ready")
@@ -521,6 +536,7 @@ class DaemonCommand(
         fun cleanup() {
             if (!cleanupStarted.compareAndSet(false, true)) return
             runCatching { stateDir.deleteControlPort() }
+            runCatching { autoDeployRetrier.close() }
             runCatching { plane.close() }
             commandChannels.forEach { runCatching { it.close() } }
             runCatching { dailySummarySchedulers.forEach { it.close() } }
@@ -599,13 +615,55 @@ class DaemonCommand(
         }
     }
 
+    /** One `--load-dir` file that failed to deploy at startup and is owed a retry (#1055). */
+    internal data class FailedAutoDeploy(
+        val name: String,
+        val file: java.nio.file.Path,
+        val message: String,
+    )
+
+    /** Deploy one `--load-dir` file as a strategy or portfolio; throws with the deploy error. */
+    internal fun deployLoadDirFile(
+        name: String,
+        file: java.nio.file.Path,
+        registry: StrategyRegistry,
+        portfolioDeployer: PortfolioDeployer?,
+    ): String =
+        when (val parsed = Dsl.parseFileAny(file)) {
+            is ParseResult.Success ->
+                when (parsed.value) {
+                    is ParsedFile.StrategyFile -> {
+                        registry.deploy(name, file)
+                        "strategy"
+                    }
+                    is ParsedFile.PortfolioFile -> {
+                        check(portfolioDeployer != null) {
+                            "portfolio deploy not configured on this daemon"
+                        }
+                        val compiled = PortfolioLoader.load(file)
+                        val record = portfolioDeployer.deploy(name, compiled)
+                        registry.registerPortfolio(record)
+                        "portfolio"
+                    }
+                }
+            is ParseResult.Failure -> {
+                val msg = parsed.errors.joinToString("\n") { "${it.line}:${it.col} ? ${it.message}" }
+                error("parse failure for $file:\n$msg")
+            }
+        }
+
+    /**
+     * Auto-deploy every `.qkt` in [dir]. Returns the files that failed so the caller can
+     * hand them to an [AutoDeployRetrier] — a transient failure at boot (venue gap, gateway
+     * reconnecting) must not leave the daemon idle (#1055).
+     */
     internal fun loadDirIfRequested(
         dir: String?,
         registry: StrategyRegistry,
         portfolioDeployer: PortfolioDeployer? = null,
         onDeployError: (name: String, message: String) -> Unit = { _, _ -> },
-    ) {
-        if (dir == null) return
+    ): List<FailedAutoDeploy> {
+        if (dir == null) return emptyList()
         val path =
             java.nio.file.Path
                 .of(dir)
@@ -613,42 +671,24 @@ class DaemonCommand(
                 .isDirectory(path)
         ) {
             System.err.println("[WARN] --load-dir $dir is not a directory; skipping")
-            return
+            return emptyList()
         }
+        val failed = ArrayList<FailedAutoDeploy>()
         java.nio.file.Files.list(path).use { stream ->
             for (file in stream.toList()) {
                 if (!file.toString().endsWith(".qkt")) continue
                 val name = file.fileName.toString().removeSuffix(".qkt")
-                runCatching {
-                    when (val parsed = Dsl.parseFileAny(file)) {
-                        is ParseResult.Success ->
-                            when (parsed.value) {
-                                is ParsedFile.StrategyFile -> {
-                                    registry.deploy(name, file)
-                                    "strategy"
-                                }
-                                is ParsedFile.PortfolioFile -> {
-                                    check(portfolioDeployer != null) {
-                                        "portfolio deploy not configured on this daemon"
-                                    }
-                                    val compiled = PortfolioLoader.load(file)
-                                    val record = portfolioDeployer.deploy(name, compiled)
-                                    registry.registerPortfolio(record)
-                                    "portfolio"
-                                }
-                            }
-                        is ParseResult.Failure -> {
-                            val msg = parsed.errors.joinToString("\n") { "${it.line}:${it.col} ? ${it.message}" }
-                            error("parse failure for $file:\n$msg")
-                        }
-                    }
-                }.onSuccess { println("[INFO] auto-deployed $name from $file") }
+                runCatching { deployLoadDirFile(name, file, registry, portfolioDeployer) }
+                    .onSuccess { println("[INFO] auto-deployed $name from $file") }
                     .onFailure { e ->
-                        System.err.println("[WARN] failed to auto-deploy $name: ${e.message}")
-                        onDeployError(name, e.message ?: e::class.java.simpleName)
+                        val message = e.message ?: e::class.java.simpleName
+                        System.err.println("[WARN] failed to auto-deploy $name: $message")
+                        failed += FailedAutoDeploy(name, file, message)
+                        onDeployError(name, message)
                     }
             }
         }
+        return failed
     }
 
     private fun controlClient(stateDir: StateDir): ControlClient = ControlClient(stateDir)
