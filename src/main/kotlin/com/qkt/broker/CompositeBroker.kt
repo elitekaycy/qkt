@@ -261,7 +261,7 @@ class CompositeBroker(
             return leaves.isNotEmpty() && leaves.all(Broker::supportsPositionTickets)
         }
 
-    override fun recoverPendingOrders(orders: List<com.qkt.execution.ManagedOrder>) {
+    override fun recoverPendingOrders(orders: List<com.qkt.execution.ManagedOrder>): Set<String> {
         val byBroker = LinkedHashMap<Broker, MutableList<com.qkt.execution.ManagedOrder>>()
         for (order in orders) {
             val target =
@@ -272,7 +272,9 @@ class CompositeBroker(
             orderIdToBroker[order.id] = target
             byBroker.getOrPut(target) { mutableListOf() }.add(order)
         }
-        for ((broker, group) in byBroker) broker.recoverPendingOrders(group)
+        val accounted = LinkedHashSet<String>()
+        for ((broker, group) in byBroker) accounted += broker.recoverPendingOrders(group)
+        return accounted
     }
 
     private fun allLeaves(): List<Broker> = routes.map { it.second } + listOfNotNull(fallback)
