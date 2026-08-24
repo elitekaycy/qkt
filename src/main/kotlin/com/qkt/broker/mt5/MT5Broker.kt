@@ -1874,8 +1874,8 @@ class MT5Broker(
         return out
     }
 
-    override fun recoverPendingOrders(orders: List<com.qkt.execution.ManagedOrder>) {
-        if (orders.isEmpty()) return
+    override fun recoverPendingOrders(orders: List<com.qkt.execution.ManagedOrder>): Set<String> {
+        if (orders.isEmpty()) return emptySet()
         val snapshot =
             readMT5RecoverySnapshot(
                 attempts = recoveryReadAttempts,
@@ -1965,6 +1965,11 @@ class MT5Broker(
                 onPendingPositionOpened(a.position)
             }
         }
+        // Accounted for: partial fills adopted above, plus every order joined to a venue ticket
+        // (re-seeded, filled during downtime, or vanished-and-tracked). Anything else has no
+        // venue counterpart and is the caller's to retire.
+        return recoveredPartialIds +
+            resolvedOrders.filter { it.brokerOrderId != null }.mapTo(LinkedHashSet()) { it.id }
     }
 
     private fun recoverPartialEntries(

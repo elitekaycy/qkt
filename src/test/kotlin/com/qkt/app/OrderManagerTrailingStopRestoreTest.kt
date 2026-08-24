@@ -34,8 +34,9 @@ class OrderManagerTrailingStopRestoreTest {
     ) : Broker by delegate {
         val recovered = mutableListOf<ManagedOrder>()
 
-        override fun recoverPendingOrders(orders: List<ManagedOrder>) {
+        override fun recoverPendingOrders(orders: List<ManagedOrder>): Set<String> {
             recovered += orders
+            return orders.mapTo(LinkedHashSet()) { it.id }
         }
     }
 
