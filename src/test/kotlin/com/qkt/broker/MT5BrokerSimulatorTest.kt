@@ -21,6 +21,22 @@ import org.junit.jupiter.api.Test
 class MT5BrokerSimulatorTest {
     private fun newBus(): EventBus = EventBus(FixedClock(0L), MonotonicSequenceGenerator())
 
+    @Test
+    fun `position accounting mode defaults to hedging like the real retail venue`() {
+        val bus = newBus()
+        val sim = MT5BrokerSimulator(bus, FixedClock(0L), MarketPriceTracker(), registry(xauusd()))
+        assertThat(sim.positionAccountingMode("EXNESS:XAUUSD")).isEqualTo(PositionAccountingMode.HEDGING)
+        val netting =
+            MT5BrokerSimulator(
+                bus,
+                FixedClock(0L),
+                MarketPriceTracker(),
+                registry(xauusd()),
+                positionMode = PositionAccountingMode.NETTING,
+            )
+        assertThat(netting.positionAccountingMode("EXNESS:XAUUSD")).isEqualTo(PositionAccountingMode.NETTING)
+    }
+
     private fun registry(meta: InstrumentMeta): InstrumentRegistry =
         object : InstrumentRegistry {
             override fun lookup(qktSymbol: String): InstrumentMeta? = if (qktSymbol == meta.qktSymbol) meta else null

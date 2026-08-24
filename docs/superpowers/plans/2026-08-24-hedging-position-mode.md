@@ -12,8 +12,10 @@
 - [ ] `enum class PositionMode { NETTING, HEDGING }`.
 - [ ] `ExecutionSimulationConfig.positionMode: PositionMode = PositionMode.HEDGING` —
   the default matches the production venue model; netting stays selectable.
-- [ ] CLI `--position-mode netting|hedging` (backtest + sweep), scenario key
-  `position_mode`; unknown values error with the valid list.
+- [ ] CLI `--position-mode netting|hedging` (backtest + sweep) and config key
+  `execution.position_mode`; unknown values error with the valid list. (Scenario-file
+  key dropped: scenarios inherit the run's `executionConfig`, which already carries
+  the mode — `BacktestContext.scenarioBacktest`.)
 - [ ] `PaperBroker` + `MT5BrokerSimulator` take `positionMode`; both override
   `positionAccountingMode()` accordingly (paper loses its hardcoded NETTING; mt5-sim
   loses its UNKNOWN inconsistency with MULTI_POSITION_PER_SYMBOL).
