@@ -214,8 +214,10 @@ object ControlRoutes {
                         .lastOrNull()
                         ?.ts
                 val ageMs = lastEvent?.let { now - it }
+                val haltReason = h.live.haltReason()
                 """{"name":"${h.name}","running":${h.isRunning()},""" +
                     """"halted":${h.live.isHalted()},""" +
+                    """"haltReason":${haltReason?.let { json.encodeToString(String.serializer(), it) } ?: "null"},""" +
                     """"lastEventAgeMs":${ageMs ?: "null"},""" +
                     """"inboundQueueDepth":${h.live.inboundQueueDepth()},""" +
                     """"droppedTicks":${h.live.droppedTicks}}"""
