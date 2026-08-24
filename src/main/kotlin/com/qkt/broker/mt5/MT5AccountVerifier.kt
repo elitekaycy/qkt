@@ -50,6 +50,13 @@ object MT5AccountVerifier {
                 "MT5 profile '${profile.name}' leverage mismatch: expected $expected, got ${account.leverage}"
             }
         }
+        profile.expectedMarginMode?.let { expected ->
+            val actual = describeMarginMode(account.marginMode)
+            require(actual == expected.name.lowercase()) {
+                "MT5 profile '${profile.name}' margin mode mismatch: expected ${expected.name.lowercase()}, " +
+                    "got $actual — the engine's position model would diverge from the venue's (#1071)"
+            }
+        }
     }
 
     /** Operator-readable identity suitable for startup logs and notifications. */
@@ -62,4 +69,11 @@ object MT5AccountVerifier {
 
     private fun describeTradeMode(value: Int): String =
         MT5TradeMode.fromWire(value)?.name?.lowercase() ?: "unknown($value)"
+
+    private fun describeMarginMode(value: Int): String =
+        when (value) {
+            MARGIN_MODE_NETTING -> "netting"
+            MARGIN_MODE_HEDGING -> "hedging"
+            else -> "unknown($value)"
+        }
 }

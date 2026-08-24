@@ -38,6 +38,19 @@ class MT5AccountVerifierTest {
             .hasMessageContaining("expected real, got demo")
     }
 
+    @Test
+    fun `netting expectation refuses a hedging account`() {
+        // The engine's position model would silently diverge from the venue's (#1071).
+        assertThatThrownBy {
+            MT5AccountVerifier.verify(
+                profile().copy(expectedMarginMode = com.qkt.broker.PositionAccountingMode.NETTING),
+                account,
+            )
+        }.isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageContaining("margin mode mismatch")
+            .hasMessageContaining("expected netting, got hedging")
+    }
+
     private fun profile(): MT5BrokerProfile =
         MT5DefaultProfiles.exness.copy(
             expectedAccountLogin = account.login,
@@ -45,5 +58,6 @@ class MT5AccountVerifierTest {
             expectedTradeMode = MT5TradeMode.DEMO,
             expectedAccountCurrency = account.currency,
             expectedLeverage = account.leverage,
+            expectedMarginMode = com.qkt.broker.PositionAccountingMode.HEDGING,
         )
 }

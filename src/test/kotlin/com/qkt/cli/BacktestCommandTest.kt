@@ -21,6 +21,28 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 
 class BacktestCommandTest {
+    @Test
+    fun `an unknown position mode is a setup error naming the valid values`(
+        @TempDir dir: Path,
+    ) {
+        val strategy = writeStrategy(dir, "true")
+        val (code, _, err) =
+            runBacktest(
+                "backtest",
+                strategy.toString(),
+                "--from",
+                "2024-01-01",
+                "--to",
+                "2024-01-02",
+                "--data-root",
+                dir.toString(),
+                "--position-mode",
+                "both-at-once",
+            )
+        assertThat(code).isNotZero()
+        assertThat(err).contains("unknown position mode").contains("netting, hedging")
+    }
+
     private fun runBacktest(vararg argv: String): Triple<Int, String, String> {
         val out = ByteArrayOutputStream()
         val err = ByteArrayOutputStream()

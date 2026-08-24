@@ -37,6 +37,13 @@ data class MT5BrokerProfile(
     val expectedTradeMode: MT5TradeMode? = null,
     val expectedAccountCurrency: String? = null,
     val expectedLeverage: Int? = null,
+    /**
+     * Expected venue margin mode (#1071): NETTING or HEDGING. Asserted against the
+     * account's `marginMode` at connect so the engine's position model can never
+     * silently diverge from the venue's; also the source of truth when a live config
+     * is replayed in backtest.
+     */
+    val expectedMarginMode: com.qkt.broker.PositionAccountingMode? = null,
     /** Live quote polling cadence in milliseconds. */
     val tickPollIntervalMs: Long = 1000,
 ) {
@@ -56,7 +63,8 @@ data class MT5BrokerProfile(
                 expectedAccountServer != null ||
                 expectedTradeMode != null ||
                 expectedAccountCurrency != null ||
-                expectedLeverage != null
+                expectedLeverage != null ||
+                expectedMarginMode != null
 }
 
 /**

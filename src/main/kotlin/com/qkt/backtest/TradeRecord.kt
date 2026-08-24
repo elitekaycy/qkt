@@ -27,4 +27,8 @@ data class TradeRecord(
     val contractSize: BigDecimal? = null,
     /** True when the fill reduced strategy-owned exposure and therefore represents an exit outcome. */
     val reducedExposure: Boolean = true,
+    /** Leg the fill was routed to when the strategy book is leg-routed (#1071). */
+    val legId: String? = null,
+    /** How the fill landed in the strategy leg book (OPENED/CLOSED/NETTED). */
+    val legAction: com.qkt.positions.StrategyPositionTracker.LegAction? = null,
 )
