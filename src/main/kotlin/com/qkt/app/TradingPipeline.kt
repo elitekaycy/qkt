@@ -557,7 +557,8 @@ class TradingPipeline(
             val accountRealized = convertedRealized.account.amount
             pnl.recordRealized(accountRealized.subtract(costs))
 
-            val rawStratRealized = strategyPositions.applyFill(e)
+            val stratApplication = strategyPositions.applyFillDetailed(e)
+            val rawStratRealized = stratApplication.realized
             val stratRealized = rawStratRealized.multiply(cs)
             val accountStratRealized =
                 accounting
@@ -627,6 +628,8 @@ class TradingPipeline(
                     strategyPositionBefore = strategyBefore,
                     strategyPositionAfter = strategyAfter,
                     reducedExposure = reducedExposure,
+                    legId = stratApplication.legId,
+                    legAction = stratApplication.legAction,
                     partial = false,
                 ),
             )
@@ -648,6 +651,8 @@ class TradingPipeline(
                     contractSize = contractSize,
                     netAccountRealized = netAccountStratRealized,
                     reducedExposure = reducedExposure,
+                    legId = stratApplication.legId,
+                    legAction = stratApplication.legAction,
                 ),
             )
         }
@@ -694,7 +699,8 @@ class TradingPipeline(
             val accountRealized = convertedRealized.account.amount
             pnl.recordRealized(accountRealized.subtract(costs))
 
-            val rawStratRealized = strategyPositions.applyPartialFill(asFill)
+            val stratApplication = strategyPositions.applyPartialFillDetailed(asFill)
+            val rawStratRealized = stratApplication.realized
             val stratRealized = rawStratRealized.multiply(cs)
             val accountStratRealized =
                 accounting
@@ -755,6 +761,8 @@ class TradingPipeline(
                     strategyPositionBefore = strategyBefore,
                     strategyPositionAfter = strategyAfter,
                     reducedExposure = reducedExposure,
+                    legId = stratApplication.legId,
+                    legAction = stratApplication.legAction,
                     partial = true,
                 ),
             )
@@ -776,6 +784,8 @@ class TradingPipeline(
                     contractSize = contractSize,
                     netAccountRealized = netAccountStratRealized,
                     reducedExposure = reducedExposure,
+                    legId = stratApplication.legId,
+                    legAction = stratApplication.legAction,
                 ),
             )
             dslStrategiesById[e.strategyId]?.onOrderTerminal(e.clientOrderId)

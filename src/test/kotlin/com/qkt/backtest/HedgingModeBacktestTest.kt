@@ -124,6 +124,22 @@ class HedgingModeBacktestTest {
             .describedAs("the long leg's SL should close the long leg out of the hedge")
             .isTrue()
 
+        // Leg-aware audit labels (#1071 Task 5): the SELL entry that opens the short leg
+        // of the hedge must read OPEN_SHORT, not CLOSE_LONG, even though net went 1 -> 0.
+        val shortLegOpen =
+            result.trades.first {
+                it.trade.side == com.qkt.common.Side.SELL &&
+                    !it.trade.orderId.endsWith("-sl") &&
+                    !it.trade.orderId.endsWith("-tp") &&
+                    qty(it.strategyPositionBefore).signum() > 0
+            }
+        assertThat(
+            com.qkt.backtest.report.TradeAuditSummaries
+                .positionEffect(shortLegOpen),
+        ).isEqualTo("OPEN_SHORT")
+        assertThat(shortLegOpen.legAction)
+            .isEqualTo(com.qkt.positions.StrategyPositionTracker.LegAction.OPENED)
+
         // Reduce-only invariant, leg-aware: no exit fill ever grows GROSS exposure.
         // (Net can legitimately move away from zero when one leg of a hedge closes.)
         val exitFills = result.trades.filter { it.trade.orderId.endsWith("-sl") || it.trade.orderId.endsWith("-tp") }

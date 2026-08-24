@@ -83,6 +83,19 @@ internal object TradeAuditSummaries {
     }
 
     fun positionEffect(r: TradeRecord): String {
+        // Leg-routed fills (#1071): the net view mislabels a hedged book (a short leg
+        // opened while net-long reads as CLOSE_LONG), so the leg's own transition wins.
+        val legAction = r.legAction
+        if (legAction != null && legAction != com.qkt.positions.StrategyPositionTracker.LegAction.NETTED) {
+            val longSide = r.trade.side == com.qkt.common.Side.BUY
+            return when (legAction) {
+                com.qkt.positions.StrategyPositionTracker.LegAction.OPENED ->
+                    if (longSide) "OPEN_LONG" else "OPEN_SHORT"
+                com.qkt.positions.StrategyPositionTracker.LegAction.CLOSED ->
+                    if (longSide) "CLOSE_SHORT" else "CLOSE_LONG"
+                com.qkt.positions.StrategyPositionTracker.LegAction.NETTED -> error("unreachable")
+            }
+        }
         val beforePosition = r.strategyPositionBefore
         val afterPosition = r.strategyPositionAfter
         if (beforePosition == null && afterPosition == null) return "UNKNOWN"

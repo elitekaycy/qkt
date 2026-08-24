@@ -513,6 +513,8 @@ class ReplayEngine(
                             strategyPositionAfter = fillState.strategyPositionAfter,
                             contractSize = fillState.contractSize,
                             reducedExposure = fillState.reducedExposure,
+                            legId = fillState.legId,
+                            legAction = fillState.legAction,
                         ),
                     )
                     tape.add(TapeEvent.Filled(currentTimestamp, trade, fillState.netAccountRealized, strategyId))
