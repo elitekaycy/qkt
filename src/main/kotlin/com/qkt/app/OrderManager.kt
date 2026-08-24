@@ -84,6 +84,12 @@ class OrderManager(
     private val engineHeldSubmissionBlockReason: (OrderRequest) -> String? = { null },
     /** Identifies requests that reduce current exposure and must survive a halt cancel sweep. */
     private val isRiskReducingForHalt: (OrderRequest) -> Boolean = { false },
+    /**
+     * Net strategy position for (strategyId, symbol), used to retire protective exits whose
+     * position was consumed by an opposite entry (#1069). Null disables the sweep — venue
+     * position semantics then depend entirely on the broker.
+     */
+    private val strategyNetQty: ((strategyId: String, symbol: String) -> BigDecimal)? = null,
 ) : PendingOrderExposureProvider {
     private val log = LoggerFactory.getLogger(OrderManager::class.java)
 
@@ -3070,6 +3076,49 @@ class OrderManager(
         }
         resolveOcoOnExecution(e.clientOrderId)
         ocoSiblingCancelStarted.remove(e.clientOrderId)
+        retireStaleProtectiveExits(e.strategyId, e.symbol)
+    }
+
+    /**
+     * A protective exit exists to REDUCE the position its bracket opened. When a netting fill
+     * consumes that position (reversal, or a flatten), the venue drops the position's SL/TP with
+     * it — an engine-managed resting exit must be retired the same way, or it later fires as a
+     * naked opposite-direction entry with no protection of its own (#1069). Stale means: the
+     * exit's side would INCREASE the current net strategy position (any exit is stale when flat).
+     * A partial reduce that keeps the sign leaves exits alone — reducing them is venue-faithful
+     * resizing, tracked separately.
+     */
+    private fun retireStaleProtectiveExits(
+        strategyId: String,
+        symbol: String,
+    ) {
+        val netQty = strategyNetQty?.invoke(strategyId, symbol) ?: return
+        val staleSide =
+            when {
+                netQty.signum() > 0 -> Side.BUY
+                netQty.signum() < 0 -> Side.SELL
+                else -> null // flat: every resting exit is stale
+            }
+        val stale =
+            orders.entries.filter { (id, managed) ->
+                !managed.state.isTerminal &&
+                    (id.endsWith("-sl") || id.endsWith("-tp")) &&
+                    managed.request.strategyId == strategyId &&
+                    managed.request.symbol == symbol &&
+                    (staleSide == null || managed.request.side == staleSide)
+            }
+        for ((id, managed) in stale) {
+            val request = managed.request
+            log.warn(
+                "retiring stale protective exit {} {} {} — its position was consumed (net {} {})",
+                id,
+                request.side,
+                request.quantity,
+                netQty,
+                symbol,
+            )
+            cancel(id)
+        }
     }
 
     /**
