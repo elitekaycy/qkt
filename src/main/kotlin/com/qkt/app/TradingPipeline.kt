@@ -494,7 +494,21 @@ class TradingPipeline(
         // Both subscribe earlier in construction order, so ordinary subscribe() here
         // would run them against a pre-fill book (#374, #377).
         bus.subscribeFirst<BrokerEvent.OrderFilled> { e ->
-            if (e.strategyId.isBlank()) return@subscribeFirst
+            if (e.strategyId.isBlank()) {
+                // An execution slice with no owner cannot be booked: position books and PnL
+                // will drift from the venue until the next restart reconciles them. Say so
+                // loudly instead of silently skipping (#1061 book-drift symptom).
+                log.warn(
+                    "unattributed fill dropped: order_id={} broker_order_id={} {} {} qty={} — " +
+                        "position books not adjusted",
+                    e.clientOrderId,
+                    e.brokerOrderId,
+                    e.symbol,
+                    e.side,
+                    e.quantity,
+                )
+                return@subscribeFirst
+            }
             if (latencyEnabled) latency.observeFill(e.clientOrderId, e.strategyId)
             riskState.beforeFill(e.strategyId)
             // Phase 30: PositionTracker computes raw realized as qty * priceDiff. Apply
