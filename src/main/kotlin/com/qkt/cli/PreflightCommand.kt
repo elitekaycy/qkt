@@ -306,6 +306,7 @@ object ProductionPreflight {
                         if (profile.expectedAccountServer == null) add("expected_account_server")
                         if (profile.expectedTradeMode == null) add("expected_trade_mode")
                         if (profile.expectedLeverage == null) add("expected_leverage")
+                        if (profile.expectedMarginMode == null) add("expected_margin_mode")
                     }
                 if (missing.isNotEmpty()) problems.add("missing ${missing.joinToString()}")
             }

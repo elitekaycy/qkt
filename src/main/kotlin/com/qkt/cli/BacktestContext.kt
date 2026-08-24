@@ -146,7 +146,13 @@ class BacktestContext private constructor(
                 ?: listOf(ast.name to AstCompiler().compile(ast, overrides))
         val effectiveExecution =
             if (executionConfig == this.executionConfig && brokerKind != this.brokerKind) {
-                ExecutionSimulationConfig.forBrokerKind(brokerKind)
+                // Rebuild the broker-derived preset fields, but carry the run's venue
+                // position model: it is an operator/venue property, not a broker-kind
+                // property (#1071) — dropping it made a brokerKind override silently
+                // grade a different book than the baked context.
+                ExecutionSimulationConfig
+                    .forBrokerKind(brokerKind)
+                    .copy(positionMode = executionConfig.positionMode)
             } else {
                 executionConfig
             }
