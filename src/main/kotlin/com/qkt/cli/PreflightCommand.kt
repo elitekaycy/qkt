@@ -34,6 +34,8 @@ private data class PreflightTarget(
 )
 
 object ProductionPreflight {
+    private val CRYPTO_SYMBOL = Regex("^(BTC|ETH|XRP|LTC|SOL|DOGE|ADA|BNB|DOT|AVAX)")
+
     fun evaluate(
         configPath: Path,
         stateDir: StateDir,
@@ -73,9 +75,52 @@ object ProductionPreflight {
         checks.add(alertsCheck(cfg, production))
         if (target != null) {
             checks.add(symbolMetadataCheck(target, production))
+            checks.add(symbolCalendarCheck(cfg, target, production))
             checks.add(dataFieldCheck(target))
         }
         return checks
+    }
+
+    /**
+     * A crypto-looking symbol governed by the FX weekend calendar would have its feed, pollers,
+     * and venue-state refresh go quiet every Saturday. The fix is a `calendars:` rule on the
+     * broker profile; say exactly which one.
+     */
+    private fun symbolCalendarCheck(
+        cfg: Config,
+        target: PreflightTarget,
+        production: Boolean,
+    ): PreflightCheck {
+        val profiles =
+            runCatching {
+                resolveMt5Profiles(cfg)
+            }.getOrElse { return PreflightCheck("symbol.calendar", PreflightStatus.PASS, "no MT5 profile to validate") }
+        val symbols =
+            (target.strategyAsts.flatMap { ast -> ast.streams.map { it.qktSymbol } } + target.portfolioSymbols)
+                .distinct()
+                .filter { it.contains(':') }
+        val offenders =
+            symbols.filter { qktSymbol ->
+                val profile =
+                    profiles.firstOrNull { it.name.equals(qktSymbol.substringBefore(':'), ignoreCase = true) }
+                        ?: return@filter false
+                val bare = qktSymbol.substringAfter(':')
+                CRYPTO_SYMBOL.containsMatchIn(bare) &&
+                    profile.symbolCalendars
+                        .calendarFor(bare)
+                        .name
+                        .startsWith("fx")
+            }
+        return if (offenders.isEmpty()) {
+            PreflightCheck("symbol.calendar", PreflightStatus.PASS, "${symbols.size} symbol(s) on a matching calendar")
+        } else {
+            PreflightCheck(
+                "symbol.calendar",
+                if (production) PreflightStatus.FAIL else PreflightStatus.WARN,
+                "crypto symbol(s) on the FX weekend calendar: ${offenders.joinToString()} — add " +
+                    "brokers.<name>.calendars: { \"${offenders.first().substringAfter(':').take(3)}*\": crypto }",
+            )
+        }
     }
 
     private fun MutableList<PreflightCheck>.parseTarget(path: Path): PreflightTarget? {
