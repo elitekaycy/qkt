@@ -201,6 +201,7 @@ execution, risk, accounting, or warmup pipeline.
 | #945 | `qkt instruments verify` compares YAML contract size, volume bounds/step, point size, digits, and stops level against `/symbol_info`, exiting non-zero on drift | `InstrumentsCommandTest` |
 | #946 | The catalog cadence/topology claims are corrected and a real `PortfolioDeployer` topology with `CAPITAL`, `WEIGHT`, `RISK OF BOOK`, and book allocation is compared with backtest output | `PortfolioDeployerBacktestParityTest` |
 | #947 | CLI/store replay derives the same exact-stream warmup plan as live and seeds pre-window closed bars before DSL binding | `BacktestFromStoreTest`, `CompiledStrategyAutoWarmupTest` |
+| #1071 | Backtest position model is venue-derived: CLI runs default to HEDGING (per-leg books, exits close their own leg) matching the retail-MT5 accounts, `--position-mode netting` for netted venues; `expected_margin_mode` asserts the live account matches; stale netting exits are retired and a reduce-only tripwire alerts on any exit that adds exposure (#1069/#1070) | `HedgingModeBacktestTest`, `StaleBracketExitAfterReversalTest`, `MT5AccountVerifierTest`, `OrderManagerReduceOnlyExitTest` |
 
 ### Residual divergences (known, accepted, tracked)
 

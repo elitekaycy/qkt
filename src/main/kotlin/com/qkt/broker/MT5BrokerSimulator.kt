@@ -58,7 +58,15 @@ class MT5BrokerSimulator(
     private val enforceStopsLevel: Boolean = false,
     private val rejectionModel: RejectionModel = NoBrokerRejections,
     private val partialFillModel: PartialFillModel = FullFill,
+    /**
+     * Position model this venue simulates (#1071). Default HEDGING matches real retail
+     * MT5 (and this simulator's MULTI_POSITION_PER_SYMBOL capability); NETTING remains
+     * for netted MT5 accounts.
+     */
+    private val positionMode: PositionAccountingMode = PositionAccountingMode.HEDGING,
 ) : Broker {
+    override fun positionAccountingMode(symbol: String): PositionAccountingMode = positionMode
+
     init {
         require(syntheticSpreadPoints >= 0) {
             "syntheticSpreadPoints must be >= 0: $syntheticSpreadPoints"
