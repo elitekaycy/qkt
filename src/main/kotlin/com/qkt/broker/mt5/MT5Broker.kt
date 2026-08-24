@@ -2481,9 +2481,12 @@ class MT5Broker(
         val expected = expectedProtectionByTicket[ticket] ?: return false
         val stopChanged = event.oldStopLoss.compareTo(event.newStopLoss) != 0
         val takeProfitChanged = event.oldTakeProfit.compareTo(event.newTakeProfit) != 0
-        val stopMatches = !stopChanged || expected.stopLoss?.compareTo(event.newStopLoss) == 0
+        // Venue-scale comparison: the gateway reports SL/TP quantized to the symbol's
+        // digits, while the engine registered its full-precision request (#1063).
+        val stopMatches =
+            !stopChanged || ProtectionExpectation.matchesVenue(expected.stopLoss, event.newStopLoss)
         val takeProfitMatches =
-            !takeProfitChanged || expected.takeProfit?.compareTo(event.newTakeProfit) == 0
+            !takeProfitChanged || ProtectionExpectation.matchesVenue(expected.takeProfit, event.newTakeProfit)
         if (!stopMatches || !takeProfitMatches) return false
         expectedProtectionByTicket.remove(ticket, expected)
         return true
