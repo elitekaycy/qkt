@@ -168,20 +168,49 @@ class StrategyPositionTracker(
         pendingIndependentOpens.remove(key)
     }
 
+    /** How one execution slice landed in the leg book (#1071). */
+    enum class LegAction {
+        /** The slice opened (or extended) a specific leg. */
+        OPENED,
+
+        /** The slice closed (or reduced) a specific leg, realizing that leg's PnL. */
+        CLOSED,
+
+        /** The slice netted into the PRIMARY book — no single-leg attribution. */
+        NETTED,
+    }
+
+    /**
+     * Result of applying one execution slice: the realized PnL plus, when the slice was
+     * leg-routed, which leg it touched and how. NETTED slices carry no leg id.
+     */
+    data class FillApplication(
+        val realized: BigDecimal,
+        val legId: String? = null,
+        val legAction: LegAction = LegAction.NETTED,
+    )
+
     /** Apply a terminal execution slice and consume any matching ownership intent. */
-    fun applyFill(event: BrokerEvent.OrderFilled): BigDecimal = applyFillSlice(event, terminal = true)
+    fun applyFill(event: BrokerEvent.OrderFilled): BigDecimal = applyFillSlice(event, terminal = true).realized
 
     /**
      * Apply a non-terminal execution slice while retaining its matching ownership intent for the
      * remaining slices. The caller must later deliver a terminal fill, cancellation, or rejection.
      */
-    fun applyPartialFill(event: BrokerEvent.OrderFilled): BigDecimal = applyFillSlice(event, terminal = false)
+    fun applyPartialFill(event: BrokerEvent.OrderFilled): BigDecimal = applyFillSlice(event, terminal = false).realized
+
+    /** [applyFill] variant reporting leg attribution for the report layer (#1071). */
+    fun applyFillDetailed(event: BrokerEvent.OrderFilled): FillApplication = applyFillSlice(event, terminal = true)
+
+    /** [applyPartialFill] variant reporting leg attribution for the report layer (#1071). */
+    fun applyPartialFillDetailed(event: BrokerEvent.OrderFilled): FillApplication =
+        applyFillSlice(event, terminal = false)
 
     private fun applyFillSlice(
         event: BrokerEvent.OrderFilled,
         terminal: Boolean,
-    ): BigDecimal {
-        if (event.strategyId.isBlank()) return Money.ZERO
+    ): FillApplication {
+        if (event.strategyId.isBlank()) return FillApplication(Money.ZERO)
 
         val key = "${event.strategyId}|${event.clientOrderId}"
 
@@ -189,25 +218,25 @@ class StrategyPositionTracker(
             val realized = applyStackOpen(event, intent)
             if (terminal) pendingStackOpens.remove(key, intent)
             persistBook(event.strategyId, event.symbol)
-            return realized
+            return FillApplication(realized, intent.stackLegId, LegAction.OPENED)
         }
         pendingStackCloses[key]?.let { stackLegId ->
             val realized = applyStackClose(event, stackLegId)
             if (terminal) pendingStackCloses.remove(key, stackLegId)
             persistBook(event.strategyId, event.symbol)
-            return realized
+            return FillApplication(realized, stackLegId, LegAction.CLOSED)
         }
         pendingIndependentOpens[key]?.let { legId ->
             applyIndependentOpen(event, legId)
             if (terminal) pendingIndependentOpens.remove(key, legId)
             persistBook(event.strategyId, event.symbol)
-            return Money.ZERO
+            return FillApplication(Money.ZERO, legId, LegAction.OPENED)
         }
         // A later slice or venue-detected close may arrive without its transient registration
         // (notably after recovery). The stable position ticket still identifies its owned leg.
-        applyOwnedLegByTicket(event)?.let { realized ->
+        applyOwnedLegByTicket(event)?.let { owned ->
             persistBook(event.strategyId, event.symbol)
-            return realized
+            return owned
         }
 
         val trade =
@@ -222,7 +251,7 @@ class StrategyPositionTracker(
         val realized = apply(event.strategyId, trade, event.brokerOrderId)
         syncPrimaryMfeTracker(event.strategyId, trade.symbol)
         persistBook(event.strategyId, event.symbol)
-        return realized
+        return FillApplication(realized)
     }
 
     /**
@@ -368,7 +397,7 @@ class StrategyPositionTracker(
      * position-poller closes and recovered partial entries without falling through to PRIMARY
      * netting. Returns `null` when no owned leg has the ticket.
      */
-    private fun applyOwnedLegByTicket(event: BrokerEvent.OrderFilled): BigDecimal? {
+    private fun applyOwnedLegByTicket(event: BrokerEvent.OrderFilled): FillApplication? {
         val ticket = event.brokerOrderId?.takeIf { it.isNotBlank() } ?: return null
         val book = byStrategy[event.strategyId]?.get(event.symbol) ?: return null
         val leg =
@@ -384,7 +413,7 @@ class StrategyPositionTracker(
                     openedAt = event.timestamp,
                 ),
             )
-            return Money.ZERO
+            return FillApplication(Money.ZERO, leg.legId, LegAction.OPENED)
         }
         val closed = book.close(leg.legId) ?: return null
         val closingQty = closed.quantity.min(event.quantity)
@@ -398,7 +427,7 @@ class StrategyPositionTracker(
         val remaining = closed.quantity.subtract(closingQty)
         if (remaining.signum() > 0) book.add(closed.copy(quantity = remaining))
         if (book.isEmpty()) byStrategy[event.strategyId]?.remove(event.symbol)
-        return realized
+        return FillApplication(realized, closed.legId, LegAction.CLOSED)
     }
 
     private fun applyStackClose(

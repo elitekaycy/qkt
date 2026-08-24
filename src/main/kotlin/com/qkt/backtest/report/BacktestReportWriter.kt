@@ -79,7 +79,8 @@ class BacktestReportWriter(
                     "stopLossPrice,takeProfitPrice," +
                     "accountPositionQtyBefore,accountPositionAvgEntryBefore,accountPositionQtyAfter," +
                     "accountPositionAvgEntryAfter,strategyPositionQtyBefore,strategyPositionAvgEntryBefore," +
-                    "strategyPositionQtyAfter,strategyPositionAvgEntryAfter,contractSize,fillNotional,reducedExposure\n",
+                    "strategyPositionQtyAfter,strategyPositionAvgEntryAfter,contractSize,fillNotional," +
+                    "reducedExposure,legId,legAction\n",
             )
         for (r in trades) {
             val fillNotional = TradeAuditSummaries.fillNotional(r)
@@ -149,6 +150,10 @@ class BacktestReportWriter(
                 .append(fillNotional.toPlainString())
                 .append(',')
                 .append(r.reducedExposure)
+                .append(',')
+                .append(csv(r.legId ?: ""))
+                .append(',')
+                .append(r.legAction?.name ?: "")
                 .append('\n')
         }
         return sb.toString()
