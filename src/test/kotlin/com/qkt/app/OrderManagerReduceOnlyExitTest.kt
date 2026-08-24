@@ -62,7 +62,11 @@ class OrderManagerReduceOnlyExitTest {
 
         broker.emitFill(exit, Money.of("99"))
 
-        assertThat(alerts).singleElement().asString().contains("REDUCE-ONLY VIOLATION").contains("b1-sl")
+        assertThat(alerts)
+            .singleElement()
+            .asString()
+            .contains("REDUCE-ONLY VIOLATION")
+            .contains("b1-sl")
     }
 
     @Test
