@@ -34,10 +34,11 @@ different books for any strategy that can fire an entry while holding a position
 
 `PositionMode { NETTING, HEDGING }` declared where execution simulation is configured:
 
-- CLI: `--position-mode netting|hedging` on `backtest`/`sweep`; scenario file key
-  `position_mode`. Default **hedging** for `--broker mt5-sim` and `--broker paper`
-  (matching the production venue model); `netting` remains selectable for venues that
-  truly net (futures-style).
+- CLI: `--position-mode netting|hedging` on `backtest`/`sweep`, config key
+  `execution.position_mode`. The CLI default is **hedging** (the production venue
+  model); the embedded-library `ExecutionSimulationConfig` default stays **netting**
+  so programmatic `Backtest` callers keep their existing semantics — the flip happens
+  at the operator boundary, never silently inside the API.
 - `MT5BrokerProfile.expectedMarginMode` (sibling of `expectedTradeMode`): asserted by
   `MT5AccountVerifier` against the account's `marginMode` at connect, and the source of
   truth when replaying a live config.

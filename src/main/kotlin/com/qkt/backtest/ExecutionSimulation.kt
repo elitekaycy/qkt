@@ -51,13 +51,15 @@ data class ExecutionSimulationConfig(
     val partialFillFraction: BigDecimal? = null,
     val enforceStopsLevel: Boolean = false,
     /**
-     * Venue position model the simulated broker books (#1071). HEDGING (the default —
-     * both production venues) gives every entry its own coexisting position leg with
-     * exits closing that leg; NETTING collapses opposite fills into one signed position
-     * for venues that truly net.
+     * Venue position model the simulated broker books (#1071). HEDGING gives every
+     * entry its own coexisting position leg with exits closing that leg (the retail-MT5
+     * semantic); NETTING collapses opposite fills into one signed position. The library
+     * default stays NETTING so embedded [com.qkt.backtest.Backtest] callers keep their
+     * semantics; the CLI defaults to HEDGING (both production venues hedge) unless
+     * `--position-mode netting` / `execution.position_mode` says otherwise.
      */
     val positionMode: com.qkt.broker.PositionAccountingMode =
-        com.qkt.broker.PositionAccountingMode.HEDGING,
+        com.qkt.broker.PositionAccountingMode.NETTING,
 ) {
     init {
         require(latencyMs >= 0L) { "execution latencyMs must be >= 0: $latencyMs" }

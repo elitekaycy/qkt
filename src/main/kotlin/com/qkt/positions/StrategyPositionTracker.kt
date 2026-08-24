@@ -134,6 +134,7 @@ class StrategyPositionTracker(
      * others on the symbol without netting (the truthful-position path; e.g. each leg of an
      * OCO_ENTRY straddle). Close it via [registerStackClose] when its bracket exit fills.
      */
+
     fun registerIndependentOpen(
         strategyId: String,
         clientOrderId: String,
@@ -141,6 +142,16 @@ class StrategyPositionTracker(
     ) {
         pendingIndependentOpens["$strategyId|$clientOrderId"] = legId
     }
+
+    /**
+     * True when [clientOrderId] is pre-registered to close a specific leg for
+     * [strategyId] — such an exit is structurally reduce-only (it closes exactly its
+     * own leg) and is exempt from the net-based stale-exit sweep and tripwire (#1071).
+     */
+    fun hasRegisteredClose(
+        strategyId: String,
+        clientOrderId: String,
+    ): Boolean = pendingStackCloses.containsKey("$strategyId|$clientOrderId")
 
     /**
      * Drop the remaining pending intent for [clientOrderId] after cancellation or rejection.

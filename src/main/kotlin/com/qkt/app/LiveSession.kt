@@ -1289,6 +1289,7 @@ class LiveSession(
                 strategies = strategies,
                 riskEngine = riskEngine,
                 riskState = riskState,
+                positionMode = { symbol -> broker.positionAccountingMode(symbol) },
                 pacerLedger = pacerLedger,
                 pacerCooldownDurationMs = perStrategyCooldownAfterLossMs,
                 pacerCooldownAfterConsecutive = perStrategyCooldownAfterLossAfterConsecutive,
