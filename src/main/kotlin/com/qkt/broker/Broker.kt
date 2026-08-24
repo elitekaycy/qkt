@@ -104,10 +104,16 @@ interface Broker {
      * restart. Brokers join each [com.qkt.execution.ManagedOrder] to live venue state by
      * ticket and, for a leg that filled while the daemon was down, republish its
      * [com.qkt.events.BrokerEvent.OrderFilled]. Implementations must throw when venue truth
-     * cannot be established, so startup refuses to trade on assumed state. Default no-op — only
-     * stateful venue connectors override.
+     * cannot be established, so startup refuses to trade on assumed state.
+     *
+     * Returns the client order ids the venue could account for — matched to a working order,
+     * an open position, or a ticket the broker now tracks to its terminal state. An id missing
+     * from the result has no venue counterpart at all; the caller retires it rather than
+     * carrying a phantom working order (and its exposure) for the rest of the session (#1048
+     * legacy state). Brokers without venue truth vouch for every order — the default.
      */
-    fun recoverPendingOrders(orders: List<com.qkt.execution.ManagedOrder>) {}
+    fun recoverPendingOrders(orders: List<com.qkt.execution.ManagedOrder>): Set<String> =
+        orders.mapTo(LinkedHashSet()) { it.id }
 
     /**
      * Release venue-side resources held by this broker (poller threads, reconcilers,
@@ -122,6 +128,23 @@ interface Broker {
 
     /** Whether [accountEquity] is a supported venue operation rather than the default null view. */
     val supportsAccountEquity: Boolean get() = false
+
+    /**
+     * Whether any session this venue trades is open at [nowMs] per its calendar. Pollers whose
+     * only job is to refresh venue state (equity, insights snapshots) back off while closed —
+     * nothing changes over a weekend except the bill for asking. Defaults to always open.
+     */
+    fun marketOpen(nowMs: Long): Boolean = true
+
+    /**
+     * Whether [symbol] is inside a venue-scheduled intraday pause at [nowMs] (e.g. the 17:00
+     * New York metals close). The market-data gate uses it to report an expected quote gap
+     * as a pause rather than a feed fault; order suppression is unchanged. Defaults to never.
+     */
+    fun scheduledBreak(
+        symbol: String,
+        nowMs: Long,
+    ): Boolean = false
 
     /**
      * Phase 38: when true, this broker submits GTD orders with a venue-side expiration and

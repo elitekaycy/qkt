@@ -174,6 +174,9 @@ class LiveSession(
     private val insightsDeployedIds: () -> Collection<String> = { emptyList() },
     /** Broker state poller cadence (insights `state_poll_ms`); active when the STATE family is enabled. */
     private val insightsStatePollMs: Long = 10_000L,
+    private val insightsSharedDeals: com.qkt.observe.insights.SharedDealFetch =
+        com.qkt.observe.insights
+            .SharedDealFetch(),
     /** Days of broker deal history the state poller backfills at start (insights `deal_backfill_days`). */
     private val insightsDealBackfillDays: Long = 30L,
     /**
@@ -195,6 +198,15 @@ class LiveSession(
      * [com.qkt.app.TradingPipeline.ingest].
      */
     private val scheduleHeartbeatIntervalMs: Long = 1000L,
+    /**
+     * How far behind the wall clock the heartbeat closes a quiet bar (#1058). A tick
+     * stamped just before a boundary can still be in flight from the poller (one poll
+     * round plus a gateway round trip) when the heartbeat fires; closing at
+     * `now - grace` keeps it in its own bar instead of rejecting it as late. Tick-driven
+     * closes are exact and unaffected; only a bar with no post-boundary tick closes up
+     * to this much later in wall time.
+     */
+    private val candleCloseGraceMs: Long = DEFAULT_CANDLE_CLOSE_GRACE_MS,
     /**
      * Starting balance per strategy id, the basis for `ACCOUNT.equity`
      * (equity = starting balance + realized + unrealized). The portfolio deployer
@@ -241,6 +253,12 @@ class LiveSession(
          * is strictly better than growing the heap.
          */
         const val TICK_QUEUE_CAPACITY: Int = 10_000
+
+        /**
+         * Wall-clock lag for heartbeat-driven bar closes (#1058): comfortably above one MT5
+         * poll round (50ms) plus a gateway round trip, far below any bar window.
+         */
+        const val DEFAULT_CANDLE_CLOSE_GRACE_MS: Long = 500L
 
         /** Tick-queue poll timeout — bounds the control-queue re-check latency. */
         const val QUEUE_POLL_MS: Long = 25L
@@ -819,6 +837,7 @@ class LiveSession(
     private fun wireInsights(
         bus: EventBus,
         sink: com.qkt.observe.insights.InsightsSink,
+        prices: com.qkt.marketdata.MarketPriceProvider,
     ) {
         val t = com.qkt.observe.insights.InsightsTranslate
         if (com.qkt.observe.insights.InsightsEventFamily.SIGNAL in insightsEvents) {
@@ -826,7 +845,12 @@ class LiveSession(
             bus.subscribe<com.qkt.events.RuleDecisionEvent> { e -> sink.offer(t.fromRuleDecision(e)) }
         }
         if (com.qkt.observe.insights.InsightsEventFamily.ORDER in insightsEvents) {
-            bus.subscribe<com.qkt.events.OrderEvent> { e -> sink.offer(t.fromOrderSubmit(e)) }
+            bus.subscribe<com.qkt.events.OrderEvent> { e ->
+                // The sided execution price the engine saw at submission: the slippage
+                // baseline for market entries, which carry no price of their own.
+                val reference = prices.executionPrice(e.request.symbol, e.request.side)
+                sink.offer(t.fromOrderSubmit(e, reference))
+            }
             bus.subscribe<com.qkt.events.DecisionOrderLinkedEvent> { e ->
                 sink.offer(t.fromDecisionOrderLinked(e))
             }
@@ -1120,6 +1144,10 @@ class LiveSession(
                 minStaleAgeMs = marketDataGateConfig.minStaleAgeMs,
                 outlierSigma = marketDataGateConfig.outlierSigma,
                 maxClockSkewMs = marketDataGateConfig.maxClockSkewMs,
+                inSession = { _, nowMs -> broker.marketOpen(nowMs) },
+                scheduledBreak = { symbol, nowMs ->
+                    builtBrokers.ifEmpty { listOf(broker) }.any { it.scheduledBreak(symbol, nowMs) }
+                },
                 onUnhealthy = { symbol, reason ->
                     if (NotifyEventKind.STRATEGY_ERROR in notifyEvents) {
                         for ((strategyId, _) in strategies) {
@@ -1348,7 +1376,7 @@ class LiveSession(
         bus.subscribe<BrokerEvent.OrderFilled> { e ->
             ticketAttribution.record(e.brokerOrderId, e.strategyId)
         }
-        insightsSink?.let { sink -> wireInsights(bus, sink) }
+        insightsSink?.let { sink -> wireInsights(bus, sink, priceTracker) }
         // Restore OCO legs from the persistor and reconcile them against venue truth so
         // any sibling whose pair filled during downtime is cancelled before ticks flow.
         pipeline.orderManager.restore(strategies.map { it.first })
@@ -1685,8 +1713,13 @@ class LiveSession(
                                 }
                             is Inbound.Heartbeat ->
                                 runCatching {
+                                    // Control drains ahead of ticks, so a heartbeat can overtake
+                                    // ticks that were queued before it fired. Those ticks precede
+                                    // the heartbeat in event time: process them first, or the
+                                    // wall-clock close rejects them as late (#1058).
+                                    while (true) processTick(tickQueue.poll() ?: break)
                                     for (symbol in feedSymbols) marketDataGate.isHealthy(symbol)
-                                    pipeline.scheduleHeartbeat(msg.nowMs)
+                                    pipeline.scheduleHeartbeat(msg.nowMs, candleCloseGraceMs)
                                 }.onFailure { t -> onEngineFault("schedule heartbeat", t) }
                             Inbound.PersistenceHealthCheck -> checkPersistenceHealth()
                             is Inbound.Query -> msg.execute()
@@ -1852,6 +1885,7 @@ class LiveSession(
                         deployedIds = { (strategies.map { it.first } + insightsDeployedIds()).distinct() },
                         rosterIds = { strategies.map { it.first } },
                         pollIntervalMs = insightsStatePollMs,
+                        sharedDeals = insightsSharedDeals,
                         backfillDays = insightsDealBackfillDays,
                         emitDeals = com.qkt.observe.insights.InsightsEventFamily.DEAL in insightsEvents,
                     ).also { it.start() }

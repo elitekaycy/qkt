@@ -912,16 +912,30 @@ private class CompiledStrategy(
         // for basket aliases — they evaluate from the composite write (see basket groups).
         val basketAliases: Set<String> = baskets.map { it.alias }.toSet()
 
+        // Seeding the ring alone is insufficient: indicators, aggregates, rolling
+        // snapshots and CROSSES state must see the same historical closes that a
+        // continuous backtest saw. Replay without firing rules or position-open
+        // transitions, then attach the live listeners.
+        //
+        // The replay interleaves every stream's history by bar close time, exactly as a
+        // continuous run delivers closes. Walking one alias to completion before the next
+        // leaves every cross-stream indicator (`lag(o.close, n)` read while replaying `s`)
+        // Undefined for the whole of `s`'s replay, so an expression-fed indicator rooted
+        // on `s` never receives an input and stays cold for its full period after deploy.
+        val replay = ArrayList<Pair<String, Candle>>()
         for ((alias, key) in streams) {
             if (alias in basketAliases) continue
-            // Seeding the ring alone is insufficient: indicators, aggregates, rolling
-            // snapshots and CROSSES state must see the same historical closes that a
-            // continuous backtest saw. Replay without firing rules or position-open
-            // transitions, then attach the live listener.
-            for (seeded in hub.seededHistory(key)) {
-                updatePerAlias(alias, seeded, hub, ctx, warmupReplay = true)
-            }
-            if (alias in syncedAliases) continue
+            for (seeded in hub.seededHistory(key)) replay.add(alias to seeded)
+        }
+        // Stable sort: bars closing at the same instant keep declaration order, matching
+        // the live sync-group update pass.
+        replay.sortBy { it.second.endTime }
+        for ((alias, seeded) in replay) {
+            updatePerAlias(alias, seeded, hub, ctx, warmupReplay = true)
+        }
+
+        for ((alias, key) in streams) {
+            if (alias in basketAliases || alias in syncedAliases) continue
             hub.onClosed(key, ctx.strategyId) { closed ->
                 evaluate(alias, closed, hub, ctx, emit)
             }

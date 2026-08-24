@@ -209,6 +209,21 @@ data class Config(
         get() = state["async"]?.lowercase() == "true"
 
     /**
+     * Effective `state.journal_retention_days`: day-files of the engine audit journal and the
+     * MT5 transport journal older than this many UTC days are deleted by the daemon. Defaults
+     * to 14. `0` keeps every file forever.
+     */
+    val journalRetentionDays: Int
+        get() {
+            val raw = state["journal_retention_days"] ?: return DEFAULT_JOURNAL_RETENTION_DAYS
+            val parsed = raw.toIntOrNull()
+            require(parsed != null && parsed >= 0) {
+                "state.journal_retention_days must be a non-negative integer; got '$raw'"
+            }
+            return parsed
+        }
+
+    /**
      * Returns the [com.qkt.persistence.StatePersistor] for this config, writing under
      * [stateRoot]. Layered by flag:
      *   - `state.enabled = false`              → [com.qkt.persistence.NoopStatePersistor].
@@ -241,6 +256,9 @@ data class Config(
          * an explicit `risk.max_daily_loss` in `qkt.config.yaml`.
          */
         val DEFAULT_MAX_DAILY_LOSS: BigDecimal = BigDecimal("1000")
+
+        /** Default `state.journal_retention_days`: two weeks covers a parity-attestation window. */
+        const val DEFAULT_JOURNAL_RETENTION_DAYS: Int = 14
 
         /** Default per-order quantity cap; see [com.qkt.risk.rules.PreTradeControls]. */
         val DEFAULT_MAX_ORDER_QTY: BigDecimal =
@@ -459,8 +477,22 @@ data class Config(
                 .mapNotNull { (name, cfg) ->
                     val block =
                         (cfg as? Map<String, Any?>)?.get("calendars") as? Map<String, Any?> ?: return@mapNotNull null
-                    name to block.map { (pattern, cal) -> pattern to (cal?.toString() ?: "") }
+                    name to block.map { (pattern, cal) -> pattern to calendarSpec(cal) }
                 }.toMap()
+        }
+
+        /**
+         * A calendar rule value is either a name (`fx`, `crypto`, `nyse`), a sentence with a
+         * daily pause (`fx pause 17:00-18:00 America/New_York`), or the same spelled out as a
+         * map `{ base: fx, pause: 17:00-18:00, zone: America/New_York }`. The map form is
+         * flattened to the sentence so the profile loader sees one shape.
+         */
+        private fun calendarSpec(raw: Any?): String {
+            val block = raw as? Map<*, *> ?: return raw?.toString() ?: ""
+            val base = block["base"]?.toString() ?: error("calendar rule map needs 'base' (fx|crypto|nyse)")
+            val pause = block["pause"]?.toString() ?: return base
+            val zone = block["zone"]?.toString()
+            return listOfNotNull(base, "pause", pause, zone).joinToString(" ")
         }
 
         /** A nested `string → string` block under each broker (e.g. `aliases`). */
