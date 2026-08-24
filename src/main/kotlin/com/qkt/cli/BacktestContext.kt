@@ -914,6 +914,19 @@ class BacktestContext private constructor(
             (args.option("partial-fill") ?: cfg.execution["partial_fill"])?.let {
                 result = result.copy(partialFillFraction = BigDecimal(it))
             }
+            (args.option("position-mode") ?: cfg.execution["position_mode"])?.let {
+                result =
+                    result.copy(
+                        positionMode =
+                            when (it.trim().lowercase()) {
+                                "netting" -> com.qkt.broker.PositionAccountingMode.NETTING
+                                "hedging" -> com.qkt.broker.PositionAccountingMode.HEDGING
+                                else -> throw SetupError(
+                                    "unknown position mode '$it' (valid: netting, hedging)",
+                                )
+                            },
+                    )
+            }
             return result
         }
 

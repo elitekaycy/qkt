@@ -52,8 +52,13 @@ class PaperBroker(
      */
     private val fillAtTriggerPrice: Boolean = false,
     private val calendar: TradingCalendar = TradingCalendar.crypto(),
+    /**
+     * Position model this venue simulates (#1071). Default NETTING preserves direct
+     * constructions; backtests wire [ExecutionSimulationConfig.positionMode].
+     */
+    private val positionMode: PositionAccountingMode = PositionAccountingMode.NETTING,
 ) : Broker {
-    override fun positionAccountingMode(symbol: String): PositionAccountingMode = PositionAccountingMode.NETTING
+    override fun positionAccountingMode(symbol: String): PositionAccountingMode = positionMode
 
     private val log = LoggerFactory.getLogger(PaperBroker::class.java)
 

@@ -306,6 +306,7 @@ class ReplayEngine(
                         instruments,
                         fillAtTriggerPrice = barFills,
                         calendar = calendar,
+                        positionMode = executionConfig.positionMode,
                     )
                 BrokerKind.MT5_SIM ->
                     MT5BrokerSimulator(
@@ -318,6 +319,7 @@ class ReplayEngine(
                         enforceStopsLevel = executionConfig.enforceStopsLevel,
                         rejectionModel = executionConfig.rejectionModel(),
                         partialFillModel = executionConfig.partialFillModel(),
+                        positionMode = executionConfig.positionMode,
                     )
             }
         }

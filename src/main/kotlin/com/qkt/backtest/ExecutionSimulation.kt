@@ -50,6 +50,14 @@ data class ExecutionSimulationConfig(
     val rejectEvery: Int? = null,
     val partialFillFraction: BigDecimal? = null,
     val enforceStopsLevel: Boolean = false,
+    /**
+     * Venue position model the simulated broker books (#1071). HEDGING (the default —
+     * both production venues) gives every entry its own coexisting position leg with
+     * exits closing that leg; NETTING collapses opposite fills into one signed position
+     * for venues that truly net.
+     */
+    val positionMode: com.qkt.broker.PositionAccountingMode =
+        com.qkt.broker.PositionAccountingMode.HEDGING,
 ) {
     init {
         require(latencyMs >= 0L) { "execution latencyMs must be >= 0: $latencyMs" }
