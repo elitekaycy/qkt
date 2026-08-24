@@ -74,6 +74,16 @@ class TradingPipeline(
     val riskEngine: RiskEngine,
     val riskState: com.qkt.risk.RiskState,
     val mode: Mode,
+    /**
+     * Venue position model per symbol (#1071). HEDGING routes every entry to its own
+     * coexisting [com.qkt.positions.LegRole.INDEPENDENT] leg with exits closing that
+     * leg — the retail-MT5 semantic. Default UNKNOWN preserves netting behavior.
+     * Backtests wire the simulation's configured mode; live wires the broker's
+     * venue-reported mode so the engine books the model the account actually runs.
+     */
+    val positionMode: (symbol: String) -> com.qkt.broker.PositionAccountingMode = {
+        com.qkt.broker.PositionAccountingMode.UNKNOWN
+    },
     val calendar: TradingCalendar,
     val source: MarketSource,
     val candleWindow: TimeWindow? = null,
@@ -231,6 +241,9 @@ class TradingPipeline(
             strategyNetQty = { strategyId, symbol ->
                 strategyPositions.positionFor(strategyId, symbol)?.quantity ?: java.math.BigDecimal.ZERO
             },
+            hasLegLinkage = { strategyId, clientOrderId ->
+                strategyPositions.hasRegisteredClose(strategyId, clientOrderId)
+            },
         )
     val latchManager: LatchManager =
         LatchManager(
@@ -372,6 +385,7 @@ class TradingPipeline(
                                     }
                                     exitHookManager.trackCloseRequest(strategyId, request)
                                     registerOcoEntryLegs(strategyId, request)
+                                    registerHedgingEntryLegs(strategyId, request)
                                     registerLegClose(strategyId, request)
                                     bus.publish(OrderEvent(request))
                                 }
@@ -543,7 +557,8 @@ class TradingPipeline(
             val accountRealized = convertedRealized.account.amount
             pnl.recordRealized(accountRealized.subtract(costs))
 
-            val rawStratRealized = strategyPositions.applyFill(e)
+            val stratApplication = strategyPositions.applyFillDetailed(e)
+            val rawStratRealized = stratApplication.realized
             val stratRealized = rawStratRealized.multiply(cs)
             val accountStratRealized =
                 accounting
@@ -613,6 +628,8 @@ class TradingPipeline(
                     strategyPositionBefore = strategyBefore,
                     strategyPositionAfter = strategyAfter,
                     reducedExposure = reducedExposure,
+                    legId = stratApplication.legId,
+                    legAction = stratApplication.legAction,
                     partial = false,
                 ),
             )
@@ -634,6 +651,8 @@ class TradingPipeline(
                     contractSize = contractSize,
                     netAccountRealized = netAccountStratRealized,
                     reducedExposure = reducedExposure,
+                    legId = stratApplication.legId,
+                    legAction = stratApplication.legAction,
                 ),
             )
         }
@@ -680,7 +699,8 @@ class TradingPipeline(
             val accountRealized = convertedRealized.account.amount
             pnl.recordRealized(accountRealized.subtract(costs))
 
-            val rawStratRealized = strategyPositions.applyPartialFill(asFill)
+            val stratApplication = strategyPositions.applyPartialFillDetailed(asFill)
+            val rawStratRealized = stratApplication.realized
             val stratRealized = rawStratRealized.multiply(cs)
             val accountStratRealized =
                 accounting
@@ -741,6 +761,8 @@ class TradingPipeline(
                     strategyPositionBefore = strategyBefore,
                     strategyPositionAfter = strategyAfter,
                     reducedExposure = reducedExposure,
+                    legId = stratApplication.legId,
+                    legAction = stratApplication.legAction,
                     partial = true,
                 ),
             )
@@ -762,6 +784,8 @@ class TradingPipeline(
                     contractSize = contractSize,
                     netAccountRealized = netAccountStratRealized,
                     reducedExposure = reducedExposure,
+                    legId = stratApplication.legId,
+                    legAction = stratApplication.legAction,
                 ),
             )
             dslStrategiesById[e.strategyId]?.onOrderTerminal(e.clientOrderId)
@@ -1062,6 +1086,38 @@ class TradingPipeline(
     ) {
         if (request is com.qkt.execution.OrderRequest.Market && request.closesLegId != null) {
             strategyPositions.registerStackClose(strategyId, request.id, request.closesLegId)
+        }
+    }
+
+    /**
+     * Under a HEDGING venue model every strategy-emitted entry books its own coexisting
+     * position leg — the retail-MT5 ticket semantic (#1071). A [OrderRequest.Bracket]
+     * opens an [com.qkt.positions.LegRole.INDEPENDENT] leg closed by its deterministic
+     * `-tp`/`-sl` exits; a plain entry Market/Limit/Stop opens a standalone leg (on a
+     * hedging venue a raw market SELL opens a short ticket, it does not net). Closes
+     * (`closesTicket`/`closesLegId`) and already-leg-routed shapes are untouched. No-op
+     * for NETTING/UNKNOWN symbols, so netted venues keep today's PRIMARY behavior.
+     */
+    private fun registerHedgingEntryLegs(
+        strategyId: String,
+        request: com.qkt.execution.OrderRequest,
+    ) {
+        if (positionMode(request.symbol) != com.qkt.broker.PositionAccountingMode.HEDGING) return
+        when (request) {
+            is com.qkt.execution.OrderRequest.Bracket -> {
+                strategyPositions.registerIndependentOpen(strategyId, request.entry.id, request.id)
+                strategyPositions.registerStackClose(strategyId, "${request.id}-tp", request.id)
+                strategyPositions.registerStackClose(strategyId, "${request.id}-sl", request.id)
+            }
+            is com.qkt.execution.OrderRequest.Market ->
+                if (request.closesTicket == null && request.closesLegId == null) {
+                    strategyPositions.registerIndependentOpen(strategyId, request.id, request.id)
+                }
+            is com.qkt.execution.OrderRequest.Limit,
+            is com.qkt.execution.OrderRequest.Stop,
+            ->
+                strategyPositions.registerIndependentOpen(strategyId, request.id, request.id)
+            else -> {}
         }
     }
 

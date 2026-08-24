@@ -109,7 +109,7 @@ class BacktestReportWriterTest {
         assertThat(tradesCsv.lines().first())
             .contains("nativeCurrency,accountRealized,accountCurrency,fxRate")
         assertThat(tradesCsv.lines().first()).contains("riskUsd,brokerOrderId,stopLossPrice,takeProfitPrice")
-        assertThat(tradesCsv.lines().first()).contains("fillNotional,reducedExposure")
+        assertThat(tradesCsv.lines().first()).contains("fillNotional,reducedExposure,legId,legAction")
         val financingCsv = Files.readString(dir.resolve("financing.csv"))
         assertThat(financingCsv).isEqualTo("component,paid,netPnlImpact\nswap,2.50000000,-2.50000000\n")
     }
@@ -351,7 +351,7 @@ class BacktestReportWriterTest {
         assertThat(tradesCsv).contains("\"order,1\"")
         assertThat(tradesCsv).contains("\"test,fx\"")
         assertThat(tradesCsv).contains(",25.00,25.00,25.00,25.00,")
-        assertThat(tradesCsv).contains(",20000.00,true\n")
+        assertThat(tradesCsv).contains(",20000.00,true,,\n")
         val pnlComponentsCsv = Files.readString(dir.resolve("pnl_components.csv"))
         assertThat(pnlComponentsCsv.lines().first())
             .isEqualTo("scope,strategy,date,tradeRealized,adjustment,dailyPnL")

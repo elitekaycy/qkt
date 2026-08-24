@@ -90,6 +90,13 @@ class OrderManager(
      * position semantics then depend entirely on the broker.
      */
     private val strategyNetQty: ((strategyId: String, symbol: String) -> BigDecimal)? = null,
+    /**
+     * True when an exit order is pre-registered to close a specific position leg
+     * (#1071). A leg-linked exit is structurally reduce-only — it closes exactly its
+     * own leg — so the net-based stale sweep and tripwire must not judge it: under a
+     * hedging book a short leg's BUY stop while net-long is a legitimate exit.
+     */
+    private val hasLegLinkage: (strategyId: String, clientOrderId: String) -> Boolean = { _, _ -> false },
 ) : PendingOrderExposureProvider {
     private val log = LoggerFactory.getLogger(OrderManager::class.java)
 
@@ -3090,6 +3097,7 @@ class OrderManager(
      */
     private fun detectExitIncreasedExposure(e: BrokerEvent.OrderFilled) {
         if (!e.clientOrderId.endsWith("-sl") && !e.clientOrderId.endsWith("-tp")) return
+        if (hasLegLinkage(e.strategyId, e.clientOrderId)) return
         val netQty = strategyNetQty?.invoke(e.strategyId, e.symbol) ?: return
         val landedOnOwnSide =
             (e.side == Side.BUY && netQty.signum() > 0) ||
@@ -3128,7 +3136,8 @@ class OrderManager(
                     (id.endsWith("-sl") || id.endsWith("-tp")) &&
                     managed.request.strategyId == strategyId &&
                     managed.request.symbol == symbol &&
-                    (staleSide == null || managed.request.side == staleSide)
+                    (staleSide == null || managed.request.side == staleSide) &&
+                    !hasLegLinkage(strategyId, id)
             }
         for ((id, managed) in stale) {
             val request = managed.request

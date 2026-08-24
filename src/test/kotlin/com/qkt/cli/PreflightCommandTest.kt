@@ -450,6 +450,7 @@ class PreflightCommandTest {
                     expected_account_server: Exness-MT5Trial9
                     expected_trade_mode: demo
                     expected_leverage: 100
+                    expected_margin_mode: hedging
                 """.trimIndent(),
             )
 
