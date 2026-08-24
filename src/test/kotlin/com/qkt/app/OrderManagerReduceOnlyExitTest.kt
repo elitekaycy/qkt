@@ -36,7 +36,10 @@ class OrderManagerReduceOnlyExitTest {
             strategyId = "s",
         )
 
-    private fun harness(netQty: BigDecimal): Triple<OrderManager, FakeBroker, MutableList<String>> {
+    private fun harness(
+        netQty: BigDecimal,
+        legLinked: Boolean = false,
+    ): Triple<OrderManager, FakeBroker, MutableList<String>> {
         val clock = FixedClock(1_000L)
         val bus = EventBus(clock, MonotonicSequenceGenerator())
         val broker = FakeBroker(bus, clock, setOf(OrderTypeCapability.STOP))
@@ -49,8 +52,22 @@ class OrderManagerReduceOnlyExitTest {
                 clock,
                 onProtectionFailure = { _, message -> alerts.add(message) },
                 strategyNetQty = { _, _ -> netQty },
+                hasLegLinkage = { _, _ -> legLinked },
             )
         return Triple(om, broker, alerts)
+    }
+
+    @Test
+    fun `a leg-linked exit on its own side is exempt from the tripwire`() {
+        // Hedging book: a short leg's BUY stop while the book is net LONG is a
+        // legitimate per-leg exit (#1071) — no alert.
+        val (om, broker, alerts) = harness(netQty = BigDecimal.ONE, legLinked = true)
+        val exit = stopExit("h1-sl", Side.BUY)
+        om.submit(exit)
+
+        broker.emitFill(exit, Money.of("99"))
+
+        assertThat(alerts).isEmpty()
     }
 
     @Test

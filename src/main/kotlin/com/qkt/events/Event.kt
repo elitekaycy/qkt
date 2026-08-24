@@ -127,6 +127,10 @@ data class FillAccountedEvent(
     val strategyPositionBefore: Position?,
     val strategyPositionAfter: Position?,
     val reducedExposure: Boolean,
+    /** Leg the fill was routed to when the strategy book is leg-routed (#1071). */
+    val legId: String? = null,
+    /** How the fill landed in the strategy leg book (OPENED/CLOSED/NETTED). */
+    val legAction: com.qkt.positions.StrategyPositionTracker.LegAction? = null,
     val partial: Boolean,
     override val timestamp: Long = 0L,
     override val sequenceId: Long = 0L,

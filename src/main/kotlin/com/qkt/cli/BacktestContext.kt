@@ -146,7 +146,13 @@ class BacktestContext private constructor(
                 ?: listOf(ast.name to AstCompiler().compile(ast, overrides))
         val effectiveExecution =
             if (executionConfig == this.executionConfig && brokerKind != this.brokerKind) {
-                ExecutionSimulationConfig.forBrokerKind(brokerKind)
+                // Rebuild the broker-derived preset fields, but carry the run's venue
+                // position model: it is an operator/venue property, not a broker-kind
+                // property (#1071) — dropping it made a brokerKind override silently
+                // grade a different book than the baked context.
+                ExecutionSimulationConfig
+                    .forBrokerKind(brokerKind)
+                    .copy(positionMode = executionConfig.positionMode)
             } else {
                 executionConfig
             }
@@ -913,6 +919,24 @@ class BacktestContext private constructor(
             }
             (args.option("partial-fill") ?: cfg.execution["partial_fill"])?.let {
                 result = result.copy(partialFillFraction = BigDecimal(it))
+            }
+            // CLI runs default to the production venue model (#1071): both live hosts are
+            // hedging MT5 accounts, so research, gates, and replay grade hedging books
+            // unless the operator explicitly selects netting.
+            val positionModeRaw =
+                args.option("position-mode") ?: cfg.execution["position_mode"] ?: "hedging"
+            positionModeRaw.let {
+                result =
+                    result.copy(
+                        positionMode =
+                            when (it.trim().lowercase()) {
+                                "netting" -> com.qkt.broker.PositionAccountingMode.NETTING
+                                "hedging" -> com.qkt.broker.PositionAccountingMode.HEDGING
+                                else -> throw SetupError(
+                                    "unknown position mode '$it' (valid: netting, hedging)",
+                                )
+                            },
+                    )
             }
             return result
         }

@@ -89,6 +89,12 @@ class StaleBracketExitAfterReversalTest {
                             to = Instant.ofEpochMilli(40 * 60_000L),
                         ),
                     candleWindow = TimeWindow.ONE_MINUTE,
+                    // This test pins NETTING semantics (#1069); the hedging pair lives in
+                    // HedgingModeBacktestTest.
+                    executionConfig =
+                        ExecutionSimulationConfig(
+                            positionMode = com.qkt.broker.PositionAccountingMode.NETTING,
+                        ),
                 ).run()
 
         fun qty(p: com.qkt.positions.Position?): BigDecimal = p?.quantity ?: BigDecimal.ZERO

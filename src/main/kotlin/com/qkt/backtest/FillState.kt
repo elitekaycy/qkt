@@ -21,4 +21,8 @@ data class FillState(
     val netAccountRealized: BigDecimal = BigDecimal.ZERO,
     /** Whether this fill reduced an existing strategy-owned position. */
     val reducedExposure: Boolean = false,
+    /** Leg the fill was routed to when leg-routed (hedging/stack/OCO books, #1071). */
+    val legId: String? = null,
+    /** How the fill landed in the strategy leg book; null for pre-#1071 producers. */
+    val legAction: com.qkt.positions.StrategyPositionTracker.LegAction? = null,
 )

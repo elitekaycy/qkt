@@ -306,6 +306,7 @@ class ReplayEngine(
                         instruments,
                         fillAtTriggerPrice = barFills,
                         calendar = calendar,
+                        positionMode = executionConfig.positionMode,
                     )
                 BrokerKind.MT5_SIM ->
                     MT5BrokerSimulator(
@@ -318,6 +319,7 @@ class ReplayEngine(
                         enforceStopsLevel = executionConfig.enforceStopsLevel,
                         rejectionModel = executionConfig.rejectionModel(),
                         partialFillModel = executionConfig.partialFillModel(),
+                        positionMode = executionConfig.positionMode,
                     )
             }
         }
@@ -443,6 +445,7 @@ class ReplayEngine(
                 strategies = strategies,
                 riskEngine = riskEngine,
                 riskState = riskState,
+                positionMode = { executionConfig.positionMode },
                 runawayBreaker =
                     com.qkt.risk.RunawayBreaker(
                         clock = clock,
@@ -510,6 +513,8 @@ class ReplayEngine(
                             strategyPositionAfter = fillState.strategyPositionAfter,
                             contractSize = fillState.contractSize,
                             reducedExposure = fillState.reducedExposure,
+                            legId = fillState.legId,
+                            legAction = fillState.legAction,
                         ),
                     )
                     tape.add(TapeEvent.Filled(currentTimestamp, trade, fillState.netAccountRealized, strategyId))

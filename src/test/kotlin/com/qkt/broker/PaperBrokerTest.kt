@@ -20,6 +20,21 @@ import org.junit.jupiter.api.Test
 class PaperBrokerTest {
     private fun newBus(): EventBus = EventBus(FixedClock(0L), MonotonicSequenceGenerator())
 
+    @Test
+    fun `position accounting mode is the configured venue model, defaulting to netting`() {
+        val bus = newBus()
+        val default = PaperBroker(bus, FixedClock(0L), MarketPriceTracker())
+        assertThat(default.positionAccountingMode("X")).isEqualTo(PositionAccountingMode.NETTING)
+        val hedging =
+            PaperBroker(
+                bus,
+                FixedClock(0L),
+                MarketPriceTracker(),
+                positionMode = PositionAccountingMode.HEDGING,
+            )
+        assertThat(hedging.positionAccountingMode("X")).isEqualTo(PositionAccountingMode.HEDGING)
+    }
+
     private fun tick(
         symbol: String,
         price: String,
