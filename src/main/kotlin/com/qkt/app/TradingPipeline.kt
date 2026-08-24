@@ -228,6 +228,9 @@ class TradingPipeline(
             isRiskReducingForHalt = { request ->
                 com.qkt.risk.isRiskReducing(request, positions)
             },
+            strategyNetQty = { strategyId, symbol ->
+                strategyPositions.positionFor(strategyId, symbol)?.quantity ?: java.math.BigDecimal.ZERO
+            },
         )
     val latchManager: LatchManager =
         LatchManager(
