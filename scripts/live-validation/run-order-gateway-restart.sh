@@ -794,12 +794,18 @@ failed_close_posts="$(jq -r --argjson ticket "$owned_ticket" --argjson restartSt
         (.responseCode < 200 or .responseCode >= 300 or .error != null)) | 1
 ' "${transport_journals[@]}" | count_records)"
 failed_entry_or_protection_mutations="$(jq -r '
+        def no_changes_protection:
+        # A protection modify that lands on the levels already placed is MT5 NO_CHANGES
+        # (retcode 10025, HTTP 400): idempotent success for the engine and for this gate.
+        .path == "/modify_sl_tp" and ((.responseBody | fromjson? | .mt5_error.retcode? // null) == 10025);
     def mt5_success:
-        (.responseBody | fromjson? | .result.retcode) as $retcode |
-        $retcode == 10008 or $retcode == 10009 or $retcode == 10010;
+        no_changes_protection or (
+            (.responseBody | fromjson? | .result.retcode) as $retcode |
+            $retcode == 10008 or $retcode == 10009 or $retcode == 10010);
     select(
         .method == "POST" and
         (.path == "/order" or .path == "/modify_sl_tp" or .path == "/position_close_partial" or .path == "/cancel_order") and
+        (no_changes_protection | not) and
         (.responseCode < 200 or .responseCode >= 300 or .error != null or (mt5_success | not))
     ) | 1
 ' "${transport_journals[@]}" | count_records)"
