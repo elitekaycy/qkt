@@ -329,14 +329,20 @@ jq -n \
         ($order | decoded_request) as $request |
         ($order | decoded_response) as $response |
         ($response.result.order | tostring) as $ticket |
+        # A fill-anchored protection update that lands on the values already placed comes
+        # back as MT5 NO_CHANGES (retcode 10025, HTTP 400); the engine treats it as the
+        # idempotent success it is, and so does this comparison — the request still carries
+        # the adjusted levels being verified below.
         [
             $transport[] |
             select(
                 .method == "POST" and
                 .path == "/modify_sl_tp" and
-                .responseCode == 200 and
                 ((decoded_request.position | tostring) == $ticket) and
-                (decoded_response.ok == true)
+                (
+                    (.responseCode == 200 and (decoded_response.ok == true)) or
+                    ((decoded_response.mt5_error.retcode? // null) == 10025)
+                )
             )
         ] as $modifications |
         if ($modifications | length) != 1 then error("expected successful protection update") else . end |

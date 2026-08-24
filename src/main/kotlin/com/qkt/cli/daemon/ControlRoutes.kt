@@ -21,6 +21,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
 import java.time.Instant
+import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -42,6 +43,7 @@ object ControlRoutes {
         prometheusMetricsEnabled: Boolean = true,
         promotionGates: PromotionGateConfig = PromotionGateConfig.DISABLED,
         controlToken: String? = null,
+        pendingAutoDeploys: () -> List<AutoDeployRetrier.Pending> = { emptyList() },
     ): HttpHandler =
         HttpHandler { ex ->
             val path = ex.requestURI.path
@@ -53,7 +55,7 @@ object ControlRoutes {
                     return@HttpHandler
                 }
                 when {
-                    method == "GET" && path == "/health" -> handleHealth(ex, registry, startedAt)
+                    method == "GET" && path == "/health" -> handleHealth(ex, registry, startedAt, pendingAutoDeploys())
                     method == "POST" && path == "/deploy" ->
                         handleDeploy(ex, registry, stateDir, portfolioDeployer, promotionGates)
                     method == "POST" && path == "/resync" ->
@@ -196,6 +198,7 @@ object ControlRoutes {
         ex: HttpExchange,
         registry: StrategyRegistry,
         startedAt: Instant,
+        pendingAutoDeploys: List<AutoDeployRetrier.Pending> = emptyList(),
     ) {
         val now = Instant.now().toEpochMilli()
         val uptimeMs = now - startedAt.toEpochMilli()
@@ -217,10 +220,20 @@ object ControlRoutes {
                     """"inboundQueueDepth":${h.live.inboundQueueDepth()},""" +
                     """"droppedTicks":${h.live.droppedTicks}}"""
             }
+        // A `--load-dir` file still waiting to deploy (#1055) means the daemon is idle where an
+        // operator expects a strategy: degraded, not ok, so watchdogs and Insights see it.
+        val pending =
+            pendingAutoDeploys.joinToString(",", "[", "]") { p ->
+                """{"name":${json.encodeToString(String.serializer(), p.name)},""" +
+                    """"attempts":${p.attempts},"nextAttemptAtMs":${p.nextAttemptAtMs},""" +
+                    """"lastError":${json.encodeToString(String.serializer(), p.lastError)}}"""
+            }
+        val status = if (pendingAutoDeploys.isEmpty()) "ok" else "degraded"
         respond(
             ex,
             200,
-            """{"status":"ok","strategies":${handles.size},"uptimeMs":$uptimeMs,"perStrategy":$perStrategy}""",
+            """{"status":"$status","strategies":${handles.size},"uptimeMs":$uptimeMs,""" +
+                """"pendingAutoDeploys":$pending,"perStrategy":$perStrategy}""",
         )
     }
 

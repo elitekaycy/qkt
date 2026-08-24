@@ -721,7 +721,33 @@ class OrderManager(
             }
         }
         if (recovered.isNotEmpty()) {
-            broker.recoverPendingOrders(recovered)
+            val accounted = broker.recoverPendingOrders(recovered)
+            // A restored working order the venue cannot account for — no pending ticket, no
+            // position, nothing to track — is a phantom: pre-#1048 attached-bracket wrappers
+            // whose position closed long ago. Left alone it holds exposure for the whole
+            // session and never reaches a terminal state. Retire it through the ordinary cancel
+            // path so exposure, children and persistence unwind exactly as a venue cancel would.
+            val vanished = recovered.filter { it.id !in accounted }
+            for (order in vanished) {
+                log.warn(
+                    "[restore] {} {} {} has no venue counterpart after recovery; retiring stale order",
+                    order.request.strategyId,
+                    order.id,
+                    order.request::class.simpleName,
+                )
+                onCancelled(
+                    BrokerEvent.OrderCancelled(
+                        clientOrderId = order.id,
+                        brokerOrderId = null,
+                        reason = "not at venue after recovery",
+                        strategyId = order.request.strategyId,
+                        timestamp = clock.now(),
+                    ),
+                )
+            }
+            if (vanished.isNotEmpty()) {
+                log.warn("[restore] retired {} stale order(s) with no venue counterpart", vanished.size)
+            }
         }
     }
 

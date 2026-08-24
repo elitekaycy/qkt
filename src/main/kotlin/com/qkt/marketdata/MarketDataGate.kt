@@ -32,6 +32,18 @@ class MarketDataGate(
     private val maxClockSkewMs: Long = DEFAULT_MAX_CLOCK_SKEW_MS,
     /** Invoked once per unhealthy transition; recovery permits a later transition to alert again. */
     private val onUnhealthy: (symbol: String, reason: String) -> Unit = { _, _ -> },
+    /**
+     * Whether the venue trades [symbol] at the given wall-clock instant (#1056). A tick whose
+     * broker time trails the local clock while the venue is closed is the venue's last print,
+     * not a skewed clock; defaults to always open so the gate judges skew alone.
+     */
+    private val inSession: (symbol: String, nowMs: Long) -> Boolean = { _, _ -> true },
+    /**
+     * Whether [symbol] is inside a venue-scheduled pause at the given time. A quote gap that
+     * starts inside a pause is reported as PAUSED (info, no unhealthy alert) instead of STALE;
+     * new orders are suppressed either way. Defaults to never paused.
+     */
+    private val scheduledBreak: (symbol: String, nowMs: Long) -> Boolean = { _, _ -> false },
 ) {
     private val log = LoggerFactory.getLogger(MarketDataGate::class.java)
 
@@ -45,8 +57,10 @@ class MarketDataGate(
         var windowHead = 0
         var windowSize = 0
         var staleAlerted = false
+        var pausedAlerted = false
         var lastSkewMs = 0L
         var skewAlerted = false
+        var closedAlerted = false
         var rejectedOutlierRun = 0
         var rebaselineCandidate = 0.0
         var rebaselineCandidateCount = 0
@@ -132,9 +146,20 @@ class MarketDataGate(
         touch(state, now)
         state.push(price)
         state.clearRejectedOutliers()
+        if (state.pausedAlerted) {
+            state.pausedAlerted = false
+            // The pause gap would otherwise sit in the smoothed inter-tick gap for the next
+            // hour and lift the stale threshold; restart the estimate from the live cadence.
+            state.ewmaGapMs = 0.0
+            log.info("market data for {} resumed after scheduled break", tick.symbol)
+        }
         if (state.staleAlerted) {
             state.staleAlerted = false
             log.info("market data for {} healthy again", tick.symbol)
+        }
+        if (state.closedAlerted && kotlin.math.abs(state.lastSkewMs) <= maxClockSkewMs) {
+            state.closedAlerted = false
+            log.info("market data for {}: fresh print after venue gap; healthy again", tick.symbol)
         }
         if (state.skewAlerted && kotlin.math.abs(state.lastSkewMs) <= maxClockSkewMs) {
             state.skewAlerted = false
@@ -223,6 +248,26 @@ class MarketDataGate(
             return false
         }
         if (kotlin.math.abs(state.lastSkewMs) > maxClockSkewMs) {
+            // A print that trails the local clock by more than any plausible server-zone
+            // offset, or while the venue is closed, is the venue's last tick before a
+            // gap — a weekend, a holiday, a symbol that opens later than its peers. Not
+            // a clock problem: keep new orders suppressed (nothing to trade against),
+            // say so once at INFO, and let the first fresh tick clear it (#1056).
+            val now = clock.now()
+            val lastPrint =
+                state.lastSkewMs < 0L &&
+                    (-state.lastSkewMs > MAX_PLAUSIBLE_ZONE_OFFSET_MS || !inSession(symbol, now))
+            if (lastPrint) {
+                if (!state.closedAlerted) {
+                    state.closedAlerted = true
+                    log.info(
+                        "market data for {}: venue closed — last print {}ms old; new orders wait for a fresh tick",
+                        symbol,
+                        -state.lastSkewMs,
+                    )
+                }
+                return false
+            }
             if (!state.skewAlerted) {
                 state.skewAlerted = true
                 log.error(
@@ -237,9 +282,22 @@ class MarketDataGate(
             return false
         }
         val threshold = staleThresholdMs(state)
-        val age = clock.now() - state.lastSeenMs
+        val now = clock.now()
+        val age = now - state.lastSeenMs
         val healthy = age <= threshold
+        if (!healthy && !state.staleAlerted && scheduledBreak(symbol, now)) {
+            if (!state.pausedAlerted) {
+                state.pausedAlerted = true
+                log.info(
+                    "market data for {} PAUSED: scheduled break, quote age {}ms — suppressing new orders",
+                    symbol,
+                    age,
+                )
+            }
+            return false
+        }
         if (!healthy && !state.staleAlerted) {
+            // A gap that outlives its scheduled break is a feed fault after all.
             state.staleAlerted = true
             log.error(
                 "market data for {} STALE: age {}ms exceeds threshold {}ms — suppressing new orders",
@@ -280,6 +338,9 @@ class MarketDataGate(
         // symbols gap ~15s), far below the whole-hour offsets a wrong time zone
         // produces — the smallest real misconfiguration is 3_600_000ms.
         const val DEFAULT_MAX_CLOCK_SKEW_MS: Long = 60_000L
+
+        /** Widest real server-zone offset (UTC-12..UTC+14); a print older than this is a gap, not skew. */
+        const val MAX_PLAUSIBLE_ZONE_OFFSET_MS: Long = 14L * 3_600_000L
         private const val WINDOW_SIZE = 64
         private const val MIN_WINDOW_FOR_OUTLIER = 16
         private const val EWMA_ALPHA = 0.1

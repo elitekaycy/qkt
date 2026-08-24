@@ -28,6 +28,8 @@ class ControlPlane(
     private val prometheusMetricsEnabled: Boolean =
         System.getenv("QKT_METRICS_PROMETHEUS")?.lowercase() !in setOf("false", "0", "off", "no"),
     private val controlToken: String? = null,
+    /** `--load-dir` files still awaiting a successful auto-deploy; surfaced by `/health` (#1055). */
+    private val pendingAutoDeploys: () -> List<AutoDeployRetrier.Pending> = { emptyList() },
 ) : AutoCloseable {
     private val server: HttpServer = HttpServer.create(InetSocketAddress(bind, port), 0)
 
@@ -47,6 +49,7 @@ class ControlPlane(
                 prometheusMetricsEnabled = prometheusMetricsEnabled,
                 promotionGates = promotionGates,
                 controlToken = controlToken,
+                pendingAutoDeploys = pendingAutoDeploys,
             ),
         )
         server.executor = Executors.newFixedThreadPool(8)

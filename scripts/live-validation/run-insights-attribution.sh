@@ -560,10 +560,17 @@ jq -s -e --argjson ticket "$owned_ticket" '
     fail "collector observed a sequence gap or regression"
 max_duplicate_count="$(jq -r '([.[].count] | max) // 0' "$evidence/duplicate-event-ids.json")"
 [ "$max_duplicate_count" -le 2 ] || fail "an event id was replayed excessively"
-[ "$(sqlite3 "$db" "select count(*) from events where instance_id='$instance' and type='insights.health' and json_extract(payload,'$.dropped') != 0;")" -eq 0 ] ||
-    fail "Insights health reported dropped envelopes"
-[ "$(sqlite3 "$db" "select count(*) from events where instance_id='$instance' and type='insights.health';")" -gt 0 ] ||
-    fail "Insights published no durable health evidence"
+# Collectors from qkt-insights #52 onward keep the latest health envelope per instance in
+# instance_health (and purge the event rows); older collectors keep every envelope in
+# events. Accept either shape so the gate follows the collector, not one schema version.
+health_rows="$(sqlite3 "$db" "select
+    (select count(*) from events where instance_id='$instance' and type='insights.health') +
+    (select count(*) from instance_health where instance_id='$instance');" 2>/dev/null || printf 0)"
+dropped_health="$(sqlite3 "$db" "select
+    (select count(*) from events where instance_id='$instance' and type='insights.health' and json_extract(payload,'$.dropped') != 0) +
+    (select count(*) from instance_health where instance_id='$instance' and json_extract(payload,'$.dropped') != 0);" 2>/dev/null || printf 0)"
+[ "${dropped_health:-0}" -eq 0 ] || fail "Insights health reported dropped envelopes"
+[ "${health_rows:-0}" -gt 0 ] || fail "Insights published no durable health evidence"
 while IFS= read -r insight_journal; do
     insight_cursor="${insight_journal%.jsonl}.cursor"
     [ -f "$insight_cursor" ] || fail "Insights journal cursor is missing: $insight_cursor"

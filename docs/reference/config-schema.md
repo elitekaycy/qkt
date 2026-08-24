@@ -120,6 +120,7 @@ brokers:
     magic: ${QKT_BROKER_MAGIC:-10001}
     calendars:
       "BTC*": crypto
+      "XAU*": fx pause 17:00-18:00 America/New_York
       "*": fx
     aliases:
       NAS100: USTEC
@@ -401,7 +402,7 @@ Built-in MT5 profile names: `exness`, `icmarkets`, `ftmo`, `pepperstone`.
 | `expected_trade_mode` | `demo`, `contest`, or `real` | production MT5 | none | Prevents demo/real environment inversion. |
 | `expected_account_currency` | currency code | no | none | Optional profile-level currency assertion; global `account.currency` is also checked by preflight. |
 | `expected_leverage` | int | production MT5 | none | Refuses startup when venue leverage differs. |
-| `calendars` | map pattern to `fx`, `crypto`, or `nyse` | no | inherited or FX default | First matching pattern wins. |
+| `calendars` | map pattern to `fx`, `crypto`, `nyse`, or `<base> pause HH:MM-HH:MM [Zone]` | no | inherited or FX default | First matching pattern wins. A `pause` clause adds a venue-scheduled daily break on top of the base calendar's sessions; the map form `{ base: fx, pause: 17:00-18:00, zone: America/New_York }` is equivalent. During the pause the market-data gate reports a quote gap as `PAUSED` (info) instead of `STALE` (error) and still suppresses new entries; feed polling and session gating are unchanged. Built-in `exness` and `icmarkets` profiles pause metals and energy (`XAU*`, `XAG*`, `XPT*`, `XPD*`, `USOIL*`, `UKOIL*`, `XTI*`, `XBR*`, `XNG*`) 17:00–18:00 New York. |
 | `aliases` | map qkt symbol to broker symbol | no | inherited plus overrides | Example `NAS100: USTEC`. |
 | `capability_restrictions` | list of `OrderTypeCapability` names | no | inherited plus overrides | Disables venue capabilities by enum name. |
 | `instrument_overrides.<symbol>` | map | no | inherited plus overrides | Requires `min_volume`, `volume_step`, `point_size`, `digits`, `trade_stops_level_points`; optional `max_volume` is enforced when present. |
