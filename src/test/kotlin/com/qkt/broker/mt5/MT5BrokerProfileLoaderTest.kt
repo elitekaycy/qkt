@@ -261,6 +261,46 @@ class MT5BrokerProfileLoaderTest {
     }
 
     @Test
+    fun `a pause sentence builds a daily-break calendar over its base`() {
+        val profiles =
+            loader.load(
+                extendingExness("x", "11003"),
+                MT5DefaultProfiles.all,
+                env = emptyMap(),
+                calendars = mapOf("x" to listOf("XAU*" to "fx pause 17:00-18:00 America/New_York", "*" to "fx")),
+            )
+        val p = profiles.first { it.name == "x" }
+        val gold = p.symbolCalendars.calendarFor("XAUUSD")
+        assertThat(gold.name).isEqualTo("fx pause 17:00-18:00 America/New_York")
+        assertThat(gold.isScheduledBreak("XAUUSD", java.time.Instant.parse("2026-08-20T21:30:00Z"))).isTrue()
+        assertThat(gold.isInSession("XAUUSD", java.time.Instant.parse("2026-08-20T21:30:00Z"))).isTrue()
+        assertThat(
+            p.symbolCalendars
+                .calendarFor(
+                    "EURUSD",
+                ).isScheduledBreak("EURUSD", java.time.Instant.parse("2026-08-20T21:30:00Z")),
+        ).isFalse()
+    }
+
+    @Test
+    fun `built-in exness and icmarkets pause metals and energy at the New York close`() {
+        for (profile in listOf(MT5DefaultProfiles.exness, MT5DefaultProfiles.icmarkets)) {
+            val t = java.time.Instant.parse("2026-08-20T21:30:00Z")
+            for (sym in listOf("XAUUSD", "XAGUSD", "USOIL", "UKOIL")) {
+                assertThat(
+                    profile.symbolCalendars.calendarFor(sym).isScheduledBreak(sym, t),
+                ).describedAs("${profile.name} $sym").isTrue()
+            }
+            for (sym in listOf("EURUSD", "NZDUSD", "XCUUSD")) {
+                assertThat(
+                    profile.symbolCalendars.calendarFor(sym).isScheduledBreak(sym, t),
+                ).describedAs("${profile.name} $sym").isFalse()
+            }
+            assertThat(profile.symbolCalendars.anyCalendarInSession(t)).isTrue()
+        }
+    }
+
+    @Test
     fun `unknown calendar name is rejected`() {
         assertThatThrownBy {
             loader.load(

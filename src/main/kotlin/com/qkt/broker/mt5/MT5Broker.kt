@@ -368,6 +368,14 @@ class MT5Broker(
     override fun marketOpen(nowMs: Long): Boolean =
         profile.symbolCalendars.anyCalendarInSession(java.time.Instant.ofEpochMilli(nowMs))
 
+    override fun scheduledBreak(
+        symbol: String,
+        nowMs: Long,
+    ): Boolean {
+        val bare = symbol.substringAfter(':')
+        return profile.symbolCalendars.calendarFor(bare).isScheduledBreak(bare, java.time.Instant.ofEpochMilli(nowMs))
+    }
+
     override val supportsMarginLevel: Boolean = true
 
     override fun accountEquity(): java.math.BigDecimal? =

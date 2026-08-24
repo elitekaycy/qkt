@@ -131,6 +131,16 @@ interface Broker {
     fun marketOpen(nowMs: Long): Boolean = true
 
     /**
+     * Whether [symbol] is inside a venue-scheduled intraday pause at [nowMs] (e.g. the 17:00
+     * New York metals close). The market-data gate uses it to report an expected quote gap
+     * as a pause rather than a feed fault; order suppression is unchanged. Defaults to never.
+     */
+    fun scheduledBreak(
+        symbol: String,
+        nowMs: Long,
+    ): Boolean = false
+
+    /**
      * Phase 38: when true, this broker submits GTD orders with a venue-side expiration and
      * the venue self-cancels at the deadline; the engine's deadline-sweep in
      * [com.qkt.app.OrderManager] skips orders routed through this broker. When false

@@ -72,6 +72,59 @@ class MarketDataGateTest {
     }
 
     @Test
+    fun `a gap inside a scheduled break is a pause, not a fault, and resumes cleanly`() {
+        val clock = TickingClock(0L)
+        val alerts = mutableListOf<String>()
+        var paused = false
+        val gate =
+            MarketDataGate(
+                clock,
+                minStaleAgeMs = 1_000L,
+                onUnhealthy = { symbol, reason -> alerts.add("$symbol:$reason") },
+                scheduledBreak = { _, _ -> paused },
+            )
+        clock.t = 1L
+        gate.observe(tick("100", clock.t))
+        paused = true
+        clock.t += 2_000L
+
+        repeat(3) { assertThat(gate.isHealthy("X")).isFalse() }
+        assertThat(alerts).isEmpty()
+
+        paused = false
+        clock.t += 100L
+        gate.observe(tick("100", clock.t))
+        assertThat(gate.isHealthy("X")).isTrue()
+        assertThat(alerts).isEmpty()
+    }
+
+    @Test
+    fun `a gap that outlives its scheduled break escalates to stale`() {
+        val clock = TickingClock(0L)
+        val alerts = mutableListOf<String>()
+        var paused = false
+        val gate =
+            MarketDataGate(
+                clock,
+                minStaleAgeMs = 1_000L,
+                onUnhealthy = { symbol, reason -> alerts.add("$symbol:$reason") },
+                scheduledBreak = { _, _ -> paused },
+            )
+        clock.t = 1L
+        gate.observe(tick("100", clock.t))
+        paused = true
+        clock.t += 2_000L
+        assertThat(gate.isHealthy("X")).isFalse()
+        assertThat(alerts).isEmpty()
+
+        paused = false
+        clock.t += 2_000L
+        assertThat(gate.isHealthy("X")).isFalse()
+        assertThat(alerts).hasSize(1)
+        assertThat(alerts.single()).contains("X:quote age")
+    }
+
+    @Test
     fun `an implausible outlier tick is rejected, plausible moves pass`() {
         val clock = TickingClock(0L)
         val gate = MarketDataGate(clock)
