@@ -340,7 +340,8 @@ class LiveSession(
     private fun reconcileOrPreload(
         strategyPositions: com.qkt.positions.StrategyPositionTracker,
         broker: Broker,
-    ) {
+    ): Map<String, Int> {
+        val adoptedLegCounts = mutableMapOf<String, Int>()
         // Never reconcile against assumed state: a transient broker error that reads as
         // "no open positions" lets the session start flat while holding leveraged
         // positions. Retry with backoff; refuse to start without one clean read.
@@ -507,6 +508,7 @@ class LiveSession(
                         for (leg in attachLegs) {
                             strategyPositions.addIndependentLeg(strategyId, leg)
                         }
+                        adoptedLegCounts.merge(strategyId, attachLegs.size, Int::plus)
                     }
                     com.qkt.persistence.LegBookReconciler.Outcome.NothingPersisted -> {
                         // Clean state. Nothing to do.
@@ -514,6 +516,7 @@ class LiveSession(
                 }
             }
         }
+        return adoptedLegCounts
     }
 
     /** Captures the broker instances built by [buildBroker] so [buildInstrumentRegistry] can wrap MT5 brokers. */
@@ -1021,7 +1024,7 @@ class LiveSession(
 
         // Reconcile persisted leg state against broker positions BEFORE the engine starts
         // taking ticks. Refuses to start on mismatch unless ignoreMismatches=true.
-        reconcileOrPreload(strategyPositions, broker)
+        val adoptedLegCounts = reconcileOrPreload(strategyPositions, broker)
 
         val engine = Engine(bus, priceTracker)
         val riskPersistId = strategies.firstOrNull()?.first ?: "session"
@@ -1053,6 +1056,18 @@ class LiveSession(
             }
         }
         riskState.initializeAnchors(strategies.map { it.first })
+        // Positions adopted under ignore-mismatches carry no coherent per-leg history, and a
+        // position-aware strategy running on such a book has produced a live fill/re-enter
+        // loop (#1061). Fail closed: start the adopted strategy under a persistent
+        // operator halt — exits and management stay live, new entries wait for a human
+        // to review the adopted book and `qkt resume`.
+        for ((adoptedId, legCount) in adoptedLegCounts) {
+            val reason =
+                "adopted $legCount venue position(s) via ignore-mismatches — " +
+                    "review the adopted book, then resume"
+            riskState.haltStrategy(adoptedId, reason)
+            log.error("strategy {} starts HALTED: {}", adoptedId, reason)
+        }
         val pacerLedger = riskState.pacerLedger
 
         // Phase 25D: per-strategy risk overrides for the (single) strategy in this session.
@@ -2134,15 +2149,25 @@ class LiveSession(
                 riskState.halt(reason, scope)
             }
 
-            override fun haltReason(): String? = riskState.haltReason
+            override fun haltReason(): String? =
+                riskState.haltReason
+                    ?: strategies.firstNotNullOfOrNull { (id, _) -> riskState.haltReasonFor(id) }
 
             override fun haltScope(): com.qkt.risk.HaltScope? = riskState.globalHaltScope()
 
             override fun resume() {
                 riskState.resume()
+                // Operator resume must clear this session's strategy-scoped halts too —
+                // a runaway-breaker halt was otherwise unreachable from `qkt resume` (#1064).
+                for ((id, _) in strategies) riskState.resumeStrategy(id)
             }
 
-            override fun isHalted(): Boolean = riskState.halted
+            // A strategy-scoped halt (runaway breaker, per-strategy drawdown) blocks entries
+            // exactly like a global one; status/health must not show the session as free (#1064).
+            override fun isHalted(): Boolean =
+                riskState.halted || strategies.any { (id, _) -> riskState.strategyHalted(id) }
+
+            override fun strategyHalts(): List<com.qkt.persistence.PersistedStrategyHalt> = riskState.strategyHalts()
 
             override fun flattenAndVerify(timeout: Duration): FlattenResult {
                 val strategyId =

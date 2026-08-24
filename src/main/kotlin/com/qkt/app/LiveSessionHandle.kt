@@ -98,6 +98,9 @@ interface LiveSessionHandle {
     /** Whether this session is currently halted (operator halt or a risk auto-halt). */
     fun isHalted(): Boolean = false
 
+    /** Strategy-scoped halts held by this session's risk state; empty by default (#1064). */
+    fun strategyHalts(): List<com.qkt.persistence.PersistedStrategyHalt> = emptyList()
+
     /** Cancels all working orders and flattens any open position at market. */
     fun flatten()
 
