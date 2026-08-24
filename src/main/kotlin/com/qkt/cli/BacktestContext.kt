@@ -914,7 +914,12 @@ class BacktestContext private constructor(
             (args.option("partial-fill") ?: cfg.execution["partial_fill"])?.let {
                 result = result.copy(partialFillFraction = BigDecimal(it))
             }
-            (args.option("position-mode") ?: cfg.execution["position_mode"])?.let {
+            // CLI runs default to the production venue model (#1071): both live hosts are
+            // hedging MT5 accounts, so research, gates, and replay grade hedging books
+            // unless the operator explicitly selects netting.
+            val positionModeRaw =
+                args.option("position-mode") ?: cfg.execution["position_mode"] ?: "hedging"
+            positionModeRaw.let {
                 result =
                     result.copy(
                         positionMode =

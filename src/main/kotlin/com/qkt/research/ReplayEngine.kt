@@ -445,6 +445,7 @@ class ReplayEngine(
                 strategies = strategies,
                 riskEngine = riskEngine,
                 riskState = riskState,
+                positionMode = { executionConfig.positionMode },
                 runawayBreaker =
                     com.qkt.risk.RunawayBreaker(
                         clock = clock,

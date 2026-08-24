@@ -10,8 +10,8 @@
 `broker/MT5BrokerSimulator.kt`, `research/ReplayEngine.kt` (broker factory ~:299).
 
 - [ ] `enum class PositionMode { NETTING, HEDGING }`.
-- [ ] `ExecutionSimulationConfig.positionMode: PositionMode = PositionMode.HEDGING` —
-  the default matches the production venue model; netting stays selectable.
+- [ ] `ExecutionSimulationConfig.positionMode` — library default NETTING (embedded
+  `Backtest` callers keep semantics); CLI default HEDGING (production venue model).
 - [ ] CLI `--position-mode netting|hedging` (backtest + sweep) and config key
   `execution.position_mode`; unknown values error with the valid list. (Scenario-file
   key dropped: scenarios inherit the run's `executionConfig`, which already carries
