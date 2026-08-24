@@ -194,6 +194,7 @@ class MT5BrokerProfileLoaderTest {
                                     "expected_trade_mode" to "demo",
                                     "expected_account_currency" to "usd",
                                     "expected_leverage" to "100",
+                                    "expected_margin_mode" to "hedging",
                                 ),
                         ),
                     defaults = MT5DefaultProfiles.all,
@@ -205,6 +206,27 @@ class MT5BrokerProfileLoaderTest {
         assertThat(profile.expectedTradeMode).isEqualTo(MT5TradeMode.DEMO)
         assertThat(profile.expectedAccountCurrency).isEqualTo("USD")
         assertThat(profile.expectedLeverage).isEqualTo(100)
+        assertThat(profile.expectedMarginMode).isEqualTo(com.qkt.broker.PositionAccountingMode.HEDGING)
+    }
+
+    @Test
+    fun `unknown expected margin mode names the valid values`() {
+        org.assertj.core.api.Assertions
+            .assertThatThrownBy {
+                loader.load(
+                    raw =
+                        mapOf(
+                            "exness" to
+                                mapOf(
+                                    "type" to "mt5",
+                                    "expected_margin_mode" to "both",
+                                ),
+                        ),
+                    defaults = MT5DefaultProfiles.all,
+                    env = emptyMap(),
+                )
+            }.hasMessageContaining("unknown expected_margin_mode")
+            .hasMessageContaining("netting, hedging")
     }
 
     @Test

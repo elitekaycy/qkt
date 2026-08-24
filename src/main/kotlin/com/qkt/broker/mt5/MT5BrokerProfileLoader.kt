@@ -168,6 +168,18 @@ class MT5BrokerProfileLoader {
                     ?.uppercase(),
             expectedLeverage =
                 pick("expected_leverage", fields, env, name, base?.expectedLeverage?.toString())?.toInt(),
+            expectedMarginMode =
+                pick("expected_margin_mode", fields, env, name, base?.expectedMarginMode?.name)
+                    ?.let { raw ->
+                        when (raw.trim().lowercase()) {
+                            "netting" -> com.qkt.broker.PositionAccountingMode.NETTING
+                            "hedging" -> com.qkt.broker.PositionAccountingMode.HEDGING
+                            else ->
+                                error(
+                                    "broker '$name': unknown expected_margin_mode '$raw' (valid: netting, hedging)",
+                                )
+                        }
+                    },
         )
     }
 
