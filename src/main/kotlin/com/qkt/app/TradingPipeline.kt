@@ -856,16 +856,23 @@ class TradingPipeline(
      * arrived during that second. Backtest doesn't need it — tick replay drives
      * the heartbeat via [ingest] (#77).
      */
-    fun scheduleHeartbeat(nowMs: Long) {
+    fun scheduleHeartbeat(
+        nowMs: Long,
+        candleCloseGraceMs: Long = 0L,
+    ) {
         orderManager.persistTrailingStateIfDirty()
         orderManager.retryHaltCancellations(nowMs)
         scheduleRunner.tick(nowMs)
         sampleAccountEquitySeries(nowMs)
         // Time-driven candle close: a quiet symbol's bar must close when its window
         // ends, not when the next tick eventually arrives (live only — the heartbeat
-        // doesn't run in backtest, where event-time is the only clock).
-        windowAggregator?.flushClosed(nowMs)
-        candleHub.flushClosed(nowMs)
+        // doesn't run in backtest, where event-time is the only clock). The close lags
+        // the wall clock by [candleCloseGraceMs] so a tick stamped just before the
+        // boundary that is still in flight from the poller lands in its own bar instead
+        // of being rejected as late (#1058). A tick-driven close is unaffected.
+        val closeAtMs = nowMs - candleCloseGraceMs
+        windowAggregator?.flushClosed(closeAtMs)
+        candleHub.flushClosed(closeAtMs)
     }
 
     /** Close completed replay candles without running live-only schedule and broker maintenance. */
