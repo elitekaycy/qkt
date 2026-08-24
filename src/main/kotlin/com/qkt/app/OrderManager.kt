@@ -3076,7 +3076,30 @@ class OrderManager(
         }
         resolveOcoOnExecution(e.clientOrderId)
         ocoSiblingCancelStarted.remove(e.clientOrderId)
+        detectExitIncreasedExposure(e)
         retireStaleProtectiveExits(e.strategyId, e.symbol)
+    }
+
+    /**
+     * Reduce-only tripwire (#1069): an engine-managed protective exit may only shrink the
+     * position its bracket opened. After an exit fill the net position must not sit on the
+     * fill's own side — long after a BUY exit (or short after a SELL exit) means the "exit"
+     * added exposure. The sweep above prevents the known stale-exit path; this detector
+     * refuses to let ANY future path fail silently: it raises the operator protection alert
+     * (live: telegram/log; backtest: report + log) the moment the invariant breaks.
+     */
+    private fun detectExitIncreasedExposure(e: BrokerEvent.OrderFilled) {
+        if (!e.clientOrderId.endsWith("-sl") && !e.clientOrderId.endsWith("-tp")) return
+        val netQty = strategyNetQty?.invoke(e.strategyId, e.symbol) ?: return
+        val landedOnOwnSide =
+            (e.side == Side.BUY && netQty.signum() > 0) ||
+                (e.side == Side.SELL && netQty.signum() < 0)
+        if (!landedOnOwnSide) return
+        val message =
+            "REDUCE-ONLY VIOLATION: protective exit ${e.clientOrderId} filled ${e.side} " +
+                "${e.quantity} ${e.symbol} but net position is now $netQty — an exit added exposure"
+        log.error(message)
+        reportProtectionFailure(e.strategyId, message)
     }
 
     /**
