@@ -90,4 +90,26 @@ class AutoDeployRetrierTest {
         assertThat(retrier.pending()).isEmpty()
         assertThat(deployCalls).isZero()
     }
+
+    @Test
+    fun `pending drops an operator-deployed name immediately, not at the next backoff tick`() {
+        val clock = FixedClock(0L)
+        var deployed = false
+        val retrier =
+            AutoDeployRetrier(
+                deploy = { _, _ -> error("boot failure") },
+                alreadyDeployed = { deployed },
+                clock = clock,
+                backoffMs = listOf(900_000L),
+                log = {},
+            )
+        retrier.schedule("p", file, "boot failure")
+        assertThat(retrier.pending()).hasSize(1)
+
+        // Operator deploys the name by hand: /health must clear on the next read (#1060),
+        // 15 minutes before the retry would have noticed.
+        deployed = true
+        assertThat(retrier.pending()).isEmpty()
+        assertThat(retrier.retryDue(900_000L)).isEmpty()
+    }
 }
