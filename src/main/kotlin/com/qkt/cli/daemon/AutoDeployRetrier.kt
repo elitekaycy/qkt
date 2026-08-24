@@ -56,8 +56,21 @@ class AutoDeployRetrier(
             Pending(name, file, attempts = 1, lastError = error, nextAttemptAtMs = clock.now() + backoffMs.first())
     }
 
-    /** Files still awaiting a successful deploy, oldest next attempt first. */
-    fun pending(): List<Pending> = pending.values.sortedBy { it.nextAttemptAtMs }
+    /**
+     * Files still awaiting a successful deploy, oldest next attempt first. A name the
+     * operator has since deployed by hand is dropped here as well as in [retryDue], so
+     * `/health` stops reporting `degraded` the moment the strategy is actually running
+     * instead of at the next backoff tick (#1060).
+     */
+    fun pending(): List<Pending> =
+        pending.values
+            .filterNot { entry ->
+                alreadyDeployed(entry.name).also { deployed ->
+                    if (deployed && pending.remove(entry.name) != null) {
+                        log("[INFO] auto-deploy retry for ${entry.name} dropped: already deployed")
+                    }
+                }
+            }.sortedBy { it.nextAttemptAtMs }
 
     /**
      * Run every retry due at [nowMs]. Returns the names that deployed. A name the operator

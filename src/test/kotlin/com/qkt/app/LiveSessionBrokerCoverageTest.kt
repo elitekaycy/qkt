@@ -694,6 +694,76 @@ class LiveSessionBrokerCoverageTest {
     }
 
     @Test
+    fun `ignore-mismatches adoption starts the strategy under a persistent operator halt`() {
+        // An adopted book has no coherent per-leg history; running position-aware rules on
+        // it produced a live fill/re-enter loop (#1061). The session must come up with the
+        // adopted strategy halted, visible on the handle (#1064), and resumable by the
+        // operator once the book is reviewed.
+        val strategy =
+            StubDslStrategy(
+                declaredStreams =
+                    mapOf("gold" to HubKey(broker = "EXNESS", symbol = "XAUUSD", timeframe = "5m")),
+            )
+        val factory: BrokerFactory = { bus, clock, priceTracker, _, _ ->
+            object : Broker by PaperBroker(bus, clock, priceTracker) {
+                override val supportsPositionTickets: Boolean = true
+
+                override fun getOpenPositions(): Map<String, List<com.qkt.positions.Position>> =
+                    mapOf(
+                        "EXNESS:XAUUSD" to
+                            listOf(
+                                com.qkt.positions.Position("EXNESS:XAUUSD", BigDecimal("0.52"), BigDecimal("4343")),
+                            ),
+                    )
+
+                override fun positionTickets(): List<BrokerPositionTicket> =
+                    listOf(
+                        com.qkt.broker.BrokerPositionTicket(
+                            ticket = "9001",
+                            symbol = "EXNESS:XAUUSD",
+                            side = Side.BUY,
+                            qty = BigDecimal("0.52"),
+                            entryPrice = BigDecimal("4343"),
+                            currentPrice = null,
+                            profit = null,
+                            swap = null,
+                            openedAt = 1_700_000_000_000L,
+                            comment = "",
+                        ),
+                    )
+            }
+        }
+        val session =
+            LiveSession(
+                strategies = listOf("alpha" to strategy),
+                source = EmptySource,
+                symbols = listOf("EXNESS:XAUUSD"),
+                clock = FixedClock(time = 1_700_000_100_000L),
+                brokerFactories = mapOf("exness" to factory),
+                persistor = NoopStatePersistor(),
+                ignoreMismatches = true,
+            )
+        val handle = session.start()
+        try {
+            assertThat(handle.isHalted()).isTrue()
+            val halts = handle.strategyHalts()
+            assertThat(halts).hasSize(1)
+            assertThat(halts.single().strategyId).isEqualTo("alpha")
+            assertThat(halts.single().reason).contains("ignore-mismatches")
+            assertThat(halts.single().scope).isEqualTo("PERSISTENT")
+            assertThat(handle.haltReason()).contains("adopted 1 venue position(s)")
+
+            // Operator reviewed the book: resume clears the strategy-scoped halt too (#1064).
+            handle.resume()
+            assertThat(handle.isHalted()).isFalse()
+            assertThat(handle.strategyHalts()).isEmpty()
+        } finally {
+            handle.stop()
+            handle.awaitTermination(java.time.Duration.ofSeconds(2))
+        }
+    }
+
+    @Test
     fun `adoption falls back to the session clock when the venue exposes no open time`() {
         val strategy =
             StubDslStrategy(
