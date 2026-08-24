@@ -84,6 +84,12 @@ class OrderManager(
     private val engineHeldSubmissionBlockReason: (OrderRequest) -> String? = { null },
     /** Identifies requests that reduce current exposure and must survive a halt cancel sweep. */
     private val isRiskReducingForHalt: (OrderRequest) -> Boolean = { false },
+    /**
+     * Net strategy position for (strategyId, symbol), used to retire protective exits whose
+     * position was consumed by an opposite entry (#1069). Null disables the sweep — venue
+     * position semantics then depend entirely on the broker.
+     */
+    private val strategyNetQty: ((strategyId: String, symbol: String) -> BigDecimal)? = null,
 ) : PendingOrderExposureProvider {
     private val log = LoggerFactory.getLogger(OrderManager::class.java)
 
@@ -3070,6 +3076,72 @@ class OrderManager(
         }
         resolveOcoOnExecution(e.clientOrderId)
         ocoSiblingCancelStarted.remove(e.clientOrderId)
+        detectExitIncreasedExposure(e)
+        retireStaleProtectiveExits(e.strategyId, e.symbol)
+    }
+
+    /**
+     * Reduce-only tripwire (#1069): an engine-managed protective exit may only shrink the
+     * position its bracket opened. After an exit fill the net position must not sit on the
+     * fill's own side — long after a BUY exit (or short after a SELL exit) means the "exit"
+     * added exposure. The sweep above prevents the known stale-exit path; this detector
+     * refuses to let ANY future path fail silently: it raises the operator protection alert
+     * (live: telegram/log; backtest: report + log) the moment the invariant breaks.
+     */
+    private fun detectExitIncreasedExposure(e: BrokerEvent.OrderFilled) {
+        if (!e.clientOrderId.endsWith("-sl") && !e.clientOrderId.endsWith("-tp")) return
+        val netQty = strategyNetQty?.invoke(e.strategyId, e.symbol) ?: return
+        val landedOnOwnSide =
+            (e.side == Side.BUY && netQty.signum() > 0) ||
+                (e.side == Side.SELL && netQty.signum() < 0)
+        if (!landedOnOwnSide) return
+        val message =
+            "REDUCE-ONLY VIOLATION: protective exit ${e.clientOrderId} filled ${e.side} " +
+                "${e.quantity} ${e.symbol} but net position is now $netQty — an exit added exposure"
+        log.error(message)
+        reportProtectionFailure(e.strategyId, message)
+    }
+
+    /**
+     * A protective exit exists to REDUCE the position its bracket opened. When a netting fill
+     * consumes that position (reversal, or a flatten), the venue drops the position's SL/TP with
+     * it — an engine-managed resting exit must be retired the same way, or it later fires as a
+     * naked opposite-direction entry with no protection of its own (#1069). Stale means: the
+     * exit's side would INCREASE the current net strategy position (any exit is stale when flat).
+     * A partial reduce that keeps the sign leaves exits alone — reducing them is venue-faithful
+     * resizing, tracked separately.
+     */
+    private fun retireStaleProtectiveExits(
+        strategyId: String,
+        symbol: String,
+    ) {
+        val netQty = strategyNetQty?.invoke(strategyId, symbol) ?: return
+        val staleSide =
+            when {
+                netQty.signum() > 0 -> Side.BUY
+                netQty.signum() < 0 -> Side.SELL
+                else -> null // flat: every resting exit is stale
+            }
+        val stale =
+            orders.entries.filter { (id, managed) ->
+                !managed.state.isTerminal &&
+                    (id.endsWith("-sl") || id.endsWith("-tp")) &&
+                    managed.request.strategyId == strategyId &&
+                    managed.request.symbol == symbol &&
+                    (staleSide == null || managed.request.side == staleSide)
+            }
+        for ((id, managed) in stale) {
+            val request = managed.request
+            log.warn(
+                "retiring stale protective exit {} {} {} — its position was consumed (net {} {})",
+                id,
+                request.side,
+                request.quantity,
+                netQty,
+                symbol,
+            )
+            cancel(id)
+        }
     }
 
     /**
