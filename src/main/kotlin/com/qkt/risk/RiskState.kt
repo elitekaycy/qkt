@@ -199,6 +199,15 @@ class RiskState(
         persistNow()
     }
 
+    /** True when [strategyId] carries a strategy-scoped halt (global halt not included). */
+    fun strategyHalted(strategyId: String): Boolean = haltedStrategies.containsKey(strategyId)
+
+    /** Snapshot of every strategy-scoped halt, for status/health surfaces (#1064). */
+    fun strategyHalts(): List<com.qkt.persistence.PersistedStrategyHalt> =
+        haltedStrategies.map { (id, info) ->
+            com.qkt.persistence.PersistedStrategyHalt(id, info.reason, info.scope.name, info.epochDay)
+        }
+
     fun resumeStrategy(strategyId: String) {
         if (haltedStrategies.remove(strategyId) == null) return
         bus.publish(RiskEvent.Resumed(strategyId = strategyId, timestamp = clock.now()))
