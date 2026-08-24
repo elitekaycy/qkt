@@ -121,24 +121,83 @@ class Mt5MarketSourceTimeBaseTest {
         server: MockWebServer,
         range: TimeRange = RANGE,
         retryAttempts: Int = 0,
+        calendar: TradingCalendar = TradingCalendar.crypto(),
+        serverTimeZone: MT5ServerTimeZone = MT5ServerTimeZone.NEW_YORK_CLOSE,
     ): Mt5MarketSource {
-        val cryptoCalendars = SymbolCalendars(emptyList(), TradingCalendar.crypto())
+        val calendars = SymbolCalendars(emptyList(), calendar)
         val profile =
             MT5BrokerProfile(
                 name = "test",
                 gatewayUrl = server.url("/").toString().trimEnd('/'),
                 symbolPolicy = SymbolPolicy(),
-                serverTimeZone = MT5ServerTimeZone.NEW_YORK_CLOSE,
+                serverTimeZone = serverTimeZone,
                 magic = 10,
-                symbolCalendars = cryptoCalendars,
+                symbolCalendars = calendars,
                 retryAttempts = retryAttempts,
             )
         return Mt5MarketSource(
             profile = profile,
             clock = FixedClock(range.to.toEpochMilli()),
-            symbolCalendars = cryptoCalendars,
+            symbolCalendars = calendars,
             retryBackoffMs = 0L,
         )
+    }
+
+    @Test
+    fun `first tick after a weekend passes although the newest closed bar is two days old`() {
+        // bot2, 2026-08-24 00:04:52Z: XAGUSD 4h — newest closed bar ended Saturday 00:00Z,
+        // the first Monday tick is 48h later. Every 4h slot in between was out of session
+        // except Sunday 20:00 (the FX calendar opens Sunday 22:00), so no bar could have
+        // closed: one in-session slot, not a time-base offset (#1055).
+        val server = MockWebServer().apply { start() }
+        try {
+            val range =
+                TimeRange(
+                    Instant.parse("2026-08-08T00:00:00Z"),
+                    Instant.parse("2026-08-24T00:04:52.930Z"),
+                )
+            enqueueTimeResponses(
+                server,
+                barTime = "2026-08-21T20:00:00Z",
+                tickTime = "2026-08-24T00:04:52.930Z",
+            )
+            val source =
+                source(server, range, calendar = TradingCalendar.fxDefault(), serverTimeZone = MT5ServerTimeZone.UTC)
+
+            val bars = source.bars("TEST:XAGUSD", TimeWindow.parse("4h"), range).toList()
+
+            assertThat(bars.single().endTime).isEqualTo(Instant.parse("2026-08-22T00:00:00Z").toEpochMilli())
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test
+    fun `a three hour offset on a trading day still fails closed under the session-time rule`() {
+        // Wednesday 11:00Z: the newest 1m bar ended at 08:00Z per the (mis-zoned) bar clock
+        // while the tick reads 11:00Z. All 181 slot starts in between were in session — a real
+        // server-zone offset, which must still abort the deploy.
+        val server = MockWebServer().apply { start() }
+        try {
+            val range =
+                TimeRange(
+                    Instant.parse("2026-08-19T07:00:00Z"),
+                    Instant.parse("2026-08-19T11:00:05Z"),
+                )
+            enqueueTimeResponses(
+                server,
+                barTime = "2026-08-19T07:59:00Z",
+                tickTime = "2026-08-19T11:00:05Z",
+            )
+            val source =
+                source(server, range, calendar = TradingCalendar.fxDefault(), serverTimeZone = MT5ServerTimeZone.UTC)
+
+            assertThatThrownBy { source.bars("TEST:EURUSD", TimeWindow.parse("1m"), range).toList() }
+                .isInstanceOf(IllegalArgumentException::class.java)
+                .hasMessageContaining("inSessionSlots=181")
+        } finally {
+            server.shutdown()
+        }
     }
 
     private fun enqueueTimeResponses(
