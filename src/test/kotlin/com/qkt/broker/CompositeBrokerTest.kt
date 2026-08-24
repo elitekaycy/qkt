@@ -386,7 +386,7 @@ class CompositeBrokerTest {
         val delegate = FakeBroker(bus, clock, setOf(OrderTypeCapability.MARKET))
         val failingBroker =
             object : Broker by delegate {
-                override fun recoverPendingOrders(orders: List<com.qkt.execution.ManagedOrder>) {
+                override fun recoverPendingOrders(orders: List<com.qkt.execution.ManagedOrder>): Set<String> {
                     error("venue truth unavailable")
                 }
             }

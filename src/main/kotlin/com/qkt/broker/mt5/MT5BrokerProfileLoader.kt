@@ -194,12 +194,27 @@ class MT5BrokerProfileLoader {
     private fun calendarByName(
         profile: String,
         cal: String,
+    ): TradingCalendar {
+        val spec = cal.trim()
+        com.qkt.common.DailyBreakCalendar
+            .parse(spec) { base -> baseCalendarByName(profile, base) }
+            ?.let { return it }
+        return baseCalendarByName(profile, spec)
+    }
+
+    private fun baseCalendarByName(
+        profile: String,
+        cal: String,
     ): TradingCalendar =
         when (cal.trim().lowercase()) {
             "fx" -> TradingCalendar.fxDefault()
             "crypto" -> TradingCalendar.crypto()
             "nyse" -> TradingCalendar.nyse()
-            else -> error("MT5 profile '$profile' has unknown calendar '$cal' (expected fx|crypto|nyse)")
+            else ->
+                error(
+                    "MT5 profile '$profile' has unknown calendar '$cal' " +
+                        "(expected fx|crypto|nyse, optionally '<base> pause HH:MM-HH:MM [Zone]')",
+                )
         }
 
     private fun parseCapability(

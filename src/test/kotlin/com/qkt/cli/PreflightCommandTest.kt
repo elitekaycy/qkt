@@ -224,6 +224,77 @@ class PreflightCommandTest {
     }
 
     @Test
+    fun `crypto symbol on the fx weekend calendar is flagged with the rule to add`(
+        @TempDir tmp: Path,
+    ) {
+        val strategy = tmp.resolve("btc.qkt")
+        Files.writeString(
+            strategy,
+            """
+            STRATEGY btc VERSION 1
+            SYMBOLS
+                c = EXNESS:BTCUSD EVERY 1m
+            RULES
+                WHEN c.close > 0 THEN FLATTEN
+            """.trimIndent(),
+        )
+        val config = tmp.resolve("qkt.config.yaml")
+        Files.writeString(
+            config,
+            """
+            runtime:
+              mode: dev
+            brokers:
+              exness:
+                type: mt5
+                gateway_url: http://127.0.0.1:5001
+            """.trimIndent(),
+        )
+
+        val flagged =
+            ProductionPreflight.evaluate(
+                configPath = config,
+                stateDir = StateDir.resolve(tmp.resolve("state").toString()),
+                strategyPath = strategy,
+                offline = true,
+            )
+        assertThat(flagged).anySatisfy { check ->
+            assertThat(check.name).isEqualTo("symbol.calendar")
+            assertThat(check.status).isEqualTo(PreflightStatus.WARN)
+            assertThat(check.detail).contains("EXNESS:BTCUSD").contains("\"BTC*\": crypto")
+        }
+
+        Files.writeString(
+            config,
+            """
+            runtime:
+              mode: dev
+            brokers:
+              exness:
+                type: mt5
+                gateway_url: http://127.0.0.1:5001
+                calendars:
+                  "BTC*": crypto
+                  "XAU*":
+                    base: fx
+                    pause: 17:00-18:00
+                    zone: America/New_York
+            """.trimIndent(),
+        )
+        val fixed =
+            ProductionPreflight.evaluate(
+                configPath = config,
+                stateDir = StateDir.resolve(tmp.resolve("state").toString()),
+                strategyPath = strategy,
+                offline = true,
+            )
+        assertThat(fixed).anySatisfy { check ->
+            assertThat(check.name).isEqualTo("symbol.calendar")
+            assertThat(check.status).isEqualTo(PreflightStatus.PASS)
+        }
+    }
+
+    @Test
     fun `offline preflight skips broker gateway checks without connecting`(
         @TempDir tmp: Path,
     ) {

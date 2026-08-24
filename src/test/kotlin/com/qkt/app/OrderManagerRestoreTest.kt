@@ -38,9 +38,13 @@ class OrderManagerRestoreTest {
     ) : Broker by delegate {
         val recovered = mutableListOf<ManagedOrder>()
 
-        override fun recoverPendingOrders(orders: List<ManagedOrder>) {
+        /** Ids the venue reports no counterpart for (nothing pending, no position, no ticket). */
+        val unaccounted = mutableSetOf<String>()
+
+        override fun recoverPendingOrders(orders: List<ManagedOrder>): Set<String> {
             recovered += orders
             onRecover(orders)
+            return orders.filterNot { it.id in unaccounted }.mapTo(LinkedHashSet()) { it.id }
         }
     }
 
@@ -210,6 +214,52 @@ class OrderManagerRestoreTest {
     }
 
     @Test
+    fun `restore retires a working order the venue cannot account for`(
+        @TempDir tmp: Path,
+    ) {
+        // bot1 carried 204 pre-#1048 bracket wrappers whose positions had closed weeks earlier:
+        // no pending ticket, no position, nothing for the broker to track. Restoring them as
+        // WORKING kept their exposure registered for the whole session. The venue's answer is
+        // authoritative: an unaccounted order is retired through the normal cancel path.
+        val persistor = FileStatePersistor(tmp)
+        val stale =
+            OrderRequest.Stop(
+                id = "stale-entry",
+                symbol = "XAUUSD",
+                side = Side.SELL,
+                quantity = BigDecimal("0.45"),
+                stopPrice = BigDecimal("4350"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+                strategyId = "alpha",
+            )
+        val live =
+            OrderRequest.Stop(
+                id = "live-entry",
+                symbol = "XAUUSD",
+                side = Side.BUY,
+                quantity = BigDecimal("1"),
+                stopPrice = BigDecimal("2000"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+                strategyId = "alpha",
+            )
+        persistor.savePendingOrders("alpha", mapOf(stale.id to stale, live.id to live))
+        val clock = FixedClock(2_000L)
+        val bus = EventBus(clock, MonotonicSequenceGenerator())
+        val broker = RecordingBroker(LogBroker(bus, clock)).apply { unaccounted += "stale-entry" }
+        val om = OrderManager(broker, bus, MarketPriceTracker(), clock, persistor)
+
+        om.restore(listOf("alpha"))
+
+        assertThat(broker.recovered.map { it.id }).containsExactlyInAnyOrder("stale-entry", "live-entry")
+        assertThat(om.getOrder("live-entry")?.state).isEqualTo(OrderState.WORKING)
+        assertThat(om.getOrder("stale-entry")?.state).isEqualTo(OrderState.CANCELLED)
+        assertThat(om.activeEntryOrderCount("alpha", "XAUUSD")).isEqualTo(1)
+        assertThat(persistor.loadPendingOrders("alpha").keys).containsExactly("live-entry")
+    }
+
+    @Test
     fun `restore re-arms OTO children before broker recovery replays the parent fill`(
         @TempDir tmp: Path,
     ) {
@@ -354,7 +404,7 @@ class OrderManagerRestoreTest {
         val bus = newBus()
         val broker =
             object : Broker by LogBroker(bus, FixedClock(0L)) {
-                override fun recoverPendingOrders(orders: List<ManagedOrder>) {
+                override fun recoverPendingOrders(orders: List<ManagedOrder>): Set<String> {
                     error("venue truth unavailable")
                 }
             }
