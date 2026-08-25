@@ -14,6 +14,7 @@ fun kindOf(event: NotificationEvent): NotifyEventKind? =
         is NotificationEvent.StrategyStopped -> NotifyEventKind.STRATEGY_STOPPED
         is NotificationEvent.StrategyError -> NotifyEventKind.STRATEGY_ERROR
         is NotificationEvent.DaemonStarted -> NotifyEventKind.DAEMON_STARTED
+        is NotificationEvent.DiskSpaceLow -> NotifyEventKind.DISK_SPACE_LOW
         is NotificationEvent.DailySummary -> null
     }
 

@@ -13,6 +13,7 @@ enum class NotifyEventKind(
     STRATEGY_STOPPED("strategy_stopped"),
     STRATEGY_ERROR("strategy_error"),
     DAEMON_STARTED("daemon_started"),
+    DISK_SPACE_LOW("disk_space_low"),
     ;
 
     companion object {

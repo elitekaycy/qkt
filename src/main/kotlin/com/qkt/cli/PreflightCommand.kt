@@ -68,6 +68,7 @@ object ProductionPreflight {
         val target = strategyPath?.let { checks.parseTarget(it) }
         checks.add(stateCheck(cfg, stateDir, production))
         checks.add(journalCheck(stateDir, production))
+        checks.add(diskHeadroomCheck(cfg, stateDir, production))
         checks.add(riskCheck(cfg, production))
         checks.add(brokerConfigCheck(cfg, production))
         checks.add(brokerProfileCheck(cfg, production))
@@ -233,6 +234,66 @@ object ProductionPreflight {
         } else {
             PreflightCheck("journal.append_only", if (production) PreflightStatus.FAIL else PreflightStatus.WARN, error)
         }
+    }
+
+    /**
+     * Free space on the state volume plus a days-to-full projection from recent journal
+     * day-file sizes. Below the `state.disk_free_alert_gb` floor is FAIL in production:
+     * a filling state volume is a live-trading outage on a timer (#1074).
+     */
+    private fun diskHeadroomCheck(
+        cfg: Config,
+        stateDir: StateDir,
+        production: Boolean,
+    ): PreflightCheck {
+        val root = stateDir.stateRoot
+        val free =
+            try {
+                Files.createDirectories(root)
+                Files.getFileStore(root).usableSpace
+            } catch (e: Exception) {
+                return PreflightCheck("state.disk_headroom", PreflightStatus.WARN, "unreadable: ${e.message}")
+            }
+        val gib = 1024L * 1024L * 1024L
+        val dailyBytes = recentJournalDailyBytes(root)
+        val projection =
+            if (dailyBytes > 0L) {
+                "; journals ~${dailyBytes / (1024L * 1024L)} MB/day on disk -> ~${free / dailyBytes} day(s) to full"
+            } else {
+                ""
+            }
+        val detail = "${free / gib} GB free$projection"
+        val floorGb = cfg.diskFreeAlertGb
+        return if (floorGb > 0 && free < floorGb.toLong() * gib) {
+            PreflightCheck(
+                "state.disk_headroom",
+                if (production) PreflightStatus.FAIL else PreflightStatus.WARN,
+                "$detail (< $floorGb GB floor)",
+            )
+        } else {
+            PreflightCheck("state.disk_headroom", PreflightStatus.PASS, detail)
+        }
+    }
+
+    /** Mean bytes/day of journal day-files over the most recent complete days (newest day excluded as partial). */
+    private fun recentJournalDailyBytes(stateRoot: Path): Long {
+        val datePattern = Regex("""-(\d{4}-\d{2}-\d{2})\.jsonl(\.gz)?$""")
+        val byDay = sortedMapOf<String, Long>()
+        for (dirName in listOf("audit-journal", "mt5-transport-journal")) {
+            val dir = stateRoot.resolve(dirName)
+            if (!Files.isDirectory(dir)) continue
+            Files.walk(dir, 2).use { stream ->
+                for (file in stream.filter { Files.isRegularFile(it) }) {
+                    val day = datePattern.find(file.fileName.toString())?.groupValues?.get(1) ?: continue
+                    val size = runCatching { Files.size(file) }.getOrDefault(0L)
+                    byDay.merge(day, size) { a, b -> a + b }
+                }
+            }
+        }
+        if (byDay.size < 2) return 0L
+        byDay.remove(byDay.lastKey())
+        val recent = byDay.values.toList().takeLast(3)
+        return if (recent.isEmpty()) 0L else recent.sum() / recent.size
     }
 
     private fun riskCheck(
