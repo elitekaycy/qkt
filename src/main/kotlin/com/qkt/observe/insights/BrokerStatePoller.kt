@@ -59,6 +59,12 @@ class BrokerStatePoller(
     private val sharedDeals: SharedDealFetch = SharedDealFetch(),
     /** Cadence while every broker reports its market closed; venue state cannot change. */
     private val closedPollIntervalMs: Long = 5 * 60_000L,
+    /**
+     * Per-strategy equity envelopes ([InsightsTranslate.equitySnapshot]) sampled once per
+     * cycle from the session's PnL view. The store populates `equity_snapshots` only from
+     * this type (#1073); the session supplies a reader that snapshots on the engine thread.
+     */
+    private val strategyEquity: () -> List<InsightsEnvelope> = { emptyList() },
 ) : AutoCloseable {
     private val log = LoggerFactory.getLogger(BrokerStatePoller::class.java)
     private val running = AtomicBoolean(false)
@@ -111,6 +117,11 @@ class BrokerStatePoller(
         // prior bench topology left behind, independent of any per-broker fetch outcome.
         // Each session announces its own ids; the collector unions them across sessions.
         rosterIds().takeIf { it.isNotEmpty() }?.let { sink.offer(InsightsTranslate.instanceRoster(clock(), it)) }
+        // Model-side equity per strategy rides the same cadence as venue truth; a failed
+        // read (engine busy, session stopping) skips this cycle rather than the poll.
+        runCatching { strategyEquity() }
+            .onSuccess { samples -> samples.forEach(sink::offer) }
+            .onFailure { e -> log.warn("[insights] strategy equity sample failed: {}", e.message) }
         // Accounts whose deals were already fetched this cycle — the first broker of each
         // account owns the fetch, the rest skip it (deal history is account-wide).
         val dealsFetched = mutableSetOf<String>()
