@@ -159,6 +159,58 @@ class BrokerStatePollerTest {
     }
 
     @Test
+    fun `emits one snapshot equity per strategy each cycle from the session view`() {
+        // #1073: the store fills equity_snapshots only from snapshot.equity; the poller
+        // carries the session's per-strategy sample on the same cadence as venue state.
+        val now = 1_700_000_000_000L
+        val poller =
+            BrokerStatePoller(
+                brokers = listOf(FakeBroker()),
+                sink = sink,
+                attribution = TicketAttribution(),
+                deployedIds = { listOf("alpha") },
+                clock = { now },
+                strategyEquity = {
+                    listOf(
+                        InsightsTranslate.equitySnapshot(
+                            ts = now,
+                            strategyId = "alpha",
+                            realized = BigDecimal("12.5"),
+                            unrealized = BigDecimal("-3"),
+                            equity = BigDecimal("100009.5"),
+                            startingBalance = BigDecimal("100000"),
+                        ),
+                    )
+                },
+            )
+        poller.pollOnce()
+
+        val body = collectBodies("snapshot.equity")
+        assertThat(body).contains("\"type\":\"snapshot.equity\"")
+        assertThat(body).contains("\"strategyId\":\"alpha\"")
+        assertThat(body).contains("\"startingBalance\":100000")
+        assertThat(body).contains("\"equity\":100009.5")
+    }
+
+    @Test
+    fun `a failing equity reader skips the sample, not the poll`() {
+        val now = 1_700_000_000_000L
+        val broker = FakeBroker()
+        val poller =
+            BrokerStatePoller(
+                brokers = listOf(broker),
+                sink = sink,
+                attribution = TicketAttribution(),
+                deployedIds = { emptyList() },
+                clock = { now },
+                strategyEquity = { error("engine busy") },
+            )
+        poller.pollOnce()
+
+        assertThat(broker.accountReads.get()).isEqualTo(1)
+    }
+
+    @Test
     fun `closed market polls once per closed interval instead of every cycle`() {
         var now = 1_700_000_000_000L
         val broker = FakeBroker()
