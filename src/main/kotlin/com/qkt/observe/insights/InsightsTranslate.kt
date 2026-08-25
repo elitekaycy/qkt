@@ -767,6 +767,36 @@ object InsightsTranslate {
             payload = mapOf("portfolioId" to portfolioId, "allocations" to allocations, "ts" to ts),
         )
 
+    /**
+     * Per-strategy equity sample ("snapshot.equity"): the store's `equity_snapshots` rows and
+     * `strategies.equity/starting_balance` are fed ONLY by this type, so its absence blanks
+     * every equity/drawdown panel even while venue `state.*` streams fine (#1073). Emitted on
+     * the STATE poller cadence from the session's [com.qkt.pnl.StrategyPnL] view.
+     */
+    fun equitySnapshot(
+        ts: Long,
+        strategyId: String,
+        realized: BigDecimal,
+        unrealized: BigDecimal,
+        equity: BigDecimal,
+        startingBalance: BigDecimal,
+    ): InsightsEnvelope =
+        InsightsEnvelope(
+            id = "eq-$strategyId-$ts",
+            seq = 0,
+            ts = ts,
+            strategyId = strategyId,
+            type = "snapshot.equity",
+            payload =
+                mapOf(
+                    "strategyId" to strategyId,
+                    "realized" to realized,
+                    "unrealized" to unrealized,
+                    "equity" to equity,
+                    "startingBalance" to startingBalance,
+                ),
+        )
+
     /** Records an aggregated realized/unrealized equity sample for a portfolio book. */
     fun portfolioEquityUpdated(
         portfolioId: String,
