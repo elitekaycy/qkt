@@ -365,11 +365,6 @@ class PortfolioDeployer(
             haltRules = haltRules,
             clock = clock,
             onSample = { timestamp ->
-                val controller = bookController ?: return@PortfolioRiskAggregator
-                val legs =
-                    childPairs.flatMap { (child, wrapper) ->
-                        wrapper.handle.live.bookLegs(child.strategyId)
-                    }
                 val pnlSnapshots =
                     childPairs.associate { (child, wrapper) ->
                         child.strategyId to wrapper.handle.live.pnlSnapshot(child.strategyId)
@@ -398,6 +393,14 @@ class PortfolioDeployer(
                         perStrategyPnl,
                     ),
                 )
+                // The equity sample above is dashboard truth and must not depend on the
+                // book-risk controller: a book with only drawdown/daily-loss rules used to
+                // return before emitting it, leaving portfolio_equity empty (#1073).
+                val controller = bookController ?: return@PortfolioRiskAggregator
+                val legs =
+                    childPairs.flatMap { (child, wrapper) ->
+                        wrapper.handle.live.bookLegs(child.strategyId)
+                    }
                 val regimeWeights =
                     portfolioGate.currentState().weightByAlias.mapKeys { (alias, _) ->
                         aliasToStrategyId[alias] ?: alias

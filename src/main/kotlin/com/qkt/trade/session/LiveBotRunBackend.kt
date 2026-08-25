@@ -17,12 +17,19 @@ class LiveBotRunBackend(
     private val identities: Set<String>,
     private val clock: Clock = SystemClock(),
     private val pollMs: Long = 200L,
+    /**
+     * Fires once per [awaitNextBar], after the caller has captured `before` and this backend
+     * is about to wait on the feed. Gives a feed-driving harness a deterministic "now
+     * waiting for bar N" signal instead of a timing guess (the parity tests, #1078).
+     */
+    private val onAwaitingBar: (symbol: String, before: Long) -> Unit = { _, _ -> },
 ) : BotRunBackend {
     override fun awaitNextBar(
         symbol: String,
         before: Long,
         history: BarHistory,
     ): Boolean {
+        onAwaitingBar(symbol, before)
         while (handle.running) {
             if (history.countFor(symbol) > before) return true
             Thread.sleep(pollMs)
