@@ -420,6 +420,46 @@ class OrderManager(
                 accepted = true,
             )
         }
+        // Venue-faithful stops validation (#1076): MT5 rejects an order whose absolute stop
+        // is already on the wrong side of the reference price (retcode 10016 Invalid stops).
+        // Refusing locally keeps every simulated tier byte-consistent with live — on a gap
+        // tick the entry is never taken, instead of filling with an INVERTED protective stop
+        // that fires on the next print as a guaranteed instant loss. Market entries validate
+        // against the current quote; pending entries against their own trigger price. Scope
+        // is deliberately the stop side only: a take profit the market has already reached is
+        // an instant profit-take, not broken protection, and BY-resolved targets are anchored
+        // to the signal bar rather than the submit quote. Relative (BY/trail) stops resolve
+        // off the fill and cannot invert.
+        if (request is OrderRequest.Bracket) {
+            val stopsReference =
+                when (val entry = request.entry) {
+                    is OrderRequest.Limit -> entry.limitPrice
+                    is OrderRequest.Stop -> entry.stopPrice
+                    else -> priceProvider.lastPrice(request.symbol)?.takeIf { it.signum() != 0 }
+                }
+            val fixedSl = (request.stopLoss as? StopLossSpec.Fixed)?.price
+            if (stopsReference != null && fixedSl != null) {
+                val slCrossed =
+                    if (request.side == Side.BUY) fixedSl >= stopsReference else fixedSl <= stopsReference
+                if (slCrossed) {
+                    return rejectCrossedProtection(request, stopsReference, fixedSl, "stop loss")
+                }
+            }
+            // The target needs the same check, but ONLY for an absolute `AT` level. A BY/PCT/RR
+            // target is re-anchored off the fill by resolveBracketAtFill and cannot invert, and
+            // its pre-fill value is a placeholder — checking that would reject healthy brackets.
+            // An inverted absolute target is not a free profit-take: measured on the gold RSI-fade
+            // tape, a BUY filled at 1320.700 carrying TAKE_PROFIT 1320.019 closed instantly for a
+            // 0.68/oz LOSS. MT5 rejects it under the same retcode 10016 the stop side gets.
+            if (stopsReference != null && request.takeProfitAst is com.qkt.dsl.ast.ChildAt) {
+                val tp = request.takeProfit
+                val tpCrossed =
+                    if (request.side == Side.BUY) tp <= stopsReference else tp >= stopsReference
+                if (tpCrossed) {
+                    return rejectCrossedProtection(request, stopsReference, tp, "take profit")
+                }
+            }
+        }
         val now = clock.now()
         track(
             ManagedOrder(
@@ -2265,6 +2305,35 @@ class OrderManager(
     // rejection (MT5 retcode 10022), so it is refused here with both clocks in the
     // reason — a bar-clock vs wall-clock divergence (#811) is visible at its first
     // occurrence instead of masquerading as a venue error.
+
+    /**
+     * A bracket whose absolute protection is already crossed at submit can only round-trip
+     * into a venue rejection (MT5 retcode 10016 Invalid stops) — or, in a simulated tier,
+     * fill and instantly stop out, which live would never do (#1076). Refuse locally with
+     * the levels in the reason.
+     */
+    private fun rejectCrossedProtection(
+        request: OrderRequest.Bracket,
+        reference: BigDecimal,
+        level: BigDecimal,
+        leg: String,
+    ): SubmitAck {
+        val reason =
+            "invalid stops: $leg $level already crossed for ${request.side} at reference $reference " +
+                "(venue would reject, retcode 10016)"
+        log.warn("order {} {} — rejected locally, not sent to broker", request.id, reason)
+        bus.publish(
+            BrokerEvent.OrderRejected(
+                clientOrderId = request.id,
+                brokerOrderId = null,
+                reason = reason,
+                strategyId = request.strategyId,
+                timestamp = clock.now(),
+            ),
+        )
+        return SubmitAck(clientOrderId = request.id, brokerOrderId = null, accepted = false, rejectReason = reason)
+    }
+
     private fun rejectExpiredBeforeSubmit(
         request: OrderRequest,
         expiresAt: Long,

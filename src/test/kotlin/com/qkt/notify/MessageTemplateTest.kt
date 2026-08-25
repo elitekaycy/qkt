@@ -56,6 +56,21 @@ class MessageTemplateTest {
     }
 
     @Test
+    fun `DiskSpaceLow renders path free space and floor`() {
+        val out =
+            MessageTemplate.format(
+                NotificationEvent.DiskSpaceLow(
+                    path = "/var/lib/qkt/state",
+                    freeBytes = 9L * 1024L * 1024L * 1024L,
+                    floorBytes = 10L * 1024L * 1024L * 1024L,
+                    timestamp = ts,
+                ),
+            )
+        assertThat(out).contains("[CRITICAL] qkt DISK SPACE LOW")
+        assertThat(out).contains("/var/lib/qkt/state: 9216 MB free (floor 10240 MB)")
+    }
+
+    @Test
     fun `PositionReconciled renders qty transition`() {
         val out =
             MessageTemplate.format(
