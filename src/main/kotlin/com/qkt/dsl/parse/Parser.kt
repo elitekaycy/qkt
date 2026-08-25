@@ -435,10 +435,19 @@ class Parser(
             }
 
         val lets =
-            if (peek().kind == TokenKind.LET) {
-                tryParse { parseLet() } ?: emptyList()
-            } else {
-                emptyList()
+            run {
+                // Repeated `LET` LINES are the documented form (docs/reference/dsl/let-defaults.md
+                // and the session-range example in indicators.md both show two). `parseLet` consumes
+                // one LET keyword plus its comma-separated bindings, so a single `if` silently
+                // stopped after the first line and every later LET fell through to the
+                // "unexpected token after the last recognized block" error. Loop like PARAM does.
+                val acc = mutableListOf<LetDecl>()
+                while (peek().kind == TokenKind.LET) {
+                    val parsed = tryParse { parseLet() }
+                    if (parsed == null) break
+                    acc.addAll(parsed)
+                }
+                acc
             }
 
         val schedules =
