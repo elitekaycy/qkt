@@ -24,8 +24,14 @@ class LegBookReconciler(
     private val log = LoggerFactory.getLogger(LegBookReconciler::class.java)
 
     sealed class Outcome {
+        /**
+         * Persisted legs matched venue positions. [retired] lists legs whose venue ticket the
+         * venue no longer reports — positions that closed while the daemon was down. They are
+         * dropped from the attached book; the caller books their realized result (#1079).
+         */
         data class Attached(
             val legBook: LegBook,
+            val retired: List<PersistedLeg> = emptyList(),
         ) : Outcome()
 
         data class Mismatch(
@@ -46,6 +52,7 @@ class LegBookReconciler(
         strategyId: String,
         symbol: String,
         brokerPositions: List<Position>,
+        venueTickets: Set<String>? = null,
     ): Outcome {
         val persisted = persistor.loadLegBook(strategyId, symbol)
 
@@ -65,7 +72,7 @@ class LegBookReconciler(
                     "broker reports ${brokerPositions.size} position(s) for $strategyId/$symbol, no persisted state",
                 )
 
-            else -> attemptAttach(strategyId, symbol, brokerPositions, persisted!!)
+            else -> attemptAttach(strategyId, symbol, brokerPositions, persisted!!, venueTickets)
         }
     }
 
@@ -74,9 +81,31 @@ class LegBookReconciler(
         symbol: String,
         brokerPositions: List<Position>,
         persisted: PersistedLegBook,
+        venueTickets: Set<String>?,
     ): Outcome {
         val unmatchedPersisted = persisted.legs.toMutableList()
         val matchedLegs = mutableListOf<PersistedLeg>()
+        // A leg whose venue ticket is definitively absent from the venue's position list did
+        // not drift: its position closed (SL/TP, manual) while we were down. That is a
+        // completed lifecycle observed late, not a mismatch — retire it and keep deploying.
+        // Only decidable when the venue exposes tickets AND the leg recorded one; a ticketless
+        // leg or a ticketless venue keeps the fail-closed path below (#1079).
+        val retired = mutableListOf<PersistedLeg>()
+        if (venueTickets != null) {
+            val closedWhileDown =
+                unmatchedPersisted.filter { leg -> leg.brokerTicket != null && leg.brokerTicket !in venueTickets }
+            for (leg in closedWhileDown) {
+                log.warn(
+                    "Reconcile: {}/{} leg {} ticket {} is no longer open at the venue; retiring it as closed while down",
+                    strategyId,
+                    symbol,
+                    leg.legId,
+                    leg.brokerTicket,
+                )
+                unmatchedPersisted.remove(leg)
+                retired.add(leg)
+            }
+        }
 
         for (pos in brokerPositions) {
             val (side, qty) = decompose(pos.quantity)
@@ -99,7 +128,8 @@ class LegBookReconciler(
 
         val book = LegBook(symbol)
         matchedLegs.forEach { book.add(it.toPositionLeg()) }
-        return Outcome.Attached(book)
+        if (retired.isNotEmpty()) persistor.saveLegBook(strategyId, symbol, book)
+        return Outcome.Attached(book, retired)
     }
 
     private fun decompose(signedQty: BigDecimal): Pair<Side, BigDecimal> =

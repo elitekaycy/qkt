@@ -234,6 +234,9 @@ class BotSessionServerBacktestLiveParityTest {
                         clock = FixedClock(time = tickSeq.first().timestamp),
                         onTrade = { trade, _, _ -> liveTrades.add(trade) },
                     ).start()
+            // Readiness is signalled by the backend from inside awaitNextBar, i.e. after the
+            // server has received /next and captured `before` — no settle sleep needed (#1078).
+            val readyForBar = AtomicInteger(0)
             val session =
                 BotRunSession(
                     runId = "parity-http-live",
@@ -243,6 +246,7 @@ class BotSessionServerBacktestLiveParityTest {
                             identities = setOf("brain"),
                             clock = FixedClock(time = tickSeq.first().timestamp),
                             pollMs = 1L,
+                            onAwaitingBar = { _, _ -> readyForBar.incrementAndGet() },
                         ),
                     bridges = mapOf("brain" to bridge),
                     history = history,
@@ -263,12 +267,10 @@ class BotSessionServerBacktestLiveParityTest {
                 // would; the test thread pumps ticks in lockstep via the same
                 // readyForBar/decided handshake.
                 val lastBar = 9
-                val readyForBar = AtomicInteger(0)
                 val decided = AtomicInteger(0)
                 val decisionThread =
                     Thread {
                         for (bar in 1..lastBar) {
-                            readyForBar.set(bar)
                             val barResponse = call(server, "POST", "/next", """{"symbol":"$symbol"}""")
                             check(barResponse.body().contains("\"type\":\"bar\"")) { "bar $bar should be available" }
                             decisions()[bar]?.let { postIntent(server, it) }
@@ -288,13 +290,6 @@ class BotSessionServerBacktestLiveParityTest {
                         check(System.nanoTime() < deadline) { "decision thread never became ready for bar $bar" }
                         Thread.sleep(1)
                     }
-                    // Unlike the engine-level parity test, "ready" here only means the
-                    // decision thread is about to send an HTTP POST /next — the server
-                    // needs real (if small) network/dispatch time to receive it and
-                    // capture `before` inside session.next(). A fixed settle margin is
-                    // simpler and more robust here than trying to observe server-side
-                    // receipt directly.
-                    Thread.sleep(50)
                     val target = closesAfterTicks[bar - 1]
                     while (released < target) {
                         feed.release()
