@@ -69,6 +69,7 @@ class PreflightCommandTest {
         assertThat(text).contains("FAIL broker.config")
         assertThat(text).contains("FAIL notify.alerts")
         assertThat(text).contains("PASS journal.append_only")
+        assertThat(text).contains("PASS state.disk_headroom")
     }
 
     @Test
