@@ -3,6 +3,8 @@ package com.qkt.cli
 import com.qkt.cli.daemon.StateDir
 import com.qkt.common.Clock
 import com.qkt.common.SystemClock
+import java.io.BufferedReader
+import java.io.InputStreamReader
 import java.math.BigDecimal
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
@@ -16,6 +18,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
 import java.util.UUID
+import java.util.zip.GZIPInputStream
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import kotlinx.serialization.json.Json
@@ -191,7 +194,7 @@ class GoldenCommand(
         val filledOrderIds = mutableSetOf<String>()
         val filledBrokerOrderIds = mutableSetOf<String>()
         for (file in files) {
-            Files.newBufferedReader(file, StandardCharsets.UTF_8).use { reader ->
+            journalReader(file).use { reader ->
                 var lineNumber = 0L
                 while (true) {
                     val line = reader.readLine() ?: break
@@ -336,7 +339,7 @@ class GoldenCommand(
         var linkedPlacements = 0L
         var mutations = 0L
         for (file in files) {
-            Files.newBufferedReader(file, StandardCharsets.UTF_8).use { reader ->
+            journalReader(file).use { reader ->
                 var lineNumber = 0L
                 while (true) {
                     val line = reader.readLine() ?: break
@@ -386,9 +389,11 @@ class GoldenCommand(
     ): EntryEvidence {
         val digest = MessageDigest.getInstance("SHA-256")
         var records = 0L
-        val entry = ZipEntry(name).apply { time = 0L }
+        // Retention may have gzipped the on-disk day-file; bundle entries stay plain JSONL.
+        val entryName = name.removeSuffix(".gz")
+        val entry = ZipEntry(entryName).apply { time = 0L }
         zip.putNextEntry(entry)
-        Files.newBufferedReader(file, StandardCharsets.UTF_8).use { reader ->
+        journalReader(file).use { reader ->
             var lineNumber = 0L
             while (true) {
                 val line = reader.readLine() ?: break
@@ -403,7 +408,7 @@ class GoldenCommand(
             }
         }
         zip.closeEntry()
-        return EntryEvidence(name, records, digest.digest().toHex())
+        return EntryEvidence(entryName, records, digest.digest().toHex())
     }
 
     private fun renderManifest(
@@ -465,12 +470,27 @@ class GoldenCommand(
         record["ts"]?.jsonPrimitive?.contentOrNull?.toLongOrNull()
             ?: throw IllegalArgumentException("missing numeric ts at $file:$lineNumber")
 
+    /**
+     * Opens a journal day-file for line reading, transparently gunzipping `.jsonl.gz` files
+     * produced by [com.qkt.observe.JournalRetention] compression.
+     */
+    private fun journalReader(file: Path): BufferedReader {
+        val input = Files.newInputStream(file)
+        val stream = if (file.fileName.toString().endsWith(".gz")) GZIPInputStream(input) else input
+        return BufferedReader(InputStreamReader(stream, StandardCharsets.UTF_8))
+    }
+
+    private fun isJournalFile(file: Path): Boolean {
+        val name = file.fileName.toString()
+        return name.endsWith(".jsonl") || name.endsWith(".jsonl.gz")
+    }
+
     private fun jsonlFiles(dir: Path): List<Path> {
         if (!Files.isDirectory(dir, LinkOption.NOFOLLOW_LINKS)) return emptyList()
         return Files.list(dir).use { stream ->
             stream
                 .filter { Files.isRegularFile(it, LinkOption.NOFOLLOW_LINKS) }
-                .filter { it.fileName.toString().endsWith(".jsonl") }
+                .filter { isJournalFile(it) }
                 .sorted()
                 .toList()
         }
@@ -481,7 +501,7 @@ class GoldenCommand(
         return Files.walk(dir).use { stream ->
             stream
                 .filter { Files.isRegularFile(it, LinkOption.NOFOLLOW_LINKS) }
-                .filter { it.fileName.toString().endsWith(".jsonl") }
+                .filter { isJournalFile(it) }
                 .sorted()
                 .toList()
         }

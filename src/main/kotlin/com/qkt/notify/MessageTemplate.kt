@@ -47,6 +47,14 @@ object MessageTemplate {
                 """.trimIndent()
             }
 
+            is NotificationEvent.DiskSpaceLow ->
+                """
+                $tag qkt DISK SPACE LOW
+                ${event.path}: ${event.freeBytes / (1024L * 1024L)} MB free (floor ${event.floorBytes / (1024L * 1024L)} MB)
+                journal and state writes fail when the volume fills
+                $t
+                """.trimIndent()
+
             is NotificationEvent.PositionReconciled ->
                 """
                 $tag qkt position drift ${event.strategyId}
