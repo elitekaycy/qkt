@@ -125,6 +125,13 @@ logs, latency, reconcile, and metrics routes remain unauthenticated on loopback.
 same production-gate waiver form as deploy: `--waive <gate> --reason <text>`.
 Use `--dry-run` before applying an edited live strategy.
 
+Reconcile distinguishes a position that closed while the daemon was down from a real
+mismatch: a persisted leg whose venue ticket is no longer in the venue's open-position list
+is retired automatically (its realized result is booked from the venue's closing deals when
+the venue keeps deal history) and the deploy continues. A venue position with no persisted
+leg, a quantity/side disagreement on a ticket that still exists, or a leg without a ticket
+still fails closed and needs `--reconcile=ignore-mismatches`.
+
 ## Exit codes
 
 | Code | Meaning |

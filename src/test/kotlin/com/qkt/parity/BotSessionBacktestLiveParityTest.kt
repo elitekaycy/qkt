@@ -189,22 +189,30 @@ class BotSessionBacktestLiveParityTest {
                         clock = FixedClock(time = tickSeq.first().timestamp),
                         onTrade = { trade, _, _ -> liveTrades.add(trade) },
                     ).start()
+            val lastBar = 9
+            // "Ready for bar N" is signalled by the backend itself, from inside awaitNextBar,
+            // AFTER session.next() has captured `before`. Announcing it from the decision
+            // thread before calling next() left a window where the pumped ticks could close
+            // the bar before `before` was read, landing the submit one tick late (#1078).
+            val readyForBar = AtomicInteger(0)
+            val decided = AtomicInteger(0)
             val session =
                 BotRunSession(
                     runId = "parity-live",
-                    backend = LiveBotRunBackend(handle = handle, identities = setOf("brain"), pollMs = 1L),
+                    backend =
+                        LiveBotRunBackend(
+                            handle = handle,
+                            identities = setOf("brain"),
+                            pollMs = 1L,
+                            onAwaitingBar = { _, _ -> readyForBar.incrementAndGet() },
+                        ),
                     bridges = mapOf("brain" to bridge),
                     history = history,
                     recorder = recorder,
                 )
-
-            val lastBar = 9
-            val readyForBar = AtomicInteger(0)
-            val decided = AtomicInteger(0)
             val decisionThread =
                 Thread {
                     for (bar in 1..lastBar) {
-                        readyForBar.set(bar)
                         checkNotNull(session.next(symbol)) { "bar $bar should be available" }
                         decisions()[bar]?.let { session.submit("brain", it) }
                         decided.set(bar)
