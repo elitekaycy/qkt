@@ -340,6 +340,7 @@ class LiveSession(
     private fun reconcileOrPreload(
         strategyPositions: com.qkt.positions.StrategyPositionTracker,
         broker: Broker,
+        onLegRetired: (strategyId: String, leg: com.qkt.persistence.PersistedLeg) -> Unit = { _, _ -> },
     ): Map<String, Int> {
         val adoptedLegCounts = mutableMapOf<String, Int>()
         // Never reconcile against assumed state: a transient broker error that reads as
@@ -392,6 +393,14 @@ class LiveSession(
             log.warn("reconcile: position and ticket snapshots differ; retaining magic-global fail-closed behavior")
         }
         val brokerTicketsBySymbol = brokerTickets.groupBy(BrokerPositionTicket::symbol)
+        // The venue's full open-ticket set is what lets reconcile tell "closed while we were
+        // down" from a real mismatch (#1079); only authoritative when the ticket read succeeded.
+        val venueTickets: Set<String>? =
+            if (broker.supportsPositionTickets && brokerTicketRead.isSuccess) {
+                brokerTickets.map(BrokerPositionTicket::ticket).toSet()
+            } else {
+                null
+            }
         val reconciler = com.qkt.persistence.LegBookReconciler(persistor)
         for ((strategyId, _) in strategies) {
             for (symbol in symbols) {
@@ -415,9 +424,10 @@ class LiveSession(
                     } else {
                         brokerByQktSymbol[symbol] ?: emptyList()
                     }
-                val outcome = reconciler.reconcile(strategyId, symbol, brokerForSymbol)
+                val outcome = reconciler.reconcile(strategyId, symbol, brokerForSymbol, venueTickets)
                 when (outcome) {
                     is com.qkt.persistence.LegBookReconciler.Outcome.Attached -> {
+                        outcome.retired.forEach { leg -> onLegRetired(strategyId, leg) }
                         // Rebuild the whole book from disk — the engine hasn't run yet, so use the
                         // persistor preload path rather than applyFill. preloadFromPersistor loads
                         // every leg regardless of role, so call it once per reconciled (strategy,
@@ -1024,7 +1034,45 @@ class LiveSession(
 
         // Reconcile persisted leg state against broker positions BEFORE the engine starts
         // taking ticks. Refuses to start on mismatch unless ignoreMismatches=true.
-        val adoptedLegCounts = reconcileOrPreload(strategyPositions, broker)
+        val adoptedLegCounts =
+            reconcileOrPreload(strategyPositions, broker) { strategyId, leg ->
+                // The leg's position closed while the daemon was down. Book what the venue
+                // realized on it (OUT deals of that position ticket) so lifetime PnL and the
+                // equity curve do not silently lose the trade; a venue with no deal history
+                // just retires the leg with a warning.
+                val ticket = leg.brokerTicket
+                val closing =
+                    runCatching { broker.deals(leg.openedAt - 1L, clock.now()) }
+                        .getOrDefault(emptyList())
+                        .filter { d -> d.positionTicket == ticket && d.entry != "IN" }
+                if (closing.isEmpty()) {
+                    log.warn(
+                        "{}: leg {} (ticket {}) closed while down; no closing deal found in venue history, " +
+                            "realized PnL not booked",
+                        strategyId,
+                        leg.legId,
+                        ticket,
+                    )
+                } else {
+                    val realized =
+                        closing.fold(java.math.BigDecimal.ZERO) { acc, d ->
+                            acc
+                                .add(d.profit)
+                                .add(d.commission)
+                                .add(d.swap)
+                                .add(d.fee ?: java.math.BigDecimal.ZERO)
+                        }
+                    strategyPnL.recordRealized(strategyId, realized)
+                    log.warn(
+                        "{}: leg {} (ticket {}) closed while down; booked realized {} from {} closing deal(s)",
+                        strategyId,
+                        leg.legId,
+                        ticket,
+                        realized.toPlainString(),
+                        closing.size,
+                    )
+                }
+            }
 
         val engine = Engine(bus, priceTracker)
         val riskPersistId = strategies.firstOrNull()?.first ?: "session"
@@ -1888,6 +1936,11 @@ class LiveSession(
         // polled on the poller's own thread, off the engine loop. Replaces the retired
         // engine-thread ledger snapshots — dashboards read state.* / broker.deal now.
         val brokerStatePollerBrokers = builtBrokers.ifEmpty { listOf(broker) }.distinct()
+        // The handle is built at the end of start(); the poller samples equity through it so
+        // the read runs as an engine-thread snapshot rather than a racy cross-thread read.
+        val handleRef =
+            java.util.concurrent.atomic
+                .AtomicReference<LiveSessionHandle?>(null)
         val brokerStatePoller =
             if (insightsSink != null &&
                 com.qkt.observe.insights.InsightsEventFamily.STATE in insightsEvents &&
@@ -1904,6 +1957,25 @@ class LiveSession(
                         sharedDeals = insightsSharedDeals,
                         backfillDays = insightsDealBackfillDays,
                         emitDeals = com.qkt.observe.insights.InsightsEventFamily.DEAL in insightsEvents,
+                        strategyEquity = {
+                            val handle = handleRef.get()
+                            if (handle == null) {
+                                emptyList()
+                            } else {
+                                val now = clock.now()
+                                strategies.map { (strategyId, _) ->
+                                    val pnl = handle.pnlSnapshot(strategyId)
+                                    com.qkt.observe.insights.InsightsTranslate.equitySnapshot(
+                                        ts = now,
+                                        strategyId = strategyId,
+                                        realized = pnl.realized,
+                                        unrealized = pnl.unrealized,
+                                        equity = pnl.equity,
+                                        startingBalance = strategyPnL.startingBalanceFor(strategyId),
+                                    )
+                                }
+                            }
+                        },
                     ).also { it.start() }
             } else {
                 null
@@ -2280,7 +2352,7 @@ class LiveSession(
             override fun flatten() {
                 control.put(Inbound.Flatten)
             }
-        }
+        }.also { handleRef.set(it) }
     }
 }
 
