@@ -95,6 +95,20 @@ sealed interface NotificationEvent {
     ) : NotificationEvent {
         override val severity = Severity.INFO
     }
+
+    /**
+     * Free space on the daemon's state volume dropped below the configured floor. Raised by
+     * [com.qkt.observe.DiskSpaceGuard] well before writes fail: a full state volume means the
+     * daemon can no longer persist journals, state, or recovery data while positions are open.
+     */
+    data class DiskSpaceLow(
+        val path: String,
+        val freeBytes: Long,
+        val floorBytes: Long,
+        override val timestamp: Long,
+    ) : NotificationEvent {
+        override val severity = Severity.CRITICAL
+    }
 }
 
 data class StrategySummary(

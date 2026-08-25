@@ -224,6 +224,39 @@ data class Config(
         }
 
     /**
+     * Effective `state.journal_compress_after_days`: closed `.jsonl` day-files of the engine
+     * audit journal and the MT5 transport journal whose UTC date is more than this many days
+     * old are gzipped in place by the daemon's retention sweep (~10x smaller; readers accept
+     * both forms). Defaults to 1, so today's and yesterday's files are always left plain.
+     * `0` disables compression.
+     */
+    val journalCompressAfterDays: Int
+        get() {
+            val raw = state["journal_compress_after_days"] ?: return DEFAULT_JOURNAL_COMPRESS_AFTER_DAYS
+            val parsed = raw.toIntOrNull()
+            require(parsed != null && parsed >= 0) {
+                "state.journal_compress_after_days must be a non-negative integer; got '$raw'"
+            }
+            return parsed
+        }
+
+    /**
+     * Effective `state.disk_free_alert_gb`: when free space on the state volume drops below
+     * this many gigabytes the daemon logs an error and raises a `disk_space_low` alert on the
+     * configured notify channels — well before writes fail. Defaults to 10. `0` disables the
+     * guard.
+     */
+    val diskFreeAlertGb: Int
+        get() {
+            val raw = state["disk_free_alert_gb"] ?: return DEFAULT_DISK_FREE_ALERT_GB
+            val parsed = raw.toIntOrNull()
+            require(parsed != null && parsed >= 0) {
+                "state.disk_free_alert_gb must be a non-negative integer; got '$raw'"
+            }
+            return parsed
+        }
+
+    /**
      * Returns the [com.qkt.persistence.StatePersistor] for this config, writing under
      * [stateRoot]. Layered by flag:
      *   - `state.enabled = false`              → [com.qkt.persistence.NoopStatePersistor].
@@ -259,6 +292,8 @@ data class Config(
 
         /** Default `state.journal_retention_days`: two weeks covers a parity-attestation window. */
         const val DEFAULT_JOURNAL_RETENTION_DAYS: Int = 14
+        const val DEFAULT_JOURNAL_COMPRESS_AFTER_DAYS: Int = 1
+        const val DEFAULT_DISK_FREE_ALERT_GB: Int = 10
 
         /** Default per-order quantity cap; see [com.qkt.risk.rules.PreTradeControls]. */
         val DEFAULT_MAX_ORDER_QTY: BigDecimal =
