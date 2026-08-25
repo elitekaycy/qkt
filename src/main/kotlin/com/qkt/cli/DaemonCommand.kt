@@ -243,6 +243,25 @@ class DaemonCommand(
                         ),
                     retentionDays = cfg.journalRetentionDays,
                     clock = com.qkt.common.SystemClock(),
+                    compressAfterDays = cfg.journalCompressAfterDays,
+                ).also { it.start() }
+        val diskSpaceGuard =
+            com.qkt.observe
+                .DiskSpaceGuard(
+                    root = stateDir.stateRoot,
+                    floorBytes = cfg.diskFreeAlertGb.toLong() * 1024L * 1024L * 1024L,
+                    onLow = { free, floor ->
+                        if (NotifyEventKind.DISK_SPACE_LOW in notifyEventKinds) {
+                            notifier.notify(
+                                NotificationEvent.DiskSpaceLow(
+                                    path = stateDir.stateRoot.toString(),
+                                    freeBytes = free,
+                                    floorBytes = floor,
+                                    timestamp = Instant.now().toEpochMilli(),
+                                ),
+                            )
+                        }
+                    },
                 ).also { it.start() }
         val insightsSharedDeals =
             com.qkt.observe.insights
@@ -544,6 +563,7 @@ class DaemonCommand(
             runCatching { statePersistor.close() }
             mt5TransportJournals.values.forEach { runCatching { it.close() } }
             runCatching { journalRetention.close() }
+            runCatching { diskSpaceGuard.close() }
             runCatching { bybitClient?.close() }
             runCatching { notifier.close() }
             runCatching { insightsSink?.close() }

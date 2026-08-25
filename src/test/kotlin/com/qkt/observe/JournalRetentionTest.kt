@@ -1,8 +1,10 @@
 package com.qkt.observe
 
 import com.qkt.common.FixedClock
+import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.zip.GZIPInputStream
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -37,7 +39,8 @@ class JournalRetentionTest {
 
         val removed = JournalRetention(listOf(audit, transport), retentionDays = 14, clock = FixedClock(now)).sweep()
 
-        assertThat(removed).isEqualTo(3)
+        assertThat(removed.removed).isEqualTo(3)
+        assertThat(removed.compressed).isZero()
         assertThat(old).doesNotExist()
         assertThat(oldMarker).doesNotExist()
         assertThat(oldTransport).doesNotExist()
@@ -56,8 +59,62 @@ class JournalRetentionTest {
 
         val removed = JournalRetention(listOf(audit), retentionDays = 0, clock = FixedClock(now)).sweep()
 
-        assertThat(removed).isZero()
+        assertThat(removed.removed).isZero()
         assertThat(old).exists()
+    }
+
+    @Test
+    fun `compresses closed day-files and leaves the recent window plain`(
+        @TempDir tmp: Path,
+    ) {
+        val audit = tmp.resolve("audit-journal")
+        val closed = touch(audit, "alpha", "audit-2023-11-11.jsonl")
+        val yesterday = touch(audit, "alpha", "audit-2023-11-13.jsonl")
+        val today = touch(audit, "alpha", "audit-2023-11-14.jsonl")
+        val marker = touch(audit, "alpha", "audit-2023-11-11.dropped")
+        Files.writeString(closed, "{\"v\":1}\n{\"v\":2}\n")
+
+        val result =
+            JournalRetention(listOf(audit), retentionDays = 14, clock = FixedClock(now), compressAfterDays = 1)
+                .sweep()
+
+        assertThat(result.compressed).isEqualTo(1)
+        assertThat(result.removed).isZero()
+        assertThat(closed).doesNotExist()
+        assertThat(yesterday).exists()
+        assertThat(today).exists()
+        assertThat(marker).exists()
+        val gz = closed.resolveSibling("audit-2023-11-11.jsonl.gz")
+        assertThat(gz).exists()
+        val content =
+            GZIPInputStream(Files.newInputStream(gz)).use { String(it.readAllBytes(), StandardCharsets.UTF_8) }
+        assertThat(content).isEqualTo("{\"v\":1}\n{\"v\":2}\n")
+    }
+
+    @Test
+    fun `deletes compressed day-files past the retention window`(
+        @TempDir tmp: Path,
+    ) {
+        val audit = tmp.resolve("audit-journal")
+        val oldGz = touch(audit, "alpha", "audit-2023-10-01.jsonl.gz")
+
+        val result = JournalRetention(listOf(audit), retentionDays = 14, clock = FixedClock(now)).sweep()
+
+        assertThat(result.removed).isEqualTo(1)
+        assertThat(oldGz).doesNotExist()
+    }
+
+    @Test
+    fun `zero compressAfterDays never compresses`(
+        @TempDir tmp: Path,
+    ) {
+        val audit = tmp.resolve("audit-journal")
+        val closed = touch(audit, "alpha", "audit-2023-11-01.jsonl")
+
+        val result = JournalRetention(listOf(audit), retentionDays = 60, clock = FixedClock(now)).sweep()
+
+        assertThat(result.compressed).isZero()
+        assertThat(closed).exists()
     }
 
     @Test
@@ -67,6 +124,6 @@ class JournalRetentionTest {
         val removed =
             JournalRetention(listOf(tmp.resolve("nope")), retentionDays = 14, clock = FixedClock(now)).sweep()
 
-        assertThat(removed).isZero()
+        assertThat(removed.removed).isZero()
     }
 }

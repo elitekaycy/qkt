@@ -288,7 +288,9 @@ Controls engine state persistence.
 |---|---|---|---|---|
 | `state.enabled` | boolean | `true` | daemon and live sessions | `false` disables restart recovery and fails production preflight. |
 | `state.async` | boolean | `false` | state persistor | `true` moves persistence writes to a background thread. |
-| `state.journal_retention_days` | integer | `14` | daemon | Day-files of the engine audit journal and MT5 transport journal older than this many UTC days are deleted at daemon start and once a day. `0` keeps everything. |
+| `state.journal_retention_days` | integer | `14` | daemon | Day-files of the engine audit journal and MT5 transport journal (plain or gzipped) older than this many UTC days are deleted at daemon start and once a day. `0` keeps everything. |
+| `state.journal_compress_after_days` | integer | `1` | daemon | Closed `.jsonl` journal day-files older than this many UTC days are gzipped in place (~10x smaller); today's and yesterday's files stay plain with the default. Golden capture and retention read both forms. `0` disables compression. |
+| `state.disk_free_alert_gb` | integer | `10` | daemon and preflight | Below this much free space on the state volume the daemon logs an error and raises a `disk_space_low` alert (once per crossing; re-arms at 110% of the floor). Preflight fails production below the floor. `0` disables. |
 
 State root is not set in config. Use `--state-dir` or `QKT_STATE_DIR` for commands that support state directories.
 
@@ -440,7 +442,7 @@ Notification channels are keyed by channel type. Telegram is built in.
 |---|---|---|---|---|
 | `notify.<channel>.enabled` | boolean | `false` | daemon notifier and preflight | Production preflight fails if no alert channel is enabled unless `runtime.waivers.alerts.reason` is set. |
 | `notify.<channel>.commands` | boolean | `false` | daemon command channels | Telegram command channel is enabled only when this is true. |
-| `notify.<channel>.events` | list | empty | notifier filter | Valid event names: `order_rejected`, `halted`, `resumed`, `position_reconciled`, `strategy_started`, `strategy_stopped`, `strategy_error`, `daemon_started`. |
+| `notify.<channel>.events` | list | empty | notifier filter | Valid event names: `order_rejected`, `halted`, `resumed`, `position_reconciled`, `strategy_started`, `strategy_stopped`, `strategy_error`, `daemon_started`, `disk_space_low`. |
 | `notify.<channel>.daily_summary_utc` | string | empty | daily summary scheduler | UTC time string used by the channel. |
 | `notify.telegram.bot_token` | string | none | Telegram provider | Required for enabled Telegram. |
 | `notify.telegram.chat_id` | string | none | Telegram provider | Required for enabled Telegram. |
