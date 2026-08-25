@@ -442,7 +442,21 @@ class OrderManager(
                 val slCrossed =
                     if (request.side == Side.BUY) fixedSl >= stopsReference else fixedSl <= stopsReference
                 if (slCrossed) {
-                    return rejectCrossedProtection(request, stopsReference, fixedSl)
+                    return rejectCrossedProtection(request, stopsReference, fixedSl, "stop loss")
+                }
+            }
+            // The target needs the same check, but ONLY for an absolute `AT` level. A BY/PCT/RR
+            // target is re-anchored off the fill by resolveBracketAtFill and cannot invert, and
+            // its pre-fill value is a placeholder — checking that would reject healthy brackets.
+            // An inverted absolute target is not a free profit-take: measured on the gold RSI-fade
+            // tape, a BUY filled at 1320.700 carrying TAKE_PROFIT 1320.019 closed instantly for a
+            // 0.68/oz LOSS. MT5 rejects it under the same retcode 10016 the stop side gets.
+            if (stopsReference != null && request.takeProfitAst is com.qkt.dsl.ast.ChildAt) {
+                val tp = request.takeProfit
+                val tpCrossed =
+                    if (request.side == Side.BUY) tp <= stopsReference else tp >= stopsReference
+                if (tpCrossed) {
+                    return rejectCrossedProtection(request, stopsReference, tp, "take profit")
                 }
             }
         }
@@ -2301,10 +2315,11 @@ class OrderManager(
     private fun rejectCrossedProtection(
         request: OrderRequest.Bracket,
         reference: BigDecimal,
-        fixedSl: BigDecimal,
+        level: BigDecimal,
+        leg: String,
     ): SubmitAck {
         val reason =
-            "invalid stops: stop loss $fixedSl already crossed for ${request.side} at reference $reference " +
+            "invalid stops: $leg $level already crossed for ${request.side} at reference $reference " +
                 "(venue would reject, retcode 10016)"
         log.warn("order {} {} — rejected locally, not sent to broker", request.id, reason)
         bus.publish(
