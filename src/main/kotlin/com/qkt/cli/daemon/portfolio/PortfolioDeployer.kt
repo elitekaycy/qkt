@@ -114,6 +114,8 @@ class PortfolioDeployer(
     fun deploy(
         portfolioName: String,
         compiled: PortfolioCompiled,
+        /** `--reconcile=ignore-mismatches`: every child adopts unmatched venue positions instead of refusing to start. */
+        ignoreMismatches: Boolean = false,
     ): PortfolioRecord {
         val children = mutableListOf<StrategyHandle>()
         val childWrappers = mutableListOf<ChildHandle>()
@@ -181,6 +183,7 @@ class PortfolioDeployer(
                         bookController,
                         bookFillBuffer?.let { buffer -> buffer::record } ?: { _, _ -> },
                         bookBalance,
+                        ignoreMismatches,
                     )
                 children.add(handle)
                 childWrappers.add(wrapper)
@@ -493,6 +496,7 @@ class PortfolioDeployer(
         bookController: com.qkt.risk.book.BookRiskController? = null,
         onBookRealized: (String, java.math.BigDecimal) -> Unit = { _, _ -> },
         bookBalance: PortfolioBookBalance? = null,
+        ignoreMismatches: Boolean = false,
     ): Pair<StrategyHandle, ChildHandle> {
         val childName = "$portfolioName/${compiledChild.alias}"
         val gateActive = AtomicBoolean(false)
@@ -523,6 +527,8 @@ class PortfolioDeployer(
         val session =
             LiveSession(
                 strategies = listOf(compiledChild.strategyId to compiledChild.compiled),
+                strategyCommentNames = mapOf(compiledChild.strategyId to compiledChild.ast.name),
+                ignoreMismatches = ignoreMismatches,
                 haltRules = haltRules,
                 source = source,
                 symbols = compiledChild.symbols,
