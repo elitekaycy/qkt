@@ -55,6 +55,29 @@ class TicketAttributionTest {
     }
 
     @Test
+    fun `fromComment resolves a truncated DSL name to the portfolio child id via alias`() {
+        val map = TicketAttribution()
+        map.alias("gold_silver_ratio_accel", "forward_bench:s0")
+        assertThat(map.fromComment("dsl-gold_silver_ratio_acc", listOf("forward_bench:s0")))
+            .isEqualTo("forward_bench:s0")
+        // The alias only speaks for a deployed id — an undeployed target stays unattributed.
+        assertThat(map.fromComment("dsl-gold_silver_ratio_acc", listOf("forward_bench:s1"))).isNull()
+    }
+
+    @Test
+    fun `fromComment stays null when two children share a truncated DSL name`() {
+        val map = TicketAttribution()
+        map.alias("gold_silver_ratio_accel_ny", "forward_bench:s8")
+        map.alias("gold_silver_ratio_accel_london", "forward_bench:s9")
+        assertThat(
+            map.fromComment("dsl-gold_silver_ratio_acc", listOf("forward_bench:s8", "forward_bench:s9")),
+        ).isNull()
+        assertThat(
+            map.fromComment("dsl-gold_silver_ratio_accel_lon", listOf("forward_bench:s8", "forward_bench:s9")),
+        ).isEqualTo("forward_bench:s9")
+    }
+
+    @Test
     fun `fromComment returns null on ambiguity`() {
         val map = TicketAttribution()
         val deployed = listOf("hedge_straddle", "hedge_straddle_v2")
