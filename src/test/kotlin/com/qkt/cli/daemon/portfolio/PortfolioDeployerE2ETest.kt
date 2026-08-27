@@ -418,6 +418,74 @@ class PortfolioDeployerE2ETest {
     }
 
     @Test
+    fun `reconcile ignore-mismatches reaches every portfolio child`(
+        @TempDir tmp: Path,
+    ) {
+        // A venue position with no persisted leg fails the child closed; the deploy-time
+        // flag is the operator's only way to adopt it, so it must not stop at the portfolio.
+        val stateDir = StateDir.resolve(tmp.toString())
+        val venueLong: BrokerFactory = { bus, clock, prices, _, _ ->
+            object : Broker by PaperBroker(bus, clock, prices) {
+                override val supportsPositionTickets: Boolean = true
+
+                override fun getOpenPositions(): Map<String, List<com.qkt.positions.Position>> =
+                    mapOf(
+                        "BACKTEST:BTCUSDT" to
+                            listOf(
+                                com.qkt.positions.Position("BACKTEST:BTCUSDT", BigDecimal("0.1"), BigDecimal("100")),
+                            ),
+                    )
+
+                override fun positionTickets(): List<com.qkt.broker.BrokerPositionTicket> =
+                    listOf(
+                        com.qkt.broker.BrokerPositionTicket(
+                            ticket = "77",
+                            symbol = "BACKTEST:BTCUSDT",
+                            side = com.qkt.common.Side.BUY,
+                            qty = BigDecimal("0.1"),
+                            entryPrice = BigDecimal("100"),
+                            currentPrice = null,
+                            profit = null,
+                            swap = null,
+                            openedAt = null,
+                            comment = "",
+                        ),
+                    )
+            }
+        }
+        val deployer =
+            PortfolioDeployer(
+                stateDir = stateDir,
+                marketSourceProvider = { symbols -> FakeSource(ticksFor(symbols.first())) },
+                brokerFactories = mapOf("backtest" to venueLong),
+            )
+        val compiled = PortfolioLoader.load(Path.of("src/test/resources/dsl/portfolio_weighted.qkt"))
+
+        assertThatThrownBy { deployer.deploy("weighted_book", compiled) }
+            .hasMessageContaining("--reconcile=ignore-mismatches")
+
+        val record = deployer.deploy("weighted_book", compiled, ignoreMismatches = true)
+        try {
+            // Child a trades BTCUSDT and adopts the venue leg under the operator halt; child b
+            // trades ETHUSDT, sees no mismatch, and starts normally.
+            val childrenByAlias = record.children.associateBy { it.childMeta?.alias }
+            val childA = childrenByAlias["a"] ?: error("child 'a' missing")
+            val childB = childrenByAlias["b"] ?: error("child 'b' missing")
+            assertThat(childA.live.isHalted()).`as`("child a adoption halt").isTrue()
+            assertThat(
+                childA.live
+                    .dailySummaryRows()
+                    .single()
+                    .positionsSummary,
+            ).contains("long 0.1")
+            assertThat(childB.live.isHalted()).`as`("child b untouched").isFalse()
+        } finally {
+            record.supervisor.stop()
+            for (child in record.children) runCatching { child.close() }
+        }
+    }
+
+    @Test
     fun `weighted portfolio allocates capital times weight to each child's equity`(
         @TempDir tmp: Path,
     ) {

@@ -14,7 +14,20 @@ class Args(
 
     /** First argv token. Defaults to `"help"` when argv is empty. */
     val subcommand: String = argv.getOrNull(0) ?: "help"
-    private var rest: List<String> = argv.drop(1)
+
+    // `--name=value` is the spelling the daemon's own error text and the reference docs use
+    // (`--reconcile=ignore-mismatches`); split it so both forms parse identically.
+    private var rest: List<String> =
+        argv.drop(1).flatMap { token ->
+            val eq = token.indexOf('=')
+            if (token.startsWith("--") &&
+                eq > 2
+            ) {
+                listOf(token.substring(0, eq), token.substring(eq + 1))
+            } else {
+                listOf(token)
+            }
+        }
 
     /**
      * Validates option tokens before a command performs work and expands supported short aliases.

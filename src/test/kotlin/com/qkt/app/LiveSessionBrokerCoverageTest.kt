@@ -536,6 +536,83 @@ class LiveSessionBrokerCoverageTest {
     }
 
     @Test
+    fun `startup reconcile attaches a portfolio child leg stamped with its DSL name`() {
+        // bot2 2026-08-25: forward_bench:s0 ran STRATEGY gold_silver_ratio_accel; the venue kept
+        // the truncated comment dsl-gold_silver_ratio_acc, which matched neither spelling of
+        // the child id, so reconcile disowned and wiped the child's own leg.
+        val strategy =
+            StubDslStrategy(
+                declaredStreams =
+                    mapOf("gold" to HubKey(broker = "EXNESS_S0", symbol = "XAUUSD", timeframe = "4h")),
+            )
+        val persistor = NoopStatePersistor()
+        val book = LegBook("EXNESS_S0:XAUUSD")
+        book.add(
+            PositionLeg(
+                legId = "gold_silver_ratio_accel-primary",
+                symbol = "EXNESS_S0:XAUUSD",
+                side = Side.BUY,
+                quantity = BigDecimal("0.03"),
+                entryPrice = BigDecimal("4643.452"),
+                openedAt = 1_700_000_000_000L,
+                role = LegRole.PRIMARY,
+                brokerTicket = "3126874959",
+            ),
+        )
+        persistor.saveLegBook("forward_bench:s0", "EXNESS_S0:XAUUSD", book)
+        val factory: BrokerFactory = { bus, clock, priceTracker, _, _ ->
+            object : Broker by PaperBroker(bus, clock, priceTracker) {
+                override val supportsPositionTickets: Boolean = true
+
+                override fun getOpenPositions(): Map<String, List<com.qkt.positions.Position>> =
+                    mapOf(
+                        "EXNESS_S0:XAUUSD" to
+                            listOf(
+                                com.qkt.positions.Position(
+                                    "EXNESS_S0:XAUUSD",
+                                    BigDecimal("0.03"),
+                                    BigDecimal("4643.452"),
+                                ),
+                            ),
+                    )
+
+                override fun positionTickets(): List<BrokerPositionTicket> =
+                    listOf(
+                        BrokerPositionTicket(
+                            ticket = "3126874959",
+                            symbol = "EXNESS_S0:XAUUSD",
+                            side = Side.BUY,
+                            qty = BigDecimal("0.03"),
+                            entryPrice = BigDecimal("4643.452"),
+                            currentPrice = null,
+                            profit = null,
+                            swap = null,
+                            openedAt = null,
+                            comment = "dsl-gold_silver_ratio_acc",
+                        ),
+                    )
+            }
+        }
+        val session =
+            LiveSession(
+                strategies = listOf("forward_bench:s0" to strategy),
+                strategyCommentNames = mapOf("forward_bench:s0" to "gold_silver_ratio_accel"),
+                source = EmptySource,
+                symbols = listOf("EXNESS_S0:XAUUSD"),
+                clock = FixedClock(time = 1_700_000_100_000L),
+                brokerFactories = mapOf("exness_s0" to factory),
+                persistor = persistor,
+            )
+
+        val handle = session.start()
+        assertThat(handle.dailySummaryRows().single().positionsSummary)
+            .contains("long 0.03")
+            .contains("EXNESS_S0:XAUUSD")
+        handle.stop()
+        handle.awaitTermination(java.time.Duration.ofSeconds(2))
+    }
+
+    @Test
     fun `restart re-adopts a persisted straddle of INDEPENDENT legs into the tracker (#432)`() {
         // A hedge_straddle holds two INDEPENDENT legs (a filled long and a filled short), no
         // PRIMARY. On restart the reconciler matches both to the broker's open positions and
