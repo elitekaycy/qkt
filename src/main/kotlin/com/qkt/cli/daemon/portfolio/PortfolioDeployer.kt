@@ -523,6 +523,7 @@ class PortfolioDeployer(
         val session =
             LiveSession(
                 strategies = listOf(compiledChild.strategyId to compiledChild.compiled),
+                strategyCommentNames = mapOf(compiledChild.strategyId to compiledChild.ast.name),
                 haltRules = haltRules,
                 source = source,
                 symbols = compiledChild.symbols,

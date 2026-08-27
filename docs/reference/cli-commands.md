@@ -132,6 +132,11 @@ the venue keeps deal history) and the deploy continues. A venue position with no
 leg, a quantity/side disagreement on a ticket that still exists, or a leg without a ticket
 still fails closed and needs `--reconcile=ignore-mismatches`.
 
+Ticket ownership is read from the venue comment (`dsl-<STRATEGY name>`, truncated by MT5).
+A portfolio child runs under `<portfolio>:<slot>` but stamps its `STRATEGY` name, so the
+session registers that name as an alias of the child id — otherwise a restart with open
+legs disowns every child position and wipes its leg book while the venue stays long.
+
 ## Exit codes
 
 | Code | Meaning |

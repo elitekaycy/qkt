@@ -69,6 +69,12 @@ import org.slf4j.LoggerFactory
  */
 class LiveSession(
     private val strategies: List<Pair<String, Strategy>>,
+    /**
+     * Strategy id → the `STRATEGY` name the DSL stamps into order comments, for hosts
+     * whose runtime id differs from it (portfolio children: `forward_bench:s0` runs
+     * `gold_silver_ratio_accel`). Empty when the two coincide.
+     */
+    private val strategyCommentNames: Map<String, String> = emptyMap(),
     private val rules: List<RiskRule> = emptyList(),
     private val haltRules: List<HaltRule> = emptyList(),
     private val source: MarketSource,
@@ -540,6 +546,9 @@ class LiveSession(
     internal val ticketAttribution =
         com.qkt.observe.insights
             .TicketAttribution()
+            .also { attribution ->
+                strategyCommentNames.forEach { (strategyId, name) -> attribution.alias(name, strategyId) }
+            }
 
     private fun buildBroker(
         paperBroker: PaperBroker,
