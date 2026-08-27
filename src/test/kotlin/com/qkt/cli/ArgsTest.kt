@@ -29,6 +29,14 @@ class ArgsTest {
     }
 
     @Test
+    fun `option accepts the equals spelling`() {
+        val args = Args(arrayOf("deploy", "s.qkt", "--reconcile=ignore-mismatches", "--as", "x"))
+        assertThat(args.option("reconcile")).isEqualTo("ignore-mismatches")
+        assertThat(args.option("as")).isEqualTo("x")
+        assertThat(args.positional(0)).isEqualTo("s.qkt")
+    }
+
+    @Test
     fun `requireOption throws on missing`() {
         val a = Args(arrayOf("backtest", "foo.qkt"))
         assertThatThrownBy { a.requireOption("from") }

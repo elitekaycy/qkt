@@ -932,7 +932,7 @@ object ControlRoutes {
                         val compiled =
                             com.qkt.dsl.portfolio.PortfolioLoader
                                 .load(path)
-                        val record = portfolioDeployer.deploy(name, compiled)
+                        val record = portfolioDeployer.deploy(name, compiled, ignoreMismatches)
                         registry.registerPortfolio(record)
                         record
                     } catch (e: IllegalStateException) {
@@ -1052,6 +1052,7 @@ object ControlRoutes {
                     name = name,
                     path = path,
                     dryRun = dryRun,
+                    ignoreMismatches = ignoreMismatches,
                     promotionResult = promotionResult,
                 )
         }
@@ -1128,6 +1129,7 @@ object ControlRoutes {
         name: String,
         path: Path,
         dryRun: Boolean,
+        ignoreMismatches: Boolean,
         promotionResult: PromotionGateResult,
     ) {
         if (registry.get(name) != null) {
@@ -1150,7 +1152,7 @@ object ControlRoutes {
             try {
                 val compiled = PortfolioLoader.load(path)
                 registry.retirePortfolioForResync(name, compiled.children.map { it.alias })
-                val replacement = portfolioDeployer.deploy(name, compiled)
+                val replacement = portfolioDeployer.deploy(name, compiled, ignoreMismatches)
                 registry.registerPortfolio(replacement)
                 replacement
             } catch (e: IllegalStateException) {
