@@ -22,11 +22,19 @@ class BotTrail(
      * Null for plain one-shot commands — their envelopes are unchanged.
      */
     private val run: String? = null,
+    /**
+     * Externally-owned sink to reuse instead of building one from [insights]. A live
+     * bot session shares its [com.qkt.app.LiveSession] sink here so one process never
+     * runs two sinks against one insights journal. The trail never closes a shared
+     * sink — the caller that built it does.
+     */
+    sharedSink: InsightsSink? = null,
 ) : AutoCloseable {
     private val journal = OrderJournal(stateRoot.resolve("bot"), clock)
     private var seq = 0L
+    private val ownsSink: Boolean = sharedSink == null
     private val sink: InsightsSink? =
-        if (insights.enabled) {
+        sharedSink ?: if (insights.enabled) {
             InsightsSink(
                 url = insights.url,
                 token = insights.token,
@@ -137,6 +145,6 @@ class BotTrail(
 
     override fun close() {
         journal.close()
-        sink?.close()
+        if (ownsSink) sink?.close()
     }
 }
