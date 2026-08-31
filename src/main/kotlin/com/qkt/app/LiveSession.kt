@@ -852,6 +852,13 @@ class LiveSession(
     }
 
     /**
+     * Strategy ids this session announces to insights. Ids beginning with `__` are
+     * session-internal plumbing (e.g. the bot session recorder) — they never trade,
+     * so announcing them would grow a permanent ghost strategy on the dashboard.
+     */
+    private fun insightsStrategyIds(): List<String> = strategies.map { it.first }.filterNot { it.startsWith("__") }
+
+    /**
      * Streams allow-listed event families to the insights sink. Each handler only builds
      * a small envelope and enqueues it — the sink's own thread does JSON and HTTP, so
      * none of this touches the engine loop's latency. Mirrors [wireJournal]'s shape.
@@ -1961,7 +1968,7 @@ class LiveSession(
                         sink = insightsSink,
                         attribution = ticketAttribution,
                         deployedIds = { (strategies.map { it.first } + insightsDeployedIds()).distinct() },
-                        rosterIds = { strategies.map { it.first } },
+                        rosterIds = { insightsStrategyIds() },
                         pollIntervalMs = insightsStatePollMs,
                         sharedDeals = insightsSharedDeals,
                         backfillDays = insightsDealBackfillDays,
@@ -1972,7 +1979,7 @@ class LiveSession(
                                 emptyList()
                             } else {
                                 val now = clock.now()
-                                strategies.map { (strategyId, _) ->
+                                insightsStrategyIds().map { strategyId ->
                                     val pnl = handle.pnlSnapshot(strategyId)
                                     com.qkt.observe.insights.InsightsTranslate.equitySnapshot(
                                         ts = now,
@@ -2007,7 +2014,7 @@ class LiveSession(
         if (insightsSink != null &&
             com.qkt.observe.insights.InsightsEventFamily.LIFECYCLE in insightsEvents
         ) {
-            for ((strategyId, _) in strategies) {
+            for (strategyId in insightsStrategyIds()) {
                 insightsSink.offer(
                     com.qkt.observe.insights.InsightsTranslate.strategyStarted(
                         strategyId = strategyId,
@@ -2159,7 +2166,7 @@ class LiveSession(
                 if (insightsSink != null &&
                     com.qkt.observe.insights.InsightsEventFamily.LIFECYCLE in insightsEvents
                 ) {
-                    for ((strategyId, _) in strategies) {
+                    for (strategyId in insightsStrategyIds()) {
                         insightsSink.offer(
                             com.qkt.observe.insights.InsightsTranslate.strategyStopped(
                                 strategyId = strategyId,

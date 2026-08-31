@@ -152,7 +152,11 @@ class BotSessionCommand(
      * Live session: the same pipeline `qkt deploy` runs (LiveSession, MT5 broker,
      * config halt rules), with bridge strategies in the slots. Intents compile
      * against venue point-in-time facts via [com.qkt.trade.BotGateway], so sizing
-     * and quantization match the one-shot live path exactly.
+     * and quantization match the one-shot live path exactly. When insights egress is
+     * configured, the session and its [com.qkt.trade.BotTrail] share one sink: the
+     * session streams the configured event families (state.account/positions/orders,
+     * equity snapshots, lifecycle) exactly as a daemon deploy does, the trail adds
+     * the bot.* command stream.
      */
     private fun startLive(
         sub: Args,
@@ -202,6 +206,8 @@ class BotSessionCommand(
                 totalDdBasis = cfg.totalDdBasis,
                 startingBalance = cfg.startingBalance,
             )
+        val stateRoot = StateDir.resolve(sub.option("state-dir")).stateRoot
+        val insightsSink = insightsSink(cfg, stateRoot)
         val handle =
             com.qkt.app
                 .LiveSession(
@@ -218,6 +224,10 @@ class BotSessionCommand(
                     dailyDdBasis = cfg.dailyDdBasis,
                     runawayMaxRoundTrips = cfg.runawayMaxRoundTrips,
                     runawayMaxRejections = cfg.runawayMaxRejections,
+                    insightsSink = insightsSink,
+                    insightsEvents = cfg.insights.events,
+                    insightsStatePollMs = cfg.insights.statePollMs,
+                    insightsDealBackfillDays = cfg.insights.dealBackfillDays,
                 ).start()
         val session =
             BotRunSession(
@@ -227,7 +237,6 @@ class BotSessionCommand(
                 history = history,
                 recorder = recorder,
             )
-        val stateRoot = StateDir.resolve(sub.option("state-dir")).stateRoot
         return serve(
             sub = sub,
             json = json,
@@ -242,12 +251,44 @@ class BotSessionCommand(
                     .quoteContext(symbol, cfg.accountCurrency)
             },
             serverThreads = 4,
+            insightsSink = insightsSink,
             onFinish = {
                 BotSessionFiles.delete(stateRoot, runId)
                 null
             },
         )
     }
+
+    /**
+     * Shared insights sink for a live session: the [com.qkt.app.LiveSession] streams
+     * engine/state envelopes and the [com.qkt.trade.BotTrail] streams bot.* envelopes
+     * through the same instance, so one journal directory has exactly one writer.
+     * Null when insights egress is disabled or has no collector URL.
+     */
+    private fun insightsSink(
+        cfg: com.qkt.cli.Config,
+        stateRoot: Path,
+    ): com.qkt.observe.insights.InsightsSink? =
+        if (cfg.insights.enabled && cfg.insights.url.isNotBlank()) {
+            com.qkt.observe.insights.InsightsSink(
+                url = cfg.insights.url,
+                token = cfg.insights.token,
+                instanceId = cfg.insights.instanceId.ifBlank { "qkt" },
+                batchSize = cfg.insights.batchSize,
+                flushIntervalMs = cfg.insights.flushIntervalMs,
+                queueCapacity = cfg.insights.queueCapacity,
+                journalDir =
+                    if (cfg.insights.journalEnabled) {
+                        Path.of(
+                            cfg.insights.journalDir.ifBlank { stateRoot.resolve("bot-insights-journal").toString() },
+                        )
+                    } else {
+                        null
+                    },
+            )
+        } else {
+            null
+        }
 
     private fun serve(
         sub: Args,
@@ -260,12 +301,19 @@ class BotSessionCommand(
         quoteContextFor: ((String) -> com.qkt.trade.BotQuoteContext)?,
         serverThreads: Int,
         onFinish: (com.qkt.backtest.BacktestResult?) -> String?,
+        insightsSink: com.qkt.observe.insights.InsightsSink? = null,
     ): Int {
         val token = randomToken()
         val sessionDir = BotSessionFiles.sessionDir(stateRoot, session.runId)
         Files.createDirectories(sessionDir)
         val trail =
-            com.qkt.trade.BotTrail(stateRoot, cfg.insights, com.qkt.common.SystemClock(), run = session.runId)
+            com.qkt.trade.BotTrail(
+                stateRoot,
+                cfg.insights,
+                com.qkt.common.SystemClock(),
+                run = session.runId,
+                sharedSink = insightsSink,
+            )
         val server =
             BotSessionServer(
                 session = session,
@@ -303,6 +351,7 @@ class BotSessionCommand(
             BotSessionFiles.delete(stateRoot, session.runId)
             server.close()
             trail.close()
+            insightsSink?.close()
         }
         return ExitCodes.SUCCESS
     }

@@ -197,6 +197,54 @@ class LiveSessionInsightsTest {
     }
 
     @Test
+    fun `session-internal double-underscore ids are excluded from lifecycle envelopes`() {
+        val now = Instant.parse("2024-01-15T15:00:00Z")
+        val src = InMemoryMarketSource()
+        src.seedLive("X", listOf(Tick("X", Money.of("100"), now.toEpochMilli())))
+        val sink =
+            InsightsSink(
+                url = server.url("/ingest").toString(),
+                token = "secret",
+                instanceId = "qkt-test",
+                batchSize = 100,
+                flushIntervalMs = 20L,
+                queueCapacity = 1000,
+            )
+
+        fun noop(): Strategy =
+            object : Strategy {
+                override fun onTick(
+                    tick: Tick,
+                    ctx: StrategyContext,
+                    emit: (Signal) -> Unit,
+                ) = Unit
+            }
+        val handle =
+            LiveSession(
+                strategies = listOf("visible" to noop(), "__recorder" to noop()),
+                source = src,
+                symbols = listOf("X"),
+                candleWindow = TimeWindow.ONE_MINUTE,
+                clock = FixedClock(time = now.toEpochMilli()),
+                calendar = TradingCalendar.crypto(),
+                insightsSink = sink,
+                insightsEvents = setOf(InsightsEventFamily.LIFECYCLE),
+            ).start()
+        assertThat(handle.awaitTermination(Duration.ofSeconds(5))).isTrue()
+
+        val bodies = StringBuilder()
+        val deadline = System.currentTimeMillis() + 5_000
+        while (System.currentTimeMillis() < deadline) {
+            server.takeRequest(100, TimeUnit.MILLISECONDS)?.let { bodies.append(it.body.readUtf8()) }
+            if (bodies.contains("\"type\":\"strategy.started\"")) break
+        }
+        sink.close()
+
+        assertThat(bodies.toString()).contains("\"strategyId\":\"visible\"")
+        assertThat(bodies.toString()).doesNotContain("__recorder")
+    }
+
+    @Test
     fun `heartbeat emits per-symbol staleness while a position is open`() {
         val clock = FixedClock(1L)
         val source = TickThenHoldSource()
