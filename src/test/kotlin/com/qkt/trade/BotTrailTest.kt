@@ -5,9 +5,14 @@ import com.qkt.common.Side
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.TimeInForce
 import com.qkt.observe.insights.InsightsConfig
+import com.qkt.observe.insights.InsightsEnvelope
+import com.qkt.observe.insights.InsightsSink
 import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.TimeUnit
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -65,6 +70,44 @@ class BotTrailTest {
         assertThat(lines[0]).contains("\"kind\":\"bot.command\"").contains(action.sha256)
         assertThat(lines[1]).contains("\"kind\":\"bot.submit\"").contains("\"sl\":\"2620.50\"")
         assertThat(lines[2]).contains("\"kind\":\"bot.accepted\"").contains("\"ticket\":\"123\"")
+    }
+
+    @Test
+    fun `shared sink carries trail envelopes and survives trail close`() {
+        val server = MockWebServer().also { it.start() }
+        repeat(10) { server.enqueue(MockResponse().setResponseCode(200).setBody("""{"accepted":1}""")) }
+        val sink =
+            InsightsSink(
+                url = server.url("/ingest").toString(),
+                token = "t",
+                instanceId = "qkt-test",
+                flushIntervalMs = 20L,
+            )
+        val clock = FixedClock(86_400_000L)
+        BotTrail(tmp, InsightsConfig.DISABLED, clock, run = "r1", sharedSink = sink).use { trail ->
+            trail.recordCommand("claude", action, listOf("bot", "buy"))
+        }
+        // The trail is closed; a sink it did not build must still accept envelopes.
+        sink.offer(
+            InsightsEnvelope(
+                id = "after-close",
+                seq = 99L,
+                ts = clock.now(),
+                strategyId = "claude",
+                type = "probe",
+                payload = emptyMap(),
+            ),
+        )
+        val bodies = StringBuilder()
+        val deadline = System.currentTimeMillis() + 5_000
+        while (System.currentTimeMillis() < deadline) {
+            server.takeRequest(100, TimeUnit.MILLISECONDS)?.let { bodies.append(it.body.readUtf8()) }
+            if (bodies.contains("after-close")) break
+        }
+        sink.close()
+        server.shutdown()
+        assertThat(bodies.toString()).contains("\"type\":\"bot.command\"").contains("\"run\":\"r1\"")
+        assertThat(bodies.toString()).contains("\"id\":\"after-close\"")
     }
 
     @Test
