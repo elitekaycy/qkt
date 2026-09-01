@@ -43,6 +43,28 @@ class MT5StateRecoveryMatchTest {
     }
 
     @Test
+    fun `own order id with the generator's double-dash counter matches`() {
+        // live regression (2026-08-31, The5ers HS1-50K): the id generator emits
+        // `dsl-<name>-` + `-<seq>`, and the double-dash tail was misread as a
+        // longer strategy name — the venue SL close then fired with blank
+        // strategyId and the realized P&L was never booked.
+        assertThat(matchOrphan("dsl-gold_ema_pullback--0", "gold_ema_pullback"))
+            .isEqualTo(OrphanMatch.Match)
+        assertThat(matchOrphan("dsl-ema-cross--12", "ema-cross")).isEqualTo(OrphanMatch.Match)
+    }
+
+    @Test
+    fun `double dash truncated before the counter still matches`() {
+        assertThat(matchOrphan("dsl-ema-cross--", "ema-cross")).isEqualTo(OrphanMatch.Match)
+    }
+
+    @Test
+    fun `alpha tail after the dashes still reads as a longer strategy name`() {
+        assertThat(matchOrphan("dsl-ema-cross--x", "ema-cross"))
+            .isInstanceOf(OrphanMatch.AmbiguousOverlap::class.java)
+    }
+
+    @Test
     fun `truncated hedge-straddle comment is ambiguous-truncation and seeded`() {
         assertThat(matchOrphan("dsl-hedge-stradd", "hedge-straddle"))
             .isEqualTo(OrphanMatch.AmbiguousTruncation)
