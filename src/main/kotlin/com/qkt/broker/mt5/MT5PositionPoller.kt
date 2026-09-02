@@ -33,6 +33,15 @@ class MT5PositionPoller(
      */
     private val onPositionOpened: ((MT5Position) -> Boolean)? = null,
     /**
+     * Ledger legs pinned to this broker's tickets. A leg whose ticket is absent from two
+     * consecutive clean snapshots, and that this poller never saw open, closed while nobody
+     * was watching (a restart gap, a gateway outage that outlived the position): its venue
+     * close is synthesized from deal history so the ledger retires the leg through the
+     * ordinary fill path (#1097). Two snapshots, not one, so a leg booked from a fill that
+     * raced a snapshot already in flight is never mistaken for a vanished position.
+     */
+    private val bookedLegs: (() -> List<com.qkt.broker.BookedLeg>)? = null,
+    /**
      * Invoked when an existing position's venue volume increases. Entry orders can fill in
      * multiple slices while retaining one ticket; the broker uses this hook to advance the
      * order's cumulative fill without waiting for a new position ticket.
@@ -103,6 +112,9 @@ class MT5PositionPoller(
      * memory hygiene — far longer than any plausible snapshot hiccup.
      */
     private val closedTickets: MutableMap<Long, Long> = ConcurrentHashMap()
+
+    /** Booked tickets absent from the latest clean snapshot(s), with the consecutive miss count. */
+    private val missingBooked = HashMap<Long, Int>()
 
     /** Runtime-opened tickets rejected by this broker instance's local correlation. */
     private val foreignRuntimeTickets: MutableSet<Long> = ConcurrentHashMap.newKeySet()
@@ -236,6 +248,7 @@ class MT5PositionPoller(
                 onPositionIncreased?.invoke(previous, latest)
             }
         }
+        retireVanishedBookedLegs(current, now)
         val closed = lastSnapshot.keys - current.keys
         for (ticket in closed) {
             when (engineCloseState?.invoke(ticket) ?: EngineCloseState.NONE) {
@@ -274,8 +287,82 @@ class MT5PositionPoller(
         ticket: Long,
         now: Long,
         positionClosed: Boolean,
+    ) = publishCloseFill(
+        qktSymbol = "${profile.name.uppercase()}:${symbol.toQkt(position.symbol)}",
+        closeSide = if (position.type == 0) Side.SELL else Side.BUY,
+        quantity = quantity,
+        ticket = ticket,
+        now = now,
+        dealsFromUtcMs = position.openTime,
+        fallbackPrice = position.priceOpen,
+        positionClosed = positionClosed,
+        strategyId = null,
+    )
+
+    /**
+     * Book the venue close of every ledger leg whose ticket the venue no longer holds. See
+     * [bookedLegs] for the two-snapshot rule; an engine close still pending on the ticket is
+     * left to its own callback.
+     */
+    private fun retireVanishedBookedLegs(
+        current: Map<Long, MT5Position>,
+        now: Long,
     ) {
-        val qktSymbol = "${profile.name.uppercase()}:${symbol.toQkt(position.symbol)}"
+        val legs = bookedLegs?.invoke() ?: return
+        if (legs.isEmpty()) {
+            missingBooked.clear()
+            return
+        }
+        val stillMissing = HashSet<Long>(legs.size)
+        for (leg in legs) {
+            val ticket = leg.ticket.toLongOrNull() ?: continue
+            if (ticket in current || ticket in lastSnapshot || ticket in closedTickets) continue
+            if (engineCloseState?.invoke(ticket) == EngineCloseState.PENDING) continue
+            stillMissing.add(ticket)
+            val misses = (missingBooked[ticket] ?: 0) + 1
+            if (misses < BOOKED_LEG_MISSES_TO_RETIRE) {
+                missingBooked[ticket] = misses
+                continue
+            }
+            closedTickets[ticket] = now
+            log.error(
+                "MT5 poller for {} found ledger leg {} ({}) on ticket {} that the venue no longer holds — " +
+                    "booking the missed venue close",
+                profile.name,
+                leg.legId,
+                leg.strategyId,
+                ticket,
+            )
+            publishCloseFill(
+                qktSymbol = leg.symbol,
+                closeSide = if (leg.side == Side.BUY) Side.SELL else Side.BUY,
+                quantity = leg.quantity,
+                ticket = ticket,
+                now = now,
+                dealsFromUtcMs = leg.openedAt - 1L,
+                fallbackPrice = leg.entryPrice,
+                positionClosed = true,
+                strategyId = leg.strategyId,
+            )
+            observedClosingDeals.remove(ticket)
+            onPositionClosed?.invoke(ticket)
+        }
+        missingBooked.keys.retainAll(stillMissing)
+        missingBooked.keys.removeAll(closedTickets.keys)
+    }
+
+    private fun publishCloseFill(
+        qktSymbol: String,
+        closeSide: Side,
+        quantity: java.math.BigDecimal,
+        ticket: Long,
+        now: Long,
+        dealsFromUtcMs: Long,
+        fallbackPrice: BigDecimal,
+        positionClosed: Boolean,
+        /** Owner when the ticket has no qkt-side meta (a leg restored before this session). */
+        strategyId: String?,
+    ) {
         val meta = closedTicketMeta?.invoke(ticket)
         val clientOrderId =
             meta?.clientOrderId
@@ -286,7 +373,7 @@ class MT5PositionPoller(
                         ticket,
                     )
                 }
-        val deal = client.getClosingDeal(ticket, fromUtcMs = position.openTime, toUtcMs = now)
+        val deal = client.getClosingDeal(ticket, fromUtcMs = dealsFromUtcMs, toUtcMs = now)
         val seenDeals = observedClosingDeals.getOrPut(ticket) { mutableSetOf() }
         val newDeals = deal?.deals.orEmpty().filter { seenDeals.add(it.ticket) }
         val newClosingDeals = newDeals.filter { it.entry != 0 && it.volume.signum() > 0 }
@@ -297,7 +384,7 @@ class MT5PositionPoller(
         val closePrice =
             closingPrice(newClosingDeals)
                 ?: deal?.price
-                ?: (priceProvider?.lastPrice(qktSymbol) ?: position.priceOpen).also { fallback ->
+                ?: (priceProvider?.lastPrice(qktSymbol) ?: fallbackPrice).also { fallback ->
                     log.warn(
                         "MT5 poller for {} pricing close of ticket {} from local proxy {} — closing deal unavailable",
                         profile.name,
@@ -310,10 +397,10 @@ class MT5PositionPoller(
                 clientOrderId = clientOrderId,
                 brokerOrderId = ticket.toString(),
                 symbol = qktSymbol,
-                side = if (position.type == 0) Side.SELL else Side.BUY,
+                side = closeSide,
                 price = closePrice,
                 quantity = quantity,
-                strategyId = meta?.strategyId ?: "",
+                strategyId = meta?.strategyId ?: strategyId ?: "",
                 timestamp = now,
                 updatesOrderExecution = false,
                 venueCosts = venueCosts,
@@ -343,6 +430,9 @@ class MT5PositionPoller(
 
         /** Consecutive failed polls before [onGatewayUnreachable] fires. */
         const val GATEWAY_FAILURE_ALERT_THRESHOLD: Int = 3
+
+        /** Consecutive clean snapshots a booked ticket must be absent from before its leg retires. */
+        const val BOOKED_LEG_MISSES_TO_RETIRE: Int = 2
     }
 }
 

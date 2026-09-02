@@ -195,6 +195,15 @@ class MT5Broker(
     private val mt5Symbol = MT5Symbol(profile.symbolPolicy)
     private val translator = MT5OrderTranslator(profile, mt5Symbol, priceTracker)
     private val gatewayDown = AtomicBoolean(false)
+
+    /** Ledger legs on this broker's tickets; installed by the session, read by the poller thread. */
+    @Volatile
+    private var bookedLegs: () -> List<com.qkt.broker.BookedLeg> = { emptyList() }
+
+    override fun watchBookedLegs(supplier: () -> List<com.qkt.broker.BookedLeg>) {
+        bookedLegs = supplier
+    }
+
     internal val poller =
         MT5PositionPoller(
             client,
@@ -202,6 +211,10 @@ class MT5Broker(
             mt5Symbol,
             bus,
             clock,
+            bookedLegs = {
+                val prefix = "${profile.name.uppercase()}:"
+                bookedLegs().filter { it.symbol.startsWith(prefix) }
+            },
             onPositionOpened = ::onPendingPositionOpened,
             onPositionIncreased = ::onPositionIncreased,
             closedTicketMeta = ::lookupClosedTicketMeta,

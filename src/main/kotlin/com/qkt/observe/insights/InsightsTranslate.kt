@@ -175,6 +175,8 @@ object InsightsTranslate {
                 "accountCurrency" to e.accountCurrency,
                 "netAccountRealized" to e.netAccountRealized,
                 "netStrategyAccountRealized" to e.netStrategyAccountRealized,
+                "kind" to e.kind.name,
+                "executedAt" to e.executedAt,
                 "conversionRate" to e.conversionRate,
                 "conversionTimestampMs" to e.conversionTimestampMs,
                 "conversionSource" to e.conversionSource,

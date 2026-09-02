@@ -280,6 +280,12 @@ class CompositeBroker(
         return accounted
     }
 
+    override fun watchBookedLegs(supplier: () -> List<BookedLeg>) {
+        for (broker in (routes.map { it.second } + listOfNotNull(fallback)).distinct()) {
+            broker.watchBookedLegs(supplier)
+        }
+    }
+
     private fun allLeaves(): List<Broker> = routes.map { it.second } + listOfNotNull(fallback)
 
     private fun brokerFor(symbol: String): Broker? =

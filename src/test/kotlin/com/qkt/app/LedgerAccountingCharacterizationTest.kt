@@ -161,5 +161,38 @@ class LedgerAccountingCharacterizationTest {
         assertThat(h.strategyPnl.realizedFor("alpha")).isEqualByComparingTo("-3.5")
         assertThat(h.riskState.dailyPnLTracker.realizedToday("alpha")).isEqualByComparingTo("-3.5")
         assertThat(h.strategyPnl.equityFor("alpha")).isEqualByComparingTo("9996.5")
+        val accrual = h.accounted.single()
+        assertThat(accrual.kind).isEqualTo(com.qkt.events.FillAccountingKind.FINANCING)
+        assertThat(accrual.netAccountRealized).isEqualByComparingTo("-3.5")
+        assertThat(accrual.legAction).isNull()
+        assertThat(h.trades).isEmpty()
+    }
+
+    @Test
+    fun `a boot reconcile books lifetime realized but stays out of today's loss budget`() {
+        val h = Harness()
+        h.pipeline.applyReconciledRealized("alpha", BigDecimal("12.25"), legId = "leg-7")
+
+        assertThat(h.pnl.realizedTotal()).isEqualByComparingTo("12.25")
+        assertThat(h.strategyPnl.realizedFor("alpha")).isEqualByComparingTo("12.25")
+        assertThat(h.strategyPnl.balanceFor("alpha")).isEqualByComparingTo("10012.25")
+        assertThat(h.riskState.dailyPnLTracker.realizedToday("alpha")).isEqualByComparingTo(BigDecimal.ZERO)
+        val reconcile = h.accounted.single()
+        assertThat(reconcile.kind).isEqualTo(com.qkt.events.FillAccountingKind.RECONCILE)
+        assertThat(reconcile.legId).isEqualTo("leg-7")
+        assertThat(reconcile.orderId).isEqualTo("reconcile:leg-7")
+    }
+
+    @Test
+    fun `an execution's accounted event carries the fill's time and kind`() {
+        val h = Harness()
+        h.clock.time = 5_000L
+        h.fill("e1", Side.BUY, "1", "2000", 1_234L)
+        val open = h.accounted.single()
+        assertThat(open.kind).isEqualTo(com.qkt.events.FillAccountingKind.EXECUTION)
+        // The bus stamps every event it carries, so in the backtest the fill's time is the
+        // clock's; executedAt is whatever the fill carried when it was accounted.
+        assertThat(open.executedAt).isEqualTo(5_000L)
+        assertThat(h.pipeline.tradeHistory.lastTradePnl("alpha")).isNull()
     }
 }

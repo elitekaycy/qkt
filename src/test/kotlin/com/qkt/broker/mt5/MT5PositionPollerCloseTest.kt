@@ -587,4 +587,105 @@ class MT5PositionPollerCloseTest {
         poller.tick()
         assertThat(fills.single().price).isEqualByComparingTo("1.2000")
     }
+
+    private fun bookedLeg(ticket: Long) =
+        com.qkt.broker.BookedLeg(
+            strategyId = "alpha",
+            legId = "leg-a",
+            ticket = ticket.toString(),
+            symbol = "TEST-MT5:XAUUSD",
+            side = Side.BUY,
+            quantity = BigDecimal("0.10"),
+            entryPrice = BigDecimal("100"),
+            openedAt = clock.now() - 60_000L,
+        )
+
+    @Test
+    fun `a booked leg whose ticket the venue no longer holds is closed from deal history`() {
+        server.enqueue(MockResponse().setBody("[]"))
+        server.enqueue(MockResponse().setBody("[]"))
+        server.enqueue(
+            MockResponse().setBody(
+                """[{"ticket":31,"position_id":7001,"entry":1,"price":"104","volume":"0.10","commission":"-0.30"}]""",
+            ),
+        )
+        val closedTickets = mutableListOf<Long>()
+        val poller =
+            MT5PositionPoller(
+                client = client,
+                profile = profile,
+                symbol = MT5Symbol(profile.symbolPolicy),
+                bus = bus,
+                clock = clock,
+                onPositionClosed = { closedTickets += it },
+                bookedLegs = { listOf(bookedLeg(7001L)) },
+            )
+
+        poller.tick()
+        assertThat(fills).isEmpty()
+
+        poller.tick()
+        val close = fills.single()
+        assertThat(close.brokerOrderId).isEqualTo("7001")
+        assertThat(close.clientOrderId).isEqualTo("mt5-close-7001")
+        assertThat(close.strategyId).isEqualTo("alpha")
+        assertThat(close.symbol).isEqualTo("TEST-MT5:XAUUSD")
+        assertThat(close.side).isEqualTo(Side.SELL)
+        assertThat(close.quantity).isEqualByComparingTo("0.10")
+        assertThat(close.price).isEqualByComparingTo("104")
+        assertThat(close.venueCosts).isEqualByComparingTo("0.30")
+        assertThat(close.updatesOrderExecution).isFalse()
+        assertThat(closedTickets).containsExactly(7001L)
+        assertThat(poller.hasPublishedClose(7001L)).isTrue()
+
+        // Retired once: a third clean snapshot without it books nothing more.
+        server.enqueue(MockResponse().setBody("[]"))
+        poller.tick()
+        assertThat(fills).hasSize(1)
+    }
+
+    @Test
+    fun `a booked leg missing from a single snapshot is not retired`() {
+        server.enqueue(MockResponse().setBody("[]"))
+        server.enqueue(MockResponse().setBody(positionJson(7001L, "0.10", "90", "110")))
+        server.enqueue(MockResponse().setBody(positionJson(7001L, "0.10", "90", "110")))
+        val poller =
+            MT5PositionPoller(
+                client = client,
+                profile = profile,
+                symbol = MT5Symbol(profile.symbolPolicy),
+                bus = bus,
+                clock = clock,
+                bookedLegs = { listOf(bookedLeg(7001L)) },
+            )
+
+        poller.tick()
+        poller.tick()
+        poller.tick()
+
+        assertThat(fills).isEmpty()
+    }
+
+    @Test
+    fun `a booked leg with an engine close still pending is left to that close`() {
+        server.enqueue(MockResponse().setBody("[]"))
+        server.enqueue(MockResponse().setBody("[]"))
+        server.enqueue(MockResponse().setBody("[]"))
+        val poller =
+            MT5PositionPoller(
+                client = client,
+                profile = profile,
+                symbol = MT5Symbol(profile.symbolPolicy),
+                bus = bus,
+                clock = clock,
+                engineCloseState = { EngineCloseState.PENDING },
+                bookedLegs = { listOf(bookedLeg(7001L)) },
+            )
+
+        poller.tick()
+        poller.tick()
+        poller.tick()
+
+        assertThat(fills).isEmpty()
+    }
 }
