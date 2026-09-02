@@ -45,6 +45,27 @@ class CliOptionSchemaTest {
     }
 
     @Test
+    fun `research verbs accept the venue position mode`() {
+        for (verb in listOf("backtest", "sweep", "walkforward", "research")) {
+            val args =
+                Args(
+                    arrayOf(
+                        verb,
+                        "strategy.qkt",
+                        "--from",
+                        "2026-01-01",
+                        "--to",
+                        "2026-01-02",
+                        "--position-mode",
+                        "netting",
+                    ),
+                )
+
+            assertThatCode { validate(args) }.doesNotThrowAnyException()
+        }
+    }
+
+    @Test
     fun `backtest schema accepts strict breaker and seeded chaos flags`() {
         val args =
             Args(
