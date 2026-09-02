@@ -14,7 +14,7 @@ This phase is small and additive. It reuses Phase 10b's `BacktestSweep` for per-
 - `WalkForwardResult.concatenatedTestCurve` — cumulative out-of-sample equity curve stitched across folds.
 - `WalkForwardResult.winnerCounts` — `Map<configLabel, Int>` showing how often each config won.
 - `WalkForwardResult.meanTrainScore` / `meanTestScore` — quantifies overfit at the harness level.
-- `com.qkt.backtest.report.WalkForwardReportWriter(dir)` — emits `walkforward_summary.json`, `walkforward_summary.csv`, `concatenated_equity.csv`, `winner_counts.csv`, plus per-fold subdirectories with the full Phase 10 `BacktestReportWriter` output.
+- `com.qkt.backtest.report.WalkForwardReportWriter(dir)` — emits `walkforward_summary.json`, `walkforward_summary.csv`, `concatenated_equity.csv`, `winner_counts.csv`, plus per-fold subdirectories with the full Phase 10 `BacktestReportWriter` output. Reachable from the CLI via `qkt walkforward ... --report-dir DIR`.
 - Reuses Phase 10's `ReportSerializer` for JSON encoding — no new dependencies.
 
 ## Migration from previous phase
@@ -159,7 +159,7 @@ fun `writer emits expected files`(@TempDir dir: Path) {
 - **No multi-symbol cross-asset walk-forward.** Caller passes a single backtest factory; multi-symbol with cross-asset correlation is out of scope.
 - **No live-mode walk-forward** (auto-retrain in production). Strictly offline.
 - **Memory bound is `parallelism + folds`.** Each fold keeps the winner's `BacktestResult` (full equity curve) + top-N labels with scores.
-- **`winnerConfig.toString()` rejected at write time** if it contains `,`, `"`, or `\n`. Use `data class` for sane output.
+- **Winner config text is `toString()` by default.** Pass `configText` to `write` for a readable rendering; CSV fields are quoted when needed.
 - **Not transactional.** A partial failure mid-write leaves a partial directory.
 
 ## References

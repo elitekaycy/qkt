@@ -163,4 +163,34 @@ class WalkForwardCommandTest {
             .contains("\"hash\":\"sha256:")
             .contains("\"mutableStore\":false")
     }
+
+    @Test
+    fun `walkforward --report-dir writes per-fold pnl summary and fold bundles`(
+        @TempDir dir: Path,
+    ) {
+        val reportDir = dir.resolve("wf-report")
+        val code =
+            WalkForwardCommand(
+                wfArgs(writeStrategy(dir), dir, "--rank", "totalPnL", "--report-dir", reportDir.toString()),
+                fetcherOverride = FakeXauFetcher,
+            ).run()
+        assertThat(code).isEqualTo(ExitCodes.SUCCESS)
+
+        val summary = Files.readString(reportDir.resolve("walkforward_summary.csv")).trim().lines()
+        assertThat(summary[0])
+            .isEqualTo(
+                "foldIndex,trainStart,trainEnd,testStart,testEnd,winnerLabel,winnerConfig," +
+                    "trainScore,testTotalPnL,testMaxDrawdown",
+            )
+        assertThat(summary.size).isGreaterThan(1)
+        for (i in 1 until summary.size) {
+            assertThat(summary[i]).startsWith("$i,")
+            assertThat(summary[i]).containsPattern(",fast=[23],fast=[23],")
+            val padded = "fold_%03d".format(i)
+            assertThat(reportDir.resolve("folds/$padded/result.json")).exists()
+            assertThat(reportDir.resolve("folds/$padded/trades.csv")).exists()
+        }
+        assertThat(reportDir.resolve("concatenated_equity.csv")).exists()
+        assertThat(reportDir.resolve("winner_counts.csv")).exists()
+    }
 }
