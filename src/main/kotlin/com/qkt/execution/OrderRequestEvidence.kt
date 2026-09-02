@@ -80,6 +80,7 @@ object OrderRequestEvidence {
                 "timeInForce" to request.timeInForce.name,
                 "createdTs" to request.timestamp,
                 "expiresAt" to request.expiresAt,
+                "legIntent" to legIntentPayload(request.legIntent),
             )
         when (request) {
             is OrderRequest.Market -> {
@@ -177,6 +178,27 @@ object OrderRequestEvidence {
     fun toJson(request: OrderRequest): String =
         buildString {
             appendJsonValue(this, payload(request))
+        }
+
+    /** Structural intent record; `null` while unplanned so pre-intent captures stay comparable. */
+    private fun legIntentPayload(intent: LegIntent): Map<String, Any?>? =
+        when (intent) {
+            LegIntent.Unplanned -> null
+            LegIntent.Net -> linkedMapOf("kind" to "Net")
+            is LegIntent.Open ->
+                linkedMapOf(
+                    "kind" to "Open",
+                    "legId" to intent.legId,
+                    "role" to intent.role.name,
+                    "parentLegId" to intent.parentLegId,
+                )
+            is LegIntent.Close ->
+                linkedMapOf(
+                    "kind" to "Close",
+                    "legId" to intent.legId,
+                    "ticket" to intent.ticket,
+                    "partial" to intent.partial,
+                )
         }
 
     private fun orderTypeLabel(request: OrderRequest): String =
