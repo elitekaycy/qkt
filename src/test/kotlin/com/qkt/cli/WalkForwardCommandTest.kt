@@ -126,6 +126,9 @@ class WalkForwardCommandTest {
             .contains("\"meanOutOfSample\":")
             .contains("\"winnerStability\":")
             .contains("\"foldDetail\":")
+            .contains("\"testTotalPnL\":")
+            .contains("\"testMaxDrawdown\":")
+            .contains("\"testTrades\":")
         assertThat(json).doesNotContain("-1E18").doesNotContain("1000000000000000000")
     }
 
