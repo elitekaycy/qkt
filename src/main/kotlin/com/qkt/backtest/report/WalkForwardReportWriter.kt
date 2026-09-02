@@ -8,37 +8,33 @@ import java.nio.file.Path
 
 /**
  * Writes a walk-forward analysis result ([com.qkt.backtest.walkforward.WalkForwardResult])
- * to a directory: one row per fold in `folds.csv`, an aggregated stitched-equity CSV,
- * and a JSON summary. One writer per output directory; call [write] once.
+ * to a directory: one row per fold in `walkforward_summary.csv`, an aggregated
+ * stitched-equity CSV, a JSON summary, and a full [BacktestReportWriter] bundle per fold
+ * under `folds/fold_NNN/`. One writer per output directory; call [write] once.
  *
- * Winner labels and stringified configs are validated up-front — any CSV-hostile
- * character (comma, quote, newline) in either fails fast so the emitted CSV is
- * always well-formed without needing quoting.
+ * Winner labels and configs are written verbatim; CSV fields containing a comma, quote,
+ * or newline are RFC 4180 quoted so a `fast=8,slow=20` label round-trips through any
+ * CSV reader. Fold directories are indexed, never named after a label.
+ *
  */
 class WalkForwardReportWriter(
     private val dir: Path,
 ) {
-    private val safeLabel = Regex("[A-Za-z0-9_-]+")
-
     /**
      * Emit all artifacts for [result] into the writer's directory. Overwrites any
      * existing files; the directory must exist and be writable.
+     *
+     * @param configText renders a winner config for the summary CSV/JSON; defaults to `toString()`.
      */
-    fun <C> write(result: WalkForwardResult<C>) {
+    fun <C> write(
+        result: WalkForwardResult<C>,
+        configText: (C) -> String = { it.toString() },
+    ) {
         require(Files.isDirectory(dir)) { "Not a directory: $dir" }
         require(Files.isWritable(dir)) { "Directory not writable: $dir" }
-        for (fold in result.folds) {
-            require(safeLabel.matches(fold.winnerLabel)) {
-                "Unsafe winner label for filesystem write: ${fold.winnerLabel}"
-            }
-            val cs = fold.winnerConfig.toString()
-            require(!cs.contains(',') && !cs.contains('"') && !cs.contains('\n')) {
-                "winnerConfig string must not contain comma, double-quote, or newline: $cs"
-            }
-        }
 
-        Files.writeString(dir.resolve("walkforward_summary.csv"), renderSummaryCsv(result))
-        Files.writeString(dir.resolve("walkforward_summary.json"), renderJson(result))
+        Files.writeString(dir.resolve("walkforward_summary.csv"), renderSummaryCsv(result, configText))
+        Files.writeString(dir.resolve("walkforward_summary.json"), renderJson(result, configText))
         Files.writeString(dir.resolve("concatenated_equity.csv"), renderEquityCsv(result.concatenatedTestCurve))
         Files.writeString(dir.resolve("winner_counts.csv"), renderWinnerCountsCsv(result.winnerCounts))
 
@@ -52,7 +48,10 @@ class WalkForwardReportWriter(
         }
     }
 
-    private fun <C> renderSummaryCsv(result: WalkForwardResult<C>): String {
+    private fun <C> renderSummaryCsv(
+        result: WalkForwardResult<C>,
+        configText: (C) -> String,
+    ): String {
         val sb =
             StringBuilder(
                 "foldIndex,trainStart,trainEnd,testStart,testEnd,winnerLabel,winnerConfig,trainScore,testTotalPnL,testMaxDrawdown\n",
@@ -70,9 +69,9 @@ class WalkForwardReportWriter(
                 .append(',')
                 .append(fold.testRange.to)
                 .append(',')
-                .append(fold.winnerLabel)
+                .append(csv(fold.winnerLabel))
                 .append(',')
-                .append(fold.winnerConfig.toString())
+                .append(csv(configText(fold.winnerConfig)))
                 .append(',')
                 .append(fold.trainScore.toPlainString())
                 .append(',')
@@ -83,6 +82,13 @@ class WalkForwardReportWriter(
         }
         return sb.toString()
     }
+
+    private fun csv(value: String): String =
+        if (value.any { it == ',' || it == '"' || it == '\n' || it == '\r' }) {
+            "\"" + value.replace("\"", "\"\"") + "\""
+        } else {
+            value
+        }
 
     private fun renderEquityCsv(curve: List<EquitySample>): String {
         val sb = StringBuilder("timestamp,equity\n")
@@ -100,7 +106,7 @@ class WalkForwardReportWriter(
         val sb = StringBuilder("configLabel,winCount\n")
         for ((label, count) in counts.entries.sortedByDescending { it.value }) {
             sb
-                .append(label)
+                .append(csv(label))
                 .append(',')
                 .append(count)
                 .append('\n')
@@ -108,13 +114,16 @@ class WalkForwardReportWriter(
         return sb.toString()
     }
 
-    private fun <C> renderJson(result: WalkForwardResult<C>): String {
+    private fun <C> renderJson(
+        result: WalkForwardResult<C>,
+        configText: (C) -> String,
+    ): String {
         val sb = StringBuilder("{\n")
         sb.append("  \"folds\": [")
         if (result.folds.isNotEmpty()) {
             sb.append('\n')
             for ((i, fold) in result.folds.withIndex()) {
-                sb.append("    ").append(renderFoldJson(i + 1, fold))
+                sb.append("    ").append(renderFoldJson(i + 1, fold, configText))
                 if (i != result.folds.size - 1) sb.append(",")
                 sb.append('\n')
             }
@@ -143,6 +152,7 @@ class WalkForwardReportWriter(
     private fun <C> renderFoldJson(
         index: Int,
         fold: WalkForwardFold<C>,
+        configText: (C) -> String,
     ): String {
         val r = fold.testResult.global
         val sb = StringBuilder("{")
@@ -163,7 +173,7 @@ class WalkForwardReportWriter(
         sb
             .append(
                 "\n      \"winnerConfig\": ",
-            ).append(ReportSerializer.jsonString(fold.winnerConfig.toString()))
+            ).append(ReportSerializer.jsonString(configText(fold.winnerConfig)))
             .append(",")
         sb.append("\n      \"trainScore\": ").append(ReportSerializer.jsonBigDecimal(fold.trainScore)).append(",")
         sb.append("\n      \"testTotalPnL\": ").append(ReportSerializer.jsonBigDecimal(r.totalPnL)).append(",")
