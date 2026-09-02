@@ -252,6 +252,54 @@ class TradingPipeline(
         )
 
     /**
+     * Stage A of the position-ledger migration: the intent-driven resolution is computed for
+     * every fill and checked against the routing the pending-intent maps produced. A mismatch is
+     * logged, never acted on, so the live wave can prove the two agree before the resolver
+     * becomes the sole authority and the maps are removed.
+     */
+    private val legIntentResolver =
+        LegIntentResolver(
+            orderFor = { clientOrderId -> orderManager.getOrder(clientOrderId)?.request },
+            ownedLegByTicket = { strategyId, symbol, ticket ->
+                strategyPositions.legBookFor(strategyId, symbol)?.ownedLegByTicket(ticket)
+            },
+            positionMode = positionMode,
+        )
+
+    private fun verifyLegIntent(
+        fill: BrokerEvent.OrderFilled,
+        applied: StrategyPositionTracker.FillApplication,
+    ) {
+        val resolution = legIntentResolver.resolve(fill)
+        val agrees =
+            when (val intent = resolution.intent) {
+                is com.qkt.execution.LegIntent.Open ->
+                    applied.legAction == StrategyPositionTracker.LegAction.OPENED && applied.legId == intent.legId
+                is com.qkt.execution.LegIntent.Close ->
+                    if (intent.legId != null) {
+                        applied.legAction == StrategyPositionTracker.LegAction.CLOSED && applied.legId == intent.legId
+                    } else {
+                        applied.legAction != StrategyPositionTracker.LegAction.OPENED
+                    }
+                com.qkt.execution.LegIntent.Net -> applied.legAction == StrategyPositionTracker.LegAction.NETTED
+                com.qkt.execution.LegIntent.Unplanned -> false
+            }
+        if (!agrees) {
+            log.warn(
+                "leg intent disagreement order_id={} strategy_id={} {} {} resolved={} via={} applied={} leg={}",
+                fill.clientOrderId,
+                fill.strategyId,
+                fill.symbol,
+                fill.side,
+                resolution.intent,
+                resolution.source,
+                applied.legAction,
+                applied.legId,
+            )
+        }
+    }
+
+    /**
      * Clock-driven scheduler for DSL `SCHEDULE` blocks (#77). Single instance shared
      * across every strategy. Heartbeat ticks from [ingest] for tick-driven advance,
      * plus [scheduleHeartbeat] from a 1Hz `LiveSession` timer for quiet markets.
@@ -558,6 +606,7 @@ class TradingPipeline(
             pnl.recordRealized(accountRealized.subtract(costs))
 
             val stratApplication = strategyPositions.applyFillDetailed(e)
+            verifyLegIntent(e, stratApplication)
             val rawStratRealized = stratApplication.realized
             val stratRealized = rawStratRealized.multiply(cs)
             val accountStratRealized =
@@ -700,6 +749,7 @@ class TradingPipeline(
             pnl.recordRealized(accountRealized.subtract(costs))
 
             val stratApplication = strategyPositions.applyPartialFillDetailed(asFill)
+            verifyLegIntent(asFill, stratApplication)
             val rawStratRealized = stratApplication.realized
             val stratRealized = rawStratRealized.multiply(cs)
             val accountStratRealized =

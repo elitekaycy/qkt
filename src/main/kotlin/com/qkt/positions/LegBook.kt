@@ -39,6 +39,17 @@ class LegBook(
     /** Return the leg with [legId], or `null` when this book does not own it. */
     fun leg(legId: String): PositionLeg? = legs[legId]
 
+    /**
+     * The non-PRIMARY leg carrying venue [ticket], or `null`. Iterates in place — no snapshot —
+     * because it runs on the fill path when an execution arrives without a known client order.
+     */
+    fun ownedLegByTicket(ticket: String): PositionLeg? {
+        for (leg in legs.values) {
+            if (leg.role != LegRole.PRIMARY && leg.brokerTicket == ticket) return leg
+        }
+        return null
+    }
+
     fun all(): List<PositionLeg> = legs.values.toList()
 
     fun primary(): PositionLeg? = legs.values.firstOrNull { it.role == LegRole.PRIMARY }
