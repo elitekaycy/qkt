@@ -76,7 +76,7 @@ class IntentBook(
         val resolver =
             LegIntentResolver(
                 orderFor = { orders[it] },
-                ownedLegByTicket = { s, sym, t -> tracker.legBookFor(s, sym)?.ownedLegByTicket(t) },
+                legByTicket = { s, sym, t -> tracker.legBookFor(s, sym)?.legByTicket(t) },
                 positionMode = { mode },
             )
         return tracker.applyFillDetailed(event, resolver.resolve(event).intent, cumulativeFilled)

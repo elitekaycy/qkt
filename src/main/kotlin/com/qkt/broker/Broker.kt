@@ -122,6 +122,16 @@ interface Broker {
     ): Set<String> = orders.mapTo(LinkedHashSet()) { it.id }
 
     /**
+     * Hand the broker a live view of the ledger legs that carry one of its venue tickets.
+     * A broker with venue truth compares them against its position snapshots: a ticket the
+     * ledger holds but the venue no longer has closed while nobody was watching, and the
+     * broker must publish that close so the ledger retires the leg (#1097). Read from the
+     * broker's own polling thread — the supplier must be safe to call off the engine thread.
+     * Brokers without venue truth ignore it — the default.
+     */
+    fun watchBookedLegs(supplier: () -> List<BookedLeg>) {}
+
+    /**
      * Release venue-side resources held by this broker (poller threads, reconcilers,
      * HTTP connections, WebSocket transports). Called by the engine when the owning
      * [com.qkt.app.LiveSession] stops, so a long-running daemon that cycles strategies
@@ -227,4 +237,20 @@ data class OrderModification(
     val newQuantity: BigDecimal? = null,
     val newLimitPrice: BigDecimal? = null,
     val newStopPrice: BigDecimal? = null,
+)
+
+/**
+ * A position-ledger leg pinned to a venue ticket, as the broker needs to see it: enough to
+ * synthesize the venue close the engine missed when the ticket is gone.
+ */
+data class BookedLeg(
+    val strategyId: String,
+    val legId: String,
+    val ticket: String,
+    /** qkt symbol with broker prefix, e.g. "EXNESS:XAUUSD". */
+    val symbol: String,
+    val side: com.qkt.common.Side,
+    val quantity: java.math.BigDecimal,
+    val entryPrice: java.math.BigDecimal,
+    val openedAt: Long,
 )
