@@ -30,20 +30,23 @@ class StrategyPositionTrackerMfeTest {
     @Test
     fun `primaryMfeFor returns null before any fill`() {
         val tracker = StrategyPositionTracker()
+        val intents = IntentBook()
         assertThat(tracker.primaryMfeFor("alpha", "BTCUSDT")).isNull()
     }
 
     @Test
     fun `primary fill installs a fresh MFE tracker at zero`() {
         val tracker = StrategyPositionTracker()
-        tracker.applyFill(fill("alpha", "c-1", "BTCUSDT", Side.BUY, "1", "100"))
+        val intents = IntentBook()
+        intents.apply(tracker, fill("alpha", "c-1", "BTCUSDT", Side.BUY, "1", "100"))
         assertThat(tracker.primaryMfeFor("alpha", "BTCUSDT")).isEqualByComparingTo("0")
     }
 
     @Test
     fun `BUY primary MFE rises on favorable ticks and never decreases`() {
         val tracker = StrategyPositionTracker()
-        tracker.applyFill(fill("alpha", "c-1", "BTCUSDT", Side.BUY, "1", "100"))
+        val intents = IntentBook()
+        intents.apply(tracker, fill("alpha", "c-1", "BTCUSDT", Side.BUY, "1", "100"))
         tracker.onTick("BTCUSDT", BigDecimal("105"))
         assertThat(tracker.primaryMfeFor("alpha", "BTCUSDT")).isEqualByComparingTo("5")
         tracker.onTick("BTCUSDT", BigDecimal("110"))
@@ -55,7 +58,8 @@ class StrategyPositionTrackerMfeTest {
     @Test
     fun `BUY primary MAE rises on adverse ticks and never decreases`() {
         val tracker = StrategyPositionTracker()
-        tracker.applyFill(fill("alpha", "c-1", "BTCUSDT", Side.BUY, "1", "100"))
+        val intents = IntentBook()
+        intents.apply(tracker, fill("alpha", "c-1", "BTCUSDT", Side.BUY, "1", "100"))
         tracker.onTick("BTCUSDT", BigDecimal("95"))
         assertThat(tracker.primaryMaeFor("alpha", "BTCUSDT")).isEqualByComparingTo("5")
         tracker.onTick("BTCUSDT", BigDecimal("98"))
@@ -67,7 +71,8 @@ class StrategyPositionTrackerMfeTest {
     @Test
     fun `SELL primary MFE rises on downward ticks`() {
         val tracker = StrategyPositionTracker()
-        tracker.applyFill(fill("alpha", "c-1", "BTCUSDT", Side.SELL, "1", "100"))
+        val intents = IntentBook()
+        intents.apply(tracker, fill("alpha", "c-1", "BTCUSDT", Side.SELL, "1", "100"))
         tracker.onTick("BTCUSDT", BigDecimal("95"))
         assertThat(tracker.primaryMfeFor("alpha", "BTCUSDT")).isEqualByComparingTo("5")
         tracker.onTick("BTCUSDT", BigDecimal("105")) // unfavorable for SELL — MFE stays
@@ -77,21 +82,23 @@ class StrategyPositionTrackerMfeTest {
     @Test
     fun `closing primary fully removes the MFE tracker`() {
         val tracker = StrategyPositionTracker()
-        tracker.applyFill(fill("alpha", "c-1", "BTCUSDT", Side.BUY, "1", "100"))
+        val intents = IntentBook()
+        intents.apply(tracker, fill("alpha", "c-1", "BTCUSDT", Side.BUY, "1", "100"))
         tracker.onTick("BTCUSDT", BigDecimal("110"))
         // Close the primary
-        tracker.applyFill(fill("alpha", "c-2", "BTCUSDT", Side.SELL, "1", "110"))
+        intents.apply(tracker, fill("alpha", "c-2", "BTCUSDT", Side.SELL, "1", "110"))
         assertThat(tracker.primaryMfeFor("alpha", "BTCUSDT")).isNull()
     }
 
     @Test
     fun `flipping primary re-anchors MFE to the new entry`() {
         val tracker = StrategyPositionTracker()
-        tracker.applyFill(fill("alpha", "c-1", "BTCUSDT", Side.BUY, "1", "100"))
+        val intents = IntentBook()
+        intents.apply(tracker, fill("alpha", "c-1", "BTCUSDT", Side.BUY, "1", "100"))
         tracker.onTick("BTCUSDT", BigDecimal("110"))
         assertThat(tracker.primaryMfeFor("alpha", "BTCUSDT")).isEqualByComparingTo("10")
         // Flip: SELL 2 against BUY 1 — net SELL 1 at trade price 110
-        tracker.applyFill(fill("alpha", "c-2", "BTCUSDT", Side.SELL, "2", "110"))
+        intents.apply(tracker, fill("alpha", "c-2", "BTCUSDT", Side.SELL, "2", "110"))
         assertThat(tracker.primaryMfeFor("alpha", "BTCUSDT")).isEqualByComparingTo("0")
         // Downward tick now grows MFE on the SELL primary
         tracker.onTick("BTCUSDT", BigDecimal("100"))
@@ -101,10 +108,11 @@ class StrategyPositionTrackerMfeTest {
     @Test
     fun `averaging fill re-anchors MFE to the new weighted entry`() {
         val tracker = StrategyPositionTracker()
-        tracker.applyFill(fill("alpha", "c-1", "BTCUSDT", Side.BUY, "1", "100"))
+        val intents = IntentBook()
+        intents.apply(tracker, fill("alpha", "c-1", "BTCUSDT", Side.BUY, "1", "100"))
         tracker.onTick("BTCUSDT", BigDecimal("110"))
         // Add to BUY at 130 — new weighted entry = (100+130)/2 = 115
-        tracker.applyFill(fill("alpha", "c-2", "BTCUSDT", Side.BUY, "1", "130"))
+        intents.apply(tracker, fill("alpha", "c-2", "BTCUSDT", Side.BUY, "1", "130"))
         // MFE reset because the tracker was rebuilt at the new entry
         assertThat(tracker.primaryMfeFor("alpha", "BTCUSDT")).isEqualByComparingTo("0")
         tracker.onTick("BTCUSDT", BigDecimal("125"))
@@ -114,6 +122,7 @@ class StrategyPositionTrackerMfeTest {
     @Test
     fun `onTick on a symbol with no positions is a no-op`() {
         val tracker = StrategyPositionTracker()
+        val intents = IntentBook()
         tracker.onTick("BTCUSDT", BigDecimal("100"))
         assertThat(tracker.primaryMfeFor("alpha", "BTCUSDT")).isNull()
     }
@@ -121,11 +130,12 @@ class StrategyPositionTrackerMfeTest {
     @Test
     fun `STACK leg fills do not affect primary MFE tracker`() {
         val tracker = StrategyPositionTracker()
-        tracker.applyFill(fill("alpha", "c-1", "BTCUSDT", Side.BUY, "1", "100"))
+        val intents = IntentBook()
+        intents.apply(tracker, fill("alpha", "c-1", "BTCUSDT", Side.BUY, "1", "100"))
         tracker.onTick("BTCUSDT", BigDecimal("110"))
 
-        tracker.registerStackOpen("alpha", "stack-entry", "stack-1", "primary-1")
-        tracker.applyFill(fill("alpha", "stack-entry", "BTCUSDT", Side.BUY, "0.5", "110"))
+        intents.stackOpen("alpha", "stack-entry", "stack-1", "primary-1")
+        intents.apply(tracker, fill("alpha", "stack-entry", "BTCUSDT", Side.BUY, "0.5", "110"))
         // Primary MFE preserved
         assertThat(tracker.primaryMfeFor("alpha", "BTCUSDT")).isEqualByComparingTo("10")
     }

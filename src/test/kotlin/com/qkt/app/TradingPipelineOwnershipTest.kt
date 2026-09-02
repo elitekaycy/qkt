@@ -119,13 +119,13 @@ class TradingPipelineOwnershipTest {
             riskEngine = RiskEngine(rules = emptyList(), positions = positions),
             riskState = riskState,
             mode = Mode.BACKTEST,
+            positionMode = { com.qkt.broker.PositionAccountingMode.HEDGING },
             calendar = TradingCalendar.crypto(),
             source = NullMarketSource,
             candleWindow = TimeWindow.ONE_MINUTE,
         )
         val trades = mutableListOf<TradeEvent>()
         bus.subscribe<TradeEvent> { trades.add(it) }
-        strategyPositions.registerIndependentOpen("alpha", "entry", "independent-leg")
 
         bus.publish(
             BrokerEvent.OrderPartiallyFilled(

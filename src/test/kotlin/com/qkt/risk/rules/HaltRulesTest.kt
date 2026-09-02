@@ -9,6 +9,7 @@ import com.qkt.events.BrokerEvent
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.pnl.PnLCalculator
 import com.qkt.pnl.StrategyPnL
+import com.qkt.positions.IntentBook
 import com.qkt.positions.PositionTracker
 import com.qkt.positions.StrategyPositionTracker
 import com.qkt.risk.DrawdownBasis
@@ -49,7 +50,7 @@ class HaltRulesTest {
         fun applyAndRecord(event: BrokerEvent.OrderFilled) {
             val realized = positions.applyFill(event)
             pnl.recordRealized(realized)
-            val stratRealized = strategyPositions.applyFill(event)
+            val stratRealized = IntentBook().apply(strategyPositions, event)
             strategyPnL.recordRealized(event.strategyId, stratRealized)
         }
     }

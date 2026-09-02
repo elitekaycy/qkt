@@ -181,6 +181,21 @@ class TradingPipelineOcoEntryTest {
     }
 
     @Test
+    fun `a straddle leg that fills after its sibling cancelled it still opens its own leg`() {
+        // Reproduction of #1098: leg A fills, the OCO cancels leg B, then B fills anyway on a
+        // whipsaw. B's fill must open its INDEPENDENT leg, not net into a PRIMARY.
+        val h = harness(StraddleStrategy(shouldEmit = { _, _ -> true }, makeOco = { straddle("1") }))
+        h.bus.publish(TickEvent(Tick(symbol, BigDecimal("2000"), 100L)))
+        fill(h.bus, "e1-A", Side.BUY, "2010")
+        fill(h.bus, "e1-B", Side.SELL, "1990")
+
+        val legs = h.strategyPositions.legBookFor("alpha", symbol)!!.all()
+        assertThat(legs).hasSize(2)
+        assertThat(legs.map { it.role }).containsOnly(com.qkt.positions.LegRole.INDEPENDENT)
+        assertThat(legs.map { it.legId }).containsExactlyInAnyOrder("b1-A", "b1-B")
+    }
+
+    @Test
     fun `count-gated straddle does not re-arm after both legs fill`() {
         // The fix for the prod accumulation: gate on the TRUTHFUL count, not the net. Emit a
         // straddle once per session tick, only while flat by count. The old POSITION = 0 gate

@@ -111,9 +111,15 @@ interface Broker {
      * from the result has no venue counterpart at all; the caller retires it rather than
      * carrying a phantom working order (and its exposure) for the rest of the session (#1048
      * legacy state). Brokers without venue truth vouch for every order — the default.
+     *
+     * [bookedTickets] are the venue position tickets the position ledger already holds for
+     * these strategies. An execution on such a ticket was booked before the restart: the broker
+     * must still join the order to its ticket but must not republish that execution (#1096).
      */
-    fun recoverPendingOrders(orders: List<com.qkt.execution.ManagedOrder>): Set<String> =
-        orders.mapTo(LinkedHashSet()) { it.id }
+    fun recoverPendingOrders(
+        orders: List<com.qkt.execution.ManagedOrder>,
+        bookedTickets: Set<String> = emptySet(),
+    ): Set<String> = orders.mapTo(LinkedHashSet()) { it.id }
 
     /**
      * Release venue-side resources held by this broker (poller threads, reconcilers,

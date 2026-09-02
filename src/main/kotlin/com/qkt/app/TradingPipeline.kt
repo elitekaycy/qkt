@@ -241,10 +241,10 @@ class TradingPipeline(
             strategyNetQty = { strategyId, symbol ->
                 strategyPositions.positionFor(strategyId, symbol)?.quantity ?: java.math.BigDecimal.ZERO
             },
-            hasLegLinkage = { strategyId, clientOrderId ->
-                strategyPositions.hasRegisteredClose(strategyId, clientOrderId)
-            },
             positionMode = positionMode,
+            bookedVenueTickets = { strategyId ->
+                strategyPositions.allLegsFor(strategyId).mapNotNullTo(LinkedHashSet()) { it.brokerTicket }
+            },
         )
     val latchManager: LatchManager =
         LatchManager(
@@ -252,10 +252,10 @@ class TradingPipeline(
         )
 
     /**
-     * Stage A of the position-ledger migration: the intent-driven resolution is computed for
-     * every fill and checked against the routing the pending-intent maps produced. A mismatch is
-     * logged, never acted on, so the live wave can prove the two agree before the resolver
-     * becomes the sole authority and the maps are removed.
+     * Recovers each execution's leg intent — from the order it names, else from the venue
+     * ticket an owned leg already carries, else the venue's accounting default — and hands it
+     * to the ledger. The order is the only routing authority; nothing is registered ahead of
+     * a fill and nothing is forgotten on cancel.
      */
     private val legIntentResolver =
         LegIntentResolver(
@@ -265,39 +265,6 @@ class TradingPipeline(
             },
             positionMode = positionMode,
         )
-
-    private fun verifyLegIntent(
-        fill: BrokerEvent.OrderFilled,
-        applied: StrategyPositionTracker.FillApplication,
-    ) {
-        val resolution = legIntentResolver.resolve(fill)
-        val agrees =
-            when (val intent = resolution.intent) {
-                is com.qkt.execution.LegIntent.Open ->
-                    applied.legAction == StrategyPositionTracker.LegAction.OPENED && applied.legId == intent.legId
-                is com.qkt.execution.LegIntent.Close ->
-                    if (intent.legId != null) {
-                        applied.legAction == StrategyPositionTracker.LegAction.CLOSED && applied.legId == intent.legId
-                    } else {
-                        applied.legAction != StrategyPositionTracker.LegAction.OPENED
-                    }
-                com.qkt.execution.LegIntent.Net -> applied.legAction == StrategyPositionTracker.LegAction.NETTED
-                com.qkt.execution.LegIntent.Unplanned -> false
-            }
-        if (!agrees) {
-            log.warn(
-                "leg intent disagreement order_id={} strategy_id={} {} {} resolved={} via={} applied={} leg={}",
-                fill.clientOrderId,
-                fill.strategyId,
-                fill.symbol,
-                fill.side,
-                resolution.intent,
-                resolution.source,
-                applied.legAction,
-                applied.legId,
-            )
-        }
-    }
 
     /**
      * Clock-driven scheduler for DSL `SCHEDULE` blocks (#77). Single instance shared
@@ -434,7 +401,6 @@ class TradingPipeline(
                                         exitHookManager.register(strategyId, planned, exitHook)
                                     }
                                     exitHookManager.trackCloseRequest(strategyId, planned)
-                                    registerLegIntents(strategyId, planned)
                                     bus.publish(OrderEvent(planned))
                                 }
                                 is Decision.Reject -> {
@@ -582,6 +548,13 @@ class TradingPipeline(
             // registry.
             val accountBefore = positions.positionFor(e.symbol)
             val strategyBefore = strategyPositions.positionFor(e.strategyId, e.symbol)
+            val stratApplication =
+                strategyPositions.applyFillDetailed(
+                    e,
+                    legIntentResolver.resolve(e).intent,
+                    cumulativeFilled = cumulativeAfter(e.clientOrderId, e.quantity),
+                )
+            if (stratApplication.unbooked) return@subscribeFirst
             val contractSize = instruments.lookup(e.symbol)?.contractSize
             val cs = contractSize ?: BigDecimal.ONE
             // Commission is a per-fill cash charge (#335). Net it out of realized PnL for
@@ -605,8 +578,6 @@ class TradingPipeline(
             val accountRealized = convertedRealized.account.amount
             pnl.recordRealized(accountRealized.subtract(costs))
 
-            val stratApplication = strategyPositions.applyFillDetailed(e)
-            verifyLegIntent(e, stratApplication)
             val rawStratRealized = stratApplication.realized
             val stratRealized = rawStratRealized.multiply(cs)
             val accountStratRealized =
@@ -727,6 +698,13 @@ class TradingPipeline(
             val contractSize = instruments.lookup(e.symbol)?.contractSize
             val cs = contractSize ?: BigDecimal.ONE
             val strategyBefore = strategyPositions.positionFor(e.strategyId, e.symbol)
+            val stratApplication =
+                strategyPositions.applyFillDetailed(
+                    asFill,
+                    legIntentResolver.resolve(asFill).intent,
+                    cumulativeFilled = e.cumulativeFilled,
+                )
+            if (stratApplication.unbooked) return@subscribe
             val commission = commissionBook.charge(e.strategyId, e.symbol, e.quantity)
             val venueCosts =
                 if (e.typedVenueCosts.isNotEmpty()) {
@@ -748,8 +726,6 @@ class TradingPipeline(
             val accountRealized = convertedRealized.account.amount
             pnl.recordRealized(accountRealized.subtract(costs))
 
-            val stratApplication = strategyPositions.applyPartialFillDetailed(asFill)
-            verifyLegIntent(asFill, stratApplication)
             val rawStratRealized = stratApplication.realized
             val stratRealized = rawStratRealized.multiply(cs)
             val accountStratRealized =
@@ -845,14 +821,10 @@ class TradingPipeline(
         bus.subscribe<BrokerEvent.OrderRejected> { e ->
             log.warn("Order rejected: ${e.clientOrderId} reason=${e.reason}")
             dslStrategiesById[e.strategyId]?.onOrderRejected(e.clientOrderId)
-            strategyPositions.forgetPending(e.strategyId, e.clientOrderId)
         }
         bus.subscribe<BrokerEvent.OrderCancelled> { e ->
             exitHookManager.onCancelled(e)
             dslStrategiesById[e.strategyId]?.onOrderTerminal(e.clientOrderId)
-            // The losing leg of an OCO bracket cancels once its sibling fills; drop its
-            // pre-registered open/close intent so the pending maps don't leak.
-            strategyPositions.forgetPending(e.strategyId, e.clientOrderId)
         }
         bus.subscribe<RiskRejectedEvent> { e ->
             dslStrategiesById[e.request.strategyId]?.onOrderRejected(e.request.id)
@@ -860,6 +832,17 @@ class TradingPipeline(
         }
         bus.subscribe<CandleEvent> { e -> onCandle(e.candle) }
     }
+
+    /**
+     * The order's executed quantity once [sliceQuantity] is included: the manager's running
+     * total is read before it books this slice (this handler subscribes first), so add it.
+     * A replayed terminal fill therefore reports a cumulative the leg already holds.
+     */
+    private fun cumulativeAfter(
+        clientOrderId: String,
+        sliceQuantity: BigDecimal,
+    ): BigDecimal =
+        (orderManager.getOrder(clientOrderId)?.cumulativeFilledQuantity ?: BigDecimal.ZERO).add(sliceQuantity)
 
     fun ingest(tick: Tick) {
         val isMacroObservation = tick.symbol.startsWith("MACRO:")
@@ -1121,63 +1104,6 @@ class TradingPipeline(
                 "Strategy '$strategyId' binds a volume-weighted indicator (VWAP/OBV) on $symbol but its " +
                     "data feed ('${source.name}') does not supply volume — bind a volume-bearing feed or remove the indicator"
             }
-        }
-    }
-
-    /**
-     * Mirror a planned request's [com.qkt.execution.LegIntent]s into the tracker's pending-intent
-     * maps. The intent on the order is the source of truth; these registrations are the adapter
-     * the tracker's fill routing still reads. A bracket's `-tp`/`-sl` exits are minted later by
-     * [OrderManager] under deterministic ids, so their closes are registered from the bracket
-     * here. Straddle legs and STACK_AT tiers arrive already stamped (planner / orchestrator).
-     */
-    private fun registerLegIntents(
-        strategyId: String,
-        request: com.qkt.execution.OrderRequest,
-    ) {
-        when (request) {
-            is com.qkt.execution.OrderRequest.Bracket -> registerBracketIntent(strategyId, request)
-            is com.qkt.execution.OrderRequest.StandaloneOCO -> {
-                registerLegIntents(strategyId, request.leg1)
-                registerLegIntents(strategyId, request.leg2)
-            }
-            else -> registerLeafIntent(strategyId, request)
-        }
-    }
-
-    private fun registerBracketIntent(
-        strategyId: String,
-        bracket: com.qkt.execution.OrderRequest.Bracket,
-    ) {
-        val intent = bracket.entry.legIntent as? com.qkt.execution.LegIntent.Open ?: return
-        when (intent.role) {
-            com.qkt.positions.LegRole.STACK ->
-                strategyPositions.registerStackOpen(
-                    strategyId = strategyId,
-                    clientOrderId = bracket.entry.id,
-                    stackLegId = intent.legId,
-                    parentLegId = requireNotNull(intent.parentLegId),
-                )
-            com.qkt.positions.LegRole.INDEPENDENT,
-            com.qkt.positions.LegRole.PRIMARY,
-            -> strategyPositions.registerIndependentOpen(strategyId, bracket.entry.id, intent.legId)
-        }
-        strategyPositions.registerStackClose(strategyId, "${bracket.id}-tp", intent.legId)
-        strategyPositions.registerStackClose(strategyId, "${bracket.id}-sl", intent.legId)
-    }
-
-    private fun registerLeafIntent(
-        strategyId: String,
-        leaf: com.qkt.execution.OrderRequest,
-    ) {
-        when (val intent = leaf.legIntent) {
-            is com.qkt.execution.LegIntent.Open ->
-                strategyPositions.registerIndependentOpen(strategyId, leaf.id, intent.legId)
-            is com.qkt.execution.LegIntent.Close ->
-                intent.legId?.let { strategyPositions.registerStackClose(strategyId, leaf.id, it) }
-            com.qkt.execution.LegIntent.Net,
-            com.qkt.execution.LegIntent.Unplanned,
-            -> {}
         }
     }
 

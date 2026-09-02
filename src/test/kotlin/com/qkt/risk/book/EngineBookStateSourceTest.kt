@@ -6,6 +6,7 @@ import com.qkt.instrument.NoopInstrumentRegistry
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.pnl.PnLCalculator
 import com.qkt.pnl.StrategyPnL
+import com.qkt.positions.IntentBook
 import com.qkt.positions.PositionTracker
 import com.qkt.positions.StrategyPositionTracker
 import java.math.BigDecimal
@@ -34,8 +35,8 @@ class EngineBookStateSourceTest {
         val prices = MarketPriceTracker()
         prices.update("X", BigDecimal("100"))
         val positions = StrategyPositionTracker()
-        positions.applyFill(fill("a", "X", Side.BUY, "1", "100"))
-        positions.applyFill(fill("b", "X", Side.SELL, "1", "100"))
+        IntentBook().apply(positions, fill("a", "X", Side.BUY, "1", "100"))
+        IntentBook().apply(positions, fill("b", "X", Side.SELL, "1", "100"))
         val strategyPnL = StrategyPnL(positions, prices)
         val pnl = PnLCalculator(PositionTracker(), prices)
 

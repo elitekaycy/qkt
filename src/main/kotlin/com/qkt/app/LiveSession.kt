@@ -447,7 +447,7 @@ class LiveSession(
                         if (!ignoreMismatches) {
                             throw ReconcileException(
                                 "$strategyId/$symbol: ${outcome.details}. " +
-                                    "Pass --reconcile=ignore-mismatches to attach broker positions as PRIMARY.",
+                                    "Pass --reconcile=ignore-mismatches to adopt the venue positions as independent legs.",
                             )
                         }
                         log.warn(
