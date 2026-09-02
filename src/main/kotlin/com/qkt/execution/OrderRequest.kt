@@ -664,3 +664,14 @@ fun OrderRequest.openingLegIntent(): LegIntent =
         is OrderRequest.StandaloneOCO -> leg1.openingLegIntent()
         else -> legIntent
     }
+
+/**
+ * The intent an exit minted for this request must carry: an entry that opens leg `L` is closed
+ * by `Close(L)`; a netting entry is closed by a netting exit; an unplanned entry yields an
+ * unplanned exit. Used by [com.qkt.app.OrderManager] when it mints `-tp`/`-sl` children.
+ */
+fun OrderRequest.exitLegIntent(): LegIntent =
+    when (val opening = openingLegIntent()) {
+        is LegIntent.Open -> LegIntent.Close(legId = opening.legId)
+        else -> opening
+    }

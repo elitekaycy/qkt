@@ -350,7 +350,9 @@ class OrderManagerOcoTest {
 
         om.submit(request)
 
-        assertThat(broker.submits).containsExactly(request)
+        // The venue receives the atomic OCO exactly as submitted, with leg intents planned.
+        assertThat(broker.submits)
+            .containsExactly(LegIntentPlanner.plan(request, com.qkt.broker.PositionAccountingMode.UNKNOWN))
         assertThat(om.siblingsOf("native-l1")).isEmpty()
     }
 

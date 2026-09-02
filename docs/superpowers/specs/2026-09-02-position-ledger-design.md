@@ -67,18 +67,20 @@ derived views over `legIntent` (kept as properties so the MT5 close-by-ticket pa
 `TradingPipeline` at the point the three `register*` calls run today, and is the **only** place
 accounting mode influences booking:
 
-| request | NETTING | HEDGING / UNKNOWN |
+| request | NETTING / UNKNOWN | HEDGING |
 |---|---|---|
-| plain entry leaf, no close fields | `Net` | `Open(request.id, INDEPENDENT)` |
+| plain entry leaf (Market/Limit/Stop, no close fields) | `Net` | `Open(request.id, INDEPENDENT)` |
 | leaf with `closesLegId`/`closesTicket` | `Close(...)` | `Close(...)` |
-| Bracket | entry `Open(bracket.id, PRIMARY)`, exits `Close(bracket.id)` | entry `Open(bracket.id, INDEPENDENT)`, exits `Close(bracket.id)` |
-| StandaloneOCO of Brackets | each leg as Bracket | same |
-| Stack tier (orchestrator) | `Open(tier.id, STACK, parent)` / `Close(tier.id)` | same |
+| Bracket | entry `Net`; minted exits `Net` | entry `Open(bracket.id, INDEPENDENT)`; minted exits `Close(bracket.id)` |
+| StandaloneOCO of two Brackets (straddle) | each leg `Open(leg.id, INDEPENDENT)` | same |
+| STACK_AT tier (stamped by the orchestrator) | `Open(tier.id, STACK, parent)` / `Close(tier.id)` | same |
+| pyramiding `Stack` layer (minted by OrderManager) | `Net` | `Open(layer.id, INDEPENDENT)` |
 | already planned | unchanged | unchanged |
 
-UNKNOWN is treated as HEDGING (the reconcile policy already does). A leaf reaching the broker as
-`Unplanned` is a programming error and is rejected by `OrderManager.submit` with a `RiskRejectedEvent`
--style loud failure, never silently netted.
+UNKNOWN keeps the netting book in the engine (the venue has not confirmed it holds coexisting
+tickets; reconciliation stays conservative per direction). Live sessions always resolve a real mode
+from the venue. A leaf reaching the broker as `Unplanned` is a programming error and is rejected by
+`OrderManager.submit` with a `RiskRejectedEvent`-style loud failure (stage B), never silently netted.
 
 The three constructors that carry no intent today are fixed at the source: `Signal.Buy/Sell →
 Market` (`OrderFactory`) leaves `Unplanned` for the planner; `OrderManager`'s TimeExit
@@ -94,7 +96,7 @@ precedence in `LegIntentResolver`:
    restart (pending orders are persisted with their intent; `recoverPendingOrders` restores them).
 2. A leg owned by this strategy whose `brokerTicket == brokerOrderId` — the venue-detected close
    path (`MT5PositionPoller`, `updatesOrderExecution = false`).
-3. `Net` **only if** `mode(symbol) == NETTING`. On HEDGING/UNKNOWN an unresolvable fill is booked as
+3. `Net` **only if** `mode(symbol) != HEDGING`. On HEDGING an unresolvable fill is booked as
    `Open(clientOrderId, INDEPENDENT)` (it *is* a new ticket on such a venue) and raised as a WARN
    plus `NotificationEvent` — the book never silently nets on a hedging account.
 
