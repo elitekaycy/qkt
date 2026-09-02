@@ -7,7 +7,6 @@ import com.qkt.events.RiskEvent
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.pnl.PnLCalculator
 import com.qkt.pnl.StrategyPnL
-import com.qkt.positions.PositionTracker
 import com.qkt.positions.StrategyPositionTracker
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -17,7 +16,8 @@ class RiskStateTest {
         val sequencer = MonotonicSequenceGenerator()
         val bus = EventBus(clock, sequencer)
         val prices = MarketPriceTracker()
-        val positions = PositionTracker()
+        val strategyPositions = StrategyPositionTracker()
+        val positions = strategyPositions.account
         val pnl = PnLCalculator(positions, prices)
         val strategyPnL = StrategyPnL(StrategyPositionTracker(), prices)
         val state = RiskState(pnl, strategyPnL, clock, bus)

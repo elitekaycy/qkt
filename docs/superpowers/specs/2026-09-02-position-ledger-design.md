@@ -105,58 +105,62 @@ forgotten on terminal/cancel/reject.
 
 ### 4. One ledger
 
-`PositionLedger` = today's `LegBook` per (strategy, symbol), owned by `StrategyPositionTracker`
-(renamed in stage C). Its single mutator:
+The ledger is `StrategyPositionTracker` (the name stays: 40+ call sites, no information in a
+rename) holding one `LegBook` per (strategy, symbol). Its single fill mutator:
 
 ```kotlin
-fun apply(strategyId: String, fill: OrderFilled, intent: LegIntent): Realization
-data class Realization(val legId: String?, val action: LegAction, val closedQty: BigDecimal,
-                       val entryPrice: BigDecimal?, val exitPrice: BigDecimal, val side: Side?, val rawRealized: BigDecimal)
+fun applyFillDetailed(fill: OrderFilled, intent: LegIntent, cumulativeFilled: BigDecimal?): FillApplication
+data class FillApplication(val realized: BigDecimal, val legId: String?, val legAction: LegAction?, val unbooked: Boolean)
 ```
 
-`when (intent)` is exhaustive: `Open` → `mergeOwnedOpenSlice`; `Close` → close/reduce that leg,
-realize `closedQty × priceDiff`; `Net` → today's `apply(trade)` netting into PRIMARY. The three
-pending maps, `register*`, `forgetPending`, `hasRegisteredClose` and `applyOwnedLegByTicket` are
-deleted; `OrderManager.hasLegLinkage` reads `getOrder(id)?.request?.legIntent is Close`.
+`when (intent)` is exhaustive: `Open` → open or extend the owned leg (one leg per venue ticket; a
+re-report on an owned ticket books only the cumulative delta); `Close` → close/reduce that leg and
+realize `closedQty × priceDiff`; `Net` → net into PRIMARY. A close naming a leg the book does not
+hold books nothing (`unbooked`) and the pipeline accounts and publishes nothing for it. The pending
+maps, `register*`, `forgetPending`, `hasRegisteredClose` and `applyOwnedLegByTicket` are gone;
+`OrderManager.isLegLinked` reads `getOrder(id)?.request?.legIntent is Close`.
 
-The account `PositionTracker` stops being a writer. `AccountPositionView : PositionProvider` folds
-the ledger across strategies (`positionFor(symbol)` = signed net over every strategy's legs,
-`symbols()` = union), so `RiskEngine`, the broker constructors, `BybitLinearStateRecovery`, and the
-account columns of the reports keep their interface. `PositionReconciled.reset` becomes a ledger
-reconcile (adopt/retire INDEPENDENT legs by ticket), the same operation `LegBookReconciler` already
-performs at boot.
+The account book is not a writer. `AccountPositionView : LegExposureProvider` reads an index the
+ledger maintains incrementally (`accountBySymbol`, rebuilt for one symbol on every mutation of that
+symbol), so `RiskEngine`, the broker constructors, state recovery and the account report columns keep
+their `PositionProvider` interface at O(1) per read. `PositionReconciled` → `reconcileNet` on the
+ledger. `PositionTracker` is deleted.
 
 ### 5. P&L is a fold, not a counter
 
-The fill handler becomes: resolve intent → `ledger.apply` → **one** accounting step (contract size,
-FX via `AccountingEngine`, modeled commission, venue costs) → publish `FillAccountedEvent` (existing
-type; gains `realization`). Then:
+The fill handler is: resolve intent → `applyFillDetailed` → **one** accounting step
+(`bookExecution`: contract size, FX via `AccountingEngine`, modeled commission, venue costs) →
+publish `FillAccountedEvent` → exit hooks → trade event and callbacks. The event gained `kind`
+(`EXECUTION`, `FINANCING`, `RECONCILE`) and `executedAt` (venue time; `timestamp` stays the bus
+stamp). Then:
 
-- `StrategyPnL` and the account `PnLCalculator` subscribe to `FillAccountedEvent` and accumulate
-  `netStrategyAccountRealized` / `netAccountRealized`. They keep their read APIs (`realizedFor`,
-  `equityFor`, `balanceFor`, `realizedTotal`) — every consumer in the inventory is untouched.
-- `DailyPnLTracker`, `TradeHistory`, `PortfolioRiskAggregator`, pacer ledger, runaway breaker and
-  exit hooks are driven from the same event where they were driven from the local `realized` before.
-- The three non-fill realized sources publish the same event: swap/financing accrual
-  (`applyFinancing`) as `FillAccountedEvent(kind = FINANCING)`, boot reconcile of venue OUT-deals as
-  `kind = RECONCILE`, restore as the initial fold seed. One path, one ordering.
-- Ordering: `riskState.onFill` and `evaluateHaltRules` today run *before* the publish; they move to
-  a `subscribeFirst` on `FillAccountedEvent` so halts still see the fill before any venue side effect.
-- Persistence: the ledger (legs) and the accounted-event fold seed (`PersistedPnl.realized`) stay on
-  disk, but the seed is written by the fold's own subscriber and is a checkpoint of the event stream,
-  not an independently mutated number. `PersistedRiskState.globalRealizedTotal` is derived from the
-  same seed at boot.
+- `foldAccounted`, a `subscribeFirst` on `FillAccountedEvent`, is the only writer of
+  `PnLCalculator`, `StrategyPnL`, `TradeHistory`, the pacer ledger, the runaway breaker,
+  `riskState.onFill` and halt evaluation. The accumulators keep their read APIs; no consumer moved.
+- The two non-execution realized sources publish the same event: financing accrual
+  (`applyFinancing`, `kind = FINANCING`) and the boot reconcile of venue OUT-deals
+  (`applyReconciledRealized`, `kind = RECONCILE`, booked once the pipeline exists). A reconcile is
+  venue history from before the session: it enters lifetime realized and both accumulators, not the
+  daily loss budget. Restore stays the fold's initial seed.
+- Ordering: halts see the amount before any later subscriber of the accounted event, and before the
+  exit hooks and trade event that follow the publish — the same order as before, now enforced by
+  subscription rather than by statement order.
+- Audit journal and Insights payloads carry `kind` and `executedAt`, so a financing or reconcile
+  amount is visible as its own accounted record.
 
-### 6. Unrealized, flatten, projections
+### 6. Unrealized, flatten, venue truth
 
-- Unrealized is per-leg everywhere: `StrategyPnL.unrealizedTotalFor` iterates ledger symbols, not
-  the net view. Account unrealized = Σ strategies. A flat-net hedged pair reports its open spread
-  loss in both.
-- Flatten-on-halt is one implementation, leg-by-leg with `Close(legId, ticket)`, used by
-  `LiveSession` and `ReplayEngine`. The NETTING-only guard and the account-net path are deleted.
-- `positionFor` / `positionsFor` / `allByStrategy` keep returning `Position` from `netView()` — the
-  DSL scalar, risk caps, `PositionDto`, `BacktestResult.finalPositions*` and the report column pairs
-  are byte-identical.
+- Account unrealized is per leg (`PnLCalculator.unrealizedFor` walks `forEachLeg`); strategy
+  unrealized already summed every non-empty book.
+- Flatten is one implementation, `LegFlattener`: each ledger leg closes with its own market order
+  carrying `Close(legId, ticket)`; a venue ticket attributed to the strategy but unknown to the ledger
+  closes by ticket. The netting-only guard remains for venues without position tickets.
+- Venue truth keeps the ledger honest (#1097): the session hands the broker a live view of the
+  ledger's ticketed legs (`Broker.watchBookedLegs`); the MT5 position poller books the venue close,
+  priced from deal history, for any leg whose ticket is absent from two consecutive clean snapshots
+  and that it never saw open. The close flows through the ordinary fill path, so the ledger, both
+  accumulators and the audit trail treat it like any venue-detected close.
+- `positionFor` / `positionsFor` / `allByStrategy` keep returning `Position` from `netView()`.
 
 ## Decisions (each pinned by a characterization test before the code moves)
 

@@ -99,6 +99,9 @@ data class DecisionOrderLinkedEvent(
     override val sequenceId: Long = 0L,
 ) : Event
 
+/** What an accounted amount came from: an execution, a financing accrual, or a boot-time venue reconcile. */
+enum class FillAccountingKind { EXECUTION, FINANCING, RECONCILE }
+
 /** Post-accounting evidence for one complete or partial broker fill slice. */
 data class FillAccountedEvent(
     val orderId: String,
@@ -132,6 +135,10 @@ data class FillAccountedEvent(
     /** How the fill landed in the strategy leg book (OPENED/CLOSED/NETTED). */
     val legAction: com.qkt.positions.StrategyPositionTracker.LegAction? = null,
     val partial: Boolean,
+    /** Source of the amount; every accumulator folds all kinds, trade statistics only executions. */
+    val kind: FillAccountingKind = FillAccountingKind.EXECUTION,
+    /** Venue time of the execution (or accrual), distinct from the bus stamp in [timestamp]. */
+    val executedAt: Long = 0L,
     override val timestamp: Long = 0L,
     override val sequenceId: Long = 0L,
 ) : Event

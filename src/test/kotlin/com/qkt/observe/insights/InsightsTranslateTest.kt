@@ -801,6 +801,8 @@ class InsightsTranslateTest {
             .containsEntry("grossAccountRealized", BigDecimal("12.00"))
             .containsEntry("netAccountRealized", BigDecimal("11.70"))
             .containsEntry("netStrategyAccountRealized", BigDecimal("6.90"))
+            .containsEntry("kind", "EXECUTION")
+            .containsKeys("legId", "legAction", "executedAt")
             .containsEntry("reducedExposure", true)
             .containsEntry("partial", true)
         assertThat(env.payload["accountPositionBefore"])
