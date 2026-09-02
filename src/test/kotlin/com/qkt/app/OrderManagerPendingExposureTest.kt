@@ -13,7 +13,7 @@ import com.qkt.events.BrokerEvent
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.TimeInForce
 import com.qkt.marketdata.MarketPriceTracker
-import com.qkt.positions.PositionTracker
+import com.qkt.positions.StrategyPositionTracker
 import com.qkt.risk.Decision
 import com.qkt.risk.RiskEngine
 import com.qkt.risk.rules.MaxPositionSize
@@ -43,7 +43,7 @@ class OrderManagerPendingExposureTest {
 
     @Test
     fun `working entry blocks another order that would breach the cap`() {
-        val risk = RiskEngine(listOf(MaxPositionSize("X", Money.of("3"))), PositionTracker())
+        val risk = RiskEngine(listOf(MaxPositionSize("X", Money.of("3"))), StrategyPositionTracker().account)
         risk.bindPendingExposure(manager)
         val first = limit("first", "2")
 

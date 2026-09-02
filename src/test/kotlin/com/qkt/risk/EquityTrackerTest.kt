@@ -6,7 +6,7 @@ import com.qkt.events.BrokerEvent
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.pnl.PnLCalculator
 import com.qkt.pnl.StrategyPnL
-import com.qkt.positions.PositionTracker
+import com.qkt.positions.IntentBook
 import com.qkt.positions.StrategyPositionTracker
 import java.math.BigDecimal
 import java.util.concurrent.atomic.AtomicLong
@@ -35,13 +35,14 @@ class EquityTrackerTest {
 
     @Test
     fun `currentEquity tracks realized plus unrealized`() {
-        val positions = PositionTracker()
+        val strategyPositions = StrategyPositionTracker()
+        val positions = strategyPositions.account
         val prices = MarketPriceTracker()
         val pnl = PnLCalculator(positions, prices)
         val strategyPnL = StrategyPnL(StrategyPositionTracker(), prices)
         val tracker = EquityTracker(pnl, strategyPnL)
 
-        positions.applyFill(fill("A", "BTCUSDT", Side.BUY, "1", "80000"))
+        IntentBook().apply(strategyPositions, fill("A", "BTCUSDT", Side.BUY, "1", "80000"))
         prices.update("BTCUSDT", Money.of("82000"))
         tracker.update()
 
@@ -50,13 +51,14 @@ class EquityTrackerTest {
 
     @Test
     fun `peakEquity is monotonically non-decreasing`() {
-        val positions = PositionTracker()
+        val strategyPositions = StrategyPositionTracker()
+        val positions = strategyPositions.account
         val prices = MarketPriceTracker()
         val pnl = PnLCalculator(positions, prices)
         val strategyPnL = StrategyPnL(StrategyPositionTracker(), prices)
         val tracker = EquityTracker(pnl, strategyPnL)
 
-        positions.applyFill(fill("A", "BTCUSDT", Side.BUY, "1", "80000"))
+        IntentBook().apply(strategyPositions, fill("A", "BTCUSDT", Side.BUY, "1", "80000"))
         prices.update("BTCUSDT", Money.of("82000"))
         tracker.update()
 
@@ -69,15 +71,15 @@ class EquityTrackerTest {
 
     @Test
     fun `per-strategy equity is tracked independently`() {
-        val positions = PositionTracker()
+        val strategyPositions = StrategyPositionTracker()
+        val positions = strategyPositions.account
         val prices = MarketPriceTracker()
         val pnl = PnLCalculator(positions, prices)
-        val strategyPositions = StrategyPositionTracker()
         val strategyPnL = StrategyPnL(strategyPositions, prices)
         val tracker = EquityTracker(pnl, strategyPnL)
 
-        strategyPositions.applyFill(fill("A", "BTCUSDT", Side.BUY, "1", "80000"))
-        strategyPositions.applyFill(fill("B", "ETHUSDT", Side.BUY, "10", "3000"))
+        IntentBook().apply(strategyPositions, fill("A", "BTCUSDT", Side.BUY, "1", "80000"))
+        IntentBook().apply(strategyPositions, fill("B", "ETHUSDT", Side.BUY, "10", "3000"))
         prices.update("BTCUSDT", Money.of("82000"))
         prices.update("ETHUSDT", Money.of("2900"))
         tracker.updateStrategy("A")
@@ -90,14 +92,14 @@ class EquityTrackerTest {
 
     @Test
     fun `updateStrategies refreshes per-strategy peak between fills`() {
-        val positions = PositionTracker()
+        val strategyPositions = StrategyPositionTracker()
+        val positions = strategyPositions.account
         val prices = MarketPriceTracker()
         val pnl = PnLCalculator(positions, prices)
-        val strategyPositions = StrategyPositionTracker()
         val strategyPnL = StrategyPnL(strategyPositions, prices)
         val tracker = EquityTracker(pnl, strategyPnL)
 
-        strategyPositions.applyFill(fill("A", "BTCUSDT", Side.BUY, "1", "80000"))
+        IntentBook().apply(strategyPositions, fill("A", "BTCUSDT", Side.BUY, "1", "80000"))
         prices.update("BTCUSDT", Money.of("80500"))
         tracker.updateStrategy("A")
         assertThat(tracker.peakEquityFor("A")).isEqualByComparingTo(BigDecimal("500"))

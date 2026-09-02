@@ -4,6 +4,7 @@ import com.qkt.common.Money
 import com.qkt.common.Side
 import com.qkt.events.BrokerEvent
 import com.qkt.marketdata.MarketPriceTracker
+import com.qkt.positions.IntentBook
 import com.qkt.positions.StrategyPositionTracker
 import java.math.BigDecimal
 import java.util.concurrent.atomic.AtomicLong
@@ -55,13 +56,14 @@ class StrategyPnLTest {
         // locked-in spread loss of (1997 - 2000) x 0.1 = -0.3. Equity and halts must
         // see that loss at ANY mark, not zero.
         val tracker = StrategyPositionTracker()
+        val intents = IntentBook()
         val prices = MarketPriceTracker()
         val pnl = StrategyPnL(tracker, prices)
 
-        tracker.registerIndependentOpen("A", "c-long", "leg-long")
-        tracker.registerIndependentOpen("A", "c-short", "leg-short")
-        tracker.applyFill(fillWithId("c-long", "A", "XAUUSD", Side.BUY, "0.1", "2000"))
-        tracker.applyFill(fillWithId("c-short", "A", "XAUUSD", Side.SELL, "0.1", "1997"))
+        intents.independentOpen("A", "c-long", "leg-long")
+        intents.independentOpen("A", "c-short", "leg-short")
+        intents.apply(tracker, fillWithId("c-long", "A", "XAUUSD", Side.BUY, "0.1", "2000"))
+        intents.apply(tracker, fillWithId("c-short", "A", "XAUUSD", Side.SELL, "0.1", "1997"))
 
         prices.update("XAUUSD", Money.of("2010"))
         assertThat(pnl.unrealizedFor("A", "XAUUSD")).isEqualByComparingTo("-0.3")
@@ -78,15 +80,16 @@ class StrategyPnLTest {
     @Test
     fun `realizedFor accrues only this strategy's closes`() {
         val tracker = StrategyPositionTracker()
+        val intents = IntentBook()
         val prices = MarketPriceTracker()
         val pnl = StrategyPnL(tracker, prices)
 
-        val rA1 = tracker.applyFill(fill("A", "BTCUSDT", Side.BUY, "1", "80000"))
-        val rA2 = tracker.applyFill(fill("A", "BTCUSDT", Side.SELL, "1", "82000"))
+        val rA1 = intents.apply(tracker, fill("A", "BTCUSDT", Side.BUY, "1", "80000"))
+        val rA2 = intents.apply(tracker, fill("A", "BTCUSDT", Side.SELL, "1", "82000"))
         pnl.recordRealized("A", rA1)
         pnl.recordRealized("A", rA2)
 
-        val rB = tracker.applyFill(fill("B", "BTCUSDT", Side.BUY, "0.5", "80000"))
+        val rB = intents.apply(tracker, fill("B", "BTCUSDT", Side.BUY, "0.5", "80000"))
         pnl.recordRealized("B", rB)
 
         assertThat(pnl.realizedFor("A")).isEqualByComparingTo(BigDecimal("2000"))
@@ -96,10 +99,11 @@ class StrategyPnLTest {
     @Test
     fun `unrealizedFor uses this strategy's avg entry`() {
         val tracker = StrategyPositionTracker()
+        val intents = IntentBook()
         val prices = MarketPriceTracker()
         val pnl = StrategyPnL(tracker, prices)
 
-        tracker.applyFill(fill("A", "BTCUSDT", Side.BUY, "1", "80000"))
+        intents.apply(tracker, fill("A", "BTCUSDT", Side.BUY, "1", "80000"))
         prices.update("BTCUSDT", Money.of("82000"))
 
         assertThat(pnl.unrealizedFor("A", "BTCUSDT")).isEqualByComparingTo(BigDecimal("2000"))
@@ -109,10 +113,11 @@ class StrategyPnLTest {
     @Test
     fun `totalFor sums realized and unrealized for the strategy only`() {
         val tracker = StrategyPositionTracker()
+        val intents = IntentBook()
         val prices = MarketPriceTracker()
         val pnl = StrategyPnL(tracker, prices)
 
-        val rA = tracker.applyFill(fill("A", "BTCUSDT", Side.BUY, "1", "80000"))
+        val rA = intents.apply(tracker, fill("A", "BTCUSDT", Side.BUY, "1", "80000"))
         pnl.recordRealized("A", rA)
         prices.update("BTCUSDT", Money.of("82000"))
 

@@ -96,17 +96,16 @@ class OrderManager(
      */
     private val strategyNetQty: ((strategyId: String, symbol: String) -> BigDecimal)? = null,
     /**
-     * True when an exit order is pre-registered to close a specific position leg
-     * (#1071). A leg-linked exit is structurally reduce-only — it closes exactly its
-     * own leg — so the net-based stale sweep and tripwire must not judge it: under a
-     * hedging book a short leg's BUY stop while net-long is a legitimate exit.
-     */
-    private val hasLegLinkage: (strategyId: String, clientOrderId: String) -> Boolean = { _, _ -> false },
-    /**
      * How the venue accounts positions on a symbol. Read once per submitted request by
      * [LegIntentPlanner] and once per minted stack layer — never per tick or per fill.
      */
     private val positionMode: (symbol: String) -> PositionAccountingMode = { PositionAccountingMode.UNKNOWN },
+    /**
+     * Venue tickets the position ledger already holds for a strategy, read once at restore so
+     * broker recovery joins those orders to their tickets without republishing executions the
+     * book already reflects (#1096). Default: nothing booked.
+     */
+    private val bookedVenueTickets: (strategyId: String) -> Set<String> = { emptySet() },
 ) : PendingOrderExposureProvider {
     private val log = LoggerFactory.getLogger(OrderManager::class.java)
 
@@ -787,7 +786,8 @@ class OrderManager(
             }
         }
         if (recovered.isNotEmpty()) {
-            val accounted = broker.recoverPendingOrders(recovered)
+            val booked = strategyIds.flatMapTo(LinkedHashSet()) { bookedVenueTickets(it) }
+            val accounted = broker.recoverPendingOrders(recovered, booked)
             // A restored working order the venue cannot account for — no pending ticket, no
             // position, nothing to track — is a phantom: pre-#1048 attached-bracket wrappers
             // whose position closed long ago. Left alone it holds exposure for the whole
@@ -2226,7 +2226,7 @@ class OrderManager(
      * hit (no counter on a hedging account) and keeps protecting it even if qkt is offline.
      * Keying under the entry id (not the bracket id) means the fill — and the ticket it carries —
      * flow through the same entry.id paths the position tracking already uses (sibling-cancel,
-     * `registerIndependentOpen`, poller close attribution).
+     * leg intent on the entry, poller close attribution).
      *
      * The engine still runs the trail on top: the [OrderRequest.ArmedTrailingStop] is dispatched
      * when the entry fills (via [pendingChildren]) and, once armed, fires a close-by-ticket at the
@@ -2236,7 +2236,7 @@ class OrderManager(
         val now = clock.now()
         // Ship keyed under the ENTRY id so the venue attaches the SL/TP to the position AND the
         // fill — with its ticket — flows through the same entry.id paths the position tracking
-        // uses (registerIndependentOpen / registerStackOpen, sibling-cancel, poller close
+        // uses (the entry's leg intent, sibling-cancel, poller close
         // attribution). A native bracket keyed under its own id would fill under the bracket id
         // and silently miss those registrations.
         val attached = req.copy(id = req.entry.id)
@@ -3218,7 +3218,7 @@ class OrderManager(
      */
     private fun detectExitIncreasedExposure(e: BrokerEvent.OrderFilled) {
         if (!e.clientOrderId.endsWith("-sl") && !e.clientOrderId.endsWith("-tp")) return
-        if (hasLegLinkage(e.strategyId, e.clientOrderId)) return
+        if (isLegLinked(e.clientOrderId)) return
         val netQty = strategyNetQty?.invoke(e.strategyId, e.symbol) ?: return
         val landedOnOwnSide =
             (e.side == Side.BUY && netQty.signum() > 0) ||
@@ -3258,7 +3258,7 @@ class OrderManager(
                     managed.request.strategyId == strategyId &&
                     managed.request.symbol == symbol &&
                     (staleSide == null || managed.request.side == staleSide) &&
-                    !hasLegLinkage(strategyId, id)
+                    !isLegLinked(id)
             }
         for ((id, managed) in stale) {
             val request = managed.request
@@ -4074,6 +4074,14 @@ class OrderManager(
         const val OCO_SLOT = "oco-legs"
         const val TRAILING_SLOT = "trailing-stops"
     }
+
+    /**
+     * An exit carrying a [LegIntent.Close] closes exactly its own leg, so the net-based stale
+     * sweep and reduce-only tripwire must not judge it: under a hedging book a short leg's BUY
+     * stop while net-long is a legitimate exit (#1071).
+     */
+    private fun isLegLinked(clientOrderId: String): Boolean =
+        orders[clientOrderId]?.request?.legIntent is LegIntent.Close
 
     private fun managedStopCloseTicket(request: OrderRequest): String? =
         closeTicketFor?.invoke(request.strategyId, request.id)

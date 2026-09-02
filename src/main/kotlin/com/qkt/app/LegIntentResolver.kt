@@ -23,7 +23,8 @@ import com.qkt.positions.PositionLeg
  */
 class LegIntentResolver(
     private val orderFor: (clientOrderId: String) -> OrderRequest?,
-    private val ownedLegByTicket: (strategyId: String, symbol: String, ticket: String) -> PositionLeg?,
+    /** The leg of any role carrying a venue ticket; the resolver applies the role rule itself. */
+    private val legByTicket: (strategyId: String, symbol: String, ticket: String) -> PositionLeg?,
     private val positionMode: (symbol: String) -> PositionAccountingMode,
 ) {
     /** Where the resolved intent came from — reported alongside the intent for diagnostics. */
@@ -48,7 +49,9 @@ class LegIntentResolver(
             if (intent != LegIntent.Unplanned) return Resolution(intent, Source.ORDER)
         }
         if (ticket != null) {
-            val owned = ownedLegByTicket(fill.strategyId, fill.symbol, ticket)
+            val owned =
+                legByTicket(fill.strategyId, fill.symbol, ticket)
+                    ?.takeIf { ticketIsOnePosition(it, fill.symbol) }
             if (owned != null) {
                 val intent =
                     if (owned.side == fill.side) {
@@ -67,4 +70,15 @@ class LegIntentResolver(
             }
         return Resolution(fallback, Source.VENUE_DEFAULT)
     }
+
+    /**
+     * Whether an execution on [leg]'s ticket can only be an execution on that leg. On a
+     * hedging venue a ticket is one position, whatever the leg's role. On a netting venue the
+     * PRIMARY is the venue's netted position and keeps its ticket across a reversal, so an
+     * execution there nets — the STACK and INDEPENDENT legs are still one position each.
+     */
+    private fun ticketIsOnePosition(
+        leg: PositionLeg,
+        symbol: String,
+    ): Boolean = leg.role != LegRole.PRIMARY || positionMode(symbol) == PositionAccountingMode.HEDGING
 }
