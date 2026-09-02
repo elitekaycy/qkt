@@ -45,3 +45,15 @@ sealed interface LegIntent {
     /** Not decided yet. A leaf must be planned before it reaches a broker. */
     data object Unplanned : LegIntent
 }
+
+/**
+ * Attach a venue [ticket] to a closing intent. A [LegIntent.Close] keeps its own ticket when it
+ * already has one; a non-closing intent becomes a ticket close only when a ticket is actually
+ * known — `null` leaves the intent untouched, so a netting exit stays [LegIntent.Net].
+ */
+fun LegIntent.withCloseTicket(ticket: String?): LegIntent =
+    when {
+        ticket == null -> this
+        this is LegIntent.Close -> if (this.ticket == null) copy(ticket = ticket) else this
+        else -> LegIntent.Close(ticket = ticket)
+    }

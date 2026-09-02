@@ -244,6 +244,7 @@ class TradingPipeline(
             hasLegLinkage = { strategyId, clientOrderId ->
                 strategyPositions.hasRegisteredClose(strategyId, clientOrderId)
             },
+            positionMode = positionMode,
         )
     val latchManager: LatchManager =
         LatchManager(
@@ -380,14 +381,13 @@ class TradingPipeline(
                                             is com.qkt.strategy.Signal.Submit -> sig.exitHook
                                             else -> null
                                         }
+                                    val planned = LegIntentPlanner.plan(request, positionMode(request.symbol))
                                     if (exitHook != null) {
-                                        exitHookManager.register(strategyId, request, exitHook)
+                                        exitHookManager.register(strategyId, planned, exitHook)
                                     }
-                                    exitHookManager.trackCloseRequest(strategyId, request)
-                                    registerOcoEntryLegs(strategyId, request)
-                                    registerHedgingEntryLegs(strategyId, request)
-                                    registerLegClose(strategyId, request)
-                                    bus.publish(OrderEvent(request))
+                                    exitHookManager.trackCloseRequest(strategyId, planned)
+                                    registerLegIntents(strategyId, planned)
+                                    bus.publish(OrderEvent(planned))
                                 }
                                 is Decision.Reject -> {
                                     ctx.submissions.recordSuppressed()
@@ -1075,70 +1075,59 @@ class TradingPipeline(
     }
 
     /**
-     * A `CLOSE` of a tracked position leg is emitted as a market tagged with `closesLegId`
-     * ([com.qkt.dsl.compile.ActionCompiler.closeSignalsFor]). Register the fill so the tracker
-     * realizes that specific leg instead of netting into the primary. Works in backtest and
-     * live; the venue-side close (by ticket) is handled separately by the MT5 broker.
+     * Mirror a planned request's [com.qkt.execution.LegIntent]s into the tracker's pending-intent
+     * maps. The intent on the order is the source of truth; these registrations are the adapter
+     * the tracker's fill routing still reads. A bracket's `-tp`/`-sl` exits are minted later by
+     * [OrderManager] under deterministic ids, so their closes are registered from the bracket
+     * here. Straddle legs and STACK_AT tiers arrive already stamped (planner / orchestrator).
      */
-    private fun registerLegClose(
+    private fun registerLegIntents(
         strategyId: String,
         request: com.qkt.execution.OrderRequest,
     ) {
-        if (request is com.qkt.execution.OrderRequest.Market && request.closesLegId != null) {
-            strategyPositions.registerStackClose(strategyId, request.id, request.closesLegId)
-        }
-    }
-
-    /**
-     * Under a HEDGING venue model every strategy-emitted entry books its own coexisting
-     * position leg — the retail-MT5 ticket semantic (#1071). A [OrderRequest.Bracket]
-     * opens an [com.qkt.positions.LegRole.INDEPENDENT] leg closed by its deterministic
-     * `-tp`/`-sl` exits; a plain entry Market/Limit/Stop opens a standalone leg (on a
-     * hedging venue a raw market SELL opens a short ticket, it does not net). Closes
-     * (`closesTicket`/`closesLegId`) and already-leg-routed shapes are untouched. No-op
-     * for NETTING/UNKNOWN symbols, so netted venues keep today's PRIMARY behavior.
-     */
-    private fun registerHedgingEntryLegs(
-        strategyId: String,
-        request: com.qkt.execution.OrderRequest,
-    ) {
-        if (positionMode(request.symbol) != com.qkt.broker.PositionAccountingMode.HEDGING) return
         when (request) {
-            is com.qkt.execution.OrderRequest.Bracket -> {
-                strategyPositions.registerIndependentOpen(strategyId, request.entry.id, request.id)
-                strategyPositions.registerStackClose(strategyId, "${request.id}-tp", request.id)
-                strategyPositions.registerStackClose(strategyId, "${request.id}-sl", request.id)
+            is com.qkt.execution.OrderRequest.Bracket -> registerBracketIntent(strategyId, request)
+            is com.qkt.execution.OrderRequest.StandaloneOCO -> {
+                registerLegIntents(strategyId, request.leg1)
+                registerLegIntents(strategyId, request.leg2)
             }
-            is com.qkt.execution.OrderRequest.Market ->
-                if (request.closesTicket == null && request.closesLegId == null) {
-                    strategyPositions.registerIndependentOpen(strategyId, request.id, request.id)
-                }
-            is com.qkt.execution.OrderRequest.Limit,
-            is com.qkt.execution.OrderRequest.Stop,
-            ->
-                strategyPositions.registerIndependentOpen(strategyId, request.id, request.id)
-            else -> {}
+            else -> registerLeafIntent(strategyId, request)
         }
     }
 
-    /**
-     * For an `OCO_ENTRY` whose legs are brackets (e.g. a straddle), register each leg's entry
-     * fill to open its own [com.qkt.positions.LegRole.INDEPENDENT] position leg — so a filled
-     * long and a filled short coexist as two real positions instead of netting to zero — and
-     * register each bracket's TP/SL exit to close that leg. Mirrors the stack machinery in
-     * [wireStackOrchestrator], reusing OrderManager's deterministic `<bracket-id>-tp`/`-sl`
-     * exit naming. No-op for any other request, so single-position strategies are unaffected.
-     */
-    private fun registerOcoEntryLegs(
+    private fun registerBracketIntent(
         strategyId: String,
-        request: com.qkt.execution.OrderRequest,
+        bracket: com.qkt.execution.OrderRequest.Bracket,
     ) {
-        if (request !is com.qkt.execution.OrderRequest.StandaloneOCO) return
-        for (leg in listOf(request.leg1, request.leg2)) {
-            if (leg !is com.qkt.execution.OrderRequest.Bracket) continue
-            strategyPositions.registerIndependentOpen(strategyId, leg.entry.id, leg.id)
-            strategyPositions.registerStackClose(strategyId, "${leg.id}-tp", leg.id)
-            strategyPositions.registerStackClose(strategyId, "${leg.id}-sl", leg.id)
+        val intent = bracket.entry.legIntent as? com.qkt.execution.LegIntent.Open ?: return
+        when (intent.role) {
+            com.qkt.positions.LegRole.STACK ->
+                strategyPositions.registerStackOpen(
+                    strategyId = strategyId,
+                    clientOrderId = bracket.entry.id,
+                    stackLegId = intent.legId,
+                    parentLegId = requireNotNull(intent.parentLegId),
+                )
+            com.qkt.positions.LegRole.INDEPENDENT,
+            com.qkt.positions.LegRole.PRIMARY,
+            -> strategyPositions.registerIndependentOpen(strategyId, bracket.entry.id, intent.legId)
+        }
+        strategyPositions.registerStackClose(strategyId, "${bracket.id}-tp", intent.legId)
+        strategyPositions.registerStackClose(strategyId, "${bracket.id}-sl", intent.legId)
+    }
+
+    private fun registerLeafIntent(
+        strategyId: String,
+        leaf: com.qkt.execution.OrderRequest,
+    ) {
+        when (val intent = leaf.legIntent) {
+            is com.qkt.execution.LegIntent.Open ->
+                strategyPositions.registerIndependentOpen(strategyId, leaf.id, intent.legId)
+            is com.qkt.execution.LegIntent.Close ->
+                intent.legId?.let { strategyPositions.registerStackClose(strategyId, leaf.id, it) }
+            com.qkt.execution.LegIntent.Net,
+            com.qkt.execution.LegIntent.Unplanned,
+            -> {}
         }
     }
 
@@ -1166,27 +1155,6 @@ class TradingPipeline(
                 emit = emit,
                 strategyId = strategyId,
                 persistor = persistor,
-                onStackBracketEmit = { bracket, parentLegId ->
-                    // Pre-register the stack's entry fill → STACK leg open, and the bracket's
-                    // TP/SL ids → STACK leg close (using OrderManager.submitBracketFallback's
-                    // deterministic `${bracket.id}-tp` / `-sl` naming).
-                    strategyPositions.registerStackOpen(
-                        strategyId = strategyId,
-                        clientOrderId = bracket.entry.id,
-                        stackLegId = bracket.id,
-                        parentLegId = parentLegId,
-                    )
-                    strategyPositions.registerStackClose(
-                        strategyId = strategyId,
-                        clientOrderId = "${bracket.id}-tp",
-                        stackLegId = bracket.id,
-                    )
-                    strategyPositions.registerStackClose(
-                        strategyId = strategyId,
-                        clientOrderId = "${bracket.id}-sl",
-                        stackLegId = bracket.id,
-                    )
-                },
             )
         // Restart path: rebuild engines for parents that were open when the process
         // died — the restored leg supplies identity, the persisted tier state supplies
