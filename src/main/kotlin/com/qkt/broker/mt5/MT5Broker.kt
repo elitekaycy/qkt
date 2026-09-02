@@ -1874,7 +1874,10 @@ class MT5Broker(
         return out
     }
 
-    override fun recoverPendingOrders(orders: List<com.qkt.execution.ManagedOrder>): Set<String> {
+    override fun recoverPendingOrders(
+        orders: List<com.qkt.execution.ManagedOrder>,
+        bookedTickets: Set<String>,
+    ): Set<String> {
         if (orders.isEmpty()) return emptySet()
         val snapshot =
             readMT5RecoverySnapshot(
@@ -1894,7 +1897,7 @@ class MT5Broker(
             )
         val pending = snapshot.pendingOrders
         val positions = snapshot.positions
-        val recoveredPartialIds = recoverPartialEntries(orders, pending, positions)
+        val recoveredPartialIds = recoverPartialEntries(orders, pending, positions, bookedTickets)
         val resolvedOrders =
             orders.filterNot { it.id in recoveredPartialIds }.map { order ->
                 if (order.brokerOrderId != null) return@map order
@@ -1958,6 +1961,17 @@ class MT5Broker(
                         a.order.request.strategyId,
                         protectionFor(a.order.request),
                     )
+                if (a.position.ticket.toString() in bookedTickets) {
+                    // The ledger booked this execution before the restart; republishing it
+                    // would book it again (#1096). The ticket stays tracked for its close.
+                    positionMetaByTicket[a.position.ticket] = pendingByTicket.getValue(a.position.ticket)
+                    positionSymbolByTicket[a.position.ticket] = a.order.request.symbol
+                    positionOpenedAtByTicket[a.position.ticket] = a.position.openTime
+                    log.info(
+                        "MT5Broker ${profile.name} recovery: leg ${a.order.id} ticket=${a.position.ticket} already booked; not republishing",
+                    )
+                    continue
+                }
                 log.info(
                     "MT5Broker ${profile.name} recovery: leg ${a.order.id} filled during downtime " +
                         "ticket=${a.position.ticket}",
@@ -1976,6 +1990,7 @@ class MT5Broker(
         orders: List<com.qkt.execution.ManagedOrder>,
         pending: List<MT5PendingOrder>,
         positions: List<MT5Position>,
+        bookedTickets: Set<String>,
     ): Set<String> {
         val recovered = mutableSetOf<String>()
         for (order in orders) {
@@ -2001,6 +2016,15 @@ class MT5Broker(
             positionMetaByTicket[position.ticket] = meta
             positionSymbolByTicket[position.ticket] = order.request.symbol
             positionOpenedAtByTicket[position.ticket] = position.openTime
+            if (position.ticket.toString() in bookedTickets) {
+                // Already in the ledger from before the restart: keep the ticket tracked and let
+                // the residual resolve, but never republish the booked execution (#1096).
+                log.info(
+                    "MT5Broker ${profile.name} recovery: partial entry ${order.id} ticket=${position.ticket} already booked; not republishing",
+                )
+                recovered.add(order.id)
+                continue
+            }
             val partialEvent =
                 BrokerEvent.OrderPartiallyFilled(
                     clientOrderId = order.id,

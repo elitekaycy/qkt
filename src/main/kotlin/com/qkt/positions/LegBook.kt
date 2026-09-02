@@ -39,6 +39,12 @@ class LegBook(
     /** Return the leg with [legId], or `null` when this book does not own it. */
     fun leg(legId: String): PositionLeg? = legs[legId]
 
+    /** The leg of any role carrying venue [ticket], or `null`. In-place scan, no snapshot. */
+    fun legByTicket(ticket: String): PositionLeg? {
+        for (leg in legs.values) if (leg.brokerTicket == ticket) return leg
+        return null
+    }
+
     /**
      * The non-PRIMARY leg carrying venue [ticket], or `null`. Iterates in place — no snapshot —
      * because it runs on the fill path when an execution arrives without a known client order.

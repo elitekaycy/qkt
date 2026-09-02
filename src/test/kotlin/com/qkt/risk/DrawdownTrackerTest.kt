@@ -6,6 +6,7 @@ import com.qkt.events.BrokerEvent
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.pnl.PnLCalculator
 import com.qkt.pnl.StrategyPnL
+import com.qkt.positions.IntentBook
 import com.qkt.positions.PositionTracker
 import com.qkt.positions.StrategyPositionTracker
 import java.math.BigDecimal
@@ -75,8 +76,8 @@ class DrawdownTrackerTest {
         val equity = EquityTracker(pnl, strategyPnL)
         val drawdown = DrawdownTracker(equity)
 
-        strategyPositions.applyFill(fill("A", "BTCUSDT", Side.BUY, "1", "80000"))
-        strategyPositions.applyFill(fill("B", "ETHUSDT", Side.BUY, "10", "3000"))
+        IntentBook().apply(strategyPositions, fill("A", "BTCUSDT", Side.BUY, "1", "80000"))
+        IntentBook().apply(strategyPositions, fill("B", "ETHUSDT", Side.BUY, "10", "3000"))
         prices.update("BTCUSDT", Money.of("82000"))
         prices.update("ETHUSDT", Money.of("3300"))
         equity.updateStrategy("A")

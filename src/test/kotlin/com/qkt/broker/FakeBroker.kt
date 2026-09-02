@@ -150,7 +150,10 @@ class FakeBroker(
 
     val recovered: MutableList<com.qkt.execution.ManagedOrder> = mutableListOf()
 
-    override fun recoverPendingOrders(orders: List<com.qkt.execution.ManagedOrder>): Set<String> {
+    override fun recoverPendingOrders(
+        orders: List<com.qkt.execution.ManagedOrder>,
+        bookedTickets: Set<String>,
+    ): Set<String> {
         recovered.addAll(orders)
         return orders.mapTo(LinkedHashSet()) { it.id }
     }

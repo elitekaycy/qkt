@@ -32,8 +32,9 @@ class StrategyPositionTrackerTest {
     @Test
     fun `same-symbol fills from different strategies do not commingle`() {
         val tracker = StrategyPositionTracker()
-        tracker.applyFill(fill("A", "BTCUSDT", Side.BUY, "1", "80000"))
-        tracker.applyFill(fill("B", "BTCUSDT", Side.SELL, "0.3", "81000"))
+        val intents = IntentBook()
+        intents.apply(tracker, fill("A", "BTCUSDT", Side.BUY, "1", "80000"))
+        intents.apply(tracker, fill("B", "BTCUSDT", Side.SELL, "0.3", "81000"))
 
         assertThat(tracker.positionFor("A", "BTCUSDT")?.quantity).isEqualByComparingTo(BigDecimal("1"))
         assertThat(tracker.positionFor("B", "BTCUSDT")?.quantity).isEqualByComparingTo(BigDecimal("-0.3"))
@@ -42,9 +43,10 @@ class StrategyPositionTrackerTest {
     @Test
     fun `realized accrues per strategy independently`() {
         val tracker = StrategyPositionTracker()
-        tracker.applyFill(fill("A", "BTCUSDT", Side.BUY, "1", "80000"))
-        val realizedA = tracker.applyFill(fill("A", "BTCUSDT", Side.SELL, "1", "82000"))
-        tracker.applyFill(fill("B", "BTCUSDT", Side.BUY, "0.5", "79000"))
+        val intents = IntentBook()
+        intents.apply(tracker, fill("A", "BTCUSDT", Side.BUY, "1", "80000"))
+        val realizedA = intents.apply(tracker, fill("A", "BTCUSDT", Side.SELL, "1", "82000"))
+        intents.apply(tracker, fill("B", "BTCUSDT", Side.BUY, "0.5", "79000"))
 
         assertThat(realizedA).isEqualByComparingTo(BigDecimal("2000"))
         assertThat(tracker.positionFor("A", "BTCUSDT")).isNull()
@@ -54,9 +56,10 @@ class StrategyPositionTrackerTest {
     @Test
     fun `positionsFor returns only that strategy's positions`() {
         val tracker = StrategyPositionTracker()
-        tracker.applyFill(fill("A", "BTCUSDT", Side.BUY, "1", "80000"))
-        tracker.applyFill(fill("A", "ETHUSDT", Side.BUY, "10", "3000"))
-        tracker.applyFill(fill("B", "BTCUSDT", Side.BUY, "0.5", "79000"))
+        val intents = IntentBook()
+        intents.apply(tracker, fill("A", "BTCUSDT", Side.BUY, "1", "80000"))
+        intents.apply(tracker, fill("A", "ETHUSDT", Side.BUY, "10", "3000"))
+        intents.apply(tracker, fill("B", "BTCUSDT", Side.BUY, "0.5", "79000"))
 
         assertThat(tracker.positionsFor("A").keys).containsExactlyInAnyOrder("BTCUSDT", "ETHUSDT")
         assertThat(tracker.positionsFor("B").keys).containsExactlyInAnyOrder("BTCUSDT")
@@ -65,7 +68,8 @@ class StrategyPositionTrackerTest {
     @Test
     fun `applyFill with blank strategyId is a noop`() {
         val tracker = StrategyPositionTracker()
-        val realized = tracker.applyFill(fill("", "BTCUSDT", Side.BUY, "1", "80000"))
+        val intents = IntentBook()
+        val realized = intents.apply(tracker, fill("", "BTCUSDT", Side.BUY, "1", "80000"))
 
         assertThat(realized).isEqualByComparingTo(Money.ZERO)
         assertThat(tracker.allByStrategy()).isEmpty()
@@ -74,8 +78,9 @@ class StrategyPositionTrackerTest {
     @Test
     fun `driftFor returns difference between strategy sum and broker view`() {
         val tracker = StrategyPositionTracker()
-        tracker.applyFill(fill("A", "BTCUSDT", Side.BUY, "1", "80000"))
-        tracker.applyFill(fill("B", "BTCUSDT", Side.BUY, "0.5", "81000"))
+        val intents = IntentBook()
+        intents.apply(tracker, fill("A", "BTCUSDT", Side.BUY, "1", "80000"))
+        intents.apply(tracker, fill("B", "BTCUSDT", Side.BUY, "0.5", "81000"))
 
         val brokerView =
             object : PositionProvider {
@@ -93,7 +98,8 @@ class StrategyPositionTrackerTest {
     @Test
     fun `openedAt is set on flat-to-long transition`() {
         val tracker = StrategyPositionTracker()
-        tracker.applyFill(fill("A", "BTC", Side.BUY, "1", "100", timestamp = 1000L))
+        val intents = IntentBook()
+        intents.apply(tracker, fill("A", "BTC", Side.BUY, "1", "100", timestamp = 1000L))
         val pos = tracker.positionFor("A", "BTC")!!
         assertThat(pos.openedAt).isEqualTo(1000L)
     }
@@ -101,8 +107,9 @@ class StrategyPositionTrackerTest {
     @Test
     fun `openedAt is preserved on add-to-position`() {
         val tracker = StrategyPositionTracker()
-        tracker.applyFill(fill("A", "BTC", Side.BUY, "1", "100", timestamp = 1000L))
-        tracker.applyFill(fill("A", "BTC", Side.BUY, "1", "110", timestamp = 2000L))
+        val intents = IntentBook()
+        intents.apply(tracker, fill("A", "BTC", Side.BUY, "1", "100", timestamp = 1000L))
+        intents.apply(tracker, fill("A", "BTC", Side.BUY, "1", "110", timestamp = 2000L))
         val pos = tracker.positionFor("A", "BTC")!!
         assertThat(pos.openedAt).isEqualTo(1000L)
     }
@@ -110,17 +117,19 @@ class StrategyPositionTrackerTest {
     @Test
     fun `position fully closed clears openedAt`() {
         val tracker = StrategyPositionTracker()
-        tracker.applyFill(fill("A", "BTC", Side.BUY, "1", "100", timestamp = 1000L))
-        tracker.applyFill(fill("A", "BTC", Side.SELL, "1", "110", timestamp = 2000L))
+        val intents = IntentBook()
+        intents.apply(tracker, fill("A", "BTC", Side.BUY, "1", "100", timestamp = 1000L))
+        intents.apply(tracker, fill("A", "BTC", Side.SELL, "1", "110", timestamp = 2000L))
         assertThat(tracker.positionFor("A", "BTC")).isNull()
     }
 
     @Test
     fun `reopening after close sets new openedAt`() {
         val tracker = StrategyPositionTracker()
-        tracker.applyFill(fill("A", "BTC", Side.BUY, "1", "100", timestamp = 1000L))
-        tracker.applyFill(fill("A", "BTC", Side.SELL, "1", "110", timestamp = 2000L))
-        tracker.applyFill(fill("A", "BTC", Side.BUY, "1", "120", timestamp = 3000L))
+        val intents = IntentBook()
+        intents.apply(tracker, fill("A", "BTC", Side.BUY, "1", "100", timestamp = 1000L))
+        intents.apply(tracker, fill("A", "BTC", Side.SELL, "1", "110", timestamp = 2000L))
+        intents.apply(tracker, fill("A", "BTC", Side.BUY, "1", "120", timestamp = 3000L))
         val pos = tracker.positionFor("A", "BTC")!!
         assertThat(pos.openedAt).isEqualTo(3000L)
     }
@@ -128,8 +137,9 @@ class StrategyPositionTrackerTest {
     @Test
     fun `long-to-short flip resets openedAt to flip timestamp`() {
         val tracker = StrategyPositionTracker()
-        tracker.applyFill(fill("A", "BTC", Side.BUY, "1", "100", timestamp = 1000L))
-        tracker.applyFill(fill("A", "BTC", Side.SELL, "3", "90", timestamp = 2000L))
+        val intents = IntentBook()
+        intents.apply(tracker, fill("A", "BTC", Side.BUY, "1", "100", timestamp = 1000L))
+        intents.apply(tracker, fill("A", "BTC", Side.SELL, "3", "90", timestamp = 2000L))
         val pos = tracker.positionFor("A", "BTC")!!
         assertThat(pos.quantity).isEqualByComparingTo(BigDecimal("-2"))
         assertThat(pos.openedAt).isEqualTo(2000L)
