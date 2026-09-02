@@ -16,7 +16,6 @@ import java.nio.file.Path
 import java.time.Duration
 import java.time.Instant
 import org.assertj.core.api.Assertions.assertThat
-import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 
@@ -90,16 +89,16 @@ class WalkForwardReportWriterTest {
     }
 
     @Test
-    fun `unsafe winner label is rejected before any file is written`(
+    fun `labels with commas are quoted so the summary csv stays well-formed`(
         @TempDir dir: Path,
     ) {
         val total = TimeRange(t0, t0.plus(Duration.ofDays(40)))
         val harness =
             WalkForwardHarness(
-                configs = listOf("../danger" to "ok"),
-                backtestFactory = { label, _, range ->
+                configs = listOf("fast=8,slow=20" to mapOf("fast" to "8", "slow" to "20")),
+                backtestFactory = { _, _, range ->
                     Backtest(
-                        strategies = listOf(label to noopStrategy),
+                        strategies = listOf("noop" to noopStrategy),
                         ticks = ticksForRange(range),
                         candleWindow = TimeWindow.ONE_MINUTE,
                         initialTimestamp = range.from.toEpochMilli(),
@@ -113,8 +112,14 @@ class WalkForwardReportWriterTest {
             )
         val result = harness.run()
 
-        assertThatThrownBy { WalkForwardReportWriter(dir).write(result) }
-            .isInstanceOf(IllegalArgumentException::class.java)
-        assertThat(Files.list(dir).count()).isEqualTo(0L)
+        WalkForwardReportWriter(dir).write(result) { it.entries.joinToString(" ") { (k, v) -> "$k=$v" } }
+
+        val lines = Files.readString(dir.resolve("walkforward_summary.csv")).trim().lines()
+        assertThat(lines[0].split(",")).hasSize(10)
+        assertThat(lines[1]).contains(",\"fast=8,slow=20\",fast=8 slow=20,")
+        assertThat(Files.readString(dir.resolve("winner_counts.csv")).trim().lines()[1])
+            .isEqualTo("\"fast=8,slow=20\",${result.folds.size}")
+        assertThat(Files.readString(dir.resolve("walkforward_summary.json")))
+            .contains("\"winnerConfig\": \"fast=8 slow=20\"")
     }
 }
