@@ -186,7 +186,10 @@ class WalkForwardCommand(
                     """"test":"${f.testRange.from}..${f.testRange.to}",""" +
                     """"winner":"${esc(f.winnerLabel)}",""" +
                     """"inSample":${num(rank.defined(f.trainScore))},""" +
-                    """"outOfSample":${num(rank.valueOf(f.testResult.global))}}"""
+                    """"outOfSample":${num(rank.valueOf(f.testResult.global))},""" +
+                    """"testTotalPnL":${num(f.testResult.global.totalPnL)},""" +
+                    """"testMaxDrawdown":${num(f.testResult.global.maxDrawdown)},""" +
+                    """"testTrades":${f.testResult.trades.size}}"""
             }
         println(
             """{"rank":"${rank.flag}",$datasetField"trialCount":$trialCount,""" +
