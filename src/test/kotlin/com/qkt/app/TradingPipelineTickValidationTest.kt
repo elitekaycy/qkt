@@ -13,7 +13,7 @@ import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.source.NullMarketSource
 import com.qkt.pnl.PnLCalculator
-import com.qkt.positions.PositionTracker
+import com.qkt.positions.StrategyPositionTracker
 import com.qkt.risk.RiskEngine
 import com.qkt.strategy.Mode
 import java.math.BigDecimal
@@ -27,9 +27,9 @@ import org.junit.jupiter.api.Test
 class TradingPipelineTickValidationTest {
     private fun pipeline(priceTracker: MarketPriceTracker): TradingPipeline {
         val clock = FixedClock(time = 0L)
-        val positions = PositionTracker()
+        val strategyPositions = StrategyPositionTracker()
+        val positions = strategyPositions.account
         val pnl = PnLCalculator(positions, priceTracker)
-        val strategyPositions = com.qkt.positions.StrategyPositionTracker()
         val strategyPnL = com.qkt.pnl.StrategyPnL(strategyPositions, priceTracker)
         val bus = EventBus(clock, MonotonicSequenceGenerator())
         return TradingPipeline(

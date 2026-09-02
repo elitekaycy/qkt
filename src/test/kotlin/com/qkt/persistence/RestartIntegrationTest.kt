@@ -8,6 +8,7 @@ import com.qkt.events.BrokerEvent
 import com.qkt.events.OrderEvent
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.TimeInForce
+import com.qkt.positions.IntentBook
 import com.qkt.positions.LegRole
 import com.qkt.positions.StrategyPositionTracker
 import com.qkt.strategy.Signal
@@ -57,7 +58,8 @@ class RestartIntegrationTest {
         // Session 1: open primary, drive tick that fires tier 0, persist.
         // ============================================================
         val tracker1 = StrategyPositionTracker(persistor)
-        tracker1.applyFill(primaryFill(strategyId))
+        val intents = IntentBook()
+        intents.apply(tracker1, primaryFill(strategyId))
         // sanity: the primary leg is persisted
         val persistedAfterPrimary = persistor.loadLegBook(strategyId, "XAUUSDm")
         assertThat(persistedAfterPrimary).isNotNull
@@ -167,7 +169,8 @@ class RestartIntegrationTest {
 
         // Session 1: open primary, then a stack leg
         val tracker1 = StrategyPositionTracker(persistor)
-        tracker1.applyFill(primaryFill(strategyId))
+        val intents = IntentBook()
+        intents.apply(tracker1, primaryFill(strategyId))
         tracker1.addStackLeg(
             strategyId,
             com.qkt.positions.PositionLeg(

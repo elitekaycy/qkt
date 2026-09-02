@@ -6,7 +6,6 @@ import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.pnl.PnLCalculator
 import com.qkt.pnl.StrategyPnL
-import com.qkt.positions.PositionTracker
 import com.qkt.positions.StrategyPositionTracker
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -20,7 +19,7 @@ class RiskEngineHaltRulesTest {
             object : HaltRule {
                 override fun evaluate(riskState: RiskState): HaltDecision = HaltDecision.Halt("forced")
             }
-        val engine = RiskEngine(emptyList(), listOf(haltingRule), PositionTracker(), state)
+        val engine = RiskEngine(emptyList(), listOf(haltingRule), StrategyPositionTracker().account, state)
 
         engine.evaluateHaltRules()
 
@@ -35,7 +34,7 @@ class RiskEngineHaltRulesTest {
             object : HaltRule {
                 override fun evaluate(riskState: RiskState): HaltDecision = HaltDecision.Halt("forced")
             }
-        val engine = RiskEngine(emptyList(), listOf(haltingRule), PositionTracker(), state)
+        val engine = RiskEngine(emptyList(), listOf(haltingRule), StrategyPositionTracker().account, state)
 
         engine.evaluateHaltRules()
 
@@ -54,7 +53,8 @@ class RiskEngineHaltRulesTest {
             object : HaltRule {
                 override fun evaluate(riskState: RiskState): HaltDecision = HaltDecision.Halt("after the throw")
             }
-        val engine = RiskEngine(emptyList(), listOf(throwingRule, haltingRule), PositionTracker(), state)
+        val engine =
+            RiskEngine(emptyList(), listOf(throwingRule, haltingRule), StrategyPositionTracker().account, state)
 
         engine.evaluateHaltRules()
 
@@ -70,7 +70,7 @@ class RiskEngineHaltRulesTest {
             object : HaltRule {
                 override fun evaluate(riskState: RiskState): HaltDecision = error("broken feed")
             }
-        val engine = RiskEngine(emptyList(), listOf(throwingRule), PositionTracker(), state)
+        val engine = RiskEngine(emptyList(), listOf(throwingRule), StrategyPositionTracker().account, state)
 
         repeat(3) { engine.evaluateHaltRules() }
 
@@ -83,7 +83,8 @@ class RiskEngineHaltRulesTest {
         val sequencer = MonotonicSequenceGenerator()
         val bus = EventBus(clock, sequencer)
         val prices = MarketPriceTracker()
-        val positions = PositionTracker()
+        val strategyPositions = StrategyPositionTracker()
+        val positions = strategyPositions.account
         val pnl = PnLCalculator(positions, prices)
         val strategyPnL = StrategyPnL(StrategyPositionTracker(), prices)
         return RiskState(pnl, strategyPnL, clock, bus)

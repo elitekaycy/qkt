@@ -8,7 +8,8 @@ import com.qkt.common.Side
 import com.qkt.events.BrokerEvent
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.TimeInForce
-import com.qkt.positions.PositionTracker
+import com.qkt.positions.IntentBook
+import com.qkt.positions.StrategyPositionTracker
 import com.qkt.risk.Decision
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
@@ -65,7 +66,8 @@ class MarginFloorTest {
 
     @Test
     fun `entry rejected below the floor, approved above it`() {
-        val positions = PositionTracker()
+        val strategyPositions = StrategyPositionTracker()
+        val positions = strategyPositions.account
         val low = MarginFloor(brokerAt("150"), BigDecimal("200"))
         val decision = low.evaluate(entry(), positions)
         assertThat(decision).isInstanceOf(Decision.Reject::class.java)
@@ -79,8 +81,10 @@ class MarginFloorTest {
     fun `risk-reducing orders pass even below the floor`() {
         // Long 1 lot, margin level collapsed to 120%: the CLOSE must pass — shrinking
         // exposure is how the level recovers.
-        val positions = PositionTracker()
-        positions.applyFill(
+        val strategyPositions = StrategyPositionTracker()
+        val positions = strategyPositions.account
+        IntentBook().apply(
+            strategyPositions,
             BrokerEvent.OrderFilled(
                 clientOrderId = "o1",
                 brokerOrderId = "b1",
@@ -88,6 +92,7 @@ class MarginFloorTest {
                 side = Side.BUY,
                 price = Money.of("2000"),
                 quantity = Money.of("1"),
+                strategyId = "s",
                 timestamp = 0L,
             ),
         )
@@ -100,8 +105,10 @@ class MarginFloorTest {
     fun `margin floor blocks reentry and reopens after headroom recovers`() {
         val broker = MutableMarginBroker(BigDecimal("850"))
         val rule = MarginFloor(broker, BigDecimal("200"))
-        val positions = PositionTracker()
-        positions.applyFill(
+        val strategyPositions = StrategyPositionTracker()
+        val positions = strategyPositions.account
+        IntentBook().apply(
+            strategyPositions,
             BrokerEvent.OrderFilled(
                 clientOrderId = "o1",
                 brokerOrderId = "b1",
@@ -109,6 +116,7 @@ class MarginFloorTest {
                 side = Side.BUY,
                 price = Money.of("2000"),
                 quantity = Money.of("1"),
+                strategyId = "s",
                 timestamp = 0L,
             ),
         )
@@ -126,9 +134,9 @@ class MarginFloorTest {
     @Test
     fun `repeated missing margin reads fail closed for new exposure`() {
         val rule = MarginFloor(brokerAt(null), BigDecimal("200"))
-        assertThat(rule.evaluate(entry(), PositionTracker())).isEqualTo(Decision.Approve)
-        assertThat(rule.evaluate(entry(), PositionTracker())).isEqualTo(Decision.Approve)
-        assertThat(rule.evaluate(entry(), PositionTracker())).isInstanceOf(Decision.Reject::class.java)
+        assertThat(rule.evaluate(entry(), StrategyPositionTracker().account)).isEqualTo(Decision.Approve)
+        assertThat(rule.evaluate(entry(), StrategyPositionTracker().account)).isEqualTo(Decision.Approve)
+        assertThat(rule.evaluate(entry(), StrategyPositionTracker().account)).isInstanceOf(Decision.Reject::class.java)
     }
 
     @Test
@@ -145,7 +153,7 @@ class MarginFloorTest {
         val rule = MarginFloor(broker, BigDecimal("200"))
 
         repeat(5) {
-            assertThat(rule.evaluate(entry(), PositionTracker())).isEqualTo(Decision.Approve)
+            assertThat(rule.evaluate(entry(), StrategyPositionTracker().account)).isEqualTo(Decision.Approve)
         }
     }
 }

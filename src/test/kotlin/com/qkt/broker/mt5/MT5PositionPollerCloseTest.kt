@@ -8,7 +8,8 @@ import com.qkt.events.BrokerEvent
 import com.qkt.execution.ExitReason
 import com.qkt.marketdata.MarketPriceProvider
 import com.qkt.marketdata.MarketPriceTracker
-import com.qkt.positions.PositionTracker
+import com.qkt.positions.IntentBook
+import com.qkt.positions.StrategyPositionTracker
 import java.math.BigDecimal
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -323,9 +324,23 @@ class MT5PositionPollerCloseTest {
         )
 
         val priceTracker = MarketPriceTracker().apply { update("TEST-MT5:XAUUSD", BigDecimal("1.1200")) }
-        val positions = PositionTracker().apply { reset("TEST-MT5:XAUUSD", BigDecimal("0.10"), BigDecimal("1.1000")) }
+        val ledger = StrategyPositionTracker()
+        val positions = ledger.account
+        IntentBook().apply(
+            ledger,
+            BrokerEvent.OrderFilled(
+                clientOrderId = "ord-1",
+                brokerOrderId = "7001",
+                symbol = "TEST-MT5:XAUUSD",
+                side = com.qkt.common.Side.BUY,
+                price = BigDecimal("1.1000"),
+                quantity = BigDecimal("0.10"),
+                strategyId = "alpha",
+                timestamp = 0L,
+            ),
+        )
         var realized = BigDecimal.ZERO
-        bus.subscribe<BrokerEvent.OrderFilled> { realized = realized.add(positions.applyFill(it)) }
+        bus.subscribe<BrokerEvent.OrderFilled> { realized = realized.add(IntentBook().apply(ledger, it)) }
         val poller =
             MT5PositionPoller(
                 client = client,
@@ -571,5 +586,106 @@ class MT5PositionPollerCloseTest {
         poller.tick()
         poller.tick()
         assertThat(fills.single().price).isEqualByComparingTo("1.2000")
+    }
+
+    private fun bookedLeg(ticket: Long) =
+        com.qkt.broker.BookedLeg(
+            strategyId = "alpha",
+            legId = "leg-a",
+            ticket = ticket.toString(),
+            symbol = "TEST-MT5:XAUUSD",
+            side = Side.BUY,
+            quantity = BigDecimal("0.10"),
+            entryPrice = BigDecimal("100"),
+            openedAt = clock.now() - 60_000L,
+        )
+
+    @Test
+    fun `a booked leg whose ticket the venue no longer holds is closed from deal history`() {
+        server.enqueue(MockResponse().setBody("[]"))
+        server.enqueue(MockResponse().setBody("[]"))
+        server.enqueue(
+            MockResponse().setBody(
+                """[{"ticket":31,"position_id":7001,"entry":1,"price":"104","volume":"0.10","commission":"-0.30"}]""",
+            ),
+        )
+        val closedTickets = mutableListOf<Long>()
+        val poller =
+            MT5PositionPoller(
+                client = client,
+                profile = profile,
+                symbol = MT5Symbol(profile.symbolPolicy),
+                bus = bus,
+                clock = clock,
+                onPositionClosed = { closedTickets += it },
+                bookedLegs = { listOf(bookedLeg(7001L)) },
+            )
+
+        poller.tick()
+        assertThat(fills).isEmpty()
+
+        poller.tick()
+        val close = fills.single()
+        assertThat(close.brokerOrderId).isEqualTo("7001")
+        assertThat(close.clientOrderId).isEqualTo("mt5-close-7001")
+        assertThat(close.strategyId).isEqualTo("alpha")
+        assertThat(close.symbol).isEqualTo("TEST-MT5:XAUUSD")
+        assertThat(close.side).isEqualTo(Side.SELL)
+        assertThat(close.quantity).isEqualByComparingTo("0.10")
+        assertThat(close.price).isEqualByComparingTo("104")
+        assertThat(close.venueCosts).isEqualByComparingTo("0.30")
+        assertThat(close.updatesOrderExecution).isFalse()
+        assertThat(closedTickets).containsExactly(7001L)
+        assertThat(poller.hasPublishedClose(7001L)).isTrue()
+
+        // Retired once: a third clean snapshot without it books nothing more.
+        server.enqueue(MockResponse().setBody("[]"))
+        poller.tick()
+        assertThat(fills).hasSize(1)
+    }
+
+    @Test
+    fun `a booked leg missing from a single snapshot is not retired`() {
+        server.enqueue(MockResponse().setBody("[]"))
+        server.enqueue(MockResponse().setBody(positionJson(7001L, "0.10", "90", "110")))
+        server.enqueue(MockResponse().setBody(positionJson(7001L, "0.10", "90", "110")))
+        val poller =
+            MT5PositionPoller(
+                client = client,
+                profile = profile,
+                symbol = MT5Symbol(profile.symbolPolicy),
+                bus = bus,
+                clock = clock,
+                bookedLegs = { listOf(bookedLeg(7001L)) },
+            )
+
+        poller.tick()
+        poller.tick()
+        poller.tick()
+
+        assertThat(fills).isEmpty()
+    }
+
+    @Test
+    fun `a booked leg with an engine close still pending is left to that close`() {
+        server.enqueue(MockResponse().setBody("[]"))
+        server.enqueue(MockResponse().setBody("[]"))
+        server.enqueue(MockResponse().setBody("[]"))
+        val poller =
+            MT5PositionPoller(
+                client = client,
+                profile = profile,
+                symbol = MT5Symbol(profile.symbolPolicy),
+                bus = bus,
+                clock = clock,
+                engineCloseState = { EngineCloseState.PENDING },
+                bookedLegs = { listOf(bookedLeg(7001L)) },
+            )
+
+        poller.tick()
+        poller.tick()
+        poller.tick()
+
+        assertThat(fills).isEmpty()
     }
 }

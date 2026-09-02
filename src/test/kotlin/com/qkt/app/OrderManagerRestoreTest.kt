@@ -41,7 +41,10 @@ class OrderManagerRestoreTest {
         /** Ids the venue reports no counterpart for (nothing pending, no position, no ticket). */
         val unaccounted = mutableSetOf<String>()
 
-        override fun recoverPendingOrders(orders: List<ManagedOrder>): Set<String> {
+        override fun recoverPendingOrders(
+            orders: List<ManagedOrder>,
+            bookedTickets: Set<String>,
+        ): Set<String> {
             recovered += orders
             onRecover(orders)
             return orders.filterNot { it.id in unaccounted }.mapTo(LinkedHashSet()) { it.id }
@@ -404,7 +407,10 @@ class OrderManagerRestoreTest {
         val bus = newBus()
         val broker =
             object : Broker by LogBroker(bus, FixedClock(0L)) {
-                override fun recoverPendingOrders(orders: List<ManagedOrder>): Set<String> {
+                override fun recoverPendingOrders(
+                    orders: List<ManagedOrder>,
+                    bookedTickets: Set<String>,
+                ): Set<String> {
                     error("venue truth unavailable")
                 }
             }
