@@ -4,12 +4,13 @@ import com.qkt.common.Money
 import com.qkt.common.Side
 import com.qkt.execution.Trade
 import com.qkt.marketdata.MarketPriceTracker
-import com.qkt.positions.PositionTracker
+import com.qkt.positions.StrategyPositionTracker
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
 class PnLCalculatorTest {
-    private val tracker = PositionTracker()
+    private val ledger = StrategyPositionTracker()
+    private val tracker = ledger.account
     private val priceTracker = MarketPriceTracker()
     private val pnl = PnLCalculator(tracker, priceTracker)
 
@@ -39,7 +40,8 @@ class PnLCalculatorTest {
 
     @Test
     fun `unrealizedFor returns zero when no current price for symbol`() {
-        tracker.apply(
+        ledger.apply(
+            "acct",
             Trade("ORD-X", "XAUUSD", Money.of("100"), Money.of("1"), Side.BUY, 1000L),
         )
         // priceTracker has no price for XAUUSD
@@ -48,7 +50,8 @@ class PnLCalculatorTest {
 
     @Test
     fun `unrealizedFor computes (price - avg) * quantity for a long position`() {
-        tracker.apply(
+        ledger.apply(
+            "acct",
             Trade("ORD-X", "XAUUSD", Money.of("100"), Money.of("2"), Side.BUY, 1000L),
         )
         priceTracker.update("XAUUSD", Money.of("110"))
@@ -58,7 +61,8 @@ class PnLCalculatorTest {
 
     @Test
     fun `unrealizedFor returns negative for a short position with rising price`() {
-        tracker.apply(
+        ledger.apply(
+            "acct",
             Trade("ORD-X", "XAUUSD", Money.of("100"), Money.of("2"), Side.SELL, 1000L),
         )
         priceTracker.update("XAUUSD", Money.of("110"))
@@ -68,10 +72,12 @@ class PnLCalculatorTest {
 
     @Test
     fun `unrealizedTotal sums across all open symbols`() {
-        tracker.apply(
+        ledger.apply(
+            "acct",
             Trade("ORD-1", "XAUUSD", Money.of("100"), Money.of("2"), Side.BUY, 1000L),
         )
-        tracker.apply(
+        ledger.apply(
+            "acct",
             Trade("ORD-2", "EURUSD", Money.of("1.10"), Money.of("100"), Side.BUY, 1000L),
         )
         priceTracker.update("XAUUSD", Money.of("110"))

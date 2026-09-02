@@ -9,7 +9,6 @@ import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.marketdata.Tick
 import com.qkt.pnl.PnLCalculator
 import com.qkt.pnl.StrategyPnL
-import com.qkt.positions.PositionTracker
 import com.qkt.positions.StrategyPositionTracker
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
@@ -28,7 +27,7 @@ class BookReturnCollectorTest {
         val clock = FixedClock(0L)
         val bus = EventBus(clock, MonotonicSequenceGenerator())
         val priceTracker = MarketPriceTracker()
-        val pnl = PnLCalculator(PositionTracker(), priceTracker)
+        val pnl = PnLCalculator(StrategyPositionTracker().account, priceTracker)
         val strategyPnL = StrategyPnL(StrategyPositionTracker(), priceTracker)
         return Rig(bus, pnl, strategyPnL, clock)
     }

@@ -12,7 +12,9 @@ class StrategyPositionTrackerPersistenceTest {
     fun `applyFill persists the LegBook after a primary fill`() {
         val persistor = NoopStatePersistor()
         val tracker = StrategyPositionTracker(persistor)
-        tracker.applyFill(
+        val intents = IntentBook()
+        intents.apply(
+            tracker,
             BrokerEvent.OrderFilled(
                 clientOrderId = "c-1",
                 brokerOrderId = null,
@@ -35,8 +37,10 @@ class StrategyPositionTrackerPersistenceTest {
     fun `addStackLeg persists the new STACK leg`() {
         val persistor = NoopStatePersistor()
         val tracker = StrategyPositionTracker(persistor)
+        val intents = IntentBook()
         // First open a primary so the book exists.
-        tracker.applyFill(
+        intents.apply(
+            tracker,
             BrokerEvent.OrderFilled(
                 clientOrderId = "c-1",
                 brokerOrderId = null,
@@ -70,6 +74,7 @@ class StrategyPositionTrackerPersistenceTest {
     fun `closeLeg persists the now-empty book`() {
         val persistor = NoopStatePersistor()
         val tracker = StrategyPositionTracker(persistor)
+        val intents = IntentBook()
         tracker.addStackLeg(
             "hedge",
             PositionLeg(

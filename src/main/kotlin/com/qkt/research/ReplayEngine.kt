@@ -51,7 +51,6 @@ import com.qkt.pnl.PnLCalculator
 import com.qkt.pnl.StrategyPnL
 import com.qkt.pnl.SwapFinancingBook
 import com.qkt.positions.Position
-import com.qkt.positions.PositionTracker
 import com.qkt.positions.StrategyPositionTracker
 import com.qkt.risk.RiskEngine
 import com.qkt.risk.RiskRule
@@ -168,10 +167,10 @@ class ReplayEngine(
 
     private val clock = FixedClock(time = initialTimestamp)
     private val priceTracker = MarketPriceTracker()
-    private val positions = PositionTracker()
+    private val strategyPositions = StrategyPositionTracker()
+    private val positions = strategyPositions.account
     private val accounting: AccountingEngine
     private val pnl: PnLCalculator
-    private val strategyPositions: StrategyPositionTracker
     private val strategyPnL: StrategyPnL
     private val collector: EquityCurveCollector
     private val autocorr: ReturnAutocorrCollector
@@ -204,7 +203,6 @@ class ReplayEngine(
         val sequencer = MonotonicSequenceGenerator()
         accounting = AccountingEngine(accountingConfig, priceTracker)
         pnl = PnLCalculator(positions, priceTracker, instruments, accounting, markTimestamp = { currentTimestamp })
-        strategyPositions = StrategyPositionTracker()
         strategyPnL =
             StrategyPnL(
                 strategyPositions,

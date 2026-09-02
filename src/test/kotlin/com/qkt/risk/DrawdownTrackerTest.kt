@@ -6,7 +6,7 @@ import com.qkt.events.BrokerEvent
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.pnl.PnLCalculator
 import com.qkt.pnl.StrategyPnL
-import com.qkt.positions.PositionTracker
+import com.qkt.positions.IntentBook
 import com.qkt.positions.StrategyPositionTracker
 import java.math.BigDecimal
 import java.util.concurrent.atomic.AtomicLong
@@ -35,7 +35,8 @@ class DrawdownTrackerTest {
 
     @Test
     fun `drawdown is zero when no positive peak yet`() {
-        val positions = PositionTracker()
+        val strategyPositions = StrategyPositionTracker()
+        val positions = strategyPositions.account
         val prices = MarketPriceTracker()
         val pnl = PnLCalculator(positions, prices)
         val strategyPnL = StrategyPnL(StrategyPositionTracker(), prices)
@@ -49,14 +50,15 @@ class DrawdownTrackerTest {
 
     @Test
     fun `globalDrawdown is fractional peak-to-current`() {
-        val positions = PositionTracker()
+        val strategyPositions = StrategyPositionTracker()
+        val positions = strategyPositions.account
         val prices = MarketPriceTracker()
         val pnl = PnLCalculator(positions, prices)
         val strategyPnL = StrategyPnL(StrategyPositionTracker(), prices)
         val equity = EquityTracker(pnl, strategyPnL)
         val drawdown = DrawdownTracker(equity)
 
-        positions.applyFill(fill("A", "BTCUSDT", Side.BUY, "1", "80000"))
+        IntentBook().apply(strategyPositions, fill("A", "BTCUSDT", Side.BUY, "1", "80000"))
         prices.update("BTCUSDT", Money.of("82000"))
         equity.update()
         prices.update("BTCUSDT", Money.of("80000"))
@@ -67,16 +69,16 @@ class DrawdownTrackerTest {
 
     @Test
     fun `per-strategy drawdown is independent`() {
-        val positions = PositionTracker()
+        val strategyPositions = StrategyPositionTracker()
+        val positions = strategyPositions.account
         val prices = MarketPriceTracker()
         val pnl = PnLCalculator(positions, prices)
-        val strategyPositions = StrategyPositionTracker()
         val strategyPnL = StrategyPnL(strategyPositions, prices)
         val equity = EquityTracker(pnl, strategyPnL)
         val drawdown = DrawdownTracker(equity)
 
-        strategyPositions.applyFill(fill("A", "BTCUSDT", Side.BUY, "1", "80000"))
-        strategyPositions.applyFill(fill("B", "ETHUSDT", Side.BUY, "10", "3000"))
+        IntentBook().apply(strategyPositions, fill("A", "BTCUSDT", Side.BUY, "1", "80000"))
+        IntentBook().apply(strategyPositions, fill("B", "ETHUSDT", Side.BUY, "10", "3000"))
         prices.update("BTCUSDT", Money.of("82000"))
         prices.update("ETHUSDT", Money.of("3300"))
         equity.updateStrategy("A")
