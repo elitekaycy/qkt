@@ -8,18 +8,18 @@
 
 ### Task A1: `LegIntent` + `OrderRequest.legIntent`
 **Files:** `execution/LegIntent.kt` (new), `execution/OrderRequest.kt`.
-- [ ] Sealed `LegIntent { Open(legId, role, parentLegId?), Close(legId?, ticket?, partial), Net, Unplanned }`.
-- [ ] `OrderRequest.legIntent` default `Unplanned`; trailing defaulted param on every leaf variant;
+- [x] Sealed `LegIntent { Open(legId, role, parentLegId?), Close(legId?, ticket?, partial), Net, Unplanned }`.
+- [x] `OrderRequest.legIntent` default `Unplanned`; trailing defaulted param on every leaf variant;
   `withStrategyId`/`withExpiresAt`/`scaleQuantity` carry it; `withLegIntent(intent)` helper for leaves.
-- [ ] `Market.closesTicket/closesLegId/partialClose` and `IfTouched.closesTicket/partialClose` stay as
+- [x] `Market.closesTicket/closesLegId/partialClose` and `IfTouched.closesTicket/partialClose` stay as
   constructor params; `init` requires them consistent with a `Close` intent when both set.
 - **Tests:** `OrderRequestLegIntentTest` — default is Unplanned; copy helpers preserve it; positional
   constructor calls still compile (existing `OrderTypeCompilerTest` untouched).
 
 ### Task A2: planner
 **Files:** `app/LegIntentPlanner.kt` (new), `app/TradingPipeline.kt`.
-- [ ] `plan(request, mode)` per spec §2 table; idempotent on already-planned requests.
-- [ ] Pipeline calls the planner before `registerOcoEntryLegs/registerHedgingEntryLegs/registerLegClose`;
+- [x] `plan(request, mode)` per spec §2 table; idempotent on already-planned requests.
+- [x] Pipeline calls the planner before `registerOcoEntryLegs/registerHedgingEntryLegs/registerLegClose`;
   the three `register*` are rewritten to *derive* their map entries from `legIntent` (adapters).
 - **Tests:** `LegIntentPlannerTest` — one row per spec table cell × mode; pipeline ownership tests
   (`TradingPipelineOwnershipTest`) unchanged and green.
@@ -28,35 +28,37 @@
 **Files:** `app/OrderManager.kt` (`bracketExitOco`, `submitBracketFallback`, `submitBracketAttached`,
 `attachLayerSl/Tp`, scale-out prep, OCO double-fill close, TimeExit close, trigger→Market
 conversions), `dsl/compile/StackEngine.kt`.
-- [ ] Bracket entry → `Open(bracket.id, role from planner)`; `-tp`/`-sl` → `Close(bracket.id)`.
-- [ ] Stack tier entry → `Open(tier.id, STACK, parent)`; tier exits → `Close(tier.id)`.
-- [ ] TimeExit `CLOSE_AT_MARKET` and TrailingStop→Market carry `Close` from the managed order.
+- [x] Bracket entry → `Open(bracket.id, role from planner)`; `-tp`/`-sl` → `Close(bracket.id)`.
+- [x] Stack tier entry → `Open(tier.id, STACK, parent)`; tier exits → `Close(tier.id)`.
+- [x] TimeExit `CLOSE_AT_MARKET` and TrailingStop→Market carry `Close` from the managed order.
 - **Tests:** extend `OrderManagerAttachedBracketTest`, `TradingPipelineStackTest` to assert intent on
   minted leaves; id-naming assertions unchanged.
 
 ### Task A4: persistence, evidence, brokers carry the field
 **Files:** `persistence/FileStatePersistor.kt` (DTO + to/fromDomain), `execution/OrderRequestEvidence.kt`,
 `broker/mt5/MT5Broker.kt` (`convertAlreadyCrossedStop`), `execution/OrderFactory.kt`.
-- [ ] `OrderRequestDto.legIntent: LegIntentDto? = null` (no schema bump); round-trip.
-- [ ] Evidence payload emits `legIntent`; `SCHEMA_VERSION` unchanged (additive key).
-- [ ] `convertAlreadyCrossedStop` copies `legIntent`.
+- [x] `OrderRequestDto.legIntent: LegIntentDto? = null` (no schema bump); round-trip.
+- [x] Evidence payload emits `legIntent`; `SCHEMA_VERSION` unchanged (additive key).
+- [x] `convertAlreadyCrossedStop` copies `legIntent`.
 - **Tests:** persistor round-trip for each leaf; evidence golden update; MT5 convert test.
 
 ### Task A5: resolver (wired, not yet authoritative)
 **Files:** `app/LegIntentResolver.kt` (new), `app/TradingPipeline.kt`.
-- [ ] `resolve(fill): LegIntent` with the spec §3 precedence; pipeline computes it and asserts (WARN
+- [x] `resolve(fill): LegIntent` with the spec §3 precedence; pipeline computes it and asserts (WARN
   only in stage A) that it agrees with what `applyFillSlice` decided (`FillApplication.legAction`).
 - **Tests:** resolver unit tests; a pipeline test that a venue-detected close resolves by ticket.
 
 ### Task A6: stage gate
-- [ ] `./gradlew build`, parity suite, golden replays hash-identical vs base; PR to `dev`.
+- [x] `./gradlew build`, parity suite, golden replays hash-identical vs base; PR to `dev`.
 
 ## Stage B — delete the maps
 
 ### Task B1: characterization pins for D4
-- [ ] `HedgingFillNeverNetsTest`: unregistered fill on a HEDGING symbol books an INDEPENDENT leg + WARN;
-  same fill on NETTING nets. Pins today's netting behavior on NETTING tapes.
-- [ ] Straddle whipsaw pin (found by the stage-A verifier in `TradingPipelineOcoEntryTest`): when
+- [x] Resolver venue default pinned in `LegIntentResolverTest` (HEDGING → INDEPENDENT leg, NETTING/UNKNOWN → net).
+- [x] Restart replay pins (#1096) in `StrategyPositionTrackerReplayTest`: a re-report on an owned ticket
+  books once; a venue ticket belongs to exactly one leg; a further slice books only the venue's increment.
+- [x] Comment-match pin (#1096b) in `Mt5CommentMatchTest`.
+- [x] Straddle whipsaw pin (found by the stage-A verifier in `TradingPipelineOcoEntryTest`): when
   leg A fills, the OCO cancels leg B and today's `forgetPending` drops B's registration, so a
   subsequent B fill nets into PRIMARY instead of opening its INDEPENDENT leg. With intent on the
   order the cancel forgets nothing; assert B opens as INDEPENDENT (`legAction == OPENED`,
@@ -64,11 +66,15 @@ conversions), `dsl/compile/StackEngine.kt`.
 
 ### Task B2: `applyFillSlice` reads the resolver
 **Files:** `positions/StrategyPositionTracker.kt`, `app/TradingPipeline.kt`, `app/OrderManager.kt`.
-- [ ] `apply(strategyId, fill, intent)` exhaustive `when`; delete the three maps, `register*`,
-  `forgetPending`, `hasRegisteredClose`, `applyOwnedLegByTicket`; `hasLegLinkage` reads intent.
-- [ ] Remove the `register*` adapters from the pipeline and the orchestrator hook.
-- **Tests:** rewrite `StrategyPositionTrackerStackTest`/`MfeTest`, `StrategyPnLTest:61`,
-  `TradingPipelineOwnershipTest:128` to construct intents instead of registering.
+- [x] `applyFillDetailed(fill, intent, cumulativeFilled)` exhaustive `when`; the three maps, `register*`,
+  `forgetPending`, `hasRegisteredClose`, `applyOwnedLegByTicket` deleted; `OrderManager.isLegLinked`
+  reads the order's intent.
+- [x] Ledger rules: one leg per venue ticket; a re-report on an owned ticket books only the cumulative
+  delta; a close naming a leg the book does not hold books nothing (`FillApplication.unbooked`) and the
+  pipeline accounts/publishes nothing for it.
+- [x] Recovery: `Broker.recoverPendingOrders(orders, bookedTickets)` — MT5 joins already-booked tickets
+  without republishing their executions; `matchesOrderComment` never matches across a digit boundary.
+- [x] Tests rewritten on `IntentBook` (routes through the production resolver).
 
 ### Task B3: stage gate (as A6).
 
