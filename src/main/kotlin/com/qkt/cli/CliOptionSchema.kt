@@ -32,6 +32,7 @@ internal object CliOptionSchemas {
             "reject-every",
             "partial-fill",
             "dataset",
+            "position-mode",
         )
     private val backtestFlags =
         setOf("no-fetch", "bars", "allow-incomplete", "tick-fills", "enforce-live-breakers", "chaos")
