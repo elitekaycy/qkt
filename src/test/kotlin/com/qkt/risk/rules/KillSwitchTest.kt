@@ -10,7 +10,6 @@ import com.qkt.execution.TimeInForce
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.pnl.PnLCalculator
 import com.qkt.pnl.StrategyPnL
-import com.qkt.positions.PositionTracker
 import com.qkt.positions.StrategyPositionTracker
 import com.qkt.risk.Decision
 import com.qkt.risk.RiskState
@@ -23,7 +22,8 @@ class KillSwitchTest {
         val sequencer = MonotonicSequenceGenerator()
         val bus = EventBus(clock, sequencer)
         val prices = MarketPriceTracker()
-        val positions = PositionTracker()
+        val strategyPositions = StrategyPositionTracker()
+        val positions = strategyPositions.account
         val pnl = PnLCalculator(positions, prices)
         val strategyPnL = StrategyPnL(StrategyPositionTracker(), prices)
         return RiskState(pnl, strategyPnL, clock, bus)
@@ -45,7 +45,7 @@ class KillSwitchTest {
         val state = newState()
         val rule = KillSwitch(state)
 
-        assertThat(rule.evaluate(anyRequest, PositionTracker())).isEqualTo(Decision.Approve)
+        assertThat(rule.evaluate(anyRequest, StrategyPositionTracker().account)).isEqualTo(Decision.Approve)
     }
 
     @Test
@@ -54,7 +54,7 @@ class KillSwitchTest {
         state.halt("test")
         val rule = KillSwitch(state)
 
-        val decision = rule.evaluate(anyRequest, PositionTracker())
+        val decision = rule.evaluate(anyRequest, StrategyPositionTracker().account)
         assertThat(decision).isInstanceOf(Decision.Reject::class.java)
         assertThat((decision as Decision.Reject).reason).contains("test")
     }
@@ -65,7 +65,9 @@ class KillSwitchTest {
         state.haltStrategy("A", "strategy halt")
         val rule = KillSwitch(state)
 
-        assertThat(rule.evaluate(anyRequest, PositionTracker())).isInstanceOf(Decision.Reject::class.java)
+        assertThat(
+            rule.evaluate(anyRequest, StrategyPositionTracker().account),
+        ).isInstanceOf(Decision.Reject::class.java)
     }
 
     @Test
@@ -74,6 +76,6 @@ class KillSwitchTest {
         state.haltStrategy("B", "B halt")
         val rule = KillSwitch(state)
 
-        assertThat(rule.evaluate(anyRequest, PositionTracker())).isEqualTo(Decision.Approve)
+        assertThat(rule.evaluate(anyRequest, StrategyPositionTracker().account)).isEqualTo(Decision.Approve)
     }
 }

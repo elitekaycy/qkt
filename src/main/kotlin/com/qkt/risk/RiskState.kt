@@ -10,7 +10,6 @@ import com.qkt.pnl.PnLCalculator
 import com.qkt.pnl.PnLProvider
 import com.qkt.pnl.RestorablePnLProvider
 import com.qkt.pnl.StrategyPnL
-import com.qkt.positions.PositionTracker
 import com.qkt.positions.StrategyPositionTracker
 import java.math.BigDecimal
 import java.util.concurrent.ConcurrentHashMap
@@ -326,9 +325,9 @@ class RiskState(
             val sequencer = MonotonicSequenceGenerator()
             val bus = EventBus(clock, sequencer)
             val prices = MarketPriceTracker()
-            val positions = PositionTracker()
-            val pnl = PnLCalculator(positions, prices)
-            val strategyPnL = StrategyPnL(StrategyPositionTracker(), prices)
+            val ledger = StrategyPositionTracker()
+            val pnl = PnLCalculator(ledger.account, prices)
+            val strategyPnL = StrategyPnL(ledger, prices)
             return RiskState(pnl, strategyPnL, clock, bus)
         }
     }

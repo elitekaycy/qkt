@@ -14,7 +14,6 @@ import com.qkt.marketdata.MockTickFeed
 import com.qkt.marketdata.source.NullMarketSource
 import com.qkt.pnl.PnLCalculator
 import com.qkt.pnl.StrategyPnL
-import com.qkt.positions.PositionTracker
 import com.qkt.positions.StrategyPositionTracker
 import com.qkt.risk.RiskEngine
 import com.qkt.risk.RiskRule
@@ -32,7 +31,8 @@ fun main() {
     val ids = SequentialIdGenerator()
     val sequencer = MonotonicSequenceGenerator()
     val priceTracker = MarketPriceTracker()
-    val positions = PositionTracker()
+    val strategyPositions = StrategyPositionTracker()
+    val positions = strategyPositions.account
     val instruments = com.qkt.instrument.StandardInstrumentRegistry
     val pnl = PnLCalculator(positions, priceTracker, instruments)
     val bus = EventBus(clock, sequencer)
@@ -47,7 +47,6 @@ fun main() {
         listOf(
             MaxPositionSize(symbol = "XAUUSD", maxQty = Money.of("3")),
         )
-    val strategyPositions = StrategyPositionTracker()
     val strategyPnL = StrategyPnL(strategyPositions, priceTracker, instruments)
     val riskState = RiskState(pnl, strategyPnL, clock, bus)
     riskState.warmupComplete = true

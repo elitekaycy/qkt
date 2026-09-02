@@ -35,7 +35,6 @@ import com.qkt.pnl.PnLCalculator
 import com.qkt.pnl.StrategyPnL
 import com.qkt.positions.Position
 import com.qkt.positions.PositionProvider
-import com.qkt.positions.PositionTracker
 import com.qkt.positions.StrategyPositionTracker
 import com.qkt.risk.HaltRule
 import com.qkt.risk.RiskEngine
@@ -447,7 +446,7 @@ class LiveSession(
                         if (!ignoreMismatches) {
                             throw ReconcileException(
                                 "$strategyId/$symbol: ${outcome.details}. " +
-                                    "Pass --reconcile=ignore-mismatches to attach broker positions as PRIMARY.",
+                                    "Pass --reconcile=ignore-mismatches to adopt the venue positions as independent legs.",
                             )
                         }
                         log.warn(
@@ -958,8 +957,8 @@ class LiveSession(
                 accountCurrency = accounting.accountCurrency,
                 canConvert = { symbol, _ -> accounting.canConvertSymbol(symbol) },
             )
-        val positions = PositionTracker()
         val strategyPositions = StrategyPositionTracker(persistor)
+        val positions = strategyPositions.account
         val bus = busOverride ?: EventBus(clock, sequencer)
         // The control queue and bus sink exist BEFORE any broker constructs: MT5
         // pollers start at construction and publish from their own threads — without
@@ -1050,6 +1049,10 @@ class LiveSession(
 
         // Reconcile persisted leg state against broker positions BEFORE the engine starts
         // taking ticks. Refuses to start on mismatch unless ignoreMismatches=true.
+        // Venue-realized amounts on legs that closed while down. Booked once the pipeline exists,
+        // through the same accounted-event fold as a live execution, so every accumulator and
+        // the audit trail see them.
+        val bootReconciled = ArrayList<BootReconciled>()
         val adoptedLegCounts =
             reconcileOrPreload(strategyPositions, broker) { strategyId, leg ->
                 // The leg's position closed while the daemon was down. Book what the venue
@@ -1078,7 +1081,7 @@ class LiveSession(
                                 .add(d.swap)
                                 .add(d.fee ?: java.math.BigDecimal.ZERO)
                         }
-                    strategyPnL.recordRealized(strategyId, realized)
+                    bootReconciled += BootReconciled(strategyId, leg.legId, realized)
                     log.warn(
                         "{}: leg {} (ticket {}) closed while down; booked realized {} from {} closing deal(s)",
                         strategyId,
@@ -1460,6 +1463,31 @@ class LiveSession(
         // Restore OCO legs from the persistor and reconcile them against venue truth so
         // any sibling whose pair filled during downtime is cancelled before ticks flow.
         pipeline.orderManager.restore(strategies.map { it.first })
+        for (booked in bootReconciled) {
+            pipeline.applyReconciledRealized(booked.strategyId, booked.realized, booked.legId)
+        }
+        // The broker keeps the ledger honest against venue truth from here on (#1097).
+        val watchedStrategyIds = strategies.map { it.first }
+        broker.watchBookedLegs {
+            val legs = ArrayList<com.qkt.broker.BookedLeg>()
+            for (strategyId in watchedStrategyIds) {
+                for (leg in strategyPositions.allLegsFor(strategyId)) {
+                    val ticket = leg.brokerTicket ?: continue
+                    legs +=
+                        com.qkt.broker.BookedLeg(
+                            strategyId = strategyId,
+                            legId = leg.legId,
+                            ticket = ticket,
+                            symbol = leg.symbol,
+                            side = leg.side,
+                            quantity = leg.quantity,
+                            entryPrice = leg.entryPrice,
+                            openedAt = leg.openedAt,
+                        )
+                }
+            }
+            legs
+        }
         // Keep the daily-summary tracker's halt count current. The daemon owns the one
         // DailySummaryScheduler; this session just feeds its tracker.
         val ownerStrategyId = strategies.firstOrNull()?.first.orEmpty()
@@ -1578,10 +1606,12 @@ class LiveSession(
         // state from its own worker thread.
         fun doFlatten() {
             val strategyId = strategies.firstOrNull()?.first ?: return
+            val now = clock.now()
             if (broker.supportsPositionTickets) {
+                // Venue truth leads: every position the venue attributes to this strategy is
+                // closed by ticket, through the ledger leg that owns it when there is one.
                 val deployedIds = strategies.map { it.first }
-                val tickets = broker.positionTickets()
-                for (ticket in tickets) {
+                for (ticket in broker.positionTickets()) {
                     val owner =
                         ticketAttribution.ownerOf(ticket.ticket)
                             ?: ticketAttribution.fromComment(ticket.comment, deployedIds)
@@ -1596,57 +1626,30 @@ class LiveSession(
                         continue
                     }
                     pipeline.orderManager.cancelPendingForSymbol(ticket.symbol)
-                    val side =
-                        if (ticket.side == com.qkt.common.Side.BUY) {
-                            com.qkt.common.Side.SELL
+                    val leg = strategyPositions.legBookFor(strategyId, ticket.symbol)?.legByTicket(ticket.ticket)
+                    val request =
+                        if (leg != null) {
+                            LegFlattener.closeLeg(strategyId, leg, ids.next(), now)
                         } else {
-                            com.qkt.common.Side.BUY
+                            LegFlattener.closeTicket(strategyId, ticket, ids.next(), now)
                         }
-                    bus.publish(
-                        com.qkt.events.OrderEvent(
-                            com.qkt.execution.OrderRequest.Market(
-                                id = ids.next(),
-                                symbol = ticket.symbol,
-                                side = side,
-                                quantity = ticket.qty,
-                                timeInForce = com.qkt.execution.TimeInForce.GTC,
-                                timestamp = clock.now(),
-                                strategyId = strategyId,
-                                closesTicket = ticket.ticket,
-                            ),
-                        ),
-                    )
+                    bus.publish(com.qkt.events.OrderEvent(request))
                 }
                 return
             }
-            for ((symbol, pos) in positions.allPositions()) {
-                if (pos.quantity.signum() == 0) continue
-                if (broker.positionAccountingMode(symbol) != com.qkt.broker.PositionAccountingMode.NETTING) {
+            for (leg in strategyPositions.allLegsFor(strategyId)) {
+                if (broker.positionAccountingMode(leg.symbol) != com.qkt.broker.PositionAccountingMode.NETTING) {
                     log.error(
                         "flatten cannot safely close {} on broker {} without position tickets; " +
                             "accounting mode is {}",
-                        symbol,
+                        leg.symbol,
                         broker.name,
-                        broker.positionAccountingMode(symbol),
+                        broker.positionAccountingMode(leg.symbol),
                     )
                     continue
                 }
-                pipeline.orderManager.cancelPendingForSymbol(symbol)
-                val side =
-                    if (pos.quantity.signum() > 0) com.qkt.common.Side.SELL else com.qkt.common.Side.BUY
-                bus.publish(
-                    com.qkt.events.OrderEvent(
-                        com.qkt.execution.OrderRequest.Market(
-                            id = ids.next(),
-                            symbol = symbol,
-                            side = side,
-                            quantity = pos.quantity.abs(),
-                            timeInForce = com.qkt.execution.TimeInForce.GTC,
-                            timestamp = clock.now(),
-                            strategyId = strategyId,
-                        ),
-                    ),
-                )
+                pipeline.orderManager.cancelPendingForSymbol(leg.symbol)
+                bus.publish(com.qkt.events.OrderEvent(LegFlattener.closeLeg(strategyId, leg, ids.next(), now)))
             }
         }
 
@@ -2403,3 +2406,10 @@ private sealed interface Inbound {
         val deadlineNanos: Long,
     ) : Inbound
 }
+
+/** A venue-realized amount on a leg that closed while the daemon was down. */
+private class BootReconciled(
+    val strategyId: String,
+    val legId: String,
+    val realized: java.math.BigDecimal,
+)

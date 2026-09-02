@@ -5,7 +5,8 @@ import com.qkt.common.Side
 import com.qkt.events.BrokerEvent
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.TimeInForce
-import com.qkt.positions.PositionTracker
+import com.qkt.positions.IntentBook
+import com.qkt.positions.StrategyPositionTracker
 import com.qkt.risk.Decision
 import com.qkt.risk.TestClock
 import java.math.BigDecimal
@@ -27,7 +28,8 @@ class MeasuredUsageTest {
     fun `entries above the validation cap reject during the window and pass after`() {
         val clock = TestClock(0L)
         val rule = MeasuredUsage(clock, startedAtMs = 0L, windowHours = 24L, maxQty = BigDecimal("0.01"))
-        val positions = PositionTracker()
+        val strategyPositions = StrategyPositionTracker()
+        val positions = strategyPositions.account
 
         val decision = rule.evaluate(entry("0.5"), positions)
         assertThat(decision).isInstanceOf(Decision.Reject::class.java)
@@ -44,8 +46,10 @@ class MeasuredUsageTest {
         // A pre-existing 0.5 position must remain closable even though new 0.5 entries
         // reject — the window restricts new risk, not the way out.
         val clock = TestClock(0L)
-        val positions = PositionTracker()
-        positions.applyFill(
+        val strategyPositions = StrategyPositionTracker()
+        val positions = strategyPositions.account
+        IntentBook().apply(
+            strategyPositions,
             BrokerEvent.OrderFilled(
                 clientOrderId = "o1",
                 brokerOrderId = "b1",
@@ -53,6 +57,7 @@ class MeasuredUsageTest {
                 side = Side.BUY,
                 price = Money.of("2000"),
                 quantity = Money.of("0.5"),
+                strategyId = "s",
                 timestamp = 0L,
             ),
         )

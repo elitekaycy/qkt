@@ -9,7 +9,7 @@ import com.qkt.common.Side
 import com.qkt.events.BrokerEvent
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.TimeInForce
-import com.qkt.positions.PositionTracker
+import com.qkt.positions.StrategyPositionTracker
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
@@ -26,7 +26,7 @@ class BybitLinearBrokerTest {
         client.responses["/v5/execution/list"] = emptyOk()
         client.responses["/v5/account/wallet-balance"] = emptyOk()
         client.responses["/v5/position/list"] = emptyOk()
-        val broker = BybitLinearBroker(client, bus, FixedClock(0L), PositionTracker())
+        val broker = BybitLinearBroker(client, bus, FixedClock(0L), StrategyPositionTracker().account)
         client.posts.clear()
         return broker
     }
@@ -260,7 +260,7 @@ class BybitLinearBrokerTest {
         client.responses["/v5/account/wallet-balance"] = emptyOk()
         client.responses["/v5/position/list"] = emptyOk()
 
-        BybitLinearBroker(client, newBus(), FixedClock(0L), PositionTracker())
+        BybitLinearBroker(client, newBus(), FixedClock(0L), StrategyPositionTracker().account)
 
         val paths = client.posts.map { it.path }
         assertThat(paths).contains(

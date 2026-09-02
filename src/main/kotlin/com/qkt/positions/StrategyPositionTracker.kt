@@ -3,6 +3,7 @@ package com.qkt.positions
 import com.qkt.common.Money
 import com.qkt.common.Side
 import com.qkt.events.BrokerEvent
+import com.qkt.execution.LegIntent
 import com.qkt.execution.Trade
 import java.math.BigDecimal
 import java.util.concurrent.ConcurrentHashMap
@@ -23,7 +24,120 @@ import java.util.concurrent.atomic.AtomicLong
 class StrategyPositionTracker(
     private val persistor: com.qkt.persistence.StatePersistor = com.qkt.persistence.NoopStatePersistor(),
 ) {
+    private val log = org.slf4j.LoggerFactory.getLogger(StrategyPositionTracker::class.java)
+
     private val byStrategy: MutableMap<String, MutableMap<String, LegBook>> = ConcurrentHashMap()
+
+    /**
+     * Account-level net position per symbol, folded across strategies. Rebuilt for one symbol
+     * after every mutation of that symbol's legs, so account reads are index lookups and the
+     * account never disagrees with the ledger it is derived from.
+     */
+    private val accountBySymbol: MutableMap<String, Position> = ConcurrentHashMap()
+
+    /** The account's positions as a read-only projection of this ledger. */
+    val account: LegExposureProvider = AccountPositionView(this)
+
+    internal fun accountPositionFor(symbol: String): Position? = accountBySymbol[symbol]
+
+    internal fun accountPositions(): Map<String, Position> = accountBySymbol.toMap()
+
+    internal fun accountSymbols(): Set<String> = accountBySymbol.keys
+
+    internal fun forEachLeg(
+        symbol: String,
+        action: (PositionLeg) -> Unit,
+    ) {
+        for (books in byStrategy.values) {
+            val book = books[symbol] ?: continue
+            book.forEach(action)
+        }
+    }
+
+    private fun reindex(symbol: String) {
+        // Accumulate from a scale-0 zero so the net keeps the legs' own quantity scale, exactly
+        // as the strategy net view does — report columns print 0.01, not 0.01000000.
+        var netQty = BigDecimal.ZERO
+        var earliest = Long.MAX_VALUE
+        var any = false
+        for (books in byStrategy.values) {
+            val book = books[symbol] ?: continue
+            book.forEach { leg ->
+                any = true
+                netQty = if (leg.side == Side.BUY) netQty.add(leg.quantity) else netQty.subtract(leg.quantity)
+                if (leg.openedAt < earliest) earliest = leg.openedAt
+            }
+        }
+        if (!any) {
+            accountBySymbol.remove(symbol)
+            return
+        }
+        if (netQty.signum() == 0) {
+            accountBySymbol[symbol] = Position(symbol, Money.ZERO, Money.ZERO, openedAt = earliest)
+            return
+        }
+        val netSide = if (netQty.signum() > 0) Side.BUY else Side.SELL
+        var notional = Money.ZERO
+        var qty = Money.ZERO
+        for (books in byStrategy.values) {
+            val book = books[symbol] ?: continue
+            book.forEach { leg ->
+                if (leg.side != netSide) return@forEach
+                notional = notional.add(leg.entryPrice.multiply(leg.quantity))
+                qty = qty.add(leg.quantity)
+            }
+        }
+        val avg = notional.divide(qty, Money.CONTEXT).setScale(Money.SCALE, Money.ROUNDING)
+        accountBySymbol[symbol] = Position(symbol, netQty, avg, openedAt = earliest)
+    }
+
+    /**
+     * Replace a symbol's ledger with the venue's net position when the venue reports a
+     * correction. Only possible when exactly one strategy trades the symbol — a net figure
+     * cannot be attributed across several — otherwise the correction is logged and left to the
+     * per-ticket reconcile. Returns true when the ledger changed.
+     */
+    fun reconcileNet(
+        symbol: String,
+        signedQuantity: BigDecimal,
+        avgEntryPrice: BigDecimal,
+        openedAt: Long,
+        source: String,
+    ): Boolean {
+        val owners = byStrategy.entries.filter { (_, books) -> books.containsKey(symbol) }
+        if (owners.size > 1) {
+            log.warn("venue correction for {} from {} not applied: {} strategies hold it", symbol, source, owners.size)
+            return false
+        }
+        val strategyId = owners.singleOrNull()?.key
+        if (strategyId == null) {
+            if (signedQuantity.signum() == 0) return false
+            log.warn("venue correction for {} from {} not applied: no strategy holds it", symbol, source)
+            return false
+        }
+        val books = byStrategy.getValue(strategyId)
+        if (signedQuantity.signum() == 0) {
+            books.remove(symbol)
+        } else {
+            val book = LegBook(symbol)
+            book.add(
+                PositionLeg(
+                    legId = nextPrimaryId(strategyId, symbol),
+                    symbol = symbol,
+                    side = if (signedQuantity.signum() > 0) Side.BUY else Side.SELL,
+                    quantity = signedQuantity.abs(),
+                    entryPrice = avgEntryPrice,
+                    openedAt = openedAt,
+                    role = LegRole.PRIMARY,
+                ),
+            )
+            books[symbol] = book
+        }
+        syncPrimaryMfeTracker(strategyId, symbol)
+        persistBook(strategyId, symbol)
+        reindex(symbol)
+        return true
+    }
 
     private fun persistBook(
         strategyId: String,
@@ -48,6 +162,7 @@ class StrategyPositionTracker(
         val books = byStrategy.getOrPut(strategyId) { ConcurrentHashMap() }
         val book = books.getOrPut(symbol) { LegBook(symbol) }
         for (leg in persisted.legs) book.add(leg.toPositionLeg())
+        reindex(symbol)
     }
 
     /** Monotonic counter for engine-internal PRIMARY leg ids. */
@@ -71,104 +186,7 @@ class StrategyPositionTracker(
         val tracker: MfeTracker,
     )
 
-    /**
-     * Pre-registered stack-leg open intents. Key is `"$strategyId|$clientOrderId"`.
-     * When [applyFill] sees a matching clientOrderId, the resulting fill is added as a
-     * STACK leg (with the bracket id as legId) instead of being averaged into the
-     * primary. Populated by [com.qkt.dsl.compile.StackOrchestrator] at engine emit time.
-     */
-    private val pendingStackOpens: MutableMap<String, StackOpenIntent> = ConcurrentHashMap()
-
-    /**
-     * Pre-registered stack-leg close ids. Key is `"$strategyId|$clientOrderId"`, value
-     * is the stack legId to close. Populated for predicted bracket TP/SL ids of stack
-     * orders so that those fills close the right stack leg and realize its PnL without
-     * touching the primary.
-     */
-    private val pendingStackCloses: MutableMap<String, String> = ConcurrentHashMap()
-
-    /**
-     * Pre-registered independent-leg open ids. Key is `"$strategyId|$clientOrderId"`, value
-     * is the [legId] the fill should open as an [LegRole.INDEPENDENT] leg — a standalone
-     * position that does NOT net against existing legs (each leg of an OCO_ENTRY straddle is
-     * one of these). Populated at order-emit time; closed via [registerStackClose] (which
-     * closes any leg by id) when the leg's bracket exit fills.
-     */
-    private val pendingIndependentOpens: MutableMap<String, String> = ConcurrentHashMap()
-
-    private data class StackOpenIntent(
-        val stackLegId: String,
-        val parentLegId: String,
-    )
-
-    /**
-     * Phase 27: declare that a future [BrokerEvent.OrderFilled] with [clientOrderId]
-     * should open a STACK leg (not average into PRIMARY). The [stackLegId] becomes the
-     * new leg's id and is correlated to [parentLegId] via [PositionLeg.parentLegId].
-     */
-    fun registerStackOpen(
-        strategyId: String,
-        clientOrderId: String,
-        stackLegId: String,
-        parentLegId: String,
-    ) {
-        pendingStackOpens["$strategyId|$clientOrderId"] = StackOpenIntent(stackLegId, parentLegId)
-    }
-
-    /**
-     * Phase 27: declare that a future [BrokerEvent.OrderFilled] with [clientOrderId]
-     * should close stack leg [stackLegId] (typically a stack-bracket TP or SL fill).
-     * Returns realized PnL on that fill via the normal [applyFill] return path.
-     */
-    fun registerStackClose(
-        strategyId: String,
-        clientOrderId: String,
-        stackLegId: String,
-    ) {
-        pendingStackCloses["$strategyId|$clientOrderId"] = stackLegId
-    }
-
-    /**
-     * Declare that a future [BrokerEvent.OrderFilled] with [clientOrderId] should open an
-     * [LegRole.INDEPENDENT] leg with id [legId] — a standalone position that coexists with
-     * others on the symbol without netting (the truthful-position path; e.g. each leg of an
-     * OCO_ENTRY straddle). Close it via [registerStackClose] when its bracket exit fills.
-     */
-
-    fun registerIndependentOpen(
-        strategyId: String,
-        clientOrderId: String,
-        legId: String,
-    ) {
-        pendingIndependentOpens["$strategyId|$clientOrderId"] = legId
-    }
-
-    /**
-     * True when [clientOrderId] is pre-registered to close a specific leg for
-     * [strategyId] — such an exit is structurally reduce-only (it closes exactly its
-     * own leg) and is exempt from the net-based stale-exit sweep and tripwire (#1071).
-     */
-    fun hasRegisteredClose(
-        strategyId: String,
-        clientOrderId: String,
-    ): Boolean = pendingStackCloses.containsKey("$strategyId|$clientOrderId")
-
-    /**
-     * Drop the remaining pending intent for [clientOrderId] after cancellation or rejection.
-     * Already-executed owned quantity remains in its leg; a late execution carrying that leg's
-     * stable venue ticket still correlates by ticket instead of falling through to PRIMARY.
-     */
-    fun forgetPending(
-        strategyId: String,
-        clientOrderId: String,
-    ) {
-        val key = "$strategyId|$clientOrderId"
-        pendingStackOpens.remove(key)
-        pendingStackCloses.remove(key)
-        pendingIndependentOpens.remove(key)
-    }
-
-    /** How one execution slice landed in the leg book (#1071). */
+    /** How one execution slice landed in the leg book. */
     enum class LegAction {
         /** The slice opened (or extended) a specific leg. */
         OPENED,
@@ -182,76 +200,49 @@ class StrategyPositionTracker(
 
     /**
      * Result of applying one execution slice: the realized PnL plus, when the slice was
-     * leg-routed, which leg it touched and how. NETTED slices carry no leg id.
+     * leg-routed, which leg it touched and how. [unbooked] means nothing was booked — a
+     * re-report of an execution the book already holds, or a close naming a leg the book does
+     * not hold — and the caller must not account it.
      */
     data class FillApplication(
         val realized: BigDecimal,
         val legId: String? = null,
         val legAction: LegAction = LegAction.NETTED,
+        val unbooked: Boolean = false,
     )
 
-    /** Apply a terminal execution slice and consume any matching ownership intent. */
-    fun applyFill(event: BrokerEvent.OrderFilled): BigDecimal = applyFillSlice(event, terminal = true).realized
+    /** Apply an execution slice under [intent]; see [applyFillDetailed]. */
+    fun applyFill(
+        event: BrokerEvent.OrderFilled,
+        intent: LegIntent,
+        cumulativeFilled: BigDecimal? = null,
+    ): BigDecimal = applyFillDetailed(event, intent, cumulativeFilled).realized
 
     /**
-     * Apply a non-terminal execution slice while retaining its matching ownership intent for the
-     * remaining slices. The caller must later deliver a terminal fill, cancellation, or rejection.
+     * Book one execution slice. [intent] is the leg intent carried by the order (or resolved by
+     * the venue ticket); [cumulativeFilled] is the order's total executed quantity including
+     * this slice when the venue reports it, which is what makes a re-report of an already
+     * booked slice a no-op instead of new quantity (#1096).
      */
-    fun applyPartialFill(event: BrokerEvent.OrderFilled): BigDecimal = applyFillSlice(event, terminal = false).realized
-
-    /** [applyFill] variant reporting leg attribution for the report layer (#1071). */
-    fun applyFillDetailed(event: BrokerEvent.OrderFilled): FillApplication = applyFillSlice(event, terminal = true)
-
-    /** [applyPartialFill] variant reporting leg attribution for the report layer (#1071). */
-    fun applyPartialFillDetailed(event: BrokerEvent.OrderFilled): FillApplication =
-        applyFillSlice(event, terminal = false)
-
-    private fun applyFillSlice(
+    fun applyFillDetailed(
         event: BrokerEvent.OrderFilled,
-        terminal: Boolean,
+        intent: LegIntent,
+        cumulativeFilled: BigDecimal? = null,
     ): FillApplication {
         if (event.strategyId.isBlank()) return FillApplication(Money.ZERO)
-
-        val key = "${event.strategyId}|${event.clientOrderId}"
-
-        pendingStackOpens[key]?.let { intent ->
-            val realized = applyStackOpen(event, intent)
-            if (terminal) pendingStackOpens.remove(key, intent)
+        val application =
+            when (intent) {
+                is LegIntent.Open -> openLeg(event, intent, cumulativeFilled)
+                is LegIntent.Close -> closeLeg(event, intent)
+                LegIntent.Net -> netIntoPrimary(event)
+                LegIntent.Unplanned ->
+                    error("execution ${event.clientOrderId} for ${event.strategyId} reached the ledger unplanned")
+            }
+        if (!application.unbooked) {
             persistBook(event.strategyId, event.symbol)
-            return FillApplication(realized, intent.stackLegId, LegAction.OPENED)
+            reindex(event.symbol)
         }
-        pendingStackCloses[key]?.let { stackLegId ->
-            val realized = applyStackClose(event, stackLegId)
-            if (terminal) pendingStackCloses.remove(key, stackLegId)
-            persistBook(event.strategyId, event.symbol)
-            return FillApplication(realized, stackLegId, LegAction.CLOSED)
-        }
-        pendingIndependentOpens[key]?.let { legId ->
-            applyIndependentOpen(event, legId)
-            if (terminal) pendingIndependentOpens.remove(key, legId)
-            persistBook(event.strategyId, event.symbol)
-            return FillApplication(Money.ZERO, legId, LegAction.OPENED)
-        }
-        // A later slice or venue-detected close may arrive without its transient registration
-        // (notably after recovery). The stable position ticket still identifies its owned leg.
-        applyOwnedLegByTicket(event)?.let { owned ->
-            persistBook(event.strategyId, event.symbol)
-            return owned
-        }
-
-        val trade =
-            Trade(
-                orderId = event.clientOrderId,
-                symbol = event.symbol,
-                price = event.price,
-                quantity = event.quantity,
-                side = event.side,
-                timestamp = event.timestamp,
-            )
-        val realized = apply(event.strategyId, trade, event.brokerOrderId)
-        syncPrimaryMfeTracker(event.strategyId, trade.symbol)
-        persistBook(event.strategyId, event.symbol)
-        return FillApplication(realized)
+        return application
     }
 
     /**
@@ -307,48 +298,76 @@ class StrategyPositionTracker(
         }
     }
 
-    private fun applyStackOpen(
+    private fun openLeg(
         event: BrokerEvent.OrderFilled,
-        intent: StackOpenIntent,
-    ): BigDecimal {
+        intent: LegIntent.Open,
+        cumulativeFilled: BigDecimal?,
+    ): FillApplication {
         val books = byStrategy.getOrPut(event.strategyId) { ConcurrentHashMap() }
         val book = books.getOrPut(event.symbol) { LegBook(event.symbol) }
+        val ticket = event.brokerOrderId?.takeIf { it.isNotBlank() }
+        // A venue ticket is one position and belongs to exactly one leg. A second leg claiming
+        // it is a duplicate report (a replayed execution attributed to another order), not new
+        // exposure.
+        val owner = ticket?.let { book.legByTicket(it) }
+        if (owner != null && owner.legId != intent.legId) {
+            log.warn(
+                "duplicate execution ignored: ticket {} on {} is already leg {} — {} for order {} books nothing",
+                ticket,
+                event.symbol,
+                owner.legId,
+                event.strategyId,
+                event.clientOrderId,
+            )
+            return FillApplication(Money.ZERO, owner.legId, LegAction.OPENED, unbooked = true)
+        }
+        val existing = book.leg(intent.legId)
+        if (existing == null) {
+            book.add(
+                PositionLeg(
+                    legId = intent.legId,
+                    symbol = event.symbol,
+                    side = event.side,
+                    quantity = event.quantity,
+                    entryPrice = event.price,
+                    openedAt = event.timestamp,
+                    role = intent.role,
+                    parentLegId = intent.parentLegId,
+                    brokerTicket = ticket,
+                ),
+            )
+            return FillApplication(Money.ZERO, intent.legId, LegAction.OPENED)
+        }
+        // The same order executing again: book only what the venue reports beyond what the
+        // leg already holds. A cumulative at or below the booked quantity is a re-report.
+        val sliceQuantity =
+            if (cumulativeFilled != null && ticket != null && existing.brokerTicket == ticket) {
+                val delta = cumulativeFilled.subtract(existing.quantity)
+                if (delta.signum() <= 0) {
+                    log.warn(
+                        "duplicate execution ignored: leg {} on {} already holds {} of ticket {} (reported cumulative {})",
+                        existing.legId,
+                        event.symbol,
+                        existing.quantity.toPlainString(),
+                        ticket,
+                        cumulativeFilled.toPlainString(),
+                    )
+                    return FillApplication(Money.ZERO, existing.legId, LegAction.OPENED, unbooked = true)
+                }
+                delta
+            } else {
+                event.quantity
+            }
         mergeOwnedOpenSlice(
             book,
-            PositionLeg(
-                legId = intent.stackLegId,
-                symbol = event.symbol,
-                side = event.side,
-                quantity = event.quantity,
+            existing.copy(
+                quantity = sliceQuantity,
                 entryPrice = event.price,
                 openedAt = event.timestamp,
-                role = LegRole.STACK,
-                parentLegId = intent.parentLegId,
-                brokerTicket = event.brokerOrderId,
+                brokerTicket = ticket,
             ),
         )
-        return Money.ZERO
-    }
-
-    private fun applyIndependentOpen(
-        event: BrokerEvent.OrderFilled,
-        legId: String,
-    ) {
-        val books = byStrategy.getOrPut(event.strategyId) { ConcurrentHashMap() }
-        val book = books.getOrPut(event.symbol) { LegBook(event.symbol) }
-        mergeOwnedOpenSlice(
-            book,
-            PositionLeg(
-                legId = legId,
-                symbol = event.symbol,
-                side = event.side,
-                quantity = event.quantity,
-                entryPrice = event.price,
-                openedAt = event.timestamp,
-                role = LegRole.INDEPENDENT,
-                brokerTicket = event.brokerOrderId,
-            ),
-        )
+        return FillApplication(Money.ZERO, existing.legId, LegAction.OPENED)
     }
 
     /** Merge another execution slice into one stable owned leg without scanning the book. */
@@ -392,30 +411,31 @@ class StrategyPositionTracker(
     }
 
     /**
-     * Apply an unregistered execution to the owned leg carrying the same venue ticket. A same-side
-     * slice extends that leg; an opposite-side slice closes it and realizes PnL. This covers
-     * position-poller closes and recovered partial entries without falling through to PRIMARY
-     * netting. Returns `null` when no owned leg has the ticket.
+     * Close (or reduce) the one leg [intent] names — by qkt id first, then by venue ticket.
      */
-    private fun applyOwnedLegByTicket(event: BrokerEvent.OrderFilled): FillApplication? {
-        val ticket = event.brokerOrderId?.takeIf { it.isNotBlank() } ?: return null
-        val book = byStrategy[event.strategyId]?.get(event.symbol) ?: return null
+    private fun closeLeg(
+        event: BrokerEvent.OrderFilled,
+        intent: LegIntent.Close,
+    ): FillApplication {
+        val book = byStrategy[event.strategyId]?.get(event.symbol)
         val leg =
-            book.all().firstOrNull {
-                it.role != LegRole.PRIMARY && it.brokerTicket == ticket
-            } ?: return null
-        if (leg.side == event.side) {
-            mergeOwnedOpenSlice(
-                book,
-                leg.copy(
-                    quantity = event.quantity,
-                    entryPrice = event.price,
-                    openedAt = event.timestamp,
-                ),
+            book?.let { b ->
+                intent.legId?.let { b.leg(it) } ?: intent.ticket?.let { b.legByTicket(it) }
+            }
+        if (book == null || leg == null) {
+            // A close cannot create exposure: booking it against another leg would invent a
+            // position the venue never opened. Nothing is booked; venue reconciliation owns the
+            // correction.
+            log.error(
+                "close for {} on {} names leg {} / ticket {} the book does not hold; nothing booked",
+                event.strategyId,
+                event.symbol,
+                intent.legId,
+                intent.ticket,
             )
-            return FillApplication(Money.ZERO, leg.legId, LegAction.OPENED)
+            return FillApplication(Money.ZERO, unbooked = true)
         }
-        val closed = book.close(leg.legId) ?: return null
+        val closed = book.close(leg.legId) ?: return FillApplication(Money.ZERO, unbooked = true)
         val closingQty = closed.quantity.min(event.quantity)
         val priceDiff =
             if (closed.side == Side.BUY) {
@@ -427,35 +447,43 @@ class StrategyPositionTracker(
         val remaining = closed.quantity.subtract(closingQty)
         if (remaining.signum() > 0) book.add(closed.copy(quantity = remaining))
         if (book.isEmpty()) byStrategy[event.strategyId]?.remove(event.symbol)
+        if (closed.role == LegRole.PRIMARY) syncPrimaryMfeTracker(event.strategyId, event.symbol)
         return FillApplication(realized, closed.legId, LegAction.CLOSED)
     }
 
-    private fun applyStackClose(
-        event: BrokerEvent.OrderFilled,
-        stackLegId: String,
-    ): BigDecimal {
-        val book = byStrategy[event.strategyId]?.get(event.symbol) ?: return Money.ZERO
-        val closed = book.close(stackLegId) ?: return Money.ZERO
-        val closingQty = closed.quantity.min(event.quantity)
-        val priceDiff =
-            if (closed.side == Side.BUY) {
-                event.price.subtract(closed.entryPrice)
-            } else {
-                closed.entryPrice.subtract(event.price)
-            }
-        val realized = closingQty.multiply(priceDiff).setScale(Money.SCALE, Money.ROUNDING)
-        val remaining = closed.quantity.subtract(closingQty)
-        if (remaining.signum() > 0) book.add(closed.copy(quantity = remaining))
-        if (book.isEmpty()) {
-            byStrategy[event.strategyId]?.remove(event.symbol)
-        }
-        return realized
+    private fun netIntoPrimary(event: BrokerEvent.OrderFilled): FillApplication {
+        val trade =
+            Trade(
+                orderId = event.clientOrderId,
+                symbol = event.symbol,
+                price = event.price,
+                quantity = event.quantity,
+                side = event.side,
+                timestamp = event.timestamp,
+            )
+        val realized = apply(event.strategyId, trade, event.brokerOrderId)
+        syncPrimaryMfeTracker(event.strategyId, event.symbol)
+        return FillApplication(realized)
     }
 
+    /**
+     * Net [trade] into the strategy's PRIMARY leg on its symbol — the netting-venue booking
+     * rule: same side averages in, the opposite side realizes, reduces, flat-closes or flips.
+     */
     fun apply(
         strategyId: String,
         trade: Trade,
         brokerTicket: String? = null,
+    ): BigDecimal {
+        val realized = applyNet(strategyId, trade, brokerTicket)
+        reindex(trade.symbol)
+        return realized
+    }
+
+    private fun applyNet(
+        strategyId: String,
+        trade: Trade,
+        brokerTicket: String?,
     ): BigDecimal {
         val books = byStrategy.getOrPut(strategyId) { ConcurrentHashMap() }
         val book = books.getOrPut(trade.symbol) { LegBook(trade.symbol) }
@@ -573,6 +601,7 @@ class StrategyPositionTracker(
         val book = books.getOrPut(leg.symbol) { LegBook(leg.symbol) }
         book.add(leg)
         persistBook(strategyId, leg.symbol)
+        reindex(leg.symbol)
     }
 
     /**
@@ -591,6 +620,7 @@ class StrategyPositionTracker(
         val book = books.getOrPut(leg.symbol) { LegBook(leg.symbol) }
         book.add(leg)
         persistBook(strategyId, leg.symbol)
+        reindex(leg.symbol)
     }
 
     /**
@@ -608,6 +638,7 @@ class StrategyPositionTracker(
             byStrategy[strategyId]?.remove(symbol)
         }
         persistBook(strategyId, symbol)
+        reindex(symbol)
         return closed
     }
 

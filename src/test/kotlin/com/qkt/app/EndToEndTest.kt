@@ -24,7 +24,7 @@ import com.qkt.marketdata.Candle
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.marketdata.Tick
 import com.qkt.pnl.PnLCalculator
-import com.qkt.positions.PositionTracker
+import com.qkt.positions.StrategyPositionTracker
 import com.qkt.risk.Decision
 import com.qkt.risk.RiskEngine
 import com.qkt.risk.RiskRule
@@ -42,7 +42,8 @@ class EndToEndTest {
     private val ids = SequentialIdGenerator()
     private val sequencer = MonotonicSequenceGenerator()
     private val tracker = MarketPriceTracker()
-    private val positions = PositionTracker()
+    private val ledger = StrategyPositionTracker()
+    private val positions = ledger.account
     private val bus = EventBus(clock, sequencer)
     private val broker = PaperBroker(bus, clock, tracker)
     private val engine = Engine(bus, tracker)
@@ -66,7 +67,7 @@ class EndToEndTest {
                     side = e.side,
                     timestamp = e.timestamp,
                 )
-            val realized = positions.apply(trade)
+            val realized = ledger.apply("e2e", trade)
             pnl.recordRealized(realized)
             bus.publish(TradeEvent(trade))
         }

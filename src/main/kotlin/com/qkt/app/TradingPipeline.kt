@@ -17,6 +17,7 @@ import com.qkt.events.BrokerEvent
 import com.qkt.events.CandleEvent
 import com.qkt.events.DecisionOrderLinkedEvent
 import com.qkt.events.FillAccountedEvent
+import com.qkt.events.FillAccountingKind
 import com.qkt.events.OrderEvent
 import com.qkt.events.RiskRejectedEvent
 import com.qkt.events.RuleDecisionEvent
@@ -38,7 +39,6 @@ import com.qkt.pnl.CommissionBook
 import com.qkt.pnl.PnLCalculator
 import com.qkt.pnl.StrategyPnL
 import com.qkt.pnl.StrategyPnLViewImpl
-import com.qkt.positions.PositionTracker
 import com.qkt.positions.StrategyPositionTracker
 import com.qkt.positions.StrategyPositionViewImpl
 import com.qkt.risk.Decision
@@ -63,7 +63,7 @@ class TradingPipeline(
     val ids: IdGenerator,
     val sequencer: SequenceGenerator,
     val priceTracker: MarketPriceTracker,
-    val positions: PositionTracker,
+    val positions: com.qkt.positions.PositionProvider,
     val pnl: PnLCalculator,
     val strategyPositions: StrategyPositionTracker,
     val strategyPnL: StrategyPnL,
@@ -241,10 +241,10 @@ class TradingPipeline(
             strategyNetQty = { strategyId, symbol ->
                 strategyPositions.positionFor(strategyId, symbol)?.quantity ?: java.math.BigDecimal.ZERO
             },
-            hasLegLinkage = { strategyId, clientOrderId ->
-                strategyPositions.hasRegisteredClose(strategyId, clientOrderId)
-            },
             positionMode = positionMode,
+            bookedVenueTickets = { strategyId ->
+                strategyPositions.allLegsFor(strategyId).mapNotNullTo(LinkedHashSet()) { it.brokerTicket }
+            },
         )
     val latchManager: LatchManager =
         LatchManager(
@@ -252,52 +252,19 @@ class TradingPipeline(
         )
 
     /**
-     * Stage A of the position-ledger migration: the intent-driven resolution is computed for
-     * every fill and checked against the routing the pending-intent maps produced. A mismatch is
-     * logged, never acted on, so the live wave can prove the two agree before the resolver
-     * becomes the sole authority and the maps are removed.
+     * Recovers each execution's leg intent — from the order it names, else from the venue
+     * ticket an owned leg already carries, else the venue's accounting default — and hands it
+     * to the ledger. The order is the only routing authority; nothing is registered ahead of
+     * a fill and nothing is forgotten on cancel.
      */
     private val legIntentResolver =
         LegIntentResolver(
             orderFor = { clientOrderId -> orderManager.getOrder(clientOrderId)?.request },
-            ownedLegByTicket = { strategyId, symbol, ticket ->
-                strategyPositions.legBookFor(strategyId, symbol)?.ownedLegByTicket(ticket)
+            legByTicket = { strategyId, symbol, ticket ->
+                strategyPositions.legBookFor(strategyId, symbol)?.legByTicket(ticket)
             },
             positionMode = positionMode,
         )
-
-    private fun verifyLegIntent(
-        fill: BrokerEvent.OrderFilled,
-        applied: StrategyPositionTracker.FillApplication,
-    ) {
-        val resolution = legIntentResolver.resolve(fill)
-        val agrees =
-            when (val intent = resolution.intent) {
-                is com.qkt.execution.LegIntent.Open ->
-                    applied.legAction == StrategyPositionTracker.LegAction.OPENED && applied.legId == intent.legId
-                is com.qkt.execution.LegIntent.Close ->
-                    if (intent.legId != null) {
-                        applied.legAction == StrategyPositionTracker.LegAction.CLOSED && applied.legId == intent.legId
-                    } else {
-                        applied.legAction != StrategyPositionTracker.LegAction.OPENED
-                    }
-                com.qkt.execution.LegIntent.Net -> applied.legAction == StrategyPositionTracker.LegAction.NETTED
-                com.qkt.execution.LegIntent.Unplanned -> false
-            }
-        if (!agrees) {
-            log.warn(
-                "leg intent disagreement order_id={} strategy_id={} {} {} resolved={} via={} applied={} leg={}",
-                fill.clientOrderId,
-                fill.strategyId,
-                fill.symbol,
-                fill.side,
-                resolution.intent,
-                resolution.source,
-                applied.legAction,
-                applied.legId,
-            )
-        }
-    }
 
     /**
      * Clock-driven scheduler for DSL `SCHEDULE` blocks (#77). Single instance shared
@@ -434,7 +401,6 @@ class TradingPipeline(
                                         exitHookManager.register(strategyId, planned, exitHook)
                                     }
                                     exitHookManager.trackCloseRequest(strategyId, planned)
-                                    registerLegIntents(strategyId, planned)
                                     bus.publish(OrderEvent(planned))
                                 }
                                 is Decision.Reject -> {
@@ -551,13 +517,16 @@ class TradingPipeline(
             orderManager.submit(e.request)
         }
         bus.subscribe<BrokerEvent.PositionReconciled> { e ->
-            positions.reset(e.symbol, e.newQty, e.newAvgPx)
+            strategyPositions.reconcileNet(e.symbol, e.newQty, e.newAvgPx, openedAt = e.timestamp, source = e.source)
         }
         // subscribeFirst: the books must reflect this fill BEFORE any handler with venue
         // side effects runs — OrderManager cancels OCO siblings and dispatches children,
         // and the stack orchestrator risk-checks child tiers against position state.
         // Both subscribe earlier in construction order, so ordinary subscribe() here
         // would run them against a pre-fill book (#374, #377).
+        // The fold: the ONLY writer of every realized accumulator. It subscribes first on the
+        // accounted event so halts see the amount before any consumer with venue side effects.
+        bus.subscribeFirst<FillAccountedEvent> { a -> foldAccounted(a) }
         bus.subscribeFirst<BrokerEvent.OrderFilled> { e ->
             if (e.strategyId.isBlank()) {
                 // An execution slice with no owner cannot be booked: position books and PnL
@@ -575,140 +544,22 @@ class TradingPipeline(
                 return@subscribeFirst
             }
             if (latencyEnabled) latency.observeFill(e.clientOrderId, e.strategyId)
-            riskState.beforeFill(e.strategyId)
-            // Phase 30: PositionTracker computes raw realized as qty * priceDiff. Apply
-            // the instrument's contractSize here so dollar amounts match what the venue
-            // reports. Default 1 preserves pre-Phase-30 behavior for symbols not in the
-            // registry.
-            val accountBefore = positions.positionFor(e.symbol)
-            val strategyBefore = strategyPositions.positionFor(e.strategyId, e.symbol)
-            val contractSize = instruments.lookup(e.symbol)?.contractSize
-            val cs = contractSize ?: BigDecimal.ONE
-            // Commission is a per-fill cash charge (#335). Net it out of realized PnL for
-            // accumulators, close callbacks, and report outcomes so equity and exit statistics agree.
-            val commission = commissionBook.charge(e.strategyId, e.symbol, e.quantity)
-            // Venue-reported costs (MT5 deal commission/swap, Bybit execFee) net out the
-            // same way the modeled commission does — equity and halt inputs must be
-            // cost-true, or a strategy bleeding costs looks healthier than it is.
-            val venueCosts = typedVenueCostAmount(e.typedVenueCosts, e.symbol, e.timestamp, e.price)
-            val costs = commission.add(if (e.typedVenueCosts.isEmpty()) e.venueCosts else venueCosts)
-            val rawRealized = positions.applyFill(e)
-            val realized = rawRealized.multiply(cs)
-            val convertedRealized =
-                accounting
-                    .convertPnl(
-                        symbol = e.symbol,
-                        nativeAmount = realized,
-                        timestamp = e.timestamp,
-                        referencePrice = e.price,
-                    )
-            val accountRealized = convertedRealized.account.amount
-            pnl.recordRealized(accountRealized.subtract(costs))
-
-            val stratApplication = strategyPositions.applyFillDetailed(e)
-            verifyLegIntent(e, stratApplication)
-            val rawStratRealized = stratApplication.realized
-            val stratRealized = rawStratRealized.multiply(cs)
-            val accountStratRealized =
-                accounting
-                    .convertPnl(
-                        symbol = e.symbol,
-                        nativeAmount = stratRealized,
-                        timestamp = e.timestamp,
-                        referencePrice = e.price,
-                    ).account.amount
-            val netAccountStratRealized = accountStratRealized.subtract(costs)
-            strategyPnL.recordRealized(e.strategyId, netAccountStratRealized)
-            tradeHistory.recordTrade(e.strategyId, e.timestamp, netAccountStratRealized, e.symbol)
-            val strategyAfter = strategyPositions.positionFor(e.strategyId, e.symbol)
-            val reducedExposure = closesExposure(strategyBefore, strategyAfter)
-            if (isRiskIncreasingFill(strategyBefore, strategyAfter)) {
-                pacerLedger.recordEntryFill(e.strategyId, e.timestamp)
-            }
-            if (reducedExposure) {
-                pacerLedger.recordOutcome(e.strategyId, e.timestamp, netAccountStratRealized)
-            }
-            riskState.onFill(e.strategyId, netAccountStratRealized)
-            if (netAccountStratRealized.signum() != 0) runawayBreaker?.recordClose(e.strategyId)
-            riskEngine.evaluateHaltRules()
+            val accounted =
+                bookExecution(e, cumulativeFilled = cumulativeAfter(e.clientOrderId, e.quantity), partial = false)
+                    ?: return@subscribeFirst
+            bus.publish(accounted.event)
             exitHookManager.onFill(
                 event = e,
-                netRealizedPnl = netAccountStratRealized,
-                strategyAfterQuantity = strategyAfter?.quantity ?: BigDecimal.ZERO,
-                reducedExposure = reducedExposure,
+                netRealizedPnl = accounted.event.netStrategyAccountRealized,
+                strategyAfterQuantity = accounted.event.strategyPositionAfter?.quantity ?: BigDecimal.ZERO,
+                reducedExposure = accounted.event.reducedExposure,
                 deferDispatch = true,
             )
-
-            val trade =
-                Trade(
-                    orderId = e.clientOrderId,
-                    symbol = e.symbol,
-                    price = e.price,
-                    quantity = e.quantity,
-                    side = e.side,
-                    timestamp = e.timestamp,
-                )
-            val accountAfter = positions.positionFor(e.symbol)
-            bus.publish(
-                FillAccountedEvent(
-                    orderId = e.clientOrderId,
-                    strategyId = e.strategyId,
-                    symbol = e.symbol,
-                    fillSliceId = "${e.clientOrderId}:${e.sequenceId}",
-                    sourceFillSequenceId = e.sequenceId,
-                    cumulativeFilled = null,
-                    modeledCommissionAccount = commission,
-                    venueCostsAccount = costs.subtract(commission),
-                    totalCostsAccount = costs,
-                    accountNativeRealized = realized,
-                    strategyNativeRealized = stratRealized,
-                    nativeCurrency = convertedRealized.native.normalizedCurrency,
-                    grossAccountRealized = accountRealized,
-                    grossStrategyAccountRealized = accountStratRealized,
-                    accountCurrency = convertedRealized.account.normalizedCurrency,
-                    netAccountRealized = accountRealized.subtract(costs),
-                    netStrategyAccountRealized = netAccountStratRealized,
-                    conversionRate = convertedRealized.conversion?.rate,
-                    conversionTimestampMs = convertedRealized.conversion?.timestamp,
-                    conversionSource = convertedRealized.conversion?.source,
-                    contractSize = contractSize,
-                    accountPositionBefore = accountBefore,
-                    accountPositionAfter = accountAfter,
-                    strategyPositionBefore = strategyBefore,
-                    strategyPositionAfter = strategyAfter,
-                    reducedExposure = reducedExposure,
-                    legId = stratApplication.legId,
-                    legAction = stratApplication.legAction,
-                    partial = false,
-                ),
-            )
-            bus.publish(TradeEvent(trade, strategyId = e.strategyId))
-            onFilled(
-                trade,
-                if (reducedExposure) netAccountStratRealized else accountStratRealized,
-                e.strategyId,
-            )
-            onAccountedFill(
-                trade,
-                convertedRealized,
-                e.strategyId,
-                com.qkt.backtest.FillState(
-                    accountPositionBefore = accountBefore,
-                    accountPositionAfter = accountAfter,
-                    strategyPositionBefore = strategyBefore,
-                    strategyPositionAfter = strategyPositions.positionFor(e.strategyId, e.symbol),
-                    contractSize = contractSize,
-                    netAccountRealized = netAccountStratRealized,
-                    reducedExposure = reducedExposure,
-                    legId = stratApplication.legId,
-                    legAction = stratApplication.legAction,
-                ),
-            )
+            finishExecution(e, accounted)
         }
         bus.subscribe<BrokerEvent.OrderFilled> { e -> exitHookManager.dispatchReady(e) }
         bus.subscribe<BrokerEvent.OrderPartiallyFilled> { e ->
             if (e.strategyId.isBlank()) return@subscribe
-            riskState.beforeFill(e.strategyId)
             val asFill =
                 BrokerEvent.OrderFilled(
                     clientOrderId = e.clientOrderId,
@@ -719,125 +570,22 @@ class TradingPipeline(
                     quantity = e.quantity,
                     strategyId = e.strategyId,
                     timestamp = e.timestamp,
+                    sequenceId = e.sequenceId,
                     venueCosts = e.venueCosts,
                     typedVenueCosts = e.typedVenueCosts,
                     exitReason = e.exitReason,
                 )
-            val accountBefore = positions.positionFor(e.symbol)
-            val contractSize = instruments.lookup(e.symbol)?.contractSize
-            val cs = contractSize ?: BigDecimal.ONE
-            val strategyBefore = strategyPositions.positionFor(e.strategyId, e.symbol)
-            val commission = commissionBook.charge(e.strategyId, e.symbol, e.quantity)
-            val venueCosts =
-                if (e.typedVenueCosts.isNotEmpty()) {
-                    typedVenueCostAmount(e.typedVenueCosts, e.symbol, e.timestamp, e.price)
-                } else {
-                    e.venueCosts
-                }
-            val costs = commission.add(venueCosts)
-            val rawRealized = positions.applyFill(asFill)
-            val realized = rawRealized.multiply(cs)
-            val convertedRealized =
-                accounting
-                    .convertPnl(
-                        symbol = e.symbol,
-                        nativeAmount = realized,
-                        timestamp = e.timestamp,
-                        referencePrice = e.price,
-                    )
-            val accountRealized = convertedRealized.account.amount
-            pnl.recordRealized(accountRealized.subtract(costs))
-
-            val stratApplication = strategyPositions.applyPartialFillDetailed(asFill)
-            verifyLegIntent(asFill, stratApplication)
-            val rawStratRealized = stratApplication.realized
-            val stratRealized = rawStratRealized.multiply(cs)
-            val accountStratRealized =
-                accounting
-                    .convertPnl(
-                        symbol = e.symbol,
-                        nativeAmount = stratRealized,
-                        timestamp = e.timestamp,
-                        referencePrice = e.price,
-                    ).account.amount
-            val netAccountStratRealized = accountStratRealized.subtract(costs)
-            strategyPnL.recordRealized(e.strategyId, netAccountStratRealized)
-            tradeHistory.recordTrade(e.strategyId, e.timestamp, netAccountStratRealized, e.symbol)
-            val strategyAfter = strategyPositions.positionFor(e.strategyId, e.symbol)
-            val reducedExposure = closesExposure(strategyBefore, strategyAfter)
-            if (isRiskIncreasingFill(strategyBefore, strategyAfter)) {
-                pacerLedger.recordEntryFill(e.strategyId, e.timestamp)
-            }
-            if (reducedExposure) {
-                pacerLedger.recordOutcome(e.strategyId, e.timestamp, netAccountStratRealized)
-            }
-            riskState.onFill(e.strategyId, netAccountStratRealized)
-            if (netAccountStratRealized.signum() != 0) runawayBreaker?.recordClose(e.strategyId)
-            riskEngine.evaluateHaltRules()
+            val accounted =
+                bookExecution(asFill, cumulativeFilled = e.cumulativeFilled, partial = true)
+                    ?: return@subscribe
+            bus.publish(accounted.event)
             exitHookManager.onFill(
                 event = asFill,
-                netRealizedPnl = netAccountStratRealized,
-                strategyAfterQuantity = strategyAfter?.quantity ?: BigDecimal.ZERO,
-                reducedExposure = reducedExposure,
+                netRealizedPnl = accounted.event.netStrategyAccountRealized,
+                strategyAfterQuantity = accounted.event.strategyPositionAfter?.quantity ?: BigDecimal.ZERO,
+                reducedExposure = accounted.event.reducedExposure,
             )
-            val trade =
-                Trade(e.clientOrderId, e.symbol, e.price, e.quantity, e.side, e.timestamp)
-            val accountAfter = positions.positionFor(e.symbol)
-            bus.publish(
-                FillAccountedEvent(
-                    orderId = e.clientOrderId,
-                    strategyId = e.strategyId,
-                    symbol = e.symbol,
-                    fillSliceId = "${e.clientOrderId}:${e.sequenceId}",
-                    sourceFillSequenceId = e.sequenceId,
-                    cumulativeFilled = e.cumulativeFilled,
-                    modeledCommissionAccount = commission,
-                    venueCostsAccount = venueCosts,
-                    totalCostsAccount = costs,
-                    accountNativeRealized = realized,
-                    strategyNativeRealized = stratRealized,
-                    nativeCurrency = convertedRealized.native.normalizedCurrency,
-                    grossAccountRealized = accountRealized,
-                    grossStrategyAccountRealized = accountStratRealized,
-                    accountCurrency = convertedRealized.account.normalizedCurrency,
-                    netAccountRealized = accountRealized.subtract(costs),
-                    netStrategyAccountRealized = netAccountStratRealized,
-                    conversionRate = convertedRealized.conversion?.rate,
-                    conversionTimestampMs = convertedRealized.conversion?.timestamp,
-                    conversionSource = convertedRealized.conversion?.source,
-                    contractSize = contractSize,
-                    accountPositionBefore = accountBefore,
-                    accountPositionAfter = accountAfter,
-                    strategyPositionBefore = strategyBefore,
-                    strategyPositionAfter = strategyAfter,
-                    reducedExposure = reducedExposure,
-                    legId = stratApplication.legId,
-                    legAction = stratApplication.legAction,
-                    partial = true,
-                ),
-            )
-            bus.publish(TradeEvent(trade, strategyId = e.strategyId))
-            onFilled(
-                trade,
-                if (reducedExposure) netAccountStratRealized else accountStratRealized,
-                e.strategyId,
-            )
-            onAccountedFill(
-                trade,
-                convertedRealized,
-                e.strategyId,
-                com.qkt.backtest.FillState(
-                    accountPositionBefore = accountBefore,
-                    accountPositionAfter = accountAfter,
-                    strategyPositionBefore = strategyBefore,
-                    strategyPositionAfter = strategyPositions.positionFor(e.strategyId, e.symbol),
-                    contractSize = contractSize,
-                    netAccountRealized = netAccountStratRealized,
-                    reducedExposure = reducedExposure,
-                    legId = stratApplication.legId,
-                    legAction = stratApplication.legAction,
-                ),
-            )
+            finishExecution(asFill, accounted)
             dslStrategiesById[e.strategyId]?.onOrderTerminal(e.clientOrderId)
         }
         bus.subscribe<BrokerEvent.OrderRejected> { e -> runawayBreaker?.recordRejection(e.strategyId) }
@@ -845,14 +593,10 @@ class TradingPipeline(
         bus.subscribe<BrokerEvent.OrderRejected> { e ->
             log.warn("Order rejected: ${e.clientOrderId} reason=${e.reason}")
             dslStrategiesById[e.strategyId]?.onOrderRejected(e.clientOrderId)
-            strategyPositions.forgetPending(e.strategyId, e.clientOrderId)
         }
         bus.subscribe<BrokerEvent.OrderCancelled> { e ->
             exitHookManager.onCancelled(e)
             dslStrategiesById[e.strategyId]?.onOrderTerminal(e.clientOrderId)
-            // The losing leg of an OCO bracket cancels once its sibling fills; drop its
-            // pre-registered open/close intent so the pending maps don't leak.
-            strategyPositions.forgetPending(e.strategyId, e.clientOrderId)
         }
         bus.subscribe<RiskRejectedEvent> { e ->
             dslStrategiesById[e.request.strategyId]?.onOrderRejected(e.request.id)
@@ -860,6 +604,17 @@ class TradingPipeline(
         }
         bus.subscribe<CandleEvent> { e -> onCandle(e.candle) }
     }
+
+    /**
+     * The order's executed quantity once [sliceQuantity] is included: the manager's running
+     * total is read before it books this slice (this handler subscribes first), so add it.
+     * A replayed terminal fill therefore reports a cumulative the leg already holds.
+     */
+    private fun cumulativeAfter(
+        clientOrderId: String,
+        sliceQuantity: BigDecimal,
+    ): BigDecimal =
+        (orderManager.getOrder(clientOrderId)?.cumulativeFilledQuantity ?: BigDecimal.ZERO).add(sliceQuantity)
 
     fun ingest(tick: Tick) {
         val isMacroObservation = tick.symbol.startsWith("MACRO:")
@@ -895,16 +650,207 @@ class TradingPipeline(
         scheduleRunner.tick(tick.timestamp)
     }
 
-    /** Apply a non-trade realized adjustment through the shared PnL and risk writers. */
+    /** Book a financing accrual (swap) through the same accounted-event fold as an execution. */
     internal fun applyFinancing(
         strategyId: String,
         amount: BigDecimal,
+    ) = publishNonExecution(strategyId, amount, FillAccountingKind.FINANCING, "financing:$strategyId")
+
+    /**
+     * Book what the venue realized on a leg that closed while the daemon was down. Same fold,
+     * same accumulators, same audit trail as an execution the engine saw itself.
+     */
+    fun applyReconciledRealized(
+        strategyId: String,
+        amount: BigDecimal,
+        legId: String,
+    ) = publishNonExecution(strategyId, amount, FillAccountingKind.RECONCILE, "reconcile:$legId", legId)
+
+    private fun publishNonExecution(
+        strategyId: String,
+        amount: BigDecimal,
+        kind: FillAccountingKind,
+        id: String,
+        legId: String? = null,
     ) {
         riskState.beforeFill(strategyId)
-        pnl.recordRealized(amount)
-        strategyPnL.recordRealized(strategyId, amount)
-        riskState.onFill(strategyId, amount)
+        val scaled = amount.setScale(Money.SCALE, Money.ROUNDING)
+        bus.publish(
+            FillAccountedEvent(
+                orderId = id,
+                strategyId = strategyId,
+                symbol = "",
+                fillSliceId = id,
+                sourceFillSequenceId = 0L,
+                cumulativeFilled = null,
+                modeledCommissionAccount = Money.ZERO,
+                venueCostsAccount = Money.ZERO,
+                totalCostsAccount = Money.ZERO,
+                accountNativeRealized = scaled,
+                strategyNativeRealized = scaled,
+                nativeCurrency = accounting.accountCurrency,
+                grossAccountRealized = scaled,
+                grossStrategyAccountRealized = scaled,
+                accountCurrency = accounting.accountCurrency,
+                netAccountRealized = scaled,
+                netStrategyAccountRealized = scaled,
+                conversionRate = null,
+                conversionTimestampMs = null,
+                conversionSource = null,
+                contractSize = null,
+                accountPositionBefore = null,
+                accountPositionAfter = null,
+                strategyPositionBefore = null,
+                strategyPositionAfter = null,
+                reducedExposure = false,
+                legId = legId,
+                legAction = null,
+                partial = false,
+                kind = kind,
+                executedAt = clock.now(),
+            ),
+        )
+    }
+
+    /** An execution booked into the ledger and priced, ready to publish and report. */
+    private class AccountedExecution(
+        val event: FillAccountedEvent,
+        val converted: ConvertedMoney,
+        val application: StrategyPositionTracker.FillApplication,
+        val grossStrategyAccountRealized: BigDecimal,
+    )
+
+    /**
+     * Book one execution slice into the ledger and price it: contract size, account-currency
+     * conversion, modeled commission and venue costs. Returns null when the ledger booked
+     * nothing (a replayed or unattributable slice) — then nothing is accounted or published.
+     */
+    private fun bookExecution(
+        e: BrokerEvent.OrderFilled,
+        cumulativeFilled: BigDecimal?,
+        partial: Boolean,
+    ): AccountedExecution? {
+        riskState.beforeFill(e.strategyId)
+        val accountBefore = positions.positionFor(e.symbol)
+        val strategyBefore = strategyPositions.positionFor(e.strategyId, e.symbol)
+        val application =
+            strategyPositions.applyFillDetailed(e, legIntentResolver.resolve(e).intent, cumulativeFilled)
+        if (application.unbooked) return null
+        val contractSize = instruments.lookup(e.symbol)?.contractSize
+        val cs = contractSize ?: BigDecimal.ONE
+        // Commission is a per-fill cash charge (#335); venue-reported costs (MT5 deal
+        // commission/swap, Bybit execFee) net out the same way — equity and halt inputs must be
+        // cost-true, or a strategy bleeding costs looks healthier than it is.
+        val commission = commissionBook.charge(e.strategyId, e.symbol, e.quantity)
+        val venueCosts =
+            if (e.typedVenueCosts.isNotEmpty()) {
+                typedVenueCostAmount(e.typedVenueCosts, e.symbol, e.timestamp, e.price)
+            } else {
+                e.venueCosts
+            }
+        val costs = commission.add(venueCosts)
+        // One ledger, one realized figure: the account amount is the strategy amount.
+        val native = application.realized.multiply(cs)
+        val converted =
+            accounting.convertPnl(
+                symbol = e.symbol,
+                nativeAmount = native,
+                timestamp = e.timestamp,
+                referencePrice = e.price,
+            )
+        val gross = converted.account.amount
+        val net = gross.subtract(costs)
+        val strategyAfter = strategyPositions.positionFor(e.strategyId, e.symbol)
+        val reducedExposure = closesExposure(strategyBefore, strategyAfter)
+        val event =
+            FillAccountedEvent(
+                orderId = e.clientOrderId,
+                strategyId = e.strategyId,
+                symbol = e.symbol,
+                fillSliceId = "${e.clientOrderId}:${e.sequenceId}",
+                sourceFillSequenceId = e.sequenceId,
+                cumulativeFilled = if (partial) cumulativeFilled else null,
+                modeledCommissionAccount = commission,
+                venueCostsAccount = venueCosts,
+                totalCostsAccount = costs,
+                accountNativeRealized = native,
+                strategyNativeRealized = native,
+                nativeCurrency = converted.native.normalizedCurrency,
+                grossAccountRealized = gross,
+                grossStrategyAccountRealized = gross,
+                accountCurrency = converted.account.normalizedCurrency,
+                netAccountRealized = net,
+                netStrategyAccountRealized = net,
+                conversionRate = converted.conversion?.rate,
+                conversionTimestampMs = converted.conversion?.timestamp,
+                conversionSource = converted.conversion?.source,
+                contractSize = contractSize,
+                accountPositionBefore = accountBefore,
+                accountPositionAfter = positions.positionFor(e.symbol),
+                strategyPositionBefore = strategyBefore,
+                strategyPositionAfter = strategyAfter,
+                reducedExposure = reducedExposure,
+                legId = application.legId,
+                legAction = application.legAction,
+                partial = partial,
+                kind = FillAccountingKind.EXECUTION,
+                executedAt = e.timestamp,
+            )
+        return AccountedExecution(event, converted, application, gross)
+    }
+
+    /**
+     * Fold one accounted amount into every accumulator. Runs first on the accounted event, so
+     * equity, daily loss and halt rules reflect it before any later subscriber acts.
+     */
+    private fun foldAccounted(a: FillAccountedEvent) {
+        pnl.recordRealized(a.netAccountRealized)
+        strategyPnL.recordRealized(a.strategyId, a.netStrategyAccountRealized)
+        if (a.kind == FillAccountingKind.EXECUTION) {
+            tradeHistory.recordTrade(a.strategyId, a.executedAt, a.netStrategyAccountRealized, a.symbol)
+            if (isRiskIncreasingFill(a.strategyPositionBefore, a.strategyPositionAfter)) {
+                pacerLedger.recordEntryFill(a.strategyId, a.executedAt)
+            }
+            if (a.reducedExposure) {
+                pacerLedger.recordOutcome(a.strategyId, a.executedAt, a.netStrategyAccountRealized)
+            }
+            if (a.netStrategyAccountRealized.signum() != 0) runawayBreaker?.recordClose(a.strategyId)
+        }
+        // A boot-time reconcile is venue history from before this session; it belongs in
+        // lifetime P&L, not in today's loss budget.
+        if (a.kind != FillAccountingKind.RECONCILE) riskState.onFill(a.strategyId, a.netStrategyAccountRealized)
         riskEngine.evaluateHaltRules()
+    }
+
+    /** Report an accounted execution: trade event, fill callbacks, report state. */
+    private fun finishExecution(
+        e: BrokerEvent.OrderFilled,
+        accounted: AccountedExecution,
+    ) {
+        val a = accounted.event
+        val trade = Trade(e.clientOrderId, e.symbol, e.price, e.quantity, e.side, e.timestamp)
+        bus.publish(TradeEvent(trade, strategyId = e.strategyId))
+        onFilled(
+            trade,
+            if (a.reducedExposure) a.netStrategyAccountRealized else accounted.grossStrategyAccountRealized,
+            e.strategyId,
+        )
+        onAccountedFill(
+            trade,
+            accounted.converted,
+            e.strategyId,
+            com.qkt.backtest.FillState(
+                accountPositionBefore = a.accountPositionBefore,
+                accountPositionAfter = a.accountPositionAfter,
+                strategyPositionBefore = a.strategyPositionBefore,
+                strategyPositionAfter = a.strategyPositionAfter,
+                contractSize = a.contractSize,
+                netAccountRealized = a.netStrategyAccountRealized,
+                reducedExposure = a.reducedExposure,
+                legId = a.legId,
+                legAction = a.legAction,
+            ),
+        )
     }
 
     private fun sampleAccountEquitySeries(nowMs: Long) {
@@ -1121,63 +1067,6 @@ class TradingPipeline(
                 "Strategy '$strategyId' binds a volume-weighted indicator (VWAP/OBV) on $symbol but its " +
                     "data feed ('${source.name}') does not supply volume — bind a volume-bearing feed or remove the indicator"
             }
-        }
-    }
-
-    /**
-     * Mirror a planned request's [com.qkt.execution.LegIntent]s into the tracker's pending-intent
-     * maps. The intent on the order is the source of truth; these registrations are the adapter
-     * the tracker's fill routing still reads. A bracket's `-tp`/`-sl` exits are minted later by
-     * [OrderManager] under deterministic ids, so their closes are registered from the bracket
-     * here. Straddle legs and STACK_AT tiers arrive already stamped (planner / orchestrator).
-     */
-    private fun registerLegIntents(
-        strategyId: String,
-        request: com.qkt.execution.OrderRequest,
-    ) {
-        when (request) {
-            is com.qkt.execution.OrderRequest.Bracket -> registerBracketIntent(strategyId, request)
-            is com.qkt.execution.OrderRequest.StandaloneOCO -> {
-                registerLegIntents(strategyId, request.leg1)
-                registerLegIntents(strategyId, request.leg2)
-            }
-            else -> registerLeafIntent(strategyId, request)
-        }
-    }
-
-    private fun registerBracketIntent(
-        strategyId: String,
-        bracket: com.qkt.execution.OrderRequest.Bracket,
-    ) {
-        val intent = bracket.entry.legIntent as? com.qkt.execution.LegIntent.Open ?: return
-        when (intent.role) {
-            com.qkt.positions.LegRole.STACK ->
-                strategyPositions.registerStackOpen(
-                    strategyId = strategyId,
-                    clientOrderId = bracket.entry.id,
-                    stackLegId = intent.legId,
-                    parentLegId = requireNotNull(intent.parentLegId),
-                )
-            com.qkt.positions.LegRole.INDEPENDENT,
-            com.qkt.positions.LegRole.PRIMARY,
-            -> strategyPositions.registerIndependentOpen(strategyId, bracket.entry.id, intent.legId)
-        }
-        strategyPositions.registerStackClose(strategyId, "${bracket.id}-tp", intent.legId)
-        strategyPositions.registerStackClose(strategyId, "${bracket.id}-sl", intent.legId)
-    }
-
-    private fun registerLeafIntent(
-        strategyId: String,
-        leaf: com.qkt.execution.OrderRequest,
-    ) {
-        when (val intent = leaf.legIntent) {
-            is com.qkt.execution.LegIntent.Open ->
-                strategyPositions.registerIndependentOpen(strategyId, leaf.id, intent.legId)
-            is com.qkt.execution.LegIntent.Close ->
-                intent.legId?.let { strategyPositions.registerStackClose(strategyId, leaf.id, it) }
-            com.qkt.execution.LegIntent.Net,
-            com.qkt.execution.LegIntent.Unplanned,
-            -> {}
         }
     }
 

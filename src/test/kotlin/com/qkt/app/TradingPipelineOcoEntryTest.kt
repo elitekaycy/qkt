@@ -24,7 +24,6 @@ import com.qkt.marketdata.Tick
 import com.qkt.marketdata.source.NullMarketSource
 import com.qkt.pnl.PnLCalculator
 import com.qkt.pnl.StrategyPnL
-import com.qkt.positions.PositionTracker
 import com.qkt.positions.StrategyPositionTracker
 import com.qkt.risk.RiskEngine
 import com.qkt.risk.RiskState
@@ -73,9 +72,9 @@ class TradingPipelineOcoEntryTest {
         val clock = FixedClock(0L)
         val sequencer = MonotonicSequenceGenerator()
         val priceTracker = MarketPriceTracker()
-        val positions = PositionTracker()
-        val pnl = PnLCalculator(positions, priceTracker)
         val strategyPositions = StrategyPositionTracker()
+        val positions = strategyPositions.account
+        val pnl = PnLCalculator(positions, priceTracker)
         val strategyPnL = StrategyPnL(strategyPositions, priceTracker)
         val bus = EventBus(clock, sequencer)
         TradingPipeline(
@@ -178,6 +177,21 @@ class TradingPipelineOcoEntryTest {
         assertThat(h.strategyPositions.shortCountFor("alpha", symbol)).isEqualTo(1)
         // The net view still reads 0 — back-compat for everything reading POSITION.quantity.
         assertThat(h.strategyPositions.positionFor("alpha", symbol)?.quantity).isEqualByComparingTo("0")
+    }
+
+    @Test
+    fun `a straddle leg that fills after its sibling cancelled it still opens its own leg`() {
+        // Reproduction of #1098: leg A fills, the OCO cancels leg B, then B fills anyway on a
+        // whipsaw. B's fill must open its INDEPENDENT leg, not net into a PRIMARY.
+        val h = harness(StraddleStrategy(shouldEmit = { _, _ -> true }, makeOco = { straddle("1") }))
+        h.bus.publish(TickEvent(Tick(symbol, BigDecimal("2000"), 100L)))
+        fill(h.bus, "e1-A", Side.BUY, "2010")
+        fill(h.bus, "e1-B", Side.SELL, "1990")
+
+        val legs = h.strategyPositions.legBookFor("alpha", symbol)!!.all()
+        assertThat(legs).hasSize(2)
+        assertThat(legs.map { it.role }).containsOnly(com.qkt.positions.LegRole.INDEPENDENT)
+        assertThat(legs.map { it.legId }).containsExactlyInAnyOrder("b1-A", "b1-B")
     }
 
     @Test

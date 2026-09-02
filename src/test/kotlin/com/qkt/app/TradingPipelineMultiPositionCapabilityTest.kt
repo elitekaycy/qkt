@@ -20,7 +20,6 @@ import com.qkt.marketdata.Tick
 import com.qkt.marketdata.source.NullMarketSource
 import com.qkt.pnl.PnLCalculator
 import com.qkt.pnl.StrategyPnL
-import com.qkt.positions.PositionTracker
 import com.qkt.positions.StrategyPositionTracker
 import com.qkt.risk.RiskEngine
 import com.qkt.risk.RiskState
@@ -81,9 +80,9 @@ class TradingPipelineMultiPositionCapabilityTest {
         val ids = SequentialIdGenerator()
         val sequencer = MonotonicSequenceGenerator()
         val priceTracker = MarketPriceTracker()
-        val positions = PositionTracker()
-        val pnl = PnLCalculator(positions, priceTracker)
         val strategyPositions = StrategyPositionTracker()
+        val positions = strategyPositions.account
+        val pnl = PnLCalculator(positions, priceTracker)
         val strategyPnL = StrategyPnL(strategyPositions, priceTracker)
         val bus = EventBus(clock, sequencer)
         val engine = Engine(bus, priceTracker)

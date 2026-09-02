@@ -16,7 +16,6 @@ import com.qkt.marketdata.source.NullMarketSource
 import com.qkt.pnl.PnLCalculator
 import com.qkt.pnl.StrategyPnL
 import com.qkt.positions.LegRole
-import com.qkt.positions.PositionTracker
 import com.qkt.positions.StrategyPositionTracker
 import com.qkt.risk.RiskEngine
 import com.qkt.risk.RiskState
@@ -31,9 +30,9 @@ class TradingPipelineOwnershipTest {
         val clock = FixedClock(time = 0L)
         val sequencer = MonotonicSequenceGenerator()
         val prices = MarketPriceTracker()
-        val positions = PositionTracker()
-        val pnl = PnLCalculator(positions, prices)
         val strategyPositions = StrategyPositionTracker()
+        val positions = strategyPositions.account
+        val pnl = PnLCalculator(positions, prices)
         val strategyPnl = StrategyPnL(strategyPositions, prices)
         val bus = EventBus(clock, sequencer)
         val riskState = RiskState(pnl, strategyPnl, clock, bus)
@@ -97,9 +96,9 @@ class TradingPipelineOwnershipTest {
         val clock = FixedClock(time = 0L)
         val sequencer = MonotonicSequenceGenerator()
         val prices = MarketPriceTracker()
-        val positions = PositionTracker()
-        val pnl = PnLCalculator(positions, prices)
         val strategyPositions = StrategyPositionTracker()
+        val positions = strategyPositions.account
+        val pnl = PnLCalculator(positions, prices)
         val strategyPnl = StrategyPnL(strategyPositions, prices)
         val bus = EventBus(clock, sequencer)
         val riskState = RiskState(pnl, strategyPnl, clock, bus)
@@ -119,13 +118,13 @@ class TradingPipelineOwnershipTest {
             riskEngine = RiskEngine(rules = emptyList(), positions = positions),
             riskState = riskState,
             mode = Mode.BACKTEST,
+            positionMode = { com.qkt.broker.PositionAccountingMode.HEDGING },
             calendar = TradingCalendar.crypto(),
             source = NullMarketSource,
             candleWindow = TimeWindow.ONE_MINUTE,
         )
         val trades = mutableListOf<TradeEvent>()
         bus.subscribe<TradeEvent> { trades.add(it) }
-        strategyPositions.registerIndependentOpen("alpha", "entry", "independent-leg")
 
         bus.publish(
             BrokerEvent.OrderPartiallyFilled(

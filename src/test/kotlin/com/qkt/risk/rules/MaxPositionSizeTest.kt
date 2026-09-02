@@ -6,14 +6,15 @@ import com.qkt.execution.OrderRequest
 import com.qkt.execution.TimeInForce
 import com.qkt.execution.Trade
 import com.qkt.positions.PositionProvider
-import com.qkt.positions.PositionTracker
+import com.qkt.positions.StrategyPositionTracker
 import com.qkt.risk.Decision
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
 class MaxPositionSizeTest {
-    private val positions = PositionTracker()
+    private val ledger = StrategyPositionTracker()
+    private val positions = ledger.account
     private val rule = MaxPositionSize("XAUUSD", maxQty = Money.of("3"))
 
     private fun order(
@@ -34,7 +35,8 @@ class MaxPositionSizeTest {
         qty: BigDecimal,
         side: Side,
     ) {
-        positions.apply(
+        ledger.apply(
+            "acct",
             Trade(
                 orderId = "ORD-X",
                 symbol = symbol,

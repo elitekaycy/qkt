@@ -20,7 +20,8 @@ import java.util.concurrent.ConcurrentHashMap
 class LegBook(
     val symbol: String,
 ) {
-    private val legs: MutableMap<String, PositionLeg> = ConcurrentHashMap()
+    @PublishedApi
+    internal val legs: MutableMap<String, PositionLeg> = ConcurrentHashMap()
 
     fun add(leg: PositionLeg) {
         require(leg.symbol == symbol) {
@@ -39,6 +40,12 @@ class LegBook(
     /** Return the leg with [legId], or `null` when this book does not own it. */
     fun leg(legId: String): PositionLeg? = legs[legId]
 
+    /** The leg of any role carrying venue [ticket], or `null`. In-place scan, no snapshot. */
+    fun legByTicket(ticket: String): PositionLeg? {
+        for (leg in legs.values) if (leg.brokerTicket == ticket) return leg
+        return null
+    }
+
     /**
      * The non-PRIMARY leg carrying venue [ticket], or `null`. Iterates in place — no snapshot —
      * because it runs on the fill path when an execution arrives without a known client order.
@@ -51,6 +58,11 @@ class LegBook(
     }
 
     fun all(): List<PositionLeg> = legs.values.toList()
+
+    /** Visit every leg in place — the tick-path alternative to [all]. */
+    inline fun forEach(action: (PositionLeg) -> Unit) {
+        for (leg in legs.values) action(leg)
+    }
 
     fun primary(): PositionLeg? = legs.values.firstOrNull { it.role == LegRole.PRIMARY }
 

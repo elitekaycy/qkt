@@ -203,6 +203,17 @@ execution, risk, accounting, or warmup pipeline.
 | #947 | CLI/store replay derives the same exact-stream warmup plan as live and seeds pre-window closed bars before DSL binding | `BacktestFromStoreTest`, `CompiledStrategyAutoWarmupTest` |
 | #1071 | Backtest position model is venue-derived: CLI runs default to HEDGING (per-leg books, exits close their own leg) matching the retail-MT5 accounts, `--position-mode netting` for netted venues; `expected_margin_mode` asserts the live account matches; stale netting exits are retired and a reduce-only tripwire alerts on any exit that adds exposure (#1069/#1070) | `HedgingModeBacktestTest`, `StaleBracketExitAfterReversalTest`, `MT5AccountVerifierTest`, `OrderManagerReduceOnlyExitTest` |
 
+## 2026-09-02 position ledger — one book, derived P&L (#1096, #1097, #1098)
+
+| Row | Behavior | Proof |
+| --- | --- | --- |
+| Leg intent on the order | Every leaf order carries `LegIntent` (Open/Close/Net); the fill resolver reads it first, then the owned leg by ticket, then the venue default. Backtest and live book from the same intent, so a venue-detected close and a backtest close realize the same leg | `LegIntentResolverTest`, `LegIntentPlannerTest`, `TradingPipelineOcoEntryTest` |
+| One leg per venue ticket | A re-report of an execution on an owned ticket (restart recovery) books only the venue's cumulative increment; a close naming a leg the book does not hold books nothing | `StrategyPositionTrackerReplayTest`, `Mt5CommentMatchTest` |
+| Account book derived | The account position view is an index over the strategy ledger, never a second writer; account and strategy realized are the same number from one ledger | `LedgerAccountingCharacterizationTest`, report column pairs byte-identical on the fixture set |
+| One accounting fold | Every realized amount (execution, financing, boot reconcile) is one `FillAccountedEvent` folded once into both accumulators, the daily tracker, trade history, pacer and halts | `LedgerAccountingCharacterizationTest`, `TradingPipelineVenueCostsTest` |
+| Flatten leg by leg | Halt-flatten closes each ledger leg with `Close(legId, ticket)` on every venue; no account-net path | `LiveSessionFlatten*` suites, `MT5Broker` close-by-ticket |
+| Vanished-ticket retirement | A ledger leg whose venue ticket is gone from two consecutive clean snapshots is closed from deal history through the ordinary fill path | `MT5PositionPollerCloseTest` |
+
 ### Residual divergences (known, accepted, tracked)
 
 | Residual | Behavior | Tracking |

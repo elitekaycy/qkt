@@ -46,7 +46,7 @@ class LegIntentResolverTest {
         mode: PositionAccountingMode = PositionAccountingMode.NETTING,
     ) = LegIntentResolver(
         orderFor = { if (it == "o1") order else null },
-        ownedLegByTicket = { _, _, ticket -> leg?.takeIf { it.brokerTicket == ticket } },
+        legByTicket = { _, _, ticket -> leg?.takeIf { it.brokerTicket == ticket } },
         positionMode = { mode },
     )
 
@@ -89,5 +89,21 @@ class LegIntentResolverTest {
         val hedged = resolver(mode = PositionAccountingMode.HEDGING).resolve(fill)
         assertThat(hedged.intent).isEqualTo(LegIntent.Open("o1", LegRole.INDEPENDENT))
         assertThat(hedged.source).isEqualTo(LegIntentResolver.Source.VENUE_DEFAULT)
+    }
+
+    private val primaryLong = ownedLong.copy(legId = "primary", role = LegRole.PRIMARY)
+
+    @Test
+    fun `a primary's ticket is one position on a hedging venue`() {
+        val r = resolver(leg = primaryLong, mode = PositionAccountingMode.HEDGING).resolve(fill)
+        assertThat(r.intent).isEqualTo(LegIntent.Close(legId = "primary", ticket = "T-9"))
+        assertThat(r.source).isEqualTo(LegIntentResolver.Source.TICKET)
+    }
+
+    @Test
+    fun `a primary's ticket nets on a netting venue because a reversal keeps it`() {
+        val r = resolver(leg = primaryLong, mode = PositionAccountingMode.NETTING).resolve(fill)
+        assertThat(r.intent).isEqualTo(LegIntent.Net)
+        assertThat(r.source).isEqualTo(LegIntentResolver.Source.VENUE_DEFAULT)
     }
 }
