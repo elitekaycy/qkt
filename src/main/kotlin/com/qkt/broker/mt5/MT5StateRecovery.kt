@@ -184,6 +184,8 @@ internal fun matchOrphan(
     }
 }
 
+private val SEQ_TAIL = Regex("-{1,2}\\d*")
+
 /** Single-strategy classification step, with [strippedComment] already past `oco:` prefix. */
 private fun classifyAgainst(
     strippedComment: String,
@@ -194,7 +196,11 @@ private fun classifyAgainst(
         val tail = strippedComment.substring(expected.length)
         return when {
             tail.isEmpty() -> OrphanMatch.Match
-            tail.startsWith("-") && (tail.length == 1 || tail[1].isDigit()) -> OrphanMatch.Match
+            // The DSL id generator emits `dsl-<name>-` + `-<seq>`, so an own order id has a
+            // DOUBLE-dash tail (`--0`). Accept one or two dashes followed by digits — including
+            // a bare dash run when MT5's 16-char truncation cut the counter off. A tail whose
+            // first non-dash character is anything else still means a longer strategy name.
+            tail.matches(SEQ_TAIL) -> OrphanMatch.Match
             else -> OrphanMatch.AmbiguousOverlap(tail)
         }
     }
