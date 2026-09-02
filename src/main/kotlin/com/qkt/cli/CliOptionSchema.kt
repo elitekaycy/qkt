@@ -66,6 +66,7 @@ internal object CliOptionSchemas {
                                 "step",
                                 "topN",
                                 "large-search-threshold",
+                                "report-dir",
                             ),
                     flags = backtestFlags + setOf("json"),
                 ),
