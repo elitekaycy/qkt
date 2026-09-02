@@ -1741,10 +1741,7 @@ class MT5Broker(
     private fun matchesComment(
         stored: String?,
         wireComment: String,
-    ): Boolean {
-        if (stored.isNullOrBlank()) return false
-        return wireComment.startsWith(stored) || stored.startsWith(wireComment)
-    }
+    ): Boolean = matchesOrderComment(stored, wireComment)
 
     private fun submitComposite(
         request: OrderRequest,
