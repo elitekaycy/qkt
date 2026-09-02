@@ -1,5 +1,6 @@
 package com.qkt.cli
 
+import com.qkt.backtest.report.WalkForwardReportWriter
 import com.qkt.backtest.walkforward.WalkForwardHarness
 import com.qkt.backtest.walkforward.WalkForwardResult
 import com.qkt.candles.TimeWindow
@@ -14,7 +15,14 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Duration
 
-/** `qkt walkforward <file> --from --to --train 90d --test 30d --step 30d --param NAME=v1,v2 [--rank]`. */
+/**
+ * `qkt walkforward <file> --from --to --train 90d --test 30d --step 30d --param NAME=v1,v2
+ * [--rank] [--report-dir DIR]`.
+ *
+ * `--report-dir` writes the full [WalkForwardReportWriter] bundle: per-fold PnL and drawdown
+ * in `walkforward_summary.csv`, the stitched out-of-sample equity curve, and a complete
+ * backtest report for every fold's test window under `folds/fold_NNN/`.
+ */
 class WalkForwardCommand(
     private val args: Args,
     private val fetcherOverride: DataFetcher? = null,
@@ -81,6 +89,12 @@ class WalkForwardCommand(
                 System.err.println("qkt: error: ${e.message}")
                 return ExitCodes.USER_ERROR
             }
+
+        args.option("report-dir")?.let { reportDir ->
+            val dir = Path.of(reportDir)
+            Files.createDirectories(dir)
+            WalkForwardReportWriter(dir).write(result) { it.label }
+        }
 
         // Means recomputed from each fold's true metric, skipping folds where the metric is
         // undefined. The harness's mean folds in the ranking sentinel (-1E18), which would
