@@ -56,6 +56,11 @@ conversions), `dsl/compile/StackEngine.kt`.
 ### Task B1: characterization pins for D4
 - [ ] `HedgingFillNeverNetsTest`: unregistered fill on a HEDGING symbol books an INDEPENDENT leg + WARN;
   same fill on NETTING nets. Pins today's netting behavior on NETTING tapes.
+- [ ] Straddle whipsaw pin (found by the stage-A verifier in `TradingPipelineOcoEntryTest`): when
+  leg A fills, the OCO cancels leg B and today's `forgetPending` drops B's registration, so a
+  subsequent B fill nets into PRIMARY instead of opening its INDEPENDENT leg. With intent on the
+  order the cancel forgets nothing; assert B opens as INDEPENDENT (`legAction == OPENED`,
+  role INDEPENDENT) and the book holds two legs with distinct roles, not PRIMARY + INDEPENDENT.
 
 ### Task B2: `applyFillSlice` reads the resolver
 **Files:** `positions/StrategyPositionTracker.kt`, `app/TradingPipeline.kt`, `app/OrderManager.kt`.
