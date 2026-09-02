@@ -48,6 +48,7 @@ internal fun convertAlreadyCrossedStop(
                     timeInForce = request.timeInForce,
                     timestamp = request.timestamp,
                     strategyId = request.strategyId,
+                    legIntent = request.legIntent,
                 )
             } else {
                 request
@@ -64,6 +65,7 @@ internal fun convertAlreadyCrossedStop(
                     timestamp = request.timestamp,
                     strategyId = request.strategyId,
                     expiresAt = request.expiresAt,
+                    legIntent = request.legIntent,
                 )
             } else {
                 request
@@ -81,6 +83,7 @@ internal fun convertAlreadyCrossedStop(
                             timeInForce = entry.timeInForce,
                             timestamp = entry.timestamp,
                             strategyId = entry.strategyId,
+                            legIntent = entry.legIntent,
                         ),
                 )
             } else {
