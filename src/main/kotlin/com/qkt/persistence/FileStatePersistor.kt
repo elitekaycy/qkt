@@ -2,6 +2,7 @@ package com.qkt.persistence
 
 import com.qkt.common.Side
 import com.qkt.execution.OrderRequest
+import com.qkt.execution.withLegIntent
 import com.qkt.positions.LegBook
 import com.qkt.positions.LegRole
 import java.math.BigDecimal
@@ -763,8 +764,15 @@ private data class OrderRequestDto(
     val takeProfitAst: ChildPriceAstDto? = null,
     val stopLossAst: ChildPriceAstDto? = null,
     val scaleOutLegs: List<ScaleOutLegDto>? = null,
+    val legIntent: LegIntentDto? = null,
 ) {
     fun toDomain(): com.qkt.execution.OrderRequest {
+        val shape = toDomainShape()
+        val intent = legIntent ?: return shape
+        return shape.withLegIntent(intent.toDomain())
+    }
+
+    private fun toDomainShape(): com.qkt.execution.OrderRequest {
         val sideEnum =
             com.qkt.common.Side
                 .valueOf(side)
@@ -1090,6 +1098,9 @@ private data class OrderRequestDto(
 
     companion object {
         fun fromDomain(req: com.qkt.execution.OrderRequest): OrderRequestDto? =
+            fromDomainShape(req)?.copy(legIntent = LegIntentDto.from(req.legIntent))
+
+        private fun fromDomainShape(req: com.qkt.execution.OrderRequest): OrderRequestDto? =
             when (req) {
                 is com.qkt.execution.OrderRequest.Market ->
                     OrderRequestDto(

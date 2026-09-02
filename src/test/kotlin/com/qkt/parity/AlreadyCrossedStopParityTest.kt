@@ -1,8 +1,10 @@
 package com.qkt.parity
 
+import com.qkt.app.LegIntentPlanner
 import com.qkt.app.OrderManager
 import com.qkt.broker.FakeBroker
 import com.qkt.broker.OrderTypeCapability
+import com.qkt.broker.PositionAccountingMode
 import com.qkt.broker.mt5.convertAlreadyCrossedStop
 import com.qkt.bus.EventBus
 import com.qkt.common.FixedClock
@@ -54,7 +56,10 @@ class AlreadyCrossedStopParityTest {
             ),
         )
         val engineHeldDecision = broker.submits.single()
-        val liveShapedDecision = convertAlreadyCrossedStop(stop, currentExecPrice = BigDecimal("1.1051"))
+        // The live broker receives the request after OrderManager has planned its leg intent,
+        // so the MT5-shaped conversion must start from the same planned request.
+        val planned = LegIntentPlanner.plan(stop, PositionAccountingMode.UNKNOWN)
+        val liveShapedDecision = convertAlreadyCrossedStop(planned, currentExecPrice = BigDecimal("1.1051"))
 
         assertThat(engineHeldDecision).isInstanceOf(OrderRequest.Market::class.java)
         assertThat(liveShapedDecision).isEqualTo(engineHeldDecision)
