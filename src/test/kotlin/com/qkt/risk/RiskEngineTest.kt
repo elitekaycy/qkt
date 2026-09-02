@@ -4,14 +4,15 @@ import com.qkt.common.Money
 import com.qkt.common.Side
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.TimeInForce
+import com.qkt.positions.IntentBook
 import com.qkt.positions.PositionProvider
-import com.qkt.positions.PositionTracker
+import com.qkt.positions.StrategyPositionTracker
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
 class RiskEngineTest {
-    private val positions = PositionTracker()
+    private val positions = StrategyPositionTracker().account
 
     private fun order(
         symbol: String = "XAUUSD",
@@ -47,8 +48,10 @@ class RiskEngineTest {
         // Long 1 XAUUSD; the strategy halts. The way OUT must stay open (FIA 7.3):
         // a close-sized SELL passes, a new BUY and an over-sized SELL (which would
         // flip the position) are rejected.
-        val tracker = PositionTracker()
-        tracker.applyFill(
+        val ledger = StrategyPositionTracker()
+        val tracker = ledger.account
+        IntentBook().apply(
+            ledger,
             com.qkt.events.BrokerEvent.OrderFilled(
                 clientOrderId = "open-1",
                 brokerOrderId = "b1",

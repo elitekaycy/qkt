@@ -38,7 +38,6 @@ import com.qkt.pnl.CommissionBook
 import com.qkt.pnl.PnLCalculator
 import com.qkt.pnl.StrategyPnL
 import com.qkt.pnl.StrategyPnLViewImpl
-import com.qkt.positions.PositionTracker
 import com.qkt.positions.StrategyPositionTracker
 import com.qkt.positions.StrategyPositionViewImpl
 import com.qkt.risk.Decision
@@ -63,7 +62,7 @@ class TradingPipeline(
     val ids: IdGenerator,
     val sequencer: SequenceGenerator,
     val priceTracker: MarketPriceTracker,
-    val positions: PositionTracker,
+    val positions: com.qkt.positions.PositionProvider,
     val pnl: PnLCalculator,
     val strategyPositions: StrategyPositionTracker,
     val strategyPnL: StrategyPnL,
@@ -517,7 +516,7 @@ class TradingPipeline(
             orderManager.submit(e.request)
         }
         bus.subscribe<BrokerEvent.PositionReconciled> { e ->
-            positions.reset(e.symbol, e.newQty, e.newAvgPx)
+            strategyPositions.reconcileNet(e.symbol, e.newQty, e.newAvgPx, openedAt = e.timestamp, source = e.source)
         }
         // subscribeFirst: the books must reflect this fill BEFORE any handler with venue
         // side effects runs — OrderManager cancels OCO siblings and dispatches children,
@@ -565,8 +564,7 @@ class TradingPipeline(
             // cost-true, or a strategy bleeding costs looks healthier than it is.
             val venueCosts = typedVenueCostAmount(e.typedVenueCosts, e.symbol, e.timestamp, e.price)
             val costs = commission.add(if (e.typedVenueCosts.isEmpty()) e.venueCosts else venueCosts)
-            val rawRealized = positions.applyFill(e)
-            val realized = rawRealized.multiply(cs)
+            val realized = stratApplication.realized.multiply(cs)
             val convertedRealized =
                 accounting
                     .convertPnl(
@@ -713,8 +711,7 @@ class TradingPipeline(
                     e.venueCosts
                 }
             val costs = commission.add(venueCosts)
-            val rawRealized = positions.applyFill(asFill)
-            val realized = rawRealized.multiply(cs)
+            val realized = stratApplication.realized.multiply(cs)
             val convertedRealized =
                 accounting
                     .convertPnl(

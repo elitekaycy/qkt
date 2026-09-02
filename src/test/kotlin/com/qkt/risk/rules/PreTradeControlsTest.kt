@@ -5,14 +5,14 @@ import com.qkt.common.Side
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.TimeInForce
 import com.qkt.marketdata.MarketPriceTracker
-import com.qkt.positions.PositionTracker
+import com.qkt.positions.StrategyPositionTracker
 import com.qkt.risk.Decision
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
 class PreTradeControlsTest {
-    private val positions = PositionTracker()
+    private val positions = StrategyPositionTracker().account
 
     private fun market(qty: String) =
         OrderRequest.Market(

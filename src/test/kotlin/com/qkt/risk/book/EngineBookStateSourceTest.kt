@@ -7,7 +7,6 @@ import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.pnl.PnLCalculator
 import com.qkt.pnl.StrategyPnL
 import com.qkt.positions.IntentBook
-import com.qkt.positions.PositionTracker
 import com.qkt.positions.StrategyPositionTracker
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
@@ -38,7 +37,7 @@ class EngineBookStateSourceTest {
         IntentBook().apply(positions, fill("a", "X", Side.BUY, "1", "100"))
         IntentBook().apply(positions, fill("b", "X", Side.SELL, "1", "100"))
         val strategyPnL = StrategyPnL(positions, prices)
-        val pnl = PnLCalculator(PositionTracker(), prices)
+        val pnl = PnLCalculator(StrategyPositionTracker().account, prices)
 
         val source =
             EngineBookStateSource(

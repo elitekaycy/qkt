@@ -20,7 +20,8 @@ import java.util.concurrent.ConcurrentHashMap
 class LegBook(
     val symbol: String,
 ) {
-    private val legs: MutableMap<String, PositionLeg> = ConcurrentHashMap()
+    @PublishedApi
+    internal val legs: MutableMap<String, PositionLeg> = ConcurrentHashMap()
 
     fun add(leg: PositionLeg) {
         require(leg.symbol == symbol) {
@@ -57,6 +58,11 @@ class LegBook(
     }
 
     fun all(): List<PositionLeg> = legs.values.toList()
+
+    /** Visit every leg in place — the tick-path alternative to [all]. */
+    inline fun forEach(action: (PositionLeg) -> Unit) {
+        for (leg in legs.values) action(leg)
+    }
 
     fun primary(): PositionLeg? = legs.values.firstOrNull { it.role == LegRole.PRIMARY }
 

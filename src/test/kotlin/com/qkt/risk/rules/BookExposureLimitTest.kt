@@ -5,7 +5,7 @@ import com.qkt.execution.OrderRequest
 import com.qkt.execution.TimeInForce
 import com.qkt.instrument.NoopInstrumentRegistry
 import com.qkt.marketdata.MarketPriceTracker
-import com.qkt.positions.PositionTracker
+import com.qkt.positions.StrategyPositionTracker
 import com.qkt.risk.Decision
 import com.qkt.risk.book.BookLimits
 import com.qkt.risk.book.BookRiskConfig
@@ -18,7 +18,7 @@ import org.junit.jupiter.api.Test
 
 class BookExposureLimitTest {
     private val prices = MarketPriceTracker().apply { update("X", BigDecimal("100")) }
-    private val positions = PositionTracker()
+    private val positions = StrategyPositionTracker().account
 
     private fun controllerWithGross(gross: String): BookRiskController {
         val c =

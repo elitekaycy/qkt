@@ -10,7 +10,6 @@ import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.pnl.PnLCalculator
 import com.qkt.pnl.StrategyPnL
 import com.qkt.positions.IntentBook
-import com.qkt.positions.PositionTracker
 import com.qkt.positions.StrategyPositionTracker
 import com.qkt.risk.DrawdownBasis
 import com.qkt.risk.HaltDecision
@@ -42,15 +41,15 @@ class HaltRulesTest {
 
     private class TestRig(
         val state: RiskState,
-        val positions: PositionTracker,
+        val positions: com.qkt.positions.PositionProvider,
         val strategyPositions: StrategyPositionTracker,
         val pnl: PnLCalculator,
         val strategyPnL: StrategyPnL,
     ) {
         fun applyAndRecord(event: BrokerEvent.OrderFilled) {
-            val realized = positions.applyFill(event)
+            val realized = IntentBook().apply(strategyPositions, event)
             pnl.recordRealized(realized)
-            val stratRealized = IntentBook().apply(strategyPositions, event)
+            val stratRealized = realized
             strategyPnL.recordRealized(event.strategyId, stratRealized)
         }
     }
@@ -60,8 +59,8 @@ class HaltRulesTest {
         val sequencer = MonotonicSequenceGenerator()
         val bus = EventBus(clock, sequencer)
         val prices = MarketPriceTracker()
-        val positions = PositionTracker()
         val strategyPositions = StrategyPositionTracker()
+        val positions = strategyPositions.account
         val pnl = PnLCalculator(positions, prices)
         val strategyPnL = StrategyPnL(strategyPositions, prices)
         val state = RiskState(pnl, strategyPnL, clock, bus)

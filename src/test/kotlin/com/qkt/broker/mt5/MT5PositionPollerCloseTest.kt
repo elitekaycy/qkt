@@ -8,7 +8,8 @@ import com.qkt.events.BrokerEvent
 import com.qkt.execution.ExitReason
 import com.qkt.marketdata.MarketPriceProvider
 import com.qkt.marketdata.MarketPriceTracker
-import com.qkt.positions.PositionTracker
+import com.qkt.positions.IntentBook
+import com.qkt.positions.StrategyPositionTracker
 import java.math.BigDecimal
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -323,9 +324,23 @@ class MT5PositionPollerCloseTest {
         )
 
         val priceTracker = MarketPriceTracker().apply { update("TEST-MT5:XAUUSD", BigDecimal("1.1200")) }
-        val positions = PositionTracker().apply { reset("TEST-MT5:XAUUSD", BigDecimal("0.10"), BigDecimal("1.1000")) }
+        val ledger = StrategyPositionTracker()
+        val positions = ledger.account
+        IntentBook().apply(
+            ledger,
+            BrokerEvent.OrderFilled(
+                clientOrderId = "ord-1",
+                brokerOrderId = "7001",
+                symbol = "TEST-MT5:XAUUSD",
+                side = com.qkt.common.Side.BUY,
+                price = BigDecimal("1.1000"),
+                quantity = BigDecimal("0.10"),
+                strategyId = "alpha",
+                timestamp = 0L,
+            ),
+        )
         var realized = BigDecimal.ZERO
-        bus.subscribe<BrokerEvent.OrderFilled> { realized = realized.add(positions.applyFill(it)) }
+        bus.subscribe<BrokerEvent.OrderFilled> { realized = realized.add(IntentBook().apply(ledger, it)) }
         val poller =
             MT5PositionPoller(
                 client = client,

@@ -5,7 +5,7 @@ import com.qkt.common.MutableClock
 import com.qkt.common.Side
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.TimeInForce
-import com.qkt.positions.PositionTracker
+import com.qkt.positions.StrategyPositionTracker
 import com.qkt.risk.Decision
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
@@ -197,7 +197,8 @@ class MarketDataGateTest {
         val clock = TickingClock(1L)
         val gate = MarketDataGate(clock, minStaleAgeMs = 1_000L)
         val rule = MarketDataHealthRule(gate)
-        val positions = PositionTracker()
+        val strategyPositions = StrategyPositionTracker()
+        val positions = strategyPositions.account
         val entry = marketOrder("entry", Side.BUY)
         val exit = marketOrder("exit", Side.SELL, closesTicket = "42")
 
@@ -216,7 +217,7 @@ class MarketDataGateTest {
         val clock = TickingClock(1L)
         val gate = MarketDataGate(clock, minStaleAgeMs = 1_000L)
         val rule = MarketDataHealthRule(gate)
-        val flatPositions = PositionTracker()
+        val flatPositions = StrategyPositionTracker().account
         val firstEntry = marketOrder("first-entry", Side.BUY)
         val secondEntry = marketOrder("second-entry", Side.BUY)
         val protectiveExit = marketOrder("protective-exit", Side.SELL, closesTicket = "open-ticket")

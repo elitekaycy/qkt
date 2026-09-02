@@ -14,7 +14,7 @@ import com.qkt.events.FillAccountedEvent
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.marketdata.source.NullMarketSource
 import com.qkt.pnl.PnLCalculator
-import com.qkt.positions.PositionTracker
+import com.qkt.positions.StrategyPositionTracker
 import com.qkt.risk.RiskEngine
 import com.qkt.strategy.Mode
 import java.math.BigDecimal
@@ -32,9 +32,9 @@ class TradingPipelineVenueCostsTest {
     fun `venue costs net out of realized pnl and halt inputs`() {
         val clock = FixedClock(time = 0L)
         val priceTracker = MarketPriceTracker()
-        val positions = PositionTracker()
+        val strategyPositions = StrategyPositionTracker()
+        val positions = strategyPositions.account
         val pnl = PnLCalculator(positions, priceTracker)
-        val strategyPositions = com.qkt.positions.StrategyPositionTracker()
         val strategyPnL = com.qkt.pnl.StrategyPnL(strategyPositions, priceTracker)
         val bus = EventBus(clock, MonotonicSequenceGenerator())
         val riskState = com.qkt.risk.RiskState(pnl, strategyPnL, clock, bus)

@@ -16,7 +16,7 @@ import com.qkt.marketdata.Tick
 import com.qkt.marketdata.source.InMemoryMarketSource
 import com.qkt.marketdata.source.NullMarketSource
 import com.qkt.pnl.PnLCalculator
-import com.qkt.positions.PositionTracker
+import com.qkt.positions.StrategyPositionTracker
 import com.qkt.risk.RiskEngine
 import com.qkt.strategy.Mode
 import com.qkt.strategy.Signal
@@ -37,9 +37,9 @@ class IndicatorWarmerTest {
         val ids = SequentialIdGenerator()
         val sequencer = MonotonicSequenceGenerator()
         val priceTracker = MarketPriceTracker()
-        val positions = PositionTracker()
+        val strategyPositions = StrategyPositionTracker()
+        val positions = strategyPositions.account
         val pnl = PnLCalculator(positions, priceTracker)
-        val strategyPositions = com.qkt.positions.StrategyPositionTracker()
         val strategyPnL = com.qkt.pnl.StrategyPnL(strategyPositions, priceTracker)
         val bus = EventBus(clock, sequencer)
         val riskState = com.qkt.risk.RiskState(pnl, strategyPnL, clock, bus)

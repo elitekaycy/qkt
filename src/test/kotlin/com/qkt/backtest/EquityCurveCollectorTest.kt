@@ -13,7 +13,6 @@ import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.marketdata.Tick
 import com.qkt.pnl.PnLCalculator
 import com.qkt.pnl.StrategyPnL
-import com.qkt.positions.PositionTracker
 import com.qkt.positions.StrategyPositionTracker
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -47,9 +46,9 @@ class EquityCurveCollectorTest {
         val sequencer = MonotonicSequenceGenerator()
         val bus = EventBus(clock, sequencer)
         val priceTracker = MarketPriceTracker()
-        val positions = PositionTracker()
-        val pnl = PnLCalculator(positions, priceTracker)
         val strategyPositions = StrategyPositionTracker()
+        val positions = strategyPositions.account
+        val pnl = PnLCalculator(positions, priceTracker)
         val strategyPnL = StrategyPnL(strategyPositions, priceTracker)
         return Rig(bus, pnl, strategyPnL, clock)
     }
