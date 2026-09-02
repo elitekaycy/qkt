@@ -81,29 +81,51 @@ conversions), `dsl/compile/StackEngine.kt`.
 ## Stage C — one ledger, derived P&L
 
 ### Task C1: characterization pins for D1, D2, D3, D5
-- [ ] Netting flip, hedged straddle, partial fill, restart recovery, commission + venue cost netting,
-  FX conversion, financing accrual, boot OUT-deal reconcile — each asserts today's exact numbers on
-  `realizedFor`, `realizedTotal`, `unrealizedFor/TotalFor`, `equityFor`, `balanceFor`,
-  `DailyPnLTracker`, `TradeHistory`, and the two flatten paths.
+- [x] `LedgerAccountingCharacterizationTest` pins a netting round trip, a partial slice, a financing
+  accrual and a boot reconcile on every consumer: both accumulators, `DailyPnLTracker`,
+  `TradeHistory`, `equityFor`/`balanceFor`, the accounted event's fields and the trade events.
+  Restart recovery, commission/venue-cost netting and FX conversion stay pinned by their existing
+  suites (`StrategyPositionTrackerReplayTest`, `TradingPipelineVenueCostsTest`, `AccountingEngine*`).
 
 ### Task C2: `AccountPositionView` fold
-**Files:** `positions/AccountPositionView.kt` (new), `app/LiveSession.kt`, `research/ReplayEngine.kt`,
-`app/Main.kt`, `risk/RiskState.kt`, `app/TradingPipeline.kt`.
-- [ ] `PositionProvider` over the ledger; replace the four `PositionTracker()` constructions; delete
-  `positions.applyFill/reset` calls; `PositionReconciled` → ledger reconcile.
-- **Tests:** `AccountPositionViewTest`; report column pairs byte-identical on fixtures.
+**Files:** `positions/AccountPositionView.kt` (new), `positions/PositionProvider.kt`,
+`positions/StrategyPositionTracker.kt`, `app/LiveSession.kt`, `research/ReplayEngine.kt`, `app/Main.kt`,
+`risk/RiskState.kt`, `app/TradingPipeline.kt`.
+- [x] `PositionTracker` deleted. `StrategyPositionTracker.account: LegExposureProvider` reads an
+  `accountBySymbol` index the ledger maintains incrementally on every mutation (`reindex(symbol)`), so
+  the account book is a derivation, never a second writer. `positions.applyFill/reset` gone;
+  `PositionReconciled` → `reconcileNet(symbol, …)` on the ledger. Account unrealized is per leg
+  (`PnLCalculator.unrealizedFor` over `forEachLeg`).
 
 ### Task C3: accounting step + `FillAccountedEvent` fold
-**Files:** `app/FillAccounting.kt` (new), `app/TradingPipeline.kt`, `pnl/StrategyPnL.kt`,
-`pnl/PnLProvider.kt`, `risk/RiskState.kt`, `pnl/TradeHistory.kt`, `events/Event.kt`.
-- [ ] Handler: resolve → `ledger.apply` → account → publish; move `riskState.onFill`/halt evaluation
-  to `subscribeFirst<FillAccountedEvent>`; accumulators become subscribers; `applyFinancing` and the
-  boot OUT-deal path publish `kind = FINANCING/RECONCILE` events; `PersistedPnl` written by the fold.
-- [ ] `unrealizedTotalFor` over ledger symbols; single leg-by-leg flatten shared by live + replay.
-- **Tests:** C1 pins green unchanged; ordering test (halt sees fill before OCO sibling cancel).
+**Files:** `app/TradingPipeline.kt`, `events/Event.kt`, `app/LiveSession.kt`, `app/LegFlattener.kt` (new),
+`app/LegIntentResolver.kt`, `broker/Broker.kt`, `broker/CompositeBroker.kt`, `broker/mt5/MT5Broker.kt`,
+`broker/mt5/MT5PositionPoller.kt`, `observe/EngineAuditJournal.kt`, `observe/insights/InsightsTranslate.kt`.
+- [x] Handler = `bookExecution` (resolve → `applyFillDetailed` → contract size, FX, commission, venue
+  costs → one `FillAccountedEvent`) → publish → exit hooks → `finishExecution` (trade event, callbacks).
+  The account and strategy realized figures are the same number from the one ledger.
+- [x] `foldAccounted` is the only writer of `PnLCalculator`, `StrategyPnL`, `TradeHistory`, the pacer
+  ledger, the runaway breaker, `riskState.onFill` and halt evaluation; it is a `subscribeFirst` on the
+  accounted event so halts see the amount before any later subscriber. The event carries `kind`
+  (EXECUTION / FINANCING / RECONCILE) and `executedAt` (venue time, distinct from the bus stamp).
+- [x] `applyFinancing` publishes `kind = FINANCING`; the boot OUT-deal reconcile publishes
+  `kind = RECONCILE` through `applyReconciledRealized` once the pipeline exists (lifetime realized and
+  both accumulators, not today's loss budget). Audit journal and Insights payloads carry both fields.
+- [x] Flatten is one leg-by-leg implementation (`LegFlattener`): every ledger leg closes with
+  `Close(legId, ticket)`; a venue ticket attributed to the strategy but unknown to the ledger closes
+  by ticket. Replay never had a second flatten path — nothing to unify there.
+- [x] #1097: the ledger hands its ticketed legs to the broker (`Broker.watchBookedLegs`); the MT5
+  position poller books the missed venue close, from deal history, for any leg whose ticket is absent
+  from two consecutive clean snapshots (`MT5PositionPollerCloseTest`). The resolver treats a PRIMARY's
+  ticket as one position on hedging venues (so that synthesized close resolves to `Close`) and nets it
+  on netting venues (a reversal keeps its ticket).
+- [ ] Not moved: `unrealizedTotalFor` already sums every non-empty ledger book (its key set is the
+  set of books with legs), so the "iterate ledger symbols" change is a no-op and was not made.
+- **Tests:** C1 pins green unchanged; `LedgerAccountingCharacterizationTest` kinds/venue-time;
+  `LegIntentResolverTest` PRIMARY-ticket rule; `MT5PositionPollerCloseTest` vanished-leg cases.
 
 ### Task C4: docs + catalog
-- [ ] `docs/parity/backtest-vs-live.md`: account-netting approximation row closed; flatten row closed.
-- [ ] Phase changelog `docs/phases/phase-41-position-ledger.md`; KDoc on every new public type.
+- [x] `docs/parity/backtest-vs-live.md`: 2026-09-02 ledger rows (account book derived; flatten leg-by-leg).
+- [x] Phase changelog `docs/phases/phase-41-position-ledger.md`; KDoc on every new public type.
 
 ### Task C5: stage gate + live attestation wave (bot2 → bot1).
