@@ -5,7 +5,7 @@ import com.qkt.common.Side
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.TimeInForce
 import com.qkt.execution.Trade
-import com.qkt.positions.PositionTracker
+import com.qkt.positions.StrategyPositionTracker
 import com.qkt.risk.Decision
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
@@ -13,7 +13,8 @@ import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 
 class MaxOpenPositionsTest {
-    private val positions = PositionTracker()
+    private val ledger = StrategyPositionTracker()
+    private val positions = ledger.account
 
     private fun order(
         symbol: String,
@@ -33,7 +34,8 @@ class MaxOpenPositionsTest {
         qty: BigDecimal,
         side: Side,
     ) {
-        positions.apply(
+        ledger.apply(
+            "acct",
             Trade(
                 orderId = "ORD-X",
                 symbol = symbol,

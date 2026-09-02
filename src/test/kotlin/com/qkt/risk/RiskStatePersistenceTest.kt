@@ -6,7 +6,6 @@ import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.persistence.NoopStatePersistor
 import com.qkt.pnl.PnLCalculator
 import com.qkt.pnl.StrategyPnL
-import com.qkt.positions.PositionTracker
 import com.qkt.positions.StrategyPositionTracker
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
@@ -29,7 +28,8 @@ class RiskStatePersistenceTest {
         initialBalance: BigDecimal = BigDecimal("10000"),
     ): Fixture {
         val prices = MarketPriceTracker()
-        val positions = PositionTracker()
+        val strategyPositions = StrategyPositionTracker()
+        val positions = strategyPositions.account
         val pnl = PnLCalculator(positions, prices)
         val strategyPnL = StrategyPnL(StrategyPositionTracker(), prices)
         strategyPnL.setStartingBalance("s1", initialBalance)

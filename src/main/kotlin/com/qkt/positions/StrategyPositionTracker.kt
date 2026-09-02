@@ -28,6 +28,115 @@ class StrategyPositionTracker(
 
     private val byStrategy: MutableMap<String, MutableMap<String, LegBook>> = ConcurrentHashMap()
 
+    /**
+     * Account-level net position per symbol, folded across strategies. Rebuilt for one symbol
+     * after every mutation of that symbol's legs, so account reads are index lookups and the
+     * account never disagrees with the ledger it is derived from.
+     */
+    private val accountBySymbol: MutableMap<String, Position> = ConcurrentHashMap()
+
+    /** The account's positions as a read-only projection of this ledger. */
+    val account: LegExposureProvider = AccountPositionView(this)
+
+    internal fun accountPositionFor(symbol: String): Position? = accountBySymbol[symbol]
+
+    internal fun accountPositions(): Map<String, Position> = accountBySymbol.toMap()
+
+    internal fun accountSymbols(): Set<String> = accountBySymbol.keys
+
+    internal fun forEachLeg(
+        symbol: String,
+        action: (PositionLeg) -> Unit,
+    ) {
+        for (books in byStrategy.values) {
+            val book = books[symbol] ?: continue
+            book.forEach(action)
+        }
+    }
+
+    private fun reindex(symbol: String) {
+        var netQty = Money.ZERO
+        var earliest = Long.MAX_VALUE
+        var any = false
+        for (books in byStrategy.values) {
+            val book = books[symbol] ?: continue
+            book.forEach { leg ->
+                any = true
+                netQty = if (leg.side == Side.BUY) netQty.add(leg.quantity) else netQty.subtract(leg.quantity)
+                if (leg.openedAt < earliest) earliest = leg.openedAt
+            }
+        }
+        if (!any) {
+            accountBySymbol.remove(symbol)
+            return
+        }
+        if (netQty.signum() == 0) {
+            accountBySymbol[symbol] = Position(symbol, Money.ZERO, Money.ZERO, openedAt = earliest)
+            return
+        }
+        val netSide = if (netQty.signum() > 0) Side.BUY else Side.SELL
+        var notional = Money.ZERO
+        var qty = Money.ZERO
+        for (books in byStrategy.values) {
+            val book = books[symbol] ?: continue
+            book.forEach { leg ->
+                if (leg.side != netSide) return@forEach
+                notional = notional.add(leg.entryPrice.multiply(leg.quantity))
+                qty = qty.add(leg.quantity)
+            }
+        }
+        val avg = notional.divide(qty, Money.CONTEXT).setScale(Money.SCALE, Money.ROUNDING)
+        accountBySymbol[symbol] = Position(symbol, netQty, avg, openedAt = earliest)
+    }
+
+    /**
+     * Replace a symbol's ledger with the venue's net position when the venue reports a
+     * correction. Only possible when exactly one strategy trades the symbol — a net figure
+     * cannot be attributed across several — otherwise the correction is logged and left to the
+     * per-ticket reconcile. Returns true when the ledger changed.
+     */
+    fun reconcileNet(
+        symbol: String,
+        signedQuantity: BigDecimal,
+        avgEntryPrice: BigDecimal,
+        openedAt: Long,
+        source: String,
+    ): Boolean {
+        val owners = byStrategy.entries.filter { (_, books) -> books.containsKey(symbol) }
+        if (owners.size > 1) {
+            log.warn("venue correction for {} from {} not applied: {} strategies hold it", symbol, source, owners.size)
+            return false
+        }
+        val strategyId = owners.singleOrNull()?.key
+        if (strategyId == null) {
+            if (signedQuantity.signum() == 0) return false
+            log.warn("venue correction for {} from {} not applied: no strategy holds it", symbol, source)
+            return false
+        }
+        val books = byStrategy.getValue(strategyId)
+        if (signedQuantity.signum() == 0) {
+            books.remove(symbol)
+        } else {
+            val book = LegBook(symbol)
+            book.add(
+                PositionLeg(
+                    legId = nextPrimaryId(strategyId, symbol),
+                    symbol = symbol,
+                    side = if (signedQuantity.signum() > 0) Side.BUY else Side.SELL,
+                    quantity = signedQuantity.abs(),
+                    entryPrice = avgEntryPrice,
+                    openedAt = openedAt,
+                    role = LegRole.PRIMARY,
+                ),
+            )
+            books[symbol] = book
+        }
+        syncPrimaryMfeTracker(strategyId, symbol)
+        persistBook(strategyId, symbol)
+        reindex(symbol)
+        return true
+    }
+
     private fun persistBook(
         strategyId: String,
         symbol: String,
@@ -51,6 +160,7 @@ class StrategyPositionTracker(
         val books = byStrategy.getOrPut(strategyId) { ConcurrentHashMap() }
         val book = books.getOrPut(symbol) { LegBook(symbol) }
         for (leg in persisted.legs) book.add(leg.toPositionLeg())
+        reindex(symbol)
     }
 
     /** Monotonic counter for engine-internal PRIMARY leg ids. */
@@ -126,7 +236,10 @@ class StrategyPositionTracker(
                 LegIntent.Unplanned ->
                     error("execution ${event.clientOrderId} for ${event.strategyId} reached the ledger unplanned")
             }
-        if (!application.unbooked) persistBook(event.strategyId, event.symbol)
+        if (!application.unbooked) {
+            persistBook(event.strategyId, event.symbol)
+            reindex(event.symbol)
+        }
         return application
     }
 
@@ -351,10 +464,24 @@ class StrategyPositionTracker(
         return FillApplication(realized)
     }
 
+    /**
+     * Net [trade] into the strategy's PRIMARY leg on its symbol — the netting-venue booking
+     * rule: same side averages in, the opposite side realizes, reduces, flat-closes or flips.
+     */
     fun apply(
         strategyId: String,
         trade: Trade,
         brokerTicket: String? = null,
+    ): BigDecimal {
+        val realized = applyNet(strategyId, trade, brokerTicket)
+        reindex(trade.symbol)
+        return realized
+    }
+
+    private fun applyNet(
+        strategyId: String,
+        trade: Trade,
+        brokerTicket: String?,
     ): BigDecimal {
         val books = byStrategy.getOrPut(strategyId) { ConcurrentHashMap() }
         val book = books.getOrPut(trade.symbol) { LegBook(trade.symbol) }
@@ -472,6 +599,7 @@ class StrategyPositionTracker(
         val book = books.getOrPut(leg.symbol) { LegBook(leg.symbol) }
         book.add(leg)
         persistBook(strategyId, leg.symbol)
+        reindex(leg.symbol)
     }
 
     /**
@@ -490,6 +618,7 @@ class StrategyPositionTracker(
         val book = books.getOrPut(leg.symbol) { LegBook(leg.symbol) }
         book.add(leg)
         persistBook(strategyId, leg.symbol)
+        reindex(leg.symbol)
     }
 
     /**
@@ -507,6 +636,7 @@ class StrategyPositionTracker(
             byStrategy[strategyId]?.remove(symbol)
         }
         persistBook(strategyId, symbol)
+        reindex(symbol)
         return closed
     }
 

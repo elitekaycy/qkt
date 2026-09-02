@@ -6,7 +6,6 @@ import com.qkt.execution.OrderRequest
 import com.qkt.execution.TimeInForce
 import com.qkt.execution.Trade
 import com.qkt.positions.PositionProvider
-import com.qkt.positions.PositionTracker
 import com.qkt.positions.StrategyPositionTracker
 import com.qkt.risk.Decision
 import java.math.BigDecimal
@@ -14,7 +13,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
 class MaxStrategyPositionSizeTest {
-    private val global = PositionTracker()
+    private val global = StrategyPositionTracker().account
     private val strategyPositions = StrategyPositionTracker()
     private val rule =
         MaxStrategyPositionSize("ema_cross", maxQty = Money.of("3"), strategyPositions = strategyPositions)

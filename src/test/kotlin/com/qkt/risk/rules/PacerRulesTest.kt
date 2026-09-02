@@ -5,7 +5,8 @@ import com.qkt.common.Money
 import com.qkt.common.Side
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.TimeInForce
-import com.qkt.positions.PositionTracker
+import com.qkt.positions.IntentBook
+import com.qkt.positions.StrategyPositionTracker
 import com.qkt.risk.Decision
 import com.qkt.risk.HaltDecision
 import com.qkt.risk.HaltScope
@@ -37,7 +38,7 @@ class PacerRulesTest {
         ledger.recordEntryFill("s", clock.now() - 1_000L)
         val rule = MaxTradesPerDay(maxTrades = 1, ledger = ledger, clock = clock)
 
-        assertThat(rule.evaluate(order(), PositionTracker()))
+        assertThat(rule.evaluate(order(), StrategyPositionTracker().account))
             .isInstanceOf(Decision.Reject::class.java)
     }
 
@@ -46,8 +47,9 @@ class PacerRulesTest {
         val clock = FixedClock(10_000L)
         val ledger = PacerLedger()
         ledger.recordEntryFill("s", 1_000L)
-        val positions = PositionTracker()
-        positions.applyFill(fill(Side.BUY, Money.of("1")))
+        val strategyPositions = StrategyPositionTracker()
+        val positions = strategyPositions.account
+        IntentBook().apply(strategyPositions, fill(Side.BUY, Money.of("1")))
         val rule = MaxTradesPerDay(maxTrades = 1, ledger = ledger, clock = clock)
 
         assertThat(rule.evaluate(order(side = Side.SELL), positions)).isEqualTo(Decision.Approve)
@@ -60,11 +62,11 @@ class PacerRulesTest {
         ledger.recordOutcome("s", 1_000L, BigDecimal("-10"))
         val rule = CooldownAfterLoss(durationMs = 5_000L, ledger = ledger, clock = clock)
 
-        assertThat(rule.evaluate(order(), PositionTracker()))
+        assertThat(rule.evaluate(order(), StrategyPositionTracker().account))
             .isInstanceOf(Decision.Reject::class.java)
 
         clock.time = 6_001L
-        assertThat(rule.evaluate(order(), PositionTracker())).isEqualTo(Decision.Approve)
+        assertThat(rule.evaluate(order(), StrategyPositionTracker().account)).isEqualTo(Decision.Approve)
     }
 
     @Test

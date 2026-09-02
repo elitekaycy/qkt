@@ -35,7 +35,6 @@ import com.qkt.pnl.PnLCalculator
 import com.qkt.pnl.StrategyPnL
 import com.qkt.positions.Position
 import com.qkt.positions.PositionProvider
-import com.qkt.positions.PositionTracker
 import com.qkt.positions.StrategyPositionTracker
 import com.qkt.risk.HaltRule
 import com.qkt.risk.RiskEngine
@@ -958,8 +957,8 @@ class LiveSession(
                 accountCurrency = accounting.accountCurrency,
                 canConvert = { symbol, _ -> accounting.canConvertSymbol(symbol) },
             )
-        val positions = PositionTracker()
         val strategyPositions = StrategyPositionTracker(persistor)
+        val positions = strategyPositions.account
         val bus = busOverride ?: EventBus(clock, sequencer)
         // The control queue and bus sink exist BEFORE any broker constructs: MT5
         // pollers start at construction and publish from their own threads — without

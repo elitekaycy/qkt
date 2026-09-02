@@ -2,9 +2,11 @@ package com.qkt.pnl
 
 import com.qkt.accounting.AccountingEngine
 import com.qkt.common.Money
+import com.qkt.common.Side
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.NoopInstrumentRegistry
 import com.qkt.marketdata.MarketPriceProvider
+import com.qkt.positions.LegExposureProvider
 import com.qkt.positions.PositionProvider
 import java.math.BigDecimal
 
@@ -53,15 +55,26 @@ class PnLCalculator(
     override fun realizedTotal(): BigDecimal = realizedTotal
 
     override fun unrealizedFor(symbol: String): BigDecimal {
-        val pos = positions.positionFor(symbol) ?: return Money.ZERO
         val price = prices.lastPrice(symbol) ?: return Money.ZERO
         val cs = instruments.lookup(symbol)?.contractSize ?: BigDecimal.ONE
+        // Per leg when the provider exposes legs: a hedged pair nets to zero but both legs are
+        // open at the venue, and their locked spread must reach equity and every halt rule.
         val native =
-            price
-                .subtract(pos.avgEntryPrice)
-                .multiply(pos.quantity)
-                .multiply(cs)
-                .setScale(Money.SCALE, Money.ROUNDING)
+            if (positions is LegExposureProvider) {
+                var sum = Money.ZERO
+                positions.forEachLeg(symbol) { leg ->
+                    val signedQty = if (leg.side == Side.BUY) leg.quantity else leg.quantity.negate()
+                    sum = sum.add(price.subtract(leg.entryPrice).multiply(signedQty).multiply(cs))
+                }
+                sum.setScale(Money.SCALE, Money.ROUNDING)
+            } else {
+                val pos = positions.positionFor(symbol) ?: return Money.ZERO
+                price
+                    .subtract(pos.avgEntryPrice)
+                    .multiply(pos.quantity)
+                    .multiply(cs)
+                    .setScale(Money.SCALE, Money.ROUNDING)
+            }
         return accounting.convertPnlAmount(
             symbol = symbol,
             nativeAmount = native,
