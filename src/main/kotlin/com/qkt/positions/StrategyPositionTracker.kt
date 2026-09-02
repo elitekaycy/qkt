@@ -55,7 +55,9 @@ class StrategyPositionTracker(
     }
 
     private fun reindex(symbol: String) {
-        var netQty = Money.ZERO
+        // Accumulate from a scale-0 zero so the net keeps the legs' own quantity scale, exactly
+        // as the strategy net view does — report columns print 0.01, not 0.01000000.
+        var netQty = BigDecimal.ZERO
         var earliest = Long.MAX_VALUE
         var any = false
         for (books in byStrategy.values) {
