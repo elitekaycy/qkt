@@ -48,6 +48,13 @@ sealed interface OrderRequest {
      */
     val expiresAt: Long? get() = null
 
+    /**
+     * What a fill of this order means to the position ledger. Leaf variants carry it as a
+     * trailing constructor parameter; composites leave it [LegIntent.Unplanned] because the
+     * leaves they decompose into are stamped when they are minted. See [LegIntent].
+     */
+    val legIntent: LegIntent get() = LegIntent.Unplanned
+
     /** Fill at the next available market price. */
     data class Market(
         override val id: String,
@@ -77,9 +84,18 @@ sealed interface OrderRequest {
          * full closes continue to use close-by-ticket.
          */
         val partialClose: Boolean = false,
+        override val legIntent: LegIntent = LegIntent.Unplanned,
     ) : OrderRequest {
         init {
             require(quantity.signum() > 0) { "quantity must be > 0: $quantity" }
+            if (legIntent is LegIntent.Close) {
+                require(closesLegId == null || legIntent.legId == null || closesLegId == legIntent.legId) {
+                    "closesLegId=$closesLegId disagrees with legIntent=$legIntent"
+                }
+                require(closesTicket == null || legIntent.ticket == null || closesTicket == legIntent.ticket) {
+                    "closesTicket=$closesTicket disagrees with legIntent=$legIntent"
+                }
+            }
         }
     }
 
@@ -94,6 +110,7 @@ sealed interface OrderRequest {
         override val timestamp: Long,
         override val strategyId: String = "",
         override val expiresAt: Long? = null,
+        override val legIntent: LegIntent = LegIntent.Unplanned,
     ) : OrderRequest {
         init {
             require(quantity.signum() > 0) { "quantity must be > 0: $quantity" }
@@ -112,6 +129,7 @@ sealed interface OrderRequest {
         override val timestamp: Long,
         override val strategyId: String = "",
         override val expiresAt: Long? = null,
+        override val legIntent: LegIntent = LegIntent.Unplanned,
     ) : OrderRequest {
         init {
             require(quantity.signum() > 0) { "quantity must be > 0: $quantity" }
@@ -131,6 +149,7 @@ sealed interface OrderRequest {
         override val timestamp: Long,
         override val strategyId: String = "",
         override val expiresAt: Long? = null,
+        override val legIntent: LegIntent = LegIntent.Unplanned,
     ) : OrderRequest {
         init {
             require(quantity.signum() > 0) { "quantity must be > 0: $quantity" }
@@ -162,10 +181,16 @@ sealed interface OrderRequest {
         val closesTicket: String? = null,
         /** Whether the triggered market order reduces only part of [closesTicket]. */
         val partialClose: Boolean = false,
+        override val legIntent: LegIntent = LegIntent.Unplanned,
     ) : OrderRequest {
         init {
             require(quantity.signum() > 0) { "quantity must be > 0: $quantity" }
             require(triggerPrice.signum() > 0) { "triggerPrice must be > 0: $triggerPrice" }
+            if (legIntent is LegIntent.Close) {
+                require(closesTicket == null || legIntent.ticket == null || closesTicket == legIntent.ticket) {
+                    "closesTicket=$closesTicket disagrees with legIntent=$legIntent"
+                }
+            }
             if (onTrigger == TriggerType.LIMIT) {
                 requireNotNull(limitPrice) { "IfTouched.LIMIT requires limitPrice" }
                 require(limitPrice.signum() > 0) { "limitPrice must be > 0: $limitPrice" }
@@ -185,6 +210,7 @@ sealed interface OrderRequest {
         override val timestamp: Long,
         override val strategyId: String = "",
         override val expiresAt: Long? = null,
+        override val legIntent: LegIntent = LegIntent.Unplanned,
     ) : OrderRequest {
         init {
             require(quantity.signum() > 0) { "quantity must be > 0: $quantity" }
@@ -223,6 +249,7 @@ sealed interface OrderRequest {
         override val timestamp: Long,
         override val strategyId: String = "",
         override val expiresAt: Long? = null,
+        override val legIntent: LegIntent = LegIntent.Unplanned,
     ) : OrderRequest {
         init {
             require(quantity.signum() > 0) { "quantity must be > 0: $quantity" }
@@ -248,6 +275,7 @@ sealed interface OrderRequest {
         override val timestamp: Long,
         override val strategyId: String = "",
         override val expiresAt: Long? = null,
+        override val legIntent: LegIntent = LegIntent.Unplanned,
     ) : OrderRequest {
         init {
             require(quantity.signum() > 0) { "quantity must be > 0: $quantity" }
@@ -274,6 +302,7 @@ sealed interface OrderRequest {
         override val timestamp: Long,
         override val strategyId: String = "",
         override val expiresAt: Long? = null,
+        override val legIntent: LegIntent = LegIntent.Unplanned,
     ) : OrderRequest {
         init {
             require(quantity.signum() > 0) { "quantity must be > 0: $quantity" }
@@ -295,6 +324,7 @@ sealed interface OrderRequest {
         override val timestamp: Long,
         override val strategyId: String = "",
         override val expiresAt: Long? = null,
+        override val legIntent: LegIntent = LegIntent.Unplanned,
     ) : OrderRequest {
         init {
             require(quantity.signum() > 0) { "quantity must be > 0: $quantity" }
@@ -595,3 +625,42 @@ fun OrderRequest.scaleQuantity(factor: BigDecimal): OrderRequest {
         is OrderRequest.Stack -> copy(quantity = q)
     }
 }
+
+/**
+ * Returns a copy with [intent] stamped on the leaf that fills first. Leaves copy it directly;
+ * composites recurse into their opening leg ([OrderRequest.Bracket.entry],
+ * [OrderRequest.OTO.parent], [OrderRequest.ScaleOut.basis], [OrderRequest.TimeExit.target],
+ * both [OrderRequest.StandaloneOCO] legs). [OrderRequest.Stack] has no leaf of its own until the
+ * stack engine mints tiers, so it is returned unchanged.
+ */
+fun OrderRequest.withLegIntent(intent: LegIntent): OrderRequest =
+    when (this) {
+        is OrderRequest.Market -> copy(legIntent = intent)
+        is OrderRequest.Limit -> copy(legIntent = intent)
+        is OrderRequest.Stop -> copy(legIntent = intent)
+        is OrderRequest.StopLimit -> copy(legIntent = intent)
+        is OrderRequest.IfTouched -> copy(legIntent = intent)
+        is OrderRequest.TrailingStop -> copy(legIntent = intent)
+        is OrderRequest.TrailingStopLimit -> copy(legIntent = intent)
+        is OrderRequest.ArmedTrailingStop -> copy(legIntent = intent)
+        is OrderRequest.SteppedStop -> copy(legIntent = intent)
+        is OrderRequest.TimeTighteningStop -> copy(legIntent = intent)
+        is OrderRequest.Bracket -> copy(entry = entry.withLegIntent(intent))
+        is OrderRequest.StandaloneOCO ->
+            copy(leg1 = leg1.withLegIntent(intent), leg2 = leg2.withLegIntent(intent))
+        is OrderRequest.OTO -> copy(parent = parent.withLegIntent(intent))
+        is OrderRequest.ScaleOut -> copy(basis = basis.withLegIntent(intent))
+        is OrderRequest.TimeExit -> copy(target = target.withLegIntent(intent))
+        is OrderRequest.Stack -> this
+    }
+
+/** The intent of the leaf that fills first — the mirror of [withLegIntent]. */
+fun OrderRequest.openingLegIntent(): LegIntent =
+    when (this) {
+        is OrderRequest.Bracket -> entry.openingLegIntent()
+        is OrderRequest.OTO -> parent.openingLegIntent()
+        is OrderRequest.ScaleOut -> basis.openingLegIntent()
+        is OrderRequest.TimeExit -> target.openingLegIntent()
+        is OrderRequest.StandaloneOCO -> leg1.openingLegIntent()
+        else -> legIntent
+    }
