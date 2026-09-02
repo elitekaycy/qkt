@@ -365,6 +365,8 @@ class EngineAuditJournal(
             .append(jsonString(event.netStrategyAccountRealized.toPlainString()))
         append(",\"kind\":").append(jsonString(event.kind.name))
         append(",\"executedAt\":").append(event.executedAt)
+        append(",\"legId\":").append(event.legId?.let { jsonString(it) } ?: "null")
+        append(",\"legAction\":").append(event.legAction?.let { jsonString(it.name) } ?: "null")
         event.conversionRate?.let {
             append(",\"conversionRate\":").append(jsonString(it.toPlainString()))
         }

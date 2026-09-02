@@ -177,6 +177,8 @@ object InsightsTranslate {
                 "netStrategyAccountRealized" to e.netStrategyAccountRealized,
                 "kind" to e.kind.name,
                 "executedAt" to e.executedAt,
+                "legId" to e.legId,
+                "legAction" to e.legAction?.name,
                 "conversionRate" to e.conversionRate,
                 "conversionTimestampMs" to e.conversionTimestampMs,
                 "conversionSource" to e.conversionSource,
