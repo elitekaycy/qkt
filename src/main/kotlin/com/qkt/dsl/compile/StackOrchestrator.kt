@@ -2,7 +2,10 @@ package com.qkt.dsl.compile
 
 import com.qkt.common.Clock
 import com.qkt.common.Side
+import com.qkt.execution.LegIntent
 import com.qkt.execution.OrderRequest
+import com.qkt.execution.withLegIntent
+import com.qkt.positions.LegRole
 import com.qkt.strategy.Signal
 import java.math.BigDecimal
 
@@ -21,12 +24,25 @@ import java.math.BigDecimal
  */
 class StackOrchestrator(
     private val clock: Clock,
-    private val onStackBracketEmit: (bracket: OrderRequest.Bracket, parentLegId: String) -> Unit = { _, _ -> },
     private val strategyId: String = "",
     private val persistor: com.qkt.persistence.StatePersistor = com.qkt.persistence.NoopStatePersistor(),
     private val emit: (Signal) -> Unit,
 ) {
     private val engines: MutableMap<String, StackEngine> = mutableMapOf()
+
+    /**
+     * A tier bracket's fill opens a STACK leg whose id is the bracket id and whose parent is the
+     * PRIMARY it stacked onto — the one fact only this orchestrator knows, so it is stamped here
+     * before the signal enters the shared emit path.
+     */
+    private fun stampStackIntent(
+        sig: Signal,
+        parentLegId: String,
+    ): Signal {
+        if (sig !is Signal.Submit) return sig
+        val req = sig.request as? OrderRequest.Bracket ?: return sig
+        return sig.copy(request = req.withLegIntent(LegIntent.Open(req.id, LegRole.STACK, parentLegId)))
+    }
 
     fun onPrimaryFilled(
         parentLegId: String,
@@ -39,13 +55,7 @@ class StackOrchestrator(
     ) {
         if (tiers.isEmpty()) return
         check(parentLegId !in engines) { "StackEngine already registered for $parentLegId" }
-        val engineEmit: (Signal) -> Unit = { sig ->
-            if (sig is Signal.Submit) {
-                val req = sig.request
-                if (req is OrderRequest.Bracket) onStackBracketEmit(req, parentLegId)
-            }
-            emit(sig)
-        }
+        val engineEmit: (Signal) -> Unit = { sig -> emit(stampStackIntent(sig, parentLegId)) }
         val persistedTiers =
             runCatching { persistor.loadPendingStacks(strategyId)[parentLegId] }.getOrNull()
         val initialFired: Set<Int> =
@@ -103,13 +113,7 @@ class StackOrchestrator(
         persisted: com.qkt.persistence.PersistedTierState,
     ) {
         if (parentLegId in engines) return
-        val engineEmit: (Signal) -> Unit = { sig ->
-            if (sig is Signal.Submit) {
-                val req = sig.request
-                if (req is OrderRequest.Bracket) onStackBracketEmit(req, parentLegId)
-            }
-            emit(sig)
-        }
+        val engineEmit: (Signal) -> Unit = { sig -> emit(stampStackIntent(sig, parentLegId)) }
         val resolved =
             persisted.tiers
                 .sortedBy { it.index }

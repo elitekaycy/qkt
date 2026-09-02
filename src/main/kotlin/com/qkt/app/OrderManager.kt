@@ -2,6 +2,7 @@ package com.qkt.app
 
 import com.qkt.broker.Broker
 import com.qkt.broker.OrderTypeCapability
+import com.qkt.broker.PositionAccountingMode
 import com.qkt.broker.SubmitAck
 import com.qkt.bus.EventBus
 import com.qkt.common.Clock
@@ -20,6 +21,7 @@ import com.qkt.execution.At
 import com.qkt.execution.ExpiryAction
 import com.qkt.execution.Immediate
 import com.qkt.execution.LayerSpec
+import com.qkt.execution.LegIntent
 import com.qkt.execution.ManagedOrder
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.OrderState
@@ -27,8 +29,10 @@ import com.qkt.execution.StopLossSpec
 import com.qkt.execution.TimeInForce
 import com.qkt.execution.TrailMode
 import com.qkt.execution.TriggerType
+import com.qkt.execution.exitLegIntent
 import com.qkt.execution.isCompositeShape
 import com.qkt.execution.isTerminal
+import com.qkt.execution.withCloseTicket
 import com.qkt.execution.withStrategyId
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.NoopInstrumentRegistry
@@ -36,6 +40,7 @@ import com.qkt.marketdata.MarketPriceProvider
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.buyExecPrice
 import com.qkt.marketdata.sellExecPrice
+import com.qkt.positions.LegRole
 import com.qkt.positions.PendingOrderExposureProvider
 import java.math.BigDecimal
 import org.slf4j.LoggerFactory
@@ -97,6 +102,11 @@ class OrderManager(
      * hedging book a short leg's BUY stop while net-long is a legitimate exit.
      */
     private val hasLegLinkage: (strategyId: String, clientOrderId: String) -> Boolean = { _, _ -> false },
+    /**
+     * How the venue accounts positions on a symbol. Read once per submitted request by
+     * [LegIntentPlanner] and once per minted stack layer — never per tick or per fill.
+     */
+    private val positionMode: (symbol: String) -> PositionAccountingMode = { PositionAccountingMode.UNKNOWN },
 ) : PendingOrderExposureProvider {
     private val log = LoggerFactory.getLogger(OrderManager::class.java)
 
@@ -412,7 +422,10 @@ class OrderManager(
         bus.subscribe<TickEvent> { e -> evaluateTriggers(e.tick) }
     }
 
-    fun submit(request: OrderRequest): SubmitAck {
+    fun submit(request: OrderRequest): SubmitAck =
+        submitPlanned(LegIntentPlanner.plan(request, positionMode(request.symbol)))
+
+    private fun submitPlanned(request: OrderRequest): SubmitAck {
         orders[request.id]?.takeIf { !it.state.isTerminal }?.let { existing ->
             return SubmitAck(
                 clientOrderId = existing.id,
@@ -1624,6 +1637,7 @@ class OrderManager(
                 timeInForce = parent.timeInForce,
                 timestamp = clock.now(),
                 strategyId = parent.strategyId,
+                legIntent = layerEntry.request.exitLegIntent(),
             )
         val now = clock.now()
         track(
@@ -1660,16 +1674,18 @@ class OrderManager(
         val tpPrice = computeChildPrice(tpAst, parent.side, fillPrice, isStopLoss = false, slDistance = slDistance)
         val tpId = "$layerOrderId-tp"
         val exitSide = if (parent.side == Side.BUY) Side.SELL else Side.BUY
+        val layerEntry = orders[layerOrderId] ?: return false
         val tpReq =
             OrderRequest.Limit(
                 id = tpId,
                 symbol = parent.symbol,
                 side = exitSide,
-                quantity = (orders[layerOrderId]?.request?.quantity ?: return false),
+                quantity = layerEntry.request.quantity,
                 limitPrice = tpPrice,
                 timeInForce = parent.timeInForce,
                 timestamp = clock.now(),
                 strategyId = parent.strategyId,
+                legIntent = layerEntry.request.exitLegIntent(),
             )
         val now = clock.now()
         track(
@@ -1875,8 +1891,9 @@ class OrderManager(
         layer: LayerSpec,
         qty: BigDecimal,
         triggerPrice: BigDecimal?,
-    ): OrderRequest =
-        when {
+    ): OrderRequest {
+        val intent = layerEntryIntent(layerId, parent.symbol)
+        return when {
             triggerPrice == null ->
                 OrderRequest.Market(
                     id = layerId,
@@ -1886,6 +1903,7 @@ class OrderManager(
                     timeInForce = parent.timeInForce,
                     timestamp = clock.now(),
                     strategyId = parent.strategyId,
+                    legIntent = intent,
                 )
             layer.orderType is com.qkt.dsl.ast.Limit ->
                 OrderRequest.Limit(
@@ -1897,6 +1915,7 @@ class OrderManager(
                     timeInForce = parent.timeInForce,
                     timestamp = clock.now(),
                     strategyId = parent.strategyId,
+                    legIntent = intent,
                 )
             else ->
                 OrderRequest.Stop(
@@ -1908,7 +1927,23 @@ class OrderManager(
                     timeInForce = parent.timeInForce,
                     timestamp = clock.now(),
                     strategyId = parent.strategyId,
+                    legIntent = intent,
                 )
+        }
+    }
+
+    /**
+     * A pyramiding layer is its own ticket on a hedging venue and nets into the book elsewhere —
+     * the same rule the planner applies to a strategy-emitted entry.
+     */
+    private fun layerEntryIntent(
+        layerId: String,
+        symbol: String,
+    ): LegIntent =
+        if (positionMode(symbol) == PositionAccountingMode.HEDGING) {
+            LegIntent.Open(layerId, LegRole.INDEPENDENT)
+        } else {
+            LegIntent.Net
         }
 
     /**
@@ -1978,6 +2013,7 @@ class OrderManager(
         // real volume (#615) would otherwise get exits sized to the full request.
         val exitQuantity = resolved.quantity.min(fillQuantity)
         val exitSide = if (resolved.side == Side.BUY) Side.SELL else Side.BUY
+        val exit = resolved.exitLegIntent()
         val tp =
             OrderRequest.Limit(
                 "${resolved.id}-tp",
@@ -1988,6 +2024,7 @@ class OrderManager(
                 resolved.timeInForce,
                 clock.now(),
                 resolved.strategyId,
+                legIntent = exit,
             )
         val sl =
             when (val spec = resolved.stopLoss) {
@@ -2001,6 +2038,7 @@ class OrderManager(
                         resolved.timeInForce,
                         clock.now(),
                         resolved.strategyId,
+                        legIntent = exit,
                     )
                 is StopLossSpec.ArmedTrail ->
                     OrderRequest.ArmedTrailingStop(
@@ -2014,6 +2052,7 @@ class OrderManager(
                         resolved.timeInForce,
                         clock.now(),
                         resolved.strategyId,
+                        legIntent = exit,
                     )
                 is StopLossSpec.SteppedStop ->
                     OrderRequest.SteppedStop(
@@ -2027,6 +2066,7 @@ class OrderManager(
                         timeInForce = resolved.timeInForce,
                         timestamp = clock.now(),
                         strategyId = resolved.strategyId,
+                        legIntent = exit,
                     )
                 is StopLossSpec.TimeTighten ->
                     OrderRequest.TimeTighteningStop(
@@ -2042,6 +2082,7 @@ class OrderManager(
                         timeInForce = resolved.timeInForce,
                         timestamp = clock.now(),
                         strategyId = resolved.strategyId,
+                        legIntent = exit,
                     )
             }
         return OrderRequest.StandaloneOCO(
@@ -2059,6 +2100,7 @@ class OrderManager(
 
     private fun submitBracketFallback(req: OrderRequest.Bracket): SubmitAck {
         val exitSide = if (req.side == Side.BUY) Side.SELL else Side.BUY
+        val exit = req.exitLegIntent()
         val tp =
             OrderRequest.Limit(
                 id = "${req.id}-tp",
@@ -2069,6 +2111,7 @@ class OrderManager(
                 timeInForce = req.timeInForce,
                 timestamp = clock.now(),
                 strategyId = req.strategyId,
+                legIntent = exit,
             )
         // Pick the SL child shape per the bracket's stop spec. Fixed → a plain Stop at
         // the resolved price. ArmedTrail → an engine-managed ArmedTrailingStop whose
@@ -2086,6 +2129,7 @@ class OrderManager(
                         timeInForce = req.timeInForce,
                         timestamp = clock.now(),
                         strategyId = req.strategyId,
+                        legIntent = exit,
                     )
                 is StopLossSpec.ArmedTrail -> {
                     val entryPrice = bracketEntryEstimate(req)
@@ -2100,6 +2144,7 @@ class OrderManager(
                         timeInForce = req.timeInForce,
                         timestamp = clock.now(),
                         strategyId = req.strategyId,
+                        legIntent = exit,
                     )
                 }
                 is StopLossSpec.SteppedStop -> {
@@ -2115,6 +2160,7 @@ class OrderManager(
                         timeInForce = req.timeInForce,
                         timestamp = clock.now(),
                         strategyId = req.strategyId,
+                        legIntent = exit,
                     )
                 }
                 is StopLossSpec.TimeTighten -> {
@@ -2132,6 +2178,7 @@ class OrderManager(
                         timeInForce = req.timeInForce,
                         timestamp = clock.now(),
                         strategyId = req.strategyId,
+                        legIntent = exit,
                     )
                 }
             }
@@ -2242,6 +2289,7 @@ class OrderManager(
         now: Long,
     ): OrderRequest? {
         val exitSide = if (req.side == Side.BUY) Side.SELL else Side.BUY
+        val exit = req.exitLegIntent()
         return when (val spec = req.stopLoss) {
             is StopLossSpec.Fixed -> null
             is StopLossSpec.ArmedTrail ->
@@ -2256,6 +2304,7 @@ class OrderManager(
                     timeInForce = req.timeInForce,
                     timestamp = now,
                     strategyId = req.strategyId,
+                    legIntent = exit,
                 )
             is StopLossSpec.SteppedStop ->
                 OrderRequest.SteppedStop(
@@ -2269,6 +2318,7 @@ class OrderManager(
                     timeInForce = req.timeInForce,
                     timestamp = now,
                     strategyId = req.strategyId,
+                    legIntent = exit,
                 )
             is StopLossSpec.TimeTighten ->
                 OrderRequest.TimeTighteningStop(
@@ -2284,6 +2334,7 @@ class OrderManager(
                     timeInForce = req.timeInForce,
                     timestamp = now,
                     strategyId = req.strategyId,
+                    legIntent = exit,
                 )
         }
     }
@@ -3110,6 +3161,7 @@ class OrderManager(
                                     timeInForce = resolved.timeInForce,
                                     timestamp = clock.now(),
                                     strategyId = resolved.strategyId,
+                                    legIntent = resolved.exitLegIntent(),
                                 )
                             } else {
                                 null
@@ -3341,6 +3393,7 @@ class OrderManager(
                 timestamp = clock.now(),
                 strategyId = strategyId,
                 closesTicket = positionTicket,
+                legIntent = LegIntent.Close(ticket = positionTicket),
             )
         val ack = submit(close)
         if (!ack.accepted) {
@@ -3433,6 +3486,7 @@ class OrderManager(
                     strategyId = scaleOut.strategyId,
                     closesTicket = positionTicket,
                     partialClose = legQuantity < basisQuantity,
+                    legIntent = LegIntent.Close(ticket = positionTicket, partial = legQuantity < basisQuantity),
                 )
             }
         armScaleOutExits(scaleOut, exitRequests)
@@ -3606,6 +3660,7 @@ class OrderManager(
                             timeInForce = te.timeInForce,
                             timestamp = clock.now(),
                             strategyId = te.strategyId,
+                            legIntent = te.target.exitLegIntent(),
                         )
                     submit(closing)
                 } else if (!target.state.isTerminal) {
@@ -3877,7 +3932,8 @@ class OrderManager(
         }
         val internal: OrderRequest =
             when (val req = managed.request) {
-                is OrderRequest.Stop ->
+                is OrderRequest.Stop -> {
+                    val ticket = engineHeldCloseTickets[req.id]
                     OrderRequest.Market(
                         id = req.id,
                         symbol = req.symbol,
@@ -3886,8 +3942,10 @@ class OrderManager(
                         timeInForce = req.timeInForce,
                         timestamp = clock.now(),
                         strategyId = req.strategyId,
-                        closesTicket = engineHeldCloseTickets[req.id],
+                        closesTicket = ticket,
+                        legIntent = req.legIntent.withCloseTicket(ticket),
                     )
+                }
                 is OrderRequest.StopLimit ->
                     OrderRequest.Limit(
                         id = req.id,
@@ -3898,6 +3956,7 @@ class OrderManager(
                         timeInForce = req.timeInForce,
                         timestamp = clock.now(),
                         strategyId = req.strategyId,
+                        legIntent = req.legIntent,
                     )
                 is OrderRequest.IfTouched ->
                     if (req.onTrigger == TriggerType.MARKET) {
@@ -3911,6 +3970,7 @@ class OrderManager(
                             strategyId = req.strategyId,
                             closesTicket = req.closesTicket,
                             partialClose = req.partialClose,
+                            legIntent = req.legIntent,
                         )
                     } else {
                         OrderRequest.Limit(
@@ -3922,6 +3982,7 @@ class OrderManager(
                             timeInForce = req.timeInForce,
                             timestamp = clock.now(),
                             strategyId = req.strategyId,
+                            legIntent = req.legIntent,
                         )
                     }
                 is OrderRequest.TrailingStop ->
@@ -3933,8 +3994,12 @@ class OrderManager(
                         timeInForce = req.timeInForce,
                         timestamp = clock.now(),
                         strategyId = req.strategyId,
+                        legIntent = req.legIntent,
                     )
-                is OrderRequest.ArmedTrailingStop ->
+                is OrderRequest.ArmedTrailingStop -> {
+                    // Close the exact venue position by ticket when this exit belongs to an
+                    // independent leg (hedging) — otherwise a plain market opens a counter.
+                    val ticket = managedStopCloseTicket(req)
                     OrderRequest.Market(
                         id = req.id,
                         symbol = req.symbol,
@@ -3943,11 +4008,12 @@ class OrderManager(
                         timeInForce = req.timeInForce,
                         timestamp = clock.now(),
                         strategyId = req.strategyId,
-                        // Close the exact venue position by ticket when this exit belongs to an
-                        // independent leg (hedging) — otherwise a plain market opens a counter.
-                        closesTicket = managedStopCloseTicket(req),
+                        closesTicket = ticket,
+                        legIntent = req.legIntent.withCloseTicket(ticket),
                     )
-                is OrderRequest.SteppedStop, is OrderRequest.TimeTighteningStop ->
+                }
+                is OrderRequest.SteppedStop, is OrderRequest.TimeTighteningStop -> {
+                    val ticket = managedStopCloseTicket(req)
                     OrderRequest.Market(
                         id = req.id,
                         symbol = req.symbol,
@@ -3956,8 +4022,10 @@ class OrderManager(
                         timeInForce = req.timeInForce,
                         timestamp = clock.now(),
                         strategyId = req.strategyId,
-                        closesTicket = managedStopCloseTicket(req),
+                        closesTicket = ticket,
+                        legIntent = req.legIntent.withCloseTicket(ticket),
                     )
+                }
                 is OrderRequest.TrailingStopLimit -> {
                     val level = trailLevel(managed) ?: error("TrailingStopLimit level missing for ${managed.id}")
                     val limitPrice =
@@ -3971,6 +4039,7 @@ class OrderManager(
                         timeInForce = req.timeInForce,
                         timestamp = clock.now(),
                         strategyId = req.strategyId,
+                        legIntent = req.legIntent,
                     )
                 }
                 else -> error("Not a Tier 2 fallback type: ${req::class.simpleName}")
