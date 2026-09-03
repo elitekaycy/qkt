@@ -124,6 +124,14 @@ services:
       ADMIN_USERNAME: ${QKT_INSIGHTS_ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${QKT_INSIGHTS_ADMIN_PASSWORD:-}
       SESSION_SECRET: ${QKT_INSIGHTS_SESSION_SECRET:-}
+      INSIGHTS_NAME: ${QKT_INSIGHTS_INSTANCE_ID:-}
+      # Uptime: one heartbeat monitor per daemon needs no configuration; the gateway's
+      # /health carries mt5_status and sits behind the API key, so it is probed with it.
+      INSIGHTS_MONITORS: '[{"name":"mt5-gateway","url":"http://mt5-gateway:5001/health","expect":{"mt5_status":"connected"},"headers":{"Authorization":"Bearer ${MT5_API_KEY}"}}]'
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      ALERT_WEBHOOK_URL: ${QKT_INSIGHTS_ALERT_WEBHOOK_URL:-}
+      DEADMAN_URL: ${QKT_INSIGHTS_DEADMAN_URL:-}
     volumes:
       - insights_data:/data
     healthcheck:
