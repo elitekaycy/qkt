@@ -106,6 +106,24 @@ temporary validation environments.
 The `insights:` block is optional. When enabled, QKT streams order, trade, risk,
 position, lifecycle, and log events to qkt-insights and keeps a local journal.
 
+## Uptime
+
+With the insights profile on, qkt-insights also watches the stack: a heartbeat monitor
+per QKT daemon (down after 90s of silence, judged on the collector's clock) and an HTTP
+probe of the MT5 gateway's `/health` that asserts `mt5_status: connected`, so a gateway
+that answers but has lost its MT5 login counts as down. Both are defined in
+docker-compose.yml and need no .env change.
+
+Every up/down transition is shown on the Health page and, when `TELEGRAM_BOT_TOKEN` and
+`TELEGRAM_CHAT_ID` are set, sent to the same chat QKT's own alerts use, prefixed with
+`QKT_INSIGHTS_INSTANCE_ID`. `QKT_INSIGHTS_ALERT_WEBHOOK_URL` receives the transition as JSON
+for Discord, Slack, ntfy, or Uptime Kuma. Expect one `... is UP` per monitor on first boot.
+
+None of this can report the VPS itself dying. Set `QKT_INSIGHTS_DEADMAN_URL` to a
+healthchecks.io check or an Uptime Kuma push monitor: qkt-insights pings it every 30s and
+the outside service pages when the pings stop. Extra monitors go in the `INSIGHTS_MONITORS`
+JSON in docker-compose.yml; see the qkt-insights README for the fields.
+
 ## State
 
 QKT writes runtime state under `./state`, mounted into the container at
