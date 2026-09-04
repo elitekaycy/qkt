@@ -208,6 +208,11 @@ class BotSessionCommand(
             )
         val stateRoot = StateDir.resolve(sub.option("state-dir")).stateRoot
         val insightsSink = insightsSink(cfg, stateRoot)
+        // Leg-book state lives under the state root exactly as a daemon deploy's does, so a
+        // session that ends with a position open can be reconciled by the next session over
+        // the same identity instead of failing closed on "no persisted state".
+        val persistor = cfg.statePersistor(stateRoot)
+        val ignoreMismatches = sub.option("reconcile") == "ignore-mismatches"
         val handle =
             com.qkt.app
                 .LiveSession(
@@ -224,6 +229,8 @@ class BotSessionCommand(
                     dailyDdBasis = cfg.dailyDdBasis,
                     runawayMaxRoundTrips = cfg.runawayMaxRoundTrips,
                     runawayMaxRejections = cfg.runawayMaxRejections,
+                    persistor = persistor,
+                    ignoreMismatches = ignoreMismatches,
                     insightsSink = insightsSink,
                     insightsEvents = cfg.insights.events,
                     insightsStatePollMs = cfg.insights.statePollMs,
