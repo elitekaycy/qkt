@@ -399,6 +399,112 @@ class OrderManagerRestoreTest {
     }
 
     @Test
+    fun `restore of a market-entry bracket before any quote defers its exits to the fill`(
+        @TempDir tmp: Path,
+    ) {
+        val persistor = FileStatePersistor(tmp)
+        val entry =
+            OrderRequest.Market(
+                id = "entry-market",
+                symbol = "XAUUSD",
+                side = Side.BUY,
+                quantity = BigDecimal.ONE,
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+                strategyId = "alpha",
+            )
+        val bracket =
+            OrderRequest.Bracket(
+                id = "bracket-market",
+                symbol = "XAUUSD",
+                side = Side.BUY,
+                quantity = BigDecimal.ONE,
+                entry = entry,
+                takeProfit = BigDecimal("120"),
+                stopLoss = StopLossSpec.Fixed(BigDecimal("90")),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+                strategyId = "alpha",
+            )
+        persistor.savePendingOrders("alpha", mapOf(entry.id to bracket))
+        val clock = FixedClock(0L)
+        val bus = EventBus(clock, MonotonicSequenceGenerator())
+        val fake =
+            FakeBroker(
+                bus,
+                clock,
+                setOf(OrderTypeCapability.LIMIT, OrderTypeCapability.STOP),
+            )
+        val broker = RecordingBroker(fake)
+        // No tick has been seen for XAUUSD: the tracker is empty, as it is right after a deploy.
+        val manager = OrderManager(broker, bus, MarketPriceTracker(), clock, persistor)
+
+        manager.restore(listOf("alpha"))
+
+        assertThat(broker.recovered.map { it.id }).containsExactly(entry.id)
+        assertThat(manager.getOrder(entry.id)?.state).isEqualTo(OrderState.WORKING)
+        bus.publish(
+            BrokerEvent.OrderFilled(
+                clientOrderId = entry.id,
+                brokerOrderId = "venue-entry-9",
+                symbol = entry.symbol,
+                side = entry.side,
+                price = BigDecimal("105"),
+                quantity = BigDecimal.ONE,
+                strategyId = "alpha",
+            ),
+        )
+        assertThat(manager.getOrder(entry.id)?.state).isEqualTo(OrderState.FILLED)
+        val takeProfit = fake.submits.filterIsInstance<OrderRequest.Limit>().single()
+        val stopLoss = fake.submits.filterIsInstance<OrderRequest.Stop>().single()
+        assertThat(takeProfit.limitPrice).isEqualByComparingTo("120")
+        assertThat(stopLoss.stopPrice).isEqualByComparingTo("90")
+    }
+
+    @Test
+    fun `restore drops a pending order whose venue is no longer configured`(
+        @TempDir tmp: Path,
+    ) {
+        val persistor = FileStatePersistor(tmp)
+        val stale =
+            OrderRequest.Market(
+                id = "entry-stale",
+                symbol = "ICM_S01:XAUUSD",
+                side = Side.BUY,
+                quantity = BigDecimal.ONE,
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+                strategyId = "alpha",
+            )
+        val live =
+            OrderRequest.Limit(
+                id = "entry-live",
+                symbol = "XAUUSD",
+                side = Side.BUY,
+                quantity = BigDecimal.ONE,
+                limitPrice = BigDecimal("100"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+                strategyId = "alpha",
+            )
+        persistor.savePendingOrders("alpha", mapOf(stale.id to stale, live.id to live))
+        val clock = FixedClock(0L)
+        val bus = EventBus(clock, MonotonicSequenceGenerator())
+        val fake = FakeBroker(bus, clock, setOf(OrderTypeCapability.LIMIT, OrderTypeCapability.STOP))
+        val broker =
+            object : Broker by RecordingBroker(fake) {
+                override fun supports(symbol: String): Boolean = !symbol.startsWith("ICM_S01:")
+            }
+        val manager = OrderManager(broker, bus, MarketPriceTracker(), clock, persistor)
+
+        manager.restore(listOf("alpha"))
+
+        assertThat(manager.getOrder(stale.id)).isNull()
+        assertThat(manager.getOrder(live.id)?.state).isEqualTo(OrderState.WORKING)
+        assertThat(persistor.loadPendingOrders("alpha").keys).containsExactly(live.id)
+    }
+
+    @Test
     fun `restore propagates broker recovery failure`(
         @TempDir tmp: Path,
     ) {

@@ -718,7 +718,20 @@ class OrderManager(
                     siblings[exitId] = exitIds.filter { it != exitId }
                 }
             }
-            val pendingOrders = persistor.loadPendingOrders(sid)
+            val persistedPending = persistor.loadPendingOrders(sid)
+            // A pending order whose symbol no venue routes any more (a broker profile removed
+            // from the config since it was persisted) can never be quoted, recovered, or
+            // filled; keeping it would fail every deploy of this strategy from now on.
+            val unroutable = persistedPending.filterValues { !broker.supports(it.symbol) }
+            for ((id, request) in unroutable) {
+                log.warn(
+                    "[restore] dropping pending order {} for {}: no configured venue routes that symbol",
+                    id,
+                    request.symbol,
+                )
+            }
+            val pendingOrders = persistedPending - unroutable.keys
+            if (unroutable.isNotEmpty()) persistor.savePendingOrders(sid, pendingOrders)
             for ((id, request) in pendingOrders) {
                 if (request is OrderRequest.ScaleOut && id == request.id) {
                     restoreActiveScaleOut(request, pendingOrders.keys)
@@ -1016,17 +1029,15 @@ class OrderManager(
                 orders[entry.id] = managed
                 indexLive(managed)
                 preFillBrackets[entry.id] = request
-                if (needsFillAnchor) {
+                // A Market entry restored before the venue has quoted its symbol has no price to
+                // anchor the exits on; place them from the actual fill instead of failing the
+                // whole deploy (which the daemon would retry forever, quote or no quote).
+                val entryEstimate = if (needsFillAnchor) null else bracketEntryEstimateOrNull(request)
+                if (entryEstimate == null) {
                     fillAnchoredFallbackBrackets[entry.id] = request
                 } else {
                     pendingChildren[entry.id] =
-                        listOf(
-                            bracketExitOco(
-                                request,
-                                bracketEntryEstimate(request),
-                                request.quantity,
-                            ),
-                        )
+                        listOf(bracketExitOco(request, entryEstimate, request.quantity))
                 }
                 registerExposure(entry)
                 recovered += managed
@@ -1952,15 +1963,16 @@ class OrderManager(
      * entries fall back to the last observed market price.
      */
     private fun bracketEntryEstimate(req: OrderRequest.Bracket): BigDecimal =
+        bracketEntryEstimateOrNull(req)
+            ?: error("Cannot estimate entry price for bracket ${req.id}: no last price for ${req.symbol}")
+
+    private fun bracketEntryEstimateOrNull(req: OrderRequest.Bracket): BigDecimal? =
         when (val entry = req.entry) {
             is OrderRequest.Stop -> entry.stopPrice
             is OrderRequest.Limit -> entry.limitPrice
             is OrderRequest.IfTouched -> entry.triggerPrice
             is OrderRequest.StopLimit -> entry.stopPrice
-            else ->
-                lastObservedPrice[req.symbol]
-                    ?: priceProvider.lastPrice(req.symbol)
-                    ?: error("Cannot estimate entry price for bracket ${req.id}: no last price for ${req.symbol}")
+            else -> lastObservedPrice[req.symbol] ?: priceProvider.lastPrice(req.symbol)
         }
 
     private fun resolveBracketAtFill(
