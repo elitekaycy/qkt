@@ -87,6 +87,8 @@ class BotCommand(
             SESSION (stateful runs: risk from qkt.config.yaml, backtest reports)
                 bot session start --backtest --symbols BROKER:SYMBOL --tf 5m
                     --from <date> --to <date> [--identities a,b] [--out runs/x]
+                bot session start --symbols BROKER:SYMBOL --tf 5m [--identities a,b]
+                    [--reconcile=ignore-mismatches]   live; leg state persists under --state-dir
                 bot session status | finish [--run <id>]
                 bot next BROKER:SYMBOL            pull next closed bar (advances sim clock)
                 buy/sell/quote/bars/positions/account route through a running session.
