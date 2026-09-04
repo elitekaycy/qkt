@@ -718,7 +718,20 @@ class OrderManager(
                     siblings[exitId] = exitIds.filter { it != exitId }
                 }
             }
-            val pendingOrders = persistor.loadPendingOrders(sid)
+            val persistedPending = persistor.loadPendingOrders(sid)
+            // A pending order whose symbol no venue routes any more (a broker profile removed
+            // from the config since it was persisted) can never be quoted, recovered, or
+            // filled; keeping it would fail every deploy of this strategy from now on.
+            val unroutable = persistedPending.filterValues { !broker.supports(it.symbol) }
+            for ((id, request) in unroutable) {
+                log.warn(
+                    "[restore] dropping pending order {} for {}: no configured venue routes that symbol",
+                    id,
+                    request.symbol,
+                )
+            }
+            val pendingOrders = persistedPending - unroutable.keys
+            if (unroutable.isNotEmpty()) persistor.savePendingOrders(sid, pendingOrders)
             for ((id, request) in pendingOrders) {
                 if (request is OrderRequest.ScaleOut && id == request.id) {
                     restoreActiveScaleOut(request, pendingOrders.keys)
