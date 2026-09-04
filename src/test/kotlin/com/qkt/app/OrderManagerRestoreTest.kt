@@ -462,6 +462,49 @@ class OrderManagerRestoreTest {
     }
 
     @Test
+    fun `restore drops a pending order whose venue is no longer configured`(
+        @TempDir tmp: Path,
+    ) {
+        val persistor = FileStatePersistor(tmp)
+        val stale =
+            OrderRequest.Market(
+                id = "entry-stale",
+                symbol = "ICM_S01:XAUUSD",
+                side = Side.BUY,
+                quantity = BigDecimal.ONE,
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+                strategyId = "alpha",
+            )
+        val live =
+            OrderRequest.Limit(
+                id = "entry-live",
+                symbol = "XAUUSD",
+                side = Side.BUY,
+                quantity = BigDecimal.ONE,
+                limitPrice = BigDecimal("100"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+                strategyId = "alpha",
+            )
+        persistor.savePendingOrders("alpha", mapOf(stale.id to stale, live.id to live))
+        val clock = FixedClock(0L)
+        val bus = EventBus(clock, MonotonicSequenceGenerator())
+        val fake = FakeBroker(bus, clock, setOf(OrderTypeCapability.LIMIT, OrderTypeCapability.STOP))
+        val broker =
+            object : Broker by RecordingBroker(fake) {
+                override fun supports(symbol: String): Boolean = !symbol.startsWith("ICM_S01:")
+            }
+        val manager = OrderManager(broker, bus, MarketPriceTracker(), clock, persistor)
+
+        manager.restore(listOf("alpha"))
+
+        assertThat(manager.getOrder(stale.id)).isNull()
+        assertThat(manager.getOrder(live.id)?.state).isEqualTo(OrderState.WORKING)
+        assertThat(persistor.loadPendingOrders("alpha").keys).containsExactly(live.id)
+    }
+
+    @Test
     fun `restore propagates broker recovery failure`(
         @TempDir tmp: Path,
     ) {
