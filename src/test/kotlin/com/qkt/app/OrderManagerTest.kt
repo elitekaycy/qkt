@@ -763,7 +763,6 @@ class OrderManagerTest {
         assertThat(om.orderDetailsFor("never-submitted")).isNull()
     }
 
-
     @Test
     fun `a global halt keeps a filled bracket's protective exits working`() {
         // Forge #2401, 2023-12-11: a daily-drawdown halt fired mid-bar and the open longs' working
@@ -775,7 +774,11 @@ class OrderManagerTest {
         val net =
             object : com.qkt.positions.PositionProvider {
                 override fun positionFor(symbol: String) =
-                    com.qkt.positions.Position(symbol = symbol, quantity = Money.of("1"), avgEntryPrice = Money.of("1.10"))
+                    com.qkt.positions.Position(
+                        symbol = symbol,
+                        quantity = Money.of("1"),
+                        avgEntryPrice = Money.of("1.10"),
+                    )
 
                 override fun allPositions() = mapOf("EURUSD" to positionFor("EURUSD"))
             }

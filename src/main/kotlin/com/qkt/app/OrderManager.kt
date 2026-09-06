@@ -608,7 +608,10 @@ class OrderManager(
         }
     }
 
-    private fun mustSurviveHalt(managed: ManagedOrder, depth: Int = 0): Boolean {
+    private fun mustSurviveHalt(
+        managed: ManagedOrder,
+        depth: Int = 0,
+    ): Boolean {
         if (managed.id in engineHeldCloseTickets) return true
         if (isPersistentManagedStop(managed.request)) return true
         if (isRiskReducingForHalt(managed.request)) return true
