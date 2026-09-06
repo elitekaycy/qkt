@@ -608,12 +608,23 @@ class OrderManager(
         }
     }
 
-    private fun mustSurviveHalt(managed: ManagedOrder): Boolean {
+    private fun mustSurviveHalt(
+        managed: ManagedOrder,
+        depth: Int = 0,
+    ): Boolean {
         if (managed.id in engineHeldCloseTickets) return true
         if (isPersistentManagedStop(managed.request)) return true
         if (isRiskReducingForHalt(managed.request)) return true
+        if (managed.childClientOrderIds.any { orders[it]?.state == OrderState.FILLED }) return true
+        // A wrapper (OTO / OCO / ScaleOut) is cancelled as a whole and the cascade takes every child
+        // with it. If any LIVE child is itself a protective exit that must survive, the wrapper
+        // must survive too — otherwise a daily halt strips the stops off open positions (observed
+        // 2023-12-11 in a BTC replay: the filled bracket's OTO wrapper was not risk-reducing, its
+        // entry child had already left the live map, and the cascade cancelled the working stops).
+        if (depth >= 4) return false
         return managed.childClientOrderIds.any { childId ->
-            orders[childId]?.state == OrderState.FILLED
+            val child = orders[childId] ?: return@any false
+            !child.state.isTerminal && mustSurviveHalt(child, depth + 1)
         }
     }
 
