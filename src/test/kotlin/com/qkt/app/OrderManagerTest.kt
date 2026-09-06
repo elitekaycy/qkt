@@ -762,4 +762,53 @@ class OrderManagerTest {
 
         assertThat(om.orderDetailsFor("never-submitted")).isNull()
     }
+
+
+    @Test
+    fun `a global halt keeps a filled bracket's protective exits working`() {
+        // Forge #2401, 2023-12-11: a daily-drawdown halt fired mid-bar and the open longs' working
+        // stops never filled; the legs were closed three days later after the market recovered.
+        // A halt must stop NEW exposure only — the way out of a position is never cancelled.
+        val bus = newBus()
+        val clock = FixedClock(time = 0L)
+        val broker = LogBroker(bus, clock)
+        val net =
+            object : com.qkt.positions.PositionProvider {
+                override fun positionFor(symbol: String) =
+                    com.qkt.positions.Position(symbol = symbol, quantity = Money.of("1"), avgEntryPrice = Money.of("1.10"))
+
+                override fun allPositions() = mapOf("EURUSD" to positionFor("EURUSD"))
+            }
+        val om =
+            OrderManager(
+                broker,
+                bus,
+                MarketPriceTracker(),
+                clock,
+                isRiskReducingForHalt = { com.qkt.risk.isRiskReducing(it, net) },
+            )
+        om.submit(bracket("b1", "e1"))
+        bus.publish(
+            BrokerEvent.OrderFilled(
+                clientOrderId = "e1",
+                brokerOrderId = "e1",
+                symbol = "EURUSD",
+                side = Side.BUY,
+                price = Money.of("1.10"),
+                quantity = Money.of("1"),
+            ),
+        )
+        assertThat(om.getOrder("b1-sl")?.state).isEqualTo(OrderState.WORKING)
+        assertThat(om.getOrder("b1-tp")?.state).isEqualTo(OrderState.WORKING)
+        // A market tick runs the order GC: the filled entry is dead and unreferenced, so it leaves
+        // the live map exactly as it does in a replay — the OTO wrapper can no longer prove a
+        // filled child and must survive on its live protective children alone.
+        bus.publish(com.qkt.events.TickEvent(com.qkt.marketdata.Tick("EURUSD", Money.of("1.10"), 1L)))
+        assertThat(om.getOrder("e1")).isNull()
+
+        om.cancelEntriesForHalt(null)
+
+        assertThat(om.getOrder("b1-sl")?.state).isEqualTo(OrderState.WORKING)
+        assertThat(om.getOrder("b1-tp")?.state).isEqualTo(OrderState.WORKING)
+    }
 }
