@@ -9,6 +9,7 @@ import com.qkt.dsl.ast.CancelAll
 import com.qkt.dsl.ast.Close
 import com.qkt.dsl.ast.CloseAll
 import com.qkt.dsl.ast.ExprAst
+import com.qkt.dsl.ast.HUB_BROKER
 import com.qkt.dsl.ast.Latch
 import com.qkt.dsl.ast.Log
 import com.qkt.dsl.ast.OcoEntry
@@ -39,16 +40,37 @@ class AstCompiler {
         val ast = ParamSubstitution.apply(rawAst, overrides)
         // Real streams keep their venue identity; each basket is a synthetic stream with a
         // `BASKET:` identity whose composite candle is written into the hub at sync time.
-        val streams: Map<String, HubKey> =
+        val declaredStreamKeys: Map<String, HubKey> =
             ast.streams.associate { it.alias to HubKey(it.broker, it.symbol, it.timeframe) } +
                 ast.baskets.associate { it.alias to HubKey("BASKET", it.alias.uppercase(), it.timeframe) } +
                 ast.series.associate { it.alias to HubKey(it.source.broker, it.source.symbol, it.timeframe) }
+        // A hub alias names a dataset, and a rule reads one field of it. Expand each REFERENCED
+        // field into its own hidden stream so the candle hub, warmup seeding and the feed merge
+        // all keep working unchanged -- none of them has to learn what a dataset is. Only fields
+        // the strategy actually reads are expanded, so a wide dataset costs nothing unused.
+        val hubAliases: Set<String> =
+            declaredStreamKeys.filterValues { it.broker.equals(HUB_BROKER, ignoreCase = true) }.keys
+        val hubFieldStreams: Map<String, HubKey> =
+            if (hubAliases.isEmpty()) {
+                emptyMap()
+            } else {
+                val found = LinkedHashMap<String, HubKey>()
+                collectMetaRefs(ast, declaredStreamKeys) { ref ->
+                    if (ref.stream in hubAliases && ref.field !in ExprCompiler.META_FIELDS) {
+                        val declared = declaredStreamKeys.getValue(ref.stream)
+                        found[hubFieldAlias(ref.stream, ref.field)] =
+                            HubKey(declared.broker, "${declared.symbol}/${ref.field}", declared.timeframe)
+                    }
+                }
+                found
+            }
+        val streams: Map<String, HubKey> = declaredStreamKeys + hubFieldStreams
         // alias -> constituent aliases, for fanning basket orders out and reading basket positions.
         val basketConstituents: Map<String, List<String>> = ast.baskets.associate { it.alias to it.constituents }
         val resolver = LetResolver(ast.lets, streams.keys)
         val bindings = IndicatorBinding.Bag()
         val aggregates = AggregateBinding.Bag()
-        val exprCompiler = ExprCompiler(bindings, aggregates, basketConstituents)
+        val exprCompiler = ExprCompiler(bindings, aggregates, basketConstituents, hubAliases = hubAliases)
         val exitExprCompiler =
             ExprCompiler(
                 bindings = bindings,
@@ -96,7 +118,13 @@ class AstCompiler {
             }
         // Macro series (MACRO:) are read-only — they carry a published statistic, not a tradeable
         // price. Reject any order action targeting one at compile time (#440).
-        val readOnlyAliases = streams.filterValues { it.broker == "MACRO" || it.broker == SeriesSymbols.BROKER }.keys
+        val readOnlyAliases =
+            streams
+                .filterValues {
+                    it.broker == "MACRO" ||
+                        it.broker == SeriesSymbols.BROKER ||
+                        it.broker.equals(HUB_BROKER, ignoreCase = true)
+                }.keys
         whenThens.forEach { rejectReadOnlyOrders(it.action, readOnlyAliases) }
         validateBaskets(ast)
         validateCompleteBrackets(ast)

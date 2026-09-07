@@ -108,7 +108,7 @@ class CandleHub {
         if (matching != null) {
             for (i in matching.indices) {
                 val slot = matching[i]
-                if (tick.symbol.startsWith("MACRO:")) {
+                if (isObservationSymbol(tick.symbol)) {
                     publishMacroEvent(slot, tick)
                 } else {
                     slot.aggregator.onTick(tick)

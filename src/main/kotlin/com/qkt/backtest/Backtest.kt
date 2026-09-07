@@ -8,6 +8,8 @@ import com.qkt.marketdata.HistoricalTickFeed
 import com.qkt.marketdata.MergingTickFeed
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.TickFeed
+import com.qkt.marketdata.hub.HubMarketSource
+import com.qkt.marketdata.hub.hubRoot
 import com.qkt.marketdata.source.BarTickFeed
 import com.qkt.marketdata.source.CompositeMarketSource
 import com.qkt.marketdata.source.LocalMarketSource
@@ -321,16 +323,21 @@ class Backtest(
                     binaryBarStore = if (forceBars) binaryBarStore else null,
                 )
             // MACRO: streams (daily yields/real rates) read from the macro store via a point-in-time
-            // source; everything else falls through to the tick store. Non-MACRO runs are unchanged.
+            // source, and HUB: streams read a qkt-data-hub store the same way. Both are routed only
+            // when a run actually declares one, so a run that binds neither constructs exactly the
+            // object graph it constructed before either existed and cannot change behaviour.
+            val observationRoutes: List<Pair<SymbolPattern, MarketSource>> =
+                buildList {
+                    if (request.symbols.any { it.startsWith("MACRO:") }) {
+                        add(SymbolPattern.prefix("MACRO:") to MacroMarketSource(MacroSeriesStore(store.root)))
+                    }
+                    if (request.symbols.any { it.startsWith(HubMarketSource.PREFIX) }) {
+                        add(SymbolPattern.prefix(HubMarketSource.PREFIX) to HubMarketSource(hubRoot(store.root)))
+                    }
+                }
             val source: MarketSource =
-                if (request.symbols.any { it.startsWith("MACRO:") }) {
-                    CompositeMarketSource(
-                        routes =
-                            listOf(
-                                SymbolPattern.prefix("MACRO:") to MacroMarketSource(MacroSeriesStore(store.root)),
-                            ),
-                        fallback = localSource,
-                    )
+                if (observationRoutes.isNotEmpty()) {
+                    CompositeMarketSource(routes = observationRoutes, fallback = localSource)
                 } else {
                     localSource
                 }

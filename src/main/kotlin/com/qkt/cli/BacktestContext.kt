@@ -16,6 +16,7 @@ import com.qkt.candles.TimeWindow
 import com.qkt.common.FixedClock
 import com.qkt.common.TimeRange
 import com.qkt.common.TradingCalendar
+import com.qkt.dsl.ast.HUB_BROKER
 import com.qkt.dsl.ast.StrategyAst
 import com.qkt.dsl.compile.AstCompiler
 import com.qkt.dsl.portfolio.PortfolioGate
@@ -498,7 +499,7 @@ class BacktestContext private constructor(
                 val allProvisionStreams =
                     replaySymbols
                         .map { brokerAndBare(it) }
-                        .filter { (broker, _) -> broker != "MACRO" && broker != "BYBIT" }
+                        .filter { (broker, _) -> broker != "MACRO" && broker != "BYBIT" && broker != HUB_BROKER }
                         .distinct()
                         .map { (broker, bare) -> ProvisionStream(broker = broker, bareSymbol = bare) }
                 val provisionFrom = LocalDate.ofInstant(from, ZoneOffset.UTC)
@@ -733,7 +734,7 @@ class BacktestContext private constructor(
                 val allProvisionStreams =
                     replaySymbols
                         .map { brokerAndBare(it) }
-                        .filter { (broker, _) -> broker != "MACRO" && broker != "BYBIT" }
+                        .filter { (broker, _) -> broker != "MACRO" && broker != "BYBIT" && broker != HUB_BROKER }
                         .distinct()
                         .map { (broker, bare) -> ProvisionStream(broker = broker, bareSymbol = bare) }
                 val provisionFrom = LocalDate.ofInstant(from, ZoneOffset.UTC)

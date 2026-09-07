@@ -101,6 +101,7 @@ internal data class MetaRef(
 internal fun collectMetaRefs(
     ast: StrategyAst,
     streams: Map<String, HubKey>,
+    onStreamField: (StreamFieldRef) -> Unit = {},
 ): List<MetaRef> {
     val out = mutableListOf<MetaRef>()
 
@@ -113,6 +114,10 @@ internal fun collectMetaRefs(
             StackEntryRef, EntryQty, LastTradingDayOfMonth, is com.qkt.dsl.ast.ExitRef,
             -> Unit
             is StreamFieldRef -> {
+                // Every reference is offered to the caller before the meta filter, so a second
+                // consumer (hub field expansion) can share this one exhaustive walk rather than
+                // maintaining a parallel copy that would drift the first time a node is added.
+                onStreamField(e)
                 if (e.field in ExprCompiler.META_FIELDS) {
                     val sym = streams[e.stream]?.qktSymbol
                     if (sym != null) out.add(MetaRef(e.stream, e.field, sym))
