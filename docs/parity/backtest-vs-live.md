@@ -144,6 +144,7 @@ keep in mind when reading a backtest.
 | A15 | Margin floor is a live pre-trade rule because replay has no venue margin-level feed | INHERENT — repeated missing reads fail closed for new exposure; risk-reducing exits remain allowed (`MarginFloorTest`) |
 | A16 | Standalone live sessions default to fresh venue equity for drawdown and percent-of-equity sizing; replay uses model equity | DECLARED/CONFIGURABLE (#939) — `risk.live_equity_basis: modeled` pins live to `starting_balance + qkt realized + qkt unrealized`; `venue` remains the compatibility default (`LiveSessionBrokerEquityTest`) |
 | A17 | Measured-usage ramp caps live order quantity during a configured post-deploy window; replay does not model deployment age | INHERENT — pinned by `MeasuredUsageTest` |
+| A18 | Equity-curve window: replay used to sample warmup ticks and seeded pre-window bars onto the equity curve, so a replay's sample count (and Sharpe) depended on how much warmup history preceded `--from`; live never had those samples | FIXED — `EquityCurveCollector` floors samples at the replay window start (`windowStartMs`); trades, PnL, and drawdown are unaffected. Golden replays recorded before this change report a different Sharpe for the same fills (`EquityCurveCollectorTest`) |
 
 ## 2026-07-03 hardening pass — parity-audit rows resolved (#658)
 

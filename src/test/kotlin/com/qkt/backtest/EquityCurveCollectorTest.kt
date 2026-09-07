@@ -107,6 +107,49 @@ class EquityCurveCollectorTest {
     }
 
     @Test
+    fun `a sample stamped before the replay window is warmup and never reaches the curve`() {
+        // Warmup replays pre-window ticks and seeded bars through the same bus. Without the floor
+        // the curve started with flat starting-balance points before the run began, which changed
+        // the sample count every return-based statistic divides by.
+        val rig = newRig()
+        val collector =
+            EquityCurveCollector(
+                cadence = SampleCadence.CANDLE_CLOSE,
+                bus = rig.bus,
+                pnl = rig.pnl,
+                strategyPnL = rig.strategyPnL,
+                strategyIds = listOf("s1"),
+                windowStartMs = 120_000L,
+            )
+
+        rig.bus.publish(CandleEvent(candle("100", 60_000L)))
+        assertThat(collector.global()).isEmpty()
+        assertThat(collector.globalMetrics().count).isEqualTo(0)
+
+        rig.bus.publish(CandleEvent(candle("100", 120_000L)))
+        rig.bus.publish(CandleEvent(candle("100", 180_000L)))
+
+        assertThat(collector.global().map { it.timestamp }).containsExactly(120_000L, 180_000L)
+        assertThat(collector.globalMetrics().count).isEqualTo(2)
+        assertThat(collector.forStrategy("s1")).hasSize(2)
+    }
+
+    @Test
+    fun `no window floor keeps every sample for a live session`() {
+        val rig = newRig()
+        val collector =
+            EquityCurveCollector(
+                cadence = SampleCadence.CANDLE_CLOSE,
+                bus = rig.bus,
+                pnl = rig.pnl,
+                strategyPnL = rig.strategyPnL,
+                strategyIds = listOf("s1"),
+            )
+        rig.bus.publish(CandleEvent(candle("100", 60_000L)))
+        assertThat(collector.global()).hasSize(1)
+    }
+
+    @Test
     fun `unknown strategyId returns empty list`() {
         val rig = newRig()
         val bus = rig.bus
