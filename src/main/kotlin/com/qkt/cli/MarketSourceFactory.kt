@@ -4,6 +4,9 @@ import com.qkt.broker.mt5.MT5BrokerProfile
 import com.qkt.broker.mt5.MT5ServerTimeZone
 import com.qkt.broker.mt5.SymbolCalendars
 import com.qkt.broker.mt5.SymbolPolicy
+import com.qkt.marketdata.hub.HubMarketSource
+import com.qkt.marketdata.hub.HubStoreConfig
+import com.qkt.marketdata.hub.liveHubRoot
 import com.qkt.marketdata.live.bybit.BybitLinearMarketSource
 import com.qkt.marketdata.live.bybit.BybitSpotMarketSource
 import com.qkt.marketdata.live.mt5.Mt5MarketSource
@@ -91,9 +94,19 @@ object MarketSourceFactory {
         mt5Profiles: List<MT5BrokerProfile>,
         source: String = "tv",
         enableBybit: Boolean = defaultEnableBybit(),
+        // Declared before the fallback so a trailing-lambda caller still binds to fallbackProvider.
+        hub: HubStoreConfig = HubStoreConfig.NONE,
         fallbackProvider: () -> MarketSource = { defaultFallback(source) },
     ): (List<String>) -> MarketSource {
         val routes = mutableListOf<Pair<SymbolPattern, MarketSource>>()
+        // The hub route exists only when a store is configured. Without one, a `HUB:` stream falls
+        // through to the fallback and fails at deploy like any unknown venue prefix would.
+        liveHubRoot(hub)?.let { root ->
+            routes.add(
+                SymbolPattern.prefix(HubMarketSource.PREFIX) to
+                    HubMarketSource(root, hub.policy, staleAfterMs = hub.staleAfterMs),
+            )
+        }
         val policySymbols = PolicyRateSeries.entries.map { "MACRO:${it.id}" }.toSet()
         routes.add(
             SymbolPattern.exactSet(policySymbols) to

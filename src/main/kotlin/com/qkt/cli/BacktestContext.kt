@@ -16,6 +16,7 @@ import com.qkt.candles.TimeWindow
 import com.qkt.common.FixedClock
 import com.qkt.common.TimeRange
 import com.qkt.common.TradingCalendar
+import com.qkt.dsl.ast.HUB_BROKER
 import com.qkt.dsl.ast.StrategyAst
 import com.qkt.dsl.compile.AstCompiler
 import com.qkt.dsl.portfolio.PortfolioGate
@@ -27,6 +28,7 @@ import com.qkt.instrument.LayeredInstrumentRegistry
 import com.qkt.instrument.StandardInstrumentRegistry
 import com.qkt.instrument.YamlInstrumentRegistry
 import com.qkt.marketdata.TickFeed
+import com.qkt.marketdata.hub.resolveHubRoot
 import com.qkt.marketdata.source.MarketRequest
 import com.qkt.marketdata.source.SequenceTickFeed
 import com.qkt.marketdata.store.BinaryBarStore
@@ -77,6 +79,8 @@ class BacktestContext private constructor(
     val instruments: InstrumentRegistry,
     val barStore: LocalBarStore,
     val datasetEvidence: DatasetEvidence,
+    /** Where `HUB:` streams are served from; resolved once so every run path agrees. */
+    val hubStoreRoot: java.nio.file.Path,
     val accountingConfig: AccountingConfig,
     private val candleWindow: TimeWindow?,
     private val startingBalance: BigDecimal,
@@ -178,6 +182,7 @@ class BacktestContext private constructor(
             calendar = calendar,
             store = store,
             request = MarketRequest(symbols = replaySymbols, from = range.from, to = range.to),
+            hubStoreRoot = hubStoreRoot,
             candleWindow = candleWindow,
             startingBalance = startingBalance,
             startingBalances = startingBalances,
@@ -498,7 +503,7 @@ class BacktestContext private constructor(
                 val allProvisionStreams =
                     replaySymbols
                         .map { brokerAndBare(it) }
-                        .filter { (broker, _) -> broker != "MACRO" && broker != "BYBIT" }
+                        .filter { (broker, _) -> broker != "MACRO" && broker != "BYBIT" && broker != HUB_BROKER }
                         .distinct()
                         .map { (broker, bare) -> ProvisionStream(broker = broker, bareSymbol = bare) }
                 val provisionFrom = LocalDate.ofInstant(from, ZoneOffset.UTC)
@@ -580,6 +585,7 @@ class BacktestContext private constructor(
                 instruments = instruments,
                 barStore = barStore,
                 datasetEvidence = datasetContext.evidence,
+                hubStoreRoot = resolveHubRoot(args.option("hub-root"), cfg.hub, Path.of(dataRoot)),
                 accountingConfig = accountingConfig,
                 candleWindow = candleWindow,
                 startingBalance = startingBalance,
@@ -733,7 +739,7 @@ class BacktestContext private constructor(
                 val allProvisionStreams =
                     replaySymbols
                         .map { brokerAndBare(it) }
-                        .filter { (broker, _) -> broker != "MACRO" && broker != "BYBIT" }
+                        .filter { (broker, _) -> broker != "MACRO" && broker != "BYBIT" && broker != HUB_BROKER }
                         .distinct()
                         .map { (broker, bare) -> ProvisionStream(broker = broker, bareSymbol = bare) }
                 val provisionFrom = LocalDate.ofInstant(from, ZoneOffset.UTC)
@@ -816,6 +822,7 @@ class BacktestContext private constructor(
                 instruments = instruments,
                 barStore = barStore,
                 datasetEvidence = datasetContext.evidence,
+                hubStoreRoot = resolveHubRoot(args.option("hub-root"), cfg.hub, Path.of(dataRoot)),
                 accountingConfig = accountingConfig,
                 candleWindow = candleWindow,
                 startingBalance = startingBalance,
