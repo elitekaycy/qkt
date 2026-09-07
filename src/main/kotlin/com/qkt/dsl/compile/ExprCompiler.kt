@@ -47,12 +47,18 @@ class ExprCompiler(
     private val aggregates: AggregateBinding.Bag = AggregateBinding.Bag(),
     private val baskets: Map<String, List<String>> = emptyMap(),
     private val allowExitAccess: Boolean = false,
+    /**
+     * Aliases bound to a hub dataset. Their field names come from the dataset's schema rather
+     * than from the fixed candle vocabulary, so `cpi.surprise` must not be rejected the way
+     * `gold.surprise` rightly is.
+     */
+    private val hubAliases: Set<String> = emptySet(),
 ) {
     internal fun forExitHooks(): ExprCompiler =
         if (allowExitAccess) {
             this
         } else {
-            ExprCompiler(bindings, aggregates, baskets, allowExitAccess = true)
+            ExprCompiler(bindings, aggregates, baskets, allowExitAccess = true, hubAliases = hubAliases)
         }
 
     fun compile(
@@ -822,11 +828,35 @@ class ExprCompiler(
     }
 
     private fun compileStreamField(ref: StreamFieldRef): CompiledExpr {
+        if (ref.stream in hubAliases && ref.field !in META_FIELDS) return compileHubField(ref)
         require(ref.field in CANDLE_FIELDS || ref.field in META_FIELDS) {
             "Unknown stream field for ${ref.stream}: ${ref.field}"
         }
         return if (ref.field in META_FIELDS) compileMetaField(ref) else compileCandleField(ref)
     }
+
+    /**
+     * One field of a hub dataset, read from the hidden per-field stream the compiler registered.
+     *
+     * A hub record carries many fields while a candle carries one price, so the alias `cpi` is
+     * expanded at compile time into one stream per referenced field and this reads the matching
+     * one. An absent stream or an empty one evaluates to `Undefined`, never to zero: the hub's
+     * "unknown" must stay unknown all the way to the rule, or a missing release would read as a
+     * surprise of exactly zero and fire something.
+     */
+    private fun compileHubField(ref: StreamFieldRef): CompiledExpr =
+        CompiledExpr { ctx ->
+            val key = ctx.streams[hubFieldAlias(ref.stream, ref.field)]
+            val candle =
+                key?.let {
+                    if (ctx.candle.symbol == it.qktSymbol) {
+                        ctx.candle
+                    } else {
+                        ctx.historyAsOfMs?.let { at -> ctx.hub.latestAtOrBefore(it, at) } ?: ctx.hub.latest(it)
+                    }
+                }
+            if (candle == null) Value.Undefined else Value.Num(candle.close)
+        }
 
     private fun compileCandleField(ref: StreamFieldRef): CompiledExpr =
         CompiledExpr { ctx ->

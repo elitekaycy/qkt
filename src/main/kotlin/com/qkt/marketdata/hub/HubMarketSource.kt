@@ -120,8 +120,23 @@ class HubMarketSource(
 
     companion object {
         const val PREFIX: String = "HUB:"
+
+        /** Environment variable naming the hub store root, for a deployment that mounts it. */
+        const val ROOT_ENV: String = "QKT_HUB_ROOT"
     }
 }
+
+/**
+ * Where the hub store lives for this process.
+ *
+ * A deployment mounts the hub's root read-only and names it in the environment; a local run falls
+ * back to a `hub/` directory beside the data root, so a checkout works with no configuration. The
+ * engine only ever reads: the hub is the sole writer of its own store, and two writers would
+ * interleave sequence numbers and corrupt the ordering every consumer depends on.
+ */
+fun hubRoot(dataRoot: Path): Path =
+    System.getenv(HubMarketSource.ROOT_ENV)?.takeIf { it.isNotBlank() }?.let { Path.of(it) }
+        ?: dataRoot.resolve("hub")
 
 /**
  * How much less than the hub a consumer is willing to believe.

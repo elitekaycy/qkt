@@ -47,6 +47,7 @@ import com.qkt.dsl.ast.Fok
 import com.qkt.dsl.ast.FuncCall
 import com.qkt.dsl.ast.Gtc
 import com.qkt.dsl.ast.Gtd
+import com.qkt.dsl.ast.HUB_BROKER
 import com.qkt.dsl.ast.InList
 import com.qkt.dsl.ast.IndicatorCall
 import com.qkt.dsl.ast.Ioc
@@ -2155,7 +2156,12 @@ class Parser(
     private fun parseStream(alias: String): StreamDecl {
         val broker = expect(TokenKind.IDENT, "expected broker prefix").lexeme
         expect(TokenKind.COLON, "expected ':' between broker and symbol")
-        val symbol = expect(TokenKind.IDENT, "expected symbol after ':'").lexeme
+        val symbol =
+            if (broker.equals(HUB_BROKER, ignoreCase = true)) {
+                parseDottedSymbol()
+            } else {
+                expect(TokenKind.IDENT, "expected symbol after ':'").lexeme
+            }
         expect(TokenKind.EVERY, "expected EVERY")
         val timeframe = parseTimeframe()
         val warmupBars: Int? =
@@ -2178,6 +2184,41 @@ class Parser(
             timeframe = timeframe,
             warmupBars = warmupBars,
         )
+    }
+
+    /**
+     * A hub dataset name, which is dotted: `HUB:cal.high_impact` or `HUB:cal.high_impact.USD`.
+     *
+     * Every other venue names an instrument with one identifier, so the general symbol rule is a
+     * single IDENT. A hub dataset is addressed by a hierarchical name instead, and the lexer
+     * splits on `.` because that character means field access everywhere else. Re-joining the
+     * segments here keeps that meaning intact for every other stream while letting a hub alias
+     * name what it actually needs to name.
+     */
+    private fun parseDottedSymbol(): String {
+        val parts = mutableListOf(nameSegment())
+        while (peek().kind == TokenKind.DOT) {
+            advance()
+            parts.add(nameSegment())
+        }
+        return parts.joinToString(".")
+    }
+
+    /**
+     * One segment of a hub dataset name, accepting a token that happens to spell a keyword.
+     *
+     * A scope is written the way the world writes it -- `USD`, `EUR` -- and several of those are
+     * already reserved words elsewhere in the grammar (`SIZING 10000 USD`). Matching on the shape
+     * of the lexeme rather than on the token kind keeps a dataset free to be named after the thing
+     * it describes, without the DSL's own vocabulary leaking into what a dataset may be called.
+     */
+    private fun nameSegment(): String {
+        val token = peek()
+        require(token.lexeme.isNotEmpty() && token.lexeme.all { it.isLetterOrDigit() || it == '_' }) {
+            "expected a name segment in a hub dataset, got '${token.lexeme}'"
+        }
+        advance()
+        return token.lexeme
     }
 
     /**
