@@ -203,6 +203,16 @@ qkt bot session finish --run demo --json     # writes runs/demo/{result.json,tra
 qkt bot session start --symbols MT5:XAUUSD --tf 5m --identities mybrain --json &
 ```
 
+A live session persists its leg book under the state root (`--state-dir`, the same
+`state/<identity>/` layout a daemon deploy writes), so a session that ends with a
+position open — exits are venue-side brackets, so this is normal — is reconciled by the
+next session over the same identity and state root: it attaches the persisted legs and
+carries on. Reconcile is fail-closed: venue positions with no persisted state stop the
+start with `ReconcileException`; pass `--reconcile=ignore-mismatches` to adopt them as
+independent legs (the same operator escape hatch as `qkt deploy`). Never work around a
+refusal by wiping the state directory — that is exactly the position the refusal is
+protecting.
+
 Session resolution for every verb: `--run <id>` → `QKT_BOT_RUN` env → the single
 session under the state root (two or more running sessions require an explicit
 `--run`; that ambiguity fails closed). With **no** session running, every verb keeps

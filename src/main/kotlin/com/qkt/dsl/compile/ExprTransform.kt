@@ -97,11 +97,19 @@ import com.qkt.dsl.ast.UnaryOp
  * ref up in its binding table; defaults-merge rewrites the `SYMBOL` placeholder to a field ref.
  */
 class ExprTransform(
+    /**
+     * Hook for stream field references. Defaults to identity, and sits FIRST so that every
+     * existing `ExprTransform { ref -> ... }` call still binds its trailing lambda to [onRef].
+     * Hub expansion uses it to redirect `cal.surprise` onto the hidden per-field alias without
+     * a second walker that would drift the next time a node type is added.
+     */
+    private val onStreamField: (StreamFieldRef) -> ExprAst = { it },
     private val onRef: (Ref) -> ExprAst,
 ) {
     fun expr(e: ExprAst): ExprAst =
         when (e) {
             is Ref -> onRef(e)
+            is StreamFieldRef -> onStreamField(e)
             is BinaryOp -> BinaryOp(e.op, expr(e.lhs), expr(e.rhs))
             is UnaryOp -> UnaryOp(e.op, expr(e.arg))
             is CmpOp -> CmpOp(e.op, expr(e.lhs), expr(e.rhs))
@@ -117,7 +125,7 @@ class ExprTransform(
             is Aggregate -> Aggregate(e.fn, expr(e.series), e.window)
             is FuncCall -> FuncCall(e.name, e.args.map(::expr))
             is IsNull -> IsNull(expr(e.expr), e.negated)
-            is NumLit, is BoolLit, is StringLit, is StreamFieldRef, is AccountRef, is StreakRef, is TradesRef,
+            is NumLit, is BoolLit, is StringLit, is AccountRef, is StreakRef, is TradesRef,
             is CooldownRef, is PositionRef, is StateAccessor, is StackEntryRef, is NowAccessor,
             is SequenceAccessor,
             is CalendarWindow,

@@ -30,6 +30,8 @@ qkt sweep strategy.qkt --from 2024-01-01 --to 2024-02-01 \
 
     It trains on each rolling window (picking the best params), tests them on the *next, unseen*
     window, and reports mean in-sample vs out-of-sample score — a large gap is overfitting.
+    Add `--report-dir wf/` to get per-fold PnL and drawdown in `wf/walkforward_summary.csv`
+    plus a complete backtest report for each test window under `wf/folds/fold_NNN/`.
     See [Phase 10c — Walk-forward](../phases/phase-10c-walk-forward.md) for the protocol.
 
 ## Programmatic (advanced)

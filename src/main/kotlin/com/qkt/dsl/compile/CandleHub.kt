@@ -108,7 +108,7 @@ class CandleHub {
         if (matching != null) {
             for (i in matching.indices) {
                 val slot = matching[i]
-                if (tick.symbol.startsWith("MACRO:")) {
+                if (isObservationSymbol(tick.symbol)) {
                     publishMacroEvent(slot, tick)
                 } else {
                     slot.aggregator.onTick(tick)
@@ -222,7 +222,11 @@ class CandleHub {
         // Live aggregation and backtests both build bars on the epoch-aligned UTC grid
         // (00:00, 04:00, ... for 4h). A seed on any other phase (e.g. broker-day-aligned
         // MT5 history) would warm indicators on bars no other part of qkt ever produces.
-        require(candles.all { it.startTime % expectedDurationMs == 0L }) {
+        // An observation stream (MACRO:, HUB:) closes each published value as its own event candle
+        // at the instant it became knowable, which is almost never a day boundary. Its history is
+        // seeded the same way, so the grid rule -- which exists for aggregated OHLC bars -- must not
+        // reject the very shape the live path publishes.
+        require(isObservationSymbol(key.qktSymbol) || candles.all { it.startTime % expectedDurationMs == 0L }) {
             "CandleHub.seed: bars for $key are not on the epoch-aligned UTC grid " +
                 "(first offender starts at ${candles.first { it.startTime % expectedDurationMs != 0L }.startTime}); " +
                 "refusing to warm indicators on a shifted grid"

@@ -58,6 +58,11 @@ class CreateCommandTest {
         assertThat(compose).contains("qkt-insights")
         assertThat(compose).contains("ghcr.io/elitekaycy/qkt-insights:latest")
         assertThat(compose).contains("\${QKT_INSIGHTS_BIND_HOST:-127.0.0.1}:\${QKT_INSIGHTS_HOST_PORT:-8420}:8420")
+        assertThat(compose).contains("INSIGHTS_NAME: \${QKT_INSIGHTS_INSTANCE_ID:-}")
+        assertThat(compose).contains("\"url\":\"http://mt5-gateway:5001/health\"")
+        assertThat(compose).contains("\"expect\":{\"mt5_status\":\"connected\"}")
+        assertThat(compose).contains("\"headers\":{\"Authorization\":\"Bearer \${MT5_API_KEY}\"}")
+        assertThat(compose).contains("DEADMAN_URL: \${QKT_INSIGHTS_DEADMAN_URL:-}")
         assertThat(compose).contains("\${QKT_BIND_HOST:-127.0.0.1}:\${MT5_API_HOST_PORT:-5020}:5001")
         assertThat(compose).doesNotContain("container_name:")
         val topReadme = Files.readString(target.resolve("README.md"))
@@ -114,6 +119,8 @@ class CreateCommandTest {
         assertThat(envContent).contains("QKT_INSIGHTS_HOST_PORT=8420")
         assertThat(envContent).contains("COMPOSE_PROFILES=")
         assertThat(envContent).contains("QKT_INSIGHTS_IMAGE=ghcr.io/elitekaycy/qkt-insights:latest")
+        assertThat(envContent).contains("QKT_INSIGHTS_ALERT_WEBHOOK_URL=")
+        assertThat(envContent).contains("QKT_INSIGHTS_DEADMAN_URL=")
     }
 
     @Test

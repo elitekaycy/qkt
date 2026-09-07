@@ -19,7 +19,7 @@ class LetResolver(
         }
     }
 
-    private val transform = ExprTransform(::onRef)
+    private val transform = ExprTransform(onRef = ::onRef)
 
     fun resolve(expr: ExprAst): ExprAst = transform.expr(expr)
 

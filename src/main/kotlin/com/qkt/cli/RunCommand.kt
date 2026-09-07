@@ -130,7 +130,7 @@ class RunCommand(
                         println("[WARN] mt5 profile load failed: ${e.message}")
                         emptyList()
                     }
-                MarketSourceFactory.composite(mt5Profiles)
+                MarketSourceFactory.composite(mt5Profiles, hub = cfg.hub)
             }
         val feedSymbols = (symbols + accountingConfig.normalizedSymbols.values).distinct()
         val marketSource = effectiveSourceFactory(feedSymbols)
