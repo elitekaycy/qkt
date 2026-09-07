@@ -27,6 +27,13 @@ class EquityCurveCollector(
      * returns-on-profit instead of returns-on-capital.
      */
     private val startingBalance: BigDecimal = BigDecimal.ZERO,
+    /**
+     * The replay window's first instant. A sample stamped before it is warmup, not history the
+     * run is reporting on: a seeded observation bar can close during warmup replay and would
+     * otherwise put a starting-balance point on the curve before the backtest began, shifting
+     * every return-based statistic by one flat sample. Null (live) disables the floor.
+     */
+    private val windowStartMs: Long? = null,
 ) {
     private val globalMetricsAcc = EquityMetrics()
     private val globalCurve = DecimatedCurve(curveCap)
@@ -75,6 +82,8 @@ class EquityCurveCollector(
     }
 
     private fun sample(timestamp: Long) {
+        val floor = windowStartMs
+        if (floor != null && timestamp < floor) return
         val globalEquity: BigDecimal = startingBalance.add(pnl.realizedTotal()).add(pnl.unrealizedTotal())
         globalMetricsAcc.accept(timestamp, globalEquity)
         globalCurve.accept(EquitySample(timestamp, globalEquity))

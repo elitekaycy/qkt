@@ -27,6 +27,14 @@ data class StrategyAst(
     }
 }
 
+/**
+ * The venue token a hub-backed stream declares: `alias = HUB:<dataset>[.<scope>] EVERY <tf>`.
+ *
+ * Named once so the parser, the compiler's read-only check and the market-source routing cannot
+ * drift apart -- three copies of the string "HUB" is exactly how a fourth place gets missed.
+ */
+const val HUB_BROKER: String = "HUB"
+
 /** Well-known broker/symbol identity used for synthetic DSL series streams. */
 object SeriesSymbols {
     const val BROKER: String = "SERIES"
