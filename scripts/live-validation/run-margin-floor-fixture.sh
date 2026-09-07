@@ -623,9 +623,9 @@ jq -s -e --arg strategy "$probe_strategy" --slurpfile contract "$output/probe/ex
     ($contract[0]) as $c |
     ($c.expectedReason.value | gsub("\\\\u2014"; "—")) as $expectedReasonRegex |
     [$events[] | select(.eventType == "com.qkt.events.StreamCandleEvent" and
-      .broker == "EXNESS" and .timeframe == $c.timeframe and (.payload | contains("symbol=" + $c.symbol)))] as $streams |
+      .broker == "EXNESS" and .timeframe == $c.timeframe and (.symbol == $c.symbol or ((.payload // "") | contains("symbol=" + $c.symbol))))] as $streams |
     [$events[] | select(.eventType == "com.qkt.events.StrategyCandleEvaluatedEvent" and
-      .strategyId == $strategy and .timeframe == $c.timeframe and (.payload | contains("symbol=" + $c.symbol)))] as $evaluations |
+      .strategyId == $strategy and .timeframe == $c.timeframe and (.symbol == $c.symbol or ((.payload // "") | contains("symbol=" + $c.symbol))))] as $evaluations |
     [$events[] | select(.eventType == "com.qkt.events.RuleDecisionEvent" and
       .strategyId == $strategy and .conditionResult == true and .signalCount == 1)] as $decisions |
     [$events[] | select(.eventType == "com.qkt.events.DecisionOrderLinkedEvent" and .strategyId == $strategy)] as $links |
