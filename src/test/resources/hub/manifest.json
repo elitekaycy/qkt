@@ -1,0 +1,89 @@
+{
+ "datasets": {
+  "cal.high_impact": {
+   "fields": [
+    {
+     "derived": "",
+     "name": "title",
+     "null_policy": "forbid",
+     "strategy": false,
+     "type": "string",
+     "unit": "",
+     "values": []
+    },
+    {
+     "derived": "",
+     "name": "impact",
+     "null_policy": "forbid",
+     "strategy": true,
+     "type": "enum",
+     "unit": "",
+     "values": [
+      "low",
+      "medium",
+      "high",
+      "holiday"
+     ]
+    },
+    {
+     "derived": "",
+     "name": "forecast",
+     "null_policy": "allow",
+     "strategy": true,
+     "type": "number",
+     "unit": "",
+     "values": []
+    },
+    {
+     "derived": "",
+     "name": "previous",
+     "null_policy": "allow",
+     "strategy": true,
+     "type": "number",
+     "unit": "",
+     "values": []
+    },
+    {
+     "derived": "",
+     "name": "actual",
+     "null_policy": "allow_until_release",
+     "strategy": true,
+     "type": "number",
+     "unit": "",
+     "values": []
+    },
+    {
+     "derived": "actual - forecast",
+     "name": "surprise",
+     "null_policy": "allow",
+     "strategy": true,
+     "type": "number",
+     "unit": "",
+     "values": []
+    },
+    {
+     "derived": "zscore(surprise, window=24, min_obs=8)",
+     "name": "surprise_z",
+     "null_policy": "allow",
+     "strategy": true,
+     "type": "number",
+     "unit": "",
+     "values": []
+    }
+   ],
+   "key": [
+    "effective_at",
+    "scope",
+    "title"
+   ],
+   "last_known_at": 1788757504091,
+   "last_seq": 12,
+   "schema_hash": "sha256:534886146331f151d13ac0fe38b1a97029cf4e0393af9da2782e7b9f4ecae410",
+   "schema_path": "datasets/cal.high_impact.yaml",
+   "scope_kind": "currency",
+   "windows": []
+  }
+ },
+ "generated_at": 0,
+ "v": 1
+}
