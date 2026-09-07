@@ -10,6 +10,7 @@ import com.qkt.marketdata.Tick
 import com.qkt.marketdata.TickFeed
 import com.qkt.marketdata.hub.HubMarketSource
 import com.qkt.marketdata.hub.hubRoot
+import com.qkt.marketdata.hub.validateHubStreams
 import com.qkt.marketdata.source.BarTickFeed
 import com.qkt.marketdata.source.CompositeMarketSource
 import com.qkt.marketdata.source.LocalMarketSource
@@ -332,7 +333,14 @@ class Backtest(
                         add(SymbolPattern.prefix("MACRO:") to MacroMarketSource(MacroSeriesStore(store.root)))
                     }
                     if (request.symbols.any { it.startsWith(HubMarketSource.PREFIX) }) {
-                        add(SymbolPattern.prefix(HubMarketSource.PREFIX) to HubMarketSource(hubRoot(store.root)))
+                        val root = hubRoot(store.root)
+                        // Fail before the first tick rather than after the report: a mistyped
+                        // field would otherwise be undefined for the whole run, and the result
+                        // would read as a strategy that found no setups rather than one that was
+                        // never able to evaluate its own rule.
+                        val problems = validateHubStreams(root, request.symbols)
+                        require(problems.isEmpty()) { "hub data problems:\n  " + problems.joinToString("\n  ") }
+                        add(SymbolPattern.prefix(HubMarketSource.PREFIX) to HubMarketSource(root))
                     }
                 }
             val source: MarketSource =
