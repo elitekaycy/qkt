@@ -95,6 +95,13 @@ data class Config(
      * gate's historical hard-coded thresholds.
      */
     val marketData: com.qkt.marketdata.MarketDataGateConfig = com.qkt.marketdata.MarketDataGateConfig.DEFAULT,
+    /**
+     * Where the qkt-data-hub store is and how much of it to believe (the `hub:` block). Absent
+     * means no store: a strategy binding a `HUB:` stream then needs `--hub-root` or
+     * `QKT_HUB_ROOT`. Unknown keys fail at load, unlike most other sections, because a typo in
+     * `refuse_derived` would otherwise silently turn a safety setting off.
+     */
+    val hub: com.qkt.marketdata.hub.HubStoreConfig = com.qkt.marketdata.hub.HubStoreConfig.NONE,
 ) {
     val runtimeMode: RuntimeMode
         get() = RuntimeMode.fromConfig(runtime["mode"])
@@ -393,6 +400,9 @@ data class Config(
                 marketData =
                     com.qkt.marketdata.MarketDataGateConfig
                         .parse(map["market_data"]),
+                hub =
+                    com.qkt.marketdata.hub.HubStoreConfig
+                        .parse(map["hub"]),
             )
         }
 

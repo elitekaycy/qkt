@@ -82,6 +82,38 @@
    "schema_path": "datasets/cal.high_impact.yaml",
    "scope_kind": "currency",
    "windows": []
+  },
+  "rates.us.dfii10": {
+   "fields": [
+    {
+     "derived": "",
+     "name": "value",
+     "null_policy": "allow",
+     "strategy": true,
+     "type": "number",
+     "unit": "pct",
+     "values": []
+    },
+    {
+     "derived": "diff(value, 1)",
+     "name": "change_1d",
+     "null_policy": "allow",
+     "strategy": true,
+     "type": "number",
+     "unit": "pct",
+     "values": []
+    }
+   ],
+   "key": [
+    "period_start",
+    "scope"
+   ],
+   "last_known_at": 1788526800000,
+   "last_seq": 2264,
+   "schema_hash": "sha256:d081ca602dc629599f896bbe8de44a27194315b626b114073db0bd9c8ef04eb2",
+   "schema_path": "datasets/rates.us.dfii10.yaml",
+   "scope_kind": "currency",
+   "windows": []
   }
  },
  "generated_at": 0,

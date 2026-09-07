@@ -25,19 +25,6 @@ data class HubKey(
 }
 
 /**
- * The synthetic alias under which a hub dataset's field is registered as its own stream.
- *
- * A hub alias declares a dataset; a rule reads one field of it. Registering each referenced field
- * as its own stream lets every existing mechanism -- the candle hub's slots, warmup seeding, the
- * merge -- work on hub data without any of them learning what a dataset is. The separator cannot
- * appear in a DSL alias, so a hidden entry can never collide with one an author wrote.
- */
-fun hubFieldAlias(
-    alias: String,
-    field: String,
-): String = "$alias/$field"
-
-/**
  * True for a stream that carries a published OBSERVATION rather than a tradeable price.
  *
  * Macro series and hub datasets are both statements about the world, not quotes: they arrive at
