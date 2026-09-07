@@ -1,6 +1,6 @@
 # Hub Stream Binding (`HUB:`) — Design
 
-> Scoping spec. Companion to the qkt-data-hub design
+> Design spec, updated 2026-09-07 to the shipped shape (PR #1110). Companion to the qkt-data-hub design
 > (`qkt-data-hub/docs/spec/2026-09-07-qkt-data-hub-design.md`), which owns the record format,
 > the pipeline and the snapshot/journal artifacts. This document owns exactly one thing: how
 > qkt reads those artifacts and exposes them to strategies **without changing a single byte of
@@ -206,51 +206,44 @@ class HubMarketSource(
   the interleaving is arrival order, as with any two live vendors. This is why backtest
   ordering (5.5) uses `known_at` then feed index, and why the parity catalogue row exists.
 
-### 5.3 Compiler: one alias, hidden per-field streams
+### 5.3 Parse-boundary expansion: one alias, one stream per referenced field
 
-Today `StreamDecl(alias, broker, symbol, timeframe)` yields one `HubKey(broker, symbol,
-timeframe)` and `compileCandleField` resolves `alias.field` against the fixed `CANDLE_FIELDS`
-set. For `broker == "HUB"`:
+`HubFieldExpansion` rewrites a hub alias into first-class streams **before anything else sees
+the AST** -- applied in `Dsl.parse` (like the `FOR EACH` expansion the parser already performs)
+and again, idempotently, in `AstCompiler.compile` for callers that build ASTs by hand:
 
-1. **Resolution at compile time.** `AstCompiler` asks the `HubSchemaResolver` (a small
-   interface; production impl reads `manifest.json`, tests use a map) for the dataset's schema
-   and hash. Unknown dataset → compile error. The strategy's compiled artifact records the
-   schema hash (Section 8).
-2. **Expansion.** The alias expands to one hidden `HubKey("HUB", "<dataset>/<field>", tf)` per
-   *strategy-visible* field in the schema, plus three envelope streams `known_at`,
-   `effective_at`, `revision`. Hidden keys are registered in the `CandleHub` exactly like
-   declared streams (retention from warmup requirements, default 2).
-3. **Field access.** `StreamFieldRef(alias, field)` on a hub alias compiles to a candle-field
-   read of the hidden key for `field`, reading `.close`. `alias.value` is legal only when the
-   schema declares `value_alias`; every other field name not in the schema is a **compile
-   error** with the list of valid fields. `bid/ask/spread/open/high/low/volume` are not
-   valid on hub aliases (compile error).
-4. **Types.** number → `Value.Num`; bool → `Value.Num(0|1)` with `= TRUE`/`= FALSE` sugar
-   resolved at compile time; timestamp → `Value.Num(epochMs)`; enum → `Value.Num(ordinal)`,
-   and a comparison against a string literal that names a declared enum value is rewritten to
-   the ordinal at compile time (`cpi.direction = "UP"` → `= 2`); any other string literal
-   comparison on a hub field is a compile error. `strategy: false` fields are not expanded.
-5. **Read-only.** `readOnlyAliases` gains `broker == "HUB"`; orders, resize, cancel and latch
-   on a hub alias are compile errors, as for `MACRO`.
-6. **Warmup.** `WarmupRequirements` treats hidden hub keys like any stream: an indicator over
-   `cpi.surprise` with window N requires N closed event candles, i.e. N records. With no
-   indicator, warmup is 0 and the alias is warm from tick zero; a missing latest candle then
-   reads `Undefined`, so a rule referencing it does not fire — fail-closed for entries,
-   unchanged semantics for everyone else.
-7. **Subscription set.** The set of hidden hub symbols across all loaded strategies is what
-   `LiveSession` passes to `source.liveTicks(feedSymbols)` and what `Backtest` puts into
-   `request.symbols`. Nothing else in either assembly changes.
+```
+cal = HUB:cal.high_impact.USD EVERY 1d        WHEN cal.surprise > 0 ...
+   becomes
+cal/surprise = HUB:cal.high_impact.USD/surprise EVERY 1d     WHEN cal/surprise.close > 0 ...
+```
 
-Every existing DSL construct then works on hub fields with no further code: indicators, `LET`,
-`CASE`, snapshots, sizing expressions, bracket prices, `GTD UNTIL`, exit hooks, portfolio
-`REGIMES`. Three-valued logic, edge-triggered firing and `IS NULL` behave exactly as for a
-warming indicator or a missing cross-stream bar.
+Why a rewrite rather than an evaluation-time lookup (the shape first tried): an indicator
+binding keys its updates on its root alias's symbol, so `ema(cal.surprise, 3)` bound to the
+dataset alias would never receive a bar and never warm. As a first-class alias, every existing
+mechanism works for the right reasons -- indicator bindings, `WarmupRequirements`, `WarmupGate`,
+warmup seeding, the candle hub's slots, the feed merge, the live subscription list, `--symbols`
+validation and provisioning exclusions -- and none of them learns what a dataset is.
 
-**Lexer check (open item from the hub spec).** Dataset names are dotted (`macro.us.cpi`) and
-may carry a scope suffix (`cal.high_impact.USD`); the symbol position in `parseStream` is a
-single `IDENT` today. Options, to be settled in the plan: (a) extend the symbol token to accept
-`.` and `/` when the broker token is `HUB`; (b) accept a string literal in symbol position for
-any broker. (a) is smaller and keeps `qktSymbol` a plain string; it is the default.
+1. Only fields the strategy actually reads are expanded; a wide dataset costs nothing unused.
+2. `WARMUP N BARS` on the dataset alias carries to every expanded field stream.
+3. The dataset alias itself is removed: it names nothing with a value, and asking the store for
+   it would be asking for a stream that cannot exist. Orders, closes, cancels, resizes and
+   latches against it are refused inside the expansion with the same read-only message a macro
+   series gets, checked exhaustively over every `ActionAst` variant.
+4. `alias.value` is a field literally named `value`. A single-field dataset names its field
+   `value`; no schema lookup happens at compile time. (`value` is therefore not a reserved
+   envelope name in the hub; `value_alias` remains available on the hub side.)
+5. `.value` is also accepted as a numeric indicator input, for `MACRO:` streams too -- the
+   macro design promised that and had only implemented it for scalar reads.
+6. Unknown field names cannot be caught at compile time without the manifest; instead
+   `validateHubStreams` checks every declared `HUB:` stream against the store's manifest
+   **before the first tick** (backtest) and **at feed start** (live), failing loudly with the
+   fields that do exist. A store that has never compiled has no manifest and is deliberately
+   not an error; a missing store is.
+7. Observation history is seeded off the epoch grid, at each record's `known_at`, exactly as the
+   live path publishes it; the grid-alignment guard in `CandleHub.seed` applies to aggregated
+   OHLC bars only.
 
 ### 5.4 Stream kind replaces two hard-coded prefixes
 
@@ -326,21 +319,23 @@ and gets its own test (Section 10).
 
 ## 6. Configuration
 
-### 6.1 `qkt.config.yaml`
+### 6.1 `qkt.config.yaml` and `--hub-root`
 
 ```yaml
 hub:
   root: /var/lib/qkt-hub          # read-only mount of the hub_root
-  policy:
-    min_lag_ms: 0                 # added to every record's known_at before visibility
-    refuse_derived: true          # availability=derived records are invisible
-    stale_after_ms: 900000        # heartbeat age that flips hub.health / onDisconnect
-    skew_tolerance_ms: 5000       # known_at may not exceed clock.now() by more than this
-  tail_poll_ms: 250
-  datasets: auto                  # or an explicit allowlist; anything else is a deploy error
+  min_lag_ms: 0                   # added to every record's known_at before visibility
+  refuse_derived: true            # availability=derived records are invisible
+  stale_after_ms: 900000          # heartbeat age that reports the hub as disconnected
 ```
 
-- **The `hub` section must be added to strict unknown-key validation.** `Config.kt` rejects
+Precedence for a backtest: `--hub-root`, then `hub.root`, then `QKT_HUB_ROOT`, then
+`<data_root>/hub` so a checkout works unconfigured. A **live** process has no local default:
+`hub.root`, then the environment, else no store -- a book binding a hub stream with no store
+configured fails at deploy rather than reading an empty directory and trading as if every fact
+were unknown.
+
+- **The `hub` section IS strictly validated** (unlike most sections): `Config.kt` rejects
   unknown keys only under `risk`; every other section silently drops them, so a typo such as
   `refuse_derived: ture` would today parse as absent and fail open. `HUB_KEYS` and
   `HUB_POLICY_KEYS` join `RISK_KEYS` in `validate*Keys`, and the same is done for
