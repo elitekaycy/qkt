@@ -348,7 +348,7 @@ class DaemonCommand(
         val brokerFactories: Map<String, com.qkt.app.BrokerFactory> = mt5Factories + bybitFactories
 
         val effectiveSourceFactory: (List<String>) -> MarketSource =
-            sourceFactory ?: MarketSourceFactory.composite(mt5Profiles, source = cfg.source)
+            sourceFactory ?: MarketSourceFactory.composite(mt5Profiles, source = cfg.source, hub = cfg.hub)
 
         val statePersistor =
             statePersistorFactory?.invoke(cfg, stateDir.stateRoot)

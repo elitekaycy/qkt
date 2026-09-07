@@ -38,10 +38,12 @@ class HubStreamBindingTest {
 
     @Test
     fun `a dotted hub dataset name parses as one symbol`() {
-        val cal = ast(strategy).streams.first { it.alias == "cal" }
-        assertThat(cal.broker).isEqualTo("HUB")
-        assertThat(cal.symbol).isEqualTo("cal.high_impact.USD")
-        assertThat(cal.qktSymbol).isEqualTo("HUB:cal.high_impact.USD")
+        // Expansion happens at the parse boundary, so what a caller sees is already per-field;
+        // the dotted dataset name survives intact as the prefix of every field stream.
+        val streams = ast(strategy).streams.filter { it.broker == "HUB" }
+        assertThat(streams).isNotEmpty
+        assertThat(streams.map { it.symbol }).allMatch { it.startsWith("cal.high_impact.USD/") }
+        assertThat(streams.map { it.alias }).containsExactlyInAnyOrder("cal/surprise", "cal/forecast")
     }
 
     @Test
@@ -49,7 +51,9 @@ class HubStreamBindingTest {
         val compiled = compile(strategy)
         val streams = compiled.declaredStreams
 
-        assertThat(streams).containsKey("cal")
+        // The dataset alias itself is gone: it names nothing with a value of its own, and asking
+        // the store for it would be asking for a stream that cannot exist.
+        assertThat(streams).doesNotContainKey("cal")
         assertThat(streams["cal/surprise"]?.qktSymbol).isEqualTo("HUB:cal.high_impact.USD/surprise")
         assertThat(streams["cal/forecast"]?.qktSymbol).isEqualTo("HUB:cal.high_impact.USD/forecast")
     }
@@ -129,6 +133,50 @@ class HubStreamBindingTest {
     @Test
     fun `the hidden alias separator cannot collide with an author's alias`() {
         // A DSL alias is an identifier, so it can never contain '/'.
-        assertThat(hubFieldAlias("cal", "surprise")).isEqualTo("cal/surprise")
+        assertThat(HubFieldExpansion.hiddenAlias("cal", "surprise")).isEqualTo("cal/surprise")
+        assertThat(HubFieldExpansion.SEPARATOR.isLetterOrDigit()).isFalse()
+    }
+
+    @Test
+    fun `an indicator over a hub field binds to the stream whose bars actually arrive`() {
+        // The reason the expansion is an AST rewrite and not an evaluation-time lookup: an
+        // indicator keys its updates on its root alias's symbol. Bound to the dataset alias it
+        // would never see a bar and never warm; bound to the field stream it does.
+        val source =
+            """
+            STRATEGY smoothed VERSION 1
+
+            SYMBOLS
+                gold = BACKTEST:XAUUSD EVERY 5m
+                cal  = HUB:cal.high_impact.USD EVERY 1d
+
+            RULES
+                WHEN ema(cal.surprise, 3) > 0 AND POSITION.gold = 0
+                THEN BUY gold SIZING 0.01
+            """.trimIndent()
+        val expanded = HubFieldExpansion.apply(ast(source)).ast
+        val decl = expanded.streams.single { it.alias == "cal/surprise" }
+        assertThat(decl.qktSymbol).isEqualTo("HUB:cal.high_impact.USD/surprise")
+        val warmup = WarmupRequirements.compute(expanded)
+        assertThat(warmup["cal/surprise"]).isEqualTo(3)
+        assertThat(warmup).doesNotContainKey("cal")
+    }
+
+    @Test
+    fun `a declared warmup on the dataset alias carries to every field stream`() {
+        val source =
+            """
+            STRATEGY warmed VERSION 1
+
+            SYMBOLS
+                gold = BACKTEST:XAUUSD EVERY 5m
+                cal  = HUB:cal.high_impact.USD EVERY 1d WARMUP 4 BARS
+
+            RULES
+                WHEN cal.surprise > 0 AND cal.forecast > 0 AND POSITION.gold = 0
+                THEN BUY gold SIZING 0.01
+            """.trimIndent()
+        val expanded = HubFieldExpansion.apply(ast(source)).ast
+        assertThat(expanded.streams.filter { it.alias.startsWith("cal/") }.map { it.warmupBars }).containsOnly(4)
     }
 }

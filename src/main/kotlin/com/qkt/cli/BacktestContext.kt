@@ -28,6 +28,7 @@ import com.qkt.instrument.LayeredInstrumentRegistry
 import com.qkt.instrument.StandardInstrumentRegistry
 import com.qkt.instrument.YamlInstrumentRegistry
 import com.qkt.marketdata.TickFeed
+import com.qkt.marketdata.hub.resolveHubRoot
 import com.qkt.marketdata.source.MarketRequest
 import com.qkt.marketdata.source.SequenceTickFeed
 import com.qkt.marketdata.store.BinaryBarStore
@@ -78,6 +79,8 @@ class BacktestContext private constructor(
     val instruments: InstrumentRegistry,
     val barStore: LocalBarStore,
     val datasetEvidence: DatasetEvidence,
+    /** Where `HUB:` streams are served from; resolved once so every run path agrees. */
+    val hubStoreRoot: java.nio.file.Path,
     val accountingConfig: AccountingConfig,
     private val candleWindow: TimeWindow?,
     private val startingBalance: BigDecimal,
@@ -179,6 +182,7 @@ class BacktestContext private constructor(
             calendar = calendar,
             store = store,
             request = MarketRequest(symbols = replaySymbols, from = range.from, to = range.to),
+            hubStoreRoot = hubStoreRoot,
             candleWindow = candleWindow,
             startingBalance = startingBalance,
             startingBalances = startingBalances,
@@ -581,6 +585,7 @@ class BacktestContext private constructor(
                 instruments = instruments,
                 barStore = barStore,
                 datasetEvidence = datasetContext.evidence,
+                hubStoreRoot = resolveHubRoot(args.option("hub-root"), cfg.hub, Path.of(dataRoot)),
                 accountingConfig = accountingConfig,
                 candleWindow = candleWindow,
                 startingBalance = startingBalance,
@@ -817,6 +822,7 @@ class BacktestContext private constructor(
                 instruments = instruments,
                 barStore = barStore,
                 datasetEvidence = datasetContext.evidence,
+                hubStoreRoot = resolveHubRoot(args.option("hub-root"), cfg.hub, Path.of(dataRoot)),
                 accountingConfig = accountingConfig,
                 candleWindow = candleWindow,
                 startingBalance = startingBalance,

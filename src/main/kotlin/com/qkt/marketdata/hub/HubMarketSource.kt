@@ -5,6 +5,8 @@ import com.qkt.common.Money
 import com.qkt.common.TimeRange
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
+import com.qkt.marketdata.TickFeed
+import com.qkt.marketdata.live.LiveTickFeed
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.marketdata.source.MarketSourceCapability
 import java.math.BigDecimal
@@ -31,13 +33,33 @@ import java.nio.file.Path
 class HubMarketSource(
     private val root: Path,
     private val policy: HubPolicy = HubPolicy(),
+    private val staleAfterMs: Long = HubStoreConfig.DEFAULT_STALE_AFTER_MS,
 ) : MarketSource {
     override val name: String = "Hub"
 
     override val capabilities: Set<MarketSourceCapability> =
-        setOf(MarketSourceCapability.TICKS, MarketSourceCapability.BARS)
+        setOf(MarketSourceCapability.TICKS, MarketSourceCapability.BARS, MarketSourceCapability.LIVE_TICKS)
 
     override fun supports(symbol: String): Boolean = symbol.startsWith(PREFIX)
+
+    /**
+     * Tail the store's journals for the requested field streams, through the same live feed
+     * adaptor the MT5 poller uses. A bad reference fails HERE, at feed start, rather than
+     * reading as undefined for the life of the session.
+     *
+     * The reconnect budget is effectively unbounded: a hub going stale is reported to the feed
+     * as a disconnect and to strategies through `hub.health`, but it must never END the feed --
+     * that would take the price ticks down with it.
+     */
+    override fun liveTicks(symbols: List<String>): TickFeed {
+        val problems = validateHubStreams(root, symbols)
+        require(problems.isEmpty()) { "hub data problems:\n  " + problems.joinToString("\n  ") }
+        val fieldSymbols = symbols.filter { runCatching { HubStreamSymbol.parse(it) }.isSuccess }
+        return LiveTickFeed(
+            HubTailSource(root, fieldSymbols, policy, staleAfterMs = staleAfterMs),
+            reconnectBudgetMs = Long.MAX_VALUE / 4,
+        )
+    }
 
     override fun ticks(
         symbol: String,

@@ -270,6 +270,8 @@ class Backtest(
             calendar: TradingCalendar = TradingCalendar.crypto(),
             store: DataStore,
             request: MarketRequest,
+            /** The qkt-data-hub store to serve `HUB:` streams from; null resolves the local default. */
+            hubStoreRoot: java.nio.file.Path? = null,
             candleWindow: TimeWindow? = null,
             cadence: SampleCadence? = null,
             startingBalance: BigDecimal = BigDecimal.ZERO,
@@ -333,7 +335,7 @@ class Backtest(
                         add(SymbolPattern.prefix("MACRO:") to MacroMarketSource(MacroSeriesStore(store.root)))
                     }
                     if (request.symbols.any { it.startsWith(HubMarketSource.PREFIX) }) {
-                        val root = hubRoot(store.root)
+                        val root = hubStoreRoot ?: hubRoot(store.root)
                         // Fail before the first tick rather than after the report: a mistyped
                         // field would otherwise be undefined for the whole run, and the result
                         // would read as a strategy that found no setups rather than one that was
