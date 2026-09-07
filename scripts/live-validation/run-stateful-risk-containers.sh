@@ -546,9 +546,9 @@ for index in 0 1 2 3; do
         . as $events |
         ($contract[0]) as $c |
         [$events[] | select(.eventType == "com.qkt.events.StreamCandleEvent" and
-          .broker == "EXNESS" and .timeframe == $c.timeframe and (.payload | contains("symbol=" + $c.symbol)))] as $streams |
+          .broker == "EXNESS" and .timeframe == $c.timeframe and (.symbol == $c.symbol or ((.payload // "") | contains("symbol=" + $c.symbol))))] as $streams |
         [$events[] | select(.eventType == "com.qkt.events.StrategyCandleEvaluatedEvent" and
-          .strategyId == $strategy and .timeframe == $c.timeframe and (.payload | contains("symbol=" + $c.symbol)))] as $evaluations |
+          .strategyId == $strategy and .timeframe == $c.timeframe and (.symbol == $c.symbol or ((.payload // "") | contains("symbol=" + $c.symbol))))] as $evaluations |
         [$events[] | select(.eventType == "com.qkt.events.RiskEvent.Halted" and
           (if $c.expectedHalt.strategyId == null then .strategyId == null else .strategyId == $c.expectedHalt.strategyId end))] as $halts |
         [$events[] | select(.eventType == "com.qkt.events.RuleDecisionEvent" and
