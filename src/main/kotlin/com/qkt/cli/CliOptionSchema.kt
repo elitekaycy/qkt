@@ -15,6 +15,7 @@ internal object CliOptionSchemas {
             "starting-balance",
             "symbols",
             "data-root",
+            "hub-root",
             "fetcher",
             "fetcher-script",
             "instruments",

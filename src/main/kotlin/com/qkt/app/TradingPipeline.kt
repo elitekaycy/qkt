@@ -617,7 +617,9 @@ class TradingPipeline(
         (orderManager.getOrder(clientOrderId)?.cumulativeFilledQuantity ?: BigDecimal.ZERO).add(sliceQuantity)
 
     fun ingest(tick: Tick) {
-        val isMacroObservation = tick.symbol.startsWith("MACRO:")
+        val isMacroObservation =
+            com.qkt.dsl.compile
+                .isObservationSymbol(tick.symbol)
         // Hard floor on the most exposed input boundary the engine has: one glitched
         // tick (zero/negative price, crossed quotes) marks every open position wrong,
         // fires engine-held triggers, and poisons indicators for a full window. Drop
