@@ -9,6 +9,7 @@ import com.qkt.dsl.ast.CancelAll
 import com.qkt.dsl.ast.Close
 import com.qkt.dsl.ast.CloseAll
 import com.qkt.dsl.ast.ExprAst
+import com.qkt.dsl.ast.HUB_BROKER
 import com.qkt.dsl.ast.Latch
 import com.qkt.dsl.ast.Log
 import com.qkt.dsl.ast.OcoEntry
@@ -36,7 +37,10 @@ class AstCompiler {
         rawAst: StrategyAst,
         overrides: Map<String, String> = emptyMap(),
     ): Strategy {
-        val ast = ParamSubstitution.apply(rawAst, overrides)
+        // Hub datasets are expanded into one stream per referenced field before anything else
+        // sees the AST, so every later stage handles a hub field exactly like a candle close.
+        val expanded = HubFieldExpansion.apply(ParamSubstitution.apply(rawAst, overrides))
+        val ast = expanded.ast
         // Real streams keep their venue identity; each basket is a synthetic stream with a
         // `BASKET:` identity whose composite candle is written into the hub at sync time.
         val streams: Map<String, HubKey> =
@@ -96,7 +100,15 @@ class AstCompiler {
             }
         // Macro series (MACRO:) are read-only — they carry a published statistic, not a tradeable
         // price. Reject any order action targeting one at compile time (#440).
-        val readOnlyAliases = streams.filterValues { it.broker == "MACRO" || it.broker == SeriesSymbols.BROKER }.keys
+        // A hub dataset alias was expanded away above, so it is refused by name; its hidden
+        // per-field streams are refused by broker. Both carry a published statistic, not a price.
+        val readOnlyAliases =
+            streams
+                .filterValues {
+                    it.broker == "MACRO" ||
+                        it.broker == SeriesSymbols.BROKER ||
+                        it.broker.equals(HUB_BROKER, ignoreCase = true)
+                }.keys + expanded.datasetAliases
         whenThens.forEach { rejectReadOnlyOrders(it.action, readOnlyAliases) }
         validateBaskets(ast)
         validateCompleteBrackets(ast)

@@ -80,7 +80,7 @@ class IndicatorBinding private constructor(
             IndicatorInput.NUMERIC_SERIES -> {
                 val v: BigDecimal =
                     when (field) {
-                        "close", "price" -> ctx.candle.close
+                        "close", "price", "value" -> ctx.candle.close
                         "open" -> ctx.candle.open
                         "high" -> ctx.candle.high
                         "low" -> ctx.candle.low
@@ -333,7 +333,7 @@ class IndicatorBinding private constructor(
         ): IndicatorBinding =
             when (spec.inputKind) {
                 IndicatorInput.NUMERIC_SERIES -> {
-                    require(seriesArg.field in setOf("close", "open", "high", "low", "volume", "price")) {
+                    require(seriesArg.field in setOf("close", "value", "open", "high", "low", "volume", "price")) {
                         "Indicator ${call.name} series field must be numeric: got ${seriesArg.field}"
                     }
                     streamFed(call, ind, seriesArg.stream, seriesArg.field, spec.inputKind)

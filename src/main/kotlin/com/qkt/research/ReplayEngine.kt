@@ -392,6 +392,7 @@ class ReplayEngine(
                 strategyIds = strategies.map { it.first },
                 startingBalance = startingBalance,
                 candleSymbols = symbols.toSet(),
+                windowStartMs = initialTimestamp,
             )
 
         autocorr = ReturnAutocorrCollector(bus)

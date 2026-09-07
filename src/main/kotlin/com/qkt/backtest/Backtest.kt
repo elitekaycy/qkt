@@ -8,6 +8,9 @@ import com.qkt.marketdata.HistoricalTickFeed
 import com.qkt.marketdata.MergingTickFeed
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.TickFeed
+import com.qkt.marketdata.hub.HubMarketSource
+import com.qkt.marketdata.hub.hubRoot
+import com.qkt.marketdata.hub.validateHubStreams
 import com.qkt.marketdata.source.BarTickFeed
 import com.qkt.marketdata.source.CompositeMarketSource
 import com.qkt.marketdata.source.LocalMarketSource
@@ -267,6 +270,8 @@ class Backtest(
             calendar: TradingCalendar = TradingCalendar.crypto(),
             store: DataStore,
             request: MarketRequest,
+            /** The qkt-data-hub store to serve `HUB:` streams from; null resolves the local default. */
+            hubStoreRoot: java.nio.file.Path? = null,
             candleWindow: TimeWindow? = null,
             cadence: SampleCadence? = null,
             startingBalance: BigDecimal = BigDecimal.ZERO,
@@ -321,16 +326,28 @@ class Backtest(
                     binaryBarStore = if (forceBars) binaryBarStore else null,
                 )
             // MACRO: streams (daily yields/real rates) read from the macro store via a point-in-time
-            // source; everything else falls through to the tick store. Non-MACRO runs are unchanged.
+            // source, and HUB: streams read a qkt-data-hub store the same way. Both are routed only
+            // when a run actually declares one, so a run that binds neither constructs exactly the
+            // object graph it constructed before either existed and cannot change behaviour.
+            val observationRoutes: List<Pair<SymbolPattern, MarketSource>> =
+                buildList {
+                    if (request.symbols.any { it.startsWith("MACRO:") }) {
+                        add(SymbolPattern.prefix("MACRO:") to MacroMarketSource(MacroSeriesStore(store.root)))
+                    }
+                    if (request.symbols.any { it.startsWith(HubMarketSource.PREFIX) }) {
+                        val root = hubStoreRoot ?: hubRoot(store.root)
+                        // Fail before the first tick rather than after the report: a mistyped
+                        // field would otherwise be undefined for the whole run, and the result
+                        // would read as a strategy that found no setups rather than one that was
+                        // never able to evaluate its own rule.
+                        val problems = validateHubStreams(root, request.symbols)
+                        require(problems.isEmpty()) { "hub data problems:\n  " + problems.joinToString("\n  ") }
+                        add(SymbolPattern.prefix(HubMarketSource.PREFIX) to HubMarketSource(root))
+                    }
+                }
             val source: MarketSource =
-                if (request.symbols.any { it.startsWith("MACRO:") }) {
-                    CompositeMarketSource(
-                        routes =
-                            listOf(
-                                SymbolPattern.prefix("MACRO:") to MacroMarketSource(MacroSeriesStore(store.root)),
-                            ),
-                        fallback = localSource,
-                    )
+                if (observationRoutes.isNotEmpty()) {
+                    CompositeMarketSource(routes = observationRoutes, fallback = localSource)
                 } else {
                     localSource
                 }
