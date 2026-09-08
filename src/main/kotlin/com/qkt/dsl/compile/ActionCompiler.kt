@@ -199,6 +199,19 @@ class ActionCompiler(
         }
     }
 
+    /**
+     * True when [stream] is not the stream whose bar is being evaluated — i.e. this action is
+     * ordering on a symbol other than the one that triggered the rule.
+     */
+    private fun crossStream(
+        ctx: EvalContext,
+        stream: String,
+    ): Boolean {
+        val target = ctx.streams[stream] ?: return false
+        val current = ctx.currentAlias
+        return if (current != null) current != stream else ctx.candle.symbol != target.qktSymbol
+    }
+
     private fun compileOcoEntry(action: OcoEntry): (EvalContext) -> List<Signal> {
         for (leg in listOf(action.leg1, action.leg2)) {
             val legTimes =
@@ -524,6 +537,23 @@ class ActionCompiler(
                                     "(strategy=${ctx.strategyContext.strategyId}, stream=$stream)",
                             )
                             skippedUndefinedLogged = true
+                        }
+                        // A rule firing on one stream's bar can order on another, and that order
+                        // prices itself from ITS OWN stream's last closed candle. Before that
+                        // stream has closed one there is no price and the order cannot be built.
+                        // Say so as a suppressed signal rather than returning nothing: a dropped
+                        // cross-stream order is otherwise invisible in the trade record, and it
+                        // is the kind of silence that costs a leg of a hedge without a trace.
+                        // The same-stream case is ordinary warm-up and stays quiet.
+                        if (crossStream(ctx, stream)) {
+                            return@buySell listOf(
+                                Signal.Suppressed(
+                                    symbol = symbol,
+                                    reason =
+                                        "entry price for '$stream' is undefined: it has not closed a candle yet, " +
+                                            "and this rule fired on another stream's bar. Declare WARMUP on '$stream'.",
+                                ),
+                            )
                         }
                         return@buySell emptyList()
                     }

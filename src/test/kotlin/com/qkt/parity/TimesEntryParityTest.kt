@@ -395,7 +395,8 @@ class TimesEntryParityTest {
             startingBalance = BigDecimal("100000"),
         )
 
-        // fires on the very first bar: eur has closed nothing, so only the gold leg is placed
+        // fires on the very first bar: eur has closed nothing, so only the gold leg is placed --
+        // the dropped leg is reported as a suppressed signal (see CrossStreamSuppressionTest)
         assertThat(run("first_bar", listOf("100", "100", "100")).backtest.trades.map { it.symbol })
             .containsExactly(X)
         // fires once eur has closed a bar: both legs are placed
