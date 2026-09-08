@@ -483,6 +483,11 @@ Book-risk controls apply to portfolio/book evaluation and portfolio daemon flows
 | Key | Type | Default | Notes |
 |---|---|---|---|
 | `book_risk.capital` | decimal | unset | Required for drawdown-style book risk to form a basis. |
+
+> **`book_risk` applies to portfolio deployments only.** A strategy deployed on its own is
+> not bounded by these limits — `BookRiskController` is built by the portfolio deployer alone. The
+> daemon warns at start when the block is present, and total notional is otherwise unbounded for a
+> standalone strategy. See parity catalog row A23.
 | `book_risk.limits.max_gross_exposure` | decimal | unset | Gross exposure cap in account currency. |
 | `book_risk.limits.max_net_exposure` | decimal | unset | Net exposure cap in account currency. |
 | `book_risk.limits.max_symbol_concentration` | decimal | unset | Fractional single-symbol concentration cap. |
