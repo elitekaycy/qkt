@@ -145,6 +145,7 @@ object WarmupRequirements {
         out: MutableMap<String, Int>,
     ) {
         opts.sizing?.let { walkSizing(it, out) }
+        opts.times?.let { walkExpr(it, out) }
         opts.orderType?.let { walkOrderType(it, out) }
         opts.tif?.let { if (it is Gtd) walkExpr(it.until, out) }
         opts.bracket?.stopLoss?.let { walkChildPrice(it, out) }
