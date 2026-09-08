@@ -38,6 +38,7 @@ enum class TokenKind {
     STACK,
     STAGE,
     SPACING,
+    TIMES,
     WITHIN,
     AFTER,
     DURATION,

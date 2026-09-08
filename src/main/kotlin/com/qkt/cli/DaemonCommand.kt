@@ -412,6 +412,22 @@ class DaemonCommand(
         val startedAt = Instant.now()
         val stopLatch = CountDownLatch(1)
 
+        // `book_risk` is enforced by the portfolio deployer alone: a standalone strategy is
+        // deployed through StrategyHandle, which never builds a BookRiskController. A config that
+        // declares gross- or net-exposure limits and then deploys single strategies therefore
+        // reads as protected while nothing bounds total notional — measured on a demo account, a
+        // 100-leg burst reached roughly 1.16x capital against a declared 0.60. Say so once, at
+        // start, rather than let the silence imply a limit that is not there (catalog row A23).
+        if (cfg.bookRisk?.limits != null) {
+            org.slf4j.LoggerFactory
+                .getLogger("com.qkt.cli.DaemonCommand")
+                .warn(
+                    "book_risk limits are configured but are enforced only for PORTFOLIO deployments; " +
+                        "strategies deployed individually are not bounded by them. Deploy as a " +
+                        "portfolio, or bound exposure inside the strategy.",
+                )
+        }
+
         val portfolioDeployer =
             com.qkt.cli.daemon.portfolio
                 .PortfolioDeployer(

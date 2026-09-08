@@ -59,6 +59,7 @@ internal object GeneratedStrategyReplay {
         dailyDdBasis: DailyDrawdownBasis = DailyDrawdownBasis.BALANCE,
         totalDdBasis: DrawdownBasis = DrawdownBasis.STATIC,
         haltRules: () -> List<HaltRule> = { emptyList() },
+        runawayMaxRoundTrips: Int = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_ROUND_TRIPS,
     ): DslParityHarness.Result {
         val candles =
             (closes + closes.last()).mapIndexed { index, close -> candle(close, index) }
@@ -80,6 +81,7 @@ internal object GeneratedStrategyReplay {
             dailyDdBasis = dailyDdBasis,
             totalDdBasis = totalDdBasis,
             haltRules = haltRules,
+            runawayMaxRoundTrips = runawayMaxRoundTrips,
         )
     }
 
@@ -101,6 +103,7 @@ internal object GeneratedStrategyReplay {
         dailyDdBasis: DailyDrawdownBasis = DailyDrawdownBasis.BALANCE,
         totalDdBasis: DrawdownBasis = DrawdownBasis.STATIC,
         haltRules: () -> List<HaltRule> = { emptyList() },
+        runawayMaxRoundTrips: Int = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_ROUND_TRIPS,
     ): DslParityHarness.Result {
         val symbols = candlesBySymbol.keys.toList()
         val allCandles = candlesBySymbol.values.flatten()
@@ -267,6 +270,7 @@ internal object GeneratedStrategyReplay {
                 dailyDdBasis = dailyDdBasis,
                 totalDdBasis = totalDdBasis,
                 haltRules = haltRules,
+                runawayMaxRoundTrips = runawayMaxRoundTrips,
             )
         assertThat(liveParity.live).isEqualTo(liveParity.backtest)
         assertThat(liveParity.backtest.rejections).hasSize(expectedRejectionCount)
