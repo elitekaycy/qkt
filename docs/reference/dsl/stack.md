@@ -1,6 +1,6 @@
 # STACK — pyramiding
 
-Turn one entry signal into N layered orders. Each layer fires at its own price; all layers share a common `BRACKET`. Unfilled layers cancel automatically when the trade exits or after a time fence.
+Turn one entry signal into N layered orders. Each layer fires at its own price and carries its own copy of the `BRACKET`, anchored to that layer's fill. Unfilled layers cancel automatically when the trade exits or after a time fence.
 
 The classic use case: an entry signal is right but you don't want full size on day 1 — you'd rather add to a winning trade as confirmation comes. `STACK` is qkt's pyramiding primitive.
 
@@ -36,7 +36,7 @@ If the seed fills at $67,000:
 - **Layer 3** — triggers when price reaches $67,400 (seed + 400)
 - After 4 hours, any unfilled layer abandons
 
-If price hits $67,500 then reverses to $66,700 (stop), only layers 1+2 filled, both close out at the shared stop.
+If price hits $67,500 then reverses, only layers 1+2 filled. Each closes on its own stop: layer 1 at $66,700 (its $67,000 fill less 300) and layer 2 at $66,900 (its $67,200 fill less 300).
 
 ### Average-down example
 
@@ -68,7 +68,9 @@ Each layer:
 
 ```qkt
 <size>                          -- seed: fires at market
-<size> AT <price_expr>          -- triggers at price (market order on touch)
+<size> AT <price_expr>          -- fires when price touches the level: a stop when the level
+                                --   is beyond the seed in the trade direction, a resting
+                                --   limit when it is behind the seed (an average-down add)
 <size> LIMIT AT <price_expr>    -- limit order at price (waits)
 ```
 
@@ -111,11 +113,32 @@ BRACKET { STOP_LOSS BY 800, TAKE_PROFIT BY 400 }
 
 ## How fills and brackets work together
 
-When a layer fills, the **shared bracket** applies to the **combined position**. The stop-loss and take-profit prices are set once at seed-fill time and don't move as more layers fill (unless you also use `TRAILING_STOP`).
+The `BRACKET` clause is written once for the whole stack, and **each layer gets its own copy of
+it, anchored to that layer's own fill price**. A `BY` distance therefore means the same distance
+for every layer, measured from wherever that layer filled — not one shared price computed at
+seed-fill time.
 
-Example: seed fills at $67,000 with `BRACKET { STOP_LOSS BY 300 }` → shared stop at $66,700. When layer 2 fills at $67,200, the stop remains at $66,700 — layer 2's individual loss tolerance is $500, not $300.
+Example: `BRACKET { STOP_LOSS BY 4, TAKE_PROFIT BY 12 }` on a stack seeded at $100 with layers at
+$105 and $110:
 
-This is by design — the stop is the **portfolio-level safety net**, not per-layer. If you want per-layer stops, you need separate strategies, not STACK.
+| Layer | Fill | Stop | Target |
+|---|---|---|---|
+| 1 (seed) | 100 | 96 | 112 |
+| 2 | 105 | 101 | 117 |
+| 3 | 110 | 106 | 122 |
+
+Every layer carries the same 4-point risk and the same 12-point reward. A move back down through
+106, then 101, then 96 closes layer 3, then layer 2, then layer 1 — each on its own stop, as
+separate fills.
+
+Two consequences worth planning for:
+
+- **Each layer exits independently.** A stack that filled ten layers produces ten closing fills,
+  not one netted close, and pays commission on each. A rule-driven `CLOSE <stream>` is the way to
+  take the whole position out in one instruction.
+- **There is no basket-level stop or target.** If you want "flatten the whole ladder once the
+  combined position is N points above its average entry", write it as a rule over
+  `POSITION.<stream>.entry_price` and `CLOSE`, not as a `BRACKET`.
 
 ## Time fences
 
@@ -171,7 +194,7 @@ As price rises and more layers fill, the trail follows the highest point. Locks 
 
 - **`STACK N` includes the seed.** `STACK 3` = 1 seed + 2 adds, not 1 + 3.
 - **Direction matters.** `ABOVE` for buys = pyramid-up; `BELOW` for buys = average-down. For sells, it's reversed: `ABOVE` for sells = average-up (short adds as price rises against you); `BELOW` for sells = pyramid-down (short adds as price falls in your favor).
-- **Shared bracket = portfolio stop.** Don't expect each layer to have its own stop. If you need that, run separate strategies.
+- **The bracket is per layer, not a portfolio stop.** Every layer gets the same distance measured from its own fill, so a filled stack exits as several separate closes. For a basket-level exit, write a rule over `POSITION.<stream>.entry_price` and `CLOSE`.
 - **Time fence starts at seed fill.** Not at signal time. If your seed is a limit that takes 20 minutes to fill, the 4h timer starts after the 20 minutes.
 - **Margin/sizing checks happen at each layer.** A layer that would exceed `max-position-pct` is rejected at fill time, not pre-emptively cancelled. The seed succeeds; later layers may fail.
 - **Cancel via `CANCEL <stream>`.** Cancels pending stack layers but leaves filled position alone. Pair with `CLOSE <stream>` for a full unwind.
