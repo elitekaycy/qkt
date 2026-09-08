@@ -72,10 +72,24 @@ venue_symbol="$(jq -er '.armedScenario.venueSymbol' "$expected")"
 expected_symbol="$(jq -er '.armedScenario.symbol' "$expected")"
 starting_balance="$(jq -er '.account.startingBalance' "$expected")"
 max_drift_points="$(jq -er '.armedScenario.maximumEntryAnchorDriftPoints' "$expected")"
+second_symbol="$(jq -r '.armedScenario.secondSymbol // ""' "$expected")"
 case "$expected_symbol:$venue_symbol" in
     EXNESS:EURUSD:EURUSDm|EXNESS:GBPUSD:GBPUSDm) symbol_point="0.00001" ;;
     *) fail "scenario is not in the reviewed live-vs-replay drift set: $expected_symbol/$venue_symbol" ;;
 esac
+# A scenario may trade a second instrument whose point is orders of magnitude coarser: gold
+# quotes to 0.001 where EURUSD quotes to 0.00001, so the same dollar move reads a hundred times
+# larger in points. The replayed trade records carry no symbol, so a fill cannot be attributed
+# back to its instrument here; the gate therefore uses the COARSEST point in the scenario, which
+# keeps it honest for a single-symbol run and prevents a mixed run from failing on unit confusion
+# alone. Tighten by comparing one instrument at a time.
+if [ -n "$second_symbol" ]; then
+    case "$second_symbol" in
+        XAUUSD) symbol_point="0.001" ;;
+        GBPUSD) : ;;
+        *) fail "second symbol is not in the reviewed drift set: $second_symbol" ;;
+    esac
+fi
 drift_limit="$(awk -v p="$symbol_point" -v n="$max_drift_points" 'BEGIN{printf "%.8f", p*n}')"
 
 mkdir -m 700 "$output" "$output/source" "$output/logs" "$output/comparison"

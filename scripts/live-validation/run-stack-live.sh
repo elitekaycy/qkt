@@ -39,6 +39,16 @@ magic=""; symbol="EURUSD"; min_legs=2; hold_seconds=120; timeout_seconds=300; ar
 # Aggregate position cap for the strategy. Every leg of a burst or stack counts toward it, so a
 # run of N legs at 0.01 lots needs at least N/100 here or the tail is rejected pre-trade.
 max_position_size="0.25"
+# Optional second stream, declared as alias `g`. A multi-symbol scenario proves a rule can order
+# on a stream other than the one whose bar fired it -- the case where a bracketed cross-stream
+# order used to be dropped silently before its own stream had closed a candle.
+second_symbol=""
+# How far a live layer fill may sit from its replayed twin before the comparison calls it a
+# divergence, in POINTS of the instrument. A burst is placed serially, so the market moves between
+# legs and each fills at its own price while a backtest fills them all at one -- the dispersion is
+# real execution drift, and it scales with the instrument's volatility measured in its own points.
+# 80 suits a 0.00001-point FX pair; a 0.001-point metal needs far more for the same dollar move.
+max_entry_drift_points=80
 cli="$repo_root/build/install/qkt/bin/qkt"
 
 while [ "$#" -gt 0 ]; do
@@ -58,6 +68,8 @@ while [ "$#" -gt 0 ]; do
         --arm) arm="${2:-}"; shift 2 ;;
         --http-timeout-ms) http_timeout_ms="${2:-}"; shift 2 ;;
         --max-position-size) max_position_size="${2:-}"; shift 2 ;;
+        --second-symbol) second_symbol="${2:-}"; shift 2 ;;
+        --max-entry-drift-points) max_entry_drift_points="${2:-}"; shift 2 ;;
         --help|-h) usage; exit 0 ;;
         *) fail "unknown argument: $1" ;;
     esac
@@ -81,6 +93,11 @@ done
 for tool in jq curl flock unzip sha256sum; do command -v "$tool" >/dev/null || fail "$tool is required"; done
 
 venue_symbol="${symbol}m"
+second_venue_symbol=""
+if [ -n "$second_symbol" ]; then
+    [[ "$second_symbol" =~ ^(XAUUSD|GBPUSD)$ ]] || fail "--second-symbol must be XAUUSD or GBPUSD"
+    second_venue_symbol="${second_symbol}m"
+fi
 strategy_name="${scenario_id}_${variant}"
 qkt_version="$("$cli" --version | head -n 1)"
 qkt_commit="$(printf '%s\n' "$qkt_version" | sed -nE 's/.*\(([0-9a-f]{8,40})\).*/\1/p')"
@@ -155,6 +172,45 @@ EOF
     THEN CLOSE x
 EOF
             ;;
+        multi_symbol_times)
+            # The headline shape: one condition, a burst on gold and the opposite side on EURUSD
+            # in the same rule. Gold quotes near 4394 with a 0.001 point, so its bracket is sized
+            # in dollars while EURUSD's is in pips. Both streams declare WARMUP, which is what
+            # gives the cross-stream order a price to build from on the bar the rule fires.
+            cat <<EOF
+    WHEN POSITION.x = 0 AND POSITION.g = 0 AND OPEN_ORDERS.x = 0 AND TRADES.today = 0
+    THEN BUY g SIZING 0.01 BRACKET { STOP LOSS BY 12.0, TAKE PROFIT BY 24.0 } TIMES 5
+       ; SELL x SIZING 0.01 BRACKET { STOP LOSS BY 0.0030, TAKE PROFIT BY 0.0060 } TIMES 10
+
+    WHEN POSITION.g <> 0 AND POSITION.g.holding_duration >= $hold_seconds
+    THEN CLOSE g
+
+    WHEN POSITION.x <> 0 AND POSITION.x.holding_duration >= $hold_seconds
+    THEN CLOSE x
+EOF
+            ;;
+        at_below_seed)
+            # The below-seed fix under live fire. Bare `AT entry - d` (market-on-touch), NOT the
+            # LIMIT AT workaround: these rungs sit behind the seed, so they must rest as limits.
+            # Before the fix they were armed as buy STOPS below the market, which a venue triggers
+            # the instant they are placed -- the whole ladder would fill at once on the first
+            # adverse tick instead of at its stated levels.
+            cat <<EOF
+    WHEN POSITION.x = 0 AND OPEN_ORDERS.x = 0 AND TRADES.today = 0
+    THEN BUY x STACK [
+           0.01,
+           0.01 AT entry - 0.00002,
+           0.01 AT entry - 0.00004,
+           0.01 AT entry - 0.00006,
+           0.01 AT entry - 0.00008,
+           0.01 AT entry - 0.00010
+         ]
+         BRACKET { STOP LOSS BY 0.0030, TAKE PROFIT BY 0.0060 }
+
+    WHEN POSITION.x > 0 AND POSITION.x.holding_duration >= $hold_seconds
+    THEN CANCEL x ; CLOSE x
+EOF
+            ;;
         times_burst_30)
             # The TIMES clause under live fire: one condition, thirty independent bracketed
             # orders. Each is its own ticket with its own protection, and the strategy's timed
@@ -223,6 +279,11 @@ jq -e '.ok == true and (.data | length) == 0' "$evidence/positions-initial.json"
 gateway_get "/symbol_info/$venue_symbol" > "$evidence/symbol-info.json"
 jq -e '(.data // .) | .point == 0.00001 and .volume_min == 0.01' "$evidence/symbol-info.json" >/dev/null ||
     fail "$venue_symbol is not the reviewed 0.00001-point, 0.01-lot instrument"
+if [ -n "$second_venue_symbol" ]; then
+    gateway_get "/symbol_info/$second_venue_symbol" > "$evidence/symbol-info-second.json"
+    jq -e '(.data // .) | .volume_min == 0.01 and .point > 0' "$evidence/symbol-info-second.json" >/dev/null ||
+        fail "$second_venue_symbol is not a 0.01-lot instrument"
+fi
 starting_balance="$(jq -r '.balance | tostring' "$evidence/gateway-account-initial.json")"
 leverage="$(jq -r '.leverage' "$evidence/gateway-account-initial.json")"
 
@@ -300,7 +361,9 @@ insights:
 EOF
 
 {
-    printf 'STRATEGY %s VERSION 1\n\nSYMBOLS\n    x = EXNESS:%s EVERY 1m WARMUP 10 BARS\n\nRULES\n' "$strategy_name" "$symbol"
+    printf 'STRATEGY %s VERSION 1\n\nSYMBOLS\n    x = EXNESS:%s EVERY 1m WARMUP 10 BARS\n' "$strategy_name" "$symbol"
+    [ -n "$second_symbol" ] && printf '    g = EXNESS:%s EVERY 1m WARMUP 10 BARS\n' "$second_symbol"
+    printf '\nRULES\n'
     strategy_body
 } > "$output/strategies/armed/$strategy_name.qkt"
 "$cli" parse "$output/strategies/armed/$strategy_name.qkt" > "$evidence/parse.json" 2>&1 ||
@@ -310,13 +373,14 @@ created_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 jq -n --arg id "$scenario_id" --arg variant "$variant" --arg strategy "$strategy_name" --arg symbol "EXNESS:$symbol" \
     --arg venueSymbol "$venue_symbol" --arg balance "$starting_balance" --argjson leverage "$leverage" \
     --argjson login "$expected_login" --arg server "$expected_server" --argjson magic "$magic" \
-    --argjson minLegs "$min_legs" --argjson holdSeconds "$hold_seconds" '{
+    --argjson minLegs "$min_legs" --argjson holdSeconds "$hold_seconds" --argjson maxDrift "$max_entry_drift_points" \
+    --arg secondSymbol "${second_symbol:-}" '{
       schema: "qkt-live-stack-scenario-v1",
       scenarioId: $id, variant: $variant, strategy: $strategy,
       account: {login: $login, server: $server, tradeMode: "demo", currency: "USD", leverage: $leverage, startingBalance: $balance},
-      armedScenario: {symbol: $symbol, venueSymbol: $venueSymbol, expectedContractSize: "100000",
+      armedScenario: {symbol: $symbol, venueSymbol: $venueSymbol, secondSymbol: $secondSymbol, expectedContractSize: "100000",
                       quantityLots: "0.01", minimumLegs: $minLegs, holdSeconds: $holdSeconds,
-                      maximumEntryAnchorDriftPoints: 80, exitOwner: "strategy"}
+                      maximumEntryAnchorDriftPoints: $maxDrift, exitOwner: "strategy"}
     }' > "$output/expected.json"
 jq -n --arg id "$scenario_id" --arg createdAt "$created_at" --arg commit "$qkt_commit" --arg gw "$gateway_url" --argjson magic "$magic" '{
       schema: "qkt-live-stack-scenario-v1", scenarioId: $id, createdAt: $createdAt, qktCommit: $commit, qktDirty: false,

@@ -25,6 +25,15 @@ interface PositionProvider {
      * live view where the implementation allows; callers must not retain it across mutations.
      */
     fun symbols(): Set<String> = allPositions().keys
+
+    /**
+     * Symbols this strategy has live, not-yet-filled entry orders on. A concurrency limit that
+     * counts only filled positions can be outrun by a burst: every order in the burst is checked
+     * before any of its fills come back, so each one sees an empty book and is approved. Counting
+     * in-flight symbols closes that, and makes the limit bind identically whether fills arrive
+     * between submissions (backtest) or after all of them (live).
+     */
+    fun pendingEntrySymbols(strategyId: String? = null): Set<String> = emptySet()
 }
 
 /**
@@ -47,6 +56,9 @@ fun interface PendingOrderExposureProvider {
         side: Side,
         strategyId: String?,
     ): BigDecimal
+
+    /** Symbols with live, not-yet-filled entry orders in the requested strategy scope. */
+    fun symbolsFor(strategyId: String?): Set<String> = emptySet()
 
     companion object {
         /** Provider used when no order manager has been bound. */

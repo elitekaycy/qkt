@@ -486,6 +486,18 @@ class OrderManager(
         return dispatch(request)
     }
 
+    override fun symbolsFor(strategyId: String?): Set<String> {
+        val out = mutableSetOf<String>()
+        for ((id, entry) in exposureEntries) {
+            val request = entry.request
+            if (strategyId != null && request.strategyId != strategyId) continue
+            if (orders[id]?.state?.isTerminal == true) continue
+            if (request.quantity.subtract(entry.filledQuantity).signum() <= 0) continue
+            out.add(request.symbol)
+        }
+        return out
+    }
+
     override fun quantityFor(
         symbol: String,
         side: Side,

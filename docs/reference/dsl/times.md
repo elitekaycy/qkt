@@ -101,6 +101,10 @@ position cap counts every leg of the burst.
   stream a rule can trade.
 - **`CLOSE` nets.** Thirty legs closed by a rule become one closing order in the netting model
   used by backtests and the paper session; a hedging MT5 account closes each ticket separately.
+- **Every leg fills at its own price, live.** The backtest fills a whole burst at one price; the
+  venue fills each leg as it arrives, across the seconds the burst takes to place. A 5-leg gold
+  burst dispersed 316 points in 1.4 seconds; a 30-leg EURUSD burst drifted 2 points in 7. If the
+  edge is a few points a leg, the burst backtest's entry is optimistic.
 - **Risk limits apply per order, and per burst.** `max_position_size`, `max_open_positions` and
   `max_trades_per_day` all see N orders, not one. A burst sized for the venue can still be
   rejected by a per-strategy limit written for single trades.
