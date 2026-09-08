@@ -321,6 +321,22 @@ internal class GoldenReplayDataMaterializer(
                 emitted
             }
 
+    /**
+     * Whether two records of the same bar agree on what the bar was.
+     *
+     * One bar legitimately reaches the journal from three places: the tick aggregator's
+     * `CandleEvent`, the gateway's `StreamCandleEvent`, and -- when warmup ticks overlap the
+     * session -- a candle rehydrated from those ticks. Only the OHLC has to agree; a genuine
+     * disagreement there means the capture is corrupt and still fails closed.
+     *
+     * Volume and quotes deliberately do not. The aggregator counts the ticks it saw while the
+     * stream candle carries the venue's own figure, so the same bar arrives as `volume=1` on one
+     * path and `volume=0` on the other; and warmup ticks carry no bid/ask at all, so a rehydrated
+     * candle has no quotes to compare. Treating either as a conflict made an otherwise sound live
+     * capture refuse to materialize, which cost the ability to replay that session at all. The
+     * merged record keeps the values of the highest-priority provenance, so the captured bar wins
+     * over the reconstructed one.
+     */
     private fun sameCandle(
         left: Candle,
         right: Candle,
@@ -332,14 +348,14 @@ internal class GoldenReplayDataMaterializer(
             left.high.compareTo(right.high) == 0 &&
             left.low.compareTo(right.low) == 0 &&
             left.close.compareTo(right.close) == 0 &&
-            left.volume.compareTo(right.volume) == 0 &&
-            nullableDecimalEquals(left.bid, right.bid) &&
-            nullableDecimalEquals(left.ask, right.ask)
+            quotesCompatible(left.bid, right.bid) &&
+            quotesCompatible(left.ask, right.ask)
 
-    private fun nullableDecimalEquals(
+    /** Equal when both sides carry the quote; compatible when either side simply has none. */
+    private fun quotesCompatible(
         left: BigDecimal?,
         right: BigDecimal?,
-    ): Boolean = left == null && right == null || left != null && right != null && left.compareTo(right) == 0
+    ): Boolean = left == null || right == null || left.compareTo(right) == 0
 
     private fun provenancePriority(provenance: String): Int =
         when (provenance) {

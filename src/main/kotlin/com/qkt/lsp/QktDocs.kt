@@ -437,6 +437,9 @@ object QktDocs {
                 "`SIZING <N> PCT RISK [OF BOOK]` risks N% of strategy equity (or the portfolio book).",
             "STREAK" to "Trade-streak state namespace: `STREAK.wins`, `STREAK.losses`, `STREAK.banked`.",
             "BRACKET" to "Attaches a stop loss and/or take profit to an entry.",
+            "TIMES" to
+                "Repeat an entry: `BUY x SIZING 0.01 BRACKET { ... } TIMES 30` emits thirty independent orders " +
+                "in one evaluation. The count is an expression evaluated when the rule fires.",
             "ON_FILL" to
                 "OTO: child BUY/SELL orders placed only when the parent fills: " +
                 "`BUY x SIZING 1 ON_FILL { SELL y SIZING 1 }`. Children may use `entry` for the parent fill price.",

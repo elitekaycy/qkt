@@ -81,6 +81,40 @@ class MaxStrategyOpenPositionsTest {
             .contains("MaxStrategyOpenPositions", "ema_cross", "2", "max 2")
     }
 
+    /** A provider that reports live, not-yet-filled entry orders on the given symbols. */
+    private fun withInFlight(vararg symbols: String) =
+        object : com.qkt.positions.PositionProvider by global {
+            override fun pendingEntrySymbols(strategyId: String?): Set<String> = symbols.toSet()
+        }
+
+    @Test
+    fun `a burst cannot outrun the cap while its fills are still in flight`() {
+        // The live failure this guards. Every order of a burst is risk-checked before any of its
+        // fills come back, so counting only FILLED positions let each one see an empty book and
+        // pass: a strategy capped at two symbols opened a third. A backtest, where fills land
+        // between submissions, rejected it — same strategy, same config, two different answers.
+        val decision =
+            rule.evaluate(order(symbol = "SPX500"), withInFlight("XAUUSD", "EURUSD"))
+        assertThat(decision).isInstanceOf(Decision.Reject::class.java)
+        assertThat((decision as Decision.Reject).reason).contains("MaxStrategyOpenPositions", "max 2")
+    }
+
+    @Test
+    fun `an in-flight symbol counts once, not twice, alongside its own fill`() {
+        fill("ema_cross", "XAUUSD")
+        // XAUUSD is both filled and still adding; that is one symbol, so EURUSD still fits.
+        val decision = rule.evaluate(order(symbol = "EURUSD"), withInFlight("XAUUSD"))
+        assertThat(decision).isEqualTo(Decision.Approve)
+    }
+
+    @Test
+    fun `adding to a symbol already in flight is always approved`() {
+        // Every leg after the first in a same-symbol burst takes this path.
+        val decision =
+            rule.evaluate(order(symbol = "XAUUSD"), withInFlight("XAUUSD", "EURUSD"))
+        assertThat(decision).isEqualTo(Decision.Approve)
+    }
+
     @Test
     fun `count is per-strategy not global`() {
         fill("other_strat", "AAA")
