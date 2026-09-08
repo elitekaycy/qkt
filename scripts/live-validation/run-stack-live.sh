@@ -43,12 +43,18 @@ max_position_size="0.25"
 # on a stream other than the one whose bar fired it -- the case where a bracketed cross-stream
 # order used to be dropped silently before its own stream had closed a candle.
 second_symbol=""
+# Depth for the parameterised burst variant.
+burst_n=30
 # How far a live layer fill may sit from its replayed twin before the comparison calls it a
 # divergence, in POINTS of the instrument. A burst is placed serially, so the market moves between
 # legs and each fills at its own price while a backtest fills them all at one -- the dispersion is
 # real execution drift, and it scales with the instrument's volatility measured in its own points.
 # 80 suits a 0.00001-point FX pair; a 0.001-point metal needs far more for the same dollar move.
 max_entry_drift_points=80
+# Warmup bars for the second stream. Set to 0 to declare it WITHOUT warmup, which is how the
+# cross-stream drop reproduces: a rule firing on one stream's bar orders on another that has not
+# closed a candle yet, so the order cannot be priced and is reported as suppressed.
+second_warmup=10
 cli="$repo_root/build/install/qkt/bin/qkt"
 
 while [ "$#" -gt 0 ]; do
@@ -70,6 +76,8 @@ while [ "$#" -gt 0 ]; do
         --max-position-size) max_position_size="${2:-}"; shift 2 ;;
         --second-symbol) second_symbol="${2:-}"; shift 2 ;;
         --max-entry-drift-points) max_entry_drift_points="${2:-}"; shift 2 ;;
+        --second-warmup) second_warmup="${2:-}"; shift 2 ;;
+        --burst-n) burst_n="${2:-}"; shift 2 ;;
         --help|-h) usage; exit 0 ;;
         *) fail "unknown argument: $1" ;;
     esac
@@ -167,6 +175,30 @@ EOF
     WHEN POSITION.x = 0 AND OPEN_ORDERS.x = 0 AND TRADES.today < 3
     THEN BUY x SIZING 0.01
          BRACKET { STOP LOSS BY 0.0010, TAKE PROFIT BY 0.0003 }
+
+    WHEN POSITION.x > 0 AND POSITION.x.holding_duration >= $hold_seconds
+    THEN CLOSE x
+EOF
+            ;;
+        cross_stream_no_warmup)
+            # The cross-stream drop, deliberately provoked. The rule is gated on x alone and
+            # orders on g, which is declared WITHOUT warmup. On the bar this first fires, g has
+            # closed no candle, so its bracketed order cannot be priced. It used to vanish with
+            # only a log line; it now reports a suppressed signal naming the stream.
+            cat <<EOF
+    WHEN x.close > 0 AND POSITION.g = 0 AND TRADES.today = 0
+    THEN BUY g SIZING 0.01 BRACKET { STOP LOSS BY 12.0, TAKE PROFIT BY 24.0 }
+
+    WHEN POSITION.g <> 0 AND POSITION.g.holding_duration >= $hold_seconds
+    THEN CLOSE g
+EOF
+            ;;
+        times_burst_n)
+            # Depth probe: the same burst shape at whatever depth --burst-n asks for, to find
+            # where serial placement, the position cap, or the gateway timeout actually bites.
+            cat <<EOF
+    WHEN POSITION.x = 0 AND OPEN_ORDERS.x = 0 AND TRADES.today = 0
+    THEN BUY x SIZING 0.01 BRACKET { STOP LOSS BY 0.0030, TAKE PROFIT BY 0.0060 } TIMES $burst_n
 
     WHEN POSITION.x > 0 AND POSITION.x.holding_duration >= $hold_seconds
     THEN CLOSE x
@@ -362,7 +394,13 @@ EOF
 
 {
     printf 'STRATEGY %s VERSION 1\n\nSYMBOLS\n    x = EXNESS:%s EVERY 1m WARMUP 10 BARS\n' "$strategy_name" "$symbol"
-    [ -n "$second_symbol" ] && printf '    g = EXNESS:%s EVERY 1m WARMUP 10 BARS\n' "$second_symbol"
+    if [ -n "$second_symbol" ]; then
+        if [ "$second_warmup" -gt 0 ]; then
+            printf '    g = EXNESS:%s EVERY 1m WARMUP %s BARS\n' "$second_symbol" "$second_warmup"
+        else
+            printf '    g = EXNESS:%s EVERY 1m\n' "$second_symbol"
+        fi
+    fi
     printf '\nRULES\n'
     strategy_body
 } > "$output/strategies/armed/$strategy_name.qkt"
