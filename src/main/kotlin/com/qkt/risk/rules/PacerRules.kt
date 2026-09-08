@@ -12,7 +12,17 @@ import com.qkt.risk.RiskRule
 import com.qkt.risk.RiskState
 import com.qkt.risk.isRiskReducing
 
-/** Rejects risk-increasing orders after [maxTrades] entry fills in the current UTC day. */
+/**
+ * Rejects risk-increasing orders after [maxTrades] entry FILLS in the current UTC day.
+ *
+ * Known gap (catalog row A22): a burst outruns this cap live, because the whole burst is
+ * risk-checked before any of it fills and every order reads the same pre-burst total. Measured on
+ * a demo account: a strategy capped at sixty executed a hundred in one `TIMES 100` burst, while
+ * the backtest — where fills land between submissions — stopped it at sixty. Counting in-flight
+ * entries here is the obvious fix and is NOT yet applied: a first attempt changed the backtest's
+ * own count in a way that was not fully understood, and a half-understood change to a risk rule is
+ * worse than a documented gap. Cap burst depth explicitly until this is resolved.
+ */
 class MaxTradesPerDay(
     private val maxTrades: Int,
     private val ledger: PacerLedger,
@@ -29,7 +39,9 @@ class MaxTradesPerDay(
     ): Decision {
         if (strategyId != null && request.strategyId != strategyId) return Decision.Approve
         if (isRiskReducing(request, positions)) return Decision.Approve
-        val count = ledger.tradesToday(request.strategyId, nowMs(request, clock))
+        val count =
+            ledger.tradesToday(request.strategyId, nowMs(request, clock)) +
+                positions.pendingEntryOrderCount(request.side, request.strategyId)
         return if (count < maxTrades) {
             Decision.Approve
         } else {

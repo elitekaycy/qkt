@@ -163,6 +163,7 @@ private fun subst(
         stack = opts.stack?.let { subst(it, v, alias) },
         stackAts = opts.stackAts.map { subst(it, v, alias) },
         onFill = opts.onFill.map { subst(it, v, alias) },
+        times = opts.times?.let { subst(it, v, alias) },
         exitHooks =
             opts.exitHooks.copy(
                 onStop = opts.exitHooks.onStop.map { subst(it, v, alias) },
