@@ -212,6 +212,7 @@ fun collectStreamAliases(rule: WhenThen): Set<String> {
 
     fun walkOpts(opts: ActionOpts) {
         walkSizing(opts.sizing)
+        opts.times?.let { walkExpr(it) }
         walkOrderType(opts.orderType)
         walkTif(opts.tif)
         walkBracket(opts.bracket)

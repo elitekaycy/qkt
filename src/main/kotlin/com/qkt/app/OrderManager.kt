@@ -486,6 +486,43 @@ class OrderManager(
         return dispatch(request)
     }
 
+    /**
+     * Entries this strategy has in flight on [side], counted the way [quantityFor] counts
+     * exposure: one per group, plus each ungrouped order, and only on the requested side. The side
+     * filter is what separates entries from exits — an open position's protective stop and target
+     * rest on the opposite side and stay live until the position closes, so counting both sides
+     * reported a pending "entry" for every already-filled position and doubled the total.
+     */
+    override fun orderCountFor(
+        side: Side,
+        strategyId: String?,
+    ): Int {
+        var ungrouped = 0
+        val groups = mutableSetOf<String>()
+        for ((id, entry) in exposureEntries) {
+            val request = entry.request
+            if (request.side != side) continue
+            if (strategyId != null && request.strategyId != strategyId) continue
+            if (orders[id]?.state?.isTerminal == true) continue
+            if (request.quantity.subtract(entry.filledQuantity).signum() <= 0) continue
+            val groupId = entry.groupId
+            if (groupId == null) ungrouped++ else groups.add(groupId)
+        }
+        return ungrouped + groups.size
+    }
+
+    override fun symbolsFor(strategyId: String?): Set<String> {
+        val out = mutableSetOf<String>()
+        for ((id, entry) in exposureEntries) {
+            val request = entry.request
+            if (strategyId != null && request.strategyId != strategyId) continue
+            if (orders[id]?.state?.isTerminal == true) continue
+            if (request.quantity.subtract(entry.filledQuantity).signum() <= 0) continue
+            out.add(request.symbol)
+        }
+        return out
+    }
+
     override fun quantityFor(
         symbol: String,
         side: Side,
@@ -1810,7 +1847,7 @@ class OrderManager(
             val triggerPrice = resolveTriggerPrice(layer.trigger, anchor)
             val layerOrderId = "$stackId-l${layer.index}"
             val qty = resolveLayerQuantity(layer)
-            val pending = buildLayerOrder(layerOrderId, parent, layer, qty, triggerPrice)
+            val pending = buildLayerOrder(layerOrderId, parent, layer, qty, triggerPrice, anchor)
             val now = clock.now()
             track(
                 ManagedOrder(
@@ -1907,14 +1944,32 @@ class OrderManager(
         )
     }
 
+    /**
+     * Turn one layer into the venue order that fires it. A layer written as a plain touch
+     * (`AT price`, market on touch) becomes a stop when its trigger sits beyond the seed in the
+     * trade direction — price has to move through it — and a limit when the trigger sits behind
+     * the seed, where price has to come back to it. A buy stop below the market would be
+     * triggered the moment it was placed, which is not what "buy more when down 200" means.
+     * The compact `STACK n SPACING d BELOW` form already resolves this at compile time; this is
+     * the same rule applied to the layer-list form, whose triggers are only known once the seed
+     * fills. [anchor] is the seed fill (null for the seed layer itself).
+     */
     private fun buildLayerOrder(
         layerId: String,
         parent: OrderRequest.Stack,
         layer: LayerSpec,
         qty: BigDecimal,
         triggerPrice: BigDecimal?,
+        anchor: BigDecimal? = null,
     ): OrderRequest {
         val intent = layerEntryIntent(layerId, parent.symbol)
+        val restsBehindAnchor =
+            triggerPrice != null &&
+                anchor != null &&
+                (
+                    (parent.side == Side.BUY && triggerPrice < anchor) ||
+                        (parent.side == Side.SELL && triggerPrice > anchor)
+                )
         return when {
             triggerPrice == null ->
                 OrderRequest.Market(
@@ -1927,7 +1982,7 @@ class OrderManager(
                     strategyId = parent.strategyId,
                     legIntent = intent,
                 )
-            layer.orderType is com.qkt.dsl.ast.Limit ->
+            layer.orderType is com.qkt.dsl.ast.Limit || restsBehindAnchor ->
                 OrderRequest.Limit(
                     id = layerId,
                     symbol = parent.symbol,
