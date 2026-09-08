@@ -486,6 +486,31 @@ class OrderManager(
         return dispatch(request)
     }
 
+    /**
+     * Entries this strategy has in flight on [side], counted the way [quantityFor] counts
+     * exposure: one per group, plus each ungrouped order, and only on the requested side. The side
+     * filter is what separates entries from exits — an open position's protective stop and target
+     * rest on the opposite side and stay live until the position closes, so counting both sides
+     * reported a pending "entry" for every already-filled position and doubled the total.
+     */
+    override fun orderCountFor(
+        side: Side,
+        strategyId: String?,
+    ): Int {
+        var ungrouped = 0
+        val groups = mutableSetOf<String>()
+        for ((id, entry) in exposureEntries) {
+            val request = entry.request
+            if (request.side != side) continue
+            if (strategyId != null && request.strategyId != strategyId) continue
+            if (orders[id]?.state?.isTerminal == true) continue
+            if (request.quantity.subtract(entry.filledQuantity).signum() <= 0) continue
+            val groupId = entry.groupId
+            if (groupId == null) ungrouped++ else groups.add(groupId)
+        }
+        return ungrouped + groups.size
+    }
+
     override fun symbolsFor(strategyId: String?): Set<String> {
         val out = mutableSetOf<String>()
         for ((id, entry) in exposureEntries) {

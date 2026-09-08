@@ -44,6 +44,11 @@ class RiskEngine(
             ) = pendingExposure.quantityFor(symbol, side, strategyId)
 
             override fun pendingEntrySymbols(strategyId: String?) = pendingExposure.symbolsFor(strategyId)
+
+            override fun pendingEntryOrderCount(
+                side: com.qkt.common.Side,
+                strategyId: String?,
+            ) = pendingExposure.orderCountFor(side, strategyId)
         }
 
     /** Convenience constructor for tests / single-strategy setups with no halt rules. */
