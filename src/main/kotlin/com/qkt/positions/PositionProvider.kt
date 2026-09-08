@@ -34,6 +34,18 @@ interface PositionProvider {
      * between submissions (backtest) or after all of them (live).
      */
     fun pendingEntrySymbols(strategyId: String? = null): Set<String> = emptySet()
+
+    /**
+     * Count of this strategy's live, not-yet-filled entry orders on [side]. A per-day trade cap
+     * that counts only filled entries is outrun by a burst: the whole burst is risk-checked before
+     * any of it fills, so every order reads the same pre-burst total. [side] separates entries from
+     * exits — an open position's protective legs rest on the opposite side and stay live until it
+     * closes, so counting both sides reports a phantom entry for every filled position.
+     */
+    fun pendingEntryOrderCount(
+        side: Side,
+        strategyId: String? = null,
+    ): Int = 0
 }
 
 /**
@@ -59,6 +71,12 @@ fun interface PendingOrderExposureProvider {
 
     /** Symbols with live, not-yet-filled entry orders in the requested strategy scope. */
     fun symbolsFor(strategyId: String?): Set<String> = emptySet()
+
+    /** Number of live, not-yet-filled entry orders on [side] in the requested strategy scope. */
+    fun orderCountFor(
+        side: Side,
+        strategyId: String?,
+    ): Int = 0
 
     companion object {
         /** Provider used when no order manager has been bound. */

@@ -39,7 +39,9 @@ class MaxTradesPerDay(
     ): Decision {
         if (strategyId != null && request.strategyId != strategyId) return Decision.Approve
         if (isRiskReducing(request, positions)) return Decision.Approve
-        val count = ledger.tradesToday(request.strategyId, nowMs(request, clock))
+        val count =
+            ledger.tradesToday(request.strategyId, nowMs(request, clock)) +
+                positions.pendingEntryOrderCount(request.side, request.strategyId)
         return if (count < maxTrades) {
             Decision.Approve
         } else {

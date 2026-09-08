@@ -87,11 +87,10 @@ position cap counts every leg of the burst.
 
 ## Common gotchas
 
-- **Two caps do not bound a burst.** `max_trades_per_day` counts filled entries, so a burst is
-  checked before any of it fills and walks straight through it live (a 60/day strategy executed
-  100). `book_risk.max_gross_exposure` is ignored entirely outside a portfolio deployment. Bound
-  burst depth in the strategy itself — the `TIMES` count is the reliable limit. Catalog rows A22
-  and A23.
+- **`book_risk.max_gross_exposure` does not bound a burst.** It is ignored entirely outside a
+  portfolio deployment, so a standalone strategy has no aggregate notional cap: a 100-leg EURUSD
+  burst reached about 1.16x account capital against a declared 0.60. `max_trades_per_day` and
+  `max_open_positions` do bind correctly. Catalog row A23.
 - **The live runaway breaker counts closing fills.** It defaults to ten per strategy per ten
   minutes and halts the strategy *persistently* — an operator must run `qkt resume`. A burst of
   thirty entries that exits is thirty round trips, so it halts live while the backtest sails
