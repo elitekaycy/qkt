@@ -82,25 +82,19 @@ BRACKET {
 }
 ```
 
-## Scale-out (multi-leg take-profit)
+## Scale-out (multi-leg take-profit) — not implemented
 
-The take-profit can be a list of partial-exit legs, each with a fraction and a price:
+A bracket carries exactly one take-profit. A fractional multi-leg take-profit
+(`TAKE_PROFIT { 0.33 AT ..., 0.33 AT ... }`) does not parse and has no AST; earlier
+revisions of this page documented one that was never built.
 
-```qkt
-BUY btc SIZING 1.0
-BRACKET {
-  STOP_LOSS BY 2 PCT,
-  TAKE_PROFIT {
-    0.33 AT btc.close * 1.01,        -- exit 33% at +1%
-    0.33 AT btc.close * 1.02,        -- exit 33% more at +2%
-    0.34 AT btc.close * 1.05         -- exit final 34% at +5%
-  }
-}
-```
+To bank a position in pieces today, choose one of:
 
-The fractions sum to ≤ 1.0 (a sum > 1.0 is a parse error; < 1.0 leaves a runner that closes on stop or on a later `CLOSE` action).
-
-**When to use:** mean-reversion strategies, scaling out of trending moves to bank certainty.
+- **Repeat the entry instead of splitting the exit.** `BUY btc SIZING 0.01 TIMES 3` with a
+  different `TAKE_PROFIT` per action gives three independently-exiting positions and is the
+  closest equivalent. See [TIMES](times.md).
+- **`RESIZE`** trims an open position toward a target size, but it is not usable alongside a
+  `BRACKET` on the same position — see the gotchas below.
 
 ## Complete protection
 
@@ -222,7 +216,6 @@ RULES
 ## Common gotchas
 
 - **Wrong side stop direction.** For a `BUY`, the stop must be **below** the entry price. The parser does check this for absolute prices but can't always check expressions (`btc.close + 100` for a long stop is a logic error). Test on backtest before live.
-- **Scale-out fractions > 1.0** — parse error. ≤ 1.0; the remainder stays open as a runner.
 - **Bracket stop too close** — MT5 brokers enforce `tradeStopsLevel` minimum distance. Orders too tight reject at the venue. Use `atr * <multiplier>` to scale; if the multiplier produces too-tight stops in low-vol regimes, the order rejects.
 - **`TRAILING_STOP` not yet shipped** — see the admonition above. Use a rule-based trail until Phase 25.
 - **Limit-entry bracket execution.** When the entry is a limit order (`BUY btc LIMIT AT 67000 BRACKET ...`), the bracket only activates after the limit fills. If the limit never fills, the bracket never sends.

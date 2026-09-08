@@ -104,6 +104,14 @@ internal object DslParityHarness {
         dailyDdBasis: DailyDrawdownBasis = DailyDrawdownBasis.BALANCE,
         totalDdBasis: DrawdownBasis = DrawdownBasis.STATIC,
         haltRules: () -> List<HaltRule> = { emptyList() },
+        /**
+         * The live runaway breaker's round-trip threshold, mirroring config `max_round_trips_10m`.
+         * It counts closing fills per strategy in a ten-minute window and halts the strategy
+         * persistently, and it runs only in the live assembly -- so a strategy that opens and
+         * closes many positions quickly is a backtest/live divergence unless this is raised.
+         * Burst strategies must set it here to model the deployment they will actually run under.
+         */
+        runawayMaxRoundTrips: Int = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_ROUND_TRIPS,
     ): Result {
         require(ticks.isNotEmpty()) { "parity tape must not be empty" }
         val symbols = ticks.map { it.symbol }.distinct()
@@ -217,6 +225,7 @@ internal object DslParityHarness {
                 maxOrderNotional = maxOrderNotional,
                 dailyDdBasis = dailyDdBasis,
                 totalDdBasis = totalDdBasis,
+                runawayMaxRoundTrips = runawayMaxRoundTrips,
                 busOverride = liveBus,
             ).start()
         check(handle.awaitTermination(Duration.ofSeconds(10))) { "live parity session did not terminate" }
