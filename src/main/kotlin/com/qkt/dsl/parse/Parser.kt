@@ -1542,11 +1542,17 @@ class Parser(
         var onStop: List<ActionAst> = emptyList()
         var onTakeProfit: List<ActionAst> = emptyList()
         var onClose: List<ActionAst> = emptyList()
+        var times: ExprAst? = null
         loop@ while (true) {
             when (peek().kind) {
                 TokenKind.SIZING -> {
                     advance()
                     sizing = parseSizing()
+                }
+                TokenKind.TIMES -> {
+                    if (times != null) error("duplicate TIMES clause")
+                    advance()
+                    times = parseExpr()
                 }
                 TokenKind.ORDER_TYPE -> {
                     advance()
@@ -1612,6 +1618,7 @@ class Parser(
             stackAts,
             onFill,
             ExitHooksAst(onStop, onTakeProfit, onClose),
+            times = times,
         )
     }
 

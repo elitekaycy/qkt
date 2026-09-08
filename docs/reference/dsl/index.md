@@ -124,6 +124,14 @@ If you want the one-page cheat sheet, see [DSL grammar (one-pager)](../dsl-gramm
 
     [:octicons-arrow-right-24: STACK_AT](stack-at.md)
 
+- :material-content-duplicate:{ .lg .middle } **TIMES repeated entries**
+
+    ---
+
+    Emit one entry N times in a single evaluation, each its own ticket and bracket. The count is an expression, so it can follow conviction, volatility, or the account balance.
+
+    [:octicons-arrow-right-24: TIMES](times.md)
+
 - :material-call-split:{ .lg .middle } **OTO one-triggers-other**
 
     ---

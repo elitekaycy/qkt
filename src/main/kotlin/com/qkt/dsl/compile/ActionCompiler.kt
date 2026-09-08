@@ -149,7 +149,66 @@ class ActionCompiler(
         }
     }
 
+    /**
+     * `TIMES <expr>`: the action repeated N times in one evaluation. The body is compiled once
+     * with the clause removed and invoked N times, so every repetition goes through the same
+     * path a hand-written `BUY ...; BUY ...` would — its own order id, its own bracket, its own
+     * stack or STACK_AT registration. The count is evaluated at fire time: a fraction truncates,
+     * zero or less emits nothing, an undefined value (indicator still warming) emits nothing and
+     * logs once, and a count above [MAX_TIMES] is suppressed rather than sent, since no
+     * strategy means a thousand-order burst by accident.
+     */
+    private fun compileRepeated(
+        stream: String,
+        opts: ActionOpts,
+        side: Side,
+    ): (EvalContext) -> List<Signal> {
+        val timesExpr = opts.times ?: error("unreachable")
+        val once = compileBuySell(stream, opts.copy(times = null), side)
+        val compiledTimes = exprCompiler.compile(timesExpr)
+        var skippedUndefinedLogged = false
+        return repeat@{ ctx ->
+            val symbol = ctx.streams[stream]?.qktSymbol ?: error("Unknown stream alias: $stream")
+            val count =
+                when (val v = compiledTimes.evaluate(ctx)) {
+                    is Value.Num -> v.v.setScale(0, RoundingMode.DOWN)
+                    Value.Undefined -> {
+                        if (!skippedUndefinedLogged) {
+                            strategyLogger.warn(
+                                "order skipped: TIMES count undefined during warm-up " +
+                                    "(strategy=${ctx.strategyContext.strategyId}, stream=$stream)",
+                            )
+                            skippedUndefinedLogged = true
+                        }
+                        return@repeat emptyList()
+                    }
+                    else -> error("TIMES must be numeric, got $v")
+                }
+            if (count.signum() <= 0) return@repeat emptyList()
+            if (count > MAX_TIMES) {
+                return@repeat listOf(
+                    Signal.Suppressed(
+                        symbol = symbol,
+                        reason = "TIMES evaluated to ${count.toPlainString()}, above the $MAX_TIMES repetition cap",
+                    ),
+                )
+            }
+            val out = ArrayList<Signal>()
+            repeat(count.toInt()) { out.addAll(once(ctx)) }
+            out
+        }
+    }
+
     private fun compileOcoEntry(action: OcoEntry): (EvalContext) -> List<Signal> {
+        for (leg in listOf(action.leg1, action.leg2)) {
+            val legTimes =
+                when (leg) {
+                    is Buy -> leg.opts.times
+                    is Sell -> leg.opts.times
+                    else -> null
+                }
+            require(legTimes == null) { "OCO_ENTRY legs cannot carry TIMES; repeat the OCO_ENTRY action instead" }
+        }
         val leg1Compiled = compile(action.leg1)
         val leg2Compiled = compile(action.leg2)
         var skippedUndefinedLogged = false
@@ -352,6 +411,9 @@ class ActionCompiler(
         }
 
     companion object {
+        /** Upper bound on one `TIMES` evaluation; a larger count is suppressed, not sent. */
+        val MAX_TIMES: BigDecimal = BigDecimal(1000)
+
         private val LOG_PLACEHOLDER_REGEX = Regex("\\{([a-zA-Z_][a-zA-Z0-9_]*)\\}")
     }
 
@@ -360,6 +422,9 @@ class ActionCompiler(
         opts: ActionOpts,
         side: Side,
     ): (EvalContext) -> List<Signal> {
+        if (opts.times != null) {
+            return compileRepeated(stream, opts, side)
+        }
         if (!opts.exitHooks.isEmpty()) {
             return compileWithExitHooks(stream, opts, side)
         }
