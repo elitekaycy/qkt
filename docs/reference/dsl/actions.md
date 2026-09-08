@@ -336,9 +336,10 @@ When you stack modifiers on a `BUY`/`SELL`, the order matters but the parser is 
 4. `BRACKET { ... }` (or `STOP_LOSS ... TAKE_PROFIT ...` bare)
 5. `STACK <n> SPACING <points> ABOVE|BELOW [WITHIN <duration>]` — pyramiding
 6. `STACK_AT MFE >= <threshold> WITHIN <duration> SIZING <qty> BRACKET { ... }` or `STACK_AT MAE >= <threshold> RECOVER <distance> WITHIN <duration> ...` — conditional bracketed stacks (multiple per action allowed; see [STACK_AT](stack-at.md))
-7. `TIF <mode>` — time-in-force
-8. `ON_STOP`, `ON_TP`, and `ON_CLOSE` — one-shot exit hooks
-9. `LOG ...` — usually a separate action after `;` but can be inline-chained
+7. `TIMES <expression>` — repeat the whole entry N times (see [TIMES](times.md))
+8. `TIF <mode>` — time-in-force
+9. `ON_STOP`, `ON_TP`, and `ON_CLOSE` — one-shot exit hooks
+10. `LOG ...` — usually a separate action after `;` but can be inline-chained
 
 The most common patterns:
 
@@ -355,6 +356,9 @@ BUY btc SIZING 0.1 STOP_LOSS AT btc.close - atr(btc, 14) * 2
 -- Stacked with shared bracket
 BUY btc SIZING 0.1 STACK 3 SPACING 200 ABOVE WITHIN 4h
     BRACKET { STOP_LOSS BY 300, TAKE_PROFIT BY 1000 }
+
+-- Thirty independent bracketed entries at once
+BUY btc SIZING 0.01 BRACKET { STOP_LOSS BY 300, TAKE_PROFIT BY 600 } TIMES 30
 ```
 
 ## Common gotchas

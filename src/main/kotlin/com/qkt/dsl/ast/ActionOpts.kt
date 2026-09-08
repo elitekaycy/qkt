@@ -22,6 +22,16 @@ data class ActionOpts(
     val onFill: List<ActionAst> = emptyList(),
     /** One-shot actions dispatched when the parent position exits. */
     val exitHooks: ExitHooksAst = ExitHooksAst(),
+    /**
+     * `TIMES <expr>`: emit this entry that many times in one evaluation. Each repetition is a
+     * separate order with its own id and its own copy of every clause on the action (bracket,
+     * stack, STACK_AT tiers), exactly as if the action had been written out N times separated
+     * by `;`. The expression is evaluated when the rule fires, so the count can follow a
+     * condition, an indicator, or the account: `TIMES 30`, `TIMES CASE WHEN strong THEN 5
+     * ELSE 1 END`, `TIMES floor(ACCOUNT.balance / 25000)`. Fractions truncate; zero or a
+     * negative value emits nothing; an undefined value (indicator warm-up) emits nothing.
+     */
+    val times: ExprAst? = null,
 )
 
 /** Exit-triggered child actions attached to one BUY/SELL action. */

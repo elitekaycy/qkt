@@ -234,6 +234,7 @@ class ExprTransform(
             stack = o.stack?.let(::stack),
             stackAts = o.stackAts.map(::stackAt),
             onFill = o.onFill.map(::action),
+            times = o.times?.let(::expr),
             exitHooks =
                 com.qkt.dsl.ast.ExitHooksAst(
                     onStop = o.exitHooks.onStop.map(::action),
