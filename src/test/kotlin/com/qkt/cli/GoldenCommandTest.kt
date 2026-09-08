@@ -219,6 +219,62 @@ class GoldenCommandTest {
     }
 
     @Test
+    fun `materialize merges the same bar from the tick aggregator and the stream feed when only volume differs`(
+        @TempDir tmp: Path,
+    ) {
+        // Live records a closed 1m bar twice: the tick aggregator's CandleEvent carries the
+        // number of ticks it saw as volume, the gateway's StreamCandleEvent carries the venue
+        // figure (often 0 on a quote feed). Same OHLC, same quotes, different volume. That is
+        // one bar, not a conflict, and a stacking session's capture must stay replayable.
+        val audit = tmp.resolve("state/audit-journal/alpha/audit-2026-08-09.jsonl")
+        val transport = tmp.resolve("state/mt5-transport-journal/demo/transport-2026-08-09.jsonl")
+        audit.parent.let(Files::createDirectories)
+        transport.parent.let(Files::createDirectories)
+        Files.writeString(
+            audit,
+            """
+            {"v":1,"ts":1100,"seq":1,"eventType":"com.qkt.events.TickEvent","symbol":"EXNESS:EURUSD","tick":{"timestampMs":10000,"price":"1.162355","bid":"1.16224","ask":"1.16247"}}
+            {"v":1,"ts":1200,"seq":2,"eventType":"com.qkt.events.CandleEvent","symbol":"EXNESS:EURUSD","candle":{"startTimeMs":0,"endTimeMs":60000,"open":"1.162355","high":"1.162355","low":"1.162355","close":"1.16235500","volume":"1.00000000","bid":"1.16224000","ask":"1.16247000"}}
+            {"v":1,"ts":1201,"seq":3,"eventType":"com.qkt.events.StreamCandleEvent","broker":"EXNESS","timeframe":"1m","symbol":"EXNESS:EURUSD","candle":{"startTimeMs":0,"endTimeMs":60000,"open":"1.16235500","high":"1.16235500","low":"1.16235500","close":"1.16235500","volume":"0.00000000","bid":"1.16224000","ask":"1.16247000"}}
+            """.trimIndent() + "\n",
+        )
+        Files.writeString(
+            transport,
+            """{"v":1,"ts":1100,"method":"GET","path":"/account","responseCode":200}""" + "\n",
+        )
+        val output = tmp.resolve("volume-golden.zip")
+        val code =
+            GoldenCommand(
+                Args(
+                    arrayOf(
+                        "golden",
+                        "capture",
+                        "--session",
+                        "alpha",
+                        "--state-dir",
+                        tmp.toString(),
+                        "--out",
+                        output.toString(),
+                        "--read-only",
+                    ),
+                ),
+            ).run()
+        assertThat(code).isEqualTo(ExitCodes.SUCCESS)
+
+        val replayRoot = tmp.resolve("volume-replay")
+        val materializeCode =
+            GoldenCommand(
+                Args(arrayOf("golden", "materialize", "--bundle", output.toString(), "--out", replayRoot.toString())),
+            ).run()
+
+        assertThat(materializeCode).isEqualTo(ExitCodes.SUCCESS)
+        // one bar, carrying the stream feed's provenance (the higher priority) and its volume
+        val bars = Files.readString(replayRoot.resolve("bars/EXNESS/EURUSD/1m/1970-01-01.csv"))
+        assertThat(bars.lines().filter { it.startsWith("0,") }).hasSize(1)
+        assertThat(bars).contains("0,1.16235500,1.16235500,1.16235500,1.16235500,0.00000000")
+    }
+
+    @Test
     fun `read only capture rejects a mutating gateway exchange`(
         @TempDir tmp: Path,
     ) {

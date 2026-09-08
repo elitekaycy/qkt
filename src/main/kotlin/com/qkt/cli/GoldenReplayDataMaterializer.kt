@@ -321,6 +321,13 @@ internal class GoldenReplayDataMaterializer(
                 emitted
             }
 
+    /**
+     * Whether two records of the same bar agree on what the bar was. Prices, and the closing
+     * quote when both carry one, must match exactly. Volume is deliberately not compared: the
+     * tick aggregator counts the ticks it saw while the stream candle carries the venue's own
+     * figure, so the same bar legitimately arrives as `volume=1` on one path and `volume=0` on
+     * the other. The merged record keeps the volume of the higher-priority provenance.
+     */
     private fun sameCandle(
         left: Candle,
         right: Candle,
@@ -332,7 +339,6 @@ internal class GoldenReplayDataMaterializer(
             left.high.compareTo(right.high) == 0 &&
             left.low.compareTo(right.low) == 0 &&
             left.close.compareTo(right.close) == 0 &&
-            left.volume.compareTo(right.volume) == 0 &&
             nullableDecimalEquals(left.bid, right.bid) &&
             nullableDecimalEquals(left.ask, right.ask)
 
