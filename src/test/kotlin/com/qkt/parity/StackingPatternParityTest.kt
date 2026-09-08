@@ -21,7 +21,14 @@ import org.junit.jupiter.api.io.TempDir
  * Where a pattern is expressible the case pins its mechanics. Where it is not, that is worth
  * knowing precisely, and the sibling `StackingPatternLimitsTest` records which ones and why.
  */
+@org.junit.jupiter.api.TestInstance(org.junit.jupiter.api.TestInstance.Lifecycle.PER_CLASS)
 class StackingPatternParityTest {
+    @org.junit.jupiter.api.BeforeAll
+    fun quietEngineLogs() = QuietEngineLogs.silence()
+
+    @org.junit.jupiter.api.AfterAll
+    fun restoreEngineLogs() = QuietEngineLogs.restore()
+
     private data class Case(
         val id: String,
         val prices: List<String>,

@@ -23,7 +23,14 @@ import org.junit.jupiter.api.io.TempDir
  * a count decided at fire time by a condition, an indicator, or the account -- and the
  * multi-symbol, multi-condition sequence a real bot runs.
  */
+@org.junit.jupiter.api.TestInstance(org.junit.jupiter.api.TestInstance.Lifecycle.PER_CLASS)
 class TimesEntryParityTest {
+    @org.junit.jupiter.api.BeforeAll
+    fun quietEngineLogs() = QuietEngineLogs.silence()
+
+    @org.junit.jupiter.api.AfterAll
+    fun restoreEngineLogs() = QuietEngineLogs.restore()
+
     private data class Case(
         val id: String,
         val candles: Map<String, List<Candle>>,

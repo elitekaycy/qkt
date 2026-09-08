@@ -32,7 +32,14 @@ import org.junit.jupiter.api.io.TempDir
  * backtest, tick-resolved source, and a live paper session -- so a divergence between how a stack
  * fills on ticks and how it fills on bars fails here rather than in production.
  */
+@org.junit.jupiter.api.TestInstance(org.junit.jupiter.api.TestInstance.Lifecycle.PER_CLASS)
 class ScalpStackParityTest {
+    @org.junit.jupiter.api.BeforeAll
+    fun quietEngineLogs() = QuietEngineLogs.silence()
+
+    @org.junit.jupiter.api.AfterAll
+    fun restoreEngineLogs() = QuietEngineLogs.restore()
+
     private data class Case(
         val id: String,
         val prices: List<String>,
