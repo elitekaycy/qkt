@@ -13,11 +13,18 @@ class CandleAggregator private constructor(
     private val window: TimeWindow,
     private val emit: (Candle) -> Unit,
     bus: EventBus?,
+    /**
+     * Supplies the venue's own tick volume for a closed bar when one is available. Left null
+     * for tick-replay sources, where every tick is present and the aggregated count is already
+     * the venue's figure. See [BarVolumeSource].
+     */
+    private val barVolume: BarVolumeSource? = null,
 ) {
-    constructor(bus: EventBus, window: TimeWindow) : this(
+    constructor(bus: EventBus, window: TimeWindow, barVolume: BarVolumeSource? = null) : this(
         window = window,
         emit = { c -> bus.publish(CandleEvent(c)) },
         bus = bus,
+        barVolume = barVolume,
     )
 
     private val open = mutableMapOf<String, MutableCandle>()
@@ -81,8 +88,14 @@ class CandleAggregator private constructor(
     }
 
     private fun emitClosed(state: MutableCandle) {
-        emit(state.toCandle())
+        emit(finalize(state.toCandle()))
         lastClosedEnd[state.symbol] = state.endTime
+    }
+
+    /** The venue's figure when it has one for exactly this bar, else what we counted. */
+    private fun finalize(c: Candle): Candle {
+        val venue = barVolume?.volumeFor(c.symbol, c.startTime, c.endTime) ?: return c
+        return if (venue.compareTo(c.volume) == 0) c else c.copy(volume = venue)
     }
 
     private fun newState(tick: Tick): MutableCandle {
@@ -95,6 +108,8 @@ class CandleAggregator private constructor(
             low = tick.price,
             close = tick.price,
             volume = tick.volume ?: Money.ZERO,
+            ticks = 1,
+            venueVolume = tick.volume != null && tick.volume.signum() > 0,
             startTime = start,
             endTime = end,
             bid = tick.bid,
@@ -109,6 +124,8 @@ class CandleAggregator private constructor(
         var low: BigDecimal,
         var close: BigDecimal,
         var volume: BigDecimal,
+        var ticks: Int,
+        var venueVolume: Boolean,
         val startTime: Long,
         val endTime: Long,
         var bid: BigDecimal?,
@@ -118,18 +135,36 @@ class CandleAggregator private constructor(
             if (tick.price > high) high = tick.price
             if (tick.price < low) low = tick.price
             close = tick.price
-            if (tick.volume != null) volume = volume.add(tick.volume)
+            ticks += 1
+            if (tick.volume != null) {
+                volume = volume.add(tick.volume)
+                if (tick.volume.signum() > 0) venueVolume = true
+            }
             bid = tick.bid
             ask = tick.ask
         }
 
-        fun toCandle(): Candle = Candle(symbol, open, high, low, close, volume, startTime, endTime, bid, ask)
+        /**
+         * Spot FX and CFD venues quote without traded size: every MT5 tick on such a symbol
+         * carries `volume = 0`, so summing tick volume yields an empty bar even though the
+         * venue's own history endpoint reports a `tick_volume` for the same period. A strategy
+         * reading `<stream>.volume` would then see real numbers on warmup and backtest bars and
+         * zero once live -- the same silent divergence class as the risk-rule defects.
+         *
+         * When no tick in the bar carried size, fall back to the count of ticks, which is
+         * exactly how MT5 defines `tick_volume`. Venues that do report size are untouched.
+         */
+        fun toCandle(): Candle {
+            val vol = if (venueVolume) volume else Money.of(ticks.toLong())
+            return Candle(symbol, open, high, low, close, vol, startTime, endTime, bid, ask)
+        }
     }
 
     companion object {
         fun standalone(
             window: TimeWindow,
+            barVolume: BarVolumeSource? = null,
             onClose: (Candle) -> Unit,
-        ): CandleAggregator = CandleAggregator(window = window, emit = onClose, bus = null)
+        ): CandleAggregator = CandleAggregator(window = window, emit = onClose, bus = null, barVolume = barVolume)
     }
 }

@@ -243,6 +243,21 @@ EOF
     THEN CANCEL x ; CLOSE x
 EOF
             ;;
+        volume_gated)
+            # Proves <stream>.volume is populated and usable on a LIVE venue feed. MT5 spot
+            # symbols quote without traded size, so before the aggregator counted ticks this
+            # condition was unreachable live while working fine in backtest -- exactly the
+            # silent divergence the parity catalog exists to record. The gate is loose on
+            # purpose: the run is testing that volume EXISTS and gates consistently, not that
+            # any particular threshold is predictive.
+            cat <<EOF
+    WHEN POSITION.x = 0 AND OPEN_ORDERS.x = 0 AND TRADES.today = 0 AND x.volume > 0
+    THEN BUY x SIZING 0.01 BRACKET { STOP LOSS BY 0.0030, TAKE PROFIT BY 0.0060 }
+
+    WHEN POSITION.x > 0 AND POSITION.x.holding_duration >= $hold_seconds
+    THEN CLOSE x
+EOF
+            ;;
         times_burst_30)
             # The TIMES clause under live fire: one condition, thirty independent bracketed
             # orders. Each is its own ticket with its own protection, and the strategy's timed
