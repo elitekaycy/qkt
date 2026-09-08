@@ -26,7 +26,12 @@ data class MT5BrokerProfile(
     val instrumentOverrides: Map<String, InstrumentSpec> = emptyMap(),
     /** Position and pending-order reconciliation cadence in milliseconds. */
     val pollIntervalMs: Long = 1000,
-    val httpTimeoutMs: Long = 5000,
+    /**
+     * Per-request gateway timeout. The gateway serialises order placement at roughly four
+     * market orders a second, so a burst of N entries queues N/4 seconds deep before its last
+     * request is even started; the default covers a burst of about eighty.
+     */
+    val httpTimeoutMs: Long = 20_000,
     val retryAttempts: Int = 3,
     val deviationPoints: Int = 20,
     val apiKey: String? = null,

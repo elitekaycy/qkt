@@ -401,7 +401,7 @@ Built-in MT5 profile names: `exness`, `icmarkets`, `ftmo`, `pepperstone`.
 | `server_tz_offset_hours` | int | no | none | Legacy fixed-offset alternative. Cannot be combined with `server_time_zone`; does not handle DST. |
 | `poll_interval_ms` | long | no | `1000` | Position and pending-order polling cadence. |
 | `tick_poll_interval_ms` | long | no | `1000` | Live quote polling cadence. When omitted beside an explicitly configured `poll_interval_ms`, inherits that value for backward compatibility. Set both keys to tune quote and reconciliation load independently. |
-| `http_timeout_ms` | long | no | `5000` | Gateway HTTP timeout. |
+| `http_timeout_ms` | long | no | `20000` | Per-request gateway HTTP timeout. The gateway places orders serially at roughly four a second, so a burst of N entries (`TIMES N`, a deep `STACK`, N actions in one rule) queues N/4 seconds deep; size this above that or the tail of the burst fails on the qkt side with "Socket closed" while the venue still fills it. |
 | `retry_attempts` | int | no | `3` | Gateway retry attempts. |
 | `deviation_points` | int | no | `20` | Market-order price deviation tolerance. |
 | `expected_account_login` | long | production MT5 | none | Refuses startup when `/account.login` differs. |
