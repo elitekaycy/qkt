@@ -6,7 +6,8 @@ usage() {
     cat <<'EOF'
 Usage: run-stack-live.sh --output DIR --id ID --variant VARIANT --gateway-url URL \
   --expected-login N --expected-server NAME --magic N \
-  [--symbol EURUSD] [--min-legs N] [--hold-seconds N] [--timeout-seconds N] [--http-timeout-ms N] [--cli PATH] \
+  [--symbol EURUSD] [--min-legs N] [--hold-seconds N] [--timeout-seconds N] [--http-timeout-ms N] \
+  [--max-position-size LOTS] [--cli PATH] \
   --arm I_UNDERSTAND_DEMO_ORDER_0.01
 
 Runs ONE stacking strategy against the local demo gateway with real 0.01-lot orders, lets the
@@ -35,6 +36,9 @@ fail() {
 
 output=""; scenario_id=""; variant=""; gateway_url=""; expected_login=""; expected_server=""
 magic=""; symbol="EURUSD"; min_legs=2; hold_seconds=120; timeout_seconds=300; arm=""; http_timeout_ms=20000
+# Aggregate position cap for the strategy. Every leg of a burst or stack counts toward it, so a
+# run of N legs at 0.01 lots needs at least N/100 here or the tail is rejected pre-trade.
+max_position_size="0.25"
 cli="$repo_root/build/install/qkt/bin/qkt"
 
 while [ "$#" -gt 0 ]; do
@@ -53,6 +57,7 @@ while [ "$#" -gt 0 ]; do
         --cli) cli="${2:-}"; shift 2 ;;
         --arm) arm="${2:-}"; shift 2 ;;
         --http-timeout-ms) http_timeout_ms="${2:-}"; shift 2 ;;
+        --max-position-size) max_position_size="${2:-}"; shift 2 ;;
         --help|-h) usage; exit 0 ;;
         *) fail "unknown argument: $1" ;;
     esac
@@ -270,7 +275,7 @@ risk:
   per_strategy:
     $strategy_name:
       max_daily_loss: "40"
-      max_position_size: "0.25"
+      max_position_size: "$max_position_size"
       max_open_positions: 1
       max_trades_per_day: 60
       max_drawdown_pct: "0.25"

@@ -69,6 +69,22 @@ THEN BUY gold SIZING 0.01 BRACKET { STOP LOSS BY 3, TAKE PROFIT BY 6 } TIMES 10
    ; SELL eur SIZING 0.01 BRACKET { STOP LOSS BY 0.0030, TAKE PROFIT BY 0.0060 } TIMES 10
 ```
 
+## Measured against a live venue
+
+A `TIMES 30` burst on an Exness MT5 demo account, EURUSD at 0.01 lots:
+
+| | |
+|---|---|
+| Positions opened, closed, net flat | 30 / 30 / yes |
+| Wall time to place all thirty | 7.0 s (about 3.6 orders a second) |
+| Venue or risk rejections | 0 |
+| Entry drift, live versus mt5-sim replay | 1-2 points on every leg |
+| Exit drift, tick versus bar replay | 0 points across all thirty |
+
+An earlier run of the same strategy under a `max_position_size` of 0.25 lots filled 25 and had
+the last five rejected pre-trade, cleanly and with nothing sent to the venue -- the aggregate
+position cap counts every leg of the burst.
+
 ## Common gotchas
 
 - **The live runaway breaker counts closing fills.** It defaults to ten per strategy per ten
