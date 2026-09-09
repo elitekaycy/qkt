@@ -143,11 +143,6 @@ class CandleHub {
     }
 
     /**
-     * Time-driven close: finish every in-progress candle whose window ended at
-     * [nowMs], across all keys, and sweep sync timeouts. Live's heartbeat calls this
-     * so a quiet symbol's last bar still closes and fires its rules.
-     */
-    /**
      * Late ticks rejected across every slot's aggregator.
      *
      * A hub slot is where a DSL stream's bars are actually built, so a late drop here is a bar
@@ -156,6 +151,11 @@ class CandleHub {
      */
     fun droppedLateTicks(): Long = slots.values.sumOf { it.aggregator.droppedLateTicks }
 
+    /**
+     * Time-driven close: finish every in-progress candle whose window ended at
+     * [nowMs], across all keys, and sweep sync timeouts. Live's heartbeat calls this
+     * so a quiet symbol's last bar still closes and fires its rules.
+     */
     fun flushClosed(nowMs: Long) {
         for (slot in orderedSlots) slot.aggregator.flushClosed(nowMs)
         sweepSyncTimeouts(nowMs)
