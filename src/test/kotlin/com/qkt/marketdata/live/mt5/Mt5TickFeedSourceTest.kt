@@ -23,10 +23,10 @@ class Mt5TickFeedSourceTest {
                     val body =
                         if (n <= 2) {
                             // first two polls return the same broker time → second dedups
-                            """{"bid":4700.0,"ask":4700.3,"last":4700.1,"flags":6,"time":1778662794,"time_msc":1778662794911,"volume":0,"volume_real":0}"""
+                            """[{"bid":4700.0,"ask":4700.3,"last":4700.1,"flags":6,"time":1778662794,"time_msc":1778662794911,"volume":0,"volume_real":0}]"""
                         } else {
                             // third onwards: newer broker time
-                            """{"bid":4701.0,"ask":4701.3,"last":4701.1,"flags":6,"time":1778662795,"time_msc":1778662795200,"volume":0,"volume_real":0}"""
+                            """[{"bid":4701.0,"ask":4701.3,"last":4701.1,"flags":6,"time":1778662795,"time_msc":1778662795200,"volume":0,"volume_real":0}]"""
                         }
                     return MockResponse().setBody(body)
                 }
@@ -72,8 +72,8 @@ class Mt5TickFeedSourceTest {
                         MockResponse().setResponseCode(500).setBody("gateway down")
                     } else {
                         MockResponse().setBody(
-                            """{"bid":4700.0,"ask":4700.3,"last":4700.1,"flags":6,"time":1778662794,""" +
-                                """"time_msc":${1778662794911L + n},"volume":0,"volume_real":0}""",
+                            """[{"bid":4700.0,"ask":4700.3,"last":4700.1,"flags":6,"time":1778662794,""" +
+                                """"time_msc":${1778662794911L + n},"volume":0,"volume_real":0}]""",
                         )
                     }
                 }
@@ -135,7 +135,7 @@ class Mt5TickFeedSourceTest {
                     // Quote-driven instrument: bid/ask populated, last = 0 (Exness XAUUSD).
                     val ms = 1778662794911L + counter.incrementAndGet()
                     return MockResponse().setBody(
-                        """{"bid":4700.0,"ask":4700.4,"last":0.0,"flags":6,"time":1778662794,"time_msc":$ms,"volume":0,"volume_real":0}""",
+                        """[{"bid":4700.0,"ask":4700.4,"last":0.0,"flags":6,"time":1778662794,"time_msc":$ms,"volume":0,"volume_real":0}]""",
                     )
                 }
             }
@@ -172,7 +172,7 @@ class Mt5TickFeedSourceTest {
                 override fun dispatch(request: RecordedRequest): MockResponse {
                     val ms = brokerMs + counter.incrementAndGet()
                     return MockResponse().setBody(
-                        """{"bid":4700.0,"ask":4700.3,"last":4700.1,"flags":6,"time":1778662794,"time_msc":$ms,"volume":0,"volume_real":0}""",
+                        """[{"bid":4700.0,"ask":4700.3,"last":4700.1,"flags":6,"time":1778662794,"time_msc":$ms,"volume":0,"volume_real":0}]""",
                     )
                 }
             }

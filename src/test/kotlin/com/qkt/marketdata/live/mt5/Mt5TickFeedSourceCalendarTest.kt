@@ -74,7 +74,7 @@ class Mt5TickFeedSourceCalendarTest {
                 override fun dispatch(request: RecordedRequest): MockResponse {
                     requestCount.incrementAndGet()
                     return MockResponse().setBody(
-                        """{"bid":1.0,"ask":1.0,"last":1.0,"flags":6,"time":1,"time_msc":1000,"volume":0,"volume_real":0}""",
+                        """[{"bid":1.0,"ask":1.0,"last":1.0,"flags":6,"time":1,"time_msc":1000,"volume":0,"volume_real":0}]""",
                     )
                 }
             }
@@ -109,7 +109,7 @@ class Mt5TickFeedSourceCalendarTest {
                 override fun dispatch(request: RecordedRequest): MockResponse {
                     requestCount.incrementAndGet()
                     return MockResponse().setBody(
-                        """{"bid":1.0,"ask":1.0,"last":1.0,"flags":6,"time":1,"time_msc":1000,"volume":0,"volume_real":0}""",
+                        """[{"bid":1.0,"ask":1.0,"last":1.0,"flags":6,"time":1,"time_msc":1000,"volume":0,"volume_real":0}]""",
                     )
                 }
             }

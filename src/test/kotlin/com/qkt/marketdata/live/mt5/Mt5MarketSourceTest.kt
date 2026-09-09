@@ -47,7 +47,7 @@ class Mt5MarketSourceTest {
         try {
             server.enqueue(
                 MockResponse().setBody(
-                    """{"bid":4700.0,"ask":4700.3,"last":4700.1,"flags":6,"time":1778662794,"time_msc":1778662794911,"volume":0,"volume_real":0}""",
+                    """[{"bid":4700.0,"ask":4700.3,"last":4700.1,"flags":6,"time":1778662794,"time_msc":1778662794911,"volume":0,"volume_real":0}]""",
                 ),
             )
             val profile =
@@ -71,7 +71,8 @@ class Mt5MarketSourceTest {
             // (suffix applied) lives only in the gateway path
             assertThat(tick!!.symbol).isEqualTo("EXNESS:XAUUSD")
             val req = server.takeRequest()
-            assertThat(req.path).isEqualTo("/symbol_info_tick/XAUUSDm")
+            // The wire symbol carries the broker suffix; the range window follows in the query.
+            assertThat(req.path).startsWith("/copy_ticks_range?symbol=XAUUSDm&")
         } finally {
             server.shutdown()
         }
