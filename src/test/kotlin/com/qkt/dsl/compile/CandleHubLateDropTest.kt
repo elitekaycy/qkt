@@ -1,6 +1,5 @@
 package com.qkt.dsl.compile
 
-import com.qkt.candles.TimeWindow
 import com.qkt.common.Money
 import com.qkt.marketdata.Tick
 import org.assertj.core.api.Assertions.assertThat
