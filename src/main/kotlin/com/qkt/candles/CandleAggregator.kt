@@ -27,6 +27,8 @@ class CandleAggregator private constructor(
         barVolume = barVolume,
     )
 
+    private val log = org.slf4j.LoggerFactory.getLogger(CandleAggregator::class.java)
+
     private val open = mutableMapOf<String, MutableCandle>()
     private val lastClosedEnd = mutableMapOf<String, Long>()
 
@@ -48,7 +50,22 @@ class CandleAggregator private constructor(
         // A heartbeat can close a window while older ticks remain queued. Never reopen
         // or mutate an already-emitted window: doing so double-feeds every indicator.
         if (tick.timestamp < (lastClosedEnd[tick.symbol] ?: Long.MIN_VALUE)) {
-            if (countLateDrop) droppedLateTicks++
+            if (countLateDrop) {
+                droppedLateTicks++
+                // A dropped late tick is a bar that silently disagrees with the venue's own, so
+                // it must never be a counter nobody reads. Throttled: a feed stall drops a burst.
+                if (droppedLateTicks == 1L || droppedLateTicks % LATE_DROP_LOG_EVERY == 0L) {
+                    log.warn(
+                        "late tick for {} stamped {} arrived after its candle closed at {} — " +
+                            "that bar under-reports the venue ({} dropped so far); raise " +
+                            "candle_close_grace_ms if this persists",
+                        tick.symbol,
+                        tick.timestamp,
+                        lastClosedEnd[tick.symbol],
+                        droppedLateTicks,
+                    )
+                }
+            }
             return
         }
         val state = open[tick.symbol]
@@ -161,6 +178,9 @@ class CandleAggregator private constructor(
     }
 
     companion object {
+        /** Throttle for the late-drop warning: a stalled feed drops a burst, not one tick. */
+        private const val LATE_DROP_LOG_EVERY: Long = 100L
+
         fun standalone(
             window: TimeWindow,
             barVolume: BarVolumeSource? = null,
