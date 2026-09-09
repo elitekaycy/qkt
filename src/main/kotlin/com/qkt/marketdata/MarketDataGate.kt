@@ -10,9 +10,11 @@ import org.slf4j.LoggerFactory
  *  - **Stale quotes** — when no tick has arrived for [staleAgeMultiple] x the symbol's
  *    smoothed inter-tick gap (floored at [minStaleAgeMs]), the symbol is unhealthy and
  *    NEW order generation for it should be suppressed. Auto-resumes when data flows.
- *  - **Outlier ticks** — a price more than [outlierSigma] standard deviations from the
- *    short-window mean is rejected. A short cluster at a coherent new level re-baselines
- *    the window so genuine gaps do not freeze marks and triggers indefinitely.
+ *  - **Outlier ticks** — a price more than [outlierSigma] standard deviations from the mean
+ *    of the last [outlierWindowMs] of prices is rejected. A short cluster at a coherent new
+ *    level re-baselines the window so genuine gaps do not freeze marks and triggers
+ *    indefinitely. The sample is bounded by AGE, not by tick count, so the band's width does
+ *    not narrow when a feed starts delivering more ticks per second.
  *  - **Crossed books** (bid > ask) are treated as outliers.
  *  - **Clock skew** — when a fresh tick's broker timestamp is more than [maxClockSkewMs]
  *    from the local clock (#810), the feed's time base is wrong — usually a
@@ -29,6 +31,11 @@ class MarketDataGate(
     private val staleAgeMultiple: Double = DEFAULT_STALE_AGE_MULTIPLE,
     private val minStaleAgeMs: Long = DEFAULT_MIN_STALE_AGE_MS,
     private val outlierSigma: Double = DEFAULT_OUTLIER_SIGMA,
+    /**
+     * Age of the price sample the outlier band is computed over. Bounding the window by time
+     * rather than by tick count keeps the band's width independent of the feed's tick rate.
+     */
+    private val outlierWindowMs: Long = DEFAULT_OUTLIER_WINDOW_MS,
     private val maxClockSkewMs: Long = DEFAULT_MAX_CLOCK_SKEW_MS,
     /** Invoked once per unhealthy transition; recovery permits a later transition to alert again. */
     private val onUnhealthy: (symbol: String, reason: String) -> Unit = { _, _ -> },
@@ -51,9 +58,11 @@ class MarketDataGate(
         var lastSeenMs: Long = 0L
         var ewmaGapMs: Double = 0.0
 
-        // Primitive ring of the last WINDOW_SIZE prices, oldest at [windowHead] — the boxed
-        // ArrayDeque<Double> allocated a wrapper per tick on the live hot path.
-        val window = DoubleArray(WINDOW_SIZE)
+        // Primitive rings of the last WINDOW_CAPACITY prices and their arrival times, oldest
+        // at [windowHead] — the boxed ArrayDeque<Double> allocated a wrapper per tick on the
+        // live hot path. Entries are evicted by AGE, not by count: see [outlierWindowMs].
+        val window = DoubleArray(WINDOW_CAPACITY)
+        val windowAtMs = LongArray(WINDOW_CAPACITY)
         var windowHead = 0
         var windowSize = 0
         var staleAlerted = false
@@ -65,20 +74,29 @@ class MarketDataGate(
         var rebaselineCandidate = 0.0
         var rebaselineCandidateCount = 0
 
-        fun push(price: Double) {
-            if (windowSize < WINDOW_SIZE) {
-                window[(windowHead + windowSize) % WINDOW_SIZE] = price
+        fun push(
+            price: Double,
+            atMs: Long,
+        ) {
+            if (windowSize < WINDOW_CAPACITY) {
+                val slot = (windowHead + windowSize) % WINDOW_CAPACITY
+                window[slot] = price
+                windowAtMs[slot] = atMs
                 windowSize++
             } else {
                 window[windowHead] = price
-                windowHead = (windowHead + 1) % WINDOW_SIZE
+                windowAtMs[windowHead] = atMs
+                windowHead = (windowHead + 1) % WINDOW_CAPACITY
             }
         }
 
-        fun resetAt(price: Double) {
+        fun resetAt(
+            price: Double,
+            atMs: Long,
+        ) {
             windowHead = 0
             windowSize = 0
-            repeat(MIN_WINDOW_FOR_OUTLIER) { push(price) }
+            repeat(MIN_WINDOW_FOR_OUTLIER) { push(price, atMs) }
             clearRejectedOutliers()
         }
 
@@ -109,11 +127,11 @@ class MarketDataGate(
 
         val crossed = tick.bid != null && tick.ask != null && tick.bid > tick.ask
         val price = tick.price.toDouble()
-        val outlier = crossed || isOutlier(state, price)
+        val outlier = crossed || isOutlier(state, price, now)
         if (outlier) {
             state.rejectedOutlierRun++
             if (!crossed && recordRebaselineCandidate(state, price)) {
-                state.resetAt(price)
+                state.resetAt(price, now)
                 state.staleAlerted = false
                 touch(state, now)
                 log.error(
@@ -144,7 +162,7 @@ class MarketDataGate(
         }
 
         touch(state, now)
-        state.push(price)
+        state.push(price, now)
         state.clearRejectedOutliers()
         if (state.pausedAlerted) {
             state.pausedAlerted = false
@@ -204,19 +222,31 @@ class MarketDataGate(
     private fun isOutlier(
         state: SymbolState,
         price: Double,
+        nowMs: Long,
     ): Boolean {
-        val n = state.windowSize
+        val stored = state.windowSize
+        if (stored < MIN_WINDOW_FOR_OUTLIER) return false
+        val window = state.window
+        val at = state.windowAtMs
+        val head = state.windowHead
+        // The ring is in arrival order, so the first entry inside the age window starts the
+        // sample. Bounding by AGE rather than by count keeps the comparison band's meaning
+        // fixed as the feed's tick rate changes: a fixed 64-entry window spanned about a
+        // minute under one-quote-per-poll and about twelve seconds once range polling
+        // delivered every tick, tightening the band precisely during fast moves.
+        val cutoff = nowMs - outlierWindowMs
+        var first = 0
+        while (first < stored && at[(head + first) % WINDOW_CAPACITY] < cutoff) first++
+        val n = stored - first
         if (n < MIN_WINDOW_FOR_OUTLIER) return false
         // Two passes in oldest-to-newest order, matching the deque version's summation order
         // exactly so the double math is unchanged.
-        val window = state.window
-        val head = state.windowHead
         var sum = 0.0
-        for (k in 0 until n) sum += window[(head + k) % WINDOW_SIZE]
+        for (k in first until stored) sum += window[(head + k) % WINDOW_CAPACITY]
         val mean = sum / n
         var ssd = 0.0
-        for (k in 0 until n) {
-            val d = window[(head + k) % WINDOW_SIZE] - mean
+        for (k in first until stored) {
+            val d = window[(head + k) % WINDOW_CAPACITY] - mean
             ssd += d * d
         }
         val variance = ssd / n
@@ -341,7 +371,12 @@ class MarketDataGate(
 
         /** Widest real server-zone offset (UTC-12..UTC+14); a print older than this is a gap, not skew. */
         const val MAX_PLAUSIBLE_ZONE_OFFSET_MS: Long = 14L * 3_600_000L
-        private const val WINDOW_SIZE = 64
+
+        /** Sample age for the outlier band; preserves the span a 64-tick window covered at ~1 tick/s. */
+        const val DEFAULT_OUTLIER_WINDOW_MS: Long = 64_000L
+
+        /** Ring capacity — bounds memory; [DEFAULT_OUTLIER_WINDOW_MS] bounds the sample itself. */
+        private const val WINDOW_CAPACITY = 512
         private const val MIN_WINDOW_FOR_OUTLIER = 16
         private const val EWMA_ALPHA = 0.1
         private const val MIN_RELATIVE_SIGMA = 0.002
