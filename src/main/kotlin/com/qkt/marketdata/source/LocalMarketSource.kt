@@ -20,10 +20,11 @@ class LocalMarketSource(
     private val store: DataStore,
     private val clock: Clock,
     /**
-     * Phase 25A: optional pre-fetched bar store keyed by `(broker, symbol, tf)`. When
-     * present and fully populated for the requested range, `bars()` reads bars
-     * directly from disk instead of aggregating ticks. Partial coverage falls back
-     * to tick aggregation, so the two stores can coexist safely.
+     * Phase 25A: optional pre-fetched bar store keyed by `(broker, symbol, tf)`. When it holds
+     * ANY day of the requested range, `bars()` reads those days from disk instead of aggregating
+     * ticks; days the store does not have are skipped rather than disqualifying the whole read,
+     * because a range longer than a few days always misses the days the venue did not trade.
+     * Only a range the store cannot serve at all falls back to tick aggregation.
      */
     private val barStore: LocalBarStore? = null,
     /**
@@ -183,11 +184,24 @@ class LocalMarketSource(
                 val sym = parts[1]
                 val tf = window.canonicalSpec()
                 val days = daysCovering(range)
-                if (days.isNotEmpty() && days.all { bs.hasDay(broker, sym, tf, it) }) {
+                // Gaps are tolerated, as in the binary tier above: a range of more than a few
+                // days ALWAYS misses the days the venue did not trade, so requiring every day
+                // to be present made the bar store unusable for any multi-day warmup and sent
+                // it down the tick-aggregation fallback instead. In a golden-replay store that
+                // fallback is actively wrong -- the tick file also holds warmup ticks rehydrated
+                // from every stream's timeframe, each carrying its whole bar's volume, so
+                // aggregating it into one timeframe sums volume across all of them. Measured on
+                // a 4-stream gold capture, a 120-bar 1h warmup read 52,737 on a bar the venue
+                // recorded as 9,828; the same warmup shortened to 10 bars (inside one day's
+                // file) read it correctly. A store with no coverage at all still falls back,
+                // and a short read surfaces through the caller's underfill check rather than
+                // silently substituting different numbers.
+                val available = days.filter { bs.hasDay(broker, sym, tf, it) }
+                if (available.isNotEmpty()) {
                     val rangeFromMs = range.from.toEpochMilli()
                     val rangeToMs = range.to.toEpochMilli()
                     return sequence {
-                        for (day in days) {
+                        for (day in available) {
                             for (candle in bs.readDay(broker, sym, tf, day)) {
                                 if (candle.startTime < rangeFromMs) continue
                                 if (candle.endTime > rangeToMs) continue
