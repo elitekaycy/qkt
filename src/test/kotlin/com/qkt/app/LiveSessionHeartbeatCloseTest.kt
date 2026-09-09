@@ -54,6 +54,13 @@ class LiveSessionHeartbeatCloseTest {
 
     private class Harness {
         val clock = FixedClock(1_000L)
+
+        /**
+         * Pinned explicitly so these tests assert the grace BEHAVIOUR rather than whatever the
+         * production default happens to be; that default is sized from measured feed lag and has
+         * moved once already (500ms -> 2000ms, catalog row A25).
+         */
+        val graceMs = 500L
         val bus = EventBus(clock, MonotonicSequenceGenerator())
         val source = ControllableSource()
         val closed = CopyOnWriteArrayList<CandleEvent>()
@@ -79,6 +86,7 @@ class LiveSessionHeartbeatCloseTest {
                     candleWindow = TimeWindow.ONE_MINUTE,
                     busOverride = bus,
                     scheduleHeartbeatIntervalMs = 5L,
+                    candleCloseGraceMs = graceMs,
                 ).start()
         }
 

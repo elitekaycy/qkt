@@ -260,10 +260,23 @@ class LiveSession(
         const val TICK_QUEUE_CAPACITY: Int = 10_000
 
         /**
-         * Wall-clock lag for heartbeat-driven bar closes (#1058): comfortably above one MT5
-         * poll round (50ms) plus a gateway round trip, far below any bar window.
+         * Wall-clock lag for heartbeat-driven bar closes (#1058): above the feed's tick arrival
+         * lag, far below any bar window.
+         *
+         * Sized from measurement, not from the poll interval. Against a local Exness gateway the
+         * lag between a tick's broker timestamp and its arrival at the aggregator ran a median of
+         * 100ms and a p99 of 192ms unloaded, but the tail is set by gateway contention rather than
+         * by cadence: a single MT5 terminal serializes requests, and a competing poller pushed the
+         * same measurement to a 1458ms p90. The former 500ms sat inside that tail, so a heartbeat
+         * could close a bar while its own ticks were still in flight and they were then rejected as
+         * late — reproduced live as one bar that recorded 18 of the venue's 111 ticks while every
+         * neighbouring bar matched exactly.
+         *
+         * A heartbeat close is only reached when no tick from the next bar has arrived, so an
+         * active symbol closes tick-driven and is unaffected by this value; it costs close latency
+         * on quiet symbols alone.
          */
-        const val DEFAULT_CANDLE_CLOSE_GRACE_MS: Long = 500L
+        const val DEFAULT_CANDLE_CLOSE_GRACE_MS: Long = 2_000L
 
         /** Tick-queue poll timeout — bounds the control-queue re-check latency. */
         const val QUEUE_POLL_MS: Long = 25L
