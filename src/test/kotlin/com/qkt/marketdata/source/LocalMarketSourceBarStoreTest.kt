@@ -19,8 +19,8 @@ import org.junit.jupiter.api.io.TempDir
 
 /**
  * Integration: when a [LocalBarStore] is wired into [LocalMarketSource], `bars()`
- * pulls from disk instead of aggregating ticks. Partial coverage falls back so
- * the two stores coexist safely.
+ * pulls from disk instead of aggregating ticks. Days the store lacks are skipped; only a range
+ * it cannot serve at all falls back to tick aggregation.
  */
 class LocalMarketSourceBarStoreTest {
     private val day = LocalDate.parse("2024-01-15")
@@ -117,6 +117,34 @@ class LocalMarketSourceBarStoreTest {
                 .toList()
 
         assertThat(out.map { it.close.toPlainString() }).containsExactly("202", "203", "204")
+    }
+
+    @Test
+    fun `a day the venue did not trade does not disqualify the whole range`(
+        @TempDir tmp: Path,
+    ) {
+        // Requiring every day to be present made the bar store unusable for any multi-day read:
+        // a weekend is always absent, so the read fell through to tick aggregation. In a
+        // golden-replay store that fallback returns different numbers entirely, because the tick
+        // file also carries warmup ticks rehydrated from every stream's timeframe.
+        val barStore = LocalBarStore(root = tmp)
+        val friday = LocalDate.parse("2024-01-12")
+        val monday = LocalDate.parse("2024-01-15")
+        val fridayStart = friday.atStartOfDay(java.time.ZoneOffset.UTC).toInstant()
+        barStore.writeDay("EXNESS", "XAUUSD", "1m", friday, listOf(bar(fridayStart.toEpochMilli(), close = "301")))
+        barStore.writeDay("EXNESS", "XAUUSD", "1m", monday, listOf(bar(dayStart.toEpochMilli(), close = "302")))
+        // Saturday and Sunday are deliberately absent — the venue was closed.
+
+        val source =
+            LocalMarketSource(
+                store = emptyDataStore(tmp),
+                clock = FixedClock(time = dayEnd.toEpochMilli()),
+                barStore = barStore,
+            )
+
+        val out = source.bars("EXNESS:XAUUSD", TimeWindow.ONE_MINUTE, TimeRange(fridayStart, dayEnd)).toList()
+
+        assertThat(out.map { it.close.toPlainString() }).containsExactly("301", "302")
     }
 
     @Test

@@ -920,8 +920,12 @@ class TradingPipeline(
         candleHub.flushClosed(nowMs)
     }
 
-    /** Late ticks rejected after their candle was finalized. */
-    fun droppedLateTicks(): Long = windowAggregator?.droppedLateTicks ?: 0L
+    /**
+     * Late ticks rejected after their candle was finalized, across the default window aggregator
+     * AND every hub slot. The hub is where a DSL stream's bars are built, so counting only the
+     * default aggregator under-reported a multi-stream strategy's drops to zero.
+     */
+    fun droppedLateTicks(): Long = (windowAggregator?.droppedLateTicks ?: 0L) + candleHub.droppedLateTicks()
 
     fun ingestForWarmup(tick: Tick) = ingestForWarmup(tick, sourceTimeframeMs = null)
 
