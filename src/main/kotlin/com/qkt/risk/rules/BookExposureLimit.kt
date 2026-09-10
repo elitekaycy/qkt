@@ -60,7 +60,8 @@ class BookExposureLimit(
         // cap that admits one. Reading `controller.state()` alone let a whole book enter at once.
         val breach =
             controller.checkAndReserve(
-                com.qkt.risk.book.bookReservationKey(request.strategyId, request.id),
+                com.qkt.risk.book
+                    .bookReservationKey(request.strategyId, request.id),
                 request.symbol,
                 signed,
             ) ?: return Decision.Approve

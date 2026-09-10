@@ -535,7 +535,10 @@ class ReplayEngine(
             )
         // Same reservation lifecycle as live, registered after the pipeline so a fill is already in
         // positions when it is marked. Without it the backtest would never release a reservation.
-        bookRiskController?.let { controller -> com.qkt.risk.book.wireBookReservations(bus, controller) }
+        bookRiskController?.let { controller ->
+            com.qkt.risk.book
+                .wireBookReservations(bus, controller)
+        }
         holder[0] = pipeline
         swapBook =
             SwapFinancingBook(
