@@ -798,7 +798,8 @@ Eight shapes, grouped by how ordinary they are:
 
 crossed with five risk profiles: `no-book-risk` (the control, every cap open and no `book_risk`
 section at all), `book-gross-cap`, `book-concentration-cap`, `per-order-qty-cap` (set below the
-children's lot so every entry must be refused) and `margin-floor`. Every generated book is validated
+children's lot so every entry must be refused) and `margin-floor` (a 1e9% floor, which binds as soon
+as any position is open). Every generated book is validated
 with the real `qkt parse`, so a case that cannot compile never reaches the runner, and no credential
 is written into any artifact.
 
@@ -809,27 +810,45 @@ scripts/live-validation/run-portfolio-matrix.sh \
   --scenario /var/tmp/qkt-validation/portfolio-001 --verify-only
 ```
 
-Run against the real local demo gateway. Each case gets its own daemon, state and journal, so a
-leftover deployment can never be mistaken for the case under test:
+Run against the real local demo gateway. Every generated book emits entries, so deploying one
+places real bounded `0.01`-lot demo orders; there is no unarmed live mode, and `--run-live` requires
+both approvals:
 
 ```bash
 export QKT_BROKER_API_KEY="$LOCAL_GATEWAY_KEY"
+export QKT_LIVE_DEMO_ORDER_APPROVAL=LOCALHOST_DEMO_ONLY
 scripts/live-validation/run-portfolio-matrix.sh \
-  --scenario /var/tmp/qkt-validation/portfolio-001 --run-live
+  --scenario /var/tmp/qkt-validation/portfolio-001 --run-live \
+  --arm I_UNDERSTAND_DEMO_ORDER_0.01
 ```
 
-Unarmed, this proves the control plane: the gateway is hedging and flat before the case starts,
-`qkt deploy` fans the book out into exactly the declared number of children, and the venue is
-untouched when the case ends. A gateway that serves `/account` unauthenticated is accepted on
-loopback and the fact is printed rather than hidden.
+Each case gets its own daemon, state and journal, so a leftover deployment can never be mistaken
+for the case under test. Before the first case the gateway must be hedging and flat; `qkt deploy`
+must fan the book out into exactly the declared number of children; and every case flattens and
+stops whatever happened, failing if the account is left carrying a position. A gateway that serves
+`/account` unauthenticated is accepted on loopback and the fact is printed rather than hidden.
 
-Adding `--arm I_UNDERSTAND_DEMO_ORDER_0.01` together with
-`QKT_LIVE_DEMO_ORDER_APPROVAL=LOCALHOST_DEMO_ONLY` additionally lets the children's bounded
-`0.01`-lot entries reach the venue, which is what proves risk refusals and per-child attribution on
-real fills. Profiles whose caps must refuse every entry are required to open nothing; profiles that
-permit entries are required to open at least one and to leave no venue position unattributed to a
-child of the book. Every case flattens and stops whatever happened, and a case that leaves the
-account carrying a position fails.
+Venue positions are read through `qkt bot positions --json`, the broker view the engine trades with.
+The local gateway has no `/positions` route and answers 404; an earlier version of this runner piped
+that through `jq length`, read it as zero, and reported "venue untouched" while real tickets opened.
+An unreadable position list now fails the case.
+
+Every verdict is judged from the ENGINE's own decisions, never from a pre-baked expectation:
+
+- Every child that can fire must reach an entry decision inside the window -- a venue position or a
+  logged risk refusal. When one does not, the runner says why from the log: no signal at all, or a
+  child held by the market-data staleness gate. Neither is reported as a pass or as a refusal.
+- `no-book-risk` must refuse nothing and fill every deciding child.
+- `per-order-qty-cap` must refuse every entry before the venue.
+- `book-gross-cap` and `book-concentration-cap` are order-dependent -- which child gets in first
+  depends on timing -- so they are checked arithmetically: every refusal must quote an exposure that
+  genuinely exceeds cap x capital, and the positions that did open must fit inside that limit.
+- `margin-floor` passes entries on a flat account by design (`MarginFloor` approves at margin level
+  0), so every refusal must quote a margin level genuinely below the configured floor.
+
+Per-child attribution is recorded, not asserted: positions opened by portfolio children carry comment
+`ORD-0` rather than a `dsl-<name>` marker, and shutdown logs "flatten skipped unattributed ticket" for
+each sibling's ticket. Each child still closes its own position, so the account ends flat.
 
 This runner asserts FLOW parity, not price parity. A live run against a moving market cannot
 reproduce a backtest's fill prices, and it does not pretend to: what it holds to is the same

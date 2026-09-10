@@ -37,7 +37,8 @@ Usage: run-portfolio-matrix.sh --scenario DIR [--case ID] [--cli PATH]
 --run-live         deploy each case against the local demo gateway; ALWAYS places real
                    demo orders, so --arm is mandatory
 --arm              I_UNDERSTAND_DEMO_ORDER_0.01, mandatory with --run-live
---observe-seconds  live observation window per case (default 90)
+--observe-seconds  live observation window per case (default 150: at least two closed
+                   1m bars after deploy and warmup, so every child reaches a decision)
 EOF
 }
 
@@ -49,7 +50,7 @@ only_case=""
 cli="$repo_root/build/install/qkt/bin/qkt"
 verify_only=true
 arm=""
-observe_seconds=90
+observe_seconds=150
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -138,7 +139,7 @@ verify_case() {
     local expects_rejections
     expects_rejections="$(jq -r '.required.riskRejectionsExpected' "$case_dir/expected.json")"
     if [ "$expects_rejections" = "true" ]; then
-        grep -qE 'max_order_qty: "0\.005"|margin_floor_pct: "100000"' "$case_dir/qkt.config.yaml" \
+        grep -qE 'max_order_qty: "0\.005"' "$case_dir/qkt.config.yaml" \
             || { note "case expects rejections but its config cannot cause any"; return 1; }
     fi
 
@@ -268,37 +269,101 @@ run_case_live() {
         open_positions="$(jq 'length' "$evidence/positions.json" 2>/dev/null || echo ERROR)"
         [ "$open_positions" = "ERROR" ] && { note "unreadable position list"; rc=1; open_positions=0; }
 
-        local entries_reach
-        entries_reach="$(jq -r '.required.entriesReachVenue' "$expected")"
-        if [ "$entries_reach" = "false" ]; then
-            if [ "$open_positions" != "0" ]; then
-                note "risk profile should have refused every entry, but $open_positions opened"
-                rc=1
+        # ---- verdict, judged from the ENGINE's own decisions -------------------------------
+        # Every child that can fire must reach an entry decision inside the window: either a real
+        # venue position or a logged risk refusal. A case where none did has not tested anything,
+        # and that is reported as exactly that -- no closed bar in the window -- instead of being
+        # mistaken for a refusal or a pass. (A 45s window missed the first closed 1m bar on some
+        # cases and was reported, wrongly, as "the shape proved nothing".)
+        local profile attempting refused_children book_refusals
+        profile="$(jq -r '.riskProfile' "$expected")"
+        attempting="$(jq -r '.childrenAttemptingEntry' "$expected")"
+        grep -E "risk rejected" "$evidence/daemon.log" > "$evidence/refusals.log" 2>/dev/null || true
+        refused_children="$(grep -oE "risk rejected [^ ]+" "$evidence/refusals.log" | sort -u | wc -l | tr -d ' ')"
+        book_refusals="$(grep -cE "risk rejected .*: book " "$evidence/refusals.log" || true)"
+        note "decisions: $open_positions opened, $refused_children child(ren) refused, $attempting expected to decide"
+
+        local decided=$((open_positions + refused_children))
+        if [ "$decided" -lt "$attempting" ]; then
+            # Say WHY a child did not decide, from the engine's own log, instead of guessing.
+            # Measured 2026-09-10: one child was held by the market-data staleness gate ("market
+            # data for EXNESS:AUDUSD STALE ... suppressing new orders") and a whole case produced no
+            # signal at all; both were first reported as "no closed bar", which was wrong for one.
+            local submits stale_children
+            submits="$(grep -c ' submit ' "$evidence/daemon.log" 2>/dev/null || true)"
+            stale_children="$(grep -oE 'ERROR +\[[^]]+\] [^ ]+ - market data for [^ ]+ STALE' \
+                "$evidence/daemon.log" 2>/dev/null | grep -oE '\[[^]]+\]' | sort -u | wc -l | tr -d ' ')"
+            if [ "$submits" = "0" ]; then
+                note "no child produced a signal in ${observe_seconds}s -- no closed bar reached the strategies; this case tested nothing"
+            elif [ "$stale_children" != "0" ]; then
+                note "only $decided of $attempting children decided; $stale_children child(ren) were held by the market-data staleness gate (orders suppressed on stale quotes) -- the staleness gate, not the risk profile, decided this case"
             else
-                note "entries correctly refused by the configured cap"
+                note "only $decided of $attempting children reached an entry decision in ${observe_seconds}s; this case tested nothing"
             fi
+            rc=1
         else
-            if [ "$open_positions" -lt 1 ]; then
-                note "armed run opened nothing; the shape proved nothing"
-                rc=1
-            else
-                # Attribution is RECORDED, not asserted, until the comment convention is settled.
-                # Measured on 2026-09-10 against this gateway: positions opened by portfolio children
-                # carry comment "ORD-0" -- the internal order id -- rather than the `dsl-<name>`
-                # marker that forge's orphan-flattener greps for, and the engine's own shutdown logs
-                # "flatten skipped unattributed ticket <n>; operator intervention required" for every
-                # sibling's ticket. Each child does still close its OWN position, so the account ends
-                # flat, but nothing downstream can tell from the venue alone which child owns which
-                # ticket. Failing the case on that would assert a convention this build does not use;
-                # recording it keeps the evidence without inventing a verdict.
-                local dsl_marked
-                dsl_marked="$(jq '[.[] | select((.comment // "") | startswith("dsl-"))] | length' \
-                    "$evidence/positions.json" 2>/dev/null || echo 0)"
-                note "opened $open_positions position(s); $dsl_marked carry a dsl- attribution comment"
-                jq -r '[.[] | {ticket, symbol, comment}]' "$evidence/positions.json" \
-                    > "$evidence/attribution.json" 2>/dev/null || true
-            fi
+            local capital cap
+            capital="$(grep -oE 'capital: "[0-9.]+"' "$config" | head -1 | grep -oE '[0-9.]+')"
+            case "$profile" in
+                no-book-risk)
+                    # Control: nothing may be refused and every deciding child must hold a position.
+                    [ "$refused_children" = "0" ] || { note "control profile refused $refused_children child(ren)"; rc=1; }
+                    [ "$open_positions" -ge "$attempting" ] || { note "control opened $open_positions of $attempting"; rc=1; }
+                    ;;
+                margin-floor)
+                    # MarginFloor approves every entry while the venue reports a margin level of 0 --
+                    # a flat account -- by design (risk/rules/MarginFloor.kt), and at 1000:1 leverage a
+                    # single 0.01-lot position already puts the level in the millions of percent. So
+                    # entries on a flat account are EXPECTED to pass; what is checked is that every
+                    # refusal quotes a margin level genuinely below the configured floor, and that
+                    # nothing else refused under this profile.
+                    local floor bad_margin other
+                    floor="$(grep -oE 'margin_floor_pct: "[0-9.]+"' "$config" | grep -oE '[0-9.]+')"
+                    bad_margin="$(grep -oE 'margin level [0-9.]+% below floor' "$evidence/refusals.log" \
+                        | grep -oE '[0-9.]+' | awk -v f="$floor" '$1 >= f {n++} END {print n+0}')"
+                    [ "$bad_margin" = "0" ] || { note "$bad_margin margin refusal(s) quote a level at or above the ${floor}% floor"; rc=1; }
+                    other="$(grep -vc 'margin level' "$evidence/refusals.log" || true)"
+                    [ "$other" = "0" ] || { note "$other refusal(s) under margin-floor were not margin refusals"; rc=1; }
+                    note "floor ${floor}%: $open_positions entr(ies) passed, $refused_children child(ren) refused below the floor"
+                    ;;
+                per-order-qty-cap)
+                    # Every entry must be refused before the venue.
+                    [ "$open_positions" = "0" ] || { note "$profile let $open_positions position(s) through"; rc=1; }
+                    [ "$refused_children" -ge "$attempting" ] || { note "$profile refused only $refused_children of $attempting"; rc=1; }
+                    ;;
+                book-gross-cap|book-concentration-cap)
+                    # Which children get in is order-dependent (children run concurrently), so the
+                    # check is order-independent and ARITHMETIC: every refusal must quote an exposure
+                    # that genuinely exceeds cap x capital, and every opened position must fit.
+                    if [ "$profile" = book-gross-cap ]; then cap=0.02; else cap=0.01; fi
+                    local limit
+                    limit="$(awk -v c="$cap" -v k="$capital" 'BEGIN{printf "%.4f", c*k}')"
+                    local unjustified
+                    unjustified="$(grep -oE ': book [^0-9]*[0-9]+\.[0-9]+' "$evidence/refusals.log" \
+                        | grep -oE '[0-9]+\.[0-9]+$' \
+                        | awk -v l="$limit" '$1 <= l {n++} END {print n+0}')"
+                    [ "$unjustified" = "0" ] || { note "$unjustified refusal(s) quote an exposure within the $limit limit"; rc=1; }
+                    local over
+                    if [ "$profile" = book-gross-cap ]; then
+                        over="$(jq --argjson l "$limit" '[.[] | .lots*100000*.entry] | add // 0 | if . > $l then 1 else 0 end' "$evidence/positions.json")"
+                    else
+                        over="$(jq --argjson l "$limit" '[group_by(.symbol)[] | map(.lots*100000*.entry) | add | select(. > $l)] | length' "$evidence/positions.json")"
+                    fi
+                    [ "$over" = "0" ] || { note "an opened position exceeds the $limit $profile limit"; rc=1; }
+                    [ "$book_refusals" -ge 1 ] || [ "$refused_children" = "0" ] \
+                        || { note "refusals under $profile were not book-cap refusals"; rc=1; }
+                    note "cap $cap x capital $capital = limit $limit; refusals and fills checked against it"
+                    ;;
+                *) note "unknown risk profile $profile"; rc=1 ;;
+            esac
         fi
+
+        # Attribution is RECORDED, not asserted. Measured 2026-09-10: positions opened by portfolio
+        # children carry comment "ORD-0" rather than the `dsl-<name>` marker, and shutdown logs
+        # "flatten skipped unattributed ticket <n>; operator intervention required" for each
+        # sibling's ticket. Each child still closes its own position, so the account ends flat.
+        jq -r '[.[] | {ticket, symbol, lots, entry, comment}]' "$evidence/positions.json" \
+            > "$evidence/attribution.json" 2>/dev/null || true
     fi
 
     # Always flatten and stop, whatever happened above: a case must never leave the demo account
