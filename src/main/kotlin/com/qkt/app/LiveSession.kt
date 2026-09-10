@@ -979,6 +979,7 @@ class LiveSession(
         // They queue here and drain, in order, once the engine loop starts.
         val running = AtomicBoolean(true)
         val stopping = AtomicBoolean(false)
+        val clearRuleEdgesAtStop = AtomicBoolean(false)
         val control = java.util.concurrent.LinkedBlockingQueue<Inbound>()
         bus.bindSink { ev -> if (running.get()) control.put(Inbound.BusEvent(ev)) }
         val paperInstruments =
@@ -1472,6 +1473,12 @@ class LiveSession(
         bus.subscribe<BrokerEvent.OrderFilled> { e ->
             ticketAttribution.record(e.brokerOrderId, e.strategyId)
         }
+        // Book reservations are released or aged by this session's own order lifecycle. Registered
+        // after the pipeline, so a fill is already folded into positions when it is marked.
+        bookRiskController?.let { controller ->
+            com.qkt.risk.book
+                .wireBookReservations(bus, controller)
+        }
         insightsSink?.let { sink -> wireInsights(bus, sink, priceTracker) }
         // Restore OCO legs from the persistor and reconcile them against venue truth so
         // any sibling whose pair filled during downtime is cancelled before ticks flow.
@@ -1844,6 +1851,15 @@ class LiveSession(
                     Thread.currentThread().interrupt()
                 } finally {
                     running.set(false)
+                    // After the final drain, so the stop flatten's fills are already booked and no
+                    // later bar can fire on the cleared edges before the session is gone.
+                    if (clearRuleEdgesAtStop.get()) {
+                        for ((strategyId, strategy) in strategies) {
+                            if (strategy !is DslCompiledStrategy) continue
+                            runCatching { strategy.clearRuleEdges() }
+                                .onFailure { t -> log.warn("could not clear rule edges for {} at stop", strategyId, t) }
+                        }
+                    }
                     // Journal appends run on this thread (bus dispatch), so its channels
                     // close here — the last event is already durable when we count down.
                     runCatching { journal?.close() }
@@ -2382,6 +2398,11 @@ class LiveSession(
 
             // Legacy fire-and-forget flatten stays engine-thread confined for internal callers.
             override fun flatten() {
+                control.put(Inbound.Flatten)
+            }
+
+            override fun flattenForStop() {
+                clearRuleEdgesAtStop.set(true)
                 control.put(Inbound.Flatten)
             }
         }.also { handleRef.set(it) }

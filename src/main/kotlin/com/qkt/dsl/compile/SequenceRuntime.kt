@@ -137,6 +137,13 @@ class SequenceRuntime(
         }
     }
 
+    /** Clear every rule edge, including any not yet restored, and persist the cleared state. */
+    internal fun clearRuleEdges() {
+        restoredRuleEdges = emptyMap()
+        for (rule in ruleEdges) rule.clearEdge()
+        persistRuleEdges()
+    }
+
     internal fun persistRuleEdges() {
         var dirty = false
         for (rule in ruleEdges) {
