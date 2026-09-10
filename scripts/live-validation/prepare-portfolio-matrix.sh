@@ -147,8 +147,12 @@ YAML
             max_qty="0.005"
             ;;
         margin-floor)
-            # A floor no demo account can satisfy, so entries reject on margin rather than on size.
-            margin_floor="100000"
+            # MarginFloor approves every entry while margin level is 0 (a flat account) by design,
+            # and at 1000:1 leverage one 0.01-lot position already puts the level in the millions of
+            # percent -- the first version of this profile used 100000% and could never refuse
+            # anything. 1e9% binds as soon as any position is open, so later entries are refused and
+            # the refusal arithmetic can be checked against the engine's own reason.
+            margin_floor="1000000000"
             ;;
         *) fail "unknown risk profile: $profile" ;;
     esac
@@ -396,9 +400,17 @@ EOF
 write_case_contract() {
     local case_dir="$1" case_id="$2" shape="$3" profile="$4" children="$5" magic="$6"
     # Whether entries are expected to reach the venue at all under this profile.
-    local entries_reach_venue=true
+    # How entries should resolve under this profile. Book caps are "cap-dependent": whether a given
+    # child gets in depends on live prices and on which sibling reached the book first, so the
+    # runner judges those arithmetically from the engine's own refusal lines instead of from a
+    # pre-baked yes/no. (The first contract said book-cap entries would reach the venue; a 0.01-lot
+    # EURUSD position is ~1,163 of notional against a 999 concentration limit, so the engine was
+    # right to refuse and the contract was wrong.)
+    local entries_reach_venue=true entry_policy=open
     case "$profile" in
-        per-order-qty-cap|margin-floor) entries_reach_venue=false ;;
+        per-order-qty-cap) entries_reach_venue=false; entry_policy=refuse ;;
+        book-gross-cap|book-concentration-cap) entry_policy=cap-dependent ;;
+        margin-floor) entry_policy=floor-dependent ;;
     esac
     # The silent child never fires, so one fewer child is expected to attempt an entry.
     local attempting="$children"
@@ -412,11 +424,13 @@ write_case_contract() {
         --argjson attempting "$attempting" \
         --argjson magic "$magic" \
         --argjson entriesReachVenue "$entries_reach_venue" \
+        --arg entryPolicy "$entry_policy" \
         '{
           schema: "qkt-live-portfolio-case-v1",
           caseId: $caseId,
           shape: $shape,
           riskProfile: $profile,
+          entryPolicy: $entryPolicy,
           children: $children,
           childrenAttemptingEntry: $attempting,
           magicBase: $magic,
