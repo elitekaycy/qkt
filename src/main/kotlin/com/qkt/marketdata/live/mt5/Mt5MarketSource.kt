@@ -101,8 +101,14 @@ class Mt5MarketSource(
         val recentNowMs = recentInSessionNowMs(bareSymbol, range)
         var candles = fetch()
         if (recentNowMs != null) {
+            // Retry a STALE window as well as an empty one. A terminal repopulating its history
+            // cache serves both shapes transiently -- and when several strategies warm up at once
+            // the stale shape is the common one -- but only the empty shape used to retry, so a
+            // deployment could fail on a window that was correct milliseconds later. Observed on
+            // a live restart: a 5m stream failed with a 17-hour-stale window while its 15m sibling
+            // on the same symbol succeeded, and both were current on the very next read.
             for (retry in 1..profile.retryAttempts) {
-                if (candles.isNotEmpty()) break
+                if (candles.isNotEmpty() && timeBaseFailure(bareSymbol, wire, window, recentNowMs, candles) == null) break
                 sleepBeforeRetry(retry)
                 candles = fetch()
             }
@@ -132,6 +138,7 @@ class Mt5MarketSource(
         }
     }
 
+    /** Throws with the reason when the freshly-read window cannot be trusted. */
     private fun validateRecentTimeBase(
         bareSymbol: String,
         wireSymbol: String,
@@ -139,9 +146,22 @@ class Mt5MarketSource(
         recentNowMs: Long?,
         candles: List<Candle>,
     ) {
-        val nowMs = recentNowMs ?: return
-        require(candles.isNotEmpty()) {
-            "MT5 time-base mismatch for $bareSymbol: no decoded bar remained in the recent UTC range; " +
+        // IllegalArgumentException, not IllegalState: this reports a bad INPUT (the window the
+        // gateway served), and callers and tests have always distinguished the two.
+        timeBaseFailure(bareSymbol, wireSymbol, window, recentNowMs, candles)?.let { throw IllegalArgumentException(it) }
+    }
+
+    /** The reason this window is untrustworthy, or null when it passes. Never throws. */
+    private fun timeBaseFailure(
+        bareSymbol: String,
+        wireSymbol: String,
+        window: TimeWindow,
+        recentNowMs: Long?,
+        candles: List<Candle>,
+    ): String? {
+        val nowMs = recentNowMs ?: return null
+        if (candles.isEmpty()) {
+            return "MT5 time-base mismatch for $bareSymbol: no decoded bar remained in the recent UTC range; " +
                 "set gateway MT5_SERVER_UTC_OFFSET_SECONDS=0 and verify " +
                 "server_time_zone=${profile.serverTimeZone.id}"
         }
@@ -169,13 +189,12 @@ class Mt5MarketSource(
         // fails: three hours of a trading day is 180 in-session 1m slots (#1055).
         val maxSlots = maxOf(3L, MIN_RECENT_BAR_AGE_MS / window.durationMs)
         val inSessionSlots = inSessionSlotsBetween(bareSymbol, window, newestClosedBarEndMs, tick.brokerTimeMs)
-        require(barAgeMs >= minAgeMs && inSessionSlots <= maxSlots) {
-            "MT5 time-base mismatch for $bareSymbol: " +
-                "newest closed bar end=${Instant.ofEpochMilli(newestClosedBarEndMs)}, " +
-                "tick=${Instant.ofEpochMilli(tick.brokerTimeMs)}, deltaMs=$barAgeMs, " +
-                "inSessionSlots=$inSessionSlots (max $maxSlots); " +
-                "set gateway MT5_SERVER_UTC_OFFSET_SECONDS=0 and verify server_time_zone=${profile.serverTimeZone.id}"
-        }
+        if (barAgeMs >= minAgeMs && inSessionSlots <= maxSlots) return null
+        return "MT5 time-base mismatch for $bareSymbol: " +
+            "newest closed bar end=${Instant.ofEpochMilli(newestClosedBarEndMs)}, " +
+            "tick=${Instant.ofEpochMilli(tick.brokerTimeMs)}, deltaMs=$barAgeMs, " +
+            "inSessionSlots=$inSessionSlots (max $maxSlots); " +
+            "set gateway MT5_SERVER_UTC_OFFSET_SECONDS=0 and verify server_time_zone=${profile.serverTimeZone.id}"
     }
 
     /**
