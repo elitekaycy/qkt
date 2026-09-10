@@ -9,14 +9,13 @@ set -euo pipefail
 #                            and validates each contract. No network, no daemon, no orders.
 #
 #   --run-live               deploys each case's portfolio into a real daemon against the local demo
-#                            gateway and observes it. Read-only by default: the gateway is checked
-#                            for health, identity and a flat account, the book is deployed, and the
-#                            runner proves the CONTROL PLANE behaves -- every child deployed, each
-#                            with its own magic, the book's declared capital split by WEIGHT, and the
-#                            account still flat at the end. Adding --arm together with
-#                            QKT_LIVE_DEMO_ORDER_APPROVAL=LOCALHOST_DEMO_ONLY additionally permits
-#                            the bounded 0.01-lot entries the children ask for, which is what proves
-#                            risk refusals and per-child attribution on real fills.
+#                            gateway and observes it. It ALWAYS places real demo orders (every
+#                            generated book emits entries), so it refuses to start without --arm
+#                            I_UNDERSTAND_DEMO_ORDER_0.01 and QKT_LIVE_DEMO_ORDER_APPROVAL=
+#                            LOCALHOST_DEMO_ONLY. The gateway is checked for health, identity and a
+#                            flat account; each case proves every child deployed with its own magic,
+#                            the book's capital split, its risk refusals, per-child attribution on
+#                            real 0.01-lot fills, and a flat account at the end.
 #
 # What "parity" means here, stated plainly: a live run against a moving market cannot reproduce a
 # backtest's fill PRICES, so this does not pretend to. It proves FLOW parity -- the same children,
@@ -307,10 +306,18 @@ run_case_live() {
             submits="$(grep -c ' submit ' "$evidence/daemon.log" 2>/dev/null || true)"
             stale_children="$(grep -oE 'ERROR +\[[^]]+\] [^ ]+ - market data for [^ ]+ STALE' \
                 "$evidence/daemon.log" 2>/dev/null | grep -oE '\[[^]]+\]' | sort -u | wc -l | tr -d ' ')"
-            if [ "$submits" = "0" ]; then
+            # Staleness FIRST: a child held by the market-data gate never logs a submit, so testing for
+            # zero submits first reported a stale-held child as "no signal" (2026-09-10: child a's own
+            # log said "market data for EXNESS:EURUSD STALE ... suppressing new orders" inside the
+            # window while the runner said no bar had reached it). The gate also writes to the child's
+            # own log under state/logs, which the daemon's stdout does not always carry.
+            stale_children="$(cat "$evidence/daemon.log" "$case_dir"/state/logs/*.log 2>/dev/null \
+                | grep -oE '\[[^]]+\] [^ ]+ - market data for [^ ]+ STALE|\[ERROR\] market data for [^ ]+ STALE' \
+                | sort -u | wc -l | tr -d ' ')"
+            if [ "$stale_children" != "0" ]; then
+                note "only $decided of $attempting children decided; the market-data staleness gate suppressed orders on stale quotes during the window -- the staleness gate, not the risk profile, decided this case"
+            elif [ "$submits" = "0" ]; then
                 note "no child produced a signal in ${observe_seconds}s -- no closed bar reached the strategies; this case tested nothing"
-            elif [ "$stale_children" != "0" ]; then
-                note "only $decided of $attempting children decided; $stale_children child(ren) were held by the market-data staleness gate (orders suppressed on stale quotes) -- the staleness gate, not the risk profile, decided this case"
             else
                 note "only $decided of $attempting children reached an entry decision in ${observe_seconds}s; this case tested nothing"
             fi
