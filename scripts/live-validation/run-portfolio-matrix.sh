@@ -159,6 +159,17 @@ gateway_get() {
     curl -sS -m 10 -H "Authorization: Bearer ${QKT_BROKER_API_KEY:-}" "$gateway_url$1"
 }
 
+# A fingerprint of the engine a daemon will load: the sha256 of every qkt jar beside the CLI.
+# Recorded at daemon start and re-checked before teardown, because the installed jar can be replaced
+# while a sweep runs (a Gradle test run executes installDist) and `qkt status --deep` only reports the
+# CLI's own build, not the daemon's.
+engine_fingerprint() {
+    local lib
+    lib="$(cd "$(dirname "$cli")/../lib" 2>/dev/null && pwd)" || { printf 'unknown'; return 0; }
+    find "$lib" -maxdepth 1 -name 'qkt*.jar' -exec sha256sum {} + 2>/dev/null \
+        | sort | sha256sum | cut -c1-16
+}
+
 # Open venue positions, as JSON, through QKT's OWN broker view.
 #
 # This deliberately does NOT ask the gateway for /positions: this gateway build has no such route
@@ -222,6 +233,9 @@ run_case_live() {
         --state-dir "$case_dir/state" \
         > "$evidence/daemon.log" 2>&1 &
     daemon_pid=$!
+    local engine_before
+    engine_before="$(engine_fingerprint)"
+    printf '%s\n' "$engine_before" > "$evidence/engine.txt"
 
     local ready=false
     for _ in $(seq 1 60); do
@@ -365,6 +379,14 @@ run_case_live() {
         jq -r '[.[] | {ticket, symbol, lots, entry, comment}]' "$evidence/positions.json" \
             > "$evidence/attribution.json" 2>/dev/null || true
     fi
+
+    local engine_after
+    engine_after="$(engine_fingerprint)"
+    if [ "$engine_after" != "$engine_before" ]; then
+        note "the installed engine changed during this case ($engine_before -> $engine_after); its result cannot be attributed to one build"
+        rc=1
+    fi
+    note "engine $engine_before"
 
     # Always flatten and stop, whatever happened above: a case must never leave the demo account
     # carrying a position into the next case.
