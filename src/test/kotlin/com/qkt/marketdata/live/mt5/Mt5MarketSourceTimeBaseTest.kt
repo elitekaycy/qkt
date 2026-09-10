@@ -108,7 +108,9 @@ class Mt5MarketSourceTimeBaseTest {
         // on the very next read: observed live when a 5m stream reported a 17-hour-stale window
         // while its 15m sibling on the same symbol succeeded.
         val server = MockWebServer()
-        val barReads = java.util.concurrent.atomic.AtomicInteger(0)
+        val barReads =
+            java.util.concurrent.atomic
+                .AtomicInteger(0)
         val tickTimeMs = Instant.parse("2026-07-15T11:05:00Z").toEpochMilli()
         server.dispatcher =
             object : okhttp3.mockwebserver.Dispatcher() {
@@ -119,7 +121,14 @@ class Mt5MarketSourceTimeBaseTest {
                             MockResponse().setBody("""{"bid":1,"ask":1,"last":1,"flags":6,"time_msc":$tickTimeMs}""")
                         path.contains("fetch_data") -> {
                             // First read is hours stale; the terminal has caught up by the retry.
-                            val barTime = if (barReads.getAndIncrement() == 0) "2026-07-15T02:00:00Z" else "2026-07-15T11:00:00Z"
+                            val barTime =
+                                if (barReads.getAndIncrement() ==
+                                    0
+                                ) {
+                                    "2026-07-15T02:00:00Z"
+                                } else {
+                                    "2026-07-15T11:00:00Z"
+                                }
                             MockResponse().setBody(
                                 """[{"open":1,"high":1,"low":1,"close":1,"spread":0,"tick_volume":1,"time":"$barTime"}]""",
                             )
