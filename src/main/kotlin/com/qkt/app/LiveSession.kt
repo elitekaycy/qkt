@@ -1472,6 +1472,9 @@ class LiveSession(
         bus.subscribe<BrokerEvent.OrderFilled> { e ->
             ticketAttribution.record(e.brokerOrderId, e.strategyId)
         }
+        // Book reservations are released or aged by this session's own order lifecycle. Registered
+        // after the pipeline, so a fill is already folded into positions when it is marked.
+        bookRiskController?.let { controller -> com.qkt.risk.book.wireBookReservations(bus, controller) }
         insightsSink?.let { sink -> wireInsights(bus, sink, priceTracker) }
         // Restore OCO legs from the persistor and reconcile them against venue truth so
         // any sibling whose pair filled during downtime is cancelled before ticks flow.
