@@ -101,6 +101,56 @@ class Mt5MarketSourceTimeBaseTest {
     }
 
     @Test
+    fun `stale recent history retries like empty history does`() {
+        // A terminal repopulating its history cache serves a STALE window as readily as an empty
+        // one, and when several strategies warm up together the stale shape is the common one.
+        // Only the empty shape used to retry, so a deployment failed on a window that was correct
+        // on the very next read: observed live when a 5m stream reported a 17-hour-stale window
+        // while its 15m sibling on the same symbol succeeded.
+        val server = MockWebServer()
+        val barReads =
+            java.util.concurrent.atomic
+                .AtomicInteger(0)
+        val tickTimeMs = Instant.parse("2026-07-15T11:05:00Z").toEpochMilli()
+        server.dispatcher =
+            object : okhttp3.mockwebserver.Dispatcher() {
+                override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse {
+                    val path = request.path ?: ""
+                    return when {
+                        path.contains("symbol_info_tick") ->
+                            MockResponse().setBody("""{"bid":1,"ask":1,"last":1,"flags":6,"time_msc":$tickTimeMs}""")
+                        path.contains("fetch_data") -> {
+                            // First read is hours stale; the terminal has caught up by the retry.
+                            val barTime =
+                                if (barReads.getAndIncrement() ==
+                                    0
+                                ) {
+                                    "2026-07-15T02:00:00Z"
+                                } else {
+                                    "2026-07-15T11:00:00Z"
+                                }
+                            MockResponse().setBody(
+                                """[{"open":1,"high":1,"low":1,"close":1,"spread":0,"tick_volume":1,"time":"$barTime"}]""",
+                            )
+                        }
+                        else -> MockResponse().setBody("""{"point":"0.00001"}""")
+                    }
+                }
+            }
+        server.start()
+        try {
+            val bars = source(server, retryAttempts = 1).bars("TEST:EURUSD", WINDOW, RANGE).toList()
+
+            assertThat(bars).hasSize(1)
+            assertThat(barReads.get())
+                .withFailMessage("stale window must be re-read, not accepted or fatal on first look")
+                .isGreaterThanOrEqualTo(2)
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test
     fun `empty recent history still fails closed after retries are exhausted`() {
         val server = MockWebServer().apply { start() }
         try {
