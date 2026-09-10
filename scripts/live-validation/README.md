@@ -766,3 +766,71 @@ artifacts. It also checks that the capture includes warmup ticks, live ticks, ba
 stream-candle events, strategy-candle evaluations, linked placements, and the canonical
 live bracket evidence. This is the current bridge between real local MT5 execution and
 offline parity over ticks, bars, and MT5-sim for the same retained scenario.
+
+## Portfolio Matrix
+
+Nothing else in this directory deploys a PORTFOLIO. Every other matrix runs a single strategy, so
+none of them exercise what only appears when N children share one account: per-child attribution and
+magic assignment, capital split by `WEIGHT`, book-level exposure caps counting every child at once,
+two children on one symbol, or children on opposing sides of the same symbol.
+
+Prepare one case per (book shape x risk profile) pair:
+
+```bash
+scripts/live-validation/prepare-portfolio-matrix.sh \
+  --output /var/tmp/qkt-validation/portfolio-001 \
+  --id portfolio_matrix_001 \
+  --gateway-url http://127.0.0.1:5001 \
+  --expected-login "$DEMO_LOGIN" \
+  --expected-server "$DEMO_SERVER" \
+  --expected-balance "$CURRENT_BALANCE" \
+  --expected-leverage "$CURRENT_LEVERAGE" \
+  --magic-base "$UNIQUE_MAGIC_BASE"
+```
+
+Eight shapes, grouped by how ordinary they are:
+
+| band | shapes |
+|---|---|
+| normal | two children on distinct symbols; three children with uneven weights |
+| average | five children; weights summing to 0.5 so half the book stays in cash |
+| edge | two children on ONE symbol; long and short children on the same symbol; a single-child book; a book whose second child never fires |
+
+crossed with five risk profiles: `no-book-risk` (the control, every cap open and no `book_risk`
+section at all), `book-gross-cap`, `book-concentration-cap`, `per-order-qty-cap` (set below the
+children's lot so every entry must be refused) and `margin-floor`. Every generated book is validated
+with the real `qkt parse`, so a case that cannot compile never reaches the runner, and no credential
+is written into any artifact.
+
+Verify offline, which performs no network calls and starts no daemon:
+
+```bash
+scripts/live-validation/run-portfolio-matrix.sh \
+  --scenario /var/tmp/qkt-validation/portfolio-001 --verify-only
+```
+
+Run against the real local demo gateway. Each case gets its own daemon, state and journal, so a
+leftover deployment can never be mistaken for the case under test:
+
+```bash
+export QKT_BROKER_API_KEY="$LOCAL_GATEWAY_KEY"
+scripts/live-validation/run-portfolio-matrix.sh \
+  --scenario /var/tmp/qkt-validation/portfolio-001 --run-live
+```
+
+Unarmed, this proves the control plane: the gateway is hedging and flat before the case starts,
+`qkt deploy` fans the book out into exactly the declared number of children, and the venue is
+untouched when the case ends. A gateway that serves `/account` unauthenticated is accepted on
+loopback and the fact is printed rather than hidden.
+
+Adding `--arm I_UNDERSTAND_DEMO_ORDER_0.01` together with
+`QKT_LIVE_DEMO_ORDER_APPROVAL=LOCALHOST_DEMO_ONLY` additionally lets the children's bounded
+`0.01`-lot entries reach the venue, which is what proves risk refusals and per-child attribution on
+real fills. Profiles whose caps must refuse every entry are required to open nothing; profiles that
+permit entries are required to open at least one and to leave no venue position unattributed to a
+child of the book. Every case flattens and stops whatever happened, and a case that leaves the
+account carrying a position fails.
+
+This runner asserts FLOW parity, not price parity. A live run against a moving market cannot
+reproduce a backtest's fill prices, and it does not pretend to: what it holds to is the same
+children, the same allocation, the same refusals and the same attribution.
