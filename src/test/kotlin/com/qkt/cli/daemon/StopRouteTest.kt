@@ -28,21 +28,26 @@ import org.junit.jupiter.api.io.TempDir
 class StopRouteTest {
     private val opened = mutableListOf<AutoCloseable>()
     private val flattenCalls = ConcurrentHashMap<String, AtomicInteger>()
+    private val stopFlattenCalls = ConcurrentHashMap<String, AtomicInteger>()
 
     @AfterEach
     fun cleanup() {
         for (c in opened.reversed()) runCatching { c.close() }
         opened.clear()
         flattenCalls.clear()
+        stopFlattenCalls.clear()
     }
 
     private fun flattens(name: String): Int = flattenCalls[name]?.get() ?: 0
+
+    private fun stopFlattens(name: String): Int = stopFlattenCalls[name]?.get() ?: 0
 
     private fun stubFactory(stateDir: StateDir): StrategyHandle.Factory =
         StrategyHandle.Factory { name, _, _ ->
             val ring = EventRing(capacity = 8)
             val running = AtomicBoolean(true)
             val counter = flattenCalls.computeIfAbsent(name) { AtomicInteger(0) }
+            val stopCounter = stopFlattenCalls.computeIfAbsent(name) { AtomicInteger(0) }
             val live =
                 object : LiveSessionHandle {
                     override val running: Boolean get() = running.get()
@@ -61,6 +66,11 @@ class StopRouteTest {
 
                     override fun flatten() {
                         counter.incrementAndGet()
+                    }
+
+                    override fun flattenForStop() {
+                        stopCounter.incrementAndGet()
+                        flatten()
                     }
                 }
             val server =
@@ -179,6 +189,8 @@ class StopRouteTest {
                 ).execute()
         assertThat(resp.code).isEqualTo(200)
         assertThat(flattens("foo")).isEqualTo(1)
+        // The stop flatten, so the session clears its rule edges and a restart can re-enter.
+        assertThat(stopFlattens("foo")).isEqualTo(1)
     }
 
     @Test

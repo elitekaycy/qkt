@@ -121,6 +121,17 @@ interface DslCompiledStrategy : Strategy {
         // default no-op
     }
 
+    /**
+     * Clear every rule edge so the next start evaluates entries like a fresh deployment.
+     * Called when an operator stop flattened this strategy's positions: a persisted edge
+     * would otherwise still say "already fired", and a rule gated on being flat (for
+     * example `POSITION.x = 0`) never sees another false-to-true transition, so the
+     * restarted strategy never enters again.
+     */
+    fun clearRuleEdges() {
+        // default no-op
+    }
+
     /** Re-arm the rule edge that produced a rejected order, if this strategy owns it. */
     fun onOrderRejected(clientOrderId: String) {
         // default no-op

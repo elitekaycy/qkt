@@ -816,6 +816,11 @@ private class CompiledStrategy(
         sequenceRuntime.bindPersistor(strategyId, persistor)
     }
 
+    override fun clearRuleEdges() {
+        ruleByOrderId.clear()
+        sequenceRuntime.clearRuleEdges()
+    }
+
     override fun onOrderRejected(clientOrderId: String) {
         ruleByOrderId.remove(clientOrderId)?.rearmAfterRejection()
         sequenceRuntime.persistRuleEdges()

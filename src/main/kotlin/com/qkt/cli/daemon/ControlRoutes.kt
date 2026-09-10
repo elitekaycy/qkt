@@ -756,7 +756,7 @@ object ControlRoutes {
                 val meta = child.childMeta
                 val shouldFlatten = flattenOverride ?: (meta != null && !meta.hold)
                 if (shouldFlatten) {
-                    runCatching { child.live.flatten() }
+                    runCatching { child.live.flattenForStop() }
                 }
                 totalTrades += child.tradeCount
             }
@@ -797,7 +797,7 @@ object ControlRoutes {
             )
         }
         val trades = handle.tradeCount
-        if (flattenOverride == true) runCatching { handle.live.flatten() }
+        if (flattenOverride == true) runCatching { handle.live.flattenForStop() }
         registry.stop(name)
         OperatorJournal
             .from(stateDir, "http")

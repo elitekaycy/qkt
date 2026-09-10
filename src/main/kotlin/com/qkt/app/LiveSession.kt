@@ -979,6 +979,7 @@ class LiveSession(
         // They queue here and drain, in order, once the engine loop starts.
         val running = AtomicBoolean(true)
         val stopping = AtomicBoolean(false)
+        val clearRuleEdgesAtStop = AtomicBoolean(false)
         val control = java.util.concurrent.LinkedBlockingQueue<Inbound>()
         bus.bindSink { ev -> if (running.get()) control.put(Inbound.BusEvent(ev)) }
         val paperInstruments =
@@ -1847,6 +1848,15 @@ class LiveSession(
                     Thread.currentThread().interrupt()
                 } finally {
                     running.set(false)
+                    // After the final drain, so the stop flatten's fills are already booked and no
+                    // later bar can fire on the cleared edges before the session is gone.
+                    if (clearRuleEdgesAtStop.get()) {
+                        for ((strategyId, strategy) in strategies) {
+                            if (strategy !is DslCompiledStrategy) continue
+                            runCatching { strategy.clearRuleEdges() }
+                                .onFailure { t -> log.warn("could not clear rule edges for {} at stop", strategyId, t) }
+                        }
+                    }
                     // Journal appends run on this thread (bus dispatch), so its channels
                     // close here — the last event is already durable when we count down.
                     runCatching { journal?.close() }
@@ -2385,6 +2395,11 @@ class LiveSession(
 
             // Legacy fire-and-forget flatten stays engine-thread confined for internal callers.
             override fun flatten() {
+                control.put(Inbound.Flatten)
+            }
+
+            override fun flattenForStop() {
+                clearRuleEdgesAtStop.set(true)
                 control.put(Inbound.Flatten)
             }
         }.also { handleRef.set(it) }

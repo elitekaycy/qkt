@@ -44,6 +44,17 @@ class CompiledRule(
         edgeDirty = false
     }
 
+    /**
+     * Forget the edge, as on a fresh deployment. Used when an operator stop flattened the
+     * position this edge's fire opened: the next bar the condition holds fires again.
+     */
+    internal fun clearEdge() {
+        if (wasTrue) edgeDirty = true
+        wasTrue = false
+        pendingCommit = false
+        rejectedDuringCommit = false
+    }
+
     internal fun consumeEdgeDirty(): Boolean {
         val dirty = edgeDirty
         edgeDirty = false
