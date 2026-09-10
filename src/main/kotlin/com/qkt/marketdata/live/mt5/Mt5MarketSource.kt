@@ -108,7 +108,10 @@ class Mt5MarketSource(
             // a live restart: a 5m stream failed with a 17-hour-stale window while its 15m sibling
             // on the same symbol succeeded, and both were current on the very next read.
             for (retry in 1..profile.retryAttempts) {
-                if (candles.isNotEmpty() && timeBaseFailure(bareSymbol, wire, window, recentNowMs, candles) == null) break
+                val trustworthy =
+                    candles.isNotEmpty() &&
+                        timeBaseFailure(bareSymbol, wire, window, recentNowMs, candles) == null
+                if (trustworthy) break
                 sleepBeforeRetry(retry)
                 candles = fetch()
             }
@@ -148,7 +151,8 @@ class Mt5MarketSource(
     ) {
         // IllegalArgumentException, not IllegalState: this reports a bad INPUT (the window the
         // gateway served), and callers and tests have always distinguished the two.
-        timeBaseFailure(bareSymbol, wireSymbol, window, recentNowMs, candles)?.let { throw IllegalArgumentException(it) }
+        val failure = timeBaseFailure(bareSymbol, wireSymbol, window, recentNowMs, candles)
+        require(failure == null) { failure ?: "" }
     }
 
     /** The reason this window is untrustworthy, or null when it passes. Never throws. */
