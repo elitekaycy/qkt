@@ -7,7 +7,7 @@ usage() {
     cat <<'EOF'
 Usage: prepare-scenario.sh --output DIR --id ID --gateway-url URL \
   --expected-login N --expected-server NAME --expected-balance DECIMAL \
-  --expected-leverage N --magic N [--symbol EURUSD|GBPUSD|XAUUSD] \
+  --expected-leverage N --magic N [--symbol EURUSD|GBPUSD|XAUUSD|EURJPY] \
   [--variant ema_cross|rsi_reversion|atr_channel|case_math] \
   [--ema-fast N --ema-slow N] \
   [--qkt-commit SHA] \
@@ -15,7 +15,7 @@ Usage: prepare-scenario.sh --output DIR --id ID --gateway-url URL \
   [--lifecycle single|reentry|reentry_blocked_max_trades|reentry_max_trades_next_day_recovered|reentry_daily_halt_next_day_recovered|reentry_global_daily_halt_next_day_recovered|reentry_blocked_operator_halt|reentry_operator_halt_recovered|reentry_cooldown_recovered|reentry_blocked_loss_streak]
        prepare-scenario.sh --output DIR --id ID --gateway-url URL \
   --runtime-account-identity --expected-balance DECIMAL \
-  --expected-leverage N --magic N [--symbol EURUSD|GBPUSD|XAUUSD] \
+  --expected-leverage N --magic N [--symbol EURUSD|GBPUSD|XAUUSD|EURJPY] \
   [--variant ema_cross|rsi_reversion|atr_channel|case_math] \
   [--secondary-timeframe 5m|15m|1h|4h] \
   [--lifecycle single|reentry|reentry_blocked_max_trades|reentry_max_trades_next_day_recovered|reentry_daily_halt_next_day_recovered|reentry_global_daily_halt_next_day_recovered|reentry_blocked_operator_halt|reentry_operator_halt_recovered|reentry_cooldown_recovered|reentry_blocked_loss_streak]
@@ -118,7 +118,18 @@ case "$symbol" in
         expected_contract_size="100"
         maximum_entry_anchor_drift_points=1000
         ;;
-    *) fail "--symbol must be one of: EURUSD, GBPUSD, XAUUSD" ;;
+    EURJPY)
+        # Profit currency JPY against a USD account: the only supported symbol that exercises
+        # the FX-conversion leg of PnL, where nativeRealized and accountRealized differ and
+        # fxRate stops being the identity. Contract size and digits agree between
+        # StandardInstrumentRegistry and the venue, so a backtest prices it the same way.
+        max_order_notional="2500"
+        stop_distance="0.300"
+        take_profit_distance="0.600"
+        expected_contract_size="100000"
+        maximum_entry_anchor_drift_points=800
+        ;;
+    *) fail "--symbol must be one of: EURUSD, GBPUSD, XAUUSD, EURJPY" ;;
 esac
 case "$variant" in
     ema_cross|rsi_reversion|atr_channel|case_math) ;;

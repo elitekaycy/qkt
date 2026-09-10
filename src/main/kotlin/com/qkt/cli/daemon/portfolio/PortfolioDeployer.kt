@@ -400,6 +400,9 @@ class PortfolioDeployer(
                 // book-risk controller: a book with only drawdown/daily-loss rules used to
                 // return before emitting it, leaving portfolio_equity empty (#1073).
                 val controller = bookController ?: return@PortfolioRiskAggregator
+                // Before the legs are read: a fill marked after this point may be missing from them,
+                // so its reservation must survive this sample (see BookRiskController.onSample).
+                val startedAt = controller.beginSample()
                 val legs =
                     childPairs.flatMap { (child, wrapper) ->
                         wrapper.handle.live.bookLegs(child.strategyId)
@@ -417,6 +420,7 @@ class PortfolioDeployer(
                             .bookExposure(legs, timestampMs = timestamp),
                         perStrategyPnl,
                     ),
+                    startedAt = startedAt,
                 )
             },
             sampleOnEvaluate = sampleOnEvaluate,

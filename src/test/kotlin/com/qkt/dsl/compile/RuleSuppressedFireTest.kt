@@ -72,6 +72,25 @@ class RuleSuppressedFireTest {
         assertThat(signals).hasSize(1)
     }
 
+    @Test
+    fun `edges cleared by a stop flatten fire again after restart while the condition holds`(
+        @TempDir tmp: Path,
+    ) {
+        // Measured live 2026-09-10: a child entered, the operator stop flattened it before the
+        // next bar, and the persisted edge still said "fired". Restarted, `close > 0 AND
+        // POSITION.x = 0` held on every bar, never rose, and the child never entered again.
+        val first = strategyWith(above100) as DslCompiledStrategy
+        first.bindStatePersistor("edge", FileStatePersistor(tmp))
+        assertThat(feed(first, listOf("90", "150"), testStrategyContext()) { _, _ -> }).hasSize(1)
+        first.clearRuleEdges()
+
+        val restored = strategyWith(above100) as DslCompiledStrategy
+        restored.bindStatePersistor("edge", FileStatePersistor(tmp))
+        val signals = feed(restored, listOf("160", "170"), testStrategyContext()) { _, _ -> }
+
+        assertThat(signals).hasSize(1)
+    }
+
     private fun sequenceStrategy(): Strategy {
         val ast =
             StrategyAst(
