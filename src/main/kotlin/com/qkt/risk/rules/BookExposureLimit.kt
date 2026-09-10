@@ -55,7 +55,15 @@ class BookExposureLimit(
             )
         }
         val signed = converted.account.amount
-        val breach = controller.state().limitBreach(request.symbol, signed) ?: return Decision.Approve
+        // Against the last sample PLUS every approved order it does not carry yet, reserving this one
+        // if it fits -- atomically, so two children checking at the same moment cannot both pass a
+        // cap that admits one. Reading `controller.state()` alone let a whole book enter at once.
+        val breach =
+            controller.checkAndReserve(
+                com.qkt.risk.book.bookReservationKey(request.strategyId, request.id),
+                request.symbol,
+                signed,
+            ) ?: return Decision.Approve
         return Decision.Reject(breach)
     }
 }
