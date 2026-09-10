@@ -105,6 +105,15 @@ interface LiveSessionHandle {
     fun flatten()
 
     /**
+     * [flatten] as part of an operator stop. Sessions with DSL rule state also clear their
+     * rule edges when the engine loop ends, so a restart re-enters like a fresh deployment
+     * instead of treating the entry it just flattened as still taken.
+     */
+    fun flattenForStop() {
+        flatten()
+    }
+
+    /**
      * Emergency control-plane flatten with broker-truth verification. Implementations that cannot
      * verify venue tickets must report an unverified result rather than claiming the book is flat.
      */

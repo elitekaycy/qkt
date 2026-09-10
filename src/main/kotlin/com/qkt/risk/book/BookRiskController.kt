@@ -3,6 +3,15 @@ package com.qkt.risk.book
 import com.qkt.common.Money
 import java.math.BigDecimal
 
+private const val NOT_FILLED = -1L
+
+/**
+ * How many samples an approved order may stay reserved without a fill, reject or cancel. Bounds every
+ * reservation so none can leak: a resting order is not counted after this (it is not counted at all
+ * without reservations), and an order that never reports back cannot slowly starve the book.
+ */
+private const val UNRESOLVED_TTL_SAMPLES = 2
+
 /**
  * The book-risk brain. Fed a [BookSnapshot] each sample (by the measurement monitor), it refreshes an
  * immutable [BookRiskState] the pre-trade gate and order sizing read. Every output is a deterministic
@@ -39,6 +48,29 @@ class BookRiskController(
     private var current: BookRiskState = BookRiskState(capital, Money.ZERO, emptyMap(), config.limits)
 
     /**
+     * Approved risk-increasing orders that no sample carries yet, keyed by [bookReservationKey].
+     *
+     * The sampled state only moves when a sample is taken -- live, once per `riskIntervalMs` from
+     * FILLED positions -- so without these every order checked inside one sample window saw the same
+     * exposure and children entering together all passed a cap that admits one. Measured live on
+     * 2026-09-10: three 0.01-lot entries (~3,239 notional) cleared a 1,998.53 gross cap, two of them
+     * submitted 1 ms apart. An approved order is counted from approval until a sample that already
+     * holds its position ([markFilled] then [onSample]), or until it is refused, rejected or cancelled
+     * ([release]), or until [UNRESOLVED_TTL_SAMPLES] samples pass with no word from it.
+     */
+    private val reservationLock = Any()
+    private val reservations = LinkedHashMap<String, Reservation>()
+    private var startedSamples = 0L
+
+    private class Reservation(
+        val symbol: String,
+        val signedNotional: BigDecimal,
+    ) {
+        var filledAtSample: Long = NOT_FILLED
+        var unresolvedSamples: Int = 0
+    }
+
+    /**
      * Set the current regime-weight vector. Keys must match the strategy ids the controller sees in
      * [BookSnapshot.perStrategyPnl]. Empty weights leave allocation unchanged (scale = 1.0).
      *
@@ -54,7 +86,17 @@ class BookRiskController(
         current = current.copy(allocationWeights = this.weights)
     }
 
-    fun onSample(snapshot: BookSnapshot) {
+    /**
+     * Fold a book sample in. [startedAt] is the value [beginSample] returned BEFORE the sample's legs
+     * were gathered; a filled reservation is dropped only by a sample that began after its fill was
+     * marked, because only such a sample is guaranteed to hold the position. Callers that build and
+     * apply the snapshot in one step on the thread that processes fills (the backtest monitor) can
+     * leave it to default: the sample then begins at this call.
+     */
+    fun onSample(
+        snapshot: BookSnapshot,
+        startedAt: Long = beginSample(),
+    ) {
         if (snapshot.bookEquity > peakEquity) peakEquity = snapshot.bookEquity
         val drawdown =
             if (peakEquity.signum() > 0) {
@@ -85,9 +127,69 @@ class BookRiskController(
                 deRiskFactor = factor,
                 allocationWeights = weights,
             )
+        synchronized(reservationLock) {
+            val iterator = reservations.values.iterator()
+            while (iterator.hasNext()) {
+                val r = iterator.next()
+                if (r.filledAtSample != NOT_FILLED) {
+                    if (r.filledAtSample < startedAt) iterator.remove()
+                } else if (++r.unresolvedSamples >= UNRESOLVED_TTL_SAMPLES) {
+                    iterator.remove()
+                }
+            }
+        }
     }
 
+    /** The raw last sample. Sizing and dashboards read this; only [checkAndReserve] adds reservations. */
     fun state(): BookRiskState = current
+
+    /** Marks the start of a sample: call BEFORE gathering the legs that will become its snapshot. */
+    fun beginSample(): Long = synchronized(reservationLock) { ++startedSamples }
+
+    /**
+     * Pre-trade check and reservation in one atomic step: would adding [signedNotional] on [symbol]
+     * breach a cap, counting the last sample AND every approved order it does not carry yet? If not,
+     * the order is reserved under [key] before the lock is released, so a second child checking at
+     * the same moment sees it. Returns the breach reason, or null when allowed.
+     */
+    fun checkAndReserve(
+        key: String,
+        symbol: String,
+        signedNotional: BigDecimal,
+    ): String? =
+        synchronized(reservationLock) {
+            val breach = withReservations(current).limitBreach(symbol, signedNotional)
+            if (breach == null && config.limits != null && capital.signum() > 0) {
+                reservations[key] = Reservation(symbol, signedNotional)
+            }
+            breach
+        }
+
+    /** The order was refused downstream, rejected by the venue, or cancelled: free its headroom now. */
+    fun release(key: String) {
+        synchronized(reservationLock) { reservations.remove(key) }
+    }
+
+    /** The order filled. It keeps counting until a sample that began after this call carries it. */
+    fun markFilled(key: String) {
+        synchronized(reservationLock) {
+            val r = reservations[key] ?: return
+            if (r.filledAtSample == NOT_FILLED) r.filledAtSample = startedSamples
+        }
+    }
+
+    fun pendingReservations(): Int = synchronized(reservationLock) { reservations.size }
+
+    private fun withReservations(state: BookRiskState): BookRiskState {
+        if (reservations.isEmpty()) return state
+        var gross = state.grossExposure
+        val net = HashMap<String, BigDecimal>(state.perSymbolNet)
+        for (r in reservations.values) {
+            gross = gross.add(r.signedNotional.abs())
+            net[r.symbol] = (net[r.symbol] ?: Money.ZERO).add(r.signedNotional)
+        }
+        return state.copy(grossExposure = gross, perSymbolNet = net)
+    }
 
     private fun foldReturns(perStrategyPnl: Map<String, BigDecimal>) {
         if (ids.isEmpty()) {
