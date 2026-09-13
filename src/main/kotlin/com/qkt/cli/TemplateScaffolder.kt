@@ -80,6 +80,7 @@ class TemplateScaffolder(
                         val outputName =
                             when (entry) {
                                 "gitignore.tmpl" -> ".gitignore"
+                                "gitattributes.tmpl" -> ".gitattributes"
                                 else -> entry.removeSuffix(".tmpl")
                             }
                         rendered.toByteArray(Charsets.UTF_8) to target.resolve(outputName)

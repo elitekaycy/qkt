@@ -19,6 +19,9 @@ make resync STRAT=full_strategy
 The default is the full MT5 stack. Generated `.env` files, state, market data,
 reports, and logs are ignored by Git.
 
+Every template also includes a `.gitattributes` that makes GitHub colour `.qkt`
+files; see [Highlight .qkt files on GitHub](../how-to/github-syntax-highlighting.md).
+
 ## Template kinds
 
 ```bash
