@@ -10,6 +10,7 @@ Use a portfolio when:
 
 ## Shape
 
+<!-- qkt-doc: grammar -->
 ```qkt
 PORTFOLIO <name> VERSION <int>
 
@@ -21,7 +22,6 @@ PORTFOLIO <name> VERSION <int>
 IMPORT '<path>' AS <alias> [ HOLD ]
 [ ... more imports ... ]
 
-[ LET <name> = <expression> ]
 
 [ REGIMES
     NAME <regime-set-name>
@@ -55,12 +55,10 @@ IMPORT 'trend.qkt'     AS trend
 IMPORT 'meanrev.qkt'   AS meanrev
 IMPORT 'breakout.qkt'  AS breakout
 
-LET adxValue = adx(btc, 14)
-
 RULES
-    WHEN adxValue > 30  RUN trend          -- strong trend
-    WHEN adxValue < 20  RUN meanrev        -- ranging
-    WHEN adxValue BETWEEN 20 AND 30  RUN breakout    -- transitional
+    WHEN adx(btc, 14) > 30  RUN trend                      -- strong trend
+    WHEN adx(btc, 14) < 20  RUN meanrev                    -- ranging
+    WHEN adx(btc, 14) BETWEEN 20 AND 30  RUN breakout      -- transitional
 ```
 
 Only one child runs at a time. When ADX moves from ≥30 to <20, `trend` deactivates (positions closed unless `HOLD`) and `meanrev` activates.
@@ -102,6 +100,7 @@ The weights are evaluated on every closed candle and applied to new orders throu
 
 ## `IMPORT` syntax
 
+<!-- qkt-doc: grammar -->
 ```qkt
 IMPORT '<relative_path>' AS <alias> [ HOLD ]
 ```
@@ -135,6 +134,7 @@ RUN conservative OVERRIDE { riskPct = 0.003 }
 
 The portfolio's only action verb. Activates the named child.
 
+<!-- qkt-doc: grammar -->
 ```qkt
 WHEN <condition>  RUN <alias>
 ```
@@ -224,9 +224,9 @@ risk:
 
 These apply independently to each strategy hosted in the daemon — including portfolio children.
 
-## LET in portfolios
+## Conditions in portfolios
 
-`LET` works the same as in `STRATEGY` files — name an expression for reuse in `RUN` conditions:
+`PORTFOLIO` files have no `LET` block: the sections are `SYMBOLS`, `IMPORT`, `REGIMES`, `ALLOCATE` and `RULES`, in that order. Write the gating expression directly in the `RUN` condition, or name the market state with [`REGIMES`](#regime-weighted-allocation):
 
 ```qkt
 PORTFOLIO mybook VERSION 1
@@ -237,15 +237,10 @@ SYMBOLS
 IMPORT 'trend.qkt'   AS trend
 IMPORT 'meanrev.qkt' AS meanrev
 
-LET adxStrong = adx(btc, 14) > 30
-LET adxWeak   = adx(btc, 14) < 20
-
 RULES
-    WHEN adxStrong  RUN trend
-    WHEN adxWeak    RUN meanrev
+    WHEN adx(btc, 14) > 30  RUN trend
+    WHEN adx(btc, 14) < 20  RUN meanrev
 ```
-
-LET names make portfolio rules read like English.
 
 ## What children inherit
 

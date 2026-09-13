@@ -6,6 +6,7 @@ The technical-analysis functions you can call in conditions and expressions. qkt
 
 Every indicator is a function call:
 
+<!-- qkt-doc: grammar -->
 ```qkt
 <indicator>(<stream_or_field>, <period>, [<extra_args>...])
 ```
@@ -16,6 +17,7 @@ The first argument is what to compute on. For most indicators that's `<stream>.c
 
 ### Moving averages
 
+<!-- qkt-doc: grammar -->
 ```qkt
 ema(<value>, <period>)        -- exponential moving average
 sma(<value>, <period>)        -- simple moving average
@@ -38,6 +40,7 @@ sma((btc.high + btc.low) / 2, 20)  -- 20-bar SMA of midpoint
 
 ### Oscillators
 
+<!-- qkt-doc: grammar -->
 ```qkt
 rsi(<value>, <period>)        -- Relative Strength Index, 0-100
 ```
@@ -51,6 +54,7 @@ RSI uses Wilder's smoothing. Bounded [0, 100]. Below 30 = oversold, above 70 = o
 
 ### Volatility
 
+<!-- qkt-doc: grammar -->
 ```qkt
 atr(<stream>, <period>)       -- Average True Range
 ```
@@ -66,6 +70,7 @@ sizing (`STOP_LOSS BY atr(btc, 14) * 2`).
 
 ### MACD
 
+<!-- qkt-doc: grammar -->
 ```qkt
 macd(<value>, <fast>, <slow>, <signal>)
 ```
@@ -87,6 +92,7 @@ The three values share the same internal computation — the parser deduplicates
 
 ### Bollinger Bands
 
+<!-- qkt-doc: grammar -->
 ```qkt
 bollinger_upper(<value>, <period>, <stddev>)
 bollinger_middle(<value>, <period>, <stddev>)    -- = SMA
@@ -95,21 +101,22 @@ bollinger_lower(<value>, <period>, <stddev>)
 
 ```qkt
 WHEN btc.close > bollinger_upper(btc.close, 20, 2.0)
-THEN LOG INFO "above upper Bollinger"
+THEN LOG "above upper Bollinger"
 ```
 
 `<stddev>` is the band width in standard deviations; the typical value is 2.0.
 
 ### VWAP
 
+<!-- qkt-doc: grammar -->
 ```qkt
-vwap(<stream>, <period>)      -- rolling N-tick VWAP
+vwap(<stream>.tick, <period>) -- rolling N-tick VWAP
 ```
 
 Takes the stream because it needs both price and volume. The period is in **ticks**, not bars — VWAP is a tick-level indicator.
 
 ```qkt
-WHEN btc.close > vwap(btc, 1000)         -- price above 1000-tick VWAP
+WHEN btc.close > vwap(btc.tick, 1000)    -- price above 1000-tick VWAP
 THEN BUY btc SIZING 0.1
 ```
 
@@ -117,6 +124,7 @@ If a tick has no volume, that tick contributes 0 (doesn't pollute the average).
 
 ### Donchian (rolling extremes)
 
+<!-- qkt-doc: grammar -->
 ```qkt
 highest(<value>, <period>)    -- highest value in the last <period> bars
 lowest(<value>, <period>)
@@ -135,6 +143,7 @@ THEN CLOSE btc
 
 ### Statistical {#zscore}
 
+<!-- qkt-doc: grammar -->
 ```qkt
 zscore(<series>, <period>)    -- rolling z-score over the last <period> values
 ```
@@ -153,9 +162,9 @@ Warmup is `<period>` bars. While warming up `zscore` returns `null`, and it also
 ```qkt
 -- Pairs spread: trade gold against silver when their ratio reaches an extreme.
 WHEN zscore(gold.close / silver.close, 100) >= 2.0 AND POSITION.gold = 0
-THEN SELL gold
+THEN SELL gold SIZING 0.1
 WHEN zscore(gold.close / silver.close, 100) <= -2.0 AND POSITION.gold = 0
-THEN BUY gold
+THEN BUY gold SIZING 0.1
 ```
 
 A cross-stream series like `gold.close / silver.close` mixes two streams. The binding gates updates on the **primary alias** — the first stream the expression references (here `gold`) — and reads the other stream's latest closed bar. For that read to be the **same-window** value rather than the previous window's, put the two streams in a shared `SYNCHRONIZE` group so their bars are delivered together:
@@ -171,6 +180,7 @@ Without the `SYNCHRONIZE`, the spread is still computed, but `silver.close` may 
 
 ### State dwell
 
+<!-- qkt-doc: grammar -->
 ```qkt
 runlength_where(<condition>)   -- consecutive bars where condition is true
 ```
@@ -181,7 +191,7 @@ runlength_where(<condition>)   -- consecutive bars where condition is true
 LET calm = atr(gold.candle, 14) < percentile_rank(atr(gold.candle, 14), 200)
 WHEN runlength_where(calm) > percentile_rank(runlength_where(calm), 100)
  AND SESSION_WINDOW(11, 30, 14, 0)
-THEN BUY gold
+THEN BUY gold SIZING 0.1
 ```
 
 The condition may reference any stream expression. Cross-stream conditions follow the same primary-alias and `SYNCHRONIZE` alignment rules as expression-fed numeric indicators.
@@ -190,6 +200,7 @@ The condition may reference any stream expression. Cross-stream conditions follo
 
 Two indicators take **two** series and measure how a pair of streams move together over a rolling window. They follow the same primary-alias / `SYNCHRONIZE` alignment rules as a cross-stream `zscore` — put the two streams in a shared `SYNCHRONIZE` group so each bar reads the same-window value from both.
 
+<!-- qkt-doc: grammar -->
 ```qkt
 correlation(<a>, <b>, <period>)   -- rolling Pearson correlation, in [-1, +1]
 beta(<a>, <b>, <period>)          -- rolling OLS slope of <a> on <b> (hedge ratio)
@@ -202,7 +213,7 @@ beta(<a>, <b>, <period>)          -- rolling OLS slope of <a> on <b> (hedge rati
 -- AND the ratio is extended, so bet on re-coupling.
 WHEN correlation(eur.close, gbp.close, 48) < 0.40
  AND abs(zscore(eur.close / gbp.close, 48)) > 2.0
-THEN SELL eur
+THEN SELL eur SIZING 0.1
 ```
 
 `beta` is the slope of an ordinary-least-squares fit of `<a>` on `<b>` over the window — how many units `<a>` moves per unit move in `<b>`. It is the classic hedge ratio: to be market-neutral against `<b>`, hold `beta` units of `<b>` per unit of `<a>`. e.g. `beta(stock.close, index.close, 60)` over closes that move 2-for-1 → ~2.
@@ -215,6 +226,7 @@ Both warm up over `<period>` bars, returning `null` until the window is full (an
 
 ### Regression residual
 
+<!-- qkt-doc: grammar -->
 ```qkt
 resid(<dependent>, <regressor1>, …, <period>)   -- rolling multi-regressor OLS residual
 ```
@@ -233,13 +245,14 @@ SYMBOLS
     SYNCHRONIZE gbp eur aud
 RULES
     WHEN zscore(resid(gbp.close, eur.close, aud.close, 96), 96) > 2.0 AND POSITION.gbp = 0
-    THEN SELL gbp
+    THEN SELL gbp SIZING 0.1
 ```
 
 Each series may be any arithmetic expression that references a stream, exactly like `zscore`. `resid` returns `null` until the window is full and when the regressors are collinear or constant (the fit is undefined). Because `zscore(resid(...))` chains two rolling windows, set an explicit `WARMUP` covering both (the residual period plus the z-score period) — the compiler infers only the outer window for chained indicators.
 
 ### Confirmation ratio (cross-symbol)
 
+<!-- qkt-doc: grammar -->
 ```qkt
 confirm_ratio(<signal>, <peer1>, …, <lookback>)   -- fraction of peers confirming, in [0, 1]
 ```
@@ -253,7 +266,7 @@ To flip polarity for an inverse pair, **negate the peer** rather than passing a 
 WHEN zscore(eur.close, 48) > 2.0
  AND confirm_ratio(eur.close, gbp.close, aud.close, -chf.close, 4) < 0.5
  AND POSITION.eur = 0
-THEN SELL eur
+THEN SELL eur SIZING 0.1
 ```
 
 Like `resid`, `confirm_ratio` is bound through the multi-series path and reads the peers' latest closed bars; put the streams in a `SYNCHRONIZE` group for same-window alignment. It returns `null` until `<lookback> + 1` bars are seen.
@@ -264,6 +277,7 @@ These reset on a fixed UTC clock boundary rather than sliding over a fixed bar c
 
 ### Session VWAP
 
+<!-- qkt-doc: grammar -->
 ```qkt
 vwap_session(<stream>, <anchorHour>)        -- volume-weighted average since anchorHour UTC
 vwap_session_stdev(<stream>, <anchorHour>)  -- volume-weighted stddev around that VWAP
@@ -277,15 +291,16 @@ partial-session VWAP.
 
 ```qkt
 -- Fade the upper 2-sigma band of the overlap-anchored session VWAP back to VWAP.
-LET vwap = vwap_session(gold, 12)
-LET band = vwap + 2 * vwap_session_stdev(gold, 12)
-WHEN gold.close >= band AND POSITION.gold = 0 THEN SELL gold
+LET vwap = vwap_session(gold.candle, 12)
+LET band = vwap + 2 * vwap_session_stdev(gold.candle, 12)
+WHEN gold.close >= band AND POSITION.gold = 0 THEN SELL gold SIZING 0.1
 ```
 
 Volume-less candles contribute nothing, like `vwap`. Both return `null` until a volume-bearing candle is seen in the current session. (Note: a broker that does not report volume — e.g. the MT5 gateway on FX/metals — leaves these inert live; they are backtest-faithful where the data carries volume.)
 
 ### Session range
 
+<!-- qkt-doc: grammar -->
 ```qkt
 session_range_high(<stream>.candle, <sh>, <sm>, <eh>, <em>)   -- high of the prior completed UTC window
 session_range_low(<stream>.candle, <sh>, <sm>, <eh>, <em>)    -- low of the prior completed UTC window
@@ -297,13 +312,14 @@ These latch the high and low of the most recent **completed** instance of the da
 -- Fade a poke above the 00:00-07:00 UTC Asian range during the 07:00-11:30 London window.
 LET asianHigh = session_range_high(gold.candle, 0, 0, 7, 0)
 WHEN session_window(7, 0, 11, 30) AND gold.close > asianHigh AND POSITION.gold = 0
-THEN SELL gold
+THEN SELL gold SIZING 0.1
 ```
 
 The level is `null` until the first window completes (a warmup delay, not a bug).
 
 ### Floor-trader pivots
 
+<!-- qkt-doc: grammar -->
 ```qkt
 pivot_p(<stream>.candle)    -- central pivot (H + L + C) / 3 of the prior UTC day
 pivot_r1(<stream>.candle)   -- first resistance 2*P - prior_day_low
@@ -315,7 +331,7 @@ The classic floor-trader pivots, computed from the **prior completed UTC day's**
 ```qkt
 -- Fade a stretch above the central pivot back toward it; stop just beyond R1.
 WHEN gold.close > pivot_p(gold.candle) + atr(gold.candle, 14) AND POSITION.gold = 0
-THEN SELL gold BRACKET {
+THEN SELL gold SIZING 0.1 BRACKET {
     STOP LOSS AT pivot_r1(gold.candle),
     TAKE PROFIT AT pivot_p(gold.candle)
 }
@@ -325,6 +341,7 @@ The levels are `null` until the first full UTC day completes.
 
 ### Seasonal range (hour-of-day volatility)
 
+<!-- qkt-doc: grammar -->
 ```qkt
 seasonal_range(<stream>.candle, <window>)   -- trailing mean range of bars sharing this bar's UTC hour
 ```
@@ -334,7 +351,7 @@ seasonal_range(<stream>.candle, <window>)   -- trailing mean range of bars shari
 ```qkt
 -- Arm a breakout only on a bar that is wide for its hour (an information shock, not the clock).
 WHEN (gold.high - gold.low) > 2 * seasonal_range(gold.candle, 20)
-THEN BUY gold
+THEN BUY gold SIZING 0.1
 ```
 
 It is `null` for a given hour until `<window>` earlier bars of that hour have been seen.
@@ -345,13 +362,14 @@ It is `null` for a given hour until `<window>` earlier bars of that hour have be
 -- Continue an outlier that clears ~2.5 sigma above its hour's own range baseline.
 LET hourz = ((gold.high - gold.low) - seasonal_range(gold.candle, 20)) / seasonal_range_stdev(gold.candle, 20)
 WHEN hourz > 2.5 AND POSITION.gold = 0
-THEN BUY gold
+THEN BUY gold SIZING 0.1
 ```
 
 `seasonal_range_stdev` needs `<window>` > 1 (the sample stddev needs at least two occurrences) and is `null` for a given hour until that many earlier bars of the hour have been seen.
 
 ### Run length (same-direction streak)
 
+<!-- qkt-doc: grammar -->
 ```qkt
 runlength(<value>)   -- signed count of the current same-direction run in the series
 ```
@@ -361,13 +379,14 @@ runlength(<value>)   -- signed count of the current same-direction run in the se
 ```qkt
 -- Continuation: enter with a 4+ up-close streak, but stand down past an 8-close blow-off.
 WHEN runlength(eur.close) >= 4 AND runlength(eur.close) <= 8 AND POSITION.eur = 0
-THEN BUY eur
+THEN BUY eur SIZING 0.1
 ```
 
 It is `null` until the first change is seen (one prior value is needed).
 
 ### Session momentum
 
+<!-- qkt-doc: grammar -->
 ```qkt
 session_momentum(<stream>.candle, <startHour>, <endHour>, <nDays>)   -- in-window drift over nDays
 ```
@@ -377,13 +396,14 @@ session_momentum(<stream>.candle, <startHour>, <endHour>, <nDays>)   -- in-windo
 ```qkt
 -- At the overlap open, enter in the direction of the trailing 3-day overlap-segment drift.
 WHEN session_window(12, 0, 12, 1) AND session_momentum(eur.candle, 12, 14, 3) > 0
-THEN BUY eur
+THEN BUY eur SIZING 0.1
 ```
 
 It is `null` until `<nDays>` in-window days have completed.
 
 ### Anchored return (sub-bar, grid-anchored)
 
+<!-- qkt-doc: grammar -->
 ```qkt
 anchored_return(<stream>.candle, <bucketMinutes>)   -- return since the current bucket's open
 ```
@@ -393,13 +413,14 @@ anchored_return(<stream>.candle, <bucketMinutes>)   -- return since the current 
 ```qkt
 -- Intra-30m lead: GBP's beta-scaled move outrunning EUR's, on 1m bars.
 WHEN beta(gbp.close, eur.close, 96) * anchored_return(gbp.candle, 30) - anchored_return(eur.candle, 30) > 0.0005
-THEN BUY eur
+THEN BUY eur SIZING 0.1
 ```
 
 It is `null` until the first bar of a bucket is seen.
 
 ### Reopen gap (session-boundary gap)
 
+<!-- qkt-doc: grammar -->
 ```qkt
 reopen_gap(<stream>.candle, <minGapHours>)          -- signed gap across a trading break
 reopen_gap_origin(<stream>.candle, <minGapHours>)   -- the pre-break close a full fill returns to
@@ -412,7 +433,7 @@ A "reopen" is the first bar whose start follows the previous bar's end by more t
 -- Large, unfilled weekend gap → trade the continuation, stop at the gap origin.
 WHEN abs(reopen_gap(g.candle, 12)) > 2 * atr(g.candle, 14) AND gap_fill_fraction(g.candle, 12) < 0.5
      AND reopen_gap(g.candle, 12) > 0 AND POSITION.g = 0
-THEN BUY g
+THEN BUY g SIZING 0.1
 WHEN POSITION.g > 0 AND g.close < reopen_gap_origin(g.candle, 12) THEN CLOSE g
 ```
 
@@ -420,6 +441,7 @@ All three are `null` until the first reopen; `gap_fill_fraction` is also `null` 
 
 ### Failed breakout (fakeout latch)
 
+<!-- qkt-doc: grammar -->
 ```qkt
 failed_break_high(<stream>.candle, <rangeLen>, <reclaimBars>, <armBars>)
 failed_break_low(<stream>.candle, <rangeLen>, <reclaimBars>, <armBars>)
@@ -429,14 +451,15 @@ failed_break_low(<stream>.candle, <rangeLen>, <reclaimBars>, <armBars>)
 
 ```qkt
 -- Arm a straddle only after a failed first break, not on compression alone.
-WHEN failed_break_high(gbp.candle, 20, 3, 6) > 0 AND POSITION.gbp = 0 THEN BUY gbp
-WHEN failed_break_low(gbp.candle, 20, 3, 6) > 0 AND POSITION.gbp = 0 THEN SELL gbp
+WHEN failed_break_high(gbp.candle, 20, 3, 6) > 0 AND POSITION.gbp = 0 THEN BUY gbp SIZING 0.1
+WHEN failed_break_low(gbp.candle, 20, 3, 6) > 0 AND POSITION.gbp = 0 THEN SELL gbp SIZING 0.1
 ```
 
 It is `null` until the range window fills.
 
 ### Initial-balance prior defense
 
+<!-- qkt-doc: grammar -->
 ```qkt
 ib_defended_high(<stream>.candle, <sessionStartHour>, <ibMinutes>)
 ib_defended_low(<stream>.candle, <sessionStartHour>, <ibMinutes>)
@@ -448,13 +471,14 @@ The Initial Balance (IB) is the high/low of the session's first `<ibMinutes>` fr
 -- Late IB break that was defended earlier, confirmed dollar-wide by GBP.
 WHEN eur.close > session_range_high(eur.candle, 8, 0, 9, 0) AND ib_defended_high(eur.candle, 8, 60) > 0
      AND gbp.close > session_range_high(gbp.candle, 8, 0, 9, 0) AND POSITION.eur = 0
-THEN BUY eur
+THEN BUY eur SIZING 0.1
 ```
 
 It is `null` until the IB window has elapsed with an IB captured this session.
 
 ### Percentile rank
 
+<!-- qkt-doc: grammar -->
 ```qkt
 percentile_rank(<value>, <lookback>)   -- fraction of the trailing window below the current value
 ```
@@ -465,13 +489,14 @@ percentile_rank(<value>, <lookback>)   -- fraction of the trailing window below 
 -- Trade the mean-reversion band only in the calm half of the realized-vol regime.
 WHEN percentile_rank(stddev(xag.close, 30), 200) < 0.5
  AND xag.close <= keltner_lower(xag, 20, 2.0)
-THEN BUY xag
+THEN BUY xag SIZING 0.1
 ```
 
 Warmup is `<lookback>` bars.
 
 ### Skew
 
+<!-- qkt-doc: grammar -->
 ```qkt
 skew(<value>, <period>)   -- rolling realized skewness of bar-to-bar returns
 ```
@@ -482,13 +507,14 @@ skew(<value>, <period>)   -- rolling realized skewness of bar-to-bar returns
 -- Single-name skew-premium gate: enter only when skew sits in its most-negative decile.
 WHEN percentile_rank(skew(aud.close, 20), 250) < 0.1
  AND percentile_rank(skew(nzd.close, 20), 250) < 0.1
-THEN BUY aud
+THEN BUY aud SIZING 0.1
 ```
 
 Warmup is `<period> + 1` bars (one extra price is needed to form the first return). A flat window with no return dispersion reports 0.
 
 ### Efficiency ratio
 
+<!-- qkt-doc: grammar -->
 ```qkt
 er(<value>, <period>)   -- Kaufman efficiency ratio, net move / path length, in [0, 1]
 ```
@@ -499,13 +525,14 @@ er(<value>, <period>)   -- Kaufman efficiency ratio, net move / path length, in 
 -- Take the momentum signal only in a clean, low-noise trend; stand down in chop.
 WHEN er(gold.close, 10) > 0.6
  AND ema(gold.close, 20) > ema(gold.close, 50)
-THEN BUY gold
+THEN BUY gold SIZING 0.1
 ```
 
 Warmup is `<period> + 1` bars. A perfectly flat window reports 0.
 
 ### Variance ratio
 
+<!-- qkt-doc: grammar -->
 ```qkt
 variance_ratio(<value>, <k>, <lookback>)   -- Lo-MacKinlay variance ratio, regime statistic
 ```
@@ -515,13 +542,14 @@ variance_ratio(<value>, <k>, <lookback>)   -- Lo-MacKinlay variance ratio, regim
 ```qkt
 -- Fade only while the series is statistically mean-reverting; stand down when it trends.
 WHEN variance_ratio(aud.close, 5, 100) < 1 AND zscore(aud.close, 20) >= 2
-THEN SELL aud
+THEN SELL aud SIZING 0.1
 ```
 
 Like `zscore`, the series can be any expression referencing a stream — `variance_ratio(gold.close / silver.close, 5, 120)` gates a pairs spread on its own stationarity. Warmup is `<lookback> + 1` bars; it returns `null` until then, and also when the 1-bar variance is zero (a flat window, where the ratio is undefined).
 
 ### Lag (series offset)
 
+<!-- qkt-doc: grammar -->
 ```qkt
 lag(<value>, <n>)   -- the value of the series n bars ago
 ```
@@ -531,7 +559,7 @@ lag(<value>, <n>)   -- the value of the series n bars ago
 ```qkt
 -- Skip-month trend: trade the 12-month move that excludes the last ~month.
 WHEN lag(gold.close, 21) - lag(gold.close, 252) > 0 AND POSITION.gold = 0
-THEN BUY gold
+THEN BUY gold SIZING 0.1
 ```
 
 The reported value is the buffered input verbatim, so it is exact. Warmup is `<n> + 1` bars.
@@ -540,6 +568,7 @@ The reported value is the buffered input verbatim, so it is exact. Warmup is `<n
 
 Available alongside indicators:
 
+<!-- qkt-doc: grammar -->
 ```qkt
 abs(<expr>)             -- absolute value
 sqrt(<expr>)            -- square root
@@ -560,7 +589,7 @@ figure by gating on `mod` and anchoring a `LIMIT` at `round_to`.
 
 ```qkt
 WHEN mod(gold.close, 10) < 1        -- price within $1 of a round $10 figure
-THEN LOG INFO "near a big figure"
+THEN LOG "near a big figure"
 ```
 
 `max` and `min` are **windowed aggregates** (see Aggregates), not scalar two-argument
@@ -568,22 +597,35 @@ functions. For the larger or smaller of two values, use a `CASE` expression — 
 upper wick of a bar is `high - (CASE WHEN open > close THEN open ELSE close END)`.
 
 ```qkt
-LET vol = sqrt(252 * sum(pow(btc.close / lag(btc.close, 1) - 1, 2), 20))
+LET vol = sqrt(252 * sum(pow(btc.close / lag(btc.close, 1) - 1, 2)) SINCE T-20)
 ```
 
 Annualized 20-bar realized volatility from log returns. Composes the helpers and a 20-bar `sum` aggregate.
 
 ## Aggregates
 
+Aggregates fold a series over a window: `sum`, `mean`, `max` or `min` of one series, followed by `SINCE`:
+
+<!-- qkt-doc: grammar -->
 ```qkt
-sum(<expr>, <period>)   -- rolling sum
-avg(<expr>, <period>)   -- rolling mean (same as sma)
-count(<predicate>, <period>)   -- rolling count of bars where predicate is true
+sum(<expr>)  SINCE OPEN | T-<N>
+mean(<expr>) SINCE OPEN | T-<N>
+max(<expr>)  SINCE OPEN | T-<N>
+min(<expr>)  SINCE OPEN | T-<N>
 ```
 
+`SINCE T-N` is a rolling window over the last `N` closed bars (`null` until `N` bars exist). `SINCE OPEN` covers the bars since the position on that stream opened. There is no `sum(<expr>, <period>)` form and no `avg` or `count` function; see [Expressions → Aggregates](expressions.md#aggregates) for the full rules.
+
+| You want | Write |
+| --- | --- |
+| Rolling sum of `x` over 20 bars | `sum(x) SINCE T-20` |
+| Rolling mean over 20 bars | `mean(x) SINCE T-20`, or `sma(x, 20)` |
+| Bars out of the last 20 where a condition held | `sum(CASE WHEN <condition> THEN 1 ELSE 0 END) SINCE T-20` |
+| Share of the last 20 bars where it held | `sma(CASE WHEN <condition> THEN 1 ELSE 0 END, 20)` |
+
 ```qkt
-LET upDays = count(btc.close > lag(btc.close, 1), 20)
-WHEN upDays >= 15 THEN LOG INFO "trend confirmed: 15 of last 20 bars were up"
+LET upDays = sum(CASE WHEN btc.close > lag(btc.close, 1) THEN 1 ELSE 0 END) SINCE T-20
+WHEN upDays >= 15 THEN LOG "trend confirmed: 15 of last 20 bars were up"
 ```
 
 ## Warmup
@@ -641,20 +683,20 @@ Indicators return numbers; numbers compose freely. Common patterns:
 
 ```qkt
 LET emaSpread = ema(btc.close, 9) - ema(btc.close, 21)
-WHEN emaSpread > 100 THEN LOG INFO "strong trend"
+WHEN emaSpread > 100 THEN LOG "strong trend"
 ```
 
 ### Ratio
 
 ```qkt
 LET ratio = ema(btc.close, 9) / ema(btc.close, 21)
-WHEN ratio > 1.02 THEN LOG INFO "2% above slow MA"
+WHEN ratio > 1.02 THEN LOG "2% above slow MA"
 ```
 
 ### Multiply ATR for stops
 
 ```qkt
-STOP_LOSS AT btc.close - atr(btc, 14) * 2     -- 2-ATR stop
+BRACKET { STOP_LOSS AT btc.close - atr(btc, 14) * 2, TAKE_PROFIT AT btc.close + atr(btc, 14) * 4 }   -- 2-ATR stop, 4-ATR target
 ```
 
 ### Combine across streams

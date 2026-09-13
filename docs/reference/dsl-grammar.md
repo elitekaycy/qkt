@@ -172,7 +172,7 @@ Reusable expression aliases. Evaluated lazily per tick.
 ## FOR EACH
 
 ```qkt
-FOR EACH s IN btc, gold, aapl DO
+FOR EACH s IN [btc, gold, aapl] DO
     rule { whenever(s.close gt 0) then { buy(s) } }
 ```
 

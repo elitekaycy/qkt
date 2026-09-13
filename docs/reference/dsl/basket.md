@@ -72,7 +72,7 @@ constituent's own symbol, all on the same side:
 
 ```qkt
 WHEN zscore(gold.close / antipodean.close, 100) >= 2.0 AND POSITION.gold = 0
-THEN SELL gold ; BUY antipodean SIZING 10000 USD
+THEN SELL gold SIZING 0.1 ; BUY antipodean SIZING 10000 USD
 ```
 
 `BUY antipodean SIZING 10000 USD` becomes a BUY of AUDUSD and a BUY of NZDUSD.
@@ -108,6 +108,7 @@ is flat or its constituents disagree on side. (Summing quantities across differe
 would be meaningless; the useful idiom is the flat-gate `POSITION.antipodean = 0`, exactly as
 `POSITION.gold = 0` works for one symbol.)
 
+<!-- qkt-doc: grammar -->
 ```qkt
 WHEN POSITION.antipodean = 0 AND <entry signal>
 THEN BUY antipodean SIZING 10000 USD

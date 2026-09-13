@@ -6,6 +6,7 @@ The classic use case: a session level sits at $2,000. You don't want to trade th
 
 ## Shape
 
+<!-- qkt-doc: grammar -->
 ```qkt
 WHEN <condition>
 THEN LATCH <stream> OFFSET <d> [ FROM <ref_expr> ] [ ARM <duration> ] [ AS <name> ]
@@ -84,7 +85,7 @@ By default entries submit on the latch stream. `ENTER ON <stream>` watches one s
 
 ```qkt
 LATCH gold OFFSET 2 FROM gold.high ARM 10m CONFIRM TIME_IN_BREACH 10s {
-    ENTER ON silver MARKET SIZING 0.5
+    ENTER ON silver MARKET SIZING 0.5 ;
     ENTER ON silver LIMIT AGAINST 5 SIZING 0.5 BRACKET { STOP LOSS AGAINST 8, TAKE PROFIT WITH 20 }
 }
 ```
@@ -104,10 +105,10 @@ The entry stream must be declared in `SYMBOLS`. `SYNCHRONIZE` is recommended for
 
 ```qkt
 -- Default: reference is gold.close of the closing bar
-LATCH gold OFFSET 2 ARM 10m { ... }
+LATCH gold OFFSET 2 ARM 10m { ENTER MARKET SIZING 0.1 }
 
 -- Override reference to today's high
-LATCH gold OFFSET 2 FROM gold.high ARM 10m { ... }
+LATCH gold OFFSET 2 FROM gold.high ARM 10m { ENTER MARKET SIZING 0.1 }
 ```
 
 ### `ARM <duration>`
@@ -115,8 +116,8 @@ LATCH gold OFFSET 2 FROM gold.high ARM 10m { ... }
 How long the wires stay armed after the signal fires. Starts at the clock time of the `WHEN` rule fire (candle close). If no wire is crossed before the arm expires, the latch is dropped silently.
 
 ```qkt
-LATCH gold OFFSET 0.50 ARM 5m { ... }   -- 5-minute arm window
-LATCH gold OFFSET 0.50 ARM 1h { ... }   -- 1-hour arm window
+LATCH gold OFFSET 0.50 ARM 5m { ENTER MARKET SIZING 0.1 }   -- 5-minute arm window
+LATCH gold OFFSET 0.50 ARM 1h { ENTER MARKET SIZING 0.1 }   -- 1-hour arm window
 ```
 
 ### `CONFIRM`
@@ -124,9 +125,9 @@ LATCH gold OFFSET 0.50 ARM 1h { ... }   -- 1-hour arm window
 Confirmation is bounded by the same `ARM` window. `EXPIRE` on emitted LIMIT/STOP entries starts from the confirmation instant, not from the original arm time.
 
 ```qkt
-LATCH gold OFFSET 0.50 ARM 15m CONFIRM CLOSE_BEYOND { ... }
-LATCH gold OFFSET 0.50 ARM 15m CONFIRM TIME_IN_BREACH 10s { ... }
-LATCH gold OFFSET 0.50 ARM 15m CONFIRM RETEST_HOLD 0.25 WITHIN 2m { ... }
+LATCH gold OFFSET 0.50 ARM 15m CONFIRM CLOSE_BEYOND { ENTER MARKET SIZING 0.1 }
+LATCH gold OFFSET 0.50 ARM 15m CONFIRM TIME_IN_BREACH 10s { ENTER MARKET SIZING 0.1 }
+LATCH gold OFFSET 0.50 ARM 15m CONFIRM RETEST_HOLD 0.25 WITHIN 2m { ENTER MARKET SIZING 0.1 }
 ```
 
 - `CLOSE_BEYOND` — direction commits only when the watched stream's completed bar closes beyond a wire. A spike through the wire that closes back inside does not fire.
@@ -139,6 +140,7 @@ If one side starts confirmation and then the other wire breaches first, pending 
 
 Limits how long a placed order (LIMIT or STOP entry) stays working before auto-cancelling. Measured from the time the wire is crossed (when the order is placed).
 
+<!-- qkt-doc: grammar -->
 ```qkt
 ENTER LIMIT RETRACE 4 EXPIRE 2h { ... }  -- cancel limit if not filled within 2h
 ```
@@ -148,7 +150,7 @@ ENTER LIMIT RETRACE 4 EXPIRE 2h { ... }  -- cancel limit if not filled within 2h
 Optional label for the latch. Currently used in log output.
 
 ```qkt
-LATCH gold OFFSET 0.50 ARM 5m AS brk { ... }
+LATCH gold OFFSET 0.50 ARM 5m AS brk { ENTER MARKET SIZING 0.1 }
 ```
 
 ## Multiple entries (laddering)
