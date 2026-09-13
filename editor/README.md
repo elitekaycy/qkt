@@ -8,6 +8,11 @@ Editor support files for `.qkt` strategy files.
 - **`nvim/`**, **`vscode/`** — per-editor highlighting, snippets, and (Neovim) language-server autostart.
 - **Language server** — `qkt lsp` provides diagnostics, completion, and hover for any LSP-capable editor. See [docs/how-to/editor-integrations.md](../docs/how-to/editor-integrations.md) for per-editor setup.
 
+## On GitHub
+
+GitHub cannot use these grammars. Repositories and gists borrow Linguist's Haskell grammar instead; see
+[docs/how-to/github-syntax-highlighting.md](../docs/how-to/github-syntax-highlighting.md).
+
 ## What's not here yet
 
 - Tree-sitter grammar (structural parser for Neovim, Zed, Helix, modern GitHub highlighting) — follow-up issue.
