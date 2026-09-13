@@ -373,6 +373,28 @@ class CreateCommandTest {
     }
 
     @Test
+    fun `every kind maps qkt files to github syntax highlighting`(
+        @TempDir tmp: Path,
+    ) {
+        for (kind in listOf("mt5", "mt5-ci", "backtest", "portfolio", "minimal", "bybit", "bot")) {
+            val target = tmp.resolve(kind)
+            val (code, _, _) = invoke("create", "template", target.toString(), "--kind", kind)
+            assertThat(code).isEqualTo(ExitCodes.SUCCESS)
+            val attributes = target.resolve(".gitattributes")
+            assertThat(attributes).withFailMessage("kind $kind has no .gitattributes").exists()
+            assertThat(Files.readAllLines(attributes))
+                .contains("*.qkt linguist-language=Haskell linguist-detectable=false")
+        }
+    }
+
+    @Test
+    fun `a gist highlighting modeline on the first line still parses`() {
+        val template = javaClass.classLoader.getResourceAsStream("templates/minimal/strategies/ema_cross.qkt")
+        val strategy = "-- -*- mode: haskell -*-\n" + String(requireNotNull(template).readBytes())
+        assertThat(Parser(Lexer(strategy).tokenize()).parseFile()).isInstanceOf(ParseResult.Success::class.java)
+    }
+
+    @Test
     fun `unknown --kind errors out and lists valid kinds`(
         @TempDir tmp: Path,
     ) {
