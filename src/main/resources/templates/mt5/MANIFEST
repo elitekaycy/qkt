@@ -3,6 +3,7 @@
 # and the .tmpl suffix stripped on write.
 .env.example.tmpl
 gitignore.tmpl
+gitattributes.tmpl
 README.md.tmpl
 CONFIG.md.tmpl
 Makefile.tmpl

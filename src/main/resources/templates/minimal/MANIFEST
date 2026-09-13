@@ -1,6 +1,7 @@
 # Files copied by `qkt create template --kind minimal`.
 .env.example.tmpl
 gitignore.tmpl
+gitattributes.tmpl
 README.md.tmpl
 CONFIG.md.tmpl
 Makefile.tmpl
