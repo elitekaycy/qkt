@@ -6,6 +6,7 @@ The classic use case: an entry signal is right but you don't want full size on d
 
 ## Shape — compact form
 
+<!-- qkt-doc: grammar -->
 ```qkt
 BUY <stream> SIZING <seed_size>
     STACK <n> SPACING <points> <ABOVE|BELOW> [ WITHIN <duration> ]
@@ -55,6 +56,7 @@ BUY btc SIZING 0.05
 
 For fully customized pyramids — different sizes per layer, different prices, mixed market/limit:
 
+<!-- qkt-doc: grammar -->
 ```qkt
 BUY <stream> STACK [
   <layer_1>,
@@ -66,6 +68,7 @@ BRACKET { ... }
 
 Each layer:
 
+<!-- qkt-doc: grammar -->
 ```qkt
 <size>                          -- seed: fires at market
 <size> AT <price_expr>          -- fires when price touches the level: a stop when the level
@@ -95,7 +98,7 @@ BUY btc STACK [
   0.10 LIMIT AT entry + 200,    -- waits at $67,200 as a resting limit
   0.15 LIMIT AT entry + 400
 ]
-BRACKET { ... }
+BRACKET { STOP LOSS BY 300, TAKE PROFIT BY 1000 }
 ```
 
 Limit layers avoid slippage on the adds but may miss the layer if price gaps through.
@@ -166,7 +169,7 @@ BUY btc STACK [
   2.0 PCT RISK AT entry + 200,        -- next layer: 2% risk
   3.0 PCT RISK AT entry + 400         -- last layer: 3% risk
 ]
-STOP_LOSS AT entry - atr(btc, 14) * 2
+BRACKET { STOP LOSS BY atr(btc, 14) * 2, TAKE PROFIT BY atr(btc, 14) * 6 }
 ```
 
 This pyramids risk — each successful layer commits more equity. Common in trend-following.
@@ -177,18 +180,17 @@ Layers in the list trigger **in order**. Layer 2 can't fill before layer 1 (the 
 
 If you want layers that all fire independently on conditions, you don't want STACK — you want separate rules.
 
-## Combining with TRAILING_STOP
+## Combining with a trailing stop
 
-A trailing stop on a STACK trails relative to the **highest favorable price seen across all fills**:
+There is no `TRAILING_STOP` clause. Give the stack's bracket an armed trailing stop leg ([BRACKET → armed trailing stop](bracket.md)):
 
 ```qkt
 BUY btc SIZING 0.05
     STACK 3 SPACING 200 ABOVE WITHIN 4h
-    BRACKET { STOP_LOSS BY 300, TAKE_PROFIT BY 2000 }
-    TRAILING_STOP BY 1 PCT
+    BRACKET { STOP LOSS TRAILING 300 AFTER MFE >= 0, TAKE PROFIT BY 2000 }
 ```
 
-As price rises and more layers fill, the trail follows the highest point. Locks in profit on the whole stacked position as the trend continues.
+The bracket is per layer (see the gotchas below), so each filled layer trails its own stop from its own favorable extreme; this is not one stop for the whole stacked position.
 
 ## Common gotchas
 

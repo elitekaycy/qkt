@@ -131,7 +131,7 @@ Max drawdown:   -315.00
 Realized volatility (rolling stddev of returns):
 
 ```qkt
-LET realVol = sqrt(252 * sum(pow(btc.close / btc.close[1] - 1, 2), 20))
+LET realVol = sqrt(252 * sum(pow(btc.close / btc.close[1] - 1, 2)) SINCE T-20)
 
 RULES
     WHEN realVol > 0.6  RUN volStrategy

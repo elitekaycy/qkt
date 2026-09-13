@@ -4,6 +4,7 @@ A compile-time macro that applies the same rule body to multiple streams. One so
 
 ## Shape
 
+<!-- qkt-doc: grammar -->
 ```qkt
 FOR EACH <iter_var> IN <stream1>, <stream2>, ... DO
     <rule body using iter_var>
@@ -19,7 +20,7 @@ SYMBOLS
     eth = BACKTEST:ETHUSDT EVERY 1m
     sol = BACKTEST:SOLUSDT EVERY 1m
 
-FOR EACH s IN btc, eth, sol DO
+FOR EACH s IN [btc, eth, sol] DO
     WHEN ema(s.close, 9) CROSSES ABOVE ema(s.close, 21)
     THEN BUY s SIZING 0.1
          BRACKET { STOP_LOSS BY 1 PCT, TAKE_PROFIT BY 2 PCT }
@@ -60,11 +61,11 @@ RULES
 You can have multiple `FOR EACH` blocks in one file:
 
 ```qkt
-FOR EACH s IN btc, eth, sol DO
+FOR EACH s IN [btc, eth, sol] DO
     WHEN ema(s.close, 9) CROSSES ABOVE ema(s.close, 21)
     THEN BUY s SIZING 0.1
 
-FOR EACH s IN btc, eth, sol DO
+FOR EACH s IN [btc, eth, sol] DO
     WHEN ema(s.close, 9) CROSSES BELOW ema(s.close, 21)
      AND POSITION.s > 0
     THEN CLOSE s
@@ -82,7 +83,7 @@ RULES
     WHEN btc.close > 70000 AND POSITION.btc = 0
     THEN BUY btc SIZING 0.5
 
-FOR EACH s IN eth, sol, ada DO
+FOR EACH s IN [eth, sol, ada] DO
     -- Same rule applied to alts
     WHEN ema(s.close, 12) CROSSES ABOVE ema(s.close, 48)
     THEN BUY s SIZING 0.1
@@ -95,21 +96,22 @@ Order: explicit `RULES` first, then `FOR EACH` blocks. The DSL parser handles bo
 `s` is replaced anywhere in the rule body — in stream-field access, in indicator calls, in `POSITION.s`, in `BUY s`:
 
 ```qkt
-FOR EACH s IN btc, eth DO
+FOR EACH s IN [btc, eth] DO
     WHEN ema(s.close, 9) > sma(s.close, 50)             -- s.close
      AND rsi(s.close, 14) > 50
      AND POSITION.s = 0                                -- POSITION.s
     THEN BUY s SIZING 1.0 PCT RISK                      -- BUY s
-         STOP_LOSS AT s.close - atr(s, 14) * 2          -- atr(s, 14)
+         BRACKET { STOP_LOSS AT s.close - atr(s, 14) * 2,   -- atr(s, 14)
+                   TAKE_PROFIT AT s.close + atr(s, 14) * 4 }
 ```
 
 Three substitutions of `s` per rule for `btc`, three for `eth`, etc.
 
 ## Limitations
 
-- **Stream list is static.** `FOR EACH s IN btc, eth, sol DO` — the streams are listed inline. You can't reference a variable or a config-driven list.
+- **Stream list is static.** `FOR EACH s IN [btc, eth, sol] DO` — the streams are listed inline. You can't reference a variable or a config-driven list.
 - **No nested iteration.** `FOR EACH a IN ... FOR EACH b IN ...` is **not supported**. If you genuinely need a Cartesian product across symbols, write the rules explicitly.
-- **No filtering.** `FOR EACH s IN btc, eth, sol WHERE s.kind = "spot"` is **not supported**. Filter the list manually.
+- **No filtering.** `FOR EACH s IN [btc, eth, sol] WHERE s.kind = "spot"` is **not supported**. Filter the list manually.
 - **Iteration variable can't be used in `LET`.** `LET` clauses are file-level; they can't reference the iteration variable.
 
 ## Common gotchas

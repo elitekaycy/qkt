@@ -13,8 +13,9 @@ The values you can compute inside conditions, action parameters, and `LET` bindi
 'BUY'             -- single-quoted string also works
 TRUE              -- boolean
 FALSE
-NULL              -- null literal (rare; usually you get it from missing data)
 ```
+
+There is no `NULL` literal. A missing value comes from data (a lookback past the start of history, an indicator still warming up); test for it with [`IS NULL`](#is-null-is-not-null).
 
 Numbers are parsed as exact decimals internally (BigDecimal). No floating-point drift over thousands of trades.
 Strings support exact, case-sensitive `=` / `==` and `!=` / `<>` comparisons. Ordered comparisons
@@ -22,20 +23,20 @@ Strings support exact, case-sensitive `=` / `==` and `!=` / `<>` comparisons. Or
 
 ## Arithmetic
 
+<!-- qkt-doc: grammar -->
 ```qkt
 a + b             -- addition
 a - b             -- subtraction
 a * b             -- multiplication
 a / b             -- division
-a % b             -- modulo
 -a                -- unary negation
 ```
 
-Standard precedence: `* / %` before `+ -`. Use parentheses for clarity:
+Standard precedence: `* /` before `+ -`. There is no `%` operator; use `mod(<a>, <b>)` (see [Indicators](indicators.md#math-helpers)). Use parentheses for clarity:
 
 ```qkt
 WHEN (btc.high - btc.low) / btc.close > 0.02     -- 2% range
-THEN LOG INFO "volatile bar"
+THEN LOG "volatile bar"
 ```
 
 ## Comparison and boolean
@@ -68,12 +69,12 @@ btc.high
 btc.low
 btc.close
 btc.volume
-btc.timestamp
-btc.bid           -- optional (ticks with bid/ask only)
+btc.bid           -- optional (quote feeds only)
 btc.ask
 btc.spread        -- ask - bid, computed when both present
-btc.mid           -- (bid + ask) / 2
 ```
+
+There is no per-stream time field (`btc.timestamp` does not exist). Use [`NOW`](now.md), the strategy's clock in epoch milliseconds, with fields such as `NOW.hour_utc` and `NOW.weekday`. There is no `btc.mid` either; compute `(btc.bid + btc.ask) / 2`.
 
 Lookback:
 
@@ -81,7 +82,7 @@ Lookback:
 btc.close         -- current closed candle's close
 btc.close[0]      -- same as btc.close
 btc.close[1]      -- previous candle
-btc.close[N]      -- N bars ago
+btc.close[20]     -- 20 bars ago
 ```
 
 Out-of-range returns `null` (which makes any containing comparison `false`).
@@ -148,14 +149,17 @@ COOLDOWN.remaining_s    -- seconds left in the configured after-loss cooldown, o
 -- Cooldown between entries: don't re-enter for an hour after a trade.
 WHEN signal AND POSITION.btc = 0
  AND (ACCOUNT.last_trade_at IS NULL OR NOW.epoch_ms - ACCOUNT.last_trade_at > 3600000)
-THEN BUY btc SIZING 0.5 PCT RISK
+THEN BUY btc SIZING 0.5 PCT RISK BRACKET { STOP_LOSS BY 300, TAKE_PROFIT BY 600 }
 
 -- Self-halt on drawdown: stop trading at 5% DD until equity recovers.
-WHEN signal AND ACCOUNT.dd_pct < 5 THEN BUY btc SIZING 0.5 PCT RISK
+WHEN signal AND ACCOUNT.dd_pct < 5
+THEN BUY btc SIZING 0.5 PCT RISK BRACKET { STOP_LOSS BY 300, TAKE_PROFIT BY 600 }
 
 -- Loss-streak-aware sizing: scale down after consecutive losses.
-WHEN signal AND STREAK.losses < 2 THEN BUY btc SIZING 1.0 PCT RISK
-WHEN signal AND STREAK.losses >= 2 THEN BUY btc SIZING 0.5 PCT RISK
+WHEN signal AND STREAK.losses < 2
+THEN BUY btc SIZING 1.0 PCT RISK BRACKET { STOP_LOSS BY 300, TAKE_PROFIT BY 600 }
+WHEN signal AND STREAK.losses >= 2
+THEN BUY btc SIZING 0.5 PCT RISK BRACKET { STOP_LOSS BY 300, TAKE_PROFIT BY 600 }
 ```
 
 Win and loss streaks are exclusive — `STREAK.losses >= 1` implies `STREAK.wins = 0` and vice versa. Both return `0` until the strategy has closed at least one trade. The bounded trade-history buffer is persisted with engine state when persistence is enabled; otherwise a fresh process starts with empty streak state.
@@ -165,13 +169,14 @@ A "win" is `realized_pnl > 0` for the closing fill; "loss" is `< 0`. Position-op
 `STREAK.banked` sums only the consecutive winning closes at the end of history. A loss resets it to `0`, so it can be used to press with banked profit without increasing base risk after a losing close:
 
 ```qkt
-THEN BUY btc SIZING RISK $ (100 + 0.30 * STREAK.banked)
+THEN BUY btc SIZING RISK $ (100 + 0.30 * STREAK.banked) BRACKET { STOP_LOSS BY 300, TAKE_PROFIT BY 600 }
 ```
 
 `TRADES.today` and `COOLDOWN.remaining_s` read the same PACER ledger used by configured per-strategy throttles. `TRADES.today` counts entry fills, not closed round trips.
 
 ## Position references
 
+<!-- qkt-doc: grammar -->
 ```qkt
 POSITION.<stream>                           -- net quantity (signed) — same as POSITION.<stream>.quantity
 POSITION.<stream>.quantity                  -- explicit form
@@ -211,6 +216,7 @@ THEN SELL gold ORDER_TYPE = LIMIT AT gold.close + 2 SIZING 1
 
 ## Conditional expressions (`CASE`)
 
+<!-- qkt-doc: grammar -->
 ```qkt
 CASE
   WHEN <cond1> THEN <expr1>
@@ -220,7 +226,7 @@ END
 ```
 
 ```qkt
-LET sizing = CASE
+LET size = CASE
   WHEN atr(btc, 14) > 200 THEN 0.05        -- volatile: small size
   WHEN atr(btc, 14) > 100 THEN 0.10        -- normal
   ELSE 0.15                                -- quiet: bigger
@@ -228,15 +234,16 @@ END
 
 RULES
     WHEN ema(btc.close, 9) CROSSES ABOVE ema(btc.close, 21)
-    THEN BUY btc SIZING sizing
+    THEN BUY btc SIZING size
 ```
 
-`CASE` is an **expression**, not a control-flow statement. It evaluates and returns a value; the surrounding context (here `LET sizing = ...`) decides what to do with it.
+`CASE` is an **expression**, not a control-flow statement. It evaluates and returns a value; the surrounding context (here `LET size = ...`) decides what to do with it.
 
 If no `WHEN` matches and there's no `ELSE`, the expression returns `null`.
 
 ## Math helpers
 
+<!-- qkt-doc: grammar -->
 ```qkt
 abs(<expr>)
 max(<a>, <b>)
@@ -254,20 +261,29 @@ pow(<base>, <exp>)
 LET vol_norm = (btc.close - sma(btc.close, 20)) / atr(btc, 14)
 LET signal_strength = abs(vol_norm)
 
-WHEN signal_strength > 2 THEN LOG INFO "strong dislocation" z=vol_norm
+WHEN signal_strength > 2 THEN LOG "strong dislocation" z=vol_norm
 ```
 
 ## Aggregates
 
+An aggregate folds a series over a window. The function name is followed by one series in parentheses and a `SINCE` window:
+
+<!-- qkt-doc: grammar -->
 ```qkt
-sum(<expr>, <period>)        -- rolling sum
-avg(<expr>, <period>)        -- = sma
-count(<predicate>, <period>) -- count of true
+sum(<expr>)  SINCE OPEN | T-<N>     -- total
+mean(<expr>) SINCE OPEN | T-<N>     -- average
+max(<expr>)  SINCE OPEN | T-<N>     -- largest value
+min(<expr>)  SINCE OPEN | T-<N>     -- smallest value
 ```
 
+- `SINCE T-N` covers the last `N` closed bars of the stream the series is evaluated on. It is `null` until `N` bars have been seen, so it composes with the usual null handling.
+- `SINCE OPEN` covers the bars since the position on that stream was opened. It resets whenever the position opens, closes or flips.
+
+There is no two-argument form (`sum(<expr>, <period>)`), and no `avg` or `count` function. Write a rolling count as the sum of a `CASE` that is `1` when the predicate holds:
+
 ```qkt
-LET pct_up_days = count(btc.close > btc.close[1], 20) / 20
-WHEN pct_up_days > 0.7 THEN LOG INFO "70%+ of last 20 bars up"
+LET pct_up_days = sum(CASE WHEN btc.close > btc.close[1] THEN 1 ELSE 0 END) SINCE T-20 / 20
+WHEN pct_up_days > 0.7 THEN LOG "70%+ of last 20 bars up"
 ```
 
 ## Null handling
