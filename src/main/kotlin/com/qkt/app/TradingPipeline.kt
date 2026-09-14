@@ -517,7 +517,15 @@ class TradingPipeline(
             orderManager.submit(e.request)
         }
         bus.subscribe<BrokerEvent.PositionReconciled> { e ->
-            strategyPositions.reconcileNet(e.symbol, e.newQty, e.newAvgPx, openedAt = e.timestamp, source = e.source)
+            strategyPositions.reconcileNet(
+                e.symbol,
+                e.newQty,
+                e.newAvgPx,
+                openedAt = e.timestamp,
+                source = e.source,
+                ticket = e.ticket,
+                strategyId = e.strategyId,
+            )
         }
         // subscribeFirst: the books must reflect this fill BEFORE any handler with venue
         // side effects runs — OrderManager cancels OCO siblings and dispatches children,
