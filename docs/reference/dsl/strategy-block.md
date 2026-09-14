@@ -4,6 +4,7 @@ The outermost envelope of every `.qkt` strategy file. Declares the strategy's na
 
 ## Shape
 
+<!-- qkt-doc: skip #1131 (section keyword after RULES crashes the parser) -->
 ```qkt
 STRATEGY <name> VERSION <integer>
 
@@ -38,13 +39,14 @@ SYMBOLS
 
 RULES
     WHEN btc.close > 0
-    THEN LOG INFO "tick received"
+    THEN LOG "tick received"
 ```
 
 This compiles and runs. It does nothing useful, but every part the parser requires is present.
 
 ## The header
 
+<!-- qkt-doc: grammar -->
 ```qkt
 STRATEGY <name> VERSION <integer>
 ```
@@ -64,10 +66,10 @@ Pre-sets values that any action in `RULES` can use without restating them.
 STRATEGY momo VERSION 1
 
 DEFAULTS {
-  sizing = 0.1
-  stopLoss = atr(SYMBOL, 14) * 2
-  takeProfit = atr(SYMBOL, 14) * 4
-  tif = GTC
+  SIZING = 0.1
+  STOP_LOSS = BY atr(SYMBOL, 14) * 2
+  TAKE_PROFIT = BY atr(SYMBOL, 14) * 4
+  TIF = GTC
 }
 
 SYMBOLS
@@ -156,6 +158,7 @@ The CLI's `--param key=value` flag overrides `LET` values at backtest time. Anyt
 
 The decision logic. A list of `WHEN ... THEN ...` pairs.
 
+<!-- qkt-doc: grammar -->
 ```qkt
 RULES
     WHEN <condition>
@@ -172,7 +175,7 @@ WHEN ema(btc.close, 9) CROSSES ABOVE ema(btc.close, 21)
 THEN
     CLOSE eur ;                      -- close any open EUR position
     BUY btc SIZING 0.1 ;             -- enter BTC long
-    LOG INFO "switched to BTC"       -- audit log
+    LOG "switched to BTC"       -- audit log
 ```
 
 Conditions are **edge-triggered by default**: the rule fires on the first tick where the condition transitions from false to true. See [Conditions](conditions.md) for level-triggered patterns.
@@ -187,7 +190,7 @@ SYMBOLS
     eth  = BACKTEST:ETHUSDT EVERY 1m
     sol  = BACKTEST:SOLUSDT EVERY 1m
 
-FOR EACH s IN btc, eth, sol DO
+FOR EACH s IN [btc, eth, sol] DO
     WHEN ema(s.close, 9) CROSSES ABOVE ema(s.close, 21)
     THEN BUY s SIZING 0.1 BRACKET { STOP_LOSS BY 1 PCT, TAKE_PROFIT BY 2 PCT }
 ```

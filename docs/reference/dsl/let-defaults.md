@@ -101,10 +101,10 @@ Pre-sets parameters for every action in the file. Anything an action doesn't exp
 STRATEGY momo VERSION 1
 
 DEFAULTS {
-  sizing = 0.1
-  stopLoss = atr(SYMBOL, 14) * 2
-  takeProfit = atr(SYMBOL, 14) * 4
-  tif = GTC
+  SIZING = 0.1
+  STOP_LOSS = BY atr(SYMBOL, 14) * 2
+  TAKE_PROFIT = BY atr(SYMBOL, 14) * 4
+  TIF = GTC
 }
 
 SYMBOLS
@@ -116,7 +116,7 @@ RULES
                                           -- → all come from DEFAULTS
 ```
 
-`stopLoss` and `takeProfit` form one bracket. If defaults supply either leg,
+`STOP_LOSS` and `TAKE_PROFIT` form one bracket. If defaults supply either leg,
 the merged action must supply the other leg explicitly or through `DEFAULTS`;
 an incomplete bracket is rejected when the strategy compiles.
 
@@ -124,10 +124,14 @@ an incomplete bracket is rejected when the strategy compiles.
 
 | Key | What it sets | Maps to |
 | --- | --- | --- |
-| `sizing` | Default position size | `SIZING <value>` |
-| `stopLoss` | Default stop-loss distance/price | inside `BRACKET { STOP_LOSS ... }` |
-| `takeProfit` | Default take-profit | inside `BRACKET { TAKE_PROFIT ... }` |
-| `tif` | Default time-in-force | `TIF GTC / IOC / FOK / DAY` |
+| `SIZING = <size>` | Default position size | `SIZING <size>` |
+| `STOP_LOSS = AT\|BY\|PCT\|RR <value>` | Default stop-loss price or distance | inside `BRACKET { STOP_LOSS ... }` |
+| `TAKE_PROFIT = AT\|BY\|PCT\|RR <value>` | Default take-profit | inside `BRACKET { TAKE_PROFIT ... }` |
+| `TIF = GTC\|IOC\|FOK\|DAY` | Default time-in-force | `TIF ...` |
+| `ORDER_TYPE = <order type>` | Default entry order type | `ORDER_TYPE = ...` |
+| `TRAILING = <order type>` | Default trailing stop | trailing stop clause |
+
+Keys are keywords, so they are not case-sensitive (`STOP_LOSS` and `stop_loss` are the same key). A stop or target leg needs a child-price form such as `BY <distance>`; a bare expression (`STOP_LOSS = atr(SYMBOL, 14) * 2`) is rejected.
 
 ### The `SYMBOL` placeholder
 
@@ -135,9 +139,9 @@ Inside `DEFAULTS`, the literal `SYMBOL` substitutes for whatever stream alias th
 
 ```qkt
 DEFAULTS {
-  stopLoss = atr(SYMBOL, 14) * 2     -- → atr(btc, 14) * 2 for rules on btc,
+  STOP_LOSS = BY atr(SYMBOL, 14) * 2     -- → atr(btc, 14) * 2 for rules on btc,
                                      --   atr(eur, 14) * 2 for rules on eur
-  takeProfit = atr(SYMBOL, 14) * 4
+  TAKE_PROFIT = BY atr(SYMBOL, 14) * 4
 }
 ```
 
@@ -163,16 +167,17 @@ RULES
 ### Partial defaults
 
 Independent defaults can be partial. The exception is bracket protection:
-`stopLoss` and `takeProfit` must be complete after the action-level override is
+`STOP_LOSS` and `TAKE_PROFIT` must be complete after the action-level override is
 merged.
 
 ```qkt
 DEFAULTS {
-  tif = IOC                          -- always use IOC time-in-force
+  TIF = IOC                          -- always use IOC time-in-force
 }
 
 RULES
-    WHEN ... THEN BUY btc SIZING 0.1   -- SIZING is per-rule; TIF comes from DEFAULTS
+    WHEN ema(btc.close, 9) CROSSES ABOVE ema(btc.close, 21)
+    THEN BUY btc SIZING 0.1   -- SIZING is per-rule; TIF comes from DEFAULTS
 ```
 
 ## When to use which
