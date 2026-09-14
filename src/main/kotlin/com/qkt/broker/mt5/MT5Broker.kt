@@ -693,12 +693,27 @@ class MT5Broker(
                 positionSymbolByTicket.remove(ticket)
             }
             val filledQuantity = reportedVolume ?: closeQuantity
-            val venueCosts =
-                venueCostsForPositionClose(
+            val venueTruth =
+                venueTruthForPositionClose(
                     positionTicket = ticket,
                     closingDealTicket = resp.result.deal,
                     positionClosed = !positionRemainsOpen,
                 )
+            val venueCosts = venueTruth.costs
+            // Async-fill venues report price 0.0 on the close acknowledgement too (#1092);
+            // the closing deal is the executed price. A zero close price would book the
+            // whole entry as realized loss/gain.
+            val closePrice =
+                resp.result.price.takeIf { it.signum() > 0 }
+                    ?: venueTruth.closingDealPrice
+                    ?: resp.result.price.also {
+                        log.warn(
+                            "MT5Broker {} close {} acknowledged with price 0.0 and no closing deal {} found; booking as reported",
+                            profile.name,
+                            request.id,
+                            resp.result.deal,
+                        )
+                    }
             if (!positionRemainsOpen) positionOpenedAtByTicket.remove(ticket)
             bus.publish(
                 BrokerEvent.OrderAccepted(
@@ -714,7 +729,7 @@ class MT5Broker(
                     brokerOrderId = ticket.toString(),
                     symbol = request.symbol,
                     side = request.side,
-                    price = resp.result.price,
+                    price = closePrice,
                     quantity = filledQuantity,
                     strategyId = request.strategyId,
                     timestamp = clock.now(),
@@ -1156,6 +1171,22 @@ class MT5Broker(
             }
             return
         }
+        if (isInstantFill && resp.result.price.signum() <= 0) {
+            // Async-fill venues (#1092) acknowledge a market order with DONE and price 0.0; the
+            // real fill price lands on the position a moment later. Booking 0.0 faults the
+            // engine loop, so resolve the fill from venue truth (bounded retry, exact
+            // client_order_id match) instead — the same path an ambiguous send takes.
+            executeUnknownResolution {
+                resolveUnknownOutcome(
+                    request,
+                    placement,
+                    placementStartedAtMs,
+                    protection,
+                    "fill acknowledged with price 0.0 — anchoring from the venue position",
+                )
+            }
+            return
+        }
         // Register the venue ticket BEFORE announcing acceptance so any consumer reacting to
         // [BrokerEvent.OrderAccepted] (e.g. a follow-up modify keyed by clientOrderId) sees the
         // broker's bookkeeping already consistent.
@@ -1205,11 +1236,17 @@ class MT5Broker(
         }
     }
 
-    private fun venueCostsForPositionClose(
+    /** What the venue's deal history says about a close: booked costs and the closing deal's price. */
+    private data class CloseVenueTruth(
+        val costs: BigDecimal,
+        val closingDealPrice: BigDecimal?,
+    )
+
+    private fun venueTruthForPositionClose(
         positionTicket: Long,
         closingDealTicket: Long,
         positionClosed: Boolean,
-    ): BigDecimal {
+    ): CloseVenueTruth {
         val now = clock.now()
         val from = positionOpenedAtByTicket[positionTicket] ?: now - DEAL_LOOKUP_WINDOW_MS
         val deals =
@@ -1222,7 +1259,13 @@ class MT5Broker(
                     .filter {
                         it.positionTicket == positionTicket || it.ticket == closingDealTicket
                     }
-        return venueCostLedger.book(positionTicket, deals, positionClosed, now)
+        return CloseVenueTruth(
+            costs = venueCostLedger.book(positionTicket, deals, positionClosed, now),
+            closingDealPrice =
+                deals
+                    .firstOrNull { it.ticket == closingDealTicket && it.price.signum() > 0 }
+                    ?.price,
+        )
     }
 
     /**
@@ -1298,6 +1341,9 @@ class MT5Broker(
         val residualTicket = response.result.order
         val positionTicket = openingDeal.positionTicket
         val filledQuantity = requireNotNull(response.result.volume)
+        // Async-fill venues report price 0.0 on the acknowledgement (#1092); the opening deal
+        // carries the executed price.
+        val fillPrice = response.result.price.takeIf { it.signum() > 0 } ?: openingDeal.price
         val meta = PendingMeta(request.id, request.strategyId, protection)
         val earlyPosition =
             registerPartialEntry(
@@ -1309,7 +1355,7 @@ class MT5Broker(
                     side = request.side,
                     requestedQuantity = placement.volume,
                     cumulativeFilled = filledQuantity,
-                    averageFillPrice = response.result.price,
+                    averageFillPrice = fillPrice,
                 ),
                 openedAtMs = openingDeal.timeMs.takeIf { it > 0L } ?: placementStartedAtMs,
             )
@@ -1327,7 +1373,7 @@ class MT5Broker(
                 brokerOrderId = positionTicket.toString(),
                 symbol = request.symbol,
                 side = request.side,
-                price = response.result.price,
+                price = fillPrice,
                 quantity = filledQuantity,
                 cumulativeFilled = filledQuantity,
                 strategyId = request.strategyId,
