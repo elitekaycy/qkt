@@ -94,7 +94,7 @@ class Mt5BarFetcher(
         if (toMs <= fromMs) return emptySequence()
         require(toMs - fromMs <= MAX_TICK_SPAN_MS) {
             "Sub-minute warmup for $symbol spans ${(toMs - fromMs) / 60_000L} minutes of ticks; " +
-                "the limit is ${MAX_TICK_SPAN_MS / 60_000L} minutes. Reduce WARMUP or indicator periods on that stream."
+                "the limit is ${MAX_TICK_SPAN_MS / 60_000L} minutes; reduce WARMUP or indicator periods on that stream"
         }
         val client = Mt5TickClient(baseUrl, http, serverTimeZone, apiKey)
         val bars = mutableListOf<Candle>()
