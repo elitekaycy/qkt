@@ -67,13 +67,18 @@ class LegBookReconciler(
                         strategyId,
                         symbol,
                     )
+                    Outcome.NothingPersisted
                 } else {
+                    // Every persisted leg closed while the daemon was down. Wipe the book and hand
+                    // the legs back as retired so the caller books what the venue realized on them
+                    // and resets the strategy's rule edges (#1079) — the same path as a partial
+                    // downtime close, instead of dropping the trades silently.
                     log.warn(
                         "Reconcile: persisted state for $strategyId/$symbol exists but broker reports no positions; wiping persisted state",
                     )
                     persistor.saveLegBook(strategyId, symbol, LegBook(symbol))
+                    Outcome.Attached(LegBook(symbol), retired = persisted.legs)
                 }
-                Outcome.NothingPersisted
             }
 
             brokerPositions.isNotEmpty() && persisted == null ->
