@@ -4,6 +4,7 @@ A condition is everything between `WHEN` and `THEN` in a rule. It's a boolean ex
 
 ## Shape
 
+<!-- qkt-doc: grammar -->
 ```qkt
 WHEN <condition>
 THEN <action> [ ; <action> ... ]
@@ -32,7 +33,7 @@ A bare comparison like `>` or `<` is **level-triggered for evaluation** — it r
 
 ```qkt
 WHEN btc.close > 50000
-THEN LOG INFO "above 50k"
+THEN LOG "above 50k"
 ```
 
 This fires the **first** tick where `btc.close > 50000`. If `btc.close` stays above 50k for 100 bars, you get **one** log line, not 100.
@@ -62,14 +63,15 @@ case-sensitive; `<`, `<=`, `>`, and `>=` accept numbers only. Mixed or unsupport
 evaluate as undefined, so the containing rule does not fire.
 
 ```qkt
-WHEN rsi(btc.close, 14) < 30 THEN LOG INFO "oversold"
-WHEN account.equity >= 10000 THEN BUY btc SIZING 0.5 PCT
-WHEN POSITION.btc = 0 THEN ...
+WHEN rsi(btc.close, 14) < 30 THEN LOG "oversold"
+WHEN account.equity >= 10000 THEN BUY btc SIZING 0.01
+WHEN POSITION.btc = 0 THEN LOG "flat"
 WHEN status = "ready" THEN BUY btc SIZING 0.01
 ```
 
 ## Boolean combinators
 
+<!-- qkt-doc: grammar -->
 ```qkt
 WHEN <cond1> AND <cond2>            -- both must hold
 WHEN <cond1> OR  <cond2>            -- either holds
@@ -98,6 +100,7 @@ WHEN a > 0 AND (b > 0 OR c > 0)     -- a>0, AND (b>0 OR c>0)
 
 Edge-triggered, the workhorse of moving-average strategies:
 
+<!-- qkt-doc: grammar -->
 ```qkt
 <expr_a> CROSSES ABOVE <expr_b>
 <expr_a> CROSSES BELOW <expr_b>
@@ -122,6 +125,7 @@ equal to or below it, so a touch from above counts as a below cross.
 
 ### `BETWEEN`
 
+<!-- qkt-doc: grammar -->
 ```qkt
 <expr> BETWEEN <low> AND <high>
 ```
@@ -130,11 +134,12 @@ True when `low <= expr <= high`. Inclusive on both ends.
 
 ```qkt
 WHEN rsi(btc.close, 14) BETWEEN 30 AND 70
-THEN LOG INFO "in neutral RSI range"
+THEN LOG "in neutral RSI range"
 ```
 
 ### Membership (`IN`)
 
+<!-- qkt-doc: grammar -->
 ```qkt
 <expr> IN [<a>, <b>, <c>, ...]
 ```
@@ -191,6 +196,7 @@ THEN CLOSE gold
 
 The most common entry guard pattern:
 
+<!-- qkt-doc: grammar -->
 ```qkt
 WHEN <signal_condition>
  AND POSITION.btc = 0
@@ -200,6 +206,7 @@ THEN BUY btc ...                  -- enter only when flat
 
 The most common exit pattern:
 
+<!-- qkt-doc: grammar -->
 ```qkt
 WHEN <exit_condition> AND POSITION.btc > 0
 THEN CLOSE btc                    -- exit only when long
@@ -222,7 +229,7 @@ Out-of-range or negative indices return `null`; comparisons with `null` are `fal
 
 ```qkt
 -- This won't crash on the first tick despite no [20] history yet:
-WHEN btc.close > btc.close[20] THEN ...
+WHEN btc.close > btc.close[20] THEN LOG "up over 20 bars"
 ```
 
 ## Combining conditions across streams

@@ -4,6 +4,7 @@
 
 ## Shape
 
+<!-- qkt-doc: grammar -->
 ```qkt
 NOW.<field>
 NOW                      -- bare form, equivalent to NOW.epoch_ms
@@ -43,7 +44,7 @@ For sub-hour precision, add `NOW.minute_utc`:
 WHEN NOW.hour_utc = 14
  AND NOW.minute_utc < 5
  AND POSITION.gold = 0
-THEN ...
+THEN BUY gold SIZING 0.1
 ```
 
 (Strategy fires only on candles whose closing minute is 0, 1, 2, 3, or 4 of hour 14.)
@@ -62,7 +63,7 @@ A window may wrap midnight — when the start is later in the day than the end, 
 
 ```qkt
     -- 23:00-01:00 UTC
-    WHEN SESSION_WINDOW(23, 0, 1, 0) AND ...
+    WHEN SESSION_WINDOW(23, 0, 1, 0) AND POSITION.gold = 0
 ```
 
 Exit at the window close by negating it (`SESSION_WINDOW` is a boolean):
@@ -79,8 +80,8 @@ All four arguments must be integer literals; hour is 0-23 and minute 0-59, valid
 
 ```qkt
 WHEN NOW.weekday < 5      -- Monday through Friday only (Mon=0, Fri=4)
- AND ...
-THEN ...
+ AND POSITION.gold = 0
+THEN BUY gold SIZING 0.1
 ```
 
 Useful for FX strategies that should skip Saturday/Sunday gaps.
@@ -127,8 +128,8 @@ RULES
     -- Month-end fix-rebalancing breakout: only on the final trading day.
     WHEN LAST_TRADING_DAY_OF_MONTH()
      AND SESSION_WINDOW(8, 0, 16, 0)
-     AND gbp.close > session_range_high(gbp, 7, 0, 11, 0)
-    THEN BUY gbp
+     AND gbp.close > session_range_high(gbp.candle, 7, 0, 11, 0)
+    THEN BUY gbp SIZING 0.1
 ```
 
 It takes no arguments. "Trading day" means a weekday: the predicate does not consult an exchange holiday calendar, so a public holiday landing on the last weekday is still treated as the last trading day. This is the faithful approximation for 24/5 FX, which trades every weekday. e.g. if a month ends on Saturday the 31st, the last trading day is Friday the 30th; if it ends on Sunday, it is the preceding Friday. Like the windows above it reads `StrategyContext.clock`, so it is deterministic and identical in backtest and live.

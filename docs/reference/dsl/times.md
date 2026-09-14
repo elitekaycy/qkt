@@ -12,6 +12,7 @@ produces — same orders, same ids, same fills, same P&L — with the count in o
 
 ## Shape
 
+<!-- qkt-doc: grammar -->
 ```qkt
 BUY|SELL <stream> ... TIMES <expression>
 ```
