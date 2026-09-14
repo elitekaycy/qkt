@@ -40,6 +40,8 @@ data class ExecutionEvidence(
     val stopLatencyModel: String? = null,
     /** Pricing of a gap-crossed take-profit: `print` (crossing print or better) or `level`. */
     val takeProfitFillModel: String? = null,
+    /** How replay closes a quiet symbol's ended bar: `heartbeat:<n>ms grace:<n>ms`, matching live (#1138). */
+    val candleCloseModel: String? = null,
     val slippageModel: String? = null,
     val rejectionModel: String? = null,
     val partialFillModel: String? = null,
@@ -131,6 +133,7 @@ object EvidenceJson {
             append(",\"latencyModel\":").append(nullableString(e.latencyModel))
             append(",\"stopLatencyModel\":").append(nullableString(e.stopLatencyModel))
             append(",\"takeProfitFillModel\":").append(nullableString(e.takeProfitFillModel))
+            append(",\"candleCloseModel\":").append(nullableString(e.candleCloseModel))
             append(",\"slippageModel\":").append(nullableString(e.slippageModel))
             append(",\"rejectionModel\":").append(nullableString(e.rejectionModel))
             append(",\"partialFillModel\":").append(nullableString(e.partialFillModel))
