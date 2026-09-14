@@ -1068,8 +1068,14 @@ class LiveSession(
         // through the same accounted-event fold as a live execution, so every accumulator and
         // the audit trail see them.
         val bootReconciled = ArrayList<BootReconciled>()
+        // Strategies with a leg that closed while the daemon was down. Their persisted rule
+        // edges still describe the bar that opened the position, so an entry condition that is
+        // true again after the restart would show no rising edge and never fire (the same trap
+        // as a stop --flatten inside the entry bar). Cleared once the strategies are bound below.
+        val edgeResetStrategies = LinkedHashSet<String>()
         val adoptedLegCounts =
             reconcileOrPreload(strategyPositions, broker) { strategyId, leg ->
+                edgeResetStrategies += strategyId
                 // The leg's position closed while the daemon was down. Book what the venue
                 // realized on it (OUT deals of that position ticket) so lifetime PnL and the
                 // equity curve do not silently lose the trade; a venue with no deal history
@@ -1434,6 +1440,16 @@ class LiveSession(
                 },
                 latencyEnabled = latencyEnabled,
             )
+        for (strategyId in edgeResetStrategies) {
+            val strategy = strategies.firstOrNull { it.first == strategyId }?.second as? DslCompiledStrategy ?: continue
+            runCatching { strategy.clearRuleEdges() }
+                .onSuccess {
+                    log.warn(
+                        "{}: rule edges cleared — a position closed while the daemon was down",
+                        strategyId,
+                    )
+                }.onFailure { t -> log.warn("could not clear rule edges for {} after downtime close", strategyId, t) }
+        }
         engineHeldProtectiveStopCount = pipeline.orderManager::engineHeldProtectiveStopCount
 
         bus.subscribe<WarmupTickEvent> { e -> onWarmupTick(e.tick) }
