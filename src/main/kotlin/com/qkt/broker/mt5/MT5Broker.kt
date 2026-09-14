@@ -650,9 +650,23 @@ class MT5Broker(
         client.closePositionAsync(ticket, volume = closeQuantity, partial = request.partialClose) { resp ->
             if (!isOrderSuccessful(resp.result.retcode)) {
                 val message = resp.errorMessage ?: "close_position retcode=${resp.result.retcode}"
-                if (isAmbiguousSendFailure(message)) {
+                val venueReportedClosed = venueOwnsClose(resp, message)
+                if (isAmbiguousSendFailure(message) || venueReportedClosed) {
+                    // A venue-side exit (mirrored stop, take-profit, manual close) can land
+                    // between the engine deciding to close and the close reaching the venue.
+                    // The venue then answers POSITION_CLOSED, or FROZEN when the market is
+                    // already inside the stop's freeze level: the trade is finishing at the
+                    // venue, so the outcome is read from deal history rather than surfaced
+                    // as a rejection that would count toward the runaway breaker.
                     executeUnknownResolution {
-                        resolveUnknownCloseOutcome(request, ticket, closeQuantity, closeStartedAtMs, message)
+                        resolveUnknownCloseOutcome(
+                            request,
+                            ticket,
+                            closeQuantity,
+                            closeStartedAtMs,
+                            message,
+                            venueReportedClosed,
+                        )
                     }
                     return@closePositionAsync
                 }
@@ -741,12 +755,19 @@ class MT5Broker(
         return SubmitAck(request.id, ticket.toString(), accepted = true)
     }
 
+    /**
+     * [venueReportedClosed] marks a close the venue answered with `POSITION_CLOSED`: the
+     * closing deal then predates this close attempt (a venue-side stop or take-profit
+     * fired first), so deal correlation looks back over the full correlation window
+     * instead of only the clock-skew margin used for a close of unknown delivery.
+     */
     private fun resolveUnknownCloseOutcome(
         request: OrderRequest.Market,
         ticket: Long,
         requestedQuantity: BigDecimal,
         closeStartedAtMs: Long,
         cause: String,
+        venueReportedClosed: Boolean = false,
     ) {
         log.warn(
             "MT5Broker {} close {} outcome UNKNOWN ({}) — querying venue before resolving",
@@ -754,6 +775,9 @@ class MT5Broker(
             request.id,
             cause,
         )
+        val dealsNotBeforeMs =
+            closeStartedAtMs -
+                if (venueReportedClosed) UNKNOWN_CORRELATION_WINDOW_MS else CLOSE_DEAL_CLOCK_SKEW_MS
         var cleanAbsenceReads = 0
         for (attempt in 1..UNKNOWN_RESOLVE_ATTEMPTS) {
             Thread.sleep(unknownResolveBackoffMs * attempt)
@@ -771,7 +795,7 @@ class MT5Broker(
                         it.positionTicket == ticket &&
                             it.magic == profile.magic &&
                             it.entry != 0 &&
-                            it.timeMs >= closeStartedAtMs - CLOSE_DEAL_CLOCK_SKEW_MS
+                            it.timeMs >= dealsNotBeforeMs
                     }.sortedBy { it.timeMs }
             if (closingDeals.isNotEmpty()) {
                 val filledQuantity = closingDeals.fold(BigDecimal.ZERO) { total, deal -> total + deal.volume }
@@ -797,6 +821,19 @@ class MT5Broker(
                             profile.name,
                             request.id,
                             ticket,
+                        )
+                        // The position's close (and its P&L) is already on the bus under the
+                        // entry. Retire this close order without a second fill so the engine
+                        // does not keep a live exit child on a position that no longer exists.
+                        bus.publish(
+                            BrokerEvent.OrderCancelled(
+                                clientOrderId = request.id,
+                                brokerOrderId = ticket.toString(),
+                                reason =
+                                    "superseded by venue close of ticket $ticket already published by the position poller",
+                                strategyId = request.strategyId,
+                                timestamp = clock.now(),
+                            ),
                         )
                         return
                     }
@@ -845,7 +882,7 @@ class MT5Broker(
             UNKNOWN_RESOLVE_ATTEMPTS,
         )
         publishGatewayUnreachable(UNKNOWN_RESOLVE_ATTEMPTS)
-        scheduleUnknownCloseResolution(request, ticket, requestedQuantity, closeStartedAtMs, cause)
+        scheduleUnknownCloseResolution(request, ticket, requestedQuantity, closeStartedAtMs, cause, venueReportedClosed)
     }
 
     private fun scheduleUnknownCloseResolution(
@@ -854,9 +891,10 @@ class MT5Broker(
         requestedQuantity: BigDecimal,
         closeStartedAtMs: Long,
         cause: String,
+        venueReportedClosed: Boolean,
     ) {
         scheduleUnknownResolution {
-            resolveUnknownCloseOutcome(request, ticket, requestedQuantity, closeStartedAtMs, cause)
+            resolveUnknownCloseOutcome(request, ticket, requestedQuantity, closeStartedAtMs, cause, venueReportedClosed)
         }
     }
 
@@ -1409,6 +1447,21 @@ class MT5Broker(
         if (positionClosed) positionOpenedAtByTicket.remove(positionTicket)
         return venueCostLedger.book(positionTicket, deals, positionClosed = positionClosed, nowMs = clock.now())
     }
+
+    /**
+     * True when a close acknowledgement says the venue owns this position's exit: the
+     * position is already gone (`TRADE_RETCODE_POSITION_CLOSED`) or the market sits inside
+     * the freeze level of its venue-side stop (`TRADE_RETCODE_FROZEN`), which the venue is
+     * about to execute itself. Recognised whether the gateway surfaced the code in the
+     * parsed result or only inside a non-2xx error body.
+     */
+    private fun venueOwnsClose(
+        resp: MT5OrderResponse,
+        errorMessage: String,
+    ): Boolean =
+        resp.result.retcode == MT5_TRADE_RETCODE_POSITION_CLOSED ||
+            resp.result.retcode == MT5_TRADE_RETCODE_FROZEN ||
+            VENUE_OWNED_CLOSE_RETCODE_IN_BODY.containsMatchIn(errorMessage)
 
     /** True for failures where the request may have reached the venue despite the error. */
     private fun isAmbiguousSendFailure(errorMessage: String): Boolean =
@@ -2764,6 +2817,10 @@ class MT5Broker(
         /** Maximum distance from placement time for legacy comment-based correlation. */
         private const val UNKNOWN_CORRELATION_WINDOW_MS: Long = 60_000L
         private const val CLOSE_DEAL_CLOCK_SKEW_MS: Long = 1_000L
+
+        /** `POSITION_CLOSED` / `FROZEN` retcodes as gateways embed them in a non-2xx error body. */
+        private val VENUE_OWNED_CLOSE_RETCODE_IN_BODY: Regex =
+            Regex(""""retcode"\s*:\s*(?:$MT5_TRADE_RETCODE_POSITION_CLOSED|$MT5_TRADE_RETCODE_FROZEN)\b""")
 
         /** Margin-level cache TTL — fresh enough for a floor check, cheap on the gateway. */
         private const val MARGIN_CACHE_TTL_MS: Long = 5_000L
