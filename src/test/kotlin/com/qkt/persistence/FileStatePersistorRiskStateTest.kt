@@ -35,6 +35,9 @@ class FileStatePersistorRiskStateTest {
                 pacerEntryFillsByStrategy = mapOf("s1" to listOf(1L, 2L)),
                 pacerLossStreakByStrategy = mapOf("s1" to 2),
                 pacerLastLossAtByStrategy = mapOf("s1" to 2L),
+                monthKey = 650L,
+                realizedMonth = BigDecimal("-450"),
+                perStrategyRealizedMonth = mapOf("s1" to BigDecimal("-450")),
             )
 
         persistor.saveRiskState("s1", state)

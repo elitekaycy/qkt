@@ -331,6 +331,10 @@ data class PersistedRiskState(
     val pacerEntryFillsByStrategy: Map<String, List<Long>> = emptyMap(),
     val pacerLossStreakByStrategy: Map<String, Int> = emptyMap(),
     val pacerLastLossAtByStrategy: Map<String, Long> = emptyMap(),
+    /** UTC month key (months since 1970-01) of [realizedMonth]; null in files written before #855. */
+    val monthKey: Long? = null,
+    val realizedMonth: java.math.BigDecimal? = null,
+    val perStrategyRealizedMonth: Map<String, java.math.BigDecimal> = emptyMap(),
 )
 
 /** One strategy-scoped halt inside [PersistedRiskState]. */
