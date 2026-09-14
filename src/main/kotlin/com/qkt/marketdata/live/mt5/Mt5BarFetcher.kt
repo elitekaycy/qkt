@@ -99,13 +99,20 @@ class Mt5BarFetcher(
         val client = Mt5TickClient(baseUrl, http, serverTimeZone, apiKey)
         val bars = mutableListOf<Candle>()
         val aggregator = CandleAggregator.standalone(window) { bars.add(it) }
+        // The gateway floors `from_date` to the second and treats `to_date` as exclusive, so
+        // adjacent pages re-deliver the head of the boundary second. Advance a watermark past
+        // each page like the live poller does, or those ticks are counted twice.
+        var watermark = fromMs - 1L
         var chunkFrom = fromMs
         while (chunkFrom < toMs) {
             val chunkTo = minOf(chunkFrom + TICK_CHUNK_MS, toMs)
-            client
-                .fetchRange(symbol, afterBrokerMs = chunkFrom - 1L, toBrokerMs = chunkTo, capturedAtMs = toMs)
+            val page =
+                client
+                    .fetchRange(symbol, afterBrokerMs = watermark, toBrokerMs = chunkTo, capturedAtMs = toMs)
+                    .filter { it.brokerTimeMs > watermark && it.brokerTimeMs < toMs }
+            page.lastOrNull()?.let { watermark = it.brokerTimeMs }
+            page
                 .asSequence()
-                .filter { it.brokerTimeMs in fromMs until toMs }
                 .filter { it.bid.signum() > 0 && it.ask.signum() > 0 }
                 .forEach { tick ->
                     aggregator.onTick(
