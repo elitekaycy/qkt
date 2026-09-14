@@ -64,6 +64,8 @@ class MT5StateRecovery(
                         newAvgPx = p.priceOpen,
                         source = "mt5:${profile.name}",
                         reason = "startup-recovery",
+                        ticket = p.ticket.toString(),
+                        strategyId = strategyName,
                     ),
                 )
             }
