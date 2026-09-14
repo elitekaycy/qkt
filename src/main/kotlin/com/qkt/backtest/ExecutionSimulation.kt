@@ -8,6 +8,7 @@ import com.qkt.broker.PartialFillModel
 import com.qkt.broker.RejectEveryNthOrder
 import com.qkt.broker.RejectionModel
 import com.qkt.broker.SlippageModel
+import com.qkt.broker.TakeProfitFill
 import com.qkt.broker.UniformRandomSlippage
 import com.qkt.broker.ZeroSlippage
 import com.qkt.evidence.ExecutionEvidence
@@ -45,6 +46,14 @@ data class ExecutionSimulationConfig(
     val preset: ExecutionPreset = ExecutionPreset.PAPER_FAST,
     val seed: Long? = null,
     val latencyMs: Long = 0L,
+    /**
+     * Execution delay applied to protective stops only (#1135): a crossed stop fills at the
+     * first quote at or after `trigger + stopLatencyMs`, sided, plus slippage. Entry latency
+     * ([latencyMs]) delays order placement and does not model this. 0 keeps the on-trigger fill.
+     */
+    val stopLatencyMs: Long = 0L,
+    /** Pricing of a gap-crossed protective take-profit (#1135). */
+    val takeProfitFill: TakeProfitFill = TakeProfitFill.PRINT,
     val slippage: SlippageSpec = SlippageSpec.ZERO,
     val slippagePoints: Int = 0,
     val rejectEvery: Int? = null,
@@ -63,6 +72,7 @@ data class ExecutionSimulationConfig(
 ) {
     init {
         require(latencyMs >= 0L) { "execution latencyMs must be >= 0: $latencyMs" }
+        require(stopLatencyMs >= 0L) { "execution stopLatencyMs must be >= 0: $stopLatencyMs" }
         require(slippagePoints >= 0) { "execution slippagePoints must be >= 0: $slippagePoints" }
         rejectEvery?.let { require(it > 0) { "execution rejectEvery must be > 0: $it" } }
         partialFillFraction?.let {
@@ -113,6 +123,8 @@ data class ExecutionSimulationConfig(
                     else -> "bid/ask when available, synthetic spread fallback"
                 },
             latencyModel = if (latencyMs == 0L) "zero" else "fixed:${latencyMs}ms",
+            stopLatencyModel = if (stopLatencyMs == 0L) "on-trigger" else "fixed:${stopLatencyMs}ms",
+            takeProfitFillModel = takeProfitFill.id,
             slippageModel = slippageLabel(),
             rejectionModel = rejectEvery?.let { "reject-every:$it" } ?: "none",
             partialFillModel = partialFillFraction?.let { "fraction:$it" } ?: "none",

@@ -36,6 +36,10 @@ data class ExecutionEvidence(
     val realistic: Boolean = false,
     val fillPriceSource: String? = null,
     val latencyModel: String? = null,
+    /** Delay between a protective stop's trigger and its fill: `on-trigger` or `fixed:<n>ms`. */
+    val stopLatencyModel: String? = null,
+    /** Pricing of a gap-crossed take-profit: `print` (crossing print or better) or `level`. */
+    val takeProfitFillModel: String? = null,
     val slippageModel: String? = null,
     val rejectionModel: String? = null,
     val partialFillModel: String? = null,
@@ -125,6 +129,8 @@ object EvidenceJson {
             append(",\"realistic\":").append(e.realistic)
             append(",\"fillPriceSource\":").append(nullableString(e.fillPriceSource))
             append(",\"latencyModel\":").append(nullableString(e.latencyModel))
+            append(",\"stopLatencyModel\":").append(nullableString(e.stopLatencyModel))
+            append(",\"takeProfitFillModel\":").append(nullableString(e.takeProfitFillModel))
             append(",\"slippageModel\":").append(nullableString(e.slippageModel))
             append(",\"rejectionModel\":").append(nullableString(e.rejectionModel))
             append(",\"partialFillModel\":").append(nullableString(e.partialFillModel))
