@@ -231,6 +231,10 @@ class BacktestCommandTest {
                 "7",
                 "--execution-latency",
                 "fixed:100ms",
+                "--stop-latency",
+                "300ms",
+                "--tp-fill",
+                "level",
                 "--slippage",
                 "fixed-points:3",
             )
@@ -245,6 +249,8 @@ class BacktestCommandTest {
         assertThat(execution["broker"]?.jsonPrimitive?.contentOrNull).isEqualTo("mt5-sim")
         assertThat(execution["seed"]?.jsonPrimitive?.contentOrNull).isEqualTo("7")
         assertThat(execution["latencyModel"]?.jsonPrimitive?.contentOrNull).isEqualTo("fixed:100ms")
+        assertThat(execution["stopLatencyModel"]?.jsonPrimitive?.contentOrNull).isEqualTo("fixed:300ms")
+        assertThat(execution["takeProfitFillModel"]?.jsonPrimitive?.contentOrNull).isEqualTo("level")
         assertThat(execution["slippageModel"]?.jsonPrimitive?.contentOrNull).isEqualTo("fixed-points:3")
         assertThat(execution["venueRules"]?.jsonPrimitive?.contentOrNull).contains("tradeStopsLevel")
     }

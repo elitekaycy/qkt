@@ -314,6 +314,8 @@ class ReplayEngine(
                         instruments,
                         slippage = executionConfig.slippageModel(),
                         latencyMs = executionConfig.latencyMs,
+                        stopLatencyMs = executionConfig.stopLatencyMs,
+                        takeProfitFill = executionConfig.takeProfitFill,
                         enforceStopsLevel = executionConfig.enforceStopsLevel,
                         rejectionModel = executionConfig.rejectionModel(),
                         partialFillModel = executionConfig.partialFillModel(),

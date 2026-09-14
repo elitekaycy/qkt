@@ -7,6 +7,7 @@ import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.Side
 import com.qkt.events.BrokerEvent
 import com.qkt.events.TickEvent
+import com.qkt.execution.LegIntent
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.TimeInForce
 import com.qkt.execution.TriggerType
@@ -763,5 +764,208 @@ class MT5BrokerSimulatorTest {
 
         assertThat(fills).hasSize(1)
         assertThat(fills.single().price).isEqualByComparingTo(Money.of("1989.550"))
+    }
+
+    private fun protectiveSellStop(
+        id: String = "sl",
+        stop: String = "1999.000",
+    ) = OrderRequest.Stop(
+        id = id,
+        symbol = "EXNESS:XAUUSD",
+        side = Side.SELL,
+        quantity = Money.of("0.01"),
+        stopPrice = Money.of(stop),
+        timeInForce = TimeInForce.GTC,
+        timestamp = 0L,
+        legIntent = LegIntent.Close(legId = "leg-1"),
+    )
+
+    private fun quote(
+        ms: Long,
+        bid: String,
+        ask: String,
+    ) = Tick(
+        symbol = "EXNESS:XAUUSD",
+        price = Money.of(bid),
+        timestamp = ms,
+        bid = Money.of(bid),
+        ask = Money.of(ask),
+    )
+
+    @Test
+    fun `protective stop with stop latency fills at the first quote after the delay, not the crossing print (#1135)`() {
+        val clock = FixedClock(0L)
+        val bus = EventBus(clock, MonotonicSequenceGenerator())
+        val fills = mutableListOf<BrokerEvent.OrderFilled>()
+        bus.subscribe<BrokerEvent.OrderFilled> { fills.add(it) }
+        val tracker = MarketPriceTracker()
+        val sim =
+            MT5BrokerSimulator(
+                bus,
+                clock,
+                tracker,
+                registry(xauusd()),
+                syntheticSpreadPoints = 0,
+                stopLatencyMs = 300L,
+            )
+        sim.submit(protectiveSellStop())
+
+        // Crossing print at t=1000: bid 1998.900 <= 1999.000 triggers, but nothing fills yet.
+        clock.advanceTo(1_000L)
+        bus.publish(TickEvent(quote(1_000L, "1998.900", "1999.100")))
+        assertThat(fills).isEmpty()
+        // A quote inside the delay is not the execution either.
+        clock.advanceTo(1_200L)
+        bus.publish(TickEvent(quote(1_200L, "1998.500", "1998.700")))
+        assertThat(fills).isEmpty()
+        // First quote at or after trigger + 300 ms executes, sided on the bid.
+        clock.advanceTo(1_350L)
+        bus.publish(TickEvent(quote(1_350L, "1997.800", "1998.000")))
+
+        assertThat(fills).hasSize(1)
+        assertThat(fills.single().clientOrderId).isEqualTo("sl")
+        assertThat(fills.single().price).isEqualByComparingTo(Money.of("1997.800"))
+    }
+
+    @Test
+    fun `stop latency leaves entry stops and zero-delay runs on the crossing print (#1135)`() {
+        val clock = FixedClock(0L)
+        val bus = EventBus(clock, MonotonicSequenceGenerator())
+        val fills = mutableListOf<BrokerEvent.OrderFilled>()
+        bus.subscribe<BrokerEvent.OrderFilled> { fills.add(it) }
+        val delayed =
+            MT5BrokerSimulator(
+                bus,
+                clock,
+                MarketPriceTracker(),
+                registry(xauusd()),
+                syntheticSpreadPoints = 0,
+                stopLatencyMs = 300L,
+            )
+        // An entry stop (no Close intent) is a placement, not a protective exit: unaffected.
+        delayed.submit(
+            OrderRequest.Stop(
+                id = "entry-stop",
+                symbol = "EXNESS:XAUUSD",
+                side = Side.SELL,
+                quantity = Money.of("0.01"),
+                stopPrice = Money.of("1999.000"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+            ),
+        )
+        clock.advanceTo(1_000L)
+        bus.publish(TickEvent(quote(1_000L, "1998.900", "1999.100")))
+        assertThat(fills.map { it.clientOrderId }).containsExactly("entry-stop")
+        assertThat(fills.single().price).isEqualByComparingTo(Money.of("1998.900"))
+
+        // Default delay 0: a protective stop still fills on the crossing print (byte-identical history).
+        fills.clear()
+        val bus2 = EventBus(clock, MonotonicSequenceGenerator())
+        bus2.subscribe<BrokerEvent.OrderFilled> { fills.add(it) }
+        val immediate =
+            MT5BrokerSimulator(bus2, clock, MarketPriceTracker(), registry(xauusd()), syntheticSpreadPoints = 0)
+        immediate.submit(protectiveSellStop())
+        clock.advanceTo(2_000L)
+        bus2.publish(TickEvent(quote(2_000L, "1998.900", "1999.100")))
+        assertThat(fills.single().price).isEqualByComparingTo(Money.of("1998.900"))
+    }
+
+    @Test
+    fun `a stop cancelled during its execution delay never fills (#1135)`() {
+        val clock = FixedClock(0L)
+        val bus = EventBus(clock, MonotonicSequenceGenerator())
+        val fills = mutableListOf<BrokerEvent.OrderFilled>()
+        val cancels = mutableListOf<BrokerEvent.OrderCancelled>()
+        bus.subscribe<BrokerEvent.OrderFilled> { fills.add(it) }
+        bus.subscribe<BrokerEvent.OrderCancelled> { cancels.add(it) }
+        val sim =
+            MT5BrokerSimulator(
+                bus,
+                clock,
+                MarketPriceTracker(),
+                registry(xauusd()),
+                syntheticSpreadPoints = 0,
+                stopLatencyMs = 300L,
+            )
+        sim.submit(protectiveSellStop())
+        clock.advanceTo(1_000L)
+        bus.publish(TickEvent(quote(1_000L, "1998.900", "1999.100")))
+        // The OCO sibling filled meanwhile and the engine cancels the stop.
+        sim.cancel("sl")
+        assertThat(cancels.map { it.clientOrderId }).containsExactly("sl")
+        clock.advanceTo(2_000L)
+        bus.publish(TickEvent(quote(2_000L, "1997.000", "1997.200")))
+        assertThat(fills).isEmpty()
+    }
+
+    @Test
+    fun `take-profit LEVEL books a gapped protective limit at its level while PRINT keeps the improvement (#1135)`() {
+        fun run(mode: TakeProfitFill): BigDecimal {
+            val clock = FixedClock(0L)
+            val bus = EventBus(clock, MonotonicSequenceGenerator())
+            val fills = mutableListOf<BrokerEvent.OrderFilled>()
+            bus.subscribe<BrokerEvent.OrderFilled> { fills.add(it) }
+            val sim =
+                MT5BrokerSimulator(
+                    bus,
+                    clock,
+                    MarketPriceTracker(),
+                    registry(xauusd()),
+                    syntheticSpreadPoints = 0,
+                    takeProfitFill = mode,
+                )
+            sim.submit(
+                OrderRequest.Limit(
+                    id = "tp",
+                    symbol = "EXNESS:XAUUSD",
+                    side = Side.SELL,
+                    quantity = Money.of("0.01"),
+                    limitPrice = Money.of("2001.000"),
+                    timeInForce = TimeInForce.GTC,
+                    timestamp = 0L,
+                    legIntent =
+                        com.qkt.execution.LegIntent
+                            .Close(legId = "leg-1"),
+                ),
+            )
+            clock.advanceTo(1_000L)
+            // Gap through the level: bid prints 2002.500.
+            bus.publish(TickEvent(quote(1_000L, "2002.500", "2002.700")))
+            return fills.single().price
+        }
+        assertThat(run(TakeProfitFill.PRINT)).isEqualByComparingTo(Money.of("2002.500"))
+        assertThat(run(TakeProfitFill.LEVEL)).isEqualByComparingTo(Money.of("2001.000"))
+    }
+
+    @Test
+    fun `take-profit fill mode LEVEL does not touch entry limits (#1135)`() {
+        val clock = FixedClock(0L)
+        val bus = EventBus(clock, MonotonicSequenceGenerator())
+        val fills = mutableListOf<BrokerEvent.OrderFilled>()
+        bus.subscribe<BrokerEvent.OrderFilled> { fills.add(it) }
+        val sim =
+            MT5BrokerSimulator(
+                bus,
+                clock,
+                MarketPriceTracker(),
+                registry(xauusd()),
+                syntheticSpreadPoints = 0,
+                takeProfitFill = TakeProfitFill.LEVEL,
+            )
+        sim.submit(
+            OrderRequest.Limit(
+                id = "entry-limit",
+                symbol = "EXNESS:XAUUSD",
+                side = Side.SELL,
+                quantity = Money.of("0.01"),
+                limitPrice = Money.of("2001.000"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+            ),
+        )
+        clock.advanceTo(1_000L)
+        bus.publish(TickEvent(quote(1_000L, "2002.500", "2002.700")))
+        assertThat(fills.single().price).isEqualByComparingTo(Money.of("2002.500"))
     }
 }
