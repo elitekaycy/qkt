@@ -32,12 +32,17 @@ fun interface CompiledChildPrice {
  * at submission time given the entry price.
  */
 sealed interface CompiledStopLoss {
+    /**
+     * Resolved at signal time. Null means the stop cannot be built yet (an operand is
+     * undefined during warm-up, or evaluates to a value the stop spec rejects), and the
+     * order is skipped like any other undefined bracket price.
+     */
     fun interface Dynamic : CompiledStopLoss {
         fun evaluate(
             ec: EvalContext,
             side: Side,
             entry: BigDecimal,
-        ): StopLossSpec.Fixed?
+        ): StopLossSpec?
     }
 
     data class Static(
@@ -54,61 +59,59 @@ class ChildPriceResolver(
      * or [CompiledStopLoss.Dynamic] for the price-resolving variants (`AT`, `BY`, `PCT`).
      * `RR` is rejected because it's a take-profit-only form.
      */
-    fun compileStopLoss(child: ChildPriceAst): CompiledStopLoss =
+    fun compileStopLoss(
+        child: ChildPriceAst,
+        /**
+         * Whether trail and ratchet distances may be expressions (`TRAILING atr(x, 14) * 2`),
+         * evaluated once when the order is built (#1116). STACK brackets keep literals: their
+         * layer fills re-read the bracket AST, which does not carry evaluated ratchet operands.
+         */
+        allowExpressionDistances: Boolean = true,
+    ): CompiledStopLoss =
         when (child) {
             is ChildArmedTrail -> {
-                require(child.trailDistance is NumLit) {
-                    "TRAILING <distance> must be a numeric literal; got ${child.trailDistance::class.simpleName}"
+                val operands = listOf(child.trailDistance, child.mfeThreshold)
+                val labels = listOf("TRAILING <distance>", "AFTER MFE >= <threshold>")
+                specFrom(operands, labels, allowExpressionDistances) { v ->
+                    StopLossSpec.ArmedTrail(trailDistance = v[0], mfeThreshold = v[1])
                 }
-                require(child.mfeThreshold is NumLit) {
-                    "AFTER MFE >= <threshold> must be a numeric literal; got ${child.mfeThreshold::class.simpleName}"
-                }
-                CompiledStopLoss.Static(
-                    StopLossSpec.ArmedTrail(
-                        trailDistance = (child.trailDistance as NumLit).value,
-                        mfeThreshold = (child.mfeThreshold as NumLit).value,
-                    ),
-                )
             }
             is ChildBy -> {
-                val ratchet = child.ratchet
-                if (ratchet == null) {
-                    val priced = compile(child, ChildKind.STOP_LOSS)
-                    CompiledStopLoss.Dynamic { ec, side, entry ->
-                        priced.evaluate(ec, side, entry, stopDistance = null)?.let { StopLossSpec.Fixed(it) }
-                    }
-                } else {
-                    val initialDistance = literal(child.distance, "STOP LOSS BY <distance>")
-                    val spec =
-                        when (ratchet) {
-                            is SteppedStopAst ->
-                                StopLossSpec.SteppedStop(
-                                    initialDistance = initialDistance,
-                                    steps =
-                                        ratchet.steps.mapIndexed { index, step ->
-                                            StopLossSpec.Step(
-                                                mfeThreshold =
-                                                    literal(
-                                                        step.mfeThreshold,
-                                                        "step ${index + 1} MFE threshold",
-                                                    ),
-                                                profitDistance =
-                                                    literal(
-                                                        step.profitDistance,
-                                                        "step ${index + 1} target",
-                                                    ),
-                                            )
-                                        },
-                                )
-                            is TimeTightenAst ->
-                                StopLossSpec.TimeTighten(
-                                    initialDistance = initialDistance,
-                                    tightenBy = literal(ratchet.tightenBy, "TIGHTEN BY <distance>"),
-                                    intervalMs = ratchet.interval.millis,
-                                    floorDistance = literal(ratchet.floorDistance, "FLOOR <distance>"),
-                                )
+                when (val ratchet = child.ratchet) {
+                    null -> {
+                        val priced = compile(child, ChildKind.STOP_LOSS)
+                        CompiledStopLoss.Dynamic { ec, side, entry ->
+                            priced.evaluate(ec, side, entry, stopDistance = null)?.let { StopLossSpec.Fixed(it) }
                         }
-                    CompiledStopLoss.Static(spec)
+                    }
+                    is SteppedStopAst -> {
+                        val operands =
+                            listOf(child.distance) +
+                                ratchet.steps.flatMap { listOf(it.mfeThreshold, it.profitDistance) }
+                        val labels =
+                            listOf("STOP LOSS BY <distance>") +
+                                ratchet.steps.indices.flatMap {
+                                    listOf("step ${it + 1} MFE threshold", "step ${it + 1} target")
+                                }
+                        specFrom(operands, labels, allowExpressionDistances) { v ->
+                            StopLossSpec.SteppedStop(
+                                initialDistance = v[0],
+                                steps = ratchet.steps.indices.map { StopLossSpec.Step(v[1 + 2 * it], v[2 + 2 * it]) },
+                            )
+                        }
+                    }
+                    is TimeTightenAst -> {
+                        val operands = listOf(child.distance, ratchet.tightenBy, ratchet.floorDistance)
+                        val labels = listOf("STOP LOSS BY <distance>", "TIGHTEN BY <distance>", "FLOOR <distance>")
+                        specFrom(operands, labels, allowExpressionDistances) { v ->
+                            StopLossSpec.TimeTighten(
+                                initialDistance = v[0],
+                                tightenBy = v[1],
+                                intervalMs = ratchet.interval.millis,
+                                floorDistance = v[2],
+                            )
+                        }
+                    }
                 }
             }
             is ChildRr -> error("ChildRr is only valid for TAKE PROFIT, not STOP LOSS")
@@ -183,14 +186,37 @@ class ChildPriceResolver(
             }
         }
 
-    private fun literal(
-        expression: com.qkt.dsl.ast.ExprAst,
-        label: String,
-    ): BigDecimal {
-        require(expression is NumLit) {
-            "$label must be a numeric literal; got ${expression::class.simpleName}"
+    /**
+     * A stop spec whose numbers come from [operands]. All literals: built and validated now,
+     * so a bad literal is still a compile error. Otherwise each operand is evaluated when the
+     * order is built, the same moment `BY <expr>` is resolved, and the spec is fixed from then
+     * on; an undefined operand (warm-up) or a value the spec rejects (a zero ATR) yields null
+     * so the order is skipped instead of throwing inside the rule.
+     */
+    private fun specFrom(
+        operands: List<com.qkt.dsl.ast.ExprAst>,
+        labels: List<String>,
+        allowExpressions: Boolean,
+        build: (List<BigDecimal>) -> StopLossSpec,
+    ): CompiledStopLoss {
+        if (operands.all { it is NumLit }) {
+            return CompiledStopLoss.Static(build(operands.map { (it as NumLit).value }))
         }
-        return expression.value
+        if (!allowExpressions) {
+            val index = operands.indexOfFirst { it !is NumLit }
+            error(
+                "${labels[index]} must be a numeric literal in a STACK bracket; got ${operands[index]::class.simpleName}",
+            )
+        }
+        val compiled = operands.map { exprCompiler.compile(it) }
+        return CompiledStopLoss.Dynamic { ec, _, _ ->
+            val values = compiled.map { it.evaluateNumber(ec) ?: return@Dynamic null }
+            try {
+                build(values)
+            } catch (_: IllegalArgumentException) {
+                null
+            }
+        }
     }
 
     private fun applyDistance(

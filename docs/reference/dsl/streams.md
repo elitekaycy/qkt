@@ -158,13 +158,13 @@ btc.open          -- open price of the current closed candle
 btc.high          -- high
 btc.low           -- low
 btc.close         -- close
-btc.volume        -- volume
+btc.volume        -- traded volume; on quote-only venues (MT5 FX, metals) the number of ticks in the bar
 btc.bid           -- best bid from the last tick in the window (quote feeds only)
 btc.ask           -- best ask from the last tick in the window (quote feeds only)
 btc.spread        -- ask - bid (quote feeds only)
 ```
 
-There is no `btc.timestamp` field. For time, use [`NOW`](now.md), the strategy's clock in epoch milliseconds.
+`btc.timestamp` is the bar's start time in epoch milliseconds; `btc.timestamp[1]` is the previous bar's start. For the strategy's clock, use [`NOW`](now.md).
 
 `bid`, `ask`, and `spread` are populated only on feeds that carry a quote: live MT5 streams, and tick backtests over quote data (bid/ask ticks). A backtest over bars, or over trade-only ticks, has no quote. When a quote is unavailable they resolve to undefined and a condition referencing them does not fire (the same null-tolerant behaviour as out-of-range lookback). They are the quote from the last tick before the candle closed — the freshest value the engine holds, not the live quote at order-placement instant.
 

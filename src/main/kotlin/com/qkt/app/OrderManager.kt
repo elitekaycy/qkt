@@ -1033,8 +1033,15 @@ class OrderManager(
                 orders[attached.id] = managed
                 indexLive(managed)
                 preFillBrackets[attached.id] = request
-                if (needsFillAnchor) fillAnchoredAttachedBrackets[attached.id] = request
-                buildAttachedManagedStop(request, now)?.let { stop ->
+                // Expression-anchored exits are built from the fill. So is an engine-managed
+                // stop restored before the venue has quoted its symbol: there is no price to
+                // anchor it on yet, and failing the deploy here would be retried forever
+                // because the quote only starts flowing once the strategy is deployed.
+                val anchorAtFill =
+                    needsFillAnchor || (isEngineManagedStop && bracketEntryEstimateOrNull(request) == null)
+                if (anchorAtFill) fillAnchoredAttachedBrackets[attached.id] = request
+                val restoredStop = if (anchorAtFill) null else buildAttachedManagedStop(request, now)
+                restoredStop?.let { stop ->
                     track(
                         ManagedOrder(
                             id = stop.id,
@@ -2365,6 +2372,7 @@ class OrderManager(
     private fun buildAttachedManagedStop(
         req: OrderRequest.Bracket,
         now: Long,
+        entryPrice: BigDecimal? = null,
     ): OrderRequest? {
         val exitSide = if (req.side == Side.BUY) Side.SELL else Side.BUY
         val exit = req.exitLegIntent()
@@ -2376,7 +2384,7 @@ class OrderManager(
                     symbol = req.symbol,
                     side = exitSide,
                     quantity = req.quantity,
-                    entryPrice = bracketEntryEstimate(req),
+                    entryPrice = entryPrice ?: bracketEntryEstimate(req),
                     trailDistance = spec.trailDistance,
                     mfeThreshold = spec.mfeThreshold,
                     timeInForce = req.timeInForce,
@@ -2390,7 +2398,7 @@ class OrderManager(
                     symbol = req.symbol,
                     side = exitSide,
                     quantity = req.quantity,
-                    entryPrice = bracketEntryEstimate(req),
+                    entryPrice = entryPrice ?: bracketEntryEstimate(req),
                     initialDistance = spec.initialDistance,
                     steps = spec.steps,
                     timeInForce = req.timeInForce,
@@ -2404,7 +2412,7 @@ class OrderManager(
                     symbol = req.symbol,
                     side = exitSide,
                     quantity = req.quantity,
-                    entryPrice = bracketEntryEstimate(req),
+                    entryPrice = entryPrice ?: bracketEntryEstimate(req),
                     initialDistance = spec.initialDistance,
                     tightenBy = spec.tightenBy,
                     intervalMs = spec.intervalMs,
@@ -3248,7 +3256,29 @@ class OrderManager(
                             BracketPositionModification(ticket, resolved.strategyId, fallbackStop)
                         modifyPositionAsync(operationId, ticket, sl, resolved.takeProfit)
                     }
-                pending.orEmpty().forEach { child ->
+                // A bracket restored before its symbol was quoted had no price to build its
+                // engine-managed stop on; build it now from the fill it anchors to.
+                val heldStop =
+                    if (resolved.stopLoss !is StopLossSpec.Fixed &&
+                        pending.orEmpty().none { it.id == "${resolved.id}-sl" } &&
+                        orders["${resolved.id}-sl"]?.state?.isTerminal != false
+                    ) {
+                        buildAttachedManagedStop(resolved, clock.now(), entryPrice = e.price)?.also { stop ->
+                            track(
+                                ManagedOrder(
+                                    id = stop.id,
+                                    request = stop,
+                                    state = OrderState.CREATED,
+                                    parentClientOrderId = resolved.id,
+                                    createdAt = clock.now(),
+                                    lastUpdatedAt = clock.now(),
+                                ),
+                            )
+                        }
+                    } else {
+                        null
+                    }
+                (pending.orEmpty() + listOfNotNull(heldStop)).forEach { child ->
                     val anchored =
                         when (child) {
                             is OrderRequest.ArmedTrailingStop ->
@@ -3282,6 +3312,7 @@ class OrderManager(
         }
         resolveOcoOnExecution(e.clientOrderId)
         ocoSiblingCancelStarted.remove(e.clientOrderId)
+        completeAttachedBracketOnEngineExit(e)
         detectExitIncreasedExposure(e)
         retireStaleProtectiveExits(e.strategyId, e.symbol)
     }
@@ -3364,21 +3395,63 @@ class OrderManager(
         val entry = orders[e.clientOrderId] ?: return
         if (entry.request !is OrderRequest.Bracket || entry.state != OrderState.FILLED) return
         val filled = entry.cumulativeFilledQuantity.takeIf { it.signum() > 0 } ?: entry.request.quantity
-        val closed = (venueClosedQuantityByEntry[entry.id] ?: BigDecimal.ZERO) + e.quantity
-        if (closed < filled) {
-            venueClosedQuantityByEntry[entry.id] = closed
+        completeAttachedBracketOnExit(
+            entryId = entry.id,
+            wrapperId = entry.parentClientOrderId,
+            filledQuantity = filled,
+            closedQuantity = e.quantity,
+            closeTicket = e.brokerOrderId ?: entry.brokerOrderId,
+        )
+    }
+
+    /**
+     * An engine-held exit child (`-sl` / `-tp`) of a venue-attached bracket filled: the
+     * position it protected is reduced or gone, exactly as after a venue-side close. Account
+     * the closed quantity against the bracket's entry so the wrapper completes and releases
+     * its exposure instead of staying pending until the next restart retires it as a phantom.
+     * The entry's own record may already be reclaimed by then, so the filled quantity falls
+     * back to the bracket's requested size.
+     */
+    private fun completeAttachedBracketOnEngineExit(e: BrokerEvent.OrderFilled) {
+        if (!e.clientOrderId.endsWith("-sl") && !e.clientOrderId.endsWith("-tp")) return
+        val wrapperId = orders[e.clientOrderId]?.parentClientOrderId ?: return
+        val wrapper = orders[wrapperId] ?: return
+        val request = wrapper.request as? OrderRequest.Bracket ?: return
+        if (wrapper.state.isTerminal) return
+        val entryId = request.entry.id
+        val entry = orders[entryId]
+        if (entry != null && entry.request !is OrderRequest.Bracket) return
+        val filled = entry?.cumulativeFilledQuantity?.takeIf { it.signum() > 0 } ?: request.quantity
+        completeAttachedBracketOnExit(
+            entryId = entryId,
+            wrapperId = wrapperId,
+            filledQuantity = filled,
+            closedQuantity = e.quantity,
+            closeTicket = e.brokerOrderId ?: entry?.brokerOrderId,
+        )
+    }
+
+    private fun completeAttachedBracketOnExit(
+        entryId: String,
+        wrapperId: String?,
+        filledQuantity: BigDecimal,
+        closedQuantity: BigDecimal,
+        closeTicket: String?,
+    ) {
+        val closed = (venueClosedQuantityByEntry[entryId] ?: BigDecimal.ZERO) + closedQuantity
+        if (closed < filledQuantity) {
+            venueClosedQuantityByEntry[entryId] = closed
             return
         }
-        venueClosedQuantityByEntry.remove(entry.id)
-        val ticket = e.brokerOrderId ?: entry.brokerOrderId
-        if (ticket != null) {
-            val held = engineHeldCloseTickets.filterValues { it == ticket }.keys
+        venueClosedQuantityByEntry.remove(entryId)
+        if (closeTicket != null) {
+            val held = engineHeldCloseTickets.filterValues { it == closeTicket }.keys
             for (id in held) {
                 val managed = orders[id] ?: continue
                 if (managed.state == OrderState.PENDING || managed.state == OrderState.CREATED) cancel(id)
             }
         }
-        val wrapperId = entry.parentClientOrderId ?: return
+        if (wrapperId == null) return
         val wrapper = orders[wrapperId] ?: return
         if (wrapper.state.isTerminal) return
         for (childId in wrapper.childClientOrderIds) {

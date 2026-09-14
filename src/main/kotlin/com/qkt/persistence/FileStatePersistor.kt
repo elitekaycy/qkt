@@ -265,6 +265,9 @@ class FileStatePersistor(
                 pacerEntryFillsByStrategy = state.pacerEntryFillsByStrategy,
                 pacerLossStreakByStrategy = state.pacerLossStreakByStrategy,
                 pacerLastLossAtByStrategy = state.pacerLastLossAtByStrategy,
+                monthKey = state.monthKey,
+                realizedMonth = state.realizedMonth?.toPlainString(),
+                perStrategyRealizedMonth = state.perStrategyRealizedMonth.mapValues { it.value.toPlainString() },
             )
         runCatching { json.encodeToString(RiskStateDto.serializer(), dto) }
             .onSuccess { writer.write(strategyId, RISK_STATE_FILE, it) }
@@ -298,6 +301,9 @@ class FileStatePersistor(
             perStrategyPeakEquity = dto.perStrategyPeakEquity.mapValues { it.value.toBigDecimal() },
             pacerEntryFillsByStrategy = dto.pacerEntryFillsByStrategy,
             pacerLossStreakByStrategy = dto.pacerLossStreakByStrategy,
+            monthKey = dto.monthKey,
+            realizedMonth = dto.realizedMonth?.toBigDecimal(),
+            perStrategyRealizedMonth = dto.perStrategyRealizedMonth.mapValues { it.value.toBigDecimal() },
             pacerLastLossAtByStrategy = dto.pacerLastLossAtByStrategy,
         )
     }
@@ -1683,6 +1689,9 @@ private data class RiskStateDto(
     val pacerEntryFillsByStrategy: Map<String, List<Long>> = emptyMap(),
     val pacerLossStreakByStrategy: Map<String, Int> = emptyMap(),
     val pacerLastLossAtByStrategy: Map<String, Long> = emptyMap(),
+    val monthKey: Long? = null,
+    val realizedMonth: String? = null,
+    val perStrategyRealizedMonth: Map<String, String> = emptyMap(),
 )
 
 @Serializable

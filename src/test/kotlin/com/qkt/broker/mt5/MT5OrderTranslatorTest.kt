@@ -450,4 +450,70 @@ class MT5OrderTranslatorTest {
         assertThat(out.requests[0].comment).contains("buy")
         assertThat(out.requests[1].comment).contains("sell")
     }
+
+    private fun quotes(
+        bid: String,
+        ask: String,
+    ) = object : com.qkt.marketdata.MarketPriceProvider {
+        override fun lastPrice(symbol: String): BigDecimal? = BigDecimal(bid)
+
+        override fun executionPrice(
+            symbol: String,
+            side: Side,
+        ): BigDecimal? = if (side == Side.BUY) BigDecimal(ask) else BigDecimal(bid)
+    }
+
+    private fun marketBracket(
+        side: Side,
+        stop: StopLossSpec,
+    ) = OrderRequest.Bracket(
+        id = "br-1",
+        symbol = "XAUUSD",
+        side = side,
+        quantity = BigDecimal("0.01"),
+        entry =
+            OrderRequest.Market(
+                id = "br-1-entry",
+                symbol = "XAUUSD",
+                side = side,
+                quantity = BigDecimal("0.01"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1L,
+            ),
+        takeProfit = if (side == Side.BUY) BigDecimal("4400") else BigDecimal("4200"),
+        stopLoss = stop,
+        timeInForce = TimeInForce.GTC,
+        timestamp = 1L,
+    )
+
+    @Test
+    fun `a market-entry stepped stop anchors its initial venue stop on the buy quote`() {
+        val t = MT5OrderTranslator(profile, MT5Symbol(profile.symbolPolicy), quotes(bid = "4300.00", ask = "4300.30"))
+        val stop =
+            StopLossSpec.SteppedStop(
+                BigDecimal("3.5"),
+                listOf(StopLossSpec.Step(BigDecimal("1"), BigDecimal.ZERO)),
+            )
+        val mt5 = (t.translate(marketBracket(Side.BUY, stop)) as MT5Translation.Single).request
+        assertThat(mt5.sl).isEqualByComparingTo("4296.80")
+    }
+
+    @Test
+    fun `a market-entry armed trail anchors its pre-arm venue stop on the sell quote`() {
+        val t = MT5OrderTranslator(profile, MT5Symbol(profile.symbolPolicy), quotes(bid = "4300.00", ask = "4300.30"))
+        val mt5 =
+            (
+                t.translate(
+                    marketBracket(Side.SELL, StopLossSpec.ArmedTrail(BigDecimal("8"), BigDecimal.ZERO)),
+                ) as MT5Translation.Single
+            ).request
+        assertThat(mt5.sl).isEqualByComparingTo("4308.00")
+    }
+
+    @Test
+    fun `a market-entry time-tightening stop without any quote still fails with the symbol named`() {
+        val stop = StopLossSpec.TimeTighten(BigDecimal("6"), BigDecimal("1"), 60_000L, BigDecimal("2"))
+        assertThatThrownBy { translator.translate(marketBracket(Side.BUY, stop)) }
+            .hasMessageContaining("current quote for XAUUSD")
+    }
 }

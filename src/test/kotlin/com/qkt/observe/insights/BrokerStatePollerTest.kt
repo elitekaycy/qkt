@@ -509,7 +509,7 @@ class BrokerStatePollerTest {
     }
 
     @Test
-    fun `deployed strategy poller emits only locally attributed broker deals`() {
+    fun `every broker deal is emitted, attributed when known and without a strategy otherwise (#1143)`() {
         val now = 1_700_000_000_000L
         val broker = FakeBroker()
         broker.allDeals =
@@ -534,12 +534,21 @@ class BrokerStatePollerTest {
 
         poller.pollOnce()
 
-        val all = collectBodies("deal-FAKE-local-ticket", "deal-FAKE-local-comment")
-        assertThat(all)
-            .contains("deal-FAKE-local-ticket")
-            .contains("deal-FAKE-local-comment")
-            .doesNotContain("deal-FAKE-foreign-ticket")
-            .doesNotContain("deal-FAKE-unknown")
+        val all =
+            collectBodies(
+                "deal-FAKE-local-ticket",
+                "deal-FAKE-local-comment",
+                "deal-FAKE-foreign-ticket",
+                "deal-FAKE-unknown",
+            )
+
+        fun body(id: String) = all.substringAfter(id).substringBefore("}}")
+        assertThat(body("deal-FAKE-local-ticket")).contains(""""strategyId":"local_strat"""")
+        assertThat(body("deal-FAKE-local-comment")).contains(""""strategyId":"local_strat"""")
+        // Owned by a strategy this daemon no longer runs: still its deal, sent under that owner.
+        assertThat(body("deal-FAKE-foreign-ticket")).contains(""""strategyId":"foreign_strat"""")
+        // No owner known in this process (e.g. a close after a restart): sent without a strategy.
+        assertThat(body("deal-FAKE-unknown")).doesNotContain("strategyId")
     }
 
     @Test

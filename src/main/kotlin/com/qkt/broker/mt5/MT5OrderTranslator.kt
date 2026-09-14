@@ -89,26 +89,33 @@ class MT5OrderTranslator(
                     (if (req.side == Side.BUY) "BUY_LIMIT" else "SELL_LIMIT") to entry.limitPrice
                 else -> error("MT5 bracket entry must be Market/Stop/Limit, got ${entry::class.simpleName}")
             }
+
         // An armed trail attaches its PRE-ARM level (`entry ∓ trailDistance`) to the position as
         // the venue-side floor; the engine then tightens it via `modifyPosition` as the trail
         // moves. So the venue always holds a stop (broker-enforced even if qkt is offline) and
         // closes the position itself rather than the engine sending an opposite (counter) order.
+        // A market entry has no price of its own: anchor on the side's current execution quote,
+        // the same basis a fixed market-bracket stop is computed from. Without it every market
+        // entry with a ratchet or armed trail was rejected on MT5 venues.
+        fun entryPrice(kind: String): BigDecimal =
+            price
+                ?: priceTracker?.executionPrice(req.symbol, req.side)
+                ?: error(
+                    "$kind bracket needs a known entry price or a current quote for ${req.symbol} to attach its initial stop",
+                )
         val slPrice =
             when (val sl = req.stopLoss) {
                 is StopLossSpec.Fixed -> sl.price
                 is StopLossSpec.ArmedTrail -> {
-                    val entryPx =
-                        price ?: error("armed-trail bracket needs a known entry price to attach a pre-arm stop")
+                    val entryPx = entryPrice("armed-trail")
                     if (req.side == Side.BUY) entryPx - sl.trailDistance else entryPx + sl.trailDistance
                 }
                 is StopLossSpec.SteppedStop -> {
-                    val entryPx =
-                        price ?: error("stepped-stop bracket needs a known entry price to attach its initial stop")
+                    val entryPx = entryPrice("stepped-stop")
                     if (req.side == Side.BUY) entryPx - sl.initialDistance else entryPx + sl.initialDistance
                 }
                 is StopLossSpec.TimeTighten -> {
-                    val entryPx =
-                        price ?: error("time-tighten bracket needs a known entry price to attach its initial stop")
+                    val entryPx = entryPrice("time-tighten")
                     if (req.side == Side.BUY) entryPx - sl.initialDistance else entryPx + sl.initialDistance
                 }
             }

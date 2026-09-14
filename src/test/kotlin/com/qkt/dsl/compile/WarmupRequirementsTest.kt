@@ -25,6 +25,26 @@ class WarmupRequirementsTest {
     private fun ast(src: String) = (Dsl.parse(src) as ParseResult.Success).value
 
     @Test
+    fun `a SINCE T-N window needs N bars of warmup on its stream (#1130)`() {
+        val s =
+            ast(
+                """
+                STRATEGY t VERSION 1
+                SYMBOLS
+                  g = X:Y EVERY 1m,
+                  h = X:Z EVERY 5m
+                LET m = mean(g.close) SINCE T-200,
+                    c = count(h.close > h.open, 30)
+                RULES
+                  WHEN m > 0 AND c > 10 THEN FLATTEN
+                """.trimIndent(),
+            )
+        val req = WarmupRequirements.compute(s)
+        assertThat(req["g"]).isEqualTo(200)
+        assertThat(req["h"]).isEqualTo(30)
+    }
+
+    @Test
     fun `empty strategy returns no requirements`() {
         val s =
             ast(
