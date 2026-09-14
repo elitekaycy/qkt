@@ -139,6 +139,29 @@ class LegBookReconcilerTest {
     }
 
     @Test
+    fun `empty persisted book and no broker positions -- NothingPersisted without a wipe (#1103)`() {
+        val inner = NoopStatePersistor()
+        val persistor =
+            object : StatePersistor by inner {
+                var saves = 0
+
+                override fun saveLegBook(
+                    strategyId: String,
+                    symbol: String,
+                    legBook: LegBook,
+                ) {
+                    saves++
+                    inner.saveLegBook(strategyId, symbol, legBook)
+                }
+            }
+        persistor.saveLegBook("hedge", "XAUUSDm", LegBook("XAUUSDm"))
+        val r = LegBookReconciler(persistor)
+        assertThat(r.reconcile("hedge", "XAUUSDm", emptyList())).isEqualTo(LegBookReconciler.Outcome.NothingPersisted)
+        // the seed save only: an already-empty book is not rewritten on every restart
+        assertThat(persistor.saves).isEqualTo(1)
+    }
+
+    @Test
     fun `persisted but no broker -- wipe and NothingPersisted`() {
         val persistor = NoopStatePersistor()
         persistor.saveLegBook("hedge", "XAUUSDm", book(primary()))

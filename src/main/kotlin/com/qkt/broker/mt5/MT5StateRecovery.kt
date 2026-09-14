@@ -46,29 +46,39 @@ class MT5StateRecovery(
         val siblings = if (strategyName != null) siblingsLookup() else emptyList()
         for (p in positions) {
             onPositionRecovered(p)
-            val qktSymbol = symbol.toQkt(p.symbol)
-            val signedQty = if (p.type == 0) p.volume else p.volume.negate()
-            bus.publish(
-                BrokerEvent.PositionReconciled(
-                    symbol = qktSymbol,
-                    oldQty = null,
-                    newQty = signedQty,
-                    oldAvgPx = null,
-                    newAvgPx = p.priceOpen,
-                    source = "mt5:${profile.name}",
-                    reason = "startup-recovery",
-                ),
-            )
-            if (strategyName != null) seedIfOurs(p, siblings)
+            val match = strategyName?.let { matchOrphan(p.comment, it, siblings) }
+            // Under a shared magic every strategy's recovery sees every sibling's position. Only
+            // the owner's ledger can absorb a correction, so a strategy-scoped recovery publishes
+            // it for the positions it claims; a session-scoped one (no strategy) publishes all.
+            if (match == null || match is OrphanMatch.Match || match is OrphanMatch.AmbiguousTruncation) {
+                // Books, fills and the position poller all key by the profile-prefixed qkt symbol
+                // (EXNESS:XAUUSD); the bare venue symbol never matched any of them (#1103).
+                val qktSymbol = "${profile.name.uppercase()}:${symbol.toQkt(p.symbol)}"
+                val signedQty = if (p.type == 0) p.volume else p.volume.negate()
+                bus.publish(
+                    BrokerEvent.PositionReconciled(
+                        symbol = qktSymbol,
+                        oldQty = null,
+                        newQty = signedQty,
+                        oldAvgPx = null,
+                        newAvgPx = p.priceOpen,
+                        source = "mt5:${profile.name}",
+                        reason = "startup-recovery",
+                        ticket = p.ticket.toString(),
+                        strategyId = strategyName,
+                    ),
+                )
+            }
+            if (match != null) seedIfOurs(p, match)
         }
     }
 
     private fun seedIfOurs(
         p: MT5Position,
-        siblings: List<String>,
+        m: OrphanMatch,
     ) {
         val name = strategyName ?: return
-        when (val m = matchOrphan(p.comment, name, siblings)) {
+        when (m) {
             is OrphanMatch.Match -> {
                 seedOrphan(p.ticket, syntheticOrderId(p.ticket), name)
                 log.info(
