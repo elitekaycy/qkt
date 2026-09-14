@@ -135,7 +135,7 @@ Semantics:
 - Arming is one-way: once armed, the stop never disarms.
 - The same `<distance>` value applies pre and post — only the reference point shifts (entry → hwm).
 
-Both `<distance>` and `<threshold>` must be **positive numeric literals** (no expressions). `<threshold>` can be zero, which means "trail from inception." `TAKE PROFIT TRAILING` is rejected at parse time — armed trailing is stop-only.
+`<distance>` must be positive and `<threshold>` non-negative; `<threshold>` of zero means "trail from inception." Either may be an expression such as `atr(btc.candle, 14) * 2`: it is evaluated once when the order is built, from the signal bar, and the trail keeps that fixed distance from then on. If an operand is still undefined during warm-up, or evaluates to a value outside those bounds, the order is skipped. Inside a `STACK` bracket both must be numeric literals. `TAKE PROFIT TRAILING` is rejected at parse time — armed trailing is stop-only.
 
 Risk-based sizing (`SIZING RISK $ N`) sees `<distance>` as the worst-case stop distance regardless of arming state.
 
@@ -161,8 +161,12 @@ entry; at 70 points it moves to 40 points of locked profit. `BREAKEVEN + <d>`
 and `ENTRY + <d>` are equivalent direction-relative targets, so the same source
 works for long and short entries.
 
-Thresholds must be strictly increasing numeric literals. Target distances must
-be non-negative numeric literals. Each step is consumed once. A target that
+Thresholds must be strictly increasing and target distances non-negative. The
+initial distance, thresholds and targets may be expressions (for example
+`STOP LOSS BY atr(btc.candle, 14) * 2 STEP TO BREAKEVEN AFTER MFE >= atr(btc.candle, 14)`):
+they are evaluated once when the order is built and fixed for the life of the
+trade, and an undefined or invalid evaluation skips the order. Inside a `STACK`
+bracket they must be numeric literals. Each step is consumed once. A target that
 would widen the current stop is skipped with an operator warning.
 
 ## Time-tightening stop
@@ -178,8 +182,9 @@ BUY btc SIZING 0.1 BRACKET {
 
 It starts 60 points from the fill, tightens by 10 points per completed 15-minute
 interval, and stops tightening at a 20-point distance. The initial distance,
-tightening delta, and floor must be positive numeric literals; the floor cannot
-exceed the initial distance.
+tightening delta, and floor must be positive, and the floor cannot exceed the
+initial distance. Like the stepped stop, they may be expressions evaluated once
+when the order is built (numeric literals inside a `STACK` bracket).
 
 Both ratchet forms are engine-managed in paper/backtest and live execution. The
 engine evaluates only live stops for the tick's symbol, persists ratchet progress

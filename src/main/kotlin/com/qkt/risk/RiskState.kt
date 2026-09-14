@@ -46,6 +46,9 @@ class RiskState(
     val equityTracker: EquityTracker = EquityTracker(pnl, strategyPnL, initialBalance)
     val drawdownTracker: DrawdownTracker = DrawdownTracker(equityTracker)
     val dailyPnLTracker: DailyPnLTracker = DailyPnLTracker(clock)
+
+    /** Realized P&L since the 1st of the UTC month, for `ACCOUNT.realized_month` (#855). */
+    val monthlyPnLTracker: DailyPnLTracker = DailyPnLTracker(clock, PnLPeriod.UTC_MONTH)
     val dailyDrawdownTracker: DailyDrawdownTracker =
         DailyDrawdownTracker(
             clock,
@@ -108,6 +111,7 @@ class RiskState(
         if (equityTracker.update()) anchorsDirty.set(true)
         if (equityTracker.updateStrategy(strategyId)) anchorsDirty.set(true)
         dailyPnLTracker.recordRealized(strategyId, realized)
+        monthlyPnLTracker.recordRealized(strategyId, realized)
         persistNow()
     }
 
@@ -239,6 +243,7 @@ class RiskState(
     /** Current realized PnL, drawdown anchors, pacing state, and halt flags. */
     fun snapshot(): com.qkt.persistence.PersistedRiskState {
         val daily = dailyPnLTracker.snapshot()
+        val monthly = monthlyPnLTracker.snapshot()
         val dailyDrawdown = dailyDrawdownTracker.snapshot()
         val equity = equityTracker.snapshot()
         val pacer = pacerLedger.snapshot(clock.now())
@@ -265,6 +270,9 @@ class RiskState(
             pacerEntryFillsByStrategy = pacer.entryFillsByStrategy,
             pacerLossStreakByStrategy = pacer.lossStreakByStrategy,
             pacerLastLossAtByStrategy = pacer.lastLossAtByStrategy,
+            monthKey = monthly.epochDay,
+            realizedMonth = monthly.global,
+            perStrategyRealizedMonth = monthly.byStrategy,
         )
     }
 
@@ -284,6 +292,15 @@ class RiskState(
         dailyPnLTracker.restore(
             DailyPnLSnapshot(persisted.epochDay, persisted.realizedToday, persisted.perStrategyRealizedToday),
         )
+        persisted.monthKey?.let { month ->
+            monthlyPnLTracker.restore(
+                DailyPnLSnapshot(
+                    month,
+                    persisted.realizedMonth ?: java.math.BigDecimal.ZERO,
+                    persisted.perStrategyRealizedMonth,
+                ),
+            )
+        }
         persisted.dailyDrawdownEpochDay?.let { day ->
             dailyDrawdownTracker.restore(
                 DailyDrawdownSnapshot(day, persisted.globalDailyDrawdownRef, persisted.perStrategyDailyDrawdownRefs),
