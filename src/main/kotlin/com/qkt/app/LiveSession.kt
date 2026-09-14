@@ -18,6 +18,7 @@ import com.qkt.events.RiskEvent
 import com.qkt.events.SignalEvent
 import com.qkt.events.WarmupTickEvent
 import com.qkt.execution.Trade
+import com.qkt.execution.allIds
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.live.LiveTickFeed
@@ -1483,6 +1484,18 @@ class LiveSession(
         // Restore OCO legs from the persistor and reconcile them against venue truth so
         // any sibling whose pair filled during downtime is cancelled before ticks flow.
         pipeline.orderManager.restore(strategies.map { it.first })
+        // Restored orders and legs carry ids the strategy minted before the restart; its
+        // sequence must continue past them or the next submit collides with a restored one.
+        for ((strategyId, strategy) in strategies) {
+            val dsl = strategy as? com.qkt.dsl.compile.DslCompiledStrategy ?: continue
+            val usedIds =
+                pipeline.orderManager
+                    .activeOrders()
+                    .filter { it.request.strategyId == strategyId }
+                    .flatMap { it.request.allIds() + it.id } +
+                    strategyPositions.allLegsFor(strategyId).map { it.legId }
+            dsl.resumeOrderIds(usedIds)
+        }
         for (booked in bootReconciled) {
             pipeline.applyReconciledRealized(booked.strategyId, booked.realized, booked.legId)
         }
