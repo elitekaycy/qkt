@@ -541,13 +541,20 @@ class Mt5BarFetcherTest {
         val server = MockWebServer().apply { start() }
         try {
             val t0 = Instant.parse("2026-09-13T22:00:00Z").toEpochMilli()
-            // 20 minutes of range → two /copy_ticks_range pages (15 min each).
+            // 20 minutes of range → two /copy_ticks_range pages (15 min each). The gateway
+            // widens each page to whole seconds, so page 2 re-delivers page 1's last tick.
+            val boundary = t0 + 15 * 60_000L - 400L
             server.enqueue(
                 MockResponse().setBody(
-                    "[" + tickRow(t0 - 1L, "1", "1") + "," + tickRow(t0 + 1L, "2", "2") + "]",
+                    "[" + tickRow(t0 - 1L, "1", "1") + "," + tickRow(t0 + 1L, "2", "2") + "," +
+                        tickRow(boundary, "2.5", "2.5") + "]",
                 ),
             )
-            server.enqueue(MockResponse().setBody("[" + tickRow(t0 + 16 * 60_000L, "3", "3") + "]"))
+            server.enqueue(
+                MockResponse().setBody(
+                    "[" + tickRow(boundary, "2.5", "2.5") + "," + tickRow(t0 + 16 * 60_000L, "3", "3") + "]",
+                ),
+            )
             val fetcher = Mt5BarFetcher(server.url("/").toString().trimEnd('/'))
 
             val candles =
@@ -563,8 +570,14 @@ class Mt5BarFetcherTest {
                     ).toList()
 
             assertThat(server.requestCount).isEqualTo(2)
-            // The tick at t0-1 precedes the window; the bar at t0 opens at 2 and the one at 16:00 at 3.
-            assertThat(candles.map { it.open.toPlainString() }).containsExactly("2.00000000", "3.00000000")
+            // The tick at t0-1 precedes the window; bars open at 2 (t0), 2.5 (14:59) and 3 (16:00).
+            val opens = candles.map { it.open.toPlainString() }
+            assertThat(opens).containsExactly("2.00000000", "2.50000000", "3.00000000")
+            // The re-delivered boundary tick is counted once: that bar holds exactly one tick.
+            assertThat(candles[1].volume).isEqualByComparingTo("1")
+            // Page 2 starts after the last tick page 1 delivered, not at the chunk edge.
+            assertThat(server.takeRequest().path).contains("from_date=2026-09-13T21%3A59%3A59")
+            assertThat(server.takeRequest().path).contains("from_date=2026-09-13T22%3A14%3A59")
         } finally {
             server.shutdown()
         }
