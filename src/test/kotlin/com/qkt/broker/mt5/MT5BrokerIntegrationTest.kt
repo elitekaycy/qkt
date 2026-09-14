@@ -948,6 +948,136 @@ class MT5BrokerIntegrationTest {
     }
 
     @Test
+    fun `close racing a venue-side stop resolves from deals instead of rejecting`() {
+        // Live 2026-09-14: a mirrored ratchet stop fired at the venue moments before the
+        // engine-held stop sent its close-by-ticket. The gateway answered 400 with MT5
+        // retcode 10036 (POSITION_CLOSED); the engine turned that into an OrderRejected
+        // that counted toward the runaway breaker although the trade had simply exited.
+        val closeSent = AtomicBoolean(false)
+        val nowMs = System.currentTimeMillis()
+        val venueStopBody =
+            """{"error": "Close position failed: Position doesn't exist", "error_type": "mt5_rejected", """ +
+                """"mt5_error": {"comment": "Position doesn't exist", "retcode": 10036, """ +
+                """"retcode_name": "POSITION_CLOSED"}, "ok": false}"""
+        server.dispatcher =
+            object : okhttp3.mockwebserver.Dispatcher() {
+                override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse {
+                    val path = request.path.orEmpty()
+                    return when {
+                        path.startsWith("/close_position") -> {
+                            closeSent.set(true)
+                            MockResponse().setResponseCode(400).setBody(venueStopBody)
+                        }
+                        path.startsWith("/get_positions") -> MockResponse().setBody("[]")
+                        path.startsWith("/orders") -> MockResponse().setBody("[]")
+                        // The venue stop's deal predates the engine close by more than the
+                        // clock-skew margin: it must still correlate.
+                        path.startsWith("/history_deals_get") ->
+                            MockResponse().setBody(
+                                if (closeSent.get()) closeDealHistory(timeMs = nowMs - 5_000L) else "[]",
+                            )
+                        else -> MockResponse().setResponseCode(404)
+                    }
+                }
+            }
+        val fastBroker = newFastUnknownOutcomeBroker()
+        captured.clear()
+
+        fastBroker.submit(ambiguousClose("close-venue-stop-raced"))
+        awaitCaptured { captured.any { it is BrokerEvent.OrderFilled } }
+        fastBroker.shutdown()
+
+        assertThat(captured.filterIsInstance<BrokerEvent.OrderRejected>()).isEmpty()
+        val fill = captured.filterIsInstance<BrokerEvent.OrderFilled>().single()
+        assertThat(fill.clientOrderId).isEqualTo("close-venue-stop-raced")
+        assertThat(fill.brokerOrderId).isEqualTo("999")
+        assertThat(fill.price).isEqualByComparingTo("1.1050")
+    }
+
+    @Test
+    fun `close frozen inside the venue stop's freeze level resolves from the stop's deal`() {
+        // Live 2026-09-14 (pr-live-007): the engine-held stop fired while the market sat inside
+        // the freeze level of the mirrored venue stop. The venue answered FROZEN (10029) and
+        // executed its own stop about a second later.
+        val closeSent = AtomicBoolean(false)
+        val positionReads = AtomicInteger()
+        val frozenBody =
+            """{"error": "Close position failed: Modification failed due to order or position """ +
+                """being close to market", "error_type": "mt5_rejected", """ +
+                """"mt5_error": {"comment": "Modification failed due to order or position being close to market", """ +
+                """"retcode": 10029, "retcode_name": "FROZEN"}, "ok": false}"""
+        server.dispatcher =
+            object : okhttp3.mockwebserver.Dispatcher() {
+                override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse {
+                    val path = request.path.orEmpty()
+                    return when {
+                        path.startsWith("/close_position") -> {
+                            closeSent.set(true)
+                            MockResponse().setResponseCode(400).setBody(frozenBody)
+                        }
+                        // Still open on the first read after the frozen close, gone afterwards.
+                        path.startsWith("/get_positions") ->
+                            if (closeSent.get() && positionReads.incrementAndGet() == 1) {
+                                MockResponse().setBody(openPosition999())
+                            } else {
+                                MockResponse().setBody("[]")
+                            }
+                        path.startsWith("/orders") -> MockResponse().setBody("[]")
+                        path.startsWith("/history_deals_get") ->
+                            if (closeSent.get() && positionReads.get() >= 2) {
+                                MockResponse().setBody(closeDealHistory(timeMs = System.currentTimeMillis()))
+                            } else {
+                                MockResponse().setBody("[]")
+                            }
+                        else -> MockResponse().setResponseCode(404)
+                    }
+                }
+            }
+        val fastBroker = newFastUnknownOutcomeBroker()
+        captured.clear()
+
+        fastBroker.submit(ambiguousClose("close-frozen"))
+        awaitCaptured { captured.any { it is BrokerEvent.OrderFilled } }
+        fastBroker.shutdown()
+
+        assertThat(captured.filterIsInstance<BrokerEvent.OrderRejected>()).isEmpty()
+        val fill = captured.filterIsInstance<BrokerEvent.OrderFilled>().single()
+        assertThat(fill.clientOrderId).isEqualTo("close-frozen")
+        assertThat(fill.price).isEqualByComparingTo("1.1050")
+    }
+
+    @Test
+    fun `close rejected for any other venue reason still surfaces a rejection`() {
+        server.dispatcher =
+            object : okhttp3.mockwebserver.Dispatcher() {
+                override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse {
+                    val path = request.path.orEmpty()
+                    return when {
+                        path.startsWith("/close_position") ->
+                            MockResponse().setResponseCode(400).setBody(
+                                """{"error": "Close position failed: Invalid volume", """ +
+                                    """"error_type": "mt5_rejected", """ +
+                                    """"mt5_error": {"comment": "Invalid volume", "retcode": 10014}, "ok": false}""",
+                            )
+                        path.startsWith("/get_positions") -> MockResponse().setBody("[]")
+                        path.startsWith("/orders") -> MockResponse().setBody("[]")
+                        path.startsWith("/history_deals_get") -> MockResponse().setBody(closeDealHistory())
+                        else -> MockResponse().setResponseCode(404)
+                    }
+                }
+            }
+        val fastBroker = newFastUnknownOutcomeBroker()
+        captured.clear()
+
+        fastBroker.submit(ambiguousClose("close-invalid-volume"))
+        awaitCaptured { captured.any { it is BrokerEvent.OrderRejected } }
+        fastBroker.shutdown()
+
+        assertThat(captured.filterIsInstance<BrokerEvent.OrderFilled>()).isEmpty()
+        assertThat(captured.filterIsInstance<BrokerEvent.OrderRejected>().single().reason).contains("Invalid volume")
+    }
+
+    @Test
     fun `ambiguous close waits through clean open read before late close deal`() {
         val closeSent = AtomicBoolean(false)
         val historyReads = AtomicInteger()

@@ -298,6 +298,24 @@ const val MT5_TRADE_RETCODE_PLACED: Int = 10008
 const val MT5_TRADE_RETCODE_DONE_PARTIAL: Int = 10010
 
 /**
+ * MQL5 `TRADE_RETCODE_POSITION_CLOSED` — the position named by the request no longer
+ * exists at the venue. A close-by-ticket that earns this code lost a race against a
+ * venue-side exit (a mirrored stop, a take-profit, or a manual close): the trade is
+ * finished and its deal is in history, so the engine resolves the outcome from deals
+ * instead of treating the acknowledgement as a rejection.
+ */
+const val MT5_TRADE_RETCODE_POSITION_CLOSED: Int = 10036
+
+/**
+ * MQL5 `TRADE_RETCODE_FROZEN` — the venue refused to touch the position because the market
+ * is inside the symbol's freeze level of its stop-loss or take-profit. For a close-by-ticket
+ * on a position whose stop is mirrored at the venue this means the venue is about to execute
+ * that stop itself (live 2026-09-14: the stop deal followed within ~1s every time), so the
+ * outcome is resolved from deals exactly like [MT5_TRADE_RETCODE_POSITION_CLOSED].
+ */
+const val MT5_TRADE_RETCODE_FROZEN: Int = 10029
+
+/**
  * Returns `true` iff [retcode] is in MT5's success family. 10008 (placed) and 10010
  * (partial) mean the venue OWNS the order — treating them as rejections abandons a
  * live order and double-submits on the strategy's next attempt.
