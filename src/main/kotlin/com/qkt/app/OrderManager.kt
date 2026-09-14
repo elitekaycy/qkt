@@ -248,6 +248,13 @@ class OrderManager(
     private val fillAnchoredFallbackBrackets: MutableMap<String, OrderRequest.Bracket> = mutableMapOf()
     private val fillAnchoredAttachedBrackets: MutableMap<String, OrderRequest.Bracket> = mutableMapOf()
 
+    /**
+     * Venue-attached bracket entries recreated by [restore]. Their wrapper record is not
+     * persisted, and the venue does not republish an execution the ledger already booked, so
+     * after recovery they are matched to their booked ticket and marked filled explicitly.
+     */
+    private val restoredAttachedEntries: MutableSet<String> = mutableSetOf()
+
     private sealed interface PendingPositionModification
 
     private data class StackPositionModification(
@@ -875,7 +882,30 @@ class OrderManager(
             if (vanished.isNotEmpty()) {
                 log.warn("[restore] retired {} stale order(s) with no venue counterpart", vanished.size)
             }
+            // A restored attached entry the venue matched to a position the ledger already booked
+            // is a filled entry: it must not count as an open entry order (it would block every
+            // re-entry once that position closes) nor hold entry exposure on top of the position.
+            for (id in restoredAttachedEntries) {
+                val managed = orders[id] ?: continue
+                if (managed.state != OrderState.WORKING) continue
+                val ticket = managed.brokerOrderId ?: continue
+                if (ticket !in booked) continue
+                update(id) {
+                    it.copy(
+                        state = OrderState.FILLED,
+                        cumulativeFilledQuantity = it.request.quantity,
+                        lastUpdatedAt = clock.now(),
+                    )
+                }
+                exposureEntries.remove(id)
+                log.info(
+                    "[restore] attached entry {} is backed by booked venue ticket {} — marked filled without republishing",
+                    id,
+                    ticket,
+                )
+            }
         }
+        restoredAttachedEntries.clear()
     }
 
     private fun restorePendingScaleOut(
@@ -1032,6 +1062,7 @@ class OrderManager(
                     )
                 orders[attached.id] = managed
                 indexLive(managed)
+                restoredAttachedEntries += attached.id
                 preFillBrackets[attached.id] = request
                 // Expression-anchored exits are built from the fill. So is an engine-managed
                 // stop restored before the venue has quoted its symbol: there is no price to
@@ -3414,8 +3445,27 @@ class OrderManager(
      */
     private fun completeAttachedBracketOnEngineExit(e: BrokerEvent.OrderFilled) {
         if (!e.clientOrderId.endsWith("-sl") && !e.clientOrderId.endsWith("-tp")) return
-        val wrapperId = orders[e.clientOrderId]?.parentClientOrderId ?: return
-        val wrapper = orders[wrapperId] ?: return
+        val wrapperId = orders[e.clientOrderId]?.parentClientOrderId
+        val wrapper = wrapperId?.let { orders[it] }
+        if (wrapper == null) {
+            // Restored after a restart: the wrapper record is not persisted, but the attached
+            // entry carries the position ticket this close-by-ticket just consumed.
+            val ticket = e.brokerOrderId?.takeIf { it.isNotBlank() } ?: return
+            val entry =
+                orders.values.firstOrNull {
+                    it.brokerOrderId == ticket &&
+                        it.request is OrderRequest.Bracket &&
+                        it.id == (it.request as OrderRequest.Bracket).entry.id
+                } ?: return
+            completeAttachedBracketOnExit(
+                entryId = entry.id,
+                wrapperId = null,
+                filledQuantity = entry.cumulativeFilledQuantity.takeIf { it.signum() > 0 } ?: entry.request.quantity,
+                closedQuantity = e.quantity,
+                closeTicket = ticket,
+            )
+            return
+        }
         val request = wrapper.request as? OrderRequest.Bracket ?: return
         if (wrapper.state.isTerminal) return
         val entryId = request.entry.id

@@ -1,5 +1,6 @@
 package com.qkt.app
 
+import com.qkt.broker.Broker
 import com.qkt.broker.FakeBroker
 import com.qkt.broker.OrderTypeCapability
 import com.qkt.bus.EventBus
@@ -9,6 +10,7 @@ import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.Side
 import com.qkt.events.BrokerEvent
 import com.qkt.events.TickEvent
+import com.qkt.execution.ManagedOrder
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.StopLossSpec
 import com.qkt.execution.TimeInForce
@@ -209,5 +211,85 @@ class OrderManagerAttachedBracketCloseTest {
             ),
         )
         assertThat(om.activeOrders().map { it.id }).contains("b1-sl")
+    }
+
+    /** Recovery matched every restored order to its venue ticket that the ledger already booked. */
+    private class BookedRecoveryBroker(
+        private val delegate: FakeBroker,
+        private val bus: EventBus,
+        private val clock: FixedClock,
+        private val ticketFor: (String) -> String?,
+    ) : Broker by delegate {
+        override fun recoverPendingOrders(
+            orders: List<ManagedOrder>,
+            bookedTickets: Set<String>,
+        ): Set<String> {
+            for (o in orders) {
+                val ticket = ticketFor(o.id) ?: continue
+                bus.publish(
+                    BrokerEvent.OrderAccepted(
+                        clientOrderId = o.id,
+                        brokerOrderId = ticket,
+                        strategyId = o.request.strategyId,
+                        timestamp = clock.now(),
+                    ),
+                )
+            }
+            return orders.mapTo(LinkedHashSet()) { it.id }
+        }
+    }
+
+    @Test
+    fun `restored attached entry backed by a booked position is filled, not an open entry order`() {
+        // Live 2026-09-14 (pr-live-007 restart over an open BTCUSD position): the restored entry
+        // stayed WORKING with its exposure registered, so OPEN_ORDERS never returned to zero
+        // after the position closed and the strategy could not re-enter until the next restart.
+        val clock = FixedClock(0L)
+        val bus = newBus(clock)
+        val fake = FakeBroker(bus, clock, attachCaps)
+        val broker = BookedRecoveryBroker(fake, bus, clock) { id -> if (id == "e1") "tkt-1" else null }
+        val persistor = NoopStatePersistor()
+        val request =
+            OrderRequest.Bracket(
+                id = "b1",
+                symbol = "X",
+                side = Side.BUY,
+                quantity = Money.of("1"),
+                entry =
+                    OrderRequest.Market(
+                        id = "e1",
+                        symbol = "X",
+                        side = Side.BUY,
+                        quantity = Money.of("1"),
+                        timeInForce = TimeInForce.GTC,
+                        timestamp = 0L,
+                        strategyId = "alpha",
+                    ),
+                takeProfit = Money.of("120"),
+                stopLoss = StopLossSpec.ArmedTrail(trailDistance = Money.of("5"), mfeThreshold = Money.of("10")),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+                strategyId = "alpha",
+            )
+        persistor.savePendingOrders("alpha", mapOf("b1" to request))
+        val om =
+            OrderManager(
+                broker,
+                bus,
+                MarketPriceTracker(),
+                clock,
+                persistor = persistor,
+                bookedVenueTickets = { setOf("tkt-1") },
+            )
+
+        om.restore(listOf("alpha"))
+
+        assertThat(om.activeEntryOrderCount("alpha", "X")).isZero()
+        assertThat(om.activeOrders().map { it.id }).doesNotContain("e1")
+
+        // The venue later closes that position: nothing is left over and nothing throws.
+        venueClose(bus, clock, Money.of("1"))
+        assertThat(om.activeEntryOrderCount("alpha", "X")).isZero()
+        assertThat(om.activeOrders()).isEmpty()
     }
 }
