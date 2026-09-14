@@ -278,6 +278,19 @@ data class Config(
         return if (stateAsync) com.qkt.persistence.AsyncStatePersistor(file) else file
     }
 
+    /**
+     * How long after a bar's window ends the 1 Hz heartbeat closes a quiet symbol's bar,
+     * in milliseconds. Live and replay read the same value so a `SYNCHRONIZE` group with a
+     * sparse member decides at the same moment in both (#1138). Key: `runtime.candle_close_grace_ms`.
+     */
+    val candleCloseGraceMs: Long
+        get() {
+            val raw = runtime["candle_close_grace_ms"] ?: return com.qkt.app.LiveSession.DEFAULT_CANDLE_CLOSE_GRACE_MS
+            val value = raw.trim().toLongOrNull()
+            require(value != null && value >= 0) { "runtime.candle_close_grace_ms must be a non-negative integer" }
+            return value
+        }
+
     private fun nonNegativeRiskInt(
         key: String,
         default: Int,

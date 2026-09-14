@@ -1,6 +1,7 @@
 package com.qkt.research
 
 import com.qkt.backtest.Backtest
+import com.qkt.backtest.ExecutionSimulationConfig
 import com.qkt.candles.TimeWindow
 import com.qkt.common.Money
 import com.qkt.common.Side
@@ -62,9 +63,47 @@ class ReplayEventTimeCandleCloseTest {
             ).run()
 
         val buy = result.trades.single { it.trade.side == Side.BUY }.trade
-        // The follower's [0,5s) bar closes on the leader's 6 s tick — the first event strictly
-        // past the window end — so the entry fills against the leader's 6 s quote, one second
-        // after the bar ended, instead of 12.9 s later on the follower's next tick.
+        // The follower's [0,5s) bar closes on the leader's 7 s tick: the first heartbeat step at
+        // least the default 2 s grace after the window end, exactly when live's heartbeat would
+        // close it (#1138) — instead of 12.9 s later on the follower's next tick (#1134).
+        assertThat(buy.timestamp).isEqualTo(7_000L)
+        assertThat(buy.price).isEqualByComparingTo(Money.of("4338.007"))
+    }
+
+    @Test
+    fun `the close waits for the heartbeat step, not merely the grace`() {
+        // Leader ticks at 6.4 s, 6.9 s and 7.3 s: 6.9 s is past end + grace (7.0 s)? No — 7.0 s is
+        // the first 1 Hz step at or after end + grace, so the 7.3 s tick is the first that can close.
+        val ticks =
+            buildList {
+                add(tick("BACKTEST:AUDUSD", 100L, "0.6400"))
+                add(tick("BACKTEST:AUDUSD", 2_000L, "0.6402"))
+                for (t in listOf(0L, 1_000L, 2_000L, 3_000L, 4_000L, 5_000L, 6_400L, 6_900L, 7_300L, 8_000L)) {
+                    add(tick("BACKTEST:XAUUSD", t, "4338.${(t / 100).toString().padStart(3, '0')}"))
+                }
+                add(tick("BACKTEST:AUDUSD", 17_885L, "0.6405"))
+            }.sortedBy { it.timestamp }
+        val result =
+            Backtest(
+                strategies = listOf("lag" to compile(src)),
+                ticks = ticks,
+                candleWindow = TimeWindow.parse("5s"),
+            ).run()
+        val buy = result.trades.single { it.trade.side == Side.BUY }.trade
+        assertThat(buy.timestamp).isEqualTo(7_300L)
+        assertThat(buy.price).isEqualByComparingTo(Money.of("4338.073"))
+    }
+
+    @Test
+    fun `with zero grace the close happens on the first tick strictly past the window end`() {
+        val result =
+            Backtest(
+                strategies = listOf("lag" to compile(src)),
+                ticks = tape(),
+                candleWindow = TimeWindow.parse("5s"),
+                executionConfig = ExecutionSimulationConfig(candleCloseGraceMs = 0L),
+            ).run()
+        val buy = result.trades.single { it.trade.side == Side.BUY }.trade
         assertThat(buy.timestamp).isEqualTo(6_000L)
         assertThat(buy.price).isEqualByComparingTo(Money.of("4338.006"))
     }
