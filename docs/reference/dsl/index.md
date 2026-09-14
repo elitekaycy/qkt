@@ -200,7 +200,7 @@ RULES
     THEN LOG "tick received"
 ```
 
-<!-- qkt-doc: skip #1131 (section keyword after RULES crashes the parser) -->
+<!-- qkt-doc: illegal -->
 ```qkt
 -- illegal: SYMBOLS must come before RULES
 STRATEGY hello VERSION 1
@@ -208,7 +208,7 @@ RULES
     WHEN btc.close > 0 THEN BUY btc
 SYMBOLS
     btc = BACKTEST:BTCUSDT EVERY 1m
--- parse error: undefined stream 'btc' in RULES (line 3)
+-- parse error: SYMBOLS must come before RULES (line 5)
 ```
 
 <!-- qkt-doc: illegal -->

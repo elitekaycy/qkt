@@ -468,4 +468,191 @@ class Mt5BarFetcherTest {
             server.shutdown()
         }
     }
+
+    private fun tickRow(
+        ms: Long,
+        bid: String,
+        ask: String,
+    ): String = """{"bid":$bid,"ask":$ask,"last":0.0,"flags":6,"time":${ms / 1000},"time_msc":$ms,"volume":0}"""
+
+    @Test
+    fun `sub-minute warmup is rebuilt from venue ticks with the live feed's aggregator (#1133)`() {
+        val server = MockWebServer().apply { start() }
+        try {
+            val t0 = Instant.parse("2026-09-13T22:00:00Z").toEpochMilli()
+            // Ticks over 12 s: two complete 5s bars [0,5) and [5,10), then a partial bar.
+            val ticks =
+                listOf(
+                    Triple(t0 + 400L, "4338.10", "4338.30"),
+                    Triple(t0 + 2_900L, "4338.50", "4338.70"),
+                    Triple(t0 + 4_999L, "4337.90", "4338.10"),
+                    Triple(t0 + 5_100L, "4338.00", "4338.20"),
+                    Triple(t0 + 9_000L, "4339.00", "4339.20"),
+                    Triple(t0 + 11_000L, "4340.00", "4340.20"),
+                )
+            val body = ticks.joinToString(",", prefix = "[", postfix = "]") { tickRow(it.first, it.second, it.third) }
+            server.enqueue(MockResponse().setBody(body))
+            val fetcher = Mt5BarFetcher(server.url("/").toString().trimEnd('/'))
+
+            val candles =
+                fetcher
+                    .fetchRange(
+                        symbol = "XAUUSDm",
+                        window = TimeWindow.parse("5s"),
+                        range = TimeRange(from = Instant.ofEpochMilli(t0), to = Instant.ofEpochMilli(t0 + 12_000L)),
+                    ).toList()
+
+            val request = server.takeRequest()
+            assertThat(request.path).contains("/copy_ticks_range").contains("symbol=XAUUSDm")
+            // The same ticks through the live aggregator must give the same bars.
+            val expected = mutableListOf<com.qkt.marketdata.Candle>()
+            val live =
+                com.qkt.candles.CandleAggregator
+                    .standalone(TimeWindow.parse("5s")) { expected.add(it) }
+            ticks.forEach { (ms, bid, ask) ->
+                val mid = (bid.toBigDecimal() + ask.toBigDecimal()).divide(java.math.BigDecimal(2))
+                live.onTick(
+                    com.qkt.marketdata.Tick(
+                        symbol = "XAUUSDm",
+                        price = mid.setScale(com.qkt.common.Money.SCALE, com.qkt.common.Money.ROUNDING),
+                        timestamp = ms,
+                        bid = bid.toBigDecimal(),
+                        ask = ask.toBigDecimal(),
+                    ),
+                )
+            }
+            live.flushClosed(t0 + 12_000L)
+            assertThat(candles).hasSize(2)
+            assertThat(candles).isEqualTo(expected)
+            assertThat(candles[0].startTime).isEqualTo(t0)
+            assertThat(candles[0].endTime).isEqualTo(t0 + 5_000L)
+            assertThat(candles[0].open).isEqualByComparingTo("4338.20")
+            assertThat(candles[0].high).isEqualByComparingTo("4338.60")
+            assertThat(candles[0].close).isEqualByComparingTo("4338.00")
+            assertThat(candles[0].volume).isEqualByComparingTo("3")
+            assertThat(candles[1].startTime).isEqualTo(t0 + 5_000L)
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test
+    fun `sub-minute warmup pages the tick range and drops ticks outside the window (#1133)`() {
+        val server = MockWebServer().apply { start() }
+        try {
+            val t0 = Instant.parse("2026-09-13T22:00:00Z").toEpochMilli()
+            // 20 minutes of range → two /copy_ticks_range pages (15 min each). The gateway
+            // widens each page to whole seconds, so page 2 re-delivers page 1's last tick.
+            val boundary = t0 + 15 * 60_000L - 400L
+            server.enqueue(
+                MockResponse().setBody(
+                    "[" + tickRow(t0 - 1L, "1", "1") + "," + tickRow(t0 + 1L, "2", "2") + "," +
+                        tickRow(boundary, "2.5", "2.5") + "]",
+                ),
+            )
+            server.enqueue(
+                MockResponse().setBody(
+                    "[" + tickRow(boundary, "2.5", "2.5") + "," + tickRow(t0 + 16 * 60_000L, "3", "3") + "]",
+                ),
+            )
+            val fetcher = Mt5BarFetcher(server.url("/").toString().trimEnd('/'))
+
+            val candles =
+                fetcher
+                    .fetchRange(
+                        symbol = "EURUSDm",
+                        window = TimeWindow.parse("30s"),
+                        range =
+                            TimeRange(
+                                from = Instant.ofEpochMilli(t0),
+                                to = Instant.ofEpochMilli(t0 + 20 * 60_000L),
+                            ),
+                    ).toList()
+
+            assertThat(server.requestCount).isEqualTo(2)
+            // The tick at t0-1 precedes the window; bars open at 2 (t0), 2.5 (14:59) and 3 (16:00).
+            val opens = candles.map { it.open.toPlainString() }
+            assertThat(opens).containsExactly("2.00000000", "2.50000000", "3.00000000")
+            // The re-delivered boundary tick is counted once: that bar holds exactly one tick.
+            assertThat(candles[1].volume).isEqualByComparingTo("1")
+            // Page 2 starts after the last tick page 1 delivered, not at the chunk edge.
+            assertThat(server.takeRequest().path).contains("from_date=2026-09-13T21%3A59%3A59")
+            assertThat(server.takeRequest().path).contains("from_date=2026-09-13T22%3A14%3A59")
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test
+    fun `sub-minute warmup refuses a tick span longer than the cap (#1133)`() {
+        val fetcher = Mt5BarFetcher("http://unused")
+        assertThatThrownBy {
+            fetcher
+                .fetchRange(
+                    symbol = "XAUUSDm",
+                    window = TimeWindow.parse("1s"),
+                    range =
+                        TimeRange(
+                            from = Instant.parse("2026-09-13T00:00:00Z"),
+                            to = Instant.parse("2026-09-13T07:00:00Z"),
+                        ),
+                ).toList()
+        }.isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageContaining("Sub-minute warmup for XAUUSDm spans 420 minutes")
+    }
+
+    @Test
+    fun `non-native minute windows are rebuilt from M1 on the epoch grid (#1133)`() {
+        val server = MockWebServer().apply { start() }
+        try {
+            val rows =
+                (0 until 5).joinToString(",") { i ->
+                    """{"open":${100 + i},"high":${200 + i},"low":${50 + i},"close":${150 + i},""" +
+                        """"tick_volume":1,"time":"2026-07-13T08:0$i:00"}"""
+                }
+            server.enqueue(MockResponse().setBody("[$rows]"))
+            val fetcher = Mt5BarFetcher(server.url("/").toString().trimEnd('/'))
+
+            val candles =
+                fetcher
+                    .fetchRange(
+                        symbol = "EURUSDm",
+                        window = TimeWindow.parse("2m"),
+                        range =
+                            TimeRange(
+                                from = Instant.parse("2026-07-13T08:00:00Z"),
+                                to = Instant.parse("2026-07-13T08:05:00Z"),
+                            ),
+                    ).toList()
+
+            assertThat(server.takeRequest().path).contains("timeframe=M1")
+            // 08:00-08:02 and 08:02-08:04 close inside the range; 08:04 alone is a partial bucket.
+            assertThat(candles).hasSize(2)
+            assertThat(candles[0].open).isEqualByComparingTo("100")
+            assertThat(candles[0].close).isEqualByComparingTo("151")
+            assertThat(candles[0].high).isEqualByComparingTo("201")
+            assertThat(candles[0].volume).isEqualByComparingTo("2")
+            assertThat(candles[1].startTime).isEqualTo(Instant.parse("2026-07-13T08:02:00Z").toEpochMilli())
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test
+    fun `windows that fit no native source still fail with the timeframe named`() {
+        val fetcher = Mt5BarFetcher("http://unused")
+        assertThatThrownBy {
+            fetcher
+                .fetchRange(
+                    symbol = "XAUUSDm",
+                    window = TimeWindow(90_000L),
+                    range =
+                        TimeRange(
+                            from = Instant.parse("2026-07-13T08:00:00Z"),
+                            to = Instant.parse("2026-07-13T09:00:00Z"),
+                        ),
+                ).toList()
+        }.isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageContaining("Cannot align 90000ms bars")
+    }
 }

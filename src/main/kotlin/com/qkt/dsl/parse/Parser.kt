@@ -504,6 +504,9 @@ class Parser(
     private fun requireEof() {
         if (peek().kind == TokenKind.EOF) return
         val t = peek()
+        // Already reported at this exact token (e.g. an ordering error from parseRules):
+        // a second message pointing at the same place adds noise, not information.
+        if (errors.any { it.line == t.line && it.col == t.col }) return
         errors.add(
             ParseError(
                 line = t.line,
@@ -1231,9 +1234,24 @@ class Parser(
         expect(TokenKind.RULES, "expected RULES")
         val out = mutableListOf<RuleAst>()
         while (peek().kind != TokenKind.EOF) {
-            when (peek().kind) {
-                TokenKind.WHEN -> tryParse { parseWhenThen() }?.let { out.add(it) }
-                TokenKind.FOR -> tryParse { parseForEach() }?.let { out.addAll(it) }
+            val kind = peek().kind
+            when {
+                kind == TokenKind.WHEN -> tryParse { parseWhenThen() }?.let { out.add(it) }
+                kind == TokenKind.FOR -> tryParse { parseForEach() }?.let { out.addAll(it) }
+                kind in SECTION_KINDS -> {
+                    // A section keyword after RULES is an ordering error, not a rule. Report it
+                    // once and hand the token back to the caller; `requireEof` then covers the
+                    // rest. Looping on it used to append the same error forever (#1131).
+                    val t = peek()
+                    errors.add(
+                        ParseError(
+                            line = t.line,
+                            col = t.col,
+                            message = "${t.lexeme} must come before RULES",
+                        ),
+                    )
+                    return out
+                }
                 else -> {
                     tryParse {
                         error("expected WHEN or FOR EACH in RULES, got '${peek().lexeme}'")
@@ -2409,13 +2427,18 @@ class Parser(
         )
     }
 
-    private inline fun <T> tryParse(block: () -> T): T? =
-        try {
+    private inline fun <T> tryParse(block: () -> T): T? {
+        val start = pos
+        return try {
             block()
         } catch (_: ParseException) {
             synchronize()
+            // Recovery must always make progress: if the failing token is itself a sync
+            // point, `synchronize` stays put and a caller's loop would spin forever (#1131).
+            if (pos == start && peek().kind != TokenKind.EOF) advance()
             null
         }
+    }
 
     private fun peek(): Token = tokens[pos]
 
@@ -2485,6 +2508,18 @@ class Parser(
                 TokenKind.WHEN,
                 TokenKind.FOR,
                 TokenKind.EOF,
+            )
+
+        /** Top-level section keywords; each opens a block that must precede RULES. */
+        private val SECTION_KINDS =
+            setOf(
+                TokenKind.DEFAULTS,
+                TokenKind.SYMBOLS,
+                TokenKind.LET,
+                TokenKind.PARAM,
+                TokenKind.RULES,
+                TokenKind.SCHEDULE,
+                TokenKind.SEQUENCE,
             )
     }
 }
