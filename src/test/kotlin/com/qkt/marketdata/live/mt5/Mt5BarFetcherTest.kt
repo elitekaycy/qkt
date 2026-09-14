@@ -490,7 +490,8 @@ class Mt5BarFetcherTest {
                     Triple(t0 + 9_000L, "4339.00", "4339.20"),
                     Triple(t0 + 11_000L, "4340.00", "4340.20"),
                 )
-            server.enqueue(MockResponse().setBody("[" + ticks.joinToString(",") { tickRow(it.first, it.second, it.third) } + "]"))
+            val body = ticks.joinToString(",", prefix = "[", postfix = "]") { tickRow(it.first, it.second, it.third) }
+            server.enqueue(MockResponse().setBody(body))
             val fetcher = Mt5BarFetcher(server.url("/").toString().trimEnd('/'))
 
             val candles =
@@ -505,7 +506,9 @@ class Mt5BarFetcherTest {
             assertThat(request.path).contains("/copy_ticks_range").contains("symbol=XAUUSDm")
             // The same ticks through the live aggregator must give the same bars.
             val expected = mutableListOf<com.qkt.marketdata.Candle>()
-            val live = com.qkt.candles.CandleAggregator.standalone(TimeWindow.parse("5s")) { expected.add(it) }
+            val live =
+                com.qkt.candles.CandleAggregator
+                    .standalone(TimeWindow.parse("5s")) { expected.add(it) }
             ticks.forEach { (ms, bid, ask) ->
                 val mid = (bid.toBigDecimal() + ask.toBigDecimal()).divide(java.math.BigDecimal(2))
                 live.onTick(
@@ -539,7 +542,11 @@ class Mt5BarFetcherTest {
         try {
             val t0 = Instant.parse("2026-09-13T22:00:00Z").toEpochMilli()
             // 20 minutes of range → two /copy_ticks_range pages (15 min each).
-            server.enqueue(MockResponse().setBody("[" + tickRow(t0 - 1L, "1", "1") + "," + tickRow(t0 + 1L, "2", "2") + "]"))
+            server.enqueue(
+                MockResponse().setBody(
+                    "[" + tickRow(t0 - 1L, "1", "1") + "," + tickRow(t0 + 1L, "2", "2") + "]",
+                ),
+            )
             server.enqueue(MockResponse().setBody("[" + tickRow(t0 + 16 * 60_000L, "3", "3") + "]"))
             val fetcher = Mt5BarFetcher(server.url("/").toString().trimEnd('/'))
 
@@ -548,7 +555,11 @@ class Mt5BarFetcherTest {
                     .fetchRange(
                         symbol = "EURUSDm",
                         window = TimeWindow.parse("30s"),
-                        range = TimeRange(from = Instant.ofEpochMilli(t0), to = Instant.ofEpochMilli(t0 + 20 * 60_000L)),
+                        range =
+                            TimeRange(
+                                from = Instant.ofEpochMilli(t0),
+                                to = Instant.ofEpochMilli(t0 + 20 * 60_000L),
+                            ),
                     ).toList()
 
             assertThat(server.requestCount).isEqualTo(2)
@@ -622,7 +633,11 @@ class Mt5BarFetcherTest {
                 .fetchRange(
                     symbol = "XAUUSDm",
                     window = TimeWindow(90_000L),
-                    range = TimeRange(from = Instant.parse("2026-07-13T08:00:00Z"), to = Instant.parse("2026-07-13T09:00:00Z")),
+                    range =
+                        TimeRange(
+                            from = Instant.parse("2026-07-13T08:00:00Z"),
+                            to = Instant.parse("2026-07-13T09:00:00Z"),
+                        ),
                 ).toList()
         }.isInstanceOf(IllegalArgumentException::class.java)
             .hasMessageContaining("Cannot align 90000ms bars")
