@@ -885,27 +885,36 @@ class OrderManager(
             // A restored attached entry the venue matched to a position the ledger already booked
             // is a filled entry: it must not count as an open entry order (it would block every
             // re-entry once that position closes) nor hold entry exposure on top of the position.
-            for (id in restoredAttachedEntries) {
-                val managed = orders[id] ?: continue
-                if (managed.state != OrderState.WORKING) continue
-                val ticket = managed.brokerOrderId ?: continue
-                if (ticket !in booked) continue
-                update(id) {
-                    it.copy(
-                        state = OrderState.FILLED,
-                        cumulativeFilledQuantity = it.request.quantity,
-                        lastUpdatedAt = clock.now(),
-                    )
-                }
-                exposureEntries.remove(id)
-                log.info(
-                    "[restore] attached entry {} is backed by booked venue ticket {} — marked filled without republishing",
-                    id,
-                    ticket,
-                )
+            // The ticket arrives as OrderAccepted — synchronously here on a direct bus, or later
+            // on the engine thread in the daemon — so both restore and onAccepted apply the mark.
+            for (id in restoredAttachedEntries.toList()) {
+                val ticket = orders[id]?.brokerOrderId ?: continue
+                markRestoredAttachedEntryFilled(id, ticket)
             }
         }
-        restoredAttachedEntries.clear()
+    }
+
+    private fun markRestoredAttachedEntryFilled(
+        id: String,
+        ticket: String,
+    ) {
+        val managed = orders[id] ?: return
+        if (managed.state != OrderState.WORKING) return
+        if (ticket !in bookedVenueTickets(managed.request.strategyId)) return
+        update(id) {
+            it.copy(
+                state = OrderState.FILLED,
+                cumulativeFilledQuantity = it.request.quantity,
+                lastUpdatedAt = clock.now(),
+            )
+        }
+        exposureEntries.remove(id)
+        restoredAttachedEntries.remove(id)
+        log.info(
+            "[restore] attached entry {} is backed by booked venue ticket {} — marked filled without republishing",
+            id,
+            ticket,
+        )
     }
 
     private fun restorePendingScaleOut(
@@ -3110,6 +3119,10 @@ class OrderManager(
             e.strategyId,
             e.brokerOrderId,
         )
+        val ticket = e.brokerOrderId
+        if (ticket != null && e.clientOrderId in restoredAttachedEntries) {
+            markRestoredAttachedEntryFilled(e.clientOrderId, ticket)
+        }
         advanceOcoOnAccept(e.clientOrderId)
     }
 
