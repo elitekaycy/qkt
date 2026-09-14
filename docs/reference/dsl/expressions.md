@@ -130,6 +130,21 @@ ACCOUNT.last_trade_pnl   -- realized P&L of the most recent closed trade; null b
 ACCOUNT.win_streak       -- consecutive closed wins (0 if last close was a loss / no trades yet)
 ACCOUNT.loss_streak      -- consecutive closed losses
 ACCOUNT.dd_pct           -- current drawdown from this strategy's equity peak, as a percent (5.0 = 5%)
+ACCOUNT.realized_today   -- this strategy's closed-trade P&L since UTC midnight
+ACCOUNT.realized_month   -- this strategy's closed-trade P&L since the 1st of the UTC month
+```
+
+`realized_today` and `realized_month` reset at their UTC boundary and survive a daemon restart within the same day or month. They are in account currency; a monthly loss gate in risk units multiplies your per-trade risk:
+
+```qkt
+STRATEGY monthly_gate VERSION 1
+SYMBOLS
+    eur = EXNESS:EURUSD EVERY 30m
+PARAM riskUsd = 50
+RULES
+    -- Stop opening new trades once this month's closed losses reach 3R; exits still run.
+    WHEN eur.close > eur.open AND POSITION.eur = 0 AND ACCOUNT.realized_month > -3 * riskUsd
+    THEN BUY eur SIZING 0.1
 ```
 
 `STREAK` exposes the same outcome stream through the issue-facing ladder namespace:

@@ -542,7 +542,7 @@ class ExprCompiler(
                 "wins_today",
                 "losses_today",
             )
-        val riskFields = setOf("dd_pct", "equity_peak", "open_positions_count")
+        val riskFields = setOf("dd_pct", "equity_peak", "open_positions_count", "realized_today", "realized_month")
         require(ref.field in pnlFields || ref.field in historyFields || ref.field in riskFields) {
             "Unsupported ACCOUNT field: ${ref.field}"
         }
@@ -584,6 +584,9 @@ class ExprCompiler(
                     )
                 }
                 "equity_peak" -> Value.Num(ctx.strategyContext.risk.equityPeak)
+                // Closed-trade P&L since UTC midnight / the 1st of the UTC month (#855).
+                "realized_today" -> Value.Num(ctx.strategyContext.risk.realizedToday)
+                "realized_month" -> Value.Num(ctx.strategyContext.risk.realizedMonth)
                 "open_positions_count" -> {
                     val count =
                         ctx.strategyContext.positions
