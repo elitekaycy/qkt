@@ -928,6 +928,8 @@ class BacktestContext private constructor(
             (args.option("tp-fill") ?: cfg.execution["tp_fill"])?.let {
                 result = result.copy(takeProfitFill = parseTakeProfitFill(it))
             }
+            // The live daemon reads the same key, so quiet bars close at the same moment (#1138).
+            result = result.copy(candleCloseGraceMs = cfg.candleCloseGraceMs)
             (args.option("slippage") ?: cfg.execution["slippage"])?.let {
                 val (spec, points) = parseSlippage(it)
                 result = result.copy(slippage = spec, slippagePoints = points)
