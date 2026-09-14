@@ -474,6 +474,8 @@ class ReplayEngine(
                         }
                     },
                 mode = Mode.BACKTEST,
+                replayCandleCloseGraceMs = executionConfig.candleCloseGraceMs,
+                replayHeartbeatIntervalMs = executionConfig.heartbeatIntervalMs,
                 calendar = calendar,
                 source = source,
                 candleWindow = candleWindow,

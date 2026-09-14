@@ -162,6 +162,7 @@ class HtmlReportWriter(
                 it.latencyModel?.let { v -> append("<tr><td>latency model</td><td>${html(v)}</td></tr>") }
                 it.stopLatencyModel?.let { v -> append("<tr><td>stop execution delay</td><td>${html(v)}</td></tr>") }
                 it.takeProfitFillModel?.let { v -> append("<tr><td>take-profit fill</td><td>${html(v)}</td></tr>") }
+                it.candleCloseModel?.let { v -> append("<tr><td>quiet-bar close</td><td>${html(v)}</td></tr>") }
                 it.slippageModel?.let { v -> append("<tr><td>slippage model</td><td>${html(v)}</td></tr>") }
                 it.rejectionModel?.let { v -> append("<tr><td>rejection model</td><td>${html(v)}</td></tr>") }
                 it.partialFillModel?.let { v -> append("<tr><td>partial-fill model</td><td>${html(v)}</td></tr>") }

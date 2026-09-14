@@ -251,6 +251,8 @@ class BacktestCommandTest {
         assertThat(execution["latencyModel"]?.jsonPrimitive?.contentOrNull).isEqualTo("fixed:100ms")
         assertThat(execution["stopLatencyModel"]?.jsonPrimitive?.contentOrNull).isEqualTo("fixed:300ms")
         assertThat(execution["takeProfitFillModel"]?.jsonPrimitive?.contentOrNull).isEqualTo("level")
+        assertThat(execution["candleCloseModel"]?.jsonPrimitive?.contentOrNull)
+            .isEqualTo("heartbeat:1000ms grace:2000ms")
         assertThat(execution["slippageModel"]?.jsonPrimitive?.contentOrNull).isEqualTo("fixed-points:3")
         assertThat(execution["venueRules"]?.jsonPrimitive?.contentOrNull).contains("tradeStopsLevel")
     }
