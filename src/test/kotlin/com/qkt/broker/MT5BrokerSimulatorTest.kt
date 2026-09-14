@@ -7,6 +7,7 @@ import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.Side
 import com.qkt.events.BrokerEvent
 import com.qkt.events.TickEvent
+import com.qkt.execution.LegIntent
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.TimeInForce
 import com.qkt.execution.TriggerType
@@ -776,7 +777,7 @@ class MT5BrokerSimulatorTest {
         stopPrice = Money.of(stop),
         timeInForce = TimeInForce.GTC,
         timestamp = 0L,
-        legIntent = com.qkt.execution.LegIntent.Close(legId = "leg-1"),
+        legIntent = LegIntent.Close(legId = "leg-1"),
     )
 
     private fun quote(
@@ -833,7 +834,14 @@ class MT5BrokerSimulatorTest {
         val fills = mutableListOf<BrokerEvent.OrderFilled>()
         bus.subscribe<BrokerEvent.OrderFilled> { fills.add(it) }
         val delayed =
-            MT5BrokerSimulator(bus, clock, MarketPriceTracker(), registry(xauusd()), syntheticSpreadPoints = 0, stopLatencyMs = 300L)
+            MT5BrokerSimulator(
+                bus,
+                clock,
+                MarketPriceTracker(),
+                registry(xauusd()),
+                syntheticSpreadPoints = 0,
+                stopLatencyMs = 300L,
+            )
         // An entry stop (no Close intent) is a placement, not a protective exit: unaffected.
         delayed.submit(
             OrderRequest.Stop(
@@ -855,7 +863,8 @@ class MT5BrokerSimulatorTest {
         fills.clear()
         val bus2 = EventBus(clock, MonotonicSequenceGenerator())
         bus2.subscribe<BrokerEvent.OrderFilled> { fills.add(it) }
-        val immediate = MT5BrokerSimulator(bus2, clock, MarketPriceTracker(), registry(xauusd()), syntheticSpreadPoints = 0)
+        val immediate =
+            MT5BrokerSimulator(bus2, clock, MarketPriceTracker(), registry(xauusd()), syntheticSpreadPoints = 0)
         immediate.submit(protectiveSellStop())
         clock.advanceTo(2_000L)
         bus2.publish(TickEvent(quote(2_000L, "1998.900", "1999.100")))
@@ -871,7 +880,14 @@ class MT5BrokerSimulatorTest {
         bus.subscribe<BrokerEvent.OrderFilled> { fills.add(it) }
         bus.subscribe<BrokerEvent.OrderCancelled> { cancels.add(it) }
         val sim =
-            MT5BrokerSimulator(bus, clock, MarketPriceTracker(), registry(xauusd()), syntheticSpreadPoints = 0, stopLatencyMs = 300L)
+            MT5BrokerSimulator(
+                bus,
+                clock,
+                MarketPriceTracker(),
+                registry(xauusd()),
+                syntheticSpreadPoints = 0,
+                stopLatencyMs = 300L,
+            )
         sim.submit(protectiveSellStop())
         clock.advanceTo(1_000L)
         bus.publish(TickEvent(quote(1_000L, "1998.900", "1999.100")))
@@ -884,14 +900,21 @@ class MT5BrokerSimulatorTest {
     }
 
     @Test
-    fun `take-profit fill mode LEVEL books a gapped protective limit at its level, PRINT keeps the improvement (#1135)`() {
+    fun `take-profit LEVEL books a gapped protective limit at its level while PRINT keeps the improvement (#1135)`() {
         fun run(mode: TakeProfitFill): BigDecimal {
             val clock = FixedClock(0L)
             val bus = EventBus(clock, MonotonicSequenceGenerator())
             val fills = mutableListOf<BrokerEvent.OrderFilled>()
             bus.subscribe<BrokerEvent.OrderFilled> { fills.add(it) }
             val sim =
-                MT5BrokerSimulator(bus, clock, MarketPriceTracker(), registry(xauusd()), syntheticSpreadPoints = 0, takeProfitFill = mode)
+                MT5BrokerSimulator(
+                    bus,
+                    clock,
+                    MarketPriceTracker(),
+                    registry(xauusd()),
+                    syntheticSpreadPoints = 0,
+                    takeProfitFill = mode,
+                )
             sim.submit(
                 OrderRequest.Limit(
                     id = "tp",
@@ -901,7 +924,9 @@ class MT5BrokerSimulatorTest {
                     limitPrice = Money.of("2001.000"),
                     timeInForce = TimeInForce.GTC,
                     timestamp = 0L,
-                    legIntent = com.qkt.execution.LegIntent.Close(legId = "leg-1"),
+                    legIntent =
+                        com.qkt.execution.LegIntent
+                            .Close(legId = "leg-1"),
                 ),
             )
             clock.advanceTo(1_000L)
