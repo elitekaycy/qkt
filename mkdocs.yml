@@ -166,6 +166,7 @@ nav:
           - reference/dsl/index.md
           - STRATEGY block: reference/dsl/strategy-block.md
           - Streams (SYMBOLS): reference/dsl/streams.md
+          - Hub streams (HUB:): reference/dsl/hub.md
           - LET and DEFAULTS: reference/dsl/let-defaults.md
           - Conditions (WHEN): reference/dsl/conditions.md
           - Indicators: reference/dsl/indicators.md

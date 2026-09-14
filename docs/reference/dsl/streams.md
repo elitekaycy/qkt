@@ -158,7 +158,7 @@ btc.open          -- open price of the current closed candle
 btc.high          -- high
 btc.low           -- low
 btc.close         -- close
-btc.volume        -- volume
+btc.volume        -- traded volume; on quote-only venues (MT5 FX, metals) the number of ticks in the bar
 btc.bid           -- best bid from the last tick in the window (quote feeds only)
 btc.ask           -- best ask from the last tick in the window (quote feeds only)
 btc.spread        -- ask - bid (quote feeds only)
