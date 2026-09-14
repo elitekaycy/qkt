@@ -162,12 +162,18 @@ class LegBookReconcilerTest {
     }
 
     @Test
-    fun `persisted but no broker -- wipe and NothingPersisted`() {
+    fun `persisted but no broker -- wipe and retire every leg`() {
         val persistor = NoopStatePersistor()
         persistor.saveLegBook("hedge", "XAUUSDm", book(primary()))
         val r = LegBookReconciler(persistor)
         val outcome = r.reconcile("hedge", "XAUUSDm", emptyList())
-        assertThat(outcome).isEqualTo(LegBookReconciler.Outcome.NothingPersisted)
+        // The legs closed while the daemon was down: they come back as retired so the caller
+        // books their venue-realized result and resets rule edges, exactly like a partial
+        // downtime close does.
+        assertThat(outcome).isInstanceOf(LegBookReconciler.Outcome.Attached::class.java)
+        val attached = outcome as LegBookReconciler.Outcome.Attached
+        assertThat(attached.legBook.legs).isEmpty()
+        assertThat(attached.retired.map { it.legId }).containsExactly(primary().legId)
         // persisted state should be empty after the wipe
         val after = persistor.loadLegBook("hedge", "XAUUSDm")
         assertThat(after?.legs).isEmpty()
