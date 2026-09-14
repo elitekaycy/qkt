@@ -181,8 +181,12 @@ class MT5BrokerSimulator(
     }
 
     override fun cancel(orderId: String) {
-        val match = working.firstOrNull { it.id == orderId } ?: pendingStopFills.firstOrNull { it.request.id == orderId }?.request
-        val removed = working.removeAll { it.id == orderId } or pendingStopFills.removeAll { it.request.id == orderId }
+        val match =
+            working.firstOrNull { it.id == orderId }
+                ?: pendingStopFills.firstOrNull { it.request.id == orderId }?.request
+        val removedWorking = working.removeAll { it.id == orderId }
+        val removedPending = pendingStopFills.removeAll { it.request.id == orderId }
+        val removed = removedWorking || removedPending
         if (removed) {
             bus.publish(
                 BrokerEvent.OrderCancelled(

@@ -648,13 +648,15 @@ class TradingPipeline(
         }
         engine.onTick(tick)
         sampleAccountEquitySeries(tick.timestamp)
-        // Replay has no wall clock, so this tick's event time is the clock: every window that
-        // ended at or before it closes now, whichever symbol quoted. Otherwise a quiet
-        // symbol's bar waits for that symbol's next tick and a SYNCHRONIZE group decides
-        // seconds late at a different price than the live heartbeat would (#1134). Runs after
-        // the TickEvent so a same-symbol close still fills against the tick that crossed the
-        // boundary, exactly as the tick-driven close did.
-        if (mode == Mode.BACKTEST) flushReplayCandles(tick.timestamp)
+        // Replay has no wall clock, so event time is the clock: the first tick stamped strictly
+        // past a window's end closes it, whichever symbol quoted. Otherwise a quiet symbol's
+        // bar waits for that symbol's next tick and a SYNCHRONIZE group decides seconds late
+        // at a different price than the live heartbeat would (#1134). Strictly past, because
+        // ticks sharing one timestamp arrive together live and a tick cannot know whether more
+        // of its instant follow; a symbol's own boundary tick therefore still closes its bar
+        // through the feed below, after this TickEvent, so it fills against that tick exactly
+        // as before.
+        if (mode == Mode.BACKTEST) flushReplayCandles(tick.timestamp - 1L)
         candleHub.feed(tick)
         scheduleRunner.tick(tick.timestamp)
     }

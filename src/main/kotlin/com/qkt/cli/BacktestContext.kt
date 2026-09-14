@@ -11,6 +11,7 @@ import com.qkt.backtest.ExecutionSimulationConfig
 import com.qkt.backtest.GatedChild
 import com.qkt.backtest.ProvisionStream
 import com.qkt.backtest.SlippageSpec
+import com.qkt.broker.TakeProfitFill
 import com.qkt.broker.mt5.SymbolCalendars
 import com.qkt.candles.TimeWindow
 import com.qkt.common.FixedClock
@@ -925,12 +926,7 @@ class BacktestContext private constructor(
                 result = result.copy(stopLatencyMs = parseLatencyMs(it))
             }
             (args.option("tp-fill") ?: cfg.execution["tp_fill"])?.let {
-                result =
-                    result.copy(
-                        takeProfitFill =
-                            runCatching { com.qkt.broker.TakeProfitFill.fromConfig(it) }
-                                .getOrElse { e -> throw SetupError(e.message ?: "bad tp_fill '$it'") },
-                    )
+                result = result.copy(takeProfitFill = parseTakeProfitFill(it))
             }
             (args.option("slippage") ?: cfg.execution["slippage"])?.let {
                 val (spec, points) = parseSlippage(it)
@@ -962,6 +958,13 @@ class BacktestContext private constructor(
             }
             return result
         }
+
+        private fun parseTakeProfitFill(raw: String): TakeProfitFill =
+            try {
+                TakeProfitFill.fromConfig(raw)
+            } catch (e: IllegalStateException) {
+                throw SetupError(e.message ?: "bad tp_fill '$raw'")
+            }
 
         private fun parseLatencyMs(raw: String): Long {
             val trimmed = raw.trim().lowercase().removePrefix("fixed:")

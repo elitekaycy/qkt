@@ -62,10 +62,46 @@ class ReplayEventTimeCandleCloseTest {
             ).run()
 
         val buy = result.trades.single { it.trade.side == Side.BUY }.trade
-        // The follower's [0,5s) bar closes on the leader's 5 s tick — the first event at or past
-        // the window end — so the entry fills against the leader's 5 s quote.
+        // The follower's [0,5s) bar closes on the leader's 6 s tick — the first event strictly
+        // past the window end — so the entry fills against the leader's 6 s quote, one second
+        // after the bar ended, instead of 12.9 s later on the follower's next tick.
+        assertThat(buy.timestamp).isEqualTo(6_000L)
+        assertThat(buy.price).isEqualByComparingTo(Money.of("4338.006"))
+    }
+
+    @Test
+    fun `ticks sharing a timestamp are all ingested before any of them closes another symbol's bar`() {
+        // X quotes at the 5 s boundary before Y does. Y's boundary tick must still be the one
+        // that closes Y's bar (and the quote a Y fill sees), as it was before #1134.
+        val pair =
+            """
+            STRATEGY pair VERSION 1
+            SYMBOLS
+              x = BACKTEST:X EVERY 5s,
+              y = BACKTEST:Y EVERY 5s
+            RULES
+              WHEN y.close > y.open AND POSITION.y = 0
+              THEN BUY y SIZING 1
+            """.trimIndent()
+        val ticks =
+            listOf(
+                tick("BACKTEST:X", 0L, "100"),
+                tick("BACKTEST:Y", 0L, "200"),
+                tick("BACKTEST:Y", 2_000L, "200.5"),
+                tick("BACKTEST:X", 5_000L, "101"),
+                tick("BACKTEST:Y", 5_000L, "201"),
+                tick("BACKTEST:X", 6_000L, "101"),
+                tick("BACKTEST:Y", 6_000L, "201"),
+            )
+        val result =
+            Backtest(
+                strategies = listOf("pair" to compile(pair)),
+                ticks = ticks,
+                candleWindow = TimeWindow.parse("5s"),
+            ).run()
+        val buy = result.trades.single { it.trade.side == Side.BUY }.trade
         assertThat(buy.timestamp).isEqualTo(5_000L)
-        assertThat(buy.price).isEqualByComparingTo(Money.of("4338.005"))
+        assertThat(buy.price).isEqualByComparingTo(Money.of("201"))
     }
 
     @Test
