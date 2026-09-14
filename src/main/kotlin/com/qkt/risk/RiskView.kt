@@ -29,6 +29,9 @@ interface RiskView {
     /** Strategy's realized P&L today (UTC day). Resets at the daily boundary. */
     val realizedToday: BigDecimal
 
+    /** Strategy's realized P&L since the 1st of the UTC month. Resets at the month boundary. */
+    val realizedMonth: BigDecimal
+
     /** True if the global (account-level) halt is engaged — affects every strategy. */
     val globalHalted: Boolean
 
@@ -59,6 +62,9 @@ class RiskViewImpl(
     override val realizedToday: BigDecimal
         get() = riskState.dailyPnLTracker.realizedToday(strategyId)
 
+    override val realizedMonth: BigDecimal
+        get() = riskState.monthlyPnLTracker.realizedToday(strategyId)
+
     override val globalHalted: Boolean
         get() = riskState.halted
 
@@ -77,6 +83,7 @@ class NoOpRiskView : RiskView {
     override val equityPeak: BigDecimal = Money.ZERO
     override val drawdown: BigDecimal = Money.ZERO
     override val realizedToday: BigDecimal = Money.ZERO
+    override val realizedMonth: BigDecimal = Money.ZERO
     override val globalHalted: Boolean = false
     override val globalDrawdown: BigDecimal = Money.ZERO
 }

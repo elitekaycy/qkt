@@ -72,6 +72,38 @@ class RiskStatePersistenceTest {
     }
 
     @Test
+    fun `month-to-date realized pnl survives a restart within the month, not into the next (#855)`() {
+        val clock =
+            TestClock(
+                java.time.Instant
+                    .parse("2024-03-10T12:00:00Z")
+                    .toEpochMilli(),
+            )
+        val persistor = NoopStatePersistor()
+        val first = riskState(clock, persistor)
+        first.onFill("s1", BigDecimal("-120"))
+        clock.t =
+            java.time.Instant
+                .parse("2024-03-11T12:00:00Z")
+                .toEpochMilli()
+        first.onFill("s1", BigDecimal("-30"))
+
+        val restarted = riskState(clock, persistor)
+        restarted.restore(persistor.loadRiskState("s1")!!)
+        assertThat(RiskViewImpl(restarted, "s1").realizedMonth).isEqualByComparingTo("-150")
+        // The day tracker only kept today's fill.
+        assertThat(RiskViewImpl(restarted, "s1").realizedToday).isEqualByComparingTo("-30")
+
+        clock.t =
+            java.time.Instant
+                .parse("2024-04-01T00:00:01Z")
+                .toEpochMilli()
+        val nextMonth = riskState(clock, persistor)
+        nextMonth.restore(persistor.loadRiskState("s1")!!)
+        assertThat(RiskViewImpl(nextMonth, "s1").realizedMonth).isEqualByComparingTo("0")
+    }
+
+    @Test
     fun `a daily halt from yesterday legitimately clears on restore`() {
         val clock = TestClock(86_400_000L * 100 + 3_600_000L)
         val persistor = NoopStatePersistor()

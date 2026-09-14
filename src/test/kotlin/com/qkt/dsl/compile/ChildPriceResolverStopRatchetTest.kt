@@ -58,20 +58,66 @@ class ChildPriceResolverStopRatchetTest {
         assertThat(spec.floorDistance).isEqualByComparingTo("20")
     }
 
+    private fun ec(close: String) =
+        EvalContext(
+            candle =
+                com.qkt.marketdata.Candle(
+                    "BACKTEST:X",
+                    BigDecimal(close),
+                    BigDecimal(close),
+                    BigDecimal(close),
+                    BigDecimal(close),
+                    BigDecimal.ZERO,
+                    0L,
+                    60_000L,
+                ),
+            streams = mapOf("x" to HubKey("BACKTEST", "X", "1m")),
+            lets = emptyMap(),
+            strategyContext = com.qkt.strategy.testStrategyContext(),
+        )
+
     @Test
-    fun `ratchet operands must be compile-time constants`() {
+    fun `stepped stop operands may be expressions, fixed when the order is built (#1116)`() {
+        val half =
+            com.qkt.dsl.ast.BinaryOp(
+                com.qkt.dsl.ast.BinOp.DIV,
+                StreamFieldRef("x", "close"),
+                NumLit(BigDecimal("2")),
+            )
+        val child =
+            ChildBy(
+                StreamFieldRef("x", "close"),
+                SteppedStopAst(listOf(StopStepAst(half, NumLit(BigDecimal.ZERO)))),
+            )
+        val compiled = resolver.compileStopLoss(child) as CompiledStopLoss.Dynamic
+        val spec = compiled.evaluate(ec("40"), com.qkt.common.Side.BUY, BigDecimal("4300")) as StopLossSpec.SteppedStop
+        assertThat(spec.initialDistance).isEqualByComparingTo("40")
+        assertThat(spec.steps.single().mfeThreshold).isEqualByComparingTo("20")
+        assertThat(spec.steps.single().profitDistance).isEqualByComparingTo("0")
+    }
+
+    @Test
+    fun `time-tightening operands may be expressions and an invalid evaluation yields no stop`() {
+        val child =
+            ChildBy(
+                StreamFieldRef("x", "close"),
+                TimeTightenAst(NumLit(BigDecimal("10")), DurationAst(900_000L), NumLit(BigDecimal("20"))),
+            )
+        val compiled = resolver.compileStopLoss(child) as CompiledStopLoss.Dynamic
+        val ok = compiled.evaluate(ec("60"), com.qkt.common.Side.SELL, BigDecimal("4300")) as StopLossSpec.TimeTighten
+        assertThat(ok.initialDistance).isEqualByComparingTo("60")
+        // An initial distance below the floor is rejected by the spec: skip, do not throw.
+        assertThat(compiled.evaluate(ec("15"), com.qkt.common.Side.SELL, BigDecimal("4300"))).isNull()
+    }
+
+    @Test
+    fun `all-literal ratchets still validate at compile time`() {
         val child =
             ChildBy(
                 NumLit(BigDecimal("50")),
-                SteppedStopAst(
-                    listOf(
-                        StopStepAst(StreamFieldRef("x", "close"), NumLit(BigDecimal.ZERO)),
-                    ),
-                ),
+                SteppedStopAst(listOf(StopStepAst(NumLit(BigDecimal("-1")), NumLit(BigDecimal.ZERO)))),
             )
-
-        assertThatThrownBy { resolver.compileStopLoss(child) }
-            .hasMessageContainingAll("MFE threshold", "numeric literal")
+        assertThatThrownBy { resolver.compileStopLoss(child) }.isInstanceOf(IllegalArgumentException::class.java)
     }
 
     @Test

@@ -870,6 +870,10 @@ class Parser(
                                 buildSessionWindow(args, t)
                             name.equals("LAST_TRADING_DAY_OF_MONTH", ignoreCase = true) ->
                                 buildLastTradingDayOfMonth(args, t)
+                            // Rolling shorthand (#1130): avg(x, N) is mean(x) SINCE T-N, and
+                            // count(cond, N) counts the last N bars where cond held.
+                            name.equals("AVG", ignoreCase = true) -> rollingShorthand(AggFn.MEAN, name, args, t)
+                            name.equals("COUNT", ignoreCase = true) -> rollingShorthand(AggFn.SUM, name, args, t)
                             // Scalar math functions (abs, sqrt, log, exp, pow, …) route through
                             // FuncCall — pure functions on numeric values, no warmup or per-bar state.
                             // Everything else stays IndicatorCall for the indicator-binding path.
@@ -983,10 +987,49 @@ class Parser(
             }
         expect(TokenKind.LPAREN, "expected '(' after ${fnTok.lexeme}")
         val series = parseExpr()
+        // `sum(x, N)` / `mean(x, N)` is shorthand for `sum(x) SINCE T-N` (#1130).
+        if (match(TokenKind.COMMA)) {
+            val window = rollingWindowArg(fnTok.lexeme)
+            expect(TokenKind.RPAREN, "expected ')' to close ${fnTok.lexeme}(<expr>, N)")
+            return Aggregate(fn, series, window)
+        }
         expect(TokenKind.RPAREN, "expected ')' to close aggregate args")
         expect(TokenKind.SINCE, "expected SINCE after aggregate")
         val window = parseWindow()
         return Aggregate(fn, series, window)
+    }
+
+    /** The `N` of a rolling shorthand: a positive integer literal, the same rule as `T-N`. */
+    private fun rollingWindowArg(fnName: String): SinceTPast {
+        val tok = expect(TokenKind.NUMBER, "expected a positive integer window after $fnName(<expr>,")
+        val n = tok.lexeme.toIntOrNull()
+        if (n == null || n <= 0) error("$fnName(<expr>, N) window must be a positive integer, got '${tok.lexeme}'")
+        return SinceTPast(n)
+    }
+
+    private fun rollingShorthand(
+        fn: AggFn,
+        name: String,
+        args: List<ExprAst>,
+        at: Token,
+    ): ExprAst {
+        if (args.size != 2) {
+            errors += ParseError(at.line, at.col, "${name.lowercase()} expects (<expr>, N)")
+            return NumLit(java.math.BigDecimal.ZERO)
+        }
+        val n = (args[1] as? NumLit)?.value
+        val window = n?.takeIf { it.signum() > 0 && it.stripTrailingZeros().scale() <= 0 }?.toInt()
+        if (window == null) {
+            errors += ParseError(at.line, at.col, "${name.lowercase()}(<expr>, N) window must be a positive integer")
+            return NumLit(java.math.BigDecimal.ZERO)
+        }
+        val series =
+            if (fn == AggFn.SUM) {
+                CaseWhen(listOf(args[0] to NumLit(java.math.BigDecimal.ONE)), NumLit(java.math.BigDecimal.ZERO))
+            } else {
+                args[0]
+            }
+        return Aggregate(fn, series, SinceTPast(window))
     }
 
     private fun parseAggregateOrFunction(): ExprAst {
