@@ -90,8 +90,7 @@ class CandleAggregator private constructor(
      * time-driven close for quiet symbols. Without it a candle only closes when the
      * NEXT tick arrives: on a thin session edge the last bar never closes, its rules
      * never evaluate, and partial sync windows are immortal. The live heartbeat drives
-     * this; backtests stay purely tick-driven (event-time has no "quiet wall clock"),
-     * a documented divergence (catalog row A12).
+     * this from the wall clock; replay drives it from each tick's event time (#1134).
      */
     fun flushClosed(nowMs: Long) {
         val it = open.entries.iterator()

@@ -350,7 +350,9 @@ Backtest, sweep, walk-forward, and experiment commands read execution settings t
 |---|---|---|---|---|
 | `execution.preset` | `paper-fast`, `mt5-basic`, `mt5-realistic`, `stress` | based on `--broker`, usually `paper-fast` | `--execution` | Chooses default broker simulator behavior. |
 | `execution.seed` | long | unset except stress default `42` | `--seed` | Deterministic random slippage seed. |
-| `execution.latency` | duration | preset default | `--execution-latency` | Accepts integer milliseconds, `250ms`, `1s`, or `fixed:250ms`. |
+| `execution.latency` | duration | preset default | `--execution-latency` | Accepts integer milliseconds, `250ms`, `1s`, or `fixed:250ms`. Delays order placement; a resting order's trigger-to-fill stays instantaneous. |
+| `execution.stop_latency` | duration | `0` | `--stop-latency` | Delay between a protective stop's trigger and its execution (mt5-sim). A crossed stop fills at the first quote at or after `trigger + delay`, sided, plus slippage — the venue behaviour measured on the Exness demo (median ~260 ms, #1135). `0` fills on the crossing print. Same format as `execution.latency`. |
+| `execution.tp_fill` | `print`, `level` | `print` | `--tp-fill` | How a gap-crossed protective take-profit is priced (mt5-sim). `print` credits the crossing print when it beats the level; `level` fills exactly at the level, as retail MT5 does. |
 | `execution.slippage` | string | preset default | `--slippage` | `zero`, `instrument`, `fixed-points:N`, or `uniform:N`. |
 | `execution.reject_every` | int | unset | `--reject-every` | Reject every Nth simulated order. |
 | `execution.partial_fill` | decimal `(0,1)` | unset | `--partial-fill` | Fractional partial-fill model. |
