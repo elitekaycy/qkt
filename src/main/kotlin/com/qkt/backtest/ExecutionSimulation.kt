@@ -8,6 +8,7 @@ import com.qkt.broker.PartialFillModel
 import com.qkt.broker.RejectEveryNthOrder
 import com.qkt.broker.RejectionModel
 import com.qkt.broker.SlippageModel
+import com.qkt.broker.TakeProfitFill
 import com.qkt.broker.UniformRandomSlippage
 import com.qkt.broker.ZeroSlippage
 import com.qkt.evidence.ExecutionEvidence
@@ -45,6 +46,22 @@ data class ExecutionSimulationConfig(
     val preset: ExecutionPreset = ExecutionPreset.PAPER_FAST,
     val seed: Long? = null,
     val latencyMs: Long = 0L,
+    /**
+     * Execution delay applied to protective stops only (#1135): a crossed stop fills at the
+     * first quote at or after `trigger + stopLatencyMs`, sided, plus slippage. Entry latency
+     * ([latencyMs]) delays order placement and does not model this. 0 keeps the on-trigger fill.
+     */
+    val stopLatencyMs: Long = 0L,
+    /** Pricing of a gap-crossed protective take-profit (#1135). */
+    val takeProfitFill: TakeProfitFill = TakeProfitFill.PRINT,
+    /**
+     * Replay closes a quiet symbol's ended bar the way the live heartbeat does: at the first
+     * [heartbeatIntervalMs] step at or after `windowEnd + candleCloseGraceMs`, in event time
+     * (#1138). A tick of the same stream from the next window still closes it immediately.
+     * Shares `runtime.candle_close_grace_ms` with the live daemon.
+     */
+    val candleCloseGraceMs: Long = com.qkt.app.LiveSession.DEFAULT_CANDLE_CLOSE_GRACE_MS,
+    val heartbeatIntervalMs: Long = 1_000L,
     val slippage: SlippageSpec = SlippageSpec.ZERO,
     val slippagePoints: Int = 0,
     val rejectEvery: Int? = null,
@@ -63,6 +80,9 @@ data class ExecutionSimulationConfig(
 ) {
     init {
         require(latencyMs >= 0L) { "execution latencyMs must be >= 0: $latencyMs" }
+        require(stopLatencyMs >= 0L) { "execution stopLatencyMs must be >= 0: $stopLatencyMs" }
+        require(candleCloseGraceMs >= 0L) { "candleCloseGraceMs must be >= 0: $candleCloseGraceMs" }
+        require(heartbeatIntervalMs > 0L) { "heartbeatIntervalMs must be > 0: $heartbeatIntervalMs" }
         require(slippagePoints >= 0) { "execution slippagePoints must be >= 0: $slippagePoints" }
         rejectEvery?.let { require(it > 0) { "execution rejectEvery must be > 0: $it" } }
         partialFillFraction?.let {
@@ -113,6 +133,9 @@ data class ExecutionSimulationConfig(
                     else -> "bid/ask when available, synthetic spread fallback"
                 },
             latencyModel = if (latencyMs == 0L) "zero" else "fixed:${latencyMs}ms",
+            stopLatencyModel = if (stopLatencyMs == 0L) "on-trigger" else "fixed:${stopLatencyMs}ms",
+            takeProfitFillModel = takeProfitFill.id,
+            candleCloseModel = "heartbeat:${heartbeatIntervalMs}ms grace:${candleCloseGraceMs}ms",
             slippageModel = slippageLabel(),
             rejectionModel = rejectEvery?.let { "reject-every:$it" } ?: "none",
             partialFillModel = partialFillFraction?.let { "fraction:$it" } ?: "none",

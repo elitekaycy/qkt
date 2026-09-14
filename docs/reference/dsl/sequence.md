@@ -9,8 +9,8 @@ SYMBOLS
     gold = BACKTEST:XAUUSD EVERY 1m
 
 SEQUENCE sweep ON gold {
-    STAGE swept: gold.low < lowest(gold.low, 20)[1]
-    STAGE reclaimed WITHIN 30m: gold.close > lowest(gold.low, 20)[1]
+    STAGE swept: gold.low < lag(lowest(gold.low, 20), 1)
+    STAGE reclaimed WITHIN 30m: gold.close > lag(lowest(gold.low, 20), 1)
     STAGE go WITHIN 15m: rsi(gold.close, 14) > 50
 }
 
@@ -21,6 +21,7 @@ RULES
 
 ## Grammar
 
+<!-- qkt-doc: grammar -->
 ```qkt
 SEQUENCE <name> ON <stream> {
     STAGE <stage_name> [WITHIN <duration>]: <condition>
@@ -49,6 +50,7 @@ No worker thread or async path is introduced. Backtest and live DSL strategies b
 
 ## Accessors
 
+<!-- qkt-doc: grammar -->
 ```qkt
 SEQUENCE.<name>.stage
 SEQUENCE.<name>.complete

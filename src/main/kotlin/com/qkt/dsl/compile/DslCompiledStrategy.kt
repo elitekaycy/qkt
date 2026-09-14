@@ -54,6 +54,13 @@ interface DslCompiledStrategy : Strategy {
     /** Compiled exit-hook identities available for durable binding validation. */
     fun exitHookReferences(): Map<String, ExitHookRef> = emptyMap()
 
+    /**
+     * Continue the strategy's order-id sequence past [usedIds], the ids of orders and legs a
+     * restarted session restored. Without this a restart mints `dsl-<name>--0` again, which a
+     * restored non-terminal order of the same id swallows as a duplicate submit.
+     */
+    fun resumeOrderIds(usedIds: Collection<String>) = Unit
+
     /** Execute one validated exit hook against the strategy's latest evaluation state. */
     fun executeExitHook(
         ref: ExitHookRef,

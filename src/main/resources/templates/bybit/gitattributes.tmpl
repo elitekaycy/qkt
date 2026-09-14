@@ -1,0 +1,6 @@
+# Syntax highlighting for .qkt on github.com.
+# GitHub only highlights languages that Linguist ships, and qkt is not one yet, so .qkt borrows the
+# Haskell grammar: qkt's UPPERCASE keywords, `--` comments, operators, numbers and strings each get a
+# distinct colour (SQL colours only a handful of qkt keywords). linguist-detectable=false keeps .qkt
+# out of the repository language bar, so the repo is not reported as Haskell.
+*.qkt linguist-language=Haskell linguist-detectable=false

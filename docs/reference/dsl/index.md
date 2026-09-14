@@ -197,9 +197,10 @@ SYMBOLS
     btc = BACKTEST:BTCUSDT EVERY 1m
 RULES
     WHEN btc.close > 0
-    THEN LOG INFO "tick received"
+    THEN LOG "tick received"
 ```
 
+<!-- qkt-doc: illegal -->
 ```qkt
 -- illegal: SYMBOLS must come before RULES
 STRATEGY hello VERSION 1
@@ -207,14 +208,15 @@ RULES
     WHEN btc.close > 0 THEN BUY btc
 SYMBOLS
     btc = BACKTEST:BTCUSDT EVERY 1m
--- parse error: undefined stream 'btc' in RULES (line 3)
+-- parse error: SYMBOLS must come before RULES (line 5)
 ```
 
+<!-- qkt-doc: illegal -->
 ```qkt
 -- illegal: missing VERSION
 STRATEGY hello
 SYMBOLS ...
--- parse error: expected VERSION after strategy name (line 1)
+-- parse error: expected VERSION, got 'SYMBOLS' (line 2)
 ```
 
 The parser is strict by design. A strategy file that compiles is one where the engine knows exactly what to do — there's no "interpret loosely and hope" mode.

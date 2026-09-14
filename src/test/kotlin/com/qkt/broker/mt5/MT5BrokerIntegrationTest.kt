@@ -1203,6 +1203,75 @@ class MT5BrokerIntegrationTest {
         assertThat(captured.filterIsInstance<BrokerEvent.OrderRejected>()).isEmpty()
     }
 
+    @Test
+    fun `async-fill venue acknowledges with price 0 -- fill is anchored from the venue position (#1092)`() {
+        server.dispatcher =
+            object : okhttp3.mockwebserver.Dispatcher() {
+                override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse {
+                    val path = request.path.orEmpty()
+                    return when {
+                        path.startsWith("/order") && request.method == "POST" ->
+                            MockResponse().setBody(
+                                """{"result":{"retcode":10009,"order":597056135,"deal":412639332,""" +
+                                    """"volume":"0.10","price":"0.0","comment":"ok"}}""",
+                            )
+                        path.startsWith("/orders") -> MockResponse().setBody("[]")
+                        path.startsWith("/get_positions") ->
+                            MockResponse().setBody(
+                                """[{"ticket":"597056135","symbol":"EURUSDm","type":"0","volume":"0.10",""" +
+                                    """"price_open":"1.1003","sl":"0","tp":"0","profit":"0","magic":"10001",""" +
+                                    """"time_msc":"0","comment":"ord-async-1",""" +
+                                    """"client_order_id":"mt5-10001-session-1700000000000-0"}]""",
+                            )
+                        else -> MockResponse().setResponseCode(404)
+                    }
+                }
+            }
+        val fastBroker = newFastUnknownOutcomeBroker()
+        captured.clear()
+        fastBroker.submit(ambiguousMarket("ord-async-1"))
+        awaitCaptured { captured.any { it is BrokerEvent.OrderFilled } }
+        fastBroker.shutdown()
+
+        assertThat(captured.filterIsInstance<BrokerEvent.OrderRejected>()).isEmpty()
+        val fill = captured.filterIsInstance<BrokerEvent.OrderFilled>().single()
+        assertThat(fill.clientOrderId).isEqualTo("ord-async-1")
+        assertThat(fill.brokerOrderId).isEqualTo("597056135")
+        // Never 0.0: PositionLeg rejects a zero entry price and the engine loop would fault.
+        assertThat(fill.price).isEqualByComparingTo("1.1003")
+        assertThat(fill.quantity).isEqualByComparingTo("0.10")
+    }
+
+    @Test
+    fun `async-fill venue acknowledges a close with price 0 -- fill is anchored from the closing deal (#1092)`() {
+        server.dispatcher =
+            object : okhttp3.mockwebserver.Dispatcher() {
+                override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse {
+                    val path = request.path.orEmpty()
+                    return when {
+                        path.startsWith("/close_position") ->
+                            MockResponse().setBody(
+                                """{"result":{"retcode":10009,"order":301,"deal":401,"volume":"0.10","price":"0.0","comment":"ok"}}""",
+                            )
+                        path.startsWith("/get_positions") -> MockResponse().setBody("[]")
+                        path.startsWith("/orders") -> MockResponse().setBody("[]")
+                        path.startsWith("/history_deals_get") -> MockResponse().setBody(closeDealHistory())
+                        else -> MockResponse().setResponseCode(404)
+                    }
+                }
+            }
+        val fastBroker = newFastUnknownOutcomeBroker()
+        captured.clear()
+        fastBroker.submit(ambiguousClose("close-async"))
+        awaitCaptured { captured.any { it is BrokerEvent.OrderFilled } }
+        fastBroker.shutdown()
+
+        assertThat(captured.filterIsInstance<BrokerEvent.OrderRejected>()).isEmpty()
+        val fill = captured.filterIsInstance<BrokerEvent.OrderFilled>().single()
+        assertThat(fill.clientOrderId).isEqualTo("close-async")
+        assertThat(fill.price).isEqualByComparingTo("1.1050")
+    }
+
     private fun ambiguousClose(id: String): OrderRequest.Market =
         OrderRequest.Market(
             id = id,

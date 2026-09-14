@@ -4,6 +4,7 @@ A **stream** is a single instrument on a single venue at a single timeframe. The
 
 ## Shape
 
+<!-- qkt-doc: grammar -->
 ```qkt
 SYMBOLS
     <alias> = <BROKER>:<symbol> EVERY <timeframe>
@@ -109,6 +110,22 @@ Supported windows:
 
 The parser is liberal — `EVERY 7m` and `EVERY 3h` work fine, even though they're non-standard. But your data fetcher may not have data at non-standard resolutions; check.
 
+### How live warmup finds history for each window
+
+MT5 serves bars only at its native timeframes (M1, M5, M15, M30, H1). When a stream needs
+history before its first live bar (an indicator period or `WARMUP N BARS`), qkt rebuilds
+other windows on the UTC epoch grid from the finest native source that fits:
+
+| Window | Warmup source |
+| --- | --- |
+| `1s` … `30s` | The venue's tick record (`/copy_ticks_range`), aggregated by the same candle builder the live feed uses. Capped at six hours of ticks per stream. |
+| `2m`, `7m`, other whole-minute windows | M1 bars |
+| `2h`, `4h`, `1d`, other whole-hour windows | H1 bars |
+| `90s`, `90m` and other windows that fit no native grid | Not servable; deploy aborts naming the window. Change `EVERY`, not `WARMUP`. |
+
+A plain lookback such as `x.close[1]` does not fetch history on its own; only indicators and
+`WARMUP` do.
+
 ## Per-stream warmup (`WARMUP N BARS`)
 
 ```qkt
@@ -142,13 +159,14 @@ btc.high          -- high
 btc.low           -- low
 btc.close         -- close
 btc.volume        -- volume
-btc.bid           -- best bid from the last tick in the window (live feeds only)
-btc.ask           -- best ask from the last tick in the window (live feeds only)
-btc.spread        -- ask - bid (live feeds only)
-btc.timestamp     -- candle start time (ms since epoch)
+btc.bid           -- best bid from the last tick in the window (quote feeds only)
+btc.ask           -- best ask from the last tick in the window (quote feeds only)
+btc.spread        -- ask - bid (quote feeds only)
 ```
 
-`bid`, `ask`, and `spread` are populated only on feeds that carry a quote — live MT5 streams do, backtest/historical feeds do not. When a quote is unavailable they resolve to undefined and a condition referencing them does not fire (the same null-tolerant behaviour as out-of-range lookback). They are the quote from the last tick before the candle closed — the freshest value the engine holds, not the live quote at order-placement instant.
+There is no `btc.timestamp` field. For time, use [`NOW`](now.md), the strategy's clock in epoch milliseconds.
+
+`bid`, `ask`, and `spread` are populated only on feeds that carry a quote: live MT5 streams, and tick backtests over quote data (bid/ask ticks). A backtest over bars, or over trade-only ticks, has no quote. When a quote is unavailable they resolve to undefined and a condition referencing them does not fire (the same null-tolerant behaviour as out-of-range lookback). They are the quote from the last tick before the candle closed — the freshest value the engine holds, not the live quote at order-placement instant.
 
 For historical lookback (the N-th candle ago):
 
@@ -200,7 +218,7 @@ SYMBOLS
     eth = BACKTEST:ETHUSDT EVERY 1m
     sol = BACKTEST:SOLUSDT EVERY 1m
 
-FOR EACH s IN btc, eth, sol DO
+FOR EACH s IN [btc, eth, sol] DO
     WHEN ema(s.close, 9) CROSSES ABOVE ema(s.close, 21)
     THEN BUY s SIZING 0.1
 ```

@@ -75,6 +75,14 @@ class TradingPipeline(
     val riskState: com.qkt.risk.RiskState,
     val mode: Mode,
     /**
+     * Replay's stand-in for the live heartbeat (#1138): a quiet symbol's ended bar closes on
+     * the first replayed tick at or past the first [replayHeartbeatIntervalMs] step that is at
+     * least [replayCandleCloseGraceMs] after the window end. Live closes it from the wall clock
+     * with the same grace, so both decide on the same heartbeat step. Unused in [Mode.LIVE].
+     */
+    val replayCandleCloseGraceMs: Long = LiveSession.DEFAULT_CANDLE_CLOSE_GRACE_MS,
+    val replayHeartbeatIntervalMs: Long = 1_000L,
+    /**
      * Venue position model per symbol (#1071). HEDGING routes every entry to its own
      * coexisting [com.qkt.positions.LegRole.INDEPENDENT] leg with exits closing that
      * leg — the retail-MT5 semantic. Default UNKNOWN preserves netting behavior.
@@ -517,7 +525,15 @@ class TradingPipeline(
             orderManager.submit(e.request)
         }
         bus.subscribe<BrokerEvent.PositionReconciled> { e ->
-            strategyPositions.reconcileNet(e.symbol, e.newQty, e.newAvgPx, openedAt = e.timestamp, source = e.source)
+            strategyPositions.reconcileNet(
+                e.symbol,
+                e.newQty,
+                e.newAvgPx,
+                openedAt = e.timestamp,
+                source = e.source,
+                ticket = e.ticket,
+                strategyId = e.strategyId,
+            )
         }
         // subscribeFirst: the books must reflect this fill BEFORE any handler with venue
         // side effects runs — OrderManager cancels OCO siblings and dispatches children,
@@ -648,6 +664,14 @@ class TradingPipeline(
         }
         engine.onTick(tick)
         sampleAccountEquitySeries(tick.timestamp)
+        // Replay has no wall clock, so event time is the clock. A quiet symbol's ended bar
+        // closes on the first tick of any symbol at or past the heartbeat step that live would
+        // close it on: the first 1 Hz step at least the grace after the window end (#1134,
+        // #1138). Never at the tick's own instant, because ticks sharing one timestamp arrive
+        // together live and a tick cannot know whether more of its instant follow; a symbol's
+        // own boundary tick therefore still closes its bar through the feed below, after this
+        // TickEvent, so it fills against that tick exactly as before.
+        if (mode == Mode.BACKTEST) flushReplayCandles(replayCloseAt(tick.timestamp))
         candleHub.feed(tick)
         scheduleRunner.tick(tick.timestamp)
     }
@@ -904,17 +928,26 @@ class TradingPipeline(
         scheduleRunner.tick(nowMs)
         sampleAccountEquitySeries(nowMs)
         // Time-driven candle close: a quiet symbol's bar must close when its window
-        // ends, not when the next tick eventually arrives (live only — the heartbeat
-        // doesn't run in backtest, where event-time is the only clock). The close lags
-        // the wall clock by [candleCloseGraceMs] so a tick stamped just before the
-        // boundary that is still in flight from the poller lands in its own bar instead
-        // of being rejected as late (#1058). A tick-driven close is unaffected.
+        // ends, not when the next tick eventually arrives (replay does the same from
+        // event time in [ingest]). The close lags the wall clock by [candleCloseGraceMs]
+        // so a tick stamped just before the boundary that is still in flight from the
+        // poller lands in its own bar instead of being rejected as late (#1058). A
+        // tick-driven close is unaffected.
         val closeAtMs = nowMs - candleCloseGraceMs
         windowAggregator?.flushClosed(closeAtMs)
         candleHub.flushClosed(closeAtMs)
     }
 
-    /** Close completed replay candles without running live-only schedule and broker maintenance. */
+    /**
+     * The latest window end that live's heartbeat would have closed by event time [eventMs]:
+     * the heartbeat step at or before [eventMs], minus the grace — and never [eventMs] itself.
+     */
+    private fun replayCloseAt(eventMs: Long): Long {
+        val step = Math.floorDiv(eventMs, replayHeartbeatIntervalMs) * replayHeartbeatIntervalMs
+        return minOf(step - replayCandleCloseGraceMs, eventMs - 1L)
+    }
+
+    /** Close every window ended at [nowMs] without running live-only schedule and broker maintenance. */
     internal fun flushReplayCandles(nowMs: Long) {
         windowAggregator?.flushClosed(nowMs)
         candleHub.flushClosed(nowMs)

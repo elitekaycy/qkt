@@ -314,6 +314,8 @@ class ReplayEngine(
                         instruments,
                         slippage = executionConfig.slippageModel(),
                         latencyMs = executionConfig.latencyMs,
+                        stopLatencyMs = executionConfig.stopLatencyMs,
+                        takeProfitFill = executionConfig.takeProfitFill,
                         enforceStopsLevel = executionConfig.enforceStopsLevel,
                         rejectionModel = executionConfig.rejectionModel(),
                         partialFillModel = executionConfig.partialFillModel(),
@@ -472,6 +474,8 @@ class ReplayEngine(
                         }
                     },
                 mode = Mode.BACKTEST,
+                replayCandleCloseGraceMs = executionConfig.candleCloseGraceMs,
+                replayHeartbeatIntervalMs = executionConfig.heartbeatIntervalMs,
                 calendar = calendar,
                 source = source,
                 candleWindow = candleWindow,

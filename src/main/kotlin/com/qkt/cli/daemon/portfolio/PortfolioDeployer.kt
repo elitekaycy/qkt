@@ -67,6 +67,7 @@ class PortfolioDeployer(
     private val priceCollarFrac: java.math.BigDecimal =
         com.qkt.risk.rules.PreTradeControls.DEFAULT_PRICE_COLLAR_FRAC,
     private val runawayMaxRoundTrips: Int = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_ROUND_TRIPS,
+    private val candleCloseGraceMs: Long = com.qkt.app.LiveSession.DEFAULT_CANDLE_CLOSE_GRACE_MS,
     private val runawayMaxRejections: Int = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_REJECTIONS,
     private val marginFloorPct: java.math.BigDecimal = java.math.BigDecimal("200"),
     private val measuredUsageHours: Long = 0L,
@@ -611,6 +612,7 @@ class PortfolioDeployer(
                 maxOrderNotional = maxOrderNotional,
                 priceCollarFrac = priceCollarFrac,
                 runawayMaxRoundTrips = runawayMaxRoundTrips,
+                candleCloseGraceMs = candleCloseGraceMs,
                 runawayMaxRejections = runawayMaxRejections,
                 marginFloorPct = marginFloorPct,
                 measuredUsageHours = measuredUsageHours,

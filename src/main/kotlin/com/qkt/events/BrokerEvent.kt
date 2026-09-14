@@ -216,6 +216,14 @@ sealed interface BrokerEvent : Event {
         val reason: String,
         override val timestamp: Long = 0L,
         override val sequenceId: Long = 0L,
+        /**
+         * The venue position this correction describes, when the venue keys positions by
+         * ticket (MT5). Then [newQty] is that one position, not the symbol's net, and the
+         * ledger adds or confirms the matching leg instead of replacing the book (#1103).
+         */
+        val ticket: String? = null,
+        /** The strategy the venue attributes this position to, when the recovery is strategy-scoped. */
+        val strategyId: String? = null,
     ) : BrokerEvent
 
     /** Venue-side SL/TP protection changed while the position ticket remained open. */
