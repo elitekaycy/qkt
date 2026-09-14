@@ -110,6 +110,22 @@ Supported windows:
 
 The parser is liberal — `EVERY 7m` and `EVERY 3h` work fine, even though they're non-standard. But your data fetcher may not have data at non-standard resolutions; check.
 
+### How live warmup finds history for each window
+
+MT5 serves bars only at its native timeframes (M1, M5, M15, M30, H1). When a stream needs
+history before its first live bar (an indicator period or `WARMUP N BARS`), qkt rebuilds
+other windows on the UTC epoch grid from the finest native source that fits:
+
+| Window | Warmup source |
+| --- | --- |
+| `1s` … `30s` | The venue's tick record (`/copy_ticks_range`), aggregated by the same candle builder the live feed uses. Capped at six hours of ticks per stream. |
+| `2m`, `7m`, other whole-minute windows | M1 bars |
+| `2h`, `4h`, `1d`, other whole-hour windows | H1 bars |
+| `90s`, `90m` and other windows that fit no native grid | Not servable; deploy aborts naming the window. Change `EVERY`, not `WARMUP`. |
+
+A plain lookback such as `x.close[1]` does not fetch history on its own; only indicators and
+`WARMUP` do.
+
 ## Per-stream warmup (`WARMUP N BARS`)
 
 ```qkt

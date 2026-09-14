@@ -230,6 +230,7 @@ class AstCompiler {
 
         return CompiledStrategy(
             strategyFingerprint = sha256(ast.toString()),
+            ids = ids,
             streams = streams,
             retentionByKey = retentionByKey,
             bindings = bindings,
@@ -712,6 +713,7 @@ class AstCompiler {
 
 private class CompiledStrategy(
     private val strategyFingerprint: String,
+    private val ids: com.qkt.common.SequentialIdGenerator,
     private val streams: Map<String, HubKey>,
     override val retentionByKey: Map<HubKey, Int>,
     private val bindings: IndicatorBinding.Bag,
@@ -753,6 +755,8 @@ private class CompiledStrategy(
     private var ruleDecisionObserver: (RuleDecisionAudit) -> Unit = {}
 
     override val declaredStreams: Map<String, HubKey> get() = streams
+
+    override fun resumeOrderIds(usedIds: Collection<String>) = ids.resumePast(usedIds)
 
     override fun observeCandleEvaluations(
         observer: (alias: String, key: HubKey, candle: Candle, rulesEvaluated: Int) -> Unit,

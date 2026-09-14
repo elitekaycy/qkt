@@ -13,7 +13,8 @@ class WarmupFailedException(
 ) : RuntimeException(
         "qkt: failed to fetch warmup history for stream '$streamAlias' ($qktSymbol) — " +
             "broker historical API returned: ${cause.message ?: cause::class.simpleName}. " +
-            "Deploy aborted. Retry after fixing the broker connection, or remove WARMUP / " +
-            "reduce indicator periods to deploy without prefetch.",
+            "Deploy aborted. Retry after fixing the broker connection. If the cause names an " +
+            "unsupported timeframe, change the stream's EVERY window — WARMUP and indicator " +
+            "periods do not affect which windows the venue can serve.",
         cause,
     )
