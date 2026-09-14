@@ -243,7 +243,7 @@ class LiveSession(
 ) {
     private val log = LoggerFactory.getLogger(LiveSession::class.java)
 
-    private companion object {
+    companion object {
         /** Attempts to read broker positions at reconcile before refusing to start. */
         const val RECONCILE_READ_ATTEMPTS: Int = 5
 
