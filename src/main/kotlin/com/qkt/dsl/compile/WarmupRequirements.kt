@@ -29,6 +29,7 @@ import com.qkt.dsl.ast.OrderTypeAst
 import com.qkt.dsl.ast.Ref
 import com.qkt.dsl.ast.RuleAst
 import com.qkt.dsl.ast.Sell
+import com.qkt.dsl.ast.SinceTPast
 import com.qkt.dsl.ast.SizeNotional
 import com.qkt.dsl.ast.SizePctBalance
 import com.qkt.dsl.ast.SizePctEquity
@@ -283,7 +284,15 @@ object WarmupRequirements {
                 }
                 walkExpr(expr.elseExpr, out)
             }
-            is Aggregate -> walkExpr(expr.series, out)
+            is Aggregate -> {
+                walkExpr(expr.series, out)
+                // A `SINCE T-N` window is undefined until it holds N closed bars, so the
+                // stream it runs on needs N bars of warmup like an N-period indicator. The
+                // walker used to skip the window, and a strategy on `mean(x) SINCE T-200`
+                // started live without the history its first decision reads.
+                val window = expr.window
+                if (window is SinceTPast) aliasFor(expr.series)?.let { merge(out, it, window.n) }
+            }
             is FuncCall -> expr.args.forEach { walkExpr(it, out) }
             is IsNull -> walkExpr(expr.expr, out)
             else -> Unit

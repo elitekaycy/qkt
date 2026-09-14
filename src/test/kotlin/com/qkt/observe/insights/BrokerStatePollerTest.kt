@@ -541,6 +541,7 @@ class BrokerStatePollerTest {
                 "deal-FAKE-foreign-ticket",
                 "deal-FAKE-unknown",
             )
+
         fun body(id: String) = all.substringAfter(id).substringBefore("}}")
         assertThat(body("deal-FAKE-local-ticket")).contains(""""strategyId":"local_strat"""")
         assertThat(body("deal-FAKE-local-comment")).contains(""""strategyId":"local_strat"""")
