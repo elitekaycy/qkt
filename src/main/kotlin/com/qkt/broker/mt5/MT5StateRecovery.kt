@@ -46,7 +46,9 @@ class MT5StateRecovery(
         val siblings = if (strategyName != null) siblingsLookup() else emptyList()
         for (p in positions) {
             onPositionRecovered(p)
-            val qktSymbol = symbol.toQkt(p.symbol)
+            // Books, fills and the position poller all key by the profile-prefixed qkt symbol
+            // (EXNESS:XAUUSD); the bare venue symbol never matched any of them (#1103).
+            val qktSymbol = "${profile.name.uppercase()}:${symbol.toQkt(p.symbol)}"
             val signedQty = if (p.type == 0) p.volume else p.volume.negate()
             bus.publish(
                 BrokerEvent.PositionReconciled(
