@@ -648,6 +648,13 @@ class TradingPipeline(
         }
         engine.onTick(tick)
         sampleAccountEquitySeries(tick.timestamp)
+        // Replay has no wall clock, so this tick's event time is the clock: every window that
+        // ended at or before it closes now, whichever symbol quoted. Otherwise a quiet
+        // symbol's bar waits for that symbol's next tick and a SYNCHRONIZE group decides
+        // seconds late at a different price than the live heartbeat would (#1134). Runs after
+        // the TickEvent so a same-symbol close still fills against the tick that crossed the
+        // boundary, exactly as the tick-driven close did.
+        if (mode == Mode.BACKTEST) flushReplayCandles(tick.timestamp)
         candleHub.feed(tick)
         scheduleRunner.tick(tick.timestamp)
     }
@@ -904,17 +911,17 @@ class TradingPipeline(
         scheduleRunner.tick(nowMs)
         sampleAccountEquitySeries(nowMs)
         // Time-driven candle close: a quiet symbol's bar must close when its window
-        // ends, not when the next tick eventually arrives (live only — the heartbeat
-        // doesn't run in backtest, where event-time is the only clock). The close lags
-        // the wall clock by [candleCloseGraceMs] so a tick stamped just before the
-        // boundary that is still in flight from the poller lands in its own bar instead
-        // of being rejected as late (#1058). A tick-driven close is unaffected.
+        // ends, not when the next tick eventually arrives (replay does the same from
+        // event time in [ingest]). The close lags the wall clock by [candleCloseGraceMs]
+        // so a tick stamped just before the boundary that is still in flight from the
+        // poller lands in its own bar instead of being rejected as late (#1058). A
+        // tick-driven close is unaffected.
         val closeAtMs = nowMs - candleCloseGraceMs
         windowAggregator?.flushClosed(closeAtMs)
         candleHub.flushClosed(closeAtMs)
     }
 
-    /** Close completed replay candles without running live-only schedule and broker maintenance. */
+    /** Close every window ended at [nowMs] without running live-only schedule and broker maintenance. */
     internal fun flushReplayCandles(nowMs: Long) {
         windowAggregator?.flushClosed(nowMs)
         candleHub.flushClosed(nowMs)
