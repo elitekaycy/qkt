@@ -185,7 +185,7 @@ Without the `SYNCHRONIZE`, the spread is still computed, but `silver.close` may 
 runlength_where(<condition>)   -- consecutive bars where condition is true
 ```
 
-`runlength_where` counts an uninterrupted boolean state. Each bar where `<condition>` is true increments the counter; the first false bar resets it to `0`. This is different from a rolling fraction such as `mean(CASE WHEN condition THEN 1 ELSE 0 END, N)`: it preserves escape-time / dwell semantics.
+`runlength_where` counts an uninterrupted boolean state. Each bar where `<condition>` is true increments the counter; the first false bar resets it to `0`. This is different from a rolling fraction such as `mean(CASE WHEN condition THEN 1 ELSE 0 END) SINCE T-N` (or `count(condition, N) / N`): it preserves escape-time / dwell semantics.
 
 ```qkt
 LET calm = atr(gold.candle, 14) < percentile_rank(atr(gold.candle, 14), 200)

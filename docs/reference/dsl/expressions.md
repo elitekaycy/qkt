@@ -74,7 +74,7 @@ btc.ask
 btc.spread        -- ask - bid, computed when both present
 ```
 
-There is no per-stream time field (`btc.timestamp` does not exist). Use [`NOW`](now.md), the strategy's clock in epoch milliseconds, with fields such as `NOW.hour_utc` and `NOW.weekday`. There is no `btc.mid` either; compute `(btc.bid + btc.ask) / 2`.
+`btc.timestamp` is the bar's start time in epoch milliseconds, and `btc.timestamp[n]` is the start of the bar `n` bars ago. It is not a price series: `ema(btc.timestamp, 9)` is an error. For the strategy's clock use [`NOW`](now.md), with fields such as `NOW.hour_utc` and `NOW.weekday`. There is no `btc.mid` either; compute `(btc.bid + btc.ask) / 2`.
 
 Lookback:
 
@@ -279,11 +279,25 @@ min(<expr>)  SINCE OPEN | T-<N>     -- smallest value
 - `SINCE T-N` covers the last `N` closed bars of the stream the series is evaluated on. It is `null` until `N` bars have been seen, so it composes with the usual null handling.
 - `SINCE OPEN` covers the bars since the position on that stream was opened. It resets whenever the position opens, closes or flips.
 
-There is no two-argument form (`sum(<expr>, <period>)`), and no `avg` or `count` function. Write a rolling count as the sum of a `CASE` that is `1` when the predicate holds:
+A rolling window also has a two-argument shorthand. Each form is exactly the `SINCE T-N` aggregate beside it, and `N` must be a positive integer literal:
+
+<!-- qkt-doc: grammar -->
+```qkt
+sum(<expr>, N)          -- sum(<expr>) SINCE T-N
+mean(<expr>, N)         -- mean(<expr>) SINCE T-N
+avg(<expr>, N)          -- mean(<expr>) SINCE T-N
+count(<condition>, N)   -- sum(CASE WHEN <condition> THEN 1 ELSE 0 END) SINCE T-N
+```
+
+`max(a, b)` and `min(a, b)` keep meaning the larger and smaller of two values; for a rolling extreme use `max(<expr>) SINCE T-N` or the `highest` / `lowest` indicators (which exclude the current bar). A `SINCE T-N` window adds `N` bars to its stream's automatic warmup.
 
 ```qkt
-LET pct_up_days = sum(CASE WHEN btc.close > btc.close[1] THEN 1 ELSE 0 END) SINCE T-20 / 20
-WHEN pct_up_days > 0.7 THEN LOG "70%+ of last 20 bars up"
+STRATEGY rolling_count VERSION 1
+SYMBOLS
+    btc = BACKTEST:BTCUSDT EVERY 1d
+LET pct_up_days = count(btc.close > btc.close[1], 20) / 20
+RULES
+    WHEN pct_up_days > 0.7 THEN LOG "70%+ of last 20 bars up"
 ```
 
 ## Null handling

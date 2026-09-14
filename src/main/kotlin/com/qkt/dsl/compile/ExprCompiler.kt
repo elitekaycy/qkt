@@ -855,6 +855,9 @@ class ExprCompiler(
                         "bid" -> candle.bid
                         "ask" -> candle.ask
                         "spread" -> candle.spread
+                        // Bar start time in epoch milliseconds (#1130), the same instant the
+                        // bar-keyed tooling and reports use.
+                        "timestamp" -> BigDecimal.valueOf(candle.startTime)
                         else -> error("unreachable")
                     }
                 if (fieldValue == null) Value.Undefined else Value.Num(fieldValue)
@@ -882,7 +885,7 @@ class ExprCompiler(
 
     companion object {
         val CANDLE_FIELDS: Set<String> =
-            setOf("close", "open", "high", "low", "volume", "price", "bid", "ask", "spread", "value")
+            setOf("close", "open", "high", "low", "volume", "price", "bid", "ask", "spread", "value", "timestamp")
         val META_FIELDS: Set<String> =
             setOf(
                 "tick_size",
