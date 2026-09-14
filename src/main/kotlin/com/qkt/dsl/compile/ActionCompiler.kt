@@ -61,16 +61,24 @@ class ActionCompiler(
     /** Default resize deadband: skip a resize whose `|target - current|` is under 5% of target. */
     private val defaultMinStepFraction = BigDecimal("0.05")
 
-    fun compile(action: ActionAst): (EvalContext) -> List<Signal> =
+    /**
+     * [ruleAlias] is the stream the enclosing rule evaluates on. Expressions that keep per-bar
+     * state keyed to that stream (a `SINCE` aggregate, and so `count(x, N)`) need it to know
+     * which bars to fold; without it they refuse to compile.
+     */
+    fun compile(
+        action: ActionAst,
+        ruleAlias: String? = null,
+    ): (EvalContext) -> List<Signal> =
         when (action) {
             is Buy -> compileBuySell(action.stream, action.opts, Side.BUY)
             is Sell -> compileBuySell(action.stream, action.opts, Side.SELL)
-            is Log -> compileLog(action)
+            is Log -> compileLog(action, ruleAlias)
             is Close -> compileClose(action.stream)
             is CloseAll -> compileCloseAll()
             is Cancel -> compileCancel(action.stream)
             is CancelAll -> compileCancelAll()
-            is Block -> compileBlock(action)
+            is Block -> compileBlock(action, ruleAlias)
             is OcoEntry -> compileOcoEntry(action)
             is Latch -> { ec ->
                 listOf(Signal.ArmLatch(latchCompiler.compile(action, ec.strategyContext.strategyId), ec))
@@ -259,8 +267,11 @@ class ActionCompiler(
         }
     }
 
-    private fun compileBlock(action: Block): (EvalContext) -> List<Signal> {
-        val children = action.actions.map { compile(it) }
+    private fun compileBlock(
+        action: Block,
+        ruleAlias: String?,
+    ): (EvalContext) -> List<Signal> {
+        val children = action.actions.map { compile(it, ruleAlias) }
         return { ctx ->
             val out = mutableListOf<Signal>()
             for (child in children) out.addAll(child(ctx))
@@ -377,13 +388,18 @@ class ActionCompiler(
                 .map { Signal.CancelPendingForSymbol(it) }
         }
 
-    private fun compileLog(log: Log): (EvalContext) -> List<Signal> {
+    private fun compileLog(
+        log: Log,
+        ruleAlias: String?,
+    ): (EvalContext) -> List<Signal> {
         val placeholders = LOG_PLACEHOLDER_REGEX.findAll(log.messageFormat).map { it.groupValues[1] }.toSet()
         val unmatched = placeholders - log.fields.keys
         check(unmatched.isEmpty()) {
             "LOG placeholder(s) without matching field: ${unmatched.joinToString()}"
         }
-        val compiledFields = log.fields.mapValues { (_, expr) -> exprCompiler.compile(expr) }
+        // With the rule's stream, a LOG field may read an aggregate (`mean(x) SINCE T-10`, `count(c, N)`),
+        // which used to fail to compile with "Aggregate requires rule symbol context".
+        val compiledFields = log.fields.mapValues { (_, expr) -> exprCompiler.compile(expr, ruleAlias) }
         return { ctx ->
             val resolved = compiledFields.mapValues { (_, ce) -> ce.evaluate(ctx) }
             val rendered = renderLogMessage(log.messageFormat, resolved)
