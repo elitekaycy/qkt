@@ -8,10 +8,13 @@ import com.qkt.common.Money
 import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.Side
 import com.qkt.events.BrokerEvent
+import com.qkt.events.TickEvent
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.StopLossSpec
 import com.qkt.execution.TimeInForce
 import com.qkt.marketdata.MarketPriceTracker
+import com.qkt.marketdata.Tick
+import com.qkt.persistence.NoopStatePersistor
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -127,5 +130,84 @@ class OrderManagerAttachedBracketCloseTest {
 
         assertThat(om.activeOrders()).isEmpty()
         assertThat(broker.submits).hasSize(1)
+    }
+
+    @Test
+    fun `armed trail wrapper completes when its held engine stop fires and fills`() {
+        // The engine-held stop fires a close-by-ticket and the venue fills it. That fill is the
+        // position's exit exactly like a venue-side close is: the wrapper must complete and
+        // release its exposure instead of staying pending until the next restart retires it.
+        val clock = FixedClock(0L)
+        val bus = newBus(clock)
+        val broker = FakeBroker(bus, clock, attachCaps)
+        val om = OrderManager(broker, bus, MarketPriceTracker(), clock)
+
+        om.submit(
+            bracket(StopLossSpec.ArmedTrail(trailDistance = Money.of("5"), mfeThreshold = Money.of("10"))),
+        )
+        broker.emitFill(broker.submits.single(), price = Money.of("100"))
+        assertThat(om.activeOrders().map { it.id }).containsExactlyInAnyOrder("b1", "b1-sl")
+
+        // Arm (MFE 10 ≥ threshold → trail at 110−5=105), then drop through the trail.
+        bus.publish(TickEvent(Tick("X", Money.of("110"), 1L)))
+        bus.publish(TickEvent(Tick("X", Money.of("104"), 2L)))
+        val close = broker.submits.first { it.id == "b1-sl" }
+        broker.emitFill(close, price = Money.of("104"))
+
+        assertThat(om.activeOrders()).isEmpty()
+    }
+
+    @Test
+    fun `restoring a persisted attached armed-trail bracket before any quote anchors its stop on the replayed fill`() {
+        // Live 2026-09-14 (pr-live-007 restart): a Market-entry bracket with an engine-managed
+        // stop was persisted while its position was open. On restart the strategy failed to
+        // deploy with "Cannot estimate entry price ... no last price" and retried forever,
+        // because the quote only starts once the strategy is deployed.
+        val clock = FixedClock(0L)
+        val bus = newBus(clock)
+        val broker = FakeBroker(bus, clock, attachCaps)
+        val persistor = NoopStatePersistor()
+        val request =
+            OrderRequest.Bracket(
+                id = "b1",
+                symbol = "X",
+                side = Side.BUY,
+                quantity = Money.of("1"),
+                entry =
+                    OrderRequest.Market(
+                        id = "e1",
+                        symbol = "X",
+                        side = Side.BUY,
+                        quantity = Money.of("1"),
+                        timeInForce = TimeInForce.GTC,
+                        timestamp = 0L,
+                        strategyId = "alpha",
+                    ),
+                takeProfit = Money.of("120"),
+                stopLoss = StopLossSpec.ArmedTrail(trailDistance = Money.of("5"), mfeThreshold = Money.of("10")),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 0L,
+                strategyId = "alpha",
+            )
+        persistor.savePendingOrders("alpha", mapOf("b1" to request))
+        val om = OrderManager(broker, bus, MarketPriceTracker(), clock, persistor = persistor)
+
+        om.restore(listOf("alpha"))
+        assertThat(om.activeOrders().map { it.id }).contains("e1")
+
+        // Venue recovery replays the open position as the entry's fill; the stop anchors on it.
+        bus.publish(
+            BrokerEvent.OrderFilled(
+                clientOrderId = "e1",
+                brokerOrderId = "tkt-1",
+                symbol = "X",
+                side = Side.BUY,
+                price = Money.of("100"),
+                quantity = Money.of("1"),
+                strategyId = "alpha",
+                timestamp = clock.now(),
+            ),
+        )
+        assertThat(om.activeOrders().map { it.id }).contains("b1-sl")
     }
 }
