@@ -59,4 +59,26 @@ class StreamTimestampFieldTest {
             ).run()
         }.hasMessageContaining("series field must be numeric")
     }
+
+    @Test
+    fun `a LOG field may read an aggregate and the rolling shorthand`() {
+        // Used to fail to compile: "Aggregate requires rule symbol context".
+        val src =
+            """
+            STRATEGY log_agg VERSION 1
+            SYMBOLS
+              b = BACKTEST:BTCUSDT EVERY 1m
+            LET up3 = count(b.close > b.open, 3)
+            RULES
+              WHEN b.close > 0
+              THEN LOG "avg={a} up={u} since={m}" a=avg(b.close, 3) u=up3 m=mean(b.close) SINCE T-2
+            """.trimIndent()
+        val result =
+            Backtest(
+                strategies = listOf("log_agg" to compile(src)),
+                ticks = ticks(),
+                candleWindow = TimeWindow.ONE_MINUTE,
+            ).run()
+        assertThat(result.trades).isEmpty()
+    }
 }

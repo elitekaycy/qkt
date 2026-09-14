@@ -160,7 +160,7 @@ class AstCompiler {
                         ?: error("Unknown stream alias: $ruleAlias")
                 val compiledCond = exprCompiler.compile(cond, ruleAlias = ruleAlias)
                 val mergedAction = resolver.resolve(mergeDefaults(rule.action, ast.defaults))
-                val action = actionCompiler.compile(mergedAction)
+                val action = actionCompiler.compile(mergedAction, ruleAlias)
                 val isBuy = primary is Buy
                 val isSell = primary is Sell
                 CompiledRule(
