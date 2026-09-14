@@ -9,7 +9,7 @@ Without `SCHEDULE`, the only way to express "act at 09:00" is to write a tick-dr
 ```qkt
 RULES
     WHEN NOW.minute_utc = 0 AND NOW.hour_utc = 9
-    THEN BUY gold ...
+    THEN BUY gold SIZING 0.1
 ```
 
 Two ways that goes wrong:
@@ -21,6 +21,7 @@ Two ways that goes wrong:
 
 ## Shape
 
+<!-- qkt-doc: grammar -->
 ```qkt
 SCHEDULE
     AT 09:00 UTC                  THEN <action>
@@ -53,8 +54,10 @@ The multi-time `AT` list is first-class — session strategies routinely need 3-
 SCHEDULE
     AT 08:00 LONDON THEN LOG "ldn-open"
     AT 13:30 NY     THEN BUY gold SIZING 0.1
-    AT 21:00 UTC    THEN CLOSE_ALL gold
+    AT 21:00 UTC    THEN CLOSE gold
+```
 
+```qkt
 -- List in one clause: same action at multiple times
 SCHEDULE
     AT 09:00, 12:00, 14:00 UTC THEN LOG "midday checkpoint"
@@ -101,8 +104,8 @@ SYMBOLS
     gold = EXNESS:XAUUSD EVERY 1m
 
 SCHEDULE
-    EVERY DAY AT 19:55 UTC THEN BUY gold SIZING 0.05 BRACKET { ... }
-    EVERY DAY AT 21:00 UTC THEN CLOSE_ALL gold
+    EVERY DAY AT 19:55 UTC THEN BUY gold SIZING 0.05 BRACKET { STOP LOSS BY 5, TAKE PROFIT BY 10 }
+    EVERY DAY AT 21:00 UTC THEN CLOSE gold
 
 RULES
     WHEN gold.spread > 50 THEN LOG "wide spread"
@@ -113,21 +116,20 @@ RULES
 
 ### Conditional fire at scheduled time
 
-The action body uses the same grammar as `RULES`, so a `CASE` can filter at fire time:
+A `SCHEDULE` clause is a trigger and one action (`AT|EVERY ... THEN <action>`); it takes no condition, and `CASE` is an expression, not an action. To act at a time only when a condition holds, write a rule gated on `NOW`:
 
 ```qkt
-SCHEDULE
-    EVERY DAY AT 09:00 UTC THEN
-        CASE WHEN ema(gold.close, 9) > ema(gold.close, 21) THEN BUY gold SIZING 0.1
-             ELSE LOG "no signal at 09:00"
-        END
+RULES
+    WHEN NOW.hour_utc = 9 AND NOW.minute_utc = 0
+     AND ema(gold.close, 9) > ema(gold.close, 21)
+    THEN BUY gold SIZING 0.1
 ```
 
 ## What's NOT in this phase
 
 - **`LOCAL` timezone tag** — deferred. Use explicit IANA names.
 - **`BROKER` timezone wiring** — the keyword parses but throws at registration. Needs `serverTzOffset` config support in `qkt.config.yaml` broker profiles, which lands in a follow-up.
-- **State between fires** — the pattern "observe an EMA at 09:00, act on the observation at 21:00" needs a mutable-`LET` `SET` action that hasn't shipped yet. Today the closest is to re-evaluate the condition at the action time inside a `CASE`. File an issue if you have a concrete use case.
+- **State between fires** — the pattern "observe an EMA at 09:00, act on the observation at 21:00" needs a mutable-`LET` `SET` action that hasn't shipped yet. Today the closest is to re-evaluate the condition at the action time in a `NOW`-gated rule. File an issue if you have a concrete use case.
 - **Sub-minute granularity** — no `EVERY MINUTE` or seconds-level recurrence. Deferred.
 - **Cron syntax** — `0 0 * * *` is not supported. English forms keep the DSL readable.
 - **Sub-second live timing** — live uses a 1Hz heartbeat during quiet markets, so it does not promise sub-second placement.
