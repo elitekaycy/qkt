@@ -112,7 +112,9 @@ class Mt5BarFetcher(
                         Tick(
                             symbol = symbol,
                             // Quote-driven instruments report last = 0: same mid fallback as the live feed.
-                            price = (if (tick.last.signum() > 0) tick.last else tick.mid).setScale(Money.SCALE, Money.ROUNDING),
+                            price =
+                                (if (tick.last.signum() > 0) tick.last else tick.mid)
+                                    .setScale(Money.SCALE, Money.ROUNDING),
                             timestamp = tick.brokerTimeMs,
                             bid = tick.bid,
                             ask = tick.ask,

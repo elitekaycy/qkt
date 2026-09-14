@@ -62,7 +62,11 @@ class LegBookReconciler(
             brokerPositions.isEmpty() && persisted != null -> {
                 if (persisted.legs.isEmpty()) {
                     // An empty persisted book and no venue positions agree; nothing to wipe (#1103).
-                    log.debug("Reconcile: persisted state for {}/{} is empty and broker reports no positions", strategyId, symbol)
+                    log.debug(
+                        "Reconcile: persisted state for {}/{} is empty and broker reports no positions",
+                        strategyId,
+                        symbol,
+                    )
                 } else {
                     log.warn(
                         "Reconcile: persisted state for $strategyId/$symbol exists but broker reports no positions; wiping persisted state",
