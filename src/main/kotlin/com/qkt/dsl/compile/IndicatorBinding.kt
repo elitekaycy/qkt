@@ -85,6 +85,7 @@ class IndicatorBinding private constructor(
                         "high" -> ctx.candle.high
                         "low" -> ctx.candle.low
                         "volume" -> ctx.candle.volume
+                        "timestamp" -> BigDecimal.valueOf(ctx.candle.startTime)
                         else ->
                             error(
                                 "Numeric indicator on stream '$streamAlias' requires a numeric field; got '$field'",
@@ -333,7 +334,13 @@ class IndicatorBinding private constructor(
         ): IndicatorBinding =
             when (spec.inputKind) {
                 IndicatorInput.NUMERIC_SERIES -> {
-                    require(seriesArg.field in setOf("close", "value", "open", "high", "low", "volume", "price")) {
+                    // A bar time is not a price series: only a lookback (`btc.timestamp[3]`, which
+                    // lowers to lag) may read it; `ema(btc.timestamp, 9)` stays an error (#1130).
+                    val timestampLookback = seriesArg.field == "timestamp" && call.name.equals("LAG", ignoreCase = true)
+                    require(
+                        timestampLookback ||
+                            seriesArg.field in setOf("close", "value", "open", "high", "low", "volume", "price"),
+                    ) {
                         "Indicator ${call.name} series field must be numeric: got ${seriesArg.field}"
                     }
                     streamFed(call, ind, seriesArg.stream, seriesArg.field, spec.inputKind)

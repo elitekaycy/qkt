@@ -217,9 +217,13 @@ class BrokerStatePoller(
                 // Its opening deal on the same position does; remember that owner so the
                 // close that follows in this very fetch resolves through the ticket map.
                 if (strategyId != null && d.entry == "IN") attribution.record(d.positionTicket, strategyId)
-                if (deployed.isEmpty() || strategyId in deployed) {
-                    sink.offer(InsightsTranslate.brokerDeal(d, strategyId))
-                }
+                // Attribution is metadata, never a gate (#1143). A close whose opening deal this
+                // process never saw (restart, retired strategy, SL/TP comment rewrite, manual
+                // close) is still a real deal on the account: send it with no strategy and let
+                // the collector inherit the owner from the stored opening deal on the same
+                // position. Dropping it here lost those closes permanently, because the deal
+                // watermark moves past it and it is never fetched again.
+                sink.offer(InsightsTranslate.brokerDeal(d, strategyId))
                 if (d.ts > newest) newest = d.ts
             }
             // A quiet account must still advance its watermark, or the whole backfill
