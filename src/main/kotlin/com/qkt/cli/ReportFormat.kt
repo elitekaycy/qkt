@@ -143,6 +143,8 @@ object ReportPrinter {
             out.println("  execution: ${it.preset} (${it.broker})")
             it.fillPriceSource?.let { v -> out.println("  fills:     $v") }
             it.latencyModel?.let { v -> out.println("  latency:   $v") }
+            it.stopLatencyModel?.let { v -> out.println("  stop delay: $v") }
+            it.takeProfitFillModel?.let { v -> out.println("  tp fill:   $v") }
             it.slippageModel?.let { v -> out.println("  slippage:  $v") }
             it.rejectionModel?.let { v -> out.println("  rejects:   $v") }
             it.partialFillModel?.let { v -> out.println("  partials:  $v") }
