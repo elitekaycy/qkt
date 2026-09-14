@@ -996,7 +996,8 @@ class ActionCompiler(
         val stackAst = opts.stack ?: error("unreachable")
         val tif = TifTranslator.translate(opts.tif)
         val staticStopDistance = resolveStaticStopDistance(opts.bracket?.stopLoss)
-        val compiledStopLoss = opts.bracket?.stopLoss?.let { childPriceResolver.compileStopLoss(it) }
+        val compiledStopLoss =
+            opts.bracket?.stopLoss?.let { childPriceResolver.compileStopLoss(it, allowExpressionDistances = false) }
         val frozenOuterSL = opts.bracket?.stopLoss?.let { childPriceFreezer.prepare(it) }
         val frozenOuterTP = opts.bracket?.takeProfit?.let { childPriceFreezer.prepare(it) }
         val plan = StackCompiler.compile(stackAst, opts.sizing, opts.bracket, side)

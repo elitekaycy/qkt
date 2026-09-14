@@ -34,26 +34,65 @@ class ChildPriceResolverArmedTrailTest {
         assertThat(armed.mfeThreshold).isEqualByComparingTo("10")
     }
 
+    private fun ec(close: String) =
+        EvalContext(
+            candle =
+                com.qkt.marketdata.Candle(
+                    "BACKTEST:G",
+                    BigDecimal(close),
+                    BigDecimal(close),
+                    BigDecimal(close),
+                    BigDecimal(close),
+                    BigDecimal.ZERO,
+                    0L,
+                    60_000L,
+                ),
+            streams = mapOf("g" to HubKey("BACKTEST", "G", "1m")),
+            lets = emptyMap(),
+            strategyContext = com.qkt.strategy.testStrategyContext(),
+        )
+
     @Test
-    fun `non-literal trail distance is rejected at compile time`() {
+    fun `an expression trail distance and threshold are evaluated when the order is built (#1116)`() {
         val ast =
             ChildArmedTrail(
                 trailDistance = StreamFieldRef("g", "close"),
                 mfeThreshold = NumLit(BigDecimal("10")),
             )
-        assertThatThrownBy { resolver.compileStopLoss(ast) }
-            .hasMessageContaining("literal")
+        val compiled = resolver.compileStopLoss(ast)
+        assertThat(compiled).isInstanceOf(CompiledStopLoss.Dynamic::class.java)
+        val spec =
+            (compiled as CompiledStopLoss.Dynamic).evaluate(
+                ec("4.5"),
+                com.qkt.common.Side.BUY,
+                BigDecimal("100"),
+            )
+        assertThat(
+            spec,
+        ).isEqualTo(StopLossSpec.ArmedTrail(trailDistance = BigDecimal("4.5"), mfeThreshold = BigDecimal("10")))
     }
 
     @Test
-    fun `non-literal threshold is rejected at compile time`() {
+    fun `an expression that evaluates to a value the spec rejects skips the order instead of throwing`() {
         val ast =
             ChildArmedTrail(
                 trailDistance = NumLit(BigDecimal("5")),
                 mfeThreshold = StreamFieldRef("g", "close"),
             )
-        assertThatThrownBy { resolver.compileStopLoss(ast) }
-            .hasMessageContaining("literal")
+        val compiled = resolver.compileStopLoss(ast) as CompiledStopLoss.Dynamic
+        // A negative MFE threshold is invalid: no stop spec, so the order is skipped.
+        assertThat(compiled.evaluate(ec("-1"), com.qkt.common.Side.BUY, BigDecimal("100"))).isNull()
+    }
+
+    @Test
+    fun `a STACK bracket still requires literal trail operands`() {
+        val ast =
+            ChildArmedTrail(
+                trailDistance = StreamFieldRef("g", "close"),
+                mfeThreshold = NumLit(BigDecimal("10")),
+            )
+        assertThatThrownBy { resolver.compileStopLoss(ast, allowExpressionDistances = false) }
+            .hasMessageContainingAll("TRAILING <distance>", "numeric literal", "STACK")
     }
 
     @Test
