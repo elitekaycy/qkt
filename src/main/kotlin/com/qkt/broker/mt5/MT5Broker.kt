@@ -2082,6 +2082,17 @@ class MT5Broker(
                     log.info(
                         "MT5Broker ${profile.name} recovery: leg ${a.order.id} ticket=${a.position.ticket} already booked; not republishing",
                     )
+                    // Hand the restored order its venue ticket without republishing the execution:
+                    // OrderManager uses it to recognise the entry as position-backed (already
+                    // filled and booked) instead of leaving it working for the rest of the session.
+                    bus.publish(
+                        BrokerEvent.OrderAccepted(
+                            clientOrderId = a.order.id,
+                            brokerOrderId = a.position.ticket.toString(),
+                            strategyId = a.order.request.strategyId,
+                            timestamp = clock.now(),
+                        ),
+                    )
                     continue
                 }
                 log.info(
