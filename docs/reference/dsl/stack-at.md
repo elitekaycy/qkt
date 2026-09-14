@@ -8,6 +8,7 @@ This is the multi-leg pattern from the production hedge-straddle: a directional 
 
 ## Shape
 
+<!-- qkt-doc: grammar -->
 ```qkt
 BUY <stream> SIZING <primary_size>
     BRACKET { STOP LOSS BY <p>, TAKE PROFIT BY <q> }
@@ -108,6 +109,7 @@ PnL realizes on the stack's qty × distance, independently of the primary's PnL.
 
 The threshold supports compile-time-constant arithmetic — literals and `+`/`-`/`*`/`/` over literals. References, indicators, and `NOW.<field>` are rejected to keep the per-tick path cheap:
 
+<!-- qkt-doc: grammar -->
 ```qkt
 STACK_AT MFE >= 10 WITHIN 30m                  -- literal: OK
 STACK_AT MFE >= 5 * 2 WITHIN 30m               -- compile-folded to 10: OK
@@ -125,14 +127,14 @@ STACK_AT MFE >= atr(gold, 14) WITHIN 30m       -- rejected at compile time
 
 ```qkt
 WHEN POSITION.gold.mfe > 25
-THEN LOG "primary is up 25+ points" mfe=POSITION.gold.mfe
+THEN LOG "primary is up {excursion} points" excursion=POSITION.gold.mfe
 ```
 
 `POSITION.<stream>.mae` returns the primary leg's current MAE in price units:
 
 ```qkt
 WHEN POSITION.gold.mae > 20
-THEN LOG "primary drawdown over 20 points" mae=POSITION.gold.mae
+THEN LOG "primary drawdown is {excursion} points" excursion=POSITION.gold.mae
 ```
 
 Both accessors return `0` if no primary leg exists.

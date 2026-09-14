@@ -28,6 +28,7 @@ WHEN ACCOUNT.realized_pnl < -1000 THEN FLATTEN   -- daily loss kill switch
 
 The entry verbs. Both take the same set of modifiers.
 
+<!-- qkt-doc: grammar -->
 ```qkt
 BUY <stream>
     [ SIZING <size_spec> ]
@@ -46,7 +47,7 @@ Trailing-stop order types ship as `ORDER_TYPE = TRAILING BY <distance>` and `ORD
 
 ```qkt
 WHEN ema(btc.close, 9) CROSSES ABOVE ema(btc.close, 21)
-THEN BUY btc
+THEN BUY btc SIZING 0.1
 ```
 
 This is valid only if `DEFAULTS { sizing = ... }` is set (otherwise the parser complains). Sizing is the only field without a sensible compile-time default.
@@ -70,13 +71,13 @@ BUY btc
 By default `BUY`/`SELL` submit market orders. To submit a limit order:
 
 ```qkt
-BUY btc SIZING 0.1 LIMIT AT 67000      -- limit order at $67,000
+BUY btc SIZING 0.1 ORDER_TYPE = LIMIT AT 67000      -- limit order at $67,000
 ```
 
 To submit a stop entry (buy on breakout above a level):
 
 ```qkt
-BUY btc SIZING 0.1 STOP AT 67500       -- triggers when price hits $67,500
+BUY btc SIZING 0.1 ORDER_TYPE = STOP AT 67500       -- triggers when price hits $67,500
 ```
 
 !!! info "Stop-limit and if-touched coming in Phase 25"
@@ -140,7 +141,7 @@ that plain `BUY`/`SELL` opens; pair it with the `CLOSE`-rule stop above.
 
 ```qkt
 WHEN ACCOUNT.equity < 5000
-THEN CLOSE_ALL
+THEN CLOSE_ALL ;
      LOG WARN "equity below safety threshold — flattening"
 ```
 
@@ -157,7 +158,7 @@ Use case: a STACK strategy with unfilled layers — you want to cancel the rest 
 
 ```qkt
 WHEN regime_changed
-THEN CANCEL btc      -- abandon unfilled stack layers
+THEN CANCEL btc ;    -- abandon unfilled stack layers
      CLOSE btc       -- close the already-filled portion
 ```
 
@@ -248,6 +249,7 @@ orders.
 
 Inside a hook, a pending entry can be relative to the exit price:
 
+<!-- qkt-doc: grammar -->
 ```qkt
 ORDER_TYPE = LIMIT WITH 30
 ORDER_TYPE = STOP AGAINST 20
@@ -271,6 +273,7 @@ The one-level nesting limit prevents an accidental infinite stop-and-reverse loo
 
 Emits a structured log line. Three levels (`INFO`, `WARN`, `ERROR`, `DEBUG`) and optional structured fields.
 
+<!-- qkt-doc: grammar -->
 ```qkt
 LOG [LEVEL] "<msg>" [<key>=<expr> ...]
 ```
@@ -292,12 +295,12 @@ Output (with the default logback config):
 `{name}` placeholders in the message string get filled from the structured fields:
 
 ```qkt
-THEN LOG "long entry at {price} with stop at {stop}"
+THEN LOG "long entry at {price} with stop at {stopPrice}"
      price=btc.close
-     stop=btc.close - atr(btc, 14) * 2
+     stopPrice=btc.close - atr(btc, 14) * 2
 ```
 
-The `{price}` and `{stop}` in the string are replaced with the evaluated values. The fields **also** appear in the JSON output (if you're using structured logging) under `log.price` and `log.stop`.
+The `{price}` and `{stopPrice}` in the string are replaced with the evaluated values. The fields **also** appear in the JSON output (if you're using structured logging) under `log.price` and `log.stopPrice`.
 
 ### Levels
 
@@ -332,8 +335,8 @@ When you stack modifiers on a `BUY`/`SELL`, the order matters but the parser is 
 
 1. `<stream>` (required)
 2. `SIZING <spec>` (or inherited from `DEFAULTS`)
-3. Order-type modifier (`LIMIT AT`, `STOP AT`) — defaults to market
-4. `BRACKET { ... }` (or `STOP_LOSS ... TAKE_PROFIT ...` bare)
+3. Order-type modifier (`ORDER_TYPE = LIMIT AT <price>`, `ORDER_TYPE = STOP AT <price>`) — defaults to market
+4. `BRACKET { STOP_LOSS ..., TAKE_PROFIT ... }` — both legs are required
 5. `STACK <n> SPACING <points> ABOVE|BELOW [WITHIN <duration>]` — pyramiding
 6. `STACK_AT MFE >= <threshold> WITHIN <duration> SIZING <qty> BRACKET { ... }` or `STACK_AT MAE >= <threshold> RECOVER <distance> WITHIN <duration> ...` — conditional bracketed stacks (multiple per action allowed; see [STACK_AT](stack-at.md))
 7. `TIMES <expression>` — repeat the whole entry N times (see [TIMES](times.md))
@@ -348,10 +351,8 @@ The most common patterns:
 BUY btc SIZING 0.1 BRACKET { STOP_LOSS BY 1 PCT, TAKE_PROFIT BY 2 PCT }
 
 -- Limit entry with bracket
-BUY btc SIZING 0.1 LIMIT AT 67000 BRACKET { ... }
+BUY btc SIZING 0.1 ORDER_TYPE = LIMIT AT 67000 BRACKET { STOP_LOSS BY 300, TAKE_PROFIT BY 600 }
 
--- Bare stop (no take-profit, exit via rule)
-BUY btc SIZING 0.1 STOP_LOSS AT btc.close - atr(btc, 14) * 2
 
 -- Stacked with shared bracket
 BUY btc SIZING 0.1 STACK 3 SPACING 200 ABOVE WITHIN 4h

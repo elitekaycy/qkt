@@ -4,6 +4,7 @@ A **stream** is a single instrument on a single venue at a single timeframe. The
 
 ## Shape
 
+<!-- qkt-doc: grammar -->
 ```qkt
 SYMBOLS
     <alias> = <BROKER>:<symbol> EVERY <timeframe>
@@ -142,13 +143,14 @@ btc.high          -- high
 btc.low           -- low
 btc.close         -- close
 btc.volume        -- volume
-btc.bid           -- best bid from the last tick in the window (live feeds only)
-btc.ask           -- best ask from the last tick in the window (live feeds only)
-btc.spread        -- ask - bid (live feeds only)
-btc.timestamp     -- candle start time (ms since epoch)
+btc.bid           -- best bid from the last tick in the window (quote feeds only)
+btc.ask           -- best ask from the last tick in the window (quote feeds only)
+btc.spread        -- ask - bid (quote feeds only)
 ```
 
-`bid`, `ask`, and `spread` are populated only on feeds that carry a quote — live MT5 streams do, backtest/historical feeds do not. When a quote is unavailable they resolve to undefined and a condition referencing them does not fire (the same null-tolerant behaviour as out-of-range lookback). They are the quote from the last tick before the candle closed — the freshest value the engine holds, not the live quote at order-placement instant.
+There is no `btc.timestamp` field. For time, use [`NOW`](now.md), the strategy's clock in epoch milliseconds.
+
+`bid`, `ask`, and `spread` are populated only on feeds that carry a quote: live MT5 streams, and tick backtests over quote data (bid/ask ticks). A backtest over bars, or over trade-only ticks, has no quote. When a quote is unavailable they resolve to undefined and a condition referencing them does not fire (the same null-tolerant behaviour as out-of-range lookback). They are the quote from the last tick before the candle closed — the freshest value the engine holds, not the live quote at order-placement instant.
 
 For historical lookback (the N-th candle ago):
 
@@ -200,7 +202,7 @@ SYMBOLS
     eth = BACKTEST:ETHUSDT EVERY 1m
     sol = BACKTEST:SOLUSDT EVERY 1m
 
-FOR EACH s IN btc, eth, sol DO
+FOR EACH s IN [btc, eth, sol] DO
     WHEN ema(s.close, 9) CROSSES ABOVE ema(s.close, 21)
     THEN BUY s SIZING 0.1
 ```

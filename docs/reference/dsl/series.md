@@ -10,11 +10,12 @@ SYMBOLS
 RULES
   WHEN gold.close > ema(gold.close, 20)
    AND eq.close > ema(eq.close, 24)
-  THEN BUY gold SIZING 0.5 PCT RISK
+  THEN BUY gold SIZING 0.5 PCT RISK BRACKET { STOP LOSS BY 5, TAKE PROFIT BY 10 }
 ```
 
 ## Account equity
 
+<!-- qkt-doc: grammar -->
 ```qkt
 <alias> = SERIES ACCOUNT.EQUITY EVERY <timeframe>
 ```

@@ -4,6 +4,7 @@ A `BRACKET` attaches a stop-loss and a take-profit to an entry as one atomic gro
 
 ## Shape
 
+<!-- qkt-doc: grammar -->
 ```qkt
 BUY <stream> SIZING <size>
     BRACKET {
@@ -14,6 +15,7 @@ BUY <stream> SIZING <size>
 
 Or, less verbose, the bare form (without the `BRACKET { ... }` wrapper) when you only need a stop:
 
+<!-- qkt-doc: grammar -->
 ```qkt
 BUY <stream> SIZING <size>
     STOP_LOSS <distance_or_price>
@@ -201,9 +203,9 @@ If most of your strategies use the same bracket pattern, hoist it:
 
 ```qkt
 DEFAULTS {
-  sizing = 0.1
-  stopLoss = atr(SYMBOL, 14) * 2          -- 2-ATR stop
-  takeProfit = atr(SYMBOL, 14) * 6        -- 6-ATR target (3R)
+  SIZING = 0.1
+  STOP_LOSS = BY atr(SYMBOL, 14) * 2          -- 2-ATR stop
+  TAKE_PROFIT = BY atr(SYMBOL, 14) * 6        -- 6-ATR target (3R)
 }
 
 RULES
@@ -217,8 +219,8 @@ RULES
 
 - **Wrong side stop direction.** For a `BUY`, the stop must be **below** the entry price. The parser does check this for absolute prices but can't always check expressions (`btc.close + 100` for a long stop is a logic error). Test on backtest before live.
 - **Bracket stop too close** — MT5 brokers enforce `tradeStopsLevel` minimum distance. Orders too tight reject at the venue. Use `atr * <multiplier>` to scale; if the multiplier produces too-tight stops in low-vol regimes, the order rejects.
-- **`TRAILING_STOP` not yet shipped** — see the admonition above. Use a rule-based trail until Phase 25.
-- **Limit-entry bracket execution.** When the entry is a limit order (`BUY btc LIMIT AT 67000 BRACKET ...`), the bracket only activates after the limit fills. If the limit never fills, the bracket never sends.
+- **There is no `TRAILING_STOP` clause.** Use a trailing entry (`ORDER_TYPE = TRAILING BY <distance>`) or an armed trailing stop leg (`STOP LOSS TRAILING <distance> AFTER MFE >= <threshold>`), both above.
+- **Limit-entry bracket execution.** When the entry is a limit order (`BUY btc SIZING 0.1 ORDER_TYPE = LIMIT AT 67000 BRACKET ...`), the bracket only activates after the limit fills. If the limit never fills, the bracket never sends.
 
 ## What this composes with
 

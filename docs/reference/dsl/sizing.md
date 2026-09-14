@@ -67,7 +67,7 @@ SELL btc SIZING POSITION.btc
 Sells exactly the current position size — equivalent to `CLOSE btc`. Mostly used in scale-out logic:
 
 ```qkt
-SELL btc SIZING POSITION.btc * 0.5     -- partial close: 50% of position
+SELL btc SIZING 0.5 * POSITION.btc     -- partial close: 50% of position
 ```
 
 You can multiply, divide, or do any arithmetic on `POSITION.<stream>`.
@@ -89,7 +89,7 @@ Requires a `BRACKET` with a `STOP_LOSS` — without one the compiler rejects the
 
 ```qkt
 BUY btc SIZING 0.5 PCT RISK OF BOOK
-    BRACKET { STOP LOSS BY 500 }
+    BRACKET { STOP LOSS BY 500, TAKE PROFIT BY 1000 }
 ```
 
 `OF BOOK` is available to portfolio children and uses `CAPITAL + realized PnL` across
@@ -160,11 +160,12 @@ If most of your strategies use the same sizing, hoist it:
 
 ```qkt
 DEFAULTS {
-  sizing = 0.1
+  SIZING = 0.1
 }
 
 RULES
-    WHEN ... THEN BUY btc     -- inherits sizing = 0.1
+    WHEN ema(btc.close, 9) CROSSES ABOVE ema(btc.close, 21)
+    THEN BUY btc     -- inherits SIZING = 0.1
 ```
 
 ## Multiple sizings per stack
@@ -177,7 +178,7 @@ BUY btc STACK [
   0.10 AT entry + 200,        -- layer 2: 0.10 lots at +200
   0.15 AT entry + 400         -- layer 3: 0.15 lots at +400
 ]
-BRACKET { ... }
+BRACKET { STOP LOSS BY 300, TAKE PROFIT BY 1000 }
 ```
 
 See [STACK](stack.md).
