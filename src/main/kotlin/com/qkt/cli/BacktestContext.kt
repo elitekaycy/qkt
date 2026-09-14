@@ -309,6 +309,10 @@ class BacktestContext private constructor(
                 "--tick-fills is not valid with execution latency (${executionConfig.latencyMs}ms): " +
                     "filtered ticks cannot preserve delayed-order release timing; use full tick replay"
             }
+            require(!tickFills || executionConfig.stopLatencyMs == 0L) {
+                "--tick-fills is not valid with stop latency (${executionConfig.stopLatencyMs}ms): " +
+                    "filtered ticks cannot preserve delayed stop execution; use full tick replay"
+            }
             require(
                 !tickFills ||
                     streams
@@ -916,6 +920,17 @@ class BacktestContext private constructor(
                 }
             (args.option("execution-latency") ?: cfg.execution["latency"])?.let {
                 result = result.copy(latencyMs = parseLatencyMs(it))
+            }
+            (args.option("stop-latency") ?: cfg.execution["stop_latency"])?.let {
+                result = result.copy(stopLatencyMs = parseLatencyMs(it))
+            }
+            (args.option("tp-fill") ?: cfg.execution["tp_fill"])?.let {
+                result =
+                    result.copy(
+                        takeProfitFill =
+                            runCatching { com.qkt.broker.TakeProfitFill.fromConfig(it) }
+                                .getOrElse { e -> throw SetupError(e.message ?: "bad tp_fill '$it'") },
+                    )
             }
             (args.option("slippage") ?: cfg.execution["slippage"])?.let {
                 val (spec, points) = parseSlippage(it)
