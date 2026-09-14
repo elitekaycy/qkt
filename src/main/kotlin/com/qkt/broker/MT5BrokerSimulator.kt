@@ -6,6 +6,7 @@ import com.qkt.common.Money
 import com.qkt.common.Side
 import com.qkt.events.BrokerEvent
 import com.qkt.events.TickEvent
+import com.qkt.execution.LegIntent
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.TriggerType
 import com.qkt.instrument.InstrumentMeta
@@ -55,6 +56,15 @@ class MT5BrokerSimulator(
     private val slippage: SlippageModel = ZeroSlippage,
     private val syntheticSpreadPoints: Int = 2,
     private val latencyMs: Long = 0L,
+    /**
+     * Delay between a protective stop's trigger and its execution (#1135). The venue
+     * runs a crossed stop as a market order a beat later, so it fills at the first quote
+     * at or after `trigger + stopLatencyMs`, not the crossing print. Measured on the
+     * Exness demo: median ~260 ms; 0 keeps the on-trigger fill.
+     */
+    private val stopLatencyMs: Long = 0L,
+    /** Pricing of a gap-crossed protective take-profit; see [TakeProfitFill]. */
+    private val takeProfitFill: TakeProfitFill = TakeProfitFill.PRINT,
     private val enforceStopsLevel: Boolean = false,
     private val rejectionModel: RejectionModel = NoBrokerRejections,
     private val partialFillModel: PartialFillModel = FullFill,
@@ -72,6 +82,7 @@ class MT5BrokerSimulator(
             "syntheticSpreadPoints must be >= 0: $syntheticSpreadPoints"
         }
         require(latencyMs >= 0L) { "latencyMs must be >= 0: $latencyMs" }
+        require(stopLatencyMs >= 0L) { "stopLatencyMs must be >= 0: $stopLatencyMs" }
     }
 
     private val log = LoggerFactory.getLogger(MT5BrokerSimulator::class.java)
@@ -83,6 +94,7 @@ class MT5BrokerSimulator(
     private val toFillScratch: MutableList<OrderRequest> = mutableListOf()
     private val gtdExpiredScratch: MutableList<OrderRequest> = mutableListOf()
     private val delayedSubmissions: MutableList<DelayedSubmission> = mutableListOf()
+    private val pendingStopFills: MutableList<PendingStopFill> = mutableListOf()
     private val lastTickBySymbol: MutableMap<String, Tick> = HashMap()
     private var submittedOrdinal: Int = 0
 
@@ -169,8 +181,12 @@ class MT5BrokerSimulator(
     }
 
     override fun cancel(orderId: String) {
-        val match = working.firstOrNull { it.id == orderId }
-        val removed = working.removeAll { it.id == orderId }
+        val match =
+            working.firstOrNull { it.id == orderId }
+                ?: pendingStopFills.firstOrNull { it.request.id == orderId }?.request
+        val removedWorking = working.removeAll { it.id == orderId }
+        val removedPending = pendingStopFills.removeAll { it.request.id == orderId }
+        val removed = removedWorking || removedPending
         if (removed) {
             bus.publish(
                 BrokerEvent.OrderCancelled(
@@ -187,6 +203,7 @@ class MT5BrokerSimulator(
     fun onTick(tick: Tick) {
         lastTickBySymbol[tick.symbol] = tick
         drainDelayedSubmissions(clock.now())
+        drainPendingStopFills(tick)
         if (working.isEmpty()) return
         expireGtd(tick)
         if (working.isEmpty()) return
@@ -200,9 +217,28 @@ class MT5BrokerSimulator(
             // A synchronous fill callback may cancel an OCO sibling that is also present in
             // this tick's trigger snapshot. Never fill an order that is no longer working.
             if (!working.remove(wo)) continue
-            fillFromTrigger(wo, tick)
+            if (stopLatencyMs > 0L && isProtectiveStop(wo)) {
+                pendingStopFills.add(PendingStopFill(wo, fillAt = clock.now() + stopLatencyMs))
+            } else {
+                fillFromTrigger(wo, tick)
+            }
         }
     }
+
+    /** A crossed protective stop executes at the first quote at or after its delay (#1135). */
+    private fun drainPendingStopFills(tick: Tick) {
+        if (pendingStopFills.isEmpty()) return
+        val now = clock.now()
+        val due = pendingStopFills.filter { it.request.symbol == tick.symbol && it.fillAt <= now }
+        if (due.isEmpty()) return
+        pendingStopFills.removeAll(due.toSet())
+        for (pending in due) fillFromTrigger(pending.request, tick)
+    }
+
+    /** A stop whose job is to close a leg: bracket and stop-loss legs, not stop entries. */
+    private fun isProtectiveStop(req: OrderRequest): Boolean =
+        req.legIntent is LegIntent.Close &&
+            (req is OrderRequest.Stop || (req is OrderRequest.IfTouched && req.onTrigger == TriggerType.MARKET))
 
     private fun expireGtd(tick: Tick) {
         gtdExpiredScratch.clear()
@@ -263,6 +299,7 @@ class MT5BrokerSimulator(
                     timestamp = req.timestamp,
                     strategyId = req.strategyId,
                     expiresAt = req.expiresAt,
+                    legIntent = req.legIntent,
                 ),
                 triggeringTick,
                 meta,
@@ -281,6 +318,7 @@ class MT5BrokerSimulator(
                     timestamp = req.timestamp,
                     strategyId = req.strategyId,
                     expiresAt = req.expiresAt,
+                    legIntent = req.legIntent,
                 ),
                 triggeringTick,
                 meta,
@@ -308,13 +346,26 @@ class MT5BrokerSimulator(
         val fillPrice =
             if (limit == null) {
                 slippage.adjust(fair, req.side, meta)
-            } else if (req.side == Side.BUY) {
-                fair.min(limit)
             } else {
-                fair.max(limit)
+                limitFillPrice(req, fair, limit)
             }
         publishFill(req.id, req.symbol, req.side, fillPrice, req.quantity, req.strategyId, meta)
     }
+
+    /**
+     * A limit fills at the crossing print or its level, whichever is better — except a
+     * protective take-profit under [TakeProfitFill.LEVEL], which fills at the level (#1135).
+     */
+    private fun limitFillPrice(
+        req: OrderRequest,
+        execution: BigDecimal,
+        limit: BigDecimal,
+    ): BigDecimal =
+        when {
+            takeProfitFill == TakeProfitFill.LEVEL && req.legIntent is LegIntent.Close -> limit
+            req.side == Side.BUY -> execution.min(limit)
+            else -> execution.max(limit)
+        }
 
     private fun activateLimit(
         limit: OrderRequest.Limit,
@@ -326,8 +377,7 @@ class MT5BrokerSimulator(
                 requireNotNull(
                     sidedFillPrice(limit.side, triggeringTick, fallback = triggeringTick.price, meta),
                 )
-            val fillPrice =
-                if (limit.side == Side.BUY) execution.min(limit.limitPrice) else execution.max(limit.limitPrice)
+            val fillPrice = limitFillPrice(limit, execution, limit.limitPrice)
             publishFill(
                 limit.id,
                 limit.symbol,
@@ -557,5 +607,10 @@ class MT5BrokerSimulator(
         val request: OrderRequest,
         val ordinal: Int,
         val releaseAt: Long,
+    )
+
+    private data class PendingStopFill(
+        val request: OrderRequest,
+        val fillAt: Long,
     )
 }

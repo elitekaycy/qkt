@@ -11,6 +11,7 @@ import com.qkt.backtest.ExecutionSimulationConfig
 import com.qkt.backtest.GatedChild
 import com.qkt.backtest.ProvisionStream
 import com.qkt.backtest.SlippageSpec
+import com.qkt.broker.TakeProfitFill
 import com.qkt.broker.mt5.SymbolCalendars
 import com.qkt.candles.TimeWindow
 import com.qkt.common.FixedClock
@@ -308,6 +309,10 @@ class BacktestContext private constructor(
             require(!tickFills || executionConfig.latencyMs == 0L) {
                 "--tick-fills is not valid with execution latency (${executionConfig.latencyMs}ms): " +
                     "filtered ticks cannot preserve delayed-order release timing; use full tick replay"
+            }
+            require(!tickFills || executionConfig.stopLatencyMs == 0L) {
+                "--tick-fills is not valid with stop latency (${executionConfig.stopLatencyMs}ms): " +
+                    "filtered ticks cannot preserve delayed stop execution; use full tick replay"
             }
             require(
                 !tickFills ||
@@ -917,6 +922,12 @@ class BacktestContext private constructor(
             (args.option("execution-latency") ?: cfg.execution["latency"])?.let {
                 result = result.copy(latencyMs = parseLatencyMs(it))
             }
+            (args.option("stop-latency") ?: cfg.execution["stop_latency"])?.let {
+                result = result.copy(stopLatencyMs = parseLatencyMs(it))
+            }
+            (args.option("tp-fill") ?: cfg.execution["tp_fill"])?.let {
+                result = result.copy(takeProfitFill = parseTakeProfitFill(it))
+            }
             (args.option("slippage") ?: cfg.execution["slippage"])?.let {
                 val (spec, points) = parseSlippage(it)
                 result = result.copy(slippage = spec, slippagePoints = points)
@@ -947,6 +958,13 @@ class BacktestContext private constructor(
             }
             return result
         }
+
+        private fun parseTakeProfitFill(raw: String): TakeProfitFill =
+            try {
+                TakeProfitFill.fromConfig(raw)
+            } catch (e: IllegalStateException) {
+                throw SetupError(e.message ?: "bad tp_fill '$raw'")
+            }
 
         private fun parseLatencyMs(raw: String): Long {
             val trimmed = raw.trim().lowercase().removePrefix("fixed:")

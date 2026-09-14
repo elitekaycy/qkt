@@ -29,6 +29,8 @@ internal object CliOptionSchemas {
             "seed",
             "execution",
             "execution-latency",
+            "stop-latency",
+            "tp-fill",
             "slippage",
             "reject-every",
             "partial-fill",
