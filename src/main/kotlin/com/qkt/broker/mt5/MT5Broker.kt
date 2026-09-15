@@ -1515,13 +1515,19 @@ class MT5Broker(
                         it.symbol == brokerSymbol &&
                         matchesComment(it.comment, wireComment)
                 }
+            // An id match still has to be this order's size: colliding comments from another
+            // strategy under the same magic can carry the same id with a different volume (#1155).
             val exactMatches: List<UnknownVenueMatch> =
                 pendingCandidates
-                    .filter { it.clientOrderId == placement.clientOrderId }
-                    .map { UnknownVenueMatch.Pending(it) } +
+                    .filter {
+                        it.clientOrderId == placement.clientOrderId &&
+                            it.volume.compareTo(placement.volume) == 0
+                    }.map { UnknownVenueMatch.Pending(it) } +
                     positionCandidates
-                        .filter { it.clientOrderId == placement.clientOrderId }
-                        .map { UnknownVenueMatch.Position(it) }
+                        .filter {
+                            it.clientOrderId == placement.clientOrderId &&
+                                it.volume.compareTo(placement.volume) == 0
+                        }.map { UnknownVenueMatch.Position(it) }
             val fallbackMatches: List<UnknownVenueMatch> =
                 if (exactMatches.isEmpty()) {
                     pendingCandidates
