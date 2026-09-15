@@ -15,6 +15,7 @@ import com.qkt.marketdata.source.MarketSourceCapability
 import java.time.Instant
 import kotlin.math.abs
 import okhttp3.OkHttpClient
+import org.slf4j.LoggerFactory
 
 /**
  * [MarketSource] backed by an `mt5-gateway` HTTP endpoint. Reuses the [profile]
@@ -126,8 +127,23 @@ class Mt5MarketSource(
     ): Long? {
         val nowMs = clock.now()
         val recent = abs(range.to.toEpochMilli() - nowMs) <= RECENT_RANGE_TOLERANCE_MS
-        val inSession = symbolCalendars.calendarFor(bareSymbol).isInSession(bareSymbol, Instant.ofEpochMilli(nowMs))
-        return nowMs.takeIf { recent && inSession }
+        val calendar = symbolCalendars.calendarFor(bareSymbol)
+        val now = Instant.ofEpochMilli(nowMs)
+        val inSession = calendar.isInSession(bareSymbol, now)
+        // Inside a venue-scheduled pause (the metals close at 17:00 New York) no bar can
+        // close and no tick prints, exactly as at the weekend: an empty or stale window is
+        // the expected shape, not a server-clock offset, and there is no fresh tick to
+        // measure one against. Skip the check so the warmup loader can widen its range
+        // back to the last bars before the pause instead of failing the deploy (#1144).
+        val paused = inSession && calendar.isScheduledBreak(bareSymbol, now)
+        if (paused) {
+            log.info(
+                "{}: {} history read inside a scheduled pause; time-base validation deferred to the next in-session read",
+                name,
+                bareSymbol,
+            )
+        }
+        return nowMs.takeIf { recent && inSession && !paused }
     }
 
     private fun sleepBeforeRetry(retry: Int) {
@@ -227,6 +243,7 @@ class Mt5MarketSource(
     override fun close() {}
 
     companion object {
+        private val log = LoggerFactory.getLogger(Mt5MarketSource::class.java)
         private const val RECENT_RANGE_TOLERANCE_MS: Long = 5 * 60_000L
         private const val MIN_RECENT_BAR_AGE_MS: Long = 5 * 60_000L
     }
