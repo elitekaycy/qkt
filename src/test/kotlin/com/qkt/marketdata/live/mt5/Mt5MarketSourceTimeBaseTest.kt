@@ -5,10 +5,13 @@ import com.qkt.broker.mt5.MT5ServerTimeZone
 import com.qkt.broker.mt5.SymbolCalendars
 import com.qkt.broker.mt5.SymbolPolicy
 import com.qkt.candles.TimeWindow
+import com.qkt.common.DailyBreakCalendar
 import com.qkt.common.FixedClock
 import com.qkt.common.TimeRange
 import com.qkt.common.TradingCalendar
 import java.time.Instant
+import java.time.LocalTime
+import java.time.ZoneId
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.assertj.core.api.Assertions.assertThat
@@ -245,6 +248,51 @@ class Mt5MarketSourceTimeBaseTest {
             assertThatThrownBy { source.bars("TEST:EURUSD", TimeWindow.parse("1m"), range).toList() }
                 .isInstanceOf(IllegalArgumentException::class.java)
                 .hasMessageContaining("inSessionSlots=181")
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test
+    fun `empty history inside a scheduled pause is returned without a time-base failure`() {
+        // Live 2026-09-14 21:05Z (#1144): a 5s XAUUSD stream redeployed during the Exness metals
+        // pause (17:00-18:00 New York). Its 50s warmup window held no bar and the read was
+        // rejected as a time-base mismatch, so the deploy failed and retried until the venue
+        // reopened. The pause is modelled by the calendar; the source must hand the empty
+        // window back so WarmupHistory can widen its range to the bars before the pause.
+        val server = MockWebServer().apply { start() }
+        try {
+            // 21:05Z on a Monday in September = 17:05 New York, inside the pause and in session.
+            val range =
+                TimeRange(
+                    Instant.parse("2026-09-14T21:03:00Z"),
+                    Instant.parse("2026-09-14T21:05:00Z"),
+                )
+            val pausedMetals =
+                DailyBreakCalendar(
+                    TradingCalendar.fxDefault(),
+                    LocalTime.of(17, 0),
+                    LocalTime.of(18, 0),
+                    ZoneId.of("America/New_York"),
+                )
+            server.enqueue(MockResponse().setBody("""{"point":"0.001"}"""))
+            // Enough empty windows for the unfixed retry loop to exhaust and fail closed with
+            // "no decoded bar remained"; the fixed source consumes exactly one.
+            repeat(3) { server.enqueue(MockResponse().setBody("[]")) }
+            val source =
+                source(
+                    server,
+                    range,
+                    retryAttempts = 2,
+                    calendar = pausedMetals,
+                    serverTimeZone = MT5ServerTimeZone.UTC,
+                )
+
+            val bars = source.bars("TEST:XAUUSD", TimeWindow.parse("1m"), range).toList()
+
+            assertThat(bars).isEmpty()
+            // No time-base retry loop either: one point read plus one bar read.
+            assertThat(server.requestCount).isEqualTo(2)
         } finally {
             server.shutdown()
         }
