@@ -980,6 +980,7 @@ class LiveSession(
         // They queue here and drain, in order, once the engine loop starts.
         val running = AtomicBoolean(true)
         val stopping = AtomicBoolean(false)
+        val stopFinishing = AtomicBoolean(false)
         val clearRuleEdgesAtStop = AtomicBoolean(false)
         val control = java.util.concurrent.LinkedBlockingQueue<Inbound>()
         bus.bindSink { ev -> if (running.get()) control.put(Inbound.BusEvent(ev)) }
@@ -2180,7 +2181,9 @@ class LiveSession(
                 )
             }
 
-            override fun stop() {
+            private val drainGraceMs = if (builtBrokers.isEmpty()) 0L else STOP_DRAIN_GRACE_MS
+
+            override fun requestStop() {
                 if (!stopping.compareAndSet(false, true)) return
                 feedThread.interrupt()
                 runCatching { feed.close() }
@@ -2193,12 +2196,16 @@ class LiveSession(
                 // Stop the broker-equity poller (#352) so it doesn't outlive the session.
                 runCatching { equityPoller?.shutdownNow() }
                 tickQueue.clear()
-                val drainGraceMs = if (builtBrokers.isEmpty()) 0L else STOP_DRAIN_GRACE_MS
                 control.put(
                     Inbound.GracefulStop(
                         deadlineNanos = System.nanoTime() + drainGraceMs * 1_000_000L,
                     ),
                 )
+            }
+
+            override fun stop() {
+                requestStop()
+                if (!stopFinishing.compareAndSet(false, true)) return
                 if (!terminated.await(drainGraceMs + 500L, TimeUnit.MILLISECONDS)) {
                     running.set(false)
                     thread.interrupt()
