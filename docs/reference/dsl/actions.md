@@ -66,6 +66,13 @@ BUY btc
 
 `SELL` is identical in shape, just opens a short instead of a long.
 
+On an MT5 hedging account a plain opposite-side market `BUY`/`SELL` keeps its netting meaning:
+qkt closes the strategy's open opposite legs by ticket, oldest first, and opens only any excess
+as a new position. So `BUY btc SIZING 0.01` followed by `SELL btc SIZING 0.01` ends flat at the
+venue with one closed deal, the same as on a netting account — it does not leave two tickets
+hedged against each other. Use `CLOSE` when you mean "flatten"; use an explicit hedge (`OCO_ENTRY`
+straddle or a bracket entry) when you really want both sides open.
+
 ### Order type modifiers
 
 By default `BUY`/`SELL` submit market orders. To submit a limit order:
