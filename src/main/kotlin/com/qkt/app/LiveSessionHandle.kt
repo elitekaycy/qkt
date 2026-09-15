@@ -47,6 +47,16 @@ interface LiveSessionHandle {
     /** Initiates graceful shutdown. Use [awaitTermination] to wait for completion. */
     fun stop()
 
+    /**
+     * Signals shutdown without blocking: the session stops taking ticks and submitting orders
+     * right away, and [stop] later completes the drain and releases venue resources. A daemon
+     * stopping many sessions signals all of them first, so no session keeps trading while an
+     * earlier one drains (#1157). Defaults to [stop] for handles that never block.
+     */
+    fun requestStop() {
+        stop()
+    }
+
     /** Blocks up to [timeout] for shutdown. Returns `true` iff the session terminated in time. */
     fun awaitTermination(timeout: Duration): Boolean
 

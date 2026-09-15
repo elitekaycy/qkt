@@ -81,7 +81,8 @@ class StrategyPnL(
         val native =
             if (legs.isEmpty()) {
                 val pos = strategyPositions.positionFor(strategyId, symbol) ?: return Money.ZERO
-                price
+                val mark = prices.closingMark(symbol, pos.quantity.signum()) ?: return Money.ZERO
+                mark
                     .subtract(pos.avgEntryPrice)
                     .multiply(pos.quantity)
                     .multiply(cs)
@@ -90,7 +91,8 @@ class StrategyPnL(
                 var sum = Money.ZERO
                 for (leg in legs) {
                     val signedQty = if (leg.side == com.qkt.common.Side.BUY) leg.quantity else leg.quantity.negate()
-                    sum = sum.add(price.subtract(leg.entryPrice).multiply(signedQty).multiply(cs))
+                    val mark = prices.closingMark(symbol, signedQty.signum()) ?: price
+                    sum = sum.add(mark.subtract(leg.entryPrice).multiply(signedQty).multiply(cs))
                 }
                 sum.setScale(Money.SCALE, Money.ROUNDING)
             }

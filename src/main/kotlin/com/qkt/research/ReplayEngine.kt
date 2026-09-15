@@ -199,7 +199,7 @@ class ReplayEngine(
         require(this.cadence != SampleCadence.CANDLE_CLOSE || candleWindow != null) {
             "SampleCadence.CANDLE_CLOSE requires candleWindow"
         }
-        val ids = SequentialIdGenerator()
+        val ids = SequentialIdGenerator.forSession(strategies.map { it.first })
         val sequencer = MonotonicSequenceGenerator()
         accounting = AccountingEngine(accountingConfig, priceTracker)
         pnl = PnLCalculator(positions, priceTracker, instruments, accounting, markTimestamp = { currentTimestamp })

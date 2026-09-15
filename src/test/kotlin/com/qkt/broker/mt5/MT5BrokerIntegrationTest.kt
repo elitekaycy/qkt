@@ -499,6 +499,68 @@ class MT5BrokerIntegrationTest {
     }
 
     @Test
+    fun `an exact id match with a different volume is another strategy's fill and is not claimed`() {
+        // Two strategies under one magic that both sent `ORD-0` for different sizes: the venue
+        // position tagged with this order's id but holding 0.10 cannot be this 0.20 order.
+        val posts = AtomicInteger()
+        server.dispatcher =
+            object : okhttp3.mockwebserver.Dispatcher() {
+                override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse {
+                    val path = request.path.orEmpty()
+                    return when {
+                        path.startsWith("/order") && request.method == "POST" -> {
+                            posts.incrementAndGet()
+                            MockResponse().setResponseCode(500).setBody("gateway crashed mid-send")
+                        }
+                        path.startsWith("/orders") -> MockResponse().setBody("[]")
+                        path.startsWith("/get_positions") ->
+                            MockResponse().setBody(
+                                """[{"ticket":"4343","symbol":"EURUSDm","type":"0","volume":"0.10",""" +
+                                    """"price_open":"1.1003","sl":"0","tp":"0","profit":"0","magic":"10001",""" +
+                                    """"time_msc":"1700000000000","comment":"ORD-0",""" +
+                                    """"client_order_id":"mt5-10001-session-1700000000000-0"}]""",
+                            )
+                        else -> MockResponse().setResponseCode(404)
+                    }
+                }
+            }
+        val fastProfile =
+            MT5DefaultProfiles.exness.copy(
+                gatewayUrl = server.url("/").toString().trimEnd('/'),
+                httpTimeoutMs = 2000,
+                retryAttempts = 0,
+                pollIntervalMs = 100_000,
+                instrumentOverrides = mapOf("EXNESS:EURUSD" to TEST_EURUSD_SPEC),
+            )
+        val fastBroker =
+            MT5Broker(
+                profile = fastProfile,
+                bus = bus,
+                clock = FixedClock(time = 1_700_000_000_000L),
+                unknownResolveBackoffMs = 1L,
+            )
+        bus.subscribe<BrokerEvent.GatewayUnreachable> { captured.add(it) }
+        captured.clear()
+        fastBroker.submit(
+            OrderRequest.Market(
+                id = "ORD-0",
+                symbol = "EXNESS:EURUSD",
+                side = Side.BUY,
+                quantity = BigDecimal("0.20"),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1L,
+                strategyId = "s1",
+            ),
+        )
+        awaitCaptured { captured.any { it is BrokerEvent.GatewayUnreachable } }
+        fastBroker.shutdown()
+
+        assertThat(captured.filterIsInstance<BrokerEvent.OrderFilled>()).isEmpty()
+        assertThat(captured.filterIsInstance<BrokerEvent.OrderRejected>()).isEmpty()
+        assertThat(fastBroker.ticketAttributions()).doesNotContainKey("4343")
+    }
+
+    @Test
     fun `multiple legacy comment candidates leave the send unresolved`() {
         val posts = AtomicInteger()
         server.dispatcher =

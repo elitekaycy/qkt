@@ -404,12 +404,21 @@ class TradingPipeline(
                                             is com.qkt.strategy.Signal.Submit -> sig.exitHook
                                             else -> null
                                         }
-                                    val planned = LegIntentPlanner.plan(request, positionMode(request.symbol))
-                                    if (exitHook != null) {
-                                        exitHookManager.register(strategyId, planned, exitHook)
+                                    val mode = positionMode(request.symbol)
+                                    val openLegs =
+                                        strategyPositions.legBookFor(strategyId, request.symbol)?.all().orEmpty()
+                                    val routed = HedgedEntryRouter.route(request, mode, openLegs, ids::next)
+                                    for (leaf in routed) {
+                                        val planned = LegIntentPlanner.plan(leaf, mode)
+                                        val isClose =
+                                            planned is com.qkt.execution.OrderRequest.Market &&
+                                                planned.closesTicket != null
+                                        if (exitHook != null && !isClose) {
+                                            exitHookManager.register(strategyId, planned, exitHook)
+                                        }
+                                        exitHookManager.trackCloseRequest(strategyId, planned)
+                                        bus.publish(OrderEvent(planned))
                                     }
-                                    exitHookManager.trackCloseRequest(strategyId, planned)
-                                    bus.publish(OrderEvent(planned))
                                 }
                                 is Decision.Reject -> {
                                     ctx.submissions.recordSuppressed()
