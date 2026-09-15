@@ -7,6 +7,17 @@ interface IdGenerator {
 class SequentialIdGenerator(
     private val prefix: String = "ORD",
 ) : IdGenerator {
+    companion object {
+        /**
+         * Ids for the plain BUY/SELL orders of a session running [strategyIds]. The id becomes
+         * the venue order comment, and the unknown-outcome resolver attributes fills by it, so
+         * sessions under one broker magic must not all mint `ORD-0` (#1155). Backtest and live
+         * share this scheme so parity compares like ids.
+         */
+        fun forSession(strategyIds: Collection<String>): SequentialIdGenerator =
+            SequentialIdGenerator(prefix = "ORD-" + strategyIds.joinToString("+"))
+    }
+
     private var counter = 0L
 
     override fun next(): String = "$prefix-${counter++}"

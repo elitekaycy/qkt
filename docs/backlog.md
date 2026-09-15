@@ -89,6 +89,10 @@ Full-code parity audit (7 pillars, findings verified against source before filin
 - `done` — Persisted leg books keep legs for positions the venue already closed ([#1097](https://github.com/elitekaycy/qkt/issues/1097)) — consequence of #1096; periodic venue-vs-book reconcile in stage C
 - `done` — Straddle whipsaw: sibling cancel drops leg B's open intent so its fill nets ([#1098](https://github.com/elitekaycy/qkt/issues/1098)) — position-ledger stage B
 - `tbd` — Startup `PositionReconciled` carries an unprefixed symbol so the venue correction never matches a book ([#1103](https://github.com/elitekaycy/qkt/issues/1103)) — position-ledger follow-up
+- `done` — `POSITION.<stream>.mfe`/`mae` stay 0 on hedging venues: no PRIMARY leg to track ([#1152](https://github.com/elitekaycy/qkt/issues/1152)) — 2026-09-15 position matrix on Exness demo
+- `done` — Unrealized P&L marked at mid, half a spread optimistic per leg ([#1153](https://github.com/elitekaycy/qkt/issues/1153)) — 2026-09-15 position matrix
+- `done` — Opposite-side entry on a hedging venue nets to 0 in qkt while the venue holds both tickets ([#1154](https://github.com/elitekaycy/qkt/issues/1154)) — 2026-09-15 position matrix
+- `done` — Plain `ORD-N` ids collide across strategies under one magic; resolver misattributes fills ([#1155](https://github.com/elitekaycy/qkt/issues/1155)) — 2026-09-15 position matrix
 - `tbd` — Model swap in backtest cost model ([#644](https://github.com/elitekaycy/qkt/issues/644))
 - `tbd` — Cross-mode parity test program epic ([#645](https://github.com/elitekaycy/qkt/issues/645))
 

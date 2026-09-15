@@ -961,7 +961,7 @@ class LiveSession(
         }
 
     fun start(): LiveSessionHandle {
-        val ids = SequentialIdGenerator()
+        val ids = SequentialIdGenerator.forSession(strategies.map { it.first })
         val sequencer = MonotonicSequenceGenerator()
         val priceTracker = MarketPriceTracker()
         val accounting = com.qkt.accounting.AccountingEngine(accountingConfig, priceTracker)
@@ -1511,6 +1511,7 @@ class LiveSession(
                     .flatMap { it.request.allIds() + it.id } +
                     strategyPositions.allLegsFor(strategyId).map { it.legId }
             dsl.resumeOrderIds(usedIds)
+            ids.resumePast(usedIds)
         }
         for (booked in bootReconciled) {
             pipeline.applyReconciledRealized(booked.strategyId, booked.realized, booked.legId)

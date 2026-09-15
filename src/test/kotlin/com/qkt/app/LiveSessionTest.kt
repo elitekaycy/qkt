@@ -970,8 +970,28 @@ class LiveSessionTest {
                 ) {
                     if (fired) return
                     fired = true
-                    emit(Signal.Buy(tick.symbol, Money.of("1")))
-                    emit(Signal.Sell(tick.symbol, Money.of("1")))
+                    // A deliberate hedged pair: two independent legs. (A plain opposite SELL
+                    // would close the BUY by ticket on a hedging venue, not hedge it.)
+                    for ((id, side) in listOf(
+                        "ORD-test-0" to com.qkt.common.Side.BUY,
+                        "ORD-test-1" to com.qkt.common.Side.SELL,
+                    )) {
+                        emit(
+                            Signal.Submit(
+                                com.qkt.execution.OrderRequest.Market(
+                                    id = id,
+                                    symbol = tick.symbol,
+                                    side = side,
+                                    quantity = Money.of("1"),
+                                    timeInForce = com.qkt.execution.TimeInForce.GTC,
+                                    timestamp = tick.timestamp,
+                                    legIntent =
+                                        com.qkt.execution.LegIntent
+                                            .Open(id, com.qkt.positions.LegRole.INDEPENDENT),
+                                ),
+                            ),
+                        )
+                    }
                 }
             }
         val handle =
@@ -992,7 +1012,7 @@ class LiveSessionTest {
         handle.stop()
         handle.awaitTermination(Duration.ofSeconds(2))
 
-        assertThat(ticketCloses).containsExactlyInAnyOrder("ORD-0", "ORD-1")
+        assertThat(ticketCloses).containsExactlyInAnyOrder("ORD-test-0", "ORD-test-1")
         assertThat(tickets).isEmpty()
     }
 

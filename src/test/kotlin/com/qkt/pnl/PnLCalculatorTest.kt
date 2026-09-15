@@ -60,6 +60,34 @@ class PnLCalculatorTest {
     }
 
     @Test
+    fun `unrealizedFor marks a long at the bid and a short at the ask when the tick carries quotes`() {
+        // A long can only be closed by selling at the bid; a short by buying at the ask. Marking
+        // at mid overstates both by half the spread — the exact amount the venue then charges.
+        val quote =
+            com.qkt.marketdata.Tick(
+                symbol = "XAUUSD",
+                price = Money.of("110"),
+                timestamp = 2000L,
+                bid = Money.of("109.9"),
+                ask = Money.of("110.1"),
+            )
+        ledger.apply(
+            "acct",
+            Trade("ORD-L", "XAUUSD", Money.of("100"), Money.of("2"), Side.BUY, 1000L),
+        )
+        priceTracker.update(quote)
+        // (109.9 - 100) * 2 = 19.8, not (110 - 100) * 2
+        assertThat(pnl.unrealizedFor("XAUUSD")).isEqualByComparingTo(Money.of("19.8"))
+
+        ledger.apply(
+            "acct",
+            Trade("ORD-S", "XAUUSD", Money.of("110"), Money.of("4"), Side.SELL, 1500L),
+        )
+        // Net short 2 @ 110: (110.1 - 110) * -2 = -0.2
+        assertThat(pnl.unrealizedFor("XAUUSD")).isEqualByComparingTo(Money.of("-0.2"))
+    }
+
+    @Test
     fun `unrealizedFor returns negative for a short position with rising price`() {
         ledger.apply(
             "acct",
