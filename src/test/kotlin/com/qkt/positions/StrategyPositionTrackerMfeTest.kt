@@ -120,6 +120,58 @@ class StrategyPositionTrackerMfeTest {
     }
 
     @Test
+    fun `an INDEPENDENT entry on a hedging venue tracks MFE and MAE like a primary`() {
+        // Hedging venues open every plain BUY/SELL as an INDEPENDENT leg (no PRIMARY exists),
+        // yet `POSITION.<stream>.mfe` must still measure the strategy's entry.
+        val tracker = StrategyPositionTracker()
+        val intents = IntentBook()
+        intents.independentOpen("alpha", "c-1", "leg-1")
+        intents.apply(tracker, fill("alpha", "c-1", "BTCUSDT", Side.BUY, "1", "100"))
+        assertThat(tracker.primaryMfeFor("alpha", "BTCUSDT")).isEqualByComparingTo("0")
+
+        tracker.onTick("BTCUSDT", BigDecimal("110"))
+        assertThat(tracker.primaryMfeFor("alpha", "BTCUSDT")).isEqualByComparingTo("10")
+        tracker.onTick("BTCUSDT", BigDecimal("95"))
+        assertThat(tracker.primaryMfeFor("alpha", "BTCUSDT")).isEqualByComparingTo("10")
+        assertThat(tracker.primaryMaeFor("alpha", "BTCUSDT")).isEqualByComparingTo("5")
+    }
+
+    @Test
+    fun `the oldest INDEPENDENT leg anchors MFE and a later add does not re-anchor it`() {
+        val tracker = StrategyPositionTracker()
+        val intents = IntentBook()
+        intents.independentOpen("alpha", "c-1", "leg-1")
+        intents.independentOpen("alpha", "c-2", "leg-2")
+        intents.apply(tracker, fill("alpha", "c-1", "BTCUSDT", Side.BUY, "1", "100", timestamp = 1L))
+        tracker.onTick("BTCUSDT", BigDecimal("110"))
+        intents.apply(tracker, fill("alpha", "c-2", "BTCUSDT", Side.BUY, "1", "110", timestamp = 2L))
+        // Adding a peer leg keeps the entry leg's excursion intact.
+        assertThat(tracker.primaryMfeFor("alpha", "BTCUSDT")).isEqualByComparingTo("10")
+    }
+
+    @Test
+    fun `closing the INDEPENDENT entry leg hands MFE to the next oldest leg or removes it`() {
+        val tracker = StrategyPositionTracker()
+        val intents = IntentBook()
+        intents.independentOpen("alpha", "c-1", "leg-1")
+        intents.independentOpen("alpha", "c-2", "leg-2")
+        intents.close("alpha", "x-1", "leg-1")
+        intents.close("alpha", "x-2", "leg-2")
+        intents.apply(tracker, fill("alpha", "c-1", "BTCUSDT", Side.BUY, "1", "100", timestamp = 1L))
+        intents.apply(tracker, fill("alpha", "c-2", "BTCUSDT", Side.BUY, "1", "120", timestamp = 2L))
+        tracker.onTick("BTCUSDT", BigDecimal("130"))
+
+        intents.apply(tracker, fill("alpha", "x-1", "BTCUSDT", Side.SELL, "1", "130", timestamp = 3L))
+        // leg-2 (entry 120) is now the entry leg; its tracker starts fresh.
+        assertThat(tracker.primaryMfeFor("alpha", "BTCUSDT")).isEqualByComparingTo("0")
+        tracker.onTick("BTCUSDT", BigDecimal("125"))
+        assertThat(tracker.primaryMfeFor("alpha", "BTCUSDT")).isEqualByComparingTo("5")
+
+        intents.apply(tracker, fill("alpha", "x-2", "BTCUSDT", Side.SELL, "1", "125", timestamp = 4L))
+        assertThat(tracker.primaryMfeFor("alpha", "BTCUSDT")).isNull()
+    }
+
+    @Test
     fun `onTick on a symbol with no positions is a no-op`() {
         val tracker = StrategyPositionTracker()
         val intents = IntentBook()

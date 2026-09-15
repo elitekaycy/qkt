@@ -116,6 +116,11 @@ class StrategyRegistryTest {
                     override val running: Boolean get() = running.get()
                     override val droppedTicks: Long = 0L
 
+                    override fun requestStop() {
+                        events.add("request:$name:${file.fileName}")
+                        running.set(false)
+                    }
+
                     override fun stop() {
                         events.add("stop:$name:${file.fileName}")
                         running.set(false)
@@ -417,8 +422,37 @@ class StrategyRegistryTest {
         registry.stopAll()
 
         val firstAwait = events.indexOfFirst { it.startsWith("await:") }
-        val lastStop = events.indexOfLast { it.startsWith("stop:") }
-        assertThat(firstAwait).isGreaterThan(lastStop)
+        val lastRequest = events.indexOfLast { it.startsWith("request:") }
+        assertThat(firstAwait).isGreaterThan(lastRequest)
+    }
+
+    @Test
+    fun `stopAll signals every session before any session's blocking stop runs`(
+        @TempDir tmp: Path,
+    ) {
+        // A live session's stop() waits out its drain grace and releases its broker; with many
+        // per-strategy sessions that fan-out is sequential, and every session after the first
+        // keeps trading until its turn. The non-blocking request must reach all of them first.
+        val state = StateDir.resolve(tmp.toString())
+        val events = java.util.concurrent.CopyOnWriteArrayList<String>()
+        val registry = StrategyRegistry(recordingFactory(state, events))
+        registry.deploy("alpha", tmp.resolve("alpha.qkt"))
+        registry.deploy("beta", tmp.resolve("beta.qkt"))
+        registry.deploy("gamma", tmp.resolve("gamma.qkt"))
+
+        registry.stopAll()
+
+        val requests = events.filter { it.startsWith("request:") }
+        assertThat(requests).hasSize(3)
+        val lastRequest = events.indexOfLast { it.startsWith("request:") }
+        val firstStop = events.indexOfFirst { it.startsWith("stop:") }
+        assertThat(firstStop).isGreaterThan(lastRequest)
+        // Each session's blocking stop still runs, once, before its termination wait.
+        assertThat(events.filter { it.startsWith("stop:") }).hasSize(3)
+        for (name in listOf("alpha", "beta", "gamma")) {
+            assertThat(events.indexOfFirst { it.startsWith("stop:$name") })
+                .isLessThan(events.indexOfFirst { it.startsWith("await:$name") })
+        }
     }
 
     @Test

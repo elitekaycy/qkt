@@ -336,7 +336,7 @@ class StrategyPositionTracker(
         symbol: String,
     ) {
         val key = Pair(strategyId, symbol)
-        val primary = byStrategy[strategyId]?.get(symbol)?.primary()
+        val primary = byStrategy[strategyId]?.get(symbol)?.let { entryLeg(it) }
         if (primary == null) {
             primaryMfeTrackers.remove(key)
             return
@@ -346,6 +346,18 @@ class StrategyPositionTracker(
             primaryMfeTrackers[key] = LegMfe(primary.legId, MfeTracker(primary.side, primary.entryPrice))
         }
     }
+
+    /**
+     * The leg `POSITION.<stream>.mfe` measures: the PRIMARY when the book has one, otherwise the
+     * oldest parentless leg. Hedging venues open every plain BUY/SELL as an INDEPENDENT leg, so
+     * without the fallback the excursion accessors would sit at zero for the whole trade.
+     */
+    private fun entryLeg(book: LegBook): PositionLeg? =
+        book.primary()
+            ?: book
+                .all()
+                .filter { it.parentLegId == null && it.role != LegRole.STACK }
+                .minWithOrNull(compareBy({ it.openedAt }, { it.legId }))
 
     private fun openLeg(
         event: BrokerEvent.OrderFilled,
@@ -385,6 +397,7 @@ class StrategyPositionTracker(
                     brokerTicket = ticket,
                 ),
             )
+            syncPrimaryMfeTracker(event.strategyId, event.symbol)
             return FillApplication(Money.ZERO, intent.legId, LegAction.OPENED)
         }
         // The same order executing again: book only what the venue reports beyond what the
@@ -496,7 +509,7 @@ class StrategyPositionTracker(
         val remaining = closed.quantity.subtract(closingQty)
         if (remaining.signum() > 0) book.add(closed.copy(quantity = remaining))
         if (book.isEmpty()) byStrategy[event.strategyId]?.remove(event.symbol)
-        if (closed.role == LegRole.PRIMARY) syncPrimaryMfeTracker(event.strategyId, event.symbol)
+        syncPrimaryMfeTracker(event.strategyId, event.symbol)
         return FillApplication(realized, closed.legId, LegAction.CLOSED)
     }
 
