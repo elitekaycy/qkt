@@ -57,9 +57,13 @@ class StrategyHandle(
 
     fun isRunning(): Boolean = live.running
 
-    /** Requests session shutdown without waiting, allowing a registry to fan out stops first. */
+    /**
+     * Requests session shutdown without waiting, allowing a registry to fan out stops first.
+     * Only the non-blocking signal runs here; [awaitStopped] completes the drain, so the
+     * registry's fan-out never leaves later sessions trading while an earlier one drains (#1157).
+     */
     fun requestStop() {
-        if (stopRequested.compareAndSet(false, true)) live.stop()
+        if (stopRequested.compareAndSet(false, true)) live.requestStop()
     }
 
     /** Waits for the session and closes its operator endpoint, returning whether it terminated. */
@@ -67,6 +71,7 @@ class StrategyHandle(
         var interrupted = false
         var terminated = false
         try {
+            live.stop()
             terminated = live.awaitTermination(timeout)
         } catch (_: InterruptedException) {
             interrupted = true
