@@ -94,6 +94,7 @@ Full-code parity audit (7 pillars, findings verified against source before filin
 - `done` — Opposite-side entry on a hedging venue nets to 0 in qkt while the venue holds both tickets ([#1154](https://github.com/elitekaycy/qkt/issues/1154)) — 2026-09-15 position matrix
 - `done` — Plain `ORD-N` ids collide across strategies under one magic; resolver misattributes fills ([#1155](https://github.com/elitekaycy/qkt/issues/1155)) — 2026-09-15 position matrix
 - `done` — `daemon stop` lets later sessions keep trading while earlier ones drain ([#1157](https://github.com/elitekaycy/qkt/issues/1157)) — 2026-09-15 position matrix round 2
+- `done` — `POSITION.mfe`/`mae` stay 0 after a daemon restart over an open position ([#1158](https://github.com/elitekaycy/qkt/issues/1158)) — 2026-09-15 position matrix round 3
 - `tbd` — Model swap in backtest cost model ([#644](https://github.com/elitekaycy/qkt/issues/644))
 - `tbd` — Cross-mode parity test program epic ([#645](https://github.com/elitekaycy/qkt/issues/645))
 

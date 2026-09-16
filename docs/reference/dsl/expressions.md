@@ -217,6 +217,8 @@ THEN CLOSE btc
 
 `POSITION.<stream>.mae` reads the high-water mark of `entry_price - current_price` (for BUY) or `current_price - entry_price` (for SELL) on the same entry leg since it opened. Returns `0` if the strategy holds nothing on the stream. Same value the stack engine uses for `STACK_AT MAE >= ... RECOVER ...` arming checks.
 
+Both marks survive a daemon restart: the live session saves each new extreme (at most once a second per stream) and restores it with the position, then extends it with the bars the warmup loaded for the downtime, so a position held across a restart reads the same or higher `mfe`/`mae` afterwards — never `0`.
+
 `POSITION.<stream>` returns a signed quantity. `POSITION.btc > 0` means long; `POSITION.btc < 0` means short; `POSITION.btc = 0` means flat. Most entry rules guard with `POSITION.btc = 0`.
 
 `OPEN_ORDERS.<stream>` is scoped to the current strategy and resolved stream symbol. It counts active risk-increasing entries in pending, submitted, working, or partially-filled states. It excludes dormant composite children and protective or otherwise risk-reducing exits. Terminal fills, cancellations, rejections, and GTD expiry remove the entry from the count through the same order lifecycle used in replay and live execution.
