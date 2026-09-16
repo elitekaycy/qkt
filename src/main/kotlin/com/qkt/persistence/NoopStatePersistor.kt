@@ -22,6 +22,7 @@ class NoopStatePersistor : StatePersistor {
         var tradeHistory: PersistedTradeHistory? = null,
         var sequences: Map<String, PersistedSequenceState> = emptyMap(),
         var exitHooks: List<PersistedExitHookBinding> = emptyList(),
+        val excursions: ConcurrentHashMap<String, PersistedExcursion> = ConcurrentHashMap(),
     )
 
     private val state: ConcurrentHashMap<String, StrategyState> = ConcurrentHashMap()
@@ -45,6 +46,19 @@ class NoopStatePersistor : StatePersistor {
         strategyId: String,
         symbol: String,
     ): PersistedLegBook? = state[strategyId]?.legBooks?.get(symbol)
+
+    override fun saveExcursion(
+        strategyId: String,
+        symbol: String,
+        excursion: PersistedExcursion,
+    ) {
+        stateFor(strategyId).excursions[symbol] = excursion
+    }
+
+    override fun loadExcursion(
+        strategyId: String,
+        symbol: String,
+    ): PersistedExcursion? = state[strategyId]?.excursions?.get(symbol)
 
     override fun saveBracketPairs(
         strategyId: String,
