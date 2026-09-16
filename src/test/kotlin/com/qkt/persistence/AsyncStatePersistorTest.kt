@@ -41,6 +41,28 @@ class AsyncStatePersistorTest {
     }
 
     @Test
+    fun `saveExcursion is queued, flushed to the delegate, and read back through load`(
+        @TempDir tmp: Path,
+    ) {
+        val excursion =
+            PersistedExcursion(
+                legId = "leg-1",
+                side = Side.BUY,
+                entryPrice = BigDecimal("4700"),
+                mfe = BigDecimal("30"),
+                mae = BigDecimal("5"),
+                adverseExtremePrice = BigDecimal("4695"),
+            )
+        AsyncStatePersistor(FileStatePersistor(tmp)).use { async ->
+            async.saveExcursion("hedge", "XAUUSDm", excursion)
+            assertThat(async.awaitDrain()).isTrue
+            assertThat(async.loadExcursion("hedge", "XAUUSDm")).isEqualTo(excursion)
+        }
+        assertThat(FileStatePersistor(tmp).loadExcursion("hedge", "XAUUSDm")).isEqualTo(excursion)
+        assertThat(FileStatePersistor(tmp).loadExcursion("hedge", "EURUSDm")).isNull()
+    }
+
+    @Test
     fun `snapshot freezes the LegBook against post-call mutation`(
         @TempDir tmp: Path,
     ) {
