@@ -115,6 +115,22 @@ class AsyncStatePersistor(
         }
     }
 
+    override fun saveExcursion(
+        strategyId: String,
+        symbol: String,
+        excursion: PersistedExcursion,
+    ) {
+        // Immutable value: safe to hand to the writer thread as is.
+        submit("saveExcursion $strategyId/$symbol") {
+            delegate.saveExcursion(strategyId, symbol, excursion)
+        }
+    }
+
+    override fun loadExcursion(
+        strategyId: String,
+        symbol: String,
+    ): PersistedExcursion? = delegate.loadExcursion(strategyId, symbol)
+
     override fun loadLegBook(
         strategyId: String,
         symbol: String,

@@ -23,6 +23,12 @@ import java.util.concurrent.atomic.AtomicLong
  */
 class StrategyPositionTracker(
     private val persistor: com.qkt.persistence.StatePersistor = com.qkt.persistence.NoopStatePersistor(),
+    /**
+     * Minimum spacing between excursion saves for one (strategy, symbol). A new extreme inside
+     * the window is kept in memory and lands with the next save; 0 saves every new extreme.
+     */
+    private val excursionPersistIntervalMs: Long = 1_000L,
+    private val clock: () -> Long = System::currentTimeMillis,
 ) {
     private val log = org.slf4j.LoggerFactory.getLogger(StrategyPositionTracker::class.java)
 
@@ -212,6 +218,83 @@ class StrategyPositionTracker(
         val book = books.getOrPut(symbol) { LegBook(symbol) }
         for (leg in persisted.legs) book.add(leg.toPositionLeg())
         reindex(symbol)
+        // The restored book needs its excursion tracker like any other (#1158), seeded with the
+        // marks saved before the restart when they belong to the same leg.
+        syncPrimaryMfeTracker(strategyId, symbol)
+        val tracked = primaryMfeTrackers[Pair(strategyId, symbol)] ?: return
+        val saved = runCatching { persistor.loadExcursion(strategyId, symbol) }.getOrNull() ?: return
+        val leg = book.leg(tracked.legId) ?: return
+        if (saved.legId != leg.legId || saved.side != leg.side || saved.entryPrice.compareTo(leg.entryPrice) != 0) {
+            return
+        }
+        tracked.tracker.seed(saved.mfe, saved.mae, saved.adverseExtremePrice)
+        log.info(
+            "restored excursion for {} {} leg={} mfe={} mae={}",
+            strategyId,
+            symbol,
+            leg.legId,
+            saved.mfe.toPlainString(),
+            saved.mae.toPlainString(),
+        )
+    }
+
+    /**
+     * Extend the tracked excursion on [symbol] with bars printed while the daemon was down.
+     * Only bars that started after the tracked leg opened count; the bar spanning the entry is
+     * skipped because it also holds pre-entry prices. Bars are mid-based, like [onTick].
+     */
+    fun extendExcursion(
+        strategyId: String,
+        symbol: String,
+        candles: List<com.qkt.marketdata.Candle>,
+    ) {
+        val key = Pair(strategyId, symbol)
+        val tracked = primaryMfeTrackers[key] ?: return
+        val leg = byStrategy[strategyId]?.get(symbol)?.leg(tracked.legId) ?: return
+        var used = 0
+        for (candle in candles) {
+            if (candle.startTime < leg.openedAt) continue
+            tracked.tracker.observeRange(candle.high, candle.low)
+            used++
+        }
+        if (used > 0) {
+            persistExcursion(strategyId, symbol, tracked, force = true)
+            log.info(
+                "extended excursion for {} {} leg={} from {} downtime bars: mfe={} mae={}",
+                strategyId,
+                symbol,
+                leg.legId,
+                used,
+                tracked.tracker.value().toPlainString(),
+                tracked.tracker.mae().toPlainString(),
+            )
+        }
+    }
+
+    private fun persistExcursion(
+        strategyId: String,
+        symbol: String,
+        tracked: LegMfe,
+        force: Boolean = false,
+    ) {
+        val now = clock()
+        if (!force && now - tracked.lastPersistedAt < excursionPersistIntervalMs) return
+        val leg = byStrategy[strategyId]?.get(symbol)?.leg(tracked.legId) ?: return
+        tracked.lastPersistedAt = now
+        runCatching {
+            persistor.saveExcursion(
+                strategyId,
+                symbol,
+                com.qkt.persistence.PersistedExcursion(
+                    legId = leg.legId,
+                    side = leg.side,
+                    entryPrice = leg.entryPrice,
+                    mfe = tracked.tracker.value(),
+                    mae = tracked.tracker.mae(),
+                    adverseExtremePrice = tracked.tracker.adverseExtremePrice(),
+                ),
+            )
+        }
     }
 
     /** Monotonic counter for engine-internal PRIMARY leg ids. */
@@ -230,10 +313,14 @@ class StrategyPositionTracker(
      */
     private val primaryMfeTrackers: MutableMap<Pair<String, String>, LegMfe> = ConcurrentHashMap()
 
-    private data class LegMfe(
+    private class LegMfe(
         val legId: String,
         val tracker: MfeTracker,
-    )
+    ) {
+        /** Wall-clock of the last excursion save; the throttle in [persistExcursion] reads it. */
+        @Volatile
+        var lastPersistedAt: Long = Long.MIN_VALUE / 2
+    }
 
     /** How one execution slice landed in the leg book. */
     enum class LegAction {
@@ -304,7 +391,14 @@ class StrategyPositionTracker(
     ) {
         if (primaryMfeTrackers.isEmpty()) return
         for ((key, lm) in primaryMfeTrackers) {
-            if (key.second == symbol) lm.tracker.onTick(price)
+            if (key.second != symbol) continue
+            val mfeBefore = lm.tracker.value()
+            val maeBefore = lm.tracker.mae()
+            lm.tracker.onTick(price)
+            // A new extreme is worth keeping across a restart (#1158); ties and pullbacks are not.
+            if (lm.tracker.value() > mfeBefore || lm.tracker.mae() > maeBefore) {
+                persistExcursion(key.first, symbol, lm)
+            }
         }
     }
 

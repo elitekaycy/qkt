@@ -56,6 +56,7 @@ class FileStatePersistor(
 
     private companion object {
         const val LEGBOOK_FILE = "legbook.json"
+        const val EXCURSION_FILE = "excursion.json"
         const val BRACKET_PAIRS_FILE = "bracket-pairs.json"
         const val PENDING_ORDERS_FILE = "pending-orders.json"
         const val PENDING_STACKS_FILE = "pending-stacks.json"
@@ -325,6 +326,62 @@ class FileStatePersistor(
             .onFailure { e -> writer.recordFailure("saveLegBook encode for $strategyId/$symbol", e) }
     }
 
+    override fun saveExcursion(
+        strategyId: String,
+        symbol: String,
+        excursion: PersistedExcursion,
+    ) {
+        val dto =
+            ExcursionDto(
+                version = SCHEMA_VERSION,
+                strategyId = strategyId,
+                symbol = symbol,
+                legId = excursion.legId,
+                side = excursion.side.name,
+                entryPrice = excursion.entryPrice.toPlainString(),
+                mfe = excursion.mfe.toPlainString(),
+                mae = excursion.mae.toPlainString(),
+                adverseExtremePrice = excursion.adverseExtremePrice?.toPlainString(),
+            )
+        runCatching { json.encodeToString(ExcursionDto.serializer(), dto) }
+            .onSuccess { writer.write(strategyId, fileNameFor(symbol, EXCURSION_FILE), it) }
+            .onFailure { e -> writer.recordFailure("saveExcursion encode for $strategyId/$symbol", e) }
+    }
+
+    override fun loadExcursion(
+        strategyId: String,
+        symbol: String,
+    ): PersistedExcursion? {
+        val raw = writer.read(strategyId, fileNameFor(symbol, EXCURSION_FILE)) ?: return null
+        // Excursion marks are a convenience, not a position of record: an unreadable file restores
+        // as "no marks" rather than failing the deploy.
+        val dto =
+            try {
+                json.decodeFromString(ExcursionDto.serializer(), raw)
+            } catch (e: SerializationException) {
+                log.warn("loadExcursion parse failed for {}/{}: {}", strategyId, symbol, e.message)
+                return null
+            }
+        if (dto.version != SCHEMA_VERSION) {
+            log.warn(
+                "loadExcursion schema mismatch for {}/{}: {} != {}",
+                strategyId,
+                symbol,
+                dto.version,
+                SCHEMA_VERSION,
+            )
+            return null
+        }
+        return PersistedExcursion(
+            legId = dto.legId,
+            side = Side.valueOf(dto.side),
+            entryPrice = BigDecimal(dto.entryPrice),
+            mfe = BigDecimal(dto.mfe),
+            mae = BigDecimal(dto.mae),
+            adverseExtremePrice = dto.adverseExtremePrice?.let(::BigDecimal),
+        )
+    }
+
     override fun loadLegBook(
         strategyId: String,
         symbol: String,
@@ -589,6 +646,19 @@ private data class LegBookDto(
     val strategyId: String,
     val symbol: String,
     val legs: List<LegDto>,
+)
+
+@Serializable
+private data class ExcursionDto(
+    val version: Int,
+    val strategyId: String,
+    val symbol: String,
+    val legId: String,
+    val side: String,
+    val entryPrice: String,
+    val mfe: String,
+    val mae: String,
+    val adverseExtremePrice: String? = null,
 )
 
 @Serializable

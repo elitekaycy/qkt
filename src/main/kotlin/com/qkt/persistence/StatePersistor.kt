@@ -109,6 +109,23 @@ interface StatePersistor : AutoCloseable {
     fun loadTrailingStops(strategyId: String): List<PersistedTrailingStop> = emptyList()
 
     /**
+     * Persist the excursion marks of the leg `POSITION.<stream>.mfe`/`mae` measures on [symbol],
+     * so a restart resumes them instead of reading 0 (#1158). One record per (strategy, symbol);
+     * a later save replaces it. Default no-op keeps persistors that predate this compiling.
+     */
+    fun saveExcursion(
+        strategyId: String,
+        symbol: String,
+        excursion: PersistedExcursion,
+    ) {}
+
+    /** The last excursion saved for [strategyId] on [symbol], or `null` when none was. */
+    fun loadExcursion(
+        strategyId: String,
+        symbol: String,
+    ): PersistedExcursion? = null
+
+    /**
      * Persist the session's complete risk snapshot: halt flags, realized PnL,
      * drawdown anchors, trailing peaks, and pacing state. Default no-op keeps
      * persistors that predate risk persistence compiling.
@@ -268,6 +285,20 @@ data class PersistedLeg(
             )
     }
 }
+
+/**
+ * Excursion marks of one leg. [legId], [side] and [entryPrice] identify the leg the marks belong
+ * to: a restore applies them only to that same leg, so a record left behind by a closed leg can
+ * never inflate its successor's excursion.
+ */
+data class PersistedExcursion(
+    val legId: String,
+    val side: Side,
+    val entryPrice: BigDecimal,
+    val mfe: BigDecimal,
+    val mae: BigDecimal,
+    val adverseExtremePrice: BigDecimal?,
+)
 
 data class PersistedLegBook(
     val strategyId: String,
