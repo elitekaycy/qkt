@@ -1346,6 +1346,23 @@ class LiveSession(
         // Fail-fast: any broker error here aborts deploy with a typed exception.
         warmupCoordinator.prepareHub()
 
+        // A position restored over the restart has its excursion marks seeded from disk; the
+        // bars the hub just loaded cover the downtime, so extend the marks with them (#1158).
+        // The smallest declared timeframe per symbol gives the closest range.
+        for ((strategyId, strategy) in strategies) {
+            val dsl = strategy as? DslCompiledStrategy ?: continue
+            val keysBySymbol = dsl.declaredStreams.values.groupBy { it.qktSymbol }
+            for ((symbol, keys) in keysBySymbol) {
+                if (strategyPositions.legBookFor(strategyId, symbol) == null) continue
+                val key = keys.minByOrNull { TimeWindow.parse(it.timeframe).durationMs } ?: continue
+                val bars =
+                    (0 until pipelineCandleHub.historySize(key)).mapNotNull { n ->
+                        pipelineCandleHub.history(key, n)
+                    }
+                strategyPositions.extendExcursion(strategyId, symbol, bars)
+            }
+        }
+
         // Resolver for `SCHEDULE … BROKER`: take the first MT5 broker in this
         // session's route list and use its profile's DST-aware server clock.
         // LiveSession is per-strategy in the daemon model, so all calls return
