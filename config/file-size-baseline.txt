@@ -82,7 +82,6 @@
 278 src/main/kotlin/com/qkt/marketdata/live/mt5/Mt5TickFeedSource.kt
 277 src/test/kotlin/com/qkt/cli/daemon/StopRouteTest.kt
 277 src/test/kotlin/com/qkt/marketdata/live/mt5/Mt5TickRangePollingTest.kt
-275 src/test/kotlin/com/qkt/cli/ConfigTest.kt
 275 src/test/kotlin/com/qkt/dsl/compile/GeneratedDslStructureParityTest.kt
 273 src/test/kotlin/com/qkt/broker/bybit/linear/BybitLinearBrokerTest.kt
 270 src/main/kotlin/com/qkt/marketdata/live/mt5/Mt5BarFetcher.kt
