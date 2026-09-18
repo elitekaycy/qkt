@@ -65,7 +65,6 @@
 317 src/test/kotlin/com/qkt/cli/observe/ObservabilityServerTest.kt
 311 src/test/kotlin/com/qkt/cli/SweepCommandTest.kt
 307 src/test/kotlin/com/qkt/observe/insights/LiveSessionInsightsTest.kt
-306 src/test/kotlin/com/qkt/cli/daemon/ListRouteTest.kt
 304 src/test/kotlin/com/qkt/parity/ScalpStackParityTest.kt
 298 src/main/kotlin/com/qkt/broker/CompositeBroker.kt
 296 src/test/kotlin/com/qkt/cli/daemon/StrategyHandleTest.kt
