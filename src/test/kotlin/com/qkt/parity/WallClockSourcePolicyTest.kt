@@ -74,6 +74,7 @@ class WallClockSourcePolicyTest {
                 "src/main/kotlin/com/qkt/cli/daemon/routes/HealthRoute.kt" to "operator health uptime and event age",
                 "src/main/kotlin/com/qkt/cli/daemon/routes/ListRoute.kt" to "operator list uptime",
                 "src/main/kotlin/com/qkt/cli/daemon/routes/MetricsRoute.kt" to "daemon uptime metric",
+                "src/main/kotlin/com/qkt/cli/daemon/routes/PortfolioStatus.kt" to "operator portfolio uptime",
                 "src/main/kotlin/com/qkt/cli/daemon/StrategyHandle.kt" to "live stop duration measurement",
                 "src/main/kotlin/com/qkt/cli/daemon/StrategyRegistry.kt" to "daemon stop deadline",
                 "src/main/kotlin/com/qkt/cli/daemon/portfolio/PortfolioSupervisor.kt" to "daemon stop deadline",
