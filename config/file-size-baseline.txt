@@ -31,7 +31,6 @@
 453 src/main/kotlin/com/qkt/cli/daemon/StrategyHandle.kt
 452 src/main/kotlin/com/qkt/broker/bybit/spot/BybitSpotBroker.kt
 451 src/main/kotlin/com/qkt/broker/mt5/MT5PositionPoller.kt
-429 src/test/kotlin/com/qkt/parity/TimesEntryParityTest.kt
 418 src/main/kotlin/com/qkt/research/ReplayEngine.kt
 411 src/main/kotlin/com/qkt/broker/PaperBroker.kt
 411 src/test/kotlin/com/qkt/broker/mt5/MT5BrokerProfileLoaderTest.kt
