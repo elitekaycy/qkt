@@ -1,16 +1,21 @@
 package com.qkt.app
 
+import com.qkt.app.order.BracketRiskRecorder
+import com.qkt.app.order.EntryRiskReport
+import com.qkt.app.order.HaltCancellations
 import com.qkt.app.order.OrderBook
+import com.qkt.app.order.PendingExposureBook
+import com.qkt.app.order.ProtectionLevels
 import com.qkt.app.order.blendAvg
 import com.qkt.app.order.computeChildPrice
 import com.qkt.app.order.evaluateAt
+import com.qkt.app.order.exposureEntryRequest
 import com.qkt.app.order.initialStopLevel
 import com.qkt.app.order.isTighter
 import com.qkt.app.order.limitReached
 import com.qkt.app.order.profitStopLevel
 import com.qkt.app.order.referencesStackEntryRef
 import com.qkt.app.order.resolveBracketAtFill
-import com.qkt.app.order.stopPriceAtEntry
 import com.qkt.app.order.stopReached
 import com.qkt.broker.Broker
 import com.qkt.broker.OrderTypeCapability
@@ -82,7 +87,7 @@ class OrderManager(
     /** Venue metadata used to report bracket risk in account units (`price distance x qty x contractSize`). */
     private val instruments: InstrumentRegistry = NoopInstrumentRegistry,
     /**
-     * Record per-bracket risk into [riskByClientOrderId] for the backtest report to read via
+     * Record per-bracket risk for the backtest report to read via
      * [riskUsdFor]. Only the backtest path consumes it, so live leaves this false — otherwise the
      * map would grow unbounded over a 24/7 session. Wired by [TradingPipeline] to `mode == BACKTEST`.
      */
@@ -121,22 +126,12 @@ class OrderManager(
             isReferenced = { id -> isReferenced(id) },
             reclaim = { id -> reclaim(id) },
         )
-    private val exposureEntries: MutableMap<String, ExposureEntry> = mutableMapOf()
-    private val exposureGroupScratch: MutableMap<String, BigDecimal> = mutableMapOf()
-
-    private data class ExposureEntry(
-        val request: OrderRequest,
-        val groupId: String?,
-        var filledQuantity: BigDecimal = BigDecimal.ZERO,
-    )
-
-    private data class HaltCancelState(
-        var attempts: Int,
-        var nextAttemptAtMs: Long,
-        var alerted: Boolean = false,
-    )
-
-    private val haltCancellations: MutableMap<String, HaltCancelState> = mutableMapOf()
+    private val exposure = PendingExposureBook(book)
+    private val risk = BracketRiskRecorder(trackRisk, instruments)
+    private val haltCancels =
+        HaltCancellations(book, broker, clock) { strategyId, message ->
+            reportProtectionFailure(strategyId, message)
+        }
 
     // Reusable per-tick scratch buffers for [evaluateTriggers]. Each is cleared and refilled every
     // tick; ArrayList.clear() retains capacity, so steady-state per-tick list allocation is zero.
@@ -291,31 +286,14 @@ class OrderManager(
 
     private val stacks: StackTracker = StackTracker()
 
-    private val riskByClientOrderId: MutableMap<String, BigDecimal> = java.util.concurrent.ConcurrentHashMap()
-    private val protectionByClientOrderId: MutableMap<String, ProtectionLevels> =
-        java.util.concurrent.ConcurrentHashMap()
-    private val reportBracketByClientOrderId: MutableMap<String, OrderRequest.Bracket> = mutableMapOf()
-
-    /** Exact protective stop and target prices resolved for an entry fill. */
-    data class ProtectionLevels(
-        val stopLoss: BigDecimal,
-        val takeProfit: BigDecimal,
-    )
-
-    /** Dollar risk and protective prices resolved against one exact entry fill. */
-    data class EntryRiskReport(
-        val riskUsd: BigDecimal,
-        val protection: ProtectionLevels,
-    )
-
     /**
      * Returns and removes the recorded risk for [clientOrderId]. Designed to be called once per
      * fill — the entry is consumed so the map doesn't grow unbounded over a long-running session.
      */
-    fun riskUsdFor(clientOrderId: String): BigDecimal? = riskByClientOrderId.remove(clientOrderId)
+    fun riskUsdFor(clientOrderId: String): BigDecimal? = risk.riskUsdFor(clientOrderId)
 
     /** Resolved venue prices attached to an entry fill; consumed once by the backtest report. */
-    fun protectionFor(clientOrderId: String): ProtectionLevels? = protectionByClientOrderId.remove(clientOrderId)
+    fun protectionFor(clientOrderId: String): ProtectionLevels? = risk.protectionFor(clientOrderId)
 
     /**
      * Resolve and consume an entry bracket using the broker's actual [fillPrice] and [quantity].
@@ -327,60 +305,7 @@ class OrderManager(
         quantity: BigDecimal,
         fillPrice: BigDecimal,
         symbol: String,
-    ): EntryRiskReport? {
-        if (!trackRisk) return null
-        val bracket = reportBracketByClientOrderId[clientOrderId] ?: return null
-        val ids = listOf(bracket.id, bracket.entry.id, clientOrderId).distinct()
-        for (id in ids) {
-            reportBracketByClientOrderId.remove(id)
-            riskByClientOrderId.remove(id)
-            protectionByClientOrderId.remove(id)
-        }
-        val resolved = resolveBracketAtFill(bracket, fillPrice)
-        val stopPrice = stopPriceAtEntry(resolved, fillPrice)
-        return EntryRiskReport(
-            riskUsd = calculateRisk(quantity, fillPrice, stopPrice, symbol),
-            protection = ProtectionLevels(stopPrice, resolved.takeProfit),
-        )
-    }
-
-    private fun recordProtection(
-        clientOrderIds: List<String>,
-        stopLoss: BigDecimal,
-        takeProfit: BigDecimal,
-    ) {
-        if (!trackRisk) return
-        val protection = ProtectionLevels(stopLoss, takeProfit)
-        for (id in clientOrderIds) protectionByClientOrderId[id] = protection
-    }
-
-    private fun recordRisk(
-        clientOrderIds: List<String>,
-        quantity: BigDecimal,
-        entry: BigDecimal,
-        stop: BigDecimal,
-        symbol: String,
-    ) {
-        // Risk-per-trade is consumed only by the backtest report (via [riskUsdFor] in ReplayEngine).
-        // In live nothing reads it, so recording would just leak ~2 entries per bracket forever.
-        if (!trackRisk) return
-        val risk = calculateRisk(quantity, entry, stop, symbol)
-        for (id in clientOrderIds) riskByClientOrderId[id] = risk
-    }
-
-    private fun calculateRisk(
-        quantity: BigDecimal,
-        entry: BigDecimal,
-        stop: BigDecimal,
-        symbol: String,
-    ): BigDecimal {
-        val contractSize = instruments.lookup(symbol)?.contractSize ?: BigDecimal.ONE
-        return entry
-            .subtract(stop)
-            .abs()
-            .multiply(quantity, Money.CONTEXT)
-            .multiply(contractSize, Money.CONTEXT)
-    }
+    ): EntryRiskReport? = risk.entryRiskForFill(clientOrderId, quantity, fillPrice, symbol)
 
     init {
         bus.subscribe<BrokerEvent.OrderAccepted> { e -> onAccepted(e) }
@@ -456,7 +381,7 @@ class OrderManager(
                 lastUpdatedAt = now,
             ),
         )
-        if (!request.isCompositeShape()) registerExposure(request)
+        if (!request.isCompositeShape()) exposure.register(request)
         return dispatch(request)
     }
 
@@ -470,79 +395,15 @@ class OrderManager(
     override fun orderCountFor(
         side: Side,
         strategyId: String?,
-    ): Int {
-        var ungrouped = 0
-        val groups = mutableSetOf<String>()
-        for ((id, entry) in exposureEntries) {
-            val request = entry.request
-            if (request.side != side) continue
-            if (strategyId != null && request.strategyId != strategyId) continue
-            if (book[id]?.state?.isTerminal == true) continue
-            if (request.quantity.subtract(entry.filledQuantity).signum() <= 0) continue
-            val groupId = entry.groupId
-            if (groupId == null) ungrouped++ else groups.add(groupId)
-        }
-        return ungrouped + groups.size
-    }
+    ): Int = exposure.orderCountFor(side, strategyId)
 
-    override fun symbolsFor(strategyId: String?): Set<String> {
-        val out = mutableSetOf<String>()
-        for ((id, entry) in exposureEntries) {
-            val request = entry.request
-            if (strategyId != null && request.strategyId != strategyId) continue
-            if (book[id]?.state?.isTerminal == true) continue
-            if (request.quantity.subtract(entry.filledQuantity).signum() <= 0) continue
-            out.add(request.symbol)
-        }
-        return out
-    }
+    override fun symbolsFor(strategyId: String?): Set<String> = exposure.symbolsFor(strategyId)
 
     override fun quantityFor(
         symbol: String,
         side: Side,
         strategyId: String?,
-    ): BigDecimal {
-        var ungrouped = BigDecimal.ZERO
-        exposureGroupScratch.clear()
-        for ((id, entry) in exposureEntries) {
-            val request = entry.request
-            if (request.symbol != symbol || request.side != side) continue
-            if (strategyId != null && request.strategyId != strategyId) continue
-            if (book[id]?.state?.isTerminal == true) continue
-            val remaining = request.quantity.subtract(entry.filledQuantity).max(BigDecimal.ZERO)
-            if (remaining.signum() == 0) continue
-            val groupId = entry.groupId
-            if (groupId == null) {
-                ungrouped = ungrouped.add(remaining)
-            } else {
-                val prior = exposureGroupScratch[groupId]
-                if (prior == null || remaining > prior) exposureGroupScratch[groupId] = remaining
-            }
-        }
-        return exposureGroupScratch.values.fold(ungrouped, BigDecimal::add)
-    }
-
-    private fun registerExposure(
-        request: OrderRequest,
-        groupId: String? = null,
-    ) {
-        val existing = exposureEntries[request.id]
-        exposureEntries[request.id] =
-            ExposureEntry(
-                request = request,
-                groupId = existing?.groupId ?: groupId,
-                filledQuantity = existing?.filledQuantity ?: BigDecimal.ZERO,
-            )
-    }
-
-    private fun exposureEntryRequest(request: OrderRequest): OrderRequest =
-        when (request) {
-            is OrderRequest.Bracket -> request.entry.withStrategyId(request.strategyId)
-            is OrderRequest.OTO -> request.parent
-            is OrderRequest.ScaleOut -> request.basis
-            is OrderRequest.TimeExit -> request.target
-            else -> request
-        }
+    ): BigDecimal = exposure.quantityFor(symbol, side, strategyId)
 
     fun cancel(clientOrderId: String) {
         val managed = book[clientOrderId] ?: return
@@ -553,7 +414,7 @@ class OrderManager(
             }
             stacks.terminate(clientOrderId)
             update(clientOrderId) { it.copy(state = OrderState.CANCELLED, lastUpdatedAt = clock.now()) }
-            exposureEntries.remove(clientOrderId)
+            exposure.remove(clientOrderId)
             return
         }
         if (managed.childClientOrderIds.isNotEmpty()) {
@@ -562,7 +423,7 @@ class OrderManager(
             try {
                 for (childId in managed.childClientOrderIds) cancel(childId)
                 update(clientOrderId) { it.copy(state = OrderState.CANCELLED, lastUpdatedAt = clock.now()) }
-                exposureEntries.remove(clientOrderId)
+                exposure.remove(clientOrderId)
             } finally {
                 if (scaleOutCancellation) cancellingScaleOutWrappers.remove(clientOrderId)
             }
@@ -571,7 +432,7 @@ class OrderManager(
         when (managed.state) {
             OrderState.CREATED, OrderState.PENDING -> {
                 update(clientOrderId) { it.copy(state = OrderState.CANCELLED, lastUpdatedAt = clock.now()) }
-                exposureEntries.remove(clientOrderId)
+                exposure.remove(clientOrderId)
                 completeScaleOutExit(clientOrderId, OrderState.CANCELLED)
             }
             else -> broker.cancel(clientOrderId)
@@ -614,7 +475,7 @@ class OrderManager(
                         !mustSurviveHalt(managed)
                 }.map { it.id }
         for (id in entryIds) {
-            haltCancellations[id] = HaltCancelState(attempts = 1, nextAttemptAtMs = clock.now() + HALT_CANCEL_RETRY_MS)
+            haltCancels.begin(id)
             cancel(id)
         }
     }
@@ -640,36 +501,9 @@ class OrderManager(
     }
 
     /** Retry halt-owned cancellations that have not produced a terminal broker event. */
-    fun retryHaltCancellations(nowMs: Long) {
-        val due = haltCancellations.filterValues { nowMs >= it.nextAttemptAtMs }.keys.toList()
-        for (id in due) {
-            val managed = book[id]
-            if (managed == null || managed.state.isTerminal) {
-                haltCancellations.remove(id)
-                continue
-            }
-            val state = haltCancellations[id] ?: continue
-            state.attempts += 1
-            state.nextAttemptAtMs = nowMs + haltCancelDelayMs(state.attempts)
-            if (state.attempts >= HALT_CANCEL_ALERT_ATTEMPTS && !state.alerted) {
-                state.alerted = true
-                reportProtectionFailure(
-                    managed.request.strategyId,
-                    "CRITICAL halt cancellation remains unconfirmed for ${managed.id} " +
-                        "after ${state.attempts} attempts",
-                )
-            }
-            broker.cancel(id)
-        }
-    }
+    fun retryHaltCancellations(nowMs: Long) = haltCancels.retry(nowMs)
 
-    private fun onCancelFailed(event: BrokerEvent.OrderCancelFailed) {
-        val state = haltCancellations[event.clientOrderId] ?: return
-        state.nextAttemptAtMs = minOf(state.nextAttemptAtMs, clock.now() + HALT_CANCEL_RETRY_MS)
-    }
-
-    private fun haltCancelDelayMs(attempts: Int): Long =
-        (HALT_CANCEL_RETRY_MS * (1L shl (attempts - 1).coerceAtMost(5))).coerceAtMost(HALT_CANCEL_MAX_RETRY_MS)
+    private fun onCancelFailed(event: BrokerEvent.OrderCancelFailed) = haltCancels.onCancelFailed(event.clientOrderId)
 
     fun getOrder(clientOrderId: String): ManagedOrder? = book[clientOrderId]
 
@@ -729,7 +563,7 @@ class OrderManager(
                     )
                 book.put(managed)
                 siblings[leg.clientOrderId] = leg.siblingIds
-                registerExposure(leg.request, groupId)
+                exposure.register(leg.request, groupId)
                 recovered += managed
             }
             val pairs = persistor.loadBracketPairs(sid)
@@ -802,7 +636,7 @@ class OrderManager(
                         lastUpdatedAt = now,
                     )
                 book.put(managed)
-                registerExposure(request)
+                exposure.register(request)
                 if (!engineHeldScaleOutExit) recovered += managed
             }
             // Older journals may contain a dynamic stop without the duplicate pending-order
@@ -873,7 +707,7 @@ class OrderManager(
                 lastUpdatedAt = clock.now(),
             )
         }
-        exposureEntries.remove(id)
+        exposure.remove(id)
         restoredAttachedEntries.remove(id)
         log.info(
             "[restore] attached entry {} is backed by booked venue ticket {} — marked filled without republishing",
@@ -912,7 +746,7 @@ class OrderManager(
         book.put(wrapper)
         book.put(basis)
         pendingScaleOutsByBasis[basis.id] = request
-        registerExposure(exposureEntryRequest(request.basis))
+        exposure.register(exposureEntryRequest(request.basis))
         recovered += basis
     }
 
@@ -1000,7 +834,7 @@ class OrderManager(
         }
         pendingChildren[parent.id] = request.children
         pendingOtosByParent[parent.id] = request
-        registerExposure(exposureEntryRequest(request.parent))
+        exposure.register(exposureEntryRequest(request.parent))
         recovered += parent
     }
 
@@ -1052,7 +886,7 @@ class OrderManager(
                     )
                     pendingChildren[attached.id] = listOf(stop)
                 }
-                registerExposure(attached)
+                exposure.register(attached)
                 recovered += managed
             }
             !isEngineManagedStop && !needsFillAnchor && OrderTypeCapability.BRACKET in caps -> {
@@ -1065,7 +899,7 @@ class OrderManager(
                         lastUpdatedAt = now,
                     )
                 book.put(managed)
-                registerExposure(request)
+                exposure.register(request)
                 recovered += managed
             }
             else -> {
@@ -1090,7 +924,7 @@ class OrderManager(
                     pendingChildren[entry.id] =
                         listOf(bracketExitOco(request, entryEstimate, request.quantity))
                 }
-                registerExposure(entry)
+                exposure.register(entry)
                 recovered += managed
             }
         }
@@ -1146,7 +980,7 @@ class OrderManager(
             is OrderRequest.SteppedStop -> trailingHwm.putIfAbsent(clientOrderId, request.entryPrice)
             else -> Unit
         }
-        registerExposure(request, groupId)
+        exposure.register(request, groupId)
     }
 
     /** Symbol, side, and quantity submitted under [clientOrderId]. */
@@ -1182,7 +1016,7 @@ class OrderManager(
         val ids = book.liveIdsFor(symbol) ?: return 0
         var count = 0
         for (id in ids) {
-            if (id !in exposureEntries) continue
+            if (id !in exposure) continue
             val managed = book[id] ?: error("live order index desync: $id")
             if (managed.request.strategyId != strategyId) continue
             val activeEntry =
@@ -1295,49 +1129,7 @@ class OrderManager(
             is OrderRequest.OTO -> submitOto(request)
 
             is OrderRequest.Bracket -> {
-                val entryEstimate = priceProvider.lastPrice(request.symbol) ?: BigDecimal.ZERO
-                if (entryEstimate.signum() != 0) {
-                    val riskStop =
-                        when (val sl = request.stopLoss) {
-                            is StopLossSpec.Fixed -> sl.price
-                            is StopLossSpec.ArmedTrail ->
-                                // Pre-arm stop level is `entry ± trailDistance`; risk recording
-                                // sees the worst-case loss the bracket can take.
-                                if (request.side == Side.BUY) {
-                                    entryEstimate - sl.trailDistance
-                                } else {
-                                    entryEstimate + sl.trailDistance
-                                }
-                            is StopLossSpec.SteppedStop ->
-                                if (request.side == Side.BUY) {
-                                    entryEstimate - sl.initialDistance
-                                } else {
-                                    entryEstimate + sl.initialDistance
-                                }
-                            is StopLossSpec.TimeTighten ->
-                                if (request.side == Side.BUY) {
-                                    entryEstimate - sl.initialDistance
-                                } else {
-                                    entryEstimate + sl.initialDistance
-                                }
-                        }
-                    recordRisk(
-                        clientOrderIds = listOf(request.id, request.entry.id),
-                        quantity = request.quantity,
-                        entry = entryEstimate,
-                        stop = riskStop,
-                        symbol = request.symbol,
-                    )
-                    recordProtection(
-                        clientOrderIds = listOf(request.id, request.entry.id),
-                        stopLoss = riskStop,
-                        takeProfit = request.takeProfit,
-                    )
-                }
-                if (trackRisk) {
-                    reportBracketByClientOrderId[request.id] = request
-                    reportBracketByClientOrderId[request.entry.id] = request
-                }
+                risk.recordAtSubmit(request, priceProvider.lastPrice(request.symbol) ?: BigDecimal.ZERO)
                 val caps = broker.capabilitiesFor(request.symbol)
                 val isEngineManagedStop =
                     request.stopLoss is StopLossSpec.ArmedTrail ||
@@ -1398,7 +1190,7 @@ class OrderManager(
             ),
         )
         pendingScaleOutsByBasis[normalized.basis.id] = normalized
-        registerExposure(exposureEntryRequest(normalized.basis))
+        exposure.register(exposureEntryRequest(normalized.basis))
         dispatch(normalized.basis)
         return SubmitAck(req.id, req.id, accepted = true)
     }
@@ -1423,7 +1215,7 @@ class OrderManager(
             ),
         )
         timeExits[req.id] = req
-        registerExposure(exposureEntryRequest(req.target))
+        exposure.register(exposureEntryRequest(req.target))
         dispatch(req.target)
         return SubmitAck(req.id, req.id, accepted = true)
     }
@@ -1466,7 +1258,7 @@ class OrderManager(
                 lastUpdatedAt = now,
             )
         }
-        registerExposure(firstReq)
+        exposure.register(firstReq)
         dispatch(firstReq)
         return SubmitAck(req.id, req.id, accepted = true)
     }
@@ -1650,7 +1442,7 @@ class OrderManager(
             )
         book.put(managed)
         engineHeldCloseTickets[stop.id] = ticket
-        registerExposure(stop)
+        exposure.register(stop)
         persistAll()
     }
 
@@ -1798,7 +1590,7 @@ class OrderManager(
                 ),
             )
             stacks.addPending(stackId, layerOrderId)
-            registerExposure(pending)
+            exposure.register(pending)
             log.info(
                 "stack pending stack_id={} strategy_id={} layer={} qty={} trigger={} side={}",
                 stackId,
@@ -2223,7 +2015,7 @@ class OrderManager(
             // Arm the trail only once the position exists — dispatched on the entry's fill.
             pendingChildren[attached.id] = listOf(managedStop)
         }
-        registerExposure(attached)
+        exposure.register(attached)
         val ack = submitToBroker(attached)
         return SubmitAck(req.id, req.id, accepted = ack.accepted, rejectReason = ack.rejectReason)
     }
@@ -2292,7 +2084,7 @@ class OrderManager(
         val ack = broker.submit(request)
         if (!ack.accepted && book[request.id]?.state?.isTerminal != true) {
             update(request.id) { it.copy(state = OrderState.REJECTED, lastUpdatedAt = clock.now()) }
-            exposureEntries.remove(request.id)
+            exposure.remove(request.id)
         }
         return ack
     }
@@ -2351,8 +2143,8 @@ class OrderManager(
 
     private fun submitRegisteredToBroker(request: OrderRequest): SubmitAck {
         val entry = exposureEntryRequest(request)
-        val existing = if (entry.id == request.id) null else exposureEntries.remove(entry.id)
-        registerExposure(request, existing?.groupId)
+        val existingGroup = if (entry.id == request.id) null else exposure.remove(entry.id)
+        exposure.register(request, existingGroup)
         return submitToBroker(request)
     }
 
@@ -2390,7 +2182,7 @@ class OrderManager(
         }
         pendingChildren[req.parent.id] = req.children
         pendingOtosByParent[req.parent.id] = req
-        registerExposure(exposureEntryRequest(req.parent))
+        exposure.register(exposureEntryRequest(req.parent))
         dispatch(req.parent)
         return SubmitAck(req.id, req.id, accepted = true)
     }
@@ -2426,8 +2218,8 @@ class OrderManager(
         // under the same id, so the sequence below is keyed by it too.
         val leg1AckId = ocoFillId(req.leg1)
         val leg2AckId = ocoFillId(req.leg2)
-        registerExposure(exposureEntryRequest(req.leg1), req.id)
-        registerExposure(exposureEntryRequest(req.leg2), req.id)
+        exposure.register(exposureEntryRequest(req.leg1), req.id)
+        exposure.register(exposureEntryRequest(req.leg2), req.id)
         siblings[leg1AckId] = listOf(leg2AckId)
         siblings[leg2AckId] = listOf(leg1AckId)
         emulatedOcoGroupByLeg[leg1AckId] = req.id
@@ -2449,7 +2241,7 @@ class OrderManager(
         if (!ack1.accepted) {
             // Local rejection that carried no event (e.g. a capability reject) — abandon the
             // OCO; leg2 was never dispatched.
-            exposureEntries.remove(leg2AckId)
+            exposure.remove(leg2AckId)
             clearOcoSequence(seq)
             return rejectOco(req.id, "leg ${req.leg1.id} rejected: ${ack1.rejectReason ?: "unknown"}")
         }
@@ -2486,7 +2278,7 @@ class OrderManager(
     private fun failOcoOnReject(ackId: String) {
         ocoByLeg1[ackId]?.let { seq ->
             if (!seq.leg2Placed) {
-                exposureEntries.remove(seq.leg2AckId)
+                exposure.remove(seq.leg2AckId)
                 clearOcoSequence(seq)
                 rejectOco(seq.ocoId, "leg ${seq.leg1.id} rejected")
                 return
@@ -2604,7 +2396,7 @@ class OrderManager(
         pendingChildren.remove(id)
         pendingOtosByParent.remove(id)
         engineHeldCloseTickets.remove(id)
-        exposureEntries.remove(id)
+        exposure.remove(id)
     }
 
     private fun runGc() = book.drainGc()
@@ -2902,7 +2694,7 @@ class OrderManager(
     }
 
     private fun onRejected(e: BrokerEvent.OrderRejected) {
-        haltCancellations.remove(e.clientOrderId)
+        haltCancels.forget(e.clientOrderId)
         preFillBrackets.remove(e.clientOrderId)
         fillAnchoredFallbackBrackets.remove(e.clientOrderId)
         fillAnchoredAttachedBrackets.remove(e.clientOrderId)
@@ -2923,16 +2715,9 @@ class OrderManager(
                     "${compensation.positionTicket}: ${e.reason}",
             )
         }
-        exposureEntries.remove(e.clientOrderId)
+        exposure.remove(e.clientOrderId)
         completeScaleOutExit(e.clientOrderId, OrderState.REJECTED)
-        reportBracketByClientOrderId.remove(e.clientOrderId)?.let { bracket ->
-            reportBracketByClientOrderId.remove(bracket.id)
-            reportBracketByClientOrderId.remove(bracket.entry.id)
-            riskByClientOrderId.remove(bracket.id)
-            riskByClientOrderId.remove(bracket.entry.id)
-            protectionByClientOrderId.remove(bracket.id)
-            protectionByClientOrderId.remove(bracket.entry.id)
-        }
+        risk.forgetRejected(e.clientOrderId)
         unarmedChildren.orEmpty().forEach { cancel(it.id) }
         failOcoOnReject(e.clientOrderId)
     }
@@ -2953,7 +2738,7 @@ class OrderManager(
                 ?.takeIf { it.isNotBlank() }
                 ?.let { partialScaleOutPositionTickets[e.clientOrderId] = it }
         }
-        exposureEntries[e.clientOrderId]?.filledQuantity = e.cumulativeFilled
+        exposure.recordFill(e.clientOrderId, e.cumulativeFilled)
         log.info(
             "order partially filled order_id={} strategy_id={} symbol={} side={} qty={} cumulative={} price={}",
             e.clientOrderId,
@@ -2970,7 +2755,7 @@ class OrderManager(
     }
 
     private fun onFilled(e: BrokerEvent.OrderFilled) {
-        haltCancellations.remove(e.clientOrderId)
+        haltCancels.forget(e.clientOrderId)
         if (!e.updatesOrderExecution) {
             log.info(
                 "position close observed order_id={} broker_order_id={} — terminal order record unchanged",
@@ -3003,7 +2788,7 @@ class OrderManager(
             }
         if (!applied) return
         ocoCompensations.remove(e.clientOrderId)
-        exposureEntries.remove(e.clientOrderId)
+        exposure.remove(e.clientOrderId)
         completeScaleOutExit(e.clientOrderId, OrderState.FILLED)
         log.info(
             "order filled order_id={} strategy_id={} symbol={} side={} qty={} price={}",
@@ -3299,7 +3084,7 @@ class OrderManager(
         val liveChild = wrapper.childClientOrderIds.any { book[it]?.state?.isTerminal == false }
         if (liveChild) return
         update(wrapperId) { it.copy(state = OrderState.FILLED, lastUpdatedAt = clock.now()) }
-        exposureEntries.remove(wrapperId)
+        exposure.remove(wrapperId)
     }
 
     /** Cancel an OCO sibling exactly once, beginning with the first positive execution slice. */
@@ -3397,7 +3182,7 @@ class OrderManager(
     }
 
     private fun onCancelled(e: BrokerEvent.OrderCancelled) {
-        haltCancellations.remove(e.clientOrderId)
+        haltCancels.forget(e.clientOrderId)
         preFillBrackets.remove(e.clientOrderId)
         fillAnchoredFallbackBrackets.remove(e.clientOrderId)
         fillAnchoredAttachedBrackets.remove(e.clientOrderId)
@@ -3407,7 +3192,7 @@ class OrderManager(
             }
         if (!applied) return
         ocoSiblingCancelStarted.remove(e.clientOrderId)
-        exposureEntries.remove(e.clientOrderId)
+        exposure.remove(e.clientOrderId)
         completeScaleOutExit(e.clientOrderId, OrderState.CANCELLED)
         val unarmedChildren = pendingChildren.remove(e.clientOrderId)
         pendingOtosByParent.remove(e.clientOrderId)
@@ -3501,7 +3286,7 @@ class OrderManager(
                     lastUpdatedAt = now,
                 )
             book.put(managed)
-            registerExposure(exit)
+            exposure.register(exit)
         }
         book[scaleOut.id]?.let { wrapper ->
             book.put(
@@ -4049,15 +3834,12 @@ class OrderManager(
         reason: String,
     ) {
         update(request.id) { it.copy(state = OrderState.REJECTED, lastUpdatedAt = clock.now()) }
-        exposureEntries.remove(request.id)
+        exposure.remove(request.id)
         log.warn("engine-held order {} blocked before broker submission: {}", request.id, reason)
         bus.publish(com.qkt.events.RiskRejectedEvent(request, reason, timestamp = clock.now()))
     }
 
     private companion object {
-        const val HALT_CANCEL_RETRY_MS = 1_000L
-        const val HALT_CANCEL_MAX_RETRY_MS = 30_000L
-        const val HALT_CANCEL_ALERT_ATTEMPTS = 3
         const val PENDING_SLOT = "pending-orders"
         const val PAIRS_SLOT = "bracket-pairs"
         const val OCO_SLOT = "oco-legs"
