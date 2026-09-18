@@ -184,7 +184,7 @@ test class that pins it.
 | #634 | `CandleAggregator` never reopens a closed window; late ticks are dropped and counted | `CandleAggregatorTest` |
 | #635 | Sim StopLimit/IfTouched-LIMIT activate a resting limit (no instant fill at the limit); limit fills are limit-or-better, never slipped adversely | `PaperBrokerTest`, `MT5BrokerSimulatorTest` |
 | #636 | Expiry wins the deadline instant in both venue-held (sim `expireGtd` before the trigger pass) and engine-held (`now >= deadline`) paths | `OrderManagerGtdSweepTest` |
-| #637 | A triggered order re-checks its live state before broker submission — a same-pass cancel can no longer double-submit | `OrderManagerBracketTest` |
+| #637 | A triggered order re-checks its live state before broker submission — a same-pass cancel can no longer double-submit | `OrderManagerBracketDecompositionTest` |
 | #639 | Crossed stored quotes (bid > ask) are dropped identically at read time by CSV and binary feeds, warn-counted, instead of crashing the replay | `CsvTickFeedTest`, `BinaryTickParityTest` |
 | #640 | Fetch persists tick volume; old cached rows derive volume from stored side volumes at read time | `DukascopyTickFetcherTest`, `TickAssemblerTest` |
 | #643 | Plain `--bars` stops that gap through their level fill at the adverse opening print, not the level | `PaperBrokerTest` |
