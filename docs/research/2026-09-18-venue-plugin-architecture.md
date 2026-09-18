@@ -11,7 +11,10 @@ Both blockers that document named (per-symbol calendars, config-driven profiles)
 shipped (`broker/mt5/SymbolCalendars.kt`, `MT5BrokerProfileLoader.kt:34-37`). This document is
 the next step it deferred: the venues MT5 cannot reach, and the deep asset-class concepts.
 
-**Status:** research / proposal. Nothing here is implemented.
+**Status:** research / proposal. Step 1a (the contracts, MT5 and Bybit behind them, live wiring) is
+implemented — see [trading account contracts](../superpowers/specs/2026-09-18-trading-account-contracts-design.md).
+The design settled on these names: `Connector`, `TradingAccount`, `AccountDirectory`; the research's
+`Venue` is `TradingAccount`.
 
 ---
 

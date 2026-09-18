@@ -4,9 +4,10 @@ import com.qkt.execution.OrderRequest
 import java.math.BigDecimal
 
 /**
- * Single interface every venue connector implements.
+ * The order-entry session a strategy uses on one trading account.
  *
- * Brokers receive [OrderRequest]s and publish results back through
+ * A connector's [com.qkt.connectivity.TradingAccount] creates one per strategy session through
+ * its `orderEntry` factory. Sessions receive [OrderRequest]s and publish results back through
  * [com.qkt.events.BrokerEvent]s on the bus. The interface is intentionally narrow —
  * submit, cancel, and (optionally) modify — because the engine handles everything
  * around it: order management, P&L attribution, position tracking, risk.
@@ -14,7 +15,7 @@ import java.math.BigDecimal
  * Implementations: [PaperBroker] (in-process simulator), [com.qkt.connector.mt5.MT5Broker]
  * (MetaTrader 5 via gateway), [com.qkt.connector.bybit.spot.BybitSpotBroker] /
  * [com.qkt.connector.bybit.linear.BybitLinearBroker] (Bybit REST/WS),
- * [com.qkt.broker.composite.CompositeBroker] (multi-venue router).
+ * [CompositeBroker] (multi-venue router).
  */
 interface Broker {
     /** Human-readable broker identifier — appears in logs and status output. */

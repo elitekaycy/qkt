@@ -64,6 +64,7 @@ starting_balance: 10000
 brokers:
   bybit_spot:
     type: bybit
+    category: spot                      # spot | linear; the name must be bybit_<category>
     api_key: ${BYBIT_API_KEY}
     api_secret: ${BYBIT_API_SECRET}
     testnet: false

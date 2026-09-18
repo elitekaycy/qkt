@@ -211,9 +211,16 @@ daemon) are a Bybit-internal change for later.
    uses Bybit today (checked bot1, bot2, local labs on 2026-09-18).
 2. A `brokers:` entry with a missing or unknown `type` is a startup error. Every deployed config
    sets `type: mt5` (checked on the same date).
-3. Startup logs and `DaemonStarted` list every verified account, not only MT5 ones; the
-   "live account in non-production mode" warning covers any `AccountType.LIVE` account. MT5 lines
-   are byte-identical (the connector owns `description`).
+3. Startup logs and `DaemonStarted` list every verified account, not only MT5 ones. The labels are
+   connector-neutral — `[INFO] broker accounts loaded: …` and `[INFO] account: …` replace
+   `mt5 broker profiles loaded:` / `mt5 account:` — while each account's description is
+   byte-identical (the connector owns it). Load and preflight errors say "broker account" instead
+   of "MT5 profile", with the same exit code. The "live account in non-production mode" warning
+   covers any `AccountType.LIVE` account and names it. No repository parses these lines (checked
+   2026-09-18).
+4. `qkt run` and `qkt bot` live sessions open accounts through the directory too; `qkt bot` live
+   now shares one client and read cache per account instead of one client per strategy session.
+5. MT5 `api_key` also accepts `env:` and `file:` references, like every connector's credentials.
 
 ## Enforcement
 

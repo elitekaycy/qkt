@@ -23,7 +23,7 @@ brokers:
 ```
 
 Broker env overrides of the form `QKT_BROKER_<NAME>_<FIELD>` win over file
-values for MT5 broker profile scalar fields. They are profile-scoped operational
+values for MT5 profile scalar fields and for every connector's credential fields. They are profile-scoped operational
 overrides; reusable scaffolds use neutral substitution variables such as
 `QKT_BROKER_GATEWAY_URL`.
 
@@ -388,13 +388,24 @@ Promotion records are appended JSONL. Waivers require a reason and are also jour
 
 ## `brokers`
 
-`brokers` is keyed by profile name. `type: mt5` entries are loaded by `MT5BrokerProfileLoader` and can inherit built-in defaults.
+`brokers` is keyed by account name. Each entry is one trading account, opened by the connector
+named in its `type`; the entry name, upper-cased, is the prefix strategies use (`prop_s01` serves
+`PROP_S01:XAUUSD`). A missing or unknown `type` refuses startup and lists the installed
+connectors. See [Broker integration](../concepts/broker-integration.md) for the model.
+
+Credential fields (`api_key`, `api_secret`) accept a literal, `${VAR}` (substituted when the
+file loads), `env:VAR`, or `file:/path` (trailing newline trimmed, for Docker secrets). An
+environment override `QKT_BROKER_<NAME>_<FIELD>` wins over the file value.
+
+### `type: mt5`
+
+MT5 entries can inherit built-in defaults.
 
 Built-in MT5 profile names: `exness`, `icmarkets`, `ftmo`, `pepperstone`.
 
 | Key | Type | Required | Default/inheritance | Notes |
 |---|---|---|---|---|
-| `brokers.<name>.type` | string | yes | none | Currently `mt5` for config-driven MT5 profiles. |
+| `brokers.<name>.type` | string | yes | none | `mt5` (this table) or `bybit` (below). |
 | `extends` | profile name | no | same-name built-in if present | Inherit from a built-in or earlier user profile. |
 | `gateway_url` | URL | yes for fresh profile | inherited or built-in | MT5 gateway HTTP base URL. |
 | `api_key` | string | no | inherited or empty | Bearer token matching the gateway `API_KEY`; use a neutral variable such as `${QKT_BROKER_API_KEY}` in reusable scaffolds. |
@@ -418,7 +429,33 @@ Built-in MT5 profile names: `exness`, `icmarkets`, `ftmo`, `pepperstone`.
 | `capability_restrictions` | list of `OrderTypeCapability` names | no | inherited plus overrides | Disables venue capabilities by enum name. |
 | `instrument_overrides.<symbol>` | map | no | inherited plus overrides | Requires `min_volume`, `volume_step`, `point_size`, `digits`, `trade_stops_level_points`; optional `max_volume` is enforced when present. |
 
-Bybit credentials are not configured under `qkt.config.yaml`. Bybit live routes are enabled when `BYBIT_API_KEY` is non-empty. The client reads `BYBIT_API_KEY`, `BYBIT_API_SECRET`, `BYBIT_TESTNET`, `BYBIT_RECV_WINDOW_MS`, and `BYBIT_ACCOUNT_TYPE` from the environment.
+### `type: bybit`
+
+One entry per Bybit product category. The Bybit brokers serve fixed prefixes, so the entry must be
+named after its category: `bybit_spot` (`BYBIT_SPOT:`) or `bybit_linear` (`BYBIT_LINEAR:`).
+Entries with the same credentials and endpoint share one Bybit connection.
+
+```yaml
+brokers:
+  bybit_linear:
+    type: bybit
+    category: linear
+    api_key: env:BYBIT_API_KEY
+    api_secret: env:BYBIT_API_SECRET
+    testnet: "true"
+```
+
+| Key | Type | Required | Default | Notes |
+|---|---|---|---|---|
+| `category` | `spot` or `linear` | yes | none | Must match the entry name. |
+| `api_key` | credential | yes | none | Refuses startup when missing or empty. |
+| `api_secret` | credential | yes | none | Refuses startup when missing or empty. |
+| `testnet` | bool | no | `true` | Only an explicit `false` trades mainnet. |
+| `recv_window_ms` | long | no | `5000` | Bybit signed-request receive window. |
+| `account_type` | string | no | `UNIFIED` | Bybit account type for balance reads. |
+
+The daemon connects each Bybit account at startup and refuses to start if the connection is
+rejected. Bybit is never enabled by environment variables alone.
 
 Policy-rate artifacts are also configured through the environment. `QKT_RBA_POLICY_RATE_SOURCE`
 and `QKT_RBNZ_POLICY_RATE_SOURCE` accept an absolute path, `file:` URI, or HTTPS URL for the
