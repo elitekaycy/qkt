@@ -14,7 +14,7 @@ import com.qkt.execution.StopLossSpec
 import com.qkt.execution.isTerminal
 import com.qkt.marketdata.MarketPriceProvider
 import java.math.BigDecimal
-import org.slf4j.LoggerFactory
+import org.slf4j.Logger
 
 /**
  * The last step before the venue, and the local refusals that stand in for venue rejections.
@@ -31,9 +31,8 @@ internal class VenueSubmission(
     private val priceProvider: MarketPriceProvider,
     private val clock: Clock,
     private val ops: OrderOps,
+    private val log: Logger,
 ) {
-    private val log = LoggerFactory.getLogger(VenueSubmission::class.java)
-
     /** Sends [request] to the venue; a refusal marks it rejected and releases its exposure. */
     fun submitToBroker(request: OrderRequest): SubmitAck {
         val expiresAt = request.expiresAt

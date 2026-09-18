@@ -11,7 +11,7 @@ import com.qkt.execution.OrderState
 import com.qkt.execution.TriggerType
 import com.qkt.execution.withCloseTicket
 import java.math.BigDecimal
-import org.slf4j.LoggerFactory
+import org.slf4j.Logger
 
 /**
  * Turns a triggered engine-held order into the order the venue executes: a stop becomes a
@@ -29,9 +29,8 @@ internal class TriggerFiring(
     private val ops: OrderOps,
     private val closeTicket: (OrderRequest) -> String?,
     private val engineHeldSubmissionBlockReason: (OrderRequest) -> String?,
+    private val log: Logger,
 ) {
-    private val log = LoggerFactory.getLogger(TriggerFiring::class.java)
-
     /** Sends the triggered engine-held order [managed] to the venue as the order it becomes. */
     fun fire(
         managed: ManagedOrder,

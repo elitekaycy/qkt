@@ -14,7 +14,6 @@
 1022 src/main/kotlin/com/qkt/dsl/compile/ExprCompiler.kt
 971 src/test/kotlin/com/qkt/broker/MT5BrokerSimulatorTest.kt
 947 src/test/kotlin/com/qkt/cli/daemon/portfolio/PortfolioDeployerE2ETest.kt
-939 src/main/kotlin/com/qkt/app/OrderManager.kt
 899 src/test/kotlin/com/qkt/app/LiveSessionBrokerCoverageTest.kt
 898 src/main/kotlin/com/qkt/positions/StrategyPositionTracker.kt
 897 src/test/kotlin/com/qkt/broker/mt5/MT5ClientTest.kt
@@ -24,6 +23,7 @@
 794 src/test/kotlin/com/qkt/parity/GeneratedReentryParityTest.kt
 758 src/main/kotlin/com/qkt/cli/DaemonCommand.kt
 755 src/test/kotlin/com/qkt/broker/PaperBrokerTest.kt
+752 src/main/kotlin/com/qkt/app/OrderManager.kt
 734 src/main/kotlin/com/qkt/cli/Config.kt
 703 src/main/kotlin/com/qkt/cli/daemon/portfolio/PortfolioDeployer.kt
 693 src/main/kotlin/com/qkt/cli/GoldenReplayDataMaterializer.kt

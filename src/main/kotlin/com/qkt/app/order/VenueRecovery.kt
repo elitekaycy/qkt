@@ -5,7 +5,7 @@ import com.qkt.common.Clock
 import com.qkt.events.BrokerEvent
 import com.qkt.execution.ManagedOrder
 import com.qkt.execution.OrderState
-import org.slf4j.LoggerFactory
+import org.slf4j.Logger
 
 /**
  * Reconciles restored venue-held orders with what the venue actually holds. Orders the venue
@@ -20,10 +20,9 @@ internal class VenueRecovery(
     private val bookedVenueTickets: (strategyId: String) -> Set<String>,
     private val clock: Clock,
     private val ops: OrderOps,
+    private val log: Logger,
     private val retire: (BrokerEvent.OrderCancelled) -> Unit,
 ) {
-    private val log = LoggerFactory.getLogger(VenueRecovery::class.java)
-
     /** Hands [recovered] to the broker for reconciliation, then retires what it could not match. */
     fun reconcile(
         strategyIds: List<String>,

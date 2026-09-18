@@ -6,7 +6,7 @@ import com.qkt.common.Side
 import com.qkt.execution.ManagedOrder
 import com.qkt.execution.OrderRequest
 import java.math.BigDecimal
-import org.slf4j.LoggerFactory
+import org.slf4j.Logger
 
 /**
  * Per-tick policy of each engine-held stop kind: a trailing mark follows the favorable extreme,
@@ -24,9 +24,8 @@ internal class ManagedStopTicker(
     private val clock: Clock,
     private val persist: () -> Unit,
     private val tightenAtVenue: (managed: ManagedOrder, stopLoss: BigDecimal, transition: String) -> Unit,
+    private val log: Logger,
 ) {
-    private val log = LoggerFactory.getLogger(ManagedStopTicker::class.java)
-
     /** Advances [managed]'s mark, arm flag, step or tightening for a tick at [tickPrice]. */
     fun onTick(
         managed: ManagedOrder,
