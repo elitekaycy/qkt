@@ -30,7 +30,12 @@ class BybitTestnetExerciseTest {
             System.getenv("BYBIT_API_KEY") != null && System.getenv("BYBIT_API_SECRET") != null,
             "BYBIT_API_KEY/SECRET not set — skipping live testnet exercise",
         )
-        val c = BybitClient(testnet = true)
+        val c =
+            BybitClient(
+                apiKey = System.getenv("BYBIT_API_KEY").orEmpty(),
+                apiSecret = System.getenv("BYBIT_API_SECRET").orEmpty(),
+                testnet = true,
+            )
         assertThat(c.restBaseUrl)
             .withFailMessage("refusing to run against a non-testnet base URL: ${c.restBaseUrl}")
             .contains("api-testnet.bybit.com")
