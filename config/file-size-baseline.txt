@@ -60,7 +60,6 @@
 382 src/test/kotlin/com/qkt/broker/bybit/spot/BybitSpotStateRecoveryTest.kt
 382 src/test/kotlin/com/qkt/marketdata/live/mt5/Mt5MarketSourceTimeBaseTest.kt
 377 src/main/kotlin/com/qkt/persistence/StatePersistor.kt
-371 src/test/kotlin/com/qkt/app/OrderManagerAttachedBracketCloseTest.kt
 368 src/test/kotlin/com/qkt/cli/daemon/portfolio/PortfolioRiskAggregatorTest.kt
 362 src/test/kotlin/com/qkt/broker/bybit/spot/BybitSpotBrokerTest.kt
 360 src/test/kotlin/com/qkt/app/OrderManagerAttachedBracketTest.kt
