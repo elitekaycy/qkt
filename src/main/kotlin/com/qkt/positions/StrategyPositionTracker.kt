@@ -6,7 +6,6 @@ import com.qkt.events.BrokerEvent
 import com.qkt.execution.LegIntent
 import com.qkt.execution.Trade
 import java.math.BigDecimal
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
 /**
@@ -22,9 +21,9 @@ import java.util.concurrent.atomic.AtomicLong
  * would otherwise commingle them into the primary's entry-price math.
  */
 class StrategyPositionTracker private constructor(
-    private val persistor: com.qkt.persistence.StatePersistor,
-    private val excursionPersistIntervalMs: Long,
-    private val clock: () -> Long,
+    private val persistor: com.qkt.persistence.StatePersistor, // read reflectively by BacktestPersistenceInvariantTest
+    excursionPersistIntervalMs: Long,
+    clock: () -> Long,
     private val legBooks: StrategyLegBooks,
 ) : StrategyLegReads by legBooks {
     /**
@@ -41,6 +40,8 @@ class StrategyPositionTracker private constructor(
     private val log = org.slf4j.LoggerFactory.getLogger(StrategyPositionTracker::class.java)
 
     private val accountIndex = AccountNetIndex(legBooks)
+
+    private val excursions = PrimaryExcursions(legBooks, persistor, excursionPersistIntervalMs, clock)
 
     /** The account's positions as a read-only projection of this ledger. */
     val account: LegExposureProvider = AccountPositionView(accountIndex)
@@ -114,7 +115,7 @@ class StrategyPositionTracker private constructor(
                 ),
             )
             log.info("venue position {} on {} booked for {} from {}", ticket, symbol, owner, source)
-            syncPrimaryMfeTracker(owner, symbol)
+            excursions.sync(owner, symbol)
             legBooks.persist(owner, symbol)
             accountIndex.reindex(symbol)
             return true
@@ -136,7 +137,7 @@ class StrategyPositionTracker private constructor(
             )
             books[symbol] = book
         }
-        syncPrimaryMfeTracker(owner, symbol)
+        excursions.sync(owner, symbol)
         legBooks.persist(owner, symbol)
         accountIndex.reindex(symbol)
         return true
@@ -156,22 +157,8 @@ class StrategyPositionTracker private constructor(
         accountIndex.reindex(symbol)
         // The restored book needs its excursion tracker like any other (#1158), seeded with the
         // marks saved before the restart when they belong to the same leg.
-        syncPrimaryMfeTracker(strategyId, symbol)
-        val tracked = primaryMfeTrackers[Pair(strategyId, symbol)] ?: return
-        val saved = runCatching { persistor.loadExcursion(strategyId, symbol) }.getOrNull() ?: return
-        val leg = book.leg(tracked.legId) ?: return
-        if (saved.legId != leg.legId || saved.side != leg.side || saved.entryPrice.compareTo(leg.entryPrice) != 0) {
-            return
-        }
-        tracked.tracker.seed(saved.mfe, saved.mae, saved.adverseExtremePrice)
-        log.info(
-            "restored excursion for {} {} leg={} mfe={} mae={}",
-            strategyId,
-            symbol,
-            leg.legId,
-            saved.mfe.toPlainString(),
-            saved.mae.toPlainString(),
-        )
+        excursions.sync(strategyId, symbol)
+        excursions.restore(strategyId, symbol, book)
     }
 
     /**
@@ -183,80 +170,10 @@ class StrategyPositionTracker private constructor(
         strategyId: String,
         symbol: String,
         candles: List<com.qkt.marketdata.Candle>,
-    ) {
-        val key = Pair(strategyId, symbol)
-        val tracked = primaryMfeTrackers[key] ?: return
-        val leg = legBooks.book(strategyId, symbol)?.leg(tracked.legId) ?: return
-        var used = 0
-        for (candle in candles) {
-            if (candle.startTime < leg.openedAt) continue
-            tracked.tracker.observeRange(candle.high, candle.low)
-            used++
-        }
-        if (used > 0) {
-            persistExcursion(strategyId, symbol, tracked, force = true)
-            log.info(
-                "extended excursion for {} {} leg={} from {} downtime bars: mfe={} mae={}",
-                strategyId,
-                symbol,
-                leg.legId,
-                used,
-                tracked.tracker.value().toPlainString(),
-                tracked.tracker.mae().toPlainString(),
-            )
-        }
-    }
-
-    private fun persistExcursion(
-        strategyId: String,
-        symbol: String,
-        tracked: LegMfe,
-        force: Boolean = false,
-    ) {
-        val now = clock()
-        if (!force && now - tracked.lastPersistedAt < excursionPersistIntervalMs) return
-        val leg = legBooks.book(strategyId, symbol)?.leg(tracked.legId) ?: return
-        tracked.lastPersistedAt = now
-        runCatching {
-            persistor.saveExcursion(
-                strategyId,
-                symbol,
-                com.qkt.persistence.PersistedExcursion(
-                    legId = leg.legId,
-                    side = leg.side,
-                    entryPrice = leg.entryPrice,
-                    mfe = tracked.tracker.value(),
-                    mae = tracked.tracker.mae(),
-                    adverseExtremePrice = tracked.tracker.adverseExtremePrice(),
-                ),
-            )
-        }
-    }
+    ) = excursions.extend(strategyId, symbol, candles)
 
     /** Monotonic counter for engine-internal PRIMARY leg ids. */
     private val primaryLegSeq = AtomicLong()
-
-    /**
-     * Per-(strategyId, symbol) excursion trackers for the current PRIMARY leg. Maintained in
-     * sync with the leg-book by [syncPrimaryMfeTracker] after every fill, and updated on
-     * each market tick via [onTick]. Reads land via [primaryMfeFor], which backs the DSL
-     * accessor `POSITION.<stream>.mfe`, and [primaryMaeFor], which backs
-     * `POSITION.<stream>.mae`.
-     *
-     * Same-direction averaging fills re-anchor the tracker to the new weighted entry —
-     * MFE resets to zero from the new reference point, matching the "favorable excursion
-     * from current best-estimate entry" semantic.
-     */
-    private val primaryMfeTrackers: MutableMap<Pair<String, String>, LegMfe> = ConcurrentHashMap()
-
-    private class LegMfe(
-        val legId: String,
-        val tracker: MfeTracker,
-    ) {
-        /** Wall-clock of the last excursion save; the throttle in [persistExcursion] reads it. */
-        @Volatile
-        var lastPersistedAt: Long = Long.MIN_VALUE / 2
-    }
 
     /** How one execution slice landed in the leg book. */
     enum class LegAction {
@@ -324,19 +241,7 @@ class StrategyPositionTracker private constructor(
     fun onTick(
         symbol: String,
         price: BigDecimal,
-    ) {
-        if (primaryMfeTrackers.isEmpty()) return
-        for ((key, lm) in primaryMfeTrackers) {
-            if (key.second != symbol) continue
-            val mfeBefore = lm.tracker.value()
-            val maeBefore = lm.tracker.mae()
-            lm.tracker.onTick(price)
-            // A new extreme is worth keeping across a restart (#1158); ties and pullbacks are not.
-            if (lm.tracker.value() > mfeBefore || lm.tracker.mae() > maeBefore) {
-                persistExcursion(key.first, symbol, lm)
-            }
-        }
-    }
+    ) = excursions.onTick(symbol, price)
 
     /**
      * Current MFE of the PRIMARY leg on [symbol] for [strategyId], or null if no primary
@@ -345,7 +250,7 @@ class StrategyPositionTracker private constructor(
     fun primaryMfeFor(
         strategyId: String,
         symbol: String,
-    ): BigDecimal? = primaryMfeTrackers[Pair(strategyId, symbol)]?.tracker?.value()
+    ): BigDecimal? = excursions.mfeFor(strategyId, symbol)
 
     /**
      * Current MAE of the PRIMARY leg on [symbol] for [strategyId], or null if no primary
@@ -354,40 +259,12 @@ class StrategyPositionTracker private constructor(
     fun primaryMaeFor(
         strategyId: String,
         symbol: String,
-    ): BigDecimal? = primaryMfeTrackers[Pair(strategyId, symbol)]?.tracker?.mae()
+    ): BigDecimal? = excursions.maeFor(strategyId, symbol)
 
     internal fun primaryAdverseExtremePriceFor(
         strategyId: String,
         symbol: String,
-    ): BigDecimal? = primaryMfeTrackers[Pair(strategyId, symbol)]?.tracker?.adverseExtremePrice()
-
-    private fun syncPrimaryMfeTracker(
-        strategyId: String,
-        symbol: String,
-    ) {
-        val key = Pair(strategyId, symbol)
-        val primary = legBooks.book(strategyId, symbol)?.let { entryLeg(it) }
-        if (primary == null) {
-            primaryMfeTrackers.remove(key)
-            return
-        }
-        val existing = primaryMfeTrackers[key]
-        if (existing == null || existing.legId != primary.legId) {
-            primaryMfeTrackers[key] = LegMfe(primary.legId, MfeTracker(primary.side, primary.entryPrice))
-        }
-    }
-
-    /**
-     * The leg `POSITION.<stream>.mfe` measures: the PRIMARY when the book has one, otherwise the
-     * oldest parentless leg. Hedging venues open every plain BUY/SELL as an INDEPENDENT leg, so
-     * without the fallback the excursion accessors would sit at zero for the whole trade.
-     */
-    private fun entryLeg(book: LegBook): PositionLeg? =
-        book.primary()
-            ?: book
-                .all()
-                .filter { it.parentLegId == null && it.role != LegRole.STACK }
-                .minWithOrNull(compareBy({ it.openedAt }, { it.legId }))
+    ): BigDecimal? = excursions.adverseExtremePriceFor(strategyId, symbol)
 
     private fun openLeg(
         event: BrokerEvent.OrderFilled,
@@ -427,7 +304,7 @@ class StrategyPositionTracker private constructor(
                     brokerTicket = ticket,
                 ),
             )
-            syncPrimaryMfeTracker(event.strategyId, event.symbol)
+            excursions.sync(event.strategyId, event.symbol)
             return FillApplication(Money.ZERO, intent.legId, LegAction.OPENED)
         }
         // The same order executing again: book only what the venue reports beyond what the
@@ -539,7 +416,7 @@ class StrategyPositionTracker private constructor(
         val remaining = closed.quantity.subtract(closingQty)
         if (remaining.signum() > 0) book.add(closed.copy(quantity = remaining))
         if (book.isEmpty()) legBooks.booksOf(event.strategyId)?.remove(event.symbol)
-        syncPrimaryMfeTracker(event.strategyId, event.symbol)
+        excursions.sync(event.strategyId, event.symbol)
         return FillApplication(realized, closed.legId, LegAction.CLOSED)
     }
 
@@ -554,7 +431,7 @@ class StrategyPositionTracker private constructor(
                 timestamp = event.timestamp,
             )
         val realized = apply(event.strategyId, trade, event.brokerOrderId)
-        syncPrimaryMfeTracker(event.strategyId, event.symbol)
+        excursions.sync(event.strategyId, event.symbol)
         return FillApplication(realized)
     }
 
