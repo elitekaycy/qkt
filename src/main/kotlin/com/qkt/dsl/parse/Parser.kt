@@ -1,24 +1,17 @@
 package com.qkt.dsl.parse
 
 import com.qkt.common.Money
-import com.qkt.dsl.ast.AccountRef
 import com.qkt.dsl.ast.ActionAst
 import com.qkt.dsl.ast.ActionOpts
-import com.qkt.dsl.ast.AggFn
-import com.qkt.dsl.ast.Aggregate
 import com.qkt.dsl.ast.AllocateBlock
-import com.qkt.dsl.ast.Between
 import com.qkt.dsl.ast.BinOp
 import com.qkt.dsl.ast.BinaryOp
 import com.qkt.dsl.ast.Block
-import com.qkt.dsl.ast.BoolLit
 import com.qkt.dsl.ast.BracketAst
 import com.qkt.dsl.ast.BreakOffset
 import com.qkt.dsl.ast.Buy
-import com.qkt.dsl.ast.CalendarWindow
 import com.qkt.dsl.ast.Cancel
 import com.qkt.dsl.ast.CancelAll
-import com.qkt.dsl.ast.CaseWhen
 import com.qkt.dsl.ast.ChildArmedTrail
 import com.qkt.dsl.ast.ChildAt
 import com.qkt.dsl.ast.ChildBy
@@ -27,32 +20,20 @@ import com.qkt.dsl.ast.ChildPriceAst
 import com.qkt.dsl.ast.ChildRr
 import com.qkt.dsl.ast.Close
 import com.qkt.dsl.ast.CloseAll
-import com.qkt.dsl.ast.Cmp
-import com.qkt.dsl.ast.CmpOp
-import com.qkt.dsl.ast.CooldownRef
-import com.qkt.dsl.ast.CrossDir
-import com.qkt.dsl.ast.Crosses
 import com.qkt.dsl.ast.Day
 import com.qkt.dsl.ast.DefaultsBlock
 import com.qkt.dsl.ast.DirRel
 import com.qkt.dsl.ast.DirSense
 import com.qkt.dsl.ast.DurationAst
-import com.qkt.dsl.ast.ExitField
 import com.qkt.dsl.ast.ExitHooksAst
-import com.qkt.dsl.ast.ExitRef
 import com.qkt.dsl.ast.ExitRelativeLimit
 import com.qkt.dsl.ast.ExitRelativeStop
 import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.Fok
-import com.qkt.dsl.ast.FuncCall
 import com.qkt.dsl.ast.Gtc
 import com.qkt.dsl.ast.Gtd
 import com.qkt.dsl.ast.HUB_BROKER
-import com.qkt.dsl.ast.InList
-import com.qkt.dsl.ast.IndicatorCall
 import com.qkt.dsl.ast.Ioc
-import com.qkt.dsl.ast.IsNull
-import com.qkt.dsl.ast.LastTradingDayOfMonth
 import com.qkt.dsl.ast.Latch
 import com.qkt.dsl.ast.LatchBracket
 import com.qkt.dsl.ast.LatchCloseBeyond
@@ -70,16 +51,12 @@ import com.qkt.dsl.ast.Limit
 import com.qkt.dsl.ast.Log
 import com.qkt.dsl.ast.LogLevel
 import com.qkt.dsl.ast.Market
-import com.qkt.dsl.ast.NowAccessor
-import com.qkt.dsl.ast.NowField
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.OcoAst
 import com.qkt.dsl.ast.OcoEntry
 import com.qkt.dsl.ast.OrderTypeAst
 import com.qkt.dsl.ast.ParamDecl
 import com.qkt.dsl.ast.PortfolioAllocationMethod
-import com.qkt.dsl.ast.PositionRef
-import com.qkt.dsl.ast.Ref
 import com.qkt.dsl.ast.RegimeBlock
 import com.qkt.dsl.ast.RegimeConditionalState
 import com.qkt.dsl.ast.RegimeDefaultState
@@ -89,14 +66,10 @@ import com.qkt.dsl.ast.RuleAst
 import com.qkt.dsl.ast.ScheduleDecl
 import com.qkt.dsl.ast.ScheduleTrigger
 import com.qkt.dsl.ast.Sell
-import com.qkt.dsl.ast.SequenceAccessor
 import com.qkt.dsl.ast.SequenceDecl
 import com.qkt.dsl.ast.SequenceStageDecl
 import com.qkt.dsl.ast.SeriesDecl
 import com.qkt.dsl.ast.SeriesSource
-import com.qkt.dsl.ast.SessionWindow
-import com.qkt.dsl.ast.SinceOpen
-import com.qkt.dsl.ast.SinceTPast
 import com.qkt.dsl.ast.SizeNotional
 import com.qkt.dsl.ast.SizePctBalance
 import com.qkt.dsl.ast.SizePctEquity
@@ -106,41 +79,26 @@ import com.qkt.dsl.ast.SizeRiskAbs
 import com.qkt.dsl.ast.SizeRiskFrac
 import com.qkt.dsl.ast.SizeRiskFracOfBook
 import com.qkt.dsl.ast.SizingAst
-import com.qkt.dsl.ast.SnapshotBuy
-import com.qkt.dsl.ast.SnapshotKind
-import com.qkt.dsl.ast.SnapshotOpen
-import com.qkt.dsl.ast.SnapshotSell
-import com.qkt.dsl.ast.SnapshotTPast
 import com.qkt.dsl.ast.StackAst
 import com.qkt.dsl.ast.StackAtClause
 import com.qkt.dsl.ast.StackDirection
-import com.qkt.dsl.ast.StackEntryRef
 import com.qkt.dsl.ast.StackLayer
 import com.qkt.dsl.ast.StackLayers
 import com.qkt.dsl.ast.StackSpacing
-import com.qkt.dsl.ast.StateAccessor
-import com.qkt.dsl.ast.StateSource
 import com.qkt.dsl.ast.SteppedStopAst
 import com.qkt.dsl.ast.Stop
 import com.qkt.dsl.ast.StopLimit
 import com.qkt.dsl.ast.StopStepAst
 import com.qkt.dsl.ast.StrategyAst
-import com.qkt.dsl.ast.StreakRef
 import com.qkt.dsl.ast.StreamDecl
-import com.qkt.dsl.ast.StreamFieldRef
-import com.qkt.dsl.ast.StringLit
 import com.qkt.dsl.ast.SyncGroupDecl
 import com.qkt.dsl.ast.TifAst
 import com.qkt.dsl.ast.TimeOfDay
 import com.qkt.dsl.ast.TimeTightenAst
 import com.qkt.dsl.ast.Timezone
-import com.qkt.dsl.ast.TradesRef
 import com.qkt.dsl.ast.TrailingBy
 import com.qkt.dsl.ast.TrailingPct
-import com.qkt.dsl.ast.UnOp
-import com.qkt.dsl.ast.UnaryOp
 import com.qkt.dsl.ast.WhenThen
-import com.qkt.dsl.ast.Window
 import java.math.BigDecimal
 
 /**
@@ -157,6 +115,8 @@ class Parser(
 ) {
     private val cursor = TokenCursor(tokens)
     private val scope = ParseScope()
+    private val literalParser = LiteralParser(cursor)
+    private val expressionParser = ExpressionParser(cursor, scope, literalParser)
 
     fun parseFile(): ParseResult<ParsedFile> =
         when (cursor.peek().kind) {
@@ -278,7 +238,7 @@ class Parser(
         when (cursor.peek().kind) {
             TokenKind.WHEN -> {
                 cursor.advance()
-                val cond = parseExpr()
+                val cond = expressionParser.parseExpr()
                 cursor.expect(TokenKind.RUN, "expected RUN after WHEN expression")
                 val alias = cursor.expect(TokenKind.IDENT, "expected child alias after RUN").lexeme
                 val weight = parseOptionalWeight()
@@ -314,7 +274,7 @@ class Parser(
                 val key = cursor.expect(TokenKind.IDENT, "expected override key").lexeme
                 if (out.containsKey(key)) cursor.error("duplicate OVERRIDE key '$key'")
                 cursor.expect(TokenKind.EQ, "expected '=' after override key")
-                out[key] = parseLiteral()
+                out[key] = literalParser.parseLiteral()
             } while (cursor.match(TokenKind.COMMA))
         }
         cursor.expect(TokenKind.RBRACE, "expected '}' to close OVERRIDE")
@@ -338,7 +298,7 @@ class Parser(
         return when (cursor.peek().kind) {
             TokenKind.WHEN -> {
                 cursor.advance()
-                RegimeConditionalState(name, parseExpr())
+                RegimeConditionalState(name, expressionParser.parseExpr())
             }
             TokenKind.DEFAULT -> {
                 cursor.advance()
@@ -356,7 +316,7 @@ class Parser(
             if (cursor.peek().kind == TokenKind.REBALANCE) {
                 cursor.advance()
                 cursor.expect(TokenKind.EVERY, "expected EVERY after REBALANCE")
-                parseDuration()
+                literalParser.parseDuration()
             } else {
                 null
             }
@@ -509,40 +469,10 @@ class Parser(
         do {
             val name = cursor.expect(TokenKind.IDENT, "expected let name").lexeme
             cursor.expect(TokenKind.EQ, "expected '=' after let name")
-            val expr = parseExpr()
+            val expr = expressionParser.parseExpr()
             out.add(LetDecl(name, expr))
         } while (cursor.match(TokenKind.COMMA))
         return out
-    }
-
-    private fun parseLiteral(): ExprAst {
-        val negate = cursor.match(TokenKind.MINUS)
-        return when (cursor.peek().kind) {
-            TokenKind.NUMBER -> {
-                val t = cursor.advance()
-                val n = t.lexeme.toBigDecimalOrNull() ?: cursor.error("expected a number literal, got '${t.lexeme}'")
-                NumLit(if (negate) n.negate() else n)
-            }
-            TokenKind.TRUE -> {
-                cursor.advance()
-                if (negate) cursor.error("cannot negate a boolean")
-                BoolLit(true)
-            }
-            TokenKind.FALSE -> {
-                cursor.advance()
-                if (negate) cursor.error("cannot negate a boolean")
-                BoolLit(false)
-            }
-            TokenKind.STRING -> {
-                val t = cursor.advance()
-                if (negate) cursor.error("cannot negate a string")
-                StringLit(t.lexeme)
-            }
-            else ->
-                cursor.error(
-                    "expected a literal value (number, TRUE/FALSE, or string), got '${cursor.peek().lexeme}'",
-                )
-        }
     }
 
     private fun parseParams(): List<ParamDecl> {
@@ -550,566 +480,8 @@ class Parser(
         cursor.expect(TokenKind.PARAM, "expected PARAM")
         val name = cursor.expect(TokenKind.IDENT, "expected param name").lexeme
         cursor.expect(TokenKind.EQ, "expected '=' after param name")
-        out.add(ParamDecl(name, parseLiteral()))
+        out.add(ParamDecl(name, literalParser.parseLiteral()))
         return out
-    }
-
-    private fun parseExpr(): ExprAst = parseOrExpr()
-
-    private fun parseOrExpr(): ExprAst {
-        var lhs = parseAndExpr()
-        while (cursor.peek().kind == TokenKind.OR) {
-            cursor.advance()
-            val rhs = parseAndExpr()
-            lhs = BinaryOp(BinOp.OR, lhs, rhs)
-        }
-        return lhs
-    }
-
-    private fun parseAndExpr(): ExprAst {
-        var lhs = parseNotExpr()
-        while (cursor.peek().kind == TokenKind.AND) {
-            cursor.advance()
-            val rhs = parseNotExpr()
-            lhs = BinaryOp(BinOp.AND, lhs, rhs)
-        }
-        return lhs
-    }
-
-    private fun parseNotExpr(): ExprAst {
-        if (cursor.match(TokenKind.NOT)) return UnaryOp(UnOp.NOT, parseNotExpr())
-        return parseCmpExpr()
-    }
-
-    private fun parseCmpExpr(): ExprAst {
-        var lhs = parseAddExpr()
-        while (true) {
-            val k = cursor.peek().kind
-            val op =
-                when (k) {
-                    TokenKind.GT -> Cmp.GT
-                    TokenKind.LT -> Cmp.LT
-                    TokenKind.GE -> Cmp.GE
-                    TokenKind.LE -> Cmp.LE
-                    TokenKind.EQEQ -> Cmp.EQ
-                    TokenKind.EQ -> Cmp.EQ
-                    TokenKind.NEQ -> Cmp.NE
-                    else -> null
-                }
-            if (op != null) {
-                cursor.advance()
-                val rhs = parseAddExpr()
-                lhs = CmpOp(op, lhs, rhs)
-                continue
-            }
-            when (k) {
-                TokenKind.BETWEEN -> {
-                    cursor.advance()
-                    val lo = parseAddExpr()
-                    cursor.expect(TokenKind.AND, "expected AND between BETWEEN bounds")
-                    val hi = parseAddExpr()
-                    lhs = Between(lhs, lo, hi)
-                }
-                TokenKind.IN -> {
-                    cursor.advance()
-                    cursor.expect(TokenKind.LBRACKET, "expected '[' after IN")
-                    val members = mutableListOf<ExprAst>()
-                    if (cursor.peek().kind != TokenKind.RBRACKET) {
-                        members.add(parseExpr())
-                        while (cursor.match(TokenKind.COMMA)) members.add(parseExpr())
-                    }
-                    cursor.expect(TokenKind.RBRACKET, "expected ']' to close IN list")
-                    lhs = InList(lhs, members)
-                }
-                TokenKind.CROSSES -> {
-                    cursor.advance()
-                    val dir =
-                        when (cursor.peek().kind) {
-                            TokenKind.ABOVE -> {
-                                cursor.advance()
-                                CrossDir.ABOVE
-                            }
-                            TokenKind.BELOW -> {
-                                cursor.advance()
-                                CrossDir.BELOW
-                            }
-                            else -> cursor.error("expected ABOVE or BELOW after CROSSES, got '${cursor.peek().lexeme}'")
-                        }
-                    val rhs = parseAddExpr()
-                    lhs = Crosses(dir, lhs, rhs)
-                }
-                TokenKind.IS -> {
-                    cursor.advance()
-                    val negated = cursor.match(TokenKind.NOT)
-                    cursor.expect(TokenKind.NULL, "expected NULL after IS${if (negated) " NOT" else ""}")
-                    lhs = IsNull(lhs, negated)
-                }
-                else -> return lhs
-            }
-        }
-    }
-
-    private fun parseAddExpr(): ExprAst {
-        var lhs = parseMulExpr()
-        while (cursor.peek().kind == TokenKind.PLUS || cursor.peek().kind == TokenKind.MINUS) {
-            val op = if (cursor.advance().kind == TokenKind.PLUS) BinOp.ADD else BinOp.SUB
-            val rhs = parseMulExpr()
-            lhs = BinaryOp(op, lhs, rhs)
-        }
-        return lhs
-    }
-
-    private fun parseMulExpr(): ExprAst {
-        var lhs = parseUnaryExpr()
-        while (cursor.peek().kind == TokenKind.STAR || cursor.peek().kind == TokenKind.SLASH) {
-            val op = if (cursor.advance().kind == TokenKind.STAR) BinOp.MUL else BinOp.DIV
-            val rhs = parseUnaryExpr()
-            lhs = BinaryOp(op, lhs, rhs)
-        }
-        return lhs
-    }
-
-    private fun parseUnaryExpr(): ExprAst {
-        if (cursor.match(TokenKind.MINUS)) return UnaryOp(UnOp.NEG, parseUnaryExpr())
-        return parsePrimary()
-    }
-
-    private fun parsePrimary(): ExprAst {
-        val t = cursor.peek()
-        return when (t.kind) {
-            TokenKind.NUMBER -> {
-                cursor.advance()
-                NumLit(BigDecimal(t.lexeme))
-            }
-            TokenKind.DURATION -> {
-                val d = parseDuration()
-                NumLit(BigDecimal.valueOf(d.millis))
-            }
-            TokenKind.STRING -> {
-                cursor.advance()
-                StringLit(t.lexeme)
-            }
-            TokenKind.TRUE -> {
-                cursor.advance()
-                BoolLit(true)
-            }
-            TokenKind.FALSE -> {
-                cursor.advance()
-                BoolLit(false)
-            }
-            TokenKind.ENTRY_QTY -> {
-                cursor.advance()
-                com.qkt.dsl.ast.EntryQty
-            }
-            TokenKind.EXIT -> {
-                cursor.advance()
-                cursor.expect(TokenKind.DOT, "expected '.' after EXIT")
-                val field = cursor.expectFieldName().lexeme.uppercase()
-                ExitRef(
-                    when (field) {
-                        "PRICE" -> ExitField.PRICE
-                        "SIDE" -> ExitField.SIDE
-                        "QTY", "QUANTITY" -> ExitField.QTY
-                        "PNL" -> ExitField.PNL
-                        "REASON" -> ExitField.REASON
-                        else -> cursor.error("unknown EXIT field '$field'")
-                    },
-                )
-            }
-            TokenKind.MAX, TokenKind.MIN -> parseAggregateOrFunction()
-            TokenKind.MEAN, TokenKind.SUM -> parseAggregate()
-            TokenKind.CASE -> parseCaseWhen()
-            TokenKind.ACCOUNT -> {
-                cursor.advance()
-                cursor.expect(TokenKind.DOT, "expected '.' after ACCOUNT")
-                AccountRef(cursor.expectFieldName().lexeme)
-            }
-            TokenKind.STREAK -> {
-                cursor.advance()
-                cursor.expect(TokenKind.DOT, "expected '.' after STREAK")
-                StreakRef(cursor.expectFieldName().lexeme)
-            }
-            TokenKind.TRADES -> {
-                cursor.advance()
-                cursor.expect(TokenKind.DOT, "expected '.' after TRADES")
-                TradesRef(cursor.expectFieldName().lexeme)
-            }
-            TokenKind.COOLDOWN -> {
-                cursor.advance()
-                cursor.expect(TokenKind.DOT, "expected '.' after COOLDOWN")
-                CooldownRef(cursor.expectFieldName().lexeme)
-            }
-            TokenKind.SEQUENCE -> {
-                cursor.advance()
-                cursor.expect(TokenKind.DOT, "expected '.' after SEQUENCE")
-                val sequenceName = cursor.expectFieldName().lexeme
-                cursor.expect(TokenKind.DOT, "expected '.' after SEQUENCE name")
-                val first = cursor.expectFieldName().lexeme
-                if (first == "stage" || first == "complete") {
-                    SequenceAccessor(sequenceName, null, first)
-                } else {
-                    cursor.expect(TokenKind.DOT, "expected '.' after SEQUENCE stage name")
-                    SequenceAccessor(sequenceName, first, cursor.expectFieldName().lexeme)
-                }
-            }
-            TokenKind.POSITION -> {
-                cursor.advance()
-                cursor.expect(TokenKind.DOT, "expected '.' after POSITION")
-                val streamAlias = cursor.expectFieldName().lexeme
-                if (cursor.peek().kind == TokenKind.DOT) {
-                    cursor.advance()
-                    val accessor = cursor.expectFieldName().lexeme
-                    when (accessor) {
-                        "quantity", "qty" -> PositionRef(streamAlias)
-                        "entry_price", "avg_price", "avg_entry_price" ->
-                            StateAccessor(StateSource.POSITION_AVG_PRICE, streamAlias)
-                        "pnl" -> StateAccessor(StateSource.POSITION_PNL, streamAlias)
-                        "realized_pnl" -> StateAccessor(StateSource.POSITION_REALIZED_PNL, streamAlias)
-                        "unrealized_pnl" -> StateAccessor(StateSource.POSITION_UNREALIZED_PNL, streamAlias)
-                        "holding_duration" -> StateAccessor(StateSource.POSITION_HOLDING_DURATION, streamAlias)
-                        "mfe" -> StateAccessor(StateSource.POSITION_MFE, streamAlias)
-                        "mae" -> StateAccessor(StateSource.POSITION_MAE, streamAlias)
-                        "count", "open_count" -> StateAccessor(StateSource.POSITION_OPEN_COUNT, streamAlias)
-                        "longs", "long_count" -> StateAccessor(StateSource.POSITION_LONG_COUNT, streamAlias)
-                        "shorts", "short_count" -> StateAccessor(StateSource.POSITION_SHORT_COUNT, streamAlias)
-                        "gross" -> StateAccessor(StateSource.POSITION_GROSS, streamAlias)
-                        "trades_today" -> StateAccessor(StateSource.POSITION_TRADES_TODAY, streamAlias)
-                        "last_trade_at" -> StateAccessor(StateSource.POSITION_LAST_TRADE_AT, streamAlias)
-                        else -> {
-                            cursor.errors += ParseError(t.line, t.col, "unknown POSITION accessor: $accessor")
-                            PositionRef(streamAlias)
-                        }
-                    }
-                } else {
-                    PositionRef(streamAlias)
-                }
-            }
-            TokenKind.POSITION_AVG_PRICE -> {
-                cursor.advance()
-                cursor.expect(TokenKind.DOT, "expected '.' after POSITION_AVG_PRICE")
-                StateAccessor(StateSource.POSITION_AVG_PRICE, cursor.expectFieldName().lexeme)
-            }
-            TokenKind.OPEN_ORDERS -> {
-                cursor.advance()
-                cursor.expect(TokenKind.DOT, "expected '.' after OPEN_ORDERS")
-                StateAccessor(StateSource.OPEN_ORDERS, cursor.expectFieldName().lexeme)
-            }
-            TokenKind.SYMBOL -> {
-                cursor.advance()
-                Ref("__SYMBOL__")
-            }
-            TokenKind.NOW -> {
-                cursor.advance()
-                if (cursor.peek().kind == TokenKind.DOT) {
-                    cursor.advance()
-                    // NOW.<field>. `WEEKDAY` is also a SCHEDULE token (#77), so we
-                    // accept either an IDENT or that specific keyword here and read
-                    // the lexeme — keeps `NOW.weekday` working as a field access.
-                    val fieldTok =
-                        when (cursor.peek().kind) {
-                            // WEEKDAY and DAY are also SCHEDULE keywords; accept them here and read
-                            // the lexeme so `NOW.weekday` / `NOW.day` work as field accesses.
-                            TokenKind.IDENT, TokenKind.WEEKDAY, TokenKind.DAY -> cursor.advance()
-                            else -> cursor.expect(TokenKind.IDENT, "expected NOW field name")
-                        }
-                    val field =
-                        when (fieldTok.lexeme.uppercase()) {
-                            "HOUR_UTC" -> NowField.HOUR_UTC
-                            "MINUTE_UTC" -> NowField.MINUTE_UTC
-                            "WEEKDAY" -> NowField.WEEKDAY
-                            "MONTH" -> NowField.MONTH
-                            "DAY" -> NowField.DAY
-                            "DAYS_IN_MONTH" -> NowField.DAYS_IN_MONTH
-                            "DATE_UTC" -> NowField.DATE_UTC
-                            "EPOCH_MS" -> NowField.EPOCH_MS
-                            else -> {
-                                cursor.errors +=
-                                    ParseError(fieldTok.line, fieldTok.col, "unknown NOW field: ${fieldTok.lexeme}")
-                                NowField.EPOCH_MS
-                            }
-                        }
-                    NowAccessor(field)
-                } else {
-                    NowAccessor(NowField.EPOCH_MS)
-                }
-            }
-            // LOG and FLOOR are also reserved action/order keywords. In expression
-            // position their parenthesized forms bind to registered math functions.
-            TokenKind.IDENT, TokenKind.OPEN, TokenKind.CLOSE, TokenKind.LOG, TokenKind.FLOOR -> {
-                if ((scope.inStackLayerAt || scope.inOtoChildPrice) &&
-                    t.kind == TokenKind.IDENT &&
-                    t.lexeme == "entry"
-                ) {
-                    cursor.advance()
-                    return StackEntryRef
-                }
-                val name = cursor.advance().lexeme
-                when {
-                    cursor.match(TokenKind.LPAREN) -> {
-                        val args = mutableListOf<ExprAst>()
-                        if (cursor.peek().kind != TokenKind.RPAREN) {
-                            args.add(parseExpr())
-                            while (cursor.match(TokenKind.COMMA)) args.add(parseExpr())
-                        }
-                        cursor.expect(TokenKind.RPAREN, "expected ')' after arguments")
-                        when {
-                            // CALENDAR_WINDOW is a clock-reading boolean primitive (like NOW.*),
-                            // not a pure numeric function or an indicator — it gets its own node.
-                            name.equals("CALENDAR_WINDOW", ignoreCase = true) ->
-                                buildCalendarWindow(args, t)
-                            name.equals("SESSION_WINDOW", ignoreCase = true) ->
-                                buildSessionWindow(args, t)
-                            name.equals("LAST_TRADING_DAY_OF_MONTH", ignoreCase = true) ->
-                                buildLastTradingDayOfMonth(args, t)
-                            // Rolling shorthand (#1130): avg(x, N) is mean(x) SINCE T-N, and
-                            // count(cond, N) counts the last N bars where cond held.
-                            name.equals("AVG", ignoreCase = true) -> rollingShorthand(AggFn.MEAN, name, args, t)
-                            name.equals("COUNT", ignoreCase = true) -> rollingShorthand(AggFn.SUM, name, args, t)
-                            // Scalar math functions (abs, sqrt, log, exp, pow, …) route through
-                            // FuncCall — pure functions on numeric values, no warmup or per-bar state.
-                            // Everything else stays IndicatorCall for the indicator-binding path.
-                            com.qkt.dsl.stdlib.FuncRegistry
-                                .has(name.uppercase()) ->
-                                FuncCall(name.uppercase(), args)
-                            else -> IndicatorCall(name, args)
-                        }
-                    }
-                    cursor.match(TokenKind.DOT) -> {
-                        val field = cursor.expectFieldName().lexeme
-                        barOffset(StreamFieldRef(name, field))
-                    }
-                    cursor.match(TokenKind.AT_SIGN) -> Ref(name, parseSnapshotKind())
-                    else -> Ref(name)
-                }
-            }
-            TokenKind.LPAREN -> {
-                cursor.advance()
-                val e = parseExpr()
-                cursor.expect(TokenKind.RPAREN, "expected ')'")
-                e
-            }
-            else -> cursor.error("expected expression, got '${t.lexeme}'")
-        }
-    }
-
-    /**
-     * Build a [CalendarWindow] from a `CALENDAR_WINDOW(startMonth, startDay, endMonth, endDay)`
-     * call. All four arguments must be integer literals; month must be 1-12 and day 1-31.
-     * Violations are recorded as parse errors so the strategy fails to compile rather than
-     * silently misbehaving. [at] is the call token, used for error position.
-     */
-    private fun buildCalendarWindow(
-        args: List<ExprAst>,
-        at: Token,
-    ): ExprAst {
-        val ints =
-            args.map { a ->
-                (a as? NumLit)?.value?.let { if (it.stripTrailingZeros().scale() <= 0) it.toInt() else null }
-            }
-        if (args.size != 4 || ints.any { it == null }) {
-            cursor.errors +=
-                ParseError(
-                    at.line,
-                    at.col,
-                    "CALENDAR_WINDOW expects 4 integer literals: startMonth, startDay, endMonth, endDay",
-                )
-            return CalendarWindow(1, 1, 1, 1)
-        }
-        val (sm, sd, em, ed) = ints.map { it!! }
-        if (sm !in 1..12 || em !in 1..12 || sd !in 1..31 || ed !in 1..31) {
-            cursor.errors += ParseError(at.line, at.col, "CALENDAR_WINDOW month must be 1-12 and day 1-31")
-        }
-        return CalendarWindow(sm, sd, em, ed)
-    }
-
-    /**
-     * Build a [SessionWindow] from a `SESSION_WINDOW(startHour, startMinute, endHour, endMinute)`
-     * call. All four arguments must be integer literals; hour must be 0-23 and minute 0-59.
-     * Violations are recorded as parse errors so the strategy fails to compile rather than
-     * silently misbehaving. [at] is the call token, used for error position.
-     */
-    private fun buildSessionWindow(
-        args: List<ExprAst>,
-        at: Token,
-    ): ExprAst {
-        val ints =
-            args.map { a ->
-                (a as? NumLit)?.value?.let { if (it.stripTrailingZeros().scale() <= 0) it.toInt() else null }
-            }
-        if (args.size != 4 || ints.any { it == null }) {
-            cursor.errors +=
-                ParseError(
-                    at.line,
-                    at.col,
-                    "SESSION_WINDOW expects 4 integer literals: startHour, startMinute, endHour, endMinute",
-                )
-            return SessionWindow(0, 0, 0, 0)
-        }
-        val (sh, sm, eh, em) = ints.map { it!! }
-        if (sh !in 0..23 || eh !in 0..23 || sm !in 0..59 || em !in 0..59) {
-            cursor.errors += ParseError(at.line, at.col, "SESSION_WINDOW hour must be 0-23 and minute 0-59")
-        }
-        return SessionWindow(sh, sm, eh, em)
-    }
-
-    /**
-     * Build a [LastTradingDayOfMonth] from a `LAST_TRADING_DAY_OF_MONTH()` call. The predicate
-     * takes no arguments; any argument is a parse error. [at] is the call token, for error position.
-     */
-    private fun buildLastTradingDayOfMonth(
-        args: List<ExprAst>,
-        at: Token,
-    ): ExprAst {
-        if (args.isNotEmpty()) {
-            cursor.errors += ParseError(at.line, at.col, "LAST_TRADING_DAY_OF_MONTH takes no arguments")
-        }
-        return LastTradingDayOfMonth
-    }
-
-    private fun parseAggregate(): ExprAst {
-        val fnTok = cursor.advance()
-        val fn =
-            when (fnTok.kind) {
-                TokenKind.MAX -> AggFn.MAX
-                TokenKind.MIN -> AggFn.MIN
-                TokenKind.MEAN -> AggFn.MEAN
-                TokenKind.SUM -> AggFn.SUM
-                else -> cursor.error("unreachable")
-            }
-        cursor.expect(TokenKind.LPAREN, "expected '(' after ${fnTok.lexeme}")
-        val series = parseExpr()
-        // `sum(x, N)` / `mean(x, N)` is shorthand for `sum(x) SINCE T-N` (#1130).
-        if (cursor.match(TokenKind.COMMA)) {
-            val window = rollingWindowArg(fnTok.lexeme)
-            cursor.expect(TokenKind.RPAREN, "expected ')' to close ${fnTok.lexeme}(<expr>, N)")
-            return Aggregate(fn, series, window)
-        }
-        cursor.expect(TokenKind.RPAREN, "expected ')' to close aggregate args")
-        cursor.expect(TokenKind.SINCE, "expected SINCE after aggregate")
-        val window = parseWindow()
-        return Aggregate(fn, series, window)
-    }
-
-    /** The `N` of a rolling shorthand: a positive integer literal, the same rule as `T-N`. */
-    private fun rollingWindowArg(fnName: String): SinceTPast {
-        val tok = cursor.expect(TokenKind.NUMBER, "expected a positive integer window after $fnName(<expr>,")
-        val n = tok.lexeme.toIntOrNull()
-        if (n == null ||
-            n <= 0
-        ) {
-            cursor.error("$fnName(<expr>, N) window must be a positive integer, got '${tok.lexeme}'")
-        }
-        return SinceTPast(n)
-    }
-
-    private fun rollingShorthand(
-        fn: AggFn,
-        name: String,
-        args: List<ExprAst>,
-        at: Token,
-    ): ExprAst {
-        if (args.size != 2) {
-            cursor.errors += ParseError(at.line, at.col, "${name.lowercase()} expects (<expr>, N)")
-            return NumLit(java.math.BigDecimal.ZERO)
-        }
-        val n = (args[1] as? NumLit)?.value
-        val window = n?.takeIf { it.signum() > 0 && it.stripTrailingZeros().scale() <= 0 }?.toInt()
-        if (window == null) {
-            cursor.errors +=
-                ParseError(at.line, at.col, "${name.lowercase()}(<expr>, N) window must be a positive integer")
-            return NumLit(java.math.BigDecimal.ZERO)
-        }
-        val series =
-            if (fn == AggFn.SUM) {
-                CaseWhen(listOf(args[0] to NumLit(java.math.BigDecimal.ONE)), NumLit(java.math.BigDecimal.ZERO))
-            } else {
-                args[0]
-            }
-        return Aggregate(fn, series, SinceTPast(window))
-    }
-
-    private fun parseAggregateOrFunction(): ExprAst {
-        val fnTok = cursor.advance()
-        cursor.expect(TokenKind.LPAREN, "expected '(' after ${fnTok.lexeme}")
-        val args = mutableListOf(parseExpr())
-        while (cursor.match(TokenKind.COMMA)) args.add(parseExpr())
-        cursor.expect(TokenKind.RPAREN, "expected ')' after arguments")
-
-        if (cursor.match(TokenKind.SINCE)) {
-            if (args.size != 1) {
-                cursor.errors +=
-                    ParseError(fnTok.line, fnTok.col, "${fnTok.lexeme} aggregate expects exactly one series")
-            }
-            val fn = if (fnTok.kind == TokenKind.MAX) AggFn.MAX else AggFn.MIN
-            return Aggregate(fn, args.first(), parseWindow())
-        }
-        return FuncCall(fnTok.lexeme.uppercase(), args)
-    }
-
-    private fun parseWindow(): Window {
-        val t = cursor.peek()
-        return when {
-            t.kind == TokenKind.OPEN -> {
-                cursor.advance()
-                SinceOpen
-            }
-            t.kind == TokenKind.IDENT && t.lexeme.equals("T", ignoreCase = true) -> {
-                cursor.advance()
-                cursor.expect(TokenKind.MINUS, "expected '-' after T")
-                val n =
-                    cursor.expect(TokenKind.NUMBER, "expected positive integer after T-").lexeme.toIntOrNull()
-                        ?: cursor.error("expected positive integer after T-")
-                SinceTPast(n)
-            }
-            else -> cursor.error("expected OPEN or T-N for window, got '${t.lexeme}'")
-        }
-    }
-
-    /**
-     * Optional `[n]` bar-offset suffix on a stream field, e.g. `btc.close[20]` is the close
-     * 20 bars ago. `[0]` is the current bar (the bare field); `[n>0]` compiles to the `lag`
-     * indicator, so it carries lag's `n + 1` bar warmup. A non-integer or negative offset is a
-     * parse error.
-     */
-    private fun barOffset(base: ExprAst): ExprAst {
-        if (cursor.peek().kind != TokenKind.LBRACKET) return base
-        val open = cursor.advance()
-        val nTok = cursor.expect(TokenKind.NUMBER, "expected an integer bar offset inside [ ]")
-        cursor.expect(TokenKind.RBRACKET, "expected ']' to close the bar offset")
-        val n = nTok.lexeme.toIntOrNull()
-        if (n == null || n < 0) {
-            cursor.errors +=
-                ParseError(open.line, open.col, "bar offset must be a non-negative integer: ${nTok.lexeme}")
-            return base
-        }
-        return if (n == 0) base else IndicatorCall("LAG", listOf(base, NumLit(java.math.BigDecimal(n))))
-    }
-
-    private fun parseSnapshotKind(): SnapshotKind {
-        val t = cursor.peek()
-        return when {
-            t.kind == TokenKind.BUY -> {
-                cursor.advance()
-                SnapshotBuy
-            }
-            t.kind == TokenKind.SELL -> {
-                cursor.advance()
-                SnapshotSell
-            }
-            t.kind == TokenKind.OPEN -> {
-                cursor.advance()
-                SnapshotOpen
-            }
-            t.kind == TokenKind.IDENT && t.lexeme.equals("T", ignoreCase = true) -> {
-                cursor.advance()
-                cursor.expect(TokenKind.MINUS, "expected '-' after T")
-                val n =
-                    cursor.expect(TokenKind.NUMBER, "expected positive integer after T-").lexeme.toIntOrNull()
-                        ?: cursor.error("expected positive integer after T-")
-                SnapshotTPast(n)
-            }
-            else -> cursor.error("expected snapshot kind (buy/sell/open/T-N), got '${t.lexeme}'")
-        }
     }
 
     internal fun parseOrderType(): OrderTypeAst =
@@ -1124,7 +496,7 @@ class Parser(
                     ExitRelativeLimit(parseDirRel())
                 } else {
                     cursor.expect(TokenKind.AT, "expected AT after LIMIT")
-                    Limit(parseExpr())
+                    Limit(expressionParser.parseExpr())
                 }
             }
             TokenKind.STOP -> {
@@ -1133,11 +505,11 @@ class Parser(
                     ExitRelativeStop(parseDirRel())
                 } else {
                     cursor.expect(TokenKind.AT, "expected AT after STOP")
-                    val stopPrice = parseExpr()
+                    val stopPrice = expressionParser.parseExpr()
                     if (cursor.peek().kind == TokenKind.LIMIT) {
                         cursor.advance()
                         cursor.expect(TokenKind.AT, "expected AT after LIMIT")
-                        StopLimit(stopPrice, parseExpr())
+                        StopLimit(stopPrice, expressionParser.parseExpr())
                     } else {
                         Stop(stopPrice)
                     }
@@ -1148,11 +520,11 @@ class Parser(
                 when (cursor.peek().kind) {
                     TokenKind.BY -> {
                         cursor.advance()
-                        TrailingBy(parseExpr())
+                        TrailingBy(expressionParser.parseExpr())
                     }
                     TokenKind.PCT -> {
                         cursor.advance()
-                        TrailingPct(parseExpr())
+                        TrailingPct(expressionParser.parseExpr())
                     }
                     else -> cursor.error("expected BY or PCT after TRAILING, got '${cursor.peek().lexeme}'")
                 }
@@ -1181,7 +553,7 @@ class Parser(
             TokenKind.GTD -> {
                 cursor.advance()
                 cursor.match(TokenKind.UNTIL)
-                Gtd(parseExpr())
+                Gtd(expressionParser.parseExpr())
             }
             else -> cursor.error("expected TIF (GTC/IOC/FOK/DAY/GTD), got '${cursor.peek().lexeme}'")
         }
@@ -1190,11 +562,11 @@ class Parser(
         when (cursor.peek().kind) {
             TokenKind.AT -> {
                 cursor.advance()
-                ChildAt(parseExpr())
+                ChildAt(expressionParser.parseExpr())
             }
             TokenKind.BY -> {
                 cursor.advance()
-                val distance = parseExpr()
+                val distance = expressionParser.parseExpr()
                 when {
                     cursor.match(TokenKind.PCT) -> ChildPct(distance)
                     cursor.peek().kind == TokenKind.STEP ->
@@ -1212,19 +584,19 @@ class Parser(
             }
             TokenKind.PCT -> {
                 cursor.advance()
-                ChildPct(parseExpr())
+                ChildPct(expressionParser.parseExpr())
             }
             TokenKind.RR -> {
                 cursor.advance()
-                ChildRr(parseExpr())
+                ChildRr(expressionParser.parseExpr())
             }
             TokenKind.TRAILING -> {
                 cursor.advance()
-                val distance = parseExpr()
+                val distance = expressionParser.parseExpr()
                 cursor.expect(TokenKind.AFTER, "expected AFTER after TRAILING <distance>")
                 cursor.expect(TokenKind.MFE, "expected MFE after AFTER")
                 cursor.expect(TokenKind.GE, "expected '>=' after MFE")
-                val threshold = parseExpr()
+                val threshold = expressionParser.parseExpr()
                 ChildArmedTrail(distance, threshold)
             }
             else -> cursor.error("expected child price (AT/BY/PCT/RR/TRAILING), got '${cursor.peek().lexeme}'")
@@ -1242,7 +614,7 @@ class Parser(
             }
             val profitDistance =
                 if (cursor.match(TokenKind.PLUS)) {
-                    parseExpr()
+                    expressionParser.parseExpr()
                 } else {
                     NumLit(BigDecimal.ZERO)
                 }
@@ -1251,7 +623,7 @@ class Parser(
             cursor.expect(TokenKind.GE, "expected '>=' after MFE")
             steps +=
                 StopStepAst(
-                    mfeThreshold = parseExpr(),
+                    mfeThreshold = expressionParser.parseExpr(),
                     profitDistance = profitDistance,
                 )
         }
@@ -1260,14 +632,14 @@ class Parser(
 
     private fun parseTimeTighten(): TimeTightenAst {
         cursor.expect(TokenKind.BY, "expected BY after TIGHTEN")
-        val tightenBy = parseExpr()
+        val tightenBy = expressionParser.parseExpr()
         cursor.expect(TokenKind.EVERY, "expected EVERY after TIGHTEN BY <distance>")
-        val interval = parseDuration()
+        val interval = literalParser.parseDuration()
         cursor.expect(TokenKind.FLOOR, "expected FLOOR after tightening interval")
         return TimeTightenAst(
             tightenBy = tightenBy,
             interval = interval,
-            floorDistance = parseExpr(),
+            floorDistance = expressionParser.parseExpr(),
         )
     }
 
@@ -1305,7 +677,7 @@ class Parser(
 
     private fun parseWhenThen(): WhenThen {
         cursor.expect(TokenKind.WHEN, "expected WHEN")
-        val cond = parseExpr()
+        val cond = expressionParser.parseExpr()
         cursor.expect(TokenKind.THEN, "expected THEN after WHEN condition")
         val first = parseAction()
         if (cursor.peek().kind != TokenKind.SEMICOLON) return WhenThen(cond, first)
@@ -1379,7 +751,7 @@ class Parser(
                 val stream = cursor.expect(TokenKind.IDENT, "expected stream alias after RESIZE").lexeme
                 cursor.expect(TokenKind.TO, "expected TO after RESIZE stream")
                 val target = parseSizing()
-                val minStep = if (cursor.match(TokenKind.MIN_STEP)) parseExpr() else null
+                val minStep = if (cursor.match(TokenKind.MIN_STEP)) expressionParser.parseExpr() else null
                 Resize(stream, target, minStep)
             }
             TokenKind.CANCEL -> {
@@ -1417,15 +789,15 @@ class Parser(
         cursor.expect(TokenKind.LATCH, "expected LATCH")
         val stream = cursor.expect(TokenKind.IDENT, "expected stream alias after LATCH").lexeme
         cursor.expect(TokenKind.OFFSET, "expected OFFSET after LATCH stream")
-        val offset = parseExpr()
+        val offset = expressionParser.parseExpr()
         val reference =
             if (cursor.match(TokenKind.FROM)) {
-                parseExpr()
+                expressionParser.parseExpr()
             } else {
                 null
             }
         cursor.expect(TokenKind.ARM, "expected ARM <duration> in LATCH")
-        val armWindow = parseDuration()
+        val armWindow = literalParser.parseDuration()
         val name =
             if (cursor.match(TokenKind.AS)) {
                 cursor.expect(TokenKind.IDENT, "expected name after AS").lexeme
@@ -1456,13 +828,13 @@ class Parser(
             }
             TokenKind.TIME_IN_BREACH -> {
                 cursor.advance()
-                LatchTimeInBreach(parseDuration())
+                LatchTimeInBreach(literalParser.parseDuration())
             }
             TokenKind.RETEST_HOLD -> {
                 cursor.advance()
-                val distance = parseExpr()
+                val distance = expressionParser.parseExpr()
                 cursor.expect(TokenKind.WITHIN, "expected WITHIN after RETEST_HOLD distance")
-                LatchRetestHold(distance, parseDuration())
+                LatchRetestHold(distance, literalParser.parseDuration())
             }
             else -> cursor.error("expected CLOSE_BEYOND, TIME_IN_BREACH, or RETEST_HOLD after CONFIRM")
         }
@@ -1491,7 +863,7 @@ class Parser(
                 }
                 TokenKind.EXPIRE -> {
                     cursor.advance()
-                    expire = parseDuration()
+                    expire = literalParser.parseDuration()
                 }
                 else -> break@loop
             }
@@ -1525,7 +897,7 @@ class Parser(
                 else -> cursor.error("expected WITH/AGAINST/RETRACE, got '${cursor.peek().lexeme}'")
             }
         cursor.advance()
-        return DirRel(sense, parseExpr())
+        return DirRel(sense, expressionParser.parseExpr())
     }
 
     private fun parseLatchBracket(): LatchBracket {
@@ -1575,7 +947,7 @@ class Parser(
         while (cursor.peek().kind == TokenKind.IDENT && cursor.peekAtOrNull(1)?.kind == TokenKind.EQ) {
             val name = cursor.expect(TokenKind.IDENT, "expected field name").lexeme
             cursor.expect(TokenKind.EQ, "expected '='")
-            val expr = parseExpr()
+            val expr = expressionParser.parseExpr()
             if (fields.containsKey(name)) {
                 cursor.error("duplicate LOG field '$name'")
             }
@@ -1611,7 +983,7 @@ class Parser(
                 TokenKind.TIMES -> {
                     if (times != null) cursor.error("duplicate TIMES clause")
                     cursor.advance()
-                    times = parseExpr()
+                    times = expressionParser.parseExpr()
                 }
                 TokenKind.ORDER_TYPE -> {
                     cursor.advance()
@@ -1748,16 +1120,16 @@ class Parser(
             }
         }
         cursor.expect(TokenKind.GE, "expected '>=' after MFE/MAE in STACK_AT")
-        val threshold = parseExpr()
+        val threshold = expressionParser.parseExpr()
         val recoverDistance =
             if (trigger == TokenKind.MAE) {
                 cursor.expect(TokenKind.RECOVER, "expected RECOVER after MAE threshold in STACK_AT")
-                parseExpr()
+                expressionParser.parseExpr()
             } else {
                 null
             }
         cursor.expect(TokenKind.WITHIN, "expected WITHIN after STACK_AT threshold")
-        val duration = parseDuration()
+        val duration = literalParser.parseDuration()
         cursor.expect(TokenKind.SIZING, "expected SIZING in STACK_AT clause")
         val sizing = parseSizing()
         cursor.expect(TokenKind.BRACKET, "expected BRACKET in STACK_AT clause")
@@ -1788,7 +1160,7 @@ class Parser(
                 ?: cursor.error("STACK count must be a positive integer, got '${countTok.lexeme}'")
         if (count < 1) cursor.error("STACK count must be >= 1, got $count")
         cursor.expect(TokenKind.SPACING, "expected SPACING after STACK count")
-        val spacing = parseExpr()
+        val spacing = expressionParser.parseExpr()
         val direction =
             when (cursor.peek().kind) {
                 TokenKind.ABOVE -> {
@@ -1801,7 +1173,7 @@ class Parser(
                 }
                 else -> StackDirection.TRADE_DIRECTION
             }
-        val within = if (cursor.peek().kind == TokenKind.WITHIN) parseWithin() else null
+        val within = if (cursor.peek().kind == TokenKind.WITHIN) literalParser.parseWithin() else null
         return StackSpacing(count, spacing, direction, within)
     }
 
@@ -1818,7 +1190,7 @@ class Parser(
             layers.add(parseLayer(isFirst = false))
         }
         cursor.expect(TokenKind.RBRACKET, "expected ']' to close layer list")
-        val within = if (cursor.peek().kind == TokenKind.WITHIN) parseWithin() else null
+        val within = if (cursor.peek().kind == TokenKind.WITHIN) literalParser.parseWithin() else null
         return StackLayers(layers, within)
     }
 
@@ -1847,7 +1219,7 @@ class Parser(
                         )
                     }
                     cursor.advance()
-                    parseExpr()
+                    expressionParser.parseExpr()
                 } else {
                     null
                 }
@@ -1859,29 +1231,6 @@ class Parser(
         } finally {
             scope.inStackLayerAt = false
         }
-    }
-
-    internal fun parseWithin(): DurationAst {
-        cursor.expect(TokenKind.WITHIN, "expected WITHIN")
-        return parseDuration()
-    }
-
-    internal fun parseDuration(): DurationAst {
-        val tok = cursor.expect(TokenKind.DURATION, "expected duration literal (e.g., 1h, 30m)")
-        val lex = tok.lexeme
-        val n =
-            lex.dropLast(1).toLongOrNull()
-                ?: cursor.error("invalid duration literal '$lex'")
-        val unit = lex.last()
-        val millis =
-            when (unit) {
-                's' -> n * 1_000L
-                'm' -> n * 60_000L
-                'h' -> n * 3_600_000L
-                'd' -> n * 86_400_000L
-                else -> cursor.error("unknown duration unit '$unit' in '$lex'")
-            }
-        return DurationAst(millis)
     }
 
     internal fun parseDefaults(): DefaultsBlock {
@@ -1972,12 +1321,12 @@ class Parser(
                 TokenKind.STOP -> {
                     cursor.advance()
                     cursor.expect(TokenKind.AT, "expected AT after STOP in OCO")
-                    stop = ChildAt(parseExpr())
+                    stop = ChildAt(expressionParser.parseExpr())
                 }
                 TokenKind.LIMIT -> {
                     cursor.advance()
                     cursor.expect(TokenKind.AT, "expected AT after LIMIT in OCO")
-                    limit = ChildAt(parseExpr())
+                    limit = ChildAt(expressionParser.parseExpr())
                 }
                 else -> cursor.error("expected STOP AT or LIMIT AT in OCO, got '${cursor.peek().lexeme}'")
             }
@@ -1994,9 +1343,9 @@ class Parser(
             TokenKind.RISK -> {
                 cursor.advance()
                 if (cursor.match(TokenKind.DOLLAR)) {
-                    SizeRiskAbs(parseExpr())
+                    SizeRiskAbs(expressionParser.parseExpr())
                 } else {
-                    riskFracWithOptionalBookBasis(parseExpr())
+                    riskFracWithOptionalBookBasis(expressionParser.parseExpr())
                 }
             }
             TokenKind.POSITION -> {
@@ -2007,7 +1356,7 @@ class Parser(
                 SizePositionFull(alias)
             }
             else -> {
-                val e = parseExpr()
+                val e = expressionParser.parseExpr()
                 when (cursor.peek().kind) {
                     TokenKind.USD -> {
                         cursor.advance()
@@ -2082,27 +1431,6 @@ class Parser(
             BinaryOp(BinOp.DIV, e, NumLit(BigDecimal(100)))
         }
 
-    private fun parseCaseWhen(): ExprAst {
-        cursor.expect(TokenKind.CASE, "expected CASE")
-        val branches = mutableListOf<Pair<ExprAst, ExprAst>>()
-        while (cursor.peek().kind == TokenKind.WHEN) {
-            cursor.advance()
-            val cond = parseExpr()
-            cursor.expect(TokenKind.THEN, "expected THEN in CASE branch")
-            val body = parseExpr()
-            branches.add(cond to body)
-        }
-        if (branches.isEmpty()) cursor.error("CASE requires at least one WHEN branch")
-        val elseExpr =
-            if (cursor.match(TokenKind.ELSE)) {
-                parseExpr()
-            } else {
-                cursor.error("CASE requires an ELSE branch")
-            }
-        cursor.expect(TokenKind.END, "expected END to close CASE")
-        return CaseWhen(branches, elseExpr)
-    }
-
     internal data class SymbolsBlock(
         val streams: List<StreamDecl>,
         val syncGroups: List<SyncGroupDecl>,
@@ -2154,7 +1482,7 @@ class Parser(
             val timeoutMs: Long? =
                 if (cursor.peek().kind == TokenKind.WITHIN) {
                     cursor.advance()
-                    parseDuration().millis
+                    literalParser.parseDuration().millis
                 } else {
                     null
                 }
@@ -2191,7 +1519,7 @@ class Parser(
                 else -> cursor.error("expected ACCOUNT.EQUITY after SERIES, got '${cursor.peek().lexeme}'")
             }
         cursor.expect(TokenKind.EVERY, "expected EVERY after SERIES source")
-        val timeframe = parseTimeframe()
+        val timeframe = literalParser.parseTimeframe()
         val windowMs =
             com.qkt.candles.TimeWindow
                 .parse(timeframe)
@@ -2210,9 +1538,9 @@ class Parser(
         while (cursor.peek().kind != TokenKind.RBRACE && cursor.peek().kind != TokenKind.EOF) {
             cursor.expect(TokenKind.STAGE, "expected STAGE in SEQUENCE block")
             val stageName = cursor.expect(TokenKind.IDENT, "expected stage name after STAGE").lexeme
-            val within = if (cursor.match(TokenKind.WITHIN)) parseDuration() else null
+            val within = if (cursor.match(TokenKind.WITHIN)) literalParser.parseDuration() else null
             cursor.expect(TokenKind.COLON, "expected ':' after SEQUENCE stage header")
-            stages += SequenceStageDecl(stageName, within, parseExpr())
+            stages += SequenceStageDecl(stageName, within, expressionParser.parseExpr())
         }
         cursor.expect(TokenKind.RBRACE, "expected '}' to close SEQUENCE block")
         return SequenceDecl(name, stream, stages)
@@ -2229,7 +1557,7 @@ class Parser(
                 cursor.expect(TokenKind.IDENT, "expected symbol after ':'").lexeme
             }
         cursor.expect(TokenKind.EVERY, "expected EVERY")
-        val timeframe = parseTimeframe()
+        val timeframe = literalParser.parseTimeframe()
         val warmupBars: Int? =
             if (cursor.peek().kind == TokenKind.WARMUP) {
                 cursor.advance()
@@ -2316,7 +1644,7 @@ class Parser(
             cursor.error("BASKET '$alias' needs at least 2 constituents, got ${constituents.size}")
         }
         cursor.expect(TokenKind.EVERY, "expected EVERY after basket constituents")
-        val timeframe = parseTimeframe()
+        val timeframe = literalParser.parseTimeframe()
         return com.qkt.dsl.ast.BasketDecl(
             alias = alias,
             weighting = weighting,
@@ -2324,16 +1652,6 @@ class Parser(
             timeframe = timeframe,
         )
     }
-
-    /** Parse an `EVERY` timeframe value: a `DURATION` token (`1h`) or a `<number><unit>` pair. */
-    private fun parseTimeframe(): String =
-        if (cursor.peek().kind == TokenKind.DURATION) {
-            cursor.advance().lexeme
-        } else {
-            val tfNum = cursor.expect(TokenKind.NUMBER, "expected timeframe count").lexeme
-            val tfUnit = cursor.expect(TokenKind.IDENT, "expected timeframe unit (s/m/h/d)").lexeme
-            "$tfNum$tfUnit"
-        }
 
     /**
      * Parse one `SCHEDULE` block (#77). Each clause is one of:
