@@ -48,7 +48,6 @@
 326 src/main/kotlin/com/qkt/observe/insights/InsightsSink.kt
 298 src/main/kotlin/com/qkt/broker/CompositeBroker.kt
 295 src/test/kotlin/com/qkt/dsl/compile/SizingCompilerTest.kt
-293 src/test/kotlin/com/qkt/parity/RegimeAdaptiveBacktestParityTest.kt
 291 src/main/kotlin/com/qkt/persistence/AsyncStatePersistor.kt
 282 src/main/kotlin/com/qkt/trade/session/BotSessionServer.kt
 278 src/main/kotlin/com/qkt/marketdata/live/mt5/Mt5TickFeedSource.kt

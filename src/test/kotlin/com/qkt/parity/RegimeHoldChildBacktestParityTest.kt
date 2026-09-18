@@ -6,7 +6,9 @@ import com.qkt.common.Money
 import com.qkt.common.TradingCalendar
 import com.qkt.dsl.portfolio.PortfolioGate
 import com.qkt.dsl.portfolio.PortfolioLoader
+import com.qkt.marketdata.Tick
 import com.qkt.parity.RegimeAdaptiveFixtures.firstTs
+import com.qkt.parity.RegimeAdaptiveFixtures.sym
 import com.qkt.parity.RegimeAdaptiveFixtures.ticks
 import com.qkt.parity.RegimeAdaptiveFixtures.unitRegistry
 import com.qkt.risk.book.Allocation
@@ -19,17 +21,12 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 
-/**
- * Verifies that portfolio `REGIMES` + `ALLOCATE METHOD regime_weighted` actually scales child orders
- * in a backtest. One regime gives full weight to child A and zero to child B; the default regime does
- * the opposite. We assert that each child only trades while its regime is active.
- */
-class RegimeAdaptiveBacktestParityTest {
+class RegimeHoldChildBacktestParityTest {
     @Test
-    fun `regime weighted allocation switches child order scaling`(
+    fun `HOLD child keeps position when regime deactivates it`(
         @TempDir tmp: Path,
     ) {
-        writePortfolio(tmp)
+        writeHoldPortfolio(tmp)
         val compiled = PortfolioLoader.load(tmp.resolve("book.qkt"))
         val aliasToStrategyId = compiled.children.associate { it.alias to it.strategyId }
 
@@ -60,10 +57,29 @@ class RegimeAdaptiveBacktestParityTest {
                 allocation = Allocation(method = AllocationMethod.REGIME_WEIGHTED),
             )
 
+        val strategies =
+            compiled.children.map { child ->
+                child.strategyId to
+                    com.qkt.backtest.GatedChild(
+                        strategyId = child.strategyId,
+                        inner = child.compiled,
+                        hold = child.hold,
+                        gateFor = gateFor,
+                        flattenSymbols = child.symbols,
+                    )
+            }
+
         val backtest =
             Backtest(
-                strategies = compiled.children.map { it.strategyId to it.compiled },
-                ticks = ticks(),
+                strategies = strategies,
+                ticks =
+                    listOf(
+                        Tick(sym, Money.of("100"), firstTs),
+                        Tick(sym, Money.of("100"), firstTs + 60_000L),
+                        Tick(sym, Money.of("300"), firstTs + 120_000L),
+                        Tick(sym, Money.of("100"), firstTs + 180_000L),
+                        Tick(sym, Money.of("100"), firstTs + 240_000L),
+                    ),
                 candleWindow = com.qkt.candles.TimeWindow.ONE_MINUTE,
                 initialTimestamp = firstTs,
                 startingBalance = BigDecimal("10000"),
@@ -78,20 +94,17 @@ class RegimeAdaptiveBacktestParityTest {
         val result = backtest.run()
         val tradesByChild = result.trades.groupBy { it.strategyId }
 
-        // Bar 1 closes at 100 -> default regime -> b weight 1.0, a weight 0.0 -> b enters, fill at tick 2.
-        val bTrades = tradesByChild["book:b"]
-        assertThat(bTrades).hasSize(1)
-        assertThat(bTrades?.first()?.trade?.price).isEqualByComparingTo(Money.of("300"))
-        assertThat(bTrades?.first()?.trade?.timestamp).isEqualTo(firstTs + 60_000L)
+        // low -> b enters; high -> b flattens and a enters; low -> a holds, b re-enters.
+        assertThat(tradesByChild["book:b"]).hasSize(3)
+        assertThat(tradesByChild["book:a"]).hasSize(1)
 
-        // Bar 2 closes at 300 -> high regime -> a weight 1.0, b weight 0.0 -> a enters, fill at tick 3.
-        val aTrades = tradesByChild["book:a"]
-        assertThat(aTrades).hasSize(1)
-        assertThat(aTrades?.first()?.trade?.price).isEqualByComparingTo(Money.of("300"))
-        assertThat(aTrades?.first()?.trade?.timestamp).isEqualTo(firstTs + 120_000L)
+        val aPos = result.finalPositionsByStrategy["book:a"]?.get(sym)?.quantity ?: BigDecimal.ZERO
+        val bPos = result.finalPositionsByStrategy["book:b"]?.get(sym)?.quantity ?: BigDecimal.ZERO
+        assertThat(aPos).isGreaterThan(BigDecimal.ZERO)
+        assertThat(bPos).isGreaterThan(BigDecimal.ZERO)
     }
 
-    private fun writePortfolio(tmp: Path) {
+    private fun writeHoldPortfolio(tmp: Path) {
         Files.writeString(
             tmp.resolve("a.qkt"),
             """
@@ -100,7 +113,7 @@ class RegimeAdaptiveBacktestParityTest {
                 x = BACKTEST:BTCUSDT EVERY 1m
             RULES
                 WHEN x.close > 0 AND POSITION.x = 0
-                THEN BUY x SIZING 1 PCT RISK BRACKET { STOP LOSS PCT 10, TAKE PROFIT AT 1000 }
+                THEN BUY x SIZING 1
             """.trimIndent(),
         )
         Files.writeString(
@@ -111,7 +124,7 @@ class RegimeAdaptiveBacktestParityTest {
                 x = BACKTEST:BTCUSDT EVERY 1m
             RULES
                 WHEN x.close > 0 AND POSITION.x = 0
-                THEN BUY x SIZING 1 PCT RISK BRACKET { STOP LOSS PCT 10, TAKE PROFIT AT 1000 }
+                THEN BUY x SIZING 1
             """.trimIndent(),
         )
         Files.writeString(
@@ -120,7 +133,7 @@ class RegimeAdaptiveBacktestParityTest {
             PORTFOLIO book VERSION 1 CAPITAL 10000
             SYMBOLS
                 btc = BACKTEST:BTCUSDT EVERY 1m
-            IMPORT 'a.qkt' AS a
+            IMPORT 'a.qkt' AS a HOLD
             IMPORT 'b.qkt' AS b
             REGIMES
                 NAME r
@@ -131,8 +144,8 @@ class RegimeAdaptiveBacktestParityTest {
                 high -> a 1.0
                 low -> b 1.0
             RULES
-                RUN a
-                RUN b
+                WHEN btc.close > 200 RUN a
+                WHEN btc.close <= 200 RUN b
             """.trimIndent(),
         )
     }
