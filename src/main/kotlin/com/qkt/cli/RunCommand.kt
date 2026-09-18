@@ -115,26 +115,7 @@ class RunCommand(
                 runawayMaxRoundTrips = cfg.runawayMaxRoundTrips
                 runawayMaxRejections = cfg.runawayMaxRejections
                 candleCloseGraceMs = cfg.candleCloseGraceMs
-                // Paper trading reads prices from the configured accounts' own feeds; it places no
-                // orders there, so accounts are opened for market data and never verified.
-                val accountRoutes =
-                    try {
-                        com.qkt.connectivity.AccountDirectory
-                            .open(
-                                cfg.accountConfigs(),
-                                com.qkt.connectivity.ConnectorRegistry
-                                    .discover(),
-                                com.qkt.connectivity.ConnectorContext(
-                                    stateRoot = null,
-                                    env = System.getenv(),
-                                    clock = com.qkt.common.SystemClock(),
-                                ),
-                            ).marketDataRoutes()
-                    } catch (e: Exception) {
-                        println("[WARN] broker account load failed: ${e.message}")
-                        emptyList()
-                    }
-                MarketSourceFactory.composite(accountRoutes, hub = cfg.hub)
+                MarketSourceFactory.composite(cfg.accountMarketDataRoutes(), hub = cfg.hub)
             }
         val feedSymbols = (symbols + accountingConfig.normalizedSymbols.values).distinct()
         val marketSource = effectiveSourceFactory(feedSymbols)

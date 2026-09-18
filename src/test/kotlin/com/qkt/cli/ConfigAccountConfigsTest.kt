@@ -40,6 +40,25 @@ class ConfigAccountConfigsTest {
     }
 
     @Test
+    fun `the bybit scaffold declares one account per category and opens through the connectors`(
+        @TempDir dir: Path,
+    ) {
+        val template =
+            checkNotNull(javaClass.classLoader.getResource("templates/bybit/qkt.config.yaml.tmpl")) {
+                "bybit config template missing"
+            }.readText()
+        val file = dir.resolve("qkt.config.yaml").also { Files.writeString(it, template) }
+
+        val accounts = Config.load(file).accountConfigs()
+
+        assertThat(accounts.map { it.name to it.type })
+            .containsExactly("bybit_spot" to "bybit", "bybit_linear" to "bybit")
+        TestAccounts.directory(*accounts.toTypedArray()).use { opened ->
+            assertThat(opened.forSymbol("BYBIT_LINEAR:BTCUSDT")?.config?.name).isEqualTo("bybit_linear")
+        }
+    }
+
+    @Test
     fun `the built-in connectors are discovered as services`() {
         assertThat(ConnectorRegistry.discover().types).containsExactly("bybit", "mt5")
     }

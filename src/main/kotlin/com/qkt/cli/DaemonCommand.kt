@@ -164,12 +164,9 @@ class DaemonCommand(
         // account. Recovery runs strictly after the broker is built, so by the time a broker asks,
         // `registryRef.get()` is populated. See #154.
         val registryRef = AtomicReference<StrategyRegistry?>(null)
-        val connectorContext =
-            com.qkt.connectivity.ConnectorContext(
-                stateRoot = stateDir.stateRoot,
-                env = System.getenv(),
-                clock = com.qkt.common.SystemClock(),
-                strategiesTrading = { accountName ->
+        val accounts =
+            try {
+                cfg.openAccounts(stateDir.stateRoot) { accountName ->
                     registryRef
                         .get()
                         ?.list()
@@ -180,16 +177,7 @@ class DaemonCommand(
                                 .values
                                 .any { it.equals(accountName, ignoreCase = true) }
                         }.map { it.name }
-                },
-            )
-        val accounts =
-            try {
-                com.qkt.connectivity.AccountDirectory.open(
-                    cfg.accountConfigs(),
-                    com.qkt.connectivity.ConnectorRegistry
-                        .discover(),
-                    connectorContext,
-                )
+                }
             } catch (e: Exception) {
                 System.err.println("qkt: broker account load failed: ${e.message}")
                 runCatching { insightsSink?.close() }

@@ -4,10 +4,9 @@ import com.qkt.execution.OrderRequest
 import java.math.BigDecimal
 
 /**
- * The order-entry session a strategy uses on one trading account.
+ * A strategy's order-entry session on one account, from [com.qkt.connectivity.TradingAccount.orderEntry].
  *
- * A connector's [com.qkt.connectivity.TradingAccount] creates one per strategy session through
- * its `orderEntry` factory. Sessions receive [OrderRequest]s and publish results back through
+ * Sessions receive [OrderRequest]s and publish results back through
  * [com.qkt.events.BrokerEvent]s on the bus. The interface is intentionally narrow —
  * submit, cancel, and (optionally) modify — because the engine handles everything
  * around it: order management, P&L attribution, position tracking, risk.
