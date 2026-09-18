@@ -106,11 +106,9 @@
 320 src/test/kotlin/com/qkt/execution/OrderRequestTest.kt
 320 src/test/kotlin/com/qkt/marketdata/MarketDataGateTest.kt
 317 src/test/kotlin/com/qkt/cli/observe/ObservabilityServerTest.kt
-313 src/test/kotlin/com/qkt/dsl/compile/WarmupRequirementsTest.kt
 311 src/test/kotlin/com/qkt/cli/SweepCommandTest.kt
 307 src/test/kotlin/com/qkt/observe/insights/LiveSessionInsightsTest.kt
 306 src/test/kotlin/com/qkt/cli/daemon/ListRouteTest.kt
-305 src/test/kotlin/com/qkt/dsl/compile/ScheduleRunnerTest.kt
 304 src/test/kotlin/com/qkt/app/LatchBacktestTest.kt
 304 src/test/kotlin/com/qkt/parity/ScalpStackParityTest.kt
 298 src/main/kotlin/com/qkt/broker/CompositeBroker.kt
@@ -118,7 +116,6 @@
 295 src/test/kotlin/com/qkt/dsl/compile/SizingCompilerTest.kt
 293 src/test/kotlin/com/qkt/parity/RegimeAdaptiveBacktestParityTest.kt
 292 src/main/kotlin/com/qkt/cli/StatusCommand.kt
-292 src/test/kotlin/com/qkt/dsl/parse/LexerTest.kt
 291 src/main/kotlin/com/qkt/persistence/AsyncStatePersistor.kt
 291 src/test/kotlin/com/qkt/bus/EventBusTest.kt
 287 src/test/kotlin/com/qkt/app/OrderManagerTier2FallbackTest.kt
@@ -134,7 +131,6 @@
 276 src/main/kotlin/com/qkt/cli/PromotionCommand.kt
 275 src/test/kotlin/com/qkt/cli/ConfigTest.kt
 275 src/test/kotlin/com/qkt/dsl/compile/GeneratedDslStructureParityTest.kt
-274 src/test/kotlin/com/qkt/dsl/stdlib/FuncRegistryTest.kt
 273 src/test/kotlin/com/qkt/broker/bybit/linear/BybitLinearBrokerTest.kt
 270 src/main/kotlin/com/qkt/marketdata/live/mt5/Mt5BarFetcher.kt
 270 src/main/kotlin/com/qkt/pnl/TradeHistory.kt
