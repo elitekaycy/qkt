@@ -14,36 +14,21 @@ import com.qkt.dsl.ast.CalendarWindow
 import com.qkt.dsl.ast.Cancel
 import com.qkt.dsl.ast.CancelAll
 import com.qkt.dsl.ast.CaseWhen
-import com.qkt.dsl.ast.ChildArmedTrail
-import com.qkt.dsl.ast.ChildAt
-import com.qkt.dsl.ast.ChildBy
-import com.qkt.dsl.ast.ChildPct
 import com.qkt.dsl.ast.ChildPriceAst
-import com.qkt.dsl.ast.ChildRr
 import com.qkt.dsl.ast.Close
 import com.qkt.dsl.ast.CloseAll
 import com.qkt.dsl.ast.CmpOp
 import com.qkt.dsl.ast.CooldownRef
 import com.qkt.dsl.ast.Crosses
-import com.qkt.dsl.ast.Day
 import com.qkt.dsl.ast.DefaultsBlock
-import com.qkt.dsl.ast.DirRel
 import com.qkt.dsl.ast.EntryQty
-import com.qkt.dsl.ast.ExitRelativeLimit
-import com.qkt.dsl.ast.ExitRelativeStop
 import com.qkt.dsl.ast.ExprAst
-import com.qkt.dsl.ast.Fok
 import com.qkt.dsl.ast.FuncCall
-import com.qkt.dsl.ast.Gtc
-import com.qkt.dsl.ast.Gtd
 import com.qkt.dsl.ast.InList
 import com.qkt.dsl.ast.IndicatorCall
-import com.qkt.dsl.ast.Ioc
 import com.qkt.dsl.ast.IsNull
 import com.qkt.dsl.ast.LastTradingDayOfMonth
-import com.qkt.dsl.ast.Limit
 import com.qkt.dsl.ast.Log
-import com.qkt.dsl.ast.Market
 import com.qkt.dsl.ast.NowAccessor
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.OcoAst
@@ -54,34 +39,17 @@ import com.qkt.dsl.ast.Ref
 import com.qkt.dsl.ast.Sell
 import com.qkt.dsl.ast.SequenceAccessor
 import com.qkt.dsl.ast.SessionWindow
-import com.qkt.dsl.ast.SizeNotional
-import com.qkt.dsl.ast.SizePctBalance
-import com.qkt.dsl.ast.SizePctEquity
-import com.qkt.dsl.ast.SizePositionFull
-import com.qkt.dsl.ast.SizeQty
-import com.qkt.dsl.ast.SizeRiskAbs
-import com.qkt.dsl.ast.SizeRiskFrac
-import com.qkt.dsl.ast.SizeRiskFracOfBook
 import com.qkt.dsl.ast.SizingAst
 import com.qkt.dsl.ast.StackAst
 import com.qkt.dsl.ast.StackAtClause
 import com.qkt.dsl.ast.StackEntryRef
 import com.qkt.dsl.ast.StackLayer
-import com.qkt.dsl.ast.StackLayers
-import com.qkt.dsl.ast.StackSpacing
 import com.qkt.dsl.ast.StateAccessor
-import com.qkt.dsl.ast.SteppedStopAst
-import com.qkt.dsl.ast.Stop
-import com.qkt.dsl.ast.StopLimit
-import com.qkt.dsl.ast.StopStepAst
 import com.qkt.dsl.ast.StreakRef
 import com.qkt.dsl.ast.StreamFieldRef
 import com.qkt.dsl.ast.StringLit
 import com.qkt.dsl.ast.TifAst
-import com.qkt.dsl.ast.TimeTightenAst
 import com.qkt.dsl.ast.TradesRef
-import com.qkt.dsl.ast.TrailingBy
-import com.qkt.dsl.ast.TrailingPct
 import com.qkt.dsl.ast.UnaryOp
 
 /**
@@ -106,6 +74,11 @@ class ExprTransform(
     private val onStreamField: (StreamFieldRef) -> ExprAst = { it },
     private val onRef: (Ref) -> ExprAst,
 ) {
+    private val orderSpecs = OrderSpecTransform(this)
+    private val childPrices = ChildPriceTransform(this)
+    private val stacks = StackTransform(this)
+    private val latches = LatchTransform(this)
+
     fun expr(e: ExprAst): ExprAst =
         when (e) {
             is Ref -> onRef(e)
@@ -135,94 +108,23 @@ class ExprTransform(
             -> e
         }
 
-    fun sizing(s: SizingAst): SizingAst =
-        when (s) {
-            is SizeQty -> SizeQty(expr(s.expr))
-            is SizeNotional -> SizeNotional(expr(s.usd))
-            is SizePctEquity -> SizePctEquity(expr(s.frac))
-            is SizePctBalance -> SizePctBalance(expr(s.frac))
-            is SizeRiskFrac -> SizeRiskFrac(expr(s.frac))
-            is SizeRiskFracOfBook -> SizeRiskFracOfBook(expr(s.frac))
-            is SizeRiskAbs -> SizeRiskAbs(expr(s.usd))
-            is SizePositionFull -> s
-        }
+    fun sizing(s: SizingAst): SizingAst = orderSpecs.sizing(s)
 
-    fun orderType(o: OrderTypeAst): OrderTypeAst =
-        when (o) {
-            Market -> o
-            is Limit -> Limit(expr(o.price))
-            is ExitRelativeLimit ->
-                ExitRelativeLimit(
-                    DirRel(o.price.sense, expr(o.price.dist)),
-                )
-            is Stop -> Stop(expr(o.price))
-            is ExitRelativeStop ->
-                ExitRelativeStop(
-                    DirRel(o.price.sense, expr(o.price.dist)),
-                )
-            is StopLimit -> StopLimit(expr(o.stopPrice), expr(o.limitPrice))
-            is TrailingBy -> TrailingBy(expr(o.distance))
-            is TrailingPct -> TrailingPct(expr(o.percent))
-        }
+    fun orderType(o: OrderTypeAst): OrderTypeAst = orderSpecs.orderType(o)
 
-    fun tif(t: TifAst): TifAst =
-        when (t) {
-            is Gtd -> Gtd(expr(t.until))
-            Gtc, Ioc, Fok, Day -> t
-        }
+    fun tif(t: TifAst): TifAst = orderSpecs.tif(t)
 
-    fun childPrice(cp: ChildPriceAst): ChildPriceAst =
-        when (cp) {
-            is ChildAt -> ChildAt(expr(cp.price))
-            is ChildBy ->
-                ChildBy(
-                    distance = expr(cp.distance),
-                    ratchet =
-                        when (val ratchet = cp.ratchet) {
-                            null -> null
-                            is SteppedStopAst ->
-                                SteppedStopAst(
-                                    ratchet.steps.map {
-                                        StopStepAst(
-                                            mfeThreshold = expr(it.mfeThreshold),
-                                            profitDistance = expr(it.profitDistance),
-                                        )
-                                    },
-                                )
-                            is TimeTightenAst ->
-                                TimeTightenAst(
-                                    tightenBy = expr(ratchet.tightenBy),
-                                    interval = ratchet.interval,
-                                    floorDistance = expr(ratchet.floorDistance),
-                                )
-                        },
-                )
-            is ChildPct -> ChildPct(expr(cp.percent))
-            is ChildRr -> ChildRr(expr(cp.multiplier))
-            is ChildArmedTrail -> ChildArmedTrail(expr(cp.trailDistance), expr(cp.mfeThreshold))
-        }
+    fun childPrice(cp: ChildPriceAst): ChildPriceAst = childPrices.childPrice(cp)
 
-    fun bracket(b: BracketAst): BracketAst = BracketAst(b.stopLoss?.let(::childPrice), b.takeProfit?.let(::childPrice))
+    fun bracket(b: BracketAst): BracketAst = childPrices.bracket(b)
 
-    fun oco(o: OcoAst): OcoAst = OcoAst(childPrice(o.stop), childPrice(o.limit))
+    fun oco(o: OcoAst): OcoAst = childPrices.oco(o)
 
-    fun stack(s: StackAst): StackAst =
-        when (s) {
-            is StackSpacing -> s.copy(spacing = expr(s.spacing))
-            is StackLayers -> s.copy(layers = s.layers.map(::stackLayer))
-        }
+    fun stack(s: StackAst): StackAst = stacks.stack(s)
 
-    fun stackLayer(l: StackLayer): StackLayer =
-        StackLayer(sizing(l.sizing), l.orderType?.let(::orderType), l.at?.let(::expr))
+    fun stackLayer(l: StackLayer): StackLayer = stacks.stackLayer(l)
 
-    fun stackAt(c: StackAtClause): StackAtClause =
-        StackAtClause(
-            expr(c.mfeThreshold),
-            c.withinDuration,
-            sizing(c.sizing),
-            bracket(c.bracket),
-            c.maeRecoverDistance?.let(::expr),
-        )
+    fun stackAt(c: StackAtClause): StackAtClause = stacks.stackAt(c)
 
     fun opts(o: ActionOpts): ActionOpts =
         ActionOpts(
@@ -252,51 +154,8 @@ class ExprTransform(
             is Log -> a.copy(fields = a.fields.mapValues { expr(it.value) })
             is Close, is Cancel, CloseAll, CancelAll -> a
             is com.qkt.dsl.ast.Resize -> a.copy(target = sizing(a.target), minStep = a.minStep?.let(::expr))
-            is com.qkt.dsl.ast.Latch -> latch(a)
+            is com.qkt.dsl.ast.Latch -> latches.latch(a)
         }
-
-    // Walk a latch's expressions so LET (and other expr transforms) reach the offset,
-    // each entry's direction-relative distance, and the bracket distances. Without this
-    // the latch is a passthrough and `RETRACE near` (a LET ref) never resolves to a literal.
-    private fun latch(a: com.qkt.dsl.ast.Latch): com.qkt.dsl.ast.Latch =
-        a.copy(
-            sensor =
-                when (val s = a.sensor) {
-                    is com.qkt.dsl.ast.BreakOffset ->
-                        com.qkt.dsl.ast
-                            .BreakOffset(s.reference?.let(::expr), expr(s.offset))
-                },
-            entries = a.entries.map(::latchEntry),
-            confirm =
-                when (val c = a.confirm) {
-                    is com.qkt.dsl.ast.LatchRetestHold -> c.copy(distance = expr(c.distance))
-                    else -> c
-                },
-        )
-
-    private fun latchEntry(e: com.qkt.dsl.ast.LatchEntry): com.qkt.dsl.ast.LatchEntry =
-        e.copy(
-            order =
-                when (val o = e.order) {
-                    com.qkt.dsl.ast.LatchMarket -> o
-                    is com.qkt.dsl.ast.LatchLimit ->
-                        com.qkt.dsl.ast
-                            .LatchLimit(dirRel(o.price))
-                    is com.qkt.dsl.ast.LatchStop ->
-                        com.qkt.dsl.ast
-                            .LatchStop(dirRel(o.price))
-                },
-            bracket =
-                e.bracket?.let { b ->
-                    com.qkt.dsl.ast
-                        .LatchBracket(b.stopLoss?.let(::dirRel), b.takeProfit?.let(::dirRel))
-                },
-            sizing = e.sizing?.let(::sizing),
-        )
-
-    private fun dirRel(r: com.qkt.dsl.ast.DirRel): com.qkt.dsl.ast.DirRel =
-        com.qkt.dsl.ast
-            .DirRel(r.sense, expr(r.dist))
 
     fun defaultsBlock(d: DefaultsBlock): DefaultsBlock =
         DefaultsBlock(
