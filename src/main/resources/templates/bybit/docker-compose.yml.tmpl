@@ -20,8 +20,8 @@ services:
     command: ["--config", "/etc/qkt/qkt.config.yaml", "--control-port", "47000"]
     environment:
       QKT_STATE_DIR: /var/lib/qkt
-      # Bybit credentials. Routes auto-activate when BYBIT_API_KEY is non-empty;
-      # leave blank to disable Bybit entirely (e.g. paper-only against BACKTEST symbols).
+      # Bybit credentials, read by the bybit_spot / bybit_linear entries in qkt.config.yaml.
+      # To run paper-only against BACKTEST symbols, delete those entries rather than blanking these.
       BYBIT_API_KEY: ${BYBIT_API_KEY:-}
       BYBIT_API_SECRET: ${BYBIT_API_SECRET:-}
       # Testnet vs mainnet selector. Default `true` keeps you on api-testnet.bybit.com

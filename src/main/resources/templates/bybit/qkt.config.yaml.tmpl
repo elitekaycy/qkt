@@ -1,12 +1,26 @@
-# qkt daemon config. Bybit symbol routes (BYBIT_SPOT:..., BYBIT_LINEAR:...) auto-register
-# whenever the `BYBIT_API_KEY` environment variable is non-empty — there's no per-profile
-# `brokers:` entry needed. Add other broker profiles (e.g. mt5) here if you also want
-# to trade through them from the same daemon.
+# qkt daemon config. Each `brokers:` entry is one trading account, and its name is the prefix
+# strategies use: `bybit_spot` serves BYBIT_SPOT:... symbols, `bybit_linear` serves
+# BYBIT_LINEAR:... symbols. Credentials come from the environment (see .env); both entries share
+# one Bybit connection. Delete the entry you don't trade. To run paper-only against BACKTEST
+# symbols, delete both. Add other accounts (e.g. a `type: mt5` entry) to trade them from the
+# same daemon.
 
 state:
   enabled: true
 
-brokers: {}
+brokers:
+  bybit_spot:
+    type: bybit
+    category: spot
+    api_key: env:BYBIT_API_KEY
+    api_secret: env:BYBIT_API_SECRET
+    testnet: ${BYBIT_TESTNET:-true}
+  bybit_linear:
+    type: bybit
+    category: linear
+    api_key: env:BYBIT_API_KEY
+    api_secret: env:BYBIT_API_SECRET
+    testnet: ${BYBIT_TESTNET:-true}
 
 notify:
   telegram:
