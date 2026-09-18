@@ -43,7 +43,6 @@
 377 src/main/kotlin/com/qkt/persistence/StatePersistor.kt
 362 src/test/kotlin/com/qkt/broker/bybit/spot/BybitSpotBrokerTest.kt
 351 src/main/kotlin/com/qkt/risk/RiskState.kt
-344 src/test/kotlin/com/qkt/parity/DslParityHarness.kt
 338 src/main/kotlin/com/qkt/cli/RunCommand.kt
 330 src/main/kotlin/com/qkt/app/TradingPipeline.kt
 327 src/test/kotlin/com/qkt/broker/mt5/MT5PollerRaceTest.kt
