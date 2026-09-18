@@ -68,7 +68,6 @@
 254 src/main/kotlin/com/qkt/observe/insights/BrokerStatePoller.kt
 252 src/main/kotlin/com/qkt/events/BrokerEvent.kt
 250 src/main/kotlin/com/qkt/marketdata/live/mt5/Mt5MarketSource.kt
-250 src/test/kotlin/com/qkt/candles/CandleAggregatorTest.kt
 250 src/test/kotlin/com/qkt/dsl/compile/GeneratedActionParityTest.kt
 249 src/test/kotlin/com/qkt/dsl/compile/GeneratedExpressionParityTest.kt
 248 src/test/kotlin/com/qkt/broker/mt5/MT5BrokerStateTest.kt
