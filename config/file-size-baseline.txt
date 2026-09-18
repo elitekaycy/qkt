@@ -89,7 +89,6 @@
 252 src/main/kotlin/com/qkt/events/BrokerEvent.kt
 252 src/test/kotlin/com/qkt/parity/DslFeatureParityTest.kt
 251 src/test/kotlin/com/qkt/backtest/BacktestSoakTest.kt
-251 src/test/kotlin/com/qkt/cli/StatusCommandDeepTest.kt
 251 src/test/kotlin/com/qkt/parity/PortfolioBookRiskRaceTest.kt
 250 src/main/kotlin/com/qkt/marketdata/live/mt5/Mt5MarketSource.kt
 250 src/test/kotlin/com/qkt/candles/CandleAggregatorTest.kt
