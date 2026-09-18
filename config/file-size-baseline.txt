@@ -19,7 +19,6 @@
 755 src/test/kotlin/com/qkt/broker/PaperBrokerTest.kt
 734 src/main/kotlin/com/qkt/cli/Config.kt
 703 src/main/kotlin/com/qkt/cli/daemon/portfolio/PortfolioDeployer.kt
-693 src/main/kotlin/com/qkt/cli/GoldenReplayDataMaterializer.kt
 691 src/test/kotlin/com/qkt/broker/mt5/MT5PositionPollerCloseTest.kt
 677 src/main/kotlin/com/qkt/execution/OrderRequest.kt
 658 src/test/kotlin/com/qkt/marketdata/live/mt5/Mt5BarFetcherTest.kt

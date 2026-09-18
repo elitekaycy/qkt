@@ -1,6 +1,7 @@
 package com.qkt.cli
 
 import com.qkt.cli.daemon.StateDir
+import com.qkt.cli.golden.GoldenReplayDataMaterializer
 import com.qkt.common.Clock
 import com.qkt.common.SystemClock
 import java.io.BufferedReader
@@ -72,7 +73,6 @@ class GoldenCommand(
             System.err.println("qkt: no engine audit journal found for session '$session'")
             return ExitCodes.USER_ERROR
         }
-
         return try {
             val audit = scanAudit(auditFiles)
             require(audit.tickCount > 0L) { "session has no captured inbound ticks" }
