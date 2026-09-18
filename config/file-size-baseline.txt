@@ -167,7 +167,6 @@
 223 src/test/kotlin/com/qkt/risk/RiskStatePersistenceTest.kt
 222 src/test/kotlin/com/qkt/parity/mt5golden/MT5GoldenVerifier.kt
 221 src/main/kotlin/com/qkt/bus/EventBus.kt
-221 src/main/kotlin/com/qkt/marketdata/store/DatasetSnapshot.kt
 218 src/main/kotlin/com/qkt/marketdata/store/LocalBarStore.kt
 216 src/main/kotlin/com/qkt/evidence/Evidence.kt
 216 src/main/kotlin/com/qkt/marketdata/source/CachedHistoricalMarketSource.kt
