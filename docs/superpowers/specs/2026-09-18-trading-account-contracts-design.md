@@ -196,7 +196,12 @@ brokers:
     testnet: "true"
 ```
 
-Accounts with identical credentials and testnet flag share one Bybit client.
+Accounts with identical credentials and testnet flag share one Bybit client, built on first use.
+
+The Bybit brokers hardcode the `BYBIT_SPOT:` / `BYBIT_LINEAR:` prefixes internally, so in this
+step a Bybit entry must be named after its category (`bybit_spot`, `bybit_linear`); any other name
+is refused with a message saying so. Configurable Bybit prefixes (several Bybit logins on one
+daemon) are a Bybit-internal change for later.
 
 ## Behaviour changes (intended, all outside MT5 trading)
 
