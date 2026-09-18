@@ -2,10 +2,8 @@ package com.qkt.dsl.parse
 
 import com.qkt.dsl.ast.ActionAst
 import com.qkt.dsl.ast.AllocateBlock
-import com.qkt.dsl.ast.Block
 import com.qkt.dsl.ast.BracketAst
 import com.qkt.dsl.ast.ChildPriceAst
-import com.qkt.dsl.ast.DefaultsBlock
 import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.HUB_BROKER
 import com.qkt.dsl.ast.LetDecl
@@ -17,11 +15,7 @@ import com.qkt.dsl.ast.RegimeBlock
 import com.qkt.dsl.ast.RegimeConditionalState
 import com.qkt.dsl.ast.RegimeDefaultState
 import com.qkt.dsl.ast.RegimeState
-import com.qkt.dsl.ast.RuleAst
-import com.qkt.dsl.ast.ScheduleDecl
-import com.qkt.dsl.ast.ScheduleTrigger
 import com.qkt.dsl.ast.SequenceDecl
-import com.qkt.dsl.ast.SequenceStageDecl
 import com.qkt.dsl.ast.SeriesDecl
 import com.qkt.dsl.ast.SeriesSource
 import com.qkt.dsl.ast.SizingAst
@@ -29,9 +23,6 @@ import com.qkt.dsl.ast.StrategyAst
 import com.qkt.dsl.ast.StreamDecl
 import com.qkt.dsl.ast.SyncGroupDecl
 import com.qkt.dsl.ast.TifAst
-import com.qkt.dsl.ast.TimeOfDay
-import com.qkt.dsl.ast.Timezone
-import com.qkt.dsl.ast.WhenThen
 import java.math.BigDecimal
 
 /**
@@ -55,6 +46,10 @@ class Parser(
     private val bracketParser = BracketParser(cursor, literalParser, expressionParser)
     private val actionParser =
         ActionParser(cursor, scope, literalParser, expressionParser, sizingParser, orderTypeParser, bracketParser)
+    private val ruleParser = RuleParser(cursor, expressionParser, actionParser)
+    private val scheduleParser = ScheduleParser(cursor, actionParser)
+    private val declarationParser = DeclarationParser(cursor, literalParser, expressionParser)
+    private val defaultsParser = DefaultsParser(cursor, sizingParser, orderTypeParser, bracketParser)
 
     fun parseFile(): ParseResult<ParsedFile> =
         when (cursor.peek().kind) {
@@ -316,7 +311,7 @@ class Parser(
 
         val defaults =
             if (cursor.peek().kind == TokenKind.DEFAULTS) {
-                cursor.tryParse { parseDefaults() }
+                cursor.tryParse { defaultsParser.parseDefaults() }
             } else {
                 null
             }
@@ -336,7 +331,7 @@ class Parser(
             run {
                 val acc = mutableListOf<ParamDecl>()
                 while (cursor.peek().kind == TokenKind.PARAM) {
-                    cursor.tryParse { parseParams() }?.let { acc.addAll(it) }
+                    cursor.tryParse { declarationParser.parseParams() }?.let { acc.addAll(it) }
                 }
                 acc
             }
@@ -350,7 +345,7 @@ class Parser(
                 // "unexpected token after the last recognized block" error. Loop like PARAM does.
                 val acc = mutableListOf<LetDecl>()
                 while (cursor.peek().kind == TokenKind.LET) {
-                    val parsed = cursor.tryParse { parseLet() }
+                    val parsed = cursor.tryParse { declarationParser.parseLet() }
                     if (parsed == null) break
                     acc.addAll(parsed)
                 }
@@ -359,7 +354,7 @@ class Parser(
 
         val schedules =
             if (cursor.peek().kind == TokenKind.SCHEDULE) {
-                cursor.tryParse { parseSchedules() } ?: emptyList()
+                cursor.tryParse { scheduleParser.parseSchedules() } ?: emptyList()
             } else {
                 emptyList()
             }
@@ -368,14 +363,14 @@ class Parser(
             run {
                 val acc = mutableListOf<SequenceDecl>()
                 while (cursor.peek().kind == TokenKind.SEQUENCE) {
-                    cursor.tryParse { parseSequence() }?.let { acc.add(it) }
+                    cursor.tryParse { declarationParser.parseSequence() }?.let { acc.add(it) }
                 }
                 acc
             }
 
         val rules =
             if (cursor.peek().kind == TokenKind.RULES) {
-                cursor.tryParse { parseRules() } ?: emptyList()
+                cursor.tryParse { ruleParser.parseRules() } ?: emptyList()
             } else {
                 emptyList()
             }
@@ -399,153 +394,6 @@ class Parser(
                 sequences = sequences,
             ),
         )
-    }
-
-    private fun parseLet(): List<LetDecl> {
-        val out = mutableListOf<LetDecl>()
-        cursor.expect(TokenKind.LET, "expected LET")
-        do {
-            val name = cursor.expect(TokenKind.IDENT, "expected let name").lexeme
-            cursor.expect(TokenKind.EQ, "expected '=' after let name")
-            val expr = expressionParser.parseExpr()
-            out.add(LetDecl(name, expr))
-        } while (cursor.match(TokenKind.COMMA))
-        return out
-    }
-
-    private fun parseParams(): List<ParamDecl> {
-        val out = mutableListOf<ParamDecl>()
-        cursor.expect(TokenKind.PARAM, "expected PARAM")
-        val name = cursor.expect(TokenKind.IDENT, "expected param name").lexeme
-        cursor.expect(TokenKind.EQ, "expected '=' after param name")
-        out.add(ParamDecl(name, literalParser.parseLiteral()))
-        return out
-    }
-
-    internal fun parseRules(): List<RuleAst> {
-        cursor.expect(TokenKind.RULES, "expected RULES")
-        val out = mutableListOf<RuleAst>()
-        while (cursor.peek().kind != TokenKind.EOF) {
-            val kind = cursor.peek().kind
-            when {
-                kind == TokenKind.WHEN -> cursor.tryParse { parseWhenThen() }?.let { out.add(it) }
-                kind == TokenKind.FOR -> cursor.tryParse { parseForEach() }?.let { out.addAll(it) }
-                kind in SECTION_KINDS -> {
-                    // A section keyword after RULES is an ordering error, not a rule. Report it
-                    // once and hand the token back to the caller; `requireEof` then covers the
-                    // rest. Looping on it used to append the same error forever (#1131).
-                    val t = cursor.peek()
-                    cursor.errors.add(
-                        ParseError(
-                            line = t.line,
-                            col = t.col,
-                            message = "${t.lexeme} must come before RULES",
-                        ),
-                    )
-                    return out
-                }
-                else -> {
-                    cursor.tryParse {
-                        cursor.error("expected WHEN or FOR EACH in RULES, got '${cursor.peek().lexeme}'")
-                    }
-                }
-            }
-        }
-        return out
-    }
-
-    private fun parseWhenThen(): WhenThen {
-        cursor.expect(TokenKind.WHEN, "expected WHEN")
-        val cond = expressionParser.parseExpr()
-        cursor.expect(TokenKind.THEN, "expected THEN after WHEN condition")
-        val first = actionParser.parseAction()
-        if (cursor.peek().kind != TokenKind.SEMICOLON) return WhenThen(cond, first)
-        val actions = mutableListOf(first)
-        while (cursor.match(TokenKind.SEMICOLON)) {
-            if (!isActionStart(cursor.peek().kind)) break
-            actions.add(actionParser.parseAction())
-        }
-        return WhenThen(cond, Block(actions))
-    }
-
-    private fun isActionStart(k: TokenKind): Boolean =
-        k == TokenKind.BUY ||
-            k == TokenKind.SELL ||
-            k == TokenKind.CLOSE ||
-            k == TokenKind.CLOSE_ALL ||
-            k == TokenKind.FLATTEN ||
-            k == TokenKind.RESIZE ||
-            k == TokenKind.CANCEL ||
-            k == TokenKind.CANCEL_ALL ||
-            k == TokenKind.LOG ||
-            k == TokenKind.OCO_ENTRY ||
-            k == TokenKind.LATCH
-
-    private fun parseForEach(): List<RuleAst> {
-        cursor.expect(TokenKind.FOR, "expected FOR")
-        cursor.expect(TokenKind.EACH, "expected EACH after FOR")
-        val iterVar = cursor.expect(TokenKind.IDENT, "expected iteration variable").lexeme
-        cursor.expect(TokenKind.IN, "expected IN after iteration variable")
-        cursor.expect(TokenKind.LBRACKET, "expected '[' to open stream alias list")
-        val aliases = mutableListOf<String>()
-        if (cursor.peek().kind != TokenKind.RBRACKET) {
-            aliases.add(cursor.expect(TokenKind.IDENT, "expected stream alias").lexeme)
-            while (cursor.match(TokenKind.COMMA)) {
-                aliases.add(cursor.expect(TokenKind.IDENT, "expected stream alias").lexeme)
-            }
-        }
-        cursor.expect(TokenKind.RBRACKET, "expected ']' to close stream alias list")
-        cursor.expect(TokenKind.DO, "expected DO after stream alias list")
-        val template = parseWhenThen()
-        return aliases.map { alias -> substituteIterVar(template, iterVar, alias) }
-    }
-
-    internal fun parseDefaults(): DefaultsBlock {
-        cursor.expect(TokenKind.DEFAULTS, "expected DEFAULTS")
-        cursor.expect(TokenKind.LBRACE, "expected '{' after DEFAULTS")
-        var sizing: SizingAst? = null
-        var orderType: OrderTypeAst? = null
-        var tif: TifAst? = null
-        var stopLoss: ChildPriceAst? = null
-        var takeProfit: ChildPriceAst? = null
-        var trailing: OrderTypeAst? = null
-        while (cursor.peek().kind != TokenKind.RBRACE && cursor.peek().kind != TokenKind.EOF) {
-            when (cursor.peek().kind) {
-                TokenKind.SIZING -> {
-                    cursor.advance()
-                    cursor.expect(TokenKind.EQ, "expected '=' after SIZING in DEFAULTS")
-                    sizing = sizingParser.parseSizing()
-                }
-                TokenKind.STOP_LOSS -> {
-                    cursor.advance()
-                    cursor.expect(TokenKind.EQ, "expected '=' after STOP_LOSS in DEFAULTS")
-                    stopLoss = bracketParser.parseChildPrice()
-                }
-                TokenKind.TAKE_PROFIT -> {
-                    cursor.advance()
-                    cursor.expect(TokenKind.EQ, "expected '=' after TAKE_PROFIT in DEFAULTS")
-                    takeProfit = bracketParser.parseChildPrice()
-                }
-                TokenKind.TIF -> {
-                    cursor.advance()
-                    cursor.expect(TokenKind.EQ, "expected '=' after TIF in DEFAULTS")
-                    tif = orderTypeParser.parseTif()
-                }
-                TokenKind.ORDER_TYPE -> {
-                    cursor.advance()
-                    cursor.expect(TokenKind.EQ, "expected '=' after ORDER_TYPE in DEFAULTS")
-                    orderType = orderTypeParser.parseOrderType()
-                }
-                TokenKind.TRAILING -> {
-                    cursor.advance()
-                    cursor.expect(TokenKind.EQ, "expected '=' after TRAILING in DEFAULTS")
-                    trailing = orderTypeParser.parseOrderType()
-                }
-                else -> cursor.error("expected DEFAULTS clause keyword, got '${cursor.peek().lexeme}'")
-            }
-        }
-        cursor.expect(TokenKind.RBRACE, "expected '}' to close DEFAULTS")
-        return DefaultsBlock(sizing, orderType, tif, stopLoss, takeProfit, trailing)
     }
 
     internal data class SymbolsBlock(
@@ -643,24 +491,6 @@ class Parser(
                 .durationMs
         if (windowMs < 60_000L) cursor.error("SERIES '$alias' timeframe must be >= 1m, got '$timeframe'")
         return SeriesDecl(alias = alias, source = source, timeframe = timeframe)
-    }
-
-    private fun parseSequence(): SequenceDecl {
-        cursor.expect(TokenKind.SEQUENCE, "expected SEQUENCE")
-        val name = cursor.expect(TokenKind.IDENT, "expected sequence name after SEQUENCE").lexeme
-        cursor.expect(TokenKind.ON, "expected ON after SEQUENCE name")
-        val stream = cursor.expect(TokenKind.IDENT, "expected stream alias after SEQUENCE ON").lexeme
-        cursor.expect(TokenKind.LBRACE, "expected '{' to open SEQUENCE block")
-        val stages = mutableListOf<SequenceStageDecl>()
-        while (cursor.peek().kind != TokenKind.RBRACE && cursor.peek().kind != TokenKind.EOF) {
-            cursor.expect(TokenKind.STAGE, "expected STAGE in SEQUENCE block")
-            val stageName = cursor.expect(TokenKind.IDENT, "expected stage name after STAGE").lexeme
-            val within = if (cursor.match(TokenKind.WITHIN)) literalParser.parseDuration() else null
-            cursor.expect(TokenKind.COLON, "expected ':' after SEQUENCE stage header")
-            stages += SequenceStageDecl(stageName, within, expressionParser.parseExpr())
-        }
-        cursor.expect(TokenKind.RBRACE, "expected '}' to close SEQUENCE block")
-        return SequenceDecl(name, stream, stages)
     }
 
     /** Parse the stream body after `<alias> =`: `<broker>:<symbol> EVERY <tf> [WARMUP <n> BARS]`. */
@@ -770,139 +600,6 @@ class Parser(
         )
     }
 
-    /**
-     * Parse one `SCHEDULE` block (#77). Each clause is one of:
-     *   - `AT <time> UTC THEN <action>` — single one-off, fires daily
-     *   - `AT <t1>, <t2>, … UTC THEN <action>` — same action at multiple times
-     *   - `EVERY HOUR AT :<min> THEN <action>`
-     *   - `EVERY DAY AT <time> UTC THEN <action>`
-     *   - `EVERY WEEKDAY AT <time> UTC THEN <action>`
-     *
-     * UTC is required on every `AT <time>` form. Block continues until a non-trigger
-     * token (typically `RULES`).
-     */
-    private fun parseSchedules(): List<ScheduleDecl> {
-        cursor.expect(TokenKind.SCHEDULE, "expected SCHEDULE")
-        val out = mutableListOf<ScheduleDecl>()
-        while (cursor.peek().kind == TokenKind.AT || cursor.peek().kind == TokenKind.EVERY) {
-            val triggers = mutableListOf<ScheduleTrigger>()
-            if (cursor.peek().kind == TokenKind.AT) {
-                cursor.advance() // AT
-                val times = mutableListOf<TimeOfDay>()
-                times.add(parseTimeOfDay())
-                while (cursor.peek().kind == TokenKind.COMMA) {
-                    cursor.advance()
-                    times.add(parseTimeOfDay())
-                }
-                val tz = parseTimezone("SCHEDULE AT")
-                for (t in times) {
-                    triggers.add(ScheduleTrigger.At(time = t, tz = tz))
-                }
-            } else {
-                triggers.add(parseScheduleTrigger())
-            }
-            cursor.expect(TokenKind.THEN, "expected THEN after SCHEDULE trigger(s)")
-            val action = actionParser.parseAction()
-            out.add(ScheduleDecl(triggers = triggers, action = action))
-        }
-        return out
-    }
-
-    /** Parse one non-list trigger: `EVERY HOUR AT :NN`, `EVERY DAY AT ...`, `EVERY WEEKDAY AT ...`. */
-    private fun parseScheduleTrigger(): ScheduleTrigger {
-        cursor.expect(TokenKind.EVERY, "expected EVERY")
-        return when (cursor.peek().kind) {
-            TokenKind.HOUR -> {
-                cursor.advance()
-                cursor.expect(TokenKind.AT, "expected AT after EVERY HOUR")
-                cursor.expect(TokenKind.COLON, "expected ':' before minute offset")
-                val mTok = cursor.expect(TokenKind.NUMBER, "expected minute 0-59")
-                val m = mTok.lexeme.toIntOrNull() ?: cursor.error("expected integer minute, got '${mTok.lexeme}'")
-                ScheduleTrigger.EveryHour(minuteOffset = m)
-            }
-            TokenKind.DAY -> {
-                cursor.advance()
-                cursor.expect(TokenKind.AT, "expected AT after EVERY DAY")
-                val time = parseTimeOfDay()
-                val tz = parseTimezone("EVERY DAY")
-                ScheduleTrigger.EveryDay(time = time, tz = tz)
-            }
-            TokenKind.WEEKDAY -> {
-                cursor.advance()
-                cursor.expect(TokenKind.AT, "expected AT after EVERY WEEKDAY")
-                val time = parseTimeOfDay()
-                val tz = parseTimezone("EVERY WEEKDAY")
-                ScheduleTrigger.EveryWeekday(time = time, tz = tz)
-            }
-            else -> cursor.error("expected HOUR, DAY, or WEEKDAY after EVERY, got '${cursor.peek().lexeme}'")
-        }
-    }
-
-    /**
-     * Parse the timezone tag that follows a time literal in a `SCHEDULE` trigger.
-     * One of `UTC` / `NY` / `LONDON` / `TOKYO` / `SYDNEY` / `CHICAGO` / `BROKER`.
-     * [where] is the trigger label used in the error message.
-     */
-    private fun parseTimezone(where: String): Timezone =
-        when (cursor.peek().kind) {
-            TokenKind.UTC -> {
-                cursor.advance()
-                Timezone.UTC
-            }
-            TokenKind.NY -> {
-                cursor.advance()
-                Timezone.NY
-            }
-            TokenKind.LONDON -> {
-                cursor.advance()
-                Timezone.LONDON
-            }
-            TokenKind.TOKYO -> {
-                cursor.advance()
-                Timezone.TOKYO
-            }
-            TokenKind.SYDNEY -> {
-                cursor.advance()
-                Timezone.SYDNEY
-            }
-            TokenKind.CHICAGO -> {
-                cursor.advance()
-                Timezone.CHICAGO
-            }
-            TokenKind.BROKER -> {
-                cursor.advance()
-                Timezone.BROKER
-            }
-            else ->
-                cursor.error(
-                    "$where requires an explicit timezone " +
-                        "(UTC/NY/LONDON/TOKYO/SYDNEY/CHICAGO/BROKER), got '${cursor.peek().lexeme}'",
-                )
-        }
-
-    /**
-     * Parse `HH:MM` or `HH:MM:SS` into a [TimeOfDay]. Out-of-range values are
-     * rejected by [TimeOfDay.init].
-     */
-    private fun parseTimeOfDay(): TimeOfDay {
-        val hourTok = cursor.expect(TokenKind.NUMBER, "expected hour")
-        cursor.expect(TokenKind.COLON, "expected ':' after hour")
-        val minTok = cursor.expect(TokenKind.NUMBER, "expected minute")
-        val second: Int =
-            if (cursor.peek().kind == TokenKind.COLON) {
-                cursor.advance()
-                val secTok = cursor.expect(TokenKind.NUMBER, "expected second")
-                secTok.lexeme.toIntOrNull() ?: cursor.error("expected integer second, got '${secTok.lexeme}'")
-            } else {
-                0
-            }
-        return TimeOfDay(
-            hour = hourTok.lexeme.toIntOrNull() ?: cursor.error("expected integer hour, got '${hourTok.lexeme}'"),
-            minute = minTok.lexeme.toIntOrNull() ?: cursor.error("expected integer minute, got '${minTok.lexeme}'"),
-            second = second,
-        )
-    }
-
     internal fun parseAction(): ActionAst = actionParser.parseAction()
 
     internal fun parseBracket(): BracketAst = bracketParser.parseBracket()
@@ -916,18 +613,4 @@ class Parser(
     internal fun parseTif(): TifAst = orderTypeParser.parseTif()
 
     internal fun parseSizing(): SizingAst = sizingParser.parseSizing()
-
-    companion object {
-        /** Top-level section keywords; each opens a block that must precede RULES. */
-        private val SECTION_KINDS =
-            setOf(
-                TokenKind.DEFAULTS,
-                TokenKind.SYMBOLS,
-                TokenKind.LET,
-                TokenKind.PARAM,
-                TokenKind.RULES,
-                TokenKind.SCHEDULE,
-                TokenKind.SEQUENCE,
-            )
-    }
 }
