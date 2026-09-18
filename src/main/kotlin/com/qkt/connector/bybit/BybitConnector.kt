@@ -89,13 +89,23 @@ class BybitConnector(
         context: ConnectorContext,
     ): BybitCredentials =
         BybitCredentials(
-            apiKey = context.secrets.resolve(cfg, "api_key") ?: error("brokers.${cfg.name}.api_key is required"),
-            apiSecret =
-                context.secrets.resolve(cfg, "api_secret") ?: error("brokers.${cfg.name}.api_secret is required"),
+            apiKey = requiredSecret(cfg, context, "api_key"),
+            apiSecret = requiredSecret(cfg, context, "api_secret"),
             testnet = cfg.setting("testnet")?.equals("false", ignoreCase = true) != true,
             recvWindowMs = cfg.setting("recv_window_ms")?.toLong() ?: DEFAULT_RECV_WINDOW_MS,
             accountType = cfg.setting("account_type") ?: DEFAULT_ACCOUNT_TYPE,
         )
+
+    /** A credential that must be present and non-empty; an empty one would only fail later as a connect timeout. */
+    private fun requiredSecret(
+        cfg: AccountConfig,
+        context: ConnectorContext,
+        field: String,
+    ): Secret {
+        val secret = context.secrets.resolve(cfg, field) ?: error("brokers.${cfg.name}.$field is required")
+        require(secret.reveal().isNotBlank()) { "brokers.${cfg.name}.$field resolved to an empty value" }
+        return secret
+    }
 
     private companion object {
         val CATEGORIES = setOf("spot", "linear")

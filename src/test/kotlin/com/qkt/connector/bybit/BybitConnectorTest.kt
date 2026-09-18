@@ -92,6 +92,20 @@ class BybitConnectorTest {
     }
 
     @Test
+    fun `empty credentials are refused at open, not discovered by a connect timeout`() {
+        val blankEnv =
+            ConnectorContext(
+                stateRoot = null,
+                env = mapOf("BYBIT_API_KEY" to "", "BYBIT_API_SECRET" to "s"),
+                clock = SystemClock(),
+            )
+
+        assertThatThrownBy { BybitConnector().open(listOf(acct("bybit_spot", "spot")), blankEnv) }
+            .hasMessageContaining("bybit_spot.api_key")
+            .hasMessageContaining("empty")
+    }
+
+    @Test
     fun `missing credentials are refused naming the field`() {
         val noKey = AccountConfig("bybit_spot", "bybit", mapOf("category" to "spot"))
 
