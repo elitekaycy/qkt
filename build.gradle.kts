@@ -9,6 +9,7 @@ plugins {
     id("qkt.build-info")
     id("qkt.testing")
     id("qkt.script-tests")
+    id("qkt.file-size")
     id("qkt.distribution")
     id("qkt.dev-tasks")
 }
