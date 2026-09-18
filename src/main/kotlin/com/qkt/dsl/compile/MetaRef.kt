@@ -8,73 +8,40 @@ import com.qkt.dsl.ast.Between
 import com.qkt.dsl.ast.BinaryOp
 import com.qkt.dsl.ast.Block
 import com.qkt.dsl.ast.BoolLit
-import com.qkt.dsl.ast.BracketAst
 import com.qkt.dsl.ast.Buy
 import com.qkt.dsl.ast.CalendarWindow
 import com.qkt.dsl.ast.Cancel
 import com.qkt.dsl.ast.CancelAll
 import com.qkt.dsl.ast.CaseWhen
-import com.qkt.dsl.ast.ChildArmedTrail
-import com.qkt.dsl.ast.ChildAt
-import com.qkt.dsl.ast.ChildBy
-import com.qkt.dsl.ast.ChildPct
-import com.qkt.dsl.ast.ChildPriceAst
-import com.qkt.dsl.ast.ChildRr
 import com.qkt.dsl.ast.Close
 import com.qkt.dsl.ast.CloseAll
 import com.qkt.dsl.ast.CmpOp
 import com.qkt.dsl.ast.CooldownRef
 import com.qkt.dsl.ast.Crosses
-import com.qkt.dsl.ast.Day
 import com.qkt.dsl.ast.EntryQty
 import com.qkt.dsl.ast.ExprAst
-import com.qkt.dsl.ast.Fok
 import com.qkt.dsl.ast.FuncCall
-import com.qkt.dsl.ast.Gtc
-import com.qkt.dsl.ast.Gtd
 import com.qkt.dsl.ast.InList
 import com.qkt.dsl.ast.IndicatorCall
-import com.qkt.dsl.ast.Ioc
 import com.qkt.dsl.ast.IsNull
 import com.qkt.dsl.ast.LastTradingDayOfMonth
-import com.qkt.dsl.ast.Limit
 import com.qkt.dsl.ast.Log
-import com.qkt.dsl.ast.Market
 import com.qkt.dsl.ast.NowAccessor
 import com.qkt.dsl.ast.NumLit
-import com.qkt.dsl.ast.OcoAst
 import com.qkt.dsl.ast.OcoEntry
-import com.qkt.dsl.ast.OrderTypeAst
 import com.qkt.dsl.ast.PositionRef
 import com.qkt.dsl.ast.Ref
 import com.qkt.dsl.ast.RuleAst
 import com.qkt.dsl.ast.Sell
 import com.qkt.dsl.ast.SequenceAccessor
 import com.qkt.dsl.ast.SessionWindow
-import com.qkt.dsl.ast.SizeNotional
-import com.qkt.dsl.ast.SizePctBalance
-import com.qkt.dsl.ast.SizePctEquity
-import com.qkt.dsl.ast.SizePositionFull
-import com.qkt.dsl.ast.SizeQty
-import com.qkt.dsl.ast.SizeRiskAbs
-import com.qkt.dsl.ast.SizeRiskFrac
-import com.qkt.dsl.ast.SizeRiskFracOfBook
-import com.qkt.dsl.ast.SizingAst
-import com.qkt.dsl.ast.StackAst
 import com.qkt.dsl.ast.StackEntryRef
-import com.qkt.dsl.ast.StackLayers
-import com.qkt.dsl.ast.StackSpacing
 import com.qkt.dsl.ast.StateAccessor
-import com.qkt.dsl.ast.Stop
-import com.qkt.dsl.ast.StopLimit
 import com.qkt.dsl.ast.StrategyAst
 import com.qkt.dsl.ast.StreakRef
 import com.qkt.dsl.ast.StreamFieldRef
 import com.qkt.dsl.ast.StringLit
-import com.qkt.dsl.ast.TifAst
 import com.qkt.dsl.ast.TradesRef
-import com.qkt.dsl.ast.TrailingBy
-import com.qkt.dsl.ast.TrailingPct
 import com.qkt.dsl.ast.UnaryOp
 import com.qkt.dsl.ast.WhenThen
 
@@ -154,96 +121,18 @@ internal fun collectMetaRefs(
         }
     }
 
-    fun walkSizing(s: SizingAst?) {
-        when (s) {
-            null -> Unit
-            is SizeQty -> walkExpr(s.expr)
-            is SizeNotional -> walkExpr(s.usd)
-            is SizePctEquity -> walkExpr(s.frac)
-            is SizePctBalance -> walkExpr(s.frac)
-            is SizeRiskFrac -> walkExpr(s.frac)
-            is SizeRiskFracOfBook -> walkExpr(s.frac)
-            is SizeRiskAbs -> walkExpr(s.usd)
-            is SizePositionFull -> Unit
-        }
-    }
-
-    fun walkOrderType(o: OrderTypeAst?) {
-        when (o) {
-            null -> Unit
-            Market -> Unit
-            is Limit -> walkExpr(o.price)
-            is com.qkt.dsl.ast.ExitRelativeLimit -> walkExpr(o.price.dist)
-            is Stop -> walkExpr(o.price)
-            is com.qkt.dsl.ast.ExitRelativeStop -> walkExpr(o.price.dist)
-            is StopLimit -> {
-                walkExpr(o.stopPrice)
-                walkExpr(o.limitPrice)
-            }
-            is TrailingBy -> walkExpr(o.distance)
-            is TrailingPct -> walkExpr(o.percent)
-        }
-    }
-
-    fun walkChildPrice(c: ChildPriceAst?) {
-        when (c) {
-            null -> Unit
-            is ChildAt -> walkExpr(c.price)
-            is ChildBy -> walkExpr(c.distance)
-            is ChildPct -> walkExpr(c.percent)
-            is ChildRr -> walkExpr(c.multiplier)
-            is ChildArmedTrail -> {
-                walkExpr(c.trailDistance)
-                walkExpr(c.mfeThreshold)
-            }
-        }
-    }
-
-    fun walkBracket(b: BracketAst?) {
-        if (b == null) return
-        walkChildPrice(b.stopLoss)
-        walkChildPrice(b.takeProfit)
-    }
-
-    fun walkOco(o: OcoAst?) {
-        if (o == null) return
-        walkChildPrice(o.stop)
-        walkChildPrice(o.limit)
-    }
-
-    fun walkTif(t: TifAst?) {
-        when (t) {
-            null -> Unit
-            Gtc, Ioc, Fok, Day -> Unit
-            is Gtd -> walkExpr(t.until)
-        }
-    }
-
-    fun walkStack(s: StackAst?) {
-        when (s) {
-            null -> Unit
-            is StackSpacing -> walkExpr(s.spacing)
-            is StackLayers ->
-                s.layers.forEach { layer ->
-                    walkSizing(layer.sizing)
-                    walkOrderType(layer.orderType)
-                    layer.at?.let { walkExpr(it) }
-                }
-        }
-    }
-
     fun walkOpts(opts: ActionOpts) {
-        walkSizing(opts.sizing)
-        walkOrderType(opts.orderType)
-        walkTif(opts.tif)
-        walkBracket(opts.bracket)
-        walkOco(opts.oco)
-        walkStack(opts.stack)
+        OrderPartExprs.sizing(opts.sizing, ::walkExpr)
+        OrderPartExprs.orderType(opts.orderType, ::walkExpr)
+        OrderPartExprs.tif(opts.tif, ::walkExpr)
+        OrderPartExprs.bracket(opts.bracket, ::walkExpr)
+        OrderPartExprs.oco(opts.oco, ::walkExpr)
+        OrderPartExprs.stack(opts.stack, ::walkExpr)
         opts.stackAts.forEach { clause ->
             walkExpr(clause.mfeThreshold)
             clause.maeRecoverDistance?.let { walkExpr(it) }
-            walkSizing(clause.sizing)
-            walkBracket(clause.bracket)
+            OrderPartExprs.sizing(clause.sizing, ::walkExpr)
+            OrderPartExprs.bracket(clause.bracket, ::walkExpr)
         }
         // OTO (ON_FILL) children carry their own expressions (sizing, prices).
         opts.onFill.forEach { child ->
@@ -278,7 +167,7 @@ internal fun collectMetaRefs(
                 walkAction(a.leg2)
             }
             is com.qkt.dsl.ast.Resize -> {
-                walkSizing(a.target)
+                OrderPartExprs.sizing(a.target, ::walkExpr)
                 a.minStep?.let { walkExpr(it) }
             }
             is com.qkt.dsl.ast.Latch -> Unit
