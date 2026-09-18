@@ -175,7 +175,7 @@ test class that pins it.
 | #623 | Session-scoped indicators (`SessionRange`, `SessionVwap`, `AnchoredReturn`) refuse to latch partial initial windows — Undefined until the first complete window | `SessionRangeTest`, `SessionVwapTest`, `AnchoredReturnTest` |
 | #624 | The tick-fills classifier expands the mid bar range by the slice's max half-spread, so levels crossed only by the executable quote resolve on real (side-aware) ticks | `OrderManagerIntrabarFillTest`, `BarResolvedFeedTest` |
 | #625 | Backtest sims never fill an order cancelled earlier in the same tick | `PaperBrokerTest`, `MT5BrokerSimulatorTest` |
-| #626 | Backtest and live honor each halt event's `cancelWorkingOrders`; cancellation is strategy-scoped and retains protective exits | `OrderManagerTest`, `BacktestRiskParityTest` |
+| #626 | Backtest and live honor each halt event's `cancelWorkingOrders`; cancellation is strategy-scoped and retains protective exits | `OrderManagerHaltCancelTest`, `BacktestRiskParityTest` |
 | #627/#628 | Portfolio backtests accept always-run `CAPITAL`/`WEIGHT` and `RISK OF BOOK` topologies. They refuse conditional `WHEN..RUN` gates and portfolio `--bars`/`--bar-tf`/`--tick-fills` rather than silently changing topology | `BacktestCommandPortfolioTest`, `PortfolioDeployerBacktestParityTest` |
 | #629 | `qkt sweep --tick-fills` errors instead of silently downgrading | `SweepCommandTest` |
 | #630/#641 | `--bars` validates bar-store coverage per trading day (fail-loud, `--allow-incomplete` escape); non-Dukascopy streams are completeness-validated; empty feeds error instead of replaying nothing | `BarCompletenessValidatorTest`, `BacktestFromStoreTest` |
@@ -206,7 +206,7 @@ execution, risk, accounting, or warmup pipeline.
 | #939 | Standalone live equity remains venue-based by default and can be pinned to modeled parity with `risk.live_equity_basis: modeled` | `ConfigTest`, `LiveSessionBrokerEquityTest` |
 | #940 | Margin floor and measured-usage ramp remain intentionally live-only and are declared in A15/A17; neither restriction is implied by a backtest | `MarginFloorTest`, `MeasuredUsageTest` |
 | #941 | Live child/standalone feeds subscribe configured FX conversion symbols in addition to traded streams; conversion symbols do not become tradable streams | `StrategyHandleTest`, `PortfolioDeployerE2ETest` |
-| #942 | Halt cancellation honors `cancelWorkingOrders`, scopes by strategy id, and retains protective exits | `OrderManagerTest`, `BacktestRiskParityTest` |
+| #942 | Halt cancellation honors `cancelWorkingOrders`, scopes by strategy id, and retains protective exits | `OrderManagerHaltCancelTest`, `BacktestRiskParityTest` |
 | #943 | A live deploy with a drawdown limit refuses a non-positive `starting_balance` instead of silently making static drawdown inert | `StrategyHandleTest` |
 | #944 | MT5 `volume_max` is parsed and enforced in live preflight and MT5_SIM | `MT5ClientTest`, `MT5BrokerIntegrationTest`, `MT5BrokerSimulatorTest` |
 | #945 | `qkt instruments verify` compares YAML contract size, volume bounds/step, point size, digits, and stops level against `/symbol_info`, exiting non-zero on drift | `InstrumentsCommandTest` |
