@@ -1,11 +1,17 @@
 package com.qkt.app
 
+import com.qkt.app.order.AttachedBracketCompletion
 import com.qkt.app.order.BracketBook
+import com.qkt.app.order.BracketExits
+import com.qkt.app.order.BracketFills
 import com.qkt.app.order.BracketRiskRecorder
+import com.qkt.app.order.BracketSubmission
+import com.qkt.app.order.EngineHeldCloseTickets
 import com.qkt.app.order.EntryRiskReport
 import com.qkt.app.order.HaltCancellations
 import com.qkt.app.order.ManagedStopBook
 import com.qkt.app.order.ManagedStopTicker
+import com.qkt.app.order.ObservedPrices
 import com.qkt.app.order.OcoExecutionGuard
 import com.qkt.app.order.OcoSequencer
 import com.qkt.app.order.OrderBook
@@ -30,7 +36,6 @@ import com.qkt.app.order.isPersistentManagedStop
 import com.qkt.app.order.isTriggered
 import com.qkt.app.order.limitReached
 import com.qkt.app.order.referencesStackEntryRef
-import com.qkt.app.order.resolveBracketAtFill
 import com.qkt.app.order.stopReached
 import com.qkt.broker.Broker
 import com.qkt.broker.OrderTypeCapability
@@ -163,7 +168,8 @@ class OrderManager(
             tightenAtVenue = { managed, level, transition -> venueProtection.ratchet(managed, level, transition) },
         )
 
-    private val lastObservedPrice: MutableMap<String, BigDecimal> = mutableMapOf()
+    private val prices = ObservedPrices(priceProvider)
+    private val closeTickets = EngineHeldCloseTickets()
 
     private val siblings = SiblingLinks()
     private val ops =
@@ -180,6 +186,11 @@ class OrderManager(
                 id: String,
                 change: (ManagedOrder) -> ManagedOrder,
             ): Boolean = this@OrderManager.update(id, change)
+
+            override fun submitToBroker(request: OrderRequest): SubmitAck = this@OrderManager.submitToBroker(request)
+
+            override fun submitRegisteredToBroker(request: OrderRequest): SubmitAck =
+                this@OrderManager.submitRegisteredToBroker(request)
 
             override fun persistAll() = this@OrderManager.persistAll()
 
@@ -210,12 +221,16 @@ class OrderManager(
         ScaleOutExits(scaleOuts, book, exposure, broker, bus, clock, ops, requireArmedTrailTicket)
     private val scaleOutTracker = ScaleOutTracker(scaleOuts, scaleOutExits, book, exposure, clock, ops)
     private val scaleOutRecovery = ScaleOutRecovery(scaleOuts, book, exposure, clock)
-    private val engineHeldCloseTickets: MutableMap<String, String> = mutableMapOf()
 
     private val children = PendingChildBook()
     private val brackets = BracketBook()
     private val snapshots =
         OrderStateSnapshots(persistor, book, children, brackets, scaleOutRecovery, siblings, stops)
+    private val bracketExits = BracketExits(prices, clock)
+    private val bracketSubmission =
+        BracketSubmission(broker, priceProvider, bracketExits, risk, brackets, children, exposure, book, clock, ops)
+    private val bracketFills = BracketFills(book, brackets, bracketExits, venueProtection, clock, ops)
+    private val attachedCompletion = AttachedBracketCompletion(book, brackets, closeTickets, exposure, clock, ops)
 
     private val timeExits: MutableMap<String, OrderRequest.TimeExit> = mutableMapOf()
 
@@ -419,7 +434,7 @@ class OrderManager(
         managed: ManagedOrder,
         depth: Int = 0,
     ): Boolean {
-        if (managed.id in engineHeldCloseTickets) return true
+        if (managed.id in closeTickets) return true
         if (isPersistentManagedStop(managed.request)) return true
         if (isRiskReducingForHalt(managed.request)) return true
         if (managed.childClientOrderIds.any { book[it]?.state == OrderState.FILLED }) return true
@@ -742,9 +757,9 @@ class OrderManager(
                 // anchor it on yet, and failing the deploy here would be retried forever
                 // because the quote only starts flowing once the strategy is deployed.
                 val anchorAtFill =
-                    needsFillAnchor || (isEngineManagedStop && bracketEntryEstimateOrNull(request) == null)
+                    needsFillAnchor || (isEngineManagedStop && bracketExits.entryEstimateOrNull(request) == null)
                 if (anchorAtFill) brackets.fillAnchoredAttached[attached.id] = request
-                val restoredStop = if (anchorAtFill) null else buildAttachedManagedStop(request, now)
+                val restoredStop = if (anchorAtFill) null else bracketExits.managedStop(request, now)
                 restoredStop?.let { stop ->
                     track(
                         ManagedOrder(
@@ -789,11 +804,11 @@ class OrderManager(
                 // A Market entry restored before the venue has quoted its symbol has no price to
                 // anchor the exits on; place them from the actual fill instead of failing the
                 // whole deploy (which the daemon would retry forever, quote or no quote).
-                val entryEstimate = if (needsFillAnchor) null else bracketEntryEstimateOrNull(request)
+                val entryEstimate = if (needsFillAnchor) null else bracketExits.entryEstimateOrNull(request)
                 if (entryEstimate == null) {
                     brackets.fillAnchoredFallback[entry.id] = request
                 } else {
-                    children.hold(entry.id, listOf(bracketExitOco(request, entryEstimate, request.quantity)))
+                    children.hold(entry.id, listOf(bracketExits.exitOco(request, entryEstimate, request.quantity)))
                 }
                 exposure.register(entry)
                 recovered += managed
@@ -975,35 +990,7 @@ class OrderManager(
 
             is OrderRequest.OTO -> submitOto(request)
 
-            is OrderRequest.Bracket -> {
-                risk.recordAtSubmit(request, priceProvider.lastPrice(request.symbol) ?: BigDecimal.ZERO)
-                val caps = broker.capabilitiesFor(request.symbol)
-                val isEngineManagedStop =
-                    request.stopLoss is StopLossSpec.ArmedTrail ||
-                        request.stopLoss is StopLossSpec.SteppedStop ||
-                        request.stopLoss is StopLossSpec.TimeTighten
-                val needsFillAnchor =
-                    (request.stopLossAst != null && request.stopLossAst !is com.qkt.dsl.ast.ChildAt) ||
-                        (request.takeProfitAst != null && request.takeProfitAst !is com.qkt.dsl.ast.ChildAt)
-                val canAttach =
-                    OrderTypeCapability.BRACKET in caps && OrderTypeCapability.POSITION_MODIFY in caps
-                when {
-                    // Venue that both attaches SL/TP to an order and can modify an open position's
-                    // SL/TP: ship the bracket keyed under its entry id so the venue holds the SL/TP
-                    // on the position (closing that ticket on a hedging account instead of a resting
-                    // exit opening a counter) and the fill flows through the entry.id tracking paths.
-                    // Armed trail also runs the engine trail on top (fires close-by-ticket at the
-                    // tightened level, #278); the venue's attached stop is the offline backstop.
-                    canAttach -> submitBracketAttached(request)
-                    // BRACKET but no position-modify, fixed SL: ship whole (venue attaches SL/TP,
-                    // nothing to trail).
-                    !isEngineManagedStop && !needsFillAnchor && OrderTypeCapability.BRACKET in caps ->
-                        submitRegisteredToBroker(request)
-                    // No venue attach (backtest / restricted venue): decompose into engine-watched
-                    // resting exits.
-                    else -> submitBracketFallback(request)
-                }
-            }
+            is OrderRequest.Bracket -> bracketSubmission.submit(request)
 
             is OrderRequest.ScaleOut -> scaleOutTracker.submit(request)
 
@@ -1187,7 +1174,7 @@ class OrderManager(
                 lastUpdatedAt = now,
             )
         book.put(managed)
-        engineHeldCloseTickets[stop.id] = ticket
+        closeTickets[stop.id] = ticket
         exposure.register(stop)
         persistAll()
     }
@@ -1234,7 +1221,7 @@ class OrderManager(
             it.copy(childClientOrderIds = it.childClientOrderIds + slId, lastUpdatedAt = now)
         }
         if (engineHeldCloseTicket != null) {
-            engineHeldCloseTickets[slId] = engineHeldCloseTicket
+            closeTickets[slId] = engineHeldCloseTicket
             update(slId) { it.copy(state = OrderState.PENDING, lastUpdatedAt = clock.now()) }
         } else {
             dispatch(slReq)
@@ -1368,7 +1355,7 @@ class OrderManager(
         book.orders.values.count { managed ->
             !managed.state.isTerminal &&
                 (
-                    managed.id in engineHeldCloseTickets ||
+                    managed.id in closeTickets ||
                         isPersistentManagedStop(managed.request)
                 )
         }
@@ -1469,358 +1456,6 @@ class OrderManager(
         } else {
             LegIntent.Net
         }
-
-    /**
-     * Best-effort entry-price estimate for an [OrderRequest.Bracket]'s SL/TP children.
-     * Stop/Limit/IfTouched entries carry their intended trigger as a field; Market
-     * entries fall back to the last observed market price.
-     */
-    private fun bracketEntryEstimate(req: OrderRequest.Bracket): BigDecimal =
-        bracketEntryEstimateOrNull(req)
-            ?: error("Cannot estimate entry price for bracket ${req.id}: no last price for ${req.symbol}")
-
-    private fun bracketEntryEstimateOrNull(req: OrderRequest.Bracket): BigDecimal? =
-        when (val entry = req.entry) {
-            is OrderRequest.Stop -> entry.stopPrice
-            is OrderRequest.Limit -> entry.limitPrice
-            is OrderRequest.IfTouched -> entry.triggerPrice
-            is OrderRequest.StopLimit -> entry.stopPrice
-            else -> lastObservedPrice[req.symbol] ?: priceProvider.lastPrice(req.symbol)
-        }
-
-    private fun bracketExitOco(
-        req: OrderRequest.Bracket,
-        fillPrice: BigDecimal,
-        fillQuantity: BigDecimal,
-    ): OrderRequest.StandaloneOCO {
-        val resolved = resolveBracketAtFill(req, fillPrice)
-        // Exits must never exceed what actually filled — a venue partial booked at its
-        // real volume (#615) would otherwise get exits sized to the full request.
-        val exitQuantity = resolved.quantity.min(fillQuantity)
-        val exitSide = if (resolved.side == Side.BUY) Side.SELL else Side.BUY
-        val exit = resolved.exitLegIntent()
-        val tp =
-            OrderRequest.Limit(
-                "${resolved.id}-tp",
-                resolved.symbol,
-                exitSide,
-                exitQuantity,
-                resolved.takeProfit,
-                resolved.timeInForce,
-                clock.now(),
-                resolved.strategyId,
-                legIntent = exit,
-            )
-        val sl =
-            when (val spec = resolved.stopLoss) {
-                is StopLossSpec.Fixed ->
-                    OrderRequest.Stop(
-                        "${resolved.id}-sl",
-                        resolved.symbol,
-                        exitSide,
-                        exitQuantity,
-                        spec.price,
-                        resolved.timeInForce,
-                        clock.now(),
-                        resolved.strategyId,
-                        legIntent = exit,
-                    )
-                is StopLossSpec.ArmedTrail ->
-                    OrderRequest.ArmedTrailingStop(
-                        "${resolved.id}-sl",
-                        resolved.symbol,
-                        exitSide,
-                        exitQuantity,
-                        fillPrice,
-                        spec.trailDistance,
-                        spec.mfeThreshold,
-                        resolved.timeInForce,
-                        clock.now(),
-                        resolved.strategyId,
-                        legIntent = exit,
-                    )
-                is StopLossSpec.SteppedStop ->
-                    OrderRequest.SteppedStop(
-                        id = "${resolved.id}-sl",
-                        symbol = resolved.symbol,
-                        side = exitSide,
-                        quantity = exitQuantity,
-                        entryPrice = fillPrice,
-                        initialDistance = spec.initialDistance,
-                        steps = spec.steps,
-                        timeInForce = resolved.timeInForce,
-                        timestamp = clock.now(),
-                        strategyId = resolved.strategyId,
-                        legIntent = exit,
-                    )
-                is StopLossSpec.TimeTighten ->
-                    OrderRequest.TimeTighteningStop(
-                        id = "${resolved.id}-sl",
-                        symbol = resolved.symbol,
-                        side = exitSide,
-                        quantity = exitQuantity,
-                        entryPrice = fillPrice,
-                        initialDistance = spec.initialDistance,
-                        tightenBy = spec.tightenBy,
-                        intervalMs = spec.intervalMs,
-                        floorDistance = spec.floorDistance,
-                        timeInForce = resolved.timeInForce,
-                        timestamp = clock.now(),
-                        strategyId = resolved.strategyId,
-                        legIntent = exit,
-                    )
-            }
-        return OrderRequest.StandaloneOCO(
-            "${resolved.id}-oco",
-            resolved.symbol,
-            exitSide,
-            exitQuantity,
-            tp,
-            sl,
-            resolved.timeInForce,
-            clock.now(),
-            resolved.strategyId,
-        )
-    }
-
-    private fun submitBracketFallback(req: OrderRequest.Bracket): SubmitAck {
-        val exitSide = if (req.side == Side.BUY) Side.SELL else Side.BUY
-        val exit = req.exitLegIntent()
-        val tp =
-            OrderRequest.Limit(
-                id = "${req.id}-tp",
-                symbol = req.symbol,
-                side = exitSide,
-                quantity = req.quantity,
-                limitPrice = req.takeProfit,
-                timeInForce = req.timeInForce,
-                timestamp = clock.now(),
-                strategyId = req.strategyId,
-                legIntent = exit,
-            )
-        // Pick the SL child shape per the bracket's stop spec. Fixed → a plain Stop at
-        // the resolved price. ArmedTrail → an engine-managed ArmedTrailingStop whose
-        // entry price is the bracket entry's intended fill, and whose pre-arm/post-arm
-        // levels are computed by trailLevel on each tick. See #48.
-        val sl: OrderRequest =
-            when (val spec = req.stopLoss) {
-                is StopLossSpec.Fixed ->
-                    OrderRequest.Stop(
-                        id = "${req.id}-sl",
-                        symbol = req.symbol,
-                        side = exitSide,
-                        quantity = req.quantity,
-                        stopPrice = spec.price,
-                        timeInForce = req.timeInForce,
-                        timestamp = clock.now(),
-                        strategyId = req.strategyId,
-                        legIntent = exit,
-                    )
-                is StopLossSpec.ArmedTrail -> {
-                    val entryPrice = bracketEntryEstimate(req)
-                    OrderRequest.ArmedTrailingStop(
-                        id = "${req.id}-sl",
-                        symbol = req.symbol,
-                        side = exitSide,
-                        quantity = req.quantity,
-                        entryPrice = entryPrice,
-                        trailDistance = spec.trailDistance,
-                        mfeThreshold = spec.mfeThreshold,
-                        timeInForce = req.timeInForce,
-                        timestamp = clock.now(),
-                        strategyId = req.strategyId,
-                        legIntent = exit,
-                    )
-                }
-                is StopLossSpec.SteppedStop -> {
-                    val entryPrice = bracketEntryEstimate(req)
-                    OrderRequest.SteppedStop(
-                        id = "${req.id}-sl",
-                        symbol = req.symbol,
-                        side = exitSide,
-                        quantity = req.quantity,
-                        entryPrice = entryPrice,
-                        initialDistance = spec.initialDistance,
-                        steps = spec.steps,
-                        timeInForce = req.timeInForce,
-                        timestamp = clock.now(),
-                        strategyId = req.strategyId,
-                        legIntent = exit,
-                    )
-                }
-                is StopLossSpec.TimeTighten -> {
-                    val entryPrice = bracketEntryEstimate(req)
-                    OrderRequest.TimeTighteningStop(
-                        id = "${req.id}-sl",
-                        symbol = req.symbol,
-                        side = exitSide,
-                        quantity = req.quantity,
-                        entryPrice = entryPrice,
-                        initialDistance = spec.initialDistance,
-                        tightenBy = spec.tightenBy,
-                        intervalMs = spec.intervalMs,
-                        floorDistance = spec.floorDistance,
-                        timeInForce = req.timeInForce,
-                        timestamp = clock.now(),
-                        strategyId = req.strategyId,
-                        legIntent = exit,
-                    )
-                }
-            }
-        val oco =
-            OrderRequest.StandaloneOCO(
-                id = "${req.id}-oco",
-                symbol = req.symbol,
-                side = exitSide,
-                quantity = req.quantity,
-                leg1 = tp,
-                leg2 = sl,
-                timeInForce = req.timeInForce,
-                timestamp = clock.now(),
-                strategyId = req.strategyId,
-            )
-        val oto =
-            OrderRequest.OTO(
-                id = req.id,
-                symbol = req.symbol,
-                side = req.side,
-                quantity = req.quantity,
-                parent = req.entry.withStrategyId(req.strategyId),
-                children = listOf(oco),
-                timeInForce = req.timeInForce,
-                timestamp = clock.now(),
-                strategyId = req.strategyId,
-            )
-        brackets.preFill[req.entry.id] = req
-        if (req.takeProfitAst != null || req.stopLossAst != null) {
-            brackets.fillAnchoredFallback[req.entry.id] = req
-        }
-        book.evict(req.id)
-        return submit(oto)
-    }
-
-    /**
-     * Ship an armed-trail bracket to a venue that holds attached SL/TP on the position.
-     *
-     * The bracket goes to the broker keyed under the ENTRY id, so [MT5OrderTranslator] attaches
-     * the pre-arm SL (`entry ∓ trailDistance`, via the bracket's [StopLossSpec.ArmedTrail]) and
-     * the TP to the resulting position — the venue then closes that exact ticket when a level is
-     * hit (no counter on a hedging account) and keeps protecting it even if qkt is offline.
-     * Keying under the entry id (not the bracket id) means the fill — and the ticket it carries —
-     * flow through the same entry.id paths the position tracking already uses (sibling-cancel,
-     * leg intent on the entry, poller close attribution).
-     *
-     * The engine still runs the trail on top: the [OrderRequest.ArmedTrailingStop] is dispatched
-     * when the entry fills (via [children]) and, once armed, fires a close-by-ticket at the
-     * tightened level — finer than the static venue stop, which remains the offline backstop.
-     */
-    private fun submitBracketAttached(req: OrderRequest.Bracket): SubmitAck {
-        val now = clock.now()
-        // Ship keyed under the ENTRY id so the venue attaches the SL/TP to the position AND the
-        // fill — with its ticket — flows through the same entry.id paths the position tracking
-        // uses (the entry's leg intent, sibling-cancel, poller close
-        // attribution). A native bracket keyed under its own id would fill under the bracket id
-        // and silently miss those registrations.
-        val attached = req.copy(id = req.entry.id)
-        brackets.preFill[attached.id] = req
-        if (req.takeProfitAst != null || req.stopLossAst != null) {
-            brackets.fillAnchoredAttached[attached.id] = req
-        }
-        // An armed trail is engine-managed on top of the venue's static pre-arm stop: dispatched
-        // on the entry fill, it fires close-by-ticket at the tightened level. A fixed bracket has
-        // no engine exit — the venue's attached SL/TP closes it outright.
-        val managedStop = buildAttachedManagedStop(req, now)
-        update(req.id) {
-            it.copy(
-                state = OrderState.WORKING,
-                childClientOrderIds = listOfNotNull(attached.id, managedStop?.id),
-                lastUpdatedAt = now,
-            )
-        }
-        track(
-            ManagedOrder(
-                id = attached.id,
-                request = attached,
-                state = OrderState.CREATED,
-                parentClientOrderId = req.id,
-                createdAt = now,
-                lastUpdatedAt = now,
-            ),
-        )
-        if (managedStop != null) {
-            track(
-                ManagedOrder(
-                    id = managedStop.id,
-                    request = managedStop,
-                    state = OrderState.CREATED,
-                    parentClientOrderId = req.id,
-                    createdAt = now,
-                    lastUpdatedAt = now,
-                ),
-            )
-            // Arm the trail only once the position exists — dispatched on the entry's fill.
-            children.hold(attached.id, listOf(managedStop))
-        }
-        exposure.register(attached)
-        val ack = submitToBroker(attached)
-        return SubmitAck(req.id, req.id, accepted = ack.accepted, rejectReason = ack.rejectReason)
-    }
-
-    private fun buildAttachedManagedStop(
-        req: OrderRequest.Bracket,
-        now: Long,
-        entryPrice: BigDecimal? = null,
-    ): OrderRequest? {
-        val exitSide = if (req.side == Side.BUY) Side.SELL else Side.BUY
-        val exit = req.exitLegIntent()
-        return when (val spec = req.stopLoss) {
-            is StopLossSpec.Fixed -> null
-            is StopLossSpec.ArmedTrail ->
-                OrderRequest.ArmedTrailingStop(
-                    id = "${req.id}-sl",
-                    symbol = req.symbol,
-                    side = exitSide,
-                    quantity = req.quantity,
-                    entryPrice = entryPrice ?: bracketEntryEstimate(req),
-                    trailDistance = spec.trailDistance,
-                    mfeThreshold = spec.mfeThreshold,
-                    timeInForce = req.timeInForce,
-                    timestamp = now,
-                    strategyId = req.strategyId,
-                    legIntent = exit,
-                )
-            is StopLossSpec.SteppedStop ->
-                OrderRequest.SteppedStop(
-                    id = "${req.id}-sl",
-                    symbol = req.symbol,
-                    side = exitSide,
-                    quantity = req.quantity,
-                    entryPrice = entryPrice ?: bracketEntryEstimate(req),
-                    initialDistance = spec.initialDistance,
-                    steps = spec.steps,
-                    timeInForce = req.timeInForce,
-                    timestamp = now,
-                    strategyId = req.strategyId,
-                    legIntent = exit,
-                )
-            is StopLossSpec.TimeTighten ->
-                OrderRequest.TimeTighteningStop(
-                    id = "${req.id}-sl",
-                    symbol = req.symbol,
-                    side = exitSide,
-                    quantity = req.quantity,
-                    entryPrice = entryPrice ?: bracketEntryEstimate(req),
-                    initialDistance = spec.initialDistance,
-                    tightenBy = spec.tightenBy,
-                    intervalMs = spec.intervalMs,
-                    floorDistance = spec.floorDistance,
-                    timeInForce = req.timeInForce,
-                    timestamp = now,
-                    strategyId = req.strategyId,
-                    legIntent = exit,
-                )
-        }
-    }
 
     private fun submitToBroker(request: OrderRequest): SubmitAck {
         val expiresAt = request.expiresAt
@@ -1936,7 +1571,7 @@ class OrderManager(
         update(request.id) { it.copy(state = OrderState.PENDING, lastUpdatedAt = clock.now()) }
         val trailingSeed =
             if (request is OrderRequest.TrailingStop || request is OrderRequest.TrailingStopLimit) {
-                lastObservedPrice[request.symbol] ?: priceProvider.lastPrice(request.symbol)
+                prices.priceOf(request.symbol)
             } else {
                 null
             }
@@ -1983,7 +1618,7 @@ class OrderManager(
         siblingCancels.forget(id)
         ocoGuard.forget(id)
         children.take(id)
-        engineHeldCloseTickets.remove(id)
+        closeTickets.remove(id)
         exposure.remove(id)
     }
 
@@ -2113,7 +1748,7 @@ class OrderManager(
                 e.clientOrderId,
                 e.brokerOrderId,
             )
-            completeAttachedBracketOnVenueClose(e)
+            attachedCompletion.onVenueClose(e)
             return
         }
         brackets.preFill.remove(e.clientOrderId)
@@ -2158,113 +1793,11 @@ class OrderManager(
             return
         }
         val pending = children.take(e.clientOrderId)
-        val fallbackBracket = brackets.fillAnchoredFallback.remove(e.clientOrderId)
-        val attachedBracket = brackets.fillAnchoredAttached.remove(e.clientOrderId)
-        when {
-            fallbackBracket != null -> dispatch(bracketExitOco(fallbackBracket, e.price, e.quantity))
-            attachedBracket != null -> {
-                val resolved = resolveBracketAtFill(attachedBracket, e.price)
-                val sl =
-                    when (val spec = resolved.stopLoss) {
-                        is StopLossSpec.Fixed -> spec.price
-                        is StopLossSpec.ArmedTrail ->
-                            if (resolved.side == Side.BUY) {
-                                e.price - spec.trailDistance
-                            } else {
-                                e.price + spec.trailDistance
-                            }
-                        is StopLossSpec.SteppedStop ->
-                            if (resolved.side == Side.BUY) {
-                                e.price - spec.initialDistance
-                            } else {
-                                e.price + spec.initialDistance
-                            }
-                        is StopLossSpec.TimeTighten ->
-                            if (resolved.side == Side.BUY) {
-                                e.price - spec.initialDistance
-                            } else {
-                                e.price + spec.initialDistance
-                            }
-                    }
-                e.brokerOrderId
-                    ?.takeIf { it.isNotBlank() }
-                    ?.let { ticket ->
-                        val operationId = "bracket:${e.clientOrderId}:${e.sequenceId}"
-                        val fallbackStop =
-                            if (resolved.stopLoss is StopLossSpec.Fixed) {
-                                OrderRequest.Stop(
-                                    id = "${resolved.id}-sl",
-                                    symbol = resolved.symbol,
-                                    side = if (resolved.side == Side.BUY) Side.SELL else Side.BUY,
-                                    quantity = e.quantity,
-                                    stopPrice = sl,
-                                    timeInForce = resolved.timeInForce,
-                                    timestamp = clock.now(),
-                                    strategyId = resolved.strategyId,
-                                    legIntent = resolved.exitLegIntent(),
-                                )
-                            } else {
-                                null
-                            }
-                        venueProtection.attachBracket(
-                            operationId,
-                            ticket,
-                            resolved.strategyId,
-                            fallbackStop,
-                            sl,
-                            resolved.takeProfit,
-                        )
-                    }
-                // A bracket restored before its symbol was quoted had no price to build its
-                // engine-managed stop on; build it now from the fill it anchors to.
-                val heldStop =
-                    if (resolved.stopLoss !is StopLossSpec.Fixed &&
-                        pending.orEmpty().none { it.id == "${resolved.id}-sl" } &&
-                        book["${resolved.id}-sl"]?.state?.isTerminal != false
-                    ) {
-                        buildAttachedManagedStop(resolved, clock.now(), entryPrice = e.price)?.also { stop ->
-                            track(
-                                ManagedOrder(
-                                    id = stop.id,
-                                    request = stop,
-                                    state = OrderState.CREATED,
-                                    parentClientOrderId = resolved.id,
-                                    createdAt = clock.now(),
-                                    lastUpdatedAt = clock.now(),
-                                ),
-                            )
-                        }
-                    } else {
-                        null
-                    }
-                (pending.orEmpty() + listOfNotNull(heldStop)).forEach { child ->
-                    val anchored =
-                        when (child) {
-                            is OrderRequest.ArmedTrailingStop ->
-                                child.copy(entryPrice = e.price, quantity = child.quantity.min(e.quantity))
-                            is OrderRequest.SteppedStop ->
-                                child.copy(
-                                    entryPrice = e.price,
-                                    quantity = child.quantity.min(e.quantity),
-                                    timestamp = clock.now(),
-                                )
-                            is OrderRequest.TimeTighteningStop ->
-                                child.copy(
-                                    entryPrice = e.price,
-                                    quantity = child.quantity.min(e.quantity),
-                                    timestamp = clock.now(),
-                                )
-                            else -> child
-                        }
-                    dispatch(anchored)
-                }
-            }
-            else -> pending?.forEach { dispatch(it) }
-        }
+        bracketFills.armExits(e, pending)
         scaleOutTracker.onBasisFilled(e)
         siblingCancels.onExecution(e.clientOrderId)
         siblingCancels.forget(e.clientOrderId)
-        completeAttachedBracketOnEngineExit(e)
+        attachedCompletion.onEngineExit(e)
         detectExitIncreasedExposure(e)
         retireStaleProtectiveExits(e.strategyId, e.symbol)
     }
@@ -2335,106 +1868,6 @@ class OrderManager(
         }
     }
 
-    /**
-     * A venue-attached bracket has no resting exit orders — the venue closes the ticket when
-     * SL/TP is hit and reports it under the entry id. Once the closed quantity covers the fill,
-     * the bracket is done: release any engine-held stop armed against the ticket, cancel held
-     * children, and mark the wrapper terminal so it stops being persisted and can be reclaimed.
-     * A wrapper with a child still live on the venue is left alone; its own terminal event
-     * completes it.
-     */
-    private fun completeAttachedBracketOnVenueClose(e: BrokerEvent.OrderFilled) {
-        val entry = book[e.clientOrderId] ?: return
-        if (entry.request !is OrderRequest.Bracket || entry.state != OrderState.FILLED) return
-        val filled = entry.cumulativeFilledQuantity.takeIf { it.signum() > 0 } ?: entry.request.quantity
-        completeAttachedBracketOnExit(
-            entryId = entry.id,
-            wrapperId = entry.parentClientOrderId,
-            filledQuantity = filled,
-            closedQuantity = e.quantity,
-            closeTicket = e.brokerOrderId ?: entry.brokerOrderId,
-        )
-    }
-
-    /**
-     * An engine-held exit child (`-sl` / `-tp`) of a venue-attached bracket filled: the
-     * position it protected is reduced or gone, exactly as after a venue-side close. Account
-     * the closed quantity against the bracket's entry so the wrapper completes and releases
-     * its exposure instead of staying pending until the next restart retires it as a phantom.
-     * The entry's own record may already be reclaimed by then, so the filled quantity falls
-     * back to the bracket's requested size.
-     */
-    private fun completeAttachedBracketOnEngineExit(e: BrokerEvent.OrderFilled) {
-        if (!e.clientOrderId.endsWith("-sl") && !e.clientOrderId.endsWith("-tp")) return
-        val wrapperId = book[e.clientOrderId]?.parentClientOrderId
-        val wrapper = wrapperId?.let { book[it] }
-        if (wrapper == null) {
-            // Restored after a restart: the wrapper record is not persisted, but the attached
-            // entry carries the position ticket this close-by-ticket just consumed.
-            val ticket = e.brokerOrderId?.takeIf { it.isNotBlank() } ?: return
-            val entry =
-                book.orders.values.firstOrNull {
-                    it.brokerOrderId == ticket &&
-                        it.request is OrderRequest.Bracket &&
-                        it.id == (it.request as OrderRequest.Bracket).entry.id
-                } ?: return
-            completeAttachedBracketOnExit(
-                entryId = entry.id,
-                wrapperId = null,
-                filledQuantity = entry.cumulativeFilledQuantity.takeIf { it.signum() > 0 } ?: entry.request.quantity,
-                closedQuantity = e.quantity,
-                closeTicket = ticket,
-            )
-            return
-        }
-        val request = wrapper.request as? OrderRequest.Bracket ?: return
-        if (wrapper.state.isTerminal) return
-        val entryId = request.entry.id
-        val entry = book[entryId]
-        if (entry != null && entry.request !is OrderRequest.Bracket) return
-        val filled = entry?.cumulativeFilledQuantity?.takeIf { it.signum() > 0 } ?: request.quantity
-        completeAttachedBracketOnExit(
-            entryId = entryId,
-            wrapperId = wrapperId,
-            filledQuantity = filled,
-            closedQuantity = e.quantity,
-            closeTicket = e.brokerOrderId ?: entry?.brokerOrderId,
-        )
-    }
-
-    private fun completeAttachedBracketOnExit(
-        entryId: String,
-        wrapperId: String?,
-        filledQuantity: BigDecimal,
-        closedQuantity: BigDecimal,
-        closeTicket: String?,
-    ) {
-        val closed = (brackets.venueClosedQuantityByEntry[entryId] ?: BigDecimal.ZERO) + closedQuantity
-        if (closed < filledQuantity) {
-            brackets.venueClosedQuantityByEntry[entryId] = closed
-            return
-        }
-        brackets.venueClosedQuantityByEntry.remove(entryId)
-        if (closeTicket != null) {
-            val held = engineHeldCloseTickets.filterValues { it == closeTicket }.keys
-            for (id in held) {
-                val managed = book[id] ?: continue
-                if (managed.state == OrderState.PENDING || managed.state == OrderState.CREATED) cancel(id)
-            }
-        }
-        if (wrapperId == null) return
-        val wrapper = book[wrapperId] ?: return
-        if (wrapper.state.isTerminal) return
-        for (childId in wrapper.childClientOrderIds) {
-            val child = book[childId] ?: continue
-            if (child.state == OrderState.PENDING || child.state == OrderState.CREATED) cancel(childId)
-        }
-        val liveChild = wrapper.childClientOrderIds.any { book[it]?.state?.isTerminal == false }
-        if (liveChild) return
-        update(wrapperId) { it.copy(state = OrderState.FILLED, lastUpdatedAt = clock.now()) }
-        exposure.remove(wrapperId)
-    }
-
     private fun discardChildrenForCompensatedOcoLeg(clientOrderId: String) {
         children.take(clientOrderId)
         brackets.fillAnchoredFallback.remove(clientOrderId)
@@ -2468,7 +1901,7 @@ class OrderManager(
     }
 
     private fun evaluateTriggers(tick: Tick) {
-        lastObservedPrice[tick.symbol] = tick.price
+        prices.record(tick.symbol, tick.price)
         // Only this symbol's live orders drive trailing + trigger evaluation — O(this symbol),
         // not O(all live). An id in the index with no entry in [orders] is an invariant violation,
         // not an expected absence, so surface it.
@@ -2610,7 +2043,7 @@ class OrderManager(
         val internal: OrderRequest =
             when (val req = managed.request) {
                 is OrderRequest.Stop -> {
-                    val ticket = engineHeldCloseTickets[req.id]
+                    val ticket = closeTickets.ticketFor(req.id)
                     OrderRequest.Market(
                         id = req.id,
                         symbol = req.symbol,
@@ -2726,7 +2159,7 @@ class OrderManager(
             rejectEngineHeld(internal, blockReason)
             return
         }
-        engineHeldCloseTickets.remove(managed.id)
+        closeTickets.remove(managed.id)
         update(managed.id) { it.copy(state = OrderState.SUBMITTED, lastUpdatedAt = clock.now()) }
         persistSubmissionIntent(internal.strategyId)
         broker.submit(internal)

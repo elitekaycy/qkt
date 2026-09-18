@@ -16,6 +16,12 @@ internal interface OrderOps {
     /** Routes an already-tracked [request] to the venue or to an engine-held monitor. */
     fun dispatch(request: OrderRequest): SubmitAck
 
+    /** Sends [request] straight to the venue, bypassing engine-side routing. */
+    fun submitToBroker(request: OrderRequest): SubmitAck
+
+    /** Sends [request] to the venue after moving its exposure entry onto it. */
+    fun submitRegisteredToBroker(request: OrderRequest): SubmitAck
+
     /** Cancels [clientOrderId], cascading to a composite's children. */
     fun cancel(clientOrderId: String)
 
