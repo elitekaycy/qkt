@@ -1,39 +1,23 @@
 package com.qkt.dsl.parse
 
-import com.qkt.common.Money
 import com.qkt.dsl.ast.ActionAst
 import com.qkt.dsl.ast.ActionOpts
 import com.qkt.dsl.ast.AllocateBlock
-import com.qkt.dsl.ast.BinOp
-import com.qkt.dsl.ast.BinaryOp
 import com.qkt.dsl.ast.Block
 import com.qkt.dsl.ast.BracketAst
 import com.qkt.dsl.ast.BreakOffset
 import com.qkt.dsl.ast.Buy
 import com.qkt.dsl.ast.Cancel
 import com.qkt.dsl.ast.CancelAll
-import com.qkt.dsl.ast.ChildArmedTrail
-import com.qkt.dsl.ast.ChildAt
-import com.qkt.dsl.ast.ChildBy
-import com.qkt.dsl.ast.ChildPct
 import com.qkt.dsl.ast.ChildPriceAst
-import com.qkt.dsl.ast.ChildRr
 import com.qkt.dsl.ast.Close
 import com.qkt.dsl.ast.CloseAll
-import com.qkt.dsl.ast.Day
 import com.qkt.dsl.ast.DefaultsBlock
 import com.qkt.dsl.ast.DirRel
-import com.qkt.dsl.ast.DirSense
 import com.qkt.dsl.ast.DurationAst
 import com.qkt.dsl.ast.ExitHooksAst
-import com.qkt.dsl.ast.ExitRelativeLimit
-import com.qkt.dsl.ast.ExitRelativeStop
 import com.qkt.dsl.ast.ExprAst
-import com.qkt.dsl.ast.Fok
-import com.qkt.dsl.ast.Gtc
-import com.qkt.dsl.ast.Gtd
 import com.qkt.dsl.ast.HUB_BROKER
-import com.qkt.dsl.ast.Ioc
 import com.qkt.dsl.ast.Latch
 import com.qkt.dsl.ast.LatchBracket
 import com.qkt.dsl.ast.LatchCloseBeyond
@@ -50,8 +34,6 @@ import com.qkt.dsl.ast.LetDecl
 import com.qkt.dsl.ast.Limit
 import com.qkt.dsl.ast.Log
 import com.qkt.dsl.ast.LogLevel
-import com.qkt.dsl.ast.Market
-import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.OcoAst
 import com.qkt.dsl.ast.OcoEntry
 import com.qkt.dsl.ast.OrderTypeAst
@@ -70,14 +52,6 @@ import com.qkt.dsl.ast.SequenceDecl
 import com.qkt.dsl.ast.SequenceStageDecl
 import com.qkt.dsl.ast.SeriesDecl
 import com.qkt.dsl.ast.SeriesSource
-import com.qkt.dsl.ast.SizeNotional
-import com.qkt.dsl.ast.SizePctBalance
-import com.qkt.dsl.ast.SizePctEquity
-import com.qkt.dsl.ast.SizePositionFull
-import com.qkt.dsl.ast.SizeQty
-import com.qkt.dsl.ast.SizeRiskAbs
-import com.qkt.dsl.ast.SizeRiskFrac
-import com.qkt.dsl.ast.SizeRiskFracOfBook
 import com.qkt.dsl.ast.SizingAst
 import com.qkt.dsl.ast.StackAst
 import com.qkt.dsl.ast.StackAtClause
@@ -85,19 +59,14 @@ import com.qkt.dsl.ast.StackDirection
 import com.qkt.dsl.ast.StackLayer
 import com.qkt.dsl.ast.StackLayers
 import com.qkt.dsl.ast.StackSpacing
-import com.qkt.dsl.ast.SteppedStopAst
 import com.qkt.dsl.ast.Stop
 import com.qkt.dsl.ast.StopLimit
-import com.qkt.dsl.ast.StopStepAst
 import com.qkt.dsl.ast.StrategyAst
 import com.qkt.dsl.ast.StreamDecl
 import com.qkt.dsl.ast.SyncGroupDecl
 import com.qkt.dsl.ast.TifAst
 import com.qkt.dsl.ast.TimeOfDay
-import com.qkt.dsl.ast.TimeTightenAst
 import com.qkt.dsl.ast.Timezone
-import com.qkt.dsl.ast.TrailingBy
-import com.qkt.dsl.ast.TrailingPct
 import com.qkt.dsl.ast.WhenThen
 import java.math.BigDecimal
 
@@ -117,6 +86,9 @@ class Parser(
     private val scope = ParseScope()
     private val literalParser = LiteralParser(cursor)
     private val expressionParser = ExpressionParser(cursor, scope, literalParser)
+    private val sizingParser = SizingParser(cursor, expressionParser)
+    private val orderTypeParser = OrderTypeParser(cursor, scope, expressionParser)
+    private val bracketParser = BracketParser(cursor, literalParser, expressionParser)
 
     fun parseFile(): ParseResult<ParsedFile> =
         when (cursor.peek().kind) {
@@ -484,165 +456,6 @@ class Parser(
         return out
     }
 
-    internal fun parseOrderType(): OrderTypeAst =
-        when (cursor.peek().kind) {
-            TokenKind.MARKET -> {
-                cursor.advance()
-                Market
-            }
-            TokenKind.LIMIT -> {
-                cursor.advance()
-                if (scope.inExitHook && cursor.peek().kind in setOf(TokenKind.WITH, TokenKind.AGAINST)) {
-                    ExitRelativeLimit(parseDirRel())
-                } else {
-                    cursor.expect(TokenKind.AT, "expected AT after LIMIT")
-                    Limit(expressionParser.parseExpr())
-                }
-            }
-            TokenKind.STOP -> {
-                cursor.advance()
-                if (scope.inExitHook && cursor.peek().kind in setOf(TokenKind.WITH, TokenKind.AGAINST)) {
-                    ExitRelativeStop(parseDirRel())
-                } else {
-                    cursor.expect(TokenKind.AT, "expected AT after STOP")
-                    val stopPrice = expressionParser.parseExpr()
-                    if (cursor.peek().kind == TokenKind.LIMIT) {
-                        cursor.advance()
-                        cursor.expect(TokenKind.AT, "expected AT after LIMIT")
-                        StopLimit(stopPrice, expressionParser.parseExpr())
-                    } else {
-                        Stop(stopPrice)
-                    }
-                }
-            }
-            TokenKind.TRAILING -> {
-                cursor.advance()
-                when (cursor.peek().kind) {
-                    TokenKind.BY -> {
-                        cursor.advance()
-                        TrailingBy(expressionParser.parseExpr())
-                    }
-                    TokenKind.PCT -> {
-                        cursor.advance()
-                        TrailingPct(expressionParser.parseExpr())
-                    }
-                    else -> cursor.error("expected BY or PCT after TRAILING, got '${cursor.peek().lexeme}'")
-                }
-            }
-            else -> cursor.error("expected order type (MARKET/LIMIT/STOP/TRAILING), got '${cursor.peek().lexeme}'")
-        }
-
-    internal fun parseTif(): TifAst =
-        when (cursor.peek().kind) {
-            TokenKind.GTC -> {
-                cursor.advance()
-                Gtc
-            }
-            TokenKind.IOC -> {
-                cursor.advance()
-                Ioc
-            }
-            TokenKind.FOK -> {
-                cursor.advance()
-                Fok
-            }
-            TokenKind.DAY -> {
-                cursor.advance()
-                Day
-            }
-            TokenKind.GTD -> {
-                cursor.advance()
-                cursor.match(TokenKind.UNTIL)
-                Gtd(expressionParser.parseExpr())
-            }
-            else -> cursor.error("expected TIF (GTC/IOC/FOK/DAY/GTD), got '${cursor.peek().lexeme}'")
-        }
-
-    internal fun parseChildPrice(): ChildPriceAst =
-        when (cursor.peek().kind) {
-            TokenKind.AT -> {
-                cursor.advance()
-                ChildAt(expressionParser.parseExpr())
-            }
-            TokenKind.BY -> {
-                cursor.advance()
-                val distance = expressionParser.parseExpr()
-                when {
-                    cursor.match(TokenKind.PCT) -> ChildPct(distance)
-                    cursor.peek().kind == TokenKind.STEP ->
-                        ChildBy(
-                            distance = distance,
-                            ratchet = parseSteppedStop(),
-                        )
-                    cursor.match(TokenKind.TIGHTEN) ->
-                        ChildBy(
-                            distance = distance,
-                            ratchet = parseTimeTighten(),
-                        )
-                    else -> ChildBy(distance)
-                }
-            }
-            TokenKind.PCT -> {
-                cursor.advance()
-                ChildPct(expressionParser.parseExpr())
-            }
-            TokenKind.RR -> {
-                cursor.advance()
-                ChildRr(expressionParser.parseExpr())
-            }
-            TokenKind.TRAILING -> {
-                cursor.advance()
-                val distance = expressionParser.parseExpr()
-                cursor.expect(TokenKind.AFTER, "expected AFTER after TRAILING <distance>")
-                cursor.expect(TokenKind.MFE, "expected MFE after AFTER")
-                cursor.expect(TokenKind.GE, "expected '>=' after MFE")
-                val threshold = expressionParser.parseExpr()
-                ChildArmedTrail(distance, threshold)
-            }
-            else -> cursor.error("expected child price (AT/BY/PCT/RR/TRAILING), got '${cursor.peek().lexeme}'")
-        }
-
-    private fun parseSteppedStop(): com.qkt.dsl.ast.SteppedStopAst {
-        val steps = mutableListOf<com.qkt.dsl.ast.StopStepAst>()
-        while (cursor.match(TokenKind.STEP)) {
-            cursor.expect(TokenKind.TO, "expected TO after STEP")
-            val target = cursor.expect(TokenKind.IDENT, "expected BREAKEVEN or ENTRY after STEP TO")
-            if (!target.lexeme.equals("BREAKEVEN", ignoreCase = true) &&
-                !target.lexeme.equals("ENTRY", ignoreCase = true)
-            ) {
-                cursor.error("expected BREAKEVEN or ENTRY after STEP TO")
-            }
-            val profitDistance =
-                if (cursor.match(TokenKind.PLUS)) {
-                    expressionParser.parseExpr()
-                } else {
-                    NumLit(BigDecimal.ZERO)
-                }
-            cursor.expect(TokenKind.AFTER, "expected AFTER after step target")
-            cursor.expect(TokenKind.MFE, "expected MFE after AFTER")
-            cursor.expect(TokenKind.GE, "expected '>=' after MFE")
-            steps +=
-                StopStepAst(
-                    mfeThreshold = expressionParser.parseExpr(),
-                    profitDistance = profitDistance,
-                )
-        }
-        return SteppedStopAst(steps)
-    }
-
-    private fun parseTimeTighten(): TimeTightenAst {
-        cursor.expect(TokenKind.BY, "expected BY after TIGHTEN")
-        val tightenBy = expressionParser.parseExpr()
-        cursor.expect(TokenKind.EVERY, "expected EVERY after TIGHTEN BY <distance>")
-        val interval = literalParser.parseDuration()
-        cursor.expect(TokenKind.FLOOR, "expected FLOOR after tightening interval")
-        return TimeTightenAst(
-            tightenBy = tightenBy,
-            interval = interval,
-            floorDistance = expressionParser.parseExpr(),
-        )
-    }
-
     internal fun parseRules(): List<RuleAst> {
         cursor.expect(TokenKind.RULES, "expected RULES")
         val out = mutableListOf<RuleAst>()
@@ -750,7 +563,7 @@ class Parser(
                 cursor.advance()
                 val stream = cursor.expect(TokenKind.IDENT, "expected stream alias after RESIZE").lexeme
                 cursor.expect(TokenKind.TO, "expected TO after RESIZE stream")
-                val target = parseSizing()
+                val target = sizingParser.parseSizing()
                 val minStep = if (cursor.match(TokenKind.MIN_STEP)) expressionParser.parseExpr() else null
                 Resize(stream, target, minStep)
             }
@@ -859,7 +672,7 @@ class Parser(
                 }
                 TokenKind.SIZING -> {
                     cursor.advance()
-                    sizing = parseSizing()
+                    sizing = sizingParser.parseSizing()
                 }
                 TokenKind.EXPIRE -> {
                     cursor.advance()
@@ -879,26 +692,14 @@ class Parser(
             }
             TokenKind.LIMIT -> {
                 cursor.advance()
-                LatchLimit(parseDirRel())
+                LatchLimit(orderTypeParser.parseDirRel())
             }
             TokenKind.STOP -> {
                 cursor.advance()
-                LatchStop(parseDirRel())
+                LatchStop(orderTypeParser.parseDirRel())
             }
             else -> cursor.error("expected MARKET/LIMIT/STOP after ENTER, got '${cursor.peek().lexeme}'")
         }
-
-    private fun parseDirRel(): DirRel {
-        val sense =
-            when (cursor.peek().kind) {
-                TokenKind.WITH -> DirSense.WITH
-                TokenKind.AGAINST -> DirSense.AGAINST
-                TokenKind.RETRACE -> DirSense.AGAINST
-                else -> cursor.error("expected WITH/AGAINST/RETRACE, got '${cursor.peek().lexeme}'")
-            }
-        cursor.advance()
-        return DirRel(sense, expressionParser.parseExpr())
-    }
 
     private fun parseLatchBracket(): LatchBracket {
         cursor.expect(TokenKind.LBRACE, "expected '{' to open BRACKET block")
@@ -910,12 +711,12 @@ class Parser(
                 TokenKind.STOP, TokenKind.STOP_LOSS -> {
                     cursor.advance()
                     if (tok == TokenKind.STOP) cursor.expect(TokenKind.LOSS, "expected LOSS after STOP")
-                    stopLoss = parseDirRel()
+                    stopLoss = orderTypeParser.parseDirRel()
                 }
                 TokenKind.TAKE, TokenKind.TAKE_PROFIT -> {
                     cursor.advance()
                     if (tok == TokenKind.TAKE) cursor.expect(TokenKind.PROFIT, "expected PROFIT after TAKE")
-                    takeProfit = parseDirRel()
+                    takeProfit = orderTypeParser.parseDirRel()
                 }
                 else -> cursor.error("expected STOP LOSS or TAKE PROFIT in BRACKET, got '${cursor.peek().lexeme}'")
             }
@@ -978,7 +779,7 @@ class Parser(
             when (cursor.peek().kind) {
                 TokenKind.SIZING -> {
                     cursor.advance()
-                    sizing = parseSizing()
+                    sizing = sizingParser.parseSizing()
                 }
                 TokenKind.TIMES -> {
                     if (times != null) cursor.error("duplicate TIMES clause")
@@ -988,19 +789,19 @@ class Parser(
                 TokenKind.ORDER_TYPE -> {
                     cursor.advance()
                     cursor.expect(TokenKind.EQ, "expected '=' after ORDER_TYPE")
-                    orderType = parseOrderType()
+                    orderType = orderTypeParser.parseOrderType()
                 }
                 TokenKind.TIF -> {
                     cursor.advance()
-                    tif = parseTif()
+                    tif = orderTypeParser.parseTif()
                 }
                 TokenKind.BRACKET -> {
                     cursor.advance()
-                    bracket = parseBracket()
+                    bracket = bracketParser.parseBracket()
                 }
                 TokenKind.OCO -> {
                     cursor.advance()
-                    oco = parseOco()
+                    oco = bracketParser.parseOco()
                 }
                 TokenKind.STACK -> {
                     cursor.advance()
@@ -1131,9 +932,9 @@ class Parser(
         cursor.expect(TokenKind.WITHIN, "expected WITHIN after STACK_AT threshold")
         val duration = literalParser.parseDuration()
         cursor.expect(TokenKind.SIZING, "expected SIZING in STACK_AT clause")
-        val sizing = parseSizing()
+        val sizing = sizingParser.parseSizing()
         cursor.expect(TokenKind.BRACKET, "expected BRACKET in STACK_AT clause")
-        val bracket = parseBracket()
+        val bracket = bracketParser.parseBracket()
         return StackAtClause(
             mfeThreshold = threshold,
             withinDuration = duration,
@@ -1195,12 +996,12 @@ class Parser(
     }
 
     internal fun parseLayer(isFirst: Boolean): StackLayer {
-        val sizing = parseSizing()
+        val sizing = sizingParser.parseSizing()
         scope.inStackLayerAt = true
         try {
             val orderType: OrderTypeAst? =
                 when (cursor.peek().kind) {
-                    TokenKind.MARKET, TokenKind.LIMIT, TokenKind.STOP -> parseOrderType()
+                    TokenKind.MARKET, TokenKind.LIMIT, TokenKind.STOP -> orderTypeParser.parseOrderType()
                     else -> null
                 }
             val priceFromOrderType: ExprAst? =
@@ -1247,32 +1048,32 @@ class Parser(
                 TokenKind.SIZING -> {
                     cursor.advance()
                     cursor.expect(TokenKind.EQ, "expected '=' after SIZING in DEFAULTS")
-                    sizing = parseSizing()
+                    sizing = sizingParser.parseSizing()
                 }
                 TokenKind.STOP_LOSS -> {
                     cursor.advance()
                     cursor.expect(TokenKind.EQ, "expected '=' after STOP_LOSS in DEFAULTS")
-                    stopLoss = parseChildPrice()
+                    stopLoss = bracketParser.parseChildPrice()
                 }
                 TokenKind.TAKE_PROFIT -> {
                     cursor.advance()
                     cursor.expect(TokenKind.EQ, "expected '=' after TAKE_PROFIT in DEFAULTS")
-                    takeProfit = parseChildPrice()
+                    takeProfit = bracketParser.parseChildPrice()
                 }
                 TokenKind.TIF -> {
                     cursor.advance()
                     cursor.expect(TokenKind.EQ, "expected '=' after TIF in DEFAULTS")
-                    tif = parseTif()
+                    tif = orderTypeParser.parseTif()
                 }
                 TokenKind.ORDER_TYPE -> {
                     cursor.advance()
                     cursor.expect(TokenKind.EQ, "expected '=' after ORDER_TYPE in DEFAULTS")
-                    orderType = parseOrderType()
+                    orderType = orderTypeParser.parseOrderType()
                 }
                 TokenKind.TRAILING -> {
                     cursor.advance()
                     cursor.expect(TokenKind.EQ, "expected '=' after TRAILING in DEFAULTS")
-                    trailing = parseOrderType()
+                    trailing = orderTypeParser.parseOrderType()
                 }
                 else -> cursor.error("expected DEFAULTS clause keyword, got '${cursor.peek().lexeme}'")
             }
@@ -1280,156 +1081,6 @@ class Parser(
         cursor.expect(TokenKind.RBRACE, "expected '}' to close DEFAULTS")
         return DefaultsBlock(sizing, orderType, tif, stopLoss, takeProfit, trailing)
     }
-
-    internal fun parseBracket(): BracketAst {
-        cursor.expect(TokenKind.LBRACE, "expected '{' to open BRACKET block")
-        var stopLoss: ChildPriceAst? = null
-        var takeProfit: ChildPriceAst? = null
-        do {
-            // Accept both the two-word `STOP LOSS` / `TAKE PROFIT` and the single-token
-            // `STOP_LOSS` / `TAKE_PROFIT` spellings (the latter is what DEFAULTS uses).
-            when (val tok = cursor.peek().kind) {
-                TokenKind.STOP, TokenKind.STOP_LOSS -> {
-                    cursor.advance()
-                    if (tok == TokenKind.STOP) cursor.expect(TokenKind.LOSS, "expected LOSS after STOP")
-                    stopLoss = parseChildPrice()
-                }
-                TokenKind.TAKE, TokenKind.TAKE_PROFIT -> {
-                    cursor.advance()
-                    if (tok == TokenKind.TAKE) cursor.expect(TokenKind.PROFIT, "expected PROFIT after TAKE")
-                    if (cursor.peek().kind == TokenKind.TRAILING) {
-                        cursor.error(
-                            "TAKE PROFIT TRAILING is not supported — TRAILING is stop-only " +
-                                "(armed trail). Use TAKE PROFIT AT/BY/PCT/RR.",
-                        )
-                    }
-                    takeProfit = parseChildPrice()
-                }
-                else -> cursor.error("expected STOP LOSS or TAKE PROFIT in BRACKET, got '${cursor.peek().lexeme}'")
-            }
-        } while (cursor.match(TokenKind.COMMA))
-        cursor.expect(TokenKind.RBRACE, "expected '}' to close BRACKET block")
-        return BracketAst(stopLoss, takeProfit)
-    }
-
-    internal fun parseOco(): OcoAst {
-        cursor.expect(TokenKind.LBRACE, "expected '{' to open OCO block")
-        var stop: ChildPriceAst? = null
-        var limit: ChildPriceAst? = null
-        do {
-            when (cursor.peek().kind) {
-                TokenKind.STOP -> {
-                    cursor.advance()
-                    cursor.expect(TokenKind.AT, "expected AT after STOP in OCO")
-                    stop = ChildAt(expressionParser.parseExpr())
-                }
-                TokenKind.LIMIT -> {
-                    cursor.advance()
-                    cursor.expect(TokenKind.AT, "expected AT after LIMIT in OCO")
-                    limit = ChildAt(expressionParser.parseExpr())
-                }
-                else -> cursor.error("expected STOP AT or LIMIT AT in OCO, got '${cursor.peek().lexeme}'")
-            }
-        } while (cursor.match(TokenKind.COMMA))
-        cursor.expect(TokenKind.RBRACE, "expected '}' to close OCO block")
-        val s = stop ?: cursor.error("OCO requires a STOP AT child")
-        val l = limit ?: cursor.error("OCO requires a LIMIT AT child")
-        return OcoAst(s, l)
-    }
-
-    internal fun parseSizing(): SizingAst {
-        val k = cursor.peek().kind
-        return when (k) {
-            TokenKind.RISK -> {
-                cursor.advance()
-                if (cursor.match(TokenKind.DOLLAR)) {
-                    SizeRiskAbs(expressionParser.parseExpr())
-                } else {
-                    riskFracWithOptionalBookBasis(expressionParser.parseExpr())
-                }
-            }
-            TokenKind.POSITION -> {
-                // SIZING POSITION.<alias>
-                cursor.advance()
-                cursor.expect(TokenKind.DOT, "expected '.' after POSITION")
-                val alias = cursor.expectFieldName().lexeme
-                SizePositionFull(alias)
-            }
-            else -> {
-                val e = expressionParser.parseExpr()
-                when (cursor.peek().kind) {
-                    TokenKind.USD -> {
-                        cursor.advance()
-                        SizeNotional(e)
-                    }
-                    TokenKind.PCT -> {
-                        cursor.advance()
-                        if (cursor.peek().kind == TokenKind.OF) {
-                            cursor.advance()
-                            parsePercentOf(e)
-                        } else {
-                            cursor.expect(TokenKind.RISK, "expected RISK or OF after PCT in SIZING")
-                            require(e is NumLit) {
-                                "SIZING N PCT RISK requires a numeric literal for N, got non-literal expression"
-                            }
-                            val pct = e.value
-                            require(pct.signum() > 0) {
-                                "SIZING N PCT RISK requires N > 0, got $pct"
-                            }
-                            riskFracWithOptionalBookBasis(percentToFraction(e))
-                        }
-                    }
-                    TokenKind.PERCENT -> {
-                        cursor.advance()
-                        cursor.expect(TokenKind.OF, "expected OF after %")
-                        parsePercentOf(e)
-                    }
-                    else -> SizeQty(e)
-                }
-            }
-        }
-    }
-
-    /**
-     * `RISK <frac>` sizes off the strategy's own equity; an optional `OF BOOK` suffix
-     * re-bases it on the whole portfolio book (CAPITAL + realized PnL of every child).
-     * BOOK is matched as a contextual identifier, not a reserved keyword, so existing
-     * strategies may keep `book` as an alias or param name.
-     */
-    private fun riskFracWithOptionalBookBasis(frac: ExprAst): SizingAst {
-        if (cursor.peek().kind != TokenKind.OF) return SizeRiskFrac(frac)
-        cursor.advance()
-        val basis = cursor.advance()
-        require(basis.lexeme.uppercase() == "BOOK") {
-            "expected BOOK after OF in SIZING RISK, got '${basis.lexeme}'"
-        }
-        return SizeRiskFracOfBook(frac)
-    }
-
-    private fun parsePercentOf(e: ExprAst): SizingAst =
-        when (cursor.peek().kind) {
-            TokenKind.EQUITY -> {
-                cursor.advance()
-                SizePctEquity(percentToFraction(e))
-            }
-            TokenKind.BALANCE -> {
-                cursor.advance()
-                SizePctBalance(percentToFraction(e))
-            }
-            else -> cursor.error("expected EQUITY or BALANCE after % OF, got '${cursor.peek().lexeme}'")
-        }
-
-    /**
-     * Normalizes the number before `%`/`PCT` from a percentage to a fraction — the
-     * single place the "N means N percent" sizing convention is applied, so every
-     * percent form agrees. e.g. `SIZING 2 % OF EQUITY` compiles with frac 0.02.
-     */
-    private fun percentToFraction(e: ExprAst): ExprAst =
-        if (e is NumLit) {
-            NumLit(e.value.divide(BigDecimal(100), Money.CONTEXT))
-        } else {
-            BinaryOp(BinOp.DIV, e, NumLit(BigDecimal(100)))
-        }
 
     internal data class SymbolsBlock(
         val streams: List<StreamDecl>,
@@ -1785,6 +1436,18 @@ class Parser(
             second = second,
         )
     }
+
+    internal fun parseBracket(): BracketAst = bracketParser.parseBracket()
+
+    internal fun parseOco(): OcoAst = bracketParser.parseOco()
+
+    internal fun parseChildPrice(): ChildPriceAst = bracketParser.parseChildPrice()
+
+    internal fun parseOrderType(): OrderTypeAst = orderTypeParser.parseOrderType()
+
+    internal fun parseTif(): TifAst = orderTypeParser.parseTif()
+
+    internal fun parseSizing(): SizingAst = sizingParser.parseSizing()
 
     companion object {
         private val LOG_PLACEHOLDER_REGEX = Regex("\\{([a-zA-Z_][a-zA-Z0-9_]*)\\}")
