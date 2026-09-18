@@ -58,7 +58,6 @@
 351 src/main/kotlin/com/qkt/risk/RiskState.kt
 344 src/test/kotlin/com/qkt/observe/EngineAuditJournalTest.kt
 344 src/test/kotlin/com/qkt/parity/DslParityHarness.kt
-343 src/test/kotlin/com/qkt/cli/editor/EditorInstallerTest.kt
 338 src/main/kotlin/com/qkt/cli/RunCommand.kt
 334 src/test/kotlin/com/qkt/persistence/RestartIntegrationTest.kt
 330 src/main/kotlin/com/qkt/app/TradingPipeline.kt
