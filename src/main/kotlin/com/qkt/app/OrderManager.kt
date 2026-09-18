@@ -19,6 +19,7 @@ import com.qkt.app.order.OcoSequencer
 import com.qkt.app.order.OrderBook
 import com.qkt.app.order.OrderOps
 import com.qkt.app.order.OrderRestorer
+import com.qkt.app.order.OrderRouter
 import com.qkt.app.order.OrderStateSnapshots
 import com.qkt.app.order.PendingChildBook
 import com.qkt.app.order.PendingExposureBook
@@ -37,12 +38,11 @@ import com.qkt.app.order.TimeExits
 import com.qkt.app.order.TriggerFiring
 import com.qkt.app.order.VenuePositionProtection
 import com.qkt.app.order.VenueRecovery
+import com.qkt.app.order.VenueSubmission
 import com.qkt.app.order.blendAvg
-import com.qkt.app.order.exposureEntryRequest
 import com.qkt.app.order.intrabarFillFor
 import com.qkt.app.order.isPersistentManagedStop
 import com.qkt.broker.Broker
-import com.qkt.broker.OrderTypeCapability
 import com.qkt.broker.PositionAccountingMode
 import com.qkt.broker.SubmitAck
 import com.qkt.bus.EventBus
@@ -54,8 +54,6 @@ import com.qkt.execution.LegIntent
 import com.qkt.execution.ManagedOrder
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.OrderState
-import com.qkt.execution.StopLossSpec
-import com.qkt.execution.isCompositeShape
 import com.qkt.execution.isTerminal
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.NoopInstrumentRegistry
@@ -281,6 +279,26 @@ class OrderManager(
             requireArmedTrailTicket = requireArmedTrailTicket,
             closeTicket = { request -> managedStopCloseTicket(request) },
         )
+    private val venue = VenueSubmission(book, exposure, broker, bus, priceProvider, clock, ops)
+    private val router =
+        OrderRouter(
+            book = book,
+            exposure = exposure,
+            stops = stops,
+            prices = prices,
+            children = children,
+            venue = venue,
+            ocoSequencer = ocoSequencer,
+            bracketSubmission = bracketSubmission,
+            scaleOutTracker = scaleOutTracker,
+            timeExits = timeExits,
+            stackExecution = stackExecution,
+            broker = broker,
+            bus = bus,
+            clock = clock,
+            ops = ops,
+            positionMode = positionMode,
+        )
 
     /**
      * Returns and removes the recorded risk for [clientOrderId]. Designed to be called once per
@@ -316,70 +334,7 @@ class OrderManager(
         bus.subscribe<TickEvent> { e -> tickEvaluation.onTick(e.tick) }
     }
 
-    fun submit(request: OrderRequest): SubmitAck =
-        submitPlanned(LegIntentPlanner.plan(request, positionMode(request.symbol)))
-
-    private fun submitPlanned(request: OrderRequest): SubmitAck {
-        book[request.id]?.takeIf { !it.state.isTerminal }?.let { existing ->
-            return SubmitAck(
-                clientOrderId = existing.id,
-                brokerOrderId = existing.brokerOrderId,
-                accepted = true,
-            )
-        }
-        // Venue-faithful stops validation (#1076): MT5 rejects an order whose absolute stop
-        // is already on the wrong side of the reference price (retcode 10016 Invalid stops).
-        // Refusing locally keeps every simulated tier byte-consistent with live — on a gap
-        // tick the entry is never taken, instead of filling with an INVERTED protective stop
-        // that fires on the next print as a guaranteed instant loss. Market entries validate
-        // against the current quote; pending entries against their own trigger price. Scope
-        // is deliberately the stop side only: a take profit the market has already reached is
-        // an instant profit-take, not broken protection, and BY-resolved targets are anchored
-        // to the signal bar rather than the submit quote. Relative (BY/trail) stops resolve
-        // off the fill and cannot invert.
-        if (request is OrderRequest.Bracket) {
-            val stopsReference =
-                when (val entry = request.entry) {
-                    is OrderRequest.Limit -> entry.limitPrice
-                    is OrderRequest.Stop -> entry.stopPrice
-                    else -> priceProvider.lastPrice(request.symbol)?.takeIf { it.signum() != 0 }
-                }
-            val fixedSl = (request.stopLoss as? StopLossSpec.Fixed)?.price
-            if (stopsReference != null && fixedSl != null) {
-                val slCrossed =
-                    if (request.side == Side.BUY) fixedSl >= stopsReference else fixedSl <= stopsReference
-                if (slCrossed) {
-                    return rejectCrossedProtection(request, stopsReference, fixedSl, "stop loss")
-                }
-            }
-            // The target needs the same check, but ONLY for an absolute `AT` level. A BY/PCT/RR
-            // target is re-anchored off the fill by resolveBracketAtFill and cannot invert, and
-            // its pre-fill value is a placeholder — checking that would reject healthy brackets.
-            // An inverted absolute target is not a free profit-take: measured on the gold RSI-fade
-            // tape, a BUY filled at 1320.700 carrying TAKE_PROFIT 1320.019 closed instantly for a
-            // 0.68/oz LOSS. MT5 rejects it under the same retcode 10016 the stop side gets.
-            if (stopsReference != null && request.takeProfitAst is com.qkt.dsl.ast.ChildAt) {
-                val tp = request.takeProfit
-                val tpCrossed =
-                    if (request.side == Side.BUY) tp <= stopsReference else tp >= stopsReference
-                if (tpCrossed) {
-                    return rejectCrossedProtection(request, stopsReference, tp, "take profit")
-                }
-            }
-        }
-        val now = clock.now()
-        track(
-            ManagedOrder(
-                id = request.id,
-                request = request,
-                state = OrderState.CREATED,
-                createdAt = now,
-                lastUpdatedAt = now,
-            ),
-        )
-        if (!request.isCompositeShape()) exposure.register(request)
-        return dispatch(request)
-    }
+    fun submit(request: OrderRequest): SubmitAck = router.submit(request)
 
     /**
      * Entries this strategy has in flight on [side], counted the way [quantityFor] counts
@@ -592,59 +547,7 @@ class OrderManager(
                 )
         }
 
-    private fun dispatch(request: OrderRequest): SubmitAck =
-        when (request) {
-            is OrderRequest.Market, is OrderRequest.Limit -> submitToBroker(request)
-
-            is OrderRequest.Stop ->
-                if (OrderTypeCapability.STOP in broker.capabilitiesFor(request.symbol)) {
-                    submitToBroker(request)
-                } else {
-                    holdPending(request)
-                }
-
-            is OrderRequest.StopLimit ->
-                if (OrderTypeCapability.STOP_LIMIT in broker.capabilitiesFor(request.symbol)) {
-                    submitToBroker(request)
-                } else {
-                    holdPending(request)
-                }
-
-            is OrderRequest.IfTouched ->
-                if (request.closesTicket == null &&
-                    OrderTypeCapability.IF_TOUCHED in broker.capabilitiesFor(request.symbol)
-                ) {
-                    submitToBroker(request)
-                } else {
-                    holdPending(request)
-                }
-
-            is OrderRequest.TrailingStop,
-            is OrderRequest.TrailingStopLimit,
-            is OrderRequest.ArmedTrailingStop,
-            is OrderRequest.SteppedStop,
-            is OrderRequest.TimeTighteningStop,
-            -> holdPending(request)
-
-            is OrderRequest.StandaloneOCO ->
-                if (OrderTypeCapability.OCO in broker.capabilitiesFor(request.symbol)) {
-                    submitRegisteredToBroker(request)
-                } else {
-                    ocoSequencer.submit(request)
-                }
-
-            is OrderRequest.OTO -> submitOto(request)
-
-            is OrderRequest.Bracket -> bracketSubmission.submit(request)
-
-            is OrderRequest.ScaleOut -> scaleOutTracker.submit(request)
-
-            is OrderRequest.TimeExit -> timeExits.submit(request)
-
-            is OrderRequest.Stack -> stackExecution.submit(request)
-
-            else -> error("Order type ${request::class.simpleName} dispatch not yet implemented (added later in 7d-b)")
-        }
+    private fun dispatch(request: OrderRequest): SubmitAck = router.dispatch(request)
 
     private fun reportProtectionFailure(
         strategyId: String,
@@ -675,139 +578,9 @@ class OrderManager(
         persistAll()
     }
 
-    private fun submitToBroker(request: OrderRequest): SubmitAck {
-        val expiresAt = request.expiresAt
-        if (expiresAt != null && expiresAt <= clock.now()) return rejectExpiredBeforeSubmit(request, expiresAt)
-        update(request.id) { it.copy(state = OrderState.SUBMITTED, lastUpdatedAt = clock.now()) }
-        persistSubmissionIntent(request.strategyId)
-        val ack = broker.submit(request)
-        if (!ack.accepted && book[request.id]?.state?.isTerminal != true) {
-            update(request.id) { it.copy(state = OrderState.REJECTED, lastUpdatedAt = clock.now()) }
-            exposure.remove(request.id)
-        }
-        return ack
-    }
+    private fun submitToBroker(request: OrderRequest): SubmitAck = venue.submitToBroker(request)
 
-    // A GTD deadline at or past the current clock can only round-trip into a venue
-    // rejection (MT5 retcode 10022), so it is refused here with both clocks in the
-    // reason — a bar-clock vs wall-clock divergence (#811) is visible at its first
-    // occurrence instead of masquerading as a venue error.
-
-    /**
-     * A bracket whose absolute protection is already crossed at submit can only round-trip
-     * into a venue rejection (MT5 retcode 10016 Invalid stops) — or, in a simulated tier,
-     * fill and instantly stop out, which live would never do (#1076). Refuse locally with
-     * the levels in the reason.
-     */
-    private fun rejectCrossedProtection(
-        request: OrderRequest.Bracket,
-        reference: BigDecimal,
-        level: BigDecimal,
-        leg: String,
-    ): SubmitAck {
-        val reason =
-            "invalid stops: $leg $level already crossed for ${request.side} at reference $reference " +
-                "(venue would reject, retcode 10016)"
-        log.warn("order {} {} — rejected locally, not sent to broker", request.id, reason)
-        bus.publish(
-            BrokerEvent.OrderRejected(
-                clientOrderId = request.id,
-                brokerOrderId = null,
-                reason = reason,
-                strategyId = request.strategyId,
-                timestamp = clock.now(),
-            ),
-        )
-        return SubmitAck(clientOrderId = request.id, brokerOrderId = null, accepted = false, rejectReason = reason)
-    }
-
-    private fun rejectExpiredBeforeSubmit(
-        request: OrderRequest,
-        expiresAt: Long,
-    ): SubmitAck {
-        val now = clock.now()
-        val reason = "expired before submit: expiresAt=$expiresAt now=$now"
-        log.warn("order {} {} — rejected locally, not sent to broker", request.id, reason)
-        bus.publish(
-            BrokerEvent.OrderRejected(
-                clientOrderId = request.id,
-                brokerOrderId = null,
-                reason = reason,
-                strategyId = request.strategyId,
-                timestamp = now,
-            ),
-        )
-        return SubmitAck(clientOrderId = request.id, brokerOrderId = null, accepted = false, rejectReason = reason)
-    }
-
-    private fun submitRegisteredToBroker(request: OrderRequest): SubmitAck {
-        val entry = exposureEntryRequest(request)
-        val existingGroup = if (entry.id == request.id) null else exposure.remove(entry.id)
-        exposure.register(request, existingGroup)
-        return submitToBroker(request)
-    }
-
-    private fun submitOto(req: OrderRequest.OTO): SubmitAck {
-        val now = clock.now()
-        val childIds = req.children.map { it.id }
-        update(req.id) {
-            it.copy(
-                state = OrderState.WORKING,
-                childClientOrderIds = listOf(req.parent.id) + childIds,
-                lastUpdatedAt = now,
-            )
-        }
-        track(
-            ManagedOrder(
-                id = req.parent.id,
-                request = req.parent,
-                state = OrderState.CREATED,
-                parentClientOrderId = req.id,
-                createdAt = now,
-                lastUpdatedAt = now,
-            ),
-        )
-        for (child in req.children) {
-            track(
-                ManagedOrder(
-                    id = child.id,
-                    request = child,
-                    state = OrderState.CREATED,
-                    parentClientOrderId = req.id,
-                    createdAt = now,
-                    lastUpdatedAt = now,
-                ),
-            )
-        }
-        children.hold(req.parent.id, req.children, req)
-        exposure.register(exposureEntryRequest(req.parent))
-        dispatch(req.parent)
-        return SubmitAck(req.id, req.id, accepted = true)
-    }
-
-    private fun holdPending(request: OrderRequest): SubmitAck {
-        update(request.id) { it.copy(state = OrderState.PENDING, lastUpdatedAt = clock.now()) }
-        val trailingSeed =
-            if (request is OrderRequest.TrailingStop || request is OrderRequest.TrailingStopLimit) {
-                prices.priceOf(request.symbol)
-            } else {
-                null
-            }
-        stops.startTracking(request, trailingSeed)
-        bus.publish(
-            BrokerEvent.OrderAccepted(
-                clientOrderId = request.id,
-                brokerOrderId = request.id,
-                strategyId = request.strategyId,
-                timestamp = clock.now(),
-            ),
-        )
-        return SubmitAck(
-            clientOrderId = request.id,
-            brokerOrderId = request.id,
-            accepted = true,
-        )
-    }
+    private fun submitRegisteredToBroker(request: OrderRequest): SubmitAck = venue.submitRegisteredToBroker(request)
 
     /**
      * True while some active structure still points at [id], so reclaiming it would break a
@@ -1121,12 +894,7 @@ class OrderManager(
     private fun rejectEngineHeld(
         request: OrderRequest,
         reason: String,
-    ) {
-        update(request.id) { it.copy(state = OrderState.REJECTED, lastUpdatedAt = clock.now()) }
-        exposure.remove(request.id)
-        log.warn("engine-held order {} blocked before broker submission: {}", request.id, reason)
-        bus.publish(com.qkt.events.RiskRejectedEvent(request, reason, timestamp = clock.now()))
-    }
+    ) = venue.rejectEngineHeld(request, reason)
 
     /**
      * An exit carrying a [LegIntent.Close] closes exactly its own leg, so the net-based stale
