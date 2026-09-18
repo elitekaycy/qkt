@@ -70,7 +70,7 @@ class WallClockSourcePolicyTest {
                 "src/main/kotlin/com/qkt/cli/observe/EventRing.kt" to "operator event receipt timestamp",
                 "src/main/kotlin/com/qkt/cli/daemon/StrategyHandleJson.kt" to "live status age calculation",
                 "src/main/kotlin/com/qkt/cli/daemon/ControlPlane.kt" to "daemon start timestamp",
-                "src/main/kotlin/com/qkt/cli/daemon/ControlRoutes.kt" to "operator request timestamps",
+                "src/main/kotlin/com/qkt/cli/daemon/routes/DeployPromotion.kt" to "operator waiver timestamps",
                 "src/main/kotlin/com/qkt/cli/daemon/routes/HealthRoute.kt" to "operator health uptime and event age",
                 "src/main/kotlin/com/qkt/cli/daemon/routes/ListRoute.kt" to "operator list uptime",
                 "src/main/kotlin/com/qkt/cli/daemon/routes/MetricsRoute.kt" to "daemon uptime metric",
