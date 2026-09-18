@@ -1,28 +1,16 @@
 package com.qkt.backtest
 
 import com.qkt.candles.TimeWindow
-import com.qkt.common.FixedClock
 import com.qkt.common.TimeRange
 import com.qkt.common.TradingCalendar
 import com.qkt.marketdata.HistoricalTickFeed
-import com.qkt.marketdata.MergingTickFeed
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.TickFeed
-import com.qkt.marketdata.hub.HubMarketSource
-import com.qkt.marketdata.hub.hubRoot
-import com.qkt.marketdata.hub.validateHubStreams
-import com.qkt.marketdata.source.BarTickFeed
-import com.qkt.marketdata.source.CompositeMarketSource
-import com.qkt.marketdata.source.LocalMarketSource
-import com.qkt.marketdata.source.MacroMarketSource
 import com.qkt.marketdata.source.MarketRequest
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.marketdata.source.MarketSourceCapability
 import com.qkt.marketdata.source.NullMarketSource
-import com.qkt.marketdata.source.SequenceTickFeed
-import com.qkt.marketdata.source.SymbolPattern
 import com.qkt.marketdata.store.DataStore
-import com.qkt.marketdata.store.macro.MacroSeriesStore
 import com.qkt.risk.RiskRule
 import com.qkt.strategy.Strategy
 import com.qkt.strategy.WarmupSpec
@@ -316,41 +304,16 @@ class Backtest(
         ): Backtest {
             val (from, to) = store.resolveRange(request)
             val resolved = MarketRequest(symbols = request.symbols, from = from, to = to)
-            val localSource =
-                LocalMarketSource(
-                    store,
-                    FixedClock(time = to.toEpochMilli()),
+            val source =
+                storeMarketSource(
+                    store = store,
+                    symbols = request.symbols,
+                    to = to,
+                    hubStoreRoot = hubStoreRoot,
                     barStore = barStore,
-                    // Only the `--bars` research tier reads the binary bar store; normal runs use
-                    // ticks (or the fetched CSV bar store for bars-only venues), unchanged.
-                    binaryBarStore = if (forceBars) binaryBarStore else null,
+                    forceBars = forceBars,
+                    binaryBarStore = binaryBarStore,
                 )
-            // MACRO: streams (daily yields/real rates) read from the macro store via a point-in-time
-            // source, and HUB: streams read a qkt-data-hub store the same way. Both are routed only
-            // when a run actually declares one, so a run that binds neither constructs exactly the
-            // object graph it constructed before either existed and cannot change behaviour.
-            val observationRoutes: List<Pair<SymbolPattern, MarketSource>> =
-                buildList {
-                    if (request.symbols.any { it.startsWith("MACRO:") }) {
-                        add(SymbolPattern.prefix("MACRO:") to MacroMarketSource(MacroSeriesStore(store.root)))
-                    }
-                    if (request.symbols.any { it.startsWith(HubMarketSource.PREFIX) }) {
-                        val root = hubStoreRoot ?: hubRoot(store.root)
-                        // Fail before the first tick rather than after the report: a mistyped
-                        // field would otherwise be undefined for the whole run, and the result
-                        // would read as a strategy that found no setups rather than one that was
-                        // never able to evaluate its own rule.
-                        val problems = validateHubStreams(root, request.symbols)
-                        require(problems.isEmpty()) { "hub data problems:\n  " + problems.joinToString("\n  ") }
-                        add(SymbolPattern.prefix(HubMarketSource.PREFIX) to HubMarketSource(root))
-                    }
-                }
-            val source: MarketSource =
-                if (observationRoutes.isNotEmpty()) {
-                    CompositeMarketSource(routes = observationRoutes, fallback = localSource)
-                } else {
-                    localSource
-                }
             return fromSource(
                 strategies = strategies,
                 rules = rules,
@@ -452,33 +415,11 @@ class Backtest(
             // 0 and the feed keeps the flat-default Low-first order.
             val engineHolder = arrayOfNulls<com.qkt.research.ReplayEngine>(1)
             val positionSign: (String) -> Int = { sym -> engineHolder[0]?.positionSign(sym) ?: 0 }
-            val perSymbolFeeds: List<TickFeed> =
-                request.symbols.map { sym ->
-                    replayFeed(source, sym, range, barWindows[sym] ?: candleWindow, forceBars, positionSign)
-                }
-            val feed: TickFeed =
-                if (perSymbolFeeds.size == 1) perSymbolFeeds[0] else MergingTickFeed(perSymbolFeeds)
-            // Tick-resolved fills: the engine drives off these bars but loads real ticks for any bar
-            // a fill could land in. The slice is filtered half-open [from, to) so every tick belongs
-            // to exactly one bar regardless of TimeRange boundary semantics.
-            val tickResolvedBars: Map<String, Sequence<com.qkt.marketdata.Candle>>? =
-                if (tickFills) {
-                    request.symbols.associateWith { sym ->
-                        source.bars(
-                            sym,
-                            barWindows[sym] ?: candleWindow ?: error("--tick-fills needs a candle window"),
-                            range,
-                        )
-                    }
-                } else {
-                    null
-                }
-            val tickSlicer: ((String, Long, Long) -> Sequence<Tick>)? =
-                if (tickFills) {
-                    { sym, fromMs, toMs -> source.tickSlice(sym, fromMs, toMs) }
-                } else {
-                    null
-                }
+            val feed =
+                ReplayFeeds.merged(source, request.symbols, range, barWindows, candleWindow, forceBars, positionSign)
+            val tickResolvedBars =
+                ReplayFeeds.tickResolvedBars(source, request.symbols, range, barWindows, candleWindow, tickFills)
+            val tickSlicer = ReplayFeeds.tickSlicer(source, tickFills)
             return Backtest(
                 strategies = strategies,
                 rules = rules,
@@ -528,49 +469,6 @@ class Backtest(
                 tickSlicer = tickSlicer,
                 engineHolder = engineHolder,
             )
-        }
-
-        /**
-         * Picks the replay feed for one symbol: real recorded ticks when the source has them,
-         * otherwise synthesized O->L->H->C ticks from its OHLC bars (the only path for bars-only
-         * venues like crypto). Preferring ticks keeps tick-sourced backtests (e.g. MT5) byte-for-byte
-         * unchanged; the bar fallback is what makes a `qkt fetch`ed crypto symbol backtest at all.
-         */
-        private fun replayFeed(
-            source: MarketSource,
-            symbol: String,
-            range: TimeRange,
-            window: TimeWindow?,
-            forceBars: Boolean,
-            positionSign: (String) -> Int = { 0 },
-        ): TickFeed {
-            val caps = source.capabilities
-            val ticksAvailable = MarketSourceCapability.TICKS in caps
-            // The `--bars` research tier forces synthesis from bars; otherwise prefer real ticks,
-            // which keeps tick-sourced backtests byte-for-byte unchanged.
-            if (!forceBars && ticksAvailable) {
-                val iter = source.ticks(symbol, range).iterator()
-                if (iter.hasNext()) {
-                    val first = iter.next()
-                    return SequenceTickFeed(sequenceOf(first) + iter.asSequence())
-                }
-            }
-            // Synthesize O->L->H->C ticks from OHLC bars (the forced research tier, or the bars-only
-            // fallback for venues like crypto).
-            if (MarketSourceCapability.BARS in caps && window != null) {
-                val iter = source.bars(symbol, window, range).iterator()
-                require(iter.hasNext()) {
-                    "no market data for $symbol in requested range ${range.from}..${range.to}"
-                }
-                return BarTickFeed(sequenceOf(iter.next()) + iter.asSequence(), positionSign)
-            }
-            if (forceBars) {
-                error("--bars: cannot replay bars for $symbol (source has no BARS capability or no candle window)")
-            }
-            require(ticksAvailable) {
-                "bar-based backtest for $symbol needs a candle window (timeframe) — pass candleWindow"
-            }
-            error("no market data for $symbol in requested range ${range.from}..${range.to}")
         }
     }
 }
