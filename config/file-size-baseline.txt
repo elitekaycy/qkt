@@ -54,7 +54,6 @@
 453 src/main/kotlin/com/qkt/cli/daemon/StrategyHandle.kt
 452 src/main/kotlin/com/qkt/broker/bybit/spot/BybitSpotBroker.kt
 451 src/main/kotlin/com/qkt/broker/mt5/MT5PositionPoller.kt
-450 src/main/kotlin/com/qkt/cli/SoakCommand.kt
 440 src/test/kotlin/com/qkt/docs/DslReferenceCodeBlocksTest.kt
 435 src/main/kotlin/com/qkt/cli/ExperimentCommand.kt
 429 src/test/kotlin/com/qkt/parity/TimesEntryParityTest.kt
