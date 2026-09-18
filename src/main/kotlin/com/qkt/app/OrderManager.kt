@@ -1,5 +1,6 @@
 package com.qkt.app
 
+import com.qkt.app.order.BracketBook
 import com.qkt.app.order.BracketRiskRecorder
 import com.qkt.app.order.EntryRiskReport
 import com.qkt.app.order.HaltCancellations
@@ -9,6 +10,7 @@ import com.qkt.app.order.OcoExecutionGuard
 import com.qkt.app.order.OcoSequencer
 import com.qkt.app.order.OrderBook
 import com.qkt.app.order.OrderOps
+import com.qkt.app.order.PendingChildBook
 import com.qkt.app.order.PendingExposureBook
 import com.qkt.app.order.ProtectionLevels
 import com.qkt.app.order.ScaleOutBook
@@ -210,32 +212,8 @@ class OrderManager(
     private val scaleOutRecovery = ScaleOutRecovery(scaleOuts, book, exposure, clock)
     private val engineHeldCloseTickets: MutableMap<String, String> = mutableMapOf()
 
-    /**
-     * Quantity the venue has closed against each attached-bracket entry, summed from
-     * position-close observations, so a partial close does not complete the wrapper early.
-     */
-    private val venueClosedQuantityByEntry: MutableMap<String, BigDecimal> = mutableMapOf()
-
-    private val pendingChildren: MutableMap<String, List<OrderRequest>> = mutableMapOf()
-
-    /**
-     * OTO wrappers whose parent is live and whose children are still unarmed, keyed by parent id.
-     * Persistence snapshots scan only this bounded active set on order-state mutations; the tick
-     * path never reads or scans it.
-     */
-    private val pendingOtosByParent: MutableMap<String, OrderRequest.OTO> = mutableMapOf()
-
-    /** Original pre-fill brackets retained until their entry resolves, for durable re-arming. */
-    private val preFillBrackets: MutableMap<String, OrderRequest.Bracket> = mutableMapOf()
-    private val fillAnchoredFallbackBrackets: MutableMap<String, OrderRequest.Bracket> = mutableMapOf()
-    private val fillAnchoredAttachedBrackets: MutableMap<String, OrderRequest.Bracket> = mutableMapOf()
-
-    /**
-     * Venue-attached bracket entries recreated by [restore]. Their wrapper record is not
-     * persisted, and the venue does not republish an execution the ledger already booked, so
-     * after recovery they are matched to their booked ticket and marked filled explicitly.
-     */
-    private val restoredAttachedEntries: MutableSet<String> = mutableSetOf()
+    private val children = PendingChildBook()
+    private val brackets = BracketBook()
 
     private val persistedStrategies = mutableSetOf<String>()
 
@@ -650,7 +628,7 @@ class OrderManager(
             // re-entry once that position closes) nor hold entry exposure on top of the position.
             // The ticket arrives as OrderAccepted — synchronously here on a direct bus, or later
             // on the engine thread in the daemon — so both restore and onAccepted apply the mark.
-            for (id in restoredAttachedEntries.toList()) {
+            for (id in brackets.restoredAttachedEntries.toList()) {
                 val ticket = book[id]?.brokerOrderId ?: continue
                 markRestoredAttachedEntryFilled(id, ticket)
             }
@@ -672,7 +650,7 @@ class OrderManager(
             )
         }
         exposure.remove(id)
-        restoredAttachedEntries.remove(id)
+        brackets.restoredAttachedEntries.remove(id)
         log.info(
             "[restore] attached entry {} is backed by booked venue ticket {} — marked filled without republishing",
             id,
@@ -734,8 +712,7 @@ class OrderManager(
                 )
             book.put(managed)
         }
-        pendingChildren[parent.id] = request.children
-        pendingOtosByParent[parent.id] = request
+        children.hold(parent.id, request.children, request)
         exposure.register(exposureEntryRequest(request.parent))
         recovered += parent
     }
@@ -765,15 +742,15 @@ class OrderManager(
                         lastUpdatedAt = now,
                     )
                 book.put(managed)
-                restoredAttachedEntries += attached.id
-                preFillBrackets[attached.id] = request
+                brackets.restoredAttachedEntries += attached.id
+                brackets.preFill[attached.id] = request
                 // Expression-anchored exits are built from the fill. So is an engine-managed
                 // stop restored before the venue has quoted its symbol: there is no price to
                 // anchor it on yet, and failing the deploy here would be retried forever
                 // because the quote only starts flowing once the strategy is deployed.
                 val anchorAtFill =
                     needsFillAnchor || (isEngineManagedStop && bracketEntryEstimateOrNull(request) == null)
-                if (anchorAtFill) fillAnchoredAttachedBrackets[attached.id] = request
+                if (anchorAtFill) brackets.fillAnchoredAttached[attached.id] = request
                 val restoredStop = if (anchorAtFill) null else buildAttachedManagedStop(request, now)
                 restoredStop?.let { stop ->
                     track(
@@ -786,7 +763,7 @@ class OrderManager(
                             lastUpdatedAt = now,
                         ),
                     )
-                    pendingChildren[attached.id] = listOf(stop)
+                    children.hold(attached.id, listOf(stop))
                 }
                 exposure.register(attached)
                 recovered += managed
@@ -815,16 +792,15 @@ class OrderManager(
                         lastUpdatedAt = now,
                     )
                 book.put(managed)
-                preFillBrackets[entry.id] = request
+                brackets.preFill[entry.id] = request
                 // A Market entry restored before the venue has quoted its symbol has no price to
                 // anchor the exits on; place them from the actual fill instead of failing the
                 // whole deploy (which the daemon would retry forever, quote or no quote).
                 val entryEstimate = if (needsFillAnchor) null else bracketEntryEstimateOrNull(request)
                 if (entryEstimate == null) {
-                    fillAnchoredFallbackBrackets[entry.id] = request
+                    brackets.fillAnchoredFallback[entry.id] = request
                 } else {
-                    pendingChildren[entry.id] =
-                        listOf(bracketExitOco(request, entryEstimate, request.quantity))
+                    children.hold(entry.id, listOf(bracketExitOco(request, entryEstimate, request.quantity)))
                 }
                 exposure.register(entry)
                 recovered += managed
@@ -1722,9 +1698,9 @@ class OrderManager(
                 timestamp = clock.now(),
                 strategyId = req.strategyId,
             )
-        preFillBrackets[req.entry.id] = req
+        brackets.preFill[req.entry.id] = req
         if (req.takeProfitAst != null || req.stopLossAst != null) {
-            fillAnchoredFallbackBrackets[req.entry.id] = req
+            brackets.fillAnchoredFallback[req.entry.id] = req
         }
         book.evict(req.id)
         return submit(oto)
@@ -1742,7 +1718,7 @@ class OrderManager(
      * leg intent on the entry, poller close attribution).
      *
      * The engine still runs the trail on top: the [OrderRequest.ArmedTrailingStop] is dispatched
-     * when the entry fills (via [pendingChildren]) and, once armed, fires a close-by-ticket at the
+     * when the entry fills (via [children]) and, once armed, fires a close-by-ticket at the
      * tightened level — finer than the static venue stop, which remains the offline backstop.
      */
     private fun submitBracketAttached(req: OrderRequest.Bracket): SubmitAck {
@@ -1753,9 +1729,9 @@ class OrderManager(
         // attribution). A native bracket keyed under its own id would fill under the bracket id
         // and silently miss those registrations.
         val attached = req.copy(id = req.entry.id)
-        preFillBrackets[attached.id] = req
+        brackets.preFill[attached.id] = req
         if (req.takeProfitAst != null || req.stopLossAst != null) {
-            fillAnchoredAttachedBrackets[attached.id] = req
+            brackets.fillAnchoredAttached[attached.id] = req
         }
         // An armed trail is engine-managed on top of the venue's static pre-arm stop: dispatched
         // on the entry fill, it fires close-by-ticket at the tightened level. A fixed bracket has
@@ -1790,7 +1766,7 @@ class OrderManager(
                 ),
             )
             // Arm the trail only once the position exists — dispatched on the entry's fill.
-            pendingChildren[attached.id] = listOf(managedStop)
+            children.hold(attached.id, listOf(managedStop))
         }
         exposure.register(attached)
         val ack = submitToBroker(attached)
@@ -1957,8 +1933,7 @@ class OrderManager(
                 ),
             )
         }
-        pendingChildren[req.parent.id] = req.children
-        pendingOtosByParent[req.parent.id] = req
+        children.hold(req.parent.id, req.children, req)
         exposure.register(exposureEntryRequest(req.parent))
         dispatch(req.parent)
         return SubmitAck(req.id, req.id, accepted = true)
@@ -2014,8 +1989,7 @@ class OrderManager(
         scaleOuts.forget(id)
         siblingCancels.forget(id)
         ocoGuard.forget(id)
-        pendingChildren.remove(id)
-        pendingOtosByParent.remove(id)
+        children.take(id)
         engineHeldCloseTickets.remove(id)
         exposure.remove(id)
     }
@@ -2069,7 +2043,7 @@ class OrderManager(
             val pendingByStrategy: MutableMap<String, MutableMap<String, com.qkt.execution.OrderRequest>> =
                 mutableMapOf()
             val pairsByStrategy: MutableMap<String, MutableList<com.qkt.persistence.BracketPair>> = mutableMapOf()
-            val unarmedChildren = unarmedChildIds()
+            val unarmedChildren = children.unarmedChildIds()
 
             for ((id, managed) in book.orders) {
                 if (!managed.state.isTerminal) {
@@ -2083,7 +2057,7 @@ class OrderManager(
             }
             overlayPendingOtos(pendingByStrategy)
             scaleOutRecovery.overlay(pendingByStrategy)
-            for ((entryId, bracket) in preFillBrackets) {
+            for ((entryId, bracket) in brackets.preFill) {
                 if (book[entryId]?.state?.isTerminal == true) continue
                 val sid = bracket.strategyId
                 if (sid.isBlank()) continue
@@ -2091,7 +2065,7 @@ class OrderManager(
             }
             for ((id, managed) in book.orders) {
                 val bracket = managed.request as? OrderRequest.Bracket ?: continue
-                if (managed.state.isTerminal || id in preFillBrackets || bracket in preFillBrackets.values) continue
+                if (managed.state.isTerminal || id in brackets.preFill || bracket in brackets.preFill.values) continue
                 val sid = bracket.strategyId
                 if (sid.isBlank()) continue
                 pendingByStrategy.getOrPut(sid) { mutableMapOf() }[id] = bracket
@@ -2175,7 +2149,7 @@ class OrderManager(
     }
 
     private fun recoveryPendingOrders(strategyId: String): Map<String, OrderRequest> {
-        val unarmedChildren = unarmedChildIds()
+        val unarmedChildren = children.unarmedChildIds()
         val result =
             book.orders
                 .asSequence()
@@ -2185,13 +2159,13 @@ class OrderManager(
                         !managed.request.isCompositeShape() &&
                         id !in unarmedChildren
                 }.associateTo(linkedMapOf()) { (id, managed) -> id to managed.request }
-        pendingOtosByParent.forEach { (parentId, oto) ->
+        children.pendingOtos.forEach { (parentId, oto) ->
             if (oto.strategyId == strategyId && book[parentId]?.state?.isTerminal == false) {
                 result[parentId] = oto
             }
         }
         result.putAll(scaleOutRecovery.recoverySnapshot(strategyId))
-        for ((entryId, bracket) in preFillBrackets) {
+        for ((entryId, bracket) in brackets.preFill) {
             if (bracket.strategyId == strategyId && book[entryId]?.state?.isTerminal != true) {
                 result[entryId] = bracket
             }
@@ -2199,27 +2173,20 @@ class OrderManager(
         for ((id, managed) in book.orders) {
             val bracket = managed.request as? OrderRequest.Bracket ?: continue
             if (bracket.strategyId != strategyId || managed.state.isTerminal) continue
-            if (id in preFillBrackets || bracket in preFillBrackets.values) continue
+            if (id in brackets.preFill || bracket in brackets.preFill.values) continue
             result[id] = bracket
         }
         return result
     }
 
     private fun overlayPendingOtos(pendingByStrategy: MutableMap<String, MutableMap<String, OrderRequest>>) {
-        for ((parentId, oto) in pendingOtosByParent) {
+        for ((parentId, oto) in children.pendingOtos) {
             val strategyId = oto.strategyId
             if (strategyId.isBlank() || book[parentId]?.state?.isTerminal != false) continue
             // Replace the atomic parent snapshot with the wrapper so restart can re-arm children.
             pendingByStrategy.getOrPut(strategyId) { mutableMapOf() }[parentId] = oto
         }
     }
-
-    private fun unarmedChildIds(): Set<String> =
-        pendingChildren.values
-            .asSequence()
-            .flatten()
-            .map { it.id }
-            .toSet()
 
     /** Flushes HWM-only trailing-stop changes at the live heartbeat cadence. */
     fun persistTrailingStateIfDirty() {
@@ -2253,7 +2220,7 @@ class OrderManager(
             e.brokerOrderId,
         )
         val ticket = e.brokerOrderId
-        if (ticket != null && e.clientOrderId in restoredAttachedEntries) {
+        if (ticket != null && e.clientOrderId in brackets.restoredAttachedEntries) {
             markRestoredAttachedEntryFilled(e.clientOrderId, ticket)
         }
         ocoSequencer.onAccepted(e.clientOrderId)
@@ -2261,11 +2228,8 @@ class OrderManager(
 
     private fun onRejected(e: BrokerEvent.OrderRejected) {
         haltCancels.forget(e.clientOrderId)
-        preFillBrackets.remove(e.clientOrderId)
-        fillAnchoredFallbackBrackets.remove(e.clientOrderId)
-        fillAnchoredAttachedBrackets.remove(e.clientOrderId)
-        val unarmedChildren = pendingChildren.remove(e.clientOrderId)
-        pendingOtosByParent.remove(e.clientOrderId)
+        brackets.forgetEntry(e.clientOrderId)
+        val unarmedChildren = children.take(e.clientOrderId)
         scaleOutTracker.discardBasis(e.clientOrderId)
         val applied =
             update(e.clientOrderId) {
@@ -2320,7 +2284,7 @@ class OrderManager(
             completeAttachedBracketOnVenueClose(e)
             return
         }
-        preFillBrackets.remove(e.clientOrderId)
+        brackets.preFill.remove(e.clientOrderId)
         val existing = book[e.clientOrderId]
         if (existing?.state?.isTerminal == true) {
             log.error(
@@ -2361,10 +2325,9 @@ class OrderManager(
             ocoSequencer.clearFor(e.clientOrderId)
             return
         }
-        val pending = pendingChildren.remove(e.clientOrderId)
-        pendingOtosByParent.remove(e.clientOrderId)
-        val fallbackBracket = fillAnchoredFallbackBrackets.remove(e.clientOrderId)
-        val attachedBracket = fillAnchoredAttachedBrackets.remove(e.clientOrderId)
+        val pending = children.take(e.clientOrderId)
+        val fallbackBracket = brackets.fillAnchoredFallback.remove(e.clientOrderId)
+        val attachedBracket = brackets.fillAnchoredAttached.remove(e.clientOrderId)
         when {
             fallbackBracket != null -> dispatch(bracketExitOco(fallbackBracket, e.price, e.quantity))
             attachedBracket != null -> {
@@ -2614,12 +2577,12 @@ class OrderManager(
         closedQuantity: BigDecimal,
         closeTicket: String?,
     ) {
-        val closed = (venueClosedQuantityByEntry[entryId] ?: BigDecimal.ZERO) + closedQuantity
+        val closed = (brackets.venueClosedQuantityByEntry[entryId] ?: BigDecimal.ZERO) + closedQuantity
         if (closed < filledQuantity) {
-            venueClosedQuantityByEntry[entryId] = closed
+            brackets.venueClosedQuantityByEntry[entryId] = closed
             return
         }
-        venueClosedQuantityByEntry.remove(entryId)
+        brackets.venueClosedQuantityByEntry.remove(entryId)
         if (closeTicket != null) {
             val held = engineHeldCloseTickets.filterValues { it == closeTicket }.keys
             for (id in held) {
@@ -2641,18 +2604,15 @@ class OrderManager(
     }
 
     private fun discardChildrenForCompensatedOcoLeg(clientOrderId: String) {
-        pendingChildren.remove(clientOrderId)
-        pendingOtosByParent.remove(clientOrderId)
-        fillAnchoredFallbackBrackets.remove(clientOrderId)
-        fillAnchoredAttachedBrackets.remove(clientOrderId)
+        children.take(clientOrderId)
+        brackets.fillAnchoredFallback.remove(clientOrderId)
+        brackets.fillAnchoredAttached.remove(clientOrderId)
         scaleOutTracker.discardPendingBasis(clientOrderId)
     }
 
     private fun onCancelled(e: BrokerEvent.OrderCancelled) {
         haltCancels.forget(e.clientOrderId)
-        preFillBrackets.remove(e.clientOrderId)
-        fillAnchoredFallbackBrackets.remove(e.clientOrderId)
-        fillAnchoredAttachedBrackets.remove(e.clientOrderId)
+        brackets.forgetEntry(e.clientOrderId)
         val applied =
             update(e.clientOrderId) {
                 it.copy(state = OrderState.CANCELLED, lastUpdatedAt = clock.now())
@@ -2661,8 +2621,7 @@ class OrderManager(
         siblingCancels.forget(e.clientOrderId)
         exposure.remove(e.clientOrderId)
         scaleOutExits.completeExit(e.clientOrderId, OrderState.CANCELLED)
-        val unarmedChildren = pendingChildren.remove(e.clientOrderId)
-        pendingOtosByParent.remove(e.clientOrderId)
+        val unarmedChildren = children.take(e.clientOrderId)
         val pendingScaleOut = scaleOuts.pendingByBasis.remove(e.clientOrderId)
         val partialPositionTicket = scaleOuts.partialPositionTickets.remove(e.clientOrderId)
         unarmedChildren?.forEach { child -> cancel(child.id) }
