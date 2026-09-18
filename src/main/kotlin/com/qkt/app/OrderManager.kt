@@ -3,6 +3,8 @@ package com.qkt.app
 import com.qkt.app.order.BracketRiskRecorder
 import com.qkt.app.order.EntryRiskReport
 import com.qkt.app.order.HaltCancellations
+import com.qkt.app.order.ManagedStopBook
+import com.qkt.app.order.ManagedStopTicker
 import com.qkt.app.order.OrderBook
 import com.qkt.app.order.PendingExposureBook
 import com.qkt.app.order.ProtectionLevels
@@ -10,13 +12,14 @@ import com.qkt.app.order.blendAvg
 import com.qkt.app.order.computeChildPrice
 import com.qkt.app.order.evaluateAt
 import com.qkt.app.order.exposureEntryRequest
-import com.qkt.app.order.initialStopLevel
-import com.qkt.app.order.isTighter
+import com.qkt.app.order.hasPersistentDynamicState
+import com.qkt.app.order.isPersistentManagedStop
+import com.qkt.app.order.isTriggered
 import com.qkt.app.order.limitReached
-import com.qkt.app.order.profitStopLevel
 import com.qkt.app.order.referencesStackEntryRef
 import com.qkt.app.order.resolveBracketAtFill
 import com.qkt.app.order.stopReached
+import com.qkt.app.order.trailingStopSnapshot
 import com.qkt.broker.Broker
 import com.qkt.broker.OrderTypeCapability
 import com.qkt.broker.PositionAccountingMode
@@ -39,7 +42,6 @@ import com.qkt.execution.OrderRequest
 import com.qkt.execution.OrderState
 import com.qkt.execution.StopLossSpec
 import com.qkt.execution.TimeInForce
-import com.qkt.execution.TrailMode
 import com.qkt.execution.TriggerType
 import com.qkt.execution.exitLegIntent
 import com.qkt.execution.isCompositeShape
@@ -50,8 +52,6 @@ import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.NoopInstrumentRegistry
 import com.qkt.marketdata.MarketPriceProvider
 import com.qkt.marketdata.Tick
-import com.qkt.marketdata.buyExecPrice
-import com.qkt.marketdata.sellExecPrice
 import com.qkt.positions.LegRole
 import com.qkt.positions.PendingOrderExposureProvider
 import java.math.BigDecimal
@@ -143,19 +143,14 @@ class OrderManager(
     private val gtdExpiredScratch = ArrayList<String>()
     private val expiredStacksScratch = ArrayList<StackTracker.ActiveStack>()
 
-    private val trailingHwm: MutableMap<String, BigDecimal> = mutableMapOf()
-
-    /**
-     * One-way arming state for [OrderRequest.ArmedTrailingStop] book.orders. `false` while
-     * the stop sits at `entry ± distance`; flips to `true` once MFE crosses the
-     * threshold and the stop starts trailing [OrderRequest.ArmedTrailingStop.hwm].
-     * Never reverts. See #48.
-     */
-    private val armedTrailArmed: MutableMap<String, Boolean> = mutableMapOf()
-    private val steppedStopIndex: MutableMap<String, Int> = mutableMapOf()
-    private val timeTightenIntervals: MutableMap<String, Long> = mutableMapOf()
-    private val managedStopLevel: MutableMap<String, BigDecimal> = mutableMapOf()
-    private var trailingStateDirty = false
+    private val stops = ManagedStopBook()
+    private val stopTicker =
+        ManagedStopTicker(
+            stops = stops,
+            clock = clock,
+            persist = { persistAll() },
+            tightenAtVenue = { managed, level, transition -> modifyManagedStopAtVenue(managed, level, transition) },
+        )
 
     private val lastObservedPrice: MutableMap<String, BigDecimal> = mutableMapOf()
 
@@ -955,31 +950,7 @@ class OrderManager(
                 lastUpdatedAt = now,
             )
         book.put(managed)
-        dynamicState?.let { trailingHwm[clientOrderId] = it.hwm }
-        when (request) {
-            is OrderRequest.TrailingStop, is OrderRequest.TrailingStopLimit -> Unit
-            is OrderRequest.ArmedTrailingStop ->
-                armedTrailArmed[clientOrderId] = dynamicState?.armed ?: false
-            is OrderRequest.SteppedStop -> {
-                steppedStopIndex[clientOrderId] = dynamicState?.stepIndex ?: 0
-                managedStopLevel[clientOrderId] =
-                    dynamicState?.stopLevel
-                        ?: initialStopLevel(request.side, request.entryPrice, request.initialDistance)
-            }
-            is OrderRequest.TimeTighteningStop -> {
-                timeTightenIntervals[clientOrderId] = dynamicState?.elapsedIntervals ?: 0L
-                managedStopLevel[clientOrderId] =
-                    dynamicState?.stopLevel
-                        ?: initialStopLevel(request.side, request.entryPrice, request.initialDistance)
-            }
-            is OrderRequest.StopLimit -> Unit
-            else -> error("unsupported restored engine-held order ${request::class.simpleName}")
-        }
-        when (request) {
-            is OrderRequest.ArmedTrailingStop -> trailingHwm.putIfAbsent(clientOrderId, request.entryPrice)
-            is OrderRequest.SteppedStop -> trailingHwm.putIfAbsent(clientOrderId, request.entryPrice)
-            else -> Unit
-        }
+        stops.restore(clientOrderId, request, dynamicState)
         exposure.register(request, groupId)
     }
 
@@ -2318,28 +2289,13 @@ class OrderManager(
 
     private fun holdPending(request: OrderRequest): SubmitAck {
         update(request.id) { it.copy(state = OrderState.PENDING, lastUpdatedAt = clock.now()) }
-        if (request is OrderRequest.TrailingStop || request is OrderRequest.TrailingStopLimit) {
-            val seed = lastObservedPrice[request.symbol] ?: priceProvider.lastPrice(request.symbol)
-            if (seed != null) trailingHwm[request.id] = seed
-        }
-        if (request is OrderRequest.ArmedTrailingStop) {
-            // Seed hwm at the entry price — MFE = |hwm - entry| starts at 0. Each tick
-            // [updateTrailingHwm] will move hwm toward the favorable side. Pre-arm the
-            // stop sits at entry ± distance regardless of hwm; once armed, hwm leads.
-            trailingHwm[request.id] = request.entryPrice
-            armedTrailArmed[request.id] = false
-        }
-        if (request is OrderRequest.SteppedStop) {
-            trailingHwm[request.id] = request.entryPrice
-            steppedStopIndex[request.id] = 0
-            managedStopLevel[request.id] =
-                initialStopLevel(request.side, request.entryPrice, request.initialDistance)
-        }
-        if (request is OrderRequest.TimeTighteningStop) {
-            timeTightenIntervals[request.id] = 0L
-            managedStopLevel[request.id] =
-                initialStopLevel(request.side, request.entryPrice, request.initialDistance)
-        }
+        val trailingSeed =
+            if (request is OrderRequest.TrailingStop || request is OrderRequest.TrailingStopLimit) {
+                lastObservedPrice[request.symbol] ?: priceProvider.lastPrice(request.symbol)
+            } else {
+                null
+            }
+        stops.startTracking(request, trailingSeed)
         bus.publish(
             BrokerEvent.OrderAccepted(
                 clientOrderId = request.id,
@@ -2381,11 +2337,7 @@ class OrderManager(
     /** Drop a dead, unreferenced order and all its order-keyed satellite state. */
     private fun reclaim(id: String) {
         book.evict(id)
-        trailingHwm.remove(id)
-        armedTrailArmed.remove(id)
-        steppedStopIndex.remove(id)
-        timeTightenIntervals.remove(id)
-        managedStopLevel.remove(id)
+        stops.forget(id)
         siblings.remove(id)
         pendingScaleOutsByBasis.remove(id)
         partialScaleOutPositionTickets.remove(id)
@@ -2512,7 +2464,7 @@ class OrderManager(
                     ),
                 )
             }
-            val trailingStopsByStrategy = trailingStopsByStrategy()
+            val trailingStopsByStrategy = trailingStopSnapshot(book.orders, stops)
             val strategies =
                 (
                     persistedStrategies + pendingByStrategy.keys + pairsByStrategy.keys + ocoLegsByStrategy.keys +
@@ -2529,7 +2481,7 @@ class OrderManager(
                     persistor::saveTrailingStops,
                 )
             }
-            trailingStateDirty = false
+            stops.dirty = false
         }
     }
 
@@ -2624,46 +2576,13 @@ class OrderManager(
 
     /** Flushes HWM-only trailing-stop changes at the live heartbeat cadence. */
     fun persistTrailingStateIfDirty() {
-        if (!trailingStateDirty) return
+        if (!stops.dirty) return
         runCatching {
-            for ((strategyId, stops) in trailingStopsByStrategy()) {
-                persistor.saveTrailingStops(strategyId, stops)
+            for ((strategyId, snapshot) in trailingStopSnapshot(book.orders, stops)) {
+                persistor.saveTrailingStops(strategyId, snapshot)
             }
-            trailingStateDirty = false
+            stops.dirty = false
         }
-    }
-
-    private fun trailingStopsByStrategy(): Map<String, List<com.qkt.persistence.PersistedTrailingStop>> {
-        val result = mutableMapOf<String, MutableList<com.qkt.persistence.PersistedTrailingStop>>()
-        for ((id, managed) in book.orders) {
-            val request = managed.request
-            if (!hasPersistentDynamicState(request) || managed.state != OrderState.PENDING) continue
-            val strategyId = request.strategyId
-            if (strategyId.isBlank()) continue
-            val entryPrice =
-                when (request) {
-                    is OrderRequest.ArmedTrailingStop -> request.entryPrice
-                    is OrderRequest.SteppedStop -> request.entryPrice
-                    is OrderRequest.TimeTighteningStop -> request.entryPrice
-                    is OrderRequest.TrailingStop, is OrderRequest.TrailingStopLimit ->
-                        trailingHwm[id] ?: continue
-                    else -> error("unreachable")
-                }
-            result.getOrPut(strategyId) { mutableListOf() }.add(
-                com.qkt.persistence.PersistedTrailingStop(
-                    clientOrderId = id,
-                    brokerOrderId = managed.brokerOrderId,
-                    strategyId = strategyId,
-                    request = request,
-                    armed = armedTrailArmed[id] ?: false,
-                    hwm = trailingHwm[id] ?: entryPrice,
-                    stepIndex = steppedStopIndex[id] ?: 0,
-                    elapsedIntervals = timeTightenIntervals[id] ?: 0L,
-                    stopLevel = managedStopLevel[id],
-                ),
-            )
-        }
-        return result
     }
 
     private fun onAccepted(e: BrokerEvent.OrderAccepted) {
@@ -3350,7 +3269,7 @@ class OrderManager(
                 cancel(managed.id)
                 continue
             }
-            updateTrailingHwm(managed, tick.price)
+            stopTicker.onTick(managed, tick.price)
         }
 
         // Phase 38: sweep pending GTD orders past their deadline when the broker doesn't
@@ -3404,7 +3323,7 @@ class OrderManager(
         triggeredScratch.clear()
         for (i in symbolLiveScratch.indices) {
             val managed = symbolLiveScratch[i]
-            if (managed.state == OrderState.PENDING && triggerHit(managed, tick)) {
+            if (managed.state == OrderState.PENDING && isTriggered(managed, tick, stops)) {
                 triggeredScratch.add(managed)
             }
         }
@@ -3444,245 +3363,6 @@ class OrderManager(
             }
         }
     }
-
-    private fun updateTrailingHwm(
-        managed: ManagedOrder,
-        tickPrice: BigDecimal,
-    ) {
-        when (val request = managed.request) {
-            is OrderRequest.ArmedTrailingStop -> {
-                // The "favorable side" for an ArmedTrailingStop (an EXIT order) is the
-                // direction the underlying entry is profiting in. Exit side BUY (i.e.
-                // entry was SELL) → favorable means price falling, hwm tracks the low.
-                // Exit side SELL (entry was BUY) → favorable means price rising, hwm
-                // tracks the high.
-                val current = trailingHwm[managed.id] ?: request.entryPrice
-                val newHwm =
-                    when (request.side) {
-                        Side.SELL -> if (tickPrice > current) tickPrice else current
-                        Side.BUY -> if (tickPrice < current) tickPrice else current
-                    }
-                if (newHwm != current) {
-                    trailingHwm[managed.id] = newHwm
-                    trailingStateDirty = true
-                }
-
-                // Arming gate: MFE = |hwm - entry|. Once MFE crosses the threshold, arm
-                // for life. Subsequent thresholds being un-crossed do NOT disarm.
-                if (armedTrailArmed[managed.id] == false) {
-                    val mfe = newHwm.subtract(request.entryPrice).abs()
-                    if (mfe.compareTo(request.mfeThreshold) >= 0) {
-                        armedTrailArmed[managed.id] = true
-                        log.info(
-                            "armed-trail armed: order_id={} symbol={} entry={} hwm={} mfe={} threshold={}",
-                            managed.id,
-                            managed.request.symbol,
-                            request.entryPrice,
-                            newHwm,
-                            mfe,
-                            request.mfeThreshold,
-                        )
-                        // Persist the one-time arm transition immediately so a crash right after
-                        // arming still resumes armed on restart, not reset to the entry (#436).
-                        persistAll()
-                    }
-                }
-            }
-            is OrderRequest.SteppedStop -> {
-                val currentHwm = trailingHwm[managed.id] ?: request.entryPrice
-                val newHwm =
-                    when (request.side) {
-                        Side.SELL -> if (tickPrice > currentHwm) tickPrice else currentHwm
-                        Side.BUY -> if (tickPrice < currentHwm) tickPrice else currentHwm
-                    }
-                if (newHwm != currentHwm) {
-                    trailingHwm[managed.id] = newHwm
-                    trailingStateDirty = true
-                }
-                val mfe = newHwm.subtract(request.entryPrice).abs()
-                var index = steppedStopIndex[managed.id] ?: 0
-                var level =
-                    managedStopLevel[managed.id]
-                        ?: initialStopLevel(request.side, request.entryPrice, request.initialDistance)
-                var advanced = false
-                var tightened = false
-                while (index < request.steps.size && mfe >= request.steps[index].mfeThreshold) {
-                    val step = request.steps[index]
-                    val candidate = profitStopLevel(request.side, request.entryPrice, step.profitDistance)
-                    if (isTighter(request.side, candidate, level)) {
-                        level = candidate
-                        managedStopLevel[managed.id] = candidate
-                        tightened = true
-                        log.info(
-                            "stepped stop advanced: order_id={} symbol={} step={} mfe={} stop={}",
-                            managed.id,
-                            request.symbol,
-                            index + 1,
-                            mfe,
-                            candidate,
-                        )
-                    } else {
-                        log.warn(
-                            "stepped stop skipped widening target: order_id={} symbol={} step={} current={} candidate={}",
-                            managed.id,
-                            request.symbol,
-                            index + 1,
-                            level,
-                            candidate,
-                        )
-                    }
-                    index++
-                    advanced = true
-                }
-                if (advanced) {
-                    steppedStopIndex[managed.id] = index
-                    trailingStateDirty = true
-                    persistAll()
-                    if (tightened) modifyManagedStopAtVenue(managed, level, "step-$index")
-                }
-            }
-            is OrderRequest.TimeTighteningStop -> {
-                val floorLevel = initialStopLevel(request.side, request.entryPrice, request.floorDistance)
-                if (managedStopLevel[managed.id]?.compareTo(floorLevel) == 0) return
-                val elapsedMs = (clock.now() - request.timestamp).coerceAtLeast(0L)
-                val intervals = elapsedMs / request.intervalMs
-                val prior = timeTightenIntervals[managed.id] ?: 0L
-                if (intervals > prior) {
-                    val reduction = request.tightenBy.multiply(BigDecimal.valueOf(intervals), Money.CONTEXT)
-                    val distance = request.initialDistance.subtract(reduction, Money.CONTEXT).max(request.floorDistance)
-                    val current =
-                        managedStopLevel[managed.id]
-                            ?: initialStopLevel(request.side, request.entryPrice, request.initialDistance)
-                    val candidate = initialStopLevel(request.side, request.entryPrice, distance)
-                    timeTightenIntervals[managed.id] = intervals
-                    val tightened = isTighter(request.side, candidate, current)
-                    if (tightened) {
-                        managedStopLevel[managed.id] = candidate
-                        log.info(
-                            "time-tightening stop advanced: order_id={} symbol={} intervals={} distance={} stop={}",
-                            managed.id,
-                            request.symbol,
-                            intervals,
-                            distance,
-                            candidate,
-                        )
-                    }
-                    trailingStateDirty = true
-                    persistAll()
-                    if (tightened) {
-                        modifyManagedStopAtVenue(managed, candidate, "interval-$intervals")
-                    }
-                }
-            }
-            else -> {
-                val params = trailParams(request) ?: return
-                val current = trailingHwm[managed.id]
-                val newHwm =
-                    when (params.side) {
-                        Side.SELL -> if (current == null || tickPrice > current) tickPrice else current
-                        Side.BUY -> if (current == null || tickPrice < current) tickPrice else current
-                    }
-                if (newHwm != current) {
-                    trailingHwm[managed.id] = newHwm
-                    trailingStateDirty = true
-                }
-            }
-        }
-    }
-
-    private fun trailParams(request: OrderRequest): TrailParams? =
-        when (request) {
-            is OrderRequest.TrailingStop ->
-                TrailParams(request.side, request.trailAmount, request.trailMode, limitOffset = null)
-            is OrderRequest.TrailingStopLimit ->
-                TrailParams(request.side, request.trailAmount, request.trailMode, limitOffset = request.limitOffset)
-            else -> null
-        }
-
-    private fun trailLevel(managed: ManagedOrder): BigDecimal? {
-        when (val request = managed.request) {
-            is OrderRequest.ArmedTrailingStop -> {
-                val isArmed = armedTrailArmed[managed.id] == true
-                val reference =
-                    if (isArmed) {
-                        trailingHwm[managed.id] ?: return null
-                    } else {
-                        request.entryPrice
-                    }
-                // Exit-side SELL closes a long → stop sits BELOW reference (`hwm` or
-                // `entry`), fires on a drop. Exit-side BUY closes a short → stop ABOVE.
-                return when (request.side) {
-                    Side.SELL -> reference - request.trailDistance
-                    Side.BUY -> reference + request.trailDistance
-                }
-            }
-            is OrderRequest.SteppedStop, is OrderRequest.TimeTighteningStop ->
-                return managedStopLevel[managed.id]
-            else -> {
-                val params = trailParams(request) ?: return null
-                val hwm = trailingHwm[managed.id] ?: return null
-                return when (params.trailMode) {
-                    TrailMode.ABSOLUTE ->
-                        if (params.side == Side.SELL) hwm - params.trailAmount else hwm + params.trailAmount
-                    TrailMode.PERCENT -> {
-                        val factor = params.trailAmount.divide(BigDecimal("100"), Money.CONTEXT)
-                        if (params.side == Side.SELL) {
-                            hwm
-                                .multiply(BigDecimal.ONE - factor, Money.CONTEXT)
-                                .setScale(Money.SCALE, Money.ROUNDING)
-                        } else {
-                            hwm
-                                .multiply(BigDecimal.ONE + factor, Money.CONTEXT)
-                                .setScale(Money.SCALE, Money.ROUNDING)
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // Side-aware like the venue: a BUY executes at the ask, a SELL at the bid, so the
-    // engine-held trigger compares against the side's execution price — otherwise
-    // engine-held triggers fire on mid while native venue triggers fire on bid/ask,
-    // and live is internally inconsistent (#382).
-    private fun triggerHit(
-        managed: ManagedOrder,
-        tick: com.qkt.marketdata.Tick,
-    ): Boolean {
-        val request = managed.request
-        val exec = if (request.side == Side.BUY) tick.buyExecPrice() else tick.sellExecPrice()
-        return when (request) {
-            is OrderRequest.Stop ->
-                if (request.side == Side.BUY) exec >= request.stopPrice else exec <= request.stopPrice
-            is OrderRequest.StopLimit ->
-                if (request.side == Side.BUY) exec >= request.stopPrice else exec <= request.stopPrice
-            is OrderRequest.IfTouched ->
-                if (request.side == Side.BUY) exec <= request.triggerPrice else exec >= request.triggerPrice
-            is OrderRequest.TrailingStop, is OrderRequest.TrailingStopLimit -> {
-                val params = trailParams(request) ?: return false
-                val level = trailLevel(managed) ?: return false
-                if (params.side == Side.SELL) exec <= level else exec >= level
-            }
-            is OrderRequest.ArmedTrailingStop -> {
-                val level = trailLevel(managed) ?: return false
-                // Exit SELL fires when price falls to the stop. Exit BUY fires when
-                // price rises to the stop. Matches [OrderRequest.TrailingStop] semantics.
-                if (request.side == Side.SELL) exec <= level else exec >= level
-            }
-            is OrderRequest.SteppedStop, is OrderRequest.TimeTighteningStop -> {
-                val level = trailLevel(managed) ?: return false
-                if (request.side == Side.SELL) exec <= level else exec >= level
-            }
-            else -> false
-        }
-    }
-
-    private data class TrailParams(
-        val side: Side,
-        val trailAmount: BigDecimal,
-        val trailMode: TrailMode,
-        val limitOffset: BigDecimal?,
-    )
 
     private fun fireFallbackTrigger(
         managed: ManagedOrder,
@@ -3801,7 +3481,7 @@ class OrderManager(
                     )
                 }
                 is OrderRequest.TrailingStopLimit -> {
-                    val level = trailLevel(managed) ?: error("TrailingStopLimit level missing for ${managed.id}")
+                    val level = stops.trailLevel(managed) ?: error("TrailingStopLimit level missing for ${managed.id}")
                     val limitPrice =
                         if (req.side == Side.SELL) level - req.limitOffset else level + req.limitOffset
                     OrderRequest.Limit(
@@ -3856,16 +3536,6 @@ class OrderManager(
     private fun managedStopCloseTicket(request: OrderRequest): String? =
         closeTicketFor?.invoke(request.strategyId, request.id)
             ?: closePrimaryTicketFor?.invoke(request.strategyId, request.symbol)
-
-    private fun isPersistentManagedStop(request: OrderRequest): Boolean =
-        request is OrderRequest.ArmedTrailingStop ||
-            request is OrderRequest.SteppedStop ||
-            request is OrderRequest.TimeTighteningStop
-
-    private fun hasPersistentDynamicState(request: OrderRequest): Boolean =
-        request is OrderRequest.TrailingStop ||
-            request is OrderRequest.TrailingStopLimit ||
-            isPersistentManagedStop(request)
 
     private fun isEngineHeldOnRestore(request: OrderRequest): Boolean =
         when (request) {
