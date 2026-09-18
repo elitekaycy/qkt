@@ -7,7 +7,6 @@
 1343 src/test/kotlin/com/qkt/app/OrderManagerStackTest.kt
 1255 src/test/kotlin/com/qkt/observe/insights/InsightsTranslateTest.kt
 1180 src/main/kotlin/com/qkt/app/TradingPipeline.kt
-1155 src/main/kotlin/com/qkt/dsl/compile/ActionCompiler.kt
 1146 src/main/kotlin/com/qkt/cli/BacktestContext.kt
 1084 src/main/kotlin/com/qkt/broker/mt5/MT5Client.kt
 1052 src/test/kotlin/com/qkt/app/LiveSessionTest.kt
