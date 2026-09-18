@@ -1,19 +1,13 @@
 package com.qkt.backtest.report
 
 import com.qkt.backtest.BacktestResult
-import com.qkt.backtest.EquitySample
 import com.qkt.backtest.PerformanceReport
-import com.qkt.backtest.TradeRecord
-import com.qkt.events.RiskRejectedEvent
 import com.qkt.evidence.EvidenceHasher
 import com.qkt.evidence.EvidenceJson
-import com.qkt.execution.OrderRequestEvidence
 import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.Path
-import java.time.Instant
 import java.time.LocalDate
-import java.time.ZoneOffset
 
 /**
  * Writes a single [com.qkt.backtest.BacktestResult] to a directory as a bundle of
@@ -42,250 +36,21 @@ class BacktestReportWriter(
         }
 
         Files.writeString(dir.resolve("result.json"), renderJson(result))
-        Files.writeString(dir.resolve("equity_global.csv"), renderEquityCsv(result.global.equityCurve))
+        Files.writeString(dir.resolve("equity_global.csv"), EquityCsv.render(result.global.equityCurve))
         for ((id, report) in result.perStrategy) {
-            Files.writeString(dir.resolve("equity_${fileId(id)}.csv"), renderEquityCsv(report.equityCurve))
+            Files.writeString(dir.resolve(EquityCsv.fileName(id)), EquityCsv.render(report.equityCurve))
         }
-        Files.writeString(dir.resolve("trades.csv"), renderTradesCsv(result.trades))
-        Files.writeString(dir.resolve("financing.csv"), renderFinancingCsv(result.global.swapPaid))
-        Files.writeString(dir.resolve("rejections.csv"), renderRejectionsCsv(result.rejections))
-        Files.writeString(dir.resolve("orders.jsonl"), renderOrdersJsonl(result))
-        Files.writeString(dir.resolve("pnl_components.csv"), renderPnlComponentsCsv(result))
-        result.bookRisk?.let { Files.writeString(dir.resolve("book_risk.csv"), renderBookRiskCsv(it)) }
+        Files.writeString(dir.resolve("trades.csv"), TradesCsv.render(result.trades))
+        Files.writeString(dir.resolve("financing.csv"), FinancingCsv.render(result.global.swapPaid))
+        Files.writeString(dir.resolve("rejections.csv"), RejectionsCsv.render(result.rejections))
+        Files.writeString(dir.resolve("orders.jsonl"), OrderDecisionsJsonl.render(result))
+        Files.writeString(dir.resolve("pnl_components.csv"), PnlComponentsCsv.render(result))
+        result.bookRisk?.let { Files.writeString(dir.resolve("book_risk.csv"), BookRiskCsv.render(it)) }
         HtmlReportWriter().write(result, dir.resolve("report.html"))
         Files.writeString(dir.resolve("manifest.json"), renderManifest(result))
     }
 
     private fun fileId(strategyId: String): String = strategyId.replace(":", "%3A")
-
-    private fun renderEquityCsv(curve: List<EquitySample>): String {
-        val sb = StringBuilder("timestamp,equity\n")
-        for (s in curve) {
-            sb
-                .append(s.timestamp)
-                .append(',')
-                .append(s.equity.toPlainString())
-                .append('\n')
-        }
-        return sb.toString()
-    }
-
-    private fun renderTradesCsv(trades: List<TradeRecord>): String {
-        val sb =
-            StringBuilder(
-                "timestamp,strategy,symbol,side,positionEffect,orderType,quantity,price,realized,netAccountRealized," +
-                    "grossAccountRealized,nativeRealized,nativeCurrency,accountRealized,accountCurrency," +
-                    "fxRate,fxRateTimestamp,fxSource,riskUsd,brokerOrderId," +
-                    "stopLossPrice,takeProfitPrice," +
-                    "accountPositionQtyBefore,accountPositionAvgEntryBefore,accountPositionQtyAfter," +
-                    "accountPositionAvgEntryAfter,strategyPositionQtyBefore,strategyPositionAvgEntryBefore," +
-                    "strategyPositionQtyAfter,strategyPositionAvgEntryAfter,contractSize,fillNotional," +
-                    "reducedExposure,legId,legAction\n",
-            )
-        for (r in trades) {
-            val fillNotional = TradeAuditSummaries.fillNotional(r)
-            sb
-                .append(r.trade.timestamp)
-                .append(',')
-                .append(csv(r.strategyId))
-                .append(',')
-                .append(csv(r.trade.symbol))
-                .append(',')
-                .append(r.trade.side)
-                .append(',')
-                .append(TradeAuditSummaries.positionEffect(r))
-                .append(',')
-                .append(csv(r.orderType ?: ""))
-                .append(',')
-                .append(r.trade.quantity.toPlainString())
-                .append(',')
-                .append(r.trade.price.toPlainString())
-                .append(',')
-                .append(r.realized.toPlainString())
-                .append(',')
-                .append(r.realized.toPlainString())
-                .append(',')
-                .append(r.accountRealized?.toPlainString() ?: "")
-                .append(',')
-                .append(r.nativeRealized?.toPlainString() ?: "")
-                .append(',')
-                .append(csv(r.nativeCurrency ?: ""))
-                .append(',')
-                .append(r.accountRealized?.toPlainString() ?: "")
-                .append(',')
-                .append(csv(r.accountCurrency ?: ""))
-                .append(',')
-                .append(r.fxRate?.toPlainString() ?: "")
-                .append(',')
-                .append(r.fxRateTimestamp?.toString() ?: "")
-                .append(',')
-                .append(csv(r.fxSource ?: ""))
-                .append(',')
-                .append(r.riskUsd?.toPlainString() ?: "")
-                .append(',')
-                .append(csv(r.trade.orderId))
-                .append(',')
-                .append(r.stopLossPrice?.toPlainString() ?: "")
-                .append(',')
-                .append(r.takeProfitPrice?.toPlainString() ?: "")
-                .append(',')
-                .append(r.accountPositionBefore?.quantity?.toPlainString() ?: "")
-                .append(',')
-                .append(r.accountPositionBefore?.avgEntryPrice?.toPlainString() ?: "")
-                .append(',')
-                .append(r.accountPositionAfter?.quantity?.toPlainString() ?: "")
-                .append(',')
-                .append(r.accountPositionAfter?.avgEntryPrice?.toPlainString() ?: "")
-                .append(',')
-                .append(r.strategyPositionBefore?.quantity?.toPlainString() ?: "")
-                .append(',')
-                .append(r.strategyPositionBefore?.avgEntryPrice?.toPlainString() ?: "")
-                .append(',')
-                .append(r.strategyPositionAfter?.quantity?.toPlainString() ?: "")
-                .append(',')
-                .append(r.strategyPositionAfter?.avgEntryPrice?.toPlainString() ?: "")
-                .append(',')
-                .append(r.contractSize?.toPlainString() ?: "")
-                .append(',')
-                .append(fillNotional.toPlainString())
-                .append(',')
-                .append(r.reducedExposure)
-                .append(',')
-                .append(csv(r.legId ?: ""))
-                .append(',')
-                .append(r.legAction?.name ?: "")
-                .append('\n')
-        }
-        return sb.toString()
-    }
-
-    private fun renderFinancingCsv(swapPaid: java.math.BigDecimal): String =
-        buildString {
-            append("component,paid,netPnlImpact\n")
-            append("swap,")
-            append(swapPaid.toPlainString())
-            append(',')
-            append(swapPaid.negate().toPlainString())
-            append('\n')
-        }
-
-    private fun renderRejectionsCsv(rejections: List<RiskRejectedEvent>): String {
-        val sb = StringBuilder("timestamp,reason,strategy,symbol\n")
-        for (e in rejections) {
-            sb
-                .append(e.timestamp)
-                .append(',')
-                .append(csv(e.reason))
-                .append(',')
-                .append(csv(e.request.strategyId))
-                .append(',')
-                .append(csv(e.request.symbol))
-                .append('\n')
-        }
-        return sb.toString()
-    }
-
-    private fun renderOrdersJsonl(result: BacktestResult): String {
-        val lines =
-            buildList {
-                result.causality?.approvedOrders.orEmpty().forEach { event ->
-                    add(
-                        Triple(
-                            event.sequenceId,
-                            event.timestamp,
-                            buildString {
-                                append("{\"schema\":\"qkt-order-decision-v1\",\"schemaVersion\":1")
-                                append(",\"decision\":\"approved\",\"seq\":").append(event.sequenceId)
-                                append(",\"ts\":").append(event.timestamp)
-                                append(",\"requestSchemaVersion\":").append(OrderRequestEvidence.SCHEMA_VERSION)
-                                append(",\"request\":").append(OrderRequestEvidence.toJson(event.request))
-                                append('}')
-                            },
-                        ),
-                    )
-                }
-                result.rejections.forEach { event ->
-                    add(
-                        Triple(
-                            event.sequenceId,
-                            event.timestamp,
-                            buildString {
-                                append("{\"schema\":\"qkt-order-decision-v1\",\"schemaVersion\":1")
-                                append(",\"decision\":\"rejected\",\"seq\":").append(event.sequenceId)
-                                append(",\"ts\":").append(event.timestamp)
-                                append(",\"reason\":").append(ReportSerializer.jsonString(event.reason))
-                                append(",\"requestSchemaVersion\":").append(OrderRequestEvidence.SCHEMA_VERSION)
-                                append(",\"request\":").append(OrderRequestEvidence.toJson(event.request))
-                                append('}')
-                            },
-                        ),
-                    )
-                }
-            }.sortedWith(compareBy<Triple<Long, Long, String>> { it.first }.thenBy { it.second })
-        if (lines.isEmpty()) return ""
-        return lines.joinToString(separator = "\n", postfix = "\n") { it.third }
-    }
-
-    private fun renderPnlComponentsCsv(result: BacktestResult): String {
-        val sb = StringBuilder("scope,strategy,date,tradeRealized,adjustment,dailyPnL\n")
-        appendPnlComponents(sb, scope = "global", strategyId = "", report = result.global, trades = result.trades)
-        for ((strategyId, report) in result.perStrategy.entries.sortedBy { it.key }) {
-            appendPnlComponents(
-                sb,
-                scope = "strategy",
-                strategyId = strategyId,
-                report = report,
-                trades = result.trades.filter { it.strategyId == strategyId },
-            )
-        }
-        return sb.toString()
-    }
-
-    private fun appendPnlComponents(
-        sb: StringBuilder,
-        scope: String,
-        strategyId: String,
-        report: PerformanceReport,
-        trades: List<TradeRecord>,
-    ) {
-        val tradeDaily = trades.realizedByUtcDate()
-        val dates = (tradeDaily.keys + report.dailyPnL.keys).toSortedSet()
-        for (date in dates) {
-            val tradeRealized = tradeDaily[date] ?: BigDecimal.ZERO
-            val dailyPnl = report.dailyPnL[date] ?: BigDecimal.ZERO
-            val adjustment = dailyPnl.subtract(tradeRealized)
-            sb
-                .append(scope)
-                .append(',')
-                .append(csv(strategyId))
-                .append(',')
-                .append(date)
-                .append(',')
-                .append(tradeRealized.toPlainString())
-                .append(',')
-                .append(adjustment.toPlainString())
-                .append(',')
-                .append(dailyPnl.toPlainString())
-                .append('\n')
-        }
-    }
-
-    private fun List<TradeRecord>.realizedByUtcDate(): Map<LocalDate, BigDecimal> =
-        groupBy {
-            Instant
-                .ofEpochMilli(it.trade.timestamp)
-                .atZone(ZoneOffset.UTC)
-                .toLocalDate()
-        }.mapValues { (_, trades) ->
-            trades.fold(BigDecimal.ZERO) { acc, r -> acc.add(r.realized) }
-        }
-
-    private fun csv(value: String): String =
-        if (value.any { it == ',' || it == '"' || it == '\n' || it == '\r' }) {
-            "\"" + value.replace("\"", "\"\"") + "\""
-        } else {
-            value
-        }
 
     private fun renderJson(result: BacktestResult): String {
         val sb = StringBuilder()
@@ -505,22 +270,6 @@ class BacktestReportWriter(
             )
             append("]}")
         }
-    }
-
-    private fun renderBookRiskCsv(br: com.qkt.backtest.BookRiskReport): String {
-        val sb = StringBuilder("timestamp,grossExposure,netExposure,bookEquity\n")
-        for (s in br.series) {
-            sb
-                .append(s.timestampMs)
-                .append(',')
-                .append(s.grossExposure.toPlainString())
-                .append(',')
-                .append(s.netExposure.toPlainString())
-                .append(',')
-                .append(s.bookEquity.toPlainString())
-                .append('\n')
-        }
-        return sb.toString()
     }
 
     private fun renderBookRiskJson(br: com.qkt.backtest.BookRiskReport?): String {
