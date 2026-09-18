@@ -3,7 +3,6 @@
 4410 src/main/kotlin/com/qkt/app/OrderManager.kt
 2848 src/main/kotlin/com/qkt/broker/mt5/MT5Broker.kt
 2699 src/test/kotlin/com/qkt/broker/mt5/MT5BrokerIntegrationTest.kt
-2568 src/main/kotlin/com/qkt/dsl/parse/Parser.kt
 2503 src/main/kotlin/com/qkt/app/LiveSession.kt
 1773 src/main/kotlin/com/qkt/persistence/FileStatePersistor.kt
 1440 src/main/kotlin/com/qkt/dsl/compile/AstCompiler.kt
