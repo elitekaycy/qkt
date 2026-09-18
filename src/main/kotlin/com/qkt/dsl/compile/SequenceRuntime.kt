@@ -1,82 +1,9 @@
 package com.qkt.dsl.compile
 
 import com.qkt.marketdata.Candle
-import com.qkt.persistence.PersistedSequenceSnapshot
 import com.qkt.persistence.PersistedSequenceState
 import com.qkt.persistence.StatePersistor
 import java.math.BigDecimal
-
-/**
- * Compiled representation of one `SEQUENCE` stage.
- *
- * [withinMs] is measured from the previous completed stage. A null value means
- * the stage can complete any time after it becomes current.
- */
-data class CompiledSequenceStage(
-    val name: String,
-    val withinMs: Long?,
-    val condition: CompiledExpr,
-)
-
-/**
- * Compiled runtime metadata for a DSL `SEQUENCE` declaration.
- *
- * [referencedAliases] includes the sequence's `ON` stream and any aliases read by
- * stage conditions. The runtime uses it to avoid advancing a sequence before all
- * referenced streams are warmed.
- */
-data class CompiledSequence(
-    val name: String,
-    val streamAlias: String,
-    val streamSymbol: String,
-    val stages: List<CompiledSequenceStage>,
-    val referencedAliases: Set<String>,
-)
-
-/** Snapshot captured when a sequence stage completes. */
-data class SequenceSnapshot(
-    val stage: String,
-    val price: BigDecimal,
-    val timeMs: Long,
-)
-
-/** Read-only view exposed to compiled DSL expressions for `SEQUENCE.*` accessors. */
-interface SequenceStateView {
-    /** Zero-based current stage index, or the stage count while completion is pulsing. */
-    fun stage(sequence: String): Int
-
-    /** True only for the rule pass immediately after the final stage completes. */
-    fun complete(sequence: String): Boolean
-
-    /** Close price captured when [stage] completed, or null if it has not completed. */
-    fun stagePrice(
-        sequence: String,
-        stage: String,
-    ): BigDecimal?
-
-    /** Candle close time captured when [stage] completed, or null if it has not completed. */
-    fun stageTime(
-        sequence: String,
-        stage: String,
-    ): Long?
-}
-
-/** Empty sequence state used when a compiled expression is evaluated outside a DSL runtime. */
-object NoopSequenceStateView : SequenceStateView {
-    override fun stage(sequence: String): Int = 0
-
-    override fun complete(sequence: String): Boolean = false
-
-    override fun stagePrice(
-        sequence: String,
-        stage: String,
-    ): BigDecimal? = null
-
-    override fun stageTime(
-        sequence: String,
-        stage: String,
-    ): Long? = null
-}
 
 /**
  * Stateful executor for DSL `SEQUENCE` declarations.
@@ -88,15 +15,8 @@ object NoopSequenceStateView : SequenceStateView {
 class SequenceRuntime(
     private val sequences: List<CompiledSequence>,
 ) : SequenceStateView {
-    private data class RuntimeState(
-        var stage: Int = 0,
-        val snapshots: MutableMap<String, SequenceSnapshot> = linkedMapOf(),
-        val lastValues: MutableMap<String, Boolean> = mutableMapOf(),
-        var completePulse: Boolean = false,
-    )
-
     private val byName = sequences.associateBy { it.name }
-    private val states = sequences.associate { it.name to RuntimeState() }.toMutableMap()
+    private val states = sequences.associate { it.name to SequenceProgress() }.toMutableMap()
     private var persistor: StatePersistor? = null
     private var strategyId: String = ""
     private var ruleEdges: List<CompiledRule> = emptyList()
@@ -119,14 +39,7 @@ class SequenceRuntime(
         restoreRuleEdges()
         for ((name, state) in persisted) {
             val runtime = states[name] ?: continue
-            runtime.stage = state.stage
-            runtime.completePulse = state.completePulse
-            runtime.snapshots.clear()
-            for (snap in state.snapshots) {
-                runtime.snapshots[snap.stage] = SequenceSnapshot(snap.stage, snap.price, snap.timeMs)
-            }
-            runtime.lastValues.clear()
-            runtime.lastValues.putAll(state.lastValues)
+            runtime.restoreFrom(state)
         }
     }
 
@@ -183,7 +96,7 @@ class SequenceRuntime(
         var changed = false
         for ((name, state) in states) {
             if (!state.completePulse) continue
-            reset(state)
+            state.reset()
             changed = true
         }
         if (changed) persist()
@@ -205,7 +118,7 @@ class SequenceRuntime(
 
     private fun advance(
         sequence: CompiledSequence,
-        state: RuntimeState,
+        state: SequenceProgress,
         candle: Candle,
         ec: EvalContext,
     ) {
@@ -225,9 +138,9 @@ class SequenceRuntime(
             }
         }
 
-        val timedOut = timedOut(sequence, state, candle.endTime)
+        val timedOut = state.timedOut(sequence, candle.endTime)
         if (timedOut) {
-            reset(state)
+            state.reset()
             changed = true
         }
         val next = state.stage
@@ -248,47 +161,15 @@ class SequenceRuntime(
         persist()
     }
 
-    private fun timedOut(
-        sequence: CompiledSequence,
-        state: RuntimeState,
-        nowMs: Long,
-    ): Boolean {
-        val stage = sequence.stages.getOrNull(state.stage) ?: return false
-        val within = stage.withinMs ?: return false
-        if (state.stage == 0) return false
-        val previous = state.snapshots.values.lastOrNull() ?: return false
-        return nowMs - previous.timeMs > within
-    }
-
-    private fun reset(state: RuntimeState) {
-        state.stage = 0
-        state.snapshots.clear()
-        state.lastValues.clear()
-        state.completePulse = false
-    }
-
-    private fun stateFor(name: String): RuntimeState = states.getOrPut(name) { RuntimeState() }
+    private fun stateFor(name: String): SequenceProgress = states.getOrPut(name) { SequenceProgress() }
 
     private fun persist() {
         val p = persistor ?: return
         if (strategyId.isBlank()) return
         val persisted =
             states
-                .mapValues { (name, state) ->
-                    val sequence = byName.getValue(name)
-                    PersistedSequenceState(
-                        name = name,
-                        stage = state.stage,
-                        snapshots =
-                            sequence.stages.mapNotNull { stage ->
-                                state.snapshots[stage.name]?.let {
-                                    PersistedSequenceSnapshot(it.stage, it.price, it.timeMs)
-                                }
-                            },
-                        lastValues = state.lastValues.toMap(),
-                        completePulse = state.completePulse,
-                    )
-                }.toMutableMap()
+                .mapValues { (name, state) -> state.toPersisted(name, byName.getValue(name)) }
+                .toMutableMap()
         if (ruleEdges.isNotEmpty()) {
             persisted[RULE_EDGE_STATE] =
                 PersistedSequenceState(
