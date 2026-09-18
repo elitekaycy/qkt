@@ -1,67 +1,39 @@
 package com.qkt.research
 
 import com.qkt.accounting.AccountingConfig
-import com.qkt.accounting.AccountingEngine
-import com.qkt.app.IndicatorWarmer
-import com.qkt.app.PerStreamWarmupCoordinator
 import com.qkt.app.TradingPipeline
 import com.qkt.backtest.BacktestResult
-import com.qkt.backtest.BookReturnCollector
-import com.qkt.backtest.BookRiskMonitor
 import com.qkt.backtest.BrokerKind
-import com.qkt.backtest.EquityCurveCollector
-import com.qkt.backtest.EquityMetrics
 import com.qkt.backtest.ExecutionSimulationConfig
-import com.qkt.backtest.ReplayCausalityReport
-import com.qkt.backtest.ReplayInputReport
-import com.qkt.backtest.ReportBuilder
-import com.qkt.backtest.ReturnAutocorrCollector
 import com.qkt.backtest.SampleCadence
-import com.qkt.backtest.TradeRecord
-import com.qkt.broker.MT5BrokerSimulator
-import com.qkt.broker.PaperBroker
 import com.qkt.bus.EventBus
 import com.qkt.candles.TimeWindow
 import com.qkt.common.FixedClock
-import com.qkt.common.Money
 import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.SequentialIdGenerator
 import com.qkt.common.TradingCalendar
+import com.qkt.dsl.compile.CandleHub
+import com.qkt.dsl.compile.DslCompiledStrategy
 import com.qkt.engine.Engine
-import com.qkt.events.CandleEvent
-import com.qkt.events.DecisionOrderLinkedEvent
-import com.qkt.events.FillAccountedEvent
-import com.qkt.events.OrderEvent
-import com.qkt.events.RiskRejectedEvent
-import com.qkt.events.RuleDecisionEvent
-import com.qkt.events.StrategyCandleEvaluatedEvent
-import com.qkt.events.StreamCandleEvent
-import com.qkt.events.TickEvent
-import com.qkt.events.WarmupTickEvent
+import com.qkt.events.RiskEvent
+import com.qkt.events.SignalEvent
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.NoopInstrumentRegistry
-import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.TickFeed
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.marketdata.source.NullMarketSource
-import com.qkt.pnl.CommissionBook
-import com.qkt.pnl.PerLotCommission
-import com.qkt.pnl.PnLCalculator
-import com.qkt.pnl.StrategyPnL
+import com.qkt.pnl.BookBalanceView
 import com.qkt.pnl.SwapFinancingBook
 import com.qkt.positions.Position
-import com.qkt.positions.StrategyPositionTracker
-import com.qkt.risk.RiskEngine
 import com.qkt.risk.RiskRule
-import com.qkt.risk.RiskState
+import com.qkt.risk.RunawayBreaker
 import com.qkt.risk.StrategyRiskLimits
-import com.qkt.risk.StrategyRiskRuleFactory
+import com.qkt.risk.book.wireBookReservations
 import com.qkt.strategy.Mode
 import com.qkt.strategy.Strategy
 import com.qkt.strategy.WarmupSpec
 import java.math.BigDecimal
-import java.time.Instant
 
 /**
  * The shared replay core: builds the full trading pipeline once and advances ticks
@@ -144,8 +116,6 @@ class ReplayEngine(
     private val runawayMaxRejections: Int = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_REJECTIONS,
     private val runawayRejectionWindowMs: Long = com.qkt.risk.RunawayBreaker.DEFAULT_REJECTION_WINDOW_MS,
 ) : AutoCloseable {
-    private val log = org.slf4j.LoggerFactory.getLogger(ReplayEngine::class.java)
-
     private val cadence: SampleCadence =
         cadence ?: if (candleWindow != null) SampleCadence.CANDLE_CLOSE else SampleCadence.TICK
 
@@ -166,34 +136,12 @@ class ReplayEngine(
         private set
 
     private val clock = FixedClock(time = initialTimestamp)
-    private val priceTracker = MarketPriceTracker()
-    private val strategyPositions = StrategyPositionTracker()
-    private val positions = strategyPositions.account
-    private val accounting: AccountingEngine
-    private val pnl: PnLCalculator
-    private val strategyPnL: StrategyPnL
-    private val collector: EquityCurveCollector
-    private val autocorr: ReturnAutocorrCollector
-    private val bookReturns: BookReturnCollector
-    private val bookRiskMonitor: BookRiskMonitor
-    private val commissionBook = CommissionBook(PerLotCommission(instruments))
+    private val books = ReplayBooks(instruments, accountingConfig, markTimestamp = { currentTimestamp })
+    private val positions = books.positions
+    private val recorder = ReplayRecorder(initialTimestamp)
     private val pipeline: TradingPipeline
     private val swapBook: SwapFinancingBook
-    private val tradeRecords = mutableListOf<TradeRecord>()
-    private val rejections = mutableListOf<RiskRejectedEvent>()
-    private val approvedOrders = mutableListOf<OrderEvent>()
-    private val ruleDecisions = mutableListOf<RuleDecisionEvent>()
-    private val decisionOrderLinks = mutableListOf<DecisionOrderLinkedEvent>()
-    private val accountedFills = mutableListOf<FillAccountedEvent>()
-    private val halts = mutableListOf<com.qkt.events.RiskEvent.Halted>()
-    private val breakerTrips = mutableListOf<com.qkt.risk.RunawayBreakerTrip>()
-    private val tape = mutableListOf<TapeEvent>()
-    private var liveTicksProcessed = 0L
-    private var warmupTicksProcessed = 0L
-    private var warmupCandlesEmitted = 0L
-    private var liveCandlesEmitted = 0L
-    private val streamCandlesEmitted = mutableMapOf<String, Long>()
-    private val strategyCandleEvaluations = mutableMapOf<String, Long>()
+    private val results: ReplayResultBuilder
 
     init {
         require(this.cadence != SampleCadence.CANDLE_CLOSE || candleWindow != null) {
@@ -201,232 +149,69 @@ class ReplayEngine(
         }
         val ids = SequentialIdGenerator.forSession(strategies.map { it.first })
         val sequencer = MonotonicSequenceGenerator()
-        accounting = AccountingEngine(accountingConfig, priceTracker)
-        pnl = PnLCalculator(positions, priceTracker, instruments, accounting, markTimestamp = { currentTimestamp })
-        strategyPnL =
-            StrategyPnL(
-                strategyPositions,
-                priceTracker,
-                instruments,
-                accounting = accounting,
-                markTimestamp = { currentTimestamp },
-            )
+        val strategyPnL = books.strategyPnL
         for ((id, _) in strategies) {
             strategyPnL.setStartingBalance(id, startingBalances[id] ?: startingBalance)
         }
         val bus = EventBus(clock, sequencer)
-        bus.subscribe<OrderEvent>(approvedOrders::add)
-        bus.subscribe<RuleDecisionEvent>(ruleDecisions::add)
-        bus.subscribe<DecisionOrderLinkedEvent>(decisionOrderLinks::add)
-        bus.subscribe<FillAccountedEvent>(accountedFills::add)
-        bus.subscribe<TickEvent> { liveTicksProcessed++ }
-        bus.subscribe<WarmupTickEvent> { warmupTicksProcessed++ }
-        bus.subscribe<CandleEvent> { event ->
-            if (event.candle.endTime <= initialTimestamp) {
-                warmupCandlesEmitted++
-            } else {
-                liveCandlesEmitted++
-            }
-        }
-        bus.subscribe<StreamCandleEvent> { event ->
-            val key = "${event.broker}:${event.candle.symbol.substringAfter(':')}:${event.timeframe}"
-            streamCandlesEmitted[key] = (streamCandlesEmitted[key] ?: 0L) + 1L
-        }
-        bus.subscribe<StrategyCandleEvaluatedEvent> { event ->
-            val symbol = event.candle.symbol.substringAfter(':')
-            val key = "${event.strategyId}:${event.alias}:${event.broker}:$symbol:${event.timeframe}"
-            strategyCandleEvaluations[key] = (strategyCandleEvaluations[key] ?: 0L) + 1L
-        }
-        val engine = Engine(bus, priceTracker)
-        val candleHub =
-            com.qkt.dsl.compile
-                .CandleHub()
-        val perStreamWarmup =
-            if (source !== NullMarketSource) {
-                PerStreamWarmupCoordinator(
-                    strategies = strategies,
-                    source = source,
-                    hub = candleHub,
-                    now = Instant.ofEpochMilli(initialTimestamp),
-                    requireFullHistory = false,
-                ).also { it.prepareHub() }
-            } else {
-                null
-            }
+        recorder.subscribe(bus)
+        val engine = Engine(bus, books.priceTracker)
+        val candleHub = CandleHub()
+        val warmup = ReplayWarmup(strategies, source, candleHub, initialTimestamp, warmupSpec, tradedSymbols)
 
-        val dslStrategies =
-            strategies.mapNotNull { (_, s) -> s as? com.qkt.dsl.compile.DslCompiledStrategy }
-        for (s in dslStrategies) {
-            if (s.quoteFieldStreams.isNotEmpty()) {
-                log.warn(
-                    "strategy reads quote fields (bid/ask/spread) on streams {} — these evaluate " +
-                        "Undefined unless the backtest data source carries real ticks with quotes; " +
-                        "bar-synthesized feeds do not, so spread-aware rules will silently never fire " +
-                        "(divergence catalog row A10)",
-                    s.quoteFieldStreams,
-                )
-            }
-        }
-        val brokerSymbols: MutableMap<String, MutableSet<String>> = mutableMapOf()
-        for (s in dslStrategies) {
-            for (key in s.declaredStreams.values) {
-                brokerSymbols.getOrPut(key.broker) { mutableSetOf() }.add(key.qktSymbol)
-            }
-        }
-        com.qkt.instrument.QuoteCurrencyGuard
-            .assertAccountQuoted(
-                tradedSymbols + brokerSymbols.values.flatten(),
-                accountCurrency = accounting.accountCurrency,
-                canConvert = { symbol, _ -> accounting.canConvertSymbol(symbol) },
+        val dslStrategies = strategies.mapNotNull { (_, s) -> s as? DslCompiledStrategy }
+        warnQuoteFieldReads(dslStrategies)
+        val brokerSymbols = brokerSymbolsOf(dslStrategies)
+        requireReplaySymbolsResolvable(tradedSymbols + brokerSymbols.values.flatten(), books.accounting, instruments)
+        val broker =
+            replayBroker(
+                executionConfig,
+                bus,
+                clock,
+                books.priceTracker,
+                instruments,
+                barFills,
+                calendar,
+                brokerSymbols,
             )
-        // Same deploy-time contract as live: a real registry that cannot resolve a traded
-        // symbol fails the run up front instead of silently booking contractSize=1.
-        if (instruments !is NoopInstrumentRegistry) {
-            for (symbol in (tradedSymbols + brokerSymbols.values.flatten()).distinct()) {
-                if (!com.qkt.instrument.QuoteCurrencyGuard
-                        .requiresContractSizeMeta(symbol)
-                ) {
-                    continue
-                }
-                requireNotNull(instruments.lookup(symbol)) {
-                    "InstrumentMeta unresolvable for $symbol — refusing to backtest " +
-                        "(PnL would silently book contractSize=1)"
-                }
-            }
-        }
-        val brokerFactory: () -> com.qkt.broker.Broker = {
-            when (executionConfig.brokerKind) {
-                BrokerKind.PAPER ->
-                    PaperBroker(
-                        bus,
-                        clock,
-                        priceTracker,
-                        instruments,
-                        fillAtTriggerPrice = barFills,
-                        calendar = calendar,
-                        positionMode = executionConfig.positionMode,
-                    )
-                BrokerKind.MT5_SIM ->
-                    MT5BrokerSimulator(
-                        bus,
-                        clock,
-                        priceTracker,
-                        instruments,
-                        slippage = executionConfig.slippageModel(),
-                        latencyMs = executionConfig.latencyMs,
-                        stopLatencyMs = executionConfig.stopLatencyMs,
-                        takeProfitFill = executionConfig.takeProfitFill,
-                        enforceStopsLevel = executionConfig.enforceStopsLevel,
-                        rejectionModel = executionConfig.rejectionModel(),
-                        partialFillModel = executionConfig.partialFillModel(),
-                        positionMode = executionConfig.positionMode,
-                    )
-            }
-        }
-        val broker: com.qkt.broker.Broker =
-            if (brokerSymbols.isEmpty()) {
-                brokerFactory()
-            } else {
-                com.qkt.broker.CompositeBroker(
-                    routes =
-                        brokerSymbols.map { (_, syms) ->
-                            com.qkt.marketdata.source.SymbolPattern
-                                .exactSet(syms.toSet()) to brokerFactory()
-                        },
-                    bus = bus,
-                )
-            }
-        // Mirror the live RiskState construction (balance basis + halt rules) so a
-        // strategy that would halt live halts at the same point in its backtest.
-        val riskState = RiskState(pnl, strategyPnL, clock, bus, startingBalance, dailyDdBasis)
-        riskState.warmupComplete = true
-        val strategyRuleSet =
-            StrategyRiskRuleFactory.build(
+        val risk =
+            ReplayRisk(
+                rules = rules,
+                haltRules = haltRules,
                 strategyIds = strategies.map { it.first },
-                limitsByStrategy = strategyRiskLimits,
-                strategyPositions = strategyPositions,
-                pacerLedger = pacerLedger,
+                books = books,
                 clock = clock,
-                totalDdBasis = totalDdBasis,
+                bus = bus,
+                instruments = instruments,
                 startingBalance = startingBalance,
                 startingBalances = startingBalances,
-            )
-        // The same always-on pre-trade controls live runs (#393): a backtest must show
-        // the rejection a live deploy would produce, not sail past it.
-        val preTradeRules =
-            com.qkt.risk.rules.PreTradeControls.standard(
-                prices = priceTracker,
-                instruments = instruments,
+                dailyDdBasis = dailyDdBasis,
+                totalDdBasis = totalDdBasis,
+                strategyRiskLimits = strategyRiskLimits,
+                pacerLedger = pacerLedger,
                 maxOrderQty = maxOrderQty,
                 maxOrderNotional = maxOrderNotional,
                 priceCollarFrac = priceCollarFrac,
-                accounting = accounting,
+                candleWindow = candleWindow,
+                calendar = calendar,
+                bookRiskConfig = bookRiskConfig,
             )
-        val bookAnnualization =
-            if (candleWindow != null) calendar.tradingPeriodsPerYear(candleWindow) else BigDecimal("252")
-        val bookRiskController =
-            bookRiskConfig?.let {
-                com.qkt.risk.book
-                    .BookRiskController(it, it.capital ?: startingBalance, bookAnnualization)
-            }
-        val bookRules =
-            bookRiskController?.let {
-                listOf(
-                    com.qkt.risk.rules
-                        .BookExposureLimit(it, priceTracker, instruments, accounting),
-                )
-            } ?: emptyList()
-        val riskEngine =
-            RiskEngine(
-                rules + strategyRuleSet.riskRules + preTradeRules + bookRules,
-                haltRules + strategyRuleSet.haltRules,
-                positions,
-                riskState,
-            )
-        bus.subscribe<com.qkt.events.RiskEvent.Halted> { halts.add(it) }
+        val riskState = risk.riskState
+        val bookRiskController = risk.bookRiskController
+        bus.subscribe<RiskEvent.Halted> { recorder.halts.add(it) }
 
-        collector =
-            EquityCurveCollector(
+        val analytics =
+            ReplayAnalytics(
                 cadence = this.cadence,
                 bus = bus,
-                pnl = pnl,
-                strategyPnL = strategyPnL,
+                books = books,
                 strategyIds = strategies.map { it.first },
-                startingBalance = startingBalance,
-                candleSymbols = symbols.toSet(),
-                windowStartMs = initialTimestamp,
-            )
-
-        autocorr = ReturnAutocorrCollector(bus)
-
-        bookReturns =
-            BookReturnCollector(
-                cadence = this.cadence,
-                bus = bus,
-                pnl = pnl,
-                strategyPnL = strategyPnL,
-                strategyIds = strategies.map { it.first },
-                startingBalance = startingBalance,
-            )
-
-        bookRiskMonitor =
-            BookRiskMonitor(
-                cadence = this.cadence,
-                bus = bus,
-                source =
-                    com.qkt.risk.book.EngineBookStateSource(
-                        strategyIds = strategies.map { it.first },
-                        pnl = pnl,
-                        strategyPnL = strategyPnL,
-                        positions = strategyPositions,
-                        prices = priceTracker,
-                        instruments = instruments,
-                        startingBalance = startingBalance,
-                        accounting = accounting,
-                    ),
                 strategyCount = strategies.size,
                 startingBalance = startingBalance,
-                controller = bookRiskController,
+                symbols = symbols,
+                initialTimestamp = initialTimestamp,
+                instruments = instruments,
+                bookRiskController = bookRiskController,
             )
 
         val holder = arrayOfNulls<TradingPipeline>(1)
@@ -435,20 +220,20 @@ class ReplayEngine(
                 clock = clock,
                 ids = ids,
                 sequencer = sequencer,
-                priceTracker = priceTracker,
+                priceTracker = books.priceTracker,
                 positions = positions,
-                pnl = pnl,
-                strategyPositions = strategyPositions,
+                pnl = books.pnl,
+                strategyPositions = books.strategyPositions,
                 strategyPnL = strategyPnL,
                 bus = bus,
                 broker = broker,
                 engine = engine,
                 strategies = strategies,
-                riskEngine = riskEngine,
+                riskEngine = risk.riskEngine,
                 riskState = riskState,
                 positionMode = { executionConfig.positionMode },
                 runawayBreaker =
-                    com.qkt.risk.RunawayBreaker(
+                    RunawayBreaker(
                         clock = clock,
                         riskState = riskState,
                         maxRoundTrips = runawayMaxRoundTrips,
@@ -456,7 +241,7 @@ class ReplayEngine(
                         maxRejections = runawayMaxRejections,
                         rejectionWindowMs = runawayRejectionWindowMs,
                         enforce = enforceLiveBreakers,
-                        onTrip = breakerTrips::add,
+                        onTrip = recorder.breakerTrips::add,
                     ),
                 pacerLedger = pacerLedger,
                 pacerCooldownDurationMs = pacerCooldownDurationMs,
@@ -469,7 +254,7 @@ class ReplayEngine(
                 // children cross on one symbol) — sizing stays parity-exact.
                 bookBalance =
                     bookCapital?.let { capital ->
-                        com.qkt.pnl.BookBalanceView {
+                        BookBalanceView {
                             strategies.fold(capital) { acc, (id, _) -> acc.add(strategyPnL.realizedFor(id)) }
                         }
                     },
@@ -482,50 +267,9 @@ class ReplayEngine(
                 candleHub = candleHub,
                 onAccountedFill = { trade, converted, strategyId, fillState ->
                     val orderManager = holder[0]?.orderManager
-                    val entryRisk =
-                        orderManager?.entryRiskForFill(
-                            clientOrderId = trade.orderId,
-                            quantity = trade.quantity,
-                            fillPrice = trade.price,
-                            symbol = trade.symbol,
-                        )
-                    tradeRecords.add(
-                        TradeRecord(
-                            trade = trade,
-                            realized = fillState.netAccountRealized,
-                            strategyId = strategyId,
-                            orderType =
-                                orderManager
-                                    ?.getOrder(trade.orderId)
-                                    ?.request
-                                    ?.javaClass
-                                    ?.simpleName,
-                            riskUsd = entryRisk?.riskUsd,
-                            stopLossPrice = entryRisk?.protection?.stopLoss,
-                            takeProfitPrice = entryRisk?.protection?.takeProfit,
-                            nativeRealized = converted.native.amount,
-                            nativeCurrency = converted.native.normalizedCurrency,
-                            accountRealized = converted.account.amount,
-                            accountCurrency = converted.account.normalizedCurrency,
-                            fxRate = converted.conversion?.rate,
-                            fxRateTimestamp = converted.conversion?.timestamp,
-                            fxSource = converted.conversion?.source,
-                            accountPositionBefore = fillState.accountPositionBefore,
-                            accountPositionAfter = fillState.accountPositionAfter,
-                            strategyPositionBefore = fillState.strategyPositionBefore,
-                            strategyPositionAfter = fillState.strategyPositionAfter,
-                            contractSize = fillState.contractSize,
-                            reducedExposure = fillState.reducedExposure,
-                            legId = fillState.legId,
-                            legAction = fillState.legAction,
-                        ),
-                    )
-                    tape.add(TapeEvent.Filled(currentTimestamp, trade, fillState.netAccountRealized, strategyId))
+                    recorder.recordFill(currentTimestamp, trade, converted, strategyId, fillState, orderManager)
                 },
-                onRejected = { e ->
-                    rejections.add(e)
-                    tape.add(TapeEvent.Rejected(currentTimestamp, e.request.symbol, e.reason))
-                },
+                onRejected = { e -> recorder.recordRejection(currentTimestamp, e) },
                 onCandle = { barsClosed++ },
                 preCandle = { candle ->
                     this.preCandle(candle)
@@ -533,60 +277,24 @@ class ReplayEngine(
                 },
                 gateFor = gateFor,
                 instruments = instruments,
-                commissionBook = commissionBook,
-                accounting = accounting,
+                commissionBook = books.commissionBook,
+                accounting = books.accounting,
                 latencyEnabled = latencyEnabled,
             )
         // Same reservation lifecycle as live, registered after the pipeline so a fill is already in
         // positions when it is marked. Without it the backtest would never release a reservation.
-        bookRiskController?.let { controller ->
-            com.qkt.risk.book
-                .wireBookReservations(bus, controller)
-        }
+        bookRiskController?.let { controller -> wireBookReservations(bus, controller) }
         holder[0] = pipeline
         swapBook =
             SwapFinancingBook(
                 instruments = instruments,
-                strategyPositions = strategyPositions,
-                accounting = accounting,
-                prices = priceTracker,
+                strategyPositions = books.strategyPositions,
+                accounting = books.accounting,
+                prices = books.priceTracker,
                 strategyIds = strategies.map { it.first },
                 symbols = tradedSymbols + brokerSymbols.values.flatten(),
             )
-        // Match the live kill-switch: a halt must remove every resting pending before
-        // another replay tick can trigger it. RiskEngine only rejects new submissions;
-        // without this subscription backtests could fill old entries after the halt.
-        bus.subscribe<com.qkt.events.RiskEvent.Halted> { event ->
-            if (event.cancelWorkingOrders) {
-                pipeline.orderManager.cancelEntriesForHalt(event.strategyId)
-            }
-            if (event.strategyId == null && bookCapital != null && strategies.size > 1) {
-                for ((strategyId, _) in strategies) {
-                    for (leg in strategyPositions.allLegsFor(strategyId)) {
-                        bus.publish(
-                            com.qkt.events.OrderEvent(
-                                com.qkt.execution.OrderRequest.Market(
-                                    id = ids.next(),
-                                    symbol = leg.symbol,
-                                    side =
-                                        if (leg.side == com.qkt.common.Side.BUY) {
-                                            com.qkt.common.Side.SELL
-                                        } else {
-                                            com.qkt.common.Side.BUY
-                                        },
-                                    quantity = leg.quantity,
-                                    timeInForce = com.qkt.execution.TimeInForce.GTC,
-                                    timestamp = clock.now(),
-                                    strategyId = strategyId,
-                                    closesTicket = leg.brokerTicket,
-                                    closesLegId = leg.legId,
-                                ),
-                            ),
-                        )
-                    }
-                }
-            }
-        }
+        subscribeHaltKillSwitch(bus, pipeline, strategies, books.strategyPositions, ids, clock, bookCapital)
 
         // Tick-resolved fills: replace the bar feed with one that loads real ticks for fill-possible
         // bars, deciding via this engine's own OrderManager. Built here, after the pipeline exists.
@@ -594,19 +302,29 @@ class ReplayEngine(
             feed = BarResolvedFeed(tickResolvedBars, tickSlicer, ::intrabarFill, replayEndTimestamp)
         }
 
-        if (perStreamWarmup?.specs?.isNotEmpty() == true) {
-            perStreamWarmup.warm(pipeline)
-        } else if (source !== NullMarketSource && warmupSpec !is WarmupSpec.None && tradedSymbols.isNotEmpty()) {
-            IndicatorWarmer(source, pipeline).warmup(
-                symbols = tradedSymbols,
-                spec = warmupSpec,
-                now = Instant.ofEpochMilli(initialTimestamp),
-            )
-        }
+        warmup.warm(pipeline)
 
-        bus.subscribe<com.qkt.events.SignalEvent> { e ->
-            tape.add(TapeEvent.SignalEmitted(currentTimestamp, e.signal))
-        }
+        bus.subscribe<SignalEvent> { e -> recorder.recordSignal(currentTimestamp, e.signal) }
+
+        results =
+            ReplayResultBuilder(
+                strategies = strategies,
+                books = books,
+                recorder = recorder,
+                analytics = analytics,
+                swapBook = swapBook,
+                pipeline = pipeline,
+                instruments = instruments,
+                cadence = this.cadence,
+                candleWindow = candleWindow,
+                calendar = calendar,
+                latencyEnabled = latencyEnabled,
+                enforceLiveBreakers = enforceLiveBreakers,
+                runawayMaxRoundTrips = runawayMaxRoundTrips,
+                runawayRoundTripWindowMs = runawayRoundTripWindowMs,
+                runawayMaxRejections = runawayMaxRejections,
+                runawayRejectionWindowMs = runawayRejectionWindowMs,
+            )
     }
 
     /**
@@ -675,10 +393,10 @@ class ReplayEngine(
     }
 
     /** Trades filled so far. */
-    val tradeCount: Int get() = tradeRecords.size
+    val tradeCount: Int get() = recorder.tradeRecords.size
 
     /** Account equity as of the last ingested tick: starting balance + realized + unrealized. */
-    fun equity(): BigDecimal = startingBalance + pnl.realizedTotal() + pnl.unrealizedTotal()
+    fun equity(): BigDecimal = startingBalance + books.pnl.realizedTotal() + books.pnl.unrealizedTotal()
 
     /** Currently open (non-flat) positions keyed by symbol. */
     fun openPositions(): Map<String, Position> = positions.allPositions().filterValues { it.quantity.signum() != 0 }
@@ -691,113 +409,10 @@ class ReplayEngine(
     fun positionSign(symbol: String): Int = positions.positionFor(symbol)?.quantity?.signum() ?: 0
 
     /** Build a [BacktestResult] from current state — valid mid-replay or at end. */
-    fun snapshot(): BacktestResult {
-        val annualizationFactor = annualizationFactorFor(collector.globalMetrics())
-        val globalReport =
-            ReportBuilder.buildGlobal(
-                trades = tradeRecords,
-                equityCurve = collector.global(),
-                finalRealized = pnl.realizedTotal(),
-                finalUnrealized = pnl.unrealizedTotal(),
-                annualizationFactor = annualizationFactor,
-                metrics = collector.globalMetrics(),
-                commissionPaid = commissionBook.total(),
-                swapPaid = swapBook.totalPaid(),
-                dailyAdjustments = swapBook.dailyNet(),
-                tradedNotional = tradedNotional(tradeRecords),
-            )
-        val perStrategy =
-            strategies.associate { (id, _) ->
-                id to
-                    ReportBuilder.buildPerStrategy(
-                        strategyId = id,
-                        trades = tradeRecords.filter { it.strategyId == id },
-                        equityCurve = collector.forStrategy(id),
-                        finalRealized = strategyPnL.realizedFor(id),
-                        finalUnrealized = strategyPnL.unrealizedTotalFor(id),
-                        annualizationFactor = annualizationFactor,
-                        metrics = collector.metricsFor(id),
-                        commissionPaid = commissionBook.totalFor(id),
-                        swapPaid = swapBook.totalPaidFor(id),
-                        dailyAdjustments = swapBook.dailyNetFor(id),
-                        tradedNotional = tradedNotional(tradeRecords.filter { it.strategyId == id }),
-                    )
-            }
-        return BacktestResult(
-            trades = tradeRecords.toList(),
-            rejections = rejections.toList(),
-            halts = halts.toList(),
-            finalPositions = positions.allPositions(),
-            global = globalReport,
-            perStrategy = perStrategy,
-            cadence = cadence,
-            latencyReport = if (latencyEnabled) pipeline.latency.snapshot() else null,
-            conditionalAutocorr = autocorr.snapshot(),
-            bookAnalytics = bookReturns.result(),
-            bookRisk = bookRiskMonitor.result(annualizationFactor),
-            accounting = accounting.snapshot(),
-            finalPositionsByStrategy = strategyPositions.allByStrategy(),
-            inputSummary =
-                ReplayInputReport(
-                    attemptedFeedTicks = ticksIngested,
-                    liveTicks = liveTicksProcessed,
-                    warmupTicks = warmupTicksProcessed,
-                    warmupCandles = warmupCandlesEmitted,
-                    liveCandles = liveCandlesEmitted,
-                    malformedTicks = pipeline.malformedTickCount.get(),
-                    droppedLateTicks = pipeline.droppedLateTicks(),
-                    streamCandles = streamCandlesEmitted.toSortedMap(),
-                    strategyCandleEvaluations = strategyCandleEvaluations.toSortedMap(),
-                ),
-            runawayBreaker =
-                com.qkt.backtest.RunawayBreakerReport(
-                    enforceLiveBreakers = enforceLiveBreakers,
-                    maxRoundTrips = runawayMaxRoundTrips,
-                    roundTripWindowMs = runawayRoundTripWindowMs,
-                    maxRejections = runawayMaxRejections,
-                    rejectionWindowMs = runawayRejectionWindowMs,
-                    trips = breakerTrips.toList(),
-                ),
-            causality =
-                ReplayCausalityReport(
-                    approvedOrders = approvedOrders.toList(),
-                    ruleDecisions = ruleDecisions.toList(),
-                    decisionOrderLinks = decisionOrderLinks.toList(),
-                    accountedFills = accountedFills.toList(),
-                ),
-        )
-    }
+    fun snapshot(): BacktestResult = results.build(ticksIngested)
 
     /** Returns tape events accumulated since the last drain, then clears the buffer. */
-    fun drainTape(): List<TapeEvent> {
-        val out = tape.toList()
-        tape.clear()
-        return out
-    }
+    fun drainTape(): List<TapeEvent> = recorder.drainTape()
 
     override fun close() = feed.close()
-
-    /** Gross traded notional (price x |qty| x contractSize) across [trades], for turnover. */
-    private fun tradedNotional(trades: List<TradeRecord>): BigDecimal =
-        trades.fold(Money.ZERO) { acc, r ->
-            val cs = instruments.lookup(r.trade.symbol)?.contractSize ?: BigDecimal.ONE
-            acc.add(
-                r.trade.price
-                    .multiply(r.trade.quantity.abs(), Money.CONTEXT)
-                    .multiply(cs, Money.CONTEXT),
-            )
-        }
-
-    private fun annualizationFactorFor(metrics: EquityMetrics): BigDecimal {
-        if (cadence == SampleCadence.CANDLE_CLOSE && candleWindow != null) {
-            return calendar.tradingPeriodsPerYear(candleWindow)
-        }
-        if (metrics.count < 2) return BigDecimal("252")
-        val first = metrics.firstTimestamp() ?: return BigDecimal("252")
-        val spanMs = metrics.lastTimestamp() - first
-        if (spanMs <= 0L) return BigDecimal("252")
-        val avgIntervalMs = BigDecimal(spanMs).divide(BigDecimal(metrics.count - 1), Money.CONTEXT)
-        val msPerYear = BigDecimal("31557600000")
-        return msPerYear.divide(avgIntervalMs, Money.CONTEXT)
-    }
 }
