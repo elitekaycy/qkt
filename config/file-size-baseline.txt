@@ -150,7 +150,6 @@
 238 src/test/kotlin/com/qkt/app/IndicatorWarmerPerStreamTest.kt
 238 src/test/kotlin/com/qkt/cli/CliTierDeterminismTest.kt
 238 src/test/kotlin/com/qkt/cli/SoakCommandTest.kt
-237 src/main/kotlin/com/qkt/marketdata/store/macro/PolicyRateSeriesFetcher.kt
 237 src/test/kotlin/com/qkt/dsl/compile/RuleSuppressedFireTest.kt
 237 src/test/kotlin/com/qkt/parity/mt5golden/MT5GoldenFixture.kt
 236 src/main/kotlin/com/qkt/cli/bot/BotQueryCommand.kt
