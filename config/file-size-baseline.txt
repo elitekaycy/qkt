@@ -132,7 +132,6 @@
 277 src/test/kotlin/com/qkt/cli/daemon/StopRouteTest.kt
 277 src/test/kotlin/com/qkt/marketdata/live/mt5/Mt5TickRangePollingTest.kt
 276 src/main/kotlin/com/qkt/cli/PromotionCommand.kt
-276 src/main/kotlin/com/qkt/dsl/ast/StrategyAst.kt
 275 src/test/kotlin/com/qkt/cli/ConfigTest.kt
 275 src/test/kotlin/com/qkt/dsl/compile/GeneratedDslStructureParityTest.kt
 274 src/test/kotlin/com/qkt/dsl/stdlib/FuncRegistryTest.kt
@@ -215,14 +214,12 @@
 213 src/main/kotlin/com/qkt/backtest/ExecutionSimulation.kt
 213 src/main/kotlin/com/qkt/backtest/report/SvgChart.kt
 213 src/main/kotlin/com/qkt/cli/editor/EditorInstaller.kt
-213 src/main/kotlin/com/qkt/dsl/ast/ActionOpts.kt
 212 src/main/kotlin/com/qkt/app/LiveSessionHandle.kt
 212 src/main/kotlin/com/qkt/broker/bybit/linear/BybitLinearStateRecovery.kt
 210 src/main/kotlin/com/qkt/cli/WalkForwardCommand.kt
 210 src/main/kotlin/com/qkt/cli/daemon/portfolio/PortfolioSupervisor.kt
 210 src/main/kotlin/com/qkt/trade/BotGateway.kt
 209 src/main/kotlin/com/qkt/dsl/parse/TokenKind.kt
-208 src/main/kotlin/com/qkt/dsl/ast/ExprAst.kt
 206 src/main/kotlin/com/qkt/broker/mt5/MT5TransportJournal.kt
 206 src/main/kotlin/com/qkt/cli/observe/Routes.kt
 201 src/main/kotlin/com/qkt/backtest/report/WalkForwardReportWriter.kt
