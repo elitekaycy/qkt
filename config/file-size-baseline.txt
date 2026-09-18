@@ -26,7 +26,6 @@
 566 src/test/kotlin/com/qkt/cli/daemon/StrategyRegistryTest.kt
 552 src/main/kotlin/com/qkt/execution/OrderRequestEvidence.kt
 552 src/test/kotlin/com/qkt/cli/BacktestCommandPortfolioTest.kt
-542 src/test/kotlin/com/qkt/execution/OrderRequestEvidenceTest.kt
 535 src/test/kotlin/com/qkt/backtest/TickResolvedParityTest.kt
 534 src/main/kotlin/com/qkt/broker/bybit/BybitClient.kt
 532 src/test/kotlin/com/qkt/cli/daemon/DeployCommandTest.kt
