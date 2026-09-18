@@ -32,39 +32,34 @@ import com.qkt.app.order.SiblingLinks
 import com.qkt.app.order.StackExecution
 import com.qkt.app.order.StackLayerExits
 import com.qkt.app.order.StackLayerOrders
+import com.qkt.app.order.TickEvaluation
+import com.qkt.app.order.TimeExits
+import com.qkt.app.order.TriggerFiring
 import com.qkt.app.order.VenuePositionProtection
 import com.qkt.app.order.VenueRecovery
 import com.qkt.app.order.blendAvg
 import com.qkt.app.order.exposureEntryRequest
+import com.qkt.app.order.intrabarFillFor
 import com.qkt.app.order.isPersistentManagedStop
-import com.qkt.app.order.isTriggered
-import com.qkt.app.order.limitReached
-import com.qkt.app.order.stopReached
 import com.qkt.broker.Broker
 import com.qkt.broker.OrderTypeCapability
 import com.qkt.broker.PositionAccountingMode
 import com.qkt.broker.SubmitAck
 import com.qkt.bus.EventBus
 import com.qkt.common.Clock
-import com.qkt.common.Money
 import com.qkt.common.Side
 import com.qkt.events.BrokerEvent
 import com.qkt.events.TickEvent
-import com.qkt.execution.ExpiryAction
 import com.qkt.execution.LegIntent
 import com.qkt.execution.ManagedOrder
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.OrderState
 import com.qkt.execution.StopLossSpec
-import com.qkt.execution.TriggerType
-import com.qkt.execution.exitLegIntent
 import com.qkt.execution.isCompositeShape
 import com.qkt.execution.isTerminal
-import com.qkt.execution.withCloseTicket
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.NoopInstrumentRegistry
 import com.qkt.marketdata.MarketPriceProvider
-import com.qkt.marketdata.Tick
 import com.qkt.positions.PendingOrderExposureProvider
 import java.math.BigDecimal
 import org.slf4j.LoggerFactory
@@ -144,16 +139,6 @@ class OrderManager(
         HaltCancellations(book, broker, clock) { strategyId, message ->
             reportProtectionFailure(strategyId, message)
         }
-
-    // Reusable per-tick scratch buffers for [evaluateTriggers]. Each is cleared and refilled every
-    // tick; ArrayList.clear() retains capacity, so steady-state per-tick list allocation is zero.
-    // Shareable only because evaluateTriggers runs on the single engine thread and is not reentrant
-    // (its sole caller is the TickEvent subscription, and TickEvent is feed-sourced).
-    private val symbolLiveScratch = ArrayList<ManagedOrder>()
-    private val triggeredScratch = ArrayList<ManagedOrder>()
-    private val expiredExitsScratch = ArrayList<OrderRequest.TimeExit>()
-    private val gtdExpiredScratch = ArrayList<String>()
-    private val expiredStacksScratch = ArrayList<StackTracker.ActiveStack>()
 
     private val stops = ManagedStopBook()
     private val stopTicker: ManagedStopTicker =
@@ -251,8 +236,6 @@ class OrderManager(
             clock = clock,
         )
 
-    private val timeExits: MutableMap<String, OrderRequest.TimeExit> = mutableMapOf()
-
     private val stacks: StackTracker = StackTracker()
     private val stackLayers: StackLayerOrders = StackLayerOrders(clock, positionMode)
     private val stackExits: StackLayerExits =
@@ -269,6 +252,34 @@ class OrderManager(
             clock,
             ops,
             engineHeldSubmissionBlockReason,
+        )
+    private val timeExits = TimeExits(book, exposure, clock, ops)
+    private val tickEvaluation =
+        TickEvaluation(
+            book = book,
+            prices = prices,
+            stops = stops,
+            stopTicker = stopTicker,
+            timeExits = timeExits,
+            stacks = stacks,
+            stackExecution = stackExecution,
+            firing =
+                TriggerFiring(
+                    book = book,
+                    stacks = stacks,
+                    stops = stops,
+                    closeTickets = closeTickets,
+                    broker = broker,
+                    clock = clock,
+                    ops = ops,
+                    closeTicket = { request -> managedStopCloseTicket(request) },
+                    engineHeldSubmissionBlockReason = engineHeldSubmissionBlockReason,
+                ),
+            broker = broker,
+            clock = clock,
+            ops = ops,
+            requireArmedTrailTicket = requireArmedTrailTicket,
+            closeTicket = { request -> managedStopCloseTicket(request) },
         )
 
     /**
@@ -302,7 +313,7 @@ class OrderManager(
         bus.subscribe<BrokerEvent.OrderCancelled> { e -> onCancelled(e) }
         bus.subscribe<BrokerEvent.OrderCancelFailed> { e -> onCancelFailed(e) }
         bus.subscribe<BrokerEvent.PositionModificationCompleted> { e -> venueProtection.onCompleted(e) }
-        bus.subscribe<TickEvent> { e -> evaluateTriggers(e.tick) }
+        bus.subscribe<TickEvent> { e -> tickEvaluation.onTick(e.tick) }
     }
 
     fun submit(request: OrderRequest): SubmitAck =
@@ -567,42 +578,7 @@ class OrderManager(
         low: BigDecimal,
         high: BigDecimal,
         maxHalfSpread: BigDecimal = BigDecimal.ZERO,
-    ): IntrabarFill {
-        // Time-based exits (GTD expiry, TimeExit, stack deadline) fire on time, not price, so a
-        // fill/cancel can land on a tick the new-extreme filter would skip. Conservatively bail to a
-        // full real-tick replay whenever any is live.
-        if (book.gtdDeadlines.isNotEmpty() ||
-            timeExits.isNotEmpty() ||
-            stacks.activeView().any { it.deadlineEpochMs != null }
-        ) {
-            return IntrabarFill.ALL_TICKS
-        }
-        val ids = book.liveIdsFor(symbol) ?: return IntrabarFill.SYNTHETIC
-        // Candles aggregate mid prices, while venue triggers use ask for BUY and bid for SELL.
-        // Expand the mid range by the largest observed half-spread so a level crossed only by
-        // the executable quote still selects real-tick resolution.
-        val executableLow = low - maxHalfSpread
-        val executableHigh = high + maxHalfSpread
-        var fillable = false
-        for (id in ids) {
-            val m = book[id] ?: continue
-            if (m.state.isTerminal) continue
-            when (val r = m.request) {
-                is OrderRequest.Stop ->
-                    if (stopReached(r.side, executableLow, executableHigh, r.stopPrice)) fillable = true
-                is OrderRequest.StopLimit ->
-                    if (stopReached(r.side, executableLow, executableHigh, r.stopPrice)) fillable = true
-                is OrderRequest.Limit ->
-                    if (limitReached(r.side, executableLow, executableHigh, r.limitPrice)) fillable = true
-                is OrderRequest.IfTouched ->
-                    if (limitReached(r.side, executableLow, executableHigh, r.triggerPrice)) fillable = true
-                // Trailing/composite shapes (OTO, OCO, trailing stops, ...) move with the path; their
-                // trigger is not a fixed level we can search for, so resolve the bar on real ticks.
-                else -> return IntrabarFill.ALL_TICKS
-            }
-        }
-        return if (fillable) IntrabarFill.EXTREMES else IntrabarFill.SYNTHETIC
-    }
+    ): IntrabarFill = intrabarFillFor(book, timeExits, stacks, symbol, low, high, maxHalfSpread)
 
     fun pendingOrders(): List<ManagedOrder> = book.orders.values.filter { it.state == OrderState.PENDING }
 
@@ -663,37 +639,12 @@ class OrderManager(
 
             is OrderRequest.ScaleOut -> scaleOutTracker.submit(request)
 
-            is OrderRequest.TimeExit -> submitTimeExit(request)
+            is OrderRequest.TimeExit -> timeExits.submit(request)
 
             is OrderRequest.Stack -> stackExecution.submit(request)
 
             else -> error("Order type ${request::class.simpleName} dispatch not yet implemented (added later in 7d-b)")
         }
-
-    private fun submitTimeExit(req: OrderRequest.TimeExit): SubmitAck {
-        val now = clock.now()
-        update(req.id) {
-            it.copy(
-                state = OrderState.WORKING,
-                childClientOrderIds = listOf(req.target.id),
-                lastUpdatedAt = now,
-            )
-        }
-        track(
-            ManagedOrder(
-                id = req.target.id,
-                request = req.target,
-                state = OrderState.CREATED,
-                parentClientOrderId = req.id,
-                createdAt = now,
-                lastUpdatedAt = now,
-            ),
-        )
-        timeExits[req.id] = req
-        exposure.register(exposureEntryRequest(req.target))
-        dispatch(req.target)
-        return SubmitAck(req.id, req.id, accepted = true)
-    }
 
     private fun reportProtectionFailure(
         strategyId: String,
@@ -868,7 +819,7 @@ class OrderManager(
      */
     private fun isReferenced(id: String): Boolean {
         if (ocoGuard.isHoldingForSibling(id)) return true
-        if (timeExits.values.any { it.target.id == id }) return true
+        if (timeExits.targets(id)) return true
         for (s in stacks.all()) {
             if (id == s.id || id == s.layerOneOrderId) return true
             if (id in s.pendingLayerIds || id in s.filledLayerIds || id in s.closedLayerIds) return true
@@ -1165,271 +1116,6 @@ class OrderManager(
             e.reason,
         )
         ocoSequencer.clearFor(e.clientOrderId)
-    }
-
-    private fun evaluateTriggers(tick: Tick) {
-        prices.record(tick.symbol, tick.price)
-        // Only this symbol's live orders drive trailing + trigger evaluation — O(this symbol),
-        // not O(all live). An id in the index with no entry in [orders] is an invariant violation,
-        // not an expected absence, so surface it.
-        symbolLiveScratch.clear()
-        book.liveIdsFor(tick.symbol)?.let { ids ->
-            for (id in ids) {
-                symbolLiveScratch.add(book[id] ?: error("live order index desync: $id"))
-            }
-        }
-        for (i in symbolLiveScratch.indices) {
-            val managed = symbolLiveScratch[i]
-            if (managed.state != OrderState.PENDING) continue
-            if (isPersistentManagedStop(managed.request) &&
-                requireArmedTrailTicket &&
-                managedStopCloseTicket(managed.request) == null
-            ) {
-                log.warn(
-                    "cancelling engine-managed stop {} because its venue position ticket no longer exists",
-                    managed.id,
-                )
-                cancel(managed.id)
-                continue
-            }
-            stopTicker.onTick(managed, tick.price)
-        }
-
-        // Phase 38: sweep pending GTD orders past their deadline when the broker doesn't
-        // self-cancel. Only runs when the venue can't self-expire — MT5 returns
-        // supportsNativeGtd=true and skips it; PaperBroker, Bybit, and LogBroker fall through here.
-        // Walks [gtdLive] (deadline-bearing orders only) and compares longs; the live order is
-        // resolved only for the few that actually expired, in the same order a full scan would cancel.
-        // One timestamp per pass: GTD, time-exit, and stack deadlines all compare against the same
-        // tick instant. The empty guards keep the pass iterator-free when nothing has a deadline.
-        val now = clock.now()
-        if (!broker.supportsNativeGtd && book.gtdDeadlines.isNotEmpty()) {
-            gtdExpiredScratch.clear()
-            for ((id, deadline) in book.gtdDeadlines) {
-                if (now >= deadline) gtdExpiredScratch.add(id)
-            }
-            for (i in gtdExpiredScratch.indices) {
-                val managed = book[gtdExpiredScratch[i]] ?: continue
-                if (managed.state.isTerminal) continue
-                if (managed.state != OrderState.PENDING && managed.state != OrderState.WORKING) continue
-                cancel(managed.id)
-            }
-        }
-
-        if (timeExits.isNotEmpty()) {
-            expiredExitsScratch.clear()
-            for (te in timeExits.values) {
-                if (now >= te.deadline.toEpochMilli()) expiredExitsScratch.add(te)
-            }
-            for (i in expiredExitsScratch.indices) {
-                val te = expiredExitsScratch[i]
-                timeExits.remove(te.id)
-                handleTimeExitExpiry(te)
-            }
-        }
-
-        val activeStacks = stacks.activeView()
-        if (activeStacks.isNotEmpty()) {
-            expiredStacksScratch.clear()
-            for (state in activeStacks) {
-                val deadline = state.deadlineEpochMs ?: continue
-                if (now < deadline) continue
-                expiredStacksScratch.add(state)
-            }
-            for (i in expiredStacksScratch.indices) {
-                val state = expiredStacksScratch[i]
-                stackExecution.cancelPending(state.id)
-                stacks.terminate(state.id)
-            }
-        }
-
-        triggeredScratch.clear()
-        for (i in symbolLiveScratch.indices) {
-            val managed = symbolLiveScratch[i]
-            if (managed.state == OrderState.PENDING && isTriggered(managed, tick, stops)) {
-                triggeredScratch.add(managed)
-            }
-        }
-        for (i in triggeredScratch.indices) {
-            fireFallbackTrigger(triggeredScratch[i], tick.price)
-        }
-
-        runGc()
-    }
-
-    private fun handleTimeExitExpiry(te: OrderRequest.TimeExit) {
-        val target = book[te.target.id] ?: return
-        when (te.onExpiry) {
-            ExpiryAction.CANCEL -> {
-                if (!target.state.isTerminal) cancel(te.target.id)
-                update(te.id) { it.copy(state = OrderState.CANCELLED, lastUpdatedAt = clock.now()) }
-            }
-            ExpiryAction.CLOSE_AT_MARKET -> {
-                if (target.state == OrderState.FILLED) {
-                    val exitSide = if (te.target.side == Side.BUY) Side.SELL else Side.BUY
-                    val closing =
-                        OrderRequest.Market(
-                            id = "${te.id}-close",
-                            symbol = te.symbol,
-                            side = exitSide,
-                            quantity = te.target.quantity,
-                            timeInForce = te.timeInForce,
-                            timestamp = clock.now(),
-                            strategyId = te.strategyId,
-                            legIntent = te.target.exitLegIntent(),
-                        )
-                    submit(closing)
-                } else if (!target.state.isTerminal) {
-                    cancel(te.target.id)
-                }
-                update(te.id) { it.copy(state = OrderState.FILLED, lastUpdatedAt = clock.now()) }
-            }
-        }
-    }
-
-    private fun fireFallbackTrigger(
-        managed: ManagedOrder,
-        tickPrice: BigDecimal,
-    ) {
-        // [triggeredScratch] is a snapshot. An earlier synchronous fill can cancel this order
-        // before its turn in the loop; terminal-state protection rejects the state transition,
-        // but without this guard the stale snapshot would still be submitted to the broker.
-        if (book[managed.id]?.state != OrderState.PENDING) return
-        val stackOwner = stacks.stackOwning(managed.id)
-        if (stackOwner != null) {
-            val layerIdx = managed.id.substringAfterLast("-l").toIntOrNull() ?: 0
-            log.info(
-                "stack fire stack_id={} strategy_id={} layer={} qty={} trigger_price={}",
-                stackOwner,
-                managed.request.strategyId,
-                layerIdx,
-                managed.request.quantity,
-                tickPrice,
-            )
-        }
-        val internal: OrderRequest =
-            when (val req = managed.request) {
-                is OrderRequest.Stop -> {
-                    val ticket = closeTickets.ticketFor(req.id)
-                    OrderRequest.Market(
-                        id = req.id,
-                        symbol = req.symbol,
-                        side = req.side,
-                        quantity = req.quantity,
-                        timeInForce = req.timeInForce,
-                        timestamp = clock.now(),
-                        strategyId = req.strategyId,
-                        closesTicket = ticket,
-                        legIntent = req.legIntent.withCloseTicket(ticket),
-                    )
-                }
-                is OrderRequest.StopLimit ->
-                    OrderRequest.Limit(
-                        id = req.id,
-                        symbol = req.symbol,
-                        side = req.side,
-                        quantity = req.quantity,
-                        limitPrice = req.limitPrice,
-                        timeInForce = req.timeInForce,
-                        timestamp = clock.now(),
-                        strategyId = req.strategyId,
-                        legIntent = req.legIntent,
-                    )
-                is OrderRequest.IfTouched ->
-                    if (req.onTrigger == TriggerType.MARKET) {
-                        OrderRequest.Market(
-                            id = req.id,
-                            symbol = req.symbol,
-                            side = req.side,
-                            quantity = req.quantity,
-                            timeInForce = req.timeInForce,
-                            timestamp = clock.now(),
-                            strategyId = req.strategyId,
-                            closesTicket = req.closesTicket,
-                            partialClose = req.partialClose,
-                            legIntent = req.legIntent,
-                        )
-                    } else {
-                        OrderRequest.Limit(
-                            id = req.id,
-                            symbol = req.symbol,
-                            side = req.side,
-                            quantity = req.quantity,
-                            limitPrice = req.limitPrice!!,
-                            timeInForce = req.timeInForce,
-                            timestamp = clock.now(),
-                            strategyId = req.strategyId,
-                            legIntent = req.legIntent,
-                        )
-                    }
-                is OrderRequest.TrailingStop ->
-                    OrderRequest.Market(
-                        id = req.id,
-                        symbol = req.symbol,
-                        side = req.side,
-                        quantity = req.quantity,
-                        timeInForce = req.timeInForce,
-                        timestamp = clock.now(),
-                        strategyId = req.strategyId,
-                        legIntent = req.legIntent,
-                    )
-                is OrderRequest.ArmedTrailingStop -> {
-                    // Close the exact venue position by ticket when this exit belongs to an
-                    // independent leg (hedging) — otherwise a plain market opens a counter.
-                    val ticket = managedStopCloseTicket(req)
-                    OrderRequest.Market(
-                        id = req.id,
-                        symbol = req.symbol,
-                        side = req.side,
-                        quantity = req.quantity,
-                        timeInForce = req.timeInForce,
-                        timestamp = clock.now(),
-                        strategyId = req.strategyId,
-                        closesTicket = ticket,
-                        legIntent = req.legIntent.withCloseTicket(ticket),
-                    )
-                }
-                is OrderRequest.SteppedStop, is OrderRequest.TimeTighteningStop -> {
-                    val ticket = managedStopCloseTicket(req)
-                    OrderRequest.Market(
-                        id = req.id,
-                        symbol = req.symbol,
-                        side = req.side,
-                        quantity = req.quantity,
-                        timeInForce = req.timeInForce,
-                        timestamp = clock.now(),
-                        strategyId = req.strategyId,
-                        closesTicket = ticket,
-                        legIntent = req.legIntent.withCloseTicket(ticket),
-                    )
-                }
-                is OrderRequest.TrailingStopLimit -> {
-                    val level = stops.trailLevel(managed) ?: error("TrailingStopLimit level missing for ${managed.id}")
-                    val limitPrice =
-                        if (req.side == Side.SELL) level - req.limitOffset else level + req.limitOffset
-                    OrderRequest.Limit(
-                        id = req.id,
-                        symbol = req.symbol,
-                        side = req.side,
-                        quantity = req.quantity,
-                        limitPrice = limitPrice.setScale(Money.SCALE, Money.ROUNDING),
-                        timeInForce = req.timeInForce,
-                        timestamp = clock.now(),
-                        strategyId = req.strategyId,
-                        legIntent = req.legIntent,
-                    )
-                }
-                else -> error("Not a Tier 2 fallback type: ${req::class.simpleName}")
-            }
-        val blockReason = engineHeldSubmissionBlockReason(internal)
-        if (blockReason != null) {
-            rejectEngineHeld(internal, blockReason)
-            return
-        }
-        closeTickets.remove(managed.id)
-        update(managed.id) { it.copy(state = OrderState.SUBMITTED, lastUpdatedAt = clock.now()) }
-        persistSubmissionIntent(internal.strategyId)
-        broker.submit(internal)
     }
 
     private fun rejectEngineHeld(
