@@ -55,7 +55,6 @@
 452 src/main/kotlin/com/qkt/broker/bybit/spot/BybitSpotBroker.kt
 451 src/main/kotlin/com/qkt/broker/mt5/MT5PositionPoller.kt
 440 src/test/kotlin/com/qkt/docs/DslReferenceCodeBlocksTest.kt
-435 src/main/kotlin/com/qkt/cli/ExperimentCommand.kt
 429 src/test/kotlin/com/qkt/parity/TimesEntryParityTest.kt
 418 src/main/kotlin/com/qkt/research/ReplayEngine.kt
 414 src/test/kotlin/com/qkt/app/EndToEndTest.kt
