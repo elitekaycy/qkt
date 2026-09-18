@@ -1,12 +1,8 @@
 package com.qkt.risk
 
-import com.qkt.bus.EventBus
-import com.qkt.common.MonotonicSequenceGenerator
-import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.persistence.NoopStatePersistor
-import com.qkt.pnl.PnLCalculator
-import com.qkt.pnl.StrategyPnL
-import com.qkt.positions.StrategyPositionTracker
+import com.qkt.risk.RiskStatePersistenceFixtures.fixture
+import com.qkt.risk.RiskStatePersistenceFixtures.riskState
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -16,61 +12,7 @@ import org.junit.jupiter.api.Test
  * its daily loss must come back halted with its budget still spent — not un-halted
  * with a fresh budget the same day it exhausted one.
  */
-class RiskStatePersistenceTest {
-    private data class Fixture(
-        val state: RiskState,
-        val pnl: PnLCalculator,
-    )
-
-    private fun fixture(
-        clock: TestClock,
-        persistor: NoopStatePersistor,
-        initialBalance: BigDecimal = BigDecimal("10000"),
-    ): Fixture {
-        val prices = MarketPriceTracker()
-        val strategyPositions = StrategyPositionTracker()
-        val positions = strategyPositions.account
-        val pnl = PnLCalculator(positions, prices)
-        val strategyPnL = StrategyPnL(StrategyPositionTracker(), prices)
-        strategyPnL.setStartingBalance("s1", initialBalance)
-        val bus = EventBus(clock, MonotonicSequenceGenerator())
-        return Fixture(
-            RiskState(
-                pnl,
-                strategyPnL,
-                clock,
-                bus,
-                initialBalance = initialBalance,
-                persist = { snap -> persistor.saveRiskState("s1", snap) },
-            ),
-            pnl,
-        )
-    }
-
-    private fun riskState(
-        clock: TestClock,
-        persistor: NoopStatePersistor,
-    ): RiskState = fixture(clock, persistor, BigDecimal.ZERO).state
-
-    @Test
-    fun `halt and daily pnl survive a restart`() {
-        val clock = TestClock(86_400_000L * 100 + 3_600_000L) // day 100, 01:00 UTC
-        val persistor = NoopStatePersistor()
-        val first = riskState(clock, persistor)
-        first.onFill("s1", BigDecimal("-900"))
-        first.halt("daily loss 900 exceeds max 800", scope = HaltScope.DAILY)
-
-        // "Restart": a fresh RiskState restoring the persisted snapshot, same day.
-        val second = riskState(clock, persistor)
-        second.restore(persistor.loadRiskState("s1")!!)
-        assertThat(second.halted).isTrue()
-        assertThat(second.haltReason).contains("daily loss")
-        assertThat(second.dailyPnLTracker.globalRealizedToday()).isEqualByComparingTo("-900")
-        // The auto-resume sweep must NOT clear a same-day daily halt.
-        second.clearExpiredDailyHalts()
-        assertThat(second.halted).isTrue()
-    }
-
+class RiskStatePersistenceBudgetTest {
     @Test
     fun `month-to-date realized pnl survives a restart within the month, not into the next (#855)`() {
         val clock =
@@ -101,51 +43,6 @@ class RiskStatePersistenceTest {
         val nextMonth = riskState(clock, persistor)
         nextMonth.restore(persistor.loadRiskState("s1")!!)
         assertThat(RiskViewImpl(nextMonth, "s1").realizedMonth).isEqualByComparingTo("0")
-    }
-
-    @Test
-    fun `a daily halt from yesterday legitimately clears on restore`() {
-        val clock = TestClock(86_400_000L * 100 + 3_600_000L)
-        val persistor = NoopStatePersistor()
-        val first = riskState(clock, persistor)
-        first.onFill("s1", BigDecimal("-900"))
-        first.halt("daily loss", scope = HaltScope.DAILY)
-
-        // Restart the next UTC day: the daily halt expires, the budget is fresh.
-        clock.t += 86_400_000L
-        val second = riskState(clock, persistor)
-        second.restore(persistor.loadRiskState("s1")!!)
-        assertThat(second.halted).isFalse()
-        assertThat(second.dailyPnLTracker.globalRealizedToday()).isEqualByComparingTo("0")
-    }
-
-    @Test
-    fun `a transient drain halt suppresses trading but does not survive a restart`() {
-        val clock = TestClock(86_400_000L * 100 + 3_600_000L)
-        val persistor = NoopStatePersistor()
-        val first = riskState(clock, persistor)
-        first.halt("operator resync", scope = HaltScope.TRANSIENT)
-        assertThat(first.halted).isTrue()
-
-        // "Restart" the same day: a resync drain must not poison the replacement session.
-        val second = riskState(clock, persistor)
-        second.restore(persistor.loadRiskState("s1")!!)
-        assertThat(second.halted).isFalse()
-        assertThat(second.haltReason).isNull()
-    }
-
-    @Test
-    fun `a persistent halt survives across days`() {
-        val clock = TestClock(86_400_000L * 100)
-        val persistor = NoopStatePersistor()
-        val first = riskState(clock, persistor)
-        first.haltStrategy("s1", "trailing drawdown breached", scope = HaltScope.PERSISTENT)
-
-        clock.t += 86_400_000L * 3
-        val second = riskState(clock, persistor)
-        second.restore(persistor.loadRiskState("s1")!!)
-        assertThat(second.isStrategyHalted("s1")).isTrue()
-        assertThat(second.haltReasonFor("s1")).contains("trailing drawdown")
     }
 
     @Test
