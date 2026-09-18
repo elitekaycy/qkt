@@ -65,7 +65,6 @@
 397 src/test/kotlin/com/qkt/parity/PortfolioDeployerBacktestParityTest.kt
 395 src/test/kotlin/com/qkt/parity/BacktestLiveParityTest.kt
 393 src/test/kotlin/com/qkt/dsl/compile/GeneratedStrategyReplay.kt
-385 src/main/kotlin/com/qkt/cli/IncidentCommand.kt
 382 src/test/kotlin/com/qkt/broker/bybit/spot/BybitSpotStateRecoveryTest.kt
 382 src/test/kotlin/com/qkt/marketdata/live/mt5/Mt5MarketSourceTimeBaseTest.kt
 377 src/main/kotlin/com/qkt/persistence/StatePersistor.kt
