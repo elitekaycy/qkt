@@ -61,7 +61,6 @@
 311 src/test/kotlin/com/qkt/cli/SweepCommandTest.kt
 304 src/test/kotlin/com/qkt/parity/ScalpStackParityTest.kt
 298 src/main/kotlin/com/qkt/broker/CompositeBroker.kt
-296 src/test/kotlin/com/qkt/cli/daemon/StrategyHandleTest.kt
 295 src/test/kotlin/com/qkt/dsl/compile/SizingCompilerTest.kt
 293 src/test/kotlin/com/qkt/parity/RegimeAdaptiveBacktestParityTest.kt
 291 src/main/kotlin/com/qkt/persistence/AsyncStatePersistor.kt
