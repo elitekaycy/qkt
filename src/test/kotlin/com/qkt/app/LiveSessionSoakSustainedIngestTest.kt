@@ -1,5 +1,8 @@
 package com.qkt.app
 
+import com.qkt.app.LiveSessionSoakFixtures.awaitUntil
+import com.qkt.app.LiveSessionSoakFixtures.now
+import com.qkt.app.LiveSessionSoakFixtures.symbol
 import com.qkt.candles.TimeWindow
 import com.qkt.common.FixedClock
 import com.qkt.common.Money
@@ -13,88 +16,19 @@ import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.TickFeed
 import com.qkt.marketdata.source.InMemoryMarketSource
-import com.qkt.strategy.Signal
-import com.qkt.strategy.Strategy
-import com.qkt.strategy.StrategyContext
 import java.time.Duration
-import java.time.Instant
 import java.util.concurrent.atomic.AtomicLong
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 
 /**
- * #65 — soak coverage for the live engine: the slow resource growth that only a long
- * uptime surfaces, which unit and stress tests miss.
- *
- * Two angles (see `docs/superpowers/specs/2026-06-04-issue65-soak-design.md`):
- *  1. session churn — start/stop many sessions, prove no thread/executor leak as the
- *     daemon cycles strategies over its uptime.
- *  2. sustained ingest — one non-trading session ingests millions of ticks, prove the
- *     candle ring stays bounded and retained heap plateaus.
- *
- * Tagged `soak` so it stays out of default CI (excluded in `build.gradle.kts`). Run via:
- *
- *   ./gradlew test -PincludeTags=soak --tests 'com.qkt.app.LiveSessionSoakTest'
- *
- * Scale for a real multi-hour soak with `-Dsoak.ticks=` / `-Dsoak.cycles=`; the defaults
- * keep each test to tens of seconds.
+ * Sustained ingest soak: one non-trading session ingests millions of ticks; the candle ring
+ * stays bounded and retained heap plateaus. See [LiveSessionSoakFixtures].
  */
 @Tag("soak")
-class LiveSessionSoakTest {
-    private val now = Instant.parse("2024-01-15T15:00:00Z")
-    private val symbol = "BACKTEST:BTCUSDT"
-    private val cycles = System.getProperty("soak.cycles")?.toInt() ?: 200
+class LiveSessionSoakSustainedIngestTest {
     private val total = System.getProperty("soak.ticks")?.toLong() ?: 3_000_000L
-
-    private fun noopStrategy(): Strategy =
-        object : Strategy {
-            override fun onTick(
-                tick: Tick,
-                ctx: StrategyContext,
-                emit: (Signal) -> Unit,
-            ) {}
-        }
-
-    /** Live threads a [LiveSession] spawns; both must die on `stop()`. */
-    private fun liveSessionThreadCount(): Int =
-        Thread.getAllStackTraces().keys.count {
-            it.isAlive &&
-                (it.name.startsWith("qkt-live-engine") || it.name.startsWith("qkt-schedule-heartbeat"))
-        }
-
-    @Test
-    fun `cycling many sessions does not leak engine threads or executors`() {
-        val baseline = liveSessionThreadCount()
-
-        repeat(cycles) {
-            val src = InMemoryMarketSource()
-            src.seedLive(symbol, listOf(Tick(symbol, Money.of("100"), now.toEpochMilli())))
-            val handle =
-                LiveSession(
-                    strategies = listOf("soak" to noopStrategy()),
-                    source = src,
-                    symbols = listOf(symbol),
-                    candleWindow = TimeWindow.ONE_MINUTE,
-                    clock = FixedClock(time = now.toEpochMilli()),
-                    calendar = TradingCalendar.crypto(),
-                ).start()
-            // Feed drains after the single tick, so the engine thread exits on its own;
-            // stop() is what must tear down the schedule-heartbeat executor.
-            handle.awaitTermination(Duration.ofSeconds(5))
-            handle.stop()
-        }
-
-        // Threads die asynchronously; give them a bounded moment to settle.
-        val settled =
-            awaitUntil(timeoutMs = 15_000) { liveSessionThreadCount() <= baseline + SLACK }
-        val finalCount = liveSessionThreadCount()
-        assertThat(settled)
-            .withFailMessage(
-                "after $cycles start/stop cycles, $finalCount live session threads remain " +
-                    "(baseline $baseline) — a stop() teardown leak",
-            ).isTrue()
-    }
 
     @Test
     fun `a long-lived session holds bounded candle history and steady heap`() {
@@ -216,20 +150,7 @@ class LiveSessionSoakTest {
             }
     }
 
-    private inline fun awaitUntil(
-        timeoutMs: Long,
-        condition: () -> Boolean,
-    ): Boolean {
-        val deadlineNs = System.nanoTime() + timeoutMs * 1_000_000
-        while (System.nanoTime() < deadlineNs) {
-            if (condition()) return true
-            Thread.sleep(2)
-        }
-        return condition()
-    }
-
     private companion object {
-        const val SLACK = 2
         const val CHECKPOINTS = 4
         const val RING_CEILING = 10_000
 

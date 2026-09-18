@@ -119,7 +119,6 @@
 248 src/test/kotlin/com/qkt/broker/mt5/MT5BrokerStateTest.kt
 247 src/test/kotlin/com/qkt/backtest/BacktestTest.kt
 246 src/test/kotlin/com/qkt/trade/BotActionCompilerTest.kt
-245 src/test/kotlin/com/qkt/app/LiveSessionSoakTest.kt
 244 src/test/kotlin/com/qkt/persistence/LegBookReconcilerTest.kt
 242 src/test/kotlin/com/qkt/dsl/compile/ForgeThesisExpressibilityTest.kt
 242 src/test/kotlin/com/qkt/pnl/TradeHistoryTest.kt
