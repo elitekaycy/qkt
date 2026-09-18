@@ -179,7 +179,10 @@ class MT5Broker(
             prefix = "mt5-${profile.magic}-${strategyName ?: "session"}-${clock.now()}",
         ),
 ) : Broker,
-    MarginLevelProvider {
+    MarginLevelProvider,
+    com.qkt.broker.InstrumentProvider,
+    com.qkt.broker.ServerTimeZoneProvider,
+    com.qkt.broker.TicketAttributionProvider {
     override val name: String = profile.name
     override val supportsPositionTickets: Boolean = true
     override val capabilities: Set<OrderTypeCapability> = profile.capabilities
@@ -518,8 +521,14 @@ class MT5Broker(
      * seed the insights ticket-attribution mirror, e.g. an orphan ticket 2832831596
      * recovered for hedge_straddle yields ("2832831596", "hedge_straddle").
      */
-    fun ticketAttributions(): Map<String, String> =
+    override fun ticketAttributions(): Map<String, String> =
         positionMetaByTicket.entries.associate { (ticket, meta) -> ticket.toString() to meta.strategyId }
+
+    /** The venue's `/symbol_info` specs for this profile's symbols. */
+    override fun instrumentRegistry(): com.qkt.instrument.InstrumentRegistry = MT5InstrumentRegistry(this)
+
+    /** The profile's DST-aware MT5 server clock, used by `SCHEDULE … BROKER`. */
+    override fun serverTimeZone(): java.time.ZoneId = profile.serverTimeZone.asZoneId()
 
     /** MT5 `DEAL_ENTRY_*` codes as names; an unrecognized code passes through as its number. */
     private fun dealEntryName(entry: Int): String =
