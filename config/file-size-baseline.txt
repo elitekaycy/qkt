@@ -60,7 +60,6 @@
 470 src/test/kotlin/com/qkt/cli/BarsReplayTest.kt
 468 src/test/kotlin/com/qkt/backtest/report/BacktestReportWriterTest.kt
 467 src/main/kotlin/com/qkt/broker/bybit/linear/BybitLinearBroker.kt
-465 src/main/kotlin/com/qkt/observe/EngineAuditJournal.kt
 465 src/test/kotlin/com/qkt/cli/BacktestCommandTest.kt
 464 src/main/kotlin/com/qkt/cli/bot/BotSessionCommand.kt
 459 src/test/kotlin/com/qkt/cli/CreateCommandTest.kt
