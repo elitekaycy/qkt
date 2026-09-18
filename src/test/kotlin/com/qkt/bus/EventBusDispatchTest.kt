@@ -4,34 +4,19 @@ import com.qkt.common.FixedClock
 import com.qkt.common.Money
 import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.Side
-import com.qkt.events.CandleEvent
 import com.qkt.events.Event
 import com.qkt.events.OrderEvent
-import com.qkt.events.RiskRejectedEvent
 import com.qkt.events.SignalEvent
 import com.qkt.events.TickEvent
 import com.qkt.events.TradeEvent
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.TimeInForce
-import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
 import com.qkt.strategy.Signal
-import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
-import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 
-class EventBusTest {
-    private val clock = FixedClock(time = 1000L)
-    private val sequencer = MonotonicSequenceGenerator()
-
-    private fun newBus() = EventBus(clock, sequencer)
-
-    private fun tick(
-        symbol: String = "XAUUSD",
-        price: BigDecimal = Money.of("2400.0"),
-    ) = Tick(symbol, price, 999L)
-
+class EventBusDispatchTest : EventBusFixture() {
     @Test
     fun `publish with no subscribers is a no-op`() {
         val bus = newBus()
@@ -49,89 +34,6 @@ class EventBusTest {
 
         assertThat(received).hasSize(1)
         assertThat(received[0].tick).isEqualTo(event.tick)
-    }
-
-    @Test
-    fun `bus stamps timestamp from clock on publish`() {
-        val bus = newBus()
-        val received = mutableListOf<TickEvent>()
-        bus.subscribe<TickEvent> { received.add(it) }
-
-        clock.time = 12345L
-        bus.publish(TickEvent(tick()))
-
-        assertThat(received[0].timestamp).isEqualTo(12345L)
-    }
-
-    @Test
-    fun `bus stamps CandleEvent on publish`() {
-        val bus = newBus()
-        val received = mutableListOf<CandleEvent>()
-        bus.subscribe<CandleEvent> { received.add(it) }
-
-        clock.time = 7777L
-        bus.publish(
-            CandleEvent(
-                Candle(
-                    "XAUUSD",
-                    open = Money.of("100.0"),
-                    high = Money.of("101.0"),
-                    low = Money.of("99.0"),
-                    close = Money.of("100.5"),
-                    volume = Money.of("12.0"),
-                    startTime = 0L,
-                    endTime = 60_000L,
-                ),
-            ),
-        )
-
-        assertThat(received).hasSize(1)
-        assertThat(received[0].timestamp).isEqualTo(7777L)
-        assertThat(received[0].sequenceId).isEqualTo(0L)
-        assertThat(received[0].candle.symbol).isEqualTo("XAUUSD")
-    }
-
-    @Test
-    fun `bus stamps RiskRejectedEvent on publish`() {
-        val bus = newBus()
-        val received = mutableListOf<RiskRejectedEvent>()
-        bus.subscribe<RiskRejectedEvent> { received.add(it) }
-
-        clock.time = 8888L
-        bus.publish(
-            RiskRejectedEvent(
-                request =
-                    OrderRequest.Market(
-                        id = "ORD-9",
-                        symbol = "XAUUSD",
-                        side = Side.BUY,
-                        quantity = Money.of("1"),
-                        timeInForce = TimeInForce.GTC,
-                        timestamp = 1000L,
-                    ),
-                reason = "test rejection",
-            ),
-        )
-
-        assertThat(received).hasSize(1)
-        assertThat(received[0].timestamp).isEqualTo(8888L)
-        assertThat(received[0].sequenceId).isEqualTo(0L)
-        assertThat(received[0].request.id).isEqualTo("ORD-9")
-        assertThat(received[0].reason).isEqualTo("test rejection")
-    }
-
-    @Test
-    fun `bus stamps monotonic sequenceId on publish`() {
-        val bus = newBus()
-        val received = mutableListOf<Event>()
-        bus.subscribe<TickEvent> { received.add(it) }
-        bus.subscribe<SignalEvent> { received.add(it) }
-
-        bus.publish(TickEvent(tick()))
-        bus.publish(SignalEvent(Signal.Buy("XAUUSD", Money.of("1"))))
-        bus.publish(TickEvent(tick()))
-
-        assertThat(received.map { it.sequenceId }).containsExactly(0L, 1L, 2L)
     }
 
     @Test
@@ -209,29 +111,6 @@ class EventBusTest {
     }
 
     @Test
-    fun `subscriber exception propagates out of publish`() {
-        val bus = newBus()
-        bus.subscribe<TickEvent> { error("boom") }
-
-        assertThatThrownBy { bus.publish(TickEvent(tick())) }
-            .isInstanceOf(IllegalStateException::class.java)
-            .hasMessage("boom")
-    }
-
-    @Test
-    fun `published event default timestamp and sequenceId are overwritten`() {
-        val bus = newBus()
-        val received = mutableListOf<TickEvent>()
-        bus.subscribe<TickEvent> { received.add(it) }
-
-        clock.time = 5555L
-        bus.publish(TickEvent(tick(), timestamp = 999L, sequenceId = 999L))
-
-        assertThat(received[0].timestamp).isEqualTo(5555L)
-        assertThat(received[0].sequenceId).isEqualTo(0L)
-    }
-
-    @Test
     fun `each event type retains its own subscriber list`() {
         val bus = newBus()
         val tickHandlers = mutableListOf<String>()
@@ -270,22 +149,5 @@ class EventBusTest {
         bus.publish(TickEvent(Tick("X", Money.of("1"), 1L)))
 
         assertThat(order).containsExactly("book-applier", "venue-side-effects")
-    }
-
-    @Test
-    fun `a throwing subscriber does not skip the rest, and the failure still surfaces`() {
-        val bus = EventBus(FixedClock(0L), MonotonicSequenceGenerator())
-        val ran = mutableListOf<String>()
-        bus.subscribe<TickEvent> { ran.add("first") }
-        bus.subscribe<TickEvent> { error("boom in the middle") }
-        bus.subscribe<TickEvent> { ran.add("third") }
-
-        org.assertj.core.api.Assertions
-            .assertThatThrownBy { bus.publish(TickEvent(Tick("X", Money.of("1"), 1L))) }
-            .hasMessageContaining("boom in the middle")
-
-        // The third subscriber still ran — a venue-mutating handler upstream can no
-        // longer leave the book-applier silently skipped.
-        assertThat(ran).containsExactly("first", "third")
     }
 }

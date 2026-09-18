@@ -51,7 +51,6 @@
 295 src/test/kotlin/com/qkt/dsl/compile/SizingCompilerTest.kt
 293 src/test/kotlin/com/qkt/parity/RegimeAdaptiveBacktestParityTest.kt
 291 src/main/kotlin/com/qkt/persistence/AsyncStatePersistor.kt
-291 src/test/kotlin/com/qkt/bus/EventBusTest.kt
 282 src/main/kotlin/com/qkt/trade/session/BotSessionServer.kt
 278 src/main/kotlin/com/qkt/marketdata/live/mt5/Mt5TickFeedSource.kt
 277 src/test/kotlin/com/qkt/marketdata/live/mt5/Mt5TickRangePollingTest.kt
