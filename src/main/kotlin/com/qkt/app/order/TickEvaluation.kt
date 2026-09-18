@@ -8,7 +8,7 @@ import com.qkt.execution.OrderRequest
 import com.qkt.execution.OrderState
 import com.qkt.execution.isTerminal
 import com.qkt.marketdata.Tick
-import org.slf4j.LoggerFactory
+import org.slf4j.Logger
 
 /**
  * The per-tick pass over engine-held orders, run once per tick on the engine thread: advance
@@ -34,8 +34,8 @@ internal class TickEvaluation(
     private val ops: OrderOps,
     private val requireArmedTrailTicket: Boolean,
     private val closeTicket: (OrderRequest) -> String?,
+    private val log: Logger,
 ) {
-    private val log = LoggerFactory.getLogger(TickEvaluation::class.java)
     private val symbolLiveScratch = ArrayList<ManagedOrder>()
     private val triggeredScratch = ArrayList<ManagedOrder>()
     private val gtdExpiredScratch = ArrayList<String>()

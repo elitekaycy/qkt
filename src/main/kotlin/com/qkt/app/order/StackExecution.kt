@@ -12,7 +12,7 @@ import com.qkt.execution.ManagedOrder
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.OrderState
 import java.math.BigDecimal
-import org.slf4j.LoggerFactory
+import org.slf4j.Logger
 
 /**
  * Pyramiding stacks from submit to flat. Layer 1 (the seed) goes out first; its fill anchors
@@ -31,9 +31,8 @@ internal class StackExecution(
     private val clock: Clock,
     private val ops: OrderOps,
     private val engineHeldSubmissionBlockReason: (OrderRequest) -> String?,
+    private val log: Logger,
 ) {
-    private val log = LoggerFactory.getLogger(StackExecution::class.java)
-
     fun submit(req: OrderRequest.Stack): SubmitAck {
         val firstLayer =
             req.plan.layers.firstOrNull()

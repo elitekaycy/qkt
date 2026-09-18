@@ -10,6 +10,7 @@ import com.qkt.app.order.CompositeRestore
 import com.qkt.app.order.EngineHeldCloseTickets
 import com.qkt.app.order.EngineHeldRestore
 import com.qkt.app.order.EntryRiskReport
+import com.qkt.app.order.FillHandler
 import com.qkt.app.order.HaltCancellations
 import com.qkt.app.order.ManagedStopBook
 import com.qkt.app.order.ManagedStopTicker
@@ -17,6 +18,7 @@ import com.qkt.app.order.ObservedPrices
 import com.qkt.app.order.OcoExecutionGuard
 import com.qkt.app.order.OcoSequencer
 import com.qkt.app.order.OrderBook
+import com.qkt.app.order.OrderEventHandlers
 import com.qkt.app.order.OrderOps
 import com.qkt.app.order.OrderRestorer
 import com.qkt.app.order.OrderRouter
@@ -24,6 +26,7 @@ import com.qkt.app.order.OrderStateSnapshots
 import com.qkt.app.order.PendingChildBook
 import com.qkt.app.order.PendingExposureBook
 import com.qkt.app.order.ProtectionLevels
+import com.qkt.app.order.ProtectiveExitGuard
 import com.qkt.app.order.ScaleOutBook
 import com.qkt.app.order.ScaleOutExits
 import com.qkt.app.order.ScaleOutRecovery
@@ -39,7 +42,6 @@ import com.qkt.app.order.TriggerFiring
 import com.qkt.app.order.VenuePositionProtection
 import com.qkt.app.order.VenueRecovery
 import com.qkt.app.order.VenueSubmission
-import com.qkt.app.order.blendAvg
 import com.qkt.app.order.intrabarFillFor
 import com.qkt.app.order.isPersistentManagedStop
 import com.qkt.broker.Broker
@@ -50,7 +52,6 @@ import com.qkt.common.Clock
 import com.qkt.common.Side
 import com.qkt.events.BrokerEvent
 import com.qkt.events.TickEvent
-import com.qkt.execution.LegIntent
 import com.qkt.execution.ManagedOrder
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.OrderState
@@ -145,6 +146,7 @@ class OrderManager(
             clock = clock,
             persist = { persistAll() },
             tightenAtVenue = { managed, level, transition -> venueProtection.ratchet(managed, level, transition) },
+            log = log,
         )
 
     private val prices = ObservedPrices(priceProvider)
@@ -215,9 +217,18 @@ class OrderManager(
         BracketSubmission(broker, priceProvider, bracketExits, risk, brackets, children, exposure, book, clock, ops)
     private val bracketFills = BracketFills(book, brackets, bracketExits, venueProtection, clock, ops)
     private val attachedCompletion = AttachedBracketCompletion(book, brackets, closeTickets, exposure, clock, ops)
-    private val venueRecovery =
-        VenueRecovery(book, brackets, exposure, broker, bookedVenueTickets, clock, ops) { event -> onCancelled(event) }
-    private val restorer =
+    private val venueRecovery: VenueRecovery =
+        VenueRecovery(
+            book,
+            brackets,
+            exposure,
+            broker,
+            bookedVenueTickets,
+            clock,
+            ops,
+            log,
+        ) { event -> eventHandlers.onCancelled(event) }
+    private val restorer: OrderRestorer =
         OrderRestorer(
             persistor = persistor,
             book = book,
@@ -232,6 +243,7 @@ class OrderManager(
             snapshots = snapshots,
             broker = broker,
             clock = clock,
+            log = log,
         )
 
     private val stacks: StackTracker = StackTracker()
@@ -250,9 +262,10 @@ class OrderManager(
             clock,
             ops,
             engineHeldSubmissionBlockReason,
+            log,
         )
-    private val timeExits = TimeExits(book, exposure, clock, ops)
-    private val tickEvaluation =
+    private val timeExits: TimeExits = TimeExits(book, exposure, clock, ops)
+    private val tickEvaluation: TickEvaluation =
         TickEvaluation(
             book = book,
             prices = prices,
@@ -272,15 +285,17 @@ class OrderManager(
                     ops = ops,
                     closeTicket = { request -> managedStopCloseTicket(request) },
                     engineHeldSubmissionBlockReason = engineHeldSubmissionBlockReason,
+                    log = log,
                 ),
             broker = broker,
             clock = clock,
             ops = ops,
             requireArmedTrailTicket = requireArmedTrailTicket,
             closeTicket = { request -> managedStopCloseTicket(request) },
+            log = log,
         )
-    private val venue = VenueSubmission(book, exposure, broker, bus, priceProvider, clock, ops)
-    private val router =
+    private val venue: VenueSubmission = VenueSubmission(book, exposure, broker, bus, priceProvider, clock, ops, log)
+    private val router: OrderRouter =
         OrderRouter(
             book = book,
             exposure = exposure,
@@ -299,6 +314,45 @@ class OrderManager(
             ops = ops,
             positionMode = positionMode,
         )
+    private val exitGuard: ProtectiveExitGuard = ProtectiveExitGuard(book, ops, strategyNetQty, log)
+    private val eventHandlers: OrderEventHandlers =
+        OrderEventHandlers(
+            book = book,
+            exposure = exposure,
+            children = children,
+            brackets = brackets,
+            haltCancels = haltCancels,
+            risk = risk,
+            ocoGuard = ocoGuard,
+            ocoSequencer = ocoSequencer,
+            siblingCancels = siblingCancels,
+            scaleOuts = scaleOuts,
+            scaleOutTracker = scaleOutTracker,
+            scaleOutExits = scaleOutExits,
+            venueRecovery = venueRecovery,
+            clock = clock,
+            ops = ops,
+            log = log,
+        )
+    private val fillHandler: FillHandler =
+        FillHandler(
+            book = book,
+            exposure = exposure,
+            children = children,
+            brackets = brackets,
+            haltCancels = haltCancels,
+            ocoGuard = ocoGuard,
+            ocoSequencer = ocoSequencer,
+            siblingCancels = siblingCancels,
+            bracketFills = bracketFills,
+            attachedCompletion = attachedCompletion,
+            scaleOutTracker = scaleOutTracker,
+            scaleOutExits = scaleOutExits,
+            exitGuard = exitGuard,
+            clock = clock,
+            ops = ops,
+            log = log,
+        )
 
     /**
      * Returns and removes the recorded risk for [clientOrderId]. Designed to be called once per
@@ -312,7 +366,7 @@ class OrderManager(
     /**
      * Resolve and consume an entry bracket using the broker's actual [fillPrice] and [quantity].
      * The accounting subscriber runs before the ordinary order-state subscriber, so report
-     * generation must not depend on [onFilled] having re-anchored relative children first.
+     * generation must not depend on the fill handler having re-anchored relative children first.
      */
     fun entryRiskForFill(
         clientOrderId: String,
@@ -322,13 +376,13 @@ class OrderManager(
     ): EntryRiskReport? = risk.entryRiskForFill(clientOrderId, quantity, fillPrice, symbol)
 
     init {
-        bus.subscribe<BrokerEvent.OrderAccepted> { e -> onAccepted(e) }
-        bus.subscribe<BrokerEvent.OrderRejected> { e -> onRejected(e) }
-        bus.subscribe<BrokerEvent.OrderFilled> { e -> onFilled(e) }
+        bus.subscribe<BrokerEvent.OrderAccepted> { e -> eventHandlers.onAccepted(e) }
+        bus.subscribe<BrokerEvent.OrderRejected> { e -> eventHandlers.onRejected(e) }
+        bus.subscribe<BrokerEvent.OrderFilled> { e -> fillHandler.onFilled(e) }
         bus.subscribe<BrokerEvent.OrderFilled> { e -> stackExecution.onLayerFilled(e) }
         bus.subscribe<BrokerEvent.OrderFilled> { e -> stackExecution.onExitFilled(e) }
-        bus.subscribe<BrokerEvent.OrderPartiallyFilled> { e -> onPartiallyFilled(e) }
-        bus.subscribe<BrokerEvent.OrderCancelled> { e -> onCancelled(e) }
+        bus.subscribe<BrokerEvent.OrderPartiallyFilled> { e -> eventHandlers.onPartiallyFilled(e) }
+        bus.subscribe<BrokerEvent.OrderCancelled> { e -> eventHandlers.onCancelled(e) }
         bus.subscribe<BrokerEvent.OrderCancelFailed> { e -> onCancelFailed(e) }
         bus.subscribe<BrokerEvent.PositionModificationCompleted> { e -> venueProtection.onCompleted(e) }
         bus.subscribe<TickEvent> { e -> tickEvaluation.onTick(e.tick) }
@@ -657,251 +711,10 @@ class OrderManager(
     /** Flushes HWM-only trailing-stop changes at the live heartbeat cadence. */
     fun persistTrailingStateIfDirty() = snapshots.persistTrailingStateIfDirty()
 
-    private fun onAccepted(e: BrokerEvent.OrderAccepted) {
-        val applied =
-            update(e.clientOrderId) {
-                if (it.state == OrderState.PENDING) {
-                    it.copy(brokerOrderId = e.brokerOrderId ?: it.brokerOrderId, lastUpdatedAt = clock.now())
-                } else {
-                    it.copy(
-                        state = OrderState.WORKING,
-                        brokerOrderId = e.brokerOrderId ?: it.brokerOrderId,
-                        lastUpdatedAt = clock.now(),
-                    )
-                }
-            }
-        if (!applied) return
-        log.info(
-            "order accepted order_id={} strategy_id={} broker_order_id={}",
-            e.clientOrderId,
-            e.strategyId,
-            e.brokerOrderId,
-        )
-        val ticket = e.brokerOrderId
-        if (ticket != null && e.clientOrderId in brackets.restoredAttachedEntries) {
-            venueRecovery.markAttachedEntryFilled(e.clientOrderId, ticket)
-        }
-        ocoSequencer.onAccepted(e.clientOrderId)
-    }
-
-    private fun onRejected(e: BrokerEvent.OrderRejected) {
-        haltCancels.forget(e.clientOrderId)
-        brackets.forgetEntry(e.clientOrderId)
-        val unarmedChildren = children.take(e.clientOrderId)
-        scaleOutTracker.discardBasis(e.clientOrderId)
-        val applied =
-            update(e.clientOrderId) {
-                it.copy(state = OrderState.REJECTED, lastUpdatedAt = clock.now())
-            }
-        if (!applied) return
-        siblingCancels.forget(e.clientOrderId)
-        ocoGuard.onRejected(e.clientOrderId, e.reason)
-        exposure.remove(e.clientOrderId)
-        scaleOutExits.completeExit(e.clientOrderId, OrderState.REJECTED)
-        risk.forgetRejected(e.clientOrderId)
-        unarmedChildren.orEmpty().forEach { cancel(it.id) }
-        ocoSequencer.onRejected(e.clientOrderId)
-    }
-
-    private fun onPartiallyFilled(e: BrokerEvent.OrderPartiallyFilled) {
-        val applied =
-            update(e.clientOrderId) {
-                it.copy(
-                    state = OrderState.PARTIALLY_FILLED,
-                    cumulativeFilledQuantity = e.cumulativeFilled,
-                    avgFillPrice = blendAvg(it.avgFillPrice, it.cumulativeFilledQuantity, e.price, e.quantity),
-                    lastUpdatedAt = clock.now(),
-                )
-            }
-        if (!applied) return
-        scaleOutTracker.onBasisPartiallyFilled(e)
-        exposure.recordFill(e.clientOrderId, e.cumulativeFilled)
-        log.info(
-            "order partially filled order_id={} strategy_id={} symbol={} side={} qty={} cumulative={} price={}",
-            e.clientOrderId,
-            e.strategyId,
-            e.symbol,
-            e.side,
-            e.quantity,
-            e.cumulativeFilled,
-            e.price,
-        )
-        if (e.quantity.signum() > 0 && e.cumulativeFilled.signum() > 0) {
-            siblingCancels.onExecution(e.clientOrderId)
-        }
-    }
-
-    private fun onFilled(e: BrokerEvent.OrderFilled) {
-        haltCancels.forget(e.clientOrderId)
-        if (!e.updatesOrderExecution) {
-            log.info(
-                "position close observed order_id={} broker_order_id={} — terminal order record unchanged",
-                e.clientOrderId,
-                e.brokerOrderId,
-            )
-            attachedCompletion.onVenueClose(e)
-            return
-        }
-        brackets.preFill.remove(e.clientOrderId)
-        val existing = book[e.clientOrderId]
-        if (existing?.state?.isTerminal == true) {
-            log.error(
-                "ignoring duplicate fill for terminal order {} in state {} — cumulative execution is immutable",
-                e.clientOrderId,
-                existing.state,
-            )
-            return
-        }
-        val applied =
-            update(e.clientOrderId) {
-                val newCumulative = it.cumulativeFilledQuantity + e.quantity
-                it.copy(
-                    state = OrderState.FILLED,
-                    brokerOrderId = e.brokerOrderId ?: it.brokerOrderId,
-                    cumulativeFilledQuantity = newCumulative,
-                    avgFillPrice = blendAvg(it.avgFillPrice, it.cumulativeFilledQuantity, e.price, e.quantity),
-                    lastUpdatedAt = clock.now(),
-                )
-            }
-        if (!applied) return
-        ocoGuard.onFilled(e.clientOrderId)
-        exposure.remove(e.clientOrderId)
-        scaleOutExits.completeExit(e.clientOrderId, OrderState.FILLED)
-        log.info(
-            "order filled order_id={} strategy_id={} symbol={} side={} qty={} price={}",
-            e.clientOrderId,
-            e.strategyId,
-            e.symbol,
-            e.side,
-            e.quantity,
-            e.price,
-        )
-        val filledSibling = ocoGuard.filledSibling(e.clientOrderId)
-        if (filledSibling != null) {
-            discardChildrenForCompensatedOcoLeg(e.clientOrderId)
-            ocoGuard.compensateDoubleFill(e, filledSibling)
-            ocoSequencer.clearFor(e.clientOrderId)
-            return
-        }
-        val pending = children.take(e.clientOrderId)
-        bracketFills.armExits(e, pending)
-        scaleOutTracker.onBasisFilled(e)
-        siblingCancels.onExecution(e.clientOrderId)
-        siblingCancels.forget(e.clientOrderId)
-        attachedCompletion.onEngineExit(e)
-        detectExitIncreasedExposure(e)
-        retireStaleProtectiveExits(e.strategyId, e.symbol)
-    }
-
-    /**
-     * Reduce-only tripwire (#1069): an engine-managed protective exit may only shrink the
-     * position its bracket opened. After an exit fill the net position must not sit on the
-     * fill's own side — long after a BUY exit (or short after a SELL exit) means the "exit"
-     * added exposure. The sweep above prevents the known stale-exit path; this detector
-     * refuses to let ANY future path fail silently: it raises the operator protection alert
-     * (live: telegram/log; backtest: report + log) the moment the invariant breaks.
-     */
-    private fun detectExitIncreasedExposure(e: BrokerEvent.OrderFilled) {
-        if (!e.clientOrderId.endsWith("-sl") && !e.clientOrderId.endsWith("-tp")) return
-        if (isLegLinked(e.clientOrderId)) return
-        val netQty = strategyNetQty?.invoke(e.strategyId, e.symbol) ?: return
-        val landedOnOwnSide =
-            (e.side == Side.BUY && netQty.signum() > 0) ||
-                (e.side == Side.SELL && netQty.signum() < 0)
-        if (!landedOnOwnSide) return
-        val message =
-            "REDUCE-ONLY VIOLATION: protective exit ${e.clientOrderId} filled ${e.side} " +
-                "${e.quantity} ${e.symbol} but net position is now $netQty — an exit added exposure"
-        log.error(message)
-        reportProtectionFailure(e.strategyId, message)
-    }
-
-    /**
-     * A protective exit exists to REDUCE the position its bracket opened. When a netting fill
-     * consumes that position (reversal, or a flatten), the venue drops the position's SL/TP with
-     * it — an engine-managed resting exit must be retired the same way, or it later fires as a
-     * naked opposite-direction entry with no protection of its own (#1069). Stale means: the
-     * exit's side would INCREASE the current net strategy position (any exit is stale when flat).
-     * A partial reduce that keeps the sign leaves exits alone — reducing them is venue-faithful
-     * resizing, tracked separately.
-     */
-    private fun retireStaleProtectiveExits(
-        strategyId: String,
-        symbol: String,
-    ) {
-        val netQty = strategyNetQty?.invoke(strategyId, symbol) ?: return
-        val staleSide =
-            when {
-                netQty.signum() > 0 -> Side.BUY
-                netQty.signum() < 0 -> Side.SELL
-                else -> null // flat: every resting exit is stale
-            }
-        val stale =
-            book.orders.entries.filter { (id, managed) ->
-                !managed.state.isTerminal &&
-                    (id.endsWith("-sl") || id.endsWith("-tp")) &&
-                    managed.request.strategyId == strategyId &&
-                    managed.request.symbol == symbol &&
-                    (staleSide == null || managed.request.side == staleSide) &&
-                    !isLegLinked(id)
-            }
-        for ((id, managed) in stale) {
-            val request = managed.request
-            log.warn(
-                "retiring stale protective exit {} {} {} — its position was consumed (net {} {})",
-                id,
-                request.side,
-                request.quantity,
-                netQty,
-                symbol,
-            )
-            cancel(id)
-        }
-    }
-
-    private fun discardChildrenForCompensatedOcoLeg(clientOrderId: String) {
-        children.take(clientOrderId)
-        brackets.fillAnchoredFallback.remove(clientOrderId)
-        brackets.fillAnchoredAttached.remove(clientOrderId)
-        scaleOutTracker.discardPendingBasis(clientOrderId)
-    }
-
-    private fun onCancelled(e: BrokerEvent.OrderCancelled) {
-        haltCancels.forget(e.clientOrderId)
-        brackets.forgetEntry(e.clientOrderId)
-        val applied =
-            update(e.clientOrderId) {
-                it.copy(state = OrderState.CANCELLED, lastUpdatedAt = clock.now())
-            }
-        if (!applied) return
-        siblingCancels.forget(e.clientOrderId)
-        exposure.remove(e.clientOrderId)
-        scaleOutExits.completeExit(e.clientOrderId, OrderState.CANCELLED)
-        val unarmedChildren = children.take(e.clientOrderId)
-        val pendingScaleOut = scaleOuts.pendingByBasis.remove(e.clientOrderId)
-        val partialPositionTicket = scaleOuts.partialPositionTickets.remove(e.clientOrderId)
-        unarmedChildren?.forEach { child -> cancel(child.id) }
-        scaleOutTracker.onBasisCancelled(e.clientOrderId, pendingScaleOut, partialPositionTicket)
-        log.info(
-            "order cancelled order_id={} strategy_id={} reason={}",
-            e.clientOrderId,
-            e.strategyId,
-            e.reason,
-        )
-        ocoSequencer.clearFor(e.clientOrderId)
-    }
-
     private fun rejectEngineHeld(
         request: OrderRequest,
         reason: String,
     ) = venue.rejectEngineHeld(request, reason)
-
-    /**
-     * An exit carrying a [LegIntent.Close] closes exactly its own leg, so the net-based stale
-     * sweep and reduce-only tripwire must not judge it: under a hedging book a short leg's BUY
-     * stop while net-long is a legitimate exit (#1071).
-     */
-    private fun isLegLinked(clientOrderId: String): Boolean = book[clientOrderId]?.request?.legIntent is LegIntent.Close
 
     private fun managedStopCloseTicket(request: OrderRequest): String? =
         closeTicketFor?.invoke(request.strategyId, request.id)

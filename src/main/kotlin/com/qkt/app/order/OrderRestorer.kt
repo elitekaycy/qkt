@@ -7,7 +7,7 @@ import com.qkt.execution.OrderRequest
 import com.qkt.execution.OrderState
 import com.qkt.persistence.PersistedTrailingStop
 import com.qkt.persistence.StatePersistor
-import org.slf4j.LoggerFactory
+import org.slf4j.Logger
 
 /**
  * Rebuilds order tracking and sibling linkage from the persistor at session startup, strategy by
@@ -30,9 +30,8 @@ internal class OrderRestorer(
     private val snapshots: OrderStateSnapshots,
     private val broker: Broker,
     private val clock: Clock,
+    private val log: Logger,
 ) {
-    private val log = LoggerFactory.getLogger(OrderRestorer::class.java)
-
     /** Restores every order of [strategyIds], then reconciles the venue-held ones. */
     fun restore(strategyIds: List<String>) {
         val recovered = mutableListOf<ManagedOrder>()
