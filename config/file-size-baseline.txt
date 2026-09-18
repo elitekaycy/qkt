@@ -20,7 +20,6 @@
 677 src/main/kotlin/com/qkt/execution/OrderRequest.kt
 658 src/test/kotlin/com/qkt/marketdata/live/mt5/Mt5BarFetcherTest.kt
 616 src/main/kotlin/com/qkt/broker/MT5BrokerSimulator.kt
-606 src/test/kotlin/com/qkt/cli/GoldenCommandTest.kt
 574 src/main/kotlin/com/qkt/cli/PreflightCommand.kt
 566 src/test/kotlin/com/qkt/cli/daemon/StrategyRegistryTest.kt
 552 src/main/kotlin/com/qkt/execution/OrderRequestEvidence.kt
