@@ -25,7 +25,6 @@
 519 src/test/kotlin/com/qkt/broker/mt5/MT5OrderTranslatorTest.kt
 476 src/test/kotlin/com/qkt/broker/CompositeBrokerTest.kt
 474 src/main/kotlin/com/qkt/backtest/Backtest.kt
-468 src/test/kotlin/com/qkt/backtest/report/BacktestReportWriterTest.kt
 467 src/main/kotlin/com/qkt/broker/bybit/linear/BybitLinearBroker.kt
 464 src/main/kotlin/com/qkt/cli/bot/BotSessionCommand.kt
 456 src/main/kotlin/com/qkt/lsp/QktDocs.kt
