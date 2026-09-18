@@ -1,5 +1,16 @@
 package com.qkt.app
 
+import com.qkt.app.order.blendAvg
+import com.qkt.app.order.computeChildPrice
+import com.qkt.app.order.evaluateAt
+import com.qkt.app.order.initialStopLevel
+import com.qkt.app.order.isTighter
+import com.qkt.app.order.limitReached
+import com.qkt.app.order.profitStopLevel
+import com.qkt.app.order.referencesStackEntryRef
+import com.qkt.app.order.resolveBracketAtFill
+import com.qkt.app.order.stopPriceAtEntry
+import com.qkt.app.order.stopReached
 import com.qkt.broker.Broker
 import com.qkt.broker.OrderTypeCapability
 import com.qkt.broker.PositionAccountingMode
@@ -8,13 +19,8 @@ import com.qkt.bus.EventBus
 import com.qkt.common.Clock
 import com.qkt.common.Money
 import com.qkt.common.Side
-import com.qkt.dsl.ast.BinOp
-import com.qkt.dsl.ast.BinaryOp
-import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.SizeQty
-import com.qkt.dsl.ast.StackEntryRef
-import com.qkt.dsl.compile.BracketPercent
 import com.qkt.events.BrokerEvent
 import com.qkt.events.TickEvent
 import com.qkt.execution.At
@@ -400,20 +406,6 @@ class OrderManager(
             .multiply(quantity, Money.CONTEXT)
             .multiply(contractSize, Money.CONTEXT)
     }
-
-    private fun stopPriceAtEntry(
-        bracket: OrderRequest.Bracket,
-        entryPrice: BigDecimal,
-    ): BigDecimal =
-        when (val stop = bracket.stopLoss) {
-            is StopLossSpec.Fixed -> stop.price
-            is StopLossSpec.ArmedTrail ->
-                if (bracket.side == Side.BUY) entryPrice - stop.trailDistance else entryPrice + stop.trailDistance
-            is StopLossSpec.SteppedStop ->
-                if (bracket.side == Side.BUY) entryPrice - stop.initialDistance else entryPrice + stop.initialDistance
-            is StopLossSpec.TimeTighten ->
-                if (bracket.side == Side.BUY) entryPrice - stop.initialDistance else entryPrice + stop.initialDistance
-        }
 
     init {
         bus.subscribe<BrokerEvent.OrderAccepted> { e -> onAccepted(e) }
@@ -1294,24 +1286,6 @@ class OrderManager(
         return if (fillable) IntrabarFill.EXTREMES else IntrabarFill.SYNTHETIC
     }
 
-    // A stop / stop-limit trigger needs the bar to reach UP to the level for a buy (high >= level),
-    // or DOWN for a sell (low <= level). Direction-aware, so a gap-open through the level counts.
-    private fun stopReached(
-        side: Side,
-        low: BigDecimal,
-        high: BigDecimal,
-        level: BigDecimal,
-    ): Boolean = if (side == Side.BUY) high >= level else low <= level
-
-    // A limit / if-touched fill needs a dip DOWN to the level for a buy (low <= level), or a rise UP
-    // for a sell (high >= level).
-    private fun limitReached(
-        side: Side,
-        low: BigDecimal,
-        high: BigDecimal,
-        level: BigDecimal,
-    ): Boolean = if (side == Side.BUY) low <= level else high >= level
-
     fun pendingOrders(): List<ManagedOrder> = orders.values.filter { it.state == OrderState.PENDING }
 
     private fun dispatch(request: OrderRequest): SubmitAck =
@@ -1811,51 +1785,6 @@ class OrderManager(
         return true
     }
 
-    private fun computeChildPrice(
-        childPrice: com.qkt.dsl.ast.ChildPriceAst,
-        side: Side,
-        fillPrice: BigDecimal,
-        isStopLoss: Boolean,
-        slDistance: BigDecimal? = null,
-    ): BigDecimal {
-        val sign =
-            if (side == Side.BUY) {
-                if (isStopLoss) BigDecimal("-1") else BigDecimal("1")
-            } else {
-                if (isStopLoss) BigDecimal("1") else BigDecimal("-1")
-            }
-        return when (childPrice) {
-            is com.qkt.dsl.ast.ChildBy -> {
-                val distance = evaluateAt(childPrice.distance, fillPrice)
-                (fillPrice + distance.multiply(sign)).setScale(Money.SCALE, Money.ROUNDING)
-            }
-            is com.qkt.dsl.ast.ChildAt -> evaluateAt(childPrice.price, fillPrice).setScale(Money.SCALE, Money.ROUNDING)
-            is com.qkt.dsl.ast.ChildPct -> {
-                val percent = evaluateAt(childPrice.percent, fillPrice)
-                val fraction = BracketPercent.fraction(percent, isStopLoss)
-                val distance = fillPrice.multiply(fraction, Money.CONTEXT)
-                (fillPrice + distance.multiply(sign)).setScale(Money.SCALE, Money.ROUNDING)
-            }
-            is com.qkt.dsl.ast.ChildRr -> {
-                require(!isStopLoss) { "RR is only valid for TAKE PROFIT, not STOP LOSS" }
-                val sl =
-                    slDistance
-                        ?: error("ChildRr requires a resolvable STOP LOSS distance from outerBracket")
-                val multiplier = evaluateAt(childPrice.multiplier, fillPrice)
-                val distance = sl.multiply(multiplier, Money.CONTEXT)
-                (fillPrice + distance.multiply(sign)).setScale(Money.SCALE, Money.ROUNDING)
-            }
-            is com.qkt.dsl.ast.ChildArmedTrail -> {
-                require(isStopLoss) { "ChildArmedTrail is only valid for STOP LOSS, not TAKE PROFIT" }
-                // Pre-arm stop level: `fillPrice ± trailDistance`. The armed/trailing
-                // behaviour is gated separately via [StopLossSpec.ArmedTrail] in OrderManager's
-                // tick loop; this path computes the static pre-arm level only.
-                val distance = evaluateAt(childPrice.trailDistance, fillPrice)
-                (fillPrice + distance.multiply(sign)).setScale(Money.SCALE, Money.ROUNDING)
-            }
-        }
-    }
-
     private fun evaluateStackFlat(e: BrokerEvent.OrderFilled) {
         val managed = orders[e.clientOrderId] ?: return
         val parentId = managed.parentClientOrderId ?: return
@@ -1933,35 +1862,6 @@ class OrderManager(
         val at = (trigger as? At) ?: error("non-Immediate triggers must be At")
         return evaluateAt(at.price, anchor)
     }
-
-    private fun referencesStackEntryRef(expr: ExprAst): Boolean =
-        when (expr) {
-            is StackEntryRef -> true
-            is BinaryOp -> referencesStackEntryRef(expr.lhs) || referencesStackEntryRef(expr.rhs)
-            else -> false
-        }
-
-    private fun evaluateAt(
-        expr: ExprAst,
-        anchor: BigDecimal,
-    ): BigDecimal =
-        when (expr) {
-            is StackEntryRef -> anchor
-            is NumLit -> expr.value
-            is BinaryOp -> {
-                val l = evaluateAt(expr.lhs, anchor)
-                val r = evaluateAt(expr.rhs, anchor)
-                when (expr.op) {
-                    BinOp.ADD -> l + r
-                    BinOp.SUB -> l - r
-                    BinOp.MUL -> l * r
-                    BinOp.DIV -> l.divide(r, Money.CONTEXT)
-                    else -> error("unsupported op in stack trigger: ${expr.op}")
-                }
-            }
-
-            else -> error("unsupported trigger expression: $expr")
-        }
 
     /** Active protective orders that require ticks on the engine thread to trigger. */
     fun engineHeldProtectiveStopCount(): Int =
@@ -2087,46 +1987,6 @@ class OrderManager(
             is OrderRequest.StopLimit -> entry.stopPrice
             else -> lastObservedPrice[req.symbol] ?: priceProvider.lastPrice(req.symbol)
         }
-
-    private fun resolveBracketAtFill(
-        req: OrderRequest.Bracket,
-        fillPrice: BigDecimal,
-    ): OrderRequest.Bracket {
-        val stop =
-            req.stopLossAst?.let { ast ->
-                when (ast) {
-                    is com.qkt.dsl.ast.ChildArmedTrail ->
-                        StopLossSpec.ArmedTrail(
-                            evaluateAt(ast.trailDistance, fillPrice),
-                            evaluateAt(ast.mfeThreshold, fillPrice),
-                        )
-                    is com.qkt.dsl.ast.ChildBy ->
-                        if (req.stopLoss !is StopLossSpec.Fixed) {
-                            req.stopLoss
-                        } else {
-                            StopLossSpec.Fixed(
-                                computeChildPrice(ast, req.side, fillPrice, isStopLoss = true),
-                            )
-                        }
-                    else ->
-                        StopLossSpec.Fixed(
-                            computeChildPrice(ast, req.side, fillPrice, isStopLoss = true),
-                        )
-                }
-            } ?: req.stopLoss
-        val stopDistance =
-            when (stop) {
-                is StopLossSpec.Fixed -> (fillPrice - stop.price).abs()
-                is StopLossSpec.ArmedTrail -> stop.trailDistance
-                is StopLossSpec.SteppedStop -> stop.initialDistance
-                is StopLossSpec.TimeTighten -> stop.initialDistance
-            }
-        val takeProfit =
-            req.takeProfitAst?.let {
-                computeChildPrice(it, req.side, fillPrice, isStopLoss = false, slDistance = stopDistance)
-            } ?: req.takeProfit
-        return req.copy(takeProfit = takeProfit, stopLoss = stop)
-    }
 
     private fun bracketExitOco(
         req: OrderRequest.Bracket,
@@ -4319,34 +4179,6 @@ class OrderManager(
             else -> isPersistentManagedStop(request)
         }
 
-    private fun initialStopLevel(
-        exitSide: Side,
-        entryPrice: BigDecimal,
-        distance: BigDecimal,
-    ): BigDecimal =
-        if (exitSide == Side.SELL) {
-            entryPrice.subtract(distance, Money.CONTEXT)
-        } else {
-            entryPrice.add(distance, Money.CONTEXT)
-        }
-
-    private fun profitStopLevel(
-        exitSide: Side,
-        entryPrice: BigDecimal,
-        profitDistance: BigDecimal,
-    ): BigDecimal =
-        if (exitSide == Side.SELL) {
-            entryPrice.add(profitDistance, Money.CONTEXT)
-        } else {
-            entryPrice.subtract(profitDistance, Money.CONTEXT)
-        }
-
-    private fun isTighter(
-        exitSide: Side,
-        candidate: BigDecimal,
-        current: BigDecimal,
-    ): Boolean = if (exitSide == Side.SELL) candidate > current else candidate < current
-
     private fun modifyManagedStopAtVenue(
         managed: ManagedOrder,
         stopLoss: BigDecimal,
@@ -4363,19 +4195,6 @@ class OrderManager(
                 stopLoss = stopLoss,
             )
         modifyPositionAsync(operationId, ticket, stopLoss, null)
-    }
-
-    private fun blendAvg(
-        oldAvg: BigDecimal?,
-        oldQty: BigDecimal,
-        newPrice: BigDecimal,
-        newQty: BigDecimal,
-    ): BigDecimal {
-        if (oldAvg == null || oldQty.signum() == 0) return newPrice
-        val totalQty = oldQty + newQty
-        return (oldAvg * oldQty + newPrice * newQty)
-            .divide(totalQty, Money.CONTEXT)
-            .setScale(Money.SCALE, Money.ROUNDING)
     }
 
     fun pendingStackLayerInfos(): List<PendingStackLayerInfo> =
