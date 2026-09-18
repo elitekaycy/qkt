@@ -26,7 +26,12 @@ class BybitSpotLiveSmokeTest {
 
         val clock = SystemClock()
         val bus = EventBus(clock, MonotonicSequenceGenerator())
-        val client = BybitClient(testnet = true)
+        val client =
+            BybitClient(
+                apiKey = System.getenv("BYBIT_API_KEY").orEmpty(),
+                apiSecret = System.getenv("BYBIT_API_SECRET").orEmpty(),
+                testnet = true,
+            )
         client.connect()
         try {
             val broker = BybitSpotBroker(client, bus, clock)

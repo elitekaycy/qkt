@@ -98,15 +98,16 @@ interface BybitTransport {
 /**
  * Default production [BybitTransport] — signed REST + WebSocket with reconnect supervisor.
  *
- * Reads API credentials from env vars (`BYBIT_API_KEY`, `BYBIT_API_SECRET`) unless
- * passed explicitly. Honors `BYBIT_TESTNET=true` for paper-testing against testnet.
+ * Credentials and endpoint are passed in — [com.qkt.connector.bybit.BybitConnector] resolves
+ * them from the account's config entry — so the client never reads the environment. [testnet]
+ * selects the testnet REST and WebSocket endpoints.
  */
 class BybitClient(
-    apiKey: String? = null,
-    apiSecret: String? = null,
-    testnet: Boolean? = null,
-    recvWindowMs: Long? = null,
-    accountType: String? = null,
+    apiKey: String,
+    apiSecret: String,
+    testnet: Boolean = true,
+    recvWindowMs: Long = 5_000L,
+    accountType: String = "UNIFIED",
     private val httpClient: OkHttpClient = defaultHttpClient(),
     private val clock: Clock = SystemClock(),
     private val wsFactory: (Request, WebSocketListener) -> WebSocket =
@@ -114,30 +115,15 @@ class BybitClient(
 ) : BybitTransport {
     private val log = LoggerFactory.getLogger(BybitClient::class.java)
 
-    private val resolvedApiKey: String =
-        apiKey
-            ?: System.getenv("BYBIT_API_KEY")
-            ?: error("Bybit API key required: pass apiKey=... or set BYBIT_API_KEY env var")
+    private val resolvedApiKey: String = apiKey
 
-    private val resolvedApiSecret: String =
-        apiSecret
-            ?: System.getenv("BYBIT_API_SECRET")
-            ?: error("Bybit API secret required: pass apiSecret=... or set BYBIT_API_SECRET env var")
+    private val resolvedApiSecret: String = apiSecret
 
-    private val resolvedTestnet: Boolean =
-        testnet
-            ?: (System.getenv("BYBIT_TESTNET")?.equals("false", ignoreCase = true)?.let { !it })
-            ?: true
+    private val resolvedTestnet: Boolean = testnet
 
-    private val resolvedRecvWindowMs: Long =
-        recvWindowMs
-            ?: System.getenv("BYBIT_RECV_WINDOW_MS")?.toLongOrNull()
-            ?: 5_000L
+    private val resolvedRecvWindowMs: Long = recvWindowMs
 
-    private val resolvedAccountType: String =
-        accountType
-            ?: System.getenv("BYBIT_ACCOUNT_TYPE")
-            ?: "UNIFIED"
+    private val resolvedAccountType: String = accountType
 
     override val accountType: String get() = resolvedAccountType
 
@@ -398,7 +384,7 @@ class BybitClient(
             pingExecutor.shutdownNow()
             throw BybitConnectException(
                 "Initial Bybit connect failed within 10s (auth ack not received). " +
-                    "Check BYBIT_API_KEY / BYBIT_API_SECRET and BYBIT_TESTNET flag.",
+                    "Check the account's api_key, api_secret and testnet settings.",
             )
         }
     }

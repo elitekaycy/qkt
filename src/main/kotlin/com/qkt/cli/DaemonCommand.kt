@@ -325,8 +325,10 @@ class DaemonCommand(
         val bybitClient: com.qkt.connector.bybit.BybitClient? =
             if (!System.getenv("BYBIT_API_KEY").isNullOrEmpty()) {
                 com.qkt.connector.bybit
-                    .BybitClient()
-                    .also { c ->
+                    .BybitClient(
+                        apiKey = System.getenv("BYBIT_API_KEY").orEmpty(),
+                        apiSecret = System.getenv("BYBIT_API_SECRET") ?: error("BYBIT_API_SECRET is required"),
+                    ).also { c ->
                         runCatching { c.connect() }
                             .onFailure { println("[WARN] Bybit connect failed at startup: ${it.message}") }
                     }
