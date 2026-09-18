@@ -46,7 +46,7 @@ data class Config(
      * [brokerCalendars] = ordered `(symbolPattern, calendarName)` rules (per-symbol session
      * calendar); [brokerAliases] = `(qktSymbol, brokerSymbol)`; [brokerCapabilityRestrictions] =
      * disabled order-type capability names; [brokerInstrumentOverrides] = `symbol → (field →
-     * value)` venue specs. [accountConfigs] attaches them to each account's entry.
+     * value)` venue specs. `accountConfigs()` attaches them to each account's entry.
      */
     val brokerCalendars: Map<String, List<Pair<String, String>>> = emptyMap(),
     val brokerAliases: Map<String, Map<String, String>> = emptyMap(),
@@ -300,24 +300,6 @@ data class Config(
         require(value != null && value >= 0) { "risk.$key must be a non-negative integer" }
         return value
     }
-
-    /**
-     * Every `brokers:` entry as a connector-neutral [com.qkt.connectivity.AccountConfig], in file
-     * order, with its nested blocks attached. The account directory opens these through their
-     * connectors; nothing here knows which connector an entry uses.
-     */
-    fun accountConfigs(): List<com.qkt.connectivity.AccountConfig> =
-        brokers.map { (name, fields) ->
-            com.qkt.connectivity.AccountConfig(
-                name = name,
-                type = fields["type"].orEmpty(),
-                settings = fields,
-                tradingHours = brokerCalendars[name].orEmpty(),
-                symbolAliases = brokerAliases[name].orEmpty(),
-                disabledOrderTypes = brokerCapabilityRestrictions[name].orEmpty(),
-                instrumentOverrides = brokerInstrumentOverrides[name].orEmpty(),
-            )
-        }
 
     companion object {
         /**

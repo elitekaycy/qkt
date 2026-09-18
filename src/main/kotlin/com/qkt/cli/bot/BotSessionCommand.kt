@@ -6,6 +6,7 @@ import com.qkt.cli.Args
 import com.qkt.cli.BacktestContext
 import com.qkt.cli.ExitCodes
 import com.qkt.cli.daemon.StateDir
+import com.qkt.cli.openAccounts
 import com.qkt.common.FixedClock
 import com.qkt.common.TimeRange
 import com.qkt.dsl.parse.Dsl
@@ -165,17 +166,7 @@ class BotSessionCommand(
         val spec = parseStart(sub) { "live-${com.qkt.common.SystemClock().now()}" }
         val (symbols, _, window, runId, identities, historyBars) = spec
         val cfg = botConfig(sub)
-        val accounts =
-            com.qkt.connectivity.AccountDirectory.open(
-                cfg.accountConfigs(),
-                com.qkt.connectivity.ConnectorRegistry
-                    .discover(),
-                com.qkt.connectivity.ConnectorContext(
-                    stateRoot = null,
-                    env = System.getenv(),
-                    clock = com.qkt.common.SystemClock(),
-                ),
-            )
+        val accounts = cfg.openAccounts()
         require(accounts.accounts.isNotEmpty()) { "no broker accounts in config — a live session needs one" }
         val sourceFactory =
             com.qkt.cli.MarketSourceFactory
