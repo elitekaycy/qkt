@@ -3,11 +3,8 @@ package com.qkt.dsl.parse
 import com.qkt.dsl.ast.ActionAst
 import com.qkt.dsl.ast.BracketAst
 import com.qkt.dsl.ast.ChildPriceAst
-import com.qkt.dsl.ast.LetDecl
 import com.qkt.dsl.ast.OcoAst
 import com.qkt.dsl.ast.OrderTypeAst
-import com.qkt.dsl.ast.ParamDecl
-import com.qkt.dsl.ast.SequenceDecl
 import com.qkt.dsl.ast.SizingAst
 import com.qkt.dsl.ast.StrategyAst
 import com.qkt.dsl.ast.TifAst
@@ -39,11 +36,14 @@ class Parser(
     private val defaultsParser = DefaultsParser(cursor, sizingParser, orderTypeParser, bracketParser)
     private val symbolsParser = SymbolsParser(cursor, literalParser)
     private val portfolioParser = PortfolioParser(cursor, literalParser, expressionParser, symbolsParser)
+    private val strategyParser =
+        StrategyParser(cursor, ruleParser, scheduleParser, declarationParser, defaultsParser, symbolsParser)
 
+    /** Parses a whole file, dispatching on its first keyword to a strategy or a portfolio. */
     fun parseFile(): ParseResult<ParsedFile> =
         when (cursor.peek().kind) {
             TokenKind.STRATEGY ->
-                when (val r = parseStrategy()) {
+                when (val r = strategyParser.parseStrategy()) {
                     is ParseResult.Success -> ParseResult.Success(ParsedFile.StrategyFile(r.value))
                     is ParseResult.Failure -> ParseResult.Failure(r.errors)
                 }
@@ -64,106 +64,12 @@ class Parser(
                 )
         }
 
-    fun parseStrategy(): ParseResult<StrategyAst> {
-        var name = "_unparsed"
-        var version = 0
-        try {
-            cursor.expect(TokenKind.STRATEGY, "expected STRATEGY")
-            name = cursor.expectName("expected strategy name").lexeme
-            cursor.expect(TokenKind.VERSION, "expected VERSION")
-            val v = cursor.expect(TokenKind.NUMBER, "expected integer version")
-            version = v.lexeme.toIntOrNull() ?: cursor.error("VERSION must be an integer, got '${v.lexeme}'")
-        } catch (_: ParseException) {
-            cursor.synchronize()
-        }
+    /** Parses a file that must be a `STRATEGY`; every recoverable error is reported together. */
+    fun parseStrategy(): ParseResult<StrategyAst> = strategyParser.parseStrategy()
 
-        val defaults =
-            if (cursor.peek().kind == TokenKind.DEFAULTS) {
-                cursor.tryParse { defaultsParser.parseDefaults() }
-            } else {
-                null
-            }
+    internal fun parsePortfolio(): ParseResult<com.qkt.dsl.ast.PortfolioAst> = portfolioParser.parsePortfolio()
 
-        val symbolsBlock =
-            if (cursor.peek().kind == TokenKind.SYMBOLS) {
-                cursor.tryParse { symbolsParser.parseSymbols() } ?: SymbolsBlock(emptyList(), emptyList())
-            } else {
-                SymbolsBlock(emptyList(), emptyList())
-            }
-        val streams = symbolsBlock.streams
-        val syncGroups = symbolsBlock.syncGroups
-        val baskets = symbolsBlock.baskets
-        val series = symbolsBlock.series
-
-        val params =
-            run {
-                val acc = mutableListOf<ParamDecl>()
-                while (cursor.peek().kind == TokenKind.PARAM) {
-                    cursor.tryParse { declarationParser.parseParams() }?.let { acc.addAll(it) }
-                }
-                acc
-            }
-
-        val lets =
-            run {
-                // Repeated `LET` LINES are the documented form (docs/reference/dsl/let-defaults.md
-                // and the session-range example in indicators.md both show two). `parseLet` consumes
-                // one LET keyword plus its comma-separated bindings, so a single `if` silently
-                // stopped after the first line and every later LET fell through to the
-                // "unexpected token after the last recognized block" error. Loop like PARAM does.
-                val acc = mutableListOf<LetDecl>()
-                while (cursor.peek().kind == TokenKind.LET) {
-                    val parsed = cursor.tryParse { declarationParser.parseLet() }
-                    if (parsed == null) break
-                    acc.addAll(parsed)
-                }
-                acc
-            }
-
-        val schedules =
-            if (cursor.peek().kind == TokenKind.SCHEDULE) {
-                cursor.tryParse { scheduleParser.parseSchedules() } ?: emptyList()
-            } else {
-                emptyList()
-            }
-
-        val sequences =
-            run {
-                val acc = mutableListOf<SequenceDecl>()
-                while (cursor.peek().kind == TokenKind.SEQUENCE) {
-                    cursor.tryParse { declarationParser.parseSequence() }?.let { acc.add(it) }
-                }
-                acc
-            }
-
-        val rules =
-            if (cursor.peek().kind == TokenKind.RULES) {
-                cursor.tryParse { ruleParser.parseRules() } ?: emptyList()
-            } else {
-                emptyList()
-            }
-
-        cursor.requireEof()
-        if (cursor.errors.isNotEmpty()) return ParseResult.Failure(cursor.errors.toList())
-        return ParseResult.Success(
-            StrategyAst(
-                name = name,
-                version = version,
-                streams = streams,
-                constants = emptyList(),
-                lets = lets,
-                params = params,
-                defaults = defaults,
-                rules = rules,
-                syncGroups = syncGroups,
-                schedules = schedules,
-                baskets = baskets,
-                series = series,
-                sequences = sequences,
-            ),
-        )
-    }
-
+    // Single-clause entry points, used by focused grammar tests.
     internal fun parseAction(): ActionAst = actionParser.parseAction()
 
     internal fun parseBracket(): BracketAst = bracketParser.parseBracket()
@@ -177,6 +83,4 @@ class Parser(
     internal fun parseTif(): TifAst = orderTypeParser.parseTif()
 
     internal fun parseSizing(): SizingAst = sizingParser.parseSizing()
-
-    internal fun parsePortfolio(): ParseResult<com.qkt.dsl.ast.PortfolioAst> = portfolioParser.parsePortfolio()
 }
