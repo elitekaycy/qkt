@@ -2,20 +2,52 @@ package com.qkt.positions
 
 import com.qkt.common.Money
 import com.qkt.common.Side
+import com.qkt.events.BrokerEvent
+import com.qkt.execution.LegIntent
 import com.qkt.execution.Trade
+import com.qkt.positions.StrategyPositionTracker.FillApplication
 import java.math.BigDecimal
 
 /**
  * The netting-venue booking rule for a strategy's PRIMARY leg: a trade on the PRIMARY's side
  * averages in, the opposite side realizes PnL and reduces, flat-closes or flips it. Holds no
- * state of its own; it rewrites books in [legBooks] when [StrategyPositionTracker.apply] calls it.
+ * state of its own; it rewrites books in [legBooks], then reindexes the account, when the tracker calls it.
  */
 internal class PrimaryNetting(
     private val legBooks: StrategyLegBooks,
     private val ids: PrimaryLegIds,
+    private val accountIndex: AccountNetIndex,
+    private val excursions: PrimaryExcursions,
 ) {
+    /** Book a [LegIntent.Net] fill: net it via [apply], then re-anchor the PRIMARY's excursion. */
+    fun netFill(event: BrokerEvent.OrderFilled): FillApplication {
+        val trade =
+            Trade(
+                orderId = event.clientOrderId,
+                symbol = event.symbol,
+                price = event.price,
+                quantity = event.quantity,
+                side = event.side,
+                timestamp = event.timestamp,
+            )
+        val realized = apply(event.strategyId, trade, event.brokerOrderId)
+        excursions.sync(event.strategyId, event.symbol)
+        return FillApplication(realized)
+    }
+
+    /** See [StrategyPositionTracker.apply]: [net] then reindex the account. */
+    fun apply(
+        strategyId: String,
+        trade: Trade,
+        brokerTicket: String?,
+    ): BigDecimal {
+        val realized = net(strategyId, trade, brokerTicket)
+        accountIndex.reindex(trade.symbol)
+        return realized
+    }
+
     /** Net [trade] into [strategyId]'s PRIMARY leg and return the realized PnL. */
-    fun net(
+    private fun net(
         strategyId: String,
         trade: Trade,
         brokerTicket: String?,

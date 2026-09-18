@@ -9,8 +9,8 @@ import java.util.concurrent.ConcurrentHashMap
 /**
  * Per-(strategyId, symbol) excursion trackers for the current PRIMARY leg. Maintained in
  * sync with the leg-book by [sync] after every fill, and updated on each market tick via
- * [onTick]. Reads land via [mfeFor], which backs the DSL accessor `POSITION.<stream>.mfe`, and
- * [maeFor], which backs `POSITION.<stream>.mae`. Owned and driven by [StrategyPositionTracker].
+ * [onTick]. Reads land via [primaryMfeFor], which backs the DSL accessor `POSITION.<stream>.mfe`, and
+ * [primaryMaeFor], which backs `POSITION.<stream>.mae`. Owned and driven by [StrategyPositionTracker].
  *
  * Same-direction averaging fills re-anchor the tracker to the new weighted entry —
  * MFE resets to zero from the new reference point, matching the "favorable excursion
@@ -21,7 +21,7 @@ internal class PrimaryExcursions(
     private val persistor: StatePersistor,
     private val excursionPersistIntervalMs: Long,
     private val clock: () -> Long,
-) {
+) : PrimaryExcursionTracking {
     private val log = org.slf4j.LoggerFactory.getLogger(StrategyPositionTracker::class.java)
 
     private val primaryMfeTrackers: MutableMap<Pair<String, String>, LegMfe> = ConcurrentHashMap()
@@ -58,8 +58,7 @@ internal class PrimaryExcursions(
         )
     }
 
-    /** See [StrategyPositionTracker.extendExcursion]. */
-    fun extend(
+    override fun extendExcursion(
         strategyId: String,
         symbol: String,
         candles: List<Candle>,
@@ -113,8 +112,7 @@ internal class PrimaryExcursions(
         }
     }
 
-    /** See [StrategyPositionTracker.onTick]. */
-    fun onTick(
+    override fun onTick(
         symbol: String,
         price: BigDecimal,
     ) {
@@ -131,17 +129,17 @@ internal class PrimaryExcursions(
         }
     }
 
-    fun mfeFor(
+    override fun primaryMfeFor(
         strategyId: String,
         symbol: String,
     ): BigDecimal? = primaryMfeTrackers[Pair(strategyId, symbol)]?.tracker?.value()
 
-    fun maeFor(
+    override fun primaryMaeFor(
         strategyId: String,
         symbol: String,
     ): BigDecimal? = primaryMfeTrackers[Pair(strategyId, symbol)]?.tracker?.mae()
 
-    fun adverseExtremePriceFor(
+    fun primaryAdverseExtremePriceFor(
         strategyId: String,
         symbol: String,
     ): BigDecimal? = primaryMfeTrackers[Pair(strategyId, symbol)]?.tracker?.adverseExtremePrice()
