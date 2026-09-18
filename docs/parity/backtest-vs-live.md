@@ -218,7 +218,7 @@ execution, risk, accounting, or warmup pipeline.
 
 | Row | Behavior | Proof |
 | --- | --- | --- |
-| Leg intent on the order | Every leaf order carries `LegIntent` (Open/Close/Net); the fill resolver reads it first, then the owned leg by ticket, then the venue default. Backtest and live book from the same intent, so a venue-detected close and a backtest close realize the same leg | `LegIntentResolverTest`, `LegIntentPlannerTest`, `TradingPipelineOcoEntryTest` |
+| Leg intent on the order | Every leaf order carries `LegIntent` (Open/Close/Net); the fill resolver reads it first, then the owned leg by ticket, then the venue default. Backtest and live book from the same intent, so a venue-detected close and a backtest close realize the same leg | `LegIntentResolverTest`, `LegIntentPlannerTest`, `TradingPipelineOcoEntryLegTrackingTest` |
 | One leg per venue ticket | A re-report of an execution on an owned ticket (restart recovery) books only the venue's cumulative increment; a close naming a leg the book does not hold books nothing | `StrategyPositionTrackerReplayTest`, `Mt5CommentMatchTest` |
 | Account book derived | The account position view is an index over the strategy ledger, never a second writer; account and strategy realized are the same number from one ledger | `LedgerAccountingCharacterizationTest`, report column pairs byte-identical on the fixture set |
 | One accounting fold | Every realized amount (execution, financing, boot reconcile) is one `FillAccountedEvent` folded once into both accumulators, the daily tracker, trade history, pacer and halts | `LedgerAccountingCharacterizationTest`, `TradingPipelineVenueCostsTest` |
