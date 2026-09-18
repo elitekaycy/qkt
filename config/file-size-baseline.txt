@@ -26,7 +26,6 @@
 552 src/main/kotlin/com/qkt/execution/OrderRequestEvidence.kt
 535 src/test/kotlin/com/qkt/backtest/TickResolvedParityTest.kt
 534 src/main/kotlin/com/qkt/broker/bybit/BybitClient.kt
-532 src/test/kotlin/com/qkt/cli/daemon/DeployCommandTest.kt
 532 src/test/kotlin/com/qkt/dsl/portfolio/fixture/PortfolioFixtureGenerator.kt
 519 src/test/kotlin/com/qkt/broker/mt5/MT5OrderTranslatorTest.kt
 510 src/test/kotlin/com/qkt/backtest/StackBacktestTest.kt
