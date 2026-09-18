@@ -25,7 +25,6 @@
 693 src/main/kotlin/com/qkt/cli/GoldenReplayDataMaterializer.kt
 691 src/test/kotlin/com/qkt/broker/mt5/MT5PositionPollerCloseTest.kt
 677 src/main/kotlin/com/qkt/execution/OrderRequest.kt
-664 src/main/kotlin/com/qkt/cli/ReportFormat.kt
 658 src/test/kotlin/com/qkt/marketdata/live/mt5/Mt5BarFetcherTest.kt
 616 src/main/kotlin/com/qkt/broker/MT5BrokerSimulator.kt
 606 src/test/kotlin/com/qkt/cli/GoldenCommandTest.kt
