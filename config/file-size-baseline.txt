@@ -31,7 +31,6 @@
 488 src/test/kotlin/com/qkt/parity/RegimePortfolioEdgeCaseTest.kt
 476 src/test/kotlin/com/qkt/broker/CompositeBrokerTest.kt
 474 src/main/kotlin/com/qkt/backtest/Backtest.kt
-473 src/test/kotlin/com/qkt/cli/PreflightCommandTest.kt
 468 src/test/kotlin/com/qkt/backtest/report/BacktestReportWriterTest.kt
 467 src/main/kotlin/com/qkt/broker/bybit/linear/BybitLinearBroker.kt
 464 src/main/kotlin/com/qkt/cli/bot/BotSessionCommand.kt
