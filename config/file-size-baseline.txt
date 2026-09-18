@@ -176,7 +176,6 @@
 244 src/test/kotlin/com/qkt/persistence/LegBookReconcilerTest.kt
 242 src/test/kotlin/com/qkt/dsl/compile/ForgeThesisExpressibilityTest.kt
 242 src/test/kotlin/com/qkt/pnl/TradeHistoryTest.kt
-240 src/main/kotlin/com/qkt/dsl/compile/ChildPriceResolver.kt
 240 src/test/kotlin/com/qkt/dsl/compile/AccountStateAccessorsTest.kt
 240 src/test/kotlin/com/qkt/dsl/compile/ActionCompilerTest.kt
 238 src/test/kotlin/com/qkt/app/IndicatorWarmerPerStreamTest.kt
