@@ -31,6 +31,12 @@ internal interface OrderOps {
     /** Snapshots order state for restart recovery. */
     fun persistAll()
 
+    /**
+     * Synchronously persists [strategyId]'s pending orders before venue-bound intent leaves the
+     * engine, so a crash can never lose an order the venue may already hold.
+     */
+    fun persistSubmissionIntent(strategyId: String)
+
     /** Raises an operator alert that a position is not protected as intended. */
     fun reportProtectionFailure(
         strategyId: String,
