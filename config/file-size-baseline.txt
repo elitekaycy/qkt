@@ -113,7 +113,6 @@
 249 src/test/kotlin/com/qkt/dsl/compile/GeneratedExpressionParityTest.kt
 248 src/test/kotlin/com/qkt/broker/mt5/MT5BrokerStateTest.kt
 247 src/test/kotlin/com/qkt/backtest/BacktestTest.kt
-246 src/test/kotlin/com/qkt/trade/BotActionCompilerTest.kt
 244 src/test/kotlin/com/qkt/persistence/LegBookReconcilerTest.kt
 242 src/test/kotlin/com/qkt/dsl/compile/ForgeThesisExpressibilityTest.kt
 240 src/test/kotlin/com/qkt/dsl/compile/AccountStateAccessorsTest.kt
