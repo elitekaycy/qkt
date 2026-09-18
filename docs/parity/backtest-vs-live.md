@@ -188,7 +188,7 @@ test class that pins it.
 | #639 | Crossed stored quotes (bid > ask) are dropped identically at read time by CSV and binary feeds, warn-counted, instead of crashing the replay | `CsvTickFeedTest`, `BinaryTickParityTest` |
 | #640 | Fetch persists tick volume; old cached rows derive volume from stored side volumes at read time | `DukascopyTickFetcherTest`, `TickAssemblerTest` |
 | #643 | Plain `--bars` stops that gap through their level fill at the adverse opening print, not the level | `PaperBrokerTest` |
-| #390 | Bracket exits re-anchor on the actual fill price (fallback OCO and venue-attached modify both) | `OrderManagerAttachedBracketProtectionModifyTest`, `OrderManagerTier2FallbackTest` |
+| #390 | Bracket exits re-anchor on the actual fill price (fallback OCO and venue-attached modify both) | `OrderManagerAttachedBracketProtectionModifyTest`, `OrderManagerTier2FallbackConversionTest` |
 
 ## 2026-07-31 parity verification (#948)
 

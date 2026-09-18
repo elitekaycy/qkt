@@ -85,7 +85,6 @@
 293 src/test/kotlin/com/qkt/parity/RegimeAdaptiveBacktestParityTest.kt
 291 src/main/kotlin/com/qkt/persistence/AsyncStatePersistor.kt
 291 src/test/kotlin/com/qkt/bus/EventBusTest.kt
-287 src/test/kotlin/com/qkt/app/OrderManagerTier2FallbackTest.kt
 285 src/test/kotlin/com/qkt/app/ExitHookManagerTest.kt
 282 src/main/kotlin/com/qkt/trade/session/BotSessionServer.kt
 280 src/test/kotlin/com/qkt/app/LiveSessionPersistenceHealthTest.kt
