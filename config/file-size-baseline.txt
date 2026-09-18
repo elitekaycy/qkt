@@ -83,7 +83,6 @@
 227 src/test/kotlin/com/qkt/dsl/compile/StackEnginePersistenceTest.kt
 225 src/main/kotlin/com/qkt/broker/mt5/MT5StateRecovery.kt
 223 src/main/kotlin/com/qkt/tools/parity/ParityDukascopyMt5Xauusd.kt
-222 src/test/kotlin/com/qkt/parity/mt5golden/MT5GoldenVerifier.kt
 221 src/main/kotlin/com/qkt/bus/EventBus.kt
 216 src/main/kotlin/com/qkt/evidence/Evidence.kt
 213 src/main/kotlin/com/qkt/backtest/ExecutionSimulation.kt
