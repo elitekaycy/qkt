@@ -4,7 +4,7 @@
 2848 src/main/kotlin/com/qkt/broker/mt5/MT5Broker.kt
 2699 src/test/kotlin/com/qkt/broker/mt5/MT5BrokerIntegrationTest.kt
 2503 src/main/kotlin/com/qkt/app/LiveSession.kt
-991 src/main/kotlin/com/qkt/persistence/FileStatePersistor.kt
+647 src/main/kotlin/com/qkt/persistence/FileStatePersistor.kt
 1440 src/main/kotlin/com/qkt/dsl/compile/AstCompiler.kt
 1343 src/test/kotlin/com/qkt/app/OrderManagerStackTest.kt
 1306 src/main/kotlin/com/qkt/cli/daemon/ControlRoutes.kt
