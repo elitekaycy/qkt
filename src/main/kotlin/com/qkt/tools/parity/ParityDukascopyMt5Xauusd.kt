@@ -2,9 +2,9 @@ package com.qkt.tools.parity
 
 import com.qkt.candles.CandleAggregator
 import com.qkt.candles.TimeWindow
+import com.qkt.connector.mt5.marketdata.Mt5DataClient
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.CsvTickFeed
-import com.qkt.marketdata.live.mt5.Mt5DataClient
 import com.qkt.marketdata.store.dukascopy.DukascopyTickFetcher
 import java.math.BigDecimal
 import java.math.MathContext

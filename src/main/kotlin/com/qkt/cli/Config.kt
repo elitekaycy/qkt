@@ -46,7 +46,7 @@ data class Config(
      * [brokerCalendars] = ordered `(symbolPattern, calendarName)` rules (per-symbol session
      * calendar); [brokerAliases] = `(qktSymbol, brokerSymbol)`; [brokerCapabilityRestrictions] =
      * disabled order-type capability names; [brokerInstrumentOverrides] = `symbol → (field →
-     * value)` venue specs. All feed [com.qkt.broker.mt5.MT5BrokerProfileLoader.load].
+     * value)` venue specs. All feed [com.qkt.connector.mt5.MT5BrokerProfileLoader.load].
      */
     val brokerCalendars: Map<String, List<Pair<String, String>>> = emptyMap(),
     val brokerAliases: Map<String, Map<String, String>> = emptyMap(),

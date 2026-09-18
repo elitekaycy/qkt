@@ -1,6 +1,6 @@
 # Adding a broker
 
-This guide walks through implementing a new broker integration end-to-end. The two reference implementations in the codebase are `com.qkt.broker.mt5` (MetaTrader 5 via HTTP gateway, poll-based fill detection) and `com.qkt.broker.bybit` (Bybit REST + WebSocket, push-based fills). Read this guide alongside one of those — the patterns are intentionally regular.
+This guide walks through implementing a new broker integration end-to-end. The two reference implementations in the codebase are `com.qkt.connector.mt5` (MetaTrader 5 via HTTP gateway, poll-based fill detection) and `com.qkt.connector.bybit` (Bybit REST + WebSocket, push-based fills). Read this guide alongside one of those — the patterns are intentionally regular.
 
 ## What "adding a broker" means
 
@@ -35,7 +35,7 @@ interface Broker {
 
 ## Package layout convention
 
-Put your broker in `src/main/kotlin/com/qkt/broker/<venue>/`. The conventional file set:
+Put your broker in `src/main/kotlin/com/qkt/connector/<venue>/`. The conventional file set:
 
 | File | Responsibility | Required? |
 | --- | --- | --- |
@@ -49,7 +49,7 @@ Put your broker in `src/main/kotlin/com/qkt/broker/<venue>/`. The conventional f
 | `<Venue>Signer.kt` | API request signing (HMAC, JWT, etc.). | If venue uses signed requests |
 | `<Venue>BrokerProfile.kt` + `<Venue>DefaultProfiles.kt` | Per-account configuration (credentials, magic number, symbol policy, capability restrictions). | If multiple accounts/sub-venues share the same protocol |
 
-Multi-variant venues (Bybit Spot vs Bybit Linear, MT5 Exness vs MT5 ICMarkets) keep the shared parts at the package root and add variant-specific files alongside. See `com.qkt.broker.bybit` for the pattern — `BybitClient.kt`, `BybitOrderTranslator.kt`, `BybitSymbol.kt`, `BybitSigner.kt` are shared; `BybitSpotBroker.kt`/`BybitSpotStateRecovery.kt` and `BybitLinearBroker.kt`/`BybitLinearStateRecovery.kt` are the variants.
+Multi-variant venues (Bybit Spot vs Bybit Linear, MT5 Exness vs MT5 ICMarkets) keep the shared parts at the package root and add variant-specific files alongside. See `com.qkt.connector.bybit` for the pattern — `BybitClient.kt`, `BybitOrderTranslator.kt`, `BybitSymbol.kt`, `BybitSigner.kt` are shared; `BybitSpotBroker.kt`/`BybitSpotStateRecovery.kt` and `BybitLinearBroker.kt`/`BybitLinearStateRecovery.kt` are the variants.
 
 ## Implementation walkthrough
 
@@ -89,7 +89,7 @@ class VenueSymbol(private val policy: SymbolPolicy) {
 }
 ```
 
-The `SymbolPolicy` data class lives in `com.qkt.broker.mt5.MT5BrokerProfile` today but is generic — feel free to use it or define a parallel `VenueSymbolPolicy`.
+The `SymbolPolicy` data class lives in `com.qkt.connector.mt5.MT5BrokerProfile` today but is generic — feel free to use it or define a parallel `VenueSymbolPolicy`.
 
 ### Step 3 — Translator
 
@@ -167,7 +167,7 @@ The venue exposes `/positions` (and ideally `/orders` for pending). Poll at inte
 1. **New position appears** = a pending order filled (or a market order completed)
 2. **Position disappears** = position closed (stopped out, taken profit, manual close)
 
-Reference: `com.qkt.broker.mt5.MT5PositionPoller`. It detects opens (Phase 26c) and closes (existing). The broker registers an `onPositionOpened` callback to correlate venue tickets back to qkt `clientOrderId`s.
+Reference: `com.qkt.connector.mt5.MT5PositionPoller`. It detects opens (Phase 26c) and closes (existing). The broker registers an `onPositionOpened` callback to correlate venue tickets back to qkt `clientOrderId`s.
 
 The key data structure for poll-based brokers:
 
@@ -289,7 +289,7 @@ Honest capability declarations prevent silent failures. A strategy submitting an
 The daemon's `DaemonCommand` (`src/main/kotlin/com/qkt/cli/DaemonCommand.kt`) builds a `Map<String, BrokerFactory>` at startup. Add your broker:
 
 ```kotlin
-val brokerFactories: Map<String, com.qkt.app.BrokerFactory> =
+val brokerFactories: Map<String, com.qkt.broker.BrokerFactory> =
     mt5Profiles.associate { /* ... */ } +
     venueProfiles.associate { profile ->
         profile.name.lowercase() to
@@ -347,7 +347,7 @@ Hold off until then. Two implementations don't justify an abstraction; three sta
 
 ## Checklist for the PR
 
-- [ ] Broker is in `src/main/kotlin/com/qkt/broker/<venue>/`
+- [ ] Broker is in `src/main/kotlin/com/qkt/connector/<venue>/`
 - [ ] Implements `Broker` interface — `name`, `capabilities`, `submit`, `cancel`, optionally `modify`
 - [ ] Capability set declared honestly — strategies that submit unsupported shapes get a clean rejection
 - [ ] Translator, client, symbol, state-recovery as separate files

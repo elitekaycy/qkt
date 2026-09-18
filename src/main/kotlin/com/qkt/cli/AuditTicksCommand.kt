@@ -1,9 +1,9 @@
 package com.qkt.cli
 
-import com.qkt.broker.mt5.MT5BrokerProfileLoader
-import com.qkt.broker.mt5.MT5Client
-import com.qkt.broker.mt5.MT5DefaultProfiles
-import com.qkt.broker.mt5.MT5Symbol
+import com.qkt.connector.mt5.MT5BrokerProfileLoader
+import com.qkt.connector.mt5.MT5Client
+import com.qkt.connector.mt5.MT5DefaultProfiles
+import com.qkt.connector.mt5.MT5Symbol
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.live.tv.TradingViewMarketSource
 import java.math.BigDecimal
