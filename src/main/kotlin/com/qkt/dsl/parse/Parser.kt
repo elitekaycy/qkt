@@ -1,41 +1,15 @@
 package com.qkt.dsl.parse
 
 import com.qkt.dsl.ast.ActionAst
-import com.qkt.dsl.ast.ActionOpts
 import com.qkt.dsl.ast.AllocateBlock
 import com.qkt.dsl.ast.Block
 import com.qkt.dsl.ast.BracketAst
-import com.qkt.dsl.ast.BreakOffset
-import com.qkt.dsl.ast.Buy
-import com.qkt.dsl.ast.Cancel
-import com.qkt.dsl.ast.CancelAll
 import com.qkt.dsl.ast.ChildPriceAst
-import com.qkt.dsl.ast.Close
-import com.qkt.dsl.ast.CloseAll
 import com.qkt.dsl.ast.DefaultsBlock
-import com.qkt.dsl.ast.DirRel
-import com.qkt.dsl.ast.DurationAst
-import com.qkt.dsl.ast.ExitHooksAst
 import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.HUB_BROKER
-import com.qkt.dsl.ast.Latch
-import com.qkt.dsl.ast.LatchBracket
-import com.qkt.dsl.ast.LatchCloseBeyond
-import com.qkt.dsl.ast.LatchConfirm
-import com.qkt.dsl.ast.LatchEntry
-import com.qkt.dsl.ast.LatchFirstTick
-import com.qkt.dsl.ast.LatchLimit
-import com.qkt.dsl.ast.LatchMarket
-import com.qkt.dsl.ast.LatchOrder
-import com.qkt.dsl.ast.LatchRetestHold
-import com.qkt.dsl.ast.LatchStop
-import com.qkt.dsl.ast.LatchTimeInBreach
 import com.qkt.dsl.ast.LetDecl
-import com.qkt.dsl.ast.Limit
-import com.qkt.dsl.ast.Log
-import com.qkt.dsl.ast.LogLevel
 import com.qkt.dsl.ast.OcoAst
-import com.qkt.dsl.ast.OcoEntry
 import com.qkt.dsl.ast.OrderTypeAst
 import com.qkt.dsl.ast.ParamDecl
 import com.qkt.dsl.ast.PortfolioAllocationMethod
@@ -43,24 +17,14 @@ import com.qkt.dsl.ast.RegimeBlock
 import com.qkt.dsl.ast.RegimeConditionalState
 import com.qkt.dsl.ast.RegimeDefaultState
 import com.qkt.dsl.ast.RegimeState
-import com.qkt.dsl.ast.Resize
 import com.qkt.dsl.ast.RuleAst
 import com.qkt.dsl.ast.ScheduleDecl
 import com.qkt.dsl.ast.ScheduleTrigger
-import com.qkt.dsl.ast.Sell
 import com.qkt.dsl.ast.SequenceDecl
 import com.qkt.dsl.ast.SequenceStageDecl
 import com.qkt.dsl.ast.SeriesDecl
 import com.qkt.dsl.ast.SeriesSource
 import com.qkt.dsl.ast.SizingAst
-import com.qkt.dsl.ast.StackAst
-import com.qkt.dsl.ast.StackAtClause
-import com.qkt.dsl.ast.StackDirection
-import com.qkt.dsl.ast.StackLayer
-import com.qkt.dsl.ast.StackLayers
-import com.qkt.dsl.ast.StackSpacing
-import com.qkt.dsl.ast.Stop
-import com.qkt.dsl.ast.StopLimit
 import com.qkt.dsl.ast.StrategyAst
 import com.qkt.dsl.ast.StreamDecl
 import com.qkt.dsl.ast.SyncGroupDecl
@@ -89,6 +53,8 @@ class Parser(
     private val sizingParser = SizingParser(cursor, expressionParser)
     private val orderTypeParser = OrderTypeParser(cursor, scope, expressionParser)
     private val bracketParser = BracketParser(cursor, literalParser, expressionParser)
+    private val actionParser =
+        ActionParser(cursor, scope, literalParser, expressionParser, sizingParser, orderTypeParser, bracketParser)
 
     fun parseFile(): ParseResult<ParsedFile> =
         when (cursor.peek().kind) {
@@ -492,12 +458,12 @@ class Parser(
         cursor.expect(TokenKind.WHEN, "expected WHEN")
         val cond = expressionParser.parseExpr()
         cursor.expect(TokenKind.THEN, "expected THEN after WHEN condition")
-        val first = parseAction()
+        val first = actionParser.parseAction()
         if (cursor.peek().kind != TokenKind.SEMICOLON) return WhenThen(cond, first)
         val actions = mutableListOf(first)
         while (cursor.match(TokenKind.SEMICOLON)) {
             if (!isActionStart(cursor.peek().kind)) break
-            actions.add(parseAction())
+            actions.add(actionParser.parseAction())
         }
         return WhenThen(cond, Block(actions))
     }
@@ -532,506 +498,6 @@ class Parser(
         cursor.expect(TokenKind.DO, "expected DO after stream alias list")
         val template = parseWhenThen()
         return aliases.map { alias -> substituteIterVar(template, iterVar, alias) }
-    }
-
-    internal fun parseAction(): ActionAst =
-        when (cursor.peek().kind) {
-            TokenKind.BUY -> {
-                cursor.advance()
-                val stream = cursor.expect(TokenKind.IDENT, "expected stream alias after BUY").lexeme
-                Buy(stream, parseActionOpts())
-            }
-            TokenKind.SELL -> {
-                cursor.advance()
-                val stream = cursor.expect(TokenKind.IDENT, "expected stream alias after SELL").lexeme
-                Sell(stream, parseActionOpts())
-            }
-            TokenKind.CLOSE -> {
-                cursor.advance()
-                val stream = cursor.expect(TokenKind.IDENT, "expected stream alias after CLOSE").lexeme
-                Close(stream)
-            }
-            TokenKind.CLOSE_ALL -> {
-                cursor.advance()
-                CloseAll
-            }
-            TokenKind.FLATTEN -> {
-                cursor.advance()
-                CloseAll
-            }
-            TokenKind.RESIZE -> {
-                cursor.advance()
-                val stream = cursor.expect(TokenKind.IDENT, "expected stream alias after RESIZE").lexeme
-                cursor.expect(TokenKind.TO, "expected TO after RESIZE stream")
-                val target = sizingParser.parseSizing()
-                val minStep = if (cursor.match(TokenKind.MIN_STEP)) expressionParser.parseExpr() else null
-                Resize(stream, target, minStep)
-            }
-            TokenKind.CANCEL -> {
-                cursor.advance()
-                val stream = cursor.expect(TokenKind.IDENT, "expected stream alias after CANCEL").lexeme
-                Cancel(stream)
-            }
-            TokenKind.CANCEL_ALL -> {
-                cursor.advance()
-                CancelAll
-            }
-            TokenKind.LOG -> parseLogAction()
-            TokenKind.OCO_ENTRY -> parseOcoEntry()
-            TokenKind.LATCH -> parseLatch()
-            else -> cursor.error("expected action keyword, got '${cursor.peek().lexeme}'")
-        }
-
-    private fun parseOcoEntry(): ActionAst {
-        cursor.expect(TokenKind.OCO_ENTRY, "expected OCO_ENTRY")
-        cursor.expect(TokenKind.LBRACE, "expected '{' after OCO_ENTRY")
-        val leg1 = parseAction()
-        if (leg1 !is Buy && leg1 !is Sell) {
-            cursor.error("OCO_ENTRY legs must be BUY or SELL, got ${leg1::class.simpleName}")
-        }
-        cursor.expect(TokenKind.COMMA, "expected ',' between OCO_ENTRY legs")
-        val leg2 = parseAction()
-        if (leg2 !is Buy && leg2 !is Sell) {
-            cursor.error("OCO_ENTRY legs must be BUY or SELL, got ${leg2::class.simpleName}")
-        }
-        cursor.expect(TokenKind.RBRACE, "expected '}' to close OCO_ENTRY (exactly two legs)")
-        return OcoEntry(leg1, leg2)
-    }
-
-    private fun parseLatch(): ActionAst {
-        cursor.expect(TokenKind.LATCH, "expected LATCH")
-        val stream = cursor.expect(TokenKind.IDENT, "expected stream alias after LATCH").lexeme
-        cursor.expect(TokenKind.OFFSET, "expected OFFSET after LATCH stream")
-        val offset = expressionParser.parseExpr()
-        val reference =
-            if (cursor.match(TokenKind.FROM)) {
-                expressionParser.parseExpr()
-            } else {
-                null
-            }
-        cursor.expect(TokenKind.ARM, "expected ARM <duration> in LATCH")
-        val armWindow = literalParser.parseDuration()
-        val name =
-            if (cursor.match(TokenKind.AS)) {
-                cursor.expect(TokenKind.IDENT, "expected name after AS").lexeme
-            } else {
-                null
-            }
-        val confirm =
-            if (cursor.match(TokenKind.CONFIRM)) {
-                parseLatchConfirm()
-            } else {
-                LatchFirstTick
-            }
-        cursor.expect(TokenKind.LBRACE, "expected '{' to open LATCH block")
-        val entries = mutableListOf(parseLatchEntry())
-
-        while (cursor.match(TokenKind.SEMICOLON)) {
-            entries.add(parseLatchEntry())
-        }
-        cursor.expect(TokenKind.RBRACE, "expected '}' to close LATCH block")
-        return Latch(stream, BreakOffset(reference, offset), armWindow, name, entries, confirm)
-    }
-
-    private fun parseLatchConfirm(): LatchConfirm =
-        when (cursor.peek().kind) {
-            TokenKind.CLOSE_BEYOND -> {
-                cursor.advance()
-                LatchCloseBeyond
-            }
-            TokenKind.TIME_IN_BREACH -> {
-                cursor.advance()
-                LatchTimeInBreach(literalParser.parseDuration())
-            }
-            TokenKind.RETEST_HOLD -> {
-                cursor.advance()
-                val distance = expressionParser.parseExpr()
-                cursor.expect(TokenKind.WITHIN, "expected WITHIN after RETEST_HOLD distance")
-                LatchRetestHold(distance, literalParser.parseDuration())
-            }
-            else -> cursor.error("expected CLOSE_BEYOND, TIME_IN_BREACH, or RETEST_HOLD after CONFIRM")
-        }
-
-    private fun parseLatchEntry(): LatchEntry {
-        cursor.expect(TokenKind.ENTER, "expected ENTER in LATCH block")
-        val entryStream =
-            if (cursor.match(TokenKind.ON)) {
-                cursor.expect(TokenKind.IDENT, "expected stream alias after ENTER ON").lexeme
-            } else {
-                null
-            }
-        val order = parseLatchOrder()
-        var bracket: LatchBracket? = null
-        var sizing: SizingAst? = null
-        var expire: DurationAst? = null
-        loop@ while (true) {
-            when (cursor.peek().kind) {
-                TokenKind.BRACKET -> {
-                    cursor.advance()
-                    bracket = parseLatchBracket()
-                }
-                TokenKind.SIZING -> {
-                    cursor.advance()
-                    sizing = sizingParser.parseSizing()
-                }
-                TokenKind.EXPIRE -> {
-                    cursor.advance()
-                    expire = literalParser.parseDuration()
-                }
-                else -> break@loop
-            }
-        }
-        return LatchEntry(order, bracket, sizing, expire, entryStream)
-    }
-
-    private fun parseLatchOrder(): LatchOrder =
-        when (cursor.peek().kind) {
-            TokenKind.MARKET -> {
-                cursor.advance()
-                LatchMarket
-            }
-            TokenKind.LIMIT -> {
-                cursor.advance()
-                LatchLimit(orderTypeParser.parseDirRel())
-            }
-            TokenKind.STOP -> {
-                cursor.advance()
-                LatchStop(orderTypeParser.parseDirRel())
-            }
-            else -> cursor.error("expected MARKET/LIMIT/STOP after ENTER, got '${cursor.peek().lexeme}'")
-        }
-
-    private fun parseLatchBracket(): LatchBracket {
-        cursor.expect(TokenKind.LBRACE, "expected '{' to open BRACKET block")
-        var stopLoss: DirRel? = null
-        var takeProfit: DirRel? = null
-        do {
-            // Accept both `STOP LOSS` / `TAKE PROFIT` and the single-token `STOP_LOSS` / `TAKE_PROFIT`.
-            when (val tok = cursor.peek().kind) {
-                TokenKind.STOP, TokenKind.STOP_LOSS -> {
-                    cursor.advance()
-                    if (tok == TokenKind.STOP) cursor.expect(TokenKind.LOSS, "expected LOSS after STOP")
-                    stopLoss = orderTypeParser.parseDirRel()
-                }
-                TokenKind.TAKE, TokenKind.TAKE_PROFIT -> {
-                    cursor.advance()
-                    if (tok == TokenKind.TAKE) cursor.expect(TokenKind.PROFIT, "expected PROFIT after TAKE")
-                    takeProfit = orderTypeParser.parseDirRel()
-                }
-                else -> cursor.error("expected STOP LOSS or TAKE PROFIT in BRACKET, got '${cursor.peek().lexeme}'")
-            }
-        } while (cursor.match(TokenKind.COMMA))
-        cursor.expect(TokenKind.RBRACE, "expected '}' to close BRACKET block")
-        return LatchBracket(stopLoss, takeProfit)
-    }
-
-    private fun parseLogAction(): Log {
-        cursor.expect(TokenKind.LOG, "expected LOG")
-        val level =
-            when (cursor.peek().kind) {
-                TokenKind.WARN -> {
-                    cursor.advance()
-                    LogLevel.WARN
-                }
-                TokenKind.ERROR -> {
-                    cursor.advance()
-                    LogLevel.ERROR
-                }
-                TokenKind.DEBUG -> {
-                    cursor.advance()
-                    LogLevel.DEBUG
-                }
-                else -> LogLevel.INFO
-            }
-        val message = cursor.expect(TokenKind.STRING, "expected string literal after LOG").lexeme
-        val fields = linkedMapOf<String, ExprAst>()
-        while (cursor.peek().kind == TokenKind.IDENT && cursor.peekAtOrNull(1)?.kind == TokenKind.EQ) {
-            val name = cursor.expect(TokenKind.IDENT, "expected field name").lexeme
-            cursor.expect(TokenKind.EQ, "expected '='")
-            val expr = expressionParser.parseExpr()
-            if (fields.containsKey(name)) {
-                cursor.error("duplicate LOG field '$name'")
-            }
-            fields[name] = expr
-        }
-        val placeholders = LOG_PLACEHOLDER_REGEX.findAll(message).map { it.groupValues[1] }.toSet()
-        val unmatched = placeholders - fields.keys
-        if (unmatched.isNotEmpty()) {
-            cursor.error("LOG placeholder(s) without matching field: ${unmatched.joinToString()}")
-        }
-        return Log(level, message, fields)
-    }
-
-    private fun parseActionOpts(): ActionOpts {
-        var sizing: SizingAst? = null
-        var orderType: OrderTypeAst? = null
-        var tif: TifAst? = null
-        var bracket: BracketAst? = null
-        var oco: OcoAst? = null
-        var stack: StackAst? = null
-        var stackAts: List<StackAtClause> = emptyList()
-        var onFill: List<ActionAst> = emptyList()
-        var onStop: List<ActionAst> = emptyList()
-        var onTakeProfit: List<ActionAst> = emptyList()
-        var onClose: List<ActionAst> = emptyList()
-        var times: ExprAst? = null
-        loop@ while (true) {
-            when (cursor.peek().kind) {
-                TokenKind.SIZING -> {
-                    cursor.advance()
-                    sizing = sizingParser.parseSizing()
-                }
-                TokenKind.TIMES -> {
-                    if (times != null) cursor.error("duplicate TIMES clause")
-                    cursor.advance()
-                    times = expressionParser.parseExpr()
-                }
-                TokenKind.ORDER_TYPE -> {
-                    cursor.advance()
-                    cursor.expect(TokenKind.EQ, "expected '=' after ORDER_TYPE")
-                    orderType = orderTypeParser.parseOrderType()
-                }
-                TokenKind.TIF -> {
-                    cursor.advance()
-                    tif = orderTypeParser.parseTif()
-                }
-                TokenKind.BRACKET -> {
-                    cursor.advance()
-                    bracket = bracketParser.parseBracket()
-                }
-                TokenKind.OCO -> {
-                    cursor.advance()
-                    oco = bracketParser.parseOco()
-                }
-                TokenKind.STACK -> {
-                    cursor.advance()
-                    stack = parseStackClause()
-                }
-                TokenKind.STACK_AT -> {
-                    stackAts += parseStackAtClause()
-                }
-                TokenKind.ON_FILL -> {
-                    cursor.advance()
-                    onFill = parseOnFill()
-                }
-                TokenKind.ON_STOP -> {
-                    if (onStop.isNotEmpty()) cursor.error("duplicate ON_STOP clause")
-                    cursor.advance()
-                    onStop = parseExitHook("ON_STOP")
-                }
-                TokenKind.ON_TP -> {
-                    if (onTakeProfit.isNotEmpty()) cursor.error("duplicate ON_TP clause")
-                    cursor.advance()
-                    onTakeProfit = parseExitHook("ON_TP")
-                }
-                TokenKind.ON_CLOSE -> {
-                    if (onClose.isNotEmpty()) cursor.error("duplicate ON_CLOSE clause")
-                    cursor.advance()
-                    onClose = parseExitHook("ON_CLOSE")
-                }
-                else -> break@loop
-            }
-        }
-        val finalStack = stack
-        if (sizing != null && finalStack is StackLayers) {
-            cursor.error(
-                "STACK layer-list cannot be combined with outer SIZING; specify size on each layer or remove the layer list",
-            )
-        }
-        // orderType stays null here so DEFAULTS ORDER_TYPE can fill it during the
-        // defaults merge; ActionCompiler applies the Market fallback after the merge.
-        return ActionOpts(
-            sizing,
-            orderType,
-            tif,
-            bracket,
-            oco,
-            finalStack,
-            stackAts,
-            onFill,
-            ExitHooksAst(onStop, onTakeProfit, onClose),
-            times = times,
-        )
-    }
-
-    /**
-     * Parse an OTO child block: `ON_FILL { <BUY|SELL …> [; <BUY|SELL …>]* }`.
-     *
-     * Each child is a normal BUY/SELL action, so it reuses the full action grammar (sizing,
-     * order type). Inside the block, `entry` resolves to the parent fill price, letting a child
-     * price itself relative to where the parent filled (e.g. `LIMIT AT entry - 10`).
-     */
-    private fun parseOnFill(): List<ActionAst> {
-        cursor.expect(TokenKind.LBRACE, "expected '{' to open ON_FILL block")
-        val children = mutableListOf<ActionAst>()
-        val prev = scope.inOtoChildPrice
-        scope.inOtoChildPrice = true
-        try {
-            children.add(parseAction())
-            while (cursor.peek().kind == TokenKind.SEMICOLON) {
-                cursor.advance()
-                if (cursor.peek().kind == TokenKind.RBRACE) break
-                children.add(parseAction())
-            }
-        } finally {
-            scope.inOtoChildPrice = prev
-        }
-        cursor.expect(TokenKind.RBRACE, "expected '}' to close ON_FILL block")
-        return children
-    }
-
-    /**
-     * Parse an exit hook block. Children reuse BUY/SELL parsing, while the compiler
-     * enforces the v1 action and nesting constraints.
-     */
-    private fun parseExitHook(name: String): List<ActionAst> {
-        cursor.expect(TokenKind.LBRACE, "expected '{' to open $name block")
-        val children = mutableListOf<ActionAst>()
-        val previous = scope.inExitHook
-        scope.inExitHook = true
-        try {
-            if (cursor.peek().kind == TokenKind.RBRACE) cursor.error("$name block must contain at least one action")
-            children.add(parseAction())
-            while (cursor.match(TokenKind.SEMICOLON)) {
-                if (cursor.peek().kind == TokenKind.RBRACE) break
-                children.add(parseAction())
-            }
-        } finally {
-            scope.inExitHook = previous
-        }
-        cursor.expect(TokenKind.RBRACE, "expected '}' to close $name block")
-        return children
-    }
-
-    /**
-     * Phase 27: `STACK_AT MFE >= <expr> WITHIN <duration> SIZING <sizing> BRACKET { ... }`.
-     * Phase 38: `STACK_AT MAE >= <expr> RECOVER <expr> WITHIN <duration> ...`.
-     *
-     * The clause attaches to its parent BUY/SELL action. The stack engine fires the stack
-     * when the parent leg's MFE crosses the threshold within the duration window.
-     */
-    private fun parseStackAtClause(): StackAtClause {
-        cursor.expect(TokenKind.STACK_AT, "expected STACK_AT")
-        val trigger = cursor.peek().kind
-        when (trigger) {
-            TokenKind.MFE, TokenKind.MAE -> cursor.advance()
-            else -> {
-                cursor.errors += ParseError(cursor.peek().line, cursor.peek().col, "expected MFE or MAE after STACK_AT")
-                cursor.advance()
-            }
-        }
-        cursor.expect(TokenKind.GE, "expected '>=' after MFE/MAE in STACK_AT")
-        val threshold = expressionParser.parseExpr()
-        val recoverDistance =
-            if (trigger == TokenKind.MAE) {
-                cursor.expect(TokenKind.RECOVER, "expected RECOVER after MAE threshold in STACK_AT")
-                expressionParser.parseExpr()
-            } else {
-                null
-            }
-        cursor.expect(TokenKind.WITHIN, "expected WITHIN after STACK_AT threshold")
-        val duration = literalParser.parseDuration()
-        cursor.expect(TokenKind.SIZING, "expected SIZING in STACK_AT clause")
-        val sizing = sizingParser.parseSizing()
-        cursor.expect(TokenKind.BRACKET, "expected BRACKET in STACK_AT clause")
-        val bracket = bracketParser.parseBracket()
-        return StackAtClause(
-            mfeThreshold = threshold,
-            withinDuration = duration,
-            sizing = sizing,
-            bracket = bracket,
-            maeRecoverDistance = recoverDistance,
-        )
-    }
-
-    internal fun parseStackClause(): StackAst {
-        // STACK <count> SPACING <expr> [ABOVE|BELOW] [WITHIN <duration>]
-        // STACK [ <layers> ] [WITHIN <duration>]   (added in Task 5)
-        return if (cursor.peek().kind == TokenKind.LBRACKET) {
-            parseStackLayers()
-        } else {
-            parseStackSpacing()
-        }
-    }
-
-    internal fun parseStackSpacing(): StackSpacing {
-        val countTok = cursor.expect(TokenKind.NUMBER, "expected count after STACK")
-        val count =
-            countTok.lexeme.toIntOrNull()
-                ?: cursor.error("STACK count must be a positive integer, got '${countTok.lexeme}'")
-        if (count < 1) cursor.error("STACK count must be >= 1, got $count")
-        cursor.expect(TokenKind.SPACING, "expected SPACING after STACK count")
-        val spacing = expressionParser.parseExpr()
-        val direction =
-            when (cursor.peek().kind) {
-                TokenKind.ABOVE -> {
-                    cursor.advance()
-                    StackDirection.ABOVE
-                }
-                TokenKind.BELOW -> {
-                    cursor.advance()
-                    StackDirection.BELOW
-                }
-                else -> StackDirection.TRADE_DIRECTION
-            }
-        val within = if (cursor.peek().kind == TokenKind.WITHIN) literalParser.parseWithin() else null
-        return StackSpacing(count, spacing, direction, within)
-    }
-
-    internal fun parseStackLayers(): StackLayers {
-        cursor.expect(TokenKind.LBRACKET, "expected '[' to open layer list")
-        val layers = mutableListOf<StackLayer>()
-        if (cursor.peek().kind == TokenKind.RBRACKET) {
-            cursor.error("STACK layer list must not be empty")
-        }
-        layers.add(parseLayer(isFirst = true))
-        while (cursor.peek().kind == TokenKind.COMMA) {
-            cursor.advance()
-            if (cursor.peek().kind == TokenKind.RBRACKET) break
-            layers.add(parseLayer(isFirst = false))
-        }
-        cursor.expect(TokenKind.RBRACKET, "expected ']' to close layer list")
-        val within = if (cursor.peek().kind == TokenKind.WITHIN) literalParser.parseWithin() else null
-        return StackLayers(layers, within)
-    }
-
-    internal fun parseLayer(isFirst: Boolean): StackLayer {
-        val sizing = sizingParser.parseSizing()
-        scope.inStackLayerAt = true
-        try {
-            val orderType: OrderTypeAst? =
-                when (cursor.peek().kind) {
-                    TokenKind.MARKET, TokenKind.LIMIT, TokenKind.STOP -> orderTypeParser.parseOrderType()
-                    else -> null
-                }
-            val priceFromOrderType: ExprAst? =
-                when (orderType) {
-                    is Limit -> orderType.price
-                    is Stop -> orderType.price
-                    is StopLimit -> orderType.stopPrice
-                    else -> null
-                }
-            val explicitAt: ExprAst? =
-                if (cursor.peek().kind == TokenKind.AT) {
-                    if (priceFromOrderType != null) {
-                        cursor.error(
-                            "STACK layer with LIMIT/STOP/STOPLIMIT cannot have a separate AT clause; " +
-                                "the order type's price is the trigger",
-                        )
-                    }
-                    cursor.advance()
-                    expressionParser.parseExpr()
-                } else {
-                    null
-                }
-            val at: ExprAst? = priceFromOrderType ?: explicitAt
-            if (!isFirst && at == null) {
-                cursor.error("STACK layers after the first must have a trigger (via AT or LIMIT/STOP price)")
-            }
-            return StackLayer(sizing, orderType, at)
-        } finally {
-            scope.inStackLayerAt = false
-        }
     }
 
     internal fun parseDefaults(): DefaultsBlock {
@@ -1336,7 +802,7 @@ class Parser(
                 triggers.add(parseScheduleTrigger())
             }
             cursor.expect(TokenKind.THEN, "expected THEN after SCHEDULE trigger(s)")
-            val action = parseAction()
+            val action = actionParser.parseAction()
             out.add(ScheduleDecl(triggers = triggers, action = action))
         }
         return out
@@ -1437,6 +903,8 @@ class Parser(
         )
     }
 
+    internal fun parseAction(): ActionAst = actionParser.parseAction()
+
     internal fun parseBracket(): BracketAst = bracketParser.parseBracket()
 
     internal fun parseOco(): OcoAst = bracketParser.parseOco()
@@ -1450,8 +918,6 @@ class Parser(
     internal fun parseSizing(): SizingAst = sizingParser.parseSizing()
 
     companion object {
-        private val LOG_PLACEHOLDER_REGEX = Regex("\\{([a-zA-Z_][a-zA-Z0-9_]*)\\}")
-
         /** Top-level section keywords; each opens a block that must precede RULES. */
         private val SECTION_KINDS =
             setOf(
