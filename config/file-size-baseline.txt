@@ -1,6 +1,6 @@
 # Files over the size limit (200 lines, tests 220) when the rule landed.
 # Entries may only go down. Split a file, then run ./gradlew updateFileSizeBaseline.
-3595 src/main/kotlin/com/qkt/app/OrderManager.kt
+3353 src/main/kotlin/com/qkt/app/OrderManager.kt
 2848 src/main/kotlin/com/qkt/broker/mt5/MT5Broker.kt
 2699 src/test/kotlin/com/qkt/broker/mt5/MT5BrokerIntegrationTest.kt
 2503 src/main/kotlin/com/qkt/app/LiveSession.kt

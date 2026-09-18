@@ -5,9 +5,14 @@ import com.qkt.app.order.EntryRiskReport
 import com.qkt.app.order.HaltCancellations
 import com.qkt.app.order.ManagedStopBook
 import com.qkt.app.order.ManagedStopTicker
+import com.qkt.app.order.OcoExecutionGuard
+import com.qkt.app.order.OcoSequencer
 import com.qkt.app.order.OrderBook
+import com.qkt.app.order.OrderOps
 import com.qkt.app.order.PendingExposureBook
 import com.qkt.app.order.ProtectionLevels
+import com.qkt.app.order.SiblingCancellation
+import com.qkt.app.order.SiblingLinks
 import com.qkt.app.order.blendAvg
 import com.qkt.app.order.computeChildPrice
 import com.qkt.app.order.evaluateAt
@@ -41,7 +46,6 @@ import com.qkt.execution.ManagedOrder
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.OrderState
 import com.qkt.execution.StopLossSpec
-import com.qkt.execution.TimeInForce
 import com.qkt.execution.TriggerType
 import com.qkt.execution.exitLegIntent
 import com.qkt.execution.isCompositeShape
@@ -154,10 +158,32 @@ class OrderManager(
 
     private val lastObservedPrice: MutableMap<String, BigDecimal> = mutableMapOf()
 
-    private val siblings: MutableMap<String, List<String>> = mutableMapOf()
+    private val siblings = SiblingLinks()
+    private val ops =
+        object : OrderOps {
+            override fun submit(request: OrderRequest): SubmitAck = this@OrderManager.submit(request)
 
-    /** Group id for each leg of an OCO that qkt, rather than the venue, must enforce. */
-    private val emulatedOcoGroupByLeg: MutableMap<String, String> = mutableMapOf()
+            override fun dispatch(request: OrderRequest): SubmitAck = this@OrderManager.dispatch(request)
+
+            override fun cancel(clientOrderId: String) = this@OrderManager.cancel(clientOrderId)
+
+            override fun track(managed: ManagedOrder) = this@OrderManager.track(managed)
+
+            override fun update(
+                id: String,
+                change: (ManagedOrder) -> ManagedOrder,
+            ): Boolean = this@OrderManager.update(id, change)
+
+            override fun persistAll() = this@OrderManager.persistAll()
+
+            override fun reportProtectionFailure(
+                strategyId: String,
+                message: String,
+            ) = this@OrderManager.reportProtectionFailure(strategyId, message)
+        }
+    private val ocoGuard = OcoExecutionGuard(book, siblings, clock, ops)
+    private val ocoSequencer = OcoSequencer(book, exposure, siblings, ocoGuard, clock, ops)
+    private val siblingCancels = SiblingCancellation(book, siblings, ocoSequencer, ops)
     private val engineHeldCloseTickets: MutableMap<String, String> = mutableMapOf()
 
     /**
@@ -165,45 +191,6 @@ class OrderManager(
      * position-close observations, so a partial close does not complete the wrapper early.
      */
     private val venueClosedQuantityByEntry: MutableMap<String, BigDecimal> = mutableMapOf()
-
-    private data class OcoCompensation(
-        val strategyId: String,
-        val positionTicket: String,
-    )
-
-    /** In-flight closes raised after both independently placed OCO legs executed. */
-    private val ocoCompensations: MutableMap<String, OcoCompensation> = mutableMapOf()
-
-    /**
-     * In-flight sequencing for a [OrderRequest.StandaloneOCO] whose legs are placed one
-     * acceptance at a time: leg2 is dispatched only after the venue accepts leg1, so a leg1
-     * rejection can never leave a one-legged (directional) OCO. Indexed in [ocoByLeg1] /
-     * [ocoByLeg2] under the id each leg's broker events arrive under — the entry id for a
-     * bracket leg, the leg's own id otherwise (see [ocoFillId]).
-     */
-    private class OcoSequence(
-        val ocoId: String,
-        val leg1: OrderRequest,
-        val leg1AckId: String,
-        val leg2: OrderRequest,
-        val leg2AckId: String,
-    ) {
-        var leg2Placed: Boolean = false
-        var leg2Confirmed: Boolean = false
-
-        /**
-         * Set when leg1 fills before leg2's acceptance arrives: leg2's venue ticket isn't
-         * known yet, so the sibling-cancel is deferred until [OrderManager.onAccepted] sees
-         * leg2's acceptance and cancels it then.
-         */
-        var leg2PendingCancel: Boolean = false
-    }
-
-    /** OCO sequences awaiting leg1's acceptance, keyed by [OcoSequence.leg1AckId]. */
-    private val ocoByLeg1: MutableMap<String, OcoSequence> = mutableMapOf()
-
-    /** Active/in-flight OCO sequences keyed by [OcoSequence.leg2AckId], until the OCO resolves. */
-    private val ocoByLeg2: MutableMap<String, OcoSequence> = mutableMapOf()
 
     private val pendingChildren: MutableMap<String, List<OrderRequest>> = mutableMapOf()
 
@@ -273,9 +260,6 @@ class OrderManager(
     private val activeScaleOutsById: MutableMap<String, OrderRequest.ScaleOut> = mutableMapOf()
     private val scaleOutByExitId: MutableMap<String, String> = mutableMapOf()
     private val remainingScaleOutExitIds: MutableMap<String, MutableSet<String>> = mutableMapOf()
-
-    /** Winning OCO legs whose first positive execution slice already started sibling cancellation. */
-    private val ocoSiblingCancelStarted: MutableSet<String> = mutableSetOf()
 
     private val timeExits: MutableMap<String, OrderRequest.TimeExit> = mutableMapOf()
 
@@ -503,7 +487,7 @@ class OrderManager(
     fun getOrder(clientOrderId: String): ManagedOrder? = book[clientOrderId]
 
     /** Sibling order ids linked to [clientOrderId] — exposed for restart-recovery tests. */
-    fun siblingsOf(clientOrderId: String): List<String> = siblings[clientOrderId].orEmpty()
+    fun siblingsOf(clientOrderId: String): List<String> = siblings[clientOrderId]
 
     /**
      * Rebuild pending order tracking and sibling linkage from the persistor for [strategyIds].
@@ -527,7 +511,7 @@ class OrderManager(
                     (leg.siblingIds + leg.clientOrderId)
                         .sorted()
                         .joinToString(prefix = "restored-oco:", separator = "|")
-                emulatedOcoGroupByLeg[leg.clientOrderId] = groupId
+                ocoGuard.markEmulated(leg.clientOrderId, groupId)
                 if (isEngineHeldOnRestore(leg.request)) {
                     siblings[leg.clientOrderId] = leg.siblingIds
                     val persisted = dynamicStops.remove(leg.clientOrderId)
@@ -1094,7 +1078,7 @@ class OrderManager(
                 if (OrderTypeCapability.OCO in broker.capabilitiesFor(request.symbol)) {
                     submitRegisteredToBroker(request)
                 } else {
-                    submitOco(request)
+                    ocoSequencer.submit(request)
                 }
 
             is OrderRequest.OTO -> submitOto(request)
@@ -2158,135 +2142,6 @@ class OrderManager(
         return SubmitAck(req.id, req.id, accepted = true)
     }
 
-    private fun submitOco(req: OrderRequest.StandaloneOCO): SubmitAck {
-        val now = clock.now()
-        update(req.id) {
-            it.copy(
-                state = OrderState.WORKING,
-                groupId = req.id,
-                childClientOrderIds = listOf(req.leg1.id, req.leg2.id),
-                lastUpdatedAt = now,
-            )
-        }
-        for (leg in listOf(req.leg1, req.leg2)) {
-            track(
-                ManagedOrder(
-                    id = leg.id,
-                    request = leg,
-                    state = OrderState.CREATED,
-                    parentClientOrderId = req.id,
-                    groupId = req.id,
-                    createdAt = now,
-                    lastUpdatedAt = now,
-                ),
-            )
-        }
-        // Sibling link keyed by the id each leg's fill arrives under, not the leg's own id.
-        // A Bracket leg is placed as an OTO whose parent is the inner entry, so the broker
-        // fills `Bracket.entry` (a distinct id) — keying by the bracket id would leave the
-        // link unreachable and the sibling would never cancel on fill. Leaf legs (Stop/Limit)
-        // fill under their own id, so this is a no-op for them. Acceptances/rejections arrive
-        // under the same id, so the sequence below is keyed by it too.
-        val leg1AckId = ocoFillId(req.leg1)
-        val leg2AckId = ocoFillId(req.leg2)
-        exposure.register(exposureEntryRequest(req.leg1), req.id)
-        exposure.register(exposureEntryRequest(req.leg2), req.id)
-        siblings[leg1AckId] = listOf(leg2AckId)
-        siblings[leg2AckId] = listOf(leg1AckId)
-        emulatedOcoGroupByLeg[leg1AckId] = req.id
-        emulatedOcoGroupByLeg[leg2AckId] = req.id
-
-        // Event-driven sequencing: place leg1 now; leg2 only once the venue accepts leg1
-        // (in [advanceOcoOnAccept]). A leg1 rejection abandons the OCO with leg2 never sent —
-        // there is no one-legged window. With a synchronous broker the acceptance fires inline
-        // during dispatch, so the whole OCO resolves here re-entrantly; with an async broker
-        // the result follows later on the bus. Either way the OCO's tracked state is the truth.
-        val seq = OcoSequence(req.id, req.leg1, leg1AckId, req.leg2, leg2AckId)
-        ocoByLeg1[leg1AckId] = seq
-        ocoByLeg2[leg2AckId] = seq
-
-        val ack1 = dispatch(req.leg1)
-        if (book[req.id]?.state == OrderState.REJECTED) {
-            return SubmitAck(req.id, req.id, accepted = false, rejectReason = "leg ${req.leg1.id} rejected")
-        }
-        if (!ack1.accepted) {
-            // Local rejection that carried no event (e.g. a capability reject) — abandon the
-            // OCO; leg2 was never dispatched.
-            exposure.remove(leg2AckId)
-            clearOcoSequence(seq)
-            return rejectOco(req.id, "leg ${req.leg1.id} rejected: ${ack1.rejectReason ?: "unknown"}")
-        }
-        return SubmitAck(req.id, req.id, accepted = true)
-    }
-
-    /**
-     * Advance any OCO whose leg the venue just accepted. Accepting leg1 releases leg2 (held
-     * back so a leg1 rejection can't leave a one-legged OCO); accepting leg2 confirms its
-     * venue ticket and fires a cancel that was deferred because leg1 filled while leg2 was
-     * still unacknowledged.
-     */
-    private fun advanceOcoOnAccept(ackId: String) {
-        ocoByLeg1[ackId]?.let { seq ->
-            if (!seq.leg2Placed && book[seq.ocoId]?.state?.isTerminal != true) {
-                seq.leg2Placed = true
-                dispatch(seq.leg2)
-            }
-        }
-        ocoByLeg2[ackId]?.let { seq ->
-            seq.leg2Confirmed = true
-            if (seq.leg2PendingCancel) {
-                seq.leg2PendingCancel = false
-                cancel(seq.leg2.id)
-                clearOcoSequence(seq)
-            }
-        }
-    }
-
-    /**
-     * Abandon an OCO whose leg the venue rejected. A leg1 rejection means leg2 was never sent
-     * — nothing to unwind. A leg2 rejection cancels the still-live leg1.
-     */
-    private fun failOcoOnReject(ackId: String) {
-        ocoByLeg1[ackId]?.let { seq ->
-            if (!seq.leg2Placed) {
-                exposure.remove(seq.leg2AckId)
-                clearOcoSequence(seq)
-                rejectOco(seq.ocoId, "leg ${seq.leg1.id} rejected")
-                return
-            }
-        }
-        ocoByLeg2[ackId]?.let { seq ->
-            clearOcoSequence(seq)
-            cancel(seq.leg1.id)
-            rejectOco(seq.ocoId, "leg ${seq.leg2.id} rejected")
-        }
-    }
-
-    private fun clearOcoSequence(seq: OcoSequence) {
-        ocoByLeg1.remove(seq.leg1AckId)
-        ocoByLeg2.remove(seq.leg2AckId)
-    }
-
-    private fun clearOcoSequenceFor(ackId: String) {
-        (ocoByLeg1[ackId] ?: ocoByLeg2[ackId])?.let { clearOcoSequence(it) }
-    }
-
-    /**
-     * The clientOrderId under which [leg]'s fill is reported. A Bracket leg is placed as an
-     * OTO whose parent is `Bracket.entry`, so the broker fills the inner entry — its id, not
-     * the bracket wrapper's. Leaf legs (Stop/Limit) fill under their own id. Mirrors the
-     * compiler's [com.qkt.dsl.compile.ActionCompiler.parentClientOrderIdFor].
-     */
-    private fun ocoFillId(leg: OrderRequest): String = (leg as? OrderRequest.Bracket)?.entry?.id ?: leg.id
-
-    private fun rejectOco(
-        ocoId: String,
-        reason: String,
-    ): SubmitAck {
-        update(ocoId) { it.copy(state = OrderState.REJECTED, lastUpdatedAt = clock.now()) }
-        return SubmitAck(ocoId, ocoId, accepted = false, rejectReason = reason)
-    }
-
     private fun holdPending(request: OrderRequest): SubmitAck {
         update(request.id) { it.copy(state = OrderState.PENDING, lastUpdatedAt = clock.now()) }
         val trailingSeed =
@@ -2320,12 +2175,7 @@ class OrderManager(
      * second fill can still be identified and compensated after intervening ticks.
      */
     private fun isReferenced(id: String): Boolean {
-        if (
-            id in emulatedOcoGroupByLeg &&
-            siblings[id].orEmpty().any { siblingId -> book[siblingId]?.state?.isTerminal == false }
-        ) {
-            return true
-        }
+        if (ocoGuard.isHoldingForSibling(id)) return true
         if (timeExits.values.any { it.target.id == id }) return true
         for (s in stacks.all()) {
             if (id == s.id || id == s.layerOneOrderId) return true
@@ -2343,8 +2193,8 @@ class OrderManager(
         partialScaleOutPositionTickets.remove(id)
         cancellingScaleOutWrappers.remove(id)
         scaleOutByExitId.remove(id)
-        ocoSiblingCancelStarted.remove(id)
-        emulatedOcoGroupByLeg.remove(id)
+        siblingCancels.forget(id)
+        ocoGuard.forget(id)
         pendingChildren.remove(id)
         pendingOtosByParent.remove(id)
         engineHeldCloseTickets.remove(id)
@@ -2427,7 +2277,7 @@ class OrderManager(
                 if (sid.isBlank()) continue
                 pendingByStrategy.getOrPut(sid) { mutableMapOf() }[id] = bracket
             }
-            for ((entryId, siblingIds) in siblings) {
+            for ((entryId, siblingIds) in siblings.all) {
                 val entry = book[entryId] ?: continue
                 val sid = entry.request.strategyId
                 if (sid.isBlank()) continue
@@ -2448,7 +2298,7 @@ class OrderManager(
             }
             val ocoLegsByStrategy: MutableMap<String, MutableList<com.qkt.persistence.PersistedOcoLeg>> =
                 mutableMapOf()
-            for ((legId, siblingIds) in siblings) {
+            for ((legId, siblingIds) in siblings.all) {
                 val managed = book[legId] ?: continue
                 if (managed.state.isTerminal) continue
                 val ticket = managed.brokerOrderId ?: continue
@@ -2609,7 +2459,7 @@ class OrderManager(
         if (ticket != null && e.clientOrderId in restoredAttachedEntries) {
             markRestoredAttachedEntryFilled(e.clientOrderId, ticket)
         }
-        advanceOcoOnAccept(e.clientOrderId)
+        ocoSequencer.onAccepted(e.clientOrderId)
     }
 
     private fun onRejected(e: BrokerEvent.OrderRejected) {
@@ -2626,19 +2476,13 @@ class OrderManager(
                 it.copy(state = OrderState.REJECTED, lastUpdatedAt = clock.now())
             }
         if (!applied) return
-        ocoSiblingCancelStarted.remove(e.clientOrderId)
-        ocoCompensations.remove(e.clientOrderId)?.let { compensation ->
-            reportProtectionFailure(
-                compensation.strategyId,
-                "CRITICAL OCO compensation ${e.clientOrderId} failed for position " +
-                    "${compensation.positionTicket}: ${e.reason}",
-            )
-        }
+        siblingCancels.forget(e.clientOrderId)
+        ocoGuard.onRejected(e.clientOrderId, e.reason)
         exposure.remove(e.clientOrderId)
         completeScaleOutExit(e.clientOrderId, OrderState.REJECTED)
         risk.forgetRejected(e.clientOrderId)
         unarmedChildren.orEmpty().forEach { cancel(it.id) }
-        failOcoOnReject(e.clientOrderId)
+        ocoSequencer.onRejected(e.clientOrderId)
     }
 
     private fun onPartiallyFilled(e: BrokerEvent.OrderPartiallyFilled) {
@@ -2669,7 +2513,7 @@ class OrderManager(
             e.price,
         )
         if (e.quantity.signum() > 0 && e.cumulativeFilled.signum() > 0) {
-            resolveOcoOnExecution(e.clientOrderId)
+            siblingCancels.onExecution(e.clientOrderId)
         }
     }
 
@@ -2706,7 +2550,7 @@ class OrderManager(
                 )
             }
         if (!applied) return
-        ocoCompensations.remove(e.clientOrderId)
+        ocoGuard.onFilled(e.clientOrderId)
         exposure.remove(e.clientOrderId)
         completeScaleOutExit(e.clientOrderId, OrderState.FILLED)
         log.info(
@@ -2718,11 +2562,11 @@ class OrderManager(
             e.quantity,
             e.price,
         )
-        val filledSibling = filledEmulatedOcoSibling(e.clientOrderId)
+        val filledSibling = ocoGuard.filledSibling(e.clientOrderId)
         if (filledSibling != null) {
             discardChildrenForCompensatedOcoLeg(e.clientOrderId)
-            compensateEmulatedOcoDoubleFill(e, filledSibling)
-            clearOcoSequenceFor(e.clientOrderId)
+            ocoGuard.compensateDoubleFill(e, filledSibling)
+            ocoSequencer.clearFor(e.clientOrderId)
             return
         }
         val pending = pendingChildren.remove(e.clientOrderId)
@@ -2833,8 +2677,8 @@ class OrderManager(
                 positionTicket = e.brokerOrderId?.takeIf { it.isNotBlank() },
             )
         }
-        resolveOcoOnExecution(e.clientOrderId)
-        ocoSiblingCancelStarted.remove(e.clientOrderId)
+        siblingCancels.onExecution(e.clientOrderId)
+        siblingCancels.forget(e.clientOrderId)
         completeAttachedBracketOnEngineExit(e)
         detectExitIncreasedExposure(e)
         retireStaleProtectiveExits(e.strategyId, e.symbol)
@@ -3006,98 +2850,12 @@ class OrderManager(
         exposure.remove(wrapperId)
     }
 
-    /** Cancel an OCO sibling exactly once, beginning with the first positive execution slice. */
-    private fun resolveOcoOnExecution(clientOrderId: String) {
-        val siblingIds = siblings[clientOrderId].orEmpty()
-        if (siblingIds.isEmpty() || !ocoSiblingCancelStarted.add(clientOrderId)) return
-        var deferredSiblingCancel = false
-        siblingIds.forEach { sibId ->
-            val sib = book[sibId] ?: return@forEach
-            if (sib.state.isTerminal) return@forEach
-            // If the sibling is an OCO leg2 that the venue hasn't acknowledged yet, its ticket
-            // is unknown — a cancel now would no-op at the venue. Defer it to leg2's acceptance.
-            val pending = ocoByLeg2[sibId]
-            if (pending != null && pending.leg2Placed && !pending.leg2Confirmed) {
-                pending.leg2PendingCancel = true
-                deferredSiblingCancel = true
-            } else {
-                cancel(sibId)
-            }
-        }
-        // The filled leg resolved its OCO; drop the sequence unless a cancel is still deferred
-        // (that path clears it once leg2 is acknowledged and cancelled).
-        if (!deferredSiblingCancel) clearOcoSequenceFor(clientOrderId)
-    }
-
-    private fun filledEmulatedOcoSibling(clientOrderId: String): ManagedOrder? {
-        if (clientOrderId !in emulatedOcoGroupByLeg) return null
-        return siblings[clientOrderId]
-            .orEmpty()
-            .asSequence()
-            .mapNotNull(book.orders::get)
-            .firstOrNull { it.state == OrderState.FILLED }
-    }
-
     private fun discardChildrenForCompensatedOcoLeg(clientOrderId: String) {
         pendingChildren.remove(clientOrderId)
         pendingOtosByParent.remove(clientOrderId)
         fillAnchoredFallbackBrackets.remove(clientOrderId)
         fillAnchoredAttachedBrackets.remove(clientOrderId)
         pendingScaleOutsByBasis.remove(clientOrderId)
-    }
-
-    private fun compensateEmulatedOcoDoubleFill(
-        secondFill: BrokerEvent.OrderFilled,
-        firstFilledSibling: ManagedOrder,
-    ) {
-        val strategyId =
-            secondFill.strategyId.ifBlank {
-                book[secondFill.clientOrderId]?.request?.strategyId.orEmpty()
-            }
-        val positionTicket = secondFill.brokerOrderId?.takeIf { it.isNotBlank() }
-        val groupId = emulatedOcoGroupByLeg.getValue(secondFill.clientOrderId)
-        if (positionTicket == null) {
-            reportProtectionFailure(
-                strategyId,
-                "CRITICAL OCO invariant violated for $groupId: ${firstFilledSibling.id} and " +
-                    "${secondFill.clientOrderId} both filled, but the second fill has no owned position ticket; " +
-                    "automatic close was refused",
-            )
-            return
-        }
-
-        val compensationId = "$groupId-oco-double-fill-close-${secondFill.clientOrderId}"
-        val secondPositionQuantity =
-            book[secondFill.clientOrderId]?.cumulativeFilledQuantity?.takeIf { it.signum() > 0 }
-                ?: secondFill.quantity
-        reportProtectionFailure(
-            strategyId,
-            "CRITICAL OCO invariant violated for $groupId: ${firstFilledSibling.id} and " +
-                "${secondFill.clientOrderId} both filled; closing second position ticket $positionTicket",
-        )
-        ocoCompensations[compensationId] = OcoCompensation(strategyId, positionTicket)
-        val close =
-            OrderRequest.Market(
-                id = compensationId,
-                symbol = secondFill.symbol,
-                side = if (secondFill.side == Side.BUY) Side.SELL else Side.BUY,
-                quantity = secondPositionQuantity,
-                timeInForce = TimeInForce.GTC,
-                timestamp = clock.now(),
-                strategyId = strategyId,
-                closesTicket = positionTicket,
-                legIntent = LegIntent.Close(ticket = positionTicket),
-            )
-        val ack = submit(close)
-        if (!ack.accepted) {
-            ocoCompensations.remove(compensationId)?.let {
-                reportProtectionFailure(
-                    strategyId,
-                    "CRITICAL OCO compensation $compensationId was rejected for position $positionTicket: " +
-                        (ack.rejectReason ?: "unknown reason"),
-                )
-            }
-        }
     }
 
     private fun onCancelled(e: BrokerEvent.OrderCancelled) {
@@ -3110,7 +2868,7 @@ class OrderManager(
                 it.copy(state = OrderState.CANCELLED, lastUpdatedAt = clock.now())
             }
         if (!applied) return
-        ocoSiblingCancelStarted.remove(e.clientOrderId)
+        siblingCancels.forget(e.clientOrderId)
         exposure.remove(e.clientOrderId)
         completeScaleOutExit(e.clientOrderId, OrderState.CANCELLED)
         val unarmedChildren = pendingChildren.remove(e.clientOrderId)
@@ -3140,7 +2898,7 @@ class OrderManager(
             e.strategyId,
             e.reason,
         )
-        clearOcoSequenceFor(e.clientOrderId)
+        ocoSequencer.clearFor(e.clientOrderId)
     }
 
     private fun activateScaleOut(
