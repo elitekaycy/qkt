@@ -34,6 +34,12 @@ internal interface OrderOps {
         change: (ManagedOrder) -> ManagedOrder,
     ): Boolean
 
+    /** Refuses an engine-held [request] before it reaches the venue, e.g. after a risk halt. */
+    fun rejectEngineHeld(
+        request: OrderRequest,
+        reason: String,
+    )
+
     /** Snapshots order state for restart recovery. */
     fun persistAll()
 

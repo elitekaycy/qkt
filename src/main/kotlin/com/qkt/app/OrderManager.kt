@@ -26,16 +26,16 @@ import com.qkt.app.order.ScaleOutRecovery
 import com.qkt.app.order.ScaleOutTracker
 import com.qkt.app.order.SiblingCancellation
 import com.qkt.app.order.SiblingLinks
+import com.qkt.app.order.StackExecution
+import com.qkt.app.order.StackLayerExits
+import com.qkt.app.order.StackLayerOrders
 import com.qkt.app.order.VenuePositionProtection
 import com.qkt.app.order.blendAvg
-import com.qkt.app.order.computeChildPrice
-import com.qkt.app.order.evaluateAt
 import com.qkt.app.order.exposureEntryRequest
 import com.qkt.app.order.hasPersistentDynamicState
 import com.qkt.app.order.isPersistentManagedStop
 import com.qkt.app.order.isTriggered
 import com.qkt.app.order.limitReached
-import com.qkt.app.order.referencesStackEntryRef
 import com.qkt.app.order.stopReached
 import com.qkt.broker.Broker
 import com.qkt.broker.OrderTypeCapability
@@ -45,14 +45,9 @@ import com.qkt.bus.EventBus
 import com.qkt.common.Clock
 import com.qkt.common.Money
 import com.qkt.common.Side
-import com.qkt.dsl.ast.NumLit
-import com.qkt.dsl.ast.SizeQty
 import com.qkt.events.BrokerEvent
 import com.qkt.events.TickEvent
-import com.qkt.execution.At
 import com.qkt.execution.ExpiryAction
-import com.qkt.execution.Immediate
-import com.qkt.execution.LayerSpec
 import com.qkt.execution.LegIntent
 import com.qkt.execution.ManagedOrder
 import com.qkt.execution.OrderRequest
@@ -68,7 +63,6 @@ import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.NoopInstrumentRegistry
 import com.qkt.marketdata.MarketPriceProvider
 import com.qkt.marketdata.Tick
-import com.qkt.positions.LegRole
 import com.qkt.positions.PendingOrderExposureProvider
 import java.math.BigDecimal
 import org.slf4j.LoggerFactory
@@ -137,14 +131,14 @@ class OrderManager(
 ) : PendingOrderExposureProvider {
     private val log = LoggerFactory.getLogger(OrderManager::class.java)
 
-    private val book =
+    private val book: OrderBook =
         OrderBook(
             isReferenced = { id -> isReferenced(id) },
             reclaim = { id -> reclaim(id) },
         )
     private val exposure = PendingExposureBook(book)
     private val risk = BracketRiskRecorder(trackRisk, instruments)
-    private val haltCancels =
+    private val haltCancels: HaltCancellations =
         HaltCancellations(book, broker, clock) { strategyId, message ->
             reportProtectionFailure(strategyId, message)
         }
@@ -160,7 +154,7 @@ class OrderManager(
     private val expiredStacksScratch = ArrayList<StackTracker.ActiveStack>()
 
     private val stops = ManagedStopBook()
-    private val stopTicker =
+    private val stopTicker: ManagedStopTicker =
         ManagedStopTicker(
             stops = stops,
             clock = clock,
@@ -172,7 +166,7 @@ class OrderManager(
     private val closeTickets = EngineHeldCloseTickets()
 
     private val siblings = SiblingLinks()
-    private val ops =
+    private val ops: OrderOps =
         object : OrderOps {
             override fun submit(request: OrderRequest): SubmitAck = this@OrderManager.submit(request)
 
@@ -192,6 +186,11 @@ class OrderManager(
             override fun submitRegisteredToBroker(request: OrderRequest): SubmitAck =
                 this@OrderManager.submitRegisteredToBroker(request)
 
+            override fun rejectEngineHeld(
+                request: OrderRequest,
+                reason: String,
+            ) = this@OrderManager.rejectEngineHeld(request, reason)
+
             override fun persistAll() = this@OrderManager.persistAll()
 
             override fun persistSubmissionIntent(strategyId: String) =
@@ -205,14 +204,14 @@ class OrderManager(
     private val ocoGuard = OcoExecutionGuard(book, siblings, clock, ops)
     private val ocoSequencer = OcoSequencer(book, exposure, siblings, ocoGuard, clock, ops)
     private val siblingCancels = SiblingCancellation(book, siblings, ocoSequencer, ops)
-    private val venueProtection =
+    private val venueProtection: VenuePositionProtection =
         VenuePositionProtection(
             broker = broker,
             bus = bus,
             ops = ops,
             closeTicket = { request -> managedStopCloseTicket(request) },
             armStackFallbackStop = { stackId, layerOrderId, fillPrice, ticket ->
-                attachLayerSl(stackId, layerOrderId, fillPrice, engineHeldCloseTicket = ticket)
+                stackExits.attachStopLoss(stackId, layerOrderId, fillPrice, engineHeldCloseTicket = ticket)
             },
             armBracketFallbackStop = { stop, ticket -> armFillAnchoredFallbackStop(stop, ticket) },
         )
@@ -235,6 +234,22 @@ class OrderManager(
     private val timeExits: MutableMap<String, OrderRequest.TimeExit> = mutableMapOf()
 
     private val stacks: StackTracker = StackTracker()
+    private val stackLayers: StackLayerOrders = StackLayerOrders(clock, positionMode)
+    private val stackExits: StackLayerExits =
+        StackLayerExits(stacks, book, closeTickets, venueProtection, clock, ops, closeTicketFor)
+    private val stackExecution: StackExecution =
+        StackExecution(
+            stacks,
+            stackLayers,
+            stackExits,
+            book,
+            exposure,
+            siblings,
+            broker,
+            clock,
+            ops,
+            engineHeldSubmissionBlockReason,
+        )
 
     /**
      * Returns and removes the recorded risk for [clientOrderId]. Designed to be called once per
@@ -261,8 +276,8 @@ class OrderManager(
         bus.subscribe<BrokerEvent.OrderAccepted> { e -> onAccepted(e) }
         bus.subscribe<BrokerEvent.OrderRejected> { e -> onRejected(e) }
         bus.subscribe<BrokerEvent.OrderFilled> { e -> onFilled(e) }
-        bus.subscribe<BrokerEvent.OrderFilled> { e -> onStackLayerFilled(e) }
-        bus.subscribe<BrokerEvent.OrderFilled> { e -> evaluateStackFlat(e) }
+        bus.subscribe<BrokerEvent.OrderFilled> { e -> stackExecution.onLayerFilled(e) }
+        bus.subscribe<BrokerEvent.OrderFilled> { e -> stackExecution.onExitFilled(e) }
         bus.subscribe<BrokerEvent.OrderPartiallyFilled> { e -> onPartiallyFilled(e) }
         bus.subscribe<BrokerEvent.OrderCancelled> { e -> onCancelled(e) }
         bus.subscribe<BrokerEvent.OrderCancelFailed> { e -> onCancelFailed(e) }
@@ -947,6 +962,16 @@ class OrderManager(
 
     fun pendingOrders(): List<ManagedOrder> = book.orders.values.filter { it.state == OrderState.PENDING }
 
+    /** Active protective orders that require ticks on the engine thread to trigger. */
+    fun engineHeldProtectiveStopCount(): Int =
+        book.orders.values.count { managed ->
+            !managed.state.isTerminal &&
+                (
+                    managed.id in closeTickets ||
+                        isPersistentManagedStop(managed.request)
+                )
+        }
+
     private fun dispatch(request: OrderRequest): SubmitAck =
         when (request) {
             is OrderRequest.Market, is OrderRequest.Limit -> submitToBroker(request)
@@ -996,7 +1021,7 @@ class OrderManager(
 
             is OrderRequest.TimeExit -> submitTimeExit(request)
 
-            is OrderRequest.Stack -> submitStack(request)
+            is OrderRequest.Stack -> stackExecution.submit(request)
 
             else -> error("Order type ${request::class.simpleName} dispatch not yet implemented (added later in 7d-b)")
         }
@@ -1024,130 +1049,6 @@ class OrderManager(
         exposure.register(exposureEntryRequest(req.target))
         dispatch(req.target)
         return SubmitAck(req.id, req.id, accepted = true)
-    }
-
-    private fun submitStack(req: OrderRequest.Stack): SubmitAck {
-        val firstLayer =
-            req.plan.layers.firstOrNull()
-                ?: error("StackPlan must have at least one layer")
-        // Layer 1 may be Immediate (market) or At (pending limit/stop). Both are supported.
-        stacks.register(req.id, req.plan, req.plan.outerBracket)
-        val now = clock.now()
-        val firstOrderId = "${req.id}-l1"
-        stacks.setLayerOneOrderId(req.id, firstOrderId)
-        val firstQty = resolveLayerQuantity(firstLayer)
-        val firstTriggerPrice: BigDecimal? =
-            when (val t = firstLayer.trigger) {
-                Immediate -> null
-                is At -> {
-                    require(!referencesStackEntryRef(t.price)) {
-                        "STACK layer 1 AT expression cannot reference 'entry' (anchor is set by layer 1's fill)"
-                    }
-                    evaluateAt(t.price, anchor = BigDecimal.ZERO)
-                }
-            }
-        val firstReq = buildLayerOrder(firstOrderId, req, firstLayer, firstQty, triggerPrice = firstTriggerPrice)
-        track(
-            ManagedOrder(
-                id = firstOrderId,
-                request = firstReq,
-                state = OrderState.CREATED,
-                parentClientOrderId = req.id,
-                createdAt = now,
-                lastUpdatedAt = now,
-            ),
-        )
-        update(req.id) {
-            it.copy(
-                state = OrderState.WORKING,
-                childClientOrderIds = listOf(firstOrderId),
-                lastUpdatedAt = now,
-            )
-        }
-        exposure.register(firstReq)
-        dispatch(firstReq)
-        return SubmitAck(req.id, req.id, accepted = true)
-    }
-
-    private fun onStackLayerFilled(e: BrokerEvent.OrderFilled) {
-        val filledQuantity = book[e.clientOrderId]?.cumulativeFilledQuantity ?: e.quantity
-        val owner = stacks.markFilled(e.clientOrderId, filledQuantity) ?: return
-        val state = stacks.get(owner) ?: return
-        // Anchor capture happens only on layer 1.
-        if (state.layerOneOrderId == e.clientOrderId && state.anchor == null) {
-            stacks.setAnchor(owner, e.price, clock.now())
-            materializePendingLayers(owner, anchor = e.price)
-        }
-        // On a venue that holds attached position SL/TP, attach the layer's fixed exits to the
-        // position so the broker closes that exact ticket — a resting exit order would instead
-        // open a counter on a hedging account. Otherwise decompose into separate resting exits.
-        if (OrderTypeCapability.POSITION_MODIFY in broker.capabilitiesFor(e.symbol)) {
-            attachLayerSlTpToVenue(
-                stackId = owner,
-                layerOrderId = e.clientOrderId,
-                fillPrice = e.price,
-                ticket = e.brokerOrderId,
-                operationId = "stack:${e.clientOrderId}:${e.sequenceId}",
-            )
-            return
-        }
-        val slId = "${e.clientOrderId}-sl"
-        val tpId = "${e.clientOrderId}-tp"
-        val slDistance = attachLayerSl(stackId = owner, layerOrderId = e.clientOrderId, fillPrice = e.price)
-        val hadTp =
-            attachLayerTp(stackId = owner, layerOrderId = e.clientOrderId, fillPrice = e.price, slDistance = slDistance)
-        if (slDistance != null && hadTp) {
-            siblings[slId] = listOf(tpId)
-            siblings[tpId] = listOf(slId)
-        }
-    }
-
-    /**
-     * Attach a filled stack layer's fixed SL/TP to its venue position, so the broker closes that
-     * exact ticket when a level is hit. The levels are computed off the actual fill (a stack fires
-     * at market, so they aren't known until fill) — hence a position modify rather than the entry
-     * wire. Used when the broker supports [OrderTypeCapability.POSITION_MODIFY]; without it the
-     * layer's exits rest as separate orders (see [attachLayerSl] / [attachLayerTp]).
-     */
-    private fun attachLayerSlTpToVenue(
-        stackId: String,
-        layerOrderId: String,
-        fillPrice: BigDecimal,
-        ticket: String?,
-        operationId: String,
-    ) {
-        val state = stacks.get(stackId) ?: return
-        val parent = (book[stackId]?.request as? OrderRequest.Stack) ?: return
-        val resolvedTicket =
-            ticket?.takeIf { it.isNotBlank() }
-                ?: closeTicketFor?.invoke(parent.strategyId, layerOrderId)
-        if (resolvedTicket == null) {
-            reportProtectionFailure(
-                parent.strategyId,
-                "filled stack layer $layerOrderId has no venue ticket; SL/TP cannot be attached",
-            )
-            return
-        }
-        val slPrice =
-            state.outerBracket?.stopLoss?.let {
-                computeChildPrice(it, parent.side, fillPrice, isStopLoss = true)
-            }
-        val slDistance = slPrice?.let { (fillPrice - it).abs() }
-        val tpPrice =
-            state.outerBracket?.takeProfit?.let {
-                computeChildPrice(it, parent.side, fillPrice, isStopLoss = false, slDistance = slDistance)
-            }
-        if (slPrice == null && tpPrice == null) return
-        venueProtection.attachStackLayer(
-            operationId = operationId,
-            stackId = stackId,
-            layerOrderId = layerOrderId,
-            fillPrice = fillPrice,
-            ticket = resolvedTicket,
-            strategyId = parent.strategyId,
-            stopLoss = slPrice,
-            takeProfit = tpPrice,
-        )
     }
 
     private fun reportProtectionFailure(
@@ -1178,284 +1079,6 @@ class OrderManager(
         exposure.register(stop)
         persistAll()
     }
-
-    private fun attachLayerSl(
-        stackId: String,
-        layerOrderId: String,
-        fillPrice: BigDecimal,
-        engineHeldCloseTicket: String? = null,
-    ): BigDecimal? {
-        val state = stacks.get(stackId) ?: return null
-        val slAst = state.outerBracket?.stopLoss ?: return null
-        val parent = (book[stackId]?.request as? OrderRequest.Stack) ?: return null
-        val exitSide = if (parent.side == Side.BUY) Side.SELL else Side.BUY
-        val slPrice = computeChildPrice(slAst, parent.side, fillPrice, isStopLoss = true)
-        val layerEntry = book[layerOrderId] ?: return null
-        val slId = "$layerOrderId-sl"
-        val slReq =
-            OrderRequest.Stop(
-                id = slId,
-                symbol = parent.symbol,
-                side = exitSide,
-                quantity =
-                    layerEntry.cumulativeFilledQuantity.takeIf { it.signum() > 0 }
-                        ?: layerEntry.request.quantity,
-                stopPrice = slPrice,
-                timeInForce = parent.timeInForce,
-                timestamp = clock.now(),
-                strategyId = parent.strategyId,
-                legIntent = layerEntry.request.exitLegIntent(),
-            )
-        val now = clock.now()
-        track(
-            ManagedOrder(
-                id = slId,
-                request = slReq,
-                state = OrderState.CREATED,
-                parentClientOrderId = layerOrderId,
-                createdAt = now,
-                lastUpdatedAt = now,
-            ),
-        )
-        update(layerOrderId) {
-            it.copy(childClientOrderIds = it.childClientOrderIds + slId, lastUpdatedAt = now)
-        }
-        if (engineHeldCloseTicket != null) {
-            closeTickets[slId] = engineHeldCloseTicket
-            update(slId) { it.copy(state = OrderState.PENDING, lastUpdatedAt = clock.now()) }
-        } else {
-            dispatch(slReq)
-        }
-        return (fillPrice - slPrice).abs()
-    }
-
-    private fun attachLayerTp(
-        stackId: String,
-        layerOrderId: String,
-        fillPrice: BigDecimal,
-        slDistance: BigDecimal?,
-    ): Boolean {
-        val state = stacks.get(stackId) ?: return false
-        val tpAst = state.outerBracket?.takeProfit ?: return false
-        val parent = (book[stackId]?.request as? OrderRequest.Stack) ?: return false
-        val tpPrice = computeChildPrice(tpAst, parent.side, fillPrice, isStopLoss = false, slDistance = slDistance)
-        val tpId = "$layerOrderId-tp"
-        val exitSide = if (parent.side == Side.BUY) Side.SELL else Side.BUY
-        val layerEntry = book[layerOrderId] ?: return false
-        val tpReq =
-            OrderRequest.Limit(
-                id = tpId,
-                symbol = parent.symbol,
-                side = exitSide,
-                quantity = layerEntry.request.quantity,
-                limitPrice = tpPrice,
-                timeInForce = parent.timeInForce,
-                timestamp = clock.now(),
-                strategyId = parent.strategyId,
-                legIntent = layerEntry.request.exitLegIntent(),
-            )
-        val now = clock.now()
-        track(
-            ManagedOrder(
-                id = tpId,
-                request = tpReq,
-                state = OrderState.CREATED,
-                parentClientOrderId = layerOrderId,
-                createdAt = now,
-                lastUpdatedAt = now,
-            ),
-        )
-        update(layerOrderId) {
-            it.copy(childClientOrderIds = it.childClientOrderIds + tpId, lastUpdatedAt = now)
-        }
-        dispatch(tpReq)
-        return true
-    }
-
-    private fun evaluateStackFlat(e: BrokerEvent.OrderFilled) {
-        val managed = book[e.clientOrderId] ?: return
-        val parentId = managed.parentClientOrderId ?: return
-        val parent = book[parentId] ?: return
-        val stackId =
-            if (parent.request is OrderRequest.Stack) {
-                // POSITION_MODIFY venues report a position close under the layer entry's own id.
-                // Its side is opposite the entry; same-side events are the original layer fill.
-                if (e.side == managed.request.side) return
-                stacks.recordLayerCloseFill(e.clientOrderId, e.quantity) ?: return
-            } else {
-                // Engine-decomposed SL/TP fills are children of the layer entry.
-                stacks.markLayerClosed(parentId) ?: return
-            }
-        val state = stacks.get(stackId) ?: return
-        if (state.filledLayerIds.size == state.closedLayerIds.size && state.filledLayerIds.isNotEmpty()) {
-            cancelStackPending(stackId)
-            stacks.terminate(stackId)
-        }
-    }
-
-    private fun cancelStackPending(stackId: String) {
-        val state = stacks.get(stackId) ?: return
-        for (pid in state.pendingLayerIds.toList()) cancel(pid)
-    }
-
-    private fun materializePendingLayers(
-        stackId: String,
-        anchor: BigDecimal,
-    ) {
-        val state = stacks.get(stackId) ?: return
-        val parent =
-            (book[stackId]?.request as? OrderRequest.Stack)
-                ?: error("Stack request not tracked for $stackId")
-        for (layer in state.plan.layers.drop(1)) {
-            val triggerPrice = resolveTriggerPrice(layer.trigger, anchor)
-            val layerOrderId = "$stackId-l${layer.index}"
-            val qty = resolveLayerQuantity(layer)
-            val pending = buildLayerOrder(layerOrderId, parent, layer, qty, triggerPrice, anchor)
-            val now = clock.now()
-            track(
-                ManagedOrder(
-                    id = layerOrderId,
-                    request = pending,
-                    state = OrderState.CREATED,
-                    parentClientOrderId = stackId,
-                    createdAt = now,
-                    lastUpdatedAt = now,
-                ),
-            )
-            stacks.addPending(stackId, layerOrderId)
-            exposure.register(pending)
-            log.info(
-                "stack pending stack_id={} strategy_id={} layer={} qty={} trigger={} side={}",
-                stackId,
-                parent.strategyId,
-                layer.index,
-                qty,
-                triggerPrice,
-                parent.side,
-            )
-            val blockReason = engineHeldSubmissionBlockReason(pending)
-            if (blockReason == null) {
-                dispatch(pending)
-            } else {
-                rejectEngineHeld(pending, blockReason)
-            }
-        }
-    }
-
-    private fun resolveTriggerPrice(
-        trigger: com.qkt.execution.LayerTrigger,
-        anchor: BigDecimal,
-    ): BigDecimal {
-        val at = (trigger as? At) ?: error("non-Immediate triggers must be At")
-        return evaluateAt(at.price, anchor)
-    }
-
-    /** Active protective orders that require ticks on the engine thread to trigger. */
-    fun engineHeldProtectiveStopCount(): Int =
-        book.orders.values.count { managed ->
-            !managed.state.isTerminal &&
-                (
-                    managed.id in closeTickets ||
-                        isPersistentManagedStop(managed.request)
-                )
-        }
-
-    private fun resolveLayerQuantity(layer: LayerSpec): BigDecimal {
-        layer.resolvedQuantity?.let { return it }
-        // Fallback: supports test code that builds LayerSpec by hand without going through
-        // ActionCompiler. Only literal-qty sizing is supported in this path.
-        val sizing = layer.sizing
-        if (sizing is SizeQty) {
-            val n =
-                sizing.expr as? NumLit
-                    ?: error("STACK layer qty must be a literal in tests that bypass ActionCompiler")
-            return n.value
-        }
-        error(
-            "STACK non-qty sizing (RISK/NOTIONAL/EQUITY%/BALANCE%) requires resolution by ActionCompiler. " +
-                "If building LayerSpec manually for testing, use SizeQty(NumLit). " +
-                "If reaching this in production, ActionCompiler did not populate LayerSpec.resolvedQuantity.",
-        )
-    }
-
-    /**
-     * Turn one layer into the venue order that fires it. A layer written as a plain touch
-     * (`AT price`, market on touch) becomes a stop when its trigger sits beyond the seed in the
-     * trade direction — price has to move through it — and a limit when the trigger sits behind
-     * the seed, where price has to come back to it. A buy stop below the market would be
-     * triggered the moment it was placed, which is not what "buy more when down 200" means.
-     * The compact `STACK n SPACING d BELOW` form already resolves this at compile time; this is
-     * the same rule applied to the layer-list form, whose triggers are only known once the seed
-     * fills. [anchor] is the seed fill (null for the seed layer itself).
-     */
-    private fun buildLayerOrder(
-        layerId: String,
-        parent: OrderRequest.Stack,
-        layer: LayerSpec,
-        qty: BigDecimal,
-        triggerPrice: BigDecimal?,
-        anchor: BigDecimal? = null,
-    ): OrderRequest {
-        val intent = layerEntryIntent(layerId, parent.symbol)
-        val restsBehindAnchor =
-            triggerPrice != null &&
-                anchor != null &&
-                (
-                    (parent.side == Side.BUY && triggerPrice < anchor) ||
-                        (parent.side == Side.SELL && triggerPrice > anchor)
-                )
-        return when {
-            triggerPrice == null ->
-                OrderRequest.Market(
-                    id = layerId,
-                    symbol = parent.symbol,
-                    side = parent.side,
-                    quantity = qty,
-                    timeInForce = parent.timeInForce,
-                    timestamp = clock.now(),
-                    strategyId = parent.strategyId,
-                    legIntent = intent,
-                )
-            layer.orderType is com.qkt.dsl.ast.Limit || restsBehindAnchor ->
-                OrderRequest.Limit(
-                    id = layerId,
-                    symbol = parent.symbol,
-                    side = parent.side,
-                    quantity = qty,
-                    limitPrice = triggerPrice,
-                    timeInForce = parent.timeInForce,
-                    timestamp = clock.now(),
-                    strategyId = parent.strategyId,
-                    legIntent = intent,
-                )
-            else ->
-                OrderRequest.Stop(
-                    id = layerId,
-                    symbol = parent.symbol,
-                    side = parent.side,
-                    quantity = qty,
-                    stopPrice = triggerPrice,
-                    timeInForce = parent.timeInForce,
-                    timestamp = clock.now(),
-                    strategyId = parent.strategyId,
-                    legIntent = intent,
-                )
-        }
-    }
-
-    /**
-     * A pyramiding layer is its own ticket on a hedging venue and nets into the book elsewhere —
-     * the same rule the planner applies to a strategy-emitted entry.
-     */
-    private fun layerEntryIntent(
-        layerId: String,
-        symbol: String,
-    ): LegIntent =
-        if (positionMode(symbol) == PositionAccountingMode.HEDGING) {
-            LegIntent.Open(layerId, LegRole.INDEPENDENT)
-        } else {
-            LegIntent.Net
-        }
 
     private fun submitToBroker(request: OrderRequest): SubmitAck {
         val expiresAt = request.expiresAt
@@ -1971,7 +1594,7 @@ class OrderManager(
             }
             for (i in expiredStacksScratch.indices) {
                 val state = expiredStacksScratch[i]
-                cancelStackPending(state.id)
+                stackExecution.cancelPending(state.id)
                 stacks.terminate(state.id)
             }
         }
