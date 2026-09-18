@@ -115,7 +115,6 @@
 242 src/test/kotlin/com/qkt/dsl/compile/ForgeThesisExpressibilityTest.kt
 240 src/test/kotlin/com/qkt/dsl/compile/AccountStateAccessorsTest.kt
 240 src/test/kotlin/com/qkt/dsl/compile/ActionCompilerTest.kt
-238 src/test/kotlin/com/qkt/cli/CliTierDeterminismTest.kt
 238 src/test/kotlin/com/qkt/cli/SoakCommandTest.kt
 237 src/test/kotlin/com/qkt/dsl/compile/RuleSuppressedFireTest.kt
 237 src/test/kotlin/com/qkt/parity/mt5golden/MT5GoldenFixture.kt
