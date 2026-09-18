@@ -87,7 +87,6 @@
 327 src/test/kotlin/com/qkt/broker/mt5/MT5PollerRaceTest.kt
 326 src/main/kotlin/com/qkt/broker/mt5/MT5WireTypes.kt
 326 src/main/kotlin/com/qkt/observe/insights/InsightsSink.kt
-320 src/main/kotlin/com/qkt/cli/CliOptionSchema.kt
 320 src/main/kotlin/com/qkt/cli/DataCommand.kt
 320 src/test/kotlin/com/qkt/execution/OrderRequestTest.kt
 320 src/test/kotlin/com/qkt/marketdata/MarketDataGateTest.kt
