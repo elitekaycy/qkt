@@ -79,6 +79,27 @@ class Mt5ConnectorTest {
     }
 
     @Test
+    fun `gateway api keys resolve through the shared credential forms`(
+        @org.junit.jupiter.api.io.TempDir dir: java.nio.file.Path,
+    ) {
+        val keyFile =
+            dir.resolve("gateway_key").also {
+                java.nio.file.Files
+                    .writeString(it, "from-file\n")
+            }
+        val ctx = ConnectorContext(stateRoot = null, env = mapOf("GW_KEY" to "from-env"), clock = SystemClock())
+
+        fun keyOf(value: String): String? {
+            val cfg = acct("a", 1).let { it.copy(settings = it.settings + ("api_key" to value)) }
+            return (Mt5Connector().open(listOf(cfg), ctx).single() as Mt5TradingAccount).profile.apiKey
+        }
+
+        assertThat(keyOf("env:GW_KEY")).isEqualTo("from-env")
+        assertThat(keyOf("file:$keyFile")).isEqualTo("from-file")
+        assertThat(keyOf("literal-key")).isEqualTo("literal-key")
+    }
+
+    @Test
     fun `trading hours come from the account's calendars block`() {
         val cfg = acct("a", 1).copy(tradingHours = listOf("BTC*" to "crypto", "*" to "fx"))
 

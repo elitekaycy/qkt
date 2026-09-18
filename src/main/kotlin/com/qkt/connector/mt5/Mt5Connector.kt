@@ -38,7 +38,7 @@ class Mt5Connector(
     ): List<TradingAccount> {
         val profiles =
             MT5BrokerProfileLoader().load(
-                raw = accounts.associate { it.name to it.settings },
+                raw = accounts.associate { it.name to withResolvedApiKey(it, context) },
                 defaults = MT5DefaultProfiles.all,
                 env = context.env,
                 calendars = accounts.associate { it.name to it.tradingHours },
@@ -82,6 +82,21 @@ class Mt5Connector(
     }
 
     /**
+     * Resolves an `env:` or `file:` gateway key through the shared [ConnectorContext.secrets], the
+     * same forms every connector accepts. `${VAR}` was already substituted when the config file
+     * loaded, and a literal key passes through, so existing configs load exactly as before.
+     */
+    private fun withResolvedApiKey(
+        account: AccountConfig,
+        context: ConnectorContext,
+    ): Map<String, String> {
+        val raw = account.setting(API_KEY) ?: return account.settings
+        if (!raw.startsWith("env:") && !raw.startsWith("file:")) return account.settings
+        val resolved = context.secrets.resolve(account, API_KEY) ?: return account.settings
+        return account.settings + (API_KEY to resolved.reveal())
+    }
+
+    /**
      * One lazily built feed per market-data identity. The first account of a group owns the
      * poller; the others remap their prefix onto it, so the gateway sees one tick poller per
      * identity. Nothing is constructed until an account's market data is first read.
@@ -114,6 +129,8 @@ class Mt5Connector(
 
         /** Under the state root; the daemon's journal retention sweeps the same directory. */
         const val TRANSPORT_JOURNAL_DIR: String = "mt5-transport-journal"
+
+        const val API_KEY: String = "api_key"
     }
 }
 
