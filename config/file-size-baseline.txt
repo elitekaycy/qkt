@@ -77,7 +77,6 @@
 397 src/test/kotlin/com/qkt/parity/PortfolioDeployerBacktestParityTest.kt
 395 src/test/kotlin/com/qkt/parity/BacktestLiveParityTest.kt
 393 src/test/kotlin/com/qkt/dsl/compile/GeneratedStrategyReplay.kt
-391 src/main/kotlin/com/qkt/dsl/compile/WarmupRequirements.kt
 388 src/main/kotlin/com/qkt/cli/StrategyDataRequirements.kt
 385 src/main/kotlin/com/qkt/cli/IncidentCommand.kt
 385 src/main/kotlin/com/qkt/dsl/compile/CandleHub.kt
