@@ -113,7 +113,7 @@ class VenueOrderTranslator(
 }
 ```
 
-**Composite shapes (OCO, OTO, Bracket)** that the engine splits into atomic legs before submitting (most modern brokers handle them this way): you don't need translator support — `OrderManager.submitOco` dispatches the legs individually. Your translator only needs to handle the atomic types.
+**Composite shapes (OCO, OTO, Bracket)** that the engine splits into atomic legs before submitting (most modern brokers handle them this way): you don't need translator support — the order manager's OCO sequencer (`com.qkt.app.order.OcoSequencer`) places the legs individually. Your translator only needs to handle the atomic types.
 
 **Composite shapes the engine sends as one wire call** (rare — only when a venue has a native compound order API): use a sealed return type so a single `translate` call can return multiple wire requests. See `MT5OrderTranslator.MT5Translation` for the pattern.
 
@@ -185,7 +185,7 @@ private fun onPositionOpened(position: VenuePosition) {
 }
 ```
 
-The `meta.orderId` is what `OrderManager.siblings[]` keys on for OCO sibling cancel-on-fill, so this correlation is critical.
+The `meta.orderId` is what the order manager's sibling links (`com.qkt.app.order.SiblingLinks`) key on for OCO sibling cancel-on-fill, so this correlation is critical.
 
 ### Step 6 — State recovery
 
