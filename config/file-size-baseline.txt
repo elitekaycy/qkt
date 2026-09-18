@@ -35,7 +35,6 @@
 411 src/main/kotlin/com/qkt/broker/PaperBroker.kt
 411 src/test/kotlin/com/qkt/broker/mt5/MT5BrokerProfileLoaderTest.kt
 400 src/main/kotlin/com/qkt/accounting/Accounting.kt
-395 src/test/kotlin/com/qkt/parity/BacktestLiveParityTest.kt
 393 src/test/kotlin/com/qkt/dsl/compile/GeneratedStrategyReplay.kt
 382 src/test/kotlin/com/qkt/broker/bybit/spot/BybitSpotStateRecoveryTest.kt
 382 src/test/kotlin/com/qkt/marketdata/live/mt5/Mt5MarketSourceTimeBaseTest.kt
