@@ -202,7 +202,6 @@
 221 src/main/kotlin/com/qkt/bus/EventBus.kt
 221 src/main/kotlin/com/qkt/marketdata/store/DatasetSnapshot.kt
 218 src/main/kotlin/com/qkt/marketdata/store/LocalBarStore.kt
-217 src/main/kotlin/com/qkt/dsl/compile/OrderTypeCompiler.kt
 216 src/main/kotlin/com/qkt/evidence/Evidence.kt
 216 src/main/kotlin/com/qkt/marketdata/source/CachedHistoricalMarketSource.kt
 215 src/main/kotlin/com/qkt/marketdata/hub/HubMarketSource.kt
