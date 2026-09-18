@@ -62,7 +62,6 @@
 451 src/main/kotlin/com/qkt/broker/mt5/MT5PositionPoller.kt
 450 src/main/kotlin/com/qkt/cli/SoakCommand.kt
 446 src/main/kotlin/com/qkt/app/ExitHookManager.kt
-440 src/main/kotlin/com/qkt/backtest/report/BacktestReportWriter.kt
 440 src/test/kotlin/com/qkt/docs/DslReferenceCodeBlocksTest.kt
 435 src/main/kotlin/com/qkt/cli/ExperimentCommand.kt
 429 src/test/kotlin/com/qkt/parity/TimesEntryParityTest.kt
