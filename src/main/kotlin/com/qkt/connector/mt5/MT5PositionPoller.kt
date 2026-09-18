@@ -3,7 +3,6 @@ package com.qkt.connector.mt5
 import com.qkt.bus.EventBus
 import com.qkt.common.Clock
 import com.qkt.common.Side
-import com.qkt.common.SymbolCalendars
 import com.qkt.events.BrokerEvent
 import com.qkt.marketdata.MarketPriceProvider
 import java.math.BigDecimal
@@ -78,7 +77,7 @@ class MT5PositionPoller(
     /**
      * Session gate: when non-null, [tick] skips the venue HTTP call whenever it returns false
      * (out of session). Null keeps the legacy always-on behavior. [MT5Broker] wires this to the
-     * profile's [SymbolCalendars] so a multi-asset broker polls whenever any asset class is open.
+     * profile's [com.qkt.common.SymbolCalendars] so a multi-asset broker polls whenever any asset class is open.
      */
     private val sessionGate: ((Instant) -> Boolean)? = null,
     /**

@@ -447,7 +447,7 @@ class MT5Broker(
                 orderTicket = d.orderTicket.takeIf { it != 0L }?.toString(),
                 symbol = "${profile.name.uppercase()}:${mt5Symbol.toQkt(d.symbol)}",
                 side = if (d.type == 0) com.qkt.common.Side.BUY else com.qkt.common.Side.SELL,
-                entry = dealEntryName(d.entry),
+                entry = mt5DealEntryName(d.entry),
                 qty = d.volume,
                 price = d.price,
                 profit = d.profit,
@@ -524,21 +524,9 @@ class MT5Broker(
     override fun ticketAttributions(): Map<String, String> =
         positionMetaByTicket.entries.associate { (ticket, meta) -> ticket.toString() to meta.strategyId }
 
-    /** The venue's `/symbol_info` specs for this profile's symbols. */
     override fun instrumentRegistry(): com.qkt.instrument.InstrumentRegistry = MT5InstrumentRegistry(this)
 
-    /** The profile's DST-aware MT5 server clock, used by `SCHEDULE … BROKER`. */
     override fun serverTimeZone(): java.time.ZoneId = profile.serverTimeZone.asZoneId()
-
-    /** MT5 `DEAL_ENTRY_*` codes as names; an unrecognized code passes through as its number. */
-    private fun dealEntryName(entry: Int): String =
-        when (entry) {
-            0 -> "IN"
-            1 -> "OUT"
-            2 -> "INOUT"
-            3 -> "OUT_BY"
-            else -> entry.toString()
-        }
 
     /**
      * Venue margin level, cached for [MARGIN_CACHE_TTL_MS] — the margin floor consults
