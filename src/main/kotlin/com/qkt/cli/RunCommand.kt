@@ -37,8 +37,8 @@ class RunCommand(
     private val args: Args,
     /**
      * Test seam. When `null` (production default), the run command builds a
-     * [com.qkt.marketdata.source.CompositeMarketSource] from the loaded MT5 broker
-     * profiles plus Bybit public spot/linear sources, with TradingView as fallback.
+     * [com.qkt.marketdata.source.CompositeMarketSource] from the configured trading accounts'
+     * own feeds, with TradingView as fallback.
      * Tests pass an explicit factory to swap in a fake.
      */
     private val sourceFactory: ((List<String>) -> MarketSource)? = null,
@@ -115,24 +115,26 @@ class RunCommand(
                 runawayMaxRoundTrips = cfg.runawayMaxRoundTrips
                 runawayMaxRejections = cfg.runawayMaxRejections
                 candleCloseGraceMs = cfg.candleCloseGraceMs
-                val mt5Profiles =
+                // Paper trading reads prices from the configured accounts' own feeds; it places no
+                // orders there, so accounts are opened for market data and never verified.
+                val accountRoutes =
                     try {
-                        com.qkt.connector.mt5
-                            .MT5BrokerProfileLoader()
-                            .load(
-                                raw = cfg.brokers,
-                                defaults = com.qkt.connector.mt5.MT5DefaultProfiles.all,
-                                env = System.getenv(),
-                                calendars = cfg.brokerCalendars,
-                                aliases = cfg.brokerAliases,
-                                capabilityRestrictions = cfg.brokerCapabilityRestrictions,
-                                instrumentOverrides = cfg.brokerInstrumentOverrides,
-                            )
+                        com.qkt.connectivity.AccountDirectory
+                            .open(
+                                cfg.accountConfigs(),
+                                com.qkt.connectivity.ConnectorRegistry
+                                    .discover(),
+                                com.qkt.connectivity.ConnectorContext(
+                                    stateRoot = null,
+                                    env = System.getenv(),
+                                    clock = com.qkt.common.SystemClock(),
+                                ),
+                            ).marketDataRoutes()
                     } catch (e: Exception) {
-                        println("[WARN] mt5 profile load failed: ${e.message}")
+                        println("[WARN] broker account load failed: ${e.message}")
                         emptyList()
                     }
-                MarketSourceFactory.composite(mt5Profiles, hub = cfg.hub)
+                MarketSourceFactory.composite(accountRoutes, hub = cfg.hub)
             }
         val feedSymbols = (symbols + accountingConfig.normalizedSymbols.values).distinct()
         val marketSource = effectiveSourceFactory(feedSymbols)

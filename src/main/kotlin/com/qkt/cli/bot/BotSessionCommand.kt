@@ -149,7 +149,7 @@ class BotSessionCommand(
     }
 
     /**
-     * Live session: the same pipeline `qkt deploy` runs (LiveSession, MT5 broker,
+     * Live session: the same pipeline `qkt deploy` runs (LiveSession, the account's broker,
      * config halt rules), with bridge strategies in the slots. Intents compile
      * against venue point-in-time facts via [com.qkt.trade.BotGateway], so sizing
      * and quantization match the one-shot live path exactly. When insights egress is
@@ -165,33 +165,22 @@ class BotSessionCommand(
         val spec = parseStart(sub) { "live-${com.qkt.common.SystemClock().now()}" }
         val (symbols, _, window, runId, identities, historyBars) = spec
         val cfg = botConfig(sub)
-        val profiles =
-            com.qkt.connector.mt5.MT5BrokerProfileLoader().load(
-                raw = cfg.brokers,
-                defaults = com.qkt.connector.mt5.MT5DefaultProfiles.all,
-                env = System.getenv(),
-                calendars = cfg.brokerCalendars,
-                aliases = cfg.brokerAliases,
-                capabilityRestrictions = cfg.brokerCapabilityRestrictions,
-                instrumentOverrides = cfg.brokerInstrumentOverrides,
+        val accounts =
+            com.qkt.connectivity.AccountDirectory.open(
+                cfg.accountConfigs(),
+                com.qkt.connectivity.ConnectorRegistry
+                    .discover(),
+                com.qkt.connectivity.ConnectorContext(
+                    stateRoot = null,
+                    env = System.getenv(),
+                    clock = com.qkt.common.SystemClock(),
+                ),
             )
-        require(profiles.isNotEmpty()) { "no MT5 broker profiles in config — a live session needs a gateway" }
+        require(accounts.accounts.isNotEmpty()) { "no broker accounts in config — a live session needs one" }
         val sourceFactory =
             com.qkt.cli.MarketSourceFactory
-                .composite(profiles, source = cfg.source)
-        val brokerFactories: Map<String, com.qkt.broker.BrokerFactory> =
-            profiles.associate { profile ->
-                profile.name.lowercase() to
-                    { bus, clock, priceTracker, _, strategyName ->
-                        com.qkt.connector.mt5.MT5Broker(
-                            profile = profile,
-                            bus = bus,
-                            clock = clock,
-                            priceTracker = priceTracker,
-                            strategyName = strategyName,
-                        )
-                    }
-            }
+                .composite(accounts.marketDataRoutes(), source = cfg.source)
+        val brokerFactories: Map<String, com.qkt.broker.BrokerFactory> = accounts.orderEntry()
         val history = BarHistory(capacity = maxOf(historyBars, 1000))
         seedLiveWarmup(cfg, symbols, window, historyBars, history)
         val recorder = BotSessionRecorder(history)
@@ -244,26 +233,30 @@ class BotSessionCommand(
                 history = history,
                 recorder = recorder,
             )
-        return serve(
-            sub = sub,
-            json = json,
-            session = session,
-            mode = "live",
-            cfg = cfg,
-            stateRoot = stateRoot,
-            identities = identities,
-            quoteContextFor = { symbol ->
-                com.qkt.trade.BotGateway
-                    .forSymbol(cfg, symbol)
-                    .quoteContext(symbol, cfg.accountCurrency)
-            },
-            serverThreads = 4,
-            insightsSink = insightsSink,
-            onFinish = {
-                BotSessionFiles.delete(stateRoot, runId)
-                null
-            },
-        )
+        return try {
+            serve(
+                sub = sub,
+                json = json,
+                session = session,
+                mode = "live",
+                cfg = cfg,
+                stateRoot = stateRoot,
+                identities = identities,
+                quoteContextFor = { symbol ->
+                    com.qkt.trade.BotGateway
+                        .forSymbol(cfg, symbol)
+                        .quoteContext(symbol, cfg.accountCurrency)
+                },
+                serverThreads = 4,
+                insightsSink = insightsSink,
+                onFinish = {
+                    BotSessionFiles.delete(stateRoot, runId)
+                    null
+                },
+            )
+        } finally {
+            accounts.close()
+        }
     }
 
     /**

@@ -13,10 +13,6 @@ import com.qkt.cli.daemon.StrategyHandle
 import com.qkt.cli.daemon.StrategyRegistry
 import com.qkt.cli.daemon.TelegramCommandChannel
 import com.qkt.cli.daemon.portfolio.PortfolioDeployer
-import com.qkt.connector.mt5.MT5AccountVerifier
-import com.qkt.connector.mt5.MT5Client
-import com.qkt.connector.mt5.MT5ReadCache
-import com.qkt.connector.mt5.MT5TradeMode
 import com.qkt.dsl.parse.Dsl
 import com.qkt.dsl.parse.ParseResult
 import com.qkt.dsl.parse.ParsedFile
@@ -51,8 +47,8 @@ class DaemonCommand(
     private val args: Args,
     /**
      * Test seam. When `null` (production default), the daemon builds a
-     * [CompositeMarketSource] from the loaded MT5 broker profiles plus Bybit public
-     * spot/linear sources, with TradingView as fallback. Tests pass an explicit
+     * [CompositeMarketSource] from the configured trading accounts' own feeds, with
+     * TradingView as fallback. Tests pass an explicit
      * factory to swap in a stub.
      */
     private val sourceFactory: ((List<String>) -> MarketSource)? = null,
@@ -164,36 +160,52 @@ class DaemonCommand(
             com.qkt.observe.insights.InsightsLogAppender
                 .attach(insightsSink)
         }
-        val mt5Profiles =
+        // Forward reference so the connector context can ask which deployed strategies trade an
+        // account. Recovery runs strictly after the broker is built, so by the time a broker asks,
+        // `registryRef.get()` is populated. See #154.
+        val registryRef = AtomicReference<StrategyRegistry?>(null)
+        val connectorContext =
+            com.qkt.connectivity.ConnectorContext(
+                stateRoot = stateDir.stateRoot,
+                env = System.getenv(),
+                clock = com.qkt.common.SystemClock(),
+                strategiesTrading = { accountName ->
+                    registryRef
+                        .get()
+                        ?.list()
+                        .orEmpty()
+                        .filter { handle ->
+                            handle.live
+                                .streamBrokers()
+                                .values
+                                .any { it.equals(accountName, ignoreCase = true) }
+                        }.map { it.name }
+                },
+            )
+        val accounts =
             try {
-                com.qkt.connector.mt5
-                    .MT5BrokerProfileLoader()
-                    .load(
-                        raw = cfg.brokers,
-                        defaults = com.qkt.connector.mt5.MT5DefaultProfiles.all,
-                        env = System.getenv(),
-                        calendars = cfg.brokerCalendars,
-                        aliases = cfg.brokerAliases,
-                        capabilityRestrictions = cfg.brokerCapabilityRestrictions,
-                        instrumentOverrides = cfg.brokerInstrumentOverrides,
-                    )
+                com.qkt.connectivity.AccountDirectory.open(
+                    cfg.accountConfigs(),
+                    com.qkt.connectivity.ConnectorRegistry
+                        .discover(),
+                    connectorContext,
+                )
             } catch (e: Exception) {
-                System.err.println("qkt: MT5 profile load failed: ${e.message}")
+                System.err.println("qkt: broker account load failed: ${e.message}")
                 runCatching { insightsSink?.close() }
                 return ExitCodes.USER_ERROR
             }
-        val mt5Accounts =
+        val verifiedAccounts =
             try {
-                mt5Profiles.associateWith { profile ->
-                    MT5AccountVerifier.fetchAndVerify(profile)
-                }
+                accounts.verifyAll()
             } catch (e: Exception) {
-                System.err.println("qkt: MT5 account preflight failed: ${e.message}")
+                System.err.println("qkt: broker account preflight failed: ${e.message}")
+                runCatching { accounts.close() }
                 runCatching { insightsSink?.close() }
                 return ExitCodes.USER_ERROR
             }
         val daemonCalendarFor: (String) -> com.qkt.common.TradingCalendar = { qktSymbol ->
-            liveCalendarFor(qktSymbol, mt5Profiles)
+            liveCalendarFor(qktSymbol, accounts)
         }
         val daemonInstrumentRegistry =
             try {
@@ -214,25 +226,13 @@ class DaemonCommand(
                 runCatching { insightsSink?.close() }
                 return ExitCodes.USER_ERROR
             }
-        if (!cfg.runtimeMode.production && mt5Accounts.values.any { it.tradeMode == MT5TradeMode.REAL.wireValue }) {
+        val liveAccounts = verifiedAccounts.filter { it.second.type == com.qkt.connectivity.AccountType.LIVE }
+        if (!cfg.runtimeMode.production && liveAccounts.isNotEmpty()) {
             System.err.println(
-                "[WARN] REAL MT5 account detected while runtime.mode=${cfg.runtimeMode.name.lowercase()}; " +
-                    "production governance checks are not active",
+                "[WARN] live-money account(s) ${liveAccounts.joinToString { it.first.config.name }} detected while " +
+                    "runtime.mode=${cfg.runtimeMode.name.lowercase()}; production governance checks are not active",
             )
         }
-        // Forward reference so the factory closure can query the registry that's
-        // constructed below. Recovery runs strictly after the broker is built, so by
-        // the time `siblingsLookup` fires, `registryRef.get()` is populated. See #154.
-        val registryRef = AtomicReference<StrategyRegistry?>(null)
-        val mt5TransportJournals =
-            mt5Profiles.associate { profile ->
-                profile.name.lowercase() to
-                    com.qkt.connector.mt5.MT5TransportJournal(
-                        stateDir.stateRoot.resolve("mt5-transport-journal"),
-                        profile.name,
-                        com.qkt.common.SystemClock(),
-                    )
-            }
         val journalRetention =
             com.qkt.observe
                 .JournalRetention(
@@ -266,91 +266,11 @@ class DaemonCommand(
         val insightsSharedDeals =
             com.qkt.observe.insights
                 .SharedDealFetch()
-        val mt5ReadCaches =
-            mt5Profiles
-                .map { profile -> profile.gatewayUrl to profile.apiKey }
-                .distinct()
-                .associateWith { MT5ReadCache(SHARED_MT5_READ_TTL_MS) }
-        val mt5Factories: Map<String, com.qkt.broker.BrokerFactory> =
-            mt5Profiles.associate { profile ->
-                val profileLabel = profile.name
-                val key = profileLabel.lowercase()
-                val sharedClient =
-                    MT5Client(
-                        gatewayUrl = profile.gatewayUrl,
-                        serverTimeZone = profile.serverTimeZone,
-                        httpTimeoutMs = profile.httpTimeoutMs,
-                        retryAttempts = profile.retryAttempts,
-                        apiKey = profile.apiKey,
-                        readCache = mt5ReadCaches.getValue(profile.gatewayUrl to profile.apiKey),
-                        transportJournal = mt5TransportJournals.getValue(key),
-                    )
-                key to
-                    { bus, clock, priceTracker, _, strategyName ->
-                        val siblingsLookup: () -> List<String> = {
-                            val registry = registryRef.get()
-                            if (registry == null || strategyName == null) {
-                                emptyList()
-                            } else {
-                                registry
-                                    .list()
-                                    .asSequence()
-                                    .filter { it.name != strategyName }
-                                    .filter { handle ->
-                                        handle.live
-                                            .streamBrokers()
-                                            .values
-                                            .any { it.equals(profileLabel, ignoreCase = true) }
-                                    }.map { it.name }
-                                    .toList()
-                            }
-                        }
-                        com.qkt.connector.mt5
-                            .MT5Broker(
-                                profile = profile,
-                                bus = bus,
-                                clock = clock,
-                                priceTracker = priceTracker,
-                                client = sharedClient,
-                                strategyName = strategyName,
-                                siblingsLookup = siblingsLookup,
-                            )
-                    }
-            }
-
-        // Bybit: one shared client per daemon (REST + private WS), created only when
-        // BYBIT_API_KEY is set so pure-MT5 deployments don't open an idle connection. Both
-        // spot and linear factories share it; a broker's close() stops only its reconciler,
-        // not the client, so the daemon owns the client lifecycle (closed on shutdown below).
-        val bybitClient: com.qkt.connector.bybit.BybitClient? =
-            if (!System.getenv("BYBIT_API_KEY").isNullOrEmpty()) {
-                com.qkt.connector.bybit
-                    .BybitClient(
-                        apiKey = System.getenv("BYBIT_API_KEY").orEmpty(),
-                        apiSecret = System.getenv("BYBIT_API_SECRET") ?: error("BYBIT_API_SECRET is required"),
-                    ).also { c ->
-                        runCatching { c.connect() }
-                            .onFailure { println("[WARN] Bybit connect failed at startup: ${it.message}") }
-                    }
-            } else {
-                null
-            }
-        val bybitFactories: Map<String, com.qkt.broker.BrokerFactory> =
-            bybitClient?.let { client ->
-                val spot: com.qkt.broker.BrokerFactory = { bus, clock, _, _, _ ->
-                    com.qkt.connector.bybit.spot
-                        .BybitSpotBroker(client, bus, clock)
-                }
-                val linear: com.qkt.broker.BrokerFactory = { bus, clock, _, positions, _ ->
-                    com.qkt.connector.bybit.linear
-                        .BybitLinearBroker(client, bus, clock, positions)
-                }
-                mapOf("bybit_spot" to spot, "bybit_linear" to linear)
-            } ?: emptyMap()
-        val brokerFactories: Map<String, com.qkt.broker.BrokerFactory> = mt5Factories + bybitFactories
+        val brokerFactories: Map<String, com.qkt.broker.BrokerFactory> = accounts.orderEntry()
 
         val effectiveSourceFactory: (List<String>) -> MarketSource =
-            sourceFactory ?: MarketSourceFactory.composite(mt5Profiles, source = cfg.source, hub = cfg.hub)
+            sourceFactory
+                ?: MarketSourceFactory.composite(accounts.marketDataRoutes(), source = cfg.source, hub = cfg.hub)
 
         val statePersistor =
             statePersistorFactory?.invoke(cfg, stateDir.stateRoot)
@@ -508,11 +428,9 @@ class DaemonCommand(
                 "(state file: ${stateDir.controlPortFile})",
         )
 
-        if (mt5Profiles.isNotEmpty()) {
-            println("[INFO] mt5 broker profiles loaded: ${mt5Profiles.joinToString { it.name }}")
-            mt5Accounts.forEach { (profile, account) ->
-                println("[INFO] mt5 account: ${MT5AccountVerifier.describe(profile, account)}")
-            }
+        if (verifiedAccounts.isNotEmpty()) {
+            println("[INFO] broker accounts loaded: ${accounts.accounts.joinToString { it.config.name }}")
+            verifiedAccounts.forEach { (_, profile) -> println("[INFO] account: ${profile.description}") }
         }
 
         val failedAutoDeploys =
@@ -543,10 +461,7 @@ class DaemonCommand(
                     version = BuildInfo.VERSION,
                     strategies = registry.list().map { it.name },
                     timestamp = startedAt.toEpochMilli(),
-                    accounts =
-                        mt5Accounts.map { (profile, account) ->
-                            MT5AccountVerifier.describe(profile, account)
-                        },
+                    accounts = verifiedAccounts.map { (_, profile) -> profile.description },
                 ),
             )
         }
@@ -581,10 +496,9 @@ class DaemonCommand(
             runCatching { dailySummarySchedulers.forEach { it.close() } }
             runCatching { registry.stopAll() }
             runCatching { statePersistor.close() }
-            mt5TransportJournals.values.forEach { runCatching { it.close() } }
             runCatching { journalRetention.close() }
             runCatching { diskSpaceGuard.close() }
-            runCatching { bybitClient?.close() }
+            runCatching { accounts.close() }
             runCatching { notifier.close() }
             runCatching { insightsSink?.close() }
         }
@@ -734,27 +648,18 @@ class DaemonCommand(
     private fun controlClient(stateDir: StateDir): ControlClient = ControlClient(stateDir)
 
     companion object {
-        /** Below the 1s venue poll cadence: collapses sibling reads without hiding a poll round. */
-        private const val SHARED_MT5_READ_TTL_MS: Long = 500L
-
         @Suppress("UNUSED_PARAMETER")
         fun defaultTradingViewSource(symbols: List<String>): MarketSource = TradingViewMarketSource.connect()
     }
 }
 
+/**
+ * The trading calendar for [qktSymbol]: its account's trading hours when an account serves the
+ * prefix, otherwise the backtest defaults (e.g. `PAPER:SPX` resolves to NYSE hours).
+ */
 internal fun liveCalendarFor(
     qktSymbol: String,
-    mt5Profiles: List<com.qkt.connector.mt5.MT5BrokerProfile>,
-): com.qkt.common.TradingCalendar {
-    val broker = qktSymbol.substringBefore(':', missingDelimiterValue = "").lowercase()
-    val bare = qktSymbol.substringAfter(':')
-    if (broker == "bybit_spot" || broker == "bybit_linear") {
-        return com.qkt.common.TradingCalendar
-            .crypto()
-    }
-    return mt5Profiles
-        .firstOrNull { it.name.equals(broker, ignoreCase = true) }
-        ?.symbolCalendars
-        ?.calendarFor(bare)
-        ?: BacktestContext.defaultCalendars().calendarFor(bare)
-}
+    accounts: com.qkt.connectivity.AccountDirectory,
+): com.qkt.common.TradingCalendar =
+    accounts.tradingHoursFor(qktSymbol)
+        ?: BacktestContext.defaultCalendars().calendarFor(qktSymbol.substringAfter(':'))
