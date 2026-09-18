@@ -179,7 +179,6 @@
 216 src/main/kotlin/com/qkt/marketdata/source/CachedHistoricalMarketSource.kt
 215 src/main/kotlin/com/qkt/marketdata/hub/HubMarketSource.kt
 213 src/main/kotlin/com/qkt/backtest/ExecutionSimulation.kt
-213 src/main/kotlin/com/qkt/cli/editor/EditorInstaller.kt
 212 src/main/kotlin/com/qkt/app/LiveSessionHandle.kt
 212 src/main/kotlin/com/qkt/broker/bybit/linear/BybitLinearStateRecovery.kt
 210 src/main/kotlin/com/qkt/cli/daemon/portfolio/PortfolioSupervisor.kt
