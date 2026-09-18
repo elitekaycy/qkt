@@ -21,18 +21,24 @@ import java.util.concurrent.atomic.AtomicLong
  * Stack legs are added via [addStackLeg] — they bypass the [apply] averaging logic which
  * would otherwise commingle them into the primary's entry-price math.
  */
-class StrategyPositionTracker(
-    private val persistor: com.qkt.persistence.StatePersistor = com.qkt.persistence.NoopStatePersistor(),
+class StrategyPositionTracker private constructor(
+    private val persistor: com.qkt.persistence.StatePersistor,
+    private val excursionPersistIntervalMs: Long,
+    private val clock: () -> Long,
+    private val legBooks: StrategyLegBooks,
+) : StrategyLegReads by legBooks {
     /**
-     * Minimum spacing between excursion saves for one (strategy, symbol). A new extreme inside
-     * the window is kept in memory and lands with the next save; 0 saves every new extreme.
+     * [excursionPersistIntervalMs] is the minimum spacing between excursion saves for one
+     * (strategy, symbol). A new extreme inside the window is kept in memory and lands with the
+     * next save; 0 saves every new extreme.
      */
-    private val excursionPersistIntervalMs: Long = 1_000L,
-    private val clock: () -> Long = System::currentTimeMillis,
-) {
-    private val log = org.slf4j.LoggerFactory.getLogger(StrategyPositionTracker::class.java)
+    constructor(
+        persistor: com.qkt.persistence.StatePersistor = com.qkt.persistence.NoopStatePersistor(),
+        excursionPersistIntervalMs: Long = 1_000L,
+        clock: () -> Long = System::currentTimeMillis,
+    ) : this(persistor, excursionPersistIntervalMs, clock, StrategyLegBooks(persistor))
 
-    private val byStrategy: MutableMap<String, MutableMap<String, LegBook>> = ConcurrentHashMap()
+    private val log = org.slf4j.LoggerFactory.getLogger(StrategyPositionTracker::class.java)
 
     /**
      * Account-level net position per symbol, folded across strategies. Rebuilt for one symbol
@@ -54,7 +60,7 @@ class StrategyPositionTracker(
         symbol: String,
         action: (PositionLeg) -> Unit,
     ) {
-        for (books in byStrategy.values) {
+        for (books in legBooks.strategyBooks()) {
             val book = books[symbol] ?: continue
             book.forEach(action)
         }
@@ -66,7 +72,7 @@ class StrategyPositionTracker(
         var netQty = BigDecimal.ZERO
         var earliest = Long.MAX_VALUE
         var any = false
-        for (books in byStrategy.values) {
+        for (books in legBooks.strategyBooks()) {
             val book = books[symbol] ?: continue
             book.forEach { leg ->
                 any = true
@@ -85,7 +91,7 @@ class StrategyPositionTracker(
         val netSide = if (netQty.signum() > 0) Side.BUY else Side.SELL
         var notional = Money.ZERO
         var qty = Money.ZERO
-        for (books in byStrategy.values) {
+        for (books in legBooks.strategyBooks()) {
             val book = books[symbol] ?: continue
             book.forEach { leg ->
                 if (leg.side != netSide) return@forEach
@@ -120,7 +126,7 @@ class StrategyPositionTracker(
     ): Boolean {
         val owner =
             strategyId ?: run {
-                val owners = byStrategy.entries.filter { (_, books) -> books.containsKey(symbol) }
+                val owners = legBooks.holdersOf(symbol)
                 if (owners.size > 1) {
                     log.warn(
                         "venue correction for {} from {} not applied: {} strategies hold it",
@@ -137,7 +143,7 @@ class StrategyPositionTracker(
                     return false
                 }
             }
-        val books = byStrategy.getOrPut(owner) { ConcurrentHashMap() }
+        val books = legBooks.booksOrCreate(owner)
         if (ticket != null && signedQuantity.signum() != 0) {
             val book = books[symbol]
             if (book != null && !book.isEmpty()) {
@@ -167,7 +173,7 @@ class StrategyPositionTracker(
             )
             log.info("venue position {} on {} booked for {} from {}", ticket, symbol, owner, source)
             syncPrimaryMfeTracker(owner, symbol)
-            persistBook(owner, symbol)
+            legBooks.persist(owner, symbol)
             reindex(symbol)
             return true
         }
@@ -189,17 +195,9 @@ class StrategyPositionTracker(
             books[symbol] = book
         }
         syncPrimaryMfeTracker(owner, symbol)
-        persistBook(owner, symbol)
+        legBooks.persist(owner, symbol)
         reindex(symbol)
         return true
-    }
-
-    private fun persistBook(
-        strategyId: String,
-        symbol: String,
-    ) {
-        val book = byStrategy[strategyId]?.get(symbol) ?: LegBook(symbol)
-        runCatching { persistor.saveLegBook(strategyId, symbol, book) }
     }
 
     /**
@@ -212,11 +210,7 @@ class StrategyPositionTracker(
         strategyId: String,
         symbol: String,
     ) {
-        val persisted = runCatching { persistor.loadLegBook(strategyId, symbol) }.getOrNull() ?: return
-        if (persisted.legs.isEmpty()) return
-        val books = byStrategy.getOrPut(strategyId) { ConcurrentHashMap() }
-        val book = books.getOrPut(symbol) { LegBook(symbol) }
-        for (leg in persisted.legs) book.add(leg.toPositionLeg())
+        val book = legBooks.restore(strategyId, symbol) ?: return
         reindex(symbol)
         // The restored book needs its excursion tracker like any other (#1158), seeded with the
         // marks saved before the restart when they belong to the same leg.
@@ -250,7 +244,7 @@ class StrategyPositionTracker(
     ) {
         val key = Pair(strategyId, symbol)
         val tracked = primaryMfeTrackers[key] ?: return
-        val leg = byStrategy[strategyId]?.get(symbol)?.leg(tracked.legId) ?: return
+        val leg = legBooks.book(strategyId, symbol)?.leg(tracked.legId) ?: return
         var used = 0
         for (candle in candles) {
             if (candle.startTime < leg.openedAt) continue
@@ -279,7 +273,7 @@ class StrategyPositionTracker(
     ) {
         val now = clock()
         if (!force && now - tracked.lastPersistedAt < excursionPersistIntervalMs) return
-        val leg = byStrategy[strategyId]?.get(symbol)?.leg(tracked.legId) ?: return
+        val leg = legBooks.book(strategyId, symbol)?.leg(tracked.legId) ?: return
         tracked.lastPersistedAt = now
         runCatching {
             persistor.saveExcursion(
@@ -375,7 +369,7 @@ class StrategyPositionTracker(
                     error("execution ${event.clientOrderId} for ${event.strategyId} reached the ledger unplanned")
             }
         if (!application.unbooked) {
-            persistBook(event.strategyId, event.symbol)
+            legBooks.persist(event.strategyId, event.symbol)
             reindex(event.symbol)
         }
         return application
@@ -430,7 +424,7 @@ class StrategyPositionTracker(
         symbol: String,
     ) {
         val key = Pair(strategyId, symbol)
-        val primary = byStrategy[strategyId]?.get(symbol)?.let { entryLeg(it) }
+        val primary = legBooks.book(strategyId, symbol)?.let { entryLeg(it) }
         if (primary == null) {
             primaryMfeTrackers.remove(key)
             return
@@ -458,7 +452,7 @@ class StrategyPositionTracker(
         intent: LegIntent.Open,
         cumulativeFilled: BigDecimal?,
     ): FillApplication {
-        val books = byStrategy.getOrPut(event.strategyId) { ConcurrentHashMap() }
+        val books = legBooks.booksOrCreate(event.strategyId)
         val book = books.getOrPut(event.symbol) { LegBook(event.symbol) }
         val ticket = event.brokerOrderId?.takeIf { it.isNotBlank() }
         // A venue ticket is one position and belongs to exactly one leg. A second leg claiming
@@ -573,7 +567,7 @@ class StrategyPositionTracker(
         event: BrokerEvent.OrderFilled,
         intent: LegIntent.Close,
     ): FillApplication {
-        val book = byStrategy[event.strategyId]?.get(event.symbol)
+        val book = legBooks.book(event.strategyId, event.symbol)
         val leg =
             book?.let { b ->
                 intent.legId?.let { b.leg(it) } ?: intent.ticket?.let { b.legByTicket(it) }
@@ -602,7 +596,7 @@ class StrategyPositionTracker(
         val realized = closingQty.multiply(priceDiff).setScale(Money.SCALE, Money.ROUNDING)
         val remaining = closed.quantity.subtract(closingQty)
         if (remaining.signum() > 0) book.add(closed.copy(quantity = remaining))
-        if (book.isEmpty()) byStrategy[event.strategyId]?.remove(event.symbol)
+        if (book.isEmpty()) legBooks.booksOf(event.strategyId)?.remove(event.symbol)
         syncPrimaryMfeTracker(event.strategyId, event.symbol)
         return FillApplication(realized, closed.legId, LegAction.CLOSED)
     }
@@ -641,7 +635,7 @@ class StrategyPositionTracker(
         trade: Trade,
         brokerTicket: String?,
     ): BigDecimal {
-        val books = byStrategy.getOrPut(strategyId) { ConcurrentHashMap() }
+        val books = legBooks.booksOrCreate(strategyId)
         val book = books.getOrPut(trade.symbol) { LegBook(trade.symbol) }
         val primary = book.primary()
 
@@ -753,10 +747,10 @@ class StrategyPositionTracker(
         leg: PositionLeg,
     ) {
         require(leg.role == LegRole.STACK) { "addStackLeg requires LegRole.STACK; got ${leg.role}" }
-        val books = byStrategy.getOrPut(strategyId) { ConcurrentHashMap() }
+        val books = legBooks.booksOrCreate(strategyId)
         val book = books.getOrPut(leg.symbol) { LegBook(leg.symbol) }
         book.add(leg)
-        persistBook(strategyId, leg.symbol)
+        legBooks.persist(strategyId, leg.symbol)
         reindex(leg.symbol)
     }
 
@@ -772,10 +766,10 @@ class StrategyPositionTracker(
         leg: PositionLeg,
     ) {
         require(leg.role == LegRole.INDEPENDENT) { "addIndependentLeg requires LegRole.INDEPENDENT; got ${leg.role}" }
-        val books = byStrategy.getOrPut(strategyId) { ConcurrentHashMap() }
+        val books = legBooks.booksOrCreate(strategyId)
         val book = books.getOrPut(leg.symbol) { LegBook(leg.symbol) }
         book.add(leg)
-        persistBook(strategyId, leg.symbol)
+        legBooks.persist(strategyId, leg.symbol)
         reindex(leg.symbol)
     }
 
@@ -788,107 +782,14 @@ class StrategyPositionTracker(
         symbol: String,
         legId: String,
     ): PositionLeg? {
-        val book = byStrategy[strategyId]?.get(symbol) ?: return null
+        val book = legBooks.book(strategyId, symbol) ?: return null
         val closed = book.close(legId)
         if (book.isEmpty()) {
-            byStrategy[strategyId]?.remove(symbol)
+            legBooks.booksOf(strategyId)?.remove(symbol)
         }
-        persistBook(strategyId, symbol)
+        legBooks.persist(strategyId, symbol)
         reindex(symbol)
         return closed
-    }
-
-    fun positionFor(
-        strategyId: String,
-        symbol: String,
-    ): Position? = byStrategy[strategyId]?.get(symbol)?.netView()
-
-    fun positionsFor(strategyId: String): Map<String, Position> {
-        val books = byStrategy[strategyId] ?: return emptyMap()
-        // Single pass straight into the result map; the previous mapNotNull{}.toMap() allocated an
-        // intermediate List of Pairs and rehashed, per call, on the per-tick position-read path.
-        return buildMap(books.size) {
-            for ((sym, book) in books) book.netView()?.let { put(sym, it) }
-        }
-    }
-
-    fun allByStrategy(): Map<String, Map<String, Position>> =
-        byStrategy.mapValues { (_, books) ->
-            books.mapNotNull { (sym, book) -> book.netView()?.let { sym to it } }.toMap()
-        }
-
-    /** Immutable snapshot of every open leg owned by [strategyId], across symbols. */
-    fun allLegsFor(strategyId: String): List<PositionLeg> =
-        byStrategy[strategyId]?.values?.flatMap { it.all() } ?: emptyList()
-
-    /** New Phase 27 accessor: the full leg book for direct inspection. */
-    fun legBookFor(
-        strategyId: String,
-        symbol: String,
-    ): LegBook? = byStrategy[strategyId]?.get(symbol)
-
-    /** Find an open leg by id across every symbol the strategy holds. */
-    fun legById(
-        strategyId: String,
-        legId: String,
-    ): PositionLeg? =
-        byStrategy[strategyId]
-            ?.values
-            ?.firstNotNullOfOrNull { book -> book.all().firstOrNull { it.legId == legId } }
-
-    /**
-     * Venue ticket of the leg with [legId] for [strategyId], searching across that strategy's
-     * symbols, or null if no such leg (or it has no ticket). Lets an engine-fired exit close the
-     * exact venue position by ticket — e.g. a trailing stop closing its independent straddle leg.
-     */
-    fun ticketForLeg(
-        strategyId: String,
-        legId: String,
-    ): String? =
-        byStrategy[strategyId]?.values?.firstNotNullOfOrNull { book ->
-            book.all().firstOrNull { it.legId == legId }?.brokerTicket
-        }
-
-    /** Venue ticket for the strategy's PRIMARY position on [symbol], when unambiguous. */
-    fun ticketForPrimary(
-        strategyId: String,
-        symbol: String,
-    ): String? = byStrategy[strategyId]?.get(symbol)?.primary()?.brokerTicket
-
-    /** Open position count on [symbol] for [strategyId] — the real number of legs, not the net. */
-    fun openCountFor(
-        strategyId: String,
-        symbol: String,
-    ): Int = byStrategy[strategyId]?.get(symbol)?.size() ?: 0
-
-    /** Open long-side legs on [symbol] for [strategyId]. */
-    fun longCountFor(
-        strategyId: String,
-        symbol: String,
-    ): Int = byStrategy[strategyId]?.get(symbol)?.longCount() ?: 0
-
-    /** Open short-side legs on [symbol] for [strategyId]. */
-    fun shortCountFor(
-        strategyId: String,
-        symbol: String,
-    ): Int = byStrategy[strategyId]?.get(symbol)?.shortCount() ?: 0
-
-    /** Gross exposure (sum of leg sizes, side-blind) on [symbol] for [strategyId]. */
-    fun grossFor(
-        strategyId: String,
-        symbol: String,
-    ): BigDecimal = byStrategy[strategyId]?.get(symbol)?.grossQuantity() ?: Money.ZERO
-
-    fun driftFor(
-        symbol: String,
-        brokerView: PositionProvider,
-    ): BigDecimal {
-        val strategySum =
-            byStrategy.values.fold(Money.ZERO) { acc, books ->
-                acc.add(books[symbol]?.netQuantity() ?: Money.ZERO)
-            }
-        val broker = brokerView.positionFor(symbol)?.quantity ?: Money.ZERO
-        return strategySum.subtract(broker).setScale(Money.SCALE, Money.ROUNDING)
     }
 
     private fun nextPrimaryId(
