@@ -6,7 +6,9 @@ import com.qkt.app.order.BracketExits
 import com.qkt.app.order.BracketFills
 import com.qkt.app.order.BracketRiskRecorder
 import com.qkt.app.order.BracketSubmission
+import com.qkt.app.order.CompositeRestore
 import com.qkt.app.order.EngineHeldCloseTickets
+import com.qkt.app.order.EngineHeldRestore
 import com.qkt.app.order.EntryRiskReport
 import com.qkt.app.order.HaltCancellations
 import com.qkt.app.order.ManagedStopBook
@@ -16,6 +18,7 @@ import com.qkt.app.order.OcoExecutionGuard
 import com.qkt.app.order.OcoSequencer
 import com.qkt.app.order.OrderBook
 import com.qkt.app.order.OrderOps
+import com.qkt.app.order.OrderRestorer
 import com.qkt.app.order.OrderStateSnapshots
 import com.qkt.app.order.PendingChildBook
 import com.qkt.app.order.PendingExposureBook
@@ -30,9 +33,9 @@ import com.qkt.app.order.StackExecution
 import com.qkt.app.order.StackLayerExits
 import com.qkt.app.order.StackLayerOrders
 import com.qkt.app.order.VenuePositionProtection
+import com.qkt.app.order.VenueRecovery
 import com.qkt.app.order.blendAvg
 import com.qkt.app.order.exposureEntryRequest
-import com.qkt.app.order.hasPersistentDynamicState
 import com.qkt.app.order.isPersistentManagedStop
 import com.qkt.app.order.isTriggered
 import com.qkt.app.order.limitReached
@@ -58,7 +61,6 @@ import com.qkt.execution.exitLegIntent
 import com.qkt.execution.isCompositeShape
 import com.qkt.execution.isTerminal
 import com.qkt.execution.withCloseTicket
-import com.qkt.execution.withStrategyId
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.NoopInstrumentRegistry
 import com.qkt.marketdata.MarketPriceProvider
@@ -230,6 +232,24 @@ class OrderManager(
         BracketSubmission(broker, priceProvider, bracketExits, risk, brackets, children, exposure, book, clock, ops)
     private val bracketFills = BracketFills(book, brackets, bracketExits, venueProtection, clock, ops)
     private val attachedCompletion = AttachedBracketCompletion(book, brackets, closeTickets, exposure, clock, ops)
+    private val venueRecovery =
+        VenueRecovery(book, brackets, exposure, broker, bookedVenueTickets, clock, ops) { event -> onCancelled(event) }
+    private val restorer =
+        OrderRestorer(
+            persistor = persistor,
+            book = book,
+            siblings = siblings,
+            ocoGuard = ocoGuard,
+            exposure = exposure,
+            scaleOuts = scaleOuts,
+            scaleOutRecovery = scaleOutRecovery,
+            composites = CompositeRestore(book, children, brackets, bracketExits, exposure, broker, clock, ops),
+            engineHeld = EngineHeldRestore(book, stops, exposure, broker, clock),
+            venueRecovery = venueRecovery,
+            snapshots = snapshots,
+            broker = broker,
+            clock = clock,
+        )
 
     private val timeExits: MutableMap<String, OrderRequest.TimeExit> = mutableMapOf()
 
@@ -482,383 +502,7 @@ class OrderManager(
      * at session startup. Persistence read failures abort startup rather than silently discarding
      * live order state.
      */
-    fun restore(strategyIds: List<String>) {
-        val recovered = mutableListOf<ManagedOrder>()
-        for (sid in strategyIds) {
-            snapshots.remember(sid)
-            val dynamicStops =
-                persistor
-                    .loadTrailingStops(sid)
-                    .associateBy { it.clientOrderId }
-                    .toMutableMap()
-            for (leg in persistor.loadOcoLegs(sid)) {
-                if (book.contains(leg.clientOrderId)) continue
-                val groupId =
-                    (leg.siblingIds + leg.clientOrderId)
-                        .sorted()
-                        .joinToString(prefix = "restored-oco:", separator = "|")
-                ocoGuard.markEmulated(leg.clientOrderId, groupId)
-                if (isEngineHeldOnRestore(leg.request)) {
-                    siblings[leg.clientOrderId] = leg.siblingIds
-                    val persisted = dynamicStops.remove(leg.clientOrderId)
-                    if (persisted == null && hasPersistentDynamicState(leg.request)) {
-                        log.warn(
-                            "[restore] dynamic state missing for {}; restarting from its available anchor",
-                            leg.clientOrderId,
-                        )
-                    }
-                    restoreEngineHeldOrder(
-                        clientOrderId = leg.clientOrderId,
-                        brokerOrderId = leg.brokerOrderId,
-                        request = leg.request,
-                        dynamicState = persisted,
-                        groupId = groupId,
-                    )
-                    continue
-                }
-                val now = clock.now()
-                val managed =
-                    ManagedOrder(
-                        id = leg.clientOrderId,
-                        request = leg.request,
-                        state = OrderState.WORKING,
-                        brokerOrderId = leg.brokerOrderId,
-                        createdAt = now,
-                        lastUpdatedAt = now,
-                    )
-                book.put(managed)
-                siblings[leg.clientOrderId] = leg.siblingIds
-                exposure.register(leg.request, groupId)
-                recovered += managed
-            }
-            val pairs = persistor.loadBracketPairs(sid)
-            for (pair in pairs) {
-                val exitIds = listOfNotNull(pair.stopLossClientOrderId, pair.takeProfitClientOrderId)
-                for (exitId in exitIds) {
-                    siblings[exitId] = exitIds.filter { it != exitId }
-                }
-            }
-            val persistedPending = persistor.loadPendingOrders(sid)
-            // A pending order whose symbol no venue routes any more (a broker profile removed
-            // from the config since it was persisted) can never be quoted, recovered, or
-            // filled; keeping it would fail every deploy of this strategy from now on.
-            val unroutable = persistedPending.filterValues { !broker.supports(it.symbol) }
-            for ((id, request) in unroutable) {
-                log.warn(
-                    "[restore] dropping pending order {} for {}: no configured venue routes that symbol",
-                    id,
-                    request.symbol,
-                )
-            }
-            val pendingOrders = persistedPending - unroutable.keys
-            if (unroutable.isNotEmpty()) persistor.savePendingOrders(sid, pendingOrders)
-            for ((id, request) in pendingOrders) {
-                if (request is OrderRequest.ScaleOut && id == request.id) {
-                    scaleOutRecovery.restoreActive(request, pendingOrders.keys)
-                }
-            }
-            for ((id, request) in pendingOrders) {
-                if (book.contains(id)) continue
-                if (request is OrderRequest.OTO) {
-                    require(id == request.parent.id) {
-                        "persisted OTO ${request.id} keyed by $id instead of parent ${request.parent.id}"
-                    }
-                    restorePendingOto(request, recovered)
-                    continue
-                }
-                if (request is OrderRequest.ScaleOut) {
-                    if (id == request.id) continue
-                    require(id == request.basis.id) {
-                        "persisted ScaleOut ${request.id} keyed by $id instead of basis ${request.basis.id}"
-                    }
-                    scaleOutRecovery.restorePending(request, recovered)
-                    continue
-                }
-                if (request is OrderRequest.Bracket) {
-                    restorePendingBracket(request, recovered)
-                    continue
-                }
-                if (isEngineHeldOnRestore(request)) {
-                    restoreEngineHeldOrder(
-                        clientOrderId = id,
-                        brokerOrderId = null,
-                        request = request,
-                        dynamicState = dynamicStops.remove(id),
-                        groupId = null,
-                    )
-                    continue
-                }
-                val now = clock.now()
-                val engineHeldScaleOutExit =
-                    request is OrderRequest.IfTouched && request.closesTicket != null
-                val managed =
-                    ManagedOrder(
-                        id = id,
-                        request = request,
-                        state = if (engineHeldScaleOutExit) OrderState.PENDING else OrderState.WORKING,
-                        parentClientOrderId = scaleOuts.wrapperOf(id),
-                        createdAt = now,
-                        lastUpdatedAt = now,
-                    )
-                book.put(managed)
-                exposure.register(request)
-                if (!engineHeldScaleOutExit) recovered += managed
-            }
-            // Older journals may contain a dynamic stop without the duplicate pending-order
-            // snapshot. Keep accepting that shape after the current OCO and pending snapshots have
-            // consumed their matching state.
-            for (stop in dynamicStops.values) {
-                restoreEngineHeldOrder(
-                    clientOrderId = stop.clientOrderId,
-                    brokerOrderId = stop.brokerOrderId,
-                    request = stop.request,
-                    dynamicState = stop,
-                    groupId = null,
-                )
-            }
-        }
-        if (recovered.isNotEmpty()) {
-            val booked = strategyIds.flatMapTo(LinkedHashSet()) { bookedVenueTickets(it) }
-            val accounted = broker.recoverPendingOrders(recovered, booked)
-            // A restored working order the venue cannot account for — no pending ticket, no
-            // position, nothing to track — is a phantom: pre-#1048 attached-bracket wrappers
-            // whose position closed long ago. Left alone it holds exposure for the whole
-            // session and never reaches a terminal state. Retire it through the ordinary cancel
-            // path so exposure, children and persistence unwind exactly as a venue cancel would.
-            val vanished = recovered.filter { it.id !in accounted }
-            for (order in vanished) {
-                log.warn(
-                    "[restore] {} {} {} has no venue counterpart after recovery; retiring stale order",
-                    order.request.strategyId,
-                    order.id,
-                    order.request::class.simpleName,
-                )
-                onCancelled(
-                    BrokerEvent.OrderCancelled(
-                        clientOrderId = order.id,
-                        brokerOrderId = null,
-                        reason = "not at venue after recovery",
-                        strategyId = order.request.strategyId,
-                        timestamp = clock.now(),
-                    ),
-                )
-            }
-            if (vanished.isNotEmpty()) {
-                log.warn("[restore] retired {} stale order(s) with no venue counterpart", vanished.size)
-            }
-            // A restored attached entry the venue matched to a position the ledger already booked
-            // is a filled entry: it must not count as an open entry order (it would block every
-            // re-entry once that position closes) nor hold entry exposure on top of the position.
-            // The ticket arrives as OrderAccepted — synchronously here on a direct bus, or later
-            // on the engine thread in the daemon — so both restore and onAccepted apply the mark.
-            for (id in brackets.restoredAttachedEntries.toList()) {
-                val ticket = book[id]?.brokerOrderId ?: continue
-                markRestoredAttachedEntryFilled(id, ticket)
-            }
-        }
-    }
-
-    private fun markRestoredAttachedEntryFilled(
-        id: String,
-        ticket: String,
-    ) {
-        val managed = book[id] ?: return
-        if (managed.state != OrderState.WORKING) return
-        if (ticket !in bookedVenueTickets(managed.request.strategyId)) return
-        update(id) {
-            it.copy(
-                state = OrderState.FILLED,
-                cumulativeFilledQuantity = it.request.quantity,
-                lastUpdatedAt = clock.now(),
-            )
-        }
-        exposure.remove(id)
-        brackets.restoredAttachedEntries.remove(id)
-        log.info(
-            "[restore] attached entry {} is backed by booked venue ticket {} — marked filled without republishing",
-            id,
-            ticket,
-        )
-    }
-
-    private fun restorePendingOto(
-        request: OrderRequest.OTO,
-        recovered: MutableList<ManagedOrder>,
-    ) {
-        require(request.parent.id != request.id) { "OTO ${request.id} parent must have a distinct id" }
-        require(request.children.none { it.id == request.id || it.id == request.parent.id }) {
-            "OTO ${request.id} child ids must differ from the wrapper and parent ids"
-        }
-        require(
-            request.children
-                .map { it.id }
-                .distinct()
-                .size == request.children.size,
-        ) {
-            "OTO ${request.id} child ids must be unique"
-        }
-        require(book[request.id] == null && request.children.none { book[it.id] != null }) {
-            "persisted OTO ${request.id} collides with already-restored order state"
-        }
-        val now = clock.now()
-        val childIds = request.children.map { it.id }
-        val wrapper =
-            ManagedOrder(
-                id = request.id,
-                request = request,
-                state = OrderState.WORKING,
-                childClientOrderIds = listOf(request.parent.id) + childIds,
-                createdAt = now,
-                lastUpdatedAt = now,
-            )
-        book.put(wrapper)
-
-        val parent =
-            ManagedOrder(
-                id = request.parent.id,
-                request = request.parent,
-                state = OrderState.WORKING,
-                parentClientOrderId = request.id,
-                createdAt = now,
-                lastUpdatedAt = now,
-            )
-        book.put(parent)
-        for (child in request.children) {
-            val managed =
-                ManagedOrder(
-                    id = child.id,
-                    request = child,
-                    state = OrderState.CREATED,
-                    parentClientOrderId = request.id,
-                    createdAt = now,
-                    lastUpdatedAt = now,
-                )
-            book.put(managed)
-        }
-        children.hold(parent.id, request.children, request)
-        exposure.register(exposureEntryRequest(request.parent))
-        recovered += parent
-    }
-
-    private fun restorePendingBracket(
-        request: OrderRequest.Bracket,
-        recovered: MutableList<ManagedOrder>,
-    ) {
-        val caps = broker.capabilitiesFor(request.symbol)
-        val isEngineManagedStop = request.stopLoss !is StopLossSpec.Fixed
-        val needsFillAnchor =
-            (request.stopLossAst != null && request.stopLossAst !is com.qkt.dsl.ast.ChildAt) ||
-                (request.takeProfitAst != null && request.takeProfitAst !is com.qkt.dsl.ast.ChildAt)
-        val canAttach =
-            OrderTypeCapability.BRACKET in caps && OrderTypeCapability.POSITION_MODIFY in caps
-        val now = clock.now()
-
-        when {
-            canAttach -> {
-                val attached = request.copy(id = request.entry.id)
-                val managed =
-                    ManagedOrder(
-                        id = attached.id,
-                        request = attached,
-                        state = OrderState.WORKING,
-                        createdAt = now,
-                        lastUpdatedAt = now,
-                    )
-                book.put(managed)
-                brackets.restoredAttachedEntries += attached.id
-                brackets.preFill[attached.id] = request
-                // Expression-anchored exits are built from the fill. So is an engine-managed
-                // stop restored before the venue has quoted its symbol: there is no price to
-                // anchor it on yet, and failing the deploy here would be retried forever
-                // because the quote only starts flowing once the strategy is deployed.
-                val anchorAtFill =
-                    needsFillAnchor || (isEngineManagedStop && bracketExits.entryEstimateOrNull(request) == null)
-                if (anchorAtFill) brackets.fillAnchoredAttached[attached.id] = request
-                val restoredStop = if (anchorAtFill) null else bracketExits.managedStop(request, now)
-                restoredStop?.let { stop ->
-                    track(
-                        ManagedOrder(
-                            id = stop.id,
-                            request = stop,
-                            state = OrderState.CREATED,
-                            parentClientOrderId = request.id,
-                            createdAt = now,
-                            lastUpdatedAt = now,
-                        ),
-                    )
-                    children.hold(attached.id, listOf(stop))
-                }
-                exposure.register(attached)
-                recovered += managed
-            }
-            !isEngineManagedStop && !needsFillAnchor && OrderTypeCapability.BRACKET in caps -> {
-                val managed =
-                    ManagedOrder(
-                        id = request.id,
-                        request = request,
-                        state = OrderState.WORKING,
-                        createdAt = now,
-                        lastUpdatedAt = now,
-                    )
-                book.put(managed)
-                exposure.register(request)
-                recovered += managed
-            }
-            else -> {
-                val entry = request.entry.withStrategyId(request.strategyId)
-                val managed =
-                    ManagedOrder(
-                        id = entry.id,
-                        request = entry,
-                        state = OrderState.WORKING,
-                        createdAt = now,
-                        lastUpdatedAt = now,
-                    )
-                book.put(managed)
-                brackets.preFill[entry.id] = request
-                // A Market entry restored before the venue has quoted its symbol has no price to
-                // anchor the exits on; place them from the actual fill instead of failing the
-                // whole deploy (which the daemon would retry forever, quote or no quote).
-                val entryEstimate = if (needsFillAnchor) null else bracketExits.entryEstimateOrNull(request)
-                if (entryEstimate == null) {
-                    brackets.fillAnchoredFallback[entry.id] = request
-                } else {
-                    children.hold(entry.id, listOf(bracketExits.exitOco(request, entryEstimate, request.quantity)))
-                }
-                exposure.register(entry)
-                recovered += managed
-            }
-        }
-    }
-
-    private fun restoreEngineHeldOrder(
-        clientOrderId: String,
-        brokerOrderId: String?,
-        request: OrderRequest,
-        dynamicState: com.qkt.persistence.PersistedTrailingStop?,
-        groupId: String?,
-    ) {
-        if (book.contains(clientOrderId)) return
-        require(request.id == clientOrderId) {
-            "persisted engine-held order $clientOrderId contains request ${request.id}"
-        }
-        require(dynamicState == null || dynamicState.clientOrderId == clientOrderId) {
-            "dynamic state ${dynamicState?.clientOrderId} does not belong to $clientOrderId"
-        }
-        val now = clock.now()
-        val managed =
-            ManagedOrder(
-                id = clientOrderId,
-                request = request,
-                state = OrderState.PENDING,
-                brokerOrderId = brokerOrderId,
-                createdAt = now,
-                lastUpdatedAt = now,
-            )
-        book.put(managed)
-        stops.restore(clientOrderId, request, dynamicState)
-        exposure.register(request, groupId)
-    }
+    fun restore(strategyIds: List<String>) = restorer.restore(strategyIds)
 
     /** Symbol, side, and quantity submitted under [clientOrderId]. */
     data class OrderDetails(
@@ -1311,7 +955,7 @@ class OrderManager(
         )
         val ticket = e.brokerOrderId
         if (ticket != null && e.clientOrderId in brackets.restoredAttachedEntries) {
-            markRestoredAttachedEntryFilled(e.clientOrderId, ticket)
+            venueRecovery.markAttachedEntryFilled(e.clientOrderId, ticket)
         }
         ocoSequencer.onAccepted(e.clientOrderId)
     }
@@ -1808,14 +1452,6 @@ class OrderManager(
     private fun managedStopCloseTicket(request: OrderRequest): String? =
         closeTicketFor?.invoke(request.strategyId, request.id)
             ?: closePrimaryTicketFor?.invoke(request.strategyId, request.symbol)
-
-    private fun isEngineHeldOnRestore(request: OrderRequest): Boolean =
-        when (request) {
-            is OrderRequest.TrailingStop, is OrderRequest.TrailingStopLimit -> true
-            is OrderRequest.StopLimit ->
-                OrderTypeCapability.STOP_LIMIT !in broker.capabilitiesFor(request.symbol)
-            else -> isPersistentManagedStop(request)
-        }
 
     fun pendingStackLayerInfos(): List<PendingStackLayerInfo> =
         stacks.all().flatMap { state ->
