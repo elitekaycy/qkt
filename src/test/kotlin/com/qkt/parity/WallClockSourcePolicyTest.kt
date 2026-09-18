@@ -59,7 +59,7 @@ class WallClockSourcePolicyTest {
                 "src/main/kotlin/com/qkt/cli/ExperimentCommand.kt" to "operator-run evidence timestamp",
                 "src/main/kotlin/com/qkt/cli/PreflightCommand.kt" to "temporary probe uniqueness",
                 "src/main/kotlin/com/qkt/cli/RunCommand.kt" to "live command lifecycle timing",
-                "src/main/kotlin/com/qkt/cli/FetchCommand.kt" to "operator-selected current date",
+                "src/main/kotlin/com/qkt/cli/fetch/FetchDateRange.kt" to "operator-selected current date",
                 "src/main/kotlin/com/qkt/cli/IncidentCommand.kt" to "injectable incident capture default",
                 "src/main/kotlin/com/qkt/cli/audit/TradingViewDriftAudit.kt" to "interactive capture deadline",
                 "src/main/kotlin/com/qkt/cli/audit/Mt5HistoryAudit.kt" to "interactive capture deadline",
