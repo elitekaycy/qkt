@@ -182,7 +182,6 @@
 213 src/main/kotlin/com/qkt/cli/editor/EditorInstaller.kt
 212 src/main/kotlin/com/qkt/app/LiveSessionHandle.kt
 212 src/main/kotlin/com/qkt/broker/bybit/linear/BybitLinearStateRecovery.kt
-210 src/main/kotlin/com/qkt/cli/WalkForwardCommand.kt
 210 src/main/kotlin/com/qkt/cli/daemon/portfolio/PortfolioSupervisor.kt
 210 src/main/kotlin/com/qkt/trade/BotGateway.kt
 209 src/main/kotlin/com/qkt/dsl/parse/TokenKind.kt
