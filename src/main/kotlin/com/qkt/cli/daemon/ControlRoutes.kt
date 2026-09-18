@@ -6,16 +6,17 @@ import com.qkt.cli.PromotionGateResult
 import com.qkt.cli.PromotionJson
 import com.qkt.cli.PromotionRecord
 import com.qkt.cli.PromotionState
-import com.qkt.cli.PromotionStore
 import com.qkt.cli.PromotionWaiver
-import com.qkt.cli.UserDirs
+import com.qkt.cli.daemon.routes.handleHealth
+import com.qkt.cli.daemon.routes.handleList
+import com.qkt.cli.daemon.routes.handleMetrics
 import com.qkt.cli.daemon.routes.jsonArray
 import com.qkt.cli.daemon.routes.jsonDecimal
 import com.qkt.cli.daemon.routes.jsonString
 import com.qkt.cli.daemon.routes.jsonStringOrNull
 import com.qkt.cli.daemon.routes.parseQuery
+import com.qkt.cli.daemon.routes.promotionStore
 import com.qkt.cli.daemon.routes.respond
-import com.qkt.cli.daemon.routes.respondText
 import com.qkt.cli.daemon.routes.routeJson
 import com.qkt.dsl.parse.Dsl
 import com.qkt.dsl.parse.ParseResult
@@ -28,7 +29,6 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
 import java.time.Instant
-import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
@@ -105,225 +105,6 @@ object ControlRoutes {
             supplied.toByteArray(StandardCharsets.UTF_8),
             expectedToken.toByteArray(StandardCharsets.UTF_8),
         )
-    }
-
-    /**
-     * `GET /metrics` — Prometheus text exposition format. Currently covers:
-     * - Notifier counters (sent/dropped/failed/rateLimitHits) + degradedMode gauge.
-     * - Daemon uptime + strategies-running gauge.
-     * - Per-strategy trade counter.
-     *
-     * Latency exposition (per-strategy + per-stage from [com.qkt.observability.LatencyRegistry])
-     * is deferred to a follow-up — needs design discussion on label cardinality and quantile
-     * shape (summary vs histogram). See #79.
-     */
-    private fun handleMetrics(
-        ex: HttpExchange,
-        registry: StrategyRegistry,
-        startedAt: Instant,
-        notifierMetrics: com.qkt.notify.NotifierMetrics?,
-    ) {
-        val now = Instant.now()
-        val out = PrometheusFormat()
-
-        out.gauge(
-            "qkt_daemon_uptime_seconds",
-            "Seconds the daemon has been up",
-            listOf(
-                PrometheusFormat.Sample(
-                    value = ((now.toEpochMilli() - startedAt.toEpochMilli()) / 1_000L).toString(),
-                ),
-            ),
-        )
-        out.gauge(
-            "qkt_strategies_running",
-            "Count of strategies currently in running state",
-            listOf(
-                PrometheusFormat.Sample(
-                    value = registry.list().count { it.isRunning() }.toString(),
-                ),
-            ),
-        )
-        out.counter(
-            "qkt_strategy_trades_total",
-            "Total trades executed per strategy since daemon start",
-            registry.list().map { h ->
-                PrometheusFormat.Sample(
-                    labels = mapOf("strategy" to h.name),
-                    value = h.tradeCount.toString(),
-                )
-            },
-        )
-
-        if (notifierMetrics != null) {
-            out.counter(
-                "qkt_notifier_sent_total",
-                "Notifications successfully sent",
-                listOf(PrometheusFormat.Sample(value = notifierMetrics.sent.toString())),
-            )
-            out.counter(
-                "qkt_notifier_dropped_total",
-                "Notifications dropped without an attempt (queue full, etc)",
-                listOf(PrometheusFormat.Sample(value = notifierMetrics.dropped.toString())),
-            )
-            out.counter(
-                "qkt_notifier_failed_total",
-                "Notification send attempts that failed",
-                listOf(PrometheusFormat.Sample(value = notifierMetrics.failed.toString())),
-            )
-            out.counter(
-                "qkt_notifier_rate_limit_hits_total",
-                "Number of rate-limit responses observed from the notification provider",
-                listOf(PrometheusFormat.Sample(value = notifierMetrics.rateLimitHits.toString())),
-            )
-            out.gauge(
-                "qkt_notifier_degraded_mode",
-                "1 when the notifier is in degraded mode (giving up retries), 0 otherwise",
-                listOf(PrometheusFormat.Sample(value = if (notifierMetrics.degradedMode) "1" else "0")),
-            )
-        }
-
-        respondText(ex, 200, out.toString())
-    }
-
-    private fun handleHealth(
-        ex: HttpExchange,
-        registry: StrategyRegistry,
-        startedAt: Instant,
-        pendingAutoDeploys: List<AutoDeployRetrier.Pending> = emptyList(),
-    ) {
-        val now = Instant.now().toEpochMilli()
-        val uptimeMs = now - startedAt.toEpochMilli()
-        val handles = registry.list()
-        // Per-strategy last-event age lets an external watchdog tell a WEDGED single
-        // session (dead engine thread, growing queue, no events) from a healthy idle
-        // one — the daemon answering /health alone cannot (#397).
-        val perStrategy =
-            handles.joinToString(",", "[", "]") { h ->
-                val lastEvent =
-                    h.ring
-                        .snapshot(0, 1_000)
-                        .lastOrNull()
-                        ?.ts
-                val ageMs = lastEvent?.let { now - it }
-                val haltReason = h.live.haltReason()
-                """{"name":"${h.name}","running":${h.isRunning()},""" +
-                    """"halted":${h.live.isHalted()},""" +
-                    """"haltReason":${haltReason?.let {
-                        routeJson.encodeToString(
-                            String.serializer(),
-                            it,
-                        )
-                    } ?: "null"},""" +
-                    """"lastEventAgeMs":${ageMs ?: "null"},""" +
-                    """"inboundQueueDepth":${h.live.inboundQueueDepth()},""" +
-                    """"droppedTicks":${h.live.droppedTicks}}"""
-            }
-        // A `--load-dir` file still waiting to deploy (#1055) means the daemon is idle where an
-        // operator expects a strategy: degraded, not ok, so watchdogs and Insights see it.
-        val pending =
-            pendingAutoDeploys.joinToString(",", "[", "]") { p ->
-                """{"name":${routeJson.encodeToString(String.serializer(), p.name)},""" +
-                    """"attempts":${p.attempts},"nextAttemptAtMs":${p.nextAttemptAtMs},""" +
-                    """"lastError":${routeJson.encodeToString(String.serializer(), p.lastError)}}"""
-            }
-        val status = if (pendingAutoDeploys.isEmpty()) "ok" else "degraded"
-        respond(
-            ex,
-            200,
-            """{"status":"$status","strategies":${handles.size},"uptimeMs":$uptimeMs,""" +
-                """"pendingAutoDeploys":$pending,"perStrategy":$perStrategy}""",
-        )
-    }
-
-    private fun handleList(
-        ex: HttpExchange,
-        registry: StrategyRegistry,
-        stateDir: StateDir?,
-        promotionGates: PromotionGateConfig,
-    ) {
-        val now = Instant.now().toEpochMilli()
-        val rows = mutableListOf<String>()
-        val promotionStore = promotionStore(stateDir, promotionGates)
-        for (record in registry.listPortfolios()) {
-            val uptime = now - record.startedAt.toEpochMilli()
-            val state = if (record.supervisor.running) "running" else "stopped"
-            val aliases = record.children.mapNotNull { it.childMeta?.alias }
-            val aliasJson = aliases.joinToString(",", "[", "]") { "\"$it\"" }
-            val promotionJson =
-                renderPromotionFields(
-                    name = record.name,
-                    sourceFile = null,
-                    store = promotionStore,
-                    gates = promotionGates,
-                )
-            rows.add(
-                """{"name":"${record.name}","kind":"portfolio","childAliases":$aliasJson,""" +
-                    """"uptimeMs":$uptime,"state":"$state"$promotionJson}""",
-            )
-        }
-        for (h in registry.list()) {
-            val uptime = now - h.startedAt.toEpochMilli()
-            val state = if (h.isRunning()) "running" else "stopped"
-            val streamBrokersJson = renderStreamBrokers(h.live.streamBrokers())
-            val meta = h.childMeta
-            val promotionJson =
-                renderPromotionFields(
-                    // A portfolio is deployed and promoted as one unit. Its children inherit the
-                    // parent's gate result instead of requiring synthetic per-alias approvals.
-                    name = meta?.parent ?: h.name,
-                    sourceFile = h.sourceFile?.takeIf { meta == null },
-                    store = promotionStore,
-                    gates = promotionGates,
-                )
-            if (meta != null) {
-                val gateState =
-                    when {
-                        meta.operatorStop.get() -> "operator_stopped"
-                        meta.gateActive.get() -> "active"
-                        else -> "idle"
-                    }
-                rows.add(
-                    """{"name":"${h.name}","kind":"child","parent":"${meta.parent}",""" +
-                        """"port":${h.port},"trades":${h.tradeCount},""" +
-                        """"uptimeMs":$uptime,"state":"$state","gateState":"$gateState",""" +
-                        """"streamBrokers":$streamBrokersJson$promotionJson}""",
-                )
-            } else {
-                rows.add(
-                    """{"name":"${h.name}","kind":"strategy","port":${h.port},""" +
-                        """"trades":${h.tradeCount},"uptimeMs":$uptime,"state":"$state",""" +
-                        """"streamBrokers":$streamBrokersJson$promotionJson}""",
-                )
-            }
-        }
-        respond(ex, 200, rows.joinToString(",", "[", "]"))
-    }
-
-    private fun renderPromotionFields(
-        name: String,
-        sourceFile: Path?,
-        store: PromotionStore,
-        gates: PromotionGateConfig,
-    ): String {
-        val result =
-            PromotionGateEvaluator(gates)
-                .evaluate(
-                    strategy = name,
-                    strategyPath = sourceFile?.takeIf { Files.exists(it) },
-                    store = store,
-                )
-        if (!gates.enforce && result.recordId == null) return ""
-        return ""","promotionEnforced":${result.enforced},""" +
-            """"promotionState":${jsonStringOrNull(result.state)},""" +
-            """"promotionEligible":${result.eligibleForProduction},""" +
-            """"promotionMissingGates":${jsonArray(result.missingGates)},""" +
-            """"strategyHash":${jsonStringOrNull(result.strategyHash)}"""
-    }
-
-    private fun renderStreamBrokers(map: Map<String, String>): String {
-        if (map.isEmpty()) return "{}"
-        return map.entries.joinToString(",", "{", "}") { (k, v) -> "\"$k\":\"$v\"" }
     }
 
     private val internalHttp = okhttp3.OkHttpClient()
@@ -701,16 +482,6 @@ object ControlRoutes {
         }
         respond(ex, 200, """{"state":"resumed","affected":${jsonArray(result.affected)}}""")
     }
-
-    private fun promotionStore(
-        stateDir: StateDir?,
-        gates: PromotionGateConfig,
-    ): PromotionStore =
-        PromotionStore(
-            gates.registryDir
-                ?: stateDir?.stateRoot?.resolve("promotion")
-                ?: UserDirs().stateHome().resolve("state").resolve("promotion"),
-        )
 
     private fun handleStop(
         ex: HttpExchange,
