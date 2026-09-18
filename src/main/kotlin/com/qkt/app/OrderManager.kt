@@ -1,5 +1,6 @@
 package com.qkt.app
 
+import com.qkt.app.order.OrderBook
 import com.qkt.app.order.blendAvg
 import com.qkt.app.order.computeChildPrice
 import com.qkt.app.order.evaluateAt
@@ -115,7 +116,11 @@ class OrderManager(
 ) : PendingOrderExposureProvider {
     private val log = LoggerFactory.getLogger(OrderManager::class.java)
 
-    private val orders: MutableMap<String, ManagedOrder> = mutableMapOf()
+    private val book =
+        OrderBook(
+            isReferenced = { id -> isReferenced(id) },
+            reclaim = { id -> reclaim(id) },
+        )
     private val exposureEntries: MutableMap<String, ExposureEntry> = mutableMapOf()
     private val exposureGroupScratch: MutableMap<String, BigDecimal> = mutableMapOf()
 
@@ -124,36 +129,6 @@ class OrderManager(
         val groupId: String?,
         var filledQuantity: BigDecimal = BigDecimal.ZERO,
     )
-
-    /**
-     * Ids of orders that are not yet terminal. The per-tick [evaluateTriggers] scan walks this
-     * instead of every order ever created, so its cost tracks live orders, not all-time orders.
-     * A LinkedHashSet populated in [track] order keeps iteration order identical to [orders]
-     * (a LinkedHashMap), so trigger-firing order is unchanged.
-     */
-    private val liveOrderIds: LinkedHashSet<String> = LinkedHashSet()
-
-    /**
-     * Live order ids bucketed by symbol, maintained in lockstep with [liveOrderIds]. Lets the
-     * per-tick scan touch only the tick's symbol — O(this symbol's orders) instead of O(all live
-     * orders) — so per-tick cost stays flat as more symbols/strategies are added.
-     */
-    private val liveBySymbol: MutableMap<String, LinkedHashSet<String>> = mutableMapOf()
-
-    /**
-     * Live orders carrying a GTD deadline, id -> deadline epoch ms, in [liveOrderIds] insertion
-     * order. The per-tick expiry sweep (PaperBroker path) walks this instead of resolving every
-     * live order each tick: most orders are GTC, so resolving the whole live set just to read an
-     * absent deadline was the dominant cost of a bar-replay backtest. Insertion order matches
-     * [liveOrderIds], so expired orders cancel in the same order as a full scan would.
-     */
-    private val gtdLive: LinkedHashMap<String, Long> = LinkedHashMap()
-
-    /**
-     * Ids awaiting reclamation. An order is enqueued when it goes terminal in [update]; [runGc]
-     * drains it once per pass, reclaiming it if nothing references it and re-queuing it otherwise.
-     */
-    private val gcQueue: ArrayDeque<String> = ArrayDeque()
 
     private data class HaltCancelState(
         var attempts: Int,
@@ -176,7 +151,7 @@ class OrderManager(
     private val trailingHwm: MutableMap<String, BigDecimal> = mutableMapOf()
 
     /**
-     * One-way arming state for [OrderRequest.ArmedTrailingStop] orders. `false` while
+     * One-way arming state for [OrderRequest.ArmedTrailingStop] book.orders. `false` while
      * the stop sits at `entry ± distance`; flips to `true` once MFE crosses the
      * threshold and the stop starts trailing [OrderRequest.ArmedTrailingStop.hwm].
      * Never reverts. See #48.
@@ -424,7 +399,7 @@ class OrderManager(
         submitPlanned(LegIntentPlanner.plan(request, positionMode(request.symbol)))
 
     private fun submitPlanned(request: OrderRequest): SubmitAck {
-        orders[request.id]?.takeIf { !it.state.isTerminal }?.let { existing ->
+        book[request.id]?.takeIf { !it.state.isTerminal }?.let { existing ->
             return SubmitAck(
                 clientOrderId = existing.id,
                 brokerOrderId = existing.brokerOrderId,
@@ -502,7 +477,7 @@ class OrderManager(
             val request = entry.request
             if (request.side != side) continue
             if (strategyId != null && request.strategyId != strategyId) continue
-            if (orders[id]?.state?.isTerminal == true) continue
+            if (book[id]?.state?.isTerminal == true) continue
             if (request.quantity.subtract(entry.filledQuantity).signum() <= 0) continue
             val groupId = entry.groupId
             if (groupId == null) ungrouped++ else groups.add(groupId)
@@ -515,7 +490,7 @@ class OrderManager(
         for ((id, entry) in exposureEntries) {
             val request = entry.request
             if (strategyId != null && request.strategyId != strategyId) continue
-            if (orders[id]?.state?.isTerminal == true) continue
+            if (book[id]?.state?.isTerminal == true) continue
             if (request.quantity.subtract(entry.filledQuantity).signum() <= 0) continue
             out.add(request.symbol)
         }
@@ -533,7 +508,7 @@ class OrderManager(
             val request = entry.request
             if (request.symbol != symbol || request.side != side) continue
             if (strategyId != null && request.strategyId != strategyId) continue
-            if (orders[id]?.state?.isTerminal == true) continue
+            if (book[id]?.state?.isTerminal == true) continue
             val remaining = request.quantity.subtract(entry.filledQuantity).max(BigDecimal.ZERO)
             if (remaining.signum() == 0) continue
             val groupId = entry.groupId
@@ -570,7 +545,7 @@ class OrderManager(
         }
 
     fun cancel(clientOrderId: String) {
-        val managed = orders[clientOrderId] ?: return
+        val managed = book[clientOrderId] ?: return
         if (managed.state.isTerminal) return
         if (managed.request is OrderRequest.Stack) {
             stacks.get(clientOrderId)?.let { state ->
@@ -609,14 +584,14 @@ class OrderManager(
             stacks
                 .all()
                 .filter { state ->
-                    val managed = orders[state.id] ?: return@filter false
+                    val managed = book[state.id] ?: return@filter false
                     (managed.request as? OrderRequest.Stack)?.symbol == symbol
                 }.map { it.id }
         for (id in stackIds) cancel(id)
         // Cancel any remaining (non-stack) engine-held or venue-resting orders for the symbol
         // that aren't already children of a stack we just cancelled.
         val pending =
-            orders.values
+            book.orders.values
                 .filter {
                     (it.state == OrderState.PENDING || it.state == OrderState.WORKING) &&
                         it.request.symbol == symbol
@@ -632,7 +607,7 @@ class OrderManager(
      */
     fun cancelEntriesForHalt(strategyId: String? = null) {
         val entryIds =
-            orders.values
+            book.orders.values
                 .filter { managed ->
                     (managed.state == OrderState.PENDING || managed.state == OrderState.WORKING) &&
                         (strategyId == null || managed.request.strategyId == strategyId) &&
@@ -651,7 +626,7 @@ class OrderManager(
         if (managed.id in engineHeldCloseTickets) return true
         if (isPersistentManagedStop(managed.request)) return true
         if (isRiskReducingForHalt(managed.request)) return true
-        if (managed.childClientOrderIds.any { orders[it]?.state == OrderState.FILLED }) return true
+        if (managed.childClientOrderIds.any { book[it]?.state == OrderState.FILLED }) return true
         // A wrapper (OTO / OCO / ScaleOut) is cancelled as a whole and the cascade takes every child
         // with it. If any LIVE child is itself a protective exit that must survive, the wrapper
         // must survive too — otherwise a daily halt strips the stops off open positions (observed
@@ -659,7 +634,7 @@ class OrderManager(
         // entry child had already left the live map, and the cascade cancelled the working stops).
         if (depth >= 4) return false
         return managed.childClientOrderIds.any { childId ->
-            val child = orders[childId] ?: return@any false
+            val child = book[childId] ?: return@any false
             !child.state.isTerminal && mustSurviveHalt(child, depth + 1)
         }
     }
@@ -668,7 +643,7 @@ class OrderManager(
     fun retryHaltCancellations(nowMs: Long) {
         val due = haltCancellations.filterValues { nowMs >= it.nextAttemptAtMs }.keys.toList()
         for (id in due) {
-            val managed = orders[id]
+            val managed = book[id]
             if (managed == null || managed.state.isTerminal) {
                 haltCancellations.remove(id)
                 continue
@@ -696,7 +671,7 @@ class OrderManager(
     private fun haltCancelDelayMs(attempts: Int): Long =
         (HALT_CANCEL_RETRY_MS * (1L shl (attempts - 1).coerceAtMost(5))).coerceAtMost(HALT_CANCEL_MAX_RETRY_MS)
 
-    fun getOrder(clientOrderId: String): ManagedOrder? = orders[clientOrderId]
+    fun getOrder(clientOrderId: String): ManagedOrder? = book[clientOrderId]
 
     /** Sibling order ids linked to [clientOrderId] — exposed for restart-recovery tests. */
     fun siblingsOf(clientOrderId: String): List<String> = siblings[clientOrderId].orEmpty()
@@ -718,7 +693,7 @@ class OrderManager(
                     .associateBy { it.clientOrderId }
                     .toMutableMap()
             for (leg in persistor.loadOcoLegs(sid)) {
-                if (orders.containsKey(leg.clientOrderId)) continue
+                if (book.contains(leg.clientOrderId)) continue
                 val groupId =
                     (leg.siblingIds + leg.clientOrderId)
                         .sorted()
@@ -752,8 +727,7 @@ class OrderManager(
                         createdAt = now,
                         lastUpdatedAt = now,
                     )
-                orders[leg.clientOrderId] = managed
-                indexLive(managed)
+                book.put(managed)
                 siblings[leg.clientOrderId] = leg.siblingIds
                 registerExposure(leg.request, groupId)
                 recovered += managed
@@ -785,7 +759,7 @@ class OrderManager(
                 }
             }
             for ((id, request) in pendingOrders) {
-                if (orders.containsKey(id)) continue
+                if (book.contains(id)) continue
                 if (request is OrderRequest.OTO) {
                     require(id == request.parent.id) {
                         "persisted OTO ${request.id} keyed by $id instead of parent ${request.parent.id}"
@@ -827,8 +801,7 @@ class OrderManager(
                         createdAt = now,
                         lastUpdatedAt = now,
                     )
-                orders[id] = managed
-                indexLive(managed)
+                book.put(managed)
                 registerExposure(request)
                 if (!engineHeldScaleOutExit) recovered += managed
             }
@@ -880,7 +853,7 @@ class OrderManager(
             // The ticket arrives as OrderAccepted — synchronously here on a direct bus, or later
             // on the engine thread in the daemon — so both restore and onAccepted apply the mark.
             for (id in restoredAttachedEntries.toList()) {
-                val ticket = orders[id]?.brokerOrderId ?: continue
+                val ticket = book[id]?.brokerOrderId ?: continue
                 markRestoredAttachedEntryFilled(id, ticket)
             }
         }
@@ -890,7 +863,7 @@ class OrderManager(
         id: String,
         ticket: String,
     ) {
-        val managed = orders[id] ?: return
+        val managed = book[id] ?: return
         if (managed.state != OrderState.WORKING) return
         if (ticket !in bookedVenueTickets(managed.request.strategyId)) return
         update(id) {
@@ -914,7 +887,7 @@ class OrderManager(
         recovered: MutableList<ManagedOrder>,
     ) {
         require(request.basis.id != request.id) { "ScaleOut ${request.id} basis must have a distinct id" }
-        require(orders[request.id] == null) {
+        require(book[request.id] == null) {
             "persisted ScaleOut ${request.id} collides with already-restored order state"
         }
         val now = clock.now()
@@ -936,10 +909,8 @@ class OrderManager(
                 createdAt = now,
                 lastUpdatedAt = now,
             )
-        orders[wrapper.id] = wrapper
-        indexLive(wrapper)
-        orders[basis.id] = basis
-        indexLive(basis)
+        book.put(wrapper)
+        book.put(basis)
         pendingScaleOutsByBasis[basis.id] = request
         registerExposure(exposureEntryRequest(request.basis))
         recovered += basis
@@ -954,7 +925,7 @@ class OrderManager(
                 .map { "${request.id}-leg-$it" }
                 .filterTo(linkedSetOf()) { it in persistedIds }
         if (exitIds.isEmpty()) return
-        require(orders[request.id] == null) {
+        require(book[request.id] == null) {
             "persisted active ScaleOut ${request.id} collides with already-restored order state"
         }
         val now = clock.now()
@@ -967,8 +938,7 @@ class OrderManager(
                 createdAt = now,
                 lastUpdatedAt = now,
             )
-        orders[wrapper.id] = wrapper
-        indexLive(wrapper)
+        book.put(wrapper)
         activeScaleOutsById[request.id] = request
         remainingScaleOutExitIds[request.id] = exitIds
         for (exitId in exitIds) scaleOutByExitId[exitId] = request.id
@@ -990,7 +960,7 @@ class OrderManager(
         ) {
             "OTO ${request.id} child ids must be unique"
         }
-        require(orders[request.id] == null && request.children.none { orders[it.id] != null }) {
+        require(book[request.id] == null && request.children.none { book[it.id] != null }) {
             "persisted OTO ${request.id} collides with already-restored order state"
         }
         val now = clock.now()
@@ -1004,8 +974,7 @@ class OrderManager(
                 createdAt = now,
                 lastUpdatedAt = now,
             )
-        orders[wrapper.id] = wrapper
-        indexLive(wrapper)
+        book.put(wrapper)
 
         val parent =
             ManagedOrder(
@@ -1016,8 +985,7 @@ class OrderManager(
                 createdAt = now,
                 lastUpdatedAt = now,
             )
-        orders[parent.id] = parent
-        indexLive(parent)
+        book.put(parent)
         for (child in request.children) {
             val managed =
                 ManagedOrder(
@@ -1028,8 +996,7 @@ class OrderManager(
                     createdAt = now,
                     lastUpdatedAt = now,
                 )
-            orders[managed.id] = managed
-            indexLive(managed)
+            book.put(managed)
         }
         pendingChildren[parent.id] = request.children
         pendingOtosByParent[parent.id] = request
@@ -1061,8 +1028,7 @@ class OrderManager(
                         createdAt = now,
                         lastUpdatedAt = now,
                     )
-                orders[attached.id] = managed
-                indexLive(managed)
+                book.put(managed)
                 restoredAttachedEntries += attached.id
                 preFillBrackets[attached.id] = request
                 // Expression-anchored exits are built from the fill. So is an engine-managed
@@ -1098,8 +1064,7 @@ class OrderManager(
                         createdAt = now,
                         lastUpdatedAt = now,
                     )
-                orders[request.id] = managed
-                indexLive(managed)
+                book.put(managed)
                 registerExposure(request)
                 recovered += managed
             }
@@ -1113,8 +1078,7 @@ class OrderManager(
                         createdAt = now,
                         lastUpdatedAt = now,
                     )
-                orders[entry.id] = managed
-                indexLive(managed)
+                book.put(managed)
                 preFillBrackets[entry.id] = request
                 // A Market entry restored before the venue has quoted its symbol has no price to
                 // anchor the exits on; place them from the actual fill instead of failing the
@@ -1139,7 +1103,7 @@ class OrderManager(
         dynamicState: com.qkt.persistence.PersistedTrailingStop?,
         groupId: String?,
     ) {
-        if (orders.containsKey(clientOrderId)) return
+        if (book.contains(clientOrderId)) return
         require(request.id == clientOrderId) {
             "persisted engine-held order $clientOrderId contains request ${request.id}"
         }
@@ -1156,8 +1120,7 @@ class OrderManager(
                 createdAt = now,
                 lastUpdatedAt = now,
             )
-        orders[clientOrderId] = managed
-        indexLive(managed)
+        book.put(managed)
         dynamicState?.let { trailingHwm[clientOrderId] = it.hwm }
         when (request) {
             is OrderRequest.TrailingStop, is OrderRequest.TrailingStopLimit -> Unit
@@ -1200,9 +1163,9 @@ class OrderManager(
      * this synchronously within the rejection handler; a deferred read may find it reclaimed.
      */
     fun orderDetailsFor(clientOrderId: String): OrderDetails? =
-        orders[clientOrderId]?.request?.let { OrderDetails(it.symbol, it.side, it.quantity) }
+        book[clientOrderId]?.request?.let { OrderDetails(it.symbol, it.side, it.quantity) }
 
-    fun activeOrders(): List<ManagedOrder> = orders.values.filter { !it.state.isTerminal }
+    fun activeOrders(): List<ManagedOrder> = book.orders.values.filter { !it.state.isTerminal }
 
     /**
      * Count active, risk-increasing entry orders for [strategyId] on [symbol].
@@ -1216,11 +1179,11 @@ class OrderManager(
         strategyId: String,
         symbol: String,
     ): Int {
-        val ids = liveBySymbol[symbol] ?: return 0
+        val ids = book.liveIdsFor(symbol) ?: return 0
         var count = 0
         for (id in ids) {
             if (id !in exposureEntries) continue
-            val managed = orders[id] ?: error("live order index desync: $id")
+            val managed = book[id] ?: error("live order index desync: $id")
             if (managed.request.strategyId != strategyId) continue
             val activeEntry =
                 when (managed.state) {
@@ -1253,13 +1216,13 @@ class OrderManager(
         // Time-based exits (GTD expiry, TimeExit, stack deadline) fire on time, not price, so a
         // fill/cancel can land on a tick the new-extreme filter would skip. Conservatively bail to a
         // full real-tick replay whenever any is live.
-        if (gtdLive.isNotEmpty() ||
+        if (book.gtdDeadlines.isNotEmpty() ||
             timeExits.isNotEmpty() ||
             stacks.activeView().any { it.deadlineEpochMs != null }
         ) {
             return IntrabarFill.ALL_TICKS
         }
-        val ids = liveBySymbol[symbol] ?: return IntrabarFill.SYNTHETIC
+        val ids = book.liveIdsFor(symbol) ?: return IntrabarFill.SYNTHETIC
         // Candles aggregate mid prices, while venue triggers use ask for BUY and bid for SELL.
         // Expand the mid range by the largest observed half-spread so a level crossed only by
         // the executable quote still selects real-tick resolution.
@@ -1267,7 +1230,7 @@ class OrderManager(
         val executableHigh = high + maxHalfSpread
         var fillable = false
         for (id in ids) {
-            val m = orders[id] ?: continue
+            val m = book[id] ?: continue
             if (m.state.isTerminal) continue
             when (val r = m.request) {
                 is OrderRequest.Stop ->
@@ -1286,7 +1249,7 @@ class OrderManager(
         return if (fillable) IntrabarFill.EXTREMES else IntrabarFill.SYNTHETIC
     }
 
-    fun pendingOrders(): List<ManagedOrder> = orders.values.filter { it.state == OrderState.PENDING }
+    fun pendingOrders(): List<ManagedOrder> = book.orders.values.filter { it.state == OrderState.PENDING }
 
     private fun dispatch(request: OrderRequest): SubmitAck =
         when (request) {
@@ -1509,7 +1472,7 @@ class OrderManager(
     }
 
     private fun onStackLayerFilled(e: BrokerEvent.OrderFilled) {
-        val filledQuantity = orders[e.clientOrderId]?.cumulativeFilledQuantity ?: e.quantity
+        val filledQuantity = book[e.clientOrderId]?.cumulativeFilledQuantity ?: e.quantity
         val owner = stacks.markFilled(e.clientOrderId, filledQuantity) ?: return
         val state = stacks.get(owner) ?: return
         // Anchor capture happens only on layer 1.
@@ -1556,7 +1519,7 @@ class OrderManager(
         operationId: String,
     ) {
         val state = stacks.get(stackId) ?: return
-        val parent = (orders[stackId]?.request as? OrderRequest.Stack) ?: return
+        val parent = (book[stackId]?.request as? OrderRequest.Stack) ?: return
         val resolvedTicket =
             ticket?.takeIf { it.isNotBlank() }
                 ?: closeTicketFor?.invoke(parent.strategyId, layerOrderId)
@@ -1675,7 +1638,7 @@ class OrderManager(
         stop: OrderRequest.Stop,
         ticket: String,
     ) {
-        if (orders.containsKey(stop.id)) return
+        if (book.contains(stop.id)) return
         val now = clock.now()
         val managed =
             ManagedOrder(
@@ -1685,8 +1648,7 @@ class OrderManager(
                 createdAt = now,
                 lastUpdatedAt = now,
             )
-        orders[stop.id] = managed
-        indexLive(managed)
+        book.put(managed)
         engineHeldCloseTickets[stop.id] = ticket
         registerExposure(stop)
         persistAll()
@@ -1700,10 +1662,10 @@ class OrderManager(
     ): BigDecimal? {
         val state = stacks.get(stackId) ?: return null
         val slAst = state.outerBracket?.stopLoss ?: return null
-        val parent = (orders[stackId]?.request as? OrderRequest.Stack) ?: return null
+        val parent = (book[stackId]?.request as? OrderRequest.Stack) ?: return null
         val exitSide = if (parent.side == Side.BUY) Side.SELL else Side.BUY
         val slPrice = computeChildPrice(slAst, parent.side, fillPrice, isStopLoss = true)
-        val layerEntry = orders[layerOrderId] ?: return null
+        val layerEntry = book[layerOrderId] ?: return null
         val slId = "$layerOrderId-sl"
         val slReq =
             OrderRequest.Stop(
@@ -1750,11 +1712,11 @@ class OrderManager(
     ): Boolean {
         val state = stacks.get(stackId) ?: return false
         val tpAst = state.outerBracket?.takeProfit ?: return false
-        val parent = (orders[stackId]?.request as? OrderRequest.Stack) ?: return false
+        val parent = (book[stackId]?.request as? OrderRequest.Stack) ?: return false
         val tpPrice = computeChildPrice(tpAst, parent.side, fillPrice, isStopLoss = false, slDistance = slDistance)
         val tpId = "$layerOrderId-tp"
         val exitSide = if (parent.side == Side.BUY) Side.SELL else Side.BUY
-        val layerEntry = orders[layerOrderId] ?: return false
+        val layerEntry = book[layerOrderId] ?: return false
         val tpReq =
             OrderRequest.Limit(
                 id = tpId,
@@ -1786,9 +1748,9 @@ class OrderManager(
     }
 
     private fun evaluateStackFlat(e: BrokerEvent.OrderFilled) {
-        val managed = orders[e.clientOrderId] ?: return
+        val managed = book[e.clientOrderId] ?: return
         val parentId = managed.parentClientOrderId ?: return
-        val parent = orders[parentId] ?: return
+        val parent = book[parentId] ?: return
         val stackId =
             if (parent.request is OrderRequest.Stack) {
                 // POSITION_MODIFY venues report a position close under the layer entry's own id.
@@ -1817,7 +1779,7 @@ class OrderManager(
     ) {
         val state = stacks.get(stackId) ?: return
         val parent =
-            (orders[stackId]?.request as? OrderRequest.Stack)
+            (book[stackId]?.request as? OrderRequest.Stack)
                 ?: error("Stack request not tracked for $stackId")
         for (layer in state.plan.layers.drop(1)) {
             val triggerPrice = resolveTriggerPrice(layer.trigger, anchor)
@@ -1865,7 +1827,7 @@ class OrderManager(
 
     /** Active protective orders that require ticks on the engine thread to trigger. */
     fun engineHeldProtectiveStopCount(): Int =
-        orders.values.count { managed ->
+        book.orders.values.count { managed ->
             !managed.state.isTerminal &&
                 (
                     managed.id in engineHeldCloseTickets ||
@@ -2195,10 +2157,7 @@ class OrderManager(
         if (req.takeProfitAst != null || req.stopLossAst != null) {
             fillAnchoredFallbackBrackets[req.entry.id] = req
         }
-        orders.remove(req.id)
-        liveOrderIds.remove(req.id)
-        liveBySymbol[req.symbol]?.remove(req.id)
-        gtdLive.remove(req.id)
+        book.evict(req.id)
         return submit(oto)
     }
 
@@ -2331,7 +2290,7 @@ class OrderManager(
         update(request.id) { it.copy(state = OrderState.SUBMITTED, lastUpdatedAt = clock.now()) }
         persistSubmissionIntent(request.strategyId)
         val ack = broker.submit(request)
-        if (!ack.accepted && orders[request.id]?.state?.isTerminal != true) {
+        if (!ack.accepted && book[request.id]?.state?.isTerminal != true) {
             update(request.id) { it.copy(state = OrderState.REJECTED, lastUpdatedAt = clock.now()) }
             exposureEntries.remove(request.id)
         }
@@ -2484,7 +2443,7 @@ class OrderManager(
         ocoByLeg2[leg2AckId] = seq
 
         val ack1 = dispatch(req.leg1)
-        if (orders[req.id]?.state == OrderState.REJECTED) {
+        if (book[req.id]?.state == OrderState.REJECTED) {
             return SubmitAck(req.id, req.id, accepted = false, rejectReason = "leg ${req.leg1.id} rejected")
         }
         if (!ack1.accepted) {
@@ -2505,7 +2464,7 @@ class OrderManager(
      */
     private fun advanceOcoOnAccept(ackId: String) {
         ocoByLeg1[ackId]?.let { seq ->
-            if (!seq.leg2Placed && orders[seq.ocoId]?.state?.isTerminal != true) {
+            if (!seq.leg2Placed && book[seq.ocoId]?.state?.isTerminal != true) {
                 seq.leg2Placed = true
                 dispatch(seq.leg2)
             }
@@ -2605,26 +2564,6 @@ class OrderManager(
     }
 
     /**
-     * Keep the live-order indexes in sync: a non-terminal order is live, a terminal one is not.
-     * Alongside [liveOrderIds]/[liveBySymbol] this maintains [gtdLive] (orders with a deadline) so
-     * the per-tick expiry sweep walks only deadline-bearing orders. `expiresAt` is fixed at
-     * creation, so re-indexing an order whose state changed keeps the subset correct.
-     */
-    private fun indexLive(managed: ManagedOrder) {
-        val symbol = managed.request.symbol
-        val id = managed.id
-        if (managed.state.isTerminal) {
-            liveOrderIds.remove(id)
-            liveBySymbol[symbol]?.remove(id)
-            gtdLive.remove(id)
-        } else {
-            liveOrderIds.add(id)
-            liveBySymbol.getOrPut(symbol) { LinkedHashSet() }.add(id)
-            managed.request.expiresAt?.let { gtdLive[id] = it }
-        }
-    }
-
-    /**
      * True while some active structure still points at [id], so reclaiming it would break a
      * later lookup: a pending timed-exit whose target is this order, or an active stack that
      * owns it as the parent, layer-one, or a pending/filled/closed layer. Per-order satellite
@@ -2635,7 +2574,7 @@ class OrderManager(
     private fun isReferenced(id: String): Boolean {
         if (
             id in emulatedOcoGroupByLeg &&
-            siblings[id].orEmpty().any { siblingId -> orders[siblingId]?.state?.isTerminal == false }
+            siblings[id].orEmpty().any { siblingId -> book[siblingId]?.state?.isTerminal == false }
         ) {
             return true
         }
@@ -2649,11 +2588,7 @@ class OrderManager(
 
     /** Drop a dead, unreferenced order and all its order-keyed satellite state. */
     private fun reclaim(id: String) {
-        val symbol = orders[id]?.request?.symbol
-        orders.remove(id)
-        liveOrderIds.remove(id)
-        if (symbol != null) liveBySymbol[symbol]?.remove(id)
-        gtdLive.remove(id)
+        book.evict(id)
         trailingHwm.remove(id)
         armedTrailArmed.remove(id)
         steppedStopIndex.remove(id)
@@ -2672,32 +2607,13 @@ class OrderManager(
         exposureEntries.remove(id)
     }
 
-    /**
-     * Reclaim terminal orders that nothing references. Processes each queued id once per drain;
-     * a still-referenced id (e.g. a filled entry a pending timed-exit still points at) is
-     * re-queued for a later pass, so per-drain cost tracks freshly-finished plus still-referenced
-     * terminal orders. Only removes dead, unreferenced orders, so it can never change a trading
-     * decision.
-     */
-    private fun runGc() {
-        repeat(gcQueue.size) {
-            val id = gcQueue.removeFirst()
-            val managed = orders[id]
-            when {
-                managed == null -> Unit
-                !managed.state.isTerminal -> Unit
-                isReferenced(id) -> gcQueue.addLast(id)
-                else -> reclaim(id)
-            }
-        }
-    }
+    private fun runGc() = book.drainGc()
 
     private fun track(managed: ManagedOrder) {
-        orders[managed.id] = managed
+        book.put(managed)
         managed.request.strategyId
             .takeIf { it.isNotBlank() }
             ?.let(persistedStrategies::add)
-        indexLive(managed)
         persistAll()
     }
 
@@ -2705,7 +2621,7 @@ class OrderManager(
         id: String,
         change: (ManagedOrder) -> ManagedOrder,
     ): Boolean {
-        val current = orders[id]
+        val current = book[id]
         if (current == null) {
             persistAll()
             return false
@@ -2722,9 +2638,8 @@ class OrderManager(
             )
             return false
         }
-        orders[id] = updated
-        indexLive(updated)
-        if (updated.state.isTerminal && !current.state.isTerminal) gcQueue.addLast(id)
+        book.put(updated)
+        if (updated.state.isTerminal && !current.state.isTerminal) book.enqueueGc(id)
         persistAll()
         return true
     }
@@ -2743,7 +2658,7 @@ class OrderManager(
             val pairsByStrategy: MutableMap<String, MutableList<com.qkt.persistence.BracketPair>> = mutableMapOf()
             val unarmedChildren = unarmedChildIds()
 
-            for ((id, managed) in orders) {
+            for ((id, managed) in book.orders) {
                 if (!managed.state.isTerminal) {
                     val sid = managed.request.strategyId
                     if (sid.isBlank()) continue
@@ -2756,12 +2671,12 @@ class OrderManager(
             overlayPendingOtos(pendingByStrategy)
             overlayPendingScaleOuts(pendingByStrategy)
             for ((entryId, bracket) in preFillBrackets) {
-                if (orders[entryId]?.state?.isTerminal == true) continue
+                if (book[entryId]?.state?.isTerminal == true) continue
                 val sid = bracket.strategyId
                 if (sid.isBlank()) continue
                 pendingByStrategy.getOrPut(sid) { mutableMapOf() }[entryId] = bracket
             }
-            for ((id, managed) in orders) {
+            for ((id, managed) in book.orders) {
                 val bracket = managed.request as? OrderRequest.Bracket ?: continue
                 if (managed.state.isTerminal || id in preFillBrackets || bracket in preFillBrackets.values) continue
                 val sid = bracket.strategyId
@@ -2769,13 +2684,13 @@ class OrderManager(
                 pendingByStrategy.getOrPut(sid) { mutableMapOf() }[id] = bracket
             }
             for ((entryId, siblingIds) in siblings) {
-                val entry = orders[entryId] ?: continue
+                val entry = book[entryId] ?: continue
                 val sid = entry.request.strategyId
                 if (sid.isBlank()) continue
                 val sl =
                     siblingIds.firstOrNull {
                         it.contains("-sl") ||
-                            (orders[it]?.request is com.qkt.execution.OrderRequest.Stop)
+                            (book[it]?.request is com.qkt.execution.OrderRequest.Stop)
                     }
                 val tp = siblingIds.firstOrNull { it != sl }
                 pairsByStrategy.getOrPut(sid) { mutableListOf() }.add(
@@ -2790,7 +2705,7 @@ class OrderManager(
             val ocoLegsByStrategy: MutableMap<String, MutableList<com.qkt.persistence.PersistedOcoLeg>> =
                 mutableMapOf()
             for ((legId, siblingIds) in siblings) {
-                val managed = orders[legId] ?: continue
+                val managed = book[legId] ?: continue
                 if (managed.state.isTerminal) continue
                 val ticket = managed.brokerOrderId ?: continue
                 val sid = managed.request.strategyId
@@ -2849,7 +2764,7 @@ class OrderManager(
     private fun recoveryPendingOrders(strategyId: String): Map<String, OrderRequest> {
         val unarmedChildren = unarmedChildIds()
         val result =
-            orders
+            book.orders
                 .asSequence()
                 .filter { (id, managed) ->
                     managed.request.strategyId == strategyId &&
@@ -2858,12 +2773,12 @@ class OrderManager(
                         id !in unarmedChildren
                 }.associateTo(linkedMapOf()) { (id, managed) -> id to managed.request }
         pendingOtosByParent.forEach { (parentId, oto) ->
-            if (oto.strategyId == strategyId && orders[parentId]?.state?.isTerminal == false) {
+            if (oto.strategyId == strategyId && book[parentId]?.state?.isTerminal == false) {
                 result[parentId] = oto
             }
         }
         pendingScaleOutsByBasis.forEach { (basisId, scaleOut) ->
-            if (scaleOut.strategyId == strategyId && orders[basisId]?.state?.isTerminal == false) {
+            if (scaleOut.strategyId == strategyId && book[basisId]?.state?.isTerminal == false) {
                 result[basisId] = scaleOut
             }
         }
@@ -2873,11 +2788,11 @@ class OrderManager(
             }
         }
         for ((entryId, bracket) in preFillBrackets) {
-            if (bracket.strategyId == strategyId && orders[entryId]?.state?.isTerminal != true) {
+            if (bracket.strategyId == strategyId && book[entryId]?.state?.isTerminal != true) {
                 result[entryId] = bracket
             }
         }
-        for ((id, managed) in orders) {
+        for ((id, managed) in book.orders) {
             val bracket = managed.request as? OrderRequest.Bracket ?: continue
             if (bracket.strategyId != strategyId || managed.state.isTerminal) continue
             if (id in preFillBrackets || bracket in preFillBrackets.values) continue
@@ -2889,7 +2804,7 @@ class OrderManager(
     private fun overlayPendingOtos(pendingByStrategy: MutableMap<String, MutableMap<String, OrderRequest>>) {
         for ((parentId, oto) in pendingOtosByParent) {
             val strategyId = oto.strategyId
-            if (strategyId.isBlank() || orders[parentId]?.state?.isTerminal != false) continue
+            if (strategyId.isBlank() || book[parentId]?.state?.isTerminal != false) continue
             // Replace the atomic parent snapshot with the wrapper so restart can re-arm children.
             pendingByStrategy.getOrPut(strategyId) { mutableMapOf() }[parentId] = oto
         }
@@ -2898,7 +2813,7 @@ class OrderManager(
     private fun overlayPendingScaleOuts(pendingByStrategy: MutableMap<String, MutableMap<String, OrderRequest>>) {
         for ((basisId, scaleOut) in pendingScaleOutsByBasis) {
             val strategyId = scaleOut.strategyId
-            if (strategyId.isBlank() || orders[basisId]?.state?.isTerminal != false) continue
+            if (strategyId.isBlank() || book[basisId]?.state?.isTerminal != false) continue
             pendingByStrategy.getOrPut(strategyId) { mutableMapOf() }[basisId] = scaleOut
         }
         for ((scaleOutId, scaleOut) in activeScaleOutsById) {
@@ -2928,7 +2843,7 @@ class OrderManager(
 
     private fun trailingStopsByStrategy(): Map<String, List<com.qkt.persistence.PersistedTrailingStop>> {
         val result = mutableMapOf<String, MutableList<com.qkt.persistence.PersistedTrailingStop>>()
-        for ((id, managed) in orders) {
+        for ((id, managed) in book.orders) {
             val request = managed.request
             if (!hasPersistentDynamicState(request) || managed.state != OrderState.PENDING) continue
             val strategyId = request.strategyId
@@ -3066,7 +2981,7 @@ class OrderManager(
             return
         }
         preFillBrackets.remove(e.clientOrderId)
-        val existing = orders[e.clientOrderId]
+        val existing = book[e.clientOrderId]
         if (existing?.state?.isTerminal == true) {
             log.error(
                 "ignoring duplicate fill for terminal order {} in state {} — cumulative execution is immutable",
@@ -3165,7 +3080,7 @@ class OrderManager(
                 val heldStop =
                     if (resolved.stopLoss !is StopLossSpec.Fixed &&
                         pending.orEmpty().none { it.id == "${resolved.id}-sl" } &&
-                        orders["${resolved.id}-sl"]?.state?.isTerminal != false
+                        book["${resolved.id}-sl"]?.state?.isTerminal != false
                     ) {
                         buildAttachedManagedStop(resolved, clock.now(), entryPrice = e.price)?.also { stop ->
                             track(
@@ -3210,7 +3125,7 @@ class OrderManager(
         pendingScaleOutsByBasis.remove(e.clientOrderId)?.let { scaleReq ->
             activateScaleOut(
                 scaleOut = scaleReq,
-                basisQuantity = orders[e.clientOrderId]?.cumulativeFilledQuantity ?: e.quantity,
+                basisQuantity = book[e.clientOrderId]?.cumulativeFilledQuantity ?: e.quantity,
                 positionTicket = e.brokerOrderId?.takeIf { it.isNotBlank() },
             )
         }
@@ -3265,7 +3180,7 @@ class OrderManager(
                 else -> null // flat: every resting exit is stale
             }
         val stale =
-            orders.entries.filter { (id, managed) ->
+            book.orders.entries.filter { (id, managed) ->
                 !managed.state.isTerminal &&
                     (id.endsWith("-sl") || id.endsWith("-tp")) &&
                     managed.request.strategyId == strategyId &&
@@ -3296,7 +3211,7 @@ class OrderManager(
      * completes it.
      */
     private fun completeAttachedBracketOnVenueClose(e: BrokerEvent.OrderFilled) {
-        val entry = orders[e.clientOrderId] ?: return
+        val entry = book[e.clientOrderId] ?: return
         if (entry.request !is OrderRequest.Bracket || entry.state != OrderState.FILLED) return
         val filled = entry.cumulativeFilledQuantity.takeIf { it.signum() > 0 } ?: entry.request.quantity
         completeAttachedBracketOnExit(
@@ -3318,14 +3233,14 @@ class OrderManager(
      */
     private fun completeAttachedBracketOnEngineExit(e: BrokerEvent.OrderFilled) {
         if (!e.clientOrderId.endsWith("-sl") && !e.clientOrderId.endsWith("-tp")) return
-        val wrapperId = orders[e.clientOrderId]?.parentClientOrderId
-        val wrapper = wrapperId?.let { orders[it] }
+        val wrapperId = book[e.clientOrderId]?.parentClientOrderId
+        val wrapper = wrapperId?.let { book[it] }
         if (wrapper == null) {
             // Restored after a restart: the wrapper record is not persisted, but the attached
             // entry carries the position ticket this close-by-ticket just consumed.
             val ticket = e.brokerOrderId?.takeIf { it.isNotBlank() } ?: return
             val entry =
-                orders.values.firstOrNull {
+                book.orders.values.firstOrNull {
                     it.brokerOrderId == ticket &&
                         it.request is OrderRequest.Bracket &&
                         it.id == (it.request as OrderRequest.Bracket).entry.id
@@ -3342,7 +3257,7 @@ class OrderManager(
         val request = wrapper.request as? OrderRequest.Bracket ?: return
         if (wrapper.state.isTerminal) return
         val entryId = request.entry.id
-        val entry = orders[entryId]
+        val entry = book[entryId]
         if (entry != null && entry.request !is OrderRequest.Bracket) return
         val filled = entry?.cumulativeFilledQuantity?.takeIf { it.signum() > 0 } ?: request.quantity
         completeAttachedBracketOnExit(
@@ -3370,18 +3285,18 @@ class OrderManager(
         if (closeTicket != null) {
             val held = engineHeldCloseTickets.filterValues { it == closeTicket }.keys
             for (id in held) {
-                val managed = orders[id] ?: continue
+                val managed = book[id] ?: continue
                 if (managed.state == OrderState.PENDING || managed.state == OrderState.CREATED) cancel(id)
             }
         }
         if (wrapperId == null) return
-        val wrapper = orders[wrapperId] ?: return
+        val wrapper = book[wrapperId] ?: return
         if (wrapper.state.isTerminal) return
         for (childId in wrapper.childClientOrderIds) {
-            val child = orders[childId] ?: continue
+            val child = book[childId] ?: continue
             if (child.state == OrderState.PENDING || child.state == OrderState.CREATED) cancel(childId)
         }
-        val liveChild = wrapper.childClientOrderIds.any { orders[it]?.state?.isTerminal == false }
+        val liveChild = wrapper.childClientOrderIds.any { book[it]?.state?.isTerminal == false }
         if (liveChild) return
         update(wrapperId) { it.copy(state = OrderState.FILLED, lastUpdatedAt = clock.now()) }
         exposureEntries.remove(wrapperId)
@@ -3393,7 +3308,7 @@ class OrderManager(
         if (siblingIds.isEmpty() || !ocoSiblingCancelStarted.add(clientOrderId)) return
         var deferredSiblingCancel = false
         siblingIds.forEach { sibId ->
-            val sib = orders[sibId] ?: return@forEach
+            val sib = book[sibId] ?: return@forEach
             if (sib.state.isTerminal) return@forEach
             // If the sibling is an OCO leg2 that the venue hasn't acknowledged yet, its ticket
             // is unknown — a cancel now would no-op at the venue. Defer it to leg2's acceptance.
@@ -3415,7 +3330,7 @@ class OrderManager(
         return siblings[clientOrderId]
             .orEmpty()
             .asSequence()
-            .mapNotNull(orders::get)
+            .mapNotNull(book.orders::get)
             .firstOrNull { it.state == OrderState.FILLED }
     }
 
@@ -3433,7 +3348,7 @@ class OrderManager(
     ) {
         val strategyId =
             secondFill.strategyId.ifBlank {
-                orders[secondFill.clientOrderId]?.request?.strategyId.orEmpty()
+                book[secondFill.clientOrderId]?.request?.strategyId.orEmpty()
             }
         val positionTicket = secondFill.brokerOrderId?.takeIf { it.isNotBlank() }
         val groupId = emulatedOcoGroupByLeg.getValue(secondFill.clientOrderId)
@@ -3449,7 +3364,7 @@ class OrderManager(
 
         val compensationId = "$groupId-oco-double-fill-close-${secondFill.clientOrderId}"
         val secondPositionQuantity =
-            orders[secondFill.clientOrderId]?.cumulativeFilledQuantity?.takeIf { it.signum() > 0 }
+            book[secondFill.clientOrderId]?.cumulativeFilledQuantity?.takeIf { it.signum() > 0 }
                 ?: secondFill.quantity
         reportProtectionFailure(
             strategyId,
@@ -3499,11 +3414,11 @@ class OrderManager(
         val pendingScaleOut = pendingScaleOutsByBasis.remove(e.clientOrderId)
         val partialPositionTicket = partialScaleOutPositionTickets.remove(e.clientOrderId)
         unarmedChildren?.forEach { child -> cancel(child.id) }
-        val cancelled = orders[e.clientOrderId]
+        val cancelled = book[e.clientOrderId]
         val wrapperId = cancelled?.parentClientOrderId
         val wrapperWasExplicitlyCancelled =
             wrapperId != null &&
-                (wrapperId in cancellingScaleOutWrappers || orders[wrapperId]?.state == OrderState.CANCELLED)
+                (wrapperId in cancellingScaleOutWrappers || book[wrapperId]?.state == OrderState.CANCELLED)
         if (pendingScaleOut != null &&
             cancelled != null &&
             cancelled.cumulativeFilledQuantity.signum() > 0 &&
@@ -3585,16 +3500,16 @@ class OrderManager(
                     createdAt = now,
                     lastUpdatedAt = now,
                 )
-            orders[exit.id] = managed
-            indexLive(managed)
+            book.put(managed)
             registerExposure(exit)
         }
-        orders[scaleOut.id]?.let { wrapper ->
-            orders[scaleOut.id] =
+        book[scaleOut.id]?.let { wrapper ->
+            book.put(
                 wrapper.copy(
                     childClientOrderIds = listOf(scaleOut.basis.id) + exitIds,
                     lastUpdatedAt = now,
-                )
+                ),
+            )
         }
         persistSubmissionIntent(scaleOut.strategyId)
         for (exit in exits) {
@@ -3631,9 +3546,9 @@ class OrderManager(
         // not O(all live). An id in the index with no entry in [orders] is an invariant violation,
         // not an expected absence, so surface it.
         symbolLiveScratch.clear()
-        liveBySymbol[tick.symbol]?.let { ids ->
+        book.liveIdsFor(tick.symbol)?.let { ids ->
             for (id in ids) {
-                symbolLiveScratch.add(orders[id] ?: error("live order index desync: $id"))
+                symbolLiveScratch.add(book[id] ?: error("live order index desync: $id"))
             }
         }
         for (i in symbolLiveScratch.indices) {
@@ -3661,13 +3576,13 @@ class OrderManager(
         // One timestamp per pass: GTD, time-exit, and stack deadlines all compare against the same
         // tick instant. The empty guards keep the pass iterator-free when nothing has a deadline.
         val now = clock.now()
-        if (!broker.supportsNativeGtd && gtdLive.isNotEmpty()) {
+        if (!broker.supportsNativeGtd && book.gtdDeadlines.isNotEmpty()) {
             gtdExpiredScratch.clear()
-            for ((id, deadline) in gtdLive) {
+            for ((id, deadline) in book.gtdDeadlines) {
                 if (now >= deadline) gtdExpiredScratch.add(id)
             }
             for (i in gtdExpiredScratch.indices) {
-                val managed = orders[gtdExpiredScratch[i]] ?: continue
+                val managed = book[gtdExpiredScratch[i]] ?: continue
                 if (managed.state.isTerminal) continue
                 if (managed.state != OrderState.PENDING && managed.state != OrderState.WORKING) continue
                 cancel(managed.id)
@@ -3716,7 +3631,7 @@ class OrderManager(
     }
 
     private fun handleTimeExitExpiry(te: OrderRequest.TimeExit) {
-        val target = orders[te.target.id] ?: return
+        val target = book[te.target.id] ?: return
         when (te.onExpiry) {
             ExpiryAction.CANCEL -> {
                 if (!target.state.isTerminal) cancel(te.target.id)
@@ -3991,7 +3906,7 @@ class OrderManager(
         // [triggeredScratch] is a snapshot. An earlier synchronous fill can cancel this order
         // before its turn in the loop; terminal-state protection rejects the state transition,
         // but without this guard the stale snapshot would still be submitted to the broker.
-        if (orders[managed.id]?.state != OrderState.PENDING) return
+        if (book[managed.id]?.state != OrderState.PENDING) return
         val stackOwner = stacks.stackOwning(managed.id)
         if (stackOwner != null) {
             val layerIdx = managed.id.substringAfterLast("-l").toIntOrNull() ?: 0
@@ -4154,8 +4069,7 @@ class OrderManager(
      * sweep and reduce-only tripwire must not judge it: under a hedging book a short leg's BUY
      * stop while net-long is a legitimate exit (#1071).
      */
-    private fun isLegLinked(clientOrderId: String): Boolean =
-        orders[clientOrderId]?.request?.legIntent is LegIntent.Close
+    private fun isLegLinked(clientOrderId: String): Boolean = book[clientOrderId]?.request?.legIntent is LegIntent.Close
 
     private fun managedStopCloseTicket(request: OrderRequest): String? =
         closeTicketFor?.invoke(request.strategyId, request.id)
@@ -4200,7 +4114,7 @@ class OrderManager(
     fun pendingStackLayerInfos(): List<PendingStackLayerInfo> =
         stacks.all().flatMap { state ->
             state.pendingLayerIds.mapNotNull { layerId ->
-                val managed = orders[layerId] ?: return@mapNotNull null
+                val managed = book[layerId] ?: return@mapNotNull null
                 if (managed.state != OrderState.PENDING) return@mapNotNull null
                 val triggerPrice =
                     when (val r = managed.request) {
