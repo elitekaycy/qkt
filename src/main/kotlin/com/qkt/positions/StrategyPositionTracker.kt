@@ -40,68 +40,10 @@ class StrategyPositionTracker private constructor(
 
     private val log = org.slf4j.LoggerFactory.getLogger(StrategyPositionTracker::class.java)
 
-    /**
-     * Account-level net position per symbol, folded across strategies. Rebuilt for one symbol
-     * after every mutation of that symbol's legs, so account reads are index lookups and the
-     * account never disagrees with the ledger it is derived from.
-     */
-    private val accountBySymbol: MutableMap<String, Position> = ConcurrentHashMap()
+    private val accountIndex = AccountNetIndex(legBooks)
 
     /** The account's positions as a read-only projection of this ledger. */
-    val account: LegExposureProvider = AccountPositionView(this)
-
-    internal fun accountPositionFor(symbol: String): Position? = accountBySymbol[symbol]
-
-    internal fun accountPositions(): Map<String, Position> = accountBySymbol.toMap()
-
-    internal fun accountSymbols(): Set<String> = accountBySymbol.keys
-
-    internal fun forEachLeg(
-        symbol: String,
-        action: (PositionLeg) -> Unit,
-    ) {
-        for (books in legBooks.strategyBooks()) {
-            val book = books[symbol] ?: continue
-            book.forEach(action)
-        }
-    }
-
-    private fun reindex(symbol: String) {
-        // Accumulate from a scale-0 zero so the net keeps the legs' own quantity scale, exactly
-        // as the strategy net view does — report columns print 0.01, not 0.01000000.
-        var netQty = BigDecimal.ZERO
-        var earliest = Long.MAX_VALUE
-        var any = false
-        for (books in legBooks.strategyBooks()) {
-            val book = books[symbol] ?: continue
-            book.forEach { leg ->
-                any = true
-                netQty = if (leg.side == Side.BUY) netQty.add(leg.quantity) else netQty.subtract(leg.quantity)
-                if (leg.openedAt < earliest) earliest = leg.openedAt
-            }
-        }
-        if (!any) {
-            accountBySymbol.remove(symbol)
-            return
-        }
-        if (netQty.signum() == 0) {
-            accountBySymbol[symbol] = Position(symbol, Money.ZERO, Money.ZERO, openedAt = earliest)
-            return
-        }
-        val netSide = if (netQty.signum() > 0) Side.BUY else Side.SELL
-        var notional = Money.ZERO
-        var qty = Money.ZERO
-        for (books in legBooks.strategyBooks()) {
-            val book = books[symbol] ?: continue
-            book.forEach { leg ->
-                if (leg.side != netSide) return@forEach
-                notional = notional.add(leg.entryPrice.multiply(leg.quantity))
-                qty = qty.add(leg.quantity)
-            }
-        }
-        val avg = notional.divide(qty, Money.CONTEXT).setScale(Money.SCALE, Money.ROUNDING)
-        accountBySymbol[symbol] = Position(symbol, netQty, avg, openedAt = earliest)
-    }
+    val account: LegExposureProvider = AccountPositionView(accountIndex)
 
     /**
      * Apply a venue correction to a symbol's ledger. Only possible when exactly one strategy
@@ -174,7 +116,7 @@ class StrategyPositionTracker private constructor(
             log.info("venue position {} on {} booked for {} from {}", ticket, symbol, owner, source)
             syncPrimaryMfeTracker(owner, symbol)
             legBooks.persist(owner, symbol)
-            reindex(symbol)
+            accountIndex.reindex(symbol)
             return true
         }
         if (signedQuantity.signum() == 0) {
@@ -196,7 +138,7 @@ class StrategyPositionTracker private constructor(
         }
         syncPrimaryMfeTracker(owner, symbol)
         legBooks.persist(owner, symbol)
-        reindex(symbol)
+        accountIndex.reindex(symbol)
         return true
     }
 
@@ -211,7 +153,7 @@ class StrategyPositionTracker private constructor(
         symbol: String,
     ) {
         val book = legBooks.restore(strategyId, symbol) ?: return
-        reindex(symbol)
+        accountIndex.reindex(symbol)
         // The restored book needs its excursion tracker like any other (#1158), seeded with the
         // marks saved before the restart when they belong to the same leg.
         syncPrimaryMfeTracker(strategyId, symbol)
@@ -370,7 +312,7 @@ class StrategyPositionTracker private constructor(
             }
         if (!application.unbooked) {
             legBooks.persist(event.strategyId, event.symbol)
-            reindex(event.symbol)
+            accountIndex.reindex(event.symbol)
         }
         return application
     }
@@ -626,7 +568,7 @@ class StrategyPositionTracker private constructor(
         brokerTicket: String? = null,
     ): BigDecimal {
         val realized = applyNet(strategyId, trade, brokerTicket)
-        reindex(trade.symbol)
+        accountIndex.reindex(trade.symbol)
         return realized
     }
 
@@ -751,7 +693,7 @@ class StrategyPositionTracker private constructor(
         val book = books.getOrPut(leg.symbol) { LegBook(leg.symbol) }
         book.add(leg)
         legBooks.persist(strategyId, leg.symbol)
-        reindex(leg.symbol)
+        accountIndex.reindex(leg.symbol)
     }
 
     /**
@@ -770,7 +712,7 @@ class StrategyPositionTracker private constructor(
         val book = books.getOrPut(leg.symbol) { LegBook(leg.symbol) }
         book.add(leg)
         legBooks.persist(strategyId, leg.symbol)
-        reindex(leg.symbol)
+        accountIndex.reindex(leg.symbol)
     }
 
     /**
@@ -788,7 +730,7 @@ class StrategyPositionTracker private constructor(
             legBooks.booksOf(strategyId)?.remove(symbol)
         }
         legBooks.persist(strategyId, symbol)
-        reindex(symbol)
+        accountIndex.reindex(symbol)
         return closed
     }
 
