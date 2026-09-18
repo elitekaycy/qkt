@@ -142,7 +142,6 @@
 257 src/test/kotlin/com/qkt/broker/mt5/MT5PollerSessionGateTest.kt
 257 src/test/kotlin/com/qkt/parity/MT5DaemonE2ETest.kt
 256 src/main/kotlin/com/qkt/broker/Broker.kt
-256 src/main/kotlin/com/qkt/research/BarResolvedFeed.kt
 255 src/test/kotlin/com/qkt/marketdata/source/CompositeMarketSourceTest.kt
 254 src/main/kotlin/com/qkt/broker/mt5/MT5BrokerProfileLoader.kt
 254 src/main/kotlin/com/qkt/observe/insights/BrokerStatePoller.kt
