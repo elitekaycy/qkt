@@ -7,17 +7,20 @@ import com.qkt.cli.PromotionJson
 import com.qkt.cli.PromotionRecord
 import com.qkt.cli.PromotionState
 import com.qkt.cli.PromotionWaiver
+import com.qkt.cli.daemon.routes.handleHalt
 import com.qkt.cli.daemon.routes.handleHealth
+import com.qkt.cli.daemon.routes.handleKill
 import com.qkt.cli.daemon.routes.handleLatencyAll
 import com.qkt.cli.daemon.routes.handleList
 import com.qkt.cli.daemon.routes.handleLogs
 import com.qkt.cli.daemon.routes.handleMetrics
 import com.qkt.cli.daemon.routes.handleReconcile
+import com.qkt.cli.daemon.routes.handleResume
+import com.qkt.cli.daemon.routes.handleShutdown
+import com.qkt.cli.daemon.routes.handleStart
 import com.qkt.cli.daemon.routes.handleStatusAll
 import com.qkt.cli.daemon.routes.handleStatusOne
-import com.qkt.cli.daemon.routes.jsonArray
-import com.qkt.cli.daemon.routes.jsonString
-import com.qkt.cli.daemon.routes.jsonStringOrNull
+import com.qkt.cli.daemon.routes.handleStop
 import com.qkt.cli.daemon.routes.parseQuery
 import com.qkt.cli.daemon.routes.promotionStore
 import com.qkt.cli.daemon.routes.respond
@@ -108,182 +111,6 @@ object ControlRoutes {
             supplied.toByteArray(StandardCharsets.UTF_8),
             expectedToken.toByteArray(StandardCharsets.UTF_8),
         )
-    }
-
-    private fun handleShutdown(
-        ex: HttpExchange,
-        stateDir: StateDir?,
-        shutdown: () -> Unit,
-    ) {
-        respond(ex, 202, """{"status":"accepted"}""")
-        OperatorJournal
-            .from(stateDir, "http")
-            ?.record("shutdown", target = "_daemon", affected = emptyList())
-        // Trigger asynchronously so the response can flush before the server closes.
-        Thread {
-            try {
-                Thread.sleep(50)
-            } catch (_: InterruptedException) {
-                Thread.currentThread().interrupt()
-            }
-            runCatching { shutdown() }
-        }.apply {
-            isDaemon = true
-            start()
-        }
-    }
-
-    private fun handleHalt(
-        ex: HttpExchange,
-        registry: StrategyRegistry,
-        stateDir: StateDir?,
-        name: String?,
-    ) {
-        val target = if (name == null) Target.All else Target.Strategy(name)
-        val result = RegistryDaemonControl(registry, OperatorJournal.from(stateDir, "http")).halt(target)
-        if (result.unknown.isNotEmpty()) {
-            return respond(ex, 404, """{"error":"unknown name: ${result.unknown.first()}"}""")
-        }
-        respond(ex, 200, """{"state":"halted","affected":${jsonArray(result.affected)}}""")
-    }
-
-    private fun handleKill(
-        ex: HttpExchange,
-        registry: StrategyRegistry,
-        stateDir: StateDir?,
-        name: String?,
-    ) {
-        val params = parseQuery(ex.requestURI.rawQuery)
-        val flatten =
-            when (val raw = params["flatten"]) {
-                null -> false
-                "true" -> true
-                "false" -> false
-                else -> return respond(ex, 400, """{"error":"invalid 'flatten' query param"}""")
-            }
-        val target = if (name == null) Target.All else Target.Strategy(name)
-        val result = RegistryDaemonControl(registry, OperatorJournal.from(stateDir, "http")).kill(target, flatten)
-        if (result.unknown.isNotEmpty()) {
-            return respond(ex, 404, """{"error":"unknown name: ${result.unknown.first()}"}""")
-        }
-        val flattenVerified =
-            flatten && result.affected.isNotEmpty() && result.flattenResults.values.all { it.verifiedFlat }
-        val remainingTickets =
-            result.flattenResults.values
-                .flatMap { it.remainingTickets }
-                .distinct()
-        val flattenDetails = result.flattenResults.mapValues { it.value.detail }
-        val detailsJson =
-            flattenDetails.entries.joinToString(prefix = "{", postfix = "}") { (strategy, detail) ->
-                "${jsonString(strategy)}:${jsonStringOrNull(detail)}"
-            }
-        respond(
-            ex,
-            200,
-            """{"state":"killed","flatten":$flatten,"flattenVerified":$flattenVerified,""" +
-                """"remainingTickets":${jsonArray(remainingTickets)},"flattenDetails":$detailsJson,""" +
-                """"affected":${jsonArray(result.affected)}}""",
-        )
-    }
-
-    private fun handleResume(
-        ex: HttpExchange,
-        registry: StrategyRegistry,
-        stateDir: StateDir?,
-        name: String?,
-    ) {
-        val target = if (name == null) Target.All else Target.Strategy(name)
-        val result = RegistryDaemonControl(registry, OperatorJournal.from(stateDir, "http")).resume(target)
-        if (result.unknown.isNotEmpty()) {
-            return respond(ex, 404, """{"error":"unknown name: ${result.unknown.first()}"}""")
-        }
-        respond(ex, 200, """{"state":"resumed","affected":${jsonArray(result.affected)}}""")
-    }
-
-    private fun handleStop(
-        ex: HttpExchange,
-        registry: StrategyRegistry,
-        stateDir: StateDir?,
-        path: String,
-    ) {
-        val name = path.removePrefix("/stop/").trim('/').ifBlank { null }
-        if (name == null) {
-            return respond(ex, 400, """{"error":"missing name in path"}""")
-        }
-        val params = parseQuery(ex.requestURI.rawQuery)
-        if (params.containsKey("timeout")) {
-            val t = params["timeout"]?.toLongOrNull()
-            if (t == null || t < 0) {
-                return respond(ex, 400, """{"error":"invalid 'timeout' query param"}""")
-            }
-        }
-        val flattenOverride: Boolean? =
-            when (val raw = params["flatten"]) {
-                null -> null
-                "true" -> true
-                "false" -> false
-                else -> return respond(ex, 400, """{"error":"invalid 'flatten' query param"}""")
-            }
-
-        registry.getPortfolio(name)?.let { record ->
-            record.supervisor.stop()
-            var totalTrades = 0
-            for (child in record.children) {
-                val meta = child.childMeta
-                val shouldFlatten = flattenOverride ?: (meta != null && !meta.hold)
-                if (shouldFlatten) {
-                    runCatching { child.live.flattenForStop() }
-                }
-                totalTrades += child.tradeCount
-            }
-            registry.removePortfolio(name)
-            for (child in record.children) runCatching { child.close() }
-            OperatorJournal
-                .from(stateDir, "http")
-                ?.record(
-                    action = "stop",
-                    target = name,
-                    affected = listOf(name) + record.children.map { it.name },
-                    details = mapOf("flatten" to (flattenOverride?.toString() ?: "default")),
-                )
-            return respond(ex, 200, """{"name":"$name","state":"stopped","trades":$totalTrades}""")
-        }
-
-        val handle =
-            registry.get(name)
-                ?: return respond(ex, 404, """{"error":"unknown name: $name"}""")
-        val meta = handle.childMeta
-        if (meta != null) {
-            meta.operatorStop.set(true)
-            meta.gateActive.set(false)
-            val shouldFlatten = flattenOverride ?: !meta.hold
-            if (shouldFlatten) runCatching { handle.live.flatten() }
-            OperatorJournal
-                .from(stateDir, "http")
-                ?.record(
-                    action = "stop",
-                    target = name,
-                    affected = listOf(name),
-                    details = mapOf("flatten" to shouldFlatten.toString(), "state" to "operator_stopped"),
-                )
-            return respond(
-                ex,
-                200,
-                """{"name":"$name","state":"operator_stopped","trades":${handle.tradeCount}}""",
-            )
-        }
-        val trades = handle.tradeCount
-        if (flattenOverride == true) runCatching { handle.live.flattenForStop() }
-        registry.stop(name)
-        OperatorJournal
-            .from(stateDir, "http")
-            ?.record(
-                action = "stop",
-                target = name,
-                affected = listOf(name),
-                details = mapOf("flatten" to (flattenOverride?.toString() ?: "false")),
-            )
-        respond(ex, 200, """{"name":"$name","state":"stopped","trades":$trades}""")
     }
 
     private fun handleDeploy(
@@ -728,31 +555,5 @@ object ControlRoutes {
             createdAt = now.toString(),
             expiresAt = expiresAt,
         )
-    }
-
-    private fun handleStart(
-        ex: HttpExchange,
-        registry: StrategyRegistry,
-        stateDir: StateDir?,
-        path: String,
-    ) {
-        val name =
-            path.removePrefix("/start/").trim('/').ifBlank { null }
-                ?: return respond(ex, 400, """{"error":"missing name"}""")
-        val handle = registry.get(name)
-        if (handle != null && handle.childMeta != null) {
-            handle.childMeta.operatorStop.set(false)
-            OperatorJournal
-                .from(stateDir, "http")
-                ?.record("start", target = name, affected = listOf(name), details = mapOf("state" to "resumed"))
-            return respond(ex, 200, """{"name":"$name","state":"resumed"}""")
-        }
-        if (handle != null) {
-            return respond(ex, 400, """{"error":"strategy '$name' has no paused state"}""")
-        }
-        if (registry.getPortfolio(name) != null) {
-            return respond(ex, 400, """{"error":"portfolio '$name' cannot be started; use deploy"}""")
-        }
-        respond(ex, 404, """{"error":"unknown name: $name"}""")
     }
 }
