@@ -9,30 +9,33 @@ import com.qkt.cli.PromotionState
 import com.qkt.cli.PromotionStore
 import com.qkt.cli.PromotionWaiver
 import com.qkt.cli.UserDirs
+import com.qkt.cli.daemon.routes.jsonArray
+import com.qkt.cli.daemon.routes.jsonDecimal
+import com.qkt.cli.daemon.routes.jsonString
+import com.qkt.cli.daemon.routes.jsonStringOrNull
+import com.qkt.cli.daemon.routes.parseQuery
+import com.qkt.cli.daemon.routes.respond
+import com.qkt.cli.daemon.routes.respondText
+import com.qkt.cli.daemon.routes.routeJson
 import com.qkt.dsl.parse.Dsl
 import com.qkt.dsl.parse.ParseResult
 import com.qkt.dsl.parse.ParsedFile
 import com.qkt.dsl.portfolio.PortfolioLoader
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpHandler
-import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
 import java.time.Instant
 import kotlinx.serialization.builtins.serializer
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 object ControlRoutes {
-    private val json = Json { encodeDefaults = true }
-
     fun dispatch(
         registry: StrategyRegistry,
         startedAt: Instant,
@@ -183,17 +186,6 @@ object ControlRoutes {
         respondText(ex, 200, out.toString())
     }
 
-    private fun respondText(
-        ex: HttpExchange,
-        code: Int,
-        body: String,
-    ) {
-        ex.responseHeaders.add("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
-        val bytes = body.toByteArray(Charsets.UTF_8)
-        ex.sendResponseHeaders(code, bytes.size.toLong())
-        ex.responseBody.use { it.write(bytes) }
-    }
-
     private fun handleHealth(
         ex: HttpExchange,
         registry: StrategyRegistry,
@@ -217,7 +209,12 @@ object ControlRoutes {
                 val haltReason = h.live.haltReason()
                 """{"name":"${h.name}","running":${h.isRunning()},""" +
                     """"halted":${h.live.isHalted()},""" +
-                    """"haltReason":${haltReason?.let { json.encodeToString(String.serializer(), it) } ?: "null"},""" +
+                    """"haltReason":${haltReason?.let {
+                        routeJson.encodeToString(
+                            String.serializer(),
+                            it,
+                        )
+                    } ?: "null"},""" +
                     """"lastEventAgeMs":${ageMs ?: "null"},""" +
                     """"inboundQueueDepth":${h.live.inboundQueueDepth()},""" +
                     """"droppedTicks":${h.live.droppedTicks}}"""
@@ -226,9 +223,9 @@ object ControlRoutes {
         // operator expects a strategy: degraded, not ok, so watchdogs and Insights see it.
         val pending =
             pendingAutoDeploys.joinToString(",", "[", "]") { p ->
-                """{"name":${json.encodeToString(String.serializer(), p.name)},""" +
+                """{"name":${routeJson.encodeToString(String.serializer(), p.name)},""" +
                     """"attempts":${p.attempts},"nextAttemptAtMs":${p.nextAttemptAtMs},""" +
-                    """"lastError":${json.encodeToString(String.serializer(), p.lastError)}}"""
+                    """"lastError":${routeJson.encodeToString(String.serializer(), p.lastError)}}"""
             }
         val status = if (pendingAutoDeploys.isEmpty()) "ok" else "degraded"
         respond(
@@ -358,7 +355,7 @@ object ControlRoutes {
         body: String,
         handle: StrategyHandle,
     ): String {
-        val obj = json.parseToJsonElement(body).jsonObject
+        val obj = routeJson.parseToJsonElement(body).jsonObject
         val meta = handle.childMeta ?: return body
         val updated =
             kotlinx.serialization.json.buildJsonObject {
@@ -387,7 +384,7 @@ object ControlRoutes {
         for (c in children) {
             val meta = c.childMeta ?: continue
             val raw = fetchStrategyStatus(c.port) ?: continue
-            val obj = runCatching { json.parseToJsonElement(raw).jsonObject }.getOrNull() ?: continue
+            val obj = runCatching { routeJson.parseToJsonElement(raw).jsonObject }.getOrNull() ?: continue
             realized =
                 realized +
                 (obj["realized"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: java.math.BigDecimal.ZERO)
@@ -503,8 +500,6 @@ object ControlRoutes {
                 """"brokerEquity":${report.brokerEquity?.let { "\"${it.toPlainString()}\"" } ?: "null"}}""",
         )
     }
-
-    private fun jsonDecimal(value: java.math.BigDecimal?): String = value?.let { "\"${it.toPlainString()}\"" } ?: "null"
 
     private fun handleLatencyAll(
         ex: HttpExchange,
@@ -717,13 +712,6 @@ object ControlRoutes {
                 ?: UserDirs().stateHome().resolve("state").resolve("promotion"),
         )
 
-    private fun jsonArray(items: List<String>): String =
-        items.joinToString(prefix = "[", postfix = "]") { jsonString(it) }
-
-    private fun jsonStringOrNull(value: String?): String = value?.let(::jsonString) ?: "null"
-
-    private fun jsonString(value: String): String = JsonPrimitive(value).toString()
-
     private fun handleStop(
         ex: HttpExchange,
         registry: StrategyRegistry,
@@ -810,19 +798,6 @@ object ControlRoutes {
         respond(ex, 200, """{"name":"$name","state":"stopped","trades":$trades}""")
     }
 
-    private fun parseQuery(raw: String?): Map<String, String> {
-        if (raw.isNullOrBlank()) return emptyMap()
-        return raw
-            .split('&')
-            .mapNotNull { part ->
-                val i = part.indexOf('=')
-                if (i < 0) return@mapNotNull null
-                urlDecode(part.substring(0, i)) to urlDecode(part.substring(i + 1))
-            }.toMap()
-    }
-
-    private fun urlDecode(value: String): String = URLDecoder.decode(value, StandardCharsets.UTF_8)
-
     private fun handleDeploy(
         ex: HttpExchange,
         registry: StrategyRegistry,
@@ -833,7 +808,7 @@ object ControlRoutes {
         val body = ex.requestBody.readBytes().toString(Charsets.UTF_8)
         val obj =
             try {
-                json.parseToJsonElement(body) as? JsonObject
+                routeJson.parseToJsonElement(body) as? JsonObject
                     ?: return respond(ex, 400, """{"error":"body must be a JSON object"}""")
             } catch (_: Exception) {
                 return respond(ex, 400, """{"error":"invalid JSON body"}""")
@@ -984,7 +959,7 @@ object ControlRoutes {
         val body = ex.requestBody.readBytes().toString(Charsets.UTF_8)
         val obj =
             try {
-                json.parseToJsonElement(body) as? JsonObject
+                routeJson.parseToJsonElement(body) as? JsonObject
                     ?: return respond(ex, 400, """{"error":"body must be a JSON object"}""")
             } catch (_: Exception) {
                 return respond(ex, 400, """{"error":"invalid JSON body"}""")
@@ -1291,16 +1266,5 @@ object ControlRoutes {
             return respond(ex, 400, """{"error":"portfolio '$name' cannot be started; use deploy"}""")
         }
         respond(ex, 404, """{"error":"unknown name: $name"}""")
-    }
-
-    internal fun respond(
-        ex: HttpExchange,
-        code: Int,
-        body: String,
-    ) {
-        ex.responseHeaders.add("Content-Type", "application/json")
-        val bytes = body.toByteArray(Charsets.UTF_8)
-        ex.sendResponseHeaders(code, bytes.size.toLong())
-        ex.responseBody.use { it.write(bytes) }
     }
 }
