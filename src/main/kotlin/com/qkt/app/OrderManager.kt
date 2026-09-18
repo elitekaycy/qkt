@@ -10,6 +10,7 @@ import com.qkt.app.order.OcoExecutionGuard
 import com.qkt.app.order.OcoSequencer
 import com.qkt.app.order.OrderBook
 import com.qkt.app.order.OrderOps
+import com.qkt.app.order.OrderStateSnapshots
 import com.qkt.app.order.PendingChildBook
 import com.qkt.app.order.PendingExposureBook
 import com.qkt.app.order.ProtectionLevels
@@ -31,7 +32,6 @@ import com.qkt.app.order.limitReached
 import com.qkt.app.order.referencesStackEntryRef
 import com.qkt.app.order.resolveBracketAtFill
 import com.qkt.app.order.stopReached
-import com.qkt.app.order.trailingStopSnapshot
 import com.qkt.broker.Broker
 import com.qkt.broker.OrderTypeCapability
 import com.qkt.broker.PositionAccountingMode
@@ -214,15 +214,8 @@ class OrderManager(
 
     private val children = PendingChildBook()
     private val brackets = BracketBook()
-
-    private val persistedStrategies = mutableSetOf<String>()
-
-    /**
-     * Last snapshot written per (strategy, file). [persistAll] runs on every order state
-     * change and walks every strategy that ever traded; without this, one fill re-fsyncs four
-     * unchanged files for each of them, and the next pre-submit drain waits on all of it.
-     */
-    private val lastPersisted: MutableMap<Pair<String, String>, Any> = mutableMapOf()
+    private val snapshots =
+        OrderStateSnapshots(persistor, book, children, brackets, scaleOutRecovery, siblings, stops)
 
     private val timeExits: MutableMap<String, OrderRequest.TimeExit> = mutableMapOf()
 
@@ -462,7 +455,7 @@ class OrderManager(
     fun restore(strategyIds: List<String>) {
         val recovered = mutableListOf<ManagedOrder>()
         for (sid in strategyIds) {
-            persistedStrategies.add(sid)
+            snapshots.remember(sid)
             val dynamicStops =
                 persistor
                     .loadTrailingStops(sid)
@@ -2000,7 +1993,7 @@ class OrderManager(
         book.put(managed)
         managed.request.strategyId
             .takeIf { it.isNotBlank() }
-            ?.let(persistedStrategies::add)
+            ?.let(snapshots::remember)
         persistAll()
     }
 
@@ -2031,173 +2024,12 @@ class OrderManager(
         return true
     }
 
-    /**
-     * Snapshot all active leaf orders and linked engine state per strategy.
-     *
-     * Routine mutation snapshots are best-effort so an asynchronous persistence failure does
-     * not block event dispatch. Venue-bound intent takes the fail-closed synchronous path in
-     * [persistSubmissionIntent].
-     */
-    private fun persistAll() {
-        runCatching {
-            val pendingByStrategy: MutableMap<String, MutableMap<String, com.qkt.execution.OrderRequest>> =
-                mutableMapOf()
-            val pairsByStrategy: MutableMap<String, MutableList<com.qkt.persistence.BracketPair>> = mutableMapOf()
-            val unarmedChildren = children.unarmedChildIds()
+    private fun persistAll() = snapshots.persistAll()
 
-            for ((id, managed) in book.orders) {
-                if (!managed.state.isTerminal) {
-                    val sid = managed.request.strategyId
-                    if (sid.isBlank()) continue
-                    // Composite parents are handled below or by their dedicated recovery state.
-                    if (managed.request.isCompositeShape()) continue
-                    if (id in unarmedChildren) continue
-                    pendingByStrategy.getOrPut(sid) { mutableMapOf() }[id] = managed.request
-                }
-            }
-            overlayPendingOtos(pendingByStrategy)
-            scaleOutRecovery.overlay(pendingByStrategy)
-            for ((entryId, bracket) in brackets.preFill) {
-                if (book[entryId]?.state?.isTerminal == true) continue
-                val sid = bracket.strategyId
-                if (sid.isBlank()) continue
-                pendingByStrategy.getOrPut(sid) { mutableMapOf() }[entryId] = bracket
-            }
-            for ((id, managed) in book.orders) {
-                val bracket = managed.request as? OrderRequest.Bracket ?: continue
-                if (managed.state.isTerminal || id in brackets.preFill || bracket in brackets.preFill.values) continue
-                val sid = bracket.strategyId
-                if (sid.isBlank()) continue
-                pendingByStrategy.getOrPut(sid) { mutableMapOf() }[id] = bracket
-            }
-            for ((entryId, siblingIds) in siblings.all) {
-                val entry = book[entryId] ?: continue
-                val sid = entry.request.strategyId
-                if (sid.isBlank()) continue
-                val sl =
-                    siblingIds.firstOrNull {
-                        it.contains("-sl") ||
-                            (book[it]?.request is com.qkt.execution.OrderRequest.Stop)
-                    }
-                val tp = siblingIds.firstOrNull { it != sl }
-                pairsByStrategy.getOrPut(sid) { mutableListOf() }.add(
-                    com.qkt.persistence.BracketPair(
-                        entryClientOrderId = entryId,
-                        stopLossClientOrderId = sl,
-                        takeProfitClientOrderId = tp,
-                        legId = null,
-                    ),
-                )
-            }
-            val ocoLegsByStrategy: MutableMap<String, MutableList<com.qkt.persistence.PersistedOcoLeg>> =
-                mutableMapOf()
-            for ((legId, siblingIds) in siblings.all) {
-                val managed = book[legId] ?: continue
-                if (managed.state.isTerminal) continue
-                val ticket = managed.brokerOrderId ?: continue
-                val sid = managed.request.strategyId
-                if (sid.isBlank()) continue
-                ocoLegsByStrategy.getOrPut(sid) { mutableListOf() }.add(
-                    com.qkt.persistence.PersistedOcoLeg(
-                        clientOrderId = legId,
-                        brokerOrderId = ticket,
-                        strategyId = sid,
-                        request = managed.request,
-                        siblingIds = siblingIds,
-                    ),
-                )
-            }
-            val trailingStopsByStrategy = trailingStopSnapshot(book.orders, stops)
-            val strategies =
-                (
-                    persistedStrategies + pendingByStrategy.keys + pairsByStrategy.keys + ocoLegsByStrategy.keys +
-                        trailingStopsByStrategy.keys
-                ).toSet()
-            for (sid in strategies) {
-                persistIfChanged(sid, PENDING_SLOT, pendingByStrategy[sid] ?: emptyMap(), persistor::savePendingOrders)
-                persistIfChanged(sid, PAIRS_SLOT, pairsByStrategy[sid] ?: emptyList(), persistor::saveBracketPairs)
-                persistIfChanged(sid, OCO_SLOT, ocoLegsByStrategy[sid] ?: emptyList(), persistor::saveOcoLegs)
-                persistIfChanged(
-                    sid,
-                    TRAILING_SLOT,
-                    trailingStopsByStrategy[sid] ?: emptyList(),
-                    persistor::saveTrailingStops,
-                )
-            }
-            stops.dirty = false
-        }
-    }
-
-    private fun <T : Any> persistIfChanged(
-        strategyId: String,
-        slot: String,
-        value: T,
-        save: (String, T) -> Unit,
-    ) {
-        val key = strategyId to slot
-        if (lastPersisted[key] == value) return
-        lastPersisted[key] = value
-        save(strategyId, value)
-    }
-
-    private fun persistSubmissionIntent(strategyId: String) {
-        if (strategyId.isBlank()) return
-        persistedStrategies.add(strategyId)
-        val active = recoveryPendingOrders(strategyId)
-        lastPersisted[strategyId to PENDING_SLOT] = active
-        persistor.savePendingOrdersSync(strategyId, active)
-    }
-
-    private fun recoveryPendingOrders(strategyId: String): Map<String, OrderRequest> {
-        val unarmedChildren = children.unarmedChildIds()
-        val result =
-            book.orders
-                .asSequence()
-                .filter { (id, managed) ->
-                    managed.request.strategyId == strategyId &&
-                        !managed.state.isTerminal &&
-                        !managed.request.isCompositeShape() &&
-                        id !in unarmedChildren
-                }.associateTo(linkedMapOf()) { (id, managed) -> id to managed.request }
-        children.pendingOtos.forEach { (parentId, oto) ->
-            if (oto.strategyId == strategyId && book[parentId]?.state?.isTerminal == false) {
-                result[parentId] = oto
-            }
-        }
-        result.putAll(scaleOutRecovery.recoverySnapshot(strategyId))
-        for ((entryId, bracket) in brackets.preFill) {
-            if (bracket.strategyId == strategyId && book[entryId]?.state?.isTerminal != true) {
-                result[entryId] = bracket
-            }
-        }
-        for ((id, managed) in book.orders) {
-            val bracket = managed.request as? OrderRequest.Bracket ?: continue
-            if (bracket.strategyId != strategyId || managed.state.isTerminal) continue
-            if (id in brackets.preFill || bracket in brackets.preFill.values) continue
-            result[id] = bracket
-        }
-        return result
-    }
-
-    private fun overlayPendingOtos(pendingByStrategy: MutableMap<String, MutableMap<String, OrderRequest>>) {
-        for ((parentId, oto) in children.pendingOtos) {
-            val strategyId = oto.strategyId
-            if (strategyId.isBlank() || book[parentId]?.state?.isTerminal != false) continue
-            // Replace the atomic parent snapshot with the wrapper so restart can re-arm children.
-            pendingByStrategy.getOrPut(strategyId) { mutableMapOf() }[parentId] = oto
-        }
-    }
+    private fun persistSubmissionIntent(strategyId: String) = snapshots.persistSubmissionIntent(strategyId)
 
     /** Flushes HWM-only trailing-stop changes at the live heartbeat cadence. */
-    fun persistTrailingStateIfDirty() {
-        if (!stops.dirty) return
-        runCatching {
-            for ((strategyId, snapshot) in trailingStopSnapshot(book.orders, stops)) {
-                persistor.saveTrailingStops(strategyId, snapshot)
-            }
-            stops.dirty = false
-        }
-    }
+    fun persistTrailingStateIfDirty() = snapshots.persistTrailingStateIfDirty()
 
     private fun onAccepted(e: BrokerEvent.OrderAccepted) {
         val applied =
@@ -2908,13 +2740,6 @@ class OrderManager(
         exposure.remove(request.id)
         log.warn("engine-held order {} blocked before broker submission: {}", request.id, reason)
         bus.publish(com.qkt.events.RiskRejectedEvent(request, reason, timestamp = clock.now()))
-    }
-
-    private companion object {
-        const val PENDING_SLOT = "pending-orders"
-        const val PAIRS_SLOT = "bracket-pairs"
-        const val OCO_SLOT = "oco-legs"
-        const val TRAILING_SLOT = "trailing-stops"
     }
 
     /**
