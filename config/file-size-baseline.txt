@@ -31,7 +31,6 @@
 616 src/main/kotlin/com/qkt/broker/MT5BrokerSimulator.kt
 606 src/test/kotlin/com/qkt/cli/GoldenCommandTest.kt
 605 src/main/kotlin/com/qkt/cli/GoldenCommand.kt
-580 src/main/kotlin/com/qkt/dsl/stdlib/IndicatorRegistry.kt
 576 src/main/kotlin/com/qkt/backtest/Backtest.kt
 574 src/main/kotlin/com/qkt/cli/PreflightCommand.kt
 566 src/test/kotlin/com/qkt/cli/daemon/StrategyRegistryTest.kt
