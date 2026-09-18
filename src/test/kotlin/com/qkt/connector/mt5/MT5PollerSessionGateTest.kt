@@ -38,8 +38,7 @@ class MT5PollerSessionGateTest {
 
     @BeforeEach
     fun setup() {
-        server = MockWebServer()
-        server.start()
+        server = MockWebServer().apply { start() }
         client =
             MT5Client(
                 gatewayUrl = server.url("/").toString().trimEnd('/'),

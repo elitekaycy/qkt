@@ -152,8 +152,7 @@ class LiveSessionBrokerCoverageTest {
             )
 
         val ex = catchThrowable { session.start() }
-        assertThat(ex).isInstanceOf(ReconcileException::class.java)
-        assertThat(ex.message).contains("refusing to start")
+        assertThat(ex).isInstanceOf(ReconcileException::class.java).hasMessageContaining("refusing to start")
         assertThat(reads).isEqualTo(5)
     }
 
