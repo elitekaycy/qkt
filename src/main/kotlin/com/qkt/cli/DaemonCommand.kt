@@ -1,9 +1,5 @@
 package com.qkt.cli
 
-import com.qkt.broker.mt5.MT5AccountVerifier
-import com.qkt.broker.mt5.MT5Client
-import com.qkt.broker.mt5.MT5ReadCache
-import com.qkt.broker.mt5.MT5TradeMode
 import com.qkt.cli.daemon.AutoDeployRetrier
 import com.qkt.cli.daemon.CommandChannel
 import com.qkt.cli.daemon.ControlClient
@@ -17,6 +13,10 @@ import com.qkt.cli.daemon.StrategyHandle
 import com.qkt.cli.daemon.StrategyRegistry
 import com.qkt.cli.daemon.TelegramCommandChannel
 import com.qkt.cli.daemon.portfolio.PortfolioDeployer
+import com.qkt.connector.mt5.MT5AccountVerifier
+import com.qkt.connector.mt5.MT5Client
+import com.qkt.connector.mt5.MT5ReadCache
+import com.qkt.connector.mt5.MT5TradeMode
 import com.qkt.dsl.parse.Dsl
 import com.qkt.dsl.parse.ParseResult
 import com.qkt.dsl.parse.ParsedFile
@@ -166,11 +166,11 @@ class DaemonCommand(
         }
         val mt5Profiles =
             try {
-                com.qkt.broker.mt5
+                com.qkt.connector.mt5
                     .MT5BrokerProfileLoader()
                     .load(
                         raw = cfg.brokers,
-                        defaults = com.qkt.broker.mt5.MT5DefaultProfiles.all,
+                        defaults = com.qkt.connector.mt5.MT5DefaultProfiles.all,
                         env = System.getenv(),
                         calendars = cfg.brokerCalendars,
                         aliases = cfg.brokerAliases,
@@ -227,7 +227,7 @@ class DaemonCommand(
         val mt5TransportJournals =
             mt5Profiles.associate { profile ->
                 profile.name.lowercase() to
-                    com.qkt.broker.mt5.MT5TransportJournal(
+                    com.qkt.connector.mt5.MT5TransportJournal(
                         stateDir.stateRoot.resolve("mt5-transport-journal"),
                         profile.name,
                         com.qkt.common.SystemClock(),
@@ -271,7 +271,7 @@ class DaemonCommand(
                 .map { profile -> profile.gatewayUrl to profile.apiKey }
                 .distinct()
                 .associateWith { MT5ReadCache(SHARED_MT5_READ_TTL_MS) }
-        val mt5Factories: Map<String, com.qkt.app.BrokerFactory> =
+        val mt5Factories: Map<String, com.qkt.broker.BrokerFactory> =
             mt5Profiles.associate { profile ->
                 val profileLabel = profile.name
                 val key = profileLabel.lowercase()
@@ -305,7 +305,7 @@ class DaemonCommand(
                                     .toList()
                             }
                         }
-                        com.qkt.broker.mt5
+                        com.qkt.connector.mt5
                             .MT5Broker(
                                 profile = profile,
                                 bus = bus,
@@ -322,9 +322,9 @@ class DaemonCommand(
         // BYBIT_API_KEY is set so pure-MT5 deployments don't open an idle connection. Both
         // spot and linear factories share it; a broker's close() stops only its reconciler,
         // not the client, so the daemon owns the client lifecycle (closed on shutdown below).
-        val bybitClient: com.qkt.broker.bybit.BybitClient? =
+        val bybitClient: com.qkt.connector.bybit.BybitClient? =
             if (!System.getenv("BYBIT_API_KEY").isNullOrEmpty()) {
-                com.qkt.broker.bybit
+                com.qkt.connector.bybit
                     .BybitClient()
                     .also { c ->
                         runCatching { c.connect() }
@@ -333,19 +333,19 @@ class DaemonCommand(
             } else {
                 null
             }
-        val bybitFactories: Map<String, com.qkt.app.BrokerFactory> =
+        val bybitFactories: Map<String, com.qkt.broker.BrokerFactory> =
             bybitClient?.let { client ->
-                val spot: com.qkt.app.BrokerFactory = { bus, clock, _, _, _ ->
-                    com.qkt.broker.bybit.spot
+                val spot: com.qkt.broker.BrokerFactory = { bus, clock, _, _, _ ->
+                    com.qkt.connector.bybit.spot
                         .BybitSpotBroker(client, bus, clock)
                 }
-                val linear: com.qkt.app.BrokerFactory = { bus, clock, _, positions, _ ->
-                    com.qkt.broker.bybit.linear
+                val linear: com.qkt.broker.BrokerFactory = { bus, clock, _, positions, _ ->
+                    com.qkt.connector.bybit.linear
                         .BybitLinearBroker(client, bus, clock, positions)
                 }
                 mapOf("bybit_spot" to spot, "bybit_linear" to linear)
             } ?: emptyMap()
-        val brokerFactories: Map<String, com.qkt.app.BrokerFactory> = mt5Factories + bybitFactories
+        val brokerFactories: Map<String, com.qkt.broker.BrokerFactory> = mt5Factories + bybitFactories
 
         val effectiveSourceFactory: (List<String>) -> MarketSource =
             sourceFactory ?: MarketSourceFactory.composite(mt5Profiles, source = cfg.source, hub = cfg.hub)
@@ -742,7 +742,7 @@ class DaemonCommand(
 
 internal fun liveCalendarFor(
     qktSymbol: String,
-    mt5Profiles: List<com.qkt.broker.mt5.MT5BrokerProfile>,
+    mt5Profiles: List<com.qkt.connector.mt5.MT5BrokerProfile>,
 ): com.qkt.common.TradingCalendar {
     val broker = qktSymbol.substringBefore(':', missingDelimiterValue = "").lowercase()
     val bare = qktSymbol.substringAfter(':')

@@ -166,9 +166,9 @@ class BotSessionCommand(
         val (symbols, _, window, runId, identities, historyBars) = spec
         val cfg = botConfig(sub)
         val profiles =
-            com.qkt.broker.mt5.MT5BrokerProfileLoader().load(
+            com.qkt.connector.mt5.MT5BrokerProfileLoader().load(
                 raw = cfg.brokers,
-                defaults = com.qkt.broker.mt5.MT5DefaultProfiles.all,
+                defaults = com.qkt.connector.mt5.MT5DefaultProfiles.all,
                 env = System.getenv(),
                 calendars = cfg.brokerCalendars,
                 aliases = cfg.brokerAliases,
@@ -179,11 +179,11 @@ class BotSessionCommand(
         val sourceFactory =
             com.qkt.cli.MarketSourceFactory
                 .composite(profiles, source = cfg.source)
-        val brokerFactories: Map<String, com.qkt.app.BrokerFactory> =
+        val brokerFactories: Map<String, com.qkt.broker.BrokerFactory> =
             profiles.associate { profile ->
                 profile.name.lowercase() to
                     { bus, clock, priceTracker, _, strategyName ->
-                        com.qkt.broker.mt5.MT5Broker(
+                        com.qkt.connector.mt5.MT5Broker(
                             profile = profile,
                             bus = bus,
                             clock = clock,

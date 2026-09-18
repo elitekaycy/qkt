@@ -1,11 +1,11 @@
 package com.qkt.parity
 
-import com.qkt.app.BrokerFactory
-import com.qkt.broker.mt5.InstrumentSpec
-import com.qkt.broker.mt5.MT5Broker
-import com.qkt.broker.mt5.MT5DefaultProfiles
+import com.qkt.broker.BrokerFactory
 import com.qkt.cli.daemon.StateDir
 import com.qkt.cli.daemon.StrategyHandle
+import com.qkt.connector.mt5.InstrumentSpec
+import com.qkt.connector.mt5.MT5Broker
+import com.qkt.connector.mt5.MT5DefaultProfiles
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.TickFeed
 import com.qkt.marketdata.source.MarketSource

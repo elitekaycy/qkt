@@ -1,9 +1,9 @@
 package com.qkt.cli
 
-import com.qkt.broker.mt5.MT5BrokerProfile
-import com.qkt.broker.mt5.SymbolCalendars
-import com.qkt.broker.mt5.SymbolPolicy
+import com.qkt.common.SymbolCalendars
 import com.qkt.common.TradingCalendar
+import com.qkt.connector.mt5.MT5BrokerProfile
+import com.qkt.connector.mt5.SymbolPolicy
 import com.qkt.marketdata.source.NullMarketSource
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test

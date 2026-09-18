@@ -117,11 +117,11 @@ class RunCommand(
                 candleCloseGraceMs = cfg.candleCloseGraceMs
                 val mt5Profiles =
                     try {
-                        com.qkt.broker.mt5
+                        com.qkt.connector.mt5
                             .MT5BrokerProfileLoader()
                             .load(
                                 raw = cfg.brokers,
-                                defaults = com.qkt.broker.mt5.MT5DefaultProfiles.all,
+                                defaults = com.qkt.connector.mt5.MT5DefaultProfiles.all,
                                 env = System.getenv(),
                                 calendars = cfg.brokerCalendars,
                                 aliases = cfg.brokerAliases,

@@ -1,7 +1,7 @@
 package com.qkt.trade
 
-import com.qkt.broker.mt5.MT5OrderResponse
-import com.qkt.broker.mt5.isOrderSuccessful
+import com.qkt.connector.mt5.MT5OrderResponse
+import com.qkt.connector.mt5.isOrderSuccessful
 import java.math.BigDecimal
 
 /**

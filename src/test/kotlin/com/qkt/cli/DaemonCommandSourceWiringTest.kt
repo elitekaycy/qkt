@@ -1,9 +1,9 @@
 package com.qkt.cli
 
-import com.qkt.broker.mt5.MT5BrokerProfile
-import com.qkt.broker.mt5.SymbolPolicy
 import com.qkt.candles.TimeWindow
 import com.qkt.common.TimeRange
+import com.qkt.connector.mt5.MT5BrokerProfile
+import com.qkt.connector.mt5.SymbolPolicy
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.TickFeed

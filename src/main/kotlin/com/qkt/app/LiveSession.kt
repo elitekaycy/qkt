@@ -1,6 +1,7 @@
 package com.qkt.app
 
 import com.qkt.broker.Broker
+import com.qkt.broker.BrokerFactory
 import com.qkt.broker.BrokerPositionTicket
 import com.qkt.broker.CompositeBroker
 import com.qkt.broker.PaperBroker
@@ -624,8 +625,8 @@ class LiveSession(
 
     /**
      * Build the [com.qkt.instrument.InstrumentRegistry] the trading pipeline uses for SIZING
-     * RISK and PaperBroker fill PnL. Wraps every [com.qkt.broker.mt5.MT5Broker] in the
-     * route list via [com.qkt.instrument.MultiMT5InstrumentRegistry] so multi-MT5 deployments
+     * RISK and PaperBroker fill PnL. Wraps every [com.qkt.connector.mt5.MT5Broker] in the
+     * route list via [com.qkt.connector.mt5.MultiMT5InstrumentRegistry] so multi-MT5 deployments
      * (#139) get the correct contract specs for each broker's symbols. Falls back to
      * [com.qkt.instrument.NoopInstrumentRegistry] when no MT5 broker is configured so
      * paper-only strategies that don't need contract-size-aware math keep working.
@@ -633,8 +634,11 @@ class LiveSession(
     private fun buildInstrumentRegistry(): com.qkt.instrument.InstrumentRegistry {
         val mt5Registries =
             builtBrokers
-                .filterIsInstance<com.qkt.broker.mt5.MT5Broker>()
-                .map { com.qkt.instrument.MT5InstrumentRegistry(it) }
+                .filterIsInstance<com.qkt.connector.mt5.MT5Broker>()
+                .map {
+                    com.qkt.connector.mt5
+                        .MT5InstrumentRegistry(it)
+                }
         val layers = mt5Registries + listOfNotNull(instrumentRegistry)
         return when (layers.size) {
             0 -> com.qkt.instrument.NoopInstrumentRegistry
@@ -1002,13 +1006,13 @@ class LiveSession(
         val usesAllocatedStrategyCapital = startingBalances.isNotEmpty()
         // Recovery seeding ran inside each MT5 broker's constructor; mirror the orphan
         // ticket attributions it produced so the state poller can name their strategy.
-        for (b in builtBrokers.filterIsInstance<com.qkt.broker.mt5.MT5Broker>()) {
+        for (b in builtBrokers.filterIsInstance<com.qkt.connector.mt5.MT5Broker>()) {
             for ((ticket, strategyId) in b.ticketAttributions()) {
                 ticketAttribution.record(ticket, strategyId)
             }
         }
         // Phase 30: registry must be built after the brokers so [MT5InstrumentRegistry]
-        // can wrap the [com.qkt.broker.mt5.MT5Broker] instance if one was constructed.
+        // can wrap the [com.qkt.connector.mt5.MT5Broker] instance if one was constructed.
         val instruments = buildInstrumentRegistry()
         paperInstruments.set(instruments)
         val pnl = PnLCalculator(positions, priceTracker, instruments, accounting, markTimestamp = clock::now)
@@ -1370,7 +1374,7 @@ class LiveSession(
         // in play (paper-only / Bybit-only sessions).
         val brokerZoneIdFor: ((String) -> java.time.ZoneId?)? =
             run {
-                val mt5 = builtBrokers.filterIsInstance<com.qkt.broker.mt5.MT5Broker>().firstOrNull()
+                val mt5 = builtBrokers.filterIsInstance<com.qkt.connector.mt5.MT5Broker>().firstOrNull()
                 if (mt5 != null) {
                     val zone: java.time.ZoneId = mt5.profile.serverTimeZone.asZoneId()
                     ({ _: String -> zone })
