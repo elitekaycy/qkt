@@ -48,7 +48,7 @@ class WallClockSourcePolicyTest {
                 "src/main/kotlin/com/qkt/observability/LatencyRegistry.kt" to "monotonic latency measurement",
                 "src/main/kotlin/com/qkt/observability/LatencyTracker.kt" to "monotonic latency measurement",
                 "src/main/kotlin/com/qkt/marketdata/live/mt5/Mt5TickClient.kt" to "live transport polling deadline",
-                "src/main/kotlin/com/qkt/app/TradingPipeline.kt" to "opt-in monotonic latency measurement",
+                "src/main/kotlin/com/qkt/app/StrategySignalEmitter.kt" to "opt-in monotonic latency measurement",
                 "src/main/kotlin/com/qkt/app/LiveSession.kt" to "live engine query and shutdown deadlines",
                 "src/main/kotlin/com/qkt/app/MaxAudit.kt" to "interactive operator audit utility",
                 "src/main/kotlin/com/qkt/persistence/StateFileWriter.kt" to "persistence latency observation",
