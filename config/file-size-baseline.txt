@@ -119,7 +119,6 @@
 269 src/main/kotlin/com/qkt/broker/mt5/MT5OrderTranslator.kt
 269 src/test/kotlin/com/qkt/app/OrderManagerStopRatchetTest.kt
 268 src/test/kotlin/com/qkt/parity/BotSessionBacktestLiveParityTest.kt
-266 src/main/kotlin/com/qkt/cli/FetchCommand.kt
 265 src/main/kotlin/com/qkt/app/LatchManager.kt
 265 src/main/kotlin/com/qkt/cli/daemon/ControlClient.kt
 262 src/test/kotlin/com/qkt/backtest/EquityCurveCollectorTest.kt
