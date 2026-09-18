@@ -123,7 +123,6 @@
 265 src/main/kotlin/com/qkt/cli/daemon/ControlClient.kt
 262 src/test/kotlin/com/qkt/backtest/EquityCurveCollectorTest.kt
 262 src/test/kotlin/com/qkt/dsl/compile/OrderSurfaceEndToEndTest.kt
-258 src/main/kotlin/com/qkt/cli/SweepCommand.kt
 257 src/main/kotlin/com/qkt/lsp/QktSnippets.kt
 257 src/main/kotlin/com/qkt/marketdata/store/DefaultDataStore.kt
 257 src/test/kotlin/com/qkt/broker/mt5/MT5PollerSessionGateTest.kt
