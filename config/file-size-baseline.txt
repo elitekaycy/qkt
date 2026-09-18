@@ -108,7 +108,6 @@
 317 src/test/kotlin/com/qkt/cli/observe/ObservabilityServerTest.kt
 313 src/test/kotlin/com/qkt/dsl/compile/WarmupRequirementsTest.kt
 311 src/test/kotlin/com/qkt/cli/SweepCommandTest.kt
-307 src/main/kotlin/com/qkt/dsl/compile/SequenceRuntime.kt
 307 src/test/kotlin/com/qkt/observe/insights/LiveSessionInsightsTest.kt
 306 src/test/kotlin/com/qkt/cli/daemon/ListRouteTest.kt
 305 src/main/kotlin/com/qkt/dsl/parse/Lexer.kt
