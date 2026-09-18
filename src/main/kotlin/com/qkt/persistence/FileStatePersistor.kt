@@ -62,252 +62,49 @@ class FileStatePersistor(
         const val PENDING_STACKS_FILE = "pending-stacks.json"
         const val OCO_LEGS_FILE = "oco-legs.json"
         const val TRAILING_STOPS_FILE = "trailing-stops.json"
-        const val RISK_STATE_FILE = "risk-state.json"
-        const val PNL_FILE = "pnl.json"
-        const val TRADE_HISTORY_FILE = "trade-history.json"
-        const val SEQUENCES_FILE = "sequences.json"
-        const val EXIT_HOOKS_FILE = "exit-hooks.json"
-        const val SCHEMA_VERSION = 1
+        const val SCHEMA_VERSION = STATE_SCHEMA_VERSION
     }
+
+    private val sequences = SequencesFile(writer, json)
+    private val exitHooks = ExitHooksFile(writer, json)
+    private val tradeHistory = TradeHistoryFile(writer, json)
+    private val pnl = PnlFile(writer, json)
+    private val riskState = RiskStateFile(writer, json)
 
     override fun saveSequences(
         strategyId: String,
         states: Map<String, PersistedSequenceState>,
-    ) {
-        val dto =
-            SequencesDto(
-                version = SCHEMA_VERSION,
-                strategyId = strategyId,
-                sequences =
-                    states.values.map { state ->
-                        SequenceStateDto(
-                            name = state.name,
-                            stage = state.stage,
-                            snapshots =
-                                state.snapshots.map {
-                                    SequenceSnapshotDto(
-                                        stage = it.stage,
-                                        price = it.price.toPlainString(),
-                                        timeMs = it.timeMs,
-                                    )
-                                },
-                            lastValues = state.lastValues,
-                            completePulse = state.completePulse,
-                        )
-                    },
-            )
-        runCatching { json.encodeToString(SequencesDto.serializer(), dto) }
-            .onSuccess { writer.write(strategyId, SEQUENCES_FILE, it) }
-            .onFailure { e -> writer.recordFailure("saveSequences encode for $strategyId", e) }
-    }
+    ) = sequences.save(strategyId, states)
 
     override fun saveExitHooks(
         strategyId: String,
         bindings: List<PersistedExitHookBinding>,
-    ) {
-        val dto =
-            ExitHooksDto(
-                version = SCHEMA_VERSION,
-                strategyId = strategyId,
-                bindings = bindings.map(ExitHookBindingDto::fromDomain),
-            )
-        runCatching { json.encodeToString(ExitHooksDto.serializer(), dto) }
-            .onSuccess { writer.write(strategyId, EXIT_HOOKS_FILE, it) }
-            .onFailure { e -> writer.recordFailure("saveExitHooks encode for $strategyId", e) }
-    }
+    ) = exitHooks.save(strategyId, bindings)
 
-    override fun loadExitHooks(strategyId: String): List<PersistedExitHookBinding> {
-        val raw = writer.read(strategyId, EXIT_HOOKS_FILE) ?: return emptyList()
-        val dto =
-            try {
-                json.decodeFromString(ExitHooksDto.serializer(), raw)
-            } catch (e: SerializationException) {
-                throw IllegalStateException("loadExitHooks parse failed for $strategyId", e)
-            }
-        require(dto.version == SCHEMA_VERSION) {
-            "loadExitHooks schema mismatch for $strategyId: ${dto.version} != $SCHEMA_VERSION"
-        }
-        require(dto.strategyId == strategyId) {
-            "loadExitHooks strategy mismatch: file=${dto.strategyId}, requested=$strategyId"
-        }
-        return dto.bindings.map { it.toDomain() }
-    }
+    override fun loadExitHooks(strategyId: String): List<PersistedExitHookBinding> = exitHooks.load(strategyId)
 
-    override fun loadSequences(strategyId: String): Map<String, PersistedSequenceState> {
-        val raw = writer.read(strategyId, SEQUENCES_FILE) ?: return emptyMap()
-        val dto =
-            try {
-                json.decodeFromString(SequencesDto.serializer(), raw)
-            } catch (e: SerializationException) {
-                throw IllegalStateException("loadSequences parse failed for $strategyId", e)
-            }
-        require(dto.version == SCHEMA_VERSION) {
-            "loadSequences schema mismatch for $strategyId: ${dto.version} != $SCHEMA_VERSION"
-        }
-        return dto.sequences.associate { state ->
-            state.name to
-                PersistedSequenceState(
-                    name = state.name,
-                    stage = state.stage,
-                    snapshots =
-                        state.snapshots.map {
-                            PersistedSequenceSnapshot(
-                                stage = it.stage,
-                                price = it.price.toBigDecimal(),
-                                timeMs = it.timeMs,
-                            )
-                        },
-                    lastValues = state.lastValues,
-                    completePulse = state.completePulse,
-                )
-        }
-    }
+    override fun loadSequences(strategyId: String): Map<String, PersistedSequenceState> = sequences.load(strategyId)
 
     override fun saveTradeHistory(
         strategyId: String,
         state: PersistedTradeHistory,
-    ) {
-        val dto =
-            TradeHistoryDto(
-                version = SCHEMA_VERSION,
-                strategyId = strategyId,
-                outcomes =
-                    state.outcomes.map {
-                        TradeOutcomeDto(
-                            timestamp = it.timestamp,
-                            pnl = it.pnl.toPlainString(),
-                            symbol = it.symbol,
-                        )
-                    },
-            )
-        runCatching { json.encodeToString(TradeHistoryDto.serializer(), dto) }
-            .onSuccess { writer.write(strategyId, TRADE_HISTORY_FILE, it) }
-            .onFailure { e -> writer.recordFailure("saveTradeHistory encode for $strategyId", e) }
-    }
+    ) = tradeHistory.save(strategyId, state)
 
-    override fun loadTradeHistory(strategyId: String): PersistedTradeHistory? {
-        val raw = writer.read(strategyId, TRADE_HISTORY_FILE) ?: return null
-        val dto =
-            try {
-                json.decodeFromString(TradeHistoryDto.serializer(), raw)
-            } catch (e: SerializationException) {
-                throw IllegalStateException("loadTradeHistory parse failed for $strategyId", e)
-            }
-        require(dto.version == SCHEMA_VERSION) {
-            "loadTradeHistory schema mismatch for $strategyId: ${dto.version} != $SCHEMA_VERSION"
-        }
-        return PersistedTradeHistory(
-            outcomes =
-                dto.outcomes.map {
-                    PersistedTradeOutcome(
-                        timestamp = it.timestamp,
-                        pnl = it.pnl.toBigDecimal(),
-                        symbol = it.symbol,
-                    )
-                },
-        )
-    }
+    override fun loadTradeHistory(strategyId: String): PersistedTradeHistory? = tradeHistory.load(strategyId)
 
     override fun savePnl(
         strategyId: String,
         state: PersistedPnl,
-    ) {
-        val dto =
-            PnlDto(
-                version = SCHEMA_VERSION,
-                strategyId = strategyId,
-                realized = state.realized.toPlainString(),
-            )
-        runCatching { json.encodeToString(PnlDto.serializer(), dto) }
-            .onSuccess { writer.write(strategyId, PNL_FILE, it) }
-            .onFailure { e -> writer.recordFailure("savePnl encode for $strategyId", e) }
-    }
+    ) = pnl.save(strategyId, state)
 
-    override fun loadPnl(strategyId: String): PersistedPnl? {
-        val raw = writer.read(strategyId, PNL_FILE) ?: return null
-        val dto =
-            try {
-                json.decodeFromString(PnlDto.serializer(), raw)
-            } catch (e: SerializationException) {
-                throw IllegalStateException("loadPnl parse failed for $strategyId", e)
-            }
-        require(dto.version == SCHEMA_VERSION) {
-            "loadPnl schema mismatch for $strategyId: ${dto.version} != $SCHEMA_VERSION"
-        }
-        return PersistedPnl(realized = dto.realized.toBigDecimal())
-    }
+    override fun loadPnl(strategyId: String): PersistedPnl? = pnl.load(strategyId)
 
     override fun saveRiskState(
         strategyId: String,
         state: PersistedRiskState,
-    ) {
-        val dto =
-            RiskStateDto(
-                version = SCHEMA_VERSION,
-                strategyId = strategyId,
-                epochDay = state.epochDay,
-                realizedToday = state.realizedToday.toPlainString(),
-                perStrategyRealizedToday = state.perStrategyRealizedToday.mapValues { it.value.toPlainString() },
-                halted = state.halted,
-                haltReason = state.haltReason,
-                haltScope = state.haltScope,
-                haltEpochDay = state.haltEpochDay,
-                strategyHalts =
-                    state.strategyHalts.map {
-                        StrategyHaltDto(it.strategyId, it.reason, it.scope, it.epochDay)
-                    },
-                globalRealizedTotal = state.globalRealizedTotal?.toPlainString(),
-                dailyDrawdownEpochDay = state.dailyDrawdownEpochDay,
-                globalDailyDrawdownRef = state.globalDailyDrawdownRef?.toPlainString(),
-                perStrategyDailyDrawdownRefs =
-                    state.perStrategyDailyDrawdownRefs.mapValues { it.value.toPlainString() },
-                peakTotalEquity = state.peakTotalEquity?.toPlainString(),
-                perStrategyPeakEquity = state.perStrategyPeakEquity.mapValues { it.value.toPlainString() },
-                pacerEntryFillsByStrategy = state.pacerEntryFillsByStrategy,
-                pacerLossStreakByStrategy = state.pacerLossStreakByStrategy,
-                pacerLastLossAtByStrategy = state.pacerLastLossAtByStrategy,
-                monthKey = state.monthKey,
-                realizedMonth = state.realizedMonth?.toPlainString(),
-                perStrategyRealizedMonth = state.perStrategyRealizedMonth.mapValues { it.value.toPlainString() },
-            )
-        runCatching { json.encodeToString(RiskStateDto.serializer(), dto) }
-            .onSuccess { writer.write(strategyId, RISK_STATE_FILE, it) }
-            .onFailure { e -> writer.recordFailure("saveRiskState encode for $strategyId", e) }
-    }
+    ) = riskState.save(strategyId, state)
 
-    override fun loadRiskState(strategyId: String): PersistedRiskState? {
-        val raw = writer.read(strategyId, RISK_STATE_FILE) ?: return null
-        val dto = json.decodeFromString(RiskStateDto.serializer(), raw)
-        require(dto.version == SCHEMA_VERSION) {
-            "loadRiskState schema mismatch for $strategyId: ${dto.version} != $SCHEMA_VERSION"
-        }
-        return PersistedRiskState(
-            epochDay = dto.epochDay,
-            realizedToday = dto.realizedToday.toBigDecimal(),
-            perStrategyRealizedToday = dto.perStrategyRealizedToday.mapValues { it.value.toBigDecimal() },
-            halted = dto.halted,
-            haltReason = dto.haltReason,
-            haltScope = dto.haltScope,
-            haltEpochDay = dto.haltEpochDay,
-            strategyHalts =
-                dto.strategyHalts.map {
-                    PersistedStrategyHalt(it.strategyId, it.reason, it.scope, it.epochDay)
-                },
-            globalRealizedTotal = dto.globalRealizedTotal?.toBigDecimal(),
-            dailyDrawdownEpochDay = dto.dailyDrawdownEpochDay,
-            globalDailyDrawdownRef = dto.globalDailyDrawdownRef?.toBigDecimal(),
-            perStrategyDailyDrawdownRefs =
-                dto.perStrategyDailyDrawdownRefs.mapValues { it.value.toBigDecimal() },
-            peakTotalEquity = dto.peakTotalEquity?.toBigDecimal(),
-            perStrategyPeakEquity = dto.perStrategyPeakEquity.mapValues { it.value.toBigDecimal() },
-            pacerEntryFillsByStrategy = dto.pacerEntryFillsByStrategy,
-            pacerLossStreakByStrategy = dto.pacerLossStreakByStrategy,
-            monthKey = dto.monthKey,
-            realizedMonth = dto.realizedMonth?.toBigDecimal(),
-            perStrategyRealizedMonth = dto.perStrategyRealizedMonth.mapValues { it.value.toBigDecimal() },
-            pacerLastLossAtByStrategy = dto.pacerLastLossAtByStrategy,
-        )
-    }
+    override fun loadRiskState(strategyId: String): PersistedRiskState? = riskState.load(strategyId)
 
     override fun saveLegBook(
         strategyId: String,
@@ -711,92 +508,6 @@ private data class TrailingStopDto(
 )
 
 @Serializable
-private data class SequencesDto(
-    val version: Int,
-    val strategyId: String,
-    val sequences: List<SequenceStateDto>,
-)
-
-@Serializable
-private data class SequenceStateDto(
-    val name: String,
-    val stage: Int,
-    val snapshots: List<SequenceSnapshotDto>,
-    val lastValues: Map<String, Boolean> = emptyMap(),
-    val completePulse: Boolean = false,
-)
-
-@Serializable
-private data class SequenceSnapshotDto(
-    val stage: String,
-    val price: String,
-    val timeMs: Long,
-)
-
-@Serializable
-private data class ExitHooksDto(
-    val version: Int,
-    val strategyId: String,
-    val bindings: List<ExitHookBindingDto>,
-)
-
-@Serializable
-private data class ExitHookBindingDto(
-    val bindingId: String,
-    val strategyId: String,
-    val symbol: String,
-    val entrySide: String,
-    val definitionId: String,
-    val fingerprint: String,
-    val entryOrderIds: List<String>,
-    val stopOrderIds: List<String>,
-    val takeProfitOrderIds: List<String>,
-    val closeOrderIds: List<String> = emptyList(),
-    val brokerTickets: List<String> = emptyList(),
-    val activeQuantity: String,
-    val exitQuantity: String,
-    val exitPnl: String,
-) {
-    fun toDomain(): PersistedExitHookBinding =
-        PersistedExitHookBinding(
-            bindingId = bindingId,
-            strategyId = strategyId,
-            symbol = symbol,
-            entrySide = Side.valueOf(entrySide),
-            definitionId = definitionId,
-            fingerprint = fingerprint,
-            entryOrderIds = entryOrderIds,
-            stopOrderIds = stopOrderIds,
-            takeProfitOrderIds = takeProfitOrderIds,
-            closeOrderIds = closeOrderIds,
-            brokerTickets = brokerTickets,
-            activeQuantity = BigDecimal(activeQuantity),
-            exitQuantity = BigDecimal(exitQuantity),
-            exitPnl = BigDecimal(exitPnl),
-        )
-
-    companion object {
-        fun fromDomain(binding: PersistedExitHookBinding): ExitHookBindingDto =
-            ExitHookBindingDto(
-                bindingId = binding.bindingId,
-                strategyId = binding.strategyId,
-                symbol = binding.symbol,
-                entrySide = binding.entrySide.name,
-                definitionId = binding.definitionId,
-                fingerprint = binding.fingerprint,
-                entryOrderIds = binding.entryOrderIds,
-                stopOrderIds = binding.stopOrderIds,
-                takeProfitOrderIds = binding.takeProfitOrderIds,
-                closeOrderIds = binding.closeOrderIds,
-                brokerTickets = binding.brokerTickets,
-                activeQuantity = binding.activeQuantity.toPlainString(),
-                exitQuantity = binding.exitQuantity.toPlainString(),
-                exitPnl = binding.exitPnl.toPlainString(),
-            )
-    }
-}
-
-@Serializable
 private data class PendingStacksDto(
     val version: Int,
     val strategyId: String,
@@ -934,58 +645,3 @@ private data class LegDto(
             )
     }
 }
-
-@Serializable
-private data class PnlDto(
-    val version: Int,
-    val strategyId: String,
-    val realized: String,
-)
-
-@Serializable
-private data class TradeHistoryDto(
-    val version: Int,
-    val strategyId: String,
-    val outcomes: List<TradeOutcomeDto>,
-)
-
-@Serializable
-private data class TradeOutcomeDto(
-    val timestamp: Long,
-    val pnl: String,
-    val symbol: String,
-)
-
-@Serializable
-private data class RiskStateDto(
-    val version: Int,
-    val strategyId: String,
-    val epochDay: Long,
-    val realizedToday: String,
-    val perStrategyRealizedToday: Map<String, String>,
-    val halted: Boolean,
-    val haltReason: String?,
-    val haltScope: String,
-    val haltEpochDay: Long,
-    val strategyHalts: List<StrategyHaltDto>,
-    val globalRealizedTotal: String? = null,
-    val dailyDrawdownEpochDay: Long? = null,
-    val globalDailyDrawdownRef: String? = null,
-    val perStrategyDailyDrawdownRefs: Map<String, String> = emptyMap(),
-    val peakTotalEquity: String? = null,
-    val perStrategyPeakEquity: Map<String, String> = emptyMap(),
-    val pacerEntryFillsByStrategy: Map<String, List<Long>> = emptyMap(),
-    val pacerLossStreakByStrategy: Map<String, Int> = emptyMap(),
-    val pacerLastLossAtByStrategy: Map<String, Long> = emptyMap(),
-    val monthKey: Long? = null,
-    val realizedMonth: String? = null,
-    val perStrategyRealizedMonth: Map<String, String> = emptyMap(),
-)
-
-@Serializable
-private data class StrategyHaltDto(
-    val strategyId: String,
-    val reason: String,
-    val scope: String,
-    val epochDay: Long,
-)
