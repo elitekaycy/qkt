@@ -36,7 +36,6 @@
 574 src/main/kotlin/com/qkt/cli/PreflightCommand.kt
 566 src/test/kotlin/com/qkt/cli/daemon/StrategyRegistryTest.kt
 565 src/test/kotlin/com/qkt/app/OrderManagerOcoTest.kt
-563 src/test/kotlin/com/qkt/dsl/compile/ExprCompilerStateTest.kt
 552 src/main/kotlin/com/qkt/execution/OrderRequestEvidence.kt
 552 src/test/kotlin/com/qkt/cli/BacktestCommandPortfolioTest.kt
 542 src/test/kotlin/com/qkt/execution/OrderRequestEvidenceTest.kt
