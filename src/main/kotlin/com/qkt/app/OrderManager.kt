@@ -18,6 +18,7 @@ import com.qkt.app.order.ObservedPrices
 import com.qkt.app.order.OcoExecutionGuard
 import com.qkt.app.order.OcoSequencer
 import com.qkt.app.order.OrderBook
+import com.qkt.app.order.OrderCancellation
 import com.qkt.app.order.OrderEventHandlers
 import com.qkt.app.order.OrderOps
 import com.qkt.app.order.OrderRestorer
@@ -265,6 +266,20 @@ class OrderManager(
             log,
         )
     private val timeExits: TimeExits = TimeExits(book, exposure, clock, ops)
+    private val cancellation: OrderCancellation =
+        OrderCancellation(
+            book,
+            exposure,
+            stacks,
+            scaleOuts,
+            scaleOutExits,
+            haltCancels,
+            closeTickets,
+            broker,
+            clock,
+            ops,
+            isRiskReducingForHalt,
+        )
     private val tickEvaluation: TickEvaluation =
         TickEvaluation(
             book = book,
@@ -410,60 +425,9 @@ class OrderManager(
         strategyId: String?,
     ): BigDecimal = exposure.quantityFor(symbol, side, strategyId)
 
-    fun cancel(clientOrderId: String) {
-        val managed = book[clientOrderId] ?: return
-        if (managed.state.isTerminal) return
-        if (managed.request is OrderRequest.Stack) {
-            stacks.get(clientOrderId)?.let { state ->
-                for (pid in state.pendingLayerIds.toList()) cancel(pid)
-            }
-            stacks.terminate(clientOrderId)
-            update(clientOrderId) { it.copy(state = OrderState.CANCELLED, lastUpdatedAt = clock.now()) }
-            exposure.remove(clientOrderId)
-            return
-        }
-        if (managed.childClientOrderIds.isNotEmpty()) {
-            val scaleOutCancellation = managed.request is OrderRequest.ScaleOut
-            if (scaleOutCancellation) scaleOuts.cancellingWrappers.add(clientOrderId)
-            try {
-                for (childId in managed.childClientOrderIds) cancel(childId)
-                update(clientOrderId) { it.copy(state = OrderState.CANCELLED, lastUpdatedAt = clock.now()) }
-                exposure.remove(clientOrderId)
-            } finally {
-                if (scaleOutCancellation) scaleOuts.cancellingWrappers.remove(clientOrderId)
-            }
-            return
-        }
-        when (managed.state) {
-            OrderState.CREATED, OrderState.PENDING -> {
-                update(clientOrderId) { it.copy(state = OrderState.CANCELLED, lastUpdatedAt = clock.now()) }
-                exposure.remove(clientOrderId)
-                scaleOutExits.completeExit(clientOrderId, OrderState.CANCELLED)
-            }
-            else -> broker.cancel(clientOrderId)
-        }
-    }
+    fun cancel(clientOrderId: String) = cancellation.cancel(clientOrderId)
 
-    fun cancelPendingForSymbol(symbol: String) {
-        // Cancel pending stacks targeting this symbol.
-        val stackIds =
-            stacks
-                .all()
-                .filter { state ->
-                    val managed = book[state.id] ?: return@filter false
-                    (managed.request as? OrderRequest.Stack)?.symbol == symbol
-                }.map { it.id }
-        for (id in stackIds) cancel(id)
-        // Cancel any remaining (non-stack) engine-held or venue-resting orders for the symbol
-        // that aren't already children of a stack we just cancelled.
-        val pending =
-            book.orders.values
-                .filter {
-                    (it.state == OrderState.PENDING || it.state == OrderState.WORKING) &&
-                        it.request.symbol == symbol
-                }.map { it.id }
-        for (id in pending) cancel(id)
-    }
+    fun cancelPendingForSymbol(symbol: String) = cancellation.cancelPendingForSymbol(symbol)
 
     /**
      * Cancel active entry intent after a risk halt, optionally limited to [strategyId].
@@ -471,39 +435,7 @@ class OrderManager(
      * Protective monitors, risk-reducing exits, and composite containers whose entry has filled
      * remain active. Their risk-increasing pending children are still cancelled individually.
      */
-    fun cancelEntriesForHalt(strategyId: String? = null) {
-        val entryIds =
-            book.orders.values
-                .filter { managed ->
-                    (managed.state == OrderState.PENDING || managed.state == OrderState.WORKING) &&
-                        (strategyId == null || managed.request.strategyId == strategyId) &&
-                        !mustSurviveHalt(managed)
-                }.map { it.id }
-        for (id in entryIds) {
-            haltCancels.begin(id)
-            cancel(id)
-        }
-    }
-
-    private fun mustSurviveHalt(
-        managed: ManagedOrder,
-        depth: Int = 0,
-    ): Boolean {
-        if (managed.id in closeTickets) return true
-        if (isPersistentManagedStop(managed.request)) return true
-        if (isRiskReducingForHalt(managed.request)) return true
-        if (managed.childClientOrderIds.any { book[it]?.state == OrderState.FILLED }) return true
-        // A wrapper (OTO / OCO / ScaleOut) is cancelled as a whole and the cascade takes every child
-        // with it. If any LIVE child is itself a protective exit that must survive, the wrapper
-        // must survive too — otherwise a daily halt strips the stops off open positions (observed
-        // 2023-12-11 in a BTC replay: the filled bracket's OTO wrapper was not risk-reducing, its
-        // entry child had already left the live map, and the cascade cancelled the working stops).
-        if (depth >= 4) return false
-        return managed.childClientOrderIds.any { childId ->
-            val child = book[childId] ?: return@any false
-            !child.state.isTerminal && mustSurviveHalt(child, depth + 1)
-        }
-    }
+    fun cancelEntriesForHalt(strategyId: String? = null) = cancellation.cancelEntriesForHalt(strategyId)
 
     /** Retry halt-owned cancellations that have not produced a terminal broker event. */
     fun retryHaltCancellations(nowMs: Long) = haltCancels.retry(nowMs)
@@ -553,26 +485,7 @@ class OrderManager(
     fun activeEntryOrderCount(
         strategyId: String,
         symbol: String,
-    ): Int {
-        val ids = book.liveIdsFor(symbol) ?: return 0
-        var count = 0
-        for (id in ids) {
-            if (id !in exposure) continue
-            val managed = book[id] ?: error("live order index desync: $id")
-            if (managed.request.strategyId != strategyId) continue
-            val activeEntry =
-                when (managed.state) {
-                    OrderState.PENDING,
-                    OrderState.SUBMITTED,
-                    OrderState.WORKING,
-                    OrderState.PARTIALLY_FILLED,
-                    -> true
-                    else -> false
-                }
-            if (activeEntry && !mustSurviveHalt(managed)) count++
-        }
-        return count
-    }
+    ): Int = cancellation.activeEntryOrderCount(strategyId, symbol)
 
     /**
      * Read-only: true iff a live order on [symbol] could fill within the bar range `[low, high]`.
