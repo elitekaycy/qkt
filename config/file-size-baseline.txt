@@ -65,7 +65,6 @@
 440 src/test/kotlin/com/qkt/docs/DslReferenceCodeBlocksTest.kt
 435 src/main/kotlin/com/qkt/cli/ExperimentCommand.kt
 429 src/test/kotlin/com/qkt/parity/TimesEntryParityTest.kt
-424 src/main/kotlin/com/qkt/backtest/report/HtmlReportWriter.kt
 414 src/test/kotlin/com/qkt/app/EndToEndTest.kt
 412 src/test/kotlin/com/qkt/positions/StrategyPositionTrackerStackTest.kt
 411 src/main/kotlin/com/qkt/broker/PaperBroker.kt
