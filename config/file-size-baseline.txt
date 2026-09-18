@@ -168,7 +168,6 @@
 222 src/test/kotlin/com/qkt/parity/mt5golden/MT5GoldenVerifier.kt
 221 src/main/kotlin/com/qkt/bus/EventBus.kt
 216 src/main/kotlin/com/qkt/evidence/Evidence.kt
-215 src/main/kotlin/com/qkt/marketdata/hub/HubMarketSource.kt
 213 src/main/kotlin/com/qkt/backtest/ExecutionSimulation.kt
 212 src/main/kotlin/com/qkt/app/LiveSessionHandle.kt
 212 src/main/kotlin/com/qkt/broker/bybit/linear/BybitLinearStateRecovery.kt
