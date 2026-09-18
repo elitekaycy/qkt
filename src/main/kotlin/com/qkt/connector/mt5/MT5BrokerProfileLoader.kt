@@ -8,9 +8,8 @@ import java.math.BigDecimal
 /**
  * Resolves raw YAML broker entries from `qkt.config.yaml` into [MT5BrokerProfile]s.
  *
- * Handles `extends:` chains (a profile inherits from a default or another profile),
- * env-var substitution (`${QKT_BROKER_GATEWAY_URL}`), and merges per-profile overrides
- * over the base. Output is deterministic — same input → same profile list.
+ * Handles `extends:` chains (a profile inherits from a default or another profile) and
+ * `QKT_BROKER_<NAME>_<FIELD>` env overrides; deterministic — same input → same profile list.
  *
  * Scalar fields arrive in [raw] (flat `key: value`). The nested config blocks — per-symbol
  * calendar rules, symbol aliases, disabled capabilities, and per-instrument venue specs — are
@@ -23,7 +22,7 @@ class MT5BrokerProfileLoader {
      * Returns one [MT5BrokerProfile] per `type: mt5` entry in [raw].
      *
      * [defaults] supplies the built-in templates available for `extends:` references.
-     * [env] is consulted for `${VAR}` substitutions in raw values. [calendars] maps broker name →
+     * [env] supplies `QKT_BROKER_<NAME>_<FIELD>` overrides. [calendars] maps broker name →
      * ordered `(pattern, calendarName)` rules; [aliases] → `(qktSymbol, brokerSymbol)`;
      * [capabilityRestrictions] → disabled [OrderTypeCapability] names; [instrumentOverrides] →
      * `symbol → (field → value)` venue specs.
