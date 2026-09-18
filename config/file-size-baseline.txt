@@ -119,7 +119,6 @@
 246 src/test/kotlin/com/qkt/trade/BotActionCompilerTest.kt
 244 src/test/kotlin/com/qkt/persistence/LegBookReconcilerTest.kt
 242 src/test/kotlin/com/qkt/dsl/compile/ForgeThesisExpressibilityTest.kt
-242 src/test/kotlin/com/qkt/pnl/TradeHistoryTest.kt
 240 src/test/kotlin/com/qkt/dsl/compile/AccountStateAccessorsTest.kt
 240 src/test/kotlin/com/qkt/dsl/compile/ActionCompilerTest.kt
 238 src/test/kotlin/com/qkt/cli/CliTierDeterminismTest.kt
