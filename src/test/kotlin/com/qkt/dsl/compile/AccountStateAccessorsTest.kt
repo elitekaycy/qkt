@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Test
 /**
  * Surface test: account and streak accessors parse and compile without error.
  *
- * Runtime semantics are covered by [com.qkt.pnl.TradeHistoryTest] (streak math)
+ * Runtime semantics are covered by [com.qkt.pnl.TradeHistoryStreakTest] (streak math)
  * and the existing `RiskView.drawdown` plumbing.
  */
 class AccountStateAccessorsTest {
@@ -225,7 +225,7 @@ class AccountStateAccessorsTest {
     fun `compiled strategy returns the new accessors as numeric expressions`() {
         // Compile a tiny strategy and verify that the LET expressions resolve through
         // the new accessor path without crashing in a real eval context. Detailed
-        // runtime correctness is covered by TradeHistoryTest at the tracker level.
+        // runtime correctness is covered by TradeHistoryStreakTest at the tracker level.
         val src =
             """
             STRATEGY t VERSION 1
