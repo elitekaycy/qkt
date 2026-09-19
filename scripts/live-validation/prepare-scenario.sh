@@ -7,7 +7,7 @@ usage() {
     cat <<'EOF'
 Usage: prepare-scenario.sh --output DIR --id ID --gateway-url URL \
   --expected-login N --expected-server NAME --expected-balance DECIMAL \
-  --expected-leverage N --magic N [--symbol EURUSD|GBPUSD|XAUUSD|EURJPY] \
+  --expected-leverage N --magic N [--symbol EURUSD|GBPUSD|XAUUSD|EURJPY|BTCUSD] \
   [--variant ema_cross|rsi_reversion|atr_channel|case_math] \
   [--ema-fast N --ema-slow N] \
   [--qkt-commit SHA] \
@@ -15,7 +15,7 @@ Usage: prepare-scenario.sh --output DIR --id ID --gateway-url URL \
   [--lifecycle single|reentry|reentry_blocked_max_trades|reentry_max_trades_next_day_recovered|reentry_daily_halt_next_day_recovered|reentry_global_daily_halt_next_day_recovered|reentry_blocked_operator_halt|reentry_operator_halt_recovered|reentry_cooldown_recovered|reentry_blocked_loss_streak]
        prepare-scenario.sh --output DIR --id ID --gateway-url URL \
   --runtime-account-identity --expected-balance DECIMAL \
-  --expected-leverage N --magic N [--symbol EURUSD|GBPUSD|XAUUSD|EURJPY] \
+  --expected-leverage N --magic N [--symbol EURUSD|GBPUSD|XAUUSD|EURJPY|BTCUSD] \
   [--variant ema_cross|rsi_reversion|atr_channel|case_math] \
   [--secondary-timeframe 5m|15m|1h|4h] \
   [--lifecycle single|reentry|reentry_blocked_max_trades|reentry_max_trades_next_day_recovered|reentry_daily_halt_next_day_recovered|reentry_global_daily_halt_next_day_recovered|reentry_blocked_operator_halt|reentry_operator_halt_recovered|reentry_cooldown_recovered|reentry_blocked_loss_streak]
@@ -129,8 +129,26 @@ case "$symbol" in
         expected_contract_size="100000"
         maximum_entry_anchor_drift_points=800
         ;;
-    *) fail "--symbol must be one of: EURUSD, GBPUSD, XAUUSD, EURJPY" ;;
+    BTCUSD)
+        # The only 24/7 symbol here: it lets a live wave run at the weekend, when FX and metals
+        # are closed. One 0.01 lot is ~1 unit of BTC-quote notional, and the venue point is 0.01,
+        # so the drift allowance below is 5000 points = 50 quote units.
+        max_order_notional="5000"
+        stop_distance="1500.00"
+        take_profit_distance="3000.00"
+        expected_contract_size="1"
+        maximum_entry_anchor_drift_points=5000
+        ;;
+    *) fail "--symbol must be one of: EURUSD, GBPUSD, XAUUSD, EURJPY, BTCUSD" ;;
 esac
+# A crypto scenario must declare crypto hours, or the venue pollers and the market-data gate
+# treat the weekend as out-of-session and the wave observes nothing.
+broker_calendars=""
+if [ "$symbol" = "BTCUSD" ]; then
+    broker_calendars="
+    calendars:
+      \"BTC*\": crypto"
+fi
 case "$variant" in
     ema_cross|rsi_reversion|atr_channel|case_math) ;;
     *) fail "--variant must be one of: ema_cross, rsi_reversion, atr_channel, case_math" ;;
@@ -396,7 +414,7 @@ account:
 brokers:
   exness:
     type: mt5
-    extends: exness
+    extends: exness$broker_calendars
     gateway_url: $gateway_url
     api_key: \${QKT_BROKER_API_KEY}
     magic: $magic
