@@ -200,6 +200,7 @@ nav:
       - contributing/index.md
       - Development setup: contributing/development-setup.md
       - Conventions: contributing/conventions.md
+      - Code structure: contributing/code-structure.md
       - KDoc style: contributing/kdoc-style.md
       - Phase workflow: contributing/phase-workflow.md
       - Adding a broker: contributing/adding-a-broker.md
