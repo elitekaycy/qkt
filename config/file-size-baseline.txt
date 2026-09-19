@@ -60,7 +60,6 @@
 414 src/test/kotlin/com/qkt/app/EndToEndTest.kt
 411 src/main/kotlin/com/qkt/broker/PaperBroker.kt
 411 src/test/kotlin/com/qkt/broker/mt5/MT5BrokerProfileLoaderTest.kt
-410 src/main/kotlin/com/qkt/marketdata/MarketDataGate.kt
 400 src/main/kotlin/com/qkt/accounting/Accounting.kt
 397 src/test/kotlin/com/qkt/parity/PortfolioDeployerBacktestParityTest.kt
 395 src/test/kotlin/com/qkt/parity/BacktestLiveParityTest.kt
@@ -73,14 +72,12 @@
 368 src/test/kotlin/com/qkt/cli/daemon/portfolio/PortfolioRiskAggregatorTest.kt
 362 src/test/kotlin/com/qkt/broker/bybit/spot/BybitSpotBrokerTest.kt
 360 src/test/kotlin/com/qkt/app/OrderManagerAttachedBracketTest.kt
-356 src/main/kotlin/com/qkt/marketdata/source/SharedLiveMarketSource.kt
 351 src/main/kotlin/com/qkt/risk/RiskState.kt
 344 src/test/kotlin/com/qkt/observe/EngineAuditJournalTest.kt
 344 src/test/kotlin/com/qkt/parity/DslParityHarness.kt
 343 src/test/kotlin/com/qkt/cli/editor/EditorInstallerTest.kt
 342 src/test/kotlin/com/qkt/app/OrderManagerTrailingStopRestoreTest.kt
 338 src/main/kotlin/com/qkt/cli/RunCommand.kt
-335 src/test/kotlin/com/qkt/marketdata/store/DefaultDataStoreTest.kt
 334 src/test/kotlin/com/qkt/persistence/RestartIntegrationTest.kt
 330 src/main/kotlin/com/qkt/app/TradingPipeline.kt
 328 src/test/kotlin/com/qkt/trade/session/BotSessionServerBacktestLiveParityTest.kt
@@ -88,7 +85,6 @@
 326 src/main/kotlin/com/qkt/broker/mt5/MT5WireTypes.kt
 326 src/main/kotlin/com/qkt/observe/insights/InsightsSink.kt
 320 src/test/kotlin/com/qkt/execution/OrderRequestTest.kt
-320 src/test/kotlin/com/qkt/marketdata/MarketDataGateTest.kt
 317 src/test/kotlin/com/qkt/cli/observe/ObservabilityServerTest.kt
 311 src/test/kotlin/com/qkt/cli/SweepCommandTest.kt
 307 src/test/kotlin/com/qkt/observe/insights/LiveSessionInsightsTest.kt
@@ -105,9 +101,7 @@
 285 src/test/kotlin/com/qkt/app/ExitHookManagerTest.kt
 282 src/main/kotlin/com/qkt/trade/session/BotSessionServer.kt
 280 src/test/kotlin/com/qkt/app/LiveSessionPersistenceHealthTest.kt
-279 src/test/kotlin/com/qkt/marketdata/source/PrefixRemapMarketSourceTest.kt
 278 src/main/kotlin/com/qkt/marketdata/live/mt5/Mt5TickFeedSource.kt
-278 src/main/kotlin/com/qkt/marketdata/source/LocalMarketSource.kt
 277 src/test/kotlin/com/qkt/cli/daemon/StopRouteTest.kt
 277 src/test/kotlin/com/qkt/marketdata/live/mt5/Mt5TickRangePollingTest.kt
 275 src/test/kotlin/com/qkt/cli/ConfigTest.kt
@@ -123,11 +117,9 @@
 262 src/test/kotlin/com/qkt/backtest/EquityCurveCollectorTest.kt
 262 src/test/kotlin/com/qkt/dsl/compile/OrderSurfaceEndToEndTest.kt
 257 src/main/kotlin/com/qkt/lsp/QktSnippets.kt
-257 src/main/kotlin/com/qkt/marketdata/store/DefaultDataStore.kt
 257 src/test/kotlin/com/qkt/broker/mt5/MT5PollerSessionGateTest.kt
 257 src/test/kotlin/com/qkt/parity/MT5DaemonE2ETest.kt
 256 src/main/kotlin/com/qkt/broker/Broker.kt
-255 src/test/kotlin/com/qkt/marketdata/source/CompositeMarketSourceTest.kt
 254 src/main/kotlin/com/qkt/broker/mt5/MT5BrokerProfileLoader.kt
 254 src/main/kotlin/com/qkt/observe/insights/BrokerStatePoller.kt
 252 src/main/kotlin/com/qkt/events/BrokerEvent.kt
@@ -154,7 +146,6 @@
 238 src/test/kotlin/com/qkt/app/IndicatorWarmerPerStreamTest.kt
 238 src/test/kotlin/com/qkt/cli/CliTierDeterminismTest.kt
 238 src/test/kotlin/com/qkt/cli/SoakCommandTest.kt
-237 src/main/kotlin/com/qkt/marketdata/store/macro/PolicyRateSeriesFetcher.kt
 237 src/test/kotlin/com/qkt/dsl/compile/RuleSuppressedFireTest.kt
 237 src/test/kotlin/com/qkt/parity/mt5golden/MT5GoldenFixture.kt
 236 src/main/kotlin/com/qkt/cli/bot/BotQueryCommand.kt
@@ -172,11 +163,7 @@
 223 src/test/kotlin/com/qkt/risk/RiskStatePersistenceTest.kt
 222 src/test/kotlin/com/qkt/parity/mt5golden/MT5GoldenVerifier.kt
 221 src/main/kotlin/com/qkt/bus/EventBus.kt
-221 src/main/kotlin/com/qkt/marketdata/store/DatasetSnapshot.kt
-218 src/main/kotlin/com/qkt/marketdata/store/LocalBarStore.kt
 216 src/main/kotlin/com/qkt/evidence/Evidence.kt
-216 src/main/kotlin/com/qkt/marketdata/source/CachedHistoricalMarketSource.kt
-215 src/main/kotlin/com/qkt/marketdata/hub/HubMarketSource.kt
 213 src/main/kotlin/com/qkt/backtest/ExecutionSimulation.kt
 212 src/main/kotlin/com/qkt/app/LiveSessionHandle.kt
 212 src/main/kotlin/com/qkt/broker/bybit/linear/BybitLinearStateRecovery.kt
@@ -185,4 +172,3 @@
 209 src/main/kotlin/com/qkt/dsl/parse/TokenKind.kt
 206 src/main/kotlin/com/qkt/broker/mt5/MT5TransportJournal.kt
 206 src/main/kotlin/com/qkt/cli/observe/Routes.kt
-201 src/main/kotlin/com/qkt/marketdata/hub/HubSnapshotFormat.kt
