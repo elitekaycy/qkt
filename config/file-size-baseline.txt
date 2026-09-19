@@ -23,15 +23,12 @@
 734 src/main/kotlin/com/qkt/cli/Config.kt
 703 src/main/kotlin/com/qkt/cli/daemon/portfolio/PortfolioDeployer.kt
 693 src/main/kotlin/com/qkt/cli/GoldenReplayDataMaterializer.kt
-691 src/main/kotlin/com/qkt/backtest/report/BacktestReportWriter.kt
 691 src/test/kotlin/com/qkt/broker/mt5/MT5PositionPollerCloseTest.kt
 677 src/main/kotlin/com/qkt/execution/OrderRequest.kt
-664 src/main/kotlin/com/qkt/cli/ReportFormat.kt
 658 src/test/kotlin/com/qkt/marketdata/live/mt5/Mt5BarFetcherTest.kt
 616 src/main/kotlin/com/qkt/broker/MT5BrokerSimulator.kt
 606 src/test/kotlin/com/qkt/cli/GoldenCommandTest.kt
 605 src/main/kotlin/com/qkt/cli/GoldenCommand.kt
-576 src/main/kotlin/com/qkt/backtest/Backtest.kt
 574 src/main/kotlin/com/qkt/cli/PreflightCommand.kt
 566 src/test/kotlin/com/qkt/cli/daemon/StrategyRegistryTest.kt
 565 src/test/kotlin/com/qkt/app/OrderManagerOcoTest.kt
@@ -50,6 +47,7 @@
 495 src/test/kotlin/com/qkt/cli/ReportPrinterTest.kt
 488 src/test/kotlin/com/qkt/parity/RegimePortfolioEdgeCaseTest.kt
 476 src/test/kotlin/com/qkt/broker/CompositeBrokerTest.kt
+474 src/main/kotlin/com/qkt/backtest/Backtest.kt
 473 src/test/kotlin/com/qkt/cli/PreflightCommandTest.kt
 470 src/test/kotlin/com/qkt/cli/BarsReplayTest.kt
 468 src/test/kotlin/com/qkt/backtest/report/BacktestReportWriterTest.kt
@@ -66,7 +64,6 @@
 440 src/test/kotlin/com/qkt/docs/DslReferenceCodeBlocksTest.kt
 435 src/main/kotlin/com/qkt/cli/ExperimentCommand.kt
 429 src/test/kotlin/com/qkt/parity/TimesEntryParityTest.kt
-424 src/main/kotlin/com/qkt/backtest/report/HtmlReportWriter.kt
 414 src/test/kotlin/com/qkt/app/EndToEndTest.kt
 412 src/test/kotlin/com/qkt/positions/StrategyPositionTrackerStackTest.kt
 411 src/main/kotlin/com/qkt/broker/PaperBroker.kt
@@ -201,7 +198,6 @@
 216 src/main/kotlin/com/qkt/marketdata/source/CachedHistoricalMarketSource.kt
 215 src/main/kotlin/com/qkt/marketdata/hub/HubMarketSource.kt
 213 src/main/kotlin/com/qkt/backtest/ExecutionSimulation.kt
-213 src/main/kotlin/com/qkt/backtest/report/SvgChart.kt
 213 src/main/kotlin/com/qkt/cli/editor/EditorInstaller.kt
 212 src/main/kotlin/com/qkt/app/LiveSessionHandle.kt
 212 src/main/kotlin/com/qkt/broker/bybit/linear/BybitLinearStateRecovery.kt
@@ -211,5 +207,4 @@
 209 src/main/kotlin/com/qkt/dsl/parse/TokenKind.kt
 206 src/main/kotlin/com/qkt/broker/mt5/MT5TransportJournal.kt
 206 src/main/kotlin/com/qkt/cli/observe/Routes.kt
-201 src/main/kotlin/com/qkt/backtest/report/WalkForwardReportWriter.kt
 201 src/main/kotlin/com/qkt/marketdata/hub/HubSnapshotFormat.kt
