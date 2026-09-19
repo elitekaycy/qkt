@@ -167,6 +167,9 @@ case "$expected_symbol:$venue_symbol:$expected_contract_size:$maximum_execution_
     EXNESS:XAUUSD:XAUUSDm:100:1000)
         symbol_point="0.001"
         ;;
+    EXNESS:BTCUSD:BTCUSDm:1:5000)
+        symbol_point="0.01"
+        ;;
     *)
         fail "scenario is not in the reviewed live-vs-replay drift set: $expected_symbol/$venue_symbol"
         ;;
