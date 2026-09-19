@@ -4,15 +4,14 @@ import com.qkt.broker.MT5BrokerSimulator
 import com.qkt.bus.EventBus
 import com.qkt.common.FixedClock
 import com.qkt.common.MonotonicSequenceGenerator
-import com.qkt.common.Side
 import com.qkt.events.BrokerEvent
 import com.qkt.events.TickEvent
-import com.qkt.execution.OrderRequest
-import com.qkt.execution.TimeInForce
 import com.qkt.instrument.InstrumentMeta
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.marketdata.MarketPriceTracker
-import com.qkt.marketdata.Tick
+import com.qkt.parity.mt5golden.CaptureTranslation.toMeta
+import com.qkt.parity.mt5golden.CaptureTranslation.toOrderRequest
+import com.qkt.parity.mt5golden.CaptureTranslation.toTick
 import java.math.BigDecimal
 import java.math.RoundingMode
 
@@ -147,76 +146,5 @@ internal object MT5GoldenVerifier {
         require(volume.signum() > 0) { "deal group must have positive volume" }
         val notional = fills.fold(BigDecimal.ZERO) { total, fill -> total + fill.price.multiply(fill.volume) }
         return AggregateFill(volume, notional.divide(volume, 12, RoundingMode.HALF_EVEN))
-    }
-
-    private fun CapturedInstrument.toMeta(): InstrumentMeta =
-        InstrumentMeta(
-            qktSymbol = qktSymbol,
-            contractSize = decimal(contractSize),
-            volumeStep = decimal(volumeStep),
-            volumeMin = decimal(volumeMin),
-            volumeMax = volumeMax?.let(::decimal),
-            pointSize = decimal(pointSize),
-            digits = digits,
-            tradeStopsLevelPoints = tradeStopsLevelPoints,
-        )
-
-    private fun CapturedTick.toTick(): Tick {
-        val bidValue = decimal(bid)
-        val askValue = decimal(ask)
-        return Tick(
-            symbol = symbol,
-            price = bidValue.add(askValue).divide(BigDecimal(2)),
-            timestamp = timestampMs,
-            bid = bidValue,
-            ask = askValue,
-        )
-    }
-
-    private fun CapturedClientOrder.toOrderRequest(): OrderRequest {
-        val parsedSide = Side.valueOf(side)
-        val parsedTif = TimeInForce.valueOf(timeInForce)
-        val parsedQuantity = decimal(quantity)
-        return when (kind) {
-            CapturedOrderKind.MARKET ->
-                OrderRequest.Market(id, symbol, parsedSide, parsedQuantity, parsedTif, timestampMs, strategyId)
-            CapturedOrderKind.LIMIT ->
-                OrderRequest.Limit(
-                    id,
-                    symbol,
-                    parsedSide,
-                    parsedQuantity,
-                    decimal(requireNotNull(limitPrice)),
-                    parsedTif,
-                    timestampMs,
-                    strategyId,
-                    expiresAtMs,
-                )
-            CapturedOrderKind.STOP ->
-                OrderRequest.Stop(
-                    id,
-                    symbol,
-                    parsedSide,
-                    parsedQuantity,
-                    decimal(requireNotNull(stopPrice)),
-                    parsedTif,
-                    timestampMs,
-                    strategyId,
-                    expiresAtMs,
-                )
-            CapturedOrderKind.STOP_LIMIT ->
-                OrderRequest.StopLimit(
-                    id,
-                    symbol,
-                    parsedSide,
-                    parsedQuantity,
-                    decimal(requireNotNull(stopPrice)),
-                    decimal(requireNotNull(limitPrice)),
-                    parsedTif,
-                    timestampMs,
-                    strategyId,
-                    expiresAtMs,
-                )
-        }
     }
 }
