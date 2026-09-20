@@ -44,6 +44,8 @@ jobs:
         run: bash tests/scripts/verify-version-tag-test.sh
       - name: Test unattended attestation runner
         run: bash tests/scripts/run-attestation-test.sh
+      - name: Test live-vs-replay trace comparator
+        run: bash tests/scripts/compare-trace-vectors-test.sh
       - name: Build + test + ktlint
         run: ./gradlew build --no-daemon
       - name: Upload test reports
