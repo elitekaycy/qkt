@@ -1,10 +1,10 @@
 package com.qkt.trade
 
-import com.qkt.broker.mt5.MT5BrokerProfile
-import com.qkt.broker.mt5.MT5Client
-import com.qkt.broker.mt5.MT5ServerTimeZone
-import com.qkt.broker.mt5.SymbolPolicy
 import com.qkt.common.Side
+import com.qkt.connector.mt5.MT5BrokerProfile
+import com.qkt.connector.mt5.MT5Client
+import com.qkt.connector.mt5.MT5ServerTimeZone
+import com.qkt.connector.mt5.SymbolPolicy
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.StopLossSpec
 import com.qkt.execution.TimeInForce

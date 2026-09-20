@@ -3,99 +3,73 @@ package com.qkt.cli.daemon
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.nio.file.Path
-import okhttp3.MediaType.Companion.toMediaType
+import java.time.Duration
 import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 
+/**
+ * CLI-side client of the daemon's loopback control plane. Each call resolves the port from the
+ * state directory (or [explicitPort]), so a restarted daemon is picked up without reconfiguring.
+ * Methods are `open` so command tests can substitute canned daemon replies.
+ */
 open class ControlClient(
-    private val stateDir: StateDir,
-    private val http: OkHttpClient = defaultHttp(),
-    private val explicitPort: Int? = null,
+    stateDir: StateDir,
+    http: OkHttpClient = defaultHttp(),
+    explicitPort: Int? = null,
 ) {
+    /** No daemon is running: the state directory has no control port. */
     class NoDaemonRunningException(
         msg: String,
     ) : RuntimeException(msg)
 
+    /** The daemon answered with a non-2xx [code]; [body] is its reply. */
     class DaemonError(
         val code: Int,
         val body: String,
     ) : RuntimeException("daemon returned $code: $body")
 
-    private fun baseUrl(): String {
-        val port =
-            explicitPort
-                ?: stateDir.readControlPort()
-                ?: throw NoDaemonRunningException(
-                    "no daemon running (no control.port file at ${stateDir.controlPortFile})",
-                )
-        return "http://127.0.0.1:$port"
-    }
+    private val transport = ControlTransport(stateDir, http, explicitPort)
 
-    private fun authenticatedRequest(url: String): Request.Builder =
-        Request.Builder().url(url).also { builder ->
-            ControlToken.forClient(stateDir)?.let { builder.header("Authorization", "Bearer ${it.value}") }
-        }
+    private fun baseUrl(): String = transport.baseUrl()
 
-    open fun metrics(): String {
-        val resp =
-            http.newCall(Request.Builder().url("${baseUrl()}/metrics").build()).execute()
-        return readOrThrow(resp)
-    }
+    /** Prometheus metrics text. */
+    open fun metrics(): String = transport.get("${baseUrl()}/metrics")
 
-    open fun health(): String {
-        val resp =
-            http.newCall(Request.Builder().url("${baseUrl()}/health").build()).execute()
-        return readOrThrow(resp)
-    }
+    /** Daemon health JSON. */
+    open fun health(): String = transport.get("${baseUrl()}/health")
 
-    open fun list(): String {
-        val resp =
-            http.newCall(Request.Builder().url("${baseUrl()}/list").build()).execute()
-        return readOrThrow(resp)
-    }
+    /** JSON array of deployed strategies. */
+    open fun list(): String = transport.get("${baseUrl()}/list")
 
+    /** Daemon-wide status, or one strategy's when [name] is given. */
     open fun status(name: String? = null): String {
         val url = if (name == null) "${baseUrl()}/status" else "${baseUrl()}/status/$name"
-        val resp = http.newCall(Request.Builder().url(url).build()).execute()
-        return readOrThrow(resp)
+        return transport.get(url)
     }
 
-    open fun latency(): String {
-        val resp =
-            http.newCall(Request.Builder().url("${baseUrl()}/latency").build()).execute()
-        return readOrThrow(resp)
-    }
+    /** Per-strategy, per-stage latency percentiles. */
+    open fun latency(): String = transport.get("${baseUrl()}/latency")
 
+    /** Opens a strategy's log stream; the caller reads and closes the response. */
     fun logs(
         name: String,
         lines: Int? = null,
         since: String? = null,
         follow: Boolean = false,
-    ): okhttp3.Response {
+    ): Response {
         val q =
             buildList {
                 if (lines != null) add("lines=$lines")
                 if (since != null) add("since=$since")
                 if (follow) add("follow=true")
             }.joinToString("&").let { if (it.isEmpty()) "" else "?$it" }
-        return http
-            .newCall(Request.Builder().url("${baseUrl()}/logs/$name$q").build())
-            .execute()
+        return transport.open("${baseUrl()}/logs/$name$q")
     }
 
-    fun shutdown(): String {
-        val resp =
-            http
-                .newCall(
-                    authenticatedRequest("${baseUrl()}/shutdown")
-                        .post("".toRequestBody(JSON_MEDIA))
-                        .build(),
-                ).execute()
-        return readOrThrow(resp)
-    }
+    /** Asks the daemon to shut down. */
+    fun shutdown(): String = transport.post("${baseUrl()}/shutdown")
 
+    /** Stops a strategy, optionally flattening its positions, waiting up to [timeoutMs]. */
     fun stop(
         name: String,
         flatten: Boolean = false,
@@ -106,80 +80,38 @@ open class ControlClient(
                 if (flatten) add("flatten=true")
                 if (timeoutMs != null) add("timeout=$timeoutMs")
             }.joinToString("&").let { if (it.isEmpty()) "" else "?$it" }
-        val resp =
-            http
-                .newCall(
-                    authenticatedRequest("${baseUrl()}/stop/$name$q")
-                        .post("".toRequestBody(JSON_MEDIA))
-                        .build(),
-                ).execute()
-        return readOrThrow(resp)
+        return transport.post("${baseUrl()}/stop/$name$q")
     }
 
-    fun start(name: String): String {
-        val resp =
-            http
-                .newCall(
-                    authenticatedRequest("${baseUrl()}/start/$name")
-                        .post("".toRequestBody(JSON_MEDIA))
-                        .build(),
-                ).execute()
-        return readOrThrow(resp)
-    }
+    /** Starts a stopped strategy. */
+    fun start(name: String): String = transport.post("${baseUrl()}/start/$name")
 
+    /** Halts new entries for one strategy, or all when [name] is null. */
     open fun halt(name: String? = null): String {
         val url = if (name == null) "${baseUrl()}/halt" else "${baseUrl()}/halt/$name"
-        val resp =
-            http
-                .newCall(
-                    authenticatedRequest(url)
-                        .post("".toRequestBody(JSON_MEDIA))
-                        .build(),
-                ).execute()
-        return readOrThrow(resp)
+        return transport.post(url)
     }
 
+    /** Kills one strategy, or all when [name] is null, optionally flattening. */
     open fun kill(
         name: String? = null,
         flatten: Boolean = false,
     ): String {
         val base = if (name == null) "${baseUrl()}/kill" else "${baseUrl()}/kill/$name"
         val url = if (flatten) "$base?flatten=true" else base
-        val resp =
-            http
-                .newCall(
-                    authenticatedRequest(url)
-                        .post("".toRequestBody(JSON_MEDIA))
-                        .build(),
-                ).execute()
-        return readOrThrow(resp)
+        return transport.post(url)
     }
 
-    open fun reconcile(name: String): String {
-        val resp =
-            http
-                .newCall(
-                    Request
-                        .Builder()
-                        .url("${baseUrl()}/reconcile/$name")
-                        .get()
-                        .build(),
-                ).execute()
-        return readOrThrow(resp)
-    }
+    /** Engine-to-venue reconciliation report for a strategy. */
+    open fun reconcile(name: String): String = transport.get("${baseUrl()}/reconcile/$name")
 
+    /** Resumes one halted strategy, or all when [name] is null. */
     open fun resume(name: String? = null): String {
         val url = if (name == null) "${baseUrl()}/resume" else "${baseUrl()}/resume/$name"
-        val resp =
-            http
-                .newCall(
-                    authenticatedRequest(url)
-                        .post("".toRequestBody(JSON_MEDIA))
-                        .build(),
-                ).execute()
-        return readOrThrow(resp)
+        return transport.post(url)
     }
 
+    /** Deploys [file] under [name], with optional reconcile override and promotion waiver. */
     fun deploy(
         name: String,
         file: Path,
@@ -187,24 +119,9 @@ open class ControlClient(
         waiver: String? = null,
         waiverReason: String? = null,
     ): String {
-        val body =
-            """{"file":"${file.toAbsolutePath()}","name":"$name"}"""
-                .toRequestBody(JSON_MEDIA)
-        val q =
-            buildList {
-                if (ignoreMismatches) add("reconcile" to "ignore-mismatches")
-                if (!waiver.isNullOrBlank()) add("waive" to waiver)
-                if (!waiverReason.isNullOrBlank()) add("reason" to waiverReason)
-            }.joinToString("&") { (k, v) -> "${urlEncode(k)}=${urlEncode(v)}" }
-                .let { if (it.isEmpty()) "" else "?$it" }
-        val resp =
-            http
-                .newCall(
-                    authenticatedRequest("${baseUrl()}/deploy$q")
-                        .post(body)
-                        .build(),
-                ).execute()
-        return readOrThrow(resp)
+        val body = """{"file":"${file.toAbsolutePath()}","name":"$name"}"""
+        val q = deployQuery(ignoreMismatches, waiver, waiverReason)
+        return transport.postJson("${baseUrl()}/deploy$q", body)
     }
 
     /**
@@ -218,37 +135,26 @@ open class ControlClient(
         waiver: String? = null,
         waiverReason: String? = null,
     ): String {
-        val body =
-            """{"file":"${file.toAbsolutePath()}","name":"$name","dryRun":$dryRun}"""
-                .toRequestBody(JSON_MEDIA)
-        val q =
-            buildList {
-                if (ignoreMismatches) add("reconcile" to "ignore-mismatches")
-                if (!waiver.isNullOrBlank()) add("waive" to waiver)
-                if (!waiverReason.isNullOrBlank()) add("reason" to waiverReason)
-            }.joinToString("&") { (k, v) -> "${urlEncode(k)}=${urlEncode(v)}" }
-                .let { if (it.isEmpty()) "" else "?$it" }
-        val resp =
-            http
-                .newCall(
-                    authenticatedRequest("${baseUrl()}/resync$q")
-                        .post(body)
-                        .build(),
-                ).execute()
-        return readOrThrow(resp)
+        val body = """{"file":"${file.toAbsolutePath()}","name":"$name","dryRun":$dryRun}"""
+        val q = deployQuery(ignoreMismatches, waiver, waiverReason)
+        return transport.postJson("${baseUrl()}/resync$q", body)
     }
+
+    private fun deployQuery(
+        ignoreMismatches: Boolean,
+        waiver: String?,
+        waiverReason: String?,
+    ): String =
+        buildList {
+            if (ignoreMismatches) add("reconcile" to "ignore-mismatches")
+            if (!waiver.isNullOrBlank()) add("waive" to waiver)
+            if (!waiverReason.isNullOrBlank()) add("reason" to waiverReason)
+        }.joinToString("&") { (k, v) -> "${urlEncode(k)}=${urlEncode(v)}" }
+            .let { if (it.isEmpty()) "" else "?$it" }
 
     private fun urlEncode(value: String): String = URLEncoder.encode(value, StandardCharsets.UTF_8)
 
-    private fun readOrThrow(resp: Response): String {
-        val body = resp.body?.string().orEmpty()
-        if (!resp.isSuccessful) throw DaemonError(resp.code, body)
-        return body
-    }
-
     companion object {
-        private val JSON_MEDIA = "application/json".toMediaType()
-
         /**
          * Control calls are synchronous: deploy/resync of a multi-child portfolio holds one
          * request open for minutes while the daemon swaps sessions. The stock 10s read timeout
@@ -258,8 +164,8 @@ open class ControlClient(
         fun defaultHttp(): OkHttpClient =
             OkHttpClient
                 .Builder()
-                .connectTimeout(java.time.Duration.ofSeconds(10))
-                .readTimeout(java.time.Duration.ofMinutes(30))
+                .connectTimeout(Duration.ofSeconds(10))
+                .readTimeout(Duration.ofMinutes(30))
                 .build()
     }
 }

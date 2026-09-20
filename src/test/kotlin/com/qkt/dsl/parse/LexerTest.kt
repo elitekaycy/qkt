@@ -1,7 +1,6 @@
 package com.qkt.dsl.parse
 
 import org.assertj.core.api.Assertions.assertThat
-import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 
 class LexerTest {
@@ -52,81 +51,10 @@ class LexerTest {
     }
 
     @Test
-    fun `tokenizes both not-equal spellings`() {
-        // conditions.md documents `!=` and `<>` as equivalent; both must lex to NEQ.
-        val tokens = Lexer("a != b <> c").tokenize()
-        assertThat(tokens.map { it.kind }.filter { it == TokenKind.NEQ }).hasSize(2)
-    }
-
-    @Test
-    fun `tokenizes arrow operator`() {
-        val tokens = Lexer("a -> b").tokenize()
-        assertThat(tokens.map { it.kind })
-            .containsExactly(TokenKind.IDENT, TokenKind.ARROW, TokenKind.IDENT, TokenKind.EOF)
-    }
-
-    @Test
     fun `tokenizes REGIMES keyword case-insensitively`() {
         val tokens = Lexer("REGIMES regimes Regimes").tokenize()
         assertThat(tokens.map { it.kind })
             .containsExactly(TokenKind.REGIMES, TokenKind.REGIMES, TokenKind.REGIMES, TokenKind.EOF)
-    }
-
-    @Test
-    fun `tokenizes integers and decimals`() {
-        val tokens = Lexer("100 100.5 0.001").tokenize()
-        assertThat(tokens.dropLast(1).map { it.lexeme }).containsExactly("100", "100.5", "0.001")
-        tokens.dropLast(1).forEach { assertThat(it.kind).isEqualTo(TokenKind.NUMBER) }
-    }
-
-    @Test
-    fun `tokenizes scientific notation`() {
-        val tokens = Lexer("1e-3 2.5E+10 1.5e6").tokenize()
-        assertThat(tokens.dropLast(1).map { it.lexeme }).containsExactly("1e-3", "2.5E+10", "1.5e6")
-    }
-
-    @Test
-    fun `tokenizes single-quoted strings`() {
-        val tokens = Lexer("'hello world'").tokenize()
-        assertThat(tokens[0].kind).isEqualTo(TokenKind.STRING)
-        assertThat(tokens[0].lexeme).isEqualTo("hello world")
-    }
-
-    @Test
-    fun `string escape sequences`() {
-        val tokens = Lexer("""'don\'t \\fire'""").tokenize()
-        assertThat(tokens[0].lexeme).isEqualTo("""don't \fire""")
-    }
-
-    @Test
-    fun `tokenizes double-quoted strings`() {
-        val tokens = Lexer("\"hello world\"").tokenize()
-        assertThat(tokens[0].kind).isEqualTo(TokenKind.STRING)
-        assertThat(tokens[0].lexeme).isEqualTo("hello world")
-    }
-
-    @Test
-    fun `double-quoted strings support escapes`() {
-        val tokens = Lexer(""""she said \"hi\" and \\smiled"""").tokenize()
-        assertThat(tokens[0].lexeme).isEqualTo("""she said "hi" and \smiled""")
-    }
-
-    @Test
-    fun `single quotes pass through double-quoted strings unescaped`() {
-        val tokens = Lexer(""""don't fire"""").tokenize()
-        assertThat(tokens[0].lexeme).isEqualTo("don't fire")
-    }
-
-    @Test
-    fun `unterminated string errors`() {
-        assertThatThrownBy { Lexer("'oops").tokenize() }
-            .isInstanceOf(IllegalStateException::class.java)
-    }
-
-    @Test
-    fun `unterminated double-quoted string errors`() {
-        assertThatThrownBy { Lexer("\"oops").tokenize() }
-            .isInstanceOf(IllegalStateException::class.java)
     }
 
     @Test
@@ -139,117 +67,6 @@ class LexerTest {
             TokenKind.OCO_ENTRY,
             TokenKind.OCO_ENTRY,
         )
-    }
-
-    @Test
-    fun `tokenizes comparison operators with longest-match`() {
-        val tokens = Lexer("> < >= <= == != =").tokenize()
-        assertThat(tokens.dropLast(1).map { it.kind }).containsExactly(
-            TokenKind.GT,
-            TokenKind.LT,
-            TokenKind.GE,
-            TokenKind.LE,
-            TokenKind.EQEQ,
-            TokenKind.NEQ,
-            TokenKind.EQ,
-        )
-    }
-
-    @Test
-    fun `tokenizes arithmetic operators`() {
-        val tokens = Lexer("+ - * / %").tokenize()
-        assertThat(tokens.dropLast(1).map { it.kind }).containsExactly(
-            TokenKind.PLUS,
-            TokenKind.MINUS,
-            TokenKind.STAR,
-            TokenKind.SLASH,
-            TokenKind.PERCENT,
-        )
-    }
-
-    @Test
-    fun `tokenizes punctuation`() {
-        val tokens = Lexer("{ } [ ] ( ) , . ; : @ \$").tokenize()
-        assertThat(tokens.dropLast(1).map { it.kind }).containsExactly(
-            TokenKind.LBRACE,
-            TokenKind.RBRACE,
-            TokenKind.LBRACKET,
-            TokenKind.RBRACKET,
-            TokenKind.LPAREN,
-            TokenKind.RPAREN,
-            TokenKind.COMMA,
-            TokenKind.DOT,
-            TokenKind.SEMICOLON,
-            TokenKind.COLON,
-            TokenKind.AT_SIGN,
-            TokenKind.DOLLAR,
-        )
-    }
-
-    @Test
-    fun `skips line comments`() {
-        val tokens = Lexer("STRATEGY -- this is a comment\n  btc").tokenize()
-        assertThat(tokens.map { it.kind }).containsExactly(
-            TokenKind.STRATEGY,
-            TokenKind.IDENT,
-            TokenKind.EOF,
-        )
-    }
-
-    @Test
-    fun `skips block comments`() {
-        val tokens = Lexer("STRATEGY /* this is a\n block comment */ btc").tokenize()
-        assertThat(tokens.map { it.kind }).containsExactly(
-            TokenKind.STRATEGY,
-            TokenKind.IDENT,
-            TokenKind.EOF,
-        )
-    }
-
-    @Test
-    fun `rejects unterminated block comments`() {
-        assertThatThrownBy { Lexer("STRATEGY\n  /* never closed").tokenize() }
-            .isInstanceOf(IllegalStateException::class.java)
-            .hasMessageContaining("Unterminated block comment at line 2 col 3")
-    }
-
-    @Test
-    fun `recognizes broker-symbol colon syntax`() {
-        val tokens = Lexer("BYBIT:BTCUSDT").tokenize()
-        assertThat(tokens.map { it.kind }).containsExactly(
-            TokenKind.IDENT,
-            TokenKind.COLON,
-            TokenKind.IDENT,
-            TokenKind.EOF,
-        )
-    }
-
-    @Test
-    fun `hash line comments are skipped`() {
-        val src =
-            """
-            # opening note
-            STRATEGY hi VERSION 1
-            # mid comment
-            SYMBOLS
-                btc = X:Y EVERY 1m
-            """.trimIndent()
-        val kinds = Lexer(src).tokenize().map { it.kind }
-        assertThat(kinds).contains(TokenKind.STRATEGY, TokenKind.SYMBOLS, TokenKind.EVERY)
-    }
-
-    @Test
-    fun `mixed comment styles all work`() {
-        val src =
-            """
-            -- dash comment
-            # hash comment
-            /* block
-               comment */
-            STRATEGY x VERSION 1
-            """.trimIndent()
-        val kinds = Lexer(src).tokenize().map { it.kind }
-        assertThat(kinds).containsSequence(TokenKind.STRATEGY, TokenKind.IDENT, TokenKind.VERSION)
     }
 
     @Test

@@ -1,0 +1,897 @@
+package com.qkt.connector.mt5
+
+import java.math.BigDecimal
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
+import org.assertj.core.api.Assertions.assertThat
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+
+class MT5ClientTest {
+    private lateinit var server: MockWebServer
+    private lateinit var client: MT5Client
+
+    @BeforeEach
+    fun setup() {
+        server = MockWebServer()
+        server.start()
+        client =
+            MT5Client(
+                gatewayUrl = server.url("/").toString().trimEnd('/'),
+                serverTimeZone = MT5ServerTimeZone.fixedOffset(2),
+                httpTimeoutMs = 2000,
+                retryAttempts = 0,
+            )
+    }
+
+    @AfterEach
+    fun teardown() {
+        server.shutdown()
+    }
+
+    @Test
+    fun `placeOrder sends correct json and parses response`() {
+        server.enqueue(
+            MockResponse().setBody(
+                """{"result":{"retcode":10009,"order":12345,"deal":67890,"price":"1.1234","comment":"ok"}}""",
+            ),
+        )
+        val resp =
+            client.placeOrder(
+                MT5OrderRequest(
+                    symbol = "EURUSDm",
+                    volume = BigDecimal("0.1"),
+                    type = "BUY",
+                    magic = 10001,
+                    comment = "ord-1",
+                    clientOrderId = "placement-1",
+                ),
+            )
+        assertThat(resp.result.retcode).isEqualTo(10009)
+        assertThat(resp.result.deal).isEqualTo(67890L)
+        assertThat(resp.result.price).isEqualByComparingTo("1.1234")
+        val recorded = server.takeRequest()
+        assertThat(recorded.path).isEqualTo("/order")
+        assertThat(recorded.method).isEqualTo("POST")
+        assertThat(recorded.getHeader("Idempotency-Key")).isEqualTo("placement-1")
+        assertThat(recorded.body.readUtf8()).contains("\"client_order_id\":\"placement-1\"")
+    }
+
+    @Test
+    fun `placeOrder serializes the GTD expiration on the wire`() {
+        server.enqueue(
+            MockResponse().setBody(
+                """{"result":{"retcode":10009,"order":12345,"deal":67890,"price":"1.1234","comment":"ok"}}""",
+            ),
+        )
+        client.placeOrder(
+            MT5OrderRequest(
+                symbol = "EURUSDm",
+                volume = BigDecimal("0.1"),
+                type = "BUY_LIMIT",
+                price = BigDecimal("1.0900"),
+                magic = 10001,
+                comment = "ord-gtd",
+                expiration = 1_778_000_000L,
+            ),
+        )
+        val body = server.takeRequest().body.readUtf8()
+        assertThat(body).contains("\"expiration\":1778000000")
+    }
+
+    @Test
+    fun `placeOrderAsync delivers the parsed response via the callback`() {
+        server.enqueue(
+            MockResponse().setBody(
+                """{"result":{"retcode":10009,"order":12345,"deal":67890,"price":"1.1234","comment":"ok"}}""",
+            ),
+        )
+        val latch = java.util.concurrent.CountDownLatch(1)
+        val result =
+            java.util.concurrent.atomic
+                .AtomicReference<MT5OrderResponse>()
+        client.placeOrderAsync(
+            MT5OrderRequest(
+                symbol = "EURUSDm",
+                volume = BigDecimal("0.1"),
+                type = "BUY",
+                magic = 10001,
+                comment = "ord-async",
+            ),
+        ) { resp ->
+            result.set(resp)
+            latch.countDown()
+        }
+        assertThat(latch.await(2, java.util.concurrent.TimeUnit.SECONDS)).isTrue
+        assertThat(result.get().result.retcode).isEqualTo(10009)
+        assertThat(result.get().result.order).isEqualTo(12345L)
+        val recorded = server.takeRequest()
+        assertThat(recorded.path).isEqualTo("/order")
+        assertThat(recorded.method).isEqualTo("POST")
+    }
+
+    @Test
+    fun `placeOrderAsync delivers a synthetic failure on a non-2xx response`() {
+        server.enqueue(MockResponse().setResponseCode(500).setBody("""{"error":"boom"}"""))
+        val latch = java.util.concurrent.CountDownLatch(1)
+        val result =
+            java.util.concurrent.atomic
+                .AtomicReference<MT5OrderResponse>()
+        client.placeOrderAsync(
+            MT5OrderRequest(
+                symbol = "EURUSDm",
+                volume = BigDecimal("0.1"),
+                type = "BUY",
+                magic = 10001,
+                comment = "ord-fail",
+            ),
+        ) { resp ->
+            result.set(resp)
+            latch.countDown()
+        }
+        assertThat(latch.await(2, java.util.concurrent.TimeUnit.SECONDS)).isTrue
+        assertThat(isOrderSuccessful(result.get().result.retcode)).isFalse
+        assertThat(result.get().errorMessage).contains("HTTP 500")
+    }
+
+    @Test
+    fun `placeOrderAsync reports malformed success as an ambiguous send failure`() {
+        server.enqueue(MockResponse().setBody("not-json"))
+        val latch = java.util.concurrent.CountDownLatch(1)
+        val result =
+            java.util.concurrent.atomic
+                .AtomicReference<MT5OrderResponse>()
+
+        client.placeOrderAsync(
+            MT5OrderRequest(
+                symbol = "EURUSDm",
+                volume = BigDecimal("0.1"),
+                type = "BUY",
+                magic = 10001,
+                comment = "ord-malformed",
+            ),
+        ) { response ->
+            result.set(response)
+            latch.countDown()
+        }
+
+        assertThat(latch.await(2, java.util.concurrent.TimeUnit.SECONDS)).isTrue
+        assertThat(result.get().result.retcode).isEqualTo(-1)
+        assertThat(result.get().errorMessage).startsWith("invalid gateway response after send")
+    }
+
+    @Test
+    fun `failed GET retains gateway detail for the broker error`() {
+        server.enqueue(MockResponse().setResponseCode(503).setBody("""{"error":"terminal unavailable"}"""))
+
+        assertThat(client.getPositions()).isNull()
+        assertThat(client.lastReadFailure())
+            .contains("HTTP 503")
+            .contains("terminal unavailable")
+    }
+
+    @Test
+    fun `retcode success family includes done placed and partial`() {
+        // 10008 (placed) and 10010 (partial) mean the venue owns the order; treating
+        // them as rejections double-submits on the strategy's next attempt.
+        assertThat(isOrderSuccessful(10009)).isTrue
+        assertThat(isOrderSuccessful(10008)).isTrue
+        assertThat(isOrderSuccessful(10010)).isTrue
+        assertThat(isOrderSuccessful(10004)).isFalse
+        assertThat(isOrderSuccessful(-1)).isFalse
+    }
+
+    @Test
+    fun `placeOrder caps an over-long comment to the MT5 wire limit`() {
+        // The supported terminal rejects 30+ characters with `Invalid "comment"
+        // argument`; the full identifier remains in client_order_id for correlation.
+        server.enqueue(
+            MockResponse().setBody(
+                """{"result":{"retcode":10009,"order":1,"deal":1,"price":"1.0","comment":"ok"}}""",
+            ),
+        )
+        val longId = "dsl-hedge_straddle--7-stack-tier0"
+        assertThat(longId.length).isGreaterThan(MT5_COMMENT_MAX_LENGTH)
+        client.placeOrder(
+            MT5OrderRequest(
+                symbol = "XAUUSDm",
+                volume = BigDecimal("0.1"),
+                type = "SELL",
+                magic = 10001,
+                comment = longId,
+            ),
+        )
+        val body = server.takeRequest().body.readUtf8()
+        assertThat(body).contains("\"comment\":\"${longId.take(MT5_COMMENT_MAX_LENGTH)}\"")
+        assertThat(body).contains("\"client_order_id\":\"$longId\"")
+    }
+
+    @Test
+    fun `placeOrder leaves a comment within the limit untouched`() {
+        server.enqueue(
+            MockResponse().setBody(
+                """{"result":{"retcode":10009,"order":1,"deal":1,"price":"1.0","comment":"ok"}}""",
+            ),
+        )
+        val shortId = "dsl-hedge_straddle--7"
+        assertThat(shortId.length).isLessThanOrEqualTo(MT5_COMMENT_MAX_LENGTH)
+        client.placeOrder(
+            MT5OrderRequest(
+                symbol = "XAUUSDm",
+                volume = BigDecimal("0.1"),
+                type = "SELL",
+                magic = 10001,
+                comment = shortId,
+            ),
+        )
+        val body = server.takeRequest().body.readUtf8()
+        assertThat(body).contains("\"comment\":\"$shortId\"")
+    }
+
+    @Test
+    fun `getPositions converts the venue wall-clock epoch to utc`() {
+        // The gateway stamps time_msc with the broker's wall clock (UTC+2 for this client);
+        // measured live on IC Markets, positions and deals run exactly one server offset
+        // ahead of the engine's own event for the same ticket.
+        val serverEpochMs = 1_700_000_000_000L
+        server.enqueue(
+            MockResponse().setBody(
+                """[{"ticket":1,"symbol":"EURUSDm","type":0,"volume":"0.1","price_open":"1.1","sl":"0","tp":"0","profit":"0","magic":10001,"time_msc":$serverEpochMs,"comment":"x","client_order_id":"placement-1"}]""",
+            ),
+        )
+        val positions = client.getPositions(magic = 10001)!!
+        assertThat(positions).hasSize(1)
+        assertThat(positions[0].ticket).isEqualTo(1L)
+        assertThat(positions[0].openTime).isEqualTo(serverEpochMs - 2 * 3_600_000L)
+        assertThat(positions[0].clientOrderId).isEqualTo("placement-1")
+        val recorded = server.takeRequest()
+        assertThat(recorded.path).isEqualTo("/get_positions?magic=10001")
+        assertThat(recorded.method).isEqualTo("GET")
+    }
+
+    @Test
+    fun `getPositions accepts the current data envelope`() {
+        server.enqueue(
+            MockResponse().setBody(
+                """{"ok":true,"data":[{"ticket":1,"symbol":"EURUSDm","type":0,"volume":"0.1","price_open":"1.1","sl":"0","tp":"0","profit":"0","magic":10001,"time_msc":1700000000000,"comment":"x"}]}""",
+            ),
+        )
+        assertThat(client.getPositions()).hasSize(1)
+    }
+
+    @Test
+    fun `sibling clients share cached position snapshots and filter magic locally`() {
+        val readCache = MT5ReadCache(ttlMs = 60_000L)
+        val clientA = cachedClient(readCache)
+        val clientB = cachedClient(readCache)
+        server.enqueue(
+            MockResponse().setBody(
+                """
+                [
+                  {
+                    "ticket":1,
+                    "symbol":"EURUSDm",
+                    "type":0,
+                    "volume":"0.1",
+                    "price_open":"1.1",
+                    "sl":"0",
+                    "tp":"0",
+                    "profit":"0",
+                    "magic":10001,
+                    "time_msc":1700000000000,
+                    "comment":"a"
+                  },
+                  {
+                    "ticket":2,
+                    "symbol":"GBPUSDm",
+                    "type":1,
+                    "volume":"0.2",
+                    "price_open":"1.2",
+                    "sl":"0",
+                    "tp":"0",
+                    "profit":"0",
+                    "magic":10002,
+                    "time_msc":1700000000001,
+                    "comment":"b"
+                  }
+                ]
+                """.trimIndent(),
+            ),
+        )
+
+        assertThat(clientA.getPositions(magic = 10001)!!.map { it.ticket }).containsExactly(1L)
+        assertThat(clientB.getPositions(magic = 10002)!!.map { it.ticket }).containsExactly(2L)
+        assertThat(server.requestCount).isEqualTo(1)
+        assertThat(server.takeRequest().path).isEqualTo("/get_positions")
+    }
+
+    @Test
+    fun `cancelOrder issues DELETE on the orders ticket route`() {
+        server.enqueue(MockResponse().setBody("""{"message":"Order cancelled successfully"}"""))
+        val body = client.cancelOrder(ticket = 555L)
+        assertThat(body).contains("cancelled successfully")
+        val recorded = server.takeRequest()
+        assertThat(recorded.path).isEqualTo("/orders/555")
+        assertThat(recorded.method).isEqualTo("DELETE")
+    }
+
+    @Test
+    fun `cancelOrder returns empty string and logs on HTTP 404`() {
+        server.enqueue(MockResponse().setResponseCode(404).setBody("""{"error":"not found"}"""))
+        val body = client.cancelOrder(ticket = 999L)
+        assertThat(body).isEmpty()
+    }
+
+    @Test
+    fun `modifyOrder issues PUT with json body and parses the result`() {
+        server.enqueue(
+            MockResponse().setBody(
+                """{"result":{"retcode":10009,"order":42,"deal":0,"price":"1.1075","comment":"ok"}}""",
+            ),
+        )
+        val resp =
+            client.modifyOrder(
+                ticket = 42L,
+                mods = MT5OrderModification(price = BigDecimal("1.1075")),
+            )
+        assertThat(resp.result.retcode).isEqualTo(10009)
+        val recorded = server.takeRequest()
+        assertThat(recorded.path).isEqualTo("/orders/42")
+        assertThat(recorded.method).isEqualTo("PUT")
+        assertThat(recorded.body.readUtf8()).contains("\"price\":1.1075")
+    }
+
+    @Test
+    fun `getTick hits symbol_info_tick and converts the venue epoch to utc`() {
+        val serverEpoch = 1_700_000_000L
+        val serverEpochMs = 1_700_000_000_123L
+        server.enqueue(
+            MockResponse().setBody(
+                """{"bid":"4561.510","ask":"4561.818","time":$serverEpoch,"time_msc":$serverEpochMs}""",
+            ),
+        )
+        val tick = client.getTick("XAUUSDm")!!
+        assertThat(tick.bid).isEqualByComparingTo("4561.510")
+        assertThat(tick.ask).isEqualByComparingTo("4561.818")
+        assertThat(tick.time).isEqualTo(serverEpoch - 2 * 3600L)
+        assertThat(tick.timeMs).isEqualTo(serverEpochMs - 2 * 3_600_000L)
+        val recorded = server.takeRequest()
+        assertThat(recorded.path).isEqualTo("/symbol_info_tick/XAUUSDm")
+    }
+
+    @Test
+    fun `getTicksRange converts millisecond timestamps to utc and keeps bid ask`() {
+        server.enqueue(
+            MockResponse().setBody(
+                """{"ok":true,"data":[{"bid":"1.10001","ask":"1.10009","time":1700000000,"time_msc":1700000000123}]}""",
+            ),
+        )
+
+        val ticks = client.getTicksRange("EURUSDm", 1_700_000_000_000L, 1_700_000_001_000L)!!
+
+        assertThat(ticks).hasSize(1)
+        assertThat(ticks.single().bid).isEqualByComparingTo("1.10001")
+        assertThat(ticks.single().ask).isEqualByComparingTo("1.10009")
+        assertThat(ticks.single().timeMs).isEqualTo(1_700_000_000_123L - 2 * 3_600_000L)
+        assertThat(server.takeRequest().path)
+            .startsWith("/copy_ticks_range?symbol=EURUSDm")
+            .contains("from_date=2023-11-14T22%3A13%3A20Z")
+            .contains("to_date=2023-11-14T22%3A13%3A21Z")
+    }
+
+    @Test
+    fun `isReady returns true on 200`() {
+        server.enqueue(MockResponse().setResponseCode(200).setBody("""{"status":"ready","ok":true}"""))
+        assertThat(client.isReady()).isTrue
+        assertThat(server.takeRequest().path).isEqualTo("/health/ready")
+    }
+
+    @Test
+    fun `isReady returns false on 5xx`() {
+        server.enqueue(MockResponse().setResponseCode(503))
+        assertThat(client.isReady()).isFalse
+    }
+
+    private val pendingOrderJson =
+        """{"ticket":7,"symbol":"XAUUSDm","type":"BUY_STOP","volume":"0.1","price_open":"4700.0","sl":"4682.0","tp":"4712.0","magic":10001,"time_setup":1700000000,"time_expiration":1700000600,"comment":"x","client_order_id":"placement-7"}"""
+
+    @Test
+    fun `getPendingOrders parses a wrapped orders object`() {
+        server.enqueue(MockResponse().setBody("""{"orders":[$pendingOrderJson],"total":1}"""))
+        val orders = client.getPendingOrders(magic = 10001)!!
+        assertThat(orders).hasSize(1)
+        assertThat(orders[0].ticket).isEqualTo(7L)
+        assertThat(orders[0].symbol).isEqualTo("XAUUSDm")
+        assertThat(orders[0].clientOrderId).isEqualTo("placement-7")
+    }
+
+    @Test
+    fun `getPendingOrders parses a bare array`() {
+        server.enqueue(MockResponse().setBody("""[$pendingOrderJson]"""))
+        val orders = client.getPendingOrders(magic = 10001)!!
+        assertThat(orders).hasSize(1)
+        assertThat(orders[0].ticket).isEqualTo(7L)
+    }
+
+    @Test
+    fun `getPendingOrders parses the current data envelope`() {
+        server.enqueue(MockResponse().setBody("""{"ok":true,"data":[$pendingOrderJson]}"""))
+        assertThat(client.getPendingOrders()).hasSize(1)
+    }
+
+    @Test
+    fun `sibling clients share cached pending-order snapshots and filter magic locally`() {
+        val readCache = MT5ReadCache(ttlMs = 60_000L)
+        val clientA = cachedClient(readCache)
+        val clientB = cachedClient(readCache)
+        val other =
+            pendingOrderJson
+                .replace("\"ticket\":7", "\"ticket\":8")
+                .replace("\"magic\":10001", "\"magic\":10002")
+        server.enqueue(MockResponse().setBody("""{"orders":[$pendingOrderJson,$other],"total":2}"""))
+
+        assertThat(clientA.getPendingOrders(magic = 10001)!!.map { it.ticket }).containsExactly(7L)
+        assertThat(clientB.getPendingOrders(magic = 10002)!!.map { it.ticket }).containsExactly(8L)
+        assertThat(server.requestCount).isEqualTo(1)
+        assertThat(server.takeRequest().path).isEqualTo("/orders")
+    }
+
+    @Test
+    fun `getDeals converts venue epochs so a deal lands inside the utc window it was asked for`() {
+        val nowUtc = 1_700_000_000_000L
+        val serverStamped = nowUtc + 2 * 3_600_000L
+        server.enqueue(
+            MockResponse().setBody(
+                """[{"ticket":9,"order":8,"position_id":7,"symbol":"XAUUSDm","type":1,"entry":1,"volume":"0.1","price":"2000","profit":"5","commission":"0","swap":"0","fee":"0","magic":10001,"comment":"[tp 2000]","time":${serverStamped / 1000},"time_msc":$serverStamped}]""",
+            ),
+        )
+        val deals = client.getDeals(nowUtc - 60_000L, nowUtc)!!
+        assertThat(deals).hasSize(1)
+        assertThat(deals[0].timeMs).isEqualTo(nowUtc)
+        assertThat(deals[0].timeMs).isBetween(nowUtc - 60_000L, nowUtc)
+        // The request window itself is still expressed in venue time on the wire.
+        assertThat(server.takeRequest().path).contains("to_date=2023-11-15T00")
+    }
+
+    @Test
+    fun `pending order setup and expiration epochs keep their unit after conversion`() {
+        val serverSeconds = 1_700_000_000L
+        server.enqueue(
+            MockResponse().setBody(
+                """[{"ticket":3,"symbol":"EURUSDm","type":"BUY_LIMIT","volume":"0.1","price_open":"1.1","sl":"0","tp":"0","magic":10001,"time_setup":$serverSeconds,"time_expiration":${serverSeconds + 3600},"comment":"c"}]""",
+            ),
+        )
+        val orders = client.getPendingOrders(magic = 10001)!!
+        assertThat(orders).hasSize(1)
+        assertThat(orders[0].timeSetup).isEqualTo(serverSeconds - 2 * 3600L)
+        assertThat(orders[0].timeExpiration).isEqualTo(serverSeconds + 3600L - 2 * 3600L)
+    }
+
+    @Test
+    fun `utc venue epochs are untouched`() {
+        val utcClient =
+            MT5Client(
+                gatewayUrl = server.url("/").toString().trimEnd('/'),
+                serverTimeZone = MT5ServerTimeZone.UTC,
+                retryAttempts = 0,
+            )
+        val epochMs = 1_700_000_000_000L
+        server.enqueue(
+            MockResponse().setBody(
+                """[{"ticket":1,"symbol":"EURUSDm","type":0,"volume":"0.1","price_open":"1.1","sl":"0","tp":"0","profit":"0","magic":10001,"time_msc":$epochMs,"comment":"x"}]""",
+            ),
+        )
+        assertThat(utcClient.getPositions(magic = 10001)!![0].openTime).isEqualTo(epochMs)
+    }
+
+    private fun cachedClient(readCache: MT5ReadCache): MT5Client =
+        MT5Client(
+            gatewayUrl = server.url("/").toString().trimEnd('/'),
+            serverTimeZone = MT5ServerTimeZone.UTC,
+            retryAttempts = 0,
+            readCache = readCache,
+        )
+
+    @Test
+    fun `configured api key authenticates readiness and data requests`() {
+        client =
+            MT5Client(
+                gatewayUrl = server.url("/").toString().trimEnd('/'),
+                serverTimeZone = MT5ServerTimeZone.UTC,
+                retryAttempts = 0,
+                apiKey = "secret-token",
+            )
+        server.enqueue(MockResponse().setBody("""{"status":"ready"}"""))
+        assertThat(client.isReady()).isTrue
+        assertThat(server.takeRequest().getHeader("Authorization")).isEqualTo("Bearer secret-token")
+    }
+
+    @Test
+    fun `getPendingOrders returns empty for an object without orders`() {
+        server.enqueue(MockResponse().setBody("""{"total":0}"""))
+        assertThat(client.getPendingOrders(magic = 10001)).isEmpty()
+    }
+
+    @Test
+    fun `state reads return null on gateway failure, not empty`() {
+        // null = "could not read" so pollers can tell an outage apart from a genuinely
+        // flat account — an outage must never read as "all closed / all cancelled".
+        server.enqueue(MockResponse().setResponseCode(500).setBody("boom"))
+        assertThat(client.getPositions(magic = 10001)).isNull()
+        server.enqueue(MockResponse().setResponseCode(500).setBody("boom"))
+        assertThat(client.getPendingOrders(magic = 10001)).isNull()
+    }
+
+    @Test
+    fun `getSymbolInfo parses volume rules and basic price metadata`() {
+        server.enqueue(
+            MockResponse().setBody(
+                """{"ask":4561.818,"bid":4561.51,"digits":3,"point":0.001,""" +
+                    """"trade_stops_level":0,"trade_freeze_level":25,"volume_min":0.01,""" +
+                    """"volume_step":0.01,"volume_max":50,""" +
+                    """"trade_contract_size":100.0}""",
+            ),
+        )
+        val info = client.getSymbolInfo("XAUUSDm")!!
+        assertThat(info.volumeStep).isEqualByComparingTo("0.01")
+        assertThat(info.volumeMin).isEqualByComparingTo("0.01")
+        assertThat(info.volumeMax).isEqualByComparingTo("50")
+        assertThat(info.point).isEqualByComparingTo("0.001")
+        assertThat(info.digits).isEqualTo(3)
+        assertThat(info.tradeFreezeLevel).isEqualTo(25)
+        assertThat(info.contractSize).isEqualByComparingTo("100")
+        val recorded = server.takeRequest()
+        assertThat(recorded.path).isEqualTo("/symbol_info/XAUUSDm")
+    }
+
+    @Test
+    fun `getSymbolInfo defaults contractSize to 1 when missing`() {
+        server.enqueue(
+            MockResponse().setBody(
+                """{"ask":1.1,"bid":1.0999,"digits":5,"point":0.00001,""" +
+                    """"trade_stops_level":0,"volume_min":0.01,"volume_step":0.01}""",
+            ),
+        )
+        val info = client.getSymbolInfo("FOO")!!
+        assertThat(info.contractSize).isEqualByComparingTo("1")
+    }
+
+    @Test
+    fun `getPendingOrders survives a transient row missing ticket and price_open`() {
+        // Gateway has been observed emitting partially-populated rows mid-placement;
+        // before defensive parsing, every poll during a rejection cycle killed the poller.
+        server.enqueue(
+            MockResponse().setBody(
+                """[{"ticket":7,"symbol":"XAUUSDm","type":"BUY_STOP","volume":"0.1",""" +
+                    """"price_open":"4700.0","sl":"0","tp":"0","magic":10001,""" +
+                    """"time_setup":1700000000,"time_expiration":0,"comment":"good"},""" +
+                    """{"symbol":"XAUUSDm","type":"BUY_STOP","magic":10001}]""",
+            ),
+        )
+        val orders = client.getPendingOrders(magic = 10001)!!
+        assertThat(orders).hasSize(2)
+        assertThat(orders[0].ticket).isEqualTo(7L)
+        assertThat(orders[1].ticket).isEqualTo(0L)
+        assertThat(orders[1].priceOpen).isEqualByComparingTo("0")
+    }
+
+    @Test
+    fun `getSymbolInfo returns null when gateway returns 404`() {
+        server.enqueue(MockResponse().setResponseCode(404).setBody(""))
+        assertThat(client.getSymbolInfo("UNKNOWN")).isNull()
+    }
+
+    @Test
+    fun `getAccount parses margin mode and flags hedging`() {
+        // Real Exness demo /account shape (login 435898347): margin_mode 2 = RETAIL_HEDGING.
+        server.enqueue(
+            MockResponse().setBody(
+                """{"balance":2390.91,"equity":1895.99,"currency":"USD","leverage":100,"margin_mode":2,"login":435898347,"server":"Exness-MT5Trial9","trade_mode":0}""",
+            ),
+        )
+        val acct = client.getAccount()!!
+        assertThat(acct.marginMode).isEqualTo(2)
+        assertThat(acct.isHedging).isTrue
+        assertThat(acct.balance).isEqualByComparingTo("2390.91")
+        assertThat(acct.equity).isEqualByComparingTo("1895.99")
+        assertThat(acct.currency).isEqualTo("USD")
+        assertThat(acct.leverage).isEqualTo(100)
+        assertThat(acct.login).isEqualTo(435898347L)
+        assertThat(acct.server).isEqualTo("Exness-MT5Trial9")
+        assertThat(acct.tradeMode).isEqualTo(MT5TradeMode.DEMO.wireValue)
+        val recorded = server.takeRequest()
+        assertThat(recorded.path).isEqualTo("/account")
+        assertThat(recorded.method).isEqualTo("GET")
+    }
+
+    @Test
+    fun `getAccount reads a netting account as not hedging`() {
+        server.enqueue(
+            MockResponse().setBody(
+                """{"balance":1000.0,"equity":1000.0,"currency":"USD","leverage":500,"margin_mode":0}""",
+            ),
+        )
+        val acct = client.getAccount()!!
+        assertThat(acct.marginMode).isEqualTo(0)
+        assertThat(acct.isHedging).isFalse
+    }
+
+    @Test
+    fun `getAccount returns null on gateway failure`() {
+        server.enqueue(MockResponse().setResponseCode(500))
+        assertThat(client.getAccount()).isNull()
+    }
+
+    @Test
+    fun `shared read cache collapses account snapshots and writes invalidate it`() {
+        client =
+            MT5Client(
+                gatewayUrl = server.url("/").toString().trimEnd('/'),
+                serverTimeZone = MT5ServerTimeZone.UTC,
+                retryAttempts = 0,
+                readCache = MT5ReadCache(ttlMs = 60_000L),
+            )
+        val account =
+            """{"balance":1000.0,"equity":1000.0,"currency":"USD","leverage":100,"margin_mode":2}"""
+        server.enqueue(MockResponse().setBody(account))
+
+        assertThat(client.getAccount()).isNotNull
+        assertThat(client.getAccount()).isNotNull
+        assertThat(server.requestCount).isEqualTo(1)
+
+        server.enqueue(
+            MockResponse().setBody(
+                """{"result":{"retcode":10009,"order":1,"deal":1,"price":"1.0","comment":"ok"}}""",
+            ),
+        )
+        client.placeOrder(
+            MT5OrderRequest(
+                symbol = "EURUSDm",
+                volume = BigDecimal("0.01"),
+                type = "BUY",
+                magic = 10001,
+                comment = "cache-test",
+            ),
+        )
+        server.enqueue(MockResponse().setBody(account))
+        assertThat(client.getAccount()).isNotNull
+        assertThat(server.requestCount).isEqualTo(3)
+    }
+
+    @Test
+    fun `closePosition posts the ticket and parses the close deal`() {
+        server.enqueue(
+            MockResponse().setBody(
+                """{"result":{"retcode":10009,"order":0,"deal":555,"price":"2000.5","comment":"ok"}}""",
+            ),
+        )
+        val resp = client.closePosition(ticket = 2814861313L)
+        assertThat(resp.result.retcode).isEqualTo(10009)
+        assertThat(resp.result.deal).isEqualTo(555L)
+        val recorded = server.takeRequest()
+        assertThat(recorded.path).isEqualTo("/close_position")
+        assertThat(recorded.method).isEqualTo("POST")
+        assertThat(recorded.body.readUtf8()).isEqualTo("""{"position":{"ticket":2814861313}}""")
+    }
+
+    @Test
+    fun `closePosition includes volume for a partial close`() {
+        server.enqueue(
+            MockResponse().setBody(
+                """{"result":{"retcode":10009,"order":0,"deal":1,"price":"2000","comment":"ok"}}""",
+            ),
+        )
+        client.closePosition(ticket = 42L, volume = BigDecimal("0.10"))
+        assertThat(server.takeRequest().body.readUtf8()).isEqualTo("""{"position":{"ticket":42,"volume":0.10}}""")
+    }
+
+    @Test
+    fun `closePosition surfaces the gateway error envelope as a failed result`() {
+        // Confirmed prod shape for a bad ticket: {"error":...,"error_type":"validation_error",...}
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(400)
+                .setBody("""{"error":"Failed to close position","error_type":"validation_error"}"""),
+        )
+        val resp = client.closePosition(ticket = 1L)
+        assertThat(isOrderSuccessful(resp.result.retcode)).isFalse
+        assertThat(resp.errorMessage).contains("Failed to close position")
+    }
+
+    @Test
+    fun `modifyPosition posts position sl tp and parses the result`() {
+        server.enqueue(
+            MockResponse().setBody(
+                """{"message":"SL/TP modified","result":{"retcode":10009,"order":0,"deal":0,"price":"0","comment":"ok"}}""",
+            ),
+        )
+        val resp = client.modifyPosition(ticket = 424242L, sl = BigDecimal("1.0950"), tp = BigDecimal("1.1100"))
+        assertThat(resp.result.retcode).isEqualTo(10009)
+        val recorded = server.takeRequest()
+        assertThat(recorded.path).isEqualTo("/modify_sl_tp")
+        assertThat(recorded.method).isEqualTo("POST")
+        assertThat(recorded.body.readUtf8()).isEqualTo("""{"position":424242,"sl":1.0950,"tp":1.1100}""")
+    }
+
+    @Test
+    fun `modifyPositionAsync delivers result without a caller-thread round trip`() {
+        server.enqueue(
+            MockResponse().setBody(
+                """{"message":"SL/TP modified","result":{"retcode":10009,"order":0,"deal":0,"price":"0","comment":"ok"}}""",
+            ),
+        )
+        val latch = java.util.concurrent.CountDownLatch(1)
+        val result =
+            java.util.concurrent.atomic
+                .AtomicReference<MT5OrderResponse>()
+
+        client.modifyPositionAsync(424242L, BigDecimal("1.0950"), BigDecimal("1.1100")) { response ->
+            result.set(response)
+            latch.countDown()
+        }
+
+        assertThat(latch.await(2, java.util.concurrent.TimeUnit.SECONDS)).isTrue
+        assertThat(result.get().result.retcode).isEqualTo(10009)
+        val recorded = server.takeRequest()
+        assertThat(recorded.path).isEqualTo("/modify_sl_tp")
+        assertThat(recorded.body.readUtf8()).isEqualTo("""{"position":424242,"sl":1.0950,"tp":1.1100}""")
+    }
+
+    @Test
+    fun `modifyPosition surfaces a gateway failure`() {
+        server.enqueue(MockResponse().setResponseCode(400).setBody("""{"error":"Position 1 not found"}"""))
+        val resp = client.modifyPosition(ticket = 1L, sl = BigDecimal("1.0"))
+        assertThat(isOrderSuccessful(resp.result.retcode)).isFalse
+        assertThat(resp.errorMessage).contains("not found")
+    }
+
+    @Test
+    fun `getPositionDeals locally enforces the requested position ticket`() {
+        server.enqueue(
+            MockResponse().setBody(
+                """[{"ticket":901,"order":801,"position_id":7001,"symbol":"XAUUSDm","type":0,"entry":0,""" +
+                    """"volume":"0.10","price":"2300.0","profit":"0","commission":"-0.70",""" +
+                    """"time_msc":1700040000000},""" +
+                    """{"ticket":902,"order":802,"position_id":8002,"symbol":"GBPUSDm","type":1,"entry":1,""" +
+                    """"volume":"50","price":"1.0","profit":"999999","commission":"-5000",""" +
+                    """"time_msc":1700045000000},""" +
+                    """{"ticket":903,"order":803,"position_id":7001,"symbol":"XAUUSDm","type":1,"entry":1,""" +
+                    """"volume":"0.04","price":"2299.0","profit":"-4","commission":"-0.28",""" +
+                    """"time_msc":1700050000000},""" +
+                    """{"ticket":904,"order":804,"position_id":7001,"symbol":"XAUUSDm","type":1,"entry":1,""" +
+                    """"volume":"0.06","price":"2301.0","profit":"6","commission":"-0.42","time_msc":1700051000000}]""",
+            ),
+        )
+
+        val deals = client.getPositionDeals(7001L, 1_700_000_000_000L, 1_700_086_400_000L)!!
+
+        assertThat(deals.map { it.ticket }).containsExactly(901L, 903L, 904L)
+        assertThat(deals.map { it.positionTicket }).containsOnly(7001L)
+        val recorded = server.takeRequest()
+        assertThat(recorded.path).contains("position=7001")
+    }
+
+    @Test
+    fun `getDeals fetches a range without a position filter and parses every field`() {
+        server.enqueue(
+            MockResponse().setBody(
+                """[{"ticket":456,"order":789,"position_id":123,"symbol":"XAUUSDm","type":0,"entry":0,""" +
+                    """"volume":"0.01","price":"2300.5","profit":"0","commission":"-0.07","swap":"0",""" +
+                    """"fee":"0","magic":10001,"comment":"dsl-hedge_straddle","time_msc":1700040000000},""" +
+                    """{"ticket":457,"order":790,"position_id":123,"symbol":"XAUUSDm","type":1,"entry":1,""" +
+                    """"volume":"0.01","price":"2310.2","profit":"9.7","commission":"-0.07","swap":"-0.12",""" +
+                    """"fee":"0","magic":10001,"comment":"dsl-hedge_straddle","reason":5,""" +
+                    """"time_msc":1700050000000}]""",
+            ),
+        )
+        val deals = client.getDeals(fromUtcMs = 1_700_000_000_000L, toUtcMs = 1_700_086_400_000L)!!
+        assertThat(deals).hasSize(2)
+        val opened = deals[0]
+        assertThat(opened.ticket).isEqualTo(456L)
+        assertThat(opened.orderTicket).isEqualTo(789L)
+        assertThat(opened.positionTicket).isEqualTo(123L)
+        assertThat(opened.symbol).isEqualTo("XAUUSDm")
+        assertThat(opened.type).isEqualTo(0)
+        assertThat(opened.entry).isEqualTo(0)
+        assertThat(opened.volume).isEqualByComparingTo("0.01")
+        assertThat(opened.price).isEqualByComparingTo("2300.5")
+        assertThat(opened.timeMs).isEqualTo(1_700_040_000_000L - 2 * 3_600_000L)
+        val closed = deals[1]
+        assertThat(closed.entry).isEqualTo(1)
+        assertThat(closed.profit).isEqualByComparingTo("9.7")
+        assertThat(closed.commission).isEqualByComparingTo("-0.07")
+        assertThat(closed.swap).isEqualByComparingTo("-0.12")
+        assertThat(closed.fee).isEqualByComparingTo("0")
+        assertThat(closed.magic).isEqualTo(10001)
+        assertThat(closed.comment).isEqualTo("dsl-hedge_straddle")
+        assertThat(closed.reason).isEqualTo(5)
+        assertThat(closed.timeMs).isEqualTo(1_700_050_000_000L - 2 * 3_600_000L)
+        val recorded = server.takeRequest()
+        assertThat(recorded.method).isEqualTo("GET")
+        // Range bounds go on the wire as venue-clock ISO instants (UTC + 2h offset).
+        assertThat(recorded.path).isEqualTo(
+            "/history_deals_get?from_date=2023-11-15T00:13:20Z&to_date=2023-11-16T00:13:20Z",
+        )
+        assertThat(recorded.path).doesNotContain("position")
+    }
+
+    @Test
+    fun `getDeals returns null on gateway failure, not empty`() {
+        // null = "could not read" — a backfill that reads an outage as "no deals"
+        // would silently skip history instead of retrying next cycle.
+        server.enqueue(MockResponse().setResponseCode(500).setBody("boom"))
+        assertThat(client.getDeals(fromUtcMs = 0L, toUtcMs = 1L)).isNull()
+    }
+
+    @Test
+    fun `getAccount parses margin and open profit`() {
+        server.enqueue(
+            MockResponse().setBody(
+                """{"balance":7824.05,"equity":7676.54,"currency":"USD","leverage":100,"margin_mode":2,""" +
+                    """"margin":540.97,"margin_free":7135.57,"margin_level":1419.03,"profit":-147.51}""",
+            ),
+        )
+        val acct = client.getAccount()!!
+        assertThat(acct.margin).isEqualByComparingTo("540.97")
+        assertThat(acct.profit).isEqualByComparingTo("-147.51")
+    }
+
+    @Test
+    fun `getAccount leaves margin and profit null when the gateway omits them`() {
+        server.enqueue(
+            MockResponse().setBody(
+                """{"balance":1000.0,"equity":1000.0,"currency":"USD","leverage":500,"margin_mode":0}""",
+            ),
+        )
+        val acct = client.getAccount()!!
+        assertThat(acct.margin).isNull()
+        assertThat(acct.profit).isNull()
+    }
+
+    @Test
+    fun `modifyPosition treats venue NO_CHANGES as idempotent success`() {
+        server.enqueue(
+            MockResponse().setResponseCode(400).setBody(
+                """{"error": "Modify SL/TP failed: No changes", "error_type": "mt5_rejected", """ +
+                    """"mt5_error": {"comment": "No changes", "retcode": 10025, "retcode_name": "NO_CHANGES"}, """ +
+                    """"ok": false}""",
+            ),
+        )
+        val resp = client.modifyPosition(42L, sl = BigDecimal("1.17035"), tp = BigDecimal("1.16135"))
+        assertThat(resp.result.retcode).isEqualTo(MT5_TRADE_RETCODE_DONE)
+        assertThat(resp.errorMessage).isNull()
+    }
+
+    @Test
+    fun `modifyPositionAsync treats venue NO_CHANGES as idempotent success`() {
+        server.enqueue(
+            MockResponse().setResponseCode(400).setBody(
+                """{"error": "Modify SL/TP failed: No changes", "error_type": "mt5_rejected", """ +
+                    """"mt5_error": {"comment": "No changes", "retcode": 10025, "retcode_name": "NO_CHANGES"}, """ +
+                    """"ok": false}""",
+            ),
+        )
+        val results = java.util.concurrent.LinkedBlockingQueue<MT5OrderResponse>()
+        client.modifyPositionAsync(42L, sl = BigDecimal("1.17035")) { results.add(it) }
+        val resp =
+            results.poll(5, java.util.concurrent.TimeUnit.SECONDS)
+                ?: error("no async result")
+        assertThat(resp.result.retcode).isEqualTo(MT5_TRADE_RETCODE_DONE)
+        assertThat(resp.errorMessage).isNull()
+    }
+
+    @Test
+    fun `modifyPosition still rejects real venue errors`() {
+        server.enqueue(
+            MockResponse().setResponseCode(400).setBody(
+                """{"error": "Modify SL/TP failed: Invalid stops", "error_type": "mt5_rejected", """ +
+                    """"mt5_error": {"comment": "Invalid stops", "retcode": 10016}, """ +
+                    """"ok": false}""",
+            ),
+        )
+        val resp = client.modifyPosition(42L, sl = BigDecimal("1.0"))
+        assertThat(resp.result.retcode).isNotEqualTo(MT5_TRADE_RETCODE_DONE)
+        assertThat(resp.errorMessage).contains("HTTP 400")
+    }
+}

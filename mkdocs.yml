@@ -147,6 +147,7 @@ nav:
       - Architecture: concepts/architecture.md
       - Determinism: concepts/determinism.md
       - Broker integration: concepts/broker-integration.md
+      - Order management: concepts/order-management.md
       - Why qkt vs alternatives: concepts/why-qkt.md
   - Backtesting:
       - How a backtest runs: concepts/backtest-model.md
@@ -200,9 +201,10 @@ nav:
       - contributing/index.md
       - Development setup: contributing/development-setup.md
       - Conventions: contributing/conventions.md
+      - Code structure: contributing/code-structure.md
       - KDoc style: contributing/kdoc-style.md
       - Phase workflow: contributing/phase-workflow.md
-      - Adding a broker: contributing/adding-a-broker.md
+      - Adding a connector: contributing/adding-a-broker.md
       - Stress tests: contributing/stress-tests.md
       - Release changelogs:
           - phases/index.md

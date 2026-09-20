@@ -504,7 +504,9 @@ This section will grow when Phase 5 begins.
 
 ## 13. Code style
 
-- **File size: aim for under 150 lines per source file.** Tests may exceed by ~10% if the alternative is splitting a tightly coupled test class. Anything over 200 lines needs a refactor.
+- **File size: aim for under 150 lines per source file; 200 is the hard limit** (tests 220, build scripts 200). `./gradlew checkFileSize` enforces it in `check`, so CI fails on a violation. Files over the limit when the rule landed are listed in `config/file-size-baseline.txt` and may only shrink: never add code to a baselined file. Extract the area you touch first, then run `./gradlew updateFileSizeBaseline` to lower its entry. Nobody raises an entry.
+- **Structure models the domain.** Package by domain object (order, bracket, position, account, venue), not by layer. Name each file for the one thing it holds; if the name needs "And", "Manager", "Helper", "Utils" or "Misc", the file holds two things. Split large classes along the state they own (each group of fields that changes together becomes a collaborator the owner delegates to), never by position (`FooPart2.kt`, extension files that spread one class's privates). Refactor commits move code only; engine-path refactors prove byte-identical backtest output against the pre-refactor jar. Full standard and the refactoring procedure: [`docs/contributing/code-structure.md`](../../../docs/contributing/code-structure.md).
+- **Build scripts follow the same rules.** The root `build.gradle.kts` declares plugins, dependencies and plugin settings only; task wiring lives in `build-logic/` convention plugins, one per concern.
 - **One top-level concept per file** — exception: tightly coupled types like `MarketPriceProvider` (interface) + `MarketPriceTracker` (impl), or a sealed class with its variants.
 - **File names match the primary type.** `Order.kt` for `data class Order`. Lowercase package directories.
 - **Imports.** No wildcard imports (`import java.util.*`). Group: stdlib, then third-party, then project. Most IDEs handle this automatically.

@@ -12,7 +12,7 @@ import org.slf4j.LoggerFactory
  * Inputs:
  *   - The previously persisted [PersistedLegBook] for `(strategyId, symbol)`, if any.
  *   - The broker's view of open positions on `symbol`, recovered via the broker's
- *     state-recovery path (e.g. [com.qkt.broker.mt5.MT5StateRecovery]).
+ *     state-recovery path (e.g. [com.qkt.connector.mt5.MT5StateRecovery]).
  *
  * Output: an [Outcome] the deploy path uses to decide how to proceed. See [reconcile].
  */

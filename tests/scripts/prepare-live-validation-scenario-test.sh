@@ -141,6 +141,31 @@ jq -e '
 ' "$gbp_out/expected.json" >/dev/null
 (cd "$gbp_out" && sha256sum --check SHA256SUMS >/dev/null)
 
+# A 24/7 scenario runs while FX is closed: crypto trading hours, and its own reference stream.
+btc_out="$tmp/btc-scenario"
+bash "$script" \
+    --output "$btc_out" \
+    --id validation_btc \
+    --gateway-url http://127.0.0.1:5001 \
+    --expected-login 436804390 \
+    --expected-server Exness-MT5Trial9 \
+    --expected-balance 100000.22 \
+    --expected-leverage 500 \
+    --magic 917009 \
+    --symbol BTCUSD >/dev/null
+btc_armed="$btc_out/strategies/armed/validation_btc_market_bracket.qkt"
+grep -F 'asset1 = EXNESS:BTCUSD EVERY 1m WARMUP 10 BARS' "$btc_armed" >/dev/null
+grep -F 'STOP LOSS BY 1500.00, TAKE PROFIT BY 3000.00' "$btc_armed" >/dev/null
+grep -F '"BTC*": crypto' "$btc_out/qkt.config.yaml" >/dev/null
+jq -e '
+    .armedScenario.symbol == "EXNESS:BTCUSD" and
+    .armedScenario.venueSymbol == "BTCUSDm" and
+    .armedScenario.expectedContractSize == "1" and
+    (.readOnlyStreams | all(.symbol == "EXNESS:BTCUSD"))
+' "$btc_out/expected.json" >/dev/null
+(cd "$btc_out" && sha256sum --check SHA256SUMS >/dev/null)
+! grep -F 'calendars:' "$gbp_out/qkt.config.yaml" >/dev/null
+
 xau_out="$tmp/xau-scenario"
 bash "$script" \
     --output "$xau_out" \

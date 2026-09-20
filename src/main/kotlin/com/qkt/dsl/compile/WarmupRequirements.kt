@@ -1,51 +1,21 @@
 package com.qkt.dsl.compile
 
-import com.qkt.dsl.ast.ActionAst
-import com.qkt.dsl.ast.ActionOpts
 import com.qkt.dsl.ast.Aggregate
 import com.qkt.dsl.ast.Between
 import com.qkt.dsl.ast.BinaryOp
-import com.qkt.dsl.ast.Block
-import com.qkt.dsl.ast.Buy
 import com.qkt.dsl.ast.CaseWhen
-import com.qkt.dsl.ast.ChildArmedTrail
-import com.qkt.dsl.ast.ChildAt
-import com.qkt.dsl.ast.ChildBy
-import com.qkt.dsl.ast.ChildPct
-import com.qkt.dsl.ast.ChildPriceAst
-import com.qkt.dsl.ast.ChildRr
 import com.qkt.dsl.ast.CmpOp
 import com.qkt.dsl.ast.Crosses
 import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.FuncCall
-import com.qkt.dsl.ast.Gtd
 import com.qkt.dsl.ast.InList
 import com.qkt.dsl.ast.IndicatorCall
 import com.qkt.dsl.ast.IsNull
-import com.qkt.dsl.ast.Limit
-import com.qkt.dsl.ast.NumLit
-import com.qkt.dsl.ast.OcoEntry
-import com.qkt.dsl.ast.OrderTypeAst
 import com.qkt.dsl.ast.Ref
 import com.qkt.dsl.ast.RuleAst
-import com.qkt.dsl.ast.Sell
 import com.qkt.dsl.ast.SinceTPast
-import com.qkt.dsl.ast.SizeNotional
-import com.qkt.dsl.ast.SizePctBalance
-import com.qkt.dsl.ast.SizePctEquity
-import com.qkt.dsl.ast.SizeQty
-import com.qkt.dsl.ast.SizeRiskAbs
-import com.qkt.dsl.ast.SizeRiskFrac
-import com.qkt.dsl.ast.SizeRiskFracOfBook
-import com.qkt.dsl.ast.SizingAst
-import com.qkt.dsl.ast.StackLayers
-import com.qkt.dsl.ast.StackSpacing
-import com.qkt.dsl.ast.Stop
-import com.qkt.dsl.ast.StopLimit
 import com.qkt.dsl.ast.StrategyAst
 import com.qkt.dsl.ast.StreamFieldRef
-import com.qkt.dsl.ast.TrailingBy
-import com.qkt.dsl.ast.TrailingPct
 import com.qkt.dsl.ast.UnaryOp
 import com.qkt.dsl.ast.WhenThen
 
@@ -118,114 +88,7 @@ object WarmupRequirements {
         // price computes garbage on a half-warm window exactly like one in the
         // condition. DEFAULTS merge first so `DEFAULTS { STOP_LOSS = BY ATR(...) }`
         // counts for every action it applies to.
-        walkAction(mergeDefaults(rule.action, ast.defaults), out)
-    }
-
-    private fun walkAction(
-        action: ActionAst,
-        out: MutableMap<String, Int>,
-    ) {
-        when (action) {
-            is Buy -> walkOpts(action.opts, out)
-            is Sell -> walkOpts(action.opts, out)
-            is Block -> action.actions.forEach { walkAction(it, out) }
-            is OcoEntry -> {
-                walkAction(action.leg1, out)
-                walkAction(action.leg2, out)
-            }
-            is com.qkt.dsl.ast.Resize -> {
-                walkSizing(action.target, out)
-                action.minStep?.let { walkExpr(it, out) }
-            }
-            else -> Unit
-        }
-    }
-
-    private fun walkOpts(
-        opts: ActionOpts,
-        out: MutableMap<String, Int>,
-    ) {
-        opts.sizing?.let { walkSizing(it, out) }
-        opts.times?.let { walkExpr(it, out) }
-        opts.orderType?.let { walkOrderType(it, out) }
-        opts.tif?.let { if (it is Gtd) walkExpr(it.until, out) }
-        opts.bracket?.stopLoss?.let { walkChildPrice(it, out) }
-        opts.bracket?.takeProfit?.let { walkChildPrice(it, out) }
-        opts.oco?.let {
-            walkChildPrice(it.stop, out)
-            walkChildPrice(it.limit, out)
-        }
-        when (val stack = opts.stack) {
-            is StackSpacing -> walkExpr(stack.spacing, out)
-            is StackLayers ->
-                for (layer in stack.layers) {
-                    walkSizing(layer.sizing, out)
-                    layer.orderType?.let { walkOrderType(it, out) }
-                    layer.at?.let { walkExpr(it, out) }
-                }
-            null -> Unit
-        }
-        for (tier in opts.stackAts) {
-            walkExpr(tier.mfeThreshold, out)
-            tier.maeRecoverDistance?.let { walkExpr(it, out) }
-            walkSizing(tier.sizing, out)
-            tier.bracket.stopLoss?.let { walkChildPrice(it, out) }
-            tier.bracket.takeProfit?.let { walkChildPrice(it, out) }
-        }
-        // OTO (ON_FILL) children warm the gate too — an indicator in a child's price computes
-        // garbage on a half-warm window exactly like one in the parent.
-        opts.onFill.forEach { walkAction(it, out) }
-        (opts.exitHooks.onStop + opts.exitHooks.onTakeProfit + opts.exitHooks.onClose)
-            .forEach { walkAction(it, out) }
-    }
-
-    private fun walkSizing(
-        sizing: SizingAst,
-        out: MutableMap<String, Int>,
-    ) {
-        when (sizing) {
-            is SizeQty -> walkExpr(sizing.expr, out)
-            is SizeNotional -> walkExpr(sizing.usd, out)
-            is SizeRiskAbs -> walkExpr(sizing.usd, out)
-            is SizeRiskFrac -> walkExpr(sizing.frac, out)
-            is SizeRiskFracOfBook -> walkExpr(sizing.frac, out)
-            is SizePctEquity -> walkExpr(sizing.frac, out)
-            is SizePctBalance -> walkExpr(sizing.frac, out)
-            else -> Unit
-        }
-    }
-
-    private fun walkOrderType(
-        ot: OrderTypeAst,
-        out: MutableMap<String, Int>,
-    ) {
-        when (ot) {
-            is Limit -> walkExpr(ot.price, out)
-            is Stop -> walkExpr(ot.price, out)
-            is StopLimit -> {
-                walkExpr(ot.stopPrice, out)
-                walkExpr(ot.limitPrice, out)
-            }
-            is TrailingBy -> walkExpr(ot.distance, out)
-            is TrailingPct -> walkExpr(ot.percent, out)
-            else -> Unit
-        }
-    }
-
-    private fun walkChildPrice(
-        cp: ChildPriceAst,
-        out: MutableMap<String, Int>,
-    ) {
-        when (cp) {
-            is ChildAt -> walkExpr(cp.price, out)
-            is ChildBy -> walkExpr(cp.distance, out)
-            is ChildPct -> walkExpr(cp.percent, out)
-            is ChildRr -> walkExpr(cp.multiplier, out)
-            is ChildArmedTrail -> {
-                walkExpr(cp.trailDistance, out)
-                walkExpr(cp.mfeThreshold, out)
-            }
-        }
+        visitActionExprs(mergeDefaults(rule.action, ast.defaults)) { walkExpr(it, out) }
     }
 
     private fun walkExpr(
@@ -235,7 +98,7 @@ object WarmupRequirements {
         when (expr) {
             is IndicatorCall -> {
                 val alias = aliasFor(expr)
-                val period = registryWarmupBars(expr, alias) ?: numLitMax(expr)
+                val period = registryWarmupBars(expr, alias?.let { timeframeMinutes.get()[it] }) ?: numLitMax(expr)
                 // An expression-fed window only starts filling once every indicator inside
                 // its series expression is defined: `percentile_rank(lag(o, 160) …, 160)`
                 // needs 161 + 160 closes on `o`, not the max of the two. The window advances
@@ -298,61 +161,6 @@ object WarmupRequirements {
             else -> Unit
         }
     }
-
-    /**
-     * The indicator's true warmup, read from a registry-built instance — exact for
-     * multi-window indicators where the max literal undercounts (MACD(12,26,9) is 34
-     * bars, HIGHEST(N) is N+1). Null when the call shape doesn't match the spec; the
-     * caller falls back to [numLitMax].
-     */
-    private fun registryWarmupBars(
-        call: IndicatorCall,
-        alias: String?,
-    ): Int? {
-        val spec =
-            com.qkt.dsl.stdlib.IndicatorRegistry
-                .spec(call.name) ?: return null
-        val consts =
-            call.args
-                .drop(spec.seriesCount)
-                .filterIsInstance<NumLit>()
-                .map { it.value }
-        if (consts.size != spec.arity - spec.seriesCount) return null
-        val registryBars =
-            runCatching {
-                com.qkt.dsl.stdlib.IndicatorRegistry
-                    .create(call.name, consts)
-                    .warmupBars
-            }.getOrNull()
-        val tfMinutes = alias?.let { timeframeMinutes.get()[it] } ?: return registryBars
-
-        fun barsForMinutes(minutes: Long): Int =
-            ((minutes + tfMinutes - 1) / tfMinutes + 1)
-                .coerceAtMost(Int.MAX_VALUE.toLong())
-                .toInt()
-        val timeAware =
-            when (call.name.uppercase()) {
-                "PIVOT_P", "PIVOT_R1", "PIVOT_S1",
-                "VWAP_SESSION", "VWAP_SESSION_STDEV",
-                "SESSION_RANGE_HIGH", "SESSION_RANGE_LOW",
-                "IB_DEFENDED_HIGH", "IB_DEFENDED_LOW",
-                -> barsForMinutes(1_440L)
-                "SESSION_MOMENTUM" -> consts.getOrNull(2)?.toLong()?.let { barsForMinutes(it * 1_440L) }
-                "SEASONAL_RANGE", "SEASONAL_RANGE_STDEV" ->
-                    consts.firstOrNull()?.toLong()?.let { barsForMinutes(it * 1_440L) }
-                "ANCHORED_RETURN" -> consts.firstOrNull()?.toLong()?.let(::barsForMinutes)
-                "REOPEN_GAP", "REOPEN_GAP_ORIGIN", "REOPEN_GAP_FILL" ->
-                    consts.firstOrNull()?.toLong()?.let { barsForMinutes(it * 60L) }
-                else -> null
-            }
-        return maxOf(registryBars ?: 0, timeAware ?: 0).takeIf { it > 0 }
-    }
-
-    private fun numLitMax(call: IndicatorCall): Int? =
-        call.args
-            .drop(1)
-            .filterIsInstance<NumLit>()
-            .maxOfOrNull { it.value.toInt() }
 
     private fun aliasFor(expr: ExprAst): String? =
         when (expr) {

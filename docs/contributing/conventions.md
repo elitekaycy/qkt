@@ -36,7 +36,7 @@ One concern per branch. Never commit directly to `main`.
 
 ## File size
 
-Aim for **< 150 lines per source file**. Split when it grows. Tests may run ~10% over if splitting would break a tight test class.
+Aim for **under 150 lines per source file**; 200 is the hard limit (tests 220), enforced by `./gradlew checkFileSize`. Files that predate the rule sit in a shrink-only baseline. See [code-structure.md](code-structure.md) for the full standard, including how to split a large class.
 
 ## Naming
 

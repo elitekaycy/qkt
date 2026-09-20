@@ -6,22 +6,25 @@ import com.qkt.bus.EventBus
 import com.qkt.candles.TimeWindow
 import com.qkt.common.FixedClock
 import com.qkt.common.MonotonicSequenceGenerator
-import com.qkt.common.TimeRange
 import com.qkt.common.TradingCalendar
 import com.qkt.dsl.compile.AstCompiler
 import com.qkt.dsl.parse.Dsl
 import com.qkt.dsl.parse.ParseResult
 import com.qkt.events.RiskEvent
 import com.qkt.events.RiskRejectedEvent
-import com.qkt.execution.Trade
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.NoopInstrumentRegistry
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
-import com.qkt.marketdata.TickFeed
 import com.qkt.marketdata.source.MarketRequest
-import com.qkt.marketdata.source.MarketSource
-import com.qkt.marketdata.source.MarketSourceCapability
+import com.qkt.parity.DslParityState.HaltState
+import com.qkt.parity.DslParityState.PnlState
+import com.qkt.parity.DslParityState.Snapshot
+import com.qkt.parity.DslParityState.TradeState
+import com.qkt.parity.DslParityState.number
+import com.qkt.parity.DslParityState.positionState
+import com.qkt.parity.DslParityState.rejectionState
+import com.qkt.parity.DslParityState.tradeState
 import com.qkt.risk.DailyDrawdownBasis
 import com.qkt.risk.DrawdownBasis
 import com.qkt.risk.HaltRule
@@ -35,53 +38,6 @@ import java.time.Duration
 import java.time.Instant
 
 internal object DslParityHarness {
-    data class TradeState(
-        val strategyId: String,
-        val orderId: String,
-        val symbol: String,
-        val side: String,
-        val quantity: String,
-        val price: String,
-        val timestamp: Long,
-        val realized: String,
-    )
-
-    data class PositionState(
-        val symbol: String,
-        val quantity: String,
-        val avgEntryPrice: String,
-        val openedAt: Long?,
-    )
-
-    data class PnlState(
-        val realized: String,
-        val unrealized: String,
-        val total: String,
-    )
-
-    data class HaltState(
-        val reason: String,
-        val strategyId: String?,
-        val timestamp: Long,
-    )
-
-    data class RejectionState(
-        val strategyId: String,
-        val symbol: String,
-        val side: String,
-        val quantity: String,
-        val reason: String,
-        val timestamp: Long,
-    )
-
-    data class Snapshot(
-        val trades: List<TradeState>,
-        val positions: List<PositionState>,
-        val pnl: PnlState,
-        val rejections: List<RejectionState>,
-        val halts: List<HaltState>,
-    )
-
     data class Result(
         val backtest: Snapshot,
         val live: Snapshot,
@@ -256,89 +212,4 @@ internal object DslParityHarness {
                     },
                 )
         }
-
-    private fun tradeState(
-        strategyId: String,
-        trade: Trade,
-        realized: BigDecimal,
-    ): TradeState =
-        TradeState(
-            strategyId = strategyId,
-            orderId = trade.orderId,
-            symbol = trade.symbol,
-            side = trade.side.name,
-            quantity = number(trade.quantity),
-            price = number(trade.price),
-            timestamp = trade.timestamp,
-            realized = number(realized),
-        )
-
-    private fun positionState(position: com.qkt.positions.Position): PositionState =
-        PositionState(
-            symbol = position.symbol,
-            quantity = number(position.quantity),
-            avgEntryPrice = number(position.avgEntryPrice),
-            openedAt = position.openedAt,
-        )
-
-    private fun rejectionState(event: RiskRejectedEvent): RejectionState =
-        RejectionState(
-            strategyId = event.request.strategyId,
-            symbol = event.request.symbol,
-            side = event.request.side.name,
-            quantity = number(event.request.quantity),
-            reason = event.reason,
-            timestamp = event.timestamp,
-        )
-
-    private fun number(value: BigDecimal): String = value.stripTrailingZeros().toPlainString()
-
-    private class TapeSource(
-        private val ticks: List<Tick>,
-        private val warmupCandles: List<Candle>,
-        private val warmupByStream: Map<WarmupStream, List<Candle>>,
-    ) : MarketSource {
-        override val name: String = "DslParityTape"
-        override val capabilities: Set<MarketSourceCapability> =
-            setOf(
-                MarketSourceCapability.TICKS,
-                MarketSourceCapability.LIVE_TICKS,
-                MarketSourceCapability.BARS,
-                MarketSourceCapability.VOLUME,
-            )
-
-        override fun supports(symbol: String): Boolean = true
-
-        override fun liveTicks(symbols: List<String>): TickFeed =
-            object : TickFeed {
-                private var index = 0
-
-                override fun next(): Tick? = if (index < ticks.size) ticks[index++] else null
-
-                override fun close() = Unit
-            }
-
-        override fun ticks(
-            symbol: String,
-            range: TimeRange,
-        ): Sequence<Tick> =
-            ticks.asSequence().filter {
-                it.symbol == symbol &&
-                    it.timestamp >= range.from.toEpochMilli() &&
-                    it.timestamp < range.to.toEpochMilli()
-            }
-
-        override fun bars(
-            symbol: String,
-            window: TimeWindow,
-            range: com.qkt.common.TimeRange,
-        ): Sequence<Candle> =
-            (warmupByStream[WarmupStream(symbol, window)] ?: warmupCandles)
-                .asSequence()
-                .filter {
-                    it.symbol == symbol &&
-                        it.startTime >= range.from.toEpochMilli() &&
-                        it.startTime < range.to.toEpochMilli()
-                }
-    }
 }

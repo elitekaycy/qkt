@@ -1,12 +1,11 @@
 package com.qkt.cli
 
-import com.qkt.broker.mt5.MT5BrokerProfile
-import com.qkt.broker.mt5.SymbolPolicy
 import com.qkt.candles.TimeWindow
 import com.qkt.common.TimeRange
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.TickFeed
+import com.qkt.marketdata.source.CachedHistoricalMarketSource
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.marketdata.source.MarketSourceCapability
 import org.assertj.core.api.Assertions.assertThat
@@ -34,22 +33,19 @@ class DaemonCommandSourceWiringTest {
     }
 
     @Test
-    fun `composite routes EXNESS prefix to Mt5MarketSource`() {
-        val exness =
-            MT5BrokerProfile(
-                name = "exness",
-                gatewayUrl = "http://example",
-                symbolPolicy = SymbolPolicy(suffix = "m"),
-                magic = 1,
-            )
-        val factory = MarketSourceFactory.composite(listOf(exness)) { StubFallback() }
+    fun `composite routes an mt5 account prefix to its feed`() {
+        val accounts = TestAccounts.directory(TestAccounts.mt5("exness", gatewayUrl = "http://example"))
+        val factory = MarketSourceFactory.composite(accounts.marketDataRoutes()) { StubFallback() }
         val composite = factory(emptyList())
         assertThat(composite.supports("EXNESS:XAUUSD")).isTrue
+        val (_, feed) = accounts.marketDataRoutes().single()
+        assertThat(feed).isInstanceOf(CachedHistoricalMarketSource::class.java)
     }
 
     @Test
-    fun `composite routes BYBIT_SPOT prefix unconditionally`() {
-        val factory = MarketSourceFactory.composite(emptyList()) { StubFallback() }
+    fun `composite routes BYBIT prefixes when bybit accounts are configured`() {
+        val accounts = TestAccounts.directory(TestAccounts.bybit("spot"), TestAccounts.bybit("linear"))
+        val factory = MarketSourceFactory.composite(accounts.marketDataRoutes(), source = "local")
         val composite = factory(emptyList())
         assertThat(composite.supports("BYBIT_SPOT:BTCUSDT")).isTrue
         assertThat(composite.supports("BYBIT_LINEAR:BTCUSDT")).isTrue
@@ -72,10 +68,10 @@ class DaemonCommandSourceWiringTest {
     }
 
     @Test
-    fun `with no MT5 profiles, EXNESS prefix delegates to fallback`() {
+    fun `with no accounts, EXNESS prefix delegates to fallback`() {
         val factory = MarketSourceFactory.composite(emptyList()) { StubFallback() }
         val composite = factory(emptyList())
-        // No MT5 routes registered; EXNESS: falls through to fallback (StubFallback)
+        // No account routes registered; EXNESS: falls through to fallback (StubFallback)
         // StubFallback.supports returns true so EXNESS:XAUUSD is accepted by the composite.
         assertThat(composite.supports("EXNESS:XAUUSD")).isTrue
     }
