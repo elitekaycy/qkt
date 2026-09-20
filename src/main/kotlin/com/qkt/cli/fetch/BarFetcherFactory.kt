@@ -1,11 +1,11 @@
 package com.qkt.cli.fetch
 
-import com.qkt.broker.mt5.MT5BrokerProfileLoader
-import com.qkt.broker.mt5.MT5DefaultProfiles
-import com.qkt.broker.mt5.MT5Symbol
 import com.qkt.cli.Config
-import com.qkt.marketdata.live.bybit.BybitKlineClient
-import com.qkt.marketdata.live.mt5.Mt5BarFetcher
+import com.qkt.connector.bybit.marketdata.BybitKlineClient
+import com.qkt.connector.mt5.MT5BrokerProfileLoader
+import com.qkt.connector.mt5.MT5DefaultProfiles
+import com.qkt.connector.mt5.MT5Symbol
+import com.qkt.connector.mt5.marketdata.Mt5BarFetcher
 import java.nio.file.Path
 
 /**

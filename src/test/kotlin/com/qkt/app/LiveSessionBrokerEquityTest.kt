@@ -1,6 +1,7 @@
 package com.qkt.app
 
 import com.qkt.broker.Broker
+import com.qkt.broker.BrokerFactory
 import com.qkt.broker.PaperBroker
 import com.qkt.candles.TimeWindow
 import com.qkt.common.FixedClock

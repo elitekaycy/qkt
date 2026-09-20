@@ -1,12 +1,26 @@
-# Adding a broker
+# Adding a connector
 
-This guide walks through implementing a new broker integration end-to-end. The two reference implementations in the codebase are `com.qkt.broker.mt5` (MetaTrader 5 via HTTP gateway, poll-based fill detection) and `com.qkt.broker.bybit` (Bybit REST + WebSocket, push-based fills). Read this guide alongside one of those — the patterns are intentionally regular.
+This guide walks through connecting qkt to a new venue technology end-to-end — a futures API, a
+crypto exchange, another trading platform. The two reference implementations are
+`com.qkt.connector.mt5` (MetaTrader 5 via HTTP gateway, poll-based fill detection) and
+`com.qkt.connector.bybit` (Bybit REST + WebSocket, push-based fills). Read this guide alongside one
+of those — the patterns are intentionally regular. The model and the contracts are described in
+[Broker integration](../concepts/broker-integration.md).
 
-## What "adding a broker" means
+## What "adding a connector" means
 
-A broker integration connects qkt to one trading venue. It accepts `OrderRequest`s from the engine, translates them to the venue's wire shape, places them, and reports back via `BrokerEvent`s on the bus.
+A connector is the technology qkt trades through. It opens **trading accounts** (one per
+`brokers:` entry with its `type:`), and each account gives every strategy an **order-entry
+session** that accepts `OrderRequest`s, translates them to the venue's wire shape, places them,
+and reports back via `BrokerEvent`s on the bus.
 
-The engine never touches venue-specific code. It only sees the `Broker` interface (`src/main/kotlin/com/qkt/broker/Broker.kt`). Everything below that interface is the broker package's private territory.
+The engine never touches connector code. It sees the contracts in `com.qkt.connectivity`
+(`Connector`, `TradingAccount`) and the `Broker` interface
+(`src/main/kotlin/com/qkt/broker/Broker.kt`). Everything below them is the connector package's
+private territory, and `ConnectivityArchitectureTest` enforces it: nothing outside
+`com.qkt.connector.<type>` may name the package, and the package may use only the shared model
+(`broker`, `bus`, `common`, `events`, `execution`, `positions`, `instrument`, `marketdata`,
+`accounting`, `persistence`, `connectivity`).
 
 ## The `Broker` interface — what you implement
 
@@ -35,10 +49,11 @@ interface Broker {
 
 ## Package layout convention
 
-Put your broker in `src/main/kotlin/com/qkt/broker/<venue>/`. The conventional file set:
+Put your broker in `src/main/kotlin/com/qkt/connector/<venue>/`. The conventional file set:
 
 | File | Responsibility | Required? |
 | --- | --- | --- |
+| `<Venue>Connector.kt` | Implements `Connector` and `TradingAccount`: opens accounts from config, resolves credentials, verifies the login, hands out order-entry sessions and market data. The only entry point qkt sees. | Yes |
 | `<Venue>Broker.kt` | Implements `Broker`. Wires translator + client + state-recovery + (optionally) poller. | Yes |
 | `<Venue>OrderTranslator.kt` | Pure function: qkt `OrderRequest` → venue wire shape. No I/O. | Yes |
 | `<Venue>Client.kt` | HTTP/WS client. JSON serialization, retries, timeouts. Stateless beyond connection management. | Yes |
@@ -49,7 +64,7 @@ Put your broker in `src/main/kotlin/com/qkt/broker/<venue>/`. The conventional f
 | `<Venue>Signer.kt` | API request signing (HMAC, JWT, etc.). | If venue uses signed requests |
 | `<Venue>BrokerProfile.kt` + `<Venue>DefaultProfiles.kt` | Per-account configuration (credentials, magic number, symbol policy, capability restrictions). | If multiple accounts/sub-venues share the same protocol |
 
-Multi-variant venues (Bybit Spot vs Bybit Linear, MT5 Exness vs MT5 ICMarkets) keep the shared parts at the package root and add variant-specific files alongside. See `com.qkt.broker.bybit` for the pattern — `BybitClient.kt`, `BybitOrderTranslator.kt`, `BybitSymbol.kt`, `BybitSigner.kt` are shared; `BybitSpotBroker.kt`/`BybitSpotStateRecovery.kt` and `BybitLinearBroker.kt`/`BybitLinearStateRecovery.kt` are the variants.
+Multi-variant venues (Bybit Spot vs Bybit Linear, MT5 Exness vs MT5 ICMarkets) keep the shared parts at the package root and add variant-specific files alongside. See `com.qkt.connector.bybit` for the pattern — `BybitClient.kt`, `BybitOrderTranslator.kt`, `BybitSymbol.kt`, `BybitSigner.kt` are shared; `BybitSpotBroker.kt`/`BybitSpotStateRecovery.kt` and `BybitLinearBroker.kt`/`BybitLinearStateRecovery.kt` are the variants.
 
 ## Implementation walkthrough
 
@@ -89,7 +104,7 @@ class VenueSymbol(private val policy: SymbolPolicy) {
 }
 ```
 
-The `SymbolPolicy` data class lives in `com.qkt.broker.mt5.MT5BrokerProfile` today but is generic — feel free to use it or define a parallel `VenueSymbolPolicy`.
+The `SymbolPolicy` data class lives in `com.qkt.connector.mt5.MT5BrokerProfile` today but is generic — feel free to use it or define a parallel `VenueSymbolPolicy`.
 
 ### Step 3 — Translator
 
@@ -167,7 +182,7 @@ The venue exposes `/positions` (and ideally `/orders` for pending). Poll at inte
 1. **New position appears** = a pending order filled (or a market order completed)
 2. **Position disappears** = position closed (stopped out, taken profit, manual close)
 
-Reference: `com.qkt.broker.mt5.MT5PositionPoller`. It detects opens (Phase 26c) and closes (existing). The broker registers an `onPositionOpened` callback to correlate venue tickets back to qkt `clientOrderId`s.
+Reference: `com.qkt.connector.mt5.MT5PositionPoller`. It detects opens (Phase 26c) and closes (existing). The broker registers an `onPositionOpened` callback to correlate venue tickets back to qkt `clientOrderId`s.
 
 The key data structure for poll-based brokers:
 
@@ -284,20 +299,62 @@ object VenueProtocol {
 
 Honest capability declarations prevent silent failures. A strategy submitting an OCO order to a netting-only venue should fail with a clear "capability mismatch" error, not get processed in some half-broken state.
 
-### Step 10 — Wire the broker into the daemon
+### Step 10 — Implement `Connector` and register it
 
-The daemon's `DaemonCommand` (`src/main/kotlin/com/qkt/cli/DaemonCommand.kt`) builds a `Map<String, BrokerFactory>` at startup. Add your broker:
+The connector is the entry point: it turns `brokers:` entries into trading accounts. Nothing else
+in qkt changes.
 
 ```kotlin
-val brokerFactories: Map<String, com.qkt.app.BrokerFactory> =
-    mt5Profiles.associate { /* ... */ } +
-    venueProfiles.associate { profile ->
-        profile.name.lowercase() to
-            { bus, clock, _ -> VenueBroker(profile, bus, clock) }
-    }
+// src/main/kotlin/com/qkt/connector/venue/VenueConnector.kt
+class VenueConnector : Connector {
+    override val spec = ConnectorSpec(type = "venue", displayName = "Venue", productTypes = setOf(ProductType.FUTURE))
+
+    override fun open(accounts: List<AccountConfig>, context: ConnectorContext): List<TradingAccount> =
+        accounts.map { cfg ->
+            val apiKey = context.secrets.resolve(cfg, "api_key") ?: error("brokers.${cfg.name}.api_key is required")
+            VenueTradingAccount(cfg, VenueClient(cfg.setting("base_url") ?: error("brokers.${cfg.name}.base_url is required"), apiKey))
+        }
+}
+
+class VenueTradingAccount(override val config: AccountConfig, private val client: VenueClient) : TradingAccount {
+    override fun verify(): AccountProfile { /* connect, check the login matches the config, or throw */ }
+    override val orderEntry: BrokerFactory = { bus, clock, _, _, _ -> VenueBroker(client, bus, clock) }
+    override val marketData: MarketSource? = VenueMarketSource(client)
+    override val tradingHours = SymbolCalendars(emptyList(), TradingCalendar.fxDefault())
+    override fun close() = client.close()
+}
 ```
 
-The key is what strategies use in their `SYMBOLS` block — `EXNESS:XAUUSD` routes to the `exness` factory, `BYBIT_SPOT:BTCUSDT` routes to the `bybit-spot` factory, etc.
+Then add one line to `src/main/resources/META-INF/services/com.qkt.connectivity.Connector`:
+
+```text
+com.qkt.connector.venue.VenueConnector
+```
+
+Rules the contracts rely on:
+
+- **`open` performs no network I/O** and returns one account per entry, in order. Share
+  connections between accounts with identical endpoints and credentials here.
+- **Credentials come from `context.secrets`**, never `System.getenv`. Refuse a missing or empty
+  credential in `open` with a message naming `brokers.<name>.<field>`.
+- **`verify` fails closed.** Throw when the venue is unreachable or reports a different login,
+  environment or position mode than the config expects — the daemon then refuses to start.
+- **`close` is idempotent** and releases what the account holds.
+- If your venue reports contract specs, a server clock, or positions recovered at startup, have
+  your `Broker` also implement `InstrumentProvider`, `ServerTimeZoneProvider` or
+  `TicketAttributionProvider`.
+
+A user then trades it with config only:
+
+```yaml
+brokers:
+  venue_demo:
+    type: venue
+    base_url: https://demo.venue.example
+    api_key: env:VENUE_API_KEY
+```
+
+and strategies reference `VENUE_DEMO:<symbol>`.
 
 ### Step 11 — Tests
 
@@ -347,14 +404,15 @@ Hold off until then. Two implementations don't justify an abstraction; three sta
 
 ## Checklist for the PR
 
-- [ ] Broker is in `src/main/kotlin/com/qkt/broker/<venue>/`
-- [ ] Implements `Broker` interface — `name`, `capabilities`, `submit`, `cancel`, optionally `modify`
+- [ ] Everything lives in `src/main/kotlin/com/qkt/connector/<type>/`
+- [ ] Order-entry session implements `Broker` — `name`, `capabilities`, `submit`, `cancel`, optionally `modify`
 - [ ] Capability set declared honestly — strategies that submit unsupported shapes get a clean rejection
 - [ ] Translator, client, symbol, state-recovery as separate files
 - [ ] Push or poll for fill detection — pick one explicitly
 - [ ] Translator unit tests, client wire-shape tests, broker integration tests
-- [ ] Wired into `DaemonCommand` broker factory map
-- [ ] Updated `docs/reference/dsl/streams.md` broker-prefix table
+- [ ] `Connector` implemented and registered in `META-INF/services/com.qkt.connectivity.Connector`
+- [ ] `ConnectivityArchitectureTest` passes — no core code names the connector
+- [ ] Updated `docs/reference/dsl/streams.md` broker-prefix table and the `brokers` section of `docs/reference/config-schema.md`
 - [ ] Phase changelog if introducing new capability (see `docs/contributing/phase-workflow.md`)
 - [ ] `tests/smoke-install.sh` passes
 - [ ] `./gradlew build` passes incl. ktlint

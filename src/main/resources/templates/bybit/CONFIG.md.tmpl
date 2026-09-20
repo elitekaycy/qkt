@@ -38,8 +38,12 @@ QKT talks to Bybit REST directly through the configured broker.
 
 ## qkt.config.yaml
 
-The broker block points QKT at Bybit. Strategy files should use the configured
-broker path and let QKT handle order/risk/accounting flow.
+Each entry under `brokers:` is one trading account, and its name is the prefix strategies
+use: `bybit_spot` serves `BYBIT_SPOT:` symbols and `bybit_linear` serves `BYBIT_LINEAR:`
+symbols. Both read their keys from `.env` through `env:BYBIT_API_KEY` /
+`env:BYBIT_API_SECRET` and share one Bybit connection. Delete an entry you don't trade; delete
+both to run paper-only against `BACKTEST:` symbols. QKT checks the Bybit connection at startup
+and refuses to start if the keys are empty or rejected.
 
 Keep risk limits explicit before using real funds. Testnet passing is not proof
 that a strategy is safe for live money.

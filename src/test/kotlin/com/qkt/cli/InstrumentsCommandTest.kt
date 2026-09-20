@@ -1,6 +1,6 @@
 package com.qkt.cli
 
-import com.qkt.broker.mt5.MT5SymbolInfo
+import com.qkt.connector.mt5.MT5SymbolInfo
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.math.BigDecimal

@@ -1,6 +1,6 @@
 package com.qkt.cli
 
-import com.qkt.broker.mt5.MT5Tick
+import com.qkt.connector.mt5.MT5Tick
 import java.math.BigDecimal
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject

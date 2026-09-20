@@ -1,9 +1,9 @@
 package com.qkt.cli.audit
 
-import com.qkt.broker.mt5.MT5Client
 import com.qkt.cli.ExitCodes
 import com.qkt.cli.Mt5FeedAudit
 import com.qkt.cli.ObservedMt5Tick
+import com.qkt.connector.mt5.MT5Client
 
 /**
  * Polls MT5 quotes for [durationSeconds], waits [settleMs] for venue history to settle, then

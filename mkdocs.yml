@@ -204,7 +204,7 @@ nav:
       - Code structure: contributing/code-structure.md
       - KDoc style: contributing/kdoc-style.md
       - Phase workflow: contributing/phase-workflow.md
-      - Adding a broker: contributing/adding-a-broker.md
+      - Adding a connector: contributing/adding-a-broker.md
       - Stress tests: contributing/stress-tests.md
       - Release changelogs:
           - phases/index.md

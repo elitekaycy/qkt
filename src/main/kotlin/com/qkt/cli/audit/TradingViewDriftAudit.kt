@@ -1,7 +1,7 @@
 package com.qkt.cli.audit
 
-import com.qkt.broker.mt5.MT5Client
 import com.qkt.cli.ExitCodes
+import com.qkt.connector.mt5.MT5Client
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.live.tv.TradingViewMarketSource
 import java.math.BigDecimal
