@@ -4,7 +4,6 @@ import java.math.BigDecimal
 import java.net.URLEncoder
 import java.time.Duration
 import java.time.Instant
-import java.util.concurrent.atomic.AtomicReference
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.contentOrNull
@@ -17,7 +16,6 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
-import okio.Buffer
 import org.slf4j.LoggerFactory
 
 /**
@@ -41,10 +39,10 @@ class MT5Client(
 ) {
     private val log = LoggerFactory.getLogger(MT5Client::class.java)
     private val json = Json { ignoreUnknownKeys = true }
-    private val lastReadFailureRef = AtomicReference<String?>(null)
     private val venueTime = MT5VenueTime(serverTimeZone)
     private val responses = MT5OrderResponses(json)
     private val snapshots = MT5SnapshotParser(json, venueTime)
+    private val recorder = transportJournal?.let { MT5TransportRecorder(it, monotonicNanos) }
     private val dispatcher =
         Dispatcher().apply {
             maxRequestsPerHost = 16
@@ -56,88 +54,10 @@ class MT5Client(
             .dispatcher(dispatcher)
             .callTimeout(Duration.ofMillis(httpTimeoutMs))
             .connectTimeout(Duration.ofMillis(httpTimeoutMs))
-            .apply {
-                if (transportJournal != null) {
-                    addInterceptor { chain ->
-                        val request = chain.request()
-                        val startedNs = monotonicNanos()
-                        val response =
-                            try {
-                                chain.proceed(request)
-                            } catch (error: java.io.IOException) {
-                                recordTransportExchange(
-                                    request = request,
-                                    responseCode = null,
-                                    responseBody = null,
-                                    responseBytes = null,
-                                    error = error.message ?: error.javaClass.simpleName,
-                                    startedNs = startedNs,
-                                )
-                                throw error
-                            }
-                        // A successful snapshot read (account, positions, orders, deals) is
-                        // re-polled every second and its body is venue state the engine already
-                        // projects elsewhere; journaling it was ~99% of transport volume. Keep
-                        // the exchange, drop the body. Mutations and failures keep everything.
-                        val elideBody = request.method == "GET" && response.isSuccessful
-                        recordTransportExchange(
-                            request = request,
-                            responseCode = response.code,
-                            responseBody =
-                                if (elideBody) {
-                                    null
-                                } else {
-                                    runCatching { response.peekBody(MAX_CAPTURE_BODY_BYTES).string() }.getOrNull()
-                                },
-                            responseBytes = if (elideBody) response.body?.contentLength() else null,
-                            error = null,
-                            startedNs = startedNs,
-                        )
-                        response
-                    }
-                }
-            }.build()
+            .apply { recorder?.let { addInterceptor(it) } }
+            .build()
 
-    private fun recordTransportExchange(
-        request: okhttp3.Request,
-        responseCode: Int?,
-        responseBody: String?,
-        responseBytes: Long?,
-        error: String?,
-        startedNs: Long,
-    ) {
-        runCatching {
-            transportJournal?.record(
-                method = request.method,
-                path =
-                    request.url.encodedPath +
-                        request.url.encodedQuery
-                            ?.let { "?$it" }
-                            .orEmpty(),
-                requestBody = captureRequestBody(request),
-                responseCode = responseCode,
-                responseBody = responseBody,
-                responseBytes = responseBytes,
-                error = error,
-                durationMs = (monotonicNanos() - startedNs) / 1_000_000L,
-                idempotencyKey = request.header("Idempotency-Key"),
-                engineOrderId = request.tag(TransportCorrelation::class.java)?.engineOrderId,
-            )
-        }.onFailure { captureError ->
-            log.error("MT5 transport capture failed without affecting request: {}", captureError.message)
-        }
-    }
-
-    private fun captureRequestBody(request: okhttp3.Request): String? {
-        val body = request.body ?: return null
-        if (body.isOneShot()) return "<one-shot body omitted>"
-        return runCatching {
-            val buffer = Buffer()
-            body.writeTo(buffer)
-            val size = buffer.size.coerceAtMost(MAX_CAPTURE_BODY_BYTES)
-            buffer.readUtf8(size)
-        }.getOrNull()
-    }
+    private val reads = MT5GatewayReads(http, gatewayUrl, apiKey, retryAttempts, readCache)
 
     fun isReady(): Boolean =
         runCatching {
@@ -236,7 +156,7 @@ class MT5Client(
                 magic != null -> "$gatewayUrl/get_positions?magic=$magic"
                 else -> "$gatewayUrl/get_positions"
             }
-        val raw = getWithRetry(url) ?: return null
+        val raw = reads.get(url) ?: return null
         val positions = snapshots.parsePositions(raw)
         return if (filterLocally) {
             positions.filter { it.magic == magic }
@@ -258,7 +178,7 @@ class MT5Client(
                 magic != null -> "$gatewayUrl/orders?magic=$magic"
                 else -> "$gatewayUrl/orders"
             }
-        val raw = getWithRetry(url) ?: return null
+        val raw = reads.get(url) ?: return null
         val orders = snapshots.parsePendingOrders(raw)
         return if (filterLocally) {
             orders.filter { it.magic == magic }
@@ -274,7 +194,7 @@ class MT5Client(
      * caller decides whether to fall back to a configured override or pass-through.
      */
     fun getSymbolInfo(brokerSymbol: String): MT5SymbolInfo? {
-        val raw = getWithRetry("$gatewayUrl/symbol_info/$brokerSymbol") ?: return null
+        val raw = reads.get("$gatewayUrl/symbol_info/$brokerSymbol") ?: return null
         val obj = json.parseToJsonElement(raw).jsonObject
         return MT5SymbolInfo(
             ask = obj["ask"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
@@ -305,7 +225,7 @@ class MT5Client(
      * decision for closing a position. Returns `null` if the call fails.
      */
     fun getAccount(): MT5AccountInfo? {
-        val raw = getWithRetry("$gatewayUrl/account") ?: return null
+        val raw = reads.get("$gatewayUrl/account") ?: return null
         val obj = json.parseToJsonElement(raw).jsonObject
         return MT5AccountInfo(
             balance = obj["balance"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
@@ -545,7 +465,7 @@ class MT5Client(
         val from = venueTime.venueIso(fromUtcMs - DEAL_WINDOW_PAD_MS)
         val to = venueTime.venueIso(toUtcMs + DEAL_WINDOW_PAD_MS)
         val url = "$gatewayUrl/history_deals_get?from_date=$from&to_date=$to&position=$positionTicket"
-        val raw = getWithRetry(url) ?: return null
+        val raw = reads.get(url) ?: return null
         val arr = unwrapMT5Data(json.parseToJsonElement(raw)) as? JsonArray ?: return null
         return arr
             .map { snapshots.parseDeal(it.jsonObject) }
@@ -567,13 +487,13 @@ class MT5Client(
         val url = "$gatewayUrl/history_deals_get?from_date=${venueTime.venueIso(
             fromUtcMs,
         )}&to_date=${venueTime.venueIso(toUtcMs)}"
-        val raw = getWithRetry(url) ?: return null
+        val raw = reads.get(url) ?: return null
         val arr = unwrapMT5Data(json.parseToJsonElement(raw)) as? JsonArray ?: return null
         return arr.map { snapshots.parseDeal(it.jsonObject) }
     }
 
     fun getTick(brokerSymbol: String): MT5Tick? {
-        val raw = getWithRetry("$gatewayUrl/symbol_info_tick/$brokerSymbol") ?: return null
+        val raw = reads.get("$gatewayUrl/symbol_info_tick/$brokerSymbol") ?: return null
         val obj = json.parseToJsonElement(raw).jsonObject
         val rawTime = obj["time"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L
         val rawTimeMs = obj["time_msc"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: rawTime * 1_000L
@@ -609,7 +529,7 @@ class MT5Client(
                 Charsets.UTF_8,
             )
         val raw =
-            getWithRetry(
+            reads.get(
                 "$gatewayUrl/copy_ticks_range?symbol=$brokerSymbol&from_date=$from&to_date=$to",
             ) ?: return null
         val rows = unwrapMT5Data(json.parseToJsonElement(raw)) as? JsonArray ?: return null
@@ -741,65 +661,16 @@ class MT5Client(
         }
     }
 
-    private fun getWithRetry(url: String): String? {
-        val cache = readCache
-        return if (cache != null && isSnapshotRead(url)) {
-            cache.get(url) { getFromNetworkWithRetry(url) }
-        } else {
-            getFromNetworkWithRetry(url)
-        }
-    }
-
-    private fun isSnapshotRead(url: String): Boolean =
-        when (url.substringAfter(gatewayUrl)) {
-            "/account", "/get_positions", "/orders" -> true
-            else ->
-                url.startsWith("$gatewayUrl/get_positions?") ||
-                    url.startsWith("$gatewayUrl/orders?")
-        }
-
-    private fun getFromNetworkWithRetry(url: String): String? {
-        var attempt = 0
-        var failure: String? = null
-        while (attempt <= retryAttempts) {
-            try {
-                val resp = http.newCall(mt5RequestBuilder(url, apiKey).build()).execute()
-                resp.use {
-                    val raw = it.body?.string().orEmpty()
-                    if (it.isSuccessful) {
-                        lastReadFailureRef.set(null)
-                        return raw
-                    }
-                    failure = "HTTP ${it.code}: $raw"
-                }
-            } catch (e: java.io.IOException) {
-                failure = "IO error: ${e.message}"
-            }
-            attempt++
-            if (attempt <= retryAttempts) Thread.sleep(200L * attempt)
-        }
-        lastReadFailureRef.set(failure ?: "gateway read failed")
-        // Message-only: a refused/timed-out GET after retries is an expected operational
-        // condition; the okhttp stack adds no signal and floods test output (#879).
-        log.warn("MT5Client GET $url failed after $retryAttempts retries: {}", lastReadFailureRef.get())
-        return null
-    }
-
     /** Detail from the most recent failed GET, cleared by the next successful network read. */
-    fun lastReadFailure(): String? = lastReadFailureRef.get()
+    fun lastReadFailure(): String? = reads.lastReadFailure()
 
     companion object {
         /** Epochs below this are seconds, not milliseconds (100_000_000_000 ms is 1973). */
         private const val EPOCH_MS_THRESHOLD = 100_000_000_000L
 
-        private const val MAX_CAPTURE_BODY_BYTES = 64L * 1024L
         private val JSON_MEDIA = "application/json".toMediaType()
 
         /** Padding either side of the deal search window — venue clock skew is hours, not days. */
         private const val DEAL_WINDOW_PAD_MS: Long = 24L * 3600_000L
     }
-
-    private data class TransportCorrelation(
-        val engineOrderId: String,
-    )
 }
