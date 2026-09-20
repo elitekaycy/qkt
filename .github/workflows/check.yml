@@ -46,6 +46,8 @@ jobs:
         run: bash tests/scripts/run-attestation-test.sh
       - name: Test live-vs-replay trace comparator
         run: bash tests/scripts/compare-trace-vectors-test.sh
+      - name: Validate attestation case catalog
+        run: python3 attestation/lib/validate.py
       - name: Build + test + ktlint
         run: ./gradlew build --no-daemon
       - name: Upload test reports

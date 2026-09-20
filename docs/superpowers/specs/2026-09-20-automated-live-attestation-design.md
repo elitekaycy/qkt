@@ -74,6 +74,15 @@ A lane that has not resolved by its deadline fails; it is never waited on.
   boolean, every order request, every protective level. Fill *prices* are compared within
   the reviewed drift for the symbol's own point.
 
+## Case catalog
+
+`attestation/` holds everything that is proven, one directory per case, grouped by lane
+(`shadow`, `orders`, `risk`, `book`, `engine`, `daemon`, `stress`). A runner never names a case;
+it reads the tree. `attestation/README.md` is the contributor guide; `lib/validate.py` enforces
+the schema, the ten-minute budget, and the coverage gate (every catalog capability is proven by
+a ready case or listed in `gaps.yaml` with a reason). Each case carries a `why`: the specific
+failure it exists to catch, which is what makes the edge cases reviewable.
+
 ## Unattended operation
 
 ```

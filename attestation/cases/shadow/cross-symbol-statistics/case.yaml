@@ -1,0 +1,24 @@
+id: cross-symbol-statistics
+title: Statistics across two symbols and two timeframes
+why: Correlation, beta and z-score align two series bar by bar; live ticks for the two symbols arrive
+  interleaved and unevenly, so a misaligned pairing gives plausible but different numbers.
+status: ready
+symbols:
+- EURUSD
+- GBPUSD
+timeframes:
+- 5m
+- 1h
+warmup_bars:
+  5m: 15
+  1h: 5
+proves:
+- ZSCORE
+- CORRELATION
+- BETA
+- ATR
+- LOWEST
+- HIGHEST
+- behaviour:cross-symbol
+assertions:
+- trace-parity
