@@ -7,10 +7,7 @@ import java.time.Instant
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.intOrNull
-import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.Call
@@ -45,6 +42,9 @@ class MT5Client(
     private val log = LoggerFactory.getLogger(MT5Client::class.java)
     private val json = Json { ignoreUnknownKeys = true }
     private val lastReadFailureRef = AtomicReference<String?>(null)
+    private val venueTime = MT5VenueTime(serverTimeZone)
+    private val responses = MT5OrderResponses(json)
+    private val snapshots = MT5SnapshotParser(json, venueTime)
     private val dispatcher =
         Dispatcher().apply {
             maxRequestsPerHost = 16
@@ -174,7 +174,7 @@ class MT5Client(
                     errorMessage = "HTTP ${it.code}: $raw",
                 )
             }
-            return parseOrderResponse(raw)
+            return responses.parseOrderResponse(raw)
         }
     }
 
@@ -206,7 +206,7 @@ class MT5Client(
                     e: java.io.IOException,
                 ) {
                     readCache?.clear()
-                    onResult(errorResponse("IO error: ${e.message}"))
+                    onResult(responses.errorResponse("IO error: ${e.message}"))
                 }
 
                 override fun onResponse(
@@ -215,18 +215,12 @@ class MT5Client(
                 ) {
                     readCache?.clear()
                     response.use {
-                        onResult(parseAsyncMutationResponse(it))
+                        onResult(responses.parseAsyncMutationResponse(it))
                     }
                 }
             },
         )
     }
-
-    private fun errorResponse(message: String): MT5OrderResponse =
-        MT5OrderResponse(
-            result = MT5OrderResult(retcode = -1, order = 0, deal = 0, price = BigDecimal.ZERO, comment = ""),
-            errorMessage = message,
-        )
 
     /**
      * Fetch the venue's open positions. Returns `null` when the read FAILED (gateway
@@ -243,7 +237,7 @@ class MT5Client(
                 else -> "$gatewayUrl/get_positions"
             }
         val raw = getWithRetry(url) ?: return null
-        val positions = parsePositions(raw)
+        val positions = snapshots.parsePositions(raw)
         return if (filterLocally) {
             positions.filter { it.magic == magic }
         } else {
@@ -265,29 +259,12 @@ class MT5Client(
                 else -> "$gatewayUrl/orders"
             }
         val raw = getWithRetry(url) ?: return null
-        val orders = parsePendingOrders(raw)
+        val orders = snapshots.parsePendingOrders(raw)
         return if (filterLocally) {
             orders.filter { it.magic == magic }
         } else {
             orders
         }
-    }
-
-    private fun parsePositions(raw: String): List<MT5Position> {
-        val arr = unwrapMT5Data(json.parseToJsonElement(raw)).jsonArray
-        return arr.map { parsePosition(it.jsonObject) }
-    }
-
-    private fun parsePendingOrders(raw: String): List<MT5PendingOrder> {
-        // The gateway's /orders shape varies by version: some return a bare
-        // array, others wrap it as {"orders": [...], "total": N}. Accept both.
-        val arr =
-            when (val root = unwrapMT5Data(json.parseToJsonElement(raw))) {
-                is JsonArray -> root
-                is JsonObject -> root["orders"]?.jsonArray ?: return emptyList()
-                else -> return emptyList()
-            }
-        return arr.map { parsePendingOrder(it.jsonObject) }
     }
 
     /**
@@ -379,7 +356,7 @@ class MT5Client(
                     errorMessage = "HTTP ${it.code}: $raw",
                 )
             }
-            return parseOrderResponse(raw)
+            return responses.parseOrderResponse(raw)
         }
     }
 
@@ -422,7 +399,7 @@ class MT5Client(
                     e: java.io.IOException,
                 ) {
                     readCache?.clear()
-                    onResult(errorResponse("IO error: ${e.message}"))
+                    onResult(responses.errorResponse("IO error: ${e.message}"))
                 }
 
                 override fun onResponse(
@@ -431,7 +408,7 @@ class MT5Client(
                 ) {
                     readCache?.clear()
                     response.use {
-                        onResult(parseAsyncMutationResponse(it))
+                        onResult(responses.parseAsyncMutationResponse(it))
                     }
                 }
             },
@@ -469,49 +446,15 @@ class MT5Client(
         resp.use {
             val raw = it.body?.string().orEmpty()
             if (!it.isSuccessful) {
-                val normalized = noChangesSuccess(ticket, raw)
+                val normalized = responses.noChangesSuccess(ticket, raw)
                 if (normalized != null) return normalized
                 return MT5OrderResponse(
                     result = MT5OrderResult(retcode = -1, order = 0, deal = 0, price = BigDecimal.ZERO, comment = ""),
                     errorMessage = "HTTP ${it.code}: $raw",
                 )
             }
-            return parseOrderResponse(raw)
+            return responses.parseOrderResponse(raw)
         }
-    }
-
-    /**
-     * Normalizes a venue `NO_CHANGES` rejection of a protection modify into success:
-     * the position already carries exactly the requested SL/TP (e.g. a fill-anchored
-     * bracket update after a zero-slippage fill), so treating it as a failure would
-     * arm a redundant engine-held fallback stop next to live venue protection.
-     */
-    private fun noChangesSuccess(
-        ticket: Long,
-        raw: String,
-    ): MT5OrderResponse? {
-        val retcode =
-            runCatching {
-                json
-                    .parseToJsonElement(raw)
-                    .jsonObject["mt5_error"]
-                    ?.jsonObject
-                    ?.get("retcode")
-                    ?.jsonPrimitive
-                    ?.intOrNull
-            }.getOrNull()
-        if (retcode != MT5_TRADE_RETCODE_NO_CHANGES) return null
-        return MT5OrderResponse(
-            result =
-                MT5OrderResult(
-                    retcode = MT5_TRADE_RETCODE_DONE,
-                    order = ticket,
-                    deal = 0,
-                    price = BigDecimal.ZERO,
-                    comment = "no changes",
-                ),
-            errorMessage = null,
-        )
     }
 
     /** Modify an open position's SL/TP on OkHttp's dispatcher without blocking the caller. */
@@ -534,7 +477,7 @@ class MT5Client(
                     e: java.io.IOException,
                 ) {
                     readCache?.clear()
-                    onResult(errorResponse("IO error: ${e.message}"))
+                    onResult(responses.errorResponse("IO error: ${e.message}"))
                 }
 
                 override fun onResponse(
@@ -543,36 +486,11 @@ class MT5Client(
                 ) {
                     readCache?.clear()
                     response.use {
-                        onResult(parseAsyncModifyResponse(ticket, it))
+                        onResult(responses.parseAsyncModifyResponse(ticket, it))
                     }
                 }
             },
         )
-    }
-
-    /** [parseAsyncMutationResponse] plus the NO_CHANGES-to-success modify normalization. */
-    private fun parseAsyncModifyResponse(
-        ticket: Long,
-        response: Response,
-    ): MT5OrderResponse {
-        val raw = response.body?.string().orEmpty()
-        if (!response.isSuccessful) {
-            noChangesSuccess(ticket, raw)?.let { return it }
-            return errorResponse("HTTP ${response.code}: $raw")
-        }
-        return runCatching { parseOrderResponse(raw) }
-            .getOrElse { error ->
-                errorResponse("invalid gateway response after send: ${error.message ?: error.javaClass.simpleName}")
-            }
-    }
-
-    private fun parseAsyncMutationResponse(response: Response): MT5OrderResponse {
-        val raw = response.body?.string().orEmpty()
-        if (!response.isSuccessful) return errorResponse("HTTP ${response.code}: $raw")
-        return runCatching { parseOrderResponse(raw) }
-            .getOrElse { error ->
-                errorResponse("invalid gateway response after send: ${error.message ?: error.javaClass.simpleName}")
-            }
     }
 
     /**
@@ -624,13 +542,13 @@ class MT5Client(
         fromUtcMs: Long,
         toUtcMs: Long,
     ): List<MT5Deal>? {
-        val from = venueIso(fromUtcMs - DEAL_WINDOW_PAD_MS)
-        val to = venueIso(toUtcMs + DEAL_WINDOW_PAD_MS)
+        val from = venueTime.venueIso(fromUtcMs - DEAL_WINDOW_PAD_MS)
+        val to = venueTime.venueIso(toUtcMs + DEAL_WINDOW_PAD_MS)
         val url = "$gatewayUrl/history_deals_get?from_date=$from&to_date=$to&position=$positionTicket"
         val raw = getWithRetry(url) ?: return null
         val arr = unwrapMT5Data(json.parseToJsonElement(raw)) as? JsonArray ?: return null
         return arr
-            .map { parseDeal(it.jsonObject) }
+            .map { snapshots.parseDeal(it.jsonObject) }
             .filter { it.positionTicket == positionTicket }
     }
 
@@ -646,65 +564,20 @@ class MT5Client(
         fromUtcMs: Long,
         toUtcMs: Long,
     ): List<MT5Deal>? {
-        val url = "$gatewayUrl/history_deals_get?from_date=${venueIso(fromUtcMs)}&to_date=${venueIso(toUtcMs)}"
+        val url = "$gatewayUrl/history_deals_get?from_date=${venueTime.venueIso(
+            fromUtcMs,
+        )}&to_date=${venueTime.venueIso(toUtcMs)}"
         val raw = getWithRetry(url) ?: return null
         val arr = unwrapMT5Data(json.parseToJsonElement(raw)) as? JsonArray ?: return null
-        return arr.map { parseDeal(it.jsonObject) }
+        return arr.map { snapshots.parseDeal(it.jsonObject) }
     }
-
-    /** Tolerant of missing fields like [parsePendingOrder] — one bad row must not kill a backfill. */
-    private fun parseDeal(obj: JsonObject): MT5Deal {
-        val rawTimeMs = obj["time_msc"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L
-        val timeMs = venueEpochToUtc(rawTimeMs)
-        return MT5Deal(
-            ticket = obj["ticket"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L,
-            orderTicket = obj["order"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L,
-            positionTicket = obj["position_id"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L,
-            symbol = obj["symbol"]?.jsonPrimitive?.contentOrNull ?: "",
-            type = obj["type"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0,
-            entry = obj["entry"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0,
-            volume = obj["volume"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
-            price = obj["price"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
-            profit = obj["profit"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
-            commission = obj["commission"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
-            swap = obj["swap"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
-            fee = obj["fee"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
-            magic = obj["magic"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0,
-            comment = obj["comment"]?.jsonPrimitive?.contentOrNull,
-            timeMs = timeMs,
-            clientOrderId = obj["client_order_id"]?.jsonPrimitive?.contentOrNull,
-            reason = obj["reason"]?.jsonPrimitive?.contentOrNull?.toIntOrNull(),
-        )
-    }
-
-    /**
-     * The gateway returns MT5 epochs whose fields encode the broker's wall clock, not UTC
-     * (measured on IC Markets: deal `time_msc` runs exactly one server offset ahead of the
-     * engine's own fill timestamp for the same ticket). Every epoch that leaves this client
-     * is corrected here, once — the same translation the live tick feed applies — so deals,
-     * positions, pending orders, and ticks agree with the engine clock. Identity for UTC venues.
-     */
-    private fun venueEpochToUtc(epoch: Long): Long {
-        if (epoch <= 0L) return epoch
-        // Gateway fields mix second and millisecond epochs (`time` vs `time_msc`); keep the unit.
-        val seconds = epoch < EPOCH_MS_THRESHOLD
-        val ms = if (seconds) epoch * 1_000L else epoch
-        val utc = serverTimeZone.serverEpochToUtc(ms)
-        return if (seconds) utc / 1_000L else utc
-    }
-
-    private fun venueIso(utcMs: Long): String =
-        serverTimeZone
-            .toServerLocal(java.time.Instant.ofEpochMilli(utcMs))
-            .toInstant(java.time.ZoneOffset.UTC)
-            .toString()
 
     fun getTick(brokerSymbol: String): MT5Tick? {
         val raw = getWithRetry("$gatewayUrl/symbol_info_tick/$brokerSymbol") ?: return null
         val obj = json.parseToJsonElement(raw).jsonObject
         val rawTime = obj["time"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L
         val rawTimeMs = obj["time_msc"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: rawTime * 1_000L
-        val timeMs = venueEpochToUtc(rawTimeMs)
+        val timeMs = venueTime.venueEpochToUtc(rawTimeMs)
         return MT5Tick(
             symbol = brokerSymbol,
             bid = obj["bid"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
@@ -743,7 +616,10 @@ class MT5Client(
         return rows.map { element ->
             val obj = element.jsonObject
             val time = obj["time"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L
-            val timeMs = venueEpochToUtc(obj["time_msc"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: time * 1_000L)
+            val timeMs =
+                venueTime.venueEpochToUtc(
+                    obj["time_msc"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: time * 1_000L,
+                )
             MT5Tick(
                 symbol = brokerSymbol,
                 bid = obj["bid"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
@@ -809,7 +685,7 @@ class MT5Client(
                 ) {
                     readCache?.clear()
                     log.warn("MT5Client cancelOrder($ticket) IO error: ${e.message}")
-                    onResult(errorResponse("IO error: ${e.message}"))
+                    onResult(responses.errorResponse("IO error: ${e.message}"))
                 }
 
                 override fun onResponse(
@@ -821,35 +697,14 @@ class MT5Client(
                         val raw = it.body?.string().orEmpty()
                         if (!it.isSuccessful) {
                             log.warn("MT5Client cancelOrder($ticket) HTTP ${it.code}: $raw")
-                            onResult(errorResponse("HTTP ${it.code}: $raw"))
+                            onResult(responses.errorResponse("HTTP ${it.code}: $raw"))
                         } else {
-                            onResult(parseCancelResponse(raw))
+                            onResult(responses.parseCancelResponse(raw))
                         }
                     }
                 }
             },
         )
-    }
-
-    private fun parseCancelResponse(raw: String): MT5OrderResponse {
-        val obj =
-            runCatching { json.parseToJsonElement(raw).jsonObject }.getOrNull()
-                ?: return errorResponse("invalid cancel response: $raw")
-        if (obj["result"] is JsonObject) return parseOrderResponse(raw)
-        val message = obj["message"]?.jsonPrimitive?.contentOrNull.orEmpty()
-        if (message.contains("cancel", ignoreCase = true)) {
-            return MT5OrderResponse(
-                result =
-                    MT5OrderResult(
-                        retcode = MT5_TRADE_RETCODE_DONE,
-                        order = 0,
-                        deal = 0,
-                        price = BigDecimal.ZERO,
-                        comment = message,
-                    ),
-            )
-        }
-        return errorResponse(obj["error"]?.jsonPrimitive?.contentOrNull ?: "unconfirmed cancel response: $raw")
     }
 
     /**
@@ -882,7 +737,7 @@ class MT5Client(
                     errorMessage = "HTTP ${it.code}: $raw",
                 )
             }
-            return parseOrderResponse(raw)
+            return responses.parseOrderResponse(raw)
         }
     }
 
@@ -932,73 +787,6 @@ class MT5Client(
 
     /** Detail from the most recent failed GET, cleared by the next successful network read. */
     fun lastReadFailure(): String? = lastReadFailureRef.get()
-
-    private fun parseOrderResponse(raw: String): MT5OrderResponse {
-        val obj = json.parseToJsonElement(raw).jsonObject
-        val r =
-            obj["result"]?.jsonObject
-                ?: return MT5OrderResponse(
-                    result = MT5OrderResult(retcode = -1, order = 0, deal = 0, price = BigDecimal.ZERO, comment = ""),
-                    errorMessage = "missing result field: $raw",
-                )
-        return MT5OrderResponse(
-            result =
-                MT5OrderResult(
-                    retcode = r["retcode"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: -1,
-                    order = r["order"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L,
-                    deal = r["deal"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L,
-                    price = r["price"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
-                    comment = r["comment"]?.jsonPrimitive?.contentOrNull ?: "",
-                    volume = r["volume"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull(),
-                ),
-            errorMessage = obj["error"]?.jsonPrimitive?.contentOrNull,
-        )
-    }
-
-    private fun parsePosition(obj: JsonObject): MT5Position {
-        val rawTime = venueEpochToUtc(obj["time_msc"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L)
-        return MT5Position(
-            ticket = obj["ticket"]!!.jsonPrimitive.content.toLong(),
-            symbol = obj["symbol"]!!.jsonPrimitive.content,
-            type = obj["type"]!!.jsonPrimitive.content.toInt(),
-            volume = obj["volume"]!!.jsonPrimitive.content.toBigDecimal(),
-            priceOpen = obj["price_open"]!!.jsonPrimitive.content.toBigDecimal(),
-            sl = obj["sl"]!!.jsonPrimitive.content.toBigDecimal(),
-            tp = obj["tp"]!!.jsonPrimitive.content.toBigDecimal(),
-            profit = obj["profit"]!!.jsonPrimitive.content.toBigDecimal(),
-            magic = obj["magic"]!!.jsonPrimitive.content.toInt(),
-            openTime = rawTime,
-            comment = obj["comment"]?.jsonPrimitive?.contentOrNull,
-            clientOrderId = obj["client_order_id"]?.jsonPrimitive?.contentOrNull,
-            swap = obj["swap"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull(),
-            priceCurrent = obj["price_current"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull(),
-        )
-    }
-
-    /**
-     * Parse one pending-order entry. Tolerant of partially-populated transient entries
-     * — the gateway has been observed emitting rows mid-placement that lack a `ticket`
-     * or `price_open` field. Defaulting those preserves the poller across a single bad
-     * snapshot rather than killing the thread and missing all subsequent events.
-     */
-    private fun parsePendingOrder(obj: JsonObject): MT5PendingOrder {
-        val rawTime = venueEpochToUtc(obj["time_setup"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L)
-        val rawExp = venueEpochToUtc(obj["time_expiration"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L)
-        return MT5PendingOrder(
-            ticket = obj["ticket"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L,
-            symbol = obj["symbol"]?.jsonPrimitive?.contentOrNull ?: "",
-            type = obj["type"]?.jsonPrimitive?.contentOrNull ?: "",
-            volume = obj["volume"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
-            priceOpen = obj["price_open"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
-            sl = obj["sl"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
-            tp = obj["tp"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
-            magic = obj["magic"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0,
-            timeSetup = rawTime,
-            timeExpiration = rawExp,
-            comment = obj["comment"]?.jsonPrimitive?.contentOrNull,
-            clientOrderId = obj["client_order_id"]?.jsonPrimitive?.contentOrNull,
-        )
-    }
 
     companion object {
         /** Epochs below this are seconds, not milliseconds (100_000_000_000 ms is 1973). */
