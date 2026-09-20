@@ -1,0 +1,39 @@
+# Lanes group attestation cases by what they contend for, which decides what may run at once.
+# `concurrency: shared` cases load into one daemon; `per-magic` cases each get a magic number and
+# run side by side on one account; `exclusive` cases own the daemon or gateway and run alone.
+lanes:
+  shadow:
+    purpose: Values computed live equal values computed in replay - indicators, math, DSL expressions, across symbols, timeframes and warmup depths. Places no orders.
+    concurrency: shared
+    places_orders: false
+    budget_seconds: 360
+  orders:
+    purpose: Every order shape reaches the venue and replays to the same journal - market, limit, stop, bracket, trailing, stack, OTO, GTD, partial close, risk-sized entry.
+    concurrency: per-magic
+    places_orders: true
+    budget_seconds: 360
+  risk:
+    purpose: Caps, rejections and halts bind live exactly as in replay, from restored state, never from hoping the market produces a loss.
+    concurrency: per-magic
+    places_orders: true
+    budget_seconds: 300
+  book:
+    purpose: Portfolios - allocation, book caps, sibling interaction on one tick, attribution.
+    concurrency: per-magic
+    places_orders: true
+    budget_seconds: 360
+  engine:
+    purpose: What the engine does when the world misbehaves - restart over open positions, stale feed, gateway restart, unknown order outcome, clock skew, journal and state integrity, cleanup.
+    concurrency: exclusive
+    places_orders: true
+    budget_seconds: 420
+  daemon:
+    purpose: Every operator command works against a live daemon and leaves the state it claims - deploy, stop, start, resume, halt, flatten, status, logs, positions, reload.
+    concurrency: exclusive
+    places_orders: true
+    budget_seconds: 300
+  stress:
+    purpose: Load - order bursts, many strategies in one daemon, tick floods, long queues - without dropped ticks, a blocked subscriber or a missed cap.
+    concurrency: exclusive
+    places_orders: true
+    budget_seconds: 420

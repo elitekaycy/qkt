@@ -1,0 +1,22 @@
+id: journal-and-state-integrity
+title: Kill -9 the daemon mid-write and restart
+why: State files and the append-only journal are written while trading. A torn write must be detected
+  and recovered from, never parsed as truth.
+status: planned
+symbols:
+- BTCUSD
+timeframes:
+- 1m
+proves:
+- behaviour:crash-consistency
+- behaviour:append-only-journal
+steps:
+- run: daemon start
+  expect: trading
+- run: kill -9
+  expect: process gone
+- run: daemon start
+  expect: state loads, journal verifies
+assertions:
+- journal-hash-chain-valid
+- state-round-trips

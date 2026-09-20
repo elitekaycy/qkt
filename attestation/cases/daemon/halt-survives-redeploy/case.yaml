@@ -1,0 +1,24 @@
+id: halt-survives-redeploy
+title: A persistent halt is still a halt after redeploy, and only resume clears it
+why: '`qkt start` does not clear a persistent halt; an operator who believes it does leaves a book silently
+  not trading.'
+status: planned
+symbols:
+- BTCUSD
+timeframes:
+- 1m
+proves:
+- behaviour:persistent-halt
+- behaviour:resume
+steps:
+- run: qkt halt
+  expect: halted
+- run: redeploy
+  expect: still halted, says so
+- run: qkt start
+  expect: still halted
+- run: qkt resume
+  expect: trading
+assertions:
+- status-says-halted
+- no-entry-while-halted
