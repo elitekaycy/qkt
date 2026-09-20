@@ -1,6 +1,7 @@
 package com.qkt.app
 
 import com.qkt.broker.Broker
+import com.qkt.broker.BrokerFactory
 import com.qkt.broker.BrokerPositionTicket
 import com.qkt.broker.CompositeBroker
 import com.qkt.broker.OrderModification
@@ -151,8 +152,7 @@ class LiveSessionBrokerCoverageTest {
             )
 
         val ex = catchThrowable { session.start() }
-        assertThat(ex).isInstanceOf(ReconcileException::class.java)
-        assertThat(ex.message).contains("refusing to start")
+        assertThat(ex).isInstanceOf(ReconcileException::class.java).hasMessageContaining("refusing to start")
         assertThat(reads).isEqualTo(5)
     }
 

@@ -2,23 +2,19 @@ package com.qkt.marketdata.source
 
 import com.qkt.candles.TimeWindow
 import com.qkt.common.TimeRange
-import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
-import com.qkt.marketdata.TickFeed
 import com.qkt.marketdata.live.MarketDataFeedScope
 import com.qkt.marketdata.live.MarketDataLifecycleFeed
 import java.math.BigDecimal
 import java.time.Instant
 import java.util.concurrent.CopyOnWriteArrayList
-import java.util.concurrent.LinkedBlockingQueue
-import java.util.concurrent.atomic.AtomicBoolean
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
 class PrefixRemapMarketSourceTest {
     @Test
     fun `supports and capabilitiesFor translate the local prefix to the delegate prefix`() {
-        val delegate = RecordingSource()
+        val delegate = RemapRecordingSource()
         val source = remap(delegate)
 
         assertThat(source.supports("S1:EURUSD")).isTrue()
@@ -31,7 +27,7 @@ class PrefixRemapMarketSourceTest {
 
     @Test
     fun `liveTicks subscribes canonical symbols upstream and rewrites emitted ticks back`() {
-        val delegate = RecordingSource()
+        val delegate = RemapRecordingSource()
         val source = remap(delegate)
 
         val feed = source.liveTicks(listOf("S1:EURUSD", "S1:XAUUSD"))
@@ -46,7 +42,7 @@ class PrefixRemapMarketSourceTest {
 
     @Test
     fun `end-of-feed propagates and lifecycle handlers see rewritten scope symbols`() {
-        val delegate = RecordingSource()
+        val delegate = RemapRecordingSource()
         val source = remap(delegate)
         val feed = source.liveTicks(listOf("S1:EURUSD"))
         val lifecycle = feed as MarketDataLifecycleFeed
@@ -74,7 +70,7 @@ class PrefixRemapMarketSourceTest {
 
     @Test
     fun `plain TickFeed delegate yields a plain TickFeed without lifecycle contract`() {
-        val delegate = RecordingSource(lifecycle = false)
+        val delegate = RemapRecordingSource(lifecycle = false)
         val source = remap(delegate)
 
         val feed = source.liveTicks(listOf("S1:EURUSD"))
@@ -88,7 +84,7 @@ class PrefixRemapMarketSourceTest {
 
     @Test
     fun `bars ticks and tickSlice translate the request and restamp results with the local symbol`() {
-        val delegate = RecordingSource()
+        val delegate = RemapRecordingSource()
         val source = remap(delegate)
         val range = TimeRange(Instant.ofEpochMilli(0L), Instant.ofEpochMilli(60_000L))
 
@@ -107,7 +103,7 @@ class PrefixRemapMarketSourceTest {
 
     @Test
     fun `symbols outside the local prefix are rejected`() {
-        val source = remap(RecordingSource())
+        val source = remap(RemapRecordingSource())
 
         org.assertj.core.api.Assertions
             .assertThatThrownBy { source.liveTicks(listOf("S2:EURUSD")) }
@@ -123,157 +119,11 @@ class PrefixRemapMarketSourceTest {
             }.isInstanceOf(IllegalArgumentException::class.java)
     }
 
-    private fun remap(delegate: RecordingSource): PrefixRemapMarketSource =
+    private fun remap(delegate: RemapRecordingSource): PrefixRemapMarketSource =
         PrefixRemapMarketSource(delegate = delegate, delegatePrefix = "S0:", localPrefix = "S1:")
 
     private fun tick(
         symbol: String,
         timestamp: Long,
     ): Tick = Tick(symbol, BigDecimal("1.00000"), timestamp)
-
-    private class RecordingSource(
-        private val lifecycle: Boolean = true,
-    ) : MarketSource {
-        override val name: String = "canonical"
-        override val capabilities: Set<MarketSourceCapability> = setOf(MarketSourceCapability.LIVE_TICKS)
-
-        val supportsQueries = CopyOnWriteArrayList<String>()
-        val capabilitiesQueries = CopyOnWriteArrayList<String>()
-        val liveRequests = CopyOnWriteArrayList<List<String>>()
-        val barRequests = CopyOnWriteArrayList<String>()
-        val tickRequests = CopyOnWriteArrayList<String>()
-        val tickSliceRequests = CopyOnWriteArrayList<String>()
-
-        lateinit var feed: ControllableFeed
-        lateinit var plainFeed: PlainFeed
-
-        override fun supports(symbol: String): Boolean {
-            supportsQueries.add(symbol)
-            return symbol.startsWith("S0:")
-        }
-
-        override fun capabilitiesFor(symbol: String): Set<MarketSourceCapability> {
-            capabilitiesQueries.add(symbol)
-            return setOf(MarketSourceCapability.LIVE_TICKS)
-        }
-
-        override fun liveTicks(symbols: List<String>): TickFeed {
-            liveRequests.add(symbols)
-            return if (lifecycle) {
-                ControllableFeed().also { feed = it }
-            } else {
-                PlainFeed().also { plainFeed = it }
-            }
-        }
-
-        override fun bars(
-            symbol: String,
-            window: TimeWindow,
-            range: TimeRange,
-        ): Sequence<Candle> {
-            barRequests.add(symbol)
-            return sequenceOf(
-                Candle(
-                    symbol = symbol,
-                    open = BigDecimal("1.0"),
-                    high = BigDecimal("1.1"),
-                    low = BigDecimal("0.9"),
-                    close = BigDecimal("1.05"),
-                    volume = BigDecimal("10"),
-                    startTime = range.from.toEpochMilli(),
-                    endTime = range.to.toEpochMilli(),
-                ),
-            )
-        }
-
-        override fun ticks(
-            symbol: String,
-            range: TimeRange,
-        ): Sequence<Tick> {
-            tickRequests.add(symbol)
-            return sequenceOf(Tick(symbol, BigDecimal("1.00000"), range.from.toEpochMilli()))
-        }
-
-        override fun tickSlice(
-            symbol: String,
-            fromMs: Long,
-            toMs: Long,
-        ): Sequence<Tick> {
-            tickSliceRequests.add(symbol)
-            return sequenceOf(Tick(symbol, BigDecimal("1.00000"), fromMs))
-        }
-    }
-
-    private class ControllableFeed :
-        TickFeed,
-        MarketDataLifecycleFeed {
-        private sealed interface Item {
-            data class Value(
-                val tick: Tick,
-            ) : Item
-
-            data object End : Item
-        }
-
-        private val queue = LinkedBlockingQueue<Item>()
-        val closed = AtomicBoolean(false)
-        private val disconnectHandlers = CopyOnWriteArrayList<(MarketDataFeedScope) -> Unit>()
-        private val reconnectHandlers = CopyOnWriteArrayList<(MarketDataFeedScope) -> Unit>()
-
-        @Volatile
-        private var failure: String? = null
-
-        fun emit(tick: Tick) {
-            queue.put(Item.Value(tick))
-        }
-
-        fun disconnect(scope: MarketDataFeedScope) {
-            disconnectHandlers.forEach { it(scope) }
-        }
-
-        fun reconnect(scope: MarketDataFeedScope) {
-            reconnectHandlers.forEach { it(scope) }
-        }
-
-        fun fail(reason: String) {
-            failure = reason
-            queue.put(Item.End)
-        }
-
-        override fun next(): Tick? =
-            when (val item = queue.take()) {
-                is Item.Value -> item.tick
-                Item.End -> null
-            }
-
-        override fun onDisconnect(handler: (MarketDataFeedScope) -> Unit) {
-            disconnectHandlers.add(handler)
-        }
-
-        override fun onReconnect(handler: (MarketDataFeedScope) -> Unit) {
-            reconnectHandlers.add(handler)
-        }
-
-        override fun terminalFailureReason(): String? = failure
-
-        override fun close() {
-            closed.set(true)
-            queue.offer(Item.End)
-        }
-    }
-
-    private class PlainFeed : TickFeed {
-        private val queue = LinkedBlockingQueue<Tick>()
-        val closed = AtomicBoolean(false)
-
-        fun emit(tick: Tick) {
-            queue.put(tick)
-        }
-
-        override fun next(): Tick? = queue.take()
-
-        override fun close() {
-            closed.set(true)
-        }
-    }
 }

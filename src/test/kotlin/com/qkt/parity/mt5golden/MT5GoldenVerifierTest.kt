@@ -1,10 +1,10 @@
 package com.qkt.parity.mt5golden
 
-import com.qkt.broker.mt5.MT5DefaultProfiles
-import com.qkt.broker.mt5.MT5OrderTranslator
-import com.qkt.broker.mt5.MT5Symbol
-import com.qkt.broker.mt5.MT5Translation
 import com.qkt.common.Side
+import com.qkt.connector.mt5.MT5DefaultProfiles
+import com.qkt.connector.mt5.MT5OrderTranslator
+import com.qkt.connector.mt5.MT5Symbol
+import com.qkt.connector.mt5.MT5Translation
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.TimeInForce
 import java.nio.file.Files

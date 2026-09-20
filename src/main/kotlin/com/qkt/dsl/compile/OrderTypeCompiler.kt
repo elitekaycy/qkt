@@ -9,31 +9,8 @@ import com.qkt.dsl.ast.StopLimit
 import com.qkt.dsl.ast.TrailingBy
 import com.qkt.dsl.ast.TrailingPct
 import com.qkt.execution.OrderRequest
-import com.qkt.execution.TimeInForce
 import com.qkt.execution.TrailMode
 import java.math.BigDecimal
-
-data class CompiledOrderType(
-    val buildRequest: BuildRequest,
-    val entryPrice: EntryPriceRef,
-)
-
-fun interface EntryPriceRef {
-    fun evaluate(ec: EvalContext): BigDecimal?
-}
-
-fun interface BuildRequest {
-    fun evaluate(
-        ec: EvalContext,
-        id: String,
-        symbol: String,
-        side: Side,
-        qty: BigDecimal,
-        tif: TimeInForce,
-        strategyId: String,
-        ts: Long,
-    ): OrderRequest?
-}
 
 /**
  * Compiles a DSL order-type clause into a request builder. The order's symbol is the

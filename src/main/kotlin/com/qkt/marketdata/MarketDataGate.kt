@@ -54,60 +54,19 @@ class MarketDataGate(
 ) {
     private val log = LoggerFactory.getLogger(MarketDataGate::class.java)
 
-    private class SymbolState {
-        var lastSeenMs: Long = 0L
-        var ewmaGapMs: Double = 0.0
+    private val health =
+        FeedHealthJudge(
+            clock,
+            staleAgeMultiple,
+            minStaleAgeMs,
+            maxClockSkewMs,
+            onUnhealthy,
+            inSession,
+            scheduledBreak,
+            log,
+        )
 
-        // Primitive rings of the last WINDOW_CAPACITY prices and their arrival times, oldest
-        // at [windowHead] — the boxed ArrayDeque<Double> allocated a wrapper per tick on the
-        // live hot path. Entries are evicted by AGE, not by count: see [outlierWindowMs].
-        val window = DoubleArray(WINDOW_CAPACITY)
-        val windowAtMs = LongArray(WINDOW_CAPACITY)
-        var windowHead = 0
-        var windowSize = 0
-        var staleAlerted = false
-        var pausedAlerted = false
-        var lastSkewMs = 0L
-        var skewAlerted = false
-        var closedAlerted = false
-        var rejectedOutlierRun = 0
-        var rebaselineCandidate = 0.0
-        var rebaselineCandidateCount = 0
-
-        fun push(
-            price: Double,
-            atMs: Long,
-        ) {
-            if (windowSize < WINDOW_CAPACITY) {
-                val slot = (windowHead + windowSize) % WINDOW_CAPACITY
-                window[slot] = price
-                windowAtMs[slot] = atMs
-                windowSize++
-            } else {
-                window[windowHead] = price
-                windowAtMs[windowHead] = atMs
-                windowHead = (windowHead + 1) % WINDOW_CAPACITY
-            }
-        }
-
-        fun resetAt(
-            price: Double,
-            atMs: Long,
-        ) {
-            windowHead = 0
-            windowSize = 0
-            repeat(MIN_WINDOW_FOR_OUTLIER) { push(price, atMs) }
-            clearRejectedOutliers()
-        }
-
-        fun clearRejectedOutliers() {
-            rejectedOutlierRun = 0
-            rebaselineCandidate = 0.0
-            rebaselineCandidateCount = 0
-        }
-    }
-
-    private val bySymbol: MutableMap<String, SymbolState> = ConcurrentHashMap()
+    private val bySymbol: MutableMap<String, SymbolFeedState> = ConcurrentHashMap()
 
     /** Count of ticks rejected as outliers (crossed books included). */
     val outlierCount =
@@ -118,7 +77,7 @@ class MarketDataGate(
     enum class Verdict { OK, OUTLIER }
 
     fun observe(tick: Tick): Verdict {
-        val state = bySymbol.getOrPut(tick.symbol) { SymbolState() }
+        val state = bySymbol.getOrPut(tick.symbol) { SymbolFeedState() }
         val now = clock.now()
 
         // Every fresh tick re-measures the feed's time base: a broker timestamp hours
@@ -127,18 +86,18 @@ class MarketDataGate(
 
         val crossed = tick.bid != null && tick.ask != null && tick.bid > tick.ask
         val price = tick.price.toDouble()
-        val outlier = crossed || isOutlier(state, price, now)
+        val outlier = crossed || state.isOutlier(price, now, outlierWindowMs, outlierSigma)
         if (outlier) {
             state.rejectedOutlierRun++
-            if (!crossed && recordRebaselineCandidate(state, price)) {
+            if (!crossed && state.recordRebaselineCandidate(price)) {
                 state.resetAt(price, now)
                 state.staleAlerted = false
-                touch(state, now)
+                state.touch(now)
                 log.error(
                     "market data for {} re-baselined at {} after {} coherent outlier ticks",
                     tick.symbol,
                     tick.price.toPlainString(),
-                    REBASELINE_TICK_COUNT,
+                    SymbolFeedState.REBASELINE_TICK_COUNT,
                 )
                 return Verdict.OK
             }
@@ -157,104 +116,15 @@ class MarketDataGate(
                 )
             }
             // The clock of "data is flowing" still ticks — an outlier is data, just bad data.
-            touch(state, now)
+            state.touch(now)
             return Verdict.OUTLIER
         }
 
-        touch(state, now)
+        state.touch(now)
         state.push(price, now)
         state.clearRejectedOutliers()
-        if (state.pausedAlerted) {
-            state.pausedAlerted = false
-            // The pause gap would otherwise sit in the smoothed inter-tick gap for the next
-            // hour and lift the stale threshold; restart the estimate from the live cadence.
-            state.ewmaGapMs = 0.0
-            log.info("market data for {} resumed after scheduled break", tick.symbol)
-        }
-        if (state.staleAlerted) {
-            state.staleAlerted = false
-            log.info("market data for {} healthy again", tick.symbol)
-        }
-        if (state.closedAlerted && kotlin.math.abs(state.lastSkewMs) <= maxClockSkewMs) {
-            state.closedAlerted = false
-            log.info("market data for {}: fresh print after venue gap; healthy again", tick.symbol)
-        }
-        if (state.skewAlerted && kotlin.math.abs(state.lastSkewMs) <= maxClockSkewMs) {
-            state.skewAlerted = false
-            log.info(
-                "market data for {} clock realigned: skew {}ms within {}ms tolerance",
-                tick.symbol,
-                state.lastSkewMs,
-                maxClockSkewMs,
-            )
-        }
+        health.onFreshTick(tick.symbol, state)
         return Verdict.OK
-    }
-
-    private fun recordRebaselineCandidate(
-        state: SymbolState,
-        price: Double,
-    ): Boolean {
-        val tolerance = maxOf(kotlin.math.abs(state.rebaselineCandidate), 1.0) * REBASELINE_CLUSTER_TOLERANCE
-        if (state.rebaselineCandidateCount == 0 || kotlin.math.abs(price - state.rebaselineCandidate) > tolerance) {
-            state.rebaselineCandidate = price
-            state.rebaselineCandidateCount = 1
-        } else {
-            state.rebaselineCandidateCount++
-            state.rebaselineCandidate +=
-                (price - state.rebaselineCandidate) / state.rebaselineCandidateCount
-        }
-        return state.rebaselineCandidateCount >= REBASELINE_TICK_COUNT
-    }
-
-    private fun touch(
-        state: SymbolState,
-        now: Long,
-    ) {
-        if (state.lastSeenMs > 0L) {
-            val gap = (now - state.lastSeenMs).toDouble()
-            state.ewmaGapMs =
-                if (state.ewmaGapMs == 0.0) gap else EWMA_ALPHA * gap + (1 - EWMA_ALPHA) * state.ewmaGapMs
-        }
-        state.lastSeenMs = now
-    }
-
-    private fun isOutlier(
-        state: SymbolState,
-        price: Double,
-        nowMs: Long,
-    ): Boolean {
-        val stored = state.windowSize
-        if (stored < MIN_WINDOW_FOR_OUTLIER) return false
-        val window = state.window
-        val at = state.windowAtMs
-        val head = state.windowHead
-        // The ring is in arrival order, so the first entry inside the age window starts the
-        // sample. Bounding by AGE rather than by count keeps the comparison band's meaning
-        // fixed as the feed's tick rate changes: a fixed 64-entry window spanned about a
-        // minute under one-quote-per-poll and about twelve seconds once range polling
-        // delivered every tick, tightening the band precisely during fast moves.
-        val cutoff = nowMs - outlierWindowMs
-        var first = 0
-        while (first < stored && at[(head + first) % WINDOW_CAPACITY] < cutoff) first++
-        val n = stored - first
-        if (n < MIN_WINDOW_FOR_OUTLIER) return false
-        // Two passes in oldest-to-newest order, matching the deque version's summation order
-        // exactly so the double math is unchanged.
-        var sum = 0.0
-        for (k in first until stored) sum += window[(head + k) % WINDOW_CAPACITY]
-        val mean = sum / n
-        var ssd = 0.0
-        for (k in first until stored) {
-            val d = window[(head + k) % WINDOW_CAPACITY] - mean
-            ssd += d * d
-        }
-        val variance = ssd / n
-        val sigma = kotlin.math.sqrt(variance)
-        // A flat window (sigma ~ 0) cannot judge deviation meaningfully — use a small
-        // relative floor so a constant-price series doesn't flag the first real move.
-        val effectiveSigma = maxOf(sigma, mean.coerceAtLeast(1.0) * MIN_RELATIVE_SIGMA)
-        return kotlin.math.abs(price - mean) > outlierSigma * effectiveSigma
     }
 
     /**
@@ -264,85 +134,7 @@ class MarketDataGate(
      */
     fun isHealthy(symbol: String): Boolean {
         val state = bySymbol[symbol] ?: return true
-        if (state.lastSeenMs == 0L) return true
-        if (state.rejectedOutlierRun > 0) {
-            if (!state.staleAlerted) {
-                state.staleAlerted = true
-                log.error(
-                    "market data for {} UNHEALTHY: {} consecutive outlier tick(s) rejected — suppressing new orders",
-                    symbol,
-                    state.rejectedOutlierRun,
-                )
-                onUnhealthy(symbol, "${state.rejectedOutlierRun} consecutive outlier tick(s) rejected")
-            }
-            return false
-        }
-        if (kotlin.math.abs(state.lastSkewMs) > maxClockSkewMs) {
-            // A print that trails the local clock by more than any plausible server-zone
-            // offset, or while the venue is closed, is the venue's last tick before a
-            // gap — a weekend, a holiday, a symbol that opens later than its peers. Not
-            // a clock problem: keep new orders suppressed (nothing to trade against),
-            // say so once at INFO, and let the first fresh tick clear it (#1056).
-            val now = clock.now()
-            val lastPrint =
-                state.lastSkewMs < 0L &&
-                    (-state.lastSkewMs > MAX_PLAUSIBLE_ZONE_OFFSET_MS || !inSession(symbol, now))
-            if (lastPrint) {
-                if (!state.closedAlerted) {
-                    state.closedAlerted = true
-                    log.info(
-                        "market data for {}: venue closed — last print {}ms old; new orders wait for a fresh tick",
-                        symbol,
-                        -state.lastSkewMs,
-                    )
-                }
-                return false
-            }
-            if (!state.skewAlerted) {
-                state.skewAlerted = true
-                log.error(
-                    "market data for {} CLOCK-SKEWED: broker tick time {}ms from local clock " +
-                        "exceeds {}ms tolerance — suppressing new orders (check server_time_zone)",
-                    symbol,
-                    state.lastSkewMs,
-                    maxClockSkewMs,
-                )
-                onUnhealthy(symbol, "broker tick clock skew ${state.lastSkewMs}ms exceeds ${maxClockSkewMs}ms")
-            }
-            return false
-        }
-        val threshold = staleThresholdMs(state)
-        val now = clock.now()
-        val age = now - state.lastSeenMs
-        val healthy = age <= threshold
-        if (!healthy && !state.staleAlerted && scheduledBreak(symbol, now)) {
-            if (!state.pausedAlerted) {
-                state.pausedAlerted = true
-                log.info(
-                    "market data for {} PAUSED: scheduled break, quote age {}ms — suppressing new orders",
-                    symbol,
-                    age,
-                )
-            }
-            return false
-        }
-        if (!healthy && !state.staleAlerted) {
-            // A gap that outlives its scheduled break is a feed fault after all.
-            state.staleAlerted = true
-            log.error(
-                "market data for {} STALE: age {}ms exceeds threshold {}ms — suppressing new orders",
-                symbol,
-                age,
-                threshold,
-            )
-            onUnhealthy(symbol, "quote age ${age}ms exceeds ${threshold}ms threshold")
-        }
-        return healthy
-    }
-
-    private fun staleThresholdMs(state: SymbolState): Long {
-        val fromGap = (state.ewmaGapMs * staleAgeMultiple).toLong()
-        return maxOf(fromGap, minStaleAgeMs)
+        return health.isHealthy(symbol, state)
     }
 
     /** Symbols whose broker tick clock is out of tolerance, with the last measured skew in ms. */
@@ -355,7 +147,7 @@ class MarketDataGate(
     fun staleSymbols(): Map<String, Long> {
         val now = clock.now()
         return bySymbol
-            .filterValues { it.lastSeenMs > 0L && now - it.lastSeenMs > staleThresholdMs(it) }
+            .filterValues { it.lastSeenMs > 0L && now - it.lastSeenMs > health.staleThresholdMs(it) }
             .mapValues { (_, st) -> now - st.lastSeenMs }
     }
 
@@ -375,36 +167,6 @@ class MarketDataGate(
         /** Sample age for the outlier band; preserves the span a 64-tick window covered at ~1 tick/s. */
         const val DEFAULT_OUTLIER_WINDOW_MS: Long = 64_000L
 
-        /** Ring capacity — bounds memory; [DEFAULT_OUTLIER_WINDOW_MS] bounds the sample itself. */
-        private const val WINDOW_CAPACITY = 512
-        private const val MIN_WINDOW_FOR_OUTLIER = 16
-        private const val EWMA_ALPHA = 0.1
-        private const val MIN_RELATIVE_SIGMA = 0.002
-        private const val REBASELINE_CLUSTER_TOLERANCE = 0.002
-        private const val REBASELINE_TICK_COUNT = 3
         private const val OUTLIER_LOG_EVERY = 500L
-    }
-}
-
-/**
- * Pre-trade rule companion to [MarketDataGate]: rejects NEW-exposure orders for a
- * symbol whose data is unhealthy (stale quotes or a skewed broker clock);
- * risk-REDUCING orders (opposite side, no larger than the open position, or
- * close-by-ticket) still pass — bad data is a reason to stop adding risk, not a
- * reason to trap the position.
- */
-class MarketDataHealthRule(
-    private val gate: MarketDataGate,
-) : com.qkt.risk.RiskRule {
-    override fun evaluate(
-        request: com.qkt.execution.OrderRequest,
-        positions: com.qkt.positions.PositionProvider,
-    ): com.qkt.risk.Decision {
-        if (gate.isHealthy(request.symbol)) return com.qkt.risk.Decision.Approve
-        if (com.qkt.risk.isRiskReducing(request, positions)) return com.qkt.risk.Decision.Approve
-        return com.qkt.risk.Decision.Reject(
-            "market data for ${request.symbol} is unhealthy (stale or clock-skewed) — " +
-                "new orders suppressed until data recovers",
-        )
     }
 }

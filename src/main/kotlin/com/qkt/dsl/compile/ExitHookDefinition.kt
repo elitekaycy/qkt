@@ -69,3 +69,27 @@ class ExitHookCatalog(
 
     internal fun references(): Map<String, ExitHookRef> = definitions.mapValues { it.value.ref }
 }
+
+/**
+ * Salt for exit-hook fingerprints: every stream and basket binding, sorted, so an otherwise
+ * identical hook AST on a rebound stream gets a different durable identity.
+ */
+internal fun exitHookFingerprintContext(
+    streams: Map<String, HubKey>,
+    basketConstituents: Map<String, List<String>>,
+): String =
+    buildString {
+        streams.toSortedMap().forEach { (alias, key) ->
+            append(alias)
+            append('=')
+            append(key)
+            append('\n')
+        }
+        basketConstituents.toSortedMap().forEach { (alias, members) ->
+            append("basket:")
+            append(alias)
+            append('=')
+            append(members.joinToString(","))
+            append('\n')
+        }
+    }

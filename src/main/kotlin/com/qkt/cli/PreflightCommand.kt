@@ -1,10 +1,10 @@
 package com.qkt.cli
 
-import com.qkt.broker.mt5.MT5AccountVerifier
-import com.qkt.broker.mt5.MT5BrokerProfile
-import com.qkt.broker.mt5.MT5Client
-import com.qkt.broker.mt5.MT5Symbol
 import com.qkt.cli.daemon.StateDir
+import com.qkt.connector.mt5.MT5AccountVerifier
+import com.qkt.connector.mt5.MT5BrokerProfile
+import com.qkt.connector.mt5.MT5Client
+import com.qkt.connector.mt5.MT5Symbol
 import com.qkt.dsl.ast.StrategyAst
 import com.qkt.dsl.compile.AstCompiler
 import com.qkt.dsl.parse.Dsl
@@ -416,9 +416,9 @@ object ProductionPreflight {
     }
 
     private fun resolveMt5Profiles(cfg: Config): List<MT5BrokerProfile> =
-        com.qkt.broker.mt5.MT5BrokerProfileLoader().load(
+        com.qkt.connector.mt5.MT5BrokerProfileLoader().load(
             raw = cfg.brokers,
-            defaults = com.qkt.broker.mt5.MT5DefaultProfiles.all,
+            defaults = com.qkt.connector.mt5.MT5DefaultProfiles.all,
             env = System.getenv(),
             calendars = cfg.brokerCalendars,
             aliases = cfg.brokerAliases,

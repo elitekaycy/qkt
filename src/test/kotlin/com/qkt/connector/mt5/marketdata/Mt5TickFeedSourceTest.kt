@@ -1,0 +1,202 @@
+package com.qkt.connector.mt5.marketdata
+
+import com.qkt.marketdata.Tick
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicInteger
+import okhttp3.OkHttpClient
+import okhttp3.mockwebserver.Dispatcher
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.RecordedRequest
+import org.assertj.core.api.Assertions.assertThat
+import org.junit.jupiter.api.Test
+
+class Mt5TickFeedSourceTest {
+    @Test
+    fun `polls MT5 gateway and emits ticks deduped by time_msc`() {
+        val server = MockWebServer()
+        val counter = AtomicInteger(0)
+        server.dispatcher =
+            object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse {
+                    val n = counter.incrementAndGet()
+                    val body =
+                        if (n <= 2) {
+                            // first two polls return the same broker time → second dedups
+                            """[{"bid":4700.0,"ask":4700.3,"last":4700.1,"flags":6,"time":1778662794,"time_msc":1778662794911,"volume":0,"volume_real":0}]"""
+                        } else {
+                            // third onwards: newer broker time
+                            """[{"bid":4701.0,"ask":4701.3,"last":4701.1,"flags":6,"time":1778662795,"time_msc":1778662795200,"volume":0,"volume_real":0}]"""
+                        }
+                    return MockResponse().setBody(body)
+                }
+            }
+        server.start()
+        try {
+            val source =
+                Mt5TickFeedSource(
+                    baseUrl = server.url("/").toString().trimEnd('/'),
+                    symbolMap = mapOf("XAUUSDm" to "EXNESS:XAUUSD"),
+                    pollIntervalMs = 5L,
+                    http = OkHttpClient(),
+                )
+            val captured = CopyOnWriteArrayList<Tick>()
+            source.start(onTick = { captured.add(it) }, onError = { it.printStackTrace() }, onDisconnect = {})
+            val deadline = System.currentTimeMillis() + 3_000L
+            while (captured.size < 2 && System.currentTimeMillis() < deadline) {
+                Thread.sleep(20L)
+            }
+            source.stop()
+            assertThat(counter.get())
+                .withFailMessage("dispatcher only saw ${counter.get()} requests; raise pollIntervalMs or deadline")
+                .isGreaterThanOrEqualTo(3)
+            assertThat(captured).hasSize(2)
+            assertThat(captured.map { it.price.toPlainString() })
+                .containsExactly("4700.10000000", "4701.10000000")
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test
+    fun `repeated poll failure fires onDisconnect and recovery fires onReconnect`() {
+        // A hung gateway used to surface only as an endless onError stream — the
+        // reconnect budget never started and strategies ran on silently stale prices.
+        val server = MockWebServer()
+        val counter = AtomicInteger(0)
+        server.dispatcher =
+            object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse {
+                    val n = counter.incrementAndGet()
+                    return if (n <= 12) {
+                        MockResponse().setResponseCode(500).setBody("gateway down")
+                    } else {
+                        MockResponse().setBody(
+                            """[{"bid":4700.0,"ask":4700.3,"last":4700.1,"flags":6,"time":1778662794,""" +
+                                """"time_msc":${1778662794911L + n},"volume":0,"volume_real":0}]""",
+                        )
+                    }
+                }
+            }
+        server.start()
+        var source: Mt5TickFeedSource? = null
+        try {
+            source =
+                Mt5TickFeedSource(
+                    baseUrl = server.url("/").toString().trimEnd('/'),
+                    symbolMap = mapOf("XAUUSDm" to "EXNESS:XAUUSD"),
+                    pollIntervalMs = 1L,
+                    http = OkHttpClient(),
+                )
+            val disconnects = AtomicInteger(0)
+            val reconnects = AtomicInteger(0)
+            source.start(
+                onTick = {},
+                onError = {},
+                onDisconnect = { disconnects.incrementAndGet() },
+                onReconnect = { reconnects.incrementAndGet() },
+            )
+            val deadline = System.currentTimeMillis() + 5_000L
+            while (reconnects.get() == 0 && System.currentTimeMillis() < deadline) {
+                Thread.sleep(20L)
+            }
+            assertThat(disconnects.get()).isEqualTo(1)
+            assertThat(reconnects.get()).isEqualTo(1)
+        } finally {
+            source?.stop()
+            server.shutdown()
+        }
+    }
+
+    @Test
+    fun `prolonged-stale probing starts after threshold and fresh ticks recover normal cadence`() {
+        val controller =
+            ProlongedStaleProbeController(
+                normalPollIntervalMs = 10L,
+                staleAfterMs = 50L,
+                probePollIntervalMs = 100L,
+            )
+
+        assertThat(controller.sleepAfterRound(nowMs = 1_000L, hadFreshTick = false)).isEqualTo(10L)
+        assertThat(controller.sleepAfterRound(nowMs = 1_010L, hadFreshTick = true)).isEqualTo(10L)
+        assertThat(controller.sleepAfterRound(nowMs = 1_040L, hadFreshTick = false)).isEqualTo(10L)
+        assertThat(controller.sleepAfterRound(nowMs = 1_060L, hadFreshTick = false)).isEqualTo(100L)
+        assertThat(controller.sleepAfterRound(nowMs = 1_070L, hadFreshTick = true)).isEqualTo(10L)
+        assertThat(controller.sleepAfterRound(nowMs = 1_100L, hadFreshTick = false)).isEqualTo(10L)
+    }
+
+    @Test
+    fun `falls back to bid-ask mid when last is zero`() {
+        val server = MockWebServer()
+        val counter = AtomicInteger(0)
+        server.dispatcher =
+            object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse {
+                    // Quote-driven instrument: bid/ask populated, last = 0 (Exness XAUUSD).
+                    val ms = 1778662794911L + counter.incrementAndGet()
+                    return MockResponse().setBody(
+                        """[{"bid":4700.0,"ask":4700.4,"last":0.0,"flags":6,"time":1778662794,"time_msc":$ms,"volume":0,"volume_real":0}]""",
+                    )
+                }
+            }
+        server.start()
+        try {
+            val source =
+                Mt5TickFeedSource(
+                    baseUrl = server.url("/").toString().trimEnd('/'),
+                    symbolMap = mapOf("XAUUSDm" to "EXNESS:XAUUSD"),
+                    pollIntervalMs = 5L,
+                    http = OkHttpClient(),
+                )
+            val captured = CopyOnWriteArrayList<Tick>()
+            source.start(onTick = { captured.add(it) }, onError = { it.printStackTrace() }, onDisconnect = {})
+            val deadline = System.currentTimeMillis() + 3_000L
+            while (captured.isEmpty() && System.currentTimeMillis() < deadline) {
+                Thread.sleep(20L)
+            }
+            source.stop()
+            assertThat(captured).isNotEmpty
+            assertThat(captured.first().price.toPlainString()).isEqualTo("4700.20000000")
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test
+    fun `stamps the emitted tick with the broker time, not wall-clock`() {
+        val brokerMs = 1778662794911L
+        val server = MockWebServer()
+        val counter = AtomicInteger(0)
+        server.dispatcher =
+            object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse {
+                    val ms = brokerMs + counter.incrementAndGet()
+                    return MockResponse().setBody(
+                        """[{"bid":4700.0,"ask":4700.3,"last":4700.1,"flags":6,"time":1778662794,"time_msc":$ms,"volume":0,"volume_real":0}]""",
+                    )
+                }
+            }
+        server.start()
+        try {
+            val source =
+                Mt5TickFeedSource(
+                    baseUrl = server.url("/").toString().trimEnd('/'),
+                    symbolMap = mapOf("XAUUSDm" to "EXNESS:XAUUSD"),
+                    pollIntervalMs = 5L,
+                    http = OkHttpClient(),
+                )
+            val captured = CopyOnWriteArrayList<Tick>()
+            source.start(onTick = { captured.add(it) }, onError = { it.printStackTrace() }, onDisconnect = {})
+            val deadline = System.currentTimeMillis() + 3_000L
+            while (captured.isEmpty() && System.currentTimeMillis() < deadline) {
+                Thread.sleep(20L)
+            }
+            source.stop()
+            assertThat(captured).isNotEmpty
+            // The first poll's broker time is brokerMs + 1; the emitted tick must carry it, not clock.now().
+            assertThat(captured.first().timestamp).isEqualTo(brokerMs + 1)
+        } finally {
+            server.shutdown()
+        }
+    }
+}
