@@ -49,8 +49,8 @@ class AccountDirectory private constructor(
 
     companion object {
         /**
-         * Opens [configs] through [registry]. A missing or unknown `type` is refused before any
-         * connector runs, naming the installed types. If a connector fails, accounts already
+         * Opens [configs] through [registry]. A missing or unknown `type`, or a setting the entry's
+         * connector does not declare, is refused before any connector runs. If a connector fails, accounts already
          * opened are closed before the failure propagates.
          */
         fun open(
@@ -62,10 +62,12 @@ class AccountDirectory private constructor(
                 require(cfg.type.isNotBlank()) {
                     "brokers.${cfg.name} has no type; set type to one of: ${registry.types.joinToString()}"
                 }
-                requireNotNull(registry.find(cfg.type)) {
-                    "brokers.${cfg.name} has type '${cfg.type}', which no installed connector provides " +
-                        "(installed: ${registry.types.joinToString()})"
-                }
+                val connector =
+                    requireNotNull(registry.find(cfg.type)) {
+                        "brokers.${cfg.name} has type '${cfg.type}', which no installed connector provides " +
+                            "(installed: ${registry.types.joinToString()})"
+                    }
+                AccountSettings.requireKnown(cfg.name, cfg.settings.keys, connector.spec.settings)
             }
             val opened = linkedMapOf<String, TradingAccount>()
             try {

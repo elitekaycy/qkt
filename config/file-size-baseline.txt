@@ -63,7 +63,6 @@
 257 src/test/kotlin/com/qkt/connector/mt5/MT5PollerSessionGateTest.kt
 257 src/test/kotlin/com/qkt/parity/MT5DaemonE2ETest.kt
 256 src/main/kotlin/com/qkt/broker/Broker.kt
-254 src/main/kotlin/com/qkt/connector/mt5/MT5BrokerProfileLoader.kt
 254 src/main/kotlin/com/qkt/observe/insights/BrokerStatePoller.kt
 252 src/main/kotlin/com/qkt/events/BrokerEvent.kt
 250 src/main/kotlin/com/qkt/connector/mt5/marketdata/Mt5MarketSource.kt
@@ -87,6 +86,7 @@
 213 src/main/kotlin/com/qkt/backtest/ExecutionSimulation.kt
 212 src/main/kotlin/com/qkt/app/LiveSessionHandle.kt
 212 src/main/kotlin/com/qkt/connector/bybit/linear/BybitLinearStateRecovery.kt
+211 src/main/kotlin/com/qkt/connector/mt5/MT5BrokerProfileLoader.kt
 210 src/main/kotlin/com/qkt/cli/daemon/portfolio/PortfolioSupervisor.kt
 210 src/main/kotlin/com/qkt/trade/BotGateway.kt
 209 src/main/kotlin/com/qkt/dsl/parse/TokenKind.kt
