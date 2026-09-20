@@ -45,6 +45,23 @@ class AccountDirectoryTest {
     }
 
     @Test
+    fun `a setting the connector does not declare is refused before it opens, with the closest key`() {
+        val mt5 = FakeConnector("mt5")
+        val typo =
+            AccountConfig("prop", "mt5", mapOf("type" to "mt5", "gateway_ur" to "http://gw", "calendars" to "{}"))
+
+        assertThatThrownBy { AccountDirectory.open(listOf(typo), ConnectorRegistry(listOf(mt5)), context) }
+            .hasMessageContaining("brokers.prop has unknown setting 'gateway_ur' (did you mean 'gateway_url'?)")
+        assertThat(mt5.openCalls).isEmpty()
+    }
+
+    @Test
+    fun `a key unlike any known setting is refused without a suggestion`() {
+        assertThatThrownBy { AccountSettings.requireKnown("prop", setOf("colour"), setOf("gateway_url")) }
+            .hasMessageContaining("unknown setting 'colour'. Known settings:")
+    }
+
+    @Test
     fun `lookups go by account name and by strategy symbol prefix`() {
         val dir =
             AccountDirectory.open(

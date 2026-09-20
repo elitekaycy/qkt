@@ -307,7 +307,14 @@ in qkt changes.
 ```kotlin
 // src/main/kotlin/com/qkt/connector/venue/VenueConnector.kt
 class VenueConnector : Connector {
-    override val spec = ConnectorSpec(type = "venue", displayName = "Venue", productTypes = setOf(ProductType.FUTURE))
+    // `settings` lists every key a `brokers:` entry of this type may carry; any other key refuses startup.
+    override val spec =
+        ConnectorSpec(
+            type = "venue",
+            displayName = "Venue",
+            productTypes = setOf(ProductType.FUTURE),
+            settings = setOf("api_key", "account_id"),
+        )
 
     override fun open(accounts: List<AccountConfig>, context: ConnectorContext): List<TradingAccount> =
         accounts.map { cfg ->

@@ -25,12 +25,14 @@ interface Connector {
 
 /**
  * A connector's identity: the lowercase [type] that selects it in config (`type: mt5`), a
- * human-readable [displayName], and the [productTypes] it can trade.
+ * human-readable [displayName], the [productTypes] it can trade, and the [settings] its `brokers:`
+ * entries may carry beyond [AccountSettings.SHARED] — any other key is refused at load.
  */
 data class ConnectorSpec(
     val type: String,
     val displayName: String,
     val productTypes: Set<ProductType>,
+    val settings: Set<String>,
 ) {
     init {
         require(type.isNotBlank()) { "ConnectorSpec.type must not be blank" }

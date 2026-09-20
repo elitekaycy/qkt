@@ -55,6 +55,7 @@ class BybitConnector(
             type = "bybit",
             displayName = "Bybit",
             productTypes = setOf(ProductType.SPOT, ProductType.PERPETUAL),
+            settings = setOf("category", "api_key", "api_secret", "testnet", "recv_window_ms", "account_type"),
         )
 
     override fun open(
