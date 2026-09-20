@@ -1643,11 +1643,9 @@ class LiveSession(
         // Control events (bus events from pollers, flatten, heartbeat, feed-end) are
         // low-rate and must NEVER be dropped; ticks are high-rate and individually
         // disposable — a newer tick supersedes an older one. Splitting them bounds
-        // memory under a stalled consumer: the tick queue sheds its OLDEST on overflow
-        // and the daemon can no longer OOM because one engine thread stalled. The loop
-        // drains control ahead of ticks, so a flatten or fill never waits behind a
-        // tick backlog. [control] itself is created before broker construction — see
-        // the bindSink note above.
+        // memory under a stalled consumer: the tick queue sheds its OLDEST on overflow, so one
+        // stalled engine thread cannot OOM the daemon. The loop drains control ahead of ticks, so a
+        // flatten or fill never waits behind a tick backlog. [control] predates the broker (bindSink).
         val tickQueue = java.util.concurrent.ArrayBlockingQueue<Inbound.FeedTick>(TICK_QUEUE_CAPACITY)
         val droppedInboundTicks =
             java.util.concurrent.atomic
@@ -2290,6 +2288,8 @@ class LiveSession(
                 }
                 return out
             }
+
+            override fun realizedPnl(strategyId: String): java.math.BigDecimal = strategyPnL.realizedFor(strategyId)
 
             override fun pnlSnapshot(strategyId: String): SessionPnl =
                 engineSnapshot {

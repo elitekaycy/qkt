@@ -5,8 +5,9 @@ import java.math.BigDecimal
 
 /**
  * Live book balance for one deployed portfolio: declared CAPITAL plus the lifetime
- * realized PnL of every child, read on demand from each child session's PnL snapshot
- * (which restores across restarts). Children capture this at construction; the deployer
+ * realized PnL of every child (which restores across restarts). The readers must never wait
+ * on a child's engine thread: sizing runs ON an engine thread, so two children sizing on the
+ * same tick would each wait for the other and both halt at the snapshot timeout (#1160). Children capture this at construction; the deployer
  * binds the realized sources once every child exists, before the supervisor activates
  * any gate — so no signal can size against an unbound book.
  *
