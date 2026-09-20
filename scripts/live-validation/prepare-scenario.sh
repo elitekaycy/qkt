@@ -622,8 +622,8 @@ $account_identity_metadata
     "requiredFinalOrders": 0
   },
   "readOnlyStreams": [
-    {"symbol": "EXNESS:EURUSD", "timeframe": "1m", "warmupBars": 20},
-    {"symbol": "EXNESS:EURUSD", "timeframe": "5m", "warmupBars": 20}
+    {"symbol": "EXNESS:$symbol", "timeframe": "1m", "warmupBars": 20},
+    {"symbol": "EXNESS:$symbol", "timeframe": "5m", "warmupBars": 20}
   ],
   "armedScenario": {
     "strategy": "${scenario_id}_market_bracket",

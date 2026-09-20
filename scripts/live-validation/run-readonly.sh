@@ -135,10 +135,14 @@ jq -e 'length == 0' "$evidence/orders-initial.json" >/dev/null || fail "demo acc
 
 "$cli" preflight "${readonly_strategies[0]}" --config "$config" > "$evidence/preflight.log" 2>&1
 
+# The observed stream is the scenario's own symbol, so a crypto (24/7) scenario observes crypto.
+readonly_symbol="$(jq -er '.readOnlyStreams[0].symbol' "$scenario/expected.json")"
+[ -n "$readonly_symbol" ] || fail "scenario declares no read-only stream symbol"
+
 same_bar=false
 for attempt in 1 2 3; do
-    "$cli" bot bars EXNESS:EURUSD --tf 1m --count 10 --config "$config" --json > "$evidence/bars-1m.json"
-    "$cli" bot eval 'ema(3)' EXNESS:EURUSD --tf 1m --count 10 --config "$config" --json > "$evidence/ema3-1m.json"
+    "$cli" bot bars "$readonly_symbol" --tf 1m --count 10 --config "$config" --json > "$evidence/bars-1m.json"
+    "$cli" bot eval 'ema(3)' "$readonly_symbol" --tf 1m --count 10 --config "$config" --json > "$evidence/ema3-1m.json"
     if [ "$(jq -r '.[-1].t' "$evidence/bars-1m.json")" = "$(jq -r '.lastBarStart' "$evidence/ema3-1m.json")" ]; then
         same_bar=true
         break
@@ -146,7 +150,7 @@ for attempt in 1 2 3; do
 done
 $same_bar || fail "could not capture bars and EMA evaluation on the same closed-bar set"
 
-"$cli" bot bars EXNESS:EURUSD --tf 5m --count 10 --config "$config" --json > "$evidence/bars-5m.json"
+"$cli" bot bars "$readonly_symbol" --tf 5m --count 10 --config "$config" --json > "$evidence/bars-5m.json"
 captured_now_ms="$(date +%s%3N)"
 jq -e --argjson now "$captured_now_ms" '
     length == 10 and
