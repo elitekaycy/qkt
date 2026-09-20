@@ -25,8 +25,12 @@ interface InstrumentRegistry {
     fun require(qktSymbol: String): InstrumentMeta =
         lookup(qktSymbol)
             ?: error(
-                "no InstrumentMeta for $qktSymbol; configure it in data/instruments.yaml " +
-                    "for backtest or ensure the live broker exposes it via /symbol_info",
+                "no InstrumentMeta for $qktSymbol; risk and notional sizing need its contract size. " +
+                    "For a backtest, add it to data/instruments.yaml (or pass --instruments <file>); " +
+                    "generate the entry from your broker with " +
+                    "scripts/instruments-from-gateway.py --gateway <url> --symbols <venue symbol> " +
+                    "--prefix ${qktSymbol.substringBefore(':')} --out instruments.yaml. " +
+                    "Live, the broker must expose it via /symbol_info",
             )
 }
 
