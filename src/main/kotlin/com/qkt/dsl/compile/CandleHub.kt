@@ -1,7 +1,5 @@
 package com.qkt.dsl.compile
 
-import com.qkt.candles.CandleAggregator
-import com.qkt.candles.TimeWindow
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
 
@@ -21,59 +19,8 @@ import com.qkt.marketdata.Tick
  * owner of — so a daemon that cycles strategies does not accumulate idle aggregators.
  */
 class CandleHub {
-    private data class OwnedListener(
-        val strategyId: String,
-        val callback: (Candle) -> Unit,
-    )
-
-    private class Slot(
-        val key: HubKey,
-        val aggregator: CandleAggregator,
-        val ring: ArrayDeque<Candle>,
-        var retention: Int,
-        val listeners: MutableList<OwnedListener>,
-        val owners: MutableSet<String>,
-    )
-
-    private val slots: MutableMap<HubKey, Slot> = java.util.concurrent.ConcurrentHashMap()
-
-    // Per-tick [feed] reads only the slots for the tick's symbol via this index instead of walking the
-    // whole `slots` map and comparing qktSymbol on each. Derived from `slots`; rebuilt on
-    // register/unregister (rare) and read on the hot path, so it is published through @Volatile.
-    // Longer windows close first at a shared boundary. A faster-stream rule can therefore read the
-    // newly closed slower candle, independent of ConcurrentHashMap or registration order.
-    @Volatile
-    private var slotsByQktSymbol: Map<String, List<Slot>> = emptyMap()
-
-    @Volatile
-    private var orderedSlots: List<Slot> = emptyList()
-
-    private fun rebuildSymbolIndex() {
-        val sorted =
-            slots.values.sortedWith(
-                compareBy<Slot> { it.key.qktSymbol }
-                    .thenByDescending { TimeWindow.parse(it.key.timeframe).durationMs }
-                    .thenBy { it.key.timeframe },
-            )
-        orderedSlots = sorted
-        slotsByQktSymbol = sorted.groupBy { it.key.qktSymbol }
-    }
-
-    private data class OwnedSyncListener(
-        val strategyId: String,
-        val callback: (Map<String, Candle>) -> Unit,
-    )
-
-    private class SyncSlot(
-        val key: SyncGroupKey,
-        val listeners: MutableList<OwnedSyncListener>,
-        val owners: MutableSet<String>,
-        // window-end (ms) -> alias -> closed bar. Cleared per-window on atomic fire or timeout.
-        val pending: MutableMap<Long, MutableMap<String, Candle>> = mutableMapOf(),
-    )
-
-    private val syncSlots: MutableMap<SyncGroupKey, SyncSlot> =
-        java.util.concurrent.ConcurrentHashMap()
+    private val syncGroups = CandleSyncGroups()
+    private val slots = HubSlots(syncGroups)
 
     fun register(
         key: HubKey,
@@ -82,29 +29,11 @@ class CandleHub {
     ) {
         require(retention >= 1) { "retention must be >= 1: $retention" }
         require(strategyId.isNotBlank()) { "strategyId must be non-blank" }
-        val existing = slots[key]
-        if (existing != null) {
-            existing.retention = maxOf(existing.retention, retention)
-            existing.owners.add(strategyId)
-            return
-        }
-        val window = TimeWindow.parse(key.timeframe)
-        val ring = ArrayDeque<Candle>()
-        val listeners = mutableListOf<OwnedListener>()
-        val agg =
-            CandleAggregator.standalone(window) { closed ->
-                val slot = slots[key] ?: return@standalone
-                ring.addLast(closed)
-                while (ring.size > slot.retention) ring.removeFirst()
-                for (l in slot.listeners.toList()) l.callback(closed)
-                routeToSyncSlots(key, closed)
-            }
-        slots[key] = Slot(key, agg, ring, retention, listeners, mutableSetOf(strategyId))
-        rebuildSymbolIndex()
+        slots.register(key, retention, strategyId)
     }
 
     fun feed(tick: Tick) {
-        val matching = slotsByQktSymbol[tick.symbol]
+        val matching = slots.forQktSymbol(tick.symbol)
         if (matching != null) {
             for (i in matching.indices) {
                 val slot = matching[i]
@@ -115,31 +44,15 @@ class CandleHub {
                 }
             }
         }
-        if (syncSlots.isNotEmpty()) sweepSyncTimeouts(tick.timestamp)
+        if (syncGroups.isNotEmpty()) syncGroups.sweepTimeouts(tick.timestamp)
     }
 
     private fun publishMacroEvent(
-        slot: Slot,
+        slot: HubSlot,
         tick: Tick,
     ) {
-        val durationMs = TimeWindow.parse(slot.key.timeframe).durationMs
-        val candle =
-            Candle(
-                symbol = tick.symbol,
-                open = tick.price,
-                high = tick.price,
-                low = tick.price,
-                close = tick.price,
-                volume = tick.volume ?: com.qkt.common.Money.ZERO,
-                startTime = tick.timestamp,
-                endTime = tick.timestamp + durationMs,
-                bid = tick.bid,
-                ask = tick.ask,
-            )
-        slot.ring.addLast(candle)
-        while (slot.ring.size > slot.retention) slot.ring.removeFirst()
-        for (listener in slot.listeners.toList()) listener.callback(candle)
-        routeToSyncSlots(slot.key, candle)
+        val candle = slot.publishObservation(tick)
+        syncGroups.route(slot.key, candle)
     }
 
     /**
@@ -149,7 +62,7 @@ class CandleHub {
      * that silently disagrees with the venue. Reporting only the default window aggregator hid
      * exactly the drops a multi-stream strategy suffers.
      */
-    fun droppedLateTicks(): Long = slots.values.sumOf { it.aggregator.droppedLateTicks }
+    fun droppedLateTicks(): Long = slots.droppedLateTicks()
 
     /**
      * Time-driven close: finish every in-progress candle whose window ended at
@@ -157,52 +70,8 @@ class CandleHub {
      * so a quiet symbol's last bar still closes and fires its rules.
      */
     fun flushClosed(nowMs: Long) {
-        for (slot in orderedSlots) slot.aggregator.flushClosed(nowMs)
-        sweepSyncTimeouts(nowMs)
-    }
-
-    /**
-     * Route a closed bar into every sync group that contains [streamKey]. Stash the
-     * bar under the group's pending map keyed by `closed.endTime`. If every member of
-     * the group now has a bar for that window-end, fire the listeners once with one
-     * `(alias -> bar)` entry per member and clear the window.
-     *
-     * Called from each per-stream close callback. Safe to call when no sync group
-     * references [streamKey] — the walk just skips.
-     */
-    private fun routeToSyncSlots(
-        streamKey: HubKey,
-        closed: Candle,
-    ) {
-        for ((_, syncSlot) in syncSlots) {
-            val alias =
-                syncSlot.key.members.entries
-                    .firstOrNull { it.value == streamKey }
-                    ?.key
-                    ?: continue
-            val window = syncSlot.pending.getOrPut(closed.endTime) { mutableMapOf() }
-            window[alias] = closed
-            if (window.size == syncSlot.key.members.size) {
-                val snapshot = window.toMap()
-                syncSlot.pending.remove(closed.endTime)
-                for (l in syncSlot.listeners.toList()) l.callback(snapshot)
-            }
-        }
-    }
-
-    /**
-     * Drop any pending sync window whose end time is more than the group's
-     * `timeoutMs` behind [nowTs]. No callback fires — the partial window is GC'd.
-     *
-     * Called once per tick from [feed]. Groups with `timeoutMs == null` keep
-     * partial windows forever, which is fine if both streams reliably print.
-     */
-    private fun sweepSyncTimeouts(nowTs: Long) {
-        for ((_, syncSlot) in syncSlots) {
-            val tm = syncSlot.key.timeoutMs ?: continue
-            val expired = syncSlot.pending.keys.filter { endTime -> nowTs > endTime + tm }
-            for (et in expired) syncSlot.pending.remove(et)
-        }
+        for (slot in slots.ordered) slot.aggregator.flushClosed(nowMs)
+        syncGroups.sweepTimeouts(nowMs)
     }
 
     /**
@@ -220,31 +89,7 @@ class CandleHub {
         candles: List<Candle>,
     ) {
         val slot = slots[key] ?: error("CandleHub.seed: unknown key $key")
-        if (candles.isEmpty()) return
-        val expectedDurationMs = TimeWindow.parse(key.timeframe).durationMs
-        require(candles.all { it.symbol == key.qktSymbol }) {
-            "CandleHub.seed: symbol mismatch for $key"
-        }
-        require(candles.all { it.endTime - it.startTime == expectedDurationMs }) {
-            "CandleHub.seed: timeframe mismatch for $key; expected ${expectedDurationMs}ms bars"
-        }
-        // Live aggregation and backtests both build bars on the epoch-aligned UTC grid
-        // (00:00, 04:00, ... for 4h). A seed on any other phase (e.g. broker-day-aligned
-        // MT5 history) would warm indicators on bars no other part of qkt ever produces.
-        // An observation stream (MACRO:, HUB:) closes each published value as its own event candle
-        // at the instant it became knowable, which is almost never a day boundary. Its history is
-        // seeded the same way, so the grid rule -- which exists for aggregated OHLC bars -- must not
-        // reject the very shape the live path publishes.
-        require(isObservationSymbol(key.qktSymbol) || candles.all { it.startTime % expectedDurationMs == 0L }) {
-            "CandleHub.seed: bars for $key are not on the epoch-aligned UTC grid " +
-                "(first offender starts at ${candles.first { it.startTime % expectedDurationMs != 0L }.startTime}); " +
-                "refusing to warm indicators on a shifted grid"
-        }
-        val sorted = candles.sortedBy { it.startTime }
-        val oldestExisting = slot.ring.firstOrNull()?.startTime ?: Long.MAX_VALUE
-        val toPrepend = sorted.filter { it.startTime < oldestExisting }
-        for (c in toPrepend.reversed()) slot.ring.addFirst(c)
-        while (slot.ring.size > slot.retention) slot.ring.removeFirst()
+        slot.seed(candles)
     }
 
     /**
@@ -264,9 +109,8 @@ class CandleHub {
         candle: Candle,
     ) {
         val slot = slots[key] ?: error("CandleHub.publish: unknown key $key")
-        slot.ring.addLast(candle)
-        while (slot.ring.size > slot.retention) slot.ring.removeFirst()
-        routeToSyncSlots(key, candle)
+        slot.append(candle)
+        syncGroups.route(key, candle)
     }
 
     fun latest(key: HubKey): Candle? = slots[key]?.ring?.lastOrNull()
@@ -274,11 +118,7 @@ class CandleHub {
     fun history(
         key: HubKey,
         n: Int,
-    ): Candle? {
-        val ring = slots[key]?.ring ?: return null
-        if (n < 0 || n >= ring.size) return null
-        return ring[ring.size - 1 - n]
-    }
+    ): Candle? = slots[key]?.history(n)
 
     fun onClosed(
         key: HubKey,
@@ -297,22 +137,8 @@ class CandleHub {
      * the same rule. Idempotent and safe to call from a stop path.
      */
     fun unregister(strategyId: String) {
-        val toDrop = mutableListOf<HubKey>()
-        for ((key, slot) in slots) {
-            slot.listeners.removeAll { it.strategyId == strategyId }
-            slot.owners.remove(strategyId)
-            if (slot.owners.isEmpty()) toDrop.add(key)
-        }
-        for (k in toDrop) slots.remove(k)
-        if (toDrop.isNotEmpty()) rebuildSymbolIndex()
-
-        val syncToDrop = mutableListOf<SyncGroupKey>()
-        for ((key, slot) in syncSlots) {
-            slot.listeners.removeAll { it.strategyId == strategyId }
-            slot.owners.remove(strategyId)
-            if (slot.owners.isEmpty()) syncToDrop.add(key)
-        }
-        for (k in syncToDrop) syncSlots.remove(k)
+        slots.unregister(strategyId)
+        syncGroups.unregister(strategyId)
     }
 
     /**
@@ -332,17 +158,7 @@ class CandleHub {
                 "registerSyncGroup: alias '$alias' refers to unregistered stream $key"
             }
         }
-        val existing = syncSlots[group]
-        if (existing != null) {
-            existing.owners.add(strategyId)
-            return
-        }
-        syncSlots[group] =
-            SyncSlot(
-                key = group,
-                listeners = mutableListOf(),
-                owners = mutableSetOf(strategyId),
-            )
+        syncGroups.register(group, strategyId)
     }
 
     /**
@@ -356,11 +172,10 @@ class CandleHub {
         callback: (Map<String, Candle>) -> Unit,
     ) {
         require(strategyId.isNotBlank()) { "strategyId must be non-blank" }
-        val slot = syncSlots[group] ?: error("CandleHub.onSyncClosed: unknown sync group $group")
-        slot.listeners.add(OwnedSyncListener(strategyId, callback))
+        syncGroups.onClosed(group, strategyId, callback)
     }
 
-    fun syncGroupKeys(): Set<SyncGroupKey> = syncSlots.keys.toSet()
+    fun syncGroupKeys(): Set<SyncGroupKey> = syncGroups.keys()
 
     fun retention(key: HubKey): Int = slots[key]?.retention ?: 0
 
@@ -372,14 +187,7 @@ class CandleHub {
     fun latestAtOrBefore(
         key: HubKey,
         endTimeMs: Long,
-    ): Candle? {
-        val ring = slots[key]?.ring ?: return null
-        for (i in ring.indices.reversed()) {
-            val candle = ring[i]
-            if (candle.endTime <= endTimeMs) return candle
-        }
-        return null
-    }
+    ): Candle? = slots[key]?.latestAtOrBefore(endTimeMs)
 
-    fun keys(): Set<HubKey> = slots.keys.toSet()
+    fun keys(): Set<HubKey> = slots.keys()
 }

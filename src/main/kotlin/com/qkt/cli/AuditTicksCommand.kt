@@ -1,17 +1,12 @@
 package com.qkt.cli
 
-import com.qkt.broker.mt5.MT5BrokerProfileLoader
-import com.qkt.broker.mt5.MT5Client
-import com.qkt.broker.mt5.MT5DefaultProfiles
-import com.qkt.broker.mt5.MT5Symbol
-import com.qkt.marketdata.Tick
-import com.qkt.marketdata.live.tv.TradingViewMarketSource
-import java.math.BigDecimal
-import java.math.MathContext
-import java.math.RoundingMode
-import java.nio.file.Files
+import com.qkt.cli.audit.runMt5HistoryAudit
+import com.qkt.cli.audit.runTradingViewDriftAudit
+import com.qkt.connector.mt5.MT5BrokerProfileLoader
+import com.qkt.connector.mt5.MT5Client
+import com.qkt.connector.mt5.MT5DefaultProfiles
+import com.qkt.connector.mt5.MT5Symbol
 import java.nio.file.Path
-import java.util.concurrent.atomic.AtomicReference
 
 /**
  * `qkt audit-ticks` — operator tool that compares TradingView ticks with the MT5 gateway,
@@ -31,6 +26,7 @@ import java.util.concurrent.atomic.AtomicReference
 class AuditTicksCommand(
     private val args: Args,
 ) {
+    /** Run the selected audit and return a process exit code. */
     fun run(): Int {
         val symbol = args.option("symbol") ?: return missing("symbol")
         val duration = args.option("duration")?.toLongOrNull() ?: 60L
@@ -109,148 +105,19 @@ class AuditTicksCommand(
                 durationSeconds = duration,
                 pollMs = pollMs,
                 settleMs = settleMs,
+                jsonOutput = args.flag("json"),
+                outPath = args.option("out"),
             )
         }
-
-        val tvLatest = AtomicReference<Tick?>(null)
-        val tvSource = TradingViewMarketSource.connect()
-        val tvFeed = tvSource.liveTicks(listOf(symbol))
-
-        val tvThread =
-            Thread({
-                while (!Thread.currentThread().isInterrupted) {
-                    val t = tvFeed.next() ?: break
-                    if (t.symbol == symbol) tvLatest.set(t)
-                }
-            }, "qkt-audit-tv-feed")
-        tvThread.isDaemon = true
-        tvThread.start()
-
-        val samples = mutableListOf<Sample>()
-        val deadline = System.currentTimeMillis() + duration * 1000L
-        try {
-            while (System.currentTimeMillis() < deadline) {
-                val tvTick = tvLatest.get()
-                val mt5Tick = mt5Client.getTick(brokerSymbol)
-                if (tvTick != null && mt5Tick != null) {
-                    val tvMid = tvTick.price
-                    val mt5Mid = mt5Tick.bid.add(mt5Tick.ask).divide(BigDecimal("2"), MC)
-                    samples.add(Sample(absDiff = tvMid.subtract(mt5Mid).abs()))
-                }
-                Thread.sleep(pollMs)
-            }
-        } finally {
-            runCatching { tvFeed.close() }
-            tvThread.interrupt()
-        }
-
-        if (samples.isEmpty()) {
-            println("no samples captured (TV feed may not have produced ticks for $symbol)")
-            return ExitCodes.USER_ERROR
-        }
-
-        val sortedDiffs = samples.map { it.absDiff }.sorted()
-        val mean =
-            sortedDiffs
-                .reduce { a, b -> a.add(b) }
-                .divide(BigDecimal(sortedDiffs.size), MC)
-        val median = sortedDiffs[sortedDiffs.size / 2]
-        val p95 = sortedDiffs[(sortedDiffs.size * 95 / 100).coerceAtMost(sortedDiffs.size - 1)]
-        val max = sortedDiffs.last()
-
-        val json =
-            """{"symbol":"$symbol","samples":${samples.size},""" +
-                """"mean_abs_diff":"${mean.toPlainString()}",""" +
-                """"median_abs_diff":"${median.toPlainString()}",""" +
-                """"p95_abs_diff":"${p95.toPlainString()}",""" +
-                """"max_abs_diff":"${max.toPlainString()}"}"""
-
-        if (args.flag("json")) {
-            println(json)
-        } else {
-            println("samples:        ${samples.size}")
-            println("mean abs diff:  ${mean.toPlainString()}")
-            println("median abs diff:${median.toPlainString()}")
-            println("p95 abs diff:   ${p95.toPlainString()}")
-            println("max abs diff:   ${max.toPlainString()}")
-        }
-
-        // --out <path> persists the JSON to disk regardless of the stdout format flag.
-        // Operators recording audits append each run's JSON to the results table in
-        // docs/operations/tick-feed-audit.md; persisting to a stable path makes that
-        // a one-command workflow instead of "remember to redirect stdout."
-        persist(json)
-
-        return ExitCodes.SUCCESS
-    }
-
-    private fun runMt5HistoryAudit(
-        client: MT5Client,
-        brokerSymbol: String,
-        qktSymbol: String,
-        profileName: String,
-        durationSeconds: Long,
-        pollMs: Long,
-        settleMs: Long,
-    ): Int {
-        val startedAtMs = System.currentTimeMillis()
-        val deadline = startedAtMs + durationSeconds * 1_000L
-        val observations = mutableListOf<ObservedMt5Tick>()
-        while (System.currentTimeMillis() < deadline) {
-            client.getTick(brokerSymbol)?.let { tick ->
-                observations += ObservedMt5Tick(System.currentTimeMillis(), tick)
-            }
-            Thread.sleep(pollMs)
-        }
-        val endedAtMs = System.currentTimeMillis()
-        Thread.sleep(settleMs)
-        val history =
-            client.getTicksRange(brokerSymbol, startedAtMs, endedAtMs)
-                ?: run {
-                    System.err.println("qkt audit-ticks: MT5 raw tick history is unavailable")
-                    return ExitCodes.USER_ERROR
-                }
-        val result =
-            runCatching {
-                Mt5FeedAudit.compare(qktSymbol, startedAtMs, endedAtMs, observations, history)
-            }.getOrElse { error ->
-                System.err.println("qkt audit-ticks: ${error.message}")
-                return ExitCodes.USER_ERROR
-            }
-        val json =
-            Mt5FeedAudit.artifactJson(
-                result = result,
-                venueSymbol = brokerSymbol,
-                profileName = profileName,
-                durationSeconds = durationSeconds,
-                pollMs = pollMs,
-                settleMs = settleMs,
-            )
-        if (args.flag("json")) {
-            println(json)
-        } else {
-            println("poll samples:             ${result.pollSamples}")
-            println("unique in-window ticks:   ${result.uniqueLiveTicks}")
-            println("history ticks:            ${result.historyTicks}")
-            println("exact timestamp matches:  ${result.exactTimestampMatches}")
-            println("exact bid/ask matches:    ${result.exactPriceMatches}")
-            println("timestamp price mismatch: ${result.timestampPriceMismatches}")
-            println("missing from history:     ${result.missingFromHistory}")
-            println("invalid live quotes:      ${result.invalidLiveQuotes}")
-            println("quote age p95 ms:         ${result.quoteAgeMs.p95}")
-            println("result:                   ${if (result.passed) "PASS" else "FAIL"}")
-        }
-        persist(json)
-        return if (result.passed) ExitCodes.SUCCESS else ExitCodes.USER_ERROR
-    }
-
-    private fun persist(json: String) {
-        args.option("out")?.let { outPath ->
-            val path = Path.of(outPath)
-            path.parent?.let { Files.createDirectories(it) }
-            Files.writeString(path, json + "\n")
-            System.err.println("qkt audit-ticks: wrote $outPath")
-        }
+        return runTradingViewDriftAudit(
+            client = mt5Client,
+            symbol = symbol,
+            brokerSymbol = brokerSymbol,
+            durationSeconds = duration,
+            pollMs = pollMs,
+            jsonOutput = args.flag("json"),
+            outPath = args.option("out"),
+        )
     }
 
     private fun missing(field: String): Int {
@@ -266,12 +133,7 @@ class AuditTicksCommand(
         return ExitCodes.ARG_ERROR
     }
 
-    private data class Sample(
-        val absDiff: BigDecimal,
-    )
-
     companion object {
-        private val MC = MathContext(8, RoundingMode.HALF_EVEN)
         private const val DEFAULT_MT5_HISTORY_SETTLE_MS = 15_000L
     }
 }

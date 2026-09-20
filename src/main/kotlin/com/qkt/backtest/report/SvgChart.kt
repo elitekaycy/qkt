@@ -3,8 +3,13 @@ package com.qkt.backtest.report
 import com.qkt.backtest.DrawdownPeriod
 import com.qkt.backtest.EquityFanPoint
 import com.qkt.backtest.EquitySample
+import com.qkt.backtest.report.SvgChartFrame.PADDING_BOTTOM
+import com.qkt.backtest.report.SvgChartFrame.PADDING_TOP
+import com.qkt.backtest.report.SvgChartFrame.appendAxes
+import com.qkt.backtest.report.SvgChartFrame.emptySvg
+import com.qkt.backtest.report.SvgChartFrame.scaleX
+import com.qkt.backtest.report.SvgChartFrame.scaleY
 import java.math.BigDecimal
-import java.util.Locale
 import kotlin.math.max
 import kotlin.math.min
 
@@ -18,11 +23,6 @@ import kotlin.math.min
  * largest expected size and let CSS scale the SVG element.
  */
 object SvgChart {
-    private const val PADDING_LEFT = 60
-    private const val PADDING_BOTTOM = 30
-    private const val PADDING_TOP = 20
-    private const val PADDING_RIGHT = 20
-
     /**
      * Render a simple equity-style line chart. [points] are (timestampMs, value)
      * pairs in chronological order; empty input renders an empty-state placeholder.
@@ -46,7 +46,7 @@ object SvgChart {
             }
         return buildString {
             append("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 $width $height\">")
-            append("<title>${svgText(title)}</title>")
+            append("<title>${htmlEscape(title)}</title>")
             appendAxes(width, height, yMin, yMax)
             append("<polyline fill=\"none\" stroke=\"#1f77b4\" stroke-width=\"1.5\" points=\"$poly\"/>")
             append("</svg>")
@@ -149,65 +149,4 @@ object SvgChart {
             append("</svg>")
         }
     }
-
-    private fun emptySvg(
-        width: Int,
-        height: Int,
-        title: String,
-    ): String =
-        "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 $width $height\">" +
-            "<title>${svgText(title)}</title><text x=\"$PADDING_LEFT\" y=\"${height / 2}\">no data</text></svg>"
-
-    private fun StringBuilder.appendAxes(
-        width: Int,
-        height: Int,
-        yMin: Double,
-        yMax: Double,
-    ) {
-        append(
-            "<line x1=\"$PADDING_LEFT\" y1=\"${height - PADDING_BOTTOM}\" " +
-                "x2=\"${width - PADDING_RIGHT}\" y2=\"${height - PADDING_BOTTOM}\" stroke=\"#888\"/>",
-        )
-        append(
-            "<line x1=\"$PADDING_LEFT\" y1=\"$PADDING_TOP\" " +
-                "x2=\"$PADDING_LEFT\" y2=\"${height - PADDING_BOTTOM}\" stroke=\"#888\"/>",
-        )
-        append(
-            "<text x=\"5\" y=\"${PADDING_TOP + 5}\" font-size=\"10\">${axisLabel(yMax)}</text>",
-        )
-        append(
-            "<text x=\"5\" y=\"${height - PADDING_BOTTOM}\" font-size=\"10\">${axisLabel(yMin)}</text>",
-        )
-    }
-
-    private fun scaleX(
-        v: Double,
-        min: Double,
-        max: Double,
-        width: Int,
-    ): Double {
-        if (max == min) return PADDING_LEFT.toDouble()
-        val range = (width - PADDING_LEFT - PADDING_RIGHT)
-        return PADDING_LEFT + (v - min) / (max - min) * range
-    }
-
-    private fun scaleY(
-        v: Double,
-        min: Double,
-        max: Double,
-        height: Int,
-    ): Double {
-        if (max == min) return PADDING_TOP + (height - PADDING_TOP - PADDING_BOTTOM) / 2.0
-        val range = (height - PADDING_TOP - PADDING_BOTTOM)
-        return PADDING_TOP + (max - v) / (max - min) * range
-    }
-
-    private fun axisLabel(value: Double): String = String.format(Locale.US, "%.4g", value)
-
-    private fun svgText(value: String): String =
-        value
-            .replace("&", "&amp;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
-            .replace("\"", "&quot;")
 }

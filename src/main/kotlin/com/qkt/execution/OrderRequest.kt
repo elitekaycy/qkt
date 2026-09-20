@@ -69,7 +69,7 @@ sealed interface OrderRequest {
          * rather than opening a new one. On a hedging account that is the difference between
          * actually closing the position and opening an offsetting counter. Brokers that net
          * (and the backtest) reach the same end state by filling the opposite quantity, so
-         * they may ignore it; [com.qkt.broker.mt5.MT5Broker] routes it to a close-by-ticket.
+         * they may ignore it; [com.qkt.connector.mt5.MT5Broker] routes it to a close-by-ticket.
          */
         val closesTicket: String? = null,
         /**

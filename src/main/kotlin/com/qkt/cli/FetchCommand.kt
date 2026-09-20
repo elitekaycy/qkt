@@ -1,17 +1,15 @@
 package com.qkt.cli
 
-import com.qkt.broker.mt5.MT5BrokerProfileLoader
-import com.qkt.broker.mt5.MT5DefaultProfiles
-import com.qkt.broker.mt5.MT5Symbol
 import com.qkt.candles.TimeWindow
+import com.qkt.cli.fetch.buildFetcher
+import com.qkt.cli.fetch.resolveFetchRange
 import com.qkt.common.TimeRange
+import com.qkt.connector.bybit.marketdata.BybitKlineClient
+import com.qkt.connector.mt5.MT5BrokerProfileLoader
+import com.qkt.connector.mt5.marketdata.Mt5BarFetcher
 import com.qkt.marketdata.Candle
-import com.qkt.marketdata.live.bybit.BybitKlineClient
-import com.qkt.marketdata.live.mt5.Mt5BarFetcher
 import com.qkt.marketdata.store.DataRoot
 import com.qkt.marketdata.store.LocalBarStore
-import java.nio.file.Path
-import java.time.LocalDate
 import java.time.ZoneOffset
 
 /**
@@ -33,6 +31,7 @@ import java.time.ZoneOffset
 class FetchCommand(
     private val args: Args,
 ) {
+    /** Fetch every missing day in the range and return a process exit code. */
     fun run(): Int {
         val target =
             args.positional(0) ?: run {
@@ -66,7 +65,7 @@ class FetchCommand(
             }
 
         val (fromDate, toDate) =
-            resolveRange(args.option("from"), args.option("to"), args.option("last"))
+            resolveFetchRange(args.option("from"), args.option("to"), args.option("last"))
                 ?: return ExitCodes.ARG_ERROR
 
         if (broker == "BACKTEST") {
@@ -77,7 +76,7 @@ class FetchCommand(
             return ExitCodes.USER_ERROR
         }
 
-        val fetcher = buildFetcher(broker) ?: return ExitCodes.USER_ERROR
+        val fetcher = buildFetcher(broker, args.option("config")) ?: return ExitCodes.USER_ERROR
         val store = LocalBarStore(root = DataRoot.forDataRoot(args.option("data-root")))
 
         val totalDays =
@@ -127,140 +126,5 @@ class FetchCommand(
         }
         println("qkt fetch: done — fetched=$fetched empty=$empty skipped=$skipped total=$totalDays")
         return ExitCodes.SUCCESS
-    }
-
-    /** Either (--from + --to) or (--last Nd). Returns null on a parse error after printing it. */
-    private fun resolveRange(
-        from: String?,
-        to: String?,
-        last: String?,
-    ): Pair<LocalDate, LocalDate>? {
-        if (last != null) {
-            val days = parseLastDays(last) ?: return null
-            val today = LocalDate.now(ZoneOffset.UTC)
-            return today.minusDays(days.toLong()) to today.minusDays(1)
-        }
-        if (from == null || to == null) {
-            System.err.println("qkt: need either --from + --to or --last <Nd>")
-            return null
-        }
-        return try {
-            LocalDate.parse(from) to LocalDate.parse(to)
-        } catch (e: Exception) {
-            System.err.println("qkt: invalid date in --from/--to: ${e.message}")
-            null
-        }
-    }
-
-    private fun parseLastDays(s: String): Int? {
-        val m = Regex("^(\\d+)d$").matchEntire(s)
-        if (m == null) {
-            System.err.println("qkt: --last must be like '30d', got '$s'")
-            return null
-        }
-        return m.groupValues[1].toInt()
-    }
-
-    private fun buildFetcher(broker: String): BarFetcher? =
-        when (broker.uppercase()) {
-            "BYBIT_SPOT" ->
-                BybitFetcher(BybitKlineClient(category = "spot"))
-            "BYBIT_LINEAR" ->
-                BybitFetcher(BybitKlineClient(category = "linear"))
-            else -> {
-                // Treat as an MT5 broker — load profile and construct Mt5BarFetcher.
-                val configPath =
-                    args.option("config")?.let { Path.of(it) }
-                        ?: Config.locate() ?: run {
-                        System.err.println(
-                            "qkt: no qkt.config.yaml found (need it to resolve MT5 broker '$broker'); " +
-                                "pass --config <path> or place the file under " +
-                                Config.defaultSearchPaths().joinToString(", "),
-                        )
-                        return null
-                    }
-                val cfg = Config.load(configPath)
-                val profiles =
-                    try {
-                        MT5BrokerProfileLoader().load(
-                            raw = cfg.brokers,
-                            defaults = MT5DefaultProfiles.all,
-                            env = System.getenv(),
-                            calendars = cfg.brokerCalendars,
-                            aliases = cfg.brokerAliases,
-                            capabilityRestrictions = cfg.brokerCapabilityRestrictions,
-                            instrumentOverrides = cfg.brokerInstrumentOverrides,
-                        )
-                    } catch (e: Exception) {
-                        System.err.println("qkt: failed to load broker profiles: ${e.message}")
-                        return null
-                    }
-                val profile =
-                    profiles.firstOrNull { it.name.equals(broker, ignoreCase = true) } ?: run {
-                        System.err.println(
-                            "qkt: no broker profile named '$broker' in qkt.config.yaml; " +
-                                "known: ${profiles.joinToString(", ") { it.name }}",
-                        )
-                        return null
-                    }
-                Mt5Fetcher(
-                    Mt5BarFetcher(
-                        profile.gatewayUrl,
-                        serverTimeZone = profile.serverTimeZone,
-                        normalizeBidBarsToMid = true,
-                        apiKey = profile.apiKey,
-                    ),
-                    MT5Symbol(profile.symbolPolicy),
-                    profile.symbolCalendars,
-                )
-            }
-        }
-
-    /** Thin adapter so MT5 and Bybit fetchers share a common shape for [run]. */
-    private fun interface BarFetcher {
-        fun fetch(
-            symbol: String,
-            window: TimeWindow,
-            range: TimeRange,
-        ): List<Candle>
-
-        fun isExpectedEmpty(
-            symbol: String,
-            range: TimeRange,
-        ): Boolean = false
-    }
-
-    private class Mt5Fetcher(
-        private val inner: Mt5BarFetcher,
-        private val symbols: MT5Symbol,
-        private val calendars: com.qkt.broker.mt5.SymbolCalendars,
-    ) : BarFetcher {
-        override fun fetch(
-            symbol: String,
-            window: TimeWindow,
-            range: TimeRange,
-        ): List<Candle> = inner.fetchRange(symbols.toBroker(symbol), window, range).toList()
-
-        override fun isExpectedEmpty(
-            symbol: String,
-            range: TimeRange,
-        ): Boolean {
-            var instant = range.from
-            while (instant.isBefore(range.to)) {
-                if (calendars.calendarFor(symbol).isInSession(symbol, instant)) return false
-                instant = instant.plusSeconds(3_600L)
-            }
-            return true
-        }
-    }
-
-    private class BybitFetcher(
-        private val inner: BybitKlineClient,
-    ) : BarFetcher {
-        override fun fetch(
-            symbol: String,
-            window: TimeWindow,
-            range: TimeRange,
-        ): List<Candle> = inner.fetchRange(symbol, window, range).toList()
     }
 }

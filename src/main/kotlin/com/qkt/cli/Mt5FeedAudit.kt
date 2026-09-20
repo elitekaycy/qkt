@@ -1,6 +1,6 @@
 package com.qkt.cli
 
-import com.qkt.broker.mt5.MT5Tick
+import com.qkt.connector.mt5.MT5Tick
 import java.math.BigDecimal
 import java.math.MathContext
 import java.math.RoundingMode

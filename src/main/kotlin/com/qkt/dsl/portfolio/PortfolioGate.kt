@@ -2,10 +2,8 @@ package com.qkt.dsl.portfolio
 
 import com.qkt.common.Clock
 import com.qkt.dsl.ast.AlwaysRun
-import com.qkt.dsl.ast.PortfolioAllocationMethod
 import com.qkt.dsl.ast.PortfolioAst
 import com.qkt.dsl.ast.RegimeConditionalState
-import com.qkt.dsl.ast.RegimeDefaultState
 import com.qkt.dsl.ast.WhenRun
 import com.qkt.dsl.compile.CandleHub
 import com.qkt.dsl.compile.CompiledExpr
@@ -45,7 +43,7 @@ class PortfolioGate(
     private val bindingBag = IndicatorBinding.Bag()
     private lateinit var snapshotStore: SnapshotStore
     private lateinit var whenRules: List<Pair<WhenRun, CompiledExpr>>
-    private lateinit var regimeStates: List<Pair<com.qkt.dsl.ast.RegimeState, CompiledExpr?>>
+    private lateinit var regimes: PortfolioRegimes
     private lateinit var streamMap: Map<String, HubKey>
     private lateinit var aliasBySymbol: Map<String, String>
     private lateinit var strategyContext: StrategyContext
@@ -94,15 +92,7 @@ class PortfolioGate(
             ast.rules.filterIsInstance<WhenRun>().map { rule ->
                 rule to compiler.compile(rule.cond, ruleAlias = null)
             }
-        regimeStates =
-            ast.regimes?.states.orEmpty().map { state ->
-                val compiled =
-                    when (state) {
-                        is RegimeConditionalState -> compiler.compile(state.cond, ruleAlias = null)
-                        is RegimeDefaultState -> null
-                    }
-                state to compiled
-            } ?: emptyList()
+        regimes = PortfolioRegimes(ast, compiler)
 
         // Register streams with retention large enough for indicator warmup and any hub lookups.
         // The hub is only used for cross-stream reads; indicators maintain their own internal state.
@@ -167,7 +157,7 @@ class PortfolioGate(
         }
 
         val previous = lastState
-        val (regimeName, weightByAlias) = evaluateRegimes(ctx)
+        val (regimeName, weightByAlias) = regimes.evaluate(ctx)
         val changed =
             previous.activeByAlias != desired ||
                 previous.regimeName != regimeName ||
@@ -181,61 +171,10 @@ class PortfolioGate(
             )
     }
 
-    private fun evaluateRegimes(ctx: EvalContext): Pair<String?, Map<String, BigDecimal>> {
-        val allocate = ast.allocate ?: return null to emptyMap()
-        val selected =
-            regimeStates
-                .firstOrNull { (state, compiled) ->
-                    when (state) {
-                        is RegimeDefaultState -> false
-                        is RegimeConditionalState -> (compiled?.evaluate(ctx) as? Value.Bool)?.v == true
-                    }
-                }?.first ?: regimeStates.firstOrNull { it.first is RegimeDefaultState }?.first
-        val name = selected?.name
-        val entries = name?.let { allocate.entries[it] } ?: emptyMap()
-        val weights =
-            if (allocate.method == PortfolioAllocationMethod.REGIME_WEIGHTED) {
-                val nonCash = entries.filterKeys { !it.equals("cash", ignoreCase = true) }
-                ast.imports.associate { it.alias to (nonCash[it.alias] ?: BigDecimal.ZERO) }
-            } else {
-                emptyMap()
-            }
-        return name to weights
-    }
-
     /** Tick-fed indicators are not yet supported inside portfolio WHEN rules. */
     fun onTick(tick: Tick) {
         // Reserved for future VWAP-style indicators. The gate's hub is candle-driven, so tick
         // updates would need to update tick-fed bindings directly here.
-    }
-
-    private object EmptySource : com.qkt.marketdata.source.MarketSource {
-        override val name: String = "PortfolioGate"
-        override val capabilities: Set<com.qkt.marketdata.source.MarketSourceCapability> = emptySet()
-
-        override fun supports(symbol: String): Boolean = false
-    }
-
-    private object EmptyPositions : com.qkt.positions.StrategyPositionView {
-        override fun positionFor(symbol: String): com.qkt.positions.Position? = null
-
-        override fun allPositions(): Map<String, com.qkt.positions.Position> = emptyMap()
-
-        override fun maeFor(symbol: String): BigDecimal? = null
-    }
-
-    private object EmptyPnL : com.qkt.pnl.StrategyPnLView {
-        override fun realized(): BigDecimal = BigDecimal.ZERO
-
-        override fun unrealizedFor(symbol: String): BigDecimal = BigDecimal.ZERO
-
-        override fun unrealizedTotal(): BigDecimal = BigDecimal.ZERO
-
-        override fun total(): BigDecimal = BigDecimal.ZERO
-
-        override fun equity(): BigDecimal = BigDecimal.ZERO
-
-        override fun balance(): BigDecimal = BigDecimal.ZERO
     }
 
     /** A point-in-time snapshot of which children should be active. */

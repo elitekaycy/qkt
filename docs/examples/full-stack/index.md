@@ -133,6 +133,7 @@ brokers:
   # Bybit Spot — REST + WebSocket; no gateway container needed
   bybit_spot:
     type: bybit
+    category: spot                      # spot | linear; the name must be bybit_<category>
     api_key: ${BYBIT_API_KEY}
     api_secret: ${BYBIT_API_SECRET}
     testnet: ${BYBIT_TESTNET}

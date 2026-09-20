@@ -15,6 +15,11 @@ import java.time.LocalDate
 import java.time.ZoneOffset
 import org.slf4j.LoggerFactory
 
+/**
+ * File-backed tick [DataStore] rooted at [root]: resolves request ranges against per-symbol
+ * manifests, fetches missing days through [fetcher] and commits them to the manifest under a
+ * lock, and opens merged, range-clipped feeds over the stored day files.
+ */
 class DefaultDataStore(
     override val root: Path,
     private val fetcher: DataFetcher? = null,
@@ -29,18 +34,7 @@ class DefaultDataStore(
     override fun dayFile(
         symbol: String,
         day: LocalDate,
-    ): Path? {
-        val symDir = root.resolve("symbols").resolve(symbol)
-        val bin = symDir.resolve("$day.bin")
-        val gz = symDir.resolve("$day.csv.gz")
-        val flat = symDir.resolve("$day.csv")
-        return when {
-            Files.exists(bin) -> bin
-            Files.exists(gz) -> gz
-            Files.exists(flat) -> flat
-            else -> null
-        }
-    }
+    ): Path? = TickDayFiles.find(root, symbol, day)
 
     override fun openFeed(request: MarketRequest): TickFeed {
         val (fromMs, toMs) = resolveRangeMs(request)
@@ -75,16 +69,7 @@ class DefaultDataStore(
                 for (symDir in stream) {
                     if (!Files.isDirectory(symDir)) continue
                     val sym = symDir.fileName.toString()
-                    val days =
-                        Files.list(symDir).use { fs ->
-                            fs
-                                .map { it.fileName.toString() }
-                                .filter { it.endsWith(".csv") || it.endsWith(".csv.gz") || it.endsWith(".bin") }
-                                .map { it.removeSuffix(".gz").removeSuffix(".csv").removeSuffix(".bin") }
-                                .distinct()
-                                .sorted()
-                                .toList()
-                        }
+                    val days = TickDayFiles.storedDays(symDir)
                     if (days.isEmpty()) {
                         // No day files left (e.g. every day was deleted for a refetch). Clear the
                         // manifest so a later prefetch re-materializes it; leaving the old ranges would
@@ -92,24 +77,7 @@ class DefaultDataStore(
                         manifestStore.write(Manifest(symbol = sym, ranges = emptyList()))
                         continue
                     }
-                    val ranges = mutableListOf<DayRange>()
-                    var rangeStart: String? = null
-                    var rangeEnd: String? = null
-                    for (day in days) {
-                        val date = LocalDate.parse(day)
-                        if (rangeStart == null) {
-                            rangeStart = day
-                            rangeEnd = date.plusDays(1).toString()
-                        } else if (rangeEnd == day) {
-                            rangeEnd = date.plusDays(1).toString()
-                        } else {
-                            ranges.add(DayRange(rangeStart, rangeEnd!!))
-                            rangeStart = day
-                            rangeEnd = date.plusDays(1).toString()
-                        }
-                    }
-                    if (rangeStart != null) ranges.add(DayRange(rangeStart, rangeEnd!!))
-                    manifestStore.write(Manifest(symbol = sym, ranges = ranges))
+                    manifestStore.write(Manifest(symbol = sym, ranges = contiguousDayRanges(days)))
                 }
             }
         }
@@ -170,9 +138,9 @@ class DefaultDataStore(
                         "missing data for symbol $sym days $missing (no fetcher configured); supply a DataFetcher to DefaultDataStore",
                     )
             for (day in missing) {
-                val target = root.resolve("symbols").resolve(sym).resolve("$day.csv.gz")
+                val target = TickDayFiles.fetchTarget(root, sym, day)
                 f.fetch(sym, day, target)
-                warnOnLowQuality(sym, day, target)
+                warnOnLowQuality(log, sym, day, target)
             }
             // Commit the freshly fetched days under the lock, coalescing onto a re-read of the
             // committed manifest (not the pre-fetch snapshot) so a concurrent writer's days survive.
@@ -187,68 +155,7 @@ class DefaultDataStore(
         }
     }
 
-    /**
-     * Inspect a freshly-fetched day file and warn loudly if it looks incomplete — empty, corrupt,
-     * or holding a large intra-day gap. The store keys coverage on file presence, so without this a
-     * bad fetch is concatenated into backtests as if complete. We warn rather than refetch: a
-     * genuinely quiet day (weekend/holiday) is legitimately empty, and auto-refetching would loop.
-     */
-    private fun warnOnLowQuality(
-        sym: String,
-        day: LocalDate,
-        path: Path,
-    ) {
-        if (!Files.exists(path)) {
-            log.warn("data integrity: fetch of {} {} produced no file at {}", sym, day, path)
-            return
-        }
-        val q = DayFileIntegrity.inspect(path)
-        when {
-            !q.readable ->
-                log.warn("data integrity: {} {} is unreadable/corrupt — backtests will fail or skip it", sym, day)
-            q.isEmpty ->
-                log.warn("data integrity: {} {} has 0 ticks (a no-trading day, or a truncated fetch)", sym, day)
-            q.maxGapMs >= SUSPICIOUS_GAP_MS ->
-                log.warn(
-                    "data integrity: {} {} has a {}h intra-day gap across {} ticks — possible partial data",
-                    sym,
-                    day,
-                    q.maxGapMs / 3_600_000,
-                    q.tickCount,
-                )
-        }
-    }
-
-    private fun daysCovering(
-        fromMs: Long,
-        toMs: Long,
-    ): List<LocalDate> {
-        val fromDay = Instant.ofEpochMilli(fromMs).atZone(ZoneOffset.UTC).toLocalDate()
-        val toInclusiveDay = Instant.ofEpochMilli(toMs - 1).atZone(ZoneOffset.UTC).toLocalDate()
-        val days = mutableListOf<LocalDate>()
-        var d = fromDay
-        while (!d.isAfter(toInclusiveDay)) {
-            days.add(d)
-            d = d.plusDays(1)
-        }
-        return days
-    }
-
-    private fun dayList(range: DayRange): List<String> {
-        val days = mutableListOf<String>()
-        var d = LocalDate.parse(range.from)
-        val end = LocalDate.parse(range.to)
-        while (d.isBefore(end)) {
-            days.add(d.toString())
-            d = d.plusDays(1)
-        }
-        return days
-    }
-
     companion object {
-        /** Intra-day gap (ms) above which a fetched day file is flagged as possibly partial. 6h. */
-        private const val SUSPICIOUS_GAP_MS = 6 * 60 * 60 * 1000L
-
         fun fromEnv(
             fetcher: DataFetcher? = null,
             clock: Clock = SystemClock(),

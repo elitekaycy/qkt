@@ -2,45 +2,9 @@ package com.qkt.dsl.compile
 
 import com.qkt.common.Clock
 import com.qkt.common.Side
-import com.qkt.execution.OrderRequest
-import com.qkt.execution.StopLossSpec
-import com.qkt.execution.TimeInForce
 import com.qkt.positions.MfeTracker
 import com.qkt.strategy.Signal
 import java.math.BigDecimal
-
-/**
- * Phase 27 + Phase 37: one compiled `STACK_AT` tier. [mfeThreshold], [slDistance],
- * [tpDistance] are evaluated at compile time. Sizing is deferred to parent-fill time —
- * [resolveStackQuantity] takes the parent leg's filled quantity and returns the absolute
- * lot size for this tier. For literal-only sizing (no `ENTRY_QTY`) the lambda ignores
- * its argument and returns the constant.
- *
- * [slDistance] / [tpDistance] are in price units — the same units as the `BY` clause in
- * [com.qkt.dsl.ast.BracketAst].
- */
-data class CompiledStackTier(
-    val mfeThreshold: BigDecimal,
-    val withinMs: Long,
-    val resolveStackQuantity: (BigDecimal) -> BigDecimal,
-    val slDistance: BigDecimal,
-    val tpDistance: BigDecimal,
-    val maeRecoverDistance: BigDecimal? = null,
-)
-
-/**
- * Phase 37: a [CompiledStackTier] with [CompiledStackTier.resolveStackQuantity] already
- * applied. Held by [StackEngine] from parent-fill time onward — the per-tick path reads
- * a plain [BigDecimal] and never re-evaluates the sizing expression.
- */
-data class ResolvedStackTier(
-    val mfeThreshold: BigDecimal,
-    val withinMs: Long,
-    val stackQuantity: BigDecimal,
-    val slDistance: BigDecimal,
-    val tpDistance: BigDecimal,
-    val maeRecoverDistance: BigDecimal? = null,
-)
 
 /**
  * Phase 27: fires conditional bracketed stack orders when the parent leg's MFE crosses
@@ -200,47 +164,14 @@ class StackEngine(
 
     fun isTerminal(): Boolean = firedTierIndices.size + abandonedTierIndices.size == tiers.size
 
-    /**
-     * Build the stack signal: a [OrderRequest.Bracket] on the same symbol and side as
-     * the parent, sized to [ResolvedStackTier.stackQuantity], with SL and TP computed
-     * from the current price ± tier distance.
-     */
     private fun buildStackSignal(
         tierIdx: Int,
         tier: ResolvedStackTier,
         currentPrice: BigDecimal,
     ): Pair<Signal, String> {
-        val (sl, tp) =
-            when (parentSide) {
-                Side.BUY -> currentPrice.subtract(tier.slDistance) to currentPrice.add(tier.tpDistance)
-                Side.SELL -> currentPrice.add(tier.slDistance) to currentPrice.subtract(tier.tpDistance)
-            }
         val ts = clock.now()
         val stackLegId = idGenerator() + "-tier$tierIdx"
-        val market =
-            OrderRequest.Market(
-                id = "$stackLegId-entry",
-                symbol = parentSymbol,
-                side = parentSide,
-                quantity = tier.stackQuantity,
-                timeInForce = TimeInForce.GTC,
-                timestamp = ts,
-            )
-        val signal =
-            Signal.Submit(
-                OrderRequest.Bracket(
-                    id = stackLegId,
-                    symbol = parentSymbol,
-                    side = parentSide,
-                    quantity = tier.stackQuantity,
-                    entry = market,
-                    takeProfit = tp,
-                    stopLoss = StopLossSpec.Fixed(sl),
-                    timeInForce = TimeInForce.GTC,
-                    timestamp = ts,
-                ),
-            )
-        return signal to stackLegId
+        return stackBracketSignal(stackLegId, parentSymbol, parentSide, tier, currentPrice, ts) to stackLegId
     }
 
     private companion object {

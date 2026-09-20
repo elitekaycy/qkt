@@ -6,16 +6,16 @@ package com.qkt.positions
  * every leg mutation, so reads are O(1) map lookups and never allocate on the tick path.
  */
 class AccountPositionView internal constructor(
-    private val ledger: StrategyPositionTracker,
+    private val index: AccountNetIndex,
 ) : LegExposureProvider {
-    override fun positionFor(symbol: String): Position? = ledger.accountPositionFor(symbol)
+    override fun positionFor(symbol: String): Position? = index.positionFor(symbol)
 
-    override fun allPositions(): Map<String, Position> = ledger.accountPositions()
+    override fun allPositions(): Map<String, Position> = index.positions()
 
-    override fun symbols(): Set<String> = ledger.accountSymbols()
+    override fun symbols(): Set<String> = index.symbols()
 
     override fun forEachLeg(
         symbol: String,
         action: (PositionLeg) -> Unit,
-    ) = ledger.forEachLeg(symbol, action)
+    ) = index.forEachLeg(symbol, action)
 }

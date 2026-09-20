@@ -64,6 +64,24 @@ Changes flow one way: `feature -> dev -> testing -> main`.
   for monetary values.
 - UTC epoch milliseconds use `Long` and `Ms` suffixes where applicable.
 
+## Code Structure
+
+Full standard: [`docs/contributing/code-structure.md`](docs/contributing/code-structure.md).
+
+- Source files stay at or under 200 lines (tests 220, build scripts 200); aim for 150.
+  `./gradlew checkFileSize` enforces this in `check`.
+- Files already over the limit are listed in `config/file-size-baseline.txt` and may
+  only shrink. Never add code to a baselined file: extract the area you touch first,
+  then add the change to the extracted file. After shrinking one, run
+  `./gradlew updateFileSizeBaseline`. Never raise an entry.
+- Package by domain object (order, bracket, position, account, venue), and name each
+  file for the one thing it holds. No new `*Manager`/`*Helper`/`*Utils`/`Misc` grab
+  bags, and no splitting a class by position (`FooPart2.kt`).
+- Split large classes along the state they own: each group of fields that changes
+  together becomes a collaborator. Refactor commits move code only, and engine-path
+  refactors prove byte-identical backtest output against the pre-refactor jar.
+- Build task wiring lives in `build-logic/` convention plugins, one per concern.
+
 ## Hot Path Rules
 
 The hot path is tick/bar ingest through strategy, signal, order, broker, fill,

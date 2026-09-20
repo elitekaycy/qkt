@@ -7,8 +7,6 @@ import com.qkt.common.TimeRange
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.TickFeed
-import java.util.concurrent.CompletableFuture
-import java.util.concurrent.ExecutionException
 import org.slf4j.LoggerFactory
 
 /**
@@ -38,15 +36,7 @@ class CachedHistoricalMarketSource(
     override val capabilities: Set<MarketSourceCapability>
         get() = delegate.capabilities
 
-    private val lock = Any()
-
-    private val cache =
-        object : LinkedHashMap<BarRequest, CachedBars>(16, 0.75f, true) {
-            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<BarRequest, CachedBars>?): Boolean =
-                size > maxEntries
-        }
-
-    private val inFlight = mutableMapOf<BarRequest, CompletableFuture<List<Candle>>>()
+    private val requests = SharedBarRequests(delegate, ttlMs, maxEntries, clock, logger)
 
     override fun supports(symbol: String): Boolean = delegate.supports(symbol)
 
@@ -66,7 +56,7 @@ class CachedHistoricalMarketSource(
                 fromMs = range.from.toEpochMilli(),
                 toMs = range.to.toEpochMilli(),
             )
-        return loadOrJoin(key, symbol, window, range).asSequence()
+        return requests.loadOrJoin(key, symbol, window, range).asSequence()
     }
 
     override fun ticks(
@@ -81,132 +71,9 @@ class CachedHistoricalMarketSource(
     ): Sequence<Tick> = delegate.tickSlice(symbol, fromMs, toMs)
 
     override fun close() {
-        synchronized(lock) {
-            cache.clear()
-            inFlight.clear()
-        }
+        requests.clear()
         (delegate as? AutoCloseable)?.close()
     }
-
-    private fun loadOrJoin(
-        key: BarRequest,
-        symbol: String,
-        window: TimeWindow,
-        range: TimeRange,
-    ): List<Candle> {
-        cached(key)?.let { return it }
-
-        val future: CompletableFuture<List<Candle>>
-        val leader: Boolean
-        synchronized(lock) {
-            cachedLocked(key)?.let { return it }
-            val existing = inFlight[key]
-            if (existing == null) {
-                future = CompletableFuture()
-                inFlight[key] = future
-                leader = true
-            } else {
-                future = existing
-                leader = false
-                logger.info(
-                    "historical bar request joined source={} symbol={} windowMs={} fromMs={} toMs={}",
-                    name,
-                    key.symbol,
-                    key.windowMs,
-                    key.fromMs,
-                    key.toMs,
-                )
-            }
-        }
-
-        return if (leader) {
-            load(key, future, symbol, window, range)
-        } else {
-            await(future)
-        }
-    }
-
-    private fun cached(key: BarRequest): List<Candle>? =
-        synchronized(lock) {
-            cachedLocked(key)
-        }
-
-    private fun cachedLocked(key: BarRequest): List<Candle>? {
-        val cached = cache[key] ?: return null
-        if (clock.now() <= cached.expiresAtMs) {
-            logger.info(
-                "historical bar cache hit source={} symbol={} windowMs={} fromMs={} toMs={} bars={}",
-                name,
-                key.symbol,
-                key.windowMs,
-                key.fromMs,
-                key.toMs,
-                cached.candles.size,
-            )
-            return cached.candles
-        }
-        cache.remove(key)
-        return null
-    }
-
-    private fun load(
-        key: BarRequest,
-        future: CompletableFuture<List<Candle>>,
-        symbol: String,
-        window: TimeWindow,
-        range: TimeRange,
-    ): List<Candle> =
-        try {
-            val candles = delegate.bars(symbol, window, range).toList()
-            synchronized(lock) {
-                cache[key] = CachedBars(candles, clock.now() + ttlMs)
-                inFlight.remove(key)
-            }
-            logger.info(
-                "historical bar request loaded source={} symbol={} windowMs={} fromMs={} toMs={} bars={}",
-                name,
-                key.symbol,
-                key.windowMs,
-                key.fromMs,
-                key.toMs,
-                candles.size,
-            )
-            future.complete(candles)
-            candles
-        } catch (failure: Throwable) {
-            synchronized(lock) {
-                inFlight.remove(key)
-            }
-            future.completeExceptionally(failure)
-            throw failure
-        }
-
-    private fun await(future: CompletableFuture<List<Candle>>): List<Candle> =
-        try {
-            future.get()
-        } catch (failure: InterruptedException) {
-            Thread.currentThread().interrupt()
-            throw IllegalStateException("interrupted while waiting for shared bar request", failure)
-        } catch (failure: ExecutionException) {
-            val cause = failure.cause ?: failure
-            when (cause) {
-                is RuntimeException -> throw cause
-                is Error -> throw cause
-                else -> throw IllegalStateException("shared bar request failed", cause)
-            }
-        }
-
-    private data class BarRequest(
-        val symbol: String,
-        val windowMs: Long,
-        val fromMs: Long,
-        val toMs: Long,
-    )
-
-    private data class CachedBars(
-        val candles: List<Candle>,
-        val expiresAtMs: Long,
-    )
 
     private companion object {
         private const val DEFAULT_TTL_MS = 30_000L

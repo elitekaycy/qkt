@@ -1,5 +1,6 @@
 package com.qkt.app
 
+import com.qkt.broker.BrokerFactory
 import com.qkt.candles.TimeWindow
 import com.qkt.common.FixedClock
 import com.qkt.common.Money
@@ -1046,7 +1047,6 @@ class LiveSessionTest {
         assertThat(handle.awaitTermination(Duration.ofSeconds(2))).isTrue()
 
         val journal = Files.readString(tmp.resolve("journal/test/journal-2024-01-15.jsonl"))
-        assertThat(journal).contains("\"kind\":\"submit\"")
-        assertThat(journal).contains("\"approved\":\"true\"")
+        assertThat(journal).contains("\"kind\":\"submit\"", "\"approved\":\"true\"")
     }
 }
