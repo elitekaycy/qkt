@@ -152,7 +152,7 @@ class MT5Client(
 
     fun placeOrder(req: MT5OrderRequest): MT5OrderResponse {
         readCache?.clear()
-        val body = encodeOrder(req).toRequestBody(JSON_MEDIA)
+        val body = orderJson(req).toRequestBody(JSON_MEDIA)
         val request =
             mt5RequestBuilder("$gatewayUrl/order", apiKey)
                 .header("Idempotency-Key", req.clientOrderId)
@@ -192,7 +192,7 @@ class MT5Client(
         onResult: (MT5OrderResponse) -> Unit,
     ) {
         readCache?.clear()
-        val body = encodeOrder(req).toRequestBody(JSON_MEDIA)
+        val body = orderJson(req).toRequestBody(JSON_MEDIA)
         val request =
             mt5RequestBuilder("$gatewayUrl/order", apiKey)
                 .header("Idempotency-Key", req.clientOrderId)
@@ -360,7 +360,7 @@ class MT5Client(
         volume: BigDecimal? = null,
     ): MT5OrderResponse {
         readCache?.clear()
-        val body = encodeClosePosition(ticket, volume).toRequestBody(JSON_MEDIA)
+        val body = closePositionJson(ticket, volume).toRequestBody(JSON_MEDIA)
         val request =
             mt5RequestBuilder("$gatewayUrl/close_position", apiKey)
                 .post(body)
@@ -405,10 +405,10 @@ class MT5Client(
         if (partial) {
             val closeVolume = requireNotNull(volume) { "partial close requires volume" }
             path = "/position_close_partial"
-            payload = encodePartialClosePosition(ticket, closeVolume)
+            payload = partialCloseJson(ticket, closeVolume)
         } else {
             path = "/close_position"
-            payload = encodeClosePosition(ticket, volume)
+            payload = closePositionJson(ticket, volume)
         }
         val body = payload.toRequestBody(JSON_MEDIA)
         val request =
@@ -438,21 +438,6 @@ class MT5Client(
         )
     }
 
-    private fun encodePartialClosePosition(
-        ticket: Long,
-        volume: BigDecimal,
-    ): String = "{\"ticket\":$ticket,\"volume\":${volume.toPlainString()}}"
-
-    private fun encodeClosePosition(
-        ticket: Long,
-        volume: BigDecimal?,
-    ): String =
-        if (volume != null) {
-            "{\"position\":{\"ticket\":$ticket,\"volume\":${volume.toPlainString()}}}"
-        } else {
-            "{\"position\":{\"ticket\":$ticket}}"
-        }
-
     /**
      * Modify an OPEN position's SL/TP via `POST /modify_sl_tp` (gateway `TRADE_ACTION_SLTP`).
      * This is how a trailing stop keeps a venue-side stop in place — push the new SL level onto
@@ -470,7 +455,7 @@ class MT5Client(
         tp: BigDecimal? = null,
     ): MT5OrderResponse {
         readCache?.clear()
-        val body = encodeModifyPosition(ticket, sl, tp).toRequestBody(JSON_MEDIA)
+        val body = modifyPositionJson(ticket, sl, tp).toRequestBody(JSON_MEDIA)
         val request =
             mt5RequestBuilder("$gatewayUrl/modify_sl_tp", apiKey)
                 .post(body)
@@ -537,7 +522,7 @@ class MT5Client(
         onResult: (MT5OrderResponse) -> Unit,
     ) {
         readCache?.clear()
-        val body = encodeModifyPosition(ticket, sl, tp).toRequestBody(JSON_MEDIA)
+        val body = modifyPositionJson(ticket, sl, tp).toRequestBody(JSON_MEDIA)
         val request =
             mt5RequestBuilder("$gatewayUrl/modify_sl_tp", apiKey)
                 .post(body)
@@ -579,17 +564,6 @@ class MT5Client(
             .getOrElse { error ->
                 errorResponse("invalid gateway response after send: ${error.message ?: error.javaClass.simpleName}")
             }
-    }
-
-    private fun encodeModifyPosition(
-        ticket: Long,
-        sl: BigDecimal?,
-        tp: BigDecimal?,
-    ): String {
-        val fields = mutableListOf("\"position\":$ticket")
-        if (sl != null) fields += "\"sl\":${sl.toPlainString()}"
-        if (tp != null) fields += "\"tp\":${tp.toPlainString()}"
-        return "{" + fields.joinToString(",") + "}"
     }
 
     private fun parseAsyncMutationResponse(response: Response): MT5OrderResponse {
@@ -889,7 +863,7 @@ class MT5Client(
         mods: MT5OrderModification,
     ): MT5OrderResponse {
         readCache?.clear()
-        val body = encodeModification(mods).toRequestBody(JSON_MEDIA)
+        val body = orderModificationJson(mods).toRequestBody(JSON_MEDIA)
         val request =
             mt5RequestBuilder("$gatewayUrl/orders/$ticket", apiKey)
                 .put(body)
@@ -910,16 +884,6 @@ class MT5Client(
             }
             return parseOrderResponse(raw)
         }
-    }
-
-    private fun encodeModification(m: MT5OrderModification): String {
-        val fields = mutableListOf<String>()
-        if (m.price != null) fields += "\"price\":${m.price.toPlainString()}"
-        if (m.sl != null) fields += "\"sl\":${m.sl.toPlainString()}"
-        if (m.tp != null) fields += "\"tp\":${m.tp.toPlainString()}"
-        if (m.slDistance != null) fields += "\"sl_distance\":${m.slDistance}"
-        if (m.expiration != null) fields += "\"expiration\":${m.expiration}"
-        return "{" + fields.joinToString(",") + "}"
     }
 
     private fun getWithRetry(url: String): String? {
@@ -968,37 +932,6 @@ class MT5Client(
 
     /** Detail from the most recent failed GET, cleared by the next successful network read. */
     fun lastReadFailure(): String? = lastReadFailureRef.get()
-
-    private fun encodeOrder(req: MT5OrderRequest): String {
-        val sb = StringBuilder("{")
-
-        fun field(
-            name: String,
-            value: String,
-            last: Boolean = false,
-        ) {
-            sb.append("\"$name\":$value")
-            if (!last) sb.append(",")
-        }
-        field("symbol", "\"${req.symbol}\"")
-        field("volume", req.volume.toPlainString())
-        field("type", "\"${req.type}\"")
-        if (req.price != null) field("price", req.price.toPlainString())
-        if (req.sl != null) field("sl", req.sl.toPlainString())
-        if (req.tp != null) field("tp", req.tp.toPlainString())
-        if (req.stopLimit != null) field("stoplimit", req.stopLimit.toPlainString())
-        if (req.slDistance != null) field("sl_distance", req.slDistance.toString())
-        field("deviation", req.deviation.toString())
-        field("magic", req.magic.toString())
-        field("client_order_id", "\"${req.clientOrderId}\"")
-        // GTD expiry (epoch seconds). Without this a GTD pending rests GTC-forever on MT5
-        // and fills late. Mirrors encodeModification, which the gateway accepts without an
-        // explicit type_time — it infers TIME_SPECIFIED from the expiration's presence.
-        if (req.expiration != null) field("expiration", req.expiration.toString())
-        field("comment", "\"${req.comment.take(MT5_COMMENT_MAX_LENGTH)}\"", last = true)
-        sb.append("}")
-        return sb.toString()
-    }
 
     private fun parseOrderResponse(raw: String): MT5OrderResponse {
         val obj = json.parseToJsonElement(raw).jsonObject
