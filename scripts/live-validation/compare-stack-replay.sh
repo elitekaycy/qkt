@@ -73,6 +73,12 @@ expected_symbol="$(jq -er '.armedScenario.symbol' "$expected")"
 starting_balance="$(jq -er '.account.startingBalance' "$expected")"
 max_drift_points="$(jq -er '.armedScenario.maximumEntryAnchorDriftPoints' "$expected")"
 second_symbol="$(jq -r '.armedScenario.secondSymbol // ""' "$expected")"
+# Captures made before expected.json recorded the second instrument still trade it; read it from
+# the armed strategy so a gold fill is never judged against the EURUSD point.
+if [ -z "$second_symbol" ]; then
+    second_symbol="$(grep -oE 'EXNESS:(XAUUSD|GBPUSD)' "$strategy_file" | sed 's/^EXNESS://' |
+        grep -vx "${expected_symbol#EXNESS:}" | sort -u | head -n 1 || true)"
+fi
 case "$expected_symbol:$venue_symbol" in
     EXNESS:EURUSD:EURUSDm|EXNESS:GBPUSD:GBPUSDm) symbol_point="0.00001" ;;
     *) fail "scenario is not in the reviewed live-vs-replay drift set: $expected_symbol/$venue_symbol" ;;
