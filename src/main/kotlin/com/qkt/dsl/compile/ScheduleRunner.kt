@@ -2,11 +2,8 @@ package com.qkt.dsl.compile
 
 import com.qkt.dsl.ast.ScheduleDecl
 import com.qkt.dsl.ast.ScheduleTrigger
-import com.qkt.dsl.ast.TimeOfDay
 import java.time.Instant
-import java.time.LocalTime
 import java.time.ZoneId
-import java.time.ZoneOffset
 
 /**
  * Clock-driven runner for `SCHEDULE` blocks (#77 Phase 40).
@@ -142,114 +139,28 @@ class ScheduleRunner(
     ): Long {
         val fromInstant = Instant.ofEpochMilli(fromMs)
         return when (trigger) {
-            is ScheduleTrigger.At -> nextAt(trigger.time, resolveZoneId(trigger.tz, strategyId), fromInstant, fromMs)
+            is ScheduleTrigger.At ->
+                ScheduleFireTimes.nextAt(
+                    trigger.time,
+                    resolveZoneId(trigger.tz, strategyId),
+                    fromInstant,
+                    fromMs,
+                )
             is ScheduleTrigger.EveryDay ->
-                nextAt(
+                ScheduleFireTimes.nextAt(
                     trigger.time,
                     resolveZoneId(trigger.tz, strategyId),
                     fromInstant,
                     fromMs,
                 )
-            is ScheduleTrigger.EveryHour -> nextEveryHour(trigger.minuteOffset, fromInstant, fromMs)
+            is ScheduleTrigger.EveryHour -> ScheduleFireTimes.nextEveryHour(trigger.minuteOffset, fromInstant, fromMs)
             is ScheduleTrigger.EveryWeekday ->
-                nextWeekday(
+                ScheduleFireTimes.nextWeekday(
                     trigger.time,
                     resolveZoneId(trigger.tz, strategyId),
                     fromInstant,
                     fromMs,
                 )
         }
-    }
-
-    /**
-     * Resolve next-fire for a time-of-day in a named zone. `today` is the local
-     * calendar date in [zone]; the candidate is that date at the local clock
-     * time the trigger declared, converted to UTC epoch ms. Handles DST
-     * correctly because the zone resolution does — e.g. NY 09:00 is a different
-     * UTC instant in March vs. November.
-     */
-    private fun nextAt(
-        t: TimeOfDay,
-        zone: ZoneId,
-        from: Instant,
-        fromMs: Long,
-    ): Long {
-        val time = LocalTime.of(t.hour, t.minute, t.second)
-        val todayLocal = from.atZone(zone).toLocalDate()
-        val candidate = localInstantMs(todayLocal, time, zone)
-        // Roll to the NEXT LOCAL DAY by date arithmetic, never by adding 24h of epoch
-        // millis: across a DST transition the same local clock time is a different
-        // UTC offset, and a fixed-day add fires an hour early or late.
-        return if (candidate >= fromMs) candidate else localInstantMs(todayLocal.plusDays(1), time, zone)
-    }
-
-    private fun localInstantMs(
-        date: java.time.LocalDate,
-        time: LocalTime,
-        zone: ZoneId,
-    ): Long =
-        date
-            .atTime(time)
-            .atZone(zone)
-            .toInstant()
-            .toEpochMilli()
-
-    private fun nextEveryHour(
-        minuteOffset: Int,
-        from: Instant,
-        fromMs: Long,
-    ): Long {
-        val thisHour =
-            from
-                .atZone(ZoneOffset.UTC)
-                .withMinute(minuteOffset)
-                .withSecond(0)
-                .withNano(0)
-                .toInstant()
-                .toEpochMilli()
-        return if (thisHour >= fromMs) thisHour else thisHour + HOUR_MS
-    }
-
-    /**
-     * Mon-Fri only, evaluated in the trigger's local [zone]. A weekend day in
-     * London might still be a Friday in Tokyo at the same UTC instant — so the
-     * weekday check uses the local calendar date, not UTC.
-     */
-    private fun nextWeekday(
-        t: TimeOfDay,
-        zone: ZoneId,
-        from: Instant,
-        fromMs: Long,
-    ): Long {
-        val time = LocalTime.of(t.hour, t.minute, t.second)
-        var date = from.atZone(zone).toLocalDate()
-        var candidate = localInstantMs(date, time, zone)
-        if (candidate < fromMs) {
-            date = date.plusDays(1)
-            candidate = localInstantMs(date, time, zone)
-        }
-        // Local-date arithmetic for the same DST reason as [nextAt].
-        while (!isWeekday(candidate, zone)) {
-            date = date.plusDays(1)
-            candidate = localInstantMs(date, time, zone)
-        }
-        return candidate
-    }
-
-    private fun isWeekday(
-        epochMs: Long,
-        zone: ZoneId,
-    ): Boolean {
-        val dow =
-            Instant
-                .ofEpochMilli(epochMs)
-                .atZone(zone)
-                .dayOfWeek
-                .value
-        return dow in 1..5 // Mon-Fri
-    }
-
-    companion object {
-        private const val HOUR_MS = 3_600_000L
     }
 }

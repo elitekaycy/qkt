@@ -1,7 +1,5 @@
 package com.qkt.backtest.report
 
-import com.qkt.backtest.EquitySample
-import com.qkt.backtest.walkforward.WalkForwardFold
 import com.qkt.backtest.walkforward.WalkForwardResult
 import java.nio.file.Files
 import java.nio.file.Path
@@ -34,8 +32,8 @@ class WalkForwardReportWriter(
         require(Files.isWritable(dir)) { "Directory not writable: $dir" }
 
         Files.writeString(dir.resolve("walkforward_summary.csv"), renderSummaryCsv(result, configText))
-        Files.writeString(dir.resolve("walkforward_summary.json"), renderJson(result, configText))
-        Files.writeString(dir.resolve("concatenated_equity.csv"), renderEquityCsv(result.concatenatedTestCurve))
+        Files.writeString(dir.resolve("walkforward_summary.json"), WalkForwardSummaryJson.render(result, configText))
+        Files.writeString(dir.resolve("concatenated_equity.csv"), EquityCsv.render(result.concatenatedTestCurve))
         Files.writeString(dir.resolve("winner_counts.csv"), renderWinnerCountsCsv(result.winnerCounts))
 
         val foldsDir = dir.resolve("folds")
@@ -69,9 +67,9 @@ class WalkForwardReportWriter(
                 .append(',')
                 .append(fold.testRange.to)
                 .append(',')
-                .append(csv(fold.winnerLabel))
+                .append(csvField(fold.winnerLabel))
                 .append(',')
-                .append(csv(configText(fold.winnerConfig)))
+                .append(csvField(configText(fold.winnerConfig)))
                 .append(',')
                 .append(fold.trainScore.toPlainString())
                 .append(',')
@@ -83,119 +81,15 @@ class WalkForwardReportWriter(
         return sb.toString()
     }
 
-    private fun csv(value: String): String =
-        if (value.any { it == ',' || it == '"' || it == '\n' || it == '\r' }) {
-            "\"" + value.replace("\"", "\"\"") + "\""
-        } else {
-            value
-        }
-
-    private fun renderEquityCsv(curve: List<EquitySample>): String {
-        val sb = StringBuilder("timestamp,equity\n")
-        for (s in curve) {
-            sb
-                .append(s.timestamp)
-                .append(',')
-                .append(s.equity.toPlainString())
-                .append('\n')
-        }
-        return sb.toString()
-    }
-
     private fun renderWinnerCountsCsv(counts: Map<String, Int>): String {
         val sb = StringBuilder("configLabel,winCount\n")
         for ((label, count) in counts.entries.sortedByDescending { it.value }) {
             sb
-                .append(csv(label))
+                .append(csvField(label))
                 .append(',')
                 .append(count)
                 .append('\n')
         }
-        return sb.toString()
-    }
-
-    private fun <C> renderJson(
-        result: WalkForwardResult<C>,
-        configText: (C) -> String,
-    ): String {
-        val sb = StringBuilder("{\n")
-        sb.append("  \"folds\": [")
-        if (result.folds.isNotEmpty()) {
-            sb.append('\n')
-            for ((i, fold) in result.folds.withIndex()) {
-                sb.append("    ").append(renderFoldJson(i + 1, fold, configText))
-                if (i != result.folds.size - 1) sb.append(",")
-                sb.append('\n')
-            }
-            sb.append("  ]")
-        } else {
-            sb.append("]")
-        }
-        sb.append(",\n  \"winnerCounts\": {")
-        val entries = result.winnerCounts.entries.toList()
-        for ((i, e) in entries.withIndex()) {
-            sb
-                .append("\n    ")
-                .append(ReportSerializer.jsonString(e.key))
-                .append(": ")
-                .append(e.value)
-            if (i != entries.size - 1) sb.append(",")
-        }
-        if (entries.isNotEmpty()) sb.append("\n  ")
-        sb.append("},\n")
-        sb.append("  \"meanTrainScore\": ").append(ReportSerializer.jsonBigDecimal(result.meanTrainScore)).append(",\n")
-        sb.append("  \"meanTestScore\": ").append(ReportSerializer.jsonBigDecimal(result.meanTestScore)).append("\n")
-        sb.append("}")
-        return sb.toString()
-    }
-
-    private fun <C> renderFoldJson(
-        index: Int,
-        fold: WalkForwardFold<C>,
-        configText: (C) -> String,
-    ): String {
-        val r = fold.testResult.global
-        val sb = StringBuilder("{")
-        sb.append("\n      \"foldIndex\": ").append(index).append(",")
-        sb
-            .append("\n      \"trainRange\": {\"from\": ")
-            .append(ReportSerializer.jsonString(fold.trainRange.from.toString()))
-            .append(", \"to\": ")
-            .append(ReportSerializer.jsonString(fold.trainRange.to.toString()))
-            .append("},")
-        sb
-            .append("\n      \"testRange\": {\"from\": ")
-            .append(ReportSerializer.jsonString(fold.testRange.from.toString()))
-            .append(", \"to\": ")
-            .append(ReportSerializer.jsonString(fold.testRange.to.toString()))
-            .append("},")
-        sb.append("\n      \"winnerLabel\": ").append(ReportSerializer.jsonString(fold.winnerLabel)).append(",")
-        sb
-            .append(
-                "\n      \"winnerConfig\": ",
-            ).append(ReportSerializer.jsonString(configText(fold.winnerConfig)))
-            .append(",")
-        sb.append("\n      \"trainScore\": ").append(ReportSerializer.jsonBigDecimal(fold.trainScore)).append(",")
-        sb.append("\n      \"testTotalPnL\": ").append(ReportSerializer.jsonBigDecimal(r.totalPnL)).append(",")
-        sb.append("\n      \"testMaxDrawdown\": ").append(ReportSerializer.jsonBigDecimal(r.maxDrawdown)).append(",")
-        sb.append("\n      \"topConfigs\": [")
-        if (fold.topConfigs.isNotEmpty()) {
-            sb.append('\n')
-            for ((i, p) in fold.topConfigs.withIndex()) {
-                sb
-                    .append("        {\"label\": ")
-                    .append(ReportSerializer.jsonString(p.first))
-                    .append(", \"score\": ")
-                    .append(ReportSerializer.jsonBigDecimal(p.second))
-                    .append("}")
-                if (i != fold.topConfigs.size - 1) sb.append(",")
-                sb.append('\n')
-            }
-            sb.append("      ]")
-        } else {
-            sb.append("]")
-        }
-        sb.append("\n    }")
         return sb.toString()
     }
 }

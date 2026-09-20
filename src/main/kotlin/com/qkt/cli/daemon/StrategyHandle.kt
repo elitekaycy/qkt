@@ -100,7 +100,7 @@ class StrategyHandle(
         private val marketSourceProvider: (List<String>) -> MarketSource,
         private val ringSize: Int = 1000,
         private val bind: String = "127.0.0.1",
-        private val brokerFactories: Map<String, com.qkt.app.BrokerFactory> = emptyMap(),
+        private val brokerFactories: Map<String, com.qkt.broker.BrokerFactory> = emptyMap(),
         private val instrumentRegistry: com.qkt.instrument.InstrumentRegistry? = null,
         private val calendarFor: (String) -> com.qkt.common.TradingCalendar = {
             com.qkt.common.TradingCalendar
