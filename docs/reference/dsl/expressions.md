@@ -198,10 +198,10 @@ POSITION.<stream>.quantity                  -- explicit form
 POSITION.<stream>.entry_price               -- average entry price
 POSITION.<stream>.pnl                       -- strategy realized + this-symbol unrealized
 POSITION.<stream>.realized_pnl              -- strategy-level realized P&L (see note)
-POSITION.<stream>.unrealized_pnl            -- open P&L on this position
+POSITION.<stream>.unrealized_pnl            -- open P&L on this position, marked at the closing price
 POSITION.<stream>.holding_duration          -- seconds since the position was opened
-POSITION.<stream>.mfe                       -- max favorable excursion of the PRIMARY leg (price units)
-POSITION.<stream>.mae                       -- max adverse excursion of the PRIMARY leg (price units)
+POSITION.<stream>.mfe                       -- max favorable excursion of the entry leg (price units)
+POSITION.<stream>.mae                       -- max adverse excursion of the entry leg (price units)
 OPEN_ORDERS.<stream>                        -- active risk-increasing entry-order count
 ```
 
@@ -211,9 +211,13 @@ WHEN POSITION.btc > 0
 THEN CLOSE btc
 ```
 
-`POSITION.<stream>.mfe` reads the high-water mark of `current_price - entry_price` (for BUY) or `entry_price - current_price` (for SELL) on the PRIMARY leg since it opened. Returns `0` if no primary exists. Same value the stack engine uses for `STACK_AT MFE >= ...` threshold checks; see [STACK_AT](stack-at.md).
+`POSITION.<stream>.unrealized_pnl` marks every open leg at the price that would close it right now: a long at the bid, a short at the ask. When the feed carries no quotes (single-price ticks, most backtests) it marks at the last price. Marking at mid would count the half-spread the venue charges on the way out as open profit.
 
-`POSITION.<stream>.mae` reads the high-water mark of `entry_price - current_price` (for BUY) or `current_price - entry_price` (for SELL) on the PRIMARY leg since it opened. Returns `0` if no primary exists. Same value the stack engine uses for `STACK_AT MAE >= ... RECOVER ...` arming checks.
+`POSITION.<stream>.mfe` reads the high-water mark of `current_price - entry_price` (for BUY) or `entry_price - current_price` (for SELL) on the entry leg since it opened. The entry leg is the PRIMARY on a netting venue; on a hedging venue, where every plain `BUY`/`SELL` opens an independent leg, it is the oldest open leg. Returns `0` if the strategy holds nothing on the stream. Same value the stack engine uses for `STACK_AT MFE >= ...` threshold checks; see [STACK_AT](stack-at.md).
+
+`POSITION.<stream>.mae` reads the high-water mark of `entry_price - current_price` (for BUY) or `current_price - entry_price` (for SELL) on the same entry leg since it opened. Returns `0` if the strategy holds nothing on the stream. Same value the stack engine uses for `STACK_AT MAE >= ... RECOVER ...` arming checks.
+
+Both marks survive a daemon restart: the live session saves each new extreme (at most once a second per stream) and restores it with the position, then extends it with the bars the warmup loaded for the downtime, so a position held across a restart reads the same or higher `mfe`/`mae` afterwards — never `0`.
 
 `POSITION.<stream>` returns a signed quantity. `POSITION.btc > 0` means long; `POSITION.btc < 0` means short; `POSITION.btc = 0` means flat. Most entry rules guard with `POSITION.btc = 0`.
 

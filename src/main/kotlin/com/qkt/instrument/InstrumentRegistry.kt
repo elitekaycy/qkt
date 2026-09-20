@@ -3,7 +3,7 @@ package com.qkt.instrument
 /**
  * Lookup table for per-strategy [InstrumentMeta] resolved at strategy load.
  *
- * Live strategies wrap an `MT5Broker`'s `/symbol_info` cache via [com.qkt.instrument.MT5InstrumentRegistry].
+ * Live strategies wrap an `MT5Broker`'s `/symbol_info` cache via [com.qkt.connector.mt5.MT5InstrumentRegistry].
  * Backtests load a static YAML file via [YamlInstrumentRegistry]. Both share this
  * interface so the trading pipeline doesn't fork by mode.
  *
@@ -25,8 +25,12 @@ interface InstrumentRegistry {
     fun require(qktSymbol: String): InstrumentMeta =
         lookup(qktSymbol)
             ?: error(
-                "no InstrumentMeta for $qktSymbol; configure it in data/instruments.yaml " +
-                    "for backtest or ensure the live broker exposes it via /symbol_info",
+                "no InstrumentMeta for $qktSymbol; risk and notional sizing need its contract size. " +
+                    "For a backtest, add it to data/instruments.yaml (or pass --instruments <file>); " +
+                    "generate the entry from your broker with " +
+                    "scripts/instruments-from-gateway.py --gateway <url> --symbols <venue symbol> " +
+                    "--prefix ${qktSymbol.substringBefore(':')} --out instruments.yaml. " +
+                    "Live, the broker must expose it via /symbol_info",
             )
 }
 

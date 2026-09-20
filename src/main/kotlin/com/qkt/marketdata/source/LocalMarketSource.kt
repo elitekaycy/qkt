@@ -2,7 +2,6 @@ package com.qkt.marketdata.source
 
 import com.qkt.candles.TimeWindow
 import com.qkt.common.Clock
-import com.qkt.common.Money
 import com.qkt.common.TimeRange
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
@@ -11,11 +10,14 @@ import com.qkt.marketdata.openDayFeed
 import com.qkt.marketdata.store.BinaryBarStore
 import com.qkt.marketdata.store.DataStore
 import com.qkt.marketdata.store.LocalBarStore
-import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDate
-import java.time.ZoneOffset
 
+/**
+ * Historical [MarketSource] over the local tick [store]: tick reads guarded against look-ahead
+ * by [clock], bar reads from pre-built bar stores when they cover the range, otherwise
+ * aggregated from ticks. Has no live feed.
+ */
 class LocalMarketSource(
     private val store: DataStore,
     private val clock: Clock,
@@ -104,175 +106,21 @@ class LocalMarketSource(
         }
     }
 
-    // One mmap'd binary feed per (storeKey, day), reused across the many per-bar slices a
-    // --tick-fills replay does. A null value marks a day with no usable binary file.
-    private val sliceFeeds = mutableMapOf<Pair<String, LocalDate>, com.qkt.marketdata.BinaryTickFeed?>()
+    private val sliceReader = DayTickSliceReader(store)
+
+    private val prebuiltBars = PrebuiltBarReader(barStore, binaryBarStore)
 
     override fun tickSlice(
         symbol: String,
         fromMs: Long,
         toMs: Long,
-    ): Sequence<Tick> {
-        val storeKey = symbol.substringAfter(':')
-        val range = TimeRange(Instant.ofEpochMilli(fromMs), Instant.ofEpochMilli(toMs))
-        return sequence {
-            for (day in daysCovering(range)) {
-                val feed =
-                    sliceFeeds.getOrPut(storeKey to day) {
-                        val path = store.dayFile(storeKey, day)
-                        if (path != null &&
-                            path.toString().endsWith(".bin")
-                        ) {
-                            com.qkt.marketdata.BinaryTickFeed(path)
-                        } else {
-                            null
-                        }
-                    }
-                if (feed != null) {
-                    feed.slice(fromMs, toMs) // O(log n) seek; decodes only the window
-                    while (true) {
-                        val t = feed.next() ?: break
-                        yield(if (t.symbol == symbol) t else t.copy(symbol = symbol))
-                    }
-                } else {
-                    // Non-binary day (csv): fall back to a filtered scan; forge data is binary.
-                    val path = store.dayFile(storeKey, day) ?: continue
-                    openDayFeed(path).use { f ->
-                        while (true) {
-                            val t = f.next() ?: break
-                            if (t.timestamp < fromMs) continue
-                            if (t.timestamp >= toMs) break
-                            yield(if (t.symbol == symbol) t else t.copy(symbol = symbol))
-                        }
-                    }
-                }
-            }
-        }
-    }
+    ): Sequence<Tick> = sliceReader.tickSlice(symbol, fromMs, toMs)
 
     override fun bars(
         symbol: String,
         window: TimeWindow,
         range: TimeRange,
-    ): Sequence<Candle> {
-        val bin = binaryBarStore
-        if (bin != null) {
-            // --bars research tier: read pre-built binary bars per day (gaps tolerated, like ticks);
-            // no slow tick-aggregation fallback. The store stamps the prefixed qktSymbol on read.
-            val parts = symbol.split(":", limit = 2)
-            val broker = if (parts.size == 2) parts[0] else "BACKTEST"
-            val sym = parts.last()
-            val days = daysCovering(range)
-            val rangeFromMs = range.from.toEpochMilli()
-            val rangeToMs = range.to.toEpochMilli()
-            return sequence {
-                for (day in days) {
-                    if (!bin.hasDay(broker, sym, window, day)) continue
-                    for (candle in bin.readDay(broker, sym, window, day)) {
-                        if (candle.startTime < rangeFromMs) continue
-                        if (candle.endTime > rangeToMs) continue
-                        yield(candle)
-                    }
-                }
-            }
-        }
-        val bs = barStore
-        if (bs != null) {
-            val parts = symbol.split(":", limit = 2)
-            if (parts.size == 2) {
-                val broker = parts[0]
-                val sym = parts[1]
-                val tf = window.canonicalSpec()
-                val days = daysCovering(range)
-                // Gaps are tolerated, as in the binary tier above: a range of more than a few
-                // days ALWAYS misses the days the venue did not trade, so requiring every day
-                // to be present made the bar store unusable for any multi-day warmup and sent
-                // it down the tick-aggregation fallback instead. In a golden-replay store that
-                // fallback is actively wrong -- the tick file also holds warmup ticks rehydrated
-                // from every stream's timeframe, each carrying its whole bar's volume, so
-                // aggregating it into one timeframe sums volume across all of them. Measured on
-                // a 4-stream gold capture, a 120-bar 1h warmup read 52,737 on a bar the venue
-                // recorded as 9,828; the same warmup shortened to 10 bars (inside one day's
-                // file) read it correctly. A store with no coverage at all still falls back,
-                // and a short read surfaces through the caller's underfill check rather than
-                // silently substituting different numbers.
-                val available = days.filter { bs.hasDay(broker, sym, tf, it) }
-                if (available.isNotEmpty()) {
-                    val rangeFromMs = range.from.toEpochMilli()
-                    val rangeToMs = range.to.toEpochMilli()
-                    return sequence {
-                        for (day in available) {
-                            for (candle in bs.readDay(broker, sym, tf, day)) {
-                                if (candle.startTime < rangeFromMs) continue
-                                if (candle.endTime > rangeToMs) continue
-                                yield(candle)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        return aggregateFromTicks(symbol, window, range)
-    }
-
-    private fun aggregateFromTicks(
-        symbol: String,
-        window: TimeWindow,
-        range: TimeRange,
     ): Sequence<Candle> =
-        sequence {
-            var bucketStart: Long = -1
-            var bucketEnd: Long = -1
-            var open: BigDecimal = Money.ZERO
-            var high: BigDecimal = Money.ZERO
-            var low: BigDecimal = Money.ZERO
-            var close: BigDecimal = Money.ZERO
-            var volume: BigDecimal = Money.ZERO
-            var hasData = false
-
-            for (tick in ticks(symbol, range)) {
-                val ws = window.windowStartFor(tick.timestamp)
-                if (!hasData) {
-                    bucketStart = ws
-                    bucketEnd = ws + window.durationMs
-                    open = tick.price
-                    high = tick.price
-                    low = tick.price
-                    close = tick.price
-                    volume = tick.volume ?: Money.ZERO
-                    hasData = true
-                    continue
-                }
-                if (tick.timestamp >= bucketEnd) {
-                    yield(Candle(symbol, open, high, low, close, volume, bucketStart, bucketEnd))
-                    bucketStart = ws
-                    bucketEnd = ws + window.durationMs
-                    open = tick.price
-                    high = tick.price
-                    low = tick.price
-                    close = tick.price
-                    volume = tick.volume ?: Money.ZERO
-                } else {
-                    if (tick.price > high) high = tick.price
-                    if (tick.price < low) low = tick.price
-                    close = tick.price
-                    if (tick.volume != null) volume = volume.add(tick.volume)
-                }
-            }
-            if (hasData) {
-                yield(Candle(symbol, open, high, low, close, volume, bucketStart, bucketEnd))
-            }
-        }
-
-    private fun daysCovering(range: TimeRange): List<LocalDate> {
-        val fromDay = range.from.atZone(ZoneOffset.UTC).toLocalDate()
-        val toInclusiveDay = Instant.ofEpochMilli(range.to.toEpochMilli() - 1).atZone(ZoneOffset.UTC).toLocalDate()
-        val days = mutableListOf<LocalDate>()
-        var d = fromDay
-        while (!d.isAfter(toInclusiveDay)) {
-            days.add(d)
-            d = d.plusDays(1)
-        }
-        return days
-    }
+        prebuiltBars.bars(symbol, window, range)
+            ?: aggregateTicksToCandles(symbol, window, Sequence { ticks(symbol, range).iterator() })
 }

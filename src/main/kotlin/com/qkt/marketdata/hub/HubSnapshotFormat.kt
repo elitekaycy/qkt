@@ -1,9 +1,13 @@
 package com.qkt.marketdata.hub
 
+import com.qkt.marketdata.hub.Qkh1Columns.readByteColumn
+import com.qkt.marketdata.hub.Qkh1Columns.readDictionary
+import com.qkt.marketdata.hub.Qkh1Columns.readIntColumn
+import com.qkt.marketdata.hub.Qkh1Columns.readLongColumn
+import com.qkt.marketdata.hub.Qkh1Columns.readString
 import java.math.BigDecimal
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
@@ -160,42 +164,5 @@ object HubSnapshotFormat {
         if (!digest.contentEquals(stored)) {
             throw HubFormatException("QKH1 checksum mismatch: the snapshot's bytes have changed since it was written")
         }
-    }
-
-    private fun readString(buffer: ByteBuffer): String {
-        val length = buffer.int
-        if (length < 0 || length > buffer.remaining()) throw HubFormatException("QKH1 string length $length is invalid")
-        val raw = ByteArray(length).also { buffer.get(it) }
-        return String(raw, StandardCharsets.UTF_8)
-    }
-
-    private fun readDictionary(buffer: ByteBuffer): List<String> {
-        val count = buffer.int
-        if (count < 0) throw HubFormatException("QKH1 dictionary count $count is invalid")
-        return List(count) { readString(buffer) }
-    }
-
-    private fun readLongColumn(
-        buffer: ByteBuffer,
-        count: Int,
-    ): LongArray {
-        if (buffer.remaining() < count * 8) throw HubFormatException("QKH1 body is truncated")
-        return LongArray(count) { buffer.long }
-    }
-
-    private fun readIntColumn(
-        buffer: ByteBuffer,
-        count: Int,
-    ): IntArray {
-        if (buffer.remaining() < count * 4) throw HubFormatException("QKH1 body is truncated")
-        return IntArray(count) { buffer.int }
-    }
-
-    private fun readByteColumn(
-        buffer: ByteBuffer,
-        count: Int,
-    ): IntArray {
-        if (buffer.remaining() < count) throw HubFormatException("QKH1 body is truncated")
-        return IntArray(count) { buffer.get().toInt() }
     }
 }

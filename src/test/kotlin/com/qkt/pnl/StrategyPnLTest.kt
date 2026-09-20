@@ -78,6 +78,39 @@ class StrategyPnLTest {
     }
 
     @Test
+    fun `each leg is marked at the price that would close it`() {
+        // Long legs close at the bid, short legs at the ask. A hedged pair therefore carries the
+        // full spread as unrealized loss, not the mid-mark zero.
+        val tracker = StrategyPositionTracker()
+        val intents = IntentBook()
+        val prices = MarketPriceTracker()
+        val pnl = StrategyPnL(tracker, prices)
+
+        intents.independentOpen("A", "c-long", "leg-long")
+        intents.independentOpen("A", "c-short", "leg-short")
+        intents.apply(tracker, fillWithId("c-long", "A", "XAUUSD", Side.BUY, "1", "2000"))
+        prices.update(
+            com.qkt.marketdata.Tick(
+                symbol = "XAUUSD",
+                price = Money.of("2010"),
+                timestamp = 1L,
+                bid = Money.of("2009.8"),
+                ask = Money.of("2010.2"),
+            ),
+        )
+        // (2009.8 - 2000) x 1
+        assertThat(pnl.unrealizedFor("A", "XAUUSD")).isEqualByComparingTo("9.8")
+
+        intents.apply(tracker, fillWithId("c-short", "A", "XAUUSD", Side.SELL, "1", "2010"))
+        // long: 9.8; short: (2010 - 2010.2) x 1 = -0.2
+        assertThat(pnl.unrealizedFor("A", "XAUUSD")).isEqualByComparingTo("9.6")
+
+        // A single-price mark keeps the old mid behaviour.
+        prices.update("XAUUSD", Money.of("2010"))
+        assertThat(pnl.unrealizedFor("A", "XAUUSD")).isEqualByComparingTo("10")
+    }
+
+    @Test
     fun `realizedFor accrues only this strategy's closes`() {
         val tracker = StrategyPositionTracker()
         val intents = IntentBook()

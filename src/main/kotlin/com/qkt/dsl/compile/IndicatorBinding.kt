@@ -1,11 +1,7 @@
 package com.qkt.dsl.compile
 
 import com.qkt.dsl.ast.IndicatorCall
-import com.qkt.dsl.ast.NumLit
-import com.qkt.dsl.ast.StreamFieldRef
 import com.qkt.dsl.stdlib.IndicatorInput
-import com.qkt.dsl.stdlib.IndicatorRegistry
-import com.qkt.dsl.stdlib.IndicatorSpec
 import com.qkt.indicators.BiIndicator
 import com.qkt.indicators.Indicator
 import com.qkt.indicators.IndicatorOutput
@@ -14,7 +10,11 @@ import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
 import java.math.BigDecimal
 
-class IndicatorBinding private constructor(
+/**
+ * One DSL indicator call bound to its runtime indicator and to the feed that updates it each
+ * bar (or each tick, for tick-fed indicators). [Bag] collects every binding a strategy compiles.
+ */
+class IndicatorBinding internal constructor(
     val call: IndicatorCall,
     val indicator: IndicatorOutput,
     private val streamAlias: String?,
@@ -121,84 +121,10 @@ class IndicatorBinding private constructor(
     /** True iff this binding consumes raw ticks (queried by CompiledStrategy.onTick). */
     internal fun isTickFed(): Boolean = inputKind == IndicatorInput.TICK_SERIES && source == null
 
-    companion object {
-        internal fun streamFed(
-            call: IndicatorCall,
-            indicator: IndicatorOutput,
-            streamAlias: String,
-            field: String?,
-            inputKind: IndicatorInput,
-        ): IndicatorBinding =
-            IndicatorBinding(call, indicator, streamAlias, field, inputKind, source = null, seriesExpr = null)
-
-        internal fun indicatorFed(
-            call: IndicatorCall,
-            indicator: IndicatorOutput,
-            source: IndicatorBinding,
-        ): IndicatorBinding =
-            IndicatorBinding(
-                call,
-                indicator,
-                streamAlias = null,
-                field = null,
-                inputKind = IndicatorInput.NUMERIC_SERIES,
-                source = source,
-                seriesExpr = null,
-            )
-
-        internal fun expressionFed(
-            call: IndicatorCall,
-            indicator: IndicatorOutput,
-            primaryAlias: String,
-            seriesExpr: CompiledExpr,
-            inputKind: IndicatorInput,
-        ): IndicatorBinding =
-            IndicatorBinding(
-                call,
-                indicator,
-                streamAlias = primaryAlias,
-                field = null,
-                inputKind = inputKind,
-                source = null,
-                seriesExpr = seriesExpr,
-            )
-
-        internal fun seriesFedPair(
-            call: IndicatorCall,
-            indicator: IndicatorOutput,
-            primaryAlias: String,
-            seriesExprA: CompiledExpr,
-            seriesExprB: CompiledExpr,
-        ): IndicatorBinding =
-            IndicatorBinding(
-                call,
-                indicator,
-                streamAlias = primaryAlias,
-                field = null,
-                inputKind = IndicatorInput.NUMERIC_SERIES,
-                source = null,
-                seriesExpr = seriesExprA,
-                seriesExprB = seriesExprB,
-            )
-
-        internal fun seriesFedMulti(
-            call: IndicatorCall,
-            indicator: IndicatorOutput,
-            primaryAlias: String,
-            seriesExprs: List<CompiledExpr>,
-        ): IndicatorBinding =
-            IndicatorBinding(
-                call,
-                indicator,
-                streamAlias = primaryAlias,
-                field = null,
-                inputKind = IndicatorInput.NUMERIC_SERIES,
-                source = null,
-                seriesExpr = null,
-                seriesExprsMulti = seriesExprs,
-            )
-    }
-
+    /**
+     * Every indicator binding one strategy compiles, plus the stream aliases whose feed must carry
+     * volume. Updates bindings on bar close by alias and hands tick-fed ones to the tick path.
+     */
     class Bag {
         private val bindings: MutableList<IndicatorBinding> = mutableListOf()
         private val volumeAliases: MutableSet<String> = mutableSetOf()
@@ -210,68 +136,21 @@ class IndicatorBinding private constructor(
         val maxWarmupBars: Int
             get() = bindings.maxOfOrNull { it.indicator.warmupBars } ?: 0
 
-        fun bind(call: IndicatorCall): IndicatorBinding {
-            val spec = IndicatorRegistry.spec(call.name) ?: error("Unknown indicator: ${call.name}")
-            require(call.args.size == spec.arity) {
-                "Indicator ${call.name} expects ${spec.arity} args, got ${call.args.size}"
-            }
-            val seriesArg = call.args.first()
-            if (spec.requiresVolume && seriesArg is StreamFieldRef) volumeAliases.add(seriesArg.stream)
-            val constArgs =
-                call.args.drop(1).map {
-                    require(it is NumLit) {
-                        "Indicator ${call.name} non-series arg must be a numeric literal"
-                    }
-                    it.value
-                }
-            val ind = IndicatorRegistry.create(call.name, constArgs)
-            val binding =
-                when (seriesArg) {
-                    is StreamFieldRef -> bindStream(spec, call, seriesArg, ind)
-                    is IndicatorCall -> bindIndicator(spec, call, seriesArg, ind)
-                    else ->
-                        error(
-                            "Indicator ${call.name} series arg must be a stream field, another indicator call, " +
-                                "or routed via Bag.bindExpression for arbitrary expressions",
-                        )
-                }
-            bindings.add(binding)
-            return binding
-        }
+        /** Binds [call] (and any indicator call nested as its series arg); see [IndicatorCallBinder.bind]. */
+        fun bind(call: IndicatorCall): IndicatorBinding = keep(IndicatorCallBinder.bind(call, volumeAliases, ::bind))
 
-        /**
-         * Bind a two-series indicator (#319, e.g. correlation/beta). Both series are pre-compiled
-         * by [ExprCompiler] into [CompiledExpr]s and fed as an aligned pair each bar; [primaryAlias]
-         * gates the update to the first series' stream. Only NUMERIC_SERIES specs are supported.
-         */
+        /** Binds a two-series indicator (#319) fed an aligned pair; see [IndicatorCallBinder.bindPair]. */
         fun bindPair(
             call: IndicatorCall,
             seriesExprA: CompiledExpr,
             seriesExprB: CompiledExpr,
             primaryAlias: String,
-        ): IndicatorBinding {
-            val spec = IndicatorRegistry.spec(call.name) ?: error("Unknown indicator: ${call.name}")
-            require(call.args.size == spec.arity) {
-                "Indicator ${call.name} expects ${spec.arity} args, got ${call.args.size}"
-            }
-            require(spec.inputKind == IndicatorInput.NUMERIC_SERIES) {
-                "Indicator ${call.name} two-series binding only supports NUMERIC_SERIES"
-            }
-            val constArgs =
-                call.args.drop(spec.seriesCount).map {
-                    require(it is NumLit) { "Indicator ${call.name} non-series arg must be a numeric literal" }
-                    it.value
-                }
-            val ind = IndicatorRegistry.create(call.name, constArgs)
-            val binding = seriesFedPair(call, ind, primaryAlias, seriesExprA, seriesExprB)
-            bindings.add(binding)
-            return binding
-        }
+        ): IndicatorBinding = keep(IndicatorCallBinder.bindPair(call, seriesExprA, seriesExprB, primaryAlias))
 
         /**
          * Bind a k-series indicator (e.g. a multi-regressor OLS residual) whose series are all
          * arbitrary numeric expressions. The [indicator] is built by the caller — these indicators
-         * have a variable series count and live outside [IndicatorRegistry] — and each bar is fed
+         * have a variable series count and live outside the indicator registry — and each bar is fed
          * the aligned tuple of evaluated series values, gated on [primaryAlias]'s bar close.
          */
         fun bindMulti(
@@ -279,100 +158,18 @@ class IndicatorBinding private constructor(
             indicator: IndicatorOutput,
             seriesExprs: List<CompiledExpr>,
             primaryAlias: String,
-        ): IndicatorBinding {
-            val binding = seriesFedMulti(call, indicator, primaryAlias, seriesExprs)
-            bindings.add(binding)
-            return binding
-        }
+        ): IndicatorBinding = keep(IndicatorBindingFactory.seriesFedMulti(call, indicator, primaryAlias, seriesExprs))
 
-        /**
-         * Bind an indicator whose series arg is an arbitrary numeric expression (#174).
-         *
-         * Used by [ExprCompiler] when the series arg is neither a [StreamFieldRef] nor
-         * an [IndicatorCall] — e.g. \`stddev(gold.close - 75 * silver.close, 60)\`.
-         *
-         * [primaryAlias] gates updates: the binding fires once per bar when the closing
-         * bar belongs to that stream. Cross-stream expressions evaluate against the
-         * latest known candle for each referenced stream. [IndicatorInput.NUMERIC_SERIES] and
-         * [IndicatorInput.BOOLEAN_SERIES] specs are supported; CANDLE_SERIES / TICK_SERIES
-         * indicators (e.g. ATR, VWAP) still require their native stream-field path.
-         */
+        /** Binds an indicator fed an arbitrary series expression (#174); see [IndicatorCallBinder.bindExpression]. */
         fun bindExpression(
             call: IndicatorCall,
             seriesExpr: CompiledExpr,
             primaryAlias: String,
-        ): IndicatorBinding {
-            val spec = IndicatorRegistry.spec(call.name) ?: error("Unknown indicator: ${call.name}")
-            require(call.args.size == spec.arity) {
-                "Indicator ${call.name} expects ${spec.arity} args, got ${call.args.size}"
-            }
-            require(
-                spec.inputKind == IndicatorInput.NUMERIC_SERIES ||
-                    spec.inputKind == IndicatorInput.BOOLEAN_SERIES,
-            ) {
-                "Indicator ${call.name} requires ${spec.inputKind}; expression-fed binding only " +
-                    "supports NUMERIC_SERIES and BOOLEAN_SERIES indicators"
-            }
-            val constArgs =
-                call.args.drop(1).map {
-                    require(it is NumLit) {
-                        "Indicator ${call.name} non-series arg must be a numeric literal"
-                    }
-                    it.value
-                }
-            val ind = IndicatorRegistry.create(call.name, constArgs)
-            val binding = expressionFed(call, ind, primaryAlias, seriesExpr, spec.inputKind)
+        ): IndicatorBinding = keep(IndicatorCallBinder.bindExpression(call, seriesExpr, primaryAlias))
+
+        private fun keep(binding: IndicatorBinding): IndicatorBinding {
             bindings.add(binding)
             return binding
-        }
-
-        private fun bindStream(
-            spec: IndicatorSpec,
-            call: IndicatorCall,
-            seriesArg: StreamFieldRef,
-            ind: IndicatorOutput,
-        ): IndicatorBinding =
-            when (spec.inputKind) {
-                IndicatorInput.NUMERIC_SERIES -> {
-                    // A bar time is not a price series: only a lookback (`btc.timestamp[3]`, which
-                    // lowers to lag) may read it; `ema(btc.timestamp, 9)` stays an error (#1130).
-                    val timestampLookback = seriesArg.field == "timestamp" && call.name.equals("LAG", ignoreCase = true)
-                    require(
-                        timestampLookback ||
-                            seriesArg.field in setOf("close", "value", "open", "high", "low", "volume", "price"),
-                    ) {
-                        "Indicator ${call.name} series field must be numeric: got ${seriesArg.field}"
-                    }
-                    streamFed(call, ind, seriesArg.stream, seriesArg.field, spec.inputKind)
-                }
-                IndicatorInput.CANDLE_SERIES -> {
-                    require(seriesArg.field == "candle") {
-                        "Indicator ${call.name} series arg must be the whole stream (use stream.candle or atr(stream))"
-                    }
-                    streamFed(call, ind, seriesArg.stream, null, spec.inputKind)
-                }
-                IndicatorInput.BOOLEAN_SERIES -> {
-                    error("Indicator ${call.name} requires a condition expression")
-                }
-                IndicatorInput.TICK_SERIES -> {
-                    require(seriesArg.field == "tick") {
-                        "Indicator ${call.name} requires a tick series; use ${call.name.lowercase()}(${seriesArg.stream}.tick, …)"
-                    }
-                    streamFed(call, ind, seriesArg.stream, null, spec.inputKind)
-                }
-            }
-
-        private fun bindIndicator(
-            spec: IndicatorSpec,
-            call: IndicatorCall,
-            inner: IndicatorCall,
-            ind: IndicatorOutput,
-        ): IndicatorBinding {
-            require(spec.inputKind == IndicatorInput.NUMERIC_SERIES) {
-                "Indicator ${call.name} requires a candle series; cannot accept another indicator's output"
-            }
-            val innerBinding = bind(inner)
-            return indicatorFed(call, ind, innerBinding)
         }
 
         fun updateAll(ctx: EvalContext) {

@@ -1,12 +1,8 @@
 package com.qkt.backtest.report
 
 import com.qkt.backtest.BacktestResult
-import com.qkt.backtest.DrawdownPeriod
-import com.qkt.backtest.PerformanceReport
-import com.qkt.backtest.TradeRecord
 import java.nio.file.Files
 import java.nio.file.Path
-import java.time.Instant
 
 /**
  * Renders a [com.qkt.backtest.BacktestResult] as a self-contained HTML report —
@@ -37,22 +33,22 @@ class HtmlReportWriter(
 
         sb.append("<header><h1>qkt backtest report</h1></header>")
         sb.append("<section class=\"headline\">")
-        sb.append(headlineCards(result.global))
+        sb.append(HtmlPerformanceTables.headlineCards(result.global))
         sb.append("</section>")
 
         result.evidence?.let {
             sb.append("<section class=\"evidence\"><h2>Run evidence</h2>")
-            sb.append(evidenceSection(it))
+            sb.append(HtmlEvidenceTable.render(it))
             sb.append("</section>")
         }
         result.accounting?.let {
             sb.append("<section class=\"accounting\"><h2>Accounting</h2>")
-            sb.append(accountingSection(it))
+            sb.append(HtmlAccountingTable.render(it))
             sb.append("</section>")
         }
         result.runawayBreaker?.let {
             sb.append("<section class=\"runaway-breaker\"><h2>Runaway breaker</h2>")
-            sb.append(runawayBreakerSection(it))
+            sb.append(HtmlRunawayBreakerTable.render(it))
             sb.append("</section>")
         }
 
@@ -68,23 +64,23 @@ class HtmlReportWriter(
         sb.append("</section>")
 
         sb.append("<section class=\"drawdowns\"><h2>Drawdown periods</h2>")
-        sb.append(drawdownTable(result.global.drawdownPeriods))
+        sb.append(HtmlPerformanceTables.drawdownTable(result.global.drawdownPeriods))
         sb.append("</section>")
 
         sb.append("<section class=\"trade-stats\"><h2>Trade statistics</h2>")
-        sb.append(tradeStatsTable(result.global))
+        sb.append(HtmlPerformanceTables.tradeStatsTable(result.global))
         sb.append("</section>")
 
         sb.append("<section class=\"trade-audit\"><h2>Trade audit</h2>")
-        sb.append(tradeAuditTable(TradeAuditSummaries.from(result)))
+        sb.append(HtmlTradeAuditTable.render(TradeAuditSummaries.from(result)))
         sb.append("</section>")
 
         sb.append("<section class=\"trades\"><h2>Trades</h2>")
-        sb.append(tradesTable(result.trades))
+        sb.append(HtmlTradesTable.render(result.trades, config))
         sb.append("</section>")
 
         sb.append("<section class=\"monte-carlo\"><h2>Monte Carlo</h2>")
-        sb.append(monteCarloSection(result.global))
+        sb.append(HtmlPerformanceTables.monteCarloSection(result.global, config))
         sb.append("</section>")
 
         sb.append("<section class=\"rejections\"><h2>Rejections</h2>")
@@ -111,314 +107,4 @@ class HtmlReportWriter(
         th:first-child, td:first-child { text-align: left; }
         @media print { .rejections { display: none; } section { page-break-inside: avoid; } }
         """.trimIndent()
-
-    private fun headlineCards(r: PerformanceReport): String {
-        fun card(
-            label: String,
-            value: String,
-            classes: String = "",
-        ) = "<div class=\"card $classes\"><div class=\"label\">$label</div>" +
-            "<div class=\"value\">$value</div></div>"
-        return buildString {
-            append(
-                card(
-                    "Total PnL",
-                    r.totalPnL.toPlainString(),
-                    if (r.totalPnL.signum() >= 0) "pos" else "neg",
-                ),
-            )
-            append(card("Trades", r.tradeCount.toString()))
-            append(card("Win rate", r.winRate.toPlainString()))
-            append(card("Sharpe", r.sharpeRatio?.toPlainString() ?: "n/a"))
-            append(card("Calmar", r.calmarRatio?.toPlainString() ?: "n/a"))
-            append(card("Max DD", r.maxDrawdown.toPlainString(), "neg"))
-            append(card("Profit factor", r.profitFactor?.toPlainString() ?: "n/a"))
-        }
-    }
-
-    private fun evidenceSection(e: com.qkt.evidence.EvidenceEnvelope): String =
-        buildString {
-            append("<table><tbody>")
-            append("<tr><td>qkt version</td><td>${html(e.qktVersion)}</td></tr>")
-            append("<tr><td>git SHA</td><td>${html(e.gitSha)}</td></tr>")
-            append("<tr><td>DSL percentages</td><td>${html(e.dslPercentConvention)}</td></tr>")
-            append("<tr><td>strategy hash</td><td>${html(e.strategyHash)}</td></tr>")
-            e.configHash?.let { append("<tr><td>config hash</td><td>${html(it)}</td></tr>") }
-            e.dataset?.let {
-                val label =
-                    if (it.id != null) {
-                        it.id
-                    } else if (it.mutableStore) {
-                        "mutable local store"
-                    } else {
-                        "not specified"
-                    }
-                append("<tr><td>dataset</td><td>${html(label)}</td></tr>")
-                it.warning?.let { warning -> append("<tr><td>dataset warning</td><td>${html(warning)}</td></tr>") }
-            }
-            e.execution?.let {
-                append("<tr><td>execution</td><td>${html(it.preset)} (${html(it.broker)})</td></tr>")
-                it.fillPriceSource?.let { v -> append("<tr><td>fill price source</td><td>${html(v)}</td></tr>") }
-                it.latencyModel?.let { v -> append("<tr><td>latency model</td><td>${html(v)}</td></tr>") }
-                it.stopLatencyModel?.let { v -> append("<tr><td>stop execution delay</td><td>${html(v)}</td></tr>") }
-                it.takeProfitFillModel?.let { v -> append("<tr><td>take-profit fill</td><td>${html(v)}</td></tr>") }
-                it.candleCloseModel?.let { v -> append("<tr><td>quiet-bar close</td><td>${html(v)}</td></tr>") }
-                it.slippageModel?.let { v -> append("<tr><td>slippage model</td><td>${html(v)}</td></tr>") }
-                it.rejectionModel?.let { v -> append("<tr><td>rejection model</td><td>${html(v)}</td></tr>") }
-                it.partialFillModel?.let { v -> append("<tr><td>partial-fill model</td><td>${html(v)}</td></tr>") }
-                it.venueRules?.let { v -> append("<tr><td>venue rules</td><td>${html(v)}</td></tr>") }
-                it.commissionModel?.let { v -> append("<tr><td>cost model</td><td>${html(v)}</td></tr>") }
-                it.financingModel?.let { v -> append("<tr><td>financing model</td><td>${html(v)}</td></tr>") }
-                it.ocoMode?.let { v -> append("<tr><td>OCO mode</td><td>${html(v)}</td></tr>") }
-                it.warning?.let { warning -> append("<tr><td>execution warning</td><td>${html(warning)}</td></tr>") }
-            }
-            e.accounting?.let {
-                it.accountCurrency?.let { ccy -> append("<tr><td>account currency</td><td>${html(ccy)}</td></tr>") }
-                it.missingPolicy?.let { policy ->
-                    append("<tr><td>FX missing policy</td><td>${html(policy)}</td></tr>")
-                }
-                it.source?.let { source -> append("<tr><td>FX source</td><td>${html(source)}</td></tr>") }
-                if (it.configuredFxSymbols.isNotEmpty()) {
-                    append("<tr><td>FX symbols</td><td>${html(it.configuredFxSymbols.toString())}</td></tr>")
-                }
-                if (it.conversions.isNotEmpty()) {
-                    append("<tr><td>FX conversions</td><td>${html(it.conversions.toString())}</td></tr>")
-                }
-                if (it.warnings.isNotEmpty()) {
-                    append("<tr><td>accounting warnings</td><td>${html(it.warnings.joinToString("; "))}</td></tr>")
-                }
-                it.warning?.let { warning -> append("<tr><td>accounting warning</td><td>${html(warning)}</td></tr>") }
-            }
-            e.experiment?.let {
-                append("<tr><td>experiment</td><td>${html(it.id ?: "unspecified")}</td></tr>")
-                it.trialCount?.let { n -> append("<tr><td>trial count</td><td>$n</td></tr>") }
-                it.primaryMetric?.let { metric -> append("<tr><td>primary metric</td><td>${html(metric)}</td></tr>") }
-                for ((name, window) in it.splits.entries) {
-                    append("<tr><td>split.${html(name)}</td><td>${html(window)}</td></tr>")
-                }
-                it.selectedLabel?.let { label ->
-                    append("<tr><td>selected candidate</td><td>")
-                    append(html(label))
-                    append(" ")
-                    append(html(it.selectedParams.toString()))
-                    append("</td></tr>")
-                }
-                if (it.warnings.isNotEmpty()) {
-                    append("<tr><td>experiment warnings</td><td>${html(it.warnings.joinToString("; "))}</td></tr>")
-                }
-                it.warning?.let { warning -> append("<tr><td>experiment warning</td><td>${html(warning)}</td></tr>") }
-            }
-            e.promotion?.let {
-                it.state?.let { state -> append("<tr><td>promotion state</td><td>${html(state)}</td></tr>") }
-                it.rationale?.let { rationale ->
-                    append("<tr><td>promotion rationale</td><td>${html(rationale)}</td></tr>")
-                }
-                it.warning?.let { warning -> append("<tr><td>promotion warning</td><td>${html(warning)}</td></tr>") }
-            }
-            if (e.warnings.isNotEmpty()) {
-                append("<tr><td>warnings</td><td>${html(e.warnings.joinToString("; "))}</td></tr>")
-            }
-            append("</tbody></table>")
-        }
-
-    private fun accountingSection(snapshot: com.qkt.accounting.AccountingSnapshot): String =
-        buildString {
-            append("<table><tbody>")
-            append("<tr><td>account currency</td><td>${html(snapshot.accountCurrency)}</td></tr>")
-            append("<tr><td>FX missing policy</td><td>${html(snapshot.missingPolicy)}</td></tr>")
-            append("<tr><td>FX source</td><td>${html(snapshot.source)}</td></tr>")
-            if (snapshot.configuredSymbols.isNotEmpty()) {
-                append("<tr><td>configured FX symbols</td><td>${html(snapshot.configuredSymbols.toString())}</td></tr>")
-            }
-            if (snapshot.conversions.isNotEmpty()) {
-                append("<tr><td>observed conversions</td><td>")
-                append(
-                    html(
-                        snapshot.conversions.joinToString("; ") {
-                            "${it.from}->${it.to} rate=${it.rate.toPlainString()} timestamp=${it.timestamp} source=${it.source}"
-                        },
-                    ),
-                )
-                append("</td></tr>")
-            }
-            if (snapshot.warnings.isNotEmpty()) {
-                append("<tr><td>warnings</td><td>${html(snapshot.warnings.joinToString("; "))}</td></tr>")
-            }
-            append("<tr><td>cost kinds</td><td>${html(snapshot.supportedCostKinds.joinToString(", "))}</td></tr>")
-            append("</tbody></table>")
-        }
-
-    private fun runawayBreakerSection(report: com.qkt.backtest.RunawayBreakerReport): String =
-        buildString {
-            append("<table><tbody>")
-            append(
-                "<tr><td>mode</td><td>${if (report.enforceLiveBreakers) "enforced" else "observe-only"}</td></tr>",
-            )
-            append(
-                "<tr><td>round trips</td><td>${report.maxRoundTrips} per " +
-                    "${report.roundTripWindowMs / 1000}s</td></tr>",
-            )
-            append(
-                "<tr><td>broker rejections</td><td>${report.maxRejections} per " +
-                    "${report.rejectionWindowMs / 1000}s</td></tr>",
-            )
-            append("</tbody></table>")
-            if (!report.enforceLiveBreakers && report.trips.isNotEmpty()) {
-                val first = report.trips.first()
-                append("<p class=\"warning\"><strong>LIVE BEHAVIOR WARNING:</strong> ")
-                append("the runaway breaker would have halted this strategy ${report.trips.size} time(s); first at ")
-                append(html(Instant.ofEpochMilli(first.timestampMs).toString()))
-                append(" [${html(first.strategyId)}]: ${html(first.reason())}</p>")
-            }
-        }
-
-    private fun html(s: String): String =
-        s
-            .replace("&", "&amp;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
-            .replace("\"", "&quot;")
-
-    private fun drawdownTable(periods: List<DrawdownPeriod>): String {
-        if (periods.isEmpty()) return "<p>No drawdowns above threshold.</p>"
-        return buildString {
-            append("<table><thead><tr>")
-            append("<th>Peak</th><th>Trough</th><th>Recovery</th><th>Depth</th>")
-            append("<th>Duration ms</th><th>Status</th></tr></thead><tbody>")
-            for (p in periods) {
-                append("<tr><td>${p.peakTimestamp}</td><td>${p.troughTimestamp}</td>")
-                append("<td>${p.recoveryTimestamp ?: "ongoing"}</td>")
-                append("<td>${p.depthPct.toPlainString()}</td>")
-                append("<td>${p.durationMs}</td>")
-                append("<td>${if (p.ongoing) "ongoing" else "recovered"}</td></tr>")
-            }
-            append("</tbody></table>")
-        }
-    }
-
-    private fun tradeStatsTable(r: PerformanceReport): String =
-        buildString {
-            append("<table><tbody>")
-            append("<tr><td>Average win</td><td>${r.avgWin.toPlainString()}</td></tr>")
-            append("<tr><td>Average loss</td><td>${r.avgLoss.toPlainString()}</td></tr>")
-            append("<tr><td>Largest win</td><td>${r.largestWin.toPlainString()}</td></tr>")
-            append("<tr><td>Largest loss</td><td>${r.largestLoss.toPlainString()}</td></tr>")
-            append("<tr><td>Max consecutive losses</td><td>${r.maxConsecutiveLosses}</td></tr>")
-            append("<tr><td>Commission paid</td><td>${r.commissionPaid.toPlainString()}</td></tr>")
-            append("<tr><td>Swap paid</td><td>${r.swapPaid.toPlainString()}</td></tr>")
-            append("</tbody></table>")
-        }
-
-    private fun tradeAuditTable(summary: TradeAuditSummary): String =
-        buildString {
-            append("<table><tbody>")
-            append("<tr><td>Fills</td><td>${summary.fills}</td></tr>")
-            append("<tr><td>Buy fills</td><td>${summary.buyFills}</td></tr>")
-            append("<tr><td>Sell fills</td><td>${summary.sellFills}</td></tr>")
-            append("<tr><td>Side attribution</td><td>${html(summary.sideAttribution)}</td></tr>")
-            append("<tr><td>Long entry fills</td><td>${summary.longEntryFills}</td></tr>")
-            append("<tr><td>Short entry fills</td><td>${summary.shortEntryFills}</td></tr>")
-            append("<tr><td>Long exit fills</td><td>${summary.longExitFills}</td></tr>")
-            append("<tr><td>Short exit fills</td><td>${summary.shortExitFills}</td></tr>")
-            append("<tr><td>Unknown position effect</td><td>${summary.unknownPositionFills}</td></tr>")
-            append("<tr><td>Position attribution</td><td>${html(summary.positionAttribution)}</td></tr>")
-            append("<tr><td>Buy realized</td><td>${summary.buyRealized.toPlainString()}</td></tr>")
-            append("<tr><td>Sell realized</td><td>${summary.sellRealized.toPlainString()}</td></tr>")
-            append("<tr><td>Gross profit</td><td>${summary.grossProfit.toPlainString()}</td></tr>")
-            append("<tr><td>Gross loss</td><td>${summary.grossLoss.toPlainString()}</td></tr>")
-            append("<tr><td>Rejections</td><td>${summary.rejections}</td></tr>")
-            append("<tr><td>Rejection rate</td><td>${summary.rejectionRate?.toPlainString() ?: "n/a"}</td></tr>")
-            append("<tr><td>Risk-audited fills</td><td>${summary.riskAuditedFills}</td></tr>")
-            append("<tr><td>Min risk USD</td><td>${summary.minRiskUsd?.toPlainString() ?: "n/a"}</td></tr>")
-            append("<tr><td>Avg risk USD</td><td>${summary.avgRiskUsd?.toPlainString() ?: "n/a"}</td></tr>")
-            append("<tr><td>Max risk USD</td><td>${summary.maxRiskUsd?.toPlainString() ?: "n/a"}</td></tr>")
-            append("<tr><td>Traded notional</td><td>${summary.tradedNotional.toPlainString()}</td></tr>")
-            append("<tr><td>Max fill notional</td><td>${summary.maxFillNotional?.toPlainString() ?: "n/a"}</td></tr>")
-            append("</tbody></table>")
-        }
-
-    private fun tradesTable(trades: List<TradeRecord>): String {
-        val sample =
-            if (trades.size <= config.tradeTableHead + config.tradeTableTail) {
-                trades
-            } else {
-                trades.take(config.tradeTableHead) + trades.takeLast(config.tradeTableTail)
-            }
-        return buildString {
-            append("<table><thead><tr>")
-            append("<th>Timestamp</th><th>Strategy</th><th>Symbol</th><th>Fill side</th>")
-            append("<th>Position effect</th><th>Order type</th>")
-            append("<th>Qty</th><th>Price</th><th>riskUsd</th><th>Stop</th><th>Target</th><th>Net Account</th>")
-            append("<th>Gross Account</th><th>Native</th><th>FX</th><th>Pos Before</th><th>Pos After</th>")
-            append("<th>Strat Before</th><th>Strat After</th><th>Contract</th><th>Notional</th>")
-            append("</tr></thead><tbody>")
-            for (r in sample) {
-                val fillNotional = TradeAuditSummaries.fillNotional(r)
-                append("<tr>")
-                append("<td>${r.trade.timestamp}</td>")
-                append("<td>${html(r.strategyId)}</td>")
-                append("<td>${html(r.trade.symbol)}</td>")
-                append("<td>${html(r.trade.side.name)}</td>")
-                append("<td>${html(TradeAuditSummaries.positionEffect(r))}</td>")
-                append("<td>${html(r.orderType ?: "unknown")}</td>")
-                append("<td>${r.trade.quantity.toPlainString()}</td>")
-                append("<td>${r.trade.price.toPlainString()}</td>")
-                append("<td>${r.riskUsd?.toPlainString() ?: "n/a"}</td>")
-                append("<td>${r.stopLossPrice?.toPlainString() ?: "n/a"}</td>")
-                append("<td>${r.takeProfitPrice?.toPlainString() ?: "n/a"}</td>")
-                append("<td>${r.realized.toPlainString()}</td>")
-                append(
-                    "<td>${r.accountRealized?.toPlainString() ?: "n/a"}" +
-                        "${r.accountCurrency?.let { " ${html(it)}" } ?: ""}</td>",
-                )
-                append(
-                    "<td>${r.nativeRealized?.toPlainString() ?: "n/a"}" +
-                        "${r.nativeCurrency?.let { " ${html(it)}" } ?: ""}</td>",
-                )
-                append("<td>${r.fxRate?.toPlainString() ?: html("identity")}</td>")
-                append(
-                    "<td>${r.accountPositionBefore?.quantity?.toPlainString() ?: "n/a"} " +
-                        "@${r.accountPositionBefore?.avgEntryPrice?.toPlainString() ?: "n/a"}</td>",
-                )
-                append(
-                    "<td>${r.accountPositionAfter?.quantity?.toPlainString() ?: "n/a"} " +
-                        "@${r.accountPositionAfter?.avgEntryPrice?.toPlainString() ?: "n/a"}</td>",
-                )
-                append(
-                    "<td>${r.strategyPositionBefore?.quantity?.toPlainString() ?: "n/a"} " +
-                        "@${r.strategyPositionBefore?.avgEntryPrice?.toPlainString() ?: "n/a"}</td>",
-                )
-                append(
-                    "<td>${r.strategyPositionAfter?.quantity?.toPlainString() ?: "n/a"} " +
-                        "@${r.strategyPositionAfter?.avgEntryPrice?.toPlainString() ?: "n/a"}</td>",
-                )
-                append("<td>${r.contractSize?.toPlainString() ?: "1"}</td>")
-                append("<td>${fillNotional.toPlainString()}</td>")
-                append("</tr>")
-            }
-            append("</tbody></table>")
-            if (sample.size < trades.size) {
-                append("<p>Showing first ${config.tradeTableHead} and last ${config.tradeTableTail} ")
-                append("of ${trades.size} trades. Full list in trades.csv.</p>")
-            }
-        }
-    }
-
-    private fun monteCarloSection(r: PerformanceReport): String {
-        val mc =
-            r.monteCarlo ?: return "<p>Insufficient trades for Monte Carlo " +
-                "(need ${config.minTradesForMonteCarlo}+).</p>"
-        return buildString {
-            append("<table><tbody>")
-            append("<tr><td>Simulations</td><td>${mc.simulations}</td></tr>")
-            append("<tr><td>P5 final equity</td><td>${mc.finalEquityP5.toPlainString()}</td></tr>")
-            append("<tr><td>P50 final equity</td><td>${mc.finalEquityP50.toPlainString()}</td></tr>")
-            append("<tr><td>P95 final equity</td><td>${mc.finalEquityP95.toPlainString()}</td></tr>")
-            append("<tr><td>P5 max DD</td><td>${mc.maxDrawdownP5.toPlainString()}</td></tr>")
-            append("<tr><td>P95 max DD</td><td>${mc.maxDrawdownP95.toPlainString()}</td></tr>")
-            append("<tr><td>P(final &lt; 0)</td><td>${mc.probabilityNegativeFinal.toPlainString()}</td></tr>")
-            append("</tbody></table>")
-            append(SvgChart.fanChart(mc.equityFanByTradeIndex, width = 1000, height = 360))
-        }
-    }
 }

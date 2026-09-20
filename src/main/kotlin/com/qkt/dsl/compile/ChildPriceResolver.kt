@@ -14,45 +14,15 @@ import com.qkt.dsl.ast.TimeTightenAst
 import com.qkt.execution.StopLossSpec
 import java.math.BigDecimal
 
-enum class ChildKind { STOP_LOSS, TAKE_PROFIT }
-
-fun interface CompiledChildPrice {
-    fun evaluate(
-        ec: EvalContext,
-        side: Side,
-        entry: BigDecimal,
-        stopDistance: BigDecimal?,
-    ): BigDecimal?
-}
-
 /**
- * Output of [ChildPriceResolver.compileStopLoss] — bracket stop loss as either an
- * engine-managed [StopLossSpec.ArmedTrail] (resolved entirely at compile time, no
- * per-tick evaluation needed) or a [Dynamic] that produces a [StopLossSpec.Fixed]
- * at submission time given the entry price.
+ * Compiles bracket child prices (`AT`, `BY`, `PCT`, `RR`, armed trail) into closures that resolve
+ * against the entry side and price, and stop-loss legs into a static or dynamic [StopLossSpec].
  */
-sealed interface CompiledStopLoss {
-    /**
-     * Resolved at signal time. Null means the stop cannot be built yet (an operand is
-     * undefined during warm-up, or evaluates to a value the stop spec rejects), and the
-     * order is skipped like any other undefined bracket price.
-     */
-    fun interface Dynamic : CompiledStopLoss {
-        fun evaluate(
-            ec: EvalContext,
-            side: Side,
-            entry: BigDecimal,
-        ): StopLossSpec?
-    }
-
-    data class Static(
-        val spec: StopLossSpec,
-    ) : CompiledStopLoss
-}
-
 class ChildPriceResolver(
     private val exprCompiler: ExprCompiler,
 ) {
+    private val stopSpecs = StopSpecCompiler(exprCompiler)
+
     /**
      * Compile a bracket stop-loss leg. Returns [CompiledStopLoss.Static] when the
      * leg is an engine-managed armed trail (no per-tick price resolution required),
@@ -72,7 +42,7 @@ class ChildPriceResolver(
             is ChildArmedTrail -> {
                 val operands = listOf(child.trailDistance, child.mfeThreshold)
                 val labels = listOf("TRAILING <distance>", "AFTER MFE >= <threshold>")
-                specFrom(operands, labels, allowExpressionDistances) { v ->
+                stopSpecs.specFrom(operands, labels, allowExpressionDistances) { v ->
                     StopLossSpec.ArmedTrail(trailDistance = v[0], mfeThreshold = v[1])
                 }
             }
@@ -93,7 +63,7 @@ class ChildPriceResolver(
                                 ratchet.steps.indices.flatMap {
                                     listOf("step ${it + 1} MFE threshold", "step ${it + 1} target")
                                 }
-                        specFrom(operands, labels, allowExpressionDistances) { v ->
+                        stopSpecs.specFrom(operands, labels, allowExpressionDistances) { v ->
                             StopLossSpec.SteppedStop(
                                 initialDistance = v[0],
                                 steps = ratchet.steps.indices.map { StopLossSpec.Step(v[1 + 2 * it], v[2 + 2 * it]) },
@@ -103,7 +73,7 @@ class ChildPriceResolver(
                     is TimeTightenAst -> {
                         val operands = listOf(child.distance, ratchet.tightenBy, ratchet.floorDistance)
                         val labels = listOf("STOP LOSS BY <distance>", "TIGHTEN BY <distance>", "FLOOR <distance>")
-                        specFrom(operands, labels, allowExpressionDistances) { v ->
+                        stopSpecs.specFrom(operands, labels, allowExpressionDistances) { v ->
                             StopLossSpec.TimeTighten(
                                 initialDistance = v[0],
                                 tightenBy = v[1],
@@ -185,39 +155,6 @@ class ChildPriceResolver(
                 }
             }
         }
-
-    /**
-     * A stop spec whose numbers come from [operands]. All literals: built and validated now,
-     * so a bad literal is still a compile error. Otherwise each operand is evaluated when the
-     * order is built, the same moment `BY <expr>` is resolved, and the spec is fixed from then
-     * on; an undefined operand (warm-up) or a value the spec rejects (a zero ATR) yields null
-     * so the order is skipped instead of throwing inside the rule.
-     */
-    private fun specFrom(
-        operands: List<com.qkt.dsl.ast.ExprAst>,
-        labels: List<String>,
-        allowExpressions: Boolean,
-        build: (List<BigDecimal>) -> StopLossSpec,
-    ): CompiledStopLoss {
-        if (operands.all { it is NumLit }) {
-            return CompiledStopLoss.Static(build(operands.map { (it as NumLit).value }))
-        }
-        if (!allowExpressions) {
-            val index = operands.indexOfFirst { it !is NumLit }
-            error(
-                "${labels[index]} must be a numeric literal in a STACK bracket; got ${operands[index]::class.simpleName}",
-            )
-        }
-        val compiled = operands.map { exprCompiler.compile(it) }
-        return CompiledStopLoss.Dynamic { ec, _, _ ->
-            val values = compiled.map { it.evaluateNumber(ec) ?: return@Dynamic null }
-            try {
-                build(values)
-            } catch (_: IllegalArgumentException) {
-                null
-            }
-        }
-    }
 
     private fun applyDistance(
         side: Side,

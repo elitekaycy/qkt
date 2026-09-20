@@ -37,8 +37,8 @@ class RunCommand(
     private val args: Args,
     /**
      * Test seam. When `null` (production default), the run command builds a
-     * [com.qkt.marketdata.source.CompositeMarketSource] from the loaded MT5 broker
-     * profiles plus Bybit public spot/linear sources, with TradingView as fallback.
+     * [com.qkt.marketdata.source.CompositeMarketSource] from the configured trading accounts'
+     * own feeds, with TradingView as fallback.
      * Tests pass an explicit factory to swap in a fake.
      */
     private val sourceFactory: ((List<String>) -> MarketSource)? = null,
@@ -115,24 +115,7 @@ class RunCommand(
                 runawayMaxRoundTrips = cfg.runawayMaxRoundTrips
                 runawayMaxRejections = cfg.runawayMaxRejections
                 candleCloseGraceMs = cfg.candleCloseGraceMs
-                val mt5Profiles =
-                    try {
-                        com.qkt.broker.mt5
-                            .MT5BrokerProfileLoader()
-                            .load(
-                                raw = cfg.brokers,
-                                defaults = com.qkt.broker.mt5.MT5DefaultProfiles.all,
-                                env = System.getenv(),
-                                calendars = cfg.brokerCalendars,
-                                aliases = cfg.brokerAliases,
-                                capabilityRestrictions = cfg.brokerCapabilityRestrictions,
-                                instrumentOverrides = cfg.brokerInstrumentOverrides,
-                            )
-                    } catch (e: Exception) {
-                        println("[WARN] mt5 profile load failed: ${e.message}")
-                        emptyList()
-                    }
-                MarketSourceFactory.composite(mt5Profiles, hub = cfg.hub)
+                MarketSourceFactory.composite(cfg.accountMarketDataRoutes(), hub = cfg.hub)
             }
         val feedSymbols = (symbols + accountingConfig.normalizedSymbols.values).distinct()
         val marketSource = effectiveSourceFactory(feedSymbols)

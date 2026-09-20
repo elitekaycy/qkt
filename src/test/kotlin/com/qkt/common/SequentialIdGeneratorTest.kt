@@ -23,6 +23,17 @@ class SequentialIdGeneratorTest {
     }
 
     @Test
+    fun `session order ids carry the strategy id so sessions under one magic never collide`() {
+        val a = SequentialIdGenerator.forSession(listOf("btc_I_opposite"))
+        val b = SequentialIdGenerator.forSession(listOf("btc_E_resize"))
+        assertThat(a.next()).isEqualTo("ORD-btc_I_opposite-0")
+        assertThat(b.next()).isEqualTo("ORD-btc_E_resize-0")
+        // A restart resumes past the ids it restored, like the DSL generator does.
+        a.resumePast(listOf("ORD-btc_I_opposite-4", "ORD-btc_E_resize-9"))
+        assertThat(a.next()).isEqualTo("ORD-btc_I_opposite-5")
+    }
+
+    @Test
     fun `only this generator's ids count`() {
         val ids = SequentialIdGenerator(prefix = "dsl-x-")
         assertThat(ids.sequenceOf("dsl-x--12")).isEqualTo(12L)

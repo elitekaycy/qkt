@@ -2,54 +2,53 @@ package com.qkt.app
 
 import com.qkt.accounting.AccountingEngine
 import com.qkt.accounting.ConvertedMoney
+import com.qkt.backtest.FillState
 import com.qkt.broker.Broker
+import com.qkt.broker.PositionAccountingMode
 import com.qkt.bus.EventBus
 import com.qkt.candles.CandleAggregator
 import com.qkt.candles.TimeWindow
 import com.qkt.common.Clock
 import com.qkt.common.IdGenerator
-import com.qkt.common.Money
 import com.qkt.common.SequenceGenerator
 import com.qkt.common.TradingCalendar
-import com.qkt.dsl.ast.SeriesSymbols
+import com.qkt.dsl.compile.CandleHub
+import com.qkt.dsl.compile.ScheduleRunner
 import com.qkt.engine.Engine
 import com.qkt.events.BrokerEvent
 import com.qkt.events.CandleEvent
-import com.qkt.events.DecisionOrderLinkedEvent
-import com.qkt.events.FillAccountedEvent
 import com.qkt.events.FillAccountingKind
 import com.qkt.events.OrderEvent
 import com.qkt.events.RiskRejectedEvent
-import com.qkt.events.RuleDecisionEvent
-import com.qkt.events.SignalEvent
-import com.qkt.events.StrategyCandleEvaluatedEvent
-import com.qkt.events.StreamCandleEvent
 import com.qkt.events.TickEvent
-import com.qkt.events.TradeEvent
 import com.qkt.events.WarmupTickEvent
 import com.qkt.execution.Trade
-import com.qkt.execution.scaleQuantity
-import com.qkt.execution.toOrderRequest
+import com.qkt.instrument.InstrumentRegistry
+import com.qkt.instrument.NoopInstrumentRegistry
 import com.qkt.marketdata.Candle
+import com.qkt.marketdata.MarketDataGate
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.source.MarketSource
-import com.qkt.marketdata.source.MarketSourceCapability
+import com.qkt.observability.LatencyRegistry
+import com.qkt.persistence.NoopStatePersistor
+import com.qkt.persistence.StatePersistor
+import com.qkt.pnl.BookBalanceView
 import com.qkt.pnl.CommissionBook
 import com.qkt.pnl.PnLCalculator
 import com.qkt.pnl.StrategyPnL
-import com.qkt.pnl.StrategyPnLViewImpl
+import com.qkt.pnl.TradeHistory
+import com.qkt.positions.PositionProvider
 import com.qkt.positions.StrategyPositionTracker
-import com.qkt.positions.StrategyPositionViewImpl
-import com.qkt.risk.Decision
+import com.qkt.risk.PacerLedger
 import com.qkt.risk.RiskEngine
+import com.qkt.risk.RiskState
+import com.qkt.risk.RunawayBreaker
 import com.qkt.strategy.Mode
-import com.qkt.strategy.OpenOrderView
-import com.qkt.strategy.QuoteToAccountRateProvider
 import com.qkt.strategy.Strategy
-import com.qkt.strategy.StrategyContext
 import java.math.BigDecimal
-import org.slf4j.LoggerFactory
+import java.time.ZoneId
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * The reusable end-to-end wiring of bus + engine + risk + order management + broker.
@@ -57,13 +56,14 @@ import org.slf4j.LoggerFactory
  * Used by both `Backtest` and `LiveSession` — the only difference between the two is
  * the tick feed and the clock; the pipeline is identical. That symmetry is what makes
  * backtest = live-paper given the same ticks (verified by the parity regression test).
+ * Bus subscription order is dispatch order, so the wiring in `init` must keep its sequence.
  */
 class TradingPipeline(
     val clock: Clock,
     val ids: IdGenerator,
     val sequencer: SequenceGenerator,
     val priceTracker: MarketPriceTracker,
-    val positions: com.qkt.positions.PositionProvider,
+    val positions: PositionProvider,
     val pnl: PnLCalculator,
     val strategyPositions: StrategyPositionTracker,
     val strategyPnL: StrategyPnL,
@@ -72,443 +72,179 @@ class TradingPipeline(
     val engine: Engine,
     val strategies: List<Pair<String, Strategy>>,
     val riskEngine: RiskEngine,
-    val riskState: com.qkt.risk.RiskState,
+    val riskState: RiskState,
     val mode: Mode,
-    /**
-     * Replay's stand-in for the live heartbeat (#1138): a quiet symbol's ended bar closes on
-     * the first replayed tick at or past the first [replayHeartbeatIntervalMs] step that is at
-     * least [replayCandleCloseGraceMs] after the window end. Live closes it from the wall clock
-     * with the same grace, so both decide on the same heartbeat step. Unused in [Mode.LIVE].
-     */
+    /** Replay's stand-in for the live heartbeat's candle-close grace (#1138); see [CandleWindowCloser]. */
     val replayCandleCloseGraceMs: Long = LiveSession.DEFAULT_CANDLE_CLOSE_GRACE_MS,
     val replayHeartbeatIntervalMs: Long = 1_000L,
     /**
-     * Venue position model per symbol (#1071). HEDGING routes every entry to its own
-     * coexisting [com.qkt.positions.LegRole.INDEPENDENT] leg with exits closing that
-     * leg — the retail-MT5 semantic. Default UNKNOWN preserves netting behavior.
-     * Backtests wire the simulation's configured mode; live wires the broker's
-     * venue-reported mode so the engine books the model the account actually runs.
+     * Venue position model per symbol (#1071): HEDGING books each entry as its own leg, UNKNOWN nets.
+     * Backtests wire the simulation's configured mode; live wires the venue-reported mode.
      */
-    val positionMode: (symbol: String) -> com.qkt.broker.PositionAccountingMode = {
-        com.qkt.broker.PositionAccountingMode.UNKNOWN
-    },
+    val positionMode: (symbol: String) -> PositionAccountingMode = { PositionAccountingMode.UNKNOWN },
     val calendar: TradingCalendar,
     val source: MarketSource,
     val candleWindow: TimeWindow? = null,
-    val candleHub: com.qkt.dsl.compile.CandleHub =
-        com.qkt.dsl.compile
-            .CandleHub(),
+    val candleHub: CandleHub = CandleHub(),
     val onFilled: (Trade, BigDecimal, String) -> Unit = { _, _, _ -> },
-    val onAccountedFill: (Trade, ConvertedMoney, String, com.qkt.backtest.FillState) -> Unit = { _, _, _, _ -> },
+    val onAccountedFill: (Trade, ConvertedMoney, String, FillState) -> Unit = { _, _, _, _ -> },
     val onRejected: (RiskRejectedEvent) -> Unit = {},
     val onCandle: (Candle) -> Unit = {},
     val preCandle: (Candle) -> Unit = {},
     val gate: () -> Boolean = { true },
     val gateFor: (String) -> Boolean = { true },
-    val persistor: com.qkt.persistence.StatePersistor = com.qkt.persistence.NoopStatePersistor(),
-    /**
-     * Per-instrument venue metadata (Phase 30). Default [NoopInstrumentRegistry] preserves
-     * pre-Phase-30 behavior — strategies using `SIZING RISK $` need a real registry
-     * (wired by [com.qkt.app.LiveSession] for live, by `Backtest.fromStore` for backtest).
-     */
-    val instruments: com.qkt.instrument.InstrumentRegistry = com.qkt.instrument.NoopInstrumentRegistry,
-    /**
-     * Trading-cost ledger ([#335](https://github.com/elitekaycy/qkt/issues/335)). A backtest
-     * passes a [CommissionBook] wrapping a real [com.qkt.pnl.PerLotCommission] so fills pay the
-     * venue's commission; the cost is subtracted from realized PnL and tallied for the report.
-     * Default charges nothing — live runs leave it so, since the real broker already bills.
-     */
+    val persistor: StatePersistor = NoopStatePersistor(),
+    /** Per-instrument venue metadata (Phase 30); `SIZING RISK $` needs a real registry. */
+    val instruments: InstrumentRegistry = NoopInstrumentRegistry,
+    /** Modeled commission (#335); live leaves it charging nothing since the broker bills. */
     val commissionBook: CommissionBook = CommissionBook(),
     val accounting: AccountingEngine = AccountingEngine(),
-    /**
-     * Phase 25-followup ([#132](https://github.com/elitekaycy/qkt/issues/132)):
-     * per-strategy trade history (last fill, last P&L, win/loss streaks). Default
-     * is a fresh tracker per pipeline so backtests get isolated state; the daemon's
-     * per-strategy `LiveSession` similarly gets its own.
-     */
-    val tradeHistory: com.qkt.pnl.TradeHistory = com.qkt.pnl.TradeHistory(persistor = persistor),
+    /** Per-strategy trade history (#132); a fresh tracker per pipeline isolates state. */
+    val tradeHistory: TradeHistory = TradeHistory(persistor = persistor),
     /** Operator alert hook for a filled stack layer whose venue-side protection failed. */
     val onProtectionFailure: (strategyId: String, message: String) -> Unit = { _, _ -> },
-    val pacerLedger: com.qkt.risk.PacerLedger = com.qkt.risk.PacerLedger(),
+    val pacerLedger: PacerLedger = PacerLedger(),
     private val pacerCooldownDurationMs: Long? = null,
     private val pacerCooldownAfterConsecutive: Int = 1,
     private val pacerCooldownDurationMsFor: ((String) -> Long?)? = null,
     private val pacerCooldownAfterConsecutiveFor: ((String) -> Int)? = null,
-    /**
-     * Hot-path latency observation. Default reads `QKT_LATENCY_TRACKING` once at construction;
-     * unset → disabled → every observe call short-circuits on the first line, no allocation
-     * and no `nanoTime` call. See [com.qkt.observability.LatencyRegistry] and #150.
-     */
+    /** Hot-path latency observation (#150); read once at construction. Off: observe calls short-circuit. */
     val latencyEnabled: Boolean = System.getenv("QKT_LATENCY_TRACKING") == "1",
-    /**
-     * Resolver for `Timezone.BROKER` in DSL `SCHEDULE` triggers (#77). Returns the
-     * broker's effective `ZoneId` for the given strategy, or `null` to indicate
-     * the broker profile didn't supply `server_time_zone`. Defaults to null —
-     * `BROKER` is only meaningful in live mode where a real broker profile exists.
-     * Wired by [com.qkt.app.LiveSession] from the MT5 broker profile.
-     */
-    val brokerZoneIdFor: ((String) -> java.time.ZoneId?)? = null,
-    /**
-     * Runaway-strategy circuit breaker (#396). Non-null in live sessions; backtests
-     * leave it null so high-frequency historical churn doesn't trip live thresholds.
-     */
-    private val runawayBreaker: com.qkt.risk.RunawayBreaker? = null,
-    /**
-     * Runtime market-data judgment (#395). Non-null in live sessions; backtests leave
-     * it null — deterministic historical replay is exactly the data it was given.
-     */
-    private val marketDataGate: com.qkt.marketdata.MarketDataGate? = null,
-    /**
-     * Per-strategy book scale supplier for new risk-increasing orders: de-risk factor x allocation
-     * weight. Default 1.0 (no book risk, so behavior and parity are unchanged). Wired by
-     * [com.qkt.research.ReplayEngine] from the shared book-risk controller.
-     */
+    /** Resolves `Timezone.BROKER` for DSL `SCHEDULE` triggers (#77); null outside live. */
+    val brokerZoneIdFor: ((String) -> ZoneId?)? = null,
+    /** Runaway-strategy circuit breaker (#396); live only. */
+    private val runawayBreaker: RunawayBreaker? = null,
+    /** Runtime market-data judgment (#395); live only, see [TickIngest]. */
+    private val marketDataGate: MarketDataGate? = null,
+    /** Book scale (de-risk x allocation weight) for new risk-increasing orders; default 1.0. */
     private val bookScaleFor: (String) -> BigDecimal = { BigDecimal.ONE },
-    /**
-     * Balance of the portfolio book these strategies trade inside (CAPITAL + realized PnL
-     * of every child); read by `SIZING … RISK OF BOOK`. Null outside a portfolio deploy —
-     * a strategy that needs it then fails at deploy via the capability check, not at signal.
-     */
-    private val bookBalance: com.qkt.pnl.BookBalanceView? = null,
+    /** Portfolio book balance read by `SIZING … RISK OF BOOK`; null outside a portfolio deploy. */
+    private val bookBalance: BookBalanceView? = null,
 ) {
-    private val log = LoggerFactory.getLogger(TradingPipeline::class.java)
     private val exitHookManager = ExitHookManager(persistor)
-    private val dslStrategiesById: Map<String, com.qkt.dsl.compile.DslCompiledStrategy> =
-        strategies
-            .mapNotNull { (id, strategy) ->
-                (strategy as? com.qkt.dsl.compile.DslCompiledStrategy)?.let { id to it }
-            }.toMap()
-
-    /**
-     * Apply the book scale to a new order: a scale of exactly 1.0 and risk-reducing orders pass
-     * unchanged; a scale of 0 suppresses the order (returns null); any other scale multiplies every
-     * quantity (down to de-risk, up to a vol/allocation target).
-     */
-    private fun applyBookScale(req: com.qkt.execution.OrderRequest): com.qkt.execution.OrderRequest? {
-        val f = bookScaleFor(req.strategyId)
-        if (f.compareTo(BigDecimal.ONE) == 0) return req
-        if (com.qkt.risk.isRiskReducing(req, positions)) return req
-        if (f.signum() <= 0) return null
-        return req.scaleQuantity(f)
-    }
-
-    private fun isRiskIncreasingFill(
-        before: com.qkt.positions.Position?,
-        after: com.qkt.positions.Position?,
-    ): Boolean {
-        val beforeQty = before?.quantity ?: BigDecimal.ZERO
-        val afterQty = after?.quantity ?: BigDecimal.ZERO
-        val flipped = beforeQty.signum() != 0 && afterQty.signum() != 0 && beforeQty.signum() != afterQty.signum()
-        return afterQty.abs() > beforeQty.abs() || flipped
-    }
-
-    private fun closesExposure(
-        before: com.qkt.positions.Position?,
-        after: com.qkt.positions.Position?,
-    ): Boolean {
-        val beforeQty = before?.quantity ?: BigDecimal.ZERO
-        val afterQty = after?.quantity ?: BigDecimal.ZERO
-        val flipped = beforeQty.signum() != 0 && afterQty.signum() != 0 && beforeQty.signum() != afterQty.signum()
-        return beforeQty.abs() > BigDecimal.ZERO && (afterQty.abs() < beforeQty.abs() || flipped)
-    }
-
-    /** The primary-window aggregator (candle events on the bus); null when no window configured. */
-    private val windowAggregator: CandleAggregator?
-
     val orderManager: OrderManager =
-        OrderManager(
+        pipelineOrderManager(
             broker,
             bus,
             priceTracker,
             clock,
             persistor,
-            // An engine-managed exit id is `${bracketId}-sl`; the independent leg's id IS the
-            // bracket id, so strip the suffix and look up that leg's venue ticket.
-            closeTicketFor = { strategyId, exitId ->
-                strategyPositions.ticketForLeg(strategyId, exitId.removeSuffix("-sl"))
-            },
-            closePrimaryTicketFor = { strategyId, symbol ->
-                strategyPositions.ticketForPrimary(strategyId, symbol)
-            },
-            requireArmedTrailTicket = mode == Mode.LIVE,
-            instruments = instruments,
-            // Risk-per-trade is a backtest-report feature; only record it there so the live
-            // daemon's risk map doesn't grow unbounded.
-            trackRisk = mode == Mode.BACKTEST,
-            onProtectionFailure = onProtectionFailure,
-            engineHeldSubmissionBlockReason = { request ->
-                when {
-                    !riskState.isStrategyHalted(request.strategyId) -> null
-                    com.qkt.risk.isRiskReducing(request, positions) -> null
-                    else -> "halted: ${riskState.haltReasonFor(request.strategyId) ?: "halted"}"
-                }
-            },
-            isRiskReducingForHalt = { request ->
-                com.qkt.risk.isRiskReducing(request, positions)
-            },
-            strategyNetQty = { strategyId, symbol ->
-                strategyPositions.positionFor(strategyId, symbol)?.quantity ?: java.math.BigDecimal.ZERO
-            },
-            positionMode = positionMode,
-            bookedVenueTickets = { strategyId ->
-                strategyPositions.allLegsFor(strategyId).mapNotNullTo(LinkedHashSet()) { it.brokerTicket }
-            },
+            strategyPositions,
+            positions,
+            riskState,
+            mode,
+            instruments,
+            onProtectionFailure,
+            positionMode,
         )
-    val latchManager: LatchManager =
-        LatchManager(
-            clock = clock,
+    val latchManager: LatchManager = LatchManager(clock = clock)
+
+    /** Clock-driven scheduler for DSL `SCHEDULE` blocks (#77), advanced by ticks and [scheduleHeartbeat]. */
+    val scheduleRunner: ScheduleRunner = ScheduleRunner(brokerZoneIdFor = brokerZoneIdFor)
+
+    /** Per-(strategy, stage) latency trackers; see [LatencyRegistry]. */
+    val latency: LatencyRegistry = LatencyRegistry(enabled = latencyEnabled, strategyIds = strategies.map { it.first })
+    private val contexts =
+        StrategyContextFactory(
+            mode,
+            clock,
+            calendar,
+            source,
+            strategyPositions,
+            strategyPnL,
+            riskState,
+            instruments,
+            accounting,
+            tradeHistory,
+            pacerLedger,
+            pacerCooldownDurationMs,
+            pacerCooldownAfterConsecutive,
+            pacerCooldownDurationMsFor,
+            pacerCooldownAfterConsecutiveFor,
+            orderManager,
+            bookBalance,
         )
-
-    /**
-     * Recovers each execution's leg intent — from the order it names, else from the venue
-     * ticket an owned leg already carries, else the venue's accounting default — and hands it
-     * to the ledger. The order is the only routing authority; nothing is registered ahead of
-     * a fill and nothing is forgotten on cancel.
-     */
-    private val legIntentResolver =
-        LegIntentResolver(
-            orderFor = { clientOrderId -> orderManager.getOrder(clientOrderId)?.request },
-            legByTicket = { strategyId, symbol, ticket ->
-                strategyPositions.legBookFor(strategyId, symbol)?.legByTicket(ticket)
-            },
-            positionMode = positionMode,
+    private val submitter =
+        OrderSubmitter(
+            ids,
+            clock,
+            bus,
+            riskEngine,
+            positions,
+            strategyPositions,
+            priceTracker,
+            exitHookManager,
+            positionMode,
+            bookScaleFor,
         )
-
-    /**
-     * Clock-driven scheduler for DSL `SCHEDULE` blocks (#77). Single instance shared
-     * across every strategy. Heartbeat ticks from [ingest] for tick-driven advance,
-     * plus [scheduleHeartbeat] from a 1Hz `LiveSession` timer for quiet markets.
-     */
-    val scheduleRunner: com.qkt.dsl.compile.ScheduleRunner =
-        com.qkt.dsl.compile
-            .ScheduleRunner(brokerZoneIdFor = brokerZoneIdFor)
-
-    private val hasAccountEquitySeries: Boolean =
-        strategies.any { (_, strategy) ->
-            (strategy as? com.qkt.dsl.compile.DslCompiledStrategy)
-                ?.declaredStreams
-                ?.values
-                ?.any { it.broker == SeriesSymbols.BROKER && it.symbol == SeriesSymbols.ACCOUNT_EQUITY_SYMBOL }
-                ?: false
-        }
-
-    /** Per-(strategy, stage) latency trackers; see [com.qkt.observability.LatencyRegistry]. */
-    val latency: com.qkt.observability.LatencyRegistry =
-        com.qkt.observability.LatencyRegistry(
-            enabled = latencyEnabled,
-            strategyIds = strategies.map { it.first },
+    private val strategyBinder =
+        StrategyBinder(
+            bus,
+            clock,
+            persistor,
+            broker,
+            source,
+            bookBalance,
+            candleHub,
+            scheduleRunner,
+            latchManager,
+            exitHookManager,
+            orderManager,
+            tradeHistory,
+            strategyPositions,
+            contexts,
+            submitter,
+            gate,
+            gateFor,
+            latency,
+            latencyEnabled,
         )
+    private val booker =
+        ExecutionBooker(
+            riskState,
+            positions,
+            strategyPositions,
+            instruments,
+            commissionBook,
+            accounting,
+            orderManager,
+            positionMode,
+        )
+    private val fold =
+        AccountedFillFold(pnl, strategyPnL, tradeHistory, pacerLedger, runawayBreaker, riskState, riskEngine)
+    private val outcomes =
+        OrderOutcomeWiring(
+            bus,
+            orderManager,
+            exitHookManager,
+            booker,
+            fold,
+            ExecutionReporter(bus, onFilled, onAccountedFill),
+            runawayBreaker,
+            onRejected,
+            latency,
+            latencyEnabled,
+            strategies,
+        )
+    private val nonExecution = NonExecutionAccounting(riskState, bus, accounting, clock)
+    private val equitySampler = AccountEquitySeriesSampler(strategies, candleHub, riskState)
+    private val candleCloser: CandleWindowCloser
+    private val tickIngest: TickIngest
 
     init {
         riskEngine.bindPendingExposure(orderManager)
         require(strategies.map { it.first }.toSet().size == strategies.size) {
             "Strategy IDs must be unique: ${strategies.map { it.first }}"
         }
-        require(strategies.all { it.first.isNotBlank() }) {
-            "Strategy ID must be non-blank"
-        }
-
-        windowAggregator = if (candleWindow != null) CandleAggregator(bus, candleWindow) else null
-
+        require(strategies.all { it.first.isNotBlank() }) { "Strategy ID must be non-blank" }
+        val windowAggregator = if (candleWindow != null) CandleAggregator(bus, candleWindow) else null
+        candleCloser =
+            CandleWindowCloser(windowAggregator, candleHub, replayCandleCloseGraceMs, replayHeartbeatIntervalMs)
+        tickIngest =
+            TickIngest(engine, marketDataGate, equitySampler, candleCloser, candleHub, scheduleRunner, mode)
         bus.subscribe<WarmupTickEvent> { e -> priceTracker.update(e.tick) }
-
         bus.subscribe<CandleEvent> { e -> preCandle(e.candle) }
-
-        val auditedHubKeys = mutableSetOf<com.qkt.dsl.compile.HubKey>()
-        strategies.forEach { (strategyId, strategy) ->
-            tradeHistory.restore(strategyId)
-            val ctx =
-                StrategyContext(
-                    strategyId = strategyId,
-                    mode = mode,
-                    clock = clock,
-                    calendar = calendar,
-                    source = source,
-                    positions = StrategyPositionViewImpl(strategyPositions, strategyId),
-                    pnl = StrategyPnLViewImpl(strategyPnL, strategyId),
-                    risk = com.qkt.risk.RiskViewImpl(riskState, strategyId),
-                    instruments = instruments,
-                    quoteToAccountRate =
-                        QuoteToAccountRateProvider { symbol, timestamp, referencePrice ->
-                            accounting.quoteToAccountRate(symbol, timestamp, referencePrice)
-                        },
-                    tradeHistory = com.qkt.pnl.TradeHistoryViewImpl(tradeHistory, strategyId),
-                    pacer =
-                        com.qkt.risk.PacerViewImpl(
-                            pacerLedger,
-                            strategyId,
-                            pacerCooldownDurationMsFor?.invoke(strategyId) ?: pacerCooldownDurationMs,
-                            pacerCooldownAfterConsecutiveFor?.invoke(strategyId) ?: pacerCooldownAfterConsecutive,
-                        ),
-                    openOrders = OpenOrderView { symbol -> orderManager.activeEntryOrderCount(strategyId, symbol) },
-                    book = bookBalance,
-                )
-            lateinit var emit: (com.qkt.strategy.Signal) -> Unit
-            val rawEmit: (com.qkt.strategy.Signal) -> Unit = { sig ->
-                val t0 = if (latencyEnabled) System.nanoTime() else 0L
-                bus.publish(SignalEvent(sig, strategyId = strategyId))
-                if (sig is com.qkt.strategy.Signal.Suppressed) {
-                    ctx.submissions.recordSuppressed()
-                    bus.publish(
-                        com.qkt.events.SignalSuppressedEvent(
-                            signal = sig,
-                            strategyId = strategyId,
-                            reason = sig.reason,
-                        ),
-                    )
-                } else if (sig is com.qkt.strategy.Signal.CancelPendingForSymbol) {
-                    orderManager.cancelPendingForSymbol(sig.symbol)
-                    ctx.submissions.recordAccepted()
-                } else if (sig is com.qkt.strategy.Signal.ArmLatch) {
-                    latchManager.arm(
-                        sig.compiled,
-                        sig.ec,
-                        emit = { request ->
-                            emit(
-                                com.qkt.strategy.Signal
-                                    .Submit(request),
-                            )
-                        },
-                    )
-                    ctx.submissions.recordAccepted()
-                } else {
-                    val built = sig.toOrderRequest(ids.next(), clock.now(), strategyId = strategyId)
-                    if (built != null) {
-                        val decisionLink =
-                            (strategy as? com.qkt.dsl.compile.DslCompiledStrategy)
-                                ?.onOrderSubmitted(sig, built.id)
-                        decisionLink?.let { link ->
-                            bus.publish(
-                                DecisionOrderLinkedEvent(
-                                    strategyId = strategyId,
-                                    decisionId = link.decisionId,
-                                    ruleId = link.ruleId,
-                                    signalIndex = link.signalIndex,
-                                    orderId = link.orderId,
-                                ),
-                            )
-                        }
-                        val request = applyBookScale(built)
-                        if (request == null) {
-                            ctx.submissions.recordSuppressed()
-                            bus.publish(RiskRejectedEvent(built, "book de-risk: new risk suppressed"))
-                        } else {
-                            logSubmitContext(request)
-                            when (val decision = riskEngine.approve(request)) {
-                                is Decision.Approve -> {
-                                    ctx.submissions.recordAccepted()
-                                    val exitHook =
-                                        when (sig) {
-                                            is com.qkt.strategy.Signal.Buy -> sig.exitHook
-                                            is com.qkt.strategy.Signal.Sell -> sig.exitHook
-                                            is com.qkt.strategy.Signal.Submit -> sig.exitHook
-                                            else -> null
-                                        }
-                                    val planned = LegIntentPlanner.plan(request, positionMode(request.symbol))
-                                    if (exitHook != null) {
-                                        exitHookManager.register(strategyId, planned, exitHook)
-                                    }
-                                    exitHookManager.trackCloseRequest(strategyId, planned)
-                                    bus.publish(OrderEvent(planned))
-                                }
-                                is Decision.Reject -> {
-                                    ctx.submissions.recordSuppressed()
-                                    bus.publish(RiskRejectedEvent(request, decision.reason))
-                                }
-                            }
-                        }
-                    }
-                }
-                if (latencyEnabled) {
-                    latency.observe(
-                        strategyId,
-                        com.qkt.observability.LatencyStage.SIGNAL_TO_SUBMISSION,
-                        System.nanoTime() - t0,
-                    )
-                }
-            }
-            emit = { sig ->
-                val force =
-                    (sig is com.qkt.strategy.Signal.Buy && sig.force) ||
-                        (sig is com.qkt.strategy.Signal.Sell && sig.force)
-                if (force || (gate() && gateFor(strategyId))) {
-                    rawEmit(sig)
-                } else {
-                    ctx.submissions.recordSuppressed()
-                    // No order exists yet, so no RiskRejectedEvent can fire — publish a
-                    // dedicated event or the drop is invisible to journals and operators.
-                    bus.publish(
-                        com.qkt.events.SignalSuppressedEvent(
-                            signal = sig,
-                            strategyId = strategyId,
-                            reason = "portfolio gate inactive or operator stop",
-                        ),
-                    )
-                }
-            }
-            if (strategy is com.qkt.dsl.compile.DslCompiledStrategy) {
-                requireMultiPositionCapability(strategyId, strategy)
-                requireVolumeCapability(strategyId, strategy)
-                requireBookCapability(strategyId, strategy)
-                strategy.bindStatePersistor(strategyId, persistor)
-                val hubKeys = strategy.declaredStreams.values.toSet() + strategy.retentionByKey.keys
-                for (key in hubKeys) {
-                    candleHub.register(key, strategy.retentionByKey[key] ?: 1, strategyId)
-                }
-                for (key in strategy.declaredStreams.values) {
-                    if (auditedHubKeys.add(key)) {
-                        candleHub.onClosed(key, STREAM_AUDIT_OWNER) { candle ->
-                            bus.publish(StreamCandleEvent(key.broker, key.timeframe, candle))
-                        }
-                    }
-                }
-                for (key in strategy.declaredStreams.values) {
-                    candleHub.onClosed(key, strategyId) { candle -> latchManager.onCandle(candle) }
-                }
-                strategy.observeCandleEvaluations { alias, key, candle, rulesEvaluated ->
-                    bus.publish(
-                        StrategyCandleEvaluatedEvent(
-                            strategyId = strategyId,
-                            alias = alias,
-                            broker = key.broker,
-                            timeframe = key.timeframe,
-                            rulesEvaluated = rulesEvaluated,
-                            candle = candle,
-                        ),
-                    )
-                }
-                strategy.observeRuleDecisions { decision ->
-                    bus.publish(
-                        RuleDecisionEvent(
-                            strategyId = strategyId,
-                            decisionId = decision.decisionId,
-                            ruleId = decision.ruleId,
-                            strategyFingerprint = decision.strategyFingerprint,
-                            ruleFingerprint = decision.ruleFingerprint,
-                            conditionFingerprint = decision.conditionFingerprint,
-                            conditionResult = decision.conditionResult,
-                            alias = decision.alias,
-                            broker = decision.key.broker,
-                            timeframe = decision.key.timeframe,
-                            signalCount = decision.signalCount,
-                            candle = decision.candle,
-                        ),
-                    )
-                }
-                strategy.bindToHub(candleHub, ctx, emit)
-                exitHookManager.bind(strategyId, strategy, emit)
-                strategy.bindSchedules(scheduleRunner, ctx, clock.now(), emit)
-                bus.subscribe<TickEvent> { e -> strategy.onTick(e.tick, ctx, emit) }
-                // Candles still flow to the strategy object: a hub-bound DSL strategy's onCandle
-                // returns immediately, but a wrapper (GatedChild) relies on this hook for its
-                // flatten-on-gate-deactivate transition — hub binding carries only the inner rules.
-                bus.subscribe<CandleEvent> { e -> strategy.onCandle(e.candle, ctx, emit) }
-                wireStackOrchestrator(strategy, strategyId, emit)
-            } else {
-                bus.subscribe<TickEvent> { e -> strategy.onTick(e.tick, ctx, emit) }
-                bus.subscribe<CandleEvent> { e -> strategy.onCandle(e.candle, ctx, emit) }
-            }
-        }
+        strategyBinder.bindAll(strategies)
         bus.subscribe<TickEvent> { e -> latchManager.onTick(e.tick) }
         bus.subscribe<CandleEvent> { e -> latchManager.onCandle(e.candle) }
         bus.subscribe<TickEvent> { e ->
@@ -535,152 +271,21 @@ class TradingPipeline(
                 strategyId = e.strategyId,
             )
         }
-        // subscribeFirst: the books must reflect this fill BEFORE any handler with venue
-        // side effects runs — OrderManager cancels OCO siblings and dispatches children,
-        // and the stack orchestrator risk-checks child tiers against position state.
-        // Both subscribe earlier in construction order, so ordinary subscribe() here
-        // would run them against a pre-fill book (#374, #377).
-        // The fold: the ONLY writer of every realized accumulator. It subscribes first on the
-        // accounted event so halts see the amount before any consumer with venue side effects.
-        bus.subscribeFirst<FillAccountedEvent> { a -> foldAccounted(a) }
-        bus.subscribeFirst<BrokerEvent.OrderFilled> { e ->
-            if (e.strategyId.isBlank()) {
-                // An execution slice with no owner cannot be booked: position books and PnL
-                // will drift from the venue until the next restart reconciles them. Say so
-                // loudly instead of silently skipping (#1061 book-drift symptom).
-                log.warn(
-                    "unattributed fill dropped: order_id={} broker_order_id={} {} {} qty={} — " +
-                        "position books not adjusted",
-                    e.clientOrderId,
-                    e.brokerOrderId,
-                    e.symbol,
-                    e.side,
-                    e.quantity,
-                )
-                return@subscribeFirst
-            }
-            if (latencyEnabled) latency.observeFill(e.clientOrderId, e.strategyId)
-            val accounted =
-                bookExecution(e, cumulativeFilled = cumulativeAfter(e.clientOrderId, e.quantity), partial = false)
-                    ?: return@subscribeFirst
-            bus.publish(accounted.event)
-            exitHookManager.onFill(
-                event = e,
-                netRealizedPnl = accounted.event.netStrategyAccountRealized,
-                strategyAfterQuantity = accounted.event.strategyPositionAfter?.quantity ?: BigDecimal.ZERO,
-                reducedExposure = accounted.event.reducedExposure,
-                deferDispatch = true,
-            )
-            finishExecution(e, accounted)
-        }
-        bus.subscribe<BrokerEvent.OrderFilled> { e -> exitHookManager.dispatchReady(e) }
-        bus.subscribe<BrokerEvent.OrderPartiallyFilled> { e ->
-            if (e.strategyId.isBlank()) return@subscribe
-            val asFill =
-                BrokerEvent.OrderFilled(
-                    clientOrderId = e.clientOrderId,
-                    brokerOrderId = e.brokerOrderId,
-                    symbol = e.symbol,
-                    side = e.side,
-                    price = e.price,
-                    quantity = e.quantity,
-                    strategyId = e.strategyId,
-                    timestamp = e.timestamp,
-                    sequenceId = e.sequenceId,
-                    venueCosts = e.venueCosts,
-                    typedVenueCosts = e.typedVenueCosts,
-                    exitReason = e.exitReason,
-                )
-            val accounted =
-                bookExecution(asFill, cumulativeFilled = e.cumulativeFilled, partial = true)
-                    ?: return@subscribe
-            bus.publish(accounted.event)
-            exitHookManager.onFill(
-                event = asFill,
-                netRealizedPnl = accounted.event.netStrategyAccountRealized,
-                strategyAfterQuantity = accounted.event.strategyPositionAfter?.quantity ?: BigDecimal.ZERO,
-                reducedExposure = accounted.event.reducedExposure,
-            )
-            finishExecution(asFill, accounted)
-            dslStrategiesById[e.strategyId]?.onOrderTerminal(e.clientOrderId)
-        }
-        bus.subscribe<BrokerEvent.OrderRejected> { e -> runawayBreaker?.recordRejection(e.strategyId) }
-        bus.subscribe<BrokerEvent.OrderRejected> { e -> exitHookManager.onRejected(e) }
-        bus.subscribe<BrokerEvent.OrderRejected> { e ->
-            log.warn("Order rejected: ${e.clientOrderId} reason=${e.reason}")
-            dslStrategiesById[e.strategyId]?.onOrderRejected(e.clientOrderId)
-        }
-        bus.subscribe<BrokerEvent.OrderCancelled> { e ->
-            exitHookManager.onCancelled(e)
-            dslStrategiesById[e.strategyId]?.onOrderTerminal(e.clientOrderId)
-        }
-        bus.subscribe<RiskRejectedEvent> { e ->
-            dslStrategiesById[e.request.strategyId]?.onOrderRejected(e.request.id)
-            onRejected(e)
-        }
+        outcomes.subscribe()
         bus.subscribe<CandleEvent> { e -> onCandle(e.candle) }
     }
 
-    /**
-     * The order's executed quantity once [sliceQuantity] is included: the manager's running
-     * total is read before it books this slice (this handler subscribes first), so add it.
-     * A replayed terminal fill therefore reports a cumulative the leg already holds.
-     */
-    private fun cumulativeAfter(
-        clientOrderId: String,
-        sliceQuantity: BigDecimal,
-    ): BigDecimal =
-        (orderManager.getOrder(clientOrderId)?.cumulativeFilledQuantity ?: BigDecimal.ZERO).add(sliceQuantity)
+    /** Count of ticks dropped by [ingest]'s validation floor. */
+    val malformedTickCount: AtomicLong get() = tickIngest.malformedTickCount
 
-    fun ingest(tick: Tick) {
-        val isMacroObservation =
-            com.qkt.dsl.compile
-                .isObservationSymbol(tick.symbol)
-        // Hard floor on the most exposed input boundary the engine has: one glitched
-        // tick (zero/negative price, crossed quotes) marks every open position wrong,
-        // fires engine-held triggers, and poisons indicators for a full window. Drop
-        // it, count it, keep the last good price (#379). Identical in backtest and
-        // live so the gate itself cannot cause divergence.
-        if (!isMacroObservation && !isValidTick(tick)) {
-            val n = malformedTickCount.incrementAndGet()
-            if (n == 1L || n % MALFORMED_TICK_LOG_EVERY == 0L) {
-                log.error(
-                    "dropping malformed tick #{} for {}: price={} bid={} ask={}",
-                    n,
-                    tick.symbol,
-                    tick.price.toPlainString(),
-                    tick.bid?.toPlainString(),
-                    tick.ask?.toPlainString(),
-                )
-            }
-            return
-        }
-        // The judgment layer above the floor: an implausible (outlier/crossed) tick is
-        // dropped before it can poison indicators, marks, or triggers (#395).
-        if (!isMacroObservation &&
-            marketDataGate?.observe(tick) == com.qkt.marketdata.MarketDataGate.Verdict.OUTLIER
-        ) {
-            return
-        }
-        engine.onTick(tick)
-        sampleAccountEquitySeries(tick.timestamp)
-        // Replay has no wall clock, so event time is the clock. A quiet symbol's ended bar
-        // closes on the first tick of any symbol at or past the heartbeat step that live would
-        // close it on: the first 1 Hz step at least the grace after the window end (#1134,
-        // #1138). Never at the tick's own instant, because ticks sharing one timestamp arrive
-        // together live and a tick cannot know whether more of its instant follow; a symbol's
-        // own boundary tick therefore still closes its bar through the feed below, after this
-        // TickEvent, so it fills against that tick exactly as before.
-        if (mode == Mode.BACKTEST) flushReplayCandles(replayCloseAt(tick.timestamp))
-        candleHub.feed(tick)
-        scheduleRunner.tick(tick.timestamp)
-    }
+    /** Ingest one tick; see [TickIngest]. */
+    fun ingest(tick: Tick) = tickIngest.ingest(tick)
 
     /** Book a financing accrual (swap) through the same accounted-event fold as an execution. */
     internal fun applyFinancing(
         strategyId: String,
         amount: BigDecimal,
-    ) = publishNonExecution(strategyId, amount, FillAccountingKind.FINANCING, "financing:$strategyId")
+    ) = nonExecution.publish(strategyId, amount, FillAccountingKind.FINANCING, "financing:$strategyId")
 
     /**
      * Book what the venue realized on a leg that closed while the daemon was down. Same fold,
@@ -690,234 +295,12 @@ class TradingPipeline(
         strategyId: String,
         amount: BigDecimal,
         legId: String,
-    ) = publishNonExecution(strategyId, amount, FillAccountingKind.RECONCILE, "reconcile:$legId", legId)
-
-    private fun publishNonExecution(
-        strategyId: String,
-        amount: BigDecimal,
-        kind: FillAccountingKind,
-        id: String,
-        legId: String? = null,
-    ) {
-        riskState.beforeFill(strategyId)
-        val scaled = amount.setScale(Money.SCALE, Money.ROUNDING)
-        bus.publish(
-            FillAccountedEvent(
-                orderId = id,
-                strategyId = strategyId,
-                symbol = "",
-                fillSliceId = id,
-                sourceFillSequenceId = 0L,
-                cumulativeFilled = null,
-                modeledCommissionAccount = Money.ZERO,
-                venueCostsAccount = Money.ZERO,
-                totalCostsAccount = Money.ZERO,
-                accountNativeRealized = scaled,
-                strategyNativeRealized = scaled,
-                nativeCurrency = accounting.accountCurrency,
-                grossAccountRealized = scaled,
-                grossStrategyAccountRealized = scaled,
-                accountCurrency = accounting.accountCurrency,
-                netAccountRealized = scaled,
-                netStrategyAccountRealized = scaled,
-                conversionRate = null,
-                conversionTimestampMs = null,
-                conversionSource = null,
-                contractSize = null,
-                accountPositionBefore = null,
-                accountPositionAfter = null,
-                strategyPositionBefore = null,
-                strategyPositionAfter = null,
-                reducedExposure = false,
-                legId = legId,
-                legAction = null,
-                partial = false,
-                kind = kind,
-                executedAt = clock.now(),
-            ),
-        )
-    }
-
-    /** An execution booked into the ledger and priced, ready to publish and report. */
-    private class AccountedExecution(
-        val event: FillAccountedEvent,
-        val converted: ConvertedMoney,
-        val application: StrategyPositionTracker.FillApplication,
-        val grossStrategyAccountRealized: BigDecimal,
-    )
+    ) = nonExecution.publish(strategyId, amount, FillAccountingKind.RECONCILE, "reconcile:$legId", legId)
 
     /**
-     * Book one execution slice into the ledger and price it: contract size, account-currency
-     * conversion, modeled commission and venue costs. Returns null when the ledger booked
-     * nothing (a replayed or unattributable slice) — then nothing is accounted or published.
-     */
-    private fun bookExecution(
-        e: BrokerEvent.OrderFilled,
-        cumulativeFilled: BigDecimal?,
-        partial: Boolean,
-    ): AccountedExecution? {
-        riskState.beforeFill(e.strategyId)
-        val accountBefore = positions.positionFor(e.symbol)
-        val strategyBefore = strategyPositions.positionFor(e.strategyId, e.symbol)
-        val application =
-            strategyPositions.applyFillDetailed(e, legIntentResolver.resolve(e).intent, cumulativeFilled)
-        if (application.unbooked) return null
-        val contractSize = instruments.lookup(e.symbol)?.contractSize
-        val cs = contractSize ?: BigDecimal.ONE
-        // Commission is a per-fill cash charge (#335); venue-reported costs (MT5 deal
-        // commission/swap, Bybit execFee) net out the same way — equity and halt inputs must be
-        // cost-true, or a strategy bleeding costs looks healthier than it is.
-        val commission = commissionBook.charge(e.strategyId, e.symbol, e.quantity)
-        val venueCosts =
-            if (e.typedVenueCosts.isNotEmpty()) {
-                typedVenueCostAmount(e.typedVenueCosts, e.symbol, e.timestamp, e.price)
-            } else {
-                e.venueCosts
-            }
-        val costs = commission.add(venueCosts)
-        // One ledger, one realized figure: the account amount is the strategy amount.
-        val native = application.realized.multiply(cs)
-        val converted =
-            accounting.convertPnl(
-                symbol = e.symbol,
-                nativeAmount = native,
-                timestamp = e.timestamp,
-                referencePrice = e.price,
-            )
-        val gross = converted.account.amount
-        val net = gross.subtract(costs)
-        val strategyAfter = strategyPositions.positionFor(e.strategyId, e.symbol)
-        val reducedExposure = closesExposure(strategyBefore, strategyAfter)
-        val event =
-            FillAccountedEvent(
-                orderId = e.clientOrderId,
-                strategyId = e.strategyId,
-                symbol = e.symbol,
-                fillSliceId = "${e.clientOrderId}:${e.sequenceId}",
-                sourceFillSequenceId = e.sequenceId,
-                cumulativeFilled = if (partial) cumulativeFilled else null,
-                modeledCommissionAccount = commission,
-                venueCostsAccount = venueCosts,
-                totalCostsAccount = costs,
-                accountNativeRealized = native,
-                strategyNativeRealized = native,
-                nativeCurrency = converted.native.normalizedCurrency,
-                grossAccountRealized = gross,
-                grossStrategyAccountRealized = gross,
-                accountCurrency = converted.account.normalizedCurrency,
-                netAccountRealized = net,
-                netStrategyAccountRealized = net,
-                conversionRate = converted.conversion?.rate,
-                conversionTimestampMs = converted.conversion?.timestamp,
-                conversionSource = converted.conversion?.source,
-                contractSize = contractSize,
-                accountPositionBefore = accountBefore,
-                accountPositionAfter = positions.positionFor(e.symbol),
-                strategyPositionBefore = strategyBefore,
-                strategyPositionAfter = strategyAfter,
-                reducedExposure = reducedExposure,
-                legId = application.legId,
-                legAction = application.legAction,
-                partial = partial,
-                kind = FillAccountingKind.EXECUTION,
-                executedAt = e.timestamp,
-            )
-        return AccountedExecution(event, converted, application, gross)
-    }
-
-    /**
-     * Fold one accounted amount into every accumulator. Runs first on the accounted event, so
-     * equity, daily loss and halt rules reflect it before any later subscriber acts.
-     */
-    private fun foldAccounted(a: FillAccountedEvent) {
-        pnl.recordRealized(a.netAccountRealized)
-        strategyPnL.recordRealized(a.strategyId, a.netStrategyAccountRealized)
-        if (a.kind == FillAccountingKind.EXECUTION) {
-            tradeHistory.recordTrade(a.strategyId, a.executedAt, a.netStrategyAccountRealized, a.symbol)
-            if (isRiskIncreasingFill(a.strategyPositionBefore, a.strategyPositionAfter)) {
-                pacerLedger.recordEntryFill(a.strategyId, a.executedAt)
-            }
-            if (a.reducedExposure) {
-                pacerLedger.recordOutcome(a.strategyId, a.executedAt, a.netStrategyAccountRealized)
-            }
-            if (a.netStrategyAccountRealized.signum() != 0) runawayBreaker?.recordClose(a.strategyId)
-        }
-        // A boot-time reconcile is venue history from before this session; it belongs in
-        // lifetime P&L, not in today's loss budget.
-        if (a.kind != FillAccountingKind.RECONCILE) riskState.onFill(a.strategyId, a.netStrategyAccountRealized)
-        riskEngine.evaluateHaltRules()
-    }
-
-    /** Report an accounted execution: trade event, fill callbacks, report state. */
-    private fun finishExecution(
-        e: BrokerEvent.OrderFilled,
-        accounted: AccountedExecution,
-    ) {
-        val a = accounted.event
-        val trade = Trade(e.clientOrderId, e.symbol, e.price, e.quantity, e.side, e.timestamp)
-        bus.publish(TradeEvent(trade, strategyId = e.strategyId))
-        onFilled(
-            trade,
-            if (a.reducedExposure) a.netStrategyAccountRealized else accounted.grossStrategyAccountRealized,
-            e.strategyId,
-        )
-        onAccountedFill(
-            trade,
-            accounted.converted,
-            e.strategyId,
-            com.qkt.backtest.FillState(
-                accountPositionBefore = a.accountPositionBefore,
-                accountPositionAfter = a.accountPositionAfter,
-                strategyPositionBefore = a.strategyPositionBefore,
-                strategyPositionAfter = a.strategyPositionAfter,
-                contractSize = a.contractSize,
-                netAccountRealized = a.netStrategyAccountRealized,
-                reducedExposure = a.reducedExposure,
-                legId = a.legId,
-                legAction = a.legAction,
-            ),
-        )
-    }
-
-    private fun sampleAccountEquitySeries(nowMs: Long) {
-        if (!hasAccountEquitySeries) return
-        candleHub.feed(
-            Tick(
-                symbol = "${SeriesSymbols.BROKER}:${SeriesSymbols.ACCOUNT_EQUITY_SYMBOL}",
-                price = riskState.equityTracker.currentEquity(),
-                timestamp = nowMs,
-                volume = Money.ZERO,
-            ),
-        )
-    }
-
-    private companion object {
-        /** Log cadence for malformed-tick drops — first occurrence, then every Nth. */
-        const val MALFORMED_TICK_LOG_EVERY: Long = 1000L
-
-        const val STREAM_AUDIT_OWNER: String = "_qkt_stream_audit"
-    }
-
-    /** Count of ticks dropped by [ingest]'s validation floor. */
-    val malformedTickCount =
-        java.util.concurrent.atomic
-            .AtomicLong(0)
-
-    private fun isValidTick(tick: Tick): Boolean {
-        if (tick.price.signum() <= 0) return false
-        val bid = tick.bid
-        val ask = tick.ask
-        if (bid != null && bid.signum() <= 0) return false
-        if (ask != null && ask.signum() <= 0) return false
-        if (bid != null && ask != null && bid > ask) return false
-        return true
-    }
-
-    /**
-     * Live-only quiet-market heartbeat. `LiveSession` calls this from a 1Hz timer
-     * so a strategy's `SCHEDULE AT 09:00 UTC THEN …` still fires even if no ticks
-     * arrived during that second. Backtest doesn't need it — tick replay drives
-     * the heartbeat via [ingest] (#77).
+     * Live-only quiet-market heartbeat from a 1Hz `LiveSession` timer: schedules fire and a quiet
+     * symbol's bar closes when its window ends, lagging the wall clock by [candleCloseGraceMs] so an
+     * in-flight tick stamped just before the boundary still lands in its bar (#77, #1058).
      */
     fun scheduleHeartbeat(
         nowMs: Long,
@@ -926,39 +309,15 @@ class TradingPipeline(
         orderManager.persistTrailingStateIfDirty()
         orderManager.retryHaltCancellations(nowMs)
         scheduleRunner.tick(nowMs)
-        sampleAccountEquitySeries(nowMs)
-        // Time-driven candle close: a quiet symbol's bar must close when its window
-        // ends, not when the next tick eventually arrives (replay does the same from
-        // event time in [ingest]). The close lags the wall clock by [candleCloseGraceMs]
-        // so a tick stamped just before the boundary that is still in flight from the
-        // poller lands in its own bar instead of being rejected as late (#1058). A
-        // tick-driven close is unaffected.
-        val closeAtMs = nowMs - candleCloseGraceMs
-        windowAggregator?.flushClosed(closeAtMs)
-        candleHub.flushClosed(closeAtMs)
-    }
-
-    /**
-     * The latest window end that live's heartbeat would have closed by event time [eventMs]:
-     * the heartbeat step at or before [eventMs], minus the grace — and never [eventMs] itself.
-     */
-    private fun replayCloseAt(eventMs: Long): Long {
-        val step = Math.floorDiv(eventMs, replayHeartbeatIntervalMs) * replayHeartbeatIntervalMs
-        return minOf(step - replayCandleCloseGraceMs, eventMs - 1L)
+        equitySampler.sample(nowMs)
+        candleCloser.flushClosed(nowMs - candleCloseGraceMs)
     }
 
     /** Close every window ended at [nowMs] without running live-only schedule and broker maintenance. */
-    internal fun flushReplayCandles(nowMs: Long) {
-        windowAggregator?.flushClosed(nowMs)
-        candleHub.flushClosed(nowMs)
-    }
+    internal fun flushReplayCandles(nowMs: Long) = candleCloser.flushClosed(nowMs)
 
-    /**
-     * Late ticks rejected after their candle was finalized, across the default window aggregator
-     * AND every hub slot. The hub is where a DSL stream's bars are built, so counting only the
-     * default aggregator under-reported a multi-stream strategy's drops to zero.
-     */
-    fun droppedLateTicks(): Long = (windowAggregator?.droppedLateTicks ?: 0L) + candleHub.droppedLateTicks()
+    /** Late ticks rejected after their candle was finalized; see [CandleWindowCloser.droppedLateTicks]. */
+    fun droppedLateTicks(): Long = candleCloser.droppedLateTicks()
 
     fun ingestForWarmup(tick: Tick) = ingestForWarmup(tick, sourceTimeframeMs = null)
 
@@ -967,205 +326,5 @@ class TradingPipeline(
         sourceTimeframeMs: Long?,
     ) {
         bus.publish(WarmupTickEvent(tick, sourceTimeframeMs = sourceTimeframeMs))
-    }
-
-    private fun typedVenueCostAmount(
-        costs: List<com.qkt.accounting.VenueCost>,
-        symbol: String,
-        timestamp: Long,
-        referencePrice: BigDecimal,
-    ): BigDecimal {
-        if (costs.isEmpty()) return Money.ZERO
-        return costs
-            .fold(Money.ZERO) { acc, cost ->
-                val stamped = if (cost.timestamp == 0L) cost.copy(timestamp = timestamp) else cost
-                acc.add(
-                    accounting
-                        .convertCost(stamped, contextSymbol = symbol, referencePrice = referencePrice)
-                        .account.amount,
-                )
-            }.setScale(Money.SCALE, Money.ROUNDING)
-    }
-
-    /**
-     * INFO-log the order's price-bearing fields and the last price we saw for the
-     * symbol at submit time. Gives operators a self-contained context line they can
-     * pair with the subsequent `Order rejected` WARN (which carries only the
-     * `clientOrderId`). Without this, a `BUY_STOP price must be above current ask`
-     * rejection from the gateway is opaque — we don't see what we asked for or
-     * what the last quote was when we asked.
-     *
-     * e.g. `submit Stop dsl-hedge_straddle--1 EXNESS:XAUUSDm BUY stopPrice=2350.50 lastPrice=2350.20`
-     * paired with a later WARN tells the operator the BUY_STOP was ~30c above the
-     * last-seen price but the gateway saw an ask that drifted past it in the
-     * intervening latency window (see #185).
-     */
-    private fun logSubmitContext(request: com.qkt.execution.OrderRequest) {
-        if (!log.isInfoEnabled) return
-        val lastPrice = priceTracker.lastPrice(request.symbol)
-        val kind = request::class.simpleName
-        val priceFields =
-            when (request) {
-                is com.qkt.execution.OrderRequest.Stop -> "stopPrice=${request.stopPrice}"
-                is com.qkt.execution.OrderRequest.StopLimit ->
-                    "stopPrice=${request.stopPrice} limitPrice=${request.limitPrice}"
-                is com.qkt.execution.OrderRequest.Limit -> "limitPrice=${request.limitPrice}"
-                is com.qkt.execution.OrderRequest.IfTouched ->
-                    "triggerPrice=${request.triggerPrice}" +
-                        if (request.limitPrice != null) " limitPrice=${request.limitPrice}" else ""
-                is com.qkt.execution.OrderRequest.TrailingStop ->
-                    "trailAmount=${request.trailAmount} mode=${request.trailMode}"
-                is com.qkt.execution.OrderRequest.TrailingStopLimit ->
-                    "trailAmount=${request.trailAmount} mode=${request.trailMode} limitOffset=${request.limitOffset}"
-                is com.qkt.execution.OrderRequest.ArmedTrailingStop ->
-                    "entry=${request.entryPrice} trail=${request.trailDistance} mfe=${request.mfeThreshold}"
-                is com.qkt.execution.OrderRequest.SteppedStop ->
-                    "entry=${request.entryPrice} initial=${request.initialDistance} steps=${request.steps.size}"
-                is com.qkt.execution.OrderRequest.TimeTighteningStop ->
-                    "entry=${request.entryPrice} initial=${request.initialDistance} " +
-                        "tighten=${request.tightenBy} everyMs=${request.intervalMs} floor=${request.floorDistance}"
-                is com.qkt.execution.OrderRequest.Bracket -> {
-                    val sl =
-                        when (val s = request.stopLoss) {
-                            is com.qkt.execution.StopLossSpec.Fixed -> "stopLoss=${s.price}"
-                            is com.qkt.execution.StopLossSpec.ArmedTrail ->
-                                "stopLoss=armed(trail=${s.trailDistance}, mfe=${s.mfeThreshold})"
-                            is com.qkt.execution.StopLossSpec.SteppedStop ->
-                                "stopLoss=stepped(initial=${s.initialDistance}, steps=${s.steps.size})"
-                            is com.qkt.execution.StopLossSpec.TimeTighten ->
-                                "stopLoss=time(initial=${s.initialDistance}, tighten=${s.tightenBy}, " +
-                                    "everyMs=${s.intervalMs}, floor=${s.floorDistance})"
-                        }
-                    "takeProfit=${request.takeProfit} $sl entry=${request.entry::class.simpleName}"
-                }
-                else -> ""
-            }
-        log.info(
-            "submit {} {} {} {} {} qty={} {} lastPrice={}",
-            kind,
-            request.id,
-            request.symbol,
-            request.side,
-            request.timeInForce,
-            request.quantity,
-            priceFields,
-            lastPrice ?: "unknown",
-        )
-    }
-
-    /**
-     * Phase 27: refuse to deploy a strategy whose `STACK_AT` symbols route to a broker
-     * that doesn't declare [com.qkt.broker.OrderTypeCapability.MULTI_POSITION_PER_SYMBOL].
-     * The capability is checked per-symbol via [com.qkt.broker.Broker.capabilitiesFor]
-     * so [com.qkt.broker.CompositeBroker] routing differences across symbols are honored.
-     */
-    private fun requireMultiPositionCapability(
-        strategyId: String,
-        strategy: com.qkt.dsl.compile.DslCompiledStrategy,
-    ) {
-        for (symbol in strategy.multiPositionPerSymbolSymbols) {
-            val caps = broker.capabilitiesFor(symbol)
-            require(com.qkt.broker.OrderTypeCapability.MULTI_POSITION_PER_SYMBOL in caps) {
-                "Strategy '$strategyId' uses STACK_AT on $symbol but routing broker " +
-                    "'${broker.name}' does not declare MULTI_POSITION_PER_SYMBOL"
-            }
-        }
-    }
-
-    /**
-     * #301: refuse to deploy a strategy that binds a volume-weighted indicator (VWAP/OBV) to a feed
-     * that can't supply volume — otherwise the indicator never becomes ready and the strategy
-     * silently never fires. Only enforced when the source actually serves the symbol's stream
-     * (`TICKS`/`BARS`/`LIVE_TICKS`); a source that doesn't (e.g. [com.qkt.marketdata.source.NullMarketSource]
-     * behind an injected-tick backtest) carries no judgment about volume. Per-symbol via
-     * [com.qkt.marketdata.source.MarketSource.capabilitiesFor] so routing across a basket is honored.
-     */
-    private fun requireBookCapability(
-        strategyId: String,
-        strategy: com.qkt.dsl.compile.DslCompiledStrategy,
-    ) {
-        require(!strategy.usesBookSizing || bookBalance != null) {
-            "Strategy '$strategyId' sizes with RISK OF BOOK but no portfolio book is bound — " +
-                "deploy it as a child of a PORTFOLIO with CAPITAL, or use RISK/PCT RISK sizing"
-        }
-    }
-
-    private fun requireVolumeCapability(
-        strategyId: String,
-        strategy: com.qkt.dsl.compile.DslCompiledStrategy,
-    ) {
-        for (symbol in strategy.volumeRequiringSymbols) {
-            val caps = source.capabilitiesFor(symbol)
-            val servesStream =
-                caps.any {
-                    it == MarketSourceCapability.TICKS ||
-                        it == MarketSourceCapability.BARS ||
-                        it == MarketSourceCapability.LIVE_TICKS
-                }
-            require(!servesStream || MarketSourceCapability.VOLUME in caps) {
-                "Strategy '$strategyId' binds a volume-weighted indicator (VWAP/OBV) on $symbol but its " +
-                    "data feed ('${source.name}') does not supply volume — bind a volume-bearing feed or remove the indicator"
-            }
-        }
-    }
-
-    /**
-     * Phase 27: per-DSL-strategy stack lifecycle. The orchestrator owns one [com.qkt.dsl.compile.StackEngine]
-     * per active PRIMARY leg with `STACK_AT` clauses. On parent-fill it consumes the
-     * matching [com.qkt.dsl.compile.PendingStack] populated by the action compiler.
-     * Stack-emitted signals go through the same [emit] path as user-emitted signals so
-     * risk / ordering / id allocation behave uniformly.
-     *
-     * Parent close detection: when an [BrokerEvent.OrderFilled] for the strategy is NOT
-     * a known primary entry (no pending entry to consume), it's treated as a possible
-     * close — engines watching that id terminate. The action compiler predicts a
-     * Bracket parent's TP/SL ids using OrderManager's deterministic naming. Native
-     * broker brackets and manual closes are not yet covered.
-     */
-    private fun wireStackOrchestrator(
-        strategy: com.qkt.dsl.compile.DslCompiledStrategy,
-        strategyId: String,
-        emit: (com.qkt.strategy.Signal) -> Unit,
-    ) {
-        val orch =
-            com.qkt.dsl.compile.StackOrchestrator(
-                clock = clock,
-                emit = emit,
-                strategyId = strategyId,
-                persistor = persistor,
-            )
-        // Restart path: rebuild engines for parents that were open when the process
-        // died — the restored leg supplies identity, the persisted tier state supplies
-        // thresholds, windows, progress, and the original open-time anchor (#390).
-        runCatching {
-            for ((parentLegId, state) in persistor.loadPendingStacks(strategyId)) {
-                val leg = strategyPositions.legById(strategyId, parentLegId) ?: continue
-                orch.restoreEngine(
-                    parentLegId = parentLegId,
-                    parentSymbol = leg.symbol,
-                    parentSide = leg.side,
-                    parentEntryPrice = leg.entryPrice,
-                    persisted = state,
-                )
-            }
-        }.onFailure { e -> log.warn("stack tier restore failed for {}: {}", strategyId, e.message) }
-        bus.subscribe<TickEvent> { e -> orch.onTick(e.tick.symbol, e.tick.price) }
-        bus.subscribe<BrokerEvent.OrderFilled> { e ->
-            if (e.strategyId != strategyId) return@subscribe
-            val pending = strategy.pendingStacks.consume(e.clientOrderId)
-            if (pending != null) {
-                orch.onPrimaryFilled(
-                    parentLegId = pending.parentClientOrderId,
-                    parentSymbol = pending.symbol,
-                    parentSide = pending.side,
-                    parentEntryPrice = e.price,
-                    parentQty = e.quantity,
-                    tiers = pending.tiers,
-                    closeWatchIds = pending.closeWatchIds,
-                )
-            } else {
-                orch.onPossibleClose(e.clientOrderId)
-            }
-        }
     }
 }

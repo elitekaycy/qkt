@@ -23,6 +23,22 @@ interface MarketPriceProvider {
         symbol: String,
         side: Side,
     ): BigDecimal? = lastPrice(symbol)
+
+    /**
+     * The price at which exposure of [signum] (positive long, negative short) could be closed
+     * right now: a long sells at the bid, a short buys at the ask. Flat exposure and providers
+     * without quote depth mark at [lastPrice]. Unrealized P&L marks here rather than at mid, so
+     * the half-spread the venue charges on the way out is never counted as open profit.
+     */
+    fun closingMark(
+        symbol: String,
+        signum: Int,
+    ): BigDecimal? =
+        when {
+            signum > 0 -> executionPrice(symbol, Side.SELL)
+            signum < 0 -> executionPrice(symbol, Side.BUY)
+            else -> lastPrice(symbol)
+        }
 }
 
 /**

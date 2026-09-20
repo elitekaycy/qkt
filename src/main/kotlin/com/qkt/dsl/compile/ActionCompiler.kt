@@ -1,44 +1,33 @@
 package com.qkt.dsl.compile
 
 import com.qkt.common.IdGenerator
-import com.qkt.common.Money
 import com.qkt.common.SequentialIdGenerator
 import com.qkt.common.Side
 import com.qkt.dsl.ast.ActionAst
 import com.qkt.dsl.ast.ActionOpts
-import com.qkt.dsl.ast.BinOp
-import com.qkt.dsl.ast.BinaryOp
 import com.qkt.dsl.ast.Block
 import com.qkt.dsl.ast.Buy
 import com.qkt.dsl.ast.Cancel
 import com.qkt.dsl.ast.CancelAll
-import com.qkt.dsl.ast.ChildBy
-import com.qkt.dsl.ast.ChildPriceAst
 import com.qkt.dsl.ast.Close
 import com.qkt.dsl.ast.CloseAll
 import com.qkt.dsl.ast.ExitHooksAst
-import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.Latch
 import com.qkt.dsl.ast.Log
-import com.qkt.dsl.ast.LogLevel
-import com.qkt.dsl.ast.Market
-import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.OcoEntry
 import com.qkt.dsl.ast.Resize
 import com.qkt.dsl.ast.Sell
-import com.qkt.dsl.ast.SizeNotional
-import com.qkt.dsl.ast.SizeQty
-import com.qkt.dsl.ast.StackEntryRef
-import com.qkt.execution.At
-import com.qkt.execution.OrderRequest
-import com.qkt.execution.TimeInForce
-import com.qkt.execution.withExpiresAt
 import com.qkt.strategy.Signal
 import java.math.BigDecimal
-import java.math.RoundingMode
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
+/**
+ * Compiles a rule's `THEN` actions into closures that emit [Signal]s when the rule fires. This
+ * class is the dispatch point: each action kind compiles in its own collaborator
+ * ([EntryOrderCompiler], [StackActionCompiler], [OtoActionCompiler], [CloseActionCompiler], ...),
+ * all sharing one id generator, sizing compiler and exit-hook catalog.
+ */
 class ActionCompiler(
     private val exprCompiler: ExprCompiler,
     private val strategyLogger: Logger = LoggerFactory.getLogger("com.qkt.dsl.strategy"),
@@ -54,12 +43,28 @@ class ActionCompiler(
     private val childPriceFreezer = ChildPriceFreezer(exprCompiler)
     private val sizingCompiler = SizingCompiler(exprCompiler)
     private val latchCompiler = LatchCompiler(exprCompiler, sizingCompiler, ids)
+    private val entryOrders =
+        EntryOrderCompiler(
+            exprCompiler,
+            strategyLogger,
+            ids,
+            pendingStacks,
+            orderTypeCompiler,
+            childPriceResolver,
+            childPriceFreezer,
+            sizingCompiler,
+        )
+    private val stacks = StackActionCompiler(childPriceResolver, childPriceFreezer, sizingCompiler, ids)
+    private val otos = OtoActionCompiler(orderTypeCompiler, sizingCompiler, ids, baskets, strategyLogger)
+    private val basketFanOuts = BasketFanOutCompiler(exprCompiler)
+    private val repeats = RepeatedActionCompiler(exprCompiler, strategyLogger)
+    private val ocoEntries = OcoEntryCompiler(ids, strategyLogger)
+    private val closes = CloseActionCompiler(ids, baskets)
+    private val resizes = ResizeActionCompiler(exprCompiler, sizingCompiler, ids)
+    private val logs = LogActionCompiler(exprCompiler, strategyLogger)
 
     /** True once any compiled action (or latch entry) sized `RISK … OF BOOK`. */
     val usesBookSizing: Boolean get() = sizingCompiler.compiledBookSizing
-
-    /** Default resize deadband: skip a resize whose `|target - current|` is under 5% of target. */
-    private val defaultMinStepFraction = BigDecimal("0.05")
 
     /**
      * [ruleAlias] is the stream the enclosing rule evaluates on. Expressions that keep per-bar
@@ -73,199 +78,19 @@ class ActionCompiler(
         when (action) {
             is Buy -> compileBuySell(action.stream, action.opts, Side.BUY)
             is Sell -> compileBuySell(action.stream, action.opts, Side.SELL)
-            is Log -> compileLog(action, ruleAlias)
-            is Close -> compileClose(action.stream)
-            is CloseAll -> compileCloseAll()
+            is Log -> logs.compile(action, ruleAlias)
+            is Close -> closes.compileClose(action.stream)
+            is CloseAll -> closes.compileCloseAll()
             is Cancel -> compileCancel(action.stream)
             is CancelAll -> compileCancelAll()
             is Block -> compileBlock(action, ruleAlias)
-            is OcoEntry -> compileOcoEntry(action)
+            is OcoEntry -> ocoEntries.compile(action, this)
             is Latch -> { ec ->
                 listOf(Signal.ArmLatch(latchCompiler.compile(action, ec.strategyContext.strategyId), ec))
             }
-            is Resize -> compileResize(action)
+            is Resize -> resizes.compile(action)
             else -> error("Action ${action::class.simpleName} is not supported in 11d1")
         }
-
-    /**
-     * Set the symbol's PRIMARY leg to a per-bar target magnitude, trimming or adding to reach it.
-     * Reuses the SIZING grammar for the target (no stop distance, so RISK sizing self-rejects).
-     * Grows with a same-side market add (averages into the primary); shrinks with a partial
-     * close-by-ticket of the primary (`TO 0` closes it fully). A no-op when there is no primary
-     * or when `|target - current|` is below the [Resize.minStep] deadband (default 5% of target).
-     */
-    private fun compileResize(action: Resize): (EvalContext) -> List<Signal> {
-        val compiledTarget = sizingCompiler.compile(action.target, stopDistance = null, streamAlias = action.stream)
-        val compiledMinStep = action.minStep?.let { exprCompiler.compile(it) }
-        return resize@{ ctx ->
-            val symbol =
-                ctx.streams[action.stream]?.qktSymbol
-                    ?: error("Unknown stream alias: ${action.stream}")
-            val primary =
-                ctx.strategyContext.positions
-                    .legsFor(symbol)
-                    .firstOrNull { it.role == com.qkt.positions.LegRole.PRIMARY }
-                    ?: return@resize emptyList()
-            val refPrice = ctx.candle.close
-            val rawTarget = compiledTarget.evaluate(ctx, refPrice)
-            val target = if (rawTarget.signum() < 0) BigDecimal.ZERO else rawTarget
-            val cur = primary.quantity.abs()
-            val delta = target.subtract(cur, Money.CONTEXT)
-            val instrument = ctx.strategyContext.instruments.lookup(symbol)
-            val configuredMinStep =
-                compiledMinStep?.let { (it.evaluate(ctx) as? Value.Num)?.v }
-                    ?: target.multiply(defaultMinStepFraction, Money.CONTEXT)
-            val minStep = configuredMinStep.max(instrument?.volumeMin ?: BigDecimal.ZERO)
-            if (delta.signum() == 0 || delta.abs() < minStep) return@resize emptyList()
-            val quantity =
-                instrument
-                    ?.volumeStep
-                    ?.takeIf { it.signum() > 0 }
-                    ?.let { step -> delta.abs().divide(step, 0, RoundingMode.DOWN).multiply(step) }
-                    ?: delta.abs()
-            if (quantity.signum() == 0 || quantity < (instrument?.volumeMin ?: BigDecimal.ZERO)) {
-                return@resize listOf(
-                    Signal.Suppressed(
-                        symbol = symbol,
-                        reason =
-                            "RESIZE delta ${delta.abs().toPlainString()} quantized below venue minimum " +
-                                "${(instrument?.volumeMin ?: BigDecimal.ZERO).toPlainString()}",
-                    ),
-                )
-            }
-            // Grow with a same-side add (the tracker averages it into the primary); shrink/flatten
-            // by closing the PRIMARY's exact venue ticket. A plain opposite market would open a
-            // counter-position on a hedging account instead of reducing exposure.
-            val grow = delta.signum() > 0
-            val side = if (grow == (primary.side == Side.BUY)) Side.BUY else Side.SELL
-            listOf(
-                Signal.Submit(
-                    OrderRequest.Market(
-                        id = ids.next(),
-                        symbol = symbol,
-                        side = side,
-                        quantity = quantity,
-                        timeInForce = TimeInForce.GTC,
-                        timestamp = ctx.candle.endTime,
-                        strategyId = ctx.strategyContext.strategyId,
-                        closesTicket = if (grow) null else primary.brokerTicket,
-                        closesLegId = if (grow) null else primary.legId,
-                        partialClose = !grow && target.signum() > 0,
-                    ),
-                ),
-            )
-        }
-    }
-
-    /**
-     * `TIMES <expr>`: the action repeated N times in one evaluation. The body is compiled once
-     * with the clause removed and invoked N times, so every repetition goes through the same
-     * path a hand-written `BUY ...; BUY ...` would — its own order id, its own bracket, its own
-     * stack or STACK_AT registration. The count is evaluated at fire time: a fraction truncates,
-     * zero or less emits nothing, an undefined value (indicator still warming) emits nothing and
-     * logs once, and a count above [MAX_TIMES] is suppressed rather than sent, since no
-     * strategy means a thousand-order burst by accident.
-     */
-    private fun compileRepeated(
-        stream: String,
-        opts: ActionOpts,
-        side: Side,
-    ): (EvalContext) -> List<Signal> {
-        val timesExpr = opts.times ?: error("unreachable")
-        val once = compileBuySell(stream, opts.copy(times = null), side)
-        val compiledTimes = exprCompiler.compile(timesExpr)
-        var skippedUndefinedLogged = false
-        return repeat@{ ctx ->
-            val symbol = ctx.streams[stream]?.qktSymbol ?: error("Unknown stream alias: $stream")
-            val count =
-                when (val v = compiledTimes.evaluate(ctx)) {
-                    is Value.Num -> v.v.setScale(0, RoundingMode.DOWN)
-                    Value.Undefined -> {
-                        if (!skippedUndefinedLogged) {
-                            strategyLogger.warn(
-                                "order skipped: TIMES count undefined during warm-up " +
-                                    "(strategy=${ctx.strategyContext.strategyId}, stream=$stream)",
-                            )
-                            skippedUndefinedLogged = true
-                        }
-                        return@repeat emptyList()
-                    }
-                    else -> error("TIMES must be numeric, got $v")
-                }
-            if (count.signum() <= 0) return@repeat emptyList()
-            if (count > MAX_TIMES) {
-                return@repeat listOf(
-                    Signal.Suppressed(
-                        symbol = symbol,
-                        reason = "TIMES evaluated to ${count.toPlainString()}, above the $MAX_TIMES repetition cap",
-                    ),
-                )
-            }
-            val out = ArrayList<Signal>()
-            repeat(count.toInt()) { out.addAll(once(ctx)) }
-            out
-        }
-    }
-
-    /**
-     * True when [stream] is not the stream whose bar is being evaluated — i.e. this action is
-     * ordering on a symbol other than the one that triggered the rule.
-     */
-    private fun crossStream(
-        ctx: EvalContext,
-        stream: String,
-    ): Boolean {
-        val target = ctx.streams[stream] ?: return false
-        val current = ctx.currentAlias
-        return if (current != null) current != stream else ctx.candle.symbol != target.qktSymbol
-    }
-
-    private fun compileOcoEntry(action: OcoEntry): (EvalContext) -> List<Signal> {
-        for (leg in listOf(action.leg1, action.leg2)) {
-            val legTimes =
-                when (leg) {
-                    is Buy -> leg.opts.times
-                    is Sell -> leg.opts.times
-                    else -> null
-                }
-            require(legTimes == null) { "OCO_ENTRY legs cannot carry TIMES; repeat the OCO_ENTRY action instead" }
-        }
-        val leg1Compiled = compile(action.leg1)
-        val leg2Compiled = compile(action.leg2)
-        var skippedUndefinedLogged = false
-        return ocoEntry@{ ctx ->
-            val sigs1 = leg1Compiled(ctx)
-            val sigs2 = leg2Compiled(ctx)
-            if (sigs1.isEmpty() || sigs2.isEmpty()) {
-                if (!skippedUndefinedLogged) {
-                    strategyLogger.warn(
-                        "order skipped: OCO_ENTRY leg price undefined during warm-up " +
-                            "(strategy=${ctx.strategyContext.strategyId})",
-                    )
-                    skippedUndefinedLogged = true
-                }
-                return@ocoEntry emptyList()
-            }
-            val req1 =
-                (sigs1.singleOrNull() as? Signal.Submit)?.request
-                    ?: error("OCO_ENTRY leg1 must compile to exactly one Signal.Submit, got $sigs1")
-            val req2 =
-                (sigs2.singleOrNull() as? Signal.Submit)?.request
-                    ?: error("OCO_ENTRY leg2 must compile to exactly one Signal.Submit, got $sigs2")
-            val oco =
-                OrderRequest.StandaloneOCO(
-                    id = ids.next(),
-                    symbol = req1.symbol,
-                    side = req1.side,
-                    quantity = req1.quantity,
-                    leg1 = req1,
-                    leg2 = req2,
-                    timeInForce = req1.timeInForce,
-                    timestamp = ctx.strategyContext.clock.now(),
-                )
-            listOf(Signal.Submit(oco))
-        }
-    }
 
     private fun compileBlock(
         action: Block,
@@ -276,101 +101,6 @@ class ActionCompiler(
             val out = mutableListOf<Signal>()
             for (child in children) out.addAll(child(ctx))
             out
-        }
-    }
-
-    private fun compileCloseAll(): (EvalContext) -> List<Signal> =
-        { ctx ->
-            val out = mutableListOf<Signal>()
-            for (streamAlias in ctx.streams.keys) {
-                val sym = ctx.streams[streamAlias]?.qktSymbol ?: continue
-                out.add(Signal.CancelPendingForSymbol(sym))
-            }
-            val open = ctx.strategyContext.positions.allPositions()
-            for (symbol in open.keys) {
-                out.addAll(closeSignalsFor(ctx, symbol))
-            }
-            out
-        }
-
-    private fun compileClose(streamAlias: String): (EvalContext) -> List<Signal> {
-        baskets[streamAlias]?.let { constituents ->
-            // CLOSE on a basket flattens every constituent — one basket close, N real closes.
-            return { ctx ->
-                val signals = mutableListOf<Signal>()
-                for (alias in constituents) {
-                    val symbol = ctx.streams[alias]?.qktSymbol ?: error("Unknown basket constituent alias: $alias")
-                    signals.add(Signal.CancelPendingForSymbol(symbol))
-                    signals.addAll(closeSignalsFor(ctx, symbol))
-                }
-                signals
-            }
-        }
-        return { ctx ->
-            val symbol = ctx.streams[streamAlias]?.qktSymbol ?: error("Unknown stream alias: $streamAlias")
-            val signals = mutableListOf<Signal>()
-            signals.add(Signal.CancelPendingForSymbol(symbol))
-            signals.addAll(closeSignalsFor(ctx, symbol))
-            signals
-        }
-    }
-
-    /**
-     * Signals that flatten [symbol]. When the position is held as independent legs (e.g. a
-     * filled straddle), each leg is closed individually and attributed to its leg id — so a
-     * net-zero pair still closes both sides, and on a hedging venue each close targets the
-     * exact ticket instead of opening a counter. A PRIMARY leg is likewise closed by ticket;
-     * this is required on hedging venues and remains valid on netting venues. The net-quantity
-     * fallback exists only for legacy position views without leg metadata.
-     */
-    private fun closeSignalsFor(
-        ctx: EvalContext,
-        symbol: String,
-    ): List<Signal> {
-        val legs = ctx.strategyContext.positions.legsFor(symbol)
-        if (legs.any { it.role == com.qkt.positions.LegRole.INDEPENDENT }) {
-            return legs.map { leg ->
-                val exitSide = if (leg.side == Side.BUY) Side.SELL else Side.BUY
-                Signal.Submit(
-                    OrderRequest.Market(
-                        id = ids.next(),
-                        symbol = symbol,
-                        side = exitSide,
-                        quantity = leg.quantity,
-                        timeInForce = TimeInForce.GTC,
-                        timestamp = ctx.strategyContext.clock.now(),
-                        closesTicket = leg.brokerTicket,
-                        closesLegId = leg.legId,
-                    ),
-                )
-            }
-        }
-        val primary = legs.firstOrNull { it.role == com.qkt.positions.LegRole.PRIMARY }
-        if (primary != null) {
-            val exitSide = if (primary.side == Side.BUY) Side.SELL else Side.BUY
-            return listOf(
-                Signal.Submit(
-                    OrderRequest.Market(
-                        id = ids.next(),
-                        symbol = symbol,
-                        side = exitSide,
-                        quantity = primary.quantity,
-                        timeInForce = TimeInForce.GTC,
-                        timestamp = ctx.strategyContext.clock.now(),
-                        closesTicket = primary.brokerTicket,
-                        closesLegId = primary.legId,
-                    ),
-                ),
-            )
-        }
-        val qty =
-            ctx.strategyContext.positions
-                .positionFor(symbol)
-                ?.quantity ?: BigDecimal.ZERO
-        return when {
-            qty.signum() > 0 -> listOf(Signal.Sell(symbol, qty))
-            qty.signum() < 0 -> listOf(Signal.Buy(symbol, qty.abs()))
-            else -> emptyList()
         }
     }
 
@@ -388,62 +118,9 @@ class ActionCompiler(
                 .map { Signal.CancelPendingForSymbol(it) }
         }
 
-    private fun compileLog(
-        log: Log,
-        ruleAlias: String?,
-    ): (EvalContext) -> List<Signal> {
-        val placeholders = LOG_PLACEHOLDER_REGEX.findAll(log.messageFormat).map { it.groupValues[1] }.toSet()
-        val unmatched = placeholders - log.fields.keys
-        check(unmatched.isEmpty()) {
-            "LOG placeholder(s) without matching field: ${unmatched.joinToString()}"
-        }
-        // With the rule's stream, a LOG field may read an aggregate (`mean(x) SINCE T-10`, `count(c, N)`),
-        // which used to fail to compile with "Aggregate requires rule symbol context".
-        val compiledFields = log.fields.mapValues { (_, expr) -> exprCompiler.compile(expr, ruleAlias) }
-        return { ctx ->
-            val resolved = compiledFields.mapValues { (_, ce) -> ce.evaluate(ctx) }
-            val rendered = renderLogMessage(log.messageFormat, resolved)
-            try {
-                for ((k, v) in resolved) {
-                    org.slf4j.MDC.put("log.$k", stringifyValue(v))
-                }
-                when (log.level) {
-                    LogLevel.DEBUG -> strategyLogger.debug(rendered)
-                    LogLevel.INFO -> strategyLogger.info(rendered)
-                    LogLevel.WARN -> strategyLogger.warn(rendered)
-                    LogLevel.ERROR -> strategyLogger.error(rendered)
-                }
-            } finally {
-                for (k in resolved.keys) org.slf4j.MDC.remove("log.$k")
-            }
-            emptyList()
-        }
-    }
-
-    private fun renderLogMessage(
-        format: String,
-        resolved: Map<String, Value>,
-    ): String {
-        var out = format
-        for ((k, v) in resolved) {
-            out = out.replace("{$k}", stringifyValue(v))
-        }
-        return out
-    }
-
-    private fun stringifyValue(v: Value): String =
-        when (v) {
-            is Value.Num -> v.v.toPlainString()
-            is Value.Bool -> v.v.toString()
-            is Value.Str -> v.v
-            is Value.Undefined -> "undefined"
-        }
-
     companion object {
         /** Upper bound on one `TIMES` evaluation; a larger count is suppressed, not sent. */
         val MAX_TIMES: BigDecimal = BigDecimal(1000)
-
-        private val LOG_PLACEHOLDER_REGEX = Regex("\\{([a-zA-Z_][a-zA-Z0-9_]*)\\}")
     }
 
     private fun compileBuySell(
@@ -452,18 +129,18 @@ class ActionCompiler(
         side: Side,
     ): (EvalContext) -> List<Signal> {
         if (opts.times != null) {
-            return compileRepeated(stream, opts, side)
+            return repeats.compile(stream, opts.times, compileBuySell(stream, opts.copy(times = null), side))
         }
         if (!opts.exitHooks.isEmpty()) {
             return compileWithExitHooks(stream, opts, side)
         }
         baskets[stream]?.let { constituents ->
-            return compileBasketFanOut(stream, constituents, opts, side)
+            return basketFanOuts.compile(stream, constituents, opts, side)
         }
 
         // OTO path: a parent with ON_FILL children placed only when the parent fills.
         if (opts.onFill.isNotEmpty()) {
-            return compileOto(stream, opts, side)
+            return otos.compile(stream, opts, side)
         }
 
         // Stack path: STACK is mutually exclusive with BRACKET/OCO on the same action.
@@ -473,269 +150,10 @@ class ActionCompiler(
             require(opts.stackAts.isEmpty()) {
                 "STACK_AT cannot be combined with STACK on the same action"
             }
-            return compileStack(stream, opts, side)
+            return stacks.compile(stream, opts, side)
         }
 
-        val sizing = opts.sizing ?: error("BUY/SELL requires SIZING")
-
-        // Phase 27: STACK_AT on an OCO parent is silently broken — the OCO id is never
-        // echoed back on a broker fill (the broker fills leg1.id or leg2.id), so the
-        // engine would never be constructed. Reject loudly until OCO leg-id wiring lands.
-        require(!(opts.oco != null && opts.stackAts.isNotEmpty())) {
-            "STACK_AT cannot be combined with OCO on the same action"
-        }
-
-        // Pre-compile STACK_AT tiers if present so we can register them on each emit.
-        val stackAtTiers: List<CompiledStackTier> =
-            if (opts.stackAts.isNotEmpty()) StackAtCompiler.compileAll(opts.stackAts) else emptyList()
-
-        // Fast path: plain market + default TIF + no bracket/OCO/stack/stack-at + direct qty sizing → emit Signal.Buy/Sell
-        val isFastPath =
-            (opts.orderType == null || opts.orderType == Market) &&
-                opts.tif == null &&
-                opts.bracket == null &&
-                opts.oco == null &&
-                stackAtTiers.isEmpty() &&
-                sizing is SizeQty
-        if (isFastPath) {
-            val qtyExpr = exprCompiler.compile((sizing as SizeQty).expr)
-            return { ctx ->
-                val symbol = ctx.streams[stream]?.qktSymbol ?: error("Unknown stream alias: $stream")
-                val v = qtyExpr.evaluate(ctx)
-                require(v is Value.Num) { "SIZING must be numeric, got $v" }
-                val sig = if (side == Side.BUY) Signal.Buy(symbol, v.v) else Signal.Sell(symbol, v.v)
-                listOf(sig)
-            }
-        }
-
-        // Submit path: any non-trivial option → emit Signal.Submit(OrderRequest.X)
-        require(opts.bracket == null || opts.oco == null) { "Cannot combine BRACKET and OCO on the same action" }
-
-        val tif = TifTranslator.translate(opts.tif)
-        val orderType = opts.orderType ?: Market
-        val compiledOrderType = orderTypeCompiler.compile(orderType, targetAlias = stream)
-
-        // Phase 38: compile the GTD deadline (if any) and reject GTD on Market actions.
-        val gtdDeadlineExpr: CompiledExpr? =
-            (opts.tif as? com.qkt.dsl.ast.Gtd)?.let { exprCompiler.compile(it.until) }
-        if (gtdDeadlineExpr != null && orderType === Market) {
-            error(
-                "TIF GTD is only valid on pending order types (LIMIT/STOP/IFTOUCHED/...); " +
-                    "MARKET orders fill instantly and have no expiry semantic.",
-            )
-        }
-
-        val compiledSL = opts.bracket?.stopLoss?.let { childPriceResolver.compileStopLoss(it) }
-        val compiledTP = opts.bracket?.takeProfit?.let { childPriceResolver.compile(it, ChildKind.TAKE_PROFIT) }
-        val frozenSL = opts.bracket?.stopLoss?.let { childPriceFreezer.prepare(it) }
-        val frozenTP = opts.bracket?.takeProfit?.let { childPriceFreezer.prepare(it) }
-        val compiledOcoLeg1 = opts.oco?.stop?.let { childPriceResolver.compile(it, ChildKind.STOP_LOSS) }
-        val compiledOcoLeg2 = opts.oco?.limit?.let { childPriceResolver.compile(it, ChildKind.TAKE_PROFIT) }
-        val staticStopDistance: BigDecimal? = resolveStaticStopDistance(opts.bracket?.stopLoss)
-        val compiledSize =
-            sizingCompiler.compile(
-                sizing,
-                staticStopDistance,
-                stream,
-                runtimeStopDistanceAvailable = compiledSL != null,
-            )
-
-        var skippedUndefinedLogged = false
-        return buySell@{ ctx ->
-            val symbol = ctx.streams[stream]?.qktSymbol ?: error("Unknown stream alias: $stream")
-            val ts = ctx.strategyContext.clock.now()
-            val entry =
-                compiledOrderType.entryPrice.evaluate(ctx)
-                    ?: run {
-                        if (!skippedUndefinedLogged) {
-                            strategyLogger.warn(
-                                "order skipped: entry price undefined during warm-up " +
-                                    "(strategy=${ctx.strategyContext.strategyId}, stream=$stream)",
-                            )
-                            skippedUndefinedLogged = true
-                        }
-                        // A rule firing on one stream's bar can order on another, and that order
-                        // prices itself from ITS OWN stream's last closed candle. Before that
-                        // stream has closed one there is no price and the order cannot be built.
-                        // Say so as a suppressed signal rather than returning nothing: a dropped
-                        // cross-stream order is otherwise invisible in the trade record, and it
-                        // is the kind of silence that costs a leg of a hedge without a trace.
-                        // The same-stream case is ordinary warm-up and stays quiet.
-                        if (crossStream(ctx, stream)) {
-                            return@buySell listOf(
-                                Signal.Suppressed(
-                                    symbol = symbol,
-                                    reason =
-                                        "entry price for '$stream' is undefined: it has not closed a candle yet, " +
-                                            "and this rule fired on another stream's bar. Declare WARMUP on '$stream'.",
-                                ),
-                            )
-                        }
-                        return@buySell emptyList()
-                    }
-            val resolvedBracket: ResolvedBracket? =
-                if (opts.bracket != null) {
-                    val sl = requireNotNull(compiledSL) { "BRACKET requires STOP LOSS" }
-                    val tp = requireNotNull(compiledTP) { "BRACKET requires TAKE PROFIT" }
-                    val slSpec =
-                        resolveStopLoss(sl, ctx, side, entry)
-                            ?: run {
-                                if (!skippedUndefinedLogged) {
-                                    strategyLogger.warn(
-                                        "order skipped: bracket stop price undefined during warm-up " +
-                                            "(strategy=${ctx.strategyContext.strategyId}, stream=$stream)",
-                                    )
-                                    skippedUndefinedLogged = true
-                                }
-                                return@buySell emptyList()
-                            }
-                    val stopDistance = stopDistance(entry, slSpec)
-                    val takeProfit =
-                        tp.evaluate(ctx, side, entry, stopDistance = stopDistance)
-                            ?: run {
-                                if (!skippedUndefinedLogged) {
-                                    strategyLogger.warn(
-                                        "order skipped: bracket take-profit price undefined during warm-up " +
-                                            "(strategy=${ctx.strategyContext.strategyId}, stream=$stream)",
-                                    )
-                                    skippedUndefinedLogged = true
-                                }
-                                return@buySell emptyList()
-                            }
-                    ResolvedBracket(slSpec, stopDistance, takeProfit)
-                } else {
-                    null
-                }
-            val qty = compiledSize.evaluate(ctx, entry, resolvedBracket?.stopDistance)
-            val entryReq =
-                compiledOrderType.buildRequest.evaluate(ctx, ids.next(), symbol, side, qty, tif, "", ts)
-                    ?: run {
-                        if (!skippedUndefinedLogged) {
-                            strategyLogger.warn(
-                                "order skipped: pending order price undefined during warm-up " +
-                                    "(strategy=${ctx.strategyContext.strategyId}, stream=$stream)",
-                            )
-                            skippedUndefinedLogged = true
-                        }
-                        return@buySell emptyList()
-                    }
-
-            val request: OrderRequest =
-                when {
-                    opts.bracket != null -> {
-                        val bracket = requireNotNull(resolvedBracket)
-                        // Frozen ASTs snapshot indicator subexpressions at entry so OrderManager's
-                        // fill-time re-anchor sees literal arithmetic only. The bracket prices
-                        // resolved above from the same context, so a null snapshot cannot happen
-                        // here; the elvis is a type-level fallback to those resolved prices.
-                        OrderRequest.Bracket(
-                            id = ids.next(),
-                            symbol = symbol,
-                            side = side,
-                            quantity = qty,
-                            entry = entryReq,
-                            takeProfit = bracket.takeProfit,
-                            stopLoss = bracket.stopLoss,
-                            takeProfitAst = frozenTP?.freeze(ctx),
-                            stopLossAst = frozenSL?.freeze(ctx),
-                            timeInForce = tif,
-                            timestamp = ts,
-                        )
-                    }
-                    opts.oco != null -> {
-                        val l1 = requireNotNull(compiledOcoLeg1) { "OCO requires STOP leg" }
-                        val l2 = requireNotNull(compiledOcoLeg2) { "OCO requires LIMIT leg" }
-                        val exitSide = if (side == Side.BUY) Side.SELL else Side.BUY
-                        val stopPrice =
-                            l1.evaluate(ctx, side, entry, stopDistance = null)
-                                ?: run {
-                                    if (!skippedUndefinedLogged) {
-                                        strategyLogger.warn(
-                                            "order skipped: OCO stop price undefined during warm-up " +
-                                                "(strategy=${ctx.strategyContext.strategyId}, stream=$stream)",
-                                        )
-                                        skippedUndefinedLogged = true
-                                    }
-                                    return@buySell emptyList()
-                                }
-                        val limitPrice =
-                            l2.evaluate(ctx, side, entry, stopDistance = null)
-                                ?: run {
-                                    if (!skippedUndefinedLogged) {
-                                        strategyLogger.warn(
-                                            "order skipped: OCO limit price undefined during warm-up " +
-                                                "(strategy=${ctx.strategyContext.strategyId}, stream=$stream)",
-                                        )
-                                        skippedUndefinedLogged = true
-                                    }
-                                    return@buySell emptyList()
-                                }
-                        val stopLeg =
-                            OrderRequest.Stop(
-                                id = ids.next(),
-                                symbol = symbol,
-                                side = exitSide,
-                                quantity = qty,
-                                stopPrice = stopPrice,
-                                timeInForce = tif,
-                                timestamp = ts,
-                            )
-                        val limitLeg =
-                            OrderRequest.Limit(
-                                id = ids.next(),
-                                symbol = symbol,
-                                side = exitSide,
-                                quantity = qty,
-                                limitPrice = limitPrice,
-                                timeInForce = tif,
-                                timestamp = ts,
-                            )
-                        OrderRequest.StandaloneOCO(
-                            id = ids.next(),
-                            symbol = symbol,
-                            side = side,
-                            quantity = qty,
-                            leg1 = stopLeg,
-                            leg2 = limitLeg,
-                            timeInForce = tif,
-                            timestamp = ts,
-                        )
-                    }
-                    else -> entryReq
-                }
-
-            // Phase 38: evaluate the GTD deadline (if any) and stamp expiresAt on the request,
-            // propagating into nested sub-requests for composite shapes (Bracket.entry,
-            // StandaloneOCO.leg1/leg2, OTO.parent/children, ScaleOut.basis).
-            val finalRequest: OrderRequest =
-                if (gtdDeadlineExpr != null) {
-                    val deadline =
-                        when (val r = gtdDeadlineExpr.evaluate(ctx)) {
-                            is Value.Num -> r.v.toLong()
-                            else ->
-                                error(
-                                    "TIF GTD expression evaluated to $r; expected a numeric epoch-millis timestamp",
-                                )
-                        }
-                    request.withExpiresAt(deadline)
-                } else {
-                    request
-                }
-
-            if (stackAtTiers.isNotEmpty() && pendingStacks != null) {
-                pendingStacks.register(
-                    PendingStack(
-                        parentClientOrderId = parentClientOrderIdFor(finalRequest),
-                        symbol = symbol,
-                        side = side,
-                        tiers = stackAtTiers,
-                        closeWatchIds = closeWatchIdsFor(finalRequest),
-                    ),
-                )
-            }
-
-            listOf(Signal.Submit(finalRequest))
-        }
+        return entryOrders.compile(stream, opts, side)
     }
 
     private fun compileWithExitHooks(
@@ -743,29 +161,7 @@ class ActionCompiler(
         opts: ActionOpts,
         side: Side,
     ): (EvalContext) -> List<Signal> {
-        require(opts.onFill.isEmpty()) { "Exit hooks cannot be combined with ON_FILL in v1." }
-        require(opts.oco == null && opts.stackAts.isEmpty()) {
-            "Exit hooks support plain, BRACKET, or STACK parents in v1; OCO and STACK_AT are not supported."
-        }
-        val children = opts.exitHooks.onStop + opts.exitHooks.onTakeProfit + opts.exitHooks.onClose
-        children.forEach { child ->
-            require(child is Buy || child is Sell || child is Log) {
-                "Exit-hook children must be BUY, SELL, or LOG actions; got ${child::class.simpleName}"
-            }
-            val childOpts =
-                when (child) {
-                    is Buy -> child.opts
-                    is Sell -> child.opts
-                    is Log -> return@forEach
-                    else -> error("validated above")
-                }
-            require(childOpts.exitHooks.isEmpty() && childOpts.onFill.isEmpty()) {
-                "Exit-hook children cannot declare ON_FILL or nested ON_* hooks in v1."
-            }
-            require(childOpts.oco == null && childOpts.stack == null && childOpts.stackAts.isEmpty()) {
-                "Exit-hook children may carry a BRACKET but not OCO, STACK, or STACK_AT in v1."
-            }
-        }
+        ExitHookAttachment.validate(opts)
         val childCompiler =
             ActionCompiler(
                 exprCompiler = exitExprCompiler,
@@ -783,373 +179,6 @@ class ActionCompiler(
                 opts.copy(exitHooks = ExitHooksAst()),
                 side,
             )
-        return { ctx ->
-            base(ctx).map { signal ->
-                when (signal) {
-                    is Signal.Buy -> signal.copy(exitHook = ref)
-                    is Signal.Sell -> signal.copy(exitHook = ref)
-                    is Signal.Submit -> signal.copy(exitHook = ref)
-                    else -> error("Exit hooks require an order-producing BUY/SELL action")
-                }
-            }
-        }
+        return ExitHookAttachment.attach(base, ref)
     }
-
-    /** A compiled OTO child: builds one child [OrderRequest] given the parent's fill context. */
-    private fun interface CompiledOtoChild {
-        fun build(
-            childCtx: EvalContext,
-            ts: Long,
-        ): OrderRequest?
-    }
-
-    /**
-     * Compile an OTO parent: a BUY/SELL whose `ON_FILL` children are placed only once the parent
-     * fills (One-Triggers-Other). Emits a single [OrderRequest.OTO]; [com.qkt.app.OrderManager]
-     * submits the parent, holds the children until it fills, and drops them if it never does.
-     *
-     * v1 keeps the parent plain (no BRACKET/OCO/STACK on the same action) and the children plain
-     * BUY/SELL orders. A child prices itself relative to the parent fill via the `entry` keyword —
-     * exact for a LIMIT/STOP parent (it fills at its price), the signal-time estimate for a MARKET
-     * parent. e.g. `BUY gold SIZING 1 ON_FILL { SELL silver SIZING 1 }` market-hedges on fill.
-     */
-    private fun compileOto(
-        stream: String,
-        opts: ActionOpts,
-        side: Side,
-    ): (EvalContext) -> List<Signal> {
-        val v1 = "OTO (ON_FILL) parent on '$stream'"
-        require(opts.bracket == null) { "$v1 cannot also carry a BRACKET in v1." }
-        require(opts.oco == null) { "$v1 cannot also carry an OCO in v1." }
-        require(opts.stack == null && opts.stackAts.isEmpty()) { "$v1 cannot also carry STACK/STACK_AT in v1." }
-        require(opts.tif !is com.qkt.dsl.ast.Gtd) { "$v1 does not support TIF GTD in v1." }
-        val sizing = opts.sizing ?: error("OTO parent BUY/SELL requires SIZING")
-        val tif = TifTranslator.translate(opts.tif)
-        val compiledOrderType = orderTypeCompiler.compile(opts.orderType ?: Market, targetAlias = stream)
-        val compiledSize = sizingCompiler.compile(sizing, null, stream)
-        val children = opts.onFill.map { compileOtoChild(it) }
-        var skippedUndefinedLogged = false
-        return oto@{ ctx ->
-            val symbol = ctx.streams[stream]?.qktSymbol ?: error("Unknown stream alias: $stream")
-            val ts = ctx.strategyContext.clock.now()
-            val entry =
-                compiledOrderType.entryPrice.evaluate(ctx)
-                    ?: run {
-                        if (!skippedUndefinedLogged) {
-                            strategyLogger.warn(
-                                "order skipped: OTO parent entry price undefined during warm-up " +
-                                    "(strategy=${ctx.strategyContext.strategyId}, stream=$stream)",
-                            )
-                            skippedUndefinedLogged = true
-                        }
-                        return@oto emptyList()
-                    }
-            val qty = compiledSize.evaluate(ctx, entry)
-            val parentReq =
-                compiledOrderType.buildRequest.evaluate(ctx, ids.next(), symbol, side, qty, tif, "", ts)
-                    ?: run {
-                        if (!skippedUndefinedLogged) {
-                            strategyLogger.warn(
-                                "order skipped: OTO parent pending price undefined during warm-up " +
-                                    "(strategy=${ctx.strategyContext.strategyId}, stream=$stream)",
-                            )
-                            skippedUndefinedLogged = true
-                        }
-                        return@oto emptyList()
-                    }
-            val childCtx = ctx.withEntryPrice(entry)
-            val childReqs = children.map { it.build(childCtx, ts) }
-            if (childReqs.any { it == null }) {
-                if (!skippedUndefinedLogged) {
-                    strategyLogger.warn(
-                        "order skipped: OTO child pending price undefined during warm-up " +
-                            "(strategy=${ctx.strategyContext.strategyId}, stream=$stream)",
-                    )
-                    skippedUndefinedLogged = true
-                }
-                return@oto emptyList()
-            }
-            val oto =
-                OrderRequest.OTO(
-                    id = ids.next(),
-                    symbol = symbol,
-                    side = side,
-                    quantity = qty,
-                    parent = parentReq,
-                    children = childReqs.filterNotNull(),
-                    timeInForce = tif,
-                    timestamp = ts,
-                )
-            listOf(Signal.Submit(oto))
-        }
-    }
-
-    private fun compileOtoChild(child: ActionAst): CompiledOtoChild {
-        val childSide: Side
-        val childStream: String
-        val childOpts: ActionOpts
-        when (child) {
-            is Buy -> {
-                childSide = Side.BUY
-                childStream = child.stream
-                childOpts = child.opts
-            }
-            is Sell -> {
-                childSide = Side.SELL
-                childStream = child.stream
-                childOpts = child.opts
-            }
-            else -> error("ON_FILL children must be BUY or SELL actions; got ${child::class.simpleName}")
-        }
-        require(childOpts.onFill.isEmpty()) { "ON_FILL children cannot nest their own ON_FILL (no nested OTO in v1)." }
-        require(childOpts.bracket == null && childOpts.oco == null) {
-            "ON_FILL children cannot carry a BRACKET or OCO in v1."
-        }
-        require(childOpts.stack == null && childOpts.stackAts.isEmpty()) {
-            "ON_FILL children cannot carry STACK/STACK_AT in v1."
-        }
-        require(childOpts.tif == null) { "ON_FILL children cannot carry a TIF in v1." }
-        require(baskets[childStream] == null) { "ON_FILL children cannot target a BASKET in v1." }
-        val childSizing = childOpts.sizing ?: error("ON_FILL child BUY/SELL requires SIZING")
-        val compiledOrderType = orderTypeCompiler.compile(childOpts.orderType ?: Market, targetAlias = childStream)
-        val compiledSize = sizingCompiler.compile(childSizing, null, childStream)
-        val childTif = TifTranslator.translate(null)
-        return CompiledOtoChild { childCtx, ts ->
-            val sym = childCtx.streams[childStream]?.qktSymbol ?: error("Unknown stream alias: $childStream")
-            val childEntry = compiledOrderType.entryPrice.evaluate(childCtx) ?: return@CompiledOtoChild null
-            val childQty = compiledSize.evaluate(childCtx, childEntry)
-            compiledOrderType.buildRequest.evaluate(childCtx, ids.next(), sym, childSide, childQty, childTif, "", ts)
-        }
-    }
-
-    /**
-     * Fan a `BUY`/`SELL` on a basket alias out to one plain-market order per constituent,
-     * each sized so its notional is `total / N` — equal economic weight, not equal lots, since
-     * one lot of two differently-priced symbols is two different exposures. The basket has no
-     * tradeable symbol of its own, so there is no single order to emit; each constituent order
-     * routes by its own `qktSymbol`. e.g. `BUY antipodean SIZING NOTIONAL 10000` over
-     * `[aud, nzd]` emits a BUY of $5,000 notional on each.
-     *
-     * Basket orders are plain market in v1: a BRACKET/OCO/TIF/STACK or a LIMIT/STOP type on a
-     * basket order is a compile error, and the sizing must be `SIZING NOTIONAL` — the only mode
-     * that yields a single economic total to split across constituents priced differently.
-     */
-    private fun compileBasketFanOut(
-        basketAlias: String,
-        constituents: List<String>,
-        opts: ActionOpts,
-        side: Side,
-    ): (EvalContext) -> List<Signal> {
-        val plain = "basket orders are plain market in v1"
-        require(opts.bracket == null) { "BASKET order on '$basketAlias' cannot carry a BRACKET ($plain)." }
-        require(opts.oco == null) { "BASKET order on '$basketAlias' cannot carry an OCO ($plain)." }
-        require(opts.stack == null && opts.stackAts.isEmpty()) {
-            "BASKET order on '$basketAlias' cannot carry STACK/STACK_AT ($plain)."
-        }
-        require(opts.tif == null) { "BASKET order on '$basketAlias' cannot carry a TIF ($plain)." }
-        require(opts.orderType == null || opts.orderType == Market) {
-            "BASKET order on '$basketAlias' must be a market order; LIMIT/STOP are not supported in v1."
-        }
-        val sizing = opts.sizing
-        require(sizing is SizeNotional) {
-            "BASKET order on '$basketAlias' requires notional sizing (SIZING <amount> USD); got " +
-                "${sizing?.let { it::class.simpleName } ?: "no SIZING"} — each constituent is sized " +
-                "to an equal share of the notional."
-        }
-        val notionalExpr = exprCompiler.compile(sizing.usd)
-        val n = BigDecimal(constituents.size)
-        return { ctx ->
-            val total = notionalExpr.evaluate(ctx)
-            require(total is Value.Num) { "BASKET SIZING NOTIONAL must be numeric, got $total" }
-            val perConstituent = total.v.divide(n, Money.CONTEXT)
-            constituents.map { alias ->
-                val key = ctx.streams[alias] ?: error("Unknown basket constituent alias: $alias")
-                val symbol = key.qktSymbol
-                val price =
-                    ctx.hub.latest(key)?.close
-                        ?: error("BASKET '$basketAlias' constituent '$alias' has no price yet")
-                val contractSize =
-                    ctx.strategyContext.instruments
-                        .require(symbol)
-                        .contractSize
-                val qty = perConstituent.divide(price.multiply(contractSize, Money.CONTEXT), Money.CONTEXT)
-                if (side == Side.BUY) Signal.Buy(symbol, qty) else Signal.Sell(symbol, qty)
-            }
-        }
-    }
-
-    /**
-     * The clientOrderId the broker echoes back on [com.qkt.events.BrokerEvent.OrderFilled]
-     * for the parent leg's primary entry. For a plain Market submit it's the request id;
-     * for a Bracket parent the broker fills the inner entry, so it's [OrderRequest.Bracket.entry.id].
-     */
-    private fun parentClientOrderIdFor(request: OrderRequest): String =
-        when (request) {
-            is OrderRequest.Bracket -> request.entry.id
-            else -> request.id
-        }
-
-    /**
-     * Predicted clientOrderIds whose fill signals that the parent leg has closed. For
-     * Bracket parents this matches the deterministic naming in
-     * [com.qkt.app.OrderManager.submitBracketFallback]: `<bracket-id>-tp` and `<bracket-id>-sl`.
-     *
-     * Phase 27 limitation: this covers the paper/backtest path where bracket-fallback
-     * controls the child ids. Native broker brackets (e.g. MT5) and strategy-initiated
-     * manual closes rely on leg-aware fill routing (a separate task).
-     */
-    private fun closeWatchIdsFor(request: OrderRequest): Set<String> =
-        when (request) {
-            is OrderRequest.Bracket -> setOf("${request.id}-tp", "${request.id}-sl")
-            else -> emptySet()
-        }
-
-    private fun compileStack(
-        stream: String,
-        opts: ActionOpts,
-        side: Side,
-    ): (EvalContext) -> List<Signal> {
-        val stackAst = opts.stack ?: error("unreachable")
-        val tif = TifTranslator.translate(opts.tif)
-        val staticStopDistance = resolveStaticStopDistance(opts.bracket?.stopLoss)
-        val compiledStopLoss =
-            opts.bracket?.stopLoss?.let { childPriceResolver.compileStopLoss(it, allowExpressionDistances = false) }
-        val frozenOuterSL = opts.bracket?.stopLoss?.let { childPriceFreezer.prepare(it) }
-        val frozenOuterTP = opts.bracket?.takeProfit?.let { childPriceFreezer.prepare(it) }
-        val plan = StackCompiler.compile(stackAst, opts.sizing, opts.bracket, side)
-        // Pre-compile one CompiledSize per layer (they may share the same sizing AST for
-        // StackSpacing, but compiling per-layer is cheap and avoids sharing mutable state).
-        val compiledSizes =
-            plan.layers.map { layer ->
-                sizingCompiler.compile(
-                    layer.sizing,
-                    staticStopDistance,
-                    stream,
-                    runtimeStopDistanceAvailable = compiledStopLoss != null,
-                )
-            }
-
-        return stack@{ ctx ->
-            val symbol = ctx.streams[stream]?.qktSymbol ?: error("Unknown stream alias: $stream")
-            val ts = ctx.strategyContext.clock.now()
-            val currentPrice = ctx.candle.close
-
-            // Resolve each layer's quantity now, using the candle close as the entry proxy.
-            // Approximation: equity/balance at action-execute time may differ from fire time.
-            // For risk-fraction strategies the difference is negligible tick-to-tick.
-            val resolvedLayers =
-                plan.layers.mapIndexed { idx, layer ->
-                    val expectedEntry =
-                        if (layer.trigger == com.qkt.execution.Immediate) {
-                            currentPrice
-                        } else {
-                            val at = layer.trigger as At
-                            evaluateLayerTriggerPrice(at.price, currentPrice)
-                        }
-                    val runtimeStopDistance =
-                        compiledStopLoss?.let { stopLoss ->
-                            val spec =
-                                resolveStopLoss(stopLoss, ctx, side, expectedEntry)
-                                    ?: return@stack emptyList()
-                            stopDistance(expectedEntry, spec)
-                        }
-                    val qty = compiledSizes[idx].evaluate(ctx, expectedEntry, runtimeStopDistance)
-                    layer.copy(resolvedQuantity = qty)
-                }
-            // Freeze indicator subexpressions in the outer bracket at fire time — layer
-            // fills resolve these ASTs against the fill price and understand literal
-            // arithmetic only. A null snapshot means the indicator is still warming up.
-            val frozenOuterBracket =
-                plan.outerBracket?.let { outer ->
-                    val sl = frozenOuterSL?.freeze(ctx)
-                    val tp = frozenOuterTP?.freeze(ctx)
-                    if ((outer.stopLoss != null && sl == null) || (outer.takeProfit != null && tp == null)) {
-                        return@stack emptyList()
-                    }
-                    outer.copy(stopLoss = sl, takeProfit = tp)
-                }
-            val resolvedPlan = plan.copy(layers = resolvedLayers, outerBracket = frozenOuterBracket)
-            val totalQty = resolvedLayers.sumOf { it.resolvedQuantity!! }
-
-            val req =
-                OrderRequest.Stack(
-                    id = ids.next(),
-                    symbol = symbol,
-                    side = side,
-                    quantity = totalQty.max(BigDecimal.ONE.movePointLeft(Money.SCALE)),
-                    plan = resolvedPlan,
-                    timeInForce = tif,
-                    timestamp = ts,
-                )
-            listOf(Signal.Submit(req))
-        }
-    }
-
-    // Evaluates a layer trigger expression using currentPrice as the anchor proxy.
-    // Mirrors OrderManager.evaluateAt but lives here for compile-time resolution.
-    private fun evaluateLayerTriggerPrice(
-        expr: ExprAst,
-        anchor: BigDecimal,
-    ): BigDecimal =
-        when (expr) {
-            is StackEntryRef -> anchor
-            is NumLit -> expr.value
-            is BinaryOp -> {
-                val l = evaluateLayerTriggerPrice(expr.lhs, anchor)
-                val r = evaluateLayerTriggerPrice(expr.rhs, anchor)
-                when (expr.op) {
-                    BinOp.ADD -> l + r
-                    BinOp.SUB -> l - r
-                    BinOp.MUL -> l * r
-                    BinOp.DIV -> l.divide(r, Money.CONTEXT)
-                    else -> error("unsupported op in stack trigger: ${expr.op}")
-                }
-            }
-            else -> error("unsupported trigger expression type: ${expr::class.simpleName}")
-        }
-
-    private data class ResolvedBracket(
-        val stopLoss: com.qkt.execution.StopLossSpec,
-        val stopDistance: BigDecimal,
-        val takeProfit: BigDecimal,
-    )
-
-    private fun resolveStopLoss(
-        compiled: CompiledStopLoss,
-        ctx: EvalContext,
-        side: Side,
-        entry: BigDecimal,
-    ): com.qkt.execution.StopLossSpec? =
-        when (compiled) {
-            is CompiledStopLoss.Static -> compiled.spec
-            is CompiledStopLoss.Dynamic -> compiled.evaluate(ctx, side, entry)
-        }
-
-    private fun stopDistance(
-        entry: BigDecimal,
-        stopLoss: com.qkt.execution.StopLossSpec,
-    ): BigDecimal =
-        when (stopLoss) {
-            is com.qkt.execution.StopLossSpec.Fixed -> entry.subtract(stopLoss.price).abs()
-            is com.qkt.execution.StopLossSpec.ArmedTrail -> stopLoss.trailDistance
-            is com.qkt.execution.StopLossSpec.SteppedStop -> stopLoss.initialDistance
-            is com.qkt.execution.StopLossSpec.TimeTighten -> stopLoss.initialDistance
-        }
-
-    private fun resolveStaticStopDistance(stop: ChildPriceAst?): BigDecimal? =
-        when (stop) {
-            is ChildBy -> {
-                val expr = stop.distance
-                if (expr is NumLit) expr.value else null
-            }
-            is com.qkt.dsl.ast.ChildArmedTrail -> {
-                // Armed trail's trail distance IS the worst-case stop distance for risk
-                // sizing — pre-arm the stop sits at entry ± distance, post-arm the stop
-                // trails by the same distance. Either way `SIZING RISK $ N` sees a
-                // well-defined stop distance. See spec §6 and plan correction 5.
-                val expr = stop.trailDistance
-                if (expr is NumLit) expr.value else null
-            }
-            else -> null
-        }
 }

@@ -1,6 +1,7 @@
 package com.qkt.app
 
 import com.qkt.broker.Broker
+import com.qkt.broker.BrokerFactory
 import com.qkt.broker.BrokerPositionTicket
 import com.qkt.broker.CompositeBroker
 import com.qkt.broker.PaperBroker
@@ -246,6 +247,13 @@ class LiveSession(
     companion object {
         /** Attempts to read broker positions at reconcile before refusing to start. */
         const val RECONCILE_READ_ATTEMPTS: Int = 5
+
+        /**
+         * The server clock zone of the first of [brokers] that reports one
+         * ([com.qkt.broker.ServerTimeZoneProvider]), or null when none does.
+         */
+        internal fun serverTimeZoneOf(brokers: List<Broker>): java.time.ZoneId? =
+            brokers.filterIsInstance<com.qkt.broker.ServerTimeZoneProvider>().firstOrNull()?.serverTimeZone()
 
         /** How often to poll the broker for live account equity, off the engine thread (#352). */
         const val BROKER_EQUITY_POLL_MS: Long = 5_000L
@@ -548,7 +556,7 @@ class LiveSession(
         return adoptedLegCounts
     }
 
-    /** Captures the broker instances built by [buildBroker] so [buildInstrumentRegistry] can wrap MT5 brokers. */
+    /** Captures the broker instances built by [buildBroker] so the session can ask them for their abilities. */
     private val builtBrokers: MutableList<Broker> = mutableListOf()
 
     /**
@@ -624,18 +632,18 @@ class LiveSession(
 
     /**
      * Build the [com.qkt.instrument.InstrumentRegistry] the trading pipeline uses for SIZING
-     * RISK and PaperBroker fill PnL. Wraps every [com.qkt.broker.mt5.MT5Broker] in the
-     * route list via [com.qkt.instrument.MultiMT5InstrumentRegistry] so multi-MT5 deployments
-     * (#139) get the correct contract specs for each broker's symbols. Falls back to
-     * [com.qkt.instrument.NoopInstrumentRegistry] when no MT5 broker is configured so
-     * paper-only strategies that don't need contract-size-aware math keep working.
+     * RISK and PaperBroker fill PnL. Layers the venue specs of every broker in the route list that
+     * offers them ([com.qkt.broker.InstrumentProvider]) over the configured registry, so a session
+     * trading several accounts (#139) gets each venue's own contract specs. Falls back to
+     * [com.qkt.instrument.NoopInstrumentRegistry] when nothing provides specs, so paper-only
+     * strategies that don't need contract-size-aware math keep working.
      */
     private fun buildInstrumentRegistry(): com.qkt.instrument.InstrumentRegistry {
-        val mt5Registries =
+        val venueRegistries =
             builtBrokers
-                .filterIsInstance<com.qkt.broker.mt5.MT5Broker>()
-                .map { com.qkt.instrument.MT5InstrumentRegistry(it) }
-        val layers = mt5Registries + listOfNotNull(instrumentRegistry)
+                .filterIsInstance<com.qkt.broker.InstrumentProvider>()
+                .map { it.instrumentRegistry() }
+        val layers = venueRegistries + listOfNotNull(instrumentRegistry)
         return when (layers.size) {
             0 -> com.qkt.instrument.NoopInstrumentRegistry
             1 -> layers.single()
@@ -961,7 +969,7 @@ class LiveSession(
         }
 
     fun start(): LiveSessionHandle {
-        val ids = SequentialIdGenerator()
+        val ids = SequentialIdGenerator.forSession(strategies.map { it.first })
         val sequencer = MonotonicSequenceGenerator()
         val priceTracker = MarketPriceTracker()
         val accounting = com.qkt.accounting.AccountingEngine(accountingConfig, priceTracker)
@@ -980,6 +988,7 @@ class LiveSession(
         // They queue here and drain, in order, once the engine loop starts.
         val running = AtomicBoolean(true)
         val stopping = AtomicBoolean(false)
+        val stopFinishing = AtomicBoolean(false)
         val clearRuleEdgesAtStop = AtomicBoolean(false)
         val control = java.util.concurrent.LinkedBlockingQueue<Inbound>()
         bus.bindSink { ev -> if (running.get()) control.put(Inbound.BusEvent(ev)) }
@@ -999,15 +1008,15 @@ class LiveSession(
             )
         val broker: Broker = buildBroker(paperBroker, bus, clock, priceTracker, positions)
         val usesAllocatedStrategyCapital = startingBalances.isNotEmpty()
-        // Recovery seeding ran inside each MT5 broker's constructor; mirror the orphan
-        // ticket attributions it produced so the state poller can name their strategy.
-        for (b in builtBrokers.filterIsInstance<com.qkt.broker.mt5.MT5Broker>()) {
+        // Recovery seeding ran inside each broker's constructor; mirror the orphan ticket
+        // attributions it produced so the state poller can name their strategy.
+        for (b in builtBrokers.filterIsInstance<com.qkt.broker.TicketAttributionProvider>()) {
             for ((ticket, strategyId) in b.ticketAttributions()) {
                 ticketAttribution.record(ticket, strategyId)
             }
         }
-        // Phase 30: registry must be built after the brokers so [MT5InstrumentRegistry]
-        // can wrap the [com.qkt.broker.mt5.MT5Broker] instance if one was constructed.
+        // Phase 30: registry must be built after the brokers so each broker that provides
+        // venue contract specs can contribute them.
         val instruments = buildInstrumentRegistry()
         paperInstruments.set(instruments)
         val pnl = PnLCalculator(positions, priceTracker, instruments, accounting, markTimestamp = clock::now)
@@ -1345,21 +1354,29 @@ class LiveSession(
         // Fail-fast: any broker error here aborts deploy with a typed exception.
         warmupCoordinator.prepareHub()
 
-        // Resolver for `SCHEDULE … BROKER`: take the first MT5 broker in this
-        // session's route list and use its profile's DST-aware server clock.
-        // LiveSession is per-strategy in the daemon model, so all calls return
-        // the same zone — strategy id is ignored. Null when no MT5 broker is
-        // in play (paper-only / Bybit-only sessions).
-        val brokerZoneIdFor: ((String) -> java.time.ZoneId?)? =
-            run {
-                val mt5 = builtBrokers.filterIsInstance<com.qkt.broker.mt5.MT5Broker>().firstOrNull()
-                if (mt5 != null) {
-                    val zone: java.time.ZoneId = mt5.profile.serverTimeZone.asZoneId()
-                    ({ _: String -> zone })
-                } else {
-                    null
-                }
+        // A position restored over the restart has its excursion marks seeded from disk; the
+        // bars the hub just loaded cover the downtime, so extend the marks with them (#1158).
+        // The smallest declared timeframe per symbol gives the closest range.
+        for ((strategyId, strategy) in strategies) {
+            val dsl = strategy as? DslCompiledStrategy ?: continue
+            val keysBySymbol = dsl.declaredStreams.values.groupBy { it.qktSymbol }
+            for ((symbol, keys) in keysBySymbol) {
+                if (strategyPositions.legBookFor(strategyId, symbol) == null) continue
+                val key = keys.minByOrNull { TimeWindow.parse(it.timeframe).durationMs } ?: continue
+                val bars =
+                    (0 until pipelineCandleHub.historySize(key)).mapNotNull { n ->
+                        pipelineCandleHub.history(key, n)
+                    }
+                strategyPositions.extendExcursion(strategyId, symbol, bars)
             }
+        }
+
+        // Resolver for `SCHEDULE … BROKER`: the server clock of the first broker in this
+        // session's route list that has one. LiveSession is per-strategy in the daemon model,
+        // so all calls return the same zone — strategy id is ignored. Null when no broker
+        // reports a server clock (paper-only / Bybit-only sessions).
+        val brokerZoneIdFor: ((String) -> java.time.ZoneId?)? =
+            serverTimeZoneOf(builtBrokers)?.let { zone -> { _: String -> zone } }
 
         val pipeline =
             TradingPipeline(
@@ -1511,6 +1528,7 @@ class LiveSession(
                     .flatMap { it.request.allIds() + it.id } +
                     strategyPositions.allLegsFor(strategyId).map { it.legId }
             dsl.resumeOrderIds(usedIds)
+            ids.resumePast(usedIds)
         }
         for (booked in bootReconciled) {
             pipeline.applyReconciledRealized(booked.strategyId, booked.realized, booked.legId)
@@ -2179,7 +2197,9 @@ class LiveSession(
                 )
             }
 
-            override fun stop() {
+            private val drainGraceMs = if (builtBrokers.isEmpty()) 0L else STOP_DRAIN_GRACE_MS
+
+            override fun requestStop() {
                 if (!stopping.compareAndSet(false, true)) return
                 feedThread.interrupt()
                 runCatching { feed.close() }
@@ -2192,12 +2212,16 @@ class LiveSession(
                 // Stop the broker-equity poller (#352) so it doesn't outlive the session.
                 runCatching { equityPoller?.shutdownNow() }
                 tickQueue.clear()
-                val drainGraceMs = if (builtBrokers.isEmpty()) 0L else STOP_DRAIN_GRACE_MS
                 control.put(
                     Inbound.GracefulStop(
                         deadlineNanos = System.nanoTime() + drainGraceMs * 1_000_000L,
                     ),
                 )
+            }
+
+            override fun stop() {
+                requestStop()
+                if (!stopFinishing.compareAndSet(false, true)) return
                 if (!terminated.await(drainGraceMs + 500L, TimeUnit.MILLISECONDS)) {
                     running.set(false)
                     thread.interrupt()

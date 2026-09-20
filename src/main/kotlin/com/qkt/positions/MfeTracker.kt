@@ -26,6 +26,31 @@ class MfeTracker(
         require(entryPrice.signum() > 0) { "entryPrice must be > 0: $entryPrice" }
     }
 
+    /**
+     * Resume from marks persisted before a restart (#1158). Marks below the current ones are
+     * ignored, so seeding is monotonic like [onTick].
+     */
+    fun seed(
+        mfe: BigDecimal,
+        mae: BigDecimal,
+        adverseExtremePrice: BigDecimal?,
+    ) {
+        if (mfe > this.mfe) this.mfe = mfe
+        if (mae > this.mae) {
+            this.mae = mae
+            this.adverseExtremePrice = adverseExtremePrice
+        }
+    }
+
+    /** Observe a bar's range: both extremes count, as if every price in it had ticked. */
+    fun observeRange(
+        high: BigDecimal,
+        low: BigDecimal,
+    ) {
+        onTick(high)
+        onTick(low)
+    }
+
     @Volatile
     private var mfe: BigDecimal = BigDecimal.ZERO
 

@@ -2,6 +2,7 @@ package com.qkt.instrument
 
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 
 class StandardInstrumentRegistryTest {
@@ -36,5 +37,13 @@ class StandardInstrumentRegistryTest {
     @Test
     fun `an unknown symbol returns null like the live registry`() {
         assertThat(StandardInstrumentRegistry.lookup("BACKTEST:BTCUSDT")).isNull()
+    }
+
+    @Test
+    fun `requiring an unknown symbol names the command that generates its entry`() {
+        assertThatThrownBy { StandardInstrumentRegistry.require("EXNESS:BTCUSD") }
+            .hasMessageContaining("no InstrumentMeta for EXNESS:BTCUSD")
+            .hasMessageContaining("scripts/instruments-from-gateway.py")
+            .hasMessageContaining("--prefix EXNESS")
     }
 }

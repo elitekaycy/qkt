@@ -1,8 +1,8 @@
 package com.qkt.cli
 
-import com.qkt.broker.mt5.MT5BrokerProfile
-import com.qkt.broker.mt5.MT5BrokerProfileLoader
-import com.qkt.broker.mt5.MT5DefaultProfiles
+import com.qkt.connector.mt5.MT5BrokerProfile
+import com.qkt.connector.mt5.MT5BrokerProfileLoader
+import com.qkt.connector.mt5.MT5DefaultProfiles
 import java.nio.file.Path
 
 /** `qkt brokers list` — print configured broker profiles resolved from `qkt.config.yaml`. */
