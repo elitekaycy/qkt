@@ -1,6 +1,48 @@
 # Broker integration
 
-How qkt routes orders to brokers and what the contract is between them.
+How qkt connects to the places it trades, and what each part is responsible for.
+
+## The model
+
+Futures made "broker" ambiguous, so qkt names each real thing separately.
+
+| Real-world thing | Examples | In qkt |
+|---|---|---|
+| The technology you connect through | MetaTrader 5 (via mt5-gateway), Bybit v5 API | a **connector** — `com.qkt.connector.<type>` |
+| What that technology can trade | CFDs, spot, perpetual swaps, dated futures | `ProductType` |
+| One login at a broker, exchange or prop firm | an Exness demo, a prop-firm account | a **trading account** — one `brokers:` entry |
+| A strategy's channel for orders on that account | market, limit, stop, bracket orders | an order-entry session (the `Broker` interface) |
+
+One connector serves many accounts: the same MT5 connector opens an Exness demo and a prop-firm
+account; each is just a `brokers:` entry with its own login.
+
+## The contracts
+
+Everything a connector must provide is defined in `com.qkt.connectivity`:
+
+- **`Connector`** — one per connector type. `open(accounts, context)` receives every account of
+  its type at once, so accounts on the same gateway or credentials can share a connection. It
+  performs no network I/O.
+- **`TradingAccount`** — one per `brokers:` entry:
+    - `verify()` connects and checks the venue reports the account the config expects; the daemon
+      refuses to start on any mismatch;
+    - `orderEntry` creates each strategy's order-entry session (`Broker`);
+    - `marketData` is the account's own price feed, if it has one;
+    - `tradingHours` says when each symbol trades.
+- **`ConnectorContext`** — what qkt hands a connector: environment, credential resolution,
+  clock, state directory. Connectors never read globals.
+- **`AccountDirectory`** — every configured account, looked up by name or by the prefix a
+  strategy symbol carries.
+
+An order-entry session may also offer optional abilities, each a small interface in
+`com.qkt.broker`: `InstrumentProvider` (the venue's contract specs), `ServerTimeZoneProvider`
+(the server clock `SCHEDULE … BROKER` uses), `TicketAttributionProvider` (positions found open at
+startup, with their owning strategy). The live session asks for an ability, never for a
+connector.
+
+Nothing outside a connector's package may name it; `ConnectivityArchitectureTest` fails the build
+if core code does, if a connector reaches above the shared model, or if a connector package is not
+registered as a service.
 
 ## The `Broker` interface
 
@@ -15,7 +57,8 @@ interface Broker {
 }
 ```
 
-Every broker (Paper, Bybit, MT5) implements this. The CompositeBroker routes by symbol or by DSL stream label.
+Every order-entry session (Paper, Bybit, MT5) implements this. The CompositeBroker routes by symbol
+or by DSL stream label.
 
 ## Capability matrix
 
@@ -35,27 +78,28 @@ Every broker (Paper, Bybit, MT5) implements this. The CompositeBroker routes by 
 
 ## DSL routing
 
-Stream label = profile name = venue identity:
+Stream label = account name:
 
 ```qkt
 SYMBOLS
     eur = EXNESS:EURUSD EVERY 1m
 ```
 
-`EXNESS:` resolves to the profile named `exness` in the broker registry, regardless of what protocol it uses today (MT5) or tomorrow (REST, native SDK). The DSL doesn't know about MT5.
-
-The profile is configured in `qkt.config.yaml`:
+`EXNESS:` resolves to the account named `exness`, whatever connector opens it. The DSL does not
+know about MT5.
 
 ```yaml title="qkt.config.yaml"
 brokers:
   exness:                          # this name becomes the EXNESS: prefix
-    type: mt5                      # protocol — implementation detail
+    type: mt5                      # the connector — an implementation detail
     extends: exness                # inherits built-in suffix + tz settings
     gateway_url: http://localhost:5001
     magic: 4242
 ```
 
-When the DSL sees `EXNESS:EURUSD`, it looks up `exness` in this registry and routes orders through whatever broker type is configured. Change `type: mt5` to `type: native-exness` tomorrow and **the strategy file doesn't change** — only the config does. This is the principle: **venue identity in the DSL, protocol detail in the config**.
+When the DSL sees `EXNESS:EURUSD`, the account directory finds `exness` and routes orders through
+its connector. Move the account to another connector tomorrow and **the strategy file doesn't
+change** — only the config does: venue identity in the DSL, connector detail in the config.
 
 ## MT5 specifics
 

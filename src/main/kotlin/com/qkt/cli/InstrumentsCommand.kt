@@ -1,11 +1,11 @@
 package com.qkt.cli
 
-import com.qkt.broker.mt5.MT5BrokerProfile
-import com.qkt.broker.mt5.MT5BrokerProfileLoader
-import com.qkt.broker.mt5.MT5Client
-import com.qkt.broker.mt5.MT5DefaultProfiles
-import com.qkt.broker.mt5.MT5Symbol
-import com.qkt.broker.mt5.MT5SymbolInfo
+import com.qkt.connector.mt5.MT5BrokerProfile
+import com.qkt.connector.mt5.MT5BrokerProfileLoader
+import com.qkt.connector.mt5.MT5Client
+import com.qkt.connector.mt5.MT5DefaultProfiles
+import com.qkt.connector.mt5.MT5Symbol
+import com.qkt.connector.mt5.MT5SymbolInfo
 import com.qkt.instrument.InstrumentMeta
 import com.qkt.instrument.YamlInstrumentRegistry
 import java.nio.file.Files

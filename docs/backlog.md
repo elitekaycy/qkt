@@ -189,6 +189,8 @@ Both items below have shipped.
   `MarketSourceFactory.composite` gained an `enableBybit` flag defaulting to the
   `BYBIT_API_KEY` env check. Shipped in v0.28.3 (commit `6591d7e`, merge `dd7a815`).
   ([#34](https://github.com/elitekaycy/qkt/issues/34))
+  Superseded by the connector contracts (2026-09-18): Bybit routes now come from `type: bybit`
+  account entries in `brokers:`, never from the environment alone.
 
 - `done` — v0.28.6: `MT5StateRecovery` now correlates venue-side orphan positions back
   to the owning strategy via comment-prefix match and seeds `positionMetaByTicket` so a

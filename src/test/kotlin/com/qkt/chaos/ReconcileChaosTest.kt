@@ -1,17 +1,17 @@
 package com.qkt.chaos
 
-import com.qkt.broker.bybit.FakeBybitClient
-import com.qkt.broker.bybit.spot.BybitSpotStateRecovery
 import com.qkt.bus.EventBus
 import com.qkt.common.FixedClock
 import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.Side
+import com.qkt.connector.bybit.FakeBybitClient
+import com.qkt.connector.bybit.spot.BybitSpotStateRecovery
 import com.qkt.events.BrokerEvent
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
 /**
- * Chaos framing for broker recovery: unlike [com.qkt.broker.bybit.spot.BybitSpotStateRecoveryTest]
+ * Chaos framing for broker recovery: unlike [com.qkt.connector.bybit.spot.BybitSpotStateRecoveryTest]
  * (which calls `reconcile()` directly), these drive recovery through the reconnect callback
  * (`onReconnect { reconcile() }` + `fireOnReconnect()`) — verifying the wiring that runs on a real
  * private-WebSocket reconnect, including dedup across repeated reconnects.

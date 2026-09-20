@@ -3,7 +3,7 @@ package com.qkt.instrument
 /**
  * Lookup table for per-strategy [InstrumentMeta] resolved at strategy load.
  *
- * Live strategies wrap an `MT5Broker`'s `/symbol_info` cache via [com.qkt.instrument.MT5InstrumentRegistry].
+ * Live strategies wrap an `MT5Broker`'s `/symbol_info` cache via [com.qkt.connector.mt5.MT5InstrumentRegistry].
  * Backtests load a static YAML file via [YamlInstrumentRegistry]. Both share this
  * interface so the trading pipeline doesn't fork by mode.
  *
