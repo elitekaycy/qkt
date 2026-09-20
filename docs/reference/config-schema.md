@@ -393,6 +393,11 @@ named in its `type`; the entry name, upper-cased, is the prefix strategies use (
 `PROP_S01:XAUUSD`). A missing or unknown `type` refuses startup and lists the installed
 connectors. See [Broker integration](../concepts/broker-integration.md) for the model.
 
+An entry may carry only the settings its connector lists below, plus `type` and the nested blocks
+`calendars`, `aliases`, `capability_restrictions` and `instrument_overrides`. Any other key refuses
+startup and names the closest known setting — a misspelled `expected_account_login` would
+otherwise switch the account identity check off without a word.
+
 Credential fields (`api_key`, `api_secret`) accept a literal, `${VAR}` (substituted when the
 file loads), `env:VAR`, or `file:/path` (trailing newline trimmed, for Docker secrets). An
 environment override `QKT_BROKER_<NAME>_<FIELD>` wins over the file value.
