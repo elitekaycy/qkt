@@ -20,9 +20,9 @@ class AccountConfigTest {
 
     @Test
     fun `connector types are lowercase and named`() {
-        assertThatThrownBy { ConnectorSpec("MT5", "MetaTrader 5", setOf(ProductType.CFD)) }
+        assertThatThrownBy { ConnectorSpec("MT5", "MetaTrader 5", setOf(ProductType.CFD), emptySet()) }
             .hasMessageContaining("lowercase")
-        assertThatThrownBy { ConnectorSpec(" ", "Nothing", emptySet()) }
+        assertThatThrownBy { ConnectorSpec(" ", "Nothing", emptySet(), emptySet()) }
             .hasMessageContaining("blank")
     }
 }

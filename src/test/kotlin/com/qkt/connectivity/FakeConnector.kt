@@ -13,7 +13,7 @@ class FakeConnector(
     private val hours: TradingCalendar = TradingCalendar.fxDefault(),
     private val suppliesMarketData: Boolean = true,
 ) : Connector {
-    override val spec = ConnectorSpec(type, "Fake $type", setOf(ProductType.CFD))
+    override val spec = ConnectorSpec(type, "Fake $type", setOf(ProductType.CFD), settings = setOf("gateway_url"))
     val openCalls = mutableListOf<List<String>>()
     val closed = mutableListOf<String>()
 

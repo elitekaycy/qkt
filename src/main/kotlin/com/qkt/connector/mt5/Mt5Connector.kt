@@ -30,7 +30,7 @@ class Mt5Connector(
     private val accountFetcher: (MT5BrokerProfile) -> MT5AccountInfo = { MT5AccountVerifier.fetchAndVerify(it) },
 ) : Connector {
     override val spec: ConnectorSpec =
-        ConnectorSpec(type = "mt5", displayName = "MetaTrader 5", productTypes = setOf(ProductType.CFD))
+        ConnectorSpec("mt5", "MetaTrader 5", productTypes = setOf(ProductType.CFD), settings = MT5ProfileSettings.KEYS)
 
     override fun open(
         accounts: List<AccountConfig>,
