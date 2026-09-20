@@ -135,7 +135,8 @@ jq -e 'length == 0' "$evidence/orders-initial.json" >/dev/null || fail "demo acc
 
 "$cli" preflight "${readonly_strategies[0]}" --config "$config" > "$evidence/preflight.log" 2>&1
 
-# The observed stream is the scenario's own symbol, so a crypto (24/7) scenario observes crypto.
+# The reference stream comes from the scenario: EURUSD for FX and metals, the scenario's own
+# symbol for a 24/7 scenario, which runs while FX is closed.
 readonly_symbol="$(jq -er '.readOnlyStreams[0].symbol' "$scenario/expected.json")"
 [ -n "$readonly_symbol" ] || fail "scenario declares no read-only stream symbol"
 

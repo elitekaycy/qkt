@@ -143,8 +143,12 @@ case "$symbol" in
 esac
 # A crypto scenario must declare crypto hours, or the venue pollers and the market-data gate
 # treat the weekend as out-of-session and the wave observes nothing.
+# The read-only wave captures a fixed EURUSD reference for every FX and metals scenario. A 24/7
+# scenario exists to run while FX is closed, so its reference is the scenario's own symbol.
 broker_calendars=""
+readonly_reference_symbol="EURUSD"
 if [ "$symbol" = "BTCUSD" ]; then
+    readonly_reference_symbol="BTCUSD"
     broker_calendars="
     calendars:
       \"BTC*\": crypto"
@@ -622,8 +626,8 @@ $account_identity_metadata
     "requiredFinalOrders": 0
   },
   "readOnlyStreams": [
-    {"symbol": "EXNESS:$symbol", "timeframe": "1m", "warmupBars": 20},
-    {"symbol": "EXNESS:$symbol", "timeframe": "5m", "warmupBars": 20}
+    {"symbol": "EXNESS:$readonly_reference_symbol", "timeframe": "1m", "warmupBars": 20},
+    {"symbol": "EXNESS:$readonly_reference_symbol", "timeframe": "5m", "warmupBars": 20}
   ],
   "armedScenario": {
     "strategy": "${scenario_id}_market_bracket",
