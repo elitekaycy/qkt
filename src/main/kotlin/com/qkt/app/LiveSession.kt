@@ -839,117 +839,36 @@ class LiveSession(
         val feedThread = FeedReader(feed, mailbox, insights).newThread()
         feedThread.start()
 
-        // Quiet-market heartbeat (#77 Phase 40 follow-up). Without this, SCHEDULE fires only happen
-        // when ticks arrive — a 19:55 UTC placement would slip by seconds on a quiet Asia session.
-        // It posts onto the queue so scheduleRunner.tick only ever runs on the engine thread.
-        val scheduleHeartbeat: java.util.concurrent.ScheduledExecutorService =
-            java.util.concurrent.Executors
-                .newSingleThreadScheduledExecutor { r ->
-                    Thread(r, "qkt-schedule-heartbeat").apply { isDaemon = true }
-                }
-        scheduleHeartbeat.scheduleAtFixedRate(
-            {
-                runCatching { riskState.persistAnchorsIfDirty() }
-                runCatching { control.put(Inbound.PersistenceHealthCheck) }
-                runCatching { control.put(Inbound.Heartbeat(clock.now())) }
-            },
-            scheduleHeartbeatIntervalMs,
-            scheduleHeartbeatIntervalMs,
-            java.util.concurrent.TimeUnit.MILLISECONDS,
-        )
+        val pollers = SessionPollers(mailbox, riskState, clock, broker, bus)
+        val scheduleHeartbeat = pollers.startScheduleHeartbeat(scheduleHeartbeatIntervalMs)
+        val equityPoller =
+            pollers.startEquityPoller(
+                standaloneVenueEquity =
+                    !usesAllocatedStrategyCapital &&
+                        equityBasis == LiveEquityBasis.VENUE &&
+                        strategies.size == 1,
+                brokerEquity = brokerEquity,
+                brokerEquityStaleMs = brokerEquityStaleMs,
+                brokerEquityPollMs = brokerEquityPollMs,
+            )
 
-        // #352: poll real account equity off the engine thread so sizing + drawdown track the
-        // broker's account (commissions, swaps, deposits), not just engine-derived PnL. Standalone
-        // single-strategy only — allocated portfolio children do not own the whole account.
-        // Capability is static: a
-        // transiently failed startup read must not disable polling for the entire session. Failed
-        // reads retain the last-known value and alert once stale. The network call stays off the consumer.
-        val equityPoller: java.util.concurrent.ScheduledExecutorService? =
-            if (!usesAllocatedStrategyCapital &&
-                equityBasis == LiveEquityBasis.VENUE &&
-                strategies.size == 1 &&
-                broker.supportsAccountEquity
-            ) {
-                val monitor =
-                    BrokerEquityMonitor(
-                        broker = broker,
-                        clock = clock,
-                        equity = brokerEquity,
-                        staleAfterMs = brokerEquityStaleMs,
-                        onStale = { failures, staleForMs ->
-                            bus.publish(
-                                BrokerEvent.AccountEquityStale(
-                                    broker = broker.name,
-                                    consecutiveFailures = failures,
-                                    staleForMs = staleForMs,
-                                    timestamp = clock.now(),
-                                ),
-                            )
-                        },
-                    )
-                java.util.concurrent.Executors
-                    .newSingleThreadScheduledExecutor { r ->
-                        Thread(r, "qkt-broker-equity-poller").apply { isDaemon = true }
-                    }.also { exec ->
-                        exec.scheduleAtFixedRate(
-                            monitor::tick,
-                            0L,
-                            brokerEquityPollMs,
-                            java.util.concurrent.TimeUnit.MILLISECONDS,
-                        )
-                    }
-            } else {
-                null
-            }
-
-        // Broker truth → insights: account state, per-ticket positions, and deal history
-        // polled on the poller's own thread, off the engine loop. Replaces the retired
-        // engine-thread ledger snapshots — dashboards read state.* / broker.deal now.
         val brokerStatePollerBrokers = brokers.built.ifEmpty { listOf(broker) }.distinct()
-        // The handle is built at the end of start(); the poller samples equity through it so
-        // the read runs as an engine-thread snapshot rather than a racy cross-thread read.
         val handleRef =
             java.util.concurrent.atomic
                 .AtomicReference<LiveSessionHandle?>(null)
         val brokerStatePoller =
-            if (insightsSink != null &&
-                com.qkt.observe.insights.InsightsEventFamily.STATE in insightsEvents &&
-                brokerStatePollerBrokers.isNotEmpty()
-            ) {
-                com.qkt.observe.insights
-                    .BrokerStatePoller(
-                        brokers = brokerStatePollerBrokers,
-                        sink = insightsSink,
-                        attribution = ticketAttribution,
-                        deployedIds = { (strategies.map { it.first } + insightsDeployedIds()).distinct() },
-                        rosterIds = { insights.strategyIds() },
-                        pollIntervalMs = insightsStatePollMs,
-                        sharedDeals = insightsSharedDeals,
-                        backfillDays = insightsDealBackfillDays,
-                        emitDeals = com.qkt.observe.insights.InsightsEventFamily.DEAL in insightsEvents,
-                        strategyEquity = {
-                            val handle = handleRef.get()
-                            if (handle == null) {
-                                emptyList()
-                            } else {
-                                val now = clock.now()
-                                insights.strategyIds().map { strategyId ->
-                                    val pnl = handle.pnlSnapshot(strategyId)
-                                    com.qkt.observe.insights.InsightsTranslate.equitySnapshot(
-                                        ts = now,
-                                        strategyId = strategyId,
-                                        realized = pnl.realized,
-                                        unrealized = pnl.unrealized,
-                                        equity = pnl.equity,
-                                        startingBalance = strategyPnL.startingBalanceFor(strategyId),
-                                    )
-                                }
-                            }
-                        },
-                    ).also { it.start() }
-            } else {
-                null
-            }
+            InsightsStatePolling(
+                strategies,
+                insightsSink,
+                insightsEvents,
+                insights,
+                ticketAttribution,
+                insightsDeployedIds,
+                insightsStatePollMs,
+                insightsSharedDeals,
+                insightsDealBackfillDays,
+                clock,
+            ).start(brokerStatePollerBrokers, handleRef, strategyPnL)
 
         // Fire StrategyStarted per strategy this session hosts. Lifecycle events bypass the
         // bus because no other engine component consumes them.
