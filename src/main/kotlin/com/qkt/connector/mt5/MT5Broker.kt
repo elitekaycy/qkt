@@ -105,18 +105,8 @@ class MT5Broker(
     private val requestedProtection = MT5RequestedProtection(translator)
     private val crossedStops = MT5CrossedStopConversion(profile, priceTracker)
     private val state = MT5BrokerState(profile)
-    private val symbolMeta = state.symbolMeta
-    private val pendingBook = state.pendingBook
-    private val earlyPositionByTicket = state.earlyPositionByTicket
-    private val pendingTransitionLock = state.pendingTransitionLock
-    private val partialEntryByPositionTicket = state.partialEntryByPositionTicket
-    private val partialPositionByResidualTicket = state.partialPositionByResidualTicket
-    private val positionBook = state.positionBook
-    private val venueCostLedger = state.venueCostLedger
-    private val expectedProtectionByTicket = state.expectedProtectionByTicket
-    private val recentlyFilledTickets = state.recentlyFilledTickets
-    private val placementPrep = MT5PlacementPreparation(profile, client, priceTracker, mt5Symbol, symbolMeta)
-    private val venueReads = MT5BrokerVenueReads(profile, client, mt5Symbol, positionBook, symbolMeta)
+    private val placementPrep = MT5PlacementPreparation(profile, client, priceTracker, mt5Symbol, state.symbolMeta)
+    private val venueReads = MT5BrokerVenueReads(profile, client, mt5Symbol, state.positionBook, state.symbolMeta)
     private val engineCloses = MT5EngineCloseMarkers(profile, clock)
     private val positionModify = MT5PositionModify(profile, client, priceTracker, mt5Symbol, state)
     private val partialEntries = MT5PartialEntries(state, bus, clock)
@@ -280,10 +270,10 @@ class MT5Broker(
             bus = bus,
             strategyName = strategyName,
             seedOrphan = { ticket, orderId, strategyId ->
-                positionBook.attribute(ticket, MT5TicketMeta(orderId, strategyId))
+                state.positionBook.attribute(ticket, MT5TicketMeta(orderId, strategyId))
             },
             onPositionRecovered = { position ->
-                positionBook.setOpenedAt(position.ticket, position.openTime)
+                state.positionBook.setOpenedAt(position.ticket, position.openTime)
             },
             siblingsLookup = siblingsLookup,
         )
@@ -347,7 +337,7 @@ class MT5Broker(
      * seed the insights ticket-attribution mirror, e.g. an orphan ticket 2832831596
      * recovered for hedge_straddle yields ("2832831596", "hedge_straddle").
      */
-    override fun ticketAttributions(): Map<String, String> = positionBook.attributions()
+    override fun ticketAttributions(): Map<String, String> = state.positionBook.attributions()
 
     override fun instrumentRegistry(): com.qkt.instrument.InstrumentRegistry = MT5InstrumentRegistry(this)
 
@@ -404,15 +394,15 @@ class MT5Broker(
      * remains until full closure so multiple partial closes keep the same strategy id.
      */
     private fun lookupClosedTicketMeta(ticket: Long): ClosedPositionMeta? {
-        val meta = positionBook.meta(ticket) ?: return null
+        val meta = state.positionBook.meta(ticket) ?: return null
         return ClosedPositionMeta(clientOrderId = meta.orderId, strategyId = meta.strategyId)
     }
 
     private fun removeClosedTicketMeta(ticket: Long) {
-        partialEntryByPositionTicket[ticket]?.let { cancel(it.meta.orderId) }
-        earlyPositionByTicket.remove(ticket)
-        positionBook.forget(ticket)
-        expectedProtectionByTicket.remove(ticket)
+        state.partialEntryByPositionTicket[ticket]?.let { cancel(it.meta.orderId) }
+        state.earlyPositionByTicket.remove(ticket)
+        state.positionBook.forget(ticket)
+        state.expectedProtectionByTicket.remove(ticket)
     }
 
     /**
@@ -432,15 +422,7 @@ class MT5Broker(
     }
 
     companion object {
-        /**
-         * Multiplier applied to [MT5BrokerProfile.pollIntervalMs] for the
-         * fill-vs-cancel disambiguation TTL. 3 cycles is enough headroom for the
-         * position poller to tick at least once after the pending poller does.
-         */
-        private const val DISAMBIGUATION_TTL_MULTIPLIER: Long = MT5BrokerLimits.DISAMBIGUATION_TTL_MULTIPLIER
-
-        /** Venue queries before giving up on resolving an UNKNOWN send outcome. */
-        private const val UNKNOWN_RESOLVE_ATTEMPTS: Int = MT5BrokerLimits.UNKNOWN_RESOLVE_ATTEMPTS
+        /** Floor for the delay before an unresolved order outcome is looked up again. */
         private const val UNKNOWN_PERIODIC_RESOLVE_MIN_MS: Long = 5_000L
     }
 }
