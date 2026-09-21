@@ -33,7 +33,8 @@ class PrefixRemapMarketSource(
     private val delegatePrefix: String,
     /** Prefix this source exposes to subscribers, e.g. `EXNESS_S1:`. */
     private val localPrefix: String,
-) : MarketSource {
+) : MarketSource,
+    RefreshableBars {
     init {
         require(delegatePrefix.endsWith(":")) { "delegate prefix must end with ':': $delegatePrefix" }
         require(localPrefix.endsWith(":")) { "local prefix must end with ':': $localPrefix" }
@@ -66,6 +67,16 @@ class PrefixRemapMarketSource(
     ): Sequence<Candle> {
         require(symbol.startsWith(localPrefix)) { "$name cannot serve $symbol" }
         return delegate.bars(toDelegate(symbol), window, range).map { it.copy(symbol = symbol) }
+    }
+
+    override fun canRefresh(symbol: String): Boolean =
+        symbol.startsWith(localPrefix) && (delegate as? RefreshableBars)?.canRefresh(toDelegate(symbol)) ?: false
+
+    override fun forgetBars(
+        symbol: String,
+        window: TimeWindow,
+    ) {
+        if (symbol.startsWith(localPrefix)) (delegate as? RefreshableBars)?.forgetBars(toDelegate(symbol), window)
     }
 
     override fun ticks(
