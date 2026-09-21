@@ -11,6 +11,9 @@ The case's `steps` are executed in order. Each step is a mapping:
     expect_stdout:  regex that must match the command's output (optional)
     expect_status:  jq-free check on `qkt status <strategy>`: {"positions": 1, "halted": true} (optional)
     wait_for:       "position" | "flat" - poll the venue under this case's magic before the step (optional)
+    daemon:         "restart" | "kill9_restart" instead of `run`: stop the daemon without flattening
+                    (or SIGKILL it mid-flight) and start it again on the same state directory
+    expect_log:     regex the daemon log must contain after the step (optional)
     note:           why this step exists
 
 Operator commands rot silently because nobody runs the emergency ones until the emergency.
@@ -71,6 +74,9 @@ if owned() or pending():
 os.makedirs(f"{a.out}/strategies"); os.makedirs(f"{a.out}/state"); os.makedirs(f"{a.out}/evidence")
 # The daemon names a deployment after its file, so the file carries the strategy's own name.
 strategy_file = f"{a.out}/{strategy}.qkt"
+if case.get("autoload"):
+    strategy_file = f"{a.out}/strategies/{strategy}.qkt"
+os.makedirs(os.path.dirname(strategy_file), exist_ok=True)
 open(strategy_file, "w").write(source)
 config = f"{a.out}/qkt.config.yaml"
 open(config, "w").write(f"""source: local
@@ -115,20 +121,24 @@ def qkt(argv, timeout=120):
     return run.returncode, (run.stdout + run.stderr).strip()
 
 
-daemon_log = open(f"{a.out}/daemon.log", "w")
-daemon = subprocess.Popen([a.cli, "daemon", "start", "--config", config, "--state-dir", f"{a.out}/state",
-                           "--load-dir", f"{a.out}/strategies"], stdout=daemon_log, stderr=subprocess.STDOUT)
-results, problems = [], []
-try:
-    for _ in range(120):
-        if "daemon ready" in open(f"{a.out}/daemon.log").read():
-            break
-        if daemon.poll() is not None:
+def start_daemon():
+    """Starts (or restarts) the daemon on the case's state directory and waits until it is ready."""
+    seen = open(f"{a.out}/daemon.log").read().count("daemon ready") if os.path.exists(f"{a.out}/daemon.log") else 0
+    handle = subprocess.Popen([a.cli, "daemon", "start", "--config", config, "--state-dir", f"{a.out}/state",
+                               "--load-dir", f"{a.out}/strategies"], stdout=open(f"{a.out}/daemon.log", "a"),
+                              stderr=subprocess.STDOUT)
+    for _ in range(150):
+        if open(f"{a.out}/daemon.log").read().count("daemon ready") > seen:
+            return handle
+        if handle.poll() is not None:
             die("daemon exited during startup")
         time.sleep(1)
-    else:
-        die("daemon was not ready within 120 seconds")
+    die("daemon was not ready within 150 seconds")
 
+
+daemon = start_daemon()
+results, problems = [], []
+try:
     for index, step in enumerate(steps, 1):
         if step.get("wait_for") in ("position", "flat"):
             want = 1 if step["wait_for"] == "position" else 0
@@ -138,10 +148,26 @@ try:
                 time.sleep(1)
             else:
                 problems.append(f"step {index}: venue never reached '{step['wait_for']}'")
-        line = step["run"].format(strategy=strategy, file=strategy_file, state=f"{a.out}/state", config=config)
-        argv = line.split()[1:] if line.split()[0] == "qkt" else line.split()
-        code, output = qkt(argv)
         verdict = []
+        if step.get("daemon") in ("restart", "kill9_restart"):
+            line = f"@daemon {step['daemon']}"
+            if step["daemon"] == "restart":
+                qkt(["daemon", "stop", "--state-dir", f"{a.out}/state"])
+                try:
+                    daemon.wait(timeout=90)
+                except subprocess.TimeoutExpired:
+                    verdict.append("daemon did not stop within 90 seconds")
+                    daemon.kill()
+            else:
+                daemon.kill()  # SIGKILL: no shutdown hook, no flush, no flatten
+                daemon.wait(timeout=30)
+            held_while_down = owned()
+            daemon = start_daemon()
+            code, output = 0, f"positions held at the venue while the daemon was down: {held_while_down}"
+        else:
+            line = step["run"].format(strategy=strategy, file=strategy_file, state=f"{a.out}/state", config=config)
+            argv = line.split()[1:] if line.split()[0] == "qkt" else line.split()
+            code, output = qkt(argv)
         if code != int(step.get("expect_exit", 0)):
             verdict.append(f"exit {code}, expected {step.get('expect_exit', 0)}")
         if step.get("expect_stdout") and not re.search(step["expect_stdout"], output, re.S):
@@ -156,6 +182,8 @@ try:
                 actual = len(status.get(field) or []) if field == "positions" else status.get(field)
                 if actual != expected:
                     verdict.append(f"status.{field} is {actual!r}, expected {expected!r}")
+        if step.get("expect_log") and not re.search(step["expect_log"], open(f"{a.out}/daemon.log").read()):
+            verdict.append(f"daemon log does not match /{step['expect_log']}/")
         results.append({"step": index, "run": line, "exit": code, "output": output[-600:], "problems": verdict,
                         "note": step.get("note", "")})
         problems += [f"step {index} ({line}): {v}" for v in verdict]
