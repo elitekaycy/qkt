@@ -142,8 +142,11 @@ internal class InsightsLifecycle(
         }
     }
 
-    /** Announce every reportable strategy as started, with its deploy metadata. */
-    fun strategiesStarted() {
+    /** Announce every reportable strategy as started, with its deploy metadata and current halt state. */
+    fun strategiesStarted(riskState: com.qkt.risk.RiskState) {
+        if (insightsSink != null && InsightsEventFamily.RISK in insightsEvents) {
+            for (strategyId in strategyIds()) insightsSink.offer(riskSnapshotOf(riskState, strategyId, clock.now()))
+        }
         if (insightsSink != null && InsightsEventFamily.LIFECYCLE in insightsEvents) {
             for (strategyId in strategyIds()) {
                 insightsSink.offer(
