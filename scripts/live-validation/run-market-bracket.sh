@@ -38,6 +38,8 @@ timeout_seconds=180
 history_attempt_timeout_seconds=20
 arm=""
 verify_only=false
+# Several armed cases share one demo account when each owns a distinct magic: see --shared-account.
+shared_account=false
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -46,6 +48,7 @@ while [ "$#" -gt 0 ]; do
         --timeout-seconds) timeout_seconds="${2:-}"; shift 2 ;;
         --arm) arm="${2:-}"; shift 2 ;;
         --verify-only) verify_only=true; shift ;;
+        --shared-account) shared_account=true; shift ;;
         --help|-h) usage; exit 0 ;;
         *) fail "unknown argument: $1" ;;
     esac
@@ -240,8 +243,16 @@ verify_cli_git_sha() {
 acquire_live_lock() {
     command -v flock >/dev/null || fail "flock is required for armed live runs"
     mkdir -p "$(dirname "$live_lock_path")"
-    exec {live_lock_fd}> "$live_lock_path"
-    if ! flock -n "$live_lock_fd"; then
+    local lock_mode="-x"
+    if $shared_account; then
+        # A shared lock still excludes every exclusive run, and appends so it never clobbers
+        # another holder's record.
+        lock_mode="-s"
+        exec {live_lock_fd}>> "$live_lock_path"
+    else
+        exec {live_lock_fd}> "$live_lock_path"
+    fi
+    if ! flock -n "$lock_mode" "$live_lock_fd"; then
         local holder
         holder="$(tr '\n' ';' < "$live_lock_path" 2>/dev/null | sed 's/;*$//')"
         exec {live_lock_fd}>&-
@@ -258,12 +269,17 @@ acquire_live_lock() {
         "$scenario" \
         "$live_lock_started_at" \
         "$$" \
-        "$repo_root" > "$live_lock_path"
-    printf 'gateway_url=%s\naccount_login=%s\naccount_server=%s\n' \
+        "$repo_root" > "$evidence/live-lock.txt"
+    printf 'gateway_url=%s\naccount_login=%s\naccount_server=%s\nshared=%s\n' \
         "$gateway_url" \
         "$expected_login" \
-        "$expected_server" >> "$live_lock_path"
-    cp "$live_lock_path" "$evidence/live-lock.txt"
+        "$expected_server" \
+        "$shared_account" >> "$evidence/live-lock.txt"
+    if $shared_account; then
+        cat "$evidence/live-lock.txt" >> "$live_lock_path"
+    else
+        cp "$evidence/live-lock.txt" "$live_lock_path"
+    fi
     live_lock_acquired=true
 }
 
@@ -727,13 +743,14 @@ jq -e \
     --argjson login "$expected_login" \
     --arg server "$expected_server" \
     --argjson leverage "$expected_leverage" \
-    --arg balance "$expected_balance" '
+    --arg balance "$expected_balance" \
+    --argjson shared "$shared_account" '
         .login == $login and
         .server == $server and
         .trade_mode == 0 and
         .currency == "USD" and
         .leverage == $leverage and
-        .balance == ($balance | tonumber) and
+        ($shared or .balance == ($balance | tonumber)) and
         .trade_allowed == true and
         .trade_expert == true
     ' "$evidence/gateway-account-initial.json" >/dev/null || fail "gateway account does not match the demo allowlist"
@@ -748,8 +765,10 @@ jq -e --arg venueSymbol "$venue_symbol" --arg expectedContractSize "$expected_co
 
 "$cli" bot positions --broker exness --config "$config" --json > "$evidence/positions-initial.json"
 "$cli" bot orders --broker exness --config "$config" --json > "$evidence/orders-initial.json"
-jq -e 'length == 0' "$evidence/positions-initial.json" >/dev/null || fail "demo account has open positions"
-jq -e 'length == 0' "$evidence/orders-initial.json" >/dev/null || fail "demo account has pending orders"
+if ! $shared_account; then
+    jq -e 'length == 0' "$evidence/positions-initial.json" >/dev/null || fail "demo account has open positions"
+    jq -e 'length == 0' "$evidence/orders-initial.json" >/dev/null || fail "demo account has pending orders"
+fi
 gateway_get "/get_positions?magic=$magic" > "$evidence/positions-magic-initial.json"
 gateway_get "/orders?magic=$magic" > "$evidence/orders-magic-initial.json"
 jq -e '.ok == true and (.data | length) == 0' "$evidence/positions-magic-initial.json" >/dev/null ||
@@ -836,6 +855,7 @@ else
     "$cli" status "$strategy_name" --state-dir "$scenario/state" > "$evidence/strategy-status-flat.json"
 fi
 
+"$cli" status "$strategy_name" --state-dir "$scenario/state" > "$evidence/strategy-status-before-stop.json"
 "$cli" stop "$strategy_name" --state-dir "$scenario/state" --json > "$evidence/stop-strategy.json"
 "$cli" daemon stop --state-dir "$scenario/state" > "$evidence/daemon-stop.log"
 wait "$daemon_pid"
@@ -843,8 +863,17 @@ daemon_pid=""
 
 "$cli" bot positions --broker exness --config "$config" --json > "$evidence/positions-final.json"
 "$cli" bot orders --broker exness --config "$config" --json > "$evidence/orders-final.json"
-jq -e 'length == 0' "$evidence/positions-final.json" >/dev/null || fail "demo account is not flat after the scenario"
-jq -e 'length == 0' "$evidence/orders-final.json" >/dev/null || fail "demo account has a pending order after the scenario"
+if $shared_account; then
+    gateway_get "/get_positions?magic=$magic" > "$evidence/positions-magic-after-stop.json"
+    gateway_get "/orders?magic=$magic" > "$evidence/orders-magic-after-stop.json"
+    jq -e '.ok == true and (.data | length) == 0' "$evidence/positions-magic-after-stop.json" >/dev/null ||
+        fail "scenario magic still owns a position after the scenario"
+    jq -e '.ok == true and (.orders | length) == 0' "$evidence/orders-magic-after-stop.json" >/dev/null ||
+        fail "scenario magic still owns a pending order after the scenario"
+else
+    jq -e 'length == 0' "$evidence/positions-final.json" >/dev/null || fail "demo account is not flat after the scenario"
+    jq -e 'length == 0' "$evidence/orders-final.json" >/dev/null || fail "demo account has a pending order after the scenario"
+fi
 
 deals_seen=false
 for attempt in $(seq 1 30); do
@@ -887,9 +916,20 @@ deal_net="$(
     ' "$evidence/history-during-run.json" |
         awk '{printf "%.2f", $1}'
 )"
-[ "$balance_delta" = "$deal_net" ] || fail "venue balance delta $balance_delta does not reconcile to deal net $deal_net"
-jq -e '.trade_mode == 0 and .trade_allowed == true and .trade_expert == true and .leverage > 0 and .margin == 0 and .equity == .balance' \
-    "$evidence/gateway-account-final.json" >/dev/null || fail "final demo account snapshot is not flat and tradeable"
+if $shared_account; then
+    # Other lanes move the account balance, so this case reconciles its own deals against what
+    # the engine booked for its own strategy.
+    engine_realized="$(jq -r '.realized' "$evidence/strategy-status-before-stop.json" | awk '{printf "%.2f", $1}')"
+    [ "$engine_realized" = "$deal_net" ] ||
+        fail "engine realized $engine_realized does not reconcile to this magic's deal net $deal_net"
+    balance_delta="$deal_net"
+    jq -e '.trade_mode == 0 and .trade_allowed == true and .trade_expert == true and .leverage > 0' \
+        "$evidence/gateway-account-final.json" >/dev/null || fail "final demo account snapshot is not tradeable"
+else
+    [ "$balance_delta" = "$deal_net" ] || fail "venue balance delta $balance_delta does not reconcile to deal net $deal_net"
+    jq -e '.trade_mode == 0 and .trade_allowed == true and .trade_expert == true and .leverage > 0 and .margin == 0 and .equity == .balance' \
+        "$evidence/gateway-account-final.json" >/dev/null || fail "final demo account snapshot is not flat and tradeable"
+fi
 
 mapfile -t audit_journals < <(find "$scenario/state/state/audit-journal" -type f -name '*.jsonl' | sort)
 mapfile -t transport_journals < <(find "$scenario/state/state/mt5-transport-journal" -type f -name '*.jsonl' | sort)
