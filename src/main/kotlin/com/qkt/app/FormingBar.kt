@@ -17,6 +17,10 @@ import java.time.Instant
  *
  * e.g. a 4h stream started at 09:37 loads the 1m bars of 08:00..09:37 and folds them into one
  * partial candle spanning 08:00..12:00 that the live ticks then continue.
+ *
+ * The minutes are read through [WarmupSettle], like warmup history: a venue whose history is behind
+ * its own clock would otherwise leave the last minutes out of the live bar while a replay of the
+ * same session, reading the history later, has them.
  */
 internal class FormingBar(
     /** The closed one-minute bars of the elapsed part, oldest first. */
@@ -31,21 +35,25 @@ internal class FormingBar(
             symbol: String,
             window: TimeWindow,
             nowMs: Long,
+            settle: WarmupSettle = WarmupSettle(),
         ): FormingBar? {
             if (window.durationMs <= TimeWindow.ONE_MINUTE.durationMs) return null
             val windowStart = window.windowStartFor(nowMs)
             val upper = TimeWindow.ONE_MINUTE.windowStartFor(nowMs)
             if (upper <= windowStart) return null
+            val range = TimeRange(Instant.ofEpochMilli(windowStart), Instant.ofEpochMilli(upper))
             val minutes =
-                source
-                    .bars(
-                        symbol,
-                        TimeWindow.ONE_MINUTE,
-                        TimeRange(Instant.ofEpochMilli(windowStart), Instant.ofEpochMilli(upper)),
-                    ).filter { it.startTime >= windowStart && it.endTime <= upper }
-                    .distinctBy { it.startTime }
-                    .sortedBy { it.startTime }
-                    .toList()
+                settle
+                    .freshest(source, symbol, TimeWindow.ONE_MINUTE, upper) {
+                        val read =
+                            source
+                                .bars(symbol, TimeWindow.ONE_MINUTE, range)
+                                .filter { it.startTime >= windowStart && it.endTime <= upper }
+                                .distinctBy { it.startTime }
+                                .sortedBy { it.startTime }
+                                .toList()
+                        LoadedBars(read, upper - windowStart)
+                    }.candles
             if (minutes.isEmpty()) return null
             val partial =
                 Candle(

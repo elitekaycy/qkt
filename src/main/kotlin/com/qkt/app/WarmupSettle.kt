@@ -29,6 +29,10 @@ internal class WarmupSettle(
 ) {
     private val log = LoggerFactory.getLogger(WarmupSettle::class.java)
 
+    // (symbol, window, upper) already waited on: the warmup read and every forming-bar read of one
+    // symbol ask about the same minutes, and a quiet symbol must cost one wait, not one per stream.
+    private val waited = mutableSetOf<Triple<String, Long, Long>>()
+
     fun freshest(
         source: MarketSource,
         symbol: String,
@@ -40,6 +44,7 @@ internal class WarmupSettle(
         val refreshable = (source as? RefreshableBars)?.takeIf { it.canRefresh(symbol) } ?: return best
         val firstGapMs = gapMs(best, upperMs)
         if (firstGapMs <= 0L || firstGapMs > maxGapMs) return best
+        if (!waited.add(Triple(symbol, window.durationMs, upperMs))) return best
         repeat(attempts) {
             pause(pauseMs)
             refreshable.forgetBars(symbol, window)
