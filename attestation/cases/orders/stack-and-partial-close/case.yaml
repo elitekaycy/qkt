@@ -1,16 +1,22 @@
 id: stack-and-partial-close
-title: A three-layer stack closed in two parts
-why: On a hedging account each layer is its own ticket. A partial close must hit the intended ticket,
-  and the ledger must not net layers the venue keeps apart.
-status: planned
+title: A stack whose second layer rests far away and is cleaned up
+why: A stack places a seed at market and further layers as pending orders anchored to the seed fill. Closing the
+  position must also remove the layers still resting at the venue; a layer left behind fills days later into a strategy
+  that believes it is flat.
+status: ready
 symbols:
-- EURUSD
+- BTCUSD
 timeframes:
 - 1m
 proves:
 - behaviour:stack
-- behaviour:partial-close
-- behaviour:per-ticket-ledger
+- behaviour:pending-layer-cleanup
 assertions:
-- journal-byte-exact
+- flat-by-magic
+- no-pending-by-magic
 - deals-net-by-magic
+- no-engine-fault
+- replay-fill-sequence
+warmup_bars:
+  1m: 3
+budget_seconds: 200

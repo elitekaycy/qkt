@@ -1,26 +1,42 @@
 id: restart-over-open-position
 title: Stop the daemon without flattening, restart, let the strategy close
-why: After a restart the engine must adopt the venue position, re-attach its protection, keep the order-id
-  sequence moving and let the strategy's own exit close it - not open an opposite position on a hedging
-  account.
-status: planned
+why: After a restart the engine must adopt the venue position, re-attach its protection, keep the order-id sequence
+  moving and let the strategy's own exit close it - not open an opposite position on a hedging account.
+status: ready
 symbols:
 - BTCUSD
 timeframes:
 - 1m
 proves:
-- behaviour:state-recovery
+- behaviour:graceful-restart
 - behaviour:order-id-continuity
+- behaviour:state-recovery
 steps:
-- run: daemon start
-  expect: position open under magic
-- run: daemon stop
-  expect: position still open at venue
-- run: daemon start
-  expect: recovery log names the ticket
-- run: wait exit rule
-  expect: flat, one closing deal
+- run: qkt status atto_restart --state-dir {state}
+  wait_for: position
+  expect_status:
+    positions: 1
+  note: a position is open before the restart
+- daemon: restart
+  expect_stdout: 'while the daemon was down: 1'
+  note: graceful stop without flatten leaves the position at the venue
+- run: qkt status atto_restart --state-dir {state}
+  expect_status:
+    positions: 1
+  expect_log: 'state recovery: 1 open positions'
+  note: the restarted engine adopts the venue position instead of starting flat
+- run: qkt status --deep --state-dir {state}
+  note: healthy after recovery
+- run: qkt status atto_restart --state-dir {state}
+  wait_for: flat
+  wait_seconds: 260
+  expect_status:
+    positions: 0
+  note: 'the strategy''s own timed exit closes the recovered position: one closing deal, not an opposite position
+    on a hedging account'
 assertions:
 - flat-by-magic
 - deals-net-by-magic
 - no-duplicate-order-id
+autoload: true
+budget_seconds: 420

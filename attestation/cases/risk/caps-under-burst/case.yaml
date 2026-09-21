@@ -1,16 +1,29 @@
 id: caps-under-burst
-title: TIMES 60 against max_trades_per_day 40 and a gross exposure cap
-why: A burst is risk-checked before any of it fills. Caps that count only filled positions let the whole
-  burst through live while the backtest stops it (A21-A23).
-status: planned
+title: A burst of six entries against a four-trade daily cap
+why: A burst is risk-checked before any of it fills. Caps that count only filled positions let the whole burst through
+  live while the backtest stops it (A21-A23).
+status: ready
 symbols:
-- EURUSD
+- BTCUSD
 timeframes:
 - 1m
 proves:
 - behaviour:max-trades-cap
-- behaviour:gross-exposure-cap
 - behaviour:in-flight-reservation
+- behaviour:burst
 assertions:
-- rejections-equal-replay
 - flat-by-magic
+- deals-net-by-magic
+- rejections-equal-replay
+- replay-fill-sequence
+warmup_bars:
+  1m: 3
+budget_seconds: 200
+expect_rejections: 2
+config:
+  risk:
+    per_strategy:
+      atto_burst_cap:
+        max_trades_per_day: 4
+        max_position_size: '0.10'
+        max_open_positions: 1

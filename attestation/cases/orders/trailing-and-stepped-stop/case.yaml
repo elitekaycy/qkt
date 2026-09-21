@@ -1,15 +1,22 @@
 id: trailing-and-stepped-stop
-title: A trailing stop that ratchets at the venue
-why: The engine moves the venue stop as price advances; a modify rejected for stops-level distance must
-  not leave the position unprotected or the engine believing it moved.
-status: planned
+title: A trailing-stop entry, held and closed by the strategy
+why: 'A trailing stop is an order type, not a bracket leg: the protective level is created and then moved as price
+  advances. If the engine believes the stop moved when the venue rejected the modify, or books the trail''s own
+  fill twice, the position is unprotected or double-counted.'
+status: ready
 symbols:
-- XAUUSD
+- BTCUSD
 timeframes:
 - 1m
 proves:
 - behaviour:trailing-stop
-- behaviour:modify-rejected
+- behaviour:timed-exit
 assertions:
-- protection-matches-venue
 - flat-by-magic
+- no-pending-by-magic
+- deals-net-by-magic
+- no-engine-fault
+- replay-fill-sequence
+warmup_bars:
+  1m: 3
+budget_seconds: 200

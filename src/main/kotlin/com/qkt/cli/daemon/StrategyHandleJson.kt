@@ -74,6 +74,7 @@ internal fun buildSnapshot(
     clockSkewedSymbols: Map<String, Long> = emptyMap(),
     openPositions: List<com.qkt.positions.Position> = emptyList(),
     persistenceHealth: com.qkt.persistence.PersistenceHealth = com.qkt.persistence.PersistenceHealth.DISABLED,
+    halt: HaltStatus = HaltStatus.NONE,
 ): StatusSnapshot {
     val now = System.currentTimeMillis()
     val last = trades.lastOrNull()
@@ -118,5 +119,31 @@ internal fun buildSnapshot(
                 queueSize = persistenceHealth.queueSize,
                 callerRunsTotal = persistenceHealth.callerRunsTotal,
             ),
+        halted = halt.halted,
+        haltReason = halt.reason,
+        haltScope = halt.scope,
     )
+}
+
+/** What a session reports about a halt on one strategy: a global halt, or one scoped to that strategy. */
+internal data class HaltStatus(
+    val halted: Boolean,
+    val reason: String?,
+    val scope: String?,
+) {
+    companion object {
+        val NONE = HaltStatus(halted = false, reason = null, scope = null)
+
+        fun of(
+            session: com.qkt.app.LiveSessionHandle,
+            strategyId: String,
+        ): HaltStatus {
+            val own = session.strategyHalts().firstOrNull { it.strategyId == strategyId }
+            return when {
+                own != null -> HaltStatus(true, own.reason, own.scope)
+                session.isHalted() -> HaltStatus(true, session.haltReason(), session.haltScope()?.name)
+                else -> NONE
+            }
+        }
+    }
 }
