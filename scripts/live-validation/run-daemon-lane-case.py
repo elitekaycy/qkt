@@ -10,7 +10,8 @@ The case's `steps` are executed in order. Each step is a mapping:
     expect_exit:    exit code the command must return (default 0)
     expect_stdout:  regex that must match the command's output (optional)
     expect_status:  jq-free check on `qkt status <strategy>`: {"positions": 1, "halted": true} (optional)
-    wait_for:       "position" | "flat" - poll the venue under this case's magic before the step (optional)
+    wait_for:       "position" | "flat" - poll the venue under this case's magic before the step (optional);
+                    with `wait_count: N`, wait for at least N positions
     daemon:         "restart" | "kill9_restart" instead of `run`: stop the daemon without flattening
                     (or SIGKILL it mid-flight) and start it again on the same state directory
     expect_log:     regex the daemon log must contain after the step (optional)
@@ -47,7 +48,7 @@ if os.path.exists(a.out):
 case = yaml.safe_load(open(f"{a.case}/case.yaml"))
 steps = case.get("steps") or die("case.yaml has no steps")
 source = open(f"{a.case}/strategy.qkt").read()
-strategy = re.search(r"^STRATEGY\s+(\w+)", source, re.M).group(1)
+strategy = re.search(r"^(?:STRATEGY|PORTFOLIO)\s+(\w+)", source, re.M).group(1)
 
 
 def gateway(path):
@@ -78,6 +79,10 @@ if case.get("autoload"):
     strategy_file = f"{a.out}/strategies/{strategy}.qkt"
 os.makedirs(os.path.dirname(strategy_file), exist_ok=True)
 open(strategy_file, "w").write(source)
+# A portfolio imports its children by relative path, so they travel beside it.
+for extra in sorted(os.listdir(a.case)):
+    if extra.endswith(".qkt") and extra != "strategy.qkt":
+        open(os.path.join(os.path.dirname(strategy_file), extra), "w").write(open(f"{a.case}/{extra}").read())
 config = f"{a.out}/qkt.config.yaml"
 open(config, "w").write(f"""source: local
 data_root: "{a.out}/data"
@@ -141,13 +146,15 @@ results, problems = [], []
 try:
     for index, step in enumerate(steps, 1):
         if step.get("wait_for") in ("position", "flat"):
-            want = 1 if step["wait_for"] == "position" else 0
+            # `wait_count` asks for an exact number of positions under the magic (two children, two legs).
+            target = int(step.get("wait_count", 1)) if step["wait_for"] == "position" else 0
             for _ in range(int(step.get("wait_seconds", 150))):
-                if (owned() > 0) == bool(want):
+                held = owned()
+                if (held >= target and target > 0) or (held == 0 and target == 0):
                     break
                 time.sleep(1)
             else:
-                problems.append(f"step {index}: venue never reached '{step['wait_for']}'")
+                problems.append(f"step {index}: venue never reached '{step['wait_for']}' x{target} (held {owned()})")
         verdict = []
         if step.get("daemon") in ("restart", "kill9_restart"):
             line = f"@daemon {step['daemon']}"
