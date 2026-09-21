@@ -1,0 +1,22 @@
+id: stale-feed-and-recovery
+title: Ticks stop for ninety seconds, then resume with a backfill
+why: During a stall the market-data gate must refuse new entries; after it, backfilled ticks must not
+  be replayed as live signals or close bars twice.
+status: planned
+symbols:
+- EURUSD
+timeframes:
+- 1m
+proves:
+- behaviour:stale-gate
+- behaviour:backfill-dedup
+steps:
+- run: daemon start via proxy
+  expect: trading
+- run: pause tick endpoint 90s
+  expect: entries rejected as stale
+- run: resume
+  expect: bars contiguous, no duplicate candle
+assertions:
+- no-entry-while-stale
+- candles-contiguous

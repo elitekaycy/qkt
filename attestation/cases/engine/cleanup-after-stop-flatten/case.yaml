@@ -1,0 +1,16 @@
+id: cleanup-after-stop-flatten
+title: stop --flatten leaves nothing behind
+why: After a flatten the venue must hold no position and no pending order under the magic, and a restart
+  inside the same bar must be allowed to re-enter.
+status: planned
+symbols:
+- BTCUSD
+timeframes:
+- 1m
+proves:
+- behaviour:flatten
+- behaviour:pending-cleanup
+assertions:
+- flat-by-magic
+- no-pending-by-magic
+- re-entry-allowed

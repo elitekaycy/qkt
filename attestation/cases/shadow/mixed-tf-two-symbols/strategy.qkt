@@ -1,0 +1,15 @@
+STRATEGY attest_mixed_tf_two_symbols VERSION 1
+SYMBOLS
+    eur = EXNESS:EURUSD EVERY 1m WARMUP 6 BARS,
+    gold = EXNESS:XAUUSD EVERY 15m WARMUP 20 BARS
+LET eur_rsi = rsi(eur.close, 5),
+    gold_fast = ema(gold.close, 3),
+    gold_slow = sma(gold.close, 8)
+RULES
+    -- Rules fire on a false-to-true edge, so one always-true rule would log once. Logging on each
+    -- up-turn and each down-turn of the fastest stream yields a vector at every reversal.
+    WHEN eur_rsi IS NOT NULL AND gold_fast IS NOT NULL AND gold_slow IS NOT NULL AND eur.close > lag(eur.close, 1)
+    THEN LOG "attest vector turn=up case=mixed-tf-two-symbols rsi={a} ema={b} sma={c} eur_close={d} gold_close={e}" a=eur_rsi b=gold_fast c=gold_slow d=eur.close e=gold.close
+
+    WHEN eur_rsi IS NOT NULL AND gold_fast IS NOT NULL AND gold_slow IS NOT NULL AND eur.close <= lag(eur.close, 1)
+    THEN LOG "attest vector turn=down case=mixed-tf-two-symbols rsi={a} ema={b} sma={c} eur_close={d} gold_close={e}" a=eur_rsi b=gold_fast c=gold_slow d=eur.close e=gold.close

@@ -48,6 +48,8 @@ class PreflightCommandStrategyValidationTest : PreflightCommandFixture() {
             brokers:
               bybit:
                 type: bybit
+            state:
+              disk_free_alert_gb: 0
             """.trimIndent(),
         )
 

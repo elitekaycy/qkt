@@ -1,0 +1,16 @@
+id: order-burst-100
+title: One hundred entries from one bar close
+why: Serial placement takes seconds; caps, the runaway breaker and attribution must hold across the whole
+  burst, and the account must end flat.
+status: planned
+symbols:
+- EURUSD
+timeframes:
+- 1m
+proves:
+- behaviour:burst
+- behaviour:runaway-breaker
+assertions:
+- flat-by-magic
+- deals-net-by-magic
+- rejections-equal-replay
