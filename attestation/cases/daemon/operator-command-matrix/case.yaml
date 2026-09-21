@@ -44,6 +44,7 @@ steps:
 - run: qkt status {strategy} --state-dir {state}
   expect_status:
     positions: 1
+    halted: true
   note: a halt stops new entries; it must not close the open position
 - run: qkt resume {strategy} --state-dir {state}
   expect_stdout: (?i)resum
