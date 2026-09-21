@@ -1,8 +1,9 @@
 id: cleanup-after-stop-flatten
-title: stop --flatten leaves nothing behind
-why: After a flatten the venue must hold no position and no pending order under the magic, and a restart
-  inside the same bar must be allowed to re-enter.
-status: planned
+title: stop --flatten leaves nothing behind and a redeploy may enter again
+why: After a flatten the venue must hold no position and no resting order under the magic, and deploying
+  the same strategy again must start clean - a persisted rule edge or a leftover order would either
+  block it for good or double its exposure.
+status: ready
 symbols:
 - BTCUSD
 timeframes:
@@ -10,7 +11,44 @@ timeframes:
 proves:
 - behaviour:flatten
 - behaviour:pending-cleanup
+steps:
+- run: qkt deploy {file} --state-dir {state}
+  note: deployed by command so that stop really removes it
+- run: qkt status {strategy} --state-dir {state}
+  wait_for: position
+  expect_status:
+    positions: 1
+  expect_pending: 1
+  note: one position and one resting limit under the magic
+- run: qkt stop {strategy} --flatten --state-dir {state}
+  expect_positions: 0
+  expect_pending: 0
+  settle_seconds: 5
+  note: both the position and the resting order are gone from the venue
+- run: qkt list --state-dir {state}
+  expect_stdout: '^(?!.*atto_flatten_clean)'
+  note: the strategy is no longer deployed
+- run: qkt deploy {file} --state-dir {state}
+  note: the same file again, straight away
+- run: qkt status {strategy} --state-dir {state}
+  wait_for: position
+  wait_seconds: 200
+  expect_status:
+    positions: 1
+  expect_pending: 1
+  note: it enters again - one position and one resting order, not two of either
+- run: qkt stop {strategy} --flatten --state-dir {state}
+  expect_positions: 0
+  expect_pending: 0
+  settle_seconds: 5
+  note: and flattens clean a second time
 assertions:
 - flat-by-magic
 - no-pending-by-magic
 - re-entry-allowed
+budget_seconds: 480
+config:
+  risk:
+    per_strategy:
+      atto_flatten_clean:
+        max_trades_per_day: 4
