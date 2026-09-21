@@ -659,65 +659,16 @@ class LiveSession(
         t: Throwable,
     ) = sessionNotifier.recordFailure(strategyId, handler, t)
 
-    /**
-     * Strategy ids this session announces to insights. Ids beginning with `__` are
-     * session-internal plumbing (e.g. the bot session recorder) — they never trade,
-     * so announcing them would grow a permanent ghost strategy on the dashboard.
-     */
-    private fun insightsStrategyIds(): List<String> = strategies.map { it.first }.filterNot { it.startsWith("__") }
-
-    /**
-     * Streams allow-listed event families to the insights sink. Each handler only builds
-     * a small envelope and enqueues it — the sink's own thread does JSON and HTTP, so
-     * none of this touches the engine loop's latency. Mirrors [wireJournal]'s shape.
-     */
-    private fun wireInsights(
-        bus: EventBus,
-        sink: com.qkt.observe.insights.InsightsSink,
-        prices: com.qkt.marketdata.MarketPriceProvider,
-    ) {
-        val t = com.qkt.observe.insights.InsightsTranslate
-        if (com.qkt.observe.insights.InsightsEventFamily.SIGNAL in insightsEvents) {
-            bus.subscribe<SignalEvent> { e -> t.fromSignal(e)?.let(sink::offer) }
-            bus.subscribe<com.qkt.events.RuleDecisionEvent> { e -> sink.offer(t.fromRuleDecision(e)) }
-        }
-        if (com.qkt.observe.insights.InsightsEventFamily.ORDER in insightsEvents) {
-            bus.subscribe<com.qkt.events.OrderEvent> { e ->
-                // The sided execution price the engine saw at submission: the slippage
-                // baseline for market entries, which carry no price of their own.
-                val reference = prices.executionPrice(e.request.symbol, e.request.side)
-                sink.offer(t.fromOrderSubmit(e, reference))
-            }
-            bus.subscribe<com.qkt.events.DecisionOrderLinkedEvent> { e ->
-                sink.offer(t.fromDecisionOrderLinked(e))
-            }
-            bus.subscribe<BrokerEvent.OrderAccepted> { e -> sink.offer(t.fromOrderAccepted(e)) }
-            bus.subscribe<BrokerEvent.OrderFilled> { e -> sink.offer(t.fromOrderFilled(e)) }
-            bus.subscribe<BrokerEvent.OrderPartiallyFilled> { e -> sink.offer(t.fromOrderPartiallyFilled(e)) }
-            bus.subscribe<BrokerEvent.OrderCancelled> { e -> sink.offer(t.fromOrderCancelled(e)) }
-            bus.subscribe<BrokerEvent.OrderRejected> { e -> sink.offer(t.fromOrderRejected(e)) }
-            bus.subscribe<BrokerEvent.OrderModified> { e -> sink.offer(t.fromOrderModified(e)) }
-        }
-        if (com.qkt.observe.insights.InsightsEventFamily.TRADE in insightsEvents) {
-            bus.subscribe<com.qkt.events.TradeEvent> { e -> sink.offer(t.fromTrade(e)) }
-            bus.subscribe<com.qkt.events.FillAccountedEvent> { e -> sink.offer(t.fromFillAccounted(e)) }
-        }
-        if (com.qkt.observe.insights.InsightsEventFamily.RISK in insightsEvents) {
-            bus.subscribe<com.qkt.events.RiskRejectedEvent> { e -> sink.offer(t.fromRiskRejected(e)) }
-            bus.subscribe<com.qkt.events.SignalSuppressedEvent> { e -> sink.offer(t.fromSignalSuppressed(e)) }
-            bus.subscribe<RiskEvent.Halted> { e -> sink.offer(t.fromRiskHalted(e)) }
-            bus.subscribe<RiskEvent.Resumed> { e -> sink.offer(t.fromRiskResumed(e)) }
-        }
-        if (com.qkt.observe.insights.InsightsEventFamily.POSITION in insightsEvents) {
-            bus.subscribe<BrokerEvent.PositionReconciled> { e -> sink.offer(t.fromPositionReconciled(e)) }
-            bus.subscribe<BrokerEvent.BalancesUpdated> { e -> sink.offer(t.fromBalancesUpdated(e)) }
-            bus.subscribe<BrokerEvent.GatewayUnreachable> { e -> sink.offer(t.fromGatewayUnreachable(e)) }
-        }
-        if (com.qkt.observe.insights.InsightsEventFamily.LIFECYCLE in insightsEvents) {
-            bus.subscribe<BrokerEvent.GatewayUnreachable> { e -> sink.offer(t.fromBrokerGatewayUnreachable(e)) }
-            bus.subscribe<BrokerEvent.ConnectionChanged> { e -> sink.offer(t.fromBrokerConnectionChanged(e)) }
-        }
-    }
+    private val insights =
+        InsightsLifecycle(
+            insightsSink,
+            insightsEvents,
+            insightsStrategyMetadata,
+            strategies,
+            source,
+            feedSymbols,
+            clock,
+        )
 
     /**
      * The per-strategy daily-summary rows for this session — equity, P&L, positions, and
@@ -1064,18 +1015,7 @@ class LiveSession(
                             }.onFailure { t -> recordNotificationFailure(strategyId, "MarketDataUnhealthy", t) }
                         }
                     }
-                    if (insightsSink != null &&
-                        com.qkt.observe.insights.InsightsEventFamily.LIFECYCLE in insightsEvents
-                    ) {
-                        insightsSink.offer(
-                            com.qkt.observe.insights.InsightsTranslate.marketDataStale(
-                                source = source.name,
-                                symbol = symbol,
-                                ts = clock.now(),
-                                reason = reason,
-                            ),
-                        )
-                    }
+                    insights.marketDataStale(symbol, reason)
                 },
             )
         val marginRules =
@@ -1206,27 +1146,7 @@ class LiveSession(
                     dailyTracker.recordTrade(strategyId)
                     onTrade(trade, realized, strategyId)
                 },
-                onAccountedFill = { trade, convertedRealized, strategyId, fillState ->
-                    // Per-close net P&L for insights analytics. Entry commissions are real
-                    // cash movements, but they are not closed trades; only exposure-reducing
-                    // fills ship through the legacy trade.closed stream.
-                    val netRealized = fillState.netAccountRealized
-                    if (insightsSink != null &&
-                        fillState.reducedExposure &&
-                        netRealized.signum() != 0 &&
-                        com.qkt.observe.insights.InsightsEventFamily.TRADE in insightsEvents
-                    ) {
-                        insightsSink.offer(
-                            com.qkt.observe.insights.InsightsTranslate
-                                .tradeClosed(
-                                    trade = trade,
-                                    netAccountRealized = netRealized,
-                                    strategyId = strategyId,
-                                    convertedRealized = convertedRealized,
-                                ),
-                        )
-                    }
-                },
+                onAccountedFill = insights::accountedFill,
                 gate = gate,
                 persistor = persistor,
                 instruments = instruments,
@@ -1293,7 +1213,7 @@ class LiveSession(
             com.qkt.risk.book
                 .wireBookReservations(bus, controller)
         }
-        insightsSink?.let { sink -> wireInsights(bus, sink, priceTracker) }
+        insightsSink?.let { sink -> InsightsBusWiring(insightsEvents).wire(bus, sink, priceTracker) }
         // Restore OCO legs from the persistor and reconcile them against venue truth so
         // any sibling whose pair filled during downtime is cancelled before ticks flow.
         pipeline.orderManager.restore(strategies.map { it.first })
@@ -1376,48 +1296,7 @@ class LiveSession(
         riskState.warmupComplete = true
 
         val feed = source.liveTicks(feedSymbols)
-        if (insightsSink != null &&
-            com.qkt.observe.insights.InsightsEventFamily.LIFECYCLE in insightsEvents
-        ) {
-            val nowTs = clock.now()
-            val brokerNames = (builtBrokers.ifEmpty { listOf(broker) }).map { it.name }.distinct()
-            for (brokerName in brokerNames) {
-                insightsSink.offer(
-                    com.qkt.observe.insights.InsightsTranslate.brokerConnected(
-                        broker = brokerName,
-                        ts = nowTs,
-                    ),
-                )
-            }
-            insightsSink.offer(
-                com.qkt.observe.insights.InsightsTranslate.marketDataConnected(
-                    source = source.name,
-                    symbols = feedSymbols,
-                    ts = nowTs,
-                ),
-            )
-            if (feed is MarketDataLifecycleFeed) {
-                feed.onDisconnect { scope ->
-                    insightsSink.offer(
-                        com.qkt.observe.insights.InsightsTranslate.marketDataDisconnected(
-                            source = scope.source ?: source.name,
-                            symbols = scope.symbols ?: feedSymbols,
-                            ts = clock.now(),
-                            reason = "source-disconnected",
-                        ),
-                    )
-                }
-                feed.onReconnect { scope ->
-                    insightsSink.offer(
-                        com.qkt.observe.insights.InsightsTranslate.marketDataReconnected(
-                            source = scope.source ?: source.name,
-                            symbols = scope.symbols ?: feedSymbols,
-                            ts = clock.now(),
-                        ),
-                    )
-                }
-            }
-        }
+        insights.connected({ builtBrokers.ifEmpty { listOf(broker) } }, feed)
 
         val terminated = CountDownLatch(1)
         // Control events (bus events from pollers, flatten, heartbeat, feed-end) are
@@ -1547,17 +1426,7 @@ class LiveSession(
                     ),
                 )
             }.onFailure { t -> recordNotificationFailure(ownerStrategyId, "PersistenceFailure", t) }
-            if (insightsSink != null &&
-                com.qkt.observe.insights.InsightsEventFamily.STATE in insightsEvents
-            ) {
-                insightsSink.offer(
-                    com.qkt.observe.insights.InsightsTranslate.statePersistence(
-                        ts = clock.now(),
-                        strategyId = ownerStrategyId.takeIf { it.isNotBlank() },
-                        health = health,
-                    ),
-                )
-            }
+            insights.persistenceFailing(ownerStrategyId, health)
         }
 
         // The single-consumer engine loop: the ONE thread that touches the bus, OrderManager,
@@ -1701,18 +1570,7 @@ class LiveSession(
                         lifecycleFeed?.terminalFailureReason()
                             ?: "live market-data feed exceeded its reconnect budget"
                     runCatching { feed.close() }
-                    if (insightsSink != null &&
-                        com.qkt.observe.insights.InsightsEventFamily.LIFECYCLE in insightsEvents
-                    ) {
-                        insightsSink.offer(
-                            com.qkt.observe.insights.InsightsTranslate.marketDataDisconnected(
-                                source = source.name,
-                                symbols = feedSymbols,
-                                ts = clock.now(),
-                                reason = "feed-ended",
-                            ),
-                        )
-                    }
+                    insights.feedEnded()
                     // Non-blocking: tell the consumer the feed is done so it drains-then-stops.
                     control.offer(
                         Inbound.FeedEnded(
@@ -1808,7 +1666,7 @@ class LiveSession(
                         sink = insightsSink,
                         attribution = ticketAttribution,
                         deployedIds = { (strategies.map { it.first } + insightsDeployedIds()).distinct() },
-                        rosterIds = { insightsStrategyIds() },
+                        rosterIds = { insights.strategyIds() },
                         pollIntervalMs = insightsStatePollMs,
                         sharedDeals = insightsSharedDeals,
                         backfillDays = insightsDealBackfillDays,
@@ -1819,7 +1677,7 @@ class LiveSession(
                                 emptyList()
                             } else {
                                 val now = clock.now()
-                                insightsStrategyIds().map { strategyId ->
+                                insights.strategyIds().map { strategyId ->
                                     val pnl = handle.pnlSnapshot(strategyId)
                                     com.qkt.observe.insights.InsightsTranslate.equitySnapshot(
                                         ts = now,
@@ -1840,19 +1698,7 @@ class LiveSession(
         // Fire StrategyStarted per strategy this session hosts. Lifecycle events bypass the
         // bus because no other engine component consumes them.
         sessionNotifier.strategiesStarted()
-        if (insightsSink != null &&
-            com.qkt.observe.insights.InsightsEventFamily.LIFECYCLE in insightsEvents
-        ) {
-            for (strategyId in insightsStrategyIds()) {
-                insightsSink.offer(
-                    com.qkt.observe.insights.InsightsTranslate.strategyStarted(
-                        strategyId = strategyId,
-                        ts = clock.now(),
-                        metadata = insightsStrategyMetadata[strategyId].orEmpty(),
-                    ),
-                )
-            }
-        }
+        insights.strategiesStarted()
 
         fun <T> engineSnapshot(read: () -> T): T {
             if (Thread.currentThread() === thread || !thread.isAlive) return read()
@@ -1986,19 +1832,7 @@ class LiveSession(
                     runCatching { pipelineCandleHub.unregister(strategyId) }
                 }
                 sessionNotifier.strategiesStopped()
-                if (insightsSink != null &&
-                    com.qkt.observe.insights.InsightsEventFamily.LIFECYCLE in insightsEvents
-                ) {
-                    for (strategyId in insightsStrategyIds()) {
-                        insightsSink.offer(
-                            com.qkt.observe.insights.InsightsTranslate.strategyStopped(
-                                strategyId = strategyId,
-                                ts = clock.now(),
-                                flatten = false,
-                            ),
-                        )
-                    }
-                }
+                insights.strategiesStopped()
             }
 
             override fun awaitTermination(timeout: Duration): Boolean =
