@@ -21,12 +21,22 @@ steps:
   expect_positions: 0
   expect_log: halt \(operator
   note: 'a full bar later the eager strategy still holds nothing: the halt binds'
+- run: qkt status {strategy} --state-dir {state}
+  expect_status:
+    halted: true
+    haltReason: operator
+  note: 'status says so: a halted strategy must not look like a quiet healthy one (#1210)'
 - run: qkt resync {file} --state-dir {state}
   note: redeploy the same strategy under the same name
 - run: qkt list --state-dir {state}
   settle_seconds: 75
   expect_positions: 0
   note: 'still nothing a bar after the redeploy: a persistent halt survives it'
+- run: qkt status {strategy} --state-dir {state}
+  expect_status:
+    halted: true
+    haltReason: operator
+  note: 'status says so: a halted strategy must not look like a quiet healthy one (#1210)'
 - run: qkt resume {strategy} --state-dir {state}
   note: only resume clears it
 - run: qkt status {strategy} --state-dir {state}
@@ -34,6 +44,7 @@ steps:
   wait_seconds: 100
   expect_status:
     positions: 1
+    halted: false
   note: and the strategy trades again
 - run: qkt stop {strategy} --flatten --state-dir {state}
   note: clean exit
