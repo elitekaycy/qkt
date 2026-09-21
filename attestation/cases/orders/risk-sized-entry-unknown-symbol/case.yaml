@@ -1,8 +1,9 @@
 id: risk-sized-entry-unknown-symbol
-title: RISK $ sizing on a symbol with no built-in spec
-why: Size comes from the venue's contract size. If the spec does not reach the sizer the order is either
-  refused or sized as if one lot were one unit.
-status: planned
+title: RISK $ sizing on a symbol with no built-in contract spec
+why: Size comes from the venue's contract size. BTCUSD is not in the built-in table, so if the venue's spec does
+  not reach the sizer the order is refused - or sized as if one lot were one unit. Fifteen dollars over a 1,500
+  stop on a contract size of 1 must be exactly 0.01.
+status: ready
 symbols:
 - BTCUSD
 timeframes:
@@ -11,5 +12,11 @@ proves:
 - behaviour:risk-sizing
 - behaviour:venue-instrument-spec
 assertions:
-- quantity-equals-expected
 - flat-by-magic
+- no-pending-by-magic
+- deals-net-by-magic
+- no-engine-fault
+- replay-fill-sequence
+warmup_bars:
+  1m: 3
+budget_seconds: 200
