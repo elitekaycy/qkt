@@ -42,4 +42,19 @@ echo "ok a case that fails twice fails the run, and the first failure is kept"
 rm -rf "$fake/attestation/cases/orders/broken"
 run "$tmp/recovered" > /dev/null
 jq -e '.status == "passed" and .retried == ["orders-contended"]' "$tmp/recovered/result.json" > /dev/null
+jq -e '.maxParallel == 8' "$tmp/recovered/result.json" > /dev/null
 echo "ok a case that passes the second wave passes the run and is named in retried"
+
+# With room for one daemon at a time the stub runs never overlap.
+cat > "$fake/scripts/live-validation/run-order-lane-case.sh" <<'STUB'
+#!/usr/bin/env bash
+while [ "$#" -gt 0 ]; do case "$1" in --out) o="$2"; shift 2 ;; *) shift ;; esac; done
+mkdir -p "$o"; lock="$(dirname "$o")/busy"
+mkdir "$lock" 2>/dev/null || { echo "failed overlapped another case"; exit 1; }
+sleep 1; rmdir "$lock"; echo "passed"
+STUB
+QKT_BROKER_API_KEY=x QKT_LIVE_DEMO_ORDER_APPROVAL=LOCALHOST_DEMO_ONLY bash "$fake/scripts/live-validation/run-attestation-catalog.sh" \
+    --out "$tmp/serial" --gateway-url http://127.0.0.1:5001 --expected-login 1 --expected-server S --magic-base 100 \
+    --arm I_UNDERSTAND_DEMO_ORDER_0.01 --lanes orders --max-parallel 1 --cli "$fake/bin/qkt" > /dev/null
+jq -e '.status == "passed" and .retried == [] and .maxParallel == 1' "$tmp/serial/result.json" > /dev/null
+echo "ok --max-parallel bounds how many cases run at once"
