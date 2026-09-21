@@ -118,4 +118,8 @@ data class StatusSnapshot(
     val haltReason: String? = null,
     /** `TRANSIENT`, `DAILY` or `PERSISTENT` — a persistent halt survives restart and redeploy; only `qkt resume` clears it. */
     val haltScope: String? = null,
+    /** True when only `qkt resume` clears the halt: it survives restart, redeploy and the day rolling over. */
+    val haltPersistent: Boolean = false,
+    /** When the halt tripped, ISO-8601 UTC; null when not halted or tripped before this was recorded. */
+    val haltedAt: String? = null,
 )

@@ -18,10 +18,13 @@ The case's `steps` are executed in order. Each step is a mapping:
     expect_positions: exact number of venue positions under this case's magic after the step (optional)
     expect_pending:   exact number of resting venue orders under this case's magic after the step (optional)
     wait_log:       regex to wait for in the daemon log before the step, up to `wait_seconds` (optional)
+    venue:          "close_positions" instead of `run`: close this magic's positions at the venue by
+                    ticket while the daemon keeps running (an exit between two bar closes)
     while_down:     with `daemon: restart`, "close_at_venue" closes the magic's positions by ticket
                     while no engine is running
 
-Case-level keys: `copies: N` loads the strategy N times under numbered names and `copies_agree`
+Case-level keys: `seed_risk_state` pre-writes the strategy's risk-state file (pacer fields are keyed by
+the strategy for you; "now" is the current epoch ms); `copies: N` loads the strategy N times under numbered names and `copies_agree`
 (`log` regex, `min_lines`) requires every copy to have logged the same lines and dropped no tick;
 `start_offset: {period_seconds, min, max}` delays the daemon start until the wall clock is
 that far into a bar, so a mid-bar start is a fact and not luck; `forming_bar_checks` compares bars the
@@ -100,6 +103,17 @@ for name in copy_names:
 for extra in sorted(os.listdir(a.case)):
     if extra.endswith(".qkt") and extra != "strategy.qkt":
         open(os.path.join(os.path.dirname(strategy_file), extra), "w").write(open(f"{a.case}/{extra}").read())
+# `seed_risk_state` writes the strategy's risk-state file before the first start, as if an earlier
+# run had left it: the case then tests what the engine does with restored state instead of waiting
+# for the market to produce it (a loss streak is two losing trades nobody can order up).
+if case.get("seed_risk_state"):
+    today = int(time.time() // 86400)
+    seeded = {"version": 1, "strategyId": strategy, "epochDay": today, "realizedToday": "0", "perStrategyRealizedToday": {},
+              "halted": False, "haltReason": None, "haltScope": "PERSISTENT", "haltEpochDay": 0, "strategyHalts": []}
+    for field, value in case["seed_risk_state"].items():
+        seeded[field] = {strategy: (int(time.time() * 1000) if value == "now" else value)} if field.startswith("pacer") else value
+    os.makedirs(f"{a.out}/state/state/{strategy}")
+    json.dump(seeded, open(f"{a.out}/state/state/{strategy}/risk-state.json", "w"))
 config = f"{a.out}/qkt.config.yaml"
 open(config, "w").write(f"""source: local
 data_root: "{a.out}/data"
@@ -326,6 +340,11 @@ try:
                     verdict.append(f"could not close the position at the venue while down (closed {closed})")
             daemon = start_daemon()
             code, output = 0, f"positions held at the venue while the daemon was down: {held_while_down}"
+        elif step.get("venue") == "close_positions":
+            # The venue takes the position out while the engine is running, between two bar closes.
+            line = "@venue close_positions"
+            closed = force_close_leftovers()
+            code, output = (0 if closed and not owned() else 1), f"closed at the venue by ticket: {closed}"
         else:
             line = step["run"].format(strategy=strategy, file=strategy_file, state=f"{a.out}/state", config=config)
             argv = line.split()[1:] if line.split()[0] == "qkt" else line.split()

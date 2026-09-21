@@ -1,0 +1,22 @@
+id: oto-child-rests-and-is-cleared
+title: An ON_FILL child rests at the venue and is cleared with the position
+why: 'An OTO child is only placed once its parent fills, priced off the parent''s actual fill (`entry`),
+  and it belongs to the position: when the strategy closes, the resting child must go too, or it fills
+  later into a position nobody holds. Live and replay must place and clear it at the same points.'
+status: ready
+symbols:
+- BTCUSD
+timeframes:
+- 1m
+warmup_bars:
+  1m: 3
+proves:
+- behaviour:oto
+- behaviour:pending-cleanup
+budget_seconds: 240
+assertions:
+- flat-by-magic
+- no-pending-by-magic
+- deals-net-by-magic
+- no-engine-fault
+- replay-fill-sequence

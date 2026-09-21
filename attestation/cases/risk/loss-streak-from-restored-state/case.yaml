@@ -1,15 +1,52 @@
 id: loss-streak-from-restored-state
-title: Loss-streak halt with the losing streak restored, not traded
-why: The halt must bind on the first evaluation after a restart that carries one loss. Waiting for the
-  market to supply a loss made this case fail on a winning trade.
-status: planned
+title: A loss-streak halt binds on a streak restored from disk
+why: The halt must hold on the first entry after a restart that carries the losing streak, with nothing
+  sent to the venue. Waiting for the market to supply two losing trades made the old version of this
+  case fail on a winning trade; here the streak is restored from the risk-state file, as it is after
+  any real restart.
+status: ready
 symbols:
-- XAUUSD
+- BTCUSD
 timeframes:
 - 1m
 proves:
 - behaviour:loss-streak-halt
 - behaviour:risk-state-restore
+seed_risk_state:
+  pacerLossStreakByStrategy: 2
+  pacerLastLossAtByStrategy: now
+steps:
+- run: qkt status atto_streak --state-dir {state}
+  wait_log: 'LossStreakHalt\[atto_streak\]'
+  wait_seconds: 150
+  expect_status:
+    halted: true
+    positions: 0
+  expect_positions: 0
+  expect_pending: 0
+  note: the first entry attempt meets the restored streak - halted, and nothing reached the venue
+- run: qkt list --state-dir {state}
+  expect_stdout: 'atto_streak.*halted'
+  note: the operator sees it in the list
+- run: qkt status --deep --state-dir {state}
+  expect_exit: 1
+  expect_stdout: 'is halted .*qkt resume atto_streak'
+  note: and the deep status is not green, with the command that clears it
+- daemon: restart
+  note: a daily halt survives a restart inside the same day
+- run: qkt status atto_streak --state-dir {state}
+  expect_status:
+    halted: true
+  expect_positions: 0
+  note: still halted after the restart
 assertions:
 - zero-mutating-requests
-- rejection-reason-equals
+- halt-survives-restart
+autoload: true
+budget_seconds: 420
+config:
+  risk:
+    per_strategy:
+      atto_streak:
+        loss_streak_halt: 2
+        loss_streak_halt_scope: daily

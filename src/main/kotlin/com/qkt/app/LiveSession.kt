@@ -2139,7 +2139,7 @@ class LiveSession(
             }
         }
 
-        return object : LiveSessionHandle {
+        return object : LiveSessionHandle, HaltReads by RiskHaltReads(riskState, strategies.map { it.first }) {
             override val running: Boolean get() = running.get()
 
             override val droppedTicks: Long
@@ -2323,25 +2323,12 @@ class LiveSession(
                 riskState.halt(reason, scope)
             }
 
-            override fun haltReason(): String? =
-                riskState.haltReason
-                    ?: strategies.firstNotNullOfOrNull { (id, _) -> riskState.haltReasonFor(id) }
-
-            override fun haltScope(): com.qkt.risk.HaltScope? = riskState.globalHaltScope()
-
             override fun resume() {
                 riskState.resume()
                 // Operator resume must clear this session's strategy-scoped halts too —
                 // a runaway-breaker halt was otherwise unreachable from `qkt resume` (#1064).
                 for ((id, _) in strategies) riskState.resumeStrategy(id)
             }
-
-            // A strategy-scoped halt (runaway breaker, per-strategy drawdown) blocks entries
-            // exactly like a global one; status/health must not show the session as free (#1064).
-            override fun isHalted(): Boolean =
-                riskState.halted || strategies.any { (id, _) -> riskState.strategyHalted(id) }
-
-            override fun strategyHalts(): List<com.qkt.persistence.PersistedStrategyHalt> = riskState.strategyHalts()
 
             override fun flattenAndVerify(timeout: Duration): FlattenResult {
                 val strategyId =
