@@ -1,0 +1,23 @@
+STRATEGY attest_oscillators_and_trend_strength VERSION 1
+
+SYMBOLS
+    trig = EXNESS:XAUUSD EVERY 1m WARMUP 5 BARS,
+    q = EXNESS:XAUUSD EVERY 15m WARMUP 40 BARS
+
+LET a = adx(q.candle, 7),
+    pdi = plus_di(q.candle, 7),
+    mdi = minus_di(q.candle, 7),
+    c = cci(q.candle, 10),
+    k = stoch_k(q.candle, 9, 3),
+    d = stoch_d(q.candle, 9, 3),
+    w = williams_r(q.candle, 9),
+    r = atr(q.candle, 7)
+
+RULES
+    -- Rules fire on a false-to-true edge; logging on each up-turn and down-turn of the fastest
+    -- stream yields a vector at every reversal.
+    WHEN a IS NOT NULL AND c IS NOT NULL AND d IS NOT NULL AND w IS NOT NULL AND trig.close > lag(trig.close, 1)
+    THEN LOG "attest vector turn=up case=oscillators-and-trend-strength adx={v0} plus_di={v1} minus_di={v2} cci={v3} stoch_k={v4} stoch_d={v5} williams_r={v6} atr={v7}" v0=a v1=pdi v2=mdi v3=c v4=k v5=d v6=w v7=r
+
+    WHEN a IS NOT NULL AND c IS NOT NULL AND d IS NOT NULL AND w IS NOT NULL AND trig.close <= lag(trig.close, 1)
+    THEN LOG "attest vector turn=down case=oscillators-and-trend-strength adx={v0} plus_di={v1} minus_di={v2} cci={v3} stoch_k={v4} stoch_d={v5} williams_r={v6} atr={v7}" v0=a v1=pdi v2=mdi v3=c v4=k v5=d v6=w v7=r

@@ -1,0 +1,20 @@
+STRATEGY attest_hourly_and_four_hour_gold VERSION 1
+SYMBOLS
+    trig = EXNESS:XAUUSD EVERY 1m WARMUP 5 BARS,
+    hr = EXNESS:XAUUSD EVERY 1h WARMUP 30 BARS,
+    h4 = EXNESS:XAUUSD EVERY 4h WARMUP 20 BARS
+LET hr_atr = atr(hr.candle, 14),
+    k_up = keltner_upper(hr.candle, 10, 2),
+    k_mid = keltner_middle(hr.candle, 10, 2),
+    k_low = keltner_lower(hr.candle, 10, 2),
+    h4_ema = ema(h4.close, 10),
+    h4_high = highest(h4.high, 12),
+    h4_low = lowest(h4.low, 12)
+RULES
+    -- Rules fire on a false-to-true edge; logging on each up-turn and down-turn of the fastest
+    -- stream yields a vector at every reversal.
+    WHEN hr_atr IS NOT NULL AND k_mid IS NOT NULL AND h4_ema IS NOT NULL AND h4_high IS NOT NULL AND trig.close > lag(trig.close, 1)
+    THEN LOG "attest vector turn=up case=hourly-and-four-hour-gold atr={a} keltner_upper={b} keltner_middle={c} keltner_lower={d} ema={e} highest={f} lowest={g}" a=hr_atr b=k_up c=k_mid d=k_low e=h4_ema f=h4_high g=h4_low
+
+    WHEN hr_atr IS NOT NULL AND k_mid IS NOT NULL AND h4_ema IS NOT NULL AND h4_high IS NOT NULL AND trig.close <= lag(trig.close, 1)
+    THEN LOG "attest vector turn=down case=hourly-and-four-hour-gold atr={a} keltner_upper={b} keltner_middle={c} keltner_lower={d} ema={e} highest={f} lowest={g}" a=hr_atr b=k_up c=k_mid d=k_low e=h4_ema f=h4_high g=h4_low

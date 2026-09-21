@@ -1,0 +1,16 @@
+id: siblings-size-on-one-tick
+title: Two children sizing PCT RISK OF BOOK on the same bar close
+why: Each child reads the book balance from its own engine thread. When that read waited on the sibling's
+  thread both children halted at the snapshot timeout (#1160).
+status: planned
+symbols:
+- XAUUSD
+timeframes:
+- 1m
+proves:
+- behaviour:book-balance
+- behaviour:sibling-concurrency
+assertions:
+- no-engine-fault
+- both-children-filled
+- flat-by-magic

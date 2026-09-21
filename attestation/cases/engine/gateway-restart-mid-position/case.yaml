@@ -1,0 +1,15 @@
+id: gateway-restart-mid-position
+title: The MT5 gateway restarts while a position is open
+why: Polling fails for a while. The engine must not read an empty positions list as flat, must not halt
+  persistently, and must reconcile when the gateway returns.
+status: planned
+symbols:
+- EURUSD
+timeframes:
+- 1m
+proves:
+- behaviour:gateway-outage
+- behaviour:reconcile
+assertions:
+- position-preserved
+- no-persistent-halt

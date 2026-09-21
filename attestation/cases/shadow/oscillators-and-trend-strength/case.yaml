@@ -1,0 +1,24 @@
+id: oscillators-and-trend-strength
+title: Range oscillators and directional movement on 15m gold candles
+why: These read a bar's high and low, not only its close. They are the first to go wrong when a bar is
+  built from partial ticks or a warmup candle carries a synthetic range.
+status: ready
+symbols:
+- XAUUSD
+timeframes:
+- 1m
+- 15m
+warmup_bars:
+  1m: 5
+  15m: 40
+proves:
+- ADX
+- PLUS_DI
+- MINUS_DI
+- CCI
+- STOCH_K
+- STOCH_D
+- WILLIAMS_R
+- ATR
+assertions:
+- trace-parity

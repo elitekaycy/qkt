@@ -1,0 +1,24 @@
+id: one-symbol-three-tf
+title: One symbol on 1m, 5m and 1h at once
+why: Three streams of one symbol share one tick feed; a higher timeframe seeded from history must close
+  its first live bar at the real hour boundary, not one period after the daemon started.
+status: ready
+symbols:
+- EURUSD
+timeframes:
+- 1m
+- 5m
+- 1h
+warmup_bars:
+  1m: 10
+  5m: 12
+  1h: 4
+proves:
+- BOLLINGER_MIDDLE
+- BOLLINGER_UPPER
+- BOLLINGER_LOWER
+- SMA
+- EMA
+- behaviour:higher-timeframe-warmup
+assertions:
+- trace-parity

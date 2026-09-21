@@ -1,0 +1,16 @@
+id: stack-and-partial-close
+title: A three-layer stack closed in two parts
+why: On a hedging account each layer is its own ticket. A partial close must hit the intended ticket,
+  and the ledger must not net layers the venue keeps apart.
+status: planned
+symbols:
+- EURUSD
+timeframes:
+- 1m
+proves:
+- behaviour:stack
+- behaviour:partial-close
+- behaviour:per-ticket-ledger
+assertions:
+- journal-byte-exact
+- deals-net-by-magic
