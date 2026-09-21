@@ -1,0 +1,11 @@
+STRATEGY atto_flatten_clean VERSION 1
+
+SYMBOLS
+    btc = EXNESS:BTCUSD EVERY 1m WARMUP 3 BARS
+
+RULES
+    -- A position and a resting limit 3,000 below (inside the 5% price collar, never expected to fill):
+    -- the flatten has two different things to clean up.
+    WHEN btc.close > 0 AND POSITION.btc = 0 AND OPEN_ORDERS.btc = 0
+    THEN BUY btc SIZING 0.01 BRACKET { STOP LOSS BY 4000, TAKE PROFIT BY 8000 }
+       ; BUY btc SIZING 0.01 ORDER_TYPE = LIMIT AT btc.close - 3000

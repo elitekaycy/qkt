@@ -1,8 +1,9 @@
 id: venue-closes-while-down
-title: The venue stop fills while the daemon is stopped
+title: The venue closes the position while the daemon is stopped
 why: The engine comes back believing in a position that no longer exists. It must book the close from
-  deal history and clear the rule edge so the strategy can re-enter.
-status: planned
+  deal history, clear the rule edge, and let the strategy enter again - not sit flat forever or
+  invent a position the venue does not hold.
+status: ready
 symbols:
 - BTCUSD
 timeframes:
@@ -11,14 +12,38 @@ proves:
 - behaviour:downtime-close
 - behaviour:rule-edge-reset
 steps:
-- run: daemon start
-  expect: position open
-- run: daemon stop
-  expect: position open
-- run: close at venue
-  expect: no position
-- run: daemon start
-  expect: close booked from deals
+- run: qkt status atto_down_close --state-dir {state}
+  wait_for: position
+  expect_status:
+    positions: 1
+  note: a position is open before the daemon goes down
+- daemon: restart
+  while_down: close_at_venue
+  expect_stdout: 'while the daemon was down: 1'
+  expect_log: 'rule edges cleared . a position closed while the daemon was down'
+  note: the position is closed by ticket at the venue while no engine is running
+- run: qkt status atto_down_close --state-dir {state}
+  wait_for: position
+  wait_seconds: 200
+  expect_status:
+    positions: 1
+  note: with the edge cleared the strategy enters again on a following bar
+- run: qkt status --deep --state-dir {state}
+  note: healthy after booking a close it never saw
+- run: qkt stop atto_down_close --flatten --state-dir {state}
+  expect_positions: 0
+  expect_pending: 0
+  settle_seconds: 5
+  note: the second position is flattened by the engine
 assertions:
-- realized-equals-deal
+- flat-by-magic
+- no-pending-by-magic
 - re-entry-allowed
+autoload: true
+budget_seconds: 480
+config:
+  risk:
+    per_strategy:
+      atto_down_close:
+        max_trades_per_day: 3
+        max_open_positions: 1
