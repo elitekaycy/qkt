@@ -46,6 +46,38 @@ THEN BUY btc SIZING 0.1     -- fires once per bar where we're flat AND above 50k
                             -- (after a fill, POSITION.btc != 0 so it doesn't re-fire)
 ```
 
+### Re-entry after a position closes
+
+A rule gated on the position — `POSITION.btc = 0` on an entry, `POSITION.btc != 0` on an exit —
+re-arms the moment the position state flips, not only when a bar close happens to observe it.
+So an entry whose bracket is stopped out **inside the bar it was filled on** enters again at the
+next bar close where the signal still holds, exactly as one stopped out three bars later does.
+Before this, the first case never fired again until the signal had gone false and come back: on a
+4h strategy behind a regime filter that can mean weeks of silence after one quick stop.
+
+Two rules keep this causal and identical in backtest and live:
+
+- **An entry waits for the next close.** A bar is judged on the position as it stood when that bar
+  ended. If the tick that closes a bar is also the one that takes the position out, the rule does
+  not re-enter off that bar — the bar closed while the position was still open.
+- Only a **top-level** `AND` term on the rule's own stream counts (`POSITION.btc = 0`, `!= 0`,
+  `> 0`, `< 0`). Inside an `OR`, under `NOT`, with `>=`/`<=`, or on another stream, the rule keeps
+  plain bar-close edge behaviour.
+
+Re-entering while the signal still holds is what the rule says, but it is also how a strategy
+bleeds through a losing regime one stop at a time. Say how often you are willing to re-enter:
+
+```yaml
+risk:
+  per_strategy:
+    gold_trend:
+      max_trades_per_day: 3
+      cooldown_after_loss: 4h        # no new entry for 4h after a losing close
+```
+
+or put it in the signal, so it goes false after a loss and must re-form (`CROSSES ABOVE` instead
+of `>`, or `AND TRADES.today = 0` for one attempt a day).
+
 ## Comparison operators
 
 | Operator | Meaning |

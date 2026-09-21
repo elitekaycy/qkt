@@ -10,7 +10,17 @@
 # it finds (an attestation already assembled for this commit is still re-run, because the live
 # evidence must belong to this attempt; an open promotion PR is reused; an existing tag stops it).
 set -euo pipefail
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# This script checks out `testing` in its own clone, and bash reads a script as it runs it: a
+# checkout that rewrites this file would change the program mid-flight. Run from a private copy.
+if [ -z "${QKT_RELEASE_REPO_ROOT:-}" ]; then
+    QKT_RELEASE_REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+    copy="$(mktemp "${TMPDIR:-/tmp}/release-unattended.XXXXXX")"
+    cp "${BASH_SOURCE[0]}" "$copy"
+    export QKT_RELEASE_REPO_ROOT
+    exec bash "$copy" "$@"
+fi
+repo_root="$QKT_RELEASE_REPO_ROOT"
+trap 'rm -f "${BASH_SOURCE[0]}"' EXIT
 
 usage() {
     cat <<'USAGE'

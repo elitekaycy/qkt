@@ -89,6 +89,15 @@ internal class CompiledStrategy(
         sequenceRuntime.clearRuleEdges()
     }
 
+    override fun onPositionStateChanged(
+        symbol: String,
+        nowHeld: Boolean,
+        atMs: Long,
+    ) {
+        rules.forEach { it.onPositionStateChanged(symbol, nowHeld, atMs) }
+        sequenceRuntime.persistRuleEdges()
+    }
+
     override fun onOrderRejected(clientOrderId: String) {
         ledger.onOrderRejected(clientOrderId)
         sequenceRuntime.persistRuleEdges()

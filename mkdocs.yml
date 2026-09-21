@@ -191,6 +191,7 @@ nav:
       - Use qkt with Docker (qkt:dev): operations/running-qkt-via-docker.md
       - Deploy with Docker: operations/deploy-docker.md
       - Production deploy (qkt-prod): operations/deploy.md
+      - Unattended release on a VPS: operations/unattended-release.md
       - Monitoring: operations/monitoring.md
       - Metrics: operations/metrics.md
       - Tick-feed audit: operations/tick-feed-audit.md

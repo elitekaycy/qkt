@@ -76,6 +76,7 @@ internal object WhenThenCompiler {
                 ruleFingerprint = sha256("$cond\n$mergedAction"),
                 consumesSequenceCompletion = readsSequenceCompletion(cond),
                 edgeStateKey = "$ruleAlias#$ruleIndex",
+                positionGate = PositionGate.of(cond, ruleAlias),
             )
         }
 

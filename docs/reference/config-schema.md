@@ -154,8 +154,8 @@ insights:
 book_risk:
   capital: "100000"
   limits:
-    max_gross_exposure: "300000"
-    max_net_exposure: "150000"
+    max_gross_exposure: "3.0"      # x capital: 300,000 on this book
+    max_net_exposure: "1.5"        # x capital
     max_symbol_concentration: "0.35"
   de_risk:
     ladder:
@@ -252,8 +252,8 @@ risk:
 book_risk:
   capital: "100000"
   limits:
-    max_gross_exposure: "300000"
-    max_net_exposure: "150000"
+    max_gross_exposure: "3.0"      # x capital: 300,000 on this book
+    max_net_exposure: "1.5"        # x capital
     max_symbol_concentration: "0.35"
   allocation:
     method: ERC
@@ -533,9 +533,9 @@ Book-risk controls apply to portfolio/book evaluation and portfolio daemon flows
 > not bounded by these limits — `BookRiskController` is built by the portfolio deployer alone. The
 > daemon warns at start when the block is present, and total notional is otherwise unbounded for a
 > standalone strategy. See parity catalog row A23.
-| `book_risk.limits.max_gross_exposure` | decimal | unset | Gross exposure cap in account currency. |
-| `book_risk.limits.max_net_exposure` | decimal | unset | Net exposure cap in account currency. |
-| `book_risk.limits.max_symbol_concentration` | decimal | unset | Fractional single-symbol concentration cap. |
+| `book_risk.limits.max_gross_exposure` | decimal | unset | Gross exposure cap as a **multiple of `capital`** (`3.0` = 3x). Not an amount of money: values above 100 are refused at load. |
+| `book_risk.limits.max_net_exposure` | decimal | unset | Net exposure cap as a multiple of `capital`. |
+| `book_risk.limits.max_symbol_concentration` | decimal | unset | Single-symbol net exposure cap as a multiple of `capital` (`0.35` = 35%). |
 | `book_risk.de_risk.ladder[].drawdown` | decimal | required per rung | Drawdown threshold as fraction. |
 | `book_risk.de_risk.ladder[].factor` | decimal | required per rung | Exposure scale factor at that drawdown rung. |
 | `book_risk.de_risk.ladder[].cooldown_bars` | int | unset | Bars to hold a rung after recovery. |
