@@ -19,7 +19,6 @@ import com.qkt.execution.ExitReason
 import com.qkt.execution.OrderRequest
 import com.qkt.marketdata.MarketPriceProvider
 import java.math.BigDecimal
-import kotlin.math.abs
 import org.slf4j.LoggerFactory
 
 /**
@@ -121,6 +120,7 @@ class MT5Broker(
     private val placementPrep = MT5PlacementPreparation(profile, client, priceTracker, mt5Symbol, symbolMeta)
     private val venueReads = MT5BrokerVenueReads(profile, client, mt5Symbol, positionBook, symbolMeta)
     private val engineCloses = MT5EngineCloseMarkers(profile, clock)
+    private val positionModify = MT5PositionModify(profile, client, priceTracker, mt5Symbol, state)
     private val partialEntries = MT5PartialEntries(state, bus, clock)
     private val pendingFills = MT5PendingFills(profile, bus, clock, mt5Symbol, state, partialEntries)
     private val pendingDisappearance =
@@ -149,7 +149,7 @@ class MT5Broker(
             onPositionIncreased = partialEntries::onPositionIncreased,
             closedTicketMeta = ::lookupClosedTicketMeta,
             onPositionClosed = ::removeClosedTicketMeta,
-            isExpectedProtectionChange = ::isExpectedProtectionChange,
+            isExpectedProtectionChange = positionModify::isExpectedProtectionChange,
             engineCloseState = engineCloses::engineCloseState,
             venueCostsForClose = ::bookVenueCloseCosts,
             priceProvider = priceTracker,
@@ -1628,122 +1628,6 @@ class MT5Broker(
         }
     }
 
-    override fun modifyPosition(
-        ticket: String,
-        sl: BigDecimal?,
-        tp: BigDecimal?,
-    ): SubmitAck {
-        val t = ticket.toLongOrNull() ?: return positionModifyAck(ticket, false, "modifyPosition: bad ticket $ticket")
-        positionModifyPreflightRejection(ticket, t, sl, tp)?.let { return it }
-        // Register before the venue request: the position poller can observe the
-        // accepted protection change before the synchronous response is returned.
-        expectedProtectionByTicket[t] = MT5PositionProtection(sl, tp)
-        val response =
-            runCatching { client.modifyPosition(t, sl, tp) }
-                .getOrElse { ex ->
-                    expectedProtectionByTicket.remove(t)
-                    return positionModifyAck(ticket, false, ex.message)
-                }
-        return handlePositionModifyResult(ticket, t, sl, tp, response)
-    }
-
-    override fun modifyPositionAsync(
-        ticket: String,
-        sl: BigDecimal?,
-        tp: BigDecimal?,
-        onResult: (SubmitAck) -> Unit,
-    ) {
-        val t = ticket.toLongOrNull()
-        if (t == null) {
-            onResult(positionModifyAck(ticket, false, "modifyPosition: bad ticket $ticket"))
-            return
-        }
-        positionModifyPreflightRejection(ticket, t, sl, tp)?.let {
-            onResult(it)
-            return
-        }
-        // The poller runs independently of this callback, so publish the expected
-        // protection before sending the request to avoid a false out-of-band event.
-        expectedProtectionByTicket[t] = MT5PositionProtection(sl, tp)
-        runCatching {
-            client.modifyPositionAsync(t, sl, tp) { response ->
-                onResult(handlePositionModifyResult(ticket, t, sl, tp, response))
-            }
-        }.onFailure { error ->
-            expectedProtectionByTicket.remove(t)
-            onResult(positionModifyAck(ticket, false, error.message))
-        }
-    }
-
-    private fun positionModifyPreflightRejection(
-        ticket: String,
-        t: Long,
-        sl: BigDecimal?,
-        tp: BigDecimal?,
-    ): SubmitAck? {
-        val qktSymbol = positionBook.symbol(t)
-        if (qktSymbol != null) {
-            val brokerSymbol = mt5Symbol.toBroker(qktSymbol.substringAfter(':'))
-            val info = symbolMeta[brokerSymbol]
-            val current = priceTracker?.lastPrice(qktSymbol)
-            if (info != null && current != null && info.tradeFreezeLevel > 0) {
-                val minDistance = info.point.multiply(BigDecimal(info.tradeFreezeLevel))
-                val blocked =
-                    listOfNotNull(sl, tp).firstOrNull { level ->
-                        (level - current).abs() < minDistance
-                    }
-                if (blocked != null) {
-                    return positionModifyAck(
-                        ticket,
-                        accepted = false,
-                        reason =
-                            "modify inside tradeFreezeLevel for $qktSymbol: " +
-                                "level=$blocked current=$current minDistance=$minDistance",
-                    )
-                }
-            }
-        }
-        return null
-    }
-
-    private fun handlePositionModifyResult(
-        ticket: String,
-        t: Long,
-        sl: BigDecimal?,
-        tp: BigDecimal?,
-        response: MT5OrderResponse,
-    ): SubmitAck {
-        val ok = isOrderSuccessful(response.result.retcode)
-        if (!ok) {
-            expectedProtectionByTicket.remove(t)
-            log.warn(
-                "MT5Broker {} modifyPosition({}) rejected: {}",
-                profile.name,
-                ticket,
-                response.errorMessage ?: response.result.retcode,
-            )
-        }
-        if (ok) {
-            positionBook.updateMeta(t) { meta ->
-                val current = meta.protection
-                meta.copy(
-                    protection =
-                        MT5PositionProtection(
-                            stopLoss = sl ?: current?.stopLoss,
-                            takeProfit = tp ?: current?.takeProfit,
-                        ),
-                )
-            }
-        }
-        return positionModifyAck(ticket, ok, if (ok) null else response.errorMessage)
-    }
-
-    private fun positionModifyAck(
-        ticket: String,
-        accepted: Boolean,
-        reason: String? = null,
-    ): SubmitAck = SubmitAck(clientOrderId = ticket, brokerOrderId = ticket, accepted = accepted, rejectReason = reason)
-
     private fun protectionFor(request: OrderRequest): MT5PositionProtection? =
         runCatching { translator.translate(request) }
             .getOrNull()
@@ -1757,6 +1641,19 @@ class MT5Broker(
         } else {
             MT5PositionProtection(request.sl, request.tp)
         }
+
+    override fun modifyPosition(
+        ticket: String,
+        sl: BigDecimal?,
+        tp: BigDecimal?,
+    ): SubmitAck = positionModify.modifyPosition(ticket, sl, tp)
+
+    override fun modifyPositionAsync(
+        ticket: String,
+        sl: BigDecimal?,
+        tp: BigDecimal?,
+        onResult: (SubmitAck) -> Unit,
+    ) = positionModify.modifyPositionAsync(ticket, sl, tp, onResult)
 
     override fun modify(
         orderId: String,
@@ -1815,22 +1712,6 @@ class MT5Broker(
         earlyPositionByTicket.remove(ticket)
         positionBook.forget(ticket)
         expectedProtectionByTicket.remove(ticket)
-    }
-
-    private fun isExpectedProtectionChange(event: BrokerEvent.PositionProtectionChanged): Boolean {
-        val ticket = event.ticket.toLongOrNull() ?: return false
-        val expected = expectedProtectionByTicket[ticket] ?: return false
-        val stopChanged = event.oldStopLoss.compareTo(event.newStopLoss) != 0
-        val takeProfitChanged = event.oldTakeProfit.compareTo(event.newTakeProfit) != 0
-        // Venue-scale comparison: the gateway reports SL/TP quantized to the symbol's
-        // digits, while the engine registered its full-precision request (#1063).
-        val stopMatches =
-            !stopChanged || ProtectionExpectation.matchesVenue(expected.stopLoss, event.newStopLoss)
-        val takeProfitMatches =
-            !takeProfitChanged || ProtectionExpectation.matchesVenue(expected.takeProfit, event.newTakeProfit)
-        if (!stopMatches || !takeProfitMatches) return false
-        expectedProtectionByTicket.remove(ticket, expected)
-        return true
     }
 
     /**
