@@ -1,0 +1,22 @@
+STRATEGY attest_moving_average_family VERSION 1
+
+SYMBOLS
+    fast = EXNESS:EURUSD EVERY 1m WARMUP 30 BARS,
+    slow = EXNESS:EURUSD EVERY 1h WARMUP 30 BARS
+
+LET f_wma = wma(fast.close, 8),
+    f_dema = dema(fast.close, 8),
+    f_tema = tema(fast.close, 8),
+    f_hma = hma(fast.close, 9),
+    s_sma = sma(slow.close, 10),
+    s_ema = ema(slow.close, 10),
+    s_hma = hma(slow.close, 9)
+
+RULES
+    -- Rules fire on a false-to-true edge; logging on each up-turn and down-turn of the fastest
+    -- stream yields a vector at every reversal.
+    WHEN f_tema IS NOT NULL AND f_hma IS NOT NULL AND s_hma IS NOT NULL AND s_sma IS NOT NULL AND fast.close > lag(fast.close, 1)
+    THEN LOG "attest vector turn=up case=moving-average-family wma={v0} dema={v1} tema={v2} hma={v3} sma={v4} ema={v5} slow_hma={v6}" v0=f_wma v1=f_dema v2=f_tema v3=f_hma v4=s_sma v5=s_ema v6=s_hma
+
+    WHEN f_tema IS NOT NULL AND f_hma IS NOT NULL AND s_hma IS NOT NULL AND s_sma IS NOT NULL AND fast.close <= lag(fast.close, 1)
+    THEN LOG "attest vector turn=down case=moving-average-family wma={v0} dema={v1} tema={v2} hma={v3} sma={v4} ema={v5} slow_hma={v6}" v0=f_wma v1=f_dema v2=f_tema v3=f_hma v4=s_sma v5=s_ema v6=s_hma

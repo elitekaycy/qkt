@@ -1,0 +1,33 @@
+id: session-and-pivots
+title: Session ranges, pivots, seasonal ranges, gaps and the clock accessors
+why: These indicators depend on where the session and the day begin, which comes from the broker's
+  server time zone and a deep one-minute history. A wrong offset or a warmup that stops short of
+  the previous session shifts every level by a session while each value still looks plausible.
+status: ready
+symbols:
+- EURUSD
+timeframes:
+- 1m
+warmup_bars:
+  1m: 5000
+proves:
+- SESSION_RANGE_HIGH
+- SESSION_RANGE_LOW
+- PIVOT_P
+- PIVOT_R1
+- PIVOT_S1
+- SEASONAL_RANGE
+- SEASONAL_RANGE_STDEV
+- SESSION_MOMENTUM
+- ANCHORED_RETURN
+- REOPEN_GAP
+- REOPEN_GAP_ORIGIN
+- GAP_FILL_FRACTION
+- FAILED_BREAK_HIGH
+- FAILED_BREAK_LOW
+- IB_DEFENDED_HIGH
+- IB_DEFENDED_LOW
+- behaviour:clock-accessors
+- behaviour:deep-warmup
+assertions:
+- trace-parity

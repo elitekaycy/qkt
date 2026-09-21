@@ -1,0 +1,8 @@
+PORTFOLIO atto_book VERSION 1 CAPITAL 1000
+SYMBOLS
+    btc = EXNESS:BTCUSD EVERY 1m
+IMPORT 'atto_book_a.qkt' AS a
+IMPORT 'atto_book_b.qkt' AS b
+RULES
+    RUN a WEIGHT 0.5
+    RUN b WEIGHT 0.5
