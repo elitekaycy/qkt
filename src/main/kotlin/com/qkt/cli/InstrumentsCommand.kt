@@ -20,8 +20,11 @@ class InstrumentsCommand(
     fun run(): Int =
         when (args.firstNonOption()) {
             "verify" -> verify()
+            "pull" -> InstrumentsPull.run(args)
             else -> {
-                System.err.println("qkt: usage: qkt instruments verify [--broker NAME] [--json]")
+                System.err.println(
+                    "qkt: usage: qkt instruments verify|pull (pull: --symbols A:X,B:Y [--as-prefix P] [--out FILE])",
+                )
                 ExitCodes.ARG_ERROR
             }
         }

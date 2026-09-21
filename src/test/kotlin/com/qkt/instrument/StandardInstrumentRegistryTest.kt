@@ -43,7 +43,7 @@ class StandardInstrumentRegistryTest {
     fun `requiring an unknown symbol names the command that generates its entry`() {
         assertThatThrownBy { StandardInstrumentRegistry.require("EXNESS:BTCUSD") }
             .hasMessageContaining("no InstrumentMeta for EXNESS:BTCUSD")
-            .hasMessageContaining("scripts/instruments-from-gateway.py")
-            .hasMessageContaining("--prefix EXNESS")
+            .hasMessageContaining("qkt instruments pull")
+            .hasMessageContaining("--as-prefix EXNESS")
     }
 }

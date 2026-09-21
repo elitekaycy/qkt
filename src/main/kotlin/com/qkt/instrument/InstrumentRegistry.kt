@@ -28,8 +28,8 @@ interface InstrumentRegistry {
                 "no InstrumentMeta for $qktSymbol; risk and notional sizing need its contract size. " +
                     "For a backtest, add it to data/instruments.yaml (or pass --instruments <file>); " +
                     "generate the entry from your broker with " +
-                    "scripts/instruments-from-gateway.py --gateway <url> --symbols <venue symbol> " +
-                    "--prefix ${qktSymbol.substringBefore(':')} --out instruments.yaml. " +
+                    "qkt instruments pull --symbols <ACCOUNT>:${qktSymbol.substringAfter(':')} " +
+                    "--as-prefix ${qktSymbol.substringBefore(':')} --out data/instruments.yaml. " +
                     "Live, the broker must expose it via /symbol_info",
             )
 }
