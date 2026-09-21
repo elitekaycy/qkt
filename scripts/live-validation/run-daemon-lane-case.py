@@ -177,8 +177,26 @@ if case.get("expect_startup_refusal"):
     print(f"{result['status']} {case['id']} refusal-check problems={len(problems)}" + ("" if not problems else " :: " + " | ".join(problems)[:400]))
     sys.exit(1 if problems else 0)
 
+failures = []
+
+
+def force_close_leftovers():
+    """Last resort, by ticket: a case must never leave a position behind, whatever its name was."""
+    closed = []
+    for position in gateway(f"/get_positions?magic={a.magic}").get("data") or []:
+        body = json.dumps({"position": {"ticket": position["ticket"]}}).encode()
+        req = urllib.request.Request(a.gateway_url + "/close_position", data=body, method="POST",
+                                     headers={"Authorization": f"Bearer {key}", "content-type": "application/json"})
+        try:
+            urllib.request.urlopen(req, timeout=30).read()
+            closed.append(position["ticket"])
+        except Exception as error:  # noqa: BLE001 - reported, never swallowed
+            failures.append(f"could not force-close ticket {position['ticket']}: {error}")
+    return closed
+
+
 daemon = start_daemon()
-results, problems = [], []
+results, problems = [], failures
 try:
     for index, step in enumerate(steps, 1):
         if step.get("wait_for") in ("position", "flat"):
@@ -205,6 +223,11 @@ try:
                 daemon.kill()  # SIGKILL: no shutdown hook, no flush, no flatten
                 daemon.wait(timeout=30)
             held_while_down = owned()
+            if step.get("while_down") == "close_at_venue":
+                # The venue acts while nobody is watching: the engine must learn of it from deal history.
+                closed = force_close_leftovers()
+                if not closed or owned():
+                    verdict.append(f"could not close the position at the venue while down (closed {closed})")
             daemon = start_daemon()
             code, output = 0, f"positions held at the venue while the daemon was down: {held_while_down}"
         else:
@@ -230,6 +253,10 @@ try:
             held = owned()
             if held != int(step["expect_positions"]):
                 verdict.append(f"venue holds {held} position(s) under the magic, expected {step['expect_positions']}")
+        if "expect_pending" in step:
+            resting = pending()
+            if resting != int(step["expect_pending"]):
+                verdict.append(f"venue holds {resting} pending order(s) under the magic, expected {step['expect_pending']}")
         if step.get("expect_log") and not re.search(step["expect_log"], open(f"{a.out}/daemon.log").read()):
             verdict.append(f"daemon log does not match /{step['expect_log']}/")
         results.append({"step": index, "run": line, "exit": code, "output": output[-600:], "problems": verdict,
@@ -248,21 +275,6 @@ finally:
     except subprocess.TimeoutExpired:
         daemon.kill()
 
-
-
-def force_close_leftovers():
-    """Last resort, by ticket: a case must never leave a position behind, whatever its name was."""
-    closed = []
-    for position in gateway(f"/get_positions?magic={a.magic}").get("data") or []:
-        body = json.dumps({"position": {"ticket": position["ticket"]}}).encode()
-        req = urllib.request.Request(a.gateway_url + "/close_position", data=body, method="POST",
-                                     headers={"Authorization": f"Bearer {key}", "content-type": "application/json"})
-        try:
-            urllib.request.urlopen(req, timeout=30).read()
-            closed.append(position["ticket"])
-        except Exception as error:  # noqa: BLE001 - reported, never swallowed
-            problems.append(f"could not force-close ticket {position['ticket']}: {error}")
-    return closed
 
 
 if owned():
