@@ -79,6 +79,17 @@ for attempt in $(seq 1 "$attempts"); do
     sleep 60
 done
 
+# Every other ready case in the catalog - orders, risk, book, engine, daemon, stress - all at once,
+# each under its own magic. The shadow lane already ran inside the wave. Any failed case fails the
+# attestation: promotion to main means the whole catalog passed on this exact build.
+stage_write catalog
+catalog="$wave_root/attest-$short-catalog"; rm -rf "$catalog"
+bash scripts/live-validation/run-attestation-catalog.sh --out "$catalog" --gateway-url "$gateway_url" \
+    --expected-login "$expected_login" --expected-server "$expected_server" --magic-base "$((magic_base + 100))" \
+    --lanes orders,risk,book,engine,daemon,stress --arm I_UNDERSTAND_DEMO_ORDER_0.01 --cli "$cli" \
+    > "$catalog.log" 2>&1 || fail "attestation catalog failed: $(grep -m3 FAILED "$catalog.log" | tr '\n' ' ' | cut -c1-300)"
+log "catalog $(tail -n 1 "$catalog.log" | cut -c1-160)"
+
 stage_write insights
 ins="$wave_root/attest-$short-insights"; rm -rf "$ins"
 export QKT_BROKER_EXNESS_EXPECTED_ACCOUNT_LOGIN="$expected_login" QKT_BROKER_EXNESS_EXPECTED_ACCOUNT_SERVER="$expected_server"
