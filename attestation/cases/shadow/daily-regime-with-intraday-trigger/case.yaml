@@ -1,0 +1,25 @@
+id: daily-regime-with-intraday-trigger
+title: A daily regime filter beside a 1m trigger, FX and crypto
+why: A daily bar's boundary is the broker's day, not UTC midnight, and crypto has no weekend while FX
+  does. Fifteen daily bars of FX history span three weekends; a warmup that counts days returns eleven
+  bars and the regime filter is unready or wrong.
+status: ready
+symbols:
+- EURUSD
+- BTCUSD
+timeframes:
+- 1m
+- 1d
+warmup_bars:
+  1m: 5
+  1d: 15
+proves:
+- SMA
+- STDDEV
+- ZSCORE
+- RSI
+- behaviour:daily-bar-boundary
+- behaviour:weekend-gap-warmup
+assertions:
+- trace-parity
+- warmup-bars-equal-requested

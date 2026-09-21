@@ -1,0 +1,20 @@
+id: mid-bar-start-higher-timeframe
+title: A daemon started part-way through a 1h, 4h and 1d bar
+why: 'Warmup seeds closed bars only, so the bar in progress at start is built from ticks seen after the
+  start: right close, wrong open, high and low, for one bar on every deploy and restart (#1196). Range
+  indicators carry it for their whole lookback.'
+status: planned
+symbols:
+- XAUUSD
+timeframes:
+- 1h
+- 4h
+- 1d
+warmup_bars:
+  1h: 24
+  4h: 12
+  1d: 10
+proves:
+- behaviour:forming-bar-seed
+assertions:
+- bar-values-equal-aligned-start
