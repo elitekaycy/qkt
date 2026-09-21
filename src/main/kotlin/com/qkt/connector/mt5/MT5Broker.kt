@@ -29,90 +29,6 @@ import kotlin.math.abs
 import org.slf4j.LoggerFactory
 
 /**
- * Resolves an MT5-native stop whose trigger is already through the current executable
- * market into the same active order shape used by the engine-held trigger path.
- */
-internal fun convertAlreadyCrossedStop(
-    request: OrderRequest,
-    currentExecPrice: BigDecimal,
-): OrderRequest =
-    when (request) {
-        is OrderRequest.Stop ->
-            if (stopIsCrossed(request.side, request.stopPrice, currentExecPrice)) {
-                OrderRequest.Market(
-                    id = request.id,
-                    symbol = request.symbol,
-                    side = request.side,
-                    quantity = request.quantity,
-                    timeInForce = request.timeInForce,
-                    timestamp = request.timestamp,
-                    strategyId = request.strategyId,
-                    legIntent = request.legIntent,
-                )
-            } else {
-                request
-            }
-        is OrderRequest.StopLimit ->
-            if (stopIsCrossed(request.side, request.stopPrice, currentExecPrice)) {
-                OrderRequest.Limit(
-                    id = request.id,
-                    symbol = request.symbol,
-                    side = request.side,
-                    quantity = request.quantity,
-                    limitPrice = request.limitPrice,
-                    timeInForce = request.timeInForce,
-                    timestamp = request.timestamp,
-                    strategyId = request.strategyId,
-                    expiresAt = request.expiresAt,
-                    legIntent = request.legIntent,
-                )
-            } else {
-                request
-            }
-        is OrderRequest.Bracket -> {
-            val entry = request.entry as? OrderRequest.Stop
-            if (entry != null && stopIsCrossed(entry.side, entry.stopPrice, currentExecPrice)) {
-                request.copy(
-                    entry =
-                        OrderRequest.Market(
-                            id = entry.id,
-                            symbol = entry.symbol,
-                            side = entry.side,
-                            quantity = entry.quantity,
-                            timeInForce = entry.timeInForce,
-                            timestamp = entry.timestamp,
-                            strategyId = entry.strategyId,
-                            legIntent = entry.legIntent,
-                        ),
-                )
-            } else {
-                request
-            }
-        }
-        else -> request
-    }
-
-private fun stopIsCrossed(
-    side: Side,
-    stopPrice: BigDecimal,
-    currentExecPrice: BigDecimal,
-): Boolean = if (side == Side.BUY) stopPrice <= currentExecPrice else stopPrice >= currentExecPrice
-
-private data class NativeStopTrigger(
-    val side: Side,
-    val stopPrice: BigDecimal,
-)
-
-private fun nativeStopTrigger(request: OrderRequest): NativeStopTrigger? =
-    when (request) {
-        is OrderRequest.Stop -> NativeStopTrigger(request.side, request.stopPrice)
-        is OrderRequest.StopLimit -> NativeStopTrigger(request.side, request.stopPrice)
-        is OrderRequest.Bracket ->
-            (request.entry as? OrderRequest.Stop)?.let { NativeStopTrigger(it.side, it.stopPrice) }
-        else -> null
-    }
-
-/**
  * Routes orders to a MetaTrader 5 venue via an `mt5-gateway` HTTP service.
  *
  * Per-instance: each [com.qkt.app.LiveSession] instantiates its own broker so daemon
@@ -199,6 +115,7 @@ class MT5Broker(
     private val mt5Symbol = MT5Symbol(profile.symbolPolicy)
     private val translator = MT5OrderTranslator(profile, mt5Symbol, priceTracker)
     private val gatewayDown = AtomicBoolean(false)
+    private val crossedStops = MT5CrossedStopConversion(profile, priceTracker)
 
     /** Ledger legs on this broker's tickets; installed by the session, read by the poller thread. */
     @Volatile
@@ -500,7 +417,7 @@ class MT5Broker(
         if (request is OrderRequest.Market && request.closesTicket != null) {
             return submitCloseByTicket(request, request.closesTicket)
         }
-        val dispatchRequest = convertAlreadyCrossedStopAtMarket(request)
+        val dispatchRequest = crossedStops.convertAlreadyCrossedStopAtMarket(request)
         val translation =
             runCatching { translator.translate(dispatchRequest) }.getOrElse { ex ->
                 return reject(dispatchRequest, ex.message ?: "translation failed")
@@ -510,25 +427,6 @@ class MT5Broker(
             is MT5Translation.Single -> submitSingle(dispatchRequest, translation.request)
             is MT5Translation.Composite -> submitComposite(dispatchRequest, translation)
         }
-    }
-
-    private fun convertAlreadyCrossedStopAtMarket(request: OrderRequest): OrderRequest {
-        val trigger = nativeStopTrigger(request) ?: return request
-        val currentExecPrice = priceTracker?.executionPrice(request.symbol, trigger.side) ?: return request
-        val converted = convertAlreadyCrossedStop(request, currentExecPrice)
-        if (converted == request) return request
-        val target = if (request is OrderRequest.StopLimit) "LIMIT" else "MARKET"
-        log.info(
-            "MT5Broker {} converted already-crossed stop order_id={} side={} stop_price={} " +
-                "market_price={} converted_to={}",
-            profile.name,
-            request.id,
-            trigger.side,
-            trigger.stopPrice.toPlainString(),
-            currentExecPrice.toPlainString(),
-            target,
-        )
-        return converted
     }
 
     /**
