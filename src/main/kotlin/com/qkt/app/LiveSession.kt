@@ -651,226 +651,13 @@ class LiveSession(
         }
     }
 
-    /**
-     * Every order-lifecycle event lands in the append-only journal, in bus order.
-     *
-     * An [com.qkt.events.OrderEvent] only exists because risk approved the request, so the
-     * submit path writes ONE `"submit"` line with `"approved":"true"` instead of separate
-     * `risk-approved` + `submit` lines — one durable write per submit, not two (#648).
-     */
-    private fun wireJournal(
-        bus: EventBus,
-        journal: com.qkt.observe.OrderJournal,
-    ) {
-        fun orderFields(request: com.qkt.execution.OrderRequest): Map<String, String?> =
-            mapOf(
-                "id" to request.id,
-                "type" to request::class.simpleName,
-                "symbol" to request.symbol,
-                "side" to request.side.name,
-                "qty" to request.quantity.toPlainString(),
-            )
-
-        bus.subscribe<com.qkt.events.OrderEvent> { e ->
-            journal.append(
-                e.request.strategyId,
-                "submit",
-                orderFields(e.request) + ("approved" to "true"),
-            )
-        }
-        bus.subscribe<BrokerEvent.OrderAccepted> { e ->
-            journal.append(e.strategyId, "accepted", mapOf("id" to e.clientOrderId, "broker" to e.brokerOrderId))
-        }
-        bus.subscribe<BrokerEvent.OrderRejected> { e ->
-            journal.append(
-                e.strategyId,
-                "rejected",
-                mapOf("id" to e.clientOrderId, "reason" to e.reason),
-            )
-        }
-        bus.subscribe<BrokerEvent.OrderFilled> { e ->
-            journal.append(
-                e.strategyId,
-                "filled",
-                mapOf(
-                    "id" to e.clientOrderId,
-                    "broker" to e.brokerOrderId,
-                    "symbol" to e.symbol,
-                    "side" to e.side.name,
-                    "price" to e.price.toPlainString(),
-                    "qty" to e.quantity.toPlainString(),
-                    "venueCosts" to e.venueCosts.toPlainString(),
-                ),
-            )
-        }
-        bus.subscribe<BrokerEvent.OrderCancelled> { e ->
-            journal.append(
-                e.strategyId,
-                "cancelled",
-                mapOf("id" to e.clientOrderId, "reason" to e.reason),
-            )
-        }
-        bus.subscribe<BrokerEvent.PositionProtectionChanged> { e ->
-            journal.append(
-                e.strategyId.ifBlank { strategies.firstOrNull()?.first.orEmpty() },
-                "position-protection-changed",
-                mapOf(
-                    "broker" to e.broker,
-                    "symbol" to e.symbol,
-                    "ticket" to e.ticket,
-                    "oldSl" to e.oldStopLoss.toPlainString(),
-                    "newSl" to e.newStopLoss.toPlainString(),
-                    "oldTp" to e.oldTakeProfit.toPlainString(),
-                    "newTp" to e.newTakeProfit.toPlainString(),
-                ),
-            )
-        }
-        bus.subscribe<com.qkt.events.RiskRejectedEvent> { e ->
-            journal.append(
-                e.request.strategyId,
-                "risk-rejected",
-                mapOf("id" to e.request.id, "symbol" to e.request.symbol, "reason" to e.reason),
-            )
-        }
-        bus.subscribe<com.qkt.events.SignalSuppressedEvent> { e ->
-            journal.append(
-                e.strategyId,
-                "signal-suppressed",
-                mapOf("symbol" to e.signal.targetSymbol(), "reason" to e.reason),
-            )
-        }
-        bus.subscribe<RiskEvent.Halted> { e ->
-            journal.append(e.strategyId.orEmpty(), "halted", mapOf("reason" to e.reason))
-        }
-        bus.subscribe<RiskEvent.Resumed> { e ->
-            journal.append(e.strategyId.orEmpty(), "resumed", emptyMap<String, String?>())
-        }
-    }
-
-    /**
-     * Subscribe notifier handlers for the bus-driven event kinds in [notifyEvents]. Must be
-     * called after [bus] is constructed and before any publish — handlers registered after a
-     * publish miss that event silently.
-     *
-     * Each handler is wrapped in [runCatching] so a notifier fault never propagates back into
-     * the bus dispatch loop, whose semantics prevent later handlers from running if any handler
-     * throws.
-     *
-     * [BrokerEvent.OrderRejected] omits symbol/side/quantity; [orderManager] recovers them
-     * via [OrderManager.orderDetailsFor]. Not wired here: [NotificationEvent.DaemonStarted]
-     * is a daemon-level concern fired by [com.qkt.cli.DaemonCommand];
-     * [NotificationEvent.StrategyError] has no bus source yet.
-     */
-
-    private fun wireNotifierSubscriptions(
-        bus: EventBus,
-        orderManager: OrderManager,
-    ) {
-        if (NotifyEventKind.HALTED in notifyEvents) {
-            bus.subscribe<RiskEvent.Halted> { ev ->
-                runCatching { notifier.notify(EventTranslator.fromRiskHalted(ev)) }
-                    .onFailure { t -> recordNotificationFailure(ev.strategyId, "Halted", t) }
-            }
-        }
-        if (NotifyEventKind.RESUMED in notifyEvents) {
-            bus.subscribe<RiskEvent.Resumed> { ev ->
-                runCatching { notifier.notify(EventTranslator.fromRiskResumed(ev)) }
-                    .onFailure { t -> recordNotificationFailure(ev.strategyId, "Resumed", t) }
-            }
-        }
-        if (NotifyEventKind.POSITION_RECONCILED in notifyEvents) {
-            // Best-effort strategyId: this session typically hosts one strategy. If multiple
-            // are present, use the first; the alert still names the symbol so the operator
-            // can disambiguate from logs.
-            val ownerStrategyId = strategies.firstOrNull()?.first.orEmpty()
-            bus.subscribe<BrokerEvent.PositionReconciled> { ev ->
-                runCatching {
-                    notifier.notify(
-                        EventTranslator.fromPositionReconciled(event = ev, strategyId = ownerStrategyId),
-                    )
-                }.onFailure { t -> recordNotificationFailure(ownerStrategyId, "PositionReconciled", t) }
-            }
-        }
-        if (NotifyEventKind.STRATEGY_ERROR in notifyEvents) {
-            val ownerForError = strategies.firstOrNull()?.first.orEmpty()
-            bus.subscribe<BrokerEvent.GatewayUnreachable> { ev ->
-                runCatching {
-                    notifier.notify(
-                        NotificationEvent.StrategyError(
-                            strategyId = ownerForError,
-                            message =
-                                "MT5 gateway '${ev.broker}' unreachable for ${ev.consecutiveFailures} " +
-                                    "consecutive polls — position/pending reconciliation suspended",
-                            timestamp = ev.timestamp,
-                        ),
-                    )
-                }.onFailure { t -> recordNotificationFailure(ownerForError, "GatewayUnreachable", t) }
-            }
-            bus.subscribe<BrokerEvent.AccountEquityStale> { ev ->
-                runCatching {
-                    val age = ev.staleForMs?.let { "last good sample is ${it}ms old" } ?: "no successful sample"
-                    notifier.notify(
-                        NotificationEvent.StrategyError(
-                            strategyId = ownerForError,
-                            message =
-                                "Broker equity '${ev.broker}' unavailable for ${ev.consecutiveFailures} " +
-                                    "consecutive polls ($age) — drawdown basis is stale",
-                            timestamp = ev.timestamp,
-                        ),
-                    )
-                }.onFailure { t -> recordNotificationFailure(ownerForError, "AccountEquityStale", t) }
-            }
-            bus.subscribe<BrokerEvent.PositionProtectionChanged> { ev ->
-                runCatching {
-                    notifier.notify(
-                        NotificationEvent.StrategyError(
-                            strategyId = ev.strategyId.ifBlank { ownerForError },
-                            message =
-                                "CRITICAL venue protection changed: ${ev.broker} ${ev.symbol} ticket=${ev.ticket} " +
-                                    "SL ${ev.oldStopLoss}->${ev.newStopLoss}, " +
-                                    "TP ${ev.oldTakeProfit}->${ev.newTakeProfit}",
-                            timestamp = ev.timestamp,
-                        ),
-                    )
-                }.onFailure { t -> recordNotificationFailure(ownerForError, "PositionProtectionChanged", t) }
-            }
-        }
-        if (NotifyEventKind.ORDER_REJECTED in notifyEvents) {
-            bus.subscribe<BrokerEvent.OrderRejected> { ev ->
-                runCatching {
-                    val details = orderManager.orderDetailsFor(ev.clientOrderId)
-                    if (details != null) {
-                        notifier.notify(
-                            EventTranslator.fromBrokerRejected(
-                                event = ev,
-                                symbol = details.symbol,
-                                side = details.side,
-                                quantity = details.quantity,
-                            ),
-                        )
-                    } else {
-                        log.warn("[notify] OrderRejected for unknown order {} — skipping alert", ev.clientOrderId)
-                    }
-                }.onFailure { t -> recordNotificationFailure(ev.strategyId, "OrderRejected", t) }
-            }
-        }
-    }
+    private val sessionNotifier = SessionNotifier(notifier, notifyEvents, journal, strategies, clock)
 
     private fun recordNotificationFailure(
         strategyId: String?,
         handler: String,
         t: Throwable,
-    ) {
-        log.warn("[notify] handler failed for {}", handler, t)
-        journal?.append(
-            strategyId.orEmpty(),
-            "notification_failed",
-            mapOf(
-                "handler" to handler,
-                "reason" to (t.message ?: t::class.java.simpleName),
-            ),
-        )
-    }
+    ) = sessionNotifier.recordFailure(strategyId, handler, t)
 
     /**
      * Strategy ids this session announces to insights. Ids beginning with `__` are
@@ -1445,15 +1232,7 @@ class LiveSession(
                 instruments = instruments,
                 brokerZoneIdFor = brokerZoneIdFor,
                 onProtectionFailure = { strategyId, message ->
-                    runCatching {
-                        notifier.notify(
-                            NotificationEvent.StrategyError(
-                                strategyId = strategyId,
-                                message = message,
-                                timestamp = clock.now(),
-                            ),
-                        )
-                    }.onFailure { t -> recordNotificationFailure(strategyId, "ProtectionFailure", t) }
+                    sessionNotifier.strategyError(strategyId, "ProtectionFailure") { message }
                 },
                 latencyEnabled = latencyEnabled,
             )
@@ -1495,13 +1274,14 @@ class LiveSession(
                 e.reason,
             )
         }
-        journal?.let { wireJournal(bus, it) }
+        journal?.let { OrderJournalWiring(strategies).wire(bus, it) }
         auditJournal?.let { audit -> bus.subscribeAllFirst { e -> audit.append(e) } }
 
         // Register notifier handlers before the warmup phase so a warmup-time risk halt
         // (rare but possible) reaches Telegram. Bus dispatch is single-threaded and synchronous,
         // so any publish that happens after this line will see the new subscribers.
-        wireNotifierSubscriptions(bus, pipeline.orderManager)
+        NotifierSubscriptions(notifier, notifyEvents, strategies, sessionNotifier::recordFailure)
+            .wire(bus, pipeline.orderManager)
         // Every fill names its venue ticket. Reconciliation needs this attribution even when
         // insights are disabled, or every live ticket is misclassified as an orphan.
         bus.subscribe<BrokerEvent.OrderFilled> { e ->
@@ -1741,33 +1521,6 @@ class LiveSession(
             }
         }
 
-        fun notifyUnexpectedFeedEnd(reason: String) {
-            for ((strategyId, _) in strategies) {
-                val notification =
-                    when {
-                        NotifyEventKind.STRATEGY_STOPPED in notifyEvents ->
-                            NotificationEvent.StrategyStopped(
-                                strategyId = strategyId,
-                                flatten = false,
-                                timestamp = clock.now(),
-                                unexpected = true,
-                                reason = reason,
-                            )
-                        NotifyEventKind.STRATEGY_ERROR in notifyEvents ->
-                            NotificationEvent.StrategyError(
-                                strategyId = strategyId,
-                                message = reason,
-                                timestamp = clock.now(),
-                            )
-                        else -> null
-                    }
-                if (notification != null) {
-                    runCatching { notifier.notify(notification) }
-                        .onFailure { t -> recordNotificationFailure(strategyId, "UnexpectedFeedEnd", t) }
-                }
-            }
-        }
-
         var alertedPersistenceEpisode = 0L
 
         fun checkPersistenceHealth() {
@@ -1890,7 +1643,7 @@ class LiveSession(
                                 // queued before stopping, so no tick is dropped.
                                 if (!stopping.get()) {
                                     while (true) processTick(tickQueue.poll() ?: break)
-                                    if (msg.unexpected) notifyUnexpectedFeedEnd(msg.reason)
+                                    if (msg.unexpected) sessionNotifier.unexpectedFeedEnd(msg.reason)
                                     running.set(false)
                                 }
                             }
@@ -2086,18 +1839,7 @@ class LiveSession(
 
         // Fire StrategyStarted per strategy this session hosts. Lifecycle events bypass the
         // bus because no other engine component consumes them.
-        if (NotifyEventKind.STRATEGY_STARTED in notifyEvents) {
-            for ((strategyId, _) in strategies) {
-                runCatching {
-                    notifier.notify(
-                        NotificationEvent.StrategyStarted(
-                            strategyId = strategyId,
-                            timestamp = clock.now(),
-                        ),
-                    )
-                }.onFailure { t -> recordNotificationFailure(strategyId, "StrategyStarted", t) }
-            }
-        }
+        sessionNotifier.strategiesStarted()
         if (insightsSink != null &&
             com.qkt.observe.insights.InsightsEventFamily.LIFECYCLE in insightsEvents
         ) {
@@ -2243,19 +1985,7 @@ class LiveSession(
                 for ((strategyId, _) in strategies) {
                     runCatching { pipelineCandleHub.unregister(strategyId) }
                 }
-                if (NotifyEventKind.STRATEGY_STOPPED in notifyEvents) {
-                    for ((strategyId, _) in strategies) {
-                        runCatching {
-                            notifier.notify(
-                                NotificationEvent.StrategyStopped(
-                                    strategyId = strategyId,
-                                    flatten = false,
-                                    timestamp = clock.now(),
-                                ),
-                            )
-                        }.onFailure { t -> recordNotificationFailure(strategyId, "StrategyStopped", t) }
-                    }
-                }
+                sessionNotifier.strategiesStopped()
                 if (insightsSink != null &&
                     com.qkt.observe.insights.InsightsEventFamily.LIFECYCLE in insightsEvents
                 ) {
