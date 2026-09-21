@@ -120,7 +120,7 @@ internal class PerStreamWarmupCoordinator(
         symbol: String,
         window: TimeWindow,
     ): FormingBar? =
-        runCatching { FormingBar.load(source, symbol, window, now.toEpochMilli()) }
+        runCatching { history.forming(symbol, window, now.toEpochMilli()) }
             .onFailure { log.warn("warmup: no forming bar for {} {}: {}", symbol, window.canonicalSpec(), it.message) }
             .getOrNull()
 
