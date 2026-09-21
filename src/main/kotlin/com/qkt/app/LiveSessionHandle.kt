@@ -150,12 +150,11 @@ interface LiveSessionHandle {
      */
     fun streamBrokers(): Map<String, String> = emptyMap()
 
-    /**
-     * Current P&L scalars for [strategyId] — equity, balance, realized, unrealized. Defaults
-     * to zero for handles that aren't full live sessions (tests, replay); the live daemon
-     * session overrides it to read from its strategy P&L tracker so `/status` shows real P&L.
-     */
+    /** P&L scalars as one consistent engine-thread snapshot, so this BLOCKS until that thread answers. */
     fun pnlSnapshot(strategyId: String): SessionPnl = SessionPnl.ZERO
+
+    /** Lifetime realized P&L for [strategyId] without waiting on the engine thread (#1160). */
+    fun realizedPnl(strategyId: String): BigDecimal = BigDecimal.ZERO
 
     /** Current valued legs for account-wide live book-risk aggregation. */
     fun bookLegs(strategyId: String): List<com.qkt.risk.book.Leg> = emptyList()
