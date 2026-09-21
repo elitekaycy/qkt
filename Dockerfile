@@ -1,6 +1,17 @@
 # syntax=docker/dockerfile:1
 FROM eclipse-temurin:21-jdk AS build
 WORKDIR /src
+# The Gradle distribution first, in a layer of its own that only changes with the wrapper: the
+# builder's layer cache then serves it, and the build does not depend on a download that returned
+# 5xx twice on 2026-09-21 and stopped a release. Six attempts over about three minutes when it must.
+COPY gradlew ./
+COPY gradle/wrapper gradle/wrapper
+RUN set -eux; \
+    for attempt in 1 2 3 4 5 6; do \
+        ./gradlew --no-daemon --version && break; \
+        if [ "$attempt" = "6" ]; then exit 1; fi; \
+        sleep "$((attempt * 10))"; \
+    done
 COPY . .
 # .dockerignore excludes .git; published builds inject their immutable workflow SHA.
 ARG QKT_GIT_SHA=unknown
