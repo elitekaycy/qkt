@@ -178,6 +178,7 @@ class MT5Broker(
             prefix = "mt5-${profile.magic}-${strategyName ?: "session"}-${clock.now()}",
         ),
 ) : Broker,
+    com.qkt.broker.VenueOrderCancel by MT5VenueOrderCancel(client, profile.name),
     MarginLevelProvider,
     com.qkt.broker.InstrumentProvider,
     com.qkt.broker.ServerTimeZoneProvider,
@@ -267,11 +268,7 @@ class MT5Broker(
     private val symbolMeta: MutableMap<String, MT5SymbolInfo> = ConcurrentHashMap()
     private val placementPrep = MT5PlacementPreparation(profile, client, priceTracker, mt5Symbol, symbolMeta)
 
-    /** orderId → MT5 ticket. Populated on pending placement; used by [cancel]. */
-    private val pendingTickets: MutableMap<String, Long> = ConcurrentHashMap()
-
-    /** Reverse: MT5 ticket → metadata for emitting OrderFilled when the pending fills. */
-    private val pendingByTicket: MutableMap<Long, MT5TicketMeta> = ConcurrentHashMap()
+    private val pendingBook = MT5PendingBook()
 
     /**
      * Positions observed before the asynchronous placement response registered their pending
@@ -1161,8 +1158,7 @@ class MT5Broker(
         openedAtMs: Long,
     ): MT5Position? =
         synchronized(pendingTransitionLock) {
-            pendingTickets[state.meta.orderId] = state.residualTicket
-            pendingByTicket[state.residualTicket] = state.meta
+            pendingBook.register(state.residualTicket, state.meta)
             partialEntryByPositionTicket[state.positionTicket] = state
             partialPositionByResidualTicket[state.residualTicket] = state.positionTicket
             positionBook.track(state.positionTicket, state.meta, state.symbol, openedAtMs)
@@ -1235,7 +1231,7 @@ class MT5Broker(
             val pendingCandidates =
                 pendings.filter {
                     it.ticket > 0L &&
-                        !pendingByTicket.containsKey(it.ticket) &&
+                        !pendingBook.isPending(it.ticket) &&
                         it.symbol == brokerSymbol &&
                         matchesComment(it.comment, wireComment)
                 }
@@ -1575,7 +1571,7 @@ class MT5Broker(
                         return reject(request, "OCO leg ${wire.comment}: ${result.reason}")
                 }
             }
-        // Place legs sequentially. Each leg's ticket is registered in [pendingByTicket]
+        // Place legs sequentially. Each leg's ticket is registered in [pendingBook]
         // so [MT5PositionPoller] can correlate the eventual fill back to a strategy. If
         // any leg rejects, every previously-placed leg is cancelled on the venue and
         // the entire composite is rejected — never leave a one-legged OCO running as a
@@ -1595,8 +1591,7 @@ class MT5Broker(
                                 "MT5Broker ${profile.name} OCO rollback cancel(${leg.ticket}) failed: ${e.message}",
                             )
                         }
-                    pendingTickets.remove(leg.legOrderId)
-                    pendingByTicket.remove(leg.ticket)
+                    pendingBook.forgetLeg(leg.legOrderId, leg.ticket)
                 }
                 return reject(request, reason)
             }
@@ -1773,18 +1768,20 @@ class MT5Broker(
         // OrderManager's cancel-on-fill then unwinds the still-pending sibling.
         for (a in actions) {
             if (a is OcoRecoveryAction.EmitFill) {
-                pendingByTicket[a.position.ticket] =
+                pendingBook.attribute(
+                    a.position.ticket,
                     MT5TicketMeta(
                         a.order.id,
                         a.order.request.strategyId,
                         protectionFor(a.order.request),
-                    )
+                    ),
+                )
                 if (a.position.ticket.toString() in bookedTickets) {
                     // The ledger booked this execution before the restart; republishing it
                     // would book it again (#1096). The ticket stays tracked for its close.
                     positionBook.track(
                         a.position.ticket,
-                        pendingByTicket.getValue(a.position.ticket),
+                        pendingBook.requireMeta(a.position.ticket),
                         a.order.request.symbol,
                         a.position.openTime,
                     )
@@ -1918,8 +1915,8 @@ class MT5Broker(
     }
 
     override fun cancel(orderId: String) {
-        val ticket = pendingTickets[orderId] ?: return
-        val meta = pendingByTicket[ticket] ?: return
+        val ticket = pendingBook.ticketOf(orderId) ?: return
+        val meta = pendingBook.meta(ticket) ?: return
         // Non-blocking: OCO sibling-cancels and the halt kill-switch sweep call this from the
         // engine thread, and serialized round-trips stall it exactly when it must stop fast.
         // Keep both ticket maps until the venue confirms success. A rejected or ambiguous cancel
@@ -1946,11 +1943,10 @@ class MT5Broker(
             }
             val cancelled =
                 synchronized(pendingTransitionLock) {
-                    if (pendingByTicket[ticket] != meta || pendingTickets[orderId] != ticket) {
+                    if (!pendingBook.stillIs(orderId, ticket, meta)) {
                         false
                     } else {
-                        pendingByTicket.remove(ticket)
-                        pendingTickets.remove(orderId)
+                        pendingBook.forgetLeg(orderId, ticket)
                         removePartialEntryByResidualTicket(ticket)
                         true
                     }
@@ -2103,7 +2099,7 @@ class MT5Broker(
         changes: OrderModification,
     ): SubmitAck {
         val ticket =
-            pendingTickets[orderId] ?: return SubmitAck(
+            pendingBook.ticketOf(orderId) ?: return SubmitAck(
                 clientOrderId = orderId,
                 brokerOrderId = null,
                 accepted = false,
@@ -2129,7 +2125,7 @@ class MT5Broker(
                 clientOrderId = orderId,
                 brokerOrderId = ticket.toString(),
                 changes = changes,
-                strategyId = pendingByTicket[ticket]?.strategyId ?: "",
+                strategyId = pendingBook.meta(ticket)?.strategyId ?: "",
                 timestamp = clock.now(),
             ),
         )
@@ -2149,7 +2145,7 @@ class MT5Broker(
      *   2. iterate `siblings[orderId]` and cancel any OCO siblings
      *   3. update strategy-side position state
      *
-     * If the ticket isn't in [pendingByTicket], the position is external (manual user
+     * If the ticket isn't in [pendingBook], the position is external (manual user
      * trade or another qkt instance with the same magic) — ignore it; reconciliation
      * is a separate concern. A ticket in [partialEntryByPositionTicket] remains working until its
      * cumulative position volume reaches the requested quantity or the residual disappears.
@@ -2158,7 +2154,7 @@ class MT5Broker(
         if (reconcilePartialEntry(position)) return true
         val meta =
             synchronized(pendingTransitionLock) {
-                pendingByTicket.remove(position.ticket)
+                pendingBook.takeMeta(position.ticket)
                     ?: run {
                         if (!positionBook.isAttributed(position.ticket)) {
                             earlyPositionByTicket[position.ticket] = position
@@ -2212,8 +2208,7 @@ class MT5Broker(
             if (venueCumulative >= state.requestedQuantity) {
                 partialEntryByPositionTicket.remove(position.ticket)
                 partialPositionByResidualTicket.remove(state.residualTicket, position.ticket)
-                pendingByTicket.remove(state.residualTicket, state.meta)
-                pendingTickets.remove(state.meta.orderId, state.residualTicket)
+                pendingBook.forgetIfStill(state.meta.orderId, state.residualTicket, state.meta)
                 recentlyFilledTickets[state.residualTicket] = clock.now()
                 event =
                     BrokerEvent.OrderFilled(
@@ -2268,8 +2263,7 @@ class MT5Broker(
     ) {
         val earlyPosition =
             synchronized(pendingTransitionLock) {
-                pendingTickets[meta.orderId] = ticket
-                pendingByTicket[ticket] = meta
+                pendingBook.register(ticket, meta)
                 earlyPositionByTicket.remove(ticket)
             }
         if (earlyPosition != null) {
@@ -2281,7 +2275,7 @@ class MT5Broker(
         position: MT5Position,
         meta: MT5TicketMeta,
     ) {
-        pendingTickets.remove(meta.orderId)
+        pendingBook.forgetOrderId(meta.orderId)
         // Mark the ticket as recently filled so the pending-order poller doesn't
         // mistake the subsequent "disappeared from /orders" for an external cancel.
         recentlyFilledTickets[position.ticket] = clock.now()
@@ -2387,14 +2381,13 @@ class MT5Broker(
      *      placement, another qkt instance with the same magic) — ignore.
      */
     private fun onPendingDisappeared(ticket: Long): Boolean {
-        val meta = pendingByTicket[ticket] ?: return true
+        val meta = pendingBook.meta(ticket) ?: return true
 
         val ttlMs = profile.pollIntervalMs * DISAMBIGUATION_TTL_MULTIPLIER
         val recentlyFilledAt = recentlyFilledTickets[ticket]
         val now = clock.now()
         if (recentlyFilledAt != null && now - recentlyFilledAt < ttlMs) {
-            pendingByTicket.remove(ticket)
-            pendingTickets.entries.removeIf { it.value == ticket }
+            pendingBook.forgetTicket(ticket)
             recentlyFilledTickets.remove(ticket)
             return true
         }
@@ -2439,8 +2432,7 @@ class MT5Broker(
             return true
         }
 
-        pendingByTicket.remove(ticket)
-        pendingTickets.entries.removeIf { it.value == ticket }
+        pendingBook.forgetTicket(ticket)
         // Evict stale entries opportunistically — cheap and prevents unbounded growth
         // if positions close before their pending-disappearance signal arrives.
         recentlyFilledTickets.entries.removeIf { now - it.value >= ttlMs }
@@ -2464,8 +2456,7 @@ class MT5Broker(
             synchronized(pendingTransitionLock) {
                 val positionTicket = partialPositionByResidualTicket.remove(ticket) ?: return
                 val current = partialEntryByPositionTicket.remove(positionTicket) ?: return
-                pendingByTicket.remove(ticket, current.meta)
-                pendingTickets.remove(current.meta.orderId, ticket)
+                pendingBook.forgetIfStill(current.meta.orderId, ticket, current.meta)
                 current
             }
         bus.publish(

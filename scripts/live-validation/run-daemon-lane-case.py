@@ -23,7 +23,9 @@ The case's `steps` are executed in order. Each step is a mapping:
     while_down:     with `daemon: restart`, "close_at_venue" closes the magic's positions by ticket
                     while no engine is running
 
-Case-level keys: `seed_risk_state` pre-writes the strategy's risk-state file (pacer fields are keyed by
+Case-level keys: `gateway_proxy: lost_limit_response` places the first LIMIT order but tells the daemon 502;
+`gateway_proxy: lagging_history` makes the daemon's bar history lag for a few seconds
+(lagging-history-proxy.py); `seed_risk_state` pre-writes the strategy's risk-state file (pacer fields are keyed by
 the strategy for you; "now" is the current epoch ms); `copies: N` loads the strategy N times under numbered names and `copies_agree`
 (`log` regex, `min_lines`) requires every copy to have logged the same lines and dropped no tick;
 `start_offset: {period_seconds, min, max}` delays the daemon start until the wall clock is
@@ -114,6 +116,17 @@ if case.get("seed_risk_state"):
         seeded[field] = {strategy: (int(time.time() * 1000) if value == "now" else value)} if field.startswith("pacer") else value
     os.makedirs(f"{a.out}/state/state/{strategy}")
     json.dump(seeded, open(f"{a.out}/state/state/{strategy}/risk-state.json", "w"))
+# `gateway_proxy: lagging_history` puts a loopback proxy between the DAEMON and the gateway (the runner
+# itself keeps talking to the real one): bar history lags for a few seconds, as a busy terminal's does.
+daemon_gateway_url, proxy = a.gateway_url, None
+if case.get("gateway_proxy") in ("lagging_history", "lost_limit_response"):
+    port = 20000 + int(a.magic) % 20000
+    proxy = subprocess.Popen([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "lagging-history-proxy.py"),
+                              "--listen", str(port), "--gateway", a.gateway_url] +
+                             (["--lose-limit-response"] if case["gateway_proxy"] == "lost_limit_response" else []),
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    daemon_gateway_url = f"http://127.0.0.1:{port}"
+    time.sleep(1)
 config = f"{a.out}/qkt.config.yaml"
 open(config, "w").write(f"""source: local
 data_root: "{a.out}/data"
@@ -128,7 +141,7 @@ brokers:
     extends: exness
     calendars:
       "BTC*": crypto
-    gateway_url: {a.gateway_url}
+    gateway_url: {daemon_gateway_url}
     magic: {a.magic}
     server_time_zone: Etc/UTC
     expected_account_login: {a.expected_login}
@@ -393,6 +406,8 @@ finally:
         daemon.wait(timeout=60)
     except subprocess.TimeoutExpired:
         daemon.kill()
+    if proxy:
+        proxy.terminate()
 
 
 

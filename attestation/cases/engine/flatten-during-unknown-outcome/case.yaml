@@ -1,0 +1,32 @@
+id: flatten-during-unknown-outcome
+title: stop --flatten while an order's outcome is still unknown leaves nothing at the venue
+why: 'The response to a limit placement is lost (a proxy places the order and answers 502). The venue has
+  the order; the engine has no ticket for it yet. A flatten issued at that moment used to cancel only
+  the orders the engine knew, and the limit stayed resting under a strategy that had just been
+  stopped (#1234). The flatten is verified against the venue: it must end with no position and no
+  resting order under the magic.'
+status: ready
+symbols:
+- BTCUSD
+timeframes:
+- 1m
+proves:
+- behaviour:flatten
+- behaviour:unknown-outcome
+gateway_proxy: lost_limit_response
+steps:
+- run: qkt deploy {file} --state-dir {state}
+  note: deployed by command so that stop removes it
+- run: qkt status {strategy} --state-dir {state}
+  wait_log: 'outcome UNKNOWN'
+  wait_seconds: 150
+  note: the limit is at the venue and the daemon has just been told nothing
+- run: qkt stop {strategy} --flatten --state-dir {state}
+  expect_positions: 0
+  expect_pending: 0
+  settle_seconds: 5
+  note: flattened at once - the venue must hold neither the position nor the limit
+assertions:
+- flat-by-magic
+- no-pending-by-magic
+budget_seconds: 300
