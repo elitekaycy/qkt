@@ -353,41 +353,7 @@ class LiveSession(
             clock,
         )
 
-    /**
-     * The per-strategy daily-summary rows for this session — equity, P&L, positions, and
-     * the [dailyTracker] window totals. The daemon owns one [DailySummaryScheduler] across
-     * every session; its producer calls this once per fire. Reading the rows snapshots and
-     * resets the tracker, so it must be called exactly once per summary.
-     */
-    private fun dailySummaryRows(
-        strategyPnL: StrategyPnL,
-        strategyPositions: StrategyPositionTracker,
-    ): List<StrategySummary> =
-        strategies.map { (strategyId, _) ->
-            val positions = strategyPositions.positionsFor(strategyId)
-            val summary =
-                if (positions.isEmpty() ||
-                    positions.values.all { it.quantity.signum() == 0 }
-                ) {
-                    "flat"
-                } else {
-                    positions.entries.joinToString(", ") { (sym, p) ->
-                        "${if (p.quantity.signum() > 0) "long" else "short"} ${p.quantity.abs().toPlainString()} $sym"
-                    }
-                }
-            val equity = strategyPnL.equityFor(strategyId)
-            val totals = dailyTracker.snapshot(strategyId, equity)
-            StrategySummary(
-                strategyId = strategyId,
-                equity = equity,
-                equityDeltaPct = totals.equityDeltaPct,
-                realizedToday = strategyPnL.realizedFor(strategyId),
-                unrealized = strategyPnL.unrealizedTotalFor(strategyId),
-                tradesToday = totals.tradesToday,
-                haltsToday = totals.haltsToday,
-                positionsSummary = summary,
-            )
-        }
+    private val summaryRows = DailySummaryRows(strategies, dailyTracker)
 
     fun start(): LiveSessionHandle {
         val ids = SequentialIdGenerator.forSession(strategies.map { it.first })
@@ -1382,7 +1348,7 @@ class LiveSession(
                 engineSnapshot { strategyPositions.positionsFor(strategyId).values.toList() }
 
             override fun dailySummaryRows(): List<StrategySummary> =
-                engineSnapshot { this@LiveSession.dailySummaryRows(strategyPnL, strategyPositions) }
+                engineSnapshot { summaryRows.rows(strategyPnL, strategyPositions) }
 
             override fun pendingStackLayerInfos(): List<OrderManager.PendingStackLayerInfo> =
                 engineSnapshot { pipeline.orderManager.pendingStackLayerInfos() }
