@@ -73,6 +73,15 @@ internal class PerStreamWarmupCoordinator(
                     }
                 if (candles.isEmpty()) continue
                 hub.seed(key, candles)
+                formingBar(key.qktSymbol, bars.window)?.let { forming ->
+                    hub.seedForming(key, forming.partial)
+                    log.info(
+                        "warmup: seeded forming bar strategy={} alias={} minutes={}",
+                        strategyId,
+                        alias,
+                        forming.minutes.size,
+                    )
+                }
                 log.info(
                     "warmup: seeded hub for strategy={} alias={} symbol={} bars={}",
                     strategyId,
@@ -105,6 +114,15 @@ internal class PerStreamWarmupCoordinator(
             }
         }
     }
+
+    /** Best effort: a source that cannot serve the elapsed minutes leaves the bar to the live ticks, as before. */
+    private fun formingBar(
+        symbol: String,
+        window: TimeWindow,
+    ): FormingBar? =
+        runCatching { FormingBar.load(source, symbol, window, now.toEpochMilli()) }
+            .onFailure { log.warn("warmup: no forming bar for {} {}: {}", symbol, window.canonicalSpec(), it.message) }
+            .getOrNull()
 
     private fun stream(key: HubKey): WarmupStream = WarmupStream(key.qktSymbol, TimeWindow.parse(key.timeframe))
 }
