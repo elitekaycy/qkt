@@ -68,6 +68,16 @@ pending() { gateway_get "/orders?magic=$magic" | jq -er --argjson magic "$magic"
 strategy="$(sed -nE 's/^STRATEGY[[:space:]]+([A-Za-z0-9_]+).*/\1/p' "$case_dir/strategy.qkt" | head -n 1)"
 [ -n "$strategy" ] || fail "strategy.qkt declares no STRATEGY name"
 mkdir -p "$out/strategies" "$out/state" "$out/evidence"
+# Whatever goes wrong below, the case ends with a verdict on disk and on stdout - never silence.
+on_unexpected_exit() {
+    local code=$?
+    [ -f "$out/result.json" ] && return
+    jq -n --arg id "$id" --arg lane "$lane" --argjson code "$code" --arg line "${BASH_LINENO[0]:-?}" \
+        '{schema:"qkt-attestation-order-case-v1", id:$id, lane:$lane, status:"failed",
+          problems:["runner exited unexpectedly with code \($code) near line \($line)"]}' > "$out/result.json"
+    printf 'failed %s runner exited unexpectedly with code %s near line %s\n' "$id" "$code" "${BASH_LINENO[0]:-?}"
+}
+trap on_unexpected_exit EXIT
 # The daemon names a deployment after its file, so the file carries the strategy's own name.
 cp "$case_dir/strategy.qkt" "$out/strategies/$strategy.qkt"
 gateway_get /account > "$out/evidence/account-initial.json"
@@ -150,7 +160,7 @@ cleanup() {
     "$cli" daemon stop --state-dir "$out/state" >/dev/null 2>&1 || true
     wait "$daemon_pid" 2>/dev/null || true
 }
-trap cleanup EXIT
+trap 'cleanup; on_unexpected_exit' EXIT
 for _ in $(seq 1 120); do
     grep -q 'daemon ready' "$out/daemon.log" && break
     kill -0 "$daemon_pid" 2>/dev/null || fail "daemon exited during startup: $(tail -n 1 "$out/daemon.log")"
@@ -165,7 +175,7 @@ sleep "$budget"
 open_at_budget="$(owned)"
 "$cli" stop "$strategy" --flatten --state-dir "$out/state" --json > "$out/evidence/stop.json" 2>&1 || true
 for _ in $(seq 1 30); do [ "$(owned)" = 0 ] && [ "$(pending)" = 0 ] && break; sleep 1; done
-trap - EXIT
+trap on_unexpected_exit EXIT
 "$cli" daemon stop --state-dir "$out/state" >/dev/null 2>&1 || true
 wait "$daemon_pid" 2>/dev/null || true
 
@@ -201,7 +211,7 @@ deal_net="$(jq -r --arg prefix "dsl-$strategy" '
     [.[] | select(.positionTicket as $t | $owned | index($t)) |
         ((.profit // 0) + (.commission // 0) + (.swap // 0) + (.fee // 0))] | add // 0
 ' "$out/evidence/history.json" | awk '{printf "%.2f", $1}')"
-engine_realized="$(jq -r '.realized // 0' "$out/evidence/status-final.json" 2>/dev/null | awk '{printf "%.2f", $1}')"
+engine_realized="$({ jq -r '.realized // 0' "$out/evidence/status-final.json" 2>/dev/null || echo 0; } | awk '{printf "%.2f", $1}')"
 # The venue truncates every closing deal's profit to whole cents while the engine keeps exact
 # values, so the two may differ by up to one cent per closing deal - and by no more than that.
 closing_deals="$(jq -r --arg prefix "dsl-$strategy" '
