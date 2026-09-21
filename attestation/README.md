@@ -49,9 +49,9 @@ attestation/
 - Every capability in the catalog is proven by a `ready` case or listed in `gaps.yaml`. CI
   fails on a capability that is neither, and on a gap that a ready case already covers.
 - Every case enters on the same bar close, so the one gateway takes a burst production never sees.
-  A case that fails beside the others gets ONE attempt with the account to itself
-  (`run-attestation-catalog.sh`): it passes only if that attempt passes, its first failure is kept
-  in `result.json` (`retriedAlone`, `firstAttempt`), and a case that fails twice fails the run.
+  Cases that fail beside the others get ONE more attempt, together, in a second and much quieter
+  wave (`run-attestation-catalog.sh`): a case passes only if that attempt passes, its first failure
+  is kept in `result.json` (`retried`, `firstAttempt`), and a case that fails twice fails the run.
   The shadow lane - the parity evidence - is never retried.
 - A case that claims to catch a defect is run once against a build that still has the defect. It
   must fail there (`engine/mid-bar-start-higher-timeframe` fails on 0.49.1, passes from 0.51.0).

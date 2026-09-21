@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# A case that fails beside the others gets one attempt alone: it passes only if that attempt
+# A case that fails beside the others gets one more attempt in a quiet second wave: it passes only if that attempt
 # passes, the first failure stays in the result, and a case that fails twice fails the run.
 set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -31,15 +31,15 @@ run() {  # out-dir lanes-present
 }
 
 if run "$tmp/with-broken" > "$tmp/with-broken.txt"; then echo "FAIL a case that fails twice must fail the run"; exit 1; fi
-jq -e '.status == "failed" and .retriedAlone == ["orders-broken", "orders-contended"]
-       and ([.runs[] | select(.name == "orders-broken")][0] | .status == "failed" and .retriedAlone == true)
+jq -e '.status == "failed" and .retried == ["orders-broken", "orders-contended"]
+       and ([.runs[] | select(.name == "orders-broken")][0] | .status == "failed" and .retried == true)
        and ([.runs[] | select(.name == "orders-contended")][0] | .status == "passed" and .firstAttempt == "failed contended stale quote")
-       and ([.runs[] | select(.name == "orders-steady")][0] | .status == "passed" and (has("retriedAlone") | not))' \
+       and ([.runs[] | select(.name == "orders-steady")][0] | .status == "passed" and (has("retried") | not))' \
     "$tmp/with-broken/result.json" > /dev/null || { echo "FAIL verdicts: $(cat "$tmp/with-broken/result.json")"; exit 1; }
-grep -q 'RETRIED ALONE orders-contended: first attempt: failed contended stale quote' "$tmp/with-broken.txt"
+grep -q 'RETRIED orders-contended: first attempt: failed contended stale quote' "$tmp/with-broken.txt"
 echo "ok a case that fails twice fails the run, and the first failure is kept"
 
 rm -rf "$fake/attestation/cases/orders/broken"
 run "$tmp/recovered" > /dev/null
-jq -e '.status == "passed" and .retriedAlone == ["orders-contended"]' "$tmp/recovered/result.json" > /dev/null
-echo "ok a case that passes alone passes the run and is named in retriedAlone"
+jq -e '.status == "passed" and .retried == ["orders-contended"]' "$tmp/recovered/result.json" > /dev/null
+echo "ok a case that passes the second wave passes the run and is named in retried"

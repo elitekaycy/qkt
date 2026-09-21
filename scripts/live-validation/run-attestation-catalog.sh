@@ -85,29 +85,33 @@ done
 
 # Every case enters on the same bar close, so the one gateway takes a burst the engine never sees in
 # production; a case can fail on that contention alone (a stalled quote makes the market-data gate refuse
-# an entry - correctly). A failed case therefore gets ONE more attempt with the account to itself. It
-# passes only if that attempt passes, the first failure stays in the result as `firstAttempt`, and a
-# case that fails twice fails the run. The shadow lane is never retried: it is the parity evidence.
+# an entry - correctly). Failed cases therefore get ONE more attempt, together, in a second and much
+# quieter wave. A case passes only if that attempt passes, the first failure stays in the result as
+# `firstAttempt`, and a case that fails twice fails the run. The shadow lane is never retried: it is
+# the parity evidence.
+declare -A retry_pid first_line
+for i in "${!pids[@]}"; do
+    name="${names[$i]}"
+    [ "${codes[$i]}" -ne 0 ] && [ -n "${retry_case[$name]:-}" ] || continue
+    first_line["$name"]="$(tail -n 1 "$out/logs/$name.log" | cut -c1-300)"
+    runner=(bash "$repo_root/scripts/live-validation/run-order-lane-case.sh")
+    [ "${retry_runner[$name]}" = steps ] && runner=(python3 "$repo_root/scripts/live-validation/run-daemon-lane-case.py")
+    ( "${runner[@]}" --case "${retry_case[$name]}" --out "$out/$name-retry" "${common[@]}" --magic "$magic" --arm "$arm" ) \
+        > "$out/logs/$name-retry.log" 2>&1 &
+    retry_pid["$name"]="$!"; magic=$((magic + 1))
+done
+
 verdicts=()
 for i in "${!pids[@]}"; do
-    name="${names[$i]}"; code="${codes[$i]}"; first=""
-    if [ "$code" -ne 0 ] && [ -n "${retry_case[$name]:-}" ]; then
-        first="$(tail -n 1 "$out/logs/$name.log" | cut -c1-300)"
-        runner=(bash "$repo_root/scripts/live-validation/run-order-lane-case.sh")
-        [ "${retry_runner[$name]}" = steps ] && runner=(python3 "$repo_root/scripts/live-validation/run-daemon-lane-case.py")
-        code=0
-        "${runner[@]}" --case "${retry_case[$name]}" --out "$out/$name-retry" "${common[@]}" --magic "$magic" --arm "$arm" \
-            > "$out/logs/$name-retry.log" 2>&1 || code=$?
-        magic=$((magic + 1))
-        cp "$out/logs/$name-retry.log" "$out/logs/$name.last.log"
-    else
-        cp "$out/logs/$name.log" "$out/logs/$name.last.log"
+    name="${names[$i]}"; code="${codes[$i]}"; last="$out/logs/$name.log"
+    if [ -n "${retry_pid[$name]:-}" ]; then
+        code=0; wait "${retry_pid[$name]}" || code=$?
+        last="$out/logs/$name-retry.log"
     fi
-    verdicts+=("$(jq -n --arg name "$name" --argjson exit "$code" --arg first "$first" \
-        --arg line "$(tail -n 1 "$out/logs/$name.last.log" | cut -c1-300)" \
+    verdicts+=("$(jq -n --arg name "$name" --argjson exit "$code" --arg first "${first_line[$name]:-}" \
+        --arg line "$(tail -n 1 "$last" | cut -c1-300)" \
         '{name:$name, status:(if $exit == 0 then "passed" else "failed" end), summary:$line}
-         + (if $first == "" then {} else {retriedAlone:true, firstAttempt:$first} end)')")
-    rm -f "$out/logs/$name.last.log"
+         + (if $first == "" then {} else {retried:true, firstAttempt:$first} end)')")
 done
 
 capabilities='[]'
@@ -116,9 +120,9 @@ printf '%s\n' "${verdicts[@]}" | jq -s --arg startedAt "$started_at" --arg finis
     --argjson seconds "$(( $(date +%s) - started ))" --arg cli "$("$cli" --version | head -n 1)" --argjson capabilities "$capabilities" '
     {schema:"qkt-attestation-catalog-run-v1", startedAtUtc:$startedAt, finishedAtUtc:$finishedAt, wallClockSeconds:$seconds,
      cli:$cli, runs:., capabilitiesProvenLive:($capabilities|length), capabilities:$capabilities,
-     retriedAlone:[.[]|select(.retriedAlone)|.name],
+     retried:[.[]|select(.retried)|.name],
      status:(if all(.[]; .status == "passed") then "passed" else "failed" end)}' > "$out/result.json"
-jq -r '"\(.status) runs=\(.runs|length) passed=\([.runs[]|select(.status=="passed")]|length) capabilities=\(.capabilitiesProvenLive) retriedAlone=\(.retriedAlone|length) wallClock=\(.wallClockSeconds)s"' "$out/result.json"
-jq -r '.runs[] | select(.retriedAlone) | "  RETRIED ALONE \(.name): first attempt: \(.firstAttempt)"' "$out/result.json"
+jq -r '"\(.status) runs=\(.runs|length) passed=\([.runs[]|select(.status=="passed")]|length) capabilities=\(.capabilitiesProvenLive) retried=\(.retried|length) wallClock=\(.wallClockSeconds)s"' "$out/result.json"
+jq -r '.runs[] | select(.retried) | "  RETRIED \(.name): first attempt: \(.firstAttempt)"' "$out/result.json"
 jq -r '.runs[] | select(.status != "passed") | "  FAILED \(.name): \(.summary)"' "$out/result.json"
 [ "$(jq -r .status "$out/result.json")" = passed ]
