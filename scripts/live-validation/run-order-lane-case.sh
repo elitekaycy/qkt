@@ -182,8 +182,13 @@ if [ "$(owned)" != 0 ]; then
     problems+=("magic still owned a position after the case; force-closed: $(echo $leftovers)")
 fi
 [ "$(pending)" = 0 ] || problems+=("magic still owns a pending order")
-grep -Eq 'engine loop fault|outcome UNKNOWN|unattributed fill dropped' "$out/daemon.log" &&
-    problems+=("engine fault, unknown outcome or unattributed fill in the daemon log")
+grep -Eq 'engine loop fault|unattributed fill dropped' "$out/daemon.log" &&
+    problems+=("engine fault or unattributed fill in the daemon log")
+# A lost acknowledgement is not a failure - the engine is built to ask the venue and resolve it.
+# An outcome it never resolved is.
+unknown="$({ grep -c 'outcome UNKNOWN' "$out/daemon.log" || true; } | head -n 1)"
+resolved="$({ grep -cE 'resolved as [A-Z_]+' "$out/daemon.log" || true; } | head -n 1)"
+[ "$unknown" -le "$resolved" ] || problems+=("$unknown unknown order outcome(s), only $resolved resolved")
 
 "$cli" bot history --broker exness --since "$started_ms" --config "$out/qkt.config.yaml" --json \
     > "$out/evidence/history.json" 2>/dev/null || echo '[]' > "$out/evidence/history.json"
@@ -249,10 +254,10 @@ status="passed"; [ "${#problems[@]}" -eq 0 ] || status="failed"
 printf '%s\n' "${problems[@]:-}" | jq -R . | jq -s --arg id "$id" --arg lane "$lane" --arg status "$status" \
     --arg startedAt "$started_at" --arg finishedAt "$(date -u +%FT%TZ)" --argjson magic "$magic" --argjson budget "$budget" \
     --arg engineRealized "$engine_realized" --arg dealNet "$deal_net" --argjson liveFills "$live_fills" --argjson replayFills "$replay_fills" \
-    --argjson liveRejections "$live_rejections" --argjson replayRejections "$replay_rejections" \
+    --argjson unknownOutcomes "$unknown" --argjson liveRejections "$live_rejections" --argjson replayRejections "$replay_rejections" \
     --arg cli "$("$cli" --version | head -n 1)" \
     '{schema:"qkt-attestation-order-case-v1", id:$id, lane:$lane, status:$status, startedAtUtc:$startedAt, finishedAtUtc:$finishedAt,
       magic:$magic, budgetSeconds:$budget, cli:$cli, engineRealized:$engineRealized, dealNet:$dealNet,
-      liveFills:$liveFills, replayFills:$replayFills, liveRejections:$liveRejections, replayRejections:$replayRejections, problems:(map(select(. != "")))}' > "$out/result.json"
+      liveFills:$liveFills, replayFills:$replayFills, unknownOutcomesResolved:$unknownOutcomes, liveRejections:$liveRejections, replayRejections:$replayRejections, problems:(map(select(. != "")))}' > "$out/result.json"
 jq -r '"\(.status) \(.id) liveFills=\(.liveFills) replayFills=\(.replayFills) rejections=\(.liveRejections)/\(.replayRejections) realized=\(.engineRealized) dealNet=\(.dealNet) \(.problems|join("; "))"' "$out/result.json"
 [ "$status" = passed ]

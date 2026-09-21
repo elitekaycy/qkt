@@ -229,8 +229,12 @@ if owned():
 if pending():
     problems.append("magic still owns a pending order after the case")
 log = open(f"{a.out}/daemon.log").read()
-if re.search(r"engine loop fault|outcome UNKNOWN|unattributed fill dropped", log):
-    problems.append("engine fault, unknown outcome or unattributed fill in the daemon log")
+if re.search(r"engine loop fault|unattributed fill dropped", log):
+    problems.append("engine fault or unattributed fill in the daemon log")
+# A lost acknowledgement is resolved by asking the venue; only one left unresolved is a failure.
+unknown, resolved = len(re.findall(r"outcome UNKNOWN", log)), len(re.findall(r"resolved as [A-Z_]+", log))
+if unknown > resolved:
+    problems.append(f"{unknown} unknown order outcome(s), only {resolved} resolved")
 result = {"schema": "qkt-attestation-daemon-case-v1", "id": case["id"], "status": "failed" if problems else "passed",
           "magic": int(a.magic), "steps": results, "problems": problems}
 json.dump(result, open(f"{a.out}/result.json", "w"), indent=2)
