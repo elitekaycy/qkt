@@ -373,12 +373,16 @@ class LiveSession(
         // pollers start at construction and publish from their own threads — without
         // the sink those events dispatch inline against a half-built pipeline (#388).
         // They queue here and drain, in order, once the engine loop starts.
-        val running = AtomicBoolean(true)
-        val stopping = AtomicBoolean(false)
-        val stopFinishing = AtomicBoolean(false)
-        val clearRuleEdgesAtStop = AtomicBoolean(false)
-        val control = java.util.concurrent.LinkedBlockingQueue<Inbound>()
-        bus.bindSink { ev -> if (running.get()) control.put(Inbound.BusEvent(ev)) }
+        val mailbox = EngineMailbox()
+        val running = mailbox.running
+        val stopping = mailbox.stopping
+        val stopFinishing = mailbox.stopFinishing
+        val clearRuleEdgesAtStop = mailbox.clearRuleEdgesAtStop
+        val control = mailbox.control
+        val tickQueue = mailbox.tickQueue
+        val droppedInboundTicks = mailbox.droppedInboundTicks
+        val terminated = mailbox.terminated
+        bus.bindSink(mailbox::postBusEvent)
         val paperInstruments =
             java.util.concurrent.atomic.AtomicReference<com.qkt.instrument.InstrumentRegistry>(
                 instrumentRegistry ?: com.qkt.instrument.NoopInstrumentRegistry,
@@ -802,33 +806,6 @@ class LiveSession(
         val feed = source.liveTicks(feedSymbols)
         insights.connected({ brokers.built.ifEmpty { listOf(broker) } }, feed)
 
-        val terminated = CountDownLatch(1)
-        // Control events (bus events from pollers, flatten, heartbeat, feed-end) are
-        // low-rate and must NEVER be dropped; ticks are high-rate and individually
-        // disposable — a newer tick supersedes an older one. Splitting them bounds
-        // memory under a stalled consumer: the tick queue sheds its OLDEST on overflow, so one
-        // stalled engine thread cannot OOM the daemon. The loop drains control ahead of ticks, so a
-        // flatten or fill never waits behind a tick backlog. [control] predates the broker (bindSink).
-        val tickQueue = java.util.concurrent.ArrayBlockingQueue<Inbound.FeedTick>(TICK_QUEUE_CAPACITY)
-        val droppedInboundTicks =
-            java.util.concurrent.atomic
-                .AtomicLong(0)
-
-        fun postTick(msg: Inbound.FeedTick) {
-            while (!tickQueue.offer(msg)) {
-                if (tickQueue.poll() != null) {
-                    val dropped = droppedInboundTicks.incrementAndGet()
-                    if (dropped == 1L) {
-                        log.warn(
-                            "inbound tick queue saturated (capacity {}) — shedding oldest ticks; " +
-                                "the engine thread is not keeping up",
-                            TICK_QUEUE_CAPACITY,
-                        )
-                    }
-                }
-            }
-        }
-
         // Flattening mutates the OrderManager and publishes closes, so it must run on the engine
         // thread — the HTTP control path enqueues [Inbound.Flatten] rather than touching engine
         // state from its own worker thread.
@@ -1052,7 +1029,7 @@ class LiveSession(
         thread.isDaemon = true
         // Route every publish from a non-engine thread (broker pollers, WS readers) onto this
         // loop's queue, so subscribers only ever run on the engine thread.
-        bus.bindEngineLoop(thread) { ev -> if (running.get()) control.put(Inbound.BusEvent(ev)) }
+        bus.bindEngineLoop(thread, mailbox::postBusEvent)
         control.put(Inbound.PersistenceHealthCheck)
         thread.start()
 
@@ -1063,7 +1040,7 @@ class LiveSession(
                 try {
                     while (running.get()) {
                         val tick = feed.next() ?: break
-                        postTick(Inbound.FeedTick(tick))
+                        mailbox.postTick(Inbound.FeedTick(tick))
                     }
                 } catch (e: InterruptedException) {
                     Thread.currentThread().interrupt()
@@ -1422,36 +1399,4 @@ class LiveSession(
             }
         }.also { handleRef.set(it) }
     }
-}
-
-/** Messages drained by the live engine loop's single consumer thread (see [LiveSession.start]). */
-private sealed interface Inbound {
-    data class FeedTick(
-        val tick: com.qkt.marketdata.Tick,
-    ) : Inbound
-
-    data class BusEvent(
-        val event: com.qkt.events.Event,
-    ) : Inbound
-
-    data class Heartbeat(
-        val nowMs: Long,
-    ) : Inbound
-
-    class Query(
-        val execute: () -> Unit,
-    ) : Inbound
-
-    object Flatten : Inbound
-
-    object PersistenceHealthCheck : Inbound
-
-    data class FeedEnded(
-        val unexpected: Boolean,
-        val reason: String,
-    ) : Inbound
-
-    data class GracefulStop(
-        val deadlineNanos: Long,
-    ) : Inbound
 }
