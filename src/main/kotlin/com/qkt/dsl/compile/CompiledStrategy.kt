@@ -89,8 +89,11 @@ internal class CompiledStrategy(
         sequenceRuntime.clearRuleEdges()
     }
 
-    override fun onPositionOpened(symbol: String) {
-        rules.forEach { it.onPositionOpened(symbol) }
+    override fun onPositionStateChanged(
+        symbol: String,
+        nowHeld: Boolean,
+    ) {
+        rules.forEach { it.onPositionStateChanged(symbol, nowHeld) }
         sequenceRuntime.persistRuleEdges()
     }
 

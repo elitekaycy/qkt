@@ -22,8 +22,8 @@ class CompiledRule(
     internal val ruleFingerprint: String = "",
     val consumesSequenceCompletion: Boolean = false,
     internal val edgeStateKey: String = ruleAlias,
-    /** The condition requires the rule's own symbol to be flat; see [FlatGate]. */
-    internal val requiresFlat: Boolean = false,
+    /** What the condition requires of the position on the rule's own symbol; see [PositionGate]. */
+    internal val positionGate: PositionGate = PositionGate.NONE,
 ) {
     internal val ruleId: String
         get() = edgeStateKey
@@ -60,13 +60,18 @@ class CompiledRule(
     }
 
     /**
-     * The strategy now holds [symbol]. A rule gated on that symbol being flat is false from this
-     * moment, whether or not a bar closes while the position is open: without this a bracket
-     * stopped out before the next evaluation leaves the condition true at both evaluations, no
-     * edge occurs, and the entry never fires again (#1194).
+     * The strategy's position on [symbol] flipped between flat and held. A rule gated on the state
+     * it just left is false from this moment, whether or not a bar closes before the state flips
+     * back: without this, a bracket stopped out before the next evaluation leaves its entry
+     * condition true at both evaluations, no edge occurs, and the entry never fires again (#1194).
      */
-    internal fun onPositionOpened(symbol: String) {
-        if (!requiresFlat || symbol != ruleSymbol) return
+    internal fun onPositionStateChanged(
+        symbol: String,
+        nowHeld: Boolean,
+    ) {
+        if (symbol != ruleSymbol) return
+        val nowFalse = if (nowHeld) positionGate == PositionGate.FLAT else positionGate == PositionGate.HELD
+        if (!nowFalse) return
         // A simulated fill lands inside this rule's own fire, before the edge is sealed; a venue
         // fill lands after. Either way the edge must end up reset.
         if (pendingCommit) openedDuringCommit = true else clearEdge()
