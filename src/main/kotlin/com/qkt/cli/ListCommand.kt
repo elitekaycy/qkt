@@ -51,7 +51,9 @@ class ListCommand(
             val uptimeMs = o["uptimeMs"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L
             val port = o["port"]?.jsonPrimitive?.contentOrNull ?: "-"
             val trades = o["trades"]?.jsonPrimitive?.contentOrNull ?: "-"
-            val state = o["state"]?.jsonPrimitive?.contentOrNull ?: "?"
+            // A halted strategy is still running - it evaluates and manages exits - but it takes no entries.
+            val halted = o["halted"]?.jsonPrimitive?.contentOrNull == "true"
+            val state = if (halted) "halted" else o["state"]?.jsonPrimitive?.contentOrNull ?: "?"
             val display = if (kind == "child") "  $name" else name
             println("%-19s %-10s %-8s %-8s %-8s %s".format(display, kind, formatUptime(uptimeMs), port, trades, state))
         }
