@@ -27,9 +27,10 @@ internal class RiskStateFile(
                 haltReason = state.haltReason,
                 haltScope = state.haltScope,
                 haltEpochDay = state.haltEpochDay,
+                haltedAtMs = state.haltedAtMs,
                 strategyHalts =
                     state.strategyHalts.map {
-                        StrategyHaltDto(it.strategyId, it.reason, it.scope, it.epochDay)
+                        StrategyHaltDto(it.strategyId, it.reason, it.scope, it.epochDay, it.haltedAtMs)
                     },
                 globalRealizedTotal = state.globalRealizedTotal?.toPlainString(),
                 dailyDrawdownEpochDay = state.dailyDrawdownEpochDay,
@@ -64,9 +65,10 @@ internal class RiskStateFile(
             haltReason = dto.haltReason,
             haltScope = dto.haltScope,
             haltEpochDay = dto.haltEpochDay,
+            haltedAtMs = dto.haltedAtMs,
             strategyHalts =
                 dto.strategyHalts.map {
-                    PersistedStrategyHalt(it.strategyId, it.reason, it.scope, it.epochDay)
+                    PersistedStrategyHalt(it.strategyId, it.reason, it.scope, it.epochDay, it.haltedAtMs)
                 },
             globalRealizedTotal = dto.globalRealizedTotal?.toBigDecimal(),
             dailyDrawdownEpochDay = dto.dailyDrawdownEpochDay,
@@ -99,6 +101,7 @@ private data class RiskStateDto(
     val haltScope: String,
     val haltEpochDay: Long,
     val strategyHalts: List<StrategyHaltDto>,
+    val haltedAtMs: Long = 0L,
     val globalRealizedTotal: String? = null,
     val dailyDrawdownEpochDay: Long? = null,
     val globalDailyDrawdownRef: String? = null,
@@ -119,4 +122,5 @@ private data class StrategyHaltDto(
     val reason: String,
     val scope: String,
     val epochDay: Long,
+    val haltedAtMs: Long = 0L,
 )

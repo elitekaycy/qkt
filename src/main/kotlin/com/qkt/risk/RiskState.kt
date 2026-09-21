@@ -77,16 +77,10 @@ class RiskState(
 
     @Volatile
     private var haltEpochDay: Long = 0L
+    private var haltedAtMs: Long = 0L
 
     @Volatile
     var warmupComplete: Boolean = false
-
-    /** Per-strategy halt record: reason + scope + the UTC day it tripped (for daily auto-resume). */
-    private data class HaltInfo(
-        val reason: String,
-        val scope: HaltScope,
-        val epochDay: Long,
-    )
 
     private val haltedStrategies: MutableMap<String, HaltInfo> = ConcurrentHashMap()
 
@@ -133,14 +127,8 @@ class RiskState(
                 haltReason = reason
                 haltScope = scope
                 haltEpochDay = epochDay()
-                bus.publish(
-                    RiskEvent.Halted(
-                        reason = reason,
-                        strategyId = null,
-                        cancelWorkingOrders = cancelWorkingOrders,
-                        timestamp = clock.now(),
-                    ),
-                )
+                haltedAtMs = clock.now()
+                bus.publish(RiskEvent.Halted(reason, null, cancelWorkingOrders, scope.name, clock.now()))
                 persistNow()
             }
             return
@@ -149,27 +137,26 @@ class RiskState(
         haltReason = reason
         haltScope = scope
         haltEpochDay = epochDay()
-        bus.publish(
-            RiskEvent.Halted(
-                reason = reason,
-                strategyId = null,
-                cancelWorkingOrders = cancelWorkingOrders,
-                timestamp = clock.now(),
-            ),
-        )
+        haltedAtMs = clock.now()
+        bus.publish(RiskEvent.Halted(reason, null, cancelWorkingOrders, scope.name, clock.now()))
         persistNow()
     }
 
     /** Scope of the active global halt, or null when global risk is not halted. */
     fun globalHaltScope(): HaltScope? = haltScope.takeIf { halted }
 
+    /** When the active global halt tripped, epoch ms; null when not halted or not recorded. */
+    fun globalHaltedAtMs(): Long? = haltedAtMs.takeIf { halted && it > 0L }
+
     fun haltStrategy(
         strategyId: String,
         reason: String,
         scope: HaltScope = HaltScope.PERSISTENT,
     ) {
-        if (haltedStrategies.putIfAbsent(strategyId, HaltInfo(reason, scope, epochDay())) != null) return
-        bus.publish(RiskEvent.Halted(reason = reason, strategyId = strategyId, timestamp = clock.now()))
+        if (haltedStrategies.putIfAbsent(strategyId, HaltInfo(reason, scope, epochDay(), clock.now())) != null) return
+        bus.publish(
+            RiskEvent.Halted(reason = reason, strategyId = strategyId, scope = scope.name, timestamp = clock.now()),
+        )
         persistNow()
     }
 
@@ -208,7 +195,7 @@ class RiskState(
     /** Snapshot of every strategy-scoped halt, for status/health surfaces (#1064). */
     fun strategyHalts(): List<com.qkt.persistence.PersistedStrategyHalt> =
         haltedStrategies.map { (id, info) ->
-            com.qkt.persistence.PersistedStrategyHalt(id, info.reason, info.scope.name, info.epochDay)
+            com.qkt.persistence.PersistedStrategyHalt(id, info.reason, info.scope.name, info.epochDay, info.haltedAtMs)
         }
 
     fun resumeStrategy(strategyId: String) {
@@ -255,11 +242,18 @@ class RiskState(
             haltReason = haltReason.takeUnless { haltScope == HaltScope.TRANSIENT },
             haltScope = haltScope.name,
             haltEpochDay = haltEpochDay,
+            haltedAtMs = if (halted) haltedAtMs else 0L,
             strategyHalts =
                 haltedStrategies
                     .filterValues { it.scope != HaltScope.TRANSIENT }
                     .map { (id, info) ->
-                        com.qkt.persistence.PersistedStrategyHalt(id, info.reason, info.scope.name, info.epochDay)
+                        com.qkt.persistence.PersistedStrategyHalt(
+                            id,
+                            info.reason,
+                            info.scope.name,
+                            info.epochDay,
+                            info.haltedAtMs,
+                        )
                     },
             globalRealizedTotal = pnl.realizedTotal(),
             dailyDrawdownEpochDay = dailyDrawdown.epochDay,
@@ -326,11 +320,12 @@ class RiskState(
             haltReason = persisted.haltReason
             haltScope = scope
             haltEpochDay = persisted.haltEpochDay
+            haltedAtMs = persisted.haltedAtMs
         }
         for (h in persisted.strategyHalts) {
             val hScope = runCatching { HaltScope.valueOf(h.scope) }.getOrDefault(HaltScope.PERSISTENT)
             if (hScope != HaltScope.TRANSIENT && (hScope == HaltScope.PERSISTENT || h.epochDay >= today)) {
-                haltedStrategies[h.strategyId] = HaltInfo(h.reason, hScope, h.epochDay)
+                haltedStrategies[h.strategyId] = HaltInfo(h.reason, hScope, h.epochDay, h.haltedAtMs)
             }
         }
     }

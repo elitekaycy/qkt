@@ -47,7 +47,13 @@ interface RiskInsights {
             e.timestamp,
             e.strategyId,
             "risk.halted",
-            mapOf("strategyId" to e.strategyId, "reason" to e.reason),
+            // `persistent` is what a dashboard needs to say "stays halted until someone runs qkt resume".
+            mapOf(
+                "strategyId" to e.strategyId,
+                "reason" to e.reason,
+                "scope" to e.scope,
+                "persistent" to (e.scope == "PERSISTENT"),
+            ),
         )
 
     fun fromRiskResumed(e: RiskEvent.Resumed): InsightsEnvelope =
