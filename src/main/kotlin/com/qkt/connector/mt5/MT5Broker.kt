@@ -178,6 +178,7 @@ class MT5Broker(
             prefix = "mt5-${profile.magic}-${strategyName ?: "session"}-${clock.now()}",
         ),
 ) : Broker,
+    com.qkt.broker.VenueOrderCancel by MT5VenueOrderCancel(client, profile.name),
     MarginLevelProvider,
     com.qkt.broker.InstrumentProvider,
     com.qkt.broker.ServerTimeZoneProvider,
@@ -267,7 +268,6 @@ class MT5Broker(
     private val symbolMeta: MutableMap<String, MT5SymbolInfo> = ConcurrentHashMap()
     private val placementPrep = MT5PlacementPreparation(profile, client, priceTracker, mt5Symbol, symbolMeta)
 
-    /** Orders resting at the venue: cancellable by order id, attributable by ticket when they fill. */
     private val pendingBook = MT5PendingBook()
 
     /**

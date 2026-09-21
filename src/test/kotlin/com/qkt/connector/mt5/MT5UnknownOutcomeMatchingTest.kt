@@ -85,4 +85,14 @@ class MT5UnknownOutcomeMatchingTest {
         assertThat(price).isEqualByComparingTo("103")
         assertThat(MT5UnknownOutcomeMatching.weightedDealPrice(emptyList())).isNull()
     }
+
+    @Test
+    fun `a resting order reported with MT5's numeric type is recognised as the named placement`() {
+        // /orders says "type": 2 for a buy limit; the placement said BUY_LIMIT.
+        assertThat(MT5UnknownOutcomeMatching.sameOrderType("2", "BUY_LIMIT")).isTrue()
+        assertThat(MT5UnknownOutcomeMatching.sameOrderType("5", "SELL_STOP")).isTrue()
+        assertThat(MT5UnknownOutcomeMatching.sameOrderType("BUY_LIMIT", "buy_limit")).isTrue()
+        assertThat(MT5UnknownOutcomeMatching.sameOrderType("3", "BUY_LIMIT")).isFalse()
+        assertThat(MT5UnknownOutcomeMatching.sameOrderType("42", "BUY_LIMIT")).isFalse()
+    }
 }

@@ -11,9 +11,8 @@ import org.slf4j.LoggerFactory
  * Multi-venue router that dispatches each [OrderRequest] to the leaf broker whose
  * [SymbolPattern] matches the order's symbol.
  *
- * Used to combine multiple brokers (e.g. MT5 for FX + Bybit for crypto) behind a single
- * [Broker] interface. Routes are evaluated in order; the first matching pattern wins.
- * An optional [fallback] catches anything no pattern claims. Composite tracks
+ * Combines several brokers (e.g. MT5 for FX + Bybit for crypto) behind one [Broker]. Routes are
+ * evaluated in order, first match wins; an optional [fallback] catches the rest. Composite tracks
  * `orderId → broker` so [cancel] and [modify] reach the right leaf.
  *
  * Capabilities are symbol-dependent — [capabilities] throws, callers must use
@@ -24,7 +23,8 @@ class CompositeBroker(
     private val fallback: Broker? = null,
     bus: EventBus? = null,
 ) : Broker,
-    MarginLevelProvider {
+    MarginLevelProvider,
+    VenueOrderCancel by RoutedVenueOrderCancel(routes.map { it.second } + listOfNotNull(fallback)) {
     private val log = LoggerFactory.getLogger(CompositeBroker::class.java)
 
     override val name: String = "Composite"
