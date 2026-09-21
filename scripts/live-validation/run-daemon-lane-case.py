@@ -21,7 +21,9 @@ The case's `steps` are executed in order. Each step is a mapping:
     while_down:     with `daemon: restart`, "close_at_venue" closes the magic's positions by ticket
                     while no engine is running
 
-Case-level keys: `start_offset: {period_seconds, min, max}` delays the daemon start until the wall clock is
+Case-level keys: `copies: N` loads the strategy N times under numbered names and `copies_agree`
+(`log` regex, `min_lines`) requires every copy to have logged the same lines and dropped no tick;
+`start_offset: {period_seconds, min, max}` delays the daemon start until the wall clock is
 that far into a bar, so a mid-bar start is a fact and not luck; `forming_bar_checks` compares bars the
 strategy logged with the venue's own (see check_forming_bars). `config` is deep-merged into the run config; `expect_startup_refusal` is a regex
 the daemon must print while REFUSING to start (then no step runs and nothing may reach the venue).
@@ -89,6 +91,11 @@ if case.get("autoload"):
     strategy_file = f"{a.out}/strategies/{strategy}.qkt"
 os.makedirs(os.path.dirname(strategy_file), exist_ok=True)
 open(strategy_file, "w").write(source)
+# `copies: N` loads the same strategy N times under numbered names: identical inputs, so identical outputs.
+copy_names = [f"{strategy}_{i:02d}" for i in range(2, int(case.get("copies", 1)) + 1)]
+for name in copy_names:
+    open(os.path.join(os.path.dirname(strategy_file), f"{name}.qkt"), "w").write(
+        re.sub(r"^(STRATEGY\s+)\w+", rf"\g<1>{name}", source, count=1, flags=re.M))
 # A portfolio imports its children by relative path, so they travel beside it.
 for extra in sorted(os.listdir(a.case)):
     if extra.endswith(".qkt") and extra != "strategy.qkt":
@@ -242,6 +249,37 @@ def check_forming_bars(log):
     return found
 
 
+def check_copies(log):
+    """Every copy saw the same ticks, so every copy must have logged the same values and shed nothing."""
+    rule = case.get("copies_agree")
+    if not rule:
+        return []
+    found, lines = [], {}
+    for name in [strategy, *copy_names]:
+        lines[name] = {m for m in re.findall(rf"\[{name}\][^\n]*? - ({rule['log']}[^\n]*)", log)}
+    common = set.intersection(*lines.values())
+    if len(common) < int(rule.get("min_lines", 1)):
+        found.append(f"only {len(common)} line(s) are common to all {len(lines)} copies, expected {rule.get('min_lines', 1)}")
+    # A copy may be one bar ahead or behind at the moment the log is read; more than that is disagreement.
+    for name, own in sorted(lines.items()):
+        if len(own - common) > 2:
+            found.append(f"{name} logged {len(own - common)} line(s) no other copy agrees with, e.g. {sorted(own - common)[0][:120]}")
+    return found
+
+
+def dropped_ticks():
+    shed = []
+    for name in [strategy, *copy_names]:
+        _, raw = qkt(["status", name, "--state-dir", f"{a.out}/state"])
+        try:
+            dropped = json.loads(raw[raw.index("{"):]).get("droppedTicks")
+        except ValueError:
+            dropped = None
+        if dropped != 0:
+            shed.append(f"{name}: droppedTicks is {dropped!r}")
+    return shed
+
+
 offset = case.get("start_offset")
 while offset and not int(offset["min"]) <= time.time() % int(offset["period_seconds"]) <= int(offset["max"]):
     time.sleep(1)
@@ -321,7 +359,11 @@ try:
                         "note": step.get("note", "")})
         problems += [f"step {index} ({line}): {v}" for v in verdict]
         time.sleep(float(step.get("settle_seconds", 1)))
+    if case.get("copies_agree"):
+        problems += dropped_ticks()
 finally:
+    for name in copy_names:
+        qkt(["kill", name, "--flatten", "--state-dir", f"{a.out}/state", "--json"])
     qkt(["kill", strategy, "--flatten", "--state-dir", f"{a.out}/state", "--json"])
     for _ in range(30):
         if not owned() and not pending():
@@ -338,9 +380,21 @@ finally:
 if owned():
     problems.append(f"magic still owned a position after the case; force-closed tickets {force_close_leftovers()}")
 if pending():
-    problems.append("magic still owns a pending order after the case")
+    # Reported as a failure AND removed: a resting order left behind makes the next attestation refuse to start.
+    removed = []
+    for order in gateway(f"/orders?magic={a.magic}").get("orders") or []:
+        if str(order.get("magic", a.magic)) != str(a.magic):
+            continue
+        req = urllib.request.Request(f"{a.gateway_url}/orders/{order['ticket']}", method="DELETE",
+                                     headers={"Authorization": f"Bearer {key}"})
+        try:
+            urllib.request.urlopen(req, timeout=30).read()
+            removed.append(order["ticket"])
+        except Exception as error:  # noqa: BLE001 - reported, never swallowed
+            problems.append(f"could not cancel leftover order {order['ticket']}: {error}")
+    problems.append(f"magic still owned a pending order after the case; cancelled tickets {removed}")
 log = open(f"{a.out}/daemon.log").read()
-problems += check_forming_bars(log)
+problems += check_forming_bars(log) + check_copies(log)
 if re.search(r"engine loop fault|unattributed fill dropped", log):
     problems.append("engine fault or unattributed fill in the daemon log")
 # A lost acknowledgement is resolved by asking the venue; only one left unresolved is a failure.

@@ -1,11 +1,11 @@
 id: fifty-shadow-strategies
 title: Fifty read-only strategies in one daemon
-why: One slow subscriber must not delay the others or drop ticks; the tick queue sheds oldest-first under
-  saturation and that must be visible, not silent.
-status: planned
+why: Fifty subscribers share each symbol's one tick feed. A slow one must not delay the others or drop
+  ticks, and since all fifty are the same strategy on the same ticks, a single differing value is a
+  fan-out defect - something shed, reordered or evaluated against a half-updated bar.
+status: ready
 symbols:
 - EURUSD
-- GBPUSD
 - XAUUSD
 - BTCUSD
 timeframes:
@@ -14,6 +14,25 @@ timeframes:
 proves:
 - behaviour:fan-out
 - behaviour:no-dropped-ticks
+copies: 50
+copies_agree:
+  log: 'atto-fan '
+  min_lines: 6
+steps:
+- run: qkt list --state-dir {state}
+  expect_stdout: 'atto_fan_50'
+  note: all fifty are deployed
+- run: qkt status --deep --state-dir {state}
+  wait_log: '\[atto_fan_50\].* - atto-fan '
+  wait_seconds: 200
+  note: the last copy is evaluating, and the daemon is healthy under fifty subscribers
+- run: qkt status atto_fan_25 --state-dir {state}
+  settle_seconds: 200
+  expect_status:
+    droppedTicks: 0
+  note: a few more bars for every copy to log, then one in the middle is read
 assertions:
 - dropped-ticks-zero
-- trace-parity
+- copies-log-identical-values
+autoload: true
+budget_seconds: 540
