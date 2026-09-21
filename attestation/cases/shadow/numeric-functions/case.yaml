@@ -1,0 +1,30 @@
+id: numeric-functions
+title: Every numeric function and CASE over live prices
+why: Math functions are pure, so they only diverge through rounding mode, scale and the value they are
+  fed; logging them live pins all three against the replay.
+status: ready
+symbols:
+- EURUSD
+- XAUUSD
+timeframes:
+- 1m
+warmup_bars:
+  1m: 5
+proves:
+- ABS
+- SQRT
+- LOG
+- EXP
+- POW
+- FLOOR
+- CEIL
+- ROUND
+- MOD
+- ROUND_TO
+- MIN
+- MAX
+- RANK_OF
+- NORMALIZE
+- SOFTMAX
+assertions:
+- trace-parity

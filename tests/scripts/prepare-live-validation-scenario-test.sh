@@ -688,8 +688,14 @@ grep -F "halt \\((operator kill|operator)\\):" "$repo_root/scripts/live-validati
 grep -F 'stale_log="$evidence/daemon-pre-halt.log"' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F 'command -v flock >/dev/null || fail "flock is required for armed live runs"' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F 'exec {live_lock_fd}> "$live_lock_path"' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
-grep -F 'flock -n "$live_lock_fd"' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
-grep -F 'cp "$live_lock_path" "$evidence/live-lock.txt"' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'flock -n "$lock_mode" "$live_lock_fd"' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+# An exclusive run still writes the lock record itself; a shared run appends and never truncates.
+grep -F 'local lock_mode="-x"' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'exec {live_lock_fd}>> "$live_lock_path"' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'cp "$evidence/live-lock.txt" "$live_lock_path"' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+# Shared-account runs reconcile against their own magic, never against the account balance.
+grep -F 'fail "scenario magic still owns a position after the scenario"' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F '[ "$engine_realized" = "$deal_net" ] ||' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F 'if $live_lock_acquired; then' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 if rg --quiet 'Order(Accepted|Filled)Event' "$repo_root/scripts/live-validation/run-market-bracket.sh"; then
     echo 'order runner uses obsolete broker audit event names' >&2
