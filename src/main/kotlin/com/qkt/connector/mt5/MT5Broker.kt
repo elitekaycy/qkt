@@ -182,6 +182,28 @@ class MT5Broker(
             MT5UnknownDealReplay(profile, client, bus, clock, state),
             unknownResolveBackoffMs,
         )
+    private val placementResults =
+        MT5PlacementResults(
+            bus,
+            clock,
+            state,
+            events,
+            unknownResolver,
+            pendingFills,
+            unknownPlacement,
+            partialPlacement,
+        )
+    private val singlePlacement =
+        MT5SinglePlacement(
+            client,
+            clock,
+            priceTracker,
+            placementPrep,
+            placementIds,
+            events,
+            requestedProtection,
+            placementResults,
+        )
 
     /** Ledger legs on this broker's tickets; installed by the session, read by the poller thread. */
     @Volatile
@@ -319,209 +341,8 @@ class MT5Broker(
             }
 
         return when (translation) {
-            is MT5Translation.Single -> submitSingle(dispatchRequest, translation.request)
+            is MT5Translation.Single -> singlePlacement.submitSingle(dispatchRequest, translation.request)
             is MT5Translation.Composite -> submitComposite(dispatchRequest, translation)
-        }
-    }
-
-    /**
-     * Venue-side rules for a symbol — used to quantize wire fields before placement.
-     *
-     * [digits] is the price scale (e.g. `3` for XAUUSD → prices in 0.001 increments).
-     * MT5 rejects orders carrying more decimals than the symbol declares.
-     */
-    private fun submitSingle(
-        request: OrderRequest,
-        wire: MT5OrderRequest,
-    ): SubmitAck {
-        val prepared =
-            when (val result = placementPrep.prepareForPlacement(wire)) {
-                is MT5PlacementPreparation.PrepareResult.Ok -> result.wire
-                is MT5PlacementPreparation.PrepareResult.Reject -> return events.reject(request, result.reason)
-            }
-        // #185 diagnostic: the gateway rejects a STOP entry whose trigger sits the wrong side
-        // of the live quote (BUY_STOP <= ask). Log the submitted trigger vs the last market
-        // price we saw, so a rejection's stale-quote delta is visible — without a fresh
-        // getTick, which would add the signal-to-submission latency that causes the staleness.
-        if ("STOP" in prepared.type) {
-            log.info(
-                "STOP submit {} type={} price={} lastSeen={}",
-                request.id,
-                prepared.type,
-                prepared.price?.toPlainString(),
-                priceTracker?.lastPrice(request.symbol)?.toPlainString(),
-            )
-        }
-        // Non-blocking placement: the HTTP send runs on OkHttp's dispatcher and the venue's
-        // result returns as bus events via [handlePlacementResult] (rerouted onto the engine
-        // thread by the single-consumer loop). submit returns an optimistic ack at once so the
-        // engine thread never waits on the order round-trip — the real accept/reject/fill
-        // follows on the bus, which is what the event-driven OCO/OTO sequencing consumes.
-        val placement = prepared.withPlacementId()
-        val placementStartedAtMs = clock.now()
-        val protection = requestedProtection.protectionOf(placement)
-        client.placeOrderAsync(placement) { resp ->
-            handlePlacementResult(request, placement, placementStartedAtMs, protection, resp)
-        }
-        return SubmitAck(
-            clientOrderId = request.id,
-            brokerOrderId = null,
-            accepted = true,
-        )
-    }
-
-    /**
-     * Turn the venue's placement response into bus events. Runs on an OkHttp dispatcher thread
-     * (off the engine thread); every `bus.publish` here is rerouted onto the engine thread by
-     * the single-consumer loop, and the ticket maps it mutates are concurrent. A bad retcode
-     * becomes [BrokerEvent.OrderRejected]; success becomes [BrokerEvent.OrderAccepted] plus, for
-     * an instant-fill market, [BrokerEvent.OrderFilled].
-     * A venue partial instead emits [BrokerEvent.OrderPartiallyFilled] and retains the residual
-     * ticket for position-poller reconciliation.
-     */
-    private fun handlePlacementResult(
-        request: OrderRequest,
-        placement: MT5OrderRequest,
-        placementStartedAtMs: Long,
-        protection: MT5PositionProtection?,
-        resp: MT5OrderResponse,
-    ) {
-        if (!isOrderSuccessful(resp.result.retcode)) {
-            val message = resp.errorMessage
-            // An IO error or gateway 5xx AFTER the send leaves the outcome unknown — the
-            // order may have reached MT5 and filled. Telling the strategy "rejected"
-            // makes it re-fire and double the position; resolve against venue truth first.
-            if (message != null && MT5SendOutcomes.isAmbiguousSendFailure(message)) {
-                unknownResolver.executeUnknownResolution {
-                    unknownPlacement.resolveUnknownOutcome(
-                        request,
-                        placement,
-                        placementStartedAtMs,
-                        protection,
-                        message,
-                    )
-                }
-                return
-            }
-            events.reject(request, message ?: "retcode=${resp.result.retcode}")
-            return
-        }
-        val brokerOrderId =
-            resp.result.order
-                .takeIf { it != 0L }
-                ?.toString() ?: resp.result.deal.toString()
-        // A Bracket with a Market entry fills synchronously like a plain Market; a Bracket
-        // whose entry is Stop/Limit places a pending order on the venue and waits for the
-        // position poller to surface the eventual fill. Treating every Bracket as an
-        // instant fill produces a phantom OrderFilled at placement time, which marks OCO
-        // siblings FILLED before either has actually triggered on MT5 and turns the
-        // strategy's OCO into a hedge.
-        val isInstantFill =
-            request is OrderRequest.Market ||
-                (request is OrderRequest.Bracket && request.entry is OrderRequest.Market)
-        val isPartialEntry = isInstantFill && resp.result.retcode == MT5_TRADE_RETCODE_DONE_PARTIAL
-        val partialQuantity = resp.result.volume
-        if (
-            isPartialEntry &&
-            (
-                partialQuantity == null ||
-                    partialQuantity.signum() != 1 ||
-                    partialQuantity >= placement.volume ||
-                    resp.result.order == 0L ||
-                    resp.result.deal == 0L
-            )
-        ) {
-            unknownResolver.executeUnknownResolution {
-                unknownPlacement.resolveUnknownOutcome(
-                    request,
-                    placement,
-                    placementStartedAtMs,
-                    protection,
-                    "partial fill response cannot identify a positive residual order",
-                )
-            }
-            return
-        }
-        if (isPartialEntry) {
-            unknownResolver.executeUnknownResolution {
-                partialPlacement.resolvePartialPlacement(
-                    request = request,
-                    placement = placement,
-                    placementStartedAtMs = placementStartedAtMs,
-                    protection = protection,
-                    response = resp,
-                )
-            }
-            return
-        }
-        if (isInstantFill && resp.result.price.signum() <= 0) {
-            // Async-fill venues (#1092) acknowledge a market order with DONE and price 0.0; the
-            // real fill price lands on the position a moment later. Booking 0.0 faults the
-            // engine loop, so resolve the fill from venue truth (bounded retry, exact
-            // client_order_id match) instead — the same path an ambiguous send takes.
-            unknownResolver.executeUnknownResolution {
-                unknownPlacement.resolveUnknownOutcome(
-                    request,
-                    placement,
-                    placementStartedAtMs,
-                    protection,
-                    "fill acknowledged with price 0.0 — anchoring from the venue position",
-                )
-            }
-            return
-        }
-        // Register the venue ticket BEFORE announcing acceptance so any consumer reacting to
-        // [BrokerEvent.OrderAccepted] (e.g. a follow-up modify keyed by clientOrderId) sees the
-        // broker's bookkeeping already consistent.
-        if (isInstantFill) {
-            // Use whichever of `order` / `deal` is non-zero; instant-fill markets typically
-            // return `order=0` and `deal=N`. Lets [MT5PositionPoller] attribute the close.
-            val positionTicket =
-                resp.result.order.takeIf { it != 0L }
-                    ?: resp.result.deal.takeIf { it != 0L }
-            if (positionTicket != null) {
-                positionBook.track(
-                    positionTicket,
-                    MT5TicketMeta(request.id, request.strategyId, protection),
-                    request.symbol,
-                    clock.now(),
-                )
-            }
-        } else {
-            // Pending: track ticket so we can correlate fill events and cancel by orderId.
-            resp.result.order
-                .takeIf { it != 0L }
-                ?.let { ticket ->
-                    pendingFills.registerPendingTicket(
-                        ticket,
-                        MT5TicketMeta(request.id, request.strategyId, protection),
-                    )
-                }
-        }
-        bus.publish(
-            BrokerEvent.OrderAccepted(
-                clientOrderId = request.id,
-                brokerOrderId = brokerOrderId,
-                strategyId = request.strategyId,
-                timestamp = clock.now(),
-            ),
-        )
-        if (isInstantFill) {
-            val filledQuantity =
-                resp.result.volume?.takeIf { it.signum() > 0 }
-                    ?: placement.volume
-            bus.publish(
-                BrokerEvent.OrderFilled(
-                    clientOrderId = request.id,
-                    brokerOrderId = brokerOrderId,
-                    symbol = request.symbol,
-                    side = request.side,
-                    price = resp.result.price,
-                    quantity = filledQuantity,
-                    strategyId = request.strategyId,
-                    timestamp = clock.now(),
-                ),
-            )
         }
     }
 
