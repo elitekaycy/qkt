@@ -108,4 +108,14 @@ data class StatusSnapshot(
     val clockSkewedSymbols: Map<String, Long> = emptyMap(),
     /** Durable state-writer health; failed writes make restart state stale. */
     val persistence: PersistenceHealthDto = PersistenceHealthDto(),
+    /**
+     * Whether new entries are blocked for this strategy right now, by an operator halt or an
+     * automatic one (loss streak, drawdown, engine fault). A halted strategy is otherwise
+     * indistinguishable from a quiet one: it looks healthy and never trades.
+     */
+    val halted: Boolean = false,
+    /** Why it is halted, as the risk state recorded it; null when not halted. */
+    val haltReason: String? = null,
+    /** `TRANSIENT`, `DAILY` or `PERSISTENT` — a persistent halt survives restart and redeploy; only `qkt resume` clears it. */
+    val haltScope: String? = null,
 )
