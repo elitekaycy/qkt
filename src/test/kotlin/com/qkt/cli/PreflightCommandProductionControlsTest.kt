@@ -20,6 +20,7 @@ class PreflightCommandProductionControlsTest : PreflightCommandFixture() {
             runtime:
               mode: production
             state:
+              disk_free_alert_gb: 0
               enabled: false
             """.trimIndent(),
         )
@@ -71,6 +72,8 @@ class PreflightCommandProductionControlsTest : PreflightCommandFixture() {
             brokers:
               bybit:
                 type: bybit
+            state:
+              disk_free_alert_gb: 0
             """.trimIndent(),
         )
         val out = ByteArrayOutputStream()
@@ -122,6 +125,8 @@ class PreflightCommandProductionControlsTest : PreflightCommandFixture() {
                 enabled: true
                 bot_token:
                 chat_id:
+            state:
+              disk_free_alert_gb: 0
             """.trimIndent(),
         )
         val out = ByteArrayOutputStream()
