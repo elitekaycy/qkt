@@ -40,7 +40,27 @@ data class BookLimits(
     val maxGrossExposure: BigDecimal? = null,
     val maxNetExposure: BigDecimal? = null,
     val maxSymbolConcentration: BigDecimal? = null,
-)
+) {
+    init {
+        // A cap written in currency ("300000" on 100,000 of capital) reads as 300,000x capital: no cap
+        // at all, silently. Nothing trades a book at a hundred times its capital, so refuse it.
+        for ((key, value) in listOf(
+            "max_gross_exposure" to maxGrossExposure,
+            "max_net_exposure" to maxNetExposure,
+            "max_symbol_concentration" to maxSymbolConcentration,
+        )) {
+            require(value == null || value.signum() > 0 && value <= MAX_MULTIPLE) {
+                "book_risk.limits.$key is a multiple of book capital, not an amount of money: " +
+                    "${value?.toPlainString()} means ${value?.toPlainString()}x capital. " +
+                    "For a 300,000 cap on 100,000 of capital write 3.0 (allowed: above 0, up to $MAX_MULTIPLE)."
+            }
+        }
+    }
+
+    private companion object {
+        val MAX_MULTIPLE: BigDecimal = BigDecimal(100)
+    }
+}
 
 /** Graduated drawdown de-risking: an ordered ladder of rungs scaling new risk as the book draws down. */
 data class DeRisk(
