@@ -1,0 +1,11 @@
+STRATEGY atto_lag VERSION 1
+
+SYMBOLS
+    btc = EXNESS:BTCUSD EVERY 1m WARMUP 5 BARS
+
+LET fast = rsi(btc.close, 4)
+
+RULES
+    -- Read-only: the value only has to exist. What is asserted is how the warmup behind it was read.
+    WHEN fast IS NOT NULL
+    THEN LOG "atto-lag rsi={r}" r=fast

@@ -99,6 +99,26 @@ class WarmupSettleTest {
     }
 
     @Test
+    fun `the daemon's router over the venue still gets the re-read`() {
+        val venue = LaggingVenue(staleReads = 2, stale = bars(-10, 5), fresh = bars(-10, 6))
+        val routed =
+            com.qkt.marketdata.source.CompositeMarketSource(
+                routes =
+                    listOf(
+                        com.qkt.marketdata.source.SymbolPattern
+                            .prefix("X") to venue,
+                    ),
+                fallback = InMemoryMarketSource("files"),
+            )
+
+        val loaded = WarmupHistoryLoader(routed, settle).load("X", window, count = 5, upperMs = upper)
+
+        // One bar behind, as on 2026-09-21 13:52: 13:46-13:50 was served for a window ending 13:52.
+        assertThat(loaded.last().endTime).isEqualTo(upper)
+        assertThat(venue.forgotten).isEqualTo(1)
+    }
+
+    @Test
     fun `a source that cannot lag is never read twice`() {
         val files = InMemoryMarketSource("files").also { it.seedBars("X", window, bars(-10, 2)) }
 

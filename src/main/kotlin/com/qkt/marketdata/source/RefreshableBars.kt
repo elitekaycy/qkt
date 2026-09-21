@@ -8,6 +8,12 @@ import com.qkt.candles.TimeWindow
  * 1m bars ending 13:02 at 13:07), and a cached read would repeat that lag for the cache's lifetime.
  */
 interface RefreshableBars {
+    /**
+     * Whether a second read of [symbol] can come back different. A router answers for the source it
+     * sends the symbol to: files behind it cannot lag, a venue can.
+     */
+    fun canRefresh(symbol: String): Boolean = true
+
     /** Drop every remembered read of [symbol] at [window], so the next one goes to the venue. */
     fun forgetBars(
         symbol: String,
