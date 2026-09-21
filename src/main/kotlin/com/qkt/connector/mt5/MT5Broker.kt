@@ -13,7 +13,6 @@ import com.qkt.bus.EventBus
 import com.qkt.common.Clock
 import com.qkt.common.IdGenerator
 import com.qkt.common.SequentialIdGenerator
-import com.qkt.events.BrokerEvent
 import com.qkt.execution.OrderRequest
 import com.qkt.marketdata.MarketPriceProvider
 import java.math.BigDecimal
@@ -208,6 +207,29 @@ class MT5Broker(
     private val compositePlacement =
         MT5CompositePlacement(profile, client, bus, clock, placementPrep, placementIds, state, events, pendingFills)
 
+    private val restartRecovery =
+        MT5RestartRecovery(
+            profile,
+            client,
+            bus,
+            clock,
+            state,
+            pendingFills,
+            requestedProtection,
+            MT5PartialEntryRecovery(
+                profile,
+                bus,
+                clock,
+                state,
+                partialEntries,
+                requestedProtection,
+                seedTrackedTickets = { tickets -> pendingPoller.seedTrackedTickets(tickets) },
+            ),
+            seedTrackedTickets = { tickets -> pendingPoller.seedTrackedTickets(tickets) },
+            recoveryReadAttempts,
+            recoveryReadBackoffMs,
+        )
+
     /** Ledger legs on this broker's tickets; installed by the session, read by the poller thread. */
     @Volatile
     private var bookedLegs: () -> List<com.qkt.broker.BookedLeg> = { emptyList() }
@@ -354,229 +376,7 @@ class MT5Broker(
     override fun recoverPendingOrders(
         orders: List<com.qkt.execution.ManagedOrder>,
         bookedTickets: Set<String>,
-    ): Set<String> {
-        if (orders.isEmpty()) return emptySet()
-        val snapshot =
-            readMT5RecoverySnapshot(
-                attempts = recoveryReadAttempts,
-                backoffMs = recoveryReadBackoffMs,
-                onFailedAttempt = { attempt, reason ->
-                    log.warn(
-                        "MT5Broker {} recovery read failed (attempt {}/{}): {}",
-                        profile.name,
-                        attempt,
-                        recoveryReadAttempts,
-                        reason,
-                    )
-                },
-                readPendingOrders = { client.getPendingOrders(magic = profile.magic) },
-                readPositions = { client.getPositions(magic = profile.magic) },
-            )
-        val pending = snapshot.pendingOrders
-        val positions = snapshot.positions
-        val recoveredPartialIds = recoverPartialEntries(orders, pending, positions, bookedTickets)
-        val resolvedOrders =
-            orders.filterNot { it.id in recoveredPartialIds }.map { order ->
-                if (order.brokerOrderId != null) return@map order
-                val pendingMatch =
-                    pending.firstOrNull {
-                        it.clientOrderId == order.id ||
-                            matchesOrderComment(it.comment, order.id)
-                    }
-                val positionMatch =
-                    positions.firstOrNull {
-                        it.clientOrderId == order.id ||
-                            matchesOrderComment(it.comment, order.id)
-                    }
-                val ticket = pendingMatch?.ticket ?: positionMatch?.ticket
-                if (ticket == null) {
-                    order
-                } else {
-                    order.copy(brokerOrderId = ticket.toString())
-                }
-            }
-        val actions = classifyOcoRecovery(resolvedOrders, pending.map { it.ticket }.toSet(), positions)
-        // Pass 1: re-seed every still-pending leg before any fill is emitted, so a
-        // cancel triggered by pass 2 can resolve its sibling's ticket.
-        for (a in actions) {
-            if (a is OcoRecoveryAction.Reseed) {
-                pendingFills.registerPendingTicket(
-                    a.ticket,
-                    MT5TicketMeta(
-                        a.order.id,
-                        a.order.request.strategyId,
-                        requestedProtection.protectionFor(a.order.request),
-                    ),
-                )
-                log.info(
-                    "MT5Broker ${profile.name} recovery: re-seeded pending leg ${a.order.id} ticket=${a.ticket}",
-                )
-            }
-            if (a is OcoRecoveryAction.TrackVanished) {
-                pendingFills.registerPendingTicket(
-                    a.ticket,
-                    MT5TicketMeta(
-                        a.order.id,
-                        a.order.request.strategyId,
-                        requestedProtection.protectionFor(a.order.request),
-                    ),
-                )
-            }
-        }
-        val vanishedTickets =
-            actions
-                .filterIsInstance<OcoRecoveryAction.TrackVanished>()
-                .mapTo(mutableSetOf()) { it.ticket }
-        pendingPoller.seedTrackedTickets(vanishedTickets)
-        // Pass 2: republish the fill for any leg that filled while the daemon was down;
-        // OrderManager's cancel-on-fill then unwinds the still-pending sibling.
-        for (a in actions) {
-            if (a is OcoRecoveryAction.EmitFill) {
-                pendingBook.attribute(
-                    a.position.ticket,
-                    MT5TicketMeta(
-                        a.order.id,
-                        a.order.request.strategyId,
-                        requestedProtection.protectionFor(a.order.request),
-                    ),
-                )
-                if (a.position.ticket.toString() in bookedTickets) {
-                    // The ledger booked this execution before the restart; republishing it
-                    // would book it again (#1096). The ticket stays tracked for its close.
-                    positionBook.track(
-                        a.position.ticket,
-                        pendingBook.requireMeta(a.position.ticket),
-                        a.order.request.symbol,
-                        a.position.openTime,
-                    )
-                    log.info(
-                        "MT5Broker ${profile.name} recovery: leg ${a.order.id} ticket=${a.position.ticket} already booked; not republishing",
-                    )
-                    // Hand the restored order its venue ticket without republishing the execution:
-                    // OrderManager uses it to recognise the entry as position-backed (already
-                    // filled and booked) instead of leaving it working for the rest of the session.
-                    bus.publish(
-                        BrokerEvent.OrderAccepted(
-                            clientOrderId = a.order.id,
-                            brokerOrderId = a.position.ticket.toString(),
-                            strategyId = a.order.request.strategyId,
-                            timestamp = clock.now(),
-                        ),
-                    )
-                    continue
-                }
-                log.info(
-                    "MT5Broker ${profile.name} recovery: leg ${a.order.id} filled during downtime " +
-                        "ticket=${a.position.ticket}",
-                )
-                pendingFills.onPendingPositionOpened(a.position)
-            }
-        }
-        // Accounted for: partial fills adopted above, plus every order joined to a venue ticket
-        // (re-seeded, filled during downtime, or vanished-and-tracked). Anything else has no
-        // venue counterpart and is the caller's to retire.
-        return recoveredPartialIds +
-            resolvedOrders.filter { it.brokerOrderId != null }.mapTo(LinkedHashSet()) { it.id }
-    }
-
-    private fun recoverPartialEntries(
-        orders: List<com.qkt.execution.ManagedOrder>,
-        pending: List<MT5PendingOrder>,
-        positions: List<MT5Position>,
-        bookedTickets: Set<String>,
-    ): Set<String> {
-        val recovered = mutableSetOf<String>()
-        for (order in orders) {
-            val pendingMatches =
-                pending.filter {
-                    it.clientOrderId == order.id || matchesOrderComment(it.comment, order.id)
-                }
-            val positionMatches =
-                positions.filter {
-                    it.clientOrderId == order.id || matchesOrderComment(it.comment, order.id)
-                }
-            if (pendingMatches.size > 1 || positionMatches.size != 1) continue
-            val position = positionMatches.single()
-            val requestedQuantity = order.request.quantity
-            if (position.volume.signum() <= 0 || position.volume >= requestedQuantity) continue
-
-            val meta =
-                MT5TicketMeta(
-                    order.id,
-                    order.request.strategyId,
-                    requestedProtection.protectionFor(order.request),
-                )
-            positionBook.track(position.ticket, meta, order.request.symbol, position.openTime)
-            if (position.ticket.toString() in bookedTickets) {
-                // Already in the ledger from before the restart: keep the ticket tracked and let
-                // the residual resolve, but never republish the booked execution (#1096).
-                log.info(
-                    "MT5Broker ${profile.name} recovery: partial entry ${order.id} ticket=${position.ticket} already booked; not republishing",
-                )
-                recovered.add(order.id)
-                continue
-            }
-            val partialEvent =
-                BrokerEvent.OrderPartiallyFilled(
-                    clientOrderId = order.id,
-                    brokerOrderId = position.ticket.toString(),
-                    symbol = order.request.symbol,
-                    side = order.request.side,
-                    price = position.priceOpen,
-                    quantity = position.volume,
-                    cumulativeFilled = position.volume,
-                    strategyId = order.request.strategyId,
-                    timestamp = clock.now(),
-                )
-            val residual = pendingMatches.singleOrNull()
-            bus.publish(
-                BrokerEvent.OrderAccepted(
-                    clientOrderId = order.id,
-                    brokerOrderId = (residual?.ticket ?: position.ticket).toString(),
-                    strategyId = order.request.strategyId,
-                    timestamp = clock.now(),
-                ),
-            )
-            if (residual != null) {
-                partialEntries.registerPartialEntry(
-                    PartialEntryState(
-                        meta = meta,
-                        residualTicket = residual.ticket,
-                        positionTicket = position.ticket,
-                        symbol = order.request.symbol,
-                        side = order.request.side,
-                        requestedQuantity = requestedQuantity,
-                        cumulativeFilled = position.volume,
-                        averageFillPrice = position.priceOpen,
-                    ),
-                    openedAtMs = position.openTime,
-                )
-                bus.publish(partialEvent)
-                pendingPoller.seedTrackedTickets(setOf(residual.ticket))
-                log.info(
-                    "MT5Broker {} recovery: restored partial entry {} residual={} position={} cumulative={}",
-                    profile.name,
-                    order.id,
-                    residual.ticket,
-                    position.ticket,
-                    position.volume,
-                )
-            } else {
-                bus.publish(partialEvent)
-                bus.publish(
-                    BrokerEvent.OrderCancelled(
-                        clientOrderId = order.id,
-                        brokerOrderId = position.ticket.toString(),
-                        reason = "residual absent during partial-entry recovery",
-                        strategyId = order.request.strategyId,
-                        timestamp = clock.now(),
-                    ),
-                )
-            }
-            recovered += order.id
-        }
-        return recovered
-    }
+    ): Set<String> = restartRecovery.recoverPendingOrders(orders, bookedTickets)
 
     override fun cancel(orderId: String) = pendingOrderChanges.cancel(orderId)
 
