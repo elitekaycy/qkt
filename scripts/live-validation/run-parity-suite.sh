@@ -155,7 +155,19 @@ if $parallel && ! $verify_only; then
         refresh_case_balance "$scenario"
         bash "$readonly_runner" --scenario "$scenario" --cli "$cli" --verify-only >/dev/null
     done
+    # The shadow lane places no orders, so it shares the read-only window: every ready shadow case
+    # in one daemon, value parity against replay. Its verdict gates the suite like any case.
+    shadow_pid=""
+    if [ -d "$repo_root/attestation/cases/shadow" ]; then
+        bash "$repo_root/scripts/live-validation/run-shadow-lane.sh" --out "$output/shadow-lane" \
+            --gateway-url "$gateway_url" --expected-login "$expected_login" --expected-server "$expected_server" \
+            --magic "$((magic_base + 90))" --cli "$cli" > "$output/shadow-lane.log" 2>&1 &
+        shadow_pid="$!"
+    fi
     run_phase readonly phase_readonly
+    if [ -n "$shadow_pid" ]; then
+        wait "$shadow_pid" || fail "shadow lane failed: $(tail -n 1 "$output/shadow-lane.log")"
+    fi
     for scenario in "${cases[@]}"; do seal_armed_scenario "$scenario"; done
     run_phase armed phase_armed
     run_phase replay phase_replay
@@ -185,7 +197,8 @@ jq --arg mode "$mode" --arg completedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     --arg runId "$run_id" \
     --arg inputFingerprint "$(sha256sum "$output/SHA256SUMS" | awk '{print $1}')" \
     --slurpfile oracle "$catalog" \
-    '. + {execution:{mode:$mode,completedAt:$completedAt,cases:4,runId:$runId,inputFingerprint:$inputFingerprint},capabilityCatalog:{indicators:($oracle[0].categories.indicators | map(.capabilities) | add),numericFunctions:($oracle[0].categories.numericFunctions | map(.capabilities) | add)}}' \
+    --slurpfile shadow <(cat "$output/shadow-lane/result.json" 2>/dev/null || echo null) \
+    '. + {shadowLane:($shadow[0] | if . == null then null else {status, cases:(.cases|length), capabilities} end)} + {execution:{mode:$mode,completedAt:$completedAt,cases:4,runId:$runId,inputFingerprint:$inputFingerprint},capabilityCatalog:{indicators:($oracle[0].categories.indicators | map(.capabilities) | add),numericFunctions:($oracle[0].categories.numericFunctions | map(.capabilities) | add)}}' \
     "$output/suite.json" > "$output/.suite.json.tmp"
 mv "$output/.suite.json.tmp" "$output/suite.json"
 find "$output" -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > "$output/SHA256SUMS"
