@@ -850,7 +850,7 @@ class LiveSession(
         // Fire StrategyStarted per strategy this session hosts. Lifecycle events bypass the
         // bus because no other engine component consumes them.
         sessionNotifier.strategiesStarted()
-        insights.strategiesStarted()
+        insights.strategiesStarted(riskState)
 
         val snapshot = EngineSnapshot(thread, mailbox)
         return RunningSessionHandle(
