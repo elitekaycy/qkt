@@ -123,12 +123,16 @@ for id in "${ids[@]}"; do
         QKT_STATE_DIR="$work/state" "$cli" backtest "$out/strategies/$id.qkt" --from "$from_utc" --to "$to_utc" \
             --data-root "$work/data" --no-fetch --allow-incomplete --config "$out/qkt.config.yaml" \
             --broker paper --json > "$work/replay.log" 2>&1 || true
-        if python3 "$repo_root/scripts/live-validation/compare-trace-vectors.py" --live "$out/daemon.log" \
+        # Fewer than two ticks a minute per symbol is a market that is shut or asleep, not a feed at work.
+        ticks="$(jq -r '.counts.ticks // 0' "$work/data/golden-replay-manifest.json")"
+        symbols="$(jq -r '.symbols | length' "$work/data/golden-replay-manifest.json")"
+        code=0
+        python3 "$repo_root/scripts/live-validation/compare-trace-vectors.py" --live "$out/daemon.log" \
             --replay ticks-paper="$work/replay.log" --marker "case=$id " \
             --catalog "$repo_root/src/test/resources/validation/oracle-evidence.json" \
-            --out "$work/vectors.json" > "$work/compare.log" 2>&1; then
-            verdict="passed"
-        fi
+            --live-ticks "$ticks" --quiet-below "$(( duration / 60 * symbols * 2 ))" \
+            --out "$work/vectors.json" > "$work/compare.log" 2>&1 || code=$?
+        case "$code" in 0) verdict="passed" ;; 3) verdict="market-quiet" ;; esac
         detail="$(tail -n 1 "$work/compare.log" | cut -c1-200)"
     fi
     results+=("$(jq -n --arg id "$id" --arg status "$verdict" --arg detail "$detail" \
@@ -141,6 +145,7 @@ printf '%s\n' "${results[@]}" | jq -s --arg startedAt "$started_at" --arg finish
     {schema:"qkt-attestation-shadow-lane-v1", startedAtUtc:$startedAt, finishedAtUtc:$finishedAt, cli:$cli,
      observedSeconds:$duration, financiallyReadOnly:true, cases:.,
      capabilities:([.[].capabilities[]] | unique),
-     status:(if all(.[]; .status == "passed") then "passed" else "failed" end)}' > "$out/result.json"
+     status:(if all(.[]; .status == "passed") then "passed"
+             elif any(.[]; .status == "failed") then "failed" else "market-quiet" end)}' > "$out/result.json"
 jq -r '"\(.status) cases=\(.cases|length) passed=\([.cases[]|select(.status=="passed")]|length) capabilities=\(.capabilities|length)"' "$out/result.json"
 [ "$(jq -r .status "$out/result.json")" = passed ]

@@ -25,3 +25,15 @@ expect_failure() {  # name replay-log jq-filter
 expect_failure "last-digit difference" "$tmp/digit.log" '.mismatches[0] | .field == "ema" and .live == "1.14845001" and .replay == "1.14845002"'
 expect_failure "missing replay vector" "$tmp/short.log" '.mismatches | any(.problem == "missing in replay")'
 expect_failure "nothing compared" "$tmp/empty.log" '.status == "failed"'
+
+# A silent feed is reported as a quiet market (exit 3), never as a pass; a busy feed that produced
+# no vector, or a quiet one that still disagrees with its replay, stays a failure.
+code=0; python3 "$tool" --live "$tmp/empty.log" --replay ticks="$tmp/empty.log" --live-ticks 3 --quiet-below 16 --out "$tmp/quiet.json" >/dev/null || code=$?
+[ "$code" = 3 ] && [ "$(jq -r .status "$tmp/quiet.json")" = market-quiet ] && [ "$(jq -r .liveTicks "$tmp/quiet.json")" = 3 ]
+echo "ok no vectors from a feed that barely ticked is market-quiet, exit 3"
+code=0; python3 "$tool" --live "$tmp/empty.log" --replay ticks="$tmp/empty.log" --live-ticks 400 --quiet-below 16 --out "$tmp/busy.json" >/dev/null || code=$?
+[ "$code" = 1 ] && [ "$(jq -r .status "$tmp/busy.json")" = failed ]
+echo "ok no vectors from a feed that ticked normally is a failure"
+code=0; python3 "$tool" --live "$tmp/empty.log" --replay ticks="$tmp/same.log" --live-ticks 3 --quiet-below 16 --out "$tmp/ghost.json" >/dev/null || code=$?
+[ "$code" = 1 ] && [ "$(jq -r .status "$tmp/ghost.json")" = failed ]
+echo "ok a replay that logs what live never did is a failure even on a quiet feed"
