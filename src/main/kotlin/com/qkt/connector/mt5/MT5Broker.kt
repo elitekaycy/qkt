@@ -122,6 +122,9 @@ class MT5Broker(
     private val venueReads = MT5BrokerVenueReads(profile, client, mt5Symbol, positionBook, symbolMeta)
     private val engineCloses = MT5EngineCloseMarkers(profile, clock)
     private val partialEntries = MT5PartialEntries(state, bus, clock)
+    private val pendingFills = MT5PendingFills(profile, bus, clock, mt5Symbol, state, partialEntries)
+    private val pendingDisappearance =
+        MT5PendingDisappearance(profile, client, bus, clock, state, partialEntries, pendingFills)
 
     /** Ledger legs on this broker's tickets; installed by the session, read by the poller thread. */
     @Volatile
@@ -142,7 +145,7 @@ class MT5Broker(
                 val prefix = "${profile.name.uppercase()}:"
                 bookedLegs().filter { it.symbol.startsWith(prefix) }
             },
-            onPositionOpened = ::onPendingPositionOpened,
+            onPositionOpened = pendingFills::onPendingPositionOpened,
             onPositionIncreased = partialEntries::onPositionIncreased,
             closedTicketMeta = ::lookupClosedTicketMeta,
             onPositionClosed = ::removeClosedTicketMeta,
@@ -161,7 +164,7 @@ class MT5Broker(
             profile = profile,
             clock = clock,
             sessionGate = profile.symbolCalendars::anyCalendarInSession,
-            onPendingDisappeared = ::onPendingDisappeared,
+            onPendingDisappeared = pendingDisappearance::onPendingDisappeared,
             onGatewayUnreachable = events::publishGatewayUnreachable,
             onGatewayRecovered = events::publishGatewayRecovered,
         )
@@ -702,7 +705,10 @@ class MT5Broker(
             resp.result.order
                 .takeIf { it != 0L }
                 ?.let { ticket ->
-                    registerPendingTicket(ticket, MT5TicketMeta(request.id, request.strategyId, protection))
+                    pendingFills.registerPendingTicket(
+                        ticket,
+                        MT5TicketMeta(request.id, request.strategyId, protection),
+                    )
                 }
         }
         bus.publish(
@@ -1009,7 +1015,7 @@ class MT5Broker(
             when (val match = matches.singleOrNull()) {
                 is UnknownVenueMatch.Pending -> {
                     val pendingMatch = match.order
-                    registerPendingTicket(
+                    pendingFills.registerPendingTicket(
                         pendingMatch.ticket,
                         MT5TicketMeta(request.id, request.strategyId, protection),
                     )
@@ -1299,7 +1305,7 @@ class MT5Broker(
             val ticket = resp.result.order
             if (ticket != 0L) {
                 val legOrderId = decodeOcoLegOrderId(wire.comment) ?: request.id
-                registerPendingTicket(ticket, MT5TicketMeta(legOrderId, request.strategyId))
+                pendingFills.registerPendingTicket(ticket, MT5TicketMeta(legOrderId, request.strategyId))
                 placed.add(PlacedLeg(ticket, legOrderId))
             }
         }
@@ -1394,7 +1400,7 @@ class MT5Broker(
         // cancel triggered by pass 2 can resolve its sibling's ticket.
         for (a in actions) {
             if (a is OcoRecoveryAction.Reseed) {
-                registerPendingTicket(
+                pendingFills.registerPendingTicket(
                     a.ticket,
                     MT5TicketMeta(
                         a.order.id,
@@ -1407,7 +1413,7 @@ class MT5Broker(
                 )
             }
             if (a is OcoRecoveryAction.TrackVanished) {
-                registerPendingTicket(
+                pendingFills.registerPendingTicket(
                     a.ticket,
                     MT5TicketMeta(
                         a.order.id,
@@ -1463,7 +1469,7 @@ class MT5Broker(
                     "MT5Broker ${profile.name} recovery: leg ${a.order.id} filled during downtime " +
                         "ticket=${a.position.ticket}",
                 )
-                onPendingPositionOpened(a.position)
+                pendingFills.onPendingPositionOpened(a.position)
             }
         }
         // Accounted for: partial fills adopted above, plus every order joined to a venue ticket
@@ -1795,101 +1801,6 @@ class MT5Broker(
     }
 
     /**
-     * Called by [MT5PositionPoller] when a venue position appears that wasn't in the
-     * last snapshot. If the position's ticket matches a tracked pending order, this
-     * means the pending filled — emit [BrokerEvent.OrderFilled] with the original
-     * client orderId so [com.qkt.app.OrderManager] can:
-     *   1. mark the order FILLED
-     *   2. iterate `siblings[orderId]` and cancel any OCO siblings
-     *   3. update strategy-side position state
-     *
-     * If the ticket isn't in [pendingBook], the position is external (manual user
-     * trade or another qkt instance with the same magic) — ignore it; reconciliation
-     * is a separate concern. A ticket in [partialEntryByPositionTicket] remains working until its
-     * cumulative position volume reaches the requested quantity or the residual disappears.
-     */
-    private fun onPendingPositionOpened(position: MT5Position): Boolean {
-        if (partialEntries.reconcilePartialEntry(position)) return true
-        val meta =
-            synchronized(pendingTransitionLock) {
-                pendingBook.takeMeta(position.ticket)
-                    ?: run {
-                        if (!positionBook.isAttributed(position.ticket)) {
-                            earlyPositionByTicket[position.ticket] = position
-                        }
-                        null
-                    }
-            }
-        if (meta == null) {
-            // Already tracked? The Fix A cross-check in onPendingDisappeared may have
-            // synthesized this fill on a prior pending-poller tick; the position-poller
-            // is now seeing the same ticket in its opened-delta. Silent — already done.
-            if (positionBook.isAttributed(position.ticket)) return true
-            log.warn(
-                "MT5Broker {} saw new position ticket={} symbol={} side={} magic={} with no qkt-side " +
-                    "pending meta yet; deferring attribution while awaiting a possible asynchronous " +
-                    "placement response",
-                profile.name,
-                position.ticket,
-                position.symbol,
-                if (position.type == 0) "BUY" else "SELL",
-                profile.magic,
-            )
-            return false
-        }
-        publishPendingPositionOpened(position, meta)
-        return true
-    }
-
-    private fun registerPendingTicket(
-        ticket: Long,
-        meta: MT5TicketMeta,
-    ) {
-        val earlyPosition =
-            synchronized(pendingTransitionLock) {
-                pendingBook.register(ticket, meta)
-                earlyPositionByTicket.remove(ticket)
-            }
-        if (earlyPosition != null) {
-            onPendingPositionOpened(earlyPosition)
-        }
-    }
-
-    private fun publishPendingPositionOpened(
-        position: MT5Position,
-        meta: MT5TicketMeta,
-    ) {
-        pendingBook.forgetOrderId(meta.orderId)
-        // Mark the ticket as recently filled so the pending-order poller doesn't
-        // mistake the subsequent "disappeared from /orders" for an external cancel.
-        recentlyFilledTickets[position.ticket] = clock.now()
-        // Sweep stale entries on this always-firing position path too: the matching sweep in
-        // onPendingDisappeared only runs when the gateway exposes an /orders endpoint, so without
-        // this a gateway lacking /orders would let recentlyFilledTickets grow unbounded.
-        recentlyFilledTickets.entries.removeIf {
-            clock.now() - it.value >= profile.pollIntervalMs * DISAMBIGUATION_TTL_MULTIPLIER
-        }
-        // Keep the meta accessible to the position poller for the eventual close event.
-        positionBook.attribute(position.ticket, meta)
-        positionBook.setOpenedAt(position.ticket, position.openTime)
-        val qktSymbol = "${profile.name.uppercase()}:${mt5Symbol.toQkt(position.symbol)}"
-        positionBook.setSymbol(position.ticket, qktSymbol)
-        val filledSide = if (position.type == 0) com.qkt.common.Side.BUY else com.qkt.common.Side.SELL
-        bus.publish(
-            BrokerEvent.OrderFilled(
-                clientOrderId = meta.orderId,
-                brokerOrderId = position.ticket.toString(),
-                symbol = qktSymbol,
-                side = filledSide,
-                price = position.priceOpen,
-                quantity = position.volume,
-                strategyId = meta.strategyId,
-                timestamp = clock.now(),
-            ),
-        )
-    }
-
-    /**
      * [MT5PositionPoller] calls this when a ticket disappears from the venue snapshot
      * to resolve which qkt strategy and clientOrderId originally opened it. Attribution
      * remains until full closure so multiple partial closes keep the same strategy id.
@@ -1919,88 +1830,6 @@ class MT5Broker(
             !takeProfitChanged || ProtectionExpectation.matchesVenue(expected.takeProfit, event.newTakeProfit)
         if (!stopMatches || !takeProfitMatches) return false
         expectedProtectionByTicket.remove(ticket, expected)
-        return true
-    }
-
-    /**
-     * Called by [MT5PendingOrderPoller] when a tracked ticket leaves `/orders`.
-     *
-     * Resolves the fill-vs-cancel ambiguity:
-     *
-     *   1. If the ticket was very recently filled (within the TTL), [onPendingPositionOpened]
-     *      already emitted [BrokerEvent.OrderFilled]. Consume the marker and exit.
-     *
-     *   2. Otherwise the pending was cancelled externally or its GTD expired. Emit
-     *      [BrokerEvent.OrderCancelled] with a clear reason.
-     *
-     *   3. If we don't track this ticket, it's an external pending (manual MetaTrader
-     *      placement, another qkt instance with the same magic) — ignore.
-     */
-    private fun onPendingDisappeared(ticket: Long): Boolean {
-        val meta = pendingBook.meta(ticket) ?: return true
-
-        val ttlMs = profile.pollIntervalMs * DISAMBIGUATION_TTL_MULTIPLIER
-        val recentlyFilledAt = recentlyFilledTickets[ticket]
-        val now = clock.now()
-        if (recentlyFilledAt != null && now - recentlyFilledAt < ttlMs) {
-            pendingBook.forgetTicket(ticket)
-            recentlyFilledTickets.remove(ticket)
-            return true
-        }
-
-        // Cross-check /positions before treating as cancel. If the ticket is now a
-        // position, the pending-poller observed the transition before the position-poller
-        // did — synthesize the fill path here instead of phantom-cancelling. A FAILED
-        // read leaves fill-vs-cancel unresolved: keep the order tracked and let the next
-        // poll cycle re-resolve rather than phantom-cancelling a possibly-filled leg.
-        val positionsNow =
-            client.getPositions(magic = profile.magic) ?: run {
-                log.warn(
-                    "MT5Broker ${profile.name} pending {} disappeared but /positions read failed — " +
-                        "deferring fill-vs-cancel resolution",
-                    ticket,
-                )
-                return false
-            }
-        val partialPositionTicket = partialPositionByResidualTicket[ticket]
-        val asPosition =
-            positionsNow.firstOrNull {
-                it.ticket == (partialPositionTicket ?: ticket)
-            }
-        if (asPosition != null) {
-            if (partialPositionByResidualTicket.containsKey(ticket)) {
-                partialEntries.reconcilePartialEntry(asPosition)
-                partialEntries.cancelPartialEntryResidual(
-                    ticket,
-                    "residual disappeared from venue after partial fill",
-                )
-                return true
-            }
-            onPendingPositionOpened(asPosition)
-            return true
-        }
-
-        if (partialPositionByResidualTicket.containsKey(ticket)) {
-            partialEntries.cancelPartialEntryResidual(
-                ticket,
-                "residual disappeared from venue after partial fill",
-            )
-            return true
-        }
-
-        pendingBook.forgetTicket(ticket)
-        // Evict stale entries opportunistically — cheap and prevents unbounded growth
-        // if positions close before their pending-disappearance signal arrives.
-        recentlyFilledTickets.entries.removeIf { now - it.value >= ttlMs }
-        bus.publish(
-            BrokerEvent.OrderCancelled(
-                clientOrderId = meta.orderId,
-                brokerOrderId = ticket.toString(),
-                reason = "external or gtd-expired (pending disappeared from venue)",
-                strategyId = meta.strategyId,
-                timestamp = clock.now(),
-            ),
-        )
         return true
     }
 
