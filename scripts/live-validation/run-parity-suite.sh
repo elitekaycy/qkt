@@ -37,6 +37,9 @@ cli="$repo_root/build/install/qkt/bin/qkt"
 verify_only=true
 # Run the cases side by side instead of one after another; see run_parallel below.
 parallel=false
+# How long the shadow lane observes. The attestation verifier requires a live window of at least
+# ten minutes; nine minutes of observation plus the armed and replay phases clears it honestly.
+shadow_seconds=540
 arm=""
 run_id="parity-$(date -u +%Y%m%dT%H%M%SZ)-$(od -An -N4 -tx1 /dev/urandom | tr -d ' \n')"
 
@@ -56,6 +59,7 @@ while [ "$#" -gt 0 ]; do
         --verify-only) verify_only=true; shift ;;
         --run-live) verify_only=false; shift ;;
         --parallel) parallel=true; shift ;;
+        --shadow-seconds) shadow_seconds="${2:-}"; shift 2 ;;
     --arm) arm="${2:-}"; shift 2 ;;
         --run-id) run_id="${2:-}"; shift 2 ;;
         --help|-h) usage; exit 0 ;;
@@ -161,7 +165,7 @@ if $parallel && ! $verify_only; then
     if [ -d "$repo_root/attestation/cases/shadow" ]; then
         bash "$repo_root/scripts/live-validation/run-shadow-lane.sh" --out "$output/shadow-lane" \
             --gateway-url "$gateway_url" --expected-login "$expected_login" --expected-server "$expected_server" \
-            --magic "$((magic_base + 90))" --cli "$cli" > "$output/shadow-lane.log" 2>&1 &
+            --magic "$((magic_base + 90))" --cli "$cli" --duration-seconds "$shadow_seconds" > "$output/shadow-lane.log" 2>&1 &
         shadow_pid="$!"
     fi
     run_phase readonly phase_readonly
