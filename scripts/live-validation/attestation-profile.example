@@ -1,0 +1,11 @@
+# Profile for scripts/live-validation/run-attestation.sh. Copy outside the repo and edit.
+# No secret belongs here: the broker key comes from QKT_BROKER_API_KEY in the environment.
+gateway_url=http://127.0.0.1:5001
+expected_login=436804390
+expected_server=Exness-MT5Trial9
+expected_leverage=1000
+wave_root=/var/tmp/qkt-validation
+bundle_root=/var/lib/qkt/soak
+image_repository=ghcr.io/elitekaycy/qkt
+insights_image=ghcr.io/elitekaycy/qkt-insights:latest
+magic_base=994000

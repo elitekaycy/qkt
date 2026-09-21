@@ -1,0 +1,17 @@
+STRATEGY attest_daily_regime_with_intraday_trigger VERSION 1
+SYMBOLS
+    trig = EXNESS:EURUSD EVERY 1m WARMUP 5 BARS,
+    eur_day = EXNESS:EURUSD EVERY 1d WARMUP 15 BARS,
+    btc_day = EXNESS:BTCUSD EVERY 1d WARMUP 15 BARS
+LET eur_sma = sma(eur_day.close, 10),
+    eur_sd = stddev(eur_day.close, 10),
+    btc_z = zscore(btc_day.close, 10),
+    trig_rsi = rsi(trig.close, 4)
+RULES
+    -- Rules fire on a false-to-true edge; logging on each up-turn and down-turn of the fastest
+    -- stream yields a vector at every reversal.
+    WHEN eur_sma IS NOT NULL AND eur_sd IS NOT NULL AND btc_z IS NOT NULL AND trig_rsi IS NOT NULL AND trig.close > lag(trig.close, 1)
+    THEN LOG "attest vector turn=up case=daily-regime-with-intraday-trigger sma={a} stddev={b} zscore={c} rsi={d}" a=eur_sma b=eur_sd c=btc_z d=trig_rsi
+
+    WHEN eur_sma IS NOT NULL AND eur_sd IS NOT NULL AND btc_z IS NOT NULL AND trig_rsi IS NOT NULL AND trig.close <= lag(trig.close, 1)
+    THEN LOG "attest vector turn=down case=daily-regime-with-intraday-trigger sma={a} stddev={b} zscore={c} rsi={d}" a=eur_sma b=eur_sd c=btc_z d=trig_rsi

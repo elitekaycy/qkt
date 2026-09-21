@@ -1,0 +1,22 @@
+id: mixed-tf-two-symbols
+title: A fast FX stream beside a slow gold stream
+why: A 15m stream on a second symbol closes its bars on its own boundary; if the live bar closes on the
+  first symbol's clock, every 15m value lags the backtest by up to 14 minutes.
+status: ready
+symbols:
+- EURUSD
+- XAUUSD
+timeframes:
+- 1m
+- 15m
+warmup_bars:
+  1m: 6
+  15m: 20
+proves:
+- RSI
+- EMA
+- SMA
+- behaviour:cross-symbol
+- behaviour:mixed-timeframe
+assertions:
+- trace-parity

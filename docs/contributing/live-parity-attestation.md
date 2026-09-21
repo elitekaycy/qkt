@@ -27,6 +27,9 @@ tests. It runs against the exact immutable image built from `testing`, never a m
    use a unique strategy/book namespace for the run.
 5. Generate the live-parity evidence bundle and attestation. Do not commit generated
    tick dumps, journals, databases, or account credentials to the repository.
+   `scripts/live-validation/run-attestation.sh --profile <file>` does this end to end from a
+   clean checkout of the testing commit: build, wave, insights attribution, bundle, verify.
+   It writes `attestation-run.json` after every stage and exits non-zero on any failure.
 6. Dispatch `paper-soak.yml` with the attestation path. The trusted runner verifies
    the exact SHA, image revision, demo mode, metrics, and every artifact hash, then
    uploads the immutable bundle.

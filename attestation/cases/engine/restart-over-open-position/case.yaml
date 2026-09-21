@@ -1,0 +1,26 @@
+id: restart-over-open-position
+title: Stop the daemon without flattening, restart, let the strategy close
+why: After a restart the engine must adopt the venue position, re-attach its protection, keep the order-id
+  sequence moving and let the strategy's own exit close it - not open an opposite position on a hedging
+  account.
+status: planned
+symbols:
+- BTCUSD
+timeframes:
+- 1m
+proves:
+- behaviour:state-recovery
+- behaviour:order-id-continuity
+steps:
+- run: daemon start
+  expect: position open under magic
+- run: daemon stop
+  expect: position still open at venue
+- run: daemon start
+  expect: recovery log names the ticket
+- run: wait exit rule
+  expect: flat, one closing deal
+assertions:
+- flat-by-magic
+- deals-net-by-magic
+- no-duplicate-order-id

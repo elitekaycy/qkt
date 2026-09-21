@@ -1,0 +1,19 @@
+id: fifty-shadow-strategies
+title: Fifty read-only strategies in one daemon
+why: One slow subscriber must not delay the others or drop ticks; the tick queue sheds oldest-first under
+  saturation and that must be visible, not silent.
+status: planned
+symbols:
+- EURUSD
+- GBPUSD
+- XAUUSD
+- BTCUSD
+timeframes:
+- 1m
+- 5m
+proves:
+- behaviour:fan-out
+- behaviour:no-dropped-ticks
+assertions:
+- dropped-ticks-zero
+- trace-parity
