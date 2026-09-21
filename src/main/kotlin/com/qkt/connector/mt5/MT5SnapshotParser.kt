@@ -66,8 +66,15 @@ internal class MT5SnapshotParser(
         return MT5PendingOrder(
             ticket = obj["ticket"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L,
             symbol = obj["symbol"]?.jsonPrimitive?.contentOrNull ?: "",
-            type = obj["type"]?.jsonPrimitive?.contentOrNull ?: "",
-            volume = obj["volume"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
+            // The gateway sends MT5's own record: `type` is the number (2), `type_str` the name
+            // (BUY_LIMIT), and there is no `volume` - a resting order has `volume_current` (what is
+            // still unfilled) and `volume_initial`. Reading `volume` gave every resting order a size of
+            // zero, so one whose placement response was lost could never be matched to it (#1234).
+            type = (obj["type_str"] ?: obj["type"])?.jsonPrimitive?.contentOrNull ?: "",
+            volume =
+                listOf("volume", "volume_current", "volume_initial")
+                    .firstNotNullOfOrNull { obj[it]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() }
+                    ?: BigDecimal.ZERO,
             priceOpen = obj["price_open"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
             sl = obj["sl"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
             tp = obj["tp"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
