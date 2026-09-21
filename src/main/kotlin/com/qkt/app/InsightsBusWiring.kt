@@ -17,7 +17,11 @@ import com.qkt.observe.insights.InsightsTranslate
  */
 internal class InsightsBusWiring(
     private val insightsEvents: Set<InsightsEventFamily>,
+    /** The strategies this session runs: named on halts and resumes that are not strategy-scoped. */
+    strategies: List<Pair<String, *>> = emptyList(),
 ) {
+    private val sessionStrategies = strategies.map { it.first }
+
     /** Subscribe the enabled families on [bus]; call exactly where the session wires insights. */
     fun wire(
         bus: EventBus,
@@ -53,8 +57,8 @@ internal class InsightsBusWiring(
         if (InsightsEventFamily.RISK in insightsEvents) {
             bus.subscribe<com.qkt.events.RiskRejectedEvent> { e -> sink.offer(t.fromRiskRejected(e)) }
             bus.subscribe<com.qkt.events.SignalSuppressedEvent> { e -> sink.offer(t.fromSignalSuppressed(e)) }
-            bus.subscribe<RiskEvent.Halted> { e -> sink.offer(t.fromRiskHalted(e)) }
-            bus.subscribe<RiskEvent.Resumed> { e -> sink.offer(t.fromRiskResumed(e)) }
+            bus.subscribe<RiskEvent.Halted> { e -> sink.offer(t.fromRiskHalted(e, sessionStrategies)) }
+            bus.subscribe<RiskEvent.Resumed> { e -> sink.offer(t.fromRiskResumed(e, sessionStrategies)) }
         }
         if (InsightsEventFamily.POSITION in insightsEvents) {
             bus.subscribe<BrokerEvent.PositionReconciled> { e -> sink.offer(t.fromPositionReconciled(e)) }
