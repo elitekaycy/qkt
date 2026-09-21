@@ -1,22 +1,41 @@
 id: journal-and-state-integrity
 title: Kill -9 the daemon mid-write and restart
-why: State files and the append-only journal are written while trading. A torn write must be detected
-  and recovered from, never parsed as truth.
-status: planned
+why: State files and the append-only journal are written while trading. A torn write must be detected and recovered
+  from, never parsed as truth.
+status: ready
 symbols:
 - BTCUSD
 timeframes:
 - 1m
 proves:
-- behaviour:crash-consistency
 - behaviour:append-only-journal
+- behaviour:crash-consistency
+- behaviour:sigkill-recovery
 steps:
-- run: daemon start
-  expect: trading
-- run: kill -9
-  expect: process gone
-- run: daemon start
-  expect: state loads, journal verifies
+- run: qkt status atto_kill9 --state-dir {state}
+  wait_for: position
+  expect_status:
+    positions: 1
+  note: a position is open before the crash
+- daemon: kill9_restart
+  expect_stdout: 'while the daemon was down: 1'
+  note: 'SIGKILL mid-flight: no shutdown hook, no flush; the state and journal on disk are whatever was there'
+- run: qkt status atto_kill9 --state-dir {state}
+  expect_status:
+    positions: 1
+  expect_log: 'state recovery: 1 open positions'
+  note: the restarted engine adopts the venue position instead of starting flat
+- run: qkt status --deep --state-dir {state}
+  note: healthy after recovery
+- run: qkt status atto_kill9 --state-dir {state}
+  wait_for: flat
+  wait_seconds: 260
+  expect_status:
+    positions: 0
+  note: 'the strategy''s own timed exit closes the recovered position: one closing deal, not an opposite position
+    on a hedging account'
 assertions:
 - journal-hash-chain-valid
 - state-round-trips
+autoload: true
+budget_seconds: 420
