@@ -154,6 +154,21 @@ class MT5Broker(
     private val pendingFills = MT5PendingFills(profile, bus, clock, mt5Symbol, state, partialEntries)
     private val pendingDisappearance =
         MT5PendingDisappearance(profile, client, bus, clock, state, partialEntries, pendingFills)
+    private val unknownPlacement =
+        MT5UnknownPlacementResolution(
+            profile,
+            client,
+            bus,
+            clock,
+            mt5Symbol,
+            state,
+            events,
+            unknownResolver,
+            pendingFills,
+            MT5UnknownVenueMatcher(state),
+            MT5UnknownDealReplay(profile, client, bus, clock, state),
+            unknownResolveBackoffMs,
+        )
 
     /** Ledger legs on this broker's tickets; installed by the session, read by the poller thread. */
     @Volatile
@@ -365,7 +380,13 @@ class MT5Broker(
             // makes it re-fire and double the position; resolve against venue truth first.
             if (message != null && MT5SendOutcomes.isAmbiguousSendFailure(message)) {
                 unknownResolver.executeUnknownResolution {
-                    resolveUnknownOutcome(request, placement, placementStartedAtMs, protection, message)
+                    unknownPlacement.resolveUnknownOutcome(
+                        request,
+                        placement,
+                        placementStartedAtMs,
+                        protection,
+                        message,
+                    )
                 }
                 return
             }
@@ -398,7 +419,7 @@ class MT5Broker(
             )
         ) {
             unknownResolver.executeUnknownResolution {
-                resolveUnknownOutcome(
+                unknownPlacement.resolveUnknownOutcome(
                     request,
                     placement,
                     placementStartedAtMs,
@@ -426,7 +447,7 @@ class MT5Broker(
             // engine loop, so resolve the fill from venue truth (bounded retry, exact
             // client_order_id match) instead — the same path an ambiguous send takes.
             unknownResolver.executeUnknownResolution {
-                resolveUnknownOutcome(
+                unknownPlacement.resolveUnknownOutcome(
                     request,
                     placement,
                     placementStartedAtMs,
@@ -613,347 +634,6 @@ class MT5Broker(
         }
     }
 
-    /**
-     * Resolve an UNKNOWN send outcome by querying the venue for an order carrying this
-     * request's full gateway placement id, with a constrained fallback to the venue-truncated
-     * comment for older gateways.
-     *
-     *   - Found as a pending → the venue owns it: register tickets, publish Accepted.
-     *   - Found as a position → it filled: register meta, publish Accepted + Filled.
-     *   - Repeated clean order/position/deal reads with no match → publish Rejected.
-     *   - Found only in deal history → replay its fill and any completed close legs.
-     *   - Reads keep failing → leave the order UNRESOLVED (no event): a false "rejected"
-     *     invites a duplicate submission, which is the worse failure. Alert the operator.
-     */
-    private fun resolveUnknownOutcome(
-        request: OrderRequest,
-        placement: MT5OrderRequest,
-        placementStartedAtMs: Long,
-        protection: MT5PositionProtection?,
-        cause: String,
-    ) {
-        val wireComment = placement.comment.take(MT5_COMMENT_MAX_LENGTH)
-        val brokerSymbol = mt5Symbol.toBroker(request.symbol.substringAfter(':'))
-        log.warn(
-            "MT5Broker {} order {} outcome UNKNOWN ({}) — querying venue before resolving",
-            profile.name,
-            request.id,
-            cause,
-        )
-        var cleanAbsenceReads = 0
-        for (attempt in 1..UNKNOWN_RESOLVE_ATTEMPTS) {
-            Thread.sleep(unknownResolveBackoffMs * attempt)
-            val pendings = client.getPendingOrders(magic = profile.magic) ?: continue
-            val positions = client.getPositions(magic = profile.magic) ?: continue
-            val pendingCandidates =
-                pendings.filter {
-                    it.ticket > 0L &&
-                        !pendingBook.isPending(it.ticket) &&
-                        it.symbol == brokerSymbol &&
-                        matchesComment(it.comment, wireComment)
-                }
-            val positionCandidates =
-                positions.filter {
-                    !positionBook.isAttributed(it.ticket) &&
-                        it.symbol == brokerSymbol &&
-                        matchesComment(it.comment, wireComment)
-                }
-            // An id match still has to be this order's size: colliding comments from another
-            // strategy under the same magic can carry the same id with a different volume (#1155).
-            val exactMatches: List<UnknownVenueMatch> =
-                pendingCandidates
-                    .filter {
-                        it.clientOrderId == placement.clientOrderId &&
-                            it.volume.compareTo(placement.volume) == 0
-                    }.map { UnknownVenueMatch.Pending(it) } +
-                    positionCandidates
-                        .filter {
-                            it.clientOrderId == placement.clientOrderId &&
-                                it.volume.compareTo(placement.volume) == 0
-                        }.map { UnknownVenueMatch.Position(it) }
-            val fallbackMatches: List<UnknownVenueMatch> =
-                if (exactMatches.isEmpty()) {
-                    pendingCandidates
-                        .filter { MT5UnknownOutcomeMatching.matchesUnknownPending(it, placement, placementStartedAtMs) }
-                        .map { UnknownVenueMatch.Pending(it) } +
-                        positionCandidates
-                            .filter {
-                                MT5UnknownOutcomeMatching.matchesUnknownPosition(
-                                    it,
-                                    placement,
-                                    placementStartedAtMs,
-                                )
-                            }.map { UnknownVenueMatch.Position(it) }
-                } else {
-                    emptyList()
-                }
-            val matches = if (exactMatches.isNotEmpty()) exactMatches else fallbackMatches
-            if (matches.size > 1 || (matches.isEmpty() && (pendingCandidates + positionCandidates).isNotEmpty())) {
-                log.error(
-                    "MT5Broker {} order {} UNKNOWN outcome remains ambiguous on attempt {}/{}: " +
-                        "pendingCandidates={} positionCandidates={} correlatedMatches={}",
-                    profile.name,
-                    request.id,
-                    attempt,
-                    UNKNOWN_RESOLVE_ATTEMPTS,
-                    pendingCandidates.map { it.ticket },
-                    positionCandidates.map { it.ticket },
-                    matches.size,
-                )
-                continue
-            }
-            when (val match = matches.singleOrNull()) {
-                is UnknownVenueMatch.Pending -> {
-                    val pendingMatch = match.order
-                    pendingFills.registerPendingTicket(
-                        pendingMatch.ticket,
-                        MT5TicketMeta(request.id, request.strategyId, protection),
-                    )
-                    bus.publish(
-                        BrokerEvent.OrderAccepted(
-                            clientOrderId = request.id,
-                            brokerOrderId = pendingMatch.ticket.toString(),
-                            strategyId = request.strategyId,
-                            timestamp = clock.now(),
-                        ),
-                    )
-                    log.info(
-                        "MT5Broker {} order {} resolved as PENDING ticket {}",
-                        profile.name,
-                        request.id,
-                        pendingMatch.ticket,
-                    )
-                    return
-                }
-                is UnknownVenueMatch.Position -> {
-                    val positionMatch = match.position
-                    positionBook.attribute(
-                        positionMatch.ticket,
-                        MT5TicketMeta(request.id, request.strategyId, protection),
-                    )
-                    positionBook.setSymbol(positionMatch.ticket, request.symbol)
-                    bus.publish(
-                        BrokerEvent.OrderAccepted(
-                            clientOrderId = request.id,
-                            brokerOrderId = positionMatch.ticket.toString(),
-                            strategyId = request.strategyId,
-                            timestamp = clock.now(),
-                        ),
-                    )
-                    bus.publish(
-                        BrokerEvent.OrderFilled(
-                            clientOrderId = request.id,
-                            brokerOrderId = positionMatch.ticket.toString(),
-                            symbol = request.symbol,
-                            side = request.side,
-                            price = positionMatch.priceOpen,
-                            quantity = positionMatch.volume,
-                            strategyId = request.strategyId,
-                            timestamp = clock.now(),
-                        ),
-                    )
-                    log.info(
-                        "MT5Broker {} order {} resolved as FILLED ticket {}",
-                        profile.name,
-                        request.id,
-                        positionMatch.ticket,
-                    )
-                    return
-                }
-                null -> {
-                    val deals =
-                        client.getDeals(
-                            fromUtcMs = placementStartedAtMs - MT5UnknownOutcomeMatching.CORRELATION_WINDOW_MS,
-                            toUtcMs =
-                                maxOf(clock.now(), placementStartedAtMs) +
-                                    MT5UnknownOutcomeMatching.CORRELATION_WINDOW_MS,
-                        ) ?: continue
-                    val dealCandidates =
-                        deals.filter {
-                            it.entry == 0 &&
-                                it.magic == profile.magic &&
-                                it.symbol == brokerSymbol &&
-                                !positionBook.isAttributed(it.positionTicket) &&
-                                (
-                                    it.clientOrderId == placement.clientOrderId ||
-                                        matchesComment(it.comment, wireComment)
-                                )
-                        }
-                    val exactDealGroups =
-                        dealCandidates
-                            .filter { it.clientOrderId == placement.clientOrderId }
-                            .groupBy(MT5UnknownOutcomeMatching::dealPositionKey)
-                    val fallbackDealGroups =
-                        if (exactDealGroups.isEmpty()) {
-                            dealCandidates
-                                .groupBy(MT5UnknownOutcomeMatching::dealPositionKey)
-                                .filterValues {
-                                    MT5UnknownOutcomeMatching.matchesUnknownDeals(
-                                        it,
-                                        placement,
-                                        placementStartedAtMs,
-                                    )
-                                }
-                        } else {
-                            emptyMap()
-                        }
-                    val dealGroups = if (exactDealGroups.isNotEmpty()) exactDealGroups else fallbackDealGroups
-                    if (dealGroups.size > 1 || (dealGroups.isEmpty() && dealCandidates.isNotEmpty())) {
-                        log.error(
-                            "MT5Broker {} order {} deal-history outcome remains ambiguous on attempt {}/{}: {}",
-                            profile.name,
-                            request.id,
-                            attempt,
-                            UNKNOWN_RESOLVE_ATTEMPTS,
-                            dealCandidates.map { it.ticket },
-                        )
-                        continue
-                    }
-                    val openingDeals = dealGroups.values.singleOrNull()
-                    if (openingDeals != null) {
-                        if (resolveUnknownDeals(request, protection, openingDeals, deals, positions)) return
-                        continue
-                    }
-                    cleanAbsenceReads++
-                }
-            }
-        }
-        if (cleanAbsenceReads == UNKNOWN_RESOLVE_ATTEMPTS) {
-            events.reject(request, "unknown-state send resolved as not placed after verified retry window ($cause)")
-            return
-        }
-        log.error(
-            "MT5Broker {} order {} send outcome UNRESOLVED after {} venue queries — " +
-                "no event emitted (a false reject invites a duplicate). Check the venue manually.",
-            profile.name,
-            request.id,
-            UNKNOWN_RESOLVE_ATTEMPTS,
-        )
-        events.publishGatewayUnreachable(UNKNOWN_RESOLVE_ATTEMPTS)
-        scheduleUnknownPlacementResolution(request, placement, placementStartedAtMs, protection, cause)
-    }
-
-    private fun scheduleUnknownPlacementResolution(
-        request: OrderRequest,
-        placement: MT5OrderRequest,
-        placementStartedAtMs: Long,
-        protection: MT5PositionProtection?,
-        cause: String,
-    ) {
-        unknownResolver.scheduleUnknownResolution {
-            resolveUnknownOutcome(request, placement, placementStartedAtMs, protection, cause)
-        }
-    }
-
-    /** Replay a deal-proven ambiguous placement, including its close legs when already flat. */
-    private fun resolveUnknownDeals(
-        request: OrderRequest,
-        protection: MT5PositionProtection?,
-        openingDeals: List<MT5Deal>,
-        allDeals: List<MT5Deal>,
-        positions: List<MT5Position>,
-    ): Boolean {
-        val positionTicket = MT5UnknownOutcomeMatching.dealPositionKey(openingDeals.first())
-        if (positionTicket <= 0L) return false
-        val quantity = openingDeals.fold(BigDecimal.ZERO) { total, deal -> total + deal.volume }
-        if (quantity.signum() <= 0) return false
-        val price = MT5UnknownOutcomeMatching.weightedDealPrice(openingDeals) ?: return false
-        val positionOpen = positions.any { it.ticket == positionTicket }
-        val positionDeals = allDeals.filter { MT5UnknownOutcomeMatching.dealPositionKey(it) == positionTicket }
-        val closingDeals = positionDeals.filter { it.entry != 0 }.sortedBy { it.timeMs }
-        if (!positionOpen) {
-            val closedQuantity = closingDeals.fold(BigDecimal.ZERO) { total, deal -> total + deal.volume }
-            if (closedQuantity.compareTo(quantity) < 0) return false
-        }
-        if (positionOpen) {
-            positionBook.track(
-                positionTicket,
-                MT5TicketMeta(
-                    request.id,
-                    request.strategyId,
-                    protection,
-                ),
-                request.symbol,
-                openingDeals.minOf {
-                    it.timeMs
-                },
-            )
-        }
-        bus.publish(
-            BrokerEvent.OrderAccepted(
-                clientOrderId = request.id,
-                brokerOrderId = positionTicket.toString(),
-                strategyId = request.strategyId,
-                timestamp = clock.now(),
-            ),
-        )
-        bus.publish(
-            BrokerEvent.OrderFilled(
-                clientOrderId = request.id,
-                brokerOrderId = positionTicket.toString(),
-                symbol = request.symbol,
-                side = request.side,
-                price = price,
-                quantity = quantity,
-                strategyId = request.strategyId,
-                timestamp = clock.now(),
-            ),
-        )
-        if (!positionOpen) {
-            val venueCosts =
-                venueCostLedger.book(
-                    positionTicket,
-                    positionDeals,
-                    positionClosed = true,
-                    nowMs = clock.now(),
-                )
-            closingDeals.forEachIndexed { index, deal ->
-                bus.publish(
-                    BrokerEvent.OrderFilled(
-                        clientOrderId = request.id,
-                        brokerOrderId = positionTicket.toString(),
-                        symbol = request.symbol,
-                        side = if (deal.type == 0) Side.BUY else Side.SELL,
-                        price = deal.price,
-                        quantity = deal.volume,
-                        strategyId = request.strategyId,
-                        timestamp = clock.now(),
-                        updatesOrderExecution = false,
-                        venueCosts = if (index == closingDeals.lastIndex) venueCosts else BigDecimal.ZERO,
-                        exitReason = closingDealExitReason(listOf(deal)),
-                    ),
-                )
-            }
-        }
-        log.info(
-            "MT5Broker {} order {} resolved from deal history as {} ticket {}",
-            profile.name,
-            request.id,
-            if (positionOpen) "FILLED" else "FILLED_AND_CLOSED",
-            positionTicket,
-        )
-        return true
-    }
-
-    private sealed interface UnknownVenueMatch {
-        data class Pending(
-            val order: MT5PendingOrder,
-        ) : UnknownVenueMatch
-
-        data class Position(
-            val position: MT5Position,
-        ) : UnknownVenueMatch
-    }
-
-    /**
-     * The venue stores only a truncated prefix (~16 chars) of the submitted comment, so
-     * match in both directions: stored is a prefix of the wire comment, or vice versa.
-     */
-    private fun matchesComment(
-        stored: String?,
-        wireComment: String,
-    ): Boolean = matchesOrderComment(stored, wireComment)
-
     private fun submitComposite(
         request: OrderRequest,
         composite: MT5Translation.Composite,
@@ -1071,12 +751,12 @@ class MT5Broker(
                 val pendingMatch =
                     pending.firstOrNull {
                         it.clientOrderId == order.id ||
-                            matchesComment(it.comment, order.id)
+                            matchesOrderComment(it.comment, order.id)
                     }
                 val positionMatch =
                     positions.firstOrNull {
                         it.clientOrderId == order.id ||
-                            matchesComment(it.comment, order.id)
+                            matchesOrderComment(it.comment, order.id)
                     }
                 val ticket = pendingMatch?.ticket ?: positionMatch?.ticket
                 if (ticket == null) {
@@ -1179,11 +859,11 @@ class MT5Broker(
         for (order in orders) {
             val pendingMatches =
                 pending.filter {
-                    it.clientOrderId == order.id || matchesComment(it.comment, order.id)
+                    it.clientOrderId == order.id || matchesOrderComment(it.comment, order.id)
                 }
             val positionMatches =
                 positions.filter {
-                    it.clientOrderId == order.id || matchesComment(it.comment, order.id)
+                    it.clientOrderId == order.id || matchesOrderComment(it.comment, order.id)
                 }
             if (pendingMatches.size > 1 || positionMatches.size != 1) continue
             val position = positionMatches.single()
