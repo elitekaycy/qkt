@@ -69,7 +69,17 @@ for _ in $(seq 1 90); do
     runs="$(gh run list -R "$repo" --branch testing --limit 12 --json name,status,conclusion,headSha \
         -q ".[] | select(.headSha == \"$testing\") | .name + \":\" + .status + \":\" + (.conclusion // \"\")" | tr '\n' ' ')"
     log "testing ${testing:0:8} [$runs]"
-    grep -qE '(check|integration|docker):completed:(failure|cancelled)' <<<"$runs" && stop "testing CI failed on $testing"
+    if grep -qE '(check|integration|docker):completed:(failure|cancelled)' <<<"$runs"; then
+        # A job can fail for a third party's outage (the Gradle distribution download returned 5xx twice
+        # on 2026-09-21). Nobody is here to press "re-run", so each failed run gets exactly one.
+        [ "${reran:-}" = "$testing" ] && stop "testing CI failed on $testing, again after one re-run"
+        reran="$testing"
+        gh run list -R "$repo" --branch testing --limit 12 --json databaseId,conclusion,headSha \
+            -q ".[] | select(.headSha == \"$testing\" and (.conclusion == \"failure\" or .conclusion == \"cancelled\")) | .databaseId" |
+            while read -r failed; do gh run rerun "$failed" -R "$repo" --failed > /dev/null && log "re-ran failed testing run $failed once"; done
+        sleep 60
+        continue
+    fi
     if grep -q 'check:completed:success' <<<"$runs" && grep -q 'integration:completed:success' <<<"$runs" &&
         grep -q 'docker:completed:success' <<<"$runs"; then break; fi
     sleep 60
