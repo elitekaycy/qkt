@@ -11,11 +11,13 @@ import kotlinx.serialization.json.longOrNull
 
 /**
  * The STRATEGIES section of the deep status screen: one line per deployment with its stream routing
- * and promotion state. Appends a reason to [unhealthy] for each strategy that is not healthy.
+ * and promotion state. Appends a reason to [unhealthy] for each strategy that is not healthy, and
+ * to [halted] for each one that risk control has stopped from entering.
  */
 internal fun renderStrategies(
     strategies: JsonArray,
     unhealthy: MutableList<String>,
+    halted: MutableList<String> = mutableListOf(),
 ): String {
     if (strategies.isEmpty()) return "STRATEGIES   none deployed"
     val sb = StringBuilder()
@@ -36,12 +38,12 @@ internal fun renderStrategies(
                 ?.jsonArray
                 ?.mapNotNull { it.jsonPrimitive.contentOrNull }
                 .orEmpty()
-        val halted = obj["halted"]?.jsonPrimitive?.booleanOrNull ?: false
+        val isHalted = obj["halted"]?.jsonPrimitive?.booleanOrNull ?: false
         val haltReason = obj["haltReason"]?.jsonPrimitive?.contentOrNull.orEmpty()
         val tag =
             buildString {
                 if (kind == "child") append("[child]")
-                if (halted) append("[HALTED]")
+                if (isHalted) append("[HALTED]")
                 if (gateState == "operator_stopped") append("[OP_STOPPED]")
             }
         sb.append('\n')
@@ -76,9 +78,12 @@ internal fun renderStrategies(
         if (state != "running") {
             unhealthy.add("strategy '$name' state=$state")
         }
-        if (halted) {
+        if (isHalted) {
             sb.append("\n    halted: ").append(haltReason.ifEmpty { "no reason recorded" })
-            unhealthy.add("strategy '$name' is halted ($haltReason) - clear with: qkt resume $name")
+            // A halt is risk control doing its job, not a fault: it is shown, and named at the top of the
+            // screen, but it does not fail the health check. Container health and deploy verification
+            // run this command - a drawdown halt must not mark a working daemon unhealthy.
+            halted.add("strategy '$name' is halted ($haltReason) - clear with: qkt resume $name")
         }
         if (gateState == "operator_stopped") {
             unhealthy.add("strategy '$name' is operator-stopped")

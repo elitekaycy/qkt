@@ -8,7 +8,7 @@ import java.time.Instant
 
 private const val MAX_WARMUP_RANGE_ATTEMPTS = 8
 
-private data class LoadedBars(
+internal data class LoadedBars(
     val candles: List<Candle>,
     val searchedDurationMs: Long,
 )
@@ -16,6 +16,7 @@ private data class LoadedBars(
 /** Reuses exact per-session warmup requests across hub seeding and synthetic tick replay. */
 internal class WarmupHistoryLoader(
     private val source: MarketSource,
+    private val settle: WarmupSettle = WarmupSettle(),
 ) {
     private val cache = mutableMapOf<Request, LoadedBars>()
 
@@ -54,7 +55,7 @@ internal class WarmupHistoryLoader(
         upperMs: Long,
     ): LoadedBars =
         cache.getOrPut(Request(symbol, window, count, upperMs)) {
-            loadWarmupBars(source, symbol, window, count, upperMs)
+            settle.freshest(source, symbol, window, upperMs) { loadWarmupBars(source, symbol, window, count, upperMs) }
         }
 
     private data class Request(

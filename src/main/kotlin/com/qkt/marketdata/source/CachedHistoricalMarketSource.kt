@@ -24,6 +24,7 @@ class CachedHistoricalMarketSource(
     maxEntries: Int = DEFAULT_MAX_ENTRIES,
     private val clock: Clock = SystemClock(),
 ) : MarketSource,
+    RefreshableBars,
     AutoCloseable {
     init {
         require(ttlMs >= 0L) { "bar cache ttl must be non-negative" }
@@ -69,6 +70,11 @@ class CachedHistoricalMarketSource(
         fromMs: Long,
         toMs: Long,
     ): Sequence<Tick> = delegate.tickSlice(symbol, fromMs, toMs)
+
+    override fun forgetBars(
+        symbol: String,
+        window: TimeWindow,
+    ) = requests.forget(symbol, window.durationMs)
 
     override fun close() {
         requests.clear()
