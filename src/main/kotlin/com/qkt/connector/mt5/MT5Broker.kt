@@ -121,6 +121,7 @@ class MT5Broker(
     private val placementPrep = MT5PlacementPreparation(profile, client, priceTracker, mt5Symbol, symbolMeta)
     private val venueReads = MT5BrokerVenueReads(profile, client, mt5Symbol, positionBook, symbolMeta)
     private val engineCloses = MT5EngineCloseMarkers(profile, clock)
+    private val partialEntries = MT5PartialEntries(state, bus, clock)
 
     /** Ledger legs on this broker's tickets; installed by the session, read by the poller thread. */
     @Volatile
@@ -142,7 +143,7 @@ class MT5Broker(
                 bookedLegs().filter { it.symbol.startsWith(prefix) }
             },
             onPositionOpened = ::onPendingPositionOpened,
-            onPositionIncreased = ::onPositionIncreased,
+            onPositionIncreased = partialEntries::onPositionIncreased,
             closedTicketMeta = ::lookupClosedTicketMeta,
             onPositionClosed = ::removeClosedTicketMeta,
             isExpectedProtectionChange = ::isExpectedProtectionChange,
@@ -845,7 +846,7 @@ class MT5Broker(
         val fillPrice = response.result.price.takeIf { it.signum() > 0 } ?: openingDeal.price
         val meta = MT5TicketMeta(request.id, request.strategyId, protection)
         val earlyPosition =
-            registerPartialEntry(
+            partialEntries.registerPartialEntry(
                 PartialEntryState(
                     meta = meta,
                     residualTicket = residualTicket,
@@ -879,23 +880,11 @@ class MT5Broker(
                 timestamp = clock.now(),
             ),
         )
-        earlyPosition?.let(::reconcilePartialEntry)
+        earlyPosition?.let(partialEntries::reconcilePartialEntry)
         if (partialPositionByResidualTicket.containsKey(residualTicket)) {
             pendingPoller.seedTrackedTickets(setOf(residualTicket))
         }
     }
-
-    private fun registerPartialEntry(
-        state: PartialEntryState,
-        openedAtMs: Long,
-    ): MT5Position? =
-        synchronized(pendingTransitionLock) {
-            pendingBook.register(state.residualTicket, state.meta)
-            partialEntryByPositionTicket[state.positionTicket] = state
-            partialPositionByResidualTicket[state.residualTicket] = state.positionTicket
-            positionBook.track(state.positionTicket, state.meta, state.symbol, openedAtMs)
-            earlyPositionByTicket.remove(state.positionTicket)
-        }
 
     private fun bookVenueCloseCosts(
         positionTicket: Long,
@@ -1543,7 +1532,7 @@ class MT5Broker(
                 ),
             )
             if (residual != null) {
-                registerPartialEntry(
+                partialEntries.registerPartialEntry(
                     PartialEntryState(
                         meta = meta,
                         residualTicket = residual.ticket,
@@ -1616,7 +1605,7 @@ class MT5Broker(
                         false
                     } else {
                         pendingBook.forgetLeg(orderId, ticket)
-                        removePartialEntryByResidualTicket(ticket)
+                        partialEntries.removePartialEntryByResidualTicket(ticket)
                         true
                     }
                 }
@@ -1820,7 +1809,7 @@ class MT5Broker(
      * cumulative position volume reaches the requested quantity or the residual disappears.
      */
     private fun onPendingPositionOpened(position: MT5Position): Boolean {
-        if (reconcilePartialEntry(position)) return true
+        if (partialEntries.reconcilePartialEntry(position)) return true
         val meta =
             synchronized(pendingTransitionLock) {
                 pendingBook.takeMeta(position.ticket)
@@ -1850,80 +1839,6 @@ class MT5Broker(
         }
         publishPendingPositionOpened(position, meta)
         return true
-    }
-
-    private fun onPositionIncreased(
-        previous: MT5Position,
-        latest: MT5Position,
-    ) {
-        if (latest.volume <= previous.volume) return
-        reconcilePartialEntry(latest)
-    }
-
-    /**
-     * Advances a partially filled entry from the position poller's cumulative venue volume.
-     * Returns true when [position] belongs to a partial entry, including a duplicate snapshot.
-     */
-    private fun reconcilePartialEntry(position: MT5Position): Boolean {
-        var event: BrokerEvent? = null
-        synchronized(pendingTransitionLock) {
-            val state = partialEntryByPositionTicket[position.ticket] ?: return false
-            val venueCumulative = position.volume.min(state.requestedQuantity)
-            if (venueCumulative <= state.cumulativeFilled) return true
-
-            val sliceQuantity = venueCumulative - state.cumulativeFilled
-            val slicePrice = incrementalEntryPrice(state, venueCumulative, position.priceOpen, sliceQuantity)
-            positionBook.setOpenedAt(position.ticket, position.openTime)
-            if (venueCumulative >= state.requestedQuantity) {
-                partialEntryByPositionTicket.remove(position.ticket)
-                partialPositionByResidualTicket.remove(state.residualTicket, position.ticket)
-                pendingBook.forgetIfStill(state.meta.orderId, state.residualTicket, state.meta)
-                recentlyFilledTickets[state.residualTicket] = clock.now()
-                event =
-                    BrokerEvent.OrderFilled(
-                        clientOrderId = state.meta.orderId,
-                        brokerOrderId = position.ticket.toString(),
-                        symbol = state.symbol,
-                        side = state.side,
-                        price = slicePrice,
-                        quantity = sliceQuantity,
-                        strategyId = state.meta.strategyId,
-                        timestamp = clock.now(),
-                    )
-            } else {
-                partialEntryByPositionTicket[position.ticket] =
-                    state.copy(
-                        cumulativeFilled = venueCumulative,
-                        averageFillPrice = position.priceOpen,
-                    )
-                event =
-                    BrokerEvent.OrderPartiallyFilled(
-                        clientOrderId = state.meta.orderId,
-                        brokerOrderId = position.ticket.toString(),
-                        symbol = state.symbol,
-                        side = state.side,
-                        price = slicePrice,
-                        quantity = sliceQuantity,
-                        cumulativeFilled = venueCumulative,
-                        strategyId = state.meta.strategyId,
-                        timestamp = clock.now(),
-                    )
-            }
-        }
-        event?.let(bus::publish)
-        return true
-    }
-
-    private fun incrementalEntryPrice(
-        state: PartialEntryState,
-        venueCumulative: BigDecimal,
-        venueAveragePrice: BigDecimal,
-        sliceQuantity: BigDecimal,
-    ): BigDecimal {
-        val venueNotional = venueAveragePrice.multiply(venueCumulative)
-        val priorNotional = state.averageFillPrice.multiply(state.cumulativeFilled)
-        val slicePrice = venueNotional.subtract(priorNotional).divide(sliceQuantity, com.qkt.common.Money.CONTEXT)
-        return slicePrice.takeIf { it.signum() > 0 } ?: venueAveragePrice
     }
 
     private fun registerPendingTicket(
@@ -2054,8 +1969,8 @@ class MT5Broker(
             }
         if (asPosition != null) {
             if (partialPositionByResidualTicket.containsKey(ticket)) {
-                reconcilePartialEntry(asPosition)
-                cancelPartialEntryResidual(
+                partialEntries.reconcilePartialEntry(asPosition)
+                partialEntries.cancelPartialEntryResidual(
                     ticket,
                     "residual disappeared from venue after partial fill",
                 )
@@ -2066,7 +1981,7 @@ class MT5Broker(
         }
 
         if (partialPositionByResidualTicket.containsKey(ticket)) {
-            cancelPartialEntryResidual(
+            partialEntries.cancelPartialEntryResidual(
                 ticket,
                 "residual disappeared from venue after partial fill",
             )
@@ -2087,33 +2002,6 @@ class MT5Broker(
             ),
         )
         return true
-    }
-
-    private fun cancelPartialEntryResidual(
-        ticket: Long,
-        reason: String,
-    ) {
-        val state =
-            synchronized(pendingTransitionLock) {
-                val positionTicket = partialPositionByResidualTicket.remove(ticket) ?: return
-                val current = partialEntryByPositionTicket.remove(positionTicket) ?: return
-                pendingBook.forgetIfStill(current.meta.orderId, ticket, current.meta)
-                current
-            }
-        bus.publish(
-            BrokerEvent.OrderCancelled(
-                clientOrderId = state.meta.orderId,
-                brokerOrderId = ticket.toString(),
-                reason = reason,
-                strategyId = state.meta.strategyId,
-                timestamp = clock.now(),
-            ),
-        )
-    }
-
-    private fun removePartialEntryByResidualTicket(residualTicket: Long) {
-        val positionTicket = partialPositionByResidualTicket.remove(residualTicket) ?: return
-        partialEntryByPositionTicket.remove(positionTicket)
     }
 
     /**
