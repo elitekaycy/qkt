@@ -809,57 +809,8 @@ class LiveSession(
         val sessionFlatten =
             SessionFlatten(strategies, clock, broker, ticketAttribution, pipeline, strategyPositions, ids, bus)
 
-        // A strategy/indicator/handler exception must never kill this thread silently:
-        // log with full context, raise a CRITICAL alert, halt the session's trading
-        // (PERSISTENT — an operator resumes after diagnosing), and keep draining the
-        // queue so exits, halts, and flattens still work.
-        fun onEngineFault(
-            stage: String,
-            t: Throwable,
-        ) {
-            log.error("engine loop fault during {} — halting trading, loop stays alive", stage, t)
-            runCatching { riskState.halt("engine fault: $stage: ${t.message}") }
-            runCatching {
-                notifier.notify(
-                    NotificationEvent.StrategyError(
-                        strategyId = strategies.firstOrNull()?.first.orEmpty(),
-                        message = "engine loop fault during $stage: $t",
-                        timestamp = clock.now(),
-                    ),
-                )
-            }.onFailure { n ->
-                recordNotificationFailure(strategies.firstOrNull()?.first.orEmpty(), "StrategyError", n)
-            }
-        }
-
-        var alertedPersistenceEpisode = 0L
-
-        fun checkPersistenceHealth() {
-            val health = persistor.healthSnapshot()
-            if (!health.enabled) return
-            val newFailureEpisode = health.failureEpisodes > alertedPersistenceEpisode
-            if (!newFailureEpisode && health.consecutiveFailures == 0L) return
-            val reason =
-                "persistence failure: durable state is stale " +
-                    "(failedWrites=${health.failedWrites}, consecutiveFailures=${health.consecutiveFailures}, " +
-                    "queueSize=${health.queueSize}, " +
-                    "callerRunsTotal=${health.callerRunsTotal})"
-            riskState.halt(reason, cancelWorkingOrders = false)
-            if (!newFailureEpisode) return
-            alertedPersistenceEpisode = health.failureEpisodes
-            log.error("{}; blocking new exposure while keeping exits active", reason)
-            val ownerStrategyId = strategies.firstOrNull()?.first.orEmpty()
-            runCatching {
-                notifier.notify(
-                    NotificationEvent.StrategyError(
-                        strategyId = ownerStrategyId,
-                        message = "CRITICAL disk failing — persisted state is stale; new exposure halted",
-                        timestamp = clock.now(),
-                    ),
-                )
-            }.onFailure { t -> recordNotificationFailure(ownerStrategyId, "PersistenceFailure", t) }
-            insights.persistenceFailing(ownerStrategyId, health)
-        }
+        val faults = EngineFaults(strategies, riskState, sessionNotifier)
+        val persistenceWatch = PersistenceHealthWatch(strategies, persistor, riskState, sessionNotifier, insights)
 
         // The single-consumer engine loop: the ONE thread that touches the bus, OrderManager,
         // positions, and the schedule runner. The tick feed, the heartbeat, the broker pollers
@@ -878,7 +829,7 @@ class LiveSession(
                         (clock as? com.qkt.common.MutableClock)?.advanceTo(msg.tick.timestamp)
                         pipeline.ingest(msg.tick)
                     } catch (e: Exception) {
-                        onEngineFault("tick ${msg.tick.symbol}@${msg.tick.timestamp}", e)
+                        faults.onEngineFault("tick ${msg.tick.symbol}@${msg.tick.timestamp}", e)
                     } finally {
                         if (pipeline.latency.enabled) {
                             pipeline.latency.observeAll(
@@ -911,7 +862,7 @@ class LiveSession(
                                 try {
                                     bus.publish(msg.event)
                                 } catch (e: Exception) {
-                                    onEngineFault("event ${msg.event::class.simpleName}", e)
+                                    faults.onEngineFault("event ${msg.event::class.simpleName}", e)
                                 }
                             is Inbound.Heartbeat ->
                                 runCatching {
@@ -922,15 +873,15 @@ class LiveSession(
                                     while (true) processTick(tickQueue.poll() ?: break)
                                     for (symbol in feedSymbols) marketDataGate.isHealthy(symbol)
                                     pipeline.scheduleHeartbeat(msg.nowMs, candleCloseGraceMs)
-                                }.onFailure { t -> onEngineFault("schedule heartbeat", t) }
-                            Inbound.PersistenceHealthCheck -> checkPersistenceHealth()
+                                }.onFailure { t -> faults.onEngineFault("schedule heartbeat", t) }
+                            Inbound.PersistenceHealthCheck -> persistenceWatch.checkPersistenceHealth()
                             is Inbound.Query -> msg.execute()
                             Inbound.Flatten ->
                                 // A failed FLATTEN is the emergency path failing — the loudest case.
                                 // Then the venue's own list: a resting order whose placement response was
                                 // lost is not among the orders the engine knows, and must not outlive a flatten.
                                 runCatching { sessionFlatten.flattenAndSweep() }
-                                    .onFailure { t -> onEngineFault("flatten", t) }
+                                    .onFailure { t -> faults.onEngineFault("flatten", t) }
                             is Inbound.FeedEnded -> {
                                 // Feed ended (finite source drained): process every tick already
                                 // queued before stopping, so no tick is dropped.
