@@ -118,6 +118,23 @@ insights:
   enabled: false
 YAML
 
+# A case may tighten or extend the config it runs under (`config:` in case.yaml, deep-merged):
+# risk cases are the config as much as they are the strategy.
+python3 - "$case_dir/case.yaml" "$out/qkt.config.yaml" <<'PY'
+import sys, yaml
+case = yaml.safe_load(open(sys.argv[1])); extra = case.get("config") or {}
+def merge(base, over):
+    for key, value in over.items():
+        if isinstance(value, dict) and isinstance(base.get(key), dict):
+            merge(base[key], value)
+        else:
+            base[key] = value
+    return base
+if extra:
+    config = yaml.safe_load(open(sys.argv[2]))
+    yaml.safe_dump(merge(config, extra), open(sys.argv[2], "w"), sort_keys=False)
+PY
+
 # A replay has no venue to ask for contract specs, so copy them from the live account now. Symbols
 # outside the built-in table (BTCUSD, indices) are otherwise rejected by the MT5 simulation.
 symbols="$(grep -oE 'EXNESS:[A-Z0-9]+' "$case_dir/strategy.qkt" | sort -u | paste -sd, -)"
@@ -180,7 +197,15 @@ deal_net="$(jq -r --arg prefix "dsl-$strategy" '
         ((.profit // 0) + (.commission // 0) + (.swap // 0) + (.fee // 0))] | add // 0
 ' "$out/evidence/history.json" | awk '{printf "%.2f", $1}')"
 engine_realized="$(jq -r '.realized // 0' "$out/evidence/status-final.json" 2>/dev/null | awk '{printf "%.2f", $1}')"
-[ "$engine_realized" = "$deal_net" ] || problems+=("engine realized $engine_realized != venue deal net $deal_net")
+# The venue truncates every closing deal's profit to whole cents while the engine keeps exact
+# values, so the two may differ by up to one cent per closing deal - and by no more than that.
+closing_deals="$(jq -r --arg prefix "dsl-$strategy" '
+    ([.[] | select(.entry == "IN") | select((.comment // "") as $c | ($c | length) > 4 and
+        (($c | startswith($prefix)) or ($prefix | startswith($c)))) | .positionTicket] | unique) as $owned |
+    [.[] | select(.entry != "IN") | select(.positionTicket as $t | $owned | index($t))] | length
+' "$out/evidence/history.json")"
+awk -v e="${engine_realized:-0}" -v d="$deal_net" -v n="$closing_deals" 'BEGIN { diff = e - d; if (diff < 0) diff = -diff; exit !(diff <= n * 0.01 + 0.000001) }' ||
+    problems+=("engine realized $engine_realized differs from venue deal net $deal_net by more than one cent per closing deal ($closing_deals)")
 
 fills() { { grep -E 'order filled ' "$1" || true; } | sed -nE 's/.*side=([A-Z]+) qty=([0-9.]+).*/\1 \2/p'; }
 fills "$out/daemon.log" > "$out/evidence/live-fills.txt"
@@ -208,13 +233,26 @@ else
     problems+=("capture or materialize failed: $(tail -n 1 "$out/evidence/materialize.log" 2>/dev/null | cut -c1-120)")
 fi
 
+# Risk rejections must be the same live and in replay: a cap that binds in one and not the other is
+# exactly the divergence the risk lane exists to catch. `expect_rejections` in case.yaml pins the count.
+rejections() { { grep -cE 'risk rejected ' "$1" || true; } | head -n 1; }
+live_rejections="$(rejections "$out/daemon.log")"; replay_rejections=0
+# A backtest reports rejections in its JSON result, not as log lines.
+[ -f "$out/replay.log" ] && replay_rejections="$({ grep -m1 '^{"schema' "$out/replay.log" || echo '{}'; } | jq -r '.tradeSummary.rejections // 0')"
+expected_rejections="$(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1])).get("expect_rejections", ""))' "$case_dir/case.yaml")"
+if [ -n "$expected_rejections" ]; then
+    [ "$live_rejections" = "$expected_rejections" ] || problems+=("live risk rejections $live_rejections, expected $expected_rejections")
+    [ "$replay_rejections" = "$expected_rejections" ] || problems+=("replay risk rejections $replay_rejections, expected $expected_rejections")
+fi
+
 status="passed"; [ "${#problems[@]}" -eq 0 ] || status="failed"
 printf '%s\n' "${problems[@]:-}" | jq -R . | jq -s --arg id "$id" --arg lane "$lane" --arg status "$status" \
     --arg startedAt "$started_at" --arg finishedAt "$(date -u +%FT%TZ)" --argjson magic "$magic" --argjson budget "$budget" \
     --arg engineRealized "$engine_realized" --arg dealNet "$deal_net" --argjson liveFills "$live_fills" --argjson replayFills "$replay_fills" \
+    --argjson liveRejections "$live_rejections" --argjson replayRejections "$replay_rejections" \
     --arg cli "$("$cli" --version | head -n 1)" \
     '{schema:"qkt-attestation-order-case-v1", id:$id, lane:$lane, status:$status, startedAtUtc:$startedAt, finishedAtUtc:$finishedAt,
       magic:$magic, budgetSeconds:$budget, cli:$cli, engineRealized:$engineRealized, dealNet:$dealNet,
-      liveFills:$liveFills, replayFills:$replayFills, problems:(map(select(. != "")))}' > "$out/result.json"
-jq -r '"\(.status) \(.id) liveFills=\(.liveFills) replayFills=\(.replayFills) realized=\(.engineRealized) dealNet=\(.dealNet) \(.problems|join("; "))"' "$out/result.json"
+      liveFills:$liveFills, replayFills:$replayFills, liveRejections:$liveRejections, replayRejections:$replayRejections, problems:(map(select(. != "")))}' > "$out/result.json"
+jq -r '"\(.status) \(.id) liveFills=\(.liveFills) replayFills=\(.replayFills) rejections=\(.liveRejections)/\(.replayRejections) realized=\(.engineRealized) dealNet=\(.dealNet) \(.problems|join("; "))"' "$out/result.json"
 [ "$status" = passed ]
