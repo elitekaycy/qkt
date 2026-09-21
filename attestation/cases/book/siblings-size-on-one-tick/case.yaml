@@ -1,10 +1,10 @@
 id: siblings-size-on-one-tick
 title: Two children sizing PCT RISK OF BOOK on the same bar close
-why: Each child reads the book balance from its own engine thread. When that read waited on the sibling's
-  thread both children halted at the snapshot timeout (#1160).
-status: planned
+why: Each child reads the book balance from its own engine thread. When that read waited on the sibling's thread
+  both children halted at the snapshot timeout (#1160).
+status: ready
 symbols:
-- XAUUSD
+- BTCUSD
 timeframes:
 - 1m
 proves:
@@ -14,3 +14,20 @@ assertions:
 - no-engine-fault
 - both-children-filled
 - flat-by-magic
+budget_seconds: 360
+steps:
+- run: qkt deploy {file} --state-dir {state}
+  note: a portfolio with two children on the same stream and timeframe
+- run: qkt list --state-dir {state}
+  wait_for: position
+  wait_count: 2
+  wait_seconds: 150
+  expect_stdout: atto_book
+  note: 'both children size PCT RISK OF BOOK on the same bar close and BOTH fill - before #1160 each waited on the
+    other''s engine thread and both halted at the 5 s snapshot timeout'
+- run: qkt status --deep --state-dir {state}
+  note: no child halted with an engine fault
+- run: qkt list --state-dir {state}
+  wait_for: flat
+  wait_seconds: 220
+  note: each child closes its own leg by its timed exit
