@@ -9,9 +9,25 @@ import java.math.BigDecimal
  * Merges every source of bars in a capture (captured candles, stream candles and bars rehydrated
  * from warmup ticks) into one list per bar identity, ordered by start time then sequence. A bar
  * seen from several sources keeps the record with the highest-priority provenance; an OHLC
- * disagreement between sources fails closed.
+ * disagreement between sources fails closed - with one exception, below.
+ *
+ * A bar that closed before the session's first live tick was built by the engine purely from
+ * warmup ticks, and warmup feeds every timeframe's ticks of a symbol through the same aggregator.
+ * MT5 converts bid bars to mid with each bar's own spread, so one M5 bar and the five M1 bars it
+ * covers disagree whenever the spread moves inside it (42 then 48 points near the New York
+ * rollover): the engine's mixed bar matches neither. The stream itself was seeded with its own
+ * timeframe's bar - the rehydrated one - so that is the bar a replay must use.
  */
 internal fun replayCandles(capture: GoldenMarketCapture): List<RecordedCandle> {
+    val firstLiveTick =
+        capture.ticks
+            .filterNot { it.warmup }
+            .groupBy { it.tick.symbol }
+            .mapValues { (_, ticks) -> ticks.minOf { it.tick.timestamp } }
+
+    fun builtFromWarmup(record: RecordedCandle): Boolean =
+        record.provenance == CAPTURED_CANDLE_EVENT &&
+            record.candle.endTime <= (firstLiveTick[record.candle.symbol] ?: Long.MIN_VALUE)
     val merged = linkedMapOf<BarIdentity, RecordedCandle>()
     for (record in capture.candles + capture.streamCandles + rehydrateWarmupCandles(capture.ticks)) {
         val candle = record.candle
@@ -21,8 +37,12 @@ internal fun replayCandles(capture: GoldenMarketCapture): List<RecordedCandle> {
             merged[identity] = record
             continue
         }
-        require(sameCandle(existing.candle, candle)) {
-            "conflicting golden candles for $identity"
+        if (!sameCandle(existing.candle, candle)) {
+            val rehydrated = listOf(existing, record).singleOrNull { it.provenance == REHYDRATED_WARMUP_TICKS }
+            val warmupBuilt = listOf(existing, record).singleOrNull(::builtFromWarmup)
+            require(rehydrated != null && warmupBuilt != null) { "conflicting golden candles for $identity" }
+            merged[identity] = rehydrated
+            continue
         }
         if (provenancePriority(record.provenance) > provenancePriority(existing.provenance)) {
             merged[identity] = record
