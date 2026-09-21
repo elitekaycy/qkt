@@ -44,6 +44,9 @@ attestation/
 ## Rules
 
 - A case resolves inside its budget or fails. Nothing is waited on.
+- A shadow case that logged no vector while its feed ticked less than twice a minute per symbol is
+  `market-quiet`, not `failed`: there was nothing to compare. It still does not pass - no evidence is
+  no evidence - but an unattended run can simply come back later. A busy feed with no vector is a failure.
 - Value parity is exact text (`compare-trace-vectors.py`); fill prices are compared within the
   reviewed drift for the symbol's own point.
 - Every capability in the catalog is proven by a `ready` case or listed in `gaps.yaml`. CI

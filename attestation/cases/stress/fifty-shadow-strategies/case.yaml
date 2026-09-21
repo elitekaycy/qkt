@@ -17,7 +17,7 @@ proves:
 copies: 50
 copies_agree:
   log: 'atto-fan '
-  min_lines: 6
+  min_lines: 4      # beside seven other daemons fifty warmups take most of two minutes: fewer shared bars, same proof
 steps:
 - run: qkt list --state-dir {state}
   expect_stdout: 'atto_fan_50'

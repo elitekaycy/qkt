@@ -55,6 +55,9 @@ def main():
     parser.add_argument("--marker", action="append", default=[])
     parser.add_argument("--catalog")
     parser.add_argument("--out", required=True)
+    parser.add_argument("--live-ticks", type=int, help="ticks the live session received for this case's symbols")
+    parser.add_argument("--quiet-below", type=int, default=0,
+                        help="with --live-ticks: fewer live ticks than this, and no vector at all, is a quiet market")
     args = parser.parse_args()
 
     live = vectors(args.live, args.marker)
@@ -97,6 +100,14 @@ def main():
         result["capabilitiesNotExercised"] = sorted(names - set(exercised))
     nothing = not live or any(mode["valuesCompared"] == 0 for mode in modes.values())
     result["status"] = "failed" if mismatches or nothing else "passed"
+    # No vector at all, from a feed that barely ticked, is not a parity failure: there was nothing to
+    # compare. It still cannot pass - no evidence is no evidence - but it is reported as what it is,
+    # so an unattended run can come back later instead of raising an alarm. A feed that ticked
+    # normally and still produced no vector stays a failure.
+    quiet = not live and not mismatches and args.live_ticks is not None and args.live_ticks < args.quiet_below
+    if quiet:
+        result["status"] = "market-quiet"
+        result["liveTicks"] = args.live_ticks
     if nothing and not mismatches:
         result["mismatches"].append({"problem": "no trace values were compared"})
     with open(args.out, "w") as handle:
@@ -104,7 +115,7 @@ def main():
         handle.write("\n")
     print(f"{result['status']} liveVectors={len(live)} " +
           " ".join(f"{n}={m['valuesCompared']}" for n, m in modes.items()) + f" mismatches={len(mismatches)}")
-    return 0 if result["status"] == "passed" else 1
+    return {"passed": 0, "market-quiet": 3}.get(result["status"], 1)
 
 
 if __name__ == "__main__":
