@@ -63,6 +63,15 @@ cli_root="$wave_root/cli-$short"; rm -rf "$cli_root"; cp -r build/install/qkt "$
 ./gradlew --stop >/dev/null 2>&1 || true
 cli="$cli_root/bin/qkt"; log "cli $("$cli" --version | head -n 1)"
 
+# An earlier attestation that died badly may have left an order or a position under one of its magics;
+# the wave would refuse to start on it. Clear this attestation's own magic range, and only that:
+# anything else on the account fails the run here, with the tickets named.
+stage_write sweep "clearing leftovers under magics $magic_base..$((magic_base + 1000))"
+swept="$(python3 scripts/live-validation/sweep-attestation-leftovers.py --gateway-url "$gateway_url" \
+    --expected-login "$expected_login" --expected-server "$expected_server" \
+    --magic-from "$magic_base" --magic-to "$((magic_base + 1000))")" || fail "account is not clean and the sweep could not make it so: $swept"
+log "sweep $swept"
+
 wave="$wave_root/attest-$short"
 for attempt in $(seq 1 "$attempts"); do
     stage_write wave "attempt $attempt"

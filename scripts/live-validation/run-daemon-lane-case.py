@@ -380,7 +380,19 @@ finally:
 if owned():
     problems.append(f"magic still owned a position after the case; force-closed tickets {force_close_leftovers()}")
 if pending():
-    problems.append("magic still owns a pending order after the case")
+    # Reported as a failure AND removed: a resting order left behind makes the next attestation refuse to start.
+    removed = []
+    for order in gateway(f"/orders?magic={a.magic}").get("orders") or []:
+        if str(order.get("magic", a.magic)) != str(a.magic):
+            continue
+        req = urllib.request.Request(f"{a.gateway_url}/orders/{order['ticket']}", method="DELETE",
+                                     headers={"Authorization": f"Bearer {key}"})
+        try:
+            urllib.request.urlopen(req, timeout=30).read()
+            removed.append(order["ticket"])
+        except Exception as error:  # noqa: BLE001 - reported, never swallowed
+            problems.append(f"could not cancel leftover order {order['ticket']}: {error}")
+    problems.append(f"magic still owned a pending order after the case; cancelled tickets {removed}")
 log = open(f"{a.out}/daemon.log").read()
 problems += check_forming_bars(log) + check_copies(log)
 if re.search(r"engine loop fault|unattributed fill dropped", log):
