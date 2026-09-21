@@ -6,6 +6,9 @@ fun main(argv: Array<String>) {
 
 internal fun runMain(argv: Array<String>): Int =
     try {
+        // Before anything logs: logback reads the strategy log directory when it first initializes.
+        com.qkt.cli.daemon.logging.StateDirLogging
+            .bind(argv)
         val args = Args(argv)
         CliOptionSchemas.forSubcommand(args.subcommand)?.let { schema ->
             args.validateOptions(
