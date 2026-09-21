@@ -1,0 +1,29 @@
+STRATEGY atto_fan VERSION 1
+
+SYMBOLS
+    eur = EXNESS:EURUSD EVERY 1m WARMUP 30 BARS,
+    gold = EXNESS:XAUUSD EVERY 1m WARMUP 30 BARS,
+    btc = EXNESS:BTCUSD EVERY 1m WARMUP 30 BARS,
+    btc5 = EXNESS:BTCUSD EVERY 5m WARMUP 20 BARS
+
+LET eur_ema = ema(eur.close, 10),
+    gold_rsi = rsi(gold.close, 14),
+    btc_atr = atr(btc.candle, 14),
+    btc5_ema = ema(btc5.close, 10)
+
+RULES
+    -- One symbol per rule: each line depends on one feed only, so fifty copies must print the same text.
+    WHEN eur_ema IS NOT NULL AND eur.close > lag(eur.close, 1)
+    THEN LOG "atto-fan eur up close={c} ema={e}" c=eur.close e=eur_ema
+    WHEN eur_ema IS NOT NULL AND eur.close <= lag(eur.close, 1)
+    THEN LOG "atto-fan eur down close={c} ema={e}" c=eur.close e=eur_ema
+
+    WHEN gold_rsi IS NOT NULL AND gold.close > lag(gold.close, 1)
+    THEN LOG "atto-fan gold up close={c} rsi={r}" c=gold.close r=gold_rsi
+    WHEN gold_rsi IS NOT NULL AND gold.close <= lag(gold.close, 1)
+    THEN LOG "atto-fan gold down close={c} rsi={r}" c=gold.close r=gold_rsi
+
+    WHEN btc_atr IS NOT NULL AND btc5_ema IS NOT NULL AND btc.close > lag(btc.close, 1)
+    THEN LOG "atto-fan btc up close={c} atr={a}" c=btc.close a=btc_atr
+    WHEN btc_atr IS NOT NULL AND btc5_ema IS NOT NULL AND btc.close <= lag(btc.close, 1)
+    THEN LOG "atto-fan btc down close={c} atr={a}" c=btc.close a=btc_atr
