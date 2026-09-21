@@ -3,12 +3,14 @@ package com.qkt.cli.daemon.routes
 import com.qkt.cli.PromotionGateConfig
 import com.qkt.cli.PromotionGateEvaluator
 import com.qkt.cli.PromotionStore
+import com.qkt.cli.daemon.HaltStatus
 import com.qkt.cli.daemon.StateDir
 import com.qkt.cli.daemon.StrategyRegistry
 import com.sun.net.httpserver.HttpExchange
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
+import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * `GET /list` — one row per portfolio, portfolio child and standalone strategy, with
@@ -45,6 +47,7 @@ internal fun handleList(
         val state = if (h.isRunning()) "running" else "stopped"
         val streamBrokersJson = renderStreamBrokers(h.live.streamBrokers())
         val meta = h.childMeta
+        val haltJson = renderHaltFields(HaltStatus.of(h.live, h.name))
         val promotionJson =
             renderPromotionFields(
                 // A portfolio is deployed and promoted as one unit. Its children inherit the
@@ -65,17 +68,25 @@ internal fun handleList(
                 """{"name":"${h.name}","kind":"child","parent":"${meta.parent}",""" +
                     """"port":${h.port},"trades":${h.tradeCount},""" +
                     """"uptimeMs":$uptime,"state":"$state","gateState":"$gateState",""" +
-                    """"streamBrokers":$streamBrokersJson$promotionJson}""",
+                    """"streamBrokers":$streamBrokersJson$haltJson$promotionJson}""",
             )
         } else {
             rows.add(
                 """{"name":"${h.name}","kind":"strategy","port":${h.port},""" +
                     """"trades":${h.tradeCount},"uptimeMs":$uptime,"state":"$state",""" +
-                    """"streamBrokers":$streamBrokersJson$promotionJson}""",
+                    """"streamBrokers":$streamBrokersJson$haltJson$promotionJson}""",
             )
         }
     }
     respond(ex, 200, rows.joinToString(",", "[", "]"))
+}
+
+/** `,"halted":true,"haltReason":"…","haltScope":"…"` for a halted strategy, `,"halted":false` otherwise. */
+private fun renderHaltFields(halt: HaltStatus): String {
+    if (!halt.halted) return ""","halted":false"""
+    val reason = JsonPrimitive(halt.reason ?: "").toString()
+    val scope = JsonPrimitive(halt.scope ?: "").toString()
+    return ""","halted":true,"haltReason":$reason,"haltScope":$scope"""
 }
 
 private fun renderPromotionFields(

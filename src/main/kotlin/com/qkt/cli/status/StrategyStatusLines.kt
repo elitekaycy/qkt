@@ -36,9 +36,12 @@ internal fun renderStrategies(
                 ?.jsonArray
                 ?.mapNotNull { it.jsonPrimitive.contentOrNull }
                 .orEmpty()
+        val halted = obj["halted"]?.jsonPrimitive?.booleanOrNull ?: false
+        val haltReason = obj["haltReason"]?.jsonPrimitive?.contentOrNull.orEmpty()
         val tag =
             buildString {
                 if (kind == "child") append("[child]")
+                if (halted) append("[HALTED]")
                 if (gateState == "operator_stopped") append("[OP_STOPPED]")
             }
         sb.append('\n')
@@ -72,6 +75,10 @@ internal fun renderStrategies(
         }
         if (state != "running") {
             unhealthy.add("strategy '$name' state=$state")
+        }
+        if (halted) {
+            sb.append("\n    halted: ").append(haltReason.ifEmpty { "no reason recorded" })
+            unhealthy.add("strategy '$name' is halted ($haltReason) - clear with: qkt resume $name")
         }
         if (gateState == "operator_stopped") {
             unhealthy.add("strategy '$name' is operator-stopped")
