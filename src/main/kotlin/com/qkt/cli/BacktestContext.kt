@@ -1,17 +1,12 @@
 package com.qkt.cli
 
-import com.qkt.accounting.AccountCurrency
 import com.qkt.accounting.AccountingConfig
-import com.qkt.accounting.FxMissingPolicy
 import com.qkt.backtest.Backtest
 import com.qkt.backtest.BacktestDataProvisioner
 import com.qkt.backtest.BrokerKind
-import com.qkt.backtest.ExecutionPreset
 import com.qkt.backtest.ExecutionSimulationConfig
 import com.qkt.backtest.GatedChild
 import com.qkt.backtest.ProvisionStream
-import com.qkt.backtest.SlippageSpec
-import com.qkt.broker.TakeProfitFill
 import com.qkt.candles.TimeWindow
 import com.qkt.common.FixedClock
 import com.qkt.common.SymbolCalendars
@@ -23,7 +18,6 @@ import com.qkt.dsl.compile.AstCompiler
 import com.qkt.dsl.portfolio.PortfolioGate
 import com.qkt.dsl.portfolio.capitalAllocations
 import com.qkt.evidence.DatasetEvidence
-import com.qkt.evidence.EvidenceHasher
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.LayeredInstrumentRegistry
 import com.qkt.instrument.StandardInstrumentRegistry
@@ -35,8 +29,6 @@ import com.qkt.marketdata.source.SequenceTickFeed
 import com.qkt.marketdata.store.BinaryBarStore
 import com.qkt.marketdata.store.DataFetcher
 import com.qkt.marketdata.store.DataRoot
-import com.qkt.marketdata.store.DatasetSnapshot
-import com.qkt.marketdata.store.DatasetSnapshots
 import com.qkt.marketdata.store.DefaultDataStore
 import com.qkt.marketdata.store.LocalBarStore
 import com.qkt.marketdata.store.ScriptDataFetcher
@@ -252,157 +244,6 @@ class BacktestContext private constructor(
             message: String,
         ) : RuntimeException(message)
 
-        /** Split a qktSymbol into (broker, bare): "MT5:EURUSD" -> ("MT5","EURUSD"), "EURUSD" -> ("BACKTEST","EURUSD"). */
-        private fun brokerAndBare(qktSymbol: String): Pair<String, String> {
-            val parts = qktSymbol.split(":", limit = 2)
-            return if (parts.size == 2) parts[0] to parts[1] else "BACKTEST" to qktSymbol
-        }
-
-        private fun hasCompleteFetchedBars(
-            barStore: LocalBarStore,
-            stream: ProvisionStream,
-            window: TimeWindow,
-            from: LocalDate,
-            to: LocalDate,
-        ): Boolean {
-            var day = from
-            val timeframe = window.canonicalSpec()
-            while (!day.isAfter(to)) {
-                if (!barStore.hasDay(stream.broker, stream.bareSymbol, timeframe, day)) return false
-                day = day.plusDays(1)
-            }
-            return true
-        }
-
-        private data class BarReplayConfig(
-            val forceBars: Boolean,
-            val tickFills: Boolean,
-            val binaryBarStore: BinaryBarStore,
-            val finestDeclared: Map<String, TimeWindow>,
-            val barWindows: Map<String, TimeWindow>,
-        )
-
-        /**
-         * Resolve bar-replay parameters for a backtest. Validates --bars/--tick-fills constraints,
-         * chooses the coarsest built timeframe that divides each declared timeframe, and checks
-         * bar coverage so portfolio and single-strategy backtests fail identically.
-         */
-        private fun resolveBarReplay(
-            args: Args,
-            dataRoot: String,
-            from: Instant,
-            to: Instant,
-            symbols: List<String>,
-            streams: List<com.qkt.dsl.ast.StreamDecl>,
-            candleWindow: TimeWindow?,
-            executionConfig: ExecutionSimulationConfig,
-        ): BarReplayConfig {
-            val forceBars = args.flag("bars")
-            val tickFills = args.flag("tick-fills")
-            require(!tickFills || forceBars) {
-                "--tick-fills requires --bars (bars drive signals; ticks resolve fills)"
-            }
-            require(!forceBars || tickFills || executionConfig.brokerKind != BrokerKind.MT5_SIM) {
-                "--bars with --broker mt5-sim is unsafe: synthetic bar extremes do not preserve " +
-                    "MT5 trigger prices or market spread. Use --bars --tick-fills or full tick replay"
-            }
-            require(!tickFills || executionConfig.latencyMs == 0L) {
-                "--tick-fills is not valid with execution latency (${executionConfig.latencyMs}ms): " +
-                    "filtered ticks cannot preserve delayed-order release timing; use full tick replay"
-            }
-            require(!tickFills || executionConfig.stopLatencyMs == 0L) {
-                "--tick-fills is not valid with stop latency (${executionConfig.stopLatencyMs}ms): " +
-                    "filtered ticks cannot preserve delayed stop execution; use full tick replay"
-            }
-            require(
-                !tickFills ||
-                    streams
-                        .map { it.timeframe }
-                        .distinct()
-                        .size <= 1,
-            ) {
-                "--tick-fills is not valid for mixed-timeframe strategies: a finer-stream close can place " +
-                    "a cross-symbol order after the other symbol's bar was already resolved"
-            }
-            val binaryBarStore = BinaryBarStore(Paths.get(dataRoot))
-            val barTfOverride = args.option("bar-tf")?.let { TimeWindow.parse(it) }
-            val finestDeclared: Map<String, TimeWindow> =
-                streams
-                    .filter { it.qktSymbol in symbols }
-                    .groupBy { it.qktSymbol }
-                    .mapNotNull { (symbol, symbolStreams) ->
-                        symbolStreams
-                            .mapNotNull { it.timeframe?.let(TimeWindow::parse) }
-                            .minByOrNull { it.durationMs }
-                            ?.let { symbol to it }
-                    }.toMap()
-            val barWindows: Map<String, TimeWindow> =
-                if (!forceBars) {
-                    finestDeclared
-                } else {
-                    finestDeclared.mapValues { (sym, declared) ->
-                        val (broker, bare) = brokerAndBare(sym)
-                        if (barTfOverride != null) {
-                            require(declared.durationMs % barTfOverride.durationMs == 0L) {
-                                "--bar-tf ${barTfOverride.canonicalSpec()} must divide $sym's " +
-                                    "declared ${declared.canonicalSpec()}"
-                            }
-                            barTfOverride
-                        } else {
-                            binaryBarStore
-                                .builtTimeframes(broker, bare)
-                                .filter { declared.durationMs % it.durationMs == 0L }
-                                .maxByOrNull { it.durationMs }
-                                ?: declared // no usable built tf — let the guardrail below report it
-                        }
-                    }
-                }
-            if (forceBars) {
-                val fromDay = LocalDate.ofInstant(from, ZoneOffset.UTC)
-                val toDay = LocalDate.ofInstant(to.minusMillis(1), ZoneOffset.UTC)
-                for (sym in symbols) {
-                    val tf = barWindows[sym] ?: candleWindow ?: continue
-                    val (broker, bare) = brokerAndBare(sym)
-                    val coverage =
-                        com.qkt.marketdata.store.BarCompletenessValidator.validate(
-                            binaryBarStore,
-                            broker,
-                            bare,
-                            tf,
-                            fromDay,
-                            toDay,
-                            defaultCalendars().calendarFor(bare),
-                        )
-                    System.err.println(
-                        "qkt: bar coverage $sym ${coverage.coveredTradingDays}/${coverage.requestedTradingDays} " +
-                            "trading days (${tf.canonicalSpec()})",
-                    )
-                    if (coverage.missingDays.isNotEmpty()) {
-                        val message =
-                            "--bars: incomplete built bars for $sym: ${coverage.coveredTradingDays}/" +
-                                "${coverage.requestedTradingDays} trading days; missing " +
-                                coverage.missingDays.joinToString(",") +
-                                ". Run: qkt data build-bars $bare --tf ${tf.canonicalSpec()} " +
-                                "--from $fromDay --to ${toDay.plusDays(1)}"
-                        if (!args.flag("allow-incomplete")) {
-                            throw com.qkt.backtest.IncompleteDataException(
-                                "$message\n  re-run with --allow-incomplete to proceed anyway",
-                            )
-                        }
-                        System.err.println("qkt: WARNING — $message")
-                    }
-                }
-                System.err.println("qkt: --bars research tier — bar-approximated intrabar fills; not for grading")
-            }
-            return BarReplayConfig(
-                forceBars = forceBars,
-                tickFills = tickFills,
-                binaryBarStore = binaryBarStore,
-                finestDeclared = finestDeclared,
-                barWindows = barWindows,
-            )
-        }
-
         fun build(
             args: Args,
             ast: StrategyAst,
@@ -431,7 +272,7 @@ class BacktestContext private constructor(
                 } else {
                     declaredSymbols
                 }
-            val datasetContext = datasetContext(args, listOf(ast), symbols, from, to)
+            val datasetContext = BacktestDatasetEvidence.datasetContext(args, listOf(ast), symbols, from, to)
             // Default to the shared store (~/.qkt/data) so `qkt backtest` reads the same place
             // `qkt fetch` / `qkt data convert` write. A pinned dataset carries its own root unless
             // the caller explicitly overrides it with --data-root for relocated snapshots.
@@ -485,11 +326,11 @@ class BacktestContext private constructor(
             // that would halt live halts at the same point in its backtest. The basis balance is
             // the backtest's own starting balance.
             val cfg = Config.load(Config.resolvePath(args.option("config")))
-            val executionConfig = executionConfig(args, cfg, brokerKind)
-            val accountingConfig = accountingConfig(args, cfg)
+            val executionConfig = BacktestSimulationOptions.executionConfig(args, cfg, brokerKind)
+            val accountingConfig = BacktestSimulationOptions.accountingConfig(args, cfg)
             val replaySymbols = (symbols + accountingConfig.normalizedSymbols.values).distinct()
             val barReplay =
-                resolveBarReplay(
+                BacktestBarReplay.resolveBarReplay(
                     args = args,
                     dataRoot = dataRoot,
                     from = from,
@@ -507,7 +348,7 @@ class BacktestContext private constructor(
             val provisioner: () -> Unit = {
                 val allProvisionStreams =
                     replaySymbols
-                        .map { brokerAndBare(it) }
+                        .map { BacktestBarReplay.brokerAndBare(it) }
                         .filter { (broker, _) -> broker != "MACRO" && broker != "BYBIT" && broker != HUB_BROKER }
                         .distinct()
                         .map { (broker, bare) -> ProvisionStream(broker = broker, bareSymbol = bare) }
@@ -517,7 +358,7 @@ class BacktestContext private constructor(
                     allProvisionStreams.filterNot { stream ->
                         val window = barReplay.finestDeclared["${stream.broker}:${stream.bareSymbol}"]
                         window != null &&
-                            hasCompleteFetchedBars(
+                            BacktestBarReplay.hasCompleteFetchedBars(
                                 barStore,
                                 stream,
                                 window,
@@ -673,7 +514,7 @@ class BacktestContext private constructor(
             }
 
             val datasetContext =
-                datasetContext(
+                BacktestDatasetEvidence.datasetContext(
                     args,
                     compiled.children.map { it.ast },
                     symbols,
@@ -721,9 +562,9 @@ class BacktestContext private constructor(
                     else -> throw SetupError("unknown --broker '$raw' (valid: paper, mt5-sim)")
                 }
             val cfg = Config.load(Config.resolvePath(args.option("config")))
-            val executionConfig = executionConfig(args, cfg, brokerKind)
+            val executionConfig = BacktestSimulationOptions.executionConfig(args, cfg, brokerKind)
             val barReplay =
-                resolveBarReplay(
+                BacktestBarReplay.resolveBarReplay(
                     args = args,
                     dataRoot = dataRoot,
                     from = from,
@@ -737,13 +578,13 @@ class BacktestContext private constructor(
             val tickFills = barReplay.tickFills
             val binaryBarStore = barReplay.binaryBarStore
             val barWindows = barReplay.barWindows
-            val accountingConfig = accountingConfig(args, cfg)
+            val accountingConfig = BacktestSimulationOptions.accountingConfig(args, cfg)
             val replaySymbols = (symbols + accountingConfig.normalizedSymbols.values).distinct()
 
             val provisioner: () -> Unit = {
                 val allProvisionStreams =
                     replaySymbols
-                        .map { brokerAndBare(it) }
+                        .map { BacktestBarReplay.brokerAndBare(it) }
                         .filter { (broker, _) -> broker != "MACRO" && broker != "BYBIT" && broker != HUB_BROKER }
                         .distinct()
                         .map { (broker, bare) -> ProvisionStream(broker = broker, bareSymbol = bare) }
@@ -753,7 +594,7 @@ class BacktestContext private constructor(
                     allProvisionStreams.filterNot { stream ->
                         val window = barReplay.finestDeclared["${stream.broker}:${stream.bareSymbol}"]
                         window != null &&
-                            hasCompleteFetchedBars(
+                            BacktestBarReplay.hasCompleteFetchedBars(
                                 barStore,
                                 stream,
                                 window,
@@ -865,259 +706,6 @@ class BacktestContext private constructor(
                 tickFills = tickFills,
             )
         }
-
-        private fun accountingConfig(
-            args: Args,
-            cfg: Config,
-        ): AccountingConfig {
-            val cliSymbols =
-                args.options("fx-symbol").associate { token ->
-                    val eq = token.indexOf('=')
-                    if (eq <= 0 || eq == token.lastIndex) {
-                        throw SetupError("bad --fx-symbol '$token'; expected PAIR=QKT_SYMBOL")
-                    }
-                    token.substring(0, eq).trim() to token.substring(eq + 1).trim()
-                }
-            return AccountingConfig(
-                accountCurrency =
-                    AccountCurrency(
-                        args.option("account-currency")
-                            ?: cfg.accountCurrency,
-                    ),
-                missingPolicy =
-                    FxMissingPolicy.fromConfig(
-                        args.option("fx-missing-policy")
-                            ?: cfg.accountingConfig.missingPolicy.name
-                                .lowercase(),
-                    ),
-                source =
-                    args.option("fx-source")
-                        ?: cfg.accountingConfig.source,
-                symbols = cfg.accountingConfig.symbols + cliSymbols,
-            )
-        }
-
-        private fun executionConfig(
-            args: Args,
-            cfg: Config,
-            brokerKind: BrokerKind,
-        ): ExecutionSimulationConfig {
-            val seed = args.option("seed")?.toLongOrNull() ?: cfg.execution["seed"]?.toLongOrNull()
-            if (args.flag("chaos") && args.option("execution") != null) {
-                throw SetupError("--chaos cannot be combined with --execution")
-            }
-            val preset =
-                if (args.flag("chaos")) {
-                    ExecutionPreset.STRESS
-                } else {
-                    (args.option("execution") ?: cfg.execution["preset"])
-                        ?.let(ExecutionPreset::fromConfig)
-                }
-            var result =
-                if (preset != null) {
-                    ExecutionSimulationConfig.defaultsFor(preset, seed)
-                } else {
-                    ExecutionSimulationConfig.forBrokerKind(brokerKind).copy(seed = seed)
-                }
-            (args.option("execution-latency") ?: cfg.execution["latency"])?.let {
-                result = result.copy(latencyMs = parseLatencyMs(it))
-            }
-            (args.option("stop-latency") ?: cfg.execution["stop_latency"])?.let {
-                result = result.copy(stopLatencyMs = parseLatencyMs(it))
-            }
-            (args.option("tp-fill") ?: cfg.execution["tp_fill"])?.let {
-                result = result.copy(takeProfitFill = parseTakeProfitFill(it))
-            }
-            // The live daemon reads the same key, so quiet bars close at the same moment (#1138).
-            result = result.copy(candleCloseGraceMs = cfg.candleCloseGraceMs)
-            (args.option("slippage") ?: cfg.execution["slippage"])?.let {
-                val (spec, points) = parseSlippage(it)
-                result = result.copy(slippage = spec, slippagePoints = points)
-            }
-            (args.option("reject-every") ?: cfg.execution["reject_every"])?.let {
-                result = result.copy(rejectEvery = it.toIntOrNull() ?: throw SetupError("bad reject_every '$it'"))
-            }
-            (args.option("partial-fill") ?: cfg.execution["partial_fill"])?.let {
-                result = result.copy(partialFillFraction = BigDecimal(it))
-            }
-            // CLI runs default to the production venue model (#1071): both live hosts are
-            // hedging MT5 accounts, so research, gates, and replay grade hedging books
-            // unless the operator explicitly selects netting.
-            val positionModeRaw =
-                args.option("position-mode") ?: cfg.execution["position_mode"] ?: "hedging"
-            positionModeRaw.let {
-                result =
-                    result.copy(
-                        positionMode =
-                            when (it.trim().lowercase()) {
-                                "netting" -> com.qkt.broker.PositionAccountingMode.NETTING
-                                "hedging" -> com.qkt.broker.PositionAccountingMode.HEDGING
-                                else -> throw SetupError(
-                                    "unknown position mode '$it' (valid: netting, hedging)",
-                                )
-                            },
-                    )
-            }
-            return result
-        }
-
-        private fun parseTakeProfitFill(raw: String): TakeProfitFill =
-            try {
-                TakeProfitFill.fromConfig(raw)
-            } catch (e: IllegalStateException) {
-                throw SetupError(e.message ?: "bad tp_fill '$raw'")
-            }
-
-        private fun parseLatencyMs(raw: String): Long {
-            val trimmed = raw.trim().lowercase().removePrefix("fixed:")
-            val millis =
-                when {
-                    trimmed.endsWith("ms") -> trimmed.removeSuffix("ms")
-                    trimmed.endsWith("s") ->
-                        return (trimmed.removeSuffix("s").toBigDecimal() * BigDecimal("1000")).toLong()
-                    else -> trimmed
-                }
-            return millis.toLongOrNull() ?: throw SetupError("bad execution latency '$raw'")
-        }
-
-        private fun parseSlippage(raw: String): Pair<SlippageSpec, Int> {
-            val trimmed = raw.trim().lowercase()
-            return when {
-                trimmed == "zero" || trimmed == "none" -> SlippageSpec.ZERO to 0
-                trimmed == "instrument" || trimmed == "instrument:slippagepoints" -> SlippageSpec.INSTRUMENT to 0
-                trimmed.startsWith("fixed-points:") ->
-                    SlippageSpec.FIXED_POINTS to parsePoints(raw, trimmed.substringAfter(':'))
-                trimmed.startsWith("fixed:") ->
-                    SlippageSpec.FIXED_POINTS to parsePoints(raw, trimmed.substringAfter(':'))
-                trimmed.startsWith("uniform-random:") ->
-                    SlippageSpec.UNIFORM_RANDOM to parsePoints(raw, trimmed.substringAfter(':'))
-                trimmed.startsWith("uniform:") ->
-                    SlippageSpec.UNIFORM_RANDOM to parsePoints(raw, trimmed.substringAfter(':'))
-                else -> throw SetupError("bad slippage '$raw' (valid: zero, instrument, fixed-points:N, uniform:N)")
-            }
-        }
-
-        private fun parsePoints(
-            raw: String,
-            points: String,
-        ): Int =
-            points.toIntOrNull()
-                ?: throw SetupError("bad slippage '$raw': points must be an integer")
-
-        private data class DatasetContext(
-            val evidence: DatasetEvidence,
-            val dataRoot: String?,
-        )
-
-        private fun datasetContext(
-            args: Args,
-            strategyAsts: List<StrategyAst>,
-            symbols: List<String>,
-            from: Instant,
-            to: Instant,
-        ): DatasetContext {
-            val raw = args.option("dataset") ?: return DatasetContext(mutableDatasetEvidence(args), dataRoot = null)
-            val path = Path.of(raw)
-            val snapshot =
-                try {
-                    DatasetSnapshots.read(path)
-                } catch (e: Exception) {
-                    throw SetupError("cannot read --dataset $path: ${e.message}")
-                }
-            validateDatasetSnapshot(path, snapshot, symbols, from, to, args.option("data-root")?.let(Path::of))
-            validateDatasetFieldRequirements(path, snapshot, strategyAsts)
-            return DatasetContext(
-                evidence =
-                    DatasetEvidence(
-                        id = snapshot.id,
-                        hash = EvidenceHasher.sha256(path),
-                        qualityPolicy = snapshot.qualityPolicy.mode,
-                        mutableStore = false,
-                    ),
-                dataRoot = snapshot.dataRoot,
-            )
-        }
-
-        private fun validateDatasetFieldRequirements(
-            path: Path,
-            snapshot: DatasetSnapshot,
-            strategyAsts: List<StrategyAst>,
-        ) {
-            val failures = mutableListOf<String>()
-            val totalTicks = snapshot.files.sumOf { it.tickCount }
-            val bidAskTicks = snapshot.files.sumOf { it.bidAskTicks }
-            val volumeTicks = snapshot.files.sumOf { it.volumeTicks }
-            val hasBidAsk = snapshot.files.all { it.tickCount == 0 || it.bidAskTicks == it.tickCount }
-            val hasVolume = snapshot.files.all { it.tickCount == 0 || it.volumeTicks == it.tickCount }
-            for (ast in strategyAsts) {
-                val aliasToSymbol = ast.streams.associate { it.alias to it.symbol }
-                val requirements = StrategyDataRequirementScanner.scan(ast)
-                val missingQuotes =
-                    requirements.quoteAliases
-                        .filter { aliasToSymbol[it] == snapshot.symbol }
-                        .sorted()
-                if (missingQuotes.isNotEmpty() && !hasBidAsk) {
-                    failures.add(
-                        "strategy reads bid/ask/spread on ${missingQuotes.joinToString()} but --dataset $path " +
-                            "has bid/ask on $bidAskTicks/$totalTicks ticks",
-                    )
-                }
-                val missingVolume =
-                    requirements.volumeAliases
-                        .filter { aliasToSymbol[it] == snapshot.symbol }
-                        .sorted()
-                if (missingVolume.isNotEmpty() && !hasVolume) {
-                    failures.add(
-                        "strategy reads volume on ${missingVolume.joinToString()} but --dataset $path " +
-                            "has volume on $volumeTicks/$totalTicks ticks",
-                    )
-                }
-            }
-            if (failures.isNotEmpty()) {
-                throw SetupError("dataset field capability check failed:\n  ${failures.joinToString("\n  ")}")
-            }
-        }
-
-        private fun validateDatasetSnapshot(
-            path: Path,
-            snapshot: DatasetSnapshot,
-            symbols: List<String>,
-            from: Instant,
-            to: Instant,
-            dataRootOverride: Path?,
-        ) {
-            val bareSymbols = symbols.map { it.substringAfter(':') }.distinct()
-            if (bareSymbols != listOf(snapshot.symbol)) {
-                throw SetupError("--dataset $path covers ${snapshot.symbol}, but run symbols are $bareSymbols")
-            }
-            val runFrom = LocalDate.ofInstant(from, ZoneOffset.UTC)
-            val runToExclusive = LocalDate.ofInstant(to.minusMillis(1), ZoneOffset.UTC).plusDays(1)
-            val snapshotFrom = LocalDate.parse(snapshot.from)
-            val snapshotTo = LocalDate.parse(snapshot.to)
-            if (runFrom.isBefore(snapshotFrom) || runToExclusive.isAfter(snapshotTo)) {
-                throw SetupError(
-                    "--dataset $path covers $snapshotFrom..$snapshotTo, but run needs $runFrom..$runToExclusive",
-                )
-            }
-            val verification = DatasetSnapshots.verify(snapshot, dataRootOverride = dataRootOverride, strict = true)
-            if (!verification.ok) {
-                throw SetupError(
-                    "dataset snapshot verification failed:\n  ${verification.failures.joinToString("\n  ")}",
-                )
-            }
-        }
-
-        private fun mutableDatasetEvidence(args: Args): DatasetEvidence =
-            DatasetEvidence(
-                qualityPolicy =
-                    if (args.flag("allow-incomplete")) {
-                        "allow-incomplete"
-                    } else {
-                        "default-completeness-check"
-                    },
-                mutableStore = true,
-                warning = "Dataset is a mutable local store, not an immutable snapshot.",
-            )
 
         internal fun defaultCalendars(): SymbolCalendars =
             SymbolCalendars(
