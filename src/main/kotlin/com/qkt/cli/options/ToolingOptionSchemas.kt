@@ -10,7 +10,7 @@ internal val toolingOptionSchemas: Map<String, CliOptionSchema> =
         "brokers" to CliOptionSchema(values = setOf("config"), flags = setOf("json")),
         "instruments" to
             CliOptionSchema(
-                values = setOf("config", "instruments", "broker"),
+                values = setOf("config", "instruments", "broker", "symbols", "as-prefix", "out"),
                 flags = setOf("json"),
             ),
         "editor" to
