@@ -1,0 +1,25 @@
+STRATEGY attest_distribution_statistics VERSION 1
+
+SYMBOLS
+    e = EXNESS:EURUSD EVERY 1m WARMUP 40 BARS
+
+LET sd = stddev(e.close, 10),
+    vr = variance(e.close, 10),
+    vratio = variance_ratio(e.close, 2, 8),
+    sk = skew(e.close, 12),
+    pr = percentile_rank(e.close, 12),
+    slope = regression_slope(e.close, 10),
+    eff = er(e.close, 10),
+    prev = lag(e.close, 1),
+    len_same = runlength(e.close),
+    uprun = runlength_where(e.close > lag(e.close, 1)),
+    z = zscore(e.close, 10)
+
+RULES
+    -- Rules fire on a false-to-true edge; logging on each up-turn and down-turn of the fastest
+    -- stream yields a vector at every reversal.
+    WHEN sk IS NOT NULL AND vratio IS NOT NULL AND slope IS NOT NULL AND pr IS NOT NULL AND e.close > lag(e.close, 1)
+    THEN LOG "attest vector turn=up case=distribution-statistics stddev={v0} variance={v1} variance_ratio={v2} skew={v3} percentile_rank={v4} regression_slope={v5} er={v6} lag={v7} runlength={v8} runlength_where={v9} zscore={v10}" v0=sd v1=vr v2=vratio v3=sk v4=pr v5=slope v6=eff v7=prev v8=len_same v9=uprun v10=z
+
+    WHEN sk IS NOT NULL AND vratio IS NOT NULL AND slope IS NOT NULL AND pr IS NOT NULL AND e.close <= lag(e.close, 1)
+    THEN LOG "attest vector turn=down case=distribution-statistics stddev={v0} variance={v1} variance_ratio={v2} skew={v3} percentile_rank={v4} regression_slope={v5} er={v6} lag={v7} runlength={v8} runlength_where={v9} zscore={v10}" v0=sd v1=vr v2=vratio v3=sk v4=pr v5=slope v6=eff v7=prev v8=len_same v9=uprun v10=z

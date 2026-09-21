@@ -1,0 +1,25 @@
+id: distribution-statistics
+title: Dispersion, shape and persistence statistics on a fast stream
+why: Variance ratio, skew, percentile rank and regression slope are window statistics with easy off-by-one
+  windows; a live bar counted twice or a missing warmup bar moves them all.
+status: ready
+symbols:
+- EURUSD
+timeframes:
+- 1m
+warmup_bars:
+  1m: 40
+proves:
+- STDDEV
+- VARIANCE
+- VARIANCE_RATIO
+- SKEW
+- PERCENTILE_RANK
+- REGRESSION_SLOPE
+- ER
+- LAG
+- RUNLENGTH
+- RUNLENGTH_WHERE
+- ZSCORE
+assertions:
+- trace-parity
