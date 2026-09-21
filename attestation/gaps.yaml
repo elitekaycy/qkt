@@ -29,12 +29,6 @@ gaps:
   reason: no ready shadow case exercises it yet
 - capability: IB_DEFENDED_LOW
   reason: no ready shadow case exercises it yet
-- capability: KELTNER_LOWER
-  reason: no ready shadow case exercises it yet
-- capability: KELTNER_MIDDLE
-  reason: no ready shadow case exercises it yet
-- capability: KELTNER_UPPER
-  reason: no ready shadow case exercises it yet
 - capability: LAG
   reason: no ready shadow case exercises it yet
 - capability: LOG
@@ -94,8 +88,6 @@ gaps:
 - capability: SOFTMAX
   reason: no ready shadow case exercises it yet
 - capability: SQRT
-  reason: no ready shadow case exercises it yet
-- capability: STDDEV
   reason: no ready shadow case exercises it yet
 - capability: STOCH_D
   reason: no ready shadow case exercises it yet

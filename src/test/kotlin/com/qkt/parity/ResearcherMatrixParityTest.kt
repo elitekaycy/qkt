@@ -24,7 +24,7 @@ class ResearcherMatrixParityTest {
             DslParityHarness.run(
                 strategyId = case.id,
                 source = case.dsl,
-                ticks = tape(case.symbols, minutes = 6 * 60),
+                ticks = tape(case.symbols, minutes = 30 * 60, startMinute = case.startMinute),
                 warmupByStream = case.warmups.associate { (symbol, window, bars) -> warmup(symbol, window, bars) },
             )
 
@@ -37,6 +37,8 @@ class ResearcherMatrixParityTest {
         val symbols: List<String>,
         val warmups: List<Triple<String, TimeWindow, Int>>,
         val dsl: String,
+        /** Minutes past the hour at which the live feed starts: a daemon rarely starts on a bar boundary. */
+        val startMinute: Int = 0,
     ) {
         override fun toString() = id
     }
@@ -130,14 +132,57 @@ class ResearcherMatrixParityTest {
                           THEN CLOSE a
                         """.trimIndent(),
                 ),
+                Case(
+                    id = "four_hour_and_daily_with_minute_trigger",
+                    symbols = listOf(A, B),
+                    warmups =
+                        listOf(
+                            Triple(A, TimeWindow.ONE_MINUTE, 5),
+                            Triple(A, TimeWindow.parse("4h"), 12),
+                            Triple(B, TimeWindow.ONE_DAY, 8),
+                        ),
+                    dsl =
+                        """
+                        STRATEGY four_hour_and_daily_with_minute_trigger VERSION 1
+                        SYMBOLS
+                          trigger = $A EVERY 1m WARMUP 5 BARS
+                          swing   = $A EVERY 4h WARMUP 12 BARS
+                          regime  = $B EVERY 1d WARMUP 8 BARS
+                        RULES
+                          WHEN trigger.close > ema(swing.close, 5) AND regime.close > sma(regime.close, 6)
+                           AND rsi(trigger.close, 4) > 50 AND POSITION.trigger = 0
+                          THEN BUY trigger SIZING 1
+                          WHEN POSITION.trigger > 0 AND rsi(trigger.close, 4) < 40
+                          THEN CLOSE trigger
+                        """.trimIndent(),
+                ),
+                Case(
+                    id = "hourly_channel_started_mid_bar",
+                    symbols = listOf(A),
+                    warmups = listOf(Triple(A, TimeWindow.FIVE_MINUTES, 6), Triple(A, TimeWindow.ONE_HOUR, 24)),
+                    startMinute = 37,
+                    dsl =
+                        """
+                        STRATEGY hourly_channel_started_mid_bar VERSION 1
+                        SYMBOLS
+                          fast = $A EVERY 5m WARMUP 6 BARS
+                          hr = $A EVERY 1h WARMUP 24 BARS
+                        RULES
+                          WHEN fast.close > sma(hr.close, 12) AND atr(hr.candle, 6) > 0 AND POSITION.fast = 0
+                          THEN BUY fast SIZING 1
+                          WHEN POSITION.fast > 0 AND fast.close < sma(hr.close, 12)
+                          THEN CLOSE fast
+                        """.trimIndent(),
+                ),
             )
 
-        /** Six hours of one tick a minute per symbol: a slow swing with a faster wobble, repeatable. */
+        /** Thirty hours of one tick a minute per symbol, enough to close 4h bars and cross a day boundary: a slow swing with a faster wobble, repeatable. */
         private fun tape(
             symbols: List<String>,
             minutes: Int,
+            startMinute: Int,
         ): List<Tick> =
-            (0 until minutes).flatMap { minute ->
+            (startMinute until startMinute + minutes).flatMap { minute ->
                 symbols.mapIndexed { index, symbol ->
                     Tick(symbol, price(minute, index), minute * 60_000L + index)
                 }
