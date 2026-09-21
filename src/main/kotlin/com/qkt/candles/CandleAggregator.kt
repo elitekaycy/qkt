@@ -7,7 +7,6 @@ import com.qkt.events.TickEvent
 import com.qkt.events.WarmupTickEvent
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
-import java.math.BigDecimal
 
 class CandleAggregator private constructor(
     private val window: TimeWindow,
@@ -86,6 +85,32 @@ class CandleAggregator private constructor(
     }
 
     /**
+     * Adopt [partial] as this window's open candle, so a start part-way through a window still
+     * closes a bar with the true open, high and low (#1196). Ignored once the symbol has an open
+     * or later candle. Seeded volume counts as ticks, which is how a size-less venue defines it.
+     */
+    fun seedForming(partial: Candle) {
+        val s = partial.symbol
+        if (s in open || partial.startTime < (lastClosedEnd[s] ?: Long.MIN_VALUE)) return
+        val ticks = partial.volume.toInt().coerceAtLeast(1)
+        open[s] =
+            MutableCandle(
+                s,
+                partial.open,
+                partial.high,
+                partial.low,
+                partial.close,
+                partial.volume,
+                ticks,
+                false,
+                partial.startTime,
+                partial.endTime,
+                null,
+                null,
+            )
+    }
+
+    /**
      * Close every in-progress candle whose window already ended at [nowMs] — the
      * time-driven close for quiet symbols. Without it a candle only closes when the
      * NEXT tick arrives: on a thin session edge the last bar never closes, its rules
@@ -131,49 +156,6 @@ class CandleAggregator private constructor(
             bid = tick.bid,
             ask = tick.ask,
         )
-    }
-
-    private class MutableCandle(
-        val symbol: String,
-        val open: BigDecimal,
-        var high: BigDecimal,
-        var low: BigDecimal,
-        var close: BigDecimal,
-        var volume: BigDecimal,
-        var ticks: Int,
-        var venueVolume: Boolean,
-        val startTime: Long,
-        val endTime: Long,
-        var bid: BigDecimal?,
-        var ask: BigDecimal?,
-    ) {
-        fun update(tick: Tick) {
-            if (tick.price > high) high = tick.price
-            if (tick.price < low) low = tick.price
-            close = tick.price
-            ticks += 1
-            if (tick.volume != null) {
-                volume = volume.add(tick.volume)
-                if (tick.volume.signum() > 0) venueVolume = true
-            }
-            bid = tick.bid
-            ask = tick.ask
-        }
-
-        /**
-         * Spot FX and CFD venues quote without traded size: every MT5 tick on such a symbol
-         * carries `volume = 0`, so summing tick volume yields an empty bar even though the
-         * venue's own history endpoint reports a `tick_volume` for the same period. A strategy
-         * reading `<stream>.volume` would then see real numbers on warmup and backtest bars and
-         * zero once live -- the same silent divergence class as the risk-rule defects.
-         *
-         * When no tick in the bar carried size, fall back to the count of ticks, which is
-         * exactly how MT5 defines `tick_volume`. Venues that do report size are untouched.
-         */
-        fun toCandle(): Candle {
-            val vol = if (venueVolume) volume else Money.of(ticks.toLong())
-            return Candle(symbol, open, high, low, close, vol, startTime, endTime, bid, ask)
-        }
     }
 
     companion object {
