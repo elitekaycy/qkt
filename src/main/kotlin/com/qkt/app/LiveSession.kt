@@ -2,7 +2,6 @@ package com.qkt.app
 
 import com.qkt.broker.Broker
 import com.qkt.broker.BrokerFactory
-import com.qkt.broker.CompositeBroker
 import com.qkt.broker.PaperBroker
 import com.qkt.bus.EventBus
 import com.qkt.candles.TimeWindow
@@ -297,8 +296,8 @@ class LiveSession(
     /** Accumulates trades/halts/equity-delta for the daily summary. */
     private val dailyTracker = DailyRollingTracker()
 
-    /** Captures the broker instances built by [buildBroker] so the session can ask them for their abilities. */
-    private val builtBrokers: MutableList<Broker> = mutableListOf()
+    /** Builds and remembers this session's venue brokers so the session can ask them for their abilities. */
+    private val brokers = SessionBrokers(strategies, symbols, brokerFactories, instrumentRegistry)
 
     /**
      * Broker-ticket → strategy-id mirror for the insights state poller. Written on the
@@ -312,85 +311,28 @@ class LiveSession(
                 strategyCommentNames.forEach { (strategyId, name) -> attribution.alias(name, strategyId) }
             }
 
+    // Kept as a member: LiveSessionBrokerCoverageTest reaches it reflectively by this name.
     private fun buildBroker(
         paperBroker: PaperBroker,
         bus: EventBus,
         clock: Clock,
         priceTracker: MarketPriceTracker,
         positions: PositionProvider,
-    ): Broker {
-        if (brokerFactories.isEmpty()) return paperBroker
-        val dslStrategies =
-            strategies.mapNotNull { (_, s) -> s as? com.qkt.dsl.compile.DslCompiledStrategy }
-        val brokerSymbols = mutableMapOf<String, MutableSet<String>>()
-        for (s in dslStrategies) {
-            for (key in s.declaredStreams.values) {
-                brokerSymbols
-                    .getOrPut(key.broker.lowercase()) { mutableSetOf() }
-                    .add(key.qktSymbol)
-            }
-        }
-        // Hand-written strategies (e.g. bot run-session bridges) declare no DSL streams;
-        // with factories configured, route by the session's BROKER:SYMBOL prefixes instead
-        // of silently paper-filling (the same #139 failure mode, one layer up).
-        if (brokerSymbols.isEmpty()) {
-            for (sym in symbols) {
-                val label = sym.substringBefore(':', "").lowercase()
-                if (label.isNotEmpty()) brokerSymbols.getOrPut(label) { mutableSetOf() }.add(sym)
-            }
-        }
-        if (brokerSymbols.isEmpty()) return paperBroker
-        // Fail fast if a strategy declares a broker prefix that has no configured factory.
-        // Without this check, the old code path silently fell through to `paperBroker` for
-        // unmapped prefixes — strategy fills happened on paper instead of the intended venue
-        // and operators only noticed when they couldn't find real fills (#139).
-        val missing = brokerSymbols.keys.filter { it !in brokerFactories }
-        require(missing.isEmpty()) {
-            val configuredList = brokerFactories.keys.sorted().joinToString(", ")
-            val missingList = missing.sorted().joinToString(", ")
-            "Strategy declares broker prefix(es) with no configured factory: [$missingList]. " +
-                "Configured brokers: [$configuredList]. " +
-                "Either fix the strategy's SYMBOLS prefix or add a `type: mt5` entry " +
-                "in qkt.config.yaml's brokers block for each missing prefix."
-        }
-        // Single-strategy sessions (daemon path) propagate the strategy name so MT5 brokers
-        // can correlate orphan recovery; multi-strategy sessions (LiveDemo, Main) pass null.
-        val owningStrategy = strategies.singleOrNull()?.first
-        val routes =
-            brokerSymbols.map { (label, syms) ->
-                val factory = brokerFactories.getValue(label)
-                val instance = factory.invoke(bus, clock, priceTracker, positions, owningStrategy)
-                builtBrokers.add(instance)
-                com.qkt.marketdata.source.SymbolPattern
-                    .exactSet(syms.toSet()) to instance
-            }
-        // A configured live session must fail closed. Any symbol outside the declared route set
-        // is a typo, stale profile, or incomplete deployment — paper-filling it creates a phantom
-        // position that exists only inside qkt. Explicit paper sessions returned above still use
-        // PaperBroker directly.
-        return CompositeBroker(routes = routes, fallback = null, bus = bus)
-    }
+    ): Broker = brokers.buildBroker(paperBroker, bus, clock, priceTracker, positions)
 
-    /**
-     * Build the [com.qkt.instrument.InstrumentRegistry] the trading pipeline uses for SIZING
-     * RISK and PaperBroker fill PnL. Layers the venue specs of every broker in the route list that
-     * offers them ([com.qkt.broker.InstrumentProvider]) over the configured registry, so a session
-     * trading several accounts (#139) gets each venue's own contract specs. Falls back to
-     * [com.qkt.instrument.NoopInstrumentRegistry] when nothing provides specs, so paper-only
-     * strategies that don't need contract-size-aware math keep working.
-     */
-    private fun buildInstrumentRegistry(): com.qkt.instrument.InstrumentRegistry {
-        val venueRegistries =
-            builtBrokers
-                .filterIsInstance<com.qkt.broker.InstrumentProvider>()
-                .map { it.instrumentRegistry() }
-        val layers = venueRegistries + listOfNotNull(instrumentRegistry)
-        return when (layers.size) {
-            0 -> com.qkt.instrument.NoopInstrumentRegistry
-            1 -> layers.single()
-            else -> com.qkt.instrument.LayeredInstrumentRegistry(layers)
-        }
-    }
+    private val perStrategyLimits =
+        PerStrategyRiskLimits(
+            perStrategyMaxDailyLoss,
+            perStrategyMaxPositionSize,
+            perStrategyMaxOpenPositions,
+            perStrategyMaxDrawdownPct,
+            perStrategyMaxDailyDrawdownPct,
+            perStrategyMaxTradesPerDay,
+            perStrategyCooldownAfterLossMs,
+            perStrategyCooldownAfterLossAfterConsecutive,
+            perStrategyLossStreakHalt,
+            perStrategyLossStreakHaltScope,
+        )
 
     private val sessionNotifier = SessionNotifier(notifier, notifyEvents, journal, strategies, clock)
 
@@ -489,14 +431,14 @@ class LiveSession(
         val usesAllocatedStrategyCapital = startingBalances.isNotEmpty()
         // Recovery seeding ran inside each broker's constructor; mirror the orphan ticket
         // attributions it produced so the state poller can name their strategy.
-        for (b in builtBrokers.filterIsInstance<com.qkt.broker.TicketAttributionProvider>()) {
+        for (b in brokers.built.filterIsInstance<com.qkt.broker.TicketAttributionProvider>()) {
             for ((ticket, strategyId) in b.ticketAttributions()) {
                 ticketAttribution.record(ticket, strategyId)
             }
         }
         // Phase 30: registry must be built after the brokers so each broker that provides
         // venue contract specs can contribute them.
-        val instruments = buildInstrumentRegistry()
+        val instruments = brokers.buildInstrumentRegistry()
         paperInstruments.set(instruments)
         val pnl = PnLCalculator(positions, priceTracker, instruments, accounting, markTimestamp = clock::now)
         // #352: live account equity, polled off the engine thread (a network call) into this holder
@@ -612,70 +554,17 @@ class LiveSession(
         // The daemon creates one LiveSession per deployed strategy, so the first entry is
         // the only one. If the caller didn't set per-strategy caps, these stay empty.
         val riskOwnerStrategyId = strategies.firstOrNull()?.first
-        val perStrategyHaltRules = mutableListOf<com.qkt.risk.HaltRule>()
-        val perStrategyRiskRules = mutableListOf<com.qkt.risk.RiskRule>()
-        if (riskOwnerStrategyId != null) {
-            perStrategyMaxDailyLoss?.let {
-                perStrategyHaltRules.add(
-                    com.qkt.risk.rules
-                        .MaxStrategyDailyLoss(riskOwnerStrategyId, it),
-                )
-            }
-            perStrategyMaxPositionSize?.let {
-                perStrategyRiskRules.add(
-                    com.qkt.risk.rules
-                        .MaxStrategyPositionSize(riskOwnerStrategyId, it, strategyPositions),
-                )
-            }
-            perStrategyMaxOpenPositions?.let {
-                perStrategyRiskRules.add(
-                    com.qkt.risk.rules
-                        .MaxStrategyOpenPositions(riskOwnerStrategyId, it, strategyPositions),
-                )
-            }
-            val ownerInitialBalance = startingBalances[riskOwnerStrategyId] ?: initialBalance
-            perStrategyMaxDrawdownPct?.let {
-                perStrategyHaltRules.add(
-                    com.qkt.risk.rules
-                        .MaxStrategyDrawdown(riskOwnerStrategyId, it, totalDdBasis, ownerInitialBalance),
-                )
-            }
-            perStrategyMaxDailyDrawdownPct?.let {
-                perStrategyHaltRules.add(
-                    com.qkt.risk.rules
-                        .MaxStrategyDailyDrawdown(riskOwnerStrategyId, it),
-                )
-            }
-            perStrategyMaxTradesPerDay?.let {
-                perStrategyRiskRules.add(
-                    com.qkt.risk.rules
-                        .MaxTradesPerDay(it, pacerLedger, clock, riskOwnerStrategyId),
-                )
-            }
-            perStrategyCooldownAfterLossMs?.let {
-                perStrategyRiskRules.add(
-                    com.qkt.risk.rules
-                        .CooldownAfterLoss(
-                            durationMs = it,
-                            ledger = pacerLedger,
-                            clock = clock,
-                            afterConsecutive = perStrategyCooldownAfterLossAfterConsecutive,
-                            strategyId = riskOwnerStrategyId,
-                        ),
-                )
-            }
-            perStrategyLossStreakHalt?.let {
-                perStrategyHaltRules.add(
-                    com.qkt.risk.rules
-                        .LossStreakHalt(
-                            strategyId = riskOwnerStrategyId,
-                            maxLosses = it,
-                            ledger = pacerLedger,
-                            scope = perStrategyLossStreakHaltScope,
-                        ),
-                )
-            }
-        }
+        val perStrategyRules =
+            PerStrategyRiskRules(
+                perStrategyLimits,
+                riskOwnerStrategyId,
+                strategyPositions,
+                startingBalances,
+                initialBalance,
+                totalDdBasis,
+                pacerLedger,
+                clock,
+            )
         // Mandatory pre-trade controls are always on — they ship with defaults so "no
         // limit configured" can never mean "no limit" (#393).
         val preTradeRules =
@@ -687,7 +576,7 @@ class LiveSession(
                 priceCollarFrac = priceCollarFrac,
                 accounting = accounting,
             )
-        var engineHeldProtectiveStopCount: () -> Int = { 0 }
+        val marketDataAlerts = MarketDataHealthAlerts(strategies, sessionNotifier, insights)
         // Stale/outlier judgment over the live feeds (#395): suppresses NEW orders on
         // frozen data and drops implausible ticks before they poison indicators.
         val marketDataGate =
@@ -699,59 +588,16 @@ class LiveSession(
                 maxClockSkewMs = marketDataGateConfig.maxClockSkewMs,
                 inSession = { _, nowMs -> broker.marketOpen(nowMs) },
                 scheduledBreak = { symbol, nowMs ->
-                    builtBrokers.ifEmpty { listOf(broker) }.any { it.scheduledBreak(symbol, nowMs) }
+                    brokers.built.ifEmpty { listOf(broker) }.any { it.scheduledBreak(symbol, nowMs) }
                 },
-                onUnhealthy = { symbol, reason ->
-                    if (NotifyEventKind.STRATEGY_ERROR in notifyEvents) {
-                        for ((strategyId, _) in strategies) {
-                            runCatching {
-                                notifier.notify(
-                                    NotificationEvent.StrategyError(
-                                        strategyId = strategyId,
-                                        message =
-                                            "market data unhealthy for $symbol: $reason; " +
-                                                "${engineHeldProtectiveStopCount()} engine-held protective stop(s) " +
-                                                "cannot trigger without ticks",
-                                        timestamp = clock.now(),
-                                    ),
-                                )
-                            }.onFailure { t -> recordNotificationFailure(strategyId, "MarketDataUnhealthy", t) }
-                        }
-                    }
-                    insights.marketDataStale(symbol, reason)
-                },
+                onUnhealthy = marketDataAlerts::onUnhealthy,
             )
-        val marginRules =
-            if (marginFloorPct.signum() > 0) {
-                listOf(
-                    com.qkt.risk.rules
-                        .MarginFloor(broker, marginFloorPct),
-                )
-            } else {
-                emptyList()
-            }
-        val measuredRules =
-            if (measuredUsageHours > 0L) {
-                log.warn(
-                    "measured-usage window active for {}h: entries above {} reject " +
-                        "(risk.measured_usage_hours: 0 opts out)",
-                    measuredUsageHours,
-                    measuredUsageMaxQty.toPlainString(),
-                )
-                listOf(
-                    com.qkt.risk.rules.MeasuredUsage(
-                        clock = clock,
-                        startedAtMs = clock.now(),
-                        windowHours = measuredUsageHours,
-                        maxQty = measuredUsageMaxQty,
-                    ),
-                )
-            } else {
-                emptyList()
-            }
+        val entryGuards = EntryGuardRules(clock, marginFloorPct, measuredUsageHours, measuredUsageMaxQty)
+        val marginRules = entryGuards.marginRules(broker)
+        val measuredRules = entryGuards.measuredRules()
         val riskEngine =
             RiskEngine(
-                rules + perStrategyRiskRules + preTradeRules + marginRules + measuredRules +
+                rules + perStrategyRules.riskRules + preTradeRules + marginRules + measuredRules +
                     listOfNotNull(
                         bookRiskController?.let {
                             com.qkt.risk.rules
@@ -759,7 +605,7 @@ class LiveSession(
                         },
                     ) +
                     com.qkt.marketdata.MarketDataHealthRule(marketDataGate),
-                haltRules + perStrategyHaltRules,
+                haltRules + perStrategyRules.haltRules,
                 positions,
                 riskState,
             )
@@ -806,7 +652,7 @@ class LiveSession(
         // so all calls return the same zone — strategy id is ignored. Null when no broker
         // reports a server clock (paper-only / Bybit-only sessions).
         val brokerZoneIdFor: ((String) -> java.time.ZoneId?)? =
-            serverTimeZoneOf(builtBrokers)?.let { zone -> { _: String -> zone } }
+            serverTimeZoneOf(brokers.built)?.let { zone -> { _: String -> zone } }
 
         val pipeline =
             TradingPipeline(
@@ -860,7 +706,7 @@ class LiveSession(
                 latencyEnabled = latencyEnabled,
             )
         downtimeCloses.clearRuleEdges(strategies)
-        engineHeldProtectiveStopCount = pipeline.orderManager::engineHeldProtectiveStopCount
+        marketDataAlerts.engineHeldProtectiveStopCount = pipeline.orderManager::engineHeldProtectiveStopCount
 
         bus.subscribe<WarmupTickEvent> { e -> onWarmupTick(e.tick) }
         bus.subscribe<SignalEvent> { e -> onSignal(e.signal) }
@@ -988,7 +834,7 @@ class LiveSession(
         riskState.warmupComplete = true
 
         val feed = source.liveTicks(feedSymbols)
-        insights.connected({ builtBrokers.ifEmpty { listOf(broker) } }, feed)
+        insights.connected({ brokers.built.ifEmpty { listOf(broker) } }, feed)
 
         val terminated = CountDownLatch(1)
         // Control events (bus events from pollers, flatten, heartbeat, feed-end) are
@@ -1341,7 +1187,7 @@ class LiveSession(
         // Broker truth → insights: account state, per-ticket positions, and deal history
         // polled on the poller's own thread, off the engine loop. Replaces the retired
         // engine-thread ledger snapshots — dashboards read state.* / broker.deal now.
-        val brokerStatePollerBrokers = builtBrokers.ifEmpty { listOf(broker) }.distinct()
+        val brokerStatePollerBrokers = brokers.built.ifEmpty { listOf(broker) }.distinct()
         // The handle is built at the end of start(); the poller samples equity through it so
         // the read runs as an engine-thread snapshot rather than a racy cross-thread read.
         val handleRef =
@@ -1485,7 +1331,7 @@ class LiveSession(
                 )
             }
 
-            private val drainGraceMs = if (builtBrokers.isEmpty()) 0L else STOP_DRAIN_GRACE_MS
+            private val drainGraceMs = if (brokers.built.isEmpty()) 0L else STOP_DRAIN_GRACE_MS
 
             override fun requestStop() {
                 if (!stopping.compareAndSet(false, true)) return
@@ -1516,7 +1362,7 @@ class LiveSession(
                 }
                 // Release venue-side lifecycle resources (MT5 pollers, Bybit reconcilers)
                 // so a long-running daemon cycling strategies doesn't accumulate threads.
-                for (b in builtBrokers) runCatching { b.shutdown() }
+                for (b in brokers.built) runCatching { b.shutdown() }
                 runCatching { riskState.persistAnchorsIfDirty() }
                 // Drop hub registrations attributed to this session's strategies so
                 // their aggregators and listener closures fall out of scope.
