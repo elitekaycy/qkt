@@ -191,7 +191,15 @@ if [ "$(owned)" != 0 ]; then
     done
     problems+=("magic still owned a position after the case; force-closed: $(echo $leftovers)")
 fi
-[ "$(pending)" = 0 ] || problems+=("magic still owns a pending order")
+if [ "$(pending)" != 0 ]; then
+    # Reported as a failure AND removed: a resting order left behind makes the next attestation refuse to start.
+    resting="$(gateway_get "/orders?magic=$magic" | jq -r --argjson magic "$magic" '(.orders // [])[] | select((.magic // $magic) == $magic) | .ticket')"
+    for ticket in $resting; do
+        printf 'header = "Authorization: Bearer %s"\n' "$QKT_BROKER_API_KEY" |
+            curl --silent --show-error --max-time 30 --config - -X DELETE "$gateway_url/orders/$ticket" > /dev/null || true
+    done
+    problems+=("magic still owned a pending order after the case; cancelled: $(echo $resting)")
+fi
 grep -Eq 'engine loop fault|unattributed fill dropped' "$out/daemon.log" &&
     problems+=("engine fault or unattributed fill in the daemon log")
 # A lost acknowledgement is not a failure - the engine is built to ask the venue and resolve it.
