@@ -7,7 +7,7 @@
 #   - the engine logged no fault, unknown outcome or unattributed fill;
 #   - replaying the captured input through the MT5 simulation yields the same fills, in the same
 #     order, on the same sides, at the same sizes.
-set -euo pipefail
+set -Eeuo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 usage() {
@@ -57,9 +57,18 @@ print(int(case.get("budget_seconds", lanes[sys.argv[3]]["budget_seconds"])))
 PY
 )"
 
+# One gateway serves every case at once and answers late under that load. A read that times out is
+# retried; a case must fail for what the engine did, not because one read of a busy gateway was slow.
 gateway_get() {
-    printf 'header = "Authorization: Bearer %s"\n' "$QKT_BROKER_API_KEY" |
-        curl --silent --show-error --fail --max-time 20 --config - "$gateway_url$1"
+    local attempt
+    for attempt in 1 2 3 4; do
+        if printf 'header = "Authorization: Bearer %s"\n' "$QKT_BROKER_API_KEY" |
+            curl --silent --show-error --fail --max-time 20 --config - "$gateway_url$1"; then
+            return 0
+        fi
+        [ "$attempt" = 4 ] || sleep "$attempt"
+    done
+    return 1
 }
 owned() { gateway_get "/get_positions?magic=$magic" | jq -er '(.data // []) | length'; }
 # Filtered here as well: the gateway's magic filter on /orders is not relied upon.
@@ -69,13 +78,17 @@ strategy="$(sed -nE 's/^STRATEGY[[:space:]]+([A-Za-z0-9_]+).*/\1/p' "$case_dir/s
 [ -n "$strategy" ] || fail "strategy.qkt declares no STRATEGY name"
 mkdir -p "$out/strategies" "$out/state" "$out/evidence"
 # Whatever goes wrong below, the case ends with a verdict on disk and on stdout - never silence.
+# In an EXIT trap BASH_LINENO is the trap's own frame (it printed "near line 1"); the ERR trap sees
+# the line that actually failed.
+failed_line="?"
+trap 'failed_line=$LINENO' ERR
 on_unexpected_exit() {
     local code=$?
     [ -f "$out/result.json" ] && return
-    jq -n --arg id "$id" --arg lane "$lane" --argjson code "$code" --arg line "${BASH_LINENO[0]:-?}" \
+    jq -n --arg id "$id" --arg lane "$lane" --argjson code "$code" --arg line "$failed_line" \
         '{schema:"qkt-attestation-order-case-v1", id:$id, lane:$lane, status:"failed",
           problems:["runner exited unexpectedly with code \($code) near line \($line)"]}' > "$out/result.json"
-    printf 'failed %s runner exited unexpectedly with code %s near line %s\n' "$id" "$code" "${BASH_LINENO[0]:-?}"
+    printf 'failed %s runner exited unexpectedly with code %s near line %s\n' "$id" "$code" "$failed_line"
 }
 trap on_unexpected_exit EXIT
 # The daemon names a deployment after its file, so the file carries the strategy's own name.
