@@ -37,7 +37,7 @@ internal class WarmupSettle(
         load: () -> LoadedBars,
     ): LoadedBars {
         var best = load()
-        val refreshable = source as? RefreshableBars ?: return best
+        val refreshable = (source as? RefreshableBars)?.takeIf { it.canRefresh(symbol) } ?: return best
         val firstGapMs = gapMs(best, upperMs)
         if (firstGapMs <= 0L || firstGapMs > maxGapMs) return best
         repeat(attempts) {
