@@ -2,7 +2,6 @@ package com.qkt.app
 
 import com.qkt.broker.Broker
 import com.qkt.broker.BrokerFactory
-import com.qkt.broker.BrokerPositionTicket
 import com.qkt.broker.CompositeBroker
 import com.qkt.broker.PaperBroker
 import com.qkt.bus.EventBus
@@ -26,7 +25,6 @@ import com.qkt.marketdata.live.LiveTickFeed
 import com.qkt.marketdata.live.MarketDataLifecycleFeed
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.notify.DailyRollingTracker
-import com.qkt.notify.EventTranslator
 import com.qkt.notify.NoopNotifier
 import com.qkt.notify.NotificationEvent
 import com.qkt.notify.Notifier
@@ -299,263 +297,6 @@ class LiveSession(
     /** Accumulates trades/halts/equity-delta for the daily summary. */
     private val dailyTracker = DailyRollingTracker()
 
-    private fun ticketPosition(ticket: BrokerPositionTicket): Position =
-        Position(
-            symbol = ticket.symbol,
-            quantity =
-                if (ticket.side == com.qkt.common.Side.BUY) {
-                    ticket.qty
-                } else {
-                    ticket.qty.negate()
-                },
-            avgEntryPrice = ticket.entryPrice,
-        )
-
-    private fun ticketSnapshotMatches(
-        brokerPositions: Map<String, List<Position>>,
-        tickets: List<BrokerPositionTicket>,
-    ): Boolean {
-        val ticketPositions =
-            tickets
-                .groupBy(BrokerPositionTicket::symbol)
-                .mapValues { (_, values) -> values.map(::ticketPosition) }
-        if (brokerPositions.keys != ticketPositions.keys) return false
-        return brokerPositions.all { (symbol, positions) ->
-            val unmatched = ticketPositions.getValue(symbol).toMutableList()
-            val allMatched =
-                positions.all { position ->
-                    val index =
-                        unmatched.indexOfFirst { candidate ->
-                            candidate.quantity.compareTo(position.quantity) == 0 &&
-                                candidate.avgEntryPrice.compareTo(position.avgEntryPrice) == 0
-                        }
-                    if (index < 0) {
-                        false
-                    } else {
-                        unmatched.removeAt(index)
-                        true
-                    }
-                }
-            allMatched && unmatched.isEmpty()
-        }
-    }
-
-    private fun qktOrderMarker(value: String?): String? {
-        if (value.isNullOrBlank()) return null
-        val marker =
-            if (value.startsWith("oco:")) {
-                value.substringAfter('/', missingDelimiterValue = "")
-            } else {
-                value
-            }
-        return marker.takeIf { it.startsWith("dsl-") }
-    }
-
-    private fun isPotentiallyOwnedBy(
-        ticket: BrokerPositionTicket,
-        strategyId: String,
-    ): Boolean {
-        ticketAttribution.ownerOf(ticket.ticket)?.let { return it == strategyId }
-        val marker = qktOrderMarker(ticket.clientOrderId) ?: qktOrderMarker(ticket.comment) ?: return true
-        return ticketAttribution.fromComment(marker, listOf(strategyId)) == strategyId
-    }
-
-    /**
-     * Three-way reconcile: persisted leg state + broker positions → attached LegBook
-     * or refusal. Runs once at startup before the engine thread takes ticks.
-     */
-    private fun reconcileOrPreload(
-        strategyPositions: com.qkt.positions.StrategyPositionTracker,
-        broker: Broker,
-        onLegRetired: (strategyId: String, leg: com.qkt.persistence.PersistedLeg) -> Unit = { _, _ -> },
-    ): Map<String, Int> {
-        val adoptedLegCounts = mutableMapOf<String, Int>()
-        // Never reconcile against assumed state: a transient broker error that reads as
-        // "no open positions" lets the session start flat while holding leveraged
-        // positions. Retry with backoff; refuse to start without one clean read.
-        var brokerByQktSymbol: Map<String, List<com.qkt.positions.Position>>? = null
-        var lastReadError: Throwable? = null
-        for (attempt in 1..RECONCILE_READ_ATTEMPTS) {
-            val read = runCatching { broker.getOpenPositions() }
-            val positions = read.getOrNull()
-            if (positions != null) {
-                brokerByQktSymbol = positions
-                break
-            }
-            lastReadError = read.exceptionOrNull()
-            log.warn(
-                "reconcile: broker position read failed (attempt {}/{}): {}",
-                attempt,
-                RECONCILE_READ_ATTEMPTS,
-                lastReadError?.message,
-            )
-            if (attempt < RECONCILE_READ_ATTEMPTS) Thread.sleep(reconcileReadBackoffMs * attempt)
-        }
-        if (brokerByQktSymbol == null) {
-            throw ReconcileException(
-                "broker position read failed $RECONCILE_READ_ATTEMPTS times — refusing to start " +
-                    "on assumed state. Last error: ${lastReadError?.message}",
-            )
-        }
-        // Venue tickets for adopting unmatched positions under ignore-mismatches. positionTickets()
-        // is qkt-keyed and carries the broker ticket; getOpenPositions() above is ticketless, and a
-        // leg adopted without its ticket can't be closed per-leg on a hedging account (#437).
-        val brokerTicketRead = runCatching { broker.positionTickets() }
-        if (broker.supportsPositionTickets && brokerTicketRead.isFailure) {
-            log.warn(
-                "reconcile: position-ticket read failed; retaining magic-global fail-closed behavior: {}",
-                brokerTicketRead.exceptionOrNull()?.message,
-            )
-        }
-        val brokerTickets = brokerTicketRead.getOrElse { emptyList() }
-        val scopeByTicket =
-            broker.supportsPositionTickets &&
-                strategies.size == 1 &&
-                brokerTicketRead.isSuccess &&
-                ticketSnapshotMatches(
-                    brokerPositions = brokerByQktSymbol,
-                    tickets = brokerTickets,
-                )
-        if (broker.supportsPositionTickets && strategies.size == 1 && brokerTicketRead.isSuccess && !scopeByTicket) {
-            log.warn("reconcile: position and ticket snapshots differ; retaining magic-global fail-closed behavior")
-        }
-        val brokerTicketsBySymbol = brokerTickets.groupBy(BrokerPositionTicket::symbol)
-        // The venue's full open-ticket set is what lets reconcile tell "closed while we were
-        // down" from a real mismatch (#1079); only authoritative when the ticket read succeeded.
-        val venueTickets: Set<String>? =
-            if (broker.supportsPositionTickets && brokerTicketRead.isSuccess) {
-                brokerTickets.map(BrokerPositionTicket::ticket).toSet()
-            } else {
-                null
-            }
-        val reconciler = com.qkt.persistence.LegBookReconciler(persistor)
-        for ((strategyId, _) in strategies) {
-            for (symbol in symbols) {
-                val allTicketsForSymbol = brokerTicketsBySymbol[symbol].orEmpty()
-                val ticketsForStrategy =
-                    if (scopeByTicket) {
-                        allTicketsForSymbol.filter { ticket -> isPotentiallyOwnedBy(ticket, strategyId) }
-                    } else {
-                        allTicketsForSymbol
-                    }
-                if (scopeByTicket && ticketsForStrategy.size != allTicketsForSymbol.size) {
-                    log.info(
-                        "reconcile: excluded {} position(s) on {} clearly attributed to another strategy",
-                        allTicketsForSymbol.size - ticketsForStrategy.size,
-                        symbol,
-                    )
-                }
-                val brokerForSymbol =
-                    if (scopeByTicket) {
-                        ticketsForStrategy.map(::ticketPosition)
-                    } else {
-                        brokerByQktSymbol[symbol] ?: emptyList()
-                    }
-                val outcome = reconciler.reconcile(strategyId, symbol, brokerForSymbol, venueTickets)
-                when (outcome) {
-                    is com.qkt.persistence.LegBookReconciler.Outcome.Attached -> {
-                        outcome.retired.forEach { leg -> onLegRetired(strategyId, leg) }
-                        // Rebuild the whole book from disk — the engine hasn't run yet, so use the
-                        // persistor preload path rather than applyFill. preloadFromPersistor loads
-                        // every leg regardless of role, so call it once per reconciled (strategy,
-                        // symbol). The old per-leg PRIMARY gate skipped any book with no PRIMARY leg
-                        // — every OCO/straddle book is INDEPENDENT legs — so those positions were
-                        // left out of the tracker after a restart: POSITION.<stream> read 0 and the
-                        // dsl bracket + winner-timeout were dead (#432).
-                        strategyPositions.preloadFromPersistor(strategyId, symbol)
-                    }
-                    is com.qkt.persistence.LegBookReconciler.Outcome.Mismatch -> {
-                        if (!ignoreMismatches) {
-                            throw ReconcileException(
-                                "$strategyId/$symbol: ${outcome.details}. " +
-                                    "Pass --reconcile=ignore-mismatches to adopt the venue positions as independent legs.",
-                            )
-                        }
-                        log.warn(
-                            "Reconcile mismatch (ignored): {}/{} — {}",
-                            strategyId,
-                            symbol,
-                            outcome.details,
-                        )
-                        // Adopt each unmatched broker position as an INDEPENDENT leg carrying its
-                        // venue ticket, so CLOSE / winner-timeout flattens it per-leg by ticket. A
-                        // STACK leg with a synthetic parent — or any ticketless leg — can only be
-                        // closed by a net opposite order, which on a hedging account opens a counter
-                        // position instead of closing it (#437). Prefer the ticketed view; fall back
-                        // to the ticketless positions only on venues that expose no tickets, where a
-                        // net close still flattens correctly.
-                        val attachLegs =
-                            if (ticketsForStrategy.isNotEmpty()) {
-                                ticketsForStrategy.map { t ->
-                                    val venueStop = t.stopLoss?.takeIf { it.signum() > 0 }
-                                    val venueTarget = t.takeProfit?.takeIf { it.signum() > 0 }
-                                    if (venueStop == null) {
-                                        log.error(
-                                            "ADOPTING UNPROTECTED position after explicit ignore-mismatches ack: " +
-                                                "strategy={} symbol={} ticket={} venueStop=none venueTarget={}",
-                                            strategyId,
-                                            symbol,
-                                            t.ticket,
-                                            venueTarget?.toPlainString() ?: "none",
-                                        )
-                                    } else {
-                                        log.warn(
-                                            "adopting position after explicit ignore-mismatches ack: " +
-                                                "strategy={} symbol={} ticket={} venueStop={} venueTarget={}",
-                                            strategyId,
-                                            symbol,
-                                            t.ticket,
-                                            venueStop.toPlainString(),
-                                            venueTarget?.toPlainString() ?: "none",
-                                        )
-                                    }
-                                    com.qkt.positions.PositionLeg(
-                                        legId = "$strategyId-$symbol-reconciled-${t.ticket}",
-                                        symbol = symbol,
-                                        side = t.side,
-                                        quantity = t.qty.abs(),
-                                        entryPrice = t.entryPrice,
-                                        // The venue's open time, so time-based exits like
-                                        // holding_duration survive a restart instead of
-                                        // restarting their clock at adoption.
-                                        openedAt = t.openedAt ?: clock.now(),
-                                        role = com.qkt.positions.LegRole.INDEPENDENT,
-                                        brokerTicket = t.ticket,
-                                    )
-                                }
-                            } else {
-                                brokerForSymbol.map { pos ->
-                                    val side =
-                                        if (pos.quantity.signum() >= 0) {
-                                            com.qkt.common.Side.BUY
-                                        } else {
-                                            com.qkt.common.Side.SELL
-                                        }
-                                    com.qkt.positions.PositionLeg(
-                                        legId = "$strategyId-$symbol-reconciled-${pos.quantity}",
-                                        symbol = symbol,
-                                        side = side,
-                                        quantity = pos.quantity.abs(),
-                                        entryPrice = pos.avgEntryPrice,
-                                        openedAt = clock.now(),
-                                        role = com.qkt.positions.LegRole.INDEPENDENT,
-                                    )
-                                }
-                            }
-                        for (leg in attachLegs) {
-                            strategyPositions.addIndependentLeg(strategyId, leg)
-                        }
-                        adoptedLegCounts.merge(strategyId, attachLegs.size, Int::plus)
-                    }
-                    com.qkt.persistence.LegBookReconciler.Outcome.NothingPersisted -> {
-                        // Clean state. Nothing to do.
-                    }
-                }
-            }
-        }
-        return adoptedLegCounts
-    }
-
     /** Captures the broker instances built by [buildBroker] so the session can ask them for their abilities. */
     private val builtBrokers: MutableList<Broker> = mutableListOf()
 
@@ -811,55 +552,17 @@ class LiveSession(
 
         // Reconcile persisted leg state against broker positions BEFORE the engine starts
         // taking ticks. Refuses to start on mismatch unless ignoreMismatches=true.
-        // Venue-realized amounts on legs that closed while down. Booked once the pipeline exists,
-        // through the same accounted-event fold as a live execution, so every accumulator and
-        // the audit trail see them.
-        val bootReconciled = ArrayList<BootReconciled>()
-        // Strategies with a leg that closed while the daemon was down. Their persisted rule
-        // edges still describe the bar that opened the position, so an entry condition that is
-        // true again after the restart would show no rising edge and never fire (the same trap
-        // as a stop --flatten inside the entry bar). Cleared once the strategies are bound below.
-        val edgeResetStrategies = LinkedHashSet<String>()
+        val downtimeCloses = DowntimeCloses(broker, clock)
         val adoptedLegCounts =
-            reconcileOrPreload(strategyPositions, broker) { strategyId, leg ->
-                edgeResetStrategies += strategyId
-                // The leg's position closed while the daemon was down. Book what the venue
-                // realized on it (OUT deals of that position ticket) so lifetime PnL and the
-                // equity curve do not silently lose the trade; a venue with no deal history
-                // just retires the leg with a warning.
-                val ticket = leg.brokerTicket
-                val closing =
-                    runCatching { broker.deals(leg.openedAt - 1L, clock.now()) }
-                        .getOrDefault(emptyList())
-                        .filter { d -> d.positionTicket == ticket && d.entry != "IN" }
-                if (closing.isEmpty()) {
-                    log.warn(
-                        "{}: leg {} (ticket {}) closed while down; no closing deal found in venue history, " +
-                            "realized PnL not booked",
-                        strategyId,
-                        leg.legId,
-                        ticket,
-                    )
-                } else {
-                    val realized =
-                        closing.fold(java.math.BigDecimal.ZERO) { acc, d ->
-                            acc
-                                .add(d.profit)
-                                .add(d.commission)
-                                .add(d.swap)
-                                .add(d.fee ?: java.math.BigDecimal.ZERO)
-                        }
-                    bootReconciled += BootReconciled(strategyId, leg.legId, realized)
-                    log.warn(
-                        "{}: leg {} (ticket {}) closed while down; booked realized {} from {} closing deal(s)",
-                        strategyId,
-                        leg.legId,
-                        ticket,
-                        realized.toPlainString(),
-                        closing.size,
-                    )
-                }
-            }
+            StartupReconcile(
+                strategies,
+                symbols,
+                persistor,
+                clock,
+                ignoreMismatches,
+                reconcileReadBackoffMs,
+                ticketAttribution,
+            ).run(strategyPositions, broker, downtimeCloses::onLegRetired)
 
         val engine = Engine(bus, priceTracker)
         val riskPersistId = strategies.firstOrNull()?.first ?: "session"
@@ -1156,16 +859,7 @@ class LiveSession(
                 },
                 latencyEnabled = latencyEnabled,
             )
-        for (strategyId in edgeResetStrategies) {
-            val strategy = strategies.firstOrNull { it.first == strategyId }?.second as? DslCompiledStrategy ?: continue
-            runCatching { strategy.clearRuleEdges() }
-                .onSuccess {
-                    log.warn(
-                        "{}: rule edges cleared — a position closed while the daemon was down",
-                        strategyId,
-                    )
-                }.onFailure { t -> log.warn("could not clear rule edges for {} after downtime close", strategyId, t) }
-        }
+        downtimeCloses.clearRuleEdges(strategies)
         engineHeldProtectiveStopCount = pipeline.orderManager::engineHeldProtectiveStopCount
 
         bus.subscribe<WarmupTickEvent> { e -> onWarmupTick(e.tick) }
@@ -1230,9 +924,7 @@ class LiveSession(
             dsl.resumeOrderIds(usedIds)
             ids.resumePast(usedIds)
         }
-        for (booked in bootReconciled) {
-            pipeline.applyReconciledRealized(booked.strategyId, booked.realized, booked.legId)
-        }
+        downtimeCloses.bookInto(pipeline)
         // The broker keeps the ledger honest against venue truth from here on (#1097).
         val watchedStrategyIds = strategies.map { it.first }
         broker.watchBookedLegs {
@@ -1951,10 +1643,3 @@ private sealed interface Inbound {
         val deadlineNanos: Long,
     ) : Inbound
 }
-
-/** A venue-realized amount on a leg that closed while the daemon was down. */
-private class BootReconciled(
-    val strategyId: String,
-    val legId: String,
-    val realized: java.math.BigDecimal,
-)
