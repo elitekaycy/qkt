@@ -1873,8 +1873,18 @@ class LiveSession(
                             is Inbound.Query -> msg.execute()
                             Inbound.Flatten ->
                                 // A failed FLATTEN is the emergency path failing — the loudest case.
-                                runCatching { doFlatten() }
-                                    .onFailure { t -> onEngineFault("flatten", t) }
+                                // Then the venue's own list: a resting order whose placement response was
+                                // lost is not among the orders the engine knows, and must not outlive a flatten.
+                                runCatching {
+                                    doFlatten()
+                                    VerifiedFlatten(
+                                        broker,
+                                        ticketAttribution,
+                                        clock,
+                                        strategies.map { it.first },
+                                        {},
+                                    ).sweepRestingOrders()
+                                }.onFailure { t -> onEngineFault("flatten", t) }
                             is Inbound.FeedEnded -> {
                                 // Feed ended (finite source drained): process every tick already
                                 // queued before stopping, so no tick is dropped.
@@ -2330,111 +2340,8 @@ class LiveSession(
                 for ((id, _) in strategies) riskState.resumeStrategy(id)
             }
 
-            override fun flattenAndVerify(timeout: Duration): FlattenResult {
-                val strategyId =
-                    strategies.firstOrNull()?.first
-                        ?: return FlattenResult(false, detail = "session has no strategy owner")
-                if (!broker.supportsPositionTickets) {
-                    flatten()
-                    return FlattenResult(
-                        verifiedFlat = false,
-                        detail = "broker ${broker.name} cannot verify open position tickets",
-                    )
-                }
-                val deployedIds = strategies.map { it.first }
-
-                fun targetTickets(): Pair<List<com.qkt.broker.BrokerPositionTicket>, List<String>> {
-                    val tickets = broker.positionTickets()
-                    val owned = mutableListOf<com.qkt.broker.BrokerPositionTicket>()
-                    val ambiguous = mutableListOf<String>()
-                    for (ticket in tickets) {
-                        val owner =
-                            ticketAttribution.ownerOf(ticket.ticket)
-                                ?: ticketAttribution.fromComment(ticket.comment, deployedIds)
-                        when (owner) {
-                            strategyId -> owned.add(ticket)
-                            null -> ambiguous.add(ticket.ticket)
-                        }
-                    }
-                    return owned to ambiguous
-                }
-
-                val initial =
-                    runCatching { targetTickets() }
-                        .getOrElse { error ->
-                            return FlattenResult(false, detail = "broker position read failed: ${error.message}")
-                        }
-                for (ticket in initial.first) {
-                    val side =
-                        if (ticket.side == com.qkt.common.Side.BUY) {
-                            com.qkt.common.Side.SELL
-                        } else {
-                            com.qkt.common.Side.BUY
-                        }
-                    val ack =
-                        runCatching {
-                            broker.submit(
-                                com.qkt.execution.OrderRequest.Market(
-                                    id = "operator-kill-${ticket.ticket}",
-                                    symbol = ticket.symbol,
-                                    side = side,
-                                    quantity = ticket.qty,
-                                    timeInForce = com.qkt.execution.TimeInForce.GTC,
-                                    timestamp = clock.now(),
-                                    strategyId = strategyId,
-                                    closesTicket = ticket.ticket,
-                                ),
-                            )
-                        }.getOrElse { error ->
-                            return FlattenResult(
-                                false,
-                                remainingTickets = (initial.first.map { it.ticket } + initial.second).distinct(),
-                                detail = "close submission failed for ticket ${ticket.ticket}: ${error.message}",
-                            )
-                        }
-                    if (!ack.accepted) {
-                        return FlattenResult(
-                            false,
-                            remainingTickets = (initial.first.map { it.ticket } + initial.second).distinct(),
-                            detail = "close rejected for ticket ${ticket.ticket}: ${ack.rejectReason}",
-                        )
-                    }
-                }
-
-                val deadline = System.nanoTime() + timeout.toNanos()
-                var lastRemaining = (initial.first.map { it.ticket } + initial.second).distinct()
-                while (true) {
-                    val current =
-                        runCatching { targetTickets() }
-                            .getOrElse { error ->
-                                return FlattenResult(
-                                    false,
-                                    remainingTickets = lastRemaining,
-                                    detail = "broker verification failed: ${error.message}",
-                                )
-                            }
-                    val remaining = (current.first.map { it.ticket } + current.second).distinct()
-                    lastRemaining = remaining
-                    if (remaining.isEmpty()) return FlattenResult(verifiedFlat = true)
-                    if (System.nanoTime() >= deadline) {
-                        return FlattenResult(
-                            verifiedFlat = false,
-                            remainingTickets = remaining,
-                            detail = "broker still reports open or unattributed position tickets",
-                        )
-                    }
-                    try {
-                        Thread.sleep(FLATTEN_VERIFY_POLL_MS)
-                    } catch (_: InterruptedException) {
-                        Thread.currentThread().interrupt()
-                        return FlattenResult(
-                            verifiedFlat = false,
-                            remainingTickets = remaining,
-                            detail = "broker verification interrupted",
-                        )
-                    }
-                }
-            }
+            override fun flattenAndVerify(timeout: Duration): FlattenResult =
+                VerifiedFlatten(broker, ticketAttribution, clock, strategies.map { it.first }, ::flatten).run(timeout)
 
             // Legacy fire-and-forget flatten stays engine-thread confined for internal callers.
             override fun flatten() {
