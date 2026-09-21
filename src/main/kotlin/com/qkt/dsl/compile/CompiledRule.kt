@@ -39,6 +39,10 @@ class CompiledRule(
     private var edgeDirty = false
     private var openedDuringCommit = false
 
+    // When the position last went flat, for a rule gated on being flat. A bar is judged on the
+    // world as it stood when that bar ended.
+    private var gateSatisfiedSinceMs: Long? = null
+
     internal val edgeState: Boolean
         get() = wasTrue
 
@@ -68,10 +72,17 @@ class CompiledRule(
     internal fun onPositionStateChanged(
         symbol: String,
         nowHeld: Boolean,
+        atMs: Long,
     ) {
-        if (symbol != ruleSymbol) return
+        if (symbol != ruleSymbol || positionGate == PositionGate.NONE) return
         val nowFalse = if (nowHeld) positionGate == PositionGate.FLAT else positionGate == PositionGate.HELD
-        if (!nowFalse) return
+        if (!nowFalse) {
+            // Only entries wait for the next close. An exit gated on holding may act on the bar its
+            // entry filled on, as it always has: reducing risk early is the safe side of the race.
+            if (positionGate == PositionGate.FLAT) gateSatisfiedSinceMs = atMs
+            return
+        }
+        gateSatisfiedSinceMs = null
         // A simulated fill lands inside this rule's own fire, before the edge is sealed; a venue
         // fill lands after. Either way the edge must end up reset.
         if (pendingCommit) openedDuringCommit = true else clearEdge()
@@ -88,7 +99,13 @@ class CompiledRule(
         ctx: StrategyContext,
     ): List<Signal> {
         val v = condition.evaluate(ec)
-        val isTrue = v is Value.Bool && v.v
+        // The tick that closes a bar can also be the one that stops the position out. The bar ended
+        // first: as of its close the position was still open, so an entry gated on being flat does
+        // not fire off that bar - it would be re-entering on a close that predates its own exit,
+        // e.g. a 4h bar closes at 100, the next tick gaps to 111 through the target, and the rule
+        // would buy at 111 because "the bar closed at 100 and I am flat". It waits for the next close.
+        val gateMetAfterBar = gateSatisfiedSinceMs?.let { it >= ec.candle.endTime } ?: false
+        val isTrue = v is Value.Bool && v.v && !gateMetAfterBar
         if (!isTrue) {
             if (wasTrue) edgeDirty = true
             wasTrue = false
