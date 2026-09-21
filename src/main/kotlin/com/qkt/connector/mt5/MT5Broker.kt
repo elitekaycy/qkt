@@ -104,6 +104,7 @@ class MT5Broker(
     private val unknownResolver = MT5UnknownResolveScheduler(profile.name, unknownPeriodicResolveMs)
     private val mt5Symbol = MT5Symbol(profile.symbolPolicy)
     private val translator = MT5OrderTranslator(profile, mt5Symbol, priceTracker)
+    private val requestedProtection = MT5RequestedProtection(translator)
     private val crossedStops = MT5CrossedStopConversion(profile, priceTracker)
     private val state = MT5BrokerState(profile)
     private val symbolMeta = state.symbolMeta
@@ -346,7 +347,7 @@ class MT5Broker(
         // follows on the bus, which is what the event-driven OCO/OTO sequencing consumes.
         val placement = prepared.withPlacementId()
         val placementStartedAtMs = clock.now()
-        val protection = protectionOf(placement)
+        val protection = requestedProtection.protectionOf(placement)
         client.placeOrderAsync(placement) { resp ->
             handlePlacementResult(request, placement, placementStartedAtMs, protection, resp)
         }
@@ -775,7 +776,7 @@ class MT5Broker(
                     MT5TicketMeta(
                         a.order.id,
                         a.order.request.strategyId,
-                        protectionFor(a.order.request),
+                        requestedProtection.protectionFor(a.order.request),
                     ),
                 )
                 log.info(
@@ -788,7 +789,7 @@ class MT5Broker(
                     MT5TicketMeta(
                         a.order.id,
                         a.order.request.strategyId,
-                        protectionFor(a.order.request),
+                        requestedProtection.protectionFor(a.order.request),
                     ),
                 )
             }
@@ -807,7 +808,7 @@ class MT5Broker(
                     MT5TicketMeta(
                         a.order.id,
                         a.order.request.strategyId,
-                        protectionFor(a.order.request),
+                        requestedProtection.protectionFor(a.order.request),
                     ),
                 )
                 if (a.position.ticket.toString() in bookedTickets) {
@@ -874,7 +875,7 @@ class MT5Broker(
                 MT5TicketMeta(
                     order.id,
                     order.request.strategyId,
-                    protectionFor(order.request),
+                    requestedProtection.protectionFor(order.request),
                 )
             positionBook.track(position.ticket, meta, order.request.symbol, position.openTime)
             if (position.ticket.toString() in bookedTickets) {
@@ -947,20 +948,6 @@ class MT5Broker(
         }
         return recovered
     }
-
-    private fun protectionFor(request: OrderRequest): MT5PositionProtection? =
-        runCatching { translator.translate(request) }
-            .getOrNull()
-            ?.let { translation ->
-                (translation as? MT5Translation.Single)?.request?.let(::protectionOf)
-            }
-
-    private fun protectionOf(request: MT5OrderRequest): MT5PositionProtection? =
-        if (request.sl == null && request.tp == null) {
-            null
-        } else {
-            MT5PositionProtection(request.sl, request.tp)
-        }
 
     override fun cancel(orderId: String) = pendingOrderChanges.cancel(orderId)
 
