@@ -2,17 +2,20 @@ id: mid-bar-start-higher-timeframe
 title: A daemon started part-way through a 5m, 1h, 4h and 1d bar
 why: 'Warmup seeds closed bars only, so without a seed the bar in progress at start is built from ticks seen
   after the start: right close, wrong open, high and low, for one bar on every deploy and restart (#1196).
-  Range indicators carry it for their whole lookback. The start is held until the clock is 90-200 seconds
-  into a 5m bar, so the first bar the strategy closes is always one it joined late.'
+  Range indicators carry it for their whole lookback. The minute in progress at start must equal the
+  venue 1m bar too: a session that saw only the ticks after it subscribed built it wrong. The start is held until the clock is 70-105 seconds
+  into a 5m bar (10-45 s into a minute), so the first bar the strategy closes is always one it joined late.'
 status: ready
 symbols:
 - BTCUSD
 timeframes:
+- 1m
 - 5m
 - 1h
 - 4h
 - 1d
 warmup_bars:
+  1m: 3
   5m: 6
   1h: 24
   4h: 12
@@ -21,8 +24,11 @@ proves:
 - behaviour:forming-bar-seed
 start_offset:
   period_seconds: 300
-  min: 90
-  max: 200
+  min: 70
+  max: 105
+first_minute_check:
+  qkt_symbol: EXNESS:BTCUSD
+  symbol: BTCUSDm
 steps:
 - run: qkt status atto_mid_bar --state-dir {state}
   wait_log: 'atto-bar m5 '

@@ -38,7 +38,7 @@ Operator commands rot silently because nobody runs the emergency ones until the 
 Every step's command, exit code, output and verdict is recorded. The case always ends with
 `kill --flatten` and a venue check that the magic owns nothing. Demo accounts on loopback only.
 """
-import argparse, json, os, re, subprocess, sys, time, urllib.request
+import argparse, glob, json, os, re, subprocess, sys, time, urllib.request
 import yaml
 
 ap = argparse.ArgumentParser()
@@ -235,6 +235,41 @@ def force_close_leftovers():
     return closed
 
 
+def check_first_minute():
+    """The minute that was in progress at start, as the daemon built it, must be the venue's own bar.
+
+    Read from the strategy's audit journal (the engine's CandleEvent for that minute), not from a log
+    line: a session that saw only the ticks after it subscribed built that minute with the wrong open,
+    high and low, and a copy that subscribed three seconds earlier built a different one. The venue's
+    bid bar is lifted by half its spread to the engine's mid. Needs `start_offset` to start the daemon
+    in the first 55 s of a minute - later, the backfill deliberately stops short of the minute's open.
+    """
+    rule = case.get("first_minute_check")
+    if not rule:
+        return []
+    minute = int(started_at // 60 * 60) * 1000
+    built = None
+    for path in sorted(glob.glob(f"{a.out}/state/state/audit-journal/{strategy}/*.jsonl")):
+        for line in open(path):
+            event = json.loads(line)
+            candle = event.get("candle")
+            if (candle and event.get("symbol") == rule["qkt_symbol"] and int(candle["startTimeMs"]) == minute
+                    and int(candle["endTimeMs"]) - minute == 60_000):
+                built = candle
+    stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(minute / 1000))
+    venue = next((b for b in gateway(f"/fetch_data_pos?symbol={rule['symbol']}&timeframe=M1&num_bars=20").get("data") or []
+                  if b["time"] == stamp), None)
+    if built is None or venue is None:
+        return [f"first minute {stamp}: engine bar {'missing' if built is None else 'found'}, venue bar {'missing' if venue is None else 'found'}"]
+    point = float(gateway(f"/symbol_info/{rule['symbol']}")["point"])
+    found = []
+    for field in ("open", "high", "low", "close"):
+        mine, theirs = float(built[field]), venue[field] + venue["spread"] * point / 2
+        if abs(mine - theirs) > point / 2:
+            found.append(f"first minute {stamp} {field} {mine} is not the venue's {round(theirs, 8)}")
+    return found
+
+
 def check_forming_bars(log):
     """A bar that was already in progress when the daemon started must still be the venue's bar.
 
@@ -428,7 +463,7 @@ if pending():
             problems.append(f"could not cancel leftover order {order['ticket']}: {error}")
     problems.append(f"magic still owned a pending order after the case; cancelled tickets {removed}")
 log = open(f"{a.out}/daemon.log").read()
-problems += check_forming_bars(log) + check_copies(log)
+problems += check_forming_bars(log) + check_copies(log) + check_first_minute()
 if re.search(r"engine loop fault|unattributed fill dropped", log):
     problems.append("engine fault or unattributed fill in the daemon log")
 # A lost acknowledgement is resolved by asking the venue; only one left unresolved is a failure.

@@ -1,6 +1,7 @@
 STRATEGY atto_mid_bar VERSION 1
 
 SYMBOLS
+    m1 = EXNESS:BTCUSD EVERY 1m WARMUP 3 BARS,
     m5 = EXNESS:BTCUSD EVERY 5m WARMUP 6 BARS,
     h1 = EXNESS:BTCUSD EVERY 1h WARMUP 24 BARS,
     h4 = EXNESS:BTCUSD EVERY 4h WARMUP 12 BARS,
@@ -12,5 +13,5 @@ RULES
     THEN LOG "atto-bar m5 o={o} h={h} l={l} c={c}" o=m5.open h=m5.high l=m5.low c=m5.close
 
     -- Reading the longer streams is what makes the daemon warm and seed them.
-    WHEN h1.close > 0 AND h4.close > 0 AND d1.close > 0
+    WHEN m1.close > 0 AND h1.close > 0 AND h4.close > 0 AND d1.close > 0
     THEN LOG "atto-bar longer h1={a} h4={b} d1={c}" a=h1.close b=h4.close c=d1.close
