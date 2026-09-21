@@ -139,11 +139,10 @@ interface DslCompiledStrategy : Strategy {
         // default no-op
     }
 
-    /** Re-arm the rule edge that produced a rejected order, if this strategy owns it. */
-
     /** The strategy's position on [symbol] went from flat to open. */
     fun onPositionOpened(symbol: String) = Unit
 
+    /** Re-arm the rule edge that produced a rejected order, if this strategy owns it. */
     fun onOrderRejected(clientOrderId: String) {
         // default no-op
     }
