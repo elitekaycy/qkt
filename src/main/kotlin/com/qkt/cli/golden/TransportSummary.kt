@@ -18,8 +18,11 @@ internal data class TransportSummary(
 )
 
 /**
- * Scans MT5 transport journals for exchanges inside the audit window. A placement is linked when
- * a successful `POST /order` names an order the audit journal saw filled.
+ * Scans MT5 transport journals for exchanges inside the audit window. A placement is linked when a
+ * `POST /order` names an order the audit journal saw filled. Its HTTP response is not required: a
+ * placement whose response was lost (a timeout on a loaded gateway) is an UNKNOWN outcome the engine
+ * resolves from the venue, and the fill in the audit journal is the proof that it was placed.
+ * Requiring a 2xx made a correctly handled session impossible to capture.
  */
 internal fun scanTransport(
     files: List<Path>,
@@ -47,8 +50,7 @@ internal fun scanTransport(
                 if (
                     record["method"]?.jsonPrimitive?.contentOrNull == "POST" &&
                     endpoint == "/order" &&
-                    responseCode != null &&
-                    responseCode in 200..299 &&
+                    (responseCode == null || responseCode in 200..299 || responseCode >= 500) &&
                     (
                         engineOrderId in audit.filledOrderIds ||
                             idempotencyKey in audit.filledOrderIds ||

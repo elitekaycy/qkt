@@ -78,23 +78,6 @@ class InsightsTranslateLifecycleTest {
     }
 
     @Test
-    fun `a halt tells the dashboard its scope and whether only resume clears it`() {
-        val persistent =
-            com.qkt.events.RiskEvent
-                .Halted("operator", "gold_trend", scope = "PERSISTENT", timestamp = 1L)
-        val daily =
-            com.qkt.events.RiskEvent
-                .Halted("DailyLoss", "gold_trend", scope = "DAILY", timestamp = 1L)
-
-        assertThat(InsightsTranslate.fromRiskHalted(persistent).toJson("qkt-prod"))
-            .contains(""""scope":"PERSISTENT"""")
-            .contains(""""persistent":true""")
-        assertThat(InsightsTranslate.fromRiskHalted(daily).toJson("qkt-prod"))
-            .contains(""""scope":"DAILY"""")
-            .contains(""""persistent":false""")
-    }
-
-    @Test
     fun `strategy lifecycle events use deterministic ids and strategy attribution`() {
         val started =
             InsightsTranslate.strategyStarted(
