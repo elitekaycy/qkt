@@ -1,0 +1,16 @@
+id: caps-under-burst
+title: TIMES 60 against max_trades_per_day 40 and a gross exposure cap
+why: A burst is risk-checked before any of it fills. Caps that count only filled positions let the whole
+  burst through live while the backtest stops it (A21-A23).
+status: planned
+symbols:
+- EURUSD
+timeframes:
+- 1m
+proves:
+- behaviour:max-trades-cap
+- behaviour:gross-exposure-cap
+- behaviour:in-flight-reservation
+assertions:
+- rejections-equal-replay
+- flat-by-magic

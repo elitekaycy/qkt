@@ -1,0 +1,15 @@
+id: wrong-account-refused
+title: The gateway is logged into a different account than the config expects
+why: The identity check is the last thing between a config and the wrong account's money. It must refuse
+  to start, and a misspelled identity key must refuse too.
+status: planned
+symbols:
+- EURUSD
+timeframes:
+- 1m
+proves:
+- behaviour:account-identity
+- behaviour:unknown-setting-refused
+assertions:
+- daemon-refuses
+- zero-mutating-requests

@@ -1,0 +1,29 @@
+id: hourly-and-four-hour-gold
+title: Gold on 1h and 4h with a 1m trigger
+why: Swing strategies live on 1h and 4h bars whose history must bridge the nightly break and the weekend.
+  If warmup counts calendar hours instead of traded bars, the 4h indicators start short and silently differ
+  from the backtest.
+status: ready
+symbols:
+- XAUUSD
+timeframes:
+- 1m
+- 1h
+- 4h
+warmup_bars:
+  1m: 5
+  1h: 30
+  4h: 20
+proves:
+- ATR
+- KELTNER_UPPER
+- KELTNER_MIDDLE
+- KELTNER_LOWER
+- EMA
+- HIGHEST
+- LOWEST
+- behaviour:higher-timeframe-warmup
+- behaviour:session-gap-warmup
+assertions:
+- trace-parity
+- warmup-bars-equal-requested

@@ -1,0 +1,18 @@
+id: limit-stop-and-cancel
+title: Pending limit and stop entries, one filled, one cancelled by GTD
+why: A pending order lives at the venue, not in the engine. Expiry needs the broker's UTC offset; a wrong
+  offset cancels an hour early or never.
+status: planned
+symbols:
+- EURUSD
+timeframes:
+- 1m
+proves:
+- behaviour:limit-entry
+- behaviour:stop-entry
+- behaviour:gtd-expiry
+- behaviour:cancel
+assertions:
+- journal-byte-exact
+- flat-by-magic
+- deals-net-by-magic
