@@ -19,6 +19,20 @@ internal class WarmupHistoryLoader(
     private val settle: WarmupSettle = WarmupSettle(),
 ) {
     private val cache = mutableMapOf<Request, LoadedBars>()
+    private val formingCache = mutableMapOf<Triple<String, TimeWindow, Long>, FormingBar?>()
+
+    /**
+     * The elapsed part of [window]'s bar at [nowMs], read once per session: the hub seeding and the
+     * indicator warmer both need it, and two reads of a moving venue could disagree.
+     */
+    fun forming(
+        symbol: String,
+        window: TimeWindow,
+        nowMs: Long,
+    ): FormingBar? =
+        formingCache.getOrPut(Triple(symbol, window, nowMs)) {
+            FormingBar.load(source, symbol, window, nowMs, settle)
+        }
 
     fun load(
         symbol: String,
