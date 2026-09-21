@@ -69,7 +69,7 @@ def main():
                 if not str(proof).startswith("behaviour:") and proof not in capabilities:
                     errors.append(f"{where}: proves '{proof}', which is not a catalog capability")
             for number, step in enumerate(doc.get("steps") or [], 1):
-                for field in ("expect_stdout", "expect_log"):
+                for field in ("expect_stdout", "expect_log", "wait_log"):
                     if field in step:
                         try:
                             re.compile(str(step[field]))
