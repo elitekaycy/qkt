@@ -12,7 +12,7 @@ usage() {
     cat <<'EOF'
 Usage: run-parity-suite.sh --output DIR --id ID --gateway-url http://127.0.0.1:PORT \
   --expected-login N --expected-server NAME --expected-balance DECIMAL \
-  --expected-leverage N --magic-base N [--cli PATH] [--verify-only]
+  --expected-leverage N --magic-base N [--cli PATH] [--verify-only] [--parallel]
 
 Prepare and validate the generated four-case live/replay parity suite. By default
 this performs static verification only. Add --run-live together with
@@ -35,6 +35,8 @@ ema_fast=3
 ema_slow=5
 cli="$repo_root/build/install/qkt/bin/qkt"
 verify_only=true
+# Run the cases side by side instead of one after another; see run_parallel below.
+parallel=false
 arm=""
 run_id="parity-$(date -u +%Y%m%dT%H%M%SZ)-$(od -An -N4 -tx1 /dev/urandom | tr -d ' \n')"
 
@@ -53,6 +55,7 @@ while [ "$#" -gt 0 ]; do
         --cli) cli="${2:-}"; shift 2 ;;
         --verify-only) verify_only=true; shift ;;
         --run-live) verify_only=false; shift ;;
+        --parallel) parallel=true; shift ;;
     --arm) arm="${2:-}"; shift 2 ;;
         --run-id) run_id="${2:-}"; shift 2 ;;
         --help|-h) usage; exit 0 ;;
@@ -113,6 +116,51 @@ bash "$prepare" --output "$output" --id "$suite_id" --gateway-url "$gateway_url"
 
 mapfile -t cases < <(find "$output/cases" -mindepth 1 -maxdepth 1 -type d | sort)
 [ "${#cases[@]}" -eq 4 ] || fail "generated suite did not contain four cases"
+
+seal_armed_scenario() {
+    local scenario="$1" armed_scenario="$1/armed-live"
+    mkdir -m 700 "$armed_scenario" "$armed_scenario/evidence" "$armed_scenario/logs" "$armed_scenario/state"
+    cp "$scenario/expected.json" "$scenario/qkt.config.yaml" "$scenario/scenario.json" "$scenario/cleanup.json" "$armed_scenario/"
+    jq '.qktDirty = false' "$armed_scenario/scenario.json" > "$armed_scenario/.scenario.json.tmp"
+    mv "$armed_scenario/.scenario.json.tmp" "$armed_scenario/scenario.json"
+    cp -a "$scenario/strategies" "$armed_scenario/strategies"
+    (
+        cd "$armed_scenario"
+        find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
+    )
+}
+
+# Every case at once, one phase at a time: the read-only captures place no orders, the armed
+# runs each own a distinct magic and reconcile against it (--shared-account), and the replays
+# are offline. Wall-clock is the slowest case of each phase instead of the sum of all of them.
+run_phase() {  # name command-template-function
+    local name="$1" fn="$2" pids=() failed=0 scenario
+    mkdir -p "$output/phases"
+    for scenario in "${cases[@]}"; do
+        ( "$fn" "$scenario" ) > "$output/phases/$(basename "$scenario")-$name.log" 2>&1 &
+        pids+=("$!")
+    done
+    for i in "${!pids[@]}"; do
+        wait "${pids[$i]}" || { failed=1; printf 'run-parity-suite: %s failed for %s: %s\n' "$name" \
+            "$(basename "${cases[$i]}")" "$(tail -n 1 "$output/phases/$(basename "${cases[$i]}")-$name.log")" >&2; }
+    done
+    [ "$failed" -eq 0 ] || fail "parallel phase '$name' failed"
+}
+phase_readonly() { bash "$readonly_runner" --scenario "$1" --cli "$cli" >/dev/null; }
+phase_armed() { bash "$armed_runner" --scenario "$1/armed-live" --cli "$cli" --shared-account --arm "$arm" >/dev/null; }
+phase_replay() { bash "$replay_runner" --scenario "$1/armed-live" --out "$1/armed-live/replay" --cli "$cli" >/dev/null; }
+
+if $parallel && ! $verify_only; then
+    for scenario in "${cases[@]}"; do
+        refresh_case_balance "$scenario"
+        bash "$readonly_runner" --scenario "$scenario" --cli "$cli" --verify-only >/dev/null
+    done
+    run_phase readonly phase_readonly
+    for scenario in "${cases[@]}"; do seal_armed_scenario "$scenario"; done
+    run_phase armed phase_armed
+    run_phase replay phase_replay
+    cases=()
+fi
 for scenario in "${cases[@]}"; do
     if ! $verify_only; then
         refresh_case_balance "$scenario"
@@ -121,15 +169,7 @@ for scenario in "${cases[@]}"; do
     if ! $verify_only; then
         bash "$readonly_runner" --scenario "$scenario" --cli "$cli" >/dev/null
         armed_scenario="$scenario/armed-live"
-        mkdir -m 700 "$armed_scenario" "$armed_scenario/evidence" "$armed_scenario/logs" "$armed_scenario/state"
-        cp "$scenario/expected.json" "$scenario/qkt.config.yaml" "$scenario/scenario.json" "$scenario/cleanup.json" "$armed_scenario/"
-        jq '.qktDirty = false' "$armed_scenario/scenario.json" > "$armed_scenario/.scenario.json.tmp"
-        mv "$armed_scenario/.scenario.json.tmp" "$armed_scenario/scenario.json"
-        cp -a "$scenario/strategies" "$armed_scenario/strategies"
-        (
-            cd "$armed_scenario"
-            find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
-        )
+        seal_armed_scenario "$scenario"
         bash "$armed_runner" --scenario "$armed_scenario" --cli "$cli" \
             --arm "$arm" >/dev/null
         bash "$replay_runner" --scenario "$armed_scenario" \
