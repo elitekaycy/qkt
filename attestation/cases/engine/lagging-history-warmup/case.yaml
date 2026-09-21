@@ -1,0 +1,27 @@
+id: lagging-history-warmup
+title: Warmup waits out a venue whose bar history is behind its own clock
+why: 'A busy MT5 terminal served 1m bars ending 13:02 to a daemon started at 13:07. The loader took the hole
+  for a closed market, reached further back, and a live RSI was seeded across four missing bars while
+  the same session replayed from its ticks was not - live and backtest disagreed and live was wrong
+  (#1228). Here a loopback proxy drops the newest two bars from every history read for the first five
+  seconds; the daemon must notice, re-read past its cache, and seed from the bars that then appear.'
+status: ready
+symbols:
+- BTCUSD
+timeframes:
+- 1m
+proves:
+- behaviour:warmup-history-lag
+gateway_proxy: lagging_history
+steps:
+- run: qkt status atto_lag --state-dir {state}
+  wait_log: 'atto-lag '
+  wait_seconds: 150
+  expect_log: 'warmup: EXNESS:BTCUSD 60000ms history was \d+ms behind the live window and has caught up'
+  note: the first read was short of the live window; the re-read was not, and that is what seeded the hub
+- run: qkt status --deep --state-dir {state}
+  note: healthy after a slow start
+assertions:
+- warmup-reaches-live-window
+autoload: true
+budget_seconds: 300
