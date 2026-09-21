@@ -18,6 +18,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 class SharedLiveMarketSource(
     private val delegate: MarketSource,
     private val subscriberQueueCapacity: Int = DEFAULT_QUEUE_CAPACITY,
+    private val clock: com.qkt.common.Clock = com.qkt.common.SystemClock(),
 ) : MarketSource,
     AutoCloseable {
     override val name: String = delegate.name
@@ -50,6 +51,7 @@ class SharedLiveMarketSource(
                             name,
                             symbol,
                             subscriberQueueCapacity,
+                            clock,
                         ) { ended -> hubs.remove(symbol, ended) }
                 }!!
             hub.subscribe()?.let { return it }
