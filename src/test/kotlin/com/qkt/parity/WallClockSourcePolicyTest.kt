@@ -50,7 +50,10 @@ class WallClockSourcePolicyTest {
                 "src/main/kotlin/com/qkt/connector/mt5/marketdata/Mt5TickClient.kt" to
                     "live transport polling deadline",
                 "src/main/kotlin/com/qkt/app/StrategySignalEmitter.kt" to "opt-in monotonic latency measurement",
-                "src/main/kotlin/com/qkt/app/LiveSession.kt" to "live engine query and shutdown deadlines",
+                "src/main/kotlin/com/qkt/app/EngineSnapshot.kt" to
+                    "live engine query deadline (moved out of LiveSession)",
+                "src/main/kotlin/com/qkt/app/SessionShutdown.kt" to
+                    "live session shutdown drain deadline (moved out of LiveSession)",
                 "src/main/kotlin/com/qkt/app/EngineLoop.kt" to
                     "live engine loop stop deadline and opt-in latency (moved out of LiveSession)",
                 "src/main/kotlin/com/qkt/app/VerifiedFlatten.kt" to
