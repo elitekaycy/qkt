@@ -21,18 +21,13 @@ import com.qkt.execution.allIds
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.live.LiveTickFeed
-import com.qkt.marketdata.live.MarketDataLifecycleFeed
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.notify.DailyRollingTracker
 import com.qkt.notify.NoopNotifier
-import com.qkt.notify.NotificationEvent
 import com.qkt.notify.Notifier
 import com.qkt.notify.NotifyEventKind
-import com.qkt.notify.StrategySummary
-import com.qkt.persistence.PersistenceHealth
 import com.qkt.pnl.PnLCalculator
 import com.qkt.pnl.StrategyPnL
-import com.qkt.positions.Position
 import com.qkt.positions.PositionProvider
 import com.qkt.positions.StrategyPositionTracker
 import com.qkt.risk.HaltRule
@@ -46,11 +41,7 @@ import com.qkt.strategy.Warmable
 import com.qkt.strategy.WarmupSpec
 import com.qkt.strategy.targetSymbol
 import com.qkt.strategy.windowMs
-import java.time.Duration
 import java.time.Instant
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
 import org.slf4j.LoggerFactory
 
 /**
@@ -875,222 +866,51 @@ class LiveSession(
         sessionNotifier.strategiesStarted()
         insights.strategiesStarted()
 
-        fun <T> engineSnapshot(read: () -> T): T {
-            if (Thread.currentThread() === thread || !thread.isAlive) return read()
-            val result = java.util.concurrent.CompletableFuture<T>()
-            control.put(
-                Inbound.Query {
-                    runCatching(read)
-                        .onSuccess(result::complete)
-                        .onFailure(result::completeExceptionally)
-                },
-            )
-            val deadlineNs = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(ENGINE_QUERY_TIMEOUT_MS)
-            while (thread.isAlive) {
-                val remainingNs = deadlineNs - System.nanoTime()
-                if (remainingNs <= 0L) {
-                    throw IllegalStateException("live engine did not produce a consistent snapshot within the timeout")
-                }
-                try {
-                    return result.get(
-                        minOf(remainingNs, TimeUnit.MILLISECONDS.toNanos(QUEUE_POLL_MS)),
-                        TimeUnit.NANOSECONDS,
-                    )
-                } catch (_: java.util.concurrent.TimeoutException) {
-                    // Recheck thread liveness so a finite feed cannot strand the query on shutdown.
-                }
-            }
-            return if (result.isDone) {
-                result.get()
-            } else {
-                check(terminated.await(0L, TimeUnit.MILLISECONDS)) {
-                    "live engine stopped without publishing its termination barrier"
-                }
-                // CountDownLatch establishes a happens-before edge from the engine's final
-                // mutation to this read. The engine is terminated, so no concurrent writer exists.
-                read()
-            }
-        }
-
-        return object : LiveSessionHandle, HaltReads by RiskHaltReads(riskState, strategies.map { it.first }) {
-            override val running: Boolean get() = running.get()
-
-            override val droppedTicks: Long
-                get() =
-                    (if (feed is LiveTickFeed) feed.droppedTicks.get() else 0L) +
-                        droppedInboundTicks.get() +
-                        pipeline.droppedLateTicks()
-
-            override fun inboundQueueDepth(): Int = control.size + tickQueue.size
-
-            override fun staleSymbols(): Map<String, Long> = marketDataGate.staleSymbols()
-
-            override fun clockSkewedSymbols(): Map<String, Long> = marketDataGate.clockSkewedSymbols()
-
-            override fun persistenceHealth(): PersistenceHealth = persistor.healthSnapshot()
-
-            override fun reconcile(): ReconcileReport {
-                val ownerId = strategies.firstOrNull()?.first.orEmpty()
-                val engineState =
-                    engineSnapshot {
-                        strategyPositions.allLegsFor(ownerId) to strategyPnL.equityFor(ownerId)
-                    }
-                // positionTickets() carries the venue ticket, so the broker side can be scoped
-                // to this strategy by attribution and keyed identically to the engine tracker.
-                // getOpenPositions() is magic-global and ticketless, which made the old diff
-                // double-count (prefixed vs bare key) and cry wolf on a shared account (#413).
-                var brokerReadError: String? = null
-                val brokerTickets =
-                    try {
-                        broker.positionTickets()
-                    } catch (e: Exception) {
-                        brokerReadError = e.message ?: e::class.simpleName ?: "unknown broker read failure"
-                        emptyList()
-                    }
-                val accountingModes =
-                    symbols.associate { symbol ->
-                        symbol.substringAfter(":") to broker.positionAccountingMode(symbol)
-                    }
-                return ReconcileReport(
-                    deltas =
-                        reconcileDeltas(
-                            ownerId,
-                            brokerTickets,
-                            ticketAttribution,
-                            engineState.first,
-                            accountingModes,
-                        ),
-                    engineEquity = engineState.second,
-                    brokerEquity = runCatching { broker.accountEquity() }.getOrNull(),
-                    protectionDeltas = reconcileProtectionDeltas(ownerId, brokerTickets, ticketAttribution),
-                    brokerReadFailed = brokerReadError != null,
-                    brokerReadError = brokerReadError,
-                )
-            }
-
-            private val drainGraceMs = if (brokers.built.isEmpty()) 0L else STOP_DRAIN_GRACE_MS
-
-            override fun requestStop() {
-                if (!stopping.compareAndSet(false, true)) return
-                feedThread.interrupt()
-                runCatching { feed.close() }
-                runCatching { brokerStatePoller?.close() }
-                // Stop the schedule heartbeat thread so it doesn't outlive the session.
-                runCatching {
-                    scheduleHeartbeat.shutdownNow()
-                    scheduleHeartbeat.awaitTermination(2, java.util.concurrent.TimeUnit.SECONDS)
-                }
-                // Stop the broker-equity poller (#352) so it doesn't outlive the session.
-                runCatching { equityPoller?.shutdownNow() }
-                tickQueue.clear()
-                control.put(
-                    Inbound.GracefulStop(
-                        deadlineNanos = System.nanoTime() + drainGraceMs * 1_000_000L,
-                    ),
-                )
-            }
-
-            override fun stop() {
-                requestStop()
-                if (!stopFinishing.compareAndSet(false, true)) return
-                if (!terminated.await(drainGraceMs + 500L, TimeUnit.MILLISECONDS)) {
-                    running.set(false)
-                    thread.interrupt()
-                }
-                // Release venue-side lifecycle resources (MT5 pollers, Bybit reconcilers)
-                // so a long-running daemon cycling strategies doesn't accumulate threads.
-                for (b in brokers.built) runCatching { b.shutdown() }
-                runCatching { riskState.persistAnchorsIfDirty() }
-                // Drop hub registrations attributed to this session's strategies so
-                // their aggregators and listener closures fall out of scope.
-                for ((strategyId, _) in strategies) {
-                    runCatching { pipelineCandleHub.unregister(strategyId) }
-                }
-                sessionNotifier.strategiesStopped()
-                insights.strategiesStopped()
-            }
-
-            override fun awaitTermination(timeout: Duration): Boolean =
-                terminated.await(timeout.toMillis(), TimeUnit.MILLISECONDS)
-
-            override fun recentTrades(): List<Trade> = trades.snapshot()
-
-            override fun positionsFor(strategyId: String): List<com.qkt.positions.Position> =
-                engineSnapshot { strategyPositions.positionsFor(strategyId).values.toList() }
-
-            override fun dailySummaryRows(): List<StrategySummary> =
-                engineSnapshot { summaryRows.rows(strategyPnL, strategyPositions) }
-
-            override fun pendingStackLayerInfos(): List<OrderManager.PendingStackLayerInfo> =
-                engineSnapshot { pipeline.orderManager.pendingStackLayerInfos() }
-
-            override fun latencySnapshot(): com.qkt.observability.LatencyRegistry.Report = pipeline.latency.snapshot()
-
-            override fun streamBrokers(): Map<String, String> {
-                val out = LinkedHashMap<String, String>()
-                for ((_, strategy) in strategies) {
-                    if (strategy !is DslCompiledStrategy) continue
-                    for ((alias, key) in strategy.declaredStreams) {
-                        // Preserve declared casing for operator readability ("EXNESS" not "exness").
-                        out[alias] = key.broker
-                    }
-                }
-                return out
-            }
-
-            override fun realizedPnl(strategyId: String): java.math.BigDecimal = strategyPnL.realizedFor(strategyId)
-
-            override fun pnlSnapshot(strategyId: String): SessionPnl =
-                engineSnapshot {
-                    SessionPnl(
-                        equity = strategyPnL.equityFor(strategyId),
-                        balance = strategyPnL.balanceFor(strategyId),
-                        realized = strategyPnL.realizedFor(strategyId),
-                        unrealized = strategyPnL.unrealizedTotalFor(strategyId),
-                    )
-                }
-
-            override fun bookLegs(strategyId: String): List<com.qkt.risk.book.Leg> =
-                engineSnapshot {
-                    strategyPositions.positionsFor(strategyId).values.mapNotNull { position ->
-                        if (position.quantity.signum() == 0) return@mapNotNull null
-                        val price = priceTracker.lastPrice(position.symbol) ?: position.avgEntryPrice
-                        val contractSize = instruments.lookup(position.symbol)?.contractSize ?: java.math.BigDecimal.ONE
-                        com.qkt.risk.book
-                            .Leg(strategyId, position.symbol, position.quantity, price, contractSize)
-                    }
-                }
-
-            override fun halt(reason: String) {
-                riskState.halt(reason)
-            }
-
-            override fun halt(
-                reason: String,
-                scope: com.qkt.risk.HaltScope,
-            ) {
-                riskState.halt(reason, scope)
-            }
-
-            override fun resume() {
-                riskState.resume()
-                // Operator resume must clear this session's strategy-scoped halts too —
-                // a runaway-breaker halt was otherwise unreachable from `qkt resume` (#1064).
-                for ((id, _) in strategies) riskState.resumeStrategy(id)
-            }
-
-            override fun flattenAndVerify(timeout: Duration): FlattenResult =
-                VerifiedFlatten(broker, ticketAttribution, clock, strategies.map { it.first }, ::flatten).run(timeout)
-
-            // Legacy fire-and-forget flatten stays engine-thread confined for internal callers.
-            override fun flatten() {
-                control.put(Inbound.Flatten)
-            }
-
-            override fun flattenForStop() {
-                clearRuleEdgesAtStop.set(true)
-                control.put(Inbound.Flatten)
-            }
-        }.also { handleRef.set(it) }
+        val snapshot = EngineSnapshot(thread, mailbox)
+        return RunningSessionHandle(
+            strategies = strategies,
+            mailbox = mailbox,
+            feed = feed,
+            pipeline = pipeline,
+            marketDataGate = marketDataGate,
+            persistor = persistor,
+            trades = trades,
+            strategyPositions = strategyPositions,
+            strategyPnL = strategyPnL,
+            priceTracker = priceTracker,
+            instruments = instruments,
+            riskState = riskState,
+            broker = broker,
+            ticketAttribution = ticketAttribution,
+            clock = clock,
+            snapshot = snapshot,
+            reconcileReport =
+                SessionReconcileReport(
+                    strategies,
+                    symbols,
+                    broker,
+                    ticketAttribution,
+                    strategyPositions,
+                    strategyPnL,
+                    snapshot,
+                ),
+            shutdown =
+                SessionShutdown(
+                    strategies,
+                    mailbox,
+                    thread,
+                    feedThread,
+                    feed,
+                    brokerStatePoller,
+                    scheduleHeartbeat,
+                    equityPoller,
+                    brokers.built,
+                    riskState,
+                    pipelineCandleHub,
+                    sessionNotifier,
+                    insights,
+                ),
+            summaryRows = summaryRows,
+        ).also { handleRef.set(it) }
     }
 }
