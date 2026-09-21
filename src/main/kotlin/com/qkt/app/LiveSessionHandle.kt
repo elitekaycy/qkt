@@ -14,7 +14,7 @@ import java.time.Duration
  * `qkt stop`, `qkt status`, and `qkt flatten` reach into a live session without
  * coupling them to the full [LiveSession] type.
  */
-interface LiveSessionHandle {
+interface LiveSessionHandle : HaltReads {
     /** `true` while the session's tick loop is running. */
     val running: Boolean
 
@@ -96,20 +96,8 @@ interface LiveSessionHandle {
         halt(reason)
     }
 
-    /** Reason for the active global halt, or null when not halted/unsupported by this handle. */
-    fun haltReason(): String? = null
-
-    /** Scope for the active global halt, or null when not halted/unsupported by this handle. */
-    fun haltScope(): HaltScope? = null
-
     /** Reverse [halt]: re-enable new-order submission. Default no-op. */
     fun resume() {}
-
-    /** Whether this session is currently halted (operator halt or a risk auto-halt). */
-    fun isHalted(): Boolean = false
-
-    /** Strategy-scoped halts held by this session's risk state; empty by default (#1064). */
-    fun strategyHalts(): List<com.qkt.persistence.PersistedStrategyHalt> = emptyList()
 
     /** Cancels all working orders and flattens any open position at market. */
     fun flatten()
