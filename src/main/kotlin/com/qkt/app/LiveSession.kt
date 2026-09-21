@@ -812,115 +812,24 @@ class LiveSession(
         val faults = EngineFaults(strategies, riskState, sessionNotifier)
         val persistenceWatch = PersistenceHealthWatch(strategies, persistor, riskState, sessionNotifier, insights)
 
-        // The single-consumer engine loop: the ONE thread that touches the bus, OrderManager,
-        // positions, and the schedule runner. The tick feed, the heartbeat, the broker pollers
-        // (via the bus), and the HTTP flatten all POST onto [inbound]; this loop drains it
-        // serially, restoring the "engine is single-threaded" invariant in live mode.
         val thread =
-            Thread({
-                if (mdcStrategy != null) org.slf4j.MDC.put("strategy", mdcStrategy)
-
-                fun processTick(msg: Inbound.FeedTick) {
-                    val latencyStartNanos = if (pipeline.latency.enabled) System.nanoTime() else 0L
-                    try {
-                        // Drive event-time from the tick being PROCESSED (not when it was
-                        // read off the feed) so a deterministic clock stays in lockstep with
-                        // processing — preserving backtest==live. No-op for SystemClock.
-                        (clock as? com.qkt.common.MutableClock)?.advanceTo(msg.tick.timestamp)
-                        pipeline.ingest(msg.tick)
-                    } catch (e: Exception) {
-                        faults.onEngineFault("tick ${msg.tick.symbol}@${msg.tick.timestamp}", e)
-                    } finally {
-                        if (pipeline.latency.enabled) {
-                            pipeline.latency.observeAll(
-                                com.qkt.observability.LatencyStage.TICK_PROCESSING,
-                                System.nanoTime() - latencyStartNanos,
-                            )
-                        }
-                    }
-                }
-                try {
-                    var stopDeadlineNanos: Long? = null
-                    while (running.get()) {
-                        val msg: Inbound? =
-                            control.poll()
-                                ?: if (stopDeadlineNanos == null) {
-                                    tickQueue.poll(QUEUE_POLL_MS, TimeUnit.MILLISECONDS)
-                                } else {
-                                    control.poll(QUEUE_POLL_MS, TimeUnit.MILLISECONDS)
-                                }
-                        if (msg == null) {
-                            val deadline = stopDeadlineNanos
-                            if (deadline != null && System.nanoTime() >= deadline && control.isEmpty()) {
-                                running.set(false)
-                            }
-                            continue
-                        }
-                        when (msg) {
-                            is Inbound.FeedTick -> processTick(msg)
-                            is Inbound.BusEvent ->
-                                try {
-                                    bus.publish(msg.event)
-                                } catch (e: Exception) {
-                                    faults.onEngineFault("event ${msg.event::class.simpleName}", e)
-                                }
-                            is Inbound.Heartbeat ->
-                                runCatching {
-                                    // Control drains ahead of ticks, so a heartbeat can overtake
-                                    // ticks that were queued before it fired. Those ticks precede
-                                    // the heartbeat in event time: process them first, or the
-                                    // wall-clock close rejects them as late (#1058).
-                                    while (true) processTick(tickQueue.poll() ?: break)
-                                    for (symbol in feedSymbols) marketDataGate.isHealthy(symbol)
-                                    pipeline.scheduleHeartbeat(msg.nowMs, candleCloseGraceMs)
-                                }.onFailure { t -> faults.onEngineFault("schedule heartbeat", t) }
-                            Inbound.PersistenceHealthCheck -> persistenceWatch.checkPersistenceHealth()
-                            is Inbound.Query -> msg.execute()
-                            Inbound.Flatten ->
-                                // A failed FLATTEN is the emergency path failing — the loudest case.
-                                // Then the venue's own list: a resting order whose placement response was
-                                // lost is not among the orders the engine knows, and must not outlive a flatten.
-                                runCatching { sessionFlatten.flattenAndSweep() }
-                                    .onFailure { t -> faults.onEngineFault("flatten", t) }
-                            is Inbound.FeedEnded -> {
-                                // Feed ended (finite source drained): process every tick already
-                                // queued before stopping, so no tick is dropped.
-                                if (!stopping.get()) {
-                                    while (true) processTick(tickQueue.poll() ?: break)
-                                    if (msg.unexpected) sessionNotifier.unexpectedFeedEnd(msg.reason)
-                                    running.set(false)
-                                }
-                            }
-                            is Inbound.GracefulStop -> stopDeadlineNanos = msg.deadlineNanos
-                        }
-                        val deadline = stopDeadlineNanos
-                        if (deadline != null && System.nanoTime() >= deadline && control.isEmpty()) {
-                            running.set(false)
-                        }
-                    }
-                } catch (e: InterruptedException) {
-                    log.info("LiveSession engine thread interrupted")
-                    Thread.currentThread().interrupt()
-                } finally {
-                    running.set(false)
-                    // After the final drain, so the stop flatten's fills are already booked and no
-                    // later bar can fire on the cleared edges before the session is gone.
-                    if (clearRuleEdgesAtStop.get()) {
-                        for ((strategyId, strategy) in strategies) {
-                            if (strategy !is DslCompiledStrategy) continue
-                            runCatching { strategy.clearRuleEdges() }
-                                .onFailure { t -> log.warn("could not clear rule edges for {} at stop", strategyId, t) }
-                        }
-                    }
-                    // Journal appends run on this thread (bus dispatch), so its channels
-                    // close here — the last event is already durable when we count down.
-                    runCatching { journal?.close() }
-                    runCatching { auditJournal?.close() }
-                    terminated.countDown()
-                    if (mdcStrategy != null) org.slf4j.MDC.remove("strategy")
-                }
-            }, "qkt-live-engine")
-        thread.isDaemon = true
+            EngineLoop(
+                mailbox,
+                pipeline,
+                clock,
+                bus,
+                strategies,
+                feedSymbols,
+                marketDataGate,
+                candleCloseGraceMs,
+                mdcStrategy,
+                journal,
+                auditJournal,
+                faults,
+                persistenceWatch,
+                sessionFlatten,
+                sessionNotifier,
+            ).newThread()
         // Route every publish from a non-engine thread (broker pollers, WS readers) onto this
         // loop's queue, so subscribers only ever run on the engine thread.
         bus.bindEngineLoop(thread, mailbox::postBusEvent)
