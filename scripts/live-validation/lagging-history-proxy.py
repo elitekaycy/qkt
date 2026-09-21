@@ -3,7 +3,9 @@
 
     lagging-history-proxy.py --listen PORT --gateway http://127.0.0.1:5001 [--lag-seconds 5] [--drop-bars 2]
 
-Everything is forwarded untouched, except that for --lag-seconds after the first bar-history read
+With --lose-limit-response it instead loses one answer: the first LIMIT order is placed at the venue
+and the daemon is told 502 (case `engine/flatten-during-unknown-outcome`, #1234). Otherwise
+everything is forwarded untouched, except that for --lag-seconds after the first bar-history read
 the newest --drop-bars bars are removed from every `/fetch_data_*` answer - what a busy MT5 terminal
 does when it has not yet synced the last minute or two. Used by the attestation case
 `engine/lagging-history-warmup` to prove, in a real daemon, that warmup waits the lag out instead of
@@ -17,8 +19,11 @@ ap.add_argument("--listen", type=int, required=True)
 ap.add_argument("--gateway", required=True)
 ap.add_argument("--lag-seconds", type=float, default=5.0)
 ap.add_argument("--drop-bars", type=int, default=2)
+ap.add_argument("--lose-limit-response", action="store_true",
+                help="place the first LIMIT order at the venue but answer the daemon 502: a lost response")
 a = ap.parse_args()
 first_history_read = [None]
+limit_lost = [False]
 
 
 class Proxy(BaseHTTPRequestHandler):
@@ -37,7 +42,11 @@ class Proxy(BaseHTTPRequestHandler):
                 status, payload, ctype = resp.status, resp.read(), resp.headers.get("content-type", "application/json")
         except urllib.error.HTTPError as error:
             status, payload, ctype = error.code, error.read(), error.headers.get("content-type", "application/json")
-        if self.path.startswith("/fetch_data_") and status == 200:
+        if a.lose_limit_response and not limit_lost[0] and self.command == "POST" and self.path == "/order" and b"LIMIT" in (body or b"").upper():
+            # The venue has the order; the daemon never hears back. HTTP 5xx after a send is an UNKNOWN outcome.
+            limit_lost[0] = True
+            status, payload, ctype = 502, b'{"ok": false, "error": "attestation proxy: response lost"}', "application/json"
+        if not a.lose_limit_response and self.path.startswith("/fetch_data_") and status == 200:
             now = time.monotonic()
             first_history_read[0] = first_history_read[0] or now
             if now - first_history_read[0] < a.lag_seconds:
