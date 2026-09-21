@@ -193,11 +193,7 @@ class PortfolioDeployer(
             // construction and no entry can size until activation.
             bookBalance?.bind(
                 compiled.children.zip(childWrappers).map { (child, wrapper) ->
-                    {
-                        wrapper.handle.live
-                            .pnlSnapshot(child.strategyId)
-                            .realized
-                    }
+                    { wrapper.handle.live.realizedPnl(child.strategyId) }
                 },
             )
             val symbols =
