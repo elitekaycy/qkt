@@ -1,0 +1,31 @@
+STRATEGY attest_session_and_pivots VERSION 1
+
+SYMBOLS
+    eur = EXNESS:EURUSD EVERY 1m WARMUP 5000 BARS
+
+LET l0 = session_range_high(eur.candle, 0, 0, 1, 0),
+    l1 = session_range_low(eur.candle, 0, 0, 1, 0),
+    l2 = pivot_p(eur.candle),
+    l3 = pivot_r1(eur.candle),
+    l4 = pivot_s1(eur.candle),
+    l5 = seasonal_range(eur.candle, 2),
+    l6 = seasonal_range_stdev(eur.candle, 2),
+    l7 = session_momentum(eur.candle, 0, 1, 1),
+    l8 = anchored_return(eur.candle, 30),
+    l9 = reopen_gap(eur.candle, 1),
+    l10 = reopen_gap_origin(eur.candle, 1),
+    l11 = gap_fill_fraction(eur.candle, 1),
+    l12 = failed_break_high(eur.candle, 5, 2, 3),
+    l13 = failed_break_low(eur.candle, 5, 2, 3),
+    l14 = ib_defended_high(eur.candle, 0, 60),
+    l15 = ib_defended_low(eur.candle, 0, 60)
+
+RULES
+    -- Rules fire on a false-to-true edge; logging on each up-turn and down-turn yields a vector
+    -- at every reversal. Stateful indicators may be NULL until their pattern occurs; NULL prints
+    -- identically live and in replay, so it is compared like any other value.
+    WHEN l0 IS NOT NULL AND l2 IS NOT NULL AND eur.close > lag(eur.close, 1)
+    THEN LOG "attest vector turn=up case=session-and-pivots session_range_high={v0} session_range_low={v1} pivot_p={v2} pivot_r1={v3} pivot_s1={v4} seasonal_range={v5} seasonal_range_stdev={v6} session_momentum={v7} anchored_return={v8} reopen_gap={v9} reopen_gap_origin={v10} gap_fill_fraction={v11} failed_break_high={v12} failed_break_low={v13} ib_defended_high={v14} ib_defended_low={v15} hour_utc={h} minute_utc={m} day={d}" v0=l0 v1=l1 v2=l2 v3=l3 v4=l4 v5=l5 v6=l6 v7=l7 v8=l8 v9=l9 v10=l10 v11=l11 v12=l12 v13=l13 v14=l14 v15=l15 h=NOW.hour_utc m=NOW.minute_utc d=NOW.day
+
+    WHEN l0 IS NOT NULL AND l2 IS NOT NULL AND eur.close <= lag(eur.close, 1)
+    THEN LOG "attest vector turn=down case=session-and-pivots session_range_high={v0} session_range_low={v1} pivot_p={v2} pivot_r1={v3} pivot_s1={v4} seasonal_range={v5} seasonal_range_stdev={v6} session_momentum={v7} anchored_return={v8} reopen_gap={v9} reopen_gap_origin={v10} gap_fill_fraction={v11} failed_break_high={v12} failed_break_low={v13} ib_defended_high={v14} ib_defended_low={v15} hour_utc={h} minute_utc={m} day={d}" v0=l0 v1=l1 v2=l2 v3=l3 v4=l4 v5=l5 v6=l6 v7=l7 v8=l8 v9=l9 v10=l10 v11=l11 v12=l12 v13=l13 v14=l14 v15=l15 h=NOW.hour_utc m=NOW.minute_utc d=NOW.day
