@@ -41,7 +41,15 @@ interface RiskInsights {
             ),
         )
 
-    fun fromRiskHalted(e: RiskEvent.Halted): InsightsEnvelope =
+    /**
+     * [sessionStrategies] are the strategies the emitting session runs. A halt with no strategy id
+     * stops that whole session - not every session of the daemon, which all share one instance id -
+     * so a dashboard needs to know whose session it was, e.g. an operator `qkt halt gold_trend`.
+     */
+    fun fromRiskHalted(
+        e: RiskEvent.Halted,
+        sessionStrategies: List<String> = emptyList(),
+    ): InsightsEnvelope =
         busEnvelope(
             e.sequenceId,
             e.timestamp,
@@ -53,15 +61,30 @@ interface RiskInsights {
                 "reason" to e.reason,
                 "scope" to e.scope,
                 "persistent" to (e.scope == "PERSISTENT"),
-            ),
+            ) + sessionScope(e.strategyId, sessionStrategies),
         )
 
-    fun fromRiskResumed(e: RiskEvent.Resumed): InsightsEnvelope =
+    fun fromRiskResumed(
+        e: RiskEvent.Resumed,
+        sessionStrategies: List<String> = emptyList(),
+    ): InsightsEnvelope =
         busEnvelope(
             e.sequenceId,
             e.timestamp,
             e.strategyId,
             "risk.resumed",
-            mapOf("strategyId" to e.strategyId),
+            mapOf("strategyId" to e.strategyId) + sessionScope(e.strategyId, sessionStrategies),
         )
+
+    private fun sessionScope(
+        strategyId: String?,
+        sessionStrategies: List<String>,
+    ): Map<String, Any?> =
+        if (strategyId == null &&
+            sessionStrategies.isNotEmpty()
+        ) {
+            mapOf("sessionStrategies" to sessionStrategies)
+        } else {
+            emptyMap()
+        }
 }
