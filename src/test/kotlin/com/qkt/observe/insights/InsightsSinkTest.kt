@@ -1,5 +1,6 @@
 package com.qkt.observe.insights
 
+import java.net.InetAddress
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
 import okhttp3.mockwebserver.MockResponse
@@ -15,8 +16,13 @@ class InsightsSinkTest {
 
     @BeforeEach
     fun setup() {
-        server = MockWebServer().also { it.start() }
+        server = loopbackServer()
     }
+
+    // IPv4 loopback by address: `localhost` also resolves to ::1, and on CI runners that attempt
+    // can fail to connect. A connection failure uses up one of the sink's POST attempts without
+    // reaching this server, which shifts every scripted response by one (#1218).
+    private fun loopbackServer() = MockWebServer().also { it.start(InetAddress.getByName("127.0.0.1"), 0) }
 
     @AfterEach
     fun teardown() {
@@ -32,7 +38,7 @@ class InsightsSinkTest {
         maxPostAttempts: Int = 3,
         journalDir: Path? = null,
     ) = InsightsSink(
-        url = server.url("/ingest").toString(),
+        url = "http://127.0.0.1:${server.port}/ingest",
         token = "secret",
         instanceId = "qkt-test",
         batchSize = batchSize,
@@ -161,7 +167,7 @@ class InsightsSinkTest {
         assertThat(first.dropped.get()).isEqualTo(0L)
 
         server.shutdown()
-        server = MockWebServer().also { it.start() }
+        server = loopbackServer()
         server.enqueue(MockResponse().setResponseCode(200).setBody("""{"accepted":1}"""))
         val replay =
             sink(

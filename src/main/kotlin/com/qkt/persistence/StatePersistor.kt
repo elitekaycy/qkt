@@ -353,6 +353,8 @@ data class PersistedRiskState(
     val haltScope: String,
     val haltEpochDay: Long,
     val strategyHalts: List<PersistedStrategyHalt>,
+    /** When the global halt tripped, epoch ms; 0 when not halted or recorded before this was tracked. */
+    val haltedAtMs: Long = 0L,
     val globalRealizedTotal: java.math.BigDecimal? = null,
     val dailyDrawdownEpochDay: Long? = null,
     val globalDailyDrawdownRef: java.math.BigDecimal? = null,
@@ -366,12 +368,4 @@ data class PersistedRiskState(
     val monthKey: Long? = null,
     val realizedMonth: java.math.BigDecimal? = null,
     val perStrategyRealizedMonth: Map<String, java.math.BigDecimal> = emptyMap(),
-)
-
-/** One strategy-scoped halt inside [PersistedRiskState]. */
-data class PersistedStrategyHalt(
-    val strategyId: String,
-    val reason: String,
-    val scope: String,
-    val epochDay: Long,
 )

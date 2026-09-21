@@ -1,0 +1,41 @@
+id: reentry-after-in-bar-stop
+title: An entry stopped out inside its own bar enters again at the next close
+why: 'A flat-gated entry whose position closes before the next evaluation used to see its condition
+  true at both bar closes - no edge - and never fired again (#1194): one quick stop silenced the
+  strategy until its signal went false and came back. Here the position is closed at the venue by
+  ticket seconds after it fills, so the exit is always inside the entry bar; the signal never goes
+  false, so only the position gate can re-arm the rule. Fails on 0.51.1.'
+status: ready
+symbols:
+- BTCUSD
+timeframes:
+- 1m
+proves:
+- behaviour:reentry-after-in-bar-exit
+steps:
+- run: qkt status atto_reentry --state-dir {state}
+  wait_for: position
+  expect_status:
+    positions: 1
+  note: the first entry fills
+- venue: close_positions
+  settle_seconds: 3
+  note: closed at the venue straight away - well before the next bar close
+- run: qkt status atto_reentry --state-dir {state}
+  wait_for: position
+  wait_seconds: 150
+  expect_status:
+    positions: 1
+  note: a following bar close enters again; before the fix there is one entry for the life of the daemon
+- run: qkt status --deep --state-dir {state}
+  note: healthy after an exit it did not make
+assertions:
+- second-entry-after-in-bar-exit
+- flat-by-magic
+autoload: true
+budget_seconds: 420
+config:
+  risk:
+    per_strategy:
+      atto_reentry:
+        max_trades_per_day: 3

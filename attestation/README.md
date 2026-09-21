@@ -55,3 +55,4 @@ attestation/
   The shadow lane - the parity evidence - is never retried.
 - A case that claims to catch a defect is run once against a build that still has the defect. It
   must fail there (`engine/mid-bar-start-higher-timeframe` fails on 0.49.1, passes from 0.51.0).
+- Running all of this with nobody at the keyboard: `docs/operations/unattended-release.md`.
