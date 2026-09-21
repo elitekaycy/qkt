@@ -1,0 +1,13 @@
+STRATEGY atto_book_a VERSION 1
+
+SYMBOLS
+    btc = EXNESS:BTCUSD EVERY 1m WARMUP 3 BARS
+
+RULES
+    -- 0.5% of a 1,000 book over a 500 stop is one micro lot. Both children evaluate this on the
+    -- same bar close, so both read the book balance from their engine threads at once.
+    WHEN btc.close > 0 AND POSITION.btc = 0 AND OPEN_ORDERS.btc = 0 AND TRADES.today = 0
+    THEN BUY btc SIZING 0.5 PCT RISK OF BOOK BRACKET { STOP LOSS BY 500, TAKE PROFIT BY 1000 }
+
+    WHEN POSITION.btc != 0 AND POSITION.btc.holding_duration >= 100
+    THEN CLOSE btc
