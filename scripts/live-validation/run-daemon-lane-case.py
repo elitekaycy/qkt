@@ -23,7 +23,8 @@ The case's `steps` are executed in order. Each step is a mapping:
     while_down:     with `daemon: restart`, "close_at_venue" closes the magic's positions by ticket
                     while no engine is running
 
-Case-level keys: `gateway_proxy: lagging_history` makes the daemon's bar history lag for a few seconds
+Case-level keys: `gateway_proxy: lost_limit_response` places the first LIMIT order but tells the daemon 502;
+`gateway_proxy: lagging_history` makes the daemon's bar history lag for a few seconds
 (lagging-history-proxy.py); `seed_risk_state` pre-writes the strategy's risk-state file (pacer fields are keyed by
 the strategy for you; "now" is the current epoch ms); `copies: N` loads the strategy N times under numbered names and `copies_agree`
 (`log` regex, `min_lines`) requires every copy to have logged the same lines and dropped no tick;
@@ -118,10 +119,12 @@ if case.get("seed_risk_state"):
 # `gateway_proxy: lagging_history` puts a loopback proxy between the DAEMON and the gateway (the runner
 # itself keeps talking to the real one): bar history lags for a few seconds, as a busy terminal's does.
 daemon_gateway_url, proxy = a.gateway_url, None
-if case.get("gateway_proxy") == "lagging_history":
+if case.get("gateway_proxy") in ("lagging_history", "lost_limit_response"):
     port = 20000 + int(a.magic) % 20000
     proxy = subprocess.Popen([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "lagging-history-proxy.py"),
-                              "--listen", str(port), "--gateway", a.gateway_url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                              "--listen", str(port), "--gateway", a.gateway_url] +
+                             (["--lose-limit-response"] if case["gateway_proxy"] == "lost_limit_response" else []),
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     daemon_gateway_url = f"http://127.0.0.1:{port}"
     time.sleep(1)
 config = f"{a.out}/qkt.config.yaml"
