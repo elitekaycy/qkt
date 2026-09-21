@@ -327,12 +327,6 @@ class LiveSession(
 
     private val sessionNotifier = SessionNotifier(notifier, notifyEvents, journal, strategies, clock)
 
-    private fun recordNotificationFailure(
-        strategyId: String?,
-        handler: String,
-        t: Throwable,
-    ) = sessionNotifier.recordFailure(strategyId, handler, t)
-
     private val insights =
         InsightsLifecycle(
             insightsSink,
@@ -365,14 +359,6 @@ class LiveSession(
         // the sink those events dispatch inline against a half-built pipeline (#388).
         // They queue here and drain, in order, once the engine loop starts.
         val mailbox = EngineMailbox()
-        val running = mailbox.running
-        val stopping = mailbox.stopping
-        val stopFinishing = mailbox.stopFinishing
-        val clearRuleEdgesAtStop = mailbox.clearRuleEdgesAtStop
-        val control = mailbox.control
-        val tickQueue = mailbox.tickQueue
-        val droppedInboundTicks = mailbox.droppedInboundTicks
-        val terminated = mailbox.terminated
         bus.bindSink(mailbox::postBusEvent)
         val paperInstruments =
             java.util.concurrent.atomic.AtomicReference<com.qkt.instrument.InstrumentRegistry>(
@@ -824,7 +810,7 @@ class LiveSession(
         // Route every publish from a non-engine thread (broker pollers, WS readers) onto this
         // loop's queue, so subscribers only ever run on the engine thread.
         bus.bindEngineLoop(thread, mailbox::postBusEvent)
-        control.put(Inbound.PersistenceHealthCheck)
+        mailbox.control.put(Inbound.PersistenceHealthCheck)
         thread.start()
 
         val feedThread = FeedReader(feed, mailbox, insights).newThread()
