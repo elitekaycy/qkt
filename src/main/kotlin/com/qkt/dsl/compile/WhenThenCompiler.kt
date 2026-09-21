@@ -76,7 +76,7 @@ internal object WhenThenCompiler {
                 ruleFingerprint = sha256("$cond\n$mergedAction"),
                 consumesSequenceCompletion = readsSequenceCompletion(cond),
                 edgeStateKey = "$ruleAlias#$ruleIndex",
-                requiresFlat = (isBuy || isSell) && FlatGate.requiresFlat(cond, ruleAlias),
+                positionGate = PositionGate.of(cond, ruleAlias),
             )
         }
 
