@@ -29,9 +29,9 @@ steps:
   expect_stdout: 'atto_streak.*halted'
   note: the operator sees it in the list
 - run: qkt status --deep --state-dir {state}
-  expect_exit: 1
-  expect_stdout: 'is halted .*qkt resume atto_streak'
-  note: and the deep status is not green, with the command that clears it
+  expect_stdout: 'HEALTHY \(1 halted by risk control\)(?s:.*)is halted .*qkt resume atto_streak'
+  note: the deep status names the halt and the command that clears it - and stays exit 0, because
+    container health runs this command and a risk halt is not a fault
 - daemon: restart
   note: a daily halt survives a restart inside the same day
 - run: qkt status atto_streak --state-dir {state}
