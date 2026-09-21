@@ -836,35 +836,7 @@ class LiveSession(
         control.put(Inbound.PersistenceHealthCheck)
         thread.start()
 
-        // Feed reader: turn the blocking tick feed into queue messages so the engine loop stays a
-        // pure single consumer rather than blocking on the feed itself.
-        val feedThread =
-            Thread({
-                try {
-                    while (running.get()) {
-                        val tick = feed.next() ?: break
-                        mailbox.postTick(Inbound.FeedTick(tick))
-                    }
-                } catch (e: InterruptedException) {
-                    Thread.currentThread().interrupt()
-                } finally {
-                    val lifecycleFeed = feed as? MarketDataLifecycleFeed
-                    val unexpected = running.get() && lifecycleFeed?.expectsContinuousDelivery == true
-                    val failureReason =
-                        lifecycleFeed?.terminalFailureReason()
-                            ?: "live market-data feed exceeded its reconnect budget"
-                    runCatching { feed.close() }
-                    insights.feedEnded()
-                    // Non-blocking: tell the consumer the feed is done so it drains-then-stops.
-                    control.offer(
-                        Inbound.FeedEnded(
-                            unexpected = unexpected,
-                            reason = failureReason,
-                        ),
-                    )
-                }
-            }, "qkt-live-feed")
-        feedThread.isDaemon = true
+        val feedThread = FeedReader(feed, mailbox, insights).newThread()
         feedThread.start()
 
         // Quiet-market heartbeat (#77 Phase 40 follow-up). Without this, SCHEDULE fires only happen
