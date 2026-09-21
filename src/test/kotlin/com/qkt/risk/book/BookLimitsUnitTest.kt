@@ -23,6 +23,10 @@ class BookLimitsUnitTest {
 
     @Test
     fun `zero and negative caps are refused`() {
-        assertThatThrownBy { BookLimits(maxNetExposure = BigDecimal.ZERO) }.isInstanceOf(IllegalArgumentException::class.java)
+        assertThatThrownBy {
+            BookLimits(
+                maxNetExposure = BigDecimal.ZERO,
+            )
+        }.isInstanceOf(IllegalArgumentException::class.java)
     }
 }
