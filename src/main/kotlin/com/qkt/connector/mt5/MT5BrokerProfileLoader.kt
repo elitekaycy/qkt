@@ -1,7 +1,6 @@
 package com.qkt.connector.mt5
 
 import com.qkt.common.SymbolCalendars
-import com.qkt.common.TradingCalendar
 import com.qkt.connectivity.AccountSettings
 
 /**
@@ -119,17 +118,14 @@ class MT5BrokerProfileLoader {
                 yamlInstrumentOverrides.mapValues { (symbol, spec) ->
                     MT5ProfileSettings.parseInstrumentSpec(name, symbol, spec)
                 }
+        // Layered on the profile's own calendars: adding `BTC*: crypto` must not drop the
+        // profile's metals and energy break (a restart inside it failed to deploy gold streams).
         val symbolCalendars =
-            if (calendarRules.isNotEmpty()) {
-                SymbolCalendars(
-                    calendarRules.map { (pattern, cal) ->
-                        SymbolCalendars.Rule(pattern, MT5ProfileSettings.calendarByName(name, cal))
-                    },
-                    default = TradingCalendar.fxDefault(),
-                )
-            } else {
-                base?.symbolCalendars ?: SymbolCalendars.fxDefault()
-            }
+            (base?.symbolCalendars ?: SymbolCalendars.fxDefault()).overriddenBy(
+                calendarRules.map { (pattern, cal) ->
+                    SymbolCalendars.Rule(pattern, MT5ProfileSettings.calendarByName(name, cal))
+                },
+            )
         val explicitPollInterval = pickExplicit("poll_interval_ms", fields, env, name)
         val pollIntervalMs = explicitPollInterval?.toLong() ?: base?.pollIntervalMs ?: 1000L
         // Before tick_poll_interval_ms existed, poll_interval_ms controlled both venue

@@ -18,6 +18,20 @@ class SymbolCalendars(
     private val rules: List<Rule>,
     private val default: TradingCalendar,
 ) {
+    /**
+     * These calendars with [overrides] layered on top: an override for a pattern replaces that
+     * pattern's rule, new patterns are added ahead of the existing ones, and a `*` override sets the
+     * fallback instead of shadowing every specific rule. e.g. a profile that pauses `XAU*` at the
+     * New York close, overridden with `BTC* -> crypto, * -> fx`, still pauses gold and now trades
+     * BTC at weekends - before, the override replaced the lot and gold lost its daily break.
+     */
+    fun overriddenBy(overrides: List<Rule>): SymbolCalendars {
+        val catchAll = overrides.lastOrNull { it.pattern == "*" }
+        val specific = overrides.filter { it.pattern != "*" }
+        val kept = rules.filter { base -> specific.none { it.pattern == base.pattern } }
+        return SymbolCalendars(specific + kept, catchAll?.calendar ?: default)
+    }
+
     /** One `pattern -> calendar` mapping. [pattern] is a glob on the bare qkt symbol. */
     data class Rule(
         val pattern: String,
