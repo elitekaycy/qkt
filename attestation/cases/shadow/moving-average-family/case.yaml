@@ -1,0 +1,22 @@
+id: moving-average-family
+title: Every moving average on a fast and a slow stream of one symbol
+why: The averages differ only in their weighting recursion; a warmup that seeds them in the wrong order,
+  or a stream that feeds a repeated bar, shifts DEMA, TEMA and HMA by a bar while SMA still looks right.
+status: ready
+symbols:
+- EURUSD
+timeframes:
+- 1m
+- 1h
+warmup_bars:
+  1m: 30
+  1h: 30
+proves:
+- SMA
+- EMA
+- WMA
+- DEMA
+- TEMA
+- HMA
+assertions:
+- trace-parity

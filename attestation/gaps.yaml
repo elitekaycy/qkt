@@ -1,111 +1,41 @@
 gaps:
-- capability: ABS
-  reason: no ready shadow case exercises it yet
-- capability: ADX
-  reason: no ready shadow case exercises it yet
 - capability: ANCHORED_RETURN
-  reason: no ready shadow case exercises it yet
-- capability: CCI
-  reason: no ready shadow case exercises it yet
-- capability: CEIL
-  reason: no ready shadow case exercises it yet
-- capability: DEMA
-  reason: no ready shadow case exercises it yet
-- capability: ER
-  reason: no ready shadow case exercises it yet
-- capability: EXP
-  reason: no ready shadow case exercises it yet
+  reason: session and history indicators need a deep 1m warmup (thousands of bars); case planned as shadow/session-and-pivots
 - capability: FAILED_BREAK_HIGH
-  reason: no ready shadow case exercises it yet
+  reason: session and history indicators need a deep 1m warmup (thousands of bars); case planned as shadow/session-and-pivots
 - capability: FAILED_BREAK_LOW
-  reason: no ready shadow case exercises it yet
-- capability: FLOOR
-  reason: no ready shadow case exercises it yet
+  reason: session and history indicators need a deep 1m warmup (thousands of bars); case planned as shadow/session-and-pivots
 - capability: GAP_FILL_FRACTION
-  reason: no ready shadow case exercises it yet
-- capability: HMA
-  reason: no ready shadow case exercises it yet
+  reason: session and history indicators need a deep 1m warmup (thousands of bars); case planned as shadow/session-and-pivots
 - capability: IB_DEFENDED_HIGH
-  reason: no ready shadow case exercises it yet
+  reason: session and history indicators need a deep 1m warmup (thousands of bars); case planned as shadow/session-and-pivots
 - capability: IB_DEFENDED_LOW
-  reason: no ready shadow case exercises it yet
-- capability: LAG
-  reason: no ready shadow case exercises it yet
-- capability: LOG
-  reason: no ready shadow case exercises it yet
-- capability: MAX
-  reason: no ready shadow case exercises it yet
-- capability: MIN
-  reason: no ready shadow case exercises it yet
-- capability: MINUS_DI
-  reason: no ready shadow case exercises it yet
-- capability: MOD
-  reason: no ready shadow case exercises it yet
-- capability: NORMALIZE
-  reason: no ready shadow case exercises it yet
+  reason: session and history indicators need a deep 1m warmup (thousands of bars); case planned as shadow/session-and-pivots
 - capability: OBV
-  reason: no ready shadow case exercises it yet
-- capability: PERCENTILE_RANK
-  reason: no ready shadow case exercises it yet
+  reason: needs traded size; the demo FX/CFD feed quotes without volume
 - capability: PIVOT_P
-  reason: no ready shadow case exercises it yet
+  reason: session and history indicators need a deep 1m warmup (thousands of bars); case planned as shadow/session-and-pivots
 - capability: PIVOT_R1
-  reason: no ready shadow case exercises it yet
+  reason: session and history indicators need a deep 1m warmup (thousands of bars); case planned as shadow/session-and-pivots
 - capability: PIVOT_S1
-  reason: no ready shadow case exercises it yet
-- capability: PLUS_DI
-  reason: no ready shadow case exercises it yet
-- capability: POW
-  reason: no ready shadow case exercises it yet
-- capability: RANK_OF
-  reason: no ready shadow case exercises it yet
-- capability: REGRESSION_SLOPE
-  reason: no ready shadow case exercises it yet
+  reason: session and history indicators need a deep 1m warmup (thousands of bars); case planned as shadow/session-and-pivots
 - capability: REOPEN_GAP
-  reason: no ready shadow case exercises it yet
+  reason: session and history indicators need a deep 1m warmup (thousands of bars); case planned as shadow/session-and-pivots
 - capability: REOPEN_GAP_ORIGIN
-  reason: no ready shadow case exercises it yet
-- capability: ROUND
-  reason: no ready shadow case exercises it yet
-- capability: ROUND_TO
-  reason: no ready shadow case exercises it yet
-- capability: RUNLENGTH
-  reason: no ready shadow case exercises it yet
-- capability: RUNLENGTH_WHERE
-  reason: no ready shadow case exercises it yet
+  reason: session and history indicators need a deep 1m warmup (thousands of bars); case planned as shadow/session-and-pivots
 - capability: SEASONAL_RANGE
-  reason: no ready shadow case exercises it yet
+  reason: session and history indicators need a deep 1m warmup (thousands of bars); case planned as shadow/session-and-pivots
 - capability: SEASONAL_RANGE_STDEV
-  reason: no ready shadow case exercises it yet
+  reason: session and history indicators need a deep 1m warmup (thousands of bars); case planned as shadow/session-and-pivots
 - capability: SESSION_MOMENTUM
-  reason: no ready shadow case exercises it yet
+  reason: session and history indicators need a deep 1m warmup (thousands of bars); case planned as shadow/session-and-pivots
 - capability: SESSION_RANGE_HIGH
-  reason: no ready shadow case exercises it yet
+  reason: session and history indicators need a deep 1m warmup (thousands of bars); case planned as shadow/session-and-pivots
 - capability: SESSION_RANGE_LOW
-  reason: no ready shadow case exercises it yet
-- capability: SKEW
-  reason: no ready shadow case exercises it yet
-- capability: SOFTMAX
-  reason: no ready shadow case exercises it yet
-- capability: SQRT
-  reason: no ready shadow case exercises it yet
-- capability: STOCH_D
-  reason: no ready shadow case exercises it yet
-- capability: STOCH_K
-  reason: no ready shadow case exercises it yet
-- capability: TEMA
-  reason: no ready shadow case exercises it yet
-- capability: VARIANCE
-  reason: no ready shadow case exercises it yet
-- capability: VARIANCE_RATIO
-  reason: no ready shadow case exercises it yet
+  reason: session and history indicators need a deep 1m warmup (thousands of bars); case planned as shadow/session-and-pivots
 - capability: VWAP
-  reason: no ready shadow case exercises it yet
+  reason: needs traded size; the demo FX/CFD feed quotes without volume
 - capability: VWAP_SESSION
-  reason: no ready shadow case exercises it yet
+  reason: needs traded size; the demo FX/CFD feed quotes without volume
 - capability: VWAP_SESSION_STDEV
-  reason: no ready shadow case exercises it yet
-- capability: WILLIAMS_R
-  reason: no ready shadow case exercises it yet
-- capability: WMA
-  reason: no ready shadow case exercises it yet
+  reason: needs traded size; the demo FX/CFD feed quotes without volume
