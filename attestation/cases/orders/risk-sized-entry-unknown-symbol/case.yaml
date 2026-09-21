@@ -1,0 +1,15 @@
+id: risk-sized-entry-unknown-symbol
+title: RISK $ sizing on a symbol with no built-in spec
+why: Size comes from the venue's contract size. If the spec does not reach the sizer the order is either
+  refused or sized as if one lot were one unit.
+status: planned
+symbols:
+- BTCUSD
+timeframes:
+- 1m
+proves:
+- behaviour:risk-sizing
+- behaviour:venue-instrument-spec
+assertions:
+- quantity-equals-expected
+- flat-by-magic

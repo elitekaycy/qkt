@@ -1,0 +1,15 @@
+id: loss-streak-from-restored-state
+title: Loss-streak halt with the losing streak restored, not traded
+why: The halt must bind on the first evaluation after a restart that carries one loss. Waiting for the
+  market to supply a loss made this case fail on a winning trade.
+status: planned
+symbols:
+- XAUUSD
+timeframes:
+- 1m
+proves:
+- behaviour:loss-streak-halt
+- behaviour:risk-state-restore
+assertions:
+- zero-mutating-requests
+- rejection-reason-equals

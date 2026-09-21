@@ -1,0 +1,22 @@
+id: shallow-beside-deep-warmup
+title: A two-bar warmup beside a thirty-bar warmup
+why: Warmup depth is per stream. If the deepest request is applied to every stream, or the shallowest,
+  the slow indicator starts either unready or on the wrong history.
+status: ready
+symbols:
+- EURUSD
+- XAUUSD
+timeframes:
+- 1m
+- 15m
+warmup_bars:
+  1m: 2
+  15m: 30
+proves:
+- MACD
+- MACD_SIGNAL
+- MACD_HIST
+- SMA
+- behaviour:per-stream-warmup
+assertions:
+- trace-parity

@@ -1,0 +1,19 @@
+id: unknown-order-outcome
+title: The gateway accepts an order and the acknowledgement is lost
+why: The engine cannot know whether it has a position. It must resolve from the venue before retrying;
+  a blind retry doubles the position, a blind give-up orphans it.
+status: planned
+symbols:
+- BTCUSD
+timeframes:
+- 1m
+proves:
+- behaviour:unknown-outcome-resolution
+steps:
+- run: daemon start via fault proxy dropping the /order response
+  expect: one position at venue
+- run: observe
+  expect: resolved from venue, zero retries placed
+assertions:
+- exactly-one-position
+- no-unknown-outcome-left
