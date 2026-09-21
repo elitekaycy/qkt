@@ -122,6 +122,7 @@ class MT5Broker(
     private val engineCloses = MT5EngineCloseMarkers(profile, clock)
     private val positionModify = MT5PositionModify(profile, client, priceTracker, mt5Symbol, state)
     private val partialEntries = MT5PartialEntries(state, bus, clock)
+    private val pendingOrderChanges = MT5PendingOrderChanges(profile, client, bus, clock, state, partialEntries)
     private val pendingFills = MT5PendingFills(profile, bus, clock, mt5Symbol, state, partialEntries)
     private val pendingDisappearance =
         MT5PendingDisappearance(profile, client, bus, clock, state, partialEntries, pendingFills)
@@ -1578,56 +1579,6 @@ class MT5Broker(
         return recovered
     }
 
-    override fun cancel(orderId: String) {
-        val ticket = pendingBook.ticketOf(orderId) ?: return
-        val meta = pendingBook.meta(ticket) ?: return
-        // Non-blocking: OCO sibling-cancels and the halt kill-switch sweep call this from the
-        // engine thread, and serialized round-trips stall it exactly when it must stop fast.
-        // Keep both ticket maps until the venue confirms success. A rejected or ambiguous cancel
-        // can race a fill; retaining the metadata lets the position poller attribute that fill.
-        client.cancelOrderAsync(ticket) { response ->
-            if (!isOrderSuccessful(response.result.retcode)) {
-                log.warn(
-                    "MT5Broker {} cancel({}, ticket={}) remains unresolved: {}",
-                    profile.name,
-                    orderId,
-                    ticket,
-                    response.errorMessage ?: "retcode=${response.result.retcode}",
-                )
-                bus.publish(
-                    BrokerEvent.OrderCancelFailed(
-                        clientOrderId = orderId,
-                        brokerOrderId = ticket.toString(),
-                        reason = response.errorMessage ?: "retcode=${response.result.retcode}",
-                        strategyId = meta.strategyId,
-                        timestamp = clock.now(),
-                    ),
-                )
-                return@cancelOrderAsync
-            }
-            val cancelled =
-                synchronized(pendingTransitionLock) {
-                    if (!pendingBook.stillIs(orderId, ticket, meta)) {
-                        false
-                    } else {
-                        pendingBook.forgetLeg(orderId, ticket)
-                        partialEntries.removePartialEntryByResidualTicket(ticket)
-                        true
-                    }
-                }
-            if (!cancelled) return@cancelOrderAsync
-            bus.publish(
-                BrokerEvent.OrderCancelled(
-                    clientOrderId = orderId,
-                    brokerOrderId = ticket.toString(),
-                    reason = "user cancel",
-                    strategyId = meta.strategyId,
-                    timestamp = clock.now(),
-                ),
-            )
-        }
-    }
-
     private fun protectionFor(request: OrderRequest): MT5PositionProtection? =
         runCatching { translator.translate(request) }
             .getOrNull()
@@ -1642,6 +1593,13 @@ class MT5Broker(
             MT5PositionProtection(request.sl, request.tp)
         }
 
+    override fun cancel(orderId: String) = pendingOrderChanges.cancel(orderId)
+
+    override fun modify(
+        orderId: String,
+        changes: OrderModification,
+    ): SubmitAck = pendingOrderChanges.modify(orderId, changes)
+
     override fun modifyPosition(
         ticket: String,
         sl: BigDecimal?,
@@ -1654,48 +1612,6 @@ class MT5Broker(
         tp: BigDecimal?,
         onResult: (SubmitAck) -> Unit,
     ) = positionModify.modifyPositionAsync(ticket, sl, tp, onResult)
-
-    override fun modify(
-        orderId: String,
-        changes: OrderModification,
-    ): SubmitAck {
-        val ticket =
-            pendingBook.ticketOf(orderId) ?: return SubmitAck(
-                clientOrderId = orderId,
-                brokerOrderId = null,
-                accepted = false,
-                rejectReason = "modify: no working order with id=$orderId",
-            )
-        val mt5Mods =
-            MT5OrderModification(
-                price = changes.newStopPrice ?: changes.newLimitPrice,
-            )
-        val resp = client.modifyOrder(ticket, mt5Mods)
-        if (!isOrderSuccessful(resp.result.retcode)) {
-            val reason = resp.errorMessage ?: "modify rejected: retcode=${resp.result.retcode}"
-            log.warn("MT5Broker ${profile.name} modify($orderId, ticket=$ticket) rejected: $reason")
-            return SubmitAck(
-                clientOrderId = orderId,
-                brokerOrderId = ticket.toString(),
-                accepted = false,
-                rejectReason = reason,
-            )
-        }
-        bus.publish(
-            BrokerEvent.OrderModified(
-                clientOrderId = orderId,
-                brokerOrderId = ticket.toString(),
-                changes = changes,
-                strategyId = pendingBook.meta(ticket)?.strategyId ?: "",
-                timestamp = clock.now(),
-            ),
-        )
-        return SubmitAck(
-            clientOrderId = orderId,
-            brokerOrderId = ticket.toString(),
-            accepted = true,
-        )
-    }
 
     /**
      * [MT5PositionPoller] calls this when a ticket disappears from the venue snapshot
