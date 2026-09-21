@@ -46,6 +46,8 @@ jobs:
         run: bash tests/scripts/run-attestation-test.sh
       - name: Test live-vs-replay trace comparator
         run: bash tests/scripts/compare-trace-vectors-test.sh
+      - name: Test unattended release driver
+        run: bash tests/scripts/release-unattended-test.sh
       - name: Test attestation catalog concurrency and retry
         run: bash tests/scripts/run-attestation-catalog-retry-test.sh
       - name: Test attestation leftover sweep
