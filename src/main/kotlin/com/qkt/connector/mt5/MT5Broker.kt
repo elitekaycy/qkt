@@ -19,7 +19,6 @@ import com.qkt.execution.ExitReason
 import com.qkt.execution.OrderRequest
 import com.qkt.marketdata.MarketPriceProvider
 import java.math.BigDecimal
-import java.math.RoundingMode
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
@@ -191,6 +190,7 @@ class MT5Broker(
     override val supportsNativeGtd: Boolean = true
 
     private val log = LoggerFactory.getLogger(MT5Broker::class.java)
+    private val accountReads = MT5BrokerAccountView(profile, client, clock)
     private val unknownResolveExecutor: ScheduledExecutorService =
         Executors.newScheduledThreadPool(2) { task ->
             Thread(task, "qkt-mt5-unknown-resolve-${profile.name}").apply { isDaemon = true }
@@ -229,7 +229,7 @@ class MT5Broker(
             sessionGate = profile.symbolCalendars::anyCalendarInSession,
             onGatewayUnreachable = ::publishGatewayUnreachable,
             onGatewayRecovered = ::publishGatewayRecovered,
-            onPollRound = ::refreshMarginLevelIfStale,
+            onPollRound = accountReads::refreshMarginLevelIfStale,
         )
     internal val pendingPoller =
         MT5PendingOrderPoller(
@@ -265,6 +265,7 @@ class MT5Broker(
      * precedence over the cache so operators can pin values without the gateway round-trip.
      */
     private val symbolMeta: MutableMap<String, MT5SymbolInfo> = ConcurrentHashMap()
+    private val placementPrep = MT5PlacementPreparation(profile, client, priceTracker, mt5Symbol, symbolMeta)
 
     /** orderId → MT5 ticket. Populated on pending placement; used by [cancel]. */
     private val pendingTickets: MutableMap<String, Long> = ConcurrentHashMap()
@@ -346,12 +347,9 @@ class MT5Broker(
         val averageFillPrice: BigDecimal,
     )
 
-    @Volatile
-    private var accountingMode: PositionAccountingMode? = null
-
     init {
         if (profile.hasExpectedAccount) {
-            recordAccountingMode(MT5AccountVerifier.fetchAndVerify(profile, client))
+            accountReads.recordAccountingMode(MT5AccountVerifier.fetchAndVerify(profile, client))
         }
         // Pollers start UNCONDITIONALLY: if recovery throws (one malformed gateway
         // response) but the pollers never start, the broker still accepts orders and
@@ -372,15 +370,7 @@ class MT5Broker(
 
     override fun supports(symbol: String): Boolean = true
 
-    @Volatile
-    private var marginLevelCache: Pair<Long, java.math.BigDecimal?>? = null
-
-    override fun positionAccountingMode(symbol: String): PositionAccountingMode =
-        accountingMode
-            ?: runCatching { client.getAccount() }
-                .getOrNull()
-                ?.let(::recordAccountingMode)
-            ?: PositionAccountingMode.UNKNOWN
+    override fun positionAccountingMode(symbol: String): PositionAccountingMode = accountReads.positionAccountingMode()
 
     override val supportsAccountEquity: Boolean = true
 
@@ -397,40 +387,9 @@ class MT5Broker(
 
     override val supportsMarginLevel: Boolean = true
 
-    override fun accountEquity(): java.math.BigDecimal? =
-        runCatching { client.getAccount() }
-            .getOrNull()
-            ?.also(::recordAccountingMode)
-            ?.equity
+    override fun accountEquity(): java.math.BigDecimal? = accountReads.accountEquity()
 
-    override fun accountState(): BrokerAccountState? {
-        val acct = runCatching { client.getAccount() }.getOrNull() ?: return null
-        recordAccountingMode(acct)
-        return BrokerAccountState(
-            broker = profile.name.uppercase(),
-            currency = acct.currency,
-            balance = acct.balance,
-            equity = acct.equity,
-            margin = acct.margin,
-            marginFree = acct.marginFree,
-            openProfit = acct.profit,
-            marginLevel = acct.marginLevel,
-            login = acct.login,
-            server = acct.server,
-            name = acct.name,
-        )
-    }
-
-    private fun recordAccountingMode(account: MT5AccountInfo): PositionAccountingMode {
-        val mode =
-            when (account.marginMode) {
-                MARGIN_MODE_NETTING -> PositionAccountingMode.NETTING
-                MARGIN_MODE_HEDGING -> PositionAccountingMode.HEDGING
-                else -> PositionAccountingMode.UNKNOWN
-            }
-        accountingMode = mode
-        return mode
-    }
+    override fun accountState(): BrokerAccountState? = accountReads.accountState()
 
     override fun deals(
         from: Long,
@@ -528,34 +487,7 @@ class MT5Broker(
 
     override fun serverTimeZone(): java.time.ZoneId = profile.serverTimeZone.asZoneId()
 
-    /**
-     * Venue margin level, cached for [MARGIN_CACHE_TTL_MS] — the margin floor consults
-     * this on every entry, and a synchronous /account round-trip per order would put
-     * gateway latency on the approve path. The position poller keeps the cache warm via
-     * [refreshMarginLevelIfStale], so in normal operation this never leaves the cache;
-     * the synchronous fetch below is the fallback for a stale cache (poller not started,
-     * out of session, or gateway hiccup) — never trade a margin gate on stale data.
-     */
-    override fun marginLevel(): java.math.BigDecimal? {
-        val now = clock.now()
-        marginLevelCache?.let { (at, value) -> if (now - at < MARGIN_CACHE_TTL_MS) return value }
-        val level = runCatching { client.getAccount()?.marginLevel }.getOrNull()
-        marginLevelCache = now to level
-        return level
-    }
-
-    /**
-     * Poller-thread cache warmer: refreshes [marginLevelCache] once its TTL lapses. Only keeps
-     * an already-populated cache warm — the first fetch stays on the first [marginLevel] read,
-     * so sessions that never consult the margin floor never poll `/account` at all.
-     */
-    private fun refreshMarginLevelIfStale() {
-        val (at, _) = marginLevelCache ?: return
-        val now = clock.now()
-        if (now - at < MARGIN_CACHE_TTL_MS) return
-        val level = runCatching { client.getAccount()?.marginLevel }.getOrNull()
-        marginLevelCache = now to level
-    }
+    override fun marginLevel(): java.math.BigDecimal? = accountReads.marginLevel()
 
     private fun publishGatewayUnreachable(consecutiveFailures: Int) {
         if (!gatewayDown.compareAndSet(false, true)) return
@@ -638,9 +570,9 @@ class MT5Broker(
                 ?: return reject(request, "closesTicket is not a valid ticket: $ticketStr")
         val brokerSymbol = mt5Symbol.toBroker(request.symbol.substringAfter(':'))
         val closeQuantity =
-            when (val result = prepareVolume(brokerSymbol, request.quantity)) {
-                is VolumeResult.Ok -> result.quantity
-                is VolumeResult.Reject -> return reject(request, result.reason)
+            when (val result = placementPrep.prepareVolume(brokerSymbol, request.quantity)) {
+                is MT5PlacementPreparation.VolumeResult.Ok -> result.quantity
+                is MT5PlacementPreparation.VolumeResult.Reject -> return reject(request, result.reason)
             }
         val closeStartedAtMs = clock.now()
         recentlyClosedByTicket[ticket] = EngineCloseMarker(closeStartedAtMs)
@@ -774,7 +706,7 @@ class MT5Broker(
         )
         val dealsNotBeforeMs =
             closeStartedAtMs -
-                if (venueReportedClosed) UNKNOWN_CORRELATION_WINDOW_MS else CLOSE_DEAL_CLOCK_SKEW_MS
+                if (venueReportedClosed) MT5UnknownOutcomeMatching.CORRELATION_WINDOW_MS else CLOSE_DEAL_CLOCK_SKEW_MS
         var cleanAbsenceReads = 0
         for (attempt in 1..UNKNOWN_RESOLVE_ATTEMPTS) {
             Thread.sleep(unknownResolveBackoffMs * attempt)
@@ -782,8 +714,8 @@ class MT5Broker(
             val deals =
                 client.getPositionDeals(
                     positionTicket = ticket,
-                    fromUtcMs = closeStartedAtMs - UNKNOWN_CORRELATION_WINDOW_MS,
-                    toUtcMs = maxOf(clock.now(), closeStartedAtMs) + UNKNOWN_CORRELATION_WINDOW_MS,
+                    fromUtcMs = closeStartedAtMs - MT5UnknownOutcomeMatching.CORRELATION_WINDOW_MS,
+                    toUtcMs = maxOf(clock.now(), closeStartedAtMs) + MT5UnknownOutcomeMatching.CORRELATION_WINDOW_MS,
                 ) ?: continue
             val position = positions.firstOrNull { it.ticket == ticket }
             val closingDeals =
@@ -796,7 +728,7 @@ class MT5Broker(
                     }.sortedBy { it.timeMs }
             if (closingDeals.isNotEmpty()) {
                 val filledQuantity = closingDeals.fold(BigDecimal.ZERO) { total, deal -> total + deal.volume }
-                val fillPrice = weightedDealPrice(closingDeals)
+                val fillPrice = MT5UnknownOutcomeMatching.weightedDealPrice(closingDeals)
                 if (filledQuantity.signum() > 0 && fillPrice != null) {
                     val positionRemainsOpen = position != null
                     confirmEngineClose(ticket)
@@ -901,201 +833,14 @@ class MT5Broker(
      * [digits] is the price scale (e.g. `3` for XAUUSD → prices in 0.001 increments).
      * MT5 rejects orders carrying more decimals than the symbol declares.
      */
-    private data class VenueRules(
-        val volumeStep: BigDecimal,
-        val volumeMin: BigDecimal,
-        val volumeMax: BigDecimal?,
-        val digits: Int,
-        val pointSize: BigDecimal,
-        val tradeStopsLevelPoints: Int,
-        val tradeFreezeLevelPoints: Int,
-    )
-
-    /**
-     * Outcome of the pre-placement preparation step. [Ok] carries the quantized wire
-     * shape; [Reject] carries a venue-specific reason so the broker layer can emit a
-     * descriptive [BrokerEvent.OrderRejected] without relying on the gateway round-trip.
-     */
-    private sealed interface PrepareResult {
-        data class Ok(
-            val wire: MT5OrderRequest,
-        ) : PrepareResult
-
-        data class Reject(
-            val reason: String,
-        ) : PrepareResult
-    }
-
-    private sealed interface VolumeResult {
-        data class Ok(
-            val quantity: BigDecimal,
-        ) : VolumeResult
-
-        data class Reject(
-            val reason: String,
-        ) : VolumeResult
-    }
-
-    private fun prepareVolume(
-        brokerSymbol: String,
-        quantity: BigDecimal,
-    ): VolumeResult {
-        val rules = resolveVenueRules(brokerSymbol) ?: return VolumeResult.Ok(quantity)
-        val quantized =
-            if (rules.volumeStep.signum() > 0) {
-                quantity.divide(rules.volumeStep, 0, RoundingMode.DOWN).multiply(rules.volumeStep)
-            } else {
-                quantity
-            }
-        return when {
-            quantized < rules.volumeMin ->
-                VolumeResult.Reject(
-                    "quantized volume below venue volumeMin for $brokerSymbol (input=${quantity.toPlainString()})",
-                )
-            rules.volumeMax != null && quantized > rules.volumeMax ->
-                VolumeResult.Reject(
-                    "quantized volume above venue volumeMax for $brokerSymbol (input=${quantity.toPlainString()})",
-                )
-            else -> VolumeResult.Ok(quantized)
-        }
-    }
-
-    /**
-     * Resolve [VenueRules] for [brokerSymbol].
-     *
-     * Lookup order: profile overrides → in-memory cache → `/symbol_info` gateway call
-     * (cached on success). Returns `null` when the gateway is unreachable AND no
-     * override is configured — callers fall back to pass-through and surface the venue
-     * error if the unrounded order is rejected.
-     */
-    private fun resolveVenueRules(brokerSymbol: String): VenueRules? {
-        val qktSymbol = "${profile.name.uppercase()}:${mt5Symbol.toQkt(brokerSymbol)}"
-        profile.instrumentOverrides[qktSymbol]?.let { spec ->
-            return VenueRules(
-                volumeStep = spec.volumeStep,
-                volumeMin = spec.minVolume,
-                volumeMax = spec.maxVolume,
-                digits = spec.digits,
-                pointSize = spec.pointSize,
-                tradeStopsLevelPoints = spec.tradeStopsLevelPoints,
-                tradeFreezeLevelPoints = 0,
-            )
-        }
-        symbolMeta[brokerSymbol]?.let { info ->
-            return VenueRules(
-                volumeStep = info.volumeStep,
-                volumeMin = info.volumeMin,
-                volumeMax = info.volumeMax,
-                digits = info.digits,
-                pointSize = info.point,
-                tradeStopsLevelPoints = info.tradeStopsLevel,
-                tradeFreezeLevelPoints = info.tradeFreezeLevel,
-            )
-        }
-        val fetched =
-            runCatching { client.getSymbolInfo(brokerSymbol) }
-                .onFailure { e ->
-                    log.warn("MT5Broker ${profile.name} getSymbolInfo($brokerSymbol) failed: ${e.message}")
-                }.getOrNull() ?: return null
-        symbolMeta[brokerSymbol] = fetched
-        return VenueRules(
-            volumeStep = fetched.volumeStep,
-            volumeMin = fetched.volumeMin,
-            volumeMax = fetched.volumeMax,
-            digits = fetched.digits,
-            pointSize = fetched.point,
-            tradeStopsLevelPoints = fetched.tradeStopsLevel,
-            tradeFreezeLevelPoints = fetched.tradeFreezeLevel,
-        )
-    }
-
-    /**
-     * Prepare [wire] for placement: quantize volume + prices, enforce stops level.
-     *
-     * Volume rounds DOWN to `volume_step`; price fields round to `digits` decimals
-     * (HALF_EVEN); SL/TP within `tradeStopsLevel × pointSize` of entry are rejected
-     * pre-flight. The venue would reject these anyway — surfacing locally avoids the
-     * gateway round-trip and gives the strategy a structured reason string. When venue
-     * rules are unavailable the original wire is passed through unchanged so the venue's
-     * own rejection becomes the surfaced error.
-     */
-    private fun prepareForPlacement(wire: MT5OrderRequest): PrepareResult {
-        val rules =
-            resolveVenueRules(wire.symbol) ?: run {
-                log.warn(
-                    "MT5Broker ${profile.name} no venue rules for ${wire.symbol}; " +
-                        "sending unrounded wire (volume=${wire.volume.toPlainString()})",
-                )
-                return PrepareResult.Ok(wire)
-            }
-        val quantizedVolume =
-            if (rules.volumeStep.signum() > 0) {
-                wire.volume.divide(rules.volumeStep, 0, RoundingMode.DOWN).multiply(rules.volumeStep)
-            } else {
-                wire.volume
-            }
-        if (quantizedVolume < rules.volumeMin) {
-            return PrepareResult.Reject(
-                "quantized volume below venue volumeMin for ${wire.symbol} (input=${wire.volume.toPlainString()})",
-            )
-        }
-        if (rules.volumeMax != null && quantizedVolume > rules.volumeMax) {
-            return PrepareResult.Reject(
-                "quantized volume above venue volumeMax for ${wire.symbol} (input=${wire.volume.toPlainString()})",
-            )
-        }
-        val digits = rules.digits.coerceAtLeast(0)
-
-        fun roundPrice(p: BigDecimal?): BigDecimal? = p?.setScale(digits, RoundingMode.HALF_EVEN)
-
-        val quantized =
-            wire.copy(
-                volume = quantizedVolume,
-                price = roundPrice(wire.price),
-                sl = roundPrice(wire.sl),
-                tp = roundPrice(wire.tp),
-                stopLimit = roundPrice(wire.stopLimit),
-            )
-        // Stops-level enforcement: MT5 rejects orders whose SL/TP is closer to the entry
-        // than `tradeStopsLevel × pointSize`. Reject locally with a structured reason so
-        // strategy logs surface the cause without parsing gateway error blobs.
-        if (rules.tradeStopsLevelPoints > 0 &&
-            rules.pointSize.signum() > 0 &&
-            quantized.price != null
-        ) {
-            val minDistance = rules.pointSize.multiply(BigDecimal(rules.tradeStopsLevelPoints))
-            val current = priceTracker?.lastPrice("${profile.name.uppercase()}:${mt5Symbol.toQkt(wire.symbol)}")
-            if (current != null && (quantized.price - current).abs() < minDistance) {
-                return PrepareResult.Reject(
-                    "entry too close to current price for ${wire.symbol}: " +
-                        "distance=${(quantized.price - current).abs().toPlainString()} " +
-                        "min=${minDistance.toPlainString()}",
-                )
-            }
-            for ((field, value) in listOf("sl" to quantized.sl, "tp" to quantized.tp)) {
-                if (value != null && value.signum() > 0) {
-                    val distance = (quantized.price - value).abs()
-                    if (distance < minDistance) {
-                        return PrepareResult.Reject(
-                            "$field too close to entry for ${wire.symbol}: " +
-                                "distance=${distance.toPlainString()} min=${minDistance.toPlainString()} " +
-                                "(tradeStopsLevel=${rules.tradeStopsLevelPoints}, pointSize=${rules.pointSize.toPlainString()})",
-                        )
-                    }
-                }
-            }
-        }
-        return PrepareResult.Ok(quantized)
-    }
-
     private fun submitSingle(
         request: OrderRequest,
         wire: MT5OrderRequest,
     ): SubmitAck {
         val prepared =
-            when (val result = prepareForPlacement(wire)) {
-                is PrepareResult.Ok -> result.wire
-                is PrepareResult.Reject -> return reject(request, result.reason)
+            when (val result = placementPrep.prepareForPlacement(wire)) {
+                is MT5PlacementPreparation.PrepareResult.Ok -> result.wire
+                is MT5PlacementPreparation.PrepareResult.Reject -> return reject(request, result.reason)
             }
         // #185 diagnostic: the gateway rejects a STOP entry whose trigger sits the wrong side
         // of the live quote (BUY_STOP <= ask). Log the submitted trigger vs the last market
@@ -1318,8 +1063,12 @@ class MT5Broker(
         for (attempt in 1..UNKNOWN_RESOLVE_ATTEMPTS) {
             val deals =
                 client.getDeals(
-                    fromUtcMs = placementStartedAtMs - UNKNOWN_CORRELATION_WINDOW_MS,
-                    toUtcMs = maxOf(clock.now(), placementStartedAtMs) + UNKNOWN_CORRELATION_WINDOW_MS,
+                    fromUtcMs = placementStartedAtMs - MT5UnknownOutcomeMatching.CORRELATION_WINDOW_MS,
+                    toUtcMs =
+                        maxOf(
+                            clock.now(),
+                            placementStartedAtMs,
+                        ) + MT5UnknownOutcomeMatching.CORRELATION_WINDOW_MS,
                 )
             val openingDeal =
                 deals
@@ -1528,11 +1277,16 @@ class MT5Broker(
             val fallbackMatches: List<UnknownVenueMatch> =
                 if (exactMatches.isEmpty()) {
                     pendingCandidates
-                        .filter { matchesUnknownPending(it, placement, placementStartedAtMs) }
+                        .filter { MT5UnknownOutcomeMatching.matchesUnknownPending(it, placement, placementStartedAtMs) }
                         .map { UnknownVenueMatch.Pending(it) } +
                         positionCandidates
-                            .filter { matchesUnknownPosition(it, placement, placementStartedAtMs) }
-                            .map { UnknownVenueMatch.Position(it) }
+                            .filter {
+                                MT5UnknownOutcomeMatching.matchesUnknownPosition(
+                                    it,
+                                    placement,
+                                    placementStartedAtMs,
+                                )
+                            }.map { UnknownVenueMatch.Position(it) }
                 } else {
                     emptyList()
                 }
@@ -1610,8 +1364,10 @@ class MT5Broker(
                 null -> {
                     val deals =
                         client.getDeals(
-                            fromUtcMs = placementStartedAtMs - UNKNOWN_CORRELATION_WINDOW_MS,
-                            toUtcMs = maxOf(clock.now(), placementStartedAtMs) + UNKNOWN_CORRELATION_WINDOW_MS,
+                            fromUtcMs = placementStartedAtMs - MT5UnknownOutcomeMatching.CORRELATION_WINDOW_MS,
+                            toUtcMs =
+                                maxOf(clock.now(), placementStartedAtMs) +
+                                    MT5UnknownOutcomeMatching.CORRELATION_WINDOW_MS,
                         ) ?: continue
                     val dealCandidates =
                         deals.filter {
@@ -1627,12 +1383,18 @@ class MT5Broker(
                     val exactDealGroups =
                         dealCandidates
                             .filter { it.clientOrderId == placement.clientOrderId }
-                            .groupBy(::dealPositionKey)
+                            .groupBy(MT5UnknownOutcomeMatching::dealPositionKey)
                     val fallbackDealGroups =
                         if (exactDealGroups.isEmpty()) {
                             dealCandidates
-                                .groupBy(::dealPositionKey)
-                                .filterValues { matchesUnknownDeals(it, placement, placementStartedAtMs) }
+                                .groupBy(MT5UnknownOutcomeMatching::dealPositionKey)
+                                .filterValues {
+                                    MT5UnknownOutcomeMatching.matchesUnknownDeals(
+                                        it,
+                                        placement,
+                                        placementStartedAtMs,
+                                    )
+                                }
                         } else {
                             emptyMap()
                         }
@@ -1704,23 +1466,6 @@ class MT5Broker(
         }
     }
 
-    private fun dealPositionKey(deal: MT5Deal): Long =
-        deal.positionTicket.takeIf { it > 0L }
-            ?: deal.orderTicket.takeIf { it > 0L }
-            ?: deal.ticket
-
-    private fun matchesUnknownDeals(
-        deals: List<MT5Deal>,
-        placement: MT5OrderRequest,
-        placementStartedAtMs: Long,
-    ): Boolean {
-        val expectedType = if (placement.type.startsWith("BUY")) 0 else 1
-        val totalVolume = deals.fold(BigDecimal.ZERO) { total, deal -> total + deal.volume }
-        return deals.all { it.type == expectedType } &&
-            totalVolume.compareTo(placement.volume) == 0 &&
-            deals.any { isNearPlacement(it.timeMs, placementStartedAtMs) }
-    }
-
     /** Replay a deal-proven ambiguous placement, including its close legs when already flat. */
     private fun resolveUnknownDeals(
         request: OrderRequest,
@@ -1729,13 +1474,13 @@ class MT5Broker(
         allDeals: List<MT5Deal>,
         positions: List<MT5Position>,
     ): Boolean {
-        val positionTicket = dealPositionKey(openingDeals.first())
+        val positionTicket = MT5UnknownOutcomeMatching.dealPositionKey(openingDeals.first())
         if (positionTicket <= 0L) return false
         val quantity = openingDeals.fold(BigDecimal.ZERO) { total, deal -> total + deal.volume }
         if (quantity.signum() <= 0) return false
-        val price = weightedDealPrice(openingDeals) ?: return false
+        val price = MT5UnknownOutcomeMatching.weightedDealPrice(openingDeals) ?: return false
         val positionOpen = positions.any { it.ticket == positionTicket }
-        val positionDeals = allDeals.filter { dealPositionKey(it) == positionTicket }
+        val positionDeals = allDeals.filter { MT5UnknownOutcomeMatching.dealPositionKey(it) == positionTicket }
         val closingDeals = positionDeals.filter { it.entry != 0 }.sortedBy { it.timeMs }
         if (!positionOpen) {
             val closedQuantity = closingDeals.fold(BigDecimal.ZERO) { total, deal -> total + deal.volume }
@@ -1802,43 +1547,6 @@ class MT5Broker(
         return true
     }
 
-    private fun weightedDealPrice(deals: List<MT5Deal>): BigDecimal? {
-        val quantity = deals.fold(BigDecimal.ZERO) { total, deal -> total + deal.volume }
-        if (quantity.signum() <= 0) return null
-        val notional = deals.fold(BigDecimal.ZERO) { total, deal -> total + deal.price.multiply(deal.volume) }
-        return notional.divide(quantity, com.qkt.common.Money.CONTEXT)
-    }
-
-    private fun matchesUnknownPending(
-        candidate: MT5PendingOrder,
-        placement: MT5OrderRequest,
-        placementStartedAtMs: Long,
-    ): Boolean =
-        candidate.type.equals(placement.type, ignoreCase = true) &&
-            candidate.volume.compareTo(placement.volume) == 0 &&
-            (placement.price == null || candidate.priceOpen.compareTo(placement.price) == 0) &&
-            isNearPlacement(candidate.timeSetup, placementStartedAtMs)
-
-    private fun matchesUnknownPosition(
-        candidate: MT5Position,
-        placement: MT5OrderRequest,
-        placementStartedAtMs: Long,
-    ): Boolean {
-        val expectedType = if (placement.type.startsWith("BUY")) 0 else 1
-        return candidate.type == expectedType &&
-            candidate.volume.compareTo(placement.volume) == 0 &&
-            isNearPlacement(candidate.openTime, placementStartedAtMs)
-    }
-
-    private fun isNearPlacement(
-        venueEpoch: Long,
-        placementStartedAtMs: Long,
-    ): Boolean {
-        if (venueEpoch <= 0L) return false
-        val venueEpochMs = if (venueEpoch < 100_000_000_000L) venueEpoch * 1_000L else venueEpoch
-        return abs(venueEpochMs - placementStartedAtMs) <= UNKNOWN_CORRELATION_WINDOW_MS
-    }
-
     private sealed interface UnknownVenueMatch {
         data class Pending(
             val order: MT5PendingOrder,
@@ -1866,9 +1574,9 @@ class MT5Broker(
         // here doesn't need rollback because no client.placeOrder has run yet.
         val prepared =
             composite.requests.map { wire ->
-                when (val result = prepareForPlacement(wire)) {
-                    is PrepareResult.Ok -> result.wire
-                    is PrepareResult.Reject ->
+                when (val result = placementPrep.prepareForPlacement(wire)) {
+                    is MT5PlacementPreparation.PrepareResult.Ok -> result.wire
+                    is MT5PlacementPreparation.PrepareResult.Reject ->
                         return reject(request, "OCO leg ${wire.comment}: ${result.reason}")
                 }
             }
@@ -2829,15 +2537,11 @@ class MT5Broker(
         private const val UNKNOWN_PERIODIC_RESOLVE_MIN_MS: Long = 5_000L
 
         /** Maximum distance from placement time for legacy comment-based correlation. */
-        private const val UNKNOWN_CORRELATION_WINDOW_MS: Long = 60_000L
         private const val CLOSE_DEAL_CLOCK_SKEW_MS: Long = 1_000L
 
         /** `POSITION_CLOSED` / `FROZEN` retcodes as gateways embed them in a non-2xx error body. */
         private val VENUE_OWNED_CLOSE_RETCODE_IN_BODY: Regex =
             Regex(""""retcode"\s*:\s*(?:$MT5_TRADE_RETCODE_POSITION_CLOSED|$MT5_TRADE_RETCODE_FROZEN)\b""")
-
-        /** Margin-level cache TTL — fresh enough for a floor check, cheap on the gateway. */
-        private const val MARGIN_CACHE_TTL_MS: Long = 5_000L
 
         /** Deal-history window around an immediate fill used to retrieve its exact venue costs. */
         private const val DEAL_LOOKUP_WINDOW_MS: Long = 24L * 60L * 60L * 1_000L
