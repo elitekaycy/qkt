@@ -806,57 +806,8 @@ class LiveSession(
         val feed = source.liveTicks(feedSymbols)
         insights.connected({ brokers.built.ifEmpty { listOf(broker) } }, feed)
 
-        // Flattening mutates the OrderManager and publishes closes, so it must run on the engine
-        // thread — the HTTP control path enqueues [Inbound.Flatten] rather than touching engine
-        // state from its own worker thread.
-        fun doFlatten() {
-            val strategyId = strategies.firstOrNull()?.first ?: return
-            val now = clock.now()
-            if (broker.supportsPositionTickets) {
-                // Venue truth leads: every position the venue attributes to this strategy is
-                // closed by ticket, through the ledger leg that owns it when there is one.
-                val deployedIds = strategies.map { it.first }
-                for (ticket in broker.positionTickets()) {
-                    val owner =
-                        ticketAttribution.ownerOf(ticket.ticket)
-                            ?: ticketAttribution.fromComment(ticket.comment, deployedIds)
-                    if (owner != strategyId) {
-                        if (owner == null) {
-                            log.error(
-                                "flatten skipped unattributed ticket {} on {}; operator intervention required",
-                                ticket.ticket,
-                                ticket.symbol,
-                            )
-                        }
-                        continue
-                    }
-                    pipeline.orderManager.cancelPendingForSymbol(ticket.symbol)
-                    val leg = strategyPositions.legBookFor(strategyId, ticket.symbol)?.legByTicket(ticket.ticket)
-                    val request =
-                        if (leg != null) {
-                            LegFlattener.closeLeg(strategyId, leg, ids.next(), now)
-                        } else {
-                            LegFlattener.closeTicket(strategyId, ticket, ids.next(), now)
-                        }
-                    bus.publish(com.qkt.events.OrderEvent(request))
-                }
-                return
-            }
-            for (leg in strategyPositions.allLegsFor(strategyId)) {
-                if (broker.positionAccountingMode(leg.symbol) != com.qkt.broker.PositionAccountingMode.NETTING) {
-                    log.error(
-                        "flatten cannot safely close {} on broker {} without position tickets; " +
-                            "accounting mode is {}",
-                        leg.symbol,
-                        broker.name,
-                        broker.positionAccountingMode(leg.symbol),
-                    )
-                    continue
-                }
-                pipeline.orderManager.cancelPendingForSymbol(leg.symbol)
-                bus.publish(com.qkt.events.OrderEvent(LegFlattener.closeLeg(strategyId, leg, ids.next(), now)))
-            }
-        }
+        val sessionFlatten =
+            SessionFlatten(strategies, clock, broker, ticketAttribution, pipeline, strategyPositions, ids, bus)
 
         // A strategy/indicator/handler exception must never kill this thread silently:
         // log with full context, raise a CRITICAL alert, halt the session's trading
@@ -978,16 +929,8 @@ class LiveSession(
                                 // A failed FLATTEN is the emergency path failing — the loudest case.
                                 // Then the venue's own list: a resting order whose placement response was
                                 // lost is not among the orders the engine knows, and must not outlive a flatten.
-                                runCatching {
-                                    doFlatten()
-                                    VerifiedFlatten(
-                                        broker,
-                                        ticketAttribution,
-                                        clock,
-                                        strategies.map { it.first },
-                                        {},
-                                    ).sweepRestingOrders()
-                                }.onFailure { t -> onEngineFault("flatten", t) }
+                                runCatching { sessionFlatten.flattenAndSweep() }
+                                    .onFailure { t -> onEngineFault("flatten", t) }
                             is Inbound.FeedEnded -> {
                                 // Feed ended (finite source drained): process every tick already
                                 // queued before stopping, so no tick is dropped.
