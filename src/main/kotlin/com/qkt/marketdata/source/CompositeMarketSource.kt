@@ -11,22 +11,11 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.atomic.AtomicBoolean
 
-fun interface SymbolPattern {
-    fun matches(symbol: String): Boolean
-
-    companion object {
-        fun prefix(prefix: String): SymbolPattern = SymbolPattern { it.startsWith(prefix) }
-
-        fun exact(symbol: String): SymbolPattern = SymbolPattern { it == symbol }
-
-        fun exactSet(symbols: Set<String>): SymbolPattern = SymbolPattern { it in symbols }
-    }
-}
-
 class CompositeMarketSource(
     private val routes: List<Pair<SymbolPattern, MarketSource>>,
     private val fallback: MarketSource,
-) : MarketSource {
+) : MarketSource,
+    RefreshableBars {
     override val name: String = "Composite"
 
     override val capabilities: Set<MarketSourceCapability> =
@@ -65,6 +54,16 @@ class CompositeMarketSource(
         window: TimeWindow,
         range: TimeRange,
     ): Sequence<Candle> = sourceFor(symbol).bars(symbol, window, range)
+
+    override fun canRefresh(symbol: String): Boolean =
+        (sourceFor(symbol) as? RefreshableBars)?.canRefresh(symbol) ?: false
+
+    override fun forgetBars(
+        symbol: String,
+        window: TimeWindow,
+    ) {
+        (sourceFor(symbol) as? RefreshableBars)?.forgetBars(symbol, window)
+    }
 
     override fun ticks(
         symbol: String,
