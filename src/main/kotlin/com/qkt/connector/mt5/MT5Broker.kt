@@ -15,7 +15,6 @@ import com.qkt.common.IdGenerator
 import com.qkt.common.SequentialIdGenerator
 import com.qkt.common.Side
 import com.qkt.events.BrokerEvent
-import com.qkt.execution.ExitReason
 import com.qkt.execution.OrderRequest
 import com.qkt.marketdata.MarketPriceProvider
 import java.math.BigDecimal
@@ -123,6 +122,35 @@ class MT5Broker(
     private val positionModify = MT5PositionModify(profile, client, priceTracker, mt5Symbol, state)
     private val partialEntries = MT5PartialEntries(state, bus, clock)
     private val pendingOrderChanges = MT5PendingOrderChanges(profile, client, bus, clock, state, partialEntries)
+    private val closeTruth = MT5CloseVenueTruth(client, clock, state)
+    private val unknownClose =
+        MT5UnknownCloseResolution(
+            profile,
+            client,
+            bus,
+            clock,
+            state,
+            events,
+            engineCloses,
+            unknownResolver,
+            hasPublishedClose = { ticket -> poller.hasPublishedClose(ticket) },
+            unknownResolveBackoffMs,
+        )
+    private val positionClose =
+        MT5PositionClose(
+            profile,
+            client,
+            bus,
+            clock,
+            mt5Symbol,
+            placementPrep,
+            state,
+            events,
+            engineCloses,
+            unknownResolver,
+            unknownClose,
+            closeTruth,
+        )
     private val pendingFills = MT5PendingFills(profile, bus, clock, mt5Symbol, state, partialEntries)
     private val pendingDisappearance =
         MT5PendingDisappearance(profile, client, bus, clock, state, partialEntries, pendingFills)
@@ -152,7 +180,7 @@ class MT5Broker(
             onPositionClosed = ::removeClosedTicketMeta,
             isExpectedProtectionChange = positionModify::isExpectedProtectionChange,
             engineCloseState = engineCloses::engineCloseState,
-            venueCostsForClose = ::bookVenueCloseCosts,
+            venueCostsForClose = closeTruth::bookVenueCloseCosts,
             priceProvider = priceTracker,
             sessionGate = profile.symbolCalendars::anyCalendarInSession,
             onGatewayUnreachable = events::publishGatewayUnreachable,
@@ -254,7 +282,7 @@ class MT5Broker(
 
     override fun submit(request: OrderRequest): SubmitAck {
         if (request is OrderRequest.Market && request.closesTicket != null) {
-            return submitCloseByTicket(request, request.closesTicket)
+            return positionClose.submitCloseByTicket(request, request.closesTicket)
         }
         val dispatchRequest = crossedStops.convertAlreadyCrossedStopAtMarket(request)
         val translation =
@@ -265,282 +293,6 @@ class MT5Broker(
         return when (translation) {
             is MT5Translation.Single -> submitSingle(dispatchRequest, translation.request)
             is MT5Translation.Composite -> submitComposite(dispatchRequest, translation)
-        }
-    }
-
-    /**
-     * Close the venue position [ticketStr] via the gateway instead of placing an opposite
-     * order. On a hedging account an opposite order opens a counter; this actually closes the
-     * position. Emits the close as an attributed [BrokerEvent.OrderFilled] under [request.id]
-     * so the strategy's position tracker realizes it, and marks the ticket via
-     * [recentlyClosedByTicket] so the position poller does not publish a duplicate close.
-     *
-     * Non-blocking like [submitSingle]'s market path: the HTTP send runs on OkHttp's dispatcher
-     * and the outcome returns as bus events — closes ride CLOSE rules, trailing-stop fires, and
-     * flattens on the engine thread, where a blocking round-trip stalls tick processing exactly
-     * when exits matter. The poller-suppression mark is set BEFORE the send (the poller could
-     * observe the position gone before our callback runs) and rolled back on failure.
-     */
-    private fun submitCloseByTicket(
-        request: OrderRequest.Market,
-        ticketStr: String,
-    ): SubmitAck {
-        val ticket =
-            ticketStr.toLongOrNull()
-                ?: return events.reject(request, "closesTicket is not a valid ticket: $ticketStr")
-        val brokerSymbol = mt5Symbol.toBroker(request.symbol.substringAfter(':'))
-        val closeQuantity =
-            when (val result = placementPrep.prepareVolume(brokerSymbol, request.quantity)) {
-                is MT5PlacementPreparation.VolumeResult.Ok -> result.quantity
-                is MT5PlacementPreparation.VolumeResult.Reject -> return events.reject(request, result.reason)
-            }
-        val closeStartedAtMs = clock.now()
-        engineCloses.begin(ticket, closeStartedAtMs)
-        client.closePositionAsync(ticket, volume = closeQuantity, partial = request.partialClose) { resp ->
-            if (!isOrderSuccessful(resp.result.retcode)) {
-                val message = resp.errorMessage ?: "close_position retcode=${resp.result.retcode}"
-                val venueReportedClosed = MT5SendOutcomes.venueOwnsClose(resp, message)
-                if (MT5SendOutcomes.isAmbiguousSendFailure(message) || venueReportedClosed) {
-                    // A venue-side exit (mirrored stop, take-profit, manual close) can land
-                    // between the engine deciding to close and the close reaching the venue.
-                    // The venue then answers POSITION_CLOSED, or FROZEN when the market is
-                    // already inside the stop's freeze level: the trade is finishing at the
-                    // venue, so the outcome is read from deal history rather than surfaced
-                    // as a rejection that would count toward the runaway breaker.
-                    unknownResolver.executeUnknownResolution {
-                        resolveUnknownCloseOutcome(
-                            request,
-                            ticket,
-                            closeQuantity,
-                            closeStartedAtMs,
-                            message,
-                            venueReportedClosed,
-                        )
-                    }
-                    return@closePositionAsync
-                }
-                engineCloses.remove(ticket)
-                events.reject(request, message)
-                return@closePositionAsync
-            }
-            val partiallyFilled = resp.result.retcode == MT5_TRADE_RETCODE_DONE_PARTIAL
-            val reportedVolume = resp.result.volume?.takeIf { it.signum() > 0 }
-            if (partiallyFilled && reportedVolume == null) {
-                // The venue changed state, so a rejection would invite a duplicate close.
-                // Keep the order accepted-but-unresolved and let the position poller
-                // reconcile the remaining venue quantity without sending a second close.
-                // Remove the pending marker before it can be confirmed: a poll that sees a
-                // confirmed marker adopts the reduced snapshot without publishing its delta.
-                engineCloses.remove(ticket)
-                bus.publish(
-                    BrokerEvent.OrderAccepted(
-                        clientOrderId = request.id,
-                        brokerOrderId = ticket.toString(),
-                        strategyId = request.strategyId,
-                        timestamp = clock.now(),
-                    ),
-                )
-                log.error(
-                    "MT5Broker {} partial close {} omitted actual filled volume",
-                    profile.name,
-                    request.id,
-                )
-                return@closePositionAsync
-            }
-            val positionRemainsOpen = request.partialClose || partiallyFilled
-            if (positionRemainsOpen) {
-                engineCloses.confirmEngineClose(ticket)
-            } else {
-                engineCloses.confirmEngineClose(ticket)
-                positionBook.forgetAttribution(ticket)
-            }
-            val filledQuantity = reportedVolume ?: closeQuantity
-            val venueTruth =
-                venueTruthForPositionClose(
-                    positionTicket = ticket,
-                    closingDealTicket = resp.result.deal,
-                    positionClosed = !positionRemainsOpen,
-                )
-            val venueCosts = venueTruth.costs
-            // Async-fill venues report price 0.0 on the close acknowledgement too (#1092);
-            // the closing deal is the executed price. A zero close price would book the
-            // whole entry as realized loss/gain.
-            val closePrice =
-                resp.result.price.takeIf { it.signum() > 0 }
-                    ?: venueTruth.closingDealPrice
-                    ?: resp.result.price.also {
-                        log.warn(
-                            "MT5Broker {} close {} acknowledged with price 0.0 and no closing deal {} found; booking as reported",
-                            profile.name,
-                            request.id,
-                            resp.result.deal,
-                        )
-                    }
-            if (!positionRemainsOpen) positionBook.forgetOpenedAt(ticket)
-            bus.publish(
-                BrokerEvent.OrderAccepted(
-                    clientOrderId = request.id,
-                    brokerOrderId = ticket.toString(),
-                    strategyId = request.strategyId,
-                    timestamp = clock.now(),
-                ),
-            )
-            bus.publish(
-                BrokerEvent.OrderFilled(
-                    clientOrderId = request.id,
-                    brokerOrderId = ticket.toString(),
-                    symbol = request.symbol,
-                    side = request.side,
-                    price = closePrice,
-                    quantity = filledQuantity,
-                    strategyId = request.strategyId,
-                    timestamp = clock.now(),
-                    venueCosts = venueCosts,
-                    exitReason = ExitReason.CLOSE,
-                ),
-            )
-        }
-        return SubmitAck(request.id, ticket.toString(), accepted = true)
-    }
-
-    /**
-     * [venueReportedClosed] marks a close the venue answered with `POSITION_CLOSED`: the
-     * closing deal then predates this close attempt (a venue-side stop or take-profit
-     * fired first), so deal correlation looks back over the full correlation window
-     * instead of only the clock-skew margin used for a close of unknown delivery.
-     */
-    private fun resolveUnknownCloseOutcome(
-        request: OrderRequest.Market,
-        ticket: Long,
-        requestedQuantity: BigDecimal,
-        closeStartedAtMs: Long,
-        cause: String,
-        venueReportedClosed: Boolean = false,
-    ) {
-        log.warn(
-            "MT5Broker {} close {} outcome UNKNOWN ({}) — querying venue before resolving",
-            profile.name,
-            request.id,
-            cause,
-        )
-        val dealsNotBeforeMs =
-            closeStartedAtMs -
-                if (venueReportedClosed) MT5UnknownOutcomeMatching.CORRELATION_WINDOW_MS else CLOSE_DEAL_CLOCK_SKEW_MS
-        var cleanAbsenceReads = 0
-        for (attempt in 1..UNKNOWN_RESOLVE_ATTEMPTS) {
-            Thread.sleep(unknownResolveBackoffMs * attempt)
-            val positions = client.getPositions(magic = profile.magic) ?: continue
-            val deals =
-                client.getPositionDeals(
-                    positionTicket = ticket,
-                    fromUtcMs = closeStartedAtMs - MT5UnknownOutcomeMatching.CORRELATION_WINDOW_MS,
-                    toUtcMs = maxOf(clock.now(), closeStartedAtMs) + MT5UnknownOutcomeMatching.CORRELATION_WINDOW_MS,
-                ) ?: continue
-            val position = positions.firstOrNull { it.ticket == ticket }
-            val closingDeals =
-                deals
-                    .filter {
-                        it.positionTicket == ticket &&
-                            it.magic == profile.magic &&
-                            it.entry != 0 &&
-                            it.timeMs >= dealsNotBeforeMs
-                    }.sortedBy { it.timeMs }
-            if (closingDeals.isNotEmpty()) {
-                val filledQuantity = closingDeals.fold(BigDecimal.ZERO) { total, deal -> total + deal.volume }
-                val fillPrice = MT5UnknownOutcomeMatching.weightedDealPrice(closingDeals)
-                if (filledQuantity.signum() > 0 && fillPrice != null) {
-                    val positionRemainsOpen = position != null
-                    engineCloses.confirmEngineClose(ticket)
-                    if (!positionRemainsOpen) {
-                        positionBook.forget(ticket)
-                    }
-                    val venueCosts =
-                        venueCostLedger.book(
-                            ticket,
-                            deals,
-                            positionClosed = !positionRemainsOpen,
-                            nowMs = clock.now(),
-                        )
-                    if (poller.hasPublishedClose(ticket)) {
-                        log.info(
-                            "MT5Broker {} close {} was already published by the position poller for ticket {}",
-                            profile.name,
-                            request.id,
-                            ticket,
-                        )
-                        // The position's close (and its P&L) is already on the bus under the
-                        // entry. Retire this close order without a second fill so the engine
-                        // does not keep a live exit child on a position that no longer exists.
-                        bus.publish(
-                            BrokerEvent.OrderCancelled(
-                                clientOrderId = request.id,
-                                brokerOrderId = ticket.toString(),
-                                reason =
-                                    "superseded by venue close of ticket $ticket already published by the position poller",
-                                strategyId = request.strategyId,
-                                timestamp = clock.now(),
-                            ),
-                        )
-                        return
-                    }
-                    bus.publish(
-                        BrokerEvent.OrderAccepted(
-                            clientOrderId = request.id,
-                            brokerOrderId = ticket.toString(),
-                            strategyId = request.strategyId,
-                            timestamp = clock.now(),
-                        ),
-                    )
-                    bus.publish(
-                        BrokerEvent.OrderFilled(
-                            clientOrderId = request.id,
-                            brokerOrderId = ticket.toString(),
-                            symbol = request.symbol,
-                            side = request.side,
-                            price = fillPrice,
-                            quantity = filledQuantity.min(requestedQuantity),
-                            strategyId = request.strategyId,
-                            timestamp = clock.now(),
-                            venueCosts = venueCosts,
-                            exitReason = ExitReason.CLOSE,
-                        ),
-                    )
-                    log.info(
-                        "MT5Broker {} close {} resolved as FILLED ticket {}",
-                        profile.name,
-                        request.id,
-                        ticket,
-                    )
-                    return
-                }
-            }
-            if (position != null) cleanAbsenceReads++
-        }
-        if (cleanAbsenceReads == UNKNOWN_RESOLVE_ATTEMPTS) {
-            engineCloses.remove(ticket)
-            events.reject(request, "unknown-state close resolved as not executed after verified retry window ($cause)")
-            return
-        }
-        log.error(
-            "MT5Broker {} close {} outcome UNRESOLVED after {} venue queries — no rejection emitted",
-            profile.name,
-            request.id,
-            UNKNOWN_RESOLVE_ATTEMPTS,
-        )
-        events.publishGatewayUnreachable(UNKNOWN_RESOLVE_ATTEMPTS)
-        scheduleUnknownCloseResolution(request, ticket, requestedQuantity, closeStartedAtMs, cause, venueReportedClosed)
-    }
-
-    private fun scheduleUnknownCloseResolution(
-        request: OrderRequest.Market,
-        ticket: Long,
-        requestedQuantity: BigDecimal,
-        closeStartedAtMs: Long,
-        cause: String,
-        venueReportedClosed: Boolean,
-    ) {
-        unknownResolver.scheduleUnknownResolution {
-            resolveUnknownCloseOutcome(request, ticket, requestedQuantity, closeStartedAtMs, cause, venueReportedClosed)
         }
     }
 
@@ -739,38 +491,6 @@ class MT5Broker(
         }
     }
 
-    /** What the venue's deal history says about a close: booked costs and the closing deal's price. */
-    private data class CloseVenueTruth(
-        val costs: BigDecimal,
-        val closingDealPrice: BigDecimal?,
-    )
-
-    private fun venueTruthForPositionClose(
-        positionTicket: Long,
-        closingDealTicket: Long,
-        positionClosed: Boolean,
-    ): CloseVenueTruth {
-        val now = clock.now()
-        val from = positionBook.openedAt(positionTicket) ?: now - DEAL_LOOKUP_WINDOW_MS
-        val deals =
-            client.getPositionDeals(positionTicket, fromUtcMs = from, toUtcMs = now)
-                ?: client
-                    .getDeals(
-                        fromUtcMs = now - DEAL_LOOKUP_WINDOW_MS,
-                        toUtcMs = now + DEAL_LOOKUP_WINDOW_MS,
-                    ).orEmpty()
-                    .filter {
-                        it.positionTicket == positionTicket || it.ticket == closingDealTicket
-                    }
-        return CloseVenueTruth(
-            costs = venueCostLedger.book(positionTicket, deals, positionClosed, now),
-            closingDealPrice =
-                deals
-                    .firstOrNull { it.ticket == closingDealTicket && it.price.signum() > 0 }
-                    ?.price,
-        )
-    }
-
     /**
      * MqlTradeResult separates order and deal tickets and exposes no position ticket. Resolve
      * the exact deal through venue history, whose `position_id` is the authoritative key used by
@@ -891,15 +611,6 @@ class MT5Broker(
         if (partialPositionByResidualTicket.containsKey(residualTicket)) {
             pendingPoller.seedTrackedTickets(setOf(residualTicket))
         }
-    }
-
-    private fun bookVenueCloseCosts(
-        positionTicket: Long,
-        deals: List<MT5Deal>,
-        positionClosed: Boolean,
-    ): BigDecimal {
-        if (positionClosed) positionBook.forgetOpenedAt(positionTicket)
-        return venueCostLedger.book(positionTicket, deals, positionClosed = positionClosed, nowMs = clock.now())
     }
 
     /**
@@ -1635,11 +1346,5 @@ class MT5Broker(
         /** Venue queries before giving up on resolving an UNKNOWN send outcome. */
         private const val UNKNOWN_RESOLVE_ATTEMPTS: Int = MT5BrokerLimits.UNKNOWN_RESOLVE_ATTEMPTS
         private const val UNKNOWN_PERIODIC_RESOLVE_MIN_MS: Long = 5_000L
-
-        /** Maximum distance from placement time for legacy comment-based correlation. */
-        private const val CLOSE_DEAL_CLOCK_SKEW_MS: Long = 1_000L
-
-        /** Deal-history window around an immediate fill used to retrieve its exact venue costs. */
-        private const val DEAL_LOOKUP_WINDOW_MS: Long = 24L * 60L * 60L * 1_000L
     }
 }
