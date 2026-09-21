@@ -700,7 +700,7 @@ class LiveSession(
             com.qkt.risk.book
                 .wireBookReservations(bus, controller)
         }
-        insightsSink?.let { sink -> InsightsBusWiring(insightsEvents).wire(bus, sink, priceTracker) }
+        insightsSink?.let { sink -> InsightsBusWiring(insightsEvents, strategies).wire(bus, sink, priceTracker) }
         // Restore OCO legs from the persistor and reconcile them against venue truth so
         // any sibling whose pair filled during downtime is cancelled before ticks flow.
         pipeline.orderManager.restore(strategies.map { it.first })
