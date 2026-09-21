@@ -14,7 +14,8 @@ import kotlinx.serialization.json.longOrNull
 
 /**
  * Renders the `qkt status --deep` health screen from the daemon's `/health` and `/list` bodies and
- * returns the exit code: success only when the daemon and every strategy are healthy.
+ * returns the exit code: success only when the daemon and every strategy are healthy. A strategy
+ * halted by risk control is reported on the first line and listed, but is not a health failure.
  */
 internal fun renderDeepStatus(
     healthBody: String,
@@ -39,6 +40,7 @@ internal fun renderDeepStatus(
     val uptimeMs = health["uptimeMs"]?.jsonPrimitive?.longOrNull ?: 0L
 
     val unhealthy = mutableListOf<String>()
+    val halted = mutableListOf<String>()
     val versionLine = BuildInfo.versionLine()
 
     val lines = mutableListOf<String>()
@@ -51,18 +53,21 @@ internal fun renderDeepStatus(
         unhealthy.add("daemon status=$daemonStatus")
     }
     lines.add("CONTROL      reachable")
-    lines.add(renderStrategies(strategies, unhealthy))
+    lines.add(renderStrategies(strategies, unhealthy, halted))
 
     if (unhealthy.isEmpty()) {
-        println("qkt: HEALTHY")
+        val note = if (halted.isEmpty()) "" else " (${halted.size} halted by risk control)"
+        println("qkt: HEALTHY$note")
         println("")
         for (l in lines) println(l)
+        if (halted.isNotEmpty()) println("")
+        for (h in halted) println("  - $h")
         return ExitCodes.SUCCESS
     }
     println("qkt: UNHEALTHY (${unhealthy.size} issue${if (unhealthy.size == 1) "" else "s"})")
     println("")
     for (l in lines) println(l)
     System.err.println("")
-    for (u in unhealthy) System.err.println("  - $u")
+    for (u in unhealthy + halted) System.err.println("  - $u")
     return ExitCodes.USER_ERROR
 }

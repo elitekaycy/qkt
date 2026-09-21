@@ -139,6 +139,14 @@ internal class SharedBarRequests(
             }
         }
 
+    /** Forget every cached read of [symbol] at [windowMs]; reads already in flight complete as they are. */
+    fun forget(
+        symbol: String,
+        windowMs: Long,
+    ) {
+        synchronized(lock) { cache.keys.removeIf { it.symbol == symbol && it.windowMs == windowMs } }
+    }
+
     fun clear() {
         synchronized(lock) {
             cache.clear()
