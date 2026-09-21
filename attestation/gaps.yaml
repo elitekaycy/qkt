@@ -1,41 +1,13 @@
 gaps:
-- capability: ANCHORED_RETURN
-  reason: session and history indicators need a deep 1m warmup (thousands of bars); case planned as shadow/session-and-pivots
-- capability: FAILED_BREAK_HIGH
-  reason: session and history indicators need a deep 1m warmup (thousands of bars); case planned as shadow/session-and-pivots
-- capability: FAILED_BREAK_LOW
-  reason: session and history indicators need a deep 1m warmup (thousands of bars); case planned as shadow/session-and-pivots
-- capability: GAP_FILL_FRACTION
-  reason: session and history indicators need a deep 1m warmup (thousands of bars); case planned as shadow/session-and-pivots
-- capability: IB_DEFENDED_HIGH
-  reason: session and history indicators need a deep 1m warmup (thousands of bars); case planned as shadow/session-and-pivots
-- capability: IB_DEFENDED_LOW
-  reason: session and history indicators need a deep 1m warmup (thousands of bars); case planned as shadow/session-and-pivots
 - capability: OBV
-  reason: needs traded size; the demo FX/CFD feed quotes without volume
-- capability: PIVOT_P
-  reason: session and history indicators need a deep 1m warmup (thousands of bars); case planned as shadow/session-and-pivots
-- capability: PIVOT_R1
-  reason: session and history indicators need a deep 1m warmup (thousands of bars); case planned as shadow/session-and-pivots
-- capability: PIVOT_S1
-  reason: session and history indicators need a deep 1m warmup (thousands of bars); case planned as shadow/session-and-pivots
-- capability: REOPEN_GAP
-  reason: session and history indicators need a deep 1m warmup (thousands of bars); case planned as shadow/session-and-pivots
-- capability: REOPEN_GAP_ORIGIN
-  reason: session and history indicators need a deep 1m warmup (thousands of bars); case planned as shadow/session-and-pivots
-- capability: SEASONAL_RANGE
-  reason: session and history indicators need a deep 1m warmup (thousands of bars); case planned as shadow/session-and-pivots
-- capability: SEASONAL_RANGE_STDEV
-  reason: session and history indicators need a deep 1m warmup (thousands of bars); case planned as shadow/session-and-pivots
-- capability: SESSION_MOMENTUM
-  reason: session and history indicators need a deep 1m warmup (thousands of bars); case planned as shadow/session-and-pivots
-- capability: SESSION_RANGE_HIGH
-  reason: session and history indicators need a deep 1m warmup (thousands of bars); case planned as shadow/session-and-pivots
-- capability: SESSION_RANGE_LOW
-  reason: session and history indicators need a deep 1m warmup (thousands of bars); case planned as shadow/session-and-pivots
+  reason: needs traded size; the demo FX/CFD feed quotes without volume, so this is provable only on a venue that reports
+    it (crypto spot/perpetual)
 - capability: VWAP
-  reason: needs traded size; the demo FX/CFD feed quotes without volume
+  reason: needs traded size; the demo FX/CFD feed quotes without volume, so this is provable only on a venue that reports
+    it (crypto spot/perpetual)
 - capability: VWAP_SESSION
-  reason: needs traded size; the demo FX/CFD feed quotes without volume
+  reason: needs traded size; the demo FX/CFD feed quotes without volume, so this is provable only on a venue that reports
+    it (crypto spot/perpetual)
 - capability: VWAP_SESSION_STDEV
-  reason: needs traded size; the demo FX/CFD feed quotes without volume
+  reason: needs traded size; the demo FX/CFD feed quotes without volume, so this is provable only on a venue that reports
+    it (crypto spot/perpetual)
