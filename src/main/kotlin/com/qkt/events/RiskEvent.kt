@@ -13,6 +13,8 @@ sealed interface RiskEvent : Event {
         val strategyId: String?,
         /** Whether venue-resting orders must be swept in addition to rejecting new exposure. */
         val cancelWorkingOrders: Boolean = true,
+        /** `TRANSIENT`, `DAILY` or `PERSISTENT`; null from a publisher that does not know. */
+        val scope: String? = null,
         override val timestamp: Long = 0L,
         override val sequenceId: Long = 0L,
     ) : RiskEvent

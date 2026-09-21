@@ -122,6 +122,8 @@ internal fun buildSnapshot(
         halted = halt.halted,
         haltReason = halt.reason,
         haltScope = halt.scope,
+        haltPersistent = halt.scope == "PERSISTENT",
+        haltedAt = halt.atMs?.let { Instant.ofEpochMilli(it).toString() },
     )
 }
 
@@ -130,6 +132,7 @@ internal data class HaltStatus(
     val halted: Boolean,
     val reason: String?,
     val scope: String?,
+    val atMs: Long? = null,
 ) {
     companion object {
         val NONE = HaltStatus(halted = false, reason = null, scope = null)
@@ -140,8 +143,14 @@ internal data class HaltStatus(
         ): HaltStatus {
             val own = session.strategyHalts().firstOrNull { it.strategyId == strategyId }
             return when {
-                own != null -> HaltStatus(true, own.reason, own.scope)
-                session.isHalted() -> HaltStatus(true, session.haltReason(), session.haltScope()?.name)
+                own != null -> HaltStatus(true, own.reason, own.scope, own.haltedAtMs.takeIf { it > 0L })
+                session.isHalted() ->
+                    HaltStatus(
+                        true,
+                        session.haltReason(),
+                        session.haltScope()?.name,
+                        session.haltedAtMs(),
+                    )
                 else -> NONE
             }
         }

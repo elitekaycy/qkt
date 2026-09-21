@@ -53,7 +53,10 @@ internal class OrderOutcomeWiring(
         bus.subscribe<FillAccountedEvent> { a ->
             val wasHeld = !a.strategyPositionBefore.isFlat()
             val nowHeld = !a.strategyPositionAfter.isFlat()
-            if (wasHeld != nowHeld) dslStrategiesById[a.strategyId]?.onPositionStateChanged(a.symbol, nowHeld, a.executedAt.takeIf { it > 0L } ?: a.timestamp)
+            if (wasHeld != nowHeld) {
+                val at = a.executedAt.takeIf { it > 0L } ?: a.timestamp
+                dslStrategiesById[a.strategyId]?.onPositionStateChanged(a.symbol, nowHeld, at)
+            }
         }
         bus.subscribeFirst<BrokerEvent.OrderFilled> { e ->
             if (e.strategyId.isBlank()) {
