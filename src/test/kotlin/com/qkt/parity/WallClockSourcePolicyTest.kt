@@ -51,6 +51,8 @@ class WallClockSourcePolicyTest {
                     "live transport polling deadline",
                 "src/main/kotlin/com/qkt/app/StrategySignalEmitter.kt" to "opt-in monotonic latency measurement",
                 "src/main/kotlin/com/qkt/app/LiveSession.kt" to "live engine query and shutdown deadlines",
+                "src/main/kotlin/com/qkt/app/EngineLoop.kt" to
+                    "live engine loop stop deadline and opt-in latency (moved out of LiveSession)",
                 "src/main/kotlin/com/qkt/app/VerifiedFlatten.kt" to
                     "operator flatten verification deadline (moved out of LiveSession)",
                 "src/main/kotlin/com/qkt/app/MaxAudit.kt" to "interactive operator audit utility",
