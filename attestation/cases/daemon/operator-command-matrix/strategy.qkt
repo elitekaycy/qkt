@@ -1,0 +1,10 @@
+STRATEGY atto_ops VERSION 1
+
+SYMBOLS
+    btc = EXNESS:BTCUSD EVERY 1m WARMUP 3 BARS
+
+RULES
+    -- Enters once and holds: the operator steps act on a live position, and `stop --flatten`
+    -- is what closes it. The wide bracket is protection, not the exit.
+    WHEN btc.close > 0 AND POSITION.btc = 0 AND OPEN_ORDERS.btc = 0 AND TRADES.today = 0
+    THEN BUY btc SIZING 0.01 BRACKET { STOP LOSS BY 4000, TAKE PROFIT BY 8000 }

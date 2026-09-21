@@ -63,6 +63,15 @@ cli_root="$wave_root/cli-$short"; rm -rf "$cli_root"; cp -r build/install/qkt "$
 ./gradlew --stop >/dev/null 2>&1 || true
 cli="$cli_root/bin/qkt"; log "cli $("$cli" --version | head -n 1)"
 
+# An earlier attestation that died badly may have left an order or a position under one of its magics;
+# the wave would refuse to start on it. Clear this attestation's own magic range, and only that:
+# anything else on the account fails the run here, with the tickets named.
+stage_write sweep "clearing leftovers under magics $magic_base..$((magic_base + 1000))"
+swept="$(python3 scripts/live-validation/sweep-attestation-leftovers.py --gateway-url "$gateway_url" \
+    --expected-login "$expected_login" --expected-server "$expected_server" \
+    --magic-from "$magic_base" --magic-to "$((magic_base + 1000))")" || fail "account is not clean and the sweep could not make it so: $swept"
+log "sweep $swept"
+
 wave="$wave_root/attest-$short"
 for attempt in $(seq 1 "$attempts"); do
     stage_write wave "attempt $attempt"
@@ -71,13 +80,24 @@ for attempt in $(seq 1 "$attempts"); do
     bash scripts/live-validation/run-parity-suite.sh --output "$wave" --id "wave_$short" --gateway-url "$gateway_url" \
         --expected-login "$expected_login" --expected-server "$expected_server" --expected-balance "$(balance)" \
         --expected-leverage "$expected_leverage" --magic-base "$((magic_base + attempt * 10))" --cli "$cli" \
-        --run-live --arm I_UNDERSTAND_DEMO_ORDER_0.01 > "$wave.wave.log" 2>&1 < /dev/null || true
+        --run-live --parallel --arm I_UNDERSTAND_DEMO_ORDER_0.01 > "$wave.wave.log" 2>&1 < /dev/null || true
     results="$(find "$wave/cases" -maxdepth 4 -name result.json 2>/dev/null | wc -l)"
     log "wave attempt $attempt results=$results"
     [ "$results" = 12 ] && [ "$(tail -n 1 "$wave.wave.log")" = "$wave" ] && break
     [ "$attempt" = "$attempts" ] && fail "parity wave failed $attempts times; see $wave.wave.log"
     sleep 60
 done
+
+# Every other ready case in the catalog - orders, risk, book, engine, daemon, stress - all at once,
+# each under its own magic. The shadow lane already ran inside the wave. Any failed case fails the
+# attestation: promotion to main means the whole catalog passed on this exact build.
+stage_write catalog
+catalog="$wave_root/attest-$short-catalog"; rm -rf "$catalog"
+bash scripts/live-validation/run-attestation-catalog.sh --out "$catalog" --gateway-url "$gateway_url" \
+    --expected-login "$expected_login" --expected-server "$expected_server" --magic-base "$((magic_base + 100))" \
+    --lanes orders,risk,book,engine,daemon,stress --arm I_UNDERSTAND_DEMO_ORDER_0.01 --cli "$cli" \
+    > "$catalog.log" 2>&1 || fail "attestation catalog failed: $(grep -m3 FAILED "$catalog.log" | tr '\n' ' ' | cut -c1-300)"
+log "catalog $(tail -n 1 "$catalog.log" | cut -c1-160)"
 
 stage_write insights
 ins="$wave_root/attest-$short-insights"; rm -rf "$ins"
@@ -104,6 +124,8 @@ python3 scripts/verify-paper-soak-attestation.py "$bundle/attestation.json" --ex
 
 if [ "$dispatch" = true ]; then
     stage_write dispatch
+    runner_online="$(gh api "repos/{owner}/{repo}/actions/runners" --jq '[.runners[] | select(.status == "online")] | length' 2>/dev/null || echo 0)"
+    [ "$runner_online" -gt 0 ] || fail "no self-hosted runner is online to verify the attestation; start it and re-run with the same bundle"
     gh workflow run paper-soak.yml --ref testing -f attestation_path="$bundle/attestation.json" >/dev/null
 fi
 stage_write attested "$bundle/attestation.json"

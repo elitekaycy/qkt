@@ -1,0 +1,19 @@
+STRATEGY attest_numeric_functions VERSION 1
+
+SYMBOLS
+    e = EXNESS:EURUSD EVERY 1m WARMUP 5 BARS,
+    g = EXNESS:XAUUSD EVERY 1m WARMUP 5 BARS
+    -- A rule on one stream reading another's bar is only deterministic when both closed the same
+    -- window: live, which symbol's bar closes first depends on tick arrival; a replay orders by time.
+    SYNCHRONIZE e g
+
+LET spread_like = abs(e.close - e.open)
+
+RULES
+    -- Rules fire on a false-to-true edge; logging on each up-turn and down-turn of the fastest
+    -- stream yields a vector at every reversal.
+    WHEN e.close > 0 AND g.close > 0 AND e.close > lag(e.close, 1)
+    THEN LOG "attest vector turn=up case=numeric-functions abs={v0} sqrt={v1} log={v2} exp={v3} pow={v4} floor={v5} ceil={v6} round={v7} mod={v8} round_to={v9} min={v10} max={v11} rank_of={v12} normalize={v13} softmax={v14} case_value={v15}" v0=abs(e.open - e.close) v1=sqrt(g.close) v2=log(g.close) v3=exp(e.close) v4=pow(e.close, 2) v5=floor(g.close) v6=ceil(g.close) v7=round(g.close) v8=mod(g.close, 7) v9=round_to(e.close, 0.0005) v10=min(e.open, e.close) v11=max(e.open, e.close) v12=rank_of(e.close, g.close) v13=normalize(e.close, e.close, g.close) v14=softmax(e.close, e.open) v15=CASE WHEN e.close >= e.open THEN 1 ELSE -1 END
+
+    WHEN e.close > 0 AND g.close > 0 AND e.close <= lag(e.close, 1)
+    THEN LOG "attest vector turn=down case=numeric-functions abs={v0} sqrt={v1} log={v2} exp={v3} pow={v4} floor={v5} ceil={v6} round={v7} mod={v8} round_to={v9} min={v10} max={v11} rank_of={v12} normalize={v13} softmax={v14} case_value={v15}" v0=abs(e.open - e.close) v1=sqrt(g.close) v2=log(g.close) v3=exp(e.close) v4=pow(e.close, 2) v5=floor(g.close) v6=ceil(g.close) v7=round(g.close) v8=mod(g.close, 7) v9=round_to(e.close, 0.0005) v10=min(e.open, e.close) v11=max(e.open, e.close) v12=rank_of(e.close, g.close) v13=normalize(e.close, e.close, g.close) v14=softmax(e.close, e.open) v15=CASE WHEN e.close >= e.open THEN 1 ELSE -1 END

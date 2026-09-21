@@ -1,0 +1,14 @@
+STRATEGY atto_stack VERSION 1
+
+SYMBOLS
+    btc = EXNESS:BTCUSD EVERY 1m WARMUP 3 BARS
+
+RULES
+    -- The second layer rests 3,000 below the seed fill: inside the price collar, far outside
+    -- what a minute of BTC covers, so it never fills and must be gone after the close.
+    WHEN btc.close > 0 AND POSITION.btc = 0 AND OPEN_ORDERS.btc = 0 AND TRADES.today = 0
+    THEN BUY btc STACK [ 0.01, 0.01 LIMIT AT entry - 3000 ]
+         BRACKET { STOP LOSS BY 4000, TAKE PROFIT BY 8000 }
+
+    WHEN POSITION.btc != 0 AND POSITION.btc.holding_duration >= 50
+    THEN CANCEL btc ; CLOSE btc

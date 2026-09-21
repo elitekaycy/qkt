@@ -153,6 +153,8 @@ class Mt5TradingAccount internal constructor(
 
     override val marketData: MarketSource get() = feed.value
 
+    override fun instrumentSpec(qktSymbol: String) = client.instrumentSpec(profile, qktSymbol)
+
     override val orderEntry: BrokerFactory = { bus, clock, priceTracker, _, strategyName ->
         MT5Broker(
             profile = profile,

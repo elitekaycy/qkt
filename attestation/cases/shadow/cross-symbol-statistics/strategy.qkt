@@ -3,6 +3,8 @@ SYMBOLS
     eur = EXNESS:EURUSD EVERY 5m WARMUP 15 BARS,
     gbp = EXNESS:GBPUSD EVERY 5m WARMUP 15 BARS,
     gbp_hour = EXNESS:GBPUSD EVERY 1h WARMUP 5 BARS
+    -- Correlation and beta pair the two 5m series bar by bar, so both must have closed the same window.
+    SYNCHRONIZE eur gbp
 LET z = zscore(eur.close, 10),
     corr = correlation(eur.close, gbp.close, 10),
     b = beta(eur.close, gbp.close, 10),

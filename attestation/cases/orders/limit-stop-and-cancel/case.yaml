@@ -1,18 +1,23 @@
 id: limit-stop-and-cancel
-title: Pending limit and stop entries, one filled, one cancelled by GTD
-why: A pending order lives at the venue, not in the engine. Expiry needs the broker's UTC offset; a wrong
-  offset cancels an hour early or never.
-status: planned
+title: A resting limit that must not fill, expired by GTD, beside a filled market entry
+why: 'A pending order lives at the venue, not in the engine. Expiry needs the broker''s UTC offset: a
+  wrong offset cancels an hour early or never, and a limit the engine believes is gone can still fill
+  days later. The far limit must rest, must not fill, and must be gone when its two minutes are up.'
+status: ready
 symbols:
-- EURUSD
+- BTCUSD
 timeframes:
 - 1m
+warmup_bars:
+  1m: 3
 proves:
 - behaviour:limit-entry
-- behaviour:stop-entry
 - behaviour:gtd-expiry
-- behaviour:cancel
+- behaviour:pending-at-venue
+budget_seconds: 300
 assertions:
-- journal-byte-exact
 - flat-by-magic
+- no-pending-by-magic
 - deals-net-by-magic
+- no-engine-fault
+- replay-fill-sequence

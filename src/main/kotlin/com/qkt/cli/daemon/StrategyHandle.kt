@@ -319,10 +319,9 @@ class StrategyHandle(
                     calendar = calendar,
                     accountingConfig = accountingConfig,
                     equityBasis = liveEquityBasis,
-                    // The MDC carries the DSL strategy id, not the deploy name: log
-                    // attribution downstream (per-strategy files, insights) must match
-                    // the id every trading event uses, or consumers see two strategies
-                    // (e.g. deploy "hedge-straddle" vs STRATEGY hedge_straddle).
+                    // The MDC carries the DSL strategy id, not the deploy name: downstream attribution
+                    // (per-strategy files, insights) must match the id every trading event uses, or
+                    // consumers see two strategies (deploy "hedge-straddle" vs STRATEGY hedge_straddle).
                     mdcStrategy = ast.name,
                     onTrade = { trade, realized, _ ->
                         com.qkt.cli.daemon.logging.withMdc("strategy", ast.name) {
@@ -413,6 +412,7 @@ class StrategyHandle(
                             clockSkewedSymbols = session.clockSkewedSymbols(),
                             openPositions = session.positionsFor(ast.name),
                             persistenceHealth = session.persistenceHealth(),
+                            halt = HaltStatus.of(session, ast.name),
                         )
                     },
                     running = { session.running },

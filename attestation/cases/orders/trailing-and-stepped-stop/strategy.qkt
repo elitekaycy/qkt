@@ -1,0 +1,13 @@
+STRATEGY atto_trailing VERSION 1
+
+SYMBOLS
+    btc = EXNESS:BTCUSD EVERY 1m WARMUP 3 BARS
+
+RULES
+    WHEN btc.close > 0 AND POSITION.btc = 0 AND OPEN_ORDERS.btc = 0 AND TRADES.today = 0
+    -- An armed trailing stop is a bracket leg: fixed at 3,000 until the trade is 1 in profit, then it
+    -- follows. (`ORDER_TYPE = TRAILING BY` is a trailing ENTRY and would wait for a reversal.)
+    THEN BUY btc SIZING 0.01 BRACKET { STOP LOSS TRAILING 3000 AFTER MFE >= 1, TAKE PROFIT BY 8000 }
+
+    WHEN POSITION.btc != 0 AND POSITION.btc.holding_duration >= 50
+    THEN CLOSE btc
