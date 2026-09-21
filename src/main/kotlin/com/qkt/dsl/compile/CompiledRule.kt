@@ -22,6 +22,8 @@ class CompiledRule(
     internal val ruleFingerprint: String = "",
     val consumesSequenceCompletion: Boolean = false,
     internal val edgeStateKey: String = ruleAlias,
+    /** The condition requires the rule's own symbol to be flat; see [FlatGate]. */
+    internal val requiresFlat: Boolean = false,
 ) {
     internal val ruleId: String
         get() = edgeStateKey
@@ -35,6 +37,7 @@ class CompiledRule(
     private var pendingCommit = false
     private var rejectedDuringCommit = false
     private var edgeDirty = false
+    private var openedDuringCommit = false
 
     internal val edgeState: Boolean
         get() = wasTrue
@@ -53,6 +56,20 @@ class CompiledRule(
         wasTrue = false
         pendingCommit = false
         rejectedDuringCommit = false
+        openedDuringCommit = false
+    }
+
+    /**
+     * The strategy now holds [symbol]. A rule gated on that symbol being flat is false from this
+     * moment, whether or not a bar closes while the position is open: without this a bracket
+     * stopped out before the next evaluation leaves the condition true at both evaluations, no
+     * edge occurs, and the entry never fires again (#1194).
+     */
+    internal fun onPositionOpened(symbol: String) {
+        if (!requiresFlat || symbol != ruleSymbol) return
+        // A simulated fill lands inside this rule's own fire, before the edge is sealed; a venue
+        // fill lands after. Either way the edge must end up reset.
+        if (pendingCommit) openedDuringCommit = true else clearEdge()
     }
 
     internal fun consumeEdgeDirty(): Boolean {
@@ -103,8 +120,10 @@ class CompiledRule(
         pendingCommit = false
         val committed = accepted && !rejectedDuringCommit
         rejectedDuringCommit = false
-        if (wasTrue != committed) edgeDirty = true
-        wasTrue = committed
+        val sealed = committed && !openedDuringCommit
+        openedDuringCommit = false
+        if (wasTrue != sealed) edgeDirty = true
+        wasTrue = sealed
         return if (committed) RuleCommitOutcome.ACCEPTED else RuleCommitOutcome.REARMED
     }
 

@@ -89,6 +89,11 @@ internal class CompiledStrategy(
         sequenceRuntime.clearRuleEdges()
     }
 
+    override fun onPositionOpened(symbol: String) {
+        rules.forEach { it.onPositionOpened(symbol) }
+        sequenceRuntime.persistRuleEdges()
+    }
+
     override fun onOrderRejected(clientOrderId: String) {
         ledger.onOrderRejected(clientOrderId)
         sequenceRuntime.persistRuleEdges()
