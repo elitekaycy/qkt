@@ -48,6 +48,16 @@ internal class OrderOutcomeWiring(
         // The fold: the ONLY writer of every realized accumulator. It subscribes first on the
         // accounted event so halts see the amount before any consumer with venue side effects.
         bus.subscribeFirst<FillAccountedEvent> { a -> fold.fold(a) }
+        // After the fold, so the books already hold the fill. Only a fill that flips the strategy's
+        // position between flat and held counts; adds and partial closes change nothing here.
+        bus.subscribe<FillAccountedEvent> { a ->
+            val wasHeld = !a.strategyPositionBefore.isFlat()
+            val nowHeld = !a.strategyPositionAfter.isFlat()
+            if (wasHeld != nowHeld) {
+                val at = a.executedAt.takeIf { it > 0L } ?: a.timestamp
+                dslStrategiesById[a.strategyId]?.onPositionStateChanged(a.symbol, nowHeld, at)
+            }
+        }
         bus.subscribeFirst<BrokerEvent.OrderFilled> { e ->
             if (e.strategyId.isBlank()) {
                 // An execution slice with no owner cannot be booked: position books and PnL
@@ -136,3 +146,5 @@ internal class OrderOutcomeWiring(
     ): BigDecimal =
         (orderManager.getOrder(clientOrderId)?.cumulativeFilledQuantity ?: BigDecimal.ZERO).add(sliceQuantity)
 }
+
+private fun com.qkt.positions.Position?.isFlat(): Boolean = this == null || quantity.signum() == 0

@@ -16,7 +16,16 @@ import org.junit.jupiter.params.provider.MethodSource
  * the backtest's — a bar closed at a different boundary, a warmup applied to the wrong stream, a
  * higher timeframe fed late — shows up as a different trade list.
  */
+@org.junit.jupiter.api.TestInstance(org.junit.jupiter.api.TestInstance.Lifecycle.PER_CLASS)
 class ResearcherMatrixParityTest {
+    // Flat-gated entries re-enter after every in-bar exit (#1194), so these cases place a few hundred
+    // orders; the parity assertion is on trades, not on the order chatter.
+    @org.junit.jupiter.api.BeforeAll
+    fun quietEngineLogs() = QuietEngineLogs.silence()
+
+    @org.junit.jupiter.api.AfterAll
+    fun restoreEngineLogs() = QuietEngineLogs.restore()
+
     @ParameterizedTest(name = "{0}")
     @MethodSource("cases")
     fun `mixed symbols, timeframes and warmups trade identically live and in backtest`(case: Case) {

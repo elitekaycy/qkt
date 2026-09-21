@@ -1,16 +1,41 @@
 id: book-cap-across-children
 title: A book cap that two children would breach together
-why: Children are risk-checked independently inside one sampling interval; without reservations both pass
-  and the book exceeds its cap.
-status: planned
+why: Children are risk-checked on their own engine threads inside one sampling interval. Without atomic
+  reservations both see an empty book, both pass, and the book holds twice what its cap allows. Here
+  two children want about 850 of BTCUSD each on the same bar close under a 1,200 gross cap - exactly
+  one may fill, and the other must be refused before the venue, naming the cap.
+status: ready
 symbols:
-- EURUSD
-- GBPUSD
+- BTCUSD
 timeframes:
 - 1m
 proves:
 - behaviour:book-cap
 - behaviour:reservations
+steps:
+- run: qkt deploy {file} --state-dir {state}
+  note: a portfolio with two children entering on the same bar close
+- run: qkt list --state-dir {state}
+  wait_for: position
+  wait_seconds: 150
+  note: one child fills
+- run: qkt list --state-dir {state}
+  settle_seconds: 8
+  expect_positions: 1
+  expect_log: 'risk rejected atto_cap:[ab] .*book gross exposure'
+  note: the sibling was refused by the book cap, and the venue holds one position - not two
+- run: qkt status --deep --state-dir {state}
+  note: a refused entry is not a fault
+- run: qkt list --state-dir {state}
+  wait_for: flat
+  wait_seconds: 220
+  note: the child that filled closes by its timed exit
 assertions:
 - book-exposure-within-cap
-- rejections-equal-replay
+- flat-by-magic
+budget_seconds: 420
+config:
+  book_risk:
+    capital: 1000
+    limits:
+      max_gross_exposure: "1.2"      # x capital: 1,200 gross on this 1,000 book

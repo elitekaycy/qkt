@@ -73,4 +73,42 @@ class HaltStatusTest {
         assertThat(snapshot.haltReason).isEqualTo("operator")
         assertThat(snapshot.haltScope).isEqualTo("PERSISTENT")
     }
+
+    @Test
+    fun `a persistent halt says when it tripped and that only resume clears it`() {
+        val halts =
+            listOf(PersistedStrategyHalt("alpha", "operator", "PERSISTENT", 20_000L, haltedAtMs = 1_789_950_000_000L))
+
+        val snapshot =
+            buildSnapshot(
+                "alpha",
+                1,
+                0L,
+                "2026-09-21T00:00:00Z",
+                emptyList(),
+                halt = HaltStatus.of(session(strategyHalts = halts), "alpha"),
+            )
+
+        assertThat(snapshot.haltPersistent).isTrue()
+        assertThat(snapshot.haltedAt).isEqualTo("2026-09-21T00:20:00Z")
+    }
+
+    @Test
+    fun `a daily halt is not persistent, and one recorded before timestamps existed has no time`() {
+        val halts = listOf(PersistedStrategyHalt("alpha", "DailyLoss", "DAILY", 20_000L))
+
+        val snapshot =
+            buildSnapshot(
+                "alpha",
+                1,
+                0L,
+                "2026-09-21T00:00:00Z",
+                emptyList(),
+                halt = HaltStatus.of(session(strategyHalts = halts), "alpha"),
+            )
+
+        assertThat(snapshot.halted).isTrue()
+        assertThat(snapshot.haltPersistent).isFalse()
+        assertThat(snapshot.haltedAt).isNull()
+    }
 }

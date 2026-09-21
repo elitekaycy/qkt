@@ -139,6 +139,13 @@ interface DslCompiledStrategy : Strategy {
         // default no-op
     }
 
+    /** The strategy's position on [symbol] flipped between flat and held ([nowHeld]) at venue time [atMs]. */
+    fun onPositionStateChanged(
+        symbol: String,
+        nowHeld: Boolean,
+        atMs: Long,
+    ) = Unit
+
     /** Re-arm the rule edge that produced a rejected order, if this strategy owns it. */
     fun onOrderRejected(clientOrderId: String) {
         // default no-op
