@@ -1,0 +1,23 @@
+id: market-bracket-timed-exit
+title: A market bracket closed by the strategy's own timed exit
+why: 'The baseline every other order case builds on: an entry with venue-side protection, held across
+  a bar, closed by a rule. If the fill is booked twice, the protection is not attached, or the close opens
+  an opposite position on a hedging account, this is the smallest case that shows it.'
+status: ready
+symbols:
+- BTCUSD
+timeframes:
+- 1m
+warmup_bars:
+  1m: 3
+proves:
+- behaviour:market-entry
+- behaviour:bracket
+- behaviour:timed-exit
+budget_seconds: 200
+assertions:
+- flat-by-magic
+- no-pending-by-magic
+- deals-net-by-magic
+- no-engine-fault
+- replay-fill-sequence
