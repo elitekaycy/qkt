@@ -266,7 +266,9 @@ if "$cli" golden capture --session "$strategy" --state-dir "$out/state" --out "$
         problems+=("live fills do not begin with the replay's fill sequence")
     [ "$replay_fills" -gt 0 ] || problems+=("the replay filled nothing")
 else
-    problems+=("capture or materialize failed: $(tail -n 1 "$out/evidence/materialize.log" 2>/dev/null | cut -c1-120)")
+    # The reason is in whichever log exists: the capture's when it refused, else the materializer's.
+    why="$(tail -q -n 1 "$out/evidence/golden-capture.log" "$out/evidence/materialize.log" 2>/dev/null | tail -n 1 | cut -c1-160 || true)"
+    problems+=("capture or materialize failed: ${why:-no log}")
 fi
 
 # Risk rejections must be the same live and in replay: a cap that binds in one and not the other is
