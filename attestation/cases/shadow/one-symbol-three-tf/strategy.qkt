@@ -1,0 +1,18 @@
+STRATEGY attest_one_symbol_three_tf VERSION 1
+SYMBOLS
+    fast = EXNESS:EURUSD EVERY 1m WARMUP 10 BARS,
+    mid = EXNESS:EURUSD EVERY 5m WARMUP 12 BARS,
+    slow = EXNESS:EURUSD EVERY 1h WARMUP 4 BARS
+LET bb_mid = bollinger_middle(mid.close, 6, 2),
+    bb_up = bollinger_upper(mid.close, 6, 2),
+    bb_low = bollinger_lower(mid.close, 6, 2),
+    hour_sma = sma(slow.close, 3),
+    mid_ema = ema(mid.close, 4)
+RULES
+    -- Rules fire on a false-to-true edge, so one always-true rule would log once. Logging on each
+    -- up-turn and each down-turn of the fastest stream yields a vector at every reversal.
+    WHEN bb_mid IS NOT NULL AND hour_sma IS NOT NULL AND mid_ema IS NOT NULL AND fast.close > lag(fast.close, 1)
+    THEN LOG "attest vector turn=up case=one-symbol-three-tf bollinger_middle={a} bollinger_upper={b} bollinger_lower={c} sma={d} ema={e} close={f}" a=bb_mid b=bb_up c=bb_low d=hour_sma e=mid_ema f=fast.close
+
+    WHEN bb_mid IS NOT NULL AND hour_sma IS NOT NULL AND mid_ema IS NOT NULL AND fast.close <= lag(fast.close, 1)
+    THEN LOG "attest vector turn=down case=one-symbol-three-tf bollinger_middle={a} bollinger_upper={b} bollinger_lower={c} sma={d} ema={e} close={f}" a=bb_mid b=bb_up c=bb_low d=hour_sma e=mid_ema f=fast.close

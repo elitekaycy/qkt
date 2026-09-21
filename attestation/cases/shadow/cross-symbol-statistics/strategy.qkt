@@ -1,0 +1,19 @@
+STRATEGY attest_cross_symbol_statistics VERSION 1
+SYMBOLS
+    eur = EXNESS:EURUSD EVERY 5m WARMUP 15 BARS,
+    gbp = EXNESS:GBPUSD EVERY 5m WARMUP 15 BARS,
+    gbp_hour = EXNESS:GBPUSD EVERY 1h WARMUP 5 BARS
+LET z = zscore(eur.close, 10),
+    corr = correlation(eur.close, gbp.close, 10),
+    b = beta(eur.close, gbp.close, 10),
+    range_atr = atr(gbp.candle, 3),
+    hour_low = lowest(gbp_hour.close, 4),
+    hour_high = highest(gbp_hour.close, 4)
+RULES
+    -- Rules fire on a false-to-true edge, so one always-true rule would log once. Logging on each
+    -- up-turn and each down-turn of the fastest stream yields a vector at every reversal.
+    WHEN z IS NOT NULL AND corr IS NOT NULL AND b IS NOT NULL AND range_atr IS NOT NULL AND hour_low IS NOT NULL AND eur.close > lag(eur.close, 1)
+    THEN LOG "attest vector turn=up case=cross-symbol-statistics zscore={a} correlation={b} beta={c} atr={d} lowest={e} highest={f}" a=z b=corr c=b d=range_atr e=hour_low f=hour_high
+
+    WHEN z IS NOT NULL AND corr IS NOT NULL AND b IS NOT NULL AND range_atr IS NOT NULL AND hour_low IS NOT NULL AND eur.close <= lag(eur.close, 1)
+    THEN LOG "attest vector turn=down case=cross-symbol-statistics zscore={a} correlation={b} beta={c} atr={d} lowest={e} highest={f}" a=z b=corr c=b d=range_atr e=hour_low f=hour_high

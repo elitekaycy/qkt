@@ -1,0 +1,24 @@
+id: venue-closes-while-down
+title: The venue stop fills while the daemon is stopped
+why: The engine comes back believing in a position that no longer exists. It must book the close from
+  deal history and clear the rule edge so the strategy can re-enter.
+status: planned
+symbols:
+- BTCUSD
+timeframes:
+- 1m
+proves:
+- behaviour:downtime-close
+- behaviour:rule-edge-reset
+steps:
+- run: daemon start
+  expect: position open
+- run: daemon stop
+  expect: position open
+- run: close at venue
+  expect: no position
+- run: daemon start
+  expect: close booked from deals
+assertions:
+- realized-equals-deal
+- re-entry-allowed

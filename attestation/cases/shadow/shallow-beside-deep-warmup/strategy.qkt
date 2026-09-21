@@ -1,0 +1,16 @@
+STRATEGY attest_shallow_beside_deep_warmup VERSION 1
+SYMBOLS
+    eur = EXNESS:EURUSD EVERY 1m WARMUP 2 BARS,
+    gold = EXNESS:XAUUSD EVERY 15m WARMUP 30 BARS
+LET line = macd(gold.close, 4, 9, 3),
+    signal = macd_signal(gold.close, 4, 9, 3),
+    hist = macd_hist(gold.close, 4, 9, 3),
+    eur_sma = sma(eur.close, 2)
+RULES
+    -- Rules fire on a false-to-true edge, so one always-true rule would log once. Logging on each
+    -- up-turn and each down-turn of the fastest stream yields a vector at every reversal.
+    WHEN hist IS NOT NULL AND eur_sma IS NOT NULL AND eur.close > lag(eur.close, 1)
+    THEN LOG "attest vector turn=up case=shallow-beside-deep-warmup macd={a} macd_signal={b} macd_hist={c} sma={d}" a=line b=signal c=hist d=eur_sma
+
+    WHEN hist IS NOT NULL AND eur_sma IS NOT NULL AND eur.close <= lag(eur.close, 1)
+    THEN LOG "attest vector turn=down case=shallow-beside-deep-warmup macd={a} macd_signal={b} macd_hist={c} sma={d}" a=line b=signal c=hist d=eur_sma
