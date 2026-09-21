@@ -7,6 +7,7 @@ import com.qkt.common.SystemClock
 import com.qkt.connector.mt5.MT5ServerTimeZone
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.live.LiveTickSource
+import com.qkt.marketdata.source.LiveTickBackfill
 import java.time.Instant
 import java.util.concurrent.Callable
 import java.util.concurrent.ExecutionException
@@ -86,6 +87,9 @@ class Mt5TickFeedSource(
         require(maxCatchupMs > 0L) { "MT5 max catch-up window must be positive" }
     }
 
+    /** A symbol's first round starts at the start of the minute ([LiveTickBackfill]), at least [initialLookbackMs] back. */
+    private fun firstRoundFrom(nowMs: Long): Long = minOf(nowMs - initialLookbackMs, LiveTickBackfill.since(nowMs))
+
     override fun start(
         onTick: (Tick) -> Unit,
         onError: (Throwable) -> Unit,
@@ -136,7 +140,7 @@ class Mt5TickFeedSource(
                             symbols.map { sym ->
                                 val after =
                                     maxOf(
-                                        lastBrokerMs[sym] ?: (roundNowMs - initialLookbackMs),
+                                        lastBrokerMs[sym] ?: firstRoundFrom(roundNowMs),
                                         roundNowMs - maxCatchupMs,
                                     )
                                 fetchPool.submit(
@@ -164,18 +168,9 @@ class Mt5TickFeedSource(
                             }
                         }
                         fresh.sortBy { (_, tick) -> tick.brokerTimeMs }
+                        logFirstRoundClock(log, fresh, lastBrokerMs.keys, roundNowMs)
                         for ((sym, tick) in fresh) {
                             roundHadFreshTick = true
-                            if (!lastBrokerMs.containsKey(sym)) {
-                                val skewMs = tick.brokerTimeMs - roundNowMs
-                                log.info(
-                                    "MT5 tick clock check symbol={} brokerUtc={} localUtc={} skewMs={}",
-                                    sym,
-                                    Instant.ofEpochMilli(tick.brokerTimeMs),
-                                    Instant.ofEpochMilli(roundNowMs),
-                                    skewMs,
-                                )
-                            }
                             lastBrokerMs[sym] = tick.brokerTimeMs
                             onTick(
                                 Tick(

@@ -16,6 +16,7 @@ internal class SharedSymbolHub(
     private val name: String,
     private val symbol: String,
     private val subscriberQueueCapacity: Int,
+    private val clock: com.qkt.common.Clock,
     private val onEnded: (SharedSymbolHub) -> Unit,
 ) : AutoCloseable {
     private val lock = Any()
@@ -23,6 +24,7 @@ internal class SharedSymbolHub(
     private val stopped = AtomicBoolean(false)
     private var upstream: TickFeed? = null
     private var publisher: Thread? = null
+    private val recent = RecentTicks()
 
     fun isClosed(): Boolean = stopped.get()
 
@@ -31,6 +33,11 @@ internal class SharedSymbolHub(
             if (stopped.get()) return@synchronized null
             val subscriber = SharedSubscriberFeed(::unsubscribe, subscriberQueueCapacity)
             subscribers.add(subscriber)
+            // A late subscriber starts where the first one did - at the start of the minute - so
+            // every session builds its first bar from the same ticks. Handed over under the same
+            // lock the publisher takes to record a tick and pick its recipients, so each tick
+            // reaches this subscriber exactly once: from the backfill or from the publisher.
+            if (upstream != null) recent.backfillFor(clock.now()).forEach(subscriber::offer)
             if (upstream == null) {
                 try {
                     startUpstream()
@@ -69,7 +76,7 @@ internal class SharedSymbolHub(
                                     }
                                 break
                             }
-                            snapshotSubscribers().forEach { it.offer(tick) }
+                            recordAndSnapshot(tick).forEach { it.offer(tick) }
                         }
                     } catch (e: InterruptedException) {
                         Thread.currentThread().interrupt()
@@ -89,6 +96,12 @@ internal class SharedSymbolHub(
     }
 
     private fun snapshotSubscribers(): List<SharedSubscriberFeed> = synchronized(lock) { subscribers.toList() }
+
+    private fun recordAndSnapshot(tick: com.qkt.marketdata.Tick): List<SharedSubscriberFeed> =
+        synchronized(lock) {
+            recent.add(tick, clock.now())
+            subscribers.toList()
+        }
 
     private fun broadcastDisconnect() {
         val scope = MarketDataFeedScope(source = name, symbols = listOf(symbol))
