@@ -126,4 +126,29 @@ class WarmupSettleTest {
 
         assertThat(waits).`as`("backtests read files; they must never wait").isEmpty()
     }
+
+    @Test
+    fun `a forming bar waits out the same lag, so its last minutes are not left to a later replay`() {
+        // A 1h stream started at 13:07:30: its forming bar needs 13:00..13:06. The venue serves only
+        // 13:00..13:04 at first; a replay reading the history later would have all seven minutes.
+        val venue = LaggingVenue(staleReads = 1, stale = bars(0, 4), fresh = bars(0, 6))
+
+        val forming = FormingBar.load(venue, "X", TimeWindow.ONE_HOUR, nowMs = upper + 30_000L, settle = settle)
+
+        assertThat(forming!!.minutes).hasSize(7)
+        assertThat(venue.forgotten).isEqualTo(1)
+    }
+
+    @Test
+    fun `a quiet symbol is waited on once per minute, not once per stream`() {
+        // Nothing traded after 13:04: every read of this symbol's minutes shows the same gap.
+        val venue = LaggingVenue(staleReads = Int.MAX_VALUE, stale = bars(-10, 4), fresh = emptyList())
+        val loader = WarmupHistoryLoader(venue, settle)
+
+        loader.load("X", window, count = 5, upperMs = upper)
+        loader.forming("X", TimeWindow.ONE_HOUR, upper + 30_000L)
+        loader.forming("X", TimeWindow(14_400_000L), upper + 30_000L)
+
+        assertThat(waits).`as`("one wait of five re-reads for the symbol, not three").hasSize(5)
+    }
 }
