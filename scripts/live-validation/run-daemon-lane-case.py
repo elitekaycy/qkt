@@ -23,7 +23,8 @@ The case's `steps` are executed in order. Each step is a mapping:
     while_down:     with `daemon: restart`, "close_at_venue" closes the magic's positions by ticket
                     while no engine is running
 
-Case-level keys: `copies: N` loads the strategy N times under numbered names and `copies_agree`
+Case-level keys: `seed_risk_state` pre-writes the strategy's risk-state file (pacer fields are keyed by
+the strategy for you; "now" is the current epoch ms); `copies: N` loads the strategy N times under numbered names and `copies_agree`
 (`log` regex, `min_lines`) requires every copy to have logged the same lines and dropped no tick;
 `start_offset: {period_seconds, min, max}` delays the daemon start until the wall clock is
 that far into a bar, so a mid-bar start is a fact and not luck; `forming_bar_checks` compares bars the
@@ -102,6 +103,17 @@ for name in copy_names:
 for extra in sorted(os.listdir(a.case)):
     if extra.endswith(".qkt") and extra != "strategy.qkt":
         open(os.path.join(os.path.dirname(strategy_file), extra), "w").write(open(f"{a.case}/{extra}").read())
+# `seed_risk_state` writes the strategy's risk-state file before the first start, as if an earlier
+# run had left it: the case then tests what the engine does with restored state instead of waiting
+# for the market to produce it (a loss streak is two losing trades nobody can order up).
+if case.get("seed_risk_state"):
+    today = int(time.time() // 86400)
+    seeded = {"version": 1, "strategyId": strategy, "epochDay": today, "realizedToday": "0", "perStrategyRealizedToday": {},
+              "halted": False, "haltReason": None, "haltScope": "PERSISTENT", "haltEpochDay": 0, "strategyHalts": []}
+    for field, value in case["seed_risk_state"].items():
+        seeded[field] = {strategy: (int(time.time() * 1000) if value == "now" else value)} if field.startswith("pacer") else value
+    os.makedirs(f"{a.out}/state/state/{strategy}")
+    json.dump(seeded, open(f"{a.out}/state/state/{strategy}/risk-state.json", "w"))
 config = f"{a.out}/qkt.config.yaml"
 open(config, "w").write(f"""source: local
 data_root: "{a.out}/data"

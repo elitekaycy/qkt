@@ -1,0 +1,9 @@
+STRATEGY atto_streak VERSION 1
+
+SYMBOLS
+    btc = EXNESS:BTCUSD EVERY 1m WARMUP 3 BARS
+
+RULES
+    -- Would enter on the first bar; the restored two-loss streak must stop it before the venue.
+    WHEN btc.close > 0 AND POSITION.btc = 0 AND OPEN_ORDERS.btc = 0
+    THEN BUY btc SIZING 0.01 BRACKET { STOP LOSS BY 3000, TAKE PROFIT BY 6000 }
