@@ -82,6 +82,18 @@ class IndicatorWarmer internal constructor(
                 pipeline.ingestForWarmup(tick, bars.window.durationMs)
             }
         }
+        // The elapsed part of the window in progress, replayed as the one-minute bars it was read
+        // from, so a golden capture records what seeded the forming bar and a replay rebuilds it.
+        val forming = runCatching { FormingBar.load(source, symbol, bars.window, now.toEpochMilli()) }.getOrNull()
+        for (minute in forming?.minutes.orEmpty()) {
+            for (tick in candleToTicks(minute.copy(symbol = symbol))) {
+                if (tick.timestamp <
+                    now.toEpochMilli()
+                ) {
+                    pipeline.ingestForWarmup(tick, TimeWindow.ONE_MINUTE.durationMs)
+                }
+            }
+        }
     }
 
     private fun resolveBarSpec(spec: WarmupSpec): BarSpec? =
