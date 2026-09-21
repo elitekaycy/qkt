@@ -77,6 +77,9 @@ internal class VerifiedFlatten(
         }
     }
 
+    /** The venue-side half of any flatten: cancel, by ticket, every resting order the venue attributes to the strategy. */
+    fun sweepRestingOrders(): List<String> = deployedIds.firstOrNull()?.let(::cancelRestingOrders).orEmpty()
+
     /** Cancels the strategy's resting orders by venue ticket; returns the tickets still at the venue before this pass. */
     private fun cancelRestingOrders(strategyId: String): List<String> {
         val owned =

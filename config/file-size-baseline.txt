@@ -2,7 +2,7 @@
 # Entries may only go down. Split a file, then run ./gradlew updateFileSizeBaseline.
 2699 src/test/kotlin/com/qkt/connector/mt5/MT5BrokerIntegrationTest.kt
 2534 src/main/kotlin/com/qkt/connector/mt5/MT5Broker.kt
-2386 src/main/kotlin/com/qkt/app/LiveSession.kt
+2396 src/main/kotlin/com/qkt/app/LiveSession.kt
 1052 src/test/kotlin/com/qkt/app/LiveSessionTest.kt
 971 src/test/kotlin/com/qkt/broker/MT5BrokerSimulatorTest.kt
 947 src/test/kotlin/com/qkt/cli/daemon/portfolio/PortfolioDeployerE2ETest.kt

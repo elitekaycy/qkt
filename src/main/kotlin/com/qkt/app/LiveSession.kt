@@ -1873,8 +1873,18 @@ class LiveSession(
                             is Inbound.Query -> msg.execute()
                             Inbound.Flatten ->
                                 // A failed FLATTEN is the emergency path failing — the loudest case.
-                                runCatching { doFlatten() }
-                                    .onFailure { t -> onEngineFault("flatten", t) }
+                                // Then the venue's own list: a resting order whose placement response was
+                                // lost is not among the orders the engine knows, and must not outlive a flatten.
+                                runCatching {
+                                    doFlatten()
+                                    VerifiedFlatten(
+                                        broker,
+                                        ticketAttribution,
+                                        clock,
+                                        strategies.map { it.first },
+                                        {},
+                                    ).sweepRestingOrders()
+                                }.onFailure { t -> onEngineFault("flatten", t) }
                             is Inbound.FeedEnded -> {
                                 // Feed ended (finite source drained): process every tick already
                                 // queued before stopping, so no tick is dropped.
