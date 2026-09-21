@@ -15,6 +15,10 @@ The case's `steps` are executed in order. Each step is a mapping:
     daemon:         "restart" | "kill9_restart" instead of `run`: stop the daemon without flattening
                     (or SIGKILL it mid-flight) and start it again on the same state directory
     expect_log:     regex the daemon log must contain after the step (optional)
+    expect_positions: exact number of venue positions under this case's magic after the step (optional)
+
+Case-level keys: `config` is deep-merged into the run config; `expect_startup_refusal` is a regex
+the daemon must print while REFUSING to start (then no step runs and nothing may reach the venue).
     note:           why this step exists
 
 Operator commands rot silently because nobody runs the emergency ones until the emergency.
@@ -121,6 +125,19 @@ insights:
 """)
 
 
+def merge(base, over):
+    for k, v in over.items():
+        if isinstance(v, dict) and isinstance(base.get(k), dict):
+            merge(base[k], v)
+        else:
+            base[k] = v
+    return base
+
+
+if case.get("config"):
+    yaml.safe_dump(merge(yaml.safe_load(open(config)), case["config"]), open(config, "w"), sort_keys=False)
+
+
 def qkt(argv, timeout=120):
     run = subprocess.run([a.cli, *argv], capture_output=True, text=True, timeout=timeout)
     return run.returncode, (run.stdout + run.stderr).strip()
@@ -140,6 +157,25 @@ def start_daemon():
         time.sleep(1)
     die("daemon was not ready within 150 seconds")
 
+
+if case.get("expect_startup_refusal"):
+    # The whole point is that the daemon must NOT come up: run it to completion and read why.
+    run = subprocess.run([a.cli, "daemon", "start", "--config", config, "--state-dir", f"{a.out}/state",
+                          "--load-dir", f"{a.out}/strategies"], capture_output=True, text=True, timeout=120)
+    text = run.stdout + run.stderr
+    open(f"{a.out}/daemon.log", "w").write(text)
+    problems = []
+    if run.returncode == 0 or "daemon ready" in text:
+        problems.append("the daemon started; it must refuse")
+    if not re.search(case["expect_startup_refusal"], text):
+        problems.append(f"refusal does not match /{case['expect_startup_refusal']}/: {text.strip()[-200:]}")
+    if owned() or pending():
+        problems.append("something reached the venue under this magic")
+    result = {"schema": "qkt-attestation-daemon-case-v1", "id": case["id"], "status": "failed" if problems else "passed",
+              "magic": int(a.magic), "steps": [], "refusal": text.strip()[-400:], "problems": problems}
+    json.dump(result, open(f"{a.out}/result.json", "w"), indent=2)
+    print(f"{result['status']} {case['id']} refusal-check problems={len(problems)}" + ("" if not problems else " :: " + " | ".join(problems)[:400]))
+    sys.exit(1 if problems else 0)
 
 daemon = start_daemon()
 results, problems = [], []
@@ -189,6 +225,11 @@ try:
                 actual = len(status.get(field) or []) if field == "positions" else status.get(field)
                 if actual != expected:
                     verdict.append(f"status.{field} is {actual!r}, expected {expected!r}")
+        if "expect_positions" in step:
+            time.sleep(float(step.get("settle_seconds", 1)))
+            held = owned()
+            if held != int(step["expect_positions"]):
+                verdict.append(f"venue holds {held} position(s) under the magic, expected {step['expect_positions']}")
         if step.get("expect_log") and not re.search(step["expect_log"], open(f"{a.out}/daemon.log").read()):
             verdict.append(f"daemon log does not match /{step['expect_log']}/")
         results.append({"step": index, "run": line, "exit": code, "output": output[-600:], "problems": verdict,
@@ -229,8 +270,12 @@ if owned():
 if pending():
     problems.append("magic still owns a pending order after the case")
 log = open(f"{a.out}/daemon.log").read()
-if re.search(r"engine loop fault|outcome UNKNOWN|unattributed fill dropped", log):
-    problems.append("engine fault, unknown outcome or unattributed fill in the daemon log")
+if re.search(r"engine loop fault|unattributed fill dropped", log):
+    problems.append("engine fault or unattributed fill in the daemon log")
+# A lost acknowledgement is resolved by asking the venue; only one left unresolved is a failure.
+unknown, resolved = len(re.findall(r"outcome UNKNOWN", log)), len(re.findall(r"resolved as [A-Z_]+", log))
+if unknown > resolved:
+    problems.append(f"{unknown} unknown order outcome(s), only {resolved} resolved")
 result = {"schema": "qkt-attestation-daemon-case-v1", "id": case["id"], "status": "failed" if problems else "passed",
           "magic": int(a.magic), "steps": results, "problems": problems}
 json.dump(result, open(f"{a.out}/result.json", "w"), indent=2)

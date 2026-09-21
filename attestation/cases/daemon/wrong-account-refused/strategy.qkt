@@ -1,0 +1,9 @@
+STRATEGY atto_wrongacct VERSION 1
+
+SYMBOLS
+    btc = EXNESS:BTCUSD EVERY 1m WARMUP 3 BARS
+
+RULES
+    -- Wants to enter on every bar it is flat: if nothing stops it, a position appears within a minute.
+    WHEN btc.close > 0 AND POSITION.btc = 0 AND OPEN_ORDERS.btc = 0
+    THEN BUY btc SIZING 0.01 BRACKET { STOP LOSS BY 4000, TAKE PROFIT BY 8000 }

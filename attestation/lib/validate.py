@@ -68,6 +68,18 @@ def main():
             for proof in doc.get("proves", []):
                 if not str(proof).startswith("behaviour:") and proof not in capabilities:
                     errors.append(f"{where}: proves '{proof}', which is not a catalog capability")
+            for number, step in enumerate(doc.get("steps") or [], 1):
+                for field in ("expect_stdout", "expect_log"):
+                    if field in step:
+                        try:
+                            re.compile(str(step[field]))
+                        except re.error as error:
+                            errors.append(f"{where}: step {number} {field} is not a valid regex: {error}")
+            if doc.get("expect_startup_refusal"):
+                try:
+                    re.compile(str(doc["expect_startup_refusal"]))
+                except re.error as error:
+                    errors.append(f"{where}: expect_startup_refusal is not a valid regex: {error}")
             strategy = f"{args.root}/{where}/strategy.qkt"
             if doc.get("status") == "ready" and lane in ("shadow", "orders", "risk", "book") and not os.path.isfile(strategy):
                 errors.append(f"{where}: a ready {lane} case needs strategy.qkt")

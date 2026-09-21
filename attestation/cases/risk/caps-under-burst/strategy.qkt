@@ -1,0 +1,14 @@
+STRATEGY atto_burst_cap VERSION 1
+
+SYMBOLS
+    btc = EXNESS:BTCUSD EVERY 1m WARMUP 3 BARS
+
+RULES
+    -- Six entries from one bar close against max_trades_per_day 4. Live, the whole burst is
+    -- risk-checked before any of it fills, so a cap that counts only filled trades lets all six
+    -- through while a backtest stops at four. Exactly four must fill and two must be rejected.
+    WHEN btc.close > 0 AND POSITION.btc = 0 AND OPEN_ORDERS.btc = 0 AND TRADES.today = 0
+    THEN BUY btc SIZING 0.01 BRACKET { STOP LOSS BY 4000, TAKE PROFIT BY 8000 } TIMES 6
+
+    WHEN POSITION.btc != 0 AND POSITION.btc.holding_duration >= 50
+    THEN CLOSE btc
