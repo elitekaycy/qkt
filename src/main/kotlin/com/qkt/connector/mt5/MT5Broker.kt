@@ -13,7 +13,6 @@ import com.qkt.bus.EventBus
 import com.qkt.common.Clock
 import com.qkt.common.IdGenerator
 import com.qkt.common.SequentialIdGenerator
-import com.qkt.common.Side
 import com.qkt.events.BrokerEvent
 import com.qkt.execution.OrderRequest
 import com.qkt.marketdata.MarketPriceProvider
@@ -123,6 +122,19 @@ class MT5Broker(
     private val positionModify = MT5PositionModify(profile, client, priceTracker, mt5Symbol, state)
     private val partialEntries = MT5PartialEntries(state, bus, clock)
     private val pendingOrderChanges = MT5PendingOrderChanges(profile, client, bus, clock, state, partialEntries)
+    private val partialPlacement =
+        MT5PartialPlacement(
+            profile,
+            client,
+            bus,
+            clock,
+            state,
+            events,
+            unknownResolver,
+            partialEntries,
+            seedTrackedTickets = { tickets -> pendingPoller.seedTrackedTickets(tickets) },
+            unknownResolveBackoffMs,
+        )
     private val closeTruth = MT5CloseVenueTruth(client, clock, state)
     private val unknownClose =
         MT5UnknownCloseResolution(
@@ -432,7 +444,7 @@ class MT5Broker(
         }
         if (isPartialEntry) {
             unknownResolver.executeUnknownResolution {
-                resolvePartialPlacement(
+                partialPlacement.resolvePartialPlacement(
                     request = request,
                     placement = placement,
                     placementStartedAtMs = placementStartedAtMs,
@@ -510,128 +522,6 @@ class MT5Broker(
                     timestamp = clock.now(),
                 ),
             )
-        }
-    }
-
-    /**
-     * MqlTradeResult separates order and deal tickets and exposes no position ticket. Resolve
-     * the exact deal through venue history, whose `position_id` is the authoritative key used by
-     * `/get_positions`; never infer that the residual order ticket owns the same numeric id.
-     */
-    private fun resolvePartialPlacement(
-        request: OrderRequest,
-        placement: MT5OrderRequest,
-        placementStartedAtMs: Long,
-        protection: MT5PositionProtection?,
-        response: MT5OrderResponse,
-    ) {
-        for (attempt in 1..UNKNOWN_RESOLVE_ATTEMPTS) {
-            val deals =
-                client.getDeals(
-                    fromUtcMs = placementStartedAtMs - MT5UnknownOutcomeMatching.CORRELATION_WINDOW_MS,
-                    toUtcMs =
-                        maxOf(
-                            clock.now(),
-                            placementStartedAtMs,
-                        ) + MT5UnknownOutcomeMatching.CORRELATION_WINDOW_MS,
-                )
-            val openingDeal =
-                deals
-                    ?.singleOrNull {
-                        it.ticket == response.result.deal &&
-                            it.entry == 0 &&
-                            it.positionTicket > 0L &&
-                            (it.orderTicket == 0L || it.orderTicket == response.result.order) &&
-                            it.magic == profile.magic &&
-                            it.symbol == placement.symbol &&
-                            it.type == (if (request.side == Side.BUY) 0 else 1)
-                    }
-            if (openingDeal != null) {
-                publishInitialPartialEntry(
-                    request,
-                    placement,
-                    placementStartedAtMs,
-                    protection,
-                    response,
-                    openingDeal,
-                )
-                return
-            }
-            if (attempt < UNKNOWN_RESOLVE_ATTEMPTS) {
-                try {
-                    Thread.sleep(unknownResolveBackoffMs * attempt)
-                } catch (_: InterruptedException) {
-                    Thread.currentThread().interrupt()
-                    return
-                }
-            }
-        }
-        log.error(
-            "MT5Broker {} partial entry {} cannot resolve deal {} to a position ticket; " +
-                "retaining UNKNOWN outcome and retrying without assuming order-ticket identity",
-            profile.name,
-            request.id,
-            response.result.deal,
-        )
-        events.publishGatewayUnreachable(UNKNOWN_RESOLVE_ATTEMPTS)
-        unknownResolver.scheduleUnknownResolution {
-            resolvePartialPlacement(request, placement, placementStartedAtMs, protection, response)
-        }
-    }
-
-    private fun publishInitialPartialEntry(
-        request: OrderRequest,
-        placement: MT5OrderRequest,
-        placementStartedAtMs: Long,
-        protection: MT5PositionProtection?,
-        response: MT5OrderResponse,
-        openingDeal: MT5Deal,
-    ) {
-        val residualTicket = response.result.order
-        val positionTicket = openingDeal.positionTicket
-        val filledQuantity = requireNotNull(response.result.volume)
-        // Async-fill venues report price 0.0 on the acknowledgement (#1092); the opening deal
-        // carries the executed price.
-        val fillPrice = response.result.price.takeIf { it.signum() > 0 } ?: openingDeal.price
-        val meta = MT5TicketMeta(request.id, request.strategyId, protection)
-        val earlyPosition =
-            partialEntries.registerPartialEntry(
-                PartialEntryState(
-                    meta = meta,
-                    residualTicket = residualTicket,
-                    positionTicket = positionTicket,
-                    symbol = request.symbol,
-                    side = request.side,
-                    requestedQuantity = placement.volume,
-                    cumulativeFilled = filledQuantity,
-                    averageFillPrice = fillPrice,
-                ),
-                openedAtMs = openingDeal.timeMs.takeIf { it > 0L } ?: placementStartedAtMs,
-            )
-        bus.publish(
-            BrokerEvent.OrderAccepted(
-                clientOrderId = request.id,
-                brokerOrderId = residualTicket.toString(),
-                strategyId = request.strategyId,
-                timestamp = clock.now(),
-            ),
-        )
-        bus.publish(
-            BrokerEvent.OrderPartiallyFilled(
-                clientOrderId = request.id,
-                brokerOrderId = positionTicket.toString(),
-                symbol = request.symbol,
-                side = request.side,
-                price = fillPrice,
-                quantity = filledQuantity,
-                cumulativeFilled = filledQuantity,
-                strategyId = request.strategyId,
-                timestamp = clock.now(),
-            ),
-        )
-        earlyPosition?.let(partialEntries::reconcilePartialEntry)
-        if (partialPositionByResidualTicket.containsKey(residualTicket)) {
-            pendingPoller.seedTrackedTickets(setOf(residualTicket))
         }
     }
 
