@@ -92,6 +92,12 @@ class CandleHub {
         slot.seed(candles)
     }
 
+    /** Seed [key]'s window in progress; see [com.qkt.candles.CandleAggregator.seedForming]. */
+    fun seedForming(
+        key: HubKey,
+        partial: Candle,
+    ) = (slots[key] ?: error("CandleHub.seedForming: unknown key $key")).aggregator.seedForming(partial)
+
     /**
      * Append a synthetic [candle] to [key]'s ring, trimmed to the slot's retention, and
      * route it into any sync group that contains [key]. Unlike the aggregator path this

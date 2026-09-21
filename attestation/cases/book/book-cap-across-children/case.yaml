@@ -1,0 +1,16 @@
+id: book-cap-across-children
+title: A book cap that two children would breach together
+why: Children are risk-checked independently inside one sampling interval; without reservations both pass
+  and the book exceeds its cap.
+status: planned
+symbols:
+- EURUSD
+- GBPUSD
+timeframes:
+- 1m
+proves:
+- behaviour:book-cap
+- behaviour:reservations
+assertions:
+- book-exposure-within-cap
+- rejections-equal-replay

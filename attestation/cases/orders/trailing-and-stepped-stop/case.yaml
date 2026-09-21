@@ -1,0 +1,15 @@
+id: trailing-and-stepped-stop
+title: A trailing stop that ratchets at the venue
+why: The engine moves the venue stop as price advances; a modify rejected for stops-level distance must
+  not leave the position unprotected or the engine believing it moved.
+status: planned
+symbols:
+- XAUUSD
+timeframes:
+- 1m
+proves:
+- behaviour:trailing-stop
+- behaviour:modify-rejected
+assertions:
+- protection-matches-venue
+- flat-by-magic

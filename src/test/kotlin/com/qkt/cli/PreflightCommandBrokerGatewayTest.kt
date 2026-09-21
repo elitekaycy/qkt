@@ -43,6 +43,8 @@ class PreflightCommandBrokerGatewayTest : PreflightCommandFixture() {
                 type: mt5
                 gateway_url: http://unreachable-gateway:9999
                 retry_attempts: 0
+            state:
+              disk_free_alert_gb: 0
             """.trimIndent(),
         )
 
@@ -121,6 +123,8 @@ class PreflightCommandBrokerGatewayTest : PreflightCommandFixture() {
                     expected_trade_mode: demo
                     expected_leverage: 100
                     expected_margin_mode: hedging
+                state:
+                  disk_free_alert_gb: 0
                 """.trimIndent(),
             )
 

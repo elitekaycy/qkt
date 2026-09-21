@@ -1,0 +1,50 @@
+id: operator-command-matrix
+title: Every operator command against a live daemon
+why: Commands are exercised one at a time by hand and rot silently. Each must exit with the documented
+  code and leave the state it reports - including the ones used only in an emergency.
+status: planned
+symbols:
+- BTCUSD
+timeframes:
+- 1m
+proves:
+- behaviour:cli:deploy
+- behaviour:cli:status
+- behaviour:cli:status_--deep
+- behaviour:cli:logs
+- behaviour:cli:positions
+- behaviour:cli:halt
+- behaviour:cli:resume
+- behaviour:cli:stop
+- behaviour:cli:start
+- behaviour:cli:reload
+- behaviour:cli:stop_--flatten
+- behaviour:cli:daemon_stop
+steps:
+- run: qkt deploy
+  expect: documented exit code and state
+- run: qkt status
+  expect: documented exit code and state
+- run: qkt status --deep
+  expect: documented exit code and state
+- run: qkt logs
+  expect: documented exit code and state
+- run: qkt positions
+  expect: documented exit code and state
+- run: qkt halt
+  expect: documented exit code and state
+- run: qkt resume
+  expect: documented exit code and state
+- run: qkt stop
+  expect: documented exit code and state
+- run: qkt start
+  expect: documented exit code and state
+- run: qkt reload
+  expect: documented exit code and state
+- run: qkt stop --flatten
+  expect: documented exit code and state
+- run: qkt daemon stop
+  expect: documented exit code and state
+assertions:
+- exit-codes
+- state-matches-report
