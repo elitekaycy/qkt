@@ -3,6 +3,9 @@ STRATEGY attest_numeric_functions VERSION 1
 SYMBOLS
     e = EXNESS:EURUSD EVERY 1m WARMUP 5 BARS,
     g = EXNESS:XAUUSD EVERY 1m WARMUP 5 BARS
+    -- A rule on one stream reading another's bar is only deterministic when both closed the same
+    -- window: live, which symbol's bar closes first depends on tick arrival; a replay orders by time.
+    SYNCHRONIZE e g
 
 LET spread_like = abs(e.close - e.open)
 
