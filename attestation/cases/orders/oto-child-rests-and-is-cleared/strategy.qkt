@@ -1,0 +1,15 @@
+STRATEGY atto_oto VERSION 1
+
+SYMBOLS
+    btc = EXNESS:BTCUSD EVERY 1m WARMUP 3 BARS
+
+RULES
+    -- The child is a take-profit limit 3,000 above the parent's own fill: inside the 5% collar,
+    -- never expected to fill in the minute or so this case lives.
+    WHEN btc.close > 0 AND POSITION.btc = 0 AND OPEN_ORDERS.btc = 0 AND TRADES.today = 0
+    THEN BUY btc SIZING 0.01
+           ON_FILL { SELL btc SIZING 0.01 ORDER_TYPE = LIMIT AT entry + 3000 }
+
+    -- CLOSE clears pending orders on the stream: the child must be gone from the venue afterwards.
+    WHEN POSITION.btc != 0 AND POSITION.btc.holding_duration >= 50
+    THEN CLOSE btc

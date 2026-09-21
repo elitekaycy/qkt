@@ -1,0 +1,14 @@
+STRATEGY atto_oco VERSION 1
+
+SYMBOLS
+    btc = EXNESS:BTCUSD EVERY 1m WARMUP 3 BARS
+
+RULES
+    WHEN btc.close > 0 AND POSITION.btc = 0 AND OPEN_ORDERS.btc = 0 AND TRADES.today = 0
+    THEN OCO_ENTRY {
+           BUY btc SIZING 0.01 ORDER_TYPE = STOP AT btc.close - 50,
+           SELL btc SIZING 0.01 ORDER_TYPE = STOP AT btc.close - 3000
+         }
+
+    WHEN POSITION.btc != 0 AND POSITION.btc.holding_duration >= 50
+    THEN CLOSE btc

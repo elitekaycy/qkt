@@ -1,0 +1,22 @@
+id: oco-entry-one-leg-fills
+title: An OCO entry whose first leg fills cancels its sibling
+why: 'MT5 has no venue-side OCO: the engine places both legs and must cancel the survivor itself when one
+  fills. A sibling left resting is a second, unintended entry waiting to happen. The buy stop here is
+  already through the market, so it fills at once; the sell stop 3,000 below must then disappear.'
+status: ready
+symbols:
+- BTCUSD
+timeframes:
+- 1m
+warmup_bars:
+  1m: 3
+proves:
+- behaviour:oco-entry
+- behaviour:sibling-cancel
+budget_seconds: 240
+assertions:
+- flat-by-magic
+- no-pending-by-magic
+- deals-net-by-magic
+- no-engine-fault
+- replay-fill-sequence
