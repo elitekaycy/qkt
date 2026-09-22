@@ -5,12 +5,10 @@ import com.qkt.candles.TimeWindow
 import com.qkt.cli.daemon.PortfolioRecord
 import com.qkt.cli.daemon.StateDir
 import com.qkt.cli.daemon.StrategyHandle
-import com.qkt.cli.daemon.buildSnapshot
 import com.qkt.cli.daemon.signalToJson
 import com.qkt.cli.daemon.tradeToJson
 import com.qkt.cli.observe.EventRing
 import com.qkt.cli.observe.ObservabilityServer
-import com.qkt.cli.observe.PendingStackLayer
 import com.qkt.dsl.ast.AlwaysRun
 import com.qkt.dsl.ast.WhenRun
 import com.qkt.dsl.portfolio.CompiledChild
@@ -622,25 +620,13 @@ class PortfolioDeployer(
             ObservabilityServer(
                 ring = ring,
                 statusProvider = {
-                    val layers =
-                        session.pendingStackLayerInfos().map {
-                            PendingStackLayer(
-                                stackId = it.stackId,
-                                layer = it.layer,
-                                triggerPrice = it.triggerPrice,
-                                side = it.side,
-                                quantity = it.quantity,
-                            )
-                        }
-                    buildSnapshot(
+                    childStatusSnapshot(
                         childName,
                         compiledChild.ast.version,
+                        compiledChild.strategyId,
                         startMs,
-                        startedAt.toString(),
-                        session.recentTrades(),
-                        layers,
-                        pnl = session.pnlSnapshot(compiledChild.strategyId),
-                        persistenceHealth = session.persistenceHealth(),
+                        startedAt,
+                        session,
                     )
                 },
                 running = { session.running },
