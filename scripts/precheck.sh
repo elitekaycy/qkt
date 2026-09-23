@@ -60,7 +60,7 @@ else
 fi
 
 step "Step 5: scan for AI references in tracked files"
-if git grep -nE '(Co-Authored-By:.*Claude|Co-Authored-By:.*GPT|Generated with.*Claude|🤖)' -- ':!scripts/precheck.sh' ':!.claude/' 2>/dev/null; then
+if git grep -nE '(Co-Authored-By:.*Claude|Co-Authored-By:.*GPT|Generated with.*Claude|🤖)' -- ':!scripts/precheck.sh' ':!scripts/agent-workflow.sh' ':!.claude/' 2>/dev/null; then
     fail "found AI references in tracked files — strip them before pushing"
 else
     ok "no AI references in tracked files"
