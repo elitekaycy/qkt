@@ -1,10 +1,6 @@
 package com.qkt.broker
 
-/**
- * What [MT5BrokerSimulator] supports. It splits brackets into engine-held exits, yet live MT5 ships
- * a bracket's placeholder SL/TP with the entry and validates it at submit, so the simulator refuses
- * what that venue refuses.
- */
+/** What [MT5BrokerSimulator] supports: it splits brackets into engine-held exits. */
 internal val MT5_SIM_CAPABILITIES: Set<OrderTypeCapability> =
     setOf(
         OrderTypeCapability.MARKET,
@@ -13,5 +9,4 @@ internal val MT5_SIM_CAPABILITIES: Set<OrderTypeCapability> =
         OrderTypeCapability.STOP_LIMIT,
         OrderTypeCapability.IF_TOUCHED,
         OrderTypeCapability.MULTI_POSITION_PER_SYMBOL,
-        OrderTypeCapability.VALIDATES_SUBMITTED_PROTECTION,
     )

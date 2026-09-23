@@ -56,7 +56,7 @@
 270 src/main/kotlin/com/qkt/connector/mt5/marketdata/Mt5BarFetcher.kt
 270 src/main/kotlin/com/qkt/pnl/TradeHistory.kt
 270 src/main/kotlin/com/qkt/risk/book/BookRiskController.kt
-269 src/main/kotlin/com/qkt/connector/mt5/MT5OrderTranslator.kt
+268 src/main/kotlin/com/qkt/connector/mt5/MT5OrderTranslator.kt
 265 src/main/kotlin/com/qkt/app/LatchManager.kt
 262 src/test/kotlin/com/qkt/dsl/compile/OrderSurfaceEndToEndTest.kt
 257 src/main/kotlin/com/qkt/lsp/QktSnippets.kt

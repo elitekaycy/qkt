@@ -62,10 +62,9 @@ class OrderManagerBracketCrossedProtectionTest {
     }
 
     @Test
-    fun `an attach venue refuses a relative take profit whose placeholder is inverted`() {
-        // An attach venue ships the BY target's pre-fill placeholder with the entry, and the MT5
-        // gateway validates it: a BUY placeholder at or below the entry is refused
-        // ("For BUY orders, TP must be above entry price"), so the engine refuses it first.
+    fun `an attach venue accepts a relative take profit whose placeholder is inverted — it is never sent`() {
+        // A BY/PCT/RR target is attached by position modify once the fill is known, so its pre-fill
+        // placeholder never reaches the gateway and cannot be refused there (live run 003).
         val clock = FixedClock(0L)
         val bus = newBus()
         val broker = FakeBroker(bus, clock, ATTACH_VENUE)
@@ -78,8 +77,7 @@ class OrderManagerBracketCrossedProtectionTest {
 
         val ack = om.submit(relative)
 
-        assertThat(ack.accepted).isFalse()
-        assertThat(ack.rejectReason).contains("For BUY orders, TP must be above entry price")
+        assertThat(ack.accepted).isTrue()
     }
 
     @Test

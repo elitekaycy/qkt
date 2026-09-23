@@ -7,6 +7,7 @@ import com.qkt.common.FixedClock
 import com.qkt.common.Money
 import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.Side
+import com.qkt.dsl.ast.ChildAt
 import com.qkt.dsl.ast.ChildBy
 import com.qkt.dsl.ast.NumLit
 import com.qkt.execution.OrderRequest
@@ -22,9 +23,10 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
 /**
- * The live scale-burst trace, replayed against mt5-sim: a stack leg whose `TAKE PROFIT BY 0.10`
- * placeholder sat above the mid but 0.093 below the ask was refused by the MT5 gateway, while the
- * simulator opened it. The simulator stands in for that venue, so it must refuse it too.
+ * mt5-sim stands in for the MT5 attach path. A relative target is attached there by position modify
+ * after the fill, so the simulator must not refuse its placeholder (live run 003 refused 8 of 10
+ * stack legs while it was still sent); an absolute target still ships and is judged against the ask.
+ * Every backtest routes the simulator through a [CompositeBroker], so each case runs routed too.
  */
 class OrderManagerMt5SimSubmittedProtectionTest {
     private val quote =
@@ -37,31 +39,25 @@ class OrderManagerMt5SimSubmittedProtectionTest {
         )
 
     @Test
-    fun `mt5-sim refuses a relative target placeholder inside the spread as the venue does`() {
-        val ack = submit(tp = "4320.306")
-
-        assertThat(ack.accepted).isFalse()
-        assertThat(ack.rejectReason).contains("For BUY orders, TP must be above entry price")
+    fun `mt5-sim accepts a relative target placeholder inside the spread`() {
+        assertThat(submit(tp = "4320.306").accepted).isTrue()
+        assertThat(submit(tp = "4320.306", routed = true).accepted).isTrue()
     }
 
     @Test
-    fun `mt5-sim routed through a composite broker still refuses it, as every backtest routes it`() {
-        val ack = submit(tp = "4320.306", routed = true)
+    fun `mt5-sim refuses an absolute target inside the spread, routed or not`() {
+        for (routed in listOf(false, true)) {
+            val ack = submit(tp = "4320.306", routed = routed, absolute = true)
 
-        assertThat(ack.accepted).isFalse()
-        assertThat(ack.rejectReason).contains("For BUY orders, TP must be above entry price")
-    }
-
-    @Test
-    fun `mt5-sim accepts a relative target placeholder beyond the ask`() {
-        val ack = submit(tp = "4320.499")
-
-        assertThat(ack.accepted).isTrue()
+            assertThat(ack.accepted).isFalse()
+            assertThat(ack.rejectReason).contains("For BUY orders, TP must be above entry price")
+        }
     }
 
     private fun submit(
         tp: String,
         routed: Boolean = false,
+        absolute: Boolean = false,
     ): com.qkt.broker.SubmitAck {
         val clock = FixedClock(0L)
         val bus = EventBus(clock, MonotonicSequenceGenerator())
@@ -97,7 +93,7 @@ class OrderManagerMt5SimSubmittedProtectionTest {
                 stopLoss = StopLossSpec.Fixed(Money.of("4305.206")),
                 timeInForce = TimeInForce.GTC,
                 timestamp = 0L,
-                takeProfitAst = ChildBy(NumLit(BigDecimal("0.10"))),
+                takeProfitAst = if (absolute) ChildAt(NumLit(Money.of(tp))) else ChildBy(NumLit(BigDecimal("0.10"))),
                 stopLossAst = ChildBy(NumLit(BigDecimal("15.00"))),
             ),
         )
