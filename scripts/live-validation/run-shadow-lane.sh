@@ -4,6 +4,8 @@
 # with the live ones, text for text. Places no orders.
 set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# shellcheck source=scripts/live-validation/lib/process-stop.sh
+source "$repo_root/scripts/live-validation/lib/process-stop.sh"
 
 usage() {
     cat <<'USAGE'
@@ -87,15 +89,32 @@ started_at="$(date -u +%FT%TZ)"
 "$cli" daemon start --config "$out/qkt.config.yaml" --state-dir "$out/state" --load-dir "$out/strategies" \
     > "$out/daemon.log" 2>&1 &
 daemon_pid=$!
-stop_daemon() { "$cli" daemon stop --state-dir "$out/state" >/dev/null 2>&1 || true; wait "$daemon_pid" 2>/dev/null || true; }
+sleep_pid=""
+# `daemon stop` addresses whichever daemon last wrote this state dir's control.port, so it is only
+# the polite first step: this lane's own daemon is then stopped by PID. Without that, a lane whose
+# output dir was reused could stop another lane's daemon and leave its own running indefinitely.
+stop_grace="${QKT_SHADOW_STOP_GRACE_SECONDS:-30}"
+stop_daemon() {
+    [ -n "$sleep_pid" ] && { kill "$sleep_pid" 2>/dev/null || true; wait "$sleep_pid" 2>/dev/null || true; sleep_pid=""; }
+    [ -n "$daemon_pid" ] || return 0
+    "$cli" daemon stop --state-dir "$out/state" >/dev/null 2>&1 || true
+    await_exit "$daemon_pid" "$stop_grace" || stop_process "$daemon_pid" 10 "shadow daemon"
+    wait "$daemon_pid" 2>/dev/null || true
+    daemon_pid=""
+}
 trap stop_daemon EXIT
+trap 'exit 143' TERM
+trap 'exit 130' INT
 for _ in $(seq 1 120); do
     grep -q 'daemon ready' "$out/daemon.log" && break
     kill -0 "$daemon_pid" 2>/dev/null || fail "daemon exited during startup: $(tail -n 1 "$out/daemon.log")"
     sleep 1
 done
 grep -q 'daemon ready' "$out/daemon.log" || fail "daemon was not ready within 120 seconds"
-sleep "$duration"
+# Backgrounded so a TERM from the parent suite is handled now, not after the whole window.
+sleep "$duration" & sleep_pid=$!
+wait "$sleep_pid" || true
+sleep_pid=""
 
 trap - EXIT
 stop_daemon
