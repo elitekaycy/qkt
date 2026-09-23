@@ -206,7 +206,9 @@ THEN CLOSE btc                                                -- time-stop on a 
 
 ### Fixed elapsed-horizon exits
 
-`POSITION.<stream>.holding_duration` uses the injected engine clock, so the same elapsed-time exit works in replay and live execution. A fixed 8 × 4-hour horizon is:
+`POSITION.<stream>.holding_duration` uses the injected engine clock, so the same elapsed-time exit works in replay and live execution. Like every `WHEN` rule, though, it is evaluated only when the rule's stream closes a bar. The close therefore lands on the first bar close at or after the horizon, up to one bar late. Entries also fire at bar close, so a position is a few hundred milliseconds short of an exact multiple of the bar when that bar closes: a `holding_duration >= 4 * 60` exit on a 5-minute stream closes at about 5 minutes, and on a 1-minute stream at about 5 minutes too, not 4. When the exit time itself matters, use [`EXIT AFTER`](exit-after.md), which is checked on every tick and timed from the fill.
+
+A fixed 8 × 4-hour horizon is:
 
 ```qkt
 WHEN POSITION.gold != 0
@@ -216,13 +218,15 @@ THEN CLOSE gold
 
 This measures 32 elapsed hours from the executable fill. It does not grant a completed signal bar's close as an entry fill: a close-derived signal is only known after that bar closes, and the order fills on the next executable quote. It also counts elapsed market closures, so it is not an eight-observed-bar counter across a weekend. Research built from `close.shift(-8)` must disclose both differences when it is translated to exact-tick execution; a loss of expectancy under those executable semantics is not an indicator gap.
 
-The same pattern expresses a one-bar elapsed hold on a 30-minute stream:
+The same pattern on a 30-minute stream holds for about two bars, not one: at the first bar close after entry the position is just short of 30 minutes old, so the rule closes it at the second.
 
 ```qkt
 WHEN POSITION.gold != 0
  AND POSITION.gold.holding_duration >= 30 * 60
 THEN CLOSE gold
 ```
+
+For an exact 30-minute hold, write the exit on the entry instead: `BUY gold SIZING 0.1 EXIT AFTER 30m`.
 
 ## Position-state guards
 

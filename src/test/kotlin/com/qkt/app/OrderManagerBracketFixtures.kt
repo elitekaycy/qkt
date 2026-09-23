@@ -1,5 +1,6 @@
 package com.qkt.app
 
+import com.qkt.broker.OrderTypeCapability
 import com.qkt.bus.EventBus
 import com.qkt.common.FixedClock
 import com.qkt.common.Money
@@ -35,4 +36,14 @@ object OrderManagerBracketFixtures {
             timestamp = 0L,
         )
     }
+
+    /** A venue that attaches SL/TP to the order and can modify an open position's levels. */
+    val ATTACH_VENUE =
+        setOf(
+            OrderTypeCapability.MARKET,
+            OrderTypeCapability.LIMIT,
+            OrderTypeCapability.STOP,
+            OrderTypeCapability.BRACKET,
+            OrderTypeCapability.POSITION_MODIFY,
+        )
 }

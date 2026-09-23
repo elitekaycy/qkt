@@ -131,6 +131,11 @@ class ActionCompiler(
         if (opts.times != null) {
             return repeats.compile(stream, opts.times, compileBuySell(stream, opts.copy(times = null), side))
         }
+        if (opts.exitAfter != null) {
+            require(opts.exitHooks.isEmpty()) { "EXIT AFTER cannot be combined with ON_STOP/ON_TP/ON_CLOSE" }
+            require(opts.onFill.isEmpty()) { "EXIT AFTER cannot be combined with ON_FILL" }
+            require(opts.stack == null) { "EXIT AFTER cannot be combined with STACK; use STACK_AT" }
+        }
         if (!opts.exitHooks.isEmpty()) {
             return compileWithExitHooks(stream, opts, side)
         }

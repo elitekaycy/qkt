@@ -74,6 +74,8 @@ class OrderManager(
     positionMode: (symbol: String) -> PositionAccountingMode = { PositionAccountingMode.UNKNOWN },
     /** Venue tickets the position ledger already holds for a strategy, so restore does not republish them (#1096). */
     bookedVenueTickets: (strategyId: String) -> Set<String> = { emptySet() },
+    /** Open quantity of a strategy's leg, or null once it has closed; a timed exit closes only what is left. */
+    openLegQuantity: ((strategyId: String, legId: String) -> BigDecimal?)? = null,
 ) : PendingOrderExposureProvider {
     private val settings =
         OrderSettings(
@@ -93,6 +95,7 @@ class OrderManager(
             strategyNetQty,
             positionMode,
             bookedVenueTickets,
+            openLegQuantity,
         )
     private val log = LoggerFactory.getLogger(OrderManager::class.java)
     private val workflows = OrderWorkflows(settings, log)
@@ -195,10 +198,7 @@ class OrderManager(
             !managed.state.isTerminal && (managed.id in store.closeTickets || isPersistentManagedStop(managed.request))
         }
 
-    /**
-     * Read-only: whether a live order on [symbol] could fill within the bar range `[low, high]`;
-     * backs the tick-resolved fill replay's decision to decode a bar's ticks. See [intrabarFillFor].
-     */
+    /** Read-only: whether a live order on [symbol] could fill within `[low, high]`; see [intrabarFillFor]. */
     fun intrabarFill(
         symbol: String,
         low: BigDecimal,

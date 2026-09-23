@@ -332,11 +332,7 @@ class DaemonCommand(
         if (cfg.bookRisk?.limits != null) {
             org.slf4j.LoggerFactory
                 .getLogger("com.qkt.cli.DaemonCommand")
-                .warn(
-                    "book_risk limits are configured but are enforced only for PORTFOLIO deployments; " +
-                        "strategies deployed individually are not bounded by them. Deploy as a " +
-                        "portfolio, or bound exposure inside the strategy.",
-                )
+                .warn(STANDALONE_BOOK_RISK_WARNING)
         }
 
         val portfolioDeployer =

@@ -179,6 +179,7 @@ nav:
           - OTO (one-triggers-other): reference/dsl/oto.md
           - LATCH: reference/dsl/latch.md
           - TIMES: reference/dsl/times.md
+          - EXIT AFTER: reference/dsl/exit-after.md
           - FOR EACH: reference/dsl/foreach.md
           - PORTFOLIO files: reference/dsl/portfolio.md
           - BASKET (synthetic instruments): reference/dsl/basket.md

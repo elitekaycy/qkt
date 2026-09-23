@@ -28,6 +28,7 @@ internal class OrderSettings(
     val strategyNetQty: ((strategyId: String, symbol: String) -> BigDecimal)?,
     val positionMode: (symbol: String) -> PositionAccountingMode,
     val bookedVenueTickets: (strategyId: String) -> Set<String>,
+    val openLegQuantity: ((strategyId: String, legId: String) -> BigDecimal?)?,
 ) {
     /**
      * The venue ticket an engine-managed exit closes: its own leg's ticket when it has one, else
