@@ -40,6 +40,29 @@ internal class AttachedBracketCompletion(
     }
 
     /**
+     * An attached bracket's entry ended without a fill (rejected, cancelled, expired): the wrapper
+     * ends with it in [state], and any held child it armed is cancelled, so neither is persisted
+     * as a pending order and re-placed after a restart.
+     */
+    fun onEntryEnded(
+        entryId: String,
+        state: OrderState,
+    ) {
+        val entry = book[entryId] ?: return
+        if (entry.request !is OrderRequest.Bracket) return
+        val wrapperId = entry.parentClientOrderId ?: return
+        val wrapper = book[wrapperId] ?: return
+        if (wrapper.request !is OrderRequest.Bracket || wrapper.state.isTerminal) return
+        for (childId in wrapper.childClientOrderIds) {
+            val child = book[childId] ?: continue
+            if (child.state == OrderState.PENDING || child.state == OrderState.CREATED) ops.cancel(childId)
+        }
+        if (wrapper.childClientOrderIds.any { book[it]?.state?.isTerminal == false }) return
+        ops.update(wrapperId) { it.copy(state = state, lastUpdatedAt = clock.now()) }
+        exposure.remove(wrapperId)
+    }
+
+    /**
      * An engine-held exit child (`-sl` / `-tp`) of an attached bracket filled: the position it
      * protected is reduced or gone, exactly as after a venue-side close. The entry's own record
      * may already be reclaimed by then, so the filled quantity falls back to the requested size.
