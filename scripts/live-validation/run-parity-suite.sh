@@ -22,6 +22,17 @@ EOF
 }
 
 fail() { printf 'run-parity-suite: %s\n' "$1" >&2; exit 1; }
+# shellcheck source=scripts/live-validation/lib/process-stop.sh
+source "$repo_root/scripts/live-validation/lib/process-stop.sh"
+
+# The shadow lane runs in the background beside the read-only phase. Any exit, including a failed
+# phase, must take it and its daemon down: an orphaned lane keeps trading ticks into a journal
+# the next attempt reuses. Its own EXIT trap stops its daemon, so allow for that grace.
+shadow_pid=""
+stop_shadow_lane() { stop_process "$shadow_pid" 60 "shadow lane"; shadow_pid=""; }
+trap stop_shadow_lane EXIT
+trap 'exit 143' TERM
+trap 'exit 130' INT
 
 output=""
 suite_id=""
@@ -161,7 +172,6 @@ if $parallel && ! $verify_only; then
     done
     # The shadow lane places no orders, so it shares the read-only window: every ready shadow case
     # in one daemon, value parity against replay. Its verdict gates the suite like any case.
-    shadow_pid=""
     if [ -d "$repo_root/attestation/cases/shadow" ]; then
         bash "$repo_root/scripts/live-validation/run-shadow-lane.sh" --out "$output/shadow-lane" \
             --gateway-url "$gateway_url" --expected-login "$expected_login" --expected-server "$expected_server" \
@@ -170,7 +180,9 @@ if $parallel && ! $verify_only; then
     fi
     run_phase readonly phase_readonly
     if [ -n "$shadow_pid" ]; then
-        wait "$shadow_pid" || fail "shadow lane failed: $(tail -n 1 "$output/shadow-lane.log")"
+        lane_code=0; wait "$shadow_pid" || lane_code=$?
+        shadow_pid=""
+        [ "$lane_code" -eq 0 ] || fail "shadow lane failed: $(tail -n 1 "$output/shadow-lane.log")"
     fi
     for scenario in "${cases[@]}"; do seal_armed_scenario "$scenario"; done
     run_phase armed phase_armed
