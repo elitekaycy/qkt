@@ -386,12 +386,12 @@ jq -n \
 paper_trades="$(jq -c '.' "$output/comparison/full-ticks-paper-entry-trades.json")"
 mt5_trades="$(jq -c '.' "$output/comparison/full-ticks-mt5-entry-trades.json")"
 live_entries="$(jq -c '.' "$output/comparison/live-entries.json")"
-jq -en --slurpfile intents "$output/comparison/full-ticks-entry-orders.json" \
+jq -en -L "$repo_root/scripts/live-validation/lib" --slurpfile intents "$output/comparison/full-ticks-entry-orders.json" \
     --argjson paper "$paper_trades" --argjson mt5 "$mt5_trades" --argjson live "$live_entries" \
     --argjson expectedEntries "$comparison_entries" \
     --argjson stopDistance "$stop_distance" \
     --argjson takeProfitDistance "$take_profit_distance" '
-    def near($a; $b): (($a | tonumber) - ($b | tonumber) | fabs) < 0.000000001;
+    include "replay-entry-match";
     def adjusted_protection_matches_fill($entry):
         if $entry.fill.side == "BUY" then
             near($entry.protection.stopLossPrice; ($entry.fill.price | tonumber) - $stopDistance) and
@@ -424,7 +424,7 @@ jq -en --slurpfile intents "$output/comparison/full-ticks-entry-orders.json" \
         near($intents[0][$i].qty; $live[$i].request.quantity) and
         near($mt5[$i].quantity; $live[$i].fill.quantity) and
         near($intents[0][$i].stopLoss.price; $live[$i].request.stopLossPrice) and
-        near($intents[0][$i].takeProfit; $live[$i].request.takeProfitPrice) and
+        sent_target_matches($intents[0][$i]; $live[$i].request) and
         adjusted_protection_matches_fill($live[$i]) and
         sim_protection_matches_fill($mt5[$i])
     )
