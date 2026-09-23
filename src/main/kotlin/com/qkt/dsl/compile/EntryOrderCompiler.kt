@@ -172,7 +172,8 @@ internal class EntryOrderCompiler(
             val finalRequest: OrderRequest =
                 if (gtdDeadlineExpr != null) stampGtdDeadline(request, gtdDeadlineExpr, ctx) else request
 
-            val exitId = holdMs?.let { ids.next() }
+            // Derived from the leg id, so a restart that resumes ids past its legs cannot re-mint it.
+            val exitId = holdMs?.let { "${finalRequest.id}-exit" }
             if (stackAtTiers.isNotEmpty() && pendingStacks != null) {
                 registerPendingStack(pendingStacks, finalRequest, symbol, side, stackAtTiers, holdMs, exitId)
             }
