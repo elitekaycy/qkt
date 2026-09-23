@@ -104,6 +104,10 @@ class MT5BrokerSimulator(
 
     override val name: String = "MT5-Sim"
 
+    // Live MT5 ships a bracket's placeholder SL/TP with the entry and validates it at submit; the
+    // simulator splits brackets into engine-held exits but must refuse what the venue refuses.
+    override fun validatesSubmittedProtection(symbol: String): Boolean = true
+
     override val capabilities: Set<OrderTypeCapability> =
         setOf(
             OrderTypeCapability.MARKET,

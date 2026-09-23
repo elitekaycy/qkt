@@ -66,45 +66,37 @@ internal class VenueSubmission(
         bus.publish(RiskRejectedEvent(request, reason, timestamp = clock.now()))
     }
 
-    /** A local rejection for [request] when its absolute protection is already crossed, else null. */
+    /** A local rejection for [request] when the venue would refuse its submitted protection, else null. */
     fun crossedProtectionRejection(request: OrderRequest.Bracket): SubmitAck? {
-        // Venue-faithful stops validation (#1076): MT5 rejects an order whose absolute stop
-        // is already on the wrong side of the reference price (retcode 10016 Invalid stops).
-        // Refusing locally keeps every simulated tier byte-consistent with live — on a gap
-        // tick the entry is never taken, instead of filling with an INVERTED protective stop
-        // that fires on the next print as a guaranteed instant loss. Market entries validate
-        // against the current quote; pending entries against their own trigger price. Scope
-        // is deliberately the stop side only: a take profit the market has already reached is
-        // an instant profit-take, not broken protection, and BY-resolved targets are anchored
-        // to the signal bar rather than the submit quote. Relative (BY/trail) stops resolve
-        // off the fill and cannot invert.
+        // Venue-faithful stops validation (#1076), mirroring the MT5 gateway's validate_sl_tp:
+        // the reference is the price the entry executes at — the ask for a market BUY, the bid
+        // for a market SELL, the trigger price for a pending entry — and a BUY stop must sit
+        // strictly below it, a BUY target strictly above it (SELL mirrored). Refusing locally
+        // keeps every simulated tier consistent with live: on a gap tick the entry is never
+        // taken instead of filling with inverted protection that fires on the next print.
+        // An absolute AT target is judged on every venue. A BY/PCT/RR target's pre-fill placeholder
+        // is judged only where the venue receives it: an attach venue (and its simulator) ships it
+        // with the entry and validates it exactly as an absolute level, so a placeholder inside the
+        // spread is refused live (the scale-burst stack trace); a venue that splits the bracket
+        // never sees it, and the target re-anchors on the fill.
         val stopsReference =
             when (val entry = request.entry) {
                 is OrderRequest.Limit -> entry.limitPrice
                 is OrderRequest.Stop -> entry.stopPrice
-                else -> priceProvider.lastPrice(request.symbol)?.takeIf { it.signum() != 0 }
-            }
-        val fixedSl = (request.stopLoss as? StopLossSpec.Fixed)?.price
-        if (stopsReference != null && fixedSl != null) {
-            val slCrossed =
-                if (request.side == Side.BUY) fixedSl >= stopsReference else fixedSl <= stopsReference
-            if (slCrossed) {
-                return rejectCrossedProtection(request, stopsReference, fixedSl, "stop loss")
+                else -> priceProvider.executionPrice(request.symbol, request.side)?.takeIf { it.signum() != 0 }
+            } ?: return null
+        val buy = request.side == Side.BUY
+        (request.stopLoss as? StopLossSpec.Fixed)?.price?.let { sl ->
+            if (if (buy) sl >= stopsReference else sl <= stopsReference) {
+                val venueText = "For ${request.side} orders, SL must be ${if (buy) "below" else "above"} entry price"
+                return rejectCrossedProtection(request, stopsReference, sl, "stop loss", venueText)
             }
         }
-        // The target needs the same check, but ONLY for an absolute `AT` level. A BY/PCT/RR
-        // target is re-anchored off the fill by resolveBracketAtFill and cannot invert, and
-        // its pre-fill value is a placeholder — checking that would reject healthy brackets.
-        // An inverted absolute target is not a free profit-take: measured on the gold RSI-fade
-        // tape, a BUY filled at 1320.700 carrying TAKE_PROFIT 1320.019 closed instantly for a
-        // 0.68/oz LOSS. MT5 rejects it under the same retcode 10016 the stop side gets.
-        if (stopsReference != null && request.takeProfitAst is ChildAt) {
-            val tp = request.takeProfit
-            val tpCrossed =
-                if (request.side == Side.BUY) tp <= stopsReference else tp >= stopsReference
-            if (tpCrossed) {
-                return rejectCrossedProtection(request, stopsReference, tp, "take profit")
-            }
+        val tp = request.takeProfit
+        val targetOnWire = request.takeProfitAst is ChildAt || broker.validatesSubmittedProtection(request.symbol)
+        if (targetOnWire && (if (buy) tp <= stopsReference else tp >= stopsReference)) {
+            val venueText = "For ${request.side} orders, TP must be ${if (buy) "above" else "below"} entry price"
+            return rejectCrossedProtection(request, stopsReference, tp, "take profit", venueText)
         }
         return null
     }
@@ -120,10 +112,11 @@ internal class VenueSubmission(
         reference: BigDecimal,
         level: BigDecimal,
         leg: String,
+        venueText: String,
     ): SubmitAck {
         val reason =
-            "invalid stops: $leg $level already crossed for ${request.side} at reference $reference " +
-                "(venue would reject, retcode 10016)"
+            "invalid stops: $venueText — $leg $level already crossed for ${request.side} at reference " +
+                "$reference (venue would reject, retcode 10016)"
         log.warn("order {} {} — rejected locally, not sent to broker", request.id, reason)
         bus.publish(
             BrokerEvent.OrderRejected(
