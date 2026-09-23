@@ -2,16 +2,15 @@ package com.qkt.app.order
 
 import com.qkt.broker.Broker
 import com.qkt.broker.SubmitAck
-import com.qkt.broker.validatesSubmittedProtection
 import com.qkt.bus.EventBus
 import com.qkt.common.Clock
 import com.qkt.common.Side
-import com.qkt.dsl.ast.ChildAt
 import com.qkt.events.BrokerEvent
 import com.qkt.events.RiskRejectedEvent
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.OrderState
 import com.qkt.execution.StopLossSpec
+import com.qkt.execution.hasFillAnchoredTarget
 import com.qkt.execution.isTerminal
 import com.qkt.marketdata.MarketPriceProvider
 import java.math.BigDecimal
@@ -75,11 +74,9 @@ internal class VenueSubmission(
         // strictly below it, a BUY target strictly above it (SELL mirrored). Refusing locally
         // keeps every simulated tier consistent with live: on a gap tick the entry is never
         // taken instead of filling with inverted protection that fires on the next print.
-        // An absolute AT target is judged on every venue. A BY/PCT/RR target's pre-fill placeholder
-        // is judged only where the venue receives it: an attach venue (and its simulator) ships it
-        // with the entry and validates it exactly as an absolute level, so a placeholder inside the
-        // spread is refused live (the scale-burst stack trace); a venue that splits the bracket
-        // never sees it, and the target re-anchors on the fill.
+        // Only a target the venue receives is judged. An absolute one ships with the entry; a
+        // BY/PCT/RR one never does — it re-resolves from the fill and attaches by position modify —
+        // so its placeholder is not checked here either.
         val stopsReference =
             when (val entry = request.entry) {
                 is OrderRequest.Limit -> entry.limitPrice
@@ -94,8 +91,7 @@ internal class VenueSubmission(
             }
         }
         val tp = request.takeProfit
-        val targetOnWire = request.takeProfitAst is ChildAt || broker.validatesSubmittedProtection(request.symbol)
-        if (targetOnWire && (if (buy) tp <= stopsReference else tp >= stopsReference)) {
+        if (!request.hasFillAnchoredTarget && (if (buy) tp <= stopsReference else tp >= stopsReference)) {
             val venueText = "For ${request.side} orders, TP must be ${if (buy) "above" else "below"} entry price"
             return rejectCrossedProtection(request, stopsReference, tp, "take profit", venueText)
         }
