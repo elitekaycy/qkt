@@ -251,8 +251,6 @@ class BacktestContext private constructor(
         ): BacktestContext {
             val from = parseInstant(args.requireOption("from"))
             val to = parseInstant(args.requireOption("to"))
-            val startingBalance = args.option("starting-balance")?.let(::BigDecimal) ?: BigDecimal("10000")
-
             val declaredSymbols = ast.streams.map { it.qktSymbol }.distinct()
             val symbolsOverride =
                 args
@@ -324,8 +322,9 @@ class BacktestContext private constructor(
                 }
             // Same config-driven halt/accounting construction the live daemon uses, so a strategy
             // that would halt live halts at the same point in its backtest. The basis balance is
-            // the backtest's own starting balance.
+            // the backtest's own starting balance, which defaults to the config's like the daemon's.
             val cfg = Config.load(Config.resolvePath(args.option("config")))
+            val startingBalance = backtestStartingBalance(args, cfg)
             val executionConfig = BacktestSimulationOptions.executionConfig(args, cfg, brokerKind)
             val accountingConfig = BacktestSimulationOptions.accountingConfig(args, cfg)
             val replaySymbols = (symbols + accountingConfig.normalizedSymbols.values).distinct()

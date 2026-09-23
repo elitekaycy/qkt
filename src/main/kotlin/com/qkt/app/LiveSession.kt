@@ -342,7 +342,7 @@ class LiveSession(
 
     fun start(): LiveSessionHandle {
         val ids = SequentialIdGenerator.forSession(strategies.map { it.first })
-        val sequencer = MonotonicSequenceGenerator()
+        val sequencer = MonotonicSequenceGenerator.resumingAfter(auditJournal?.lastSequence())
         val priceTracker = MarketPriceTracker()
         val accounting = com.qkt.accounting.AccountingEngine(accountingConfig, priceTracker)
         com.qkt.instrument.QuoteCurrencyGuard
