@@ -75,6 +75,7 @@ internal class OrderStore(
     // An exit already tracked is left as is.
     private fun armEngineHeldExit(
         stop: OrderRequest,
+        wrapperId: String,
         ticket: String,
     ) {
         if (book.contains(stop.id)) return
@@ -84,6 +85,7 @@ internal class OrderStore(
                 id = stop.id,
                 request = stop,
                 state = OrderState.PENDING,
+                parentClientOrderId = wrapperId,
                 createdAt = now,
                 lastUpdatedAt = now,
             ),
@@ -96,15 +98,17 @@ internal class OrderStore(
     /**
      * Protects a venue position whose fill-anchored exits the venue refused to attach: an
      * engine-held [stop] and/or [target] that close [ticket]. With both, whichever fires first
-     * cancels the other.
+     * cancels the other. They are children of the bracket [wrapperId], so the one that fills
+     * completes that bracket the way a venue-side close does.
      */
     fun armEngineHeldExits(
+        wrapperId: String,
         stop: OrderRequest.Stop?,
         target: OrderRequest.IfTouched?,
         ticket: String,
     ) {
-        stop?.let { armEngineHeldExit(it, ticket) }
-        target?.let { armEngineHeldExit(it, ticket) }
+        stop?.let { armEngineHeldExit(it, wrapperId, ticket) }
+        target?.let { armEngineHeldExit(it, wrapperId, ticket) }
         if (stop != null && target != null) {
             siblings.pair(stop.id, target.id)
             snapshots.persistAll()

@@ -29,7 +29,12 @@ internal class VenuePositionProtection(
         fillPrice: BigDecimal,
         ticket: String,
     ) -> BigDecimal?,
-    private val armBracketFallback: (stop: OrderRequest.Stop?, target: OrderRequest.IfTouched?, ticket: String) -> Unit,
+    private val armBracketFallback: (
+        wrapperId: String,
+        stop: OrderRequest.Stop?,
+        target: OrderRequest.IfTouched?,
+        ticket: String,
+    ) -> Unit,
 ) {
     private sealed interface Pending
 
@@ -43,6 +48,7 @@ internal class VenuePositionProtection(
     ) : Pending
 
     private data class Bracket(
+        val wrapperId: String,
         val ticket: String,
         val strategyId: String,
         val fallbackStop: OrderRequest.Stop?,
@@ -76,6 +82,7 @@ internal class VenuePositionProtection(
     /** Re-anchors a filled bracket's exits on its venue position [ticket]. */
     fun attachBracket(
         operationId: String,
+        wrapperId: String,
         ticket: String,
         strategyId: String,
         fallbackStop: OrderRequest.Stop?,
@@ -83,7 +90,7 @@ internal class VenuePositionProtection(
         stopLoss: BigDecimal,
         takeProfit: BigDecimal,
     ) {
-        pending[operationId] = Bracket(ticket, strategyId, fallbackStop, fallbackTarget)
+        pending[operationId] = Bracket(wrapperId, ticket, strategyId, fallbackStop, fallbackTarget)
         modify(operationId, ticket, stopLoss, takeProfit)
     }
 
@@ -119,7 +126,7 @@ internal class VenuePositionProtection(
                 )
             }
             is Bracket -> {
-                armBracketFallback(request.fallbackStop, request.fallbackTarget, request.ticket)
+                armBracketFallback(request.wrapperId, request.fallbackStop, request.fallbackTarget, request.ticket)
                 ops.reportProtectionFailure(
                     request.strategyId,
                     "venue rejected fill-anchored bracket modify for ticket ${request.ticket}: " +

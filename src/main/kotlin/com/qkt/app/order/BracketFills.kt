@@ -70,6 +70,7 @@ internal class BracketFills(
                     }
                 venueProtection.attachBracket(
                     operationId,
+                    resolved.id,
                     ticket,
                     resolved.strategyId,
                     fallbackStop,
