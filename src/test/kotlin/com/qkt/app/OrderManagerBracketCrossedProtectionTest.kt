@@ -61,15 +61,33 @@ class OrderManagerBracketCrossedProtectionTest {
     }
 
     @Test
-    fun `a relative take profit is never rejected at submit — it re-anchors off the fill`() {
-        // A reachable target is an instant profit-take, not inverted protection; BY-resolved
-        // targets are anchored to the signal bar and legitimately trail the submit quote.
+    fun `an attach venue refuses a relative take profit whose placeholder is inverted`() {
+        // An attach venue ships the BY target's pre-fill placeholder with the entry, and the MT5
+        // gateway validates it: a BUY placeholder at or below the entry is refused
+        // ("For BUY orders, TP must be above entry price"), so the engine refuses it first.
+        val clock = FixedClock(0L)
+        val bus = newBus()
+        val broker = FakeBroker(bus, clock, ATTACH_VENUE)
+        val om = OrderManager(broker, bus, MarketPriceTracker(), clock)
+        val relative =
+            bracket().copy(
+                takeProfit = Money.of("99"),
+                takeProfitAst = ChildBy(NumLit(java.math.BigDecimal("5"))),
+            )
+
+        val ack = om.submit(relative)
+
+        assertThat(ack.accepted).isFalse()
+        assertThat(ack.rejectReason).contains("For BUY orders, TP must be above entry price")
+    }
+
+    @Test
+    fun `a venue that splits the bracket never judges a relative target's placeholder`() {
+        // Split venues never receive the placeholder; the target re-anchors off the fill.
         val clock = FixedClock(0L)
         val bus = newBus()
         val broker = FakeBroker(bus, clock, setOf(OrderTypeCapability.LIMIT, OrderTypeCapability.STOP))
         val om = OrderManager(broker, bus, MarketPriceTracker(), clock)
-        // BY/PCT/RR targets carry a placeholder before the fill; resolveBracketAtFill
-        // re-anchors them, so they cannot invert and must not be judged at submit.
         val relative =
             bracket().copy(
                 takeProfit = Money.of("99"),
@@ -80,6 +98,94 @@ class OrderManagerBracketCrossedProtectionTest {
 
         assertThat(ack.accepted).isTrue()
     }
+
+    @Test
+    fun `a relative take profit whose placeholder sits beyond the entry is accepted`() {
+        val clock = FixedClock(0L)
+        val bus = newBus()
+        val broker = FakeBroker(bus, clock, setOf(OrderTypeCapability.LIMIT, OrderTypeCapability.STOP))
+        val om = OrderManager(broker, bus, MarketPriceTracker(), clock)
+        val relative =
+            bracket().copy(
+                takeProfit = Money.of("105"),
+                takeProfitAst = ChildBy(NumLit(java.math.BigDecimal("5"))),
+            )
+
+        val ack = om.submit(relative)
+
+        assertThat(ack.accepted).isTrue()
+    }
+
+    @Test
+    fun `market BUY bracket is validated against the ask it fills at, not the mid`() {
+        // The live scale-burst trace: a stack TP 0.093 below the ask, above the mid, was rejected
+        // by the gateway; judged against the mid it would have passed locally.
+        val (om, _) = quotedManager(bid = "99.8", mid = "100", ask = "100.2")
+
+        val ack = om.submit(marketBracket(Side.BUY, tp = "100.1", sl = "90"))
+
+        assertThat(ack.accepted).isFalse()
+        assertThat(ack.rejectReason).contains("For BUY orders, TP must be above entry price")
+    }
+
+    @Test
+    fun `market SELL bracket is validated against the bid it fills at, not the mid`() {
+        val (om, _) = quotedManager(bid = "99.8", mid = "100", ask = "100.2")
+
+        val ack = om.submit(marketBracket(Side.SELL, tp = "99.9", sl = "110"))
+
+        assertThat(ack.accepted).isFalse()
+        assertThat(ack.rejectReason).contains("For SELL orders, TP must be below entry price")
+    }
+
+    @Test
+    fun `a BUY stop between the mid and the ask is valid, as the venue accepts it`() {
+        val (om, broker) = quotedManager(bid = "99.8", mid = "100", ask = "100.2")
+
+        val ack = om.submit(marketBracket(Side.BUY, tp = "110", sl = "100.1"))
+
+        assertThat(ack.accepted).isTrue()
+        assertThat(broker.submits).isNotEmpty()
+    }
+
+    private fun quotedManager(
+        bid: String,
+        mid: String,
+        ask: String,
+    ): Pair<OrderManager, FakeBroker> {
+        val clock = FixedClock(0L)
+        val bus = newBus()
+        val broker = FakeBroker(bus, clock, ATTACH_VENUE)
+        val prices = MarketPriceTracker()
+        prices.update(com.qkt.marketdata.Tick("X", Money.of(mid), 1L, bid = Money.of(bid), ask = Money.of(ask)))
+        return OrderManager(broker, bus, prices, clock) to broker
+    }
+
+    private fun marketBracket(
+        side: Side,
+        tp: String,
+        sl: String,
+    ): OrderRequest.Bracket =
+        OrderRequest.Bracket(
+            id = "b1",
+            symbol = "X",
+            side = side,
+            quantity = Money.of("1"),
+            entry =
+                OrderRequest.Market(
+                    id = "e1",
+                    symbol = "X",
+                    side = side,
+                    quantity = Money.of("1"),
+                    timeInForce = TimeInForce.GTC,
+                    timestamp = 0L,
+                ),
+            takeProfit = Money.of(tp),
+            stopLoss = StopLossSpec.Fixed(Money.of(sl)),
+            timeInForce = TimeInForce.GTC,
+            timestamp = 0L,
+            takeProfitAst = ChildBy(NumLit(java.math.BigDecimal("1"))),
+        )
 
     @Test
     fun `market bracket validates against the last quote and rejects a gapped-through stop`() {
@@ -116,5 +222,16 @@ class OrderManagerBracketCrossedProtectionTest {
 
         assertThat(ack.accepted).isFalse()
         assertThat(ack.rejectReason).contains("stop loss 95")
+    }
+
+    private companion object {
+        val ATTACH_VENUE =
+            setOf(
+                OrderTypeCapability.MARKET,
+                OrderTypeCapability.LIMIT,
+                OrderTypeCapability.STOP,
+                OrderTypeCapability.BRACKET,
+                OrderTypeCapability.POSITION_MODIFY,
+            )
     }
 }

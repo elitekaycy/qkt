@@ -171,6 +171,15 @@ interface Broker {
     val supportsNativeGtd: Boolean get() = false
 
     /**
+     * When true, the venue receives a bracket's pre-fill stop and target together with its entry
+     * and refuses the order if either sits on the wrong side of the entry price — the MT5 attach
+     * path, and any simulator standing in for it. Submit-time validation then judges a `BY`/`PCT`/
+     * `RR` target's placeholder exactly as an absolute level. Defaults to venues that attach
+     * brackets natively.
+     */
+    fun validatesSubmittedProtection(symbol: String): Boolean = OrderTypeCapability.BRACKET in capabilitiesFor(symbol)
+
+    /**
      * Venue margin level as a percent (equity / used margin x 100), or null when the
      * venue doesn't report one (paper brokers, spot venues, no margin in use). Powers
      * the pre-entry margin floor — MT5 force-closes positions around 50%, so entries
