@@ -40,7 +40,6 @@ import org.slf4j.LoggerFactory
  * **Not modelled here (deferred to follow-ups):**
  * - `tradeStopsLevel` enforcement (parity row 8).
  * - OCO atomicity edge cases (row 9).
- * - Network latency (row 11; issue #140).
  * - Retcode semantics (row 12).
  *
  * **Threading:** single-threaded by design. `working`, `lastTickBySymbol`, and
@@ -199,6 +198,8 @@ class MT5BrokerSimulator(
     }
 
     fun onTick(tick: Tick) {
+        // Releases before this tick fill at the quote prevailing then, still the previous one.
+        drainDelayedSubmissions(clock.now() - 1)
         lastTickBySymbol[tick.symbol] = tick
         drainDelayedSubmissions(clock.now())
         drainPendingStopFills(tick)
@@ -472,9 +473,9 @@ class MT5BrokerSimulator(
         )
     }
 
-    private fun drainDelayedSubmissions(now: Long) {
+    private fun drainDelayedSubmissions(releasedBy: Long) {
         if (delayedSubmissions.isEmpty()) return
-        val due = delayedSubmissions.filter { it.releaseAt <= now }
+        val due = delayedSubmissions.filter { it.releaseAt <= releasedBy }
         if (due.isEmpty()) return
         delayedSubmissions.removeAll(due.toSet())
         due.sortedBy { it.ordinal }.forEach { receive(it.request, it.ordinal) }
