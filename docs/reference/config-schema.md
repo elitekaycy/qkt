@@ -268,7 +268,7 @@ book_risk:
 |---|---|---|---|---|
 | `source` | string | `tv` when file exists, `local` from built-in defaults on missing file | `daemon`, `run` market-source fallback | `tv` opens TradingView fallback. `replay` reads `QKT_REPLAY_TICKS`. Any other value uses a null fallback. MT5 and Bybit routed symbols still use their own routes. |
 | `data_root` | path string | `./data` in config object, but backtest CLI defaults to `DataRoot.resolve()` unless `--data-root` is passed | historical data commands and examples | Prefer explicit `--data-root` for research runs that need reproducibility. |
-| `starting_balance` | decimal | `0` in config, `10000` for backtest CLI default | daemon risk, live PnL, reports | Must be greater than zero when a live drawdown limit is configured. Set explicitly for production and portfolio work. |
+| `starting_balance` | decimal | `0` (unset) | daemon risk, live PnL, reports, backtest basis | Must be greater than zero when a live drawdown limit is configured. A single-strategy backtest uses it too when `--starting-balance` is not given, so its drawdown halts and percent sizing sit on the daemon's balance; with neither set a backtest starts at `10000`. The chosen source is printed to stderr. Set explicitly for production and portfolio work. |
 | `log_level` | string | `info` | process logging setup where honored | Expected values are conventional log levels such as `debug`, `info`, `warn`, `error`. |
 
 ## `runtime`
