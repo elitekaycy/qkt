@@ -23,6 +23,7 @@ private val backtestValues =
         "seed",
         "execution",
         "execution-latency",
+        "order-spacing",
         "stop-latency",
         "tp-fill",
         "slippage",

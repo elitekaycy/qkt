@@ -118,6 +118,9 @@ Phase 16's MC bootstraps **per-trade returns with replacement**:
 - Default 1000 simulations
 - Each simulation walks the trade sequence with random replacement
 - Reports P5/P25/P50/P75/P95 final equity, max DD distribution, P(final < 0)
+- `P(final < 0)` counts paths whose equity ended below zero (ruin), not paths that ended below the starting balance
+- Needs at least 30 closed trades; otherwise `global.monteCarlo` is `null`
+- The per-trade equity fan (P5/P25/P50/P75/P95 after each resampled trade) is written to `monte_carlo_fan.csv`
 
 Assumes trade returns are i.i.d. — strategies with clustered wins/losses (momentum) violate this and the MC will be optimistic about path dependence. Block bootstrap is a future enhancement.
 
