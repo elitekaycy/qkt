@@ -323,6 +323,8 @@ data class PersistedTierState(
      * Null in pre-restore state files; restore falls back to "now" with a warning.
      */
     val openedAtMs: Long? = null,
+    /** The parent's `EXIT AFTER` hold, re-applied to legs that fire after a restore; null without one. */
+    val exitAfterMs: Long? = null,
 )
 
 /**
