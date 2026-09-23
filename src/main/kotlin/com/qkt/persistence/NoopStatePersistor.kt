@@ -17,6 +17,7 @@ class NoopStatePersistor : StatePersistor {
         var pendingStacks: Map<String, PersistedTierState> = emptyMap(),
         var ocoLegs: List<PersistedOcoLeg> = emptyList(),
         var trailingStops: List<PersistedTrailingStop> = emptyList(),
+        var timedExits: List<PersistedTimeExit> = emptyList(),
         var riskState: PersistedRiskState? = null,
         var pnl: PersistedPnl? = null,
         var tradeHistory: PersistedTradeHistory? = null,
@@ -108,6 +109,16 @@ class NoopStatePersistor : StatePersistor {
 
     override fun loadTrailingStops(strategyId: String): List<PersistedTrailingStop> =
         state[strategyId]?.trailingStops ?: emptyList()
+
+    override fun saveTimedExits(
+        strategyId: String,
+        exits: List<PersistedTimeExit>,
+    ) {
+        stateFor(strategyId).timedExits = exits
+    }
+
+    override fun loadTimedExits(strategyId: String): List<PersistedTimeExit> =
+        state[strategyId]?.timedExits ?: emptyList()
 
     override fun saveRiskState(
         strategyId: String,

@@ -28,6 +28,13 @@ internal class OcoEntryCompiler(
                     else -> null
                 }
             require(legTimes == null) { "OCO_ENTRY legs cannot carry TIMES; repeat the OCO_ENTRY action instead" }
+            val legExitAfter =
+                when (leg) {
+                    is Buy -> leg.opts.exitAfter
+                    is Sell -> leg.opts.exitAfter
+                    else -> null
+                }
+            require(legExitAfter == null) { "OCO_ENTRY legs cannot carry EXIT AFTER" }
         }
         val leg1Compiled = actions.compile(action.leg1)
         val leg2Compiled = actions.compile(action.leg2)
