@@ -84,6 +84,20 @@ On every market tick after the primary fills:
 
 If a single big tick crosses multiple thresholds, all qualifying tiers fire on the same tick — they're independent.
 
+### Where a stack's bracket is anchored
+
+Excursion (MFE/MAE) is measured on the tick's mark price — the mid on quote-driven venues
+such as MT5 metals and FX — against the primary's fill price. A long therefore starts about
+half a spread underwater: on a 0.26-spread gold quote, `MFE >= 0.05` needs roughly a 0.18
+move in the ask.
+
+A firing tier does NOT anchor its bracket on that mark. The stack's market leg fills at the
+ask (BUY) or bid (SELL), so the submitted SL/TP start at that execution quote ± the `BY`
+distances — the level a venue validates protection against at submit. Once the leg fills,
+the bracket re-anchors on the leg's actual fill price, exactly as a primary `BY` bracket
+does, in both backtest and live. A `TAKE PROFIT BY 1.00` stack therefore targets 1.00 beyond
+its own fill, not 1.00 beyond the mid at the moment it fired.
+
 ## How legs track
 
 After tier-1 fires and the stack market fills:
