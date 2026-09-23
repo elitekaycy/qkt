@@ -29,4 +29,20 @@ class MonotonicSequenceGeneratorTest {
         assertThat(a.next()).isEqualTo(2L)
         assertThat(b.next()).isEqualTo(1L)
     }
+
+    @Test
+    fun `a resumed generator continues after the last issued sequence`() {
+        assertThat(MonotonicSequenceGenerator.resumingAfter(41L).next()).isEqualTo(42L)
+        assertThat(MonotonicSequenceGenerator.resumingAfter(null).next()).isEqualTo(0L)
+    }
+
+    @Test
+    fun `resuming below the current counter never reissues a sequence`() {
+        val sequencer = MonotonicSequenceGenerator()
+        repeat(5) { sequencer.next() }
+
+        sequencer.resumeAfter(2L)
+
+        assertThat(sequencer.next()).isEqualTo(5L)
+    }
 }
