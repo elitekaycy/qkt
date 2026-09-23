@@ -30,8 +30,10 @@ internal class OrderStore(
     val brackets = BracketBook()
     val scaleOuts = ScaleOutBook()
     val stacks = StackTracker()
+    val timedExits = TimedExitBook()
     val scaleOutRecovery = ScaleOutRecovery(scaleOuts, book, exposure, settings.clock)
-    val snapshots = OrderStateSnapshots(settings.persistor, book, children, brackets, scaleOutRecovery, siblings, stops)
+    val snapshots =
+        OrderStateSnapshots(settings.persistor, book, children, brackets, scaleOutRecovery, siblings, stops, timedExits)
     private val onProtectionFailure = settings.onProtectionFailure
     private val clock = settings.clock
 

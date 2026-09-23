@@ -73,6 +73,8 @@ internal class OrderWorkflows(
             store.exposure,
             clock,
             ops,
+            armed = store.timedExits,
+            log = log,
             closeTicketFor = s.closeTicketFor,
             openLegQuantity = s.openLegQuantity,
             strategyNetQty = s.strategyNetQty,

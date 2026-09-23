@@ -75,11 +75,22 @@ These combinations are rejected at compile time:
 - legs of an `OCO_ENTRY`
 - `BASKET` orders
 
+## Restarts
+
+An armed timer is persisted with the daemon's strategy state: the leg it closes, the leg's venue
+ticket, and the absolute deadline. After a restart it is re-armed for the restored leg:
+
+- A deadline still ahead fires at the **original** time, not a fresh hold from the restart.
+- A deadline that passed while the daemon was down closes the leg on the first tick after
+  startup, and the log says so (`passed its deadline during downtime`).
+- A leg that no longer exists at the venue (closed by its stop or target, or by hand, while the
+  daemon was down) drops its timer without sending anything.
+
+The record is removed when the timer fires, when the leg exits first, or when the entry never
+fills. `OrderManagerTimeExitRestartTest` covers each case against the on-disk state store.
+
 ## Known limitations
 
-- The timer is held in memory. A daemon restart while a timed position is open loses the timer:
-  the position stays open (with its bracket, if it had one) until another rule or an operator
-  closes it.
 - The close is a market order sent on the first tick after the deadline. In live trading it
   fills at the venue's price at that moment; in backtest it fills at the tick's executable price.
 

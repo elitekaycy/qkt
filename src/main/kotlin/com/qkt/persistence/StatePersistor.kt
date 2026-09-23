@@ -7,23 +7,6 @@ import com.qkt.positions.LegRole
 import com.qkt.positions.PositionLeg
 import java.math.BigDecimal
 
-/** Point-in-time durability health exposed to live-session controls and operator status. */
-data class PersistenceHealth(
-    val enabled: Boolean,
-    val totalWrites: Long = 0L,
-    val slowWrites: Long = 0L,
-    val failedWrites: Long = 0L,
-    val consecutiveFailures: Long = failedWrites,
-    val failureEpisodes: Long = if (failedWrites == 0L) 0L else 1L,
-    val queueSize: Int = 0,
-    val callerRunsTotal: Long = 0L,
-) {
-    companion object {
-        /** Health for in-memory/no-op persistence where no durable writes are expected. */
-        val DISABLED = PersistenceHealth(enabled = false)
-    }
-}
-
 /**
  * Durable storage for the in-memory engine state that doesn't survive restart:
  * leg metadata, bracket linkages, in-flight orders, STACK_AT tier-fired state,
@@ -37,7 +20,9 @@ data class PersistenceHealth(
  * after every mutation to the underlying state object. Reads happen once at boot via
  * [com.qkt.persistence.LegBookReconciler].
  */
-interface StatePersistor : AutoCloseable {
+interface StatePersistor :
+    AutoCloseable,
+    TimedExitPersistence {
     /** Releases persistence resources after all sessions have stopped. */
     override fun close() = Unit
 
