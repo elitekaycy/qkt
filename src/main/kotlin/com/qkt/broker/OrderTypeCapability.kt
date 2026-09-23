@@ -52,4 +52,11 @@ enum class OrderTypeCapability {
      * would do. Lets bracket exits attach to the position instead of resting separately.
      */
     POSITION_MODIFY,
+
+    /**
+     * The venue refuses a bracket whose submitted stop or target sits on the wrong side of the
+     * entry, judging even a `BY`/`PCT`/`RR` target's pre-fill placeholder. Implied by [BRACKET];
+     * declared by simulators that split brackets but stand in for such a venue.
+     */
+    VALIDATES_SUBMITTED_PROTECTION,
 }

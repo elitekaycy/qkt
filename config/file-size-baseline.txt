@@ -10,12 +10,12 @@
 755 src/test/kotlin/com/qkt/broker/PaperBrokerTest.kt
 734 src/main/kotlin/com/qkt/cli/BacktestContext.kt
 734 src/main/kotlin/com/qkt/cli/Config.kt
-685 src/main/kotlin/com/qkt/cli/daemon/portfolio/PortfolioDeployer.kt
 691 src/test/kotlin/com/qkt/connector/mt5/MT5PositionPollerCloseTest.kt
+685 src/main/kotlin/com/qkt/cli/daemon/portfolio/PortfolioDeployer.kt
 677 src/main/kotlin/com/qkt/execution/OrderRequest.kt
 658 src/test/kotlin/com/qkt/connector/mt5/marketdata/Mt5BarFetcherTest.kt
-653 src/main/kotlin/com/qkt/cli/DaemonCommand.kt
-616 src/main/kotlin/com/qkt/broker/MT5BrokerSimulator.kt
+649 src/main/kotlin/com/qkt/cli/DaemonCommand.kt
+608 src/main/kotlin/com/qkt/broker/MT5BrokerSimulator.kt
 574 src/main/kotlin/com/qkt/cli/PreflightCommand.kt
 552 src/main/kotlin/com/qkt/execution/OrderRequestEvidence.kt
 532 src/test/kotlin/com/qkt/dsl/portfolio/fixture/PortfolioFixtureGenerator.kt

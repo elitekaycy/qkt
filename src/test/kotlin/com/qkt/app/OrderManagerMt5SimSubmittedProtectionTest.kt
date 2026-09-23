@@ -1,5 +1,6 @@
 package com.qkt.app
 
+import com.qkt.broker.CompositeBroker
 import com.qkt.broker.MT5BrokerSimulator
 import com.qkt.bus.EventBus
 import com.qkt.common.FixedClock
@@ -15,6 +16,7 @@ import com.qkt.instrument.InstrumentMeta
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.marketdata.Tick
+import com.qkt.marketdata.source.SymbolPattern
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -43,19 +45,39 @@ class OrderManagerMt5SimSubmittedProtectionTest {
     }
 
     @Test
+    fun `mt5-sim routed through a composite broker still refuses it, as every backtest routes it`() {
+        val ack = submit(tp = "4320.306", routed = true)
+
+        assertThat(ack.accepted).isFalse()
+        assertThat(ack.rejectReason).contains("For BUY orders, TP must be above entry price")
+    }
+
+    @Test
     fun `mt5-sim accepts a relative target placeholder beyond the ask`() {
         val ack = submit(tp = "4320.499")
 
         assertThat(ack.accepted).isTrue()
     }
 
-    private fun submit(tp: String): com.qkt.broker.SubmitAck {
+    private fun submit(
+        tp: String,
+        routed: Boolean = false,
+    ): com.qkt.broker.SubmitAck {
         val clock = FixedClock(0L)
         val bus = EventBus(clock, MonotonicSequenceGenerator())
         val prices = MarketPriceTracker()
         prices.update(quote)
         val sim = MT5BrokerSimulator(bus, clock, prices, registry)
-        val om = OrderManager(sim, bus, prices, clock)
+        val broker =
+            if (routed) {
+                CompositeBroker(
+                    listOf(SymbolPattern.exactSet(setOf("EXNESS:XAUUSD")) to sim),
+                    bus = bus,
+                )
+            } else {
+                sim
+            }
+        val om = OrderManager(broker, bus, prices, clock)
         return om.submit(
             OrderRequest.Bracket(
                 id = "stack-tier0",
