@@ -67,8 +67,8 @@ internal object BacktestBarReplay {
             "--bars with --broker mt5-sim is unsafe: synthetic bar extremes do not preserve " +
                 "MT5 trigger prices or market spread. Use --bars --tick-fills or full tick replay"
         }
-        require(!tickFills || executionConfig.latencyMs == 0L) {
-            "--tick-fills is not valid with execution latency (${executionConfig.latencyMs}ms): " +
+        require(!tickFills || (executionConfig.latencyMs == 0L && executionConfig.orderSpacingMs == 0L)) {
+            "--tick-fills is not valid with execution latency or order spacing: " +
                 "filtered ticks cannot preserve delayed-order release timing; use full tick replay"
         }
         require(!tickFills || executionConfig.stopLatencyMs == 0L) {
