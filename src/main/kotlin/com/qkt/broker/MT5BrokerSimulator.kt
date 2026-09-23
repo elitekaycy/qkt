@@ -40,7 +40,6 @@ import org.slf4j.LoggerFactory
  * **Not modelled here (deferred to follow-ups):**
  * - `tradeStopsLevel` enforcement (parity row 8).
  * - OCO atomicity edge cases (row 9).
- * - Network latency (row 11; issue #140).
  * - Retcode semantics (row 12).
  *
  * **Threading:** single-threaded by design. `working`, `lastTickBySymbol`, and
@@ -55,7 +54,7 @@ class MT5BrokerSimulator(
     private val instruments: InstrumentRegistry,
     private val slippage: SlippageModel = ZeroSlippage,
     private val syntheticSpreadPoints: Int = 2,
-    private val latencyMs: Long = 0L,
+    latencyMs: Long = 0L,
     /**
      * Delay between a protective stop's trigger and its execution (#1135). The venue
      * runs a crossed stop as a market order a beat later, so it fills at the first quote
@@ -74,6 +73,8 @@ class MT5BrokerSimulator(
      * for netted MT5 accounts.
      */
     private val positionMode: PositionAccountingMode = PositionAccountingMode.HEDGING,
+    /** Minimum gap between consecutive order releases on the venue's send lane; see [SendLane]. */
+    orderSpacingMs: Long = 0L,
 ) : Broker {
     override fun positionAccountingMode(symbol: String): PositionAccountingMode = positionMode
 
@@ -81,9 +82,10 @@ class MT5BrokerSimulator(
         require(syntheticSpreadPoints >= 0) {
             "syntheticSpreadPoints must be >= 0: $syntheticSpreadPoints"
         }
-        require(latencyMs >= 0L) { "latencyMs must be >= 0: $latencyMs" }
         require(stopLatencyMs >= 0L) { "stopLatencyMs must be >= 0: $stopLatencyMs" }
     }
+
+    private val sendLane = SendLane(latencyMs, orderSpacingMs)
 
     private val log = LoggerFactory.getLogger(MT5BrokerSimulator::class.java)
 
@@ -109,14 +111,9 @@ class MT5BrokerSimulator(
     override fun submit(request: OrderRequest): SubmitAck {
         submittedOrdinal += 1
         val ordinal = submittedOrdinal
-        if (latencyMs > 0L) {
-            delayedSubmissions.add(
-                DelayedSubmission(
-                    request = request,
-                    ordinal = ordinal,
-                    releaseAt = clock.now() + latencyMs,
-                ),
-            )
+        val releaseAt = sendLane.releaseAt(clock.now())
+        if (releaseAt > clock.now()) {
+            delayedSubmissions.add(DelayedSubmission(request = request, ordinal = ordinal, releaseAt = releaseAt))
             return SubmitAck(request.id, request.id, accepted = true)
         }
         return receive(request, ordinal)
@@ -193,6 +190,8 @@ class MT5BrokerSimulator(
     }
 
     fun onTick(tick: Tick) {
+        // Releases before this tick fill at the quote prevailing then, still the previous one.
+        drainDelayedSubmissions(clock.now() - 1)
         lastTickBySymbol[tick.symbol] = tick
         drainDelayedSubmissions(clock.now())
         drainPendingStopFills(tick)
@@ -466,9 +465,9 @@ class MT5BrokerSimulator(
         )
     }
 
-    private fun drainDelayedSubmissions(now: Long) {
+    private fun drainDelayedSubmissions(releasedBy: Long) {
         if (delayedSubmissions.isEmpty()) return
-        val due = delayedSubmissions.filter { it.releaseAt <= now }
+        val due = delayedSubmissions.filter { it.releaseAt <= releasedBy }
         if (due.isEmpty()) return
         delayedSubmissions.removeAll(due.toSet())
         due.sortedBy { it.ordinal }.forEach { receive(it.request, it.ordinal) }

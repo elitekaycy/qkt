@@ -2,6 +2,7 @@ package com.qkt.backtest.report
 
 import com.qkt.backtest.Backtest
 import com.qkt.backtest.SampleCadence
+import com.qkt.backtest.metrics.MonteCarlo
 import com.qkt.backtest.report.BacktestReportFixtures.evidence
 import com.qkt.backtest.report.BacktestReportFixtures.ticks
 import com.qkt.candles.TimeWindow
@@ -11,6 +12,7 @@ import com.qkt.marketdata.Tick
 import com.qkt.strategy.Signal
 import com.qkt.strategy.Strategy
 import com.qkt.strategy.StrategyContext
+import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlinx.serialization.json.Json
@@ -64,6 +66,7 @@ class BacktestReportBundleTest {
         assertThat(dir.resolve("orders.jsonl")).exists()
         assertThat(dir.resolve("pnl_components.csv")).exists()
         assertThat(dir.resolve("manifest.json")).exists()
+        assertThat(dir.resolve("monte_carlo_fan.csv")).doesNotExist()
 
         val json = Files.readString(dir.resolve("result.json"))
         assertThat(json).contains("\"schema\": \"qkt-backtest-result-v1\"")
@@ -162,5 +165,51 @@ class BacktestReportBundleTest {
                 .jsonPrimitive
                 .content
         assertThat(manifestArtifact).isEqualTo("manifest.json")
+    }
+
+    @Test
+    fun `a run with a Monte Carlo writes its fan and lists it`(
+        @TempDir dir: Path,
+    ) {
+        val noopStrategy =
+            object : Strategy {
+                override fun onTick(
+                    tick: Tick,
+                    ctx: StrategyContext,
+                    emit: (Signal) -> Unit,
+                ) {}
+            }
+        val base =
+            Backtest(
+                strategies = listOf("s1" to noopStrategy),
+                ticks = ticks(),
+                candleWindow = TimeWindow.ONE_MINUTE,
+                cadence = SampleCadence.CANDLE_CLOSE,
+            ).run().copy(evidence = evidence())
+        val returns = listOf("10", "-5", "7", "-3", "12").map(::BigDecimal)
+        val mc = MonteCarlo.run(returns, BigDecimal("1000"), simulations = 50, seed = 42L)
+        val result = base.copy(global = base.global.copy(monteCarlo = mc))
+
+        BacktestReportWriter(dir).write(result)
+
+        val fan = Files.readString(dir.resolve("monte_carlo_fan.csv")).trimEnd().lines()
+        assertThat(fan.first()).isEqualTo("tradeIndex,p5,p25,p50,p75,p95")
+        assertThat(fan).hasSize(returns.size + 1)
+        val last = fan.last().split(',')
+        assertThat(last[0]).isEqualTo("4")
+        assertThat(BigDecimal(last[1])).isEqualByComparingTo(mc.finalEquityP5)
+        assertThat(BigDecimal(last[3])).isEqualByComparingTo(mc.finalEquityP50)
+        assertThat(BigDecimal(last[5])).isEqualByComparingTo(mc.finalEquityP95)
+
+        val manifest = Files.readString(dir.resolve("manifest.json"))
+        assertThat(manifest).contains("\"path\": \"monte_carlo_fan.csv\"")
+        val artifacts =
+            Json
+                .parseToJsonElement(Files.readString(dir.resolve("result.json")))
+                .jsonObject
+                .getValue("artifacts")
+                .jsonObject
+        assertThat(artifacts.getValue("monteCarloFanCsv").jsonPrimitive.content)
+            .isEqualTo("monte_carlo_fan.csv")
     }
 }

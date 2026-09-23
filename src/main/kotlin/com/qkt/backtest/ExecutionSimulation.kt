@@ -46,6 +46,8 @@ data class ExecutionSimulationConfig(
     val preset: ExecutionPreset = ExecutionPreset.PAPER_FAST,
     val seed: Long? = null,
     val latencyMs: Long = 0L,
+    /** Minimum gap between consecutive releases on the venue's send lane ([com.qkt.broker.SendLane]); 0 = none. */
+    val orderSpacingMs: Long = 0L,
     /**
      * Execution delay applied to protective stops only (#1135): a crossed stop fills at the
      * first quote at or after `trigger + stopLatencyMs`, sided, plus slippage. Entry latency
@@ -80,6 +82,7 @@ data class ExecutionSimulationConfig(
 ) {
     init {
         require(latencyMs >= 0L) { "execution latencyMs must be >= 0: $latencyMs" }
+        require(orderSpacingMs >= 0L) { "execution orderSpacingMs must be >= 0: $orderSpacingMs" }
         require(stopLatencyMs >= 0L) { "execution stopLatencyMs must be >= 0: $stopLatencyMs" }
         require(candleCloseGraceMs >= 0L) { "candleCloseGraceMs must be >= 0: $candleCloseGraceMs" }
         require(heartbeatIntervalMs > 0L) { "heartbeatIntervalMs must be > 0: $heartbeatIntervalMs" }
@@ -132,7 +135,7 @@ data class ExecutionSimulationConfig(
                     ExecutionPreset.PAPER_FAST -> "latest tracked price / trigger level for bars"
                     else -> "bid/ask when available, synthetic spread fallback"
                 },
-            latencyModel = if (latencyMs == 0L) "zero" else "fixed:${latencyMs}ms",
+            latencyModel = latencyLabel(),
             stopLatencyModel = if (stopLatencyMs == 0L) "on-trigger" else "fixed:${stopLatencyMs}ms",
             takeProfitFillModel = takeProfitFill.id,
             candleCloseModel = "heartbeat:${heartbeatIntervalMs}ms grace:${candleCloseGraceMs}ms",
@@ -151,14 +154,6 @@ data class ExecutionSimulationConfig(
             financingModel = "signed swap points at configured UTC rollover; triple configured weekday",
             ocoMode = "engine-managed deterministic siblings",
         )
-
-    fun slippageLabel(): String =
-        when (slippage) {
-            SlippageSpec.ZERO -> "zero"
-            SlippageSpec.INSTRUMENT -> "instrument:slippagePoints"
-            SlippageSpec.FIXED_POINTS -> "fixed-points:$slippagePoints"
-            SlippageSpec.UNIFORM_RANDOM -> "uniform-random:0..$slippagePoints"
-        }
 
     companion object {
         private const val DEFAULT_SEED = 42L
