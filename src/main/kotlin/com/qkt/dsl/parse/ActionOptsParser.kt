@@ -3,6 +3,7 @@ package com.qkt.dsl.parse
 import com.qkt.dsl.ast.ActionAst
 import com.qkt.dsl.ast.ActionOpts
 import com.qkt.dsl.ast.BracketAst
+import com.qkt.dsl.ast.DurationAst
 import com.qkt.dsl.ast.ExitHooksAst
 import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.OcoAst
@@ -15,8 +16,8 @@ import com.qkt.dsl.ast.TifAst
 
 /**
  * Parses the option clauses that may follow `BUY`/`SELL <stream>` in any order: sizing, order
- * type, TIF, bracket, OCO, stacking, `TIMES`, and the `ON_FILL`/`ON_STOP`/`ON_TP`/`ON_CLOSE` child
- * blocks. Child blocks re-enter [ActionParser], with [ParseScope] set so the child reads `entry`
+ * type, TIF, bracket, OCO, stacking, `TIMES`, `EXIT AFTER`, and the
+ * `ON_FILL`/`ON_STOP`/`ON_TP`/`ON_CLOSE` child blocks. Child blocks re-enter [ActionParser], with [ParseScope] set so the child reads `entry`
  * and relative prices correctly.
  */
 internal class ActionOptsParser(
@@ -45,6 +46,7 @@ internal class ActionOptsParser(
         var onTakeProfit: List<ActionAst> = emptyList()
         var onClose: List<ActionAst> = emptyList()
         var times: ExprAst? = null
+        var exitAfter: DurationAst? = null
         loop@ while (true) {
             when (cursor.peek().kind) {
                 TokenKind.SIZING -> {
@@ -55,6 +57,10 @@ internal class ActionOptsParser(
                     if (times != null) cursor.error("duplicate TIMES clause")
                     cursor.advance()
                     times = expressionParser.parseExpr()
+                }
+                TokenKind.EXIT -> {
+                    if (exitAfter != null) cursor.error("duplicate EXIT AFTER clause")
+                    exitAfter = parseExitAfter()
                 }
                 TokenKind.ORDER_TYPE -> {
                     cursor.advance()
@@ -121,7 +127,24 @@ internal class ActionOptsParser(
             onFill,
             ExitHooksAst(onStop, onTakeProfit, onClose),
             times = times,
+            exitAfter = exitAfter,
         )
+    }
+
+    /** `EXIT AFTER <duration>`: a literal, positive hold measured from the entry's fill. */
+    private fun parseExitAfter(): DurationAst {
+        cursor.expect(TokenKind.EXIT, "expected EXIT")
+        cursor.expect(TokenKind.AFTER, "expected AFTER after EXIT (e.g. EXIT AFTER 4m)")
+        val tok = cursor.peek()
+        if (tok.kind != TokenKind.DURATION) cursor.error("EXIT AFTER needs a duration literal (e.g. 90s, 4m, 1h)")
+        if (tok.lexeme
+                .dropLast(1)
+                .toLongOrNull()
+                ?.let { it > 0 } != true
+        ) {
+            cursor.error("EXIT AFTER duration must be positive, got '${tok.lexeme}'")
+        }
+        return literalParser.parseDuration()
     }
 
     /**

@@ -61,6 +61,7 @@ class FileStatePersistor(
     private val pendingStacks = PendingStacksFile(writer, json)
     private val ocoLegs = OcoLegsFile(writer, json)
     private val trailingStops = TrailingStopsFile(writer, json)
+    private val timedExits = TimedExitsFile(writer, json)
 
     override fun saveSequences(
         strategyId: String,
@@ -164,6 +165,13 @@ class FileStatePersistor(
     ) = trailingStops.save(strategyId, stops)
 
     override fun loadTrailingStops(strategyId: String): List<PersistedTrailingStop> = trailingStops.load(strategyId)
+
+    override fun saveTimedExits(
+        strategyId: String,
+        exits: List<PersistedTimeExit>,
+    ) = timedExits.save(strategyId, exits)
+
+    override fun loadTimedExits(strategyId: String): List<PersistedTimeExit> = timedExits.load(strategyId)
 
     override fun clearStrategy(strategyId: String) {
         writer.deleteStrategy(strategyId)

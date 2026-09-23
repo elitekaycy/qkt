@@ -28,9 +28,11 @@ object LegIntentPlanner {
             is OrderRequest.Limit -> planEntry(request, mode)
             is OrderRequest.Stop -> planEntry(request, mode)
             is OrderRequest.Bracket -> planBracket(request, mode)
+            // The time-exit wrapper dispatches its target without re-entering the planner.
+            is OrderRequest.TimeExit -> request.copy(target = plan(request.target, mode))
             is OrderRequest.StandaloneOCO -> planOco(request, mode)
             // Engine-managed shapes mint their own leaves inside OrderManager, which stamps
-            // them there; strategy-built OTO/ScaleOut/TimeExit leaves are booked the way the
+            // them there; strategy-built OTO/ScaleOut leaves are booked the way the
             // venue nets them today. Trailing and managed stops are exits minted by the
             // manager and carry their intent from the bracket they protect.
             is OrderRequest.StopLimit,
@@ -41,7 +43,6 @@ object LegIntentPlanner {
             is OrderRequest.TimeTighteningStop,
             is OrderRequest.OTO,
             is OrderRequest.ScaleOut,
-            is OrderRequest.TimeExit,
             is OrderRequest.Stack,
             -> request
         }

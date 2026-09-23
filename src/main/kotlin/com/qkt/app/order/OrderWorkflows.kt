@@ -1,6 +1,7 @@
 package com.qkt.app.order
 
 import com.qkt.broker.SubmitAck
+import com.qkt.events.BrokerEvent
 import com.qkt.execution.ManagedOrder
 import com.qkt.execution.OrderRequest
 import org.slf4j.Logger
@@ -68,7 +69,18 @@ internal class OrderWorkflows(
             s.engineHeldSubmissionBlockReason,
             log,
         )
-    val timeExits = TimeExits(book, store.exposure, clock, ops)
+    val timeExits =
+        TimeExits(
+            book,
+            store.exposure,
+            clock,
+            ops,
+            armed = store.timedExits,
+            log = log,
+            closeTicketFor = s.closeTicketFor,
+            openLegQuantity = s.openLegQuantity,
+            strategyNetQty = s.strategyNetQty,
+        ).also { exits -> s.bus.subscribe<BrokerEvent.OrderFilled> { e -> exits.onFilled(e.clientOrderId) } }
     val cancellation: OrderCancellation =
         OrderCancellation(
             book,
