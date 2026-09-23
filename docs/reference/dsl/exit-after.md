@@ -89,6 +89,10 @@ ticket, and the absolute deadline. After a restart it is re-armed for the restor
 The record is removed when the timer fires, when the leg exits first, or when the entry never
 fills. `OrderManagerTimeExitRestartTest` covers each case against the on-disk state store.
 
+`STACK_AT` tiers that have not fired yet keep the hold too: it is saved with the tier state, so a
+leg that fires after a restart still gets `EXIT AFTER`, timed from its own fill
+(`StackExitAfterRestoreTest`).
+
 ## Known limitations
 
 - The close is a market order sent on the first tick after the deadline. In live trading it
