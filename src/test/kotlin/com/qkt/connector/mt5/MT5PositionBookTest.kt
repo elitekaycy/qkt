@@ -60,4 +60,16 @@ class MT5PositionBookTest {
         assertThat(book.openedAt(7L)).isNull()
         assertThat(book.attributions()).isEmpty()
     }
+
+    @Test
+    fun `a ticket can be claimed once and a second claimant is refused`() {
+        val sibling = MT5TicketMeta("dsl-gold--1", "gold_trend")
+
+        val first = book.claim(9L, meta)
+        val second = book.claim(9L, sibling)
+
+        assertThat(first).isTrue()
+        assertThat(second).isFalse()
+        assertThat(book.meta(9L)).isEqualTo(meta)
+    }
 }

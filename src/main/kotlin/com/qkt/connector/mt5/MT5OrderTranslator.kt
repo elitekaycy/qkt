@@ -4,6 +4,7 @@ import com.qkt.common.Side
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.StopLossSpec
 import com.qkt.execution.TrailMode
+import com.qkt.execution.hasFillAnchoredTarget
 import com.qkt.marketdata.MarketPriceProvider
 import java.math.BigDecimal
 import java.math.MathContext
@@ -73,12 +74,10 @@ class MT5OrderTranslator(
         )
 
     private fun translateBracket(req: OrderRequest.Bracket): MT5OrderRequest {
-        // Dispatch the entry order type — a Bracket can be a market entry (BUY/SELL)
-        // OR a pending entry (BUY_STOP/SELL_STOP, BUY_LIMIT/SELL_LIMIT). Previously
-        // every bracket translated to a market order regardless, which silently
-        // dropped the entry trigger for STOP-entry brackets (the hedge-straddle
-        // shape). MT5 accepts SL/TP fields on pending orders, so we attach
-        // [req.stopLoss] / [req.takeProfit] alongside the entry type.
+        // Dispatch the entry order type — a market entry (BUY/SELL) or a pending one (BUY_STOP/
+        // SELL_STOP, BUY_LIMIT/SELL_LIMIT); translating all as market once dropped the trigger of
+        // STOP-entry brackets. SL ships with the entry; TP ships unless fill-anchored (it attaches
+        // by position modify at fill, so a stale placeholder can never be refused at execution).
         val (type, price) =
             when (val entry = req.entry) {
                 is OrderRequest.Market ->
@@ -125,7 +124,7 @@ class MT5OrderTranslator(
             type = type,
             price = price,
             sl = slPrice,
-            tp = req.takeProfit,
+            tp = req.takeProfit.takeUnless { req.hasFillAnchoredTarget },
             deviation = profile.deviationPoints,
             magic = profile.magic,
             comment = req.id,

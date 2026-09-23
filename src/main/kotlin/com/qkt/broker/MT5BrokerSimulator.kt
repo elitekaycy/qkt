@@ -106,15 +106,7 @@ class MT5BrokerSimulator(
 
     override val name: String = "MT5-Sim"
 
-    override val capabilities: Set<OrderTypeCapability> =
-        setOf(
-            OrderTypeCapability.MARKET,
-            OrderTypeCapability.LIMIT,
-            OrderTypeCapability.STOP,
-            OrderTypeCapability.STOP_LIMIT,
-            OrderTypeCapability.IF_TOUCHED,
-            OrderTypeCapability.MULTI_POSITION_PER_SYMBOL,
-        )
+    override val capabilities: Set<OrderTypeCapability> = MT5_SIM_CAPABILITIES
 
     override fun submit(request: OrderRequest): SubmitAck {
         submittedOrdinal += 1

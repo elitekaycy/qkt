@@ -13,7 +13,8 @@ import org.slf4j.Logger
 /**
  * Compiles a single-order `BUY`/`SELL`: the plain-market fast path (a bare [Signal.Buy] or
  * [Signal.Sell]), or a [Signal.Submit] of a pending order, a `BRACKET`, or an exit `OCO`, with
- * an optional `TIF GTD` deadline and `STACK_AT` tiers registered on [pendingStacks].
+ * an optional `TIF GTD` deadline, `STACK_AT` tiers registered on [pendingStacks], and an
+ * `EXIT AFTER` hold that wraps the order in a fill-anchored [OrderRequest.TimeExit].
  */
 internal class EntryOrderCompiler(
     private val exprCompiler: ExprCompiler,
@@ -40,6 +41,10 @@ internal class EntryOrderCompiler(
         require(!(opts.oco != null && opts.stackAts.isNotEmpty())) {
             "STACK_AT cannot be combined with OCO on the same action"
         }
+        require(!(opts.oco != null && opts.exitAfter != null)) {
+            "EXIT AFTER cannot be combined with an exit OCO on the same action"
+        }
+        val holdMs: Long? = opts.exitAfter?.millis
 
         // Pre-compile STACK_AT tiers if present so we can register them on each emit.
         val stackAtTiers: List<CompiledStackTier> =
@@ -52,6 +57,7 @@ internal class EntryOrderCompiler(
                 opts.bracket == null &&
                 opts.oco == null &&
                 stackAtTiers.isEmpty() &&
+                holdMs == null &&
                 sizing is SizeQty
         if (isFastPath) {
             return compileMarketFastPath(stream, sizing as SizeQty, side, exprCompiler)
@@ -166,11 +172,15 @@ internal class EntryOrderCompiler(
             val finalRequest: OrderRequest =
                 if (gtdDeadlineExpr != null) stampGtdDeadline(request, gtdDeadlineExpr, ctx) else request
 
+            // Derived from the leg id, so a restart that resumes ids past its legs cannot re-mint it.
+            val exitId = holdMs?.let { "${finalRequest.id}-exit" }
             if (stackAtTiers.isNotEmpty() && pendingStacks != null) {
-                registerPendingStack(pendingStacks, finalRequest, symbol, side, stackAtTiers)
+                registerPendingStack(pendingStacks, finalRequest, symbol, side, stackAtTiers, holdMs, exitId)
             }
 
-            listOf(Signal.Submit(finalRequest))
+            val submitted =
+                if (holdMs != null && exitId != null) timedExit(exitId, finalRequest, holdMs, ts) else finalRequest
+            listOf(Signal.Submit(submitted))
         }
     }
 

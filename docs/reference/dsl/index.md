@@ -132,6 +132,14 @@ If you want the one-page cheat sheet, see [DSL grammar (one-pager)](../dsl-gramm
 
     [:octicons-arrow-right-24: TIMES](times.md)
 
+- :material-timer-sand:{ .lg .middle } **EXIT AFTER timed exits**
+
+    ---
+
+    Close an entry a fixed time after it fills, checked on every tick rather than at bar close. Applies to its `STACK_AT` legs too.
+
+    [:octicons-arrow-right-24: EXIT AFTER](exit-after.md)
+
 - :material-call-split:{ .lg .middle } **OTO one-triggers-other**
 
     ---

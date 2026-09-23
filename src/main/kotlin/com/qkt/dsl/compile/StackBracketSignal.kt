@@ -1,6 +1,8 @@
 package com.qkt.dsl.compile
 
 import com.qkt.common.Side
+import com.qkt.dsl.ast.ChildBy
+import com.qkt.dsl.ast.NumLit
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.StopLossSpec
 import com.qkt.execution.TimeInForce
@@ -9,21 +11,25 @@ import java.math.BigDecimal
 
 /**
  * Build the stack signal: a [OrderRequest.Bracket] with id [stackLegId] on the parent's
- * [symbol] and [side], sized to [ResolvedStackTier.stackQuantity], with SL and TP computed
- * from [currentPrice] ± the tier's distances and stamped at [ts].
+ * [symbol] and [side], sized to [ResolvedStackTier.stackQuantity] and stamped at [ts].
+ *
+ * SL and TP start at [fillAnchor] ± the tier's distances, where [fillAnchor] is the price the
+ * market leg is expected to fill at (ask for a BUY, bid for a SELL) — the level a venue
+ * validates the submitted protection against. The distances also ride along as `BY`
+ * expressions, so the bracket re-anchors on the leg's actual fill exactly as a primary does.
  */
 internal fun stackBracketSignal(
     stackLegId: String,
     symbol: String,
     side: Side,
     tier: ResolvedStackTier,
-    currentPrice: BigDecimal,
+    fillAnchor: BigDecimal,
     ts: Long,
 ): Signal {
     val (sl, tp) =
         when (side) {
-            Side.BUY -> currentPrice.subtract(tier.slDistance) to currentPrice.add(tier.tpDistance)
-            Side.SELL -> currentPrice.add(tier.slDistance) to currentPrice.subtract(tier.tpDistance)
+            Side.BUY -> fillAnchor.subtract(tier.slDistance) to fillAnchor.add(tier.tpDistance)
+            Side.SELL -> fillAnchor.add(tier.slDistance) to fillAnchor.subtract(tier.tpDistance)
         }
     val market =
         OrderRequest.Market(
@@ -46,6 +52,8 @@ internal fun stackBracketSignal(
                 stopLoss = StopLossSpec.Fixed(sl),
                 timeInForce = TimeInForce.GTC,
                 timestamp = ts,
+                takeProfitAst = ChildBy(NumLit(tier.tpDistance)),
+                stopLossAst = ChildBy(NumLit(tier.slDistance)),
             ),
         )
     return signal
