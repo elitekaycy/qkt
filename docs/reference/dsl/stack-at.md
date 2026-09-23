@@ -98,6 +98,13 @@ the bracket re-anchors on the leg's actual fill price, exactly as a primary `BY`
 does, in both backtest and live. A `TAKE PROFIT BY 1.00` stack therefore targets 1.00 beyond
 its own fill, not 1.00 beyond the mid at the moment it fired.
 
+On an MT5 venue the target is not sent with the leg's market entry at all: the gateway would
+validate it against the ask at the moment it executes, and in a fast market the ask can move
+past a small distance between the tier firing and the send. The stop ships with the entry, so
+the leg is protected from its first moment; the target attaches by position modify once the fill
+is known. If the venue refuses that modify, the engine holds the target itself and closes the
+leg's ticket at market once price reaches it.
+
 ## How legs track
 
 After tier-1 fires and the stack market fills:
