@@ -329,10 +329,7 @@ class BacktestContext private constructor(
             val executionConfig = BacktestSimulationOptions.executionConfig(args, cfg, brokerKind)
             val accountingConfig = BacktestSimulationOptions.accountingConfig(args, cfg)
             val replaySymbols = (symbols + accountingConfig.normalizedSymbols.values).distinct()
-            // A standalone strategy is deployed live through StrategyHandle, which never builds a
-            // BookRiskController, so `book_risk` bounds nothing there (catalog row A23). Enforcing it
-            // here would reject orders the live deploy of the same file sends.
-            if (cfg.bookRisk?.limits != null) System.err.println("qkt: WARNING — $STANDALONE_BOOK_RISK_WARNING")
+            warnStandaloneBookRiskIgnored(cfg.bookRisk)
             val barReplay =
                 BacktestBarReplay.resolveBarReplay(
                     args = args,
@@ -442,7 +439,6 @@ class BacktestContext private constructor(
                 haltConfig = haltConfig,
                 provisioner = provisioner,
                 replaySymbols = replaySymbols,
-                bookRiskConfig = null,
                 perStrategyRisk = cfg.perStrategyRisk,
                 maxOrderQty = cfg.maxOrderQty,
                 maxOrderNotional = cfg.maxOrderNotional,
