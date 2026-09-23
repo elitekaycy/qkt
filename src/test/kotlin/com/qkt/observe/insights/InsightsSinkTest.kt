@@ -115,7 +115,7 @@ class InsightsSinkTest {
     fun `retries a failed batch and delivers it without loss`() {
         server.enqueue(MockResponse().setResponseCode(500))
         server.enqueue(MockResponse().setResponseCode(200).setBody("""{"accepted":1}"""))
-        val s = sink(flushIntervalMs = 20L, failureBackoffMs = 10L)
+        val s = sink(flushIntervalMs = 20L, failureBackoffMs = 10L, healthIntervalMs = 0L)
         s.offer(envelope(1))
         val first = server.takeRequest(2, TimeUnit.SECONDS)
         val second = server.takeRequest(2, TimeUnit.SECONDS)
@@ -133,7 +133,7 @@ class InsightsSinkTest {
     fun `drops a batch after exhausting retries and keeps draining`() {
         repeat(3) { server.enqueue(MockResponse().setResponseCode(500)) }
         server.enqueue(MockResponse().setResponseCode(200).setBody("""{"accepted":1}"""))
-        val s = sink(flushIntervalMs = 20L, failureBackoffMs = 10L)
+        val s = sink(flushIntervalMs = 20L, failureBackoffMs = 10L, healthIntervalMs = 0L)
         s.offer(envelope(1))
         repeat(3) { assertThat(server.takeRequest(2, TimeUnit.SECONDS)).isNotNull }
         s.offer(envelope(2))
