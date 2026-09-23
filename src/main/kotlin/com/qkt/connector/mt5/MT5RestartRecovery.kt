@@ -51,18 +51,16 @@ internal class MT5RestartRecovery(
         val pending = snapshot.pendingOrders
         val positions = snapshot.positions
         val recoveredPartialIds = partialRecovery.recoverPartialEntries(orders, pending, positions, bookedTickets)
+        val correlation = MT5RecoveryCorrelation(orders, pending, positions)
         val resolvedOrders =
             orders.filterNot { it.id in recoveredPartialIds }.map { order ->
                 if (order.brokerOrderId != null) return@map order
-                val pendingMatch =
-                    pending.firstOrNull {
-                        it.clientOrderId == order.id ||
-                            matchesOrderComment(it.comment, order.id)
-                    }
+                val pendingMatch = correlation.pendingFor(order).firstOrNull()
+                // Partial entries were adopted above; anything else joined by prefix alone must be
+                // exactly the order's size, or it is another order's position (a stack seed, say).
                 val positionMatch =
-                    positions.firstOrNull {
-                        it.clientOrderId == order.id ||
-                            matchesOrderComment(it.comment, order.id)
+                    correlation.positionsFor(order).firstOrNull {
+                        correlation.isExact(order, it) || it.volume.compareTo(order.request.quantity) == 0
                     }
                 val ticket = pendingMatch?.ticket ?: positionMatch?.ticket
                 if (ticket == null) {

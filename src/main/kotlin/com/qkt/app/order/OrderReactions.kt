@@ -52,6 +52,7 @@ internal class OrderReactions(
             engineHeld = EngineHeldRestore(book, store.stops, store.exposure, s.broker, clock),
             venueRecovery = venueRecovery,
             snapshots = store.snapshots,
+            timeExits = w.timeExits,
             broker = s.broker,
             clock = clock,
             log = log,
@@ -86,6 +87,8 @@ internal class OrderReactions(
             closeTicket = s::closeTicket,
             log = log,
         )
+    private val attachedCompletion =
+        AttachedBracketCompletion(book, store.brackets, store.closeTickets, store.exposure, clock, ops)
     val eventHandlers: OrderEventHandlers =
         OrderEventHandlers(
             book,
@@ -101,6 +104,7 @@ internal class OrderReactions(
             w.scaleOutTracker,
             w.scaleOutExits,
             venueRecovery,
+            attachedCompletion,
             clock,
             ops,
             log,
@@ -116,7 +120,7 @@ internal class OrderReactions(
             w.ocoSequencer,
             w.siblingCancels,
             BracketFills(book, store.brackets, w.bracketExits, w.venueProtection, clock, ops),
-            AttachedBracketCompletion(book, store.brackets, store.closeTickets, store.exposure, clock, ops),
+            attachedCompletion,
             w.scaleOutTracker,
             w.scaleOutExits,
             ProtectiveExitGuard(book, ops, s.strategyNetQty, log),

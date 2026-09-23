@@ -60,6 +60,7 @@ private fun mergeOpts(
         onFill = opts.onFill,
         times = opts.times,
         exitHooks = opts.exitHooks,
+        exitAfter = opts.exitAfter,
     )
 }
 

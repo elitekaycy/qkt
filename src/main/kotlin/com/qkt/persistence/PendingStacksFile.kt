@@ -28,6 +28,7 @@ internal class PendingStacksFile(
                             primaryClientOrderId = state.primaryClientOrderId,
                             tiers = state.tiers.map { TierDto.fromDomain(it) },
                             openedAtMs = state.openedAtMs,
+                            exitAfterMs = state.exitAfterMs,
                         )
                     },
             )
@@ -53,6 +54,7 @@ internal class PendingStacksFile(
                     primaryClientOrderId = entry.primaryClientOrderId,
                     tiers = entry.tiers.map { it.toDomain() },
                     openedAtMs = entry.openedAtMs,
+                    exitAfterMs = entry.exitAfterMs,
                 )
         }
     }
@@ -73,6 +75,7 @@ private data class PrimaryTierStateDto(
     val primaryClientOrderId: String,
     val tiers: List<TierDto>,
     val openedAtMs: Long? = null,
+    val exitAfterMs: Long? = null,
 )
 
 @Serializable

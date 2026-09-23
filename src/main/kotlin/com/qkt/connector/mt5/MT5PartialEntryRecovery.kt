@@ -29,19 +29,18 @@ internal class MT5PartialEntryRecovery(
         bookedTickets: Set<String>,
     ): Set<String> {
         val recovered = mutableSetOf<String>()
+        val correlation = MT5RecoveryCorrelation(orders, pending, positions)
         for (order in orders) {
-            val pendingMatches =
-                pending.filter {
-                    it.clientOrderId == order.id || matchesOrderComment(it.comment, order.id)
-                }
-            val positionMatches =
-                positions.filter {
-                    it.clientOrderId == order.id || matchesOrderComment(it.comment, order.id)
-                }
+            val pendingMatches = correlation.pendingFor(order)
+            val positionMatches = correlation.positionsFor(order)
             if (pendingMatches.size > 1 || positionMatches.size != 1) continue
             val position = positionMatches.single()
             val requestedQuantity = order.request.quantity
             if (position.volume.signum() <= 0 || position.volume >= requestedQuantity) continue
+            // A real partial entry leaves its residual resting. Joined only by a truncated prefix
+            // and with no residual, a smaller position is someone else's — the seed of a stack
+            // burst, say — and adopting it would book a fill that never happened.
+            if (!correlation.isExact(order, position) && pendingMatches.isEmpty()) continue
 
             val meta =
                 MT5TicketMeta(

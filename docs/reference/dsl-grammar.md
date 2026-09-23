@@ -72,8 +72,8 @@ RULES
 
 | Action | Effect |
 |---|---|
-| `BUY <stream> [SIZING ...] [BRACKET ...] [STACK ...]` | Long entry |
-| `SELL <stream> [SIZING ...] [BRACKET ...] [STACK ...]` | Short entry |
+| `BUY <stream> [SIZING ...] [BRACKET ...] [STACK ...] [EXIT AFTER <duration>]` | Long entry |
+| `SELL <stream> [SIZING ...] [BRACKET ...] [STACK ...] [EXIT AFTER <duration>]` | Short entry |
 | `CLOSE <stream>` | Flatten position on the stream's symbol |
 | `CLOSE_ALL` / `FLATTEN` | Flatten every open position (aliases) |
 | `CANCEL <stream>` | Cancel pending orders on the stream's symbol |
@@ -111,6 +111,16 @@ BUY btc STACK [ 0.1, 0.2 AT entry + 100, 0.3 LIMIT AT entry + 200 ]
 ```
 
 Pyramiding — one signal becomes N price-triggered entries.
+
+### Timed exit
+
+```qkt
+BUY gold SIZING 0.01 EXIT AFTER 4m
+```
+
+Closes the entry's own leg at market once it has been open for the duration, timed from the
+fill and checked every tick. Also applies to its `STACK_AT` legs. See
+[EXIT AFTER](dsl/exit-after.md).
 
 ## Expressions
 
