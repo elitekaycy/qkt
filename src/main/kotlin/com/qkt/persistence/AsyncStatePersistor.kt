@@ -110,9 +110,7 @@ class AsyncStatePersistor(
         // Snapshot synchronously in the caller's thread. PositionLeg is immutable; the
         // copy is cheap (a few legs at most). The executor receives a frozen view.
         val snapshot = LegBook(symbol).apply { legBook.all().forEach { add(it) } }
-        submit("saveLegBook $strategyId/$symbol") {
-            delegate.saveLegBook(strategyId, symbol, snapshot)
-        }
+        submit("saveLegBook $strategyId/$symbol") { delegate.saveLegBook(strategyId, symbol, snapshot) }
     }
 
     override fun saveExcursion(
@@ -121,9 +119,7 @@ class AsyncStatePersistor(
         excursion: PersistedExcursion,
     ) {
         // Immutable value: safe to hand to the writer thread as is.
-        submit("saveExcursion $strategyId/$symbol") {
-            delegate.saveExcursion(strategyId, symbol, excursion)
-        }
+        submit("saveExcursion $strategyId/$symbol") { delegate.saveExcursion(strategyId, symbol, excursion) }
     }
 
     override fun loadExcursion(
@@ -141,9 +137,7 @@ class AsyncStatePersistor(
         pairs: List<BracketPair>,
     ) {
         val snapshot = pairs.toList()
-        submit("saveBracketPairs $strategyId") {
-            delegate.saveBracketPairs(strategyId, snapshot)
-        }
+        submit("saveBracketPairs $strategyId") { delegate.saveBracketPairs(strategyId, snapshot) }
     }
 
     override fun loadBracketPairs(strategyId: String): List<BracketPair> = delegate.loadBracketPairs(strategyId)
@@ -153,9 +147,7 @@ class AsyncStatePersistor(
         orders: Map<String, OrderRequest>,
     ) {
         val snapshot = orders.toMap()
-        submit("savePendingOrders $strategyId") {
-            delegate.savePendingOrders(strategyId, snapshot)
-        }
+        submit("savePendingOrders $strategyId") { delegate.savePendingOrders(strategyId, snapshot) }
     }
 
     override fun loadPendingOrders(strategyId: String): Map<String, OrderRequest> =
@@ -176,9 +168,7 @@ class AsyncStatePersistor(
         perPrimary: Map<String, PersistedTierState>,
     ) {
         val snapshot = perPrimary.toMap()
-        submit("savePendingStacks $strategyId") {
-            delegate.savePendingStacks(strategyId, snapshot)
-        }
+        submit("savePendingStacks $strategyId") { delegate.savePendingStacks(strategyId, snapshot) }
     }
 
     override fun loadPendingStacks(strategyId: String): Map<String, PersistedTierState> =
@@ -189,9 +179,7 @@ class AsyncStatePersistor(
         legs: List<PersistedOcoLeg>,
     ) {
         val snapshot = legs.toList()
-        submit("saveOcoLegs $strategyId") {
-            delegate.saveOcoLegs(strategyId, snapshot)
-        }
+        submit("saveOcoLegs $strategyId") { delegate.saveOcoLegs(strategyId, snapshot) }
     }
 
     override fun loadOcoLegs(strategyId: String): List<PersistedOcoLeg> = delegate.loadOcoLegs(strategyId)
@@ -201,13 +189,21 @@ class AsyncStatePersistor(
         stops: List<PersistedTrailingStop>,
     ) {
         val snapshot = stops.toList()
-        submit("saveTrailingStops $strategyId") {
-            delegate.saveTrailingStops(strategyId, snapshot)
-        }
+        submit("saveTrailingStops $strategyId") { delegate.saveTrailingStops(strategyId, snapshot) }
     }
 
     override fun loadTrailingStops(strategyId: String): List<PersistedTrailingStop> =
         delegate.loadTrailingStops(strategyId)
+
+    override fun saveTimedExits(
+        strategyId: String,
+        exits: List<PersistedTimeExit>,
+    ) {
+        val snapshot = exits.toList()
+        submit("saveTimedExits $strategyId") { delegate.saveTimedExits(strategyId, snapshot) }
+    }
+
+    override fun loadTimedExits(strategyId: String): List<PersistedTimeExit> = delegate.loadTimedExits(strategyId)
 
     override fun saveRiskState(
         strategyId: String,

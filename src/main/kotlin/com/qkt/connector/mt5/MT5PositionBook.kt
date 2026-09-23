@@ -48,6 +48,12 @@ internal class MT5PositionBook {
         metaByTicket[ticket] = meta
     }
 
+    /** Attributes [ticket] to [meta] only if nobody owns it yet; false when another order claimed it first. */
+    fun claim(
+        ticket: Long,
+        meta: MT5TicketMeta,
+    ): Boolean = metaByTicket.putIfAbsent(ticket, meta) == null
+
     fun setSymbol(
         ticket: Long,
         symbol: String,
