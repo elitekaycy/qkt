@@ -14,6 +14,7 @@ syn keyword qktFlow WHEN THEN FOR EACH IN DO AS RUN HOLD CASE ELSE END SINCE
 syn keyword qktKeyword BUY SELL CLOSE_ALL CLOSE CANCEL_ALL CANCEL FLATTEN
 syn keyword qktKeyword LOG WARN ERROR DEBUG
 syn keyword qktKeyword STACK_AT STACK SPACING WITHIN MFE
+syn keyword qktKeyword EXIT AFTER
 syn keyword qktKeyword MARKET LIMIT STOP_LOSS STOP TRAILING BRACKET
 syn keyword qktKeyword OCO_ENTRY OCO ORDER_TYPE
 syn keyword qktKeyword TAKE_PROFIT TAKE PROFIT LOSS RR AT BY
