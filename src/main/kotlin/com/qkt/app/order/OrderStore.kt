@@ -74,12 +74,10 @@ internal class OrderStore(
         return true
     }
 
-    /**
-     * Protects a venue position with an engine-held [stop] that closes [ticket] — the fallback
-     * when the venue refuses to attach a fill-anchored stop. A stop already tracked is left as is.
-     */
-    fun armEngineHeldStop(
-        stop: OrderRequest.Stop,
+    // An exit already tracked is left as is.
+    private fun armEngineHeldExit(
+        stop: OrderRequest,
+        wrapperId: String,
         ticket: String,
     ) {
         if (book.contains(stop.id)) return
@@ -89,6 +87,7 @@ internal class OrderStore(
                 id = stop.id,
                 request = stop,
                 state = OrderState.PENDING,
+                parentClientOrderId = wrapperId,
                 createdAt = now,
                 lastUpdatedAt = now,
             ),
@@ -96,6 +95,26 @@ internal class OrderStore(
         closeTickets[stop.id] = ticket
         exposure.register(stop)
         snapshots.persistAll()
+    }
+
+    /**
+     * Protects a venue position whose fill-anchored exits the venue refused to attach: an
+     * engine-held [stop] and/or [target] that close [ticket]. With both, whichever fires first
+     * cancels the other. They are children of the bracket [wrapperId], so the one that fills
+     * completes that bracket the way a venue-side close does.
+     */
+    fun armEngineHeldExits(
+        wrapperId: String,
+        stop: OrderRequest.Stop?,
+        target: OrderRequest.IfTouched?,
+        ticket: String,
+    ) {
+        stop?.let { armEngineHeldExit(it, wrapperId, ticket) }
+        target?.let { armEngineHeldExit(it, wrapperId, ticket) }
+        if (stop != null && target != null) {
+            siblings.pair(stop.id, target.id)
+            snapshots.persistAll()
+        }
     }
 
     /** Raises an operator alert that a position is not protected as intended. */
