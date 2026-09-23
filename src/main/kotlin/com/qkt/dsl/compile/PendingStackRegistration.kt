@@ -5,7 +5,9 @@ import com.qkt.execution.OrderRequest
 
 /**
  * Registers the `STACK_AT` tiers of a just-submitted parent order, keyed by the client order id
- * its entry fill will carry, so the runtime arms a [StackEngine] when that fill arrives.
+ * its entry fill will carry, so the runtime arms a [StackEngine] when that fill arrives. With an
+ * `EXIT AFTER` hold, every stack leg carries [exitAfterMs] too, and the parent's timed close
+ * ([parentExitId]`-close`) is watched so no tier fires after the parent has timed out.
  */
 internal fun registerPendingStack(
     pendingStacks: PendingStacks,
@@ -13,6 +15,8 @@ internal fun registerPendingStack(
     symbol: String,
     side: Side,
     stackAtTiers: List<CompiledStackTier>,
+    exitAfterMs: Long? = null,
+    parentExitId: String? = null,
 ) {
     pendingStacks.register(
         PendingStack(
@@ -20,7 +24,8 @@ internal fun registerPendingStack(
             symbol = symbol,
             side = side,
             tiers = stackAtTiers,
-            closeWatchIds = closeWatchIdsFor(finalRequest),
+            closeWatchIds = closeWatchIdsFor(finalRequest) + listOfNotNull(parentExitId?.let { "$it-close" }),
+            exitAfterMs = exitAfterMs,
         ),
     )
 }

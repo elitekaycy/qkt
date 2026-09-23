@@ -11,6 +11,9 @@ import com.qkt.common.Side
  * closed (typically the bracket's TP/SL child ids predicted from the OrderManager
  * fallback convention). When the runtime sees a fill for any of these, it terminates
  * the engine to prevent stacks from firing against a closed parent.
+ *
+ * [exitAfterMs] is the parent's `EXIT AFTER` hold; each stack leg is closed that long after its
+ * own fill.
  */
 data class PendingStack(
     val parentClientOrderId: String,
@@ -18,6 +21,7 @@ data class PendingStack(
     val side: Side,
     val tiers: List<CompiledStackTier>,
     val closeWatchIds: Set<String> = emptySet(),
+    val exitAfterMs: Long? = null,
 )
 
 /**

@@ -81,6 +81,8 @@ class QktLexer(RegexLexer):
         "AT",
         "WITHIN",
         "SPACING",
+        "EXIT",
+        "AFTER",
         "EVERY",
         "WEIGHT",
         "TIF",
