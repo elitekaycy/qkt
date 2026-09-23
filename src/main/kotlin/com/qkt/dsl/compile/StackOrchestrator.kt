@@ -168,10 +168,12 @@ class StackOrchestrator(
     fun onTick(
         symbol: String,
         price: BigDecimal,
+        bid: BigDecimal? = null,
+        ask: BigDecimal? = null,
     ) {
         if (engines.isEmpty()) return
         for (engine in engines.values) {
-            if (engine.parentSymbol == symbol) engine.onTick(price)
+            if (engine.parentSymbol == symbol) engine.onTick(price, bid, ask)
         }
     }
 
