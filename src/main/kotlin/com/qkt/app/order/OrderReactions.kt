@@ -52,6 +52,7 @@ internal class OrderReactions(
             engineHeld = EngineHeldRestore(book, store.stops, store.exposure, s.broker, clock),
             venueRecovery = venueRecovery,
             snapshots = store.snapshots,
+            timeExits = w.timeExits,
             broker = s.broker,
             clock = clock,
             log = log,

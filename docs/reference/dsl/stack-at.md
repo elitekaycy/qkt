@@ -164,6 +164,7 @@ Both accessors return `0` if no primary leg exists.
 
 - ✓ `BRACKET` on the primary — primary and each stack have independent brackets
 - ✓ Multiple `STACK_AT` on one action — N tiers fire independently
+- ✓ `EXIT AFTER <duration>` on the action — each stack leg closes that long after its own fill (see [EXIT AFTER](exit-after.md))
 - ✓ `OCO_ENTRY` with `STACK_AT` on each leg — whichever side fills attaches its stacks
 - ✗ Same action with both `OCO` and `STACK_AT` — rejected at compile time
 - ✗ Same action with both `STACK` (pyramiding) and `STACK_AT` — rejected at compile time
