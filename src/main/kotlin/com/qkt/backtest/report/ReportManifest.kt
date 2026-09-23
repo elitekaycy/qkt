@@ -30,6 +30,7 @@ internal object ReportManifest {
                 add("orders.jsonl")
                 add("pnl_components.csv")
                 if (result.bookRisk != null) add("book_risk.csv")
+                if (result.global.monteCarlo != null) add(MonteCarloFanCsv.FILE_NAME)
                 add("report.html")
             }
         return buildString {
