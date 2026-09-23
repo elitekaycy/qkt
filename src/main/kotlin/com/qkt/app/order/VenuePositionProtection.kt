@@ -14,7 +14,8 @@ import java.math.BigDecimal
  * [BrokerEvent.PositionModificationCompleted] and is matched here by operation id.
  *
  * A refused attach must never leave a position naked: a stack layer or fill-anchored bracket
- * falls back to an engine-held stop ([armStackFallbackStop] / [armBracketFallbackStop]), and
+ * falls back to an engine-held stop ([armStackFallbackStop] / [armBracketFallback]) — and a
+ * fill-anchored target, never sent with the entry, to an engine-held target beside it — and
  * every refusal raises an operator alert.
  */
 internal class VenuePositionProtection(
@@ -28,7 +29,7 @@ internal class VenuePositionProtection(
         fillPrice: BigDecimal,
         ticket: String,
     ) -> BigDecimal?,
-    private val armBracketFallbackStop: (stop: OrderRequest.Stop, ticket: String) -> Unit,
+    private val armBracketFallback: (stop: OrderRequest.Stop?, target: OrderRequest.IfTouched?, ticket: String) -> Unit,
 ) {
     private sealed interface Pending
 
@@ -45,6 +46,7 @@ internal class VenuePositionProtection(
         val ticket: String,
         val strategyId: String,
         val fallbackStop: OrderRequest.Stop?,
+        val fallbackTarget: OrderRequest.IfTouched?,
     ) : Pending
 
     private data class Ratchet(
@@ -77,10 +79,11 @@ internal class VenuePositionProtection(
         ticket: String,
         strategyId: String,
         fallbackStop: OrderRequest.Stop?,
+        fallbackTarget: OrderRequest.IfTouched?,
         stopLoss: BigDecimal,
         takeProfit: BigDecimal,
     ) {
-        pending[operationId] = Bracket(ticket, strategyId, fallbackStop)
+        pending[operationId] = Bracket(ticket, strategyId, fallbackStop, fallbackTarget)
         modify(operationId, ticket, stopLoss, takeProfit)
     }
 
@@ -116,16 +119,17 @@ internal class VenuePositionProtection(
                 )
             }
             is Bracket -> {
-                request.fallbackStop?.let { armBracketFallbackStop(it, request.ticket) }
+                armBracketFallback(request.fallbackStop, request.fallbackTarget, request.ticket)
                 ops.reportProtectionFailure(
                     request.strategyId,
                     "venue rejected fill-anchored bracket modify for ticket ${request.ticket}: " +
                         "${event.rejectReason}; " +
-                        if (request.fallbackStop != null) {
-                            "engine-held stop armed at ${request.fallbackStop.stopPrice.toPlainString()}"
-                        } else {
-                            "engine-managed protection remains active"
-                        },
+                        listOfNotNull(
+                            request.fallbackStop?.let { "engine-held stop armed at ${it.stopPrice.toPlainString()}" },
+                            request.fallbackTarget?.let {
+                                "engine-held target armed at ${it.triggerPrice.toPlainString()}"
+                            },
+                        ).ifEmpty { listOf("engine-managed protection remains active") }.joinToString("; "),
                 )
             }
             is Ratchet ->
