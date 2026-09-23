@@ -2,6 +2,8 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# shellcheck source=scripts/live-validation/lib/attached-protection.sh
+source "$repo_root/scripts/live-validation/lib/attached-protection.sh"
 readonly_runner="$repo_root/scripts/live-validation/run-readonly.sh"
 # shellcheck source=scripts/live-validation/lib/catalog-startup-window.sh
 source "$repo_root/scripts/live-validation/lib/catalog-startup-window.sh"
@@ -575,6 +577,7 @@ wait_for_open_cycle() {
         sleep 1
     done
     $seen || fail "no magic-scoped bracket position appeared for cycle $cycle within $timeout_seconds seconds"
+    wait_for_attached_protection "$magic" "$latest" 15 || true
     validate_open_position "$latest"
     local ticket
     ticket="$(jq -r '.data[0].ticket' "$latest")"
