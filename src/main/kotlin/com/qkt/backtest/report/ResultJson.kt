@@ -113,6 +113,9 @@ internal object ResultJson {
             )
             append("}")
             if (result.bookRisk != null) append(", \"bookRiskCsv\": \"book_risk.csv\"")
+            if (result.global.monteCarlo != null) {
+                append(", \"monteCarloFanCsv\": \"${MonteCarloFanCsv.FILE_NAME}\"")
+            }
             append(", \"html\": \"report.html\"")
             append("}")
         }
