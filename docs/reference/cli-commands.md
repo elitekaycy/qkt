@@ -52,6 +52,10 @@ Every `qkt` subcommand. Run `qkt <command> --help` for the authoritative flag li
 - `pnl_components.csv` decomposes each reported daily PnL value into
   trade-realized PnL and non-trade adjustment PnL for global and per-strategy
   scopes.
+- `monte_carlo_fan.csv` (only when the run has a Monte Carlo, i.e. at least 30
+  closed trades) holds the equity percentiles across every resampled path after
+  each trade: `tradeIndex,p5,p25,p50,p75,p95`. It is the fan `report.html`
+  draws; its last row is the final-equity P5/P25/P50/P75/P95.
 - Each report metric includes daily PnL, max daily drawdown, drawdown periods,
   Monte Carlo tail stats when available, and the retained equity curve used for
   charts.
