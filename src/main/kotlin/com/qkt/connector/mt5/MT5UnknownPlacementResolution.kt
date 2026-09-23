@@ -4,6 +4,7 @@ import com.qkt.bus.EventBus
 import com.qkt.common.Clock
 import com.qkt.events.BrokerEvent
 import com.qkt.execution.OrderRequest
+import java.util.concurrent.ConcurrentHashMap
 import org.slf4j.LoggerFactory
 
 /**
@@ -27,6 +28,8 @@ internal class MT5UnknownPlacementResolution(
     private val unknownResolveBackoffMs: Long,
 ) {
     private val log = LoggerFactory.getLogger(MT5Broker::class.java)
+    private val inFlight = ConcurrentHashMap<String, MT5InterchangeableOutcomes.InFlight>()
+    private val fills = MT5UnknownFillClaim(books, bus, clock)
 
     /**
      * Resolve an UNKNOWN send outcome by querying the venue for an order carrying this
@@ -35,6 +38,8 @@ internal class MT5UnknownPlacementResolution(
      *
      *   - Found as a pending → the venue owns it: register tickets, publish Accepted.
      *   - Found as a position → it filled: register meta, publish Accepted + Filled.
+     *   - Several interchangeable look-alikes, one per unanswered order of that shape → paired
+     *     in send order ([MT5InterchangeableOutcomes]); fewer or mixed stays ambiguous.
      *   - Repeated clean order/position/deal reads with no match → publish Rejected.
      *   - Found only in deal history → replay its fill and any completed close legs.
      *   - Reads keep failing → leave the order UNRESOLVED (no event): a false "rejected"
@@ -49,6 +54,8 @@ internal class MT5UnknownPlacementResolution(
     ) {
         val wireComment = placement.comment.take(MT5_COMMENT_MAX_LENGTH)
         val brokerSymbol = mt5Symbol.toBroker(request.symbol.substringAfter(':'))
+        val self = MT5InterchangeableOutcomes.InFlight(request.id, placement, placementStartedAtMs, brokerSymbol)
+        inFlight.putIfAbsent(request.id, self)
         log.warn(
             "MT5Broker {} order {} outcome UNKNOWN ({}) — querying venue before resolving",
             profile.name,
@@ -66,6 +73,22 @@ internal class MT5UnknownPlacementResolution(
             val positionCandidates = venue.positionCandidates
             val matches = venue.matches
             if (matches.size > 1 || (matches.isEmpty() && (pendingCandidates + positionCandidates).isNotEmpty())) {
+                val paired =
+                    matches
+                        .takeIf { m -> m.all { it is UnknownVenueMatch.Position } }
+                        ?.let { m -> m.map { (it as UnknownVenueMatch.Position).position } }
+                        ?.let { MT5InterchangeableOutcomes.pick(self, it, inFlight.values) }
+                if (paired != null && fills.claimFilled(request, paired, protection)) {
+                    log.info(
+                        "MT5Broker {} order {} resolved as FILLED ticket {} (paired among {} look-alikes)",
+                        profile.name,
+                        request.id,
+                        paired.ticket,
+                        matches.size,
+                    )
+                    inFlight.remove(request.id)
+                    return
+                }
                 log.error(
                     "MT5Broker {} order {} UNKNOWN outcome remains ambiguous on attempt {}/{}: " +
                         "pendingCandidates={} positionCandidates={} correlatedMatches={}",
@@ -100,41 +123,18 @@ internal class MT5UnknownPlacementResolution(
                         request.id,
                         pendingMatch.ticket,
                     )
+                    inFlight.remove(request.id)
                     return
                 }
                 is UnknownVenueMatch.Position -> {
-                    val positionMatch = match.position
-                    books.positionBook.attribute(
-                        positionMatch.ticket,
-                        MT5TicketMeta(request.id, request.strategyId, protection),
-                    )
-                    books.positionBook.setSymbol(positionMatch.ticket, request.symbol)
-                    bus.publish(
-                        BrokerEvent.OrderAccepted(
-                            clientOrderId = request.id,
-                            brokerOrderId = positionMatch.ticket.toString(),
-                            strategyId = request.strategyId,
-                            timestamp = clock.now(),
-                        ),
-                    )
-                    bus.publish(
-                        BrokerEvent.OrderFilled(
-                            clientOrderId = request.id,
-                            brokerOrderId = positionMatch.ticket.toString(),
-                            symbol = request.symbol,
-                            side = request.side,
-                            price = positionMatch.priceOpen,
-                            quantity = positionMatch.volume,
-                            strategyId = request.strategyId,
-                            timestamp = clock.now(),
-                        ),
-                    )
+                    if (!fills.claimFilled(request, match.position, protection)) continue
                     log.info(
                         "MT5Broker {} order {} resolved as FILLED ticket {}",
                         profile.name,
                         request.id,
-                        positionMatch.ticket,
+                        match.position.ticket,
                     )
+                    inFlight.remove(request.id)
                     return
                 }
                 null ->
@@ -150,13 +150,17 @@ internal class MT5UnknownPlacementResolution(
                             attempt,
                         )
                     ) {
-                        MT5UnknownDealReplay.Outcome.RESOLVED -> return
+                        MT5UnknownDealReplay.Outcome.RESOLVED -> {
+                            inFlight.remove(request.id)
+                            return
+                        }
                         MT5UnknownDealReplay.Outcome.INCONCLUSIVE -> continue
                         MT5UnknownDealReplay.Outcome.CLEAN_ABSENCE -> cleanAbsenceReads++
                     }
             }
         }
         if (cleanAbsenceReads == MT5BrokerLimits.UNKNOWN_RESOLVE_ATTEMPTS) {
+            inFlight.remove(request.id)
             events.reject(request, "unknown-state send resolved as not placed after verified retry window ($cause)")
             return
         }
