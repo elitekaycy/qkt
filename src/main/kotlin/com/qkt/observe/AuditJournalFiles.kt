@@ -77,7 +77,39 @@ internal class AuditJournalFiles(
         return next
     }
 
+    /**
+     * The highest `seq` in this owner's most recent day file that holds one, or null when the
+     * owner has no journaled events yet. The whole file is scanned, not just its tail, because a
+     * file written before sequences resumed across restarts can hold a lower run after a higher one.
+     */
+    fun lastSequence(): Long? {
+        val dir = ownerDir()
+        if (!Files.isDirectory(dir)) return null
+        val days =
+            Files.list(dir).use { files ->
+                files.filter { it.fileName.toString().matches(DAY_FILE) }.sorted(Comparator.reverseOrder()).toList()
+            }
+        return days.firstNotNullOfOrNull(::maxSequence)
+    }
+
+    private fun maxSequence(file: Path): Long? =
+        Files.newBufferedReader(file, Charsets.UTF_8).useLines { lines ->
+            lines
+                .mapNotNull {
+                    SEQ
+                        .find(it)
+                        ?.groupValues
+                        ?.get(1)
+                        ?.toLongOrNull()
+                }.maxOrNull()
+        }
+
     private fun ownerDir(): Path = rootDir.resolve(owner.ifBlank { "_session" }.replace(Regex("[^A-Za-z0-9._-]"), "_"))
+
+    private companion object {
+        val DAY_FILE = Regex("""audit-\d{4}-\d{2}-\d{2}\.jsonl""")
+        val SEQ = Regex(""""seq":(\d+)""")
+    }
 
     private fun createPrivateDirectory(path: Path) {
         Files.createDirectories(path)
