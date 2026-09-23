@@ -2,6 +2,8 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# shellcheck source=scripts/live-validation/lib/attached-protection.sh
+source "$repo_root/scripts/live-validation/lib/attached-protection.sh"
 readonly_runner="$repo_root/scripts/live-validation/run-readonly.sh"
 # shellcheck source=scripts/live-validation/lib/account-identity.sh
 source "$repo_root/scripts/live-validation/lib/account-identity.sh"
@@ -535,6 +537,7 @@ for _ in $(seq 1 180); do
     sleep 1
 done
 $position_seen || fail "bounded position did not open"
+wait_for_attached_protection "$magic" "$evidence/position-open.json" 15 || true
 owned_ticket="$(jq -r '.data[0].ticket' "$evidence/position-open.json")"
 jq -e --argjson magic "$magic" --arg symbol "$venue_symbol" '
     .ok == true and
