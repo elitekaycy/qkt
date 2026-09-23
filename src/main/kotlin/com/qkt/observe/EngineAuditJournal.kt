@@ -68,6 +68,13 @@ class EngineAuditJournal(
             start()
         }
 
+    /**
+     * The highest sequence this owner already journaled, or null for a first session. A session
+     * restarted over the same state resumes its bus sequence after it, so a capture spanning the
+     * restart never repeats a sequence. Call before the session publishes anything.
+     */
+    fun lastSequence(): Long? = files.lastSequence()
+
     /** Enqueue a stamped engine event for asynchronous serialization and JSONL persistence. */
     fun append(event: Event) {
         if (!running.get()) return
