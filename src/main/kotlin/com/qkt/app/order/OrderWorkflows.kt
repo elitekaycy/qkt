@@ -44,7 +44,9 @@ internal class OrderWorkflows(
                 ->
                 stackExits.attachStopLoss(stackId, layer, fill, ticket)
             },
-            armBracketFallbackStop = { stop, ticket -> store.armEngineHeldStop(stop, ticket) },
+            armBracketFallback = { wrapperId, stop, target, ticket ->
+                store.armEngineHeldExits(wrapperId, stop, target, ticket)
+            },
         )
     val scaleOutExits =
         ScaleOutExits(store.scaleOuts, book, store.exposure, s.broker, s.bus, clock, ops, s.requireArmedTrailTicket)

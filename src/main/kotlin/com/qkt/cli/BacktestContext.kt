@@ -328,6 +328,7 @@ class BacktestContext private constructor(
             val executionConfig = BacktestSimulationOptions.executionConfig(args, cfg, brokerKind)
             val accountingConfig = BacktestSimulationOptions.accountingConfig(args, cfg)
             val replaySymbols = (symbols + accountingConfig.normalizedSymbols.values).distinct()
+            warnStandaloneBookRiskIgnored(cfg.bookRisk)
             val barReplay =
                 BacktestBarReplay.resolveBarReplay(
                     args = args,
@@ -437,7 +438,6 @@ class BacktestContext private constructor(
                 haltConfig = haltConfig,
                 provisioner = provisioner,
                 replaySymbols = replaySymbols,
-                bookRiskConfig = cfg.bookRisk,
                 perStrategyRisk = cfg.perStrategyRisk,
                 maxOrderQty = cfg.maxOrderQty,
                 maxOrderNotional = cfg.maxOrderNotional,

@@ -61,7 +61,7 @@ internal class StackOrchestratorBinder(
                 )
             }
         }.onFailure { e -> log.warn("stack tier restore failed for {}: {}", strategyId, e.message) }
-        bus.subscribe<TickEvent> { e -> orch.onTick(e.tick.symbol, e.tick.price) }
+        bus.subscribe<TickEvent> { e -> orch.onTick(e.tick.symbol, e.tick.price, e.tick.bid, e.tick.ask) }
         bus.subscribe<BrokerEvent.OrderFilled> { e ->
             if (e.strategyId != strategyId) return@subscribe
             val pending = strategy.pendingStacks.consume(e.clientOrderId)
