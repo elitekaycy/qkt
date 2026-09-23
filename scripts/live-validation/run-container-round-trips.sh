@@ -2,6 +2,8 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# shellcheck source=scripts/live-validation/lib/attached-protection.sh
+source "$repo_root/scripts/live-validation/lib/attached-protection.sh"
 # shellcheck source=scripts/live-validation/lib/catalog-startup-window.sh
 source "$repo_root/scripts/live-validation/lib/catalog-startup-window.sh"
 
@@ -677,6 +679,7 @@ while [ "$SECONDS" -lt "$deadline" ]; do
         count="$(jq -er '.data | length' "$latest")"
         [ "$count" -le 1 ] || fail "scenario $index created more than one position"
         if [ "$count" -eq 1 ]; then
+            wait_for_attached_protection "${magics[$index]}" "$latest" 15 || true
             jq -e \
                 --arg symbol "${venue_symbols[$index]}" \
                 --argjson magic "${magics[$index]}" \
