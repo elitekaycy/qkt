@@ -24,6 +24,7 @@ internal class OrderEventHandlers(
     private val scaleOutTracker: ScaleOutTracker,
     private val scaleOutExits: ScaleOutExits,
     private val venueRecovery: VenueRecovery,
+    private val attachedCompletion: AttachedBracketCompletion,
     private val clock: Clock,
     private val ops: OrderOps,
     private val log: Logger,
@@ -74,6 +75,7 @@ internal class OrderEventHandlers(
         risk.forgetRejected(e.clientOrderId)
         unarmedChildren.orEmpty().forEach { ops.cancel(it.id) }
         ocoSequencer.onRejected(e.clientOrderId)
+        attachedCompletion.onEntryEnded(e.clientOrderId, OrderState.REJECTED)
     }
 
     /** An order partially filled; its first execution slice already cancels its siblings. */
@@ -121,6 +123,7 @@ internal class OrderEventHandlers(
         val pendingScaleOut = scaleOuts.pendingByBasis.remove(e.clientOrderId)
         val partialPositionTicket = scaleOuts.partialPositionTickets.remove(e.clientOrderId)
         unarmedChildren?.forEach { child -> ops.cancel(child.id) }
+        attachedCompletion.onEntryEnded(e.clientOrderId, OrderState.CANCELLED)
         scaleOutTracker.onBasisCancelled(e.clientOrderId, pendingScaleOut, partialPositionTicket)
         log.info(
             "order cancelled order_id={} strategy_id={} reason={}",
