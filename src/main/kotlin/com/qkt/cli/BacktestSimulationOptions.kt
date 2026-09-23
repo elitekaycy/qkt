@@ -69,6 +69,9 @@ internal object BacktestSimulationOptions {
         (args.option("execution-latency") ?: cfg.execution["latency"])?.let {
             result = result.copy(latencyMs = parseLatencyMs(it))
         }
+        (args.option("order-spacing") ?: cfg.execution["order_spacing"])?.let {
+            result = result.copy(orderSpacingMs = parseLatencyMs(it))
+        }
         (args.option("stop-latency") ?: cfg.execution["stop_latency"])?.let {
             result = result.copy(stopLatencyMs = parseLatencyMs(it))
         }
