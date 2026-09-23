@@ -2,7 +2,8 @@ package com.qkt.dsl.ast
 
 /**
  * The options on a BUY/SELL action: sizing, order type, TIF, bracket, OCO, stack and STACK AT
- * tiers, ON_FILL children, exit hooks and the TIMES repeat count. Every field is optional.
+ * tiers, ON_FILL children, exit hooks, the TIMES repeat count and the EXIT AFTER timed exit.
+ * Every field is optional.
  */
 data class ActionOpts(
     val sizing: SizingAst? = null,
@@ -36,6 +37,12 @@ data class ActionOpts(
      * negative value emits nothing; an undefined value (indicator warm-up) emits nothing.
      */
     val times: ExprAst? = null,
+    /**
+     * `EXIT AFTER <duration>`: close this entry's own leg at market once it has been open for
+     * the duration, timed from its fill on the engine clock (checked every tick, not at bar
+     * close). Also applies to each `STACK_AT` leg, timed from that leg's own fill.
+     */
+    val exitAfter: DurationAst? = null,
 )
 
 /** Exit-triggered child actions attached to one BUY/SELL action. */

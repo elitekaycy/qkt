@@ -52,10 +52,13 @@ class StackOrchestrator(
         parentQty: BigDecimal,
         tiers: List<CompiledStackTier>,
         closeWatchIds: Set<String> = emptySet(),
+        exitAfterMs: Long? = null,
     ) {
         if (tiers.isEmpty()) return
         check(parentLegId !in engines) { "StackEngine already registered for $parentLegId" }
-        val engineEmit: (Signal) -> Unit = { sig -> emit(stampStackIntent(sig, parentLegId)) }
+        val engineEmit: (
+            Signal,
+        ) -> Unit = { sig -> emit(stampStackIntent(sig, parentLegId).withExitAfter(exitAfterMs)) }
         val persistedTiers =
             runCatching { persistor.loadPendingStacks(strategyId)[parentLegId] }.getOrNull()
         val initialFired: Set<Int> =

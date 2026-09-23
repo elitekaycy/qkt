@@ -74,6 +74,7 @@ internal class StackOrchestratorBinder(
                     parentQty = e.quantity,
                     tiers = pending.tiers,
                     closeWatchIds = pending.closeWatchIds,
+                    exitAfterMs = pending.exitAfterMs,
                 )
             } else {
                 orch.onPossibleClose(e.clientOrderId)

@@ -37,6 +37,7 @@ internal class BasketFanOutCompiler(
             "BASKET order on '$basketAlias' cannot carry STACK/STACK_AT ($plain)."
         }
         require(opts.tif == null) { "BASKET order on '$basketAlias' cannot carry a TIF ($plain)." }
+        require(opts.exitAfter == null) { "BASKET order on '$basketAlias' cannot carry EXIT AFTER ($plain)." }
         require(opts.orderType == null || opts.orderType == Market) {
             "BASKET order on '$basketAlias' must be a market order; LIMIT/STOP are not supported in v1."
         }
