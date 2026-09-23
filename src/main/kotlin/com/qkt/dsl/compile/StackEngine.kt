@@ -45,6 +45,8 @@ class StackEngine(
      * fill) anchors at now.
      */
     initialOpenedAtMs: Long? = null,
+    /** The parent's `EXIT AFTER` hold, saved with the tier state so a restore can re-apply it. */
+    private val exitAfterMs: Long? = null,
 ) {
     private val mfeTracker = MfeTracker(parentSide, parentEntryPrice)
     private val firedTierIndices: MutableSet<Int> = initialFiredTierIndices.toMutableSet()
@@ -160,6 +162,7 @@ class StackEngine(
                 primaryClientOrderId = primaryClientOrderId,
                 tiers = persistedTiers,
                 openedAtMs = openedAt,
+                exitAfterMs = exitAfterMs,
             )
         persistor.savePendingStacks(strategyId, mapOf(parentLegId to state))
     }

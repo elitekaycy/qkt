@@ -61,18 +61,6 @@ class StackOrchestrator(
         ) -> Unit = { sig -> emit(stampStackIntent(sig, parentLegId).withExitAfter(exitAfterMs)) }
         val persistedTiers =
             runCatching { persistor.loadPendingStacks(strategyId)[parentLegId] }.getOrNull()
-        val initialFired: Set<Int> =
-            persistedTiers
-                ?.tiers
-                ?.filter { it.fired }
-                ?.map { it.index }
-                ?.toSet() ?: emptySet()
-        val initialFiredLegIds: Map<Int, String> =
-            persistedTiers
-                ?.tiers
-                ?.mapNotNull { t -> t.firedLegId?.let { t.index to it } }
-                ?.toMap()
-                ?: emptyMap()
         val resolved =
             tiers.map { c ->
                 ResolvedStackTier(
@@ -96,8 +84,9 @@ class StackOrchestrator(
                 emit = engineEmit,
                 strategyId = strategyId,
                 persistor = persistor,
-                initialFiredTierIndices = initialFired,
-                initialFiredLegIds = initialFiredLegIds,
+                initialFiredTierIndices = persistedTiers?.firedIndices() ?: emptySet(),
+                initialFiredLegIds = persistedTiers?.firedLegIds() ?: emptyMap(),
+                exitAfterMs = exitAfterMs,
             )
     }
 
@@ -116,20 +105,8 @@ class StackOrchestrator(
         persisted: com.qkt.persistence.PersistedTierState,
     ) {
         if (parentLegId in engines) return
-        val engineEmit: (Signal) -> Unit = { sig -> emit(stampStackIntent(sig, parentLegId)) }
-        val resolved =
-            persisted.tiers
-                .sortedBy { it.index }
-                .map {
-                    ResolvedStackTier(
-                        mfeThreshold = it.mfeThreshold,
-                        withinMs = it.withinMs,
-                        stackQuantity = it.stackQuantity,
-                        slDistance = it.slDistance,
-                        tpDistance = it.tpDistance,
-                        maeRecoverDistance = it.maeRecoverDistance,
-                    )
-                }
+        val hold = persisted.exitAfterMs
+        val engineEmit: (Signal) -> Unit = { sig -> emit(stampStackIntent(sig, parentLegId).withExitAfter(hold)) }
         engines[parentLegId] =
             StackEngine(
                 parentLegId = parentLegId,
@@ -137,31 +114,18 @@ class StackOrchestrator(
                 closeWatchIds = setOf(parentLegId, persisted.primaryClientOrderId),
                 parentSide = parentSide,
                 parentEntryPrice = parentEntryPrice,
-                tiers = resolved,
+                tiers = persisted.resolvedTiers(),
                 clock = clock,
                 emit = engineEmit,
                 strategyId = strategyId,
                 persistor = persistor,
                 primaryClientOrderId = persisted.primaryClientOrderId,
-                initialFiredTierIndices =
-                    persisted.tiers
-                        .filter { it.fired }
-                        .map { it.index }
-                        .toSet(),
-                initialFiredLegIds =
-                    persisted.tiers
-                        .mapNotNull { t -> t.firedLegId?.let { t.index to it } }
-                        .toMap(),
-                initialAbandonedTierIndices =
-                    persisted.tiers
-                        .filter { it.abandoned }
-                        .map { it.index }
-                        .toSet(),
-                initialArmedAdverseExtremes =
-                    persisted.tiers
-                        .mapNotNull { t -> t.armedAdverseExtreme?.let { t.index to it } }
-                        .toMap(),
+                initialFiredTierIndices = persisted.firedIndices(),
+                initialFiredLegIds = persisted.firedLegIds(),
+                initialAbandonedTierIndices = persisted.abandonedIndices(),
+                initialArmedAdverseExtremes = persisted.armedAdverseExtremes(),
                 initialOpenedAtMs = persisted.openedAtMs,
+                exitAfterMs = hold,
             )
     }
 
