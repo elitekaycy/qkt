@@ -351,7 +351,8 @@ Backtest, sweep, walk-forward, and experiment commands read execution settings t
 |---|---|---|---|---|
 | `execution.preset` | `paper-fast`, `mt5-basic`, `mt5-realistic`, `stress` | based on `--broker`, usually `paper-fast` | `--execution` | Chooses default broker simulator behavior. |
 | `execution.seed` | long | unset except stress default `42` | `--seed` | Deterministic random slippage seed. |
-| `execution.latency` | duration | preset default | `--execution-latency` | Accepts integer milliseconds, `250ms`, `1s`, or `fixed:250ms`. Delays order placement; a resting order's trigger-to-fill stays instantaneous. |
+| `execution.latency` | duration | preset default | `--execution-latency` | Accepts integer milliseconds, `250ms`, `1s`, or `fixed:250ms`. Delays order placement: a delayed market order fills at the sided quote prevailing at its release (the last quote at or before `submit + latency`), not the next quote after it, matching the venue (45 of 46 Exness demo market deals on 2026-09-23 filled at the prevailing quote, none at the next one). A resting order's trigger-to-fill stays instantaneous. |
+| `execution.order_spacing` | duration | `0` | `--order-spacing` | Minimum gap between consecutive order releases on the simulated venue's single send lane (mt5-sim). An order submitted at `t` is released at the later of `t + latency` and the previous release plus the spacing, and fills at the sided quote prevailing at its release. Models the serialized MT5 gateway, which places a burst's legs one after another (measured on the Exness demo: about 140-160 ms between legs; parity row A20). `0` releases every order independently. Same format as `execution.latency`; not valid with `--tick-fills`. |
 | `execution.stop_latency` | duration | `0` | `--stop-latency` | Delay between a protective stop's trigger and its execution (mt5-sim). A crossed stop fills at the first quote at or after `trigger + delay`, sided, plus slippage — the venue behaviour measured on the Exness demo (median ~260 ms, #1135). `0` fills on the crossing print. Same format as `execution.latency`. |
 | `execution.tp_fill` | `print`, `level` | `print` | `--tp-fill` | How a gap-crossed protective take-profit is priced (mt5-sim). `print` credits the crossing print when it beats the level; `level` fills exactly at the level, as retail MT5 does. |
 | `execution.slippage` | string | preset default | `--slippage` | `zero`, `instrument`, `fixed-points:N`, or `uniform:N`. |
@@ -366,6 +367,8 @@ Preset defaults:
 | `mt5-basic` | `mt5-sim` | instrument slippage and MT5 sizing rules |
 | `mt5-realistic` | `mt5-sim` | 250 ms latency, instrument slippage, stop-distance enforcement |
 | `stress` | `mt5-sim` | 500 ms latency, uniform slippage up to 20 points, reject every 10th order, 50 percent partial fills |
+
+No preset sets `execution.order_spacing`. Add `--order-spacing 150ms` when a strategy sends several orders at once (`STACK_AT` bursts, `TIMES`, `OCO_ENTRY`), where a single release price overstates the fills.
 
 ## `promotion`
 

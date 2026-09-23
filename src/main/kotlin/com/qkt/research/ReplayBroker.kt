@@ -54,6 +54,7 @@ internal fun replayBroker(
                     rejectionModel = executionConfig.rejectionModel(),
                     partialFillModel = executionConfig.partialFillModel(),
                     positionMode = executionConfig.positionMode,
+                    orderSpacingMs = executionConfig.orderSpacingMs,
                 )
         }
     }
