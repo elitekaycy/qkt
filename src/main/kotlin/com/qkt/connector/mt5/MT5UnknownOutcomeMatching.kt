@@ -83,7 +83,9 @@ internal object MT5UnknownOutcomeMatching {
         placementStartedAtMs: Long,
     ): Boolean {
         if (venueEpoch <= 0L) return false
-        val venueEpochMs = if (venueEpoch < 100_000_000_000L) venueEpoch * 1_000L else venueEpoch
-        return abs(venueEpochMs - placementStartedAtMs) <= CORRELATION_WINDOW_MS
+        return abs(venueEpochMs(venueEpoch) - placementStartedAtMs) <= CORRELATION_WINDOW_MS
     }
+
+    /** A venue timestamp in epoch millis; the gateway reports some fields in seconds. */
+    fun venueEpochMs(venueEpoch: Long): Long = if (venueEpoch < 100_000_000_000L) venueEpoch * 1_000L else venueEpoch
 }
