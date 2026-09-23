@@ -69,6 +69,46 @@ class TradingPipelineStackFillAnchorTest {
         assertThat(stop.stopPrice).isEqualByComparingTo("1.1020")
     }
 
+    @Test
+    fun `a leg whose fill runs past its small target distance still gets TP from its own fill`() {
+        // Live run 003: the ask rose past a 0.10 distance between tier fire and send. The target is
+        // not sent with the entry, so nothing can refuse it; it attaches at fill + distance.
+        val (bus, broker) = wire(ATTACH_VENUE)
+        val pipeline = pipelineOf(bus, broker, tp = "0.0005")
+        bus.publish(fill("parent-1", "parent-1", Side.BUY, "1.1000", "0.10"))
+        pipeline.ingest(quote)
+        val shipped = broker.submits.filterIsInstance<OrderRequest.Bracket>().last { it.id.endsWith("-entry") }
+
+        bus.publish(fill(shipped.id, "stk-tkt", Side.BUY, "1.1080", "0.05"))
+
+        val modify = broker.modifyPositions.last { it.ticket == "stk-tkt" }
+        assertThat(modify.tp).isEqualByComparingTo("1.1085")
+        assertThat(modify.sl).isEqualByComparingTo("1.1030")
+    }
+
+    @Test
+    fun `a refused target modify arms an engine-held target that closes the leg by ticket`() {
+        val (bus, broker) = wire(ATTACH_VENUE)
+        broker.rejectPositionModifications = true
+        val pipeline = pipelineOf(bus, broker, tp = "0.0005")
+        bus.publish(fill("parent-1", "parent-1", Side.BUY, "1.1000", "0.10"))
+        pipeline.ingest(quote)
+        val shipped = broker.submits.filterIsInstance<OrderRequest.Bracket>().last { it.id.endsWith("-entry") }
+        bus.publish(fill(shipped.id, "stk-tkt", Side.BUY, "1.1080", "0.05"))
+        assertThat(closesOf(broker, "stk-tkt")).isEmpty()
+
+        pipeline.ingest(
+            Tick("EURUSD", BigDecimal("1.1090"), 2L, bid = BigDecimal("1.1086"), ask = BigDecimal("1.1094")),
+        )
+
+        assertThat(closesOf(broker, "stk-tkt")).singleElement().satisfies({ assertThat(it.side).isEqualTo(Side.SELL) })
+    }
+
+    private fun closesOf(
+        broker: FakeBroker,
+        ticket: String,
+    ) = broker.submits.filterIsInstance<OrderRequest.Market>().filter { it.closesTicket == ticket }
+
     private val clock = FixedClock(time = 0L)
     private val sequencer = MonotonicSequenceGenerator()
     private val priceTracker = MarketPriceTracker()
@@ -82,6 +122,7 @@ class TradingPipelineStackFillAnchorTest {
     private fun pipelineOf(
         bus: EventBus,
         broker: FakeBroker,
+        tp: String = "0.020",
     ): TradingPipeline {
         val pendingStacks = PendingStacks()
         pendingStacks.register(
@@ -89,7 +130,7 @@ class TradingPipelineStackFillAnchorTest {
                 parentClientOrderId = "parent-1",
                 symbol = "EURUSD",
                 side = Side.BUY,
-                tiers = listOf(tier(threshold = "0.005", qty = "0.05", sl = "0.005", tp = "0.020")),
+                tiers = listOf(tier(threshold = "0.005", qty = "0.05", sl = "0.005", tp = tp)),
             ),
         )
         val positions = strategyPositions.account

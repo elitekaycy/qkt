@@ -7,8 +7,11 @@ import com.qkt.execution.ManagedOrder
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.OrderState
 import com.qkt.execution.StopLossSpec
+import com.qkt.execution.TriggerType
 import com.qkt.execution.exitLegIntent
+import com.qkt.execution.hasFillAnchoredTarget
 import com.qkt.execution.isTerminal
+import com.qkt.execution.withCloseTicket
 
 /**
  * What a filled entry releases. A decomposed bracket whose exits are anchored on the fill gets
@@ -70,6 +73,7 @@ internal class BracketFills(
                     ticket,
                     resolved.strategyId,
                     fallbackStop,
+                    fallbackTarget(resolved, ticket, e.quantity),
                     sl,
                     resolved.takeProfit,
                 )
@@ -118,4 +122,30 @@ internal class BracketFills(
             ops.dispatch(anchored)
         }
     }
+
+    // A fill-anchored target never shipped with the entry: if the venue refuses the modify that
+    // attaches it, the engine must hold it or the position would have no target at all. A market-
+    // if-touched exit fires once the bid (long) reaches it, closing at market beyond the level.
+    private fun fallbackTarget(
+        resolved: OrderRequest.Bracket,
+        ticket: String,
+        quantity: java.math.BigDecimal,
+    ): OrderRequest.IfTouched? =
+        if (!resolved.hasFillAnchoredTarget) {
+            null
+        } else {
+            OrderRequest.IfTouched(
+                id = "${resolved.id}-tp",
+                symbol = resolved.symbol,
+                side = if (resolved.side == Side.BUY) Side.SELL else Side.BUY,
+                quantity = quantity,
+                triggerPrice = resolved.takeProfit,
+                onTrigger = TriggerType.MARKET,
+                timeInForce = resolved.timeInForce,
+                timestamp = clock.now(),
+                strategyId = resolved.strategyId,
+                closesTicket = ticket,
+                legIntent = resolved.exitLegIntent().withCloseTicket(ticket),
+            )
+        }
 }
