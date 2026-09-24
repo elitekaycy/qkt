@@ -139,10 +139,13 @@ class PreflightCommandStrategyValidationTest : PreflightCommandFixture() {
             brokers:
               exness:
                 type: mt5
+                extends: ftmo
                 gateway_url: http://127.0.0.1:5001
             """.trimIndent(),
         )
 
+        // ftmo ships no crypto rule, so BTC falls to the FX weekend calendar; the built-in
+        // exness profile keeps crypto on 24/7 and needs no rule (asserted below).
         val flagged =
             ProductionPreflight.evaluate(
                 configPath = config,
@@ -164,6 +167,7 @@ class PreflightCommandStrategyValidationTest : PreflightCommandFixture() {
             brokers:
               exness:
                 type: mt5
+                extends: ftmo
                 gateway_url: http://127.0.0.1:5001
                 calendars:
                   "BTC*": crypto
@@ -183,6 +187,22 @@ class PreflightCommandStrategyValidationTest : PreflightCommandFixture() {
         assertThat(fixed).anySatisfy { check ->
             assertThat(check.name).isEqualTo("symbol.calendar")
             assertThat(check.status).isEqualTo(PreflightStatus.PASS)
+        }
+
+        Files.writeString(
+            config,
+            "runtime:\n  mode: dev\nbrokers:\n  exness:\n    type: mt5\n    gateway_url: http://127.0.0.1:5001\n",
+        )
+        val builtIn =
+            ProductionPreflight.evaluate(
+                configPath = config,
+                stateDir = StateDir.resolve(tmp.resolve("state").toString()),
+                strategyPath = strategy,
+                offline = true,
+            )
+        assertThat(builtIn).noneSatisfy { check ->
+            assertThat(check.name).isEqualTo("symbol.calendar")
+            assertThat(check.status).isEqualTo(PreflightStatus.WARN)
         }
     }
 }
