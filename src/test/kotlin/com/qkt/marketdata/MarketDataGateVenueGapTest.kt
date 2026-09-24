@@ -28,7 +28,7 @@ class MarketDataGateVenueGapTest {
         // Sunday 23:02Z daemon start: copper's newest print is Friday's close, 53h old.
         val clock = TickingClock(0L)
         val alerts = mutableListOf<String>()
-        val gate = MarketDataGate(clock, onUnhealthy = { symbol, reason -> alerts.add("$symbol:$reason") })
+        val gate = MarketDataGate(clock, onUnhealthy = { symbol, reason, _ -> alerts.add("$symbol:$reason") })
         clock.t = 53L * 3_600_000L
         gate.observe(tick("4.10", ts = 1L))
 
@@ -52,7 +52,7 @@ class MarketDataGateVenueGapTest {
         val gate =
             MarketDataGate(
                 clock,
-                onUnhealthy = { symbol, reason -> alerts.add("$symbol:$reason") },
+                onUnhealthy = { symbol, reason, _ -> alerts.add("$symbol:$reason") },
                 inSession = { _, _ -> false },
             )
         clock.t = 2L * 3_600_000L
@@ -67,7 +67,7 @@ class MarketDataGateVenueGapTest {
         // Wednesday, venue open, prints 3h behind the local clock: a mis-set server zone.
         val clock = TickingClock(0L)
         val alerts = mutableListOf<String>()
-        val gate = MarketDataGate(clock, onUnhealthy = { symbol, reason -> alerts.add("$symbol:$reason") })
+        val gate = MarketDataGate(clock, onUnhealthy = { symbol, reason, _ -> alerts.add("$symbol:$reason") })
         clock.t = 3L * 3_600_000L
         gate.observe(tick("100", ts = 1L))
 
@@ -83,7 +83,7 @@ class MarketDataGateVenueGapTest {
         val gate =
             MarketDataGate(
                 clock,
-                onUnhealthy = { symbol, reason -> alerts.add("$symbol:$reason") },
+                onUnhealthy = { symbol, reason, _ -> alerts.add("$symbol:$reason") },
                 inSession = { _, _ -> false },
             )
         clock.t = 1_000L
