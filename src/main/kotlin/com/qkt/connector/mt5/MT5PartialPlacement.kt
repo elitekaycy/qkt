@@ -56,6 +56,7 @@ internal class MT5PartialPlacement(
                         it.ticket == response.result.deal &&
                             it.entry == 0 &&
                             it.positionTicket > 0L &&
+                            it.price.signum() > 0 &&
                             (it.orderTicket == 0L || it.orderTicket == response.result.order) &&
                             it.magic == profile.magic &&
                             it.symbol == placement.symbol &&
