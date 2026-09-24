@@ -126,6 +126,19 @@ On daemon startup, `MT5StateRecovery` snapshots open positions filtered by magic
 
 `MT5PositionPoller` runs at `pollIntervalMs` (default 1000ms) per profile. Diffs the current snapshot against the previous; emits `BrokerEvent.OrderFilled` for each disappeared ticket (broker-side SL/TP fired). Approximate close price = last known position price; future enhancement queries deal history for exact.
 
+### Engine close pricing
+
+A close the engine sends by ticket (CLOSE rules, trailing stops, flattens, book halts) is
+booked at the price in the venue's acknowledgement. Dealer-desk and other async-execution
+venues (The5ers, for example) acknowledge DONE with price 0.0 and deal 0 before the fill
+exists; qkt never books such a close at 0. `MT5AcknowledgedCloseFill` reads deal history for
+the closing deal (the ack's deal ticket, else its order ticket, else the position's closing
+deals stamped since the close was sent) up to four times over about 3 s, off the engine
+thread. If the deal still has not appeared, the close books at the current closing-side quote
+(bid to close a long, ask to close a short) and logs an ERROR containing `PROVISIONAL`: that
+trade's realized PnL must be reconciled against venue deals. With no quote either, nothing is
+booked and the lookup repeats on the unknown-outcome cadence until the deal appears.
+
 Live quotes use the independent `tickPollIntervalMs` cadence. Configuration exposes these as
 `poll_interval_ms` and `tick_poll_interval_ms`. Keeping them separate lets a daemon reduce
 terminal reconciliation load without silently slowing strategy market data. A legacy profile

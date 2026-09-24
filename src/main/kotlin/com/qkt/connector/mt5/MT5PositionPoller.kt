@@ -376,7 +376,7 @@ class MT5PositionPoller(
         val deal = client.getClosingDeal(ticket, fromUtcMs = dealsFromUtcMs, toUtcMs = now)
         val seenDeals = observedClosingDeals.getOrPut(ticket) { mutableSetOf() }
         val newDeals = deal?.deals.orEmpty().filter { seenDeals.add(it.ticket) }
-        val newClosingDeals = newDeals.filter { it.entry != 0 && it.volume.signum() > 0 }
+        val newClosingDeals = newDeals.filter { it.entry != 0 && it.volume.signum() > 0 && it.price.signum() > 0 }
         val venueCosts =
             venueCostsForClose?.invoke(ticket, deal?.deals.orEmpty(), positionClosed)
                 ?: costsForDeals(newDeals)
