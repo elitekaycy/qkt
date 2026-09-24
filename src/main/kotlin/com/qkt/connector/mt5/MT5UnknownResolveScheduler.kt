@@ -28,11 +28,15 @@ internal class MT5UnknownResolveScheduler(
         }
     }
 
-    fun scheduleUnknownResolution(task: () -> Unit) {
+    /** Run [task] after [delayMs], by default the periodic re-resolve cadence. */
+    fun scheduleUnknownResolution(
+        delayMs: Long = periodicResolveMs,
+        task: () -> Unit,
+    ) {
         try {
             unknownResolveExecutor.schedule(
                 task,
-                periodicResolveMs,
+                delayMs,
                 TimeUnit.MILLISECONDS,
             )
         } catch (failure: RejectedExecutionException) {
