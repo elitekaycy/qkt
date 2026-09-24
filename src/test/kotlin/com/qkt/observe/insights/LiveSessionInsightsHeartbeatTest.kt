@@ -100,6 +100,7 @@ class LiveSessionInsightsHeartbeatTest : LiveSessionInsightsFixture() {
             assertThat(bodies.toString()).contains("\"type\":\"marketdata.stale\"")
             assertThat(bodies.toString()).contains("\"source\":\"connected-but-frozen\"")
             assertThat(bodies.toString()).contains("\"symbols\":[\"X\"]")
+            assertThat(bodies.toString()).contains("\"kind\":\"stale\"")
         } finally {
             handle.stop()
             handle.awaitTermination(Duration.ofSeconds(2))

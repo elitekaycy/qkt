@@ -57,6 +57,24 @@ class SymbolCalendars(
         t: Instant,
     ): Boolean = symbols.any { calendarFor(it).isInSession(it, t) }
 
+    /** Whether qkt [symbol] (`NAME:` prefix optional) is in session at [nowMs] under its own calendar. */
+    fun inSession(
+        symbol: String,
+        nowMs: Long,
+    ): Boolean {
+        val bare = symbol.substringAfter(':')
+        return calendarFor(bare).isInSession(bare, Instant.ofEpochMilli(nowMs))
+    }
+
+    /** Whether qkt [symbol] (`NAME:` prefix optional) is inside its calendar's scheduled break at [nowMs]. */
+    fun scheduledBreak(
+        symbol: String,
+        nowMs: Long,
+    ): Boolean {
+        val bare = symbol.substringAfter(':')
+        return calendarFor(bare).isScheduledBreak(bare, Instant.ofEpochMilli(nowMs))
+    }
+
     /** The distinct calendars referenced by the rules plus the default (for diagnostics/logging). */
     val calendars: Set<TradingCalendar>
         get() = (compiled.map { it.second } + default).toSet()
