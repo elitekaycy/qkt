@@ -3,8 +3,8 @@ package com.qkt.marketdata
 /**
  * One symbol's observed feed for [MarketDataGate]: arrival cadence (last seen time and the
  * smoothed inter-tick gap), the age-bounded price ring the outlier band is computed over,
- * the rebaseline candidate cluster, and the per-condition alert latches. Mutated only on
- * the gate's calling thread; every method is allocation-free.
+ * the rebaseline candidate cluster, the per-condition alert latches and the open unhealthy
+ * episode. Mutated only on the gate's calling thread; every method is allocation-free.
  */
 internal class SymbolFeedState {
     var lastSeenMs: Long = 0L
@@ -22,6 +22,11 @@ internal class SymbolFeedState {
     var lastSkewMs = 0L
     var skewAlerted = false
     var closedAlerted = false
+
+    // The open unhealthy episode: the fault whose alert opened it (null when none is open) and
+    // when that alert fired. Only faults open one; venue-closed and paused gaps never do.
+    var unhealthyFault: FeedFault? = null
+    var unhealthySinceMs = 0L
     var rejectedOutlierRun = 0
     var rebaselineCandidate = 0.0
     var rebaselineCandidateCount = 0
