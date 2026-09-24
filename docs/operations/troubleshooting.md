@@ -132,6 +132,7 @@ This is the most common complaint. Six things, in order of how often they happen
 | Bybit `retCode=10001` | Invalid API permissions | Re-issue keys with Read + Trade enabled |
 | Bybit rate-limit errors | Too many orders/second | The `BybitTransport` retries with backoff; if persistent, reduce strategy frequency |
 | Symbol rejected on MT5 (`symbol not found`) | Broker uses a different symbol name | Check `symbolPolicy` in your broker profile — Exness adds `m` suffix |
+| ERROR `... booking at market ... realized PnL is PROVISIONAL` | Async-execution venue acknowledged a close with price 0.0 and the closing deal was not in history within ~3 s | The trade was booked at the closing-side quote; compare it with the venue's closing deal and correct the realized PnL. See [engine close pricing](../concepts/broker-integration.md#engine-close-pricing) |
 | Position drift between qkt and broker | Manual trade on the venue, or magic-number collision | qkt's `MT5StateRecovery` reconciles on next daemon start; or restart |
 
 ## Data / data store issues
