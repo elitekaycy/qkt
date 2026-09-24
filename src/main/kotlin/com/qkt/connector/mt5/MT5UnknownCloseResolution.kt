@@ -74,7 +74,7 @@ internal class MT5UnknownCloseResolution(
             if (closingDeals.isNotEmpty()) {
                 val filledQuantity = closingDeals.fold(BigDecimal.ZERO) { total, deal -> total + deal.volume }
                 val fillPrice = MT5UnknownOutcomeMatching.weightedDealPrice(closingDeals)
-                if (filledQuantity.signum() > 0 && fillPrice != null) {
+                if (filledQuantity.signum() > 0 && fillPrice != null && fillPrice.signum() > 0) {
                     val positionRemainsOpen = position != null
                     engineCloses.confirmEngineClose(ticket)
                     if (!positionRemainsOpen) {

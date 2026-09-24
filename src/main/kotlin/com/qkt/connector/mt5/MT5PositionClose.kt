@@ -4,7 +4,6 @@ import com.qkt.broker.SubmitAck
 import com.qkt.bus.EventBus
 import com.qkt.common.Clock
 import com.qkt.events.BrokerEvent
-import com.qkt.execution.ExitReason
 import com.qkt.execution.OrderRequest
 import org.slf4j.LoggerFactory
 
@@ -12,6 +11,7 @@ import org.slf4j.LoggerFactory
  * Closes a venue position by its ticket rather than by sending an opposite order, e.g. a CLOSE
  * rule on ticket 3258722177 asks the gateway to close that ticket and the strategy receives
  * `OrderAccepted` then `OrderFilled` at the closing deal's price with the venue's costs attached.
+ * [MT5AcknowledgedCloseFill] prices the fill, including acks that arrive with price 0.0.
  */
 internal class MT5PositionClose(
     private val profile: MT5BrokerProfile,
@@ -28,6 +28,8 @@ internal class MT5PositionClose(
     private val closeTruth: MT5CloseVenueTruth,
 ) {
     private val log = LoggerFactory.getLogger(MT5Broker::class.java)
+    private val closeFill =
+        MT5AcknowledgedCloseFill(profile, bus, clock, books, engineCloses, unknownResolver, closeTruth)
 
     /**
      * Close the venue position [ticketStr] via the gateway instead of placing an opposite
@@ -109,55 +111,15 @@ internal class MT5PositionClose(
                 return@closePositionAsync
             }
             val positionRemainsOpen = request.partialClose || partiallyFilled
-            if (positionRemainsOpen) {
-                engineCloses.confirmEngineClose(ticket)
-            } else {
-                engineCloses.confirmEngineClose(ticket)
-                books.positionBook.forgetAttribution(ticket)
-            }
-            val filledQuantity = reportedVolume ?: closeQuantity
-            val venueTruth =
-                closeTruth.venueTruthForPositionClose(
-                    positionTicket = ticket,
-                    closingDealTicket = resp.result.deal,
+            closeFill.book(
+                MT5AcknowledgedCloseFill.AcknowledgedClose(
+                    request = request,
+                    ticket = ticket,
+                    brokerSymbol = brokerSymbol,
+                    ack = resp.result,
+                    filledQuantity = reportedVolume ?: closeQuantity,
+                    closeStartedAtMs = closeStartedAtMs,
                     positionClosed = !positionRemainsOpen,
-                )
-            val venueCosts = venueTruth.costs
-            // Async-fill venues report price 0.0 on the close acknowledgement too (#1092);
-            // the closing deal is the executed price. A zero close price would book the
-            // whole entry as realized loss/gain.
-            val closePrice =
-                resp.result.price.takeIf { it.signum() > 0 }
-                    ?: venueTruth.closingDealPrice
-                    ?: resp.result.price.also {
-                        log.warn(
-                            "MT5Broker {} close {} acknowledged with price 0.0 and no closing deal {} found; booking as reported",
-                            profile.name,
-                            request.id,
-                            resp.result.deal,
-                        )
-                    }
-            if (!positionRemainsOpen) books.positionBook.forgetOpenedAt(ticket)
-            bus.publish(
-                BrokerEvent.OrderAccepted(
-                    clientOrderId = request.id,
-                    brokerOrderId = ticket.toString(),
-                    strategyId = request.strategyId,
-                    timestamp = clock.now(),
-                ),
-            )
-            bus.publish(
-                BrokerEvent.OrderFilled(
-                    clientOrderId = request.id,
-                    brokerOrderId = ticket.toString(),
-                    symbol = request.symbol,
-                    side = request.side,
-                    price = closePrice,
-                    quantity = filledQuantity,
-                    strategyId = request.strategyId,
-                    timestamp = clock.now(),
-                    venueCosts = venueCosts,
-                    exitReason = ExitReason.CLOSE,
                 ),
             )
         }

@@ -45,7 +45,7 @@ internal class MT5HistoryReads(
         var reported = BigDecimal.ZERO
         for (deal in deals) {
             reported = reported.add(deal.commission).add(deal.swap).add(deal.fee)
-            if (deal.entry == 0 || deal.volume.signum() <= 0) continue
+            if (deal.entry == 0 || deal.volume.signum() <= 0 || deal.price.signum() <= 0) continue
             volume = volume.add(deal.volume)
             notional = notional.add(deal.price.multiply(deal.volume))
         }
