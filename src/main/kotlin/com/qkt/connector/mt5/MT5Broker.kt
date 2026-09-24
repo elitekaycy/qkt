@@ -88,6 +88,7 @@ class MT5Broker(
     MarginLevelProvider,
     com.qkt.broker.InstrumentProvider,
     com.qkt.broker.ServerTimeZoneProvider,
+    com.qkt.broker.SymbolSessionProvider by com.qkt.broker.SymbolSessionProvider(profile.symbolCalendars::inSession),
     com.qkt.broker.TicketAttributionProvider {
     override val name: String = profile.name
     override val supportsPositionTickets: Boolean = true
@@ -311,10 +312,7 @@ class MT5Broker(
     override fun scheduledBreak(
         symbol: String,
         nowMs: Long,
-    ): Boolean {
-        val bare = symbol.substringAfter(':')
-        return profile.symbolCalendars.calendarFor(bare).isScheduledBreak(bare, java.time.Instant.ofEpochMilli(nowMs))
-    }
+    ): Boolean = profile.symbolCalendars.scheduledBreak(symbol, nowMs)
 
     override val supportsMarginLevel: Boolean = true
 

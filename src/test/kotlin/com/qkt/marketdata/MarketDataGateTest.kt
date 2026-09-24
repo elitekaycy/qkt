@@ -53,7 +53,7 @@ class MarketDataGateTest {
             MarketDataGate(
                 clock,
                 minStaleAgeMs = 1_000L,
-                onUnhealthy = { symbol, reason -> alerts.add("$symbol:$reason") },
+                onUnhealthy = { symbol, reason, _ -> alerts.add("$symbol:$reason") },
             )
         clock.t = 1L
         gate.observe(tick("100", clock.t))
@@ -74,7 +74,7 @@ class MarketDataGateTest {
             MarketDataGate(
                 clock,
                 minStaleAgeMs = 1_000L,
-                onUnhealthy = { symbol, reason -> alerts.add("$symbol:$reason") },
+                onUnhealthy = { symbol, reason, _ -> alerts.add("$symbol:$reason") },
                 scheduledBreak = { _, _ -> paused },
             )
         clock.t = 1L
@@ -101,7 +101,7 @@ class MarketDataGateTest {
             MarketDataGate(
                 clock,
                 minStaleAgeMs = 1_000L,
-                onUnhealthy = { symbol, reason -> alerts.add("$symbol:$reason") },
+                onUnhealthy = { symbol, reason, _ -> alerts.add("$symbol:$reason") },
                 scheduledBreak = { _, _ -> paused },
             )
         clock.t = 1L

@@ -9,7 +9,8 @@ import org.slf4j.LoggerFactory
  *
  *  - **Stale quotes** — when no tick has arrived for [staleAgeMultiple] x the symbol's
  *    smoothed inter-tick gap (floored at [minStaleAgeMs]), the symbol is unhealthy and
- *    NEW order generation for it should be suppressed. Auto-resumes when data flows.
+ *    NEW order generation for it should be suppressed. Auto-resumes when data flows. A gap
+ *    while the venue is out of session is expected: orders wait, but nothing alerts.
  *  - **Outlier ticks** — a price more than [outlierSigma] standard deviations from the mean
  *    of the last [outlierWindowMs] of prices is rejected. A short cluster at a coherent new
  *    level re-baselines the window so genuine gaps do not freeze marks and triggers
@@ -37,12 +38,21 @@ class MarketDataGate(
      */
     private val outlierWindowMs: Long = DEFAULT_OUTLIER_WINDOW_MS,
     private val maxClockSkewMs: Long = DEFAULT_MAX_CLOCK_SKEW_MS,
-    /** Invoked once per unhealthy transition; recovery permits a later transition to alert again. */
-    private val onUnhealthy: (symbol: String, reason: String) -> Unit = { _, _ -> },
+    /**
+     * Invoked once per unhealthy transition with the [FeedFault] behind it; recovery permits a
+     * later transition to alert again. Expected gaps (venue closed, scheduled break) never alert.
+     */
+    private val onUnhealthy: (symbol: String, reason: String, fault: FeedFault) -> Unit = { _, _, _ -> },
+    /**
+     * Invoked once when a symbol that alerted [onUnhealthy] is fully healthy again, with how long
+     * the episode lasted since its first alert (e.g. `"fresh tick after stale"`, 184000).
+     */
+    private val onRecovered: (symbol: String, reason: String, unhealthyForMs: Long) -> Unit = { _, _, _ -> },
     /**
      * Whether the venue trades [symbol] at the given wall-clock instant (#1056). A tick whose
      * broker time trails the local clock while the venue is closed is the venue's last print,
-     * not a skewed clock; defaults to always open so the gate judges skew alone.
+     * not a skewed clock, and a quote gap while the venue is closed is not STALE (no alert;
+     * new orders still wait for a fresh tick). Defaults to always open, as for 24/7 crypto.
      */
     private val inSession: (symbol: String, nowMs: Long) -> Boolean = { _, _ -> true },
     /**
@@ -61,6 +71,7 @@ class MarketDataGate(
             minStaleAgeMs,
             maxClockSkewMs,
             onUnhealthy,
+            onRecovered,
             inSession,
             scheduledBreak,
             log,
@@ -99,6 +110,7 @@ class MarketDataGate(
                     tick.price.toPlainString(),
                     SymbolFeedState.REBASELINE_TICK_COUNT,
                 )
+                health.settleEpisode(tick.symbol, state)
                 return Verdict.OK
             }
             if (crossed) {

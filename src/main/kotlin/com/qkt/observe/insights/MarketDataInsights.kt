@@ -2,7 +2,7 @@ package com.qkt.observe.insights
 
 /**
  * Insights translation for market-data source health: connect, disconnect, reconnect and
- * per-symbol staleness transitions. Mixed into [InsightsTranslate].
+ * per-symbol unhealthy/recovered transitions. Mixed into [InsightsTranslate].
  */
 interface MarketDataInsights {
     fun marketDataConnected(
@@ -26,13 +26,48 @@ interface MarketDataInsights {
         reason: String = "source-reconnected",
     ): InsightsEnvelope = marketDataLifecycle("reconnected", "marketdata.reconnected", source, symbols, ts, reason)
 
-    /** Per-symbol quote-health transition detected while the source itself remains connected. */
+    /**
+     * Per-symbol quote-health transition detected while the source itself remains connected.
+     * [kind] names the fault — `stale` (quote age), `clock_skew` or `outlier` — and is omitted
+     * from the payload when null.
+     */
     fun marketDataStale(
         source: String,
         symbol: String,
         ts: Long,
         reason: String,
-    ): InsightsEnvelope = marketDataLifecycle("stale", "marketdata.stale", source, listOf(symbol), ts, reason)
+        kind: String? = null,
+    ): InsightsEnvelope =
+        marketDataLifecycle(
+            "stale",
+            "marketdata.stale",
+            source,
+            listOf(symbol),
+            ts,
+            reason,
+            if (kind == null) emptyMap() else mapOf("kind" to kind),
+        )
+
+    /**
+     * The end of a `marketdata.stale` episode for [symbol]: the symbol is healthy again after
+     * [unhealthyForMs] milliseconds measured from the episode's first stale event.
+     */
+    fun marketDataRecovered(
+        source: String,
+        symbol: String,
+        ts: Long,
+        reason: String,
+        unhealthyForMs: Long,
+    ): InsightsEnvelope =
+        marketDataLifecycle(
+            "recovered",
+            "marketdata.recovered",
+            source,
+            listOf(symbol),
+            ts,
+            reason,
+            mapOf("unhealthyForMs" to unhealthyForMs),
+        )
 }
 
 private fun marketDataLifecycle(
@@ -42,6 +77,7 @@ private fun marketDataLifecycle(
     symbols: List<String>,
     ts: Long,
     reason: String,
+    extra: Map<String, Any?> = emptyMap(),
 ): InsightsEnvelope =
     InsightsEnvelope(
         id = "marketdata-$state-$source-$ts",
@@ -56,5 +92,5 @@ private fun marketDataLifecycle(
                 "state" to state,
                 "reason" to reason,
                 "ts" to ts,
-            ),
+            ) + extra,
     )

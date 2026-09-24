@@ -524,20 +524,13 @@ class LiveSession(
                 accounting = accounting,
             )
         val marketDataAlerts = MarketDataHealthAlerts(strategies, sessionNotifier, insights)
-        // Stale/outlier judgment over the live feeds (#395): suppresses NEW orders on
-        // frozen data and drops implausible ticks before they poison indicators.
+        // Suppresses NEW orders on frozen data and drops implausible ticks before they poison indicators.
         val marketDataGate =
-            com.qkt.marketdata.MarketDataGate(
-                clock = clock,
-                staleAgeMultiple = marketDataGateConfig.staleAgeMultiple,
-                minStaleAgeMs = marketDataGateConfig.minStaleAgeMs,
-                outlierSigma = marketDataGateConfig.outlierSigma,
-                maxClockSkewMs = marketDataGateConfig.maxClockSkewMs,
-                inSession = { _, nowMs -> broker.marketOpen(nowMs) },
-                scheduledBreak = { symbol, nowMs ->
-                    brokers.built.ifEmpty { listOf(broker) }.any { it.scheduledBreak(symbol, nowMs) }
-                },
-                onUnhealthy = marketDataAlerts::onUnhealthy,
+            liveMarketDataGate(
+                clock,
+                marketDataGateConfig,
+                venues = { brokers.built.ifEmpty { listOf(broker) } },
+                alerts = marketDataAlerts,
             )
         val entryGuards = EntryGuardRules(clock, marginFloorPct, measuredUsageHours, measuredUsageMaxQty)
         val marginRules = entryGuards.marginRules(broker)

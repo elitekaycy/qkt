@@ -101,4 +101,15 @@ class SymbolCalendarsTest {
                 anchorEpoch: Long,
             ): TimeRange = TimeRange(Instant.EPOCH, Instant.EPOCH)
         }
+
+    @Test
+    fun `session and break answers resolve a prefixed symbol by its own calendar`() {
+        val sc = SymbolCalendars(listOf(SymbolCalendars.Rule("BTC*", crypto)), default = fx)
+        val saturdayMs = Instant.parse("2026-09-26T12:00:00Z").toEpochMilli()
+
+        assertThat(sc.inSession("EXNESS:BTCUSD", saturdayMs)).isTrue()
+        assertThat(sc.inSession("EXNESS:XAUUSD", saturdayMs)).isFalse()
+        assertThat(sc.inSession("XAUUSD", saturdayMs - 3L * 86_400_000L)).isTrue()
+        assertThat(sc.scheduledBreak("EXNESS:XAUUSD", saturdayMs)).isFalse()
+    }
 }
