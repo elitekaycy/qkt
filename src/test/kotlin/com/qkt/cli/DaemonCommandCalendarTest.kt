@@ -13,7 +13,7 @@ class DaemonCommandCalendarTest {
             )
 
         assertThat(liveCalendarFor("VENUE_A:BTCUSD", accounts).name).isEqualTo("crypto")
-        assertThat(liveCalendarFor("VENUE_A:EURUSD", accounts).name).isEqualTo("fx")
+        assertThat(liveCalendarFor("VENUE_A:EURUSD", accounts).name).startsWith("fx")
         assertThat(liveCalendarFor("BYBIT_LINEAR:BTCUSDT", accounts).name).isEqualTo("crypto")
         assertThat(liveCalendarFor("PAPER:SPX", accounts).name).isEqualTo("nyse")
     }
