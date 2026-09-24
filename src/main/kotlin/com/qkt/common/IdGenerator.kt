@@ -48,8 +48,24 @@ interface SequenceGenerator {
     fun next(): Long
 }
 
+/**
+ * The bus event sequence: 0, 1, 2, … in publish order. A session restarted over the same
+ * state resumes after the last sequence it already issued, so sequence ids stay unique across
+ * the restart for the audit journal and for keys derived from them (fill slices, operation ids).
+ */
 class MonotonicSequenceGenerator : SequenceGenerator {
     private var counter = 0L
 
     override fun next(): Long = counter++
+
+    /** Never hand out [last] or anything below it again; a no-op when already past it. */
+    fun resumeAfter(last: Long) {
+        if (last >= counter) counter = last + 1
+    }
+
+    companion object {
+        /** A generator whose first id follows [last], or that starts at zero when [last] is null. */
+        fun resumingAfter(last: Long?): MonotonicSequenceGenerator =
+            MonotonicSequenceGenerator().apply { last?.let(::resumeAfter) }
+    }
 }

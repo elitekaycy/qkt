@@ -1,5 +1,6 @@
 package com.qkt.app
 
+import com.qkt.app.OrderManagerBracketFixtures.ATTACH_VENUE
 import com.qkt.app.OrderManagerBracketFixtures.bracket
 import com.qkt.app.OrderManagerBracketFixtures.newBus
 import com.qkt.broker.FakeBroker
@@ -61,18 +62,51 @@ class OrderManagerBracketCrossedProtectionTest {
     }
 
     @Test
-    fun `a relative take profit is never rejected at submit — it re-anchors off the fill`() {
-        // A reachable target is an instant profit-take, not inverted protection; BY-resolved
-        // targets are anchored to the signal bar and legitimately trail the submit quote.
+    fun `an attach venue accepts a relative take profit whose placeholder is inverted — it is never sent`() {
+        // A BY/PCT/RR target is attached by position modify once the fill is known, so its pre-fill
+        // placeholder never reaches the gateway and cannot be refused there (live run 003).
+        val clock = FixedClock(0L)
+        val bus = newBus()
+        val broker = FakeBroker(bus, clock, ATTACH_VENUE)
+        val om = OrderManager(broker, bus, MarketPriceTracker(), clock)
+        val relative =
+            bracket().copy(
+                takeProfit = Money.of("99"),
+                takeProfitAst = ChildBy(NumLit(java.math.BigDecimal("5"))),
+            )
+
+        val ack = om.submit(relative)
+
+        assertThat(ack.accepted).isTrue()
+    }
+
+    @Test
+    fun `a venue that splits the bracket never judges a relative target's placeholder`() {
+        // Split venues never receive the placeholder; the target re-anchors off the fill.
         val clock = FixedClock(0L)
         val bus = newBus()
         val broker = FakeBroker(bus, clock, setOf(OrderTypeCapability.LIMIT, OrderTypeCapability.STOP))
         val om = OrderManager(broker, bus, MarketPriceTracker(), clock)
-        // BY/PCT/RR targets carry a placeholder before the fill; resolveBracketAtFill
-        // re-anchors them, so they cannot invert and must not be judged at submit.
         val relative =
             bracket().copy(
                 takeProfit = Money.of("99"),
+                takeProfitAst = ChildBy(NumLit(java.math.BigDecimal("5"))),
+            )
+
+        val ack = om.submit(relative)
+
+        assertThat(ack.accepted).isTrue()
+    }
+
+    @Test
+    fun `a relative take profit whose placeholder sits beyond the entry is accepted`() {
+        val clock = FixedClock(0L)
+        val bus = newBus()
+        val broker = FakeBroker(bus, clock, setOf(OrderTypeCapability.LIMIT, OrderTypeCapability.STOP))
+        val om = OrderManager(broker, bus, MarketPriceTracker(), clock)
+        val relative =
+            bracket().copy(
+                takeProfit = Money.of("105"),
                 takeProfitAst = ChildBy(NumLit(java.math.BigDecimal("5"))),
             )
 

@@ -28,6 +28,7 @@ internal class OrderRestorer(
     private val engineHeld: EngineHeldRestore,
     private val venueRecovery: VenueRecovery,
     private val snapshots: OrderStateSnapshots,
+    private val timeExits: TimeExits,
     private val broker: Broker,
     private val clock: Clock,
     private val log: Logger,
@@ -45,6 +46,7 @@ internal class OrderRestorer(
             restoreOcoLegs(sid, dynamicStops, recovered)
             restoreBracketPairs(sid)
             restorePendingOrders(sid, dynamicStops, recovered)
+            timeExits.restore(persistor.loadTimedExits(sid))
             // Older journals may contain a dynamic stop without the duplicate pending-order
             // snapshot. Keep accepting that shape after the current OCO and pending snapshots have
             // consumed their matching state.

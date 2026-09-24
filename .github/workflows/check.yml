@@ -52,6 +52,12 @@ jobs:
         run: bash tests/scripts/run-attestation-catalog-retry-test.sh
       - name: Test attestation leftover sweep
         run: bash tests/scripts/sweep-attestation-leftovers-test.sh
+      - name: Test fill-attached protection wait
+        run: bash tests/scripts/attached-protection-test.sh
+      - name: Test replay entry match rule
+        run: bash tests/scripts/replay-entry-match-test.sh
+      - name: Test shadow lane cleanup
+        run: bash tests/scripts/run-shadow-lane-cleanup-test.sh
       - name: Validate attestation case catalog
         run: python3 attestation/lib/validate.py
       - name: Build + test + ktlint

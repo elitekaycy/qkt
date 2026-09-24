@@ -41,6 +41,9 @@ class BacktestReportWriter(
         Files.writeString(dir.resolve("orders.jsonl"), OrderDecisionsJsonl.render(result))
         Files.writeString(dir.resolve("pnl_components.csv"), PnlComponentsCsv.render(result))
         result.bookRisk?.let { Files.writeString(dir.resolve("book_risk.csv"), BookRiskCsv.render(it)) }
+        result.global.monteCarlo?.let {
+            Files.writeString(dir.resolve(MonteCarloFanCsv.FILE_NAME), MonteCarloFanCsv.render(it))
+        }
         HtmlReportWriter().write(result, dir.resolve("report.html"))
         Files.writeString(dir.resolve("manifest.json"), ReportManifest.render(result, dir))
     }

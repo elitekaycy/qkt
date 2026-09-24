@@ -70,4 +70,7 @@ internal fun pipelineOrderManager(
         bookedVenueTickets = { strategyId ->
             strategyPositions.allLegsFor(strategyId).mapNotNullTo(LinkedHashSet()) { it.brokerTicket }
         },
+        openLegQuantity = { strategyId, legId ->
+            strategyPositions.legById(strategyId, legId)?.quantity
+        },
     )

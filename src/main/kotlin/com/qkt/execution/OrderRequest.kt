@@ -438,8 +438,7 @@ sealed interface OrderRequest {
 
     /**
      * Engine-managed wrapper that resolves [target] before [deadline] or invokes [onExpiry].
-     *
-     * Used to enforce "exit by N hours" without depending on a venue-side timer.
+     * With [holdMs] set the deadline is the entry fill plus [holdMs] (DSL `EXIT AFTER`).
      */
     data class TimeExit(
         override val id: String,
@@ -452,9 +451,10 @@ sealed interface OrderRequest {
         override val timeInForce: TimeInForce,
         override val timestamp: Long,
         override val strategyId: String = "",
+        val holdMs: Long? = null,
     ) : OrderRequest {
         init {
-            require(quantity.signum() > 0) { "quantity must be > 0: $quantity" }
+            require(quantity.signum() > 0 && (holdMs == null || holdMs > 0)) { "quantity and holdMs must be > 0" }
         }
     }
 

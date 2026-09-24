@@ -45,6 +45,8 @@ class StackEngine(
      * fill) anchors at now.
      */
     initialOpenedAtMs: Long? = null,
+    /** The parent's `EXIT AFTER` hold, saved with the tier state so a restore can re-apply it. */
+    private val exitAfterMs: Long? = null,
 ) {
     private val mfeTracker = MfeTracker(parentSide, parentEntryPrice)
     private val firedTierIndices: MutableSet<Int> = initialFiredTierIndices.toMutableSet()
@@ -60,8 +62,18 @@ class StackEngine(
         if (strategyId.isNotBlank()) runCatching { persistTiers() }
     }
 
-    fun onTick(price: BigDecimal) {
+    /**
+     * Advances every tier on one market tick. Excursion is measured on [price] (the mark);
+     * a firing tier anchors its bracket at the price its market leg will actually fill at —
+     * [ask] for a BUY, [bid] for a SELL — falling back to [price] when the quote is absent.
+     */
+    fun onTick(
+        price: BigDecimal,
+        bid: BigDecimal? = null,
+        ask: BigDecimal? = null,
+    ) {
         mfeTracker.onTick(price)
+        val fillAnchor = if (parentSide == Side.BUY) ask ?: price else bid ?: price
         val mfe = mfeTracker.value()
         val mae = mfeTracker.mae()
         val adverseExtreme = mfeTracker.adverseExtremePrice()
@@ -77,7 +89,7 @@ class StackEngine(
                     abandonedAny = true
                 }
                 tier.maeRecoverDistance == null && mfe >= tier.mfeThreshold -> {
-                    val (signal, stackLegId) = buildStackSignal(idx, tier, price)
+                    val (signal, stackLegId) = buildStackSignal(idx, tier, fillAnchor)
                     emit(signal)
                     firedTierIndices += idx
                     firedAtBy[idx] = clock.now()
@@ -94,7 +106,7 @@ class StackEngine(
                     }
                     val armedExtreme = armedAdverseExtremeBy[idx]
                     if (armedExtreme != null && recoveredFrom(armedExtreme, price) >= tier.maeRecoverDistance) {
-                        val (signal, stackLegId) = buildStackSignal(idx, tier, price)
+                        val (signal, stackLegId) = buildStackSignal(idx, tier, fillAnchor)
                         emit(signal)
                         firedTierIndices += idx
                         firedAtBy[idx] = clock.now()
@@ -150,6 +162,7 @@ class StackEngine(
                 primaryClientOrderId = primaryClientOrderId,
                 tiers = persistedTiers,
                 openedAtMs = openedAt,
+                exitAfterMs = exitAfterMs,
             )
         persistor.savePendingStacks(strategyId, mapOf(parentLegId to state))
     }
@@ -167,11 +180,11 @@ class StackEngine(
     private fun buildStackSignal(
         tierIdx: Int,
         tier: ResolvedStackTier,
-        currentPrice: BigDecimal,
+        fillAnchor: BigDecimal,
     ): Pair<Signal, String> {
         val ts = clock.now()
         val stackLegId = idGenerator() + "-tier$tierIdx"
-        return stackBracketSignal(stackLegId, parentSymbol, parentSide, tier, currentPrice, ts) to stackLegId
+        return stackBracketSignal(stackLegId, parentSymbol, parentSide, tier, fillAnchor, ts) to stackLegId
     }
 
     private companion object {
