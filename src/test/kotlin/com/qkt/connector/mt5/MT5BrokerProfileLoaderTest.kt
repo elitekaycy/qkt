@@ -313,7 +313,7 @@ class MT5BrokerProfileLoaderTest {
                     profile.symbolCalendars.calendarFor(sym).isScheduledBreak(sym, t),
                 ).describedAs("${profile.name} $sym").isTrue()
             }
-            for (sym in listOf("EURUSD", "NZDUSD", "XCUUSD")) {
+            for (sym in listOf("EURUSD", "NZDUSD")) {
                 assertThat(
                     profile.symbolCalendars.calendarFor(sym).isScheduledBreak(sym, t),
                 ).describedAs("${profile.name} $sym").isFalse()
@@ -402,10 +402,10 @@ class MT5BrokerProfileLoaderTest {
     }
 
     @Test
-    fun `profile with no calendars block defaults to all-fx`() {
+    fun `profile with no calendars block keeps the built-in venue calendars`() {
         val raw = mapOf("exness" to mapOf("type" to "mt5", "gateway_url" to "http://h"))
         val p = loader.load(raw, MT5DefaultProfiles.all, env = emptyMap()).first { it.name == "exness" }
-        assertThat(p.symbolCalendars.calendarFor("EURUSD").name).isEqualTo("fx")
-        assertThat(p.symbolCalendars.calendarFor("BTCUSD").name).isEqualTo("fx")
+        assertThat(p.symbolCalendars.calendarFor("EURUSD").name).startsWith("fx pause")
+        assertThat(p.symbolCalendars.calendarFor("BTCUSD").name).isEqualTo("crypto")
     }
 }
