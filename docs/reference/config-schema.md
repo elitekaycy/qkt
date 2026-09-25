@@ -530,8 +530,10 @@ costs. When conversion evidence is available, the same payload includes
 `grossAccountRealized`, `nativeRealized`, currencies, FX rate/source fields, and
 `costsAccount` so live trade tables and graphs can reconcile net-vs-gross values.
 
-Market-data health ships in the `lifecycle` family, per symbol (see [`market_data`](#market_data)
-for when each fires):
+Market-data health ships per symbol (see [`market_data`](#market_data) for when each fires).
+`marketdata.stale` is in the `lifecycle` family; `marketdata.recovered` is in the opt-in
+`marketdata` family, because a collector older than qkt-insights #106 rejects the whole batch that
+carries it. List `marketdata` only once the collector runs that release:
 
 - `marketdata.stale`: `{"source", "symbols": [symbol], "state": "stale", "reason", "ts", "kind"}`,
   `kind` one of `stale`, `clock_skew`, `outlier`; `reason` is the operator text, e.g.
@@ -549,7 +551,7 @@ Both use envelope ids `marketdata-<state>-<source>-<ts>`, like `marketdata.conne
 | `insights.url` | URL | empty | Collector ingest URL. |
 | `insights.instance_id` | string | `qkt` fallback at daemon wire time | Instance label sent with events. |
 | `insights.token` | string | empty | Bearer or collector token as expected by the sink. |
-| `insights.events` | list | all families when enabled and omitted | Valid families: `trade`, `order`, `signal`, `risk`, `position`, `snapshot`, `log`, `state`, `deal`, `lifecycle`. `snapshot` is retained for old configs and wires nothing. |
+| `insights.events` | list | every family except `marketdata` when enabled and omitted | Valid families: `trade`, `order`, `signal`, `risk`, `position`, `snapshot`, `log`, `state`, `deal`, `lifecycle`, `marketdata`. `snapshot` is retained for old configs and wires nothing. `marketdata` (feed recovery events) is opt-in and needs a qkt-insights collector with #106. |
 | `insights.flush_interval_ms` | long | `250` | Batch flush cadence. |
 | `insights.batch_size` | int | `200` | Max events per HTTP batch. |
 | `insights.queue_capacity` | int | `10000` | In-memory queue bound before the sink worker drains events. |
