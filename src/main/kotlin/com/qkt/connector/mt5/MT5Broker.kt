@@ -63,8 +63,8 @@ class MT5Broker(
      */
     private val siblingsLookup: () -> List<String> = { emptyList() },
     /**
-     * Base backoff between venue queries while resolving an UNKNOWN send outcome
-     * (multiplied by attempt number). Tests shrink it; production keeps the default.
+     * Base backoff between venue queries resolving an UNKNOWN send outcome or an unpriced
+     * close ack (multiplied by attempt number). Tests shrink it; production keeps the default.
      */
     private val unknownResolveBackoffMs: Long = 500L,
     /** Delay before retrying an unresolved outcome; production follows the poll cadence. */
@@ -88,6 +88,7 @@ class MT5Broker(
     MarginLevelProvider,
     com.qkt.broker.InstrumentProvider,
     com.qkt.broker.ServerTimeZoneProvider,
+    com.qkt.broker.SymbolSessionProvider by com.qkt.broker.SymbolSessionProvider(profile.symbolCalendars::inSession),
     com.qkt.broker.TicketAttributionProvider {
     override val name: String = profile.name
     override val supportsPositionTickets: Boolean = true
@@ -124,7 +125,7 @@ class MT5Broker(
             seedTrackedTickets = { tickets -> pendingPoller.seedTrackedTickets(tickets) },
             unknownResolveBackoffMs,
         )
-    private val closeTruth = MT5CloseVenueTruth(client, clock, state)
+    private val closeTruth = MT5CloseVenueTruth(client, clock, state, priceTracker, unknownResolveBackoffMs)
     private val unknownClose =
         MT5UnknownCloseResolution(
             profile,
@@ -311,10 +312,7 @@ class MT5Broker(
     override fun scheduledBreak(
         symbol: String,
         nowMs: Long,
-    ): Boolean {
-        val bare = symbol.substringAfter(':')
-        return profile.symbolCalendars.calendarFor(bare).isScheduledBreak(bare, java.time.Instant.ofEpochMilli(nowMs))
-    }
+    ): Boolean = profile.symbolCalendars.scheduledBreak(symbol, nowMs)
 
     override val supportsMarginLevel: Boolean = true
 

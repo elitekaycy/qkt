@@ -8,6 +8,7 @@ import com.qkt.execution.Trade
 import com.qkt.marketdata.TickFeed
 import com.qkt.marketdata.live.MarketDataLifecycleFeed
 import com.qkt.marketdata.source.MarketSource
+import com.qkt.observe.insights.InsightsEnvelope
 import com.qkt.observe.insights.InsightsEventFamily
 import com.qkt.observe.insights.InsightsSink
 import com.qkt.observe.insights.InsightsTranslate
@@ -16,9 +17,9 @@ import com.qkt.strategy.Strategy
 
 /**
  * The insights envelopes a live session emits itself rather than from a bus event: strategy and
- * feed lifecycle, stale market data, closed trades and persistence health. Every emit is a no-op
- * without a sink or with its event family disabled, e.g. a session with only `TRADE` enabled
- * offers `trade.closed` but never `strategy.started`.
+ * feed lifecycle, stale and recovered market data, closed trades and persistence health. Every
+ * emit is a no-op without a sink or with its event family disabled, e.g. a session with only
+ * `TRADE` enabled offers `trade.closed` but never `strategy.started`.
  */
 internal class InsightsLifecycle(
     private val insightsSink: InsightsSink?,
@@ -36,21 +37,28 @@ internal class InsightsLifecycle(
      */
     fun strategyIds(): List<String> = strategies.map { it.first }.filterNot { it.startsWith("__") }
 
-    /** The market-data gate judged [symbol] unhealthy for [reason]. */
+    /** The market-data gate judged [symbol] unhealthy for [reason]; [kind] is the fault's wire name. */
     fun marketDataStale(
         symbol: String,
         reason: String,
+        kind: String,
+    ) = offerLifecycle { InsightsTranslate.marketDataStale(source.name, symbol, clock.now(), reason, kind) }
+
+    /** [symbol] is healthy again after an unhealthy episode that lasted [unhealthyForMs]. */
+    fun marketDataRecovered(
+        symbol: String,
+        reason: String,
+        unhealthyForMs: Long,
     ) {
-        if (insightsSink != null && InsightsEventFamily.LIFECYCLE in insightsEvents) {
+        if (insightsSink != null && InsightsEventFamily.MARKETDATA in insightsEvents) {
             insightsSink.offer(
-                InsightsTranslate.marketDataStale(
-                    source = source.name,
-                    symbol = symbol,
-                    ts = clock.now(),
-                    reason = reason,
-                ),
+                InsightsTranslate.marketDataRecovered(source.name, symbol, clock.now(), reason, unhealthyForMs),
             )
         }
+    }
+
+    private inline fun offerLifecycle(envelope: () -> InsightsEnvelope) {
+        if (insightsSink != null && InsightsEventFamily.LIFECYCLE in insightsEvents) insightsSink.offer(envelope())
     }
 
     /** An accounted fill; only an exposure-reducing fill with a net result ships as `trade.closed`. */
@@ -129,18 +137,10 @@ internal class InsightsLifecycle(
     }
 
     /** The feed reader finished, for any reason. */
-    fun feedEnded() {
-        if (insightsSink != null && InsightsEventFamily.LIFECYCLE in insightsEvents) {
-            insightsSink.offer(
-                InsightsTranslate.marketDataDisconnected(
-                    source = source.name,
-                    symbols = feedSymbols,
-                    ts = clock.now(),
-                    reason = "feed-ended",
-                ),
-            )
+    fun feedEnded() =
+        offerLifecycle {
+            InsightsTranslate.marketDataDisconnected(source.name, feedSymbols, clock.now(), reason = "feed-ended")
         }
-    }
 
     /** Announce every reportable strategy as started, with its deploy metadata and current halt state. */
     fun strategiesStarted(riskState: com.qkt.risk.RiskState) {

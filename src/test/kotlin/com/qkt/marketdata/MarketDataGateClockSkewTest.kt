@@ -27,7 +27,7 @@ class MarketDataGateClockSkewTest {
     fun `broker clock skew beyond tolerance suppresses health and alerts once`() {
         val clock = TickingClock(1_784_000_000_000L)
         val alerts = mutableListOf<String>()
-        val gate = MarketDataGate(clock, onUnhealthy = { _, reason -> alerts.add(reason) })
+        val gate = MarketDataGate(clock, onUnhealthy = { _, reason, _ -> alerts.add(reason) })
         // Feed timestamps sit 3 hours behind the local clock — a wrong server_time_zone,
         // not latency. Data keeps flowing, so the staleness check alone never fires.
         repeat(3) {

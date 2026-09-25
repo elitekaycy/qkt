@@ -432,7 +432,7 @@ Built-in MT5 profile names: `exness`, `icmarkets`, `ftmo`, `pepperstone`.
 | `expected_account_currency` | currency code | no | none | Optional profile-level currency assertion; global `account.currency` is also checked by preflight. |
 | `expected_leverage` | int | production MT5 | none | Refuses startup when venue leverage differs. |
 | `expected_margin_mode` | `netting` or `hedging` | production MT5 | none | Refuses startup when the venue's margin mode differs — the engine's position model must match the account's (#1071). |
-| `calendars` | map pattern to `fx`, `crypto`, `nyse`, or `<base> pause HH:MM-HH:MM [Zone]` | no | inherited or FX default | First matching pattern wins. A `pause` clause adds a venue-scheduled daily break on top of the base calendar's sessions; the map form `{ base: fx, pause: 17:00-18:00, zone: America/New_York }` is equivalent. During the pause the market-data gate reports a quote gap as `PAUSED` (info) instead of `STALE` (error) and still suppresses new entries; feed polling and session gating are unchanged. Built-in `exness` and `icmarkets` profiles pause metals and energy (`XAU*`, `XAG*`, `XPT*`, `XPD*`, `USOIL*`, `UKOIL*`, `XTI*`, `XBR*`, `XNG*`) 17:00–18:00 New York. |
+| `calendars` | map pattern to `fx`, `crypto`, `nyse`, or `<base> pause HH:MM-HH:MM [Zone]` | no | inherited or FX default | First matching pattern wins. A `pause` clause adds a venue-scheduled daily break on top of the base calendar's sessions; the map form `{ base: fx, pause: 17:00-18:00, zone: America/New_York }` is equivalent. During the pause the market-data gate reports a quote gap as `PAUSED` (info) instead of `STALE` (error) and still suppresses new entries; feed polling and session gating are unchanged. Outside the symbol's session (weekends for `fx`, never for `crypto`) the gate reports a quote gap as venue closed (info), not `STALE`. Built-in venue windows, measured from live quote gaps and widened by one stale threshold on each side: `exness` and `icmarkets` pause metals and energy (`XAU*`, `XAG*`, `XPT*`, `XPD*`, `USOIL*`, `UKOIL*`, `XTI*`, `XBR*`, `XNG*`) 16:55–18:10 New York and FX 16:55–17:15 New York; `exness` also pauses copper (`XCU*`) 18:50–01:10 London and keeps crypto (`BTC*`, `ETH*`, `LTC*`, `XRP*`, `BCH*`, `SOL*`, `ADA*`, `DOGE*`, `DOT*`, `LINK*`) on the 24/7 `crypto` calendar so its feed polls through weekends; `the5ers` pauses metals and energy 16:45–18:10 and everything else 16:50–17:10 New York, with BTC on the FX calendar (it stops at weekends there). |
 | `aliases` | map qkt symbol to broker symbol | no | inherited plus overrides | Example `NAS100: USTEC`. |
 | `capability_restrictions` | list of `OrderTypeCapability` names | no | inherited plus overrides | Disables venue capabilities by enum name. |
 | `instrument_overrides.<symbol>` | map | no | inherited plus overrides | Requires `min_volume`, `volume_step`, `point_size`, `digits`, `trade_stops_level_points`; optional `max_volume` is enforced when present. |
@@ -482,6 +482,27 @@ Thresholds for the live market-data quality gate (`MarketDataGate`) every daemon
 | `market_data.outlier_sigma` | double | `6.0` | live sessions | Standard deviations from the short-window mean beyond which a tick is rejected. |
 | `market_data.max_clock_skew_ms` | long | `60000` | live sessions | Tolerance between broker tick timestamps and the local clock before new orders are suppressed. |
 
+The gate suppresses new orders for a symbol in every case below; only the faults alert. A fault
+logs at ERROR, sends a `MarketDataUnhealthy` strategy error (when `strategy_error` notifications
+are on) and ships `marketdata.stale` to insights once per episode.
+
+| Condition | Log | Alerts | `marketdata.stale` `kind` |
+|---|---|---|---|
+| No tick past the staleness threshold while the symbol is in session | ERROR `STALE` | yes | `stale` |
+| Broker tick clock further than `max_clock_skew_ms` from the local clock | ERROR `CLOCK-SKEWED` | yes | `clock_skew` |
+| A run of rejected outlier ticks | ERROR `UNHEALTHY` | yes | `outlier` |
+| Quote gap inside a calendar `pause` | INFO `PAUSED` | no | none |
+| Quote gap while the symbol's calendar is out of session, or a last print older than any server-zone offset | INFO `venue closed` | no | none |
+
+Sessions are judged per symbol from the broker profile's `calendars`, so on an account trading
+`XAUUSD` and `BTCUSD` (with `BTC*: crypto`) a weekend gap is closed for gold and still `STALE` for
+bitcoin. A gap that went `STALE` in session stays `STALE` after the session ends. Every condition
+clears on the first fresh tick. When a symbol that alerted is fully healthy again (no fault left,
+clock in tolerance), the gate logs `recovered after <ms>ms unhealthy` and ships one
+`marketdata.recovered` event whose `unhealthyForMs` runs from the episode's first alert; a symbol
+that raised `stale` and `clock_skew` recovers once, when both have cleared. Recovery sends no
+notification.
+
 ## `notify`
 
 Notification channels are keyed by channel type. Telegram is built in.
@@ -509,13 +530,28 @@ costs. When conversion evidence is available, the same payload includes
 `grossAccountRealized`, `nativeRealized`, currencies, FX rate/source fields, and
 `costsAccount` so live trade tables and graphs can reconcile net-vs-gross values.
 
+Market-data health ships per symbol (see [`market_data`](#market_data) for when each fires).
+`marketdata.stale` is in the `lifecycle` family; `marketdata.recovered` is in the opt-in
+`marketdata` family, because a collector older than qkt-insights #106 rejects the whole batch that
+carries it. List `marketdata` only once the collector runs that release:
+
+- `marketdata.stale`: `{"source", "symbols": [symbol], "state": "stale", "reason", "ts", "kind"}`,
+  `kind` one of `stale`, `clock_skew`, `outlier`; `reason` is the operator text, e.g.
+  `quote age 60553ms exceeds 60000ms threshold`.
+- `marketdata.recovered`: `{"source", "symbols": [symbol], "state": "recovered", "reason", "ts",
+  "unhealthyForMs"}`, e.g. `"reason": "fresh tick after stale", "unhealthyForMs": 184000`. Pair it
+  with the open `marketdata.stale` for the same source and symbol to measure the episode.
+
+Both use envelope ids `marketdata-<state>-<source>-<ts>`, like `marketdata.connected`,
+`marketdata.disconnected` and `marketdata.reconnected`.
+
 | Key | Type | Default | Notes |
 |---|---|---|---|
 | `insights.enabled` | boolean | `false` | Must be true and `url` non-blank to create a sink. |
 | `insights.url` | URL | empty | Collector ingest URL. |
 | `insights.instance_id` | string | `qkt` fallback at daemon wire time | Instance label sent with events. |
 | `insights.token` | string | empty | Bearer or collector token as expected by the sink. |
-| `insights.events` | list | all families when enabled and omitted | Valid families: `trade`, `order`, `signal`, `risk`, `position`, `snapshot`, `log`, `state`, `deal`, `lifecycle`. `snapshot` is retained for old configs and wires nothing. |
+| `insights.events` | list | every family except `marketdata` when enabled and omitted | Valid families: `trade`, `order`, `signal`, `risk`, `position`, `snapshot`, `log`, `state`, `deal`, `lifecycle`, `marketdata`. `snapshot` is retained for old configs and wires nothing. `marketdata` (feed recovery events) is opt-in and needs a qkt-insights collector with #106. |
 | `insights.flush_interval_ms` | long | `250` | Batch flush cadence. |
 | `insights.batch_size` | int | `200` | Max events per HTTP batch. |
 | `insights.queue_capacity` | int | `10000` | In-memory queue bound before the sink worker drains events. |

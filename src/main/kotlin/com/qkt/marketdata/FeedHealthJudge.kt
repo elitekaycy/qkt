@@ -5,22 +5,26 @@ import org.slf4j.Logger
 
 /**
  * Health verdict half of [MarketDataGate]: decides whether a symbol's feed is fit for NEW
- * orders (outlier run, clock skew versus venue-closed last print, scheduled pause, stale
- * quotes), raises each alert once per unhealthy transition, and clears the latches when a
- * fresh tick recovers the feed. Logs under the gate's logger so operator log lines are
- * unchanged.
+ * orders (outlier run, clock skew versus venue-closed last print, scheduled pause, venue out
+ * of session, stale quotes), raises each fault alert once per unhealthy transition, clears
+ * the latches when a fresh tick recovers the feed, and reports the end of an unhealthy episode
+ * once. Logs under the gate's logger so operator log lines are unchanged.
  */
 internal class FeedHealthJudge(
     private val clock: Clock,
     private val staleAgeMultiple: Double,
     private val minStaleAgeMs: Long,
     private val maxClockSkewMs: Long,
-    private val onUnhealthy: (symbol: String, reason: String) -> Unit,
+    private val onUnhealthy: (symbol: String, reason: String, fault: FeedFault) -> Unit,
+    private val onRecovered: (symbol: String, reason: String, unhealthyForMs: Long) -> Unit,
     private val inSession: (symbol: String, nowMs: Long) -> Boolean,
     private val scheduledBreak: (symbol: String, nowMs: Long) -> Boolean,
     private val log: Logger,
 ) {
-    /** Clears the pause, stale, closed and skew latches after an accepted tick for [symbol]. */
+    /**
+     * Clears the pause, stale, closed and skew latches after an accepted tick for [symbol], then
+     * closes the unhealthy episode if nothing is left wrong.
+     */
     fun onFreshTick(
         symbol: String,
         state: SymbolFeedState,
@@ -49,6 +53,39 @@ internal class FeedHealthJudge(
                 maxClockSkewMs,
             )
         }
+        settleEpisode(symbol, state)
+    }
+
+    /**
+     * Ends [symbol]'s open unhealthy episode, once, when no fault latch is left and the broker
+     * clock is back in tolerance: a symbol that raised stale and clock skew recovers when both
+     * have cleared, not at the first. A symbol that never raised a fault has nothing to end.
+     */
+    fun settleEpisode(
+        symbol: String,
+        state: SymbolFeedState,
+    ) {
+        val fault = state.unhealthyFault ?: return
+        if (state.staleAlerted || state.skewAlerted || kotlin.math.abs(state.lastSkewMs) > maxClockSkewMs) return
+        val unhealthyForMs = clock.now() - state.unhealthySinceMs
+        state.unhealthyFault = null
+        state.unhealthySinceMs = 0L
+        log.info("market data for {} recovered after {}ms unhealthy ({})", symbol, unhealthyForMs, fault.wireName)
+        onRecovered(symbol, "fresh tick after ${fault.wireName}", unhealthyForMs)
+    }
+
+    // Every fault alert goes through here so the episode opens at the first of them.
+    private fun raise(
+        symbol: String,
+        state: SymbolFeedState,
+        reason: String,
+        fault: FeedFault,
+    ) {
+        if (state.unhealthyFault == null) {
+            state.unhealthyFault = fault
+            state.unhealthySinceMs = clock.now()
+        }
+        onUnhealthy(symbol, reason, fault)
     }
 
     /** See [MarketDataGate.isHealthy]; [state] is the observed state for [symbol]. */
@@ -65,7 +102,8 @@ internal class FeedHealthJudge(
                     symbol,
                     state.rejectedOutlierRun,
                 )
-                onUnhealthy(symbol, "${state.rejectedOutlierRun} consecutive outlier tick(s) rejected")
+                val reason = "${state.rejectedOutlierRun} consecutive outlier tick(s) rejected"
+                raise(symbol, state, reason, FeedFault.OUTLIER)
             }
             return false
         }
@@ -99,7 +137,8 @@ internal class FeedHealthJudge(
                     state.lastSkewMs,
                     maxClockSkewMs,
                 )
-                onUnhealthy(symbol, "broker tick clock skew ${state.lastSkewMs}ms exceeds ${maxClockSkewMs}ms")
+                val reason = "broker tick clock skew ${state.lastSkewMs}ms exceeds ${maxClockSkewMs}ms"
+                raise(symbol, state, reason, FeedFault.CLOCK_SKEW)
             }
             return false
         }
@@ -118,6 +157,20 @@ internal class FeedHealthJudge(
             }
             return false
         }
+        if (!healthy && !state.staleAlerted && !inSession(symbol, now)) {
+            // Weekend, holiday, a symbol that opens later: the venue is shut, so a quote gap is
+            // expected, not a feed fault. New orders still wait for the first fresh tick.
+            if (!state.closedAlerted) {
+                state.closedAlerted = true
+                log.info(
+                    "market data for {}: venue closed (out of session) — quote age {}ms; " +
+                        "new orders wait for a fresh tick",
+                    symbol,
+                    age,
+                )
+            }
+            return false
+        }
         if (!healthy && !state.staleAlerted) {
             // A gap that outlives its scheduled break is a feed fault after all.
             state.staleAlerted = true
@@ -127,7 +180,7 @@ internal class FeedHealthJudge(
                 age,
                 threshold,
             )
-            onUnhealthy(symbol, "quote age ${age}ms exceeds ${threshold}ms threshold")
+            raise(symbol, state, "quote age ${age}ms exceeds ${threshold}ms threshold", FeedFault.STALE)
         }
         return healthy
     }
