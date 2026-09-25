@@ -66,9 +66,21 @@ class InsightsConfigTest {
     }
 
     @Test
-    fun `missing events list enables every family`() {
+    fun `missing events list enables every default family but not the opt-in marketdata family`() {
         val cfg = InsightsConfig.parse(mapOf("enabled" to true, "url" to "http://h/ingest"))
-        assertThat(cfg.events).containsExactlyInAnyOrderElementsOf(InsightsEventFamily.entries)
+        assertThat(
+            cfg.events,
+        ).containsExactlyInAnyOrderElementsOf(InsightsEventFamily.entries.filter { it.onByDefault })
+        assertThat(cfg.events).doesNotContain(InsightsEventFamily.MARKETDATA)
+    }
+
+    @Test
+    fun `listing marketdata opts into the recovery event family`() {
+        val cfg =
+            InsightsConfig.parse(
+                mapOf("enabled" to true, "url" to "http://h/ingest", "events" to listOf("lifecycle", "marketdata")),
+            )
+        assertThat(cfg.events).containsExactlyInAnyOrder(InsightsEventFamily.LIFECYCLE, InsightsEventFamily.MARKETDATA)
     }
 
     @Test

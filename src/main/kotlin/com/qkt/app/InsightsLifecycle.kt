@@ -49,8 +49,12 @@ internal class InsightsLifecycle(
         symbol: String,
         reason: String,
         unhealthyForMs: Long,
-    ) = offerLifecycle {
-        InsightsTranslate.marketDataRecovered(source.name, symbol, clock.now(), reason, unhealthyForMs)
+    ) {
+        if (insightsSink != null && InsightsEventFamily.MARKETDATA in insightsEvents) {
+            insightsSink.offer(
+                InsightsTranslate.marketDataRecovered(source.name, symbol, clock.now(), reason, unhealthyForMs),
+            )
+        }
     }
 
     private inline fun offerLifecycle(envelope: () -> InsightsEnvelope) {
