@@ -7,6 +7,8 @@ package com.qkt.observe.insights
  */
 enum class InsightsEventFamily(
     val configName: String,
+    /** Whether an `insights:` block with no `events:` list streams this family. */
+    val onByDefault: Boolean = true,
 ) {
     TRADE("trade"),
     ORDER("order"),
@@ -20,6 +22,12 @@ enum class InsightsEventFamily(
     STATE("state"),
     DEAL("deal"),
     LIFECYCLE("lifecycle"),
+
+    /**
+     * `marketdata.recovered` (feed recovery with its duration). Off unless listed: a collector
+     * older than qkt-insights #106 rejects the whole batch that carries this event type.
+     */
+    MARKETDATA("marketdata", onByDefault = false),
     ;
 
     companion object {
@@ -92,7 +100,7 @@ data class InsightsConfig(
                     .orEmpty()
                     .mapNotNull { InsightsEventFamily.fromConfigName(it.toString()) }
                     .toSet()
-                    .ifEmpty { InsightsEventFamily.entries.toSet() }
+                    .ifEmpty { InsightsEventFamily.entries.filter { it.onByDefault }.toSet() }
             return InsightsConfig(
                 enabled = true,
                 url = map["url"]?.toString().orEmpty(),
