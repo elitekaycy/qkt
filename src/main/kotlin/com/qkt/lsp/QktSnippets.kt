@@ -1,11 +1,5 @@
 package com.qkt.lsp
 
-import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.builtins.MapSerializer
-import kotlinx.serialization.builtins.serializer
-import kotlinx.serialization.json.Json
-
 /**
  * The strategy templates a `.qkt` author can drop into a file: a full strategy skeleton,
  * a ready-to-edit example, and smaller building blocks (a rule, a BUY, a crossover).
@@ -252,29 +246,4 @@ object QktSnippets {
                 scope = Scope.RULES,
             ),
         )
-
-    /**
-     * Render [all] as the VS Code snippets file (`editor/vscode/snippets/qkt.json`): a JSON
-     * object keyed by [Snippet.title], each value carrying `prefix`, `body`, and `description`.
-     * VS Code snippet syntax is identical to the LSP's, so the bodies are emitted verbatim.
-     */
-    fun toVscodeJson(): String {
-        val map = LinkedHashMap<String, VscodeSnippet>()
-        for (s in all) map[s.title] = VscodeSnippet(s.prefix, s.body, s.description)
-        return JSON.encodeToString(MapSerializer(String.serializer(), VscodeSnippet.serializer()), map)
-    }
-
-    @Serializable
-    private data class VscodeSnippet(
-        val prefix: String,
-        val body: List<String>,
-        val description: String,
-    )
-
-    @OptIn(ExperimentalSerializationApi::class)
-    private val JSON =
-        Json {
-            prettyPrint = true
-            prettyPrintIndent = "  "
-        }
 }
