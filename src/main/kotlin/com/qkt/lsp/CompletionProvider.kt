@@ -28,7 +28,32 @@ object CompletionProvider {
             val owner = text.substring(ownerStart, wordStart - 1)
             memberItems(owner, lastGoodAst)
         } else {
-            generalItems(lastGoodAst)
+            generalItems(lastGoodAst, scopeAt(text, line))
+        }
+    }
+
+    /**
+     * Which snippets fit the cursor's line, read from the section headers above it: an empty document
+     * takes whole-file templates, SYMBOLS takes a stream line, the space between SYMBOLS and RULES takes
+     * declarations, and RULES takes rules. A PORTFOLIO takes none. e.g. the line after `RULES` gets `rule`.
+     */
+    internal fun scopeAt(
+        text: String,
+        line: Int,
+    ): QktSnippets.Scope? {
+        val above = text.lines().take(line)
+        if (above.all { it.isBlank() || it.trimStart().startsWith("#") }) return QktSnippets.Scope.FILE
+        if (above.any { it.startsWith("PORTFOLIO") }) return null
+        val header =
+            above.lastOrNull { Regex("""^(STRATEGY|DEFAULTS|SYMBOLS|PARAM|LET|RULES|FOR)\b""").containsMatchIn(it) }
+                ?: return null
+        return when {
+            header.startsWith("RULES") || header.startsWith("FOR") -> QktSnippets.Scope.RULES
+            header.startsWith(
+                "SYMBOLS",
+            ) &&
+                text.lines().getOrElse(line) { "" }.startsWith(" ") -> QktSnippets.Scope.SYMBOLS
+            else -> QktSnippets.Scope.DECLARATION
         }
     }
 
@@ -44,14 +69,17 @@ object CompletionProvider {
         }
 
     /** Everywhere else: the full vocabulary plus the symbols this document declares. */
-    private fun generalItems(ast: ParsedFile?): List<CompletionItem> {
+    private fun generalItems(
+        ast: ParsedFile?,
+        scope: QktSnippets.Scope?,
+    ): List<CompletionItem> {
         val items = mutableListOf<CompletionItem>()
         QktVocabulary.keywords.forEach { items += item(it, CompletionItemKind.Keyword) }
         QktVocabulary.indicators.forEach { items += item(it, CompletionItemKind.Function) }
         QktVocabulary.functions.forEach { items += item(it, CompletionItemKind.Function) }
         QktVocabulary.constants.forEach { items += item(it, CompletionItemKind.Constant) }
         documentSymbols(ast).forEach { items += item(it, CompletionItemKind.Variable) }
-        QktSnippets.all.forEach { items += snippetItem(it) }
+        QktSnippets.all.filter { it.scope == scope }.forEach { items += snippetItem(it) }
         return items
     }
 

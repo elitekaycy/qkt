@@ -30,7 +30,15 @@ object QktSnippets {
         val prefix: String,
         val body: List<String>,
         val description: String,
+        val scope: Scope,
     )
+
+    /**
+     * Where a snippet produces valid DSL, so the language server offers it only there: a whole-file
+     * template in an empty document, a stream line inside SYMBOLS, a declaration before RULES, and
+     * rules or rule fragments inside RULES. e.g. `let` is never offered inside RULES, which rejects it.
+     */
+    enum class Scope { FILE, SYMBOLS, DECLARATION, RULES }
 
     val all: List<Snippet> =
         listOf(
@@ -47,16 +55,17 @@ object QktSnippets {
                         "}",
                         "",
                         "SYMBOLS",
-                        "  \${5:alias} = " +
+                        "  \${5:btc} = " +
                             "\${6|BACKTEST,BYBIT_SPOT,BYBIT_LINEAR,EXNESS,ICMARKETS|}" +
-                            ":\${7:SYMBOL} EVERY \${8|1m,5m,15m,1h,1d|}",
+                            ":\${7:BTCUSDT} EVERY \${8|1m,5m,15m,1h,1d|}",
                         "",
                         "RULES",
-                        "  WHEN \${9:condition}",
-                        "  THEN \${10:action}",
+                        "  WHEN \${9:\$5.close > \$5.open}",
+                        "  THEN \${10:BUY \$5}",
                         "\$0",
                     ),
                 description = "STRATEGY skeleton with DEFAULTS, SYMBOLS, and one RULES entry.",
+                scope = Scope.FILE,
             ),
             Snippet(
                 title = "STRATEGY skeleton (full)",
@@ -78,17 +87,19 @@ object QktSnippets {
                         "PARAM \${9:fast} = \${10:9}",
                         "PARAM \${11:slow} = \${12:21}",
                         "",
-                        "LET \${13:fast_ema} = ema(\$5.close, \${10:9})",
+                        "LET \${13:fast_ema} = ema(\$5.close, \$9)",
+                        "LET \${14:slow_ema} = ema(\$5.close, \$11)",
                         "",
                         "RULES",
-                        "  WHEN ema(\$5.close, \${10:9}) CROSSES ABOVE ema(\$5.close, \${12:21})",
+                        "  WHEN \$13 CROSSES ABOVE \$14",
                         "  THEN BUY \$5",
                         "",
-                        "  WHEN ema(\$5.close, \${10:9}) CROSSES BELOW ema(\$5.close, \${12:21})",
+                        "  WHEN \$13 CROSSES BELOW \$14",
                         "  THEN CLOSE \$5",
                         "\$0",
                     ),
-                description = "Full STRATEGY skeleton: DEFAULTS, SYMBOLS, PARAM, LET, and a crossover entry/exit.",
+                description = "Full STRATEGY skeleton: DEFAULTS, SYMBOLS, PARAMs driving a crossover entry/exit.",
+                scope = Scope.FILE,
             ),
             Snippet(
                 title = "EMA crossover strategy (complete)",
@@ -115,6 +126,7 @@ object QktSnippets {
                         "\$0",
                     ),
                 description = "A complete, runnable EMA fast/slow crossover strategy to edit.",
+                scope = Scope.FILE,
             ),
             Snippet(
                 title = "SYMBOLS line",
@@ -123,20 +135,22 @@ object QktSnippets {
                     listOf(
                         "\${1:alias} = " +
                             "\${2|BACKTEST,BYBIT_SPOT,BYBIT_LINEAR,EXNESS,ICMARKETS|}" +
-                            ":\${3:SYMBOL} EVERY \${4|1m,5m,15m,1h,1d|}" +
+                            ":\${3:BTCUSDT} EVERY \${4|1m,5m,15m,1h,1d|}" +
                             "\${5: WARMUP \${6:50} BARS}",
                     ),
                 description = "Stream declaration with optional WARMUP.",
+                scope = Scope.SYMBOLS,
             ),
             Snippet(
                 title = "WHEN/THEN rule",
                 prefix = "rule",
                 body =
                     listOf(
-                        "WHEN \${1:condition}",
-                        "THEN \${2:action}",
+                        "WHEN \${1:alias}.close > \$1.open",
+                        "THEN BUY \$1 SIZING \${2:0.1}",
                     ),
                 description = "Basic WHEN/THEN rule.",
+                scope = Scope.RULES,
             ),
             Snippet(
                 title = "BUY action",
@@ -146,6 +160,7 @@ object QktSnippets {
                         "BUY \${1:alias} SIZING \${2:0.1}",
                     ),
                 description = "BUY action with explicit sizing.",
+                scope = Scope.RULES,
             ),
             Snippet(
                 title = "BUY with bracket",
@@ -159,6 +174,7 @@ object QktSnippets {
                         "    }",
                     ),
                 description = "BUY with ATR-sized stop and take-profit.",
+                scope = Scope.RULES,
             ),
             Snippet(
                 title = "SIZING N PCT RISK",
@@ -168,6 +184,7 @@ object QktSnippets {
                         "SIZING \${1:0.5} PCT RISK",
                     ),
                 description = "Risk-percent sizing.",
+                scope = Scope.RULES,
             ),
             Snippet(
                 title = "EMA crossover",
@@ -177,15 +194,17 @@ object QktSnippets {
                         "ema(\${1:alias}.close, \${2:9}) CROSSES ABOVE ema(\${1:alias}.close, \${3:21})",
                     ),
                 description = "EMA fast/slow crossover condition.",
+                scope = Scope.RULES,
             ),
             Snippet(
                 title = "LET binding",
                 prefix = "let",
                 body =
                     listOf(
-                        "LET \${1:name} = \${2:expression}",
+                        "LET \${1:trend} = \${2:ema(alias.close, 20)}",
                     ),
-                description = "LET expression binding.",
+                description = "LET expression binding (before RULES).",
+                scope = Scope.DECLARATION,
             ),
             Snippet(
                 title = "DEFAULTS block",
@@ -197,18 +216,20 @@ object QktSnippets {
                         "  TIF = \${2|GTC,IOC,FOK,DAY|}",
                         "}",
                     ),
-                description = "DEFAULTS block.",
+                description = "DEFAULTS block (before SYMBOLS).",
+                scope = Scope.DECLARATION,
             ),
             Snippet(
                 title = "FOR EACH over streams",
                 prefix = "foreach",
                 body =
                     listOf(
-                        "FOR EACH \${1:s} IN \${2:btc, eth, sol} DO",
-                        "  WHEN \${3:condition involving \${1:s}}",
-                        "  THEN \${4:action involving \${1:s}}",
+                        "FOR EACH \${1:s} IN [\${2:btc, eth, sol}] DO",
+                        "  WHEN \$1.close > \$1.open",
+                        "  THEN BUY \$1 SIZING \${3:0.1}",
                     ),
-                description = "Iterate a rule over multiple streams.",
+                description = "Iterate a rule over multiple streams (the list needs its brackets).",
+                scope = Scope.RULES,
             ),
             Snippet(
                 title = "Session-end FLATTEN",
@@ -218,6 +239,7 @@ object QktSnippets {
                         "WHEN NOW.hour_utc = \${1:21} THEN FLATTEN",
                     ),
                 description = "Close every open position at a fixed UTC hour.",
+                scope = Scope.RULES,
             ),
             Snippet(
                 title = "IS NOT NULL guard",
@@ -227,6 +249,7 @@ object QktSnippets {
                         "\${1:expression} IS NOT NULL",
                     ),
                 description = "Guard expression against Value.Undefined.",
+                scope = Scope.RULES,
             ),
         )
 
