@@ -56,17 +56,45 @@ class CompletionProviderTest {
     }
 
     @Test
-    fun `general position offers strategy templates as expandable snippets`() {
+    fun `an empty document offers the whole-file templates as expandable snippets`() {
         val items = CompletionProvider.complete("", 0, 0, null)
         val strategy = items.first { it.label == "strategy" && it.kind == CompletionItemKind.Snippet }
         assertThat(strategy.insertTextFormat).isEqualTo(InsertTextFormat.Snippet)
         assertThat(strategy.insertText).contains("STRATEGY", "DEFAULTS", "SYMBOLS", "RULES")
-        assertThat(items.map { it.label }).contains("stratfull", "strat-ema", "rule", "buy")
+        assertThat(items.map { it.label }).contains("stratfull", "strat-ema").doesNotContain("rule", "buy")
     }
 
     @Test
     fun `member access does not offer snippets`() {
         val kinds = CompletionProvider.complete(doc, 8, 13, astOf(doc)).map { it.kind }
         assertThat(kinds).doesNotContain(CompletionItemKind.Snippet)
+    }
+
+    @Test
+    fun `snippets are offered only where they produce valid DSL`() {
+        val doc = "STRATEGY s VERSION 1\n\nSYMBOLS\n  btc = BACKTEST:BTCUSD EVERY 15m\n  \n\n\nRULES\n  \n"
+
+        fun snippetsAt(
+            line: Int,
+            ch: Int,
+        ) = CompletionProvider
+            .complete(
+                doc,
+                line,
+                ch,
+                null,
+            ).filter { it.kind == CompletionItemKind.Snippet }
+            .map { it.label }
+        assertThat(snippetsAt(4, 2)).containsExactly("sym")
+        assertThat(snippetsAt(6, 0)).contains("let", "def").doesNotContain("rule", "strategy")
+        assertThat(
+            snippetsAt(8, 2),
+        ).contains("rule", "foreach", "flatten").doesNotContain("let", "def", "strategy", "sym")
+        assertThat(
+            CompletionProvider.complete("PORTFOLIO p VERSION 1\n", 1, 0, null).filter {
+                it.kind ==
+                    CompletionItemKind.Snippet
+            },
+        ).isEmpty()
     }
 }

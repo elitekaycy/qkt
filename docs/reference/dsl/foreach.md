@@ -6,9 +6,12 @@ A compile-time macro that applies the same rule body to multiple streams. One so
 
 <!-- qkt-doc: grammar -->
 ```qkt
-FOR EACH <iter_var> IN <stream1>, <stream2>, ... DO
-    <rule body using iter_var>
+RULES
+    FOR EACH <iter_var> IN [<stream1>, <stream2>, ...] DO
+      <rule body using iter_var>
 ```
+
+`FOR EACH` goes inside `RULES`, and the stream list needs its square brackets.
 
 The iteration variable substitutes textually for each stream in the list. Each substitution produces one rule.
 
@@ -20,10 +23,11 @@ SYMBOLS
     eth = BACKTEST:ETHUSDT EVERY 1m
     sol = BACKTEST:SOLUSDT EVERY 1m
 
-FOR EACH s IN [btc, eth, sol] DO
-    WHEN ema(s.close, 9) CROSSES ABOVE ema(s.close, 21)
-    THEN BUY s SIZING 0.1
-         BRACKET { STOP_LOSS BY 1 PCT, TAKE_PROFIT BY 2 PCT }
+RULES
+    FOR EACH s IN [btc, eth, sol] DO
+      WHEN ema(s.close, 9) CROSSES ABOVE ema(s.close, 21)
+      THEN BUY s SIZING 0.1
+           BRACKET { STOP_LOSS BY 1 PCT, TAKE_PROFIT BY 2 PCT }
 ```
 
 This expands at compile time to three independent rules — one each for btc, eth, sol. The substitution is purely textual at the AST level.
