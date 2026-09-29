@@ -24,10 +24,10 @@ REQUIRED_ARTIFACTS = {
     "rejections.csv",
     "pnl_components.csv",
     "equity_global.csv",
-    "equity_daily.csv",
-    "monthly_returns.csv",
     "report.html",
 }
+# Present from qkt 0.55 on; older bundles are still valid, and the manifest hashes them when present.
+OPTIONAL_ARTIFACTS = {"equity_daily.csv", "monthly_returns.csv"}
 
 
 @dataclass
