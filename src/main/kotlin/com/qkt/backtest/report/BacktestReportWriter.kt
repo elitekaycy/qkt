@@ -40,6 +40,8 @@ class BacktestReportWriter(
         Files.writeString(dir.resolve("rejections.csv"), RejectionsCsv.render(result.rejections))
         Files.writeString(dir.resolve("orders.jsonl"), OrderDecisionsJsonl.render(result))
         Files.writeString(dir.resolve("pnl_components.csv"), PnlComponentsCsv.render(result))
+        Files.writeString(dir.resolve(DailyEquityCsv.FILE_NAME), DailyEquityCsv.render(result.dailyEquity))
+        Files.writeString(dir.resolve(MonthlyReturnsCsv.FILE_NAME), MonthlyReturnsCsv.render(result.monthlyReturns))
         result.bookRisk?.let { Files.writeString(dir.resolve("book_risk.csv"), BookRiskCsv.render(it)) }
         result.global.monteCarlo?.let {
             Files.writeString(dir.resolve(MonteCarloFanCsv.FILE_NAME), MonteCarloFanCsv.render(it))

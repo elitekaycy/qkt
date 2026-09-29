@@ -3,6 +3,7 @@ package com.qkt.backtest.report
 import com.qkt.backtest.BacktestResult
 import com.qkt.backtest.ReplayInputReport
 import com.qkt.backtest.RunawayBreakerReport
+import com.qkt.backtest.WindowReport
 import com.qkt.evidence.EvidenceJson
 
 /**
@@ -39,6 +40,7 @@ internal object ResultJson {
         } else {
             sb.append("}")
         }
+        sb.append(",\n  \"windows\": ").append(renderWindows(result.windows))
         sb.append(",\n  \"bookAnalytics\": ").append(BookJson.renderAnalytics(result.bookAnalytics))
         sb.append(",\n  \"bookRisk\": ").append(BookJson.renderRisk(result.bookRisk))
         sb.append(",\n  \"runawayBreaker\": ").append(renderRunawayBreaker(result.runawayBreaker))
@@ -101,6 +103,8 @@ internal object ResultJson {
             append(", \"rejectionsCsv\": \"rejections.csv\"")
             append(", \"ordersJsonl\": \"orders.jsonl\"")
             append(", \"pnlComponentsCsv\": \"pnl_components.csv\"")
+            append(", \"equityDailyCsv\": \"${DailyEquityCsv.FILE_NAME}\"")
+            append(", \"monthlyReturnsCsv\": \"${MonthlyReturnsCsv.FILE_NAME}\"")
             append(", \"manifestJson\": \"manifest.json\"")
             append(", \"equityGlobalCsv\": \"equity_global.csv\"")
             append(", \"equityStrategyCsv\": {")
@@ -119,6 +123,30 @@ internal object ResultJson {
             append(", \"html\": \"report.html\"")
             append("}")
         }
+
+    /** Each `--metrics-window`/`--oos-split` window keyed by name: bounds, sample and fill counts, and its report. */
+    private fun renderWindows(windows: List<WindowReport>): String {
+        if (windows.isEmpty()) return "{}"
+        return buildString {
+            append("{\n")
+            for ((i, w) in windows.withIndex()) {
+                append("    ").append(ReportSerializer.jsonString(w.window.name)).append(": {")
+                append("\"fromMs\": ").append(w.window.fromMs)
+                append(", \"fromIso\": ").append(ReportSerializer.jsonString(ReportSerializer.isoUtc(w.window.fromMs)))
+                append(", \"toMs\": ").append(w.window.toMs)
+                append(", \"toIso\": ").append(ReportSerializer.jsonString(ReportSerializer.isoUtc(w.window.toMs)))
+                append(", \"samples\": ").append(w.samples)
+                append(", \"closingFills\": ").append(w.closingFills)
+                append(", \"equityStart\": ").append(ReportSerializer.jsonBigDecimal(w.equityStart))
+                append(", \"equityEnd\": ").append(ReportSerializer.jsonBigDecimal(w.equityEnd))
+                append(", \"metrics\": ").append(PerformanceReportJson.render(w.report, indent = 4))
+                append("}")
+                if (i != windows.size - 1) append(",")
+                append('\n')
+            }
+            append("  }")
+        }
+    }
 
     private fun renderTradeSummary(result: BacktestResult): String {
         val summary = TradeAuditSummaries.from(result)

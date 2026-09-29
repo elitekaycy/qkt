@@ -19,6 +19,10 @@ internal class SymbolFeedState {
     var windowSize = 0
     var staleAlerted = false
     var pausedAlerted = false
+
+    // Last instant the symbol was judged inside a scheduled break; the post-break gap is
+    // measured from here, since the venue's first print lags the calendar's break end.
+    var pausedSeenMs = 0L
     var lastSkewMs = 0L
     var skewAlerted = false
     var closedAlerted = false

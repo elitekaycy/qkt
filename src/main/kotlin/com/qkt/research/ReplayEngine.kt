@@ -141,6 +141,7 @@ class ReplayEngine(
     private val recorder = ReplayRecorder(initialTimestamp)
     private val pipeline: TradingPipeline
     private val swapBook: SwapFinancingBook
+    private val analytics: ReplayAnalytics
     private val results: ReplayResultBuilder
 
     init {
@@ -200,7 +201,7 @@ class ReplayEngine(
         val bookRiskController = risk.bookRiskController
         bus.subscribe<RiskEvent.Halted> { recorder.halts.add(it) }
 
-        val analytics =
+        analytics =
             ReplayAnalytics(
                 cadence = this.cadence,
                 bus = bus,
@@ -299,7 +300,9 @@ class ReplayEngine(
         // Tick-resolved fills: replace the bar feed with one that loads real ticks for fill-possible
         // bars, deciding via this engine's own OrderManager. Built here, after the pipeline exists.
         if (tickResolvedBars != null && tickSlicer != null) {
-            feed = BarResolvedFeed(tickResolvedBars, tickSlicer, ::intrabarFill, replayEndTimestamp)
+            // Tick-resolved fills ask this engine's own OrderManager how few real ticks a bar needs.
+            feed =
+                BarResolvedFeed(tickResolvedBars, tickSlicer, pipeline.orderManager::intrabarFill, replayEndTimestamp)
         }
 
         warmup.warm(pipeline)
@@ -346,15 +349,6 @@ class ReplayEngine(
         clock.time = tick.timestamp
         pipeline.ingest(tick)
     }
-
-    // Tick-resolved fills: how few real ticks must this bar feed to stay byte-identical? Delegates to
-    // this engine's OrderManager so the decision matches the orders the run actually holds.
-    private fun intrabarFill(
-        symbol: String,
-        low: BigDecimal,
-        high: BigDecimal,
-        maxHalfSpread: BigDecimal,
-    ): com.qkt.app.IntrabarFill = pipeline.orderManager.intrabarFill(symbol, low, high, maxHalfSpread)
 
     /** Pull and ingest ticks until [stop] returns true after a tick, or the feed drains. */
     fun advanceUntil(stop: () -> Boolean) {
@@ -410,6 +404,10 @@ class ReplayEngine(
 
     /** Build a [BacktestResult] from current state — valid mid-replay or at end. */
     fun snapshot(): BacktestResult = results.build(ticksIngested)
+
+    /** Report [windows] beside `global` from the same equity samples (#1276); call before the first tick. */
+    fun declareMetricsWindows(windows: List<com.qkt.backtest.MetricsWindow>) =
+        windows.forEach(analytics.collector::declareWindow)
 
     /** Returns tape events accumulated since the last drain, then clears the buffer. */
     fun drainTape(): List<TapeEvent> = recorder.drainTape()

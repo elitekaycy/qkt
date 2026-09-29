@@ -147,6 +147,8 @@ class BacktestReportBundleTest {
                 "rejections.csv",
                 "orders.jsonl",
                 "pnl_components.csv",
+                "equity_daily.csv",
+                "monthly_returns.csv",
                 "report.html",
             )
         assertThat(artifacts).doesNotContainKey("manifest.json")
