@@ -650,7 +650,17 @@ def position_effect(row: dict[str, str], row_index: int, errors: list[str]) -> s
         return "UNKNOWN"
     before_raw = row.get("strategyPositionQtyBefore", "")
     after_raw = row.get("strategyPositionQtyAfter", "")
-    if not before_raw and not after_raw:
+    leg_action = row.get("legAction", "")
+    side = row.get("side", "")
+    if leg_action in {"OPENED", "CLOSED"} and side in {"BUY", "SELL"}:
+        # Leg-routed fills (hedging venues): the leg's own transition is the effect, since the net
+        # view mislabels a second long leg as INCREASE_LONG and a hedge short as CLOSE_LONG.
+        long_side = side == "BUY"
+        if leg_action == "OPENED":
+            computed = "OPEN_LONG" if long_side else "OPEN_SHORT"
+        else:
+            computed = "CLOSE_SHORT" if long_side else "CLOSE_LONG"
+    elif not before_raw and not after_raw:
         computed = "UNKNOWN"
     else:
         before = parse_decimal(before_raw, f"trades.csv row {row_index} strategyPositionQtyBefore", errors) if before_raw else Decimal("0")
