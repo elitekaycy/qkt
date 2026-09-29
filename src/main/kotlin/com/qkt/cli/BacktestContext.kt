@@ -99,6 +99,8 @@ class BacktestContext private constructor(
     private val enforceLiveBreakers: Boolean = false,
     private val runawayMaxRoundTrips: Int = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_ROUND_TRIPS,
     private val runawayMaxRejections: Int = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_REJECTIONS,
+    /** `--metrics-window` / `--oos-split` sub-windows reported beside `global` (#1276). */
+    private val metricsWindows: List<com.qkt.backtest.MetricsWindow> = emptyList(),
 ) {
     /** Fetch + completeness-validate the data the run(s) will touch. Throws IncompleteDataException on holes. */
     fun provision() = provisioner()
@@ -207,6 +209,7 @@ class BacktestContext private constructor(
             enforceLiveBreakers = enforceLiveBreakers,
             runawayMaxRoundTrips = runawayMaxRoundTrips,
             runawayMaxRejections = runawayMaxRejections,
+            metricsWindows = metricsWindows,
         )
     }
 
@@ -445,6 +448,7 @@ class BacktestContext private constructor(
                 enforceLiveBreakers = args.flag("enforce-live-breakers"),
                 runawayMaxRoundTrips = cfg.runawayMaxRoundTrips,
                 runawayMaxRejections = cfg.runawayMaxRejections,
+                metricsWindows = BacktestMetricsWindows.parse(args, from, to),
                 forceBars = forceBars,
                 barWindows = barWindows,
                 binaryBarStore = binaryBarStore,
@@ -699,6 +703,7 @@ class BacktestContext private constructor(
                 enforceLiveBreakers = args.flag("enforce-live-breakers"),
                 runawayMaxRoundTrips = cfg.runawayMaxRoundTrips,
                 runawayMaxRejections = cfg.runawayMaxRejections,
+                metricsWindows = BacktestMetricsWindows.parse(args, from, to),
                 forceBars = forceBars,
                 barWindows = barWindows,
                 binaryBarStore = binaryBarStore,

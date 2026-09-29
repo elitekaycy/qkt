@@ -115,6 +115,8 @@ class ReplayEngine(
     private val runawayRoundTripWindowMs: Long = com.qkt.risk.RunawayBreaker.DEFAULT_ROUND_TRIP_WINDOW_MS,
     private val runawayMaxRejections: Int = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_REJECTIONS,
     private val runawayRejectionWindowMs: Long = com.qkt.risk.RunawayBreaker.DEFAULT_REJECTION_WINDOW_MS,
+    /** Named sub-windows reported beside `global` (#1276); empty reports the run as a whole only. */
+    metricsWindows: List<com.qkt.backtest.MetricsWindow> = emptyList(),
 ) : AutoCloseable {
     private val cadence: SampleCadence =
         cadence ?: if (candleWindow != null) SampleCadence.CANDLE_CLOSE else SampleCadence.TICK
@@ -212,6 +214,7 @@ class ReplayEngine(
                 initialTimestamp = initialTimestamp,
                 instruments = instruments,
                 bookRiskController = bookRiskController,
+                metricsWindows = metricsWindows,
             )
 
         val holder = arrayOfNulls<TradingPipeline>(1)

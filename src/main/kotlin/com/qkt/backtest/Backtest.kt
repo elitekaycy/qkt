@@ -96,6 +96,8 @@ class Backtest(
     private val runawayRoundTripWindowMs: Long = com.qkt.risk.RunawayBreaker.DEFAULT_ROUND_TRIP_WINDOW_MS,
     private val runawayMaxRejections: Int = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_REJECTIONS,
     private val runawayRejectionWindowMs: Long = com.qkt.risk.RunawayBreaker.DEFAULT_REJECTION_WINDOW_MS,
+    /** Named sub-windows reported beside `global` (#1276). */
+    private val metricsWindows: List<MetricsWindow> = emptyList(),
 ) {
     private val cadence: SampleCadence =
         cadence
@@ -145,6 +147,7 @@ class Backtest(
         runawayRoundTripWindowMs: Long = com.qkt.risk.RunawayBreaker.DEFAULT_ROUND_TRIP_WINDOW_MS,
         runawayMaxRejections: Int = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_REJECTIONS,
         runawayRejectionWindowMs: Long = com.qkt.risk.RunawayBreaker.DEFAULT_REJECTION_WINDOW_MS,
+        metricsWindows: List<MetricsWindow> = emptyList(),
     ) : this(
         strategies = strategies,
         rules = rules,
@@ -183,6 +186,7 @@ class Backtest(
         runawayRoundTripWindowMs = runawayRoundTripWindowMs,
         runawayMaxRejections = runawayMaxRejections,
         runawayRejectionWindowMs = runawayRejectionWindowMs,
+        metricsWindows = metricsWindows,
     )
 
     /**
@@ -235,6 +239,7 @@ class Backtest(
                 runawayRoundTripWindowMs = runawayRoundTripWindowMs,
                 runawayMaxRejections = runawayMaxRejections,
                 runawayRejectionWindowMs = runawayRejectionWindowMs,
+                metricsWindows = metricsWindows,
                 barFills = barFills,
                 tickResolvedBars = tickResolvedBars,
                 tickSlicer = tickSlicer,
@@ -301,6 +306,7 @@ class Backtest(
             runawayRoundTripWindowMs: Long = com.qkt.risk.RunawayBreaker.DEFAULT_ROUND_TRIP_WINDOW_MS,
             runawayMaxRejections: Int = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_REJECTIONS,
             runawayRejectionWindowMs: Long = com.qkt.risk.RunawayBreaker.DEFAULT_REJECTION_WINDOW_MS,
+            metricsWindows: List<MetricsWindow> = emptyList(),
         ): Backtest {
             val (from, to) = store.resolveRange(request)
             val resolved = MarketRequest(symbols = request.symbols, from = from, to = to)
@@ -354,6 +360,7 @@ class Backtest(
                 runawayRoundTripWindowMs = runawayRoundTripWindowMs,
                 runawayMaxRejections = runawayMaxRejections,
                 runawayRejectionWindowMs = runawayRejectionWindowMs,
+                metricsWindows = metricsWindows,
             )
         }
 
@@ -399,6 +406,7 @@ class Backtest(
             runawayRoundTripWindowMs: Long = com.qkt.risk.RunawayBreaker.DEFAULT_ROUND_TRIP_WINDOW_MS,
             runawayMaxRejections: Int = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_REJECTIONS,
             runawayRejectionWindowMs: Long = com.qkt.risk.RunawayBreaker.DEFAULT_REJECTION_WINDOW_MS,
+            metricsWindows: List<MetricsWindow> = emptyList(),
         ): Backtest {
             require(
                 MarketSourceCapability.TICKS in source.capabilities ||
@@ -461,6 +469,7 @@ class Backtest(
                 runawayRoundTripWindowMs = runawayRoundTripWindowMs,
                 runawayMaxRejections = runawayMaxRejections,
                 runawayRejectionWindowMs = runawayRejectionWindowMs,
+                metricsWindows = metricsWindows,
                 // Tick-resolved fills use the full-tick fill model (fill at the real tick price, not
                 // the trigger level): fills only ever occur on bars fed real ticks, so the bar-tier
                 // fill-at-trigger-price guard is both unnecessary and wrong here.

@@ -176,6 +176,7 @@ object ReportBuilder {
             maxDailyDrawdown = maxDailyDd,
             sortinoRatio = sortinoR,
             turnover = turnover,
+            annualizationFactor = annualizationFactor,
         )
     }
 }
