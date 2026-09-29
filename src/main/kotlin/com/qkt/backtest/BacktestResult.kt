@@ -97,4 +97,10 @@ data class BacktestResult(
     val inputSummary: ReplayInputReport? = null,
     /** Full order-decision and fill provenance from the replay pipeline. */
     val causality: ReplayCausalityReport? = null,
+    /** Global equity per UTC day from every full-resolution sample (#1277); empty on legacy results. */
+    val dailyEquity: List<DailyEquity> = emptyList(),
+    /** Month-over-month equity returns consistent with [dailyEquity]; compound to the total return. */
+    val monthlyReturns: List<MonthlyReturn> = emptyList(),
+    /** Per-window reports for the `--metrics-window`/`--oos-split` windows, in declaration order (#1276). */
+    val windows: List<WindowReport> = emptyList(),
 )

@@ -52,6 +52,7 @@ internal object PerformanceReportJson {
         field("sortinoRatio", ReportSerializer.jsonNullableBigDecimal(r.sortinoRatio))
         field("turnover", ReportSerializer.jsonBigDecimal(r.turnover))
         field("maxDailyDrawdown", ReportSerializer.jsonBigDecimal(r.maxDailyDrawdown))
+        field("annualizationFactor", ReportSerializer.jsonNullableBigDecimal(r.annualizationFactor))
         field("dailyPnL", renderDailyPnl(r.dailyPnL))
         field("drawdownPeriods", renderDrawdownPeriods(r.drawdownPeriods))
         field("monteCarlo", renderMonteCarlo(r.monteCarlo))
