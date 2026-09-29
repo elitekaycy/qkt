@@ -173,6 +173,9 @@ class MarketDataGate(
         // produces — the smallest real misconfiguration is 3_600_000ms.
         const val DEFAULT_MAX_CLOCK_SKEW_MS: Long = 60_000L
 
+        /** Smallest real server-zone offset; a print trailing the clock by less is late delivery, not skew. */
+        const val MIN_ZONE_OFFSET_MS: Long = 3_600_000L
+
         /** Widest real server-zone offset (UTC-12..UTC+14); a print older than this is a gap, not skew. */
         const val MAX_PLAUSIBLE_ZONE_OFFSET_MS: Long = 14L * 3_600_000L
 

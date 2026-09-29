@@ -31,6 +31,7 @@ internal class FeedHealthJudge(
     ) {
         if (state.pausedAlerted) {
             state.pausedAlerted = false
+            state.pausedSeenMs = 0L
             // The pause gap would otherwise sit in the smoothed inter-tick gap for the next
             // hour and lift the stale threshold; restart the estimate from the live cadence.
             state.ewmaGapMs = 0.0
@@ -130,14 +131,32 @@ internal class FeedHealthJudge(
             }
             if (!state.skewAlerted) {
                 state.skewAlerted = true
-                log.error(
-                    "market data for {} CLOCK-SKEWED: broker tick time {}ms from local clock " +
-                        "exceeds {}ms tolerance — suppressing new orders (check server_time_zone)",
-                    symbol,
-                    state.lastSkewMs,
-                    maxClockSkewMs,
-                )
-                val reason = "broker tick clock skew ${state.lastSkewMs}ms exceeds ${maxClockSkewMs}ms"
+                // A sub-hour lag behind the clock is late delivery, not a mis-set zone: the
+                // smallest real zone error is a whole hour. Same suppression, different knob.
+                val lag = state.lastSkewMs < 0L && -state.lastSkewMs < MarketDataGate.MIN_ZONE_OFFSET_MS
+                val reason =
+                    if (lag) {
+                        "broker ticks trail the local clock by ${-state.lastSkewMs}ms, beyond the ${maxClockSkewMs}ms tolerance"
+                    } else {
+                        "broker tick clock skew ${state.lastSkewMs}ms exceeds ${maxClockSkewMs}ms"
+                    }
+                if (lag) {
+                    log.error(
+                        "market data for {} LAGGING: broker ticks trail the local clock by {}ms, beyond the {}ms " +
+                            "tolerance — suppressing new orders (check gateway/venue feed latency)",
+                        symbol,
+                        -state.lastSkewMs,
+                        maxClockSkewMs,
+                    )
+                } else {
+                    log.error(
+                        "market data for {} CLOCK-SKEWED: broker tick time {}ms from local clock " +
+                            "exceeds {}ms tolerance — suppressing new orders (check server_time_zone)",
+                        symbol,
+                        state.lastSkewMs,
+                        maxClockSkewMs,
+                    )
+                }
                 raise(symbol, state, reason, FeedFault.CLOCK_SKEW)
             }
             return false
@@ -147,6 +166,7 @@ internal class FeedHealthJudge(
         val age = now - state.lastSeenMs
         val healthy = age <= threshold
         if (!healthy && !state.staleAlerted && scheduledBreak(symbol, now)) {
+            state.pausedSeenMs = now
             if (!state.pausedAlerted) {
                 state.pausedAlerted = true
                 log.info(
@@ -171,8 +191,26 @@ internal class FeedHealthJudge(
             }
             return false
         }
+        if (!healthy && !state.staleAlerted && state.pausedAlerted) {
+            // The calendar says the break is over but the venue has not printed yet: its first
+            // post-break tick trails the break end by seconds to minutes (#1279). The gap is
+            // measured from the break end; only one that outlives the threshold is a fault.
+            val sinceBreakEndMs = now - state.pausedSeenMs
+            if (sinceBreakEndMs <= threshold) return false
+            state.staleAlerted = true
+            log.error(
+                "market data for {} STALE: no quote within {}ms after the scheduled break ended " +
+                    "(threshold {}ms) — suppressing new orders",
+                symbol,
+                sinceBreakEndMs,
+                threshold,
+            )
+            val reason =
+                "no quote within ${sinceBreakEndMs}ms after the scheduled break ended (threshold ${threshold}ms)"
+            raise(symbol, state, reason, FeedFault.STALE)
+            return false
+        }
         if (!healthy && !state.staleAlerted) {
-            // A gap that outlives its scheduled break is a feed fault after all.
             state.staleAlerted = true
             log.error(
                 "market data for {} STALE: age {}ms exceeds threshold {}ms — suppressing new orders",
