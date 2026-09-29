@@ -31,8 +31,8 @@ Every `qkt` subcommand. Run `qkt <command> --help` for the authoritative flag li
 
 | Command | What it does |
 |---|---|
-| `qkt parse <file>` | Parse-and-validate a `.qkt` file; pretty-print errors. |
-| `qkt backtest <file> [--from] [--to] [--data-root] [--broker paper\|mt5-sim] [--param NAME=V] [--enforce-live-breakers] [--chaos]` | Run a one-shot backtest; emits JSON, CSVs, and `report.html`. `--json` emits schema `qkt-backtest-result-v1`, preserves legacy top-level metric keys, and includes canonical `global`, `perStrategy`, and `tradeSummary` objects for dashboards. `--broker mt5-sim` opts into the MT5 fidelity simulator (quantization + ask/bid + spread); default `paper`. `--enforce-live-breakers` halts replay at the same runaway threshold as live; the default observe-only mode reports would-be trips while preserving the full research run. `--chaos` selects the seeded stress preset and cannot be combined with `--execution`. |
+| `qkt parse <file> [--json]` | Parse-and-validate a `.qkt` file; pretty-print errors. `--json` prints the file's machine-readable description instead of `ok` (schema `qkt-parse-v1`): kind, name, version, and one entry per stream with `alias`, `venue`, `symbol`, `qktSymbol`, `timeframe`, `warmupBars` and the `calendar` qkt applies to it (`fx`, `crypto` or `nyse`, the backtest calendar resolution). Errors keep the same diagnostics and exit codes. |
+| `qkt backtest <file> [--from] [--to] [--data-root] [--broker paper\|mt5-sim] [--param NAME=V] [--enforce-live-breakers] [--chaos] [--metrics-window NAME=FROM..TO] [--oos-split FRACTION\|DATE]` | Run a one-shot backtest; emits JSON, CSVs, and `report.html`. `--metrics-window` (repeatable) and `--oos-split` report exact sub-window metrics beside `global` (see below). `--json` emits schema `qkt-backtest-result-v1`, preserves legacy top-level metric keys, and includes canonical `global`, `perStrategy`, and `tradeSummary` objects for dashboards. `--broker mt5-sim` opts into the MT5 fidelity simulator (quantization + ask/bid + spread); default `paper`. `--enforce-live-breakers` halts replay at the same runaway threshold as live; the default observe-only mode reports would-be trips while preserving the full research run. `--chaos` selects the seeded stress preset and cannot be combined with `--execution`. |
 | `qkt sweep <file> --from --to --param NAME=v1,v2 [--rank sharpe] [--parallelism N] [--json]` | Grid-search the cartesian product of `--param` axes; ranks runs by `--rank` (`sharpe`\|`calmar`\|`profitFactor`\|`totalPnL`\|`winRate`). JSON rows expose commission-net `totalPnL`, `commissionPaid`, daily P&L, and fill-cost inputs for downstream cost reconciliation. |
 | `qkt walkforward <file> --from --to --param NAME=v1,v2 --train 90d --test 30d --step 30d [--rank] [--report-dir DIR] [--json]` | Rolling in-sample/out-of-sample validation; reports per-fold winners, winner stability, and mean IS-vs-OOS score. `--report-dir` writes `walkforward_summary.csv` (one row per fold with `testTotalPnL` and `testMaxDrawdown`), `concatenated_equity.csv` (stitched out-of-sample equity), `winner_counts.csv`, and a full backtest report bundle per fold under `folds/fold_NNN/`. `--json` fold rows carry `winner`, `inSample`, `outOfSample`, `testTotalPnL`, `testMaxDrawdown`, `testTrades`. |
 | `qkt run <file>` | Foreground paper-trade run. |
@@ -52,6 +52,24 @@ Every `qkt` subcommand. Run `qkt <command> --help` for the authoritative flag li
 - `pnl_components.csv` decomposes each reported daily PnL value into
   trade-realized PnL and non-trade adjustment PnL for global and per-strategy
   scopes.
+- `equity_daily.csv` (`date,open,high,low,close`) is account equity per UTC day
+  and `monthly_returns.csv` (`month,return`) the month-over-month equity return,
+  both folded from every full-resolution sample the metrics see — not from the
+  thinned `equity_global.csv` chart curve. The last `close` is the run's last
+  sampled equity; compounding the monthly returns gives the total return. A
+  sample stamped exactly at `--to` (the bar that closes there) lands on that day.
+- `global` and every per-strategy report record `annualizationFactor`, the
+  periods-per-year the Sharpe and Sortino ratios were annualized with.
+- `windows` holds one entry per `--metrics-window NAME=FROM..TO` (repeatable,
+  clipped to the run) and the `in_sample`/`out_of_sample` pair `--oos-split`
+  produces (a fraction such as `0.2` keeps the last 20% out of sample, or an
+  instant). Each entry carries `fromMs`/`toMs`, `samples`, `closingFills`,
+  `equityStart`, `equityEnd`, and `metrics` with the same fields as `global`,
+  computed over the full-resolution samples and closing fills inside `[from, to)`
+  — a window ending at `--to` also takes the bar that closes there, so a window
+  covering the run reproduces `global`'s drawdown, Sharpe, Sortino, profit factor
+  and win rate exactly. A window's `totalPnL` is the equity change between its
+  first and last samples.
 - `monte_carlo_fan.csv` (only when the run has a Monte Carlo, i.e. at least 30
   closed trades) holds the equity percentiles across every resampled path after
   each trade: `tradeIndex,p5,p25,p50,p75,p95`. It is the fan `report.html`

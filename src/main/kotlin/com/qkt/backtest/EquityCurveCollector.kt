@@ -39,6 +39,8 @@ class EquityCurveCollector(
     private val globalCurve = DecimatedCurve(curveCap)
     private val strategyMetricsAcc: Map<String, EquityMetrics> = strategyIds.associateWith { EquityMetrics() }
     private val strategyCurve: Map<String, DecimatedCurve> = strategyIds.associateWith { DecimatedCurve(curveCap) }
+    private val dailyEquity = DailyEquityAccumulator()
+    private val windowSamples = ArrayList<WindowSamples>()
     private var pendingCandleEndTime: Long? = null
     private val symbolsClosedAtBoundary = mutableSetOf<String>()
 
@@ -65,6 +67,18 @@ class EquityCurveCollector(
     /** Full-resolution metrics for a strategy, or null for an unknown strategy. */
     fun metricsFor(strategyId: String): EquityMetrics? = strategyMetricsAcc[strategyId]
 
+    /** Global equity per UTC day, from every sample (#1277). */
+    fun dailyEquity(): List<DailyEquity> = dailyEquity.result()
+
+    /** The metrics of each declared sub-window, in declaration order (#1276). */
+    fun windows(): List<WindowSamples> = windowSamples
+
+    /** Report [window] beside `global` from the same samples (#1276). Must precede the first sample. */
+    fun declareWindow(window: MetricsWindow) {
+        check(globalMetricsAcc.count == 0) { "metrics windows must be declared before the first equity sample" }
+        windowSamples.add(WindowSamples(window))
+    }
+
     private fun onCandleClose(event: CandleEvent) {
         if (candleSymbols.isEmpty()) {
             sample(event.candle.endTime)
@@ -87,6 +101,8 @@ class EquityCurveCollector(
         val globalEquity: BigDecimal = startingBalance.add(pnl.realizedTotal()).add(pnl.unrealizedTotal())
         globalMetricsAcc.accept(timestamp, globalEquity)
         globalCurve.accept(EquitySample(timestamp, globalEquity))
+        dailyEquity.accept(timestamp, globalEquity)
+        for (w in windowSamples) w.accept(timestamp, globalEquity)
         for ((strategyId, metrics) in strategyMetricsAcc) {
             val equity = strategyPnL.equityFor(strategyId)
             metrics.accept(timestamp, equity)
