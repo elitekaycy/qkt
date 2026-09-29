@@ -94,7 +94,7 @@ class BacktestCommand(
         return try {
             val result =
                 attachEvidence(
-                    ctx.backtest(overrides).run(),
+                    BacktestMetricsWindows.run(ctx.backtest(overrides), args, ctx.from, ctx.to),
                     path,
                     parsedFile,
                     ctx.executionConfig,

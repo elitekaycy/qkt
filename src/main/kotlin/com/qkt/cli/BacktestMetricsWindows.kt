@@ -1,5 +1,7 @@
 package com.qkt.cli
 
+import com.qkt.backtest.Backtest
+import com.qkt.backtest.BacktestResult
 import com.qkt.backtest.MetricsWindow
 import java.time.Instant
 
@@ -12,6 +14,18 @@ import java.time.Instant
  *    fraction of its span (`0.2` = the last 20% is out of sample) or at an instant.
  */
 internal object BacktestMetricsWindows {
+    /** Run [backtest] to the end, reporting the windows [args] declare over the run's [from]..[to]. */
+    fun run(
+        backtest: Backtest,
+        args: Args,
+        from: Instant,
+        to: Instant,
+    ): BacktestResult {
+        val engine = backtest.toEngine()
+        engine.declareMetricsWindows(parse(args, from, to))
+        return engine.runToEnd()
+    }
+
     fun parse(
         args: Args,
         from: Instant,
