@@ -70,4 +70,11 @@ data class PerformanceReport(
      * is no capital basis. Notional uses the instrument contract size.
      */
     val turnover: BigDecimal = BigDecimal.ZERO,
+    /**
+     * Periods per year the Sharpe and Sortino ratios were annualized with — the calendar's trading
+     * periods per year for the sample cadence, or the factor inferred from the average sample
+     * spacing. Recorded so a consumer can state exactly what the ratios mean. Null on reports
+     * built before this field existed.
+     */
+    val annualizationFactor: BigDecimal? = null,
 )

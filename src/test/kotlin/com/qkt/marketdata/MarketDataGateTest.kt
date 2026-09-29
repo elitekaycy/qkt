@@ -115,7 +115,7 @@ class MarketDataGateTest {
         clock.t += 2_000L
         assertThat(gate.isHealthy("X")).isFalse()
         assertThat(alerts).hasSize(1)
-        assertThat(alerts.single()).contains("X:quote age")
+        assertThat(alerts.single()).contains("X:no quote within 2000ms after the scheduled break ended")
     }
 
     @Test

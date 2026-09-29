@@ -268,7 +268,7 @@ RULES
 
 `qkt backtest <portfolio.qkt>` runs the children as N attributed strategies on one engine, sharing one account and the book-risk layer. The same backtest tiers that work for single strategies also work for portfolios:
 
-- `--bars` replays built bars instead of ticks.
+- `--bars` replays built bars instead of ticks. Per symbol it picks the coarsest built timeframe that divides the declared one *and covers the whole window*; a partially built coarser folder (say `4h` for two months) is skipped, with a note on stderr, in favour of a finer complete one. When no folder covers the window the coarsest one's gaps are reported.
 - `--bar-tf <tf>` pins the bar feed to a specific built timeframe (must divide every child's declared timeframe).
 - `--tick-fills` drives signals from bars but resolves fills on real ticks.
 - `--report-dir <dir>` writes the standard report bundle (`result.json`, `trades.csv`, per-strategy equity curves, etc.) in the same format as a single-strategy backtest.
