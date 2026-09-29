@@ -50,6 +50,7 @@ internal object CompactReportJson {
             append(",\"sortinoRatio\":").append(r.sortinoRatio?.toPlainString() ?: "null")
             append(",\"turnover\":").append(r.turnover.toPlainString())
             append(",\"maxDailyDrawdown\":").append(r.maxDailyDrawdown.toPlainString())
+            append(",\"annualizationFactor\":").append(r.annualizationFactor?.toPlainString() ?: "null")
             append(",\"dailyPnL\":").append(dailyPnlJson(r.dailyPnL))
             append(",\"drawdownPeriods\":").append(drawdownPeriodsJson(r.drawdownPeriods))
             append(",\"monteCarlo\":").append(monteCarloJson(r.monteCarlo))

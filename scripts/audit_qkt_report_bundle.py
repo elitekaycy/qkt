@@ -24,6 +24,8 @@ REQUIRED_ARTIFACTS = {
     "rejections.csv",
     "pnl_components.csv",
     "equity_global.csv",
+    "equity_daily.csv",
+    "monthly_returns.csv",
     "report.html",
 }
 

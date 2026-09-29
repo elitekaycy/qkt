@@ -27,6 +27,7 @@ internal class ReplayAnalytics(
     initialTimestamp: Long,
     instruments: InstrumentRegistry,
     bookRiskController: BookRiskController?,
+    metricsWindows: List<com.qkt.backtest.MetricsWindow> = emptyList(),
 ) {
     val collector =
         EquityCurveCollector(
@@ -38,6 +39,7 @@ internal class ReplayAnalytics(
             startingBalance = startingBalance,
             candleSymbols = symbols.toSet(),
             windowStartMs = initialTimestamp,
+            metricsWindows = metricsWindows,
         )
 
     val autocorr = ReturnAutocorrCollector(bus)

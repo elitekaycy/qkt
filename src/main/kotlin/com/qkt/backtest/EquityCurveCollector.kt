@@ -34,11 +34,15 @@ class EquityCurveCollector(
      * every return-based statistic by one flat sample. Null (live) disables the floor.
      */
     private val windowStartMs: Long? = null,
+    /** Named sub-windows reported beside `global` from the same full-resolution samples (#1276). */
+    metricsWindows: List<MetricsWindow> = emptyList(),
 ) {
     private val globalMetricsAcc = EquityMetrics()
     private val globalCurve = DecimatedCurve(curveCap)
     private val strategyMetricsAcc: Map<String, EquityMetrics> = strategyIds.associateWith { EquityMetrics() }
     private val strategyCurve: Map<String, DecimatedCurve> = strategyIds.associateWith { DecimatedCurve(curveCap) }
+    private val dailyEquity = DailyEquityAccumulator()
+    private val windowSamples: List<WindowSamples> = metricsWindows.map { WindowSamples(it) }
     private var pendingCandleEndTime: Long? = null
     private val symbolsClosedAtBoundary = mutableSetOf<String>()
 
@@ -65,6 +69,12 @@ class EquityCurveCollector(
     /** Full-resolution metrics for a strategy, or null for an unknown strategy. */
     fun metricsFor(strategyId: String): EquityMetrics? = strategyMetricsAcc[strategyId]
 
+    /** Global equity per UTC day, from every sample (#1277). */
+    fun dailyEquity(): List<DailyEquity> = dailyEquity.result()
+
+    /** The metrics of each requested sub-window, in the order they were declared (#1276). */
+    fun windows(): List<WindowSamples> = windowSamples
+
     private fun onCandleClose(event: CandleEvent) {
         if (candleSymbols.isEmpty()) {
             sample(event.candle.endTime)
@@ -87,6 +97,8 @@ class EquityCurveCollector(
         val globalEquity: BigDecimal = startingBalance.add(pnl.realizedTotal()).add(pnl.unrealizedTotal())
         globalMetricsAcc.accept(timestamp, globalEquity)
         globalCurve.accept(EquitySample(timestamp, globalEquity))
+        dailyEquity.accept(timestamp, globalEquity)
+        for (w in windowSamples) w.accept(timestamp, globalEquity)
         for ((strategyId, metrics) in strategyMetricsAcc) {
             val equity = strategyPnL.equityFor(strategyId)
             metrics.accept(timestamp, equity)
