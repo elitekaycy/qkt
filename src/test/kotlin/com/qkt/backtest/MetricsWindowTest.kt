@@ -39,12 +39,9 @@ class MetricsWindowTest {
                 strategyPnL = rig.strategyPnL,
                 strategyIds = listOf("s1"),
                 startingBalance = Money.of("1000"),
-                metricsWindows =
-                    listOf(
-                        MetricsWindow("first", 0L, 86_400_000L),
-                        MetricsWindow("all", 0L, Long.MAX_VALUE),
-                    ),
             )
+        collector.declareWindow(MetricsWindow("first", 0L, 86_400_000L))
+        collector.declareWindow(MetricsWindow("all", 0L, Long.MAX_VALUE))
         for (ts in listOf(1_000L, 2_000L, 86_400_000L + 1_000L)) {
             rig.clock.time = ts
             rig.bus.publish(TickEvent(Tick("X", Money.of("100"), ts)))

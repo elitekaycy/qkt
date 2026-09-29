@@ -34,15 +34,13 @@ class EquityCurveCollector(
      * every return-based statistic by one flat sample. Null (live) disables the floor.
      */
     private val windowStartMs: Long? = null,
-    /** Named sub-windows reported beside `global` from the same full-resolution samples (#1276). */
-    metricsWindows: List<MetricsWindow> = emptyList(),
 ) {
     private val globalMetricsAcc = EquityMetrics()
     private val globalCurve = DecimatedCurve(curveCap)
     private val strategyMetricsAcc: Map<String, EquityMetrics> = strategyIds.associateWith { EquityMetrics() }
     private val strategyCurve: Map<String, DecimatedCurve> = strategyIds.associateWith { DecimatedCurve(curveCap) }
     private val dailyEquity = DailyEquityAccumulator()
-    private val windowSamples: List<WindowSamples> = metricsWindows.map { WindowSamples(it) }
+    private val windowSamples = ArrayList<WindowSamples>()
     private var pendingCandleEndTime: Long? = null
     private val symbolsClosedAtBoundary = mutableSetOf<String>()
 
@@ -72,8 +70,14 @@ class EquityCurveCollector(
     /** Global equity per UTC day, from every sample (#1277). */
     fun dailyEquity(): List<DailyEquity> = dailyEquity.result()
 
-    /** The metrics of each requested sub-window, in the order they were declared (#1276). */
+    /** The metrics of each declared sub-window, in declaration order (#1276). */
     fun windows(): List<WindowSamples> = windowSamples
+
+    /** Report [window] beside `global` from the same samples (#1276). Must precede the first sample. */
+    fun declareWindow(window: MetricsWindow) {
+        check(globalMetricsAcc.count == 0) { "metrics windows must be declared before the first equity sample" }
+        windowSamples.add(WindowSamples(window))
+    }
 
     private fun onCandleClose(event: CandleEvent) {
         if (candleSymbols.isEmpty()) {
