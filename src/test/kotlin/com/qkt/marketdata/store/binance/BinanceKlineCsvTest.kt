@@ -50,4 +50,22 @@ class BinanceKlineCsvTest {
     fun `blank trailing lines are ignored`() {
         assertThat(BinanceKlineCsv.parse("S", header + row1 + "\n\n", TimeWindow.ONE_MINUTE)).hasSize(1)
     }
+
+    @Test
+    fun `rows out of order are refused`() {
+        assertThatThrownBy {
+            BinanceKlineCsv.parse(
+                "S",
+                row2 + row1,
+                TimeWindow.ONE_MINUTE,
+            )
+        }.hasMessageContaining("ascending")
+    }
+
+    @Test
+    fun `a non-numeric row after the first line is refused`() {
+        assertThatThrownBy {
+            BinanceKlineCsv.parse("S", header + row1 + "garbage\n", TimeWindow.ONE_MINUTE)
+        }.hasMessageContaining("garbage")
+    }
 }

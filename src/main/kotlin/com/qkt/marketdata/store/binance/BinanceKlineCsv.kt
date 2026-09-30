@@ -14,12 +14,20 @@ object BinanceKlineCsv {
         symbol: String,
         text: String,
         window: TimeWindow,
-    ): List<Candle> =
-        text
-            .lineSequence()
-            .filter { it.isNotBlank() && it[0].isDigit() }
-            .map { row(symbol, it, window) }
-            .toList()
+    ): List<Candle> {
+        val rows = text.lines().filterIndexed { i, line -> line.isNotBlank() && !(i == 0 && !line[0].isDigit()) }
+        val candles =
+            rows.map { line ->
+                require(line[0].isDigit()) { "unparseable kline row: $line" }
+                row(symbol, line, window)
+            }
+        for (i in 1 until candles.size) {
+            require(candles[i].startTime > candles[i - 1].startTime) {
+                "kline rows must be strictly ascending: ${candles[i].startTime} follows ${candles[i - 1].startTime}"
+            }
+        }
+        return candles
+    }
 
     private fun row(
         symbol: String,

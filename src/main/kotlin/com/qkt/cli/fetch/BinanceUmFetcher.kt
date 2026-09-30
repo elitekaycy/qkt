@@ -28,9 +28,12 @@ internal class BinanceUmFetcher(
         val zip =
             client.download("data/futures/um/daily/klines/$symbol/$interval/$symbol-$interval-$day.zip")
                 ?: return emptyList()
+        val text = client.unzipSingle(zip) ?: return emptyList()
+        // Binance keeps printing flat, zero-volume klines after delivery; nothing from expiry on is tradeable.
+        val end = minOf(range.to.toEpochMilli(), BinanceQuarterly.expiryMs(symbol) ?: Long.MAX_VALUE)
         return BinanceKlineCsv
-            .parse("$VENUE:$symbol", client.unzipSingle(zip), window)
-            .filter { it.startTime >= range.from.toEpochMilli() && it.startTime < range.to.toEpochMilli() }
+            .parse("$VENUE:$symbol", text, window)
+            .filter { it.startTime >= range.from.toEpochMilli() && it.startTime < end }
     }
 
     override fun isExpectedEmpty(

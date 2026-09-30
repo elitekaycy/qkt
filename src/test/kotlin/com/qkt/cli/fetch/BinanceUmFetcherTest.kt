@@ -73,4 +73,33 @@ class BinanceUmFetcherTest {
         assertThatThrownBy { fetcher.fetch("BTCUSDT_240927", TimeWindow(7 * 60_000L), day("2024-09-02")) }
             .hasMessageContaining("1m")
     }
+
+    @Test
+    fun `bars from delivery onwards are not kept`() {
+        // 2024-09-27 07:59 and 08:00 UTC; the contract delivers at 08:00.
+        server.enqueue(
+            MockResponse().setBody(
+                zip(
+                    "1727423940000,65386,65426,65386,65426,1,1727423999999,0,1,0,0,0\n1727424000000,65426,65426,65426,65426,0,1727424059999,0,0,0,0,0\n",
+                ),
+            ),
+        )
+        val bars = fetcher.fetch("BTCUSDT_240927", TimeWindow.ONE_MINUTE, day("2024-09-27"))
+        assertThat(bars.map { it.startTime }).containsExactly(1727423940000L)
+    }
+
+    @Test
+    fun `an empty archive is an empty day`() {
+        server.enqueue(
+            MockResponse().setBody(
+                Buffer().write(
+                    ByteArrayOutputStream()
+                        .also {
+                            ZipOutputStream(it).close()
+                        }.toByteArray(),
+                ),
+            ),
+        )
+        assertThat(fetcher.fetch("BTCUSDT_240927", TimeWindow.ONE_MINUTE, day("2024-09-02"))).isEmpty()
+    }
 }

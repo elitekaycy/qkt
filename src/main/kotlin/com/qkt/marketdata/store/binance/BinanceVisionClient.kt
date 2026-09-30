@@ -56,7 +56,17 @@ class BinanceVisionClient(
                     .toList()
             found += page
             val truncated = TRUNCATED.find(xml)?.groupValues?.get(1) == "true"
-            marker = if (truncated) NEXT_MARKER.find(xml)?.groupValues?.get(1) ?: page.lastOrNull() else null
+            val previous = marker
+            marker =
+                if (truncated) {
+                    NEXT_MARKER.find(xml)?.groupValues?.get(1) ?: page.lastOrNull()
+                        ?: error("listing for $prefix is truncated but gives no marker to continue from")
+                } else {
+                    null
+                }
+            check(
+                marker == null || marker != previous,
+            ) { "listing for $prefix is truncated but does not advance past $marker" }
         } while (marker != null)
         return found
     }
@@ -79,11 +89,15 @@ class BinanceVisionClient(
         }
     }
 
-    /** The single entry of a Binance data zip, as text. */
-    fun unzipSingle(zip: ByteArray): String =
+    /** The single entry of a Binance data zip as text, or null for an empty archive; refuses several entries. */
+    fun unzipSingle(zip: ByteArray): String? =
         ZipInputStream(ByteArrayInputStream(zip)).use { input ->
-            requireNotNull(input.nextEntry) { "zip archive is empty" }
-            input.readBytes().toString(Charsets.UTF_8)
+            if (input.nextEntry == null) return null
+            val text = input.readBytes().toString(Charsets.UTF_8)
+            var entries = 1
+            while (input.nextEntry != null) entries++
+            require(entries == 1) { "Binance archive has $entries entries, expected 1" }
+            text
         }
 
     companion object {
