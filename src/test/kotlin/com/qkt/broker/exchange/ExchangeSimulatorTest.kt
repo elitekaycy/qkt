@@ -1,5 +1,6 @@
 package com.qkt.broker.exchange
 
+import com.qkt.accounting.CostKind
 import com.qkt.common.Side
 import com.qkt.events.BrokerEvent
 import com.qkt.execution.OrderRequest
@@ -101,5 +102,33 @@ class ExchangeSimulatorTest {
     @Test
     fun `the simulator nets`() {
         assertThat(f.sim.positionAccountingMode(f.sep)).isEqualTo(com.qkt.broker.PositionAccountingMode.NETTING)
+    }
+
+    @Test
+    fun `each fill carries the contract fee on its own price as a venue cost`() {
+        val taker = ExchangeFixture(takerFeeRate = "0.0005")
+        taker.tick(taker.sep, "63000.0")
+
+        taker.sim.submit(taker.market("b", Side.BUY, "0.01"))
+
+        val cost =
+            taker
+                .only<BrokerEvent.OrderFilled>()
+                .single()
+                .typedVenueCosts
+                .single()
+        assertThat(cost.kind).isEqualTo(CostKind.EXCHANGE_FEE)
+        assertThat(cost.amount.currency).isEqualTo("USDT")
+        // 0.01 x 63000.2 (after two ticks of slippage) x 0.0005
+        assertThat(cost.amount.amount).isEqualByComparingTo("0.315001")
+    }
+
+    @Test
+    fun `a fee-free contract adds no venue cost`() {
+        f.tick(f.sep, "63000.0")
+
+        f.sim.submit(f.market("b", Side.BUY, "0.01"))
+
+        assertThat(f.only<BrokerEvent.OrderFilled>().single().typedVenueCosts).isEmpty()
     }
 }
