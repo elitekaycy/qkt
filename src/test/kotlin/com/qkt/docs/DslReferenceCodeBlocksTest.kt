@@ -14,7 +14,7 @@ import org.junit.jupiter.api.io.TempDir
 
 /**
  * Keeps the DSL reference honest: every ```qkt block in `docs/reference/dsl/` must parse and compile
- * exactly as `qkt parse` would (#1127).
+ * exactly as `qkt parse` would (#1127), and so must every block in `docs/reference/dsl-grammar.md`.
  *
  * A block is checked in the shape it is written. A complete `STRATEGY`/`PORTFOLIO` file is compiled as-is.
  * A snippet is wrapped in the smallest strategy that holds it: stream aliases it mentions are declared,
