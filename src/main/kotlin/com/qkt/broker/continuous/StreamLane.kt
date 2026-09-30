@@ -6,6 +6,7 @@ import com.qkt.common.Clock
 import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.Side
 import com.qkt.derivatives.futures.ContinuousChain
+import com.qkt.derivatives.futures.PriceSpace
 import com.qkt.events.BrokerEvent
 import com.qkt.execution.OrderRequest
 import com.qkt.instrument.PriceAdjustment
@@ -39,6 +40,7 @@ internal class StreamLane(
     private val positions = LinkedHashMap<String, BigDecimal>()
     private val stops = HashMap<String, String>()
     private var current: Int? = null
+    private val spaces = HashMap<Int, PriceSpace>()
 
     init {
         venueBus.subscribe<BrokerEvent.OrderAccepted> { e ->
@@ -65,7 +67,7 @@ internal class StreamLane(
         stops[request.strategyId]?.let { return reject(request, it) }
         val space =
             try {
-                chain.spaceFor(index)
+                space(index)
             } catch (e: IllegalArgumentException) {
                 return reject(request, e.message ?: "${chain.symbol} cannot price contract $index")
             }
@@ -84,7 +86,7 @@ internal class StreamLane(
     /** Roll if the schedule has moved on, then hand the contract tick behind [tick] to the venue. */
     fun onTick(tick: Tick) {
         val index = catchUp(tick.timestamp) ?: return
-        val space = chain.spaceFor(index)
+        val space = space(index)
         val contractTick =
             tick.copy(
                 symbol = chain.contractSymbol(index),
@@ -148,10 +150,13 @@ internal class StreamLane(
             e.copy(
                 clientOrderId = order?.request?.id ?: e.clientOrderId,
                 symbol = chain.symbol,
-                price = chain.spaceFor(index).toContinuous(e.price),
+                price = space(index).toContinuous(e.price),
             ),
         )
     }
+
+    /** Contract [index]'s price mapping, built once per contract. */
+    private fun space(index: Int): PriceSpace = spaces.getOrPut(index) { chain.spaceFor(index) }
 
     private fun contractIndexOf(contract: String): Int =
         requireNotNull(
