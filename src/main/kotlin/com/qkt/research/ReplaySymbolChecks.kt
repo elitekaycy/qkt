@@ -67,4 +67,5 @@ internal fun requireReplaySymbolsResolvable(
             }
         }
     }
+    requireDerivativeSymbolsResolvable(symbols, accounting, instruments)
 }

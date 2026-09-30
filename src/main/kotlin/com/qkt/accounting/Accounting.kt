@@ -368,14 +368,10 @@ class AccountingEngine(
     )
 
     private companion object {
-        private val DOLLAR_FAMILY = setOf("USD", "USDT", "USDC")
-
         fun compatible(
             from: String,
             to: String,
-        ): Boolean =
-            from.equals(to, ignoreCase = true) ||
-                (from.uppercase() in DOLLAR_FAMILY && to.uppercase() in DOLLAR_FAMILY)
+        ): Boolean = QuoteCurrencyGuard.sameCurrency(from, to)
 
         fun currencyPair(symbol: String): CurrencyPair? {
             val bare = symbol.substringAfter(':').uppercase()

@@ -19,6 +19,12 @@ object QuoteCurrencyGuard {
     private val KNOWN_QUOTES =
         listOf("USDT", "USDC", "USD", "JPY", "CHF", "CAD", "GBP", "EUR", "AUD", "NZD")
 
+    /** True when [a] and [b] are the same currency, treating USD, USDT and USDC as one. */
+    fun sameCurrency(
+        a: String,
+        b: String,
+    ): Boolean = a.equals(b, ignoreCase = true) || (a.uppercase() in DOLLAR_FAMILY && b.uppercase() in DOLLAR_FAMILY)
+
     /**
      * Throws when any of [qktSymbols] is quoted in a known incompatible currency and
      * [canConvert] reports no conversion path. For example, `EXNESS:USDJPY` fails under
