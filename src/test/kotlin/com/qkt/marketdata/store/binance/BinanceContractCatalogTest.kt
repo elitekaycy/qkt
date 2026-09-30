@@ -37,7 +37,9 @@ class BinanceContractCatalogTest {
                     "</ListBucketResult>",
             ),
         )
-        server.enqueue(MockResponse().setBody("""[{"deliveryTime":1727424000000,"deliveryPrice":65528.1}]"""))
+        // The endpoint stamps each delivery at 00:00 UTC of the delivery date (2024-09-27), while the
+        // contract itself settles at 08:00 UTC that day.
+        server.enqueue(MockResponse().setBody("""[{"deliveryTime":1727395200000,"deliveryPrice":65528.1}]"""))
 
         val built = catalog.build("BINANCE_UM:BTCUSDT")
 
