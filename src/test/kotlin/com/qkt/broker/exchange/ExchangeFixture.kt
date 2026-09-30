@@ -14,12 +14,15 @@ import com.qkt.instrument.FuturesRoot
 import com.qkt.instrument.ListedContract
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.marketdata.Tick
+import com.qkt.pnl.ContractFeeCommission
+import com.qkt.pnl.NoCommission
 import java.math.BigDecimal
 import java.time.Instant
 
 /** One BTCUSDT quarterly root with two listed contracts and an [ExchangeSimulator] over them. */
 internal class ExchangeFixture(
     slippageTicks: Int = 2,
+    takerFeeRate: String = "0",
 ) {
     val sep = "BINANCE_UM:BTCUSDT_240927"
     val dec = "BINANCE_UM:BTCUSDT_241227"
@@ -40,7 +43,7 @@ internal class ExchangeFixture(
             volumeMax = BigDecimal("100"),
             calendar = null,
             exchangeFeePerContract = BigDecimal.ZERO,
-            takerFeeRate = BigDecimal.ZERO,
+            takerFeeRate = BigDecimal(takerFeeRate),
             margin = null,
             slippageTicks = slippageTicks,
         )
@@ -58,7 +61,15 @@ internal class ExchangeFixture(
                     ),
             ),
         )
-    val sim = ExchangeSimulator(bus, clock, prices, registry, slippage = InstrumentSlippage)
+    val sim =
+        ExchangeSimulator(
+            bus,
+            clock,
+            prices,
+            registry,
+            slippage = InstrumentSlippage,
+            fees = ContractFeeCommission(registry, NoCommission),
+        )
 
     init {
         bus.subscribe<BrokerEvent.OrderAccepted> { events += it }

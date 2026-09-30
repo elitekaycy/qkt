@@ -1,5 +1,8 @@
 package com.qkt.broker.exchange
 
+import com.qkt.accounting.CostKind
+import com.qkt.accounting.MoneyAmount
+import com.qkt.accounting.VenueCost
 import com.qkt.broker.Broker
 import com.qkt.broker.OrderTypeCapability
 import com.qkt.broker.PaperBroker
@@ -19,6 +22,8 @@ import com.qkt.instrument.InstrumentMeta
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.marketdata.MarketPriceProvider
 import com.qkt.marketdata.Tick
+import com.qkt.pnl.CommissionModel
+import com.qkt.pnl.NoCommission
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.Instant
@@ -33,6 +38,8 @@ import java.time.Instant
  * - limit and stop prices must lie on the contract's tick grid (the offending price is named);
  * - a market order fills at the side's executable price and, like a triggered stop, then moves by
  *   [slippage] against the order; limit fills keep their price;
+ * - each fill carries its fee from [fees], on the contract's own price and in the contract's
+ *   currency, as an [CostKind.EXCHANGE_FEE] venue cost — the way a live venue reports it;
  * - nothing is accepted on a contract at or after its expiry, and on the first tick at or after it
  *   the contract's working orders are cancelled and every net position is settled
  *   ([ExpirySettlement]).
@@ -50,6 +57,7 @@ class ExchangeSimulator(
     private val prices: MarketPriceProvider,
     private val instruments: InstrumentRegistry,
     private val slippage: SlippageModel = ZeroSlippage,
+    private val fees: CommissionModel = NoCommission,
     fillAtTriggerPrice: Boolean = false,
     calendar: TradingCalendar = TradingCalendar.crypto(),
 ) : Broker {
@@ -83,7 +91,8 @@ class ExchangeSimulator(
             bus.publish(expiringOrders.remove(e.clientOrderId)?.let { e.copy(reason = it) } ?: e)
         }
         venueBus.subscribe<BrokerEvent.OrderFilled> { e ->
-            val fill = e.copy(price = executed(working.remove(e.clientOrderId), e))
+            val priced = e.copy(price = executed(working.remove(e.clientOrderId), e))
+            val fill = priced.copy(typedVenueCosts = feeOf(priced))
             settlement.onFill(fill)
             bus.publish(fill)
         }
@@ -150,6 +159,13 @@ class ExchangeSimulator(
                 else -> fill.price
             }
         return price.setScale(Money.SCALE, Money.ROUNDING)
+    }
+
+    private fun feeOf(fill: BrokerEvent.OrderFilled): List<VenueCost> {
+        val fee = fees.cost(fill.symbol, fill.quantity, fill.price)
+        if (fee.signum() == 0) return emptyList()
+        val currency = requireNotNull(instruments.lookup(fill.symbol)?.currency) { "${fill.symbol} has no currency" }
+        return listOf(VenueCost(CostKind.EXCHANGE_FEE, MoneyAmount(fee, currency), fill.timestamp))
     }
 
     private fun cancelWorkingOn(symbol: String) {
