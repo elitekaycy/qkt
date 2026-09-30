@@ -23,8 +23,8 @@ internal val toolingOptionSchemas: Map<String, CliOptionSchema> =
         "create" to CliOptionSchema(values = setOf("kind")),
         "fetch" to
             CliOptionSchema(
-                values = setOf("tf", "from", "to", "last", "data-root", "config"),
-                flags = setOf("catalog"),
+                values = setOf("tf", "from", "to", "last", "data-root", "config", "instruments"),
+                flags = setOf("catalog", "rolls"),
             ),
         "data" to
             CliOptionSchema(

@@ -147,6 +147,28 @@ A day before a contract listed, or after it delivered, has no file and is record
 delivery. A contract the strategy names but the catalog does not list fails the run up front; refresh
 the catalog with `--catalog`.
 
+### Continuous futures streams (`@front`, `@next`)
+
+A strategy can follow a root instead of one contract: `btc = BINANCE_UM:BTCUSDT@front EVERY 15m`
+trades whichever contract is front and rolls to the next one on schedule; `@next` follows the one
+after it. Give the root a roll policy and measure its rolls once:
+
+```yaml
+futures:
+  - root: BINANCE_UM:BTCUSDT
+    # …multiplier, tickSize, volumeStep, volumeMin as above…
+    roll: { daysBeforeExpiry: 8, atUtc: "08:00", adjust: panama }   # adjust: none | panama | ratio
+```
+
+```bash
+qkt fetch BINANCE_UM:BTCUSDT --rolls   # fetches missing roll days, writes contracts/BINANCE_UM/BTCUSDT.rolls.json
+```
+
+The series is adjusted forward from the first measured roll, so history never changes when new rolls
+are added and nothing leaks from the future. Each contract's bars must be fetched at the strategy's
+timeframe, and that timeframe must divide the roll time (an 08:00 roll works with 15m or 1h bars,
+not 1d).
+
 ## Scenario 3 — Speed up repeated backtests (CSV → binary)
 
 Cached ticks start life as gzipped CSV (`*.csv.gz`). Converting them to the binary format decodes
