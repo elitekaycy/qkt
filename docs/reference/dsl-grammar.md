@@ -32,9 +32,11 @@ RULES
     WHEN <condition>
     THEN <action> [ ; <action> ... ]
     [ ... more rules ... ]
-
-[ FOR EACH <ident> IN <stream-list> DO ... ]
+    [ FOR EACH <ident> IN [ <alias>, ... ] DO WHEN ... THEN ... ]
 ```
+
+`DEFAULTS` comes before `SYMBOLS`; `PARAM` and `LET` come after `SYMBOLS` and before `RULES`
+(qkt rejects `LET` inside `RULES`).
 
 `PARAM` declares an overridable scalar (number, boolean, or string) with a default. Use the name in conditions and actions. A portfolio can override it via `RUN <alias> OVERRIDE { key = value }` — e.g. `PARAM riskPct = 0.01` in the child becomes `0.008` in an aggressive portfolio slot.
 
@@ -182,11 +184,16 @@ Reusable expression aliases. Evaluated lazily per tick.
 ## FOR EACH
 
 ```qkt
-FOR EACH s IN [btc, gold, aapl] DO
-    rule { whenever(s.close gt 0) then { buy(s) } }
+RULES
+    FOR EACH s IN [btc, gold, aapl] DO
+      WHEN s.close > s.open
+       AND POSITION.s = 0
+      THEN BUY s SIZING 0.1
 ```
 
-Iterates over streams; the loop variable substitutes textually into the rule body. Phase 11.
+Iterates over streams; the loop variable substitutes textually into the rule body, so this is one
+rule per stream. The stream list needs its square brackets: `FOR EACH s IN btc, gold DO` is a parse
+error (`expected '[' to open stream alias list`).
 
 ## See also
 

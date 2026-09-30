@@ -20,21 +20,57 @@ class QktSnippetsTest {
     }
 
     @Test
-    fun `the complete strategy snippets parse with their default placeholders`() {
-        // The base "strategy" skeleton resolves to placeholder words (WHEN condition THEN action)
-        // and is not meant to parse; the full and complete templates must be real, runnable DSL.
-        for (prefix in listOf("stratfull", "strat-ema")) {
-            val snippet = QktSnippets.all.first { it.prefix == prefix }
-            val src = render(snippet.body)
+    fun `every snippet parses with its default placeholders where it is offered`() {
+        for (snippet in QktSnippets.all) {
+            val body = render(snippet.body)
+            val src = placed(snippet.scope, body)
             val analysis = DiagnosticsRunner.analyze(src)
             assertThat(analysis.diagnostics)
                 .withFailMessage(
-                    "snippet '%s' does not parse:%n%s%nerrors: %s",
-                    prefix,
+                    "snippet '%s' (%s) does not parse:%n%s%nerrors: %s",
+                    snippet.prefix,
+                    snippet.scope,
                     src,
                     analysis.diagnostics.map { it.message },
                 ).isEmpty()
-            assertThat(analysis.parsed).withFailMessage("snippet '%s' produced no AST", prefix).isNotNull()
+        }
+    }
+
+    /** A whole document with [body] where the language server offers a snippet of [scope]. */
+    private fun placed(
+        scope: QktSnippets.Scope,
+        body: String,
+    ): String {
+        val streams =
+            listOf("alias", "btc", "eth", "sol").joinToString("\n") {
+                "  $it = BACKTEST:${it.uppercase()}USD EVERY 15m"
+            }
+        val rule = "RULES\n  WHEN alias.close > 1\n  THEN BUY alias SIZING 1\n"
+        val bracket = "    BRACKET { STOP_LOSS BY 5, TAKE_PROFIT BY 10 }"
+
+        fun indent(s: String) = s.lines().joinToString("\n") { "  $it" }
+        return when (scope) {
+            QktSnippets.Scope.FILE -> body
+            QktSnippets.Scope.SYMBOLS -> "STRATEGY s VERSION 1\n\nSYMBOLS\n$streams\n${indent(body)}\n\n$rule"
+            QktSnippets.Scope.DECLARATION ->
+                if (body.startsWith("DEFAULTS")) {
+                    "STRATEGY s VERSION 1\n\n$body\n\nSYMBOLS\n$streams\n\n$rule"
+                } else {
+                    "STRATEGY s VERSION 1\n\nSYMBOLS\n$streams\n\n$body\n\n$rule"
+                }
+            QktSnippets.Scope.RULES -> {
+                // fragments go where the author types them: an action after THEN, a condition after WHEN
+                val rules =
+                    when {
+                        body.startsWith("WHEN") || body.startsWith("FOR EACH") -> indent(body)
+                        body.startsWith("BUY") -> "  WHEN alias.close > 1\n  THEN ${body.lines().joinToString("\n  ")}"
+                        body.startsWith(
+                            "SIZING",
+                        ) -> "  WHEN alias.close > 1\n  THEN BUY alias $body\n$bracket"
+                        else -> "  WHEN $body\n  THEN BUY alias SIZING 1"
+                    }
+                "STRATEGY s VERSION 1\n\nSYMBOLS\n$streams\n\nRULES\n$rules\n"
+            }
         }
     }
 
