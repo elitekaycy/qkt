@@ -1,5 +1,6 @@
 package com.qkt.dsl.parse
 
+import com.qkt.dsl.DslVocabulary
 import com.qkt.dsl.ast.CalendarWindow
 import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.LastTradingDayOfMonth
@@ -106,23 +107,11 @@ internal class ClockExprParser(
                     TokenKind.IDENT, TokenKind.WEEKDAY, TokenKind.DAY -> cursor.advance()
                     else -> cursor.expect(TokenKind.IDENT, "expected NOW field name")
                 }
-            val field =
-                when (fieldTok.lexeme.uppercase()) {
-                    "HOUR_UTC" -> NowField.HOUR_UTC
-                    "MINUTE_UTC" -> NowField.MINUTE_UTC
-                    "WEEKDAY" -> NowField.WEEKDAY
-                    "MONTH" -> NowField.MONTH
-                    "DAY" -> NowField.DAY
-                    "DAYS_IN_MONTH" -> NowField.DAYS_IN_MONTH
-                    "DATE_UTC" -> NowField.DATE_UTC
-                    "EPOCH_MS" -> NowField.EPOCH_MS
-                    else -> {
-                        cursor.errors +=
-                            ParseError(fieldTok.line, fieldTok.col, "unknown NOW field: ${fieldTok.lexeme}")
-                        NowField.EPOCH_MS
-                    }
-                }
-            NowAccessor(field)
+            val field = DslVocabulary.nowFields[fieldTok.lexeme.lowercase()]
+            if (field == null) {
+                cursor.errors += ParseError(fieldTok.line, fieldTok.col, "unknown NOW field: ${fieldTok.lexeme}")
+            }
+            NowAccessor(field ?: NowField.EPOCH_MS)
         } else {
             NowAccessor(NowField.EPOCH_MS)
         }
