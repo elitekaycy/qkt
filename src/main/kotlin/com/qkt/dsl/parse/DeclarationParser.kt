@@ -26,18 +26,21 @@ internal class DeclarationParser(
         return out
     }
 
-    fun parseParams(): List<ParamDecl> {
+    /** Parses one `PARAM name = literal`; [declared] are the names already taken by earlier lines. */
+    fun parseParams(declared: Set<String> = emptySet()): List<ParamDecl> {
         val out = mutableListOf<ParamDecl>()
         cursor.expect(TokenKind.PARAM, "expected PARAM")
-        val name = cursor.expect(TokenKind.IDENT, "expected param name").lexeme
+        val nameTok = cursor.expect(TokenKind.IDENT, "expected param name")
+        if (nameTok.lexeme in declared) cursor.errorAt(nameTok, "Duplicate PARAM '${nameTok.lexeme}'")
         cursor.expect(TokenKind.EQ, "expected '=' after param name")
-        out.add(ParamDecl(name, literalParser.parseLiteral()))
+        out.add(ParamDecl(nameTok.lexeme, literalParser.parseLiteral()))
         return out
     }
 
     fun parseSequence(): SequenceDecl {
         cursor.expect(TokenKind.SEQUENCE, "expected SEQUENCE")
-        val name = cursor.expect(TokenKind.IDENT, "expected sequence name after SEQUENCE").lexeme
+        val nameTok = cursor.expect(TokenKind.IDENT, "expected sequence name after SEQUENCE")
+        val name = nameTok.lexeme
         cursor.expect(TokenKind.ON, "expected ON after SEQUENCE name")
         val stream = cursor.expect(TokenKind.IDENT, "expected stream alias after SEQUENCE ON").lexeme
         cursor.expect(TokenKind.LBRACE, "expected '{' to open SEQUENCE block")
@@ -50,6 +53,9 @@ internal class DeclarationParser(
             stages += SequenceStageDecl(stageName, within, expressionParser.parseExpr())
         }
         cursor.expect(TokenKind.RBRACE, "expected '}' to close SEQUENCE block")
+        if (stages.size !in 2..8) {
+            cursor.errorAt(nameTok, "SEQUENCE '$name' must declare 2-8 stages, got ${stages.size}")
+        }
         return SequenceDecl(name, stream, stages)
     }
 }

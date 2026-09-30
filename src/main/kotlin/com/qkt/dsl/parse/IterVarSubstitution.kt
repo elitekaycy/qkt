@@ -38,6 +38,7 @@ internal fun substituteIterVar(
     WhenThen(
         cond = subst(rule.cond, iterVar, alias),
         action = subst(rule.action, iterVar, alias),
+        line = rule.line,
     )
 
 internal fun subst(

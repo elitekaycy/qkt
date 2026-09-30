@@ -44,6 +44,7 @@ internal class SizingParser(
                 SizePositionFull(alias)
             }
             else -> {
+                val start = cursor.peek()
                 val e = expressionParser.parseExpr()
                 when (cursor.peek().kind) {
                     TokenKind.USD -> {
@@ -57,13 +58,14 @@ internal class SizingParser(
                             parsePercentOf(e)
                         } else {
                             cursor.expect(TokenKind.RISK, "expected RISK or OF after PCT in SIZING")
-                            require(e is NumLit) {
-                                "SIZING N PCT RISK requires a numeric literal for N, got non-literal expression"
+                            if (e !is NumLit) {
+                                cursor.errorAt(
+                                    start,
+                                    "SIZING N PCT RISK requires a numeric literal for N, got non-literal expression",
+                                )
                             }
                             val pct = e.value
-                            require(pct.signum() > 0) {
-                                "SIZING N PCT RISK requires N > 0, got $pct"
-                            }
+                            if (pct.signum() <= 0) cursor.errorAt(start, "SIZING N PCT RISK requires N > 0, got $pct")
                             riskFracWithOptionalBookBasis(percentToFraction(e))
                         }
                     }
