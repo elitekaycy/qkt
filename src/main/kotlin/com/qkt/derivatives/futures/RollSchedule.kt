@@ -14,7 +14,9 @@ data class RollTransition(
 /**
  * Which contract of a root is front at any instant, under one [RollPolicy]. Pure and deterministic:
  * the same catalog and policy give the same schedule in backtest and live. Lookups are a binary
- * search over the transitions.
+ * search over the transitions. The catalog carries no listing times, so on a venue that lists
+ * only two quarterlies at once `NEXT` can name a contract that is not trading yet; its data simply
+ * starts later.
  */
 class RollSchedule(
     contracts: List<ListedContract>,

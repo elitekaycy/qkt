@@ -178,4 +178,19 @@ class FuturesRootsFileTest {
             )
         assertThatThrownBy { FuturesRootsFile.load(f) }.hasMessageContaining("adjust")
     }
+
+    @Test
+    fun `a negative roll offset names the root`(
+        @TempDir dir: Path,
+    ) {
+        val f =
+            write(
+                dir,
+                "futures:\n  - { root: CME:ES, currency: USD, multiplier: 50, tickSize: 0.25, " +
+                    "volumeStep: 1, volumeMin: 1, roll: { daysBeforeExpiry: -2, atUtc: '08:00', adjust: none } }\n",
+            )
+        assertThatThrownBy {
+            FuturesRootsFile.load(f)
+        }.hasMessageContaining("futures root CME:ES").hasMessageContaining("daysBeforeExpiry")
+    }
 }

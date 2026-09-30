@@ -126,7 +126,10 @@ object FuturesRootsFile {
             try {
                 LocalTime.parse(req("atUtc"))
             } catch (e: DateTimeParseException) {
-                throw IllegalArgumentException("futures root $name: roll.atUtc must be HH:mm, got '${req("atUtc")}'", e)
+                throw IllegalArgumentException(
+                    "futures root $name: roll.atUtc must be a UTC time like 08:00, got '${req("atUtc")}'",
+                    e,
+                )
             }
         val adjust =
             PriceAdjustment.entries.firstOrNull { it.name.equals(req("adjust"), ignoreCase = true) }
@@ -135,6 +138,7 @@ object FuturesRootsFile {
                         it.name.lowercase()
                     }}",
                 )
+        require(days >= 0) { "futures root $name: roll.daysBeforeExpiry must be >= 0, got $days" }
         return RollPolicy(days, at, adjust)
     }
 
