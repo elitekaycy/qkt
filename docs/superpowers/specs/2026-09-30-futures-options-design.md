@@ -127,16 +127,10 @@ keep `PerLotCommission`. Fees land in `CommissionBook` as today (account currenc
 
 ### 5.1 Contract codes
 
-`ContractCode` parses and formats the venue-native expiry codes; it never guesses:
-
-| Venue family | Format | Example |
-|---|---|---|
-| CME | root + month letter (F G H J K M N Q U V X Z) + 1–2 digit year | `ESZ6`, `ESZ26` |
-| Binance USDⓈ-M | `ROOT_YYMMDD` | `BTCUSDT_240927` |
-| Bybit / Deribit | `ROOT-DMMMYY` | `BTCUSDT-27DEC24`, `BTC_USDC-27SEP24` |
-
-The year of a one-digit CME code is resolved against the catalog, never against the wall clock. The
-code is a label; the catalog's `expiryMs` is the truth.
+A contract's expiry always comes from the catalog; qkt never derives it from a contract code at run
+time. The only code parser is the Binance quarterly one (`ROOT_YYMMDD`, delivering 08:00 UTC), used to
+build Binance catalogs from the public file listing. CME month letters need no parser: a CME catalog
+comes from the venue or data vendor with expiries attached.
 
 ### 5.2 Roll policy and schedule
 
@@ -321,13 +315,15 @@ Conditional artifacts, following the `bookRisk`/`monteCarlo` pattern (nullable o
 
 | Source | What | Command |
 |---|---|---|
-| `data.binance.vision` (no key) | per-contract 1m klines and trades for USDⓈ-M quarterlies since 2021 | `qkt fetch BINANCE_UM:BTCUSDT_240927 --tf 1m --from … --to …` and `--ticks` (trades → ticks) |
-| `fapi.binance.com/futures/data/delivery-price` (no key) | delivery price per quarterly | written into the catalog by `qkt fetch … --catalog` |
-| symbol list on `data.binance.vision` | which quarterlies exist | catalog builder |
+| `data.binance.vision` (no key) | per-contract klines (1m–1d) for USDⓈ-M quarterlies since 2021 | `qkt fetch BINANCE_UM:BTCUSDT_240927 --tf 1m --from … --to …` |
+| `fapi.binance.com/futures/data/delivery-price` (no key) | delivery price per quarterly, matched by UTC date | `qkt fetch BINANCE_UM:BTCUSDT --catalog` |
+| S3 listing of `data.binance.vision` | which quarterlies exist | same `--catalog` command |
 
-Trades become ticks with `price = trade price`, `volume = qty`, no bid/ask (Binance stopped
-publishing quarterly `bookTicker` files after March 2024). Market fills therefore use trade price
-plus `--slippage-ticks`; this is stated in the report's evidence block.
+Bars are the phase-42 data: the continuous series and the roll gap are defined on 1m bars. Trades →
+ticks (`--ticks`) is deferred to the phase that adds tick fills for futures. Findings from the first
+real fetch (delivery timestamps at 00:00 UTC, flat bars after delivery, headerless pre-2022 files) are
+in `docs/research/2026-09-30-binance-quarterly-free-data.md`; bars stamped at or after a contract's
+expiry are ignored everywhere.
 
 ## 6. Options
 
@@ -414,18 +410,18 @@ backtest.
 
 ```
 derivatives/
-  futures/    ContractCode, FuturesContract, ContractChain, RollPolicy, RollSchedule, RollGap,
-              ContractResolver, PriceAdjustment, PriceSpace, ContinuousSymbol
+  futures/    RollSchedule, RollPrices, AdjustmentChain, PriceSpace
   options/    OptionTerms, OptionRight, ChainSnapshot, ChainSnapshotStore, OptionSelector,
               Structure, StructurePayoff
   options/pricing/  NormalDistribution, Black76, BlackScholes, ImpliedVolatility, Greeks
-instrument/   InstrumentKind, MarginTerms, FuturesRoot, ContractCatalog, ContractCatalogRegistry
+instrument/   DerivativeTerms, MarginTerms, FuturesRoot, RollPolicy, PriceAdjustment, ContractCatalog,
+              ContractCatalogRegistry, ContinuousSelector
 accounting/margin/  MarginModel, MarginRequirement (risk rule lives in risk/rules)
 broker/exchange/    ExchangeSimulator, ExpirySettlement
 broker/continuous/  ContinuousContractBroker, ContinuousOrderMap, RollExecutor
 marketdata/source/  ContinuousMarketSource, ContinuousTickStitcher
-marketdata/store/binance/  BinanceVisionClient, BinanceKlineFetcher, BinanceTradeTickFetcher,
-                           BinanceContractCatalog
+marketdata/store/binance/  BinanceVisionClient, BinanceKlineCsv, BinanceQuarterly, BinanceContractCatalog
+cli/fetch/                 BinanceUmFetcher, CatalogFetch
 marketdata/store/tardis/   TardisChainFetcher
 connector/gateway/  (phase 44)
 ```
