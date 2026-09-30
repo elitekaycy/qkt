@@ -12,3 +12,12 @@ data class RollPrices(
         require(toPrice.signum() > 0) { "RollPrices.toPrice must be > 0: $toPrice" }
     }
 }
+
+/**
+ * A roll the history measured: at [atMs] the stream leaves one contract for the next, and [prices]
+ * are both contracts' prices at that instant — the references its series is continuous at.
+ */
+data class MeasuredRoll(
+    val atMs: Long,
+    val prices: RollPrices,
+)
