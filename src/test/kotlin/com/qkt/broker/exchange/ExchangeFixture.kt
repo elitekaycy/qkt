@@ -23,6 +23,7 @@ import java.time.Instant
 internal class ExchangeFixture(
     slippageTicks: Int = 2,
     takerFeeRate: String = "0",
+    expiryGuardHours: Int = 24,
 ) {
     val sep = "BINANCE_UM:BTCUSDT_240927"
     val dec = "BINANCE_UM:BTCUSDT_241227"
@@ -46,6 +47,7 @@ internal class ExchangeFixture(
             takerFeeRate = BigDecimal(takerFeeRate),
             margin = null,
             slippageTicks = slippageTicks,
+            expiryGuardHours = expiryGuardHours,
         )
     val registry =
         ContractCatalogRegistry(

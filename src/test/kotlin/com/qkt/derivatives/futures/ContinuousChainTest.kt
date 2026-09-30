@@ -139,4 +139,14 @@ class ContinuousChainTest {
         assertThat(next.rollOutOf(1).prices).isEqualTo(RollPrices(BigDecimal("63800"), BigDecimal("64700")))
         assertThatThrownBy { front.rollOutOf(2) }.hasMessageContaining("BINANCE_UM:BTCUSDT_250328")
     }
+
+    @Test
+    fun `a roll inside the expiry guard window is refused`() {
+        val late = root.copy(roll = RollPolicy(0, LocalTime.of(0, 0), PriceAdjustment.PANAMA), expiryGuardHours = 24)
+        val history0 = history.copy(policy = "0d@00:00")
+
+        assertThatThrownBy { ContinuousChain(late, catalog, history0, ContinuousSelector.FRONT) }
+            .hasMessageContaining("expiryGuardHours")
+            .hasMessageContaining("BTCUSDT_240927")
+    }
 }

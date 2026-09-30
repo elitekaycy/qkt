@@ -15,7 +15,16 @@ import org.snakeyaml.engine.v2.api.LoadSettings
 object FuturesRootsFile {
     private val REQUIRED = listOf("root", "currency", "multiplier", "tickSize", "volumeStep", "volumeMin")
     private val OPTIONAL =
-        listOf("volumeMax", "calendar", "exchangeFeePerContract", "takerFeeRate", "margin", "roll", "slippageTicks")
+        listOf(
+            "volumeMax",
+            "calendar",
+            "exchangeFeePerContract",
+            "takerFeeRate",
+            "margin",
+            "roll",
+            "slippageTicks",
+            "expiryGuardHours",
+        )
     private val MARGIN_KEYS = setOf("initial", "maintenance", "basis")
     private val ROLL_KEYS = setOf("daysBeforeExpiry", "atUtc", "adjust")
 
@@ -82,7 +91,9 @@ object FuturesRootsFile {
                         name,
                     )
                 },
-            slippageTicks = entry["slippageTicks"]?.let { slippageTicks(it.toString(), name) } ?: 0,
+            slippageTicks = entry["slippageTicks"]?.let { wholeNumber(it.toString(), "slippageTicks", name) } ?: 0,
+            expiryGuardHours =
+                entry["expiryGuardHours"]?.let { wholeNumber(it.toString(), "expiryGuardHours", name) } ?: 24,
         ).also { validate(it, name) }
     }
 
@@ -144,12 +155,13 @@ object FuturesRootsFile {
         return RollPolicy(days, at, adjust)
     }
 
-    private fun slippageTicks(
+    private fun wholeNumber(
         raw: String,
+        key: String,
         name: String,
     ): Int =
         raw.toIntOrNull()?.takeIf { it >= 0 }
-            ?: error("futures root $name: slippageTicks must be a whole number >= 0, got '$raw'")
+            ?: error("futures root $name: $key must be a whole number >= 0, got '$raw'")
 
     private fun validate(
         root: FuturesRoot,

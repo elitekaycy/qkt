@@ -31,10 +31,13 @@ data class FutureTerms(
     override val margin: MarginTerms? = null,
     override val exchangeFeePerContract: BigDecimal = BigDecimal.ZERO,
     override val takerFeeRate: BigDecimal = BigDecimal.ZERO,
+    /** Hours before [expiryMs] in which the exchange accepts only orders that reduce a position; 0 turns it off. */
+    val expiryGuardHours: Int = 24,
 ) : DerivativeTerms {
     init {
         require(ROOT_FORMAT.matches(root)) { "FutureTerms.root must be VENUE:ROOT: '$root'" }
         require(expiryMs == null || expiryMs > 0) { "FutureTerms.expiryMs must be > 0: $expiryMs" }
+        require(expiryGuardHours >= 0) { "FutureTerms.expiryGuardHours must be >= 0: $expiryGuardHours" }
         require(exchangeFeePerContract.signum() >= 0) {
             "FutureTerms.exchangeFeePerContract must be >= 0: $exchangeFeePerContract"
         }

@@ -46,6 +46,12 @@ internal class ExpirySettlement(
         nextDueMs = minOf(nextDueMs, expiryMs)
     }
 
+    /** [strategyId]'s net position in [symbol] as the exchange holds it, positive long. */
+    fun netOf(
+        symbol: String,
+        strategyId: String,
+    ): BigDecimal = net[symbol]?.get(strategyId) ?: BigDecimal.ZERO
+
     /** Apply one of the simulator's fills to its strategy's net position. */
     fun onFill(fill: BrokerEvent.OrderFilled) {
         val signed = if (fill.side == Side.BUY) fill.quantity else fill.quantity.negate()

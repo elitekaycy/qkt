@@ -46,4 +46,13 @@ class FuturesRootSlippageTest {
             .hasMessageContaining("BINANCE_UM:BTCUSDT")
             .hasMessageContaining("slippageTicks")
     }
+
+    @Test
+    fun `the expiry guard defaults to a day and is read from the root`(
+        @TempDir dir: Path,
+    ) {
+        assertThat(load(dir, "").single().expiryGuardHours).isEqualTo(24)
+        assertThat(load(dir, ", expiryGuardHours: 6").single().metaFor("BINANCE_UM:BTCUSDT_240927", 1L).derivative)
+            .isEqualTo(FutureTerms("BINANCE_UM:BTCUSDT", 1L, expiryGuardHours = 6))
+    }
 }

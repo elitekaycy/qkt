@@ -152,7 +152,9 @@ price and then slip by the run's slippage model; with `--slippage instrument` th
 optional `slippageTicks` (whole ticks against the order). Limit and stop prices off the contract's
 tick grid are snapped to it in the direction that never fills early. The root's fees are charged on every fill and included in the report's
 `commissionPaid`. A contract held into expiry is settled at the catalog's delivery price (exit reason
-`EXPIRY`), and orders on it after expiry are rejected.
+`EXPIRY`), and orders on it after expiry are rejected. In the last `expiryGuardHours` before expiry
+(a root key, default 24; 0 turns it off) the exchange takes only orders that reduce a position; a
+root whose roll would fall inside that window is refused when a continuous stream is built from it.
 
 ### Continuous futures streams (`@front`, `@next`)
 
