@@ -272,11 +272,7 @@ class Backtest(
             instruments: com.qkt.instrument.InstrumentRegistry = com.qkt.instrument.NoopInstrumentRegistry,
             accountingConfig: com.qkt.accounting.AccountingConfig = com.qkt.accounting.AccountingConfig(),
             tradedSymbols: List<String> = request.symbols,
-            /**
-             * Phase 25A: optional pre-fetched bar store (populated by `qkt fetch`). When
-             * present, `LocalMarketSource.bars()` reads from it instead of aggregating
-             * from ticks for any day fully covered. Falls back to ticks for missing days.
-             */
+            /** Bars fetched by `qkt fetch`; covered days are read from it instead of aggregating ticks. */
             barStore: com.qkt.marketdata.store.LocalBarStore? = null,
             brokerKind: BrokerKind = BrokerKind.PAPER,
             executionConfig: ExecutionSimulationConfig = ExecutionSimulationConfig.forBrokerKind(brokerKind),
@@ -313,6 +309,7 @@ class Backtest(
                     barStore = barStore,
                     forceBars = forceBars,
                     binaryBarStore = binaryBarStore,
+                    instruments = instruments,
                 )
             return fromSource(
                 strategies = strategies,
