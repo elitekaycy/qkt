@@ -39,6 +39,7 @@ class DslCommandTest {
         assertThat(json.keys).containsExactly(
             "schema",
             "keywords",
+            "keywordCategories",
             "indicators",
             "functions",
             "constants",
