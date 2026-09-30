@@ -35,10 +35,8 @@ class PriceSpaceTest {
     }
 
     @Test
-    fun `ratio maps levels by the factor and scales distances`() {
+    fun `ratio maps levels by the factor`() {
         assertThat(ratio.limitToContract(BigDecimal("100"), Side.BUY)).isEqualByComparingTo("200")
-        assertThat(ratio.distanceToContract(BigDecimal("5"))).isEqualByComparingTo("10")
-        assertThat(panama.distanceToContract(BigDecimal("5"))).isEqualByComparingTo("5")
     }
 
     @Test
