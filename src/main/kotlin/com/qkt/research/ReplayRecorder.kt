@@ -176,6 +176,15 @@ internal class ReplayRecorder(
             .filter { it.kind == FillAccountingKind.EXECUTION && (strategyId == null || it.strategyId == strategyId) }
             .fold(BigDecimal.ZERO) { total, fill -> total.add(fill.venueCostsAccount) }
 
+    /**
+     * The non-execution venue costs booked for [strategyId] (every strategy when null), positive for
+     * a charge, in account currency: today only futures roll costs publish them.
+     */
+    fun rollCostsPaid(strategyId: String? = null): BigDecimal =
+        accountedFills
+            .filter { it.kind == FillAccountingKind.COST && (strategyId == null || it.strategyId == strategyId) }
+            .fold(BigDecimal.ZERO) { total, cost -> total.subtract(cost.netStrategyAccountRealized) }
+
     /** The decision -> order -> fill chain recorded so far. */
     fun causality(): ReplayCausalityReport =
         ReplayCausalityReport(
