@@ -106,13 +106,12 @@ internal object RollsFetch {
                     null
             }
         println("qkt fetch: measured ${front.size} of ${schedule.transitions.size} front rolls for $target -> $file")
-        if (front.isNotEmpty()) {
-            println(
-                "  from the ${Instant.ofEpochMilli(
-                    front.first().atMs,
-                )} roll to the ${Instant.ofEpochMilli(front.last().atMs)} roll",
-            )
-        }
+        if (front.isEmpty()) return
+        val first = Instant.ofEpochMilli(front.first().atMs)
+        println("  from the $first roll to the ${Instant.ofEpochMilli(front.last().atMs)} roll")
+        val gap = schedule.transitions.lastOrNull { it.atMs < front.first().atMs } ?: return
+        val pair = "${schedule.contracts[gap.fromIndex].symbol} -> ${schedule.contracts[gap.toIndex].symbol}"
+        println("  starts after the ${Instant.ofEpochMilli(gap.atMs)} roll ($pair), which could not be measured")
     }
 
     private fun failed(
