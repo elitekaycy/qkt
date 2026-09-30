@@ -119,18 +119,4 @@ class ExprCompiler(
             }
             else -> error("ExprCompiler: unsupported expression: ${expr::class.simpleName}")
         }
-
-    companion object {
-        val CANDLE_FIELDS: Set<String> =
-            setOf("close", "open", "high", "low", "volume", "price", "bid", "ask", "spread", "value", "timestamp")
-        val META_FIELDS: Set<String> =
-            setOf(
-                "tick_size",
-                "contract_size",
-                "volume_step",
-                "volume_min",
-                "swap_long_points",
-                "swap_short_points",
-            )
-    }
 }

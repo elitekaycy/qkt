@@ -17,6 +17,23 @@ FALSE
 
 There is no `NULL` literal. A missing value comes from data (a lookback past the start of history, an indicator still warming up); test for it with [`IS NULL`](#is-null-is-not-null).
 
+A string literal is one line long and knows five escapes: `\'`, `\"`, `\\`, `\n` and `\t`. Any other backslash sequence, or a newline inside the quotes, is a lexer error:
+
+```qkt
+WHEN btc.close > 0 THEN LOG "quote \" tab\t newline\n backslash \\" ; LOG 'it\'s fine'
+```
+
+<!-- qkt-doc: illegal -->
+```qkt
+WHEN btc.close > 0 THEN LOG "no \x escapes"
+```
+
+<!-- qkt-doc: illegal -->
+```qkt
+WHEN btc.close > 0 THEN LOG "strings stop
+at the end of the line"
+```
+
 Numbers are parsed as exact decimals internally (BigDecimal). No floating-point drift over thousands of trades.
 Strings support exact, case-sensitive `=` / `==` and `!=` / `<>` comparisons. Ordered comparisons
 (`<`, `<=`, `>`, `>=`) remain numeric-only.
@@ -68,10 +85,34 @@ btc.open
 btc.high
 btc.low
 btc.close
+btc.price         -- alias of close
 btc.volume
 btc.bid           -- optional (quote feeds only)
 btc.ask
 btc.spread        -- ask - bid, computed when both present
+```
+
+### Instrument meta fields
+
+A stream also exposes the static instrument metadata qkt holds for its symbol (from the
+instrument catalog, verified against the venue by `qkt instruments verify`). They compile like
+any other field and are resolved when the strategy binds to its feed, so a symbol with no
+catalog entry fails at deploy, not on the first tick:
+
+```qkt
+btc.tick_size          -- minimum price increment (point size)
+btc.contract_size      -- units per lot
+btc.volume_step        -- lot increment the venue accepts
+btc.volume_min         -- smallest order the venue accepts
+btc.swap_long_points   -- overnight swap for a long, in points
+btc.swap_short_points  -- overnight swap for a short, in points
+```
+
+```qkt
+-- Round a computed stop to the venue grid and refuse to size below the minimum lot.
+LET stopDist = round_to(atr(gold, 14) * 2, gold.tick_size)
+WHEN gold.close > gold.open AND 0.01 / stopDist >= gold.volume_min
+THEN BUY gold SIZING 0.01 BRACKET { STOP_LOSS BY stopDist, TAKE_PROFIT BY stopDist * 2 }
 ```
 
 `btc.timestamp` is the bar's start time in epoch milliseconds, and `btc.timestamp[n]` is the start of the bar `n` bars ago. It is not a price series: `ema(btc.timestamp, 9)` is an error. For the strategy's clock use [`NOW`](now.md), with fields such as `NOW.hour_utc` and `NOW.weekday`. There is no `btc.mid` either; compute `(btc.bid + btc.ask) / 2`.
@@ -110,11 +151,13 @@ Treat them as numbers — they slot into any arithmetic context.
 ## Account references
 
 ```qkt
-ACCOUNT.equity         -- cash + open P&L
-ACCOUNT.balance        -- cash only
-ACCOUNT.realized_pnl   -- realized P&L since strategy start
-ACCOUNT.unrealized_pnl -- open-position P&L right now
-ACCOUNT.total_pnl      -- realized + unrealized
+ACCOUNT.equity               -- cash + open P&L
+ACCOUNT.balance              -- cash only
+ACCOUNT.realized_pnl         -- realized P&L since strategy start
+ACCOUNT.unrealized_pnl       -- open-position P&L right now
+ACCOUNT.total_pnl            -- realized + unrealized
+ACCOUNT.equity_peak          -- high-water mark of this strategy's equity
+ACCOUNT.open_positions_count -- open positions held by this strategy, across symbols
 ```
 
 ```qkt
@@ -132,6 +175,17 @@ ACCOUNT.loss_streak      -- consecutive closed losses
 ACCOUNT.dd_pct           -- current drawdown from this strategy's equity peak, as a percent (5.0 = 5%)
 ACCOUNT.realized_today   -- this strategy's closed-trade P&L since UTC midnight
 ACCOUNT.realized_month   -- this strategy's closed-trade P&L since the 1st of the UTC month
+ACCOUNT.trades_today     -- closed trades recorded for this strategy since UTC midnight
+ACCOUNT.wins_today       -- of those, the ones that closed with realized_pnl > 0
+ACCOUNT.losses_today     -- of those, the ones that closed with realized_pnl < 0
+```
+
+```qkt
+-- Two losses in a day is enough: stop opening, keep managing.
+WHEN btc.close > btc.open AND POSITION.btc = 0
+ AND ACCOUNT.losses_today < 2 AND ACCOUNT.open_positions_count = 0
+ AND ACCOUNT.equity >= ACCOUNT.equity_peak * 0.97
+THEN BUY btc SIZING 0.1
 ```
 
 `realized_today` and `realized_month` reset at their UTC boundary and survive a daemon restart within the same day or month. They are in account currency; a monthly loss gate in risk units multiplies your per-trade risk:
@@ -194,15 +248,39 @@ THEN BUY btc SIZING RISK $ (100 + 0.30 * STREAK.banked) BRACKET { STOP_LOSS BY 3
 <!-- qkt-doc: grammar -->
 ```qkt
 POSITION.<stream>                           -- net quantity (signed) — same as POSITION.<stream>.quantity
-POSITION.<stream>.quantity                  -- explicit form
-POSITION.<stream>.entry_price               -- average entry price
+POSITION.<stream>.quantity                  -- explicit form; .qty is the same accessor
+POSITION.<stream>.entry_price               -- average entry price; .avg_price and .avg_entry_price are aliases
+POSITION_AVG_PRICE.<stream>                 -- the same average entry price, as its own keyword
 POSITION.<stream>.pnl                       -- strategy realized + this-symbol unrealized
 POSITION.<stream>.realized_pnl              -- strategy-level realized P&L (see note)
 POSITION.<stream>.unrealized_pnl            -- open P&L on this position, marked at the closing price
 POSITION.<stream>.holding_duration          -- seconds since the position was opened
 POSITION.<stream>.mfe                       -- max favorable excursion of the entry leg (price units)
 POSITION.<stream>.mae                       -- max adverse excursion of the entry leg (price units)
+POSITION.<stream>.count                     -- open legs on this stream (hedging venues); .open_count is the same
+POSITION.<stream>.longs                     -- open long legs; .long_count is the same
+POSITION.<stream>.shorts                    -- open short legs; .short_count is the same
+POSITION.<stream>.gross                     -- sum of |quantity| over the open legs
+POSITION.<stream>.trades_today              -- fills on this stream since UTC midnight
+POSITION.<stream>.last_trade_at             -- epoch ms of the last fill on this stream; null before any
 OPEN_ORDERS.<stream>                        -- active risk-increasing entry-order count
+```
+
+Every accessor above compiles; an unknown one (`POSITION.btc.size`) is a parse error:
+
+```qkt
+WHEN POSITION.btc.qty = 0 AND POSITION.btc.count = 0 AND POSITION.btc.gross = 0
+ AND POSITION.btc.trades_today < 3
+ AND (POSITION.btc.last_trade_at IS NULL OR NOW.epoch_ms - POSITION.btc.last_trade_at > 3600000)
+THEN BUY btc SIZING 0.1
+
+WHEN POSITION.btc.longs > 0 AND POSITION.btc.shorts > 0
+THEN LOG "hedged" avg=POSITION.btc.avg_price same=POSITION_AVG_PRICE.btc
+```
+
+<!-- qkt-doc: illegal -->
+```qkt
+WHEN POSITION.btc.size > 0 THEN CLOSE btc
 ```
 
 ```qkt
@@ -240,7 +318,7 @@ THEN SELL gold ORDER_TYPE = LIMIT AT gold.close + 2 SIZING 1
 CASE
   WHEN <cond1> THEN <expr1>
   WHEN <cond2> THEN <expr2>
-  [ ELSE <default_expr> ]
+  ELSE <default_expr>
 END
 ```
 
@@ -258,15 +336,25 @@ RULES
 
 `CASE` is an **expression**, not a control-flow statement. It evaluates and returns a value; the surrounding context (here `LET size = ...`) decides what to do with it.
 
-If no `WHEN` matches and there's no `ELSE`, the expression returns `null`.
+`ELSE` is required — a `CASE` with no default branch is a parse error (`CASE requires an ELSE
+branch`), so every evaluation yields a value. Return a sentinel and test for it if you need
+"no match":
+
+<!-- qkt-doc: illegal -->
+```qkt
+LET size = CASE
+  WHEN atr(btc, 14) > 200 THEN 0.05
+  WHEN atr(btc, 14) > 100 THEN 0.10
+END
+```
 
 ## Math helpers
 
 <!-- qkt-doc: grammar -->
 ```qkt
 abs(<expr>)
-max(<a>, <b>)
-min(<a>, <b>)
+max(<a>, <b>, ...)                -- largest of two or more values
+min(<a>, <b>, ...)
 sqrt(<expr>)
 log(<expr>)
 exp(<expr>)
@@ -274,6 +362,30 @@ floor(<expr>)
 ceil(<expr>)
 round(<expr>)
 pow(<base>, <exp>)
+mod(<a>, <b>)
+round_to(<x>, <step>)
+rank_of(<self>, <peer>, ...)      -- 1-based rank of <self> among the values, 1 = highest
+normalize(<self>, <peer>, ...)    -- min-max scale of <self> among the values, in [0, 1]
+softmax(<self>, <peer>, ...)      -- softmax weight of <self> among the values, in (0, 1)
+```
+
+`max`/`min` with two or more arguments are plain scalar functions; with one argument and a
+`SINCE` window they are the [aggregates](#aggregates) below. The three cross-sectional helpers
+score the **first** argument against the rest, so the same call written from each stream's rule
+ranks that stream among its peers:
+
+```qkt
+LET mom_btc = btc.close / btc.close[20] - 1
+LET mom_eth = eth.close / eth.close[20] - 1
+LET mom_sol = sol.close / sol.close[20] - 1
+
+RULES
+    -- Long the top-2 by 20-bar momentum, sized by softmax weight of that momentum.
+    WHEN rank_of(mom_btc, mom_eth, mom_sol) <= 2 AND POSITION.btc = 0
+    THEN BUY btc SIZING 0.3 * softmax(mom_btc, mom_eth, mom_sol)
+
+    WHEN normalize(mom_eth, mom_btc, mom_sol) > 0.5 AND POSITION.eth = 0
+    THEN BUY eth SIZING max(0.05, min(0.2, abs(mom_eth)))
 ```
 
 ```qkt
@@ -330,8 +442,9 @@ Expressions return `null` when:
 
 `null` propagates through arithmetic: `null + 5 = null`. Comparisons with `null` always return `false`. This means **conditions short-circuit safely during warmup** — your rule simply doesn't fire while data is missing.
 
-!!! info "Explicit `IS NULL` / `IS NOT NULL` coming in Phase 24"
-    Phase 24 will add the explicit checks. See [Planned features](../../planned.md#phase-24-risk-sizing-primitives). Today, the silent short-circuit handles every case where you'd want them — your rule simply doesn't fire while an indicator is null.
+To test for a missing value explicitly, use [`IS NULL` / `IS NOT NULL`](#is-null-is-not-null)
+above; it always yields a boolean, so it composes with `AND` / `OR` where a bare comparison with
+`null` would just be `false`.
 
 ## Type rules (loose)
 
@@ -344,7 +457,15 @@ The DSL is dynamically typed at the expression level. Most operations coerce sen
 - Comparing Number to Null → False
 - String concat is not supported in conditions; strings are only valid in `LOG` action arguments
 
-Mixing types in arithmetic produces a compile error: `5 + "hello"` is a parse-time failure.
+Mixing types in arithmetic is not caught at parse or compile time: `5 + "hello"` compiles, and at
+runtime the mismatched operation evaluates to `null` (`Value.Undefined`), so a comparison built on
+it is `false` and `IS NULL` is `true`. Keep strings to `LOG` fields and equality tests.
+
+```qkt
+LET oops = 5 + "hello"          -- compiles; evaluates to null on every tick
+RULES
+    WHEN oops IS NULL THEN LOG "type mismatch is a runtime null, not a parse error"
+```
 
 ## Common gotchas
 
@@ -352,7 +473,7 @@ Mixing types in arithmetic produces a compile error: `5 + "hello"` is a parse-ti
 - **Operator precedence.** `AND` binds tighter than `OR`. Parentheses are free.
 - **`a == b` vs `a = b`** — both work. Pick one and stick with it for the project.
 - **No string operations in conditions.** Strings are for `LOG` only. Don't try `WHEN btc.symbol = "BTCUSDT"` (the parser doesn't expose `symbol` on streams).
-- **`null` is opinionated.** Treating null-comparisons as false simplifies most code but can hide bugs. Explicit `IS NULL`/`IS NOT NULL` lands in Phase 24.
+- **`null` is opinionated.** Treating null-comparisons as false simplifies most code but can hide bugs. Use `IS NULL`/`IS NOT NULL` when the distinction matters.
 
 ## What this composes with
 

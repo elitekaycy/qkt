@@ -2,6 +2,11 @@
 
 `qkt editor` installs the bundled editor integrations onto your machine without you having to clone the repo, copy files by hand, or build the VSCode extension yourself. The integrations themselves live under `editor/` in the source tree; the qkt distribution tarball ships them under `share/editor/`.
 
+Everything the editors know about the language is derived from the implementation: the syntax
+grammars are generated from the parser's token table and the indicator, function and constant
+registries (`qkt editor grammar`), and diagnostics, completion and hover come from the same
+parser and compiler that `qkt parse` runs (`qkt lsp`).
+
 ## See what's supported
 
 ```bash
@@ -17,7 +22,6 @@ Supported targets:
   vscode     VSCode         [detected]
   nvim       Neovim         [detected]
   vim        Vim            [not found]
-  sublime    Sublime Text   [not found]
 ```
 
 ## Install for one editor
@@ -26,7 +30,6 @@ Supported targets:
 qkt editor install vscode
 qkt editor install nvim
 qkt editor install vim
-qkt editor install sublime
 ```
 
 What each does:
@@ -34,7 +37,23 @@ What each does:
 - **vscode** — runs `code --install-extension <bundled.vsix>`. If no `.vsix` is bundled (uncommon — release tarballs include one), falls back to `npx @vscode/vsce package` against the bundled source. If neither route works, prints the GitHub release URL.
 - **nvim** — copies `qkt.vim` into `$XDG_CONFIG_HOME/nvim/{ftdetect,ftplugin,syntax}/`.
 - **vim** — same, into `~/.vim/{ftdetect,ftplugin,syntax}/`.
-- **sublime** — copies the TextMate grammar into the Sublime user packages folder (Linux or macOS).
+
+There is no Sublime target: Sublime Text cannot load a TextMate JSON grammar, so the installer
+does not write one. Use `qkt editor grammar --format textmate` with a converter of your choice.
+
+## Generated grammars
+
+```bash
+qkt editor grammar --format textmate   # the VS Code / TextMate JSON grammar
+qkt editor grammar --format vim        # the Vim/Neovim syntax file
+```
+
+Both files under `editor/` are the output of these commands; a test asserts the checked-in
+copies equal the generator's output, so they cannot drift from the parser. The grammar knows
+every keyword by category (sections, actions, clauses, portfolio keywords), every registered
+indicator and function name, the constants, the pseudo-symbols (`ACCOUNT`, `POSITION`, `NOW`,
+`EXIT`, ...) and their member fields; strings are single-line with only the lexer's five escapes,
+and `=` and `<>` are highlighted as operators.
 
 ## Install for everything detected
 
@@ -57,7 +76,7 @@ qkt: detected plugin manager(s) in your Neovim config: lazy.nvim
      Continue with sideload anyway? [y/N]
 ```
 
-Default answer is no. Pass `--yes` to bypass the prompt in scripts. The check applies to `nvim` and `vim` targets only — VSCode and Sublime have their own extension mechanisms that don't conflict.
+Default answer is no. Pass `--yes` to bypass the prompt in scripts. The check applies to `nvim` and `vim` targets only — VSCode has its own extension mechanism that doesn't conflict.
 
 ## Uninstall
 
@@ -66,7 +85,7 @@ qkt editor uninstall vscode
 qkt editor uninstall nvim
 ```
 
-For `vscode` this runs `code --uninstall-extension elitekaycy.qkt`. For `nvim`/`vim`/`sublime` it consults `~/.config/qkt/editor-install.json` (the install manifest qkt writes when it places files) and removes exactly those paths — never anything you wrote yourself. If you copied files manually before, `uninstall` refuses with a pointer to remove them yourself.
+For `vscode` this runs `code --uninstall-extension elitekaycy.qkt`. For `nvim`/`vim` it consults `~/.config/qkt/editor-install.json` (the install manifest qkt writes when it places files) and removes exactly those paths — never anything you wrote yourself. If you copied files manually before, `uninstall` refuses with a pointer to remove them yourself.
 
 ## How the manifest works
 
@@ -98,7 +117,20 @@ The `qkt` CLI is itself the language server. It speaks the Language Server Proto
 qkt lsp
 ```
 
-Any editor with an LSP client can talk to it — point the client's command for the `qkt` filetype at `qkt lsp`. Because the server is the same binary that runs your strategies, its diagnostics match `qkt parse` / `qkt run` exactly: there is no second grammar to drift.
+Any editor with an LSP client can talk to it — point the client's command for the `qkt` filetype at `qkt lsp`. Because the server is the same binary that runs your strategies, there is no second grammar to drift:
+
+- **Diagnostics** run the parser and then the compiler, exactly like `qkt parse`. A syntax error
+  and a compile error (unknown indicator, function, stream alias or reference, wrong arity, a
+  bracket or sizing rule, a recursive `LET`) both arrive with the line and column of the
+  offending token; when the compiler cannot pin an identifier it falls back to the rule's `WHEN`
+  line, then to the section keyword.
+- **Completion** offers the keywords that fit the position, every registered indicator, function
+  and constant, the declared stream, basket and series aliases with their fields (`.close`,
+  `.candle`, `.tick`, the instrument meta fields), and the members of every pseudo-symbol after
+  its dot — `POSITION.btc.`, `NOW.`, `ACCOUNT.`, `EXIT.`, `STREAK.`, `TRADES.`, `COOLDOWN.`,
+  `SEQUENCE.<name>.` — from the one vocabulary table the parser and compiler share.
+- **Hover** documents every keyword, and every indicator's signature shown in hover is itself
+  compiled by a test.
 
 ### Neovim (automatic)
 
@@ -140,9 +172,13 @@ Zed needs a small language extension to bind the `.qkt` file type; once bound, r
 
 ### VS Code
 
-The bundled extension gives you syntax highlighting and snippets today. Wiring the language client — so VS Code also gets diagnostics, completion, and hover from `qkt lsp` — ships with the marketplace extension (#85). Until then, use any LSP-capable editor above for the full feature set.
+The bundled extension gives you the generated syntax highlighting and snippets. It does not
+start a language client; for diagnostics, completion and hover in VS Code, install a generic LSP
+client extension and point it at `qkt lsp` for the `qkt` language, or use one of the editors
+above.
 
-## What's not here yet
+## What's not here
 
-- **Marketplace publish** for VSCode, including the bundled language client (#85) — install the extension via this command for now.
-- **Tree-sitter grammar** (#117) — Neovim users will get tree-sitter highlighting once it lands, superseding the hand-written syntax file shipped here.
+Go-to-definition, rename, formatting, semantic tokens, a bundled VS Code language client and a
+tree-sitter grammar are out of scope; the Vim syntax file generated by `qkt editor grammar` is
+what Neovim highlights with.

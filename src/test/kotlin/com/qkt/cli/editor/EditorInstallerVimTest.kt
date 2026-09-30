@@ -66,22 +66,4 @@ class EditorInstallerVimTest : EditorInstallerFixture() {
         assertThat(home.resolve(".vim/ftplugin/qkt.vim")).exists()
         assertThat(home.resolve(".vim/syntax/qkt.vim")).exists()
     }
-
-    @Test
-    fun `sublime install writes the grammar as a sublime-syntax file`(
-        @TempDir tmp: Path,
-    ) {
-        val root = fakeEditorRoot(tmp.resolve("share/editor"))
-        val home = tmp.resolve("home")
-        Files.createDirectories(home)
-        val installer =
-            EditorInstaller(detector = detector(home), editorRoot = root, manifestPath = tmp.resolve("manifest.json"))
-
-        val result = installer.install(EditorTarget.SUBLIME)
-
-        assertThat(result).isNotNull
-        val dst = home.resolve(".config/sublime-text/Packages/User/qkt.sublime-syntax")
-        assertThat(dst).exists()
-        assertThat(Files.readString(dst)).contains("source.qkt")
-    }
 }

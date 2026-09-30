@@ -5,6 +5,8 @@ import com.qkt.cli.bot.jsonObj
 import com.qkt.cli.bot.jsonString
 import com.qkt.dsl.ast.StreamDecl
 import com.qkt.dsl.compile.AstCompiler
+import com.qkt.dsl.compile.CompileError
+import com.qkt.dsl.compile.CompileErrorLocator
 import com.qkt.dsl.parse.Dsl
 import com.qkt.dsl.parse.ParseResult
 import com.qkt.dsl.parse.ParsedFile
@@ -28,53 +30,9 @@ class ParseCommand(
             System.err.println("qkt: error: file not found: $file")
             return ExitCodes.USER_ERROR
         }
-        return when (val result = Dsl.parseFileAny(path)) {
-            is ParseResult.Success -> {
-                when (val parsed = result.value) {
-                    is ParsedFile.StrategyFile ->
-                        try {
-                            AstCompiler().compile(parsed.ast)
-                            println(
-                                if (json) {
-                                    describe(
-                                        "strategy",
-                                        parsed.ast.name,
-                                        parsed.ast.version,
-                                        parsed.ast.streams,
-                                    )
-                                } else {
-                                    "ok"
-                                },
-                            )
-                            ExitCodes.SUCCESS
-                        } catch (e: Exception) {
-                            System.err.println("$file:1:1 — ${e.message ?: e.toString()}")
-                            System.err.println("1 error")
-                            ExitCodes.USER_ERROR
-                        }
-                    is ParsedFile.PortfolioFile ->
-                        try {
-                            PortfolioLoader.load(path)
-                            println(
-                                if (json) {
-                                    describe(
-                                        "portfolio",
-                                        parsed.ast.name,
-                                        parsed.ast.version,
-                                        parsed.ast.streams,
-                                    )
-                                } else {
-                                    "ok"
-                                },
-                            )
-                            ExitCodes.SUCCESS
-                        } catch (e: Exception) {
-                            System.err.println("$file:1:1 — ${e.message ?: e.toString()}")
-                            System.err.println("1 error")
-                            ExitCodes.USER_ERROR
-                        }
-                }
-            }
+        val text = Files.readString(path)
+        return when (val result = Dsl.parseAny(text)) {
+            is ParseResult.Success -> compile(file, text, path, result.value, json)
             is ParseResult.Failure -> {
                 for (e in result.errors) {
                     System.err.println("$file:${e.line}:${e.col} — ${e.message}")
@@ -83,6 +41,40 @@ class ParseCommand(
                 ExitCodes.USER_ERROR
             }
         }
+    }
+
+    /** Compiles a parsed file; a failure prints one located error, the same one the editor shows. */
+    private fun compile(
+        file: String,
+        text: String,
+        path: Path,
+        parsed: ParsedFile,
+        json: Boolean,
+    ): Int {
+        val kind =
+            when (parsed) {
+                is ParsedFile.StrategyFile -> "strategy"
+                is ParsedFile.PortfolioFile -> "portfolio"
+            }
+        try {
+            when (parsed) {
+                is ParsedFile.StrategyFile -> AstCompiler().compile(parsed.ast)
+                is ParsedFile.PortfolioFile -> PortfolioLoader.load(path)
+            }
+        } catch (e: Exception) {
+            val error = CompileError.of(e)
+            val at = CompileErrorLocator.locate(text, error)
+            System.err.println("$file:${at.line}:${at.col} — ${error.message}")
+            System.err.println("1 error")
+            return ExitCodes.USER_ERROR
+        }
+        val (name, version, streams) =
+            when (parsed) {
+                is ParsedFile.StrategyFile -> Triple(parsed.ast.name, parsed.ast.version, parsed.ast.streams)
+                is ParsedFile.PortfolioFile -> Triple(parsed.ast.name, parsed.ast.version, parsed.ast.streams)
+            }
+        println(if (json) describe(kind, name, version, streams) else "ok")
+        return ExitCodes.SUCCESS
     }
 
     private fun describe(

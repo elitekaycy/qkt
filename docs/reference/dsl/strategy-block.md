@@ -4,30 +4,57 @@ The outermost envelope of every `.qkt` strategy file. Declares the strategy's na
 
 ## Shape
 
-<!-- qkt-doc: skip #1131 (section keyword after RULES crashes the parser) -->
+<!-- qkt-doc: grammar -->
 ```qkt
 STRATEGY <name> VERSION <integer>
 
-[ DEFAULTS { <key> = <value> ... } ]
+[ DEFAULTS { <KEY> = <value> ... } ]
 
 SYMBOLS
     <alias> = <BROKER>:<symbol> EVERY <timeframe>
     [ ... more streams ... ]
 
+[ PARAM <name> = <literal> ]
+[ ... more PARAMs ... ]
+
 [ LET <name> = <expression> ]
 [ ... more LETs ... ]
 
-RULES
+[ SCHEDULE ... ]
+[ SEQUENCE ... ]
+
+[ RULES
     WHEN <condition>
     THEN <action> [ ; <action> ... ]
     [ ... more rules ... ]
 
-[ FOR EACH <iter_var> IN <stream-list> DO
-    <rule body using iter_var>
+    [ FOR EACH <iter_var> IN [ <alias>, ... ] DO
+        <rule body using iter_var> ]
 ]
 ```
 
-Required blocks: `STRATEGY <name> VERSION <int>`, `SYMBOLS`, `RULES`. Optional: `DEFAULTS`, `LET`, `FOR EACH`. The order matters — `SYMBOLS` must precede `RULES` because rules reference stream aliases.
+Required: `STRATEGY <name> VERSION <int>` and, for anything that compiles, `SYMBOLS` — a rule
+that names a stream the file never declared is rejected with `Unknown stream alias`. Everything
+else is optional, including `RULES` (a strategy with no rules parses and compiles; it just never
+acts). The blocks come in the fixed order above; a section keyword after `RULES` is a located
+parse error:
+
+<!-- qkt-doc: illegal -->
+```qkt
+STRATEGY late_let VERSION 1
+SYMBOLS
+    btc = BACKTEST:BTCUSDT EVERY 1m
+RULES
+    WHEN btc.close > 0 THEN LOG "tick"
+LET threshold = 100
+-- parse error: LET must come before RULES (line 6)
+```
+
+```qkt
+STRATEGY quiet VERSION 1
+SYMBOLS
+    btc = BACKTEST:BTCUSDT EVERY 1m
+```
 
 ## Minimum valid strategy
 
@@ -51,7 +78,16 @@ This compiles and runs. It does nothing useful, but every part the parser requir
 STRATEGY <name> VERSION <integer>
 ```
 
-- `<name>` — identifier (letters, digits, underscores; must start with a letter). Becomes the strategy ID used by the daemon (`qkt list` shows it in the `NAME` column).
+- `<name>` — identifier (letters, digits, underscores; starts with a letter or `_`). Becomes the strategy ID used by the daemon (`qkt list` shows it in the `NAME` column). The same rule applies to stream aliases, `LET` and `PARAM` names:
+
+```qkt
+STRATEGY _scratch VERSION 1
+SYMBOLS
+    _btc = BACKTEST:BTCUSDT EVERY 1m
+LET _last = _btc.close
+RULES
+    WHEN _last > 0 THEN LOG "underscore names are fine"
+```
 - `VERSION <integer>` — bump when you change the strategy semantically. Lets you keep multiple revisions in production with different IDs while preserving history.
 
 **Naming convention:** snake_case lowercase, descriptive. `ema_cross_v2` not `MyStrat` or `s1`.
@@ -168,7 +204,7 @@ RULES
 
 Multiple rules are evaluated in order on every candle close. Each rule is **independent** — they don't share state and don't chain.
 
-Multiple actions per rule are separated by `;` (or newline-separated, parser accepts both):
+Multiple actions per rule are separated by `;`. A newline on its own does not separate actions:
 
 ```qkt
 WHEN ema(btc.close, 9) CROSSES ABOVE ema(btc.close, 21)
@@ -178,11 +214,25 @@ THEN
     LOG "switched to BTC"       -- audit log
 ```
 
+<!-- qkt-doc: illegal -->
+```qkt
+STRATEGY missing_semicolon VERSION 1
+SYMBOLS
+    btc = BACKTEST:BTCUSDT EVERY 1m
+    eur = BACKTEST:EURUSD EVERY 1m
+RULES
+    WHEN btc.close > btc.open
+    THEN CLOSE eur
+         BUY btc SIZING 0.1
+-- parse error: expected WHEN or FOR EACH in RULES, got 'BUY' (line 8)
+```
+
 Conditions are **edge-triggered by default**: the rule fires on the first tick where the condition transitions from false to true. See [Conditions](conditions.md) for level-triggered patterns.
 
-## `FOR EACH` (optional, end-of-file)
+## `FOR EACH` (optional, inside `RULES`)
 
-Macro expansion that emits N independent rules from one template, one per stream in the list.
+Macro expansion that emits N independent rules from one template, one per stream in the list. It
+sits inside `RULES` and may come before, between or after plain `WHEN` rules:
 
 ```qkt
 SYMBOLS
@@ -190,19 +240,29 @@ SYMBOLS
     eth  = BACKTEST:ETHUSDT EVERY 1m
     sol  = BACKTEST:SOLUSDT EVERY 1m
 
-FOR EACH s IN [btc, eth, sol] DO
-    WHEN ema(s.close, 9) CROSSES ABOVE ema(s.close, 21)
-    THEN BUY s SIZING 0.1 BRACKET { STOP_LOSS BY 1 PCT, TAKE_PROFIT BY 2 PCT }
+RULES
+    FOR EACH s IN [btc, eth, sol] DO
+      WHEN ema(s.close, 9) CROSSES ABOVE ema(s.close, 21)
+      THEN BUY s SIZING 0.1 BRACKET { STOP_LOSS BY 1 PCT, TAKE_PROFIT BY 2 PCT }
+
+    WHEN ACCOUNT.dd_pct > 5
+    THEN CLOSE_ALL
+
+    FOR EACH s IN [btc, eth, sol] DO
+      WHEN ema(s.close, 9) CROSSES BELOW ema(s.close, 21) AND POSITION.s > 0
+      THEN CLOSE s
 ```
 
-Compiles to three separate rules — one each for btc, eth, sol. The substitution is textual at AST level; no runtime cost.
+The first `FOR EACH` compiles to three separate entry rules — one each for btc, eth, sol — and the
+second to three exit rules, with the drawdown rule kept in between. The substitution is textual at
+AST level; no runtime cost.
 
 See [FOR EACH](foreach.md) for caveats and limits.
 
 ## Common gotchas
 
-- **`SYMBOLS` must come before `RULES`.** The parser reads top-down and validates stream references in rules against the declared symbols.
-- **No forward references in `LET`.** A `LET` can use earlier `LET`s and any declared symbols, but not later `LET`s.
+- **`SYMBOLS` must come before `RULES`.** The parser reads top-down; the compiler then checks every stream alias a rule mentions — in a condition, an action target or a `POSITION.<alias>` read — against the declared symbols and rejects an undeclared one as a located compile error.
+- **`LET`s resolve by name, not by position.** A `LET` may reference one declared later in the file; what it cannot do is reference itself, directly or through another `LET` — recursion is a compile error. See [LET and DEFAULTS](let-defaults.md#composing-lets).
 - **`VERSION` is informational.** Bumping it doesn't trigger migrations or warnings. It's a label you choose to maintain manually.
 - **Comments**: `--` line comments (SQL-style) and `#` line comments both work. `/* ... */` block comments work too. Use whichever fits your aesthetic.
 

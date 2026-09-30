@@ -6,6 +6,7 @@ import com.qkt.cli.CliOptionSchema
 internal val toolingOptionSchemas: Map<String, CliOptionSchema> =
     mapOf(
         "parse" to CliOptionSchema(flags = setOf("json")),
+        "dsl" to CliOptionSchema(flags = setOf("json")),
         "lsp" to CliOptionSchema(),
         "brokers" to CliOptionSchema(values = setOf("config"), flags = setOf("json")),
         "instruments" to
@@ -15,6 +16,7 @@ internal val toolingOptionSchemas: Map<String, CliOptionSchema> =
             ),
         "editor" to
             CliOptionSchema(
+                values = setOf("format"),
                 flags = setOf("yes", "y"),
                 shortAliases = mapOf("-y" to "--yes"),
             ),

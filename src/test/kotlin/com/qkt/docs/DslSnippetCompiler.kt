@@ -9,6 +9,7 @@ import com.qkt.docs.DslSnippetShapes.Shape
 import com.qkt.docs.DslSnippetShapes.shape
 import com.qkt.dsl.compile.AstCompiler
 import com.qkt.dsl.parse.Dsl
+import com.qkt.dsl.parse.ParseError
 import com.qkt.dsl.parse.ParseResult
 import com.qkt.dsl.parse.ParsedFile
 import com.qkt.dsl.portfolio.PortfolioLoader
@@ -76,7 +77,7 @@ internal object DslSnippetCompiler {
         source: String,
         tempDir: Path,
     ): String? =
-        when (val parsed = Dsl.parseAny(source)) {
+        when (val parsed = parseAny(source)) {
             is ParseResult.Failure -> parsed.errors.first().let { "${it.line}:${it.col} — ${it.message}" }
             is ParseResult.Success ->
                 when (val file = parsed.value) {
@@ -90,6 +91,14 @@ internal object DslSnippetCompiler {
                         runCatching { PortfolioLoader.load(path) }.exceptionOrNull()?.let { it.message ?: "$it" }
                     }
                 }
+        }
+
+    /** `qkt parse` surfaces a lexer or sizing exception as an error too, so a doc block that raises one is rejected, not crashed. */
+    fun parseAny(source: String): ParseResult<ParsedFile> =
+        try {
+            Dsl.parseAny(source)
+        } catch (e: RuntimeException) {
+            ParseResult.Failure(listOf(ParseError(0, 0, e.message ?: "$e")))
         }
 
     fun writeStubChildren(

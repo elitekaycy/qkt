@@ -99,7 +99,7 @@ class HubStreamBindingTest {
                 WHEN cal.surprise > 0 THEN BUY cal SIZING 0.01
             """.trimIndent()
         assertThatThrownBy { compile(tradesTheDataset) }
-            .isInstanceOf(IllegalArgumentException::class.java)
+            .isInstanceOf(CompileError::class.java)
             .hasMessageContaining("read-only")
     }
 
@@ -118,7 +118,7 @@ class HubStreamBindingTest {
                 THEN BUY gold SIZING 0.01
             """.trimIndent()
         assertThatThrownBy { compile(bogus) }
-            .isInstanceOf(IllegalArgumentException::class.java)
+            .isInstanceOf(CompileError::class.java)
             .hasMessageContaining("Unknown stream field")
     }
 

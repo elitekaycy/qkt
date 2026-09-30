@@ -32,53 +32,85 @@ internal object WhenThenCompiler {
         letCompiledRhs: Map<String, CompiledExpr>,
     ): List<CompiledRule> =
         whenThens.zip(resolvedConditions).mapIndexed { ruleIndex, (rule, cond) ->
-            val primary: ActionAst =
-                when (val a = rule.action) {
-                    is Block -> a.actions.firstOrNull { it !is Log } ?: a.actions.first()
-                    is OcoEntry -> a.leg1
-                    else -> a
-                }
-            val streamAlias: String? =
-                when (primary) {
-                    is Buy -> primary.stream
-                    is Sell -> primary.stream
-                    is Close -> primary.stream
-                    is Cancel -> primary.stream
-                    is CloseAll, is CancelAll, is Log -> null
-                    else -> null
-                }
-            val referencedAliases = collectStreamAliases(rule.copy(cond = cond))
-            val ruleAlias =
-                streamAlias
-                    ?: referencedAliases.singleOrNull()
-                    ?: streams.keys.firstOrNull()
-                    ?: error("Strategy must declare at least one stream")
-            val ruleSymbol =
-                streams[ruleAlias]?.qktSymbol
-                    ?: error("Unknown stream alias: $ruleAlias")
-            val compiledCond = exprCompiler.compile(cond, ruleAlias = ruleAlias)
-            val mergedAction = resolver.resolve(mergeDefaults(rule.action, defaults))
-            val action = actionCompiler.compile(mergedAction, ruleAlias)
-            val isBuy = primary is Buy
-            val isSell = primary is Sell
-            CompiledRule(
-                condition = compiledCond,
-                action = action,
-                ruleAlias = ruleAlias,
-                ruleSymbol = ruleSymbol,
-                isBuy = isBuy,
-                isSell = isSell,
-                onBuyCaptures = plan.captureOnBuy.map { it to letCompiledRhs.getValue(it) },
-                onSellCaptures = plan.captureOnSell.map { it to letCompiledRhs.getValue(it) },
-                onOpenCaptures = plan.captureOnOpen.map { it to letCompiledRhs.getValue(it) },
-                referencedAliases = referencedAliases,
-                conditionFingerprint = sha256(cond.toString()),
-                ruleFingerprint = sha256("$cond\n$mergedAction"),
-                consumesSequenceCompletion = readsSequenceCompletion(cond),
-                edgeStateKey = "$ruleAlias#$ruleIndex",
-                positionGate = PositionGate.of(cond, ruleAlias),
-            )
+            compilingRule(rule) {
+                compileOne(
+                    ruleIndex,
+                    rule,
+                    cond,
+                    streams,
+                    defaults,
+                    resolver,
+                    exprCompiler,
+                    actionCompiler,
+                    plan,
+                    letCompiledRhs,
+                )
+            }
         }
+
+    private fun compileOne(
+        ruleIndex: Int,
+        rule: WhenThen,
+        cond: ExprAst,
+        streams: Map<String, HubKey>,
+        defaults: DefaultsBlock?,
+        resolver: LetResolver,
+        exprCompiler: ExprCompiler,
+        actionCompiler: ActionCompiler,
+        plan: SnapshotPlan,
+        letCompiledRhs: Map<String, CompiledExpr>,
+    ): CompiledRule {
+        val primary: ActionAst =
+            when (val a = rule.action) {
+                is Block -> a.actions.firstOrNull { it !is Log } ?: a.actions.first()
+                is OcoEntry -> a.leg1
+                else -> a
+            }
+        val streamAlias: String? =
+            when (primary) {
+                is Buy -> primary.stream
+                is Sell -> primary.stream
+                is Close -> primary.stream
+                is Cancel -> primary.stream
+                is CloseAll, is CancelAll, is Log -> null
+                else -> null
+            }
+        val referencedAliases = collectStreamAliases(rule.copy(cond = cond))
+        // Every alias a rule touches must be declared, whatever else the rule reads: an
+        // undeclared one used to fail only at first evaluation (or never, when another
+        // alias became the rule's stream).
+        referencedAliases.firstOrNull { it !in streams }?.let { error("Unknown stream alias: $it") }
+        val ruleAlias =
+            streamAlias
+                ?: referencedAliases.singleOrNull()
+                ?: streams.keys.firstOrNull()
+                ?: error("Strategy must declare at least one stream")
+        val ruleSymbol =
+            streams[ruleAlias]?.qktSymbol
+                ?: error("Unknown stream alias: $ruleAlias")
+        val compiledCond = exprCompiler.compile(cond, ruleAlias = ruleAlias)
+        val mergedAction = resolver.resolve(mergeDefaults(rule.action, defaults))
+        val action = actionCompiler.compile(mergedAction, ruleAlias)
+        val isBuy = primary is Buy
+        val isSell = primary is Sell
+        return CompiledRule(
+            condition = compiledCond,
+            action = action,
+            ruleAlias = ruleAlias,
+            ruleSymbol = ruleSymbol,
+            isBuy = isBuy,
+            isSell = isSell,
+            onBuyCaptures = plan.captureOnBuy.map { it to letCompiledRhs.getValue(it) },
+            onSellCaptures = plan.captureOnSell.map { it to letCompiledRhs.getValue(it) },
+            onOpenCaptures = plan.captureOnOpen.map { it to letCompiledRhs.getValue(it) },
+            referencedAliases = referencedAliases,
+            conditionFingerprint = sha256(cond.toString()),
+            ruleFingerprint = sha256("$cond\n$mergedAction"),
+            consumesSequenceCompletion = readsSequenceCompletion(cond),
+            edgeStateKey = "$ruleAlias#$ruleIndex",
+            positionGate = PositionGate.of(cond, ruleAlias),
+        )
+    }
 
     private fun readsSequenceCompletion(expr: ExprAst): Boolean =
         when (expr) {
