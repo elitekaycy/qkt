@@ -68,7 +68,25 @@ RULES
          }
 ```
 
-Order matters — declare `vol` before `volStop` references it. Forward references (using a `LET` defined later) is a parse error.
+Order does not matter to the compiler: `LET`s are resolved by name, so `volStop` may reference a
+`vol` declared later in the file. Declaring in reading order is still the convention. What is
+rejected is recursion — a `LET` that references itself, directly or through another `LET`, is a
+compile error (`LET` references form a cycle):
+
+```qkt
+LET volStop  = btc.close - vol * 2     -- references vol, declared below
+LET vol      = atr(btc, 14)
+
+RULES
+    WHEN btc.close < volStop THEN LOG "below the vol stop"
+```
+
+<!-- qkt-doc: illegal -->
+```qkt
+LET runningMax = max(runningMax, btc.close)   -- a LET cannot reference itself
+RULES
+    WHEN runningMax > 0 THEN LOG "never compiles"
+```
 
 ### Booleans
 
@@ -89,7 +107,7 @@ This factors out repeatable filter logic. You can reuse `canTrade` in every rule
 ### What `LET` can't do
 
 - **No state.** Each evaluation is fresh; you can't accumulate.
-- **No recursion.** A `LET` can't reference itself.
+- **No recursion.** A `LET` can't reference itself, directly or through another `LET`; the compiler rejects the cycle.
 - **No side effects.** `LET` doesn't do I/O, doesn't emit signals.
 - **No conditional definition.** No `LET fast = IF something THEN 9 ELSE 12`. (Use a `CASE` expression on the RHS instead — see [Expressions](expressions.md).)
 
@@ -127,11 +145,37 @@ an incomplete bracket is rejected when the strategy compiles.
 | `SIZING = <size>` | Default position size | `SIZING <size>` |
 | `STOP_LOSS = AT\|BY\|PCT\|RR <value>` | Default stop-loss price or distance | inside `BRACKET { STOP_LOSS ... }` |
 | `TAKE_PROFIT = AT\|BY\|PCT\|RR <value>` | Default take-profit | inside `BRACKET { TAKE_PROFIT ... }` |
-| `TIF = GTC\|IOC\|FOK\|DAY` | Default time-in-force | `TIF ...` |
+| `TIF = GTC\|IOC\|FOK\|DAY\|GTD <expr>` | Default time-in-force; `GTD` takes an epoch-ms deadline such as `NOW + 2h` | `TIF ...` |
 | `ORDER_TYPE = <order type>` | Default entry order type | `ORDER_TYPE = ...` |
 | `TRAILING = <order type>` | Default trailing stop | trailing stop clause |
 
-Keys are keywords, so they are not case-sensitive (`STOP_LOSS` and `stop_loss` are the same key). A stop or target leg needs a child-price form such as `BY <distance>`; a bare expression (`STOP_LOSS = atr(SYMBOL, 14) * 2`) is rejected.
+Keys are keywords, so they are not case-sensitive (`STOP_LOSS` and `stop_loss` are the same key). A stop or target leg needs a child-price form such as `BY <distance>`; a bare expression (`STOP_LOSS = atr(SYMBOL, 14) * 2`) is rejected, and so is any other key:
+
+<!-- qkt-doc: illegal -->
+```qkt
+DEFAULTS {
+  stopLoss = childBy(atr(SYMBOL, 14) * 2)   -- not a DEFAULTS key
+}
+```
+
+A `GTD` default sets the same deadline on every entry that does not name its own `TIF`:
+
+```qkt
+STRATEGY day_orders VERSION 1
+
+DEFAULTS {
+  SIZING = 0.1
+  TIF = GTD NOW + 2h
+  ORDER_TYPE = LIMIT AT 100
+}
+
+SYMBOLS
+    btc = BACKTEST:BTCUSDT EVERY 1m
+
+RULES
+    WHEN btc.close > btc.open
+    THEN BUY btc                          -- resting limit, expires two hours after placement
+```
 
 ### The `SYMBOL` placeholder
 
@@ -190,7 +234,7 @@ If you find yourself writing the same `BRACKET { ... }` clause in five rules, ho
 ## Common gotchas
 
 - **`SYMBOL` only in `DEFAULTS`.** Don't try to use it in `RULES`.
-- **Forward references in `LET` fail.** Order matters; declare what you reference before you reference it.
+- **A `LET` may not reference itself.** Forward references resolve by name, but a cycle is a compile error.
 - **`DEFAULTS` doesn't apply to engine-managed wrappers.** A `STACK` layer-list with explicit per-layer overrides shadows the default `sizing`. A `TIME_EXIT` wrapper around a market order takes the inner's `tif`, not the default.
 - **Broker magic is not a DSL default.** Configure it on the broker profile in
   `qkt.config.yaml`; it identifies that routed account/profile at the venue.
