@@ -128,13 +128,13 @@ class ContinuousMarketSourceTest {
     }
 
     @Test
-    fun `an explicit contract is not served at or after its expiry`() {
+    fun `an explicit contract ends at its expiry with a settlement bar`() {
         val late =
             FakeBars(mapOf("BINANCE_UM:BTCUSDT_240927" to bars("BTCUSDT_240927", "2024-09-27T07:30:00Z", 4, 65000)))
         val cut = ContinuousMarketSource(late, ContinuousChains(requireNotNull(registry.futures())), registry)
         val range = TimeRange(Instant.parse("2024-09-27T07:00:00Z"), Instant.parse("2024-09-27T09:00:00Z"))
         assertThat(cut.bars("BINANCE_UM:BTCUSDT_240927", quarter, range).map { it.startTime }.toList())
-            .containsExactly(ms("2024-09-27T07:30:00Z"), ms("2024-09-27T07:45:00Z"))
+            .containsExactly(ms("2024-09-27T07:30:00Z"), ms("2024-09-27T07:45:00Z"), ms("2024-09-27T08:00:00Z"))
     }
 
     @Test

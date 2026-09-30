@@ -14,7 +14,8 @@ import org.snakeyaml.engine.v2.api.LoadSettings
  */
 object FuturesRootsFile {
     private val REQUIRED = listOf("root", "currency", "multiplier", "tickSize", "volumeStep", "volumeMin")
-    private val OPTIONAL = listOf("volumeMax", "calendar", "exchangeFeePerContract", "takerFeeRate", "margin", "roll")
+    private val OPTIONAL =
+        listOf("volumeMax", "calendar", "exchangeFeePerContract", "takerFeeRate", "margin", "roll", "slippageTicks")
     private val MARGIN_KEYS = setOf("initial", "maintenance", "basis")
     private val ROLL_KEYS = setOf("daysBeforeExpiry", "atUtc", "adjust")
 
@@ -81,6 +82,7 @@ object FuturesRootsFile {
                         name,
                     )
                 },
+            slippageTicks = entry["slippageTicks"]?.let { slippageTicks(it.toString(), name) } ?: 0,
         ).also { validate(it, name) }
     }
 
@@ -141,6 +143,13 @@ object FuturesRootsFile {
         require(days >= 0) { "futures root $name: roll.daysBeforeExpiry must be >= 0, got $days" }
         return RollPolicy(days, at, adjust)
     }
+
+    private fun slippageTicks(
+        raw: String,
+        name: String,
+    ): Int =
+        raw.toIntOrNull()?.takeIf { it >= 0 }
+            ?: error("futures root $name: slippageTicks must be a whole number >= 0, got '$raw'")
 
     private fun validate(
         root: FuturesRoot,
