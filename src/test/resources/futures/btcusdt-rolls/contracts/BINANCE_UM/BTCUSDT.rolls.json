@@ -1,0 +1,13 @@
+{
+    "root": "BINANCE_UM:BTCUSDT",
+    "policy": "8d@08:00",
+    "rolls": [
+        {
+            "atMs": 1726732800000,
+            "from": "BTCUSDT_240927",
+            "to": "BTCUSDT_241227",
+            "fromPrice": "62206.4",
+            "toPrice": "63343.9"
+        }
+    ]
+}
