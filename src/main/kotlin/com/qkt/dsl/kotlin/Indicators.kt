@@ -19,4 +19,8 @@ fun rsi(
 fun atr(
     stream: StreamRef,
     period: Int,
-): ExprAst = IndicatorCall("ATR", listOf(StreamFieldRef(stream.alias, "candle"), NumLit(BigDecimal(period))))
+): ExprAst =
+    IndicatorCall(
+        "ATR",
+        listOf(StreamFieldRef(stream.alias, com.qkt.dsl.DslVocabulary.CANDLE_SELECTOR), NumLit(BigDecimal(period))),
+    )

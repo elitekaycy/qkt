@@ -42,7 +42,7 @@ class LetResolver(
         } else {
             table[ref.name]?.let(::resolve)
                 ?: if (ref.name in streamAliases) {
-                    StreamFieldRef(ref.name, "candle")
+                    StreamFieldRef(ref.name, com.qkt.dsl.DslVocabulary.CANDLE_SELECTOR)
                 } else {
                     error("Unknown reference: ${ref.name}")
                 }
