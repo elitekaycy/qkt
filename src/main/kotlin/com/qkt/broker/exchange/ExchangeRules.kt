@@ -5,6 +5,7 @@ import com.qkt.common.Side
 import com.qkt.execution.OrderRequest
 import com.qkt.instrument.FutureTerms
 import com.qkt.instrument.InstrumentMeta
+import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.Instant
 
@@ -18,19 +19,19 @@ internal class ExchangeRules(
     private val clock: Clock,
     private val settlement: ExpirySettlement,
 ) {
-    /** Why the exchange refuses [request] on the dated contract described by [meta] and [terms], or null. */
+    /**
+     * Why the exchange refuses [request] on the dated contract described by [meta] and [terms], or
+     * null. [pending] is the signed quantity of the strategy's other working orders on the contract.
+     */
     fun refusal(
         request: OrderRequest,
         meta: InstrumentMeta,
         terms: FutureTerms,
+        pending: BigDecimal,
     ): String? {
         val expiryMs = requireNotNull(terms.expiryMs)
-        val expiry = Instant.ofEpochMilli(expiryMs)
-        if (clock.now() >= expiryMs) return "${request.symbol} expired at $expiry"
-        val guardMs = terms.expiryGuardHours * HOUR_MS
-        if (guardMs > 0 && clock.now() >= expiryMs - guardMs && opensExposure(request)) {
-            return "${request.symbol} takes only exits within ${terms.expiryGuardHours}h of its expiry at $expiry"
-        }
+        if (clock.now() >= expiryMs) return "${request.symbol} expired at ${Instant.ofEpochMilli(expiryMs)}"
+        guardRefusal(request, terms, pending)?.let { return it }
         if (request !is OrderRequest.Market &&
             request !is OrderRequest.Limit &&
             request !is OrderRequest.Stop &&
@@ -47,12 +48,26 @@ internal class ExchangeRules(
         return null
     }
 
-    /** Whether [request] would grow its strategy's position in the contract or turn it to the other side. */
-    private fun opensExposure(request: OrderRequest): Boolean {
+    /**
+     * Why [request] may not stand inside [terms]' expiry guard window, or null: it would grow the
+     * strategy's position or turn it to the other side once it and the strategy's other working
+     * orders ([pending], signed) have filled.
+     */
+    fun guardRefusal(
+        request: OrderRequest,
+        terms: FutureTerms,
+        pending: BigDecimal,
+    ): String? {
+        val expiryMs = requireNotNull(terms.expiryMs)
+        val guardMs = terms.expiryGuardHours * HOUR_MS
+        if (guardMs == 0L || clock.now() < expiryMs - guardMs) return null
         val held = settlement.netOf(request.symbol, request.strategyId)
         val signed = if (request.side == Side.BUY) request.quantity else request.quantity.negate()
-        val after = held.add(signed)
-        return after.abs() > held.abs() || (held.signum() != 0 && after.signum() == -held.signum())
+        val after = held.add(pending).add(signed)
+        val opens = after.abs() > held.abs() || (held.signum() != 0 && after.signum() == -held.signum())
+        if (!opens) return null
+        return "${request.symbol} takes only exits within ${terms.expiryGuardHours}h of its expiry at " +
+            "${Instant.ofEpochMilli(expiryMs)}"
     }
 
     private companion object {

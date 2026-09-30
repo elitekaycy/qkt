@@ -47,4 +47,28 @@ class ExpiryGuardTest {
 
         assertThat(open.sim.submit(open.market("late", Side.BUY, "0.01")).accepted).isTrue()
     }
+
+    @Test
+    fun `working orders count, so stacked exits cannot flip the position inside the window`() {
+        f.tick(f.sep, "63000.0")
+        f.sim.submit(f.market("in", Side.BUY, "0.02"))
+        f.tick(f.sep, "63000.0", atMs = inside)
+
+        val first = f.sim.submit(f.limit("exit1", Side.SELL, "64000.0", qty = "0.02"))
+        val second = f.sim.submit(f.limit("exit2", Side.SELL, "64000.0", qty = "0.02"))
+
+        assertThat(first.accepted).isTrue()
+        assertThat(second.accepted).isFalse()
+    }
+
+    @Test
+    fun `an opening order resting from before the window is cancelled when the window starts`() {
+        f.tick(f.sep, "63000.0", atMs = f.sepExpiry - 30 * 3_600_000L)
+        f.sim.submit(f.limit("rest", Side.BUY, "62000.0"))
+
+        f.tick(f.sep, "62000.0", atMs = inside)
+
+        assertThat(f.only<com.qkt.events.BrokerEvent.OrderFilled>()).isEmpty()
+        assertThat(f.only<com.qkt.events.BrokerEvent.OrderCancelled>().single().reason).contains("24h")
+    }
 }
