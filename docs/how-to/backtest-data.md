@@ -147,6 +147,13 @@ A day before a contract listed, or after it delivered, has no file and is record
 delivery. A contract the strategy names but the catalog does not list fails the run up front; refresh
 the catalog with `--catalog`.
 
+Futures fill on qkt's exchange simulator, whatever `--broker` says. Market orders fill at the current
+price and then slip by the run's slippage model; with `--slippage instrument` that is the root's
+optional `slippageTicks` (whole ticks against the order). Limit and stop prices must sit on the
+contract's tick grid. The root's fees are charged on every fill and included in the report's
+`commissionPaid`. A contract held into expiry is settled at the catalog's delivery price (exit reason
+`EXPIRY`), and orders on it after expiry are rejected.
+
 ### Continuous futures streams (`@front`, `@next`)
 
 A strategy can follow a root instead of one contract: `btc = BINANCE_UM:BTCUSDT@front EVERY 15m`
@@ -168,6 +175,16 @@ The series is adjusted forward from the first measured roll, so history never ch
 are added and nothing leaks from the future. Each contract's bars must be fetched at the strategy's
 timeframe, and that timeframe must divide the roll time (an 08:00 roll works with 15m or 1h bars,
 not 1d).
+
+Orders on a continuous stream trade the contract that is front at the time; the engine sees fills in
+the adjusted series. At each roll every open position is closed on the old contract and reopened on
+the new one, and resting orders move to the new contract at the same series level. What the roll cost
+against the roll's reference prices (slippage and fees) is booked as a cost, so the stream's P&L
+equals the P&L of the contracts actually traded. Trading a continuous stream needs `adjust: panama`;
+`ratio` and `none` streams can be read but not traded. If the new contract refuses a roll, the
+position is closed at the old contract's fill (exit reason `ROLL_FAILED`) and the strategy cannot add
+exposure on that stream for the rest of the run. Continuous streams are backtest-only for now; paper
+and live runs refuse them.
 
 ## Scenario 3 — Speed up repeated backtests (CSV → binary)
 
