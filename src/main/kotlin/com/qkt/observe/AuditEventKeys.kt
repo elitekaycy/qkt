@@ -2,6 +2,7 @@ package com.qkt.observe
 
 import com.qkt.events.BrokerEvent
 import com.qkt.events.CandleEvent
+import com.qkt.events.CostIncurred
 import com.qkt.events.DecisionOrderLinkedEvent
 import com.qkt.events.Event
 import com.qkt.events.FillAccountedEvent
@@ -32,6 +33,7 @@ internal fun auditStrategyId(event: Event): String? =
         is FillAccountedEvent -> event.strategyId.takeIf { it.isNotBlank() }
         is TradeEvent -> event.strategyId.takeIf { it.isNotBlank() }
         is SignalSuppressedEvent -> event.strategyId.takeIf { it.isNotBlank() }
+        is CostIncurred -> event.strategyId.takeIf { it.isNotBlank() }
         else -> null
     }
 
@@ -55,6 +57,7 @@ internal fun auditSymbol(event: Event): String? =
         is BrokerEvent.OrderFilled -> event.symbol
         is BrokerEvent.OrderPartiallyFilled -> event.symbol
         is BrokerEvent.PositionReconciled -> event.symbol
+        is CostIncurred -> event.symbol
         is TradeEvent -> event.trade.symbol
         is TickEvent -> event.tick.symbol
         is WarmupTickEvent -> event.tick.symbol
