@@ -63,6 +63,9 @@ internal object BacktestBarReplay {
         require(!tickFills || forceBars) {
             "--tick-fills requires --bars (bars drive signals; ticks resolve fills)"
         }
+        require(!tickFills || symbols.none { '@' in it }) {
+            "--tick-fills is not supported for continuous futures streams yet; drop --tick-fills"
+        }
         require(!forceBars || tickFills || executionConfig.brokerKind != BrokerKind.MT5_SIM) {
             "--bars with --broker mt5-sim is unsafe: synthetic bar extremes do not preserve " +
                 "MT5 trigger prices or market spread. Use --bars --tick-fills or full tick replay"

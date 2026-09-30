@@ -75,12 +75,15 @@ class ContinuousChainTest {
     }
 
     @Test
-    fun `segments split exactly at roll instants`() {
-        val segments = front.segments(ms("2024-09-18T00:00:00Z"), ms("2024-09-20T00:00:00Z"))
-        assertThat(segments).containsExactly(
-            ChainSegment(0, ms("2024-09-18T00:00:00Z"), ms("2024-09-19T08:00:00Z")),
-            ChainSegment(1, ms("2024-09-19T08:00:00Z"), ms("2024-09-20T00:00:00Z")),
+    fun `segments start at the first measured roll and split exactly at later rolls`() {
+        assertThat(front.servedFromMs).isEqualTo(ms("2024-09-19T08:00:00Z"))
+        assertThat(front.segments(ms("2024-09-18T00:00:00Z"), ms("2024-09-20T00:00:00Z")))
+            .containsExactly(ChainSegment(1, ms("2024-09-19T08:00:00Z"), ms("2024-09-20T00:00:00Z")))
+        assertThat(front.segments(ms("2024-12-18T00:00:00Z"), ms("2024-12-20T00:00:00Z"))).containsExactly(
+            ChainSegment(1, ms("2024-12-18T00:00:00Z"), ms("2024-12-19T08:00:00Z")),
+            ChainSegment(2, ms("2024-12-19T08:00:00Z"), ms("2024-12-20T00:00:00Z")),
         )
+        assertThat(front.segments(ms("2024-09-01T00:00:00Z"), ms("2024-09-02T00:00:00Z"))).isEmpty()
     }
 
     @Test
