@@ -82,4 +82,25 @@ class BinanceVisionClientTest {
         assertThat(client.deliveryPrices("BTCUSDT")).containsEntry(1727424000000L, "65528.10000000")
         assertThat(server.takeRequest().path).isEqualTo("/api/futures/data/delivery-price?pair=BTCUSDT")
     }
+
+    @Test
+    fun `an archive with several entries is refused`() {
+        val two =
+            ByteArrayOutputStream()
+                .also { out ->
+                    ZipOutputStream(out).use { zip ->
+                        zip.putNextEntry(ZipEntry("a.csv"))
+                        zip.closeEntry()
+                        zip.putNextEntry(ZipEntry("b.csv"))
+                        zip.closeEntry()
+                    }
+                }.toByteArray()
+        assertThatThrownBy { client.unzipSingle(two) }.hasMessageContaining("2 entries")
+    }
+
+    @Test
+    fun `a truncated listing that cannot advance is refused`() {
+        server.enqueue(MockResponse().setBody("<ListBucketResult><IsTruncated>true</IsTruncated></ListBucketResult>"))
+        assertThatThrownBy { client.listPrefixes("data/p/B_") }.hasMessageContaining("truncated")
+    }
 }
