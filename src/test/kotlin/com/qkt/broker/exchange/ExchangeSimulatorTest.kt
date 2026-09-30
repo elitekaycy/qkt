@@ -53,12 +53,20 @@ class ExchangeSimulatorTest {
     }
 
     @Test
-    fun `a limit off the tick grid is rejected naming its price`() {
-        val ack = f.sim.submit(f.limit("off", Side.BUY, "62950.05"))
+    fun `levels off the tick grid are snapped so they never fill early`() {
+        f.tick(f.sep, "63000.0")
+        f.sim.submit(f.limit("bid", Side.BUY, "62950.05"))
+        f.sim.submit(f.stop("protect", Side.SELL, "62900.05"))
 
-        assertThat(ack.accepted).isFalse()
-        assertThat(ack.rejectReason).contains("62950.05").contains("0.1 tick grid")
-        assertThat(f.only<BrokerEvent.OrderRejected>().single().clientOrderId).isEqualTo("off")
+        f.tick(f.sep, "62950.1")
+        assertThat(f.only<BrokerEvent.OrderFilled>()).isEmpty()
+        f.tick(f.sep, "62950.0")
+        f.tick(f.sep, "62900.1")
+        assertThat(f.only<BrokerEvent.OrderFilled>().map { it.clientOrderId }).containsExactly("bid")
+        f.tick(f.sep, "62900.0")
+
+        assertThat(f.only<BrokerEvent.OrderFilled>().map { it.clientOrderId }).containsExactly("bid", "protect")
+        assertThat(f.only<BrokerEvent.OrderRejected>()).isEmpty()
     }
 
     @Test
