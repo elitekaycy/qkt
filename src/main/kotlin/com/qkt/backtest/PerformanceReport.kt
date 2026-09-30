@@ -37,10 +37,10 @@ data class PerformanceReport(
     val drawdownPeriods: List<DrawdownPeriod> = emptyList(),
     val monteCarlo: MonteCarloSummary? = null,
     /**
-     * Total commission charged over the run (#335). The realized/total PnL above are already
-     * net of this; it is reported separately as one part of the bridge from gross PnL to net.
-     * With swap, `preCostPnL = totalPnL + commissionPaid + swapPaid`. Zero when no commission
-     * was configured.
+     * Total commission charged over the run (#335), including the execution fees a venue reported
+     * on fills (the futures exchange simulator's). The realized/total PnL above are already net of
+     * this; it is reported separately as one part of the bridge from gross PnL to net. With swap,
+     * `preCostPnL = totalPnL + commissionPaid + swapPaid`. Zero when no commission was configured.
      */
     val commissionPaid: BigDecimal = BigDecimal.ZERO,
     /**

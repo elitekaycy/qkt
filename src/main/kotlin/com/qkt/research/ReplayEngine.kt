@@ -15,7 +15,6 @@ import com.qkt.common.TradingCalendar
 import com.qkt.dsl.compile.CandleHub
 import com.qkt.dsl.compile.DslCompiledStrategy
 import com.qkt.engine.Engine
-import com.qkt.events.RiskEvent
 import com.qkt.events.SignalEvent
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.NoopInstrumentRegistry
@@ -169,11 +168,11 @@ class ReplayEngine(
                 executionConfig,
                 bus,
                 clock,
-                books.priceTracker,
-                instruments,
+                books,
                 barFills,
                 calendar,
                 brokerSymbols,
+                tradedSymbols + brokerSymbols.values.flatten(),
             )
         val risk =
             ReplayRisk(
@@ -199,7 +198,6 @@ class ReplayEngine(
             )
         val riskState = risk.riskState
         val bookRiskController = risk.bookRiskController
-        bus.subscribe<RiskEvent.Halted> { recorder.halts.add(it) }
 
         analytics =
             ReplayAnalytics(
@@ -232,7 +230,7 @@ class ReplayEngine(
                 strategies = strategies,
                 riskEngine = risk.riskEngine,
                 riskState = riskState,
-                positionMode = { executionConfig.positionMode },
+                positionMode = broker::positionAccountingMode,
                 runawayBreaker =
                     RunawayBreaker(
                         clock = clock,

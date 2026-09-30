@@ -1,5 +1,6 @@
 package com.qkt.backtest
 
+import com.qkt.broker.continuous.RollEntry
 import com.qkt.events.DecisionOrderLinkedEvent
 import com.qkt.events.FillAccountedEvent
 import com.qkt.events.OrderEvent
@@ -103,4 +104,6 @@ data class BacktestResult(
     val monthlyReturns: List<MonthlyReturn> = emptyList(),
     /** Per-window reports for the `--metrics-window`/`--oos-split` windows, in declaration order (#1276). */
     val windows: List<WindowReport> = emptyList(),
+    /** Every futures roll the run carried, oldest first; empty when no continuous stream held a position. */
+    val rolls: List<RollEntry> = emptyList(),
 )
