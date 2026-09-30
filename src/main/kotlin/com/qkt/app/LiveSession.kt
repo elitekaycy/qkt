@@ -344,7 +344,7 @@ class LiveSession(
         val ids = SequentialIdGenerator.forSession(strategies.map { it.first })
         val sequencer = MonotonicSequenceGenerator.resumingAfter(auditJournal?.lastSequence())
         val priceTracker = MarketPriceTracker()
-        val accounting = com.qkt.accounting.AccountingEngine(accountingConfig, priceTracker)
+        val accounting = com.qkt.accounting.accountingEngine(accountingConfig, priceTracker, instrumentRegistry)
         com.qkt.instrument.QuoteCurrencyGuard
             .assertAccountQuoted(
                 symbols,

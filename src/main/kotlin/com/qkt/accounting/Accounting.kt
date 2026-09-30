@@ -58,22 +58,6 @@ data class ConvertedMoney(
     val conversion: FxConversion?,
 )
 
-enum class CostKind {
-    COMMISSION,
-    SWAP,
-    FUNDING,
-    BORROW,
-    EXCHANGE_FEE,
-    SPREAD_COST,
-    TAX,
-}
-
-data class VenueCost(
-    val kind: CostKind,
-    val amount: MoneyAmount,
-    val timestamp: Long,
-)
-
 enum class FxMissingPolicy {
     WARN,
     FAIL,
@@ -137,6 +121,8 @@ private class MarketPriceFxRateProvider(
  * The hot path stays cheap for the common case: account-quoted symbols return identity without
  * touching the market-price provider. Non-account FX pairs can use the traded symbol itself
  * (e.g. USDJPY converts JPY PnL to USD as 1 / USDJPY) or configured conversion symbols.
+ * [currencyOf] names a symbol's explicit quote currency; when it returns null the currency is
+ * inferred from the symbol suffix.
  */
 class AccountingEngine(
     private val config: AccountingConfig = AccountingConfig(),
@@ -144,6 +130,7 @@ class AccountingEngine(
     private val fxRates: FxRateProvider =
         prices?.let(::MarketPriceFxRateProvider)
             ?: FxRateProvider { _, _ -> null },
+    private val currencyOf: (String) -> String? = { null },
 ) {
     private val conversions: MutableMap<String, FxConversion> = ConcurrentHashMap()
     private val warnings: MutableMap<String, String> = ConcurrentHashMap()
@@ -161,7 +148,8 @@ class AccountingEngine(
             configuredPair(from = quote, to = accountCurrency) != null
     }
 
-    fun pnlCurrencyFor(symbol: String): String = QuoteCurrencyGuard.quoteOf(symbol)?.uppercase() ?: accountCurrency
+    fun pnlCurrencyFor(symbol: String): String =
+        currencyOf(symbol)?.uppercase() ?: QuoteCurrencyGuard.quoteOf(symbol)?.uppercase() ?: accountCurrency
 
     fun convertPnl(
         symbol: String,
