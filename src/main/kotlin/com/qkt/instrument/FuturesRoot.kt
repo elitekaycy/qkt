@@ -6,7 +6,9 @@ import java.math.BigDecimal
  * The static spec shared by every contract of one futures family, declared once under `futures:`
  * in `instruments.yaml`. [multiplier] becomes each contract's `contractSize` and [tickSize] its
  * `pointSize`; fees and margin are in [currency]. [roll] is required for continuous streams of the
- * root and unused by explicit contract streams.
+ * root and unused by explicit contract streams. [slippageTicks] is the adverse execution slip each
+ * contract carries as its `slippagePoints` (ticks are the contract's points), applied when a run
+ * uses instrument slippage.
  */
 data class FuturesRoot(
     val root: String,
@@ -21,6 +23,7 @@ data class FuturesRoot(
     val takerFeeRate: BigDecimal,
     val margin: MarginTerms?,
     val roll: RollPolicy? = null,
+    val slippageTicks: Int = 0,
 ) {
     /** The venue prefix of [root]: `CME` for `CME:ES`. */
     val venue: String get() = root.substringBefore(':')
@@ -42,6 +45,7 @@ data class FuturesRoot(
             pointSize = tickSize,
             digits = tickSize.stripTrailingZeros().scale().coerceAtLeast(0),
             tradeStopsLevelPoints = 0,
+            slippagePoints = slippageTicks,
             currency = currency,
             derivative = FutureTerms(root, expiryMs, margin, exchangeFeePerContract, takerFeeRate),
         )

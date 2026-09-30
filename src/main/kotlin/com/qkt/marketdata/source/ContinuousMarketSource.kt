@@ -6,7 +6,6 @@ import com.qkt.derivatives.futures.ChainSegment
 import com.qkt.derivatives.futures.ContinuousChain
 import com.qkt.derivatives.futures.ContinuousChains
 import com.qkt.derivatives.futures.PriceSpace
-import com.qkt.instrument.FutureTerms
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
@@ -19,8 +18,9 @@ import org.slf4j.LoggerFactory
  * stretch of the stream reads the contract the roll schedule names, mapped onto the series by that
  * contract's forward adjustment and re-stamped with the continuous symbol. A stream is served from its
  * first measured roll on; earlier requests are clipped (a warmup reaching back sees fewer bars).
- * Explicit contracts are cut at their expiry. Every other symbol is served by [inner] unchanged,
- * through the same calls and with the same per-symbol capabilities.
+ * Explicit contracts end at their expiry with a settlement print ([DatedContractData]). Every other
+ * symbol is served by [inner] unchanged, through the same calls and with the same per-symbol
+ * capabilities.
  */
 class ContinuousMarketSource(
     private val inner: MarketSource,
@@ -29,6 +29,7 @@ class ContinuousMarketSource(
 ) : MarketSource {
     private val log = LoggerFactory.getLogger(ContinuousMarketSource::class.java)
     private val clipped = HashSet<String>()
+    private val dated = DatedContractData(instruments)
 
     override val name: String get() = inner.name
     override val capabilities: Set<MarketSourceCapability> get() = inner.capabilities
@@ -46,7 +47,7 @@ class ContinuousMarketSource(
         range: TimeRange,
     ): Sequence<Candle> {
         val chain =
-            chains.chainFor(symbol) ?: return cutAtExpiry(symbol, inner.bars(symbol, window, range)) { it.endTime }
+            chains.chainFor(symbol) ?: return dated.bars(symbol, window, range, inner.bars(symbol, window, range))
         requireBarsAvoidRolls(chain, window, range)
         return stitched(chain, range) { contract, seg ->
             inner.bars(contract, window, seg.range()).filter { it.startTime >= seg.fromMs && it.startTime < seg.toMs }
@@ -58,7 +59,7 @@ class ContinuousMarketSource(
         range: TimeRange,
     ): Sequence<Tick> {
         val chain =
-            chains.chainFor(symbol) ?: return cutAtExpiry(symbol, inner.ticks(symbol, range)) { it.timestamp + 1 }
+            chains.chainFor(symbol) ?: return dated.ticks(symbol, range, inner.ticks(symbol, range))
         return stitched(chain, range) { contract, seg ->
             inner.ticks(contract, seg.range()).filter { it.timestamp >= seg.fromMs && it.timestamp < seg.toMs }
         }.flatMap { (space, ticks) -> ticks.map { it.inSpace(space, symbol) } }
@@ -72,7 +73,7 @@ class ContinuousMarketSource(
         require(!chains.isContinuous(symbol)) {
             "tick-resolved fills (--tick-fills) are not supported for continuous futures streams ($symbol)"
         }
-        return cutAtExpiry(symbol, inner.tickSlice(symbol, fromMs, toMs)) { it.timestamp + 1 }
+        return dated.cut(symbol, inner.tickSlice(symbol, fromMs, toMs))
     }
 
     /** Each segment's price mapping (resolved now, so gaps in the history fail at request time) and its data. */
@@ -111,16 +112,6 @@ class ContinuousMarketSource(
             "${chain.symbol} rolls at ${Instant.ofEpochMilli(inside.atMs)}, inside a ${window.durationMs} ms bar; " +
                 "use a timeframe that divides the roll time or move roll.atUtc",
         )
-    }
-
-    /** Keeps only data that ends at or before [symbol]'s expiry, when [symbol] is a dated contract. */
-    private fun <T> cutAtExpiry(
-        symbol: String,
-        data: Sequence<T>,
-        endsAt: (T) -> Long,
-    ): Sequence<T> {
-        val expiry = (instruments.lookup(symbol)?.derivative as? FutureTerms)?.expiryMs ?: return data
-        return data.filter { endsAt(it) <= expiry }
     }
 
     private fun ChainSegment.range(): TimeRange = TimeRange(Instant.ofEpochMilli(fromMs), Instant.ofEpochMilli(toMs))
