@@ -16,3 +16,14 @@ fun InstrumentRegistry.listedContract(qktSymbol: String): ListedContract? {
 /** The exchange's delivery price of the dated contract [qktSymbol], when its catalog records one. */
 fun InstrumentRegistry.deliveryPrice(qktSymbol: String): BigDecimal? =
     listedContract(qktSymbol)?.deliveryPrice?.let(::BigDecimal)
+
+/**
+ * The futures among [symbols]: continuous streams of a declared root and listed contracts. These
+ * always fill on the exchange simulator in a backtest, whatever the broker.
+ */
+fun InstrumentRegistry.futuresSymbols(symbols: Collection<String>): Set<String> {
+    val directory = futures() ?: return emptySet()
+    return symbols
+        .filter { directory.rootOfContinuous(it) != null || (lookup(it)?.derivative as? FutureTerms)?.expiryMs != null }
+        .toSet()
+}

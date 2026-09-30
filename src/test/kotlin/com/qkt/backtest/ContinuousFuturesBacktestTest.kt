@@ -118,4 +118,14 @@ class ContinuousFuturesBacktestTest {
         assertThat(code).isNotEqualTo(ExitCodes.SUCCESS)
         assertThat(output).contains("--tick-fills").contains("continuous")
     }
+
+    @Test
+    fun `a futures run explains its exchange fills instead of the paper broker's`(
+        @TempDir dir: Path,
+    ) {
+        val (code, output) = backtest(dir, "15m")
+        assertThat(code).describedAs(output).isEqualTo(ExitCodes.SUCCESS)
+        assertThat(output).doesNotContain("paper broker fills at mid")
+        assertThat(output).contains("BINANCE_UM:BTCUSDT@front fills on the exchange simulator")
+    }
 }

@@ -76,6 +76,11 @@ internal object TextReportPrinter {
         out.println("  Execution:  ${executionModel(brokerKind)}")
         out.println("  Commission: ${commissionNote(g.commissionPaid)}")
         out.println("  Swap:       ${swapNote(g.swapPaid)}")
+        if (r.contractFills.isNotEmpty() || r.settlements.isNotEmpty()) {
+            out.println(
+                "  Futures:    exchange simulator — executable price + slippage, root fees per fill, rolls as roll costs",
+            )
+        }
         out.println("  Win rate:   wins / decided trades; break-even trades excluded")
         out.println("  Calmar:     total return / max drawdown (NOT annualized)")
         out.println("  Sharpe:     annualized from average sample spacing; risk-free rate 0")
