@@ -1,6 +1,8 @@
 package com.qkt.backtest
 
+import com.qkt.broker.continuous.ContractFill
 import com.qkt.broker.continuous.RollEntry
+import com.qkt.broker.exchange.Settlement
 import com.qkt.events.DecisionOrderLinkedEvent
 import com.qkt.events.FillAccountedEvent
 import com.qkt.events.OrderEvent
@@ -106,4 +108,8 @@ data class BacktestResult(
     val windows: List<WindowReport> = emptyList(),
     /** Every futures roll the run carried, oldest first; empty when no continuous stream held a position. */
     val rolls: List<RollEntry> = emptyList(),
+    /** Every engine fill on a continuous futures stream with the contract it executed on; empty otherwise. */
+    val contractFills: List<ContractFill> = emptyList(),
+    /** Every position the exchange settled at a contract's expiry; empty otherwise. */
+    val settlements: List<Settlement> = emptyList(),
 )

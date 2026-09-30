@@ -61,11 +61,12 @@ class ExchangeSimulator(
     private val fees: CommissionModel = NoCommission,
     fillAtTriggerPrice: Boolean = false,
     calendar: TradingCalendar = TradingCalendar.crypto(),
+    settlements: SettlementLog = SettlementLog(),
 ) : Broker {
     private val venueBus = EventBus(clock, MonotonicSequenceGenerator())
     private val matching =
         PaperBroker(venueBus, clock, prices, instruments, fillAtTriggerPrice, calendar, PositionAccountingMode.NETTING)
-    private val settlement = ExpirySettlement(bus, clock, prices, instruments)
+    private val settlement = ExpirySettlement(bus, clock, prices, instruments, settlements)
     private val working = LinkedHashMap<String, OrderRequest>()
     private val expiringOrders = HashMap<String, String>()
 

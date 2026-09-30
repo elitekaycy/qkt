@@ -112,6 +112,8 @@ internal class ReplayResultBuilder(
             monthlyReturns = monthlyReturns(collector.dailyEquity()),
             windows = collector.windows().map { windowReport(it, tradeRecords, annualizationFactor) },
             rolls = books.rolls.entries,
+            contractFills = books.contractFills.entries,
+            settlements = books.settlements.entries,
         )
     }
 

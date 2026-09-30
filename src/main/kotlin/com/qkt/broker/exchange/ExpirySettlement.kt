@@ -18,15 +18,17 @@ import org.slf4j.LoggerFactory
  * contract, built from the simulator's own fills, and the settlement of those positions once a
  * contract expires. A settlement is published as a venue close ([BrokerEvent.OrderFilled] with
  * `updatesOrderExecution = false` and [ExitReason.EXPIRY]) at the catalog's delivery price, or at
- * the contract's last price, with a warning, when the catalog records none.
+ * the contract's last price, with a warning, when the catalog records none; each is recorded in the
+ * run's [SettlementLog].
  */
 internal class ExpirySettlement(
     private val bus: EventBus,
     private val clock: Clock,
     private val prices: MarketPriceProvider,
     private val instruments: InstrumentRegistry,
+    private val log: SettlementLog,
 ) {
-    private val log = LoggerFactory.getLogger(ExpirySettlement::class.java)
+    private val logger = LoggerFactory.getLogger(ExpirySettlement::class.java)
     private val pending = HashMap<String, Long>()
     private val expired = HashSet<String>()
     private val net = HashMap<String, LinkedHashMap<String, BigDecimal>>()
@@ -73,16 +75,19 @@ internal class ExpirySettlement(
     private fun settle(symbol: String) {
         val holders = net.remove(symbol)?.filterValues { it.signum() != 0 } ?: return
         if (holders.isEmpty()) return
-        val price = instruments.deliveryPrice(symbol) ?: lastPrice(symbol)
+        val delivery = instruments.deliveryPrice(symbol)
+        val price = (delivery ?: lastPrice(symbol)).setScale(Money.SCALE, Money.ROUNDING)
         for ((strategyId, quantity) in holders) {
             val id = "expiry:$symbol:$strategyId"
+            val side = if (quantity.signum() > 0) Side.SELL else Side.BUY
+            log.record(Settlement(clock.now(), strategyId, symbol, side, quantity.abs(), price, delivery != null))
             bus.publish(
                 BrokerEvent.OrderFilled(
                     clientOrderId = id,
                     brokerOrderId = id,
                     symbol = symbol,
-                    side = if (quantity.signum() > 0) Side.SELL else Side.BUY,
-                    price = price.setScale(Money.SCALE, Money.ROUNDING),
+                    side = side,
+                    price = price,
                     quantity = quantity.abs(),
                     strategyId = strategyId,
                     timestamp = clock.now(),
@@ -98,7 +103,11 @@ internal class ExpirySettlement(
             requireNotNull(prices.lastPrice(symbol)) {
                 "cannot settle $symbol at ${Instant.ofEpochMilli(clock.now())}: no delivery price and no last price"
             }
-        log.warn("{} has no delivery price in its catalog; settling at its last price {}", symbol, last.toPlainString())
+        logger.warn(
+            "{} has no delivery price in its catalog; settling at its last price {}",
+            symbol,
+            last.toPlainString(),
+        )
         return last
     }
 }

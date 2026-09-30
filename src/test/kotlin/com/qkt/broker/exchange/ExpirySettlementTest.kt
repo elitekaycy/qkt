@@ -86,4 +86,29 @@ class ExpirySettlementTest {
 
         assertThat(f.only<BrokerEvent.OrderFilled>()).isEmpty()
     }
+
+    @Test
+    fun `each settlement is logged with whether the delivery price was known`() {
+        f.tick(f.sep, "63100.0")
+        f.sim.submit(f.market("long", Side.BUY, "0.01"))
+        f.tick(f.dec, "64000.0")
+        f.sim.submit(f.market("short", Side.SELL, "0.02", symbol = f.dec))
+
+        f.tick(f.dec, "64100.0", atMs = f.decExpiry)
+
+        assertThat(
+            f.settlements.entries.map {
+                listOf(
+                    it.contract,
+                    it.side,
+                    it.quantity.toPlainString(),
+                    it.price.stripTrailingZeros().toPlainString(),
+                    it.deliveryPriceKnown,
+                )
+            },
+        ).containsExactly(
+            listOf(f.sep, Side.SELL, "0.010", "63000.5", true),
+            listOf(f.dec, Side.BUY, "0.020", "64100", false),
+        )
+    }
 }

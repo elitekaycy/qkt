@@ -61,6 +61,7 @@ internal class ExchangeFixture(
                     ),
             ),
         )
+    val settlements = SettlementLog()
     val sim =
         ExchangeSimulator(
             bus,
@@ -69,6 +70,7 @@ internal class ExchangeFixture(
             registry,
             slippage = InstrumentSlippage,
             fees = ContractFeeCommission(registry, NoCommission),
+            settlements = settlements,
         )
 
     init {

@@ -61,6 +61,7 @@ internal fun replayFuturesRoutes(
         fees,
         barFills,
         calendar,
+        books.settlements,
     )
     val routes =
         buildList<Pair<SymbolPattern, Broker>> {
@@ -72,6 +73,7 @@ internal fun replayFuturesRoutes(
                         ContinuousChains(directory),
                         continuous,
                         books.rolls,
+                        books.contractFills,
                     ) { venueBus, prices ->
                         exchange(venueBus, prices).let { ContractVenue(it, it::onTick) }
                     }
