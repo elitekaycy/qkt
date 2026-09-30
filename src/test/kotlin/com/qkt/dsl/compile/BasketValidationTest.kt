@@ -43,7 +43,7 @@ class BasketValidationTest {
                     WHEN aud.close > 0 THEN LOG "warm"
                 """.trimIndent(),
             )
-        }.isInstanceOf(IllegalArgumentException::class.java)
+        }.isInstanceOf(CompileError::class.java)
             .hasMessageContaining("nzd")
     }
 
@@ -62,7 +62,7 @@ class BasketValidationTest {
                     WHEN aud.close > 0 THEN LOG "warm"
                 """.trimIndent(),
             )
-        }.isInstanceOf(IllegalArgumentException::class.java)
+        }.isInstanceOf(CompileError::class.java)
             .hasMessageContaining("inner")
     }
 
@@ -80,7 +80,7 @@ class BasketValidationTest {
                     WHEN aud.close > 0 THEN LOG "warm"
                 """.trimIndent(),
             )
-        }.isInstanceOf(IllegalArgumentException::class.java)
+        }.isInstanceOf(CompileError::class.java)
             .hasMessageContaining("timeframe")
     }
 }

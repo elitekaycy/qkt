@@ -3,6 +3,7 @@ package com.qkt.dsl.compile
 import com.qkt.dsl.ast.ActionAst
 import com.qkt.dsl.ast.Block
 import com.qkt.dsl.ast.Buy
+import com.qkt.dsl.ast.DefaultsBlock
 import com.qkt.dsl.ast.Latch
 import com.qkt.dsl.ast.OcoEntry
 import com.qkt.dsl.ast.Sell
@@ -11,6 +12,15 @@ import com.qkt.dsl.ast.WhenThen
 
 /** Rejects a `BRACKET` missing its stop loss or take profit once `DEFAULTS` are merged in. */
 internal fun validateCompleteBrackets(ast: StrategyAst) {
+    ast.rules.filterIsInstance<WhenThen>().forEach { validateCompleteBracket(it.action, ast.defaults) }
+    ast.schedules.forEach { validateCompleteBracket(it.action, ast.defaults) }
+}
+
+/** The per-action form of [validateCompleteBrackets], so a failure can be tagged with its rule. */
+internal fun validateCompleteBracket(
+    action: ActionAst,
+    defaults: DefaultsBlock?,
+) {
     fun validate(bracket: com.qkt.dsl.ast.BracketAst?) {
         if (bracket == null || (bracket.stopLoss != null && bracket.takeProfit != null)) return
         val missing =
@@ -62,11 +72,5 @@ internal fun validateCompleteBrackets(ast: StrategyAst) {
         }
     }
 
-    ast.rules
-        .filterIsInstance<WhenThen>()
-        .map { mergeDefaults(it.action, ast.defaults) }
-        .forEach(::walk)
-    ast.schedules
-        .map { mergeDefaults(it.action, ast.defaults) }
-        .forEach(::walk)
+    walk(mergeDefaults(action, defaults))
 }

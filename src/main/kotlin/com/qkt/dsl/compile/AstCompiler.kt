@@ -14,9 +14,23 @@ import com.qkt.strategy.WarmupStream
  * snapshots, rules, sequences and schedules in a fixed order that fixes indicator binding order.
  */
 class AstCompiler {
+    /**
+     * Compiles [rawAst], substituting [overrides] into its `PARAM`s. Every failure surfaces as a
+     * [CompileError]; one that arose while compiling a rule carries that rule's line.
+     */
     fun compile(
         rawAst: StrategyAst,
         overrides: Map<String, String> = emptyMap(),
+    ): Strategy =
+        try {
+            compileUnchecked(rawAst, overrides)
+        } catch (e: RuntimeException) {
+            throw CompileError.of(e)
+        }
+
+    private fun compileUnchecked(
+        rawAst: StrategyAst,
+        overrides: Map<String, String>,
     ): Strategy {
         // Hub datasets are expanded into one stream per referenced field before anything else
         // sees the AST, so every later stage handles a hub field exactly like a candle close.
@@ -31,6 +45,10 @@ class AstCompiler {
         // alias -> constituent aliases, for fanning basket orders out and reading basket positions.
         val basketConstituents: Map<String, List<String>> = ast.baskets.associate { it.alias to it.constituents }
         val resolver = LetResolver(ast.lets, streams.keys)
+        // Every LET is inlined before any rule so a bad declaration (an unknown name, a LET
+        // that refers to itself) is reported against the LET section, not the first rule that
+        // happens to read it.
+        val letRhsByName: Map<String, ExprAst> = ast.lets.associate { it.name to resolver.resolveDeclaration(it) }
         val bindings = IndicatorBinding.Bag()
         val aggregates = AggregateBinding.Bag()
         val exprCompiler = ExprCompiler(bindings, aggregates, basketConstituents)
@@ -63,20 +81,22 @@ class AstCompiler {
                 it
             }
         val readOnlyAliases = readOnlyAliases(streams, expanded.datasetAliases)
-        whenThens.forEach { rejectReadOnlyOrders(it.action, readOnlyAliases) }
+        whenThens.forEach { rule -> compilingRule(rule) { rejectReadOnlyOrders(rule.action, readOnlyAliases) } }
+        ast.schedules.forEach { rejectReadOnlyOrders(it.action, readOnlyAliases) }
         validateBaskets(ast)
-        validateCompleteBrackets(ast)
+        whenThens.forEach { rule -> compilingRule(rule) { validateCompleteBracket(rule.action, ast.defaults) } }
+        ast.schedules.forEach { validateCompleteBracket(it.action, ast.defaults) }
         validateResizeProtection(ast)
-        val resolvedConditions: List<ExprAst> = whenThens.map { resolver.resolve(it.cond) }
-        resolvedConditions.forEach(::rejectChainedComparisons)
+        val resolvedConditions: List<ExprAst> =
+            whenThens.map { rule ->
+                compilingRule(rule) { resolver.resolve(rule.cond).also(::rejectChainedComparisons) }
+            }
         val resolvedSequenceConditions: List<ExprAst> =
             ast.sequences.flatMap { sequence -> sequence.stages.map { resolver.resolve(it.condition) } }
         val plan = SnapshotPlan.scan(resolvedConditions + resolvedSequenceConditions)
 
         val maxRollingPerName: Map<String, Int> = plan.rollingMaxN
         val snapshotStore = SnapshotStore(maxRollingPerName)
-
-        val letRhsByName: Map<String, ExprAst> = ast.lets.associate { it.name to resolver.resolve(it.expr) }
 
         val capturableNames: Set<String> =
             (plan.captureOnBuy + plan.captureOnSell + plan.captureOnOpen + plan.rollingMaxN.keys).toSet()
