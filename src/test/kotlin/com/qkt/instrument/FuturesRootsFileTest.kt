@@ -149,4 +149,33 @@ class FuturesRootsFileTest {
             FuturesRootsFile.load(f)
         }.hasMessageContaining("futures root CME:ES").hasMessageContaining("currency")
     }
+
+    @Test
+    fun `a roll policy is parsed`(
+        @TempDir dir: Path,
+    ) {
+        val f =
+            write(
+                dir,
+                "futures:\n  - { root: CME:ES, currency: USD, multiplier: 50, tickSize: 0.25, " +
+                    "volumeStep: 1, volumeMin: 1, " +
+                    "roll: { daysBeforeExpiry: 8, atUtc: '14:30', adjust: ratio } }\n",
+            )
+        val roll = FuturesRootsFile.load(f).single().roll
+        assertThat(roll).isEqualTo(RollPolicy(8, java.time.LocalTime.of(14, 30), PriceAdjustment.RATIO))
+    }
+
+    @Test
+    fun `a roll with an unknown adjustment is refused`(
+        @TempDir dir: Path,
+    ) {
+        val f =
+            write(
+                dir,
+                "futures:\n  - { root: CME:ES, currency: USD, multiplier: 50, tickSize: 0.25, " +
+                    "volumeStep: 1, volumeMin: 1, " +
+                    "roll: { daysBeforeExpiry: 8, atUtc: '08:00', adjust: backward } }\n",
+            )
+        assertThatThrownBy { FuturesRootsFile.load(f) }.hasMessageContaining("adjust")
+    }
 }

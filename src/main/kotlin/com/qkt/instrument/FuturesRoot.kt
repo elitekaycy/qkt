@@ -5,7 +5,8 @@ import java.math.BigDecimal
 /**
  * The static spec shared by every contract of one futures family, declared once under `futures:`
  * in `instruments.yaml`. [multiplier] becomes each contract's `contractSize` and [tickSize] its
- * `pointSize`; fees and margin are in [currency].
+ * `pointSize`; fees and margin are in [currency]. [roll] is required for continuous streams of the
+ * root and unused by explicit contract streams.
  */
 data class FuturesRoot(
     val root: String,
@@ -19,6 +20,7 @@ data class FuturesRoot(
     val exchangeFeePerContract: BigDecimal,
     val takerFeeRate: BigDecimal,
     val margin: MarginTerms?,
+    val roll: RollPolicy? = null,
 ) {
     /** The venue prefix of [root]: `CME` for `CME:ES`. */
     val venue: String get() = root.substringBefore(':')

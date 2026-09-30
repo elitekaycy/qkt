@@ -3,6 +3,8 @@ package com.qkt.instrument
 import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.LocalTime
+import java.time.format.DateTimeParseException
 import org.snakeyaml.engine.v2.api.Load
 import org.snakeyaml.engine.v2.api.LoadSettings
 
@@ -12,8 +14,9 @@ import org.snakeyaml.engine.v2.api.LoadSettings
  */
 object FuturesRootsFile {
     private val REQUIRED = listOf("root", "currency", "multiplier", "tickSize", "volumeStep", "volumeMin")
-    private val OPTIONAL = listOf("volumeMax", "calendar", "exchangeFeePerContract", "takerFeeRate", "margin")
+    private val OPTIONAL = listOf("volumeMax", "calendar", "exchangeFeePerContract", "takerFeeRate", "margin", "roll")
     private val MARGIN_KEYS = setOf("initial", "maintenance", "basis")
+    private val ROLL_KEYS = setOf("daysBeforeExpiry", "atUtc", "adjust")
 
     /** Every root declared in [path], in file order; empty when the file has no `futures:` section. */
     fun load(path: Path): List<FuturesRoot> {
@@ -71,6 +74,13 @@ object FuturesRootsFile {
                         name,
                     )
                 },
+            roll =
+                entry["roll"]?.let {
+                    roll(
+                        it as? Map<*, *> ?: error("futures root $name: roll must be a map"),
+                        name,
+                    )
+                },
         ).also { validate(it, name) }
     }
 
@@ -100,6 +110,33 @@ object FuturesRootsFile {
         key: String,
         raw: String,
     ): BigDecimal = raw.toBigDecimalOrNull() ?: error("futures root $name: '$key' must be a number, got '$raw'")
+
+    private fun roll(
+        raw: Map<*, *>,
+        name: String,
+    ): RollPolicy {
+        val unknown = raw.keys.map { it.toString() }.filter { it !in ROLL_KEYS }
+        require(unknown.isEmpty()) { "futures root $name: unknown roll key(s) $unknown; allowed: $ROLL_KEYS" }
+
+        fun req(key: String): String = raw[key]?.toString() ?: error("futures root $name: roll missing '$key'")
+        val days =
+            req("daysBeforeExpiry").toIntOrNull()
+                ?: error("futures root $name: roll.daysBeforeExpiry must be a whole number")
+        val at =
+            try {
+                LocalTime.parse(req("atUtc"))
+            } catch (e: DateTimeParseException) {
+                throw IllegalArgumentException("futures root $name: roll.atUtc must be HH:mm, got '${req("atUtc")}'", e)
+            }
+        val adjust =
+            PriceAdjustment.entries.firstOrNull { it.name.equals(req("adjust"), ignoreCase = true) }
+                ?: error(
+                    "futures root $name: roll.adjust must be one of ${PriceAdjustment.entries.map {
+                        it.name.lowercase()
+                    }}",
+                )
+        return RollPolicy(days, at, adjust)
+    }
 
     private fun validate(
         root: FuturesRoot,
