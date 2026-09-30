@@ -170,8 +170,9 @@ Why forward instead of the common backward adjustment:
   contract in the catalog chain**, not from wherever a run started. A backtest from 2024 and a
   live session warmed up yesterday put the same contract at the same continuous level.
 
-`PriceSpace` owns the mapping per stream: `toContinuous(raw)`, `toContract(level, side, intent)`,
-and distance conversion (panama: distances unchanged; ratio: distances scale by `1/factor`).
+`PriceSpace` owns the mapping per contract: `toContinuous(raw)` and `limitToContract`/`stopToContract`
+for levels. Distances need no mapping: the engine lowers brackets and trailing stops to absolute
+levels before an order reaches a broker.
 Contract-space levels are snapped to the tick grid in the direction that never improves the order
 (buy limit down, sell limit up, buy stop up, sell stop down). Panama that would take any continuous
 price ≤ 0 is refused at load with the advice to use `ratio`; ratio requires positive prices.
