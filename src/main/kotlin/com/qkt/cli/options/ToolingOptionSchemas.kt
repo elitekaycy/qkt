@@ -24,6 +24,7 @@ internal val toolingOptionSchemas: Map<String, CliOptionSchema> =
         "fetch" to
             CliOptionSchema(
                 values = setOf("tf", "from", "to", "last", "data-root", "config"),
+                flags = setOf("catalog"),
             ),
         "data" to
             CliOptionSchema(

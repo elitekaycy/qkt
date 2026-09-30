@@ -115,6 +115,38 @@ Notes:
   re-fetch a corrupt day, delete the file and re-run.
 - MT5 history APIs are broker-dependent — some throttle hard or serve only a limited window.
 
+## Scenario 2b — Futures contracts (Binance USDⓈ-M quarterlies, free)
+
+Dated futures are stored one contract at a time. `BINANCE_UM` reads Binance's free public archive
+(`data.binance.vision`), so no account or API key is needed.
+
+```bash
+# The root's contract list: every quarterly with its expiry and, once settled, its delivery price.
+qkt fetch BINANCE_UM:BTCUSDT --catalog
+
+# Bars for one contract, at the timeframe the strategy uses.
+qkt fetch BINANCE_UM:BTCUSDT_240927 --tf 15m --from 2024-06-01 --to 2024-09-27
+```
+
+The catalog lands in `contracts/BINANCE_UM/BTCUSDT.json`, the bars in
+`bars/BINANCE_UM/BTCUSDT_240927/15m/`. Declare the root under `futures:` in `instruments.yaml`
+so the backtest knows each contract's multiplier, tick and fees:
+
+```yaml
+futures:
+  - root: BINANCE_UM:BTCUSDT
+    currency: USDT
+    multiplier: 1
+    tickSize: 0.1
+    volumeStep: 0.001
+    volumeMin: 0.001
+    takerFeeRate: 0.0005
+```
+
+A day before a contract listed, or after it delivered, has no file and is recorded empty only after
+delivery. A contract the strategy names but the catalog does not list fails the run up front; refresh
+the catalog with `--catalog`.
+
 ## Scenario 3 — Speed up repeated backtests (CSV → binary)
 
 Cached ticks start life as gzipped CSV (`*.csv.gz`). Converting them to the binary format decodes

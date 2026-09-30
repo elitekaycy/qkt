@@ -1,6 +1,7 @@
 package com.qkt.cli
 
 import com.qkt.candles.TimeWindow
+import com.qkt.cli.fetch.CatalogFetch
 import com.qkt.cli.fetch.buildFetcher
 import com.qkt.cli.fetch.resolveFetchRange
 import com.qkt.common.TimeRange
@@ -26,7 +27,10 @@ import java.time.ZoneOffset
  *   uses [Mt5BarFetcher] against the profile's `gatewayUrl`.
  * - BYBIT_SPOT / BYBIT_LINEAR — uses [BybitKlineClient] against the public
  *   Bybit REST endpoint (no auth needed for kline data).
+ * - BINANCE_UM — Binance USDⓈ-M quarterly futures from the free `data.binance.vision` archive.
  * - BACKTEST — refused; nothing to fetch (the local store IS the backtest source).
+ *
+ * `qkt fetch VENUE:ROOT --catalog` writes the root's futures contract catalog instead of bars.
  */
 class FetchCommand(
     private val args: Args,
@@ -49,6 +53,7 @@ class FetchCommand(
         }
         val broker = parts[0]
         val symbol = parts[1]
+        if (args.flag("catalog")) return CatalogFetch.run(target, DataRoot.forDataRoot(args.option("data-root")))
         val tfArg =
             try {
                 args.requireOption("tf")
