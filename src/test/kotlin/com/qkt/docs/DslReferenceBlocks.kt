@@ -3,7 +3,7 @@ package com.qkt.docs
 import java.nio.file.Files
 import java.nio.file.Path
 
-/** Reads the ```qkt fenced blocks, and the opt-out marker above each, from the DSL reference pages. */
+/** Reads the ```qkt fenced blocks, and the opt-out marker above each, from the DSL reference pages and the grammar one-pager. */
 internal object DslReferenceBlocks {
     data class Block(
         val file: String,
@@ -13,10 +13,12 @@ internal object DslReferenceBlocks {
     )
 
     fun referenceBlocks(): List<Block> =
-        Files
-            .list(REFERENCE_DIR)
-            .use { files -> files.filter { it.toString().endsWith(".md") }.sorted().toList() }
-            .flatMap { path -> blocksIn(path) }
+        (
+            listOf(GRAMMAR_PAGE) +
+                Files
+                    .list(REFERENCE_DIR)
+                    .use { files -> files.filter { it.toString().endsWith(".md") }.sorted().toList() }
+        ).flatMap { path -> blocksIn(path) }
 
     fun blocksIn(path: Path): List<Block> {
         val lines = Files.readAllLines(path)
@@ -38,6 +40,7 @@ internal object DslReferenceBlocks {
     }
 
     val REFERENCE_DIR: Path = Path.of("docs", "reference", "dsl")
+    val GRAMMAR_PAGE: Path = Path.of("docs", "reference", "dsl-grammar.md")
     val FENCE = Regex("```qkt(\\s.*)?")
     val MARKER = Regex("<!--\\s*qkt-doc:\\s*([a-z-]+)\\b[^>]*-->")
 }

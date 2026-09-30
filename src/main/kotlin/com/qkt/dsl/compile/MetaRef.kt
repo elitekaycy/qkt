@@ -1,5 +1,6 @@
 package com.qkt.dsl.compile
 
+import com.qkt.dsl.DslVocabulary
 import com.qkt.dsl.ast.AccountRef
 import com.qkt.dsl.ast.ActionAst
 import com.qkt.dsl.ast.ActionOpts
@@ -80,7 +81,7 @@ internal fun collectMetaRefs(
             StackEntryRef, EntryQty, LastTradingDayOfMonth, is com.qkt.dsl.ast.ExitRef,
             -> Unit
             is StreamFieldRef -> {
-                if (e.field in ExprCompiler.META_FIELDS) {
+                if (e.field in DslVocabulary.metaFields) {
                     val sym = streams[e.stream]?.qktSymbol
                     if (sym != null) out.add(MetaRef(e.stream, e.field, sym))
                 }

@@ -9,7 +9,7 @@ The classic use case: a session level sits at $2,000. You don't want to trade th
 <!-- qkt-doc: grammar -->
 ```qkt
 WHEN <condition>
-THEN LATCH <stream> OFFSET <d> [ FROM <ref_expr> ] [ ARM <duration> ] [ AS <name> ]
+THEN LATCH <stream> OFFSET <d> [ FROM <ref_expr> ] ARM <duration> [ AS <name> ]
     [ CONFIRM CLOSE_BEYOND | TIME_IN_BREACH <duration> | RETEST_HOLD <d> WITHIN <duration> ] {
     ENTER [ ON <stream> ] MARKET | LIMIT <dir_rel> | STOP <dir_rel>
         [ BRACKET { [ STOP LOSS <dir_rel>, ] [ TAKE PROFIT <dir_rel> ] } ]
@@ -22,7 +22,7 @@ THEN LATCH <stream> OFFSET <d> [ FROM <ref_expr> ] [ ARM <duration> ] [ AS <name
 - `<stream>` — the stream alias whose ticks the latch watches.
 - `OFFSET <d>` — distance from the reference to each trip-wire. e.g. `OFFSET 0.50` → up-wire at `ref + 0.50`, down-wire at `ref - 0.50`.
 - `FROM <ref_expr>` — optional: overrides the reference. Omit to use `<stream>.close` (the most recent bar's close). e.g. `FROM gold.high`.
-- `ARM <duration>` — how long the wires stay active after arming. Defaults to `5m`. Supported suffixes: `s`, `m`, `h`, `d`.
+- `ARM <duration>` — how long the wires stay active after arming. Required; there is no default. Supported suffixes: `s`, `m`, `h`, `d`.
 - `AS <name>` — optional name, useful for logging and future addressing.
 - `CONFIRM ...` — optional evidence requirement. Omit for the historical first-tick behavior.
 - `{ ENTER ... }` — one or more entry clauses separated by `;`.
@@ -113,7 +113,12 @@ LATCH gold OFFSET 2 FROM gold.high ARM 10m { ENTER MARKET SIZING 0.1 }
 
 ### `ARM <duration>`
 
-How long the wires stay armed after the signal fires. Starts at the clock time of the `WHEN` rule fire (candle close). If no wire is crossed before the arm expires, the latch is dropped silently.
+How long the wires stay armed after the signal fires. Starts at the clock time of the `WHEN` rule fire (candle close). If no wire is crossed before the arm expires, the latch is dropped silently. The clause is required — omitting it is a parse error (`expected ARM <duration> in LATCH`):
+
+<!-- qkt-doc: illegal -->
+```qkt
+LATCH gold OFFSET 0.50 { ENTER MARKET SIZING 0.1 }
+```
 
 ```qkt
 LATCH gold OFFSET 0.50 ARM 5m { ENTER MARKET SIZING 0.1 }   -- 5-minute arm window

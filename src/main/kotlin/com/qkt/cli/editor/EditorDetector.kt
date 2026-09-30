@@ -13,7 +13,6 @@ import java.nio.file.Path
 class EditorDetector(
     private val env: Map<String, String> = System.getenv(),
     private val home: Path = Path.of(System.getProperty("user.home")),
-    private val osName: String = System.getProperty("os.name", "").lowercase(),
     private val pathLookup: (String) -> Path? = ::lookupInPath,
 ) {
     fun detect(target: EditorTarget): Boolean =
@@ -21,7 +20,6 @@ class EditorDetector(
             EditorTarget.VSCODE -> vscodeCli() != null
             EditorTarget.NVIM -> Files.isDirectory(nvimConfigDir())
             EditorTarget.VIM -> Files.isDirectory(vimConfigDir())
-            EditorTarget.SUBLIME -> Files.isDirectory(sublimePackagesDir())
         }
 
     fun all(): Map<EditorTarget, Boolean> = EditorTarget.entries.associateWith { detect(it) }
@@ -35,13 +33,6 @@ class EditorDetector(
     }
 
     fun vimConfigDir(): Path = home.resolve(".vim")
-
-    fun sublimePackagesDir(): Path =
-        if (osName.contains("mac") || osName.contains("darwin")) {
-            home.resolve("Library/Application Support/Sublime Text/Packages/User")
-        } else {
-            home.resolve(".config/sublime-text/Packages/User")
-        }
 }
 
 private fun lookupInPath(cmd: String): Path? {

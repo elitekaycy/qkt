@@ -240,7 +240,7 @@ object QktSnippets {
                 prefix = "notnull",
                 body =
                     listOf(
-                        "\${1:expression} IS NOT NULL",
+                        "\${1:alias.close} IS NOT NULL",
                     ),
                 description = "Guard expression against Value.Undefined.",
                 scope = Scope.RULES,

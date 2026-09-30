@@ -1,5 +1,6 @@
 package com.qkt.dsl.compile
 
+import com.qkt.dsl.DslVocabulary
 import com.qkt.dsl.ast.IndicatorCall
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.StreamFieldRef
@@ -14,6 +15,8 @@ import com.qkt.indicators.IndicatorOutput
  * [IndicatorBinding.Bag] owns the resulting bindings; this object holds no state.
  */
 internal object IndicatorCallBinder {
+    private val numericFields: Set<String> = DslVocabulary.numericCandleFields.toSet()
+
     fun bind(
         call: IndicatorCall,
         volumeAliases: MutableSet<String>,
@@ -123,14 +126,14 @@ internal object IndicatorCallBinder {
                 val timestampLookback = seriesArg.field == "timestamp" && call.name.equals("LAG", ignoreCase = true)
                 require(
                     timestampLookback ||
-                        seriesArg.field in setOf("close", "value", "open", "high", "low", "volume", "price"),
+                        seriesArg.field in numericFields,
                 ) {
                     "Indicator ${call.name} series field must be numeric: got ${seriesArg.field}"
                 }
                 IndicatorBindingFactory.streamFed(call, ind, seriesArg.stream, seriesArg.field, spec.inputKind)
             }
             IndicatorInput.CANDLE_SERIES -> {
-                require(seriesArg.field == "candle") {
+                require(seriesArg.field == DslVocabulary.CANDLE_SELECTOR) {
                     "Indicator ${call.name} series arg must be the whole stream (use stream.candle or atr(stream))"
                 }
                 IndicatorBindingFactory.streamFed(call, ind, seriesArg.stream, null, spec.inputKind)
@@ -139,7 +142,7 @@ internal object IndicatorCallBinder {
                 error("Indicator ${call.name} requires a condition expression")
             }
             IndicatorInput.TICK_SERIES -> {
-                require(seriesArg.field == "tick") {
+                require(seriesArg.field == DslVocabulary.TICK_SELECTOR) {
                     "Indicator ${call.name} requires a tick series; use ${call.name.lowercase()}(${seriesArg.stream}.tick, …)"
                 }
                 IndicatorBindingFactory.streamFed(call, ind, seriesArg.stream, null, spec.inputKind)
