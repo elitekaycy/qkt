@@ -18,6 +18,9 @@ data class RollPolicy(
         require(daysBeforeExpiry >= 0) { "RollPolicy.daysBeforeExpiry must be >= 0: $daysBeforeExpiry" }
     }
 
+    /** Identifies the roll instants this policy produces; histories built under another key do not apply. */
+    val key: String get() = "${daysBeforeExpiry}d@$atUtc"
+
     /** The roll instant, UTC epoch millis, for a contract expiring at [expiryMs]. */
     fun rollAtMs(expiryMs: Long): Long {
         val expiryDate = Instant.ofEpochMilli(expiryMs).atZone(ZoneOffset.UTC).toLocalDate()
