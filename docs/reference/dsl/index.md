@@ -192,7 +192,7 @@ When you run `qkt parse strategy.qkt`, the compiler walks the file in this order
 6. **SCHEDULE** (optional) — clock-driven actions
 7. **SEQUENCE** (optional) — ordered setup state machines
 8. **RULES** — pairs of `WHEN <condition> THEN <action>`
-9. **FOR EACH** (optional, end of file) — macro expansion that emits additional rules
+9. **FOR EACH** (optional, inside RULES) — macro expansion that emits one rule per listed stream
 
 Errors are line/column tagged. A typo in `WHEN` or a missing `THEN` produces a clear error pointing to the line, not a cryptic stack trace.
 
