@@ -1,5 +1,6 @@
 package com.qkt.app
 
+import com.qkt.accounting.requireBookable
 import com.qkt.broker.Broker
 import com.qkt.broker.BrokerFactory
 import com.qkt.broker.PaperBroker
@@ -345,12 +346,7 @@ class LiveSession(
         val sequencer = MonotonicSequenceGenerator.resumingAfter(auditJournal?.lastSequence())
         val priceTracker = MarketPriceTracker()
         val accounting = com.qkt.accounting.accountingEngine(accountingConfig, priceTracker, instrumentRegistry)
-        com.qkt.instrument.QuoteCurrencyGuard
-            .assertAccountQuoted(
-                symbols,
-                accountCurrency = accounting.accountCurrency,
-                canConvert = { symbol, _ -> accounting.canConvertSymbol(symbol) },
-            )
+        accounting.requireBookable(symbols)
         val strategyPositions = StrategyPositionTracker(persistor)
         val positions = strategyPositions.account
         val bus = busOverride ?: EventBus(clock, sequencer)
