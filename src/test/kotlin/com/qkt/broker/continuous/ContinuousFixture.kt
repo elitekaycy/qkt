@@ -1,6 +1,8 @@
 package com.qkt.broker.continuous
 
+import com.qkt.broker.Broker
 import com.qkt.broker.InstrumentSlippage
+import com.qkt.broker.SubmitAck
 import com.qkt.broker.exchange.ExchangeSimulator
 import com.qkt.bus.EventBus
 import com.qkt.common.FixedClock
@@ -36,6 +38,7 @@ internal class ContinuousFixture(
     startIso: String = "2024-09-20T00:00:00Z",
     slippageTicks: Int = 0,
     takerFeeRate: String = "0",
+    refuseOpenLegs: Boolean = false,
 ) {
     val front = "BINANCE_UM:BTCUSDT@front"
     val clock = FixedClock(time = ms(startIso))
@@ -70,6 +73,7 @@ internal class ContinuousFixture(
                             ListedContract("BTCUSDT_240628", ms("2024-06-28T08:00:00Z")),
                             ListedContract("BTCUSDT_240927", ms("2024-09-27T08:00:00Z")),
                             ListedContract("BTCUSDT_241227", ms("2024-12-27T08:00:00Z")),
+                            ListedContract("BTCUSDT_250328", ms("2025-03-28T08:00:00Z")),
                         ),
                     ),
             ),
@@ -93,6 +97,13 @@ internal class ContinuousFixture(
                                 "63000",
                                 "63800",
                             ),
+                            RollRecord(
+                                ms("2024-12-19T08:00:00Z"),
+                                "BTCUSDT_241227",
+                                "BTCUSDT_250328",
+                                "97000",
+                                "98500",
+                            ),
                         ),
                     ),
             ),
@@ -107,7 +118,7 @@ internal class ContinuousFixture(
             venueFactory = { venueBus, prices ->
                 val fees = ContractFeeCommission(registry, NoCommission)
                 val exchange = ExchangeSimulator(venueBus, clock, prices, registry, InstrumentSlippage, fees)
-                ContractVenue(exchange, exchange::onTick)
+                ContractVenue(if (refuseOpenLegs) RefusingOpenLegs(exchange, venueBus) else exchange, exchange::onTick)
             },
         )
 
@@ -150,5 +161,17 @@ internal class ContinuousFixture(
 
     companion object {
         fun ms(iso: String): Long = Instant.parse(iso).toEpochMilli()
+    }
+}
+
+/** A venue that refuses every roll's opening leg, as a venue out of margin or liquidity would. */
+internal class RefusingOpenLegs(
+    private val inner: Broker,
+    private val venueBus: EventBus,
+) : Broker by inner {
+    override fun submit(request: OrderRequest): SubmitAck {
+        if (!request.id.endsWith(":open")) return inner.submit(request)
+        venueBus.publish(BrokerEvent.OrderRejected(request.id, null, "insufficient margin", request.strategyId))
+        return SubmitAck(request.id, null, accepted = false, rejectReason = "insufficient margin")
     }
 }
