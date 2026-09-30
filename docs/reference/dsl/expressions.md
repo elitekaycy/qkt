@@ -106,6 +106,26 @@ btc.volume_step        -- lot increment the venue accepts
 btc.volume_min         -- smallest order the venue accepts
 btc.swap_long_points   -- overnight swap for a long, in points
 btc.swap_short_points  -- overnight swap for a short, in points
+btc.tick_value         -- tick_size x contract_size: what one tick is worth per lot
+btc.multiplier         -- alias of contract_size (the futures term)
+```
+
+### Futures contract fields
+
+A futures stream — a listed contract (`BINANCE_UM:BTCUSDT_241227`) or a continuous one
+(`BINANCE_UM:BTCUSDT@front`, `@next`) — also tells you which contract it follows right now. On any
+other stream these fields are Undefined, so a rule that reads them does not fire:
+
+```qkt
+btc.contract       -- the followed contract's code, e.g. 'BTCUSDT_241227' (a string)
+btc.dte            -- days until that contract expires, with fractions
+btc.days_to_roll   -- days until the stream moves to the next contract (a listed contract: its expiry)
+```
+
+```qkt
+-- Be flat through every roll instead of carrying the position (and paying the roll).
+WHEN btc.days_to_roll < 0.5 AND POSITION.btc != 0
+THEN CLOSE btc
 ```
 
 ```qkt

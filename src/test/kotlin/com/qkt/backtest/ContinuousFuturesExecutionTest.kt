@@ -120,4 +120,35 @@ class ContinuousFuturesExecutionTest {
                 .multiply(taker)
         assertThat(result.global.commissionPaid).isEqualByComparingTo(entryFee.add(exitFee))
     }
+
+    @Test
+    fun `a strategy that is flat through the roll carries nothing and re-enters on the new contract`(
+        @TempDir dir: Path,
+    ) {
+        val (result, _) =
+            FuturesFixtureRun.run(
+                dir,
+                "btcusdt-rolls",
+                """
+                STRATEGY flat VERSION 1
+                SYMBOLS
+                    btc = BINANCE_UM:BTCUSDT@front EVERY 15m
+                RULES
+                    WHEN btc.days_to_roll > 1
+                    THEN BUY btc SIZING 0.01
+                    WHEN btc.days_to_roll < 0.5 AND POSITION.btc != 0
+                    THEN CLOSE btc
+                """,
+                from = "2024-09-18",
+                to = "2024-09-20",
+            )
+
+        // Out before the 2024-09-19 08:00 roll, back in on the new contract once the next roll is far away.
+        val roll = Instant.parse("2024-09-19T08:00:00Z").toEpochMilli()
+        assertThat(result.rolls).isEmpty()
+        assertThat(result.trades.map { it.trade.side.name }).containsExactly("BUY", "SELL", "BUY")
+        assertThat(result.trades[1].trade.timestamp).isLessThan(roll)
+        assertThat(result.trades[2].trade.timestamp).isGreaterThanOrEqualTo(roll)
+        assertThat(result.contractFills.last().contract).isEqualTo(dec)
+    }
 }
