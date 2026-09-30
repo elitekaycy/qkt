@@ -28,6 +28,7 @@ import org.snakeyaml.engine.v2.api.LoadSettings
  *     swapShortPoints: 4       # optional, signed points per lot per rollover
  *     swapRolloverHourUtc: 21  # optional, default 21
  *     swapTripleDay: WEDNESDAY # optional, default WEDNESDAY
+ *     currency: USD            # optional — explicit quote currency; default: inferred from the symbol
  * ```
  *
  * Duplicate `qktSymbol` entries fail loudly at [load] — fail-fast keeps a YAML edit
@@ -96,6 +97,7 @@ class YamlInstrumentRegistry private constructor(
                         runCatching { java.time.DayOfWeek.valueOf(it.trim().uppercase()) }
                             .getOrElse { error("instruments.yaml: entry $index invalid swapTripleDay '$it'") }
                     } ?: java.time.DayOfWeek.WEDNESDAY,
+                currency = entry["currency"]?.toString()?.trim(),
             )
         }
     }
