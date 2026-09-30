@@ -12,6 +12,7 @@ import com.qkt.bus.EventBus
 import com.qkt.common.Clock
 import com.qkt.common.Money
 import com.qkt.common.MonotonicSequenceGenerator
+import com.qkt.common.Side
 import com.qkt.common.TradingCalendar
 import com.qkt.derivatives.futures.PriceSpace
 import com.qkt.events.BrokerEvent
@@ -106,7 +107,7 @@ class ExchangeSimulator(
             instruments.lookup(request.symbol) ?: return reject(request, "no instrument metadata for ${request.symbol}")
         val terms = meta.derivative as? FutureTerms
         val expiry = terms?.expiryMs ?: return reject(request, "${request.symbol} is not a dated futures contract")
-        rules.refusal(request, meta, terms)?.let { return reject(request, it) }
+        rules.refusal(request, meta, terms, pendingOf(request))?.let { return reject(request, it) }
         val grid = PriceSpace(PriceAdjustment.NONE, BigDecimal.ZERO, meta.pointSize)
         val onGrid = requireNotNull(toContract(request, request.id, request.symbol, grid))
         working[request.id] = onGrid
@@ -119,6 +120,7 @@ class ExchangeSimulator(
     /** Settle contracts that expired by [tick]'s time, then match [tick] unless its contract has expired. */
     fun onTick(tick: Tick) {
         settlement.settleDue(tick.timestamp, ::cancelWorkingOn)
+        cancelGuarded()
         if (!settlement.isExpired(tick.symbol)) matching.onTick(tick)
     }
 
@@ -135,6 +137,32 @@ class ExchangeSimulator(
                 else -> fill.price
             }
         return price.setScale(Money.SCALE, Money.ROUNDING)
+    }
+
+    /** The signed quantity of [request]'s strategy's other working orders on its contract. */
+    private fun pendingOf(request: OrderRequest): BigDecimal =
+        working.values
+            .filter { it.symbol == request.symbol && it.strategyId == request.strategyId && it.id != request.id }
+            .fold(BigDecimal.ZERO) { total, o ->
+                if (o.side ==
+                    Side.BUY
+                ) {
+                    total.add(o.quantity)
+                } else {
+                    total.subtract(o.quantity)
+                }
+            }
+
+    /** Cancel working orders that would open exposure inside their contract's expiry guard window. */
+    private fun cancelGuarded() {
+        if (working.isEmpty()) return
+        for (order in working.values.toList()) {
+            if (order.id !in working) continue
+            val terms = instruments.lookup(order.symbol)?.derivative as? FutureTerms ?: continue
+            val reason = rules.guardRefusal(order, terms, pendingOf(order)) ?: continue
+            expiringOrders[order.id] = reason
+            matching.cancel(order.id)
+        }
     }
 
     private fun cancelWorkingOn(symbol: String) {
