@@ -5,13 +5,15 @@ import com.qkt.cli.editor.EditorInstaller
 import com.qkt.cli.editor.EditorPaths
 import com.qkt.cli.editor.EditorTarget
 import com.qkt.cli.editor.PluginManagerGuard
+import com.qkt.editor.GrammarGenerator
 
 /**
- * `qkt editor list | install <target> | uninstall <target>`
+ * `qkt editor list | install <target> | uninstall <target> | grammar --format textmate|vim`
  *
  * Manages the qkt editor integrations (syntax highlighting, snippets) bundled
- * with the qkt distribution under `share/editor/`. Currently supports VSCode,
- * Neovim, Vim, and Sublime Text.
+ * with the qkt distribution under `share/editor/`. Supports VSCode, Neovim and
+ * Vim. `grammar` prints the generated syntax grammar the bundled files are
+ * regenerated from.
  */
 class EditorCommand(
     private val args: Args,
@@ -21,11 +23,25 @@ class EditorCommand(
             null, "list" -> list()
             "install" -> install()
             "uninstall" -> uninstall()
+            "grammar" -> grammar()
             else -> {
-                System.err.println("qkt: unknown editor subcommand '$sub' (expected: list, install, uninstall)")
+                System.err.println(
+                    "qkt: unknown editor subcommand '$sub' (expected: list, install, uninstall, grammar)",
+                )
                 ExitCodes.ARG_ERROR
             }
         }
+
+    private fun grammar(): Int {
+        val name = args.option("format") ?: "textmate"
+        val format =
+            GrammarGenerator.Format.parse(name) ?: run {
+                System.err.println("qkt: unknown grammar format '$name' (expected: textmate, vim)")
+                return ExitCodes.ARG_ERROR
+            }
+        print(GrammarGenerator.render(format))
+        return ExitCodes.SUCCESS
+    }
 
     private fun list(): Int {
         val detector = EditorDetector()
@@ -43,7 +59,7 @@ class EditorCommand(
     private fun install(): Int {
         val arg =
             args.positional(1) ?: run {
-                System.err.println("qkt: missing target. Try: qkt editor install <vscode|nvim|vim|sublime|all>")
+                System.err.println("qkt: missing target. Try: qkt editor install <vscode|nvim|vim|all>")
                 return ExitCodes.ARG_ERROR
             }
         val detector = EditorDetector()
@@ -80,7 +96,7 @@ class EditorCommand(
         }
         val parsed =
             EditorTarget.parse(arg) ?: run {
-                System.err.println("qkt: unknown target '$arg' (expected: vscode, nvim, vim, sublime, all)")
+                System.err.println("qkt: unknown target '$arg' (expected: vscode, nvim, vim, all)")
                 return null
             }
         return listOf(parsed)
@@ -142,7 +158,7 @@ class EditorCommand(
     private fun uninstall(): Int {
         val arg =
             args.positional(1) ?: run {
-                System.err.println("qkt: missing target. Try: qkt editor uninstall <vscode|nvim|vim|sublime|all>")
+                System.err.println("qkt: missing target. Try: qkt editor uninstall <vscode|nvim|vim|all>")
                 return ExitCodes.ARG_ERROR
             }
         val installer = EditorInstaller()
@@ -152,7 +168,7 @@ class EditorCommand(
             } else {
                 val parsed =
                     EditorTarget.parse(arg) ?: run {
-                        System.err.println("qkt: unknown target '$arg' (expected: vscode, nvim, vim, sublime, all)")
+                        System.err.println("qkt: unknown target '$arg' (expected: vscode, nvim, vim, all)")
                         return ExitCodes.ARG_ERROR
                     }
                 listOf(parsed)

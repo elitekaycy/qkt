@@ -62,6 +62,7 @@ internal class ScheduleParser(
                 cursor.expect(TokenKind.COLON, "expected ':' before minute offset")
                 val mTok = cursor.expect(TokenKind.NUMBER, "expected minute 0-59")
                 val m = mTok.lexeme.toIntOrNull() ?: cursor.error("expected integer minute, got '${mTok.lexeme}'")
+                if (m !in 0..59) cursor.errorAt(mTok, "EVERY HOUR AT minute must be 0-59, got $m")
                 ScheduleTrigger.EveryHour(minuteOffset = m)
             }
             TokenKind.DAY -> {

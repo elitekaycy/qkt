@@ -20,6 +20,7 @@ internal fun runMain(argv: Array<String>): Int =
         }
         when (args.subcommand) {
             "parse" -> ParseCommand(args).run()
+            "dsl" -> DslCommand(args).run()
             "lsp" -> LspCommand().run()
             "backtest" -> BacktestCommand(args).run()
             "sweep" -> SweepCommand(args).run()
@@ -88,6 +89,7 @@ private fun printHelp() {
 
         STRATEGY AUTHORING
             parse <file>            parse and validate a .qkt file
+            dsl vocabulary [--json] list every keyword, indicator, function, field and member
             lsp                     run the language server over stdio (for editors)
             backtest <file> ...     run a backtest (--enforce-live-breakers; --chaos for seeded stress)
             sweep <file> ...        grid-search params (--param fast=5,10,15 --rank sharpe)
@@ -136,8 +138,9 @@ private fun printHelp() {
 
         EDITOR INTEGRATIONS
             editor list             show supported editors + what's detected on this machine
-            editor install <t>      install for vscode, nvim, vim, sublime, or all
+            editor install <t>      install for vscode, nvim, vim, or all
             editor uninstall <t>    remove a previously-installed integration
+            editor grammar          print the generated grammar (--format textmate|vim)
 
         FLAGS
             --version, -v           print qkt version

@@ -33,7 +33,13 @@ fun mergeDefaults(
  */
 private fun symbolTransform(alias: String): ExprTransform =
     ExprTransform { ref ->
-        if (ref.name == SYMBOL_PLACEHOLDER_NAME) StreamFieldRef(alias, "candle") else ref
+        if (ref.name ==
+            SYMBOL_PLACEHOLDER_NAME
+        ) {
+            StreamFieldRef(alias, com.qkt.dsl.DslVocabulary.CANDLE_SELECTOR)
+        } else {
+            ref
+        }
     }
 
 private fun mergeOpts(

@@ -73,6 +73,6 @@ class SymbolPlaceholderTest {
                 }
             }
         assertThatThrownBy { AstCompiler().compile(ast) }
-            .isInstanceOf(IllegalStateException::class.java)
+            .isInstanceOf(CompileError::class.java)
     }
 }

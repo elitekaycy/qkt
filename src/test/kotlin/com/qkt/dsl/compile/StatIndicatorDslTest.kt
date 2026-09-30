@@ -125,7 +125,7 @@ class StatIndicatorDslTest {
               WHEN resid(gbp.close, eur.close, 1.5) > 0 THEN FLATTEN
             """.trimIndent()
         assertThatThrownBy { AstCompiler().compile(parse(src).value) }
-            .isInstanceOf(IllegalArgumentException::class.java)
+            .isInstanceOf(CompileError::class.java)
     }
 
     @Test
@@ -141,7 +141,7 @@ class StatIndicatorDslTest {
               WHEN resid(gbp.close, eur.close, 2) > 0 THEN FLATTEN
             """.trimIndent()
         assertThatThrownBy { AstCompiler().compile(parse(src).value) }
-            .isInstanceOf(IllegalArgumentException::class.java)
+            .isInstanceOf(CompileError::class.java)
     }
 
     @Test
@@ -182,7 +182,7 @@ class StatIndicatorDslTest {
               WHEN skew(s.close, 2) < 0 THEN FLATTEN
             """.trimIndent()
         assertThatThrownBy { AstCompiler().compile(parse(src).value) }
-            .isInstanceOf(IllegalArgumentException::class.java)
+            .isInstanceOf(CompileError::class.java)
     }
 
     @Test

@@ -2,8 +2,10 @@ package com.qkt.dsl.portfolio
 
 import com.qkt.dsl.ast.AlwaysRun
 import com.qkt.dsl.ast.ExprAst
+import com.qkt.dsl.ast.PortfolioAst
 import com.qkt.dsl.ast.WhenRun
 import com.qkt.dsl.compile.AstCompiler
+import com.qkt.dsl.compile.CompileError
 import com.qkt.dsl.compile.DslCompiledStrategy
 import com.qkt.dsl.parse.Lexer
 import com.qkt.dsl.parse.ParseResult
@@ -12,7 +14,32 @@ import com.qkt.dsl.parse.Parser
 import java.nio.file.Files
 import java.nio.file.Path
 
+/**
+ * Loads a `PORTFOLIO` file: parses it, validates its own rules, then parses and compiles every
+ * imported child with that child's `OVERRIDE`s applied.
+ */
 object PortfolioLoader {
+    /**
+     * The checks a portfolio AST can pass on its own, without reading its children from disk:
+     * today, that no alias receives two different `OVERRIDE` sets. Editors run this on an
+     * unsaved buffer; [load] runs it before touching the children.
+     */
+    fun validate(ast: PortfolioAst): Map<String, Map<String, ExprAst>> =
+        ast.rules
+            .mapNotNull { rule ->
+                val (alias, ov) =
+                    when (rule) {
+                        is WhenRun -> rule.alias to rule.overrides
+                        is AlwaysRun -> rule.alias to rule.overrides
+                    }
+                if (ov.isEmpty()) null else alias to ov
+            }.groupBy({ it.first }, { it.second })
+            .mapValues { (alias, list) ->
+                val distinct = list.distinct()
+                if (distinct.size > 1) error("conflicting OVERRIDE for alias '$alias'")
+                distinct.first()
+            }
+
     fun load(path: Path): PortfolioCompiled {
         val canonical = path.toAbsolutePath().normalize()
         val visiting = mutableSetOf<Path>()
@@ -43,21 +70,7 @@ object PortfolioLoader {
                         error("parse error at $path: ${parsed.errors.joinToString { it.message }}")
                 }
 
-            val overridesByAlias: Map<String, Map<String, ExprAst>> =
-                ast.rules
-                    .mapNotNull { rule ->
-                        val (alias, ov) =
-                            when (rule) {
-                                is WhenRun -> rule.alias to rule.overrides
-                                is AlwaysRun -> rule.alias to rule.overrides
-                            }
-                        if (ov.isEmpty()) null else alias to ov
-                    }.groupBy({ it.first }, { it.second })
-                    .mapValues { (alias, list) ->
-                        val distinct = list.distinct()
-                        if (distinct.size > 1) error("conflicting OVERRIDE for alias '$alias'")
-                        distinct.first()
-                    }
+            val overridesByAlias = validate(ast)
 
             val children =
                 ast.imports.map { imp ->
@@ -110,7 +123,14 @@ object PortfolioLoader {
                     // plain-Strategy child would silently fall back to the legacy no-hub onCandle
                     // path, where cross-stream reads evaluate Undefined and multi-stream rules
                     // never fire.
-                    val compiled = AstCompiler().compile(effectiveAst) as DslCompiledStrategy
+                    val compiled =
+                        try {
+                            AstCompiler().compile(effectiveAst) as DslCompiledStrategy
+                        } catch (e: CompileError) {
+                            // The child's position means nothing in the portfolio file; name the
+                            // child so the error lands on its IMPORT line.
+                            throw CompileError("child '${imp.alias}' ($childPath): ${e.message}", cause = e)
+                        }
                     val childStrategyId = "${ast.name}:${imp.alias}"
                     CompiledChild(
                         alias = imp.alias,

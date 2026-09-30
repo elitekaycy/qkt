@@ -1,5 +1,6 @@
 package com.qkt.dsl.compile
 
+import com.qkt.dsl.DslVocabulary
 import com.qkt.dsl.ast.StreamFieldRef
 import java.math.BigDecimal
 
@@ -9,11 +10,14 @@ import java.math.BigDecimal
  * read from the instrument catalog.
  */
 internal object StreamFieldCompiler {
+    private val candleFields: Set<String> = DslVocabulary.candleFields.toSet()
+    private val metaFields: Set<String> = DslVocabulary.metaFields.toSet()
+
     fun compile(ref: StreamFieldRef): CompiledExpr {
-        require(ref.field in ExprCompiler.CANDLE_FIELDS || ref.field in ExprCompiler.META_FIELDS) {
+        require(ref.field in candleFields || ref.field in metaFields) {
             "Unknown stream field for ${ref.stream}: ${ref.field}"
         }
-        return if (ref.field in ExprCompiler.META_FIELDS) compileMetaField(ref) else compileCandleField(ref)
+        return if (ref.field in metaFields) compileMetaField(ref) else compileCandleField(ref)
     }
 
     private fun compileCandleField(ref: StreamFieldRef): CompiledExpr =
