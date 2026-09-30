@@ -40,6 +40,7 @@ internal class RollExecutor(
     orders: ContinuousOrderMap,
     private val legs: RollLegs,
     private val ledger: RollLedger,
+    private val fills: ContractFillLog,
 ) {
     private val log = LoggerFactory.getLogger(RollExecutor::class.java)
     private val restingOrders = RestingOrdersAtRoll(bus, clock, venue, orders, legs)
@@ -132,7 +133,9 @@ internal class RollExecutor(
                 is LegOutcome.Filled -> opening.fill
                 is LegOutcome.Rejected -> {
                     log.error("{} refused the roll of {} for {}: {}", to, chain.symbol, strategyId, opening.reason)
-                    closes += closeOnStream(close, "$base:failed", fromIndex)
+                    val onStream = closeOnStream(close, "$base:failed", fromIndex)
+                    fills.record(contractFill(close, onStream))
+                    closes += onStream
                     return opening.reason
                 }
             }

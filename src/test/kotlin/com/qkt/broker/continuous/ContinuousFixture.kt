@@ -46,6 +46,7 @@ internal class ContinuousFixture(
     val events = mutableListOf<BrokerEvent>()
     val costs = mutableListOf<CostIncurred>()
     val ledger = RollLedger()
+    val fills = ContractFillLog()
     private val root =
         FuturesRoot(
             root = "BINANCE_UM:BTCUSDT",
@@ -115,6 +116,7 @@ internal class ContinuousFixture(
             chains = ContinuousChains(requireNotNull(registry.futures())),
             symbols = setOf(front),
             ledger = ledger,
+            fills = fills,
             venueFactory = { venueBus, prices ->
                 val fees = ContractFeeCommission(registry, NoCommission)
                 val exchange = ExchangeSimulator(venueBus, clock, prices, registry, InstrumentSlippage, fees)

@@ -29,6 +29,7 @@ internal class StreamLane(
     private val clock: Clock,
     private val chain: ContinuousChain,
     ledger: RollLedger,
+    private val fills: ContractFillLog,
     venueFactory: (EventBus, MarketPriceProvider) -> ContractVenue,
 ) {
     private val venueBus = EventBus(clock, MonotonicSequenceGenerator())
@@ -36,7 +37,7 @@ internal class StreamLane(
     private val venue = venueFactory(venueBus, contractPrices)
     private val orders = ContinuousOrderMap()
     private val legs = RollLegs()
-    private val rolls = RollExecutor(bus, clock, chain, venue, contractPrices, orders, legs, ledger)
+    private val rolls = RollExecutor(bus, clock, chain, venue, contractPrices, orders, legs, ledger, fills)
     private val positions = LinkedHashMap<String, BigDecimal>()
     private val stops = HashMap<String, String>()
     private var current: Int? = null
@@ -146,13 +147,14 @@ internal class StreamLane(
         val order = orders.removeByVenueId(e.clientOrderId)
         val index = order?.contractIndex ?: contractIndexOf(e.symbol)
         positions.merge(e.strategyId, signed(e), BigDecimal::add)
-        bus.publish(
+        val engineFill =
             e.copy(
                 clientOrderId = order?.request?.id ?: e.clientOrderId,
                 symbol = chain.symbol,
                 price = space(index).toContinuous(e.price),
-            ),
-        )
+            )
+        fills.record(contractFill(e, engineFill))
+        bus.publish(engineFill)
     }
 
     /** Contract [index]'s price mapping, built once per contract. */

@@ -18,13 +18,14 @@ import com.qkt.marketdata.MarketPriceProvider
  * roll schedule names at submit time, with limit and stop levels snapped so they never fill early,
  * and the venue's events are republished on [bus] in continuous space. The engine never sees a
  * contract symbol for a continuous stream. At each roll every position and resting order is carried
- * to the next contract and the roll is recorded in [ledger] with its cost booked ([RollExecutor]).
+ * to the next contract and the roll is recorded in [ledger] with its cost booked ([RollExecutor]);
+ * every engine fill is recorded in [fills] with the contract and price it executed at.
  *
  * Orders are accepted only on streams adjusted by panama: there continuous-space P&L plus the
  * booked roll costs equals the P&L of the contract legs exactly.
  *
  * ```kotlin
- * val broker = ContinuousContractBroker(bus, clock, chains, setOf("BINANCE_UM:BTCUSDT@front"), ledger) { venueBus, prices ->
+ * val broker = ContinuousContractBroker(bus, clock, chains, setOf("BINANCE_UM:BTCUSDT@front"), ledger, fills) { venueBus, prices ->
  *     ExchangeSimulator(venueBus, clock, prices, instruments).let { ContractVenue(it, it::onTick) }
  * }
  * ```
@@ -35,12 +36,13 @@ class ContinuousContractBroker(
     chains: ContinuousChains,
     private val symbols: Set<String>,
     ledger: RollLedger,
+    fills: ContractFillLog,
     venueFactory: (EventBus, MarketPriceProvider) -> ContractVenue,
 ) : Broker {
     private val lanes: Map<String, StreamLane> =
         symbols.associateWith { symbol ->
             val chain = requireNotNull(chains.chainFor(symbol)) { "$symbol is not a continuous futures stream" }
-            StreamLane(bus, clock, chain, ledger, venueFactory)
+            StreamLane(bus, clock, chain, ledger, fills, venueFactory)
         }
 
     override val name: String = "ContinuousFutures"

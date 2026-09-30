@@ -2,7 +2,9 @@ package com.qkt.research
 
 import com.qkt.accounting.AccountingConfig
 import com.qkt.accounting.accountingEngine
+import com.qkt.broker.continuous.ContractFillLog
 import com.qkt.broker.continuous.RollLedger
+import com.qkt.broker.exchange.SettlementLog
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.pnl.CommissionBook
@@ -28,6 +30,8 @@ internal class ReplayBooks(
     val positions = strategyPositions.account
     val commissionBook = CommissionBook(PerLotCommission(instruments))
     val rolls = RollLedger()
+    val contractFills = ContractFillLog()
+    val settlements = SettlementLog()
     val accounting = accountingEngine(accountingConfig, priceTracker, instruments)
     val pnl = PnLCalculator(positions, priceTracker, instruments, accounting, markTimestamp = markTimestamp)
     val strategyPnL =

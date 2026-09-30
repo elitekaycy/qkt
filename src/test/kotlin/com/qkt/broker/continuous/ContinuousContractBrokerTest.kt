@@ -88,4 +88,19 @@ class ContinuousContractBrokerTest {
         assertThat(ack.accepted).isFalse()
         assertThat(ack.rejectReason).contains("BINANCE_UM:BTCUSDT@front")
     }
+
+    @Test
+    fun `every engine fill is logged with the contract and price it executed at`() {
+        f.tick("63000.0")
+
+        f.broker.submit(f.market("buy", Side.BUY))
+
+        val fill = f.fills.entries.single()
+        assertThat(fill.orderId).isEqualTo("buy")
+        assertThat(fill.contract).isEqualTo("BINANCE_UM:BTCUSDT_241227")
+        assertThat(fill.contractPrice).isEqualByComparingTo("63800.0")
+        assertThat(fill.streamPrice).isEqualByComparingTo("63000.0")
+        assertThat(fill.side).isEqualTo(Side.BUY)
+        assertThat(fill.strategyId).isEqualTo("s")
+    }
 }
