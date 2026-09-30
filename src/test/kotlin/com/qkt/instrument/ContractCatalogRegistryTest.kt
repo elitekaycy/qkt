@@ -61,6 +61,8 @@ class ContractCatalogRegistryTest {
         assertThat(ContinuousSelector.parse("next")).isEqualTo(ContinuousSelector.NEXT)
         assertThat(ContinuousSelector.parse("FRONT")).isNull()
         assertThat(ContinuousSelector.FRONT.symbolFor("CME:ES")).isEqualTo("CME:ES@front")
+        assertThat(ContinuousSelector.FRONT.offset).isEqualTo(0)
+        assertThat(ContinuousSelector.NEXT.offset).isEqualTo(1)
     }
 
     @Test
