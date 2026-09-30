@@ -149,8 +149,8 @@ the catalog with `--catalog`.
 
 Futures fill on qkt's exchange simulator, whatever `--broker` says. Market orders fill at the current
 price and then slip by the run's slippage model; with `--slippage instrument` that is the root's
-optional `slippageTicks` (whole ticks against the order). Limit and stop prices must sit on the
-contract's tick grid. The root's fees are charged on every fill and included in the report's
+optional `slippageTicks` (whole ticks against the order). Limit and stop prices off the contract's
+tick grid are snapped to it in the direction that never fills early. The root's fees are charged on every fill and included in the report's
 `commissionPaid`. A contract held into expiry is settled at the catalog's delivery price (exit reason
 `EXPIRY`), and orders on it after expiry are rejected.
 
