@@ -74,6 +74,16 @@ internal class TokenCursor(
         throw ParseException(e)
     }
 
+    /** Records a parse error at [at] (a token already consumed) and aborts the rule being parsed. */
+    fun errorAt(
+        at: Token,
+        msg: String,
+    ): Nothing {
+        val e = ParseError(at.line, at.col, msg)
+        errors.add(e)
+        throw ParseException(e)
+    }
+
     /** Skips ahead to the next token a top-level block can restart from. */
     fun synchronize() {
         while (peek().kind !in SYNC_KINDS) advance()

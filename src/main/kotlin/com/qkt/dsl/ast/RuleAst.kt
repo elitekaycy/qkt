@@ -1,11 +1,35 @@
 package com.qkt.dsl.ast
 
-sealed interface RuleAst
+sealed interface RuleAst {
+    /**
+     * 1-based source line of the rule's `WHEN` (a `FOR EACH` expansion keeps the macro's line);
+     * 0 for a rule built by hand. Provenance only: it points diagnostics at the rule and is not
+     * part of the rule's identity.
+     */
+    val line: Int
+}
 
-data class WhenThen(
+/**
+ * `WHEN <cond> THEN <action>`. Equality, hashing and `toString` cover [cond] and [action] only,
+ * so moving a rule down the file changes neither the strategy fingerprint nor rule comparison.
+ */
+class WhenThen(
     val cond: ExprAst,
     val action: ActionAst,
-) : RuleAst
+    override val line: Int = 0,
+) : RuleAst {
+    fun copy(
+        cond: ExprAst = this.cond,
+        action: ActionAst = this.action,
+        line: Int = this.line,
+    ): WhenThen = WhenThen(cond, action, line)
+
+    override fun equals(other: Any?): Boolean = other is WhenThen && other.cond == cond && other.action == action
+
+    override fun hashCode(): Int = 31 * cond.hashCode() + action.hashCode()
+
+    override fun toString(): String = "WhenThen(cond=$cond, action=$action)"
+}
 
 sealed interface ActionAst
 

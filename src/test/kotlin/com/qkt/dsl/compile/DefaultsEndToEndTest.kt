@@ -48,7 +48,7 @@ class DefaultsEndToEndTest {
                 ).parseStrategy() as com.qkt.dsl.parse.ParseResult.Success
 
         assertThatThrownBy { AstCompiler().compile(parsed.value) }
-            .isInstanceOf(IllegalStateException::class.java)
+            .isInstanceOf(CompileError::class.java)
             .hasMessageContaining("BRACKET requires both STOP LOSS and TAKE PROFIT")
             .hasMessageContaining("missing TAKE PROFIT")
     }

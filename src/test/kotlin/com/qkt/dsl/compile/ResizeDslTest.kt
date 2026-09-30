@@ -57,7 +57,7 @@ class ResizeDslTest {
             )
 
         assertThatThrownBy { AstCompiler().compile(parse(src).value) }
-            .isInstanceOf(IllegalArgumentException::class.java)
+            .isInstanceOf(CompileError::class.java)
             .hasMessageContaining("RESIZE cannot target bracket-managed positions")
             .hasMessageContaining("aud")
     }
