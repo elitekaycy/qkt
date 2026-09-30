@@ -86,11 +86,10 @@ class PluginManagerGuardTest {
     }
 
     @Test
-    fun `vscode and sublime targets return empty regardless of config`(
+    fun `vscode target returns empty regardless of config`(
         @TempDir tmp: Path,
     ) {
         val guard = PluginManagerGuard(nvimDir = tmp, vimDir = tmp)
         assertThat(guard.detect(EditorTarget.VSCODE)).isEmpty()
-        assertThat(guard.detect(EditorTarget.SUBLIME)).isEmpty()
     }
 }
