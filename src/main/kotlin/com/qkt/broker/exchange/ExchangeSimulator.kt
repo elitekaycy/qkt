@@ -17,7 +17,6 @@ import com.qkt.derivatives.futures.PriceSpace
 import com.qkt.events.BrokerEvent
 import com.qkt.execution.OrderRequest
 import com.qkt.instrument.FutureTerms
-import com.qkt.instrument.InstrumentMeta
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.PriceAdjustment
 import com.qkt.marketdata.MarketPriceProvider
@@ -25,7 +24,6 @@ import com.qkt.marketdata.Tick
 import com.qkt.pnl.CommissionModel
 import com.qkt.pnl.NoCommission
 import java.math.BigDecimal
-import java.math.RoundingMode
 import java.time.Instant
 
 /**
@@ -41,6 +39,8 @@ import java.time.Instant
  *   [slippage] against the order; limit fills are not slipped;
  * - each fill carries its fee from [fees], on the contract's own price and in the contract's
  *   currency, as an [CostKind.EXCHANGE_FEE] venue cost — the way a live venue reports it;
+ * - within the contract's `expiryGuardHours` of expiry only orders that reduce a position are
+ *   accepted;
  * - nothing is accepted on a contract at or after its expiry, and on the first tick at or after it
  *   the contract's working orders are cancelled and every net position is settled
  *   ([ExpirySettlement]).
@@ -71,6 +71,7 @@ class ExchangeSimulator(
     private val expiringOrders = HashMap<String, String>()
 
     override val name: String = "ExchangeSim"
+    private val rules = ExchangeRules(name, clock, settlement)
 
     override val capabilities: Set<OrderTypeCapability> =
         setOf(
@@ -103,10 +104,9 @@ class ExchangeSimulator(
     override fun submit(request: OrderRequest): SubmitAck {
         val meta =
             instruments.lookup(request.symbol) ?: return reject(request, "no instrument metadata for ${request.symbol}")
-        val expiry =
-            (meta.derivative as? FutureTerms)?.expiryMs
-                ?: return reject(request, "${request.symbol} is not a dated futures contract")
-        refusal(request, meta, expiry)?.let { return reject(request, it) }
+        val terms = meta.derivative as? FutureTerms
+        val expiry = terms?.expiryMs ?: return reject(request, "${request.symbol} is not a dated futures contract")
+        rules.refusal(request, meta, terms)?.let { return reject(request, it) }
         val grid = PriceSpace(PriceAdjustment.NONE, BigDecimal.ZERO, meta.pointSize)
         val onGrid = requireNotNull(toContract(request, request.id, request.symbol, grid))
         working[request.id] = onGrid
@@ -120,28 +120,6 @@ class ExchangeSimulator(
     fun onTick(tick: Tick) {
         settlement.settleDue(tick.timestamp, ::cancelWorkingOn)
         if (!settlement.isExpired(tick.symbol)) matching.onTick(tick)
-    }
-
-    private fun refusal(
-        request: OrderRequest,
-        meta: InstrumentMeta,
-        expiryMs: Long,
-    ): String? {
-        if (clock.now() >= expiryMs) return "${request.symbol} expired at ${Instant.ofEpochMilli(expiryMs)}"
-        if (request !is OrderRequest.Market &&
-            request !is OrderRequest.Limit &&
-            request !is OrderRequest.Stop &&
-            request !is OrderRequest.StopLimit
-        ) {
-            return "$name does not accept ${request::class.simpleName} orders"
-        }
-        val max = meta.volumeMax ?: return null
-        val floored = request.quantity.divide(meta.volumeStep, 0, RoundingMode.DOWN).multiply(meta.volumeStep)
-        if (floored > max) {
-            return "quantity ${request.quantity.toPlainString()} is above venue volumeMax ${max.toPlainString()} " +
-                "for ${request.symbol}"
-        }
-        return null
     }
 
     private fun executed(

@@ -8,7 +8,7 @@ import java.math.BigDecimal
  * `pointSize`; fees and margin are in [currency]. [roll] is required for continuous streams of the
  * root and unused by explicit contract streams. [slippageTicks] is the adverse execution slip each
  * contract carries as its `slippagePoints` (ticks are the contract's points), applied when a run
- * uses instrument slippage.
+ * uses instrument slippage. [expiryGuardHours] before a contract's expiry only exits are accepted.
  */
 data class FuturesRoot(
     val root: String,
@@ -24,6 +24,7 @@ data class FuturesRoot(
     val margin: MarginTerms?,
     val roll: RollPolicy? = null,
     val slippageTicks: Int = 0,
+    val expiryGuardHours: Int = 24,
 ) {
     /** The venue prefix of [root]: `CME` for `CME:ES`. */
     val venue: String get() = root.substringBefore(':')
@@ -47,6 +48,6 @@ data class FuturesRoot(
             tradeStopsLevelPoints = 0,
             slippagePoints = slippageTicks,
             currency = currency,
-            derivative = FutureTerms(root, expiryMs, margin, exchangeFeePerContract, takerFeeRate),
+            derivative = FutureTerms(root, expiryMs, margin, exchangeFeePerContract, takerFeeRate, expiryGuardHours),
         )
 }

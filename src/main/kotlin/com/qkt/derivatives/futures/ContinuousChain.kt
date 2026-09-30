@@ -56,6 +56,15 @@ class ContinuousChain(
     private val measuredRolls: Map<Int, MeasuredRoll>
 
     init {
+        val guardMs = root.expiryGuardHours * 3_600_000L
+        val guarded = schedule.transitions.firstOrNull { schedule.contracts[it.fromIndex].expiryMs - it.atMs < guardMs }
+        if (guarded != null) {
+            throw IllegalArgumentException(
+                "futures root ${root.root} rolls ${schedule.contracts[guarded.fromIndex].symbol} at " +
+                    "${Instant.ofEpochMilli(guarded.atMs)}, inside its ${root.expiryGuardHours}h expiry guard " +
+                    "(expiryGuardHours); roll earlier or lower the guard",
+            )
+        }
         val measured = requireNotNull(history) { "no roll history for ${root.root}; build it with ${buildHint()}" }
         require(measured.policy == policy.key) {
             "roll history for ${root.root} was built for policy ${measured.policy}, " +
