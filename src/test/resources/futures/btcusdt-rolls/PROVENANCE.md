@@ -9,7 +9,9 @@ qkt fetch BINANCE_UM:BTCUSDT_240927 --tf 15m --from 2024-09-16 --to 2024-09-22
 qkt fetch BINANCE_UM:BTCUSDT_241227 --tf 15m --from 2024-09-16 --to 2024-09-22
 ```
 
-The catalog and roll history are trimmed to the two contracts in the slice. SHA-256:
+The catalog and roll history are trimmed to the contracts the slice needs: the two traded around
+the 2024-09-19 roll, plus `BTCUSDT_240628` and its 2024-06-20 roll so the stream is served from
+before the window (a stream starts at its first measured roll). SHA-256:
 
 ```
 f08e3d3546ee34d58a7411a84e7d847cb492a5325bc684c321a8799a482d1035  ./bars/BINANCE_UM/BTCUSDT_240927/15m/2024-09-16.csv
@@ -28,7 +30,7 @@ bb91d9ae403fa0859a661aa489f8983191d5c8be57db6e67ddd465d6e0829043  ./bars/BINANCE
 d95ac75049a65ff80238f2a75702dfc78dca8fb4ebdb40e4079491b43c587a6c  ./bars/BINANCE_UM/BTCUSDT_241227/15m/2024-09-21.csv
 55d200df6c6d56a5855f949c99feaaf65346e7c787f7690a157f046f3681172b  ./bars/BINANCE_UM/BTCUSDT_241227/15m/2024-09-22.csv
 b47151f6a380f434f872b6d1800490c9531a966ed99ba9e646ce92a7ba41f644  ./bars/BINANCE_UM/BTCUSDT_241227/15m/manifest.json
-74db7146d6f0947a79961cbb08957dd9221f858928ff6c637cc73c6100772cd8  ./contracts/BINANCE_UM/BTCUSDT.json
-d77a61efcfdd371cd82581440a1a71835654db8de005ec039b13c4c746fb3c49  ./contracts/BINANCE_UM/BTCUSDT.rolls.json
+3a543ba553f74789181596a653a2ef5605ef78e11672f9d09f2e2308da3c1f5d  ./contracts/BINANCE_UM/BTCUSDT.json
+00faa4820ab1a65f609d74287463a2a8c2891b468cc6c35100732fb58c28226c  ./contracts/BINANCE_UM/BTCUSDT.rolls.json
 0354fa9303426d30be88a91f20ac271b87927807028dc88ee781085cca9d7460  ./instruments.yaml
 ```

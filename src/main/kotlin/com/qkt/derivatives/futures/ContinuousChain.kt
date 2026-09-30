@@ -40,6 +40,13 @@ class ContinuousChain(
     /** The first contract this stream's adjustment is anchored at. */
     val anchorIndex: Int
 
+    /**
+     * The first instant this stream is served: the first measured roll. The anchor contract before it
+     * is never served — the roll into it was not measurable (on Binance before late 2023 it was not
+     * even listed yet), so its stretch could start before it traded.
+     */
+    val servedFromMs: Long
+
     private val adjustment: AdjustmentChain
 
     init {
@@ -58,6 +65,7 @@ class ContinuousChain(
             "roll history for ${root.root} skips the $missing roll of $symbol; rebuild it with ${buildHint()}"
         }
         anchorIndex = first + selector.offset
+        servedFromMs = schedule.transitions[first].atMs
         adjustment = AdjustmentChain(policy.adjust, run)
     }
 
@@ -82,13 +90,19 @@ class ContinuousChain(
         return PriceSpace(policy.adjust, adjustment.shiftFor(position), root.tickSize)
     }
 
-    /** The contiguous contract stretches covering `[fromMs, toMs)`, each clipped to its contract's expiry. */
+    /**
+     * The contiguous contract stretches covering `[fromMs, toMs)`, starting no earlier than
+     * [servedFromMs] and each clipped to its contract's expiry. Empty when the whole range is before
+     * the stream is served.
+     */
     fun segments(
         fromMs: Long,
         toMs: Long,
     ): List<ChainSegment> {
-        val rolls = schedule.transitions.map { it.atMs }.filter { it > fromMs && it < toMs }
-        return (listOf(fromMs) + rolls + toMs)
+        val start = maxOf(fromMs, servedFromMs)
+        if (start >= toMs) return emptyList()
+        val rolls = schedule.transitions.map { it.atMs }.filter { it > start && it < toMs }
+        return (listOf(start) + rolls + toMs)
             .zipWithNext()
             .mapNotNull { (a, b) -> indexAt(a)?.let { ChainSegment(it, a, minOf(b, schedule.contracts[it].expiryMs)) } }
             .filter { it.fromMs < it.toMs }

@@ -3,6 +3,13 @@
     "policy": "8d@08:00",
     "rolls": [
         {
+            "atMs": 1718870400000,
+            "from": "BTCUSDT_240628",
+            "to": "BTCUSDT_240927",
+            "fromPrice": "65966.9",
+            "toPrice": "68032.8"
+        },
+        {
             "atMs": 1726732800000,
             "from": "BTCUSDT_240927",
             "to": "BTCUSDT_241227",

@@ -12,6 +12,9 @@ class ContinuousChains(
 ) {
     private val built = HashMap<String, ContinuousChain>()
 
+    /** True when [symbol] names a continuous stream of a declared root; never builds the chain. */
+    fun isContinuous(symbol: String): Boolean = directory.rootOfContinuous(symbol) != null
+
     /** The chain behind [symbol] (`VENUE:ROOT@front`), or null when [symbol] is not a continuous stream. */
     fun chainFor(symbol: String): ContinuousChain? {
         built[symbol]?.let { return it }

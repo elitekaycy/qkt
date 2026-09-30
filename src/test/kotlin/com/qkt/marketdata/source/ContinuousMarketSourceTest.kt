@@ -46,6 +46,7 @@ class ContinuousMarketSourceTest {
                     ContractCatalog(
                         root.root,
                         listOf(
+                            ListedContract("BTCUSDT_240628", ms("2024-06-28T08:00:00Z")),
                             ListedContract("BTCUSDT_240927", ms("2024-09-27T08:00:00Z")),
                             ListedContract("BTCUSDT_241227", ms("2024-12-27T08:00:00Z")),
                         ),
@@ -57,6 +58,13 @@ class ContinuousMarketSourceTest {
                         root.root,
                         "8d@08:00",
                         listOf(
+                            RollRecord(
+                                ms("2024-06-20T08:00:00Z"),
+                                "BTCUSDT_240628",
+                                "BTCUSDT_240927",
+                                "65000",
+                                "65000",
+                            ),
                             RollRecord(
                                 ms("2024-09-19T08:00:00Z"),
                                 "BTCUSDT_240927",
@@ -139,6 +147,42 @@ class ContinuousMarketSourceTest {
     @Test
     fun `next without a roll history for it fails at request time`() {
         assertThatThrownBy { source.bars("BINANCE_UM:BTCUSDT@next", quarter, window) }.hasMessageContaining("@next")
+    }
+
+    @Test
+    fun `plain symbols keep the inner source's per-symbol capabilities and tick path`() {
+        val tagged = TaggedSource()
+        val wrapped = ContinuousMarketSource(tagged, ContinuousChains(requireNotNull(registry.futures())), registry)
+        assertThat(wrapped.capabilitiesFor("EXNESS:XAUUSD")).containsExactly(MarketSourceCapability.VOLUME)
+        assertThat(wrapped.ticks("EXNESS:XAUUSD", window).single().price).isEqualByComparingTo("1")
+    }
+
+    @Test
+    fun `supports never builds a chain`() {
+        val broken = ContractCatalogRegistry(listOf(root), emptyMap(), emptyMap())
+        val wrapped = ContinuousMarketSource(inner, ContinuousChains(requireNotNull(broken.futures())), broken)
+        assertThat(wrapped.supports("BINANCE_UM:BTCUSDT@front")).isTrue()
+    }
+
+    /** Answers `ticks` with price 1 and `tickSlice` with price 2, so the path taken is visible. */
+    private class TaggedSource : MarketSource {
+        override val name = "tagged"
+        override val capabilities = setOf(MarketSourceCapability.TICKS, MarketSourceCapability.VOLUME)
+
+        override fun supports(symbol: String) = true
+
+        override fun capabilitiesFor(symbol: String) = setOf(MarketSourceCapability.VOLUME)
+
+        override fun ticks(
+            symbol: String,
+            range: TimeRange,
+        ) = sequenceOf(com.qkt.marketdata.Tick(symbol, BigDecimal.ONE, range.from.toEpochMilli()))
+
+        override fun tickSlice(
+            symbol: String,
+            fromMs: Long,
+            toMs: Long,
+        ) = sequenceOf(com.qkt.marketdata.Tick(symbol, BigDecimal("2"), fromMs))
     }
 
     private class FakeBars(

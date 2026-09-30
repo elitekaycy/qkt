@@ -33,6 +33,7 @@ class ContinuousFuturesBacktestTest {
     private fun backtest(
         dir: Path,
         timeframe: String,
+        extra: List<String> = emptyList(),
     ): Pair<Int, String> {
         val strategy = dir.resolve("s.qkt")
         Files.writeString(
@@ -68,6 +69,7 @@ class ContinuousFuturesBacktestTest {
                             "--no-fetch",
                             "--allow-incomplete",
                             "--json",
+                            *extra.toTypedArray(),
                         ),
                     ),
                 ).run()
@@ -106,5 +108,14 @@ class ContinuousFuturesBacktestTest {
         val (code, output) = backtest(dir, "1d")
         assertThat(code).isNotEqualTo(ExitCodes.SUCCESS)
         assertThat(output).contains("2024-09-19T08:00:00Z").contains("roll")
+    }
+
+    @Test
+    fun `tick-resolved fills are refused for a continuous stream`(
+        @TempDir dir: Path,
+    ) {
+        val (code, output) = backtest(dir, "15m", listOf("--bars", "--tick-fills"))
+        assertThat(code).isNotEqualTo(ExitCodes.SUCCESS)
+        assertThat(output).contains("--tick-fills").contains("continuous")
     }
 }
