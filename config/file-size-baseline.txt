@@ -22,7 +22,7 @@
 520 src/main/kotlin/com/qkt/connector/bybit/BybitClient.kt
 519 src/test/kotlin/com/qkt/connector/mt5/MT5OrderTranslatorTest.kt
 476 src/test/kotlin/com/qkt/broker/CompositeBrokerTest.kt
-474 src/main/kotlin/com/qkt/backtest/Backtest.kt
+471 src/main/kotlin/com/qkt/backtest/Backtest.kt
 467 src/main/kotlin/com/qkt/connector/bybit/linear/BybitLinearBroker.kt
 453 src/main/kotlin/com/qkt/cli/daemon/StrategyHandle.kt
 452 src/main/kotlin/com/qkt/connector/bybit/spot/BybitSpotBroker.kt

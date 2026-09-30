@@ -1,10 +1,14 @@
 package com.qkt.backtest
 
 import com.qkt.common.FixedClock
+import com.qkt.derivatives.futures.ContinuousChains
+import com.qkt.instrument.InstrumentRegistry
+import com.qkt.instrument.NoopInstrumentRegistry
 import com.qkt.marketdata.hub.HubMarketSource
 import com.qkt.marketdata.hub.hubRoot
 import com.qkt.marketdata.hub.validateHubStreams
 import com.qkt.marketdata.source.CompositeMarketSource
+import com.qkt.marketdata.source.ContinuousMarketSource
 import com.qkt.marketdata.source.LocalMarketSource
 import com.qkt.marketdata.source.MacroMarketSource
 import com.qkt.marketdata.source.MarketSource
@@ -18,7 +22,8 @@ import java.time.Instant
 
 /**
  * The [MarketSource] a store-backed backtest reads: the local tick/bar store, with `MACRO:` and
- * `HUB:` streams routed to their own point-in-time sources only when [symbols] declares one.
+ * `HUB:` streams routed to their own point-in-time sources only when [symbols] declares one, and
+ * futures streams stitched from per-contract data when [instruments] declares futures.
  * Fails before the first tick when a declared hub stream is malformed.
  */
 internal fun storeMarketSource(
@@ -29,8 +34,9 @@ internal fun storeMarketSource(
     barStore: LocalBarStore?,
     forceBars: Boolean,
     binaryBarStore: BinaryBarStore?,
+    instruments: InstrumentRegistry = NoopInstrumentRegistry,
 ): MarketSource {
-    val localSource =
+    val storeSource =
         LocalMarketSource(
             store,
             FixedClock(time = to.toEpochMilli()),
@@ -39,6 +45,17 @@ internal fun storeMarketSource(
             // ticks (or the fetched CSV bar store for bars-only venues), unchanged.
             binaryBarStore = if (forceBars) binaryBarStore else null,
         )
+    // Futures streams (continuous `ROOT@front` or listed contracts) read per-contract data through the
+    // continuous source; a run with none builds exactly the source it built before futures existed.
+    val futures = instruments.futures()
+    val localSource =
+        if (futures != null &&
+            symbols.any { futures.rootOfContinuous(it) != null || instruments.lookup(it)?.derivative != null }
+        ) {
+            ContinuousMarketSource(storeSource, ContinuousChains(futures), instruments)
+        } else {
+            storeSource
+        }
     // MACRO: streams (daily yields/real rates) read from the macro store via a point-in-time
     // source, and HUB: streams read a qkt-data-hub store the same way. Both are routed only
     // when a run actually declares one, so a run that binds neither constructs exactly the
