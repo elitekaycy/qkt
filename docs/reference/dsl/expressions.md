@@ -130,9 +130,9 @@ THEN CLOSE btc
 
 The fields are read as of the bar's close. The bar that closes at the roll instant already names
 the new contract (its prices are still the old contract's), so `days_to_roll` never reaches 0 while
-the old contract is followed. A flat-through-roll threshold must therefore be longer than one bar:
-`< 0.5` works for bars up to 12 hours only when the roll is not on a bar boundary — with `EVERY 1d`
-bars use `< 2`, with `EVERY 12h` use `< 1`.
+the old contract is followed: the last bar that does follow it closes one bar before the roll, with
+`days_to_roll` equal to the bar length. A flat-through-roll threshold must therefore be longer than one
+bar — `< 0.5` for bars shorter than 12 hours, `< 1` for `EVERY 12h`, `< 2` for `EVERY 1d`.
 
 ```qkt
 -- Round a computed stop to the venue grid and refuse to size below the minimum lot.
