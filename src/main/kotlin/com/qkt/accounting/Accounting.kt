@@ -8,56 +8,6 @@ import java.util.concurrent.ConcurrentHashMap
 
 private fun normalizeCurrencyPair(raw: String): String = raw.uppercase().filter { it in 'A'..'Z' }
 
-// A 3-5 letter currency code — equivalent to the regex [A-Za-z]{3,5}, but as a char check so the
-// per-tick MoneyAmount construction compiles no pattern and allocates no Matcher (that regex
-// dominated the backtest hot path). e.g. "USD" -> true, "us" -> false, "DOLLAR" -> false.
-private fun isCurrencyCode(code: String): Boolean {
-    val trimmed = code.trim()
-    return trimmed.length in 3..5 && trimmed.all { it in 'A'..'Z' || it in 'a'..'z' }
-}
-
-@JvmInline
-value class AccountCurrency(
-    val code: String,
-) {
-    init {
-        require(isCurrencyCode(code)) {
-            "account currency must be a 3-5 letter code: $code"
-        }
-    }
-
-    val normalized: String get() = code.trim().uppercase()
-
-    override fun toString(): String = normalized
-}
-
-data class MoneyAmount(
-    val amount: BigDecimal,
-    val currency: String,
-) {
-    init {
-        require(isCurrencyCode(currency)) {
-            "money currency must be a 3-5 letter code: $currency"
-        }
-    }
-
-    val normalizedCurrency: String get() = currency.trim().uppercase()
-}
-
-data class FxConversion(
-    val from: String,
-    val to: String,
-    val rate: BigDecimal,
-    val timestamp: Long,
-    val source: String,
-)
-
-data class ConvertedMoney(
-    val native: MoneyAmount,
-    val account: MoneyAmount,
-    val conversion: FxConversion?,
-)
-
 enum class FxMissingPolicy {
     WARN,
     FAIL,
@@ -148,8 +98,16 @@ class AccountingEngine(
             configuredPair(from = quote, to = accountCurrency) != null
     }
 
+    /** [symbol]'s quote currency: explicit when declared, else inferred from its suffix, else null. */
+    fun quoteCurrencyOf(symbol: String): String? =
+        currencyOf(symbol)?.uppercase() ?: QuoteCurrencyGuard.quoteOf(symbol)?.uppercase()
+
+    /** The currency [symbol]'s P&L is booked in natively; the account currency when it cannot be told. */
     fun pnlCurrencyFor(symbol: String): String =
-        currencyOf(symbol)?.uppercase() ?: QuoteCurrencyGuard.quoteOf(symbol)?.uppercase() ?: accountCurrency
+        pnlCurrencyCache.getOrPut(symbol) {
+            quoteCurrencyOf(symbol)
+                ?: accountCurrency
+        }
 
     fun convertPnl(
         symbol: String,
@@ -179,7 +137,7 @@ class AccountingEngine(
         timestamp: Long,
         referencePrice: BigDecimal?,
     ): BigDecimal {
-        val from = pnlCurrencyCache.getOrPut(symbol) { pnlCurrencyFor(symbol) }
+        val from = pnlCurrencyFor(symbol)
         val scaled = nativeAmount.setScale(Money.SCALE, Money.ROUNDING)
         if (scaled.signum() == 0 || compatible(from, accountCurrency)) return scaled
         return convertPnl(symbol, nativeAmount, timestamp, referencePrice).account.amount
@@ -198,7 +156,7 @@ class AccountingEngine(
         timestamp: Long,
         referencePrice: BigDecimal,
     ): BigDecimal {
-        val from = pnlCurrencyCache.getOrPut(symbol) { pnlCurrencyFor(symbol) }
+        val from = pnlCurrencyFor(symbol)
         if (compatible(from, accountCurrency)) return BigDecimal.ONE
         return requireNotNull(convertPnl(symbol, BigDecimal.ONE, timestamp, referencePrice).conversion) {
             "missing FX conversion $from->$accountCurrency at $timestamp for $symbol; refusing to size order"

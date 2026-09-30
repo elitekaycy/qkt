@@ -28,16 +28,18 @@ object QuoteCurrencyGuard {
     /**
      * Throws when any of [qktSymbols] is quoted in a known incompatible currency and
      * [canConvert] reports no conversion path. For example, `EXNESS:USDJPY` fails under
-     * the default converter while `EXNESS:XAUUSD` and `BYBIT_SPOT:BTCUSDT` pass.
+     * the default converter while `EXNESS:XAUUSD` and `BYBIT_SPOT:BTCUSDT` pass. [currencyOf]
+     * names each symbol's quote currency (null to skip it); by default it is inferred from the suffix.
      */
     fun assertAccountQuoted(
         qktSymbols: Collection<String>,
         accountCurrency: String = "USD",
         canConvert: (qktSymbol: String, quoteCurrency: String) -> Boolean = { _, _ -> false },
+        currencyOf: (qktSymbol: String) -> String? = ::quoteOf,
     ) {
         val offending =
             qktSymbols.mapNotNull { qktSymbol ->
-                val quote = quoteOf(qktSymbol) ?: return@mapNotNull null
+                val quote = currencyOf(qktSymbol) ?: return@mapNotNull null
                 val compatible =
                     quote.equals(accountCurrency, ignoreCase = true) ||
                         (accountCurrency.uppercase() in DOLLAR_FAMILY && quote in DOLLAR_FAMILY)

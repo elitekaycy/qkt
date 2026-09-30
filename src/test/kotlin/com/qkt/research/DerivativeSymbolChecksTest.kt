@@ -57,7 +57,7 @@ class DerivativeSymbolChecksTest {
     }
 
     @Test
-    fun `dollar-family fees and fee-free foreign roots pass`() {
+    fun `dollar-family fees and fee-free foreign roots pass the fee check`() {
         val usd = ContractCatalogRegistry(listOf(root("USD", "1.29")), emptyMap())
         assertThatCode {
             requireDerivativeSymbolsResolvable(listOf("CME:ES@front"), accounting(usd), usd)
