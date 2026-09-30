@@ -43,10 +43,6 @@ class PriceSpace(
         side: Side,
     ): BigDecimal = snap(toRaw(level), if (side == Side.BUY) RoundingMode.CEILING else RoundingMode.FLOOR)
 
-    /** A price [distance] in the continuous series as a contract-price distance. */
-    fun distanceToContract(distance: BigDecimal): BigDecimal =
-        if (adjustment == PriceAdjustment.RATIO) distance.divide(shift, Money.CONTEXT) else distance
-
     private fun toRaw(level: BigDecimal): BigDecimal {
         val raw =
             when (adjustment) {
