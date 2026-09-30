@@ -3,6 +3,7 @@ package com.qkt.derivatives.futures
 import com.qkt.instrument.ContinuousSelector
 import com.qkt.instrument.ContractCatalog
 import com.qkt.instrument.FuturesRoot
+import com.qkt.instrument.PriceAdjustment
 import com.qkt.instrument.RollHistory
 import java.time.Instant
 
@@ -33,6 +34,9 @@ class ContinuousChain(
 
     /** The continuous symbol, e.g. `BINANCE_UM:BTCUSDT@front`. */
     val symbol: String = selector.symbolFor(root.root)
+
+    /** How this stream's series is adjusted across rolls. */
+    val adjust: PriceAdjustment get() = policy.adjust
 
     /** When each contract is front. */
     val schedule: RollSchedule = RollSchedule(catalog.contracts, policy)
