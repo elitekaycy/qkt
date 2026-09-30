@@ -226,7 +226,7 @@ class TradingPipeline(
             latencyEnabled,
             strategies,
         )
-    private val nonExecution = NonExecutionAccounting(riskState, bus, accounting, clock)
+    private val nonExecution = NonExecutionAccounting(riskState, bus, accounting, clock).also { it.subscribeCosts() }
     private val equitySampler = AccountEquitySeriesSampler(strategies, candleHub, riskState)
     private val candleCloser: CandleWindowCloser
     private val tickIngest: TickIngest

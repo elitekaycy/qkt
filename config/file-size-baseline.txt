@@ -81,7 +81,6 @@
 227 src/test/kotlin/com/qkt/dsl/compile/StackEnginePersistenceTest.kt
 225 src/main/kotlin/com/qkt/connector/mt5/MT5StateRecovery.kt
 223 src/main/kotlin/com/qkt/tools/parity/ParityDukascopyMt5Xauusd.kt
-221 src/main/kotlin/com/qkt/bus/EventBus.kt
 216 src/main/kotlin/com/qkt/evidence/Evidence.kt
 212 src/main/kotlin/com/qkt/connector/bybit/linear/BybitLinearStateRecovery.kt
 210 src/main/kotlin/com/qkt/cli/daemon/portfolio/PortfolioSupervisor.kt
