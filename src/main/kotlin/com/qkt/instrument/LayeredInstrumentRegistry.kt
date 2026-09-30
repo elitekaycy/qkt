@@ -19,4 +19,6 @@ class LayeredInstrumentRegistry(
         }
         return null
     }
+
+    override fun missingReason(qktSymbol: String): String? = layers.firstNotNullOfOrNull { it.missingReason(qktSymbol) }
 }

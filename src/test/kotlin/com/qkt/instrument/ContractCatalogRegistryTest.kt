@@ -83,4 +83,24 @@ class ContractCatalogRegistryTest {
             ContractCatalogRegistry(listOf(btc, alias), catalogs)
         }.hasMessageContaining("BINANCE_UM:BTCUSDT_240927")
     }
+
+    @Test
+    fun `a contract of a declared root missing from its catalog explains itself`() {
+        val reason = registry.missingReason("BINANCE_UM:BTCUSDT_241227")
+        assertThat(
+            reason,
+        ).contains("BINANCE_UM:BTCUSDT").contains("contracts/BINANCE_UM/BTCUSDT.json").contains("--catalog")
+    }
+
+    @Test
+    fun `an unknown selector of a declared root explains itself`() {
+        assertThat(registry.missingReason("BINANCE_UM:BTCUSDT@third")).contains("front").contains("next")
+    }
+
+    @Test
+    fun `symbols of undeclared roots and resolvable symbols have no reason`() {
+        assertThat(registry.missingReason("EXNESS:XAUUSD")).isNull()
+        assertThat(registry.missingReason("BINANCE_UM:ETHUSDT_240927")).isNull()
+        assertThat(registry.missingReason("BINANCE_UM:BTCUSDT_240927")).isNull()
+    }
 }

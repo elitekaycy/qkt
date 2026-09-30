@@ -16,10 +16,15 @@ import java.nio.file.Path
  * built-in standard table. A run without an instruments file uses the standard table alone.
  */
 internal object BacktestInstruments {
-    /** The registry for [dataRoot], reading [explicit] (`--instruments`) or `<dataRoot>/instruments.yaml`. */
+    /**
+     * The registry for [dataRoot], reading [explicit] (`--instruments`) or `<dataRoot>/instruments.yaml`.
+     * Fails before any data is read when one of [symbols] belongs to a declared futures root but
+     * cannot be resolved (e.g. a contract missing from its catalog).
+     */
     fun registry(
         dataRoot: Path,
         explicit: Path?,
+        symbols: Collection<String> = emptyList(),
     ): InstrumentRegistry {
         val path = explicit ?: dataRoot.resolve("instruments.yaml")
         if (!Files.exists(path)) {
@@ -35,8 +40,21 @@ internal object BacktestInstruments {
                     ContractCatalogRegistry.load(roots, ContractCatalogStore(dataRoot)),
                 )
             }
-        return LayeredInstrumentRegistry(
-            listOf(YamlInstrumentRegistry.load(path)) + futures + StandardInstrumentRegistry,
-        )
+        val registry =
+            LayeredInstrumentRegistry(
+                listOf(YamlInstrumentRegistry.load(path)) + futures + StandardInstrumentRegistry,
+            )
+        val unresolved =
+            symbols.firstNotNullOfOrNull { s ->
+                if (registry.lookup(s) ==
+                    null
+                ) {
+                    registry.missingReason(s)
+                } else {
+                    null
+                }
+            }
+        if (unresolved != null) throw BacktestContext.Companion.SetupError(unresolved)
+        return registry
     }
 }

@@ -5,7 +5,8 @@ import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.QuoteCurrencyGuard
 
 /**
- * Fails a replay up front for derivative symbols qkt cannot book correctly: a continuous stream
+ * Fails a replay up front for derivative symbols qkt cannot book correctly: a symbol a registry
+ * claims but cannot resolve (a contract missing from its root's catalog), a continuous stream
  * (`VENUE:ROOT@selector`) whose root is not declared, or an exchange fee in a currency the account
  * cannot book 1:1. CFD and spot symbols are not examined.
  */
@@ -17,6 +18,7 @@ internal fun requireDerivativeSymbolsResolvable(
     for (symbol in symbols.distinct()) {
         val meta = instruments.lookup(symbol)
         if (meta == null) {
+            instruments.missingReason(symbol)?.let { throw IllegalArgumentException(it) }
             require('@' !in symbol) {
                 "$symbol is a continuous futures stream but its root is not declared under 'futures:' in instruments.yaml"
             }

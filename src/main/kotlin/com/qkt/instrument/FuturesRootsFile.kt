@@ -19,6 +19,12 @@ object FuturesRootsFile {
     fun load(path: Path): List<FuturesRoot> {
         val root = Load(LoadSettings.builder().build()).loadFromString(Files.readString(path))
         check(root is Map<*, *>) { "$path: top-level must be a map" }
+        val nearMiss =
+            root.keys.map { it.toString() }.firstOrNull {
+                it != "futures" &&
+                    it.lowercase().startsWith("future")
+            }
+        require(nearMiss == null) { "$path: unknown section '$nearMiss'; did you mean 'futures:'?" }
         val list = root["futures"] ?: return emptyList()
         check(list is List<*>) { "$path: 'futures' must be a list" }
         val roots =

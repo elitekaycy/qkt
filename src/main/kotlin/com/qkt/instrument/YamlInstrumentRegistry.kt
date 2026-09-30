@@ -50,7 +50,14 @@ class YamlInstrumentRegistry private constructor(
             check(root is Map<*, *>) { "instruments.yaml: top-level must be a map (got ${root?.let { it::class }})" }
             val list =
                 root["instruments"] as? List<*>
-                    ?: error("instruments.yaml: missing 'instruments' list")
+                    ?: if (root.containsKey(
+                            "futures",
+                        )
+                    ) {
+                        emptyList<Any>()
+                    } else {
+                        error("instruments.yaml: missing 'instruments' list")
+                    }
             val table = mutableMapOf<String, InstrumentMeta>()
             for ((i, raw) in list.withIndex()) {
                 check(raw is Map<*, *>) { "instruments.yaml: entry $i must be a map" }

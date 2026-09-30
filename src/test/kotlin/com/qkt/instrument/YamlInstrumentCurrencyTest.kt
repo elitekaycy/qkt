@@ -42,4 +42,16 @@ class YamlInstrumentCurrencyTest {
     ) {
         assertThat(registry(dir, "").lookup("EXNESS:US500")?.currency).isNull()
     }
+
+    @Test
+    fun `a file with only a futures section has no instruments entries`(
+        @TempDir dir: Path,
+    ) {
+        val f = dir.resolve("instruments.yaml")
+        Files.writeString(
+            f,
+            "futures:\n  - { root: CME:ES, currency: USD, multiplier: 50, tickSize: 0.25, volumeStep: 1, volumeMin: 1 }\n",
+        )
+        assertThat(YamlInstrumentRegistry.load(f).all()).isEmpty()
+    }
 }
