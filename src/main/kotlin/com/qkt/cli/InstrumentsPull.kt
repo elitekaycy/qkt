@@ -47,6 +47,19 @@ internal object InstrumentsPull {
         ).values.sortedBy { it.qktSymbol }
     }
 
+    /**
+     * Writes [pulled] merged over the `instruments:` entries at [path], keeping every other top-level
+     * section of the file (such as `futures:`) exactly as it was.
+     */
+    fun write(
+        path: Path,
+        pulled: List<InstrumentMeta>,
+        source: String,
+    ) {
+        val others = if (Files.exists(path)) YamlSections.except(Files.readString(path), "instruments") else ""
+        Files.writeString(path, render(merge(path, pulled), source) + others)
+    }
+
     fun render(
         entries: List<InstrumentMeta>,
         source: String,
@@ -111,8 +124,13 @@ internal object InstrumentsPull {
                 return usage(e.message ?: e.toString())
             }
         val out = args.option("out")?.let(Path::of)
-        val yaml = render(if (out == null) pulled else merge(out, pulled), source = configPath.toString())
-        if (out == null) print(yaml) else Files.writeString(out, yaml)
+        if (out ==
+            null
+        ) {
+            print(render(pulled, source = configPath.toString()))
+        } else {
+            write(out, pulled, configPath.toString())
+        }
         if (out != null) println("qkt: wrote ${pulled.size} instrument spec(s) to $out")
         return ExitCodes.SUCCESS
     }
