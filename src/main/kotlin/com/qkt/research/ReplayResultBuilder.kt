@@ -83,8 +83,11 @@ internal class ReplayResultBuilder(
             rejections = recorder.rejections.toList(),
             halts = recorder.halts.toList(),
             finalPositions = books.positions.allPositions(),
-            global = globalReport,
-            perStrategy = perStrategy,
+            global = globalReport.copy(rollCostsPaid = recorder.rollCostsPaid()),
+            perStrategy =
+                perStrategy.mapValues { (id, report) ->
+                    report.copy(rollCostsPaid = recorder.rollCostsPaid(id))
+                },
             cadence = cadence,
             latencyReport = if (latencyEnabled) pipeline.latency.snapshot() else null,
             conditionalAutocorr = analytics.autocorr.snapshot(),

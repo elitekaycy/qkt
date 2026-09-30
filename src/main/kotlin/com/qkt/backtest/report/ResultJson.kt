@@ -120,6 +120,9 @@ internal object ResultJson {
             if (result.global.monteCarlo != null) {
                 append(", \"monteCarloFanCsv\": \"${MonteCarloFanCsv.FILE_NAME}\"")
             }
+            FuturesReportFiles.render(result).forEach { (name, _) ->
+                append(", \"${FuturesReportFiles.keys.getValue(name)}\": \"$name\"")
+            }
             append(", \"html\": \"report.html\"")
             append("}")
         }
