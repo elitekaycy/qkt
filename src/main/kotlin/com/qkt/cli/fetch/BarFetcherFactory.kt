@@ -6,10 +6,11 @@ import com.qkt.connector.mt5.MT5BrokerProfileLoader
 import com.qkt.connector.mt5.MT5DefaultProfiles
 import com.qkt.connector.mt5.MT5Symbol
 import com.qkt.connector.mt5.marketdata.Mt5BarFetcher
+import com.qkt.marketdata.store.binance.BinanceVisionClient
 import java.nio.file.Path
 
 /**
- * The fetcher for [broker]: Bybit spot/linear directly, anything else as an MT5 broker profile
+ * The fetcher for [broker]: Bybit spot/linear and Binance USDⓈ-M directly, anything else as an MT5 broker profile
  * resolved from `--config` ([configOption]) or the default config. Null after printing the reason.
  */
 internal fun buildFetcher(
@@ -21,6 +22,7 @@ internal fun buildFetcher(
             BybitFetcher(BybitKlineClient(category = "spot"))
         "BYBIT_LINEAR" ->
             BybitFetcher(BybitKlineClient(category = "linear"))
+        BinanceUmFetcher.VENUE -> BinanceUmFetcher(BinanceVisionClient())
         else -> {
             // Treat as an MT5 broker — load profile and construct Mt5BarFetcher.
             val configPath =
