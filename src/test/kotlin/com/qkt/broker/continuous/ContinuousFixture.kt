@@ -1,5 +1,6 @@
 package com.qkt.broker.continuous
 
+import com.qkt.broker.InstrumentSlippage
 import com.qkt.broker.exchange.ExchangeSimulator
 import com.qkt.bus.EventBus
 import com.qkt.common.FixedClock
@@ -7,6 +8,7 @@ import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.Side
 import com.qkt.derivatives.futures.ContinuousChains
 import com.qkt.events.BrokerEvent
+import com.qkt.events.CostIncurred
 import com.qkt.events.TickEvent
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.TimeInForce
@@ -19,6 +21,8 @@ import com.qkt.instrument.RollHistory
 import com.qkt.instrument.RollPolicy
 import com.qkt.instrument.RollRecord
 import com.qkt.marketdata.Tick
+import com.qkt.pnl.ContractFeeCommission
+import com.qkt.pnl.NoCommission
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalTime
@@ -30,11 +34,15 @@ import java.time.LocalTime
 internal class ContinuousFixture(
     adjust: PriceAdjustment = PriceAdjustment.PANAMA,
     startIso: String = "2024-09-20T00:00:00Z",
+    slippageTicks: Int = 0,
+    takerFeeRate: String = "0",
 ) {
     val front = "BINANCE_UM:BTCUSDT@front"
     val clock = FixedClock(time = ms(startIso))
     val bus = EventBus(clock, MonotonicSequenceGenerator())
     val events = mutableListOf<BrokerEvent>()
+    val costs = mutableListOf<CostIncurred>()
+    val ledger = RollLedger()
     private val root =
         FuturesRoot(
             root = "BINANCE_UM:BTCUSDT",
@@ -46,9 +54,10 @@ internal class ContinuousFixture(
             volumeMax = null,
             calendar = null,
             exchangeFeePerContract = BigDecimal.ZERO,
-            takerFeeRate = BigDecimal.ZERO,
+            takerFeeRate = BigDecimal(takerFeeRate),
             margin = null,
             roll = RollPolicy(8, LocalTime.of(8, 0), adjust),
+            slippageTicks = slippageTicks,
         )
     val registry =
         ContractCatalogRegistry(
@@ -94,8 +103,10 @@ internal class ContinuousFixture(
             clock = clock,
             chains = ContinuousChains(requireNotNull(registry.futures())),
             symbols = setOf(front),
+            ledger = ledger,
             venueFactory = { venueBus, prices ->
-                val exchange = ExchangeSimulator(venueBus, clock, prices, registry)
+                val fees = ContractFeeCommission(registry, NoCommission)
+                val exchange = ExchangeSimulator(venueBus, clock, prices, registry, InstrumentSlippage, fees)
                 ContractVenue(exchange, exchange::onTick)
             },
         )
@@ -105,6 +116,7 @@ internal class ContinuousFixture(
         bus.subscribe<BrokerEvent.OrderRejected> { events += it }
         bus.subscribe<BrokerEvent.OrderCancelled> { events += it }
         bus.subscribe<BrokerEvent.OrderFilled> { events += it }
+        bus.subscribe<CostIncurred> { costs += it }
     }
 
     /** Publishes an engine tick on the continuous stream at [price], at [atMs]. */

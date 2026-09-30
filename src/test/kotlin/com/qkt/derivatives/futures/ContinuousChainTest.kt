@@ -127,4 +127,16 @@ class ContinuousChainTest {
             ContinuousChain(root, catalog.copy(contracts = catalog.contracts + later), gappy, ContinuousSelector.FRONT)
         }.hasMessageContaining("skips")
     }
+
+    @Test
+    fun `each measured roll is found by the contract it leaves`() {
+        val next = ContinuousChain(root, catalog, history, ContinuousSelector.NEXT)
+
+        assertThat(front.rollOutOf(0)).isEqualTo(
+            MeasuredRoll(ms("2024-09-19T08:00:00Z"), RollPrices(BigDecimal("63000"), BigDecimal("63800"))),
+        )
+        assertThat(front.rollOutOf(1).atMs).isEqualTo(ms("2024-12-19T08:00:00Z"))
+        assertThat(next.rollOutOf(1).prices).isEqualTo(RollPrices(BigDecimal("63800"), BigDecimal("64700")))
+        assertThatThrownBy { front.rollOutOf(2) }.hasMessageContaining("BINANCE_UM:BTCUSDT_250328")
+    }
 }

@@ -24,7 +24,8 @@ data class ChainSegment(
  * fails with the command that measures more rolls.
  */
 class ContinuousChain(
-    private val root: FuturesRoot,
+    /** The root this stream follows. */
+    val root: FuturesRoot,
     catalog: ContractCatalog,
     history: RollHistory?,
     private val selector: ContinuousSelector,
@@ -52,6 +53,7 @@ class ContinuousChain(
     val servedFromMs: Long
 
     private val adjustment: AdjustmentChain
+    private val measuredRolls: Map<Int, MeasuredRoll>
 
     init {
         val measured = requireNotNull(history) { "no roll history for ${root.root}; build it with ${buildHint()}" }
@@ -71,6 +73,11 @@ class ContinuousChain(
         anchorIndex = first + selector.offset
         servedFromMs = schedule.transitions[first].atMs
         adjustment = AdjustmentChain(policy.adjust, run)
+        measuredRolls =
+            run.withIndex().associate { (k, roll) ->
+                val transition = schedule.transitions[first + k]
+                transition.fromIndex + selector.offset to MeasuredRoll(transition.atMs, roll)
+            }
     }
 
     /** Contract index followed at [tMs], or null when this stream has no contract then. */
@@ -93,6 +100,12 @@ class ContinuousChain(
         }
         return PriceSpace(policy.adjust, adjustment.shiftFor(position), root.tickSize)
     }
+
+    /** The measured roll out of contract [index]: its instant and reference prices; fails when unmeasured. */
+    fun rollOutOf(index: Int): MeasuredRoll =
+        requireNotNull(measuredRolls[index]) {
+            "$symbol has no measured roll out of ${contractSymbol(index)}; build more with ${buildHint()}"
+        }
 
     /**
      * The contiguous contract stretches covering `[fromMs, toMs)`, starting no earlier than
