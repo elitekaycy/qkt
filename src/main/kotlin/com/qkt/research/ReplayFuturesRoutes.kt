@@ -10,7 +10,7 @@ import com.qkt.common.FixedClock
 import com.qkt.common.TradingCalendar
 import com.qkt.derivatives.futures.ContinuousChains
 import com.qkt.events.TickEvent
-import com.qkt.instrument.FutureTerms
+import com.qkt.instrument.futuresSymbols
 import com.qkt.marketdata.MarketPriceProvider
 import com.qkt.marketdata.source.SymbolPattern
 import com.qkt.pnl.ContractFeeCommission
@@ -42,10 +42,11 @@ internal fun replayFuturesRoutes(
     symbols: Collection<String>,
 ): ReplayFuturesRoutes {
     val instruments = books.instruments
-    val directory = instruments.futures() ?: return ReplayFuturesRoutes(emptyList(), emptySet())
-    val continuous = symbols.filter { directory.rootOfContinuous(it) != null }.toSet()
-    val listed = symbols.filter { (instruments.lookup(it)?.derivative as? FutureTerms)?.expiryMs != null }.toSet()
-    if (continuous.isEmpty() && listed.isEmpty()) return ReplayFuturesRoutes(emptyList(), emptySet())
+    val futures = instruments.futuresSymbols(symbols)
+    val directory = instruments.futures()
+    if (futures.isEmpty() || directory == null) return ReplayFuturesRoutes(emptyList(), emptySet())
+    val continuous = futures.filter { directory.rootOfContinuous(it) != null }.toSet()
+    val listed = futures - continuous
     warnIgnoredSimulation(executionConfig)
     val fees = ContractFeeCommission(instruments, NoCommission)
 
