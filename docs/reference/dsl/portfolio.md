@@ -31,17 +31,17 @@ IMPORT '<path>' AS <alias> [ HOLD ]
 ]
 
 [ ALLOCATE
-    METHOD regime_weighted
+    METHOD regime_weighted [ REBALANCE EVERY <duration> ]
     <state-name> -> <alias> <weight>[, <alias> <weight> ...]
     [ ... more states ... ]
 ]
 
 RULES
-    [ WHEN <condition> ] RUN <alias>
+    [ WHEN <condition> ] RUN <alias> [ WEIGHT <fraction> ] [ OVERRIDE { <key> = <literal>, ... } ]
     [ ... more RUN rules ... ]
 ```
 
-The shape is similar to `STRATEGY`, but with `IMPORT` declaring child strategies and `RUN <alias>` actions. `REGIMES` + `ALLOCATE` add adaptive capital allocation on top of the on/off gating.
+The shape is similar to `STRATEGY`, but with `IMPORT` declaring child strategies and `RUN <alias>` actions, and without `DEFAULTS`, `PARAM` or `LET` blocks. `REGIMES` + `ALLOCATE` add adaptive capital allocation on top of the on/off gating; `CAPITAL` on the header is what `WEIGHT` and `ALLOCATE` divide.
 
 ## Basic — regime-gated switching
 
@@ -95,8 +95,74 @@ RULES
 - `ALLOCATE METHOD regime_weighted` maps each state to per-alias weights. Weights are fractions of normal risk (1.0 = full size, 0.0 = suppressed).
 - `cash` is reserved and ignored as an alias; use it to park risk-off capital.
 - All imported aliases receive a weight in every state. Missing aliases default to `0.0`.
+- `REBALANCE EVERY <duration>` (optional) re-applies the current state's weights on that clock interval as well as on a state change.
 
 The weights are evaluated on every closed candle and applied to new orders through the same book-risk seam used by drawdown de-risking, so backtest and live use identical scaling.
+
+```qkt
+PORTFOLIO btc_rebalanced VERSION 1 CAPITAL 10000
+
+SYMBOLS
+    btc = BACKTEST:BTCUSDT EVERY 1h
+
+IMPORT 'trend.qkt'   AS trend
+IMPORT 'meanrev.qkt' AS meanrev
+
+REGIMES
+    NAME market_regime
+    STATE trend WHEN adx(btc, 14) > 25
+    STATE range DEFAULT
+
+ALLOCATE
+    METHOD regime_weighted REBALANCE EVERY 1d
+    trend -> trend 0.8, meanrev 0.2
+    range -> trend 0.2, cash 0.8
+
+RULES
+    RUN trend
+    RUN meanrev
+```
+
+## Fixed weights: `RUN <alias> WEIGHT <fraction>`
+
+Without regimes, each `RUN` can carry a fixed share of `CAPITAL` instead. The rules are checked
+when the file parses: `CAPITAL` must be on the header, every `RUN` carries a `WEIGHT` or none
+does, each weight is in `(0, 1]`, the weights sum to at most `1.0` (no implicit leverage), and
+`WEIGHT` cannot be combined with an `ALLOCATE` block.
+
+```qkt
+PORTFOLIO two_sleeves VERSION 1 CAPITAL 10000
+
+SYMBOLS
+    btc = BACKTEST:BTCUSDT EVERY 1h
+
+IMPORT 'trend.qkt'   AS trend
+IMPORT 'meanrev.qkt' AS meanrev
+
+RULES
+    RUN trend WEIGHT 0.6
+    WHEN adx(btc, 14) < 20 RUN meanrev WEIGHT 0.4
+```
+
+<!-- qkt-doc: illegal -->
+```qkt
+PORTFOLIO no_capital VERSION 1
+IMPORT 'trend.qkt' AS trend
+RULES
+    RUN trend WEIGHT 0.6
+-- error: CAPITAL is required on the header when any RUN carries WEIGHT
+```
+
+<!-- qkt-doc: illegal -->
+```qkt
+PORTFOLIO levered VERSION 1 CAPITAL 10000
+IMPORT 'trend.qkt'   AS trend
+IMPORT 'meanrev.qkt' AS meanrev
+RULES
+    RUN trend WEIGHT 0.6
+    RUN meanrev WEIGHT 0.6
+-- error: total WEIGHT must sum to <= 1.0 (no implicit leverage), got 1.2
+```
 
 ## `IMPORT` syntax
 
@@ -226,7 +292,7 @@ These apply independently to each strategy hosted in the daemon — including po
 
 ## Conditions in portfolios
 
-`PORTFOLIO` files have no `LET` block: the sections are `SYMBOLS`, `IMPORT`, `REGIMES`, `ALLOCATE` and `RULES`, in that order. Write the gating expression directly in the `RUN` condition, or name the market state with [`REGIMES`](#regime-weighted-allocation):
+`PORTFOLIO` files have no `LET` block (and no `DEFAULTS` or `PARAM`): the sections are `SYMBOLS`, `IMPORT`, `REGIMES`, `ALLOCATE` and `RULES`, in that order. Write the gating expression directly in the `RUN` condition, or name the market state with [`REGIMES`](#regime-weighted-allocation):
 
 ```qkt
 PORTFOLIO mybook VERSION 1
@@ -242,6 +308,18 @@ RULES
     WHEN adx(btc, 14) < 20  RUN meanrev
 ```
 
+<!-- qkt-doc: illegal -->
+```qkt
+PORTFOLIO with_let VERSION 1
+SYMBOLS
+    btc = BACKTEST:BTCUSDT EVERY 1h
+IMPORT 'trend.qkt' AS trend
+LET trending = adx(btc, 14) > 30
+RULES
+    WHEN trending RUN trend
+-- parse error: unexpected 'LET' after the last recognized block
+```
+
 ## What children inherit
 
 | Inherited | Notes |
@@ -253,8 +331,7 @@ RULES
 
 | Not inherited | |
 | --- | --- |
-| `DEFAULTS` from portfolio | Children have their own |
-| `LET` from portfolio | Children have their own |
+| `DEFAULTS`, `PARAM`, `LET` | A portfolio has none of these blocks; children declare their own, and `OVERRIDE` is how a portfolio reaches a child's `PARAM` |
 
 ## Common gotchas
 
@@ -262,7 +339,7 @@ RULES
 - **Children with their own `SYMBOLS` blocks override.** A child that redeclares `btc` with a different timeframe than the portfolio works fine, but it costs an extra aggregator.
 - **`HOLD` doesn't mean "keep entering."** A held child has its positions preserved but stops generating new signals when inactive. It only manages existing positions.
 - **Cascade stop.** `qkt stop <portfolio>` cascades to every child. Use `qkt stop <portfolio>/<child>` to stop a specific child.
-- **Portfolio file is itself a strategy.** It has `VERSION`, `RULES`, can have `LET`. It just uses `RUN` actions instead of `BUY`/`SELL`.
+- **Portfolio file is not a strategy.** It shares `VERSION`, `SYMBOLS` and `RULES` with one, but its rules use `RUN` instead of `BUY`/`SELL`, and it has no `DEFAULTS`, `PARAM` or `LET` block.
 
 ## Backtesting portfolios
 
