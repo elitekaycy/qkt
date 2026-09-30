@@ -27,6 +27,10 @@ import java.time.DayOfWeek
  * through `pointSize * contractSize * quantity`; live runs leave them zero because the venue
  * reports actual swap. [swapRolloverHourUtc] and [swapTripleDay] define the deterministic
  * backtest calendar convention.
+ *
+ * [currency] is the quote/settlement currency when stated explicitly; absent, it is inferred from
+ * the symbol. [derivative] carries exchange-listed terms (expiry, margin, fees) and is absent for
+ * CFDs and spot.
  */
 data class InstrumentMeta(
     val qktSymbol: String,
@@ -43,6 +47,8 @@ data class InstrumentMeta(
     val swapShortPoints: BigDecimal = BigDecimal.ZERO,
     val swapRolloverHourUtc: Int = 21,
     val swapTripleDay: DayOfWeek = DayOfWeek.WEDNESDAY,
+    val currency: String? = null,
+    val derivative: DerivativeTerms? = null,
 ) {
     init {
         require(qktSymbol.isNotBlank()) { "InstrumentMeta.qktSymbol must not be blank" }
@@ -69,5 +75,12 @@ data class InstrumentMeta(
         require(swapTripleDay.value <= DayOfWeek.FRIDAY.value) {
             "InstrumentMeta.swapTripleDay must be Monday through Friday: $swapTripleDay"
         }
+        require(currency == null || CURRENCY_FORMAT.matches(currency)) {
+            "InstrumentMeta.currency must be an upper-case code of 3-5 letters: '$currency'"
+        }
+    }
+
+    private companion object {
+        val CURRENCY_FORMAT = Regex("[A-Z]{3,5}")
     }
 }

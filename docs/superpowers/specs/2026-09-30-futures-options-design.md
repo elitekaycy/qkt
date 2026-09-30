@@ -58,26 +58,24 @@ fingerprint, and the same persisted state files.
 | **Roll schedule** | `2024-09-19T08:00Z BTCUSDT_240927 → BTCUSDT_241227, gap +812.4` | The transitions for one root under one roll policy, with the gap measured at each roll. |
 | **Offset** | cumulative gap | Maps contract prices to the continuous price space. |
 
-`InstrumentKind` (new enum): `CFD, SPOT, PERPETUAL, FUTURE, OPTION`. Absent kind = today's
-behaviour (CFD/spot heuristics). Only `FUTURE` and `OPTION` enable any new code path.
+An instrument is a derivative when its metadata carries `DerivativeTerms` (4.1). Absent terms =
+today's behaviour (CFD/spot heuristics); only present terms enable any new code path.
 
 ## 4. Instrument model
 
-### 4.1 `InstrumentMeta` gains optional fields (all default to "absent")
+### 4.1 `InstrumentMeta` gains two optional fields
 
 ```kotlin
-val kind: InstrumentKind? = null,
 val currency: String? = null,            // explicit quote/settlement currency
-val expiryMs: Long? = null,              // UTC; contract stops trading and settles here
-val settlementPriceSource: String? = null,
-val option: OptionTerms? = null,         // underlying, strike, right, style
-val margin: MarginTerms? = null,         // initial, maintenance per contract, in `currency`
-val exchangeFeePerContract: BigDecimal? = null,
+val derivative: DerivativeTerms? = null, // exchange-listed terms; absent for CFDs and spot
 ```
 
-`contractSize` is the multiplier (already used that way by nine call sites). Fields are appended
-last; every existing constructor uses named arguments (verified), so no call site changes.
-`InstrumentsPull` and `InstrumentsCommand` learn the new keys so a round-trip does not drop them.
+`DerivativeTerms` is a sealed interface (`root`, `margin: MarginTerms?`, `exchangeFeePerContract`,
+`takerFeeRate`). Phase 42 adds `FutureTerms(root, expiryMs: Long?, …)` — `expiryMs` null is a
+continuous view of the root; phase 43 adds `OptionTerms`. A new kind is a new subtype, so every
+consumer's `when` must handle it. `contractSize` is the multiplier (already used that way by nine
+call sites). Fields are appended last; every existing constructor uses named arguments (verified),
+so no call site changes. `InstrumentsPull` learns `currency` so a round-trip does not drop it.
 
 ### 4.2 Where futures meta comes from
 
