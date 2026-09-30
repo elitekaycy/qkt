@@ -86,6 +86,7 @@ internal object InstrumentsPull {
                 ) {
                     appendLine("    swapTripleDay: ${e.swapTripleDay}")
                 }
+                e.currency?.let { appendLine("    currency: $it") }
             }
         }
 

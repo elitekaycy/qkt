@@ -39,6 +39,20 @@ class InstrumentsPullTest {
     }
 
     @Test
+    fun `an explicit currency round-trips and an absent one stays absent`(
+        @TempDir dir: Path,
+    ) {
+        val file = dir.resolve("instruments.yaml")
+        val specs = listOf(spec("BACKTEST:US500", "1").copy(currency = "USD"), spec("BACKTEST:BTCUSD", "1"))
+
+        Files.writeString(file, InstrumentsPull.render(specs, source = "test"))
+
+        val registry = YamlInstrumentRegistry.load(file)
+        assertThat(registry.lookup("BACKTEST:US500")?.currency).isEqualTo("USD")
+        assertThat(registry.lookup("BACKTEST:BTCUSD")?.currency).isNull()
+    }
+
+    @Test
     fun `a pull replaces the symbols it names and keeps the rest of the file`(
         @TempDir dir: Path,
     ) {
