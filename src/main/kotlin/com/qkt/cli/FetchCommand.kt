@@ -2,6 +2,7 @@ package com.qkt.cli
 
 import com.qkt.candles.TimeWindow
 import com.qkt.cli.fetch.CatalogFetch
+import com.qkt.cli.fetch.RollsFetch
 import com.qkt.cli.fetch.buildFetcher
 import com.qkt.cli.fetch.resolveFetchRange
 import com.qkt.common.TimeRange
@@ -30,7 +31,8 @@ import java.time.ZoneOffset
  * - BINANCE_UM — Binance USDⓈ-M quarterly futures from the free `data.binance.vision` archive.
  * - BACKTEST — refused; nothing to fetch (the local store IS the backtest source).
  *
- * `qkt fetch VENUE:ROOT --catalog` writes the root's futures contract catalog instead of bars.
+ * `qkt fetch VENUE:ROOT --catalog` writes the root's futures contract catalog instead of bars, and
+ * `qkt fetch VENUE:ROOT --rolls` measures its roll history from stored (and fetched) 1m bars.
  */
 class FetchCommand(
     private val args: Args,
@@ -54,6 +56,7 @@ class FetchCommand(
         val broker = parts[0]
         val symbol = parts[1]
         if (args.flag("catalog")) return CatalogFetch.run(target, DataRoot.forDataRoot(args.option("data-root")))
+        if (args.flag("rolls")) return rolls(target, broker)
         val tfArg =
             try {
                 args.requireOption("tf")
@@ -131,5 +134,24 @@ class FetchCommand(
         }
         println("qkt fetch: done — fetched=$fetched empty=$empty skipped=$skipped total=$totalDays")
         return ExitCodes.SUCCESS
+    }
+
+    private fun rolls(
+        target: String,
+        broker: String,
+    ): Int {
+        val dataRoot = DataRoot.forDataRoot(args.option("data-root"))
+        val fetcher = buildFetcher(broker, args.option("config")) ?: return ExitCodes.USER_ERROR
+        val store = LocalBarStore(root = dataRoot)
+        return RollsFetch.run(
+            target,
+            dataRoot,
+            args.option("instruments")?.let {
+                java.nio.file.Path
+                    .of(it)
+            },
+        ) { contract, day ->
+            RollsFetch.fetchOneDay(fetcher, store, broker, contract, day)
+        }
     }
 }
