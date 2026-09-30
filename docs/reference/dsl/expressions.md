@@ -128,6 +128,12 @@ WHEN btc.days_to_roll < 0.5 AND POSITION.btc != 0
 THEN CLOSE btc
 ```
 
+The fields are read as of the bar's close. The bar that closes at the roll instant already names
+the new contract (its prices are still the old contract's), so `days_to_roll` never reaches 0 while
+the old contract is followed. A flat-through-roll threshold must therefore be longer than one bar:
+`< 0.5` works for bars up to 12 hours only when the roll is not on a bar boundary — with `EVERY 1d`
+bars use `< 2`, with `EVERY 12h` use `< 1`.
+
 ```qkt
 -- Round a computed stop to the venue grid and refuse to size below the minimum lot.
 LET stopDist = round_to(atr(gold, 14) * 2, gold.tick_size)

@@ -118,7 +118,8 @@ WHEN btc.days_to_roll < 0.5 AND POSITION.btc != 0
 THEN CLOSE btc
 ```
 
-No position is carried, so no roll cost is paid; the next entry trades the new contract.
+No position is carried, so no roll cost is paid; the next entry trades the new contract. The
+threshold must be longer than one bar: the bar closing at the roll already follows the new contract.
 
 ### 4. Add realistic costs
 

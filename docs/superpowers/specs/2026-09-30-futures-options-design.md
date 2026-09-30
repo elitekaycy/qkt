@@ -221,8 +221,9 @@ the gateway broker (or Bybit linear broker) live. The same class runs in both mo
 - **Positions view:** `getOpenPositions()` maps delegate contract positions to the continuous
   symbol for reconciliation.
 
-Strategies that must be flat through a roll say so in the DSL (`WHEN es.days_to_roll <= 0 THEN
-CLOSE es`); there is no hidden engine-side close.
+Strategies that must be flat through a roll say so in the DSL (`WHEN es.days_to_roll < 1 THEN
+CLOSE es`, with a threshold longer than one bar: the bar closing at the roll already follows the new
+contract); there is no hidden engine-side close.
 
 ### 5.6 Explicit contract streams and expiry
 
