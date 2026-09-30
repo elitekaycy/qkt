@@ -135,4 +135,18 @@ class FuturesRootsFileTest {
             )
         assertThatThrownBy { FuturesRootsFile.load(f) }.hasMessageContaining("future").hasMessageContaining("futures")
     }
+
+    @Test
+    fun `an invalid root spec names the root`(
+        @TempDir dir: Path,
+    ) {
+        val f =
+            write(
+                dir,
+                "futures:\n  - { root: CME:ES, currency: usd, multiplier: 50, tickSize: 0.25, volumeStep: 1, volumeMin: 1 }\n",
+            )
+        assertThatThrownBy {
+            FuturesRootsFile.load(f)
+        }.hasMessageContaining("futures root CME:ES").hasMessageContaining("currency")
+    }
 }

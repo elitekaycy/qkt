@@ -71,7 +71,7 @@ object FuturesRootsFile {
                         name,
                     )
                 },
-        ).also { it.metaFor(it.root, expiryMs = null) }
+        ).also { validate(it, name) }
     }
 
     private fun margin(
@@ -100,4 +100,15 @@ object FuturesRootsFile {
         key: String,
         raw: String,
     ): BigDecimal = raw.toBigDecimalOrNull() ?: error("futures root $name: '$key' must be a number, got '$raw'")
+
+    private fun validate(
+        root: FuturesRoot,
+        name: String,
+    ) {
+        try {
+            root.metaFor(root.root, expiryMs = null)
+        } catch (e: IllegalArgumentException) {
+            throw IllegalArgumentException("futures root $name: ${e.message}", e)
+        }
+    }
 }
