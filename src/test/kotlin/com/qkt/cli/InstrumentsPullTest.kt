@@ -53,6 +53,36 @@ class InstrumentsPullTest {
     }
 
     @Test
+    fun `a pull into a file keeps its futures section verbatim`(
+        @TempDir dir: Path,
+    ) {
+        val file = dir.resolve("instruments.yaml")
+        val futures =
+            "futures:\n  # hand-maintained roots\n" +
+                "  - { root: CME:ES, currency: USD, multiplier: 50, tickSize: 0.25, volumeStep: 1, volumeMin: 1 }\n"
+        Files.writeString(file, InstrumentsPull.render(listOf(spec("BACKTEST:BTCUSD", "1")), source = "test") + futures)
+
+        InstrumentsPull.write(file, listOf(spec("BACKTEST:US500", "1")), source = "test")
+        val first = Files.readString(file)
+        InstrumentsPull.write(file, listOf(spec("BACKTEST:US500", "1")), source = "test")
+
+        val text = Files.readString(file)
+        assertThat(text).isEqualTo(first)
+        assertThat(text).contains(futures)
+        assertThat(
+            com.qkt.instrument.FuturesRootsFile
+                .load(file)
+                .single()
+                .root,
+        ).isEqualTo("CME:ES")
+        assertThat(
+            YamlInstrumentRegistry.load(file).all().map {
+                it.qktSymbol
+            },
+        ).containsExactly("BACKTEST:BTCUSD", "BACKTEST:US500")
+    }
+
+    @Test
     fun `a pull replaces the symbols it names and keeps the rest of the file`(
         @TempDir dir: Path,
     ) {
