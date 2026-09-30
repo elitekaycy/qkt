@@ -1,0 +1,30 @@
+{
+    "root": "BINANCE_UM:BTCUSDT",
+    "contracts": [
+        {
+            "symbol": "BTCUSDT_240628",
+            "expiryMs": 1719561600000,
+            "deliveryPrice": "61479.20000000"
+        },
+        {
+            "symbol": "BTCUSDT_240927",
+            "expiryMs": 1727424000000,
+            "deliveryPrice": "65422.70000000"
+        },
+        {
+            "symbol": "BTCUSDT_241227",
+            "expiryMs": 1735286400000,
+            "deliveryPrice": "95168.70000000"
+        },
+        {
+            "symbol": "BTCUSDT_250328",
+            "expiryMs": 1743148800000,
+            "deliveryPrice": "85302.80000000"
+        },
+        {
+            "symbol": "BTCUSDT_250627",
+            "expiryMs": 1751011200000,
+            "deliveryPrice": "107046.10000000"
+        }
+    ]
+}
