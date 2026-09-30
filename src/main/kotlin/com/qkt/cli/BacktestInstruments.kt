@@ -5,6 +5,7 @@ import com.qkt.instrument.ContractCatalogStore
 import com.qkt.instrument.FuturesRootsFile
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.LayeredInstrumentRegistry
+import com.qkt.instrument.RollHistoryStore
 import com.qkt.instrument.StandardInstrumentRegistry
 import com.qkt.instrument.YamlInstrumentRegistry
 import java.nio.file.Files
@@ -37,7 +38,7 @@ internal object BacktestInstruments {
                 emptyList()
             } else {
                 listOf(
-                    ContractCatalogRegistry.load(roots, ContractCatalogStore(dataRoot)),
+                    ContractCatalogRegistry.load(roots, ContractCatalogStore(dataRoot), RollHistoryStore(dataRoot)),
                 )
             }
         val registry =
