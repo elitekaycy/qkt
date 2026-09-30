@@ -46,18 +46,19 @@ internal class RuleParser(
         return out
     }
 
-    private fun parseWhenThen(): WhenThen {
+    /** [line] is the rule's source line: the `WHEN` itself, or the `FOR` of the macro it expands. */
+    private fun parseWhenThen(line: Int = cursor.peek().line): WhenThen {
         cursor.expect(TokenKind.WHEN, "expected WHEN")
         val cond = expressionParser.parseExpr()
         cursor.expect(TokenKind.THEN, "expected THEN after WHEN condition")
         val first = actionParser.parseAction()
-        if (cursor.peek().kind != TokenKind.SEMICOLON) return WhenThen(cond, first)
+        if (cursor.peek().kind != TokenKind.SEMICOLON) return WhenThen(cond, first, line)
         val actions = mutableListOf(first)
         while (cursor.match(TokenKind.SEMICOLON)) {
             if (!isActionStart(cursor.peek().kind)) break
             actions.add(actionParser.parseAction())
         }
-        return WhenThen(cond, Block(actions))
+        return WhenThen(cond, Block(actions), line)
     }
 
     private fun isActionStart(k: TokenKind): Boolean =
@@ -74,7 +75,7 @@ internal class RuleParser(
             k == TokenKind.LATCH
 
     private fun parseForEach(): List<RuleAst> {
-        cursor.expect(TokenKind.FOR, "expected FOR")
+        val line = cursor.expect(TokenKind.FOR, "expected FOR").line
         cursor.expect(TokenKind.EACH, "expected EACH after FOR")
         val iterVar = cursor.expect(TokenKind.IDENT, "expected iteration variable").lexeme
         cursor.expect(TokenKind.IN, "expected IN after iteration variable")
@@ -88,7 +89,7 @@ internal class RuleParser(
         }
         cursor.expect(TokenKind.RBRACKET, "expected ']' to close stream alias list")
         cursor.expect(TokenKind.DO, "expected DO after stream alias list")
-        val template = parseWhenThen()
+        val template = parseWhenThen(line)
         return aliases.map { alias -> substituteIterVar(template, iterVar, alias) }
     }
 
