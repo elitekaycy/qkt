@@ -118,4 +118,29 @@ class RollHistoryBuilderTest {
             }.build(root, catalog, setOf(ContinuousSelector.FRONT))
         assertThat(history.rolls.map { it.from }).containsExactly("BTCUSDT_241227")
     }
+
+    @Test
+    fun `after an unmeasurable roll the history restarts and keeps the latest run`() {
+        val later = ListedContract("BTCUSDT_250627", ms("2025-06-27T08:00:00Z"))
+        val chain = catalog.copy(contracts = catalog.contracts + later)
+        val bars =
+            mapOf(
+                ("BTCUSDT_240927" to LocalDate.parse("2024-09-19")) to
+                    listOf(bar("BTCUSDT_240927", "2024-09-19T07:59:00Z", "63000")),
+                ("BTCUSDT_241227" to LocalDate.parse("2024-09-19")) to
+                    listOf(bar("BTCUSDT_241227", "2024-09-19T07:59:00Z", "63800")),
+                ("BTCUSDT_250328" to LocalDate.parse("2025-03-20")) to
+                    listOf(bar("BTCUSDT_250328", "2025-03-20T07:59:00Z", "84000")),
+                ("BTCUSDT_250627" to LocalDate.parse("2025-03-20")) to
+                    listOf(bar("BTCUSDT_250627", "2025-03-20T07:59:00Z", "85000")),
+            )
+        val history =
+            RollHistoryBuilder {
+                c,
+                d,
+                ->
+                bars[c to d].orEmpty()
+            }.build(root, chain, setOf(ContinuousSelector.FRONT))
+        assertThat(history.rolls.map { it.from }).containsExactly("BTCUSDT_250328")
+    }
 }

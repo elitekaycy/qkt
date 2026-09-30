@@ -37,6 +37,17 @@ futures support (contracts, rolls, expiry), and what does it actually contain?
 4. **No free quotes.** Without `bookTicker`, quarterly backtests fill at trade prices; a slippage
    allowance in ticks stands in for the spread.
 
+5. **Listing lead time decides which rolls exist.** Until mid-2023 Binance listed each new quarterly
+   only 1–7 days before the previous one delivered (e.g. `BTCUSDT_211231` first traded 2021-09-22,
+   two days before `BTCUSDT_210924` delivered), so an 8-day roll had no contract to roll into. Since
+   `BTCUSDT_231229` (listed 2023-08-18) two quarterlies always overlap. `qkt fetch BINANCE_UM:BTCUSDT
+   --rolls` with an 8-day, 08:00 policy measured 13 front rolls, 2023-09-21 to 2026-09-17, with
+   contango gaps of 0.5–5.7% (e.g. 2024-12-19: 102050.9 → 105750.5). The builder keeps the latest
+   contiguous run, so continuous BTCUSDT backtests start after the 2023-09-21 roll.
+6. **No `@next` history on Binance.** The contract after next lists only at the front's delivery, so
+   at a roll instant there is nothing for `@next` to roll into; a `@next` stream on a Binance root fails
+   at start with a message saying so.
+
 ## Sources
 
 - https://data.binance.vision
