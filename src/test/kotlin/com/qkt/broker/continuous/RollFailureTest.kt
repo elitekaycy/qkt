@@ -88,4 +88,47 @@ class RollFailureTest {
         assertThat(gap.ledger.entries).isEmpty()
         assertThat(gap.broker.submit(gap.market("again", Side.BUY)).rejectReason).contains("stopped")
     }
+
+    @Test
+    fun `a gap past the old contract's expiry settles it instead of failing the run`() {
+        val late = ContinuousFixture(startIso = "2024-09-19T07:45:00Z")
+        late.tick("63010.0")
+        late.broker.submit(late.market("entry", Side.BUY))
+
+        late.tick("63100.0", atMs = ms("2024-09-27T09:00:00Z"))
+
+        val settle = late.only<BrokerEvent.OrderFilled>().last()
+        assertThat(settle.exitReason).isEqualTo(ExitReason.EXPIRY)
+        assertThat(settle.symbol).isEqualTo(late.front)
+        assertThat(late.ledger.entries).isEmpty()
+        assertThat(late.broker.submit(late.market("again", Side.BUY)).rejectReason).contains("stopped")
+    }
+
+    @Test
+    fun `a reaction to the failed roll is refused because the stream is already stopped`() {
+        f.tick("63010.0")
+        f.broker.submit(f.market("entry", Side.BUY))
+        val reactions = mutableListOf<com.qkt.broker.SubmitAck>()
+        f.bus.subscribe<BrokerEvent.OrderFilled> { e ->
+            if (e.exitReason == ExitReason.ROLL_FAILED) reactions += f.broker.submit(f.market("hook", Side.BUY))
+        }
+
+        f.tick("63005.0", atMs = roll)
+
+        assertThat(reactions.single().accepted).isFalse()
+        assertThat(reactions.single().rejectReason).startsWith(stopped)
+    }
+
+    @Test
+    fun `a stopped strategy cannot reduce either, since its leg may still sit on the old contract`() {
+        val gap = ContinuousFixture(startIso = "2024-07-01T00:00:00Z")
+        gap.tick("60000.0")
+        gap.broker.submit(gap.market("entry", Side.BUY))
+
+        gap.clock.time = ms("2024-12-20T00:00:00Z")
+        val exit = gap.broker.submit(gap.market("exit", Side.SELL))
+
+        assertThat(exit.accepted).isFalse()
+        assertThat(exit.rejectReason).contains("stopped")
+    }
 }
