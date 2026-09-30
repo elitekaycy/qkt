@@ -46,4 +46,9 @@ class PriceSpaceTest {
         val deep = PriceSpace(PriceAdjustment.PANAMA, BigDecimal("-200"), tick)
         assertThatThrownBy { deep.toContinuous(BigDecimal("150")) }.hasMessageContaining("ratio")
     }
+
+    @Test
+    fun `a level that maps to a non-positive contract price is refused`() {
+        assertThatThrownBy { panama.limitToContract(BigDecimal("-20"), Side.BUY) }.hasMessageContaining("not positive")
+    }
 }

@@ -37,16 +37,11 @@ class AdjustmentChain(
         return shifts[index]
     }
 
-    /** [raw], a price of contract [index], in the continuous series. */
+    /** [raw], a price of contract [index], in the continuous series; fails at zero or below. */
     fun toContinuous(
         index: Int,
         raw: BigDecimal,
-    ): BigDecimal =
-        when (adjustment) {
-            PriceAdjustment.NONE -> raw
-            PriceAdjustment.PANAMA -> raw.add(shiftFor(index))
-            PriceAdjustment.RATIO -> raw.multiply(shiftFor(index), Money.CONTEXT)
-        }
+    ): BigDecimal = continuousPrice(adjustment, shiftFor(index), raw)
 
     private fun identity(): BigDecimal = if (adjustment == PriceAdjustment.RATIO) BigDecimal.ONE else BigDecimal.ZERO
 }
