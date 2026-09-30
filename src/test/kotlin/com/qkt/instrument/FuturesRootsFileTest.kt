@@ -123,4 +123,16 @@ class FuturesRootsFileTest {
             )
         }.hasMessageContaining("CME:ES").hasMessageContaining("multiplier")
     }
+
+    @Test
+    fun `a misspelled futures section is refused`(
+        @TempDir dir: Path,
+    ) {
+        val f =
+            write(
+                dir,
+                "future:\n  - { root: CME:ES, currency: USD, multiplier: 50, tickSize: 0.25, volumeStep: 1, volumeMin: 1 }\n",
+            )
+        assertThatThrownBy { FuturesRootsFile.load(f) }.hasMessageContaining("future").hasMessageContaining("futures")
+    }
 }

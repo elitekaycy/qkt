@@ -36,6 +36,22 @@ class ContractCatalogRegistry(
 
     override fun lookup(qktSymbol: String): InstrumentMeta? = table[qktSymbol]
 
+    override fun missingReason(qktSymbol: String): String? {
+        if (qktSymbol in table) return null
+        val venue = qktSymbol.substringBefore(':')
+        val name = qktSymbol.substringAfter(':')
+        val selectors = ContinuousSelector.entries.joinToString { "@${it.token}" }
+        if (roots.any { it.venue == venue && '@' in name && name.substringBefore('@') == it.symbol }) {
+            return "$qktSymbol: unknown continuous selector; use $selectors"
+        }
+        val root =
+            roots.firstOrNull { it.venue == venue && name.startsWith(it.symbol) && name.length > it.symbol.length }
+                ?: return null
+        val catalog = "contracts/${root.venue}/${root.symbol}.json"
+        return "$qktSymbol looks like a contract of ${root.root} but is not in $catalog; " +
+            "refresh it with qkt fetch ${root.root} --catalog"
+    }
+
     companion object {
         /** A registry for [roots] with each root's catalog read from [store] (absent catalogs are empty). */
         fun load(

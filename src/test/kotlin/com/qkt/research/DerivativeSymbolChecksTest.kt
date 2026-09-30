@@ -3,6 +3,8 @@ package com.qkt.research
 import com.qkt.accounting.AccountingEngine
 import com.qkt.instrument.ContractCatalogRegistry
 import com.qkt.instrument.FuturesRoot
+import com.qkt.instrument.LayeredInstrumentRegistry
+import com.qkt.instrument.StandardInstrumentRegistry
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThatCode
 import org.assertj.core.api.Assertions.assertThatThrownBy
@@ -72,5 +74,14 @@ class DerivativeSymbolChecksTest {
         val registry = ContractCatalogRegistry(emptyList(), emptyMap())
         assertThatCode { requireDerivativeSymbolsResolvable(listOf("EXNESS:XAUUSD"), accounting(registry), registry) }
             .doesNotThrowAnyException()
+    }
+
+    @Test
+    fun `a dated contract missing from the catalog fails the run through a layered registry`() {
+        val registry = ContractCatalogRegistry(listOf(root("USD", "0")), emptyMap())
+        val layered = LayeredInstrumentRegistry(listOf(registry, StandardInstrumentRegistry))
+        assertThatThrownBy { requireDerivativeSymbolsResolvable(listOf("CME:ESH6"), accounting(registry), layered) }
+            .hasMessageContaining("CME:ESH6")
+            .hasMessageContaining("--catalog")
     }
 }

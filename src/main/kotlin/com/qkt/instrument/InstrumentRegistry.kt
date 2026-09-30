@@ -17,6 +17,12 @@ interface InstrumentRegistry {
     fun lookup(qktSymbol: String): InstrumentMeta?
 
     /**
+     * Why this registry should know [qktSymbol] yet has no entry for it (e.g. a futures contract of a
+     * declared root that is missing from its catalog), or null when the symbol is simply not its own.
+     */
+    fun missingReason(qktSymbol: String): String? = null
+
+    /**
      * Returns the meta for [qktSymbol] or throws with a helpful message.
      *
      * Callers in the strategy-load path use this so a missing instrument surfaces

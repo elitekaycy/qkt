@@ -297,7 +297,7 @@ class BacktestContext private constructor(
                     ?.let { TimeWindow.parse(it) }
 
             val instruments: InstrumentRegistry =
-                BacktestInstruments.registry(Paths.get(dataRoot), args.option("instruments")?.let(Paths::get))
+                BacktestInstruments.registry(Paths.get(dataRoot), args.option("instruments")?.let(Paths::get), symbols)
 
             val brokerKind =
                 when (val raw = args.option("broker")) {
@@ -526,7 +526,7 @@ class BacktestContext private constructor(
             val candleWindow = streams.firstOrNull()?.timeframe?.let { TimeWindow.parse(it) }
 
             val instruments: InstrumentRegistry =
-                BacktestInstruments.registry(Paths.get(dataRoot), args.option("instruments")?.let(Paths::get))
+                BacktestInstruments.registry(Paths.get(dataRoot), args.option("instruments")?.let(Paths::get), symbols)
 
             val brokerKind =
                 when (val raw = args.option("broker")) {
