@@ -61,4 +61,18 @@ class RollScheduleTest {
     fun `an empty chain is refused`() {
         assertThatThrownBy { RollSchedule(emptyList(), policy) }.hasMessageContaining("no contracts")
     }
+
+    @Test
+    fun `a single contract is front until it expires`() {
+        val one = RollSchedule(listOf(sep), policy)
+        assertThat(one.transitions).isEmpty()
+        assertThat(one.contractAt(ms("2024-09-27T07:59:59Z"), ContinuousSelector.FRONT)).isEqualTo(sep)
+        assertThat(one.contractAt(ms("2024-01-01T00:00:00Z"), ContinuousSelector.NEXT)).isNull()
+        assertThat(one.frontIndexAt(ms("2024-09-27T08:00:00Z"))).isNull()
+    }
+
+    @Test
+    fun `the last roll instant belongs to the new front`() {
+        assertThat(schedule.contractAt(ms("2024-12-19T08:00:00Z"), ContinuousSelector.FRONT)).isEqualTo(mar)
+    }
 }
