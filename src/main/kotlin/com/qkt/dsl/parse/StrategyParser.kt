@@ -53,7 +53,8 @@ internal class StrategyParser(
             run {
                 val acc = mutableListOf<ParamDecl>()
                 while (cursor.peek().kind == TokenKind.PARAM) {
-                    cursor.tryParse { declarationParser.parseParams() }?.let { acc.addAll(it) }
+                    val declared = acc.mapTo(mutableSetOf()) { it.name }
+                    cursor.tryParse { declarationParser.parseParams(declared) }?.let { acc.addAll(it) }
                 }
                 acc
             }
