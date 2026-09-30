@@ -1,6 +1,7 @@
 package com.qkt.dsl.compile
 
 import com.qkt.derivatives.futures.ActiveContracts
+import com.qkt.dsl.DslVocabulary
 import com.qkt.dsl.ast.StreamFieldRef
 import java.math.BigDecimal
 import java.math.RoundingMode
@@ -14,7 +15,7 @@ import java.util.concurrent.atomic.AtomicReference
  */
 internal object FuturesFieldCompiler {
     /** The fields this compiler owns. */
-    val fields: Set<String> = setOf("contract", "dte", "days_to_roll")
+    val fields: Set<String> = DslVocabulary.contractFields.toSet()
 
     private val day = BigDecimal(86_400_000)
 
