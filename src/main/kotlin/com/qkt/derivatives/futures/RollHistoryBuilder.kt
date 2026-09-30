@@ -13,9 +13,10 @@ import java.time.ZoneOffset
 
 /**
  * Measures a root's rolls from stored bars: at each roll instant, the last close at or before it for
- * the contract being left and the contract being entered. Rolls before the first one it can price
- * are skipped (older contracts may have no data) and it stops at the next roll it cannot price, so a
- * history is always one contiguous run of rolls.
+ * the contract being left and the contract being entered. It keeps the latest contiguous run of rolls
+ * it can price: a roll it cannot price (no data, or, as on Binance before late 2023, the next
+ * contract not yet listed at the roll instant) ends everything before it, so a history is always one
+ * contiguous run and never mixes eras separated by a gap.
  */
 class RollHistoryBuilder(
     private val bars: (contract: String, day: LocalDate) -> List<Candle>,
@@ -31,9 +32,17 @@ class RollHistoryBuilder(
         val records = mutableListOf<RollRecord>()
         for (selector in selectors.sortedBy { it.offset }) {
             val measured = schedule.transitions.map { t -> measure(schedule, t, selector.offset) }
-            records += measured.dropWhile { it == null }.takeWhile { it != null }.filterNotNull()
+            records += latestRun(measured)
         }
         return RollHistory(root.root, policy.key, records.distinct().sortedWith(compareBy({ it.atMs }, { it.from })))
+    }
+
+    /** The last contiguous block of measured rolls; rolls after it are either in the future or unmeasurable. */
+    private fun latestRun(measured: List<RollRecord?>): List<RollRecord> {
+        val end = measured.indexOfLast { it != null }
+        if (end < 0) return emptyList()
+        val start = (end downTo 0).firstOrNull { measured[it] == null }?.plus(1) ?: 0
+        return measured.subList(start, end + 1).filterNotNull()
     }
 
     private fun measure(
