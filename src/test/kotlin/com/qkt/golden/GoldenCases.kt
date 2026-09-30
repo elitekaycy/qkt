@@ -11,7 +11,7 @@ internal data class GoldenCase(
     val from: String,
     val to: String,
     val flags: List<String> = emptyList(),
-    val needsInstruments: Boolean = false,
+    val instruments: String? = null,
     val barsTimeframe: String? = null,
 )
 
@@ -22,6 +22,12 @@ internal enum class GoldenData {
 
     /** Three days of one-tick-per-minute synthetic XAUUSD (a fixed sine). */
     XAUUSD_SINE_3D,
+
+    /** Three days of one-tick-per-minute synthetic USDJPY (a fixed sine around 150). */
+    USDJPY_SINE_3D,
+
+    /** Three days of one-tick-per-minute synthetic BTCUSDT (a fixed sine around 42,000). */
+    BTCUSDT_SINE_3D,
 }
 
 internal object GoldenCases {
@@ -73,6 +79,28 @@ internal object GoldenCases {
             THEN CLOSE gold
         """.trimIndent()
 
+    private val xauHold =
+        """
+        STRATEGY golden_xau_hold VERSION 1
+        SYMBOLS
+            gold = BACKTEST:XAUUSD EVERY 15m
+        RULES
+            WHEN ema(gold.close, 3) CROSSES ABOVE ema(gold.close, 9)
+            THEN BUY gold SIZING 0.1 EXIT AFTER 8h
+        """.trimIndent()
+
+    private val usdjpy =
+        """
+        STRATEGY golden_usdjpy VERSION 1
+        SYMBOLS
+            uj = BACKTEST:USDJPY EVERY 15m
+        RULES
+            WHEN ema(uj.close, 3) CROSSES ABOVE ema(uj.close, 9)
+            THEN BUY uj SIZING 0.1 BRACKET { STOP LOSS BY 0.4, TAKE PROFIT BY 0.8 }
+            WHEN ema(uj.close, 3) CROSSES BELOW ema(uj.close, 9)
+            THEN CLOSE uj
+        """.trimIndent()
+
     val all: List<GoldenCase> =
         listOf(
             GoldenCase("eurusd-bracket-paper", GoldenData.EURUSD_REAL_DAY, eurusdBracket, "2024-01-10", "2024-01-11"),
@@ -91,7 +119,7 @@ internal object GoldenCases {
                 "2024-01-02",
                 "2024-01-05",
                 flags = listOf("--broker", "mt5-sim"),
-                needsInstruments = true,
+                instruments = GoldenInstruments.XAU,
             ),
             GoldenCase("xau-trailing-paper", GoldenData.XAUUSD_SINE_3D, xauTrailing, "2024-01-02", "2024-01-05"),
             GoldenCase(
@@ -101,7 +129,7 @@ internal object GoldenCases {
                 "2024-01-02",
                 "2024-01-05",
                 flags = listOf("--position-mode", "netting"),
-                needsInstruments = true,
+                instruments = GoldenInstruments.XAU,
             ),
             GoldenCase(
                 "xau-bars-paper",
@@ -110,8 +138,33 @@ internal object GoldenCases {
                 "2024-01-02",
                 "2024-01-05",
                 flags = listOf("--bars"),
-                needsInstruments = true,
+                instruments = GoldenInstruments.XAU,
                 barsTimeframe = "15m",
+            ),
+            GoldenCase(
+                "xau-costs-mt5sim",
+                GoldenData.XAUUSD_SINE_3D,
+                xauHold,
+                "2024-01-02",
+                "2024-01-05",
+                flags = listOf("--broker", "mt5-sim"),
+                instruments = GoldenInstruments.XAU_COSTS,
+            ),
+            GoldenCase("usdjpy-conversion-paper", GoldenData.USDJPY_SINE_3D, usdjpy, "2024-01-02", "2024-01-05"),
+            GoldenCase(
+                "example-latch-stack-paper",
+                GoldenData.XAUUSD_SINE_3D,
+                GoldenInstruments.example("latch-stack/latch-stack.qkt"),
+                "2024-01-02",
+                "2024-01-05",
+                instruments = GoldenInstruments.XAU,
+            ),
+            GoldenCase(
+                "example-momentum-paper",
+                GoldenData.BTCUSDT_SINE_3D,
+                GoldenInstruments.example("tutorial/momentum.qkt"),
+                "2024-01-02",
+                "2024-01-05",
             ),
         )
 }
