@@ -25,6 +25,35 @@ class BinanceContractCatalogTest {
     @AfterEach
     fun teardown() = server.shutdown()
 
+    private fun listing(vararg codes: String) =
+        MockResponse().setBody(
+            "<ListBucketResult><IsTruncated>false</IsTruncated>" +
+                codes.joinToString("") { "<CommonPrefixes><Prefix>data/x/$it/</Prefix></CommonPrefixes>" } +
+                "</ListBucketResult>",
+        )
+
+    @Test
+    fun `a contract with daily files but no monthly file yet is included`() {
+        server.enqueue(listing("BTCUSDT_261225"))
+        server.enqueue(listing("BTCUSDT_261225", "BTCUSDT_270326"))
+        server.enqueue(MockResponse().setBody("[]"))
+        val built = catalog.build("BINANCE_UM:BTCUSDT")
+        assertThat(built.contracts.map { it.symbol }).containsExactly("BTCUSDT_261225", "BTCUSDT_270326")
+        assertThat(server.takeRequest().path).contains("monthly")
+        assertThat(server.takeRequest().path).contains("daily")
+    }
+
+    @Test
+    fun `an unavailable delivery-price endpoint leaves prices out instead of failing`() {
+        server.enqueue(listing("BTCUSDT_240927"))
+        server.enqueue(listing())
+        server.enqueue(MockResponse().setResponseCode(451))
+        val warnings = mutableListOf<String>()
+        val built = catalog.build("BINANCE_UM:BTCUSDT", warnings::add)
+        assertThat(built.contracts.single().deliveryPrice).isNull()
+        assertThat(warnings.single()).contains("delivery").contains("451")
+    }
+
     @Test
     fun `quarterlies are listed with expiries and known delivery prices`() {
         server.enqueue(
@@ -37,6 +66,7 @@ class BinanceContractCatalogTest {
                     "</ListBucketResult>",
             ),
         )
+        server.enqueue(listing())
         // The endpoint stamps each delivery at 00:00 UTC of the delivery date (2024-09-27), while the
         // contract itself settles at 08:00 UTC that day.
         server.enqueue(MockResponse().setBody("""[{"deliveryTime":1727395200000,"deliveryPrice":65528.1}]"""))

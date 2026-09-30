@@ -44,4 +44,21 @@ class CatalogFetchTest {
     ) {
         assertThat(CatalogFetch.run("CME:ES", dir) { null }).isEqualTo(ExitCodes.USER_ERROR)
     }
+
+    @Test
+    fun `a listing failure is a user error, not a crash`(
+        @TempDir dir: Path,
+    ) {
+        val server = MockWebServer().also { it.start() }
+        server.enqueue(MockResponse().setResponseCode(429))
+        val base = server.url("/").toString().trimEnd('/')
+        val client = BinanceVisionClient(filesBaseUrl = base, listingBaseUrl = "$base/list", apiBaseUrl = "$base/api")
+
+        assertThat(
+            CatalogFetch.run("BINANCE_UM:BTCUSDT", dir) {
+                BinanceContractCatalog(client)
+            },
+        ).isEqualTo(ExitCodes.USER_ERROR)
+        server.shutdown()
+    }
 }

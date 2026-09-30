@@ -4,6 +4,7 @@ import com.qkt.cli.ExitCodes
 import com.qkt.instrument.ContractCatalogStore
 import com.qkt.marketdata.store.binance.BinanceContractCatalog
 import com.qkt.marketdata.store.binance.BinanceVisionClient
+import java.io.IOException
 import java.nio.file.Path
 
 /** `qkt fetch VENUE:ROOT --catalog`: writes the root's futures contract catalog into the data root. */
@@ -25,7 +26,16 @@ internal object CatalogFetch {
                 )
                 return ExitCodes.USER_ERROR
             }
-        val catalog = source.build(target)
+        val catalog =
+            try {
+                source.build(target) { System.err.println("qkt: warning: $it") }
+            } catch (e: IOException) {
+                return failed(target, e)
+            } catch (e: IllegalStateException) {
+                return failed(target, e)
+            } catch (e: IllegalArgumentException) {
+                return failed(target, e)
+            }
         ContractCatalogStore(dataRoot).write(catalog)
         println(
             "qkt fetch: ${catalog.contracts.size} contracts for $target -> ${ContractCatalogStore(
@@ -33,5 +43,13 @@ internal object CatalogFetch {
             ).path(target)}",
         )
         return ExitCodes.SUCCESS
+    }
+
+    private fun failed(
+        target: String,
+        cause: Exception,
+    ): Int {
+        System.err.println("qkt: could not build the contract catalog for $target: ${cause.message}")
+        return ExitCodes.USER_ERROR
     }
 }
