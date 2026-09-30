@@ -21,7 +21,7 @@ import java.time.Instant
  * republished on [bus] in continuous space: the engine's order id, the continuous symbol, and
  * prices mapped by the contract the order worked on. The lane keeps each strategy's position on the
  * stream from those fills and rolls it ([RollExecutor]) when the schedule moves to the next contract;
- * a strategy whose roll failed may only reduce its exposure on the stream afterwards.
+ * a strategy whose position could not be carried places no further orders on the stream.
  */
 internal class StreamLane(
     private val bus: EventBus,
@@ -62,7 +62,7 @@ internal class StreamLane(
         val now = clock.now()
         refusal(now)?.let { return reject(request, it) }
         val index = requireNotNull(catchUp(now))
-        stops[request.strategyId]?.takeIf { increasesExposure(request) }?.let { return reject(request, it) }
+        stops[request.strategyId]?.let { return reject(request, it) }
         val space =
             try {
                 chain.spaceFor(index)
@@ -104,16 +104,23 @@ internal class StreamLane(
         if (previous != null && previous != index) {
             val outcome = rolls.roll(previous, index, positions)
             stops.putAll(outcome.stopped)
-            outcome.flattened.forEach(positions::remove)
+            for (close in outcome.closes) {
+                positions.merge(close.strategyId, signed(close), BigDecimal::add)
+                bus.publish(close)
+            }
+            outcome.costs.forEach(bus::publish)
         }
         return index
     }
 
-    private fun increasesExposure(request: OrderRequest): Boolean {
-        val held = positions[request.strategyId] ?: BigDecimal.ZERO
-        val signed = if (request.side == Side.BUY) request.quantity else request.quantity.negate()
-        return held.add(signed).abs() > held.abs()
-    }
+    private fun signed(fill: BrokerEvent.OrderFilled): BigDecimal =
+        if (fill.side ==
+            Side.BUY
+        ) {
+            fill.quantity
+        } else {
+            fill.quantity.negate()
+        }
 
     private fun onRejected(e: BrokerEvent.OrderRejected) {
         val order = orders.removeByVenueId(e.clientOrderId) ?: return
@@ -136,8 +143,7 @@ internal class StreamLane(
     private fun onFilled(e: BrokerEvent.OrderFilled) {
         val order = orders.removeByVenueId(e.clientOrderId)
         val index = order?.contractIndex ?: contractIndexOf(e.symbol)
-        val signed = if (e.side == Side.BUY) e.quantity else e.quantity.negate()
-        positions.merge(e.strategyId, signed, BigDecimal::add)
+        positions.merge(e.strategyId, signed(e), BigDecimal::add)
         bus.publish(
             e.copy(
                 clientOrderId = order?.request?.id ?: e.clientOrderId,

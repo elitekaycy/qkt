@@ -5,7 +5,6 @@ import com.qkt.common.Clock
 import com.qkt.common.Side
 import com.qkt.derivatives.futures.ContinuousChain
 import com.qkt.derivatives.futures.MeasuredRoll
-import com.qkt.derivatives.futures.PriceSpace
 import com.qkt.events.BrokerEvent
 import com.qkt.events.CostIncurred
 import com.qkt.execution.ExitReason
@@ -24,11 +23,13 @@ import org.slf4j.LoggerFactory
  * [ledger] and its cost published as a [CostIncurred]. None of the roll's venue orders reach the
  * engine: its continuous position did not change.
  *
- * When the new contract refuses a strategy's opening leg, its position is gone from the venue: the
- * engine gets a venue close ([ExitReason.ROLL_FAILED]) at the old leg's fill, its resting orders are
- * cancelled rather than carried, and the strategy is stopped on the stream. A roll the stream skipped
- * (no data for a whole contract) stops every holder the same way; the exchange then settles the
- * expired contract. A refused closing leg is a configuration fault and fails loudly.
+ * When the new contract refuses a strategy's opening leg, its position is gone from the venue: it
+ * gets a venue close ([ExitReason.ROLL_FAILED]) at the old leg's fill, its resting orders are
+ * cancelled rather than carried, and the strategy is stopped on the stream. A roll that cannot be
+ * traded — the stream skipped a whole contract, or the old contract expired before the stream traded
+ * again — stops every holder the same way; the exchange then settles the expired contract. A refused
+ * closing leg is a configuration fault and fails loudly. The closes and costs are returned, not
+ * published, so the lane records the stops before any engine handler can react to them.
  */
 internal class RollExecutor(
     private val bus: EventBus,
@@ -36,11 +37,12 @@ internal class RollExecutor(
     private val chain: ContinuousChain,
     private val venue: ContractVenue,
     private val contractPrices: MarketPriceTracker,
-    private val orders: ContinuousOrderMap,
+    orders: ContinuousOrderMap,
     private val legs: RollLegs,
     private val ledger: RollLedger,
 ) {
     private val log = LoggerFactory.getLogger(RollExecutor::class.java)
+    private val restingOrders = RestingOrdersAtRoll(bus, clock, venue, orders, legs)
 
     /** Roll from contract [fromIndex] to [toIndex], carrying [positions] (strategy to signed quantity). */
     fun roll(
@@ -53,42 +55,57 @@ internal class RollExecutor(
         val to = chain.contractSymbol(toIndex)
         val stopped = "${chain.symbol} stopped: roll $from->$to at ${Instant.ofEpochMilli(measured.atMs)} failed"
         val holders = positions.filterValues { it.signum() != 0 }
-        val resting = orders.on(fromIndex)
-        for (order in resting) {
-            legs.cancelling(order.venueId)
-            venue.broker.cancel(order.venueId)
-        }
-        if (toIndex != fromIndex + 1) {
-            val reason = "$stopped (no data for ${toIndex - fromIndex - 1} contract(s) in between)"
+        val resting = restingOrders.pull(fromIndex)
+        val untradeable = untradeable(fromIndex, toIndex)
+        if (untradeable != null) {
+            val reason = "$stopped ($untradeable)"
             log.error(reason)
-            resting.forEach { cancelVisibly(it, reason) }
-            return RollOutcome(stopped = holders.mapValues { reason }, flattened = emptySet())
+            resting.forEach { restingOrders.cancel(it, reason) }
+            return RollOutcome(stopped = holders.mapValues { reason }, closes = emptyList(), costs = emptyList())
         }
         contractPrices.update(from, measured.prices.fromPrice)
         contractPrices.update(to, measured.prices.toPrice)
         val carried = mutableListOf<RollEntry>()
+        val closes = mutableListOf<BrokerEvent.OrderFilled>()
         val failed = LinkedHashMap<String, String>()
         for ((strategyId, quantity) in holders) {
-            val refusal = carry(strategyId, quantity, fromIndex, toIndex, measured, carried)
+            val refusal = carry(strategyId, quantity, fromIndex, toIndex, measured, carried, closes)
             if (refusal != null) failed[strategyId] = "$stopped ($refusal)"
         }
         val space = chain.spaceFor(toIndex)
         for (order in resting) {
-            val reason = failed[order.request.strategyId]
-            if (reason != null) cancelVisibly(order, reason) else replace(order, toIndex, to, space)
+            when (val reason = failed[order.request.strategyId]) {
+                null -> restingOrders.replace(order, toIndex, to, space)
+                else -> restingOrders.cancel(order, reason)
+            }
         }
+        carried.forEach(ledger::record)
         val referencePrice = space.toContinuous(measured.prices.toPrice)
-        for (entry in carried) {
-            ledger.record(entry)
-            bus.publish(CostIncurred(entry.strategyId, chain.symbol, entry.cost, "roll $from->$to", referencePrice))
-        }
-        return RollOutcome(stopped = failed, flattened = failed.keys)
+        val cause = "roll $from->$to"
+        val costs = carried.map { CostIncurred(it.strategyId, chain.symbol, it.cost, cause, referencePrice) }
+        return RollOutcome(stopped = failed, closes = closes, costs = costs)
+    }
+
+    /**
+     * Why positions cannot be carried from [fromIndex] to [toIndex] by trading, or null when they can:
+     * the stream skipped a whole contract, or the old contract expired before the stream traded again
+     * (the exchange settles it).
+     */
+    private fun untradeable(
+        fromIndex: Int,
+        toIndex: Int,
+    ): String? {
+        if (toIndex != fromIndex + 1) return "no data for ${toIndex - fromIndex - 1} contract(s) in between"
+        val expiry = chain.schedule.contracts[fromIndex].expiryMs
+        if (clock.now() < expiry) return null
+        val contract = chain.contractSymbol(fromIndex)
+        return "$contract expired at ${Instant.ofEpochMilli(expiry)} before the stream traded again"
     }
 
     /**
      * Carry one strategy's [quantity] to the new contract, adding its entry to [carried]. Returns the
-     * venue's refusal when the new contract refused the opening leg; the position is then closed on
-     * the stream at the old leg's fill.
+     * venue's refusal when the new contract refused the opening leg; the position's venue close at
+     * the old leg's fill is then added to [closes].
      */
     private fun carry(
         strategyId: String,
@@ -97,6 +114,7 @@ internal class RollExecutor(
         toIndex: Int,
         measured: MeasuredRoll,
         carried: MutableList<RollEntry>,
+        closes: MutableList<BrokerEvent.OrderFilled>,
     ): String? {
         val from = chain.contractSymbol(fromIndex)
         val to = chain.contractSymbol(toIndex)
@@ -114,7 +132,7 @@ internal class RollExecutor(
                 is LegOutcome.Filled -> opening.fill
                 is LegOutcome.Rejected -> {
                     log.error("{} refused the roll of {} for {}: {}", to, chain.symbol, strategyId, opening.reason)
-                    closeOnStream(close, "$base:failed", fromIndex)
+                    closes += closeOnStream(close, "$base:failed", fromIndex)
                     return opening.reason
                 }
             }
@@ -151,41 +169,18 @@ internal class RollExecutor(
         return legs.outcome(venueId)
     }
 
-    /** Report the old leg's [close] to the engine as the venue closing its position on the stream. */
+    /** The old leg's [close] as the venue closing the position on the stream. */
     private fun closeOnStream(
         close: BrokerEvent.OrderFilled,
         id: String,
         fromIndex: Int,
-    ) {
-        bus.publish(
-            close.copy(
-                clientOrderId = id,
-                brokerOrderId = id,
-                symbol = chain.symbol,
-                price = chain.spaceFor(fromIndex).toContinuous(close.price),
-                updatesOrderExecution = false,
-                exitReason = ExitReason.ROLL_FAILED,
-            ),
+    ): BrokerEvent.OrderFilled =
+        close.copy(
+            clientOrderId = id,
+            brokerOrderId = id,
+            symbol = chain.symbol,
+            price = chain.spaceFor(fromIndex).toContinuous(close.price),
+            updatesOrderExecution = false,
+            exitReason = ExitReason.ROLL_FAILED,
         )
-    }
-
-    private fun replace(
-        order: ContinuousOrder,
-        toIndex: Int,
-        to: String,
-        space: PriceSpace,
-    ) {
-        val n = order.replacements + 1
-        val venueId = "${order.request.id}~r$n"
-        orders.add(order.copy(venueId = venueId, contractIndex = toIndex, replacements = n))
-        venue.broker.submit(requireNotNull(toContract(order.request, venueId, to, space)))
-    }
-
-    private fun cancelVisibly(
-        order: ContinuousOrder,
-        reason: String,
-    ) {
-        orders.removeByVenueId(order.venueId)
-        bus.publish(BrokerEvent.OrderCancelled(order.request.id, null, reason, order.request.strategyId, clock.now()))
-    }
 }
