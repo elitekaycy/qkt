@@ -68,6 +68,17 @@ internal object JsonReportPrinter {
                 .joinToString(",") { (id, s) -> "${jsonString(id)}:${CompactReportJson.strategyJson(s)}" },
         )
         sb.append("},")
+        sb.append("\"windows\":{")
+        sb.append(
+            r.windows.joinToString(",") { w ->
+                jsonString(w.window.name) + ":{\"fromMs\":" + w.window.fromMs + ",\"toMs\":" + w.window.toMs +
+                    ",\"samples\":" + w.samples + ",\"closingFills\":" + w.closingFills +
+                    ",\"equityStart\":" + w.equityStart.toPlainString() +
+                    ",\"equityEnd\":" + w.equityEnd.toPlainString() +
+                    ",\"metrics\":" + CompactReportJson.reportJson(w.report) + "}"
+            },
+        )
+        sb.append("},")
         sb.append("\"bookAnalytics\":").append(CompactBookJson.bookAnalyticsJson(r.bookAnalytics)).append(',')
         sb.append("\"bookRisk\":").append(CompactBookJson.bookRiskJson(r.bookRisk)).append(',')
         sb.append("\"evidence\":").append(r.evidence?.let(EvidenceJson::render) ?: "null").append(',')

@@ -87,6 +87,22 @@ internal object BacktestBarReplay {
         }
         val binaryBarStore = BinaryBarStore(Paths.get(dataRoot))
         val barTfOverride = args.option("bar-tf")?.let { TimeWindow.parse(it) }
+        val fromDay = LocalDate.ofInstant(from, ZoneOffset.UTC)
+        val toDay = LocalDate.ofInstant(to.minusMillis(1), ZoneOffset.UTC)
+
+        fun coverageOf(
+            broker: String,
+            bare: String,
+            tf: TimeWindow,
+        ) = com.qkt.marketdata.store.BarCompletenessValidator.validate(
+            binaryBarStore,
+            broker,
+            bare,
+            tf,
+            fromDay,
+            toDay,
+            BacktestContext.defaultCalendars().calendarFor(bare),
+        )
         val finestDeclared: Map<String, TimeWindow> =
             streams
                 .filter { it.qktSymbol in symbols }
@@ -110,30 +126,36 @@ internal object BacktestBarReplay {
                         }
                         barTfOverride
                     } else {
-                        binaryBarStore
-                            .builtTimeframes(broker, bare)
-                            .filter { declared.durationMs % it.durationMs == 0L }
-                            .maxByOrNull { it.durationMs }
-                            ?: declared // no usable built tf — let the guardrail below report it
+                        // Coarsest first, but a folder only counts when it covers the window: a
+                        // partial 4h build must not shadow complete 30m bars (#1275). When none
+                        // covers it, the coarsest is kept so the guardrail below reports its gaps.
+                        val candidates =
+                            binaryBarStore
+                                .builtTimeframes(broker, bare)
+                                .filter { declared.durationMs % it.durationMs == 0L }
+                                .sortedByDescending { it.durationMs }
+                        var chosen: TimeWindow? = null
+                        for (tf in candidates) {
+                            val coverage = coverageOf(broker, bare, tf)
+                            if (coverage.missingDays.isEmpty()) {
+                                chosen = tf
+                                break
+                            }
+                            System.err.println(
+                                "qkt: --bars $sym: built ${tf.canonicalSpec()} covers " +
+                                    "${coverage.coveredTradingDays}/${coverage.requestedTradingDays} trading days; " +
+                                    "trying a finer built timeframe",
+                            )
+                        }
+                        chosen ?: candidates.firstOrNull() ?: declared
                     }
                 }
             }
         if (forceBars) {
-            val fromDay = LocalDate.ofInstant(from, ZoneOffset.UTC)
-            val toDay = LocalDate.ofInstant(to.minusMillis(1), ZoneOffset.UTC)
             for (sym in symbols) {
                 val tf = barWindows[sym] ?: candleWindow ?: continue
                 val (broker, bare) = brokerAndBare(sym)
-                val coverage =
-                    com.qkt.marketdata.store.BarCompletenessValidator.validate(
-                        binaryBarStore,
-                        broker,
-                        bare,
-                        tf,
-                        fromDay,
-                        toDay,
-                        BacktestContext.defaultCalendars().calendarFor(bare),
-                    )
+                val coverage = coverageOf(broker, bare, tf)
                 System.err.println(
                     "qkt: bar coverage $sym ${coverage.coveredTradingDays}/${coverage.requestedTradingDays} " +
                         "trading days (${tf.canonicalSpec()})",

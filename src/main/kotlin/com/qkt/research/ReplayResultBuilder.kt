@@ -7,6 +7,9 @@ import com.qkt.backtest.ReportBuilder
 import com.qkt.backtest.RunawayBreakerReport
 import com.qkt.backtest.SampleCadence
 import com.qkt.backtest.TradeRecord
+import com.qkt.backtest.WindowReport
+import com.qkt.backtest.WindowSamples
+import com.qkt.backtest.monthlyReturns
 import com.qkt.candles.TimeWindow
 import com.qkt.common.Money
 import com.qkt.common.TradingCalendar
@@ -105,6 +108,43 @@ internal class ReplayResultBuilder(
                     trips = recorder.breakerTrips.toList(),
                 ),
             causality = recorder.causality(),
+            dailyEquity = collector.dailyEquity(),
+            monthlyReturns = monthlyReturns(collector.dailyEquity()),
+            windows = collector.windows().map { windowReport(it, tradeRecords, annualizationFactor) },
+        )
+    }
+
+    /**
+     * One sub-window's report from its own full-resolution metrics and the closing fills stamped
+     * inside it. Its PnL is the equity change from the window's first to its last sample, so the
+     * whole-run window reproduces `global`'s curve-derived figures exactly.
+     */
+    private fun windowReport(
+        samples: WindowSamples,
+        trades: List<TradeRecord>,
+        annualizationFactor: BigDecimal,
+    ): WindowReport {
+        val window = samples.window
+        val windowTrades = trades.filter { window.contains(it.trade.timestamp) }
+        val equityStart = samples.metrics.startingEquity()
+        val equityEnd = samples.lastEquity ?: equityStart
+        val report =
+            ReportBuilder.buildGlobal(
+                trades = windowTrades,
+                equityCurve = emptyList(),
+                finalRealized = equityEnd.subtract(equityStart),
+                finalUnrealized = Money.ZERO,
+                annualizationFactor = annualizationFactor,
+                metrics = samples.metrics,
+                tradedNotional = tradedNotional(windowTrades),
+            )
+        return WindowReport(
+            window = window,
+            samples = samples.metrics.count,
+            closingFills = windowTrades.count { it.reducedExposure },
+            equityStart = equityStart.setScale(Money.SCALE, Money.ROUNDING),
+            equityEnd = equityEnd.setScale(Money.SCALE, Money.ROUNDING),
+            report = report,
         )
     }
 

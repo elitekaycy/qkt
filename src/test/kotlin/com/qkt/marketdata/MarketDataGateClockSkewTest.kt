@@ -56,6 +56,21 @@ class MarketDataGateClockSkewTest {
     }
 
     @Test
+    fun `ticks trailing the clock by a minute are reported as feed lag, not a mis-set zone`() {
+        // The prop venue delivered every tick about 60s late for twenty minutes: the operator
+        // must look at the feed, not at server_time_zone.
+        val clock = TickingClock(1_784_000_000_000L)
+        val alerts = mutableListOf<String>()
+        val gate = MarketDataGate(clock, onUnhealthy = { symbol, reason, _ -> alerts.add("$symbol:$reason") })
+        gate.observe(tick("100", clock.t - 61_000L))
+
+        assertThat(gate.isHealthy("X")).isFalse()
+        assertThat(
+            alerts,
+        ).singleElement().asString().contains("trail the local clock by 61000ms").doesNotContain("clock skew")
+    }
+
+    @Test
     fun `honest feed latency stays healthy`() {
         val clock = TickingClock(1_784_000_000_000L)
         val gate = MarketDataGate(clock)

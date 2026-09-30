@@ -40,7 +40,7 @@ internal val researchOptionSchemas: Map<String, CliOptionSchema> =
     mapOf(
         "backtest" to
             CliOptionSchema(
-                values = backtestValues + setOf("param", "report-dir"),
+                values = backtestValues + setOf("param", "report-dir", "metrics-window", "oos-split"),
                 flags = backtestFlags + setOf("json", "debug"),
             ),
         "sweep" to

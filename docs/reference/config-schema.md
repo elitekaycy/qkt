@@ -489,9 +489,10 @@ are on) and ships `marketdata.stale` to insights once per episode.
 | Condition | Log | Alerts | `marketdata.stale` `kind` |
 |---|---|---|---|
 | No tick past the staleness threshold while the symbol is in session | ERROR `STALE` | yes | `stale` |
-| Broker tick clock further than `max_clock_skew_ms` from the local clock | ERROR `CLOCK-SKEWED` | yes | `clock_skew` |
+| Broker tick clock further than `max_clock_skew_ms` from the local clock | ERROR `CLOCK-SKEWED` (or `LAGGING` when ticks trail the clock by less than an hour: late delivery, not a mis-set zone) | yes | `clock_skew` |
 | A run of rejected outlier ticks | ERROR `UNHEALTHY` | yes | `outlier` |
-| Quote gap inside a calendar `pause` | INFO `PAUSED` | no | none |
+| Quote gap inside a calendar `pause`, and for one staleness threshold after the pause ends (the venue's first post-break print lags the calendar) | INFO `PAUSED` | no | none |
+| No tick for longer than the staleness threshold after a `pause` ended | ERROR `STALE` (aged from the break end) | yes | `stale` |
 | Quote gap while the symbol's calendar is out of session, or a last print older than any server-zone offset | INFO `venue closed` | no | none |
 
 Sessions are judged per symbol from the broker profile's `calendars`, so on an account trading

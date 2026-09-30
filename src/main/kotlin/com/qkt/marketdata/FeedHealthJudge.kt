@@ -21,6 +21,8 @@ internal class FeedHealthJudge(
     private val scheduledBreak: (symbol: String, nowMs: Long) -> Boolean,
     private val log: Logger,
 ) {
+    private val clockJudge = FeedClockJudge(clock, maxClockSkewMs, inSession, log, ::raise)
+
     /**
      * Clears the pause, stale, closed and skew latches after an accepted tick for [symbol], then
      * closes the unhealthy episode if nothing is left wrong.
@@ -31,6 +33,7 @@ internal class FeedHealthJudge(
     ) {
         if (state.pausedAlerted) {
             state.pausedAlerted = false
+            state.pausedSeenMs = 0L
             // The pause gap would otherwise sit in the smoothed inter-tick gap for the next
             // hour and lift the stale threshold; restart the estimate from the live cadence.
             state.ewmaGapMs = 0.0
@@ -107,46 +110,13 @@ internal class FeedHealthJudge(
             }
             return false
         }
-        if (kotlin.math.abs(state.lastSkewMs) > maxClockSkewMs) {
-            // A print that trails the local clock by more than any plausible server-zone
-            // offset, or while the venue is closed, is the venue's last tick before a
-            // gap — a weekend, a holiday, a symbol that opens later than its peers. Not
-            // a clock problem: keep new orders suppressed (nothing to trade against),
-            // say so once at INFO, and let the first fresh tick clear it (#1056).
-            val now = clock.now()
-            val lastPrint =
-                state.lastSkewMs < 0L &&
-                    (-state.lastSkewMs > MarketDataGate.MAX_PLAUSIBLE_ZONE_OFFSET_MS || !inSession(symbol, now))
-            if (lastPrint) {
-                if (!state.closedAlerted) {
-                    state.closedAlerted = true
-                    log.info(
-                        "market data for {}: venue closed — last print {}ms old; new orders wait for a fresh tick",
-                        symbol,
-                        -state.lastSkewMs,
-                    )
-                }
-                return false
-            }
-            if (!state.skewAlerted) {
-                state.skewAlerted = true
-                log.error(
-                    "market data for {} CLOCK-SKEWED: broker tick time {}ms from local clock " +
-                        "exceeds {}ms tolerance — suppressing new orders (check server_time_zone)",
-                    symbol,
-                    state.lastSkewMs,
-                    maxClockSkewMs,
-                )
-                val reason = "broker tick clock skew ${state.lastSkewMs}ms exceeds ${maxClockSkewMs}ms"
-                raise(symbol, state, reason, FeedFault.CLOCK_SKEW)
-            }
-            return false
-        }
+        if (clockJudge.outOfTolerance(symbol, state)) return false
         val threshold = staleThresholdMs(state)
         val now = clock.now()
         val age = now - state.lastSeenMs
         val healthy = age <= threshold
         if (!healthy && !state.staleAlerted && scheduledBreak(symbol, now)) {
+            state.pausedSeenMs = now
             if (!state.pausedAlerted) {
                 state.pausedAlerted = true
                 log.info(
@@ -171,8 +141,26 @@ internal class FeedHealthJudge(
             }
             return false
         }
+        if (!healthy && !state.staleAlerted && state.pausedAlerted) {
+            // The calendar says the break is over but the venue has not printed yet: its first
+            // post-break tick trails the break end by seconds to minutes (#1279). The gap is
+            // measured from the break end; only one that outlives the threshold is a fault.
+            val sinceBreakEndMs = now - state.pausedSeenMs
+            if (sinceBreakEndMs <= threshold) return false
+            state.staleAlerted = true
+            log.error(
+                "market data for {} STALE: no quote within {}ms after the scheduled break ended " +
+                    "(threshold {}ms) — suppressing new orders",
+                symbol,
+                sinceBreakEndMs,
+                threshold,
+            )
+            val reason =
+                "no quote within ${sinceBreakEndMs}ms after the scheduled break ended (threshold ${threshold}ms)"
+            raise(symbol, state, reason, FeedFault.STALE)
+            return false
+        }
         if (!healthy && !state.staleAlerted) {
-            // A gap that outlives its scheduled break is a feed fault after all.
             state.staleAlerted = true
             log.error(
                 "market data for {} STALE: age {}ms exceeds threshold {}ms — suppressing new orders",

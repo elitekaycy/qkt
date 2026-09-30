@@ -72,6 +72,10 @@ class BacktestCommand(
             } catch (e: BacktestContext.Companion.SetupError) {
                 System.err.println("qkt: error: ${e.message}")
                 return ExitCodes.USER_ERROR
+            } catch (e: com.qkt.backtest.IncompleteDataException) {
+                // --bars coverage is judged while the context is built, not at provision time.
+                System.err.println("qkt: error: ${e.message}")
+                return ExitCodes.USER_ERROR
             } catch (e: IllegalArgumentException) {
                 System.err.println("qkt: error: ${e.message}")
                 return ExitCodes.USER_ERROR
@@ -90,7 +94,7 @@ class BacktestCommand(
         return try {
             val result =
                 attachEvidence(
-                    ctx.backtest(overrides).run(),
+                    BacktestMetricsWindows.run(ctx.backtest(overrides), args, ctx.from, ctx.to),
                     path,
                     parsedFile,
                     ctx.executionConfig,

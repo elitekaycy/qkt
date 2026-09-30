@@ -29,6 +29,8 @@ internal object ReportManifest {
                 add("rejections.csv")
                 add("orders.jsonl")
                 add("pnl_components.csv")
+                add(DailyEquityCsv.FILE_NAME)
+                add(MonthlyReturnsCsv.FILE_NAME)
                 if (result.bookRisk != null) add("book_risk.csv")
                 if (result.global.monteCarlo != null) add(MonteCarloFanCsv.FILE_NAME)
                 add("report.html")
