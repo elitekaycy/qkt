@@ -56,15 +56,6 @@ class ContinuousChain(
     private val measuredRolls: Map<Int, MeasuredRoll>
 
     init {
-        val guardMs = root.expiryGuardHours * 3_600_000L
-        val guarded = schedule.transitions.firstOrNull { schedule.contracts[it.fromIndex].expiryMs - it.atMs < guardMs }
-        if (guarded != null) {
-            throw IllegalArgumentException(
-                "futures root ${root.root} rolls ${schedule.contracts[guarded.fromIndex].symbol} at " +
-                    "${Instant.ofEpochMilli(guarded.atMs)}, inside its ${root.expiryGuardHours}h expiry guard " +
-                    "(expiryGuardHours); roll earlier or lower the guard",
-            )
-        }
         val measured = requireNotNull(history) { "no roll history for ${root.root}; build it with ${buildHint()}" }
         require(measured.policy == policy.key) {
             "roll history for ${root.root} was built for policy ${measured.policy}, " +
@@ -81,6 +72,7 @@ class ContinuousChain(
         }
         anchorIndex = first + selector.offset
         servedFromMs = schedule.transitions[first].atMs
+        if (policy.adjust == PriceAdjustment.PANAMA) requireRollsBeforeGuard(schedule.transitions.drop(first))
         adjustment = AdjustmentChain(policy.adjust, run)
         measuredRolls =
             run.withIndex().associate { (k, roll) ->
@@ -146,6 +138,24 @@ class ContinuousChain(
                 from.symbol,
                 to.symbol,
             )?.let { RollPrices(it.fromPriceValue(), it.toPriceValue()) }
+    }
+
+    /**
+     * A tradeable stream must leave each contract before that contract's expiry guard window opens,
+     * or the exchange would refuse the roll's closing leg.
+     */
+    private fun requireRollsBeforeGuard(served: List<RollTransition>) {
+        val guardMs = root.expiryGuardHours * 3_600_000L
+        val late =
+            served.firstOrNull { t ->
+                val left = schedule.contracts.getOrNull(t.fromIndex + selector.offset)
+                left != null && left.expiryMs - t.atMs < guardMs
+            } ?: return
+        throw IllegalArgumentException(
+            "futures root ${root.root}: $symbol leaves ${contractSymbol(late.fromIndex + selector.offset)} at " +
+                "${Instant.ofEpochMilli(late.atMs)}, inside its ${root.expiryGuardHours}h expiry guard " +
+                "(expiryGuardHours); roll earlier or lower the guard",
+        )
     }
 
     private fun buildHint(): String = "qkt fetch ${root.root} --rolls"
