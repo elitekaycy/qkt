@@ -81,7 +81,36 @@ BUY btc SIZING 0.5 PCT RISK
 
 Sizes the position so that, if the stop hits, the loss is exactly N% of equity. `SIZING 0.5 PCT RISK` is sugar for `SIZING RISK 0.005` — both compile to the same engine path. Use the PCT form to avoid decimal-shift bugs when expressing small risk fractions: `0.5 PCT RISK` is unambiguous; `RISK 0.005` invites typos. The engine resolves `AT`, expression-based `BY`, and `PCT` stop prices with the current entry geometry before it computes the order quantity.
 
-Requires a `BRACKET` with a `STOP_LOSS` — without one the compiler rejects the strategy because no stop distance can be established safely.
+Requires a `BRACKET` with a `STOP_LOSS` — without one the compiler rejects the strategy because no
+stop distance can be established safely. `N` must be a numeric literal: the percent is converted
+to a fraction while the file is parsed, so a `PARAM`, `LET` or arithmetic expression in that
+position is rejected (`SIZING N PCT RISK requires a numeric literal for N`). To compute the risk
+budget, use `SIZING RISK <fraction-expr>` or `SIZING RISK $ <expr>` instead.
+
+<!-- qkt-doc: illegal -->
+```qkt
+STRATEGY risk_no_stop VERSION 1
+SYMBOLS
+    btc = BACKTEST:BTCUSDT EVERY 1m
+RULES
+    WHEN btc.close > btc.open THEN BUY btc SIZING 0.5 PCT RISK
+-- compile error: SIZING RISK <fraction> requires a resolvable stop distance via BRACKET STOP LOSS
+```
+
+<!-- qkt-doc: illegal -->
+```qkt
+PARAM riskPct = 0.5
+RULES
+    WHEN btc.close > btc.open
+    THEN BUY btc SIZING riskPct PCT RISK BRACKET { STOP LOSS BY 100, TAKE PROFIT BY 200 }
+```
+
+```qkt
+PARAM riskFrac = 0.005
+RULES
+    WHEN btc.close > btc.open
+    THEN BUY btc SIZING RISK riskFrac BRACKET { STOP LOSS BY 100, TAKE PROFIT BY 200 }
+```
 
 **When to use:** the default for portable strategies. Risk-percent sizing scales correctly with account size, stop distance, and instrument volatility.
 
@@ -185,7 +214,7 @@ See [STACK](stack.md).
 
 ## Common gotchas
 
-- **Sizing is required.** Either on the action or via `DEFAULTS.sizing`. Both missing = parse error.
+- **Sizing is required.** Either on the action or via `DEFAULTS { SIZING = ... }`. Both missing = compile error (`BUY/SELL requires SIZING`).
 - **Percent-of-equity ignores stop distance.** A 5% position with a tight stop loses very little; with a wide stop loses a lot. Use the manual workaround above to factor in the stop.
 - **Broker volume bounds.** MT5 brokers enforce minimum/maximum lots (`volumeMin`, `volumeMax`) and a step (`volumeStep`). A computed size outside the bounds rejects after downward step quantization.
 - **Whole-number lots on some venues.** Futures often require integer contracts. A computed size of `0.327` will round (typically down) or reject. Check your venue's specs.

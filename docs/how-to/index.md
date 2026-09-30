@@ -48,7 +48,7 @@ Task-oriented walkthroughs. Each page is one problem and one copy-paste-able sol
 
     ---
 
-    `qkt editor install vscode|nvim|vim|sublime` — one command, no manual copies.
+    `qkt editor install vscode|nvim|vim` — one command, no manual copies.
 
     [:octicons-arrow-right-24: Install for your editor](editor-integrations.md)
 

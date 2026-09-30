@@ -120,7 +120,7 @@ class OtoEndToEndTest {
                 BRACKET { STOP LOSS BY 60, TAKE PROFIT BY 10 }
                 ON_FILL { SELL silver SIZING 1 }
             """.trimIndent()
-        assertThatThrownBy { compile(src) }.isInstanceOf(IllegalArgumentException::class.java)
+        assertThatThrownBy { compile(src) }.isInstanceOf(CompileError::class.java)
     }
 
     @Test
