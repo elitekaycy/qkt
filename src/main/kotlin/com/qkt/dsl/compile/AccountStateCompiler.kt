@@ -1,5 +1,6 @@
 package com.qkt.dsl.compile
 
+import com.qkt.dsl.DslVocabulary
 import com.qkt.dsl.ast.AccountRef
 import com.qkt.dsl.ast.CooldownRef
 import com.qkt.dsl.ast.StreakRef
@@ -12,19 +13,12 @@ import java.math.BigDecimal
  * compile time; the closures read the strategy context's live views per evaluation.
  */
 internal object AccountStateCompiler {
+    private val pnlFields: Set<String> = DslVocabulary.accountPnlFields.toSet()
+    private val historyFields: Set<String> = DslVocabulary.accountHistoryFields.toSet()
+    private val riskFields: Set<String> = DslVocabulary.accountRiskFields.toSet()
+    private val streakFields: Set<String> = DslVocabulary.streakMembers.toSet()
+
     fun compileAccountRef(ref: AccountRef): CompiledExpr {
-        val pnlFields = setOf("realized_pnl", "unrealized_pnl", "total_pnl", "equity", "balance")
-        val historyFields =
-            setOf(
-                "last_trade_at",
-                "last_trade_pnl",
-                "win_streak",
-                "loss_streak",
-                "trades_today",
-                "wins_today",
-                "losses_today",
-            )
-        val riskFields = setOf("dd_pct", "equity_peak", "open_positions_count", "realized_today", "realized_month")
         require(ref.field in pnlFields || ref.field in historyFields || ref.field in riskFields) {
             "Unsupported ACCOUNT field: ${ref.field}"
         }
@@ -83,8 +77,7 @@ internal object AccountStateCompiler {
     }
 
     fun compileStreakRef(ref: StreakRef): CompiledExpr {
-        val fields = setOf("wins", "losses", "banked")
-        require(ref.field in fields) { "Unsupported STREAK field: ${ref.field}" }
+        require(ref.field in streakFields) { "Unsupported STREAK field: ${ref.field}" }
         return CompiledExpr { ctx ->
             val history = ctx.strategyContext.tradeHistory
             when (ref.field) {
@@ -97,7 +90,7 @@ internal object AccountStateCompiler {
     }
 
     fun compileTradesRef(ref: TradesRef): CompiledExpr {
-        require(ref.field == "today") { "Unsupported TRADES field: ${ref.field}" }
+        require(ref.field in DslVocabulary.tradesMembers) { "Unsupported TRADES field: ${ref.field}" }
         return CompiledExpr { ctx ->
             Value.Num(
                 BigDecimal.valueOf(
@@ -110,7 +103,7 @@ internal object AccountStateCompiler {
     }
 
     fun compileCooldownRef(ref: CooldownRef): CompiledExpr {
-        require(ref.field == "remaining_s") { "Unsupported COOLDOWN field: ${ref.field}" }
+        require(ref.field in DslVocabulary.cooldownMembers) { "Unsupported COOLDOWN field: ${ref.field}" }
         return CompiledExpr { ctx ->
             Value.Num(BigDecimal.valueOf(ctx.strategyContext.pacer.cooldownRemainingSeconds(ctx.nowMs())))
         }
