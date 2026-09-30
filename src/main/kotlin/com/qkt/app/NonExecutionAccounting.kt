@@ -26,17 +26,18 @@ internal class NonExecutionAccounting(
     fun subscribeCosts() {
         bus.subscribe<CostIncurred> { e ->
             val charged = accounting.convertPnlAmount(e.symbol, e.amount.negate(), e.timestamp, e.referencePrice)
-            publish(e.strategyId, charged, FillAccountingKind.COST, "cost:${e.reason}")
+            publish(e.strategyId, charged, FillAccountingKind.COST, "cost:${e.reason}", symbol = e.symbol)
         }
     }
 
-    /** Publish [amount] for [strategyId] as a non-execution accounted event of [kind]. */
+    /** Publish [amount] for [strategyId] as a non-execution accounted event of [kind], attributed to [symbol] when known. */
     fun publish(
         strategyId: String,
         amount: BigDecimal,
         kind: FillAccountingKind,
         id: String,
         legId: String? = null,
+        symbol: String = "",
     ) {
         riskState.beforeFill(strategyId)
         val scaled = amount.setScale(Money.SCALE, Money.ROUNDING)
@@ -44,7 +45,7 @@ internal class NonExecutionAccounting(
             FillAccountedEvent(
                 orderId = id,
                 strategyId = strategyId,
-                symbol = "",
+                symbol = symbol,
                 fillSliceId = id,
                 sourceFillSequenceId = 0L,
                 cumulativeFilled = null,

@@ -65,6 +65,7 @@ class CostIncurredBookingTest {
         val event = accounted.single()
         assertThat(event.kind).isEqualTo(FillAccountingKind.COST)
         assertThat(event.strategyId).isEqualTo("s")
+        assertThat(event.symbol).isEqualTo("BINANCE_UM:BTCUSDT@front")
         assertThat(event.netStrategyAccountRealized).isEqualByComparingTo("-2.5")
         assertThat(event.orderId).isEqualTo("cost:roll BTCUSDT_240927->BTCUSDT_241227")
         assertThat(strategyPnL.realizedFor("s")).isEqualByComparingTo("-2.5")
