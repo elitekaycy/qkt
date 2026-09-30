@@ -62,4 +62,17 @@ class HoverProviderTest {
         val hover = HoverProvider.hover("WHEN   x", 0, 5, null)
         assertThat(hover).isNull()
     }
+
+    @Test
+    fun `hover on a basket or series alias shows its declaration`() {
+        val doc =
+            "STRATEGY s VERSION 1\nSYMBOLS\n    aud = BACKTEST:AUDUSD EVERY 1h\n    nzd = BACKTEST:NZDUSD EVERY 1h\n" +
+                "    anti = BASKET EQUAL_WEIGHT [aud, nzd] EVERY 1h\n    eq = SERIES ACCOUNT.EQUITY EVERY 1h\n" +
+                "RULES\n    WHEN anti.close > eq.close THEN BUY aud SIZING 1\n"
+        val ast = astOf(doc)
+        assertThat(
+            textOf(HoverProvider.hover(doc, 7, 10, ast)),
+        ).contains("BASKET EQUAL_WEIGHT [aud, nzd]", "Basket alias")
+        assertThat(textOf(HoverProvider.hover(doc, 7, 24, ast))).contains("SERIES ACCOUNT.EQUITY", "Series alias")
+    }
 }
