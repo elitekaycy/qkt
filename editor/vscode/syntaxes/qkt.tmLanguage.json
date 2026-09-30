@@ -1,17 +1,91 @@
 {
   "name": "qkt",
   "scopeName": "source.qkt",
-  "fileTypes": ["qkt"],
+  "fileTypes": [
+    "qkt"
+  ],
   "patterns": [
-    { "include": "#comments" },
-    { "include": "#strings" },
-    { "include": "#numbers" },
-    { "include": "#constants" },
-    { "include": "#section-keywords" },
-    { "include": "#flow-keywords" },
-    { "include": "#other-keywords" },
-    { "include": "#operators" },
-    { "include": "#stream-prefix" }
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#numbers"
+    },
+    {
+      "include": "#symbols-alias"
+    },
+    {
+      "include": "#action-target"
+    },
+    {
+      "include": "#fields"
+    },
+    {
+      "include": "#members"
+    },
+    {
+      "include": "#keyword-section"
+    },
+    {
+      "include": "#keyword-flow"
+    },
+    {
+      "include": "#keyword-action"
+    },
+    {
+      "include": "#keyword-order"
+    },
+    {
+      "include": "#keyword-sizing"
+    },
+    {
+      "include": "#keyword-bracket"
+    },
+    {
+      "include": "#keyword-stacking"
+    },
+    {
+      "include": "#keyword-portfolio"
+    },
+    {
+      "include": "#keyword-session"
+    },
+    {
+      "include": "#keyword-hook"
+    },
+    {
+      "include": "#keyword-state"
+    },
+    {
+      "include": "#keyword-operator-word"
+    },
+    {
+      "include": "#keyword-aggregate"
+    },
+    {
+      "include": "#keyword-literal"
+    },
+    {
+      "include": "#indicators"
+    },
+    {
+      "include": "#functions"
+    },
+    {
+      "include": "#constants"
+    },
+    {
+      "include": "#broker-prefix"
+    },
+    {
+      "include": "#alias"
+    },
+    {
+      "include": "#operators"
+    }
   ],
   "repository": {
     "comments": {
@@ -36,17 +110,31 @@
         {
           "name": "string.quoted.double.qkt",
           "begin": "\"",
-          "end": "\"",
+          "end": "\"|$",
           "patterns": [
-            { "name": "constant.character.escape.qkt", "match": "\\\\." }
+            {
+              "name": "constant.character.escape.qkt",
+              "match": "\\\\[\\\\'\"nt]"
+            },
+            {
+              "name": "invalid.illegal.escape.qkt",
+              "match": "\\\\."
+            }
           ]
         },
         {
           "name": "string.quoted.single.qkt",
           "begin": "'",
-          "end": "'",
+          "end": "'|$",
           "patterns": [
-            { "name": "constant.character.escape.qkt", "match": "\\\\." }
+            {
+              "name": "constant.character.escape.qkt",
+              "match": "\\\\[\\\\'\"nt]"
+            },
+            {
+              "name": "invalid.illegal.escape.qkt",
+              "match": "\\\\."
+            }
           ]
         }
       ]
@@ -63,35 +151,198 @@
         }
       ]
     },
+    "symbols-alias": {
+      "patterns": [
+        {
+          "match": "^\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*(?==\\s*[A-Za-z_][A-Za-z0-9_]*:)",
+          "captures": {
+            "1": {
+              "name": "variable.other.alias.qkt"
+            }
+          }
+        }
+      ]
+    },
+    "action-target": {
+      "patterns": [
+        {
+          "match": "(?i)\\b(BUY|SELL|CLOSE|RESIZE)\\s+([A-Za-z_][A-Za-z0-9_]*)\\b",
+          "captures": {
+            "1": {
+              "name": "keyword.other.action.qkt"
+            },
+            "2": {
+              "name": "variable.other.alias.qkt"
+            }
+          }
+        }
+      ]
+    },
+    "keyword-section": {
+      "patterns": [
+        {
+          "name": "keyword.control.section.qkt",
+          "match": "(?i)\\b(BASKET|DEFAULTS|IMPORT|LET|PARAM|PORTFOLIO|REGIMES|RULES|SCHEDULE|SEQUENCE|SERIES|STRATEGY|SYMBOLS|SYNCHRONIZE|VERSION)\\b"
+        }
+      ]
+    },
+    "keyword-flow": {
+      "patterns": [
+        {
+          "name": "keyword.control.flow.qkt",
+          "match": "(?i)\\b(CASE|DO|EACH|ELSE|END|EVERY|FOR|IN|SINCE|THEN|WHEN)\\b"
+        }
+      ]
+    },
+    "keyword-action": {
+      "patterns": [
+        {
+          "name": "keyword.other.action.qkt",
+          "match": "(?i)\\b(BUY|CANCEL|CANCEL_ALL|CLOSE|CLOSE_ALL|DEBUG|ERROR|FLATTEN|LOG|RESIZE|SELL|WARN)\\b"
+        }
+      ]
+    },
+    "keyword-order": {
+      "patterns": [
+        {
+          "name": "keyword.other.order.qkt",
+          "match": "(?i)\\b(AT|BY|DAY|FLOOR|FOK|GTC|GTD|IOC|LIMIT|MARKET|ORDER_TYPE|PCT|STEP|STOP|STOP_LOSS|TAKE_PROFIT|TIF|TIGHTEN|TO|TRAILING|UNTIL)\\b"
+        }
+      ]
+    },
+    "keyword-sizing": {
+      "patterns": [
+        {
+          "name": "keyword.other.sizing.qkt",
+          "match": "(?i)\\b(BALANCE|EQUITY|MIN_STEP|OF|RISK|SIZING|USD)\\b"
+        }
+      ]
+    },
+    "keyword-bracket": {
+      "patterns": [
+        {
+          "name": "keyword.other.bracket.qkt",
+          "match": "(?i)\\b(AGAINST|ARM|BRACKET|CLOSE_BEYOND|CONFIRM|ENTER|EXPIRE|FROM|LATCH|LOSS|OCO|OCO_ENTRY|OFFSET|ON|PROFIT|RETEST_HOLD|RETRACE|RR|TAKE|TIME_IN_BREACH|WITH)\\b"
+        }
+      ]
+    },
+    "keyword-stacking": {
+      "patterns": [
+        {
+          "name": "keyword.other.stacking.qkt",
+          "match": "(?i)\\b(AFTER|MAE|MFE|RECOVER|SPACING|STACK|STACK_AT|STAGE|TIMES|WITHIN)\\b"
+        }
+      ]
+    },
+    "keyword-portfolio": {
+      "patterns": [
+        {
+          "name": "keyword.other.portfolio.qkt",
+          "match": "(?i)\\b(ALLOCATE|AS|CAPITAL|CASH|DEFAULT|EQUAL_WEIGHT|HOLD|METHOD|NAME|OVERRIDE|REBALANCE|RUN|STATE|WEIGHT)\\b"
+        }
+      ]
+    },
+    "keyword-session": {
+      "patterns": [
+        {
+          "name": "keyword.other.session.qkt",
+          "match": "(?i)\\b(BARS|BROKER|CHICAGO|HOUR|LONDON|NY|SYDNEY|TOKYO|UTC|WARMUP|WEEKDAY)\\b"
+        }
+      ]
+    },
+    "keyword-hook": {
+      "patterns": [
+        {
+          "name": "keyword.other.hook.qkt",
+          "match": "(?i)\\b(ON_CLOSE|ON_FILL|ON_STOP|ON_TP)\\b"
+        }
+      ]
+    },
+    "keyword-state": {
+      "patterns": [
+        {
+          "name": "variable.language.qkt",
+          "match": "(?i)\\b(ACCOUNT|COOLDOWN|ENTRY_QTY|EXIT|NOW|OPEN_ORDERS|POSITION|POSITION_AVG_PRICE|STREAK|SYMBOL|TRADES)\\b"
+        }
+      ]
+    },
+    "keyword-operator-word": {
+      "patterns": [
+        {
+          "name": "keyword.operator.word.qkt",
+          "match": "(?i)\\b(ABOVE|AND|BELOW|BETWEEN|CROSSES|IS|NOT|NULL|OR)\\b"
+        }
+      ]
+    },
+    "keyword-aggregate": {
+      "patterns": [
+        {
+          "name": "support.function.aggregate.qkt",
+          "match": "(?i)\\b(MAX|MEAN|MIN|OPEN|SUM)\\b"
+        }
+      ]
+    },
+    "keyword-literal": {
+      "patterns": [
+        {
+          "name": "constant.language.boolean.qkt",
+          "match": "(?i)\\b(FALSE|TRUE)\\b"
+        }
+      ]
+    },
+    "indicators": {
+      "patterns": [
+        {
+          "name": "support.function.indicator.qkt",
+          "match": "(?i)\\b(ADX|ANCHORED_RETURN|ATR|BETA|BOLLINGER_LOWER|BOLLINGER_MIDDLE|BOLLINGER_UPPER|CCI|CONFIRM_RATIO|CORRELATION|DEMA|EMA|ER|FAILED_BREAK_HIGH|FAILED_BREAK_LOW|GAP_FILL_FRACTION|HIGHEST|HMA|IB_DEFENDED_HIGH|IB_DEFENDED_LOW|KELTNER_LOWER|KELTNER_MIDDLE|KELTNER_UPPER|LAG|LOWEST|MACD|MACD_HIST|MACD_SIGNAL|MINUS_DI|OBV|PERCENTILE_RANK|PIVOT_P|PIVOT_R1|PIVOT_S1|PLUS_DI|REGRESSION_SLOPE|REOPEN_GAP|REOPEN_GAP_ORIGIN|RESID|RSI|RUNLENGTH|RUNLENGTH_WHERE|SEASONAL_RANGE|SEASONAL_RANGE_STDEV|SESSION_MOMENTUM|SESSION_RANGE_HIGH|SESSION_RANGE_LOW|SKEW|SMA|STDDEV|STOCH_D|STOCH_K|TEMA|VARIANCE|VARIANCE_RATIO|VWAP|VWAP_SESSION|VWAP_SESSION_STDEV|WILLIAMS_R|WMA|ZSCORE)\\b(?=\\s*\\()"
+        }
+      ]
+    },
+    "functions": {
+      "patterns": [
+        {
+          "name": "support.function.builtin.qkt",
+          "match": "(?i)\\b(ABS|AVG|CALENDAR_WINDOW|CEIL|COUNT|EXP|FLOOR|LAST_TRADING_DAY_OF_MONTH|LOG|MAX|MIN|MOD|NORMALIZE|POW|RANK_OF|ROUND|ROUND_TO|SESSION_WINDOW|SOFTMAX|SQRT)\\b(?=\\s*\\()"
+        }
+      ]
+    },
     "constants": {
       "patterns": [
         {
           "name": "constant.language.qkt",
-          "match": "\\b(TRUE|FALSE)\\b"
+          "match": "(?i)\\b(BPS|FIVE_PERCENT|HALF_PERCENT|ONE_PERCENT|QUARTER_PERCENT|TEN_PERCENT|THREE_PERCENT|TWO_PERCENT)\\b"
         }
       ]
     },
-    "section-keywords": {
+    "broker-prefix": {
       "patterns": [
         {
-          "name": "keyword.control.section.qkt",
-          "match": "\\b(STRATEGY|VERSION|DEFAULTS|SYMBOLS|LET|RULES|PORTFOLIO|IMPORT)\\b"
+          "name": "entity.name.namespace.qkt",
+          "match": "\\b([A-Za-z_][A-Za-z0-9_]*):(?=[A-Za-z0-9_])"
         }
       ]
     },
-    "flow-keywords": {
+    "fields": {
       "patterns": [
         {
-          "name": "keyword.control.flow.qkt",
-          "match": "\\b(WHEN|THEN|FOR|EACH|IN|DO|AS|RUN|HOLD|CASE|ELSE|END|SINCE)\\b"
+          "name": "support.variable.field.qkt",
+          "match": "(?<=\\.)(?i)\\b(ask|avg_entry_price|avg_price|balance|banked|bid|candle|close|complete|contract_size|count|date_utc|day|days_in_month|dd_pct|entry_price|epoch_ms|equity|equity_peak|gross|high|holding_duration|hour_utc|last_trade_at|last_trade_pnl|long_count|longs|loss_streak|losses|losses_today|low|mae|mfe|minute_utc|month|open|open_count|open_positions_count|pnl|price|qty|quantity|realized_month|realized_pnl|realized_today|reason|remaining_s|short_count|shorts|side|spread|stage|swap_long_points|swap_short_points|tick|tick_size|time|timestamp|today|total_pnl|trades_today|unrealized_pnl|value|volume|volume_min|volume_step|weekday|win_streak|wins|wins_today)\\b"
         }
       ]
     },
-    "other-keywords": {
+    "members": {
       "patterns": [
         {
-          "name": "keyword.other.qkt",
-          "match": "\\b(BUY|SELL|CLOSE_ALL|CLOSE|CANCEL_ALL|CANCEL|FLATTEN|LOG|WARN|ERROR|DEBUG|STACK_AT|STACK|SPACING|WITHIN|MFE|EXIT|AFTER|MARKET|LIMIT|STOP_LOSS|STOP|TRAILING|BRACKET|OCO_ENTRY|OCO|ORDER_TYPE|TAKE_PROFIT|TAKE|PROFIT|LOSS|RR|AT|BY|PCT|SIZING|RISK|USD|OF|EQUITY|BALANCE|POSITION_AVG_PRICE|POSITION|OPEN_ORDERS|ENTRY_QTY|TIF|GTC|IOC|FOK|DAY|GTD|EVERY|WARMUP|BARS|CROSSES|ABOVE|BELOW|BETWEEN|OPEN|MAX|MIN|MEAN|SUM|ACCOUNT|SYMBOL|NOW)\\b"
+          "name": "variable.other.member.qkt",
+          "match": "(?<=\\.)[A-Za-z_][A-Za-z0-9_]*"
+        }
+      ]
+    },
+    "alias": {
+      "patterns": [
+        {
+          "name": "variable.other.alias.qkt",
+          "match": "\\b[A-Za-z_][A-Za-z0-9_]*(?=\\s*\\.)"
         }
       ]
     },
@@ -99,19 +350,7 @@
       "patterns": [
         {
           "name": "keyword.operator.qkt",
-          "match": "==|!=|<=|>=|<|>|\\+|-|\\*|/|%"
-        },
-        {
-          "name": "keyword.operator.qkt",
-          "match": "\\b(AND|OR|NOT|IS|NULL)\\b"
-        }
-      ]
-    },
-    "stream-prefix": {
-      "patterns": [
-        {
-          "name": "entity.name.namespace.qkt",
-          "match": "\\b([A-Z][A-Z0-9_]*):"
+          "match": "->|==|<>|!=|<=|>=|<|>|=|\\+|-|\\*|/|%"
         }
       ]
     }
