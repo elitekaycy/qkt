@@ -1,7 +1,7 @@
 package com.qkt.research
 
 import com.qkt.accounting.AccountingConfig
-import com.qkt.accounting.AccountingEngine
+import com.qkt.accounting.accountingEngine
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.pnl.CommissionBook
@@ -24,7 +24,7 @@ internal class ReplayBooks(
     val strategyPositions = StrategyPositionTracker()
     val positions = strategyPositions.account
     val commissionBook = CommissionBook(PerLotCommission(instruments))
-    val accounting = AccountingEngine(accountingConfig, priceTracker)
+    val accounting = accountingEngine(accountingConfig, priceTracker, instruments)
     val pnl = PnLCalculator(positions, priceTracker, instruments, accounting, markTimestamp = markTimestamp)
     val strategyPnL =
         StrategyPnL(
