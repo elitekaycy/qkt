@@ -44,7 +44,6 @@ class EditorInstaller(
                 EditorTarget.VSCODE -> vscode.install(root)
                 EditorTarget.NVIM -> installVimFamily(root, detector.nvimConfigDir(), EditorTarget.NVIM)
                 EditorTarget.VIM -> installVimFamily(root, detector.vimConfigDir(), EditorTarget.VIM)
-                EditorTarget.SUBLIME -> installSublime(root, detector.sublimePackagesDir())
             } ?: return null
         val updated = EditorManifest.load(manifestPath).withInstall(target, result.placedFiles)
         EditorManifest.save(manifestPath, updated)
@@ -95,21 +94,5 @@ class EditorInstaller(
         }
         out.appendLine("qkt editor: installed ${target.displayName} plugin (${placed.size} files at $configDir)")
         return InstallResult(target, placed)
-    }
-
-    private fun installSublime(
-        root: Path,
-        packagesDir: Path,
-    ): InstallResult? {
-        val src = root.resolve("textmate").resolve("qkt.tmLanguage.json")
-        if (!Files.isRegularFile(src)) {
-            err.appendLine("qkt: textmate grammar not found at $src")
-            return null
-        }
-        Files.createDirectories(packagesDir)
-        val dst = packagesDir.resolve("qkt.sublime-syntax")
-        Files.copy(src, dst, StandardCopyOption.REPLACE_EXISTING)
-        out.appendLine("qkt editor: installed Sublime grammar at $dst")
-        return InstallResult(EditorTarget.SUBLIME, listOf(dst))
     }
 }

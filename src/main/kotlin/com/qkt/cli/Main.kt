@@ -138,8 +138,9 @@ private fun printHelp() {
 
         EDITOR INTEGRATIONS
             editor list             show supported editors + what's detected on this machine
-            editor install <t>      install for vscode, nvim, vim, sublime, or all
+            editor install <t>      install for vscode, nvim, vim, or all
             editor uninstall <t>    remove a previously-installed integration
+            editor grammar          print the generated grammar (--format textmate|vim)
 
         FLAGS
             --version, -v           print qkt version
