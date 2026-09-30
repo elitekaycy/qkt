@@ -49,4 +49,11 @@ class PriceSpaceTest {
     fun `a level that maps to a non-positive contract price is refused`() {
         assertThatThrownBy { panama.limitToContract(BigDecimal("-20"), Side.BUY) }.hasMessageContaining("not positive")
     }
+
+    @Test
+    fun `a continuous price maps back to the contract price it came from`() {
+        val exact = PriceSpace(PriceAdjustment.PANAMA, BigDecimal("-10"), tick)
+        assertThat(exact.priceToContract(exact.toContinuous(BigDecimal("110.25")))).isEqualByComparingTo("110.25")
+        assertThat(ratio.priceToContract(ratio.toContinuous(BigDecimal("110.25")))).isEqualByComparingTo("110.25")
+    }
 }

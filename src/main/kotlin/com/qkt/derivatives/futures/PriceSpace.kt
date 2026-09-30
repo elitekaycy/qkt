@@ -43,6 +43,12 @@ class PriceSpace(
         side: Side,
     ): BigDecimal = snap(toRaw(level), if (side == Side.BUY) RoundingMode.CEILING else RoundingMode.FLOOR)
 
+    /**
+     * A continuous-series [price] as the contract price it maps from, rounded half-even to the tick:
+     * exact for every price [toContinuous] produced from an on-grid contract price.
+     */
+    fun priceToContract(price: BigDecimal): BigDecimal = snap(toRaw(price), RoundingMode.HALF_EVEN)
+
     private fun toRaw(level: BigDecimal): BigDecimal {
         val raw =
             when (adjustment) {
