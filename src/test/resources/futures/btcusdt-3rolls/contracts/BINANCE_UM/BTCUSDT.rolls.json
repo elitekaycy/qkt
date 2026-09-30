@@ -1,0 +1,34 @@
+{
+    "root": "BINANCE_UM:BTCUSDT",
+    "policy": "8d@08:00",
+    "rolls": [
+        {
+            "atMs": 1718870400000,
+            "from": "BTCUSDT_240628",
+            "to": "BTCUSDT_240927",
+            "fromPrice": "65966.9",
+            "toPrice": "68032.8"
+        },
+        {
+            "atMs": 1726732800000,
+            "from": "BTCUSDT_240927",
+            "to": "BTCUSDT_241227",
+            "fromPrice": "62206.4",
+            "toPrice": "63343.9"
+        },
+        {
+            "atMs": 1734595200000,
+            "from": "BTCUSDT_241227",
+            "to": "BTCUSDT_250328",
+            "fromPrice": "102050.9",
+            "toPrice": "105750.5"
+        },
+        {
+            "atMs": 1742457600000,
+            "from": "BTCUSDT_250328",
+            "to": "BTCUSDT_250627",
+            "fromPrice": "85898.3",
+            "toPrice": "87055.1"
+        }
+    ]
+}
