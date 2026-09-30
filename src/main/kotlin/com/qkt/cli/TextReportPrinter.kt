@@ -15,6 +15,7 @@ internal object TextReportPrinter {
         r: BacktestResult,
         out: PrintStream,
         brokerKind: BrokerKind,
+        futures: Set<String> = emptySet(),
     ) {
         val g = r.global
         out.println("Trades:           ${g.tradeCount}")
@@ -76,7 +77,7 @@ internal object TextReportPrinter {
         out.println("  Execution:  ${executionModel(brokerKind)}")
         out.println("  Commission: ${commissionNote(g.commissionPaid)}")
         out.println("  Swap:       ${swapNote(g.swapPaid)}")
-        if (r.contractFills.isNotEmpty() || r.settlements.isNotEmpty()) {
+        if (futures.isNotEmpty()) {
             out.println(
                 "  Futures:    exchange simulator — executable price + slippage, root fees per fill, rolls as roll costs",
             )

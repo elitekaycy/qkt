@@ -106,8 +106,8 @@ class BacktestCommand(
                 Files.createDirectories(dir)
                 BacktestReportWriter(dir).write(result)
             }
-            ReportPrinter.print(result, format, System.out, ctx.brokerKind)
             val futures = ctx.instruments.futuresSymbols(ctx.symbols)
+            ReportPrinter.print(result, format, System.out, ctx.brokerKind, futures)
             if (futures.isNotEmpty()) System.err.println(futuresExecutionNote(futures))
             if (ctx.brokerKind == BrokerKind.PAPER && ctx.symbols.any { it !in futures }) {
                 System.err.println(

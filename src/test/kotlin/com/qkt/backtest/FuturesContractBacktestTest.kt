@@ -71,6 +71,7 @@ class FuturesContractBacktestTest {
         dir: Path,
         data: Path,
         symbol: String,
+        json: Boolean = true,
     ): Pair<Int, String> {
         val strategy = dir.resolve("s.qkt")
         Files.writeString(
@@ -106,7 +107,7 @@ class FuturesContractBacktestTest {
                             data.toString(),
                             "--no-fetch",
                             "--allow-incomplete",
-                            "--json",
+                            *(if (json) arrayOf("--json") else emptyArray()),
                             "--report-dir",
                             dir.resolve("report").toString(),
                         ),
@@ -142,5 +143,15 @@ class FuturesContractBacktestTest {
         val (code, output) = backtest(dir, seed(dir), "BINANCE_UM:BTCUSDT_241227")
         assertThat(code).isNotEqualTo(ExitCodes.SUCCESS)
         assertThat(output).contains("BTCUSDT_241227").contains("--catalog")
+    }
+
+    @Test
+    fun `the text report says a listed contract filled on the exchange simulator`(
+        @TempDir dir: Path,
+    ) {
+        val (code, output) = backtest(dir, seed(dir), "BINANCE_UM:$contract", json = false)
+        assertThat(code).describedAs(output).isEqualTo(ExitCodes.SUCCESS)
+        assertThat(output).contains("Futures:    exchange simulator")
+        assertThat(output).doesNotContain("paper broker fills at mid")
     }
 }
