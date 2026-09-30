@@ -18,15 +18,20 @@ class BinanceContractCatalog(
             client
                 .listPrefixes("data/futures/um/monthly/klines/${pair}_")
                 .map { it.trimEnd('/').substringAfterLast('/') }
-        val delivered = client.deliveryPrices(pair)
+        // The endpoint stamps a delivery at 00:00 UTC of its date; the contract settles at 08:00 that day.
+        val delivered = client.deliveryPrices(pair).mapKeys { (ms, _) -> Math.floorDiv(ms, MS_PER_DAY) }
         val contracts =
             codes.mapNotNull { code ->
-                BinanceQuarterly.expiryMs(code)?.let { ListedContract(code, it, delivered[it]) }
+                BinanceQuarterly
+                    .expiryMs(
+                        code,
+                    )?.let { ListedContract(code, it, delivered[Math.floorDiv(it, MS_PER_DAY)]) }
             }
         return ContractCatalog(root, contracts).sorted()
     }
 
     private companion object {
         const val VENUE = "BINANCE_UM"
+        const val MS_PER_DAY = 86_400_000L
     }
 }
