@@ -15,6 +15,7 @@ internal val toolingOptionSchemas: Map<String, CliOptionSchema> =
             ),
         "editor" to
             CliOptionSchema(
+                values = setOf("format"),
                 flags = setOf("yes", "y"),
                 shortAliases = mapOf("-y" to "--yes"),
             ),
