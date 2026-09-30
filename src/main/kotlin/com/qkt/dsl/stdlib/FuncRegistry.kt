@@ -151,4 +151,19 @@ object FuncRegistry {
 
     /** Every registered function name (uppercase), for editor tooling (completion, hover). */
     fun names(): Set<String> = table.keys
+
+    /** How many arguments [name] takes, for editor tooling; null when the function is unknown. */
+    fun arity(name: String): FuncArity? =
+        when (table[name.uppercase()]?.arity) {
+            Arity.UNARY -> FuncArity(1, variadic = false)
+            Arity.BINARY -> FuncArity(2, variadic = false)
+            Arity.VARIADIC2 -> FuncArity(2, variadic = true)
+            null -> null
+        }
 }
+
+/** A function's call arity: exactly [min] arguments, or at least [min] when [variadic]. */
+data class FuncArity(
+    val min: Int,
+    val variadic: Boolean,
+)

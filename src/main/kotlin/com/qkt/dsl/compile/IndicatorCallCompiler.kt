@@ -1,5 +1,6 @@
 package com.qkt.dsl.compile
 
+import com.qkt.dsl.DslVocabulary
 import com.qkt.dsl.ast.IndicatorCall
 import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.StreamFieldRef
@@ -16,8 +17,8 @@ internal class IndicatorCallCompiler(
     private val exprs: ExprCompiler,
 ) {
     fun compile(call: IndicatorCall): CompiledExpr {
-        if (call.name.equals("RESID", ignoreCase = true)) return compileResidual(call)
-        if (call.name.equals("CONFIRM_RATIO", ignoreCase = true)) return compileConfirmRatio(call)
+        if (call.name.equals(DslVocabulary.RESID, ignoreCase = true)) return compileResidual(call)
+        if (call.name.equals(DslVocabulary.CONFIRM_RATIO, ignoreCase = true)) return compileConfirmRatio(call)
         val spec =
             com.qkt.dsl.stdlib.IndicatorRegistry
                 .spec(call.name)

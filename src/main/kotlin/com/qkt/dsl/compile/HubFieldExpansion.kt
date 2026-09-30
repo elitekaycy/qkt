@@ -36,7 +36,9 @@ object HubFieldExpansion {
     const val SEPARATOR: Char = '/'
 
     /** Fields that read instrument metadata rather than a value; a dataset has none, so they are left alone. */
-    private val META_FIELDS: Set<String> = ExprCompiler.META_FIELDS
+    private val META_FIELDS: Set<String> =
+        com.qkt.dsl.DslVocabulary.metaFields
+            .toSet()
 
     data class Expanded(
         val ast: StrategyAst,
