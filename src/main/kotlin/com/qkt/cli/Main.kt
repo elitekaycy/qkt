@@ -20,6 +20,7 @@ internal fun runMain(argv: Array<String>): Int =
         }
         when (args.subcommand) {
             "parse" -> ParseCommand(args).run()
+            "dsl" -> DslCommand(args).run()
             "lsp" -> LspCommand().run()
             "backtest" -> BacktestCommand(args).run()
             "sweep" -> SweepCommand(args).run()
@@ -88,6 +89,7 @@ private fun printHelp() {
 
         STRATEGY AUTHORING
             parse <file>            parse and validate a .qkt file
+            dsl vocabulary [--json] list every keyword, indicator, function, field and member
             lsp                     run the language server over stdio (for editors)
             backtest <file> ...     run a backtest (--enforce-live-breakers; --chaos for seeded stress)
             sweep <file> ...        grid-search params (--param fast=5,10,15 --rank sharpe)
