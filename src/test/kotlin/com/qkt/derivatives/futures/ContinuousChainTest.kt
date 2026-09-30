@@ -143,10 +143,29 @@ class ContinuousChainTest {
     @Test
     fun `a roll inside the expiry guard window is refused`() {
         val late = root.copy(roll = RollPolicy(0, LocalTime.of(0, 0), PriceAdjustment.PANAMA), expiryGuardHours = 24)
-        val history0 = history.copy(policy = "0d@00:00")
-
         assertThatThrownBy { ContinuousChain(late, catalog, history0, ContinuousSelector.FRONT) }
             .hasMessageContaining("expiryGuardHours")
             .hasMessageContaining("BTCUSDT_240927")
     }
+
+    @Test
+    fun `streams that cannot trade or never hold an expiring contract are not held to the guard`() {
+        val policy0 = RollPolicy(0, LocalTime.of(0, 0), PriceAdjustment.RATIO)
+        val readOnly = root.copy(roll = policy0, expiryGuardHours = 24)
+        val tradedNext = root.copy(roll = policy0.copy(adjust = PriceAdjustment.PANAMA), expiryGuardHours = 24)
+        assertThat(ContinuousChain(readOnly, catalog, history0, ContinuousSelector.FRONT).symbol).endsWith("@front")
+        assertThat(ContinuousChain(tradedNext, catalog, history0, ContinuousSelector.NEXT).symbol).endsWith("@next")
+    }
+
+    /** The fixture's rolls measured under a roll at 00:00 on each expiry day. */
+    private val history0 =
+        RollHistory(
+            root.root,
+            "0d@00:00",
+            listOf(
+                RollRecord(ms("2024-09-27T00:00:00Z"), "BTCUSDT_240927", "BTCUSDT_241227", "63000", "63800"),
+                RollRecord(ms("2024-12-27T00:00:00Z"), "BTCUSDT_241227", "BTCUSDT_250328", "97000", "98500"),
+                RollRecord(ms("2024-09-27T00:00:00Z"), "BTCUSDT_241227", "BTCUSDT_250328", "63800", "64700"),
+            ),
+        )
 }
