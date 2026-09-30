@@ -10,6 +10,7 @@ import com.qkt.bus.EventBus
 import com.qkt.events.CandleEvent
 import com.qkt.events.DecisionOrderLinkedEvent
 import com.qkt.events.FillAccountedEvent
+import com.qkt.events.FillAccountingKind
 import com.qkt.events.OrderEvent
 import com.qkt.events.RiskEvent
 import com.qkt.events.RiskRejectedEvent
@@ -21,6 +22,7 @@ import com.qkt.events.WarmupTickEvent
 import com.qkt.execution.Trade
 import com.qkt.risk.RunawayBreakerTrip
 import com.qkt.strategy.Signal
+import java.math.BigDecimal
 
 /**
  * Everything a replay writes down as it runs: the trade tape, rejections, halts, breaker trips, the
@@ -52,6 +54,7 @@ internal class ReplayRecorder(
         bus.subscribe<RuleDecisionEvent>(ruleDecisions::add)
         bus.subscribe<DecisionOrderLinkedEvent>(decisionOrderLinks::add)
         bus.subscribe<FillAccountedEvent>(accountedFills::add)
+        bus.subscribe<RiskEvent.Halted>(halts::add)
         bus.subscribe<TickEvent> { liveTicksProcessed++ }
         bus.subscribe<WarmupTickEvent> { warmupTicksProcessed++ }
         bus.subscribe<CandleEvent> { event ->
@@ -163,6 +166,15 @@ internal class ReplayRecorder(
             streamCandles = streamCandlesEmitted.toSortedMap(),
             strategyCandleEvaluations = strategyCandleEvaluations.toSortedMap(),
         )
+
+    /**
+     * The execution costs venues reported on fills, in account currency, for [strategyId] or for
+     * every strategy when null: the futures exchange simulator's fees. The CFD simulators report none.
+     */
+    fun venueCostsPaid(strategyId: String? = null): BigDecimal =
+        accountedFills
+            .filter { it.kind == FillAccountingKind.EXECUTION && (strategyId == null || it.strategyId == strategyId) }
+            .fold(BigDecimal.ZERO) { total, fill -> total.add(fill.venueCostsAccount) }
 
     /** The decision -> order -> fill chain recorded so far. */
     fun causality(): ReplayCausalityReport =
