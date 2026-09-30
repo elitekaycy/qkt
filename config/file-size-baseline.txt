@@ -24,12 +24,12 @@
 476 src/test/kotlin/com/qkt/broker/CompositeBrokerTest.kt
 474 src/main/kotlin/com/qkt/backtest/Backtest.kt
 467 src/main/kotlin/com/qkt/connector/bybit/linear/BybitLinearBroker.kt
-456 src/main/kotlin/com/qkt/lsp/QktDocs.kt
 453 src/main/kotlin/com/qkt/cli/daemon/StrategyHandle.kt
 452 src/main/kotlin/com/qkt/connector/bybit/spot/BybitSpotBroker.kt
 451 src/main/kotlin/com/qkt/connector/mt5/MT5PositionPoller.kt
 448 src/main/kotlin/com/qkt/cli/bot/BotSessionCommand.kt
 426 src/main/kotlin/com/qkt/connector/mt5/MT5Broker.kt
+420 src/main/kotlin/com/qkt/lsp/QktDocs.kt
 416 src/main/kotlin/com/qkt/research/ReplayEngine.kt
 411 src/main/kotlin/com/qkt/broker/PaperBroker.kt
 411 src/test/kotlin/com/qkt/connector/mt5/MT5BrokerProfileLoaderTest.kt
@@ -59,7 +59,6 @@
 268 src/main/kotlin/com/qkt/connector/mt5/MT5OrderTranslator.kt
 265 src/main/kotlin/com/qkt/app/LatchManager.kt
 262 src/test/kotlin/com/qkt/dsl/compile/OrderSurfaceEndToEndTest.kt
-257 src/main/kotlin/com/qkt/lsp/QktSnippets.kt
 257 src/test/kotlin/com/qkt/connector/mt5/MT5PollerSessionGateTest.kt
 257 src/test/kotlin/com/qkt/parity/MT5DaemonE2ETest.kt
 256 src/main/kotlin/com/qkt/broker/Broker.kt
@@ -67,6 +66,7 @@
 252 src/main/kotlin/com/qkt/events/BrokerEvent.kt
 250 src/main/kotlin/com/qkt/connector/mt5/marketdata/Mt5MarketSource.kt
 250 src/test/kotlin/com/qkt/dsl/compile/GeneratedActionParityTest.kt
+249 src/main/kotlin/com/qkt/lsp/QktSnippets.kt
 249 src/test/kotlin/com/qkt/dsl/compile/GeneratedExpressionParityTest.kt
 248 src/test/kotlin/com/qkt/connector/mt5/MT5BrokerStateTest.kt
 242 src/test/kotlin/com/qkt/dsl/compile/ForgeThesisExpressibilityTest.kt

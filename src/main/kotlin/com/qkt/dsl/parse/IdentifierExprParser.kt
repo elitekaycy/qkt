@@ -1,5 +1,6 @@
 package com.qkt.dsl.parse
 
+import com.qkt.dsl.DslVocabulary
 import com.qkt.dsl.ast.AggFn
 import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.FuncCall
@@ -49,19 +50,18 @@ internal class IdentifierExprParser(
                 when {
                     // CALENDAR_WINDOW is a clock-reading boolean primitive (like NOW.*),
                     // not a pure numeric function or an indicator — it gets its own node.
-                    name.equals("CALENDAR_WINDOW", ignoreCase = true) ->
+                    name.equals(DslVocabulary.CALENDAR_WINDOW, ignoreCase = true) ->
                         clockExprParser.buildCalendarWindow(args, t)
-                    name.equals("SESSION_WINDOW", ignoreCase = true) ->
+                    name.equals(DslVocabulary.SESSION_WINDOW, ignoreCase = true) ->
                         clockExprParser.buildSessionWindow(args, t)
-                    name.equals("LAST_TRADING_DAY_OF_MONTH", ignoreCase = true) ->
+                    name.equals(DslVocabulary.LAST_TRADING_DAY_OF_MONTH, ignoreCase = true) ->
                         clockExprParser.buildLastTradingDayOfMonth(args, t)
                     // Rolling shorthand (#1130): avg(x, N) is mean(x) SINCE T-N, and
                     // count(cond, N) counts the last N bars where cond held.
-                    name.equals("AVG", ignoreCase = true) -> aggregateParser.rollingShorthand(AggFn.MEAN, name, args, t)
-                    name.equals(
-                        "COUNT",
-                        ignoreCase = true,
-                    ) -> aggregateParser.rollingShorthand(AggFn.SUM, name, args, t)
+                    name.equals(DslVocabulary.AVG, ignoreCase = true) ->
+                        aggregateParser.rollingShorthand(AggFn.MEAN, name, args, t)
+                    name.equals(DslVocabulary.COUNT, ignoreCase = true) ->
+                        aggregateParser.rollingShorthand(AggFn.SUM, name, args, t)
                     // Scalar math functions (abs, sqrt, log, exp, pow, …) route through
                     // FuncCall — pure functions on numeric values, no warmup or per-bar state.
                     // Everything else stays IndicatorCall for the indicator-binding path.

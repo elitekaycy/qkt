@@ -1,6 +1,6 @@
 # Actions — BUY, SELL, CLOSE, CANCEL, LOG
 
-The verbs that go after `THEN`. Each action is a complete imperative — "do this exact thing." A rule can have multiple actions separated by `;` or newlines.
+The verbs that go after `THEN`. Each action is a complete imperative — "do this exact thing." A rule can have multiple actions separated by `;` (a newline alone does not separate them).
 
 ## The action verbs
 
@@ -15,7 +15,7 @@ The verbs that go after `THEN`. Each action is a complete imperative — "do thi
 | `CANCEL <stream>` | Cancel any pending orders on this stream |
 | `CANCEL_ALL` | Cancel every pending order |
 | `OCO_ENTRY { leg1, leg2 }` | Two pending entries linked one-cancels-other; whichever fills, the other auto-cancels |
-| `LOG [WARN|ERROR|DEBUG] "<msg>" [field=expr ...]` | Emit a structured log line (default level is INFO) |
+| `LOG [WARN\|ERROR\|DEBUG] "<msg>" [field=expr ...]` | Emit a structured log line (default level is INFO) |
 
 `FLATTEN` and `CLOSE_ALL` compile to the same engine path; pick whichever reads more naturally:
 
@@ -32,10 +32,12 @@ The entry verbs. Both take the same set of modifiers.
 ```qkt
 BUY <stream>
     [ SIZING <size_spec> ]
-    [ <order_type_modifier> ]
-    [ BRACKET { ... } ]
-    [ STACK ... ]
-    [ TIF <gtc|ioc|fok|day> ]
+    [ ORDER_TYPE = <order_type> ]
+    [ BRACKET { ... } | OCO { STOP AT <price>, LIMIT AT <price> } ]
+    [ STACK ... ] [ STACK_AT ... ]
+    [ TIMES <expr> ] [ EXIT AFTER <duration> ]
+    [ TIF GTC | IOC | FOK | DAY | GTD [UNTIL] <epoch_ms_expr> ]
+    [ ON_FILL { ... } ]
     [ ON_STOP { ... } ]
     [ ON_TP { ... } ]
     [ ON_CLOSE { ... } ]
@@ -43,14 +45,36 @@ BUY <stream>
 
 Trailing-stop order types ship as `ORDER_TYPE = TRAILING BY <distance>` and `ORDER_TYPE = TRAILING PCT <percent>` (see [Trailing stop](../../how-to/add-stop-loss.md#trailing-stop) in the stop-loss recipe). `1 PCT` means 1%; the percentage must be greater than 0 and less than 100.
 
-### Minimal BUY (uses DEFAULTS)
+### Minimal BUY
 
 ```qkt
 WHEN ema(btc.close, 9) CROSSES ABOVE ema(btc.close, 21)
 THEN BUY btc SIZING 0.1
 ```
 
-This is valid only if `DEFAULTS { sizing = ... }` is set (otherwise the parser complains). Sizing is the only field without a sensible compile-time default.
+`SIZING` is the one clause an entry cannot do without: it comes from the action or from
+`DEFAULTS { SIZING = ... }`, and a `BUY` with neither is rejected when the strategy compiles
+(`BUY/SELL requires SIZING`). Everything else has a default — market order, `GTC`, no bracket.
+
+```qkt
+STRATEGY sized_by_default VERSION 1
+DEFAULTS { SIZING = 0.1 }
+SYMBOLS
+    btc = BACKTEST:BTCUSDT EVERY 1m
+RULES
+    WHEN ema(btc.close, 9) CROSSES ABOVE ema(btc.close, 21)
+    THEN BUY btc                          -- 0.1 from DEFAULTS
+```
+
+<!-- qkt-doc: illegal -->
+```qkt
+STRATEGY unsized VERSION 1
+SYMBOLS
+    btc = BACKTEST:BTCUSDT EVERY 1m
+RULES
+    WHEN ema(btc.close, 9) CROSSES ABOVE ema(btc.close, 21)
+    THEN BUY btc
+```
 
 ### Full BUY
 
@@ -87,10 +111,34 @@ To submit a stop entry (buy on breakout above a level):
 BUY btc SIZING 0.1 ORDER_TYPE = STOP AT 67500       -- triggers when price hits $67,500
 ```
 
-!!! info "Stop-limit and if-touched coming in Phase 25"
-    `STOP_LIMIT AT … LIMIT_PRICE …` and `IF_TOUCHED AT …` are **planned but not yet shipped**. See [Planned features](../../planned.md). Today, only `MARKET`, `LIMIT AT`, and `STOP AT` are supported as entry order types.
+A stop-limit entry adds a `LIMIT AT` to the stop: once the stop price trades, a limit order rests
+at the limit price instead of a market order chasing:
 
-The order type modifier replaces the default `MARKET` and goes right after the stream/sizing.
+```qkt
+BUY btc SIZING 0.1 ORDER_TYPE = STOP AT 67500 LIMIT AT 67520   -- trigger at 67,500, fill no worse than 67,520
+```
+
+The entry order types are therefore `MARKET` (the default), `LIMIT AT <price>`, `STOP AT <price>`,
+`STOP AT <price> LIMIT AT <price>`, and the trailing forms `TRAILING BY <distance>` /
+`TRAILING PCT <percent>`. Each takes an expression for its price, evaluated when the rule fires.
+There is no if-touched order type. The order type modifier replaces the default `MARKET` and
+goes after the stream/sizing.
+
+### `OCO { STOP AT ..., LIMIT AT ... }` — exit pair by price
+
+Where `BRACKET` states a stop and a target as distances or prices with `STOP_LOSS` /
+`TAKE_PROFIT`, `OCO` states the same two exits as raw order prices. Both children are required
+and either may reference the bar that fired the rule:
+
+```qkt
+WHEN btc.close CROSSES ABOVE ema(btc.close, 50) AND POSITION.btc = 0
+THEN BUY btc SIZING 0.1 OCO { STOP AT btc.close - 200, LIMIT AT btc.close + 400 }
+```
+
+<!-- qkt-doc: illegal -->
+```qkt
+BUY btc SIZING 0.1 OCO { STOP AT btc.close - 200 }   -- OCO requires a LIMIT AT child
+```
 
 ## `CLOSE <stream>` and `CLOSE_ALL`
 
@@ -194,7 +242,11 @@ Both legs are submitted to the broker as pending orders (typically `STOP AT` or 
 
 ### Time-in-force
 
-The two legs typically share a `TIF GTD UNTIL NOW + <duration>` clause so both expire together if neither triggers. See [NOW](now.md) for relative deadlines.
+The two legs typically share a `TIF GTD UNTIL NOW + <duration>` clause so both expire together if neither triggers. `UNTIL` is optional sugar — `TIF GTD NOW + 10m` is the same deadline. See [NOW](now.md) for relative deadlines.
+
+```qkt
+BUY gold SIZING 0.2 ORDER_TYPE = STOP AT gold.close + 50 TIF GTD NOW + 10m
+```
 
 ### Common gotchas
 
@@ -246,9 +298,17 @@ Only hook blocks can read the `EXIT` namespace:
 | --- | --- |
 | `EXIT.price` | Terminal closing fill price |
 | `EXIT.side` | Closing fill side: `BUY` or `SELL` |
-| `EXIT.qty` | Total quantity closed by this exit |
+| `EXIT.qty` | Total quantity closed by this exit; `EXIT.quantity` is the same accessor |
 | `EXIT.pnl` | Net realized strategy PnL accumulated across the exit fills |
 | `EXIT.reason` | `STOP`, `TP`, or `CLOSE` |
+
+```qkt
+BUY gold SIZING 0.1
+  BRACKET { STOP LOSS BY 50, TAKE PROFIT BY 100 }
+  ON_CLOSE {
+    LOG "flat" side=EXIT.side qty=EXIT.quantity price=EXIT.price pnl=EXIT.pnl why=EXIT.reason
+  }
+```
 
 Using `EXIT.*` anywhere else is a compile error. String fields such as `EXIT.side` and
 `EXIT.reason` are useful in structured `LOG` fields; numeric fields can size and price
@@ -278,7 +338,7 @@ The one-level nesting limit prevents an accidental infinite stop-and-reverse loo
 
 ## `LOG`
 
-Emits a structured log line. Three levels (`INFO`, `WARN`, `ERROR`, `DEBUG`) and optional structured fields.
+Emits a structured log line. Four levels (`INFO`, `WARN`, `ERROR`, `DEBUG` — `INFO` only by omission, see below) and optional structured fields.
 
 <!-- qkt-doc: grammar -->
 ```qkt
@@ -320,7 +380,18 @@ LOG ERROR "..."        -- something failed
 LOG DEBUG "..."        -- low-level detail; usually filtered out in production
 ```
 
-There is no explicit `LOG INFO` keyword form — INFO is reached by omitting the level.
+There is no explicit `LOG INFO` keyword form — INFO is reached by omitting the level, and
+`LOG INFO "..."` is a parse error:
+
+```qkt
+WHEN btc.close > btc.open
+THEN LOG "info" ; LOG WARN "warn" ; LOG ERROR "error" ; LOG DEBUG "debug"
+```
+
+<!-- qkt-doc: illegal -->
+```qkt
+WHEN btc.close > btc.open THEN LOG INFO "not a level keyword"
+```
 
 ## Combining actions
 
@@ -342,9 +413,9 @@ When you stack modifiers on a `BUY`/`SELL`, the order matters but the parser is 
 
 1. `<stream>` (required)
 2. `SIZING <spec>` (or inherited from `DEFAULTS`)
-3. Order-type modifier (`ORDER_TYPE = LIMIT AT <price>`, `ORDER_TYPE = STOP AT <price>`) — defaults to market
-4. `BRACKET { STOP_LOSS ..., TAKE_PROFIT ... }` — both legs are required
-5. `STACK <n> SPACING <points> ABOVE|BELOW [WITHIN <duration>]` — pyramiding
+3. Order-type modifier (`ORDER_TYPE = LIMIT AT <price>`, `ORDER_TYPE = STOP AT <price> [LIMIT AT <price>]`, `ORDER_TYPE = TRAILING BY|PCT ...`) — defaults to market
+4. `BRACKET { STOP_LOSS ..., TAKE_PROFIT ... }` — both legs are required; or `OCO { STOP AT ..., LIMIT AT ... }`
+5. `STACK <n> SPACING <points> [ABOVE|BELOW] [WITHIN <duration>]` — pyramiding; without a direction the layers follow the trade direction
 6. `STACK_AT MFE >= <threshold> WITHIN <duration> SIZING <qty> BRACKET { ... }` or `STACK_AT MAE >= <threshold> RECOVER <distance> WITHIN <duration> ...` — conditional bracketed stacks (multiple per action allowed; see [STACK_AT](stack-at.md))
 7. `TIMES <expression>` — repeat the whole entry N times (see [TIMES](times.md))
 8. `EXIT AFTER <duration>` — close this entry's leg that long after it fills, checked every tick (see [EXIT AFTER](exit-after.md))
@@ -375,7 +446,7 @@ BUY btc SIZING 0.01 EXIT AFTER 4m
 
 ## Common gotchas
 
-- **`BUY btc` without `SIZING` and without `DEFAULTS.sizing` is a parse error.** Sizing is required at exactly one of: action, DEFAULTS.
+- **`BUY btc` without `SIZING` and without `DEFAULTS { SIZING = ... }` is a compile error** (`BUY/SELL requires SIZING`). Sizing is required at one of: action, DEFAULTS; the action wins when both are present.
 - **`CLOSE` doesn't take a size.** It closes the whole position. To exit partially, use a `BRACKET` with scale-out targets or a `SELL` that fires when long.
 - **Edge-trigger gotcha for entries.** Without `AND POSITION.<stream> = 0`, a `BUY` rule fires once on signal — then if the signal stays true, it doesn't re-fire (edge-trigger). If you want re-entry capability, ensure the position guard is in place.
 - **`LOG` is not an exit.** Logging doesn't change strategy state. Use `CLOSE` or `CANCEL` for actions; `LOG` for the audit trail.

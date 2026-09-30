@@ -1,18 +1,6 @@
 package com.qkt.dsl.compile
 
-import com.qkt.dsl.ast.ActionAst
-import com.qkt.dsl.ast.Block
-import com.qkt.dsl.ast.Buy
-import com.qkt.dsl.ast.Cancel
-import com.qkt.dsl.ast.CancelAll
-import com.qkt.dsl.ast.Close
-import com.qkt.dsl.ast.CloseAll
 import com.qkt.dsl.ast.HUB_BROKER
-import com.qkt.dsl.ast.Latch
-import com.qkt.dsl.ast.Log
-import com.qkt.dsl.ast.OcoEntry
-import com.qkt.dsl.ast.Resize
-import com.qkt.dsl.ast.Sell
 import com.qkt.dsl.ast.StrategyAst
 import com.qkt.dsl.ast.StreamDecl
 import com.qkt.dsl.ast.StreamFieldRef
@@ -48,7 +36,9 @@ object HubFieldExpansion {
     const val SEPARATOR: Char = '/'
 
     /** Fields that read instrument metadata rather than a value; a dataset has none, so they are left alone. */
-    private val META_FIELDS: Set<String> = ExprCompiler.META_FIELDS
+    private val META_FIELDS: Set<String> =
+        com.qkt.dsl.DslVocabulary.metaFields
+            .toSet()
 
     data class Expanded(
         val ast: StrategyAst,
@@ -62,24 +52,12 @@ object HubFieldExpansion {
         // built by hand -- is a no-op the second time rather than a second level of nesting.
         val hubDecls =
             ast.streams.filter { it.broker.equals(HUB_BROKER, ignoreCase = true) && SEPARATOR !in it.symbol }
-        if (hubDecls.isEmpty()) return Expanded(ast, emptySet())
+        if (hubDecls.isEmpty()) return Expanded(ast, datasetAliasesOf(ast))
 
+        // An order on a dataset alias is not rejected here: this pass also runs at the parse
+        // boundary, where a bare exception has no position. The compiler refuses it by name
+        // through `readOnlyAliases`, tagged with the rule that placed the order.
         val byAlias = hubDecls.associateBy { it.alias }
-        for (rule in ast.rules) {
-            val targets =
-                when (rule) {
-                    is WhenThen -> orderTargets(rule.action)
-                }
-            val traded = targets.filter { it in byAlias }
-            require(traded.isEmpty()) {
-                "Series '${traded.first()}' is read-only -- a hub dataset carries a published statistic, " +
-                    "not a tradeable price; it cannot be bought, sold, closed, cancelled or resized"
-            }
-        }
-        for (schedule in ast.schedules) {
-            val traded = orderTargets(schedule.action).filter { it in byAlias }
-            require(traded.isEmpty()) { "Series '${traded.first()}' is read-only -- a hub dataset cannot be traded" }
-        }
         val hidden = LinkedHashMap<String, StreamDecl>()
         val transform =
             ExprTransform(
@@ -114,6 +92,7 @@ object HubFieldExpansion {
                                 WhenThen(
                                     cond = transform.expr(rule.cond),
                                     action = transform.action(rule.action),
+                                    line = rule.line,
                                 )
                         }
                     },
@@ -134,23 +113,14 @@ object HubFieldExpansion {
     }
 
     /**
-     * Every stream an action would trade, cancel or resize. Exhaustive over `ActionAst`, with no
-     * `else`, so a new action variant is a compile error here rather than a silent miss.
+     * The dataset aliases an earlier pass already expanded: each hidden field stream is named
+     * `<dataset>/<field>`, so the dataset is the part before the separator.
      */
-    private fun orderTargets(a: ActionAst): List<String> =
-        when (a) {
-            is Buy -> listOf(a.stream)
-            is Sell -> listOf(a.stream)
-            is Close -> listOf(a.stream)
-            is Resize -> listOf(a.stream)
-            CloseAll -> emptyList()
-            is Cancel -> listOf(a.stream)
-            CancelAll -> emptyList()
-            is Log -> emptyList()
-            is Block -> a.actions.flatMap(::orderTargets)
-            is OcoEntry -> orderTargets(a.leg1) + orderTargets(a.leg2)
-            is Latch -> listOf(a.stream)
-        }
+    private fun datasetAliasesOf(ast: StrategyAst): Set<String> =
+        ast.streams
+            .filter { it.broker.equals(HUB_BROKER, ignoreCase = true) && SEPARATOR in it.alias }
+            .map { it.alias.substringBefore(SEPARATOR) }
+            .toSet()
 
     fun hiddenAlias(
         alias: String,

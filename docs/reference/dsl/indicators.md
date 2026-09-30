@@ -1,6 +1,6 @@
 # Indicators
 
-The technical-analysis functions you can call in conditions and expressions. qkt ships ~10 hand-implemented indicators — the most common ones, written from scratch with hand-computed tests for correctness.
+The technical-analysis functions you can call in conditions and expressions. qkt ships 59 registered indicators (every name in `IndicatorRegistry`, from `ema` to `ib_defended_low`) plus the multi-series `resid` and `confirm_ratio`, all written from scratch with hand-computed tests for correctness. Names are case-insensitive: `ema`, `EMA` and `Ema` are the same call.
 
 ## Function call shape
 
@@ -105,6 +105,120 @@ THEN LOG "above upper Bollinger"
 ```
 
 `<stddev>` is the band width in standard deviations; the typical value is 2.0.
+
+### More moving averages
+
+<!-- qkt-doc: grammar -->
+```qkt
+dema(<value>, <period>)       -- double EMA: 2·EMA − EMA(EMA); less lag than ema
+tema(<value>, <period>)       -- triple EMA: 3·EMA − 3·EMA(EMA) + EMA(EMA(EMA)); least lag
+hma(<value>, <period>)        -- Hull MA: WMA(2·WMA(N/2) − WMA(N)) over √N bars; low lag, smooth
+```
+
+Each is a drop-in for `ema` where you want a faster turn at the cost of more overshoot (`dema`,
+`tema`) or a smoother low-lag line (`hma`). On a constant series each settles to that constant.
+
+```qkt
+WHEN hma(btc.close, 20) CROSSES ABOVE tema(btc.close, 50) AND POSITION.btc = 0
+THEN BUY btc SIZING 0.1
+WHEN dema(btc.close, 20) < lag(dema(btc.close, 20), 1) AND POSITION.btc > 0
+THEN CLOSE btc
+```
+
+### Keltner Channels
+
+<!-- qkt-doc: grammar -->
+```qkt
+keltner_upper(<stream>, <period>, <atrMult>)    -- EMA(close, period) + atrMult × ATR(period)
+keltner_middle(<stream>, <period>, <atrMult>)   -- EMA(close, period)
+keltner_lower(<stream>, <period>, <atrMult>)    -- EMA(close, period) − atrMult × ATR(period)
+```
+
+Like Bollinger Bands but scaled by true range instead of the dispersion of closes, so the bands
+widen with trading range. They read the whole candle, so pass the stream (or `<stream>.candle`),
+not `<stream>.close`. The three lines share one underlying instance.
+
+```qkt
+WHEN btc.close > keltner_upper(btc, 20, 2.0) AND POSITION.btc = 0 THEN BUY btc SIZING 0.1
+WHEN btc.close < keltner_middle(btc.candle, 20, 2.0) AND POSITION.btc > 0 THEN CLOSE btc
+```
+
+### Directional movement (ADX)
+
+<!-- qkt-doc: grammar -->
+```qkt
+adx(<stream>, <period>)       -- Wilder trend strength, 0-100 (direction-blind)
+plus_di(<stream>, <period>)   -- +DI: smoothed up-move share of true range, 0-100
+minus_di(<stream>, <period>)  -- -DI: smoothed down-move share of true range, 0-100
+```
+
+`adx` says how strongly the market trends; `plus_di` against `minus_di` says which way. The
+conventional reading is a trend above 25, up when `plus_di > minus_di`. All three take the
+stream and share one Wilder computation.
+
+```qkt
+WHEN adx(gold, 14) > 25 AND plus_di(gold, 14) > minus_di(gold, 14) AND POSITION.gold = 0
+THEN BUY gold SIZING 0.1
+```
+
+### Candle oscillators
+
+<!-- qkt-doc: grammar -->
+```qkt
+cci(<stream>, <period>)               -- Commodity Channel Index: (TP − SMA(TP)) / (0.015 × mean deviation)
+williams_r(<stream>, <period>)        -- Williams %R: close within the N-bar high/low range, −100..0
+stoch_k(<stream>, <kPeriod>, <dPeriod>)   -- fast Stochastic %K, 0-100
+stoch_d(<stream>, <kPeriod>, <dPeriod>)   -- %D = SMA(%K, dPeriod), 0-100
+```
+
+Each reads high, low and close, so it takes the stream. `cci` measures distance from the average
+typical price `(high + low + close) / 3` in units of mean deviation (±100 is the classic band);
+`williams_r` is the inverse of fast `%K` (0 at the top of the range, −100 at the bottom, and
+−100 on a rangeless window); the `stoch_k` / `stoch_d` crossover is the classic trigger.
+
+```qkt
+WHEN williams_r(btc, 14) < -80 AND cci(btc, 20) < -100 AND POSITION.btc = 0
+THEN BUY btc SIZING 0.1
+WHEN stoch_k(btc, 14, 3) CROSSES BELOW stoch_d(btc, 14, 3) AND stoch_k(btc, 14, 3) > 80 AND POSITION.btc > 0
+THEN CLOSE btc
+```
+
+### Dispersion and slope
+
+<!-- qkt-doc: grammar -->
+```qkt
+stddev(<value>, <period>)            -- rolling sample (n−1) standard deviation
+variance(<value>, <period>)          -- rolling sample variance, the square of stddev
+regression_slope(<value>, <period>)  -- least-squares slope through the last N values, per bar
+```
+
+`stddev` is the plain N-bar volatility estimator (`zscore` uses the same divisor);
+`regression_slope` fits the window against bar index 0…N−1, so a clean ramp of one unit per bar
+reads 1.0 and the sign is a smoothed trend direction. `<period>` must be at least 2 for the slope.
+
+```qkt
+-- Vol-scaled sizing with a slope filter: size to a 1% move per unit of 20-bar vol, only uptrend.
+LET vol20 = stddev(btc.close, 20) / btc.close
+WHEN regression_slope(btc.close, 20) > 0 AND variance(btc.close, 20) > 0 AND POSITION.btc = 0
+THEN BUY btc SIZING 0.01 / vol20
+```
+
+### On-balance volume
+
+<!-- qkt-doc: grammar -->
+```qkt
+obv(<stream>)                 -- cumulative volume: +volume on an up close, −volume on a down close
+```
+
+`obv` has no period: it starts at zero on the first candle and accumulates from there, so read it
+relative to its own past (`lag(obv(btc), 20)`) rather than as a level. It needs a volume-bearing
+feed; on a quote-only venue where `volume` is the tick count it still compiles but says little.
+
+```qkt
+-- Price at a 20-bar high that OBV does not confirm: thinning participation, stand aside.
+WHEN btc.close > highest(btc.close, 20) AND obv(btc) < lag(obv(btc), 20)
+THEN LOG "unconfirmed breakout"
+```
 
 ### VWAP
 
@@ -592,9 +706,17 @@ WHEN mod(gold.close, 10) < 1        -- price within $1 of a round $10 figure
 THEN LOG "near a big figure"
 ```
 
-`max` and `min` are **windowed aggregates** (see Aggregates), not scalar two-argument
-functions. For the larger or smaller of two values, use a `CASE` expression — e.g. the
-upper wick of a bar is `high - (CASE WHEN open > close THEN open ELSE close END)`.
+`max` and `min` are two things: with two or more arguments they are the scalar functions
+(the larger or smaller value — the upper wick of a bar is `btc.high - max(btc.open, btc.close)`),
+and with one series and a `SINCE` window they are the **windowed aggregates** below.
+`rank_of`, `normalize` and `softmax` score their first argument against the rest; see
+[Expressions → Math helpers](expressions.md#math-helpers).
+
+```qkt
+LET upperWick = btc.high - max(btc.open, btc.close)
+LET lowerWick = min(btc.open, btc.close) - btc.low
+WHEN upperWick > 2 * lowerWick THEN LOG "rejection bar"
+```
 
 ```qkt
 LET vol = sqrt(252 * sum(pow(btc.close / lag(btc.close, 1) - 1, 2)) SINCE T-20)
@@ -614,14 +736,21 @@ max(<expr>)  SINCE OPEN | T-<N>
 min(<expr>)  SINCE OPEN | T-<N>
 ```
 
-`SINCE T-N` is a rolling window over the last `N` closed bars (`null` until `N` bars exist). `SINCE OPEN` covers the bars since the position on that stream opened. There is no `sum(<expr>, <period>)` form and no `avg` or `count` function; see [Expressions → Aggregates](expressions.md#aggregates) for the full rules.
+`SINCE T-N` is a rolling window over the last `N` closed bars (`null` until `N` bars exist). `SINCE OPEN` covers the bars since the position on that stream opened. A rolling window also has the two-argument shorthands `sum(x, N)`, `mean(x, N)`, `avg(x, N)` and `count(<condition>, N)`, each exactly the `SINCE T-N` aggregate beside it; see [Expressions → Aggregates](expressions.md#aggregates) for the full rules.
 
 | You want | Write |
 | --- | --- |
-| Rolling sum of `x` over 20 bars | `sum(x) SINCE T-20` |
-| Rolling mean over 20 bars | `mean(x) SINCE T-20`, or `sma(x, 20)` |
-| Bars out of the last 20 where a condition held | `sum(CASE WHEN <condition> THEN 1 ELSE 0 END) SINCE T-20` |
-| Share of the last 20 bars where it held | `sma(CASE WHEN <condition> THEN 1 ELSE 0 END, 20)` |
+| Rolling sum of `x` over 20 bars | `sum(x) SINCE T-20`, or `sum(x, 20)` |
+| Rolling mean over 20 bars | `mean(x) SINCE T-20`, `avg(x, 20)`, or `sma(x, 20)` |
+| Bars out of the last 20 where a condition held | `count(<condition>, 20)`, or `sum(CASE WHEN <condition> THEN 1 ELSE 0 END) SINCE T-20` |
+| Share of the last 20 bars where it held | `count(<condition>, 20) / 20` |
+
+```qkt
+LET upBars = count(btc.close > btc.open, 20)
+LET avgRange = avg(btc.high - btc.low, 20)
+LET rangeSum = sum(btc.high - btc.low, 20)
+WHEN upBars >= 15 AND btc.high - btc.low > 2 * avgRange AND rangeSum > 0 THEN LOG "wide bar in an up run"
+```
 
 ```qkt
 LET upDays = sum(CASE WHEN btc.close > lag(btc.close, 1) THEN 1 ELSE 0 END) SINCE T-20
@@ -637,10 +766,21 @@ Every indicator has a warmup period — bars needed before it produces a meaning
 | `sma(value, N)` | N bars |
 | `ema(value, N)` | N bars (seeds with SMA of first N) |
 | `wma(value, N)` | N bars |
+| `dema(value, N)` | 2N − 1 bars |
+| `tema(value, N)` | 3N − 2 bars |
+| `hma(value, N)` | N + round(√N) − 1 bars |
 | `rsi(value, N)` | N+1 bars |
 | `atr(stream, N)` | N bars |
 | `macd(value, F, S, sig)` | S + sig bars |
 | `bollinger_*(value, N, k)` | N bars |
+| `keltner_*(stream, N, k)` | N + 1 bars (the ATR needs a previous close) |
+| `adx`/`plus_di`/`minus_di(stream, N)` | 2N bars (Wilder smoothing of DX on top of DI) |
+| `cci(stream, N)` | N bars |
+| `williams_r(stream, N)` | N bars |
+| `stoch_k`/`stoch_d(stream, K, D)` | K + D − 1 bars |
+| `stddev`/`variance(value, N)` | N bars |
+| `regression_slope(value, N)` | N bars |
+| `obv(stream)` | 1 bar (cumulative from the first candle) |
 | `vwap(stream, N)` | N ticks |
 | `highest`/`lowest(value, N)` | N + 1 bars (N prior bars plus the evaluating bar) |
 | `zscore(series, N)` | N bars |

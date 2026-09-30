@@ -10,11 +10,11 @@
       "}",
       "",
       "SYMBOLS",
-      "  ${5:alias} = ${6|BACKTEST,BYBIT_SPOT,BYBIT_LINEAR,EXNESS,ICMARKETS|}:${7:SYMBOL} EVERY ${8|1m,5m,15m,1h,1d|}",
+      "  ${5:btc} = ${6|BACKTEST,BYBIT_SPOT,BYBIT_LINEAR,EXNESS,ICMARKETS|}:${7:BTCUSDT} EVERY ${8|1m,5m,15m,1h,1d|}",
       "",
       "RULES",
-      "  WHEN ${9:condition}",
-      "  THEN ${10:action}",
+      "  WHEN ${9:$5.close > $5.open}",
+      "  THEN ${10:BUY $5}",
       "$0"
     ],
     "description": "STRATEGY skeleton with DEFAULTS, SYMBOLS, and one RULES entry."
@@ -35,17 +35,18 @@
       "PARAM ${9:fast} = ${10:9}",
       "PARAM ${11:slow} = ${12:21}",
       "",
-      "LET ${13:fast_ema} = ema($5.close, ${10:9})",
+      "LET ${13:fast_ema} = ema($5.close, $9)",
+      "LET ${14:slow_ema} = ema($5.close, $11)",
       "",
       "RULES",
-      "  WHEN ema($5.close, ${10:9}) CROSSES ABOVE ema($5.close, ${12:21})",
+      "  WHEN $13 CROSSES ABOVE $14",
       "  THEN BUY $5",
       "",
-      "  WHEN ema($5.close, ${10:9}) CROSSES BELOW ema($5.close, ${12:21})",
+      "  WHEN $13 CROSSES BELOW $14",
       "  THEN CLOSE $5",
       "$0"
     ],
-    "description": "Full STRATEGY skeleton: DEFAULTS, SYMBOLS, PARAM, LET, and a crossover entry/exit."
+    "description": "Full STRATEGY skeleton: DEFAULTS, SYMBOLS, PARAMs driving a crossover entry/exit."
   },
   "EMA crossover strategy (complete)": {
     "prefix": "strat-ema",
@@ -72,15 +73,15 @@
   "SYMBOLS line": {
     "prefix": "sym",
     "body": [
-      "${1:alias} = ${2|BACKTEST,BYBIT_SPOT,BYBIT_LINEAR,EXNESS,ICMARKETS|}:${3:SYMBOL} EVERY ${4|1m,5m,15m,1h,1d|}${5: WARMUP ${6:50} BARS}"
+      "${1:alias} = ${2|BACKTEST,BYBIT_SPOT,BYBIT_LINEAR,EXNESS,ICMARKETS|}:${3:BTCUSDT} EVERY ${4|1m,5m,15m,1h,1d|}${5: WARMUP ${6:50} BARS}"
     ],
     "description": "Stream declaration with optional WARMUP."
   },
   "WHEN/THEN rule": {
     "prefix": "rule",
     "body": [
-      "WHEN ${1:condition}",
-      "THEN ${2:action}"
+      "WHEN ${1:alias}.close > $1.open",
+      "THEN BUY $1 SIZING ${2:0.1}"
     ],
     "description": "Basic WHEN/THEN rule."
   },
@@ -119,9 +120,9 @@
   "LET binding": {
     "prefix": "let",
     "body": [
-      "LET ${1:name} = ${2:expression}"
+      "LET ${1:trend} = ${2:ema(alias.close, 20)}"
     ],
-    "description": "LET expression binding."
+    "description": "LET expression binding (before RULES)."
   },
   "DEFAULTS block": {
     "prefix": "def",
@@ -131,16 +132,16 @@
       "  TIF = ${2|GTC,IOC,FOK,DAY|}",
       "}"
     ],
-    "description": "DEFAULTS block."
+    "description": "DEFAULTS block (before SYMBOLS)."
   },
   "FOR EACH over streams": {
     "prefix": "foreach",
     "body": [
-      "FOR EACH ${1:s} IN ${2:btc, eth, sol} DO",
-      "  WHEN ${3:condition involving ${1:s}}",
-      "  THEN ${4:action involving ${1:s}}"
+      "FOR EACH ${1:s} IN [${2:btc, eth, sol}] DO",
+      "  WHEN $1.close > $1.open",
+      "  THEN BUY $1 SIZING ${3:0.1}"
     ],
-    "description": "Iterate a rule over multiple streams."
+    "description": "Iterate a rule over multiple streams (the list needs its brackets)."
   },
   "Session-end FLATTEN": {
     "prefix": "flatten",
@@ -152,7 +153,7 @@
   "IS NOT NULL guard": {
     "prefix": "notnull",
     "body": [
-      "${1:expression} IS NOT NULL"
+      "${1:alias.close} IS NOT NULL"
     ],
     "description": "Guard expression against Value.Undefined."
   }

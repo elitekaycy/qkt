@@ -12,7 +12,7 @@ SYMBOLS
 
 Three parts after `=`:
 
-1. **Broker prefix** — uppercase, ASCII letters + underscores
+1. **Broker prefix** — ASCII letters + underscores, conventionally uppercase; the parser accepts any case and the broker registry lookup decides whether the profile exists
 2. **Symbol** — uppercase, the venue's name for the instrument
 3. **`EVERY` + timeframe** — candle window
 
@@ -106,7 +106,15 @@ Supported windows:
 | `1m`, `5m`, `15m`, `30m` | Intraday |
 | `1h`, `2h`, `4h`, `6h`, `12h` | Hourly |
 | `1d` | Daily |
-| `1w` | Weekly |
+
+There is no weekly window: the duration units are `s`, `m`, `h` and `d` only. `EVERY 1w` is rejected
+(`Unknown TimeWindow unit 'w'`); use `EVERY 7d`.
+
+<!-- qkt-doc: illegal -->
+```qkt
+SYMBOLS
+    btc = BACKTEST:BTCUSDT EVERY 1w
+```
 
 The parser is liberal — `EVERY 7m` and `EVERY 3h` work fine, even though they're non-standard. But your data fetcher may not have data at non-standard resolutions; check.
 
@@ -197,16 +205,22 @@ The candle hub deduplicates ticks — both aggregators read from the same underl
 
 ## Multiple brokers, same symbol
 
-Currently **not supported**. The DSL parser rejects:
+The DSL accepts the same symbol on two venues as two ordinary streams — each is keyed by
+`venue:symbol`, so they never collide:
 
 ```qkt
--- this fails to compile:
 SYMBOLS
     btc_bybit  = BYBIT_SPOT:BTCUSDT EVERY 1m
-    btc_exness = EXNESS:BTCUSDm EVERY 1m
+    btc_exness = EXNESS:BTCUSD EVERY 1m
+
+RULES
+    WHEN btc_bybit.close - btc_exness.close > 50 THEN LOG "venue spread" bybit=btc_bybit.close exness=btc_exness.close
 ```
 
-Position reconciliation becomes ambiguous when the same underlying instrument has positions on two venues simultaneously. See [Broker integration](../../concepts/broker-integration.md) for the deferred limitation and the workarounds (separate strategies, separate daemons).
+Trading both sides from one strategy is where the caveats start: positions are reconciled per
+venue, so the strategy's `POSITION.<alias>` reads stay separate and a daemon-level risk halt
+covers both. See [Broker integration](../../concepts/broker-integration.md) before running a
+cross-venue strategy live.
 
 ## `FOR EACH` over streams
 
@@ -288,8 +302,13 @@ See [Phase 35 — Bar-Level Synchronized Publish](../../phases/phase-35-bar-sync
 ## Common gotchas
 
 - **Forgetting `EVERY`.** `btc = BACKTEST:BTCUSDT` (no timeframe) is a parse error.
-- **Lowercase broker prefix.** `bybit_spot:btcusdt` is a parse error — broker prefixes must be uppercase.
-- **Mixing case in the symbol.** `BTCusdt` or `btcusdt` will fail at the broker boundary because the venue's symbol is case-sensitive (typically all-uppercase).
+- **Lowercase broker prefix.** `bybit_spot:BTCUSDT` parses — the prefix is matched case-insensitively against the registry — but write it uppercase so it reads like the profile name in `qkt.config.yaml`.
+- **Mixing case in the symbol.** `BTCusdt` or `btcusdt` parses too, but fails at the broker boundary because the venue's symbol is case-sensitive (typically all-uppercase).
+
+```qkt
+SYMBOLS
+    btc = backtest:BTCUSDT EVERY 1m    -- accepted; BACKTEST is the conventional spelling
+```
 - **Forgetting the `m` suffix on Exness.** The `exness` broker profile auto-adds it via `symbolPolicy.suffix: "m"`. You write `EURUSD` in the DSL; the broker sees `EURUSDm`. If your broker profile doesn't have this set, the order fails at submission.
 - **Stream alias collisions in `FOR EACH`.** Picking `s` as the iterator and also having a stream named `s` causes shadowing — change the iterator name.
 - **Forgetting commas between stream decls.** Up through #196 the parser silently dropped everything after the first stream when commas were missing. Both styles work now, but be consistent within a file.

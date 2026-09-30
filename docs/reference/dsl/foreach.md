@@ -6,9 +6,12 @@ A compile-time macro that applies the same rule body to multiple streams. One so
 
 <!-- qkt-doc: grammar -->
 ```qkt
-FOR EACH <iter_var> IN <stream1>, <stream2>, ... DO
-    <rule body using iter_var>
+RULES
+    FOR EACH <iter_var> IN [<stream1>, <stream2>, ...] DO
+      <rule body using iter_var>
 ```
+
+`FOR EACH` goes inside `RULES`, and the stream list needs its square brackets.
 
 The iteration variable substitutes textually for each stream in the list. Each substitution produces one rule.
 
@@ -20,10 +23,11 @@ SYMBOLS
     eth = BACKTEST:ETHUSDT EVERY 1m
     sol = BACKTEST:SOLUSDT EVERY 1m
 
-FOR EACH s IN [btc, eth, sol] DO
-    WHEN ema(s.close, 9) CROSSES ABOVE ema(s.close, 21)
-    THEN BUY s SIZING 0.1
-         BRACKET { STOP_LOSS BY 1 PCT, TAKE_PROFIT BY 2 PCT }
+RULES
+    FOR EACH s IN [btc, eth, sol] DO
+      WHEN ema(s.close, 9) CROSSES ABOVE ema(s.close, 21)
+      THEN BUY s SIZING 0.1
+           BRACKET { STOP_LOSS BY 1 PCT, TAKE_PROFIT BY 2 PCT }
 ```
 
 This expands at compile time to three independent rules — one each for btc, eth, sol. The substitution is purely textual at the AST level.
@@ -75,21 +79,27 @@ This expands to 6 rules (3 entry rules + 3 exit rules). Note the iteration varia
 
 ## Mixing with explicit rules
 
-`FOR EACH` and `RULES` can coexist:
+`FOR EACH` is a rule inside `RULES`, so it can sit before, between or after plain `WHEN` rules in
+any order:
 
 ```qkt
 RULES
+    FOR EACH s IN [eth, sol, ada] DO
+      -- Same rule applied to alts
+      WHEN ema(s.close, 12) CROSSES ABOVE ema(s.close, 48)
+      THEN BUY s SIZING 0.1
+
     -- Special rule for BTC only
     WHEN btc.close > 70000 AND POSITION.btc = 0
     THEN BUY btc SIZING 0.5
 
-FOR EACH s IN [eth, sol, ada] DO
-    -- Same rule applied to alts
-    WHEN ema(s.close, 12) CROSSES ABOVE ema(s.close, 48)
-    THEN BUY s SIZING 0.1
+    FOR EACH s IN [eth, sol, ada] DO
+      WHEN ema(s.close, 12) CROSSES BELOW ema(s.close, 48) AND POSITION.s > 0
+      THEN CLOSE s
 ```
 
-Order: explicit `RULES` first, then `FOR EACH` blocks. The DSL parser handles both.
+The expanded rules keep this order, so the alt entries are evaluated before the BTC rule and the
+alt exits after it.
 
 ## Iteration variables in nested expressions
 
@@ -117,7 +127,7 @@ Three substitutions of `s` per rule for `btc`, three for `eth`, etc.
 ## Common gotchas
 
 - **The iteration variable shadows declared streams of the same name.** Don't pick `btc` as the iterator if you have a stream called `btc`. The parser may not catch this; the substitution will silently misbehave.
-- **`FOR EACH` is end-of-file.** Place it after `RULES`. Putting it before causes a parse error.
+- **`FOR EACH` lives inside `RULES`.** Placing it before the `RULES` keyword is a parse error; anywhere among the `WHEN` rules is fine. The stream list needs its brackets: `FOR EACH s IN btc, eth DO` is rejected with `expected '[' to open stream alias list`.
 - **One iterator per `FOR EACH`.** No tuples; no multiple variables. `FOR EACH s, c IN ...` is invalid.
 - **No range syntax.** No `FOR EACH i IN 1..5`. The iteration list is always streams.
 

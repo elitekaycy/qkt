@@ -187,14 +187,29 @@ When you run `qkt parse strategy.qkt`, the compiler walks the file in this order
 1. **Header** — `STRATEGY name VERSION n` or `PORTFOLIO ...`
 2. **DEFAULTS** (optional) — captures default values for all later actions
 3. **SYMBOLS** — declares every stream the strategy listens to
-4. **PARAM** (optional) — numeric strategy inputs and overrides
+4. **PARAM** (optional) — number, boolean or string strategy inputs and their portfolio overrides
 5. **LET** (optional) — name-bound expressions for reuse
 6. **SCHEDULE** (optional) — clock-driven actions
 7. **SEQUENCE** (optional) — ordered setup state machines
 8. **RULES** — pairs of `WHEN <condition> THEN <action>`
-9. **FOR EACH** (optional, end of file) — macro expansion that emits additional rules
+9. **FOR EACH** (optional, inside RULES, interleaved with `WHEN` rules) — macro expansion that emits one rule per listed stream
 
-Errors are line/column tagged. A typo in `WHEN` or a missing `THEN` produces a clear error pointing to the line, not a cryptic stack trace.
+`qkt parse` then compiles the file, so an unknown indicator, function, stream alias or reference
+is reported too — the same diagnostics the language server shows in an editor. Errors are
+line/column tagged. A typo in `WHEN` or a missing `THEN` produces a clear error pointing to the
+line, not a cryptic stack trace.
+
+```qkt
+STRATEGY typed_params VERSION 1
+SYMBOLS
+    btc = BACKTEST:BTCUSDT EVERY 1m
+PARAM threshold = -0.5          -- number; a leading minus is part of the literal
+PARAM armed = TRUE              -- boolean
+PARAM label = "breakout"        -- string
+RULES
+    WHEN armed AND btc.close - btc.open > threshold
+    THEN LOG "signal" kind=label
+```
 
 ## Quick legal/illegal
 

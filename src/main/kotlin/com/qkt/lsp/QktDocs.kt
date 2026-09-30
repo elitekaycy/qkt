@@ -1,13 +1,15 @@
 package com.qkt.lsp
 
 /**
- * Curated hover documentation for qkt's vocabulary: one short markdown block per indicator,
- * function, and common keyword, each leading with the call signature.
+ * Curated hover documentation for qkt's vocabulary: one short markdown block per indicator
+ * and function, each leading with the call signature, plus a one-liner per keyword.
  *
  * Indicator and function entries are keyed by their registry name (upper case) and must stay
- * exhaustive — `DocsDriftTest` fails if a registry name has no entry here, so adding an
- * indicator to qkt forces adding its documentation. Constant hovers are derived from the
- * registered value, so they need no entry.
+ * exhaustive both ways — `DocsDriftTest` fails if a registry name has no entry here, if an
+ * entry names nothing the compiler knows, or if an indicator signature does not compile, so
+ * adding an indicator to qkt forces adding its documentation. Keyword entries live in
+ * [QktKeywordDocs] and [QktClauseDocs] and cover every lexer keyword. Constant hovers are
+ * derived from the registered value, so they need no entry.
  */
 object QktDocs {
     /** Markdown hover for the indicator [name] (case-insensitive), or null if unknown. */
@@ -18,6 +20,15 @@ object QktDocs {
 
     /** Markdown hover for the keyword [name] (case-insensitive), or null if unknown. */
     fun keyword(name: String): String? = KEYWORDS[name.uppercase()]
+
+    /** Every indicator name (upper case) with a hover entry. */
+    fun indicatorNames(): Set<String> = INDICATORS.keys
+
+    /** Every function name (upper case) with a hover entry. */
+    fun functionNames(): Set<String> = FUNCTIONS.keys
+
+    /** The call signature line of a hover block, e.g. `ema(value, period)`, or null when it has none. */
+    fun signature(markdown: String): String? = markdown.lines().getOrNull(1)?.takeIf { markdown.startsWith("```qkt\n") }
 
     private fun doc(
         signature: String,
@@ -153,8 +164,8 @@ object QktDocs {
                 ),
             "VWAP" to
                 doc(
-                    "vwap(stream, period)",
-                    "Volume-weighted average price over the last `period` ticks. Pass the stream — it needs volume.",
+                    "vwap(stream.tick, period)",
+                    "Volume-weighted average price over the last `period` ticks. Tick-fed: pass `<alias>.tick`.",
                 ),
             "HIGHEST" to
                 doc(
@@ -405,52 +416,5 @@ object QktDocs {
                 ),
         )
 
-    private val KEYWORDS: Map<String, String> =
-        mapOf(
-            "STRATEGY" to "Declares a single strategy file: `STRATEGY <name> VERSION <n>`.",
-            "PORTFOLIO" to "Declares a portfolio that composes imported strategies: `PORTFOLIO <name> VERSION <n>`.",
-            "VERSION" to "Schema/strategy version in the header, e.g. `VERSION 1`.",
-            "SYMBOLS" to "Block declaring the streams a strategy trades: `<alias> = <BROKER>:<SYMBOL> EVERY <tf>`.",
-            "DEFAULTS" to "Block setting default order/sizing/bracket behavior applied to every rule.",
-            "LET" to "Names a reusable expression: `LET name = <expr>`. Evaluated per bar.",
-            "PARAM" to "Declares a tunable literal parameter overridable from the CLI: `PARAM name = <literal>`.",
-            "RULES" to "Block holding the `WHEN ... THEN ...` trading rules.",
-            "SCHEDULE" to "Time-triggered action block: `SCHEDULE AT 09:00 UTC THEN ...`.",
-            "WHEN" to "Condition of a rule: `WHEN <condition> THEN <action>`.",
-            "THEN" to "Separates a rule's condition from the action it fires.",
-            "RUN" to "Portfolio action: activate a child strategy, optionally with `WHEN` gating: `RUN <alias>`.",
-            "EVERY" to "Stream bar interval in `SYMBOLS`, e.g. `EVERY 1m`, `EVERY 5m`, `EVERY 1h`.",
-            "IMPORT" to "Portfolio: import a child strategy file: `IMPORT '<path>' AS <alias> [HOLD]`.",
-            "HOLD" to "Portfolio import modifier: keep the child active for position management when its gate closes.",
-            "CAPITAL" to "Portfolio book capital: `CAPITAL <amount>` used for `RISK OF BOOK` and book-risk sizing.",
-            "REGIMES" to "Portfolio regime block defining states and conditional allocations.",
-            "STATE" to "Portfolio regime state: `STATE <name> WHEN <condition>` or `STATE <name> DEFAULT`.",
-            "ALLOCATE" to "Portfolio allocation block: `ALLOCATE METHOD <method> <regime> -> <alias> <weight>, ...`.",
-            "METHOD" to "Portfolio allocation method, e.g. `regime_weighted` or `inverse_vol`.",
-            "BUY" to "Action: open or add to a long position. `BUY <alias> SIZING <expr>`.",
-            "SELL" to "Action: open or add to a short position. `SELL <alias> SIZING <expr>`.",
-            "CLOSE" to "Action: close the position on a stream. `CLOSE <alias>`.",
-            "FLATTEN" to "Action: close every open position for the strategy.",
-            "SIZING" to "Position size for an entry: `SIZING <units>`, `SIZING RISK $ <amount>`, or `SIZING <pct>`.",
-            "RISK" to
-                "Risk-based sizing: `SIZING RISK $ <amount>` sizes so the stop loses that amount; " +
-                "`SIZING <N> PCT RISK [OF BOOK]` risks N% of strategy equity (or the portfolio book).",
-            "STREAK" to "Trade-streak state namespace: `STREAK.wins`, `STREAK.losses`, `STREAK.banked`.",
-            "BRACKET" to "Attaches a stop loss and/or take profit to an entry.",
-            "TIMES" to
-                "Repeat an entry: `BUY x SIZING 0.01 BRACKET { ... } TIMES 30` emits thirty independent orders " +
-                "in one evaluation. The count is an expression evaluated when the rule fires.",
-            "ON_FILL" to
-                "OTO: child BUY/SELL orders placed only when the parent fills: " +
-                "`BUY x SIZING 1 ON_FILL { SELL y SIZING 1 }`. Children may use `entry` for the parent fill price.",
-            "CROSSES" to "Crossover condition: `<a> CROSSES ABOVE <b>` / `CROSSES BELOW <b>`.",
-            "ABOVE" to "Direction for `CROSSES`: the left side rises through the right side.",
-            "BELOW" to "Direction for `CROSSES`: the left side falls through the right side.",
-            "BETWEEN" to "Range test: `<expr> BETWEEN <lo> AND <hi>`.",
-            "AND" to "Boolean conjunction in a condition.",
-            "OR" to "Boolean disjunction in a condition.",
-            "NOT" to "Boolean negation in a condition.",
-            "IS" to "Null test: `<expr> IS NULL` / `<expr> IS NOT NULL`.",
-            "NULL" to "The missing/undefined value. Indicators return it during warmup.",
-        )
+    private val KEYWORDS: Map<String, String> = QktKeywordDocs.entries + QktClauseDocs.entries
 }

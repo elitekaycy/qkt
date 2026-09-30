@@ -5,7 +5,9 @@ Filetype detection, syntax highlighting, and comment-string config for [qkt](htt
 ## What you get
 
 - `.qkt` files auto-detect as `filetype=qkt`.
-- Syntax highlighting that mirrors the project's TextMate grammar (sections, flow, keywords, operators, numbers, durations, strings, comments, broker prefixes).
+- Syntax highlighting generated from the language implementation: every keyword by category, indicators,
+  functions, constants, pseudo-symbols, member fields, stream aliases, operators, numbers, durations,
+  single-line strings with the lexer's escapes, comments and broker prefixes.
 - Comment-string set so `gcc` (vim-commentary, mini.comment, Comment.nvim) inserts `--` line comments.
 - Live diagnostics, completion, and hover on Neovim 0.8+ via the bundled language server (autostarted from `qkt lsp` — see below).
 - No external dependencies. No tree-sitter required. Works in any Vim 7+ / Neovim.
@@ -62,7 +64,7 @@ Plug 'elitekaycy/qkt', { 'rtp': 'editor/nvim', 'for': 'qkt' }
 
 ## Verify
 
-Open any `.qkt` file. Run `:set filetype?` — should print `filetype=qkt`. Run `:syntax sync fromstart` then `:hi qktKeyword` to inspect the link.
+Open any `.qkt` file. Run `:set filetype?` — should print `filetype=qkt`. Run `:syntax sync fromstart` then `:hi qktAction` to inspect the link.
 
 ## Highlight groups
 
@@ -70,16 +72,36 @@ The plugin defines these custom groups and links each to a stock highlight group
 
 | Custom group | Linked to | Matches |
 |---|---|---|
-| `qktSection` | `PreProc` | `STRATEGY`, `VERSION`, `DEFAULTS`, `SYMBOLS`, `LET`, `RULES`, `PORTFOLIO`, `IMPORT` |
-| `qktFlow` | `Conditional` | `WHEN`, `THEN`, `FOR`, `EACH`, `IN`, `DO`, `AS`, `RUN`, `HOLD`, `CASE`, `ELSE`, `END`, `SINCE` |
-| `qktKeyword` | `Keyword` | actions, sizing, brackets, OCO, TIF, indicators, etc. |
-| `qktOperator` | `Operator` | `==`, `!=`, `<=`, `>=`, `<`, `>`, `+`, `-`, `*`, `/`, `%`, `AND`, `OR`, `NOT`, `IS`, `NULL` |
+| `qktSection` | `PreProc` | `STRATEGY`, `VERSION`, `DEFAULTS`, `SYMBOLS`, `LET`, `RULES`, `SEQUENCE`, `PORTFOLIO`, ... |
+| `qktFlow` | `Conditional` | `WHEN`, `THEN`, `FOR`, `EACH`, `IN`, `DO`, `CASE`, `ELSE`, `END`, `SINCE`, `EVERY` |
+| `qktAction` | `Statement` | `BUY`, `SELL`, `CLOSE`, `FLATTEN`, `RESIZE`, `CANCEL`, `LOG`, `WARN`, ... |
+| `qktOrder` | `Keyword` | `MARKET`, `LIMIT`, `STOP`, `TRAILING`, `AT`, `BY`, `TIF`, `GTC`, ... |
+| `qktSizing` | `Keyword` | `SIZING`, `RISK`, `USD`, `OF`, `EQUITY`, `BALANCE`, `MIN_STEP` |
+| `qktBracket` | `Keyword` | `BRACKET`, `OCO`, `TAKE`, `PROFIT`, `LOSS`, `LATCH`, `ARM`, `RETRACE`, ... |
+| `qktStacking` | `Keyword` | `STACK`, `STAGE`, `SPACING`, `WITHIN`, `AFTER`, `MFE`, `MAE`, ... |
+| `qktPortfolio` | `Keyword` | `AS`, `RUN`, `HOLD`, `CAPITAL`, `WEIGHT`, `ALLOCATE`, `REBALANCE`, ... |
+| `qktSession` | `Keyword` | `HOUR`, `WEEKDAY`, `UTC`, `NY`, `LONDON`, `WARMUP`, `BARS`, ... |
+| `qktHook` | `Keyword` | `ON_FILL`, `ON_STOP`, `ON_TP`, `ON_CLOSE` |
+| `qktState` | `Identifier` | `POSITION`, `NOW`, `ACCOUNT`, `EXIT`, `STREAK`, `TRADES`, `COOLDOWN`, ... |
+| `qktOperatorWord` | `Operator` | `AND`, `OR`, `NOT`, `IS`, `NULL`, `BETWEEN`, `CROSSES`, `ABOVE`, `BELOW` |
+| `qktAggregate` | `Function` | `OPEN`, `MAX`, `MIN`, `MEAN`, `SUM` |
 | `qktBoolean` | `Boolean` | `TRUE`, `FALSE` |
+| `qktIndicator` | `Function` | `ema(`, `atr(`, `zscore(`, `resid(`, ... (every registered indicator) |
+| `qktFunction` | `Function` | `abs(`, `sqrt(`, `pow(`, `avg(`, `count(`, ... |
+| `qktConstant` | `Constant` | `ONE_PERCENT`, `BPS`, ... |
+| `qktField` | `Constant` | `.close`, `.bid`, `.tick_size`, `.qty`, `.hour_utc`, ... after a dot |
+| `qktMember` | `Identifier` | any other identifier after a dot |
+| `qktAlias`, `qktAliasTarget` | `Identifier` | `gold` in `gold = EXNESS:XAUUSD`, before a dot, or after `BUY`/`SELL`/`CLOSE`/`RESIZE` |
+| `qktOperator` | `Operator` | `=`, `==`, `<>`, `!=`, `<=`, `>=`, `<`, `>`, `->`, `+`, `-`, `*`, `/`, `%` |
 | `qktNumber` | `Number` | `100`, `1.5`, `1e-3` |
-| `qktDuration` | `Number` | `5m`, `1h`, `30s` |
+| `qktDuration` | `Number` | `5m`, `1h`, `30s`, `2d` |
 | `qktBroker` | `Type` | broker prefix in `BACKTEST:BTCUSDT` |
-| `qktString` | `String` | `"hello"`, `'hello'` |
+| `qktString` | `String` | `"hello"`, `'hello'` (single-line) |
+| `qktEscape`, `qktEscapeError` | `SpecialChar`, `Error` | `\\` `\'` `\"` `\n` `\t`; any other `\x` |
 | `qktComment` | `Comment` | `--`, `#`, `/* */` |
+
+Keywords match case-insensitively, as the lexer does. A word that is both a keyword and a function (`LOG`,
+`FLOOR`, `MAX`, `MIN`) keeps its keyword group even when called.
 
 Example override in `init.lua`:
 
@@ -93,13 +115,15 @@ On Neovim 0.8+ the bundled `ftplugin/qkt.vim` autostarts the qkt language server
 
 ## Limitations
 
-- Go-to-definition, references, rename, and formatting are not implemented yet — they need source positions on the parser's AST.
-- No tree-sitter grammar yet — tracked under [#117](https://github.com/elitekaycy/qkt/issues/117). Once it ships, the tree-sitter highlight queries will supersede this hand-written syntax file.
-- Keyword highlighting is uppercase-only by design (matches the convention every `.qkt` sample uses), even though the parser is case-insensitive.
+- Go-to-definition, references, rename, and formatting are not implemented.
+- No tree-sitter grammar; this is a regex syntax file.
 
 ## Source of truth
 
-The keyword sets here mirror [`editor/textmate/qkt.tmLanguage.json`](../textmate/qkt.tmLanguage.json), which in turn mirrors `src/main/kotlin/com/qkt/dsl/parse/TokenKind.kt`. When a new keyword token lands in the lexer, update the textmate grammar first, then mirror into `syntax/qkt.vim` here.
+`syntax/qkt.vim` is generated by `qkt editor grammar --format vim` from
+`src/main/kotlin/com/qkt/editor/VimSyntax.kt`, the same vocabulary the TextMate grammar is generated from.
+Do not edit it by hand; regenerate after a language change (see [editor/README.md](../README.md)).
+`GrammarFilesTest` fails on any drift. `ftdetect/` and `ftplugin/` are hand-maintained.
 
 ## License
 

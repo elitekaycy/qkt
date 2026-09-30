@@ -13,13 +13,25 @@ BUY <stream> SIZING <size>
     }
 ```
 
-Or, less verbose, the bare form (without the `BRACKET { ... }` wrapper) when you only need a stop:
+There is no bare form: `STOP_LOSS` and `TAKE_PROFIT` only exist inside the `BRACKET { ... }`
+wrapper, and a bracket carries both legs. A stop written directly on the action is a parse error
+(the parser reads `BUY btc SIZING 0.1` as complete and finds `STOP_LOSS` where the next rule
+should start):
 
-<!-- qkt-doc: grammar -->
+<!-- qkt-doc: illegal -->
 ```qkt
-BUY <stream> SIZING <size>
-    STOP_LOSS <distance_or_price>
+STRATEGY bare_stop VERSION 1
+SYMBOLS
+    btc = BACKTEST:BTCUSDT EVERY 1m
+RULES
+    WHEN btc.close > btc.open
+    THEN BUY btc SIZING 0.1 STOP_LOSS BY 100
+-- parse error: expected WHEN or FOR EACH in RULES, got 'STOP_LOSS' (line 6)
 ```
+
+For a stop with no target, keep a rule-driven `CLOSE`, a trailing entry
+(`ORDER_TYPE = TRAILING BY <distance>`), or an [`OCO`](actions.md#oco-stop-at-limit-at-exit-pair-by-price)
+whose limit sits far away.
 
 ## Distance specifications
 
@@ -230,7 +242,7 @@ RULES
 ## What this composes with
 
 - [Actions](actions.md) — `BRACKET` is a modifier on `BUY`/`SELL`
-- [SIZING](sizing.md) — risk-based sizing (`PCT RISK`) requires a stop in the bracket (or bare)
+- [SIZING](sizing.md) — risk-based sizing (`PCT RISK`) requires a stop in the bracket
 - [Indicators](indicators.md) — ATR is the canonical stop input
 - [Expressions](expressions.md) — arithmetic in stop/target prices
 - [Mean-reversion example](../../examples/mean-reversion.md) — heavy use of scale-out brackets
