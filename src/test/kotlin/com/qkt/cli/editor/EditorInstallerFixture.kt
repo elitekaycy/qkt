@@ -32,7 +32,6 @@ abstract class EditorInstallerFixture {
         EditorDetector(
             env = emptyMap(),
             home = home,
-            osName = "linux",
             pathLookup = { name -> if (name == "code" && codeBin != null) codeBin else null },
         )
 }

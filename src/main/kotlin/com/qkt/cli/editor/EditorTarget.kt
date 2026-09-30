@@ -13,7 +13,6 @@ enum class EditorTarget(
     VSCODE("VSCode", "vscode"),
     NVIM("Neovim", "nvim"),
     VIM("Vim", "vim"),
-    SUBLIME("Sublime Text", "sublime"),
     ;
 
     companion object {
@@ -22,7 +21,6 @@ enum class EditorTarget(
                 "vscode", "code", "vs-code" -> VSCODE
                 "nvim", "neovim" -> NVIM
                 "vim" -> VIM
-                "sublime", "sublime-text", "subl" -> SUBLIME
                 else -> null
             }
     }

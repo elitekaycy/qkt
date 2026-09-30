@@ -95,24 +95,6 @@ class EditorDetectorTest {
     }
 
     @Test
-    fun `sublime on linux probes config-sublime-text-packages-user`(
-        @TempDir tmp: Path,
-    ) {
-        Files.createDirectories(tmp.resolve(".config/sublime-text/Packages/User"))
-        val det = EditorDetector(env = emptyMap(), home = tmp, osName = "linux", pathLookup = { null })
-        assertThat(det.detect(EditorTarget.SUBLIME)).isTrue
-    }
-
-    @Test
-    fun `sublime on macos probes Library-Application Support`(
-        @TempDir tmp: Path,
-    ) {
-        Files.createDirectories(tmp.resolve("Library/Application Support/Sublime Text/Packages/User"))
-        val det = EditorDetector(env = emptyMap(), home = tmp, osName = "mac os x", pathLookup = { null })
-        assertThat(det.detect(EditorTarget.SUBLIME)).isTrue
-    }
-
-    @Test
     fun `all returns every target with its detection status`(
         @TempDir tmp: Path,
     ) {
