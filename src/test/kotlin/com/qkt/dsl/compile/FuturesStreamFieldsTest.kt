@@ -47,16 +47,17 @@ class FuturesStreamFieldsTest {
     private fun eval(
         stream: String,
         field: String,
+        at: Long = now,
     ): Value {
         val candle =
-            Candle("x", BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE, now - 1, now)
+            Candle("x", BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE, at - 1, at)
         val ctx =
             EvalContext(
                 candle = candle,
                 streams = streams,
                 lets = emptyMap(),
                 strategyContext = testStrategyContext(instruments = registry),
-                evaluationTimeMs = now,
+                evaluationTimeMs = at,
             )
         return ExprCompiler().compile(StreamFieldRef(stream, field)).evaluate(ctx)
     }
@@ -99,5 +100,22 @@ class FuturesStreamFieldsTest {
         assertThat(eval("gold", "tick_value")).isEqualTo(Value.Num(BigDecimal("1.00")))
         assertThat(eval("gold", "multiplier")).isEqualTo(Value.Num(BigDecimal("100")))
         assertThat(eval("front", "tick_value")).isEqualTo(Value.Num(BigDecimal("0.1")))
+    }
+
+    @Test
+    fun `at the roll instant the stream already names the new contract`() {
+        val roll = Instant.parse("2024-12-19T08:00:00Z").toEpochMilli()
+
+        assertThat(eval("front", "contract", roll - 1)).isEqualTo(Value.Str("BTCUSDT_241227"))
+        assertThat(eval("front", "days_to_roll", roll - 1)).isEqualTo(Value.Num(BigDecimal("0.000000")))
+        assertThat(eval("front", "contract", roll)).isEqualTo(Value.Str("BTCUSDT_250328"))
+    }
+
+    @Test
+    fun `at the end of the chain the last contract counts to its expiry, then there is none`() {
+        val expiry = Instant.parse("2025-03-28T08:00:00Z").toEpochMilli()
+
+        assertThat(eval("front", "days_to_roll", expiry - 86_400_000L)).isEqualTo(Value.Num(BigDecimal("1.000000")))
+        assertThat(eval("front", "dte", expiry)).isEqualTo(Value.Undefined)
     }
 }
