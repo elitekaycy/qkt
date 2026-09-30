@@ -20,7 +20,8 @@ import java.time.Instant
  * and a private contract price view; everything it publishes belongs to this stream and is
  * republished on [bus] in continuous space: the engine's order id, the continuous symbol, and
  * prices mapped by the contract the order worked on. The lane keeps each strategy's position on the
- * stream from those fills and rolls it ([RollExecutor]) when the schedule moves to the next contract.
+ * stream from those fills and rolls it ([RollExecutor]) when the schedule moves to the next contract;
+ * a strategy whose roll failed may only reduce its exposure on the stream afterwards.
  */
 internal class StreamLane(
     private val bus: EventBus,
@@ -36,6 +37,7 @@ internal class StreamLane(
     private val legs = RollLegs()
     private val rolls = RollExecutor(bus, clock, chain, venue, contractPrices, orders, legs, ledger)
     private val positions = LinkedHashMap<String, BigDecimal>()
+    private val stops = HashMap<String, String>()
     private var current: Int? = null
 
     init {
@@ -60,6 +62,7 @@ internal class StreamLane(
         val now = clock.now()
         refusal(now)?.let { return reject(request, it) }
         val index = requireNotNull(catchUp(now))
+        stops[request.strategyId]?.takeIf { increasesExposure(request) }?.let { return reject(request, it) }
         val space =
             try {
                 chain.spaceFor(index)
@@ -98,8 +101,18 @@ internal class StreamLane(
         val index = chain.indexAt(nowMs) ?: return null
         val previous = current
         current = index
-        if (previous != null && previous != index) rolls.roll(previous, index, positions)
+        if (previous != null && previous != index) {
+            val outcome = rolls.roll(previous, index, positions)
+            stops.putAll(outcome.stopped)
+            outcome.flattened.forEach(positions::remove)
+        }
         return index
+    }
+
+    private fun increasesExposure(request: OrderRequest): Boolean {
+        val held = positions[request.strategyId] ?: BigDecimal.ZERO
+        val signed = if (request.side == Side.BUY) request.quantity else request.quantity.negate()
+        return held.add(signed).abs() > held.abs()
     }
 
     private fun onRejected(e: BrokerEvent.OrderRejected) {

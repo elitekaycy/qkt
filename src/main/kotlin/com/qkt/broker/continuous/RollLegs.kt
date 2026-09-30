@@ -1,6 +1,7 @@
 package com.qkt.broker.continuous
 
 import com.qkt.events.BrokerEvent
+import java.math.BigDecimal
 
 /** How one market leg of a roll ended. */
 internal sealed interface LegOutcome {
@@ -59,3 +60,12 @@ internal class RollLegs {
         return true
     }
 }
+
+/** The fees the venue reported on this fill, all of which must be in [currency]. */
+internal fun BrokerEvent.OrderFilled.venueFeesIn(currency: String): BigDecimal =
+    typedVenueCosts.fold(BigDecimal.ZERO) { total, cost ->
+        require(cost.amount.normalizedCurrency == currency.uppercase()) {
+            "fee on $symbol is in ${cost.amount.currency}, not $currency"
+        }
+        total.add(cost.amount.amount)
+    }
