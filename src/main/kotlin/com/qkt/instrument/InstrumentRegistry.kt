@@ -22,6 +22,9 @@ interface InstrumentRegistry {
      */
     fun missingReason(qktSymbol: String): String? = null
 
+    /** The run's declared futures, or null when this registry knows none. */
+    fun futures(): FuturesDirectory? = null
+
     /**
      * Returns the meta for [qktSymbol] or throws with a helpful message.
      *

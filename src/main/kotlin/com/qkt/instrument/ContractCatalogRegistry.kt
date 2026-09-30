@@ -7,8 +7,10 @@ package com.qkt.instrument
  */
 class ContractCatalogRegistry(
     val roots: List<FuturesRoot>,
-    catalogs: Map<String, ContractCatalog>,
-) : InstrumentRegistry {
+    private val catalogs: Map<String, ContractCatalog>,
+    private val histories: Map<String, RollHistory> = emptyMap(),
+) : InstrumentRegistry,
+    FuturesDirectory {
     private val table: Map<String, InstrumentMeta> =
         buildMap {
             fun add(
@@ -36,6 +38,20 @@ class ContractCatalogRegistry(
 
     override fun lookup(qktSymbol: String): InstrumentMeta? = table[qktSymbol]
 
+    override fun futures(): FuturesDirectory = this
+
+    override fun root(rootId: String): FuturesRoot? = roots.firstOrNull { it.root == rootId }
+
+    override fun catalog(rootId: String): ContractCatalog? = catalogs[rootId]?.sorted()
+
+    override fun history(rootId: String): RollHistory? = histories[rootId]
+
+    override fun rootOfContinuous(symbol: String): String? {
+        val root = symbol.substringBefore('@', missingDelimiterValue = "")
+        val selector = ContinuousSelector.parse(symbol.substringAfter('@', missingDelimiterValue = ""))
+        return root.takeIf { selector != null && root(it) != null }
+    }
+
     override fun missingReason(qktSymbol: String): String? {
         if (qktSymbol in table) return null
         val venue = qktSymbol.substringBefore(':')
@@ -53,11 +69,16 @@ class ContractCatalogRegistry(
     }
 
     companion object {
-        /** A registry for [roots] with each root's catalog read from [store] (absent catalogs are empty). */
+        /** A registry for [roots] with each root's catalog and roll history read from the data root's stores. */
         fun load(
             roots: List<FuturesRoot>,
-            store: ContractCatalogStore,
+            catalogs: ContractCatalogStore,
+            histories: RollHistoryStore,
         ): ContractCatalogRegistry =
-            ContractCatalogRegistry(roots, roots.mapNotNull { r -> store.read(r.root)?.let { r.root to it } }.toMap())
+            ContractCatalogRegistry(
+                roots,
+                roots.mapNotNull { r -> catalogs.read(r.root)?.let { r.root to it } }.toMap(),
+                roots.mapNotNull { r -> histories.read(r.root)?.let { r.root to it } }.toMap(),
+            )
     }
 }
