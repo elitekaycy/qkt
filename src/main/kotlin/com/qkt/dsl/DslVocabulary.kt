@@ -21,43 +21,21 @@ object DslVocabulary {
     /** Every keyword and operator-word spelling the lexer reserves, excluding the `->` token. */
     val keywords: List<String> = (Lexer.keywordSpellings() - TokenKind.ARROW.name).sorted()
 
-    /**
-     * Per-bar fields readable off a stream alias, e.g. `btc.close`. `contract`, `dte` and
-     * `days_to_roll` describe the contract a futures stream follows and are Undefined elsewhere.
-     */
+    /** Fields describing the contract a futures stream follows right now; Undefined on other streams. */
+    val contractFields: List<String> = listOf("contract", "dte", "days_to_roll")
+
+    /** Per-bar fields readable off a stream alias, e.g. `btc.close`, plus the futures [contractFields]. */
     val candleFields: List<String> =
-        listOf(
-            "close",
-            "open",
-            "high",
-            "low",
-            "volume",
-            "price",
-            "bid",
-            "ask",
-            "spread",
-            "value",
-            "timestamp",
-            "contract",
-            "dte",
-            "days_to_roll",
-        )
+        listOf("close", "open", "high", "low", "volume", "price", "bid", "ask", "spread", "value", "timestamp") +
+            contractFields
 
     /** The candle fields an indicator may consume as a numeric series. */
     val numericCandleFields: List<String> = listOf("close", "value", "open", "high", "low", "volume", "price")
 
     /** Instrument-metadata fields readable off a stream alias, e.g. `btc.tick_size`. */
     val metaFields: List<String> =
-        listOf(
-            "tick_size",
-            "contract_size",
-            "volume_step",
-            "volume_min",
-            "swap_long_points",
-            "swap_short_points",
-            "tick_value",
-            "multiplier",
-        )
+        listOf("tick_size", "contract_size", "volume_step", "volume_min", "swap_long_points", "swap_short_points") +
+            listOf("tick_value", "multiplier")
 
     /** `<alias>.candle`: the whole closed candle, for candle-fed indicators such as `atr`. */
     const val CANDLE_SELECTOR = "candle"
