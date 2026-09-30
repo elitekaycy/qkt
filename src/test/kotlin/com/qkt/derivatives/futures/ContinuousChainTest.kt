@@ -108,4 +108,20 @@ class ContinuousChainTest {
         assertThatThrownBy { ContinuousChain(root.copy(roll = null), catalog, history, ContinuousSelector.FRONT) }
             .hasMessageContaining("roll")
     }
+
+    @Test
+    fun `a history that skips a roll is refused`() {
+        val later = ListedContract("BTCUSDT_250627", ms("2025-06-27T08:00:00Z"))
+        val gappy =
+            history.copy(
+                rolls =
+                    listOf(
+                        history.rolls[0],
+                        RollRecord(ms("2025-03-20T08:00:00Z"), "BTCUSDT_250328", "BTCUSDT_250627", "80000", "81000"),
+                    ),
+            )
+        assertThatThrownBy {
+            ContinuousChain(root, catalog.copy(contracts = catalog.contracts + later), gappy, ContinuousSelector.FRONT)
+        }.hasMessageContaining("skips")
+    }
 }
