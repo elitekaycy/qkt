@@ -38,7 +38,7 @@ class MacroSeriesDslTest {
                 THEN BUY real10y SIZING 0.01
             """.trimIndent()
         val ex = catchThrowable { compile(src) }
-        assertThat(ex).isInstanceOf(IllegalArgumentException::class.java)
+        assertThat(ex).isInstanceOf(CompileError::class.java)
         assertThat(ex.message).contains("read-only").contains("real10y")
     }
 
