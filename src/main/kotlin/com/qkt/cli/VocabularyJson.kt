@@ -38,6 +38,21 @@ object VocabularyJson {
         buildJsonObject {
             put("schema", SCHEMA)
             put("keywords", strings(DslVocabulary.keywords))
+            put(
+                "keywordCategories",
+                buildJsonObject {
+                    for (category in com.qkt.dsl.parse.KeywordCategory.entries) {
+                        put(
+                            category.name,
+                            strings(
+                                com.qkt.dsl.parse.KeywordCategory
+                                    .spellings(category)
+                                    .sorted(),
+                            ),
+                        )
+                    }
+                },
+            )
             put("indicators", indicators())
             put("functions", functions())
             put("constants", constants())

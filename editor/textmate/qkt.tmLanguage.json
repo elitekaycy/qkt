@@ -302,7 +302,7 @@
       "patterns": [
         {
           "name": "support.function.builtin.qkt",
-          "match": "(?i)\\b(ABS|AVG|CALENDAR_WINDOW|CEIL|COUNT|EXP|FLOOR|LAST_TRADING_DAY_OF_MONTH|LOG|MAX|MIN|MOD|NORMALIZE|POW|RANK_OF|ROUND|ROUND_TO|SESSION_WINDOW|SOFTMAX|SQRT)\\b(?=\\s*\\()"
+          "match": "(?i)\\b(ABS|AVG|CALENDAR_WINDOW|CEIL|COUNT|EXP|FLOOR|LAST_TRADING_DAY_OF_MONTH|LOG|MAX|MEAN|MIN|MOD|NORMALIZE|POW|RANK_OF|ROUND|ROUND_TO|SESSION_WINDOW|SOFTMAX|SQRT|SUM)\\b(?=\\s*\\()"
         }
       ]
     },

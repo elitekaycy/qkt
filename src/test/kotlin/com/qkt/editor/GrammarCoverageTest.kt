@@ -27,7 +27,7 @@ class GrammarCoverageTest {
     @Test
     fun `every indicator, function and constant is matched`() {
         assertThat(GrammarVocabulary.indicators).hasSize(61)
-        assertThat(GrammarVocabulary.functions).hasSize(20)
+        assertThat(GrammarVocabulary.functions).hasSize(22)
         assertThat(
             GrammarVocabulary.indicators.filter {
                 !probe.matches("support.function.indicator.qkt", "${it.lowercase()}(")
