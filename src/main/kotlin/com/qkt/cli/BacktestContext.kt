@@ -19,9 +19,6 @@ import com.qkt.dsl.portfolio.PortfolioGate
 import com.qkt.dsl.portfolio.capitalAllocations
 import com.qkt.evidence.DatasetEvidence
 import com.qkt.instrument.InstrumentRegistry
-import com.qkt.instrument.LayeredInstrumentRegistry
-import com.qkt.instrument.StandardInstrumentRegistry
-import com.qkt.instrument.YamlInstrumentRegistry
 import com.qkt.marketdata.TickFeed
 import com.qkt.marketdata.hub.resolveHubRoot
 import com.qkt.marketdata.source.MarketRequest
@@ -40,7 +37,6 @@ import com.qkt.marketdata.store.macro.PolicyRateSeries
 import com.qkt.marketdata.store.macro.PolicyRateSeriesFetcher
 import com.qkt.research.ReplayEngine
 import java.math.BigDecimal
-import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.time.Instant
@@ -300,19 +296,8 @@ class BacktestContext private constructor(
                     ?.timeframe
                     ?.let { TimeWindow.parse(it) }
 
-            val instrumentsPath: Path =
-                args.option("instruments")?.let(Paths::get) ?: Paths.get(dataRoot).resolve("instruments.yaml")
             val instruments: InstrumentRegistry =
-                if (Files.exists(instrumentsPath)) {
-                    LayeredInstrumentRegistry(
-                        listOf(YamlInstrumentRegistry.load(instrumentsPath), StandardInstrumentRegistry),
-                    )
-                } else {
-                    if (args.option("instruments") != null) {
-                        throw SetupError("--instruments file not found: $instrumentsPath")
-                    }
-                    StandardInstrumentRegistry
-                }
+                BacktestInstruments.registry(Paths.get(dataRoot), args.option("instruments")?.let(Paths::get))
 
             val brokerKind =
                 when (val raw = args.option("broker")) {
@@ -540,19 +525,8 @@ class BacktestContext private constructor(
             val barStore = LocalBarStore(root = Paths.get(dataRoot))
             val candleWindow = streams.firstOrNull()?.timeframe?.let { TimeWindow.parse(it) }
 
-            val instrumentsPath: Path =
-                args.option("instruments")?.let(Paths::get) ?: Paths.get(dataRoot).resolve("instruments.yaml")
             val instruments: InstrumentRegistry =
-                if (Files.exists(instrumentsPath)) {
-                    LayeredInstrumentRegistry(
-                        listOf(YamlInstrumentRegistry.load(instrumentsPath), StandardInstrumentRegistry),
-                    )
-                } else {
-                    if (args.option("instruments") != null) {
-                        throw SetupError("--instruments file not found: $instrumentsPath")
-                    }
-                    StandardInstrumentRegistry
-                }
+                BacktestInstruments.registry(Paths.get(dataRoot), args.option("instruments")?.let(Paths::get))
 
             val brokerKind =
                 when (val raw = args.option("broker")) {
