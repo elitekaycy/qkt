@@ -35,10 +35,11 @@ internal class StructureCoordinator(
     private val clock: Clock,
     private val cancel: (String) -> Unit,
 ) {
-    /** Follow [strategyId]'s structures in [book], unwinding through [emit]. */
+    /** Follow [strategyId]'s structures in [book], unwinding through [emit]; [save] runs after each change to the book. */
     fun bind(
         strategyId: String,
         book: StructureBook,
+        save: () -> Unit = {},
         emit: (Signal) -> Unit,
     ) {
         val ids = SequentialIdGenerator(prefix = "unwind-$strategyId-")
@@ -78,38 +79,43 @@ internal class StructureCoordinator(
 
         bus.subscribe<SignalEvent> { e ->
             val group = e.signal as? Signal.SubmitGroup ?: return@subscribe
-            if (e.strategyId == strategyId) book.accept(group)
+            if (e.strategyId != strategyId) return@subscribe
+            book.accept(group)
+            save()
         }
-        bus.subscribe<TickEvent> { book.settleExpired(clock.now()) }
-        bus.subscribe<ContractSettled> { e -> book.settleAt(e.symbol, e.price) }
-        bus.subscribe<RiskRejectedEvent> { e -> if (e.request.strategyId == strategyId) book.refused(e.request.id) }
+        bus.subscribe<TickEvent> { if (book.settleExpired(clock.now())) save() }
+        bus.subscribe<ContractSettled> { e -> if (book.settleAt(e.symbol, e.price)) save() }
+        bus.subscribe<RiskRejectedEvent> { e ->
+            if (e.request.strategyId != strategyId) return@subscribe
+            book.refused(e.request.id)
+            save()
+        }
         bus.subscribe<BrokerEvent.OrderFilled> { e ->
             if (e.strategyId != strategyId) return@subscribe
             // A settlement print is no structure order: its legs on that contract settle at its price.
             if (e.exitReason == ExitReason.EXPIRY) {
-                book.settleAt(e.symbol, e.price)
+                if (book.settleAt(e.symbol, e.price)) save()
                 return@subscribe
             }
             val owner = book.filled(e.clientOrderId, e.quantity, e.price)
             if (owner == null) {
                 book.external(e.symbol, e.side, e.quantity, e.price)
-                return@subscribe
-            }
-            if (owner.opening &&
-                owner.structure.state == StructureState.UNWINDING
-            ) {
+            } else if (owner.opening && owner.structure.state == StructureState.UNWINDING) {
                 close(owner.structure, listOf(owner.leg))
             }
+            save()
         }
         bus.subscribe<BrokerEvent.OrderCancelled> { e ->
             if (e.strategyId != strategyId) return@subscribe
             val owner = book.ended(e.clientOrderId) ?: return@subscribe
             if (owner.opening) failed(owner) else close(owner.structure, listOf(owner.leg))
+            save()
         }
         bus.subscribe<BrokerEvent.OrderRejected> { e ->
             if (e.strategyId != strategyId) return@subscribe
             val owner = book.ended(e.clientOrderId) ?: return@subscribe
             if (owner.opening) failed(owner)
+            save()
         }
     }
 }

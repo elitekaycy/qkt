@@ -35,6 +35,9 @@ internal class StructureLeg(
     /** True while a closing order of this leg is working. */
     val isClosing: Boolean get() = closing.isNotEmpty()
 
+    /** The closing orders still working: quantity by order id. */
+    val closingOrders: Map<String, BigDecimal> get() = closing
+
     /** What is held and not already being closed. */
     val unclosed: BigDecimal get() = held.subtract(closing.values.fold(BigDecimal.ZERO, BigDecimal::add))
 
@@ -50,6 +53,24 @@ internal class StructureLeg(
 
     internal fun endOpen() {
         openEnded = true
+    }
+
+    /** Takes back the state a restart restored. */
+    internal fun restore(
+        opened: BigDecimal,
+        entryPrice: BigDecimal?,
+        held: BigDecimal,
+        realized: BigDecimal,
+        openEnded: Boolean,
+        closing: Map<String, BigDecimal>,
+    ) {
+        this.opened = opened
+        this.entryPrice = entryPrice
+        this.held = held
+        this.realized = realized
+        this.openEnded = openEnded
+        this.closing.clear()
+        this.closing.putAll(closing)
     }
 
     internal fun beginClose(

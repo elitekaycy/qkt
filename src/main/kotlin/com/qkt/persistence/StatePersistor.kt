@@ -38,6 +38,15 @@ interface StatePersistor :
         symbol: String,
     ): PersistedLegBook?
 
+    /** Persists [strategyId]'s live option structures, replacing the last save; an empty list clears them. */
+    fun saveStructures(
+        strategyId: String,
+        structures: List<PersistedStructure>,
+    ) {}
+
+    /** [strategyId]'s persisted live option structures; empty when there are none. */
+    fun loadStructures(strategyId: String): List<PersistedStructure> = emptyList()
+
     /** Every symbol [strategyId] has a persisted leg book for, declared or not (an option leg a structure picked). */
     fun legBookSymbols(strategyId: String): Set<String> = emptySet()
 
@@ -257,35 +266,6 @@ data class BracketPair(
     val stopLossClientOrderId: String?,
     val takeProfitClientOrderId: String?,
     val legId: String?,
-)
-
-data class PersistedTier(
-    val index: Int,
-    val mfeThreshold: BigDecimal,
-    val withinMs: Long,
-    val stackQuantity: BigDecimal,
-    val slDistance: BigDecimal,
-    val tpDistance: BigDecimal,
-    val maeRecoverDistance: BigDecimal? = null,
-    val armedAdverseExtreme: BigDecimal? = null,
-    val fired: Boolean,
-    val firedAt: Long?,
-    val firedLegId: String?,
-    /** True when this tier's MFE window elapsed unfired — it must not fire after a restart. */
-    val abandoned: Boolean = false,
-)
-
-data class PersistedTierState(
-    val primaryClientOrderId: String,
-    val tiers: List<PersistedTier>,
-    /**
-     * When the parent leg opened (the engine's MFE-window anchor). Restored engines
-     * keep counting their `WITHIN` windows from the ORIGINAL open, not the restart.
-     * Null in pre-restore state files; restore falls back to "now" with a warning.
-     */
-    val openedAtMs: Long? = null,
-    /** The parent's `EXIT AFTER` hold, re-applied to legs that fire after a restore; null without one. */
-    val exitAfterMs: Long? = null,
 )
 
 /**

@@ -82,6 +82,7 @@ internal class StrategyBinder(
             requireVolumeCapability(strategyId, strategy, source)
             requireBookCapability(strategyId, strategy, bookBalance)
             strategy.bindStatePersistor(strategyId, persistor)
+            val kept = StructurePersistence(strategyId, book, persistor).also { it.restore() }
             val hubKeys = strategy.declaredStreams.values.toSet() + strategy.retentionByKey.keys
             for (key in hubKeys) {
                 candleHub.register(key, strategy.retentionByKey[key] ?: 1, strategyId)
@@ -100,7 +101,7 @@ internal class StrategyBinder(
             // flatten-on-gate-deactivate transition — hub binding carries only the inner rules.
             bus.subscribe<CandleEvent> { e -> strategy.onCandle(e.candle, ctx, emit) }
             stackBinder.bind(strategy, strategyId, emit)
-            structures.bind(strategyId, book, emit)
+            structures.bind(strategyId, book, kept::save, emit)
         } else {
             bus.subscribe<TickEvent> { e -> strategy.onTick(e.tick, ctx, emit) }
             bus.subscribe<CandleEvent> { e -> strategy.onCandle(e.candle, ctx, emit) }

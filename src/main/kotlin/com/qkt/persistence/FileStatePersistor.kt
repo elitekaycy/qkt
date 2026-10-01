@@ -55,6 +55,7 @@ class FileStatePersistor(
     private val pnl = PnlFile(writer, json)
     private val riskState = RiskStateFile(writer, json)
     private val legBooks = LegBookFile(writer, json)
+    private val structures = StructuresFile(writer, json)
     private val excursions = ExcursionFile(writer, json)
     private val bracketPairs = BracketPairsFile(writer, json)
     private val pendingOrders = PendingOrdersFile(writer, json)
@@ -121,6 +122,13 @@ class FileStatePersistor(
     ): PersistedLegBook? = legBooks.load(strategyId, symbol)
 
     override fun legBookSymbols(strategyId: String): Set<String> = legBooks.symbols(strategyId)
+
+    override fun saveStructures(
+        strategyId: String,
+        structures: List<PersistedStructure>,
+    ) = this.structures.save(strategyId, structures)
+
+    override fun loadStructures(strategyId: String): List<PersistedStructure> = structures.load(strategyId)
 
     override fun saveBracketPairs(
         strategyId: String,
