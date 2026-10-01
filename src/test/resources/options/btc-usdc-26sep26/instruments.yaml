@@ -1,0 +1,14 @@
+options:
+  - root: DERIBIT:BTC_USDC
+    currency: USDC
+    contractSize: 1
+    tickSize: 5
+    volumeStep: 0.01
+    volumeMin: 0.01
+    underlyingIndex: btc_usdc
+    takerFeeRate: 0.0003
+    feeCapRate: 0.125
+    deliveryFeeRate: 0.00015
+    chains: trade
+    markSpread: 0.05
+    maxQuoteAgeMinutes: 60

@@ -1,0 +1,20 @@
+{
+  "root": "DERIBIT:BTC_USDC",
+  "contracts": [
+    {
+      "symbol": "BTC_USDC-26SEP26-84000-C",
+      "strike": "84000",
+      "right": "call",
+      "expiryMs": 1790409600000
+    },
+    {
+      "symbol": "BTC_USDC-26SEP26-85000-C",
+      "strike": "85000",
+      "right": "call",
+      "expiryMs": 1790409600000
+    }
+  ],
+  "deliveryPrices": {
+    "2026-09-26": "84042.83"
+  }
+}

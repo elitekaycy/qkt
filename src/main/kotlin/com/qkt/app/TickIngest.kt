@@ -27,6 +27,11 @@ internal class TickIngest(
     private val candleHub: CandleHub,
     private val scheduleRunner: ScheduleRunner,
     private val mode: Mode,
+    /**
+     * Symbols whose price may legally be zero: an option's settlement print when it expires worthless
+     * (spec E19). Every other symbol keeps the positive-price floor.
+     */
+    private val zeroPriceLegal: (String) -> Boolean = { false },
 ) {
     // Logged under the pipeline's category so existing log filters keep matching.
     private val log = LoggerFactory.getLogger(TradingPipeline::class.java)
@@ -42,7 +47,7 @@ internal class TickIngest(
         // fires engine-held triggers, and poisons indicators for a full window. Drop
         // it, count it, keep the last good price (#379). Identical in backtest and
         // live so the gate itself cannot cause divergence.
-        if (!isMacroObservation && !isValidTick(tick)) {
+        if (!isMacroObservation && !isValidTick(tick, zeroPriceLegal)) {
             val n = malformedTickCount.incrementAndGet()
             if (n == 1L || n % MALFORMED_TICK_LOG_EVERY == 0L) {
                 log.error(
@@ -83,8 +88,12 @@ internal class TickIngest(
     }
 }
 
-private fun isValidTick(tick: Tick): Boolean {
-    if (tick.price.signum() <= 0) return false
+private fun isValidTick(
+    tick: Tick,
+    zeroPriceLegal: (String) -> Boolean,
+): Boolean {
+    val sign = tick.price.signum()
+    if (sign < 0 || (sign == 0 && !zeroPriceLegal(tick.symbol))) return false
     val bid = tick.bid
     val ask = tick.ask
     if (bid != null && bid.signum() <= 0) return false
