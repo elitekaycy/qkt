@@ -46,7 +46,20 @@ internal class RootFields(
         )
     }
 
-    private companion object {
-        val MARGIN_KEYS = setOf("initial", "maintenance", "basis")
+    companion object {
+        private val MARGIN_KEYS = setOf("initial", "maintenance", "basis")
+
+        /**
+         * The top-level key in [keys] that looks like a mistyped [section] — a case or singular variant
+         * (`future:`, `Options:`) — or null. Keys that merely start with the same letters are not judged.
+         */
+        fun misspelledSection(
+            keys: Collection<Any?>,
+            section: String,
+        ): String? =
+            keys.map { it.toString() }.firstOrNull {
+                it != section &&
+                    (it.equals(section, ignoreCase = true) || it.equals(section.removeSuffix("s"), ignoreCase = true))
+            }
     }
 }

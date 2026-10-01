@@ -21,11 +21,7 @@ object OptionRootsFile {
     fun load(path: Path): List<OptionRoot> {
         val document = Load(LoadSettings.builder().build()).loadFromString(Files.readString(path))
         check(document is Map<*, *>) { "$path: top-level must be a map" }
-        val nearMiss =
-            document.keys.map { it.toString() }.firstOrNull {
-                it != "options" &&
-                    it.lowercase().startsWith("option")
-            }
+        val nearMiss = RootFields.misspelledSection(document.keys, "options")
         require(nearMiss == null) { "$path: unknown section '$nearMiss'; did you mean 'options:'?" }
         val list = document["options"] ?: return emptyList()
         check(list is List<*>) { "$path: 'options' must be a list" }
