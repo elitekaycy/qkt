@@ -4,11 +4,9 @@ import com.qkt.cli.ExitCodes
 import com.qkt.instrument.OptionCatalog
 import com.qkt.instrument.OptionCatalogStore
 import com.qkt.instrument.OptionRoot
-import com.qkt.instrument.OptionRootsFile
 import com.qkt.marketdata.store.deribit.DeribitClient
 import com.qkt.marketdata.store.deribit.DeribitOptionCatalog
 import java.io.IOException
-import java.nio.file.Files
 import java.nio.file.Path
 
 /**
@@ -30,16 +28,7 @@ internal object OptionCatalogFetch {
             (String) -> Unit,
         ) -> OptionCatalog = { root, warn -> DeribitOptionCatalog(DeribitClient()).build(root, warn) },
     ): Int {
-        val instruments = dataRoot.resolve("instruments.yaml")
-        val root =
-            (if (Files.exists(instruments)) OptionRootsFile.load(instruments) else emptyList()).firstOrNull {
-                it.root ==
-                    target
-            }
-                ?: run {
-                    System.err.println("qkt: $target is not declared under options: in $instruments")
-                    return ExitCodes.USER_ERROR
-                }
+        val root = declaredOptionRoot(target, dataRoot) ?: return ExitCodes.USER_ERROR
         val built =
             try {
                 build(root) { System.err.println("qkt: warning: $it") }
