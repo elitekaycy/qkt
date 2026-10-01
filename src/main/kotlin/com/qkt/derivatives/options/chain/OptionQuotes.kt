@@ -12,6 +12,17 @@ data class QuoteSides(
     companion object {
         /** A quote nothing can trade on. */
         val NONE = QuoteSides(null, null)
+
+        /** A book's tradeable sides: a missing or non-positive side is absent; a crossed book trades on neither. */
+        fun book(
+            bid: BigDecimal?,
+            ask: BigDecimal?,
+        ): QuoteSides {
+            val buyable = ask?.takeIf { it.signum() > 0 }
+            val sellable = bid?.takeIf { it.signum() > 0 }
+            val crossed = sellable != null && buyable != null && sellable > buyable
+            return if (crossed) NONE else QuoteSides(sellable, buyable)
+        }
     }
 }
 
@@ -32,15 +43,9 @@ object OptionQuotes {
         root: OptionRoot,
     ): QuoteSides =
         when (quote.source) {
-            QuoteSource.BOOK -> book(quote)
+            QuoteSource.BOOK -> QuoteSides.book(quote.bid, quote.ask)
             QuoteSource.TRADE -> fromMark(quote, root)
         }
-
-    private fun book(quote: ChainQuote): QuoteSides {
-        val bid = quote.bid?.takeIf { it.signum() > 0 }
-        val ask = quote.ask?.takeIf { it.signum() > 0 }
-        return if (bid != null && ask != null && bid > ask) QuoteSides.NONE else QuoteSides(bid, ask)
-    }
 
     private fun fromMark(
         quote: ChainQuote,
