@@ -7,7 +7,8 @@ import com.qkt.broker.exchange.Settlement
 import java.time.Instant
 
 /**
- * The futures artifacts of a report — `rolls.csv`, `contracts.csv`, `settlements.csv` — each present
+ * The futures artifacts of a report — `rolls.csv`, `contracts.csv`, `settlements.csv`,
+ * `margin_daily.csv` — each present
  * only when its ledger has entries, so a report of a run without futures is unchanged. The writer,
  * the artifact index and the manifest all list files from here.
  */

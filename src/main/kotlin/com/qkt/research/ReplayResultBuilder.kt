@@ -117,6 +117,7 @@ internal class ReplayResultBuilder(
             rolls = books.rolls.entries,
             contractFills = books.contractFills.entries,
             settlements = books.settlements.entries,
+            marginDaily = books.marginDaily.rows,
         )
     }
 
