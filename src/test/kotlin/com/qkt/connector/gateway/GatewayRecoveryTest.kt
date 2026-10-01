@@ -29,10 +29,10 @@ internal class GatewayRecoveryTest : GatewayHarness() {
         val first = broker(session(), before, "a")
         first.submit(market("a-9", "a", quantity = "1"))
         await { before.of<BrokerEvent.OrderAccepted>().isNotEmpty() }
-        fake.act { fill("a-9", "f9", "0.5", "650", FakeGateway.TIME - 7_200_000) }
+        fake.act { fill(wire("a-9"), "f9", "0.5", "650", FakeGateway.TIME - 7_200_000) }
         await { before.of<BrokerEvent.OrderPartiallyFilled>().isNotEmpty() }
         first.shutdown()
-        fake.act { fill("a-9", "f10", "0.5", "652", FakeGateway.TIME) }
+        fake.act { fill(wire("a-9"), "f10", "0.5", "652", FakeGateway.TIME) }
 
         val after = Strategy()
         val known = broker(session(), after, "a").recoverPendingOrders(listOf(restored("a-9", "1", "0.5")), emptySet())
@@ -49,7 +49,7 @@ internal class GatewayRecoveryTest : GatewayHarness() {
         val before = Strategy()
         broker(session(), before, "a").submit(market("a-1", "a"))
         await { before.of<BrokerEvent.OrderAccepted>().isNotEmpty() }
-        fake.act { cancel("a-1") }
+        fake.act { cancel(wire("a-1")) }
 
         val after = Strategy()
         val known =
@@ -78,5 +78,22 @@ internal class GatewayRecoveryTest : GatewayHarness() {
         val settled = after.of<ContractSettled>().single()
         assertThat(settled.symbol to settled.price).isEqualTo(symbol to BigDecimal("1000"))
         assertThat(settled.costs).isEmpty()
+    }
+
+    @Test
+    fun `an engine id handed out again after a restart places a new order, never the ended one`() {
+        val before = Strategy()
+        broker(session(), before, "a").submit(market("a-1", "a"))
+        await { before.of<BrokerEvent.OrderAccepted>().isNotEmpty() }
+        fake.act { fill(wire("a-1"), "f1", "0.1", "650", FakeGateway.TIME) }
+        await { before.of<BrokerEvent.OrderFilled>().isNotEmpty() }
+
+        val after = Strategy()
+        broker(session(), after, "a").submit(market("a-1", "a").copy(timestamp = 9L))
+
+        await { after.of<BrokerEvent.OrderAccepted>().isNotEmpty() }
+        assertThat(fake.submits.map { it.clientOrderId }).containsExactly(wire("a-1"), "a-1.9")
+        assertThat(after.of<BrokerEvent.OrderAccepted>().single().clientOrderId).isEqualTo("a-1")
+        assertThat(after.of<BrokerEvent.OrderFilled>()).isEmpty()
     }
 }

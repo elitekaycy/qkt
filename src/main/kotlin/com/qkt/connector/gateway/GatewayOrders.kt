@@ -42,6 +42,12 @@ internal object GatewayOrders {
                 TimeInForce.GTD -> return GatewayOrderMapping.Unsupported("VGP v1 has no good-till-date orders")
             }
         if (request.expiresAt != null) return GatewayOrderMapping.Unsupported("VGP v1 orders cannot carry an expiry")
+        val clientOrderId = GatewayClientIds.of(request)
+        if (clientOrderId.length > GatewayClientIds.MAX_LENGTH) {
+            return GatewayOrderMapping.Unsupported(
+                "order id $clientOrderId is longer than ${GatewayClientIds.MAX_LENGTH} characters",
+            )
+        }
         val side = if (request.side == Side.BUY) "buy" else "sell"
         val quantity = request.quantity.toPlainString()
         val reduceOnly =
@@ -50,7 +56,7 @@ internal object GatewayOrders {
             when (request) {
                 is OrderRequest.Market ->
                     WireSubmit(
-                        request.id,
+                        clientOrderId,
                         code,
                         side,
                         "market",
@@ -62,7 +68,7 @@ internal object GatewayOrders {
                     )
                 is OrderRequest.Limit ->
                     WireSubmit(
-                        request.id,
+                        clientOrderId,
                         code,
                         side,
                         "limit",
@@ -74,7 +80,7 @@ internal object GatewayOrders {
                     )
                 is OrderRequest.Stop ->
                     WireSubmit(
-                        request.id,
+                        clientOrderId,
                         code,
                         side,
                         "stop",
@@ -86,7 +92,7 @@ internal object GatewayOrders {
                     )
                 is OrderRequest.StopLimit ->
                     WireSubmit(
-                        request.id,
+                        clientOrderId,
                         code,
                         side,
                         "stop_limit",

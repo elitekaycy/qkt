@@ -83,6 +83,9 @@ internal abstract class GatewayHarness {
         quantity: String = "0.1",
     ) = OrderRequest.Market(id, symbol, side, BigDecimal(quantity), TimeInForce.GTC, 5L, strategy)
 
+    /** The gateway's id for engine order [engineId] submitted by [market] (at time 5). */
+    protected fun wire(engineId: String) = "$engineId.${5L.toString(36)}"
+
     /** Waits up to 5 s for [condition]. */
     protected fun await(condition: () -> Boolean) {
         val deadline = System.currentTimeMillis() + 5_000

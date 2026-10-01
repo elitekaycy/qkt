@@ -132,13 +132,17 @@ internal class GatewaySession(
         placement.submit(body, reject)
     }
 
-    /** Cancels [clientOrderId]; the order's end arrives as its events. */
-    fun cancel(clientOrderId: String) = placement.cancel(clientOrderId)
+    /** Cancels engine order [engineId] if it is open here; the order's end arrives as its events. */
+    fun cancel(engineId: String) {
+        ledger.gatewayId(engineId)?.let(placement::cancel)
+    }
 
-    /** Takes back orders a restart restored; returns the ids the gateway knows. Throws when it cannot answer. */
+    /** Takes back orders a restart restored; returns the engine ids the gateway knows. Throws when it cannot answer. */
     fun recover(orders: List<RecoveredOrder>): Set<String> {
         orders.forEach { ledger.own(it.clientOrderId, it.strategyId, it.quantity, it.alreadyFilled) }
-        return GatewayRecovery.recover(client, orders, ledger::markBooked, ledger::onFill, ledger::onOrder)
+        return GatewayRecovery
+            .recover(client, orders, ledger::markBooked, ledger::onFill, ledger::onOrder)
+            .mapTo(HashSet(), GatewayClientIds::engineId)
     }
 
     /** Refreshes the gateway's listing off the caller's thread. */
