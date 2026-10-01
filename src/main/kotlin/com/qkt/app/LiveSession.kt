@@ -289,7 +289,9 @@ class LiveSession(
     /** Accumulates trades/halts/equity-delta for the daily summary. */
     private val dailyTracker = DailyRollingTracker()
 
-    private val continuous = ContinuousWiring(feedSymbols, instrumentRegistry, source, clock)
+    /** The strategy whose state holds what belongs to the whole session: its risk state and stream lanes. */
+    private val stateOwner = strategies.firstOrNull()?.first ?: "session"
+    private val continuous = ContinuousWiring(feedSymbols, instrumentRegistry, source, clock, persistor, stateOwner)
     private val source: MarketSource = continuous.source
 
     /** Builds and remembers this session's venue brokers so the session can ask them for their abilities. */
@@ -450,13 +452,10 @@ class LiveSession(
             ).run(strategyPositions, broker, downtimeCloses::onLegRetired)
 
         val engine = Engine(bus, priceTracker)
-        val riskPersistId = strategies.firstOrNull()?.first ?: "session"
-        val persistedRiskState = persistor.loadRiskState(riskPersistId)
+        val persistedRiskState = persistor.loadRiskState(stateOwner)
         val restoredGlobalRealized =
             persistedRiskState?.globalRealizedTotal
-                ?: strategies.fold(java.math.BigDecimal.ZERO) { total, (id, _) ->
-                    total + strategyPnL.realizedFor(id)
-                }
+                ?: strategies.fold(java.math.BigDecimal.ZERO) { total, (id, _) -> total + strategyPnL.realizedFor(id) }
         pnl.restoreRealizedTotal(restoredGlobalRealized)
         val riskState =
             RiskState(
@@ -467,7 +466,7 @@ class LiveSession(
                 initialBalance,
                 dailyDdBasis,
                 persist = { snap ->
-                    runCatching { persistor.saveRiskState(riskPersistId, snap) }
+                    runCatching { persistor.saveRiskState(stateOwner, snap) }
                         .onFailure { e -> log.warn("risk-state persist failed: ${e.message}") }
                 },
             )
@@ -475,7 +474,7 @@ class LiveSession(
         persistedRiskState?.let { persisted ->
             riskState.restore(persisted)
             if (riskState.halted) {
-                log.warn("restored HALTED risk state for {}: {}", riskPersistId, riskState.haltReason)
+                log.warn("restored HALTED risk state for {}: {}", stateOwner, riskState.haltReason)
             }
         }
         riskState.initializeAnchors(strategies.map { it.first })

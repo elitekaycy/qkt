@@ -1,5 +1,6 @@
 package com.qkt.app
 
+import com.qkt.broker.continuous.LaneStateStore
 import com.qkt.bus.EventBus
 import com.qkt.common.Clock
 import com.qkt.derivatives.futures.ContinuousChains
@@ -7,11 +8,18 @@ import com.qkt.instrument.InstrumentRegistry
 import com.qkt.marketdata.source.ContinuousMarketSource
 import com.qkt.marketdata.source.LiveContinuousStreams
 import com.qkt.marketdata.source.MarketSource
+import com.qkt.persistence.StreamLanePersistence
 
-/** What a session's brokers need to trade continuous futures streams: their [chains], and a way to bind each lane's bus. */
+/**
+ * What a session's brokers need to trade continuous futures streams: their [chains], where their lanes
+ * keep their state across restarts, and a way to bind each lane's bus.
+ */
 internal interface ContinuousRouting {
     /** The chains of the session's continuous streams, shared with its market data; null when it declares none. */
     val chains: ContinuousChains?
+
+    /** Where the session's lanes keep their state across restarts; null keeps none. */
+    val laneStore: LaneStateStore?
 
     /** Binds a lane's private [bus] to the session's engine loop, before the lane's venue is built. */
     fun bindLane(bus: EventBus)
@@ -23,15 +31,19 @@ internal interface ContinuousRouting {
  * from their contracts, a roll measured live extending the chains) and its brokers' lanes, which roll on
  * the same measurement. A stream needs its root's roll history on disk, where the session appends what it
  * measures. Lane buses are queued on the session's mailbox ([bindMailbox], before any broker is built) and
- * routed to its engine loop once it exists ([attach]). A session declaring no stream gets [source] as given.
+ * routed to its engine loop once it exists ([attach]); the lanes keep their state in [persistence] under
+ * the session's state owner [stateOwner]. A session declaring no stream gets [source] as given.
  */
 internal class ContinuousWiring(
     symbols: Collection<String>,
     registry: InstrumentRegistry?,
     source: MarketSource,
     clock: Clock,
+    persistence: StreamLanePersistence,
+    stateOwner: String,
 ) : ContinuousRouting {
     override val chains: ContinuousChains?
+    override val laneStore = LaneStateStore(persistence, stateOwner)
     val source: MarketSource
     private var lanes: LaneBuses? = null
 

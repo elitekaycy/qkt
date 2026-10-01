@@ -117,6 +117,7 @@ internal class SessionBrokers(
                         streams,
                         RollLedger(),
                         ContractFillLog(),
+                        continuous.laneStore,
                     ) {
                         laneBus,
                         lanePrices,
