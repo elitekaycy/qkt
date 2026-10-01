@@ -57,6 +57,29 @@ which needs two changes in the connector:
   account holdings check with the lane's own contract positions (`RollLegs` per strategy), not the
   strategy's continuous position.
 
+### 2.3a Roll legs fill asynchronously live (found while building step 4)
+
+`RollExecutor` sends each roll leg and reads its outcome at once (`RollLegs.outcome`): in a backtest the
+exchange simulator fills inside `submit`, so the outcome is there. A live venue fills later, on its
+own thread, so the roll as written cannot run live. Steps 2 and 3 (live roll measurement,
+`ContinuousLiveFeed`) do not depend on this; step 4 does.
+
+Proposal, keeping every backtest identical:
+- Split the executor into the **roll plan** (holders, resting orders, legs to send; what it computes
+  today before trading) and a **leg driver**. The backtest driver stays synchronous (the simulator
+  fills inline), so backtest results do not change; a golden backtest of a rolling stream pins it.
+- The live driver runs each strategy's carry as a sealed state machine: `CloseSent → OpenSent →
+  Carried`, or `→ Failed` on a refused opening leg (the venue close and stop the backtest already
+  applies). Ledger entry, cost and any venue close are published when that strategy's carry ends,
+  not in one batch at the roll.
+- While a roll is in flight the lane refuses new orders on the stream and holds resting-order
+  re-placement until the carries end, so no order interleaves with the legs.
+- Legs keep their deterministic ids (`roll:<stream>:<atMs>:<strategy>:close|open`), so after a restart
+  the gateway's idempotent submit and order recovery resolve a leg in flight instead of sending it
+  twice (§2.4 persists the in-flight state).
+- A leg not filled within a bound (a market order on a live venue should fill in seconds) stops that
+  strategy on the stream and alerts, as a refused leg does.
+
 ### 2.4 Restart
 
 Persisted with the session: each lane's current contract index and per-strategy contract positions;
