@@ -233,11 +233,11 @@ class TradingPipeline(
 
     init {
         riskEngine.bindPendingExposure(orderManager)
-        require(strategies.map { it.first }.toSet().size == strategies.size) {
-            "Strategy IDs must be unique: ${strategies.map { it.first }}"
-        }
-        require(strategies.all { it.first.isNotBlank() }) { "Strategy ID must be non-blank" }
-        val windowAggregator = if (candleWindow != null) CandleAggregator(bus, candleWindow) else null
+        requireValidStrategyIds(strategies)
+        val windowAggregator =
+            candleWindow?.let {
+                CandleAggregator(bus, it, aggregates = optionCandleFilter(strategies, instruments))
+            }
         candleCloser =
             CandleWindowCloser(windowAggregator, candleHub, replayCandleCloseGraceMs, replayHeartbeatIntervalMs)
         tickIngest =

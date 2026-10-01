@@ -6,6 +6,8 @@ import com.qkt.backtest.EquityCurveCollector
 import com.qkt.backtest.ReturnAutocorrCollector
 import com.qkt.backtest.SampleCadence
 import com.qkt.bus.EventBus
+import com.qkt.derivatives.options.chain.ChainAnalyticsSymbol
+import com.qkt.derivatives.options.chain.OptionRootSymbol
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.risk.book.BookRiskController
 import com.qkt.risk.book.EngineBookStateSource
@@ -36,7 +38,13 @@ internal class ReplayAnalytics(
             strategyPnL = books.strategyPnL,
             strategyIds = strategyIds,
             startingBalance = startingBalance,
-            candleSymbols = symbols.toSet(),
+            // Root feeds never form candles of their own and chain analytics only where defined.
+            candleSymbols =
+                symbols
+                    .filterNot {
+                        it.startsWith(OptionRootSymbol.PREFIX) ||
+                            it.startsWith(ChainAnalyticsSymbol.PREFIX)
+                    }.toSet(),
             windowStartMs = initialTimestamp,
         )
 

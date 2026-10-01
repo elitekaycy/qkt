@@ -18,10 +18,11 @@ data class LegCriteria(
 ) {
     init {
         require(delta > 0.0 && delta < 1.0) { "a leg's target delta is between 0 and 1: $delta" }
-        require((expiryMs != null) != (minDays != null && maxDays != null)) {
-            "a leg names an expiry or a days-to-expiry window, not both"
+        val window = minDays != null && maxDays != null
+        require(window != (expiryMs != null) && (window || (minDays == null && maxDays == null))) {
+            "a leg names a whole days window (minDays and maxDays) or an expiry, not both and not part of a window"
         }
-        require(minDays == null || maxDays == null || (minDays >= 0.0 && minDays <= maxDays)) {
+        require(!window || (requireNotNull(minDays) >= 0.0 && minDays <= requireNotNull(maxDays))) {
             "days window $minDays..$maxDays"
         }
     }
@@ -38,9 +39,10 @@ data class SelectedOption(
 /**
  * The one deterministic leg selector (spec §6.4), over a single snapshot. Only catalogued, unexpired
  * quotes with a positive mark IV no older than the quote age count. The expiry is the nearest one in
- * the leg's days window (or the given expiry). Within it, the quote of the right whose Black-76
- * |delta| is nearest the target wins, ties going to the lower strike. Delta uses that expiry's median
- * `underlying` as the forward and rate 0. Null when nothing qualifies.
+ * the leg's days window that has a usable quote of the leg's right (or the given expiry). Within it,
+ * the quote of that right whose Black-76 |delta| is nearest the target wins, ties going to the lower
+ * strike. Delta uses the expiry's median `underlying` over all its usable quotes as the forward, and
+ * rate 0. Null when nothing qualifies.
  */
 object OptionSelector {
     private const val DAY_MS = 86_400_000.0
@@ -62,33 +64,38 @@ object OptionSelector {
                     q.markAgeMs <= maxQuoteAgeMs
             }
         val byExpiry = usable.groupBy { listings.getValue(it.contract).expiryMs }
+        val ofRight = { expiry: Long ->
+            byExpiry[expiry].orEmpty().filter {
+                listings.getValue(it.contract).toContract().right ==
+                    criteria.right
+            }
+        }
         val expiry =
             criteria.expiryMs ?: byExpiry.keys.sorted().firstOrNull { e ->
                 val days = (e - snapshot.atMs) / DAY_MS
-                days >= requireNotNull(criteria.minDays) && days <= requireNotNull(criteria.maxDays)
+                days >= requireNotNull(criteria.minDays) &&
+                    days <= requireNotNull(criteria.maxDays) &&
+                    ofRight(e).isNotEmpty()
             } ?: return null
-        val quotes = byExpiry[expiry] ?: return null
+        val candidates = ofRight(expiry).ifEmpty { return null }
         val forward =
-            quotes.map { it.underlying.toDouble() }.sorted().let { m ->
-                (m[(m.size - 1) / 2] + m[m.size / 2]) /
+            byExpiry.getValue(expiry).map { it.underlying.toDouble() }.sorted().let { m ->
+                (
+                    m[(m.size - 1) / 2] +
+                        m[m.size / 2]
+                ) /
                     2
             }
         val years = (expiry - snapshot.atMs) / YEAR_MS
-        return quotes
-            .map { it to listings.getValue(it.contract).toContract() }
-            .filter { (_, contract) -> contract.right == criteria.right }
-            .map { (quote, contract) ->
-                val delta =
-                    Black76
-                        .value(
-                            criteria.right,
-                            forward,
-                            contract.strike.toDouble(),
-                            years,
-                            0.0,
-                            requireNotNull(quote.markIv).toDouble() / 100,
-                        ).delta
-                Triple(quote, contract.strike, delta)
+        return candidates
+            .map { quote ->
+                val contract = listings.getValue(quote.contract).toContract()
+                val sigma = requireNotNull(quote.markIv).toDouble() / 100
+                Triple(
+                    quote,
+                    contract.strike,
+                    Black76.value(criteria.right, forward, contract.strike.toDouble(), years, 0.0, sigma).delta,
+                )
             }.minWithOrNull(compareBy({ abs(abs(it.third) - criteria.delta) }, { it.second }))
             ?.let { (quote, _, delta) -> SelectedOption(quote.contract, expiry, delta, quote) }
     }

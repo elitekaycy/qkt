@@ -32,7 +32,10 @@ internal fun replayOptionRoutes(
     val exchange =
         OptionExchange(bus, clock, instruments, ChainQuoteLookup(dataRoot, instruments), calendar, books.settlements)
     bus.subscribe<TickEvent> { e -> exchange.onTick(e.tick) }
-    // A fed root routes every contract of the root, including ones a structure picks at fire time.
-    val pattern = SymbolPattern { s -> s in options || fedRoots.any { it.covers(s) } }
+    // A fed root routes every catalogued contract of the root, including ones a structure picks at fire time.
+    val pattern =
+        SymbolPattern { s ->
+            s in options || (fedRoots.any { it.covers(s) } && instruments.lookup(s) != null)
+        }
     return ReplayExchangeRoutes(listOf<Pair<SymbolPattern, Broker>>(pattern to exchange), options)
 }

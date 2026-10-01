@@ -9,6 +9,8 @@ import com.qkt.broker.PaperBroker
 import com.qkt.bus.EventBus
 import com.qkt.common.FixedClock
 import com.qkt.common.TradingCalendar
+import com.qkt.derivatives.options.chain.ChainAnalyticsSymbol
+import com.qkt.derivatives.options.chain.OptionRootSymbol
 import com.qkt.marketdata.source.SymbolPattern
 
 /**
@@ -71,11 +73,17 @@ internal fun replayBroker(
             )
         }
     }
-    val others = symbols.filterNot { it in futures.symbols }
+    // Option root feeds and chain analytics are read-only streams: they never need a broker.
+    val readOnly = { s: String -> s.startsWith(OptionRootSymbol.PREFIX) || s.startsWith(ChainAnalyticsSymbol.PREFIX) }
+    val others = symbols.filterNot { it in futures.symbols || readOnly(it) }
     return if (brokerSymbols.isEmpty()) {
         CompositeBroker(futures.routes, fallback = if (others.isEmpty()) null else brokerFactory(), bus = bus)
     } else {
-        val remaining = brokerSymbols.mapValues { (_, syms) -> syms - futures.symbols }.filterValues { it.isNotEmpty() }
+        val remaining =
+            brokerSymbols
+                .mapValues { (_, syms) ->
+                    syms.filterNot { it in futures.symbols || readOnly(it) }.toSet()
+                }.filterValues { it.isNotEmpty() }
         CompositeBroker(futures.routes + routesOf(remaining, brokerFactory), bus = bus)
     }
 }
