@@ -13,7 +13,18 @@ import org.snakeyaml.engine.v2.api.LoadSettings
 object OptionRootsFile {
     private val REQUIRED =
         listOf("root", "currency", "contractSize", "tickSize", "volumeStep", "volumeMin", "underlyingIndex")
-    private val OPTIONAL = listOf("tickSteps", "exchangeFeePerContract", "takerFeeRate", "margin")
+    private val OPTIONAL =
+        listOf(
+            "tickSteps",
+            "exchangeFeePerContract",
+            "takerFeeRate",
+            "margin",
+            "chains",
+            "markSpread",
+            "maxQuoteAgeMinutes",
+            "feeCapRate",
+            "deliveryFeeRate",
+        )
     private val STEP_KEYS = setOf("above", "tick")
     private val fields = RootFields("options")
 
@@ -69,12 +80,29 @@ object OptionRootsFile {
                             name,
                         )
                     },
+                chains = entry["chains"]?.let { chains(it.toString(), name) },
+                markSpread = opt("markSpread"),
+                maxQuoteAgeMinutes =
+                    entry["maxQuoteAgeMinutes"]?.let { fields.wholeNumber(name, "maxQuoteAgeMinutes", it.toString()) }
+                        ?: 60,
+                feeCapRate = opt("feeCapRate"),
+                deliveryFeeRate = opt("deliveryFeeRate") ?: BigDecimal.ZERO,
             )
         } catch (e: IllegalArgumentException) {
             if (e.message?.startsWith("options root") == true) throw e
             throw IllegalArgumentException("options root $name: ${e.message}", e)
         }
     }
+
+    private fun chains(
+        value: String,
+        name: String,
+    ): QuoteSource =
+        when (value) {
+            "trade" -> QuoteSource.TRADE
+            "book" -> QuoteSource.BOOK
+            else -> throw IllegalArgumentException("options root $name: chains must be trade or book, got '$value'")
+        }
 
     private fun steps(
         raw: Any?,
