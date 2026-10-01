@@ -14,7 +14,8 @@ import org.slf4j.LoggerFactory
 /**
  * Decorator that runs [delegate]'s writes on a single-threaded daemon executor with a
  * bounded queue. Reads stay synchronous (booted-strategy preload + reconcile run before
- * the engine takes ticks, so they're not on a hot path).
+ * the engine takes ticks, so they're not on a hot path) and go straight to [delegate], as does
+ * any write this class does not queue, so no state is ever dropped by the decorator.
  *
  * Why: the bus is single-threaded; sync writes to disk land on the dispatch thread. For
  * high-event-rate strategies (sub-second order cadence) the ~5-15ms `Files.move` per
@@ -34,7 +35,7 @@ class AsyncStatePersistor(
     private val delegate: StatePersistor,
     queueCapacity: Int = 1024,
     private val shutdownTimeoutMs: Long = 5_000L,
-) : StatePersistor,
+) : StatePersistor by delegate,
     AutoCloseable {
     private val log = LoggerFactory.getLogger(AsyncStatePersistor::class.java)
 
@@ -120,18 +121,6 @@ class AsyncStatePersistor(
         submit("saveExcursion $strategyId/$symbol") { delegate.saveExcursion(strategyId, symbol, excursion) }
     }
 
-    override fun loadExcursion(
-        strategyId: String,
-        symbol: String,
-    ): PersistedExcursion? = delegate.loadExcursion(strategyId, symbol)
-
-    override fun loadLegBook(
-        strategyId: String,
-        symbol: String,
-    ): PersistedLegBook? = delegate.loadLegBook(strategyId, symbol)
-
-    override fun legBookSymbols(strategyId: String): Set<String> = delegate.legBookSymbols(strategyId)
-
     override fun saveBracketPairs(
         strategyId: String,
         pairs: List<BracketPair>,
@@ -140,8 +129,6 @@ class AsyncStatePersistor(
         submit("saveBracketPairs $strategyId") { delegate.saveBracketPairs(strategyId, snapshot) }
     }
 
-    override fun loadBracketPairs(strategyId: String): List<BracketPair> = delegate.loadBracketPairs(strategyId)
-
     override fun savePendingOrders(
         strategyId: String,
         orders: Map<String, OrderRequest>,
@@ -149,9 +136,6 @@ class AsyncStatePersistor(
         val snapshot = orders.toMap()
         submit("savePendingOrders $strategyId") { delegate.savePendingOrders(strategyId, snapshot) }
     }
-
-    override fun loadPendingOrders(strategyId: String): Map<String, OrderRequest> =
-        delegate.loadPendingOrders(strategyId)
 
     override fun savePendingOrdersSync(
         strategyId: String,
@@ -171,9 +155,6 @@ class AsyncStatePersistor(
         submit("savePendingStacks $strategyId") { delegate.savePendingStacks(strategyId, snapshot) }
     }
 
-    override fun loadPendingStacks(strategyId: String): Map<String, PersistedTierState> =
-        delegate.loadPendingStacks(strategyId)
-
     override fun saveOcoLegs(
         strategyId: String,
         legs: List<PersistedOcoLeg>,
@@ -181,8 +162,6 @@ class AsyncStatePersistor(
         val snapshot = legs.toList()
         submit("saveOcoLegs $strategyId") { delegate.saveOcoLegs(strategyId, snapshot) }
     }
-
-    override fun loadOcoLegs(strategyId: String): List<PersistedOcoLeg> = delegate.loadOcoLegs(strategyId)
 
     override fun saveTrailingStops(
         strategyId: String,
@@ -192,9 +171,6 @@ class AsyncStatePersistor(
         submit("saveTrailingStops $strategyId") { delegate.saveTrailingStops(strategyId, snapshot) }
     }
 
-    override fun loadTrailingStops(strategyId: String): List<PersistedTrailingStop> =
-        delegate.loadTrailingStops(strategyId)
-
     override fun saveTimedExits(
         strategyId: String,
         exits: List<PersistedTimeExit>,
@@ -203,16 +179,12 @@ class AsyncStatePersistor(
         submit("saveTimedExits $strategyId") { delegate.saveTimedExits(strategyId, snapshot) }
     }
 
-    override fun loadTimedExits(strategyId: String): List<PersistedTimeExit> = delegate.loadTimedExits(strategyId)
-
     override fun saveRiskState(
         strategyId: String,
         state: PersistedRiskState,
     ) {
         submit("saveRiskState($strategyId)") { delegate.saveRiskState(strategyId, state) }
     }
-
-    override fun loadRiskState(strategyId: String): PersistedRiskState? = delegate.loadRiskState(strategyId)
 
     override fun savePnl(
         strategyId: String,
@@ -221,7 +193,13 @@ class AsyncStatePersistor(
         submit("savePnl($strategyId)") { delegate.savePnl(strategyId, state) }
     }
 
-    override fun loadPnl(strategyId: String): PersistedPnl? = delegate.loadPnl(strategyId)
+    override fun saveTradeHistory(
+        strategyId: String,
+        state: PersistedTradeHistory,
+    ) {
+        val snapshot = state.copy(outcomes = state.outcomes.toList())
+        submit("saveTradeHistory($strategyId)") { delegate.saveTradeHistory(strategyId, snapshot) }
+    }
 
     override fun saveSequences(
         strategyId: String,
@@ -236,9 +214,6 @@ class AsyncStatePersistor(
             }
         submit("saveSequences($strategyId)") { delegate.saveSequences(strategyId, snapshot) }
     }
-
-    override fun loadSequences(strategyId: String): Map<String, PersistedSequenceState> =
-        delegate.loadSequences(strategyId)
 
     override fun saveExitHooks(
         strategyId: String,
@@ -256,8 +231,6 @@ class AsyncStatePersistor(
             }
         submit("saveExitHooks($strategyId)") { delegate.saveExitHooks(strategyId, snapshot) }
     }
-
-    override fun loadExitHooks(strategyId: String): List<PersistedExitHookBinding> = delegate.loadExitHooks(strategyId)
 
     override fun clearStrategy(strategyId: String) {
         submit("clearStrategy $strategyId") { delegate.clearStrategy(strategyId) }
