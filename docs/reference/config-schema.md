@@ -465,6 +465,45 @@ brokers:
 The daemon connects each Bybit account at startup and refuses to start if the connection is
 rejected. Bybit is never enabled by environment variables alone.
 
+### `type: gateway`
+
+One entry per account on a VGP v1 venue gateway
+([wire format](../superpowers/specs/2026-10-01-vgp-v1-wire.md)): futures, perpetuals, spot and
+options at any venue the gateway's adapter serves. The entry name is the strategy prefix, and venue
+codes are written with `-` as `_`: an entry named `deribit` trades `DERIBIT:BTC_USDC_25DEC26_92000_C`.
+Name the entry after the venue the instrument catalogs use (`deribit`, `binance_um`), so live
+strategies, structures and backtests name the same symbols.
+
+```yaml
+brokers:
+  deribit:
+    type: gateway
+    gateway_url: https://venued.internal:8443
+    api_key: env:DERIBIT_GATEWAY_KEY
+    expected_adapter: deribit
+    expected_account_login: "4421"
+    expected_trade_mode: demo
+```
+
+| Key | Type | Required | Default | Notes |
+|---|---|---|---|---|
+| `gateway_url` | URL | yes | none | The gateway's base URL. |
+| `api_key` | credential | yes | none | Bearer token; `env:` and `file:` forms resolve as for every broker. |
+| `expected_adapter` | string | yes | none | Startup refuses a gateway reporting another adapter. |
+| `expected_account_login` | string | yes | none | Startup refuses a gateway logged into another account. |
+| `expected_trade_mode` | `demo` or `real` | yes | none | Startup refuses a gateway in the other mode. |
+| `http_timeout_ms` | long | no | `5000` | Per request. |
+| `retry_attempts` | int | no | `3` | Reads, and submits, are sent again on a timeout or `503`; a submit is idempotent on its client order id, so this never places a second order. |
+| `calendars` | as above | no | `crypto` | Set it for venues that close, such as CME futures. |
+
+Several strategies may share one gateway account, as a portfolio. They share one connection; each
+fill reaches the strategy whose order it was, and a contract settlement at expiry closes each
+strategy's own holding at the settlement price, sharing the venue's costs by holding. After a
+restart, fills made while qkt was down are booked once from the gateway's deal history. The kill
+switch at the gateway refuses orders that add risk; an order that only reduces a position is sent
+`reduce_only` and passes. Market data and live futures routing through the gateway arrive in a later
+phase; until then a gateway account trades symbols whose prices come from another feed.
+
 Policy-rate artifacts are also configured through the environment. `QKT_RBA_POLICY_RATE_SOURCE`
 and `QKT_RBNZ_POLICY_RATE_SOURCE` accept an absolute path, `file:` URI, or HTTPS URL for the
 authorities' official XLSX tables. The RBA and RBNZ URLs are the defaults. Use a read-only mounted
