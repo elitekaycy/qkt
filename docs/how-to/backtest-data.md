@@ -197,6 +197,51 @@ and live runs refuse them. A run window that reaches past a stream's last listed
 makes its last contract the front one) is refused with the instant the stream ends; refresh the catalog
 or end the run earlier.
 
+## Scenario 2c — Option chains (Deribit linear USDC options, free)
+
+Options are recorded as point-in-time chains: one row per contract per snapshot instant. Deribit's
+public API serves them without an account. Only the linear `<COIN>_USDC` options are accepted;
+the inverse `BTC-…` ones are priced in coin and refused. Declare the root under `options:`:
+
+```yaml
+options:
+  - root: DERIBIT:BTC_USDC
+    currency: USDC
+    contractSize: 1
+    tickSize: 5
+    volumeStep: 0.01
+    volumeMin: 0.01
+    underlyingIndex: btc_usdc
+```
+
+```bash
+# Every listed and expired contract, plus daily delivery prices (contracts/DERIBIT/BTC_USDC.options.json).
+qkt fetch DERIBIT:BTC_USDC --catalog
+
+# History: chains for completed UTC days, built from the venue's trade history.
+qkt fetch DERIBIT:BTC_USDC --chains --from 2026-09-24 --to 2026-09-30 [--every 1h] [--max-mark-age 1d]
+
+# Forward: one snapshot of the live book now; run it on a schedule to build bid/ask history.
+qkt fetch DERIBIT:BTC_USDC --chains --live
+```
+
+Chains land in `chains/DERIBIT/BTC_USDC/<YYYY-MM-DD>.csv.gz` with the columns
+`atMs,contract,bid,ask,mark,markIv,underlying,rate,markAgeMs,source`, where an empty cell means
+absent.
+
+- **Trade history is sparse.** BTC_USDC trades a few hundred times a day. A contract is quoted
+  from its last trade (mark, IV, index) only once it has traded and until its expiry. `markAgeMs`
+  says how old that trade is, and contracts quiet for longer than `--max-mark-age` drop out.
+  These rows have no bid or ask. Each day reads trades from `--max-mark-age` before its start, so
+  a day's file is the same however the range is split. Days already on disk are skipped, and a day
+  that has not ended is refused.
+- **The live book is dense.** Every listed contract has its best bid and ask (a missing side stays
+  empty), mark, mark IV, rate, and its expiry's forward as `underlying`. The snapshot is stamped at
+  its newest row, and each row carries its own small age. `--live` adds to the day's file. Run one
+  snapshotter per root.
+- A traded or listed contract missing from the catalog is reported, not quoted. Refresh the
+  catalog with `--catalog`.
+
 ## Scenario 3 — Speed up repeated backtests (CSV → binary)
 
 Cached ticks start life as gzipped CSV (`*.csv.gz`). Converting them to the binary format decodes

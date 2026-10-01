@@ -67,3 +67,19 @@ anything not linear-in-USDC rather than assume.
   configured maximum instead of trading on a stale or invented price. Denser history needs a live
   snapshotter of `public/get_book_summary_by_currency` (marks, bid/ask and IV for every contract), the
   spec §6.3 path, which builds history going forward.
+
+## 7. First real chain fetches (2026-10-01)
+
+- `qkt fetch DERIBIT:BTC_USDC --chains --from 2026-09-24 --to 2026-09-30` built 168 hourly
+  snapshots from 2,158 trades in 14.6 s (192 MB peak RSS), with no uncatalogued contracts. Both
+  bounds of `get_last_trades_by_currency_and_time` are inclusive, and the history host is current
+  to within about a minute.
+- An independent reconstruction straight from the API (Python, no qkt code) of the 2026-09-30
+  12:00Z snapshot matched qkt's file exactly: the same 109 contracts, with identical marks, ages
+  and index prices. The median mark age at that instant was 7 hours.
+- `--chains --live` snapshots of `get_book_summary_by_currency` held all 614 live contracts. 96
+  rows had no bid; none had no ask, and none was crossed. Row timestamps within one response
+  spread over about 50 ms.
+- **The venue's mark can lie outside its own book.** In 21 of 1,228 live rows the mark was below
+  the bid or above the ask. The option fill model (43.3) must therefore price against the book side
+  when one exists, and use the mark only with a declared spread model when there is no book.
