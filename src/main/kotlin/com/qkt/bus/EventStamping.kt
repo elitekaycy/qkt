@@ -2,6 +2,7 @@ package com.qkt.bus
 
 import com.qkt.events.BrokerEvent
 import com.qkt.events.CandleEvent
+import com.qkt.events.ContractSettled
 import com.qkt.events.CostIncurred
 import com.qkt.events.DecisionOrderLinkedEvent
 import com.qkt.events.Event
@@ -58,6 +59,7 @@ internal fun stampEvent(
         is BrokerEvent.PositionProtectionChanged -> event.copy(timestamp = ts, sequenceId = seq)
         is BrokerEvent.PositionModificationCompleted -> event.copy(timestamp = ts, sequenceId = seq)
         is CostIncurred -> event.copy(timestamp = ts, sequenceId = seq)
+        is ContractSettled -> event.copy(timestamp = ts, sequenceId = seq)
         is RiskEvent.Halted -> event.copy(timestamp = ts, sequenceId = seq)
         is RiskEvent.Resumed -> event.copy(timestamp = ts, sequenceId = seq)
         is StructureOpened -> event.copy(timestamp = ts, sequenceId = seq)

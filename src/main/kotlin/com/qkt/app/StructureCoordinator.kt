@@ -5,6 +5,7 @@ import com.qkt.common.Clock
 import com.qkt.common.SequentialIdGenerator
 import com.qkt.common.Side
 import com.qkt.events.BrokerEvent
+import com.qkt.events.ContractSettled
 import com.qkt.events.RiskRejectedEvent
 import com.qkt.events.SignalEvent
 import com.qkt.events.TickEvent
@@ -24,8 +25,9 @@ import com.qkt.strategy.StructureState
  *
  * An opening leg filling after the unwind began is closed as it fills. A closing leg the venue
  * cancels (no quote in time) is sent again for what it still holds; one the venue rejects is final.
- * Legs whose contract has expired are never closed: they settle at their delivery price on the first
- * tick or settlement print at or after expiry ([StructureBook.settleExpired]). A fill of an
+ * Legs whose contract has expired are never closed: they settle at the venue's settlement price (its
+ * print, or a contract-level [ContractSettled]), or from the catalog's delivery price on the first tick
+ * at or after expiry ([StructureBook.settleExpired]), whichever comes first. A fill of an
  * order no structure sent (a flatten) closes the structure legs it trades against ([StructureBook.external]).
  */
 internal class StructureCoordinator(
@@ -79,12 +81,13 @@ internal class StructureCoordinator(
             if (e.strategyId == strategyId) book.accept(group)
         }
         bus.subscribe<TickEvent> { book.settleExpired(clock.now()) }
+        bus.subscribe<ContractSettled> { e -> book.settleAt(e.symbol, e.price) }
         bus.subscribe<RiskRejectedEvent> { e -> if (e.request.strategyId == strategyId) book.refused(e.request.id) }
         bus.subscribe<BrokerEvent.OrderFilled> { e ->
             if (e.strategyId != strategyId) return@subscribe
-            // A settlement print is no structure order: the book settles from the delivery price itself.
+            // A settlement print is no structure order: its legs on that contract settle at its price.
             if (e.exitReason == ExitReason.EXPIRY) {
-                book.settleExpired(clock.now())
+                book.settleAt(e.symbol, e.price)
                 return@subscribe
             }
             val owner = book.filled(e.clientOrderId, e.quantity, e.price)

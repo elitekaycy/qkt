@@ -46,10 +46,12 @@ internal class StrategyBinder(
 ) {
     private val audit = DslEvaluationAudit(bus, candleHub)
     private val structures = StructureCoordinator(bus, clock, orderManager::cancel)
+    private val settlement = ContractSettlement(bus, strategyPositions)
     private val stackBinder = StackOrchestratorBinder(clock, bus, persistor, strategyPositions)
 
     /** Bind every strategy, in order. */
     fun bindAll(strategies: List<Pair<String, Strategy>>) {
+        settlement.bind(strategies.map { it.first })
         strategies.forEach { (strategyId, strategy) -> bind(strategyId, strategy) }
     }
 

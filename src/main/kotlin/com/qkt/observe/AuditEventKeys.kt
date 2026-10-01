@@ -2,6 +2,7 @@ package com.qkt.observe
 
 import com.qkt.events.BrokerEvent
 import com.qkt.events.CandleEvent
+import com.qkt.events.ContractSettled
 import com.qkt.events.CostIncurred
 import com.qkt.events.DecisionOrderLinkedEvent
 import com.qkt.events.Event
@@ -60,6 +61,7 @@ internal fun auditSymbol(event: Event): String? =
         is BrokerEvent.OrderPartiallyFilled -> event.symbol
         is BrokerEvent.PositionReconciled -> event.symbol
         is CostIncurred -> event.symbol
+        is ContractSettled -> event.symbol
         is TradeEvent -> event.trade.symbol
         is TickEvent -> event.tick.symbol
         is WarmupTickEvent -> event.tick.symbol
