@@ -8,6 +8,9 @@ package com.qkt.dsl.ast
  */
 const val HUB_BROKER: String = "HUB"
 
+/** The broker prefix of option chain analytics streams (`CHAIN:DERIBIT.BTC_USDC.atm_iv.30d`). */
+const val CHAIN_BROKER: String = "CHAIN"
+
 /** Well-known broker/symbol identity used for synthetic DSL series streams. */
 object SeriesSymbols {
     const val BROKER: String = "SERIES"

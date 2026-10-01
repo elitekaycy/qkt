@@ -1,5 +1,6 @@
 package com.qkt.dsl.parse
 
+import com.qkt.dsl.ast.CHAIN_BROKER
 import com.qkt.dsl.ast.HUB_BROKER
 import com.qkt.dsl.ast.SeriesDecl
 import com.qkt.dsl.ast.SeriesSource
@@ -24,7 +25,7 @@ internal class StreamDeclParser(
         val broker = cursor.expect(TokenKind.IDENT, "expected broker prefix").lexeme
         cursor.expect(TokenKind.COLON, "expected ':' between broker and symbol")
         val symbol =
-            if (broker.equals(HUB_BROKER, ignoreCase = true)) {
+            if (broker.equals(HUB_BROKER, ignoreCase = true) || broker.equals(CHAIN_BROKER, ignoreCase = true)) {
                 parseDottedSymbol()
             } else {
                 val name = cursor.expect(TokenKind.IDENT, "expected symbol after ':'").lexeme
@@ -69,7 +70,8 @@ internal class StreamDeclParser(
     }
 
     /**
-     * A hub dataset name, which is dotted: `HUB:cal.high_impact` or `HUB:cal.high_impact.USD`.
+     * A hub dataset or chain analytics name, which is dotted: `HUB:cal.high_impact`,
+     * `HUB:cal.high_impact.USD`, `CHAIN:DERIBIT.BTC_USDC.atm_iv.30d`.
      *
      * Every other venue names an instrument with one identifier, so the general symbol rule is a
      * single IDENT. A hub dataset is addressed by a hierarchical name instead, and the lexer

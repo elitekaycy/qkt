@@ -4,6 +4,7 @@ import com.qkt.dsl.ast.ActionAst
 import com.qkt.dsl.ast.ActionOpts
 import com.qkt.dsl.ast.Block
 import com.qkt.dsl.ast.Buy
+import com.qkt.dsl.ast.CHAIN_BROKER
 import com.qkt.dsl.ast.Cancel
 import com.qkt.dsl.ast.CancelAll
 import com.qkt.dsl.ast.Close
@@ -29,7 +30,8 @@ internal fun readOnlyAliases(
         .filterValues {
             it.broker == "MACRO" ||
                 it.broker == SeriesSymbols.BROKER ||
-                it.broker.equals(HUB_BROKER, ignoreCase = true)
+                it.broker.equals(HUB_BROKER, ignoreCase = true) ||
+                it.broker.equals(CHAIN_BROKER, ignoreCase = true)
         }.keys + datasetAliases
 
 /** Rejects, at compile time, any order action (including nested ON_FILL and exit hooks) on a read-only alias. */

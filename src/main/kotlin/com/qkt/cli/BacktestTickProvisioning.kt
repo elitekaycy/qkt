@@ -3,6 +3,7 @@ package com.qkt.cli
 import com.qkt.backtest.BacktestDataProvisioner
 import com.qkt.backtest.OptionChainCoverage
 import com.qkt.backtest.ProvisionStream
+import com.qkt.dsl.ast.CHAIN_BROKER
 import com.qkt.dsl.ast.HUB_BROKER
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.optionSymbols
@@ -36,8 +37,12 @@ internal object BacktestTickProvisioning {
         val tickProvisionStreams =
             (replaySymbols - instruments.optionSymbols(replaySymbols))
                 .map { BacktestBarReplay.brokerAndBare(it) }
-                .filter { (broker, _) -> broker != "MACRO" && broker != "BYBIT" && broker != HUB_BROKER }
-                .distinct()
+                .filter { (broker, _) ->
+                    broker != "MACRO" &&
+                        broker != "BYBIT" &&
+                        broker != HUB_BROKER &&
+                        broker != CHAIN_BROKER
+                }.distinct()
                 .map { (broker, bare) -> ProvisionStream(broker = broker, bareSymbol = bare) }
                 .filterNot { stream ->
                     val declared = barReplay.finestDeclared["${stream.broker}:${stream.bareSymbol}"]
