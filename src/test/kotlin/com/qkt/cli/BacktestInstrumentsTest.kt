@@ -59,7 +59,7 @@ class BacktestInstrumentsTest {
                 "volumeMin: 0.01, underlyingIndex: btc_usdc }\n",
         )
 
-        assertThatThrownBy { BacktestInstruments.registry(dir, null, listOf("DERIBIT:BTC_USDC-27SEP24-60000-C")) }
+        assertThatThrownBy { BacktestInstruments.registry(dir, null, listOf("DERIBIT:BTC_USDC_27SEP24_60000_C")) }
             .hasMessageContaining("qkt fetch DERIBIT:BTC_USDC --catalog")
     }
 }

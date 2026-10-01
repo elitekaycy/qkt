@@ -2,17 +2,14 @@ package com.qkt.cli
 
 import com.qkt.accounting.AccountingConfig
 import com.qkt.backtest.Backtest
-import com.qkt.backtest.BacktestDataProvisioner
 import com.qkt.backtest.BrokerKind
 import com.qkt.backtest.ExecutionSimulationConfig
 import com.qkt.backtest.GatedChild
-import com.qkt.backtest.ProvisionStream
 import com.qkt.candles.TimeWindow
 import com.qkt.common.FixedClock
 import com.qkt.common.SymbolCalendars
 import com.qkt.common.TimeRange
 import com.qkt.common.TradingCalendar
-import com.qkt.dsl.ast.HUB_BROKER
 import com.qkt.dsl.ast.StrategyAst
 import com.qkt.dsl.compile.AstCompiler
 import com.qkt.dsl.portfolio.PortfolioGate
@@ -29,7 +26,6 @@ import com.qkt.marketdata.store.DataRoot
 import com.qkt.marketdata.store.DefaultDataStore
 import com.qkt.marketdata.store.LocalBarStore
 import com.qkt.marketdata.store.ScriptDataFetcher
-import com.qkt.marketdata.store.dukascopy.DukascopyInstrument
 import com.qkt.marketdata.store.dukascopy.DukascopyTickFetcher
 import com.qkt.marketdata.store.macro.FredSeriesFetcher
 import com.qkt.marketdata.store.macro.MacroSeriesStore
@@ -324,49 +320,17 @@ class BacktestContext private constructor(
             val barWindows = barReplay.barWindows
 
             val provisioner: () -> Unit = {
-                val allProvisionStreams =
-                    replaySymbols
-                        .map { BacktestBarReplay.brokerAndBare(it) }
-                        .filter { (broker, _) -> broker != "MACRO" && broker != "BYBIT" && broker != HUB_BROKER }
-                        .distinct()
-                        .map { (broker, bare) -> ProvisionStream(broker = broker, bareSymbol = bare) }
                 val provisionFrom = LocalDate.ofInstant(from, ZoneOffset.UTC)
                 val provisionTo = LocalDate.ofInstant(to.minusMillis(1), ZoneOffset.UTC)
-                val tickProvisionStreams =
-                    allProvisionStreams.filterNot { stream ->
-                        val window = barReplay.finestDeclared["${stream.broker}:${stream.bareSymbol}"]
-                        window != null &&
-                            BacktestBarReplay.hasCompleteFetchedBars(
-                                barStore,
-                                stream,
-                                window,
-                                provisionFrom,
-                                provisionTo,
-                            )
-                    }
-                val (fetchableStreams, validateOnlyStreams) =
-                    tickProvisionStreams.partition { DukascopyInstrument.ofOrNull(it.bareSymbol) != null }
-                // --bars replays the pre-built bar store and never reads ticks, so skip tick fetch +
-                // completeness validation: it would otherwise scan the tick store and warn on holiday
-                // holes the bar run doesn't care about (pure waste + log noise every gate run).
-                if (!barReplay.forceBars && !provisionTo.isBefore(provisionFrom) && tickProvisionStreams.isNotEmpty()) {
-                    BacktestDataProvisioner(store).ensure(
-                        streams = fetchableStreams,
-                        from = provisionFrom,
-                        to = provisionTo,
-                        fetchEnabled = !noFetch,
-                        allowIncomplete = args.flag("allow-incomplete"),
-                        calendarFor = { defaultCalendars().calendarFor(it) },
-                    )
-                    BacktestDataProvisioner(store).ensure(
-                        streams = validateOnlyStreams,
-                        from = provisionFrom,
-                        to = provisionTo,
-                        fetchEnabled = false,
-                        allowIncomplete = args.flag("allow-incomplete"),
-                        calendarFor = { defaultCalendars().calendarFor(it) },
-                    )
-                }
+                BacktestTickProvisioning.provision(
+                    replaySymbols,
+                    instruments,
+                    barReplay,
+                    store to barStore,
+                    from to to,
+                    noFetch,
+                    args.flag("allow-incomplete"),
+                )
                 // Macro series (MACRO:) provisioning from FRED. Fetch enough history before the
                 // window for the strategy's warmup (90 calendar days ~ 60 business days). Skipped on
                 // --no-fetch; hasRange avoids re-fetching a window the store already brackets.
@@ -546,46 +510,15 @@ class BacktestContext private constructor(
             val replaySymbols = (symbols + accountingConfig.normalizedSymbols.values).distinct()
 
             val provisioner: () -> Unit = {
-                val allProvisionStreams =
-                    replaySymbols
-                        .map { BacktestBarReplay.brokerAndBare(it) }
-                        .filter { (broker, _) -> broker != "MACRO" && broker != "BYBIT" && broker != HUB_BROKER }
-                        .distinct()
-                        .map { (broker, bare) -> ProvisionStream(broker = broker, bareSymbol = bare) }
-                val provisionFrom = LocalDate.ofInstant(from, ZoneOffset.UTC)
-                val provisionTo = LocalDate.ofInstant(to.minusMillis(1), ZoneOffset.UTC)
-                val tickProvisionStreams =
-                    allProvisionStreams.filterNot { stream ->
-                        val window = barReplay.finestDeclared["${stream.broker}:${stream.bareSymbol}"]
-                        window != null &&
-                            BacktestBarReplay.hasCompleteFetchedBars(
-                                barStore,
-                                stream,
-                                window,
-                                provisionFrom,
-                                provisionTo,
-                            )
-                    }
-                val (fetchableStreams, validateOnlyStreams) =
-                    tickProvisionStreams.partition { DukascopyInstrument.ofOrNull(it.bareSymbol) != null }
-                if (!barReplay.forceBars && !provisionTo.isBefore(provisionFrom) && tickProvisionStreams.isNotEmpty()) {
-                    BacktestDataProvisioner(store).ensure(
-                        streams = fetchableStreams,
-                        from = provisionFrom,
-                        to = provisionTo,
-                        fetchEnabled = !noFetch,
-                        allowIncomplete = args.flag("allow-incomplete"),
-                        calendarFor = { defaultCalendars().calendarFor(it) },
-                    )
-                    BacktestDataProvisioner(store).ensure(
-                        streams = validateOnlyStreams,
-                        from = provisionFrom,
-                        to = provisionTo,
-                        fetchEnabled = false,
-                        allowIncomplete = args.flag("allow-incomplete"),
-                        calendarFor = { defaultCalendars().calendarFor(it) },
-                    )
-                }
+                BacktestTickProvisioning.provision(
+                    replaySymbols,
+                    instruments,
+                    barReplay,
+                    store to barStore,
+                    from to to,
+                    noFetch,
+                    args.flag("allow-incomplete"),
+                )
             }
 
             val haltConfig =

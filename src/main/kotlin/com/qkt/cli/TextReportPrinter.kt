@@ -16,6 +16,7 @@ internal object TextReportPrinter {
         out: PrintStream,
         brokerKind: BrokerKind,
         futures: Set<String> = emptySet(),
+        options: Set<String> = emptySet(),
     ) {
         val g = r.global
         out.println("Trades:           ${g.tradeCount}")
@@ -80,6 +81,11 @@ internal object TextReportPrinter {
         if (futures.isNotEmpty()) {
             out.println(
                 "  Futures:    exchange simulator — executable price + slippage, root fees per fill, rolls as roll costs",
+            )
+        }
+        if (options.isNotEmpty()) {
+            out.println(
+                "  Options:    option venue — next chain snapshot's bid/ask, capped venue fees, cash settlement at delivery",
             )
         }
         out.println("  Win rate:   wins / decided trades; break-even trades excluded")

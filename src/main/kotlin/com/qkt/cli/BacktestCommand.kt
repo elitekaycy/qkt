@@ -11,6 +11,7 @@ import com.qkt.evidence.DatasetEvidence
 import com.qkt.evidence.EvidenceEnvelope
 import com.qkt.evidence.EvidenceHasher
 import com.qkt.instrument.futuresSymbols
+import com.qkt.instrument.optionSymbols
 import com.qkt.marketdata.store.DataFetcher
 import java.nio.file.Files
 import java.nio.file.Path
@@ -107,9 +108,11 @@ class BacktestCommand(
                 BacktestReportWriter(dir).write(result)
             }
             val futures = ctx.instruments.futuresSymbols(ctx.symbols)
-            ReportPrinter.print(result, format, System.out, ctx.brokerKind, futures)
+            val options = ctx.instruments.optionSymbols(ctx.symbols)
+            ReportPrinter.print(result, format, System.out, ctx.brokerKind, futures, options)
             if (futures.isNotEmpty()) System.err.println(futuresExecutionNote(futures))
-            if (ctx.brokerKind == BrokerKind.PAPER && ctx.symbols.any { it !in futures }) {
+            if (options.isNotEmpty()) System.err.println(optionsExecutionNote(options))
+            if (ctx.brokerKind == BrokerKind.PAPER && ctx.symbols.any { it !in futures && it !in options }) {
                 System.err.println(
                     "qkt: note: paper broker fills at mid with no spread/slippage — results are optimistic. " +
                         "Use --broker mt5-sim and set commissionPerLot + slippagePoints in instruments.yaml " +
@@ -186,12 +189,4 @@ class BacktestCommand(
         val path = Config.resolvePath(args.option("config"))
         return if (Files.exists(path)) EvidenceHasher.sha256(path) else null
     }
-}
-
-/** What the exchange simulator modelled for the run's [futures] symbols. */
-internal fun futuresExecutionNote(futures: Set<String>): String {
-    val names = futures.sorted().joinToString(", ")
-    val verb = if (futures.size == 1) "fills" else "fill"
-    return "qkt: note: $names $verb on the exchange simulator: market orders at the executable price plus the " +
-        "run's slippage model, the root's fees on every fill, rolls booked as roll costs."
 }
