@@ -4,13 +4,15 @@ import com.qkt.backtest.BacktestResult
 import com.qkt.broker.continuous.ContractFill
 import com.qkt.broker.continuous.RollEntry
 import com.qkt.broker.exchange.Settlement
-import java.time.Instant
 
 /**
  * The futures artifacts of a report — `rolls.csv`, `contracts.csv`, `settlements.csv`,
  * `margin_daily.csv` — each present
  * only when its ledger has entries, so a report of a run without futures is unchanged. The writer,
- * the artifact index and the manifest all list files from here.
+ * the artifact index and the manifest all list files from here. Columns follow `trades.csv`:
+ * epoch-ms `timestamp`, plain decimals, quoted text. `rolls.csv` quantities are signed (negative
+ * short) and its prices, fees and `rollCost` are in the root's currency; `margin_daily.csv` is in
+ * account currency.
  */
 internal object FuturesReportFiles {
     /** Artifact index key of each file. */
@@ -35,16 +37,17 @@ internal object FuturesReportFiles {
 
     private fun rolls(entries: List<RollEntry>): String =
         csv(
-            "time,stream,strategy,from,to,quantity,fromReference,toReference,gap,fromFill,toFill,fees,rollCost",
+            "timestamp,stream,strategy,from,to,quantity,multiplier,fromReference,toReference,gap,fromFill,toFill,fees,rollCost",
             entries,
         ) {
             listOf(
-                time(it.atMs),
-                it.stream,
-                it.strategyId,
-                it.from,
-                it.to,
+                it.atMs.toString(),
+                csvField(it.stream),
+                csvField(it.strategyId),
+                csvField(it.from),
+                csvField(it.to),
                 plain(it.quantity),
+                plain(it.multiplier),
                 plain(it.fromReference),
                 plain(it.toReference),
                 plain(it.toReference.subtract(it.fromReference)),
@@ -56,13 +59,13 @@ internal object FuturesReportFiles {
         }
 
     private fun contracts(entries: List<ContractFill>): String =
-        csv("time,strategy,stream,orderId,contract,side,quantity,contractPrice,streamPrice", entries) {
+        csv("timestamp,strategy,stream,orderId,contract,side,quantity,contractPrice,streamPrice", entries) {
             listOf(
-                time(it.atMs),
-                it.strategyId,
-                it.stream,
-                it.orderId,
-                it.contract,
+                it.atMs.toString(),
+                csvField(it.strategyId),
+                csvField(it.stream),
+                csvField(it.orderId),
+                csvField(it.contract),
                 it.side.name,
                 plain(it.quantity),
                 plain(it.contractPrice),
@@ -71,11 +74,11 @@ internal object FuturesReportFiles {
         }
 
     private fun settlements(entries: List<Settlement>): String =
-        csv("time,strategy,contract,side,quantity,price,deliveryPriceKnown", entries) {
+        csv("timestamp,strategy,contract,side,quantity,price,deliveryPriceKnown", entries) {
             listOf(
-                time(it.atMs),
-                it.strategyId,
-                it.contract,
+                it.atMs.toString(),
+                csvField(it.strategyId),
+                csvField(it.contract),
                 it.side.name,
                 plain(it.quantity),
                 plain(it.price),
@@ -93,7 +96,5 @@ internal object FuturesReportFiles {
             for (row in rows) append(cells(row).joinToString(",")).append('\n')
         }
 
-    private fun time(ms: Long): String = Instant.ofEpochMilli(ms).toString()
-
-    private fun plain(value: java.math.BigDecimal): String = value.stripTrailingZeros().toPlainString()
+    private fun plain(value: java.math.BigDecimal): String = value.toPlainString()
 }
