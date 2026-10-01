@@ -247,7 +247,8 @@ class DaemonCommand(
 
         val effectiveSourceFactory: (List<String>) -> MarketSource =
             sourceFactory
-                ?: MarketSourceFactory.composite(accounts.marketDataRoutes(), source = cfg.source, hub = cfg.hub)
+                ?: MarketSourceFactory
+                    .composite(accounts.marketDataRoutes(), cfg.source, cfg.hub, daemonInstrumentRegistry)
 
         val statePersistor =
             statePersistorFactory?.invoke(cfg, stateDir.stateRoot)
@@ -591,9 +592,7 @@ class DaemonCommand(
         onDeployError: (name: String, message: String) -> Unit = { _, _ -> },
     ): List<FailedAutoDeploy> {
         if (dir == null) return emptyList()
-        val path =
-            java.nio.file.Path
-                .of(dir)
+        val path = Path.of(dir)
         if (!java.nio.file.Files
                 .isDirectory(path)
         ) {
