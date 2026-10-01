@@ -14,7 +14,7 @@ internal fun resolveFetchRange(
 ): Pair<LocalDate, LocalDate>? {
     if (last != null) {
         val days = parseLastDays(last) ?: return null
-        val today = LocalDate.now(ZoneOffset.UTC)
+        val today = utcToday()
         return today.minusDays(days.toLong()) to today.minusDays(1)
     }
     if (from == null || to == null) {
@@ -28,6 +28,9 @@ internal fun resolveFetchRange(
         null
     }
 }
+
+/** The operator's current UTC date: the one wall-clock read the fetch commands make. */
+internal fun utcToday(): LocalDate = LocalDate.now(ZoneOffset.UTC)
 
 private fun parseLastDays(s: String): Int? {
     val m = Regex("^(\\d+)d$").matchEntire(s)
