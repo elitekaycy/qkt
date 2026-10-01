@@ -54,8 +54,10 @@ class MarginDailySampler(
         var used = BigDecimal.ZERO
         var maintenance = BigDecimal.ZERO
         var margined = false
-        for ((symbol, position) in positions.allPositions()) {
-            if (position.quantity.signum() == 0 || !margin.hasTerms(symbol)) continue
+        for (symbol in positions.symbols()) {
+            if (!margin.hasTerms(symbol)) continue
+            val position = positions.positionFor(symbol) ?: continue
+            if (position.quantity.signum() == 0) continue
             val price = prices.lastPrice(symbol) ?: position.avgEntryPrice
             used = used.add(margin.initial(symbol, position.quantity, price, nowMs))
             maintenance = maintenance.add(margin.maintenance(symbol, position.quantity, price, nowMs))
