@@ -163,10 +163,18 @@ class DaemonCommand(
         // Forward reference so the connector context can ask which deployed strategies trade an
         // account. Recovery runs strictly after the broker is built, so by the time a broker asks,
         // `registryRef.get()` is populated. See #154.
+        val daemonInstrumentRegistry =
+            try {
+                InstrumentFiles.registry(Path.of(cfg.dataRoot), explicit = null)
+            } catch (e: Exception) {
+                System.err.println("qkt: instrument registry load failed: ${e.message}")
+                runCatching { insightsSink?.close() }
+                return ExitCodes.USER_ERROR
+            }
         val registryRef = AtomicReference<StrategyRegistry?>(null)
         val accounts =
             try {
-                cfg.openAccounts(stateDir.stateRoot) { accountName ->
+                cfg.openAccounts(stateDir.stateRoot, daemonInstrumentRegistry) { accountName ->
                     registryRef
                         .get()
                         ?.list()
@@ -195,14 +203,6 @@ class DaemonCommand(
         val daemonCalendarFor: (String) -> com.qkt.common.TradingCalendar = { qktSymbol ->
             liveCalendarFor(qktSymbol, accounts)
         }
-        val daemonInstrumentRegistry =
-            try {
-                InstrumentFiles.registry(Path.of(cfg.dataRoot), explicit = null)
-            } catch (e: Exception) {
-                System.err.println("qkt: instrument registry load failed: ${e.message}")
-                runCatching { insightsSink?.close() }
-                return ExitCodes.USER_ERROR
-            }
         val liveAccounts = verifiedAccounts.filter { it.second.type == com.qkt.connectivity.AccountType.LIVE }
         if (!cfg.runtimeMode.production && liveAccounts.isNotEmpty()) {
             System.err.println(

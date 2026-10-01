@@ -33,12 +33,14 @@ class GatewayConnector : Connector {
         accounts: List<AccountConfig>,
         context: ConnectorContext,
     ): List<TradingAccount> =
-        accounts.map {
+        accounts.map { account ->
+            val settings = GatewaySettings.of(account, context)
             GatewayTradingAccount(
-                it,
-                GatewaySettings.of(it, context),
+                account,
+                settings,
                 context.clock,
-                { context.strategiesTrading(it.name).toSet() },
+                { context.strategiesTrading(account.name).toSet() },
+                GatewayChainRecording(context.instruments, settings.chainSnapshotMs),
             )
         }
 }
@@ -49,6 +51,7 @@ class GatewayTradingAccount internal constructor(
     private val settings: GatewaySettings,
     private val clock: Clock,
     private val strategies: () -> Set<String>,
+    private val recording: GatewayChainRecording,
 ) : TradingAccount {
     private val identity = GatewayIdentity(settings.adapter, settings.accountLogin, settings.tradeMode)
     private val client by lazy {
@@ -71,7 +74,13 @@ class GatewayTradingAccount internal constructor(
     override val tradingHours: SymbolCalendars = GatewaySettings.calendars(config)
 
     private val quotes =
-        GatewayMarketSource(config.symbolPrefix, settings.url, settings.apiKey, listing = { client.instruments() })
+        GatewayMarketSource(
+            config.symbolPrefix,
+            settings.url,
+            settings.apiKey,
+            listing = { client.instruments() },
+            recorderFor = recording::sinkFor,
+        )
 
     override val marketData: MarketSource = quotes
 
@@ -102,5 +111,6 @@ class GatewayTradingAccount internal constructor(
     /** Closes the account's gateway connection, if it was ever opened. */
     override fun close() {
         if (opened.isInitialized()) opened.value.close()
+        recording.close()
     }
 }

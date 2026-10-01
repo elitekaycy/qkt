@@ -494,6 +494,7 @@ brokers:
 | `expected_trade_mode` | `demo` or `real` | yes | none | Startup refuses a gateway in the other mode. |
 | `http_timeout_ms` | long | no | `5000` | Per request. |
 | `retry_attempts` | int | no | `3` | Reads, and submits, are sent again on a timeout or `503`; a submit is idempotent on its client order id, so this never places a second order. |
+| `chain_snapshot_seconds` | int | no | `300` | How often the live chain of each fed option root declared `chains: book` is appended to its book series (structures and `CHAIN:` streams read it). |
 | `calendars` | as above | no | `crypto` | Set it for venues that close, such as CME futures. |
 
 Several strategies may share one gateway account, as a portfolio. They share one connection; each

@@ -14,7 +14,11 @@ class GatewayMarketSourceTest {
     private val symbol = "DERIBIT:BTC_USDC_25DEC26_92000_C"
     private val fake = FakeGateway(listOf(code, "ETH_USDC-25DEC26-3000-P"))
     private val client = GatewayClient(fake.url, "k", httpTimeoutMs = 500, retryAttempts = 2)
-    private val source = GatewayMarketSource("DERIBIT:", fake.url, "k") { client.instruments() }
+    private val recorded = CopyOnWriteArrayList<String>()
+    private val source =
+        GatewayMarketSource("DERIBIT:", fake.url, "k", listing = { client.instruments() }) { root ->
+            if (root == "DERIBIT:BTC_USDC") { quote -> recorded += quote.symbol } else null
+        }
     private val feeds = CopyOnWriteArrayList<TickFeed>()
 
     @AfterEach
@@ -56,6 +60,17 @@ class GatewayMarketSourceTest {
 
         assertThat(feed.next()!!.symbol).isEqualTo("DERIBIT:BTC_USDC_26MAR27_95000_C")
         assertThat(fake.quotes.subscriptions.single()).isEqualTo("roots=BTC_USDC")
+        assertThat(recorded).containsExactly(later)
+    }
+
+    @Test
+    fun `a contract fed alone is never recorded as chain history`() {
+        val feed = open(symbol)
+
+        fake.quotes.send(quote(code))
+
+        feed.next()
+        assertThat(recorded).isEmpty()
     }
 
     @Test

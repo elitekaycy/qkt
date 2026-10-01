@@ -7,7 +7,8 @@ import com.qkt.connectivity.ConnectorContext
 
 /**
  * One `type: gateway` broker entry: the gateway at [url] with token [apiKey], and the identity it must
- * report before anything trades ([adapter], [accountLogin], [tradeMode] `demo` or `real`).
+ * report before anything trades ([adapter], [accountLogin], [tradeMode] `demo` or `real`), and how
+ * often the live chain of a `chains: book` option root is snapshotted ([chainSnapshotMs]).
  *
  * ```yaml
  * deribit_main:
@@ -27,6 +28,7 @@ internal data class GatewaySettings(
     val tradeMode: String,
     val httpTimeoutMs: Long,
     val retryAttempts: Int,
+    val chainSnapshotMs: Long,
 ) {
     companion object {
         /** Every setting a gateway entry may carry. */
@@ -39,6 +41,7 @@ internal data class GatewaySettings(
                 "expected_trade_mode",
                 "http_timeout_ms",
                 "retry_attempts",
+                "chain_snapshot_seconds",
             )
 
         /** The settings of [account]; every identity check is required, so a gateway is never trusted unchecked. */
@@ -65,6 +68,7 @@ internal data class GatewaySettings(
                 tradeMode = mode,
                 httpTimeoutMs = account.setting("http_timeout_ms")?.toLong() ?: DEFAULT_TIMEOUT_MS,
                 retryAttempts = account.setting("retry_attempts")?.toInt() ?: DEFAULT_ATTEMPTS,
+                chainSnapshotMs = (account.setting("chain_snapshot_seconds")?.toLong() ?: DEFAULT_CHAIN_S) * MS_PER_S,
             )
         }
 
@@ -82,5 +86,7 @@ internal data class GatewaySettings(
 
         private const val DEFAULT_TIMEOUT_MS = 5_000L
         private const val DEFAULT_ATTEMPTS = 3
+        private const val DEFAULT_CHAIN_S = 300L
+        private const val MS_PER_S = 1_000L
     }
 }
