@@ -3,6 +3,7 @@ package com.qkt.app
 import com.qkt.broker.Broker
 import com.qkt.broker.BrokerFactory
 import com.qkt.broker.PaperBroker
+import com.qkt.broker.bookedLegs
 import com.qkt.bus.EventBus
 import com.qkt.candles.TimeWindow
 import com.qkt.common.Clock
@@ -706,26 +707,7 @@ class LiveSession(
         downtimeCloses.bookInto(pipeline)
         // The broker keeps the ledger honest against venue truth from here on (#1097).
         val watchedStrategyIds = strategies.map { it.first }
-        broker.watchBookedLegs {
-            val legs = ArrayList<com.qkt.broker.BookedLeg>()
-            for (strategyId in watchedStrategyIds) {
-                for (leg in strategyPositions.allLegsFor(strategyId)) {
-                    val ticket = leg.brokerTicket ?: continue
-                    legs +=
-                        com.qkt.broker.BookedLeg(
-                            strategyId = strategyId,
-                            legId = leg.legId,
-                            ticket = ticket,
-                            symbol = leg.symbol,
-                            side = leg.side,
-                            quantity = leg.quantity,
-                            entryPrice = leg.entryPrice,
-                            openedAt = leg.openedAt,
-                        )
-                }
-            }
-            legs
-        }
+        broker.watchBookedLegs { strategyPositions.bookedLegs(watchedStrategyIds) }
         // Keep the daily-summary tracker's halt count current. The daemon owns the one
         // DailySummaryScheduler; this session just feeds its tracker.
         val ownerStrategyId = strategies.firstOrNull()?.first.orEmpty()
