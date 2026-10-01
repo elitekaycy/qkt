@@ -5,6 +5,9 @@ import com.qkt.instrument.ContractCatalogStore
 import com.qkt.instrument.FuturesRootsFile
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.LayeredInstrumentRegistry
+import com.qkt.instrument.OptionCatalogRegistry
+import com.qkt.instrument.OptionCatalogStore
+import com.qkt.instrument.OptionRootsFile
 import com.qkt.instrument.RollHistoryStore
 import com.qkt.instrument.StandardInstrumentRegistry
 import com.qkt.instrument.YamlInstrumentRegistry
@@ -13,8 +16,8 @@ import java.nio.file.Path
 
 /**
  * The instrument metadata a backtest resolves symbols against: the `instruments:` entries of the
- * instruments file, then its `futures:` roots joined with `<dataRoot>/contracts/` catalogs, then the
- * built-in standard table. A run without an instruments file uses the standard table alone.
+ * instruments file, then its `futures:` roots joined with `<dataRoot>/contracts/` catalogs, then its
+ * `options:` roots joined with their option catalogs, then the built-in standard table. A run without an instruments file uses the standard table alone.
  */
 internal object BacktestInstruments {
     /**
@@ -41,9 +44,18 @@ internal object BacktestInstruments {
                     ContractCatalogRegistry.load(roots, ContractCatalogStore(dataRoot), RollHistoryStore(dataRoot)),
                 )
             }
+        val optionRoots = OptionRootsFile.load(path)
+        val options =
+            if (optionRoots.isEmpty()) {
+                emptyList()
+            } else {
+                listOf(
+                    OptionCatalogRegistry.load(optionRoots, OptionCatalogStore(dataRoot)),
+                )
+            }
         val registry =
             LayeredInstrumentRegistry(
-                listOf(YamlInstrumentRegistry.load(path)) + futures + StandardInstrumentRegistry,
+                listOf(YamlInstrumentRegistry.load(path)) + futures + options + StandardInstrumentRegistry,
             )
         val unresolved =
             symbols.firstNotNullOfOrNull { s ->
