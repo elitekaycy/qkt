@@ -283,9 +283,16 @@ RULES
   without that side cancels the order, with the reason in the log. With hourly snapshots, a 1h strategy
   decides on one quote and fills on the next.
 - Limits are snapped so they never fill early, and fill at their limit when a later quote reaches them.
-- Positions are long only for now: selling more than you hold is refused.
+- Selling opens a short. Before an option order is accepted, equity must cover the account's
+  worst-case expiry loss per root and expiry:
+  - a long option needs its premium;
+  - a credit spread needs its width less its credit;
+  - a short put needs its strike less its mark (cash-secured).
+
+  A naked short call has unlimited loss and is refused. So is a short call covered only by another
+  expiry's call. Buying back always passes.
 - A contract held to expiry settles in cash at its intrinsic value from the catalog's delivery price, less
-  the capped delivery fee. Out of the money it settles at zero.
+  the capped delivery fee: a long receives it, a short pays it. Out of the money it settles at zero.
 - The run checks that every day up to each contract's expiry has a stored chain day of the declared series,
   and names the `qkt fetch … --chains` that fills a gap.
 - The chain's implied volatility and skew can drive rules as read-only streams:
