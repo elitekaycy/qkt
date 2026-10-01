@@ -1,5 +1,6 @@
 package com.qkt.broker.continuous
 
+import com.qkt.common.Side
 import com.qkt.derivatives.futures.MeasuredRoll
 import com.qkt.events.BrokerEvent
 import com.qkt.events.CostIncurred
@@ -29,3 +30,13 @@ internal class RollRun(
     val closes = mutableListOf<BrokerEvent.OrderFilled>()
     val failed = LinkedHashMap<String, String>()
 }
+
+/** This fill's quantity signed by its side: positive to buy, negative to sell. */
+internal fun BrokerEvent.OrderFilled.signedQuantity(): BigDecimal =
+    if (side ==
+        Side.BUY
+    ) {
+        quantity
+    } else {
+        quantity.negate()
+    }

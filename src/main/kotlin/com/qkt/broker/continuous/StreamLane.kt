@@ -4,14 +4,12 @@ import com.qkt.broker.SubmitAck
 import com.qkt.bus.EventBus
 import com.qkt.common.Clock
 import com.qkt.common.MonotonicSequenceGenerator
-import com.qkt.common.Side
 import com.qkt.derivatives.futures.ContinuousChain
 import com.qkt.derivatives.futures.PriceSpace
 import com.qkt.events.BrokerEvent
 import com.qkt.execution.LegIntent
 import com.qkt.execution.OrderRequest
 import com.qkt.instrument.PriceAdjustment
-import com.qkt.marketdata.MarketPriceProvider
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.marketdata.Tick
 import com.qkt.positions.PositionProvider
@@ -33,7 +31,7 @@ internal class StreamLane(
     private val chainOf: () -> ContinuousChain,
     ledger: RollLedger,
     private val fills: ContractFillLog,
-    venueFactory: (EventBus, MarketPriceProvider, PositionProvider) -> ContractVenue,
+    venueFactory: (EventBus, MarketPriceTracker, PositionProvider) -> ContractVenue,
 ) {
     /** The chain as it stands now: a live session extends it with each roll it measures. */
     private val chain: ContinuousChain get() = chainOf()
@@ -94,6 +92,9 @@ internal class StreamLane(
         venue.broker.cancel(order.venueId)
     }
 
+    /** Stops the stream's venue. */
+    fun shutdown() = venue.broker.shutdown()
+
     /** Roll if the schedule has moved on, then hand the contract tick behind [tick] to the venue. */
     fun onTick(tick: Tick) {
         val index = catchUp(tick.timestamp) ?: return
@@ -118,7 +119,7 @@ internal class StreamLane(
             rolls.roll(previous, index, positions) { outcome ->
                 stops.putAll(outcome.stopped)
                 for (close in outcome.closes) {
-                    positions.merge(close.strategyId, signed(close), BigDecimal::add)
+                    positions.merge(close.strategyId, close.signedQuantity(), BigDecimal::add)
                     bus.publish(close)
                 }
                 outcome.costs.forEach(bus::publish)
@@ -126,15 +127,6 @@ internal class StreamLane(
         }
         return index
     }
-
-    private fun signed(fill: BrokerEvent.OrderFilled): BigDecimal =
-        if (fill.side ==
-            Side.BUY
-        ) {
-            fill.quantity
-        } else {
-            fill.quantity.negate()
-        }
 
     private fun onRejected(e: BrokerEvent.OrderRejected) {
         val order = orders.removeByVenueId(e.clientOrderId) ?: return
@@ -157,7 +149,7 @@ internal class StreamLane(
     private fun onFilled(e: BrokerEvent.OrderFilled) {
         val order = orders.removeByVenueId(e.clientOrderId)
         val index = order?.contractIndex ?: contractIndexOf(e.symbol)
-        positions.merge(e.strategyId, signed(e), BigDecimal::add)
+        positions.merge(e.strategyId, e.signedQuantity(), BigDecimal::add)
         val engineFill =
             e.copy(
                 clientOrderId = order?.request?.id ?: e.clientOrderId,
