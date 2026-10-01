@@ -1,8 +1,5 @@
 package com.qkt.derivatives.options.pricing
 
-/** Whether an option is the right to buy ([CALL]) or to sell ([PUT]) the underlying. */
-enum class OptionRight { CALL, PUT }
-
 /**
  * A model price and its sensitivities, per one unit of the underlying: [delta] and [gamma] to the
  * underlying price, [vega] to volatility (per 1.00, i.e. per 100 vol points), [theta] the change

@@ -1,5 +1,6 @@
 package com.qkt.derivatives.options.pricing
 
+import com.qkt.instrument.OptionRight
 import kotlin.math.exp
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
