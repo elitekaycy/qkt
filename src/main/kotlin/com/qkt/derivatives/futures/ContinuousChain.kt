@@ -100,6 +100,9 @@ class ContinuousChain(
     /** `VENUE:CODE` of contract [index]. */
     fun contractSymbol(index: Int): String = "${root.venue}:${schedule.contracts[index].symbol}"
 
+    /** Whether contract [index] lies inside the measured history, so [spaceFor] can map it. */
+    fun covers(index: Int): Boolean = index - anchorIndex in 0 until adjustment.size
+
     /** The price mapping of contract [index]; fails outside the measured history. */
     fun spaceFor(index: Int): PriceSpace {
         val position = index - anchorIndex

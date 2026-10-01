@@ -15,13 +15,14 @@ data class ActiveContract(
 /**
  * Resolves which contract a futures stream follows at a given time, from [instruments]' futures
  * directory: a listed contract follows itself until its expiry (and "rolls" at expiry); a
- * continuous stream follows its roll schedule and next rolls at the schedule's next roll instant.
- * Every other symbol has none. Each stream's schedule is built once.
+ * continuous stream follows its chain — only where it can trade: from its first measured roll and
+ * within the measured history — and next rolls at the schedule's next roll instant. Every other
+ * symbol has none. Each stream's chain is built once.
  */
 class ActiveContracts(
     val instruments: InstrumentRegistry,
 ) {
-    private val schedules = ConcurrentHashMap<String, Followed>()
+    private val chains = ConcurrentHashMap<String, Followed>()
 
     /** The contract [symbol] follows at [nowMs], or null (not futures, before or after its chain). */
     fun at(
@@ -29,34 +30,41 @@ class ActiveContracts(
         nowMs: Long,
     ): ActiveContract? {
         val terms = instruments.lookup(symbol)?.derivative as? FutureTerms ?: return null
-        val expiry = terms.expiryMs
-        if (expiry !=
-            null
-        ) {
-            return if (nowMs < expiry) ActiveContract(symbol.substringAfter(':'), expiry, expiry) else null
-        }
-        val followed = schedules.computeIfAbsent(symbol) { followed(it, terms.root) }
-        val schedule = followed.schedule ?: return null
-        val contract =
-            schedule.indexAt(nowMs, followed.selector ?: return null)?.let(schedule.contracts::get) ?: return null
-        val nextRoll = schedule.transitions.firstOrNull { it.atMs > nowMs }?.atMs ?: contract.expiryMs
+        terms.expiryMs?.let { expiry -> return listed(symbol, expiry, nowMs) }
+        val chain = chains.computeIfAbsent(symbol) { Followed(chainFor(it, terms.root)) }.chain ?: return null
+        if (nowMs < chain.servedFromMs) return null
+        val index = chain.indexAt(nowMs)?.takeIf(chain::covers) ?: return null
+        val contract = chain.schedule.contracts[index]
+        val nextRoll =
+            chain.schedule.transitions
+                .firstOrNull { it.atMs > nowMs }
+                ?.atMs ?: contract.expiryMs
         return ActiveContract(contract.symbol, contract.expiryMs, minOf(nextRoll, contract.expiryMs))
     }
 
-    private fun followed(
+    private fun listed(
+        symbol: String,
+        expiryMs: Long,
+        nowMs: Long,
+    ): ActiveContract? = if (nowMs < expiryMs) ActiveContract(symbol.substringAfter(':'), expiryMs, expiryMs) else null
+
+    /** [symbol]'s chain, or null when it cannot be built (the market source reports why at request time). */
+    private fun chainFor(
         symbol: String,
         rootId: String,
-    ): Followed {
-        val directory = instruments.futures() ?: return Followed(null, null)
-        val policy = directory.root(rootId)?.roll
-        val catalog = directory.catalog(rootId)
-        val selector = ContinuousSelector.entries.firstOrNull { it.symbolFor(rootId) == symbol }
-        if (policy == null || catalog == null || selector == null) return Followed(null, null)
-        return Followed(RollSchedule(catalog.contracts, policy), selector)
+    ): ContinuousChain? {
+        val directory = instruments.futures() ?: return null
+        val root = directory.root(rootId) ?: return null
+        val catalog = directory.catalog(rootId) ?: return null
+        val selector = ContinuousSelector.entries.firstOrNull { it.symbolFor(rootId) == symbol } ?: return null
+        return try {
+            ContinuousChain(root, catalog, directory.history(rootId), selector)
+        } catch (e: IllegalArgumentException) {
+            null
+        }
     }
 
     private class Followed(
-        val schedule: RollSchedule?,
-        val selector: ContinuousSelector?,
+        val chain: ContinuousChain?,
     )
 }

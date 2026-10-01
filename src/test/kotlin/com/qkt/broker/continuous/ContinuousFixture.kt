@@ -30,7 +30,7 @@ import java.time.Instant
 import java.time.LocalTime
 
 /**
- * BTCUSDT quarterlies with measured June and September 2024 rolls (the September roll moves the
+ * BTCUSDT quarterlies with measured June, September and December 2024 front rolls (and the @next pairs) (the September roll moves the
  * series by 63000 - 63800 = -800), and a [ContinuousContractBroker] over an [ExchangeSimulator].
  */
 internal class ContinuousFixture(
@@ -104,6 +104,20 @@ internal class ContinuousFixture(
                                 "BTCUSDT_250328",
                                 "97000",
                                 "98500",
+                            ),
+                            RollRecord(
+                                ms("2024-06-20T08:00:00Z"),
+                                "BTCUSDT_240927",
+                                "BTCUSDT_241227",
+                                "66000",
+                                "66700",
+                            ),
+                            RollRecord(
+                                ms("2024-09-19T08:00:00Z"),
+                                "BTCUSDT_241227",
+                                "BTCUSDT_250328",
+                                "63800",
+                                "64700",
                             ),
                         ),
                     ),
