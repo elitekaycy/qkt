@@ -17,4 +17,7 @@ interface FuturesDirectory {
 
     /** The root of a continuous symbol (`BINANCE_UM:BTCUSDT@front` → `BINANCE_UM:BTCUSDT`), or null. */
     fun rootOfContinuous(symbol: String): String?
+
+    /** Where the roll histories were read from, so a live session can append the rolls it measures; null when not from disk. */
+    fun historyStore(): RollHistoryStore? = null
 }

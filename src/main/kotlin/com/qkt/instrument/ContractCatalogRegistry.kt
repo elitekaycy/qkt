@@ -9,6 +9,7 @@ class ContractCatalogRegistry(
     val roots: List<FuturesRoot>,
     private val catalogs: Map<String, ContractCatalog>,
     private val histories: Map<String, RollHistory> = emptyMap(),
+    private val historyStore: RollHistoryStore? = null,
 ) : InstrumentRegistry,
     FuturesDirectory {
     private val table: Map<String, InstrumentMeta> =
@@ -46,6 +47,8 @@ class ContractCatalogRegistry(
 
     override fun history(rootId: String): RollHistory? = histories[rootId]
 
+    override fun historyStore(): RollHistoryStore? = historyStore
+
     override fun rootOfContinuous(symbol: String): String? {
         val root = symbol.substringBefore('@', missingDelimiterValue = "")
         val selector = ContinuousSelector.parse(symbol.substringAfter('@', missingDelimiterValue = ""))
@@ -79,6 +82,7 @@ class ContractCatalogRegistry(
                 roots,
                 roots.mapNotNull { r -> catalogs.read(r.root)?.let { r.root to it } }.toMap(),
                 roots.mapNotNull { r -> histories.read(r.root)?.let { r.root to it } }.toMap(),
+                histories,
             )
     }
 }
