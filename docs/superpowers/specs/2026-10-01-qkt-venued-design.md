@@ -7,22 +7,26 @@ separate host: the kill switch must be a choke point outside qkt).
 
 ## 1. What it is
 
-One `qkt-venued` process serves **one account at one venue** over VGP v1. qkt, guardrails and insights
-talk to it; it talks to the venue through one **adapter**. Everything a venue does not decide lives in
+One `qkt-venued` process serves **one account at one venue** over VGP v1. Two clients talk to it: the
+qkt daemon (trading) and guardrails (watching the account and flipping the kill switch). It talks to
+the venue through one **adapter**. qkt-insights does not talk to it: insights keeps ingesting qkt's own
+event stream (signals, orders, fills, equity) as it does today. Everything a venue does not decide lives in
 the host and is written once: auth, idempotent submits, the event journal (stream/seq/replay), the
 kill switch, reconciliation with the venue, quote refresh, health and identity. An adapter only
 translates between the venue's API and a small venue-neutral interface.
 
 ```
 qkt daemon ──┐                 ┌──────────────────── qkt-venued (one per account) ───────────────────┐
-guardrails ──┼── VGP v1 ──────▶│ HTTP/WS server ─ auth ─ kill switch ─ idempotency ─ event journal    │
-insights ────┘  (bearer)       │        │                        ▲             ▲                       │
+             ├── VGP v1 ──────▶│ HTTP/WS server ─ auth ─ kill switch ─ idempotency ─ event journal    │
+guardrails ──┘  (bearer)       │        │                        ▲             ▲                       │
                                │        ▼                        │             │                       │
                                │   order router ──────▶ adapter ─┴─ reconciler ┴─ quote hub (refresh)  │
                                └──────────────────────────────│───────────────────────────────────────┘
                                                               ▼
                                                     venue API (Deribit JSON-RPC/WS, …)
 ```
+
+qkt-insights sits beside qkt, not beside the gateway: `qkt daemon ──telemetry──▶ insights collector`.
 
 **Lives in its own repository** (`qkt-venued/` in the workspace), never inside qkt: qkt stays a
 consumer of VGP, and a gateway can be replaced, written in another language, or certified on its own.
@@ -172,7 +176,7 @@ Runs at start, after every venue reconnect, and every 60 seconds:
 - One container per account, configured by a file (venue, adapter settings, secret references, state
   directory, listen address, tokens). Secrets are `env:` or `file:` references, never inline.
 - TLS terminates at the reverse proxy already in front of the fleet; the gateway listens on a private
-  address. Tokens: one for qkt, one for guardrails (kill switch), one read-only for insights.
+  address. Tokens: one for qkt (trading), one for guardrails (reads and the kill switch).
 - Logs are structured; health is the readiness probe; a venue link down for longer than 2 minutes alerts.
 
 ## 12. Decisions for the reviewer
