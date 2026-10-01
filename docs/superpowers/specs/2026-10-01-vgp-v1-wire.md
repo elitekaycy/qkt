@@ -66,6 +66,10 @@ A list (or one) of:
 ```
 `kind` is `spot`, `perpetual`, `future` or `option`; `expiry` is absent for spot and perpetuals;
 `strike`, `right` and `underlying` only for options.
+`contract_size` is how many units of the underlying one unit of `quantity` is, the multiplier of
+P&L (`quantity × contract_size × price change`); `volume_step` is the increment a quantity moves in and
+`volume_min` the smallest. A venue that takes amounts in the base coin (Deribit's linear contracts) lists
+`contract_size` 1 and its own contract size as `volume_step`.
 A dated contract stays listed for at least **30 days after its expiry**, so a client restarting after
 a weekend still maps the contracts it held to their settlements. (The qkt client also maps an unlisted
 option by its name, which is exact; a dated future has no such rule.)
