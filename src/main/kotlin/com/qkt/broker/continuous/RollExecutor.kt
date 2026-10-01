@@ -90,10 +90,7 @@ internal class RollExecutor(
     ) {
         if (i == run.holders.size) return finish(run, done)
         val (strategyId, quantity) = run.holders[i]
-        carrying.carry(strategyId, quantity, run) { refusal ->
-            if (refusal != null) run.failed[strategyId] = "${run.stopped} ($refusal)"
-            carryFrom(run, i + 1, done)
-        }
+        carrying.start(strategyId, quantity, run) { carryFrom(run, i + 1, done) }
     }
 
     private fun finish(

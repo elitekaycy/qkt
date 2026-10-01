@@ -17,7 +17,11 @@ internal data class RollOutcome(
     val costs: List<CostIncurred>,
 )
 
-/** One roll in progress: its contracts, measurement, holders to carry, and what the carries left so far. */
+/**
+ * One roll in progress: its contracts, measurement, the [holders] to carry in order, the resting orders
+ * pulled off the old contract, and each holder's [steps] so far; what the roll left behind is read from
+ * the steps. [stopped] prefixes the reason a holder was not carried.
+ */
 internal class RollRun(
     val fromIndex: Int,
     val toIndex: Int,
@@ -26,9 +30,22 @@ internal class RollRun(
     val resting: List<ContinuousOrder>,
     val holders: List<Map.Entry<String, BigDecimal>>,
 ) {
-    val carried = mutableListOf<RollEntry>()
-    val closes = mutableListOf<BrokerEvent.OrderFilled>()
-    val failed = LinkedHashMap<String, String>()
+    /** Each holder's step, in carry order; a holder not reached yet has none. */
+    val steps = LinkedHashMap<String, CarryStep>()
+
+    val carried: List<RollEntry> get() = steps.values.filterIsInstance<CarryStep.Carried>().map { it.entry }
+
+    val closes: List<BrokerEvent.OrderFilled> get() =
+        steps.values.filterIsInstance<CarryStep.Stopped>().mapNotNull {
+            it.close
+        }
+
+    val failed: Map<String, String>
+        get() =
+            steps.values.filterIsInstance<CarryStep.Stopped>().associate {
+                it.strategyId to
+                    "$stopped (${it.reason})"
+            }
 }
 
 /** This fill's quantity signed by its side: positive to buy, negative to sell. */
