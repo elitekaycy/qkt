@@ -106,21 +106,20 @@ class OptionExchangeTest {
     }
 
     @Test
-    fun `selling more than is held is refused and a held position sells at the bid`(
+    fun `a sale with nothing held opens a short at the bid, which a later buy closes at the ask`(
         @TempDir dir: Path,
     ) {
         val f = fixture(dir)
         f.tick("2026-10-01T00:30:00Z", onSymbol = "OTHER")
-        assertThat(f.exchange.submit(f.market(Side.SELL)).accepted).isFalse()
-        f.exchange.submit(f.market(Side.BUY))
-        f.tick("2026-10-01T01:00:00Z")
-
-        assertThat(f.exchange.submit(f.market(Side.SELL, "0.2")).accepted).isFalse()
         assertThat(f.exchange.submit(f.market(Side.SELL)).accepted).isTrue()
+        f.tick("2026-10-01T01:00:00Z")
+        assertThat(f.last<BrokerEvent.OrderFilled>().price).isEqualByComparingTo("95")
+
+        f.exchange.submit(f.market(Side.BUY))
         f.tick("2026-10-01T02:00:00Z")
 
-        assertThat(f.last<BrokerEvent.OrderFilled>().price).isEqualByComparingTo("110")
-        assertThat(f.last<BrokerEvent.OrderFilled>().side).isEqualTo(Side.SELL)
+        assertThat(f.last<BrokerEvent.OrderFilled>().price).isEqualByComparingTo("130")
+        assertThat(f.last<BrokerEvent.OrderFilled>().side).isEqualTo(Side.BUY)
     }
 
     @Test

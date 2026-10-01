@@ -90,4 +90,32 @@ class OptionExpiryTest {
         otm.tick("2026-10-02T08:00:00Z", onSymbol = "OTHER")
         assertThat(otm.last<BrokerEvent.OrderFilled>().price).isEqualByComparingTo("0")
     }
+
+    @Test
+    fun `a short in the money pays its intrinsic value and the delivery fee, out of the money nothing`(
+        @TempDir dir: Path,
+    ) {
+        fun sold(
+            at: Path,
+            deliveryPrice: String,
+        ) = OptionExchangeFixture(at, deliveryPrice).also {
+            it.chain.store(Triple("2026-10-01T01:00:00Z", "100", 0L))
+            it.tick("2026-10-01T00:30:00Z", onSymbol = "OTHER")
+            it.exchange.submit(it.market(Side.SELL))
+            it.tick("2026-10-01T01:00:00Z")
+            it.tick("2026-10-02T08:00:00Z", onSymbol = "OTHER")
+        }
+
+        val itm = sold(dir.resolve("itm"), "95000").last<BrokerEvent.OrderFilled>()
+        assertThat(itm.side).isEqualTo(Side.BUY)
+        assertThat(itm.price).isEqualByComparingTo("3000")
+        assertThat(
+            itm.typedVenueCosts
+                .single()
+                .amount.amount,
+        ).isEqualByComparingTo("1.425")
+        val otm = sold(dir.resolve("otm"), "90000").last<BrokerEvent.OrderFilled>()
+        assertThat(otm.price).isEqualByComparingTo("0")
+        assertThat(otm.typedVenueCosts).isEmpty()
+    }
 }

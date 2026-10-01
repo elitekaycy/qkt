@@ -23,15 +23,15 @@ internal class WorkingOption(
 
 /**
  * The option venue's checks on an incoming order: a catalogued option of a root that trades a chain,
- * not expired, market or limit, a quantity floored to `volumeStep` and at least `volumeMin`, and
- * (long only) a sell no larger than what is held less pending sells. A limit is snapped on the price
+ * not expired, market or limit, and a quantity floored to `volumeStep` and at least `volumeMin`
+ * (whether a short can be carried is the margin rule's call, before the order reaches the venue).
+ * A limit is snapped on the price
  * grid so it never fills early: buys down, sells up. A DAY order lapses at the session's end.
  */
 internal class OptionOrderEntry(
     private val instruments: InstrumentRegistry,
     private val clock: Clock,
     private val calendar: TradingCalendar,
-    private val positions: OptionPositions,
 ) {
     /** The outcome of [check]. */
     sealed interface Checked {
@@ -67,26 +67,9 @@ internal class OptionOrderEntry(
         if (quantity.signum() == 0 || quantity < meta.volumeMin) {
             return Checked.Refused("quantized volume $quantity below venue volumeMin ${meta.volumeMin} for $symbol")
         }
-        if (request.side == Side.SELL) {
-            val available = positions.of(request.strategyId, symbol).subtract(pendingSells(request, working))
-            if (quantity > available) {
-                return Checked.Refused(
-                    "sell of $quantity $symbol exceeds the $available held; the option venue opens no shorts",
-                )
-            }
-        }
         val sized = sized(request, quantity, terms) ?: return Checked.Refused(unsizable(request))
         return Checked.Accepted(WorkingOption(sized, root, now, lapseOf(request, now), terms.expiryMs))
     }
-
-    private fun pendingSells(
-        request: OrderRequest,
-        working: Collection<WorkingOption>,
-    ): BigDecimal =
-        working
-            .map { it.request }
-            .filter { it.symbol == request.symbol && it.strategyId == request.strategyId && it.side == Side.SELL }
-            .fold(BigDecimal.ZERO) { sum, o -> sum.add(o.quantity) }
 
     /** [request] at [quantity], a limit snapped so it never fills early; null when it cannot work here. */
     private fun sized(

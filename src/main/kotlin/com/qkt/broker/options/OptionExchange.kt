@@ -32,7 +32,7 @@ import java.time.Instant
  *   quote after it fills at that quote; later it fills at its limit on a quote whose side reaches it;
  *   IOC and FOK get one look, GTD and DAY orders lapse at their time;
  * - each fill carries its [OptionFee] as an [CostKind.EXCHANGE_FEE] cost in the root's currency;
- * - positions are netted and long only: a sell beyond the held quantity is refused;
+ * - positions are netted, long or short (the margin rule decides what can be carried);
  * - at a contract's expiry its working orders lapse and its positions are cash-settled ([OptionExpiry]).
  *
  * Like the futures exchange it does not subscribe to ticks: its owner calls [onTick].
@@ -48,7 +48,7 @@ class OptionExchange(
     override val name: String = "OptionSim"
     override val capabilities: Set<OrderTypeCapability> = setOf(OrderTypeCapability.MARKET, OrderTypeCapability.LIMIT)
     private val positions = OptionPositions()
-    private val entry = OptionOrderEntry(instruments, clock, calendar, positions)
+    private val entry = OptionOrderEntry(instruments, clock, calendar)
     private val working = LinkedHashMap<String, WorkingOption>()
     private val looked = HashSet<String>()
     private val expiry = OptionExpiry(bus, instruments, positions, settlements)
