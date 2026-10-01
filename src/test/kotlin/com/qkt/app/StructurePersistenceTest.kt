@@ -38,14 +38,20 @@ class StructurePersistenceTest {
             StructureCoordinator(
                 bus,
                 FixedClock(5L),
-            ) {}.bind("st", book, kept::save) { bus.publish(SignalEvent(it, "st")) }
+            ) {}.bind("st", book, kept::save) {
+                emitted += it
+                bus.publish(SignalEvent(it, "st"))
+            }
         }
+
+        val emitted = mutableListOf<Signal>()
 
         fun group(
             id: String,
             vararg legs: OrderRequest,
             closes: String? = null,
-        ) = bus.publish(SignalEvent(Signal.SubmitGroup(id, "ps", legs.toList(), closes), strategyId = "st"))
+            alias: String = "ps",
+        ) = bus.publish(SignalEvent(Signal.SubmitGroup(id, alias, legs.toList(), closes), strategyId = "st"))
 
         fun filled(
             leg: OrderRequest,
@@ -98,5 +104,27 @@ class StructurePersistenceTest {
         session.filled(StructureFixtures.market("cfd-1", "EXNESS:XAUUSD", Side.BUY))
 
         assertThat(Files.exists(dir.resolve("st").resolve("structures.json"))).isFalse()
+    }
+
+    @Test
+    fun `an unwind after a restart never reuses the id of a close the restart restored`(
+        @TempDir dir: Path,
+    ) {
+        val persistor = FileStatePersistor(dir)
+        val before = Session(persistor)
+        before.group("ps-1", longPut, shortPut)
+        before.filled(longPut)
+        before.bus.publish(BrokerEvent.OrderCancelled("s", "s", "no bid", strategyId = "st"))
+        val restoredClose = (before.emitted.single() as Signal.SubmitGroup).requests.single().id
+
+        val after = Session(persistor)
+        val wing = StructureFixtures.market("w", StructureFixtures.P75, Side.BUY)
+        val far = StructureFixtures.market("f", StructureFixtures.P80_30OCT, Side.BUY)
+        after.group("qs-1", wing, far, alias = "qs")
+        after.filled(wing)
+        after.bus.publish(BrokerEvent.OrderCancelled("f", "f", "no bid", strategyId = "st"))
+
+        val unwind = after.emitted.filterIsInstance<Signal.SubmitGroup>().flatMap { g -> g.requests.map { it.id } }
+        assertThat(unwind).doesNotContain(restoredClose)
     }
 }

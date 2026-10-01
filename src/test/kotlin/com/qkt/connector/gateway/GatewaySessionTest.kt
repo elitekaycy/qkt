@@ -20,7 +20,7 @@ internal class GatewaySessionTest : GatewayHarness() {
 
         brokerA.submit(market("a-1", "a"))
         await { a.of<BrokerEvent.OrderAccepted>().isNotEmpty() }
-        fake.act { fill("a-1", "f1", "0.1", "650", FakeGateway.TIME) }
+        fake.act { fill(wire("a-1"), "f1", "0.1", "650", FakeGateway.TIME) }
         await { a.of<BrokerEvent.OrderFilled>().isNotEmpty() }
 
         assertThat(a.of<BrokerEvent.OrderFilled>().single().strategyId).isEqualTo("a")
@@ -81,7 +81,7 @@ internal class GatewaySessionTest : GatewayHarness() {
         val brokerA = broker(shared, a, "a")
         brokerA.submit(market("a-1", "a"))
         await { a.of<BrokerEvent.OrderAccepted>().isNotEmpty() }
-        fake.act { fill("a-1", "f1", "0.1", "650", FakeGateway.TIME) }
+        fake.act { fill(wire("a-1"), "f1", "0.1", "650", FakeGateway.TIME) }
 
         await { a.of<BrokerEvent.OrderFilled>().isNotEmpty() }
         assertThat(failed.events).isEmpty()
@@ -112,7 +112,7 @@ internal class GatewaySessionTest : GatewayHarness() {
 
         brokerA.submit(market("a-2", "a"))
         await { again.of<BrokerEvent.OrderAccepted>().isNotEmpty() }
-        fake.act { fill("a-2", "f2", "0.1", "650", FakeGateway.TIME) }
+        fake.act { fill(wire("a-2"), "f2", "0.1", "650", FakeGateway.TIME) }
 
         await { again.of<BrokerEvent.OrderFilled>().isNotEmpty() }
     }

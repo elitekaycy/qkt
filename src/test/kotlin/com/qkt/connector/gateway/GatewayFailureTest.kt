@@ -14,7 +14,7 @@ internal class GatewayFailureTest : GatewayHarness() {
         await { a.of<BrokerEvent.OrderAccepted>().isNotEmpty() && fake.streams > 0 }
         fake.failing["/v1/deals"] = 1
         fake.quiet = true
-        fake.act { fill("a-1", "f1", "0.1", "650", FakeGateway.TIME) }
+        fake.act { fill(wire("a-1"), "f1", "0.1", "650", FakeGateway.TIME) }
         fake.quiet = false
 
         fake.reset()
@@ -36,7 +36,7 @@ internal class GatewayFailureTest : GatewayHarness() {
         await { b.of<BrokerEvent.OrderAccepted>().isNotEmpty() }
         brokerB.shutdown()
 
-        fake.act { fill("b-1", "f1", "0.1", "650", FakeGateway.TIME) }
+        fake.act { fill(wire("b-1"), "f1", "0.1", "650", FakeGateway.TIME) }
         Thread.sleep(100)
         val back = Strategy()
         broker(shared, back, "b")
@@ -64,7 +64,7 @@ internal class GatewayFailureTest : GatewayHarness() {
         broker(session(), a, "a").submit(market("a-1", "a"))
         await { a.of<BrokerEvent.OrderAccepted>().isNotEmpty() && fake.streams > 0 }
         fake.quiet = true
-        fake.act { cancel("a-1") }
+        fake.act { cancel(wire("a-1")) }
         fake.quiet = false
 
         fake.reset()

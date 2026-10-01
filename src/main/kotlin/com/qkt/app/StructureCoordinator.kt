@@ -43,6 +43,8 @@ internal class StructureCoordinator(
         emit: (Signal) -> Unit,
     ) {
         val ids = SequentialIdGenerator(prefix = "unwind-$strategyId-")
+        // A restart restored the book first: its working closes keep their ids, so new ones continue past them.
+        ids.resumePast(book.structures.flatMap { s -> s.legs.flatMap { it.closingOrders.keys } })
 
         fun close(
             structure: LiveStructure,

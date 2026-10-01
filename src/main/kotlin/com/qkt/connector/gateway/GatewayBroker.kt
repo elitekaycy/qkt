@@ -69,7 +69,12 @@ class GatewayBroker internal constructor(
     ): Set<String> =
         session.recover(
             orders.map {
-                RecoveredOrder(it.id, it.request.strategyId, it.request.quantity, it.cumulativeFilledQuantity)
+                RecoveredOrder(
+                    GatewayClientIds.of(it.request),
+                    it.request.strategyId,
+                    it.request.quantity,
+                    it.cumulativeFilledQuantity,
+                )
             },
         )
 
