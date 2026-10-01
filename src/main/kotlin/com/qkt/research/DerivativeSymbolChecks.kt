@@ -9,7 +9,7 @@ import com.qkt.instrument.QuoteCurrencyGuard
  * Fails a replay up front for derivative symbols qkt cannot book correctly: a symbol a registry
  * claims but cannot resolve (a contract missing from its root's catalog), a continuous stream
  * (`VENUE:ROOT@selector`) whose root is not declared, or an exchange fee in a currency the account
- * cannot book 1:1, or an option (no venue simulates their fills, expiry and settlement yet).
+ * cannot book 1:1, or an option whose root declares no chain series to trade on.
  * CFD and spot symbols are not examined.
  */
 internal fun requireDerivativeSymbolsResolvable(
@@ -27,8 +27,13 @@ internal fun requireDerivativeSymbolsResolvable(
             continue
         }
         val terms = meta.derivative ?: continue
-        require(terms !is OptionTerms) {
-            "$symbol is an option; qkt can catalog options but has no option venue to fill, expire and settle them yet"
+        if (terms is OptionTerms) {
+            val options =
+                requireNotNull(instruments.options()) { "$symbol is an option but no option roots are declared" }
+            require(options.optionRoot(symbol)?.chains != null) {
+                "$symbol is an option of ${terms.root}, which declares no chain series to trade on; add chains: trade | book"
+            }
+            require(options.dataRoot != null) { "$symbol is an option but its chains have no data root" }
         }
         val charges = terms.exchangeFeePerContract.signum() != 0 || terms.takerFeeRate.signum() != 0
         val currency = accounting.pnlCurrencyFor(symbol)

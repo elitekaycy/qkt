@@ -58,7 +58,9 @@ internal fun replayBroker(
                 )
         }
     }
-    val futures = replayFuturesRoutes(executionConfig, bus, clock, books, barFills, calendar, symbols)
+    val futures =
+        replayFuturesRoutes(executionConfig, bus, clock, books, barFills, calendar, symbols) +
+            replayOptionRoutes(bus, clock, books, calendar, symbols)
     if (futures.routes.isEmpty()) {
         return if (brokerSymbols.isEmpty()) {
             brokerFactory()
