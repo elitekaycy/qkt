@@ -25,8 +25,10 @@ import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable
 
 /**
  * qkt against a real VGP gateway, only when `QKT_VGP_URL` (and `QKT_VGP_TOKEN`) are set: a running
- * `qkt-venue-gateway` with the paper adapter on Deribit's live public data. It verifies the account, reads
- * live ticks and closed bars, and round-trips a small market order through the real connector.
+ * `qkt-venue-gateway` whose adapter is `QKT_VGP_ADAPTER` (default `paper`, on Deribit's live public
+ * data; `deribit` for a Deribit testnet account) and whose login is `QKT_VGP_LOGIN`. It verifies the
+ * account, reads live ticks and closed bars, and round-trips a small market order through the real
+ * connector.
  */
 @EnabledIfEnvironmentVariable(named = "QKT_VGP_URL", matches = ".+")
 class LiveVenueGatewayTest {
@@ -39,7 +41,7 @@ class LiveVenueGatewayTest {
                 "type" to "gateway",
                 "gateway_url" to System.getenv("QKT_VGP_URL"),
                 "api_key" to "env:QKT_VGP_TOKEN",
-                "expected_adapter" to "paper",
+                "expected_adapter" to (System.getenv("QKT_VGP_ADAPTER") ?: "paper"),
                 "expected_account_login" to (System.getenv("QKT_VGP_LOGIN") ?: "paper-1"),
                 "expected_trade_mode" to "demo",
             )
