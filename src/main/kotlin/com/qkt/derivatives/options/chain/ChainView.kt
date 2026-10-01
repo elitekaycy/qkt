@@ -14,7 +14,7 @@ import java.time.ZoneOffset
  * instant, from the root's declared series, searching that UTC day and the one before. Decoded days
  * are kept per root (the instant's day and its neighbours), so a replay moving forward reads each day
  * file about once; a day file that changed since it was read (a live recorder appends to today's) is
- * read again.
+ * read again, parsing only the snapshots added since ([ChainSnapshotStore.readDayAfter]).
  */
 class ChainView(
     private val instruments: InstrumentRegistry,
@@ -45,8 +45,12 @@ class ChainView(
         days.keys.removeIf { (r, d) -> r == root && d != day && d != day.plusDays(1) && d != day.minusDays(1) }
         val store = ChainSnapshotStore(dataRoot, series)
         val stamp = stamp(store.path(root, day))
-        val cached = days[root to day]?.takeIf { it.stamp == stamp }
-        return (cached ?: Day(stamp, store.readDay(root, day)).also { days[root to day] = it }).snapshots
+        val held = days[root to day]
+        if (held != null && held.stamp == stamp) return held.snapshots
+        // A changed file is mostly the same day with later snapshots: re-read only those.
+        return Day(stamp, store.readDayAfter(root, day, held?.snapshots.orEmpty()))
+            .also { days[root to day] = it }
+            .snapshots
     }
 
     /** What identifies one version of [file]: a replaced file has a new key, an appended one a new time and size. */

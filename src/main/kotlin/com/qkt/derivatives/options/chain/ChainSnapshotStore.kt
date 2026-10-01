@@ -95,20 +95,48 @@ class ChainSnapshotStore(
     fun readDay(
         root: String,
         day: LocalDate,
+    ): List<ChainSnapshot> = readDayAfter(root, day, emptyList())
+
+    /**
+     * [root]'s snapshots of [day], given [known] read from an earlier version of the file. Writers only
+     * add later instants or replace the latest one ([append]), so when the file still starts with every
+     * row of [known] before its last instant (same row count, same boundary row) only the rows from that
+     * instant on are parsed; a file changed any other way is parsed whole. Either way the result equals
+     * [readDay]'s.
+     */
+    fun readDayAfter(
+        root: String,
+        day: LocalDate,
+        known: List<ChainSnapshot>,
     ): List<ChainSnapshot> {
         val file = path(root, day)
         if (!Files.exists(file)) return emptyList()
         return try {
             val lines = GZIPInputStream(Files.newInputStream(file)).bufferedReader().use { it.readLines() }
             require(lines.firstOrNull() == ChainCsv.HEADER) { "header is not '${ChainCsv.HEADER}'" }
-            val quotes = lines.drop(1).filter { it.isNotBlank() }.map(ChainCsv::parse)
-            require(quotes.all { it.source == source }) { "holds quotes of a source other than $source" }
-            quotes.groupBy { it.atMs }.map { (at, rows) -> ChainSnapshot(root, at, rows) }
+            val rows = lines.drop(1).filter { it.isNotBlank() }
+            val kept = known.dropLast(1)
+            val start = kept.sumOf { it.quotes.size }
+            val unchanged =
+                known.isNotEmpty() &&
+                    rows.size > start &&
+                    (start == 0 || rows[start - 1] == ChainCsv.row(kept.last().quotes.last())) &&
+                    rows[start].substringBefore(',').toLong() == known.last().atMs
+            if (unchanged) kept + snapshotsOf(root, rows.subList(start, rows.size)) else snapshotsOf(root, rows)
         } catch (e: IOException) {
             throw IllegalStateException("$file: unreadable chain file: ${e.message}", e)
         } catch (e: IllegalArgumentException) {
             throw IllegalStateException("$file: invalid chain file: ${e.message}", e)
         }
+    }
+
+    private fun snapshotsOf(
+        root: String,
+        rows: List<String>,
+    ): List<ChainSnapshot> {
+        val quotes = rows.map(ChainCsv::parse)
+        require(quotes.all { it.source == source }) { "holds quotes of a source other than $source" }
+        return quotes.groupBy { it.atMs }.map { (at, rows) -> ChainSnapshot(root, at, rows) }
     }
 
     /**
