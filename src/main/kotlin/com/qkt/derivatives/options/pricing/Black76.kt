@@ -1,5 +1,7 @@
 package com.qkt.derivatives.options.pricing
 
+import com.qkt.instrument.OptionRight
+
 /**
  * Black (1976) for a European option on a futures or forward price (Hull, ch. 18): carry 0, so the
  * premium is the discounted Black–Scholes value on the forward and rho is `−T × price`.
