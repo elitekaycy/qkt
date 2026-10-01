@@ -384,6 +384,10 @@ writes the file — so live builds its own history.
   as a venue close with `ExitReason.EXPIRY`.
 - `PCT RISK` for a structure divides by its max loss from `StructurePayoff` (piecewise-linear
   expiry payoff). Undefined-risk structures (naked short options) are refused for `PCT RISK` sizing.
+- Margin (implemented in phase 43.5): equity must carry each root and expiry's worst-case expiry loss
+  (mark value less `OptionPayoff.minimum`). An unbounded group, such as a naked short call, is
+  refused. This is more conservative than Deribit's standard margin, whose linear-option formula
+  could not be confirmed from a primary source (parity A42).
 - Marks: mid clamped to `[bid, ask]`; when a quote is missing or one-sided (bid 0), the model price
   from the last IV. Option quotes do not pass through `TickIngest` (bid 0 is legal for deep OTM
   options and would be dropped as malformed).
