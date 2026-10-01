@@ -44,6 +44,7 @@ internal class StrategyBinder(
     private val latencyEnabled: Boolean,
 ) {
     private val audit = DslEvaluationAudit(bus, candleHub)
+    private val structures = StructureCoordinator(bus, orderManager::cancel)
     private val stackBinder = StackOrchestratorBinder(clock, bus, persistor, strategyPositions)
 
     /** Bind every strategy, in order. */
@@ -94,6 +95,7 @@ internal class StrategyBinder(
             // flatten-on-gate-deactivate transition — hub binding carries only the inner rules.
             bus.subscribe<CandleEvent> { e -> strategy.onCandle(e.candle, ctx, emit) }
             stackBinder.bind(strategy, strategyId, emit)
+            structures.bind(strategyId, emit)
         } else {
             bus.subscribe<TickEvent> { e -> strategy.onTick(e.tick, ctx, emit) }
             bus.subscribe<CandleEvent> { e -> strategy.onCandle(e.candle, ctx, emit) }
