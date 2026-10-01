@@ -27,7 +27,7 @@ internal class RestingOrdersAtRoll(
         return resting
     }
 
-    /** Re-place [order] on contract [toIndex] ([to]), its levels mapped through [space]. */
+    /** Re-place what is left of [order] on contract [toIndex] ([to]), its levels mapped through [space]. */
     fun replace(
         order: ContinuousOrder,
         toIndex: Int,
@@ -37,7 +37,7 @@ internal class RestingOrdersAtRoll(
         val n = order.replacements + 1
         val venueId = "${order.request.id}~r$n"
         orders.add(order.copy(venueId = venueId, contractIndex = toIndex, replacements = n))
-        venue.broker.submit(requireNotNull(toContract(order.request, venueId, to, space)))
+        venue.broker.submit(requireNotNull(toContract(order.request, venueId, to, space, order.remaining)))
     }
 
     /** Tell the engine [order] is cancelled, for [reason]. */

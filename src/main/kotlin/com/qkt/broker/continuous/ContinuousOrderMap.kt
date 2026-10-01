@@ -1,19 +1,25 @@
 package com.qkt.broker.continuous
 
 import com.qkt.execution.OrderRequest
+import java.math.BigDecimal
 
 /**
- * An engine order on a continuous stream, working on contract [contractIndex] under [venueId]; an
- * order re-placed at a roll works under `<engine id>~r<replacements>`.
+ * An engine order on a continuous stream, working on contract [contractIndex] under [venueId], with
+ * [filled] of it executed so far across every venue order it worked under; an order re-placed at a roll
+ * works under `<engine id>~r<replacements>`.
  */
 internal data class ContinuousOrder(
     val request: OrderRequest,
     val venueId: String,
     val contractIndex: Int,
     val replacements: Int = 0,
+    val filled: BigDecimal = BigDecimal.ZERO,
 ) {
     /** Whether this is the engine's order as first placed, not a re-placement made at a roll. */
     val isOriginal: Boolean get() = replacements == 0
+
+    /** What is left of the engine's order to fill. */
+    val remaining: BigDecimal get() = request.quantity - filled
 }
 
 /** The working orders of one continuous stream, by engine id and by the venue id they work under. */
@@ -33,6 +39,12 @@ internal class ContinuousOrderMap {
 
     /** The orders working on contract [index], oldest first. */
     fun on(index: Int): List<ContinuousOrder> = byEngineId.values.filter { it.contractIndex == index }
+
+    /** Adds a slice of [quantity] to the order working under [venueId]; returns it updated, or null when none does. */
+    fun fill(
+        venueId: String,
+        quantity: BigDecimal,
+    ): ContinuousOrder? = byVenueId(venueId)?.let { it.copy(filled = it.filled + quantity) }?.also(::add)
 
     /** Forget the order working under [venueId]; returns it, or null when none does. */
     fun removeByVenueId(venueId: String): ContinuousOrder? {

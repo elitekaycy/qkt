@@ -82,4 +82,53 @@ class LaneSlicedFillsTest {
         assertThat(f.venue.sent.none { it.id.endsWith(":open") }).isTrue()
         assertThat(f.lanePositions.positionFor(f.sep)!!.quantity).isEqualByComparingTo("0.006")
     }
+
+    @Test
+    fun `a resting order part-filled before the roll is re-placed on the new contract for what is left of it`() {
+        f.broker.submit(
+            OrderRequest.Limit(
+                "rest",
+                f.front,
+                Side.BUY,
+                BigDecimal("0.010"),
+                BigDecimal("62900"),
+                TimeInForce.GTC,
+                f.clock.time,
+                "s",
+            ),
+        )
+        f.slice("rest", f.sep, Side.BUY, "0.004", "0.004", "62890")
+        f.rollAt("63000")
+        f.last(f.leg(":close").id, f.sep, Side.SELL, "0.004", "63000")
+        f.last(f.leg(":open").id, f.dec, Side.BUY, "0.004", "63800")
+
+        val replaced = f.venue.sent.single { it.id == "rest~r1" }
+        assertThat(replaced.symbol).isEqualTo(f.dec)
+        assertThat(replaced.quantity).isEqualByComparingTo("0.006")
+    }
+
+    @Test
+    fun `a slice of a re-placed order reaches the engine with the engine order's fill so far`() {
+        f.broker.submit(
+            OrderRequest.Limit(
+                "rest",
+                f.front,
+                Side.BUY,
+                BigDecimal("0.010"),
+                BigDecimal("62900"),
+                TimeInForce.GTC,
+                f.clock.time,
+                "s",
+            ),
+        )
+        f.slice("rest", f.sep, Side.BUY, "0.004", "0.004", "62890")
+        f.rollAt("63000")
+        f.last(f.leg(":close").id, f.sep, Side.SELL, "0.004", "63000")
+        f.last(f.leg(":open").id, f.dec, Side.BUY, "0.004", "63800")
+        f.slice("rest~r1", f.dec, Side.BUY, "0.002", "0.002", "63690")
+
+        val slice = f.engine.filterIsInstance<BrokerEvent.OrderPartiallyFilled>().last()
+        assertThat(slice.clientOrderId).isEqualTo("rest")
+        assertThat(slice.cumulativeFilled).isEqualByComparingTo("0.006")
+    }
 }

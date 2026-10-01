@@ -164,8 +164,13 @@ internal class ScriptedLaneFixture {
         )
         slice("entry", sep, Side.BUY, "0.004", "0.004", "63000")
         last("entry", sep, Side.BUY, "0.006", "63010")
+        rollAt("63000")
+    }
+
+    /** Ticks the stream at [price] at the roll instant, which starts the roll. */
+    fun rollAt(price: String) {
         clock.time = roll
-        bus.publish(TickEvent(Tick(front, BigDecimal("63000"), clock.time)))
+        bus.publish(TickEvent(Tick(front, BigDecimal(price), clock.time)))
     }
 
     fun leg(suffix: String) = venue.sent.single { it.id.startsWith("roll:") && it.id.endsWith(suffix) }
