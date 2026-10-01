@@ -20,7 +20,7 @@ class OptionCatalogRegistry(
                     require(listing.symbol.startsWith("${root.root.substringAfter(':')}-")) {
                         "option ${listing.symbol} in the catalog of ${root.root} does not belong to it"
                     }
-                    val symbol = "${root.venue}:${listing.symbol}"
+                    val symbol = "${root.venue}:${OptionSymbols.qktCode(listing.symbol)}"
                     QktSymbols.requireFileSafe(symbol)
                     require(symbol !in this) { "option symbol $symbol is claimed by more than one root" }
                     put(symbol, root.metaFor(symbol, listing.toContract()))
@@ -49,15 +49,12 @@ class OptionCatalogRegistry(
         return catalogs[terms.root]?.deliveryPrices?.get(date)?.let(::BigDecimal)
     }
 
-    /** The declared root [qktSymbol] would belong to: `DERIBIT:BTC_USDC-…` belongs to `DERIBIT:BTC_USDC`. */
+    /** The declared root [qktSymbol] is an option code of: `DERIBIT:BTC_USDC_…_C` of `DERIBIT:BTC_USDC`. */
     private fun rootOf(qktSymbol: String): OptionRoot? =
-        roots.firstOrNull { qktSymbol.startsWith("${it.root}-") }?.takeIf { looksLikeOption(qktSymbol) }
-
-    /** Whether [qktSymbol] has an option code's shape, `<UNDERLYING>-<DATE>-<STRIKE>-<C|P>`. */
-    private fun looksLikeOption(qktSymbol: String): Boolean {
-        val parts = qktSymbol.substringAfter(':').split('-')
-        return parts.size == 4 && parts[3] in setOf("C", "P")
-    }
+        roots.firstOrNull {
+            qktSymbol.startsWith("${it.venue}:") &&
+                OptionSymbols.venueName(qktSymbol.substringAfter(':'), it.root.substringAfter(':')) != null
+        }
 
     companion object {
         /** The registry for [roots], reading each root's catalog from [store] (absent catalogs list nothing). */

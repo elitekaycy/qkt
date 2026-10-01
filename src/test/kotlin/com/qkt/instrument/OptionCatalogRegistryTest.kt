@@ -31,9 +31,9 @@ class OptionCatalogRegistryTest {
         OptionCatalogStore(dir).write(catalog)
         val registry = OptionCatalogRegistry.load(listOf(root), OptionCatalogStore(dir))
 
-        val meta = requireNotNull(registry.lookup("DERIBIT:BTC_USDC-27SEP24-60000-C"))
+        val meta = requireNotNull(registry.lookup("DERIBIT:BTC_USDC_27SEP24_60000_C"))
         assertThat((meta.derivative as OptionTerms).strike).isEqualByComparingTo("60000")
-        assertThat(registry.deliveryPrice("DERIBIT:BTC_USDC-27SEP24-60000-C")).isEqualByComparingTo("65422.7")
+        assertThat(registry.deliveryPrice("DERIBIT:BTC_USDC_27SEP24_60000_C")).isEqualByComparingTo("65422.7")
         assertThat(OptionCatalogStore(dir).read("DERIBIT:BTC_USDC")).isEqualTo(catalog)
     }
 
@@ -43,9 +43,9 @@ class OptionCatalogRegistryTest {
     ) {
         val registry = OptionCatalogRegistry.load(listOf(root), OptionCatalogStore(dir))
 
-        assertThat(registry.lookup("DERIBIT:BTC_USDC-27DEC24-90000-P")).isNull()
+        assertThat(registry.lookup("DERIBIT:BTC_USDC_27DEC24_90000_P")).isNull()
         assertThat(
-            registry.missingReason("DERIBIT:BTC_USDC-27DEC24-90000-P"),
+            registry.missingReason("DERIBIT:BTC_USDC_27DEC24_90000_P"),
         ).contains("qkt fetch DERIBIT:BTC_USDC --catalog")
         assertThat(registry.missingReason("EXNESS:XAUUSD")).isNull()
     }
@@ -56,7 +56,7 @@ class OptionCatalogRegistryTest {
     ) {
         val registry = OptionCatalogRegistry.load(listOf(root), OptionCatalogStore(dir))
 
-        assertThat(registry.missingReason("DERIBIT:BTC_USDC-PERPETUAL")).isNull()
+        assertThat(registry.missingReason("DERIBIT:BTC_USDC_PERPETUAL")).isNull()
         val stray =
             catalog.copy(
                 contracts = listOf(OptionListing("ETH_USDC-27SEP24-3000-C", "3000", "call", 1_727_424_000_000L)),

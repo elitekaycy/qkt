@@ -52,7 +52,7 @@ fingerprint, and the same persisted state files.
 | Term | Example | Meaning |
 |---|---|---|
 | **Root** | `BINANCE_UM:BTCUSDT`, `CME:ES` | A contract family. Carries the static spec (multiplier, tick, currency, calendar, roll policy). |
-| **Contract symbol** | `BINANCE_UM:BTCUSDT_240927`, `CME:ESZ6`, `DERIBIT:BTC_USDC-27SEP24-60000-C` | One listed contract. What orders are sent on at the venue. Has expiry. |
+| **Contract symbol** | `BINANCE_UM:BTCUSDT_240927`, `CME:ESZ6`, `DERIBIT:BTC_USDC_27SEP24_60000_C` | One listed contract. What orders are sent on at the venue. Has expiry. Option codes write the venue's `-` as `_` (a `.qkt` symbol cannot hold `-`; amended 2026-10-01, `OptionSymbols`). |
 | **Continuous symbol** | `BINANCE_UM:BTCUSDT@front`, `CME:ES@next` | A strategy-facing perpetual view of a root. Never sent to a venue. Positions, marks, candles and P&L for a continuous stream are kept under this symbol, in its price space. |
 | **Contract chain** | all BTCUSDT quarterlies ordered by expiry | From the contract catalog. |
 | **Roll schedule** | `2024-09-19T08:00Z BTCUSDT_240927 → BTCUSDT_241227, gap +812.4` | The transitions for one root under one roll policy, with the gap measured at each roll. |

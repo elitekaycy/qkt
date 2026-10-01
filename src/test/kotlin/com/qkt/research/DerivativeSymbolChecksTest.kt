@@ -105,7 +105,7 @@ class DerivativeSymbolChecksTest {
         val registry = com.qkt.instrument.OptionCatalogRegistry(listOf(root), mapOf(root.root to catalog))
 
         assertThatThrownBy {
-            requireDerivativeSymbolsResolvable(listOf("DERIBIT:BTC_USDC-27DEC24-90000-P"), AccountingEngine(), registry)
-        }.hasMessageContaining("DERIBIT:BTC_USDC-27DEC24-90000-P").hasMessageContaining("option")
+            requireDerivativeSymbolsResolvable(listOf("DERIBIT:BTC_USDC_27DEC24_90000_P"), AccountingEngine(), registry)
+        }.hasMessageContaining("DERIBIT:BTC_USDC_27DEC24_90000_P").hasMessageContaining("option")
     }
 }

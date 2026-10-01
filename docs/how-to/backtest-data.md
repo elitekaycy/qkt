@@ -225,6 +225,10 @@ qkt fetch DERIBIT:BTC_USDC --chains --from 2026-09-24 --to 2026-09-30 [--every 1
 qkt fetch DERIBIT:BTC_USDC --chains --live
 ```
 
+A strategy names a contract by its qkt code, the venue name with each `-` written `_`
+(`DERIBIT:BTC_USDC_25DEC26_92000_C` for Deribit's `BTC_USDC-25DEC26-92000-C`); catalogs and chain
+files keep the venue's names.
+
 Each source is a separate series: trade-built days land in
 `chains/DERIBIT/BTC_USDC/trade/<YYYY-MM-DD>.csv.gz` and live book snapshots in
 `chains/DERIBIT/BTC_USDC/book/<YYYY-MM-DD>.csv.gz`, so live snapshots never block a backfill. Both

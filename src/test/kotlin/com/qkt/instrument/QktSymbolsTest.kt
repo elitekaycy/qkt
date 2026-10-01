@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Test
 class QktSymbolsTest {
     @Test
     fun `venue-qualified symbols made of safe characters pass`() {
-        listOf("CME:ESZ6", "BINANCE_UM:BTCUSDT_240927", "BINANCE_UM:BTCUSDT@front", "DERIBIT:BTC_USDC-27SEP24-60000-C")
+        listOf("CME:ESZ6", "BINANCE_UM:BTCUSDT_240927", "BINANCE_UM:BTCUSDT@front", "DERIBIT:BTC_USDC_27SEP24_60000_C")
             .forEach(QktSymbols::requireFileSafe)
     }
 
