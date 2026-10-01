@@ -181,8 +181,28 @@ Runs at start, after every venue reconnect, and every 60 seconds:
 
 ## 12. Decisions for the reviewer
 
-1. **Language and server:** Kotlin on the JVM with Ktor (one toolchain with qkt and the adapters' SPI),
-   or Python (matching `mt5-gateway`). This design assumes Kotlin/Ktor.
+1. **Language and server:** Kotlin on the JVM with Ktor (proposed), or Python (matching `mt5-gateway`).
+   The deciding question is which connectors each can reach:
+
+   | Connector | Interfaces it offers | From Kotlin/JVM |
+   |---|---|---|
+   | Rithmic | R\|Protocol API (WebSocket + protobuf, any language); R\|API+ (C++, .NET only) | R\|Protocol, natively |
+   | CQG | WebAPI (WebSocket + protobuf, any language) | natively |
+   | Tradovate | REST + WebSocket (JSON) | natively |
+   | Interactive Brokers | TWS API, official clients in Java, Python, C++, C#; also REST | official Java client |
+   | FIX venues (TT, many FCMs) | FIX 4.x/5.x | QuickFIX/J, the reference FIX engine |
+   | Crypto (Deribit, Bybit, Binance…) | REST + WebSocket (JSON) | natively |
+   | NinjaTrader | NinjaScript (C#) only | a bridge, as from Python |
+   | MT5 | the `MetaTrader5` Python package (Windows) | the existing Python `mt5-gateway` |
+
+   Every language-neutral connector is reached from the JVM directly, and the language-locked ones
+   (Rithmic R|API+, NinjaTrader, MT5) need a separate native process whichever language the host is.
+   That process should then speak VGP itself: the protocol is the contract, so the qkt client treats a
+   C# NinjaTrader bridge or the Python `mt5-gateway` exactly like `qkt-venued`. Python reaches the same
+   neutral connectors, but loses the one thing only the JVM gives: the same adapter JAR running inside
+   qkt (backtest, paper) and inside the gateway (live), from the research doc §2. Hence Kotlin/Ktor.
+   Rithmic access for automated trading also needs the FCM's and Rithmic's approval (see the 2026-09-30
+   futures prop findings), whatever the language.
 2. **Journal store:** SQLite (proposed) or an append-only file per day.
 3. **First venue:** Deribit USDC-linear (proposed), matching the options data qkt already backtests.
 4. **Paper adapter as the CI venue** (proposed) instead of mocking the venue in the host's tests.
