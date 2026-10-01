@@ -1,6 +1,6 @@
 # Live continuous futures (phase 46) — design
 
-**Status:** design for review, no code yet. **Why separate:** phase 45 ruled that continuous streams
+**Status:** steps 1-4 built (see §6); step 5 (restart) and the live leg timeout remain. **Why separate:** phase 45 ruled that continuous streams
 (`VENUE:ROOT@front`) stay backtest-only (parity A33) because live rolling is not wiring. This document
 designs it. **Builds on:** `ContinuousChain`, `AdjustmentChain`, `RollHistoryBuilder`,
 `ContinuousContractBroker`/`StreamLane`/`RollExecutor` (phase 42.5) and the gateway connector (44/45).
@@ -119,3 +119,27 @@ until an operator measures it (`qkt fetch <root> --rolls`).
 4. `SessionBrokers` routes continuous streams through `ContinuousContractBroker` over the account
    (venue factory = a lane attachment), `LiveSymbolChecks` stops refusing them.
 5. Restart (2.4), docs and parity rows, review.
+
+## 6. Built (2026-10-01, PR #1287)
+
+- Step 1: gateway routing by the attachment that sent each order.
+- Step 2: `LiveRollMeasurer` over the shared `RollPricing` rule; a live roll is appended only when it
+  directly follows the last measured one.
+- Step 3: `ContinuousLiveFeed` (one per stream, its own reader thread through `FanInTickFeed`), passing
+  the account feed's outages through; `LiveContinuousStreams` measures per root under a lock and extends
+  the shared `ContinuousChains` (`useHistory`).
+- Step 4: roll legs answered later (`RollExecutor`/`RollCarry` continuations, backtests unchanged and
+  pinned by the existing roll tests); lanes read the chain as it stands; each lane keeps its contract
+  book (`StrategyPositionTracker`, netted) and hands it to its venue; `SessionBrokers` routes streams
+  through a `ContinuousContractBroker` whose lanes are further attachments of the account, each on a bus
+  bound to the engine loop (`LaneBuses`); `ContinuousWiring` assembles it in `LiveSession`.
+  `LiveContinuousGatewayTest` runs a live session through a roll on the fake gateway end to end.
+- Found on the way: the gateway host emitted no `position` events (wire spec §4); fixed in
+  qkt-venue-gateway, proven on Deribit testnet.
+
+Remaining:
+- Step 5, restart (§2.4): persist each lane's contract book and an in-flight roll's legs; a roll in a
+  downtime is already measured on the first tick after restart.
+- A live leg timeout: a leg the venue never answers must stop the strategy on the stream and alert, and
+  a late fill of that leg must not reach the engine as an order of its own. Not built until that late
+  fill path is designed and tested.
