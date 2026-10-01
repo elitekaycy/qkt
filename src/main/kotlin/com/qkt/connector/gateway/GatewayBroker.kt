@@ -18,9 +18,10 @@ import java.math.BigDecimal
  * One trading session's [Broker] on a VGP v1 gateway account: a thin view over the account's shared
  * [GatewaySession], serving [strategy] (null: every strategy of a multi-strategy session). It sends that
  * session's orders and publishes their events, and every contract settlement, on [bus]; `reduce_only`
- * is judged against [positions], the session's view of what it holds, and the account's. When the account
- * is [shared] by several strategies, its venue positions are account-wide: startup reconcile trusts each
- * strategy's book, and the session checks the account total once every strategy is ready.
+ * is judged against [positions], the session's view of what it holds, and the account's. A gateway
+ * account's venue positions are account-wide, whether one strategy trades it or several: startup reconcile
+ * trusts each strategy's persisted book, and the account checks their total against the venue whenever a
+ * strategy is ready ([GatewaySession.ready]).
  */
 class GatewayBroker internal constructor(
     private val session: GatewaySession,
@@ -28,7 +29,6 @@ class GatewayBroker internal constructor(
     private val clock: Clock,
     private val positions: PositionProvider,
     strategy: String?,
-    private val shared: Boolean,
 ) : Broker {
     private val attachment = session.attach(strategy, positions, bus::publish)
 
@@ -87,7 +87,7 @@ class GatewayBroker internal constructor(
                 }
             }.groupBy({ it.first }, { it.second })
 
-    override fun isAccountWide(symbol: String): Boolean = shared && supports(symbol)
+    override fun isAccountWide(symbol: String): Boolean = supports(symbol)
 
     override fun accountEquity(): BigDecimal? = session.account.equity
 

@@ -15,8 +15,8 @@ internal class GatewaySessionTest : GatewayHarness() {
         val shared = session(setOf("a", "b"))
         val a = Strategy()
         val b = Strategy()
-        val brokerA = broker(shared, a, "a", shared = true)
-        broker(shared, b, "b", shared = true)
+        val brokerA = broker(shared, a, "a")
+        broker(shared, b, "b")
 
         brokerA.submit(market("a-1", "a"))
         await { a.of<BrokerEvent.OrderAccepted>().isNotEmpty() }
@@ -32,8 +32,8 @@ internal class GatewaySessionTest : GatewayHarness() {
         val shared = session(setOf("a", "b"))
         val a = Strategy().apply { held[symbol] = BigDecimal("0.3") }
         val b = Strategy().apply { held[symbol] = BigDecimal("-0.1") }
-        broker(shared, a, "a", shared = true)
-        broker(shared, b, "b", shared = true)
+        broker(shared, a, "a")
+        broker(shared, b, "b")
 
         fake.act {
             settle(
@@ -59,7 +59,7 @@ internal class GatewaySessionTest : GatewayHarness() {
         val shared = session(setOf("a", "b"))
         val a = Strategy().apply { held[symbol] = BigDecimal("0.1") }
         val b = Strategy().apply { held[symbol] = BigDecimal("-0.1") }
-        val brokerA = broker(shared, a, "a", shared = true)
+        val brokerA = broker(shared, a, "a")
         fake.killed = true
 
         brokerA.submit(market("a-1", "a", Side.SELL))

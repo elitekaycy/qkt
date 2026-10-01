@@ -499,16 +499,19 @@ brokers:
 Several strategies may share one gateway account, as a portfolio. They share one connection; each
 fill reaches the strategy whose order it was (and waits for it while its session is stopped), and a
 contract settlement at expiry closes each strategy's own holding at the settlement price, sharing the
-venue's costs once by holding. On a shared account the venue only knows the total, so startup trusts
-each strategy's persisted book, and once every strategy of the account is running their holdings
-must add up to the account's; if they do not, only orders that reduce a position are sent until an
-operator resolves it. After a restart every restored order is resolved by id, with its complete fill
+venue's costs once by holding. The venue only knows the account's total, so a gateway account is
+account-wide even when one strategy trades it: startup trusts each strategy's persisted book (a venue
+position no book holds is never adopted), and each time a strategy comes up, once every strategy
+deployed on the account is running, their holdings must add up to the account's. While they do not,
+only orders that reduce a position are sent; the check clears itself when a later one agrees (as
+strategies deploy one after another), or after an operator resolves the difference. After a restart every restored order is resolved by id, with its complete fill
 history, so a fill is never lost or booked twice. A submit the gateway never answers is sent again
 until a deadline, then resolved by id. The gateway's identity is checked at startup and whenever its
 event log restarts; a gateway on another account refuses every order. The kill switch at the gateway
 refuses orders that add risk; an order that reduces both its strategy's and the account's position is
-sent `reduce_only` and passes. Market data and live futures routing through the gateway arrive in a later
-phase; until then a gateway account trades symbols whose prices come from another feed.
+sent `reduce_only` and passes. The account's prices come from the gateway's quotes socket: its
+contracts, and its option roots as whole feeds (`OPTIONS:<ACCOUNT>.<ROOT>`, so name the account after
+the venue, e.g. `deribit`, to match `instruments.yaml`).
 
 Policy-rate artifacts are also configured through the environment. `QKT_RBA_POLICY_RATE_SOURCE`
 and `QKT_RBNZ_POLICY_RATE_SOURCE` accept an absolute path, `file:` URI, or HTTPS URL for the

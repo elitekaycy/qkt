@@ -30,8 +30,8 @@ internal class GatewayFailureTest : GatewayHarness() {
     fun `a fill for a strategy that stepped away waits for it to attach again`() {
         val shared = session(setOf("a", "b"))
         val b = Strategy()
-        broker(shared, Strategy(), "a", shared = true)
-        val brokerB = broker(shared, b, "b", shared = true)
+        broker(shared, Strategy(), "a")
+        val brokerB = broker(shared, b, "b")
         brokerB.submit(market("b-1", "b"))
         await { b.of<BrokerEvent.OrderAccepted>().isNotEmpty() }
         brokerB.shutdown()
@@ -39,7 +39,7 @@ internal class GatewayFailureTest : GatewayHarness() {
         fake.act { fill("b-1", "f1", "0.1", "650", FakeGateway.TIME) }
         Thread.sleep(100)
         val back = Strategy()
-        broker(shared, back, "b", shared = true)
+        broker(shared, back, "b")
 
         assertThat(back.of<BrokerEvent.OrderFilled>().single().clientOrderId).isEqualTo("b-1")
     }

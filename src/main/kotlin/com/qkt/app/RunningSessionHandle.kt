@@ -100,7 +100,7 @@ internal class RunningSessionHandle(
             if (strategy !is DslCompiledStrategy) continue
             for ((alias, key) in strategy.declaredStreams) {
                 // Preserve declared casing for operator readability ("EXNESS" not "exness").
-                out[alias] = key.broker
+                out[alias] = tradingBroker(key)
             }
         }
         return out
