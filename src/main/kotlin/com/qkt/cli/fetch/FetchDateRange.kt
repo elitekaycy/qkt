@@ -1,5 +1,6 @@
 package com.qkt.cli.fetch
 
+import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
 
@@ -29,8 +30,11 @@ internal fun resolveFetchRange(
     }
 }
 
-/** The operator's current UTC date: the one wall-clock read the fetch commands make. */
+/** The operator's current UTC date. Fetch commands read the wall clock only in this file. */
 internal fun utcToday(): LocalDate = LocalDate.now(ZoneOffset.UTC)
+
+/** The operator's current instant in epoch milliseconds. */
+internal fun utcNowMs(): Long = Instant.now().toEpochMilli()
 
 private fun parseLastDays(s: String): Int? {
     val m = Regex("^(\\d+)d$").matchEntire(s)

@@ -95,4 +95,12 @@ class DeribitBookSnapshotTest {
     fun `a book with none of the root's catalogued contracts is refused`() {
         assertThatThrownBy { snapshotOf(row("ETH_USDC-2OCT26-3000-C", 1_000)) }.hasMessageContaining("DERIBIT:BTC_USDC")
     }
+
+    @Test
+    fun `a contract still listed at or after its expiry is left out`() {
+        val expiry = 1_790_928_000_000
+        val taken = snapshotOf(row(call, expiry), row(put, expiry))
+
+        assertThat(taken.snapshot.quotes.map { it.contract }).containsExactly(put)
+    }
 }

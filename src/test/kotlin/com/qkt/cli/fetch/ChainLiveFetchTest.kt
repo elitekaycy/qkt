@@ -59,7 +59,7 @@ class ChainLiveFetchTest {
         val code = ChainLiveFetch.run(root, dir) { _, _ -> snapshotAt("2026-10-01T09:15:00Z") }
 
         assertThat(code).isEqualTo(ExitCodes.SUCCESS)
-        assertThat(ChainSnapshotStore(dir).readDay(root, LocalDate.parse("2026-10-01"))).hasSize(2)
+        assertThat(ChainSnapshotStore(dir, QuoteSource.BOOK).readDay(root, LocalDate.parse("2026-10-01"))).hasSize(2)
     }
 
     @Test
@@ -85,5 +85,20 @@ class ChainLiveFetchTest {
 
         assertThat(fetch()).isEqualTo(ExitCodes.USER_ERROR)
         assertThat(fetch("--last", "2d")).isEqualTo(ExitCodes.ARG_ERROR)
+    }
+
+    @Test
+    fun `an unreadable day file is a reported failure, not a crash`(
+        @TempDir dir: Path,
+    ) {
+        declare(dir)
+        OptionCatalogStore(dir).write(OptionCatalog(root, listOf(OptionListing(call, "92000", "call", 1798185600000))))
+        val file = ChainSnapshotStore(dir, QuoteSource.BOOK).path(root, LocalDate.parse("2026-10-01"))
+        Files.createDirectories(file.parent)
+        Files.write(file, "not gzip".toByteArray())
+
+        assertThat(
+            ChainLiveFetch.run(root, dir) { _, _ -> snapshotAt("2026-10-01T09:00:00Z") },
+        ).isEqualTo(ExitCodes.USER_ERROR)
     }
 }
