@@ -16,6 +16,7 @@ internal object FakeWire {
             is WireOrder -> json.encodeToJsonElement(WireOrder.serializer(), data)
             is WireFill -> json.encodeToJsonElement(WireFill.serializer(), data)
             is WireSettlement -> json.encodeToJsonElement(WireSettlement.serializer(), data)
+            is WirePosition -> json.encodeToJsonElement(WirePosition.serializer(), data)
             else -> error("no event for $data")
         }
 
