@@ -53,7 +53,7 @@ internal class SessionBrokers(
                 val root = OptionRootSymbol.parse(key.qktSymbol).getOrNull()
                 when {
                     key.broker.equals(CHAIN_BROKER, ignoreCase = true) -> Unit
-                    root != null -> fedRoots.getOrPut(venueLabel(root)) { mutableSetOf() } += root
+                    root != null -> fedRoots.getOrPut(tradingBroker(key).lowercase()) { mutableSetOf() } += root
                     else -> brokerSymbols.getOrPut(key.broker.lowercase()) { mutableSetOf() }.add(key.qktSymbol)
                 }
             }
@@ -121,6 +121,4 @@ internal class SessionBrokers(
             else -> com.qkt.instrument.LayeredInstrumentRegistry(layers)
         }
     }
-
-    private fun venueLabel(root: OptionRootSymbol): String = root.root.substringBefore(':').lowercase()
 }

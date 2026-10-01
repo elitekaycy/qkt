@@ -11,16 +11,17 @@ import org.slf4j.LoggerFactory
  * open for as long as the account is: one client, one event stream, one translator. Each strategy's
  * broker attaches with the strategy it serves and its session's positions; [GatewayRouting] sends each
  * event where it belongs. The gateway's identity is checked when the stream opens and whenever its log
- * restarts; once every strategy of [expectedStrategies] is ready, their holdings must add up to the
- * account's ([GatewayHolders]). Either failure stops new risk: an identity mismatch refuses every order,
- * a holdings mismatch every order that is not reduce-only.
+ * restarts. Each time a strategy is ready, once every strategy of [expectedStrategies] (asked then, as
+ * strategies deploy one by one) is, their holdings must add up to the account's ([GatewayHolders]).
+ * Either failure stops new risk: an identity mismatch refuses every order, a holdings mismatch every
+ * order that is not reduce-only, until a later check finds the holdings agree.
  */
 internal class GatewaySession(
     val client: GatewayClient,
     val symbols: GatewaySymbols,
     private val clock: Clock,
     private val identity: GatewayIdentity,
-    private val expectedStrategies: Set<String>,
+    private val expectedStrategies: () -> Set<String>,
     streamFactory: (
         onEvent: (WireEvent) -> Unit,
         onReset: (String) -> Unit,
@@ -73,7 +74,7 @@ internal class GatewaySession(
     @Volatile var refused: String? = null
         private set
 
-    /** Why no order that adds risk may be sent (holdings disagree with the account), or null. */
+    /** Why no order that adds risk may be sent (holdings disagreed with the account when last checked), or null. */
     @Volatile var riskRefused: String? = null
         private set
 
@@ -108,10 +109,11 @@ internal class GatewaySession(
         GatewayRecovery.settleHeld(client, held) { settlement -> ledger.settleFor(broker, settlement) }
         synchronized(lock) {
             holders.ready(broker)
-            holders.mismatch(routing.brokers, expectedStrategies, account.positions)?.let { reason ->
-                log.error("gateway account check failed: {}", reason)
-                riskRefused = reason
-            }
+            val expected = expectedStrategies() + routing.brokers.mapNotNull { it.strategy }
+            val verdict = holders.check(routing.brokers, expected, account.positions) ?: return
+            if (verdict.mismatch != null) log.error("gateway account check failed: {}", verdict.mismatch)
+            if (verdict.mismatch == null && riskRefused != null) log.info("gateway account check agrees again")
+            riskRefused = verdict.mismatch
         }
     }
 

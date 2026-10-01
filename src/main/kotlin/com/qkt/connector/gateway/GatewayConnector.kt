@@ -38,7 +38,7 @@ class GatewayConnector : Connector {
                 it,
                 GatewaySettings.of(it, context),
                 context.clock,
-                context.strategiesTrading(it.name).toSet(),
+                { context.strategiesTrading(it.name).toSet() },
             )
         }
 }
@@ -48,7 +48,7 @@ class GatewayTradingAccount internal constructor(
     override val config: AccountConfig,
     private val settings: GatewaySettings,
     private val clock: Clock,
-    private val strategies: Set<String>,
+    private val strategies: () -> Set<String>,
 ) : TradingAccount {
     private val identity = GatewayIdentity(settings.adapter, settings.accountLogin, settings.tradeMode)
     private val client by lazy {
@@ -78,7 +78,7 @@ class GatewayTradingAccount internal constructor(
     override val marketDataPattern: SymbolPattern = SymbolPattern(quotes::supports)
 
     override val orderEntry: BrokerFactory = { bus, clock, _, positions, strategyName ->
-        GatewayBroker(opened.value, bus, clock, positions, strategyName, shared = strategies.size > 1)
+        GatewayBroker(opened.value, bus, clock, positions, strategyName)
     }
 
     /** Checks the gateway before anything trades: it must speak `vgp1` and report the expected identity. */

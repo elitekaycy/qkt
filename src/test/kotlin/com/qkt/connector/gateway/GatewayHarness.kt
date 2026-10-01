@@ -37,7 +37,7 @@ internal abstract class GatewayHarness {
             GatewaySymbols("DERIBIT:"),
             clock,
             GatewayIdentity("fake", "7", "demo"),
-            expected,
+            { expected },
             streamFactory = { e, r, c -> GatewayStream(fake.url, "k", e, r, c, initialBackoffMs = 20) },
             submitDeadlineMs = 300,
             retryMs = 50,
@@ -74,8 +74,7 @@ internal abstract class GatewayHarness {
         session: GatewaySession,
         strategy: Strategy,
         id: String,
-        shared: Boolean = false,
-    ) = GatewayBroker(session, strategy.bus, SystemClock(), strategy.positions, id, shared)
+    ) = GatewayBroker(session, strategy.bus, SystemClock(), strategy.positions, id)
 
     protected fun market(
         id: String,
