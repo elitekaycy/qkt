@@ -517,7 +517,7 @@ class LiveSession(
                 maxOrderNotional = maxOrderNotional,
                 priceCollarFrac = priceCollarFrac,
                 accounting = accounting,
-                equity = riskState.equityTracker::currentEquity,
+                equity = riskState.equityTracker::liveEquity,
             )
         val marketDataAlerts = MarketDataHealthAlerts(strategies, sessionNotifier, insights)
         // Suppresses NEW orders on frozen data and drops implausible ticks before they poison indicators.

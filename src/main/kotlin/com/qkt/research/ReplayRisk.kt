@@ -56,7 +56,7 @@ internal class ReplayRisk(
     init {
         riskState.warmupComplete = true
         if (instruments.futures() != null) {
-            books.marginDaily.bind(riskState.equityTracker::currentEquity)
+            books.marginDaily.bind(riskState.equityTracker::liveEquity)
             bus.subscribe<TickEvent> { e -> books.marginDaily.onTime(e.tick.timestamp) }
         }
         val strategyRuleSet =
@@ -80,7 +80,7 @@ internal class ReplayRisk(
                 maxOrderNotional = maxOrderNotional,
                 priceCollarFrac = priceCollarFrac,
                 accounting = books.accounting,
-                equity = riskState.equityTracker::currentEquity,
+                equity = riskState.equityTracker::liveEquity,
             )
         val bookAnnualization =
             if (candleWindow != null) calendar.tradingPeriodsPerYear(candleWindow) else BigDecimal("252")
