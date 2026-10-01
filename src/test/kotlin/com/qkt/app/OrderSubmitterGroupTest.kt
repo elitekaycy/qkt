@@ -40,7 +40,7 @@ class OrderSubmitterGroupTest {
             { PositionAccountingMode.NETTING },
             { BigDecimal.ONE },
         )
-    private val book = StructureBook(StructureFixtures.registry, MarketPriceTracker())
+    private val book = StructureBook("st", StructureFixtures.registry, MarketPriceTracker())
     private val sent = mutableListOf<String>()
     private val strategy =
         object : Strategy {

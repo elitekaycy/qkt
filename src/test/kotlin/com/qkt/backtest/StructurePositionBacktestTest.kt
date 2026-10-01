@@ -75,6 +75,34 @@ class StructurePositionBacktestTest {
         assertThat(opens.map { it.symbol to opposite(it.side) })
             .containsExactlyInAnyOrderElementsOf(closes.map { it.symbol to it.side })
         assertThat(result.rejections).isEmpty()
+        // The report row, from the trades alone (contract size 1): credit = sells − buys at entry, P&L = all flows.
+        val cash = { t: com.qkt.execution.Trade ->
+            (
+                if (t.side ==
+                    Side.SELL
+                ) {
+                    t.price
+                } else {
+                    t.price.negate()
+                }
+            ).multiply(t.quantity)
+        }
+        val row = result.structures.single()
+        assertThat(row.alias).isEqualTo("ps")
+        assertThat(row.openedAt).isEqualTo(opens.first().timestamp)
+        assertThat(row.closedAt).isEqualTo(closes.first().timestamp)
+        assertThat(row.outcome).isEqualTo(com.qkt.events.StructureOutcome.CLOSED)
+        assertThat(row.credit).isEqualByComparingTo(opens.fold(BigDecimal.ZERO) { sum, t -> sum.add(cash(t)) })
+        assertThat(row.realized).isEqualByComparingTo(trades.fold(BigDecimal.ZERO) { sum, t -> sum.add(cash(t)) })
+        val csv =
+            com.qkt.backtest.report.DerivativeReportFiles
+                .render(result)
+                .toMap()
+                .getValue("structures.csv")
+        assertThat(
+            csv.lines().first(),
+        ).isEqualTo("openedAt,closedAt,strategy,structure,alias,outcome,legs,credit,realized")
+        assertThat(csv.lines()[1]).startsWith("${row.openedAt},${row.closedAt},spread,").contains(",ps,CLOSED,")
     }
 
     @Test

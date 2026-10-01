@@ -14,6 +14,7 @@ import com.qkt.events.SignalEvent
 import com.qkt.events.SignalSuppressedEvent
 import com.qkt.events.StrategyCandleEvaluatedEvent
 import com.qkt.events.StreamCandleEvent
+import com.qkt.events.StructureEvent
 import com.qkt.events.TickEvent
 import com.qkt.events.TradeEvent
 import com.qkt.events.WarmupTickEvent
@@ -34,6 +35,7 @@ internal fun auditStrategyId(event: Event): String? =
         is TradeEvent -> event.strategyId.takeIf { it.isNotBlank() }
         is SignalSuppressedEvent -> event.strategyId.takeIf { it.isNotBlank() }
         is CostIncurred -> event.strategyId.takeIf { it.isNotBlank() }
+        is StructureEvent -> event.strategyId.takeIf { it.isNotBlank() }
         else -> null
     }
 

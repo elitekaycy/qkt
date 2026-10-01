@@ -115,4 +115,6 @@ data class BacktestResult(
     val settlements: List<Settlement> = emptyList(),
     /** Each UTC day's futures margin at its last sample, for days that ended holding margined positions. */
     val marginDaily: List<MarginDay> = emptyList(),
+    /** Every option structure the strategies opened, oldest first; empty when none did. */
+    val structures: List<StructureRow> = emptyList(),
 )

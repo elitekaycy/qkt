@@ -8,12 +8,12 @@ import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
-class FuturesReportFilesTest {
+class DerivativeReportFilesTest {
     private val at = 1_726_732_800_000L
 
     @Test
     fun `a run without futures has no futures files`() {
-        assertThat(FuturesReportFiles.render(emptyList(), emptyList(), emptyList())).isEmpty()
+        assertThat(DerivativeReportFiles.render(emptyList(), emptyList(), emptyList())).isEmpty()
     }
 
     @Test
@@ -48,7 +48,7 @@ class FuturesReportFilesTest {
         val settlement =
             Settlement(at, "s", "BINANCE_UM:BTCUSDT_240927", Side.SELL, BigDecimal("0.01"), BigDecimal("65422.7"), true)
 
-        val files = FuturesReportFiles.render(listOf(roll), listOf(fill), listOf(settlement)).toMap()
+        val files = DerivativeReportFiles.render(listOf(roll), listOf(fill), listOf(settlement)).toMap()
 
         assertThat(files.keys).containsExactly("rolls.csv", "contracts.csv", "settlements.csv")
         assertThat(files.getValue("rolls.csv")).isEqualTo(

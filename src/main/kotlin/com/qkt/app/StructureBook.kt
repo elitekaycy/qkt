@@ -2,6 +2,8 @@ package com.qkt.app
 
 import com.qkt.common.Side
 import com.qkt.derivatives.options.OptionPayoff
+import com.qkt.events.StructureEvent
+import com.qkt.events.StructureOutcome
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.OptionTerms
 import com.qkt.marketdata.MarketPriceProvider
@@ -19,8 +21,10 @@ import java.math.BigDecimal
  * leaves the book once nothing is held and no order of it is working.
  */
 internal class StructureBook(
+    private val strategyId: String,
     private val instruments: InstrumentRegistry,
     private val prices: MarketPriceProvider,
+    private val publish: (StructureEvent) -> Unit = {},
 ) : StructureView {
     /** What an order id belongs to: [leg] of [structure], as its opening order or not. */
     data class Owner(
@@ -75,10 +79,12 @@ internal class StructureBook(
             leg.open(quantity, price)
             if (structure.state == StructureState.PENDING && structure.legs.all { it.openEnded }) {
                 structure.state = StructureState.OPEN
+                publish(structure.opened(strategyId))
             }
         } else {
             leg.endClose(orderId)
             leg.realize(quantity, price)
+            structure.exit = StructureOutcome.CLOSED
         }
         reopenIfIdle(structure)
         forgetIfDone(structure)
@@ -137,6 +143,7 @@ internal class StructureBook(
                 if (leg.symbol != symbol || leg.side == side || leg.held.signum() == 0 || left.signum() == 0) continue
                 val closed = left.min(leg.held)
                 leg.realize(closed, price)
+                structure.exit = StructureOutcome.CLOSED
                 left = left.subtract(closed)
             }
             forgetIfDone(structure)
@@ -145,9 +152,9 @@ internal class StructureBook(
 
     /**
      * Settles every held leg whose contract has expired by [nowMs] at its intrinsic value from the
-     * catalog's delivery price. The venue's settlement print says the same for a net position; this
-     * also settles legs the venue netted away (two structures long and short one contract). A leg
-     * whose delivery price is not catalogued waits for it.
+     * catalog's delivery price, the price the venue settles at. This also settles legs the venue netted
+     * away (two structures long and short one contract). A leg whose delivery price is not catalogued
+     * waits for it.
      */
     fun settleExpired(nowMs: Long) {
         if (byId.isEmpty()) return
@@ -158,18 +165,8 @@ internal class StructureBook(
                 val delivery = options.deliveryPrice(leg.symbol) ?: continue
                 val terms = requireNotNull(instruments.lookup(leg.symbol)?.derivative as? OptionTerms)
                 leg.realize(leg.held, OptionPayoff.intrinsic(terms.right, terms.strike, delivery))
+                structure.exit = StructureOutcome.SETTLED
             }
-            forgetIfDone(structure)
-        }
-    }
-
-    /** Every structure leg on [symbol] settled at its expiry at [price]. */
-    fun settled(
-        symbol: String,
-        price: BigDecimal,
-    ) {
-        for (structure in byId.values.toList()) {
-            structure.legs.filter { it.symbol == symbol && it.held.signum() > 0 }.forEach { it.realize(it.held, price) }
             forgetIfDone(structure)
         }
     }
@@ -187,5 +184,6 @@ internal class StructureBook(
         if (!idle) return
         byAlias.remove(structure.alias)
         byId.remove(structure.id)
+        publish(structure.closed(strategyId))
     }
 }

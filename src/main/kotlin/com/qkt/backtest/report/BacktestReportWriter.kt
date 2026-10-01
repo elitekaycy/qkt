@@ -46,7 +46,7 @@ class BacktestReportWriter(
         result.global.monteCarlo?.let {
             Files.writeString(dir.resolve(MonteCarloFanCsv.FILE_NAME), MonteCarloFanCsv.render(it))
         }
-        FuturesReportFiles.render(result).forEach { (name, body) -> Files.writeString(dir.resolve(name), body) }
+        DerivativeReportFiles.render(result).forEach { (name, body) -> Files.writeString(dir.resolve(name), body) }
         HtmlReportWriter().write(result, dir.resolve("report.html"))
         Files.writeString(dir.resolve("manifest.json"), ReportManifest.render(result, dir))
     }

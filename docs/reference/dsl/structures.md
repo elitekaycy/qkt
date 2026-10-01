@@ -145,3 +145,9 @@ RULES
   declare at least one other stream, such as a `CHAIN:` metric.
 - Two legs that select the same contract refuse the structure. Ratio structures are not supported.
 - Structures run in backtests; live structures arrive with the phase 44 gateway.
+
+## Reports
+
+A backtest with structures writes `structures.csv`: one row per structure with its legs and entries,
+when it opened and closed, how it ended (`CLOSED`, `UNWOUND`, `SETTLED`), its credit and its premium
+P&L before fees. Each leg's fills are also in `trades.csv`, and expiries in `settlements.csv`.
