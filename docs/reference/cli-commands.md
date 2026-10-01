@@ -87,7 +87,9 @@ Every `qkt` subcommand. Run `qkt <command> --help` for the authoritative flag li
   price behind every fill of a continuous stream; `settlements.csv`
   (`timestamp,strategy,contract,side,quantity,price,deliveryPriceKnown`) every position settled at a
   contract's expiry; `margin_daily.csv` (`date,marginUsed,maintenance,equity,marginCall`) each UTC
-  day's futures margin at its last sample, for days that ended holding positions with margin terms;
+  day's margin at its last sample, for days that ended holding positions with margin terms or options
+  (an option position counts its worst-case expiry loss, the one requirement the margin rule applies,
+  in both columns);
   `structures.csv` (`openedAt,closedAt,strategy,structure,alias,outcome,legs,credit,realized`) every
   option structure, with its legs as `SIDE quantity symbol @ entry`, its outcome (`CLOSED`, `UNWOUND`
   or `SETTLED`), its credit and its premium P&L before fees; times, outcome and amounts stay empty

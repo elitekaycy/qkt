@@ -21,12 +21,15 @@ data class MarginDay(
 /**
  * Samples the account's futures margin on every event it is told about ([onTime]) and keeps the
  * last sample of each UTC day, for `margin_daily.csv`. Only days that end holding a position with
- * margin terms produce a row. Equity comes from the supplier given to [bind].
+ * margin terms produce a row. Equity comes from the supplier given to [bind]. With [options], held
+ * option positions add their worst-case requirement ([OptionMargin]), the one amount the margin rule
+ * holds them to, to both the margin in use and maintenance.
  */
 class MarginDailySampler(
     private val margin: MarginModel,
     private val prices: MarketPriceProvider,
     private val positions: PositionProvider,
+    private val options: OptionMargin? = null,
 ) {
     private val days = mutableListOf<MarginDay>()
     private var equity: () -> BigDecimal = { BigDecimal.ZERO }
@@ -61,6 +64,18 @@ class MarginDailySampler(
             val price = prices.lastPrice(symbol) ?: position.avgEntryPrice
             used = used.add(margin.initial(symbol, position.quantity, price, nowMs))
             maintenance = maintenance.add(margin.maintenance(symbol, position.quantity, price, nowMs))
+            margined = true
+        }
+        val mark = { s: String -> prices.lastPrice(s) ?: positions.positionFor(s)?.avgEntryPrice }
+        val held =
+            positions.symbols().any {
+                options?.covers(it) == true &&
+                    positions.positionFor(it)?.quantity?.signum() != 0
+            }
+        val optionsRequired = options?.takeIf { held }?.requiredWithFills(emptyMap(), positions, mark)
+        if (optionsRequired is OptionMargin.Outcome.Required) {
+            used = used.add(optionsRequired.amount)
+            maintenance = maintenance.add(optionsRequired.amount)
             margined = true
         }
         return if (margined) MarginDay(date, used, maintenance, equity()) else null

@@ -4,6 +4,7 @@ import com.qkt.accounting.AccountingConfig
 import com.qkt.accounting.accountingEngine
 import com.qkt.accounting.margin.MarginDailySampler
 import com.qkt.accounting.margin.MarginModel
+import com.qkt.accounting.margin.OptionMargin
 import com.qkt.backtest.StructureLog
 import com.qkt.broker.continuous.ContractFillLog
 import com.qkt.broker.continuous.RollLedger
@@ -37,7 +38,13 @@ internal class ReplayBooks(
     val settlements = SettlementLog()
     val structures = StructureLog()
     val accounting = accountingEngine(accountingConfig, priceTracker, instruments)
-    val marginDaily = MarginDailySampler(MarginModel(instruments, accounting), priceTracker, positions)
+    val marginDaily =
+        MarginDailySampler(
+            MarginModel(instruments, accounting),
+            priceTracker,
+            positions,
+            instruments.options()?.let { OptionMargin(instruments) },
+        )
     val pnl = PnLCalculator(positions, priceTracker, instruments, accounting, markTimestamp = markTimestamp)
     val strategyPnL =
         StrategyPnL(
