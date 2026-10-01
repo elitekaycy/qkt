@@ -6,7 +6,6 @@ import com.qkt.cli.ExitCodes
 import com.qkt.derivatives.options.chain.ChainSnapshotStore
 import com.qkt.derivatives.options.chain.OptionTrade
 import com.qkt.derivatives.options.chain.TradeChainBuilder
-import com.qkt.instrument.OptionCatalogStore
 import com.qkt.instrument.OptionRoot
 import com.qkt.marketdata.store.DataRoot
 import com.qkt.marketdata.store.deribit.DeribitClient
@@ -21,7 +20,8 @@ import java.time.ZoneOffset
  * venue's trade history and writes one snapshot file per day (`chains/<VENUE>/<ROOT>/<day>.csv.gz`).
  * Each day reads trades from [Window.maxMarkAgeMs] before its start, so its file is the same however
  * the range was split; consecutive days pass that look-back along instead of fetching it twice. Days
- * already on disk are skipped. Needs the root under `options:` and its catalog (`--catalog`).
+ * already on disk are skipped. Needs the root under `options:` and its catalog (`--catalog`). With
+ * `--live` it instead adds one snapshot of the venue's book now ([ChainLiveFetch]).
  */
 internal object ChainFetch {
     private const val DAY_MS = 86_400_000L
@@ -46,12 +46,19 @@ internal object ChainFetch {
             System.err.println("qkt: --chains is available for ${DeribitClient.VENUE} option roots, not $target")
             return ExitCodes.USER_ERROR
         }
+        val dataRoot = DataRoot.forDataRoot(args.option("data-root"))
+        if (args.flag("live")) {
+            if (listOf("from", "to", "last", "every", "max-mark-age").any { args.option(it) != null }) {
+                System.err.println("qkt: --chains --live takes one snapshot now; it has no range or interval")
+                return ExitCodes.ARG_ERROR
+            }
+            return ChainLiveFetch.run(target, dataRoot)
+        }
         val (from, to) =
             resolveFetchRange(args.option("from"), args.option("to"), args.option("last"))
                 ?: return ExitCodes.ARG_ERROR
         val every = duration(args.option("every") ?: "1h", "every") ?: return ExitCodes.ARG_ERROR
         val maxAge = duration(args.option("max-mark-age") ?: "1d", "max-mark-age") ?: return ExitCodes.ARG_ERROR
-        val dataRoot = DataRoot.forDataRoot(args.option("data-root"))
         return run(target, dataRoot, Window(from, to, every, maxAge), LocalDate.now(ZoneOffset.UTC))
     }
 
@@ -85,12 +92,7 @@ internal object ChainFetch {
             System.err.println("qkt: chains are fetched for completed UTC days; --to must be before $today")
             return ExitCodes.USER_ERROR
         }
-        val root = declaredOptionRoot(target, dataRoot) ?: return ExitCodes.USER_ERROR
-        val catalog =
-            OptionCatalogStore(dataRoot).read(target) ?: run {
-                System.err.println("qkt: no option catalog for $target; run: qkt fetch $target --catalog")
-                return ExitCodes.USER_ERROR
-            }
+        val (root, catalog) = declaredOptionChain(target, dataRoot) ?: return ExitCodes.USER_ERROR
         val builder = TradeChainBuilder(catalog, window.maxMarkAgeMs)
         val store = ChainSnapshotStore(dataRoot)
         var carried = emptyList<OptionTrade>()

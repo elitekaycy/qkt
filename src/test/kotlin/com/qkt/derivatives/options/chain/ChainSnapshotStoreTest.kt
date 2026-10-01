@@ -105,4 +105,25 @@ class ChainSnapshotStoreTest {
         assertThatThrownBy { ChainSnapshot(root, at, listOf(q, q)) }.hasMessageContaining("repeats a contract")
         assertThatThrownBy { ChainSnapshot(root, at + 1, listOf(q)) }.hasMessageContaining("another instant")
     }
+
+    @Test
+    fun `appending a snapshot keeps the day's others and replaces one at the same instant`(
+        @TempDir dir: Path,
+    ) {
+        val store = ChainSnapshotStore(dir)
+        store.write(root, listOf(second))
+        val later =
+            ChainSnapshot(
+                root,
+                ms("2026-10-01T01:00:00Z"),
+                listOf(quote("2026-10-01T01:00:00Z", "BTC_USDC-2OCT26-92000-C", "0.4")),
+            )
+        val redo =
+            ChainSnapshot(root, second.atMs, listOf(quote("2026-10-01T00:00:00Z", "BTC_USDC-2OCT26-92000-C", "0.35")))
+
+        store.append(root, later)
+        store.append(root, redo)
+
+        assertThat(store.readDay(root, LocalDate.parse("2026-10-01"))).containsExactly(redo, later)
+    }
 }
