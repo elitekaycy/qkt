@@ -7,6 +7,7 @@ import java.math.BigDecimal
  * An engine order on a continuous stream, working on contract [contractIndex] under [venueId] in a venue
  * order [placed] for that quantity, with [filled] of the engine's order executed so far across every
  * venue order it worked under; an order re-placed at a roll works under `<engine id>~r<replacements>`.
+ * [cancelRequested] marks one the engine cancelled while its roll cancel was out: it is not re-placed.
  */
 internal data class ContinuousOrder(
     val request: OrderRequest,
@@ -15,6 +16,7 @@ internal data class ContinuousOrder(
     val replacements: Int = 0,
     val placed: BigDecimal = request.quantity,
     val filled: BigDecimal = BigDecimal.ZERO,
+    val cancelRequested: Boolean = false,
 ) {
     /** Whether this is the engine's order as first placed, not a re-placement made at a roll. */
     val isOriginal: Boolean get() = replacements == 0

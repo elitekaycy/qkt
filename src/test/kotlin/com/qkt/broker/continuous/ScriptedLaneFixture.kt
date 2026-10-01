@@ -107,6 +107,9 @@ internal class ScriptedLaneFixture(
         /** The order ids this venue knows when orders are recovered; null when it knows every one. */
         var knows: Set<String>? = null
 
+        /** Called while orders are recovered, before the venue answers: for answers the venue gives on the way. */
+        var onRecover: () -> Unit = {}
+
         /** Whether the session told this venue it is restored. */
         var ready = false
 
@@ -119,7 +122,11 @@ internal class ScriptedLaneFixture(
             return SubmitAck(request.id, null, accepted = true)
         }
 
+        /** Called with each order id whose cancel reaches the venue, before it is recorded. */
+        var onCancel: (String) -> Unit = {}
+
         override fun cancel(orderId: String) {
+            onCancel(orderId)
             cancels += orderId
         }
 
@@ -128,7 +135,9 @@ internal class ScriptedLaneFixture(
             bookedTickets: Set<String>,
         ): Set<String> {
             recovered += orders
-            return orders.map { it.id }.filterTo(LinkedHashSet()) { knows?.contains(it) ?: true }
+            val known = orders.map { it.id }.filterTo(LinkedHashSet()) { knows?.contains(it) ?: true }
+            onRecover()
+            return known
         }
 
         override fun watchBookedLegs(supplier: () -> List<BookedLeg>) {
@@ -162,6 +171,7 @@ internal class ScriptedLaneFixture(
         bus.subscribe<BrokerEvent.OrderFilled> { engine += it }
         bus.subscribe<BrokerEvent.OrderPartiallyFilled> { engine += it }
         bus.subscribe<BrokerEvent.OrderRejected> { engine += it }
+        bus.subscribe<BrokerEvent.OrderCancelled> { engine += it }
         tick("63010")
     }
 

@@ -14,7 +14,9 @@ import java.math.BigDecimal
  * the stream and is republished on [bus] in continuous space (the engine's order id, the stream's symbol,
  * prices mapped by the contract the order worked on), except the roll's own orders ([legs]). Every
  * execution, sliced or whole, roll legs too, is booked in the stream's contract [book] and in each
- * strategy's [positions] on the stream; a slice reaches the engine as the partial fill it is.
+ * strategy's [positions] on the stream; a slice reaches the engine as the partial fill it is, after the
+ * lane is [save]d, so a crash between the two cannot book it twice. A resting order's cancel at a roll,
+ * once confirmed, is handed to [pulled].
  */
 internal class LaneVenueEvents(
     private val bus: EventBus,
@@ -27,6 +29,8 @@ internal class LaneVenueEvents(
     private val positions: MutableMap<String, BigDecimal>,
     private val fills: ContractFillLog,
     private val space: (Int) -> PriceSpace,
+    private val save: () -> Unit,
+    private val pulled: (String) -> Unit,
 ) {
     private val chain: ContinuousChain get() = chainOf()
 
@@ -42,10 +46,14 @@ internal class LaneVenueEvents(
         }
         venueBus.subscribe<BrokerEvent.OrderRejected> { e -> if (!legs.onRejected(e)) onRejected(e) }
         venueBus.subscribe<BrokerEvent.OrderCancelled> { e ->
-            if (!legs.onCancelled(e)) {
-                orders.removeByVenueId(e.clientOrderId)?.let {
-                    bus.publish(e.copy(clientOrderId = it.request.id))
-                }
+            when {
+                legs.cancelConfirmed(e.clientOrderId) -> pulled(e.clientOrderId)
+                legs.onCancelled(e) -> Unit
+                else ->
+                    orders
+                        .removeByVenueId(
+                            e.clientOrderId,
+                        )?.let { bus.publish(e.copy(clientOrderId = it.request.id)) }
             }
         }
         venueBus.subscribe<BrokerEvent.OrderPartiallyFilled> { e ->
@@ -74,6 +82,7 @@ internal class LaneVenueEvents(
 
     private fun onPartiallyFilled(e: BrokerEvent.OrderPartiallyFilled) {
         val order = orders.fill(e.clientOrderId, e.quantity)
+        legs.slicedWhileCancelling(e.clientOrderId, e.quantity)
         val index = order?.contractIndex ?: contractIndexOf(e.symbol)
         positions.merge(e.strategyId, e.asFill().signedQuantity(), BigDecimal::add)
         val engineSlice =
@@ -84,11 +93,13 @@ internal class LaneVenueEvents(
                 cumulativeFilled = order?.filled ?: e.cumulativeFilled,
             )
         fills.record(contractFill(e.asFill(), engineSlice.asFill()))
+        save()
         bus.publish(engineSlice)
     }
 
     private fun onFilled(e: BrokerEvent.OrderFilled) {
         val order = orders.removeByVenueId(e.clientOrderId)
+        legs.forgetCancel(e.clientOrderId)
         val index = order?.contractIndex ?: contractIndexOf(e.symbol)
         positions.merge(e.strategyId, e.signedQuantity(), BigDecimal::add)
         val engineFill =
@@ -98,6 +109,7 @@ internal class LaneVenueEvents(
                 price = space(index).toContinuous(e.price),
             )
         fills.record(contractFill(e, engineFill))
+        save()
         bus.publish(engineFill)
     }
 

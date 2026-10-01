@@ -38,8 +38,8 @@ data class PersistedStreamStrategy(
 /**
  * An engine order working on the stream: the engine's [request] in continuous space, the id it works
  * under at the venue, the [contract] it works on, how many times a roll re-placed it, the quantity its
- * venue order was [placed] for, and how much of the engine's order has [filled] across every venue order
- * it worked under.
+ * venue order was [placed] for, how much of the engine's order has [filled] across every venue order it
+ * worked under, and whether the engine cancelled it while its roll cancel was out ([cancelRequested]).
  */
 data class PersistedStreamOrder(
     val request: OrderRequest,
@@ -48,6 +48,7 @@ data class PersistedStreamOrder(
     val replacements: Int,
     val placed: BigDecimal,
     val filled: BigDecimal,
+    val cancelRequested: Boolean,
 )
 
 /** One strategy's signed [quantity] on one [contract] at its average entry price, as the lane's venue account holds it. */

@@ -36,12 +36,13 @@ internal class RollExecutor(
     venue: ContractVenue,
     private val contractPrices: MarketPriceTracker,
     private val orders: ContinuousOrderMap,
-    legs: RollLegs,
+    private val legs: RollLegs,
     private val ledger: RollLedger,
     fills: ContractFillLog,
+    private val stops: Map<String, String>,
 ) {
     private val log = LoggerFactory.getLogger(RollExecutor::class.java)
-    private val restingOrders = RestingOrdersAtRoll(bus, clock, venue, orders, legs)
+    private val restingOrders = RestingOrdersAtRoll(bus, clock, chainOf, venue, orders, legs)
     private val carrying = RollCarry(clock, chainOf, venue, legs, fills, ::whenReady)
 
     /** The chain as it stands now: a live session extends it with each roll it measures. */
@@ -75,7 +76,7 @@ internal class RollExecutor(
         val stopped = "${chain.symbol} stopped: roll $from->$to at ${Instant.ofEpochMilli(measured.atMs)} failed"
         val holders = positions.filterValues { it.signum() != 0 }
         val resting = orders.on(fromIndex)
-        val untradeable = untradeable(fromIndex, toIndex)
+        val untradeable = chain.untradeableRoll(fromIndex, toIndex, clock.now())
         if (untradeable != null) {
             val reason = "$stopped ($untradeable)"
             log.error(reason)
@@ -113,6 +114,21 @@ internal class RollExecutor(
         resumeFrom(run, 0, done)
     }
 
+    /**
+     * The venue confirmed the cancel of the resting order under [venueId], pulled at a roll: while that roll
+     * is in flight its finish settles the order, after it the order is settled now, on contract [index].
+     */
+    fun pulled(
+        venueId: String,
+        index: Int,
+    ) {
+        if (inFlight) return
+        whenReady {
+            val order = orders.byVenueId(venueId) ?: return@whenReady
+            restingOrders.settle(order, stops[order.request.strategyId], index)
+        }
+    }
+
     /** The venue is back after a restart: what a restored roll held is done now, and nothing is held again. */
     fun ready() {
         val actions = held ?: return
@@ -128,7 +144,7 @@ internal class RollExecutor(
     ) {
         if (i == run.holders.size) return whenReady { finish(run, done) }
         when (val step = run.steps[run.holders[i].key]) {
-            null -> carryFrom(run, i, done)
+            null -> whenReady { carryFrom(run, i, done) }
             is CarryStep.Waiting -> carrying.resume(step, run) { carryFrom(run, i + 1, done) }
             is CarryStep.Carried, is CarryStep.Stopped -> resumeFrom(run, i + 1, done)
         }
@@ -155,13 +171,11 @@ internal class RollExecutor(
     ) {
         val to = chain.contractSymbol(run.toIndex)
         val space = chain.spaceFor(run.toIndex)
-        for (order in run.resting) {
-            // A restored roll may have re-placed or cancelled this order before the restart.
-            if (orders.byEngineId(order.request.id)?.venueId != order.venueId) continue
-            when (val reason = run.failed[order.request.strategyId]) {
-                null -> restingOrders.replace(order, run.toIndex, to, space)
-                else -> restingOrders.cancel(order, reason)
-            }
+        for (pulled in run.resting) {
+            // As it stands now: filled, or settled before a restart, it is gone; part-filled, it counts.
+            val order = orders.byVenueId(pulled.venueId) ?: continue
+            if (legs.isCancelAwaited(order.venueId)) continue
+            restingOrders.settle(order, run.failed[order.request.strategyId], run.toIndex)
         }
         val carried = run.carried.map { carrying.entry(run, it) }
         carried.forEach(ledger::record)
@@ -170,21 +184,5 @@ internal class RollExecutor(
         val costs = carried.map { CostIncurred(it.strategyId, chain.symbol, it.cost, cause, referencePrice) }
         this.run = null
         done(RollOutcome(stopped = run.failed, closes = run.closes, costs = costs))
-    }
-
-    /**
-     * Why positions cannot be carried from [fromIndex] to [toIndex] by trading, or null when they can:
-     * the stream skipped a whole contract, or the old contract expired before the stream traded again
-     * (the exchange settles it).
-     */
-    private fun untradeable(
-        fromIndex: Int,
-        toIndex: Int,
-    ): String? {
-        if (toIndex != fromIndex + 1) return "no data for ${toIndex - fromIndex - 1} contract(s) in between"
-        val expiry = chain.schedule.contracts[fromIndex].expiryMs
-        if (clock.now() < expiry) return null
-        val contract = chain.contractSymbol(fromIndex)
-        return "$contract expired at ${Instant.ofEpochMilli(expiry)} before the stream traded again"
     }
 }
