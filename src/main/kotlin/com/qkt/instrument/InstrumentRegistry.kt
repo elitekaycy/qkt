@@ -25,6 +25,9 @@ interface InstrumentRegistry {
     /** The run's declared futures, or null when this registry knows none. */
     fun futures(): FuturesDirectory? = null
 
+    /** The option contracts this registry catalogues, or null when it holds none. */
+    fun options(): OptionDirectory? = null
+
     /**
      * Returns the meta for [qktSymbol] or throws with a helpful message.
      *

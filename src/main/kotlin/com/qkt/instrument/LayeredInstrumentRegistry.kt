@@ -23,4 +23,6 @@ class LayeredInstrumentRegistry(
     override fun missingReason(qktSymbol: String): String? = layers.firstNotNullOfOrNull { it.missingReason(qktSymbol) }
 
     override fun futures(): FuturesDirectory? = layers.firstNotNullOfOrNull { it.futures() }
+
+    override fun options(): OptionDirectory? = layers.firstNotNullOfOrNull { it.options() }
 }
