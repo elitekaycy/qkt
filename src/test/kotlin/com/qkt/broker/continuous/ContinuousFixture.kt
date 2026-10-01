@@ -135,7 +135,7 @@ internal class ContinuousFixture(
             symbols = setOf(front),
             ledger = ledger,
             fills = fills,
-            venueFactory = { venueBus, prices ->
+            venueFactory = { venueBus, prices, _ ->
                 val fees = ContractFeeCommission(registry, NoCommission)
                 val exchange = ExchangeSimulator(venueBus, clock, prices, registry, InstrumentSlippage, fees)
                 val venue = if (refuseOpenLegs) RefusingOpenLegs(exchange, venueBus) else exchange

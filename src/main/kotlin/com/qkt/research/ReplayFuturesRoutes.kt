@@ -69,7 +69,7 @@ internal fun replayFuturesRoutes(
                         continuous,
                         books.rolls,
                         books.contractFills,
-                    ) { venueBus, prices ->
+                    ) { venueBus, prices, _ ->
                         exchange(venueBus, prices).let { ContractVenue(it, it::onTick) }
                     }
                 add(SymbolPattern.exactSet(continuous) to broker)
