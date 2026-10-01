@@ -27,6 +27,9 @@ internal class FakeGateway(
     private val sockets = CopyOnWriteArrayList<WebSocket>()
     private val dead = HashSet<String>()
 
+    /** Listing entries that replace the default option listing of their code (a future, say). */
+    val instruments = java.util.concurrent.ConcurrentHashMap<String, WireInstrument>()
+
     /** Closed bars by venue code and window; `GET /v1/bars` serves them [barsPage] at a time. */
     val bars = HashMap<Pair<String, Long>, List<WireBar>>()
     var barsPage = 2
@@ -102,7 +105,13 @@ internal class FakeGateway(
             path == "/v1/account" -> FakeWire.ok(FakeWire.ACCOUNT)
             path == "/v1/instruments" ->
                 FakeWire.ok(
-                    json.encodeToString(ListSerializer(WireInstrument.serializer()), codes.map(FakeWire::instrument)),
+                    json.encodeToString(
+                        ListSerializer(WireInstrument.serializer()),
+                        codes.map {
+                            instruments[it]
+                                ?: FakeWire.instrument(it)
+                        },
+                    ),
                 )
             path == "/v1/positions" ->
                 FakeWire.ok(

@@ -55,6 +55,7 @@ internal class FakeVenue(
         orders[clientOrderId] = order.copy(filledQuantity = filled.toPlainString(), status = status, updatedAt = time)
         emit("fill", fill)
         emit("order", orders.getValue(clientOrderId))
+        emit("position", positions().firstOrNull { it.symbol == order.symbol } ?: WirePosition(order.symbol, "0", "0"))
     }
 
     /** Ends [clientOrderId] at the venue, when it is still working. */
