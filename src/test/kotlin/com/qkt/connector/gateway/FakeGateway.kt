@@ -15,8 +15,8 @@ import okhttp3.mockwebserver.RecordedRequest
 /**
  * A VGP v1 gateway in a test, built from the wire spec over a [FakeVenue]: idempotent submits, lookups
  * by id (an id answered `404` is refused for ever), deal and settlement windows, a kill switch gating
- * every order that is not `reduce_only`, and a stream that replays its log after `since`. Tests drive it
- * with [venue], [reset], [killed], [unreachable], [failing], [login] and [codes].
+ * every order that is not `reduce_only`, a stream that replays its log after `since`, and [quotes].
+ * Tests drive it with [venue], [reset], [killed], [unreachable], [failing], [login] and [codes].
  */
 internal class FakeGateway(
     @Volatile var codes: List<String>,
@@ -26,6 +26,9 @@ internal class FakeGateway(
     private val log = CopyOnWriteArrayList<String>()
     private val sockets = CopyOnWriteArrayList<WebSocket>()
     private val dead = HashSet<String>()
+
+    /** The quotes socket. */
+    val quotes = FakeQuotes()
 
     /** The venue; change it through [act] so events stay in order. */
     val venue = FakeVenue { type, data -> emit(type, FakeWire.encode(data)) }
@@ -64,6 +67,7 @@ internal class FakeGateway(
 
     fun shutdown() {
         sockets.forEach { runCatching { it.close(1001, "gateway stopping") } }
+        quotes.drop()
         server.shutdown()
     }
 
@@ -100,55 +104,23 @@ internal class FakeGateway(
                 FakeWire.ok(
                     json.encodeToString(WirePositions.serializer(), WirePositions("netting", venue.positions())),
                 )
-            path == "/v1/deals" ->
-                FakeWire.ok(
-                    json.encodeToString(
-                        WireDeals.serializer(),
-                        WireDeals(
-                            venue.deals.filter {
-                                if (id !=
-                                    null
-                                ) {
-                                    it.clientOrderId == id
-                                } else {
-                                    inWindow(it.time)
-                                }
-                            },
-                        ),
-                    ),
-                )
-            path == "/v1/settlements" ->
-                FakeWire.ok(
-                    json.encodeToString(
-                        WireSettlements.serializer(),
-                        WireSettlements(
-                            venue.settlements.filter {
-                                if (symbol !=
-                                    null
-                                ) {
-                                    it.symbol == symbol
-                                } else {
-                                    inWindow(it.time)
-                                }
-                            },
-                        ),
-                    ),
-                )
-            path == "/v1/orders" && request.method == "GET" ->
-                FakeWire.ok(
-                    json.encodeToString(
-                        WireOrders.serializer(),
-                        WireOrders(
-                            venue.orders.values.filter {
-                                it.status ==
-                                    "working"
-                            },
-                        ),
-                    ),
-                )
+            path == "/v1/deals" -> {
+                val deals = venue.deals.filter { if (id != null) it.clientOrderId == id else inWindow(it.time) }
+                FakeWire.ok(json.encodeToString(WireDeals.serializer(), WireDeals(deals)))
+            }
+            path == "/v1/settlements" -> {
+                val settled =
+                    venue.settlements.filter { if (symbol != null) it.symbol == symbol else inWindow(it.time) }
+                FakeWire.ok(json.encodeToString(WireSettlements.serializer(), WireSettlements(settled)))
+            }
+            path == "/v1/orders" && request.method == "GET" -> {
+                val working = venue.orders.values.filter { it.status == "working" }
+                FakeWire.ok(json.encodeToString(WireOrders.serializer(), WireOrders(working)))
+            }
             path == "/v1/orders" -> submit(json.decodeFromString(WireSubmit.serializer(), request.body.readUtf8()))
             path.startsWith("/v1/orders/") -> byId(path.removePrefix("/v1/orders/"), request.method ?: "GET")
             path == "/v1/stream" -> stream(url.queryParameter("since")?.toLong())
+            path == "/v1/quotes" -> quotes.upgrade(url)
             else -> MockResponse().setResponseCode(404)
         }
     }

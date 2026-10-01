@@ -12,6 +12,7 @@ import com.qkt.connectivity.ConnectorSpec
 import com.qkt.connectivity.ProductType
 import com.qkt.connectivity.TradingAccount
 import com.qkt.marketdata.source.MarketSource
+import com.qkt.marketdata.source.SymbolPattern
 
 /**
  * Any venue served by a VGP v1 gateway (`docs/superpowers/specs/2026-10-01-vgp-v1-wire.md`): futures,
@@ -69,7 +70,12 @@ class GatewayTradingAccount internal constructor(
 
     override val tradingHours: SymbolCalendars = GatewaySettings.calendars(config)
 
-    override val marketData: MarketSource? = null
+    private val quotes =
+        GatewayMarketSource(config.symbolPrefix, settings.url, settings.apiKey, listing = { client.instruments() })
+
+    override val marketData: MarketSource = quotes
+
+    override val marketDataPattern: SymbolPattern = SymbolPattern(quotes::supports)
 
     override val orderEntry: BrokerFactory = { bus, clock, _, positions, strategyName ->
         GatewayBroker(opened.value, bus, clock, positions, strategyName, shared = strategies.size > 1)

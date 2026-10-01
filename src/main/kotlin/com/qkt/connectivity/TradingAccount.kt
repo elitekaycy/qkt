@@ -3,6 +3,7 @@ package com.qkt.connectivity
 import com.qkt.broker.BrokerFactory
 import com.qkt.common.SymbolCalendars
 import com.qkt.marketdata.source.MarketSource
+import com.qkt.marketdata.source.SymbolPattern
 
 /**
  * One login at one broker, exchange or prop firm, opened through a [Connector].
@@ -29,6 +30,9 @@ interface TradingAccount : AutoCloseable {
 
     /** Prices from this account's own feed, or null when the connector supplies none. */
     val marketData: MarketSource?
+
+    /** The symbols [marketData] is routed: the account's prefix, plus any feeds its connector derives from it. */
+    val marketDataPattern: SymbolPattern get() = SymbolPattern.prefix(symbolPrefix)
 
     /** When each of this account's symbols trades. */
     val tradingHours: SymbolCalendars

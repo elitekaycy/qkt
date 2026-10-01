@@ -20,7 +20,17 @@ internal object FakeWire {
         }
 
     /** An option instrument listed under [code]. */
-    fun instrument(code: String) = WireInstrument(code, "option", "USDC", "1", "5", "0.01", "0.01")
+    fun instrument(code: String) =
+        WireInstrument(
+            code,
+            "option",
+            "USDC",
+            "1",
+            "5",
+            "0.01",
+            "0.01",
+            underlying = code.substringBefore('-'),
+        )
 
     /** A `200` JSON answer. */
     fun ok(body: String) = MockResponse().setHeader("Content-Type", "application/json").setBody(body)
