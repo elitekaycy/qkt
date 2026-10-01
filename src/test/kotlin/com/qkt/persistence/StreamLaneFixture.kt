@@ -57,7 +57,8 @@ internal object StreamLaneFixture {
         venueId: String = request.id,
         contractIndex: Int = 3,
         replacements: Int = 0,
-    ) = PersistedStreamOrder(request, venueId, contractIndex, replacements)
+        filled: String = "0",
+    ) = PersistedStreamOrder(request, venueId, contractIndex, replacements, BigDecimal(filled))
 
     fun laneInFlight(): PersistedStreamLane {
         val limit =
@@ -108,7 +109,7 @@ internal object StreamLaneFixture {
                     PersistedStreamStrategy("meanrev", BigDecimal("3"), stopped = null),
                     PersistedStreamStrategy("swing", BigDecimal("-4"), stopped = null),
                 ),
-            orders = listOf(order(limit, venueId = "e-1~r1", contractIndex = 4, replacements = 1)),
+            orders = listOf(order(limit, venueId = "e-1~r1", contractIndex = 4, replacements = 1, filled = "0.4")),
             holdings =
                 listOf(
                     PersistedContractHolding(

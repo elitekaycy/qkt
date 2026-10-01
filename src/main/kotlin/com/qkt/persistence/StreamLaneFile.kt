@@ -120,12 +120,19 @@ internal data class StreamOrderDto(
     val venueId: String,
     val contractIndex: Int,
     val replacements: Int,
+    val filled: String,
 ) {
-    fun toDomain() = PersistedStreamOrder(request.toDomain(), venueId, contractIndex, replacements)
+    fun toDomain() = PersistedStreamOrder(request.toDomain(), venueId, contractIndex, replacements, BigDecimal(filled))
 
     companion object {
         fun of(o: PersistedStreamOrder) =
-            StreamOrderDto(encodeRequest(o.request), o.venueId, o.contractIndex, o.replacements)
+            StreamOrderDto(
+                encodeRequest(o.request),
+                o.venueId,
+                o.contractIndex,
+                o.replacements,
+                o.filled.toPlainString(),
+            )
 
         /** [request] on disk; a lane only works the order shapes a contract takes, so any other is a fault. */
         fun encodeRequest(request: OrderRequest): OrderRequestDto =
