@@ -266,9 +266,10 @@ untouched.
 
 `MarginModel` computes initial and maintenance margin for a position from `MarginTerms`
 (`basis: perContract | notional`). A pre-trade rule `MarginRequirement` refuses an order when
-`equity − marginUsed(after) < 0` and records a would-be margin call when equity falls below total
-maintenance. It is registered only when some traded symbol has margin terms, in both
-`ReplayRisk` and live risk assembly. Equity itself is not changed (one writer).
+`equity − marginUsed(after) < 0`; it sits in the shared pre-trade set of both `ReplayRisk` and live
+risk assembly and judges only instruments with margin terms (one lookup otherwise). Would-be margin
+calls (equity below total maintenance) are recorded per day in `margin_daily.csv`. Equity itself is
+not changed (one writer).
 
 ### 5.9 Daily settlement
 

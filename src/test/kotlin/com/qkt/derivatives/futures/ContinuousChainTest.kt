@@ -165,6 +165,16 @@ class ContinuousChainTest {
         assertThat(next.endsAtMs).isEqualTo(ms("2024-12-19T08:00:00Z"))
     }
 
+    @Test
+    fun `a next stream with too few contracts ends before it starts`() {
+        val one = catalog.copy(contracts = catalog.contracts.take(1))
+        val oneHistory = history.copy(rolls = emptyList())
+
+        assertThatThrownBy {
+            ContinuousChain(root, one, oneHistory, ContinuousSelector.NEXT)
+        }.isInstanceOf(IllegalArgumentException::class.java)
+    }
+
     /** The fixture's rolls measured under a roll at 00:00 on each expiry day. */
     private val history0 =
         RollHistory(
