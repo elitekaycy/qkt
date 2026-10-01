@@ -23,6 +23,9 @@ internal class StreamDeclParser(
      */
     fun parseStream(alias: String): StreamDecl {
         val broker = cursor.expect(TokenKind.IDENT, "expected broker prefix").lexeme
+        if (broker.equals(CHAIN_BROKER, ignoreCase = true) && broker != CHAIN_BROKER) {
+            cursor.error("write the chain analytics prefix as $CHAIN_BROKER, not '$broker'")
+        }
         cursor.expect(TokenKind.COLON, "expected ':' between broker and symbol")
         val symbol =
             if (broker.equals(HUB_BROKER, ignoreCase = true) || broker.equals(CHAIN_BROKER, ignoreCase = true)) {
@@ -99,7 +102,7 @@ internal class StreamDeclParser(
     private fun nameSegment(): String {
         val token = cursor.peek()
         require(token.lexeme.isNotEmpty() && token.lexeme.all { it.isLetterOrDigit() || it == '_' }) {
-            "expected a name segment in a hub dataset, got '${token.lexeme}'"
+            "expected a letters, digits or '_' name segment in a dotted HUB or CHAIN symbol, got '${token.lexeme}'"
         }
         cursor.advance()
         return token.lexeme

@@ -2,6 +2,7 @@ package com.qkt.backtest
 
 import com.qkt.candles.TimeWindow
 import com.qkt.common.TimeRange
+import com.qkt.derivatives.options.chain.ChainAnalyticsSymbol
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.MergingTickFeed
 import com.qkt.marketdata.Tick
@@ -87,6 +88,9 @@ internal object ReplayFeeds {
         forceBars: Boolean,
         positionSign: (String) -> Int = { 0 },
     ): TickFeed {
+        // A chain analytics stream has values only where the chain allows one; an empty stream is a
+        // stream whose rules never fire, not missing data (coverage of its chain days is checked at setup).
+        if (symbol.startsWith(ChainAnalyticsSymbol.PREFIX)) return SequenceTickFeed(source.ticks(symbol, range))
         val caps = source.capabilities
         val ticksAvailable = MarketSourceCapability.TICKS in caps
         // The `--bars` research tier forces synthesis from bars; otherwise prefer real ticks,
