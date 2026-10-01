@@ -50,4 +50,32 @@ class OptionCatalogFetchTest {
             OptionCatalogFetch.run("DERIBIT:ETH_USDC", dir) { _, _ -> error("not called") },
         ).isEqualTo(ExitCodes.USER_ERROR)
     }
+
+    @Test
+    fun `a refresh keeps contracts the venue no longer lists and takes fresh delivery prices`(
+        @TempDir dir: Path,
+    ) {
+        declare(dir)
+        val old = OptionListing("BTC_USDC-27SEP24-60000-C", "60000", "call", 1727424000000)
+        val new = OptionListing("BTC_USDC-27DEC24-90000-P", "90000", "put", 1735286400000)
+        OptionCatalogStore(dir).write(OptionCatalog("DERIBIT:BTC_USDC", listOf(old), mapOf("2024-09-27" to "1")))
+
+        OptionCatalogFetch.run("DERIBIT:BTC_USDC", dir) { _, _ ->
+            OptionCatalog("DERIBIT:BTC_USDC", listOf(new), mapOf("2024-09-27" to "65422.7"))
+        }
+
+        val merged = requireNotNull(OptionCatalogStore(dir).read("DERIBIT:BTC_USDC"))
+        assertThat(merged.contracts).containsExactly(old, new)
+        assertThat(merged.deliveryPrices).containsExactlyEntriesOf(mapOf("2024-09-27" to "65422.7"))
+    }
+
+    @Test
+    fun `a build that fails on bad data is a user error, not a crash`(
+        @TempDir dir: Path,
+    ) {
+        declare(dir)
+
+        assertThat(OptionCatalogFetch.run("DERIBIT:BTC_USDC", dir) { _, _ -> error("listed contract size 10") })
+            .isEqualTo(ExitCodes.USER_ERROR)
+    }
 }

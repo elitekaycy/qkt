@@ -2,6 +2,7 @@ package com.qkt.instrument
 
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardCopyOption
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
 
@@ -45,10 +46,12 @@ internal class RootFileStore<T>(
         return value
     }
 
-    /** Writes [value], replacing any previous file. */
+    /** Writes [value] through a temporary file moved into place, so a reader never sees half a file. */
     fun write(value: T) {
         val file = path(rootOf(value))
         Files.createDirectories(file.parent)
-        Files.writeString(file, json.encodeToString(serializer, value) + "\n")
+        val staged = file.resolveSibling("${file.fileName}.tmp")
+        Files.writeString(staged, json.encodeToString(serializer, value) + "\n")
+        Files.move(staged, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
     }
 }
