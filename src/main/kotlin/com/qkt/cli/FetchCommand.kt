@@ -2,6 +2,7 @@ package com.qkt.cli
 
 import com.qkt.candles.TimeWindow
 import com.qkt.cli.fetch.CatalogFetch
+import com.qkt.cli.fetch.ChainFetch
 import com.qkt.cli.fetch.OptionCatalogFetch
 import com.qkt.cli.fetch.RollsFetch
 import com.qkt.cli.fetch.buildFetcher
@@ -33,7 +34,8 @@ import java.time.ZoneOffset
  * - BACKTEST — refused; nothing to fetch (the local store IS the backtest source).
  *
  * `qkt fetch VENUE:ROOT --catalog` writes the root's futures contract catalog instead of bars, and
- * `qkt fetch VENUE:ROOT --rolls` measures its roll history from stored (and fetched) 1m bars.
+ * `qkt fetch VENUE:ROOT --rolls` measures its roll history from stored (and fetched) 1m bars, and
+ * `qkt fetch DERIBIT:ROOT --chains` builds an option root's chain snapshots from trade history.
  */
 class FetchCommand(
     private val args: Args,
@@ -58,6 +60,7 @@ class FetchCommand(
         val symbol = parts[1]
         if (args.flag("catalog")) return catalog(target, broker)
         if (args.flag("rolls")) return rolls(target, broker)
+        if (args.flag("chains")) return ChainFetch.run(target, args)
         val tfArg =
             try {
                 args.requireOption("tf")

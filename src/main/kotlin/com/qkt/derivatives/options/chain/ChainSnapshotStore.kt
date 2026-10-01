@@ -35,6 +35,12 @@ class ChainSnapshotStore(
             .resolve("$day.csv.gz")
     }
 
+    /** Whether [root]'s snapshots of [day] have been written. */
+    fun hasDay(
+        root: String,
+        day: LocalDate,
+    ): Boolean = Files.exists(path(root, day))
+
     /** Writes [snapshots] of [root], replacing the file of every UTC day they touch. */
     fun write(
         root: String,
