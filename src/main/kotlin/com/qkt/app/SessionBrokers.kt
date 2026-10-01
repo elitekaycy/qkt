@@ -6,8 +6,8 @@ import com.qkt.broker.CompositeBroker
 import com.qkt.broker.PaperBroker
 import com.qkt.bus.EventBus
 import com.qkt.common.Clock
-import com.qkt.derivatives.options.chain.ChainAnalyticsSymbol
 import com.qkt.derivatives.options.chain.OptionRootSymbol
+import com.qkt.derivatives.options.chain.isOptionFeed
 import com.qkt.dsl.ast.CHAIN_BROKER
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.marketdata.source.SymbolPattern
@@ -62,7 +62,7 @@ internal class SessionBrokers(
         // with factories configured, route by the session's BROKER:SYMBOL prefixes instead
         // of silently paper-filling (the same #139 failure mode, one layer up).
         if (dslStrategies.all { it.declaredStreams.isEmpty() }) {
-            for (sym in symbols.filterNot(::isReadOnlyFeed)) {
+            for (sym in symbols.filterNot(::isOptionFeed)) {
                 val label = sym.substringBefore(':', "").lowercase()
                 if (label.isNotEmpty()) brokerSymbols.getOrPut(label) { mutableSetOf() }.add(sym)
             }
@@ -123,7 +123,4 @@ internal class SessionBrokers(
     }
 
     private fun venueLabel(root: OptionRootSymbol): String = root.root.substringBefore(':').lowercase()
-
-    private fun isReadOnlyFeed(symbol: String): Boolean =
-        symbol.startsWith(OptionRootSymbol.PREFIX) || symbol.startsWith(ChainAnalyticsSymbol.PREFIX)
 }
