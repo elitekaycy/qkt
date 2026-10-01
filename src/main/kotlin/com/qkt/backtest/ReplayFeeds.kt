@@ -3,6 +3,7 @@ package com.qkt.backtest
 import com.qkt.candles.TimeWindow
 import com.qkt.common.TimeRange
 import com.qkt.derivatives.options.chain.ChainAnalyticsSymbol
+import com.qkt.derivatives.options.chain.OptionRootSymbol
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.MergingTickFeed
 import com.qkt.marketdata.Tick
@@ -28,8 +29,11 @@ internal object ReplayFeeds {
         forceBars: Boolean,
         positionSign: (String) -> Int,
     ): TickFeed {
+        // A fed option root (OPTIONS:<VENUE>.<ROOT>) carries every contract of the root; a contract of a
+        // fed root is never fed a second time, so each of its quotes arrives once.
+        val fedRoots = symbols.mapNotNull { OptionRootSymbol.parse(it).getOrNull() }
         val perSymbolFeeds: List<TickFeed> =
-            symbols.map { sym ->
+            symbols.filterNot { sym -> fedRoots.any { it.covers(sym) } }.map { sym ->
                 replayFeed(source, sym, range, barWindows[sym] ?: candleWindow, forceBars, positionSign)
             }
         return if (perSymbolFeeds.size == 1) perSymbolFeeds[0] else MergingTickFeed(perSymbolFeeds)
@@ -90,7 +94,9 @@ internal object ReplayFeeds {
     ): TickFeed {
         // A chain analytics stream has values only where the chain allows one; an empty stream is a
         // stream whose rules never fire, not missing data (coverage of its chain days is checked at setup).
-        if (symbol.startsWith(ChainAnalyticsSymbol.PREFIX)) return SequenceTickFeed(source.ticks(symbol, range))
+        if (symbol.startsWith(ChainAnalyticsSymbol.PREFIX) || symbol.startsWith(OptionRootSymbol.PREFIX)) {
+            return SequenceTickFeed(source.ticks(symbol, range))
+        }
         val caps = source.capabilities
         val ticksAvailable = MarketSourceCapability.TICKS in caps
         // The `--bars` research tier forces synthesis from bars; otherwise prefer real ticks,

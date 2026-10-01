@@ -12,6 +12,7 @@ import com.qkt.dsl.ast.CloseAll
 import com.qkt.dsl.ast.HUB_BROKER
 import com.qkt.dsl.ast.Latch
 import com.qkt.dsl.ast.Log
+import com.qkt.dsl.ast.OPTIONS_BROKER
 import com.qkt.dsl.ast.OcoEntry
 import com.qkt.dsl.ast.Resize
 import com.qkt.dsl.ast.Sell
@@ -31,7 +32,8 @@ internal fun readOnlyAliases(
             it.broker == "MACRO" ||
                 it.broker == SeriesSymbols.BROKER ||
                 it.broker.equals(HUB_BROKER, ignoreCase = true) ||
-                it.broker.equals(CHAIN_BROKER, ignoreCase = true)
+                it.broker.equals(CHAIN_BROKER, ignoreCase = true) ||
+                it.broker.equals(OPTIONS_BROKER, ignoreCase = true)
         }.keys + datasetAliases
 
 /** Rejects, at compile time, any order action (including nested ON_FILL and exit hooks) on a read-only alias. */

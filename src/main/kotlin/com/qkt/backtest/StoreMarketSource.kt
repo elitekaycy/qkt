@@ -3,6 +3,7 @@ package com.qkt.backtest
 import com.qkt.common.FixedClock
 import com.qkt.derivatives.futures.ContinuousChains
 import com.qkt.derivatives.options.chain.ChainAnalyticsSymbol
+import com.qkt.derivatives.options.chain.OptionRootSymbol
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.NoopInstrumentRegistry
 import com.qkt.instrument.optionSymbols
@@ -16,6 +17,7 @@ import com.qkt.marketdata.source.LocalMarketSource
 import com.qkt.marketdata.source.MacroMarketSource
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.marketdata.source.OptionChainMarketSource
+import com.qkt.marketdata.source.OptionRootMarketSource
 import com.qkt.marketdata.source.SymbolPattern
 import com.qkt.marketdata.store.BinaryBarStore
 import com.qkt.marketdata.store.DataStore
@@ -79,6 +81,15 @@ internal fun storeMarketSource(
                 require(problems.isEmpty()) { "chain analytics problems:\n  " + problems.joinToString("\n  ") }
                 add(SymbolPattern.prefix(ChainAnalyticsSymbol.PREFIX) to ChainAnalyticsMarketSource(instruments))
             }
+            val fedRoots = symbols.filter { it.startsWith(OptionRootSymbol.PREFIX) }
+            if (fedRoots.isNotEmpty()) {
+                val problems =
+                    fedRoots.mapNotNull { s ->
+                        OptionRootSymbol.parse(s).fold({ optionRootProblem(s, it.root, instruments) }, { it.message })
+                    }
+                require(problems.isEmpty()) { "option root feed problems:\n  " + problems.joinToString("\n  ") }
+                add(SymbolPattern.prefix(OptionRootSymbol.PREFIX) to OptionRootMarketSource(instruments))
+            }
             if (symbols.any { it.startsWith("MACRO:") }) {
                 add(SymbolPattern.prefix("MACRO:") to MacroMarketSource(MacroSeriesStore(store.root)))
             }
@@ -106,14 +117,20 @@ private fun chainStreamProblem(
     instruments: InstrumentRegistry,
 ): String? {
     val stream = ChainAnalyticsSymbol.parse(symbol).getOrElse { return it.message }
+    return optionRootProblem(symbol, stream.root, instruments)
+}
+
+/** Why [symbol], which reads option root [root]'s chain, cannot run, or null. */
+private fun optionRootProblem(
+    symbol: String,
+    root: String,
+    instruments: InstrumentRegistry,
+): String? {
     val options = instruments.options()
-    val root = options?.root(stream.root) ?: return "${stream.root} of $symbol is not declared under options:"
+    val declared = options?.root(root) ?: return "$root of $symbol is not declared under options:"
     return when {
-        root.chains == null -> "${stream.root} of $symbol declares no chain series (chains: trade | book)"
-        options
-            .listings(
-                root.root,
-            ).isEmpty() -> "${stream.root} of $symbol has no catalog; run: qkt fetch ${root.root} --catalog"
+        declared.chains == null -> "$root of $symbol declares no chain series (chains: trade | book)"
+        options.listings(root).isEmpty() -> "$root of $symbol has no catalog; run: qkt fetch $root --catalog"
         else -> null
     }
 }

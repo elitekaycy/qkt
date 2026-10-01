@@ -11,6 +11,9 @@ const val HUB_BROKER: String = "HUB"
 /** The broker prefix of option chain analytics streams (`CHAIN:DERIBIT.BTC_USDC.atm_iv.30d`). */
 const val CHAIN_BROKER: String = "CHAIN"
 
+/** The broker prefix of whole option root feeds (`OPTIONS:DERIBIT.BTC_USDC`). */
+const val OPTIONS_BROKER: String = "OPTIONS"
+
 /** Well-known broker/symbol identity used for synthetic DSL series streams. */
 object SeriesSymbols {
     const val BROKER: String = "SERIES"

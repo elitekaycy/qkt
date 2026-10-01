@@ -2,6 +2,7 @@ package com.qkt.dsl.parse
 
 import com.qkt.dsl.ast.CHAIN_BROKER
 import com.qkt.dsl.ast.HUB_BROKER
+import com.qkt.dsl.ast.OPTIONS_BROKER
 import com.qkt.dsl.ast.SeriesDecl
 import com.qkt.dsl.ast.SeriesSource
 import com.qkt.dsl.ast.StreamDecl
@@ -23,12 +24,16 @@ internal class StreamDeclParser(
      */
     fun parseStream(alias: String): StreamDecl {
         val broker = cursor.expect(TokenKind.IDENT, "expected broker prefix").lexeme
-        if (broker.equals(CHAIN_BROKER, ignoreCase = true) && broker != CHAIN_BROKER) {
-            cursor.error("write the chain analytics prefix as $CHAIN_BROKER, not '$broker'")
+        for (reserved in listOf(CHAIN_BROKER, OPTIONS_BROKER)) {
+            if (broker.equals(reserved, ignoreCase = true) &&
+                broker != reserved
+            ) {
+                cursor.error("write the prefix as $reserved, not '$broker'")
+            }
         }
         cursor.expect(TokenKind.COLON, "expected ':' between broker and symbol")
         val symbol =
-            if (broker.equals(HUB_BROKER, ignoreCase = true) || broker.equals(CHAIN_BROKER, ignoreCase = true)) {
+            if (broker.equals(HUB_BROKER, ignoreCase = true) || broker == CHAIN_BROKER || broker == OPTIONS_BROKER) {
                 parseDottedSymbol()
             } else {
                 val name = cursor.expect(TokenKind.IDENT, "expected symbol after ':'").lexeme
@@ -102,7 +107,7 @@ internal class StreamDeclParser(
     private fun nameSegment(): String {
         val token = cursor.peek()
         require(token.lexeme.isNotEmpty() && token.lexeme.all { it.isLetterOrDigit() || it == '_' }) {
-            "expected a letters, digits or '_' name segment in a dotted HUB or CHAIN symbol, got '${token.lexeme}'"
+            "expected a letters, digits or '_' name segment in a dotted HUB, CHAIN or OPTIONS symbol, got '${token.lexeme}'"
         }
         cursor.advance()
         return token.lexeme
