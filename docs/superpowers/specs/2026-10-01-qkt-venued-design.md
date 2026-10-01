@@ -62,6 +62,7 @@ interface VenueAdapter : AutoCloseable {
     fun orderByLabel(clientOrderId: String): VenueOrder?   // venue lookup by our id; null = venue never saw it
     fun fills(fromMs: Long, toMs: Long): List<VenueFill>   // executions with venue fill ids and costs
     fun settlements(fromMs: Long, toMs: Long): List<VenueSettlement>
+    fun bars(code: String, windowMs: Long, fromMs: Long, toMs: Long): List<VenueBar>  // closed bars (venue klines)
     fun subscribeQuotes(codes: Set<String>, roots: Set<String>)  // pushes arrive on the listener
 }
 

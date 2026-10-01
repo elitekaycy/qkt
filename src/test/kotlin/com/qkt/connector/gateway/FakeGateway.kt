@@ -27,6 +27,10 @@ internal class FakeGateway(
     private val sockets = CopyOnWriteArrayList<WebSocket>()
     private val dead = HashSet<String>()
 
+    /** Closed bars by venue code and window; `GET /v1/bars` serves them [barsPage] at a time. */
+    val bars = HashMap<Pair<String, Long>, List<WireBar>>()
+    var barsPage = 2
+
     /** The quotes socket. */
     val quotes = FakeQuotes()
 
@@ -121,6 +125,7 @@ internal class FakeGateway(
             path.startsWith("/v1/orders/") -> byId(path.removePrefix("/v1/orders/"), request.method ?: "GET")
             path == "/v1/stream" -> stream(url.queryParameter("since")?.toLong())
             path == "/v1/quotes" -> quotes.upgrade(url)
+            path == "/v1/bars" -> bars(url)
             else -> MockResponse().setResponseCode(404)
         }
     }
@@ -147,6 +152,20 @@ internal class FakeGateway(
         }
         val order = if (method == "DELETE") venue.cancel(id) else venue.orders.getValue(id)
         return FakeWire.ok(json.encodeToString(WireOrder.serializer(), order))
+    }
+
+    private fun bars(url: okhttp3.HttpUrl): MockResponse {
+        val window = requireNotNull(url.queryParameter("window_ms")).toLong()
+        val from = requireNotNull(url.queryParameter("from")).toLong()
+        val to = requireNotNull(url.queryParameter("to")).toLong()
+        val all =
+            bars[requireNotNull(url.queryParameter("symbol")) to window].orEmpty().filter {
+                it.start in
+                    from until to
+            }
+        val page = all.take(barsPage)
+        val next = all.getOrNull(barsPage)?.start
+        return FakeWire.ok(json.encodeToString(WireBars.serializer(), WireBars(page, next)))
     }
 
     private fun stream(since: Long?): MockResponse =

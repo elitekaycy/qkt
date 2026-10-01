@@ -20,26 +20,31 @@ designs it. **Builds on:** `ContinuousChain`, `AdjustmentChain`, `RollHistoryBui
 ### 2.1 Rolls measured live (the adjustment past the last measured roll)
 
 `ContinuousChain` maps contracts only up to the last roll in `RollHistory`; asking further fails. A
-roll that happens while live is measured the way `RollHistoryBuilder` measures history: each
-contract's last 1-minute close at or before the roll instant. Live, those closes come from the
-session's own candles of both contracts, so the lane subscribes the next contract from `leadMs`
-(default 1 day) before the roll. At the roll instant the lane:
-1. reads both closes (missing either: the roll cannot be priced, the stream stops taking new orders and
-   alerts, as `RollExecutor` already does for an unpriceable roll),
+roll that happens while live is measured by the rule `RollHistoryBuilder` applies to history: each
+contract's last 1-minute close at or before the roll instant. History is built from the venue's own
+1-minute klines (Binance's daily kline files, published after the day), so live reads the same klines
+from the venue through the gateway's `GET /v1/bars` (wire spec §3), which exist minutes after the roll
+rather than a day. At the roll instant the lane:
+1. waits for both contracts' 1-minute bar that closes at the roll instant, reads them through the
+   account's bars (missing either after a bounded wait: the roll cannot be priced, the stream stops
+   taking new orders and alerts, as `RollExecutor` already does for an unpriceable roll),
 2. appends the `RollRecord` to the root's history through `RollHistoryStore` (atomic write) and
    rebuilds the chain from it, then
 3. carries positions and orders (`RollExecutor`), with the measured prices as the reference.
 
-The appended record is exactly what `qkt fetch <root> --rolls` would compute from the same bars, so a
-backtest run later over that period gets the same adjustment (a test pins this: a live roll's record
-equals the builder's on the recorded bars).
+Because the live record reads the same klines by the same rule, it equals the record `qkt fetch <root>
+--rolls` computes later from the published files (a test pins this on recorded klines), so a backtest
+over that period gets the same adjustment. Session candles built from quotes are never used for it:
+they are not the venue's traded klines.
 
 ### 2.2 Market data in continuous space
 
-A `ContinuousLiveFeed` wraps the account's live source: it subscribes the front contract (and the next
-from `leadMs` before a roll), maps each contract tick into the series with the contract's
-`PriceSpace`, re-stamps it with the continuous symbol, and switches at the roll instant. Contract ticks
-of the next contract before the roll feed the lane (for roll pricing) but never the strategy.
+A `ContinuousLiveFeed` wraps the account's live source: it subscribes the front contract, and the
+next one from `leadMs` (default 1 hour) before a roll so its quotes are flowing when the stream
+switches to it; it maps each front-contract tick into the series with the contract's `PriceSpace`,
+re-stamps it with the continuous symbol, and switches at the roll instant. The next contract's ticks
+before the roll feed the lane's venue (its marks and stops) but never the strategy; roll pricing uses
+bars, not ticks (2.1).
 
 ### 2.3 Orders through the gateway, per stream
 

@@ -1,10 +1,15 @@
 package com.qkt.connector.gateway
 
+import com.qkt.candles.TimeWindow
+import com.qkt.common.TimeRange
 import com.qkt.derivatives.options.chain.OptionRootSymbol
+import com.qkt.marketdata.Candle
 import com.qkt.marketdata.TickFeed
 import com.qkt.marketdata.live.LiveTickFeed
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.marketdata.source.MarketSourceCapability
+import com.qkt.marketdata.source.UnsupportedDataException
+import java.math.BigDecimal
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.slf4j.LoggerFactory
 
@@ -15,6 +20,8 @@ import org.slf4j.LoggerFactory
  * quote becomes one tick ([gatewayQuoteTick]). [listing] is read once per subscription to check every
  * requested contract and root is listed: an unknown one fails the subscription rather than staying silent.
  * The quotes of a fed root also go to [recorderFor] the root (`DERIBIT:BTC_USDC`), when it records one.
+ * Closed bars of a contract come from `GET /v1/bars` through [bars] (live warmup reads them); a whole
+ * option root has none.
  */
 internal class GatewayMarketSource(
     private val prefix: String,
@@ -22,15 +29,44 @@ internal class GatewayMarketSource(
     private val apiKey: String,
     private val listing: () -> List<WireInstrument>,
     private val recorderFor: (String) -> ((WireQuote) -> Unit)? = { null },
+    private val bars: (code: String, windowMs: Long, fromMs: Long, toMs: Long) -> List<WireBar> = { _, _, _, _ ->
+        emptyList()
+    },
 ) : MarketSource {
     private val rootPrefix = OptionRootSymbol.PREFIX + prefix.removeSuffix(":") + "."
 
     private val log = LoggerFactory.getLogger(GatewayMarketSource::class.java)
 
     override val name: String = "gateway"
-    override val capabilities: Set<MarketSourceCapability> = setOf(MarketSourceCapability.LIVE_TICKS)
+    override val capabilities: Set<MarketSourceCapability> =
+        setOf(MarketSourceCapability.LIVE_TICKS, MarketSourceCapability.BARS)
 
     override fun supports(symbol: String): Boolean = symbol.startsWith(prefix) || symbol.startsWith(rootPrefix)
+
+    override fun bars(
+        symbol: String,
+        window: TimeWindow,
+        range: TimeRange,
+    ): Sequence<Candle> {
+        val ms = window.durationMs
+        if (!symbol.startsWith(prefix) || ms % MINUTE_MS != 0L || DAY_MS % ms != 0L) {
+            throw UnsupportedDataException(MarketSourceCapability.BARS, "gateway bars of $symbol every $ms ms")
+        }
+        val listed = GatewaySymbols(prefix).apply { update(listing().map { it.code }) }
+        val code = requireNotNull(listed.code(symbol)) { "gateway does not list $symbol" }
+        return bars(code, ms, range.from.toEpochMilli(), range.to.toEpochMilli()).asSequence().map {
+            Candle(
+                symbol,
+                BigDecimal(it.open),
+                BigDecimal(it.high),
+                BigDecimal(it.low),
+                BigDecimal(it.close),
+                BigDecimal(it.volume),
+                it.start,
+                it.start + ms,
+            )
+        }
+    }
 
     override fun liveTicks(symbols: List<String>): TickFeed {
         require(symbols.all(::supports)) { "gateway $prefix does not serve ${symbols.filterNot(::supports)}" }
@@ -66,6 +102,9 @@ internal class GatewayMarketSource(
     }
 
     private companion object {
+        const val MINUTE_MS = 60_000L
+        const val DAY_MS = 86_400_000L
+
         const val UNRECORDED =
             "option root {} is fed live but declares no book chain series (chains: book): nothing records " +
                 "its live chain, so structures and chain metrics see only snapshots written elsewhere"
