@@ -1,6 +1,7 @@
 package com.qkt.cli
 
 import com.qkt.instrument.InstrumentMeta
+import com.qkt.instrument.VenueInstrumentSpec
 import com.qkt.instrument.YamlInstrumentRegistry
 import java.math.BigDecimal
 import java.nio.file.Files
@@ -13,15 +14,17 @@ class InstrumentsPullTest {
     private fun spec(
         symbol: String,
         contract: String,
-    ) = InstrumentMeta(
-        qktSymbol = symbol,
-        contractSize = BigDecimal(contract),
-        volumeStep = BigDecimal("0.01"),
-        volumeMin = BigDecimal("0.01"),
-        volumeMax = BigDecimal("50"),
-        pointSize = BigDecimal("0.01"),
-        digits = 2,
-        tradeStopsLevelPoints = 0,
+    ) = VenueInstrumentSpec(
+        InstrumentMeta(
+            qktSymbol = symbol,
+            contractSize = BigDecimal(contract),
+            volumeStep = BigDecimal("0.01"),
+            volumeMin = BigDecimal("0.01"),
+            volumeMax = BigDecimal("50"),
+            pointSize = BigDecimal("0.01"),
+            digits = 2,
+            tradeStopsLevelPoints = 0,
+        ),
     )
 
     @Test
@@ -43,7 +46,11 @@ class InstrumentsPullTest {
         @TempDir dir: Path,
     ) {
         val file = dir.resolve("instruments.yaml")
-        val specs = listOf(spec("BACKTEST:US500", "1").copy(currency = "USD"), spec("BACKTEST:BTCUSD", "1"))
+        val specs =
+            listOf(
+                spec("BACKTEST:US500", "1").let { it.copy(meta = it.meta.copy(currency = "USD")) },
+                spec("BACKTEST:BTCUSD", "1"),
+            )
 
         Files.writeString(file, InstrumentsPull.render(specs, source = "test"))
 
@@ -90,8 +97,13 @@ class InstrumentsPullTest {
         val before = listOf(spec("BACKTEST:BTCUSD", "1"), spec("BACKTEST:XAUUSD", "100"))
         Files.writeString(file, InstrumentsPull.render(before, source = "test"))
 
-        val merged = InstrumentsPull.merge(file, listOf(spec("BACKTEST:BTCUSD", "10"), spec("BACKTEST:ETHUSD", "1")))
+        InstrumentsPull.write(
+            file,
+            listOf(spec("BACKTEST:BTCUSD", "10"), spec("BACKTEST:ETHUSD", "1")),
+            source = "test",
+        )
 
+        val merged = YamlInstrumentRegistry.load(file).all()
         assertThat(merged.map { it.qktSymbol }).containsExactly("BACKTEST:BTCUSD", "BACKTEST:ETHUSD", "BACKTEST:XAUUSD")
         assertThat(merged.first().contractSize).isEqualByComparingTo("10")
     }
