@@ -2,9 +2,9 @@ package com.qkt.cli.fetch
 
 import com.qkt.cli.ExitCodes
 import com.qkt.derivatives.options.chain.ChainSnapshotStore
-import com.qkt.derivatives.options.chain.QuoteSource
 import com.qkt.instrument.OptionCatalog
 import com.qkt.instrument.OptionRoot
+import com.qkt.instrument.QuoteSource
 import com.qkt.marketdata.store.deribit.DeribitBookSnapshot
 import com.qkt.marketdata.store.deribit.DeribitClient
 import java.io.IOException

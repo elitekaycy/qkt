@@ -1,9 +1,9 @@
 package com.qkt.marketdata.store.deribit
 
-import com.qkt.derivatives.options.chain.QuoteSource
 import com.qkt.instrument.OptionCatalog
 import com.qkt.instrument.OptionListing
 import com.qkt.instrument.OptionRoot
+import com.qkt.instrument.QuoteSource
 import com.qkt.instrument.TickSteps
 import java.math.BigDecimal
 import okhttp3.mockwebserver.MockResponse
