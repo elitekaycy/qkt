@@ -2,6 +2,7 @@ package com.qkt.risk.rules
 
 import com.qkt.accounting.AccountingEngine
 import com.qkt.accounting.margin.MarginModel
+import com.qkt.accounting.margin.OptionMargin
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.NoopInstrumentRegistry
 import com.qkt.marketdata.MarketPriceProvider
@@ -40,6 +41,9 @@ object PreTradeControls {
             MaxOrderQty(maxOrderQty),
             MaxOrderNotional(maxOrderNotional, prices, instruments, accounting),
             PriceCollar(priceCollarFrac, prices),
-            equity?.let { MarginRequirement(MarginModel(instruments, accounting), prices, it) },
+            equity?.let {
+                val options = instruments.options()?.let { OptionMargin(instruments) }
+                MarginRequirement(MarginModel(instruments, accounting), prices, options, it)
+            },
         )
 }
