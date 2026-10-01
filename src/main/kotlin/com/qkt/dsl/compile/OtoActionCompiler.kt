@@ -65,7 +65,11 @@ internal class OtoActionCompiler(
                         skipLog.skipped("OTO parent entry price", ctx, stream)
                         return@oto emptyList()
                     }
-            val qty = compiledSize.evaluate(ctx, entry)
+            val qty =
+                compiledSize.evaluate(ctx, entry) ?: run {
+                    skipLog.skipped("OTO parent size", ctx, stream)
+                    return@oto emptyList()
+                }
             val parentReq =
                 compiledOrderType.buildRequest.evaluate(ctx, ids.next(), symbol, side, qty, tif, "", ts)
                     ?: run {
@@ -126,7 +130,7 @@ internal class OtoActionCompiler(
         return CompiledOtoChild { childCtx, ts ->
             val sym = childCtx.streams[childStream]?.qktSymbol ?: error("Unknown stream alias: $childStream")
             val childEntry = compiledOrderType.entryPrice.evaluate(childCtx) ?: return@CompiledOtoChild null
-            val childQty = compiledSize.evaluate(childCtx, childEntry)
+            val childQty = compiledSize.evaluate(childCtx, childEntry) ?: return@CompiledOtoChild null
             compiledOrderType.buildRequest.evaluate(childCtx, ids.next(), sym, childSide, childQty, childTif, "", ts)
         }
     }

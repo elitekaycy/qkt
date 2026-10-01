@@ -16,10 +16,14 @@ internal fun compileMarketFastPath(
     exprCompiler: ExprCompiler,
 ): (EvalContext) -> List<Signal> {
     val qtyExpr = exprCompiler.compile(sizing.expr)
-    return { ctx ->
+    return ret@{ ctx ->
         val symbol = ctx.streams[stream]?.qktSymbol ?: error("Unknown stream alias: $stream")
         val v = qtyExpr.evaluate(ctx)
-        require(v is Value.Num) { "SIZING must be numeric, got $v" }
+        if (v !is Value.Num || v.v.signum() <= 0) {
+            return@ret listOf(
+                Signal.Suppressed(symbol = symbol, reason = "SIZING for '$stream' is $v, not a positive quantity"),
+            )
+        }
         val sig = if (side == Side.BUY) Signal.Buy(symbol, v.v) else Signal.Sell(symbol, v.v)
         listOf(sig)
     }
