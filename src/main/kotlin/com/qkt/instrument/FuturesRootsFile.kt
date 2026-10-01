@@ -89,9 +89,9 @@ object FuturesRootsFile {
                     )
                 },
             slippageTicks =
-                entry["slippageTicks"]?.let { fields.wholeNumber(it.toString(), "slippageTicks", name) } ?: 0,
+                entry["slippageTicks"]?.let { fields.wholeNumber(name, "slippageTicks", it.toString()) } ?: 0,
             expiryGuardHours =
-                entry["expiryGuardHours"]?.let { fields.wholeNumber(it.toString(), "expiryGuardHours", name) } ?: 24,
+                entry["expiryGuardHours"]?.let { fields.wholeNumber(name, "expiryGuardHours", it.toString()) } ?: 24,
         ).also { validate(it, name) }
     }
 

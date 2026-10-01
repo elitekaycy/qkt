@@ -18,9 +18,9 @@ internal class RootFields(
 
     /** [raw] as a whole number ≥ 0, or a failure naming [key] of root [name]. */
     fun wholeNumber(
-        raw: String,
-        key: String,
         name: String,
+        key: String,
+        raw: String,
     ): Int =
         raw.toIntOrNull()?.takeIf { it >= 0 } ?: error("$kind root $name: $key must be a whole number >= 0, got '$raw'")
 
