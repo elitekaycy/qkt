@@ -241,7 +241,9 @@ class TradingPipeline(
         candleCloser =
             CandleWindowCloser(windowAggregator, candleHub, replayCandleCloseGraceMs, replayHeartbeatIntervalMs)
         tickIngest =
-            TickIngest(engine, marketDataGate, equitySampler, candleCloser, candleHub, scheduleRunner, mode)
+            TickIngest(engine, marketDataGate, equitySampler, candleCloser, candleHub, scheduleRunner, mode) { symbol ->
+                instruments.options()?.optionRoot(symbol) != null
+            }
         bus.subscribe<WarmupTickEvent> { e -> priceTracker.update(e.tick) }
         bus.subscribe<CandleEvent> { e -> preCandle(e.candle) }
         strategyBinder.bindAll(strategies)

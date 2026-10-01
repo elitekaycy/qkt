@@ -6,14 +6,12 @@ import com.qkt.accounting.VenueCost
 import com.qkt.broker.exchange.Settlement
 import com.qkt.broker.exchange.SettlementLog
 import com.qkt.bus.EventBus
-import com.qkt.common.Money
 import com.qkt.common.Side
+import com.qkt.derivatives.options.OptionPayoff
 import com.qkt.events.BrokerEvent
 import com.qkt.execution.ExitReason
 import com.qkt.instrument.InstrumentRegistry
-import com.qkt.instrument.OptionRight
 import com.qkt.instrument.OptionTerms
-import java.math.BigDecimal
 import java.time.Instant
 import java.time.ZoneOffset
 
@@ -48,11 +46,7 @@ internal class OptionExpiry(
                 ?: error(
                     "$symbol expired with no delivery price for $day in the catalog; refresh it with qkt fetch ${root.root} --catalog",
                 )
-        val intrinsic =
-            when (terms.right) {
-                OptionRight.CALL -> delivery.subtract(terms.strike)
-                OptionRight.PUT -> terms.strike.subtract(delivery)
-            }.max(BigDecimal.ZERO).setScale(Money.SCALE, Money.ROUNDING)
+        val intrinsic = OptionPayoff.intrinsic(terms.right, terms.strike, delivery)
         for ((strategyId, quantity) in positions.holdersOf(symbol)) {
             val side = if (quantity.signum() > 0) Side.SELL else Side.BUY
             val fee = OptionFee.delivery(root, quantity, intrinsic, delivery)

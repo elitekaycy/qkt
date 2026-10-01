@@ -14,7 +14,7 @@ import java.time.LocalDate
 import java.time.ZoneOffset
 import kotlin.io.path.copyToRecursively
 
-/** Backtests a strategy over one of the real futures fixtures under `src/test/resources/futures`. */
+/** Backtests a strategy over one of the real derivative fixtures under `src/test/resources/<resources>`. */
 internal object FuturesFixtureRun {
     /**
      * Copies [fixture] into [dir], appends [rootLines] to its root in `instruments.yaml`, and runs
@@ -28,8 +28,9 @@ internal object FuturesFixtureRun {
         to: String,
         rootLines: String = "",
         flags: List<String> = emptyList(),
+        resources: String = "futures",
     ): Pair<BacktestResult, Path> {
-        val source = Paths.get(requireNotNull(javaClass.getResource("/futures/$fixture")).toURI())
+        val source = Paths.get(requireNotNull(javaClass.getResource("/$resources/$fixture")).toURI())
         val data = dir.resolve("data")
         @OptIn(kotlin.io.path.ExperimentalPathApi::class)
         source.copyToRecursively(data, followLinks = false, overwrite = false)
