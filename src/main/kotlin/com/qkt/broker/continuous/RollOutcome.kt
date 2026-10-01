@@ -1,7 +1,9 @@
 package com.qkt.broker.continuous
 
+import com.qkt.derivatives.futures.MeasuredRoll
 import com.qkt.events.BrokerEvent
 import com.qkt.events.CostIncurred
+import java.math.BigDecimal
 
 /**
  * What a roll left behind, for the lane to apply before the engine hears of it: strategies
@@ -13,3 +15,17 @@ internal data class RollOutcome(
     val closes: List<BrokerEvent.OrderFilled>,
     val costs: List<CostIncurred>,
 )
+
+/** One roll in progress: its contracts, measurement, holders to carry, and what the carries left so far. */
+internal class RollRun(
+    val fromIndex: Int,
+    val toIndex: Int,
+    val measured: MeasuredRoll,
+    val stopped: String,
+    val resting: List<ContinuousOrder>,
+    val holders: List<Map.Entry<String, BigDecimal>>,
+) {
+    val carried = mutableListOf<RollEntry>()
+    val closes = mutableListOf<BrokerEvent.OrderFilled>()
+    val failed = LinkedHashMap<String, String>()
+}

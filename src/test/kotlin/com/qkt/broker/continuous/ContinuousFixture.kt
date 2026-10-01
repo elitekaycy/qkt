@@ -41,7 +41,9 @@ internal class ContinuousFixture(
     takerFeeRate: String = "0",
     refuseOpenLegs: Boolean = false,
     margin: MarginTerms? = null,
+    deferLegs: Boolean = false,
 ) {
+    private val deferred = ArrayDeque<() -> Unit>()
     val front = "BINANCE_UM:BTCUSDT@front"
     val clock = FixedClock(time = ms(startIso))
     val bus = EventBus(clock, MonotonicSequenceGenerator())
@@ -136,7 +138,8 @@ internal class ContinuousFixture(
             venueFactory = { venueBus, prices ->
                 val fees = ContractFeeCommission(registry, NoCommission)
                 val exchange = ExchangeSimulator(venueBus, clock, prices, registry, InstrumentSlippage, fees)
-                ContractVenue(if (refuseOpenLegs) RefusingOpenLegs(exchange, venueBus) else exchange, exchange::onTick)
+                val venue = if (refuseOpenLegs) RefusingOpenLegs(exchange, venueBus) else exchange
+                ContractVenue(if (deferLegs) DeferringLegs(venue, deferred) else venue, exchange::onTick)
             },
         )
 
@@ -177,6 +180,16 @@ internal class ContinuousFixture(
 
     inline fun <reified T : BrokerEvent> only(): List<T> = events.filterIsInstance<T>()
 
+    /** Lets the venue answer the roll legs it holds, one at a time, as a live venue answers later; returns how many. */
+    fun releaseLegs(): Int {
+        var released = 0
+        while (deferred.isNotEmpty()) {
+            deferred.removeFirst()()
+            released++
+        }
+        return released
+    }
+
     companion object {
         fun ms(iso: String): Long = Instant.parse(iso).toEpochMilli()
     }
@@ -191,5 +204,17 @@ internal class RefusingOpenLegs(
         if (!request.id.endsWith(":open")) return inner.submit(request)
         venueBus.publish(BrokerEvent.OrderRejected(request.id, null, "insufficient margin", request.strategyId))
         return SubmitAck(request.id, null, accepted = false, rejectReason = "insufficient margin")
+    }
+}
+
+/** A venue that answers each roll leg only when released, after its submit returned, as a live venue does. */
+internal class DeferringLegs(
+    private val inner: Broker,
+    private val held: ArrayDeque<() -> Unit>,
+) : Broker by inner {
+    override fun submit(request: OrderRequest): SubmitAck {
+        if (!request.id.startsWith("roll:")) return inner.submit(request)
+        held.addLast { inner.submit(request) }
+        return SubmitAck(request.id, null, accepted = true)
     }
 }

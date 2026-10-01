@@ -16,11 +16,14 @@ internal sealed interface LegOutcome {
 
 /**
  * The venue orders a roll places or cancels, which the engine must never see: the market legs,
- * captured as they end, and the resting orders being cancelled before their re-placement.
+ * captured as they end, and the resting orders being cancelled before their re-placement. A leg's
+ * outcome reaches the roll through [whenEnded]: at once when the venue answered before its submit
+ * returned (the backtest's exchange simulator), else when the venue's answer arrives (a live venue).
  */
 internal class RollLegs {
     private val pending = HashSet<String>()
     private val ended = HashMap<String, LegOutcome>()
+    private val waiting = HashMap<String, (LegOutcome) -> Unit>()
     private val cancelling = HashSet<String>()
 
     /** Expect a leg under [venueId]. */
@@ -45,10 +48,18 @@ internal class RollLegs {
     /** Swallow [e] if it is a roll's cancel of a resting order; returns whether it was. */
     fun onCancelled(e: BrokerEvent.OrderCancelled): Boolean = cancelling.remove(e.clientOrderId)
 
-    /** How the leg under [venueId] ended; the venue answers a market order before its submit returns. */
-    fun outcome(venueId: String): LegOutcome {
+    /** Hands the outcome of the leg under [venueId] to [then]: now if it has ended, else once it does. */
+    fun whenEnded(
+        venueId: String,
+        then: (LegOutcome) -> Unit,
+    ) {
+        val outcome = ended.remove(venueId)
+        if (outcome == null) {
+            waiting[venueId] = then
+            return
+        }
         pending -= venueId
-        return requireNotNull(ended.remove(venueId)) { "roll leg $venueId got no answer from the venue" }
+        then(outcome)
     }
 
     private fun end(
@@ -56,7 +67,13 @@ internal class RollLegs {
         outcome: LegOutcome,
     ): Boolean {
         if (venueId !in pending) return false
-        ended[venueId] = outcome
+        val then = waiting.remove(venueId)
+        if (then == null) {
+            ended[venueId] = outcome
+        } else {
+            pending -= venueId
+            then(outcome)
+        }
         return true
     }
 }
