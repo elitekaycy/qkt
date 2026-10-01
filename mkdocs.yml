@@ -169,6 +169,7 @@ nav:
           - Streams (SYMBOLS): reference/dsl/streams.md
           - Hub streams (HUB:): reference/dsl/hub.md
           - Option chain analytics (CHAIN:): reference/dsl/chain.md
+          - Option structures (OPEN … OPTIONS ON): reference/dsl/structures.md
           - LET and DEFAULTS: reference/dsl/let-defaults.md
           - Conditions (WHEN): reference/dsl/conditions.md
           - Indicators: reference/dsl/indicators.md
