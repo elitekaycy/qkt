@@ -4,15 +4,16 @@ import com.qkt.execution.OrderRequest
 import java.math.BigDecimal
 
 /**
- * An engine order on a continuous stream, working on contract [contractIndex] under [venueId], with
- * [filled] of it executed so far across every venue order it worked under; an order re-placed at a roll
- * works under `<engine id>~r<replacements>`.
+ * An engine order on a continuous stream, working on contract [contractIndex] under [venueId] in a venue
+ * order [placed] for that quantity, with [filled] of the engine's order executed so far across every
+ * venue order it worked under; an order re-placed at a roll works under `<engine id>~r<replacements>`.
  */
 internal data class ContinuousOrder(
     val request: OrderRequest,
     val venueId: String,
     val contractIndex: Int,
     val replacements: Int = 0,
+    val placed: BigDecimal = request.quantity,
     val filled: BigDecimal = BigDecimal.ZERO,
 ) {
     /** Whether this is the engine's order as first placed, not a re-placement made at a roll. */
@@ -20,6 +21,9 @@ internal data class ContinuousOrder(
 
     /** What is left of the engine's order to fill. */
     val remaining: BigDecimal get() = request.quantity - filled
+
+    /** How much of the venue order it works under has filled. */
+    val venueFilled: BigDecimal get() = placed - remaining
 }
 
 /** The working orders of one continuous stream, by engine id and by the venue id they work under. */

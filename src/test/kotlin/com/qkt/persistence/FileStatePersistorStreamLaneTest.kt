@@ -54,10 +54,19 @@ class FileStatePersistorStreamLaneTest {
     ) {
         val persistor = FileStatePersistor(tmp)
         val other =
-            PersistedStreamLane("CME:NQ", 1, emptyList(), emptyList(), emptyList(), emptyList(), emptyList(), null)
+            PersistedStreamLane(
+                "CME:NQ",
+                "CME:NQZ26",
+                emptyList(),
+                emptyList(),
+                emptyList(),
+                emptyList(),
+                emptyList(),
+                null,
+            )
         persistor.saveStreamLane("trend", laneInFlight())
         persistor.saveStreamLane("trend", other)
-        val rolled = laneInFlight().copy(contractIndex = 4, roll = null)
+        val rolled = laneInFlight().copy(contract = "CME:ESH27", roll = null)
         persistor.saveStreamLane("trend", rolled)
 
         assertThat(persistor.loadStreamLane("trend", STREAM)).isEqualTo(rolled)

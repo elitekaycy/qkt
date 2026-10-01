@@ -55,10 +55,11 @@ internal object StreamLaneFixture {
     fun order(
         request: OrderRequest,
         venueId: String = request.id,
-        contractIndex: Int = 3,
+        contract: String = "CME:ESZ26",
         replacements: Int = 0,
+        placed: BigDecimal = request.quantity,
         filled: String = "0",
-    ) = PersistedStreamOrder(request, venueId, contractIndex, replacements, BigDecimal(filled))
+    ) = PersistedStreamOrder(request, venueId, contract, replacements, placed, BigDecimal(filled))
 
     fun laneInFlight(): PersistedStreamLane {
         val limit =
@@ -97,7 +98,7 @@ internal object StreamLaneFixture {
             )
         return PersistedStreamLane(
             stream = STREAM,
-            contractIndex = 3,
+            contract = "CME:ESZ26",
             strategies =
                 listOf(
                     PersistedStreamStrategy("trend", BigDecimal("2"), stopped = null),
@@ -109,7 +110,10 @@ internal object StreamLaneFixture {
                     PersistedStreamStrategy("meanrev", BigDecimal("3"), stopped = null),
                     PersistedStreamStrategy("swing", BigDecimal("-4"), stopped = null),
                 ),
-            orders = listOf(order(limit, venueId = "e-1~r1", contractIndex = 4, replacements = 1, filled = "0.4")),
+            orders =
+                listOf(
+                    order(limit, "e-1~r1", "CME:ESH27", replacements = 1, placed = BigDecimal("0.6"), filled = "0.4"),
+                ),
             holdings =
                 listOf(
                     PersistedContractHolding(
@@ -141,8 +145,8 @@ internal object StreamLaneFixture {
             cancelling = listOf("e-2"),
             roll =
                 PersistedStreamRoll(
-                    fromIndex = 3,
-                    toIndex = 4,
+                    from = "CME:ESZ26",
+                    to = "CME:ESH27",
                     atMs = 4_000L,
                     fromPrice = BigDecimal("5000"),
                     toPrice = BigDecimal("5040.5"),

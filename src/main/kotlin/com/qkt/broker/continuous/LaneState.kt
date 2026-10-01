@@ -31,7 +31,7 @@ internal class LaneState(
     fun snapshot(contractIndex: Int?) =
         PersistedStreamLane(
             stream = chainOf().symbol,
-            contractIndex = contractIndex,
+            contract = contractIndex?.let(chainOf()::contractSymbol),
             strategies =
                 (positions.keys + stops.keys).map {
                     PersistedStreamStrategy(
@@ -55,12 +55,19 @@ internal class LaneState(
         }
 
     private fun persisted(order: ContinuousOrder) =
-        PersistedStreamOrder(order.request, order.venueId, order.contractIndex, order.replacements, order.filled)
+        PersistedStreamOrder(
+            order.request,
+            order.venueId,
+            chainOf().contractSymbol(order.contractIndex),
+            order.replacements,
+            order.placed,
+            order.filled,
+        )
 
     private fun persisted(run: RollRun) =
         PersistedStreamRoll(
-            run.fromIndex,
-            run.toIndex,
+            chainOf().contractSymbol(run.fromIndex),
+            chainOf().contractSymbol(run.toIndex),
             run.measured.atMs,
             run.measured.prices.fromPrice,
             run.measured.prices.toPrice,

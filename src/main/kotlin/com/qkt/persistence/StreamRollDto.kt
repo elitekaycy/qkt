@@ -8,8 +8,8 @@ import kotlinx.serialization.Serializable
 /** On-disk shape of a [PersistedStreamRoll]. */
 @Serializable
 internal data class StreamRollDto(
-    val fromIndex: Int,
-    val toIndex: Int,
+    val from: String,
+    val to: String,
     val atMs: Long,
     val fromPrice: String,
     val toPrice: String,
@@ -20,8 +20,8 @@ internal data class StreamRollDto(
 ) {
     fun toDomain() =
         PersistedStreamRoll(
-            fromIndex,
-            toIndex,
+            from,
+            to,
             atMs,
             BigDecimal(fromPrice),
             BigDecimal(toPrice),
@@ -34,8 +34,8 @@ internal data class StreamRollDto(
     companion object {
         fun of(r: PersistedStreamRoll) =
             StreamRollDto(
-                r.fromIndex,
-                r.toIndex,
+                r.from,
+                r.to,
                 r.atMs,
                 r.fromPrice.toPlainString(),
                 r.toPrice.toPlainString(),
