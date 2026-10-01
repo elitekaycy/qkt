@@ -73,7 +73,7 @@ internal class LaneVenueEvents(
     }
 
     private fun onPartiallyFilled(e: BrokerEvent.OrderPartiallyFilled) {
-        val order = orders.byVenueId(e.clientOrderId)
+        val order = orders.fill(e.clientOrderId, e.quantity)
         val index = order?.contractIndex ?: contractIndexOf(e.symbol)
         positions.merge(e.strategyId, e.asFill().signedQuantity(), BigDecimal::add)
         val engineSlice =
@@ -81,6 +81,7 @@ internal class LaneVenueEvents(
                 clientOrderId = order?.request?.id ?: e.clientOrderId,
                 symbol = chain.symbol,
                 price = space(index).toContinuous(e.price),
+                cumulativeFilled = order?.filled ?: e.cumulativeFilled,
             )
         fills.record(contractFill(e.asFill(), engineSlice.asFill()))
         bus.publish(engineSlice)
