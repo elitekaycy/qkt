@@ -86,4 +86,20 @@ class OptionModelsTest {
             )
         }.hasMessageContaining("volatility")
     }
+
+    @Test
+    fun `non-finite inputs are refused rather than priced as NaN`() {
+        assertThatThrownBy {
+            BlackScholes.value(OptionRight.CALL, 42.0, 40.0, 0.5, Double.NaN, 0.2)
+        }.hasMessageContaining("rate")
+        assertThatThrownBy {
+            BlackScholes.value(OptionRight.CALL, 42.0, 40.0, 0.5, 0.1, 0.2, Double.NaN)
+        }.hasMessageContaining("carry")
+        assertThatThrownBy {
+            Black76.value(OptionRight.CALL, 20.0, 20.0, 0.5, 0.1, Double.POSITIVE_INFINITY)
+        }.hasMessageContaining("volatility")
+        assertThatThrownBy {
+            Black76.value(OptionRight.CALL, Double.POSITIVE_INFINITY, 20.0, 0.5, 0.1, 0.2)
+        }.hasMessageContaining("underlying")
+    }
 }
