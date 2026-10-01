@@ -37,25 +37,27 @@ data class SelectedOption(
 )
 
 /**
- * The one deterministic leg selector (spec §6.4), over a single snapshot. Only catalogued, unexpired
- * quotes with a positive mark IV no older than the quote age count. The expiry is the nearest one in
- * the leg's days window that has a usable quote of the leg's right (or the given expiry). Within it,
- * the quote of that right whose Black-76 |delta| is nearest the target wins, ties going to the lower
- * strike. Delta uses the expiry's median `underlying` over all its usable quotes as the forward, and
- * rate 0. Null when nothing qualifies.
+ * The one deterministic leg selector (spec §6.4), over a single snapshot read at the clock: only
+ * catalogued quotes unexpired at that moment, with a positive mark IV no older than the quote age
+ * there, count. The expiry is the nearest one whose days to expiry (from the clock) fall in the leg's
+ * window and that has a usable quote of the leg's right (or the given expiry). Within it, the quote of
+ * that right whose Black-76 |delta| is nearest the target wins, ties going to the lower strike. Delta
+ * uses the expiry's median `underlying` over all its usable quotes as the forward, rate 0, and time
+ * from the clock. Null when nothing qualifies.
  */
 object OptionSelector {
     private const val DAY_MS = 86_400_000.0
     private const val YEAR_MS = 365 * DAY_MS
 
-    /** The contract [criteria] selects in [snapshot], with terms from [listings]; null when none qualifies. */
+    /** The contract [criteria] selects in [snapshot] at [nowMs], with terms from [listings]; null when none qualifies. */
     fun select(
         snapshot: ChainSnapshot,
         listings: Map<String, OptionListing>,
         criteria: LegCriteria,
         maxQuoteAgeMs: Long,
+        nowMs: Long,
     ): SelectedOption? {
-        val usable = usableQuotes(snapshot, listings, maxQuoteAgeMs)
+        val usable = usableQuotes(snapshot, listings, maxQuoteAgeMs, nowMs)
         val byExpiry = usable.groupBy { listings.getValue(it.contract).expiryMs }
         val ofRight = { expiry: Long ->
             byExpiry[expiry].orEmpty().filter {
@@ -65,14 +67,14 @@ object OptionSelector {
         }
         val expiry =
             criteria.expiryMs ?: byExpiry.keys.sorted().firstOrNull { e ->
-                val days = (e - snapshot.atMs) / DAY_MS
+                val days = (e - nowMs) / DAY_MS
                 days >= requireNotNull(criteria.minDays) &&
                     days <= requireNotNull(criteria.maxDays) &&
                     ofRight(e).isNotEmpty()
             } ?: return null
         val candidates = ofRight(expiry).ifEmpty { return null }
         val forward = medianForward(byExpiry.getValue(expiry))
-        val years = (expiry - snapshot.atMs) / YEAR_MS
+        val years = (expiry - nowMs) / YEAR_MS
         return candidates
             .map { quote ->
                 val contract = listings.getValue(quote.contract).toContract()

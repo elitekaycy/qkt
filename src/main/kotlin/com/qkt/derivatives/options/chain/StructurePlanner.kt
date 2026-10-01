@@ -54,6 +54,7 @@ object StructurePlanner {
         listings: Map<String, OptionListing>,
         maxQuoteAgeMs: Long,
         contractSize: BigDecimal,
+        nowMs: Long,
     ): StructurePlan {
         require(specs.isNotEmpty() && specs.first().minDays != null) { "a structure's first leg names a days window" }
         val legs = mutableListOf<PlannedLeg>()
@@ -65,7 +66,7 @@ object StructurePlanner {
                     LegCriteria(spec.right, spec.delta, spec.minDays, requireNotNull(spec.maxDays))
                 }
             val picked =
-                OptionSelector.select(snapshot, listings, criteria, maxQuoteAgeMs)
+                OptionSelector.select(snapshot, listings, criteria, maxQuoteAgeMs, nowMs)
                     ?: return StructurePlan.Refused(
                         "leg ${index + 1} (${spec.side} ${spec.right} delta ${spec.delta}) selects no contract",
                     )

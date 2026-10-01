@@ -107,7 +107,7 @@ internal class StructureCompiler(
             exprCompiler.structures.view(instruments).latest(root.root, now)
                 ?: return Signal.Suppressed(root.root, "no ${root.root} chain at or before now")
         val maxAgeMs = root.maxQuoteAgeMinutes * MS_PER_MINUTE
-        val plan = StructurePlanner.plan(specs, snapshot, options.listings(root.root), maxAgeMs, root.contractSize)
+        val plan = StructurePlanner.plan(specs, snapshot, options.listings(root.root), maxAgeMs, root.contractSize, now)
         val ready =
             when (plan) {
                 is StructurePlan.Refused -> return Signal.Suppressed(root.root, "${action.alias}: ${plan.reason}")

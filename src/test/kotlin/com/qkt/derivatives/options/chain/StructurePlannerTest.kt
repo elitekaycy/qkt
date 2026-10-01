@@ -28,7 +28,7 @@ class StructurePlannerTest {
             .associateBy { it.symbol }
 
     private fun plan(vararg specs: LegSpec) =
-        StructurePlanner.plan(specs.toList(), snapshot, listings, 3_600_000L, BigDecimal.ONE)
+        StructurePlanner.plan(specs.toList(), snapshot, listings, 3_600_000L, BigDecimal.ONE, snapshot.atMs)
 
     @Test
     fun `a put spread selects both legs in one expiry and knows its loss per unit`() {

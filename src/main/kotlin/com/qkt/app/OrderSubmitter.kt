@@ -22,6 +22,7 @@ import com.qkt.risk.isRiskReducing
 import com.qkt.strategy.Signal
 import com.qkt.strategy.Strategy
 import com.qkt.strategy.StrategyContext
+import com.qkt.strategy.StructureState
 import java.math.BigDecimal
 import org.slf4j.LoggerFactory
 
@@ -105,8 +106,9 @@ internal class OrderSubmitter(
     /**
      * Submit an option structure's legs as one position: each leg is book-scaled (any suppressed leg
      * suppresses the group), the risk engine judges them together ([RiskEngine.approveGroup]), and then
-     * either every leg is published, buys before sells, or every leg is refused. Publication order is
-     * not fill order: each leg fills on its own quotes, and a leg that fails is unwound by the
+     * either every leg is published, buys before sells, or every leg is refused. A leg the venue refuses
+     * as it arrives stops the legs behind it, so a short never leaves without its wing. Publication
+     * order is not fill order: each leg fills on its own quotes, and a leg that fails is unwound by the
      * [StructureCoordinator]. The rule that fired counts one accepted or suppressed submission.
      */
     fun submitGroup(
@@ -134,7 +136,14 @@ internal class OrderSubmitter(
         when (val decision = riskEngine.approveGroup(legs)) {
             is Decision.Approve -> {
                 ctx.submissions.recordAccepted()
-                for (leg in legs.sortedBy { if (it.side == Side.BUY) 0 else 1 }) {
+                val ordered = legs.sortedBy { if (it.side == Side.BUY) 0 else 1 }
+                for ((index, leg) in ordered.withIndex()) {
+                    // A leg the venue refused on the spot unwinds the structure: the rest must not open alone.
+                    if (group.closes == null && ctx.structures.live(group.alias)?.state == StructureState.UNWINDING) {
+                        val reason = "not sent: an earlier leg of structure ${group.alias} was refused"
+                        ordered.drop(index).forEach { bus.publish(RiskRejectedEvent(it, reason)) }
+                        break
+                    }
                     logSubmitContext(leg)
                     bus.publish(OrderEvent(LegIntentPlanner.plan(leg, positionMode(leg.symbol))))
                 }

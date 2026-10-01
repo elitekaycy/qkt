@@ -48,7 +48,7 @@ object StructureGreeks {
         nowMs: Long,
     ): PositionGreeks? {
         if (legs.isEmpty()) return null
-        val usable = usableQuotes(snapshot, listings, maxQuoteAgeMs)
+        val usable = usableQuotes(snapshot, listings, maxQuoteAgeMs, nowMs)
         val byContract = usable.associateBy { it.contract }
         val byExpiry = usable.groupBy { listings.getValue(it.contract).expiryMs }
         var total = PositionGreeks(0.0, 0.0, 0.0, 0.0)
@@ -56,7 +56,6 @@ object StructureGreeks {
             val quote = byContract[leg.contract] ?: return null
             val contract = listings.getValue(leg.contract).toContract()
             val years = (contract.expiryMs - nowMs) / YEAR_MS
-            if (years <= 0.0) return null
             val forward = medianForward(byExpiry.getValue(contract.expiryMs))
             val sigma = requireNotNull(quote.markIv).toDouble() / VOL_POINTS
             val value = Black76.value(contract.right, forward, contract.strike.toDouble(), years, 0.0, sigma)

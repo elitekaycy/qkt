@@ -46,7 +46,7 @@ internal class StructureBook(
             require(group.alias !in byAlias) { "structure ${group.alias} is already live" }
             val legs =
                 group.requests.map { r ->
-                    StructureLeg(r.symbol, r.side, r.id, sizeOf(r.symbol), expiryOf(r.symbol))
+                    structureLeg(r, instruments)
                 }
             val structure = LiveStructure(group.structureId, group.alias, group.requests.first().quantity, legs)
             byAlias[group.alias] = structure
@@ -98,10 +98,13 @@ internal class StructureBook(
         return owner
     }
 
-    /** The risk engine refused the group holding [orderId]: an opening group sent nothing and is dropped. */
+    /**
+     * The engine refused [orderId]: a refused opening group sent nothing and is dropped; a leg of a
+     * structure already unwinding, or a closing leg, simply ended.
+     */
     fun refused(orderId: String) {
         val owner = owners[orderId] ?: return
-        if (!owner.opening) {
+        if (!owner.opening || owner.structure.state != StructureState.PENDING) {
             ended(orderId)
             return
         }
@@ -185,14 +188,4 @@ internal class StructureBook(
         byAlias.remove(structure.alias)
         byId.remove(structure.id)
     }
-
-    private fun sizeOf(symbol: String): BigDecimal =
-        requireNotNull(instruments.lookup(symbol)) {
-            "$symbol is not catalogued"
-        }.contractSize
-
-    private fun expiryOf(symbol: String): Long =
-        requireNotNull(
-            instruments.lookup(symbol)?.derivative as? OptionTerms,
-        ) { "$symbol has no option terms" }.expiryMs
 }
