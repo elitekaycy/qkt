@@ -53,6 +53,14 @@ class DeribitClient(
             DeribitDeliveryPage.serializer(),
         )
 
+    internal fun optionBook(currency: String): List<DeribitBookRow> =
+        call(
+            liveBaseUrl,
+            "get_book_summary_by_currency",
+            mapOf("currency" to currency, "kind" to "option"),
+            ListSerializer(DeribitBookRow.serializer()),
+        )
+
     internal fun optionTrades(
         currency: String,
         startMs: Long,

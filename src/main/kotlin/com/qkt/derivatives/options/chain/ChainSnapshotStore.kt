@@ -62,6 +62,18 @@ class ChainSnapshotStore(
         }
     }
 
+    /**
+     * Adds [snapshot] to its day, keeping the day's other snapshots and replacing one taken at the
+     * same instant. Rewrites the day file, so one writer per root at a time.
+     */
+    fun append(
+        root: String,
+        snapshot: ChainSnapshot,
+    ) {
+        val day = dayOf(snapshot.atMs)
+        write(root, readDay(root, day).filter { it.atMs != snapshot.atMs } + snapshot)
+    }
+
     /** [root]'s snapshots of [day] in time order; empty when none were written. */
     fun readDay(
         root: String,
