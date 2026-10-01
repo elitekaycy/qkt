@@ -2,6 +2,7 @@ package com.qkt.cli
 
 import com.qkt.common.TradingCalendar
 import com.qkt.derivatives.options.chain.ChainAnalyticsSymbol
+import com.qkt.derivatives.options.chain.OptionRootSymbol
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.futuresCalendar
 
@@ -17,11 +18,17 @@ internal fun backtestCalendar(
     instruments: InstrumentRegistry,
 ): TradingCalendar =
     instruments.futuresCalendar(symbols)
-        ?: symbols.firstOrNull { !it.startsWith(ChainAnalyticsSymbol.PREFIX) }?.let { first ->
-            if (instruments.options()?.optionRoot(first) != null) {
-                TradingCalendar.crypto()
-            } else {
-                BacktestContext.defaultCalendars().calendarFor(first.substringAfter(':'))
+        ?: symbols
+            .firstOrNull {
+                !it.startsWith(
+                    ChainAnalyticsSymbol.PREFIX,
+                ) &&
+                    !it.startsWith(OptionRootSymbol.PREFIX)
+            }?.let { first ->
+                if (instruments.options()?.optionRoot(first) != null) {
+                    TradingCalendar.crypto()
+                } else {
+                    BacktestContext.defaultCalendars().calendarFor(first.substringAfter(':'))
+                }
             }
-        }
         ?: TradingCalendar.crypto()

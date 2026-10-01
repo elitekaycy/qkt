@@ -5,6 +5,7 @@ import com.qkt.backtest.OptionChainCoverage
 import com.qkt.backtest.ProvisionStream
 import com.qkt.dsl.ast.CHAIN_BROKER
 import com.qkt.dsl.ast.HUB_BROKER
+import com.qkt.dsl.ast.OPTIONS_BROKER
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.optionSymbols
 import com.qkt.marketdata.store.DefaultDataStore
@@ -41,7 +42,8 @@ internal object BacktestTickProvisioning {
                     broker != "MACRO" &&
                         broker != "BYBIT" &&
                         broker != HUB_BROKER &&
-                        broker != CHAIN_BROKER
+                        broker != CHAIN_BROKER &&
+                        broker != OPTIONS_BROKER
                 }.distinct()
                 .map { (broker, bare) -> ProvisionStream(broker = broker, bareSymbol = bare) }
                 .filterNot { stream ->

@@ -3,6 +3,7 @@ package com.qkt.cli
 import com.qkt.backtest.BacktestResult
 import com.qkt.backtest.BrokerKind
 import com.qkt.backtest.report.BacktestReportWriter
+import com.qkt.derivatives.options.chain.OptionRootSymbol
 import com.qkt.dsl.compile.isObservationSymbol
 import com.qkt.dsl.parse.Dsl
 import com.qkt.dsl.parse.ParseResult
@@ -114,7 +115,12 @@ class BacktestCommand(
             if (futures.isNotEmpty()) System.err.println(futuresExecutionNote(futures))
             if (options.isNotEmpty()) System.err.println(optionsExecutionNote(options))
             if (ctx.brokerKind == BrokerKind.PAPER &&
-                ctx.symbols.any { it !in futures && it !in options && !isObservationSymbol(it) }
+                ctx.symbols.any {
+                    it !in futures &&
+                        it !in options &&
+                        !isObservationSymbol(it) &&
+                        !it.startsWith(OptionRootSymbol.PREFIX)
+                }
             ) {
                 System.err.println(
                     "qkt: note: paper broker fills at mid with no spread/slippage — results are optimistic. " +

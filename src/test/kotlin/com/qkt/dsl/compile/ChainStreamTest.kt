@@ -63,4 +63,27 @@ class ChainStreamTest {
 
         assertThat(Dsl.parse(lower)).isInstanceOf(ParseResult.Failure::class.java)
     }
+
+    @Test
+    fun `an option root feed parses as a dotted symbol and cannot be traded`() {
+        val feed =
+            """
+            STRATEGY fed VERSION 1
+            SYMBOLS
+                chain = OPTIONS:DERIBIT.BTC_USDC EVERY 1h
+                c = DERIBIT:BTC_USDC_26SEP26_84000_C EVERY 1h
+            RULES
+                WHEN c.close > 0
+                THEN BUY ACTION
+            """.trimIndent()
+        val stream = (Dsl.parse(feed.replace("ACTION", "c SIZING 0.1")) as ParseResult.Success).value.streams.first()
+
+        assertThat(stream.qktSymbol).isEqualTo("OPTIONS:DERIBIT.BTC_USDC")
+        assertThatThrownBy {
+            AstCompiler().compile((Dsl.parse(feed.replace("ACTION", "chain SIZING 1")) as ParseResult.Success).value)
+        }.hasMessageContaining("read-only")
+        assertThat(
+            Dsl.parse(feed.replace("OPTIONS:", "options:").replace("ACTION", "c SIZING 0.1")),
+        ).isInstanceOf(ParseResult.Failure::class.java)
+    }
 }

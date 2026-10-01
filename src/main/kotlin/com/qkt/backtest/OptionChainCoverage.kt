@@ -2,6 +2,7 @@ package com.qkt.backtest
 
 import com.qkt.derivatives.options.chain.ChainAnalyticsSymbol
 import com.qkt.derivatives.options.chain.ChainSnapshotStore
+import com.qkt.derivatives.options.chain.OptionRootSymbol
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.OptionTerms
 import com.qkt.instrument.optionSymbols
@@ -11,7 +12,7 @@ import java.time.ZoneOffset
 
 /**
  * The chain counterpart of tick coverage: every UTC day an option contract trades (up to its expiry)
- * and every day of a chain analytics stream must hold a stored chain day of the root's declared
+ * and every day of a chain analytics stream or option root feed must hold a stored chain day of the root's declared
  * series, or the run fails naming the fetch that fills the gap (unless incomplete data is allowed,
  * which warns instead).
  */
@@ -44,9 +45,15 @@ internal object OptionChainCoverage {
                 )
             }
         val streams =
-            symbols
-                .filter { it.startsWith(ChainAnalyticsSymbol.PREFIX) }
-                .map { Need(it, ChainAnalyticsSymbol.parse(it).getOrThrow().root, to) }
+            symbols.mapNotNull { s ->
+                when {
+                    s.startsWith(
+                        ChainAnalyticsSymbol.PREFIX,
+                    ) -> Need(s, ChainAnalyticsSymbol.parse(s).getOrThrow().root, to)
+                    s.startsWith(OptionRootSymbol.PREFIX) -> Need(s, OptionRootSymbol.parse(s).getOrThrow().root, to)
+                    else -> null
+                }
+            }
         for (need in contracts + streams) {
             val root = options.root(need.root) ?: continue
             val source = root.chains ?: continue
