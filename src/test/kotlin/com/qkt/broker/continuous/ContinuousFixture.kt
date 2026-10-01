@@ -18,6 +18,7 @@ import com.qkt.instrument.ContractCatalog
 import com.qkt.instrument.ContractCatalogRegistry
 import com.qkt.instrument.FuturesRoot
 import com.qkt.instrument.ListedContract
+import com.qkt.instrument.MarginTerms
 import com.qkt.instrument.PriceAdjustment
 import com.qkt.instrument.RollHistory
 import com.qkt.instrument.RollPolicy
@@ -39,6 +40,7 @@ internal class ContinuousFixture(
     slippageTicks: Int = 0,
     takerFeeRate: String = "0",
     refuseOpenLegs: Boolean = false,
+    margin: MarginTerms? = null,
 ) {
     val front = "BINANCE_UM:BTCUSDT@front"
     val clock = FixedClock(time = ms(startIso))
@@ -59,7 +61,7 @@ internal class ContinuousFixture(
             calendar = null,
             exchangeFeePerContract = BigDecimal.ZERO,
             takerFeeRate = BigDecimal(takerFeeRate),
-            margin = null,
+            margin = margin,
             roll = RollPolicy(8, LocalTime.of(8, 0), adjust),
             slippageTicks = slippageTicks,
         )
