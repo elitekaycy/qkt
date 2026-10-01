@@ -42,18 +42,21 @@ class OptionMarginRequirementTest {
             OptionListing("BTC_USDC-2OCT26-78000-P", "78000", "put", oct2),
             OptionListing("BTC_USDC-2OCT26-92000-C", "92000", "call", oct2),
             OptionListing("BTC_USDC-9OCT26-94000-C", "94000", "call", oct9),
+            OptionListing("BTC_USDC-2OCT26-94000-C", "94000", "call", oct2),
         )
     private val registry = OptionCatalogRegistry(listOf(root), mapOf(root.root to OptionCatalog(root.root, listings)))
     private val p80 = "DERIBIT:BTC_USDC_2OCT26_80000_P"
     private val p78 = "DERIBIT:BTC_USDC_2OCT26_78000_P"
     private val c92 = "DERIBIT:BTC_USDC_2OCT26_92000_C"
     private val c94later = "DERIBIT:BTC_USDC_9OCT26_94000_C"
+    private val c94 = "DERIBIT:BTC_USDC_2OCT26_94000_C"
     private val prices =
         MarketPriceTracker().apply {
             update(p80, BigDecimal("500"))
             update(p78, BigDecimal("300"))
             update(c92, BigDecimal("200"))
             update(c94later, BigDecimal("300"))
+            update(c94, BigDecimal("100"))
         }
     private var equity = BigDecimal("100000")
     private val rule =
@@ -139,5 +142,22 @@ class OptionMarginRequirementTest {
 
         assertThat(decide(p80, Side.SELL, pending, withEquity = "15899.99")).isInstanceOf(Decision.Reject::class.java)
         assertThat(decide(p80, Side.SELL, pending, withEquity = "15900")).isEqualTo(Decision.Approve)
+    }
+
+    @Test
+    fun `selling the long wing of a call credit spread would leave a naked short call and is refused`() {
+        val spread = Book(held = mapOf(c92 to BigDecimal("-0.1"), c94 to BigDecimal("0.1")))
+
+        assertThat(
+            (decide(c94, Side.SELL, spread, withEquity = "1000000") as Decision.Reject).reason,
+        ).contains("unbounded")
+    }
+
+    @Test
+    fun `an order that lowers the worst case passes even when equity no longer covers it`() {
+        // Short put: 7950 needed; buying back half halves it, though equity covers neither.
+        val short = Book(held = mapOf(p80 to BigDecimal("-0.2")))
+
+        assertThat(decide(p80, Side.BUY, short, withEquity = "100")).isEqualTo(Decision.Approve)
     }
 }
