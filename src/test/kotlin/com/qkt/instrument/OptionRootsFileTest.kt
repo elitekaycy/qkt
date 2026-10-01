@@ -85,4 +85,24 @@ class OptionRootsFileTest {
             .hasMessageContaining("options root DERIBIT:BTC_USDC")
             .hasMessageContaining("contractSize")
     }
+
+    @Test
+    fun `other top-level keys that merely start with option or future still load`(
+        @TempDir dir: Path,
+    ) {
+        val file = dir.resolve("instruments.yaml")
+        Files.writeString(file, "instruments: []\noption_defaults: {}\nfutures_notes: x\n")
+
+        assertThat(OptionRootsFile.load(file)).isEmpty()
+        assertThat(FuturesRootsFile.load(file)).isEmpty()
+    }
+
+    @Test
+    fun `a singular or differently cased section name is refused`(
+        @TempDir dir: Path,
+    ) {
+        assertThatThrownBy { load(dir, btc.replace("options:", "Options:")) }.hasMessageContaining("options:")
+        val file = dir.resolve("futures.yaml").also { Files.writeString(it, "future: []\n") }
+        assertThatThrownBy { FuturesRootsFile.load(file) }.hasMessageContaining("futures:")
+    }
 }
