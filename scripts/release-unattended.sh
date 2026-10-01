@@ -12,15 +12,17 @@
 set -euo pipefail
 # This script checks out `testing` in its own clone, and bash reads a script as it runs it: a
 # checkout that rewrites this file would change the program mid-flight. Run from a private copy.
-if [ -z "${QKT_RELEASE_REPO_ROOT:-}" ]; then
-    QKT_RELEASE_REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-    copy="$(mktemp "${TMPDIR:-/tmp}/release-unattended.XXXXXX")"
-    cp "${BASH_SOURCE[0]}" "$copy"
-    export QKT_RELEASE_REPO_ROOT
-    exec bash "$copy" "$@"
+# The copy is marked by its own path, so only the private copy ever deletes itself: a preset
+# QKT_RELEASE_REPO_ROOT can never make the real script remove itself.
+if [ "${QKT_RELEASE_PRIVATE_COPY:-}" != "${BASH_SOURCE[0]}" ]; then
+    QKT_RELEASE_REPO_ROOT="${QKT_RELEASE_REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+    QKT_RELEASE_PRIVATE_COPY="$(mktemp "${TMPDIR:-/tmp}/release-unattended.XXXXXX")"
+    cp "${BASH_SOURCE[0]}" "$QKT_RELEASE_PRIVATE_COPY"
+    export QKT_RELEASE_REPO_ROOT QKT_RELEASE_PRIVATE_COPY
+    exec bash "$QKT_RELEASE_PRIVATE_COPY" "$@"
 fi
 repo_root="$QKT_RELEASE_REPO_ROOT"
-trap 'rm -f "${BASH_SOURCE[0]}"' EXIT
+trap 'rm -f "$QKT_RELEASE_PRIVATE_COPY"' EXIT
 
 usage() {
     cat <<'USAGE'
