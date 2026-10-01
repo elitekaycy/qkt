@@ -144,7 +144,9 @@ RULES
 - A rule that reads no stream runs on the first stream with candles. An `OPTIONS:` feed has none, so
   declare at least one other stream, such as a `CHAIN:` metric.
 - Two legs that select the same contract refuse the structure. Ratio structures are not supported.
-- Structures run in backtests; live structures arrive with the phase 44 gateway.
+- Structures run in backtests and live on a `type: gateway` account. Live, legs are chosen from the
+  chain the account records from its quotes (declare the root `chains: book`), and a strategy's
+  structures survive a restart.
 
 ## Reports
 

@@ -52,7 +52,8 @@ run is not an error.
 - Chain streams are observations, like `HUB:` and `MACRO:`: each value closes as its own event
   candle, and negative values (a skew) are valid.
 - They are read-only: `BUY iv` fails to compile.
-- They run in backtests; live chain streams arrive with the phase 44 gateway.
+- They run in backtests and live. Live, the values come from the chain the gateway account records
+  (a root declared `chains: book`), up to 5 seconds after each snapshot.
 
 ## Feeding a whole root (`OPTIONS:`)
 
