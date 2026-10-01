@@ -17,3 +17,9 @@ interface OptionDirectory {
     /** The settlement index's delivery price on [qktSymbol]'s expiry date, when its catalog records one. */
     fun deliveryPrice(qktSymbol: String): BigDecimal?
 }
+
+/** The catalogued options among [symbols]. */
+fun InstrumentRegistry.optionSymbols(symbols: Collection<String>): Set<String> {
+    val directory = options() ?: return emptySet()
+    return symbols.filterTo(LinkedHashSet()) { directory.optionRoot(it) != null }
+}

@@ -6,6 +6,7 @@ import com.qkt.instrument.FuturesRoot
 import com.qkt.instrument.LayeredInstrumentRegistry
 import com.qkt.instrument.StandardInstrumentRegistry
 import java.math.BigDecimal
+import java.nio.file.Path
 import org.assertj.core.api.Assertions.assertThatCode
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
@@ -86,7 +87,7 @@ class DerivativeSymbolChecksTest {
     }
 
     @Test
-    fun `a catalogued option is refused until qkt has an option venue`() {
+    fun `an option trades only when its root declares a chain series`() {
         val root =
             com.qkt.instrument.OptionRoot(
                 "DERIBIT:BTC_USDC",
@@ -102,10 +103,23 @@ class DerivativeSymbolChecksTest {
                 root.root,
                 listOf(com.qkt.instrument.OptionListing("BTC_USDC-27DEC24-90000-P", "90000", "put", 1735286400000)),
             )
-        val registry = com.qkt.instrument.OptionCatalogRegistry(listOf(root), mapOf(root.root to catalog))
+        val untraded =
+            com.qkt.instrument.OptionCatalogRegistry(
+                listOf(root),
+                mapOf(root.root to catalog),
+                dataRoot = Path.of("data"),
+            )
+        val traded =
+            com.qkt.instrument.OptionCatalogRegistry(
+                listOf(root.copy(chains = com.qkt.instrument.QuoteSource.BOOK)),
+                mapOf(root.root to catalog),
+                dataRoot = Path.of("data"),
+            )
+        val symbol = listOf("DERIBIT:BTC_USDC_27DEC24_90000_P")
 
-        assertThatThrownBy {
-            requireDerivativeSymbolsResolvable(listOf("DERIBIT:BTC_USDC_27DEC24_90000_P"), AccountingEngine(), registry)
-        }.hasMessageContaining("DERIBIT:BTC_USDC_27DEC24_90000_P").hasMessageContaining("option")
+        assertThatThrownBy { requireDerivativeSymbolsResolvable(symbol, AccountingEngine(), untraded) }
+            .hasMessageContaining("DERIBIT:BTC_USDC_27DEC24_90000_P")
+            .hasMessageContaining("chains: trade | book")
+        requireDerivativeSymbolsResolvable(symbol, AccountingEngine(), traded)
     }
 }

@@ -4,6 +4,7 @@ import com.qkt.common.FixedClock
 import com.qkt.derivatives.futures.ContinuousChains
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.NoopInstrumentRegistry
+import com.qkt.instrument.optionSymbols
 import com.qkt.marketdata.hub.HubMarketSource
 import com.qkt.marketdata.hub.hubRoot
 import com.qkt.marketdata.hub.validateHubStreams
@@ -12,6 +13,7 @@ import com.qkt.marketdata.source.ContinuousMarketSource
 import com.qkt.marketdata.source.LocalMarketSource
 import com.qkt.marketdata.source.MacroMarketSource
 import com.qkt.marketdata.source.MarketSource
+import com.qkt.marketdata.source.OptionChainMarketSource
 import com.qkt.marketdata.source.SymbolPattern
 import com.qkt.marketdata.store.BinaryBarStore
 import com.qkt.marketdata.store.DataStore
@@ -62,6 +64,13 @@ internal fun storeMarketSource(
     // object graph it constructed before either existed and cannot change behaviour.
     val observationRoutes: List<Pair<SymbolPattern, MarketSource>> =
         buildList {
+            // Option contracts replay their roots' stored chains; only a run that names one routes them.
+            val options = instruments.optionSymbols(symbols)
+            if (options.isNotEmpty()) {
+                val chains =
+                    requireNotNull(instruments.options()?.dataRoot) { "option symbols have no chain data root" }
+                add(SymbolPattern.exactSet(options) to OptionChainMarketSource(chains, instruments))
+            }
             if (symbols.any { it.startsWith("MACRO:") }) {
                 add(SymbolPattern.prefix("MACRO:") to MacroMarketSource(MacroSeriesStore(store.root)))
             }

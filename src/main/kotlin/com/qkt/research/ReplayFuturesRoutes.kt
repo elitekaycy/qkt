@@ -17,13 +17,7 @@ import com.qkt.pnl.ContractFeeCommission
 import com.qkt.pnl.NoCommission
 import org.slf4j.LoggerFactory
 
-/** The replay routes for a run's futures [symbols], and those symbols. */
-internal data class ReplayFuturesRoutes(
-    val routes: List<Pair<SymbolPattern, Broker>>,
-    val symbols: Set<String>,
-)
-
-private val log = LoggerFactory.getLogger(ReplayFuturesRoutes::class.java)
+private val log = LoggerFactory.getLogger("com.qkt.research.ReplayFuturesRoutes")
 
 /**
  * Routes a replay's futures symbols to the exchange stack: continuous streams to one
@@ -40,11 +34,11 @@ internal fun replayFuturesRoutes(
     barFills: Boolean,
     calendar: TradingCalendar,
     symbols: Collection<String>,
-): ReplayFuturesRoutes {
+): ReplayExchangeRoutes {
     val instruments = books.instruments
     val futures = instruments.futuresSymbols(symbols)
     val directory = instruments.futures()
-    if (futures.isEmpty() || directory == null) return ReplayFuturesRoutes(emptyList(), emptySet())
+    if (futures.isEmpty() || directory == null) return ReplayExchangeRoutes(emptyList(), emptySet())
     val continuous = futures.filter { directory.rootOfContinuous(it) != null }.toSet()
     val listed = futures - continuous
     warnIgnoredSimulation(executionConfig)
@@ -86,7 +80,7 @@ internal fun replayFuturesRoutes(
                 add(SymbolPattern.exactSet(listed) to simulator)
             }
         }
-    return ReplayFuturesRoutes(routes, continuous + listed)
+    return ReplayExchangeRoutes(routes, continuous + listed)
 }
 
 /** The exchange simulator models no latency, venue rejections or partial fills; say so when asked for them. */
