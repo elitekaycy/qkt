@@ -18,6 +18,7 @@ internal class WorkingOption(
     val root: OptionRoot,
     val submittedAt: Long,
     val expiresAt: Long?,
+    val contractExpiryMs: Long,
 )
 
 /**
@@ -116,6 +117,6 @@ internal class OptionOrderEntry(
                 } else {
                     null
                 }
-        return Checked.Accepted(WorkingOption(sized, root, now, lapse))
+        return Checked.Accepted(WorkingOption(sized, root, now, lapse, terms.expiryMs))
     }
 }

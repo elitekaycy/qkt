@@ -29,7 +29,7 @@ class OptionCatalogRegistryTest {
         @TempDir dir: Path,
     ) {
         OptionCatalogStore(dir).write(catalog)
-        val registry = OptionCatalogRegistry.load(listOf(root), OptionCatalogStore(dir))
+        val registry = OptionCatalogRegistry.load(listOf(root), dir)
 
         val meta = requireNotNull(registry.lookup("DERIBIT:BTC_USDC_27SEP24_60000_C"))
         assertThat((meta.derivative as OptionTerms).strike).isEqualByComparingTo("60000")
@@ -41,7 +41,7 @@ class OptionCatalogRegistryTest {
     fun `an option of a declared root missing from the catalog names the refresh command`(
         @TempDir dir: Path,
     ) {
-        val registry = OptionCatalogRegistry.load(listOf(root), OptionCatalogStore(dir))
+        val registry = OptionCatalogRegistry.load(listOf(root), dir)
 
         assertThat(registry.lookup("DERIBIT:BTC_USDC_27DEC24_90000_P")).isNull()
         assertThat(
@@ -54,7 +54,7 @@ class OptionCatalogRegistryTest {
     fun `only option names of a root are claimed, and only listings that belong to it are loaded`(
         @TempDir dir: Path,
     ) {
-        val registry = OptionCatalogRegistry.load(listOf(root), OptionCatalogStore(dir))
+        val registry = OptionCatalogRegistry.load(listOf(root), dir)
 
         assertThat(registry.missingReason("DERIBIT:BTC_USDC_PERPETUAL")).isNull()
         val stray =
