@@ -25,6 +25,10 @@ data class TickSteps(
                 a.above < b.above
             },
         ) { "TickSteps steps must be ascending by price: $steps" }
+        val misaligned = steps.firstOrNull { it.above.signum() < 0 || it.above.remainder(it.tick).signum() != 0 }
+        require(misaligned == null) {
+            "TickSteps step above ${misaligned?.above} must be a non-negative multiple of its tick ${misaligned?.tick}"
+        }
     }
 
     /** The tick that applies at [price]. */

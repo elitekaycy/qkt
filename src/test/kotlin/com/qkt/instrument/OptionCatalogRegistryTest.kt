@@ -49,4 +49,20 @@ class OptionCatalogRegistryTest {
         ).contains("qkt fetch DERIBIT:BTC_USDC --catalog")
         assertThat(registry.missingReason("EXNESS:XAUUSD")).isNull()
     }
+
+    @Test
+    fun `only option names of a root are claimed, and only listings that belong to it are loaded`(
+        @TempDir dir: Path,
+    ) {
+        val registry = OptionCatalogRegistry.load(listOf(root), OptionCatalogStore(dir))
+
+        assertThat(registry.missingReason("DERIBIT:BTC_USDC-PERPETUAL")).isNull()
+        val stray =
+            catalog.copy(
+                contracts = listOf(OptionListing("ETH_USDC-27SEP24-3000-C", "3000", "call", 1_727_424_000_000L)),
+            )
+        org.assertj.core.api.Assertions
+            .assertThatThrownBy { OptionCatalogRegistry(listOf(root), mapOf(root.root to stray)) }
+            .hasMessageContaining("ETH_USDC-27SEP24-3000-C")
+    }
 }

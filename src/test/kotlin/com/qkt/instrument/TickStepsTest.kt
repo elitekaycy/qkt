@@ -41,4 +41,14 @@ class TickStepsTest {
             TickSteps(bd("5"), listOf(TickStep(bd("1000"), bd("20")), TickStep(bd("500"), bd("10"))))
         }.hasMessageContaining("ascending")
     }
+
+    @Test
+    fun `a step must start on its own grid so snapping never skips a valid level`() {
+        assertThatThrownBy {
+            TickSteps(
+                bd("5"),
+                listOf(TickStep(bd("1010"), bd("20"))),
+            )
+        }.hasMessageContaining("multiple")
+    }
 }
