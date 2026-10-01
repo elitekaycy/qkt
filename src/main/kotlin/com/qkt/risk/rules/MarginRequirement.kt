@@ -15,10 +15,14 @@ import java.math.BigDecimal
  * Refuses an order on a margined instrument when the account's [equity] could not carry the initial
  * margin of every margined position after it. Each symbol's exposure is the larger of what it would
  * hold if all its pending buys or all its pending sells filled (this order included), so a burst of
- * entries cannot outrun the check. With [options], the account's option positions add their
- * worst-case requirement ([OptionMargin]) and an option order is judged too; one that would leave an
- * unbounded loss is refused. Orders that only reduce a position always pass; symbols without margin
- * terms that are not options are not judged.
+ * entries cannot outrun the check.
+ *
+ * With [options], the account's option positions add their worst-case requirement ([OptionMargin]),
+ * and option orders are judged on that portfolio rather than per symbol. An option order that would
+ * leave an unbounded loss is refused, even one that reduces its own symbol (selling the long wing of
+ * a call spread leaves the short naked). One that lowers the options' requirement passes even when
+ * equity no longer covers it. A non-option order that only reduces a position always passes, and
+ * symbols without margin terms that are not options are not judged.
  */
 class MarginRequirement(
     private val margin: MarginModel,
@@ -31,11 +35,35 @@ class MarginRequirement(
         positions: PositionProvider,
     ): Decision {
         val isOption = options?.covers(request.symbol) == true
-        if (!(margin.hasTerms(request.symbol) || isOption) ||
-            isRiskReducing(request, positions)
+        if (!isOption &&
+            (!margin.hasTerms(request.symbol) || isRiskReducing(request, positions))
         ) {
             return Decision.Approve
         }
+        var unpriced: String? = null
+        val futures = futuresRequirement(request, positions) { unpriced = it }
+        unpriced?.let { return Decision.Reject("cannot compute margin for $it: no price reference") }
+        val optionsAfter = optionRequirement(request, request.quantity, positions)
+        if (optionsAfter is OptionMargin.Outcome.Refused) return Decision.Reject(optionsAfter.reason)
+        val afterAmount = (optionsAfter as? OptionMargin.Outcome.Required)?.amount ?: BigDecimal.ZERO
+        val required = futures.add(afterAmount)
+        val available = equity()
+        if (required <= available) return Decision.Approve
+        if (isOption) {
+            val before = optionRequirement(request, BigDecimal.ZERO, positions)
+            if (before !is OptionMargin.Outcome.Required || afterAmount < before.amount) return Decision.Approve
+        }
+        return Decision.Reject(
+            "initial margin ${required.toPlainString()} after this order exceeds account equity ${available.toPlainString()}",
+        )
+    }
+
+    /** The futures initial margin after [request]; a margined symbol without a price is reported to [unpriced]. */
+    private fun futuresRequirement(
+        request: OrderRequest,
+        positions: PositionProvider,
+        unpriced: (String) -> Unit,
+    ): BigDecimal {
         val symbols =
             (
                 positions.symbols() +
@@ -49,32 +77,22 @@ class MarginRequirement(
                 (if (symbol == request.symbol) explicitPrice(request) else null)
                     ?: prices.lastPrice(symbol)
                     ?: positions.positionFor(symbol)?.avgEntryPrice
-                    ?: return Decision.Reject("cannot compute margin for $symbol: no price reference")
+                    ?: return BigDecimal.ZERO.also { unpriced(symbol) }
             required =
                 required.add(margin.initial(symbol, exposure(symbol, request, positions), price, request.timestamp))
         }
-        if (options != null) {
-            val mark = { s: String ->
-                (
-                    if (s ==
-                        request.symbol
-                    ) {
-                        explicitPrice(request)
-                    } else {
-                        null
-                    }
-                ) ?: prices.lastPrice(s)
-            }
-            when (val outcome = options.required(request.symbol, request.side, request.quantity, positions, mark)) {
-                is OptionMargin.Outcome.Refused -> return Decision.Reject(outcome.reason)
-                is OptionMargin.Outcome.Required -> required = required.add(outcome.amount)
-            }
-        }
-        val available = equity()
-        if (required <= available) return Decision.Approve
-        return Decision.Reject(
-            "initial margin ${required.toPlainString()} after this order exceeds account equity ${available.toPlainString()}",
-        )
+        return required
+    }
+
+    /** The options' requirement with [quantity] of [request] filled (zero: as things stand); null without options. */
+    private fun optionRequirement(
+        request: OrderRequest,
+        quantity: BigDecimal,
+        positions: PositionProvider,
+    ): OptionMargin.Outcome? {
+        val model = options ?: return null
+        val mark = { s: String -> (if (s == request.symbol) explicitPrice(request) else null) ?: prices.lastPrice(s) }
+        return model.required(request.symbol, request.side, quantity, positions, mark)
     }
 
     private fun exposure(
