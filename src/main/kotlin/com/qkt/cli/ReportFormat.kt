@@ -18,7 +18,8 @@ object ReportPrinter {
     /**
      * Writes [result] in [fmt] form to [out]. [brokerKind] drives the execution-assumptions
      * disclosure — what the fills did and didn't model — so the report never reads as more
-     * realistic than it is (#336); the run's [futures] symbols filled on the exchange simulator.
+     * realistic than it is (#336); the run's [futures] symbols filled on the exchange simulator and its
+     * [options] on the option venue.
      */
     fun print(
         result: BacktestResult,
@@ -26,9 +27,10 @@ object ReportPrinter {
         out: PrintStream,
         brokerKind: BrokerKind,
         futures: Set<String> = emptySet(),
+        options: Set<String> = emptySet(),
     ) {
         when (fmt) {
-            ReportFormat.Text -> TextReportPrinter.print(result, out, brokerKind, futures)
+            ReportFormat.Text -> TextReportPrinter.print(result, out, brokerKind, futures, options)
             ReportFormat.Json -> JsonReportPrinter.print(result, out, brokerKind)
         }
     }
