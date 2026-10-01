@@ -1,5 +1,6 @@
 package com.qkt.broker.options
 
+import com.qkt.broker.exchange.SettlementLog
 import com.qkt.bus.EventBus
 import com.qkt.common.FixedClock
 import com.qkt.common.MonotonicSequenceGenerator
@@ -17,13 +18,24 @@ import java.nio.file.Path
 /** An [OptionExchange] over [OptionChainFixture]'s call, with a capturing bus and a settable clock. */
 internal class OptionExchangeFixture(
     dir: Path,
+    deliveryPrice: String? = "95000",
+    right: String = "call",
 ) {
-    val chain = OptionChainFixture(dir, takerFeeRate = "0.0003", feeCapRate = "0.125")
+    val chain =
+        OptionChainFixture(
+            dir,
+            takerFeeRate = "0.0003",
+            feeCapRate = "0.125",
+            deliveryPrice = deliveryPrice,
+            right = right,
+        )
+    val settlements = SettlementLog()
     val symbol = chain.symbol
     val clock = FixedClock(time = ms("2026-10-01T00:00:00Z"))
     val bus = EventBus(clock, MonotonicSequenceGenerator())
     val events = mutableListOf<BrokerEvent>()
-    val exchange = OptionExchange(bus, clock, chain.registry, ChainQuoteLookup(dir, chain.registry))
+    val exchange =
+        OptionExchange(bus, clock, chain.registry, ChainQuoteLookup(dir, chain.registry), settlements = settlements)
     private var ids = 0
 
     init {

@@ -10,11 +10,13 @@ import java.math.BigDecimal
 import java.nio.file.Path
 import java.time.Instant
 
-/** A BTC_USDC option root trading a trade-built chain, one call and its stored quotes, for chain-consumer tests. */
+/** A BTC_USDC option root trading a trade-built chain, one contract (a call unless [right] says put) and its stored quotes. */
 internal class OptionChainFixture(
     val dataRoot: Path,
     takerFeeRate: String = "0",
     feeCapRate: String? = null,
+    deliveryPrice: String? = "95000",
+    right: String = "call",
 ) {
     val root =
         OptionRoot(
@@ -32,13 +34,22 @@ internal class OptionChainFixture(
             feeCapRate = feeCapRate?.let(::BigDecimal),
             deliveryFeeRate = BigDecimal("0.00015"),
         )
-    val venueName = "BTC_USDC-2OCT26-92000-C"
-    val symbol = "DERIBIT:BTC_USDC_2OCT26_92000_C"
+    private val code = if (right == "call") "C" else "P"
+    val venueName = "BTC_USDC-2OCT26-92000-$code"
+    val symbol = "DERIBIT:BTC_USDC_2OCT26_92000_$code"
     val expiryMs = ms("2026-10-02T08:00:00Z")
     val registry =
         OptionCatalogRegistry(
             listOf(root),
-            mapOf(root.root to OptionCatalog(root.root, listOf(OptionListing(venueName, "92000", "call", expiryMs)))),
+            mapOf(
+                root.root to
+                    OptionCatalog(
+                        root.root,
+                        listOf(OptionListing(venueName, "92000", right, expiryMs)),
+                        deliveryPrice?.let { mapOf("2026-10-02" to it) }.orEmpty(),
+                    ),
+            ),
+            dataRoot,
         )
 
     /** Stores one trade-built snapshot of the call per (ISO instant, mark, age ms). */

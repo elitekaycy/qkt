@@ -6,7 +6,6 @@ import com.qkt.instrument.FuturesRootsFile
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.LayeredInstrumentRegistry
 import com.qkt.instrument.OptionCatalogRegistry
-import com.qkt.instrument.OptionCatalogStore
 import com.qkt.instrument.OptionRootsFile
 import com.qkt.instrument.RollHistoryStore
 import com.qkt.instrument.StandardInstrumentRegistry
@@ -50,7 +49,7 @@ internal object BacktestInstruments {
                 emptyList()
             } else {
                 listOf(
-                    OptionCatalogRegistry.load(optionRoots, OptionCatalogStore(dataRoot)),
+                    OptionCatalogRegistry.load(optionRoots, dataRoot),
                 )
             }
         val registry =

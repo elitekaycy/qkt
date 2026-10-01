@@ -12,6 +12,7 @@ import java.time.ZoneOffset
 class OptionCatalogRegistry(
     private val roots: List<OptionRoot>,
     private val catalogs: Map<String, OptionCatalog>,
+    override val dataRoot: java.nio.file.Path? = null,
 ) : InstrumentRegistry,
     OptionDirectory {
     private val table: Map<String, InstrumentMeta> =
@@ -66,20 +67,20 @@ class OptionCatalogRegistry(
         }
 
     companion object {
-        /** The registry for [roots], reading each root's catalog from [store] (absent catalogs list nothing). */
+        /** The registry for [roots], reading each root's catalog from [dataRoot] (absent catalogs list nothing). */
         fun load(
             roots: List<OptionRoot>,
-            store: OptionCatalogStore,
-        ): OptionCatalogRegistry =
-            OptionCatalogRegistry(
+            dataRoot: java.nio.file.Path,
+        ): OptionCatalogRegistry {
+            val store = OptionCatalogStore(dataRoot)
+            return OptionCatalogRegistry(
                 roots,
                 roots
                     .mapNotNull { r ->
-                        store.read(r.root)?.let {
-                            r.root to
-                                it
-                        }
+                        store.read(r.root)?.let { r.root to it }
                     }.toMap(),
+                dataRoot,
             )
+        }
     }
 }

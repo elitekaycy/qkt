@@ -7,6 +7,7 @@ import com.qkt.broker.Broker
 import com.qkt.broker.OrderTypeCapability
 import com.qkt.broker.PositionAccountingMode
 import com.qkt.broker.SubmitAck
+import com.qkt.broker.exchange.SettlementLog
 import com.qkt.bus.EventBus
 import com.qkt.common.Clock
 import com.qkt.common.Money
@@ -33,7 +34,8 @@ import java.time.Instant
  * - a limit order ([OptionOrderEntry] snaps it so it never fills early) fills at its limit on a later
  *   quote whose side reaches it; IOC and FOK get one look, GTD and DAY orders lapse at their time;
  * - each fill carries its [OptionFee] as an [CostKind.EXCHANGE_FEE] cost in the root's currency;
- * - positions are netted and long only: a sell beyond the held quantity is refused.
+ * - positions are netted and long only: a sell beyond the held quantity is refused;
+ * - at a contract's expiry its working orders lapse and its positions are cash-settled ([OptionExpiry]).
  *
  * Like the futures exchange it does not subscribe to ticks: its owner calls [onTick].
  */
@@ -43,12 +45,14 @@ class OptionExchange(
     private val instruments: InstrumentRegistry,
     private val quotes: ChainQuoteLookup,
     calendar: TradingCalendar = TradingCalendar.crypto(),
+    settlements: SettlementLog = SettlementLog(),
 ) : Broker {
     override val name: String = "OptionSim"
     override val capabilities: Set<OrderTypeCapability> = setOf(OrderTypeCapability.MARKET, OrderTypeCapability.LIMIT)
     private val positions = OptionPositions()
     private val entry = OptionOrderEntry(instruments, clock, calendar, positions)
     private val working = LinkedHashMap<String, WorkingOption>()
+    private val expiry = OptionExpiry(bus, instruments, positions, settlements)
 
     override fun positionAccountingMode(symbol: String): PositionAccountingMode = PositionAccountingMode.NETTING
 
@@ -69,10 +73,16 @@ class OptionExchange(
         working[orderId]?.let { cancelWorking(it, "cancelled") }
     }
 
-    /** Lapses, fills or cancels working orders against [tick]'s instant. */
+    /**
+     * Against [tick]'s instant: lapses orders on contracts that have expired, settles expired positions
+     * ([OptionExpiry]), then fills, cancels or lapses the remaining working orders.
+     */
     fun onTick(tick: Tick) {
-        if (working.isEmpty()) return
         val at = tick.timestamp
+        for (order in working.values.filter { at >= it.contractExpiryMs }) {
+            cancelWorking(order, "${order.request.symbol} expired at ${Instant.ofEpochMilli(order.contractExpiryMs)}")
+        }
+        for (symbol in expiry.expired(at)) expiry.settle(symbol, at)
         for (order in working.values.toList()) {
             if (order.request.id !in working) continue
             val symbol = order.request.symbol

@@ -25,6 +25,9 @@ internal class OptionPositions {
         if (next.signum() == 0) net.remove(key) else net[key] = next
     }
 
+    /** The contracts anyone holds. */
+    fun symbols(): Set<String> = net.keys.mapTo(sortedSetOf()) { it.second }
+
     /** Every non-zero position of [symbol], by strategy. */
     fun holdersOf(symbol: String): Map<String, BigDecimal> =
         net.filterKeys { it.second == symbol }.mapKeys { it.key.first }
