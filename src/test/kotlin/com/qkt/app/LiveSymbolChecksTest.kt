@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Test
 
 class LiveSymbolChecksTest {
     @Test
-    fun `a continuous futures stream is refused live until the gateway connector exists`() {
+    fun `a continuous futures stream is refused live`() {
         assertThatThrownBy { requireLiveTradable(listOf("BINANCE_UM:BTCUSDT@front"), AccountingEngine()) }
             .hasMessageContaining("BINANCE_UM:BTCUSDT@front")
             .hasMessageContaining("backtest")
@@ -22,5 +22,16 @@ class LiveSymbolChecksTest {
                 AccountingEngine(),
             )
         }.hasMessageContaining("GBP")
+    }
+
+    @Test
+    fun `a live chain stream needs its root fed, which records the chain it is computed from`() {
+        val iv = "CHAIN:DERIBIT.BTC_USDC.atm_iv.30d"
+
+        assertThatThrownBy { requireLiveTradable(listOf(iv), AccountingEngine()) }
+            .hasMessageContaining("OPTIONS:DERIBIT.BTC_USDC")
+        assertThatCode {
+            requireLiveTradable(listOf("OPTIONS:DERIBIT.BTC_USDC", iv), AccountingEngine())
+        }.doesNotThrowAnyException()
     }
 }
