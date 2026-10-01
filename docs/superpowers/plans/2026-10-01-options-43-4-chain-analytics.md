@@ -33,6 +33,11 @@ uses every existing indicator, and a value that cannot be computed honestly is a
 - **`put_call_oi`** is dropped from the spec's metric list: neither free source carries open
   interest per snapshot (spec amendment).
 
+**Amended after review (2026-10-01):** ATM IV interpolates in strike between strikes on both sides of
+the forward within 10% of it; wings use quotes within 0.15 delta of ±0.25; mark IVs ≤ 0 are ignored;
+rate 0 (the venue rate field's unit is unverified); an undefined stream is empty, not an error.
+See `ChainAnalytics` and `docs/reference/dsl/chain.md`.
+
 **Spec:** §6.4 (amended: `CHAIN:` prefix, metrics `atm_iv` and `skew_25d`); §6.2 pricing.
 
 ## Global constraints

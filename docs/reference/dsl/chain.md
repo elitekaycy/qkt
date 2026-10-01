@@ -30,19 +30,22 @@ RULES
 
 | Metric | Value |
 |---|---|
-| `atm_iv` | At-the-money implied volatility, in percent: per expiry the mean mark IV at the listed strike nearest the forward, interpolated in total variance (`IV²·T`) between the expiries around the tenor |
-| `skew_25d` | 25-delta put IV less 25-delta call IV, in IV points: per expiry each wing is interpolated linearly in Black-76 delta, and the skew linearly in time across expiries |
+| `atm_iv` | At-the-money implied volatility, in percent. Per expiry, IV is interpolated linearly in strike between the nearest strikes at or below and at or above the forward, both within 10% of it. Across expiries it is interpolated in total variance (`IV²·T`) around the tenor |
+| `skew_25d` | 25-delta put IV less 25-delta call IV, in IV points. Per expiry, each wing is interpolated linearly in Black-76 delta (at rate 0) between quotes within 0.15 of ±0.25. Across expiries the skew is interpolated linearly in time |
 
-Only quotes with a mark IV no older than the root's `maxQuoteAgeMinutes` count. The forward per
+Only catalogued quotes with a positive mark IV no older than the root's `maxQuoteAgeMinutes` count. The forward per
 expiry is the median `underlying` of those quotes: the expiry's forward on a book series, the index
 at each trade on a trade series.
 
 ## When a value is absent
 
 A stream has a value only at the chain's snapshot instants where the metric can be computed
-honestly. A tenor outside the listed expiries is never extrapolated. An expiry without both 25-delta
-wings gives no skew, and a chain of stale marks gives nothing. On free trade-built chains this is
-common (often every other hour). Rules on the stream simply do not fire at those instants.
+honestly. A tenor outside the expiries that carry the value is never extrapolated, and a value is
+never read from a distant strike or delta. An expiry without quotes on both sides of the forward
+gives no ATM IV, one without both 25-delta wings gives no skew, and stale marks give nothing. On free
+trade-built chains this is common: on 25–26 September 2026, 1-day ATM IV was defined at 9 of 48
+hours. Rules on the stream simply do not fire at those instants. A stream that is never defined in a
+run is not an error.
 
 ## Rules
 
