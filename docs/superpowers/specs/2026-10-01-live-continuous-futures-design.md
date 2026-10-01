@@ -113,8 +113,16 @@ venue already filled (on a netting account, that opens the other side).
    orders whose cancel is awaited, and the roll in flight with each holder's step. Contracts are stored by
    symbol, never by schedule index, so a catalog that dropped an expired contract cannot shift them. The
    record is written synchronously **before every venue action** (the lane's venue is wrapped, so no path
-   can skip it) and **after every venue answer**: what the lane intends is durable before the venue can
-   act on it, and an order the venue does not know after a restart was never sent.
+   can skip it), **before the engine hears of a fill or a roll's outcome**, and **after every venue
+   answer**: what the lane intends is durable before the venue can act on it, an order the venue does not
+   know after a restart was never sent, and a crash can lose the engine's copy of one event but never
+   publish it twice. A failed write counts against the session's persistence health, which halts new
+   exposure while exits (and roll legs, which carry positions) go on.
+3a. **A resting order pulled at a roll is settled only once the venue confirms its cancel**, from the
+   order as it stands then: re-placed for what is left of it, cancelled for the engine when its strategy
+   was stopped or the engine cancelled it meanwhile, or nothing when it filled instead (which also ends
+   the awaited cancel). The awaited cancel's record follows every slice, so recovery hands the venue an
+   exact fill count.
 4. **Restore** rebuilds the lane from that record when the session builds its brokers, and fails loudly
    when the chain no longer lists a saved contract or measures the saved roll differently. Each waiting
    leg is awaited again at once. When the engine hands its restored orders to the broker, or at the latest
@@ -185,13 +193,22 @@ venue already filled (on a netting account, that opens the other side).
 - Found on the way: a resting order part-filled before a roll was re-placed for its whole quantity, and
   one that filled while the roll cancelled it was placed again; both fixed (`LaneSlicedFillsTest`). A
   re-placed order's slices now reach the engine with the engine order's fill so far.
+- Review fix pass: re-placement waits for the cancel's confirmation and works from the live order
+  (`RollCancelWindowTest`); a fill instead of the cancel ends the awaited cancel, so a restart does not
+  book it twice; a restored holder with no step starts only once ready and only restored legs are
+  re-sent (no leg twice); a roll re-placement the venue never received is re-sent
+  (`LaneRestartEdgesTest`).
 
 Known limits:
 - The lane and the engine persist separately: the lane synchronously around every venue action and
-  answer, the engine through its own (possibly asynchronous) persistor. A crash in the instant between a
-  fill reaching the engine and the engine's save can leave the engine's stream position one fill apart
-  from the lane's, as with any venue; the lane's record is the one reconciled against the venue.
+  answer, the engine through its own (possibly asynchronous) persistor. A crash in the instant after the
+  lane's save and before the engine's can leave the engine's stream position one fill short of the
+  lane's, as with any venue; the lane's record is the one reconciled against the venue.
 - A restored contract position whose opening time was never recorded takes the restart time.
+- Lane records live under the session's state owner (its first strategy): reordering a session's
+  strategies across a restart starts its lanes without their record. The roll ledger (reporting) is not
+  persisted. A venue that refuses a roll's cancel without filling the order leaves it on the old contract,
+  awaited, until it answers.
 
 **Ruling (no leg timeout):** a roll leg waits for the venue's answer. The gateway resolves every order
 it took (write-ahead, then the venue's label, then the order's fills), so a leg always ends; meanwhile
