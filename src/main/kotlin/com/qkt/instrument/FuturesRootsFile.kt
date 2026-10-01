@@ -1,5 +1,6 @@
 package com.qkt.instrument
 
+import com.qkt.common.TradingCalendar
 import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.Path
@@ -74,7 +75,7 @@ object FuturesRootsFile {
             volumeStep = num("volumeStep"),
             volumeMin = num("volumeMin"),
             volumeMax = opt("volumeMax"),
-            calendar = entry["calendar"]?.toString(),
+            calendar = entry["calendar"]?.toString()?.also { calendar(it, name) },
             exchangeFeePerContract = opt("exchangeFeePerContract") ?: BigDecimal.ZERO,
             takerFeeRate = opt("takerFeeRate") ?: BigDecimal.ZERO,
             margin =
@@ -162,6 +163,13 @@ object FuturesRootsFile {
     ): Int =
         raw.toIntOrNull()?.takeIf { it >= 0 }
             ?: error("futures root $name: $key must be a whole number >= 0, got '$raw'")
+
+    private fun calendar(
+        raw: String,
+        name: String,
+    ) = require(TradingCalendar.named(raw) != null) {
+        "futures root $name: unknown calendar '$raw'; known: ${TradingCalendar.names}"
+    }
 
     private fun validate(
         root: FuturesRoot,

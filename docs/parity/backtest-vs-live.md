@@ -166,6 +166,7 @@ keep in mind when reading a backtest.
 | A35 | Roll legs trade at the roll history's reference prices (each contract's last 1m close at the roll instant) plus slippage, so the booked roll cost is slippage and fees only; a live roll trades the market at that moment. Continuous-space P&L plus the booked roll costs equals the P&L of the contract legs to the cent | DECLARED (phase 42.5) — identity pinned on real data by `ContinuousFuturesExecutionTest`; roll mechanics by `RollExecutorTest`, failures by `RollFailureTest` |
 | A36 | A listed contract held into expiry is settled by the exchange simulator at the catalog's delivery price (a settlement print closes the contract's data at its expiry); a live venue settles it itself | DECLARED (phase 42.5) — `ExpirySettlementTest`, `DatedContractDataTest` |
 | A37 | Expiry guard: within a root's `expiryGuardHours` (default 24) before expiry the exchange simulator refuses orders that open, add to or flip a contract position; exits pass. A live venue does not enforce it | DECLARED (phase 42.6) — `ExpiryGuardTest`; phase 44 applies the same rule in the contract venue wrapper |
+| A38 | `cme_globex` models the weekly hours and the daily 16:00–17:00 Chicago halt but no exchange holidays or early closes; a backtest treats a CME holiday as a normal session | DECLARED (phase 42.7) — `CmeGlobexCalendarTest`; live sessions take the venue's own trading hours |
 
 ## 2026-07-03 hardening pass — parity-audit rows resolved (#658)
 

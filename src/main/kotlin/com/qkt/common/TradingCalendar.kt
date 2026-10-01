@@ -47,5 +47,18 @@ interface TradingCalendar {
         fun fxDefault(): TradingCalendar = FxCalendar
 
         fun nyse(): TradingCalendar = NyseCalendar
+
+        /** The names [named] knows, for messages. */
+        val names: List<String> = listOf("crypto", "fx", "nyse", "cme_globex")
+
+        /** The calendar called [name] — `crypto`, `fx`, `nyse` or `cme_globex` — or null. */
+        fun named(name: String): TradingCalendar? =
+            when (name) {
+                "crypto" -> CryptoCalendar
+                "fx" -> FxCalendar
+                "nyse" -> NyseCalendar
+                "cme_globex" -> CmeGlobexCalendar
+                else -> null
+            }
     }
 }
