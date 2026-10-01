@@ -241,9 +241,16 @@ class TradingPipeline(
         candleCloser =
             CandleWindowCloser(windowAggregator, candleHub, replayCandleCloseGraceMs, replayHeartbeatIntervalMs)
         tickIngest =
-            TickIngest(engine, marketDataGate, equitySampler, candleCloser, candleHub, scheduleRunner, mode) { symbol ->
-                instruments.options()?.optionRoot(symbol) != null
-            }
+            TickIngest(
+                engine,
+                marketDataGate,
+                equitySampler,
+                candleCloser,
+                candleHub,
+                scheduleRunner,
+                mode,
+                instruments,
+            )
         bus.subscribe<WarmupTickEvent> { e -> priceTracker.update(e.tick) }
         bus.subscribe<CandleEvent> { e -> preCandle(e.candle) }
         strategyBinder.bindAll(strategies)
@@ -262,17 +269,7 @@ class TradingPipeline(
             if (latencyEnabled) latency.recordSubmit(e.request.id)
             orderManager.submit(e.request)
         }
-        bus.subscribe<BrokerEvent.PositionReconciled> { e ->
-            strategyPositions.reconcileNet(
-                e.symbol,
-                e.newQty,
-                e.newAvgPx,
-                openedAt = e.timestamp,
-                source = e.source,
-                ticket = e.ticket,
-                strategyId = e.strategyId,
-            )
-        }
+        bus.subscribe<BrokerEvent.PositionReconciled> { e -> strategyPositions.reconcile(e) }
         outcomes.subscribe()
         bus.subscribe<CandleEvent> { e -> onCandle(e.candle) }
     }

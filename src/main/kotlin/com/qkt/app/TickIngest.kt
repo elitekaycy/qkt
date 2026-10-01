@@ -4,6 +4,8 @@ import com.qkt.dsl.compile.CandleHub
 import com.qkt.dsl.compile.ScheduleRunner
 import com.qkt.dsl.compile.isObservationSymbol
 import com.qkt.engine.Engine
+import com.qkt.instrument.InstrumentRegistry
+import com.qkt.instrument.NoopInstrumentRegistry
 import com.qkt.marketdata.MarketDataGate
 import com.qkt.marketdata.Tick
 import com.qkt.strategy.Mode
@@ -28,10 +30,11 @@ internal class TickIngest(
     private val scheduleRunner: ScheduleRunner,
     private val mode: Mode,
     /**
-     * Symbols whose price may legally be zero: an option's settlement print when it expires worthless
-     * (spec E19). Every other symbol keeps the positive-price floor.
+     * Where option contracts are found: an option's price may legally be zero (its settlement print when
+     * it expires worthless, spec E19), so it is asked only about zero prices. Every other symbol keeps
+     * the positive-price floor.
      */
-    private val zeroPriceLegal: (String) -> Boolean = { false },
+    private val instruments: InstrumentRegistry = NoopInstrumentRegistry,
 ) {
     // Logged under the pipeline's category so existing log filters keep matching.
     private val log = LoggerFactory.getLogger(TradingPipeline::class.java)
@@ -47,7 +50,7 @@ internal class TickIngest(
         // fires engine-held triggers, and poisons indicators for a full window. Drop
         // it, count it, keep the last good price (#379). Identical in backtest and
         // live so the gate itself cannot cause divergence.
-        if (!isMacroObservation && !isValidTick(tick, zeroPriceLegal)) {
+        if (!isMacroObservation && !isValidTick(tick) { instruments.options()?.optionRoot(it) != null }) {
             val n = malformedTickCount.incrementAndGet()
             if (n == 1L || n % MALFORMED_TICK_LOG_EVERY == 0L) {
                 log.error(
