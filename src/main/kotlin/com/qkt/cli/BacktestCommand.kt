@@ -98,7 +98,7 @@ class BacktestCommand(
                     BacktestMetricsWindows.run(ctx.backtest(overrides), args, ctx.from, ctx.to),
                     path,
                     parsedFile,
-                    ctx.executionConfig,
+                    ctx.executionEvidence(),
                     ctx.datasetEvidence,
                 )
             args.option("report-dir")?.let { reportDir ->
@@ -126,7 +126,7 @@ class BacktestCommand(
         result: BacktestResult,
         path: Path,
         parsedFile: ParsedFile,
-        executionConfig: com.qkt.backtest.ExecutionSimulationConfig,
+        execution: com.qkt.evidence.ExecutionEvidence,
         datasetEvidence: DatasetEvidence,
     ): BacktestResult =
         result.copy(
@@ -140,7 +140,7 @@ class BacktestCommand(
                     importedFileHashes = importedHashes(path, parsedFile),
                     configHash = configHash(),
                     dataset = datasetEvidence,
-                    execution = executionConfig.toEvidence(),
+                    execution = execution,
                     accounting = accountingEvidence(result.accounting),
                 ),
         )

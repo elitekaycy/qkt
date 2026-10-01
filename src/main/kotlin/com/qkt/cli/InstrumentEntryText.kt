@@ -43,12 +43,14 @@ internal fun VenueInstrumentSpec.entryText(): String =
             e.swapTripleDay.toString(),
         )
         appendLine("    swapRolloverHourUtc: ${e.swapRolloverHourUtc}")
+        e.spreadPoints?.let { appendLine("    spreadPoints: $it") }
+        e.minSpreadPoints?.let { appendLine("    minSpreadPoints: $it") }
         e.currency?.let { appendLine("    currency: $it") }
     }
 
 /**
  * This pull with what [blocks] already sets by hand for [existing]'s symbol kept: an unreported cost
- * the entry sets any field of, its slippage, and its currency when the venue states none. A first pull keeps
+ * the entry sets any field of, its slippage and spread model, and its currency when the venue states none. A first pull keeps
  * nothing.
  */
 internal fun VenueInstrumentSpec.keeping(
@@ -58,7 +60,13 @@ internal fun VenueInstrumentSpec.keeping(
     existing ?: return this
     val symbol = meta.qktSymbol
     val kept = unreported.keys.filter { cost -> cost.keys.any { blocks.declares(symbol, it) } }.toSet()
-    var m = meta.copy(slippagePoints = existing.slippagePoints, currency = meta.currency ?: existing.currency)
+    var m =
+        meta.copy(
+            slippagePoints = existing.slippagePoints,
+            spreadPoints = existing.spreadPoints,
+            minSpreadPoints = existing.minSpreadPoints,
+            currency = meta.currency ?: existing.currency,
+        )
     if (UnreportedCost.COMMISSION in kept) m = m.copy(commissionPerLot = existing.commissionPerLot)
     if (UnreportedCost.SWAP in kept) {
         m =
