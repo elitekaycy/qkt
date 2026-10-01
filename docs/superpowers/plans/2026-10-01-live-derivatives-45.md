@@ -69,10 +69,16 @@ routing, and restart persistence for structures.
 - Startup reconcile covers persisted and venue contract symbols, not only declared streams.
 - `StructureBook` state persists with the session and is restored before the first tick.
 
-### Task 7: live continuous futures
-- Load futures catalogs (Task 1), route `ROOT@front` through `ContinuousContractBroker` over the
-  account broker, map live contract ticks to the continuous symbol across rolls, futures calendar
-  (Task 3), remove the refusal in `LiveSymbolChecks`. Fixes gap 9.
+### Task 7: live futures (ruling: listed contracts now, continuous rolling as its own phase)
+- Listed contracts (dated and perpetual) trade live with what Tasks 1-3 built: catalogs load, they
+  route to their account by prefix, the futures roots' calendar applies, prices come from the gateway
+  quotes socket, and an expiry arrives as the gateway's contract settlement (`ContractSettlement`).
+- Continuous streams (`ROOT@front`) keep the refusal in `LiveSymbolChecks`. Live rolling is not a
+  wiring task: a roll that happens live must be measured from live prices and appended to the roll
+  history (the `ContinuousChain` only maps contracts up to the last measured roll); each `StreamLane`
+  would attach its own gateway broker, so fills route per lane, not per strategy; and the gateway
+  judges reduce-only and the account holdings in contract space while the strategy holds the
+  continuous symbol. It gets its own design and plan (phase 46) before any code.
 
 ### Task 8: docs, parity rows, review
 - Connector reference, structures doc (live section), parity rows for every remaining difference,
