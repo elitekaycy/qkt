@@ -19,7 +19,7 @@ internal class RestingOrdersAtRoll(
 ) {
     /** Cancel [resting] at the venue, silently: every cancel is expected before the first is sent. */
     fun pull(resting: List<ContinuousOrder>) {
-        resting.forEach { legs.cancelling(it.venueId) }
+        resting.forEach(legs::cancelling)
         resting.forEach { venue.broker.cancel(it.venueId) }
     }
 

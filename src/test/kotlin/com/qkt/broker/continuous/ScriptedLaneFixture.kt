@@ -1,5 +1,6 @@
 package com.qkt.broker.continuous
 
+import com.qkt.broker.BookedLeg
 import com.qkt.broker.Broker
 import com.qkt.broker.OrderTypeCapability
 import com.qkt.broker.SubmitAck
@@ -10,6 +11,7 @@ import com.qkt.common.Side
 import com.qkt.derivatives.futures.ContinuousChains
 import com.qkt.events.BrokerEvent
 import com.qkt.events.TickEvent
+import com.qkt.execution.ManagedOrder
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.TimeInForce
 import com.qkt.instrument.ContractCatalog
@@ -22,19 +24,28 @@ import com.qkt.instrument.RollPolicy
 import com.qkt.instrument.RollRecord
 import com.qkt.marketdata.Tick
 import com.qkt.persistence.NoopStatePersistor
+import com.qkt.persistence.PersistedStreamLane
 import com.qkt.positions.PositionProvider
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalTime
 
-/** A continuous stream whose venue only records what it is sent; the test publishes the venue's answers. */
-internal class ScriptedLaneFixture {
+/**
+ * A continuous stream whose venue only records what it is sent; the test publishes the venue's answers.
+ * Its lane saves to [persistor]: a fixture built on another's persistor is that lane after a restart.
+ */
+internal class ScriptedLaneFixture(
+    val persistor: NoopStatePersistor = NoopStatePersistor(),
+    startMs: Long = Instant.parse("2024-09-19T07:45:00Z").toEpochMilli(),
+) {
     private fun ms(iso: String) = Instant.parse(iso).toEpochMilli()
 
     val front = "BINANCE_UM:BTCUSDT@front"
     val sep = "BINANCE_UM:BTCUSDT_240927"
     val dec = "BINANCE_UM:BTCUSDT_241227"
+    val mar = "BINANCE_UM:BTCUSDT_250328"
     val roll = ms("2024-09-19T08:00:00Z")
+    val nextRoll = ms("2024-12-19T08:00:00Z")
     private val root =
         FuturesRoot(
             "BINANCE_UM:BTCUSDT",
@@ -61,6 +72,7 @@ internal class ScriptedLaneFixture {
                             "240628" to "2024-06-28",
                             "240927" to "2024-09-27",
                             "241227" to "2024-12-27",
+                            "250328" to "2025-03-28",
                         ).map { (c, d) -> ListedContract("BTCUSDT_$c", ms("${d}T08:00:00Z")) },
                     ),
             ),
@@ -78,6 +90,7 @@ internal class ScriptedLaneFixture {
                                 "65000",
                             ),
                             RollRecord(roll, "BTCUSDT_240927", "BTCUSDT_241227", "63000", "63800"),
+                            RollRecord(nextRoll, "BTCUSDT_241227", "BTCUSDT_250328", "64000", "64500"),
                         ),
                     ),
             ),
@@ -88,6 +101,14 @@ internal class ScriptedLaneFixture {
         override val name = "scripted"
         override val capabilities = setOf(OrderTypeCapability.MARKET)
         val sent = mutableListOf<OrderRequest>()
+        val cancels = mutableListOf<String>()
+        val recovered = mutableListOf<ManagedOrder>()
+
+        /** The order ids this venue knows when orders are recovered; null when it knows every one. */
+        var knows: Set<String>? = null
+
+        /** Whether the session told this venue it is restored. */
+        var ready = false
 
         /** Called with each request as it reaches the venue, before it is recorded. */
         var onSubmit: (OrderRequest) -> Unit = {}
@@ -98,17 +119,30 @@ internal class ScriptedLaneFixture {
             return SubmitAck(request.id, null, accepted = true)
         }
 
-        override fun cancel(orderId: String) {}
+        override fun cancel(orderId: String) {
+            cancels += orderId
+        }
+
+        override fun recoverPendingOrders(
+            orders: List<ManagedOrder>,
+            bookedTickets: Set<String>,
+        ): Set<String> {
+            recovered += orders
+            return orders.map { it.id }.filterTo(LinkedHashSet()) { knows?.contains(it) ?: true }
+        }
+
+        override fun watchBookedLegs(supplier: () -> List<BookedLeg>) {
+            ready = true
+        }
     }
 
-    val clock = FixedClock(time = ms("2024-09-19T07:45:00Z"))
+    val clock = FixedClock(time = startMs)
     private val bus = EventBus(clock, MonotonicSequenceGenerator())
     val venue = Scripted()
     lateinit var venueBus: EventBus
     lateinit var lanePositions: PositionProvider
     val ledger = RollLedger()
     val engine = mutableListOf<BrokerEvent>()
-    val persistor = NoopStatePersistor()
     val broker =
         ContinuousContractBroker(
             bus,
@@ -128,8 +162,14 @@ internal class ScriptedLaneFixture {
         bus.subscribe<BrokerEvent.OrderFilled> { engine += it }
         bus.subscribe<BrokerEvent.OrderPartiallyFilled> { engine += it }
         bus.subscribe<BrokerEvent.OrderRejected> { engine += it }
-        bus.publish(TickEvent(Tick(front, BigDecimal("63010"), clock.time)))
+        tick("63010")
     }
+
+    /** Ticks the stream at [price] now. */
+    fun tick(price: String) = bus.publish(TickEvent(Tick(front, BigDecimal(price), clock.time)))
+
+    /** This lane after a restart at [atMs]: a new session on what this one saved. */
+    fun restart(atMs: Long = clock.time): ScriptedLaneFixture = ScriptedLaneFixture(persistor, atMs)
 
     fun slice(
         id: String,
@@ -177,11 +217,12 @@ internal class ScriptedLaneFixture {
     /** Ticks the stream at [price] at the roll instant, which starts the roll. */
     fun rollAt(price: String) {
         clock.time = roll
-        bus.publish(TickEvent(Tick(front, BigDecimal(price), clock.time)))
+        tick(price)
     }
 
     fun leg(suffix: String) = venue.sent.single { it.id.startsWith("roll:") && it.id.endsWith(suffix) }
 
     /** The stream's lane as last saved. */
-    fun saved() = requireNotNull(persistor.loadStreamLane("owner", front)) { "$front was never saved" }
+    fun saved(): PersistedStreamLane =
+        requireNotNull(persistor.loadStreamLane("owner", front)) { "$front was never saved" }
 }

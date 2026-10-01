@@ -114,6 +114,9 @@ class ContinuousChain(
     /** `VENUE:CODE` of contract [index]. */
     fun contractSymbol(index: Int): String = "${root.venue}:${schedule.contracts[index].symbol}"
 
+    /** The index of contract `VENUE:CODE` [contract], or null when the schedule does not list it. */
+    fun indexOf(contract: String): Int? = schedule.contracts.indices.firstOrNull { contractSymbol(it) == contract }
+
     /** Whether contract [index] lies inside the measured history, so [spaceFor] can map it. */
     fun covers(index: Int): Boolean = index - anchorIndex in 0 until adjustment.size
 

@@ -71,7 +71,7 @@ class LaneStateSavedTest {
         assertThat(roll.atMs).isEqualTo(f.roll)
         assertThat(roll.fromPrice to roll.toPrice).isEqualTo(BigDecimal("63000") to BigDecimal("63800"))
         assertThat(roll.resting.map { it.venueId }).containsExactly("rest")
-        assertThat(atClose().cancelling).containsExactly("rest")
+        assertThat(atClose().cancelling.map { it.venueId }).containsExactly("rest")
         val closing = roll.steps.single() as PersistedCarryStep.Closing
         assertThat(closing.leg.id).endsWith(":close")
         assertThat(atClose().legs.map { it.leg.id }).containsExactly(closing.leg.id)

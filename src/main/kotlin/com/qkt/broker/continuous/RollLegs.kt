@@ -37,7 +37,7 @@ internal class RollLegs {
     private val pending = LinkedHashMap<String, LegInFlight>()
     private val ended = HashMap<String, LegOutcome>()
     private val waiting = HashMap<String, (LegOutcome) -> Unit>()
-    private val cancelling = LinkedHashSet<String>()
+    private val cancelling = LinkedHashMap<String, ContinuousOrder>()
 
     /** Expect [leg], of which [slices] already filled (a leg recovered after a restart). */
     fun expect(
@@ -47,16 +47,24 @@ internal class RollLegs {
         pending[leg.id] = LegInFlight(leg, slices)
     }
 
-    /** Expect the cancel of the resting order working under [venueId]. */
-    fun cancelling(venueId: String) {
-        cancelling += venueId
+    /** Expect the cancel of the resting [order], under the venue id it works under. */
+    fun cancelling(order: ContinuousOrder) {
+        cancelling[order.venueId] = order
+    }
+
+    /** Whether a leg is expected under [venueId]. */
+    fun isExpected(venueId: String): Boolean = venueId in pending
+
+    /** Stop expecting the cancel of [venueId]: the order never reached the venue. */
+    fun forgetCancel(venueId: String) {
+        cancelling.remove(venueId)
     }
 
     /** The legs still out at the venue, in the order they were sent. */
     val inFlight: List<LegInFlight> get() = pending.values.toList()
 
-    /** The venue ids of the resting orders whose cancel is still awaited. */
-    val awaitedCancels: List<String> get() = cancelling.toList()
+    /** The resting orders whose cancel is still awaited, as they worked when it was sent. */
+    val awaitedCancels: List<ContinuousOrder> get() = cancelling.values.toList()
 
     /** Keep [e] if it is a slice of a leg; returns whether it was. */
     fun onPartiallyFilled(e: BrokerEvent.OrderPartiallyFilled): Boolean {
@@ -76,7 +84,7 @@ internal class RollLegs {
 
     /** Swallow [e] if it is a roll's cancel of a resting order, or end the leg it cancels; returns whether it was either. */
     fun onCancelled(e: BrokerEvent.OrderCancelled): Boolean =
-        cancelling.remove(e.clientOrderId) || stopped(e.clientOrderId, "cancelled by the venue: ${e.reason}")
+        cancelling.remove(e.clientOrderId) != null || stopped(e.clientOrderId, "cancelled by the venue: ${e.reason}")
 
     /** Hands the outcome of the leg under [venueId] to [then]: now if it has ended, else once it does. */
     fun whenEnded(

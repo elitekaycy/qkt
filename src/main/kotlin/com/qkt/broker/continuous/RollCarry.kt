@@ -4,13 +4,14 @@ import com.qkt.common.Clock
 import com.qkt.derivatives.futures.ContinuousChain
 import com.qkt.events.BrokerEvent
 import com.qkt.execution.ExitReason
+import com.qkt.execution.OrderRequest
 import java.math.BigDecimal
 import org.slf4j.LoggerFactory
 
 /**
  * Carries one strategy's position across a roll with two market legs on [venue] ([CarryLegs]): close on
  * the old contract, then open on the new one, each sent once the venue answered the one before, through
- * the explicit [CarryStep]s of the run, each change reported to [onStep] (where a session persists it).
+ * the explicit [CarryStep]s of the run (each leg held by [gate] while a restarted session is not ready).
  * An opening leg refused or ended leaves the position closed on the venue (any part of it that filled is
  * unwound): its close at the old leg's fill is recorded as the stream's [ExitReason.ROLL_FAILED] exit. A
  * closing leg ended part-filled closes only that part. A refused closing leg is a configuration fault and
@@ -22,10 +23,10 @@ internal class RollCarry(
     venue: ContractVenue,
     legs: RollLegs,
     private val fills: ContractFillLog,
-    private val onStep: (RollRun) -> Unit = {},
+    gate: (() -> Unit) -> Unit,
 ) {
     private val log = LoggerFactory.getLogger(RollCarry::class.java)
-    private val legOrders = CarryLegs(clock, chainOf, venue, legs)
+    private val legOrders = CarryLegs(clock, chainOf, venue, legs, gate)
 
     /** The chain as it stands now: a live session extends it with each roll it measures. */
     private val chain: ContinuousChain get() = chainOf()
@@ -52,16 +53,18 @@ internal class RollCarry(
         legOrders.send(closing.leg) { closed(run, closing, it, then) }
     }
 
-    /** Waits again for the leg [step] waits for (after a restart, the leg recovered from the venue); calls [then] once it ends. */
+    /** Waits again for the leg [step] waits for (after a restart, the leg restored); calls [then] once its carry ends. */
     fun resume(
-        step: CarryStep,
+        step: CarryStep.Waiting,
         run: RollRun,
         then: () -> Unit,
     ) = when (step) {
         is CarryStep.Closing -> legOrders.await(step.leg) { closed(run, step, it, then) }
         is CarryStep.Opening -> legOrders.await(step.leg) { opened(run, step, it, then) }
-        is CarryStep.Carried, is CarryStep.Stopped -> then()
     }
+
+    /** Waits again for the unwind [leg] (after a restart, the leg restored), as when it was sent. */
+    fun resumeUnwind(leg: OrderRequest.Market) = legOrders.awaitUnwind(leg)
 
     private fun closed(
         run: RollRun,
@@ -157,7 +160,6 @@ internal class RollCarry(
         step: CarryStep,
     ) {
         run.steps[step.strategyId] = step
-        onStep(run)
     }
 
     /** The ledger's record of [carried] in [run]. */

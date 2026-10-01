@@ -142,7 +142,7 @@ internal object StreamLaneFixture {
                     ),
                     PersistedRollLeg(market("c-4", "CME:ESZ26", Side.BUY), emptyList()),
                 ),
-            cancelling = listOf("e-2"),
+            cancelling = listOf(order(stop)),
             roll =
                 PersistedStreamRoll(
                     from = "CME:ESZ26",

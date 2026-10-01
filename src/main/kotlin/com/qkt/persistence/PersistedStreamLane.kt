@@ -8,7 +8,7 @@ import java.math.BigDecimal
  * One continuous futures stream's lane as a restart resumes it: the [contract] it last traded (null
  * before its first), each strategy on the stream, the engine orders working on
  * it, the contract positions its venue account holds, the roll's own venue orders still out ([legs], and
- * the resting orders whose cancel is awaited, by venue id, in [cancelling]), and the [roll] still in
+ * the resting orders whose cancel is awaited, as they worked, in [cancelling]), and the [roll] still in
  * flight (null when none). A roll's leg can outlive its roll: an unwind is still out after the roll ended.
  */
 data class PersistedStreamLane(
@@ -18,7 +18,7 @@ data class PersistedStreamLane(
     val orders: List<PersistedStreamOrder>,
     val holdings: List<PersistedContractHolding>,
     val legs: List<PersistedRollLeg>,
-    val cancelling: List<String>,
+    val cancelling: List<PersistedStreamOrder>,
     val roll: PersistedStreamRoll?,
 )
 

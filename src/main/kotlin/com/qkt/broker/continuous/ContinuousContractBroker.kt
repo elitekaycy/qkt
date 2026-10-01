@@ -1,5 +1,6 @@
 package com.qkt.broker.continuous
 
+import com.qkt.broker.BookedLeg
 import com.qkt.broker.Broker
 import com.qkt.broker.OrderTypeCapability
 import com.qkt.broker.PositionAccountingMode
@@ -8,6 +9,7 @@ import com.qkt.bus.EventBus
 import com.qkt.common.Clock
 import com.qkt.derivatives.futures.ContinuousChains
 import com.qkt.events.TickEvent
+import com.qkt.execution.ManagedOrder
 import com.qkt.execution.OrderRequest
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.positions.PositionProvider
@@ -66,6 +68,21 @@ class ContinuousContractBroker(
     override fun supports(symbol: String): Boolean = symbol in symbols
 
     override fun positionAccountingMode(symbol: String): PositionAccountingMode = PositionAccountingMode.NETTING
+
+    /** A stream is one netting account its strategies share: each strategy's persisted book stands at a restart. */
+    override fun isAccountWide(symbol: String): Boolean = symbol in symbols
+
+    /** Each stream's lane has its venue take back what it had out, beside the engine's restored orders on it. */
+    override fun recoverPendingOrders(
+        orders: List<ManagedOrder>,
+        bookedTickets: Set<String>,
+    ): Set<String> {
+        val byStream = orders.groupBy { it.request.symbol }
+        return lanes.flatMapTo(LinkedHashSet()) { (symbol, lane) -> lane.recover(byStream[symbol].orEmpty()) }
+    }
+
+    /** The session is restored: every lane's venue is told so, and each lane goes on. */
+    override fun watchBookedLegs(supplier: () -> List<BookedLeg>) = lanes.values.forEach { it.ready() }
 
     override fun submit(request: OrderRequest): SubmitAck {
         val lane = requireNotNull(lanes[request.symbol]) { "$name does not route ${request.symbol}" }

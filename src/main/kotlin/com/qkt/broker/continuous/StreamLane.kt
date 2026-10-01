@@ -7,6 +7,7 @@ import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.derivatives.futures.ContinuousChain
 import com.qkt.derivatives.futures.PriceSpace
 import com.qkt.events.BrokerEvent
+import com.qkt.execution.ManagedOrder
 import com.qkt.execution.OrderRequest
 import com.qkt.instrument.PriceAdjustment
 import com.qkt.marketdata.MarketPriceTracker
@@ -23,7 +24,8 @@ import java.time.Instant
  * prices mapped by the contract the order worked on. The lane keeps each strategy's position on the
  * stream from those fills and rolls it ([RollExecutor]) when the schedule moves to the next contract;
  * a strategy whose position could not be carried places no further orders on the stream. A live lane
- * with a [store] saves its state ([LaneState]) before every venue action and after every venue answer.
+ * with a [store] saves its state ([LaneState]) before every venue action and after every venue answer,
+ * and a restart restores it from there.
  */
 internal class StreamLane(
     private val bus: EventBus,
@@ -50,13 +52,25 @@ internal class StreamLane(
     private val positions = LinkedHashMap<String, BigDecimal>()
     private val stops = LinkedHashMap<String, String>()
     private val state = LaneState(chainOf, positions, stops, orders, book, legs, rolls)
+    private val recovery = LaneRecovery(clock, chainOf, venue, orders, legs, rolls, book, ::space)
     private var current: Int? = null
     private val spaces = HashMap<Int, PriceSpace>()
 
     init {
         LaneVenueEvents(bus, clock, chainOf, venueBus, book, orders, legs, positions, fills, ::space)
         if (store != null) venueBus.subscribeAll { if (it is BrokerEvent) save() }
+        store?.load(chain.symbol)?.let { saved ->
+            val restored = state.restore(saved, clock.now())
+            current = restored.contractIndex
+            rolls.restore(restored.run, restored.unwinds, ::applyRoll)
+        }
     }
+
+    /** Has the venue take back the lane's orders after a restart, beside the engine's [engineOrders]; see [LaneRecovery]. */
+    fun recover(engineOrders: List<ManagedOrder>): Set<String> = recovery.recover(engineOrders).also { save() }
+
+    /** The session is restored: the venue is told so and the lane goes on ([LaneRecovery.ready]). */
+    fun ready() = recovery.ready()
 
     /** Whether the engine order [engineId] works on this stream. */
     fun owns(engineId: String): Boolean = orders.byEngineId(engineId) != null
@@ -107,21 +121,26 @@ internal class StreamLane(
         val index = chain.indexAt(nowMs) ?: return null
         val previous = current
         if (previous == index) return index
+        // One roll at a time: while one is in flight (after a restart, possibly long), the next waits for it.
+        if (rolls.inFlight) return null
         current = index
         if (previous == null) {
             save()
             return index
         }
-        rolls.roll(previous, index, positions) { outcome ->
-            stops.putAll(outcome.stopped)
-            for (close in outcome.closes) {
-                positions.merge(close.strategyId, close.signedQuantity(), BigDecimal::add)
-                bus.publish(close)
-            }
-            outcome.costs.forEach(bus::publish)
-            save()
-        }
+        rolls.roll(previous, index, positions, ::applyRoll)
         return index
+    }
+
+    /** Applies what a roll left behind, then tells the engine of the closes and costs. */
+    private fun applyRoll(outcome: RollOutcome) {
+        stops.putAll(outcome.stopped)
+        for (close in outcome.closes) {
+            positions.merge(close.strategyId, close.signedQuantity(), BigDecimal::add)
+            bus.publish(close)
+        }
+        outcome.costs.forEach(bus::publish)
+        save()
     }
 
     /** Saves the lane as it stands, when it has a [store]: before every venue action and after every venue answer. */

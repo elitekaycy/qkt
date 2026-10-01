@@ -13,20 +13,25 @@ internal sealed interface CarryStep {
     val strategyId: String
     val quantity: BigDecimal
 
+    /** A step waiting for the venue's answer to its [leg]. */
+    sealed interface Waiting : CarryStep {
+        val leg: OrderRequest.Market
+    }
+
     /** The closing leg [leg] is out on the old contract. */
     data class Closing(
         override val strategyId: String,
         override val quantity: BigDecimal,
-        val leg: OrderRequest.Market,
-    ) : CarryStep
+        override val leg: OrderRequest.Market,
+    ) : Waiting
 
     /** The old contract was closed at [close]; the opening leg [leg] is out on the new one. */
     data class Opening(
         override val strategyId: String,
         override val quantity: BigDecimal,
         val close: BrokerEvent.OrderFilled,
-        val leg: OrderRequest.Market,
-    ) : CarryStep
+        override val leg: OrderRequest.Market,
+    ) : Waiting
 
     /** Carried to the new contract: the old contract closed at [close], the new one opened at [open]. */
     data class Carried(
