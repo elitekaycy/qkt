@@ -53,7 +53,9 @@ run is not an error.
   candle, and negative values (a skew) are valid.
 - They are read-only: `BUY iv` fails to compile.
 - They run in backtests and live. Live, the values come from the chain the gateway account records
-  (a root declared `chains: book`), up to 5 seconds after each snapshot.
+  from a fed root (a root declared `chains: book`), up to 5 seconds after each snapshot, so a live
+  strategy that reads `CHAIN:<V>.<R>...` must also declare `OPTIONS:<V>.<R>`; it is refused at start
+  otherwise.
 
 ## Feeding a whole root (`OPTIONS:`)
 
