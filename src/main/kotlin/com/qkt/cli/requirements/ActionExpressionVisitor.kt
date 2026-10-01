@@ -21,6 +21,7 @@ import com.qkt.dsl.ast.LatchSensor
 import com.qkt.dsl.ast.LatchStop
 import com.qkt.dsl.ast.Log
 import com.qkt.dsl.ast.OcoEntry
+import com.qkt.dsl.ast.OpenStructure
 import com.qkt.dsl.ast.Resize
 import com.qkt.dsl.ast.RuleAst
 import com.qkt.dsl.ast.Sell
@@ -58,6 +59,7 @@ internal class ActionExpressionVisitor(
                 walkAction(action.leg1)
                 walkAction(action.leg2)
             }
+            is OpenStructure -> orders.walkSizing(action.sizing)
             is Cancel,
             CancelAll,
             is Close,

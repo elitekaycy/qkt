@@ -148,7 +148,9 @@ class GeneratedActionParityTest {
     ): List<DynamicTest> {
         assertThat(cases.map { it.capability })
             .doesNotHaveDuplicates()
-            .containsExactlyInAnyOrderElementsOf(ActionAst::class.java.permittedSubclasses.map { it.simpleName })
+            .containsExactlyInAnyOrderElementsOf(
+                ActionAst::class.java.permittedSubclasses.map { it.simpleName } - EXCLUDED_ACTIONS,
+            )
 
         return cases.map { case ->
             DynamicTest.dynamicTest(case.capability) {
@@ -191,6 +193,13 @@ class GeneratedActionParityTest {
     }
 
     private companion object {
+        /**
+         * Actions this generic CFD harness cannot drive: an option structure selects its contracts
+         * from a stored option chain and has no live venue before phase 44. It is covered end to end
+         * on real chain data by `StructureBacktestTest`.
+         */
+        val EXCLUDED_ACTIONS = setOf("OpenStructure")
+
         const val SYMBOL = "BACKTEST:X"
         val strategyLogger = LoggerFactory.getLogger("com.qkt.dsl.strategy") as Logger
 
