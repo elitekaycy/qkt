@@ -4,6 +4,7 @@ import com.qkt.common.Side
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.TimeInForce
 import com.qkt.positions.PositionProvider
+import java.math.BigDecimal
 
 /** How an engine order maps onto VGP v1: the body to send, or why it cannot be sent. */
 internal sealed interface GatewayOrderMapping {
@@ -19,16 +20,18 @@ internal sealed interface GatewayOrderMapping {
 }
 
 /**
- * Maps engine orders onto the four VGP v1 order types. `reduce_only` is set only when the order
- * strictly reduces the account's position (opposite side, no larger than what is held), so the
- * gateway's kill switch lets a flatten through and never an opening.
+ * Maps engine orders onto the four VGP v1 order types. `reduce_only` is set only when the order strictly
+ * reduces both the strategy's position and the account's (opposite side, no larger than what is held):
+ * on a shared account a strategy's close can open the account the other way, so both must agree. The
+ * gateway's kill switch then lets a flatten through and never an opening.
  */
 internal object GatewayOrders {
-    /** The VGP v1 form of [request] on venue [code], judged against [positions]. */
+    /** The VGP v1 form of [request] on venue [code], judged against [positions] and the account's [accountHeld]. */
     fun map(
         request: OrderRequest,
         code: String,
         positions: PositionProvider,
+        accountHeld: BigDecimal,
     ): GatewayOrderMapping {
         val tif =
             when (request.timeInForce) {
@@ -41,7 +44,8 @@ internal object GatewayOrders {
         if (request.expiresAt != null) return GatewayOrderMapping.Unsupported("VGP v1 orders cannot carry an expiry")
         val side = if (request.side == Side.BUY) "buy" else "sell"
         val quantity = request.quantity.toPlainString()
-        val reduceOnly = reduces(request, positions)
+        val reduceOnly =
+            reduces(request, positions.positionFor(request.symbol)?.quantity) && reduces(request, accountHeld)
         val body =
             when (request) {
                 is OrderRequest.Market ->
@@ -99,9 +103,9 @@ internal object GatewayOrders {
 
     private fun reduces(
         request: OrderRequest,
-        positions: PositionProvider,
+        held: BigDecimal?,
     ): Boolean {
-        val held = positions.positionFor(request.symbol)?.quantity ?: return false
+        if (held == null) return false
         val opposite =
             (held.signum() > 0 && request.side == Side.SELL) || (held.signum() < 0 && request.side == Side.BUY)
         return opposite && request.quantity <= held.abs()

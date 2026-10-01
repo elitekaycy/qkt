@@ -3,42 +3,38 @@ package com.qkt.connector.gateway
 import com.qkt.broker.PositionAccountingMode
 import java.math.BigDecimal
 
-/**
- * What a resynchronization found: the account's [equity] and [accounting] mode; of the unconfirmed
- * submits, the ones the gateway knows ([found]: working, or filled in the deals) and the ones it
- * never placed ([neverPlaced]).
- */
+/** What a resynchronization found: the account's [equity], [accounting] mode and net [positions] by venue code. */
 internal data class GatewaySyncState(
     val equity: BigDecimal,
     val accounting: PositionAccountingMode,
-    val found: Set<String>,
-    val neverPlaced: Set<String>,
+    val positions: Map<String, BigDecimal>,
 )
 
 /**
  * Brings the engine back to the gateway's truth after a start, a `reset` or a lost sequence: every
- * working order, every deal and every contract settlement since the last booked fill go through
- * [onOrder], [onFill] and [onSettlement] (each drops what was already reported). A submit the gateway never
- * answered is found among them, or was never placed. The deal window starts at [fromMs] and moves to
- * the newest deal seen.
+ * working order, every deal and every settlement since the last booked deal go through [onOrder],
+ * [onFill] and [onSettlement] (each drops what was already reported); an order still open in the engine
+ * but no longer working at the gateway is resolved by id, so one the venue ended meanwhile ends here
+ * too. The deal window starts at [fromMs] and moves only with deals of orders [isOwned].
  */
 internal class GatewaySync(
     private val client: GatewayClient,
     private val onOrder: (WireOrder) -> Unit,
     private val onFill: (WireFill) -> Unit,
     private val onSettlement: (WireSettlement) -> Unit,
+    private val isOwned: (String) -> Boolean,
     @Volatile private var fromMs: Long,
     private val now: () -> Long,
 ) {
-    /** Reconciles; [unconfirmed] are the client order ids whose submit got no answer. */
-    fun run(unconfirmed: Set<String>): GatewaySyncState {
+    /** Reconciles; [open] are the orders the engine still holds open. */
+    fun run(open: Set<String>): GatewaySyncState {
         val account = client.account()
-        val mode = client.positions().accounting
+        val positions = client.positions()
         val accounting =
-            when (mode) {
+            when (positions.accounting) {
                 "netting" -> PositionAccountingMode.NETTING
                 "hedging" -> PositionAccountingMode.HEDGING
-                else -> throw GatewayProtocolException("position accounting '$mode'")
+                else -> throw GatewayProtocolException("position accounting '${positions.accounting}'")
             }
         val working = client.orders()
         val to = now()
@@ -47,21 +43,20 @@ internal class GatewaySync(
         working.forEach(onOrder)
         deals.forEach(onFill)
         settlements.forEach(onSettlement)
-        deals.maxOfOrNull { it.time }?.let { newest -> fromMs = maxOf(fromMs, newest) }
-        val known = working.map { it.clientOrderId }.toSet() + deals.map { it.clientOrderId }
-        return GatewaySyncState(
-            BigDecimal(account.equity),
-            accounting,
-            unconfirmed intersect known,
-            unconfirmed - known,
-        )
+        for (id in open - working.map { it.clientOrderId }.toSet()) {
+            client.order(id)?.let { ended ->
+                client.dealsOf(id).forEach(onFill)
+                onOrder(ended)
+            }
+        }
+        deals.filter { isOwned(it.clientOrderId) }.maxOfOrNull { it.time }?.let { newest ->
+            fromMs =
+                maxOf(fromMs, newest)
+        }
+        val net =
+            positions.positions
+                .groupBy { it.symbol }
+                .mapValues { (_, held) -> held.fold(BigDecimal.ZERO) { q, p -> q.add(BigDecimal(p.quantity)) } }
+        return GatewaySyncState(BigDecimal(account.equity), accounting, net)
     }
 }
-
-/** An order a restart restored: [strategyId]'s order for [quantity], of which [alreadyFilled] was booked before. */
-internal data class RecoveredOrder(
-    val clientOrderId: String,
-    val strategyId: String,
-    val quantity: BigDecimal,
-    val alreadyFilled: BigDecimal,
-)

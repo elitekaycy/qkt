@@ -1,156 +1,170 @@
 package com.qkt.connector.gateway
 
-import com.qkt.broker.PositionAccountingMode
 import com.qkt.common.Clock
 import com.qkt.events.BrokerEvent
-import com.qkt.events.ContractSettled
+import com.qkt.positions.PositionProvider
 import java.math.BigDecimal
-import java.util.concurrent.ConcurrentHashMap
-import kotlinx.serialization.json.Json
 import org.slf4j.LoggerFactory
 
 /**
- * One account's connection to its VGP v1 gateway, shared by every strategy trading on the account:
- * one client, one event stream, one translator. Each strategy's broker attaches with the strategy it
- * serves (null: every strategy of a multi-strategy session) and the bus it publishes on. An order's
- * events go to the broker of the strategy that sent it; a contract [ContractSettled] goes to every
- * broker, since each strategy settles its own holding. The stream opens with the first broker and
- * closes with the last.
+ * One account's connection to its VGP v1 gateway, shared by every strategy trading on the account and
+ * open for as long as the account is: one client, one event stream, one translator. Each strategy's
+ * broker attaches with the strategy it serves and its session's positions; [GatewayRouting] sends each
+ * event where it belongs. The gateway's identity is checked when the stream opens and whenever its log
+ * restarts; once every strategy of [expectedStrategies] is ready, their holdings must add up to the
+ * account's ([GatewayHolders]). Either failure stops new risk: an identity mismatch refuses every order,
+ * a holdings mismatch every order that is not reduce-only.
  */
 internal class GatewaySession(
     val client: GatewayClient,
     val symbols: GatewaySymbols,
     private val clock: Clock,
+    private val identity: GatewayIdentity,
+    private val expectedStrategies: Set<String>,
     streamFactory: (
         onEvent: (WireEvent) -> Unit,
         onReset: (String) -> Unit,
         onConnection: (Boolean, String) -> Unit,
     ) -> GatewayStream,
     recoveryWindowMs: Long = 5 * 60_000L,
+    submitDeadlineMs: Long = 30_000L,
+    retryMs: Long = 1_000L,
+    resyncRetryMs: Long = 5_000L,
 ) {
     private val log = LoggerFactory.getLogger(GatewaySession::class.java)
-    private val json = Json { ignoreUnknownKeys = true }
     private val lock = Any()
-    private val owners = ConcurrentHashMap<String, String>()
-    private val translator = GatewayEventTranslator(symbols) { id -> owners[id] ?: "" }
+
+    /** What the account last reported. */
+    val account = GatewayAccountState()
     private val routing = GatewayRouting()
-    private val unconfirmed: MutableSet<String> = ConcurrentHashMap.newKeySet()
-    private val settled: MutableSet<String> = ConcurrentHashMap.newKeySet()
-    private val placement = GatewayPlacement(client, ::onOrder) { id -> unconfirmed += id }
-    private val sync = GatewaySync(client, ::onOrder, ::onFill, ::settle, clock.now() - recoveryWindowMs, clock::now)
-    private val stream = streamFactory(::onEvent, { reason -> resync("stream $reason") }, ::onConnection)
+    private val ledger = GatewayLedger(symbols, routing, lock)
+    private val holders = GatewayHolders(symbols)
+    private val placement = GatewayPlacement(client, clock, ledger::onOrder, ledger::onFill, submitDeadlineMs, retryMs)
+    private val sync =
+        GatewaySync(
+            client,
+            ledger::onOrder,
+            ledger::onFill,
+            ledger::onSettlement,
+            ledger::owns,
+            clock.now() - recoveryWindowMs,
+            clock::now,
+        )
+    private val resyncer =
+        GatewayResyncer(
+            clock,
+            ::reconcile,
+            { identity.mismatch(client.health())?.let(::refuse) },
+            ::alertUnreachable,
+            resyncRetryMs,
+        )
+    private val decoder =
+        GatewayEventDecoder(
+            ledger::onOrder,
+            ledger::onFill,
+            ledger::onSettlement,
+            account::position,
+            account::account,
+        )
+    private val stream = streamFactory(::onEvent, { reason -> resyncer.resync("stream $reason") }, ::onConnection)
+    private var started = false
 
-    @Volatile var equity: BigDecimal? = null
+    /** Why no order may be sent (wrong gateway), or null. */
+    @Volatile var refused: String? = null
         private set
 
-    @Volatile var accounting = PositionAccountingMode.UNKNOWN
+    /** Why no order that adds risk may be sent (holdings disagree with the account), or null. */
+    @Volatile var riskRefused: String? = null
         private set
 
-    @Volatile private var owedResync: String? = null
-
-    /** Attaches a broker for [strategy] publishing on [publish]; the first one reconciles and opens the stream. */
+    /** Attaches a broker for [strategy] (null: every strategy); the first one opens the stream. Throws when the gateway cannot answer. */
     fun attach(
         strategy: String?,
+        positions: PositionProvider,
         publish: (BrokerEvent) -> Unit,
-    ): AutoCloseable =
+    ): GatewayRouting.Attached =
         synchronized(lock) {
-            val (first, detach) = routing.attach(strategy, publish)
-            // The gateway must answer at start: trading on unknown venue state is refused.
-            if (first) {
-                val health = client.health()
-                reconcile("start")
-                stream.anchor(health.stream, health.seq)
-                stream.start()
-            }
-            AutoCloseable {
-                synchronized(lock) {
-                    if (detach()) {
-                        stream.stop()
-                        placement.shutdown()
-                    }
+            val broker = GatewayRouting.Attached(strategy, positions, publish)
+            routing.attach(broker)
+            if (!started) {
+                try {
+                    val health = client.health()
+                    identity.mismatch(health)?.let { error(it) }
+                    reconcile("start")
+                    stream.anchor(health.stream, health.seq)
+                    stream.start()
+                    started = true
+                } catch (e: RuntimeException) {
+                    routing.detach(broker)
+                    throw e
                 }
             }
+            broker
         }
 
-    /** Sends [body] for [strategy] off the caller's thread; [reject] reports a refusal on the sender's bus. */
+    /** [broker]'s session is restored: settle the contracts it still holds that expired while away, then check holdings. */
+    fun ready(broker: GatewayRouting.Attached) {
+        val held = broker.positions.symbols().mapNotNull(symbols::venue)
+        GatewayRecovery.settleHeld(client, held) { settlement -> ledger.settleFor(broker, settlement) }
+        synchronized(lock) {
+            holders.ready(broker)
+            holders.mismatch(routing.brokers, expectedStrategies, account.positions)?.let { reason ->
+                log.error("gateway account check failed: {}", reason)
+                riskRefused = reason
+            }
+        }
+    }
+
+    /** Detaches [broker]; the connection stays open with the account. */
+    fun detach(broker: GatewayRouting.Attached) = synchronized(lock) { routing.detach(broker) }
+
+    /** Sends [body] for [strategy]; [reject] reports a refusal on the sender's bus. */
     fun submit(
         strategy: String,
         body: WireSubmit,
         reject: (String) -> Unit,
     ) {
-        owners[body.clientOrderId] = strategy
-        synchronized(lock) { translator.expect(body.clientOrderId, BigDecimal(body.quantity)) }
+        val blocked = refused ?: riskRefused?.takeUnless { body.reduceOnly }
+        if (blocked != null) return reject(blocked)
+        ledger.own(body.clientOrderId, strategy, BigDecimal(body.quantity))
         placement.submit(body, reject)
     }
 
-    /**
-     * Takes back orders a restart restored: [orders] are owned again and reconciled, so their fills
-     * while qkt was down are booked once. Returns the ids the gateway knows (working, or filled in the
-     * deals); throws when the gateway cannot answer.
-     */
-    fun recover(orders: List<RecoveredOrder>): Set<String> {
-        synchronized(lock) {
-            for (order in orders) {
-                owners[order.clientOrderId] = order.strategyId
-                translator.expect(order.clientOrderId, order.quantity, order.alreadyFilled)
-            }
-        }
-        val asked = orders.map { it.clientOrderId }.toSet()
-        return asked intersect reconcileState("recover", asked).found
-    }
-
-    /** Cancels [clientOrderId] off the caller's thread; the order's end arrives as its events. */
+    /** Cancels [clientOrderId]; the order's end arrives as its events. */
     fun cancel(clientOrderId: String) = placement.cancel(clientOrderId)
 
-    private fun resync(reason: String) {
-        try {
-            reconcile(reason)
-            owedResync = null
-        } catch (e: GatewayUnavailableException) {
-            log.warn("gateway resync ({}) owed: {}", reason, e.message)
-            owedResync = reason
-        }
+    /** Takes back orders a restart restored; returns the ids the gateway knows. Throws when it cannot answer. */
+    fun recover(orders: List<RecoveredOrder>): Set<String> {
+        orders.forEach { ledger.own(it.clientOrderId, it.strategyId, it.quantity, it.alreadyFilled) }
+        return GatewayRecovery.recover(client, orders, ledger::markBooked, ledger::onFill, ledger::onOrder)
+    }
+
+    /** Refreshes the gateway's listing off the caller's thread. */
+    fun refreshListing() = placement.background { symbols.update(client.instruments().map { it.code }) }
+
+    /** Closes the connection with the account. */
+    fun close() {
+        stream.stop()
+        placement.shutdown()
     }
 
     private fun reconcile(reason: String) {
-        reconcileState(reason)
+        log.info("gateway resync: {}", reason)
+        symbols.update(client.instruments().map { it.code })
+        account.apply(sync.run(ledger.openOrders))
     }
 
-    /** Reconciles, asking also about [asked]; only unconfirmed submits the gateway never placed are rejected. */
-    private fun reconcileState(
-        reason: String,
-        asked: Set<String> = emptySet(),
-    ): GatewaySyncState {
-        log.info("gateway resync: {}", reason)
-        val state = sync.run(unconfirmed.toSet() + asked)
-        equity = state.equity
-        accounting = state.accounting
-        for (id in state.neverPlaced.filter { it in unconfirmed }) {
-            unconfirmed -= id
-            routing.route(
-                BrokerEvent.OrderRejected(
-                    id,
-                    null,
-                    "not placed: the gateway was unreachable when it was sent",
-                    owners[id] ?: "",
-                ),
-            )
-        }
-        unconfirmed.removeAll(state.found)
-        return state
+    private fun alertUnreachable(failures: Int) =
+        synchronized(lock) { routing.broadcast(BrokerEvent.GatewayUnreachable("Gateway", failures, clock.now())) }
+
+    private fun refuse(reason: String) {
+        log.error("gateway refused: {}", reason)
+        refused = reason
     }
 
     private fun onEvent(event: WireEvent) {
-        owedResync?.let { resync("owed: $it") }
-        val data = requireNotNull(event.data) { "${event.type} event without data" }
-        when (event.type) {
-            "order" -> onOrder(json.decodeFromJsonElement(WireOrder.serializer(), data))
-            "fill" -> onFill(json.decodeFromJsonElement(WireFill.serializer(), data))
-            "settlement" -> settle(json.decodeFromJsonElement(WireSettlement.serializer(), data))
-            "account" -> equity = BigDecimal(json.decodeFromJsonElement(WireAccount.serializer(), data).equity)
-            "position", "quote", "kill" -> Unit
-            else -> throw GatewayProtocolException("event type '${event.type}'")
-        }
+        resyncer.retryOwed()
+        decoder.decode(event)
     }
 
     private fun onConnection(
@@ -158,25 +172,9 @@ internal class GatewaySession(
         reason: String,
     ) {
         val state = if (connected) BrokerEvent.ConnectionState.CONNECTED else BrokerEvent.ConnectionState.DISCONNECTED
-        routing.broadcast(BrokerEvent.ConnectionChanged("Gateway", state, reason, timestamp = clock.now()))
-        if (connected) owedResync?.let { resync("owed: $it") }
-    }
-
-    /** An order no strategy here owns (yet: a restart hands them back) is not reported until one does. */
-    private fun onOrder(order: WireOrder) {
-        if (!owners.containsKey(order.clientOrderId)) return
-        synchronized(lock) { translator.order(order) }?.let(routing::route)
-    }
-
-    /** A fill of an order no strategy here sent (yet: a restart hands them back) stays unbooked until one does. */
-    private fun onFill(fill: WireFill) {
-        if (!owners.containsKey(fill.clientOrderId)) return
-        synchronized(lock) { translator.fill(fill) }?.let(routing::route)
-    }
-
-    /** Broadcasts a settlement once: the stream and a resynchronization may both report it. */
-    private fun settle(settlement: WireSettlement) {
-        if (!settled.add("${settlement.symbol}@${settlement.time}")) return
-        routing.broadcast(synchronized(lock) { translator.settlement(settlement) })
+        synchronized(lock) {
+            routing.broadcast(BrokerEvent.ConnectionChanged("Gateway", state, reason, timestamp = clock.now()))
+        }
+        if (connected) resyncer.retryOwed()
     }
 }
