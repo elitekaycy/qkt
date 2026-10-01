@@ -9,33 +9,6 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 
-/** What a gateway answered to a submit: the order it placed, or its refusal (`venue_rejected`, `kill_switch`). */
-sealed interface GatewaySubmit {
-    /** The gateway holds [order]: new, or the existing one for a resubmitted `client_order_id`. */
-    data class Placed(
-        val order: WireOrder,
-    ) : GatewaySubmit
-
-    /** The venue or the kill switch refused the order, with the gateway's [code] and [message]. */
-    data class Refused(
-        val code: String,
-        val message: String,
-    ) : GatewaySubmit
-}
-
-/** The gateway answered [status] with error [code]: a request it will not serve as sent. */
-class GatewayException(
-    val status: Int,
-    val code: String,
-    message: String,
-) : RuntimeException("$code: $message")
-
-/** The gateway could not be reached, or could not reach its venue, within the configured attempts. */
-class GatewayUnavailableException(
-    message: String,
-    cause: Throwable? = null,
-) : RuntimeException(message, cause)
-
 /**
  * The REST half of a VGP v1 gateway (`docs/superpowers/specs/2026-10-01-vgp-v1-wire.md`) at
  * [baseUrl], authenticated by [apiKey]. Reads, and submits, are tried up to [retryAttempts] times
@@ -110,6 +83,24 @@ class GatewayClient(
         fromMs: Long,
         toMs: Long,
     ): List<WireSettlement> = read("/v1/settlements?from=$fromMs&to=$toMs", WireSettlements.serializer()).settlements
+
+    /** `GET /v1/bars`: every closed [windowMs] bar of venue [code] starting in `[fromMs, toMs)`, oldest first. */
+    fun bars(
+        code: String,
+        windowMs: Long,
+        fromMs: Long,
+        toMs: Long,
+    ): List<WireBar> {
+        val bars = ArrayList<WireBar>()
+        var from: Long? = fromMs
+        while (from != null && from < toMs) {
+            val page = read("/v1/bars?symbol=$code&window_ms=$windowMs&from=$from&to=$toMs", WireBars.serializer())
+            bars += page.bars
+            require(page.next == null || page.next > from) { "gateway bars of $code do not advance past $from" }
+            from = page.next
+        }
+        return bars
+    }
 
     /** `POST /v1/orders`; see the class note on retries and refusals. */
     fun submit(order: WireSubmit): GatewaySubmit {

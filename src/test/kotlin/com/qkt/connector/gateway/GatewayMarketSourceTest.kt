@@ -16,9 +16,14 @@ class GatewayMarketSourceTest {
     private val client = GatewayClient(fake.url, "k", httpTimeoutMs = 500, retryAttempts = 2)
     private val recorded = CopyOnWriteArrayList<String>()
     private val source =
-        GatewayMarketSource("DERIBIT:", fake.url, "k", listing = { client.instruments() }) { root ->
-            if (root == "DERIBIT:BTC_USDC") { quote -> recorded += quote.symbol } else null
-        }
+        GatewayMarketSource(
+            "DERIBIT:",
+            fake.url,
+            "k",
+            listing = { client.instruments() },
+            recorderFor = { root -> if (root == "DERIBIT:BTC_USDC") { quote -> recorded += quote.symbol } else null },
+            bars = client::bars,
+        )
     private val feeds = CopyOnWriteArrayList<TickFeed>()
 
     @AfterEach
@@ -116,5 +121,31 @@ class GatewayMarketSourceTest {
             check(System.currentTimeMillis() < deadline) { "timed out" }
             Thread.sleep(10)
         }
+    }
+
+    @Test
+    fun `a contract's closed bars come from the gateway across pages, as candles of its qkt symbol`() {
+        val minute = 60_000L
+        fake.bars[code to minute] = (0L until 5L).map { WireBar(it * minute, "10", "12", "9", "11.5", "3") }
+
+        val range =
+            com.qkt.common.TimeRange(java.time.Instant.ofEpochMilli(minute), java.time.Instant.ofEpochMilli(4 * minute))
+        val candles = source.bars(symbol, com.qkt.candles.TimeWindow.ONE_MINUTE, range).toList()
+
+        assertThat(candles.map { it.startTime }).containsExactly(minute, 2 * minute, 3 * minute)
+        assertThat(candles.first().symbol).isEqualTo(symbol)
+        assertThat(candles.first().endTime).isEqualTo(2 * minute)
+        assertThat(candles.first().close).isEqualByComparingTo("11.5")
+        assertThat(candles.first().volume).isEqualByComparingTo("3")
+    }
+
+    @Test
+    fun `a whole root or a window that does not divide a day has no gateway bars`() {
+        val day = com.qkt.common.TimeRange(java.time.Instant.EPOCH, java.time.Instant.ofEpochMilli(86_400_000L))
+
+        assertThatThrownBy { source.bars("OPTIONS:DERIBIT.BTC_USDC", com.qkt.candles.TimeWindow.ONE_MINUTE, day) }
+            .isInstanceOf(com.qkt.marketdata.source.UnsupportedDataException::class.java)
+        assertThatThrownBy { source.bars(symbol, com.qkt.candles.TimeWindow(7 * 60_000L), day) }
+            .isInstanceOf(com.qkt.marketdata.source.UnsupportedDataException::class.java)
     }
 }

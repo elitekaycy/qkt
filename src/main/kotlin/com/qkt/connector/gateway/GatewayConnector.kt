@@ -80,6 +80,7 @@ class GatewayTradingAccount internal constructor(
             settings.apiKey,
             listing = { client.instruments() },
             recorderFor = recording::sinkFor,
+            bars = client::bars,
         )
 
     override val marketData: MarketSource = quotes

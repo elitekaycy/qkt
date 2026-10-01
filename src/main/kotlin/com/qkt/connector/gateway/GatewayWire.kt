@@ -152,20 +152,6 @@ data class WireDeals(
     val deals: List<WireFill>,
 )
 
-/** A quote event; null fields are sides or values the venue did not report. */
-@Serializable
-data class WireQuote(
-    val symbol: String,
-    val bid: String? = null,
-    val ask: String? = null,
-    @SerialName("bid_size") val bidSize: String? = null,
-    @SerialName("ask_size") val askSize: String? = null,
-    val mark: String? = null,
-    @SerialName("mark_iv") val markIv: String? = null,
-    val underlying: String? = null,
-    val time: Long,
-)
-
 /** One stream message: [type] names what [data] holds; a `reset` carries no data. */
 @Serializable
 data class WireEvent(
