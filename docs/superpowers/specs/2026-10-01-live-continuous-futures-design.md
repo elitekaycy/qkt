@@ -39,12 +39,13 @@ they are not the venue's traded klines.
 
 ### 2.2 Market data in continuous space
 
-A `ContinuousLiveFeed` wraps the account's live source: it subscribes the front contract, and the
-next one from `leadMs` (default 1 hour) before a roll so its quotes are flowing when the stream
-switches to it; it maps each front-contract tick into the series with the contract's `PriceSpace`,
-re-stamps it with the continuous symbol, and switches at the roll instant. The next contract's ticks
-before the roll feed the lane's venue (its marks and stops) but never the strategy; roll pricing uses
-bars, not ticks (2.1).
+A `ContinuousLiveFeed` wraps the account's live source: it reads the contract the stream follows and
+the next one for the whole time it follows a contract, so the next contract's quotes are flowing when
+the stream switches to it (built without the `leadMs` window first drafted here: subscribing early costs
+one extra quote stream per lane and leaves no lead to tune). It maps each followed-contract tick into the
+series with the contract's `PriceSpace`, re-stamps it with the continuous symbol, and switches once the
+roll is measured (A54). The next contract's ticks never reach the strategy; roll pricing uses bars, not
+ticks (2.1).
 
 ### 2.3 Orders through the gateway, per stream
 
@@ -139,12 +140,14 @@ venue already filled (on a netting account, that opens the other side).
    (`isAccountWide`): each strategy's persisted stream book stands, instead of being wiped because the
    continuous broker reports no venue positions of its own.
 
-## 3. Parity that remains (rows to add)
+## 3. Parity rows
+
+Added to `docs/parity/backtest-vs-live.md` as A53-A57, and A33 updated now that streams trade live:
 
 - A live roll trades the market at the roll instant (real slippage and spread); backtest roll legs trade
-  at the reference closes plus modelled slippage (A35). The adjustment itself is identical.
-- Live needs the next contract quoted from `leadMs` before each roll; a venue that lists it later
-  cannot be rolled live.
+  at the reference closes plus modelled slippage (A35, A53). The adjustment itself is identical.
+- A venue that does not yet list the next contract at the roll cannot price it; the roll stays unpriced
+  and the session stops, fail-closed (A55).
 
 ## 4. Testing
 
