@@ -31,7 +31,7 @@ import org.slf4j.LoggerFactory
 internal class RollExecutor(
     bus: EventBus,
     private val clock: Clock,
-    private val chain: ContinuousChain,
+    private val chainOf: () -> ContinuousChain,
     venue: ContractVenue,
     private val contractPrices: MarketPriceTracker,
     orders: ContinuousOrderMap,
@@ -41,7 +41,10 @@ internal class RollExecutor(
 ) {
     private val log = LoggerFactory.getLogger(RollExecutor::class.java)
     private val restingOrders = RestingOrdersAtRoll(bus, clock, venue, orders, legs)
-    private val carrying = RollCarry(clock, chain, venue, legs, fills)
+    private val carrying = RollCarry(clock, chainOf, venue, legs, fills)
+
+    /** The chain as it stands now: a live session extends it with each roll it measures. */
+    private val chain: ContinuousChain get() = chainOf()
 
     /** Whether a roll's legs are still out at the venue (a live venue answers after submit returns). */
     var inFlight: Boolean = false

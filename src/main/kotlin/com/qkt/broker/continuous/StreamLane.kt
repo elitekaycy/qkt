@@ -27,17 +27,20 @@ import java.time.Instant
 internal class StreamLane(
     private val bus: EventBus,
     private val clock: Clock,
-    private val chain: ContinuousChain,
+    private val chainOf: () -> ContinuousChain,
     ledger: RollLedger,
     private val fills: ContractFillLog,
     venueFactory: (EventBus, MarketPriceProvider) -> ContractVenue,
 ) {
+    /** The chain as it stands now: a live session extends it with each roll it measures. */
+    private val chain: ContinuousChain get() = chainOf()
+
     private val venueBus = EventBus(clock, MonotonicSequenceGenerator())
     private val contractPrices = MarketPriceTracker()
     private val venue = venueFactory(venueBus, contractPrices)
     private val orders = ContinuousOrderMap()
     private val legs = RollLegs()
-    private val rolls = RollExecutor(bus, clock, chain, venue, contractPrices, orders, legs, ledger, fills)
+    private val rolls = RollExecutor(bus, clock, chainOf, venue, contractPrices, orders, legs, ledger, fills)
     private val positions = LinkedHashMap<String, BigDecimal>()
     private val stops = HashMap<String, String>()
     private var current: Int? = null
