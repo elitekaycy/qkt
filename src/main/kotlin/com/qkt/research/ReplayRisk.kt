@@ -55,7 +55,7 @@ internal class ReplayRisk(
 
     init {
         riskState.warmupComplete = true
-        if (instruments.futures() != null) {
+        if (instruments.futures() != null || instruments.options() != null) {
             books.marginDaily.bind(riskState.equityTracker::liveEquity)
             bus.subscribe<TickEvent> { e -> books.marginDaily.onTime(e.tick.timestamp) }
         }
