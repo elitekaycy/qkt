@@ -42,7 +42,7 @@ class OptionRootsFileTest {
         val expiry = Instant.parse("2024-09-27T08:00:00Z").toEpochMilli()
         val contract = OptionContract("BTC_USDC-27SEP24-60000-C", BigDecimal("60000"), OptionRight.CALL, expiry)
 
-        val meta = root.metaFor("DERIBIT:BTC_USDC-27SEP24-60000-C", contract)
+        val meta = root.metaFor("DERIBIT:BTC_USDC_27SEP24_60000_C", contract)
 
         assertThat(meta.currency).isEqualTo("USDC")
         assertThat(meta.contractSize).isEqualByComparingTo("1")
