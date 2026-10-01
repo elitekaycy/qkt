@@ -6,6 +6,7 @@ import com.qkt.marketdata.live.LiveTickFeed
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.marketdata.source.MarketSourceCapability
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import org.slf4j.LoggerFactory
 
 /**
  * Live prices from a VGP v1 gateway's quotes socket (`GET /v1/quotes`), for the account whose symbols
@@ -13,14 +14,18 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
  * (`OPTIONS:DERIBIT.BTC_USDC`, every listed option of the root, including ones listed later). Each
  * quote becomes one tick ([gatewayQuoteTick]). [listing] is read once per subscription to check every
  * requested contract and root is listed: an unknown one fails the subscription rather than staying silent.
+ * The quotes of a fed root also go to [recorderFor] the root (`DERIBIT:BTC_USDC`), when it records one.
  */
 internal class GatewayMarketSource(
     private val prefix: String,
     private val baseUrl: String,
     private val apiKey: String,
     private val listing: () -> List<WireInstrument>,
+    private val recorderFor: (String) -> ((WireQuote) -> Unit)? = { null },
 ) : MarketSource {
     private val rootPrefix = OptionRootSymbol.PREFIX + prefix.removeSuffix(":") + "."
+
+    private val log = LoggerFactory.getLogger(GatewayMarketSource::class.java)
 
     override val name: String = "gateway"
     override val capabilities: Set<MarketSourceCapability> = setOf(MarketSourceCapability.LIVE_TICKS)
@@ -48,6 +53,21 @@ internal class GatewayMarketSource(
                 .apply { if (roots.isNotEmpty()) addQueryParameter("roots", roots.joinToString(",")) }
                 .build()
                 .toString()
-        return LiveTickFeed(GatewayQuoteSource(url, apiKey, gatewaySymbols::qkt))
+        val recorders = HashMap<String, (WireQuote) -> Unit>()
+        for (fed in fedRoots) {
+            val recorder = recorderFor(fed.root)
+            if (recorder != null) recorders[fed.root.substringAfter(':')] = recorder else log.warn(UNRECORDED, fed.root)
+        }
+
+        fun record(quote: WireQuote) {
+            recorders[quote.symbol.substringBefore('-')]?.invoke(quote)
+        }
+        return LiveTickFeed(GatewayQuoteSource(url, apiKey, gatewaySymbols::qkt, ::record))
+    }
+
+    private companion object {
+        const val UNRECORDED =
+            "option root {} is fed live but declares no book chain series (chains: book): nothing records " +
+                "its live chain, so structures and chain metrics see only snapshots written elsewhere"
     }
 }

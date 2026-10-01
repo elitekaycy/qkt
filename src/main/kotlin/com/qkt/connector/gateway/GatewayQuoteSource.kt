@@ -7,7 +7,8 @@ import kotlinx.serialization.json.Json
 
 /**
  * The quotes socket at [url] as a [LiveTickSource]: each quote of a venue code becomes a tick of its
- * qkt symbol ([qktSymbol]); a quote without a price gives none, and a malformed one goes to `onError`.
+ * qkt symbol ([qktSymbol]), after [onQuote] has seen it; a quote without a price gives no tick, and a
+ * malformed one goes to `onError`.
  * Quotes carry no sequence, so a dropped socket only reconnects and subscribes again; the drop reaches
  * `onDisconnect` and the return `onReconnect`.
  */
@@ -15,6 +16,7 @@ internal class GatewayQuoteSource(
     private val url: String,
     private val apiKey: String,
     private val qktSymbol: (String) -> String,
+    private val onQuote: (WireQuote) -> Unit = {},
     private val initialBackoffMs: Long = 1_000,
     private val maxBackoffMs: Long = 30_000,
 ) : LiveTickSource {
@@ -56,6 +58,7 @@ internal class GatewayQuoteSource(
 
     private fun tickOf(text: String): Tick? {
         val quote = json.decodeFromString(WireQuote.serializer(), text)
+        onQuote(quote)
         return gatewayQuoteTick(qktSymbol(quote.symbol), quote)
     }
 }

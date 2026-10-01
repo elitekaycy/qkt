@@ -1,6 +1,8 @@
 package com.qkt.connector.gateway
 
+import com.qkt.derivatives.options.chain.ChainQuote
 import com.qkt.derivatives.options.chain.QuoteSides
+import com.qkt.instrument.QuoteSource
 import com.qkt.marketdata.Tick
 import java.math.BigDecimal
 
@@ -28,4 +30,26 @@ internal fun gatewayQuoteTick(
     val mark = quote.mark?.let(::BigDecimal)
     val price = if (mark != null) mark.takeIf { it.signum() > 0 } else book.mid
     return price?.let { book.copy(price = it) }
+}
+
+/**
+ * [quote] as a book chain quote of its venue code, as chain history keeps it: its own bid, ask, mark,
+ * mark IV (volatility points) and underlying (the expiry's forward), fresh at its own time. Null when it
+ * has no positive mark or underlying, which no chain quote can be without.
+ */
+internal fun gatewayChainQuote(quote: WireQuote): ChainQuote? {
+    val mark = quote.mark?.let(::BigDecimal)?.takeIf { it.signum() > 0 } ?: return null
+    val underlying = quote.underlying?.let(::BigDecimal)?.takeIf { it.signum() > 0 } ?: return null
+    return ChainQuote(
+        atMs = quote.time,
+        contract = quote.symbol,
+        bid = quote.bid?.let(::BigDecimal),
+        ask = quote.ask?.let(::BigDecimal),
+        mark = mark,
+        markIv = quote.markIv?.let(::BigDecimal),
+        underlying = underlying,
+        rate = null,
+        markAgeMs = 0L,
+        source = QuoteSource.BOOK,
+    )
 }
