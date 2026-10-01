@@ -53,3 +53,24 @@ run is not an error.
   candle, and negative values (a skew) are valid.
 - They are read-only: `BUY iv` fails to compile.
 - They run in backtests; live chain streams arrive with the phase 44 gateway.
+
+## Feeding a whole root (`OPTIONS:`)
+
+`chain = OPTIONS:<VENUE>.<ROOT> EVERY <window>` feeds every quoted contract of an option root into the
+run. Each one is marked at its own quotes, and contracts picked at run time (by structures) are
+routed to the option venue. The stream itself carries no candles and cannot be traded.
+
+```qkt
+STRATEGY fed_root VERSION 1
+SYMBOLS
+    chain = OPTIONS:DERIBIT.BTC_USDC EVERY 1h,
+    put = DERIBIT:BTC_USDC_25DEC26_80000_P EVERY 1h
+RULES
+    WHEN put.close > 0 AND POSITION.put = 0
+    THEN BUY put SIZING 0.1
+```
+
+- A contract that is both declared and in a fed root receives each quote once, from the root feed.
+- Contracts held to expiry get a settlement print at their intrinsic value, as with a declared
+  contract.
+- The run checks the root's chain days the same way as for a chain analytics stream.
