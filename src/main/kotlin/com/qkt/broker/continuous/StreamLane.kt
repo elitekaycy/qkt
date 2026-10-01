@@ -105,13 +105,14 @@ internal class StreamLane(
         val previous = current
         current = index
         if (previous != null && previous != index) {
-            val outcome = rolls.roll(previous, index, positions)
-            stops.putAll(outcome.stopped)
-            for (close in outcome.closes) {
-                positions.merge(close.strategyId, signed(close), BigDecimal::add)
-                bus.publish(close)
+            rolls.roll(previous, index, positions) { outcome ->
+                stops.putAll(outcome.stopped)
+                for (close in outcome.closes) {
+                    positions.merge(close.strategyId, signed(close), BigDecimal::add)
+                    bus.publish(close)
+                }
+                outcome.costs.forEach(bus::publish)
             }
-            outcome.costs.forEach(bus::publish)
         }
         return index
     }
@@ -175,6 +176,7 @@ internal class StreamLane(
         }
         if (now < chain.servedFromMs) return "$stream is served from ${Instant.ofEpochMilli(chain.servedFromMs)}"
         if (chain.indexAt(now) == null) return "$stream has no contract at ${Instant.ofEpochMilli(now)}"
+        if (rolls.inFlight) return "$stream is rolling to its next contract; resend once the roll is done"
         return null
     }
 
