@@ -2,6 +2,7 @@ package com.qkt.cli
 
 import com.qkt.candles.TimeWindow
 import com.qkt.cli.fetch.CatalogFetch
+import com.qkt.cli.fetch.OptionCatalogFetch
 import com.qkt.cli.fetch.RollsFetch
 import com.qkt.cli.fetch.buildFetcher
 import com.qkt.cli.fetch.resolveFetchRange
@@ -55,7 +56,7 @@ class FetchCommand(
         }
         val broker = parts[0]
         val symbol = parts[1]
-        if (args.flag("catalog")) return CatalogFetch.run(target, DataRoot.forDataRoot(args.option("data-root")))
+        if (args.flag("catalog")) return catalog(target, broker)
         if (args.flag("rolls")) return rolls(target, broker)
         val tfArg =
             try {
@@ -134,6 +135,21 @@ class FetchCommand(
         }
         println("qkt fetch: done — fetched=$fetched empty=$empty skipped=$skipped total=$totalDays")
         return ExitCodes.SUCCESS
+    }
+
+    private fun catalog(
+        target: String,
+        venue: String,
+    ): Int {
+        val dataRoot = DataRoot.forDataRoot(args.option("data-root"))
+        return if (OptionCatalogFetch.handles(
+                venue,
+            )
+        ) {
+            OptionCatalogFetch.run(target, dataRoot)
+        } else {
+            CatalogFetch.run(target, dataRoot)
+        }
     }
 
     private fun rolls(

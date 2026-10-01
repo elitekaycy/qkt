@@ -40,3 +40,16 @@ anything not linear-in-USDC rather than assume.
   declared spread model around the mark (a documented divergence), never the mark itself.
 - Expiry settlement uses `get_delivery_prices` for the underlying index (`<coin>_usdc` index names
   to be confirmed per coin).
+
+## 5. Findings from the first real catalog fetch (2026-10-01)
+
+- `qkt fetch DERIBIT:BTC_USDC --catalog` catalogued **21,163** linear BTC_USDC options (614 live, the
+  rest expired back to the 2025-08-07 expiry) and **1,666** daily `btc_usdc` delivery prices
+  (2022-03-10 onward) in ~10 s, with no warnings: every contract's name agreed with the venue's own
+  strike, right and expiry.
+- The history host's expired-options listing is ~137 MB (223,747 USDC options across all coins) and
+  takes ~40 s; qkt decodes it as it streams into small records (peak ~440 MB RSS for the whole fetch).
+- **Schema difference:** expired instruments on the history host have no `instrument_type`, and their
+  `quote_currency` is the base coin (`BTC`); the premium currency is `counter_currency` (`USDC`) on both
+  hosts. qkt therefore judges "linear in the root's currency" by `settlement_currency` and
+  `counter_currency` (type linear or absent).
