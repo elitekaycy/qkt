@@ -512,7 +512,9 @@ event log restarts; a gateway on another account refuses every order. The kill s
 refuses orders that add risk; an order that reduces both its strategy's and the account's position is
 sent `reduce_only` and passes. The account's prices come from the gateway's quotes socket: its
 contracts, and its option roots as whole feeds (`OPTIONS:<ACCOUNT>.<ROOT>`, so name the account after
-the venue, e.g. `deribit`, to match `instruments.yaml`).
+the venue, e.g. `deribit`, to match `instruments.yaml`). Venues list new option expiries every day: schedule
+`qkt fetch DERIBIT:<ROOT> --catalog` (daily is enough) and a running daemon picks the new catalog up
+within a minute; a contract missing from the catalog is never routed or recorded.
 
 Policy-rate artifacts are also configured through the environment. `QKT_RBA_POLICY_RATE_SOURCE`
 and `QKT_RBNZ_POLICY_RATE_SOURCE` accept an absolute path, `file:` URI, or HTTPS URL for the

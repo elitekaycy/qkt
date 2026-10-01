@@ -34,7 +34,7 @@ internal class GatewayChainRecording(
         val store = ChainSnapshotStore(dataRoot, QuoteSource.BOOK)
         val recorder =
             recorders.computeIfAbsent(root) {
-                ChainRecorder(root, cadenceMs, { options.listings(root).mapValues { it.value.expiryMs } }) { snapshot ->
+                ChainRecorder(root, cadenceMs, { expiries(root) }) { snapshot ->
                     writer.execute {
                         runCatching { store.append(root, snapshot) }
                             .onFailure { log.error("chain snapshot of {} not written: {}", root, it.message) }
@@ -42,6 +42,12 @@ internal class GatewayChainRecording(
                 }
             }
         return { quote -> gatewayChainQuote(quote)?.let(recorder::record) }
+    }
+
+    /** Root [root]'s catalogued contracts' expiries, asked per snapshot so a reloaded catalog counts. */
+    private fun expiries(root: String): Map<String, Long> {
+        val listings = instruments?.options()?.listings(root) ?: return emptyMap()
+        return listings.mapValues { it.value.expiryMs }
     }
 
     /** Stops recording; appends already handed to the writer finish. */
