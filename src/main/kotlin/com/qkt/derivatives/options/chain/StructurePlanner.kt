@@ -43,7 +43,8 @@ sealed interface StructurePlan {
  * Selects an option structure's legs from one chain snapshot ([OptionSelector]): each leg by its own
  * days window, a `SAME EXPIRY` leg in the first leg's expiry. Its maximum loss per unit (one contract
  * of [contractSize] per leg) is [StructureRisk.maxLoss] at the legs' marks, per expiry as the margin
- * rule measures it.
+ * rule measures it. Two legs selecting one contract refuse the plan: a structure holds each contract
+ * once (ratios are not structures here).
  */
 object StructurePlanner {
     /** Plans [specs] (the first naming a days window) on [snapshot]. */
@@ -68,6 +69,12 @@ object StructurePlanner {
                     ?: return StructurePlan.Refused(
                         "leg ${index + 1} (${spec.side} ${spec.right} delta ${spec.delta}) selects no contract",
                     )
+            val earlier = legs.indexOfFirst { it.contract == picked.contract }
+            if (earlier >= 0) {
+                return StructurePlan.Refused(
+                    "legs ${earlier + 1} and ${index + 1} select the same contract ${picked.contract}",
+                )
+            }
             legs += PlannedLeg(spec.side, picked.contract, listings.getValue(picked.contract), picked.quote.mark)
         }
         return StructurePlan.Ready(legs, maxLossPerUnit(legs, contractSize))

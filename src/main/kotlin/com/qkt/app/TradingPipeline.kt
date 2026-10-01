@@ -197,7 +197,7 @@ class TradingPipeline(
             gate,
             gateFor,
             latency,
-            latencyEnabled,
+            priceTracker,
         )
     private val booker =
         ExecutionBooker(

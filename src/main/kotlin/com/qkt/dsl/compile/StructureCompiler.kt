@@ -26,8 +26,9 @@ import java.math.RoundingMode
  * selected from the root's latest chain snapshot at or before the clock ([StructurePlanner]) and sized:
  * `SIZING <qty>` is contracts per leg; `SIZING n PCT RISK` is `equity × n%` over the structure's
  * maximum loss per contract (refused when that loss is unbounded), floored to the volume step. The
- * legs leave as one [Signal.SubmitGroup] of market orders. A leg that selects nothing, or a size below
- * the venue minimum, fires a [Signal.Suppressed] with the reason instead of a partial structure.
+ * legs leave as one [Signal.SubmitGroup] of market orders. A leg that selects nothing, a size below
+ * the venue minimum, or an alias whose structure is still live fires a [Signal.Suppressed] with the
+ * reason instead.
  */
 internal class StructureCompiler(
     private val exprCompiler: ExprCompiler,
@@ -83,6 +84,9 @@ internal class StructureCompiler(
         val root =
             options?.root(action.root)
                 ?: return Signal.Suppressed(action.root, "${action.root} is not a declared option root")
+        ec.strategyContext.structures.live(action.alias)?.let { live ->
+            return Signal.Suppressed(root.root, "${action.alias} is already live (${live.state})")
+        }
         val snapshot =
             view(instruments).latest(root.root, now)
                 ?: return Signal.Suppressed(root.root, "no ${root.root} chain at or before now")
@@ -118,7 +122,7 @@ internal class StructureCompiler(
                     strategyId = ec.strategyContext.strategyId,
                 )
             }
-        return Signal.SubmitGroup(structureId, legs)
+        return Signal.SubmitGroup(structureId, action.alias, legs)
     }
 
     private fun view(instruments: InstrumentRegistry): ChainView =
