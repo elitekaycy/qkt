@@ -28,6 +28,12 @@ enum class InsightsEventFamily(
      * older than qkt-insights #106 rejects the whole batch that carries this event type.
      */
     MARKETDATA("marketdata", onByDefault = false),
+
+    /**
+     * `signal.structure` (an option structure opened or closed, with its legs). Off unless listed: a
+     * collector that does not know the type rejects the whole batch carrying it.
+     */
+    STRUCTURE("structure", onByDefault = false),
     ;
 
     companion object {
