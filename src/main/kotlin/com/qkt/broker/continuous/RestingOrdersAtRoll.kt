@@ -32,7 +32,7 @@ internal class RestingOrdersAtRoll(
     ) {
         val n = order.replacements + 1
         val venueId = "${order.request.id}~r$n"
-        orders.add(order.copy(venueId = venueId, contractIndex = toIndex, replacements = n))
+        orders.add(order.copy(venueId = venueId, contractIndex = toIndex, replacements = n, placed = order.remaining))
         venue.broker.submit(requireNotNull(toContract(order.request, venueId, to, space, order.remaining)))
     }
 

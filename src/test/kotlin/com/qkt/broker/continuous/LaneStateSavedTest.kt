@@ -40,9 +40,9 @@ class LaneStateSavedTest {
         val atSubmit = savedWhenSent("rest")
         rest()
 
-        assertThat(atSubmit().contractIndex).isEqualTo(1)
-        assertThat(atSubmit().orders.map { Triple(it.request.id, it.venueId, it.contractIndex) })
-            .containsExactly(Triple("rest", "rest", 1))
+        assertThat(atSubmit().contract).isEqualTo(f.sep)
+        assertThat(atSubmit().orders.map { Triple(it.request.id, it.venueId, it.contract) })
+            .containsExactly(Triple("rest", "rest", f.sep))
     }
 
     @Test
@@ -67,7 +67,7 @@ class LaneStateSavedTest {
         f.rollAt("63000")
 
         val roll = requireNotNull(atClose().roll)
-        assertThat(listOf(roll.fromIndex, roll.toIndex)).containsExactly(1, 2)
+        assertThat(roll.from to roll.to).isEqualTo(f.sep to f.dec)
         assertThat(roll.atMs).isEqualTo(f.roll)
         assertThat(roll.fromPrice to roll.toPrice).isEqualTo(BigDecimal("63000") to BigDecimal("63800"))
         assertThat(roll.resting.map { it.venueId }).containsExactly("rest")
@@ -102,7 +102,7 @@ class LaneStateSavedTest {
         f.last(f.leg(":open").id, f.dec, Side.BUY, "0.010", "63800")
 
         val lane = f.saved()
-        assertThat(lane.contractIndex).isEqualTo(2)
+        assertThat(lane.contract).isEqualTo(f.dec)
         assertThat(lane.roll).isNull()
         assertThat(lane.legs).isEmpty()
         val holding = lane.holdings.single()
@@ -124,5 +124,19 @@ class LaneStateSavedTest {
         val strategy = lane.strategies.single()
         assertThat(strategy.position).isEqualByComparingTo("0")
         assertThat(strategy.stopped).contains("roll")
+    }
+
+    @Test
+    fun `a re-placed order is saved on the new contract with what its new venue order was placed for`() {
+        rest()
+        f.slice("rest", f.sep, Side.BUY, "0.004", "0.004", "62890")
+        f.rollAt("63000")
+        f.last(f.leg(":close").id, f.sep, Side.SELL, "0.004", "63000")
+        f.last(f.leg(":open").id, f.dec, Side.BUY, "0.004", "63800")
+
+        val order = f.saved().orders.single()
+        assertThat(Triple(order.venueId, order.contract, order.replacements)).isEqualTo(Triple("rest~r1", f.dec, 1))
+        assertThat(order.placed).isEqualByComparingTo("0.006")
+        assertThat(order.filled).isEqualByComparingTo("0.004")
     }
 }

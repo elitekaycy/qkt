@@ -5,15 +5,15 @@ import com.qkt.execution.OrderRequest
 import java.math.BigDecimal
 
 /**
- * One continuous futures stream's lane as a restart resumes it: the contract it last traded
- * ([contractIndex], null before its first), each strategy on the stream, the engine orders working on
+ * One continuous futures stream's lane as a restart resumes it: the [contract] it last traded (null
+ * before its first), each strategy on the stream, the engine orders working on
  * it, the contract positions its venue account holds, the roll's own venue orders still out ([legs], and
  * the resting orders whose cancel is awaited, by venue id, in [cancelling]), and the [roll] still in
  * flight (null when none). A roll's leg can outlive its roll: an unwind is still out after the roll ended.
  */
 data class PersistedStreamLane(
     val stream: String,
-    val contractIndex: Int?,
+    val contract: String?,
     val strategies: List<PersistedStreamStrategy>,
     val orders: List<PersistedStreamOrder>,
     val holdings: List<PersistedContractHolding>,
@@ -37,14 +37,16 @@ data class PersistedStreamStrategy(
 
 /**
  * An engine order working on the stream: the engine's [request] in continuous space, the id it works
- * under at the venue, the contract it works on, how many times a roll re-placed it, and how much of it
- * has [filled] across every venue order it worked under.
+ * under at the venue, the [contract] it works on, how many times a roll re-placed it, the quantity its
+ * venue order was [placed] for, and how much of the engine's order has [filled] across every venue order
+ * it worked under.
  */
 data class PersistedStreamOrder(
     val request: OrderRequest,
     val venueId: String,
-    val contractIndex: Int,
+    val contract: String,
     val replacements: Int,
+    val placed: BigDecimal,
     val filled: BigDecimal,
 )
 
@@ -58,13 +60,13 @@ data class PersistedContractHolding(
 )
 
 /**
- * A roll in flight: its contracts, the roll as measured (instant and both contracts' reference prices),
+ * A roll in flight: its contracts [from] and [to], the roll as measured (instant and both contracts' reference prices),
  * the reason that prefixes a holder's stop, the [resting] orders pulled off the old contract to re-place,
  * the [holders] in carry order, and each holder's step so far (a holder not reached yet has none).
  */
 data class PersistedStreamRoll(
-    val fromIndex: Int,
-    val toIndex: Int,
+    val from: String,
+    val to: String,
     val atMs: Long,
     val fromPrice: BigDecimal,
     val toPrice: BigDecimal,

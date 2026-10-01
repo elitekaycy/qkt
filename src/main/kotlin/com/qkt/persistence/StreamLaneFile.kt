@@ -45,7 +45,7 @@ private const val LANE_FILE = "lane.json"
 private data class StreamLaneDto(
     val version: Int,
     val stream: String,
-    val contractIndex: Int?,
+    val contract: String?,
     val strategies: List<StreamStrategyDto>,
     val orders: List<StreamOrderDto>,
     val holdings: List<ContractHoldingDto>,
@@ -56,7 +56,7 @@ private data class StreamLaneDto(
     fun toDomain() =
         PersistedStreamLane(
             stream,
-            contractIndex,
+            contract,
             strategies.map { PersistedStreamStrategy(it.strategyId, BigDecimal(it.position), it.stopped) },
             orders.map { it.toDomain() },
             holdings.map {
@@ -78,7 +78,7 @@ private data class StreamLaneDto(
             StreamLaneDto(
                 STATE_SCHEMA_VERSION,
                 l.stream,
-                l.contractIndex,
+                l.contract,
                 l.strategies.map { StreamStrategyDto(it.strategyId, it.position.toPlainString(), it.stopped) },
                 l.orders.map(StreamOrderDto::of),
                 l.holdings.map {
@@ -118,19 +118,29 @@ private data class ContractHoldingDto(
 internal data class StreamOrderDto(
     val request: OrderRequestDto,
     val venueId: String,
-    val contractIndex: Int,
+    val contract: String,
     val replacements: Int,
+    val placed: String,
     val filled: String,
 ) {
-    fun toDomain() = PersistedStreamOrder(request.toDomain(), venueId, contractIndex, replacements, BigDecimal(filled))
+    fun toDomain() =
+        PersistedStreamOrder(
+            request.toDomain(),
+            venueId,
+            contract,
+            replacements,
+            BigDecimal(placed),
+            BigDecimal(filled),
+        )
 
     companion object {
         fun of(o: PersistedStreamOrder) =
             StreamOrderDto(
                 encodeRequest(o.request),
                 o.venueId,
-                o.contractIndex,
+                o.contract,
                 o.replacements,
+                o.placed.toPlainString(),
                 o.filled.toPlainString(),
             )
 
