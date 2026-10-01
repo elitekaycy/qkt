@@ -1,8 +1,9 @@
 package com.qkt.derivatives.options.chain
 
 import com.qkt.common.Side
+import com.qkt.derivatives.options.ExpiringLeg
 import com.qkt.derivatives.options.OptionLeg
-import com.qkt.derivatives.options.OptionPayoff
+import com.qkt.derivatives.options.StructureRisk
 import com.qkt.instrument.OptionListing
 import com.qkt.instrument.OptionRight
 import java.math.BigDecimal
@@ -39,10 +40,10 @@ sealed interface StructurePlan {
 }
 
 /**
- * Selects an option structure's legs from one chain snapshot ([OptionSelector]): the first leg by its
- * days window, every `SAME EXPIRY` leg in the first leg's expiry. Its maximum loss per unit (one
- * contract of [contractSize] per leg) is the legs' mark value less their minimum expiry payoff, as
- * the margin rule measures it.
+ * Selects an option structure's legs from one chain snapshot ([OptionSelector]): each leg by its own
+ * days window, a `SAME EXPIRY` leg in the first leg's expiry. Its maximum loss per unit (one contract
+ * of [contractSize] per leg) is [StructureRisk.maxLoss] at the legs' marks, per expiry as the margin
+ * rule measures it.
  */
 object StructurePlanner {
     /** Plans [specs] (the first naming a days window) on [snapshot]. */
@@ -75,14 +76,16 @@ object StructurePlanner {
     private fun maxLossPerUnit(
         legs: List<PlannedLeg>,
         contractSize: BigDecimal,
-    ): BigDecimal? {
-        val sign = { leg: PlannedLeg -> if (leg.side == Side.BUY) BigDecimal.ONE else BigDecimal.ONE.negate() }
-        val value = legs.fold(BigDecimal.ZERO) { v, leg -> v.add(sign(leg).multiply(leg.mark).multiply(contractSize)) }
-        val payoffLegs =
+    ): BigDecimal? =
+        StructureRisk.maxLoss(
             legs.map { leg ->
-                leg.listing.toContract().let { OptionLeg(it.right, it.strike, sign(leg), contractSize) }
-            }
-        val least = OptionPayoff.minimum(payoffLegs) ?: return null
-        return value.subtract(least)
-    }
+                val sign = if (leg.side == Side.BUY) BigDecimal.ONE else BigDecimal.ONE.negate()
+                val contract = leg.listing.toContract()
+                ExpiringLeg(
+                    OptionLeg(contract.right, contract.strike, sign, contractSize),
+                    leg.listing.expiryMs,
+                    leg.mark,
+                )
+            },
+        )
 }
