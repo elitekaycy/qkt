@@ -197,18 +197,7 @@ class DaemonCommand(
         }
         val daemonInstrumentRegistry =
             try {
-                com.qkt.instrument.LayeredInstrumentRegistry(
-                    buildList {
-                        val configured = Path.of(cfg.dataRoot).resolve("instruments.yaml")
-                        if (Files.isRegularFile(configured)) {
-                            add(
-                                com.qkt.instrument.YamlInstrumentRegistry
-                                    .load(configured),
-                            )
-                        }
-                        add(com.qkt.instrument.StandardInstrumentRegistry)
-                    },
-                )
+                InstrumentFiles.registry(Path.of(cfg.dataRoot), explicit = null)
             } catch (e: Exception) {
                 System.err.println("qkt: instrument registry load failed: ${e.message}")
                 runCatching { insightsSink?.close() }

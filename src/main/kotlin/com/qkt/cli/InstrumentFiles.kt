@@ -14,11 +14,12 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 /**
- * The instrument metadata a backtest resolves symbols against: the `instruments:` entries of the
- * instruments file, then its `futures:` roots joined with `<dataRoot>/contracts/` catalogs, then its
- * `options:` roots joined with their option catalogs, then the built-in standard table. A run without an instruments file uses the standard table alone.
+ * The instrument metadata backtests and live sessions resolve symbols against: the `instruments:`
+ * entries of the instruments file, then its `futures:` roots joined with `<dataRoot>/contracts/`
+ * catalogs, then its `options:` roots joined with their option catalogs, then the built-in standard
+ * table. Without an instruments file it is the standard table alone.
  */
-internal object BacktestInstruments {
+internal object InstrumentFiles {
     /**
      * The registry for [dataRoot], reading [explicit] (`--instruments`) or `<dataRoot>/instruments.yaml`.
      * Fails before any data is read when one of [symbols] belongs to a declared futures root but

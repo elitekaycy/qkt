@@ -11,19 +11,19 @@ import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 
-class BacktestInstrumentsTest {
+class InstrumentFilesTest {
     @Test
     fun `no instruments file means the standard table`(
         @TempDir dir: Path,
     ) {
-        assertThat(BacktestInstruments.registry(dir, explicit = null)).isSameAs(StandardInstrumentRegistry)
+        assertThat(InstrumentFiles.registry(dir, explicit = null)).isSameAs(StandardInstrumentRegistry)
     }
 
     @Test
     fun `a missing explicit file is a setup error`(
         @TempDir dir: Path,
     ) {
-        assertThatThrownBy { BacktestInstruments.registry(dir, dir.resolve("nope.yaml")) }
+        assertThatThrownBy { InstrumentFiles.registry(dir, dir.resolve("nope.yaml")) }
             .isInstanceOf(BacktestContext.Companion.SetupError::class.java)
             .hasMessageContaining("nope.yaml")
     }
@@ -43,7 +43,7 @@ class BacktestInstrumentsTest {
         ContractCatalogStore(
             dir,
         ).write(ContractCatalog("BINANCE_UM:BTCUSDT", listOf(ListedContract("BTCUSDT_240927", 1L))))
-        val registry = BacktestInstruments.registry(dir, explicit = null)
+        val registry = InstrumentFiles.registry(dir, explicit = null)
         assertThat(registry.lookup("BINANCE_UM:BTCUSDT_240927")).isNotNull
         assertThat(registry.lookup("BINANCE_UM:BTCUSDT@front")).isNotNull
         assertThat(registry.lookup("BACKTEST:XAUUSD")?.contractSize).isEqualByComparingTo("100")
@@ -59,7 +59,7 @@ class BacktestInstrumentsTest {
                 "volumeMin: 0.01, underlyingIndex: btc_usdc }\n",
         )
 
-        assertThatThrownBy { BacktestInstruments.registry(dir, null, listOf("DERIBIT:BTC_USDC_27SEP24_60000_C")) }
+        assertThatThrownBy { InstrumentFiles.registry(dir, null, listOf("DERIBIT:BTC_USDC_27SEP24_60000_C")) }
             .hasMessageContaining("qkt fetch DERIBIT:BTC_USDC --catalog")
     }
 }
