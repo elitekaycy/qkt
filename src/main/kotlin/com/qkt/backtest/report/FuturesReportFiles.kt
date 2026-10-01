@@ -1,5 +1,6 @@
 package com.qkt.backtest.report
 
+import com.qkt.accounting.margin.MarginDay
 import com.qkt.backtest.BacktestResult
 import com.qkt.broker.continuous.ContractFill
 import com.qkt.broker.continuous.RollEntry
@@ -17,11 +18,16 @@ import com.qkt.broker.exchange.Settlement
 internal object FuturesReportFiles {
     /** Artifact index key of each file. */
     val keys =
-        mapOf("rolls.csv" to "rollsCsv", "contracts.csv" to "contractsCsv", "settlements.csv" to "settlementsCsv")
+        mapOf(
+            "rolls.csv" to "rollsCsv",
+            "contracts.csv" to "contractsCsv",
+            "settlements.csv" to "settlementsCsv",
+            "margin_daily.csv" to "marginDailyCsv",
+        )
 
     /** The futures files of [result], name to content. */
     fun render(result: BacktestResult): List<Pair<String, String>> =
-        render(result.rolls, result.contractFills, result.settlements)
+        render(result.rolls, result.contractFills, result.settlements) + marginDaily(result.marginDaily)
 
     /** The files for these ledgers, name to content, omitting empty ones. */
     fun render(
@@ -85,6 +91,21 @@ internal object FuturesReportFiles {
                 it.deliveryPriceKnown.toString(),
             )
         }
+
+    private fun marginDaily(days: List<MarginDay>): List<Pair<String, String>> {
+        if (days.isEmpty()) return emptyList()
+        val body =
+            csv("date,marginUsed,maintenance,equity,marginCall", days) {
+                listOf(
+                    it.date.toString(),
+                    plain(it.marginUsed),
+                    plain(it.maintenance),
+                    plain(it.equity),
+                    it.marginCall.toString(),
+                )
+            }
+        return listOf("margin_daily.csv" to body)
+    }
 
     private fun <T> csv(
         header: String,
