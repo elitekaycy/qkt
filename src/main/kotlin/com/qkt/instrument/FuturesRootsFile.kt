@@ -26,7 +26,7 @@ object FuturesRootsFile {
             "slippageTicks",
             "expiryGuardHours",
         )
-    private val MARGIN_KEYS = setOf("initial", "maintenance", "basis")
+    private val fields = RootFields("futures")
     private val ROLL_KEYS = setOf("daysBeforeExpiry", "atUtc", "adjust")
 
     /** Every root declared in [path], in file order; empty when the file has no `futures:` section. */
@@ -64,9 +64,9 @@ object FuturesRootsFile {
         fun req(key: String): String =
             entry[key]?.toString() ?: error("futures root $name: missing required key '$key'")
 
-        fun num(key: String): BigDecimal = number(name, key, req(key))
+        fun num(key: String): BigDecimal = fields.number(name, key, req(key))
 
-        fun opt(key: String): BigDecimal? = entry[key]?.let { number(name, key, it.toString()) }
+        fun opt(key: String): BigDecimal? = entry[key]?.let { fields.number(name, key, it.toString()) }
         return FuturesRoot(
             root = req("root"),
             currency = req("currency"),
@@ -80,7 +80,7 @@ object FuturesRootsFile {
             takerFeeRate = opt("takerFeeRate") ?: BigDecimal.ZERO,
             margin =
                 entry["margin"]?.let {
-                    margin(
+                    fields.margin(
                         it as? Map<*, *> ?: error("futures root $name: margin must be a map"),
                         name,
                     )
@@ -92,38 +92,12 @@ object FuturesRootsFile {
                         name,
                     )
                 },
-            slippageTicks = entry["slippageTicks"]?.let { wholeNumber(it.toString(), "slippageTicks", name) } ?: 0,
+            slippageTicks =
+                entry["slippageTicks"]?.let { fields.wholeNumber(it.toString(), "slippageTicks", name) } ?: 0,
             expiryGuardHours =
-                entry["expiryGuardHours"]?.let { wholeNumber(it.toString(), "expiryGuardHours", name) } ?: 24,
+                entry["expiryGuardHours"]?.let { fields.wholeNumber(it.toString(), "expiryGuardHours", name) } ?: 24,
         ).also { validate(it, name) }
     }
-
-    private fun margin(
-        raw: Map<*, *>,
-        name: String,
-    ): MarginTerms {
-        val unknown = raw.keys.map { it.toString() }.filter { it !in MARGIN_KEYS }
-        require(unknown.isEmpty()) { "futures root $name: unknown margin key(s) $unknown; allowed: $MARGIN_KEYS" }
-
-        fun req(key: String): String = raw[key]?.toString() ?: error("futures root $name: margin missing '$key'")
-        val basis =
-            when (req("basis").lowercase()) {
-                "per_contract" -> MarginBasis.PER_CONTRACT
-                "notional" -> MarginBasis.NOTIONAL
-                else -> error("futures root $name: margin basis must be per_contract or notional")
-            }
-        return MarginTerms(
-            number(name, "margin.initial", req("initial")),
-            number(name, "margin.maintenance", req("maintenance")),
-            basis,
-        )
-    }
-
-    private fun number(
-        name: String,
-        key: String,
-        raw: String,
-    ): BigDecimal = raw.toBigDecimalOrNull() ?: error("futures root $name: '$key' must be a number, got '$raw'")
 
     private fun roll(
         raw: Map<*, *>,
@@ -155,14 +129,6 @@ object FuturesRootsFile {
         require(days >= 0) { "futures root $name: roll.daysBeforeExpiry must be >= 0, got $days" }
         return RollPolicy(days, at, adjust)
     }
-
-    private fun wholeNumber(
-        raw: String,
-        key: String,
-        name: String,
-    ): Int =
-        raw.toIntOrNull()?.takeIf { it >= 0 }
-            ?: error("futures root $name: $key must be a whole number >= 0, got '$raw'")
 
     private fun calendar(
         raw: String,
