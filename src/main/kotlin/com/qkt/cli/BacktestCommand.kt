@@ -1,10 +1,7 @@
 package com.qkt.cli
 
 import com.qkt.backtest.BacktestResult
-import com.qkt.backtest.BrokerKind
 import com.qkt.backtest.report.BacktestReportWriter
-import com.qkt.derivatives.options.chain.OptionRootSymbol
-import com.qkt.dsl.compile.isObservationSymbol
 import com.qkt.dsl.parse.Dsl
 import com.qkt.dsl.parse.ParseResult
 import com.qkt.dsl.parse.ParsedFile
@@ -112,22 +109,7 @@ class BacktestCommand(
             val futures = ctx.instruments.futuresSymbols(ctx.symbols)
             val options = ctx.instruments.optionSymbols(ctx.symbols)
             ReportPrinter.print(result, format, System.out, ctx.brokerKind, futures, options)
-            if (futures.isNotEmpty()) System.err.println(futuresExecutionNote(futures))
-            if (options.isNotEmpty()) System.err.println(optionsExecutionNote(options))
-            if (ctx.brokerKind == BrokerKind.PAPER &&
-                ctx.symbols.any {
-                    it !in futures &&
-                        it !in options &&
-                        !isObservationSymbol(it) &&
-                        !it.startsWith(OptionRootSymbol.PREFIX)
-                }
-            ) {
-                System.err.println(
-                    "qkt: note: paper broker fills at mid with no spread/slippage — results are optimistic. " +
-                        "Use --broker mt5-sim and set commissionPerLot + slippagePoints in instruments.yaml " +
-                        "for cost-realistic backtests.",
-                )
-            }
+            printExecutionNotes(ctx.symbols, futures, options, ctx.brokerKind)
             ExitCodes.SUCCESS
         } catch (e: IllegalStateException) {
             System.err.println("qkt: error: ${e.message}")

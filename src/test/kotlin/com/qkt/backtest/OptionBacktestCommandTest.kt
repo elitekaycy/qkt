@@ -115,6 +115,36 @@ class OptionBacktestCommandTest {
         assertThat(output).contains("Trades:           0")
     }
 
+    @Test
+    fun `feeding the whole root changes nothing for a declared contract and its trades`(
+        @TempDir dir: Path,
+    ) {
+        val trading =
+            "    p = DERIBIT:BTC_USDC_26SEP26_84500_P EVERY 1h\n" +
+                "RULES\n    WHEN p.close > 0\n    THEN BUY p SIZING 0.1\n"
+
+        fun result(body: String): List<String> {
+            val (code, output) =
+                backtest(
+                    Files.createDirectories(dir.resolve("r${body.length}")),
+                    "2026-09-25",
+                    fixture = "btc-usdc-trade-25sep26",
+                    body = body,
+                )
+            assertThat(code).describedAs(output).isEqualTo(ExitCodes.SUCCESS)
+            return output.lines().filter {
+                it.contains("stream DERIBIT:") ||
+                    it.startsWith("Trades:") ||
+                    it.startsWith("Final realized:")
+            }
+        }
+
+        val alone = result(trading)
+        val fed = result("    chain = OPTIONS:DERIBIT.BTC_USDC EVERY 1h\n$trading")
+
+        assertThat(fed).isEqualTo(alone).anyMatch { it.startsWith("Trades:") && !it.endsWith(" 0") }
+    }
+
     private companion object {
         const val CALL_BODY =
             "    c = DERIBIT:BTC_USDC_26SEP26_84000_C EVERY 1h\n" +
