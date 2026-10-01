@@ -6,6 +6,9 @@ import com.qkt.derivatives.futures.LiveRoll
 import com.qkt.derivatives.futures.RollTransition
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.TickFeed
+import com.qkt.marketdata.live.MarketDataFeedScope
+import com.qkt.marketdata.live.MarketDataLifecycleFeed
+import java.util.concurrent.CopyOnWriteArrayList
 import org.slf4j.LoggerFactory
 
 /**
@@ -16,9 +19,11 @@ import org.slf4j.LoggerFactory
  * next contract's ticks never reach the strategy. When a tick shows a roll the [chain] has no
  * measurement for (a roll now, or one that fell in a downtime), the roll is measured ([measure]),
  * again every [retryMs] while its minute has not closed at the venue, the chain is rebuilt and the new
- * pair read; the ticks seen meanwhile are stale and not served. A roll the history cannot take, or one
- * still unpriced [measureForMs] after it, ends this stream, logged, as an unpriceable roll ends a
- * backtest's. Not thread-safe: one reader.
+ * pair read; the ticks seen meanwhile are stale and not served. The outages of the account feed it
+ * reads now are passed on, and its failure is this feed's [terminalFailureReason]. A roll the history
+ * cannot take, or one still unpriced [measureForMs] after it, ends the feed with that reason: the live
+ * session stops, fail-closed, until the roll is measured (`qkt fetch <ROOT> --rolls`). Not thread-safe:
+ * one reader.
  */
 class ContinuousLiveFeed(
     private val chain: () -> ContinuousChain,
@@ -28,11 +33,31 @@ class ContinuousLiveFeed(
     private val sleep: (Long) -> Unit = Thread::sleep,
     private val retryMs: Long = 15_000,
     private val measureForMs: Long = 600_000,
-) : TickFeed {
+) : TickFeed,
+    MarketDataLifecycleFeed {
     private val log = LoggerFactory.getLogger(ContinuousLiveFeed::class.java)
     private var current = chain()
-    private var feed: TickFeed? = null
+
+    @Volatile private var feed: TickFeed? = null
     private var following = -1
+    private val disconnects = CopyOnWriteArrayList<(MarketDataFeedScope) -> Unit>()
+    private val reconnects = CopyOnWriteArrayList<(MarketDataFeedScope) -> Unit>()
+
+    @Volatile private var stopped: String? = null
+
+    override val expectsContinuousDelivery: Boolean
+        get() = (feed as? MarketDataLifecycleFeed)?.expectsContinuousDelivery ?: false
+
+    override fun onDisconnect(handler: (MarketDataFeedScope) -> Unit) {
+        disconnects += handler
+    }
+
+    override fun onReconnect(handler: (MarketDataFeedScope) -> Unit) {
+        reconnects += handler
+    }
+
+    override fun terminalFailureReason(): String? =
+        stopped ?: (feed as? MarketDataLifecycleFeed)?.terminalFailureReason()
 
     override fun next(): Tick? {
         while (true) {
@@ -53,12 +78,18 @@ class ContinuousLiveFeed(
         feed?.close()
     }
 
-    /** Reads contract [index] and the one after it from now on. */
+    /** Reads contract [index] and the one after it from now on, passing on that feed's outages. */
     private fun follow(index: Int): TickFeed {
         feed?.close()
         val contracts = listOfNotNull(current.contractSymbol(index), current.contractSymbolOrNull(index + 1))
         following = index
-        return ticks(contracts).also { feed = it }
+        val next = ticks(contracts)
+        (next as? MarketDataLifecycleFeed)?.let { lifecycle ->
+            lifecycle.onDisconnect { scope -> if (feed === next) disconnects.forEach { runCatching { it(scope) } } }
+            lifecycle.onReconnect { scope -> if (feed === next) reconnects.forEach { runCatching { it(scope) } } }
+        }
+        feed = next
+        return next
     }
 
     /** Measures the last roll at or before [atMs]; true once the chain covers it and the new pair is read. */
@@ -91,11 +122,12 @@ class ContinuousLiveFeed(
 
     private fun stop(reason: String): Boolean {
         log.error("{}; the stream stops", reason)
+        stopped = reason
         return false
     }
 
     private fun end(atMs: Long): Tick? {
-        log.warn("{} has no contract at {} ({}); the stream ends", current.symbol, atMs, current.endReason)
+        stop("${current.symbol} has no contract at $atMs (${current.endReason})")
         return null
     }
 
