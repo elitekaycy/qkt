@@ -34,7 +34,7 @@ internal class RollExecutor(
     private val chainOf: () -> ContinuousChain,
     venue: ContractVenue,
     private val contractPrices: MarketPriceTracker,
-    orders: ContinuousOrderMap,
+    private val orders: ContinuousOrderMap,
     legs: RollLegs,
     private val ledger: RollLedger,
     fills: ContractFillLog,
@@ -46,9 +46,12 @@ internal class RollExecutor(
     /** The chain as it stands now: a live session extends it with each roll it measures. */
     private val chain: ContinuousChain get() = chainOf()
 
-    /** Whether a roll's legs are still out at the venue (a live venue answers after submit returns). */
-    var inFlight: Boolean = false
+    /** The roll whose legs are still out at the venue (a live venue answers after submit returns), or null. */
+    var run: RollRun? = null
         private set
+
+    /** Whether a roll is in flight. */
+    val inFlight: Boolean get() = run != null
 
     /**
      * Roll from contract [fromIndex] to [toIndex], carrying [positions] (strategy to signed quantity),
@@ -67,19 +70,22 @@ internal class RollExecutor(
         val to = chain.contractSymbol(toIndex)
         val stopped = "${chain.symbol} stopped: roll $from->$to at ${Instant.ofEpochMilli(measured.atMs)} failed"
         val holders = positions.filterValues { it.signum() != 0 }
-        val resting = restingOrders.pull(fromIndex)
+        val resting = orders.on(fromIndex)
         val untradeable = untradeable(fromIndex, toIndex)
         if (untradeable != null) {
             val reason = "$stopped ($untradeable)"
             log.error(reason)
+            restingOrders.pull(resting)
             resting.forEach { restingOrders.cancel(it, reason) }
             done(RollOutcome(stopped = holders.mapValues { reason }, closes = emptyList(), costs = emptyList()))
             return
         }
         contractPrices.update(from, measured.prices.fromPrice)
         contractPrices.update(to, measured.prices.toPrice)
-        inFlight = true
-        carryFrom(RollRun(fromIndex, toIndex, measured, stopped, resting, holders.entries.toList()), 0, done)
+        val run = RollRun(fromIndex, toIndex, measured, stopped, resting, holders.entries.toList())
+        this.run = run
+        restingOrders.pull(resting)
+        carryFrom(run, 0, done)
     }
 
     /** Carries the run's holders from [i] on, one after another as the venue answers, then finishes. */
@@ -110,7 +116,7 @@ internal class RollExecutor(
         val referencePrice = space.toContinuous(run.measured.prices.toPrice)
         val cause = "roll ${chain.contractSymbol(run.fromIndex)}->$to"
         val costs = carried.map { CostIncurred(it.strategyId, chain.symbol, it.cost, cause, referencePrice) }
-        inFlight = false
+        this.run = null
         done(RollOutcome(stopped = run.failed, closes = run.closes, costs = costs))
     }
 
