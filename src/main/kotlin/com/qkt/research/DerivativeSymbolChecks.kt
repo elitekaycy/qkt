@@ -2,13 +2,15 @@ package com.qkt.research
 
 import com.qkt.accounting.AccountingEngine
 import com.qkt.instrument.InstrumentRegistry
+import com.qkt.instrument.OptionTerms
 import com.qkt.instrument.QuoteCurrencyGuard
 
 /**
  * Fails a replay up front for derivative symbols qkt cannot book correctly: a symbol a registry
  * claims but cannot resolve (a contract missing from its root's catalog), a continuous stream
  * (`VENUE:ROOT@selector`) whose root is not declared, or an exchange fee in a currency the account
- * cannot book 1:1. CFD and spot symbols are not examined.
+ * cannot book 1:1, or an option (no venue simulates their fills, expiry and settlement yet).
+ * CFD and spot symbols are not examined.
  */
 internal fun requireDerivativeSymbolsResolvable(
     symbols: List<String>,
@@ -25,6 +27,9 @@ internal fun requireDerivativeSymbolsResolvable(
             continue
         }
         val terms = meta.derivative ?: continue
+        require(terms !is OptionTerms) {
+            "$symbol is an option; qkt can catalog options but has no option venue to fill, expire and settle them yet"
+        }
         val charges = terms.exchangeFeePerContract.signum() != 0 || terms.takerFeeRate.signum() != 0
         val currency = accounting.pnlCurrencyFor(symbol)
         require(!charges || QuoteCurrencyGuard.sameCurrency(currency, accounting.accountCurrency)) {
