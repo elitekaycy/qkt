@@ -4,6 +4,7 @@ import com.qkt.broker.Broker
 import com.qkt.broker.BrokerFactory
 import com.qkt.broker.PaperBroker
 import com.qkt.broker.continuous.ContinuousContractBroker
+import com.qkt.broker.continuous.LaneStateStore
 import com.qkt.bus.EventBus
 import com.qkt.common.FixedClock
 import com.qkt.common.MonotonicSequenceGenerator
@@ -12,6 +13,7 @@ import com.qkt.dsl.compile.CandleHub
 import com.qkt.dsl.compile.DslCompiledStrategy
 import com.qkt.dsl.compile.HubKey
 import com.qkt.dsl.compile.PendingStacks
+import com.qkt.events.TickEvent
 import com.qkt.instrument.ContractCatalog
 import com.qkt.instrument.ContractCatalogRegistry
 import com.qkt.instrument.FuturesRoot
@@ -22,6 +24,7 @@ import com.qkt.instrument.RollPolicy
 import com.qkt.instrument.RollRecord
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.marketdata.Tick
+import com.qkt.persistence.NoopStatePersistor
 import com.qkt.positions.PositionProvider
 import com.qkt.strategy.Signal
 import com.qkt.strategy.StrategyContext
@@ -110,14 +113,17 @@ class SessionBrokersContinuousRoutesTest {
             ),
         )
 
-    private fun routing(bound: MutableList<EventBus>) =
-        object : ContinuousRouting {
-            override val chains = ContinuousChains(registry.futures())
+    private fun routing(
+        bound: MutableList<EventBus>,
+        store: LaneStateStore? = null,
+    ) = object : ContinuousRouting {
+        override val chains = ContinuousChains(registry.futures())
+        override val laneStore = store
 
-            override fun bindLane(bus: EventBus) {
-                bound += bus
-            }
+        override fun bindLane(bus: EventBus) {
+            bound += bus
         }
+    }
 
     private class Attached(
         val bus: EventBus,
@@ -183,5 +189,27 @@ class SessionBrokersContinuousRoutesTest {
 
         assertThat(made).containsExactly(bus)
         assertThat(bound).isEmpty()
+    }
+
+    @Test
+    fun `a live session's lanes keep their state in its lane store`() {
+        val account: BrokerFactory = { b, c, t, _, _ -> PaperBroker(b, c, t) }
+        val streams = mapOf("perp" to HubKey("BINANCE_UM", "BTCUSDT@front", "1m"))
+        val persistor = NoopStatePersistor()
+
+        SessionBrokers(listOf("s" to Streams(streams)), emptyList(), mapOf("binance_um" to account), registry)
+            .buildBroker(
+                PaperBroker(bus, clock, tracker),
+                bus,
+                clock,
+                tracker,
+                engine,
+                routing(mutableListOf(), LaneStateStore(persistor, "s")),
+            )
+        bus.publish(TickEvent(Tick("BINANCE_UM:BTCUSDT@front", BigDecimal("63900"), clock.time)))
+
+        assertThat(
+            persistor.loadStreamLane("s", "BINANCE_UM:BTCUSDT@front")?.contract,
+        ).isEqualTo("BINANCE_UM:BTCUSDT_241227")
     }
 }
