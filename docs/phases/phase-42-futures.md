@@ -73,7 +73,7 @@ STRATEGY dec VERSION 1
 SYMBOLS
     btc = BINANCE_UM:BTCUSDT_241227 EVERY 1h
 RULES
-    WHEN ema(btc.close, 20) CROSSES ABOVE ema(btc.close, 50)
+    WHEN ema(btc.close, 20) CROSSES ABOVE ema(btc.close, 50) AND btc.dte > 2
     THEN BUY btc SIZING 0.01
     WHEN btc.dte < 2 AND POSITION.btc != 0
     THEN CLOSE btc

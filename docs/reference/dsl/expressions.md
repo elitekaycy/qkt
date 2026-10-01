@@ -117,7 +117,8 @@ A futures stream — a listed contract (`BINANCE_UM:BTCUSDT_241227`) or a contin
 other stream these fields are Undefined, so a rule that reads them does not fire:
 
 ```qkt
-btc.contract       -- the followed contract's code, e.g. 'BTCUSDT_241227' (a string)
+btc.contract       -- the followed contract's code, e.g. 'BTCUSDT_241227' (a string: compare with = or !=;
+                   -- any other operator, arithmetic or indicator on it is Undefined)
 btc.dte            -- days until that contract expires, with fractions
 btc.days_to_roll   -- days until the stream moves to the next contract (a listed contract: its expiry)
 ```
