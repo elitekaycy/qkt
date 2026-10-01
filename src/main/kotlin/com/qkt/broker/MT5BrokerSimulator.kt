@@ -87,6 +87,8 @@ class MT5BrokerSimulator(
 
     private val sendLane = SendLane(latencyMs, orderSpacingMs)
 
+    private val fillPrice = SimulatedFillPrice(syntheticSpreadPoints)
+
     private val log = LoggerFactory.getLogger(MT5BrokerSimulator::class.java)
 
     private val working: MutableList<OrderRequest> = mutableListOf()
@@ -259,7 +261,7 @@ class MT5BrokerSimulator(
         meta: InstrumentMeta,
     ) {
         val tick = lastTickBySymbol[req.symbol]
-        val fairFill = sidedFillPrice(req.side, tick, fallback = priceProvider.lastPrice(req.symbol), meta)
+        val fairFill = fillPrice.of(req.side, tick, fallback = priceProvider.lastPrice(req.symbol), meta)
         if (fairFill == null) {
             reject(req, "no price for ${req.symbol}")
             return
@@ -319,11 +321,11 @@ class MT5BrokerSimulator(
         val rawFair =
             when (req) {
                 is OrderRequest.Limit ->
-                    sidedFillPrice(req.side, triggeringTick, fallback = triggeringTick.price, meta)
+                    fillPrice.of(req.side, triggeringTick, fallback = triggeringTick.price, meta)
                 is OrderRequest.Stop ->
-                    sidedFillPrice(req.side, triggeringTick, fallback = triggeringTick.price, meta)
+                    fillPrice.of(req.side, triggeringTick, fallback = triggeringTick.price, meta)
                 is OrderRequest.IfTouched ->
-                    sidedFillPrice(req.side, triggeringTick, fallback = triggeringTick.price, meta)
+                    fillPrice.of(req.side, triggeringTick, fallback = triggeringTick.price, meta)
                 is OrderRequest.Market -> error("Market should not reach fillFromTrigger")
                 is OrderRequest.StopLimit -> error("StopLimit should activate a Limit")
                 else -> error("MT5BrokerSimulator fillFromTrigger unexpected type: ${req::class.simpleName}")
@@ -366,7 +368,7 @@ class MT5BrokerSimulator(
         if (checkTrigger(limit, triggeringTick)) {
             val execution =
                 requireNotNull(
-                    sidedFillPrice(limit.side, triggeringTick, fallback = triggeringTick.price, meta),
+                    fillPrice.of(limit.side, triggeringTick, fallback = triggeringTick.price, meta),
                 )
             val fillPrice = limitFillPrice(limit, execution, limit.limitPrice)
             publishFill(
@@ -381,30 +383,6 @@ class MT5BrokerSimulator(
         } else {
             working.add(limit)
         }
-    }
-
-    /**
-     * Returns the side-adjusted fair fill price: ask for BUY, bid for SELL. Prefers
-     * [tick]`.ask`/`.bid` when present; otherwise synthesises spread around
-     * [fallback] (or [tick]`.price`) using `meta.pointSize × syntheticSpreadPoints`.
-     * Returns null if there's no usable price at all.
-     */
-    private fun sidedFillPrice(
-        side: Side,
-        tick: Tick?,
-        fallback: BigDecimal?,
-        meta: InstrumentMeta,
-    ): BigDecimal? {
-        if (tick?.bid != null && tick.ask != null) {
-            return if (side == Side.BUY) tick.ask!! else tick.bid!!
-        }
-        val mid = tick?.price ?: fallback ?: return null
-        if (syntheticSpreadPoints == 0) return mid
-        val halfSpread =
-            meta.pointSize
-                .multiply(BigDecimal(syntheticSpreadPoints))
-                .divide(BigDecimal(2), meta.digits + 2, RoundingMode.HALF_EVEN)
-        return if (side == Side.BUY) mid.add(halfSpread) else mid.subtract(halfSpread)
     }
 
     private fun publishFill(
@@ -500,7 +478,7 @@ class MT5BrokerSimulator(
     ): String? {
         if (!enforceStopsLevel || meta.tradeStopsLevelPoints == 0) return null
         val ref =
-            sidedFillPrice(
+            fillPrice.of(
                 request.side,
                 lastTickBySymbol[request.symbol],
                 fallback = priceProvider.lastPrice(request.symbol),
