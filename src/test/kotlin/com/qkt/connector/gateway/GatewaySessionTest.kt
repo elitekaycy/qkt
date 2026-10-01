@@ -116,4 +116,20 @@ internal class GatewaySessionTest : GatewayHarness() {
 
         await { again.of<BrokerEvent.OrderFilled>().isNotEmpty() }
     }
+
+    @Test
+    fun `two brokers of one strategy each get only the events of the orders they sent`() {
+        val shared = session(setOf("a"))
+        val main = Strategy()
+        val lane = Strategy()
+        broker(shared, main, "a")
+        val laneBroker = broker(shared, lane, "a")
+
+        laneBroker.submit(market("a-1", "a"))
+        await { lane.of<BrokerEvent.OrderAccepted>().isNotEmpty() }
+        fake.act { fill(wire("a-1"), "f1", "0.1", "650", FakeGateway.TIME) }
+
+        await { lane.of<BrokerEvent.OrderFilled>().isNotEmpty() }
+        assertThat(main.events).isEmpty()
+    }
 }

@@ -57,7 +57,7 @@ class GatewayBroker internal constructor(
                 is GatewayOrderMapping.Unsupported -> return refuse(request, mapping.reason)
                 is GatewayOrderMapping.Send -> mapping.body
             }
-        session.submit(request.strategyId, body) { reason -> reject(request, reason) }
+        session.submit(request.strategyId, attachment, body) { reason -> reject(request, reason) }
         return SubmitAck(request.id, brokerOrderId = null, accepted = true)
     }
 
@@ -76,6 +76,7 @@ class GatewayBroker internal constructor(
                     it.cumulativeFilledQuantity,
                 )
             },
+            attachment,
         )
 
     /** Called once the session is restored: settles contracts that expired while away and checks the account total. */

@@ -120,15 +120,16 @@ internal class GatewaySession(
     /** Detaches [broker]; the connection stays open with the account. */
     fun detach(broker: GatewayRouting.Attached) = synchronized(lock) { routing.detach(broker) }
 
-    /** Sends [body] for [strategy]; [reject] reports a refusal on the sender's bus. */
+    /** Sends [body] for [strategy] through [sender], which gets the order's events; [reject] reports a refusal. */
     fun submit(
         strategy: String,
+        sender: GatewayRouting.Attached,
         body: WireSubmit,
         reject: (String) -> Unit,
     ) {
         val blocked = refused ?: riskRefused?.takeUnless { body.reduceOnly }
         if (blocked != null) return reject(blocked)
-        ledger.own(body.clientOrderId, strategy, BigDecimal(body.quantity))
+        ledger.own(body.clientOrderId, strategy, BigDecimal(body.quantity), sender)
         placement.submit(body, reject)
     }
 
@@ -137,9 +138,15 @@ internal class GatewaySession(
         ledger.gatewayId(engineId)?.let(placement::cancel)
     }
 
-    /** Takes back orders a restart restored; returns the engine ids the gateway knows. Throws when it cannot answer. */
-    fun recover(orders: List<RecoveredOrder>): Set<String> {
-        orders.forEach { ledger.own(it.clientOrderId, it.strategyId, it.quantity, it.alreadyFilled) }
+    /**
+     * Takes back orders a restart restored into [sender]'s session; returns the engine ids the gateway
+     * knows. Throws when it cannot answer.
+     */
+    fun recover(
+        orders: List<RecoveredOrder>,
+        sender: GatewayRouting.Attached,
+    ): Set<String> {
+        orders.forEach { ledger.own(it.clientOrderId, it.strategyId, it.quantity, sender, it.alreadyFilled) }
         return GatewayRecovery
             .recover(client, orders, ledger::markBooked, ledger::onFill, ledger::onOrder)
             .mapTo(HashSet(), GatewayClientIds::engineId)

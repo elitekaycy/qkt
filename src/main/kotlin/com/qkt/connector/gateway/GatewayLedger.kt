@@ -19,6 +19,7 @@ internal class GatewayLedger(
 ) {
     private val owners = ConcurrentHashMap<String, String>()
     private val byEngineId = ConcurrentHashMap<String, String>()
+    private val senders = ConcurrentHashMap<String, GatewayRouting.Attached>()
     private val open: MutableSet<String> = ConcurrentHashMap.newKeySet()
     private val settled: MutableSet<String> = ConcurrentHashMap.newKeySet()
     private val translator = GatewayEventTranslator(symbols) { id -> owners[id] ?: "" }
@@ -32,14 +33,19 @@ internal class GatewayLedger(
     /** Whether a strategy here owns order [clientOrderId]. */
     fun owns(clientOrderId: String): Boolean = owners.containsKey(clientOrderId)
 
-    /** [strategy] sent (or a restart restored) [clientOrderId] for [quantity], [alreadyFilled] of it booked. */
+    /**
+     * [strategy] sent (or a restart restored) [clientOrderId] for [quantity], [alreadyFilled] of it booked,
+     * through [sender], the broker its events go back to.
+     */
     fun own(
         clientOrderId: String,
         strategy: String,
         quantity: BigDecimal,
+        sender: GatewayRouting.Attached,
         alreadyFilled: BigDecimal = BigDecimal.ZERO,
     ) {
         owners[clientOrderId] = strategy
+        senders[clientOrderId] = sender
         byEngineId[GatewayClientIds.engineId(clientOrderId)] = clientOrderId
         open += clientOrderId
         synchronized(lock) { translator.expect(clientOrderId, quantity, alreadyFilled) }
@@ -73,7 +79,7 @@ internal class GatewayLedger(
     ) = synchronized(lock) { broker.publish(translator.settlement(settlement)) }
 
     private fun route(event: BrokerEvent.OrderEvent) {
-        routing.route(GatewayClientIds.toEngine(event))
+        routing.route(GatewayClientIds.toEngine(event), senders[event.clientOrderId])
         // An ended order's ownership goes with it: the translator drops any later update of it.
         if (event is BrokerEvent.OrderFilled ||
             event is BrokerEvent.OrderCancelled ||
@@ -82,6 +88,7 @@ internal class GatewayLedger(
             open -= event.clientOrderId
             owners -= event.clientOrderId
             byEngineId -= GatewayClientIds.engineId(event.clientOrderId)
+            senders -= event.clientOrderId
         }
     }
 }
