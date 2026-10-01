@@ -51,7 +51,15 @@ class StructureFieldCompilerTest {
         val view =
             object : StructureView {
                 override fun live(alias: String) =
-                    StructurePosition("ps-1", "ps", state, BigDecimal("0.1"), legs).takeIf { live && alias == "ps" }
+                    StructurePosition(
+                        "ps-1",
+                        "ps",
+                        state,
+                        BigDecimal("0.1"),
+                        legs,
+                        working =
+                            state != StructureState.OPEN,
+                    ).takeIf { live && alias == "ps" }
 
                 override fun all() = listOfNotNull(live("ps"))
 
@@ -119,5 +127,10 @@ class StructureFieldCompilerTest {
         assertThatThrownBy { compiler.compile(StateAccessor(StateSource.POSITION_MFE, "ps")) }
             .isInstanceOf(CompileError::class.java)
             .hasMessageStartingWith("POSITION.ps.mfe is not a structure field")
+    }
+
+    @Test
+    fun `exit hooks read the same structures as the rules`() {
+        assertThat(compiler.forExitHooks().structures).isSameAs(compiler.structures)
     }
 }

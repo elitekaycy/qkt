@@ -53,13 +53,7 @@ class AstCompiler {
         val aggregates = AggregateBinding.Bag()
         val exprCompiler =
             ExprCompiler(bindings, aggregates, basketConstituents, structures = StructureSupport(structureAliases(ast)))
-        val exitExprCompiler =
-            ExprCompiler(
-                bindings = bindings,
-                aggregates = aggregates,
-                baskets = basketConstituents,
-                allowExitAccess = true,
-            )
+        val exitExprCompiler = exprCompiler.forExitHooks()
         val strategyLogger = org.slf4j.LoggerFactory.getLogger("com.qkt.dsl.strategy.${ast.name}")
         val ids = com.qkt.common.SequentialIdGenerator(prefix = "dsl-${ast.name}-")
         val pendingStacks = PendingStacks()

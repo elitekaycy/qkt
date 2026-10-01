@@ -148,4 +148,33 @@ class StructureBookTest {
 
         assertThat(book.live("ps")).isNull()
     }
+
+    @Test
+    fun `a close whose other leg the venue rejected reopens the structure once the rest fills`() {
+        openSpread()
+        close("ps", "c1" to StructureFixtures.P81, "c2" to StructureFixtures.P78)
+
+        book.ended("c2")
+        book.filled("c1", BigDecimal("0.1"), BigDecimal("300"))
+
+        val ps = requireNotNull(book.live("ps"))
+        assertThat(ps.state).isEqualTo(StructureState.OPEN)
+        assertThat(ps.working).isFalse()
+    }
+
+    @Test
+    fun `legs past expiry settle from the clock even when the venue nets them to nothing`() {
+        openSpread("ps")
+        book.accept(
+            Signal.SubmitGroup("qs-1", "qs", listOf(StructureFixtures.market("q", StructureFixtures.P81, Side.BUY))),
+        )
+        book.filled("q", BigDecimal("0.1"), BigDecimal("600"))
+
+        book.settleExpired(StructureFixtures.OCT9 - 1)
+        assertThat(book.all()).hasSize(2)
+        book.settleExpired(StructureFixtures.OCT9)
+
+        // Delivered at 80000: the 81000 put pays 1000, the 78000 put nothing.
+        assertThat(book.all()).isEmpty()
+    }
 }

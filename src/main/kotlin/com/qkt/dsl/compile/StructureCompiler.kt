@@ -16,7 +16,6 @@ import com.qkt.execution.TimeInForce
 import com.qkt.instrument.OptionRight
 import com.qkt.instrument.OptionSymbols
 import com.qkt.strategy.Signal
-import com.qkt.strategy.StructureState
 import java.math.BigDecimal
 import java.math.RoundingMode
 
@@ -68,16 +67,17 @@ internal class StructureCompiler(
     }
 
     /**
-     * Compiles `CLOSE <alias>` on a structure: an OPEN structure closes as one group
-     * ([StructureCloses.closeGroup]); one still opening, unwinding or closing fires a [Signal.Suppressed]
-     * with the reason, so the rule tries again; no live structure fires nothing, as `CLOSE` on a flat stream.
+     * Compiles `CLOSE <alias>` on a structure: a closable one ([com.qkt.strategy.StructurePosition.closable])
+     * closes as one group ([StructureCloses.closeGroup]); one still opening, or unwinding or closing with
+     * orders working, fires a [Signal.Suppressed] with the reason, so the rule tries again; no live
+     * structure fires nothing, as `CLOSE` on a flat stream.
      */
     fun compileClose(alias: String): (EvalContext) -> List<Signal> =
         { ec ->
             val live = ec.strategyContext.structures.live(alias)
             when {
                 live == null -> emptyList()
-                live.state != StructureState.OPEN ->
+                !live.closable ->
                     listOf(Signal.Suppressed(alias, "$alias is ${live.state}, not open"))
                 else -> {
                     val strategyId = ec.strategyContext.strategyId

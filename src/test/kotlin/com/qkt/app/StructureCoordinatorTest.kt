@@ -1,60 +1,16 @@
 package com.qkt.app
 
-import com.qkt.bus.EventBus
-import com.qkt.common.FixedClock
-import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.Side
 import com.qkt.events.BrokerEvent
 import com.qkt.events.RiskRejectedEvent
 import com.qkt.events.SignalEvent
-import com.qkt.execution.ExitReason
-import com.qkt.execution.OrderRequest
-import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.strategy.Signal
+import com.qkt.strategy.StructureState
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
-class StructureCoordinatorTest {
-    private val clock = FixedClock(5L)
-    private val bus = EventBus(clock, MonotonicSequenceGenerator())
-    private val emitted = mutableListOf<Signal>()
-    private val cancelled = mutableListOf<String>()
-    private val book = StructureBook(StructureFixtures.registry, MarketPriceTracker())
-    private val shortPut = StructureFixtures.market("s", StructureFixtures.P81, Side.SELL)
-    private val longPut = StructureFixtures.market("l", StructureFixtures.P78, Side.BUY)
-    private val wing = StructureFixtures.market("w", StructureFixtures.P75, Side.BUY)
-    private val farPut = StructureFixtures.market("f", StructureFixtures.P80_30OCT, Side.BUY)
-
-    init {
-        StructureCoordinator(bus, clock) { cancelled += it }.bind("st", book) { signal ->
-            emitted += signal
-            bus.publish(SignalEvent(signal, strategyId = "st"))
-        }
-    }
-
-    private fun open(vararg legs: OrderRequest) =
-        bus.publish(SignalEvent(Signal.SubmitGroup("ps-1", "ps", legs.toList()), strategyId = "st"))
-
-    private fun filled(
-        leg: OrderRequest,
-        strategyId: String = "st",
-    ) = bus.publish(
-        BrokerEvent.OrderFilled(
-            leg.id,
-            leg.id,
-            leg.symbol,
-            leg.side,
-            BigDecimal.TEN,
-            leg.quantity,
-            strategyId = strategyId,
-        ),
-    )
-
-    private fun cancelled(id: String) = bus.publish(BrokerEvent.OrderCancelled(id, id, "no bid", strategyId = "st"))
-
-    private fun unwinds() = emitted.filterIsInstance<Signal.SubmitGroup>()
-
+internal class StructureCoordinatorTest : StructureCoordinatorHarness() {
     @Test
     fun `a failed leg unwinds the filled legs as one forced group, shorts bought back first`() {
         open(longPut, wing, shortPut)
@@ -121,23 +77,6 @@ class StructureCoordinatorTest {
     }
 
     @Test
-    fun `an expired leg is left to its settlement, the unexpired one is closed`() {
-        val nearShort = shortPut.copy(id = "s2")
-        val farLong = farPut.copy(id = "f2")
-        val pending = StructureFixtures.market("x", StructureFixtures.P75, Side.BUY)
-        bus.publish(SignalEvent(Signal.SubmitGroup("qs-1", "qs", listOf(pending, nearShort, farLong)), "st"))
-        filled(nearShort)
-        filled(farLong)
-        clock.time = StructureFixtures.OCT9
-
-        cancelled("x")
-
-        val unwind = unwinds().single().requests.single()
-        assertThat(Triple(unwind.symbol, unwind.side, unwind.quantity))
-            .isEqualTo(Triple(StructureFixtures.P80_30OCT, Side.SELL, BigDecimal("0.1")))
-    }
-
-    @Test
     fun `fills and cancels of another strategy's orders are not this strategy's`() {
         open(longPut, shortPut)
 
@@ -153,33 +92,6 @@ class StructureCoordinatorTest {
     }
 
     @Test
-    fun `an expiry print settles the structure's legs on that contract`() {
-        open(longPut, shortPut)
-        filled(longPut)
-        filled(shortPut)
-        clock.time = StructureFixtures.OCT9
-
-        listOf(shortPut, longPut).forEach { leg ->
-            bus.publish(
-                BrokerEvent.OrderFilled(
-                    "expiry:${leg.symbol}:st",
-                    null,
-                    leg.symbol,
-                    if (leg.side == Side.BUY) Side.SELL else Side.BUY,
-                    BigDecimal.ZERO,
-                    leg.quantity,
-                    strategyId = "st",
-                    updatesOrderExecution = false,
-                    exitReason = ExitReason.EXPIRY,
-                ),
-            )
-        }
-
-        assertThat(book.live("ps")).isNull()
-        assertThat(emitted).isEmpty()
-    }
-
-    @Test
     fun `a fill of an order no structure sent closes the legs it trades against`() {
         open(longPut, shortPut)
         filled(longPut)
@@ -190,5 +102,26 @@ class StructureCoordinatorTest {
 
         assertThat(book.live("ps")).isNull()
         assertThat(emitted).isEmpty()
+    }
+
+    @Test
+    fun `an unwind the venue rejected leaves the structure idle, so a later close can end it`() {
+        open(longPut, shortPut)
+        filled(shortPut)
+        cancelled("l")
+        val close = unwinds().single().requests.single()
+
+        bus.publish(BrokerEvent.OrderRejected(close.id, null, "rejected", strategyId = "st"))
+
+        val ps = requireNotNull(book.live("ps"))
+        assertThat(ps.state).isEqualTo(StructureState.UNWINDING)
+        assertThat(ps.working).isFalse()
+        val again =
+            requireNotNull(
+                com.qkt.dsl.compile.StructureCloses
+                    .endAll(book, "st", 5L, ids)
+                    .single() as? Signal.SubmitGroup,
+            )
+        assertThat(again.requests.map { it.symbol to it.side }).containsExactly(StructureFixtures.P81 to Side.BUY)
     }
 }

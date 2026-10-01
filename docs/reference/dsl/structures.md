@@ -113,12 +113,17 @@ RULES
   closed portfolio gate, because it only removes risk.
 - `CLOSE ps` on a structure still opening, unwinding or closing fires nothing and logs why, so the
   rule tries again. With no live structure it does nothing, like `CLOSE` on a flat stream.
-- A closing leg the venue cancels for lack of quotes is sent again. One the venue rejects stays open,
-  and the structure is open again, so a later `CLOSE` can retry.
+- A closing leg the venue cancels for lack of quotes is sent again. One the venue rejects stays held:
+  once nothing of the structure is working, a later `CLOSE` (or `FLATTEN`) can retry. This holds for
+  an unwind as well as a `CLOSE`.
 - `FLATTEN` (`CLOSE_ALL`) closes open structures as groups and cancels the working legs of opening
   ones; their filled legs are then unwound. It never closes a structure's leg a second time.
   Deactivating a portfolio child does the same.
-- An expired leg is never closed: it settles at its expiry price, which is added to `pnl`.
+- An expired leg is never closed: it settles at its intrinsic value from the catalog's delivery
+  price on the first tick at or after expiry, which is added to `pnl`. That holds even when two
+  structures hold one contract long and short and the account nets them away.
+- Ending a structure cancels only this strategy's working legs, never another strategy's orders on the
+  same contract.
 
 ## Requirements
 

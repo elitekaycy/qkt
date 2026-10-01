@@ -52,9 +52,9 @@ internal object StructureCloses {
     }
 
     /**
-     * What ends every live structure in [view]: an OPEN one closes as a group; a PENDING one has its
-     * working legs cancelled, and its coordinator then unwinds the legs that filled; an UNWINDING or
-     * CLOSING one is already being closed. Every signal only removes risk, so none is gated.
+     * What ends every live structure in [view]: a closable one ([StructurePosition.closable]) closes as
+     * a group; a PENDING one has its working legs cancelled, and its coordinator then unwinds the legs
+     * that filled; one still unwinding or closing with orders working is already being closed. Every signal only removes risk, so none is gated.
      */
     fun endAll(
         view: StructureView,
@@ -63,13 +63,13 @@ internal object StructureCloses {
         ids: IdGenerator,
     ): List<Signal> =
         view.all().flatMap { structure ->
-            when (structure.state) {
-                StructureState.OPEN -> listOfNotNull(closeGroup(structure, strategyId, now, ids))
-                StructureState.PENDING ->
+            when {
+                structure.closable -> listOfNotNull(closeGroup(structure, strategyId, now, ids))
+                structure.state == StructureState.PENDING ->
                     structure.legs
                         .filter { it.entryPrice == null }
                         .map { Signal.CancelPendingForSymbol(it.symbol, force = true) }
-                StructureState.UNWINDING, StructureState.CLOSING -> emptyList()
+                else -> emptyList()
             }
         }
 
