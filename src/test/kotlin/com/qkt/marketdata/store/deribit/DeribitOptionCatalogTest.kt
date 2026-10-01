@@ -130,12 +130,37 @@ class DeribitOptionCatalogTest {
         server.dispatcher =
             object : Dispatcher() {
                 override fun dispatch(request: RecordedRequest) =
-                    MockResponse().setBody("""{"jsonrpc":"2.0","error":{"code":10001,"message":"bad currency"}}""")
+                    MockResponse()
+                        .setResponseCode(400)
+                        .setBody(
+                            """{"jsonrpc":"2.0","error":{"code":-32602,"message":"Invalid params","data":{"reason":"invalid index"}}}""",
+                        )
             }
         val base = server.url("/api/v2").toString()
 
         assertThatThrownBy { DeribitOptionCatalog(DeribitClient(base, base, sleep = {})).build(root) {} }
             .isInstanceOf(IOException::class.java)
-            .hasMessageContaining("bad currency")
+            .hasMessageContaining("Invalid params")
+            .hasMessageContaining("invalid index")
+    }
+
+    @Test
+    fun `a server error is retried, and running out of retries fails without a final pause`() {
+        var calls = 0
+        val pauses = mutableListOf<Long>()
+        server.dispatcher =
+            object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse {
+                    calls++
+                    return MockResponse().setResponseCode(503)
+                }
+            }
+        val base = server.url("/api/v2").toString()
+
+        assertThatThrownBy { DeribitClient(base, base, sleep = { pauses += it }).deliveryPrices("btc_usdc", 0) }
+            .isInstanceOf(IOException::class.java)
+            .hasMessageContaining("503")
+        assertThat(calls).isEqualTo(5)
+        assertThat(pauses).hasSize(4)
     }
 }

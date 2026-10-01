@@ -11,11 +11,21 @@ internal data class DeribitEnvelope<T>(
     val error: DeribitError? = null,
 )
 
-/** A JSON-RPC error as Deribit reports it. */
+/** A JSON-RPC error as Deribit reports it (with HTTP 400), and the reason it may add. */
 @Serializable
 internal data class DeribitError(
     val code: Int = 0,
     val message: String = "",
+    val data: DeribitErrorData? = null,
+) {
+    /** The message with its reason, e.g. `Invalid params (invalid index)`. */
+    val description: String get() = data?.reason?.let { "$message ($it)" } ?: message
+}
+
+/** The detail Deribit attaches to some errors. */
+@Serializable
+internal data class DeribitErrorData(
+    val reason: String? = null,
 )
 
 /**
