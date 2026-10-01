@@ -165,7 +165,7 @@ class DaemonCommand(
         // `registryRef.get()` is populated. See #154.
         val daemonInstrumentRegistry =
             try {
-                InstrumentFiles.registry(Path.of(cfg.dataRoot), explicit = null)
+                InstrumentFiles.registry(Path.of(cfg.dataRoot), null, liveClock = com.qkt.common.SystemClock())
             } catch (e: Exception) {
                 System.err.println("qkt: instrument registry load failed: ${e.message}")
                 runCatching { insightsSink?.close() }

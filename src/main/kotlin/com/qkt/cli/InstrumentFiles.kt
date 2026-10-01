@@ -1,5 +1,6 @@
 package com.qkt.cli
 
+import com.qkt.common.Clock
 import com.qkt.instrument.ContractCatalogRegistry
 import com.qkt.instrument.ContractCatalogStore
 import com.qkt.instrument.FuturesRootsFile
@@ -7,6 +8,7 @@ import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.LayeredInstrumentRegistry
 import com.qkt.instrument.OptionCatalogRegistry
 import com.qkt.instrument.OptionRootsFile
+import com.qkt.instrument.RefreshingOptionCatalogs
 import com.qkt.instrument.RollHistoryStore
 import com.qkt.instrument.StandardInstrumentRegistry
 import com.qkt.instrument.YamlInstrumentRegistry
@@ -23,12 +25,15 @@ internal object InstrumentFiles {
     /**
      * The registry for [dataRoot], reading [explicit] (`--instruments`) or `<dataRoot>/instruments.yaml`.
      * Fails before any data is read when one of [symbols] belongs to a declared futures root but
-     * cannot be resolved (e.g. a contract missing from its catalog).
+     * cannot be resolved (e.g. a contract missing from its catalog). A live session passes [liveClock]:
+     * its option catalogs then reload when their files change ([RefreshingOptionCatalogs]), as venues list
+     * new expiries while it runs.
      */
     fun registry(
         dataRoot: Path,
         explicit: Path?,
         symbols: Collection<String> = emptyList(),
+        liveClock: Clock? = null,
     ): InstrumentRegistry {
         val path = explicit ?: dataRoot.resolve("instruments.yaml")
         if (!Files.exists(path)) {
@@ -50,7 +55,8 @@ internal object InstrumentFiles {
                 emptyList()
             } else {
                 listOf(
-                    OptionCatalogRegistry.load(optionRoots, dataRoot),
+                    liveClock?.let { RefreshingOptionCatalogs(optionRoots, dataRoot, it) }
+                        ?: OptionCatalogRegistry.load(optionRoots, dataRoot),
                 )
             }
         val registry =
