@@ -225,22 +225,28 @@ qkt fetch DERIBIT:BTC_USDC --chains --from 2026-09-24 --to 2026-09-30 [--every 1
 qkt fetch DERIBIT:BTC_USDC --chains --live
 ```
 
-Chains land in `chains/DERIBIT/BTC_USDC/<YYYY-MM-DD>.csv.gz` with the columns
-`atMs,contract,bid,ask,mark,markIv,underlying,rate,markAgeMs,source`, where an empty cell means
-absent.
+Each source is a separate series: trade-built days land in
+`chains/DERIBIT/BTC_USDC/trade/<YYYY-MM-DD>.csv.gz` and live book snapshots in
+`chains/DERIBIT/BTC_USDC/book/<YYYY-MM-DD>.csv.gz`, so live snapshots never block a backfill. Both
+use the columns `atMs,contract,bid,ask,mark,markIv,underlying,rate,markAgeMs,source`, where an
+empty cell means absent.
 
 - **Trade history is sparse.** BTC_USDC trades a few hundred times a day. A contract is quoted
   from its last trade (mark, IV, index) only once it has traded and until its expiry. `markAgeMs`
   says how old that trade is, and contracts quiet for longer than `--max-mark-age` drop out.
   These rows have no bid or ask. Each day reads trades from `--max-mark-age` before its start, so
-  a day's file is the same however the range is split. Days already on disk are skipped, and a day
-  that has not ended is refused.
+  a day's file is the same however the range is split. A day can be fetched from 5 minutes after it
+  ends (the history host trails by about a minute). Days already on disk are skipped; delete a file
+  to rebuild it. `--every` is at least `1m` and must divide a day.
 - **The live book is dense.** Every listed contract has its best bid and ask (a missing side stays
   empty), mark, mark IV, rate, and its expiry's forward as `underlying`. The snapshot is stamped at
-  its newest row, and each row carries its own small age. `--live` adds to the day's file. Run one
-  snapshotter per root.
-- A traded or listed contract missing from the catalog is reported, not quoted. Refresh the
-  catalog with `--catalog`.
+  its newest row, and each row carries its own small age. A contract still listed after its expiry
+  is left out. `--live` adds to the day's file, and overlapping runs wait for each other.
+- A trade-built day that traded a contract missing from the catalog is refused rather than written
+  incomplete. Refresh the catalog with `--catalog` and fetch again. A live snapshot quotes the
+  contracts it knows and warns about the rest.
+- `--live`, `--every` and `--max-mark-age` need `--chains`; `--chains` does not combine with
+  `--catalog`, `--rolls` or `--tf`.
 
 ## Scenario 3 — Speed up repeated backtests (CSV → binary)
 
