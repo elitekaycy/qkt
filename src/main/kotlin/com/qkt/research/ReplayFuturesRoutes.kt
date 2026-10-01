@@ -31,7 +31,7 @@ internal fun replayFuturesRoutes(
     bus: EventBus,
     clock: FixedClock,
     books: ReplayBooks,
-    barFills: Boolean,
+    barFills: com.qkt.backtest.BarFills,
     calendar: TradingCalendar,
     symbols: Collection<String>,
 ): ReplayExchangeRoutes {
@@ -54,7 +54,7 @@ internal fun replayFuturesRoutes(
         instruments,
         executionConfig.slippageModel(),
         fees,
-        barFills,
+        barFills::at,
         calendar,
         books.settlements,
     )

@@ -96,12 +96,12 @@ class BacktestContext private constructor(
     fun provision() = provisioner()
 
     /**
-     * True when fills resolve on synthesized bar ticks (`--bars` without `--tick-fills`). Sweep
-     * drivers must run these per-combo ([com.qkt.backtest.sweep.BacktestSweep]) rather than through
-     * the shared-feed fan-out: bar synthesis orders each bar's extremes adverse-first for the open
-     * position, and positions differ per combo, so one shared tick stream cannot serve them all.
+     * True when fills resolve on synthesized bar ticks (`--bars` without `--tick-fills`, or a symbol
+     * the store has only bars for). Sweeps then run per-combo ([com.qkt.backtest.sweep.BacktestSweep]):
+     * bar synthesis orders each bar's extremes adverse-first for the open position, which differs
+     * per combo, so one shared tick stream cannot serve them all.
      */
-    val barFills: Boolean get() = forceBars && !tickFills
+    val barFills: Boolean by lazy { (forceBars && !tickFills) || backtest(emptyMap()).barFills.any }
 
     /**
      * Build a backtest for [overrides] over [range] (defaults to the full configured window).

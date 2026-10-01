@@ -25,7 +25,7 @@ internal fun replayBroker(
     bus: EventBus,
     clock: FixedClock,
     books: ReplayBooks,
-    barFills: Boolean,
+    barFills: com.qkt.backtest.BarFills,
     calendar: TradingCalendar,
     brokerSymbols: Map<String, Set<String>>,
     symbols: Collection<String>,
@@ -38,7 +38,7 @@ internal fun replayBroker(
                     clock,
                     books.priceTracker,
                     books.instruments,
-                    fillAtTriggerPrice = barFills,
+                    fillAtTriggerPrice = barFills::at,
                     calendar = calendar,
                     positionMode = executionConfig.positionMode,
                 )

@@ -60,7 +60,7 @@ class ExchangeSimulator(
     private val instruments: InstrumentRegistry,
     private val slippage: SlippageModel = ZeroSlippage,
     private val fees: CommissionModel = NoCommission,
-    fillAtTriggerPrice: Boolean = false,
+    fillAtTriggerPrice: (String) -> Boolean = { false },
     calendar: TradingCalendar = TradingCalendar.crypto(),
     settlements: SettlementLog = SettlementLog(),
 ) : Broker {

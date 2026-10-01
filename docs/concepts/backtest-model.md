@@ -59,7 +59,12 @@ Two simulated brokers, chosen with `--broker`:
 
 - **`paper`** (default): market orders fill at the `MarketPriceTracker`'s last-known price for the
   symbol; stop and limit orders fill at their trigger price the moment the trigger condition is true;
-  bracket SL/TP fill at their level. No spread, slippage, rounding or latency.
+  bracket SL/TP fill at their level. No spread, slippage, rounding or latency. A symbol replayed from
+  bars (`--bars`, or one the store has only bars for, such as fetched crypto or broker bars) has no
+  prints between a bar's open, low, high and close: an exit the bar trades through fills at its
+  level, and one the next bar opens beyond (a gap) fills at that open.
+- `mt5-sim` needs ticks: it refuses a symbol it would replay from bars unless `--bars --tick-fills`
+  resolves the fills on recorded ticks.
 - **`mt5-sim`**: mirrors an MT5 venue. Volume is rounded down to `volumeStep` and orders below
   `volumeMin` are rejected; fill prices round to `digits`. A BUY fills at the ask and a SELL at the
   bid (see [Spread](#spread)), plus slippage. The execution preset (`--execution`, or `execution.preset`
