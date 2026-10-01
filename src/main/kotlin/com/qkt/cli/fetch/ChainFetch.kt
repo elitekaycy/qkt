@@ -59,7 +59,7 @@ internal object ChainFetch {
                 ?: return ExitCodes.ARG_ERROR
         val every = duration(args.option("every") ?: "1h", "every") ?: return ExitCodes.ARG_ERROR
         val maxAge = duration(args.option("max-mark-age") ?: "1d", "max-mark-age") ?: return ExitCodes.ARG_ERROR
-        return run(target, dataRoot, Window(from, to, every, maxAge), LocalDate.now(ZoneOffset.UTC))
+        return run(target, dataRoot, Window(from, to, every, maxAge), utcToday())
     }
 
     private fun duration(
