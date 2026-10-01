@@ -1,174 +1,183 @@
 package com.qkt.broker.continuous
 
 import com.qkt.common.Clock
-import com.qkt.common.Side
 import com.qkt.derivatives.futures.ContinuousChain
-import com.qkt.derivatives.futures.MeasuredRoll
 import com.qkt.events.BrokerEvent
 import com.qkt.execution.ExitReason
-import com.qkt.execution.OrderRequest
-import com.qkt.execution.TimeInForce
 import java.math.BigDecimal
 import org.slf4j.LoggerFactory
 
 /**
- * Carries one strategy's position across a roll with two market legs on [venue]: close on the old
- * contract, then open on the new one, each sent once the venue answered the one before. An opening leg
- * refused or ended leaves the position closed on the venue (any part of it that filled is unwound): its
- * close at the old leg's fill is recorded as the stream's [ExitReason.ROLL_FAILED] exit. A closing leg
- * ended part-filled closes only that part. A refused closing leg is a configuration fault and fails
- * loudly.
+ * Carries one strategy's position across a roll with two market legs on [venue] ([CarryLegs]): close on
+ * the old contract, then open on the new one, each sent once the venue answered the one before, through
+ * the explicit [CarryStep]s of the run, each change reported to [onStep] (where a session persists it).
+ * An opening leg refused or ended leaves the position closed on the venue (any part of it that filled is
+ * unwound): its close at the old leg's fill is recorded as the stream's [ExitReason.ROLL_FAILED] exit. A
+ * closing leg ended part-filled closes only that part. A refused closing leg is a configuration fault and
+ * fails loudly.
  */
 internal class RollCarry(
-    private val clock: Clock,
+    clock: Clock,
     private val chainOf: () -> ContinuousChain,
-    private val venue: ContractVenue,
-    private val legs: RollLegs,
+    venue: ContractVenue,
+    legs: RollLegs,
     private val fills: ContractFillLog,
+    private val onStep: (RollRun) -> Unit = {},
 ) {
     private val log = LoggerFactory.getLogger(RollCarry::class.java)
+    private val legOrders = CarryLegs(clock, chainOf, venue, legs)
 
     /** The chain as it stands now: a live session extends it with each roll it measures. */
     private val chain: ContinuousChain get() = chainOf()
 
     /**
-     * Carry one strategy's [quantity] to the new contract, adding its entry to the run, and hand [then]
-     * null once carried, or the venue's reason when it was not: the new contract refused or ended the
-     * opening leg (any part of it that filled is unwound, and the position's close at the old leg's fill
-     * is added to the run's closes), or ended the closing leg part-filled (that part is the close; the
-     * rest stays on the old contract).
+     * Starts carrying [strategyId]'s signed [quantity] to the new contract, and calls [then] once its
+     * carry has ended (carried, or stopped: the new contract refused or ended the opening leg, any part
+     * of it that filled is unwound and the position closes on the stream at the old leg's fill; or the
+     * closing leg ended part-filled, which closes only that part).
      */
-    fun carry(
+    fun start(
         strategyId: String,
         quantity: BigDecimal,
         run: RollRun,
-        then: (String?) -> Unit,
+        then: () -> Unit,
     ) {
-        val from = chain.contractSymbol(run.fromIndex)
-        val to = chain.contractSymbol(run.toIndex)
-        val side = if (quantity.signum() > 0) Side.BUY else Side.SELL
-        val opposite = if (side == Side.BUY) Side.SELL else Side.BUY
-        val size = quantity.abs()
-        val base = "roll:${chain.symbol}:${run.measured.atMs}:$strategyId"
+        val closing =
+            CarryStep.Closing(
+                strategyId,
+                quantity,
+                legOrders.market(run, strategyId, "close", run.fromIndex, quantity.negate()),
+            )
+        step(run, closing)
+        legOrders.send(closing.leg) { closed(run, closing, it, then) }
+    }
 
-        fun stopOnStream(
-            close: BrokerEvent.OrderFilled,
-            reason: String,
-        ) {
-            val onStream = closeOnStream(close, "$base:failed", run.fromIndex)
-            fills.record(contractFill(close, onStream))
-            run.closes += onStream
-            then(reason)
-        }
-        leg("$base:close", from, opposite, size, strategyId) { closing ->
-            when (closing) {
-                is LegOutcome.Rejected -> error("$from refused the closing leg $base:close: ${closing.reason}")
-                is LegOutcome.Partial -> {
-                    log.error(
-                        "{} closed {} of {} for {}: {}",
-                        from,
-                        closing.fill.quantity,
-                        size,
-                        strategyId,
-                        closing.reason,
+    /** Waits again for the leg [step] waits for (after a restart, the leg recovered from the venue); calls [then] once it ends. */
+    fun resume(
+        step: CarryStep,
+        run: RollRun,
+        then: () -> Unit,
+    ) = when (step) {
+        is CarryStep.Closing -> legOrders.await(step.leg) { closed(run, step, it, then) }
+        is CarryStep.Opening -> legOrders.await(step.leg) { opened(run, step, it, then) }
+        is CarryStep.Carried, is CarryStep.Stopped -> then()
+    }
+
+    private fun closed(
+        run: RollRun,
+        step: CarryStep.Closing,
+        outcome: LegOutcome,
+        then: () -> Unit,
+    ) {
+        when (outcome) {
+            is LegOutcome.Rejected ->
+                error(
+                    "${step.leg.symbol} refused the closing leg ${step.leg.id}: ${outcome.reason}",
+                )
+            is LegOutcome.Partial -> {
+                log.error(
+                    "{} closed {} of {} for {}: {}",
+                    step.leg.symbol,
+                    outcome.fill.quantity,
+                    step.leg.quantity,
+                    step.strategyId,
+                    outcome.reason,
+                )
+                stop(run, step, outcome.reason, outcome.fill, then)
+            }
+            is LegOutcome.Filled -> {
+                val opening =
+                    CarryStep.Opening(
+                        step.strategyId,
+                        step.quantity,
+                        outcome.fill,
+                        legOrders.market(run, step.strategyId, "open", run.toIndex, step.quantity),
                     )
-                    stopOnStream(closing.fill, closing.reason)
-                }
-                is LegOutcome.Filled ->
-                    leg("$base:open", to, side, size, strategyId) { opening ->
-                        when (opening) {
-                            is LegOutcome.Filled -> {
-                                check(
-                                    opening.fill.quantity.compareTo(size) == 0,
-                                ) { "roll leg $base:open filled ${opening.fill.quantity} of $size" }
-                                run.carried +=
-                                    entry(strategyId, quantity, from, to, run.measured, closing.fill, opening.fill)
-                                then(null)
-                            }
-                            is LegOutcome.Rejected -> {
-                                log.error(
-                                    "{} refused the roll of {} for {}: {}",
-                                    to,
-                                    chain.symbol,
-                                    strategyId,
-                                    opening.reason,
-                                )
-                                stopOnStream(closing.fill, opening.reason)
-                            }
-                            is LegOutcome.Partial -> {
-                                log.error(
-                                    "{} opened {} of {} for {}: {}; unwinding it",
-                                    to,
-                                    opening.fill.quantity,
-                                    size,
-                                    strategyId,
-                                    opening.reason,
-                                )
-                                unwind("$base:unwind", to, opposite, opening.fill.quantity, strategyId)
-                                stopOnStream(closing.fill, opening.reason)
-                            }
-                        }
-                    }
+                step(run, opening)
+                legOrders.send(opening.leg) { opened(run, opening, it, then) }
             }
         }
     }
 
-    /** Closes the [quantity] a part-filled opening leg left on [contract]; a failure leaves it there, logged. */
-    private fun unwind(
-        venueId: String,
-        contract: String,
-        side: Side,
-        quantity: BigDecimal,
-        strategyId: String,
-    ) = leg(venueId, contract, side, quantity, strategyId) { outcome ->
-        if (outcome !is LegOutcome.Filled) {
-            log.error(
-                "{} on {} could not be unwound: {}; it is still held there",
-                quantity,
-                contract,
-                outcome,
-            )
+    private fun opened(
+        run: RollRun,
+        step: CarryStep.Opening,
+        outcome: LegOutcome,
+        then: () -> Unit,
+    ) {
+        when (outcome) {
+            is LegOutcome.Filled -> {
+                check(outcome.fill.quantity.compareTo(step.leg.quantity) == 0) {
+                    "roll leg ${step.leg.id} filled ${outcome.fill.quantity} of ${step.leg.quantity}"
+                }
+                step(run, CarryStep.Carried(step.strategyId, step.quantity, entry(run, step, outcome.fill)))
+                then()
+            }
+            is LegOutcome.Rejected -> {
+                log.error(
+                    "{} refused the roll of {} for {}: {}",
+                    step.leg.symbol,
+                    chain.symbol,
+                    step.strategyId,
+                    outcome.reason,
+                )
+                stop(run, step, outcome.reason, step.close, then)
+            }
+            is LegOutcome.Partial -> {
+                log.error(
+                    "{} opened {} of {} for {}: {}; unwinding it",
+                    step.leg.symbol,
+                    outcome.fill.quantity,
+                    step.leg.quantity,
+                    step.strategyId,
+                    outcome.reason,
+                )
+                legOrders.unwind(step.leg, outcome.fill.quantity)
+                stop(run, step, outcome.reason, step.close, then)
+            }
         }
     }
 
-    private fun entry(
-        strategyId: String,
-        quantity: BigDecimal,
-        from: String,
-        to: String,
-        measured: MeasuredRoll,
+    /** Ends [step]'s carry for [reason], closing the position on the stream at the venue's [close]. */
+    private fun stop(
+        run: RollRun,
+        step: CarryStep,
+        reason: String,
         close: BrokerEvent.OrderFilled,
+        then: () -> Unit,
+    ) {
+        val onStream = closeOnStream(close, "${legOrders.base(run, step.strategyId)}:failed", run.fromIndex)
+        fills.record(contractFill(close, onStream))
+        step(run, CarryStep.Stopped(step.strategyId, step.quantity, reason, onStream))
+        then()
+    }
+
+    private fun step(
+        run: RollRun,
+        step: CarryStep,
+    ) {
+        run.steps[step.strategyId] = step
+        onStep(run)
+    }
+
+    private fun entry(
+        run: RollRun,
+        step: CarryStep.Opening,
         open: BrokerEvent.OrderFilled,
     ) = RollEntry(
-        atMs = measured.atMs,
+        atMs = run.measured.atMs,
         stream = chain.symbol,
-        strategyId = strategyId,
-        from = from,
-        to = to,
-        quantity = quantity,
+        strategyId = step.strategyId,
+        from = step.close.symbol,
+        to = step.leg.symbol,
+        quantity = step.quantity,
         multiplier = chain.root.multiplier,
-        fromFill = close.price,
+        fromFill = step.close.price,
         toFill = open.price,
-        fromReference = measured.prices.fromPrice,
-        toReference = measured.prices.toPrice,
-        fees = close.venueFeesIn(chain.root.currency).add(open.venueFeesIn(chain.root.currency)),
+        fromReference = run.measured.prices.fromPrice,
+        toReference = run.measured.prices.toPrice,
+        fees = step.close.venueFeesIn(chain.root.currency).add(open.venueFeesIn(chain.root.currency)),
     )
-
-    /** Sends one market leg and hands its outcome to [then] once the venue answered (after submit returns, never inside it). */
-    private fun leg(
-        venueId: String,
-        contract: String,
-        side: Side,
-        quantity: BigDecimal,
-        strategyId: String,
-        then: (LegOutcome) -> Unit,
-    ) {
-        legs.expect(venueId, quantity)
-        venue.broker.submit(
-            OrderRequest.Market(venueId, contract, side, quantity, TimeInForce.GTC, clock.now(), strategyId),
-        )
-        legs.whenEnded(venueId, then)
-    }
 
     /** The old leg's [close] as the venue closing the position on the stream. */
     private fun closeOnStream(
