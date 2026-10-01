@@ -7,6 +7,8 @@ import com.qkt.instrument.QuoteSource
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.TimeUnit
 import org.slf4j.LoggerFactory
 
 /**
@@ -22,6 +24,8 @@ internal class GatewayChainRecording(
 ) : AutoCloseable {
     private val log = LoggerFactory.getLogger(GatewayChainRecording::class.java)
     private val recorders = ConcurrentHashMap<String, ChainRecorder>()
+
+    @Volatile private var closed = false
     private val writer: ExecutorService by lazy {
         Executors.newSingleThreadExecutor { r -> Thread(r, "gateway-chain-writer").apply { isDaemon = true } }
     }
@@ -35,13 +39,17 @@ internal class GatewayChainRecording(
         val recorder =
             recorders.computeIfAbsent(root) {
                 ChainRecorder(root, cadenceMs, { expiries(root) }) { snapshot ->
-                    writer.execute {
-                        runCatching { store.append(root, snapshot) }
-                            .onFailure { log.error("chain snapshot of {} not written: {}", root, it.message) }
+                    try {
+                        writer.execute {
+                            runCatching { store.append(root, snapshot) }
+                                .onFailure { log.error("chain snapshot of {} not written: {}", root, it.message) }
+                        }
+                    } catch (e: RejectedExecutionException) {
+                        log.warn("chain snapshot of {} at {} dropped: recording closed", root, snapshot.atMs)
                     }
                 }
             }
-        return { quote -> gatewayChainQuote(quote)?.let(recorder::record) }
+        return { quote -> if (!closed) gatewayChainQuote(quote)?.let(recorder::record) }
     }
 
     /** Root [root]'s catalogued contracts' expiries, asked per snapshot so a reloaded catalog counts. */
@@ -50,8 +58,15 @@ internal class GatewayChainRecording(
         return listings.mapValues { it.value.expiryMs }
     }
 
-    /** Stops recording; appends already handed to the writer finish. */
+    /** Stops recording: later quotes are ignored, and appends already handed to the writer finish (up to 10 s). */
     override fun close() {
-        if (recorders.isNotEmpty()) writer.shutdown()
+        closed = true
+        if (recorders.isEmpty()) return
+        writer.shutdown()
+        if (!writer.awaitTermination(CLOSE_WAIT_S, TimeUnit.SECONDS)) log.warn("chain snapshots still writing at close")
+    }
+
+    private companion object {
+        const val CLOSE_WAIT_S = 10L
     }
 }

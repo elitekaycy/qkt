@@ -69,6 +69,7 @@ class GatewayConnectorTest {
         assertThatThrownBy { open(AccountConfig("x", "gateway", mapOf("gateway_url" to fake.url))) }
             .hasMessageMatching("brokers.x.expected_[a-z_]+ is required")
         assertThatThrownBy { open(account("expected_trade_mode" to "paper")) }.hasMessageContaining("demo or real")
+        assertThatThrownBy { open(account("chain_snapshot_seconds" to "2")) }.hasMessageContaining("at least 5")
     }
 
     @Test
