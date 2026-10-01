@@ -149,14 +149,7 @@ class BacktestContext private constructor(
             } else {
                 executionConfig
             }
-        // The symbol's LIVE calendar, not hardwired crypto: session/range indicators
-        // (PreviousDayHigh, session gates) disagree by construction otherwise. The
-        // pipeline takes one calendar — resolved from the first symbol; mixed-class
-        // baskets keep that limitation (divergence catalog row A9).
-        val calendar =
-            symbols.firstOrNull()?.let { defaultCalendars().calendarFor(it.substringAfter(':')) }
-                ?: com.qkt.common.TradingCalendar
-                    .crypto()
+        val calendar = backtestCalendar(symbols, instruments)
         val haltRules =
             com.qkt.risk.HaltRules.standard(
                 maxDailyLoss = haltConfig.maxDailyLoss,
@@ -469,34 +462,6 @@ class BacktestContext private constructor(
             val streams = compiled.children.flatMap { it.ast.streams }
             val symbols = streams.map { it.qktSymbol }.distinct()
 
-            // Build the shared portfolio gate so WHEN..RUN rules suppress child signals in backtest
-            // exactly as PortfolioSupervisor does in live. The gate is fed closed candles before
-            // strategies evaluate them, so the gate state is current for each bar.
-            val portfolioCalendar =
-                symbols.firstOrNull()?.let { defaultCalendars().calendarFor(it.substringAfter(':')) }
-                    ?: TradingCalendar.crypto()
-            val portfolioGate =
-                PortfolioGate(
-                    ast = compiled.ast,
-                    clock = FixedClock(time = from.toEpochMilli()),
-                    calendar = portfolioCalendar,
-                ).also {
-                    it.prepare()
-                    it.initialState()
-                }
-            val gateFor: (String) -> Boolean = { strategyId ->
-                portfolioGate.currentState().activeByAlias[strategyId.substringAfter(":")] == true
-            }
-            val preCandle: (com.qkt.marketdata.Candle) -> Unit = { candle ->
-                portfolioGate.onCandle(candle)
-            }
-            val aliasToStrategyId = compiled.children.associate { it.alias to it.strategyId }
-            val regimeWeights: () -> Map<String, BigDecimal> = {
-                portfolioGate.currentState().weightByAlias.mapKeys { (alias, _) ->
-                    aliasToStrategyId[alias] ?: alias
-                }
-            }
-
             val datasetContext =
                 BacktestDatasetEvidence.datasetContext(
                     args,
@@ -527,6 +492,32 @@ class BacktestContext private constructor(
 
             val instruments: InstrumentRegistry =
                 BacktestInstruments.registry(Paths.get(dataRoot), args.option("instruments")?.let(Paths::get), symbols)
+
+            // Build the shared portfolio gate so WHEN..RUN rules suppress child signals in backtest
+            // exactly as PortfolioSupervisor does in live. The gate is fed closed candles before
+            // strategies evaluate them, so the gate state is current for each bar.
+            val portfolioCalendar = backtestCalendar(symbols, instruments)
+            val portfolioGate =
+                PortfolioGate(
+                    ast = compiled.ast,
+                    clock = FixedClock(time = from.toEpochMilli()),
+                    calendar = portfolioCalendar,
+                ).also {
+                    it.prepare()
+                    it.initialState()
+                }
+            val gateFor: (String) -> Boolean = { strategyId ->
+                portfolioGate.currentState().activeByAlias[strategyId.substringAfter(":")] == true
+            }
+            val preCandle: (com.qkt.marketdata.Candle) -> Unit = { candle ->
+                portfolioGate.onCandle(candle)
+            }
+            val aliasToStrategyId = compiled.children.associate { it.alias to it.strategyId }
+            val regimeWeights: () -> Map<String, BigDecimal> = {
+                portfolioGate.currentState().weightByAlias.mapKeys { (alias, _) ->
+                    aliasToStrategyId[alias] ?: alias
+                }
+            }
 
             val brokerKind =
                 when (val raw = args.option("broker")) {

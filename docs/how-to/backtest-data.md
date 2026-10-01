@@ -157,7 +157,11 @@ tick grid are snapped to it in the direction that never fills early. The root's 
 root whose roll would fall inside that window is refused when a continuous stream is built from it.
 Give a root `margin: { initial, maintenance, basis: notional | per_contract }` and the backtest
 refuses any order that opens or adds exposure when the account's equity could not carry the initial
-margin of every futures position after it (pending entries included); exits always pass.
+margin of every futures position after it (pending entries included); exits always pass. A root's
+`calendar:` (`crypto`, `fx`, `nyse`, `cme_globex`) names its exchange hours; a run whose symbols are
+all futures sharing one calendar trades on it (CME Globex: Sunday 17:00 to Friday 16:00 Chicago time,
+halted 16:00–17:00 each weekday, so DAY orders expire at the 16:00 close). Any CFD in the run keeps
+the usual calendar of the first symbol.
 
 ### Continuous futures streams (`@front`, `@next`)
 
