@@ -9,7 +9,7 @@ import com.qkt.common.Clock
 import com.qkt.derivatives.futures.ContinuousChains
 import com.qkt.events.TickEvent
 import com.qkt.execution.OrderRequest
-import com.qkt.marketdata.MarketPriceProvider
+import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.positions.PositionProvider
 
 /**
@@ -39,7 +39,7 @@ class ContinuousContractBroker(
     private val symbols: Set<String>,
     ledger: RollLedger,
     fills: ContractFillLog,
-    venueFactory: (EventBus, MarketPriceProvider, PositionProvider) -> ContractVenue,
+    venueFactory: (EventBus, MarketPriceTracker, PositionProvider) -> ContractVenue,
 ) : Broker {
     private val lanes: Map<String, StreamLane> =
         symbols.associateWith { symbol ->
@@ -73,4 +73,6 @@ class ContinuousContractBroker(
     override fun cancel(orderId: String) {
         lanes.values.firstOrNull { it.owns(orderId) }?.cancel(orderId)
     }
+
+    override fun shutdown() = lanes.values.forEach { runCatching { it.shutdown() } }
 }
