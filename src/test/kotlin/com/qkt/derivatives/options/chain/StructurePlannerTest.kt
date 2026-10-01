@@ -56,4 +56,20 @@ class StructurePlannerTest {
             )
         assertThat((missing as StructurePlan.Refused).reason).contains("leg 2")
     }
+
+    @Test
+    fun `a calendar's loss sums each expiry's loss, never netting the far short against the near long`() {
+        val ready =
+            plan(
+                LegSpec(Side.BUY, OptionRight.PUT, 0.25, 7.0, 30.0),
+                LegSpec(Side.SELL, OptionRight.PUT, 0.25, 50.0, 70.0),
+            ) as StructurePlan.Ready
+        val (near, far) = ready.legs
+
+        assertThat(near.contract).contains("9OCT26")
+        assertThat(far.contract).contains("27NOV26")
+        // Near long put: its premium. Far short put: its strike (paid at 0) less its premium.
+        val farStrike = BigDecimal(far.listing.strike)
+        assertThat(ready.maxLossPerUnit).isEqualByComparingTo(near.mark.add(farStrike).subtract(far.mark))
+    }
 }
