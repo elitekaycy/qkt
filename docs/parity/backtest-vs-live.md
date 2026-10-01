@@ -185,6 +185,7 @@ keep in mind when reading a backtest.
 | A54 | Live, a continuous stream serves nothing for the new contract until its roll is measured (the roll minute must close at the venue, about a minute); ticks meanwhile are stale and dropped. A backtest switches at the roll instant | DECLARED (phase 46) — `ContinuousLiveFeedTest` |
 | A55 | Live, a roll that cannot be measured (no closed bar within ten minutes, or a history that would skip a roll) stops the session, fail-closed, until `qkt fetch <ROOT> --rolls` measures it; a backtest stops only the holders of that stream | DECLARED (phase 46) — `ContinuousLiveFeedLifecycleTest` |
 | A56 | Live, a stream refuses new orders while its roll legs are out at the venue; a backtest's legs fill inside the roll | DECLARED (phase 46) — `RollInFlightTest` |
+| A57 | Live, each continuous stream's lane persists its state (orders, contract book, roll legs and an in-flight roll) and resumes it after a restart, taking its orders back from the venue; a backtest never restarts, so its lanes persist nothing | DECLARED (phase 46) — `LaneStateSavedTest`, `LaneRestartTest`, `LaneRestartEdgesTest`, `LiveContinuousRestartGatewayTest` |
 
 ## 2026-07-03 hardening pass — parity-audit rows resolved (#658)
 

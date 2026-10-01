@@ -1,6 +1,6 @@
 # Live continuous futures (phase 46) — design
 
-**Status:** steps 1-4 built (see §6); step 5 (restart) remains. **Why separate:** phase 45 ruled that continuous streams
+**Status:** steps 1-5 built (see §6). **Why separate:** phase 45 ruled that continuous streams
 (`VENUE:ROOT@front`) stay backtest-only (parity A33) because live rolling is not wiring. This document
 designs it. **Builds on:** `ContinuousChain`, `AdjustmentChain`, `RollHistoryBuilder`,
 `ContinuousContractBroker`/`StreamLane`/`RollExecutor` (phase 42.5) and the gateway connector (44/45).
@@ -103,18 +103,33 @@ venue already filled (on a netting account, that opens the other side).
 1. **The carry becomes an explicit state machine** (the qkt rule for lifecycles): per strategy,
    `Closing(sent)` → `Opening(closeFill, sent)` → `Carried`, or `Stopped(reason)`, instead of nested
    continuations. Each state names the leg it waits for, so it can be persisted and resumed.
-2. **Leg sizes come from the contract book**, not the stream position: a roll closes what the strategy
-   holds on the old contract and opens what it lacks on the new one, so repeating a roll after a
-   restart sends only what is still missing.
-3. **Each lane's state is persisted** through the session's `StatePersistor`, in its own section, never
-   among the strategies' positions: the contract it last traded, each strategy's stream position and
-   contract book, stops, and an in-flight roll's states with each pending leg's order request. It is
-   written on every change (a fill, a roll's step, a stop), atomically.
-4. **Restore** rebuilds the lane from that state. A pending leg is registered again and handed to the
-   venue's order recovery (`recoverPendingOrders`), whose client id is rebuilt from the persisted
-   request, so the gateway answers for the leg it already holds instead of placing a second one; its
-   fills, during the downtime or later, end the leg and the roll resumes from its state. A roll that
-   fell inside the downtime runs on the first tick, sized from the book.
+2. **A roll is never repeated:** its legs are persisted with their state and taken back from the venue,
+   so a restart neither re-sizes nor re-sends a leg the venue already holds.
+3. **Each lane's state is persisted** through the session's `StatePersistor`, in its own record per
+   stream (`<stream>-lane.json` under the session's state owner, the strategy that owns its risk state),
+   never among the strategies' positions: the contract it last traded, each strategy's stream position
+   and stop, the engine orders (with the quantity each venue order was placed for and what of the engine
+   order has filled), the contract book, the roll's legs still out with their slices so far, the resting
+   orders whose cancel is awaited, and the roll in flight with each holder's step. Contracts are stored by
+   symbol, never by schedule index, so a catalog that dropped an expired contract cannot shift them. The
+   record is written synchronously **before every venue action** (the lane's venue is wrapped, so no path
+   can skip it) and **after every venue answer**: what the lane intends is durable before the venue can
+   act on it, and an order the venue does not know after a restart was never sent.
+4. **Restore** rebuilds the lane from that record when the session builds its brokers, and fails loudly
+   when the chain no longer lists a saved contract or measures the saved roll differently. Each waiting
+   leg is awaited again at once. When the engine hands its restored orders to the broker, or at the latest
+   when the session is ready (`watchBookedLegs`), the lane has the venue take back every order it had out
+   (engine orders under their venue ids, awaited cancels, roll legs), each with what the lane already
+   booked of it, so the venue replays only what the lane missed. An engine order the venue does not know
+   is forgotten (the engine retires it); a roll leg it does not know is sent again under its own id. Once
+   the session is ready the lane forwards the ready signal to its venue (a gateway settles contracts that
+   expired while away), re-sends awaited cancels, cancels any engine order the engine no longer holds, and
+   only then sends what the restored roll does next: no leg leaves before the session is ready. A roll
+   that fell inside the downtime runs on the first tick after the roll in flight (if any) ends: a lane
+   rolls one contract at a time.
+5. **Startup reconcile** treats a stream as one netting account its strategies share
+   (`isAccountWide`): each strategy's persisted stream book stands, instead of being wiped because the
+   continuous broker reports no venue positions of its own.
 
 ## 3. Parity that remains (rows to add)
 
@@ -160,9 +175,23 @@ venue already filled (on a netting account, that opens the other side).
 - Found on the way: the gateway host emitted no `position` events (wire spec §4); fixed in
   qkt-venue-gateway, proven on Deribit testnet.
 
-Remaining:
-- Step 5, restart (§2.4): persist each lane's contract book and an in-flight roll's legs; a roll in a
-  downtime is already measured on the first tick after restart.
+- Step 5, restart (§2.4a): `PersistedStreamLane` and `StreamLaneFile` (persistence), `LaneState`
+  (snapshot and restore), `savingFirst` (the venue wrapper), `LaneRecovery` (venue recovery and ready),
+  `RollExecutor.restore`/`ready` (legs held until ready); `ContinuousWiring` hands the session's
+  `LaneStateStore` to the lanes. Pinned by `LaneStateSavedTest`, `LaneRestartTest`,
+  `LaneRestartEdgesTest`, `FileStatePersistorStreamLaneTest`, and end to end by
+  `LiveContinuousRestartGatewayTest` (a session stopped with its closing leg out; the next one takes the
+  leg back without re-sending it and carries the position once the gateway fills it).
+- Found on the way: a resting order part-filled before a roll was re-placed for its whole quantity, and
+  one that filled while the roll cancelled it was placed again; both fixed (`LaneSlicedFillsTest`). A
+  re-placed order's slices now reach the engine with the engine order's fill so far.
+
+Known limits:
+- The lane and the engine persist separately: the lane synchronously around every venue action and
+  answer, the engine through its own (possibly asynchronous) persistor. A crash in the instant between a
+  fill reaching the engine and the engine's save can leave the engine's stream position one fill apart
+  from the lane's, as with any venue; the lane's record is the one reconciled against the venue.
+- A restored contract position whose opening time was never recorded takes the restart time.
 
 **Ruling (no leg timeout):** a roll leg waits for the venue's answer. The gateway resolves every order
 it took (write-ahead, then the venue's label, then the order's fills), so a leg always ends; meanwhile
