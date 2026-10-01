@@ -32,6 +32,14 @@ If you want the one-page cheat sheet, see [DSL grammar (one-pager)](../dsl-gramm
 
     [:octicons-arrow-right-24: Synthetic series](series.md)
 
+- :material-chart-bell-curve:{ .lg .middle } **Option chain analytics**
+
+    ---
+
+    Implied volatility and 25-delta skew of a stored option chain, at any tenor, as read-only streams.
+
+    [:octicons-arrow-right-24: Chain analytics](chain.md)
+
 - :material-variable:{ .lg .middle } **LET and DEFAULTS**
 
     ---

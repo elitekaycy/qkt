@@ -359,7 +359,10 @@ writes the file — so live builds its own history.
 
 ### 6.4 DSL
 
-- **Chain analytics as a stream:** `iv = DERIBIT:BTC_USDC.atm_iv.30d EVERY 1h`. The parser already
+- **Chain analytics as a stream** (amended 2026-10-01 in phase 43.4: written
+  `iv = CHAIN:DERIBIT.BTC_USDC.atm_iv.30d EVERY 1h`, an observation prefix like `HUB:`, with
+  metrics `atm_iv` and `skew_25d`; `put_call_oi` waits for a source with open interest; see
+  `docs/reference/dsl/chain.md`). Originally: `iv = DERIBIT:BTC_USDC.atm_iv.30d EVERY 1h`. The parser already
   accepts dotted names for `HUB`; it accepts them for any broker (an existing file never has a dot
   after the symbol, so this is additive). The resolver maps `<underlying>.<metric>.<tenor>` to a
   synthetic candle stream fed by the chain (same pattern as `SERIES ACCOUNT.EQUITY`). Metrics:
