@@ -37,7 +37,7 @@ The design settled on these names: `Connector`, `TradingAccount`, `AccountDirect
   loaded straight into the qkt JVM has no such choke point: the guardian could no longer stop it.
 - **Recommendation — write each adapter once as a JAR, run it in one of two hosts:**
   1. **in-process** inside qkt, for backtest, paper and data; or
-  2. **inside `qkt-venued`**, a small generic gateway host that loads the *same* JAR and exposes a
+  2. **inside `qkt-venue-gateway`**, a small generic gateway host that loads the *same* JAR and exposes a
      versioned **Venue Gateway Protocol (VGP v1)** — the mt5-gateway's endpoints, generalized,
      with the kill switch implemented once in the host. Live money always goes through (2).
      Guardrails talks VGP and works against every venue unchanged.
@@ -155,7 +155,7 @@ Each venue runs as its own service speaking a common HTTP/WS protocol; qkt has o
                  │                                                               │
    backtest / paper / data                                   live money
    ┌───────────────────────┐                     ┌────────────────────────────────────┐
-   │ qkt (JVM)             │                     │ qkt-venued (JVM, one per account)  │
+   │ qkt (JVM)             │                     │ qkt-venue-gateway (JVM, one per account)  │
    │  └─ InProcessHost     │                     │  ├─ loads the same adapter JAR     │
    │      └─ adapter       │                     │  ├─ kill switch (path + symbol)    │
    └───────────────────────┘                     │  ├─ VGP v1 HTTP/WS server          │
@@ -168,7 +168,7 @@ Each venue runs as its own service speaking a common HTTP/WS protocol; qkt has o
 
 - The adapter is written **once**, against the plugin SPI (§5).
 - **In-process host**: for backtest, paper and data plugins. Fast, typed, no ops cost.
-- **`qkt-venued`**: a small generic JVM service that loads adapter JARs and exposes VGP v1 (§6).
+- **`qkt-venue-gateway`**: a small generic JVM service that loads adapter JARs and exposes VGP v1 (§6).
   The kill switch, auth, idempotency, event journal and health are implemented **once** here,
   not per venue.
 - **Live deploys refuse in-process adapters.** Enforced by certification level (§10), not by
@@ -191,7 +191,7 @@ Futures break the "one broker = one thing" intuition that MT5 taught.
 |---|---|---|---|
 | **Protocol / connectivity** | The API you speak | MT5 (via gateway), Rithmic R\|Protocol, CQG WebAPI, TT, Tradovate REST/WS, IBKR TWS, Bybit v5, Binance, Deribit | **the plugin** (`type: rithmic`) |
 | **Venue / clearing** | Who holds the account and clears | AMP, Optimus, NinjaTrader Clearing, a prop firm, Exness | **config** on a broker entry |
-| **Account** | One login, one balance | AMP demo #123, The5ers HS 50k | **one broker entry**, one `qkt-venued`, one guardian |
+| **Account** | One login, one balance | AMP demo #123, The5ers HS 50k | **one broker entry**, one `qkt-venue-gateway`, one guardian |
 | **Data vendor** | Where research data comes from | Databento, FirstRate, Norgate, Dukascopy, your hub | **a data plugin**, independent of execution |
 
 So there is no `ampfuture` plugin. AMP offers several connectivity options; you pick one (say
@@ -437,7 +437,7 @@ Semantics that must be written into the spec, not left to implementations:
 - **Timestamps are UTC epoch-ms on the wire.** The raw MT5 broker-time offset
   (`mt5-gateway-server-offset`) is a gateway concern, never a client one.
 - **Auth:** Bearer token, as the gateway already does.
-- **Compatibility:** `qkt-venued` also serves the legacy paths (`/account`, `/health`, `/kill`,
+- **Compatibility:** `qkt-venue-gateway` also serves the legacy paths (`/account`, `/health`, `/kill`,
   `/kill/release`, `/get_positions`, `/close_position`) so today's guardrails `GatewayClient`
   works against a futures venue on day one. A `protocol: vgp1` option in guardrails comes later.
 
@@ -451,7 +451,7 @@ Semantics that must be written into the spec, not left to implementations:
 qkt-api              the SPI (§5) — semver, binary-compat locked
 qkt-core             engine: DSL, pipeline, risk, P&L, backtest
 qkt-cli              commands, daemon, plugin manager
-qkt-venued           the gateway host (§2, §6)
+qkt-venue-gateway           the gateway host (§2, §6)
 qkt-plugin-tck       conformance kit (§10)
 adapters/bybit       first adapter moved out (dogfood)
 adapters/mt5         stays in-tree and built-in until VGP is proven (§11)
@@ -494,7 +494,7 @@ Two fixes, both cheap:
   installed JAR does not match the lock. Same idea as your GHCR image pinning.
 - **Docker: plugins are baked into a derived image, never downloaded at container start.**
   `FROM ghcr.io/elitekaycy/qkt:vX` + `COPY plugins/ /opt/qkt/plugins/`, tagged and pinned like
-  every other image in the fleet. The same applies to `qkt-venued` images per adapter.
+  every other image in the fleet. The same applies to `qkt-venue-gateway` images per adapter.
 
 ### 7.6 CLI
 
@@ -531,8 +531,8 @@ brokers:
   amp-demo:
     type: rithmic                    # plugin id
     prefix: AMP                      # DSL: AMP:MES@front
-    host: venued                     # venued (live-capable) | in-process (paper/data only)
-    gateway_url: http://venued-amp:5101
+    host: venue-gateway              # venue-gateway (live-capable) | in-process (paper/data only)
+    gateway_url: http://venue-gateway-amp:5101
     environment: test                # test | live
     system: "Rithmic Paper Trading"
     fcm: AMP
@@ -550,8 +550,8 @@ brokers:
   binance-futures:
     type: binance
     prefix: BINANCE_UM
-    host: venued
-    gateway_url: http://venued-binance:5102
+    host: venue-gateway
+    gateway_url: http://venue-gateway-binance:5102
     credentials:
       api_key: env:BINANCE_API_KEY
       api_secret: env:BINANCE_API_SECRET
@@ -608,7 +608,7 @@ first signal.
             └─ resolve InstrumentRef → VenueSymbol (ES@front → ESZ5)
                  └─ lower by capabilities(VenueSymbol) ─► VenueSubmit (4 order shapes ± protection/OCO)
                       ├─ in-process: VenueSession → SDK → exchange          (paper, data)
-                      └─ VgpBroker ─► qkt-venued ─► kill-switch gate ─► adapter ─► exchange   (live)
+                      └─ VgpBroker ─► qkt-venue-gateway ─► kill-switch gate ─► adapter ─► exchange   (live)
   ◄─ VenueEvent stream (seq-numbered) ─► BrokerEvent (Accepted/Filled/Partial/Cancelled/Rejected)
        └─ positions keyed by InstrumentRef, legs by VenueSymbol + ticket
             └─ P&L, typed costs (COMMISSION/EXCHANGE_FEE/SWAP/FUNDING), settlement variation
@@ -644,7 +644,7 @@ Normalization rules that make the mapping global:
 |---|---|---|
 | `DATA` | `MarketSource` passes data TCK | research, backtest, `qkt fetch` |
 | `PAPER` | + `VenueSession`, order-lifecycle TCK against the venue's sandbox | paper / demo |
-| `LIVE` | + `VenueTruth` implemented (no defaults), restart/reconnect/idempotency TCK, served through `qkt-venued` with a reachable kill switch, a recorded `qkt brokers certify --level live` run on a demo account | real money |
+| `LIVE` | + `VenueTruth` implemented (no defaults), restart/reconnect/idempotency TCK, served through `qkt-venue-gateway` with a reachable kill switch, a recorded `qkt brokers certify --level live` run on a demo account | real money |
 
 `qkt deploy` in production mode refuses a broker whose plugin level is below `LIVE`. This is the
 direct answer to §1 item 7: a live adapter cannot inherit "vouch for everything" defaults,
@@ -718,7 +718,7 @@ Sizes are relative (S ≈ days, M ≈ 1–2 weeks, L ≈ several weeks). They ar
 | **1 — Seams in the monolith** | `Broker.instruments()` replaces the three `filterIsInstance<MT5Broker>` sites; a `VenueRegistry` fed by `type:` replaces hand assembly in `DaemonCommand` / `MarketSourceFactory` / `BotSessionCommand`; unified credential resolver + `Secret`; nested YAML for broker entries; optional `InstrumentMeta` fields (`kind`, explicit `quoteCurrency`) | M | Removes MT5 coupling, fixes the quote-currency hole, one credential path. **Zero behaviour change; worth doing even without plugins.** |
 | **2 — `qkt-api` + loader** | module split; `VenuePlugin`/`DataPlugin`; `ServiceLoader` + isolated class loaders; `qkt plugin` CLI; lockfile; add `java.net.http` to jlink; move **Bybit** out as the dogfood adapter; binary-compat validator in CI | M–L | Proves the API on real code. |
 | **3 — Futures research path** | Databento or file-import data plugin; exchange-futures execution simulation in backtest (whole contracts, tick rounding, per-contract commission, no swap, limit bands); CME calendar in backtest (`BacktestContext.defaultCalendars()` is hardcoded today); expiry guard | M | Tier 0 on real futures data, properly. |
-| **4 — VGP + first live-capable futures venue** | VGP v1 spec; `qkt-venued`; `VgpBroker`; kill switch incl. scoped kill; `qkt-plugin-tck`; first adapter (Tradovate or Rithmic) on demo; guardrails pointed at it via legacy paths; certify `PAPER` then `LIVE` | L | First real futures account, with the same guardian protection hg20k has. |
+| **4 — VGP + first live-capable futures venue** | VGP v1 spec; `qkt-venue-gateway`; `VgpBroker`; kill switch incl. scoped kill; `qkt-plugin-tck`; first adapter (Tradovate or Rithmic) on demo; guardrails pointed at it via legacy paths; certify `PAPER` then `LIVE` | L | First real futures account, with the same guardian protection hg20k has. |
 | **5 — Futures depth** | settlement marking, margin model, roll engine + `@front` refs, calendar-spread capability, OI/settlement data; Deribit or Binance quarterlies as the second consumer | L | Multi-month futures holds; dated crypto futures. |
 | **6 — Converge MT5 (optional)** | `mt5-gateway` speaks VGP v1; `MT5Broker` becomes a VGP client or stays | L | Only if one code path is worth the risk to live MT5 accounts. Do not do this early. |
 
@@ -732,13 +732,13 @@ OCO recovery, server-time handling) running real money; the plugin system should
 
 - **API surface creep.** The biggest long-term risk is leaking engine types into `qkt-api`. Keep
   it to §5; anything else is host-internal.
-- **Two hosts, one behaviour.** In-process and `qkt-venued` must run the same adapter identically;
+- **Two hosts, one behaviour.** In-process and `qkt-venue-gateway` must run the same adapter identically;
   the TCK must run against both.
 - **Event ordering across the network.** Sequence numbers solve loss; the engine must also tolerate
   a fill arriving before the accept.
 - **Roll semantics are a product decision,** not only engineering: legged vs spread, who owns the
   roll (engine vs strategy), what happens to stops and trailing state across a roll.
-- **Operational load.** One `qkt-venued` + one guardian per futures account. Fine at your
+- **Operational load.** One `qkt-venue-gateway` + one guardian per futures account. Fine at your
   scale; worth a compose template per venue.
 - **Licensing.** Some vendor SDKs cannot be redistributed; the plugin model (user installs the
   vendor JAR) handles it, but check each licence.

@@ -1,4 +1,4 @@
-# qkt-venued — the VGP v1 gateway host and its adapters — design
+# qkt-venue-gateway — the VGP v1 gateway host and its adapters — design
 
 **Status:** design for review, no code yet. **Builds on:** the wire spec
 `2026-10-01-vgp-v1-wire.md` (what any gateway must do), the qkt client in `connector/gateway` (what it
@@ -7,7 +7,7 @@ separate host: the kill switch must be a choke point outside qkt).
 
 ## 1. What it is
 
-One `qkt-venued` process serves **one account at one venue** over VGP v1. Two clients talk to it: the
+One `qkt-venue-gateway` process serves **one account at one venue** over VGP v1. Two clients talk to it: the
 qkt daemon (trading) and guardrails (watching the account and flipping the kill switch). It talks to
 the venue through one **adapter**. qkt-insights does not talk to it: insights keeps ingesting qkt's own
 event stream (signals, orders, fills, equity) as it does today. Everything a venue does not decide lives in
@@ -16,7 +16,7 @@ kill switch, reconciliation with the venue, quote refresh, health and identity. 
 translates between the venue's API and a small venue-neutral interface.
 
 ```
-qkt daemon ──┐                 ┌──────────────────── qkt-venued (one per account) ───────────────────┐
+qkt daemon ──┐                 ┌──────────────────── qkt-venue-gateway (one per account) ───────────────────┐
              ├── VGP v1 ──────▶│ HTTP/WS server ─ auth ─ kill switch ─ idempotency ─ event journal    │
 guardrails ──┘  (bearer)       │        │                        ▲             ▲                       │
                                │        ▼                        │             │                       │
@@ -28,7 +28,7 @@ guardrails ──┘  (bearer)       │        │                        ▲  
 
 qkt-insights sits beside qkt, not beside the gateway: `qkt daemon ──telemetry──▶ insights collector`.
 
-**Lives in its own repository** (`qkt-venued/` in the workspace), never inside qkt: qkt stays a
+**Lives in its own repository** (`qkt-venue-gateway/` in the workspace), never inside qkt: qkt stays a
 consumer of VGP, and a gateway can be replaced, written in another language, or certified on its own.
 
 ## 2. Goals and non-goals
@@ -147,7 +147,7 @@ Runs at start, after every venue reconnect, and every 60 seconds:
 ## 9. Testing
 
 - **Conformance suite** (black-box, against a URL): every statement of the wire spec as a test, run in
-  CI against `qkt-venued` with the paper adapter, and runnable against any VGP gateway. qkt's own
+  CI against `qkt-venue-gateway` with the paper adapter, and runnable against any VGP gateway. qkt's own
   client tests keep their `FakeGateway`; both are built from the one spec.
 - **Adapter contract tests:** each adapter against recorded venue sessions (request/response fixtures),
   plus a testnet soak (Deribit testnet) before it may serve a `real` account.
@@ -199,7 +199,7 @@ Runs at start, after every venue reconnect, and every 60 seconds:
    Every language-neutral connector is reached from the JVM directly, and the language-locked ones
    (Rithmic R|API+, NinjaTrader, MT5) need a separate native process whichever language the host is.
    That process should then speak VGP itself: the protocol is the contract, so the qkt client treats a
-   C# NinjaTrader bridge or the Python `mt5-gateway` exactly like `qkt-venued`. Python reaches the same
+   C# NinjaTrader bridge or the Python `mt5-gateway` exactly like `qkt-venue-gateway`. Python reaches the same
    neutral connectors, but loses the one thing only the JVM gives: the same adapter JAR running inside
    qkt (backtest, paper) and inside the gateway (live), from the research doc §2. Hence Kotlin/Ktor.
    Rithmic access for automated trading also needs the FCM's and Rithmic's approval (see the 2026-09-30

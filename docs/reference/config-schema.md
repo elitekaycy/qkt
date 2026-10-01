@@ -478,7 +478,7 @@ strategies, structures and backtests name the same symbols.
 brokers:
   deribit:
     type: gateway
-    gateway_url: https://venued.internal:8443
+    gateway_url: https://venue-gateway.internal:8443
     api_key: env:DERIBIT_GATEWAY_KEY
     expected_adapter: deribit
     expected_account_login: "4421"
