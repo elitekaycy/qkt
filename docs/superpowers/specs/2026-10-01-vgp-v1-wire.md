@@ -152,9 +152,10 @@ the ones it missed here; for contracts its strategies still hold, it asks by sym
 
 ### `POST /v1/kill`, `POST /v1/kill/release`
 Body `{"scope": "all"}` or `{"scope": "symbols", "symbols": ["<code>", ...]}`. Response `200` with the
-`kill_switch` object of `/v1/health`. While a scope covers a symbol, `POST /v1/orders` without
-`reduce_only: true`, and a `PATCH` that is not a pure reduction, are `423 kill_switch`. Cancels,
-reduce-only orders and `positions/close` always pass.
+`kill_switch` object of `/v1/health`. While a scope covers a symbol, `POST /v1/orders` is
+`423 kill_switch` unless it is `reduce_only: true` and no larger than the account's position on the
+opposite side (checked by the gateway, whatever the venue enforces), and a `PATCH` that is not a pure
+reduction is `423` too. Cancels and `positions/close` always pass.
 
 ## 4. Event stream: `GET /v1/stream?since=<seq>` (WebSocket)
 
