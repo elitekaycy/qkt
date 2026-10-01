@@ -1,11 +1,11 @@
 package com.qkt.app
 
 import com.qkt.common.Side
+import com.qkt.derivatives.options.OptionPayoff
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.OptionTerms
 import com.qkt.marketdata.MarketPriceProvider
 import com.qkt.strategy.Signal
-import com.qkt.strategy.StructureLegPosition
 import com.qkt.strategy.StructurePosition
 import com.qkt.strategy.StructureState
 import com.qkt.strategy.StructureView
@@ -33,9 +33,9 @@ internal class StructureBook(
     private val byId = LinkedHashMap<String, LiveStructure>()
     private val owners = HashMap<String, Owner>()
 
-    override fun live(alias: String): StructurePosition? = byAlias[alias]?.let(::position)
+    override fun live(alias: String): StructurePosition? = byAlias[alias]?.position()
 
-    override fun all(): List<StructurePosition> = byId.values.map(::position)
+    override fun all(): List<StructurePosition> = byId.values.map { it.position() }
 
     override fun mark(symbol: String): BigDecimal? = prices.lastPrice(symbol)
 
@@ -80,6 +80,7 @@ internal class StructureBook(
             leg.endClose(orderId)
             leg.realize(quantity, price)
         }
+        reopenIfIdle(structure)
         forgetIfDone(structure)
         return owner
     }
@@ -92,9 +93,7 @@ internal class StructureBook(
         val owner = owners.remove(orderId) ?: return null
         val structure = owner.structure
         if (owner.opening) owner.leg.endOpen() else owner.leg.endClose(orderId)
-        if (structure.state == StructureState.CLOSING && structure.legs.none { it.isClosing }) {
-            structure.state = StructureState.OPEN
-        }
+        reopenIfIdle(structure)
         forgetIfDone(structure)
         return owner
     }
@@ -141,6 +140,26 @@ internal class StructureBook(
         }
     }
 
+    /**
+     * Settles every held leg whose contract has expired by [nowMs] at its intrinsic value from the
+     * catalog's delivery price. The venue's settlement print says the same for a net position; this
+     * also settles legs the venue netted away (two structures long and short one contract). A leg
+     * whose delivery price is not catalogued waits for it.
+     */
+    fun settleExpired(nowMs: Long) {
+        if (byId.isEmpty()) return
+        val options = instruments.options() ?: return
+        for (structure in byId.values.toList()) {
+            for (leg in structure.legs) {
+                if (leg.held.signum() == 0 || leg.expiryMs > nowMs) continue
+                val delivery = options.deliveryPrice(leg.symbol) ?: continue
+                val terms = requireNotNull(instruments.lookup(leg.symbol)?.derivative as? OptionTerms)
+                leg.realize(leg.held, OptionPayoff.intrinsic(terms.right, terms.strike, delivery))
+            }
+            forgetIfDone(structure)
+        }
+    }
+
     /** Every structure leg on [symbol] settled at its expiry at [price]. */
     fun settled(
         symbol: String,
@@ -152,6 +171,13 @@ internal class StructureBook(
         }
     }
 
+    /** A closing structure left with nothing working is OPEN again, so its `CLOSE` can be tried again. */
+    private fun reopenIfIdle(structure: LiveStructure) {
+        if (structure.state == StructureState.CLOSING && structure.legs.none { it.isClosing }) {
+            structure.state = StructureState.OPEN
+        }
+    }
+
     /** Drops [structure] once nothing of it is held or working. */
     private fun forgetIfDone(structure: LiveStructure) {
         val idle = structure.legs.all { it.openEnded && it.held.signum() == 0 && !it.isClosing }
@@ -159,26 +185,6 @@ internal class StructureBook(
         byAlias.remove(structure.alias)
         byId.remove(structure.id)
     }
-
-    private fun position(s: LiveStructure): StructurePosition =
-        StructurePosition(
-            s.id,
-            s.alias,
-            s.state,
-            s.size,
-            s.legs.map { leg ->
-                val sign = if (leg.side == Side.BUY) BigDecimal.ONE else BigDecimal.ONE.negate()
-                StructureLegPosition(
-                    leg.symbol,
-                    leg.contractSize,
-                    leg.expiryMs,
-                    leg.opened.multiply(sign),
-                    leg.entryPrice,
-                    leg.held.multiply(sign),
-                    leg.realized,
-                )
-            },
-        )
 
     private fun sizeOf(symbol: String): BigDecimal =
         requireNotNull(instruments.lookup(symbol)) {

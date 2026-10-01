@@ -77,13 +77,16 @@ class GatedChild(
         ctx: StrategyContext,
         emit: (Signal) -> Unit,
     ) {
+        StructureCloses.endAll(ctx.structures, ctx.strategyId, ctx.clock.now(), structureIds).forEach(emit)
+        // Structures close their own legs; a stream they hold flattens only the rest.
+        val structureHeld = StructureCloses.heldBySymbol(ctx.structures)
         for (symbol in flattenSymbols) {
-            val qty = ctx.positions.positionFor(symbol)?.quantity ?: BigDecimal.ZERO
+            val held = ctx.positions.positionFor(symbol)?.quantity ?: BigDecimal.ZERO
+            val qty = held.subtract(structureHeld[symbol] ?: BigDecimal.ZERO)
             when {
                 qty.signum() > 0 -> emit(Signal.Sell(symbol, qty, force = true))
                 qty.signum() < 0 -> emit(Signal.Buy(symbol, qty.abs(), force = true))
             }
         }
-        StructureCloses.endAll(ctx.structures, ctx.strategyId, ctx.clock.now(), structureIds).forEach(emit)
     }
 }

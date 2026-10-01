@@ -1,6 +1,8 @@
 package com.qkt.app
 
 import com.qkt.common.Side
+import com.qkt.strategy.StructureLegPosition
+import com.qkt.strategy.StructurePosition
 import com.qkt.strategy.StructureState
 import java.math.BigDecimal
 
@@ -78,3 +80,25 @@ internal class LiveStructure(
     var state = StructureState.PENDING
         internal set
 }
+
+/** The read-only view of [this] structure a strategy sees. */
+internal fun LiveStructure.position(): StructurePosition =
+    StructurePosition(
+        id,
+        alias,
+        state,
+        size,
+        legs.map { leg ->
+            val sign = if (leg.side == Side.BUY) BigDecimal.ONE else BigDecimal.ONE.negate()
+            StructureLegPosition(
+                leg.symbol,
+                leg.contractSize,
+                leg.expiryMs,
+                leg.opened.multiply(sign),
+                leg.entryPrice,
+                leg.held.multiply(sign),
+                leg.realized,
+            )
+        },
+        legs.any { !it.openEnded || it.isClosing },
+    )

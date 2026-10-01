@@ -33,14 +33,24 @@ data class StructureLegPosition(
     val realized: BigDecimal,
 )
 
-/** The live option structure [id] opened under [alias]: [size] contracts per leg, in [state]. */
+/**
+ * The live option structure [id] opened under [alias]: [size] contracts per leg, in [state].
+ * [working] is true while an order of it (opening or closing) is still working.
+ */
 data class StructurePosition(
     val id: String,
     val alias: String,
     val state: StructureState,
     val size: BigDecimal,
     val legs: List<StructureLegPosition>,
-)
+    val working: Boolean,
+) {
+    /**
+     * True when a close can end it now: it is OPEN, or an unwind left legs held with nothing working
+     * (a closing leg the venue rejected).
+     */
+    val closable: Boolean get() = state == StructureState.OPEN || (state == StructureState.UNWINDING && !working)
+}
 
 /**
  * A strategy's read-only view of its option structures. An alias holds at most one live structure,

@@ -6,6 +6,8 @@ import com.qkt.dsl.compile.DslCompiledStrategy
 import com.qkt.dsl.parse.Dsl
 import com.qkt.dsl.parse.ParseResult
 import com.qkt.marketdata.Candle
+import com.qkt.positions.Position
+import com.qkt.positions.StrategyPositionView
 import com.qkt.strategy.Signal
 import com.qkt.strategy.StructureLegPosition
 import com.qkt.strategy.StructurePosition
@@ -45,39 +47,50 @@ class GatedChildStructureTest {
         BigDecimal.ZERO,
     )
 
-    private fun deactivate(vararg structures: StructurePosition): List<Signal> {
+    private fun deactivate(
+        structures: List<StructurePosition>,
+        flatten: List<String> = emptyList(),
+        held: Map<String, String> = emptyMap(),
+    ): List<Signal> {
         var active = true
-        val gated = GatedChild("book:child", inner, hold = false, gateFor = { active }, flattenSymbols = emptyList())
+        val gated = GatedChild("book:child", inner, hold = false, gateFor = { active }, flattenSymbols = flatten)
         val view =
             object : StructureView {
                 override fun live(alias: String) = structures.firstOrNull { it.alias == alias }
 
-                override fun all() = structures.toList()
+                override fun all() = structures
 
                 override fun mark(symbol: String): BigDecimal? = null
             }
-        val ctx = testStrategyContext(clock = FixedClock(1_000L)).copy(structures = view)
+        val positions =
+            object : StrategyPositionView {
+                override fun positionFor(symbol: String) =
+                    held[symbol]?.let { Position(symbol, BigDecimal(it), BigDecimal.ONE) }
+
+                override fun allPositions() = held.keys.associateWith { requireNotNull(positionFor(it)) }
+
+                override fun legsFor(symbol: String): List<com.qkt.positions.PositionLeg> = emptyList()
+            }
+        val ctx = testStrategyContext(clock = FixedClock(1_000L), positions = positions).copy(structures = view)
         val emitted = mutableListOf<Signal>()
         active = false
-        gated.onCandle(
-            Candle("s", BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ZERO, 0, 1),
-            ctx,
-        ) {
-            emitted += it
-        }
+        val candle = Candle("s", BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ZERO, 0, 1)
+        gated.onCandle(candle, ctx) { emitted += it }
         return emitted
     }
 
+    private val open =
+        StructurePosition(
+            "ps-1",
+            "ps",
+            StructureState.OPEN,
+            BigDecimal("0.1"),
+            listOf(leg(p81, "-0.1", "646"), leg(p78, "0.1", "219")),
+            working = false,
+        )
+
     @Test
     fun `an open structure closes as one forced group and a pending one has its working legs cancelled`() {
-        val open =
-            StructurePosition(
-                "ps-1",
-                "ps",
-                StructureState.OPEN,
-                BigDecimal("0.1"),
-                listOf(leg(p81, "-0.1", "646"), leg(p78, "0.1", "219")),
-            )
         val pending =
             StructurePosition(
                 "qs-1",
@@ -85,16 +98,32 @@ class GatedChildStructureTest {
                 StructureState.PENDING,
                 BigDecimal("0.1"),
                 listOf(leg(p81, "-0.1", "600"), leg(p78, "0.1", null)),
+                working = true,
             )
 
-        val emitted = deactivate(open, pending)
+        val emitted = deactivate(listOf(open, pending))
 
         val close = emitted.filterIsInstance<Signal.SubmitGroup>().single()
         assertThat(close.closes).isEqualTo("ps-1")
         assertThat(close.force).isTrue()
         assertThat(close.requests.map { it.symbol }).containsExactly(p81, p78)
+        assertThat(emitted.filterIsInstance<Signal.CancelPendingForSymbol>())
+            .containsExactly(Signal.CancelPendingForSymbol(p78, force = true))
+    }
+
+    @Test
+    fun `a flattened stream a structure holds is closed by the structure alone, with only the rest flattened`() {
+        val emitted = deactivate(listOf(open), flatten = listOf(p81), held = mapOf(p81 to "-0.3"))
+
         assertThat(
-            emitted.filterIsInstance<Signal.CancelPendingForSymbol>(),
-        ).containsExactly(Signal.CancelPendingForSymbol(p78, force = true))
+            emitted
+                .filterIsInstance<Signal.SubmitGroup>()
+                .single()
+                .requests
+                .map { it.symbol },
+        ).contains(p81)
+        assertThat(
+            emitted.filterIsInstance<Signal.Buy>(),
+        ).containsExactly(Signal.Buy(p81, BigDecimal("0.2"), force = true))
     }
 }

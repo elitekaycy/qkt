@@ -21,7 +21,7 @@ import com.qkt.dsl.ast.WhenThen
 internal fun requireValidStructures(ast: StrategyAst) {
     val fed =
         ast.streams
-            .filter { it.broker == OPTIONS_BROKER }
+            .filter { it.broker.equals(OPTIONS_BROKER, ignoreCase = true) }
             .map { it.symbol.replaceFirst('.', ':') }
             .toSet()
     val named = ast.streams.map { it.alias }.toSet() + ast.baskets.map { it.alias }

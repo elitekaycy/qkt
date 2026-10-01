@@ -7,6 +7,7 @@ import com.qkt.common.Side
 import com.qkt.events.BrokerEvent
 import com.qkt.events.RiskRejectedEvent
 import com.qkt.events.SignalEvent
+import com.qkt.events.TickEvent
 import com.qkt.execution.ExitReason
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.TimeInForce
@@ -23,7 +24,8 @@ import com.qkt.strategy.StructureState
  *
  * An opening leg filling after the unwind began is closed as it fills. A closing leg the venue
  * cancels (no quote in time) is sent again for what it still holds; one the venue rejects is final.
- * Legs whose contract has expired are never closed: their expiry settlement closes them. A fill of an
+ * Legs whose contract has expired are never closed: they settle from the clock at their delivery price
+ * ([StructureBook.settleExpired]) or from the venue's settlement print, whichever comes first. A fill of an
  * order no structure sent (a flatten) closes the structure legs it trades against ([StructureBook.external]).
  */
 internal class StructureCoordinator(
@@ -76,6 +78,7 @@ internal class StructureCoordinator(
             val group = e.signal as? Signal.SubmitGroup ?: return@subscribe
             if (e.strategyId == strategyId) book.accept(group)
         }
+        bus.subscribe<TickEvent> { book.settleExpired(clock.now()) }
         bus.subscribe<RiskRejectedEvent> { e -> if (e.request.strategyId == strategyId) book.refused(e.request.id) }
         bus.subscribe<BrokerEvent.OrderFilled> { e ->
             if (e.strategyId != strategyId) return@subscribe

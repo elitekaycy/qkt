@@ -11,7 +11,10 @@ import com.qkt.instrument.QuoteSource
 import com.qkt.instrument.TickSteps
 import java.math.BigDecimal
 
-/** A DERIBIT:BTC_USDC catalog (contract size 1) of four puts over two expiries, and leg orders on it. */
+/**
+ * A DERIBIT:BTC_USDC catalog (contract size 1) of four puts over two expiries, 9OCT26 delivered at
+ * 80000, and leg orders on it.
+ */
 internal object StructureFixtures {
     /** 2026-10-09T08:00Z. */
     const val OCT9 = 1_791_532_800_000L
@@ -48,6 +51,7 @@ internal object StructureFixtures {
                             OptionListing("BTC_USDC-9OCT26-75000-P", "75000", "put", OCT9),
                             OptionListing("BTC_USDC-30OCT26-80000-P", "80000", "put", OCT30),
                         ),
+                        deliveryPrices = mapOf("2026-10-09" to "80000"),
                     ),
             ),
         )
