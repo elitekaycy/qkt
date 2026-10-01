@@ -7,6 +7,7 @@ import java.nio.file.Paths
 import java.time.LocalDate
 import kotlinx.serialization.json.Json
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.assertj.core.api.Assertions.within
 import org.junit.jupiter.api.Test
 
@@ -56,4 +57,51 @@ class OptionSelectorTest {
             ),
         ).isNull()
     }
+
+    @Test
+    fun `the expiry is chosen among quotes of the leg's own right`() {
+        val nearestCallsOnly =
+            ChainSnapshot(
+                snapshot.root,
+                snapshot.atMs,
+                snapshot.quotes.filterNot {
+                    listings.getValue(it.contract).expiryMs == firstExpiryIn(7.0, 30.0) &&
+                        it.contract.endsWith("-P")
+                },
+            )
+
+        val put =
+            OptionSelector.select(
+                nearestCallsOnly,
+                listings,
+                LegCriteria(OptionRight.PUT, 0.25, minDays = 7.0, maxDays = 30.0),
+                hour,
+            )
+
+        assertThat(put).isNotNull()
+        assertThat(put!!.expiryMs).isGreaterThan(firstExpiryIn(7.0, 30.0))
+    }
+
+    @Test
+    fun `a leg names either a whole days window or an expiry`() {
+        assertThatThrownBy {
+            LegCriteria(
+                OptionRight.PUT,
+                0.25,
+                minDays = 7.0,
+                expiryMs = 1L,
+            )
+        }.hasMessageContaining("window")
+        assertThatThrownBy { LegCriteria(OptionRight.PUT, 0.25, minDays = 7.0) }.hasMessageContaining("window")
+        assertThatThrownBy { LegCriteria(OptionRight.PUT, 0.25) }.hasMessageContaining("window")
+    }
+
+    private fun firstExpiryIn(
+        min: Double,
+        max: Double,
+    ): Long =
+        listings.values.map { it.expiryMs }.distinct().sorted().first {
+            (it - snapshot.atMs) / 86_400_000.0 in
+                min..max
+        }
 }

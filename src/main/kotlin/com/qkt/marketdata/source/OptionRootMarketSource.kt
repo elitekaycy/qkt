@@ -8,7 +8,6 @@ import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.OptionSymbols
 import com.qkt.instrument.OptionTerms
 import com.qkt.marketdata.Tick
-import java.time.Instant
 import java.time.ZoneOffset
 import java.util.TreeMap
 
@@ -17,7 +16,9 @@ import java.util.TreeMap
  * series is decoded once, and every snapshot becomes one tick per quoted contract, priced as the
  * single-contract source prices it. A contract's quotes stop at its expiry. When the window covers that
  * expiry, a contract quoted in the run gets one settlement print at its intrinsic value from the
- * catalog's delivery price, emitted before any snapshot of the same instant.
+ * catalog's delivery price, emitted before any snapshot of the same instant. A contract without a recorded delivery
+ * price gets none: one nobody holds needs none, and a held one fails at its settlement naming the
+ * catalog refresh.
  */
 class OptionRootMarketSource(
     private val instruments: InstrumentRegistry,
@@ -49,7 +50,7 @@ class OptionRootMarketSource(
             suspend fun SequenceScope<Tick>.printUpTo(atMs: Long) {
                 while (prints.isNotEmpty() && prints.firstKey() <= atMs) {
                     val (expiry, symbols) = prints.pollFirstEntry()
-                    for (contract in symbols.sorted()) yield(settlement(contract, expiry))
+                    for (contract in symbols.sorted()) settlement(contract, expiry)?.let { yield(it) }
                 }
             }
             val days = generateSequence(range.from.atZone(ZoneOffset.UTC).toLocalDate()) { it.plusDays(1) }
@@ -71,21 +72,15 @@ class OptionRootMarketSource(
         }
     }
 
+    /** [contract]'s settlement print, or null when the catalog has no delivery price for its expiry. */
     private fun settlement(
         contract: String,
         expiryMs: Long,
-    ): Tick {
+    ): Tick? {
         val options = requireNotNull(instruments.options())
         val terms =
-            requireNotNull(instruments.lookup(contract)?.derivative as? OptionTerms) {
-                "$contract has no option terms"
-            }
-        val day = Instant.ofEpochMilli(expiryMs).atZone(ZoneOffset.UTC).toLocalDate()
-        val delivery =
-            options.deliveryPrice(contract)
-                ?: error(
-                    "$contract expires in the run with no delivery price for $day; refresh it with qkt fetch ${terms.root} --catalog",
-                )
+            requireNotNull(instruments.lookup(contract)?.derivative as? OptionTerms) { "$contract has no option terms" }
+        val delivery = options.deliveryPrice(contract) ?: return null
         return Tick(contract, OptionPayoff.intrinsic(terms.right, terms.strike, delivery), expiryMs)
     }
 }

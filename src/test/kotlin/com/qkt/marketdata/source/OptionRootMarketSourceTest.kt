@@ -68,4 +68,14 @@ class OptionRootMarketSourceTest {
             OptionRootSymbol.parse("CHAIN:DERIBIT.BTC_USDC").exceptionOrNull(),
         ).hasMessageContaining("not an option root")
     }
+
+    @Test
+    fun `a contract without a recorded delivery price gets no settlement print and does not stop the feed`() {
+        val noSept25 = catalog.copy(deliveryPrices = catalog.deliveryPrices - "2026-09-25")
+        val fed = OptionRootMarketSource(OptionCatalogRegistry(listOf(root), mapOf(root.root to noSept25), dir))
+
+        val ticks = fed.ticks("OPTIONS:DERIBIT.BTC_USDC", window).toList()
+
+        assertThat(ticks).hasSize(5713 + 23)
+    }
 }

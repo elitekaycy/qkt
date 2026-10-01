@@ -18,12 +18,20 @@ class CandleAggregator private constructor(
      * the venue's figure. See [BarVolumeSource].
      */
     private val barVolume: BarVolumeSource? = null,
+    /** Which symbols get candles; the rest still move prices but never form a bar. */
+    private val aggregates: ((String) -> Boolean)? = null,
 ) {
-    constructor(bus: EventBus, window: TimeWindow, barVolume: BarVolumeSource? = null) : this(
+    constructor(
+        bus: EventBus,
+        window: TimeWindow,
+        barVolume: BarVolumeSource? = null,
+        aggregates: ((String) -> Boolean)? = null,
+    ) : this(
         window = window,
         emit = { c -> bus.publish(CandleEvent(c)) },
         bus = bus,
         barVolume = barVolume,
+        aggregates = aggregates,
     )
 
     private val log = org.slf4j.LoggerFactory.getLogger(CandleAggregator::class.java)
@@ -46,6 +54,7 @@ class CandleAggregator private constructor(
         tick: Tick,
         countLateDrop: Boolean,
     ) {
+        if (aggregates?.invoke(tick.symbol) == false) return
         // A heartbeat can close a window while older ticks remain queued. Never reopen
         // or mutate an already-emitted window: doing so double-feeds every indicator.
         if (tick.timestamp < (lastClosedEnd[tick.symbol] ?: Long.MIN_VALUE)) {

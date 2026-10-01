@@ -132,11 +132,15 @@ class OptionBacktestCommandTest {
                     body = body,
                 )
             assertThat(code).describedAs(output).isEqualTo(ExitCodes.SUCCESS)
-            return output.lines().filter {
-                it.contains("stream DERIBIT:") ||
-                    it.startsWith("Trades:") ||
-                    it.startsWith("Final realized:")
-            }
+            val report =
+                output
+                    .lines()
+                    .dropWhile {
+                        !it.startsWith(
+                            "Trades:",
+                        )
+                    }.takeWhile { !it.startsWith("Runaway breaker:") }
+            return report + output.lines().filter { it.contains("stream DERIBIT:") || it.contains("live candles:") }
         }
 
         val alone = result(trading)
