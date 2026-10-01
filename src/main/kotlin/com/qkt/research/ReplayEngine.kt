@@ -96,11 +96,11 @@ class ReplayEngine(
      */
     private val regimeWeights: () -> Map<String, BigDecimal> = { emptyMap() },
     /**
-     * `--bars` research tier: fill triggered Stop/Limit exits at their own price level
+     * Symbols replayed from bars: their triggered Stop/Limit exits fill at their own price level
      * rather than the synthetic bar extreme the triggering tick carries. See
-     * [com.qkt.broker.PaperBroker.fillAtTriggerPrice]. Off (and unused) on the tick path.
+     * [com.qkt.broker.PaperBroker]. Empty on the tick path.
      */
-    private val barFills: Boolean = false,
+    private val barFills: com.qkt.backtest.BarFills = com.qkt.backtest.BarFills.NONE,
     /**
      * Tick-resolved fills: when both are non-null, the `--bars` replay is driven by these bars but
      * fills resolve on real ticks for any bar where one is possible (see [BarResolvedFeed]). The

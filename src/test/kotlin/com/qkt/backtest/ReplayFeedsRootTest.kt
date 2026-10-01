@@ -44,9 +44,8 @@ class ReplayFeedsRootTest {
                 emptyMap(),
                 null,
                 false,
-            ) {
-                0
-            }
+                { 0 },
+            )
         return generateSequence { feed.next() }.toList()
     }
 

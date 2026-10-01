@@ -412,13 +412,13 @@ class PaperBrokerTest {
 
     @Test
     fun `bar-mode fills a triggered Stop at the stop price, not the overshooting tick`() {
-        // A bar's synthetic low overshoots the stop; bar mode fills at the stop level
-        // (no slippage), not at the bar low the tick carries.
+        // The bar's synthetic low overshoots the stop; bar mode fills at the stop level.
         val tracker = MarketPriceTracker()
         val bus = newBus()
         val fills = mutableListOf<BrokerEvent.OrderFilled>()
         bus.subscribe<BrokerEvent.OrderFilled> { e -> fills.add(e) }
-        val b = PaperBroker(bus, FixedClock(0L), tracker, fillAtTriggerPrice = true)
+        val b = PaperBroker(bus, FixedClock(0L), tracker, fillAtTriggerPrice = { true })
+        b.onTick(tick("EURUSD", "1.10")) // the bar Open the move starts from
 
         b.submit(
             OrderRequest.Stop(
@@ -443,8 +443,8 @@ class PaperBrokerTest {
         val bus = newBus()
         val fills = mutableListOf<BrokerEvent.OrderFilled>()
         bus.subscribe<BrokerEvent.OrderFilled> { fills.add(it) }
-        val broker = PaperBroker(bus, FixedClock(0L), tracker, fillAtTriggerPrice = true)
-        broker.onTick(tick("EURUSD", "1.10", ts = 999L))
+        val broker = PaperBroker(bus, FixedClock(0L), tracker, fillAtTriggerPrice = { true })
+        broker.onTick(tick("EURUSD", "1.10", ts = 999L).copy(volume = Money.of("1"))) // a bar Close
         broker.submit(
             OrderRequest.Stop(
                 id = "gap-sl",
@@ -464,13 +464,13 @@ class PaperBrokerTest {
 
     @Test
     fun `bar-mode fills a triggered Limit at the limit price, not the overshooting tick`() {
-        // A long take-profit is a SELL limit above; the bar's synthetic high overshoots
-        // it. Bar mode books the limit level, not the bar high.
+        // A long take-profit's synthetic bar high overshoots it; bar mode books the limit level.
         val tracker = MarketPriceTracker()
         val bus = newBus()
         val fills = mutableListOf<BrokerEvent.OrderFilled>()
         bus.subscribe<BrokerEvent.OrderFilled> { e -> fills.add(e) }
-        val b = PaperBroker(bus, FixedClock(0L), tracker, fillAtTriggerPrice = true)
+        val b = PaperBroker(bus, FixedClock(0L), tracker, fillAtTriggerPrice = { true })
+        b.onTick(tick("EURUSD", "1.10")) // the bar Open the move starts from
 
         b.submit(
             OrderRequest.Limit(

@@ -47,7 +47,7 @@ class ReplayBrokerFuturesTest {
             bus,
             clock,
             books,
-            false,
+            com.qkt.backtest.BarFills.NONE,
             TradingCalendar.crypto(),
             emptyMap(),
             symbols,

@@ -69,11 +69,8 @@ class Backtest(
      * Updated once per closed candle before strategy handlers run.
      */
     private val regimeWeights: () -> Map<String, BigDecimal> = { emptyMap() },
-    /**
-     * `--bars` research tier: fill triggered Stop/Limit exits at their trigger level, not
-     * the synthetic bar extreme. See [com.qkt.broker.PaperBroker.fillAtTriggerPrice].
-     */
-    private val barFills: Boolean = false,
+    /** Symbols replayed from bars, whose triggered Stop/Limit exits fill at their level; see [BarFills]. */
+    val barFills: BarFills = BarFills.NONE,
     /**
      * Tick-resolved fills (`--bars --tick-fills`): bars drive signals, but fills resolve on real
      * ticks for any bar where one is possible — byte-identical to a full-tick replay. Both null on
@@ -406,17 +403,21 @@ class Backtest(
             val from = request.from ?: error("Backtest.fromSource requires explicit MarketRequest.from")
             val to = request.to ?: error("Backtest.fromSource requires explicit MarketRequest.to")
             val range = TimeRange(from, to)
-            // Late-bound engine slot: bar-synthesized feeds read net position signs from whichever
-            // engine ends up pulling this backtest's feed (bound in toEngine), so each bar emits the
-            // open position's adverse extreme first. Unbound (fan-out shared feeds), the sign reads
-            // 0 and the feed keeps the flat-default Low-first order.
+            // Late-bound engine slot for position-aware bar synthesis; see ReplayFeeds.replay.
             val engineHolder = arrayOfNulls<com.qkt.research.ReplayEngine>(1)
             val positionSign: (String) -> Int = { sym -> engineHolder[0]?.positionSign(sym) ?: 0 }
-            val feed =
-                ReplayFeeds.merged(source, request.symbols, range, barWindows, candleWindow, forceBars, positionSign)
-            val tickResolvedBars =
-                ReplayFeeds.tickResolvedBars(source, request.symbols, range, barWindows, candleWindow, tickFills)
-            val tickSlicer = ReplayFeeds.tickSlicer(source, tickFills)
+            val (feed, barFills) =
+                ReplayFeeds.replay(
+                    source,
+                    request.symbols,
+                    range,
+                    barWindows,
+                    candleWindow,
+                    forceBars,
+                    positionSign,
+                    tickFills,
+                    executionConfig.brokerKind,
+                )
             return Backtest(
                 strategies = strategies,
                 rules = rules,
@@ -458,12 +459,10 @@ class Backtest(
                 runawayRoundTripWindowMs = runawayRoundTripWindowMs,
                 runawayMaxRejections = runawayMaxRejections,
                 runawayRejectionWindowMs = runawayRejectionWindowMs,
-                // Tick-resolved fills use the full-tick fill model (fill at the real tick price, not
-                // the trigger level): fills only ever occur on bars fed real ticks, so the bar-tier
-                // fill-at-trigger-price guard is both unnecessary and wrong here.
-                barFills = forceBars && !tickFills,
-                tickResolvedBars = tickResolvedBars,
-                tickSlicer = tickSlicer,
+                barFills = barFills,
+                tickResolvedBars =
+                    ReplayFeeds.tickResolvedBars(source, request.symbols, range, barWindows, candleWindow, tickFills),
+                tickSlicer = ReplayFeeds.tickSlicer(source, tickFills),
                 engineHolder = engineHolder,
             )
         }
