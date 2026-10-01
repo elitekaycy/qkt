@@ -53,3 +53,17 @@ anything not linear-in-USDC rather than assume.
   `quote_currency` is the base coin (`BTC`); the premium currency is `counter_currency` (`USDC`) on both
   hosts. qkt therefore judges "linear in the root's currency" by `settlement_currency` and
   `counter_currency` (type linear or absent).
+
+## 6. Trade history density (2026-10-01 probe)
+
+- `get_last_trades_by_currency_and_time` accepts `count` well above 1000 (a whole 2024-09-26 day came
+  back at `count=5000`: 1,303 USDC option trades, `has_more: false`); `has_more` signals paging.
+- BTC_USDC options did not trade in September 2024 (the series starts in 2025, matching the catalog).
+- On 2026-09-01 BTC_USDC saw **274 trades across 112 instruments** — a mark per instrument only when
+  it trades. Snapshots built from trades are therefore **sparse**: most contracts' last mark is hours
+  old at any boundary.
+- Consequence for the design: every snapshot row carries the age of its mark (time since that
+  instrument's last trade), and the option venue refuses to fill against a mark older than a
+  configured maximum instead of trading on a stale or invented price. Denser history needs a live
+  snapshotter of `public/get_book_summary_by_currency` (marks, bid/ask and IV for every contract), the
+  spec §6.3 path, which builds history going forward.
