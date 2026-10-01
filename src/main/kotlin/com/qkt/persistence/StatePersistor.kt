@@ -6,9 +6,9 @@ import com.qkt.positions.LegBook
 import java.math.BigDecimal
 
 /**
- * Durable storage for the in-memory engine state that doesn't survive restart:
- * leg metadata, bracket linkages, in-flight orders, STACK_AT tier-fired state,
- * and active DSL exit hooks.
+ * Durable storage for the in-memory engine state that doesn't survive restart: leg metadata,
+ * bracket linkages, in-flight orders, STACK_AT tier-fired state, active DSL exit hooks, and
+ * continuous futures stream lanes.
  *
  * Production implementations ([FileStatePersistor]) write atomic JSON files under
  * `<stateRoot>/<strategyId>/`, where the root is the daemon state directory (honors
@@ -20,7 +20,8 @@ import java.math.BigDecimal
  */
 interface StatePersistor :
     AutoCloseable,
-    TimedExitPersistence {
+    TimedExitPersistence,
+    StreamLanePersistence {
     /** Releases persistence resources after all sessions have stopped. */
     override fun close() = Unit
 
@@ -139,10 +140,9 @@ interface StatePersistor :
     fun loadRiskState(strategyId: String): PersistedRiskState? = null
 
     /**
-     * Persist a strategy's lifetime realized PnL. Without this, every restart
-     * resets realized to zero and equity snaps back to the starting balance —
-     * downstream consumers (dashboards, drawdown stats) see a cliff that never
-     * happened. Default no-op keeps persistors that predate PnL persistence compiling.
+     * Persist a strategy's lifetime realized PnL. Without this, every restart resets realized to zero
+     * and equity snaps back to the starting balance — downstream consumers (dashboards, drawdown stats)
+     * see a cliff that never happened. Default no-op keeps persistors that predate it compiling.
      */
     fun savePnl(
         strategyId: String,

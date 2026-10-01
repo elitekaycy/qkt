@@ -63,6 +63,7 @@ class FileStatePersistor(
     private val ocoLegs = OcoLegsFile(writer, json)
     private val trailingStops = TrailingStopsFile(writer, json)
     private val timedExits = TimedExitsFile(writer, json)
+    private val streamLanes = StreamLaneFile(writer, json)
 
     override fun saveSequences(
         strategyId: String,
@@ -182,6 +183,16 @@ class FileStatePersistor(
     ) = timedExits.save(strategyId, exits)
 
     override fun loadTimedExits(strategyId: String): List<PersistedTimeExit> = timedExits.load(strategyId)
+
+    override fun saveStreamLane(
+        ownerId: String,
+        lane: PersistedStreamLane,
+    ) = streamLanes.save(ownerId, lane)
+
+    override fun loadStreamLane(
+        ownerId: String,
+        stream: String,
+    ): PersistedStreamLane? = streamLanes.load(ownerId, stream)
 
     override fun clearStrategy(strategyId: String) {
         writer.deleteStrategy(strategyId)
