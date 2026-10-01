@@ -186,7 +186,9 @@ equals the P&L of the contracts actually traded. Trading a continuous stream nee
 `ratio` and `none` streams can be read but not traded. If the new contract refuses a roll, the
 position is closed at the old contract's fill (exit reason `ROLL_FAILED`) and the strategy cannot add
 exposure on that stream for the rest of the run. Continuous streams are backtest-only for now; paper
-and live runs refuse them.
+and live runs refuse them. A run window that reaches past a stream's last listed contract (for `@next`, past the roll that
+makes its last contract the front one) is refused with the instant the stream ends; refresh the catalog
+or end the run earlier.
 
 ## Scenario 3 — Speed up repeated backtests (CSV → binary)
 

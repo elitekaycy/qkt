@@ -157,6 +157,14 @@ class ContinuousChainTest {
         assertThat(ContinuousChain(tradedNext, catalog, history0, ContinuousSelector.NEXT).symbol).endsWith("@next")
     }
 
+    @Test
+    fun `a stream ends when its last contract expires, or for next when that contract becomes front`() {
+        val next = ContinuousChain(root, catalog, history, ContinuousSelector.NEXT)
+
+        assertThat(front.endsAtMs).isEqualTo(ms("2025-03-28T08:00:00Z"))
+        assertThat(next.endsAtMs).isEqualTo(ms("2024-12-19T08:00:00Z"))
+    }
+
     /** The fixture's rolls measured under a roll at 00:00 on each expiry day. */
     private val history0 =
         RollHistory(

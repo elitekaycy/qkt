@@ -165,6 +165,15 @@ class ContinuousMarketSourceTest {
     }
 
     /** Answers `ticks` with price 1 and `tickSlice` with price 2, so the path taken is visible. */
+    @Test
+    fun `a window past the stream's last contract is refused with the instant it ends`() {
+        val late = TimeRange(Instant.parse("2024-12-26T00:00:00Z"), Instant.parse("2025-01-02T00:00:00Z"))
+
+        assertThatThrownBy { source.bars("BINANCE_UM:BTCUSDT@front", quarter, late).toList() }
+            .hasMessageContaining("2024-12-27T08:00:00Z")
+            .hasMessageContaining("--catalog")
+    }
+
     private class TaggedSource : MarketSource {
         override val name = "tagged"
         override val capabilities = setOf(MarketSourceCapability.TICKS, MarketSourceCapability.VOLUME)
