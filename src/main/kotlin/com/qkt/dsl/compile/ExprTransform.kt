@@ -156,6 +156,7 @@ class ExprTransform(
             is Close, is Cancel, CloseAll, CancelAll -> a
             is com.qkt.dsl.ast.Resize -> a.copy(target = sizing(a.target), minStep = a.minStep?.let(::expr))
             is com.qkt.dsl.ast.Latch -> latches.latch(a)
+            is com.qkt.dsl.ast.OpenStructure -> a.copy(sizing = sizing(a.sizing))
         }
 
     fun defaultsBlock(d: DefaultsBlock): DefaultsBlock =

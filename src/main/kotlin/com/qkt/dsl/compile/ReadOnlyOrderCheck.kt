@@ -67,7 +67,8 @@ internal fun rejectReadOnlyOrders(
             rejectReadOnlyOrders(action.leg2, readOnlyAliases)
         }
         is Block -> action.actions.forEach { rejectReadOnlyOrders(it, readOnlyAliases) }
-        CloseAll, CancelAll, is Log -> Unit
+        // A structure orders contracts of its option root, never a declared (possibly read-only) alias.
+        CloseAll, CancelAll, is Log, is com.qkt.dsl.ast.OpenStructure -> Unit
     }
 }
 
