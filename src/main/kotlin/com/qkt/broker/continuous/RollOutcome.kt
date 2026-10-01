@@ -33,7 +33,7 @@ internal class RollRun(
     /** Each holder's step, in carry order; a holder not reached yet has none. */
     val steps = LinkedHashMap<String, CarryStep>()
 
-    val carried: List<RollEntry> get() = steps.values.filterIsInstance<CarryStep.Carried>().map { it.entry }
+    val carried: List<CarryStep.Carried> get() = steps.values.filterIsInstance<CarryStep.Carried>()
 
     val closes: List<BrokerEvent.OrderFilled> get() =
         steps.values.filterIsInstance<CarryStep.Stopped>().mapNotNull {

@@ -105,10 +105,11 @@ internal class RollExecutor(
                 else -> restingOrders.cancel(order, reason)
             }
         }
-        run.carried.forEach(ledger::record)
+        val carried = run.carried.map { carrying.entry(run, it) }
+        carried.forEach(ledger::record)
         val referencePrice = space.toContinuous(run.measured.prices.toPrice)
         val cause = "roll ${chain.contractSymbol(run.fromIndex)}->$to"
-        val costs = run.carried.map { CostIncurred(it.strategyId, chain.symbol, it.cost, cause, referencePrice) }
+        val costs = carried.map { CostIncurred(it.strategyId, chain.symbol, it.cost, cause, referencePrice) }
         inFlight = false
         done(RollOutcome(stopped = run.failed, closes = run.closes, costs = costs))
     }
