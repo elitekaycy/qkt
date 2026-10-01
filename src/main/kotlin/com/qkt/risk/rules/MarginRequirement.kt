@@ -1,6 +1,7 @@
 package com.qkt.risk.rules
 
 import com.qkt.accounting.margin.MarginModel
+import com.qkt.accounting.margin.OptionMargin
 import com.qkt.common.Side
 import com.qkt.execution.OrderRequest
 import com.qkt.marketdata.MarketPriceProvider
@@ -14,19 +15,27 @@ import java.math.BigDecimal
  * Refuses an order on a margined instrument when the account's [equity] could not carry the initial
  * margin of every margined position after it. Each symbol's exposure is the larger of what it would
  * hold if all its pending buys or all its pending sells filled (this order included), so a burst of
- * entries cannot outrun the check. Orders that only reduce a position always pass; symbols without
- * margin terms are not judged.
+ * entries cannot outrun the check. With [options], the account's option positions add their
+ * worst-case requirement ([OptionMargin]) and an option order is judged too; one that would leave an
+ * unbounded loss is refused. Orders that only reduce a position always pass; symbols without margin
+ * terms that are not options are not judged.
  */
 class MarginRequirement(
     private val margin: MarginModel,
     private val prices: MarketPriceProvider,
+    private val options: OptionMargin? = null,
     private val equity: () -> BigDecimal,
 ) : RiskRule {
     override fun evaluate(
         request: OrderRequest,
         positions: PositionProvider,
     ): Decision {
-        if (!margin.hasTerms(request.symbol) || isRiskReducing(request, positions)) return Decision.Approve
+        val isOption = options?.covers(request.symbol) == true
+        if (!(margin.hasTerms(request.symbol) || isOption) ||
+            isRiskReducing(request, positions)
+        ) {
+            return Decision.Approve
+        }
         val symbols =
             (
                 positions.symbols() +
@@ -43,6 +52,23 @@ class MarginRequirement(
                     ?: return Decision.Reject("cannot compute margin for $symbol: no price reference")
             required =
                 required.add(margin.initial(symbol, exposure(symbol, request, positions), price, request.timestamp))
+        }
+        if (options != null) {
+            val mark = { s: String ->
+                (
+                    if (s ==
+                        request.symbol
+                    ) {
+                        explicitPrice(request)
+                    } else {
+                        null
+                    }
+                ) ?: prices.lastPrice(s)
+            }
+            when (val outcome = options.required(request.symbol, request.side, request.quantity, positions, mark)) {
+                is OptionMargin.Outcome.Refused -> return Decision.Reject(outcome.reason)
+                is OptionMargin.Outcome.Required -> required = required.add(outcome.amount)
+            }
         }
         val available = equity()
         if (required <= available) return Decision.Approve
