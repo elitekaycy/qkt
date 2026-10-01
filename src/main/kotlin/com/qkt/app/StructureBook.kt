@@ -17,8 +17,8 @@ import java.math.BigDecimal
  * One strategy's option structures: the single writer of their state, driven by the
  * [StructureCoordinator] from bus events and read by the strategy as its [StructureView]. Each live
  * structure is keyed by its alias. A leg's held quantity grows with its opening fills and shrinks with
- * its closing fills and its expiry settlement, each realizing premium P&L (before fees) at its price. A structure
- * leaves the book once nothing is held and no order of it is working.
+ * its closing fills and its expiry settlement, each realizing premium P&L (before fees) at its price.
+ * A structure leaves the book once nothing is held and no order of it is working.
  */
 internal class StructureBook(
     private val strategyId: String,
@@ -48,10 +48,7 @@ internal class StructureBook(
         val closes = group.closes
         if (closes == null) {
             require(group.alias !in byAlias) { "structure ${group.alias} is already live" }
-            val legs =
-                group.requests.map { r ->
-                    structureLeg(r, instruments)
-                }
+            val legs = group.requests.map { structureLeg(it, instruments) }
             val structure = LiveStructure(group.structureId, group.alias, group.requests.first().quantity, legs)
             byAlias[group.alias] = structure
             byId[structure.id] = structure
@@ -159,12 +156,26 @@ internal class StructureBook(
     fun settleExpired(nowMs: Long) {
         if (byId.isEmpty()) return
         val options = instruments.options() ?: return
-        for (structure in byId.values.toList()) {
-            for (leg in structure.legs) {
-                if (leg.held.signum() == 0 || leg.expiryMs > nowMs) continue
-                val delivery = options.deliveryPrice(leg.symbol) ?: continue
+        settle { leg ->
+            options.deliveryPrice(leg.symbol)?.takeIf { leg.expiryMs <= nowMs }?.let { delivery ->
                 val terms = requireNotNull(instruments.lookup(leg.symbol)?.derivative as? OptionTerms)
-                leg.realize(leg.held, OptionPayoff.intrinsic(terms.right, terms.strike, delivery))
+                OptionPayoff.intrinsic(terms.right, terms.strike, delivery)
+            }
+        }
+    }
+
+    /** Every held structure leg on [symbol] settles at [price], the venue's settlement price. */
+    fun settleAt(
+        symbol: String,
+        price: BigDecimal,
+    ) = settle { leg -> price.takeIf { leg.symbol == symbol } }
+
+    /** Settles each held leg at the price [priceOf] gives it, leaving legs it gives none. */
+    private fun settle(priceOf: (StructureLeg) -> BigDecimal?) {
+        for (structure in byId.values.toList()) {
+            for (leg in structure.legs.filter { it.held.signum() > 0 }) {
+                val price = priceOf(leg) ?: continue
+                leg.realize(leg.held, price)
                 structure.exit = StructureOutcome.SETTLED
             }
             forgetIfDone(structure)
