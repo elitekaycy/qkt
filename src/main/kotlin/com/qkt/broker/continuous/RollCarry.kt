@@ -110,7 +110,7 @@ internal class RollCarry(
                 check(outcome.fill.quantity.compareTo(step.leg.quantity) == 0) {
                     "roll leg ${step.leg.id} filled ${outcome.fill.quantity} of ${step.leg.quantity}"
                 }
-                step(run, CarryStep.Carried(step.strategyId, step.quantity, entry(run, step, outcome.fill)))
+                step(run, CarryStep.Carried(step.strategyId, step.quantity, step.close, outcome.fill))
                 then()
             }
             is LegOutcome.Rejected -> {
@@ -160,23 +160,23 @@ internal class RollCarry(
         onStep(run)
     }
 
-    private fun entry(
+    /** The ledger's record of [carried] in [run]. */
+    fun entry(
         run: RollRun,
-        step: CarryStep.Opening,
-        open: BrokerEvent.OrderFilled,
+        carried: CarryStep.Carried,
     ) = RollEntry(
         atMs = run.measured.atMs,
         stream = chain.symbol,
-        strategyId = step.strategyId,
-        from = step.close.symbol,
-        to = step.leg.symbol,
-        quantity = step.quantity,
+        strategyId = carried.strategyId,
+        from = carried.close.symbol,
+        to = carried.open.symbol,
+        quantity = carried.quantity,
         multiplier = chain.root.multiplier,
-        fromFill = step.close.price,
-        toFill = open.price,
+        fromFill = carried.close.price,
+        toFill = carried.open.price,
         fromReference = run.measured.prices.fromPrice,
         toReference = run.measured.prices.toPrice,
-        fees = step.close.venueFeesIn(chain.root.currency).add(open.venueFeesIn(chain.root.currency)),
+        fees = carried.close.venueFeesIn(chain.root.currency).add(carried.open.venueFeesIn(chain.root.currency)),
     )
 
     /** The old leg's [close] as the venue closing the position on the stream. */

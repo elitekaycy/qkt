@@ -28,11 +28,12 @@ internal sealed interface CarryStep {
         val leg: OrderRequest.Market,
     ) : CarryStep
 
-    /** Carried to the new contract, as [entry] records. */
+    /** Carried to the new contract: the old contract closed at [close], the new one opened at [open]. */
     data class Carried(
         override val strategyId: String,
         override val quantity: BigDecimal,
-        val entry: RollEntry,
+        val close: BrokerEvent.OrderFilled,
+        val open: BrokerEvent.OrderFilled,
     ) : CarryStep
 
     /** Not carried, for [reason]; [close] is the position's close on the stream when the venue closed it, or part of it. */
