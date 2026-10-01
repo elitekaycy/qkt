@@ -10,8 +10,10 @@ import org.slf4j.LoggerFactory
 
 /**
  * The brokers attached to one gateway account and where each event goes. An order's events go to the
- * broker of the strategy that sent it, else to a broker serving every strategy (attached with a null
- * strategy); with neither attached they wait, and reach the strategy's broker when it attaches again.
+ * broker that sent it while that broker is attached (a strategy may attach several: its session's broker
+ * and one per continuous stream); else to the brokers of its strategy, else to a broker serving every
+ * strategy (attached with a null strategy); with none attached they wait, and reach the strategy's
+ * broker when it attaches again.
  * A contract settlement goes to every broker with the venue's costs shared once, account-wide, by the
  * size of each broker's holding. Not thread-safe: its owner calls it under one lock.
  */
@@ -47,15 +49,17 @@ internal class GatewayRouting {
         return attached.isEmpty()
     }
 
-    /** Hands an order's [event] to the broker of its strategy, else to one serving every strategy, else keeps it. */
-    fun route(event: BrokerEvent.OrderEvent) {
+    /**
+     * Hands an order's [event] to [sender], the broker that sent the order, while it is attached; else to
+     * the brokers of its strategy, else to one serving every strategy, else keeps it.
+     */
+    fun route(
+        event: BrokerEvent.OrderEvent,
+        sender: Attached? = null,
+    ) {
+        if (sender != null && attached.any { it === sender }) return sender.publish(event)
         val targets =
-            attached.filter { it.strategy == event.strategyId }.ifEmpty {
-                attached.filter {
-                    it.strategy ==
-                        null
-                }
-            }
+            attached.filter { it.strategy == event.strategyId }.ifEmpty { attached.filter { it.strategy == null } }
         if (targets.isEmpty()) {
             log.info("gateway event for '{}' waits for its strategy to attach: {}", event.strategyId, event)
             waiting.getOrPut(event.strategyId) { ArrayList() } += event
