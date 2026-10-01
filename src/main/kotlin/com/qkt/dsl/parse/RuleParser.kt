@@ -72,7 +72,8 @@ internal class RuleParser(
             k == TokenKind.CANCEL_ALL ||
             k == TokenKind.LOG ||
             k == TokenKind.OCO_ENTRY ||
-            k == TokenKind.LATCH
+            k == TokenKind.LATCH ||
+            k == TokenKind.OPEN
 
     private fun parseForEach(): List<RuleAst> {
         val line = cursor.expect(TokenKind.FOR, "expected FOR").line

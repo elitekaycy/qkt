@@ -63,8 +63,10 @@ interface SignalInsights {
                 is Signal.SubmitGroup ->
                     "signal.structure" to
                         mapOf(
-                            "intent" to "OPEN_STRUCTURE",
+                            "intent" to if (s.closes == null) "OPEN_STRUCTURE" else "CLOSE_STRUCTURE",
                             "structureId" to s.structureId,
+                            "alias" to s.alias,
+                            "closes" to s.closes,
                             "legs" to
                                 s.requests.joinToString(
                                     ";",

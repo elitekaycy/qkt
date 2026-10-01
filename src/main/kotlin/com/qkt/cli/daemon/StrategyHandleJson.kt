@@ -50,6 +50,8 @@ internal fun signalToJson(sig: com.qkt.strategy.Signal) =
             is com.qkt.strategy.Signal.SubmitGroup -> {
                 put("kind", JsonPrimitive("structure"))
                 put("structureId", JsonPrimitive(sig.structureId))
+                put("alias", JsonPrimitive(sig.alias))
+                sig.closes?.let { put("closes", JsonPrimitive(it)) }
                 put(
                     "legs",
                     JsonPrimitive(

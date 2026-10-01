@@ -8,6 +8,7 @@ import com.qkt.dsl.compile.DslCompiledStrategy
 import com.qkt.dsl.compile.ScheduleRunner
 import com.qkt.events.CandleEvent
 import com.qkt.events.TickEvent
+import com.qkt.marketdata.MarketPriceProvider
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.observability.LatencyRegistry
 import com.qkt.persistence.StatePersistor
@@ -20,7 +21,7 @@ import com.qkt.strategy.Strategy
  * Binds each strategy into the pipeline: restores its trade history, builds its context and
  * [StrategySignalEmitter], and subscribes it to ticks and candles. A DSL strategy is also
  * capability-checked, registered on the candle hub, schedules, exit hooks and latches, audited,
- * and given a stack orchestrator. Strategies bind in list order, which fixes their dispatch order.
+ * and given a stack orchestrator and a [StructureBook] for its option structures. Strategies bind in list order, which fixes their dispatch order.
  */
 internal class StrategyBinder(
     private val bus: EventBus,
@@ -41,7 +42,7 @@ internal class StrategyBinder(
     private val gate: () -> Boolean,
     private val gateFor: (String) -> Boolean,
     private val latency: LatencyRegistry,
-    private val latencyEnabled: Boolean,
+    private val prices: MarketPriceProvider,
 ) {
     private val audit = DslEvaluationAudit(bus, candleHub)
     private val structures = StructureCoordinator(bus, clock, orderManager::cancel)
@@ -57,7 +58,9 @@ internal class StrategyBinder(
         strategy: Strategy,
     ) {
         tradeHistory.restore(strategyId)
-        val ctx = contexts.create(strategyId)
+        val base = contexts.create(strategyId)
+        val book = StructureBook(base.instruments, prices)
+        val ctx = base.copy(structures = book)
         val emit =
             StrategySignalEmitter(
                 strategyId,
@@ -70,7 +73,7 @@ internal class StrategyBinder(
                 gate,
                 gateFor,
                 latency,
-                latencyEnabled,
+                latency.enabled,
             )
         if (strategy is DslCompiledStrategy) {
             requireMultiPositionCapability(strategyId, strategy, broker)
@@ -95,7 +98,7 @@ internal class StrategyBinder(
             // flatten-on-gate-deactivate transition — hub binding carries only the inner rules.
             bus.subscribe<CandleEvent> { e -> strategy.onCandle(e.candle, ctx, emit) }
             stackBinder.bind(strategy, strategyId, emit)
-            structures.bind(strategyId, emit)
+            structures.bind(strategyId, book, emit)
         } else {
             bus.subscribe<TickEvent> { e -> strategy.onTick(e.tick, ctx, emit) }
             bus.subscribe<CandleEvent> { e -> strategy.onCandle(e.candle, ctx, emit) }

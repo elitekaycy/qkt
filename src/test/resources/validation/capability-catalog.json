@@ -90,7 +90,7 @@
     "option-structures": {
       "passed": {
         "oracle": ["src/test/kotlin/com/qkt/derivatives/options/chain/StructurePlannerTest.kt", "src/test/kotlin/com/qkt/risk/RiskEngineGroupTest.kt"],
-        "dsl": ["src/test/kotlin/com/qkt/dsl/parse/ParserStructureTest.kt", "src/test/kotlin/com/qkt/dsl/compile/StructureRootCheckTest.kt"],
+        "dsl": ["src/test/kotlin/com/qkt/dsl/parse/ParserStructureTest.kt", "src/test/kotlin/com/qkt/dsl/compile/StructureChecksTest.kt"],
         "ticks": ["src/test/kotlin/com/qkt/backtest/StructureBacktestTest.kt"]
       },
       "gaps": {

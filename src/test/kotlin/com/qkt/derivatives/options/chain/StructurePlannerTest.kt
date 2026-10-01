@@ -72,4 +72,17 @@ class StructurePlannerTest {
         val farStrike = BigDecimal(far.listing.strike)
         assertThat(ready.maxLossPerUnit).isEqualByComparingTo(near.mark.add(farStrike).subtract(far.mark))
     }
+
+    @Test
+    fun `two legs that select the same contract refuse the plan`() {
+        val same =
+            plan(
+                LegSpec(Side.SELL, OptionRight.PUT, 0.25, 7.0, 30.0),
+                LegSpec(Side.BUY, OptionRight.PUT, 0.25, null, null),
+            )
+
+        assertThat(
+            (same as StructurePlan.Refused).reason,
+        ).isEqualTo("legs 1 and 2 select the same contract BTC_USDC-9OCT26-81000-P")
+    }
 }
