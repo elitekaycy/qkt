@@ -14,7 +14,8 @@ import java.nio.file.Path
 /**
  * `qkt fetch DERIBIT:<ROOT> --catalog`: builds the option catalog of a root declared under `options:`
  * in the data root's `instruments.yaml` (its currency and settlement index come from there) and
- * writes it to `contracts/<VENUE>/<ROOT>.options.json`.
+ * writes it to `contracts/<VENUE>/<ROOT>.options.json`, merged with what was there so contracts that
+ * fall out of the venue's history window stay resolvable.
  */
 internal object OptionCatalogFetch {
     /** Whether [venue] lists options qkt can catalog. */
@@ -39,17 +40,45 @@ internal object OptionCatalogFetch {
                     System.err.println("qkt: $target is not declared under options: in $instruments")
                     return ExitCodes.USER_ERROR
                 }
-        val catalog =
+        val built =
             try {
                 build(root) { System.err.println("qkt: warning: $it") }
             } catch (e: IOException) {
-                System.err.println("qkt: could not build the option catalog for $target: ${e.message}")
-                return ExitCodes.USER_ERROR
+                return failed(target, e)
+            } catch (e: IllegalStateException) {
+                return failed(target, e)
+            } catch (e: IllegalArgumentException) {
+                return failed(target, e)
             }
         val store = OptionCatalogStore(dataRoot)
+        val catalog = merged(store.read(target), built)
         store.write(catalog)
         val counts = "${catalog.contracts.size} options and ${catalog.deliveryPrices.size} delivery prices"
         println("qkt fetch: $counts for $target -> ${store.path(target)}")
         return ExitCodes.SUCCESS
+    }
+
+    /**
+     * [built] plus every contract of [existing] the venue no longer lists (its history window rolls,
+     * and older backtests still resolve them); fresh records and delivery prices win on overlap.
+     */
+    private fun merged(
+        existing: OptionCatalog?,
+        built: OptionCatalog,
+    ): OptionCatalog {
+        if (existing == null) return built
+        val fresh = built.contracts.map { it.symbol }.toSet()
+        val contracts =
+            (built.contracts + existing.contracts.filter { it.symbol !in fresh })
+                .sortedWith(compareBy({ it.expiryMs }, { it.strike.toBigDecimal() }, { it.right }))
+        return OptionCatalog(built.root, contracts, existing.deliveryPrices + built.deliveryPrices)
+    }
+
+    private fun failed(
+        target: String,
+        cause: Exception,
+    ): Int {
+        System.err.println("qkt: could not build the option catalog for $target: ${cause.message}")
+        return ExitCodes.USER_ERROR
     }
 }
