@@ -20,6 +20,9 @@ internal class EntryGuardRules(
     // Logged under the session's category so existing log filters keep matching.
     private val log = LoggerFactory.getLogger(LiveSession::class.java)
 
+    /** Every enabled entry guard: the margin floor over [broker], then the measured-usage window. */
+    fun rules(broker: Broker): List<RiskRule> = marginRules(broker) + measuredRules()
+
     /** The margin-floor rule over [broker], or none when the floor is zero. */
     fun marginRules(broker: Broker): List<RiskRule> =
         if (marginFloorPct.signum() > 0) {

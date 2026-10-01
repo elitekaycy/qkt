@@ -1,6 +1,7 @@
 package com.qkt.risk.rules
 
 import com.qkt.accounting.AccountingEngine
+import com.qkt.accounting.margin.MarginModel
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.NoopInstrumentRegistry
 import com.qkt.marketdata.MarketPriceProvider
@@ -12,7 +13,9 @@ import java.math.BigDecimal
  * per-order quantity cap, per-order notional cap, and a price collar. These are
  * ALWAYS on — they ship with defaults so "no limit configured" can never mean "no
  * limit". They are the backstop for the entire sizing-bug class: a 100x contractSize
- * omission or percent-convention mix-up stops at this gate, not at the venue.
+ * omission or percent-convention mix-up stops at this gate, not at the venue. Given the account
+ * [equity][standard], the set also refuses orders the account could not margin ([MarginRequirement];
+ * it judges only instruments with margin terms, so it changes nothing for instruments without).
  */
 object PreTradeControls {
     /** Default per-order quantity cap (lots/units). Generous; operators tighten per account. */
@@ -31,10 +34,12 @@ object PreTradeControls {
         maxOrderNotional: BigDecimal = DEFAULT_MAX_ORDER_NOTIONAL,
         priceCollarFrac: BigDecimal = DEFAULT_PRICE_COLLAR_FRAC,
         accounting: AccountingEngine = AccountingEngine(),
+        equity: (() -> BigDecimal)? = null,
     ): List<RiskRule> =
-        listOf(
+        listOfNotNull(
             MaxOrderQty(maxOrderQty),
             MaxOrderNotional(maxOrderNotional, prices, instruments, accounting),
             PriceCollar(priceCollarFrac, prices),
+            equity?.let { MarginRequirement(MarginModel(instruments, accounting), prices, it) },
         )
 }

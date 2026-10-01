@@ -75,6 +75,7 @@ internal class ReplayRisk(
                 maxOrderNotional = maxOrderNotional,
                 priceCollarFrac = priceCollarFrac,
                 accounting = books.accounting,
+                equity = riskState.equityTracker::currentEquity,
             )
         val bookAnnualization =
             if (candleWindow != null) calendar.tradingPeriodsPerYear(candleWindow) else BigDecimal("252")

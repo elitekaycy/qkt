@@ -155,6 +155,9 @@ tick grid are snapped to it in the direction that never fills early. The root's 
 `EXPIRY`), and orders on it after expiry are rejected. In the last `expiryGuardHours` before expiry
 (a root key, default 24; 0 turns it off) the exchange takes only orders that reduce a position; a
 root whose roll would fall inside that window is refused when a continuous stream is built from it.
+Give a root `margin: { initial, maintenance, basis: notional | per_contract }` and the backtest
+refuses any order that opens or adds exposure when the account's equity could not carry the initial
+margin of every futures position after it (pending entries included); exits always pass.
 
 ### Continuous futures streams (`@front`, `@next`)
 

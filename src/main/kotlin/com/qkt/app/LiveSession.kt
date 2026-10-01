@@ -517,6 +517,7 @@ class LiveSession(
                 maxOrderNotional = maxOrderNotional,
                 priceCollarFrac = priceCollarFrac,
                 accounting = accounting,
+                equity = riskState.equityTracker::currentEquity,
             )
         val marketDataAlerts = MarketDataHealthAlerts(strategies, sessionNotifier, insights)
         // Suppresses NEW orders on frozen data and drops implausible ticks before they poison indicators.
@@ -527,12 +528,10 @@ class LiveSession(
                 venues = { brokers.built.ifEmpty { listOf(broker) } },
                 alerts = marketDataAlerts,
             )
-        val entryGuards = EntryGuardRules(clock, marginFloorPct, measuredUsageHours, measuredUsageMaxQty)
-        val marginRules = entryGuards.marginRules(broker)
-        val measuredRules = entryGuards.measuredRules()
+        val guardRules = EntryGuardRules(clock, marginFloorPct, measuredUsageHours, measuredUsageMaxQty).rules(broker)
         val riskEngine =
             RiskEngine(
-                rules + perStrategyRules.riskRules + preTradeRules + marginRules + measuredRules +
+                rules + perStrategyRules.riskRules + preTradeRules + guardRules +
                     listOfNotNull(
                         bookRiskController?.let {
                             com.qkt.risk.rules
