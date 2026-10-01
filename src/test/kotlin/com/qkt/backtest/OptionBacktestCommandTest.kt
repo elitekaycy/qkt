@@ -18,16 +18,17 @@ class OptionBacktestCommandTest {
     private fun backtest(
         dir: Path,
         from: String,
+        fixture: String = "btc-usdc-26sep26",
+        body: String = CALL_BODY,
     ): Pair<Int, String> {
-        val source = Paths.get(requireNotNull(javaClass.getResource("/options/btc-usdc-26sep26")).toURI())
+        val source = Paths.get(requireNotNull(javaClass.getResource("/options/$fixture")).toURI())
         val data = dir.resolve("data")
         @OptIn(kotlin.io.path.ExperimentalPathApi::class)
         source.copyToRecursively(data, followLinks = false, overwrite = false)
         val strategy = dir.resolve("s.qkt")
         Files.writeString(
             strategy,
-            "STRATEGY opt VERSION 1\nSYMBOLS\n    c = DERIBIT:BTC_USDC_26SEP26_84000_C EVERY 1h\n" +
-                "RULES\n    WHEN c.close > 0\n    THEN BUY c SIZING 0.1\n",
+            "STRATEGY opt VERSION 1\nSYMBOLS\n$body",
         )
         val out = ByteArrayOutputStream()
         val (o, e) = System.out to System.err
@@ -79,5 +80,27 @@ class OptionBacktestCommandTest {
 
         assertThat(code).isNotEqualTo(ExitCodes.SUCCESS)
         assertThat(output).contains("qkt fetch DERIBIT:BTC_USDC --chains --from 2026-09-24 --to 2026-09-24")
+    }
+
+    @Test
+    fun `a chain analytics stream reports its coverage and is not mistaken for a paper-traded symbol`(
+        @TempDir dir: Path,
+    ) {
+        val body =
+            "    iv = CHAIN:DERIBIT.BTC_USDC.atm_iv.1d EVERY 1h\n    p = DERIBIT:BTC_USDC_2OCT26_83000_P EVERY 1h\n" +
+                "RULES\n    WHEN iv.close > 41\n    THEN BUY p SIZING 0.1\n"
+
+        val (code, output) = backtest(dir, "2026-09-25", fixture = "btc-usdc-trade-25sep26", body = body)
+
+        assertThat(code).describedAs(output).isEqualTo(ExitCodes.SUCCESS)
+        assertThat(output).contains("chain coverage CHAIN:DERIBIT.BTC_USDC.atm_iv.1d 2/2 days (trade chain)")
+        assertThat(output).contains("stream CHAIN:DERIBIT.BTC_USDC.atm_iv.1d:1h: 24 candles")
+        assertThat(output).doesNotContain("paper broker fills at mid")
+    }
+
+    private companion object {
+        const val CALL_BODY =
+            "    c = DERIBIT:BTC_USDC_26SEP26_84000_C EVERY 1h\n" +
+                "RULES\n    WHEN c.close > 0\n    THEN BUY c SIZING 0.1\n"
     }
 }

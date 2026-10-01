@@ -2,12 +2,14 @@ package com.qkt.backtest
 
 import com.qkt.common.FixedClock
 import com.qkt.derivatives.futures.ContinuousChains
+import com.qkt.derivatives.options.chain.ChainAnalyticsSymbol
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.NoopInstrumentRegistry
 import com.qkt.instrument.optionSymbols
 import com.qkt.marketdata.hub.HubMarketSource
 import com.qkt.marketdata.hub.hubRoot
 import com.qkt.marketdata.hub.validateHubStreams
+import com.qkt.marketdata.source.ChainAnalyticsMarketSource
 import com.qkt.marketdata.source.CompositeMarketSource
 import com.qkt.marketdata.source.ContinuousMarketSource
 import com.qkt.marketdata.source.LocalMarketSource
@@ -71,6 +73,12 @@ internal fun storeMarketSource(
                     requireNotNull(instruments.options()?.dataRoot) { "option symbols have no chain data root" }
                 add(SymbolPattern.exactSet(options) to OptionChainMarketSource(chains, instruments))
             }
+            val analytics = symbols.filter { it.startsWith(ChainAnalyticsSymbol.PREFIX) }
+            if (analytics.isNotEmpty()) {
+                val problems = analytics.mapNotNull { chainStreamProblem(it, instruments) }
+                require(problems.isEmpty()) { "chain analytics problems:\n  " + problems.joinToString("\n  ") }
+                add(SymbolPattern.prefix(ChainAnalyticsSymbol.PREFIX) to ChainAnalyticsMarketSource(instruments))
+            }
             if (symbols.any { it.startsWith("MACRO:") }) {
                 add(SymbolPattern.prefix("MACRO:") to MacroMarketSource(MacroSeriesStore(store.root)))
             }
@@ -89,5 +97,22 @@ internal fun storeMarketSource(
         CompositeMarketSource(routes = observationRoutes, fallback = localSource)
     } else {
         localSource
+    }
+}
+
+/** Why chain analytics stream [symbol] cannot run, or null: a malformed symbol or a root not declared to trade a chain. */
+private fun chainStreamProblem(
+    symbol: String,
+    instruments: InstrumentRegistry,
+): String? {
+    val stream = ChainAnalyticsSymbol.parse(symbol).getOrElse { return it.message }
+    val root =
+        instruments.options()?.root(stream.root) ?: return "${stream.root} of $symbol is not declared under options:"
+    return if (root.chains ==
+        null
+    ) {
+        "${stream.root} of $symbol declares no chain series (chains: trade | book)"
+    } else {
+        null
     }
 }

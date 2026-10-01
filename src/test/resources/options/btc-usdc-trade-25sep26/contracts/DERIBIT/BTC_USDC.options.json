@@ -1,0 +1,1432 @@
+{
+ "root": "DERIBIT:BTC_USDC",
+ "contracts": [
+  {
+   "symbol": "BTC_USDC-25SEP26-56000-P",
+   "strike": "56000",
+   "right": "put",
+   "expiryMs": 1790323200000
+  },
+  {
+   "symbol": "BTC_USDC-25SEP26-70000-C",
+   "strike": "70000",
+   "right": "call",
+   "expiryMs": 1790323200000
+  },
+  {
+   "symbol": "BTC_USDC-25SEP26-70000-P",
+   "strike": "70000",
+   "right": "put",
+   "expiryMs": 1790323200000
+  },
+  {
+   "symbol": "BTC_USDC-25SEP26-72000-P",
+   "strike": "72000",
+   "right": "put",
+   "expiryMs": 1790323200000
+  },
+  {
+   "symbol": "BTC_USDC-25SEP26-74000-P",
+   "strike": "74000",
+   "right": "put",
+   "expiryMs": 1790323200000
+  },
+  {
+   "symbol": "BTC_USDC-25SEP26-75000-P",
+   "strike": "75000",
+   "right": "put",
+   "expiryMs": 1790323200000
+  },
+  {
+   "symbol": "BTC_USDC-25SEP26-76000-P",
+   "strike": "76000",
+   "right": "put",
+   "expiryMs": 1790323200000
+  },
+  {
+   "symbol": "BTC_USDC-25SEP26-77000-P",
+   "strike": "77000",
+   "right": "put",
+   "expiryMs": 1790323200000
+  },
+  {
+   "symbol": "BTC_USDC-25SEP26-78000-P",
+   "strike": "78000",
+   "right": "put",
+   "expiryMs": 1790323200000
+  },
+  {
+   "symbol": "BTC_USDC-25SEP26-79000-P",
+   "strike": "79000",
+   "right": "put",
+   "expiryMs": 1790323200000
+  },
+  {
+   "symbol": "BTC_USDC-25SEP26-80000-C",
+   "strike": "80000",
+   "right": "call",
+   "expiryMs": 1790323200000
+  },
+  {
+   "symbol": "BTC_USDC-25SEP26-80000-P",
+   "strike": "80000",
+   "right": "put",
+   "expiryMs": 1790323200000
+  },
+  {
+   "symbol": "BTC_USDC-25SEP26-81000-P",
+   "strike": "81000",
+   "right": "put",
+   "expiryMs": 1790323200000
+  },
+  {
+   "symbol": "BTC_USDC-25SEP26-82000-C",
+   "strike": "82000",
+   "right": "call",
+   "expiryMs": 1790323200000
+  },
+  {
+   "symbol": "BTC_USDC-25SEP26-82000-P",
+   "strike": "82000",
+   "right": "put",
+   "expiryMs": 1790323200000
+  },
+  {
+   "symbol": "BTC_USDC-25SEP26-83000-P",
+   "strike": "83000",
+   "right": "put",
+   "expiryMs": 1790323200000
+  },
+  {
+   "symbol": "BTC_USDC-25SEP26-83500-C",
+   "strike": "83500",
+   "right": "call",
+   "expiryMs": 1790323200000
+  },
+  {
+   "symbol": "BTC_USDC-25SEP26-83500-P",
+   "strike": "83500",
+   "right": "put",
+   "expiryMs": 1790323200000
+  },
+  {
+   "symbol": "BTC_USDC-25SEP26-84000-C",
+   "strike": "84000",
+   "right": "call",
+   "expiryMs": 1790323200000
+  },
+  {
+   "symbol": "BTC_USDC-25SEP26-84000-P",
+   "strike": "84000",
+   "right": "put",
+   "expiryMs": 1790323200000
+  },
+  {
+   "symbol": "BTC_USDC-25SEP26-84500-C",
+   "strike": "84500",
+   "right": "call",
+   "expiryMs": 1790323200000
+  },
+  {
+   "symbol": "BTC_USDC-25SEP26-84500-P",
+   "strike": "84500",
+   "right": "put",
+   "expiryMs": 1790323200000
+  },
+  {
+   "symbol": "BTC_USDC-25SEP26-85000-C",
+   "strike": "85000",
+   "right": "call",
+   "expiryMs": 1790323200000
+  },
+  {
+   "symbol": "BTC_USDC-25SEP26-85000-P",
+   "strike": "85000",
+   "right": "put",
+   "expiryMs": 1790323200000
+  },
+  {
+   "symbol": "BTC_USDC-25SEP26-85500-C",
+   "strike": "85500",
+   "right": "call",
+   "expiryMs": 1790323200000
+  },
+  {
+   "symbol": "BTC_USDC-25SEP26-86000-C",
+   "strike": "86000",
+   "right": "call",
+   "expiryMs": 1790323200000
+  },
+  {
+   "symbol": "BTC_USDC-25SEP26-87000-C",
+   "strike": "87000",
+   "right": "call",
+   "expiryMs": 1790323200000
+  },
+  {
+   "symbol": "BTC_USDC-25SEP26-90000-C",
+   "strike": "90000",
+   "right": "call",
+   "expiryMs": 1790323200000
+  },
+  {
+   "symbol": "BTC_USDC-25SEP26-92000-C",
+   "strike": "92000",
+   "right": "call",
+   "expiryMs": 1790323200000
+  },
+  {
+   "symbol": "BTC_USDC-25SEP26-94000-C",
+   "strike": "94000",
+   "right": "call",
+   "expiryMs": 1790323200000
+  },
+  {
+   "symbol": "BTC_USDC-26SEP26-77000-P",
+   "strike": "77000",
+   "right": "put",
+   "expiryMs": 1790409600000
+  },
+  {
+   "symbol": "BTC_USDC-26SEP26-78000-P",
+   "strike": "78000",
+   "right": "put",
+   "expiryMs": 1790409600000
+  },
+  {
+   "symbol": "BTC_USDC-26SEP26-79000-P",
+   "strike": "79000",
+   "right": "put",
+   "expiryMs": 1790409600000
+  },
+  {
+   "symbol": "BTC_USDC-26SEP26-80000-P",
+   "strike": "80000",
+   "right": "put",
+   "expiryMs": 1790409600000
+  },
+  {
+   "symbol": "BTC_USDC-26SEP26-81000-P",
+   "strike": "81000",
+   "right": "put",
+   "expiryMs": 1790409600000
+  },
+  {
+   "symbol": "BTC_USDC-26SEP26-82000-P",
+   "strike": "82000",
+   "right": "put",
+   "expiryMs": 1790409600000
+  },
+  {
+   "symbol": "BTC_USDC-26SEP26-82500-P",
+   "strike": "82500",
+   "right": "put",
+   "expiryMs": 1790409600000
+  },
+  {
+   "symbol": "BTC_USDC-26SEP26-83000-P",
+   "strike": "83000",
+   "right": "put",
+   "expiryMs": 1790409600000
+  },
+  {
+   "symbol": "BTC_USDC-26SEP26-83500-P",
+   "strike": "83500",
+   "right": "put",
+   "expiryMs": 1790409600000
+  },
+  {
+   "symbol": "BTC_USDC-26SEP26-84000-C",
+   "strike": "84000",
+   "right": "call",
+   "expiryMs": 1790409600000
+  },
+  {
+   "symbol": "BTC_USDC-26SEP26-84000-P",
+   "strike": "84000",
+   "right": "put",
+   "expiryMs": 1790409600000
+  },
+  {
+   "symbol": "BTC_USDC-26SEP26-84500-C",
+   "strike": "84500",
+   "right": "call",
+   "expiryMs": 1790409600000
+  },
+  {
+   "symbol": "BTC_USDC-26SEP26-84500-P",
+   "strike": "84500",
+   "right": "put",
+   "expiryMs": 1790409600000
+  },
+  {
+   "symbol": "BTC_USDC-26SEP26-85000-C",
+   "strike": "85000",
+   "right": "call",
+   "expiryMs": 1790409600000
+  },
+  {
+   "symbol": "BTC_USDC-26SEP26-85500-C",
+   "strike": "85500",
+   "right": "call",
+   "expiryMs": 1790409600000
+  },
+  {
+   "symbol": "BTC_USDC-26SEP26-86000-C",
+   "strike": "86000",
+   "right": "call",
+   "expiryMs": 1790409600000
+  },
+  {
+   "symbol": "BTC_USDC-26SEP26-86500-C",
+   "strike": "86500",
+   "right": "call",
+   "expiryMs": 1790409600000
+  },
+  {
+   "symbol": "BTC_USDC-26SEP26-87000-C",
+   "strike": "87000",
+   "right": "call",
+   "expiryMs": 1790409600000
+  },
+  {
+   "symbol": "BTC_USDC-26SEP26-87500-C",
+   "strike": "87500",
+   "right": "call",
+   "expiryMs": 1790409600000
+  },
+  {
+   "symbol": "BTC_USDC-26SEP26-88000-C",
+   "strike": "88000",
+   "right": "call",
+   "expiryMs": 1790409600000
+  },
+  {
+   "symbol": "BTC_USDC-26SEP26-88500-C",
+   "strike": "88500",
+   "right": "call",
+   "expiryMs": 1790409600000
+  },
+  {
+   "symbol": "BTC_USDC-26SEP26-90000-C",
+   "strike": "90000",
+   "right": "call",
+   "expiryMs": 1790409600000
+  },
+  {
+   "symbol": "BTC_USDC-26SEP26-91000-C",
+   "strike": "91000",
+   "right": "call",
+   "expiryMs": 1790409600000
+  },
+  {
+   "symbol": "BTC_USDC-27SEP26-77000-P",
+   "strike": "77000",
+   "right": "put",
+   "expiryMs": 1790496000000
+  },
+  {
+   "symbol": "BTC_USDC-27SEP26-78000-P",
+   "strike": "78000",
+   "right": "put",
+   "expiryMs": 1790496000000
+  },
+  {
+   "symbol": "BTC_USDC-27SEP26-79000-P",
+   "strike": "79000",
+   "right": "put",
+   "expiryMs": 1790496000000
+  },
+  {
+   "symbol": "BTC_USDC-27SEP26-80000-P",
+   "strike": "80000",
+   "right": "put",
+   "expiryMs": 1790496000000
+  },
+  {
+   "symbol": "BTC_USDC-27SEP26-81000-P",
+   "strike": "81000",
+   "right": "put",
+   "expiryMs": 1790496000000
+  },
+  {
+   "symbol": "BTC_USDC-27SEP26-82500-P",
+   "strike": "82500",
+   "right": "put",
+   "expiryMs": 1790496000000
+  },
+  {
+   "symbol": "BTC_USDC-27SEP26-83000-C",
+   "strike": "83000",
+   "right": "call",
+   "expiryMs": 1790496000000
+  },
+  {
+   "symbol": "BTC_USDC-27SEP26-83000-P",
+   "strike": "83000",
+   "right": "put",
+   "expiryMs": 1790496000000
+  },
+  {
+   "symbol": "BTC_USDC-27SEP26-83500-C",
+   "strike": "83500",
+   "right": "call",
+   "expiryMs": 1790496000000
+  },
+  {
+   "symbol": "BTC_USDC-27SEP26-83500-P",
+   "strike": "83500",
+   "right": "put",
+   "expiryMs": 1790496000000
+  },
+  {
+   "symbol": "BTC_USDC-27SEP26-84000-C",
+   "strike": "84000",
+   "right": "call",
+   "expiryMs": 1790496000000
+  },
+  {
+   "symbol": "BTC_USDC-27SEP26-84000-P",
+   "strike": "84000",
+   "right": "put",
+   "expiryMs": 1790496000000
+  },
+  {
+   "symbol": "BTC_USDC-27SEP26-84500-C",
+   "strike": "84500",
+   "right": "call",
+   "expiryMs": 1790496000000
+  },
+  {
+   "symbol": "BTC_USDC-27SEP26-85000-C",
+   "strike": "85000",
+   "right": "call",
+   "expiryMs": 1790496000000
+  },
+  {
+   "symbol": "BTC_USDC-27SEP26-85500-C",
+   "strike": "85500",
+   "right": "call",
+   "expiryMs": 1790496000000
+  },
+  {
+   "symbol": "BTC_USDC-27SEP26-86000-C",
+   "strike": "86000",
+   "right": "call",
+   "expiryMs": 1790496000000
+  },
+  {
+   "symbol": "BTC_USDC-27SEP26-86500-C",
+   "strike": "86500",
+   "right": "call",
+   "expiryMs": 1790496000000
+  },
+  {
+   "symbol": "BTC_USDC-27SEP26-87000-C",
+   "strike": "87000",
+   "right": "call",
+   "expiryMs": 1790496000000
+  },
+  {
+   "symbol": "BTC_USDC-27SEP26-87500-C",
+   "strike": "87500",
+   "right": "call",
+   "expiryMs": 1790496000000
+  },
+  {
+   "symbol": "BTC_USDC-27SEP26-88000-C",
+   "strike": "88000",
+   "right": "call",
+   "expiryMs": 1790496000000
+  },
+  {
+   "symbol": "BTC_USDC-27SEP26-89000-C",
+   "strike": "89000",
+   "right": "call",
+   "expiryMs": 1790496000000
+  },
+  {
+   "symbol": "BTC_USDC-27SEP26-89500-C",
+   "strike": "89500",
+   "right": "call",
+   "expiryMs": 1790496000000
+  },
+  {
+   "symbol": "BTC_USDC-27SEP26-90000-C",
+   "strike": "90000",
+   "right": "call",
+   "expiryMs": 1790496000000
+  },
+  {
+   "symbol": "BTC_USDC-27SEP26-91000-C",
+   "strike": "91000",
+   "right": "call",
+   "expiryMs": 1790496000000
+  },
+  {
+   "symbol": "BTC_USDC-28SEP26-76000-P",
+   "strike": "76000",
+   "right": "put",
+   "expiryMs": 1790582400000
+  },
+  {
+   "symbol": "BTC_USDC-28SEP26-78000-P",
+   "strike": "78000",
+   "right": "put",
+   "expiryMs": 1790582400000
+  },
+  {
+   "symbol": "BTC_USDC-28SEP26-81000-P",
+   "strike": "81000",
+   "right": "put",
+   "expiryMs": 1790582400000
+  },
+  {
+   "symbol": "BTC_USDC-28SEP26-82000-P",
+   "strike": "82000",
+   "right": "put",
+   "expiryMs": 1790582400000
+  },
+  {
+   "symbol": "BTC_USDC-28SEP26-82500-P",
+   "strike": "82500",
+   "right": "put",
+   "expiryMs": 1790582400000
+  },
+  {
+   "symbol": "BTC_USDC-28SEP26-83000-P",
+   "strike": "83000",
+   "right": "put",
+   "expiryMs": 1790582400000
+  },
+  {
+   "symbol": "BTC_USDC-28SEP26-83500-P",
+   "strike": "83500",
+   "right": "put",
+   "expiryMs": 1790582400000
+  },
+  {
+   "symbol": "BTC_USDC-28SEP26-84000-C",
+   "strike": "84000",
+   "right": "call",
+   "expiryMs": 1790582400000
+  },
+  {
+   "symbol": "BTC_USDC-28SEP26-84000-P",
+   "strike": "84000",
+   "right": "put",
+   "expiryMs": 1790582400000
+  },
+  {
+   "symbol": "BTC_USDC-28SEP26-84500-C",
+   "strike": "84500",
+   "right": "call",
+   "expiryMs": 1790582400000
+  },
+  {
+   "symbol": "BTC_USDC-28SEP26-85000-C",
+   "strike": "85000",
+   "right": "call",
+   "expiryMs": 1790582400000
+  },
+  {
+   "symbol": "BTC_USDC-28SEP26-85500-C",
+   "strike": "85500",
+   "right": "call",
+   "expiryMs": 1790582400000
+  },
+  {
+   "symbol": "BTC_USDC-28SEP26-86000-C",
+   "strike": "86000",
+   "right": "call",
+   "expiryMs": 1790582400000
+  },
+  {
+   "symbol": "BTC_USDC-28SEP26-87000-C",
+   "strike": "87000",
+   "right": "call",
+   "expiryMs": 1790582400000
+  },
+  {
+   "symbol": "BTC_USDC-28SEP26-90000-C",
+   "strike": "90000",
+   "right": "call",
+   "expiryMs": 1790582400000
+  },
+  {
+   "symbol": "BTC_USDC-29SEP26-74000-P",
+   "strike": "74000",
+   "right": "put",
+   "expiryMs": 1790668800000
+  },
+  {
+   "symbol": "BTC_USDC-29SEP26-75000-P",
+   "strike": "75000",
+   "right": "put",
+   "expiryMs": 1790668800000
+  },
+  {
+   "symbol": "BTC_USDC-29SEP26-76000-P",
+   "strike": "76000",
+   "right": "put",
+   "expiryMs": 1790668800000
+  },
+  {
+   "symbol": "BTC_USDC-29SEP26-77000-P",
+   "strike": "77000",
+   "right": "put",
+   "expiryMs": 1790668800000
+  },
+  {
+   "symbol": "BTC_USDC-29SEP26-80000-P",
+   "strike": "80000",
+   "right": "put",
+   "expiryMs": 1790668800000
+  },
+  {
+   "symbol": "BTC_USDC-29SEP26-81000-P",
+   "strike": "81000",
+   "right": "put",
+   "expiryMs": 1790668800000
+  },
+  {
+   "symbol": "BTC_USDC-29SEP26-81500-P",
+   "strike": "81500",
+   "right": "put",
+   "expiryMs": 1790668800000
+  },
+  {
+   "symbol": "BTC_USDC-29SEP26-83000-P",
+   "strike": "83000",
+   "right": "put",
+   "expiryMs": 1790668800000
+  },
+  {
+   "symbol": "BTC_USDC-29SEP26-83500-C",
+   "strike": "83500",
+   "right": "call",
+   "expiryMs": 1790668800000
+  },
+  {
+   "symbol": "BTC_USDC-29SEP26-87500-C",
+   "strike": "87500",
+   "right": "call",
+   "expiryMs": 1790668800000
+  },
+  {
+   "symbol": "BTC_USDC-29SEP26-88000-C",
+   "strike": "88000",
+   "right": "call",
+   "expiryMs": 1790668800000
+  },
+  {
+   "symbol": "BTC_USDC-29SEP26-94000-C",
+   "strike": "94000",
+   "right": "call",
+   "expiryMs": 1790668800000
+  },
+  {
+   "symbol": "BTC_USDC-30SEP26-76000-P",
+   "strike": "76000",
+   "right": "put",
+   "expiryMs": 1790755200000
+  },
+  {
+   "symbol": "BTC_USDC-30SEP26-77000-P",
+   "strike": "77000",
+   "right": "put",
+   "expiryMs": 1790755200000
+  },
+  {
+   "symbol": "BTC_USDC-30SEP26-79000-P",
+   "strike": "79000",
+   "right": "put",
+   "expiryMs": 1790755200000
+  },
+  {
+   "symbol": "BTC_USDC-30SEP26-80000-P",
+   "strike": "80000",
+   "right": "put",
+   "expiryMs": 1790755200000
+  },
+  {
+   "symbol": "BTC_USDC-30SEP26-81000-P",
+   "strike": "81000",
+   "right": "put",
+   "expiryMs": 1790755200000
+  },
+  {
+   "symbol": "BTC_USDC-30SEP26-85000-C",
+   "strike": "85000",
+   "right": "call",
+   "expiryMs": 1790755200000
+  },
+  {
+   "symbol": "BTC_USDC-30SEP26-88000-C",
+   "strike": "88000",
+   "right": "call",
+   "expiryMs": 1790755200000
+  },
+  {
+   "symbol": "BTC_USDC-30SEP26-90000-C",
+   "strike": "90000",
+   "right": "call",
+   "expiryMs": 1790755200000
+  },
+  {
+   "symbol": "BTC_USDC-2OCT26-65000-P",
+   "strike": "65000",
+   "right": "put",
+   "expiryMs": 1790928000000
+  },
+  {
+   "symbol": "BTC_USDC-2OCT26-72000-P",
+   "strike": "72000",
+   "right": "put",
+   "expiryMs": 1790928000000
+  },
+  {
+   "symbol": "BTC_USDC-2OCT26-75000-P",
+   "strike": "75000",
+   "right": "put",
+   "expiryMs": 1790928000000
+  },
+  {
+   "symbol": "BTC_USDC-2OCT26-76000-P",
+   "strike": "76000",
+   "right": "put",
+   "expiryMs": 1790928000000
+  },
+  {
+   "symbol": "BTC_USDC-2OCT26-77000-P",
+   "strike": "77000",
+   "right": "put",
+   "expiryMs": 1790928000000
+  },
+  {
+   "symbol": "BTC_USDC-2OCT26-78000-P",
+   "strike": "78000",
+   "right": "put",
+   "expiryMs": 1790928000000
+  },
+  {
+   "symbol": "BTC_USDC-2OCT26-79000-C",
+   "strike": "79000",
+   "right": "call",
+   "expiryMs": 1790928000000
+  },
+  {
+   "symbol": "BTC_USDC-2OCT26-79000-P",
+   "strike": "79000",
+   "right": "put",
+   "expiryMs": 1790928000000
+  },
+  {
+   "symbol": "BTC_USDC-2OCT26-80000-P",
+   "strike": "80000",
+   "right": "put",
+   "expiryMs": 1790928000000
+  },
+  {
+   "symbol": "BTC_USDC-2OCT26-81000-P",
+   "strike": "81000",
+   "right": "put",
+   "expiryMs": 1790928000000
+  },
+  {
+   "symbol": "BTC_USDC-2OCT26-82000-P",
+   "strike": "82000",
+   "right": "put",
+   "expiryMs": 1790928000000
+  },
+  {
+   "symbol": "BTC_USDC-2OCT26-83000-C",
+   "strike": "83000",
+   "right": "call",
+   "expiryMs": 1790928000000
+  },
+  {
+   "symbol": "BTC_USDC-2OCT26-83000-P",
+   "strike": "83000",
+   "right": "put",
+   "expiryMs": 1790928000000
+  },
+  {
+   "symbol": "BTC_USDC-2OCT26-84000-C",
+   "strike": "84000",
+   "right": "call",
+   "expiryMs": 1790928000000
+  },
+  {
+   "symbol": "BTC_USDC-2OCT26-84000-P",
+   "strike": "84000",
+   "right": "put",
+   "expiryMs": 1790928000000
+  },
+  {
+   "symbol": "BTC_USDC-2OCT26-85000-C",
+   "strike": "85000",
+   "right": "call",
+   "expiryMs": 1790928000000
+  },
+  {
+   "symbol": "BTC_USDC-2OCT26-85000-P",
+   "strike": "85000",
+   "right": "put",
+   "expiryMs": 1790928000000
+  },
+  {
+   "symbol": "BTC_USDC-2OCT26-86000-C",
+   "strike": "86000",
+   "right": "call",
+   "expiryMs": 1790928000000
+  },
+  {
+   "symbol": "BTC_USDC-2OCT26-87000-C",
+   "strike": "87000",
+   "right": "call",
+   "expiryMs": 1790928000000
+  },
+  {
+   "symbol": "BTC_USDC-2OCT26-88000-C",
+   "strike": "88000",
+   "right": "call",
+   "expiryMs": 1790928000000
+  },
+  {
+   "symbol": "BTC_USDC-2OCT26-89000-C",
+   "strike": "89000",
+   "right": "call",
+   "expiryMs": 1790928000000
+  },
+  {
+   "symbol": "BTC_USDC-2OCT26-90000-C",
+   "strike": "90000",
+   "right": "call",
+   "expiryMs": 1790928000000
+  },
+  {
+   "symbol": "BTC_USDC-2OCT26-95000-C",
+   "strike": "95000",
+   "right": "call",
+   "expiryMs": 1790928000000
+  },
+  {
+   "symbol": "BTC_USDC-9OCT26-65000-P",
+   "strike": "65000",
+   "right": "put",
+   "expiryMs": 1791532800000
+  },
+  {
+   "symbol": "BTC_USDC-9OCT26-68000-P",
+   "strike": "68000",
+   "right": "put",
+   "expiryMs": 1791532800000
+  },
+  {
+   "symbol": "BTC_USDC-9OCT26-70000-P",
+   "strike": "70000",
+   "right": "put",
+   "expiryMs": 1791532800000
+  },
+  {
+   "symbol": "BTC_USDC-9OCT26-72000-P",
+   "strike": "72000",
+   "right": "put",
+   "expiryMs": 1791532800000
+  },
+  {
+   "symbol": "BTC_USDC-9OCT26-74000-P",
+   "strike": "74000",
+   "right": "put",
+   "expiryMs": 1791532800000
+  },
+  {
+   "symbol": "BTC_USDC-9OCT26-77000-P",
+   "strike": "77000",
+   "right": "put",
+   "expiryMs": 1791532800000
+  },
+  {
+   "symbol": "BTC_USDC-9OCT26-78000-P",
+   "strike": "78000",
+   "right": "put",
+   "expiryMs": 1791532800000
+  },
+  {
+   "symbol": "BTC_USDC-9OCT26-79000-P",
+   "strike": "79000",
+   "right": "put",
+   "expiryMs": 1791532800000
+  },
+  {
+   "symbol": "BTC_USDC-9OCT26-80000-P",
+   "strike": "80000",
+   "right": "put",
+   "expiryMs": 1791532800000
+  },
+  {
+   "symbol": "BTC_USDC-9OCT26-81000-P",
+   "strike": "81000",
+   "right": "put",
+   "expiryMs": 1791532800000
+  },
+  {
+   "symbol": "BTC_USDC-9OCT26-82000-P",
+   "strike": "82000",
+   "right": "put",
+   "expiryMs": 1791532800000
+  },
+  {
+   "symbol": "BTC_USDC-9OCT26-84000-C",
+   "strike": "84000",
+   "right": "call",
+   "expiryMs": 1791532800000
+  },
+  {
+   "symbol": "BTC_USDC-9OCT26-84000-P",
+   "strike": "84000",
+   "right": "put",
+   "expiryMs": 1791532800000
+  },
+  {
+   "symbol": "BTC_USDC-9OCT26-85000-C",
+   "strike": "85000",
+   "right": "call",
+   "expiryMs": 1791532800000
+  },
+  {
+   "symbol": "BTC_USDC-9OCT26-85000-P",
+   "strike": "85000",
+   "right": "put",
+   "expiryMs": 1791532800000
+  },
+  {
+   "symbol": "BTC_USDC-9OCT26-86000-C",
+   "strike": "86000",
+   "right": "call",
+   "expiryMs": 1791532800000
+  },
+  {
+   "symbol": "BTC_USDC-9OCT26-87000-C",
+   "strike": "87000",
+   "right": "call",
+   "expiryMs": 1791532800000
+  },
+  {
+   "symbol": "BTC_USDC-9OCT26-88000-C",
+   "strike": "88000",
+   "right": "call",
+   "expiryMs": 1791532800000
+  },
+  {
+   "symbol": "BTC_USDC-9OCT26-89000-C",
+   "strike": "89000",
+   "right": "call",
+   "expiryMs": 1791532800000
+  },
+  {
+   "symbol": "BTC_USDC-9OCT26-90000-C",
+   "strike": "90000",
+   "right": "call",
+   "expiryMs": 1791532800000
+  },
+  {
+   "symbol": "BTC_USDC-9OCT26-94000-C",
+   "strike": "94000",
+   "right": "call",
+   "expiryMs": 1791532800000
+  },
+  {
+   "symbol": "BTC_USDC-30OCT26-59000-P",
+   "strike": "59000",
+   "right": "put",
+   "expiryMs": 1793347200000
+  },
+  {
+   "symbol": "BTC_USDC-30OCT26-60000-P",
+   "strike": "60000",
+   "right": "put",
+   "expiryMs": 1793347200000
+  },
+  {
+   "symbol": "BTC_USDC-30OCT26-61000-P",
+   "strike": "61000",
+   "right": "put",
+   "expiryMs": 1793347200000
+  },
+  {
+   "symbol": "BTC_USDC-30OCT26-67000-P",
+   "strike": "67000",
+   "right": "put",
+   "expiryMs": 1793347200000
+  },
+  {
+   "symbol": "BTC_USDC-30OCT26-68000-P",
+   "strike": "68000",
+   "right": "put",
+   "expiryMs": 1793347200000
+  },
+  {
+   "symbol": "BTC_USDC-30OCT26-70000-P",
+   "strike": "70000",
+   "right": "put",
+   "expiryMs": 1793347200000
+  },
+  {
+   "symbol": "BTC_USDC-30OCT26-72000-P",
+   "strike": "72000",
+   "right": "put",
+   "expiryMs": 1793347200000
+  },
+  {
+   "symbol": "BTC_USDC-30OCT26-73000-P",
+   "strike": "73000",
+   "right": "put",
+   "expiryMs": 1793347200000
+  },
+  {
+   "symbol": "BTC_USDC-30OCT26-74000-P",
+   "strike": "74000",
+   "right": "put",
+   "expiryMs": 1793347200000
+  },
+  {
+   "symbol": "BTC_USDC-30OCT26-75000-P",
+   "strike": "75000",
+   "right": "put",
+   "expiryMs": 1793347200000
+  },
+  {
+   "symbol": "BTC_USDC-30OCT26-76000-P",
+   "strike": "76000",
+   "right": "put",
+   "expiryMs": 1793347200000
+  },
+  {
+   "symbol": "BTC_USDC-30OCT26-77000-P",
+   "strike": "77000",
+   "right": "put",
+   "expiryMs": 1793347200000
+  },
+  {
+   "symbol": "BTC_USDC-30OCT26-78000-P",
+   "strike": "78000",
+   "right": "put",
+   "expiryMs": 1793347200000
+  },
+  {
+   "symbol": "BTC_USDC-30OCT26-79000-P",
+   "strike": "79000",
+   "right": "put",
+   "expiryMs": 1793347200000
+  },
+  {
+   "symbol": "BTC_USDC-30OCT26-80000-P",
+   "strike": "80000",
+   "right": "put",
+   "expiryMs": 1793347200000
+  },
+  {
+   "symbol": "BTC_USDC-30OCT26-81000-C",
+   "strike": "81000",
+   "right": "call",
+   "expiryMs": 1793347200000
+  },
+  {
+   "symbol": "BTC_USDC-30OCT26-81000-P",
+   "strike": "81000",
+   "right": "put",
+   "expiryMs": 1793347200000
+  },
+  {
+   "symbol": "BTC_USDC-30OCT26-82000-C",
+   "strike": "82000",
+   "right": "call",
+   "expiryMs": 1793347200000
+  },
+  {
+   "symbol": "BTC_USDC-30OCT26-82000-P",
+   "strike": "82000",
+   "right": "put",
+   "expiryMs": 1793347200000
+  },
+  {
+   "symbol": "BTC_USDC-30OCT26-83000-C",
+   "strike": "83000",
+   "right": "call",
+   "expiryMs": 1793347200000
+  },
+  {
+   "symbol": "BTC_USDC-30OCT26-83000-P",
+   "strike": "83000",
+   "right": "put",
+   "expiryMs": 1793347200000
+  },
+  {
+   "symbol": "BTC_USDC-30OCT26-84000-C",
+   "strike": "84000",
+   "right": "call",
+   "expiryMs": 1793347200000
+  },
+  {
+   "symbol": "BTC_USDC-30OCT26-85000-C",
+   "strike": "85000",
+   "right": "call",
+   "expiryMs": 1793347200000
+  },
+  {
+   "symbol": "BTC_USDC-30OCT26-85000-P",
+   "strike": "85000",
+   "right": "put",
+   "expiryMs": 1793347200000
+  },
+  {
+   "symbol": "BTC_USDC-30OCT26-86000-C",
+   "strike": "86000",
+   "right": "call",
+   "expiryMs": 1793347200000
+  },
+  {
+   "symbol": "BTC_USDC-30OCT26-86000-P",
+   "strike": "86000",
+   "right": "put",
+   "expiryMs": 1793347200000
+  },
+  {
+   "symbol": "BTC_USDC-30OCT26-88000-C",
+   "strike": "88000",
+   "right": "call",
+   "expiryMs": 1793347200000
+  },
+  {
+   "symbol": "BTC_USDC-30OCT26-88000-P",
+   "strike": "88000",
+   "right": "put",
+   "expiryMs": 1793347200000
+  },
+  {
+   "symbol": "BTC_USDC-30OCT26-90000-C",
+   "strike": "90000",
+   "right": "call",
+   "expiryMs": 1793347200000
+  },
+  {
+   "symbol": "BTC_USDC-30OCT26-90000-P",
+   "strike": "90000",
+   "right": "put",
+   "expiryMs": 1793347200000
+  },
+  {
+   "symbol": "BTC_USDC-30OCT26-93000-C",
+   "strike": "93000",
+   "right": "call",
+   "expiryMs": 1793347200000
+  },
+  {
+   "symbol": "BTC_USDC-30OCT26-95000-C",
+   "strike": "95000",
+   "right": "call",
+   "expiryMs": 1793347200000
+  },
+  {
+   "symbol": "BTC_USDC-30OCT26-98000-C",
+   "strike": "98000",
+   "right": "call",
+   "expiryMs": 1793347200000
+  },
+  {
+   "symbol": "BTC_USDC-30OCT26-100000-C",
+   "strike": "100000",
+   "right": "call",
+   "expiryMs": 1793347200000
+  },
+  {
+   "symbol": "BTC_USDC-30OCT26-102000-C",
+   "strike": "102000",
+   "right": "call",
+   "expiryMs": 1793347200000
+  },
+  {
+   "symbol": "BTC_USDC-30OCT26-104000-C",
+   "strike": "104000",
+   "right": "call",
+   "expiryMs": 1793347200000
+  },
+  {
+   "symbol": "BTC_USDC-30OCT26-105000-C",
+   "strike": "105000",
+   "right": "call",
+   "expiryMs": 1793347200000
+  },
+  {
+   "symbol": "BTC_USDC-30OCT26-106000-C",
+   "strike": "106000",
+   "right": "call",
+   "expiryMs": 1793347200000
+  },
+  {
+   "symbol": "BTC_USDC-27NOV26-60000-P",
+   "strike": "60000",
+   "right": "put",
+   "expiryMs": 1795766400000
+  },
+  {
+   "symbol": "BTC_USDC-27NOV26-68000-P",
+   "strike": "68000",
+   "right": "put",
+   "expiryMs": 1795766400000
+  },
+  {
+   "symbol": "BTC_USDC-27NOV26-72000-P",
+   "strike": "72000",
+   "right": "put",
+   "expiryMs": 1795766400000
+  },
+  {
+   "symbol": "BTC_USDC-27NOV26-73000-P",
+   "strike": "73000",
+   "right": "put",
+   "expiryMs": 1795766400000
+  },
+  {
+   "symbol": "BTC_USDC-27NOV26-75000-P",
+   "strike": "75000",
+   "right": "put",
+   "expiryMs": 1795766400000
+  },
+  {
+   "symbol": "BTC_USDC-27NOV26-77000-P",
+   "strike": "77000",
+   "right": "put",
+   "expiryMs": 1795766400000
+  },
+  {
+   "symbol": "BTC_USDC-27NOV26-80000-P",
+   "strike": "80000",
+   "right": "put",
+   "expiryMs": 1795766400000
+  },
+  {
+   "symbol": "BTC_USDC-27NOV26-82000-P",
+   "strike": "82000",
+   "right": "put",
+   "expiryMs": 1795766400000
+  },
+  {
+   "symbol": "BTC_USDC-27NOV26-84000-C",
+   "strike": "84000",
+   "right": "call",
+   "expiryMs": 1795766400000
+  },
+  {
+   "symbol": "BTC_USDC-27NOV26-84000-P",
+   "strike": "84000",
+   "right": "put",
+   "expiryMs": 1795766400000
+  },
+  {
+   "symbol": "BTC_USDC-27NOV26-85000-C",
+   "strike": "85000",
+   "right": "call",
+   "expiryMs": 1795766400000
+  },
+  {
+   "symbol": "BTC_USDC-27NOV26-95000-C",
+   "strike": "95000",
+   "right": "call",
+   "expiryMs": 1795766400000
+  },
+  {
+   "symbol": "BTC_USDC-27NOV26-97000-C",
+   "strike": "97000",
+   "right": "call",
+   "expiryMs": 1795766400000
+  },
+  {
+   "symbol": "BTC_USDC-27NOV26-98000-C",
+   "strike": "98000",
+   "right": "call",
+   "expiryMs": 1795766400000
+  },
+  {
+   "symbol": "BTC_USDC-27NOV26-100000-C",
+   "strike": "100000",
+   "right": "call",
+   "expiryMs": 1795766400000
+  },
+  {
+   "symbol": "BTC_USDC-27NOV26-110000-C",
+   "strike": "110000",
+   "right": "call",
+   "expiryMs": 1795766400000
+  },
+  {
+   "symbol": "BTC_USDC-25DEC26-20000-P",
+   "strike": "20000",
+   "right": "put",
+   "expiryMs": 1798185600000
+  },
+  {
+   "symbol": "BTC_USDC-25DEC26-50000-P",
+   "strike": "50000",
+   "right": "put",
+   "expiryMs": 1798185600000
+  },
+  {
+   "symbol": "BTC_USDC-25DEC26-55000-P",
+   "strike": "55000",
+   "right": "put",
+   "expiryMs": 1798185600000
+  },
+  {
+   "symbol": "BTC_USDC-25DEC26-60000-P",
+   "strike": "60000",
+   "right": "put",
+   "expiryMs": 1798185600000
+  },
+  {
+   "symbol": "BTC_USDC-25DEC26-62000-P",
+   "strike": "62000",
+   "right": "put",
+   "expiryMs": 1798185600000
+  },
+  {
+   "symbol": "BTC_USDC-25DEC26-66000-P",
+   "strike": "66000",
+   "right": "put",
+   "expiryMs": 1798185600000
+  },
+  {
+   "symbol": "BTC_USDC-25DEC26-68000-P",
+   "strike": "68000",
+   "right": "put",
+   "expiryMs": 1798185600000
+  },
+  {
+   "symbol": "BTC_USDC-25DEC26-70000-C",
+   "strike": "70000",
+   "right": "call",
+   "expiryMs": 1798185600000
+  },
+  {
+   "symbol": "BTC_USDC-25DEC26-70000-P",
+   "strike": "70000",
+   "right": "put",
+   "expiryMs": 1798185600000
+  },
+  {
+   "symbol": "BTC_USDC-25DEC26-72000-P",
+   "strike": "72000",
+   "right": "put",
+   "expiryMs": 1798185600000
+  },
+  {
+   "symbol": "BTC_USDC-25DEC26-75000-P",
+   "strike": "75000",
+   "right": "put",
+   "expiryMs": 1798185600000
+  },
+  {
+   "symbol": "BTC_USDC-25DEC26-78000-P",
+   "strike": "78000",
+   "right": "put",
+   "expiryMs": 1798185600000
+  },
+  {
+   "symbol": "BTC_USDC-25DEC26-80000-C",
+   "strike": "80000",
+   "right": "call",
+   "expiryMs": 1798185600000
+  },
+  {
+   "symbol": "BTC_USDC-25DEC26-82000-P",
+   "strike": "82000",
+   "right": "put",
+   "expiryMs": 1798185600000
+  },
+  {
+   "symbol": "BTC_USDC-25DEC26-84000-C",
+   "strike": "84000",
+   "right": "call",
+   "expiryMs": 1798185600000
+  },
+  {
+   "symbol": "BTC_USDC-25DEC26-84000-P",
+   "strike": "84000",
+   "right": "put",
+   "expiryMs": 1798185600000
+  },
+  {
+   "symbol": "BTC_USDC-25DEC26-85000-C",
+   "strike": "85000",
+   "right": "call",
+   "expiryMs": 1798185600000
+  },
+  {
+   "symbol": "BTC_USDC-25DEC26-86000-C",
+   "strike": "86000",
+   "right": "call",
+   "expiryMs": 1798185600000
+  },
+  {
+   "symbol": "BTC_USDC-25DEC26-86000-P",
+   "strike": "86000",
+   "right": "put",
+   "expiryMs": 1798185600000
+  },
+  {
+   "symbol": "BTC_USDC-25DEC26-92000-C",
+   "strike": "92000",
+   "right": "call",
+   "expiryMs": 1798185600000
+  },
+  {
+   "symbol": "BTC_USDC-25DEC26-98000-C",
+   "strike": "98000",
+   "right": "call",
+   "expiryMs": 1798185600000
+  },
+  {
+   "symbol": "BTC_USDC-25DEC26-100000-C",
+   "strike": "100000",
+   "right": "call",
+   "expiryMs": 1798185600000
+  },
+  {
+   "symbol": "BTC_USDC-25DEC26-102000-C",
+   "strike": "102000",
+   "right": "call",
+   "expiryMs": 1798185600000
+  },
+  {
+   "symbol": "BTC_USDC-25DEC26-104000-C",
+   "strike": "104000",
+   "right": "call",
+   "expiryMs": 1798185600000
+  },
+  {
+   "symbol": "BTC_USDC-25DEC26-105000-C",
+   "strike": "105000",
+   "right": "call",
+   "expiryMs": 1798185600000
+  },
+  {
+   "symbol": "BTC_USDC-25DEC26-108000-C",
+   "strike": "108000",
+   "right": "call",
+   "expiryMs": 1798185600000
+  },
+  {
+   "symbol": "BTC_USDC-25DEC26-115000-C",
+   "strike": "115000",
+   "right": "call",
+   "expiryMs": 1798185600000
+  }
+ ],
+ "deliveryPrices": {
+  "2026-09-27": "84604.21",
+  "2026-09-26": "84042.83",
+  "2026-09-25": "83930.84"
+ }
+}

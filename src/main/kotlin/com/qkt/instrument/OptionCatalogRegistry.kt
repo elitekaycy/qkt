@@ -34,6 +34,13 @@ class OptionCatalogRegistry(
 
     override fun options(): OptionDirectory = this
 
+    private val listingsByRoot: Map<String, Map<String, OptionListing>> =
+        catalogs.mapValues { (_, catalog) -> catalog.contracts.associateBy { it.symbol } }
+
+    override fun root(name: String): OptionRoot? = roots.firstOrNull { it.root == name }
+
+    override fun listings(name: String): Map<String, OptionListing> = listingsByRoot[name].orEmpty()
+
     override fun optionRoot(qktSymbol: String): OptionRoot? = if (qktSymbol in table) rootOf(qktSymbol) else null
 
     override fun venueName(qktSymbol: String): String? =
