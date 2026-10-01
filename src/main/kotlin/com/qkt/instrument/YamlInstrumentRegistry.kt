@@ -28,6 +28,7 @@ import org.snakeyaml.engine.v2.api.LoadSettings
  *     swapShortPoints: 4       # optional, signed points per lot per rollover
  *     swapRolloverHourUtc: 21  # optional, default 21
  *     swapTripleDay: WEDNESDAY # optional, default WEDNESDAY
+ *     spreadPoints: 260        # optional — mt5-sim fills at mid ± 130 points (or minSpreadPoints: widen only)
  *     currency: USD            # optional — explicit quote currency; default: inferred from the symbol
  * ```
  *
@@ -98,6 +99,8 @@ class YamlInstrumentRegistry private constructor(
                         runCatching { java.time.DayOfWeek.valueOf(it.trim().uppercase()) }
                             .getOrElse { error("instruments.yaml: entry $index invalid swapTripleDay '$it'") }
                     } ?: java.time.DayOfWeek.WEDNESDAY,
+                spreadPoints = intOpt("spreadPoints"),
+                minSpreadPoints = intOpt("minSpreadPoints"),
                 currency = entry["currency"]?.toString()?.trim(),
             )
         }

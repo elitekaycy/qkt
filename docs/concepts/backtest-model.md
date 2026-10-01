@@ -55,21 +55,55 @@ Returns are measured on a constant capital base — each strategy's P&L change o
 
 ## Fills
 
-- Market orders fill at the `MarketPriceTracker`'s last-known price for the symbol at the moment the order is submitted.
-- Stop and Limit orders fill at the trigger price, the moment the trigger condition becomes true.
-- Bracket SL/TP triggers when the underlying tick crosses the level. Fill price = trigger price (no gap simulation).
+Two simulated brokers, chosen with `--broker`:
+
+- **`paper`** (default): market orders fill at the `MarketPriceTracker`'s last-known price for the
+  symbol; stop and limit orders fill at their trigger price the moment the trigger condition is true;
+  bracket SL/TP fill at their level. No spread, slippage, rounding or latency.
+- **`mt5-sim`**: mirrors an MT5 venue. Volume is rounded down to `volumeStep` and orders below
+  `volumeMin` are rejected; fill prices round to `digits`. A BUY fills at the ask and a SELL at the
+  bid (see [Spread](#spread)), plus slippage. The execution preset (`--execution`, or `execution.preset`
+  in `qkt.config.yaml`) adds the rest:
+
+| Preset | Latency | Slippage | Other |
+|---|---|---|---|
+| `mt5-basic` (default for `mt5-sim`) | none | `slippagePoints` per instrument | |
+| `mt5-realistic` | 250 ms | `slippagePoints` per instrument | `tradeStopsLevel` enforced |
+| `stress` | 500 ms | uniform random up to 20 points (seeded) | every 10th order rejected, 50% partial fills, `tradeStopsLevel` enforced |
+
+Each knob can be set on its own, on the command line or under `execution:` in the config:
+`--execution-latency` (entry latency), `--stop-latency` (a crossed protective stop fills at the first
+quote at or after trigger + latency), `--tp-fill print|level` (pricing of a gap-crossed take-profit),
+`--slippage`, `--reject-every`, `--partial-fill`, `--order-spacing`. The run's `result.json` records the
+model used in `evidence.execution`.
 
 ## Slippage
 
-**Not modeled by default.** Strategies should account for spread + slippage in their stop-loss buffers. A future enhancement adds a configurable slippage model.
+`paper` fills have none. `mt5-sim` slips every fill against you by the instrument's `slippagePoints`
+(`instruments.yaml`, each point one `pointSize` wide) under `mt5-basic` and `mt5-realistic`, or as the
+`--slippage` option states.
 
 ## Spread
 
-**Not modeled.** The tick stream is mid-price. Real brokers fill on the wrong side of the spread for the strategy's direction.
+`paper` fills at the tracked price, so it pays no spread.
+
+`mt5-sim` fills at the tick's own bid/ask when the feed carries them; a mid-only feed gets a synthetic
+two-point spread around mid. A vendor's history is quoted at the vendor's spread, which may not be your
+venue's (median XAUUSD across the same 2026 days: Dukascopy $0.78, Exness $0.26). An instrument can
+state its venue's spread in `instruments.yaml`, one of:
+
+- `spreadPoints: 260` fills at the tick's mid ± 130 points, whatever spread the tick carries.
+- `minSpreadPoints: 260` only widens: a tick quoting at least 260 points fills at its own bid/ask, a
+  thinner one is widened to 260 around its mid. Use it to make a thin feed conservative.
+
+Either also replaces the synthetic spread on mid-only ticks. The fill price is the only thing they
+change: stops, limits and the strategy's own `bid`/`ask` still see the feed's quotes. The symbols
+priced this way are listed in `evidence.execution.fillPriceSource`. Live runs ignore both fields.
 
 ## Partial fills
 
-**Not modeled.** Every order is either filled fully or rejected.
+`paper` and the `mt5-basic` and `mt5-realistic` presets fill every order fully or reject it.
+`--partial-fill <fraction>` (on by default in `stress`) fills that fraction of each order first.
 
 ## Overnight swap
 
