@@ -252,6 +252,43 @@ empty cell means absent.
 - `--live`, `--every` and `--max-mark-age` need `--chains`; `--chains` does not combine with
   `--catalog`, `--rolls` or `--tf`.
 
+### Backtesting options on the chain
+
+Declare how a root trades and name a contract in a strategy:
+
+```yaml
+options:
+  - root: DERIBIT:BTC_USDC
+    # …contractSize, tickSize, volumeStep, volumeMin, underlyingIndex as above…
+    chains: trade            # or book: the stored series to trade on
+    markSpread: 0.05         # trade series only: half-spread as a fraction of the mark
+    maxQuoteAgeMinutes: 60   # older trade marks are not tradeable
+    takerFeeRate: 0.0003     # of the underlying index, per contract
+    deliveryFeeRate: 0.00015 # of the delivery price, at an in-the-money expiry
+    feeCapRate: 0.125        # each fee capped at 12.5% of the option's value
+```
+
+```
+STRATEGY call VERSION 1
+SYMBOLS
+    c = DERIBIT:BTC_USDC_26SEP26_84000_C EVERY 1h
+RULES
+    WHEN c.close > 0
+    THEN BUY c SIZING 0.1
+```
+
+- The stream's price is the chain's mark at each snapshot; its bid and ask are the tradeable sides.
+- Orders fill on the option venue, whatever `--broker` says. A market order fills at the next quote of its
+  contract after the decision, never the one it was decided on: a buy at the ask, a sell at the bid. A quote
+  without that side cancels the order, with the reason in the log. With hourly snapshots, a 1h strategy
+  decides on one quote and fills on the next.
+- Limits are snapped so they never fill early, and fill at their limit when a later quote reaches them.
+- Positions are long only for now: selling more than you hold is refused.
+- A contract held to expiry settles in cash at its intrinsic value from the catalog's delivery price, less
+  the capped delivery fee. Out of the money it settles at zero.
+- The run checks that every day up to each contract's expiry has a stored chain day of the declared series,
+  and names the `qkt fetch … --chains` that fills a gap.
+
 ## Scenario 3 — Speed up repeated backtests (CSV → binary)
 
 Cached ticks start life as gzipped CSV (`*.csv.gz`). Converting them to the binary format decodes
