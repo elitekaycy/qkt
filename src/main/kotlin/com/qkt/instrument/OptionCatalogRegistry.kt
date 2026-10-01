@@ -12,7 +12,8 @@ import java.time.ZoneOffset
 class OptionCatalogRegistry(
     private val roots: List<OptionRoot>,
     private val catalogs: Map<String, OptionCatalog>,
-) : InstrumentRegistry {
+) : InstrumentRegistry,
+    OptionDirectory {
     private val table: Map<String, InstrumentMeta> =
         buildMap {
             for (root in roots) {
@@ -30,6 +31,15 @@ class OptionCatalogRegistry(
 
     override fun lookup(qktSymbol: String): InstrumentMeta? = table[qktSymbol]
 
+    override fun options(): OptionDirectory = this
+
+    override fun optionRoot(qktSymbol: String): OptionRoot? = if (qktSymbol in table) rootOf(qktSymbol) else null
+
+    override fun venueName(qktSymbol: String): String? =
+        optionRoot(
+            qktSymbol,
+        )?.let { OptionSymbols.venueName(qktSymbol.substringAfter(':'), it.root.substringAfter(':')) }
+
     override fun missingReason(qktSymbol: String): String? {
         if (qktSymbol in table) return null
         val root = rootOf(qktSymbol) ?: return null
@@ -37,8 +47,7 @@ class OptionCatalogRegistry(
         return "option $qktSymbol is not in the catalog of $name; refresh it with qkt fetch $name --catalog"
     }
 
-    /** The settlement index's delivery price on [qktSymbol]'s expiry date, when its catalog records one. */
-    fun deliveryPrice(qktSymbol: String): BigDecimal? {
+    override fun deliveryPrice(qktSymbol: String): BigDecimal? {
         val terms = table[qktSymbol]?.derivative as? OptionTerms ?: return null
         val date =
             Instant
