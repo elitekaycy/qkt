@@ -43,7 +43,7 @@
 327 src/test/kotlin/com/qkt/connector/mt5/MT5PollerRaceTest.kt
 326 src/main/kotlin/com/qkt/connector/mt5/MT5WireTypes.kt
 326 src/main/kotlin/com/qkt/observe/insights/InsightsSink.kt
-319 src/main/kotlin/com/qkt/persistence/StatePersistor.kt
+299 src/main/kotlin/com/qkt/persistence/StatePersistor.kt
 298 src/main/kotlin/com/qkt/broker/CompositeBroker.kt
 295 src/test/kotlin/com/qkt/dsl/compile/SizingCompilerTest.kt
 288 src/main/kotlin/com/qkt/cli/RunCommand.kt
@@ -58,7 +58,7 @@
 268 src/main/kotlin/com/qkt/connector/mt5/MT5OrderTranslator.kt
 265 src/main/kotlin/com/qkt/app/LatchManager.kt
 262 src/test/kotlin/com/qkt/dsl/compile/OrderSurfaceEndToEndTest.kt
-260 src/main/kotlin/com/qkt/persistence/AsyncStatePersistor.kt
+268 src/main/kotlin/com/qkt/persistence/AsyncStatePersistor.kt
 257 src/test/kotlin/com/qkt/connector/mt5/MT5PollerSessionGateTest.kt
 257 src/test/kotlin/com/qkt/parity/MT5DaemonE2ETest.kt
 256 src/main/kotlin/com/qkt/broker/Broker.kt

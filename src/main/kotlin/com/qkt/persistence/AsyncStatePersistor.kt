@@ -193,6 +193,14 @@ class AsyncStatePersistor(
         submit("savePnl($strategyId)") { delegate.savePnl(strategyId, state) }
     }
 
+    override fun saveStructures(
+        strategyId: String,
+        structures: List<PersistedStructure>,
+    ) {
+        val snapshot = structures.toList()
+        submit("saveStructures($strategyId)") { delegate.saveStructures(strategyId, snapshot) }
+    }
+
     override fun saveTradeHistory(
         strategyId: String,
         state: PersistedTradeHistory,

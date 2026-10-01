@@ -1,11 +1,9 @@
 package com.qkt.app
 
 import com.qkt.common.Side
-import com.qkt.derivatives.options.OptionPayoff
 import com.qkt.events.StructureEvent
 import com.qkt.events.StructureOutcome
 import com.qkt.instrument.InstrumentRegistry
-import com.qkt.instrument.OptionTerms
 import com.qkt.marketdata.MarketPriceProvider
 import com.qkt.strategy.Signal
 import com.qkt.strategy.StructurePosition
@@ -22,7 +20,7 @@ import java.math.BigDecimal
  */
 internal class StructureBook(
     private val strategyId: String,
-    private val instruments: InstrumentRegistry,
+    internal val instruments: InstrumentRegistry,
     private val prices: MarketPriceProvider,
     private val publish: (StructureEvent) -> Unit = {},
 ) : StructureView {
@@ -41,7 +39,22 @@ internal class StructureBook(
 
     override fun all(): List<StructurePosition> = byId.values.map { it.position() }
 
+    /** The live structures, oldest first. */
+    internal val structures: Collection<LiveStructure> get() = byId.values
+
     override fun mark(symbol: String): BigDecimal? = prices.lastPrice(symbol)
+
+    /** Takes back [restored] structures after a restart, with the orders their legs still have working. */
+    fun restore(restored: List<LiveStructure>) {
+        for (structure in restored) {
+            byAlias[structure.alias] = structure
+            byId[structure.id] = structure
+            for (leg in structure.legs) {
+                if (!leg.openEnded) owners[leg.openOrderId] = Owner(structure, leg, opening = true)
+                leg.closingOrders.keys.forEach { owners[it] = Owner(structure, leg, opening = false) }
+            }
+        }
+    }
 
     /** Records an accepted [group]: a new PENDING structure, or closing orders for the structure it closes. */
     fun accept(group: Signal.SubmitGroup) {
@@ -147,41 +160,6 @@ internal class StructureBook(
         }
     }
 
-    /**
-     * Settles every held leg whose contract has expired by [nowMs] at its intrinsic value from the
-     * catalog's delivery price, the price the venue settles at. This also settles legs the venue netted
-     * away (two structures long and short one contract). A leg whose delivery price is not catalogued
-     * waits for it.
-     */
-    fun settleExpired(nowMs: Long) {
-        if (byId.isEmpty()) return
-        val options = instruments.options() ?: return
-        settle { leg ->
-            options.deliveryPrice(leg.symbol)?.takeIf { leg.expiryMs <= nowMs }?.let { delivery ->
-                val terms = requireNotNull(instruments.lookup(leg.symbol)?.derivative as? OptionTerms)
-                OptionPayoff.intrinsic(terms.right, terms.strike, delivery)
-            }
-        }
-    }
-
-    /** Every held structure leg on [symbol] settles at [price], the venue's settlement price. */
-    fun settleAt(
-        symbol: String,
-        price: BigDecimal,
-    ) = settle { leg -> price.takeIf { leg.symbol == symbol } }
-
-    /** Settles each held leg at the price [priceOf] gives it, leaving legs it gives none. */
-    private fun settle(priceOf: (StructureLeg) -> BigDecimal?) {
-        for (structure in byId.values.toList()) {
-            for (leg in structure.legs.filter { it.held.signum() > 0 }) {
-                val price = priceOf(leg) ?: continue
-                leg.realize(leg.held, price)
-                structure.exit = StructureOutcome.SETTLED
-            }
-            forgetIfDone(structure)
-        }
-    }
-
     /** A closing structure left with nothing working is OPEN again, so its `CLOSE` can be tried again. */
     private fun reopenIfIdle(structure: LiveStructure) {
         if (structure.state == StructureState.CLOSING && structure.legs.none { it.isClosing }) {
@@ -190,7 +168,7 @@ internal class StructureBook(
     }
 
     /** Drops [structure] once nothing of it is held or working. */
-    private fun forgetIfDone(structure: LiveStructure) {
+    internal fun forgetIfDone(structure: LiveStructure) {
         val idle = structure.legs.all { it.openEnded && it.held.signum() == 0 && !it.isClosing }
         if (!idle) return
         byAlias.remove(structure.alias)
