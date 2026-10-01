@@ -97,8 +97,8 @@ internal fun LiveStructure.position(): StructurePosition =
         id,
         alias,
         state,
-        // What the legs filled once any did (a portfolio book scale resizes every leg alike), else what was sent.
-        legs.maxOf { it.opened }.takeIf { it.signum() > 0 } ?: size,
+        // What was sent while it opens; what the legs filled once open (a portfolio book scale resizes every leg alike).
+        if (state == StructureState.PENDING) size else legs.maxOf { it.opened }.takeIf { it.signum() > 0 } ?: size,
         legs.map { leg ->
             val sign = if (leg.side == Side.BUY) BigDecimal.ONE else BigDecimal.ONE.negate()
             StructureLegPosition(

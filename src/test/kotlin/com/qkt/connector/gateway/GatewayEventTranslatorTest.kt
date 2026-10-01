@@ -11,7 +11,8 @@ import org.junit.jupiter.api.Test
 class GatewayEventTranslatorTest {
     private val code = "BTC_USDC-25DEC26-92000-C"
     private val symbol = "DERIBIT:BTC_USDC_25DEC26_92000_C"
-    private val translator = GatewayEventTranslator(GatewaySymbols("DERIBIT:", listOf(code))) { "strat" }
+    private val translator =
+        GatewayEventTranslator(GatewaySymbols("DERIBIT:").apply { update(listOf(code)) }) { "strat" }
 
     private fun order(
         status: String,
@@ -97,19 +98,17 @@ class GatewayEventTranslatorTest {
         assertThat(translator.order(order("rejected", reason = "post-only would cross")))
             .isEqualTo(BrokerEvent.OrderRejected("c1", "9", "post-only would cross", "strat"))
         assertThat(translator.order(order("rejected", reason = "post-only would cross"))).isNull()
-        val other = GatewayEventTranslator(GatewaySymbols("DERIBIT:", listOf(code))) { "strat" }
+        val other = GatewayEventTranslator(GatewaySymbols("DERIBIT:").apply { update(listOf(code)) }) { "strat" }
         assertThat(other.order(order("cancelled", filled = "0.1")))
             .isInstanceOf(BrokerEvent.OrderCancelled::class.java)
     }
 
     @Test
-    fun `an unknown status, side, cost kind or instrument is a protocol error, never a guess`() {
+    fun `an unknown status, side or cost kind is a protocol error, never a guess`() {
         assertThatThrownBy { translator.order(order("expired")) }.isInstanceOf(GatewayProtocolException::class.java)
         assertThatThrownBy { translator.fill(fill("f1", "0.1").copy(side = "short")) }
             .isInstanceOf(GatewayProtocolException::class.java)
         assertThatThrownBy { translator.fill(fill("f2", "0.1", listOf(WireCost("rebate", "1", "USDC")))) }
-            .isInstanceOf(GatewayProtocolException::class.java)
-        assertThatThrownBy { translator.fill(fill("f3", "0.1").copy(symbol = "ETH-PERP")) }
             .isInstanceOf(GatewayProtocolException::class.java)
     }
 }

@@ -1,36 +1,33 @@
 package com.qkt.connector.gateway
 
 /**
- * The exact map between a gateway's venue codes and qkt symbols, built from the codes its
- * `GET /v1/instruments` lists: a qkt symbol is [prefix] plus the code with `-` written `_` (the DSL
- * cannot hold `-`, as with option symbols). A futures code keeps its own `_`, so the way back is a
- * lookup, never a character swap; two codes that would share a qkt symbol are refused.
+ * The map between a gateway's venue codes and qkt symbols. A qkt symbol is [prefix] plus the code with
+ * `-` written `_` (the DSL cannot hold `-`, as with option symbols), so the way from a code is a pure
+ * rule and holds for any code, listed or long expired. A futures code keeps its own `_`, so the way back
+ * is a lookup in the codes the gateway lists, refreshed by [update]; two codes that would share a qkt
+ * symbol are refused.
  *
  * ```kotlin
- * GatewaySymbols("DERIBIT:", listOf("BTC_USDC-25DEC26-92000-C")).qkt("BTC_USDC-25DEC26-92000-C")
- * // "DERIBIT:BTC_USDC_25DEC26_92000_C"
+ * GatewaySymbols("DERIBIT:").apply { update(listOf("BTC_USDC-25DEC26-92000-C")) }
+ *     .venue("DERIBIT:BTC_USDC_25DEC26_92000_C") // "BTC_USDC-25DEC26-92000-C"
  * ```
  */
 class GatewaySymbols(
-    prefix: String,
-    codes: Collection<String>,
+    private val prefix: String,
 ) {
-    private val toQkt = codes.associateWith { prefix + it.replace('-', '_') }
-    private val toVenue = toQkt.entries.associate { (code, symbol) -> symbol to code }
+    @Volatile private var toVenue: Map<String, String> = emptyMap()
 
-    init {
-        require(toVenue.size == toQkt.size) {
-            "gateway codes collide once '-' is written '_': " +
-                toQkt.entries
-                    .groupBy({ it.value }, { it.key })
-                    .values
-                    .first { it.size > 1 }
-        }
+    /** Takes [codes] as the gateway's listing now. */
+    fun update(codes: Collection<String>) {
+        val listed = codes.groupBy(::qkt)
+        val collision = listed.values.firstOrNull { it.size > 1 }
+        require(collision == null) { "gateway codes collide once '-' is written '_': $collision" }
+        toVenue = listed.mapValues { (_, same) -> same.single() }
     }
 
-    /** The qkt symbol of venue [code], or null when the gateway did not list it. */
-    fun qkt(code: String): String? = toQkt[code]
+    /** The qkt symbol of venue [code]. */
+    fun qkt(code: String): String = prefix + code.replace('-', '_')
 
-    /** The venue code of [qktSymbol], or null when it is not one of the gateway's instruments. */
+    /** The venue code of [qktSymbol], or null when the gateway's listing does not hold it. */
     fun venue(qktSymbol: String): String? = toVenue[qktSymbol]
 }

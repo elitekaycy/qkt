@@ -1,196 +1,119 @@
 package com.qkt.connector.gateway
 
-import com.qkt.bus.EventBus
-import com.qkt.common.FixedClock
-import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.Side
 import com.qkt.events.BrokerEvent
 import com.qkt.events.ContractSettled
-import com.qkt.events.Event
-import com.qkt.execution.ManagedOrder
-import com.qkt.execution.OrderRequest
-import com.qkt.execution.OrderState
-import com.qkt.execution.TimeInForce
-import com.qkt.positions.Position
-import com.qkt.positions.PositionProvider
 import java.math.BigDecimal
-import java.util.concurrent.CopyOnWriteArrayList
 import org.assertj.core.api.Assertions.assertThat
-import org.junit.jupiter.api.AfterEach
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 
-/** Two strategies, each in its own session with its own bus as in the daemon, sharing one gateway account. */
-class GatewaySessionTest {
-    private val code = "BTC_USDC-25DEC26-92000-C"
-    private val symbol = "DERIBIT:BTC_USDC_25DEC26_92000_C"
-    private val fake = FakeGateway(listOf(code))
-    private val clock = FixedClock(5L)
-    private val brokers = mutableListOf<GatewayBroker>()
-
-    @AfterEach
-    fun stop() {
-        brokers.forEach { it.shutdown() }
-        fake.shutdown()
-    }
-
-    private fun session() =
-        GatewaySession(
-            GatewayClient(fake.url, "k", httpTimeoutMs = 500, retryAttempts = 3),
-            GatewaySymbols("DERIBIT:", listOf(code)),
-            clock,
-            streamFactory = { e, r, c -> GatewayStream(fake.url, "k", e, r, c, initialBackoffMs = 20) },
-        )
-
-    private class Strategy(
-        val bus: EventBus,
-        val events: MutableList<Event>,
-    )
-
-    private fun strategy(): Strategy {
-        val bus = EventBus(FixedClock(5L), MonotonicSequenceGenerator())
-        val events = CopyOnWriteArrayList<Event>()
-        bus.subscribe<BrokerEvent.OrderAccepted> { events += it }
-        bus.subscribe<BrokerEvent.OrderFilled> { events += it }
-        bus.subscribe<BrokerEvent.OrderPartiallyFilled> { events += it }
-        bus.subscribe<BrokerEvent.OrderRejected> { events += it }
-        bus.subscribe<ContractSettled> { events += it }
-        return Strategy(bus, events)
-    }
-
-    private fun broker(
-        session: GatewaySession,
-        strategy: Strategy,
-        id: String,
-        held: String = "0",
-    ) = GatewayBroker(session, strategy.bus, clock, holding(held), id).also { brokers += it }
-
-    private fun holding(quantity: String) =
-        object : PositionProvider {
-            override fun positionFor(symbol: String) =
-                Position(symbol, BigDecimal(quantity), BigDecimal.ONE).takeIf {
-                    quantity !=
-                        "0"
-                }
-
-            override fun allPositions() = emptyMap<String, Position>()
-        }
-
-    private fun market(
-        id: String,
-        strategy: String,
-        side: Side = Side.BUY,
-        quantity: String = "0.1",
-    ) = OrderRequest.Market(id, symbol, side, BigDecimal(quantity), TimeInForce.GTC, 5L, strategy)
-
-    private fun await(condition: () -> Boolean) {
-        val deadline = System.currentTimeMillis() + 5_000
-        while (!condition()) {
-            check(System.currentTimeMillis() < deadline) { "timed out" }
-            Thread.sleep(10)
-        }
-    }
-
+/** Strategies in their own sessions sharing one gateway account. */
+internal class GatewaySessionTest : GatewayHarness() {
     @Test
     fun `each strategy's fills reach its own session only`() {
-        val shared = session()
-        val a = strategy()
-        val b = strategy()
-        val brokerA = broker(shared, a, "a")
-        broker(shared, b, "b")
+        val shared = session(setOf("a", "b"))
+        val a = Strategy()
+        val b = Strategy()
+        val brokerA = broker(shared, a, "a", shared = true)
+        broker(shared, b, "b", shared = true)
 
         brokerA.submit(market("a-1", "a"))
-        await { a.events.any { it is BrokerEvent.OrderAccepted } }
-        fake.fill("a-1", "f1", "0.1", "650")
-        await { a.events.any { it is BrokerEvent.OrderFilled } }
+        await { a.of<BrokerEvent.OrderAccepted>().isNotEmpty() }
+        fake.act { fill("a-1", "f1", "0.1", "650", FakeGateway.TIME) }
+        await { a.of<BrokerEvent.OrderFilled>().isNotEmpty() }
 
-        val fill = a.events.filterIsInstance<BrokerEvent.OrderFilled>().single()
-        assertThat(fill.strategyId to fill.price).isEqualTo("a" to BigDecimal("650"))
+        assertThat(a.of<BrokerEvent.OrderFilled>().single().strategyId).isEqualTo("a")
         assertThat(b.events).isEmpty()
     }
 
     @Test
-    fun `a contract settlement reaches every strategy on the account`() {
-        val shared = session()
-        val a = strategy()
-        val b = strategy()
-        broker(shared, a, "a")
-        broker(shared, b, "b")
+    fun `a settlement reaches every strategy, its costs shared once by holding across the sessions`() {
+        val shared = session(setOf("a", "b"))
+        val a = Strategy().apply { held[symbol] = BigDecimal("0.3") }
+        val b = Strategy().apply { held[symbol] = BigDecimal("-0.1") }
+        broker(shared, a, "a", shared = true)
+        broker(shared, b, "b", shared = true)
 
-        fake.settle(code, "1000")
-
-        await { a.events.isNotEmpty() && b.events.isNotEmpty() }
-        assertThat(
-            listOf(a, b).map { (it.events.single() as ContractSettled).price.toPlainString() },
-        ).containsOnly("1000")
-    }
-
-    @Test
-    fun `under the kill switch an opening order is refused and a reducing one goes through`() {
-        val shared = session()
-        val a = strategy()
-        val b = strategy()
-        val brokerA = broker(shared, a, "a")
-        val brokerB = broker(shared, b, "b", held = "0.1")
-        fake.killed = true
-
-        brokerA.submit(market("a-1", "a"))
-        brokerB.submit(market("b-1", "b", Side.SELL))
-
-        await { a.events.isNotEmpty() && b.events.isNotEmpty() }
-        assertThat((a.events.single() as BrokerEvent.OrderRejected).reason).startsWith("kill_switch:")
-        assertThat(b.events.single()).isInstanceOf(BrokerEvent.OrderAccepted::class.java)
-        assertThat(fake.submits.single().reduceOnly).isTrue()
-    }
-
-    @Test
-    fun `a submit the gateway never answered is rejected once a resync shows it was not placed`() {
-        val a = strategy()
-        val brokerA = broker(session(), a, "a")
-        fake.unreachable = 3
-
-        brokerA.submit(market("a-1", "a"))
-        await {
-            fake.reset()
-            Thread.sleep(50)
-            a.events.isNotEmpty()
+        fake.act {
+            settle(
+                WireSettlement(code, "1000", FakeGateway.TIME, listOf(WireCost("delivery_fee", "2", "USDC"))),
+            )
         }
 
-        assertThat((a.events.single() as BrokerEvent.OrderRejected).reason).contains("not placed")
+        await { a.events.isNotEmpty() && b.events.isNotEmpty() }
+        val shares =
+            listOf(a, b).map {
+                it
+                    .of<ContractSettled>()
+                    .single()
+                    .costs
+                    .single()
+                    .amount.amount
+            }
+        assertThat(shares.map { it.toPlainString() }).containsExactly("1.5", "0.5")
     }
 
     @Test
-    fun `after a restart, fills made while down are booked once and earlier ones not again`() {
-        val first = strategy()
-        val before = broker(session(), first, "a")
-        before.submit(market("a-9", "a"))
-        await { first.events.any { it is BrokerEvent.OrderAccepted } }
-        fake.fill("a-9", "f9", "0.05", "650")
-        await { first.events.any { it is BrokerEvent.OrderPartiallyFilled } }
-        before.shutdown()
-        brokers -= before
-        fake.fill("a-9", "f10", "0.05", "652")
+    fun `under the kill switch only an order reducing both its strategy and the account goes through`() {
+        val shared = session(setOf("a", "b"))
+        val a = Strategy().apply { held[symbol] = BigDecimal("0.1") }
+        val b = Strategy().apply { held[symbol] = BigDecimal("-0.1") }
+        val brokerA = broker(shared, a, "a", shared = true)
+        fake.killed = true
 
-        val after = strategy()
-        val restored = broker(session(), after, "a")
-        val known =
-            restored.recoverPendingOrders(
-                listOf(
-                    ManagedOrder(
-                        "a-9",
-                        market("a-9", "a"),
-                        OrderState.WORKING,
-                        cumulativeFilledQuantity = BigDecimal("0.05"),
-                        createdAt = 5L,
-                        lastUpdatedAt = 5L,
-                    ),
-                ),
-                emptySet(),
-            )
+        brokerA.submit(market("a-1", "a", Side.SELL))
 
-        await { after.events.any { it is BrokerEvent.OrderFilled } }
-        assertThat(known).containsExactly("a-9")
-        val filled = after.events.filterIsInstance<BrokerEvent.OrderFilled>().single()
-        assertThat(filled.quantity to filled.price).isEqualTo(BigDecimal("0.05") to BigDecimal("652"))
-        assertThat(after.events.filterIsInstance<BrokerEvent.OrderPartiallyFilled>()).isEmpty()
+        await { a.events.isNotEmpty() }
+        assertThat((a.events.single() as BrokerEvent.OrderRejected).reason).startsWith("kill_switch:")
+        assertThat(b.events).isEmpty()
+    }
+
+    @Test
+    fun `a gateway on another account never trades, and a failed first attach leaves the session reusable`() {
+        val shared = session()
+        fake.login = "8"
+        val failed = Strategy()
+        assertThatThrownBy { broker(shared, failed, "a") }.hasMessageContaining("account '8'")
+
+        fake.login = "7"
+        val a = Strategy()
+        val brokerA = broker(shared, a, "a")
+        brokerA.submit(market("a-1", "a"))
+        await { a.of<BrokerEvent.OrderAccepted>().isNotEmpty() }
+        fake.act { fill("a-1", "f1", "0.1", "650", FakeGateway.TIME) }
+
+        await { a.of<BrokerEvent.OrderFilled>().isNotEmpty() }
+        assertThat(failed.events).isEmpty()
+    }
+
+    @Test
+    fun `a gateway that comes back on another account refuses every later order`() {
+        val shared = session()
+        val a = Strategy()
+        val brokerA = broker(shared, a, "a")
+        await { fake.streams > 0 }
+        fake.login = "8"
+        fake.reset()
+        await { shared.refused != null }
+
+        brokerA.submit(market("a-1", "a"))
+
+        await { a.events.isNotEmpty() }
+        assertThat((a.events.single() as BrokerEvent.OrderRejected).reason).contains("account '8'")
+    }
+
+    @Test
+    fun `a strategy that stops and starts again on the account keeps trading on the same connection`() {
+        val shared = session()
+        broker(shared, Strategy(), "a").shutdown()
+        val again = Strategy()
+        val brokerA = broker(shared, again, "a")
+
+        brokerA.submit(market("a-2", "a"))
+        await { again.of<BrokerEvent.OrderAccepted>().isNotEmpty() }
+        fake.act { fill("a-2", "f2", "0.1", "650", FakeGateway.TIME) }
+
+        await { again.of<BrokerEvent.OrderFilled>().isNotEmpty() }
     }
 }

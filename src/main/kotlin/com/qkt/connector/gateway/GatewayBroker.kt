@@ -1,5 +1,6 @@
 package com.qkt.connector.gateway
 
+import com.qkt.broker.BookedLeg
 import com.qkt.broker.Broker
 import com.qkt.broker.OrderTypeCapability
 import com.qkt.broker.PositionAccountingMode
@@ -15,9 +16,11 @@ import java.math.BigDecimal
 
 /**
  * One trading session's [Broker] on a VGP v1 gateway account: a thin view over the account's shared
- * [GatewaySession], serving [strategy] (null: every strategy of a multi-strategy session). It sends
- * that session's orders and publishes their events, and every contract settlement, on [bus].
- * `reduce_only` is judged against [positions], the session's view of what it holds.
+ * [GatewaySession], serving [strategy] (null: every strategy of a multi-strategy session). It sends that
+ * session's orders and publishes their events, and every contract settlement, on [bus]; `reduce_only`
+ * is judged against [positions], the session's view of what it holds, and the account's. When the account
+ * is [shared] by several strategies, its venue positions are account-wide: startup reconcile trusts each
+ * strategy's book, and the session checks the account total once every strategy is ready.
  */
 class GatewayBroker internal constructor(
     private val session: GatewaySession,
@@ -25,8 +28,9 @@ class GatewayBroker internal constructor(
     private val clock: Clock,
     private val positions: PositionProvider,
     strategy: String?,
+    private val shared: Boolean,
 ) : Broker {
-    private val attachment = session.attach(strategy, bus::publish)
+    private val attachment = session.attach(strategy, positions, bus::publish)
 
     override val name: String = "Gateway"
 
@@ -43,11 +47,13 @@ class GatewayBroker internal constructor(
     override fun supports(symbol: String): Boolean = session.symbols.venue(symbol) != null
 
     override fun submit(request: OrderRequest): SubmitAck {
-        val code =
-            session.symbols.venue(request.symbol)
-                ?: return refuse(request, "${request.symbol} is not one of the gateway's instruments")
+        val code = session.symbols.venue(request.symbol)
+        if (code == null) {
+            session.refreshListing()
+            return refuse(request, "${request.symbol} is not in the gateway's listing (refreshing it)")
+        }
         val body =
-            when (val mapping = GatewayOrders.map(request, code, positions)) {
+            when (val mapping = GatewayOrders.map(request, code, positions, session.account.quantity(code))) {
                 is GatewayOrderMapping.Unsupported -> return refuse(request, mapping.reason)
                 is GatewayOrderMapping.Send -> mapping.body
             }
@@ -63,31 +69,33 @@ class GatewayBroker internal constructor(
     ): Set<String> =
         session.recover(
             orders.map {
-                RecoveredOrder(
-                    it.id,
-                    it.request.strategyId,
-                    it.request.quantity,
-                    it.cumulativeFilledQuantity,
-                )
+                RecoveredOrder(it.id, it.request.strategyId, it.request.quantity, it.cumulativeFilledQuantity)
             },
         )
+
+    /** Called once the session is restored: settles contracts that expired while away and checks the account total. */
+    override fun watchBookedLegs(supplier: () -> List<BookedLeg>) = session.ready(attachment)
 
     override fun getOpenPositions(): Map<String, List<Position>> =
         session.client
             .positions()
             .positions
-            .mapNotNull { p ->
-                session.symbols.qkt(p.symbol)?.let { s ->
+            .map { p ->
+                session.symbols.qkt(p.symbol).let { s ->
                     s to
                         Position(s, BigDecimal(p.quantity), BigDecimal(p.avgPrice), p.openedAt)
                 }
             }.groupBy({ it.first }, { it.second })
 
-    override fun accountEquity(): BigDecimal? = session.equity
+    override fun isAccountWide(symbol: String): Boolean = shared && supports(symbol)
 
-    override fun positionAccountingMode(symbol: String): PositionAccountingMode = session.accounting
+    override fun accountEquity(): BigDecimal? = session.account.equity
 
-    override fun shutdown() = attachment.close()
+    override fun positionAccountingMode(symbol: String): PositionAccountingMode = session.account.accounting
+
+    override fun shutdown() {
+        session.detach(attachment)
+    }
 
     private fun reject(
         request: OrderRequest,

@@ -87,6 +87,24 @@ class GatewayClient(
         toMs: Long,
     ): List<WireFill> = read("/v1/deals?from=$fromMs&to=$toMs", WireDeals.serializer()).deals
 
+    /** `GET /v1/orders/{id}`: the order in its current state, or null when the gateway never placed it. */
+    fun order(clientOrderId: String): WireOrder? {
+        val (status, text) = send("/v1/orders/$clientOrderId") { it.get() }
+        return when (status) {
+            200 -> json.decodeFromString(WireOrder.serializer(), text)
+            404 -> null
+            else -> throw failure(status, text)
+        }
+    }
+
+    /** `GET /v1/deals?client_order_id=`: every execution of [clientOrderId], oldest first. */
+    fun dealsOf(clientOrderId: String): List<WireFill> =
+        read("/v1/deals?client_order_id=$clientOrderId", WireDeals.serializer()).deals
+
+    /** `GET /v1/settlements?symbol=`: the settlement of venue [code], empty until it expires. */
+    fun settlementsOf(code: String): List<WireSettlement> =
+        read("/v1/settlements?symbol=$code", WireSettlements.serializer()).settlements
+
     /** `GET /v1/settlements`: contract settlements from [fromMs] to [toMs], oldest first. */
     fun settlements(
         fromMs: Long,
@@ -106,15 +124,6 @@ class GatewayClient(
 
     /** `DELETE /v1/orders/{id}`: the order as it ended, `filled` when the fill won the race. */
     fun cancel(clientOrderId: String): WireOrder = write("/v1/orders/$clientOrderId") { it.delete() }
-
-    /** `POST /v1/positions/close`: closes [quantity] of [symbol], or all of it; never gated. */
-    fun closePosition(
-        symbol: String,
-        quantity: String? = null,
-    ): WireOrder {
-        val body = json.encodeToString(ClosePosition.serializer(), ClosePosition(symbol, quantity))
-        return write("/v1/positions/close") { it.post(body.toRequestBody(JSON)) }
-    }
 
     private fun write(
         path: String,
@@ -169,12 +178,6 @@ class GatewayClient(
         status: Int,
         text: String,
     ): GatewayException = errorOf(status, text).let { GatewayException(status, it.code, it.message) }
-
-    @kotlinx.serialization.Serializable
-    private data class ClosePosition(
-        val symbol: String,
-        val quantity: String? = null,
-    )
 
     private companion object {
         val JSON = "application/json".toMediaType()

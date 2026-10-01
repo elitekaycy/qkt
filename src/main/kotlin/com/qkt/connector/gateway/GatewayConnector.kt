@@ -33,7 +33,12 @@ class GatewayConnector : Connector {
         context: ConnectorContext,
     ): List<TradingAccount> =
         accounts.map {
-            GatewayTradingAccount(it, GatewaySettings.of(it, context), context.clock)
+            GatewayTradingAccount(
+                it,
+                GatewaySettings.of(it, context),
+                context.clock,
+                context.strategiesTrading(it.name).toSet(),
+            )
         }
 }
 
@@ -42,46 +47,38 @@ class GatewayTradingAccount internal constructor(
     override val config: AccountConfig,
     private val settings: GatewaySettings,
     private val clock: Clock,
+    private val strategies: Set<String>,
 ) : TradingAccount {
+    private val identity = GatewayIdentity(settings.adapter, settings.accountLogin, settings.tradeMode)
     private val client by lazy {
         GatewayClient(settings.url, settings.apiKey, settings.httpTimeoutMs, settings.retryAttempts)
     }
-    private val session by lazy {
-        val symbols = GatewaySymbols(config.symbolPrefix, client.instruments().map { it.code })
-        GatewaySession(
-            client,
-            symbols,
-            clock,
-            streamFactory = { onEvent, onReset, onConnection ->
-                GatewayStream(settings.url, settings.apiKey, onEvent, onReset, onConnection)
-            },
-        )
-    }
+    private val opened =
+        lazy {
+            GatewaySession(
+                client,
+                GatewaySymbols(config.symbolPrefix),
+                clock,
+                identity,
+                strategies,
+                streamFactory = { onEvent, onReset, onConnection ->
+                    GatewayStream(settings.url, settings.apiKey, onEvent, onReset, onConnection)
+                },
+            )
+        }
 
     override val tradingHours: SymbolCalendars = GatewaySettings.calendars(config)
 
     override val marketData: MarketSource? = null
 
     override val orderEntry: BrokerFactory = { bus, clock, _, positions, strategyName ->
-        GatewayBroker(session, bus, clock, positions, strategyName)
+        GatewayBroker(opened.value, bus, clock, positions, strategyName, shared = strategies.size > 1)
     }
 
-    /**
-     * Checks the gateway before anything trades: it must speak `vgp1` and report the expected adapter,
-     * account login and trade mode.
-     */
+    /** Checks the gateway before anything trades: it must speak `vgp1` and report the expected identity. */
     override fun verify(): AccountProfile {
         val health = client.health()
-        check(health.protocol == "vgp1") { "${config.name}: gateway speaks '${health.protocol}', not vgp1" }
-        check(health.adapter == settings.adapter) {
-            "${config.name}: gateway adapter '${health.adapter}', expected '${settings.adapter}'"
-        }
-        check(health.accountLogin == settings.accountLogin) {
-            "${config.name}: gateway account '${health.accountLogin}', expected '${settings.accountLogin}'"
-        }
-        check(health.tradeMode == settings.tradeMode) {
-            "${config.name}: gateway trade mode '${health.tradeMode}', expected '${settings.tradeMode}'"
-        }
+        identity.mismatch(health)?.let { error("${config.name}: $it") }
         val account = client.account()
         return AccountProfile(
             accountName = config.name,
@@ -96,5 +93,8 @@ class GatewayTradingAccount internal constructor(
         )
     }
 
-    override fun close() = Unit
+    /** Closes the account's gateway connection, if it was ever opened. */
+    override fun close() {
+        if (opened.isInitialized()) opened.value.close()
+    }
 }

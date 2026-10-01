@@ -99,6 +99,11 @@ internal class StartupReconcile(
         val reconciler = com.qkt.persistence.LegBookReconciler(persistor)
         for ((strategyId, _) in strategies) {
             for (symbol in symbols) {
+                // A shared netting account's position is every strategy's net: each persisted book stands.
+                if (broker.isAccountWide(symbol)) {
+                    strategyPositions.preloadFromPersistor(strategyId, symbol)
+                    continue
+                }
                 val allTicketsForSymbol = brokerTicketsBySymbol[symbol].orEmpty()
                 val ticketsForStrategy =
                     if (scopeByTicket) {

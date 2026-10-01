@@ -14,11 +14,12 @@ class GatewayProtocolException(
 ) : RuntimeException(message)
 
 /**
- * The one place engine events are built from VGP v1 order and fill objects. An order is accepted
- * once, and cancelled or rejected once; its fills are partial until their quantities reach the
- * order's quantity, and the fill that reaches it completes the order. A `fill_id` already booked
- * (a replay after a reconnect) is dropped. [strategyOf] attributes a client order id to its strategy.
- * Not thread-safe: the gateway stream calls it from one reader thread.
+ * The one place engine events are built from VGP v1 order, fill and settlement objects. An order is
+ * accepted once, and cancelled or rejected once; its fills are partial until their quantities reach the
+ * order's quantity, and the fill that reaches it completes the order. A `fill_id` already booked (a
+ * replay after a reconnect) is dropped, and so is any update of an order that has ended. [strategyOf]
+ * attributes a client order id to its strategy. Not thread-safe: its owner calls it under one lock from
+ * the stream, placement and engine threads.
  */
 class GatewayEventTranslator(
     private val symbols: GatewaySymbols,
@@ -26,15 +27,13 @@ class GatewayEventTranslator(
 ) {
     private val quantities = HashMap<String, BigDecimal>()
     private val filled = HashMap<String, BigDecimal>()
-    private val preBooked = HashMap<String, BigDecimal>()
     private val accepted = HashSet<String>()
-    private val ended = HashSet<String>()
-    private val booked = RecentIds(BOOKED_FILLS)
+    private val booked = RecentIds(RECENT)
+    private val done = RecentIds(RECENT)
 
     /**
      * Order [clientOrderId] was sent for [quantity]: its fills complete it at that quantity. A restored
-     * order passes [alreadyFilled], what was booked before a restart: its oldest fills up to that
-     * quantity, replayed by the gateway, are not booked again.
+     * order passes [alreadyFilled], what was booked before a restart.
      */
     fun expect(
         clientOrderId: String,
@@ -42,39 +41,42 @@ class GatewayEventTranslator(
         alreadyFilled: BigDecimal = BigDecimal.ZERO,
     ) {
         quantities[clientOrderId] = quantity
-        if (alreadyFilled.signum() > 0) {
-            filled[clientOrderId] = alreadyFilled
-            preBooked[clientOrderId] = alreadyFilled
-        }
+        if (alreadyFilled.signum() > 0) filled[clientOrderId] = alreadyFilled
+    }
+
+    /** Fill [fillId] was booked before a restart: it is never booked again. */
+    fun markBooked(fillId: String) {
+        booked.add(fillId)
     }
 
     /** The engine event an `order` update means, or null when it repeats what was already reported. */
     fun order(order: WireOrder): BrokerEvent.OrderEvent? {
         val id = order.clientOrderId
+        if (done.contains(id)) return null
         quantities[id] = decimal(order.quantity, "quantity")
         val strategy = strategyOf(id)
         return when (order.status) {
             "working", "filled" ->
-                if (accepted.add(id)) BrokerEvent.OrderAccepted(id, order.venueOrderId, strategy) else null
-            "cancelled" ->
-                if (ended.add(
+                if (accepted.add(
                         id,
                     )
                 ) {
-                    BrokerEvent.OrderCancelled(id, order.venueOrderId, "cancelled at the venue", strategy)
+                    BrokerEvent.OrderAccepted(id, order.venueOrderId, strategy)
                 } else {
                     null
                 }
+            "cancelled" ->
+                end(
+                    id,
+                ) { BrokerEvent.OrderCancelled(id, order.venueOrderId, "cancelled at the venue", strategy) }
             "rejected" ->
-                if (ended.add(id)) {
+                end(id) {
                     BrokerEvent.OrderRejected(
                         id,
                         order.venueOrderId,
                         order.rejectReason ?: "rejected by the venue",
                         strategy,
                     )
-                } else {
-                    null
                 }
             else -> throw GatewayProtocolException("order $id has status '${order.status}'")
         }
@@ -82,30 +84,13 @@ class GatewayEventTranslator(
 
     /** The engine event a `fill` means, or null for a fill already booked. */
     fun fill(fill: WireFill): BrokerEvent.OrderEvent? {
-        val symbol =
-            symbols.qkt(fill.symbol) ?: throw GatewayProtocolException("fill ${fill.fillId} on unlisted ${fill.symbol}")
+        val symbol = symbols.qkt(fill.symbol)
         val side = sideOf(fill.side)
         val quantity = decimal(fill.quantity, "quantity")
         val price = decimal(fill.price, "price")
-        val costs =
-            fill.costs.map {
-                VenueCost(kindOf(it.kind), MoneyAmount(decimal(it.amount, "cost"), it.currency), fill.time)
-            }
+        val costs = costsOf(fill.costs, fill.time)
         if (!booked.add(fill.fillId)) return null
         val id = fill.clientOrderId
-        val unreplayed = preBooked[id]
-        if (unreplayed != null && unreplayed >= quantity) {
-            // Booked before the restart: replayed, never booked twice.
-            if (unreplayed.compareTo(quantity) ==
-                0
-            ) {
-                preBooked.remove(id)
-            } else {
-                preBooked[id] = unreplayed.subtract(quantity)
-            }
-            return null
-        }
-        preBooked.remove(id)
         val cumulative = (filled[id] ?: BigDecimal.ZERO).add(quantity)
         val total = quantities[id]
         val strategy = strategyOf(id)
@@ -124,8 +109,7 @@ class GatewayEventTranslator(
                 typedVenueCosts = costs,
             )
         }
-        filled.remove(id)
-        quantities.remove(id)
+        forget(id)
         return BrokerEvent.OrderFilled(
             id,
             fill.venueOrderId,
@@ -139,17 +123,29 @@ class GatewayEventTranslator(
         )
     }
 
-    /** The engine event a `settlement` means: [settlement]'s contract settled at its price, for every holder. */
-    fun settlement(settlement: WireSettlement): ContractSettled {
-        val symbol =
-            symbols.qkt(settlement.symbol)
-                ?: throw GatewayProtocolException("settlement of unlisted ${settlement.symbol}")
-        return ContractSettled(
-            symbol,
+    /** The engine event a `settlement` means: the contract settled at its price, for every holder. */
+    fun settlement(settlement: WireSettlement): ContractSettled =
+        ContractSettled(
+            symbols.qkt(settlement.symbol),
             decimal(settlement.price, "price"),
             costsOf(settlement.costs, settlement.time),
             settlement.time,
         )
+
+    private fun end(
+        id: String,
+        event: () -> BrokerEvent.OrderEvent,
+    ): BrokerEvent.OrderEvent {
+        forget(id)
+        return event()
+    }
+
+    /** Order [id] has ended: its state goes, and later updates of it are not reported. */
+    private fun forget(id: String) {
+        done.add(id)
+        quantities.remove(id)
+        filled.remove(id)
+        accepted.remove(id)
     }
 
     private fun costsOf(
@@ -181,8 +177,8 @@ class GatewayEventTranslator(
     ): BigDecimal = text.toBigDecimalOrNull() ?: throw GatewayProtocolException("$field '$text' is not a decimal")
 
     private companion object {
-        /** Far more executions than any reconnect replays, so a replayed fill is always recognized. */
-        const val BOOKED_FILLS = 10_000
+        /** Far more executions and orders than any reconnect replays, so a replay is always recognized. */
+        const val RECENT = 10_000
     }
 }
 
@@ -197,4 +193,7 @@ internal class RecentIds(
 
     /** Adds [id]; false when it was already among the recent ones. */
     fun add(id: String): Boolean = ids.put(id, Unit) == null
+
+    /** Whether [id] is among the recent ones. */
+    fun contains(id: String): Boolean = ids.containsKey(id)
 }

@@ -39,7 +39,8 @@ class GatewayStream(
     private var streamId: String? = null
     private var lastSeq: Long? = null
     private var backoffMs = initialBackoffMs
-    private var socket: WebSocket? = null
+
+    @Volatile private var socket: WebSocket? = null
 
     @Volatile private var stopped = false
 
@@ -74,6 +75,7 @@ class GatewayStream(
         http.connectionPool.evictAll()
     }
 
+    /** Delivers [text]'s event; the stream's position moves only once it was handled, so a failure is resynchronized. */
     private fun receive(text: String) {
         val event = json.decodeFromString(WireEvent.serializer(), text)
         synchronized(lock) {
@@ -85,10 +87,10 @@ class GatewayStream(
                     lastSeq != null && event.seq > lastSeq!! + 1 -> "seq $lastSeq -> ${event.seq}"
                     else -> null
                 }
-            streamId = event.stream
-            lastSeq = event.seq
             if (reason != null) onReset(reason)
             if (event.type != "reset") onEvent(event)
+            streamId = event.stream
+            lastSeq = event.seq
         }
     }
 
