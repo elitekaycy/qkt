@@ -293,6 +293,11 @@ POSITION.<stream>.last_trade_at             -- epoch ms of the last fill on this
 OPEN_ORDERS.<stream>                        -- active risk-increasing entry-order count
 ```
 
+On an option structure alias (`OPEN ps = OPTIONS ON …`), `POSITION.ps` is the structure's size and
+`.pnl`, `.credit`, `.max_loss`, `.pnl_pct`, `.dte`, `.delta`, `.gamma`, `.vega` and `.theta` read the
+structure; see [Option structures](structures.md#reading-a-structure). The structure fields compile
+only on a structure alias, and the stream-only accessors only on a stream.
+
 Every accessor above compiles; an unknown one (`POSITION.btc.size`) is a parse error:
 
 ```qkt
