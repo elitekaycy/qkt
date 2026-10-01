@@ -23,10 +23,15 @@ internal object GeneralizedBlackScholes {
         volatility: Double,
         rho: (price: Double, d2: Double) -> Double,
     ): OptionValue {
-        require(underlying > 0.0) { "option underlying (spot or forward) must be > 0: $underlying" }
+        require(underlying > 0.0 && underlying.isFinite()) {
+            "option underlying (spot or forward) must be finite and > 0: $underlying"
+        }
         require(strike > 0.0) { "option strike must be > 0: $strike" }
         require(years >= 0.0) { "option years to expiry must be >= 0: $years" }
-        require(volatility > 0.0) { "option volatility must be > 0: $volatility" }
+        require(volatility > 0.0 && volatility.isFinite()) { "option volatility must be finite and > 0: $volatility" }
+        require(rate.isFinite()) { "option rate must be finite: $rate" }
+        require(carry.isFinite()) { "option carry (rate less yield) must be finite: $carry" }
+        require(years.isFinite()) { "option years to expiry must be finite: $years" }
         if (years == 0.0) return intrinsic(right, underlying, strike)
         val sqrtT = sqrt(years)
         val d1 = (ln(underlying / strike) + (carry + volatility * volatility / 2) * years) / (volatility * sqrtT)

@@ -9,14 +9,14 @@ import kotlin.math.max
  * bounds (the discounted intrinsic value below, the discounted underlying or strike above) and
  * expired options have none, and the solver says so with null instead of inventing a number — never
  * 0. Inside the bounds the price is increasing in volatility, so Newton steps on vega are taken
- * inside a bisection bracket on `[1e-4, 5.0]`, falling back to bisection when vega vanishes or a
+ * inside a bisection bracket on `[1e-4, 10.0]` (short-dated crypto wings can trade above 500%), falling back to bisection when vega vanishes or a
  * step leaves the bracket; it stops when volatility is pinned to 1e-12 or returns null after 100
  * steps. A price within 1e-12 (of the bound's scale) of its floor is indistinguishable from it and
  * has no implied volatility either.
  */
 object ImpliedVolatility {
     private const val LOW = 1e-4
-    private const val HIGH = 5.0
+    private const val HIGH = 10.0
     private const val SIGMA_TOLERANCE = 1e-12
 
     /** Prices this close to the no-arbitrage floor, relative to its scale, carry no volatility information. */

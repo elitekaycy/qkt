@@ -341,8 +341,9 @@ settlement: CASH)`. Option contract symbols come from the chain catalog
 
 - `Black76` (options on futures/forwards) and `BlackScholes` (spot underlying with a forward):
   price, delta, gamma, vega, theta, rho. `Double`, closed form, with `NormalDistribution` (CDF by
-  a published rational approximation with absolute error < 7.5e-8, cited in KDoc).
-- `ImpliedVolatility`: Newton on vega with a bisection fallback inside `[1e-4, 5.0]`; returns
+  Hart's double-precision algorithm as published by West (2005): exact to double precision absolutely
+  and ~1e-8 relative in the tails, so wing prices and IVs agree with exchange figures).
+- `ImpliedVolatility`: Newton on vega with a bisection fallback inside `[1e-4, 10.0]`; returns
   `null` for prices outside no-arbitrage bounds or non-convergence. Never 0.
 - Time to expiry in years = `(expiryMs − nowMs) / (365 × 24 × 3600 × 1000)`; rates are an explicit
   input (default 0 for USDC crypto options, stated).

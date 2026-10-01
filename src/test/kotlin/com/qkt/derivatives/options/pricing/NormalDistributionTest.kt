@@ -28,4 +28,13 @@ class NormalDistributionTest {
         assertThat(NormalDistribution.pdf(1.0)).isCloseTo(0.2419707245, within(1e-10))
         assertThat(NormalDistribution.pdf(-1.0)).isEqualTo(NormalDistribution.pdf(1.0))
     }
+
+    @Test
+    fun `the far tails keep their relative precision`() {
+        // Exact values from 0.5 * erfc(-x / sqrt 2).
+        val exact = mapOf(-5.0 to 2.866515718791946e-7, -8.0 to 6.220960574271819e-16, -20.0 to 2.7536241186063314e-89)
+        for ((x, value) in exact) {
+            assertThat(NormalDistribution.cdf(x) / value).describedAs("x=$x").isCloseTo(1.0, within(1e-8))
+        }
+    }
 }
