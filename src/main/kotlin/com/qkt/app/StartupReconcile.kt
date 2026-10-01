@@ -15,7 +15,8 @@ import org.slf4j.LoggerFactory
  * Three-way reconcile: persisted leg state + broker positions → attached LegBook
  * or refusal. Runs once at startup before the engine thread takes ticks, e.g. a persisted
  * BUY 0.10 leg the venue still holds is re-attached; one the venue no longer lists is retired;
- * a venue position nobody persisted throws [ReconcileException] unless mismatches are ignored.
+ * a venue position nobody persisted throws [ReconcileException] unless mismatches are ignored. On an
+ * account-wide venue every persisted book of the strategy is restored, declared symbol or not.
  */
 internal class StartupReconcile(
     private val strategies: List<Pair<String, Strategy>>,
@@ -98,7 +99,10 @@ internal class StartupReconcile(
             }
         val reconciler = com.qkt.persistence.LegBookReconciler(persistor)
         for ((strategyId, _) in strategies) {
-            for (symbol in symbols) {
+            // An account-wide venue also restores the books of symbols the strategy never declared:
+            // the option legs a structure picked when it fired.
+            val undeclared = persistor.legBookSymbols(strategyId).filter { it !in symbols && broker.isAccountWide(it) }
+            for (symbol in symbols + undeclared) {
                 // A shared netting account's position is every strategy's net: each persisted book stands.
                 if (broker.isAccountWide(symbol)) {
                     strategyPositions.preloadFromPersistor(strategyId, symbol)

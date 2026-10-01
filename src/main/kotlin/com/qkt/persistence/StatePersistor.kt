@@ -3,8 +3,6 @@ package com.qkt.persistence
 import com.qkt.common.Side
 import com.qkt.execution.OrderRequest
 import com.qkt.positions.LegBook
-import com.qkt.positions.LegRole
-import com.qkt.positions.PositionLeg
 import java.math.BigDecimal
 
 /**
@@ -39,6 +37,9 @@ interface StatePersistor :
         strategyId: String,
         symbol: String,
     ): PersistedLegBook?
+
+    /** Every symbol [strategyId] has a persisted leg book for, declared or not (an option leg a structure picked). */
+    fun legBookSymbols(strategyId: String): Set<String> = emptySet()
 
     fun saveBracketPairs(
         strategyId: String,
@@ -230,46 +231,6 @@ data class PersistedExitHookBinding(
     val exitQuantity: BigDecimal,
     val exitPnl: BigDecimal,
 )
-
-data class PersistedLeg(
-    val legId: String,
-    val parentLegId: String?,
-    val role: LegRole,
-    val side: Side,
-    val symbol: String,
-    val quantity: BigDecimal,
-    val entryPrice: BigDecimal,
-    val openedAt: Long,
-    val brokerTicket: String? = null,
-) {
-    fun toPositionLeg(): PositionLeg =
-        PositionLeg(
-            legId = legId,
-            parentLegId = parentLegId,
-            role = role,
-            side = side,
-            symbol = symbol,
-            quantity = quantity,
-            entryPrice = entryPrice,
-            openedAt = openedAt,
-            brokerTicket = brokerTicket,
-        )
-
-    companion object {
-        fun fromPositionLeg(leg: PositionLeg): PersistedLeg =
-            PersistedLeg(
-                legId = leg.legId,
-                parentLegId = leg.parentLegId,
-                role = leg.role,
-                side = leg.side,
-                symbol = leg.symbol,
-                quantity = leg.quantity,
-                entryPrice = leg.entryPrice,
-                openedAt = leg.openedAt,
-                brokerTicket = leg.brokerTicket,
-            )
-    }
-}
 
 /**
  * Excursion marks of one leg. [legId], [side] and [entryPrice] identify the leg the marks belong
