@@ -41,8 +41,8 @@ class ContinuousContractBroker(
 ) : Broker {
     private val lanes: Map<String, StreamLane> =
         symbols.associateWith { symbol ->
-            val chain = requireNotNull(chains.chainFor(symbol)) { "$symbol is not a continuous futures stream" }
-            StreamLane(bus, clock, chain, ledger, fills, venueFactory)
+            requireNotNull(chains.chainFor(symbol)) { "$symbol is not a continuous futures stream" }
+            StreamLane(bus, clock, { requireNotNull(chains.chainFor(symbol)) }, ledger, fills, venueFactory)
         }
 
     override val name: String = "ContinuousFutures"

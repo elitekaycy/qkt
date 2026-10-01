@@ -20,12 +20,15 @@ import org.slf4j.LoggerFactory
  */
 internal class RollCarry(
     private val clock: Clock,
-    private val chain: ContinuousChain,
+    private val chainOf: () -> ContinuousChain,
     private val venue: ContractVenue,
     private val legs: RollLegs,
     private val fills: ContractFillLog,
 ) {
     private val log = LoggerFactory.getLogger(RollCarry::class.java)
+
+    /** The chain as it stands now: a live session extends it with each roll it measures. */
+    private val chain: ContinuousChain get() = chainOf()
 
     /**
      * Carry one strategy's [quantity] to the new contract, adding its entry to the run, and hand [then]
