@@ -80,6 +80,11 @@ Proposal, keeping every backtest identical:
 - A leg not filled within a bound (a market order on a live venue should fill in seconds) stops that
   strategy on the stream and alerts, as a refused leg does.
 
+**Ruling (step 3):** a roll that cannot be measured ends the stream's feed with its reason, and since a
+live feed's end is an outage, the session stops (fail-closed) rather than running a strategy whose
+stream no longer updates; the operator measures the roll (`qkt fetch <ROOT> --rolls`) and restarts.
+The account feed's own outages pass through the stream unchanged.
+
 ### 2.4 Restart
 
 Persisted with the session: each lane's current contract index and per-strategy contract positions;
