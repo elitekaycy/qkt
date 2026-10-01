@@ -48,4 +48,18 @@ class BacktestInstrumentsTest {
         assertThat(registry.lookup("BINANCE_UM:BTCUSDT@front")).isNotNull
         assertThat(registry.lookup("BACKTEST:XAUUSD")?.contractSize).isEqualByComparingTo("100")
     }
+
+    @Test
+    fun `an option missing from its root's catalog fails before the run`(
+        @TempDir dir: Path,
+    ) {
+        Files.writeString(
+            dir.resolve("instruments.yaml"),
+            "options:\n  - { root: DERIBIT:BTC_USDC, currency: USDC, contractSize: 1, tickSize: 5, volumeStep: 0.01, " +
+                "volumeMin: 0.01, underlyingIndex: btc_usdc }\n",
+        )
+
+        assertThatThrownBy { BacktestInstruments.registry(dir, null, listOf("DERIBIT:BTC_USDC-27SEP24-60000-C")) }
+            .hasMessageContaining("qkt fetch DERIBIT:BTC_USDC --catalog")
+    }
 }
