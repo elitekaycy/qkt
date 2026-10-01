@@ -23,4 +23,26 @@ class BacktestCalendarTest {
             backtestCalendar(listOf("CHAIN:DERIBIT.BTC_USDC.atm_iv.30d", "EXNESS:EURUSD"), NoopInstrumentRegistry),
         ).isEqualTo(backtestCalendar(listOf("EXNESS:EURUSD"), NoopInstrumentRegistry))
     }
+
+    @Test
+    fun `a live strategy's calendar skips its read-only feeds and asks the venue for its first traded symbol`(
+        @TempDir dir: Path,
+    ) {
+        val f = OptionChainFixture(dir)
+        val asked = mutableListOf<String>()
+        val venue = TradingCalendar.fxDefault()
+
+        val symbols = listOf("OPTIONS:DERIBIT.BTC_USDC", "CHAIN:DERIBIT.BTC_USDC.atm_iv.30d", f.symbol)
+
+        val calendar =
+            strategyCalendar(symbols, f.registry) {
+                asked += it
+                venue
+            }
+
+        assertThat(calendar).isEqualTo(venue)
+        assertThat(asked).containsExactly(f.symbol)
+        assertThat(strategyCalendar(listOf("OPTIONS:DERIBIT.BTC_USDC"), f.registry) { venue })
+            .isEqualTo(TradingCalendar.crypto())
+    }
 }
