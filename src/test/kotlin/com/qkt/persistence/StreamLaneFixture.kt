@@ -126,6 +126,18 @@ internal object StreamLaneFixture {
                         openedAt = null,
                     ),
                 ),
+            legs =
+                listOf(
+                    PersistedRollLeg(
+                        market("o-3", "CME:ESH27", Side.BUY),
+                        listOf(
+                            fill("o-3", "CME:ESH27", Side.BUY, "5040.5"),
+                            fill("o-3", "CME:ESH27", Side.BUY, "5041"),
+                        ),
+                    ),
+                    PersistedRollLeg(market("c-4", "CME:ESZ26", Side.BUY), emptyList()),
+                ),
+            cancelling = listOf("e-2"),
             roll =
                 PersistedStreamRoll(
                     fromIndex = 3,
