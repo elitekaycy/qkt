@@ -1,9 +1,7 @@
 package com.qkt.derivatives.options.chain
 
+import com.qkt.instrument.QuoteSource
 import java.math.BigDecimal
-
-/** Where a chain quote came from: an instrument's last trade (sparse, no book) or the venue's book. */
-enum class QuoteSource { TRADE, BOOK }
 
 /**
  * One option contract of a chain at [atMs]: its book ([bid], [ask], either may be absent), its [mark]
