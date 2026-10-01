@@ -14,7 +14,8 @@ import okhttp3.Request
 
 /**
  * Deribit's public JSON-RPC API over HTTPS GET, no key: the live host for current instruments and
- * index data, the history host (`history.deribit.com`) for expired instruments. Responses are decoded
+ * index data, the history host (`history.deribit.com`) for expired instruments and trades (current to
+ * within a minute; both trade window bounds inclusive). Responses are decoded
  * as they stream in, into small records that ignore unused fields — the expired-options listing is
  * over 100 MB. Throttling (HTTP 429), server errors and lost connections are retried after a growing
  * pause, up to five attempts; a JSON-RPC error (sent with HTTP 400) fails at once with the venue's
@@ -50,6 +51,25 @@ class DeribitClient(
             "get_delivery_prices",
             mapOf("index_name" to index, "offset" to "$offset", "count" to "$pageSize"),
             DeribitDeliveryPage.serializer(),
+        )
+
+    internal fun optionTrades(
+        currency: String,
+        startMs: Long,
+        endMs: Long,
+    ): DeribitTradePage =
+        call(
+            historyBaseUrl,
+            "get_last_trades_by_currency_and_time",
+            mapOf(
+                "currency" to currency,
+                "kind" to "option",
+                "start_timestamp" to "$startMs",
+                "end_timestamp" to "$endMs",
+                "count" to "$pageSize",
+                "sorting" to "asc",
+            ),
+            DeribitTradePage.serializer(),
         )
 
     private fun <T> call(
