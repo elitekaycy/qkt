@@ -50,4 +50,15 @@ class FuturesMarginBacktestTest {
     ) {
         assertThat(run(dir, "10000").trades).hasSize(2)
     }
+
+    @Test
+    fun `a margined run reports each day's margin`(
+        @TempDir dir: Path,
+    ) {
+        val days = run(dir, "10000").marginDaily
+
+        assertThat(days.map { it.date.toString() }).contains("2024-09-18", "2024-09-19")
+        assertThat(days).allSatisfy { assertThat(it.marginUsed).isGreaterThan(it.maintenance) }
+        assertThat(days.none { it.marginCall }).isTrue()
+    }
 }

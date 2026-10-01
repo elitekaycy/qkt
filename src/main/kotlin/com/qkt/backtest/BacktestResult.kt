@@ -1,5 +1,6 @@
 package com.qkt.backtest
 
+import com.qkt.accounting.margin.MarginDay
 import com.qkt.broker.continuous.ContractFill
 import com.qkt.broker.continuous.RollEntry
 import com.qkt.broker.exchange.Settlement
@@ -112,4 +113,6 @@ data class BacktestResult(
     val contractFills: List<ContractFill> = emptyList(),
     /** Every position the exchange settled at a contract's expiry; empty otherwise. */
     val settlements: List<Settlement> = emptyList(),
+    /** Each UTC day's futures margin at its last sample, for days that ended holding margined positions. */
+    val marginDaily: List<MarginDay> = emptyList(),
 )
