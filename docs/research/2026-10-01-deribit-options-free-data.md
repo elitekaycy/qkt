@@ -83,3 +83,15 @@ anything not linear-in-USDC rather than assume.
 - **The venue's mark can lie outside its own book.** In 21 of 1,228 live rows the mark was below
   the bid or above the ask. The option fill model (43.3) must therefore price against the book side
   when one exists, and use the mark only with a declared spread model when there is no book.
+
+## 8. Option fees (for the 43.3 fee model)
+
+- `public/get_instrument` for `BTC_USDC-25DEC26-92000-C` (2026-10-01): `maker_commission` and
+  `taker_commission` are both `0.0003`, `block_trade_commission` is `0.0003`, `contract_size` is `1`.
+- Deribit's support articles "Linear USDC Options" and "Fees" (read through search-engine excerpts;
+  the pages themselves answer a Cloudflare challenge to scripts): the trading fee is 0.03% of the
+  underlying index price per contract, **capped at 12.5% of the option's price**. The delivery fee is
+  0.015% and is likewise never more than 12.5% of the option's value. In-the-money linear options
+  are first delivered into a future that cash-settles at the same delivery price, which pays no
+  second delivery fee. Economically, that is cash settlement at the delivery price, less one
+  delivery fee.
