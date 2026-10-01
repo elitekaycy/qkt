@@ -84,4 +84,28 @@ class DerivativeSymbolChecksTest {
             .hasMessageContaining("CME:ESH6")
             .hasMessageContaining("--catalog")
     }
+
+    @Test
+    fun `a catalogued option is refused until qkt has an option venue`() {
+        val root =
+            com.qkt.instrument.OptionRoot(
+                "DERIBIT:BTC_USDC",
+                "USDC",
+                BigDecimal.ONE,
+                com.qkt.instrument.TickSteps(BigDecimal("5")),
+                BigDecimal("0.01"),
+                BigDecimal("0.01"),
+                "btc_usdc",
+            )
+        val catalog =
+            com.qkt.instrument.OptionCatalog(
+                root.root,
+                listOf(com.qkt.instrument.OptionListing("BTC_USDC-27DEC24-90000-P", "90000", "put", 1735286400000)),
+            )
+        val registry = com.qkt.instrument.OptionCatalogRegistry(listOf(root), mapOf(root.root to catalog))
+
+        assertThatThrownBy {
+            requireDerivativeSymbolsResolvable(listOf("DERIBIT:BTC_USDC-27DEC24-90000-P"), AccountingEngine(), registry)
+        }.hasMessageContaining("DERIBIT:BTC_USDC-27DEC24-90000-P").hasMessageContaining("option")
+    }
 }
