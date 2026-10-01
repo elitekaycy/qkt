@@ -12,19 +12,26 @@ data class TradeChain(
 /**
  * Folds an option trade feed into chain snapshots at fixed instants, for markets whose only free
  * history is trades. At each instant `t` a catalogued contract is quoted once it has traded at or
- * before `t` and until its expiry (absent at the expiry instant itself), carrying its last trade's
- * mark, IV and index, the trade's age as `markAgeMs`, and no book. Nothing after `t` is used, and
- * an instant with no contract quoted has no snapshot. Trades are deduplicated by id and ordered by
+ * before `t`, until its expiry (absent at the expiry instant itself) and while that trade is at most
+ * [maxMarkAgeMs] old, carrying the trade's mark, IV and index, its age as `markAgeMs`, and no book.
+ * Nothing after `t` is used, and an instant with no contract quoted has no snapshot. The age cap
+ * makes a snapshot independent of where the feed starts, provided it starts [maxMarkAgeMs] before
+ * the first instant. Trades are deduplicated by id and ordered by
  * time then sequence, so a feed delivered out of order or with page overlaps builds the same chain.
  */
 class TradeChainBuilder(
     private val catalog: OptionCatalog,
+    private val maxMarkAgeMs: Long,
 ) {
+    init {
+        require(maxMarkAgeMs > 0) { "TradeChainBuilder.maxMarkAgeMs must be > 0: $maxMarkAgeMs" }
+    }
+
     private val expiries = catalog.contracts.associate { it.symbol to it.expiryMs }
 
     /**
-     * Snapshots at `fromMs, fromMs + everyMs, …` before `toMs`. Pass trades from before `fromMs` too:
-     * a contract last traded then is quoted from the first instant, aged accordingly.
+     * Snapshots at `fromMs, fromMs + everyMs, …` before `toMs`, from [trades] reaching back at least
+     * [maxMarkAgeMs] before `fromMs` (older trades are harmless and ignored).
      */
     fun build(
         trades: List<OptionTrade>,
@@ -45,7 +52,7 @@ class TradeChainBuilder(
                 last[feed[next].contract] = feed[next]
                 next++
             }
-            last.entries.removeIf { expiries.getValue(it.key) <= at }
+            last.entries.removeIf { expiries.getValue(it.key) <= at || at - it.value.timestampMs > maxMarkAgeMs }
             if (last.isNotEmpty()) snapshots += ChainSnapshot(catalog.root, at, last.values.map { quoteOf(it, at) })
             at += everyMs
         }

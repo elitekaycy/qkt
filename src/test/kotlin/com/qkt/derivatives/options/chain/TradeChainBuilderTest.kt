@@ -21,7 +21,7 @@ class TradeChainBuilderTest {
                 OptionListing(put, "80000", "put", ms("2026-10-01T08:00:00Z")),
             ),
         )
-    private val builder = TradeChainBuilder(catalog)
+    private val builder = TradeChainBuilder(catalog, maxMarkAgeMs = 3 * 3_600_000)
 
     private fun trade(
         id: String,
@@ -124,10 +124,43 @@ class TradeChainBuilderTest {
     }
 
     @Test
+    fun `a mark older than the maximum age drops out until the contract trades again`() {
+        val byHour =
+            builder
+                .build(trades, ms("2026-10-01T05:00:00Z"), ms("2026-10-01T14:00:00Z"), 3_600_000)
+                .snapshots
+                .associate { Instant.ofEpochMilli(it.atMs).toString() to it.quotes }
+
+        assertThat(byHour.getValue("2026-10-01T12:00:00Z").single().markAgeMs).isEqualTo(3 * 3_600_000)
+        assertThat(byHour).doesNotContainKey("2026-10-01T13:00:00Z")
+    }
+
+    @Test
+    fun `the chain at an instant does not depend on how early the feed starts`() {
+        val feed =
+            listOf(trade("1", "2026-10-01T05:00:00Z", call, "15"), trade("2", "2026-10-01T08:30:00Z", call, "16"))
+        val window = ms("2026-10-01T09:00:00Z")
+        val lookedBack = feed.filter { it.timestampMs >= window - 3 * 3_600_000 }
+
+        val fromAll = builder.build(feed, window, window + 3_600_000, 3_600_000)
+        val fromLookback = builder.build(lookedBack, window, window + 3_600_000, 3_600_000)
+
+        assertThat(fromLookback).isEqualTo(fromAll)
+        assertThat(
+            fromAll.snapshots
+                .single()
+                .quotes
+                .single()
+                .mark,
+        ).isEqualByComparingTo("16")
+    }
+
+    @Test
     fun `an empty or inverted window and a non-positive interval are refused`() {
         val at = ms("2026-10-01T05:00:00Z")
 
         assertThatThrownBy { builder.build(trades, at, at, 60_000) }.hasMessageContaining("window")
         assertThatThrownBy { builder.build(trades, at, at + 60_000, 0) }.hasMessageContaining("interval")
+        assertThatThrownBy { TradeChainBuilder(catalog, 0) }.hasMessageContaining("maxMarkAgeMs")
     }
 }
