@@ -17,14 +17,10 @@ internal class RestingOrdersAtRoll(
     private val orders: ContinuousOrderMap,
     private val legs: RollLegs,
 ) {
-    /** Cancel every order working on contract [index] at the venue, silently; returns them. */
-    fun pull(index: Int): List<ContinuousOrder> {
-        val resting = orders.on(index)
-        for (order in resting) {
-            legs.cancelling(order.venueId)
-            venue.broker.cancel(order.venueId)
-        }
-        return resting
+    /** Cancel [resting] at the venue, silently: every cancel is expected before the first is sent. */
+    fun pull(resting: List<ContinuousOrder>) {
+        resting.forEach { legs.cancelling(it.venueId) }
+        resting.forEach { venue.broker.cancel(it.venueId) }
     }
 
     /** Re-place what is left of [order] on contract [toIndex] ([to]), its levels mapped through [space]. */

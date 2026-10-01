@@ -52,7 +52,7 @@ internal class CarryLegs(
         leg: OrderRequest.Market,
         then: (LegOutcome) -> Unit,
     ) {
-        legs.expect(leg.id, leg.quantity)
+        legs.expect(leg)
         venue.broker.submit(leg)
         legs.whenEnded(leg.id, then)
     }
@@ -62,7 +62,7 @@ internal class CarryLegs(
         leg: OrderRequest.Market,
         then: (LegOutcome) -> Unit,
     ) {
-        legs.expect(leg.id, leg.quantity)
+        legs.expect(leg)
         legs.whenEnded(leg.id, then)
     }
 

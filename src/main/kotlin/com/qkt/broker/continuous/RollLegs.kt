@@ -2,6 +2,7 @@ package com.qkt.broker.continuous
 
 import com.qkt.common.Money
 import com.qkt.events.BrokerEvent
+import com.qkt.execution.OrderRequest
 import java.math.BigDecimal
 
 /** How one market leg of a roll ended. */
@@ -33,23 +34,17 @@ internal sealed interface LegOutcome {
  * submit returned, else when the answer arrives.
  */
 internal class RollLegs {
-    private class Leg(
-        val quantity: BigDecimal,
-    ) {
-        val slices = ArrayList<BrokerEvent.OrderPartiallyFilled>()
-    }
-
-    private val pending = HashMap<String, Leg>()
+    private val pending = LinkedHashMap<String, LegInFlight>()
     private val ended = HashMap<String, LegOutcome>()
     private val waiting = HashMap<String, (LegOutcome) -> Unit>()
-    private val cancelling = HashSet<String>()
+    private val cancelling = LinkedHashSet<String>()
 
-    /** Expect a leg of [quantity] under [venueId]. */
+    /** Expect [leg], of which [slices] already filled (a leg recovered after a restart). */
     fun expect(
-        venueId: String,
-        quantity: BigDecimal,
+        leg: OrderRequest.Market,
+        slices: List<BrokerEvent.OrderFilled> = emptyList(),
     ) {
-        pending[venueId] = Leg(quantity)
+        pending[leg.id] = LegInFlight(leg, slices)
     }
 
     /** Expect the cancel of the resting order working under [venueId]. */
@@ -57,20 +52,23 @@ internal class RollLegs {
         cancelling += venueId
     }
 
-    /** Whether [venueId] is a roll leg, whose events are not the engine's. */
-    fun isLeg(venueId: String): Boolean = venueId in pending
+    /** The legs still out at the venue, in the order they were sent. */
+    val inFlight: List<LegInFlight> get() = pending.values.toList()
+
+    /** The venue ids of the resting orders whose cancel is still awaited. */
+    val awaitedCancels: List<String> get() = cancelling.toList()
 
     /** Keep [e] if it is a slice of a leg; returns whether it was. */
     fun onPartiallyFilled(e: BrokerEvent.OrderPartiallyFilled): Boolean {
         val leg = pending[e.clientOrderId] ?: return false
-        leg.slices += e
+        pending[e.clientOrderId] = leg.copy(slices = leg.slices + e.asFill())
         return true
     }
 
     /** End the leg [e] completes; returns whether it was a leg. */
     fun onFilled(e: BrokerEvent.OrderFilled): Boolean {
         val leg = pending[e.clientOrderId] ?: return false
-        return end(e.clientOrderId, LegOutcome.Filled(filled(leg, e)))
+        return end(e.clientOrderId, LegOutcome.Filled(filled(leg.slices, e)))
     }
 
     /** End the leg [e] refuses; returns whether it was a leg. */
@@ -105,7 +103,7 @@ internal class RollLegs {
                     reason,
                 )
             } else {
-                LegOutcome.Partial(filled(leg, null), reason)
+                LegOutcome.Partial(filled(leg.slices, null), reason)
             }
         return end(venueId, outcome)
     }
@@ -124,24 +122,29 @@ internal class RollLegs {
         return true
     }
 
-    /** The leg's slices and [last] as one fill; a leg filled at once is [last] unchanged. */
+    /** [slices] and [last] as one fill; a leg filled at once is [last] unchanged. */
     private fun filled(
-        leg: Leg,
+        slices: List<BrokerEvent.OrderFilled>,
         last: BrokerEvent.OrderFilled?,
     ): BrokerEvent.OrderFilled {
-        if (leg.slices.isEmpty()) return requireNotNull(last)
-        val slices = leg.slices.map { it.quantity to it.price } + listOfNotNull(last?.let { it.quantity to it.price })
-        val quantity = slices.fold(BigDecimal.ZERO) { sum, (q, _) -> sum + q }
-        val notional = slices.fold(BigDecimal.ZERO) { sum, (q, p) -> sum + q * p }
-        val base = last ?: leg.slices.last().asFill()
-        return base.copy(
+        if (slices.isEmpty()) return requireNotNull(last)
+        val all = slices + listOfNotNull(last)
+        val quantity = all.fold(BigDecimal.ZERO) { sum, s -> sum + s.quantity }
+        val notional = all.fold(BigDecimal.ZERO) { sum, s -> sum + s.quantity * s.price }
+        return (last ?: slices.last()).copy(
             quantity = quantity,
             price = notional.divide(quantity, Money.CONTEXT),
-            venueCosts = leg.slices.fold(last?.venueCosts ?: BigDecimal.ZERO) { sum, s -> sum + s.venueCosts },
-            typedVenueCosts = leg.slices.flatMap { it.typedVenueCosts } + (last?.typedVenueCosts ?: emptyList()),
+            venueCosts = all.fold(BigDecimal.ZERO) { sum, s -> sum + s.venueCosts },
+            typedVenueCosts = all.flatMap { it.typedVenueCosts },
         )
     }
 }
+
+/** A roll's market [leg] out at the venue, with the [slices] of it filled so far, oldest first. */
+internal data class LegInFlight(
+    val leg: OrderRequest.Market,
+    val slices: List<BrokerEvent.OrderFilled>,
+)
 
 /** This slice as a fill of its own quantity, for books that take fills. */
 internal fun BrokerEvent.OrderPartiallyFilled.asFill() =
