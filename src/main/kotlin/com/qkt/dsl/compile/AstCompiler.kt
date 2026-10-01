@@ -84,6 +84,7 @@ class AstCompiler {
         whenThens.forEach { rule -> compilingRule(rule) { rejectReadOnlyOrders(rule.action, readOnlyAliases) } }
         ast.schedules.forEach { rejectReadOnlyOrders(it.action, readOnlyAliases) }
         validateBaskets(ast)
+        requireFedStructureRoots(ast)
         whenThens.forEach { rule -> compilingRule(rule) { validateCompleteBracket(rule.action, ast.defaults) } }
         ast.schedules.forEach { validateCompleteBracket(it.action, ast.defaults) }
         validateResizeProtection(ast)

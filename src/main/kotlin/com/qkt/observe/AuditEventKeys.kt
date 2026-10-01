@@ -77,5 +77,6 @@ private fun com.qkt.strategy.Signal.symbolOrNull(): String? =
         is com.qkt.strategy.Signal.Submit -> request.symbol
         is com.qkt.strategy.Signal.CancelPendingForSymbol -> symbol
         is com.qkt.strategy.Signal.ArmLatch -> null
+        is com.qkt.strategy.Signal.SubmitGroup -> null
         is com.qkt.strategy.Signal.Suppressed -> symbol
     }
