@@ -26,6 +26,7 @@ import com.qkt.notify.DailyRollingTracker
 import com.qkt.notify.NoopNotifier
 import com.qkt.notify.Notifier
 import com.qkt.notify.NotifyEventKind
+import com.qkt.observe.insights.TicketAttribution
 import com.qkt.pnl.PnLCalculator
 import com.qkt.pnl.StrategyPnL
 import com.qkt.positions.PositionProvider
@@ -66,7 +67,7 @@ class LiveSession(
     private val strategyCommentNames: Map<String, String> = emptyMap(),
     private val rules: List<RiskRule> = emptyList(),
     private val haltRules: List<HaltRule> = emptyList(),
-    private val source: MarketSource,
+    source: MarketSource,
     private val symbols: List<String>,
     /** Market-data subscriptions, including non-traded FX conversion symbols. */
     private val feedSymbols: List<String> = symbols,
@@ -287,6 +288,9 @@ class LiveSession(
     /** Accumulates trades/halts/equity-delta for the daily summary. */
     private val dailyTracker = DailyRollingTracker()
 
+    private val continuous = ContinuousWiring(feedSymbols, instrumentRegistry, source, clock)
+    private val source: MarketSource = continuous.source
+
     /** Builds and remembers this session's venue brokers so the session can ask them for their abilities. */
     private val brokers = SessionBrokers(strategies, symbols, brokerFactories, instrumentRegistry)
 
@@ -295,12 +299,7 @@ class LiveSession(
      * engine thread (fills) and at startup (recovery-seeded orphans); the poller only
      * reads, so it never touches engine-thread-only trackers.
      */
-    internal val ticketAttribution =
-        com.qkt.observe.insights
-            .TicketAttribution()
-            .also { attribution ->
-                strategyCommentNames.forEach { (strategyId, name) -> attribution.alias(name, strategyId) }
-            }
+    internal val ticketAttribution = TicketAttribution.aliasing(strategyCommentNames)
 
     // Kept as a member: LiveSessionBrokerCoverageTest reaches it reflectively by this name.
     private fun buildBroker(
@@ -309,7 +308,7 @@ class LiveSession(
         clock: Clock,
         priceTracker: MarketPriceTracker,
         positions: PositionProvider,
-    ): Broker = brokers.buildBroker(paperBroker, bus, clock, priceTracker, positions)
+    ): Broker = brokers.buildBroker(paperBroker, bus, clock, priceTracker, positions, continuous)
 
     private val perStrategyLimits =
         PerStrategyRiskLimits(
@@ -345,7 +344,7 @@ class LiveSession(
         val sequencer = MonotonicSequenceGenerator.resumingAfter(auditJournal?.lastSequence())
         val priceTracker = MarketPriceTracker()
         val accounting = com.qkt.accounting.accountingEngine(accountingConfig, priceTracker, instrumentRegistry)
-        requireLiveTradable(symbols, accounting)
+        requireLiveTradable(symbols, accounting, continuous.chains)
         val strategyPositions = StrategyPositionTracker(persistor)
         val positions = strategyPositions.account
         val bus = busOverride ?: EventBus(clock, sequencer)
@@ -355,6 +354,7 @@ class LiveSession(
         // They queue here and drain, in order, once the engine loop starts.
         val mailbox = EngineMailbox()
         bus.bindSink(mailbox::postBusEvent)
+        continuous.bindMailbox(mailbox)
         val paperInstruments =
             java.util.concurrent.atomic.AtomicReference<com.qkt.instrument.InstrumentRegistry>(
                 instrumentRegistry ?: com.qkt.instrument.NoopInstrumentRegistry,
@@ -551,8 +551,7 @@ class LiveSession(
                 .CandleHub()
 
         val now = Instant.ofEpochMilli(clock.now())
-        val warmupCoordinator =
-            PerStreamWarmupCoordinator(strategies, source, pipelineCandleHub, now)
+        val warmupCoordinator = PerStreamWarmupCoordinator(strategies, source, pipelineCandleHub, now)
 
         // Phase 25B: per-stream pre-fetch + hub seeding for DSL strategies. Seeding
         // must happen BEFORE TradingPipeline binds strategies to the hub: bindToHub
@@ -797,6 +796,7 @@ class LiveSession(
         // Route every publish from a non-engine thread (broker pollers, WS readers) onto this
         // loop's queue, so subscribers only ever run on the engine thread.
         bus.bindEngineLoop(thread, mailbox::postBusEvent)
+        continuous.attach(thread)
         mailbox.control.put(Inbound.PersistenceHealthCheck)
         thread.start()
 
