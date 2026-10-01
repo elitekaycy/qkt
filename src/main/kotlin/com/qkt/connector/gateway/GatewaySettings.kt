@@ -68,8 +68,17 @@ internal data class GatewaySettings(
                 tradeMode = mode,
                 httpTimeoutMs = account.setting("http_timeout_ms")?.toLong() ?: DEFAULT_TIMEOUT_MS,
                 retryAttempts = account.setting("retry_attempts")?.toInt() ?: DEFAULT_ATTEMPTS,
-                chainSnapshotMs = (account.setting("chain_snapshot_seconds")?.toLong() ?: DEFAULT_CHAIN_S) * MS_PER_S,
+                chainSnapshotMs = chainSnapshotSeconds(account) * MS_PER_S,
             )
+        }
+
+        /** The entry's live chain cadence: at least the 5 s a live chain stream polls at, so none is skipped. */
+        private fun chainSnapshotSeconds(account: AccountConfig): Long {
+            val seconds = account.setting("chain_snapshot_seconds")?.toLongOrNull() ?: DEFAULT_CHAIN_S
+            require(seconds >= MIN_CHAIN_S) {
+                "brokers.${account.name}.chain_snapshot_seconds must be at least $MIN_CHAIN_S: $seconds"
+            }
+            return seconds
         }
 
         /** The entry's `calendars` rules, by calendar name; with none, the venue trades around the clock. */
@@ -87,6 +96,7 @@ internal data class GatewaySettings(
         private const val DEFAULT_TIMEOUT_MS = 5_000L
         private const val DEFAULT_ATTEMPTS = 3
         private const val DEFAULT_CHAIN_S = 300L
+        private const val MIN_CHAIN_S = 5L
         private const val MS_PER_S = 1_000L
     }
 }

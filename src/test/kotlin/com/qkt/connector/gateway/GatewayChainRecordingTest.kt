@@ -63,4 +63,19 @@ class GatewayChainRecordingTest {
         assertThat(GatewayChainRecording(registry(dir, QuoteSource.BOOK), 60_000).sinkFor("DERIBIT:ETH_USDC")).isNull()
         assertThat(GatewayChainRecording(null, 60_000).sinkFor("DERIBIT:BTC_USDC")).isNull()
     }
+
+    @Test
+    fun `quotes after close are ignored and never fail the feed`(
+        @TempDir dir: Path,
+    ) {
+        val recording = GatewayChainRecording(registry(dir, QuoteSource.BOOK), cadenceMs = 60_000)
+        val sink = recording.sinkFor("DERIBIT:BTC_USDC")!!
+        sink(quote(ms("2026-10-01T10:00:10Z")))
+        recording.close()
+
+        sink(quote(ms("2026-10-01T10:01:05Z")))
+
+        assertThat(ChainSnapshotStore(dir, QuoteSource.BOOK).readDay("DERIBIT:BTC_USDC", LocalDate.parse("2026-10-01")))
+            .isEmpty()
+    }
 }

@@ -24,6 +24,7 @@ class NoopStatePersistor : StatePersistor {
         var sequences: Map<String, PersistedSequenceState> = emptyMap(),
         var exitHooks: List<PersistedExitHookBinding> = emptyList(),
         val excursions: ConcurrentHashMap<String, PersistedExcursion> = ConcurrentHashMap(),
+        var structures: List<PersistedStructure> = emptyList(),
     )
 
     private val state: ConcurrentHashMap<String, StrategyState> = ConcurrentHashMap()
@@ -47,6 +48,22 @@ class NoopStatePersistor : StatePersistor {
         strategyId: String,
         symbol: String,
     ): PersistedLegBook? = state[strategyId]?.legBooks?.get(symbol)
+
+    override fun legBookSymbols(strategyId: String): Set<String> =
+        state[strategyId]
+            ?.legBooks
+            ?.keys
+            ?.toSet()
+            .orEmpty()
+
+    override fun saveStructures(
+        strategyId: String,
+        structures: List<PersistedStructure>,
+    ) {
+        stateFor(strategyId).structures = structures.toList()
+    }
+
+    override fun loadStructures(strategyId: String): List<PersistedStructure> = state[strategyId]?.structures.orEmpty()
 
     override fun saveExcursion(
         strategyId: String,
