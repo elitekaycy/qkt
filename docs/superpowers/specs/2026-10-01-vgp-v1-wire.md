@@ -3,7 +3,7 @@
 **Status:** design for phase 44 (amends `2026-09-30-futures-options-design.md` §7). The endpoint list
 and semantics come from `docs/research/2026-09-18-venue-plugin-architecture.md` §6; this document
 fixes what that list left to implementations: the JSON, the event stream, errors, resume and the
-kill switch. The qkt client (`connector/gateway`) and any gateway (`qkt-venued`) implement exactly
+kill switch. The qkt client (`connector/gateway`) and any gateway (`qkt-venue-gateway`) implement exactly
 this; the client's fake gateway in tests is built from it.
 
 ## 1. Conventions

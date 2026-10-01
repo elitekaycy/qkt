@@ -25,11 +25,11 @@ import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable
 
 /**
  * qkt against a real VGP gateway, only when `QKT_VGP_URL` (and `QKT_VGP_TOKEN`) are set: a running
- * `qkt-venued` with the paper adapter on Deribit's live public data. It verifies the account, reads
+ * `qkt-venue-gateway` with the paper adapter on Deribit's live public data. It verifies the account, reads
  * live ticks and closed bars, and round-trips a small market order through the real connector.
  */
 @EnabledIfEnvironmentVariable(named = "QKT_VGP_URL", matches = ".+")
-class LiveVenuedTest {
+class LiveVenueGatewayTest {
     private val symbol = "DERIBIT:BTC_USDC_PERPETUAL"
 
     @Test
@@ -81,7 +81,7 @@ class LiveVenuedTest {
 
                     override fun allPositions() = emptyMap<String, Position>()
                 }
-            val broker = account.orderEntry(bus, SystemClock(), MarketPriceTracker(), flat, "live-venued")
+            val broker = account.orderEntry(bus, SystemClock(), MarketPriceTracker(), flat, "live-venue-gateway")
             val stamp = System.currentTimeMillis()
             broker.submit(
                 OrderRequest.Market(
@@ -91,7 +91,7 @@ class LiveVenuedTest {
                     BigDecimal("0.001"),
                     TimeInForce.GTC,
                     stamp,
-                    "live-venued",
+                    "live-venue-gateway",
                 ),
             )
             await { events.any { it is BrokerEvent.OrderFilled } || events.any { it is BrokerEvent.OrderRejected } }
@@ -107,7 +107,7 @@ class LiveVenuedTest {
                     BigDecimal("0.001"),
                     TimeInForce.GTC,
                     stamp + 1,
-                    "live-venued",
+                    "live-venue-gateway",
                 ),
             )
             await { events.filterIsInstance<BrokerEvent.OrderFilled>().size == 2 }
