@@ -1,6 +1,6 @@
 # Live continuous futures (phase 46) — design
 
-**Status:** steps 1-4 built (see §6); step 5 (restart) and the live leg timeout remain. **Why separate:** phase 45 ruled that continuous streams
+**Status:** steps 1-4 built (see §6); step 5 (restart) remains. **Why separate:** phase 45 ruled that continuous streams
 (`VENUE:ROOT@front`) stay backtest-only (parity A33) because live rolling is not wiring. This document
 designs it. **Builds on:** `ContinuousChain`, `AdjustmentChain`, `RollHistoryBuilder`,
 `ContinuousContractBroker`/`StreamLane`/`RollExecutor` (phase 42.5) and the gateway connector (44/45).
@@ -140,6 +140,11 @@ until an operator measures it (`qkt fetch <root> --rolls`).
 Remaining:
 - Step 5, restart (§2.4): persist each lane's contract book and an in-flight roll's legs; a roll in a
   downtime is already measured on the first tick after restart.
-- A live leg timeout: a leg the venue never answers must stop the strategy on the stream and alert, and
-  a late fill of that leg must not reach the engine as an order of its own. Not built until that late
-  fill path is designed and tested.
+
+**Ruling (no leg timeout):** a roll leg waits for the venue's answer. The gateway resolves every order
+it took (write-ahead, then the venue's label, then the order's fills), so a leg always ends; meanwhile
+the stream refuses new orders. A timeout would invent an outcome the venue never gave and leave a late
+fill with nowhere correct to go. What a venue can do to a leg is handled: a leg filled in slices is
+carried whole at the slices' weighted price; an opening leg ended part-filled is unwound and the
+position closed on the stream; a closing leg ended part-filled closes only that part
+(`LaneSlicedFillsTest`). The strategy's own orders filled in slices reach the engine slice by slice.

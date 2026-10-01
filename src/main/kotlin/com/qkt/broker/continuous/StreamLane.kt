@@ -7,7 +7,6 @@ import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.derivatives.futures.ContinuousChain
 import com.qkt.derivatives.futures.PriceSpace
 import com.qkt.events.BrokerEvent
-import com.qkt.execution.LegIntent
 import com.qkt.execution.OrderRequest
 import com.qkt.instrument.PriceAdjustment
 import com.qkt.marketdata.MarketPriceTracker
@@ -51,19 +50,7 @@ internal class StreamLane(
     private val spaces = HashMap<Int, PriceSpace>()
 
     init {
-        venueBus.subscribe<BrokerEvent.OrderFilled> { e -> book.applyFill(e, LegIntent.Net) }
-        venueBus.subscribe<BrokerEvent.OrderAccepted> { e ->
-            orders.byVenueId(e.clientOrderId)?.takeIf { it.isOriginal }?.let {
-                bus.publish(e.copy(clientOrderId = it.request.id))
-            }
-        }
-        venueBus.subscribe<BrokerEvent.OrderRejected> { e -> if (!legs.onRejected(e)) onRejected(e) }
-        venueBus.subscribe<BrokerEvent.OrderCancelled> { e ->
-            if (!legs.onCancelled(e)) {
-                orders.removeByVenueId(e.clientOrderId)?.let { bus.publish(e.copy(clientOrderId = it.request.id)) }
-            }
-        }
-        venueBus.subscribe<BrokerEvent.OrderFilled> { e -> if (!legs.onFilled(e)) onFilled(e) }
+        LaneVenueEvents(bus, clock, chainOf, venueBus, book, orders, legs, positions, fills, ::space)
     }
 
     /** Whether the engine order [engineId] works on this stream. */
@@ -128,48 +115,8 @@ internal class StreamLane(
         return index
     }
 
-    private fun onRejected(e: BrokerEvent.OrderRejected) {
-        val order = orders.removeByVenueId(e.clientOrderId) ?: return
-        if (order.isOriginal) {
-            bus.publish(e.copy(clientOrderId = order.request.id))
-            return
-        }
-        val reason = "re-placing on ${chain.contractSymbol(order.contractIndex)} at the roll was rejected: ${e.reason}"
-        bus.publish(
-            BrokerEvent.OrderCancelled(
-                order.request.id,
-                e.brokerOrderId,
-                reason,
-                order.request.strategyId,
-                clock.now(),
-            ),
-        )
-    }
-
-    private fun onFilled(e: BrokerEvent.OrderFilled) {
-        val order = orders.removeByVenueId(e.clientOrderId)
-        val index = order?.contractIndex ?: contractIndexOf(e.symbol)
-        positions.merge(e.strategyId, e.signedQuantity(), BigDecimal::add)
-        val engineFill =
-            e.copy(
-                clientOrderId = order?.request?.id ?: e.clientOrderId,
-                symbol = chain.symbol,
-                price = space(index).toContinuous(e.price),
-            )
-        fills.record(contractFill(e, engineFill))
-        bus.publish(engineFill)
-    }
-
     /** Contract [index]'s price mapping, built once per contract. */
     private fun space(index: Int): PriceSpace = spaces.getOrPut(index) { chain.spaceFor(index) }
-
-    private fun contractIndexOf(contract: String): Int =
-        requireNotNull(
-            chain.schedule.contracts.indices
-                .firstOrNull { chain.contractSymbol(it) == contract },
-        ) {
-            "${chain.symbol} received a fill on $contract, which is not in its chain"
-        }
 
     private fun refusal(now: Long): String? {
         val stream = chain.symbol
