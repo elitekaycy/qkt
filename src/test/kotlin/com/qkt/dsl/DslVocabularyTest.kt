@@ -1,6 +1,7 @@
 package com.qkt.dsl
 
 import com.qkt.dsl.compile.AstCompiler
+import com.qkt.dsl.compile.STRUCTURE_SOURCES
 import com.qkt.dsl.parse.Dsl
 import com.qkt.dsl.parse.ParseResult
 import org.assertj.core.api.Assertions.assertThat
@@ -37,8 +38,28 @@ class DslVocabularyTest {
     }
 
     @Test
-    fun `every POSITION member compiles after a stream alias`() {
-        for (member in DslVocabulary.members.getValue("POSITION")) compiles(strategy("POSITION.g.$member > 0"))
+    fun `every POSITION member but the structure fields compiles after a stream alias`() {
+        val structureOnly = DslVocabulary.positionAccessors.filterValues { it in STRUCTURE_SOURCES }.keys
+        for (member in DslVocabulary.members.getValue("POSITION") - structureOnly) {
+            compiles(strategy("POSITION.g.$member > 0"))
+        }
+    }
+
+    @Test
+    fun `quantity, pnl and every structure field compile after a structure alias`() {
+        val structureOnly = DslVocabulary.positionAccessors.filterValues { it in STRUCTURE_SOURCES }.keys
+        for (member in listOf("quantity", "qty", "pnl") + structureOnly) {
+            compiles(
+                """
+                STRATEGY t VERSION 1
+                SYMBOLS
+                    chain = OPTIONS:DERIBIT.BTC_USDC EVERY 1m
+                RULES
+                    WHEN POSITION.ps.$member > 0
+                    THEN OPEN ps = OPTIONS ON DERIBIT:BTC_USDC { BUY PUT DELTA 0.25 DTE 7 TO 30 } SIZING 0.1
+                """.trimIndent(),
+            )
+        }
     }
 
     @Test

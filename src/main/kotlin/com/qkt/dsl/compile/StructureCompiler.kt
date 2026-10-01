@@ -3,7 +3,6 @@ package com.qkt.dsl.compile
 import com.qkt.common.IdGenerator
 import com.qkt.common.Money
 import com.qkt.common.Side
-import com.qkt.derivatives.options.chain.ChainView
 import com.qkt.derivatives.options.chain.LegSpec
 import com.qkt.derivatives.options.chain.StructurePlan
 import com.qkt.derivatives.options.chain.StructurePlanner
@@ -14,7 +13,6 @@ import com.qkt.dsl.ast.StructureLegRight
 import com.qkt.dsl.ast.StructureLegSide
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.TimeInForce
-import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.OptionRight
 import com.qkt.instrument.OptionSymbols
 import com.qkt.strategy.Signal
@@ -34,8 +32,6 @@ internal class StructureCompiler(
     private val exprCompiler: ExprCompiler,
     private val ids: IdGenerator,
 ) {
-    private var views: Pair<InstrumentRegistry, ChainView>? = null
-
     fun compile(action: OpenStructure): (EvalContext) -> List<Signal> {
         val size: (EvalContext, BigDecimal?) -> BigDecimal? =
             when (val sizing = action.sizing) {
@@ -88,7 +84,7 @@ internal class StructureCompiler(
             return Signal.Suppressed(root.root, "${action.alias} is already live (${live.state})")
         }
         val snapshot =
-            view(instruments).latest(root.root, now)
+            exprCompiler.structures.view(instruments).latest(root.root, now)
                 ?: return Signal.Suppressed(root.root, "no ${root.root} chain at or before now")
         val maxAgeMs = root.maxQuoteAgeMinutes * MS_PER_MINUTE
         val plan = StructurePlanner.plan(specs, snapshot, options.listings(root.root), maxAgeMs, root.contractSize)
@@ -124,9 +120,6 @@ internal class StructureCompiler(
             }
         return Signal.SubmitGroup(structureId, action.alias, legs)
     }
-
-    private fun view(instruments: InstrumentRegistry): ChainView =
-        views?.takeIf { it.first === instruments }?.second ?: ChainView(instruments).also { views = instruments to it }
 
     private companion object {
         const val MS_PER_MINUTE = 60_000L

@@ -55,14 +55,7 @@ object OptionSelector {
         criteria: LegCriteria,
         maxQuoteAgeMs: Long,
     ): SelectedOption? {
-        val usable =
-            snapshot.quotes.filter { q ->
-                val listing = listings[q.contract]
-                listing != null &&
-                    listing.expiryMs > snapshot.atMs &&
-                    (q.markIv?.signum() ?: 0) > 0 &&
-                    q.markAgeMs <= maxQuoteAgeMs
-            }
+        val usable = usableQuotes(snapshot, listings, maxQuoteAgeMs)
         val byExpiry = usable.groupBy { listings.getValue(it.contract).expiryMs }
         val ofRight = { expiry: Long ->
             byExpiry[expiry].orEmpty().filter {
@@ -78,14 +71,7 @@ object OptionSelector {
                     ofRight(e).isNotEmpty()
             } ?: return null
         val candidates = ofRight(expiry).ifEmpty { return null }
-        val forward =
-            byExpiry.getValue(expiry).map { it.underlying.toDouble() }.sorted().let { m ->
-                (
-                    m[(m.size - 1) / 2] +
-                        m[m.size / 2]
-                ) /
-                    2
-            }
+        val forward = medianForward(byExpiry.getValue(expiry))
         val years = (expiry - snapshot.atMs) / YEAR_MS
         return candidates
             .map { quote ->

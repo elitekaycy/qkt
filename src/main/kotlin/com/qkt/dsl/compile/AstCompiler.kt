@@ -51,7 +51,8 @@ class AstCompiler {
         val letRhsByName: Map<String, ExprAst> = ast.lets.associate { it.name to resolver.resolveDeclaration(it) }
         val bindings = IndicatorBinding.Bag()
         val aggregates = AggregateBinding.Bag()
-        val exprCompiler = ExprCompiler(bindings, aggregates, basketConstituents)
+        val exprCompiler =
+            ExprCompiler(bindings, aggregates, basketConstituents, structures = StructureSupport(structureAliases(ast)))
         val exitExprCompiler =
             ExprCompiler(
                 bindings = bindings,
