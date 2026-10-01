@@ -21,7 +21,8 @@ import com.qkt.positions.PositionProvider
  * contract symbol for a continuous stream. Each venue is handed the stream's contract positions, as its
  * account holds them, to judge what an order reduces. At each roll every position and resting order is carried
  * to the next contract and the roll is recorded in [ledger] with its cost booked ([RollExecutor]);
- * every engine fill is recorded in [fills] with the contract and price it executed at.
+ * every engine fill is recorded in [fills] with the contract and price it executed at. A live session's
+ * lanes keep their state in [store] across restarts; a backtest passes none.
  *
  * Orders are accepted only on streams adjusted by panama: there continuous-space P&L plus the
  * booked roll costs equals the P&L of the contract legs exactly.
@@ -39,12 +40,13 @@ class ContinuousContractBroker(
     private val symbols: Set<String>,
     ledger: RollLedger,
     fills: ContractFillLog,
+    store: LaneStateStore? = null,
     venueFactory: (EventBus, MarketPriceTracker, PositionProvider) -> ContractVenue,
 ) : Broker {
     private val lanes: Map<String, StreamLane> =
         symbols.associateWith { symbol ->
             requireNotNull(chains.chainFor(symbol)) { "$symbol is not a continuous futures stream" }
-            StreamLane(bus, clock, { requireNotNull(chains.chainFor(symbol)) }, ledger, fills, venueFactory)
+            StreamLane(bus, clock, { requireNotNull(chains.chainFor(symbol)) }, ledger, fills, venueFactory, store)
         }
 
     override val name: String = "ContinuousFutures"

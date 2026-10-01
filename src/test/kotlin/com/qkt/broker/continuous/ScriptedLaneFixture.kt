@@ -21,6 +21,7 @@ import com.qkt.instrument.RollHistory
 import com.qkt.instrument.RollPolicy
 import com.qkt.instrument.RollRecord
 import com.qkt.marketdata.Tick
+import com.qkt.persistence.NoopStatePersistor
 import com.qkt.positions.PositionProvider
 import java.math.BigDecimal
 import java.time.Instant
@@ -88,7 +89,11 @@ internal class ScriptedLaneFixture {
         override val capabilities = setOf(OrderTypeCapability.MARKET)
         val sent = mutableListOf<OrderRequest>()
 
+        /** Called with each request as it reaches the venue, before it is recorded. */
+        var onSubmit: (OrderRequest) -> Unit = {}
+
         override fun submit(request: OrderRequest): SubmitAck {
+            onSubmit(request)
             sent += request
             return SubmitAck(request.id, null, accepted = true)
         }
@@ -103,6 +108,7 @@ internal class ScriptedLaneFixture {
     lateinit var lanePositions: PositionProvider
     val ledger = RollLedger()
     val engine = mutableListOf<BrokerEvent>()
+    val persistor = NoopStatePersistor()
     val broker =
         ContinuousContractBroker(
             bus,
@@ -111,6 +117,7 @@ internal class ScriptedLaneFixture {
             setOf(front),
             ledger,
             ContractFillLog(),
+            LaneStateStore(persistor, "owner"),
         ) { b, _, p ->
             venueBus = b
             lanePositions = p
@@ -174,4 +181,7 @@ internal class ScriptedLaneFixture {
     }
 
     fun leg(suffix: String) = venue.sent.single { it.id.startsWith("roll:") && it.id.endsWith(suffix) }
+
+    /** The stream's lane as last saved. */
+    fun saved() = requireNotNull(persistor.loadStreamLane("owner", front)) { "$front was never saved" }
 }

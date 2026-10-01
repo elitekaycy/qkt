@@ -22,7 +22,8 @@ import java.time.Instant
  * republished on [bus] in continuous space: the engine's order id, the continuous symbol, and
  * prices mapped by the contract the order worked on. The lane keeps each strategy's position on the
  * stream from those fills and rolls it ([RollExecutor]) when the schedule moves to the next contract;
- * a strategy whose position could not be carried places no further orders on the stream.
+ * a strategy whose position could not be carried places no further orders on the stream. A live lane
+ * with a [store] saves its state ([LaneState]) before every venue action and after every venue answer.
  */
 internal class StreamLane(
     private val bus: EventBus,
@@ -31,6 +32,7 @@ internal class StreamLane(
     ledger: RollLedger,
     private val fills: ContractFillLog,
     venueFactory: (EventBus, MarketPriceTracker, PositionProvider) -> ContractVenue,
+    private val store: LaneStateStore? = null,
 ) {
     /** The chain as it stands now: a live session extends it with each roll it measures. */
     private val chain: ContinuousChain get() = chainOf()
@@ -40,17 +42,20 @@ internal class StreamLane(
 
     /** The stream's contract positions as its venue account holds them: every venue fill, roll legs too, netted. */
     private val book = StrategyPositionTracker(clock = clock::now)
-    private val venue = venueFactory(venueBus, contractPrices, book.account)
+    private val venue =
+        venueFactory(venueBus, contractPrices, book.account).let { if (store == null) it else it.savingFirst(::save) }
     private val orders = ContinuousOrderMap()
     private val legs = RollLegs()
     private val rolls = RollExecutor(bus, clock, chainOf, venue, contractPrices, orders, legs, ledger, fills)
     private val positions = LinkedHashMap<String, BigDecimal>()
-    private val stops = HashMap<String, String>()
+    private val stops = LinkedHashMap<String, String>()
+    private val state = LaneState(chainOf, positions, stops, orders, book, legs, rolls)
     private var current: Int? = null
     private val spaces = HashMap<Int, PriceSpace>()
 
     init {
         LaneVenueEvents(bus, clock, chainOf, venueBus, book, orders, legs, positions, fills, ::space)
+        if (store != null) venueBus.subscribeAll { if (it is BrokerEvent) save() }
     }
 
     /** Whether the engine order [engineId] works on this stream. */
@@ -101,18 +106,27 @@ internal class StreamLane(
     private fun catchUp(nowMs: Long): Int? {
         val index = chain.indexAt(nowMs) ?: return null
         val previous = current
+        if (previous == index) return index
         current = index
-        if (previous != null && previous != index) {
-            rolls.roll(previous, index, positions) { outcome ->
-                stops.putAll(outcome.stopped)
-                for (close in outcome.closes) {
-                    positions.merge(close.strategyId, close.signedQuantity(), BigDecimal::add)
-                    bus.publish(close)
-                }
-                outcome.costs.forEach(bus::publish)
+        if (previous == null) {
+            save()
+            return index
+        }
+        rolls.roll(previous, index, positions) { outcome ->
+            stops.putAll(outcome.stopped)
+            for (close in outcome.closes) {
+                positions.merge(close.strategyId, close.signedQuantity(), BigDecimal::add)
+                bus.publish(close)
             }
+            outcome.costs.forEach(bus::publish)
+            save()
         }
         return index
+    }
+
+    /** Saves the lane as it stands, when it has a [store]: before every venue action and after every venue answer. */
+    private fun save() {
+        store?.save(state.snapshot(current))
     }
 
     /** Contract [index]'s price mapping, built once per contract. */

@@ -35,6 +35,9 @@ internal class ContinuousOrderMap {
 
     fun byEngineId(id: String): ContinuousOrder? = byEngineId[id]
 
+    /** Every working order, oldest first. */
+    val all: List<ContinuousOrder> get() = byEngineId.values.toList()
+
     fun byVenueId(venueId: String): ContinuousOrder? = engineIdByVenueId[venueId]?.let(byEngineId::get)
 
     /** The orders working on contract [index], oldest first. */
