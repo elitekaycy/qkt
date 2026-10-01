@@ -87,8 +87,10 @@ for other windows), else builds them from the venue's trades; a window with no t
 client reads them for live warmup, and to measure a continuous stream's roll live by the same rule as
 `qkt fetch --rolls` (each contract's last 1-minute close at or before the roll).
 
-### `GET /v1/contracts/{root}`
-The futures chain: `{"root": "BTCUSDT", "contracts": [{"code": "BTCUSDT_241227", "expiry": 1735286400000}]}`.
+### Futures chains (not in v1)
+A dated future carries no root on the wire (`underlying` is for options only), so v1 serves no futures
+chain. The chain endpoint is designed with its first consumer, live continuous futures (qkt phase 46),
+together with how a future names its root.
 
 ### `GET /v1/positions`
 `{"accounting": "netting", "positions": [<Position>]}` with
