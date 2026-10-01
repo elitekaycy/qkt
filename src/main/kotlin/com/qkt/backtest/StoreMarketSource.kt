@@ -106,13 +106,14 @@ private fun chainStreamProblem(
     instruments: InstrumentRegistry,
 ): String? {
     val stream = ChainAnalyticsSymbol.parse(symbol).getOrElse { return it.message }
-    val root =
-        instruments.options()?.root(stream.root) ?: return "${stream.root} of $symbol is not declared under options:"
-    return if (root.chains ==
-        null
-    ) {
-        "${stream.root} of $symbol declares no chain series (chains: trade | book)"
-    } else {
-        null
+    val options = instruments.options()
+    val root = options?.root(stream.root) ?: return "${stream.root} of $symbol is not declared under options:"
+    return when {
+        root.chains == null -> "${stream.root} of $symbol declares no chain series (chains: trade | book)"
+        options
+            .listings(
+                root.root,
+            ).isEmpty() -> "${stream.root} of $symbol has no catalog; run: qkt fetch ${root.root} --catalog"
+        else -> null
     }
 }

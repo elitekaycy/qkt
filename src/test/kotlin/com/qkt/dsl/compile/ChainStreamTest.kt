@@ -56,4 +56,11 @@ class ChainStreamTest {
         assertThat(ChainAnalyticsSymbol.parse("CHAIN:DERIBIT.atm_iv.30d").exceptionOrNull())
             .hasMessageContaining("CHAIN:<VENUE>.<ROOT>.<metric>.<tenor>")
     }
+
+    @Test
+    fun `a lowercase chain prefix is refused rather than read as a venue`() {
+        val lower = strategy("BUY c SIZING 0.1").replace("CHAIN:", "chain:")
+
+        assertThat(Dsl.parse(lower)).isInstanceOf(ParseResult.Failure::class.java)
+    }
 }

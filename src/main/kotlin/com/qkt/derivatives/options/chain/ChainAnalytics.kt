@@ -7,17 +7,28 @@ import kotlin.math.abs
 import kotlin.math.sqrt
 
 /**
- * Implied-volatility analytics of one chain snapshot at a tenor, from quotes with a mark IV no older
- * than the quote age. Per expiry (years T > 0 on a 365-day year): the forward is the median
- * `underlying`, ATM IV the mean mark IV at the listed strike nearest the forward (lower on a tie), and
- * the 25-delta skew the put IV at delta −0.25 less the call IV at +0.25, each interpolated linearly in
- * Black-76 delta between the bracketing quotes. Across expiries ATM IV interpolates total variance
- * `IV²·T` and skew interpolates linearly in T; a tenor outside the listed expiries, or without the
- * pieces it needs, has no value. Nothing is extrapolated.
+ * Implied-volatility analytics of one chain snapshot at a tenor, from catalogued quotes with a
+ * positive mark IV no older than the quote age. Per expiry (years T > 0 on a 365-day year):
+ * - the forward F is the median `underlying`;
+ * - ATM IV interpolates the mean IV per strike linearly in strike between the nearest strikes at or
+ *   below and at or above F, both within [MAX_MONEYNESS] of F (otherwise none);
+ * - the 25-delta skew is the put IV at Black-76 delta −0.25 less the call IV at +0.25, each
+ *   interpolated linearly in delta between bracketing quotes both within [MAX_DELTA_GAP] of the
+ *   target (at rate 0: the venue's rate field is not used).
+ *
+ * Across expiries ATM IV interpolates total variance `IV²·T` and skew interpolates linearly in T. A
+ * tenor outside the expiries that carry the value has none: nothing is extrapolated or read from a
+ * distant strike.
  */
 object ChainAnalytics {
     private const val YEAR_MS = 365.0 * 24 * 3600 * 1000
     private const val WING = 0.25
+
+    /** How far from the forward, as a fraction of it, the strikes an ATM IV is read from may be. */
+    const val MAX_MONEYNESS = 0.10
+
+    /** How far in delta from ±0.25 the quotes a 25-delta IV is read from may be. */
+    const val MAX_DELTA_GAP = 0.15
 
     /** [metric] at [tenorDays] in [snapshot], with contract terms from [listings]; null when not defined. */
     fun value(
@@ -28,9 +39,8 @@ object ChainAnalytics {
         maxQuoteAgeMs: Long,
     ): Double? {
         require(tenorDays > 0) { "chain tenor must be > 0 days: $tenorDays" }
-        val smiles = smiles(snapshot, listings, maxQuoteAgeMs)
         val points =
-            smiles.mapNotNull { s ->
+            smiles(snapshot, listings, maxQuoteAgeMs).mapNotNull { s ->
                 val v = if (metric == ChainMetric.ATM_IV) s.atmIv() else s.skew()
                 v?.let { s.years to it }
             }
@@ -42,7 +52,6 @@ object ChainAnalytics {
         tau: Double,
         variance: Boolean,
     ): Double? {
-        points.firstOrNull { it.first == tau }?.let { return it.second }
         val (lo, hi) = points.zipWithNext().firstOrNull { (a, b) -> a.first <= tau && tau <= b.first } ?: return null
         val weight = (tau - lo.first) / (hi.first - lo.first)
         if (!variance) return lo.second + (hi.second - lo.second) * weight
@@ -57,7 +66,7 @@ object ChainAnalytics {
         maxQuoteAgeMs: Long,
     ): List<Smile> =
         snapshot.quotes
-            .filter { it.markIv != null && it.markAgeMs <= maxQuoteAgeMs && it.contract in listings }
+            .filter { q -> (q.markIv?.signum() ?: 0) > 0 && q.markAgeMs <= maxQuoteAgeMs && q.contract in listings }
             .groupBy { listings.getValue(it.contract).expiryMs }
             .toSortedMap()
             .mapNotNull { (expiry, quotes) ->
@@ -70,7 +79,6 @@ object ChainAnalytics {
         val right: OptionRight,
         val iv: Double,
         val underlying: Double,
-        val rate: Double,
     ) {
         companion object {
             fun of(
@@ -78,13 +86,11 @@ object ChainAnalytics {
                 listing: OptionListing,
             ): Leg {
                 val contract = listing.toContract()
-                val iv = requireNotNull(quote.markIv).toDouble()
                 return Leg(
                     contract.strike.toDouble(),
                     contract.right,
-                    iv,
+                    requireNotNull(quote.markIv).toDouble(),
                     quote.underlying.toDouble(),
-                    quote.rate?.toDouble() ?: 0.0,
                 )
             }
         }
@@ -96,9 +102,15 @@ object ChainAnalytics {
     ) {
         private val forward = legs.map { it.underlying }.sorted().let { m -> (m[(m.size - 1) / 2] + m[m.size / 2]) / 2 }
 
-        fun atmIv(): Double {
-            val strike = legs.map { it.strike }.distinct().minWith(compareBy({ abs(it - forward) }, { it }))
-            return legs.filter { it.strike == strike }.map { it.iv }.average()
+        fun atmIv(): Double? {
+            val ivByStrike = legs.groupBy { it.strike }.mapValues { (_, at) -> at.map { it.iv }.average() }
+            val below = ivByStrike.keys.filter { it <= forward }.maxOrNull() ?: return null
+            val above = ivByStrike.keys.filter { it >= forward }.minOrNull() ?: return null
+            val band = MAX_MONEYNESS * forward
+            if (forward - below > band || above - forward > band) return null
+            val lo = ivByStrike.getValue(below)
+            if (above == below) return lo
+            return lo + (ivByStrike.getValue(above) - lo) * (forward - below) / (above - below)
         }
 
         fun skew(): Double? {
@@ -114,10 +126,16 @@ object ChainAnalytics {
             val points =
                 legs
                     .filter { it.right == right }
-                    .map { Black76.value(right, forward, it.strike, years, it.rate, it.iv / 100).delta to it.iv }
+                    .map { Black76.value(right, forward, it.strike, years, 0.0, it.iv / 100).delta to it.iv }
                     .sortedBy { it.first }
+            val near = { d: Double -> abs(d - target) <= MAX_DELTA_GAP }
             val (lo, hi) =
-                points.zipWithNext().firstOrNull { (a, b) -> a.first <= target && target <= b.first }
+                points.zipWithNext().firstOrNull { (a, b) ->
+                    a.first <= target &&
+                        target <= b.first &&
+                        near(a.first) &&
+                        near(b.first)
+                }
                     ?: return null
             if (hi.first == lo.first) return lo.second
             return lo.second + (hi.second - lo.second) * (target - lo.first) / (hi.first - lo.first)

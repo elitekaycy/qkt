@@ -23,51 +23,64 @@ from `math.erf`):
 
 ```python
 import gzip,json,math,statistics,sys
-fx='src/test/resources/options/btc-usdc-book-20261001'
-rows=[l.split(',') for l in gzip.open(fx+'/chains/DERIBIT/BTC_USDC/book/2026-10-01.csv.gz','rt').read().splitlines()[1:]]
-cat={c['symbol']:c for c in json.load(open(fx+'/contracts/DERIBIT/BTC_USDC.options.json'))['contracts']}
-t=int(rows[0][0]); Y=365*24*3600*1000
+MONEY=0.10; GAP=0.15; Y=365*24*3600*1000
 def N(x): return 0.5*(1+math.erf(x/math.sqrt(2)))
-by={}
-for r in rows:
-    if r[5]=='' or int(r[8])>3600000: continue
-    c=cat[r[1]]; by.setdefault(c['expiryMs'],[]).append((float(c['strike'].replace('d','.')) if False else float(c['strike']), c['right'], float(r[5]), float(r[6]), float(r[7]) if r[7] else 0.0))
-exp={}
-for e,q in sorted(by.items()):
-    T=(e-t)/Y
-    if T<=0: continue
-    F=statistics.median([x[3] for x in q])
-    ks=sorted({x[0] for x in q}); k=min(ks,key=lambda s:(abs(s-F),s))
-    atm=statistics.mean([x[2] for x in q if x[0]==k])
-    def delta(K,right,iv,rate):
-        s=iv/100; d1=(math.log(F/K)+0.5*s*s*T)/(s*math.sqrt(T)); df=math.exp(-rate*T)
-        return df*N(d1) if right=='call' else -df*N(-d1)
-    calls=sorted(((delta(K,'call',iv,r),iv) for K,rt,iv,_,r in q if rt=='call'))
-    puts=sorted(((delta(K,'put',iv,r),iv) for K,rt,iv,_,r in q if rt=='put'))
-    def at(pts,target):
-        for (d0,v0),(d1,v1) in zip(pts,pts[1:]):
-            if d0<=target<=d1:
-                return v0 if d1==d0 else v0+(v1-v0)*(target-d0)/(d1-d0)
-        return None
-    c25=at(calls,0.25); p25=at(puts,-0.25)
-    exp[e]=(T,F,k,atm,None if c25 is None or p25 is None else p25-c25)
-def tenor(days,idx):
-    tau=days/365
-    items=[(T,v[idx]) for e,(T,*rest) in sorted(exp.items()) for v in [exp[e]]]
-    pts=[(v[0],v[idx]) for e,v in sorted(exp.items()) if v[idx] is not None]
-    for (T1,a),(T2,b) in zip(pts,pts[1:]):
+def metrics(t,rows,cat,maxage=3600000):
+    by={}
+    for r in rows:
+        if r[5]=='' or int(r[8])>maxage or r[1] not in cat: continue
+        iv=float(r[5])
+        if not (iv>0 and math.isfinite(iv)): continue
+        c=cat[r[1]]; by.setdefault(c['expiryMs'],[]).append((float(c['strike']),c['right'],iv,float(r[6])))
+    out=[]
+    for e,q in sorted(by.items()):
+        T=(e-t)/Y
+        if T<=0: continue
+        F=statistics.median([x[3] for x in q])
+        strikes=sorted({x[0] for x in q})
+        ivk={k:statistics.mean([x[2] for x in q if x[0]==k]) for k in strikes}
+        below=[k for k in strikes if k<=F]; above=[k for k in strikes if k>=F]
+        atm=None
+        if below and above:
+            k1,k2=max(below),min(above)
+            if abs(k1-F)/F<=MONEY and abs(k2-F)/F<=MONEY:
+                atm=ivk[k1] if k1==k2 else ivk[k1]+(ivk[k2]-ivk[k1])*(F-k1)/(k2-k1)
+        def delta(K,right,iv):
+            s=iv/100; d1=(math.log(F/K)+0.5*s*s*T)/(s*math.sqrt(T))
+            return N(d1) if right=='call' else -N(-d1)
+        def wing(right,target):
+            pts=sorted((delta(K,right,iv),iv) for K,rt,iv,_ in q if rt==right)
+            for (d0,v0),(d1,v1) in zip(pts,pts[1:]):
+                if d0<=target<=d1 and abs(d0-target)<=GAP and abs(d1-target)<=GAP:
+                    return v0 if d1==d0 else v0+(v1-v0)*(target-d0)/(d1-d0)
+            return None
+        c25=wing('call',0.25); p25=wing('put',-0.25)
+        out.append((T,atm,None if c25 is None or p25 is None else p25-c25))
+    return out
+def tenor(pts,days,idx):
+    tau=days/365; p=[(x[0],x[idx]) for x in pts if x[idx] is not None]
+    for (T1,a),(T2,b) in zip(p,p[1:]):
         if T1<=tau<=T2:
-            if idx==3:
-                w=a*a*T1+(b*b*T2-a*a*T1)*(tau-T1)/(T2-T1); return math.sqrt(w/tau)
+            if idx==1: return math.sqrt((a*a*T1+(b*b*T2-a*a*T1)*(tau-T1)/(T2-T1))/tau)
             return a+(b-a)*(tau-T1)/(T2-T1)
-    for T1,a in pts:
-        if T1==tau: return a
     return None
-print('at',t,'expiries',len(exp))
-for e,v in list(sorted(exp.items()))[:8]: print(e, 'T=%.6f F=%.2f K=%s atm=%.4f skew=%s'%(v[0],v[1],v[2],v[3],v[4]))
-for d in [1,7,30,90,400]: print('atm_iv.%dd'%d, tenor(d,3), ' skew_25d.%dd'%d, tenor(d,4))
+def load(fx,days,series):
+    cat={c['symbol']:c for c in json.load(open(fx+'/contracts/DERIBIT/BTC_USDC.options.json'))['contracts']}
+    snaps={}
+    for d in days:
+        for l in gzip.open(f'{fx}/chains/DERIBIT/BTC_USDC/{series}/{d}.csv.gz','rt').read().splitlines()[1:]:
+            r=l.split(','); snaps.setdefault(int(r[0]),[]).append(r)
+    return cat,snaps
+if __name__=='__main__':
+    cat,snaps=load('src/test/resources/options/btc-usdc-book-20261001',['2026-10-01'],'book')
+    t,rows=next(iter(snaps.items())); pts=metrics(t,rows,cat)
+    for d in [1,7,30,90]: print('book atm_iv.%dd'%d, tenor(pts,d,1), 'skew_25d.%dd'%d, tenor(pts,d,2))
+    cat,snaps=load('src/test/resources/options/btc-usdc-trade-25sep26',['2026-09-25','2026-09-26'],'trade')
+    vals=[(t,tenor(metrics(t,rows,cat),1,1)) for t,rows in sorted(snaps.items())]
+    d=[(t,v) for t,v in vals if v is not None]
+    print('trade atm_iv.1d defined',len(d),'of',len(vals)); print([(t,round(v,4)) for t,v in d])
 ```
 
-Output: `atm_iv.1d` 30.348051825995896, `atm_iv.7d` 30.906520486637266, `atm_iv.30d` 33.80563317134286,
-`skew_25d.7d` 0.662717312518918, `skew_25d.30d` 1.068997868586103; 90-day and longer tenors have no
-value (the last expiry is 85 days out).
+Output: `atm_iv.1d` 30.58214541001407, `atm_iv.7d` 30.891697558131362, `atm_iv.30d` 33.820839841412294,
+`skew_25d.7d` 0.662717312518918, `skew_25d.30d` 1.068997868586103; `skew_25d.1d` and 90-day and longer
+tenors have no value.

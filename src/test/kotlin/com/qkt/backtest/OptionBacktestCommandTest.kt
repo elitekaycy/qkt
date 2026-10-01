@@ -83,19 +83,36 @@ class OptionBacktestCommandTest {
     }
 
     @Test
-    fun `a chain analytics stream reports its coverage and is not mistaken for a paper-traded symbol`(
+    fun `a chain analytics signal trades an option at the next quote's ask`(
         @TempDir dir: Path,
     ) {
+        // atm_iv.1d first exceeds 33.5 at 09:00 on the 25th (33.5953, fixture PROVENANCE); the put's 10:00
+        // trade mark 457.22577903 is 1h fresh, so its ask is 457.23 + 5% = 480.08, up to the 5 grid: 485.
         val body =
-            "    iv = CHAIN:DERIBIT.BTC_USDC.atm_iv.1d EVERY 1h\n    p = DERIBIT:BTC_USDC_2OCT26_83000_P EVERY 1h\n" +
-                "RULES\n    WHEN iv.close > 41\n    THEN BUY p SIZING 0.1\n"
+            "    iv = CHAIN:DERIBIT.BTC_USDC.atm_iv.1d EVERY 1h\n    p = DERIBIT:BTC_USDC_26SEP26_84500_P EVERY 1h\n" +
+                "RULES\n    WHEN iv.close > 33.5\n    THEN BUY p SIZING 0.1\n"
 
         val (code, output) = backtest(dir, "2026-09-25", fixture = "btc-usdc-trade-25sep26", body = body)
 
         assertThat(code).describedAs(output).isEqualTo(ExitCodes.SUCCESS)
         assertThat(output).contains("chain coverage CHAIN:DERIBIT.BTC_USDC.atm_iv.1d 2/2 days (trade chain)")
-        assertThat(output).contains("stream CHAIN:DERIBIT.BTC_USDC.atm_iv.1d:1h: 24 candles")
+        assertThat(output).contains("stream CHAIN:DERIBIT.BTC_USDC.atm_iv.1d:1h: 9 candles")
+        assertThat(output).contains("side=BUY qty=0.10 price=485.00000000")
         assertThat(output).doesNotContain("paper broker fills at mid")
+    }
+
+    @Test
+    fun `an analytics stream the chain never defines runs with rules that never fire`(
+        @TempDir dir: Path,
+    ) {
+        val body =
+            "    k = CHAIN:DERIBIT.BTC_USDC.skew_25d.7d EVERY 1h\n    p = DERIBIT:BTC_USDC_26SEP26_84500_P EVERY 1h\n" +
+                "RULES\n    WHEN k.close > 1\n    THEN BUY p SIZING 0.1\n"
+
+        val (code, output) = backtest(dir, "2026-09-25", fixture = "btc-usdc-trade-25sep26", body = body)
+
+        assertThat(code).describedAs(output).isEqualTo(ExitCodes.SUCCESS)
+        assertThat(output).contains("Trades:           0")
     }
 
     private companion object {

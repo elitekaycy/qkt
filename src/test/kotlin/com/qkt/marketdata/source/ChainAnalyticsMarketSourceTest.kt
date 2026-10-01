@@ -45,7 +45,7 @@ class ChainAnalyticsMarketSourceTest {
 
         assertThat(source.supports("CHAIN:DERIBIT.BTC_USDC.atm_iv.30d")).isTrue()
         assertThat(ticks.single().timestamp).isEqualTo(at)
-        assertThat(ticks.single().price).isEqualByComparingTo("33.80563317")
+        assertThat(ticks.single().price).isEqualByComparingTo("33.82083984")
         assertThat(source.ticks("CHAIN:DERIBIT.BTC_USDC.atm_iv.90d", day).toList()).isEmpty()
     }
 
