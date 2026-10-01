@@ -18,14 +18,16 @@ import org.slf4j.LoggerFactory
  * stretch of the stream reads the contract the roll schedule names, mapped onto the series by that
  * contract's forward adjustment and re-stamped with the continuous symbol. A stream is served from its
  * first measured roll on; earlier requests are clipped (a warmup reaching back sees fewer bars).
- * Explicit contracts end at their expiry with a settlement print ([DatedContractData]). Every other
- * symbol is served by [inner] unchanged, through the same calls and with the same per-symbol
- * capabilities.
+ * Explicit contracts end at their expiry with a settlement print ([DatedContractData]). Live, a
+ * continuous stream's ticks come from its feed in [live] (a live session's streams over its account),
+ * each read on its own thread beside the account's other symbols. Every other symbol is served by
+ * [inner] unchanged, through the same calls and with the same per-symbol capabilities.
  */
 class ContinuousMarketSource(
     private val inner: MarketSource,
     private val chains: ContinuousChains,
     private val instruments: InstrumentRegistry,
+    private val live: LiveContinuousStreams? = null,
 ) : MarketSource {
     private val log = LoggerFactory.getLogger(ContinuousMarketSource::class.java)
     private val clipped = HashSet<String>()
@@ -39,7 +41,21 @@ class ContinuousMarketSource(
 
     override fun supports(symbol: String): Boolean = chains.isContinuous(symbol) || inner.supports(symbol)
 
-    override fun liveTicks(symbols: List<String>): TickFeed = inner.liveTicks(symbols)
+    override fun liveTicks(symbols: List<String>): TickFeed {
+        val continuous = symbols.filter(chains::isContinuous)
+        if (continuous.isEmpty()) return inner.liveTicks(symbols)
+        val streams =
+            requireNotNull(
+                live,
+            ) { "continuous futures streams $continuous are served live only from a gateway account" }
+        val plain = symbols - continuous.toSet()
+        val feeds =
+            continuous.map { VendorTickFeed("continuous", listOf(it), streams.feed(it)) } +
+                listOfNotNull(
+                    plain.takeIf { it.isNotEmpty() }?.let { VendorTickFeed(inner.name, it, inner.liveTicks(it)) },
+                )
+        return FanInTickFeed(feeds)
+    }
 
     override fun bars(
         symbol: String,
