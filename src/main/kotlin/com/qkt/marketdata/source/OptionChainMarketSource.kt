@@ -3,7 +3,6 @@ package com.qkt.marketdata.source
 import com.qkt.common.TimeRange
 import com.qkt.derivatives.options.OptionPayoff
 import com.qkt.derivatives.options.chain.ChainSnapshotStore
-import com.qkt.derivatives.options.chain.OptionQuotes
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.OptionTerms
 import com.qkt.marketdata.Tick
@@ -53,10 +52,7 @@ class OptionChainMarketSource(
                 .filter { it.atMs in fromMs until toMs }
                 .mapNotNull { snapshot -> snapshot.quotes.firstOrNull { it.contract == name } }
                 .filter { it.mark.signum() > 0 }
-                .map { quote ->
-                    val sides = OptionQuotes.sides(quote, root)
-                    Tick(symbol, quote.mark, quote.atMs, bid = sides.bid, ask = sides.ask)
-                }
+                .map { quote -> optionQuoteTick(symbol, quote, root) }
         if (expiryMs !in fromMs until range.to.toEpochMilli()) return quotes
         val day = Instant.ofEpochMilli(expiryMs).atZone(ZoneOffset.UTC).toLocalDate()
         val delivery =
