@@ -7,14 +7,23 @@ import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.OptionTerms
 import com.qkt.positions.PositionProvider
 import java.math.BigDecimal
+import java.time.Instant
 
 /**
- * The margin option positions need: per root and expiry, the group's current mark value less the
- * least it can pay at expiry ([OptionPayoff.minimum]), so equity always covers the worst case. A long
- * option needs its premium, a credit spread its width less its credit, a short put its strike less
- * its mark (cash-secured). A group whose expiry payoff is unbounded below (a short call without an
- * equal or larger long call of the same expiry) cannot be margined. No offset is taken across
- * expiries or against futures or spot.
+ * The margin option positions need. Per root and expiry it is the group's mark value less the least
+ * the group can pay at expiry ([OptionPayoff.minimum]), so equity always covers the worst case:
+ * - a long option needs its premium;
+ * - a credit spread needs its width less its credit;
+ * - a short put needs its strike less its mark (cash-secured).
+ *
+ * A group whose expiry payoff is unbounded below cannot be margined: a short call without an equal or
+ * larger long call of the same expiry. No offset is taken across expiries, or against futures or spot.
+ *
+ * Pending orders may each fill or not. The requirement is convex in the quantities (a linear value
+ * less a minimum of linear payoffs), so its worst case over every mix lies at a corner of each
+ * symbol's range from "all its pending sells filled" to "all its pending buys filled". Groups are
+ * independent, and each group's corners are checked exactly, up to [MAX_PENDING_SYMBOLS] symbols with
+ * pending orders per group.
  */
 class OptionMargin(
     private val instruments: InstrumentRegistry,
@@ -36,9 +45,9 @@ class OptionMargin(
     fun covers(symbol: String): Boolean = instruments.lookup(symbol)?.derivative is OptionTerms
 
     /**
-     * The margin of the account's options after an order of [quantity] on [symbol] to [side], in the
-     * worst of four outcomes: alone, with every pending buy, every pending sell, or both filled. [mark]
-     * prices each option (null: refused).
+     * The worst-case margin of the account's options with [quantity] of [symbol] filled to [side]
+     * (zero: as things stand), over every mix of pending orders filling. [mark] values each option
+     * (null: refused).
      */
     fun required(
         symbol: String,
@@ -47,59 +56,83 @@ class OptionMargin(
         positions: PositionProvider,
         mark: (String) -> BigDecimal?,
     ): Outcome {
-        val symbols = (positions.symbols() + positions.pendingEntrySymbols(null) + symbol).filter(::covers).toSet()
         val order = if (side == Side.BUY) quantity else quantity.negate()
-        var worst = BigDecimal.ZERO
-        for ((withBuys, withSells) in listOf(false to false, true to false, false to true, true to true)) {
-            val held =
-                symbols.associateWith { s ->
-                    var q = positions.positionFor(s)?.quantity ?: BigDecimal.ZERO
-                    if (s == symbol) q = q.add(order)
-                    if (withBuys) q = q.add(positions.pendingOrderQuantity(s, Side.BUY))
-                    if (withSells) q = q.subtract(positions.pendingOrderQuantity(s, Side.SELL))
-                    q
-                }
-            when (val outcome = groups(held, mark)) {
-                is Outcome.Refused -> return outcome
-                is Outcome.Required -> worst = worst.max(outcome.amount)
-            }
-        }
-        return Outcome.Required(worst)
-    }
-
-    private fun groups(
-        held: Map<String, BigDecimal>,
-        mark: (String) -> BigDecimal?,
-    ): Outcome {
-        var total = BigDecimal.ZERO
-        val byExpiry =
-            held.filterValues { it.signum() != 0 }.entries.groupBy { (s, _) ->
-                terms(s).let {
-                    it.root to
-                        it.expiryMs
-                }
-            }
-        for ((group, members) in byExpiry) {
-            var value = BigDecimal.ZERO
-            val legs =
-                members.map { (s, q) ->
-                    val size = requireNotNull(instruments.lookup(s)).contractSize
-                    val price = mark(s) ?: return Outcome.Refused("cannot margin $s: no price")
-                    value = value.add(q.multiply(price).multiply(size))
-                    terms(s).let { OptionLeg(it.right, it.strike, q, size) }
-                }
-            val worst =
-                OptionPayoff.minimum(legs)
-                    ?: return Outcome.Refused(
-                        "options of ${group.first} expiring ${java.time.Instant.ofEpochMilli(
-                            group.second,
-                        )} have unbounded loss",
+        val ranges =
+            (
+                positions.symbols() +
+                    positions.pendingEntrySymbols(
+                        null,
+                    ) + symbol
+            ).filter(::covers).toSet().associateWith { s ->
+                val base =
+                    (positions.positionFor(s)?.quantity ?: BigDecimal.ZERO).add(
+                        if (s ==
+                            symbol
+                        ) {
+                            order
+                        } else {
+                            BigDecimal.ZERO
+                        },
                     )
-            total = total.add(value.subtract(worst).max(BigDecimal.ZERO))
+                listOf(
+                    base.subtract(positions.pendingOrderQuantity(s, Side.SELL)),
+                    base.add(positions.pendingOrderQuantity(s, Side.BUY)),
+                ).distinct()
+            }
+        var total = BigDecimal.ZERO
+        for ((group, members) in ranges.entries.groupBy { terms(it.key).let { t -> t.root to t.expiryMs } }) {
+            val pending = members.count { it.value.size > 1 }
+            if (pending >
+                MAX_PENDING_SYMBOLS
+            ) {
+                return Outcome.Refused("too many pending option orders on ${group.first} to margin")
+            }
+            var worst = BigDecimal.ZERO
+            for (corner in corners(members.map { it.key to it.value })) {
+                when (val needed = groupRequirement(group, corner, mark)) {
+                    is Outcome.Refused -> return needed
+                    is Outcome.Required -> worst = worst.max(needed.amount)
+                }
+            }
+            total = total.add(worst)
         }
         return Outcome.Required(total)
     }
 
+    private fun corners(choices: List<Pair<String, List<BigDecimal>>>): List<Map<String, BigDecimal>> =
+        choices.fold(listOf(emptyMap())) { acc, (s, values) ->
+            acc.flatMap { partial ->
+                values.map { partial + (s to it) }
+            }
+        }
+
+    private fun groupRequirement(
+        group: Pair<String, Long>,
+        held: Map<String, BigDecimal>,
+        mark: (String) -> BigDecimal?,
+    ): Outcome {
+        var value = BigDecimal.ZERO
+        val legs = mutableListOf<OptionLeg>()
+        for ((s, q) in held) {
+            if (q.signum() == 0) continue
+            val size = requireNotNull(instruments.lookup(s)).contractSize
+            val price = mark(s) ?: return Outcome.Refused("cannot margin $s: no price")
+            value = value.add(q.multiply(price).multiply(size))
+            val t = terms(s)
+            legs += OptionLeg(t.right, t.strike, q, size)
+        }
+        val least = OptionPayoff.minimum(legs) ?: return Outcome.Refused(unbounded(group))
+        return Outcome.Required(value.subtract(least).max(BigDecimal.ZERO))
+    }
+
+    private fun unbounded(group: Pair<String, Long>): String =
+        "options of ${group.first} expiring ${Instant.ofEpochMilli(group.second)} would have unbounded loss"
+
     private fun terms(symbol: String): OptionTerms =
         requireNotNull(instruments.lookup(symbol)?.derivative as? OptionTerms)
+
+    companion object {
+        /** The most symbols with pending orders in one root and expiry whose fill mixes are checked. */
+        const val MAX_PENDING_SYMBOLS = 16
+    }
 }
