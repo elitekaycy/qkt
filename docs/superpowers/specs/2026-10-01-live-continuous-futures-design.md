@@ -93,6 +93,29 @@ positions against the account (the holdings check), and resumes; a roll that fel
 is executed at start from the measured closes if both are stored, else the stream refuses new orders
 until an operator measures it (`qkt fetch <root> --rolls`).
 
+### 2.4a Restart, in detail (found while building step 5)
+
+Two hazards make a naive restart unsafe. The lane's contract book would start empty while the venue
+still holds the stream's contracts, so the account-wide holdings check refuses the account; and a
+restart inside a roll would roll again from the strategy's stream position, sending a closing leg the
+venue already filled (on a netting account, that opens the other side).
+
+1. **The carry becomes an explicit state machine** (the qkt rule for lifecycles): per strategy,
+   `Closing(sent)` → `Opening(closeFill, sent)` → `Carried`, or `Stopped(reason)`, instead of nested
+   continuations. Each state names the leg it waits for, so it can be persisted and resumed.
+2. **Leg sizes come from the contract book**, not the stream position: a roll closes what the strategy
+   holds on the old contract and opens what it lacks on the new one, so repeating a roll after a
+   restart sends only what is still missing.
+3. **Each lane's state is persisted** through the session's `StatePersistor`, in its own section, never
+   among the strategies' positions: the contract it last traded, each strategy's stream position and
+   contract book, stops, and an in-flight roll's states with each pending leg's order request. It is
+   written on every change (a fill, a roll's step, a stop), atomically.
+4. **Restore** rebuilds the lane from that state. A pending leg is registered again and handed to the
+   venue's order recovery (`recoverPendingOrders`), whose client id is rebuilt from the persisted
+   request, so the gateway answers for the leg it already holds instead of placing a second one; its
+   fills, during the downtime or later, end the leg and the roll resumes from its state. A roll that
+   fell inside the downtime runs on the first tick, sized from the book.
+
 ## 3. Parity that remains (rows to add)
 
 - A live roll trades the market at the roll instant (real slippage and spread); backtest roll legs trade
