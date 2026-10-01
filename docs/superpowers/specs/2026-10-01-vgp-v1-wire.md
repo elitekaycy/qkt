@@ -190,7 +190,8 @@ Event `type` and `data`:
 - `fill.quantity` is that fill's quantity; an order's cumulative quantity is in its `order` event.
 - `fill_id` is unique per venue execution, so a replayed fill is recognized.
 - `costs[].kind` is `commission`, `exchange_fee`, `delivery_fee`, `funding` or `swap`; an adapter
-  that cannot report a cost omits it rather than reporting zero.
+  that cannot report a cost omits it rather than reporting zero. `costs[].amount` is positive when the
+  venue charged the account and negative when it credited it (a maker rebate).
 - A `fill` is always an execution of an order the client sent. Expiry is not a fill: when a contract
   the account holds or has traded expires, the gateway sends one `settlement` with the price every
   holder settles at (an option's intrinsic value, a future's delivery price) and the costs the venue
