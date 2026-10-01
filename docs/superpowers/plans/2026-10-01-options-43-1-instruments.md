@@ -12,7 +12,7 @@ settlement = CASH, margin, exchangeFeePerContract, takerFeeRate)` joins the seal
 every `when` over it is extended (the compiler lists them). `OptionRoot` (declared under `options:`,
 strict keys like `futures:`) gives contract size, currency, tick steps (`tickSteps: [{above: 1000,
 tick: 20}]` over a base `tickSize`), volume step/min, fees and the settlement index. An
-`OptionCatalog` (`chains/<VENUE>/<ROOT>.json`) lists contracts with strike, right and expiry;
+`OptionCatalog` (`contracts/<VENUE>/<ROOT>.options.json`) lists contracts with strike, right and expiry;
 `OptionCatalogRegistry` layers into the existing registry like `ContractCatalogRegistry`.
 `qkt fetch DERIBIT:BTC_USDC --catalog` builds the catalog from `public/get_instruments` (live and
 expired, history host), keeping only `instrument_type: linear` contracts settled and quoted in the

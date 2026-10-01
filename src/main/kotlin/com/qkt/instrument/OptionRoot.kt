@@ -6,6 +6,7 @@ import java.math.BigDecimal
  * The static spec shared by every option contract of one family, declared once under `options:` in
  * `instruments.yaml`: [contractSize] underlying units per contract, premiums in [currency] on
  * [tickSteps], volume in [volumeStep] from [volumeMin], cash settlement against [underlyingIndex].
+ * The metadata's `pointSize` is only the base tick: an option's price grid is [OptionTerms.tickSteps].
  */
 data class OptionRoot(
     val root: String,
