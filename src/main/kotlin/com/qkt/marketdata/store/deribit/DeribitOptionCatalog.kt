@@ -10,7 +10,8 @@ import java.math.BigDecimal
  * Builds an option root's catalog from Deribit: every live and expired option whose name belongs to
  * the root (`BTC_USDC-…` for `DERIBIT:BTC_USDC`), kept only when it is linear (or, on the history
  * host, untyped) and priced and settled in the root's currency, and only when its name agrees with the venue's own strike, right and
- * expiry — each skipped contract is reported through `warn`. The root's settlement index delivery
+ * expiry — each skipped contract is reported through `warn`; a listing whose contract size, tick grid,
+ * minimum trade or index disagrees with the declared root fails the build ([requireMatchesRoot]). The root's settlement index delivery
  * prices are paged in from `get_delivery_prices`. Contracts are sorted by expiry, strike, then right.
  */
 class DeribitOptionCatalog(
@@ -50,6 +51,7 @@ class DeribitOptionCatalog(
             )
             return null
         }
+        requireMatchesRoot(instrument, root)
         val parsed = DeribitOptionNames.parse(name)
         val strike = instrument.strike?.content?.toBigDecimalOrNull()
         val right = if (instrument.optionType == "call") OptionRight.CALL else OptionRight.PUT

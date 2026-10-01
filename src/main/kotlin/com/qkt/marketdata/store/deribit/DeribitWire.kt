@@ -42,6 +42,18 @@ internal data class DeribitInstrument(
     val strike: JsonPrimitive? = null,
     @SerialName("option_type") val optionType: String? = null,
     @SerialName("expiration_timestamp") val expiryMs: Long? = null,
+    @SerialName("contract_size") val contractSize: JsonPrimitive? = null,
+    @SerialName("tick_size") val tickSize: JsonPrimitive? = null,
+    @SerialName("tick_size_steps") val tickSizeSteps: List<DeribitTickStep>? = null,
+    @SerialName("min_trade_amount") val minTradeAmount: JsonPrimitive? = null,
+    @SerialName("price_index") val priceIndex: String? = null,
+)
+
+/** One step of a Deribit price grid: above [above], the tick is [tick]. */
+@Serializable
+internal data class DeribitTickStep(
+    @SerialName("above_price") val above: JsonPrimitive,
+    @SerialName("tick_size") val tick: JsonPrimitive,
 )
 
 /** One page of `get_delivery_prices`. */

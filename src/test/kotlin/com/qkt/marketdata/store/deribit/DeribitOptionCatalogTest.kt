@@ -41,7 +41,8 @@ class DeribitOptionCatalogTest {
         quote: String = "USDC",
     ) = """{"instrument_name":"$name","kind":"option",""" + (kind?.let { """"instrument_type":"$it",""" } ?: "") +
         """"settlement_currency":"USDC","quote_currency":"$quote","counter_currency":"$counter",""" +
-        """"strike":$strike,"option_type":"$type","expiration_timestamp":$expiry}"""
+        """"strike":$strike,"option_type":"$type","expiration_timestamp":$expiry,""" +
+        """"contract_size":1.0,"tick_size":5.0,"tick_size_steps":[],"min_trade_amount":0.01,"price_index":"btc_usdc"}"""
 
     private fun result(body: String) = MockResponse().setBody("""{"jsonrpc":"2.0","result":$body}""")
 
@@ -162,5 +163,16 @@ class DeribitOptionCatalogTest {
             .hasMessageContaining("503")
         assertThat(calls).isEqualTo(5)
         assertThat(pauses).hasSize(4)
+    }
+
+    @Test
+    fun `a root whose declared contract size disagrees with the venue fails the fetch naming the field`() {
+        val tenfold = root.copy(contractSize = BigDecimal("10"))
+
+        assertThatThrownBy { DeribitOptionCatalog(client()).build(tenfold) {} }
+            .isInstanceOf(IllegalStateException::class.java)
+            .hasMessageContaining("contractSize")
+            .hasMessageContaining("10")
+            .hasMessageContaining("1")
     }
 }
