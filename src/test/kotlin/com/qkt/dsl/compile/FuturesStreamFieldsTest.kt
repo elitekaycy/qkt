@@ -118,4 +118,12 @@ class FuturesStreamFieldsTest {
         assertThat(eval("front", "days_to_roll", expiry - 86_400_000L)).isEqualTo(Value.Num(BigDecimal("1.000000")))
         assertThat(eval("front", "dte", expiry)).isEqualTo(Value.Undefined)
     }
+
+    @Test
+    fun `before the stream's first measured roll it follows nothing, as the broker would refuse it`() {
+        val early = Instant.parse("2024-06-01T00:00:00Z").toEpochMilli()
+
+        assertThat(eval("front", "contract", early)).isEqualTo(Value.Undefined)
+        assertThat(eval("dec", "contract", early)).isEqualTo(Value.Str("BTCUSDT_241227"))
+    }
 }
