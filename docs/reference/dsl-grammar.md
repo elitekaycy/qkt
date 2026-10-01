@@ -306,6 +306,8 @@ WHEN btc.close % 2 > 0 THEN LOG "no modulo operator"
 - `POSITION.<stream>.entry_price` (`avg_price`, `avg_entry_price`, or `POSITION_AVG_PRICE.<stream>`),
   `.pnl`, `.unrealized_pnl`, `.realized_pnl`, `.holding_duration`, `.mfe`, `.mae`, `.count`,
   `.longs`, `.shorts`, `.gross`, `.trades_today`, `.last_trade_at`
+- `POSITION.<structure>` and `.pnl`, `.credit`, `.max_loss`, `.pnl_pct`, `.dte`, `.delta`, `.gamma`,
+  `.vega`, `.theta` on an option structure alias ([Option structures](dsl/structures.md))
 
 See [Expressions](dsl/expressions.md#position-references) for the full list.
 
