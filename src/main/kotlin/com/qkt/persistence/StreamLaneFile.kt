@@ -122,6 +122,7 @@ internal data class StreamOrderDto(
     val replacements: Int,
     val placed: String,
     val filled: String,
+    val cancelRequested: Boolean,
 ) {
     fun toDomain() =
         PersistedStreamOrder(
@@ -131,6 +132,7 @@ internal data class StreamOrderDto(
             replacements,
             BigDecimal(placed),
             BigDecimal(filled),
+            cancelRequested,
         )
 
     companion object {
@@ -142,6 +144,7 @@ internal data class StreamOrderDto(
                 o.replacements,
                 o.placed.toPlainString(),
                 o.filled.toPlainString(),
+                o.cancelRequested,
             )
 
         /** [request] on disk; a lane only works the order shapes a contract takes, so any other is a fault. */

@@ -99,6 +99,7 @@ class LaneSlicedFillsTest {
         )
         f.slice("rest", f.sep, Side.BUY, "0.004", "0.004", "62890")
         f.rollAt("63000")
+        f.cancelled("rest")
         f.last(f.leg(":close").id, f.sep, Side.SELL, "0.004", "63000")
         f.last(f.leg(":open").id, f.dec, Side.BUY, "0.004", "63800")
 
@@ -123,6 +124,7 @@ class LaneSlicedFillsTest {
         )
         f.slice("rest", f.sep, Side.BUY, "0.004", "0.004", "62890")
         f.rollAt("63000")
+        f.cancelled("rest")
         f.last(f.leg(":close").id, f.sep, Side.SELL, "0.004", "63000")
         f.last(f.leg(":open").id, f.dec, Side.BUY, "0.004", "63800")
         f.slice("rest~r1", f.dec, Side.BUY, "0.002", "0.002", "63690")

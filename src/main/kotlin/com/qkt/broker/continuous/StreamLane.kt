@@ -48,16 +48,30 @@ internal class StreamLane(
         venueFactory(venueBus, contractPrices, book.account).let { if (store == null) it else it.savingFirst(::save) }
     private val orders = ContinuousOrderMap()
     private val legs = RollLegs()
-    private val rolls = RollExecutor(bus, clock, chainOf, venue, contractPrices, orders, legs, ledger, fills)
     private val positions = LinkedHashMap<String, BigDecimal>()
     private val stops = LinkedHashMap<String, String>()
+    private val rolls = RollExecutor(bus, clock, chainOf, venue, contractPrices, orders, legs, ledger, fills, stops)
     private val state = LaneState(chainOf, positions, stops, orders, book, legs, rolls)
     private val recovery = LaneRecovery(clock, chainOf, venue, orders, legs, rolls, book, ::space)
     private var current: Int? = null
     private val spaces = HashMap<Int, PriceSpace>()
 
     init {
-        LaneVenueEvents(bus, clock, chainOf, venueBus, book, orders, legs, positions, fills, ::space)
+        LaneVenueEvents(
+            bus,
+            clock,
+            chainOf,
+            venueBus,
+            book,
+            orders,
+            legs,
+            positions,
+            fills,
+            ::space,
+            ::save,
+        ) { venueId ->
+            current?.let { rolls.pulled(venueId, it) }
+        }
         if (store != null) venueBus.subscribeAll { if (it is BrokerEvent) save() }
         store?.load(chain.symbol)?.let { saved ->
             val restored = state.restore(saved, clock.now())
@@ -70,7 +84,10 @@ internal class StreamLane(
     fun recover(engineOrders: List<ManagedOrder>): Set<String> = recovery.recover(engineOrders).also { save() }
 
     /** The session is restored: the venue is told so and the lane goes on ([LaneRecovery.ready]). */
-    fun ready() = recovery.ready()
+    fun ready() {
+        recovery.ready()
+        save()
+    }
 
     /** Whether the engine order [engineId] works on this stream. */
     fun owns(engineId: String): Boolean = orders.byEngineId(engineId) != null
@@ -95,6 +112,12 @@ internal class StreamLane(
 
     fun cancel(engineId: String) {
         val order = orders.byEngineId(engineId) ?: return
+        if (legs.isCancelAwaited(order.venueId)) {
+            // The roll's cancel is already out: once confirmed, the order is cancelled instead of re-placed.
+            orders.add(order.copy(cancelRequested = true))
+            save()
+            return
+        }
         venue.broker.cancel(order.venueId)
     }
 
@@ -135,12 +158,11 @@ internal class StreamLane(
     /** Applies what a roll left behind, then tells the engine of the closes and costs. */
     private fun applyRoll(outcome: RollOutcome) {
         stops.putAll(outcome.stopped)
-        for (close in outcome.closes) {
-            positions.merge(close.strategyId, close.signedQuantity(), BigDecimal::add)
-            bus.publish(close)
-        }
-        outcome.costs.forEach(bus::publish)
+        outcome.closes.forEach { positions.merge(it.strategyId, it.signedQuantity(), BigDecimal::add) }
+        // Saved before the engine hears of it: a crash in between cannot publish the roll's closes twice.
         save()
+        outcome.closes.forEach(bus::publish)
+        outcome.costs.forEach(bus::publish)
     }
 
     /** Saves the lane as it stands, when it has a [store]: before every venue action and after every venue answer. */

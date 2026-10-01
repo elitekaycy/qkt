@@ -59,7 +59,8 @@ internal object StreamLaneFixture {
         replacements: Int = 0,
         placed: BigDecimal = request.quantity,
         filled: String = "0",
-    ) = PersistedStreamOrder(request, venueId, contract, replacements, placed, BigDecimal(filled))
+        cancelRequested: Boolean = false,
+    ) = PersistedStreamOrder(request, venueId, contract, replacements, placed, BigDecimal(filled), cancelRequested)
 
     fun laneInFlight(): PersistedStreamLane {
         val limit =
@@ -151,7 +152,7 @@ internal object StreamLaneFixture {
                     fromPrice = BigDecimal("5000"),
                     toPrice = BigDecimal("5040.5"),
                     stopped = "CME:ES stopped: roll CME:ESZ26->CME:ESH27 failed",
-                    resting = listOf(order(stop), order(stopLimit)),
+                    resting = listOf(order(stop, cancelRequested = true), order(stopLimit)),
                     holders =
                         listOf("trend" to "2", "carry" to "-1", "meanrev" to "3", "swing" to "-4")
                             .map { (id, q) -> PersistedRollHolder(id, BigDecimal(q)) },

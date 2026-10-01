@@ -100,6 +100,7 @@ internal class LaneState(
             saved.replacements,
             saved.placed,
             saved.filled,
+            saved.cancelRequested,
         )
 
     private fun run(saved: PersistedStreamRoll): RollRun {
@@ -163,6 +164,7 @@ internal class LaneState(
             order.replacements,
             order.placed,
             order.filled,
+            order.cancelRequested,
         )
 
     private fun persisted(run: RollRun) =

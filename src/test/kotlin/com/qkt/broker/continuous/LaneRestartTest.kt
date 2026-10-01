@@ -100,6 +100,7 @@ class LaneRestartTest {
         assertThat(open.symbol to open.quantity).isEqualTo(f.dec to BigDecimal("0.004"))
         assertThat(g.venue.cancels).containsExactly("rest")
         g.last(open.id, f.dec, Side.BUY, "0.004", "63800")
+        g.cancelled("rest")
 
         assertThat(
             g.ledger.entries

@@ -55,10 +55,24 @@ internal class RollLegs {
     /** Whether a leg is expected under [venueId]. */
     fun isExpected(venueId: String): Boolean = venueId in pending
 
-    /** Stop expecting the cancel of [venueId]: the order never reached the venue. */
+    /** Stop expecting the cancel of [venueId]: the order filled instead, or never reached the venue. */
     fun forgetCancel(venueId: String) {
         cancelling.remove(venueId)
     }
+
+    /** Whether the cancel of the resting order under [venueId] is still awaited. */
+    fun isCancelAwaited(venueId: String): Boolean = venueId in cancelling
+
+    /** Counts a slice of [quantity] the venue filled of an order whose cancel is awaited, so its record stays exact. */
+    fun slicedWhileCancelling(
+        venueId: String,
+        quantity: BigDecimal,
+    ) {
+        cancelling[venueId]?.let { cancelling[venueId] = it.copy(filled = it.filled + quantity) }
+    }
+
+    /** The awaited cancel of [venueId] is confirmed; returns whether one was awaited. */
+    fun cancelConfirmed(venueId: String): Boolean = cancelling.remove(venueId) != null
 
     /** The legs still out at the venue, in the order they were sent. */
     val inFlight: List<LegInFlight> get() = pending.values.toList()
@@ -82,9 +96,9 @@ internal class RollLegs {
     /** End the leg [e] refuses; returns whether it was a leg. */
     fun onRejected(e: BrokerEvent.OrderRejected): Boolean = stopped(e.clientOrderId, e.reason)
 
-    /** Swallow [e] if it is a roll's cancel of a resting order, or end the leg it cancels; returns whether it was either. */
+    /** End the leg [e] cancels; returns whether it was a leg. */
     fun onCancelled(e: BrokerEvent.OrderCancelled): Boolean =
-        cancelling.remove(e.clientOrderId) != null || stopped(e.clientOrderId, "cancelled by the venue: ${e.reason}")
+        stopped(e.clientOrderId, "cancelled by the venue: ${e.reason}")
 
     /** Hands the outcome of the leg under [venueId] to [then]: now if it has ended, else once it does. */
     fun whenEnded(
