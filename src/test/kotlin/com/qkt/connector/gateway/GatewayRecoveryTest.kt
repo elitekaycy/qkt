@@ -81,6 +81,20 @@ internal class GatewayRecoveryTest : GatewayHarness() {
     }
 
     @Test
+    fun `an option leg the gateway no longer lists after its expiry still settles once restored`() {
+        val expired = "BTC_USDC-26SEP26-90000-P"
+        fake.act { settle(WireSettlement(expired, "250", FakeGateway.TIME)) }
+        val after = Strategy().apply { held["DERIBIT:BTC_USDC_26SEP26_90000_P"] = BigDecimal("-0.1") }
+        val restoredBroker = broker(session(), after, "a")
+
+        restoredBroker.watchBookedLegs { emptyList() }
+
+        assertThat(restoredBroker.isAccountWide("DERIBIT:BTC_USDC_26SEP26_90000_P")).isTrue()
+        val settled = after.of<ContractSettled>().single()
+        assertThat(settled.symbol to settled.price).isEqualTo("DERIBIT:BTC_USDC_26SEP26_90000_P" to BigDecimal("250"))
+    }
+
+    @Test
     fun `an engine id handed out again after a restart places a new order, never the ended one`() {
         val before = Strategy()
         broker(session(), before, "a").submit(market("a-1", "a"))

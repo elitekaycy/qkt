@@ -105,7 +105,7 @@ internal class GatewaySession(
 
     /** [broker]'s session is restored: settle the contracts it still holds that expired while away, then check holdings. */
     fun ready(broker: GatewayRouting.Attached) {
-        val held = broker.positions.symbols().mapNotNull(symbols::venue)
+        val held = broker.positions.symbols().mapNotNull(symbols::code)
         GatewayRecovery.settleHeld(client, held) { settlement -> ledger.settleFor(broker, settlement) }
         synchronized(lock) {
             holders.ready(broker)

@@ -92,7 +92,7 @@ class GatewayBroker internal constructor(
                 }
             }.groupBy({ it.first }, { it.second })
 
-    override fun isAccountWide(symbol: String): Boolean = supports(symbol)
+    override fun isAccountWide(symbol: String): Boolean = session.symbols.owns(symbol)
 
     override fun accountEquity(): BigDecimal? = session.account.equity
 
