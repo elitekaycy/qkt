@@ -1,5 +1,8 @@
 package com.qkt.broker.options
 
+import com.qkt.accounting.CostKind
+import com.qkt.accounting.MoneyAmount
+import com.qkt.accounting.VenueCost
 import com.qkt.common.Money
 import com.qkt.instrument.OptionRoot
 import java.math.BigDecimal
@@ -35,6 +38,20 @@ object OptionFee {
         val percentage = capped(root, root.deliveryFeeRate.multiply(deliveryPrice), intrinsic)
         return percentage.multiply(root.contractSize).multiply(quantity.abs()).setScale(Money.SCALE, Money.ROUNDING)
     }
+
+    /** [fee] as the [CostKind.EXCHANGE_FEE] venue cost a fill reports at [atMs], or none when it is zero. */
+    fun costs(
+        fee: BigDecimal,
+        root: OptionRoot,
+        atMs: Long,
+    ): List<VenueCost> =
+        if (fee.signum() ==
+            0
+        ) {
+            emptyList()
+        } else {
+            listOf(VenueCost(CostKind.EXCHANGE_FEE, MoneyAmount(fee, root.currency), atMs))
+        }
 
     private fun capped(
         root: OptionRoot,

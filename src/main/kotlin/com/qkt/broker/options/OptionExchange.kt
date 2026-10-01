@@ -1,8 +1,5 @@
 package com.qkt.broker.options
 
-import com.qkt.accounting.CostKind
-import com.qkt.accounting.MoneyAmount
-import com.qkt.accounting.VenueCost
 import com.qkt.broker.Broker
 import com.qkt.broker.OrderTypeCapability
 import com.qkt.broker.PositionAccountingMode
@@ -31,8 +28,9 @@ import java.time.Instant
  * - a market order fills at the first quote of its contract strictly after it was submitted, a buy at
  *   the ask and a sell at the bid ([OptionQuotes]); a quote without that side cancels it, and so does
  *   no quote of the contract within the root's `maxQuoteAgeMinutes`;
- * - a limit order ([OptionOrderEntry] snaps it so it never fills early) fills at its limit on a later
- *   quote whose side reaches it; IOC and FOK get one look, GTD and DAY orders lapse at their time;
+ * - a limit order ([OptionOrderEntry] snaps it so it never fills early) that is marketable at the first
+ *   quote after it fills at that quote; later it fills at its limit on a quote whose side reaches it;
+ *   IOC and FOK get one look, GTD and DAY orders lapse at their time;
  * - each fill carries its [OptionFee] as an [CostKind.EXCHANGE_FEE] cost in the root's currency;
  * - positions are netted and long only: a sell beyond the held quantity is refused;
  * - at a contract's expiry its working orders lapse and its positions are cash-settled ([OptionExpiry]).
@@ -52,6 +50,7 @@ class OptionExchange(
     private val positions = OptionPositions()
     private val entry = OptionOrderEntry(instruments, clock, calendar, positions)
     private val working = LinkedHashMap<String, WorkingOption>()
+    private val looked = HashSet<String>()
     private val expiry = OptionExpiry(bus, instruments, positions, settlements)
 
     override fun positionAccountingMode(symbol: String): PositionAccountingMode = PositionAccountingMode.NETTING
@@ -87,12 +86,13 @@ class OptionExchange(
             if (order.request.id !in working) continue
             val symbol = order.request.symbol
             val lapse = order.expiresAt
+            val unquoted =
+                order.request is OrderRequest.Market &&
+                    at > order.submittedAt + order.root.maxQuoteAgeMinutes * MS_PER_MINUTE
             when {
                 lapse != null && at >= lapse -> cancelWorking(order, "expired at ${Instant.ofEpochMilli(lapse)}")
+                unquoted -> cancelWorking(order, "no quote of $symbol within ${order.root.maxQuoteAgeMinutes} minutes")
                 tick.symbol == symbol && at > order.submittedAt -> match(order, at)
-                order.request is OrderRequest.Market &&
-                    at >= order.submittedAt + order.root.maxQuoteAgeMinutes * MS_PER_MINUTE ->
-                    cancelWorking(order, "no quote of $symbol within ${order.root.maxQuoteAgeMinutes} minutes")
             }
         }
     }
@@ -117,8 +117,10 @@ class OptionExchange(
                 val reached =
                     price != null &&
                         if (request.side == Side.BUY) price <= request.limitPrice else price >= request.limitPrice
-                if (quote != null && reached) {
-                    fill(order, request.limitPrice, quote, at)
+                val firstLook = looked.add(request.id)
+                if (quote != null && price != null && reached) {
+                    // A marketable order meets one known quote and takes it; a resting one is filled at its limit.
+                    fill(order, if (firstLook) price else request.limitPrice, quote, at)
                 } else if (request.timeInForce == TimeInForce.IOC || request.timeInForce == TimeInForce.FOK) {
                     cancelWorking(order, "not filled at the next ${request.symbol} quote")
                 }
@@ -135,15 +137,13 @@ class OptionExchange(
     ) {
         val request = order.request
         working.remove(request.id)
-        val fee = OptionFee.trade(order.root, request.quantity, price, quote.underlying)
+        looked.remove(request.id)
         val costs =
-            if (fee.signum() ==
-                0
-            ) {
-                emptyList()
-            } else {
-                listOf(VenueCost(CostKind.EXCHANGE_FEE, MoneyAmount(fee, order.root.currency), at))
-            }
+            OptionFee.costs(
+                OptionFee.trade(order.root, request.quantity, price, quote.underlying),
+                order.root,
+                at,
+            )
         positions.apply(request.strategyId, request.symbol, request.side, request.quantity)
         bus.publish(
             BrokerEvent.OrderFilled(

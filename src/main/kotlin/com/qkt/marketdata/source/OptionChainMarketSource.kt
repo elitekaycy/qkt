@@ -45,7 +45,7 @@ class OptionChainMarketSource(
         val fromMs = range.from.toEpochMilli()
         val toMs = minOf(range.to.toEpochMilli(), expiryMs)
         val firstDay = range.from.atZone(ZoneOffset.UTC).toLocalDate()
-        val lastDay = range.to.atZone(ZoneOffset.UTC).toLocalDate()
+        val lastDay = Instant.ofEpochMilli(toMs).atZone(ZoneOffset.UTC).toLocalDate()
         val quotes =
             generateSequence(firstDay) { it.plusDays(1) }
                 .takeWhile { !it.isAfter(lastDay) }

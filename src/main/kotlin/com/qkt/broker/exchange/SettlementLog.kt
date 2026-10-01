@@ -4,8 +4,10 @@ import com.qkt.common.Side
 import java.math.BigDecimal
 
 /**
- * One position the exchange settled at expiry: [strategyId]'s [quantity] of [contract] closed on
- * [side] at [price], the catalog's delivery price when [deliveryPriceKnown], else the last price.
+ * One position settled at expiry: [strategyId]'s [quantity] of [contract] closed on [side] at
+ * [price], the settlement price per unit. For a future that is the catalog's delivery price when
+ * [deliveryPriceKnown], else the last price; for an option it is the intrinsic value at the
+ * catalog's delivery price (always known: an option expiring without one fails the run).
  */
 data class Settlement(
     val atMs: Long,

@@ -1,8 +1,5 @@
 package com.qkt.broker.options
 
-import com.qkt.accounting.CostKind
-import com.qkt.accounting.MoneyAmount
-import com.qkt.accounting.VenueCost
 import com.qkt.broker.exchange.Settlement
 import com.qkt.broker.exchange.SettlementLog
 import com.qkt.bus.EventBus
@@ -49,15 +46,7 @@ internal class OptionExpiry(
         val intrinsic = OptionPayoff.intrinsic(terms.right, terms.strike, delivery)
         for ((strategyId, quantity) in positions.holdersOf(symbol)) {
             val side = if (quantity.signum() > 0) Side.SELL else Side.BUY
-            val fee = OptionFee.delivery(root, quantity, intrinsic, delivery)
-            val costs =
-                if (fee.signum() ==
-                    0
-                ) {
-                    emptyList()
-                } else {
-                    listOf(VenueCost(CostKind.EXCHANGE_FEE, MoneyAmount(fee, root.currency), atMs))
-                }
+            val costs = OptionFee.costs(OptionFee.delivery(root, quantity, intrinsic, delivery), root, atMs)
             bus.publish(
                 BrokerEvent.OrderFilled(
                     clientOrderId = "expiry:$symbol:$strategyId",

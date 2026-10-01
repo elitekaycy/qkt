@@ -69,9 +69,9 @@ class OptionExchangeTest {
         f.tick("2026-10-01T04:30:00Z", onSymbol = "OTHER")
         f.exchange.submit(f.market(Side.BUY))
 
-        f.tick("2026-10-01T05:29:59Z", onSymbol = "OTHER")
-        assertThat(f.events.filterIsInstance<BrokerEvent.OrderCancelled>()).isEmpty()
         f.tick("2026-10-01T05:30:00Z", onSymbol = "OTHER")
+        assertThat(f.events.filterIsInstance<BrokerEvent.OrderCancelled>()).isEmpty()
+        f.tick("2026-10-01T05:30:01Z", onSymbol = "OTHER")
 
         assertThat(f.last<BrokerEvent.OrderCancelled>().reason).contains("no quote")
     }
@@ -138,5 +138,32 @@ class OptionExchangeTest {
 
         f.tick("2026-10-02T08:00:00Z", onSymbol = "OTHER")
         assertThat(f.exchange.submit(f.market(Side.BUY)).rejectReason).contains("expired")
+    }
+
+    @Test
+    fun `a limit that can fill on its first quote fills at that quote, not its limit`(
+        @TempDir dir: Path,
+    ) {
+        val f = fixture(dir)
+        f.tick("2026-10-01T01:30:00Z", onSymbol = "OTHER")
+        f.exchange.submit(f.limit(Side.BUY, "150", TimeInForce.IOC))
+
+        f.tick("2026-10-01T02:00:00Z")
+
+        assertThat(f.last<BrokerEvent.OrderFilled>().price).isEqualByComparingTo("130")
+    }
+
+    @Test
+    fun `a market order whose contract next quotes after the quote age is cancelled, not filled late`(
+        @TempDir dir: Path,
+    ) {
+        val f = fixture(dir)
+        f.tick("2026-10-01T00:30:00Z", onSymbol = "OTHER")
+        f.exchange.submit(f.market(Side.BUY))
+
+        f.tick("2026-10-01T02:00:00Z")
+
+        assertThat(f.last<BrokerEvent.OrderCancelled>().reason).contains("no quote")
+        assertThat(f.events.filterIsInstance<BrokerEvent.OrderFilled>()).isEmpty()
     }
 }

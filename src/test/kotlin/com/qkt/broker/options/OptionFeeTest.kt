@@ -10,10 +10,11 @@ class OptionFeeTest {
     private fun root(
         cap: String? = "0.125",
         flat: String = "0",
+        size: String = "1",
     ) = OptionRoot(
         "DERIBIT:BTC_USDC",
         "USDC",
-        BigDecimal.ONE,
+        BigDecimal(size),
         TickSteps(BigDecimal("5")),
         BigDecimal("0.01"),
         BigDecimal("0.01"),
@@ -46,5 +47,15 @@ class OptionFeeTest {
         // 12.5% of a 50 intrinsic = 6.25 binds.
         assertThat(OptionFee.delivery(root(), qty, BigDecimal("50"), BigDecimal("92050"))).isEqualByComparingTo("0.625")
         assertThat(OptionFee.delivery(root(), qty, BigDecimal.ZERO, BigDecimal("90000"))).isZero()
+    }
+
+    @Test
+    fun `percentage fees scale with the contract size, the flat fee does not`() {
+        assertThat(
+            OptionFee.trade(root(size = "10", flat = "0.5"), qty, BigDecimal("1500"), index),
+        ).isEqualByComparingTo("24.95")
+        assertThat(
+            OptionFee.delivery(root(size = "10"), qty, BigDecimal("3000"), BigDecimal("95000")),
+        ).isEqualByComparingTo("14.25")
     }
 }

@@ -35,7 +35,11 @@ internal fun requireDerivativeSymbolsResolvable(
             }
             require(options.dataRoot != null) { "$symbol is an option but its chains have no data root" }
         }
-        val charges = terms.exchangeFeePerContract.signum() != 0 || terms.takerFeeRate.signum() != 0
+        val deliveryFee = if (terms is OptionTerms) instruments.options()?.optionRoot(symbol)?.deliveryFeeRate else null
+        val charges =
+            terms.exchangeFeePerContract.signum() != 0 ||
+                terms.takerFeeRate.signum() != 0 ||
+                (deliveryFee?.signum() ?: 0) != 0
         val currency = accounting.pnlCurrencyFor(symbol)
         require(!charges || QuoteCurrencyGuard.sameCurrency(currency, accounting.accountCurrency)) {
             "$symbol charges fees in $currency but the account books in ${accounting.accountCurrency}; " +
