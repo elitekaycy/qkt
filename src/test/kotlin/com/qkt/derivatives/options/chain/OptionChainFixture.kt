@@ -13,6 +13,8 @@ import java.time.Instant
 /** A BTC_USDC option root trading a trade-built chain, one call and its stored quotes, for chain-consumer tests. */
 internal class OptionChainFixture(
     val dataRoot: Path,
+    takerFeeRate: String = "0",
+    feeCapRate: String? = null,
 ) {
     val root =
         OptionRoot(
@@ -26,6 +28,9 @@ internal class OptionChainFixture(
             chains = QuoteSource.TRADE,
             markSpread = BigDecimal("0.05"),
             maxQuoteAgeMinutes = 60,
+            takerFeeRate = BigDecimal(takerFeeRate),
+            feeCapRate = feeCapRate?.let(::BigDecimal),
+            deliveryFeeRate = BigDecimal("0.00015"),
         )
     val venueName = "BTC_USDC-2OCT26-92000-C"
     val symbol = "DERIBIT:BTC_USDC_2OCT26_92000_C"
