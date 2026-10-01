@@ -81,6 +81,16 @@ class ContinuousChain(
             }
     }
 
+    /**
+     * The first instant this stream has no contract: the last contract's expiry for `@front`; for
+     * `@next`, the roll that makes its last contract the front one.
+     */
+    val endsAtMs: Long
+        get() {
+            if (selector.offset == 0) return schedule.contracts.last().expiryMs
+            return schedule.transitions.getOrNull(schedule.contracts.size - selector.offset - 1)?.atMs ?: Long.MIN_VALUE
+        }
+
     /** Contract index followed at [tMs], or null when this stream has no contract then. */
     fun indexAt(tMs: Long): Int? = schedule.indexAt(tMs, selector)
 

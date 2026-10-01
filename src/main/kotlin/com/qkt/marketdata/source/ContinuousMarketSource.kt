@@ -83,6 +83,12 @@ class ContinuousMarketSource(
         read: (contract: String, segment: ChainSegment) -> Sequence<T>,
     ): Sequence<Pair<PriceSpace, Sequence<T>>> {
         val fromMs = range.from.toEpochMilli()
+        require(range.to.toEpochMilli() <= chain.endsAtMs) {
+            "${chain.symbol} has no contract from ${Instant.ofEpochMilli(
+                chain.endsAtMs,
+            )} (the last one in its catalog); " +
+                "refresh the catalog with qkt fetch ${chain.root.root} --catalog or end the run by then"
+        }
         if (fromMs < chain.servedFromMs && clipped.add(chain.symbol)) {
             log.warn(
                 "{} is served from its first measured roll, {}; earlier data is not available",
