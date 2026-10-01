@@ -48,7 +48,9 @@ object DslVocabulary {
 
     /**
      * `POSITION.<alias>.<member>` spellings and what each compiles to: a null source is the
-     * signed net quantity ([com.qkt.dsl.ast.PositionRef]); any other is a [StateSource] read.
+     * signed net quantity ([com.qkt.dsl.ast.PositionRef]); any other is a [StateSource] read. On a
+     * structure alias (`OPEN <alias> = OPTIONS ON …`) quantity is the structure's size, `pnl` its
+     * premium P&L, and `delta` through `pnl_pct` its structure fields.
      */
     val positionAccessors: Map<String, StateSource?> =
         linkedMapOf(
@@ -72,6 +74,14 @@ object DslVocabulary {
             "gross" to StateSource.POSITION_GROSS,
             "trades_today" to StateSource.POSITION_TRADES_TODAY,
             "last_trade_at" to StateSource.POSITION_LAST_TRADE_AT,
+            "delta" to StateSource.STRUCTURE_DELTA,
+            "gamma" to StateSource.STRUCTURE_GAMMA,
+            "vega" to StateSource.STRUCTURE_VEGA,
+            "theta" to StateSource.STRUCTURE_THETA,
+            "dte" to StateSource.STRUCTURE_DTE,
+            "credit" to StateSource.STRUCTURE_CREDIT,
+            "max_loss" to StateSource.STRUCTURE_MAX_LOSS,
+            "pnl_pct" to StateSource.STRUCTURE_PNL_PCT,
         )
 
     /** `NOW.<member>` spellings and the clock field each reads. */

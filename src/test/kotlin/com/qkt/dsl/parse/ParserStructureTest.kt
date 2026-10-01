@@ -4,6 +4,8 @@ import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.OpenStructure
 import com.qkt.dsl.ast.SizeQty
 import com.qkt.dsl.ast.SizeRiskFrac
+import com.qkt.dsl.ast.StateAccessor
+import com.qkt.dsl.ast.StateSource
 import com.qkt.dsl.ast.StructureLegAst
 import com.qkt.dsl.ast.StructureLegRight
 import com.qkt.dsl.ast.StructureLegSide
@@ -66,5 +68,26 @@ class ParserStructureTest {
 
         assertThat(lower.legs.map { it.right }).containsExactly(StructureLegRight.PUT, StructureLegRight.PUT)
         assertThat(lower.legs.last().minDays).isNull()
+    }
+
+    @Test
+    fun `structure fields parse as POSITION accessors and CLOSE takes the structure alias`() {
+        val rule =
+            (
+                Dsl.parse(
+                    strategy(
+                        "CLOSE ps",
+                    ).replace("WHEN chain.close > 0", "WHEN POSITION.ps.pnl_pct >= 50 OR POSITION.ps.dte < 21"),
+                ) as ParseResult.Success
+            ).value.rules
+                .single() as WhenThen
+
+        val cond = rule.cond as com.qkt.dsl.ast.BinaryOp
+        assertThat(listOf(cond.lhs, cond.rhs).map { ((it as com.qkt.dsl.ast.CmpOp).lhs as StateAccessor).source })
+            .containsExactly(StateSource.STRUCTURE_PNL_PCT, StateSource.STRUCTURE_DTE)
+        assertThat(rule.action).isEqualTo(
+            com.qkt.dsl.ast
+                .Close("ps"),
+        )
     }
 }

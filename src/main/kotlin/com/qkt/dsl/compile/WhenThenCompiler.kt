@@ -66,16 +66,18 @@ internal object WhenThenCompiler {
                 is OcoEntry -> a.leg1
                 else -> a
             }
+        // A structure alias (`OPEN ps = …`) is not a stream: its rule reads and closes the structure.
+        val structures = exprCompiler.structures.aliases
         val streamAlias: String? =
             when (primary) {
                 is Buy -> primary.stream
                 is Sell -> primary.stream
-                is Close -> primary.stream
+                is Close -> primary.stream.takeUnless { it in structures }
                 is Cancel -> primary.stream
                 is CloseAll, is CancelAll, is Log -> null
                 else -> null
             }
-        val referencedAliases = collectStreamAliases(rule.copy(cond = cond))
+        val referencedAliases = collectStreamAliases(rule.copy(cond = cond)) - structures
         // Every alias a rule touches must be declared, whatever else the rule reads: an
         // undeclared one used to fail only at first evaluation (or never, when another
         // alias became the rule's stream).
