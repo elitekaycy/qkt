@@ -7,6 +7,8 @@ import com.qkt.cli.fetch.OptionCatalogFetch
 import com.qkt.cli.fetch.RollsFetch
 import com.qkt.cli.fetch.buildFetcher
 import com.qkt.cli.fetch.resolveFetchRange
+import com.qkt.common.Clock
+import com.qkt.common.SystemClock
 import com.qkt.common.TimeRange
 import com.qkt.connector.bybit.marketdata.BybitKlineClient
 import com.qkt.connector.mt5.MT5BrokerProfileLoader
@@ -39,6 +41,7 @@ import java.time.ZoneOffset
  */
 class FetchCommand(
     private val args: Args,
+    private val clock: Clock = SystemClock(),
 ) {
     /** Fetch every missing day in the range and return a process exit code. */
     fun run(): Int {
@@ -83,6 +86,10 @@ class FetchCommand(
         val (fromDate, toDate) =
             resolveFetchRange(args.option("from"), args.option("to"), args.option("last"))
                 ?: return ExitCodes.ARG_ERROR
+        if (fromDate.isAfter(toDate)) {
+            System.err.println("qkt: --from $fromDate is after --to $toDate")
+            return ExitCodes.ARG_ERROR
+        }
 
         if (broker == "BACKTEST") {
             System.err.println(
@@ -116,6 +123,12 @@ class FetchCommand(
             }
             val rangeStart = day.atStartOfDay(ZoneOffset.UTC).toInstant()
             val rangeEnd = day.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant()
+            // A day still in progress would be stored partial and then skipped as on disk forever.
+            if (rangeEnd.toEpochMilli() > clock.now()) {
+                println("  [$idx/$totalDays] $day  not stored (the UTC day has not ended)")
+                day = day.plusDays(1)
+                continue
+            }
             val bars: List<Candle> =
                 try {
                     fetcher.fetch(symbol, window, TimeRange(rangeStart, rangeEnd))
