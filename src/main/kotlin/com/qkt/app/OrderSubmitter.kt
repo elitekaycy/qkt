@@ -105,8 +105,9 @@ internal class OrderSubmitter(
     /**
      * Submit an option structure's legs as one position: each leg is book-scaled (any suppressed leg
      * suppresses the group), the risk engine judges them together ([RiskEngine.approveGroup]), and then
-     * either every leg goes to the venue, buys first so no moment holds a short without its wing, or
-     * every leg is refused. The rule that fired counts one accepted or suppressed submission.
+     * either every leg is published, buys before sells, or every leg is refused. Publication order is
+     * not fill order: each leg fills on its own quotes, and a leg that fails is unwound by the
+     * [StructureCoordinator]. The rule that fired counts one accepted or suppressed submission.
      */
     fun submitGroup(
         strategyId: String,
@@ -115,11 +116,11 @@ internal class OrderSubmitter(
         group: Signal.SubmitGroup,
     ) {
         val built = group.requests.map { it.withStrategyId(strategyId) }
-        val dsl = strategy as? DslCompiledStrategy
-        for (leg in built) {
-            dsl?.onOrderSubmitted(group, leg.id)?.let { link ->
+        // One decision covers every leg: the ledger maps all leg ids to the firing rule in one call.
+        (strategy as? DslCompiledStrategy)?.onOrderSubmitted(group, built.first().id)?.let { link ->
+            for (leg in built) {
                 bus.publish(
-                    DecisionOrderLinkedEvent(strategyId, link.decisionId, link.ruleId, link.signalIndex, link.orderId),
+                    DecisionOrderLinkedEvent(strategyId, link.decisionId, link.ruleId, link.signalIndex, leg.id),
                 )
             }
         }

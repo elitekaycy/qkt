@@ -48,9 +48,13 @@ The size is floored to the venue's volume step. A size below the minimum opens n
 
 ## Submission and failure
 
-- The legs reach the venue together as market orders, buys first. Their margin is judged as one
-  position, so a credit spread needs its width less its credit even though its short leg alone would
-  need more. If any leg is refused, none is sent.
+- The legs reach the venue together as market orders, buys published before sells. Each leg still
+  fills on its own quotes, so publication order does not guarantee fill order. Their margin is judged
+  as one position, so a credit spread needs its width less its credit even though its short leg
+  alone would need more. If any leg is refused, none is sent.
+- While a structure's legs are still pending, a later order's margin judges each pending leg on its
+  own, not as the structure. This is conservative: it can refuse an order the filled structure would
+  allow, never the reverse.
 - Each leg fills at the next snapshot's bid or ask, like any option order. If a leg is then
   cancelled, for example when its quote has no side, the structure is unwound: still-working legs are
   cancelled, and filled legs are closed at market, shorts first.

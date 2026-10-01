@@ -31,7 +31,8 @@ internal class StrategySignalEmitter(
     override fun invoke(sig: Signal) {
         val force =
             (sig is Signal.Buy && sig.force) ||
-                (sig is Signal.Sell && sig.force)
+                (sig is Signal.Sell && sig.force) ||
+                (sig is Signal.SubmitGroup && sig.force)
         if (force || (gate() && gateFor(strategyId))) {
             route(sig)
         } else {

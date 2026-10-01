@@ -15,7 +15,8 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
 class StructureCoordinatorTest {
-    private val bus = EventBus(FixedClock(0L), MonotonicSequenceGenerator())
+    private val clock = FixedClock(5L)
+    private val bus = EventBus(clock, MonotonicSequenceGenerator())
     private val emitted = mutableListOf<Signal>()
     private val cancelled = mutableListOf<String>()
     private val shortPut =
@@ -50,7 +51,10 @@ class StructureCoordinatorTest {
         )
 
     init {
-        StructureCoordinator(bus) { cancelled += it }.bind("st") { emitted += it }
+        StructureCoordinator(bus, clock) { cancelled += it }.bind("st") { signal ->
+            emitted += signal
+            bus.publish(SignalEvent(signal, strategyId = "st"))
+        }
     }
 
     private fun open(vararg legs: OrderRequest) =
@@ -69,33 +73,45 @@ class StructureCoordinatorTest {
             ),
         )
 
-    private fun cancelled(leg: OrderRequest) =
-        bus.publish(BrokerEvent.OrderCancelled(leg.id, leg.id, "no bid", strategyId = "st"))
+    private fun cancelled(id: String) = bus.publish(BrokerEvent.OrderCancelled(id, id, "no bid", strategyId = "st"))
+
+    private fun unwinds() = emitted.filterIsInstance<Signal.SubmitGroup>()
 
     @Test
-    fun `a leg that fails after others filled closes the filled legs and cancels the working ones, shorts first`() {
+    fun `a failed leg unwinds the filled legs as one forced group, shorts bought back first`() {
         open(longPut, wing, shortPut)
         filled(longPut)
         filled(shortPut)
 
-        cancelled(wing)
+        cancelled("w")
 
-        assertThat(emitted).containsExactly(
-            Signal.Buy("DERIBIT:BTC_USDC_9OCT26_81000_P", BigDecimal("0.1")),
-            Signal.Sell("DERIBIT:BTC_USDC_9OCT26_78000_P", BigDecimal("0.1")),
+        val unwind = unwinds().single()
+        assertThat(unwind.force).isTrue()
+        assertThat(unwind.requests.map { Triple(it.symbol, it.side, it.quantity) }).containsExactly(
+            Triple("DERIBIT:BTC_USDC_9OCT26_81000_P", Side.BUY, BigDecimal("0.1")),
+            Triple("DERIBIT:BTC_USDC_9OCT26_78000_P", Side.SELL, BigDecimal("0.1")),
         )
+        assertThat(unwind.requests).allMatch { it.strategyId == "st" && it.timestamp == 5L }
         assertThat(cancelled).isEmpty()
     }
 
     @Test
-    fun `working legs are cancelled, and a leg filling after the failure is closed too`() {
+    fun `working legs are cancelled, a late fill is unwound, and a cancelled close is sent again`() {
         open(longPut, shortPut)
-        cancelled(longPut)
+        cancelled("l")
         assertThat(cancelled).containsExactly("s")
 
         filled(shortPut)
+        val close = unwinds().single().requests.single()
+        assertThat(close.side).isEqualTo(Side.BUY)
 
-        assertThat(emitted).containsExactly(Signal.Buy("DERIBIT:BTC_USDC_9OCT26_81000_P", BigDecimal("0.1")))
+        cancelled(close.id)
+
+        val retry = unwinds().last().requests.single()
+        assertThat(retry.id).isNotEqualTo(close.id)
+        assertThat(
+            Triple(retry.symbol, retry.side, retry.quantity),
+        ).isEqualTo(Triple(close.symbol, close.side, close.quantity))
     }
 
     @Test
@@ -105,7 +121,7 @@ class StructureCoordinatorTest {
         filled(shortPut)
         open(wing)
         bus.publish(RiskRejectedEvent(wing, "margin"))
-        cancelled(wing)
+        cancelled("w")
 
         assertThat(emitted).isEmpty()
         assertThat(cancelled).isEmpty()

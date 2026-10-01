@@ -44,7 +44,7 @@ internal class StrategyBinder(
     private val latencyEnabled: Boolean,
 ) {
     private val audit = DslEvaluationAudit(bus, candleHub)
-    private val structures = StructureCoordinator(bus, orderManager::cancel)
+    private val structures = StructureCoordinator(bus, clock, orderManager::cancel)
     private val stackBinder = StackOrchestratorBinder(clock, bus, persistor, strategyPositions)
 
     /** Bind every strategy, in order. */
