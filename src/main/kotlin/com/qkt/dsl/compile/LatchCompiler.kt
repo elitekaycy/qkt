@@ -139,7 +139,15 @@ class LatchCompiler(
                         is LatchLimit -> resolve(o.price)
                         is LatchStop -> resolve(o.price)
                     }
-                val qty = compiledSize?.evaluate(ec, entryPrice) ?: BigDecimal.ONE
+                // No SIZING means one lot; a SIZING that is undefined or not positive skips the entry.
+                val qty =
+                    if (compiledSize ==
+                        null
+                    ) {
+                        BigDecimal.ONE
+                    } else {
+                        compiledSize.evaluate(ec, entryPrice) ?: return@LatchEntryBuilder null
+                    }
 
                 if (slRel == null && tpRel == null) {
                     return@LatchEntryBuilder LatchOrderMath.withQty(entryReq, qty)

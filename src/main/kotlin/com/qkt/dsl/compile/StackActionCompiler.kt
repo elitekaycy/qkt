@@ -73,7 +73,9 @@ internal class StackActionCompiler(
                                     ?: return@stack emptyList()
                             stopDistance(expectedEntry, spec)
                         }
-                    val qty = compiledSizes[idx].evaluate(ctx, expectedEntry, runtimeStopDistance)
+                    val qty =
+                        compiledSizes[idx].evaluate(ctx, expectedEntry, runtimeStopDistance)
+                            ?: return@stack emptyList()
                     layer.copy(resolvedQuantity = qty)
                 }
             // Freeze indicator subexpressions in the outer bracket at fire time — layer
