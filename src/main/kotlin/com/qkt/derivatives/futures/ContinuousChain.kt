@@ -83,13 +83,27 @@ class ContinuousChain(
 
     /**
      * The first instant this stream has no contract: the last contract's expiry for `@front`; for
-     * `@next`, the roll that makes its last contract the front one.
+     * `@next`, the roll that makes its last contract the front one. A chain is only built with a
+     * measured roll for its selector, so that roll exists.
      */
     val endsAtMs: Long
-        get() {
-            if (selector.offset == 0) return schedule.contracts.last().expiryMs
-            return schedule.transitions.getOrNull(schedule.contracts.size - selector.offset - 1)?.atMs ?: Long.MIN_VALUE
-        }
+        get() =
+            if (selector.offset == 0) {
+                schedule.contracts.last().expiryMs
+            } else {
+                schedule.transitions[schedule.contracts.size - selector.offset - 1].atMs
+            }
+
+    /** Why this stream ends at [endsAtMs], for messages. */
+    val endReason: String
+        get() =
+            if (selector.offset ==
+                0
+            ) {
+                "its catalog's last contract expires"
+            } else {
+                "its last contract becomes the front one"
+            }
 
     /** Contract index followed at [tMs], or null when this stream has no contract then. */
     fun indexAt(tMs: Long): Int? = schedule.indexAt(tMs, selector)

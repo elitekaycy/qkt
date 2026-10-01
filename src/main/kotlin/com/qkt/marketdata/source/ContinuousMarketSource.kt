@@ -84,9 +84,8 @@ class ContinuousMarketSource(
     ): Sequence<Pair<PriceSpace, Sequence<T>>> {
         val fromMs = range.from.toEpochMilli()
         require(range.to.toEpochMilli() <= chain.endsAtMs) {
-            "${chain.symbol} has no contract from ${Instant.ofEpochMilli(
-                chain.endsAtMs,
-            )} (the last one in its catalog); " +
+            val end = Instant.ofEpochMilli(chain.endsAtMs)
+            "${chain.symbol} has no contract from $end (${chain.endReason}); " +
                 "refresh the catalog with qkt fetch ${chain.root.root} --catalog or end the run by then"
         }
         if (fromMs < chain.servedFromMs && clipped.add(chain.symbol)) {
