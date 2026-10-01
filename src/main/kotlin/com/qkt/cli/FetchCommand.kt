@@ -58,6 +58,10 @@ class FetchCommand(
         }
         val broker = parts[0]
         val symbol = parts[1]
+        ChainFetch.misplacedFlag(args)?.let {
+            System.err.println("qkt: $it")
+            return ExitCodes.ARG_ERROR
+        }
         if (args.flag("catalog")) return catalog(target, broker)
         if (args.flag("rolls")) return rolls(target, broker)
         if (args.flag("chains")) return ChainFetch.run(target, args)

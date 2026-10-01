@@ -9,7 +9,7 @@ enum class QuoteSource { TRADE, BOOK }
  * One option contract of a chain at [atMs]: its book ([bid], [ask], either may be absent), its [mark]
  * and mark implied volatility ([markIv], in percent), the [underlying] price it was valued against
  * (the index at a trade, the expiry's forward in a book), the venue's [rate] when given, and
- * [markAgeMs], how old the mark was at [atMs] (0 for a book, time since the trade for a trade).
+ * [markAgeMs], how old the mark was at [atMs] (time since the book row or the trade it came from).
  * [contract] is the code without venue, e.g. `BTC_USDC-27SEP24-60000-C`.
  */
 data class ChainQuote(

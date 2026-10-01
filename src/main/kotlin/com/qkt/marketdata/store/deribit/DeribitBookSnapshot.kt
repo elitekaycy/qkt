@@ -12,8 +12,8 @@ import kotlinx.serialization.json.contentOrNull
 /**
  * One live snapshot of a root's option chain from Deribit's book summary: every catalogued contract's
  * best bid and ask (a missing side stays absent), mark, mark IV, rate, and its expiry's forward as the
- * underlying. The venue stamps rows separately (tens of milliseconds apart); the snapshot is stamped
- * at the newest row and each quote carries its row's age, so nothing in it postdates its instant.
+ * underlying; a contract still listed at or after its expiry is left out. The venue stamps rows
+ * separately (tens of milliseconds apart); the snapshot is stamped at the newest row and each quote carries its row's age, so nothing in it postdates its instant.
  */
 class DeribitBookSnapshot(
     private val client: DeribitClient,
@@ -30,14 +30,16 @@ class DeribitBookSnapshot(
         catalog: OptionCatalog,
     ): Taken {
         val prefix = root.root.substringAfter(':') + "-"
-        val listed = catalog.contracts.mapTo(HashSet()) { it.symbol }
-        val (known, unknown) =
+        val expiries = catalog.contracts.associate { it.symbol to it.expiryMs }
+        val (listed, unknown) =
             client.optionBook(root.currency).filter { it.name.startsWith(prefix) }.partition {
                 it.name in
-                    listed
+                    expiries
             }
-        check(known.isNotEmpty()) { "Deribit's book lists none of ${root.root}'s catalogued contracts" }
-        val atMs = known.maxOf { it.createdMs }
+        check(listed.isNotEmpty()) { "Deribit's book lists none of ${root.root}'s catalogued contracts" }
+        val atMs = listed.maxOf { it.createdMs }
+        val known = listed.filter { expiries.getValue(it.name) > atMs }
+        check(known.isNotEmpty()) { "every catalogued ${root.root} contract on Deribit's book has expired" }
         val quotes = known.sortedBy { it.name }.map { it.toQuote(atMs) }
         return Taken(ChainSnapshot(root.root, atMs, quotes), unknown.mapTo(sortedSetOf()) { it.name })
     }
