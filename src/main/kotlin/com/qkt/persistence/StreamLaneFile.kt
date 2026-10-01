@@ -49,6 +49,8 @@ private data class StreamLaneDto(
     val strategies: List<StreamStrategyDto>,
     val orders: List<StreamOrderDto>,
     val holdings: List<ContractHoldingDto>,
+    val legs: List<RollLegDto>,
+    val cancelling: List<String>,
     val roll: StreamRollDto?,
 ) {
     fun toDomain() =
@@ -66,6 +68,8 @@ private data class StreamLaneDto(
                     it.openedAt,
                 )
             },
+            legs.map { it.toDomain() },
+            cancelling,
             roll?.toDomain(),
         )
 
@@ -86,6 +90,8 @@ private data class StreamLaneDto(
                         it.openedAt,
                     )
                 },
+                l.legs.map(RollLegDto::of),
+                l.cancelling,
                 l.roll?.let(StreamRollDto::of),
             )
     }

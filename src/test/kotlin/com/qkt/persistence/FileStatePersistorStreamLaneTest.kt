@@ -32,7 +32,17 @@ class FileStatePersistorStreamLaneTest {
     fun `a lane with no roll in flight and no contract traded yet round-trips`(
         @TempDir tmp: Path,
     ) {
-        val lane = PersistedStreamLane(STREAM, null, emptyList(), emptyList(), emptyList(), roll = null)
+        val lane =
+            PersistedStreamLane(
+                STREAM,
+                null,
+                emptyList(),
+                emptyList(),
+                emptyList(),
+                emptyList(),
+                emptyList(),
+                roll = null,
+            )
         FileStatePersistor(tmp).saveStreamLane("trend", lane)
 
         assertThat(FileStatePersistor(tmp).loadStreamLane("trend", STREAM)).isEqualTo(lane)
@@ -43,7 +53,8 @@ class FileStatePersistorStreamLaneTest {
         @TempDir tmp: Path,
     ) {
         val persistor = FileStatePersistor(tmp)
-        val other = PersistedStreamLane("CME:NQ", 1, emptyList(), emptyList(), emptyList(), null)
+        val other =
+            PersistedStreamLane("CME:NQ", 1, emptyList(), emptyList(), emptyList(), emptyList(), emptyList(), null)
         persistor.saveStreamLane("trend", laneInFlight())
         persistor.saveStreamLane("trend", other)
         val rolled = laneInFlight().copy(contractIndex = 4, roll = null)

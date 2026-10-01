@@ -53,6 +53,23 @@ internal data class RollHolderDto(
     val quantity: String,
 )
 
+/** On-disk shape of a [PersistedRollLeg]. */
+@Serializable
+internal data class RollLegDto(
+    val leg: OrderRequestDto,
+    val slices: List<OrderFilledDto>,
+) {
+    fun toDomain() =
+        PersistedRollLeg(
+            leg.toDomain() as? OrderRequest.Market ?: error("roll leg ${leg.id} is not a market order"),
+            slices.map { it.toDomain() },
+        )
+
+    companion object {
+        fun of(l: PersistedRollLeg) = RollLegDto(StreamOrderDto.encodeRequest(l.leg), l.slices.map(OrderFilledDto::of))
+    }
+}
+
 /** On-disk shape of a [PersistedCarryStep]: [kind] names the step and only that step's fields are set. */
 @Serializable
 internal data class CarryStepDto(
