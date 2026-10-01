@@ -1,6 +1,9 @@
 package com.qkt.app
 
 import com.qkt.common.Side
+import com.qkt.execution.OrderRequest
+import com.qkt.instrument.InstrumentRegistry
+import com.qkt.instrument.OptionTerms
 import com.qkt.strategy.StructureLegPosition
 import com.qkt.strategy.StructurePosition
 import com.qkt.strategy.StructureState
@@ -87,7 +90,8 @@ internal fun LiveStructure.position(): StructurePosition =
         id,
         alias,
         state,
-        size,
+        // What the legs filled once any did (a portfolio book scale resizes every leg alike), else what was sent.
+        legs.maxOf { it.opened }.takeIf { it.signum() > 0 } ?: size,
         legs.map { leg ->
             val sign = if (leg.side == Side.BUY) BigDecimal.ONE else BigDecimal.ONE.negate()
             StructureLegPosition(
@@ -102,3 +106,13 @@ internal fun LiveStructure.position(): StructurePosition =
         },
         legs.any { !it.openEnded || it.isClosing },
     )
+
+/** The opening leg [request] places, with its contract's size and expiry from [instruments]. */
+internal fun structureLeg(
+    request: OrderRequest,
+    instruments: InstrumentRegistry,
+): StructureLeg {
+    val meta = requireNotNull(instruments.lookup(request.symbol)) { "${request.symbol} is not catalogued" }
+    val terms = requireNotNull(meta.derivative as? OptionTerms) { "${request.symbol} has no option terms" }
+    return StructureLeg(request.symbol, request.side, request.id, meta.contractSize, terms.expiryMs)
+}

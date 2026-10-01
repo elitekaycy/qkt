@@ -33,7 +33,10 @@ moment:
   give a window.
 - Within that expiry, the quote whose Black-76 |delta| is nearest the target wins, ties going to the
   lower strike. Delta uses the expiry's forward (the median `underlying`) and rate 0.
-- Only quotes with a positive mark IV, no older than the root's `maxQuoteAgeMinutes`, count.
+- Everything is judged at the moment the rule fires, not when the snapshot was taken. A contract
+  expired by then is skipped. Days to expiry count from then. A quote's age is its age in the
+  snapshot plus the time since, and it must be within the root's `maxQuoteAgeMinutes`. Only quotes
+  with a positive mark IV count.
 
 A leg that finds nothing means the structure does not open at all, and the log says why. Part of a
 structure is never opened.
@@ -49,8 +52,9 @@ The size is floored to the venue's volume step. A size below the minimum opens n
 
 ## Submission and failure
 
-- The legs reach the venue together as market orders, buys published before sells. Each leg still
-  fills on its own quotes, so publication order does not guarantee fill order. Their margin is judged
+- The legs reach the venue together as market orders, buys published before sells. If the venue
+  refuses a leg as it arrives, the legs behind it are not sent, so a short never leaves without its
+  wing. Each leg still fills on its own quotes, so publication order does not guarantee fill order. Their margin is judged
   as one position, so a credit spread needs its width less its credit even though its short leg
   alone would need more. If any leg is refused, none is sent.
 - While a structure's legs are still pending, a later order's margin judges each pending leg on its
@@ -87,6 +91,8 @@ POSITION.ps.theta      -- in account currency per calendar day
   A held leg without a usable quote (IV > 0, within `maxQuoteAgeMinutes`) makes them `Undefined`,
   never 0.
 - `pnl` uses the same marks as equity. Fees are excluded: the account's P&L includes them.
+- `pnl_pct` divides by the credit or debit, however small. A structure opened for almost nothing (a
+  risk reversal near zero cost) reads very large percentages; test `pnl` for such structures.
 - `max_loss` judges each expiry on its own, as the margin does. A calendar whose long leg expires
   first is measured with its short leg alone.
 
@@ -113,7 +119,8 @@ RULES
   closed portfolio gate, because it only removes risk.
 - `CLOSE ps` on a structure still opening, unwinding or closing fires nothing and logs why, so the
   rule tries again. With no live structure it does nothing, like `CLOSE` on a flat stream.
-- A closing leg the venue cancels for lack of quotes is sent again. One the venue rejects stays held:
+- A closing leg the venue cancels for lack of quotes is sent again, on each snapshot, until it fills
+  or its contract expires and settles. One the venue rejects stays held:
   once nothing of the structure is working, a later `CLOSE` (or `FLATTEN`) can retry. This holds for
   an unwind as well as a `CLOSE`.
 - `FLATTEN` (`CLOSE_ALL`) closes open structures as groups and cancels the working legs of opening

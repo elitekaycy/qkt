@@ -28,7 +28,7 @@ class OptionSelectorTest {
             .associateBy { it.symbol }
     private val hour = 3_600_000L
 
-    private fun pick(criteria: LegCriteria) = OptionSelector.select(snapshot, listings, criteria, hour)
+    private fun pick(criteria: LegCriteria) = OptionSelector.select(snapshot, listings, criteria, hour, snapshot.atMs)
 
     @Test
     fun `the nearest expiry in the window, then the delta nearest the target`() {
@@ -54,6 +54,7 @@ class OptionSelectorTest {
                 listings,
                 LegCriteria(OptionRight.PUT, 0.25, minDays = 7.0, maxDays = 30.0),
                 hour,
+                snapshot.atMs,
             ),
         ).isNull()
     }
@@ -76,6 +77,7 @@ class OptionSelectorTest {
                 listings,
                 LegCriteria(OptionRight.PUT, 0.25, minDays = 7.0, maxDays = 30.0),
                 hour,
+                snapshot.atMs,
             )
 
         assertThat(put).isNotNull()
@@ -104,4 +106,24 @@ class OptionSelectorTest {
             (it - snapshot.atMs) / 86_400_000.0 in
                 min..max
         }
+
+    @Test
+    fun `selection is judged at the clock, so a contract expired by now is out and a quote ages since the snapshot`() {
+        val call = LegCriteria(OptionRight.CALL, 0.50, minDays = 0.0, maxDays = 1.0)
+        val afterExpiry = 1_790_841_600_000L + 60_000
+
+        val picked = OptionSelector.select(snapshot, listings, call, maxQuoteAgeMs = 12 * hour, nowMs = afterExpiry)
+
+        assertThat(picked?.contract).startsWith("BTC_USDC-2OCT26-")
+        assertThat(
+            OptionSelector.select(
+                snapshot,
+                listings,
+                call,
+                maxQuoteAgeMs = hour,
+                nowMs =
+                    snapshot.atMs + 2 * hour,
+            ),
+        ).isNull()
+    }
 }

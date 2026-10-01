@@ -177,4 +177,15 @@ class StructureBookTest {
         // Delivered at 80000: the 81000 put pays 1000, the 78000 put nothing.
         assertThat(book.all()).isEmpty()
     }
+
+    @Test
+    fun `the size is what the legs filled, as a book scale resizes them`() {
+        book.accept(Signal.SubmitGroup("ps-1", "ps", listOf(shortPut, longPut)))
+        assertThat(requireNotNull(book.live("ps")).size).isEqualByComparingTo("0.1")
+
+        book.filled("s", BigDecimal("0.05"), BigDecimal("646"))
+        book.filled("l", BigDecimal("0.05"), BigDecimal("219"))
+
+        assertThat(requireNotNull(book.live("ps")).size).isEqualByComparingTo("0.05")
+    }
 }

@@ -21,7 +21,7 @@ The chain file holds the four snapshots unchanged (2456 rows). The catalog keeps
 ## Independent Greeks (`StructureGreeksTest`)
 
 Black-76 with `math.erf`, rate 0, forward = the median `underlying` of the expiry's usable quotes (IV > 0, mark age
-<= 1 h), T from 30 s after the first snapshot. Short 0.19 of 9OCT26 82000 P, long 0.19 of 79000 P:
+at the clock <= 1 h), T from the clock, 30 s after the first snapshot. Short 0.19 of 9OCT26 82000 P, long 0.19 of 79000 P:
 delta 0.030679607082869577, gamma -7.757036237081573e-06, vega -3.537833577427546 per vol point,
 theta 6.148692334513596 per day.
 
@@ -34,9 +34,11 @@ cat = {c['symbol']: c for c in json.load(open(D + 'contracts/DERIBIT/BTC_USDC.op
 first = min(int(r['atMs']) for r in rows)
 snap = [r for r in rows if int(r['atMs']) == first]
 MAX_AGE = 3_600_000
+now = first + 30_000
 def usable(r):
+    # judged at now: unexpired then, and the quote aged by the time since the snapshot
     c = cat.get(r['contract'])
-    return c and c['expiryMs'] > first and r['markIv'] and float(r['markIv']) > 0 and int(r['markAgeMs']) <= MAX_AGE
+    return c and c['expiryMs'] > now and r['markIv'] and float(r['markIv']) > 0 and int(r['markAgeMs']) + (now - first) <= MAX_AGE
 N = lambda x: 0.5 * (1 + math.erf(x / math.sqrt(2)))
 n = lambda x: math.exp(-x * x / 2) / math.sqrt(2 * math.pi)
 now = first + 30_000
