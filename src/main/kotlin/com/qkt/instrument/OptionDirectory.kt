@@ -8,6 +8,12 @@ interface OptionDirectory {
     /** The data root whose `chains/` hold these options' chain snapshots, or null when built without one. */
     val dataRoot: Path?
 
+    /** The root declared as [name] (`DERIBIT:BTC_USDC`), or null. */
+    fun root(name: String): OptionRoot?
+
+    /** The catalogued contracts of root [name] by venue name; empty when it has no catalog. */
+    fun listings(name: String): Map<String, OptionListing>
+
     /** The declared root of the catalogued option [qktSymbol], or null when it is not one. */
     fun optionRoot(qktSymbol: String): OptionRoot?
 

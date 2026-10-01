@@ -49,4 +49,33 @@ class OptionChainCoverageTest {
             )
         }.doesNotThrowAnyException()
     }
+
+    @Test
+    fun `an analytics stream needs its root's chain on every day of the run`(
+        @TempDir dir: Path,
+    ) {
+        val f = OptionChainFixture(dir)
+        f.store(Triple("2026-10-02T01:00:00Z", "100", 0L))
+        val stream = listOf("CHAIN:DERIBIT.BTC_USDC.atm_iv.30d")
+
+        assertThatThrownBy {
+            OptionChainCoverage.ensure(
+                f.registry,
+                stream,
+                day("2026-10-02"),
+                day("2026-10-03"),
+                allowIncomplete = false,
+            )
+        }.hasMessageContaining("2026-10-03")
+            .hasMessageContaining("qkt fetch DERIBIT:BTC_USDC --chains --from 2026-10-03 --to 2026-10-03")
+        assertThatCode {
+            OptionChainCoverage.ensure(
+                f.registry,
+                stream,
+                day("2026-10-02"),
+                day("2026-10-02"),
+                allowIncomplete = false,
+            )
+        }.doesNotThrowAnyException()
+    }
 }

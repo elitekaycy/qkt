@@ -1,5 +1,6 @@
 package com.qkt.backtest
 
+import com.qkt.derivatives.options.chain.ChainAnalyticsSymbol
 import com.qkt.derivatives.options.chain.ChainSnapshotStore
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.OptionTerms
@@ -9,12 +10,19 @@ import java.time.LocalDate
 import java.time.ZoneOffset
 
 /**
- * The option counterpart of tick coverage: every UTC day of a run up to a contract's expiry must hold
- * a stored chain day of its root's declared series, or the run fails naming the fetch that fills the
- * gap (unless incomplete data is allowed, which warns instead). Days after expiry need no chain.
+ * The chain counterpart of tick coverage: every UTC day an option contract trades (up to its expiry)
+ * and every day of a chain analytics stream must hold a stored chain day of the root's declared
+ * series, or the run fails naming the fetch that fills the gap (unless incomplete data is allowed,
+ * which warns instead).
  */
 internal object OptionChainCoverage {
-    /** Checks the option contracts among [symbols] over the UTC days [from]..[to]. */
+    private class Need(
+        val symbol: String,
+        val root: String,
+        val lastDay: LocalDate,
+    )
+
+    /** Checks the option contracts and chain analytics streams among [symbols] over the UTC days [from]..[to]. */
     fun ensure(
         instruments: InstrumentRegistry,
         symbols: Collection<String>,
@@ -23,23 +31,35 @@ internal object OptionChainCoverage {
         allowIncomplete: Boolean,
     ) {
         val options = instruments.options() ?: return
-        for (symbol in instruments.optionSymbols(symbols)) {
-            val root = requireNotNull(options.optionRoot(symbol))
+        val contracts =
+            instruments.optionSymbols(symbols).map { symbol ->
+                val terms =
+                    requireNotNull(
+                        instruments.lookup(symbol)?.derivative as? OptionTerms,
+                    ) { "$symbol has no option terms" }
+                Need(
+                    symbol,
+                    terms.root,
+                    minOf(to, Instant.ofEpochMilli(terms.expiryMs).atZone(ZoneOffset.UTC).toLocalDate()),
+                )
+            }
+        val streams =
+            symbols
+                .filter { it.startsWith(ChainAnalyticsSymbol.PREFIX) }
+                .map { Need(it, ChainAnalyticsSymbol.parse(it).getOrThrow().root, to) }
+        for (need in contracts + streams) {
+            val root = options.root(need.root) ?: continue
             val source = root.chains ?: continue
-            val terms =
-                requireNotNull(instruments.lookup(symbol)?.derivative as? OptionTerms) { "$symbol has no option terms" }
-            val expiry = terms.expiryMs
-            val last = minOf(to, Instant.ofEpochMilli(expiry).atZone(ZoneOffset.UTC).toLocalDate())
-            val days = generateSequence(from) { it.plusDays(1) }.takeWhile { !it.isAfter(last) }.toList()
+            val days = generateSequence(from) { it.plusDays(1) }.takeWhile { !it.isAfter(need.lastDay) }.toList()
             val store = ChainSnapshotStore(requireNotNull(options.dataRoot), source)
             val missing = days.filterNot { store.hasDay(root.root, it) }
             val series = source.name.lowercase()
             System.err.println(
-                "qkt: chain coverage $symbol ${days.size - missing.size}/${days.size} days ($series chain)",
+                "qkt: chain coverage ${need.symbol} ${days.size - missing.size}/${days.size} days ($series chain)",
             )
             if (missing.isEmpty()) continue
             val gap =
-                "missing $series chain days for $symbol: ${missing.joinToString()}; fetch them with: " +
+                "missing $series chain days for ${need.symbol}: ${missing.joinToString()}; fetch them with: " +
                     "qkt fetch ${root.root} --chains --from ${missing.first()} --to ${missing.last()}"
             if (!allowIncomplete) throw IncompleteDataException(gap)
             System.err.println("qkt: WARNING — running with incomplete data: $gap")
