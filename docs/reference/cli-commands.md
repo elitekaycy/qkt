@@ -80,15 +80,17 @@ Every `qkt` subcommand. Run `qkt <command> --help` for the authoritative flag li
   draws; its last row is the final-equity P5/P25/P50/P75/P95.
 - Futures runs add up to three files, each only when it has rows (a run without
   futures writes none of them): `rolls.csv`
-  (`time,stream,strategy,from,to,quantity,fromReference,toReference,gap,fromFill,toFill,fees,rollCost`)
+  (`timestamp,stream,strategy,from,to,quantity,multiplier,fromReference,toReference,gap,fromFill,toFill,fees,rollCost`;
+  signed quantities, prices and costs in the root's currency)
   lists every position carried across a roll; `contracts.csv`
-  (`time,strategy,stream,orderId,contract,side,quantity,contractPrice,streamPrice`) the contract and
+  (`timestamp,strategy,stream,orderId,contract,side,quantity,contractPrice,streamPrice`) the contract and
   price behind every fill of a continuous stream; `settlements.csv`
-  (`time,strategy,contract,side,quantity,price,deliveryPriceKnown`) every position settled at a
+  (`timestamp,strategy,contract,side,quantity,price,deliveryPriceKnown`) every position settled at a
   contract's expiry; `margin_daily.csv` (`date,marginUsed,maintenance,equity,marginCall`) each UTC
   day's futures margin at its last sample, for days that ended holding positions with margin terms.
   The reports then also show `rollCostsPaid`, the fourth term of the gross-to-net
-  bridge: `preCostPnL = totalPnL + commissionPaid + swapPaid + rollCostsPaid`.
+  bridge: `preCostPnL = totalPnL + commissionPaid + swapPaid + rollCostsPaid`. Timestamps are epoch
+  milliseconds, as in `trades.csv`.
 - Each report metric includes daily PnL, max daily drawdown, drawdown periods,
   Monte Carlo tail stats when available, and the retained equity curve used for
   charts.

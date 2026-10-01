@@ -52,17 +52,18 @@ class FuturesReportFilesTest {
 
         assertThat(files.keys).containsExactly("rolls.csv", "contracts.csv", "settlements.csv")
         assertThat(files.getValue("rolls.csv")).isEqualTo(
-            "time,stream,strategy,from,to,quantity,fromReference,toReference,gap,fromFill,toFill,fees,rollCost\n" +
-                "2024-09-19T08:00:00Z,BINANCE_UM:BTCUSDT@front,s,BINANCE_UM:BTCUSDT_240927,BINANCE_UM:BTCUSDT_241227," +
-                "0.01,62206.4,63343.9,1137.5,62206.2,63344.1,0.6,0.604\n",
+            "timestamp,stream,strategy,from,to,quantity,multiplier,fromReference,toReference,gap," +
+                "fromFill,toFill,fees,rollCost\n" +
+                "1726732800000,BINANCE_UM:BTCUSDT@front,s,BINANCE_UM:BTCUSDT_240927,BINANCE_UM:BTCUSDT_241227," +
+                "0.01,1,62206.4,63343.9,1137.5,62206.2,63344.1,0.6,0.604\n",
         )
         assertThat(files.getValue("contracts.csv")).isEqualTo(
-            "time,strategy,stream,orderId,contract,side,quantity,contractPrice,streamPrice\n" +
-                "2024-09-19T08:00:00Z,s,BINANCE_UM:BTCUSDT@front,o1,BINANCE_UM:BTCUSDT_241227,BUY,0.01,63344.1,60140.7\n",
+            "timestamp,strategy,stream,orderId,contract,side,quantity,contractPrice,streamPrice\n" +
+                "1726732800000,s,BINANCE_UM:BTCUSDT@front,o1,BINANCE_UM:BTCUSDT_241227,BUY,0.01,63344.1,60140.7\n",
         )
         assertThat(files.getValue("settlements.csv")).isEqualTo(
-            "time,strategy,contract,side,quantity,price,deliveryPriceKnown\n" +
-                "2024-09-19T08:00:00Z,s,BINANCE_UM:BTCUSDT_240927,SELL,0.01,65422.7,true\n",
+            "timestamp,strategy,contract,side,quantity,price,deliveryPriceKnown\n" +
+                "1726732800000,s,BINANCE_UM:BTCUSDT_240927,SELL,0.01,65422.7,true\n",
         )
     }
 }
