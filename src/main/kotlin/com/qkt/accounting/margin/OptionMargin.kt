@@ -55,25 +55,39 @@ class OptionMargin(
         quantity: BigDecimal,
         positions: PositionProvider,
         mark: (String) -> BigDecimal?,
+    ): Outcome =
+        requiredWithFills(
+            mapOf(
+                symbol to
+                    if (side ==
+                        Side.BUY
+                    ) {
+                        quantity
+                    } else {
+                        quantity.negate()
+                    },
+            ),
+            positions,
+            mark,
+        )
+
+    /**
+     * The worst-case margin with every signed quantity of [fills] added to the positions (an option
+     * structure's legs, judged as one position), over every mix of pending orders filling.
+     */
+    fun requiredWithFills(
+        fills: Map<String, BigDecimal>,
+        positions: PositionProvider,
+        mark: (String) -> BigDecimal?,
     ): Outcome {
-        val order = if (side == Side.BUY) quantity else quantity.negate()
         val ranges =
             (
                 positions.symbols() +
                     positions.pendingEntrySymbols(
                         null,
-                    ) + symbol
+                    ) + fills.keys
             ).filter(::covers).toSet().associateWith { s ->
-                val base =
-                    (positions.positionFor(s)?.quantity ?: BigDecimal.ZERO).add(
-                        if (s ==
-                            symbol
-                        ) {
-                            order
-                        } else {
-                            BigDecimal.ZERO
-                        },
-                    )
+                val base = (positions.positionFor(s)?.quantity ?: BigDecimal.ZERO).add(fills[s] ?: BigDecimal.ZERO)
                 listOf(
                     base.subtract(positions.pendingOrderQuantity(s, Side.SELL)),
                     base.add(positions.pendingOrderQuantity(s, Side.BUY)),

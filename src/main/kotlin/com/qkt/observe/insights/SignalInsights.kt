@@ -60,6 +60,16 @@ interface SignalInsights {
                             "armWindowMs" to s.compiled.armWindowMs,
                             "expiresAt" to e.timestamp + s.compiled.armWindowMs,
                         )
+                is Signal.SubmitGroup ->
+                    "signal.structure" to
+                        mapOf(
+                            "intent" to "OPEN_STRUCTURE",
+                            "structureId" to s.structureId,
+                            "legs" to
+                                s.requests.joinToString(
+                                    ";",
+                                ) { "${it.side} ${it.quantity.toPlainString()} ${it.symbol}" },
+                        )
                 is Signal.Suppressed ->
                     "signal.suppressed" to
                         mapOf(

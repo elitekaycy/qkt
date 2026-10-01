@@ -70,6 +70,8 @@ internal class StrategySignalEmitter(
                 emit = { request -> invoke(Signal.Submit(request)) },
             )
             ctx.submissions.recordAccepted()
+        } else if (sig is Signal.SubmitGroup) {
+            submitter.submitGroup(strategyId, strategy, ctx, sig)
         } else {
             submitter.submit(strategyId, strategy, ctx, sig)
         }

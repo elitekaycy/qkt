@@ -4,6 +4,7 @@ import com.qkt.broker.PositionAccountingMode
 import com.qkt.bus.EventBus
 import com.qkt.common.Clock
 import com.qkt.common.IdGenerator
+import com.qkt.common.Side
 import com.qkt.dsl.compile.DslCompiledStrategy
 import com.qkt.events.DecisionOrderLinkedEvent
 import com.qkt.events.OrderEvent
@@ -11,6 +12,7 @@ import com.qkt.events.RiskRejectedEvent
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.scaleQuantity
 import com.qkt.execution.toOrderRequest
+import com.qkt.execution.withStrategyId
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.positions.PositionProvider
 import com.qkt.positions.StrategyPositionTracker
@@ -96,6 +98,49 @@ internal class OrderSubmitter(
             is Decision.Reject -> {
                 ctx.submissions.recordSuppressed()
                 bus.publish(RiskRejectedEvent(request, decision.reason))
+            }
+        }
+    }
+
+    /**
+     * Submit an option structure's legs as one position: each leg is book-scaled (any suppressed leg
+     * suppresses the group), the risk engine judges them together ([RiskEngine.approveGroup]), and then
+     * either every leg goes to the venue, buys first so no moment holds a short without its wing, or
+     * every leg is refused. The rule that fired counts one accepted or suppressed submission.
+     */
+    fun submitGroup(
+        strategyId: String,
+        strategy: Strategy,
+        ctx: StrategyContext,
+        group: Signal.SubmitGroup,
+    ) {
+        val built = group.requests.map { it.withStrategyId(strategyId) }
+        val dsl = strategy as? DslCompiledStrategy
+        for (leg in built) {
+            dsl?.onOrderSubmitted(group, leg.id)?.let { link ->
+                bus.publish(
+                    DecisionOrderLinkedEvent(strategyId, link.decisionId, link.ruleId, link.signalIndex, link.orderId),
+                )
+            }
+        }
+        val scaled = built.map { applyBookScale(it) }
+        if (scaled.any { it == null }) {
+            ctx.submissions.recordSuppressed()
+            built.forEach { bus.publish(RiskRejectedEvent(it, "book de-risk: new risk suppressed")) }
+            return
+        }
+        val legs = scaled.filterNotNull()
+        when (val decision = riskEngine.approveGroup(legs)) {
+            is Decision.Approve -> {
+                ctx.submissions.recordAccepted()
+                for (leg in legs.sortedBy { if (it.side == Side.BUY) 0 else 1 }) {
+                    logSubmitContext(leg)
+                    bus.publish(OrderEvent(LegIntentPlanner.plan(leg, positionMode(leg.symbol))))
+                }
+            }
+            is Decision.Reject -> {
+                ctx.submissions.recordSuppressed()
+                legs.forEach { bus.publish(RiskRejectedEvent(it, decision.reason)) }
             }
         }
     }

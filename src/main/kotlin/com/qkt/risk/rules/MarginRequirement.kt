@@ -7,7 +7,7 @@ import com.qkt.execution.OrderRequest
 import com.qkt.marketdata.MarketPriceProvider
 import com.qkt.positions.PositionProvider
 import com.qkt.risk.Decision
-import com.qkt.risk.RiskRule
+import com.qkt.risk.GroupAwareRule
 import com.qkt.risk.isRiskReducing
 import java.math.BigDecimal
 
@@ -30,7 +30,7 @@ class MarginRequirement(
     private val prices: MarketPriceProvider,
     private val options: OptionMargin? = null,
     private val equity: () -> BigDecimal,
-) : RiskRule {
+) : GroupAwareRule {
     override fun evaluate(
         request: OrderRequest,
         positions: PositionProvider,
@@ -58,6 +58,43 @@ class MarginRequirement(
             "initial margin ${required.toPlainString()} after this order exceeds account equity ${available.toPlainString()}",
         )
     }
+
+    /**
+     * The legs of an option structure, judged as one position: the options' worst case with every
+     * leg filled, plus the futures already held, against equity. A group that would leave an unbounded
+     * loss is refused; one that lowers the options' requirement passes. A group with a leg that is not
+     * an option is judged leg by leg.
+     */
+    override fun evaluateGroup(
+        requests: List<OrderRequest>,
+        positions: PositionProvider,
+    ): Decision {
+        val model = options
+        if (model == null || requests.any { !model.covers(it.symbol) }) {
+            return requests.map { evaluate(it, positions) }.firstOrNull { it is Decision.Reject } ?: Decision.Approve
+        }
+        val fills =
+            requests.groupBy { it.symbol }.mapValues { (_, legs) ->
+                legs.fold(BigDecimal.ZERO) { q, r -> q.add(r.signedQuantity()) }
+            }
+        val mark = { s: String -> prices.lastPrice(s) ?: positions.positionFor(s)?.avgEntryPrice }
+        val after = model.requiredWithFills(fills, positions, mark)
+        if (after is OptionMargin.Outcome.Refused) return Decision.Reject(after.reason)
+        var unpriced: String? = null
+        val futures = futuresRequirement(requests.first(), positions) { unpriced = it }
+        unpriced?.let { return Decision.Reject("cannot compute margin for $it: no price reference") }
+        val afterAmount = (after as OptionMargin.Outcome.Required).amount
+        val required = futures.add(afterAmount)
+        val available = equity()
+        if (required <= available) return Decision.Approve
+        val before = model.requiredWithFills(emptyMap(), positions, mark)
+        if (before !is OptionMargin.Outcome.Required || afterAmount < before.amount) return Decision.Approve
+        return Decision.Reject(
+            "initial margin ${required.toPlainString()} after this structure exceeds account equity ${available.toPlainString()}",
+        )
+    }
+
+    private fun OrderRequest.signedQuantity(): BigDecimal = if (side == Side.BUY) quantity else quantity.negate()
 
     /** The futures initial margin after [request]; a margined symbol without a price is reported to [unpriced]. */
     private fun futuresRequirement(
