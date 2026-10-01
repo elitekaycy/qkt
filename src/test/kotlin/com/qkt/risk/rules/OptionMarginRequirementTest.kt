@@ -69,6 +69,7 @@ class OptionMarginRequirementTest {
     private class Book(
         private val held: Map<String, BigDecimal> = emptyMap(),
         private val pendingSells: Map<String, BigDecimal> = emptyMap(),
+        private val pendingBuys: Map<String, BigDecimal> = emptyMap(),
     ) : PositionProvider {
         override fun positionFor(symbol: String) = held[symbol]?.let { Position(symbol, it, BigDecimal.ONE) }
 
@@ -78,15 +79,21 @@ class OptionMarginRequirementTest {
             symbol: String,
             side: Side,
             strategyId: String?,
-        ): BigDecimal = if (side == Side.SELL) pendingSells[symbol] ?: BigDecimal.ZERO else BigDecimal.ZERO
+        ): BigDecimal = (if (side == Side.SELL) pendingSells[symbol] else pendingBuys[symbol]) ?: BigDecimal.ZERO
 
-        override fun pendingEntrySymbols(strategyId: String?) = pendingSells.keys
+        override fun pendingEntrySymbols(strategyId: String?) = pendingSells.keys + pendingBuys.keys
     }
 
     private fun order(
         symbol: String,
         side: Side,
-    ) = OrderRequest.Market("o", symbol, side, BigDecimal("0.1"), TimeInForce.GTC, 0L, "s1")
+        limit: String? = null,
+    ): OrderRequest =
+        if (limit == null) {
+            OrderRequest.Market("o", symbol, side, BigDecimal("0.1"), TimeInForce.GTC, 0L, "s1")
+        } else {
+            OrderRequest.Limit("o", symbol, side, BigDecimal("0.1"), BigDecimal(limit), TimeInForce.GTC, 0L, "s1")
+        }
 
     private fun decide(
         symbol: String,
@@ -159,5 +166,46 @@ class OptionMarginRequirementTest {
         val short = Book(held = mapOf(p80 to BigDecimal("-0.2")))
 
         assertThat(decide(p80, Side.BUY, short, withEquity = "100")).isEqualTo(Decision.Approve)
+    }
+
+    @Test
+    fun `a sale stacked on a pending sale of the same long would leave a naked call and is refused`() {
+        val closing = Book(held = mapOf(c92 to BigDecimal("0.1")), pendingSells = mapOf(c92 to BigDecimal("0.1")))
+
+        assertThat(
+            (decide(c92, Side.SELL, closing, withEquity = "1000000") as Decision.Reject).reason,
+        ).contains("unbounded")
+    }
+
+    @Test
+    fun `a limit price does not revalue the position already held`() {
+        // Held -1.0 P80 needs 79500 at its 500 mark; a 0.1 sell limit at 79000 must not shrink that.
+        equity = BigDecimal("2000")
+        val decision =
+            rule.evaluate(
+                order(p80, Side.SELL, limit = "79000"),
+                Book(held = mapOf(p80 to BigDecimal("-1.0"))),
+            )
+
+        assertThat(decision).isInstanceOf(Decision.Reject::class.java)
+    }
+
+    @Test
+    fun `the worst case looks at every mix of pending orders filling or not`() {
+        // Held +0.1 C92 with pending sells of C92 (a close) and P80 (a new short): buying P78 needs 200 when
+        // the P80 sale fills and the C92 close does not.
+        val book =
+            Book(
+                held = mapOf(c92 to BigDecimal("0.1")),
+                pendingSells =
+                    mapOf(
+                        c92 to BigDecimal("0.1"),
+                        p80 to BigDecimal("0.1"),
+                    ),
+            )
+
+        val outcome = OptionMargin(registry).required(p78, Side.BUY, BigDecimal("0.1"), book) { prices.lastPrice(it) }
+
+        assertThat((outcome as OptionMargin.Outcome.Required).amount).isEqualByComparingTo("200")
     }
 }

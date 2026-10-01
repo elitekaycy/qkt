@@ -18,7 +18,8 @@ import java.math.BigDecimal
  * entries cannot outrun the check.
  *
  * With [options], the account's option positions add their worst-case requirement ([OptionMargin]),
- * and option orders are judged on that portfolio rather than per symbol. An option order that would
+ * and option orders are judged on that portfolio rather than per symbol (a futures order is refused
+ * too while the options cannot be margined). An option order that would
  * leave an unbounded loss is refused, even one that reduces its own symbol (selling the long wing of
  * a call spread leaves the short naked). One that lowers the options' requirement passes even when
  * equity no longer covers it. A non-option order that only reduces a position always passes, and
@@ -84,16 +85,29 @@ class MarginRequirement(
         return required
     }
 
-    /** The options' requirement with [quantity] of [request] filled (zero: as things stand); null without options. */
+    /**
+     * The options' requirement with [quantity] of [request] filled (zero: as things stand); null without
+     * options. Options are valued at their last price, else the position's entry price, else, for the
+     * ordered contract alone, the order's own price.
+     */
     private fun optionRequirement(
         request: OrderRequest,
         quantity: BigDecimal,
         positions: PositionProvider,
     ): OptionMargin.Outcome? {
         val model = options ?: return null
-        val mark = { s: String -> (if (s == request.symbol) explicitPrice(request) else null) ?: prices.lastPrice(s) }
+        val mark = { s: String -> optionMark(s, request, positions) }
         return model.required(request.symbol, request.side, quantity, positions, mark)
     }
+
+    private fun optionMark(
+        symbol: String,
+        request: OrderRequest,
+        positions: PositionProvider,
+    ): BigDecimal? =
+        prices.lastPrice(symbol)
+            ?: positions.positionFor(symbol)?.avgEntryPrice
+            ?: if (symbol == request.symbol) explicitPrice(request) else null
 
     private fun exposure(
         symbol: String,
