@@ -14,7 +14,9 @@ import com.qkt.dsl.ast.WhenThen
  *   chosen when it fires, and only a fed root routes and prices every contract it may pick; an unfed
  *   root's legs would reach whatever broker serves unrouted symbols;
  * - a structure alias names no stream or basket, so `POSITION.<alias>` and `CLOSE <alias>` mean one thing;
- * - no rule opens one alias twice: an alias holds one live structure at a time.
+ * - no rule opens one alias twice: an alias holds one live structure at a time;
+ * - no order trades a declared contract of a root the strategy trades through structures: its legs and
+ *   those orders would close each other's positions, and no fill could say which it belonged to.
  */
 internal fun requireValidStructures(ast: StrategyAst) {
     val fed =
@@ -37,6 +39,27 @@ internal fun requireValidStructures(ast: StrategyAst) {
             throw CompileError("one rule opens structure $it twice")
         }
     }
+    val roots = actionsOf(ast).flatMap(::structureOpens).map { it.root }.toSet()
+    val contracts = HashMap<String, String>()
+    for (stream in ast.streams) {
+        roots.firstOrNull { isContractOf(stream.broker, stream.symbol, it) }?.let { contracts[stream.alias] = it }
+    }
+    actionsOf(ast).flatMap(::orderTargets).firstOrNull { it in contracts }?.let { alias ->
+        throw CompileError(
+            "$alias is a contract of ${contracts.getValue(alias)}, which this strategy trades through structures; " +
+                "trade it in a structure, or in a strategy without them",
+        )
+    }
+}
+
+/** True when [broker]:[symbol] names an option contract of [root] (`<CODE>_<DMMMYY>_<STRIKE>_<C|P>`). */
+private fun isContractOf(
+    broker: String,
+    symbol: String,
+    root: String,
+): Boolean {
+    val (venue, code) = root.split(':', limit = 2)
+    return broker == venue && Regex("${Regex.escape(code)}_\\d{1,2}[A-Z]{3}\\d{2}_[0-9d.]+_[CP]").matches(symbol)
 }
 
 /** The aliases the strategy's `OPEN … = OPTIONS ON …` actions open. */

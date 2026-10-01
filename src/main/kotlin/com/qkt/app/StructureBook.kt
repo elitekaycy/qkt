@@ -30,10 +30,12 @@ internal class StructureBook(
     )
 
     private val byAlias = HashMap<String, LiveStructure>()
-    private val byId = HashMap<String, LiveStructure>()
+    private val byId = LinkedHashMap<String, LiveStructure>()
     private val owners = HashMap<String, Owner>()
 
     override fun live(alias: String): StructurePosition? = byAlias[alias]?.let(::position)
+
+    override fun all(): List<StructurePosition> = byId.values.map(::position)
 
     override fun mark(symbol: String): BigDecimal? = prices.lastPrice(symbol)
 
@@ -113,6 +115,30 @@ internal class StructureBook(
     /** [structure]'s legs are being unwound after one failed. */
     fun unwinding(structure: LiveStructure) {
         structure.state = StructureState.UNWINDING
+    }
+
+    /**
+     * A fill on [symbol] that is no structure's own order (a flatten, a stop that flattens): it closes
+     * legs held on the other side, oldest structure first, so the book never holds what the account
+     * no longer does. A fill on the same side as a leg opens nothing here.
+     */
+    fun external(
+        symbol: String,
+        side: Side,
+        quantity: BigDecimal,
+        price: BigDecimal,
+    ) {
+        var left = quantity
+        for (structure in byId.values.toList()) {
+            if (left.signum() == 0) return
+            for (leg in structure.legs) {
+                if (leg.symbol != symbol || leg.side == side || leg.held.signum() == 0 || left.signum() == 0) continue
+                val closed = left.min(leg.held)
+                leg.realize(closed, price)
+                left = left.subtract(closed)
+            }
+            forgetIfDone(structure)
+        }
     }
 
     /** Every structure leg on [symbol] settled at its expiry at [price]. */

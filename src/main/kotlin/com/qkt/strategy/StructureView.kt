@@ -50,6 +50,9 @@ interface StructureView {
     /** The live structure opened under [alias], or null. */
     fun live(alias: String): StructurePosition?
 
+    /** Every live structure, oldest first. */
+    fun all(): List<StructurePosition>
+
     /** The price [symbol] is marked at (the one equity uses), or null when it has none yet. */
     fun mark(symbol: String): BigDecimal?
 
@@ -58,6 +61,8 @@ interface StructureView {
         val EMPTY: StructureView =
             object : StructureView {
                 override fun live(alias: String): StructurePosition? = null
+
+                override fun all(): List<StructurePosition> = emptyList()
 
                 override fun mark(symbol: String): BigDecimal? = null
             }

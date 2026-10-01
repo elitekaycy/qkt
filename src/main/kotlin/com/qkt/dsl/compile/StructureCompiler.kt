@@ -16,17 +16,18 @@ import com.qkt.execution.TimeInForce
 import com.qkt.instrument.OptionRight
 import com.qkt.instrument.OptionSymbols
 import com.qkt.strategy.Signal
+import com.qkt.strategy.StructureState
 import java.math.BigDecimal
 import java.math.RoundingMode
 
 /**
- * Compiles `OPEN <alias> = OPTIONS ON <root> { … } SIZING …`. When the rule fires, the legs are
- * selected from the root's latest chain snapshot at or before the clock ([StructurePlanner]) and sized:
- * `SIZING <qty>` is contracts per leg; `SIZING n PCT RISK` is `equity × n%` over the structure's
- * maximum loss per contract (refused when that loss is unbounded), floored to the volume step. The
- * legs leave as one [Signal.SubmitGroup] of market orders. A leg that selects nothing, a size below
- * the venue minimum, or an alias whose structure is still live fires a [Signal.Suppressed] with the
- * reason instead.
+ * Compiles `OPEN <alias> = OPTIONS ON <root> { … } SIZING …` and `CLOSE <alias>`. When an OPEN
+ * fires, the legs are selected from the root's latest chain snapshot at or before the clock
+ * ([StructurePlanner]) and sized: `SIZING <qty>` is contracts per leg; `SIZING n PCT RISK` is
+ * `equity × n%` over the structure's maximum loss per contract (refused when that loss is unbounded),
+ * floored to the volume step. The legs leave as one [Signal.SubmitGroup] of market orders. A leg that
+ * selects nothing, a size below the venue minimum, or an alias whose structure is still live fires a
+ * [Signal.Suppressed] with the reason instead.
  */
 internal class StructureCompiler(
     private val exprCompiler: ExprCompiler,
@@ -65,6 +66,25 @@ internal class StructureCompiler(
             }
         return { ec -> listOf(fire(action, specs, size, ec)) }
     }
+
+    /**
+     * Compiles `CLOSE <alias>` on a structure: an OPEN structure closes as one group
+     * ([StructureCloses.closeGroup]); one still opening, unwinding or closing fires a [Signal.Suppressed]
+     * with the reason, so the rule tries again; no live structure fires nothing, as `CLOSE` on a flat stream.
+     */
+    fun compileClose(alias: String): (EvalContext) -> List<Signal> =
+        { ec ->
+            val live = ec.strategyContext.structures.live(alias)
+            when {
+                live == null -> emptyList()
+                live.state != StructureState.OPEN ->
+                    listOf(Signal.Suppressed(alias, "$alias is ${live.state}, not open"))
+                else -> {
+                    val strategyId = ec.strategyContext.strategyId
+                    listOfNotNull(StructureCloses.closeGroup(live, strategyId, ec.strategyContext.clock.now(), ids))
+                }
+            }
+        }
 
     private fun fire(
         action: OpenStructure,

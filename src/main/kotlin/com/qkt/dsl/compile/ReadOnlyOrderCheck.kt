@@ -41,42 +41,30 @@ internal fun rejectReadOnlyOrders(
     action: ActionAst,
     readOnlyAliases: Set<String>,
 ) {
-    fun reject(stream: String) =
-        require(stream !in readOnlyAliases) {
+    orderTargets(action).firstOrNull { it in readOnlyAliases }?.let { stream ->
+        throw IllegalArgumentException(
             "Series '$stream' is read-only — it has no tradeable price; remove the order " +
-                "action targeting it (BUY/SELL/CLOSE/CANCEL)."
-        }
-    when (action) {
-        is Buy -> {
-            reject(action.stream)
-            rejectNestedOrders(action.opts, readOnlyAliases)
-        }
-        is Sell -> {
-            reject(action.stream)
-            rejectNestedOrders(action.opts, readOnlyAliases)
-        }
-        is Close -> reject(action.stream)
-        is Resize -> reject(action.stream)
-        is Cancel -> reject(action.stream)
-        is Latch -> {
-            reject(action.stream)
-            action.entries.mapNotNull { it.stream }.forEach(::reject)
-        }
-        is OcoEntry -> {
-            rejectReadOnlyOrders(action.leg1, readOnlyAliases)
-            rejectReadOnlyOrders(action.leg2, readOnlyAliases)
-        }
-        is Block -> action.actions.forEach { rejectReadOnlyOrders(it, readOnlyAliases) }
-        // A structure orders contracts of its option root, never a declared (possibly read-only) alias.
-        CloseAll, CancelAll, is Log, is com.qkt.dsl.ast.OpenStructure -> Unit
+                "action targeting it (BUY/SELL/CLOSE/CANCEL).",
+        )
     }
 }
 
-private fun rejectNestedOrders(
-    opts: ActionOpts,
-    readOnlyAliases: Set<String>,
-) {
-    opts.onFill.forEach { rejectReadOnlyOrders(it, readOnlyAliases) }
-    (opts.exitHooks.onStop + opts.exitHooks.onTakeProfit + opts.exitHooks.onClose)
-        .forEach { rejectReadOnlyOrders(it, readOnlyAliases) }
-}
+/**
+ * Every alias an order action targets, nested ON_FILL and exit hooks included, in the order they are
+ * written. A structure orders contracts of its option root, never a declared alias.
+ */
+internal fun orderTargets(action: ActionAst): List<String> =
+    when (action) {
+        is Buy -> listOf(action.stream) + nestedTargets(action.opts)
+        is Sell -> listOf(action.stream) + nestedTargets(action.opts)
+        is Close -> listOf(action.stream)
+        is Resize -> listOf(action.stream)
+        is Cancel -> listOf(action.stream)
+        is Latch -> listOf(action.stream) + action.entries.mapNotNull { it.stream }
+        is OcoEntry -> orderTargets(action.leg1) + orderTargets(action.leg2)
+        is Block -> action.actions.flatMap(::orderTargets)
+        CloseAll, CancelAll, is Log, is com.qkt.dsl.ast.OpenStructure -> emptyList()
+    }
+
+private fun nestedTargets(opts: ActionOpts): List<String> =
+    (opts.onFill + opts.exitHooks.onStop + opts.exitHooks.onTakeProfit + opts.exitHooks.onClose).flatMap(::orderTargets)

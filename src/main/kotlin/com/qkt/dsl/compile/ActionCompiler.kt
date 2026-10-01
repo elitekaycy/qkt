@@ -80,7 +80,12 @@ class ActionCompiler(
             is Buy -> compileBuySell(action.stream, action.opts, Side.BUY)
             is Sell -> compileBuySell(action.stream, action.opts, Side.SELL)
             is Log -> logs.compile(action, ruleAlias)
-            is Close -> closes.compileClose(action.stream)
+            is Close ->
+                if (action.stream in exprCompiler.structures.aliases) {
+                    structures.compileClose(action.stream)
+                } else {
+                    closes.compileClose(action.stream)
+                }
             is CloseAll -> closes.compileCloseAll()
             is Cancel -> compileCancel(action.stream)
             is CancelAll -> compileCancelAll()

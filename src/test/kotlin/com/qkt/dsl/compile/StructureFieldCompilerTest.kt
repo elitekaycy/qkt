@@ -53,6 +53,8 @@ class StructureFieldCompilerTest {
                 override fun live(alias: String) =
                     StructurePosition("ps-1", "ps", state, BigDecimal("0.1"), legs).takeIf { live && alias == "ps" }
 
+                override fun all() = listOfNotNull(live("ps"))
+
                 override fun mark(symbol: String) = marks[symbol]?.let(::BigDecimal)
             }
         val clock = FixedClock(StructureFixtures.OCT9 - 54 * 3_600_000L)

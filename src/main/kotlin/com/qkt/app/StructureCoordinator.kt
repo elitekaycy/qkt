@@ -23,7 +23,8 @@ import com.qkt.strategy.StructureState
  *
  * An opening leg filling after the unwind began is closed as it fills. A closing leg the venue
  * cancels (no quote in time) is sent again for what it still holds; one the venue rejects is final.
- * Legs whose contract has expired are never closed: their expiry settlement closes them.
+ * Legs whose contract has expired are never closed: their expiry settlement closes them. A fill of an
+ * order no structure sent (a flatten) closes the structure legs it trades against ([StructureBook.external]).
  */
 internal class StructureCoordinator(
     private val bus: EventBus,
@@ -82,7 +83,11 @@ internal class StructureCoordinator(
                 book.settled(e.symbol, e.price)
                 return@subscribe
             }
-            val owner = book.filled(e.clientOrderId, e.quantity, e.price) ?: return@subscribe
+            val owner = book.filled(e.clientOrderId, e.quantity, e.price)
+            if (owner == null) {
+                book.external(e.symbol, e.side, e.quantity, e.price)
+                return@subscribe
+            }
             if (owner.opening &&
                 owner.structure.state == StructureState.UNWINDING
             ) {

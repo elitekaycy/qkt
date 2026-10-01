@@ -32,7 +32,8 @@ internal class StrategySignalEmitter(
         val force =
             (sig is Signal.Buy && sig.force) ||
                 (sig is Signal.Sell && sig.force) ||
-                (sig is Signal.SubmitGroup && sig.force)
+                (sig is Signal.SubmitGroup && sig.force) ||
+                (sig is Signal.CancelPendingForSymbol && sig.force)
         if (force || (gate() && gateFor(strategyId))) {
             route(sig)
         } else {

@@ -53,7 +53,8 @@ class DslVocabularyTest {
                 """
                 STRATEGY t VERSION 1
                 SYMBOLS
-                    chain = OPTIONS:DERIBIT.BTC_USDC EVERY 1m
+                    chain = OPTIONS:DERIBIT.BTC_USDC EVERY 1m,
+                    iv = CHAIN:DERIBIT.BTC_USDC.atm_iv.7d EVERY 1m
                 RULES
                     WHEN POSITION.ps.$member > 0
                     THEN OPEN ps = OPTIONS ON DERIBIT:BTC_USDC { BUY PUT DELTA 0.25 DTE 7 TO 30 } SIZING 0.1
