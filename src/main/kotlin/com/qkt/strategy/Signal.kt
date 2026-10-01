@@ -62,11 +62,13 @@ sealed class Signal {
     /**
      * The legs of one option structure [structureId], submitted together: every leg must pass the
      * per-order rules, the option margin judges them as one position, and either all go to the venue
-     * (buys first) or none does. Emitted by DSL `OPEN … = OPTIONS ON …` actions.
+     * (published buys before sells) or none does. Emitted by DSL `OPEN … = OPTIONS ON …` actions.
      */
     data class SubmitGroup(
         val structureId: String,
         val requests: List<OrderRequest>,
+        /** True for a group that only removes risk (a structure's unwind): the portfolio gate never drops it. */
+        val force: Boolean = false,
     ) : Signal()
 
     /** Intent intentionally suppressed before an order could be constructed. */

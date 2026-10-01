@@ -68,20 +68,22 @@ class RiskEngineGroupTest {
             override fun allPositions() = emptyMap<String, Position>()
         }
 
-    private fun engine(vararg extra: RiskRule) =
-        RiskEngine(
-            listOf(
-                *extra,
-                MarginRequirement(
-                    MarginModel(registry, accountingEngine(AccountingConfig(), prices, registry)),
-                    prices,
-                    OptionMargin(registry),
-                ) {
-                    equity
-                },
-            ),
-            flat,
-        )
+    private fun engine(
+        vararg extra: RiskRule,
+        book: PositionProvider = flat,
+    ) = RiskEngine(
+        listOf(
+            *extra,
+            MarginRequirement(
+                MarginModel(registry, accountingEngine(AccountingConfig(), prices, registry)),
+                prices,
+                OptionMargin(registry),
+            ) {
+                equity
+            },
+        ),
+        book,
+    )
 
     private fun leg(
         id: String,
@@ -110,5 +112,23 @@ class RiskEngineGroupTest {
         assertThat(
             capped.approveGroup(listOf(leg("a", p80, Side.SELL), leg("b", p78, Side.BUY, "0.2"))),
         ).isInstanceOf(Decision.Reject::class.java)
+    }
+
+    @Test
+    fun `an unwind group closing a held spread passes even when equity covers nothing`() {
+        val spread =
+            object : PositionProvider {
+                private val held = mapOf(p80 to BigDecimal("-0.1"), p78 to BigDecimal("0.1"))
+
+                override fun positionFor(symbol: String) = held[symbol]?.let { Position(symbol, it, BigDecimal.ONE) }
+
+                override fun allPositions() = held.mapValues { (s, q) -> Position(s, q, BigDecimal.ONE) }
+            }
+        equity = BigDecimal.ONE
+
+        assertThat(
+            engine(book = spread).approveGroup(listOf(leg("a", p80, Side.BUY), leg("b", p78, Side.SELL))),
+        ).isEqualTo(Decision.Approve)
+        assertThat(engine(book = spread).approve(leg("b", p78, Side.SELL))).isInstanceOf(Decision.Reject::class.java)
     }
 }

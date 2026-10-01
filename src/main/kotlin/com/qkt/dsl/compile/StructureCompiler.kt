@@ -23,7 +23,7 @@ import java.math.RoundingMode
 
 /**
  * Compiles `OPEN <alias> = OPTIONS ON <root> { … } SIZING …`. When the rule fires, the legs are
- * selected from the root's latest chain snapshot at or before NOW ([StructurePlanner]) and sized:
+ * selected from the root's latest chain snapshot at or before the clock ([StructurePlanner]) and sized:
  * `SIZING <qty>` is contracts per leg; `SIZING n PCT RISK` is `equity × n%` over the structure's
  * maximum loss per contract (refused when that loss is unbounded), floored to the volume step. The
  * legs leave as one [Signal.SubmitGroup] of market orders. A leg that selects nothing, or a size below
@@ -75,13 +75,16 @@ internal class StructureCompiler(
         size: (EvalContext, BigDecimal?) -> BigDecimal?,
         ec: EvalContext,
     ): Signal {
+        // The clock, not the candle's end: a bar's rules run when its window closes, and a candle's end
+        // can lie ahead of the clock (a chain snapshot inside the window would be read early).
+        val now = ec.strategyContext.clock.now()
         val instruments = ec.strategyContext.instruments
         val options = instruments.options()
         val root =
             options?.root(action.root)
                 ?: return Signal.Suppressed(action.root, "${action.root} is not a declared option root")
         val snapshot =
-            view(instruments).latest(root.root, ec.nowMs())
+            view(instruments).latest(root.root, now)
                 ?: return Signal.Suppressed(root.root, "no ${root.root} chain at or before now")
         val maxAgeMs = root.maxQuoteAgeMinutes * MS_PER_MINUTE
         val plan = StructurePlanner.plan(specs, snapshot, options.listings(root.root), maxAgeMs, root.contractSize)
@@ -111,7 +114,7 @@ internal class StructureCompiler(
                     side = leg.side,
                     quantity = qty,
                     timeInForce = TimeInForce.GTC,
-                    timestamp = ec.nowMs(),
+                    timestamp = now,
                     strategyId = ec.strategyContext.strategyId,
                 )
             }

@@ -12,9 +12,14 @@ import com.qkt.dsl.ast.Latch
 import com.qkt.dsl.ast.LatchEntry
 import com.qkt.dsl.ast.LatchLimit
 import com.qkt.dsl.ast.NumLit
+import com.qkt.dsl.ast.OpenStructure
+import com.qkt.dsl.ast.SizeQty
 import com.qkt.dsl.ast.StackDirection
 import com.qkt.dsl.ast.StackSpacing
 import com.qkt.dsl.ast.StreamFieldRef
+import com.qkt.dsl.ast.StructureLegAst
+import com.qkt.dsl.ast.StructureLegRight
+import com.qkt.dsl.ast.StructureLegSide
 import com.qkt.dsl.ast.WhenThen
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
@@ -70,5 +75,17 @@ class IterVarSubstitutionTest {
         assertThat((latch.sensor as BreakOffset).reference).isEqualTo(StreamFieldRef("gold", "high"))
         val entryPrice = (latch.entries.single().order as LatchLimit).price
         assertThat(entryPrice.dist).isEqualTo(StreamFieldRef("gold", "low"))
+    }
+
+    @Test
+    fun `FOR EACH substitutes the iter var inside a structure's sizing`() {
+        val leg = StructureLegAst(StructureLegSide.BUY, StructureLegRight.CALL, BigDecimal("0.25"), 30, 45)
+        val rule =
+            WhenThen(
+                cond = trivialCond("s"),
+                action = OpenStructure("lc", "DERIBIT:BTC_USDC", listOf(leg), SizeQty(StreamFieldRef("s", "close"))),
+            )
+        val out = substituteIterVar(rule, iterVar = "s", alias = "gold")
+        assertThat((out.action as OpenStructure).sizing).isEqualTo(SizeQty(StreamFieldRef("gold", "close")))
     }
 }

@@ -10,7 +10,7 @@ import java.math.BigDecimal
  * Parses `OPEN <alias> = OPTIONS ON <VENUE>:<ROOT> { leg (, leg)* } SIZING <sizing>`, where a leg is
  * `BUY|SELL CALL|PUT DELTA <0..1> (DTE <n> TO <m> | SAME EXPIRY)` and the first leg names a DTE window.
  * `OPTIONS`, `CALL`, `PUT`, `DELTA`, `DTE`, `SAME` and `EXPIRY` are read as words in this position
- * only, so none of them becomes a reserved keyword elsewhere.
+ * only (in any case, like the keywords around them), so none of them becomes a reserved keyword elsewhere.
  */
 internal class StructureParser(
     private val cursor: TokenCursor,
@@ -46,7 +46,7 @@ internal class StructureParser(
                 else -> cursor.error("expected BUY or SELL to start a leg")
             }
         val right =
-            when (cursor.advance().lexeme) {
+            when (cursor.advance().lexeme.uppercase()) {
                 "CALL" -> StructureLegRight.CALL
                 "PUT" -> StructureLegRight.PUT
                 else -> cursor.error("expected CALL or PUT after $side")
@@ -54,7 +54,7 @@ internal class StructureParser(
         word("DELTA")
         val delta = number()
         if (delta.signum() <= 0 || delta >= BigDecimal.ONE) cursor.error("a leg's DELTA is between 0 and 1, got $delta")
-        if (cursor.peek().lexeme == "SAME") {
+        if (cursor.peek().lexeme.equals("SAME", ignoreCase = true)) {
             word("SAME")
             word("EXPIRY")
             return StructureLegAst(side, right, delta, null, null)
@@ -69,7 +69,7 @@ internal class StructureParser(
 
     private fun word(expected: String) {
         val token = cursor.peek()
-        if (token.lexeme != expected) cursor.error("expected $expected, got '${token.lexeme}'")
+        if (!token.lexeme.equals(expected, ignoreCase = true)) cursor.error("expected $expected, got '${token.lexeme}'")
         cursor.advance()
     }
 

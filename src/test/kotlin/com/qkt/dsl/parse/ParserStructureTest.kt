@@ -56,4 +56,15 @@ class ParserStructureTest {
             ).describedAs(text).isInstanceOf(ParseResult.Failure::class.java)
         }
     }
+
+    @Test
+    fun `the leg words read in any case, like the keywords around them`() {
+        val lower =
+            action(
+                "open ps = options on DERIBIT:BTC_USDC { sell put delta 0.25 dte 30 to 45, buy put delta 0.10 same expiry } sizing 0.1",
+            )
+
+        assertThat(lower.legs.map { it.right }).containsExactly(StructureLegRight.PUT, StructureLegRight.PUT)
+        assertThat(lower.legs.last().minDays).isNull()
+    }
 }
