@@ -288,6 +288,8 @@ RULES
   the capped delivery fee. Out of the money it settles at zero.
 - The run checks that every day up to each contract's expiry has a stored chain day of the declared series,
   and names the `qkt fetch … --chains` that fills a gap.
+- The chain's implied volatility and skew can drive rules as read-only streams:
+  `iv = CHAIN:DERIBIT.BTC_USDC.atm_iv.30d EVERY 1h` (see [chain analytics](../reference/dsl/chain.md)).
 
 ## Scenario 3 — Speed up repeated backtests (CSV → binary)
 
