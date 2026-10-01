@@ -39,7 +39,7 @@ internal class GatewayHolders(
         val held = HashMap<String, BigDecimal>()
         for (broker in present) {
             for (symbol in broker.positions.symbols()) {
-                val code = symbols.venue(symbol) ?: continue
+                val code = symbols.code(symbol) ?: continue
                 held[code] = (held[code] ?: BigDecimal.ZERO).add(broker.holding(symbol))
             }
         }
