@@ -8,11 +8,14 @@ import com.qkt.common.Side
 import com.qkt.derivatives.futures.ContinuousChain
 import com.qkt.derivatives.futures.PriceSpace
 import com.qkt.events.BrokerEvent
+import com.qkt.execution.LegIntent
 import com.qkt.execution.OrderRequest
 import com.qkt.instrument.PriceAdjustment
 import com.qkt.marketdata.MarketPriceProvider
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.marketdata.Tick
+import com.qkt.positions.PositionProvider
+import com.qkt.positions.StrategyPositionTracker
 import java.math.BigDecimal
 import java.time.Instant
 
@@ -30,14 +33,17 @@ internal class StreamLane(
     private val chainOf: () -> ContinuousChain,
     ledger: RollLedger,
     private val fills: ContractFillLog,
-    venueFactory: (EventBus, MarketPriceProvider) -> ContractVenue,
+    venueFactory: (EventBus, MarketPriceProvider, PositionProvider) -> ContractVenue,
 ) {
     /** The chain as it stands now: a live session extends it with each roll it measures. */
     private val chain: ContinuousChain get() = chainOf()
 
     private val venueBus = EventBus(clock, MonotonicSequenceGenerator())
     private val contractPrices = MarketPriceTracker()
-    private val venue = venueFactory(venueBus, contractPrices)
+
+    /** The stream's contract positions as its venue account holds them: every venue fill, roll legs too, netted. */
+    private val book = StrategyPositionTracker(clock = clock::now)
+    private val venue = venueFactory(venueBus, contractPrices, book.account)
     private val orders = ContinuousOrderMap()
     private val legs = RollLegs()
     private val rolls = RollExecutor(bus, clock, chainOf, venue, contractPrices, orders, legs, ledger, fills)
@@ -47,6 +53,7 @@ internal class StreamLane(
     private val spaces = HashMap<Int, PriceSpace>()
 
     init {
+        venueBus.subscribe<BrokerEvent.OrderFilled> { e -> book.applyFill(e, LegIntent.Net) }
         venueBus.subscribe<BrokerEvent.OrderAccepted> { e ->
             orders.byVenueId(e.clientOrderId)?.takeIf { it.isOriginal }?.let {
                 bus.publish(e.copy(clientOrderId = it.request.id))
