@@ -24,6 +24,8 @@ class CompiledRule(
     internal val edgeStateKey: String = ruleAlias,
     /** What the condition requires of the position on the rule's own symbol; see [PositionGate]. */
     internal val positionGate: PositionGate = PositionGate.NONE,
+    /** The streams whose bar close evaluates this rule; see [WhenThenCompiler]. */
+    val triggerAliases: Set<String> = setOf(ruleAlias),
 ) {
     internal val ruleId: String
         get() = edgeStateKey
