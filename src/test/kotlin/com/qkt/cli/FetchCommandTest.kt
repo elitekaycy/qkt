@@ -64,4 +64,47 @@ class FetchCommandTest {
             server.shutdown()
         }
     }
+
+    @Test
+    fun `a UTC day that has not ended is not stored, so a later fetch takes it whole`(
+        @TempDir tmp: Path,
+    ) {
+        val config = tmp.resolve("qkt.config.yaml")
+        Files.writeString(config, "brokers:\n  exness:\n    type: mt5\n    gateway_url: http://127.0.0.1:9\n")
+        val noon =
+            java.time.Instant
+                .parse("2026-07-11T12:00:00Z")
+                .toEpochMilli()
+        val args =
+            Args(
+                arrayOf(
+                    "fetch",
+                    "EXNESS:EURUSD",
+                    "--tf",
+                    "1m",
+                    "--from",
+                    "2026-07-11",
+                    "--to",
+                    "2026-07-11",
+                    "--config",
+                    config.toString(),
+                    "--data-root",
+                    tmp.toString(),
+                ),
+            )
+
+        assertThat(FetchCommand(args, com.qkt.common.FixedClock(noon)).run()).isEqualTo(ExitCodes.SUCCESS)
+
+        assertThat(LocalBarStore(tmp).hasDay("EXNESS", "EURUSD", "1m", LocalDate.parse("2026-07-11"))).isFalse()
+    }
+
+    @Test
+    fun `an inverted range is an argument error`(
+        @TempDir tmp: Path,
+    ) {
+        val args =
+            Args(arrayOf("fetch", "EXNESS:EURUSD", "--tf", "1m", "--from", "2026-07-12", "--to", "2026-07-10"))
+
+        assertThat(FetchCommand(args).run()).isEqualTo(ExitCodes.ARG_ERROR)
+    }
 }
