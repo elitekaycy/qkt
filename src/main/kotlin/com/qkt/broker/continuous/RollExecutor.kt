@@ -5,6 +5,7 @@ import com.qkt.common.Clock
 import com.qkt.derivatives.futures.ContinuousChain
 import com.qkt.events.CostIncurred
 import com.qkt.execution.ExitReason
+import com.qkt.execution.OrderRequest
 import com.qkt.marketdata.MarketPriceTracker
 import java.math.BigDecimal
 import java.time.Instant
@@ -41,7 +42,7 @@ internal class RollExecutor(
 ) {
     private val log = LoggerFactory.getLogger(RollExecutor::class.java)
     private val restingOrders = RestingOrdersAtRoll(bus, clock, venue, orders, legs)
-    private val carrying = RollCarry(clock, chainOf, venue, legs, fills)
+    private val carrying = RollCarry(clock, chainOf, venue, legs, fills, ::whenReady)
 
     /** The chain as it stands now: a live session extends it with each roll it measures. */
     private val chain: ContinuousChain get() = chainOf()
@@ -52,6 +53,9 @@ internal class RollExecutor(
 
     /** Whether a roll is in flight. */
     val inFlight: Boolean get() = run != null
+
+    /** What a restored roll does next, held until the venue is [ready]; null when nothing is held. */
+    private var held: MutableList<() -> Unit>? = null
 
     /**
      * Roll from contract [fromIndex] to [toIndex], carrying [positions] (strategy to signed quantity),
@@ -88,6 +92,52 @@ internal class RollExecutor(
         carryFrom(run, 0, done)
     }
 
+    /**
+     * Restores the roll [run] saved mid-flight (null when none was) and the unwinds [unwinds] still out,
+     * after a restart: each restored leg is awaited again at once, so its venue answer cannot be missed,
+     * while every leg the roll sends next, and its finish, wait for [ready]. [done] is the roll's
+     * completion, as for [roll].
+     */
+    fun restore(
+        run: RollRun?,
+        unwinds: List<OrderRequest.Market>,
+        done: (RollOutcome) -> Unit,
+    ) {
+        check(!inFlight) { "${chain.symbol} cannot restore a roll while one is in flight" }
+        held = mutableListOf()
+        unwinds.forEach(carrying::resumeUnwind)
+        if (run == null) return
+        contractPrices.update(chain.contractSymbol(run.fromIndex), run.measured.prices.fromPrice)
+        contractPrices.update(chain.contractSymbol(run.toIndex), run.measured.prices.toPrice)
+        this.run = run
+        resumeFrom(run, 0, done)
+    }
+
+    /** The venue is back after a restart: what a restored roll held is done now, and nothing is held again. */
+    fun ready() {
+        val actions = held ?: return
+        held = null
+        actions.forEach { it() }
+    }
+
+    /** Resumes [run] at its first holder from [i] whose carry has not ended. */
+    private fun resumeFrom(
+        run: RollRun,
+        i: Int,
+        done: (RollOutcome) -> Unit,
+    ) {
+        if (i == run.holders.size) return whenReady { finish(run, done) }
+        when (val step = run.steps[run.holders[i].key]) {
+            null -> carryFrom(run, i, done)
+            is CarryStep.Waiting -> carrying.resume(step, run) { carryFrom(run, i + 1, done) }
+            is CarryStep.Carried, is CarryStep.Stopped -> resumeFrom(run, i + 1, done)
+        }
+    }
+
+    private fun whenReady(action: () -> Unit) {
+        held?.add(action) ?: action()
+    }
+
     /** Carries the run's holders from [i] on, one after another as the venue answers, then finishes. */
     private fun carryFrom(
         run: RollRun,
@@ -106,6 +156,8 @@ internal class RollExecutor(
         val to = chain.contractSymbol(run.toIndex)
         val space = chain.spaceFor(run.toIndex)
         for (order in run.resting) {
+            // A restored roll may have re-placed or cancelled this order before the restart.
+            if (orders.byEngineId(order.request.id)?.venueId != order.venueId) continue
             when (val reason = run.failed[order.request.strategyId]) {
                 null -> restingOrders.replace(order, run.toIndex, to, space)
                 else -> restingOrders.cancel(order, reason)

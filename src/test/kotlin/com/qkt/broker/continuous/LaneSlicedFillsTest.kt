@@ -131,4 +131,27 @@ class LaneSlicedFillsTest {
         assertThat(slice.clientOrderId).isEqualTo("rest")
         assertThat(slice.cumulativeFilled).isEqualByComparingTo("0.006")
     }
+
+    @Test
+    fun `a resting order that fills while the roll cancels it is not placed again on the new contract`() {
+        f.broker.submit(
+            OrderRequest.Limit(
+                "rest",
+                f.front,
+                Side.BUY,
+                BigDecimal("0.010"),
+                BigDecimal("62900"),
+                TimeInForce.GTC,
+                f.clock.time,
+                "s",
+            ),
+        )
+        f.slice("rest", f.sep, Side.BUY, "0.004", "0.004", "62890")
+        f.rollAt("63000")
+        f.last("rest", f.sep, Side.BUY, "0.006", "62890")
+        f.last(f.leg(":close").id, f.sep, Side.SELL, "0.004", "63000")
+        f.last(f.leg(":open").id, f.dec, Side.BUY, "0.004", "63800")
+
+        assertThat(f.venue.sent.none { it.id.startsWith("rest~") }).isTrue()
+    }
 }

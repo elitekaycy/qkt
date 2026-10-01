@@ -103,9 +103,6 @@ internal class LaneVenueEvents(
 
     private fun contractIndexOf(contract: String): Int =
         requireNotNull(
-            chain.schedule.contracts.indices
-                .firstOrNull { chain.contractSymbol(it) == contract },
-        ) {
-            "${chain.symbol} received a fill on $contract, which is not in its chain"
-        }
+            chain.indexOf(contract),
+        ) { "${chain.symbol} received a fill on $contract, which is not in its chain" }
 }

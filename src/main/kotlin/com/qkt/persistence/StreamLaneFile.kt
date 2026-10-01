@@ -50,7 +50,7 @@ private data class StreamLaneDto(
     val orders: List<StreamOrderDto>,
     val holdings: List<ContractHoldingDto>,
     val legs: List<RollLegDto>,
-    val cancelling: List<String>,
+    val cancelling: List<StreamOrderDto>,
     val roll: StreamRollDto?,
 ) {
     fun toDomain() =
@@ -69,7 +69,7 @@ private data class StreamLaneDto(
                 )
             },
             legs.map { it.toDomain() },
-            cancelling,
+            cancelling.map { it.toDomain() },
             roll?.toDomain(),
         )
 
@@ -91,7 +91,7 @@ private data class StreamLaneDto(
                     )
                 },
                 l.legs.map(RollLegDto::of),
-                l.cancelling,
+                l.cancelling.map(StreamOrderDto::of),
                 l.roll?.let(StreamRollDto::of),
             )
     }
