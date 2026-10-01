@@ -18,7 +18,8 @@ internal abstract class StructureCoordinatorHarness {
     protected val emitted = mutableListOf<Signal>()
     protected val cancelled = mutableListOf<String>()
     protected val ids = com.qkt.common.SequentialIdGenerator(prefix = "t-")
-    protected val book = StructureBook(StructureFixtures.registry, MarketPriceTracker())
+    protected val published = mutableListOf<com.qkt.events.StructureEvent>()
+    protected val book = StructureBook("st", StructureFixtures.registry, MarketPriceTracker()) { published += it }
     protected val shortPut = StructureFixtures.market("s", StructureFixtures.P81, Side.SELL)
     protected val longPut = StructureFixtures.market("l", StructureFixtures.P78, Side.BUY)
     protected val wing = StructureFixtures.market("w", StructureFixtures.P75, Side.BUY)

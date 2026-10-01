@@ -87,8 +87,11 @@ Every `qkt` subcommand. Run `qkt <command> --help` for the authoritative flag li
   price behind every fill of a continuous stream; `settlements.csv`
   (`timestamp,strategy,contract,side,quantity,price,deliveryPriceKnown`) every position settled at a
   contract's expiry; `margin_daily.csv` (`date,marginUsed,maintenance,equity,marginCall`) each UTC
-  day's futures margin at its last sample, for days that ended holding positions with margin terms.
-  The reports then also show `rollCostsPaid`, the fourth term of the gross-to-net
+  day's futures margin at its last sample, for days that ended holding positions with margin terms;
+  `structures.csv` (`openedAt,closedAt,strategy,structure,alias,outcome,legs,credit,realized`) every
+  option structure, with its legs as `SIDE quantity symbol @ entry`, its outcome (`CLOSED`, `UNWOUND`
+  or `SETTLED`), its credit and its premium P&L before fees; times, outcome and amounts stay empty
+  while unknown, such as for a structure still open at the end. The reports then also show `rollCostsPaid`, the fourth term of the gross-to-net
   bridge: `preCostPnL = totalPnL + commissionPaid + swapPaid + rollCostsPaid`. Timestamps are epoch
   milliseconds, as in `trades.csv`.
 - Each report metric includes daily PnL, max daily drawdown, drawdown periods,

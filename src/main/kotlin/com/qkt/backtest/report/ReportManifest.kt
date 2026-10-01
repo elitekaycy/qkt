@@ -33,7 +33,7 @@ internal object ReportManifest {
                 add(MonthlyReturnsCsv.FILE_NAME)
                 if (result.bookRisk != null) add("book_risk.csv")
                 if (result.global.monteCarlo != null) add(MonteCarloFanCsv.FILE_NAME)
-                FuturesReportFiles.render(result).forEach { (name, _) -> add(name) }
+                DerivativeReportFiles.render(result).forEach { (name, _) -> add(name) }
                 add("report.html")
             }
         return buildString {

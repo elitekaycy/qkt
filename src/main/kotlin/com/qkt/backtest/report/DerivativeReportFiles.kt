@@ -2,20 +2,22 @@ package com.qkt.backtest.report
 
 import com.qkt.accounting.margin.MarginDay
 import com.qkt.backtest.BacktestResult
+import com.qkt.backtest.StructureRow
 import com.qkt.broker.continuous.ContractFill
 import com.qkt.broker.continuous.RollEntry
 import com.qkt.broker.exchange.Settlement
 
 /**
- * The futures artifacts of a report — `rolls.csv`, `contracts.csv`, `settlements.csv`,
- * `margin_daily.csv` — each present
- * only when its ledger has entries, so a report of a run without futures is unchanged. The writer,
+ * The futures and options artifacts of a report — `rolls.csv`, `contracts.csv`, `settlements.csv`,
+ * `margin_daily.csv`, `structures.csv` — each present only when its ledger has entries, so a report of
+ * a run without derivatives is unchanged. The writer,
  * the artifact index and the manifest all list files from here. Columns follow `trades.csv`:
  * epoch-ms `timestamp`, plain decimals, quoted text. `rolls.csv` quantities are signed (negative
  * short) and its prices, fees and `rollCost` are in the root's currency; `margin_daily.csv` is in
- * account currency.
+ * account currency; `structures.csv` legs read `SIDE quantity symbol @ entry`, separated by `;`, and
+ * its `credit` and `realized` (premium P&L before fees) are in the root's currency, empty while unknown.
  */
-internal object FuturesReportFiles {
+internal object DerivativeReportFiles {
     /** Artifact index key of each file. */
     val keys =
         mapOf(
@@ -23,11 +25,13 @@ internal object FuturesReportFiles {
             "contracts.csv" to "contractsCsv",
             "settlements.csv" to "settlementsCsv",
             "margin_daily.csv" to "marginDailyCsv",
+            "structures.csv" to "structuresCsv",
         )
 
-    /** The futures files of [result], name to content. */
+    /** The futures and options files of [result], name to content. */
     fun render(result: BacktestResult): List<Pair<String, String>> =
-        render(result.rolls, result.contractFills, result.settlements) + marginDaily(result.marginDaily)
+        render(result.rolls, result.contractFills, result.settlements) + marginDaily(result.marginDaily) +
+            structures(result.structures)
 
     /** The files for these ledgers, name to content, omitting empty ones. */
     fun render(
@@ -106,6 +110,34 @@ internal object FuturesReportFiles {
             }
         return listOf("margin_daily.csv" to body)
     }
+
+    /** `structures.csv` for [rows], name to content; nothing when there are none. */
+    fun structures(rows: List<StructureRow>): List<Pair<String, String>> {
+        if (rows.isEmpty()) return emptyList()
+        val body =
+            csv("openedAt,closedAt,strategy,structure,alias,outcome,legs,credit,realized", rows) { row ->
+                listOf(
+                    row.openedAt?.toString().orEmpty(),
+                    row.closedAt?.toString().orEmpty(),
+                    csvField(row.strategyId),
+                    csvField(row.structureId),
+                    csvField(row.alias),
+                    row.outcome?.name.orEmpty(),
+                    csvField(legsOf(row)),
+                    row.credit?.let(::plain).orEmpty(),
+                    row.realized?.let(::plain).orEmpty(),
+                )
+            }
+        return listOf("structures.csv" to body)
+    }
+
+    private fun legsOf(row: StructureRow): String =
+        row.legs
+            .mapNotNull { leg ->
+                val entry = leg.entryPrice ?: return@mapNotNull null
+                val side = if (leg.entryQuantity.signum() > 0) "BUY" else "SELL"
+                "$side ${plain(leg.entryQuantity.abs())} ${leg.symbol} @ ${plain(entry)}"
+            }.joinToString(";")
 
     private fun <T> csv(
         header: String,

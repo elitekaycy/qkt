@@ -124,4 +124,18 @@ internal class StructureCoordinatorTest : StructureCoordinatorHarness() {
             )
         assertThat(again.requests.map { it.symbol to it.side }).containsExactly(StructureFixtures.P81 to Side.BUY)
     }
+
+    @Test
+    fun `a structure unwound after a failed leg leaves as unwound`() {
+        open(longPut, shortPut)
+        filled(shortPut)
+        cancelled("l")
+        val close = unwinds().single().requests.single()
+
+        filled(close)
+
+        val closed = published.filterIsInstance<com.qkt.events.StructureClosed>().single()
+        assertThat(closed.outcome).isEqualTo(com.qkt.events.StructureOutcome.UNWOUND)
+        assertThat(published.filterIsInstance<com.qkt.events.StructureOpened>()).isEmpty()
+    }
 }

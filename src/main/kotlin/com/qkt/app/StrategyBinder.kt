@@ -59,7 +59,7 @@ internal class StrategyBinder(
     ) {
         tradeHistory.restore(strategyId)
         val base = contexts.create(strategyId)
-        val book = StructureBook(base.instruments, prices)
+        val book = StructureBook(strategyId, base.instruments, prices, bus::publish)
         val ctx = base.copy(structures = book)
         val emit =
             StrategySignalEmitter(

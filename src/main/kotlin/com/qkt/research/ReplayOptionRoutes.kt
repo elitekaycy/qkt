@@ -7,13 +7,16 @@ import com.qkt.common.FixedClock
 import com.qkt.common.TradingCalendar
 import com.qkt.derivatives.options.chain.ChainQuoteLookup
 import com.qkt.derivatives.options.chain.OptionRootSymbol
+import com.qkt.events.StructureClosed
+import com.qkt.events.StructureOpened
 import com.qkt.events.TickEvent
 import com.qkt.instrument.optionSymbols
 import com.qkt.marketdata.source.SymbolPattern
 
 /**
  * Routes a replay's option contracts to one [OptionExchange] that fills on the stored chain of the
- * option roots' data root and settles expiries into the books' settlement log. The declared contracts
+ * option roots' data root, settles expiries into the books' settlement log, and records the structures
+ * the strategies' books report. The declared contracts
  * are routed, and every contract of a fed root (`OPTIONS:<VENUE>.<ROOT>`). Empty when the run neither
  * trades options nor feeds a root, so other runs build exactly what they built before.
  */
@@ -32,6 +35,8 @@ internal fun replayOptionRoutes(
     val exchange =
         OptionExchange(bus, clock, instruments, ChainQuoteLookup(dataRoot, instruments), calendar, books.settlements)
     bus.subscribe<TickEvent> { e -> exchange.onTick(e.tick) }
+    bus.subscribe<StructureOpened> { e -> books.structures.record(e) }
+    bus.subscribe<StructureClosed> { e -> books.structures.record(e) }
     // A fed root routes every catalogued contract of the root, including ones a structure picks at fire time.
     val pattern =
         SymbolPattern { s ->

@@ -14,6 +14,8 @@ import com.qkt.events.SignalEvent
 import com.qkt.events.SignalSuppressedEvent
 import com.qkt.events.StrategyCandleEvaluatedEvent
 import com.qkt.events.StreamCandleEvent
+import com.qkt.events.StructureClosed
+import com.qkt.events.StructureOpened
 import com.qkt.events.TickEvent
 import com.qkt.events.TradeEvent
 import com.qkt.events.WarmupTickEvent
@@ -58,4 +60,6 @@ internal fun stampEvent(
         is CostIncurred -> event.copy(timestamp = ts, sequenceId = seq)
         is RiskEvent.Halted -> event.copy(timestamp = ts, sequenceId = seq)
         is RiskEvent.Resumed -> event.copy(timestamp = ts, sequenceId = seq)
+        is StructureOpened -> event.copy(timestamp = ts, sequenceId = seq)
+        is StructureClosed -> event.copy(timestamp = ts, sequenceId = seq)
     }

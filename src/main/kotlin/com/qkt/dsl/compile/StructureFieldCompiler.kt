@@ -66,7 +66,7 @@ internal class StructureFieldCompiler(
             when (ref.source) {
                 StateSource.POSITION_PNL -> ::pnl
                 StateSource.STRUCTURE_PNL_PCT -> { ctx, s -> pnlPct(ctx, s) }
-                StateSource.STRUCTURE_CREDIT -> { _, s -> credit(s) }
+                StateSource.STRUCTURE_CREDIT -> { _, s -> s.credit() }
                 StateSource.STRUCTURE_MAX_LOSS -> ::maxLoss
                 StateSource.STRUCTURE_DTE -> ::dte
                 StateSource.STRUCTURE_DELTA -> greek(PositionGreeks::delta)
@@ -87,11 +87,6 @@ internal class StructureFieldCompiler(
         }
     }
 
-    private fun credit(s: StructurePosition): BigDecimal =
-        s.legs.fold(BigDecimal.ZERO) { sum, leg ->
-            sum.subtract(leg.entryQuantity.multiply(leg.contractSize).multiply(requireNotNull(leg.entryPrice)))
-        }
-
     private fun pnl(
         ctx: EvalContext,
         s: StructurePosition,
@@ -111,7 +106,7 @@ internal class StructureFieldCompiler(
         ctx: EvalContext,
         s: StructurePosition,
     ): BigDecimal? {
-        val credit = credit(s).abs()
+        val credit = s.credit().abs()
         if (credit.signum() == 0) return null
         return pnl(ctx, s)?.multiply(HUNDRED)?.divide(credit, Money.CONTEXT)
     }

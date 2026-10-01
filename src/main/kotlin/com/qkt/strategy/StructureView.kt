@@ -50,6 +50,13 @@ data class StructurePosition(
      * (a closing leg the venue rejected).
      */
     val closable: Boolean get() = state == StructureState.OPEN || (state == StructureState.UNWINDING && !working)
+
+    /** The opening premium received over the filled legs (Σ −entry quantity × contract size × entry price), negative for a debit. */
+    fun credit(): BigDecimal =
+        legs.fold(BigDecimal.ZERO) { sum, leg ->
+            val entry = leg.entryPrice ?: return@fold sum
+            sum.subtract(leg.entryQuantity.multiply(leg.contractSize).multiply(entry))
+        }
 }
 
 /**

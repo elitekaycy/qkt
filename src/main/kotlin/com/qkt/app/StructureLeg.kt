@@ -1,6 +1,9 @@
 package com.qkt.app
 
 import com.qkt.common.Side
+import com.qkt.events.StructureClosed
+import com.qkt.events.StructureOpened
+import com.qkt.events.StructureOutcome
 import com.qkt.execution.OrderRequest
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.OptionTerms
@@ -82,6 +85,10 @@ internal class LiveStructure(
 ) {
     var state = StructureState.PENDING
         internal set
+
+    /** How its legs last left: closed by orders, or settled at expiry. */
+    var exit = StructureOutcome.CLOSED
+        internal set
 }
 
 /** The read-only view of [this] structure a strategy sees. */
@@ -115,4 +122,15 @@ internal fun structureLeg(
     val meta = requireNotNull(instruments.lookup(request.symbol)) { "${request.symbol} is not catalogued" }
     val terms = requireNotNull(meta.derivative as? OptionTerms) { "${request.symbol} has no option terms" }
     return StructureLeg(request.symbol, request.side, request.id, meta.contractSize, terms.expiryMs)
+}
+
+/** [this] structure, all legs filled, as [strategyId]'s book reports it. */
+internal fun LiveStructure.opened(strategyId: String): StructureOpened =
+    position().let { StructureOpened(strategyId, id, alias, it.legs, it.credit()) }
+
+/** [this] structure leaving [strategyId]'s book: unwound if it never opened whole, else by how its legs left. */
+internal fun LiveStructure.closed(strategyId: String): StructureClosed {
+    val outcome = if (state == StructureState.UNWINDING) StructureOutcome.UNWOUND else exit
+    val realized = legs.fold(BigDecimal.ZERO) { sum, leg -> sum.add(leg.realized) }
+    return StructureClosed(strategyId, id, alias, position().legs, outcome, realized)
 }
