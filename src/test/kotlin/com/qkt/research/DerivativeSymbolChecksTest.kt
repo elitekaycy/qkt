@@ -122,4 +122,36 @@ class DerivativeSymbolChecksTest {
             .hasMessageContaining("chains: trade | book")
         requireDerivativeSymbolsResolvable(symbol, AccountingEngine(), traded)
     }
+
+    @Test
+    fun `an option root charging only a delivery fee in another currency is refused`() {
+        val root =
+            com.qkt.instrument.OptionRoot(
+                "DERIBIT:BTC_X",
+                "BTC",
+                BigDecimal.ONE,
+                com.qkt.instrument.TickSteps(BigDecimal("0.0005")),
+                BigDecimal("0.1"),
+                BigDecimal("0.1"),
+                "btc_usd",
+                chains = com.qkt.instrument.QuoteSource.BOOK,
+                deliveryFeeRate = BigDecimal("0.00015"),
+            )
+        val catalog =
+            com.qkt.instrument.OptionCatalog(
+                root.root,
+                listOf(com.qkt.instrument.OptionListing("BTC_X-27DEC24-90000-P", "90000", "put", 1735286400000)),
+            )
+        val registry =
+            com.qkt.instrument.OptionCatalogRegistry(
+                listOf(root),
+                mapOf(root.root to catalog),
+                Path.of("data"),
+            )
+
+        assertThatThrownBy {
+            val accounting = AccountingEngine(currencyOf = { registry.lookup(it)?.currency })
+            requireDerivativeSymbolsResolvable(listOf("DERIBIT:BTC_X_27DEC24_90000_P"), accounting, registry)
+        }.hasMessageContaining("fees in BTC")
+    }
 }

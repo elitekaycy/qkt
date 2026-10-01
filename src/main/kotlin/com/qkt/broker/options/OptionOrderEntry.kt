@@ -53,9 +53,9 @@ internal class OptionOrderEntry(
     ): Checked {
         val symbol = request.symbol
         val meta = instruments.lookup(symbol)
-        val terms = meta?.derivative as? OptionTerms ?: return Checked.Refused("$symbol is not a catalogued option")
-        val root =
-            instruments.options()?.optionRoot(symbol) ?: return Checked.Refused("$symbol is not a catalogued option")
+        val terms = meta?.derivative as? OptionTerms
+        val root = instruments.options()?.optionRoot(symbol)
+        if (meta == null || terms == null || root == null) return Checked.Refused("$symbol is not a catalogued option")
         if (root.chains ==
             null
         ) {
@@ -68,55 +68,63 @@ internal class OptionOrderEntry(
             return Checked.Refused("quantized volume $quantity below venue volumeMin ${meta.volumeMin} for $symbol")
         }
         if (request.side == Side.SELL) {
-            val pending =
-                working
-                    .filter {
-                        it.request.symbol == symbol &&
-                            it.request.strategyId == request.strategyId &&
-                            it.request.side == Side.SELL
-                    }.fold(BigDecimal.ZERO) { sum, o -> sum.add(o.request.quantity) }
-            val available = positions.of(request.strategyId, symbol).subtract(pending)
+            val available = positions.of(request.strategyId, symbol).subtract(pendingSells(request, working))
             if (quantity > available) {
                 return Checked.Refused(
-                    "sell of $quantity $symbol exceeds the $available held; the option venue opens no short positions",
+                    "sell of $quantity $symbol exceeds the $available held; the option venue opens no shorts",
                 )
             }
         }
-        val sized =
-            when (request) {
-                is OrderRequest.Market -> request.copy(quantity = quantity)
-                is OrderRequest.Limit -> {
-                    val grid = terms.tickSteps
-                    val limit =
-                        if (request.side ==
-                            Side.BUY
-                        ) {
-                            grid.floor(request.limitPrice)
-                        } else {
-                            grid.ceil(request.limitPrice)
-                        }
-                    if (limit.signum() <=
-                        0
+        val sized = sized(request, quantity, terms) ?: return Checked.Refused(unsizable(request))
+        return Checked.Accepted(WorkingOption(sized, root, now, lapseOf(request, now), terms.expiryMs))
+    }
+
+    private fun pendingSells(
+        request: OrderRequest,
+        working: Collection<WorkingOption>,
+    ): BigDecimal =
+        working
+            .map { it.request }
+            .filter { it.symbol == request.symbol && it.strategyId == request.strategyId && it.side == Side.SELL }
+            .fold(BigDecimal.ZERO) { sum, o -> sum.add(o.quantity) }
+
+    /** [request] at [quantity], a limit snapped so it never fills early; null when it cannot work here. */
+    private fun sized(
+        request: OrderRequest,
+        quantity: BigDecimal,
+        terms: OptionTerms,
+    ): OrderRequest? =
+        when (request) {
+            is OrderRequest.Market -> request.copy(quantity = quantity)
+            is OrderRequest.Limit -> {
+                val grid = terms.tickSteps
+                val limit =
+                    if (request.side ==
+                        Side.BUY
                     ) {
-                        return Checked.Refused(
-                            "limit ${request.limitPrice} on $symbol snaps to no price above zero",
-                        )
+                        grid.floor(request.limitPrice)
+                    } else {
+                        grid.ceil(request.limitPrice)
                     }
-                    request.copy(quantity = quantity, limitPrice = limit)
-                }
-                else -> return Checked.Refused(
-                    "the option venue takes market and limit orders, not ${request::class.simpleName}",
-                )
+                if (limit.signum() > 0) request.copy(quantity = quantity, limitPrice = limit) else null
             }
-        val lapse =
-            request.expiresAt
-                ?: if (request.timeInForce ==
-                    TimeInForce.DAY
-                ) {
-                    calendar.sessionRange(symbol, Instant.ofEpochMilli(now)).to.toEpochMilli()
-                } else {
-                    null
-                }
-        return Checked.Accepted(WorkingOption(sized, root, now, lapse, terms.expiryMs))
+            else -> null
+        }
+
+    private fun unsizable(request: OrderRequest): String =
+        if (request is OrderRequest.Limit) {
+            "limit ${request.limitPrice} on ${request.symbol} snaps to no price above zero"
+        } else {
+            "the option venue takes market and limit orders, not ${request::class.simpleName}"
+        }
+
+    /** When [request] lapses: its own expiry, the session's end for a DAY order, else never. */
+    private fun lapseOf(
+        request: OrderRequest,
+        now: Long,
+    ): Long? {
+        request.expiresAt?.let { return it }
+        if (request.timeInForce != TimeInForce.DAY) return null
+        return calendar.sessionRange(request.symbol, Instant.ofEpochMilli(now)).to.toEpochMilli()
     }
 }

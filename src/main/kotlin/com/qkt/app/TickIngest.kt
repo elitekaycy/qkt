@@ -39,6 +39,8 @@ internal class TickIngest(
     // Logged under the pipeline's category so existing log filters keep matching.
     private val log = LoggerFactory.getLogger(TradingPipeline::class.java)
 
+    private val isOption: (String) -> Boolean = { instruments.options()?.optionRoot(it) != null }
+
     /** Count of ticks dropped by [ingest]'s validation floor. */
     val malformedTickCount = AtomicLong(0)
 
@@ -50,7 +52,7 @@ internal class TickIngest(
         // fires engine-held triggers, and poisons indicators for a full window. Drop
         // it, count it, keep the last good price (#379). Identical in backtest and
         // live so the gate itself cannot cause divergence.
-        if (!isMacroObservation && !isValidTick(tick) { instruments.options()?.optionRoot(it) != null }) {
+        if (!isMacroObservation && !isValidTick(tick, isOption)) {
             val n = malformedTickCount.incrementAndGet()
             if (n == 1L || n % MALFORMED_TICK_LOG_EVERY == 0L) {
                 log.error(
