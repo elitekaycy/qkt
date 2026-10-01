@@ -45,4 +45,24 @@ class StructureChecksTest {
             .isInstanceOf(CompileError::class.java)
             .hasMessage("one rule opens structure ps twice")
     }
+
+    @Test
+    fun `a rule that reads no stream needs one with candles, which an OPTIONS feed has not`() {
+        val source =
+            "STRATEGY s VERSION 1\nSYMBOLS\n    chain = OPTIONS:DERIBIT.BTC_USDC EVERY 1h\nRULES\n" +
+                "    WHEN NOW.hour_utc = 9\n    THEN $open\n"
+
+        assertThatThrownBy { AstCompiler().compile((Dsl.parse(source) as ParseResult.Success).value) }
+            .isInstanceOf(CompileError::class.java)
+            .hasMessageContaining("an OPTIONS: feed has no candles")
+    }
+
+    @Test
+    fun `a root traded through structures cannot have its contracts traded directly too`() {
+        assertThatThrownBy { compile(fed, "$open; CLOSE p") }
+            .isInstanceOf(CompileError::class.java)
+            .hasMessageContaining("p is a contract of DERIBIT:BTC_USDC, which this strategy trades through structures")
+        val futures = "    chain = OPTIONS:DERIBIT.BTC_USDC EVERY 1h,\n    p = DERIBIT:BTC_USDC_25DEC26 EVERY 1h"
+        assertThatCode { compile(futures, "$open; BUY p SIZING 1") }.doesNotThrowAnyException()
+    }
 }

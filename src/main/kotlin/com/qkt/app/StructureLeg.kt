@@ -55,14 +55,16 @@ internal class StructureLeg(
         closing.remove(orderId)
     }
 
+    /** Closes [quantity] at [price], never more than is held: a close that overshoots is the account's, not the leg's. */
     internal fun realize(
         quantity: BigDecimal,
         price: BigDecimal,
     ) {
+        val closed = quantity.min(held)
         val sign = if (side == Side.BUY) BigDecimal.ONE else BigDecimal.ONE.negate()
         val entry = requireNotNull(entryPrice) { "$symbol closed before it was opened" }
-        realized = realized.add(sign.multiply(quantity).multiply(contractSize).multiply(price.subtract(entry)))
-        held = held.subtract(quantity)
+        realized = realized.add(sign.multiply(closed).multiply(contractSize).multiply(price.subtract(entry)))
+        held = held.subtract(closed)
     }
 }
 

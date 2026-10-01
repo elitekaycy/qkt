@@ -44,6 +44,8 @@ sealed class Signal {
     /** Cancel every working order on [symbol]. Emitted by DSL `CANCEL` actions. */
     data class CancelPendingForSymbol(
         val symbol: String,
+        /** True for a cancel that ends an option structure: it only removes risk, so the gate never drops it. */
+        val force: Boolean = false,
     ) : Signal()
 
     /**

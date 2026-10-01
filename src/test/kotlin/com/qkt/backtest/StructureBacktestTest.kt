@@ -4,8 +4,6 @@ import com.qkt.common.Side
 import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.Paths
-import java.util.zip.GZIPInputStream
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -17,34 +15,13 @@ import org.junit.jupiter.api.io.TempDir
  * long 79000 put, maximum loss 2557.09190265 per contract, so 10000 × 5% / that = 0.19 contracts).
  */
 class StructureBacktestTest {
-    private class Row(
-        val contract: String,
-        val bid: BigDecimal?,
-        val ask: BigDecimal?,
-    )
-
-    private val rows: Map<Long, List<Row>> by lazy {
-        val dir = requireNotNull(javaClass.getResource("/options/btc-usdc-book-live4/chains/DERIBIT/BTC_USDC/book"))
-        GZIPInputStream(Files.newInputStream(Paths.get(dir.toURI()).resolve("2026-10-01.csv.gz")))
-            .bufferedReader()
-            .readLines()
-            .drop(1)
-            .map { it.split(',') }
-            .groupBy({
-                it[0].toLong()
-            }, {
-                Row(
-                    it[1],
-                    it[2].takeIf(String::isNotEmpty)?.let(::BigDecimal),
-                    it[3].takeIf(String::isNotEmpty)?.let(::BigDecimal),
-                )
-            })
-    }
+    private val rows = StructureBacktestRows.rows
 
     private fun quoteAt(
         atMs: Long,
         qktSymbol: String,
-    ): Row = rows.getValue(atMs).single { "DERIBIT:${it.contract.replace('-', '_')}" == qktSymbol }
+    ): StructureBacktestRows.Row =
+        rows.getValue(atMs).single { "DERIBIT:${it.contract.replace('-', '_')}" == qktSymbol }
 
     private val putSpread = "SELL PUT DELTA 0.25 DTE 7 TO 30, BUY PUT DELTA 0.10 SAME EXPIRY"
 

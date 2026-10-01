@@ -178,4 +178,17 @@ class StructureCoordinatorTest {
         assertThat(book.live("ps")).isNull()
         assertThat(emitted).isEmpty()
     }
+
+    @Test
+    fun `a fill of an order no structure sent closes the legs it trades against`() {
+        open(longPut, shortPut)
+        filled(longPut)
+        filled(shortPut)
+
+        filled(StructureFixtures.market("flat-1", StructureFixtures.P81, Side.BUY))
+        filled(StructureFixtures.market("flat-2", StructureFixtures.P78, Side.SELL))
+
+        assertThat(book.live("ps")).isNull()
+        assertThat(emitted).isEmpty()
+    }
 }

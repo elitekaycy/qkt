@@ -10,6 +10,7 @@ import com.qkt.dsl.ast.CloseAll
 import com.qkt.dsl.ast.DefaultsBlock
 import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.Log
+import com.qkt.dsl.ast.OPTIONS_BROKER
 import com.qkt.dsl.ast.OcoEntry
 import com.qkt.dsl.ast.Sell
 import com.qkt.dsl.ast.WhenThen
@@ -82,11 +83,13 @@ internal object WhenThenCompiler {
         // undeclared one used to fail only at first evaluation (or never, when another
         // alias became the rule's stream).
         referencedAliases.firstOrNull { it !in streams }?.let { error("Unknown stream alias: $it") }
+        // A rule that reads no stream runs on the first one with candles: an OPTIONS: root feed has none
+        // under its own alias (its ticks carry contract symbols), so a rule bound to it would never run.
         val ruleAlias =
             streamAlias
                 ?: referencedAliases.singleOrNull()
-                ?: streams.keys.firstOrNull()
-                ?: error("Strategy must declare at least one stream")
+                ?: streams.entries.firstOrNull { !it.value.broker.equals(OPTIONS_BROKER, ignoreCase = true) }?.key
+                ?: error("rule needs a stream with candles to run on; an OPTIONS: feed has no candles")
         val ruleSymbol =
             streams[ruleAlias]?.qktSymbol
                 ?: error("Unknown stream alias: $ruleAlias")

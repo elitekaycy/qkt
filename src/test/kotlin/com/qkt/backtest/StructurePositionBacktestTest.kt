@@ -1,5 +1,6 @@
 package com.qkt.backtest
 
+import com.qkt.common.Side
 import java.math.BigDecimal
 import java.nio.file.Path
 import org.assertj.core.api.Assertions.assertThat
@@ -17,6 +18,7 @@ class StructurePositionBacktestTest {
     private fun run(
         dir: Path,
         rules: String,
+        flags: List<String> = emptyList(),
     ) = FuturesFixtureRun
         .run(
             dir,
@@ -25,6 +27,7 @@ class StructurePositionBacktestTest {
                 "    iv = CHAIN:DERIBIT.BTC_USDC.atm_iv.7d EVERY 1m\nRULES\n$rules\n",
             from = "2026-10-01",
             to = "2026-10-02",
+            flags = flags,
             resources = "options",
         ).first
 
@@ -40,5 +43,58 @@ class StructurePositionBacktestTest {
             )
 
         assertThat(result.trades).hasSize(2).allMatch { it.trade.quantity.compareTo(BigDecimal("0.1")) == 0 }
+    }
+
+    private fun quotesAt(atMs: Long): Map<String, Pair<BigDecimal?, BigDecimal?>> =
+        StructureBacktestRows.rows.getValue(atMs).associate {
+            "DERIBIT:${it.contract.replace('-', '_')}" to
+                (it.bid to it.ask)
+        }
+
+    @Test
+    fun `CLOSE closes the open structure as one group at the next snapshot, once its fields are defined`(
+        @TempDir dir: Path,
+    ) {
+        val result =
+            run(
+                dir,
+                "    WHEN iv.close > 0\n    THEN $open SIZING 0.1\n" +
+                    "    WHEN POSITION.ps.pnl_pct > -1000 AND POSITION.ps.delta > -1\n    THEN CLOSE ps\n",
+            )
+
+        val trades = result.trades.map { it.trade }.sortedBy { it.timestamp }
+        assertThat(trades).hasSize(4)
+        val (opens, closes) = trades.partition { it.timestamp == trades.first().timestamp }
+        assertThat(closes.map { it.timestamp }.distinct()).hasSize(1).allMatch { it > opens.first().timestamp }
+        val quotes = quotesAt(closes.first().timestamp)
+        for (close in closes) {
+            val (bid, ask) = quotes.getValue(close.symbol)
+            assertThat(close.price).isEqualByComparingTo(requireNotNull(if (close.side == Side.BUY) ask else bid))
+        }
+        val opposite = { side: Side -> if (side == Side.BUY) Side.SELL else Side.BUY }
+        assertThat(opens.map { it.symbol to opposite(it.side) })
+            .containsExactlyInAnyOrderElementsOf(closes.map { it.symbol to it.side })
+        assertThat(result.rejections).isEmpty()
+    }
+
+    @Test
+    fun `FLATTEN closes a structure as a group and never closes its legs twice`(
+        @TempDir dir: Path,
+    ) {
+        // On 500 of equity the long wing could not be sold alone: the short put left would need about 800.
+        val rules =
+            "    WHEN iv.close > 0\n    THEN $open SIZING 0.1\n" +
+                "    WHEN POSITION.ps.credit > -100000\n    THEN FLATTEN\n"
+        val result = run(dir, rules, listOf("--starting-balance", "500"))
+
+        val trades = result.trades.map { it.trade }
+        assertThat(trades).hasSize(4)
+        assertThat(result.rejections).isEmpty()
+        val signed = { t: com.qkt.execution.Trade -> if (t.side == Side.BUY) t.quantity else t.quantity.negate() }
+        val net =
+            trades.groupBy { it.symbol }.mapValues { (_, legs) ->
+                legs.fold(BigDecimal.ZERO) { q, t -> q.add(signed(t)) }
+            }
+        assertThat(net.values).hasSize(2).allMatch { it.signum() == 0 }
     }
 }
