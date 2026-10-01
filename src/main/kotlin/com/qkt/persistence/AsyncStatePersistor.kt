@@ -6,6 +6,7 @@ import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 import org.slf4j.LoggerFactory
@@ -32,14 +33,12 @@ import org.slf4j.LoggerFactory
 class AsyncStatePersistor(
     private val delegate: StatePersistor,
     queueCapacity: Int = 1024,
-    shutdownTimeoutMs: Long = 5_000L,
+    private val shutdownTimeoutMs: Long = 5_000L,
 ) : StatePersistor,
     AutoCloseable {
     private val log = LoggerFactory.getLogger(AsyncStatePersistor::class.java)
 
-    private val callerRunsCount: java.util.concurrent.atomic.AtomicLong =
-        java.util.concurrent.atomic
-            .AtomicLong(0)
+    private val callerRunsCount = AtomicLong(0)
 
     private val executor: ThreadPoolExecutor =
         ThreadPoolExecutor(
@@ -54,7 +53,6 @@ class AsyncStatePersistor(
             it.prestartCoreThread()
         }
 
-    private val shutdownTimeoutMs: Long = shutdownTimeoutMs
     private val submissionLock = ReentrantLock()
 
     /** Current depth of the pending-write queue. Operators can watch for sustained high values. */
@@ -131,6 +129,8 @@ class AsyncStatePersistor(
         strategyId: String,
         symbol: String,
     ): PersistedLegBook? = delegate.loadLegBook(strategyId, symbol)
+
+    override fun legBookSymbols(strategyId: String): Set<String> = delegate.legBookSymbols(strategyId)
 
     override fun saveBracketPairs(
         strategyId: String,

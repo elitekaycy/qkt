@@ -55,7 +55,14 @@ class LiveSessionAccountWideReconcileTest {
             }
     }
 
-    private fun session(accountWide: Boolean): LiveSession {
+    private fun session(
+        accountWide: Boolean,
+        persistor: com.qkt.persistence.StatePersistor = com.qkt.persistence.NoopStatePersistor(),
+        options: com.qkt.derivatives.options.chain.OptionChainFixture? = null,
+    ): LiveSession {
+        val streams =
+            mapOf("x" to HubKey(broker = "DERIBIT", symbol = "BTC_X", timeframe = "5m")) +
+                listOfNotNull(options?.let { "chain" to HubKey("OPTIONS", "DERIBIT.BTC_USDC", "5m") })
         val factory: BrokerFactory = { bus, clock, priceTracker, _, _ ->
             object : Broker by PaperBroker(bus, clock, priceTracker) {
                 override fun getOpenPositions(): Map<String, List<com.qkt.positions.Position>> =
@@ -70,13 +77,14 @@ class LiveSessionAccountWideReconcileTest {
         return LiveSession(
             strategies =
                 listOf(
-                    "alpha" to
-                        StubDslStrategy(mapOf("x" to HubKey(broker = "DERIBIT", symbol = "BTC_X", timeframe = "5m"))),
+                    "alpha" to StubDslStrategy(streams),
                 ),
             source = EmptySource,
-            symbols = listOf("DERIBIT:BTC_X"),
+            symbols = streams.values.map { it.qktSymbol },
             clock = FixedClock(time = 0L),
             brokerFactories = mapOf("deribit" to factory),
+            persistor = persistor,
+            instrumentRegistry = options?.registry,
         )
     }
 
@@ -86,6 +94,37 @@ class LiveSessionAccountWideReconcileTest {
 
         val handle = session(accountWide = true).start()
 
+        handle.stop()
+        handle.awaitTermination(java.time.Duration.ofSeconds(2))
+    }
+
+    @Test
+    fun `an option leg of a fed root is restored from its persisted book on an account-wide venue`(
+        @org.junit.jupiter.api.io.TempDir dir: java.nio.file.Path,
+    ) {
+        val options =
+            com.qkt.derivatives.options.chain
+                .OptionChainFixture(dir.resolve("data"))
+        val leg = options.symbol
+        val persistor = com.qkt.persistence.FileStatePersistor(dir.resolve("state"))
+        val book = com.qkt.positions.LegBook(leg)
+        book.add(
+            com.qkt.positions.PositionLeg(
+                "L1",
+                leg,
+                com.qkt.common.Side.SELL,
+                BigDecimal("0.1"),
+                BigDecimal("640"),
+                0L,
+                com.qkt.positions.LegRole.INDEPENDENT,
+            ),
+        )
+        persistor.saveLegBook("alpha", leg, book)
+        assertThat(persistor.legBookSymbols("alpha")).containsExactly(leg)
+
+        val handle = session(accountWide = true, persistor = persistor, options = options).start()
+
+        assertThat(handle.positionsFor("alpha").single { it.symbol == leg }.quantity).isEqualByComparingTo("-0.1")
         handle.stop()
         handle.awaitTermination(java.time.Duration.ofSeconds(2))
     }

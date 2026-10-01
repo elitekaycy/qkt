@@ -120,6 +120,8 @@ class FileStatePersistor(
         symbol: String,
     ): PersistedLegBook? = legBooks.load(strategyId, symbol)
 
+    override fun legBookSymbols(strategyId: String): Set<String> = legBooks.symbols(strategyId)
+
     override fun saveBracketPairs(
         strategyId: String,
         pairs: List<BracketPair>,
