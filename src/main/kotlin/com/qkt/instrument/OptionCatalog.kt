@@ -3,7 +3,7 @@ package com.qkt.instrument
 import java.math.BigDecimal
 import kotlinx.serialization.Serializable
 
-/** One catalogued option as stored: strike and prices as decimal strings, right as `call` or `put`. */
+/** One catalogued option as stored: strike as a decimal string, right as `call` or `put`. */
 @Serializable
 data class OptionListing(
     val symbol: String,
