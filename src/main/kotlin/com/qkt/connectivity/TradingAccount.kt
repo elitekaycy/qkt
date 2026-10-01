@@ -38,11 +38,11 @@ interface TradingAccount : AutoCloseable {
     val tradingHours: SymbolCalendars
 
     /**
-     * The venue's own contract spec for [qktSymbol] (`PROP_S01:XAUUSD`), or null when the
-     * connector cannot report one. Read-only and outside the trading path: it lets an operator
-     * copy the specs live trades with into the file a backtest reads.
+     * The venue's own contract spec for [qktSymbol] (`PROP_S01:XAUUSD`), with the costs it cannot
+     * report, or null when the connector cannot report one. Read-only and outside the trading path:
+     * it lets an operator copy the specs live trades with into the file a backtest reads.
      */
-    fun instrumentSpec(qktSymbol: String): com.qkt.instrument.InstrumentMeta? = null
+    fun instrumentSpec(qktSymbol: String): com.qkt.instrument.VenueInstrumentSpec? = null
 
     /** Releases the connections and files this account holds. Idempotent. */
     override fun close()

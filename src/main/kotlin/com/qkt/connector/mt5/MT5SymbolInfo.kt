@@ -20,4 +20,18 @@ data class MT5SymbolInfo(
     val contractSize: BigDecimal,
     val volumeMax: BigDecimal? = null,
     val tradeFreezeLevel: Int = 0,
+    /** The symbol's swap terms, or null when the gateway does not report them. */
+    val swap: MT5SymbolSwap? = null,
+)
+
+/**
+ * A symbol's swap terms as MT5 reports them: [mode] is `SYMBOL_SWAP_MODE` (0 disabled, 1 points,
+ * others in money or interest), [long] and [short] are per lot per rollover in that mode's units,
+ * and [tripleDay] is `swap_rollover3days` (0 Sunday … 6 Saturday).
+ */
+data class MT5SymbolSwap(
+    val mode: Int,
+    val long: BigDecimal,
+    val short: BigDecimal,
+    val tripleDay: Int,
 )
