@@ -78,7 +78,7 @@ Every `qkt` subcommand. Run `qkt <command> --help` for the authoritative flag li
   closed trades) holds the equity percentiles across every resampled path after
   each trade: `tradeIndex,p5,p25,p50,p75,p95`. It is the fan `report.html`
   draws; its last row is the final-equity P5/P25/P50/P75/P95.
-- Futures runs add up to three files, each only when it has rows (a run without
+- Futures runs add up to four files, each only when it has rows (a run without
   futures writes none of them): `rolls.csv`
   (`timestamp,stream,strategy,from,to,quantity,multiplier,fromReference,toReference,gap,fromFill,toFill,fees,rollCost`;
   signed quantities, prices and costs in the root's currency)

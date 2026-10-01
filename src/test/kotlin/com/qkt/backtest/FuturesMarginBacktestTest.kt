@@ -61,4 +61,28 @@ class FuturesMarginBacktestTest {
         assertThat(days).allSatisfy { assertThat(it.marginUsed).isGreaterThan(it.maintenance) }
         assertThat(days.none { it.marginCall }).isTrue()
     }
+
+    @Test
+    fun `the report writes the daily margin file and lists it`(
+        @TempDir dir: Path,
+    ) {
+        val result = run(dir, "10000")
+        val report =
+            java.nio.file.Files
+                .createDirectories(dir.resolve("report"))
+
+        com.qkt.backtest.report
+            .BacktestReportWriter(report)
+            .write(result)
+
+        val lines =
+            java.nio.file.Files
+                .readAllLines(report.resolve("margin_daily.csv"))
+        assertThat(lines.first()).isEqualTo("date,marginUsed,maintenance,equity,marginCall")
+        assertThat(lines).hasSize(result.marginDaily.size + 1)
+        assertThat(
+            java.nio.file.Files
+                .readString(report.resolve("manifest.json")),
+        ).contains("\"margin_daily.csv\"")
+    }
 }
