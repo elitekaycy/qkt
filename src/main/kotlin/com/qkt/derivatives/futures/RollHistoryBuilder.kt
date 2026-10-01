@@ -7,13 +7,11 @@ import com.qkt.instrument.RollHistory
 import com.qkt.instrument.RollRecord
 import com.qkt.marketdata.Candle
 import java.math.BigDecimal
-import java.time.Instant
 import java.time.LocalDate
-import java.time.ZoneOffset
 
 /**
- * Measures a root's rolls from stored bars: at each roll instant, the last close at or before it for
- * the contract being left and the contract being entered. It keeps the latest contiguous run of rolls
+ * Measures a root's rolls from stored bars by [RollPricing]: at each roll instant, the last close at or
+ * before it for the contract being left and the contract being entered. It keeps the latest contiguous run of rolls
  * it can price: a roll it cannot price (no data, or, as on Binance before late 2023, the next
  * contract not yet listed at the roll instant) ends everything before it, so a history is always one
  * contiguous run and never mixes eras separated by a gap.
@@ -60,11 +58,5 @@ class RollHistoryBuilder(
     private fun priceAt(
         contract: String,
         atMs: Long,
-    ): BigDecimal? {
-        val day = Instant.ofEpochMilli(atMs).atZone(ZoneOffset.UTC).toLocalDate()
-        return (bars(contract, day) + bars(contract, day.minusDays(1)))
-            .filter { it.endTime <= atMs }
-            .maxByOrNull { it.startTime }
-            ?.close
-    }
+    ): BigDecimal? = RollPricing.closeAtOrBefore(RollPricing.days(atMs).flatMap { bars(contract, it) }, atMs)
 }
