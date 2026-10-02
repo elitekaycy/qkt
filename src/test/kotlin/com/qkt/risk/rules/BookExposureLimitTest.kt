@@ -1,7 +1,12 @@
 package com.qkt.risk.rules
 
+import com.qkt.bus.EventBus
+import com.qkt.common.FixedClock
+import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.Side
+import com.qkt.events.BrokerEvent
 import com.qkt.execution.OrderRequest
+import com.qkt.execution.StopLossSpec
 import com.qkt.execution.TimeInForce
 import com.qkt.instrument.NoopInstrumentRegistry
 import com.qkt.marketdata.MarketPriceTracker
@@ -12,6 +17,7 @@ import com.qkt.risk.book.BookRiskConfig
 import com.qkt.risk.book.BookRiskController
 import com.qkt.risk.book.BookSnapshot
 import com.qkt.risk.book.Exposure
+import com.qkt.risk.book.wireBookReservations
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -123,5 +129,33 @@ class BookExposureLimitTest {
 
         sampleExposure(controller, "0")
         assertThat(rule.evaluate(buy("10"), positions)).isEqualTo(Decision.Approve)
+    }
+
+    @Test
+    fun `a filled bracket stops counting as a reservation once a sample carries its position`() {
+        val controller = controllerWithGross("0")
+        val bus = EventBus(FixedClock(0L), MonotonicSequenceGenerator())
+        wireBookReservations(bus, controller)
+        val rule = BookExposureLimit(controller, prices, NoopInstrumentRegistry)
+        val bracket =
+            OrderRequest.Bracket(
+                id = "b-1",
+                symbol = "X",
+                side = Side.BUY,
+                quantity = BigDecimal("150"),
+                entry = buy("150").copy(id = "b-0"),
+                takeProfit = BigDecimal("110"),
+                stopLoss = StopLossSpec.Fixed(BigDecimal("90")),
+                timeInForce = TimeInForce.GTC,
+                timestamp = 1L,
+            )
+        assertThat(rule.evaluate(bracket, positions)).isEqualTo(Decision.Approve)
+
+        // The bracket fills as its entry; the next sample holds the 15,000 position.
+        bus.publish(BrokerEvent.OrderFilled("b-0", "t-1", "X", Side.BUY, BigDecimal("100"), BigDecimal("150")))
+        sampleExposure(controller, "15000")
+
+        // 15,000 held + 15,000 more fills the 30,000 cap exactly; the filled bracket is not counted twice.
+        assertThat(rule.evaluate(buy("150").copy(id = "o2"), positions)).isEqualTo(Decision.Approve)
     }
 }
