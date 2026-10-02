@@ -27,11 +27,18 @@ internal class BracketFills(
     private val clock: Clock,
     private val ops: OrderOps,
 ) {
-    /** Arms whatever was waiting on the fill [e]; [pending] are the children held for it. */
+    /** Arms whatever was waiting on the entry's [last] fill; [pending] are the children held for it. */
     fun armExits(
-        e: BrokerEvent.OrderFilled,
+        last: BrokerEvent.OrderFilled,
         pending: List<OrderRequest>?,
     ) {
+        // An entry filled in slices completes on its last one: protect the whole fill at its average price.
+        val order = book[last.clientOrderId]
+        val e =
+            last.copy(
+                quantity = order?.cumulativeFilledQuantity?.takeIf { it.signum() > 0 } ?: last.quantity,
+                price = order?.avgFillPrice ?: last.price,
+            )
         val fallbackBracket = brackets.fillAnchoredFallback.remove(e.clientOrderId)
         val attachedBracket = brackets.fillAnchoredAttached.remove(e.clientOrderId)
         when {
