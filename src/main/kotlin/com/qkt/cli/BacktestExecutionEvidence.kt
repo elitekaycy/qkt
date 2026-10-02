@@ -1,6 +1,7 @@
 package com.qkt.cli
 
 import com.qkt.backtest.BrokerKind
+import com.qkt.backtest.toEvidence
 import com.qkt.evidence.ExecutionEvidence
 import com.qkt.instrument.InstrumentRegistry
 
