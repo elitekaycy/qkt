@@ -120,6 +120,18 @@ class CandleAggregator private constructor(
     }
 
     /**
+     * Treat [symbol]'s windows ending at or before [endTime] as closed: they were seeded from history,
+     * so a tick stamped inside one (a venue re-sending its last quote on subscribe) is late, never the
+     * open of a bar the strategy already holds.
+     */
+    fun closedThrough(
+        symbol: String,
+        endTime: Long,
+    ) {
+        if (endTime > (lastClosedEnd[symbol] ?: Long.MIN_VALUE)) lastClosedEnd[symbol] = endTime
+    }
+
+    /**
      * Close every in-progress candle whose window already ended at [nowMs] — the
      * time-driven close for quiet symbols. Without it a candle only closes when the
      * NEXT tick arrives: on a thin session edge the last bar never closes, its rules

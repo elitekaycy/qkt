@@ -96,5 +96,6 @@ internal class HubSlot(
         val toPrepend = sorted.filter { it.startTime < oldestExisting }
         for (c in toPrepend.reversed()) ring.addFirst(c)
         while (ring.size > retention) ring.removeFirst()
+        aggregator.closedThrough(key.qktSymbol, sorted.last().endTime)
     }
 }
