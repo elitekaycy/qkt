@@ -258,7 +258,7 @@ class Run:
         last_fill_minute = self.ended_ms // MINUTE * MINUTE  # fills follow a bar close; the run ends seconds later
         deadline = time.time() + 180
         while True:  # the venue serves a bar only once its minute has closed
-            bars = self.get(f"/v1/bars?symbol={code}&window_ms={MINUTE}&from={day_start}&to={end}")["bars"]
+            bars = self.fetch_bars(code, day_start, end)
             if any(b["start"] >= last_fill_minute for b in bars) or time.time() > deadline:
                 break
             time.sleep(10)
@@ -275,6 +275,22 @@ class Run:
                    "ranges": [{"from": str(min(days)), "to": str(max(days))}],
                    "lastUpdated": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")},
                   open(f"{store}/manifest.json", "w"))
+
+    def fetch_bars(self, code, day_start, end):
+        """Every closed 1m bar in [day_start, end): /v1/bars pages at 1000 bars, follow `next`.
+
+        A single page covers ~16h40m, so without this the tail of the day — always
+        including the live window the replay must cover — is silently dropped.
+        """
+        bars, since = [], day_start
+        while since < end:
+            page = self.get(f"/v1/bars?symbol={code}&window_ms={MINUTE}&from={since}&to={end}")
+            bars += page["bars"]
+            nxt = page.get("next")
+            if nxt is None or nxt <= since:
+                break
+            since = nxt
+        return bars
 
     def verdict(self, problems):
         """Writes result.json and the one-line summary; the exit code."""
