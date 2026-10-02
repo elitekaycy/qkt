@@ -47,7 +47,8 @@ fi
 # the full soak gate below applies unchanged.
 docs_only=true
 changed_files="$($gh_bin api "repos/$repo/compare/main...testing" --jq '.files[].filename')"
-if [ -z "$changed_files" ]; then
+# The compare API lists at most 300 files; a list that long may hide code files, so no waiver.
+if [ -z "$changed_files" ] || [ "$(wc -l <<< "$changed_files")" -ge 300 ]; then
     docs_only=false
 fi
 while IFS= read -r changed_file; do
