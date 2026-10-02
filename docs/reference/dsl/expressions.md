@@ -70,11 +70,13 @@ Covered in [Conditions](conditions.md):
 ### `IS NULL` / `IS NOT NULL`
 
 ```qkt
-EMA(gold.close, 50) IS NULL                 -- true while the indicator hasn't received 50 closes yet
+gold.bid IS NULL                            -- true on a feed that carries no quotes
 gold.bid IS NOT NULL AND gold.bid < ASK     -- gate that only fires when a quote is available
 ```
 
 Tests whether the inner expression evaluates to "missing" — the internal `Value.Undefined` sentinel produced by indicators that haven't warmed, snapshots that haven't been captured, missing optional fields (`btc.bid` on a no-quote feed), and any arithmetic that propagated an `Undefined`.
+
+A rule is not evaluated until the streams it references are warm (see [conditions](conditions.md)), so inside a rule an indicator on those streams has already received its warmup bars.
 
 `IS NULL` always returns a boolean — it never propagates `Undefined` itself, so it composes safely with `AND` / `OR`. Binds tighter than `AND`, so `fast IS NOT NULL AND slow IS NOT NULL AND CROSSES(fast, slow) ABOVE` parses without parentheses.
 
