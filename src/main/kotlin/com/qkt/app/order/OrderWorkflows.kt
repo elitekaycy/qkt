@@ -29,7 +29,16 @@ internal class OrderWorkflows(
     val haltCancels =
         HaltCancellations(book, s.broker, clock) { sid, message -> store.reportProtectionFailure(sid, message) }
     val ocoGuard = OcoExecutionGuard(book, store.siblings, clock, ops)
-    val ocoSequencer = OcoSequencer(book, store.exposure, store.siblings, ocoGuard, clock, ops)
+    val ocoSequencer =
+        OcoSequencer(
+            book,
+            store.exposure,
+            store.siblings,
+            ocoGuard,
+            clock,
+            ops,
+            BracketExitRefusal(book, store.exposure, store.siblings, ocoGuard, clock, ops),
+        )
     val siblingCancels = SiblingCancellation(book, store.siblings, ocoSequencer, ops)
     val venueProtection: VenuePositionProtection =
         VenuePositionProtection(
