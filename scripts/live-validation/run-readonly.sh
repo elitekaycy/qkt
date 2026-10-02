@@ -312,7 +312,7 @@ jq -e \
         .kind == "MT5_GOLDEN_CAPTURE" and
         .captureMode == "READ_ONLY" and
         .session == $strategy and
-        (.captureGitSha as $capture | ($qktCommit | startswith($capture))) and
+        (.captureGitSha as $capture | ($capture | length) >= 7 and ($qktCommit | startswith($capture))) and
         .counts.ticks > 0 and
         .counts.warmupTicks > 0 and
         .counts.candles > 0 and
