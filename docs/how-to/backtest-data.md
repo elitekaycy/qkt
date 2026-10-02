@@ -112,6 +112,12 @@ aggregation.
 Notes:
 
 - **One timeframe per run.** Want 1m and 5m? Run `qkt fetch` twice; the store keys by timeframe.
+- **Gateway contracts in a backtest.** Declare a dated future's root under `futures:` (a catalog of its
+  contracts, its `takerFeeRate`) so it fills on the exchange simulator with the venue's fees, and run
+  `--position-mode netting` for a netting venue such as Deribit. A perpetual has no root: it fills as a
+  plain instrument whose fee is `commissionPerLot`, so a venue's percentage fee is exact only at the
+  price you set it for (Deribit's 0.05% at 86,321: 43.16 per lot, 7e-6 USDC from the venue's figure on a
+  testnet round trip of 0.001).
 - **Idempotent per day-file.** An existing day file is skipped without hitting the broker. To
   re-fetch a corrupt day, delete the file and re-run.
 - MT5 history APIs are broker-dependent — some throttle hard or serve only a limited window.
