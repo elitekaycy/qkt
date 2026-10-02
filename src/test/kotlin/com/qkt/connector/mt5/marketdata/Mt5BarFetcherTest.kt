@@ -279,7 +279,7 @@ class Mt5BarFetcherTest {
                             ),
                     ).toList()
             assertThat(candles).hasSize(1)
-            assertThat(candles.first().close.toPlainString()).isEqualTo("4700.5")
+            assertThat(candles.first().close.toPlainString()).isEqualTo("4700.50000000")
             assertThat(candles.first().startTime).isEqualTo(Instant.parse("2026-05-13T08:00:00Z").toEpochMilli())
             val request = server.takeRequest()
             assertThat(request.path).contains("/fetch_data_range")
