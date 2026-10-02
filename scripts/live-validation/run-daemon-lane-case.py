@@ -195,6 +195,12 @@ def start_daemon():
         if handle.poll() is not None:
             die("daemon exited during startup")
         time.sleep(1)
+    # A daemon left behind keeps trading the case's strategies and slows every later case.
+    qkt(["daemon", "stop", "--state-dir", f"{a.out}/state"])
+    try:
+        handle.wait(timeout=60)
+    except subprocess.TimeoutExpired:
+        handle.kill()
     die("daemon was not ready within 150 seconds")
 
 
