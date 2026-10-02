@@ -92,6 +92,20 @@ data class ExecutionSimulationConfig(
                 "execution partialFillFraction must be in (0, 1): $it"
             }
         }
+        if (preset == ExecutionPreset.PAPER_FAST) {
+            // Neither the paper broker nor the exchange simulator models these: refused, never recorded as applied.
+            val unmodelled =
+                listOfNotNull(
+                    "latency".takeIf { latencyMs > 0L },
+                    "stop latency".takeIf { stopLatencyMs > 0L },
+                    "order spacing".takeIf { orderSpacingMs > 0L },
+                    "reject-every".takeIf { rejectEvery != null },
+                    "partial fill".takeIf { partialFillFraction != null },
+                )
+            require(unmodelled.isEmpty()) {
+                "the paper broker does not model ${unmodelled.joinToString()}; use --broker mt5-sim for them"
+            }
+        }
     }
 
     val brokerKind: BrokerKind
