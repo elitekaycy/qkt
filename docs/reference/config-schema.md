@@ -506,7 +506,8 @@ account-wide even when one strategy trades it: startup trusts each strategy's pe
 position no book holds is never adopted), and each time a strategy comes up, once every strategy
 deployed on the account is running, their holdings must add up to the account's. While they do not,
 only orders that reduce a position are sent; the check clears itself when a later one agrees (as
-strategies deploy one after another), or after an operator resolves the difference. After a restart every restored order is resolved by id, with its complete fill
+strategies deploy one after another, and it is judged again before any order adding risk is refused, so
+a fill the venue had not yet reported when last checked blocks nothing), or after an operator resolves the difference. After a restart every restored order is resolved by id, with its complete fill
 history, so a fill is never lost or booked twice. A submit the gateway never answers is sent again
 until a deadline, then resolved by id. The gateway's identity is checked at startup and whenever its
 event log restarts; a gateway on another account refuses every order. The kill switch at the gateway
