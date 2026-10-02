@@ -89,11 +89,17 @@ private fun nowMs(
     clock: Clock,
 ): Long = request.timestamp.takeIf { it > 0L } ?: clock.now()
 
-/** Halts [strategyId] when its consecutive loss streak reaches [maxLosses]. */
+/**
+ * Halts [strategyId] when its consecutive loss streak reaches [maxLosses]. A [HaltScope.DAILY] halt
+ * holds for the UTC day of the streak's latest loss: once that day has passed and the halt resumes,
+ * the same streak does not halt again (a halted strategy cannot post the win that would reset it);
+ * a further loss does.
+ */
 class LossStreakHalt(
     private val strategyId: String,
     private val maxLosses: Int,
     private val ledger: PacerLedger,
+    private val clock: Clock,
     private val scope: HaltScope = HaltScope.PERSISTENT,
 ) : HaltRule {
     init {
@@ -103,7 +109,10 @@ class LossStreakHalt(
 
     override fun evaluate(riskState: RiskState): HaltDecision {
         val losses = ledger.lossStreak(strategyId)
-        return if (losses >= maxLosses) {
+        val lastLossAt = ledger.lastLossAt(strategyId)
+        val fromAnEarlierDay =
+            scope == HaltScope.DAILY && lastLossAt != null && utcDay(lastLossAt) < utcDay(clock.now())
+        return if (losses >= maxLosses && !fromAnEarlierDay) {
             HaltDecision.Halt(
                 reason = "LossStreakHalt[$strategyId]: $losses consecutive losses, max $maxLosses",
                 strategyId = strategyId,
@@ -114,3 +123,5 @@ class LossStreakHalt(
         }
     }
 }
+
+private fun utcDay(epochMs: Long): Long = Math.floorDiv(epochMs, 86_400_000L)
