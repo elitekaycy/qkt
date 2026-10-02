@@ -220,9 +220,9 @@ class Run:
             shape = lambda xs: [(x["side"], x["symbol"], Decimal(x["qty"])) for x in xs]
             self.drift = [str(Decimal(t["price"]) - Decimal(f["price"])) for f, t in zip(fills, replayed)]
             return [] if shape(fills) == shape(replayed) else [f"replay-same-fills: live {fills} != replay {replayed}"]
-        legs = lambda xs: sorted((x["side"], x["symbol"], Decimal(x["qty"])) for x in xs[: len(xs) // 2])
+        legs = lambda xs: sorted((x["side"], x["symbol"], Decimal(x["qty"])) for x in xs)
         opening = fills[: len(fills) // 2]
-        return [] if legs(opening) == sorted((t["side"], t["symbol"], Decimal(t["qty"])) for t in replayed[: len(opening)]) \
+        return [] if legs(opening) == legs(replayed[: len(opening)]) \
             else [f"replay-same-legs: live opened {opening}, replay {replayed[: len(opening)]}"]
 
     def store_bars(self, root, symbol, start, end):
