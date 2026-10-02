@@ -37,3 +37,8 @@ lanes:
     concurrency: exclusive
     places_orders: true
     budget_seconds: 420
+  derivatives:
+    purpose: Futures, perpetuals and options on a VGP gateway account (Deribit testnet) - orders reach the venue on its tick grid, qkt's realized equals the venue's deals net with fees, and replaying the venue's own bars or the account's recorded chain reproduces the decisions. One netting account, so cases run one after another.
+    concurrency: exclusive
+    places_orders: true
+    budget_seconds: 420
