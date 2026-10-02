@@ -40,6 +40,32 @@ class BacktestCommandTest : BacktestCommandFixture() {
     }
 
     @Test
+    fun `a strategy that does not compile is a user error, not a crash`(
+        @TempDir dir: Path,
+    ) {
+        val strategy = dir.resolve("no_target.qkt")
+        Files.writeString(
+            strategy,
+            "STRATEGY no_target VERSION 1\nSYMBOLS\n    btc = BACKTEST:BTCUSDT EVERY 1m\nRULES\n" +
+                "    WHEN btc.close > 100\n    THEN BUY btc SIZING 1 BRACKET { STOP_LOSS BY 3 }\n",
+        )
+        val (code, _, err) =
+            runBacktest(
+                "backtest",
+                strategy.toString(),
+                "--from",
+                "2024-01-15",
+                "--to",
+                "2024-01-16",
+                "--data-root",
+                "src/test/resources/cli/data",
+                "--allow-incomplete",
+            )
+        assertThat(code).isEqualTo(ExitCodes.USER_ERROR)
+        assertThat(err).contains("qkt: error: BRACKET requires both STOP LOSS and TAKE PROFIT")
+    }
+
+    @Test
     fun `produces text report from fixture data`() {
         val (code, stdout, stderr) =
             runBacktest(
