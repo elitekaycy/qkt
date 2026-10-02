@@ -201,34 +201,18 @@ class OrderTypeCompilerTest {
 
     @Test
     fun `TrailingPct rejects non-positive percentages`() {
-        val c = compiler().compile(TrailingPct(NumLit(BigDecimal.ZERO)))
         assertThatThrownBy {
-            c.buildRequest.evaluate(
-                ec = ec("100"),
-                id = "id-6",
-                symbol = "BACKTEST:BTCUSDT",
-                side = Side.SELL,
-                qty = BigDecimal.ONE,
-                tif = TimeInForce.GTC,
-                strategyId = "s",
-                ts = 0L,
+            compiler().compile(
+                TrailingPct(NumLit(BigDecimal.ZERO)),
             )
         }.hasMessageContaining("greater than 0")
     }
 
     @Test
     fun `TrailingPct rejects percentages that cannot leave a positive trail`() {
-        val c = compiler().compile(TrailingPct(NumLit(BigDecimal("100"))))
         assertThatThrownBy {
-            c.buildRequest.evaluate(
-                ec = ec("100"),
-                id = "id-7",
-                symbol = "BACKTEST:BTCUSDT",
-                side = Side.SELL,
-                qty = BigDecimal.ONE,
-                tif = TimeInForce.GTC,
-                strategyId = "s",
-                ts = 0L,
+            compiler().compile(
+                TrailingPct(NumLit(BigDecimal("100"))),
             )
         }.hasMessageContaining("less than 100")
     }
