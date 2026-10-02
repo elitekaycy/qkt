@@ -15,14 +15,14 @@ import java.math.BigDecimal
  * declares a cap (Deribit: 12.5%).
  */
 object OptionFee {
-    /** The fee on trading [quantity] contracts of [root] at [premium] with the underlying at [underlying]. */
+    /** The fee on trading [quantity] contracts of [root] at [premium] with the underlying index at [index]. */
     fun trade(
         root: OptionRoot,
         quantity: BigDecimal,
         premium: BigDecimal,
-        underlying: BigDecimal,
+        index: BigDecimal,
     ): BigDecimal {
-        val percentage = capped(root, root.takerFeeRate.multiply(underlying), premium)
+        val percentage = capped(root, root.takerFeeRate.multiply(index), premium)
         val perContract = percentage.multiply(root.contractSize).add(root.exchangeFeePerContract)
         return perContract.multiply(quantity.abs()).setScale(Money.SCALE, Money.ROUNDING)
     }

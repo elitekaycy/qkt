@@ -56,6 +56,7 @@ class DeribitBookSnapshot(
             rate = rate.decimal(),
             markAgeMs = atMs - createdMs,
             source = QuoteSource.BOOK,
+            index = index.decimal(),
         )
 
     private fun JsonPrimitive?.decimal(): BigDecimal? = this?.contentOrNull?.let(::BigDecimal)

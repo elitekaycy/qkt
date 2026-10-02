@@ -17,6 +17,7 @@ internal class OptionChainFixture(
     feeCapRate: String? = null,
     deliveryPrice: String? = "95000",
     right: String = "call",
+    private val index: String? = null,
 ) {
     val root =
         OptionRoot(
@@ -52,7 +53,7 @@ internal class OptionChainFixture(
             dataRoot,
         )
 
-    /** Stores one trade-built snapshot of the call per (ISO instant, mark, age ms). */
+    /** Stores one trade-built snapshot of the call per (ISO instant, mark, age ms), forward 83000, at [index]. */
     fun store(vararg quotes: Triple<String, String, Long>) {
         val snapshots =
             quotes.map { (at, mark, age) ->
@@ -69,6 +70,7 @@ internal class OptionChainFixture(
                         null,
                         age,
                         QuoteSource.TRADE,
+                        index?.let(::BigDecimal),
                     )
                 ChainSnapshot(root.root, atMs, listOf(quote))
             }

@@ -52,4 +52,13 @@ class GatewayQuoteTicksTest {
     fun `a mark at or below zero is no price at all`() {
         assertThat(gatewayQuoteTick(symbol, quote("640", "655", "0"))).isNull()
     }
+
+    @Test
+    fun `a chain quote keeps the forward it is valued on and the index the venue charges fees on`() {
+        val chained = gatewayChainQuote(quote(mark = "648.5").copy(index = "84301.2"))
+
+        assertThat(chained?.underlying).isEqualByComparingTo("84437.55")
+        assertThat(chained?.index).isEqualByComparingTo("84301.2")
+        assertThat(gatewayChainQuote(quote(mark = "648.5"))?.index).isNull()
+    }
 }

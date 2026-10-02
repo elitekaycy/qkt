@@ -281,7 +281,7 @@ options:
     chains: trade            # or book: the stored series to trade on
     markSpread: 0.05         # trade series only: half-spread as a fraction of the mark
     maxQuoteAgeMinutes: 60   # older trade marks are not tradeable
-    takerFeeRate: 0.0003     # of the underlying index, per contract (book series: of the expiry's forward)
+    takerFeeRate: 0.0003     # of the underlying index, per contract
     deliveryFeeRate: 0.00015 # of the delivery price, at an in-the-money expiry
     feeCapRate: 0.125        # each fee capped at 12.5% of the option's value
 ```

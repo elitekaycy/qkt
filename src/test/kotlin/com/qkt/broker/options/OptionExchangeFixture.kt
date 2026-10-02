@@ -20,6 +20,7 @@ internal class OptionExchangeFixture(
     dir: Path,
     deliveryPrice: String? = "95000",
     right: String = "call",
+    index: String? = null,
 ) {
     val chain =
         OptionChainFixture(
@@ -28,6 +29,7 @@ internal class OptionExchangeFixture(
             feeCapRate = "0.125",
             deliveryPrice = deliveryPrice,
             right = right,
+            index = index,
         )
     val settlements = SettlementLog()
     val symbol = chain.symbol

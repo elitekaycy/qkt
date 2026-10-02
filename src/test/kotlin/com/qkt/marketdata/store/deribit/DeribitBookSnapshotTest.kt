@@ -76,6 +76,7 @@ class DeribitBookSnapshotTest {
         assertThat(c.mark).isEqualTo(BigDecimal("0.20172332"))
         assertThat(c.markIv).isEqualTo(BigDecimal("48.7"))
         assertThat(c.underlying).isEqualTo(BigDecimal("83502.39"))
+        assertThat(c.index).isEqualTo(BigDecimal("83476.57"))
         assertThat(c.rate).isEqualTo(BigDecimal("0.0"))
         assertThat(c.markAgeMs).isEqualTo(49)
         assertThat(c.source).isEqualTo(QuoteSource.BOOK)

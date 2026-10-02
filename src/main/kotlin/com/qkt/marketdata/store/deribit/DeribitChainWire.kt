@@ -4,7 +4,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonPrimitive
 
-/** One row of `get_book_summary_by_currency`: an option's book, mark and forward at [createdMs]. */
+/** One row of `get_book_summary_by_currency`: an option's book, mark, forward and index at [createdMs]. */
 @Serializable
 internal data class DeribitBookRow(
     @SerialName("instrument_name") val name: String,
@@ -15,6 +15,7 @@ internal data class DeribitBookRow(
     @SerialName("underlying_price") val underlying: JsonPrimitive,
     @SerialName("interest_rate") val rate: JsonPrimitive? = null,
     @SerialName("creation_timestamp") val createdMs: Long,
+    @SerialName("estimated_delivery_price") val index: JsonPrimitive? = null,
 )
 
 /** One page of `get_last_trades_by_currency_and_time`; both fields are required, so a short answer fails. */

@@ -48,6 +48,22 @@ class OptionExchangeTest {
     }
 
     @Test
+    fun `the fee is charged on the index the series recorded, not on the expiry's forward`(
+        @TempDir dir: Path,
+    ) {
+        val f = OptionExchangeFixture(dir, index = "82000")
+        f.chain.store(Triple("2026-10-01T01:00:00Z", "1000", 0L), Triple("2026-10-01T02:00:00Z", "1000", 0L))
+        f.tick("2026-10-01T01:00:00Z")
+        f.exchange.submit(f.market(Side.BUY))
+
+        f.tick("2026-10-01T02:00:00Z")
+
+        // 0.03% of the 82000 index (not the 83000 forward), under the 12.5% cap, x 0.1 contracts.
+        val fee = f.last<BrokerEvent.OrderFilled>().typedVenueCosts.single()
+        assertThat(fee.amount.amount).isEqualByComparingTo("2.46")
+    }
+
+    @Test
     fun `a market order meeting a quote without its side is cancelled, never filled at the mark`(
         @TempDir dir: Path,
     ) {
