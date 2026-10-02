@@ -111,7 +111,8 @@ class PacerRulesTest {
         val ledger = PacerLedger()
         ledger.recordOutcome("s", 1_000L, BigDecimal("-10"))
         ledger.recordOutcome("s", 2_000L, BigDecimal("-5"))
-        val rule = LossStreakHalt("s", maxLosses = 2, ledger = ledger, scope = HaltScope.DAILY)
+        val rule =
+            LossStreakHalt("s", maxLosses = 2, ledger = ledger, clock = FixedClock(2_000L), scope = HaltScope.DAILY)
 
         val decision = rule.evaluate(RiskState.noOp())
 
@@ -122,6 +123,25 @@ class PacerRulesTest {
                 scope = HaltScope.DAILY,
             ),
         )
+    }
+
+    @Test
+    fun `a daily loss streak halt does not trip again on a later day until another loss`() {
+        val day = 86_400_000L
+        val ledger = PacerLedger()
+        ledger.recordOutcome("s", 1_000L, BigDecimal("-10"))
+        ledger.recordOutcome("s", 2_000L, BigDecimal("-5"))
+        val clock = FixedClock(day + 1_000L)
+        val daily = LossStreakHalt("s", maxLosses = 2, ledger = ledger, clock = clock, scope = HaltScope.DAILY)
+        val persistent = LossStreakHalt("s", maxLosses = 2, ledger = ledger, clock = clock)
+
+        assertThat(daily.evaluate(RiskState.noOp())).isEqualTo(HaltDecision.Continue)
+        assertThat(persistent.evaluate(RiskState.noOp())).isInstanceOf(HaltDecision.Halt::class.java)
+
+        ledger.recordOutcome("s", day + 2_000L, BigDecimal("-1"))
+        clock.time = day + 3_000L
+
+        assertThat(daily.evaluate(RiskState.noOp())).isInstanceOf(HaltDecision.Halt::class.java)
     }
 
     private fun fill(

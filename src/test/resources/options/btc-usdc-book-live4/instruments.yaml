@@ -1,0 +1,2 @@
+options:
+  - { root: DERIBIT:BTC_USDC, currency: USDC, contractSize: 1, tickSize: 5, volumeStep: 0.01, volumeMin: 0.01, underlyingIndex: btc_usdc, chains: book }

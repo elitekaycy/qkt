@@ -99,8 +99,11 @@ data class DecisionOrderLinkedEvent(
     override val sequenceId: Long = 0L,
 ) : Event
 
-/** What an accounted amount came from: an execution, a financing accrual, or a boot-time venue reconcile. */
-enum class FillAccountingKind { EXECUTION, FINANCING, RECONCILE }
+/**
+ * What an accounted amount came from: an execution, a financing accrual, a boot-time venue
+ * reconcile, or a venue cost no fill carries (see [CostIncurred]).
+ */
+enum class FillAccountingKind { EXECUTION, FINANCING, RECONCILE, COST }
 
 /** Post-accounting evidence for one complete or partial broker fill slice. */
 data class FillAccountedEvent(

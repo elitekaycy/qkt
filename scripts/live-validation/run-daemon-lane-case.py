@@ -195,6 +195,12 @@ def start_daemon():
         if handle.poll() is not None:
             die("daemon exited during startup")
         time.sleep(1)
+    # A daemon left behind keeps trading the case's strategies and slows every later case.
+    qkt(["daemon", "stop", "--state-dir", f"{a.out}/state"])
+    try:
+        handle.wait(timeout=60)
+    except subprocess.TimeoutExpired:
+        handle.kill()
     die("daemon was not ready within 150 seconds")
 
 
@@ -316,9 +322,13 @@ def check_copies(log):
     rule = case.get("copies_agree")
     if not rule:
         return []
-    found, lines = [], {}
+    found, timed = [], {}
     for name in [strategy, *copy_names]:
-        lines[name] = {m for m in re.findall(rf"\[{name}\][^\n]*? - ({rule['log']}[^\n]*)", log)}
+        timed[name] = re.findall(rf"^(\d\d:\d\d):[^\n]*?\[{name}\][^\n]*? - ({rule['log']}[^\n]*)", log, re.M)
+    # The copies go live minutes apart and each logs only bars it closed live: compare from the minute the last
+    # one began, so a bar only the earlier copies saw is not counted as disagreement.
+    start = max((min(minute for minute, _ in own) for own in timed.values() if own), default="")
+    lines = {name: {line for minute, line in own if minute >= start} for name, own in timed.items()}
     common = set.intersection(*lines.values())
     if len(common) < int(rule.get("min_lines", 1)):
         found.append(f"only {len(common)} line(s) are common to all {len(lines)} copies, expected {rule.get('min_lines', 1)}")

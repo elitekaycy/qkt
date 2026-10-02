@@ -48,9 +48,9 @@ class PaperBroker(
      * low and a long take-profit on the bar's high, so filling "at the tick" books the
      * bar extreme — a phantom slippage that grows with bar range and contradicts this
      * broker's no-slippage design. e.g. stop 1.09, a bar dips to low 1.085: off -> fills
-     * 1.085 (inflated loss); on -> fills 1.09. Wired on only for the `--bars` tier.
+     * 1.085 (inflated loss); on -> fills 1.09. On for each symbol replayed from bars.
      */
-    private val fillAtTriggerPrice: Boolean = false,
+    private val fillAtTriggerPrice: (String) -> Boolean = { false },
     private val calendar: TradingCalendar = TradingCalendar.crypto(),
     /**
      * Position model this venue simulates (#1071). Default NETTING preserves direct
@@ -63,7 +63,7 @@ class PaperBroker(
     private val log = LoggerFactory.getLogger(PaperBroker::class.java)
 
     private val working: MutableList<OrderRequest> = mutableListOf()
-    private val lastTickTimestampBySymbol: MutableMap<String, Long> = mutableMapOf()
+    private val lastTickBySymbol: MutableMap<String, Tick> = mutableMapOf()
 
     // Reused per-tick snapshot of the orders this tick triggers; cleared and refilled every call.
     // Shareable because the broker is single-threaded and fill callbacks never re-enter onTick.
@@ -136,7 +136,7 @@ class PaperBroker(
             publishImmediateCancel(request)
             return
         }
-        fillFromTrigger(request, tick, isGapOpen = false)
+        fillFromTrigger(request, tick, from = null)
         if (working.removeAll { it.id == request.id }) publishImmediateCancel(request)
     }
 
@@ -203,17 +203,13 @@ class PaperBroker(
     }
 
     fun onTick(tick: Tick) {
-        val previousTimestamp = lastTickTimestampBySymbol.put(tick.symbol, tick.timestamp)
+        val previous = lastTickBySymbol.put(tick.symbol, tick)
         if (working.isEmpty()) return
         expireDeadlines(tick)
         if (working.isEmpty()) return
-        // BarTickFeed closes a bar at endTime-1 and opens the next contiguous bar at endTime.
-        // A larger timestamp jump therefore identifies a session/data gap. Stops that gap
-        // through their level fill at the adverse opening print, not optimistically at the level.
-        val isGapOpen =
-            fillAtTriggerPrice &&
-                previousTimestamp != null &&
-                tick.timestamp > previousTimestamp + 1
+        // A synthesized bar moves continuously Open->Low/High->Close, so a level between the previous print and
+        // this one traded; a bar Close (the only synthetic tick with volume) to the next Open is a gap.
+        val from = previous?.takeIf { fillAtTriggerPrice(tick.symbol) && it.volume == null }?.price
         toFillScratch.clear()
         for (i in working.indices) {
             val req = working[i]
@@ -224,7 +220,7 @@ class PaperBroker(
             // A synchronous fill callback may cancel an OCO sibling that is also present in
             // this tick's trigger snapshot. Never fill an order that is no longer working.
             if (!working.remove(wo)) continue
-            fillFromTrigger(wo, tick, isGapOpen)
+            fillFromTrigger(wo, tick, from)
         }
     }
 
@@ -271,7 +267,7 @@ class PaperBroker(
     private fun fillFromTrigger(
         req: OrderRequest,
         tick: Tick,
-        isGapOpen: Boolean,
+        from: BigDecimal?,
     ) {
         if (req is OrderRequest.StopLimit) {
             activateLimit(
@@ -287,6 +283,7 @@ class PaperBroker(
                     expiresAt = req.expiresAt,
                 ),
                 tick,
+                from,
             )
             return
         }
@@ -304,22 +301,24 @@ class PaperBroker(
                     expiresAt = req.expiresAt,
                 ),
                 tick,
+                from,
             )
             return
         }
         val tickPrice = tick.price
+        val at = { level: BigDecimal -> from != null && tradedThrough(from, tickPrice, level) }
         val (fillPrice, side, qty) =
             when (req) {
                 is OrderRequest.Limit ->
-                    Triple(if (fillAtTriggerPrice) req.limitPrice else tickPrice, req.side, req.quantity)
+                    Triple(if (at(req.limitPrice)) req.limitPrice else tickPrice, req.side, req.quantity)
                 is OrderRequest.Stop ->
                     Triple(
-                        if (fillAtTriggerPrice && !isGapOpen) req.stopPrice else tickPrice,
+                        if (at(req.stopPrice)) req.stopPrice else tickPrice,
                         req.side,
                         req.quantity,
                     )
                 is OrderRequest.IfTouched ->
-                    Triple(if (fillAtTriggerPrice) req.triggerPrice else tickPrice, req.side, req.quantity)
+                    Triple(if (at(req.triggerPrice)) req.triggerPrice else tickPrice, req.side, req.quantity)
                 is OrderRequest.Market -> error("Market should not reach fillFromTrigger")
                 is OrderRequest.StopLimit -> error("StopLimit should activate a Limit")
                 else -> error("PaperBroker fillFromTrigger received unexpected type: ${req::class.simpleName}")
@@ -330,11 +329,12 @@ class PaperBroker(
     private fun activateLimit(
         limit: OrderRequest.Limit,
         tick: Tick,
+        from: BigDecimal?,
     ) {
         if (checkTrigger(limit, tick)) {
             val execution = if (limit.side == Side.BUY) tick.buyExecPrice() else tick.sellExecPrice()
             val fillPrice =
-                if (fillAtTriggerPrice) {
+                if (from != null && tradedThrough(from, tick.price, limit.limitPrice)) {
                     limit.limitPrice
                 } else if (limit.side == Side.BUY) {
                     execution.min(limit.limitPrice)

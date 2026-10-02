@@ -12,7 +12,8 @@ import java.math.BigDecimal
  * change in value per bar. e.g. on a clean ramp 0,1,2,3,4 the slope is 1.0. Useful as a
  * trend-strength filter or a smoothed momentum reading.
  *
- * slope = Σ(i - x̄)(y - ȳ) / Σ(i - x̄)². Returns null until warmed up. O(period) per update.
+ * slope = Σ(i - x̄)(y - ȳ) / Σ(i - x̄)². Returns null until warmed up. O(period) per update. The value keeps
+ * 16 significant digits rather than 8 decimals, since an FX per-bar slope is around 1e-6.
  */
 class RegressionSlope(
     private val period: Int,
@@ -51,6 +52,6 @@ class RegressionSlope(
             i++
         }
         if (sxx.signum() == 0) return null
-        return sxy.divide(sxx, Money.CONTEXT).setScale(Money.SCALE, Money.ROUNDING)
+        return sxy.divide(sxx, Money.CONTEXT)
     }
 }

@@ -70,11 +70,13 @@ Covered in [Conditions](conditions.md):
 ### `IS NULL` / `IS NOT NULL`
 
 ```qkt
-EMA(gold.close, 50) IS NULL                 -- true while the indicator hasn't received 50 closes yet
+gold.bid IS NULL                            -- true on a feed that carries no quotes
 gold.bid IS NOT NULL AND gold.bid < ASK     -- gate that only fires when a quote is available
 ```
 
 Tests whether the inner expression evaluates to "missing" — the internal `Value.Undefined` sentinel produced by indicators that haven't warmed, snapshots that haven't been captured, missing optional fields (`btc.bid` on a no-quote feed), and any arithmetic that propagated an `Undefined`.
+
+A rule is not evaluated until the streams it references are warm (see [conditions](conditions.md)), so inside a rule an indicator on those streams has already received its warmup bars.
 
 `IS NULL` always returns a boolean — it never propagates `Undefined` itself, so it composes safely with `AND` / `OR`. Binds tighter than `AND`, so `fast IS NOT NULL AND slow IS NOT NULL AND CROSSES(fast, slow) ABOVE` parses without parentheses.
 
@@ -106,7 +108,34 @@ btc.volume_step        -- lot increment the venue accepts
 btc.volume_min         -- smallest order the venue accepts
 btc.swap_long_points   -- overnight swap for a long, in points
 btc.swap_short_points  -- overnight swap for a short, in points
+btc.tick_value         -- tick_size x contract_size: what one tick is worth per lot
+btc.multiplier         -- alias of contract_size (the futures term)
 ```
+
+### Futures contract fields
+
+A futures stream — a listed contract (`BINANCE_UM:BTCUSDT_241227`) or a continuous one
+(`BINANCE_UM:BTCUSDT@front`, `@next`) — also tells you which contract it follows right now. On any
+other stream these fields are Undefined, so a rule that reads them does not fire:
+
+```qkt
+btc.contract       -- the followed contract's code, e.g. 'BTCUSDT_241227' (a string: compare with = or !=;
+                   -- any other operator, arithmetic or indicator on it is Undefined)
+btc.dte            -- days until that contract expires, with fractions
+btc.days_to_roll   -- days until the stream moves to the next contract (a listed contract: its expiry)
+```
+
+```qkt
+-- Be flat through every roll instead of carrying the position (and paying the roll).
+WHEN btc.days_to_roll < 0.5 AND POSITION.btc != 0
+THEN CLOSE btc
+```
+
+The fields are read as of the bar's close. The bar that closes at the roll instant already names
+the new contract (its prices are still the old contract's), so `days_to_roll` never reaches 0 while
+the old contract is followed: the last bar that does follow it closes one bar before the roll, with
+`days_to_roll` equal to the bar length. A flat-through-roll threshold must therefore be longer than one
+bar — `< 0.5` for bars shorter than 12 hours, `< 1` for `EVERY 12h`, `< 2` for `EVERY 1d`.
 
 ```qkt
 -- Round a computed stop to the venue grid and refuse to size below the minimum lot.
@@ -265,6 +294,11 @@ POSITION.<stream>.trades_today              -- fills on this stream since UTC mi
 POSITION.<stream>.last_trade_at             -- epoch ms of the last fill on this stream; null before any
 OPEN_ORDERS.<stream>                        -- active risk-increasing entry-order count
 ```
+
+On an option structure alias (`OPEN ps = OPTIONS ON …`), `POSITION.ps` is the structure's size and
+`.pnl`, `.credit`, `.max_loss`, `.pnl_pct`, `.dte`, `.delta`, `.gamma`, `.vega` and `.theta` read the
+structure; see [Option structures](structures.md#reading-a-structure). The structure fields compile
+only on a structure alias, and the stream-only accessors only on a stream.
 
 Every accessor above compiles; an unknown one (`POSITION.btc.size`) is a parse error:
 

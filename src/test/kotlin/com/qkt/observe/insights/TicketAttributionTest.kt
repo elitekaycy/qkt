@@ -91,4 +91,12 @@ class TicketAttributionTest {
         assertThat(map.fromComment("dsl-", listOf("a"))).isNull()
         assertThat(map.fromComment("dsl-zzz", listOf("hedge_straddle"))).isNull()
     }
+
+    @Test
+    fun `aliasing resolves a broker comment by each strategy's comment name as well`() {
+        val aliased = TicketAttribution.aliasing(mapOf("s1" to "gold-trend"))
+
+        assertThat(aliased.fromComment("dsl-gold-trend", listOf("s1"))).isEqualTo("s1")
+        assertThat(TicketAttribution().fromComment("dsl-gold-trend", listOf("s1"))).isNull()
+    }
 }

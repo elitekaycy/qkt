@@ -61,7 +61,7 @@ class BookExposureLimit(
         val breach =
             controller.checkAndReserve(
                 com.qkt.risk.book
-                    .bookReservationKey(request.strategyId, request.id),
+                    .bookReservationKey(request),
                 request.symbol,
                 signed,
             ) ?: return Decision.Approve

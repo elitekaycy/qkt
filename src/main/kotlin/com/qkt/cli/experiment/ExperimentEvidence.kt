@@ -1,7 +1,6 @@
 package com.qkt.cli.experiment
 
 import com.qkt.backtest.BacktestResult
-import com.qkt.backtest.ExecutionSimulationConfig
 import com.qkt.backtest.sweep.SweepRun
 import com.qkt.cli.BuildInfo
 import com.qkt.cli.ExperimentPlan
@@ -9,6 +8,7 @@ import com.qkt.cli.ParamGrid
 import com.qkt.evidence.DatasetEvidence
 import com.qkt.evidence.EvidenceEnvelope
 import com.qkt.evidence.EvidenceHasher
+import com.qkt.evidence.ExecutionEvidence
 import com.qkt.evidence.ExperimentEvidence
 import com.qkt.evidence.PromotionEvidence
 import java.nio.file.Path
@@ -18,7 +18,7 @@ internal fun attachExperimentEvidence(
     result: BacktestResult,
     command: List<String>,
     strategyPath: Path,
-    executionConfig: ExecutionSimulationConfig,
+    execution: ExecutionEvidence,
     datasetEvidence: DatasetEvidence,
     plan: ExperimentPlan,
     selected: SweepRun<ParamGrid.Combo>,
@@ -34,7 +34,7 @@ internal fun attachExperimentEvidence(
                 command = command,
                 strategyHash = EvidenceHasher.sha256(strategyPath),
                 dataset = datasetEvidence,
-                execution = executionConfig.toEvidence(),
+                execution = execution,
                 experiment =
                     ExperimentEvidence(
                         id = plan.name,

@@ -135,4 +135,42 @@ class NoopStatePersistorTest {
     fun `loadOcoLegs returns empty when nothing persisted`() {
         assertThat(NoopStatePersistor().loadOcoLegs("absent")).isEmpty()
     }
+
+    @Test
+    fun `structures and leg book symbols round-trip in memory`() {
+        val persistor = NoopStatePersistor()
+        val leg =
+            PersistedStructureLeg(
+                "DERIBIT:BTC_USDC_9OCT26_82000_P",
+                com.qkt.common.Side.SELL,
+                "o-1",
+                java.math.BigDecimal.ONE,
+                1L,
+                java.math.BigDecimal("0.1"),
+                java.math.BigDecimal("640"),
+                java.math.BigDecimal("0.1"),
+                java.math.BigDecimal.ZERO,
+                true,
+                emptyMap(),
+            )
+        val structure =
+            PersistedStructure(
+                "ps-1",
+                "ps",
+                java.math.BigDecimal("0.1"),
+                com.qkt.strategy.StructureState.OPEN,
+                com.qkt.events.StructureOutcome.CLOSED,
+                listOf(leg),
+            )
+
+        persistor.saveStructures("s", listOf(structure))
+        persistor.saveLegBook("s", leg.symbol, com.qkt.positions.LegBook(leg.symbol))
+
+        org.assertj.core.api.Assertions
+            .assertThat(persistor.loadStructures("s"))
+            .containsExactly(structure)
+        org.assertj.core.api.Assertions
+            .assertThat(persistor.legBookSymbols("s"))
+            .containsExactly(leg.symbol)
+    }
 }

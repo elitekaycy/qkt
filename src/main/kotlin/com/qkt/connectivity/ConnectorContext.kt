@@ -1,6 +1,7 @@
 package com.qkt.connectivity
 
 import com.qkt.common.Clock
+import com.qkt.instrument.InstrumentRegistry
 import java.nio.file.Path
 
 /**
@@ -17,4 +18,5 @@ class ConnectorContext(
     val clock: Clock,
     val secrets: SecretResolver = SecretResolver(env),
     val strategiesTrading: (accountName: String) -> List<String> = { emptyList() },
+    val instruments: InstrumentRegistry? = null,
 )

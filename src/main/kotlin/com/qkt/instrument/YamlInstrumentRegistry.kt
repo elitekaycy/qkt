@@ -28,6 +28,8 @@ import org.snakeyaml.engine.v2.api.LoadSettings
  *     swapShortPoints: 4       # optional, signed points per lot per rollover
  *     swapRolloverHourUtc: 21  # optional, default 21
  *     swapTripleDay: WEDNESDAY # optional, default WEDNESDAY
+ *     spreadPoints: 260        # optional — mt5-sim fills at mid ± 130 points (or minSpreadPoints: widen only)
+ *     currency: USD            # optional — explicit quote currency; default: inferred from the symbol
  * ```
  *
  * Duplicate `qktSymbol` entries fail loudly at [load] — fail-fast keeps a YAML edit
@@ -47,9 +49,10 @@ class YamlInstrumentRegistry private constructor(
             val text = Files.readString(path)
             val root = Load(LoadSettings.builder().build()).loadFromString(text)
             check(root is Map<*, *>) { "instruments.yaml: top-level must be a map (got ${root?.let { it::class }})" }
+            val derivativesOnly = root.containsKey("futures") || root.containsKey("options")
             val list =
                 root["instruments"] as? List<*>
-                    ?: error("instruments.yaml: missing 'instruments' list")
+                    ?: if (derivativesOnly) emptyList<Any>() else error("instruments.yaml: missing 'instruments' list")
             val table = mutableMapOf<String, InstrumentMeta>()
             for ((i, raw) in list.withIndex()) {
                 check(raw is Map<*, *>) { "instruments.yaml: entry $i must be a map" }
@@ -96,6 +99,9 @@ class YamlInstrumentRegistry private constructor(
                         runCatching { java.time.DayOfWeek.valueOf(it.trim().uppercase()) }
                             .getOrElse { error("instruments.yaml: entry $index invalid swapTripleDay '$it'") }
                     } ?: java.time.DayOfWeek.WEDNESDAY,
+                spreadPoints = intOpt("spreadPoints"),
+                minSpreadPoints = intOpt("minSpreadPoints"),
+                currency = entry["currency"]?.toString()?.trim(),
             )
         }
     }

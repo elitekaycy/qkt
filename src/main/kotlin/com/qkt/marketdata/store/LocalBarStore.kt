@@ -1,5 +1,6 @@
 package com.qkt.marketdata.store
 
+import com.qkt.candles.TimeWindow
 import com.qkt.common.Clock
 import com.qkt.common.SystemClock
 import com.qkt.marketdata.Candle
@@ -138,6 +139,26 @@ class LocalBarStore(
         writeManifest(existing.copy(ranges = merged))
     }
 
+    /**
+     * The finest stored timeframe finer than [window] that tiles it, and a UTC day, evenly — the
+     * bars a [window] series can be rebuilt from exactly. Null when none is stored.
+     */
+    fun finerTimeframe(
+        broker: String,
+        symbol: String,
+        window: TimeWindow,
+    ): TimeWindow? {
+        val dir = root.resolve("bars").resolve(broker).resolve(symbol)
+        if (DAY_MS % window.durationMs != 0L || !Files.isDirectory(dir)) return null
+        return Files.list(dir).use { entries ->
+            entries
+                .toList()
+                .mapNotNull { runCatching { TimeWindow.parse(it.fileName.toString()) }.getOrNull() }
+                .filter { it.durationMs < window.durationMs && window.durationMs % it.durationMs == 0L }
+                .minByOrNull { it.durationMs }
+        }
+    }
+
     private fun barDir(
         broker: String,
         symbol: String,
@@ -156,6 +177,8 @@ class LocalBarStore(
     ): Path = barDir(broker, symbol, timeframe).resolve("manifest.json")
 
     companion object {
+        private const val DAY_MS = 86_400_000L
+
         /** UTC day of an epoch-ms instant. Used by the writer to group fetched bars per day. */
         fun dayOf(epochMs: Long): LocalDate = Instant.ofEpochMilli(epochMs).atZone(ZoneOffset.UTC).toLocalDate()
     }

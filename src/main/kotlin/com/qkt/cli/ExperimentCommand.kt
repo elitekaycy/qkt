@@ -105,7 +105,7 @@ class ExperimentCommand(
                 result = testRaw,
                 command = args.tokens,
                 strategyPath = strategyPath,
-                executionConfig = ctx.executionConfig,
+                execution = ctx.executionEvidence(),
                 datasetEvidence = ctx.datasetEvidence,
                 plan = plan,
                 selected = selected,

@@ -1,0 +1,97 @@
+# Free options data for qkt backtests — findings (2026-10-01)
+
+Probed while planning phase 43 (options). All requests were anonymous.
+
+## 1. Tardis `options_chain` CSVs are not reachable by a program
+
+`https://datasets.tardis.dev/v1/deribit/options_chain/YYYY/MM/DD/OPTIONS.csv.gz` (the spec's planned
+source, first day of each month free) answers `403` with a Cloudflare browser challenge to `curl`. It
+cannot back an automated `qkt fetch`. A full day is also many gigabytes. **Replaced as the free source.**
+
+## 2. Deribit's own public API serves options history without a key
+
+- `https://history.deribit.com/api/v2/public/get_last_trades_by_currency_and_time?currency=USDC&kind=option&start_timestamp=…&end_timestamp=…&count=…&sorting=asc`
+  returns every option trade of the window, including expired instruments, each with `price`,
+  `mark_price`, `iv` (percent), `index_price` (the underlying index at the trade), `amount`,
+  `contracts`, `direction`, `instrument_name`, `timestamp` (ms), and `has_more` for paging.
+- `…/public/get_instruments?currency=USDC&kind=option&expired=true` (history host) lists expired
+  contracts with `strike`, `option_type`, `expiration_timestamp`, `contract_size`, `tick_size`,
+  `min_trade_amount`, `settlement_currency`, `taker_commission`.
+- `https://www.deribit.com/api/v2/public/get_delivery_prices?index_name=btc_usd` gives one delivery
+  (settlement) price per day, 2624 records back.
+
+## 3. Use the linear USDC options, not the inverse BTC/ETH ones
+
+Deribit's `BTC-…` options are inverse (priced and settled in BTC) — refused by the spec (E18). The
+`<COIN>_USDC-…` options are linear: `instrument_type: linear`, quoted and settled in USDC. On
+2026-10-01: SOL 662, BTC 614, ETH 526, XRP 422, HYPE 420, AVAX 384, TRX 264 live contracts.
+`BTC_USDC-1OCT26-74000-C`: contract size 1, tick 5 USDC. Strikes with a decimal point are written with
+`d` (`AVAX_USDC-1OCT26-9d5-C` is strike 9.5).
+
+Caution: one expired listing (`SOL_USDC-13FEB24-96-C`) reports `quote_currency: SOL` though it
+settles in USDC — the importer must take settlement/quote currency per instrument and refuse
+anything not linear-in-USDC rather than assume.
+
+## 4. What this means for the design
+
+- Chain snapshots are built from trades: per instrument, the last trade's `mark_price`, `iv` and
+  `index_price` at or before each snapshot boundary (spec §6.3's "last quote at or before t", with
+  trades standing in for quotes). Bid/ask are not in the trade history; fills must therefore use a
+  declared spread model around the mark (a documented divergence), never the mark itself.
+- Expiry settlement uses `get_delivery_prices` for the underlying index (`<coin>_usdc` index names
+  to be confirmed per coin).
+
+## 5. Findings from the first real catalog fetch (2026-10-01)
+
+- `qkt fetch DERIBIT:BTC_USDC --catalog` catalogued **21,163** linear BTC_USDC options (614 live, the
+  rest expired back to the 2025-08-07 expiry) and **1,666** daily `btc_usdc` delivery prices
+  (2022-03-10 onward) in ~10 s, with no warnings: every contract's name agreed with the venue's own
+  strike, right and expiry.
+- The history host's expired-options listing is ~137 MB (223,747 USDC options across all coins) and
+  takes ~40 s; qkt decodes it as it streams into small records (peak ~440 MB RSS for the whole fetch).
+- **Schema difference:** expired instruments on the history host have no `instrument_type`, and their
+  `quote_currency` is the base coin (`BTC`); the premium currency is `counter_currency` (`USDC`) on both
+  hosts. qkt therefore judges "linear in the root's currency" by `settlement_currency` and
+  `counter_currency` (type linear or absent).
+
+## 6. Trade history density (2026-10-01 probe)
+
+- `get_last_trades_by_currency_and_time` accepts `count` well above 1000 (a whole 2024-09-26 day came
+  back at `count=5000`: 1,303 USDC option trades, `has_more: false`); `has_more` signals paging.
+- BTC_USDC options did not trade in September 2024 (the series starts in 2025, matching the catalog).
+- On 2026-09-01 BTC_USDC saw **274 trades across 112 instruments** — a mark per instrument only when
+  it trades. Snapshots built from trades are therefore **sparse**: most contracts' last mark is hours
+  old at any boundary.
+- Consequence for the design: every snapshot row carries the age of its mark (time since that
+  instrument's last trade), and the option venue refuses to fill against a mark older than a
+  configured maximum instead of trading on a stale or invented price. Denser history needs a live
+  snapshotter of `public/get_book_summary_by_currency` (marks, bid/ask and IV for every contract), the
+  spec §6.3 path, which builds history going forward.
+
+## 7. First real chain fetches (2026-10-01)
+
+- `qkt fetch DERIBIT:BTC_USDC --chains --from 2026-09-24 --to 2026-09-30` built 168 hourly
+  snapshots from 2,158 trades in 14.6 s (192 MB peak RSS), with no uncatalogued contracts. Both
+  bounds of `get_last_trades_by_currency_and_time` are inclusive, and the history host is current
+  to within about a minute.
+- An independent reconstruction straight from the API (Python, no qkt code) of the 2026-09-30
+  12:00Z snapshot matched qkt's file exactly: the same 109 contracts, with identical marks, ages
+  and index prices. The median mark age at that instant was 7 hours.
+- `--chains --live` snapshots of `get_book_summary_by_currency` held all 614 live contracts. 96
+  rows had no bid; none had no ask, and none was crossed. Row timestamps within one response
+  spread over about 50 ms.
+- **The venue's mark can lie outside its own book.** In 21 of 1,228 live rows the mark was below
+  the bid or above the ask. The option fill model (43.3) must therefore price against the book side
+  when one exists, and use the mark only with a declared spread model when there is no book.
+
+## 8. Option fees (for the 43.3 fee model)
+
+- `public/get_instrument` for `BTC_USDC-25DEC26-92000-C` (2026-10-01): `maker_commission` and
+  `taker_commission` are both `0.0003`, `block_trade_commission` is `0.0003`, `contract_size` is `1`.
+- Deribit's support articles "Linear USDC Options" and "Fees" (read through search-engine excerpts;
+  the pages themselves answer a Cloudflare challenge to scripts): the trading fee is 0.03% of the
+  underlying index price per contract, **capped at 12.5% of the option's price**. The delivery fee is
+  0.015% and is likewise never more than 12.5% of the option's value. In-the-money linear options
+  are first delivered into a future that cash-settles at the same delivery price, which pays no
+  second delivery fee. Economically, that is cash settlement at the delivery price, less one
+  delivery fee.

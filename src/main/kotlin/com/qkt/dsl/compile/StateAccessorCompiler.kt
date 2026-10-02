@@ -114,6 +114,12 @@ internal object StateAccessorCompiler {
                     val count = ctx.strategyContext.openOrders.entryCountFor(symbol)
                     Value.Num(BigDecimal.valueOf(count.toLong()))
                 }
+            in STRUCTURE_SOURCES ->
+                throw CompileError(
+                    "POSITION.${ref.key}.${accessorName(
+                        ref.source,
+                    )} is a structure field; ${ref.key} opens no structure",
+                )
             else -> throw IllegalArgumentException("StateAccessor source ${ref.source} is not supported")
         }
 }

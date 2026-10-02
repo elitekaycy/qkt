@@ -5,6 +5,7 @@ import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.OrderTypeAst
 import com.qkt.dsl.ast.ScheduleTrigger
 import com.qkt.dsl.ast.SizingAst
+import com.qkt.dsl.compile.CHAIN_ACTIONS
 import com.qkt.dsl.stdlib.FuncRegistry
 import com.qkt.dsl.stdlib.IndicatorRegistry
 import com.qkt.execution.OrderRequest
@@ -107,7 +108,8 @@ class CapabilityCatalogTest {
         assertCategory("indicators", IndicatorRegistry.names())
         assertCategory("numericFunctions", FuncRegistry.names())
         assertCategory("expressions", permittedNames(ExprAst::class.java))
-        assertCategory("actions", permittedNames(ActionAst::class.java))
+        assertCategory("actions", permittedNames(ActionAst::class.java) - CHAIN_ACTIONS)
+        assertCategory("optionStructures", CHAIN_ACTIONS)
         assertCategory("sizing", permittedNames(SizingAst::class.java))
         assertCategory("dslOrderTypes", permittedNames(OrderTypeAst::class.java))
         assertCategory(

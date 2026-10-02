@@ -1,7 +1,6 @@
 package com.qkt.cli
 
 import com.qkt.backtest.BacktestResult
-import com.qkt.backtest.BrokerKind
 import com.qkt.backtest.report.BacktestReportWriter
 import com.qkt.dsl.parse.Dsl
 import com.qkt.dsl.parse.ParseResult
@@ -10,6 +9,8 @@ import com.qkt.evidence.AccountingEvidence
 import com.qkt.evidence.DatasetEvidence
 import com.qkt.evidence.EvidenceEnvelope
 import com.qkt.evidence.EvidenceHasher
+import com.qkt.instrument.futuresSymbols
+import com.qkt.instrument.optionSymbols
 import com.qkt.marketdata.store.DataFetcher
 import java.nio.file.Files
 import java.nio.file.Path
@@ -97,7 +98,7 @@ class BacktestCommand(
                     BacktestMetricsWindows.run(ctx.backtest(overrides), args, ctx.from, ctx.to),
                     path,
                     parsedFile,
-                    ctx.executionConfig,
+                    ctx.executionEvidence(),
                     ctx.datasetEvidence,
                 )
             args.option("report-dir")?.let { reportDir ->
@@ -105,15 +106,14 @@ class BacktestCommand(
                 Files.createDirectories(dir)
                 BacktestReportWriter(dir).write(result)
             }
-            ReportPrinter.print(result, format, System.out, ctx.brokerKind)
-            if (ctx.brokerKind == BrokerKind.PAPER) {
-                System.err.println(
-                    "qkt: note: paper broker fills at mid with no spread/slippage — results are optimistic. " +
-                        "Use --broker mt5-sim and set commissionPerLot + slippagePoints in instruments.yaml " +
-                        "for cost-realistic backtests.",
-                )
-            }
+            val futures = ctx.instruments.futuresSymbols(ctx.symbols)
+            val options = ctx.instruments.optionSymbols(ctx.symbols)
+            ReportPrinter.print(result, format, System.out, ctx.brokerKind, futures, options)
+            printExecutionNotes(ctx.symbols, futures, options, ctx.brokerKind)
             ExitCodes.SUCCESS
+        } catch (e: com.qkt.dsl.compile.CompileError) {
+            System.err.println("qkt: error: ${e.message}")
+            ExitCodes.USER_ERROR
         } catch (e: IllegalStateException) {
             System.err.println("qkt: error: ${e.message}")
             if (args.flag("debug")) e.printStackTrace(System.err)
@@ -129,7 +129,7 @@ class BacktestCommand(
         result: BacktestResult,
         path: Path,
         parsedFile: ParsedFile,
-        executionConfig: com.qkt.backtest.ExecutionSimulationConfig,
+        execution: com.qkt.evidence.ExecutionEvidence,
         datasetEvidence: DatasetEvidence,
     ): BacktestResult =
         result.copy(
@@ -143,7 +143,7 @@ class BacktestCommand(
                     importedFileHashes = importedHashes(path, parsedFile),
                     configHash = configHash(),
                     dataset = datasetEvidence,
-                    execution = executionConfig.toEvidence(),
+                    execution = execution,
                     accounting = accountingEvidence(result.accounting),
                 ),
         )

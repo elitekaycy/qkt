@@ -1,5 +1,6 @@
 package com.qkt.connector.mt5.marketdata
 
+import com.qkt.common.Money
 import com.qkt.connector.mt5.MT5ServerTimeZone
 import com.qkt.connector.mt5.mt5RequestBuilder
 import com.qkt.connector.mt5.unwrapMT5Data
@@ -90,6 +91,8 @@ class Mt5DataClient(
         tfMs: Long,
         midPoint: BigDecimal?,
     ): Candle {
+        // Prices at the engine's money scale, as live ticks are (Mt5TickFeedSource): a bar read from history
+        // and the same bar built from ticks then print and compare alike.
         val halfSpread =
             midPoint?.let { point ->
                 val spread =
@@ -102,21 +105,25 @@ class Mt5DataClient(
                 .jsonPrimitive.content
                 .toBigDecimal()
                 .add(halfSpread)
+                .setScale(Money.SCALE, Money.ROUNDING)
         val high =
             row["high"]!!
                 .jsonPrimitive.content
                 .toBigDecimal()
                 .add(halfSpread)
+                .setScale(Money.SCALE, Money.ROUNDING)
         val low =
             row["low"]!!
                 .jsonPrimitive.content
                 .toBigDecimal()
                 .add(halfSpread)
+                .setScale(Money.SCALE, Money.ROUNDING)
         val close =
             row["close"]!!
                 .jsonPrimitive.content
                 .toBigDecimal()
                 .add(halfSpread)
+                .setScale(Money.SCALE, Money.ROUNDING)
         val volume =
             (row["tick_volume"] ?: row["volume"] ?: row["real_volume"])
                 ?.jsonPrimitive

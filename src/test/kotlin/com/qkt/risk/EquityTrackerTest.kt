@@ -164,4 +164,19 @@ class EquityTrackerTest {
         assertThat(tracker.peakEquityFor("A")).isEqualByComparingTo("10000")
         assertThat(tracker.currentEquityFor("A")).isEqualByComparingTo("9700")
     }
+
+    @Test
+    fun `live equity reads the books now, without waiting for the next update`() {
+        val strategyPositions = StrategyPositionTracker()
+        val prices = MarketPriceTracker()
+        val pnl = PnLCalculator(strategyPositions.account, prices)
+        val tracker = EquityTracker(pnl, StrategyPnL(StrategyPositionTracker(), prices), Money.of("10000"))
+        tracker.update()
+
+        IntentBook().apply(strategyPositions, fill("A", "BTCUSDT", Side.BUY, "1", "80000"))
+        prices.update("BTCUSDT", Money.of("80500"))
+
+        assertThat(tracker.currentEquity()).isEqualByComparingTo("10000")
+        assertThat(tracker.liveEquity()).isEqualByComparingTo("10500")
+    }
 }

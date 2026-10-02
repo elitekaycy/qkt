@@ -1,5 +1,8 @@
 <configuration>
-    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+    <!-- Logs go to stderr: stdout carries command output, such as JSON results and the qkt lsp protocol.
+         The test JVM sets QKT_CONSOLE_TARGET to System.out, where test reports do not keep them. -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <target>${QKT_CONSOLE_TARGET:-System.err}</target>
         <encoder>
             <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level [%X{strategy:-main}] %logger{36} - %msg%n</pattern>
         </encoder>
@@ -24,7 +27,7 @@
     </appender>
 
     <root level="INFO">
-        <appender-ref ref="STDOUT"/>
+        <appender-ref ref="CONSOLE"/>
         <appender-ref ref="STRATEGY_FILE"/>
     </root>
 </configuration>

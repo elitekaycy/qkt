@@ -7,7 +7,7 @@ import java.math.BigDecimal
 /**
  * Compiles `<stream>.<field>`: a candle field (close, high, bid, timestamp, ...) read from the
  * current bar or the candle hub, or an instrument-meta field (tick_size, contract_size, ...)
- * read from the instrument catalog.
+ * read from the instrument catalog, or a futures contract field ([FuturesFieldCompiler]).
  */
 internal object StreamFieldCompiler {
     private val candleFields: Set<String> = DslVocabulary.candleFields.toSet()
@@ -17,7 +17,11 @@ internal object StreamFieldCompiler {
         require(ref.field in candleFields || ref.field in metaFields) {
             "Unknown stream field for ${ref.stream}: ${ref.field}"
         }
-        return if (ref.field in metaFields) compileMetaField(ref) else compileCandleField(ref)
+        return when (ref.field) {
+            in metaFields -> compileMetaField(ref)
+            in FuturesFieldCompiler.fields -> FuturesFieldCompiler.compile(ref)
+            else -> compileCandleField(ref)
+        }
     }
 
     private fun compileCandleField(ref: StreamFieldRef): CompiledExpr =
@@ -70,6 +74,8 @@ internal object StreamFieldCompiler {
                     "volume_min" -> meta.volumeMin
                     "swap_long_points" -> meta.swapLongPoints
                     "swap_short_points" -> meta.swapShortPoints
+                    "tick_value" -> meta.pointSize.multiply(meta.contractSize)
+                    "multiplier" -> meta.contractSize
                     else -> error("unreachable: ${ref.field}")
                 }
             Value.Num(value)

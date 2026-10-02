@@ -29,11 +29,9 @@ class AccountDirectory private constructor(
     /** Each account's order-entry factory, keyed by lower-case account name. */
     fun orderEntry(): Map<String, BrokerFactory> = accounts.associate { it.config.name.lowercase() to it.orderEntry }
 
-    /** One prefix route per account that supplies market data, in config order. */
+    /** One route per account that supplies market data ([TradingAccount.marketDataPattern]), in config order. */
     fun marketDataRoutes(): List<Pair<SymbolPattern, MarketSource>> =
-        accounts.mapNotNull { account ->
-            account.marketData?.let { SymbolPattern.prefix(account.symbolPrefix) to it }
-        }
+        accounts.mapNotNull { account -> account.marketData?.let { account.marketDataPattern to it } }
 
     /** The trading hours governing [qktSymbol] on its account, or null when no account serves it. */
     fun tradingHoursFor(qktSymbol: String): TradingCalendar? =

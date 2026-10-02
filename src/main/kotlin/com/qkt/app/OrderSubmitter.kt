@@ -4,6 +4,7 @@ import com.qkt.broker.PositionAccountingMode
 import com.qkt.bus.EventBus
 import com.qkt.common.Clock
 import com.qkt.common.IdGenerator
+import com.qkt.common.Side
 import com.qkt.dsl.compile.DslCompiledStrategy
 import com.qkt.events.DecisionOrderLinkedEvent
 import com.qkt.events.OrderEvent
@@ -11,6 +12,7 @@ import com.qkt.events.RiskRejectedEvent
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.scaleQuantity
 import com.qkt.execution.toOrderRequest
+import com.qkt.execution.withStrategyId
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.positions.PositionProvider
 import com.qkt.positions.StrategyPositionTracker
@@ -20,6 +22,7 @@ import com.qkt.risk.isRiskReducing
 import com.qkt.strategy.Signal
 import com.qkt.strategy.Strategy
 import com.qkt.strategy.StrategyContext
+import com.qkt.strategy.StructureState
 import java.math.BigDecimal
 import org.slf4j.LoggerFactory
 
@@ -96,6 +99,58 @@ internal class OrderSubmitter(
             is Decision.Reject -> {
                 ctx.submissions.recordSuppressed()
                 bus.publish(RiskRejectedEvent(request, decision.reason))
+            }
+        }
+    }
+
+    /**
+     * Submit an option structure's legs as one position: each leg is book-scaled (any suppressed leg
+     * suppresses the group), the risk engine judges them together ([RiskEngine.approveGroup]), and then
+     * either every leg is published, buys before sells, or every leg is refused. A leg the venue refuses
+     * as it arrives stops the legs behind it, so a short never leaves without its wing. Publication
+     * order is not fill order: each leg fills on its own quotes, and a leg that fails is unwound by the
+     * [StructureCoordinator]. The rule that fired counts one accepted or suppressed submission.
+     */
+    fun submitGroup(
+        strategyId: String,
+        strategy: Strategy,
+        ctx: StrategyContext,
+        group: Signal.SubmitGroup,
+    ) {
+        val built = group.requests.map { it.withStrategyId(strategyId) }
+        // One decision covers every leg: the ledger maps all leg ids to the firing rule in one call.
+        (strategy as? DslCompiledStrategy)?.onOrderSubmitted(group, built.first().id)?.let { link ->
+            for (leg in built) {
+                bus.publish(
+                    DecisionOrderLinkedEvent(strategyId, link.decisionId, link.ruleId, link.signalIndex, leg.id),
+                )
+            }
+        }
+        val scaled = built.map { applyBookScale(it) }
+        if (scaled.any { it == null }) {
+            ctx.submissions.recordSuppressed()
+            built.forEach { bus.publish(RiskRejectedEvent(it, "book de-risk: new risk suppressed")) }
+            return
+        }
+        val legs = scaled.filterNotNull()
+        when (val decision = riskEngine.approveGroup(legs)) {
+            is Decision.Approve -> {
+                ctx.submissions.recordAccepted()
+                val ordered = legs.sortedBy { if (it.side == Side.BUY) 0 else 1 }
+                for ((index, leg) in ordered.withIndex()) {
+                    // A leg the venue refused on the spot unwinds the structure: the rest must not open alone.
+                    if (group.closes == null && ctx.structures.live(group.alias)?.state == StructureState.UNWINDING) {
+                        val reason = "not sent: an earlier leg of structure ${group.alias} was refused"
+                        ordered.drop(index).forEach { bus.publish(RiskRejectedEvent(it, reason)) }
+                        break
+                    }
+                    logSubmitContext(leg)
+                    bus.publish(OrderEvent(LegIntentPlanner.plan(leg, positionMode(leg.symbol))))
+                }
+            }
+            is Decision.Reject -> {
+                ctx.submissions.recordSuppressed()
+                legs.forEach { bus.publish(RiskRejectedEvent(it, decision.reason)) }
             }
         }
     }

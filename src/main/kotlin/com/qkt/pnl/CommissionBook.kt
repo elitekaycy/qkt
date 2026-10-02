@@ -23,15 +23,18 @@ class CommissionBook(
     private var total: BigDecimal = Money.ZERO
 
     /**
-     * Commission for filling [quantity] lots of [symbol] under [strategyId]: tallies it and
-     * returns the amount so the caller can deduct it from that fill's realized PnL.
+     * Commission for filling [quantity] lots of [symbol] under [strategyId], at [price] when the
+     * caller knows it (price-based fees need it): tallies it and returns the amount so the caller
+     * can deduct it from that fill's realized PnL.
      */
     fun charge(
         strategyId: String,
         symbol: String,
         quantity: BigDecimal,
+        price: BigDecimal? = null,
     ): BigDecimal {
-        val cost = model.cost(symbol, quantity).setScale(Money.SCALE, Money.ROUNDING)
+        val raw = if (price == null) model.cost(symbol, quantity) else model.cost(symbol, quantity, price)
+        val cost = raw.setScale(Money.SCALE, Money.ROUNDING)
         if (cost.signum() == 0) return Money.ZERO
         total = total.add(cost)
         if (strategyId.isNotBlank()) {

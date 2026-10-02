@@ -1,8 +1,10 @@
 package com.qkt.backtest
 
+import com.qkt.candles.TimeWindow
 import com.qkt.common.Money
 import com.qkt.instrument.InstrumentMeta
 import com.qkt.instrument.InstrumentRegistry
+import com.qkt.marketdata.HistoricalTickFeed
 import com.qkt.marketdata.Tick
 import com.qkt.risk.rules.MaxDailyLoss
 import com.qkt.strategy.Signal
@@ -96,6 +98,35 @@ class SwapFinancingBacktestTest {
             .containsEntry(LocalDate.parse("2026-07-08"), BigDecimal("-3.00000000"))
         assertThat(result.perStrategy.getValue("s").swapPaid).isEqualByComparingTo("4")
         assertThat(result.perStrategy.getValue("s").realizedTotal).isEqualByComparingTo("-4")
+    }
+
+    @Test
+    fun `a rollover after the last tick but inside the replay is still charged`() {
+        // The market closes before the rollover: no tick follows it, yet the position is held through it.
+        // With hourly bars the final flush closes the bar on the rollover instant itself.
+        val start = timestamp("2026-07-07T20:00:00Z")
+        for (window in listOf(null, TimeWindow.ONE_HOUR)) {
+            val result =
+                Backtest(
+                    strategies = listOf("s" to buyAndHold()),
+                    feed =
+                        HistoricalTickFeed(
+                            listOf(
+                                Tick(symbol, Money.of("100"), start),
+                                Tick(symbol, Money.of("100"), start + 1_800_000L),
+                            ),
+                        ),
+                    candleWindow = window,
+                    initialTimestamp = start,
+                    replayEndTimestamp = timestamp("2026-07-08T00:00:00Z"),
+                    startingBalance = BigDecimal("10000"),
+                    instruments = registry(longPoints = "-1"),
+                    symbols = listOf(symbol),
+                ).run()
+
+            assertThat(result.global.swapPaid).isEqualByComparingTo("1")
+            assertThat(result.global.realizedTotal).isEqualByComparingTo("-1")
+        }
     }
 
     @Test

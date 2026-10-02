@@ -100,6 +100,10 @@ def validate(
     trading_days = require_int(document.get("tradingDays"), "tradingDays")
     if trading_days < 0:
         fail("tradingDays must be non-negative")
+    if duration_hours < min_continuous_hours:
+        fail(f"run lasted {duration_hours:.2f}h, below the required {min_continuous_hours}h")
+    if trading_days < min_trading_days:
+        fail(f"tradingDays {trading_days} is below the required {min_trading_days}")
     metrics = document.get("metrics")
     if not isinstance(metrics, dict):
         fail("metrics must be an object")

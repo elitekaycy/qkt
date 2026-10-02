@@ -156,7 +156,9 @@ class CompletionProviderTest {
     @Test
     fun `stream basket and series aliases offer their fields plus the candle and tick selectors`() {
         assertThat(after("WHEN aud.").map { it.label }).contains("close", "tick_size", "candle", "tick")
-        assertThat(after("WHEN anti.").map { it.label }).contains("close", "candle", "tick").doesNotContain("tick_size")
+        assertThat(after("WHEN anti.").map { it.label })
+            .contains("close", "candle", "tick")
+            .doesNotContain("tick_size", "contract", "dte", "days_to_roll")
         assertThat(after("WHEN eq.").map { it.label }).contains("close", "candle").doesNotContain("tick_size")
     }
 

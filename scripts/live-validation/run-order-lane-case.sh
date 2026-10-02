@@ -186,6 +186,8 @@ sleep "$budget"
 # deployed (stopping removes it); anything still open is then flattened and counted as a problem.
 "$cli" status "$strategy" --state-dir "$out/state" > "$out/evidence/status-final.json" 2>/dev/null || true
 open_at_budget="$(owned)"
+# Fills logged before this line are the strategy's; the runner's flatten comes after it.
+strategy_log_lines="$(wc -l < "$out/daemon.log")"
 "$cli" stop "$strategy" --flatten --state-dir "$out/state" --json > "$out/evidence/stop.json" 2>&1 || true
 for _ in $(seq 1 30); do [ "$(owned)" = 0 ] && [ "$(pending)" = 0 ] && break; sleep 1; done
 trap on_unexpected_exit EXIT
@@ -221,8 +223,15 @@ unknown="$({ grep -c 'outcome UNKNOWN' "$out/daemon.log" || true; } | head -n 1)
 resolved="$({ grep -cE 'resolved as [A-Z_]+' "$out/daemon.log" || true; } | head -n 1)"
 [ "$unknown" -le "$resolved" ] || problems+=("$unknown unknown order outcome(s), only $resolved resolved")
 
-"$cli" bot history --broker exness --since "$started_ms" --config "$out/qkt.config.yaml" --json \
-    > "$out/evidence/history.json" 2>/dev/null || echo '[]' > "$out/evidence/history.json"
+# Missing evidence fails the case: an empty history and a missing status would otherwise both read
+# as zero and agree.
+if ! "$cli" bot history --broker exness --since "$started_ms" --config "$out/qkt.config.yaml" --json \
+    > "$out/evidence/history.json" 2>/dev/null; then
+    problems+=("venue deal history could not be read")
+    echo '[]' > "$out/evidence/history.json"
+fi
+jq -e 'has("realized")' "$out/evidence/status-final.json" > /dev/null 2>&1 ||
+    problems+=("the final strategy status carries no realized P&L")
 # Venue history is account-wide and a closing deal carries no comment, so ownership goes by
 # position ticket: every ticket whose opening deal carries this strategy's order comment (the
 # venue truncates comments, hence the two-way prefix match), then every deal on those tickets.
@@ -244,7 +253,9 @@ awk -v e="${engine_realized:-0}" -v d="$deal_net" -v n="$closing_deals" 'BEGIN {
     problems+=("engine realized $engine_realized differs from venue deal net $deal_net by more than one cent per closing deal ($closing_deals)")
 
 fills() { { grep -E 'order filled ' "$1" || true; } | sed -nE 's/.*side=([A-Z]+) qty=([0-9.]+).*/\1 \2/p'; }
-fills "$out/daemon.log" > "$out/evidence/live-fills.txt"
+head -n "$strategy_log_lines" "$out/daemon.log" | fills /dev/stdin > "$out/evidence/live-fills.txt"
+{ grep -E 'order filled ' "$out/daemon.log" || true; } | sed -nE 's/.*side=([A-Z]+) qty=([0-9.]+) price=([0-9.]+).*/\1 \2 \3/p' \
+    > "$out/evidence/live-fill-prices.txt"
 live_fills="$(wc -l < "$out/evidence/live-fills.txt")"
 [ "$live_fills" -gt 0 ] || problems+=("the case placed no order that filled")
 
@@ -260,10 +271,10 @@ if "$cli" golden capture --session "$strategy" --state-dir "$out/state" --out "$
         --config "$out/qkt.config.yaml" --instruments "$out/instruments.yaml" --broker mt5-sim --json > "$out/replay.log" 2>&1 || true
     fills "$out/replay.log" > "$out/evidence/replay-fills.txt"
     replay_fills="$(wc -l < "$out/evidence/replay-fills.txt")"
-    # The final flatten is the runner's, not the strategy's, so the replay may hold the last
-    # position open: the live sequence must START with the replay's, fill for fill.
-    head -n "$replay_fills" "$out/evidence/live-fills.txt" | cmp -s - "$out/evidence/replay-fills.txt" ||
-        problems+=("live fills do not begin with the replay's fill sequence")
+    # The runner's flatten is excluded above, so the strategy's live fills and the replay's must be
+    # the same sequence, fill for fill: a replay that stops short is a divergence, not a pass.
+    cmp -s "$out/evidence/live-fills.txt" "$out/evidence/replay-fills.txt" ||
+        problems+=("live fills ($live_fills) and replay fills ($replay_fills) are not the same sequence")
     [ "$replay_fills" -gt 0 ] || problems+=("the replay filled nothing")
 else
     # The reason is in whichever log exists: the capture's when it refused, else the materializer's.

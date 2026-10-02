@@ -15,21 +15,22 @@ import java.math.BigDecimal
 /** Evaluates an order quantity from the current strategy state and resolved entry geometry. */
 fun interface CompiledSize {
     /**
-     * Returns the broker quantity. [runtimeStopDistance] is supplied by bracket actions whose
-     * stop price depends on runtime expressions; non-risk sizing ignores it.
+     * Returns the broker quantity, or null when the sizing expression is undefined or not positive:
+     * the order is then skipped, never sent at a default size. [runtimeStopDistance] is supplied by
+     * bracket actions whose stop price depends on runtime expressions; non-risk sizing ignores it.
      */
     fun evaluate(
         ec: EvalContext,
         entryPrice: BigDecimal,
         runtimeStopDistance: BigDecimal?,
-    ): BigDecimal
+    ): BigDecimal?
 }
 
 /** Evaluates sizing where no runtime-resolved stop distance is available. */
 fun CompiledSize.evaluate(
     ec: EvalContext,
     entryPrice: BigDecimal,
-): BigDecimal = evaluate(ec, entryPrice, runtimeStopDistance = null)
+): BigDecimal? = evaluate(ec, entryPrice, runtimeStopDistance = null)
 
 /** Compiles DSL sizing expressions into deterministic runtime quantity evaluators. */
 class SizingCompiler(
@@ -51,16 +52,27 @@ class SizingCompiler(
         stopDistance: BigDecimal?,
         streamAlias: String,
         runtimeStopDistanceAvailable: Boolean = false,
+    ): CompiledSize {
+        val size = compileRaw(sizing, stopDistance, streamAlias, runtimeStopDistanceAvailable)
+        return CompiledSize { ec, entry, stop -> size.evaluate(ec, entry, stop)?.takeIf { it.signum() > 0 } }
+    }
+
+    /** Like [compile] but keeps a zero or negative result (a RESIZE target); null only when undefined. */
+    internal fun compileRaw(
+        sizing: SizingAst,
+        stopDistance: BigDecimal?,
+        streamAlias: String,
+        runtimeStopDistanceAvailable: Boolean = false,
     ): CompiledSize =
         when (sizing) {
             is SizeQty -> {
                 val e = exprCompiler.compile(sizing.expr)
-                CompiledSize { ec, _, _ -> (e.evaluate(ec) as Value.Num).v }
+                CompiledSize { ec, _, _ -> (e.evaluate(ec) as? Value.Num)?.v ?: return@CompiledSize null }
             }
             is SizeNotional -> {
                 val e = exprCompiler.compile(sizing.usd)
                 CompiledSize { ec, entry, _ ->
-                    val usd = (e.evaluate(ec) as Value.Num).v
+                    val usd = (e.evaluate(ec) as? Value.Num)?.v ?: return@CompiledSize null
                     usd.divide(accountValuePerLot(ec, streamAlias, entry, entry), Money.CONTEXT)
                 }
             }
@@ -71,7 +83,7 @@ class SizingCompiler(
                 }
                 val e = exprCompiler.compile(sizing.usd)
                 CompiledSize { ec, entry, runtimeStopDistance ->
-                    val amount = (e.evaluate(ec) as Value.Num).v
+                    val amount = (e.evaluate(ec) as? Value.Num)?.v ?: return@CompiledSize null
                     val resolvedStopDistance = resolveStopDistance(staticStopDistance, runtimeStopDistance)
                     amount.divide(accountValuePerLot(ec, streamAlias, resolvedStopDistance, entry), Money.CONTEXT)
                 }
@@ -91,7 +103,7 @@ class SizingCompiler(
             is SizePctEquity -> {
                 val e = exprCompiler.compile(sizing.frac)
                 CompiledSize { ec, entry, _ ->
-                    val frac = (e.evaluate(ec) as Value.Num).v
+                    val frac = (e.evaluate(ec) as? Value.Num)?.v ?: return@CompiledSize null
                     val equity = ec.strategyContext.pnl.equity()
                     equity
                         .multiply(frac, Money.CONTEXT)
@@ -101,7 +113,7 @@ class SizingCompiler(
             is SizePctBalance -> {
                 val e = exprCompiler.compile(sizing.frac)
                 CompiledSize { ec, entry, _ ->
-                    val frac = (e.evaluate(ec) as Value.Num).v
+                    val frac = (e.evaluate(ec) as? Value.Num)?.v ?: return@CompiledSize null
                     val balance = ec.strategyContext.pnl.balance()
                     balance
                         .multiply(frac, Money.CONTEXT)
@@ -115,7 +127,7 @@ class SizingCompiler(
                 }
                 val e = exprCompiler.compile(sizing.frac)
                 CompiledSize { ec, entry, runtimeStopDistance ->
-                    val frac = (e.evaluate(ec) as Value.Num).v
+                    val frac = (e.evaluate(ec) as? Value.Num)?.v ?: return@CompiledSize null
                     val equity = ec.strategyContext.pnl.equity()
                     val resolvedStopDistance = resolveStopDistance(staticStopDistance, runtimeStopDistance)
                     equity
@@ -131,7 +143,7 @@ class SizingCompiler(
                 }
                 val e = exprCompiler.compile(sizing.frac)
                 CompiledSize { ec, entry, runtimeStopDistance ->
-                    val frac = (e.evaluate(ec) as Value.Num).v
+                    val frac = (e.evaluate(ec) as? Value.Num)?.v ?: return@CompiledSize null
                     val book =
                         ec.strategyContext.book
                             ?: error(

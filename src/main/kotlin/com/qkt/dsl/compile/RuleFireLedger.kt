@@ -46,6 +46,9 @@ internal class RuleFireLedger(
         if (signal is Signal.Submit) {
             correlationIds(signal.request).forEach { ruleByOrderId[it] = cause.rule }
         }
+        if (signal is Signal.SubmitGroup) {
+            signal.requests.forEach { ruleByOrderId[it.id] = cause.rule }
+        }
         return DecisionOrderLink(
             decisionId = cause.decisionId,
             ruleId = cause.rule.ruleId,

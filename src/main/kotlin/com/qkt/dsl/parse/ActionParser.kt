@@ -85,6 +85,7 @@ internal class ActionParser(
             TokenKind.LOG -> parseLogAction()
             TokenKind.OCO_ENTRY -> parseOcoEntry()
             TokenKind.LATCH -> latchParser.parseLatch()
+            TokenKind.OPEN -> StructureParser(cursor, sizingParser).parseOpenStructure()
             else -> cursor.error("expected action keyword, got '${cursor.peek().lexeme}'")
         }
 

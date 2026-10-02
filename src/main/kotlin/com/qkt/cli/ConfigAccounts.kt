@@ -5,6 +5,7 @@ import com.qkt.connectivity.AccountConfig
 import com.qkt.connectivity.AccountDirectory
 import com.qkt.connectivity.ConnectorContext
 import com.qkt.connectivity.ConnectorRegistry
+import com.qkt.instrument.InstrumentRegistry
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.marketdata.source.SymbolPattern
 import java.nio.file.Path
@@ -29,11 +30,12 @@ fun Config.accountConfigs(): List<AccountConfig> =
 /**
  * Opens every configured account through the installed connectors. [stateRoot] is where
  * connectors keep files (null for commands that keep none); [strategiesTrading] answers which
- * deployed strategies trade an account (empty outside the daemon). Throws on a missing or
- * unknown `type`, or on an entry its connector rejects.
+ * deployed strategies trade an account (empty outside the daemon); [instruments] is the registry
+ * the sessions trade with. Throws on a missing or unknown `type`, or on an entry its connector rejects.
  */
 internal fun Config.openAccounts(
     stateRoot: Path? = null,
+    instruments: InstrumentRegistry? = null,
     strategiesTrading: (accountName: String) -> List<String> = { emptyList() },
 ): AccountDirectory =
     AccountDirectory.open(
@@ -44,6 +46,7 @@ internal fun Config.openAccounts(
             env = System.getenv(),
             clock = SystemClock(),
             strategiesTrading = strategiesTrading,
+            instruments = instruments,
         ),
     )
 

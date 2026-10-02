@@ -9,24 +9,26 @@ import com.qkt.broker.PaperBroker
 import com.qkt.bus.EventBus
 import com.qkt.common.FixedClock
 import com.qkt.common.TradingCalendar
-import com.qkt.instrument.InstrumentRegistry
-import com.qkt.marketdata.MarketPriceTracker
+import com.qkt.derivatives.options.chain.ChainAnalyticsSymbol
+import com.qkt.derivatives.options.chain.OptionRootSymbol
 import com.qkt.marketdata.source.SymbolPattern
 
 /**
- * The simulated broker a replay fills against: one [ExecutionSimulationConfig.brokerKind] broker, or,
- * when strategies declare broker-qualified streams, a [CompositeBroker] with one such broker per
- * route in [brokerSymbols] iteration order. Built once per replay.
+ * The simulated broker a replay of [symbols] fills against: one [ExecutionSimulationConfig.brokerKind]
+ * broker, or, when strategies declare broker-qualified streams, a [CompositeBroker] with one such
+ * broker per route in [brokerSymbols] iteration order. Futures symbols always fill on the exchange
+ * stack instead ([replayFuturesRoutes]), whatever the broker kind; a run without them gets exactly
+ * the broker it got before futures existed. Built once per replay.
  */
 internal fun replayBroker(
     executionConfig: ExecutionSimulationConfig,
     bus: EventBus,
     clock: FixedClock,
-    priceTracker: MarketPriceTracker,
-    instruments: InstrumentRegistry,
-    barFills: Boolean,
+    books: ReplayBooks,
+    barFills: com.qkt.backtest.BarFills,
     calendar: TradingCalendar,
     brokerSymbols: Map<String, Set<String>>,
+    symbols: Collection<String>,
 ): Broker {
     val brokerFactory: () -> Broker = {
         when (executionConfig.brokerKind) {
@@ -34,9 +36,9 @@ internal fun replayBroker(
                 PaperBroker(
                     bus,
                     clock,
-                    priceTracker,
-                    instruments,
-                    fillAtTriggerPrice = barFills,
+                    books.priceTracker,
+                    books.instruments,
+                    fillAtTriggerPrice = barFills::at,
                     calendar = calendar,
                     positionMode = executionConfig.positionMode,
                 )
@@ -44,8 +46,8 @@ internal fun replayBroker(
                 MT5BrokerSimulator(
                     bus,
                     clock,
-                    priceTracker,
-                    instruments,
+                    books.priceTracker,
+                    books.instruments,
                     slippage = executionConfig.slippageModel(),
                     latencyMs = executionConfig.latencyMs,
                     stopLatencyMs = executionConfig.stopLatencyMs,
@@ -58,16 +60,39 @@ internal fun replayBroker(
                 )
         }
     }
+    val futures =
+        replayFuturesRoutes(executionConfig, bus, clock, books, barFills, calendar, symbols) +
+            replayOptionRoutes(bus, clock, books, calendar, symbols)
+    if (futures.routes.isEmpty()) {
+        return if (brokerSymbols.isEmpty()) {
+            brokerFactory()
+        } else {
+            CompositeBroker(
+                routesOf(brokerSymbols, brokerFactory),
+                bus = bus,
+            )
+        }
+    }
+    // Option root feeds and chain analytics are read-only streams: they never need a broker.
+    val readOnly = { s: String -> s.startsWith(OptionRootSymbol.PREFIX) || s.startsWith(ChainAnalyticsSymbol.PREFIX) }
+    val others = symbols.filterNot { it in futures.symbols || readOnly(it) }
     return if (brokerSymbols.isEmpty()) {
-        brokerFactory()
+        CompositeBroker(futures.routes, fallback = if (others.isEmpty()) null else brokerFactory(), bus = bus)
     } else {
-        CompositeBroker(
-            routes =
-                brokerSymbols.map { (_, syms) ->
-                    SymbolPattern
-                        .exactSet(syms.toSet()) to brokerFactory()
-                },
-            bus = bus,
-        )
+        val remaining =
+            brokerSymbols
+                .mapValues { (_, syms) ->
+                    syms.filterNot { it in futures.symbols || readOnly(it) }.toSet()
+                }.filterValues { it.isNotEmpty() }
+        CompositeBroker(futures.routes + routesOf(remaining, brokerFactory), bus = bus)
     }
 }
+
+private fun routesOf(
+    brokerSymbols: Map<String, Set<String>>,
+    brokerFactory: () -> Broker,
+): List<Pair<SymbolPattern, Broker>> =
+    brokerSymbols.map { (_, syms) ->
+        SymbolPattern.exactSet(syms.toSet()) to
+            brokerFactory()
+    }

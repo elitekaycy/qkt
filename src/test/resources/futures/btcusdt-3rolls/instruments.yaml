@@ -1,0 +1,10 @@
+futures:
+  - root: BINANCE_UM:BTCUSDT
+    currency: USDT
+    multiplier: 1
+    tickSize: 0.1
+    volumeStep: 0.001
+    volumeMin: 0.001
+    takerFeeRate: 0.0005
+    calendar: crypto
+    roll: { daysBeforeExpiry: 8, atUtc: "08:00", adjust: panama }

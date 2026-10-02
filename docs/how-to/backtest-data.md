@@ -106,14 +106,215 @@ aggregation.
 |---|---|---|
 | `EXNESS`, `ICMARKETS`, `FTMO`, `PEPPERSTONE`, … | MT5 gateway (per broker profile in `qkt.config.yaml`) | The profile's `gatewayUrl` must be reachable. `qkt brokers list` shows what's resolved. |
 | `BYBIT_SPOT` / `BYBIT_LINEAR` | `api.bybit.com /v5/market/kline` | Public kline, no auth. |
+| A `type: gateway` account (`DERIBIT`, …) | The venue gateway's `GET /v1/bars` | Contracts the gateway lists (futures, perpetuals); the entry's `api_key` must resolve. The bars live warmup reads, so a backtest and its live warmup see the same history. |
 | `BACKTEST` | (refused) | `BACKTEST` *is* the local store — nothing to fetch from. Use a real broker prefix. |
 
 Notes:
 
 - **One timeframe per run.** Want 1m and 5m? Run `qkt fetch` twice; the store keys by timeframe.
+- **Gateway contracts in a backtest.** Declare the contracts' root under `futures:` (its
+  `takerFeeRate`, and `perpetual:` for its perpetual) so they fill on the exchange simulator with the
+  venue's fees, and run `--position-mode netting` for a netting venue such as Deribit. `qkt fetch
+  DERIBIT:BTC_USDC --catalog --config qkt.config.yaml` writes the root's catalog from the account's
+  listing: every dated contract with its expiry, keeping contracts the gateway has stopped listing. A
+  gateway reports settlements only for contracts the account held, so a contract it never held has no
+  delivery price and a backtest holding it into expiry settles it at its last price. A root declared
+  under both `options:` and `futures:` gets both catalogs. A Deribit testnet perpetual and dated future round trip each reproduced the venue's
+  realized PnL to the last digit this way.
 - **Idempotent per day-file.** An existing day file is skipped without hitting the broker. To
   re-fetch a corrupt day, delete the file and re-run.
 - MT5 history APIs are broker-dependent — some throttle hard or serve only a limited window.
+- MT5 bars are bid prices with one spread per bar; `qkt fetch` shifts each bar to mid by half of its own
+  spread. A 5m bar fetched natively can therefore differ by a fraction of a spread from the same 5m
+  rolled up from fetched 1m bars. Fetch the finest timeframe you trade and let coarser streams roll up
+  from it, so every stream sees the same prices.
+
+## Scenario 2b — Futures contracts (Binance USDⓈ-M quarterlies, free)
+
+Dated futures are stored one contract at a time. `BINANCE_UM` reads Binance's free public archive
+(`data.binance.vision`), so no account or API key is needed.
+
+```bash
+# The root's contract list: every quarterly with its expiry and, once settled, its delivery price.
+qkt fetch BINANCE_UM:BTCUSDT --catalog
+
+# Bars for one contract, at the timeframe the strategy uses.
+qkt fetch BINANCE_UM:BTCUSDT_240927 --tf 15m --from 2024-06-01 --to 2024-09-27
+```
+
+The catalog lands in `contracts/BINANCE_UM/BTCUSDT.json`, the bars in
+`bars/BINANCE_UM/BTCUSDT_240927/15m/`. Declare the root under `futures:` in `instruments.yaml`
+so the backtest knows each contract's multiplier, tick and fees:
+
+```yaml
+futures:
+  - root: BINANCE_UM:BTCUSDT
+    currency: USDT
+    multiplier: 1
+    tickSize: 0.1
+    volumeStep: 0.001
+    volumeMin: 0.001
+    takerFeeRate: 0.0005
+    perpetual: BTCUSDT   # optional: the root's perpetual (BINANCE_UM:BTCUSDT), which needs no catalog
+```
+
+A day before a contract listed, or after it delivered, has no file and is recorded empty only after
+delivery. A contract the strategy names but the catalog does not list fails the run up front; refresh
+the catalog with `--catalog`.
+
+Futures fill on qkt's exchange simulator, whatever `--broker` says. Market orders fill at the current
+price and then slip by the run's slippage model; with `--slippage instrument` that is the root's
+optional `slippageTicks` (whole ticks against the order). Limit and stop prices off the contract's
+tick grid are snapped to it in the direction that never fills early. The root's fees are charged on every fill and included in the report's
+`commissionPaid`. A contract held into expiry is settled at the catalog's delivery price (exit reason
+`EXPIRY`), and orders on it after expiry are rejected. The root's `perpetual` fills the same way with
+the same fees and tick grid, but never expires, settles or enters the guard window; its funding is not
+modelled. In the last `expiryGuardHours` before expiry
+(a root key, default 24; 0 turns it off) the exchange takes only orders that reduce a position; a
+root whose roll would fall inside that window is refused when a continuous stream is built from it.
+Give a root `margin: { initial, maintenance, basis: notional | per_contract }` and the backtest
+refuses any order that opens or adds exposure when the account's equity could not carry the initial
+margin of every futures position after it (pending entries included); exits always pass. A root's
+`calendar:` (`crypto`, `fx`, `nyse`, `cme_globex`) names its exchange hours; a run whose symbols are
+all futures sharing one calendar trades on it (CME Globex: Sunday 17:00 to Friday 16:00 Chicago time,
+halted 16:00–17:00 each weekday, so DAY orders expire at the 16:00 close). Any CFD in the run keeps
+the usual calendar of the first symbol.
+
+### Continuous futures streams (`@front`, `@next`)
+
+A strategy can follow a root instead of one contract: `btc = BINANCE_UM:BTCUSDT@front EVERY 15m`
+trades whichever contract is front and rolls to the next one on schedule; `@next` follows the one
+after it. Give the root a roll policy and measure its rolls once:
+
+```yaml
+futures:
+  - root: BINANCE_UM:BTCUSDT
+    # …multiplier, tickSize, volumeStep, volumeMin as above…
+    roll: { daysBeforeExpiry: 8, atUtc: "08:00", adjust: panama }   # adjust: none | panama | ratio
+```
+
+```bash
+qkt fetch BINANCE_UM:BTCUSDT --rolls   # fetches missing roll days, writes contracts/BINANCE_UM/BTCUSDT.rolls.json
+```
+
+The series is adjusted forward from the first measured roll, so history never changes when new rolls
+are added and nothing leaks from the future. Each contract's bars must be fetched at the strategy's
+timeframe, and that timeframe must divide the roll time (an 08:00 roll works with 15m or 1h bars,
+not 1d).
+
+Orders on a continuous stream trade the contract that is front at the time; the engine sees fills in
+the adjusted series. At each roll every open position is closed on the old contract and reopened on
+the new one, and resting orders move to the new contract at the same series level. What the roll cost
+against the roll's reference prices (slippage and fees) is booked as a cost, so the stream's P&L
+equals the P&L of the contracts actually traded. Trading a continuous stream needs `adjust: panama`;
+`ratio` and `none` streams can be read but not traded. If the new contract refuses a roll, the
+position is closed at the old contract's fill (exit reason `ROLL_FAILED`) and the strategy cannot add
+exposure on that stream for the rest of the run. Live, a continuous stream trades on a `type: gateway`
+account, its rolls measured from the venue's own bars (parity rows A53-A57). A run window that reaches past a stream's last listed contract (for `@next`, past the roll that
+makes its last contract the front one) is refused with the instant the stream ends; refresh the catalog
+or end the run earlier.
+
+## Scenario 2c — Option chains (Deribit linear USDC options, free)
+
+Options are recorded as point-in-time chains: one row per contract per snapshot instant. Deribit's
+public API serves them without an account. Only the linear `<COIN>_USDC` options are accepted;
+the inverse `BTC-…` ones are priced in coin and refused. Declare the root under `options:`:
+
+```yaml
+options:
+  - root: DERIBIT:BTC_USDC
+    currency: USDC
+    contractSize: 1
+    tickSize: 5
+    tickSteps: [{above: 1000, tick: 20}]   # must match the venue's tick schedule, or --catalog refuses
+    volumeStep: 0.01
+    volumeMin: 0.01
+    underlyingIndex: btc_usdc
+```
+
+```bash
+# Every listed and expired contract, plus daily delivery prices (contracts/DERIBIT/BTC_USDC.options.json).
+qkt fetch DERIBIT:BTC_USDC --catalog
+
+# History: chains for completed UTC days, built from the venue's trade history.
+qkt fetch DERIBIT:BTC_USDC --chains --from 2026-09-24 --to 2026-09-30 [--every 1h] [--max-mark-age 1d]
+
+# Forward: one snapshot of the live book now; run it on a schedule to build bid/ask history.
+qkt fetch DERIBIT:BTC_USDC --chains --live
+```
+
+A strategy names a contract by its qkt code, the venue name with each `-` written `_`
+(`DERIBIT:BTC_USDC_25DEC26_92000_C` for Deribit's `BTC_USDC-25DEC26-92000-C`); catalogs and chain
+files keep the venue's names.
+
+Each source is a separate series: trade-built days land in
+`chains/DERIBIT/BTC_USDC/trade/<YYYY-MM-DD>.csv.gz` and live book snapshots in
+`chains/DERIBIT/BTC_USDC/book/<YYYY-MM-DD>.csv.gz`, so live snapshots never block a backfill. Both
+use the columns `atMs,contract,bid,ask,mark,markIv,underlying,rate,markAgeMs,source`, where an
+empty cell means absent.
+
+- **Trade history is sparse.** BTC_USDC trades a few hundred times a day. A contract is quoted
+  from its last trade (mark, IV, index) only once it has traded and until its expiry. `markAgeMs`
+  says how old that trade is, and contracts quiet for longer than `--max-mark-age` drop out.
+  These rows have no bid or ask. Each day reads trades from `--max-mark-age` before its start, so
+  a day's file is the same however the range is split. A day can be fetched from 5 minutes after it
+  ends (the history host trails by about a minute). Days already on disk are skipped; delete a file
+  to rebuild it. `--every` is at least `1m` and must divide a day.
+- **The live book is dense.** Every listed contract has its best bid and ask (a missing side stays
+  empty), mark, mark IV, rate, and its expiry's forward as `underlying`. The snapshot is stamped at
+  its newest row, and each row carries its own small age. A contract still listed after its expiry
+  is left out. `--live` adds to the day's file, and overlapping runs wait for each other.
+- A trade-built day that traded a contract missing from the catalog is refused rather than written
+  incomplete. Refresh the catalog with `--catalog` and fetch again. A live snapshot quotes the
+  contracts it knows and warns about the rest.
+- `--live`, `--every` and `--max-mark-age` need `--chains`; `--chains` does not combine with
+  `--catalog`, `--rolls` or `--tf`.
+
+### Backtesting options on the chain
+
+Declare how a root trades and name a contract in a strategy:
+
+```yaml
+options:
+  - root: DERIBIT:BTC_USDC
+    # …contractSize, tickSize, volumeStep, volumeMin, underlyingIndex as above…
+    chains: trade            # or book: the stored series to trade on
+    markSpread: 0.05         # trade series only: half-spread as a fraction of the mark
+    maxQuoteAgeMinutes: 60   # older trade marks are not tradeable
+    takerFeeRate: 0.0003     # of the underlying index, per contract
+    deliveryFeeRate: 0.00015 # of the delivery price, at an in-the-money expiry
+    feeCapRate: 0.125        # each fee capped at 12.5% of the option's value
+```
+
+```
+STRATEGY call VERSION 1
+SYMBOLS
+    c = DERIBIT:BTC_USDC_26SEP26_84000_C EVERY 1h
+RULES
+    WHEN c.close > 0
+    THEN BUY c SIZING 0.1
+```
+
+- The stream's price is the chain's mark at each snapshot; its bid and ask are the tradeable sides.
+- Orders fill on the option venue, whatever `--broker` says. A market order fills at the next quote of its
+  contract after the decision, never the one it was decided on: a buy at the ask, a sell at the bid. A quote
+  without that side cancels the order, with the reason in the log. With hourly snapshots, a 1h strategy
+  decides on one quote and fills on the next.
+- Limits are snapped so they never fill early, and fill at their limit when a later quote reaches them.
+- Selling opens a short. Before an option order is accepted, equity must cover the account's
+  worst-case expiry loss per root and expiry:
+  - a long option needs its premium;
+  - a credit spread needs its width less its credit;
+  - a short put needs its strike less its mark (cash-secured).
+
+  A naked short call has unlimited loss and is refused. So is a short call covered only by another
+  expiry's call. Buying back always passes.
+- A contract held to expiry settles in cash at its intrinsic value from the catalog's delivery price, less
+  the capped delivery fee: a long receives it, a short pays it. Out of the money it settles at zero.
+- The run checks that every day up to each contract's expiry has a stored chain day of the declared series,
+  and names the `qkt fetch … --chains` that fills a gap.
+- The chain's implied volatility and skew can drive rules as read-only streams:
+  `iv = CHAIN:DERIBIT.BTC_USDC.atm_iv.30d EVERY 1h` (see [chain analytics](../reference/dsl/chain.md)).
 
 ## Scenario 3 — Speed up repeated backtests (CSV → binary)
 

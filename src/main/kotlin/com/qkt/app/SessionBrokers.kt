@@ -4,9 +4,17 @@ import com.qkt.broker.Broker
 import com.qkt.broker.BrokerFactory
 import com.qkt.broker.CompositeBroker
 import com.qkt.broker.PaperBroker
+import com.qkt.broker.continuous.ContinuousContractBroker
+import com.qkt.broker.continuous.ContractFillLog
+import com.qkt.broker.continuous.ContractVenue
+import com.qkt.broker.continuous.RollLedger
 import com.qkt.bus.EventBus
 import com.qkt.common.Clock
+import com.qkt.derivatives.options.chain.OptionRootSymbol
+import com.qkt.derivatives.options.chain.isOptionFeed
+import com.qkt.dsl.ast.CHAIN_BROKER
 import com.qkt.marketdata.MarketPriceTracker
+import com.qkt.marketdata.source.SymbolPattern
 import com.qkt.positions.PositionProvider
 import com.qkt.strategy.Strategy
 
@@ -14,7 +22,9 @@ import com.qkt.strategy.Strategy
  * Builds the brokers one live session routes orders to, and the instrument specs they bring.
  * With no configured factories the session fills on paper; otherwise each `BROKER:` prefix the
  * strategies declare gets its own venue broker, e.g. streams on `EXNESS:XAUUSD` and
- * `BYBIT:BTCUSDT` build two brokers behind one fail-closed [CompositeBroker].
+ * `BYBIT:BTCUSDT` build two brokers behind one fail-closed [CompositeBroker]. Chain streams need no
+ * broker, and a fed option root (`OPTIONS:DERIBIT.BTC_USDC`) routes every catalogued contract of the
+ * root to its venue's account (`deribit`), as a backtest routes them to its option exchange.
  */
 internal class SessionBrokers(
     private val strategies: List<Pair<String, Strategy>>,
@@ -28,33 +38,47 @@ internal class SessionBrokers(
     /** The venue brokers built so far; empty for a paper session. */
     val built: List<Broker> get() = builtBrokers
 
+    /**
+     * The session's broker. A continuous futures stream ([continuous]) trades through a
+     * [ContinuousContractBroker] whose lanes are further attachments of its account's factory, each on
+     * its own bus (bound to the engine loop by [ContinuousRouting.bindLane]) and judging orders by the lane's contract
+     * positions; the account's own broker is built as always.
+     */
     fun buildBroker(
         paperBroker: PaperBroker,
         bus: EventBus,
         clock: Clock,
         priceTracker: MarketPriceTracker,
         positions: PositionProvider,
+        continuous: ContinuousRouting? = null,
     ): Broker {
         if (brokerFactories.isEmpty()) return paperBroker
         val dslStrategies =
             strategies.mapNotNull { (_, s) -> s as? com.qkt.dsl.compile.DslCompiledStrategy }
         val brokerSymbols = mutableMapOf<String, MutableSet<String>>()
+        // A fed option root trades through its venue's account: every catalogued contract of the root
+        // routes there, including the legs a structure picks when it fires. Chain streams are read-only.
+        val fedRoots = mutableMapOf<String, MutableSet<OptionRootSymbol>>()
         for (s in dslStrategies) {
             for (key in s.declaredStreams.values) {
-                brokerSymbols
-                    .getOrPut(key.broker.lowercase()) { mutableSetOf() }
-                    .add(key.qktSymbol)
+                val root = OptionRootSymbol.parse(key.qktSymbol).getOrNull()
+                when {
+                    key.broker.equals(CHAIN_BROKER, ignoreCase = true) -> Unit
+                    root != null -> fedRoots.getOrPut(tradingBroker(key).lowercase()) { mutableSetOf() } += root
+                    else -> brokerSymbols.getOrPut(key.broker.lowercase()) { mutableSetOf() }.add(key.qktSymbol)
+                }
             }
         }
         // Hand-written strategies (e.g. bot run-session bridges) declare no DSL streams;
         // with factories configured, route by the session's BROKER:SYMBOL prefixes instead
         // of silently paper-filling (the same #139 failure mode, one layer up).
-        if (brokerSymbols.isEmpty()) {
-            for (sym in symbols) {
+        if (dslStrategies.all { it.declaredStreams.isEmpty() }) {
+            for (sym in symbols.filterNot(::isOptionFeed)) {
                 val label = sym.substringBefore(':', "").lowercase()
                 if (label.isNotEmpty()) brokerSymbols.getOrPut(label) { mutableSetOf() }.add(sym)
             }
         }
+        for (label in fedRoots.keys) brokerSymbols.getOrPut(label) { mutableSetOf() }
         if (brokerSymbols.isEmpty()) return paperBroker
         // Fail fast if a strategy declares a broker prefix that has no configured factory.
         // Without this check, the old code path silently fell through to `paperBroker` for
@@ -73,12 +97,37 @@ internal class SessionBrokers(
         // can correlate orphan recovery; multi-strategy sessions (LiveDemo, Main) pass null.
         val owningStrategy = strategies.singleOrNull()?.first
         val routes =
-            brokerSymbols.map { (label, syms) ->
+            brokerSymbols.flatMap { (label, syms) ->
                 val factory = brokerFactories.getValue(label)
+                val chains = continuous?.chains
+                val streams = syms.filter { chains?.isContinuous(it) == true }.toSet()
+                val listed = syms - streams
                 val instance = factory.invoke(bus, clock, priceTracker, positions, owningStrategy)
                 builtBrokers.add(instance)
-                com.qkt.marketdata.source.SymbolPattern
-                    .exactSet(syms.toSet()) to instance
+                val roots = fedRoots[label].orEmpty()
+                val catalogued = { s: String -> instrumentRegistry?.lookup(s) != null }
+                val account =
+                    SymbolPattern { s -> s in listed || roots.any { it.covers(s) && catalogued(s) } } to instance
+                if (streams.isEmpty()) return@flatMap listOf(account)
+                val lanes =
+                    ContinuousContractBroker(
+                        bus,
+                        clock,
+                        requireNotNull(chains),
+                        streams,
+                        RollLedger(),
+                        ContractFillLog(),
+                        continuous.laneStore,
+                    ) {
+                        laneBus,
+                        lanePrices,
+                        lanePositions,
+                        ->
+                        continuous.bindLane(laneBus)
+                        ContractVenue(factory.invoke(laneBus, clock, lanePrices, lanePositions, owningStrategy))
+                    }
+                builtBrokers.add(lanes)
+                listOf(account, SymbolPattern.exactSet(streams) to lanes)
             }
         // A configured live session must fail closed. Any symbol outside the declared route set
         // is a typo, stale profile, or incomplete deployment — paper-filling it creates a phantom

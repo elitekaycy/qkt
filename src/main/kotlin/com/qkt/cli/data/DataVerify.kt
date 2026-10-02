@@ -34,7 +34,7 @@ internal fun dataVerify(args: Args): Int {
     val dayFiles =
         Files.list(symDir).use { stream ->
             stream
-                .filter { it.fileName.toString().endsWith(".csv") || it.fileName.toString().endsWith(".csv.gz") }
+                .filter { p -> listOf(".csv", ".csv.gz", ".bin").any { p.fileName.toString().endsWith(it) } }
                 .sorted()
                 .toList()
         }
@@ -52,6 +52,7 @@ internal fun dataVerify(args: Args): Int {
                 .toString()
                 .removeSuffix(".gz")
                 .removeSuffix(".csv")
+                .removeSuffix(".bin")
         val q = DayFileIntegrity.inspect(path)
         totalTicks += q.tickCount
         val status =

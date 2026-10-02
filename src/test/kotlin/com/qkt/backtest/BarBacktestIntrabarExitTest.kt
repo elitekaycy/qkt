@@ -96,9 +96,9 @@ class BarBacktestIntrabarExitTest {
                     candleWindow = TimeWindow.ONE_MINUTE,
                 ).run()
 
-        // Default (non --bars) fill model fills the triggered stop at the printing tick — here the
-        // bar's High. The point pinned is WHICH leg fired: the stop (adverse, >= 104), never the
-        // take-profit at 96 the legacy Low-first order would have booked.
+        // A bars-only symbol fills a triggered stop at its level (BarFillsBacktestTest). The point
+        // pinned here is WHICH leg fired: the stop (adverse, >= 104), never the take-profit at 96
+        // the legacy Low-first order would have booked.
         val exit = result.trades.map { it.trade }.first { it.side == Side.BUY }
         assertThat(exit.price).isGreaterThanOrEqualTo(Money.of("104"))
     }

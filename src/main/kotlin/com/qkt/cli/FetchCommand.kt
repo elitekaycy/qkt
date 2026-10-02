@@ -1,8 +1,13 @@
 package com.qkt.cli
 
 import com.qkt.candles.TimeWindow
+import com.qkt.cli.fetch.CatalogFetch
+import com.qkt.cli.fetch.ChainFetch
+import com.qkt.cli.fetch.RollsFetch
 import com.qkt.cli.fetch.buildFetcher
 import com.qkt.cli.fetch.resolveFetchRange
+import com.qkt.common.Clock
+import com.qkt.common.SystemClock
 import com.qkt.common.TimeRange
 import com.qkt.connector.bybit.marketdata.BybitKlineClient
 import com.qkt.connector.mt5.MT5BrokerProfileLoader
@@ -26,10 +31,16 @@ import java.time.ZoneOffset
  *   uses [Mt5BarFetcher] against the profile's `gatewayUrl`.
  * - BYBIT_SPOT / BYBIT_LINEAR — uses [BybitKlineClient] against the public
  *   Bybit REST endpoint (no auth needed for kline data).
+ * - BINANCE_UM — Binance USDⓈ-M quarterly futures from the free `data.binance.vision` archive.
  * - BACKTEST — refused; nothing to fetch (the local store IS the backtest source).
+ *
+ * `qkt fetch VENUE:ROOT --catalog` writes the root's contract catalogs instead of bars (see [CatalogFetch]), and
+ * `qkt fetch VENUE:ROOT --rolls` measures its roll history from stored (and fetched) 1m bars, and
+ * `qkt fetch DERIBIT:ROOT --chains` builds an option root's chain snapshots from trade history.
  */
 class FetchCommand(
     private val args: Args,
+    private val clock: Clock = SystemClock(),
 ) {
     /** Fetch every missing day in the range and return a process exit code. */
     fun run(): Int {
@@ -49,6 +60,13 @@ class FetchCommand(
         }
         val broker = parts[0]
         val symbol = parts[1]
+        ChainFetch.misplacedFlag(args)?.let {
+            System.err.println("qkt: $it")
+            return ExitCodes.ARG_ERROR
+        }
+        if (args.flag("catalog")) return catalog(target)
+        if (args.flag("rolls")) return rolls(target, broker)
+        if (args.flag("chains")) return ChainFetch.run(target, args)
         val tfArg =
             try {
                 args.requireOption("tf")
@@ -67,6 +85,10 @@ class FetchCommand(
         val (fromDate, toDate) =
             resolveFetchRange(args.option("from"), args.option("to"), args.option("last"))
                 ?: return ExitCodes.ARG_ERROR
+        if (fromDate.isAfter(toDate)) {
+            System.err.println("qkt: --from $fromDate is after --to $toDate")
+            return ExitCodes.ARG_ERROR
+        }
 
         if (broker == "BACKTEST") {
             System.err.println(
@@ -100,6 +122,12 @@ class FetchCommand(
             }
             val rangeStart = day.atStartOfDay(ZoneOffset.UTC).toInstant()
             val rangeEnd = day.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant()
+            // A day still in progress would be stored partial and then skipped as on disk forever.
+            if (rangeEnd.toEpochMilli() > clock.now()) {
+                println("  [$idx/$totalDays] $day  not stored (the UTC day has not ended)")
+                day = day.plusDays(1)
+                continue
+            }
             val bars: List<Candle> =
                 try {
                     fetcher.fetch(symbol, window, TimeRange(rangeStart, rangeEnd))
@@ -126,5 +154,27 @@ class FetchCommand(
         }
         println("qkt fetch: done — fetched=$fetched empty=$empty skipped=$skipped total=$totalDays")
         return ExitCodes.SUCCESS
+    }
+
+    private fun catalog(target: String): Int =
+        CatalogFetch.forTarget(target, DataRoot.forDataRoot(args.option("data-root")), args.option("config"))
+
+    private fun rolls(
+        target: String,
+        broker: String,
+    ): Int {
+        val dataRoot = DataRoot.forDataRoot(args.option("data-root"))
+        val fetcher = buildFetcher(broker, args.option("config")) ?: return ExitCodes.USER_ERROR
+        val store = LocalBarStore(root = dataRoot)
+        return RollsFetch.run(
+            target,
+            dataRoot,
+            args.option("instruments")?.let {
+                java.nio.file.Path
+                    .of(it)
+            },
+        ) { contract, day ->
+            RollsFetch.fetchOneDay(fetcher, store, broker, contract, day)
+        }
     }
 }

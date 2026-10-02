@@ -38,8 +38,9 @@ internal class AccountedFillFold(
             }
             if (a.reducedExposure) {
                 pacerLedger.recordOutcome(a.strategyId, a.executedAt, a.netStrategyAccountRealized)
+                // A break-even close is still a round trip: a loop on a flat price must trip the breaker too.
+                runawayBreaker?.recordClose(a.strategyId)
             }
-            if (a.netStrategyAccountRealized.signum() != 0) runawayBreaker?.recordClose(a.strategyId)
         }
         // A boot-time reconcile is venue history from before this session; it belongs in
         // lifetime P&L, not in today's loss budget.
