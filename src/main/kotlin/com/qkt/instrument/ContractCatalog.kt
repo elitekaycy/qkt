@@ -26,8 +26,8 @@ data class ListedContract(
 }
 
 /**
- * Every known contract of one root, in expiry order. Written by `qkt fetch` and by a live venue's
- * instrument list; read by [ContractCatalogRegistry]. Adding a contract never needs a YAML edit.
+ * Every known contract of one root, in expiry order. Written by `qkt fetch --catalog` (or by hand for
+ * a venue it has no source for); read by [ContractCatalogRegistry]. Adding a contract never needs a YAML edit.
  */
 @Serializable
 data class ContractCatalog(
