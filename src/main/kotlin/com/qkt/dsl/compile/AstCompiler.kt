@@ -85,7 +85,9 @@ class AstCompiler {
         validateResizeProtection(ast)
         val resolvedConditions: List<ExprAst> =
             whenThens.map { rule ->
-                compilingRule(rule) { resolver.resolve(rule.cond).also(::rejectChainedComparisons) }
+                compilingRule(rule) {
+                    resolver.resolve(rule.cond).also(::rejectChainedComparisons).also(::rejectNonBooleanCondition)
+                }
             }
         val resolvedSequenceConditions: List<ExprAst> =
             ast.sequences.flatMap { sequence -> sequence.stages.map { resolver.resolve(it.condition) } }
