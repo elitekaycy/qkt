@@ -6,9 +6,21 @@ contract (`BINANCE_UM:BTCUSDT@front`, `@next`) across rolls. Live prices and
 execution arrive through a [gateway account](https://github.com/elitekaycy/qkt-venue-gateway),
 so the strategy never talks to the venue directly.
 
-```qkt
+```haskell
 SYMBOLS
     btc = BINANCE_UM:BTCUSDT_241227 EVERY 1h
+RULES
+    WHEN ema(btc.close, 20) > ema(btc.close, 50)
+     AND POSITION.btc = 0
+    THEN BUY btc SIZING 0.10
+```
+
+Or follow the root instead of one contract — `@front` trades whichever
+contract is front and rolls on schedule:
+
+```haskell
+SYMBOLS
+    btc = BINANCE_UM:BTCUSDT@front EVERY 15m WARMUP 100 BARS
 RULES
     WHEN ema(btc.close, 20) > ema(btc.close, 50)
      AND POSITION.btc = 0
@@ -23,6 +35,21 @@ RULES
 - Margin is judged per position each day; a run without futures writes none of
   these files.
 
-Deep dives: [Futures contract fields](../reference/dsl/expressions.md#futures-contract-fields) ·
+## Getting data
+
+Binance USDⓈ-M quarterlies read from the free public archive — no account or
+API key. Fetch the root's catalog (every quarterly with expiry and delivery
+price), then each contract's bars at the timeframe the strategy uses:
+
+```bash
+qkt fetch BINANCE_UM:BTCUSDT --catalog
+qkt fetch BINANCE_UM:BTCUSDT_240927 --tf 15m --from 2024-06-01 --to 2024-09-27
+```
+
+For a continuous stream, give the root a roll policy in `instruments.yaml` and
+measure its rolls once with `qkt fetch BINANCE_UM:BTCUSDT --rolls`. Live, a
+continuous stream trades on a `type: gateway` account (parity rows A53-A57).
+
+Deep dives: [Getting & storing data, Scenario 2b (Binance quarterlies + continuous streams)](../how-to/backtest-data.md) ·
 [Backtest report artifacts](../reference/cli-commands.md#backtest-report-artifacts) ·
 [qkt-venue-gateway](https://github.com/elitekaycy/qkt-venue-gateway)

@@ -5,7 +5,7 @@ sized by quantity or by % of equity at risk. Chain analytics arrive as
 read-only `CHAIN:` streams; the chain a rule reads is the same chain the
 gateway recorded, so backtest and live see identical snapshots.
 
-```qkt
+```haskell
 SYMBOLS
     chain = OPTIONS:DERIBIT.BTC_USDC EVERY 1h,
     iv = CHAIN:DERIBIT.BTC_USDC.atm_iv.30d EVERY 1h
@@ -27,6 +27,19 @@ RULES
 - **Backtest reports** list every structure in `structures.csv` with legs,
   outcome (`CLOSED`, `UNWOUND`, `SETTLED`), credit and premium P&L.
 
-Deep dives: [Option chain analytics](../reference/dsl/chain.md) ·
+## Getting data
+
+Deribit's public API serves chains without an account (linear `<COIN>_USDC`
+options only). Fetch the catalog (every listed and expired contract plus
+delivery prices), then history built from the venue's trade history — or
+snapshot the live book on a schedule to build bid/ask history:
+
+```bash
+qkt fetch DERIBIT:BTC_USDC --catalog
+qkt fetch DERIBIT:BTC_USDC --chains --from 2026-09-24 --to 2026-09-30
+qkt fetch DERIBIT:BTC_USDC --chains --live
+```
+
+Deep dives: [Getting & storing data, Scenario 2c (option chains)](../how-to/backtest-data.md) ·
 [Option structures](../reference/dsl/structures.md) ·
 [qkt-venue-gateway](https://github.com/elitekaycy/qkt-venue-gateway)

@@ -29,6 +29,33 @@
 
 **qkt** is an event-driven trading engine in Kotlin. You describe a strategy in a small, readable DSL — symbols, indicators, and `WHEN … THEN …` rules — and qkt compiles it into a runnable strategy. The same compiled strategy and engine pipeline run in backtest and live modes. Determinism is pinned for identical inputs at the shared pipeline and paper-broker boundary; venue execution and operational effects remain explicit divergences in the [backtest/live parity register](docs/parity/backtest-vs-live.md).
 
+Start simple — a 9/21 EMA crossover on 5-minute gold, one position at a time, with an attached stop-loss and take-profit bracket:
+
+```haskell
+
+
+STRATEGY ema_cross VERSION 1
+
+
+DEFAULTS { SIZING = 0.10 }
+
+
+SYMBOLS
+  gold = BACKTEST:XAUUSD EVERY 5m WARMUP 50 BARS
+
+
+RULES
+  WHEN ema(gold.close, 9) CROSSES ABOVE ema(gold.close, 21)
+   AND POSITION.gold = 0
+
+  THEN BUY gold
+       BRACKET { STOP LOSS BY 1.5, TAKE PROFIT BY 3.0 }
+
+
+```
+
+When one timeframe isn't enough, watch four — a 4h trend filter, a 1h RSI dip, a 15m VWAP trigger, and a volatility-regime gate:
+
 ```haskell
 
 
