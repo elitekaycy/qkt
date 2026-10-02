@@ -9,7 +9,9 @@ import java.math.BigDecimal
  * directly for callers that want the un-rooted dispersion (e.g. variance-ratio tests, or
  * combining variances additively).
  *
- * Sample (n-1) divisor, matching [Stddev]. O(period) per update. Returns null until warmed up.
+ * Sample (n-1) divisor, matching [Stddev]. O(period) per update. Returns null until warmed up. The value keeps
+ * 16 significant digits rather than 8 decimals: a variance is in squared price units, so an FX one sits
+ * far below 1e-8.
  */
 class Variance(
     private val period: Int,
@@ -40,6 +42,6 @@ class Variance(
             val d = v.subtract(mean, Money.CONTEXT)
             ssd = ssd.add(d.multiply(d, Money.CONTEXT), Money.CONTEXT)
         }
-        return ssd.divide(BigDecimal(period - 1), Money.CONTEXT).setScale(Money.SCALE, Money.ROUNDING)
+        return ssd.divide(BigDecimal(period - 1), Money.CONTEXT)
     }
 }

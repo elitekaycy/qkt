@@ -195,6 +195,8 @@ regression_slope(<value>, <period>)  -- least-squares slope through the last N v
 `stddev` is the plain N-bar volatility estimator (`zscore` uses the same divisor);
 `regression_slope` fits the window against bar index 0…N−1, so a clean ramp of one unit per bar
 reads 1.0 and the sign is a smoothed trend direction. `<period>` must be at least 2 for the slope.
+`variance` and `regression_slope` keep 16 significant digits, not the 8 decimals other indicators
+round to: on FX prices a variance is around 1e-10 and a per-bar slope around 1e-6.
 
 ```qkt
 -- Vol-scaled sizing with a slope filter: size to a 1% move per unit of 20-bar vol, only uptrend.

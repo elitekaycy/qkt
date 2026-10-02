@@ -50,6 +50,14 @@ class RegressionSlopeTest {
     }
 
     @Test
+    fun `keeps an FX per-bar slope to full precision`() {
+        val r = RegressionSlope(8)
+        listOf("1.10000", "1.10001", "1.10000", "1.10000", "1.10001", "1.10001", "1.10002", "1.10001")
+            .forEach { r.update(Money.of(it)) }
+        assertThat(r.value()).isEqualByComparingTo("0.000001904761904761905")
+    }
+
+    @Test
     fun `rejects period below 2`() {
         assertThatThrownBy { RegressionSlope(0) }.isInstanceOf(IllegalArgumentException::class.java)
         assertThatThrownBy { RegressionSlope(1) }.isInstanceOf(IllegalArgumentException::class.java)
