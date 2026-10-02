@@ -50,6 +50,8 @@ jobs:
         run: bash tests/scripts/release-unattended-test.sh
       - name: Test attestation catalog concurrency and retry
         run: bash tests/scripts/run-attestation-catalog-retry-test.sh
+      - name: Test attestation derivatives lane
+        run: bash tests/scripts/run-attestation-catalog-derivatives-test.sh
       - name: Test attestation leftover sweep
         run: bash tests/scripts/sweep-attestation-leftovers-test.sh
       - name: Test fill-attached protection wait

@@ -9,9 +9,12 @@ usage() {
     cat <<'USAGE'
 Usage: run-attestation-catalog.sh --out DIR --gateway-url URL --expected-login N
          --expected-server NAME --magic-base N --arm I_UNDERSTAND_DEMO_ORDER_0.01
-         [--lanes shadow,orders,risk,book,engine,daemon,stress] [--max-parallel N] [--cli PATH]
+         [--lanes shadow,orders,risk,book,engine,daemon,stress[,derivatives]] [--max-parallel N] [--cli PATH]
+         [--deriv-gateway-url URL --deriv-expected-login LOGIN]
 
 Needs QKT_BROKER_API_KEY and QKT_LIVE_DEMO_ORDER_APPROVAL=LOCALHOST_DEMO_ONLY. Demo, loopback only.
+The derivatives lane (futures, perpetuals, options) runs on a VGP gateway account instead: it needs the
+--deriv-* flags and QKT_DERIV_GATEWAY_KEY, and its cases run one after another (one netting account).
 Writes DIR/result.json: per-case verdicts, the capabilities proven, the wall-clock, and
 `status: passed` only when every ready case passed. Exits non-zero otherwise.
 At most --max-parallel daemons (default 8) run at once: one gateway serves them all, and past that
@@ -23,7 +26,7 @@ fail() { printf 'run-attestation-catalog: %s\n' "$1" >&2; exit 1; }
 
 out=""; gateway_url=""; expected_login=""; expected_server=""; magic_base=""; arm=""
 lanes="shadow,orders,risk,book,engine,daemon,stress"; cli="$repo_root/build/install/qkt/bin/qkt"
-max_parallel=8
+max_parallel=8; deriv_gateway_url=""; deriv_expected_login=""
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --out) out="${2:-}"; shift 2 ;;
@@ -35,6 +38,8 @@ while [ "$#" -gt 0 ]; do
         --lanes) lanes="${2:-}"; shift 2 ;;
         --max-parallel) max_parallel="${2:-}"; shift 2 ;;
         --cli) cli="${2:-}"; shift 2 ;;
+        --deriv-gateway-url) deriv_gateway_url="${2:-}"; shift 2 ;;
+        --deriv-expected-login) deriv_expected_login="${2:-}"; shift 2 ;;
         --help|-h) usage; exit 0 ;;
         *) fail "unknown argument: $1" ;;
     esac
@@ -82,6 +87,25 @@ for lane in orders risk book engine daemon stress; do
         magic=$((magic + 1))
     done
 done
+deriv_ids=()
+if [[ ",$lanes," == *,derivatives,* ]]; then
+    [ -n "$deriv_gateway_url" ] && [ -n "$deriv_expected_login" ] ||
+        fail "--lanes derivatives needs --deriv-gateway-url and --deriv-expected-login"
+    for case_yaml in "$repo_root/attestation/cases/derivatives"/*/case.yaml; do
+        [ "$(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["status"])' "$case_yaml")" = ready ] &&
+            deriv_ids+=("$(basename "$(dirname "$case_yaml")")")
+    done
+    run_derivatives() {
+        local id code=0
+        for id in "${deriv_ids[@]}"; do
+            python3 "$repo_root/scripts/live-validation/run-derivatives-lane-case.py" \
+                --case "$repo_root/attestation/cases/derivatives/$id" --out "$out/derivatives-$id" \
+                --gateway-url "$deriv_gateway_url" --expected-login "$deriv_expected_login" --arm "$arm" --cli "$cli" || code=1
+        done
+        return "$code"
+    }
+    [ "${#deriv_ids[@]}" -eq 0 ] || launch derivatives run_derivatives
+fi
 [ "${#pids[@]}" -gt 0 ] || fail "no ready case in lanes: $lanes"
 
 codes=()
@@ -109,8 +133,14 @@ for i in "${!pids[@]}"; do
 done
 
 verdicts=()
+for id in "${deriv_ids[@]}"; do  # one verdict per derivatives case, from the result it wrote
+    result="$out/derivatives-$id/result.json"
+    verdicts+=("$(jq -c --arg name "derivatives-$id" '{name:$name, status, summary:((.problems // []) | join("; "))}' "$result" 2>/dev/null ||
+        jq -n --arg name "derivatives-$id" '{name:$name, status:"failed", summary:"the case wrote no result"}')")
+done
 for i in "${!pids[@]}"; do
     name="${names[$i]}"; code="${codes[$i]}"; last="$out/logs/$name.log"
+    [ "$name" = derivatives ] && continue
     if [ -n "${retry_pid[$name]:-}" ]; then
         code=0; wait "${retry_pid[$name]}" || code=$?
         last="$out/logs/$name-retry.log"
