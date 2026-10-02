@@ -115,6 +115,10 @@ Notes:
 - **Idempotent per day-file.** An existing day file is skipped without hitting the broker. To
   re-fetch a corrupt day, delete the file and re-run.
 - MT5 history APIs are broker-dependent — some throttle hard or serve only a limited window.
+- MT5 bars are bid prices with one spread per bar; `qkt fetch` shifts each bar to mid by half of its own
+  spread. A 5m bar fetched natively can therefore differ by a fraction of a spread from the same 5m
+  rolled up from fetched 1m bars. Fetch the finest timeframe you trade and let coarser streams roll up
+  from it, so every stream sees the same prices.
 
 ## Scenario 2b — Futures contracts (Binance USDⓈ-M quarterlies, free)
 
