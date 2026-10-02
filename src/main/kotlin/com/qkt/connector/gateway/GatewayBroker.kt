@@ -10,6 +10,7 @@ import com.qkt.common.Clock
 import com.qkt.events.BrokerEvent
 import com.qkt.execution.ManagedOrder
 import com.qkt.execution.OrderRequest
+import com.qkt.instrument.TickSteps
 import com.qkt.positions.Position
 import com.qkt.positions.PositionProvider
 import java.math.BigDecimal
@@ -21,7 +22,7 @@ import java.math.BigDecimal
  * is judged against [positions], the session's view of what it holds, and the account's. A gateway
  * account's venue positions are account-wide, whether one strategy trades it or several: startup reconcile
  * trusts each strategy's persisted book, and the account checks their total against the venue whenever a
- * strategy is ready ([GatewaySession.ready]).
+ * strategy is ready ([GatewaySession.ready]). [optionGrid] is an option contract's declared price grid.
  */
 class GatewayBroker internal constructor(
     private val session: GatewaySession,
@@ -29,6 +30,7 @@ class GatewayBroker internal constructor(
     private val clock: Clock,
     private val positions: PositionProvider,
     strategy: String?,
+    private val optionGrid: (String) -> TickSteps? = { null },
 ) : Broker {
     private val attachment = session.attach(strategy, positions, bus::publish)
 
@@ -52,9 +54,10 @@ class GatewayBroker internal constructor(
             session.refreshListing()
             return refuse(request, "${request.symbol} is not in the gateway's listing (refreshing it)")
         }
-        val tick = session.symbols.tick(request.symbol)
+        // An option's grid steps up with its price, which the listing's one tick cannot say.
+        val grid = optionGrid(request.symbol) ?: session.symbols.tick(request.symbol)?.let(::TickSteps)
         val body =
-            when (val mapping = GatewayOrders.map(request, code, positions, session.account.quantity(code), tick)) {
+            when (val mapping = GatewayOrders.map(request, code, positions, session.account.quantity(code), grid)) {
                 is GatewayOrderMapping.Unsupported -> return refuse(request, mapping.reason)
                 is GatewayOrderMapping.Send -> mapping.body
             }

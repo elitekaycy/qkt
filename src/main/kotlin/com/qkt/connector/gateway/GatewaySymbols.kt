@@ -35,8 +35,8 @@ class GatewaySymbols(
         update(listing.map { it.code })
         ticks =
             listing
-                .mapNotNull { i -> i.tickSize.toBigDecimalOrNull()?.takeIf { it.signum() > 0 }?.let { i.code to it } }
-                .associate { (code, tick) -> qkt(code) to tick }
+                .mapNotNull { i -> positive(i.tickSize)?.let { qkt(i.code) to it } }
+                .toMap()
     }
 
     /** The price tick of [qktSymbol] in the latest listing, or null when the listing gave none. */
@@ -63,6 +63,8 @@ class GatewaySymbols(
         if (fields.size < OPTION_FIELDS) return null
         return OptionSymbols.venueName(name, fields.dropLast(OPTION_FIELDS - 1).joinToString("_"))
     }
+
+    private fun positive(text: String): BigDecimal? = text.toBigDecimalOrNull()?.takeIf { it.signum() > 0 }
 
     private companion object {
         /** Underlying, expiry, strike and right. */
