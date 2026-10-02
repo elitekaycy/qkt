@@ -54,6 +54,9 @@ internal class FakeGateway(
     /** The account login `/v1/health` reports. */
     @Volatile var login = "7"
 
+    /** What `/v1/account` answers; a venue moves it without sending any event. */
+    @Volatile var account = FakeWire.ACCOUNT
+
     /** Every submit body the gateway placed, in order. */
     val submits = CopyOnWriteArrayList<WireSubmit>()
 
@@ -102,7 +105,7 @@ internal class FakeGateway(
         val symbol = url.queryParameter("symbol")
         return when {
             path == "/v1/health" -> FakeWire.ok(health())
-            path == "/v1/account" -> FakeWire.ok(FakeWire.ACCOUNT)
+            path == "/v1/account" -> FakeWire.ok(account)
             path == "/v1/instruments" ->
                 FakeWire.ok(
                     json.encodeToString(
