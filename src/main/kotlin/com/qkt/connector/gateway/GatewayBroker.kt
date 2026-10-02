@@ -95,7 +95,16 @@ class GatewayBroker internal constructor(
 
     override fun isAccountWide(symbol: String): Boolean = session.symbols.owns(symbol)
 
-    override fun accountEquity(): BigDecimal? = session.account.equity
+    /**
+     * The account's equity read now from `/v1/account` (the equity poller's thread; unrealized P&L moves
+     * with every price, and the gateway sends no `account` event to keep it current).
+     */
+    override fun accountEquity(): BigDecimal? =
+        session.client
+            .account()
+            .also(session.account::account)
+            .equity
+            .let(::BigDecimal)
 
     override fun positionAccountingMode(symbol: String): PositionAccountingMode = session.account.accounting
 
