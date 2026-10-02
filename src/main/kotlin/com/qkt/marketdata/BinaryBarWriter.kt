@@ -6,6 +6,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardCopyOption
 
 /** Writes [Candle]s to a binary bar day-file ([BinaryBarFormat]). Columnar: startTs then O/H/L/C/V. */
 class BinaryBarWriter {
@@ -28,7 +29,10 @@ class BinaryBarWriter {
         for (b in bars) buf.putLong(scaled(b.close))
         for (b in bars) buf.putLong(scaled(b.volume))
         Files.createDirectories(path.parent)
-        Files.write(path, buf.array())
+        // Written aside and moved in, so an interrupted write never leaves a truncated day under the real name.
+        val partial = path.resolveSibling("${path.fileName}.partial")
+        Files.write(partial, buf.array())
+        Files.move(partial, path, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
     }
 
     private fun scaled(v: BigDecimal): Long = v.setScale(Money.SCALE, Money.ROUNDING).unscaledValue().longValueExact()
