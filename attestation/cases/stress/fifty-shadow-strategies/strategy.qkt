@@ -6,24 +6,26 @@ SYMBOLS
     btc = EXNESS:BTCUSD EVERY 1m WARMUP 30 BARS,
     btc5 = EXNESS:BTCUSD EVERY 5m WARMUP 20 BARS
 
-LET eur_ema = ema(eur.close, 10),
-    gold_rsi = rsi(gold.close, 14),
-    btc_atr = atr(btc.candle, 14),
-    btc5_ema = ema(btc5.close, 10)
+-- Window statistics only: the copies start a minute or two apart, each seeded from its own window, and an
+-- ema, rsi or atr never forgets its seed, so copies would print different decimals however correct fan-out is.
+LET eur_sma = sma(eur.close, 10),
+    gold_sd = stddev(gold.close, 14),
+    btc_range = highest(btc.high, 14) - lowest(btc.low, 14),
+    btc5_sma = sma(btc5.close, 10)
 
 RULES
     -- One symbol per rule: each line depends on one feed only, so fifty copies must print the same text.
-    WHEN eur_ema IS NOT NULL AND eur.close > lag(eur.close, 1)
-    THEN LOG "atto-fan eur up close={c} ema={e}" c=eur.close e=eur_ema
-    WHEN eur_ema IS NOT NULL AND eur.close <= lag(eur.close, 1)
-    THEN LOG "atto-fan eur down close={c} ema={e}" c=eur.close e=eur_ema
+    WHEN eur_sma IS NOT NULL AND eur.close > lag(eur.close, 1)
+    THEN LOG "atto-fan eur up close={c} sma={e}" c=eur.close e=eur_sma
+    WHEN eur_sma IS NOT NULL AND eur.close <= lag(eur.close, 1)
+    THEN LOG "atto-fan eur down close={c} sma={e}" c=eur.close e=eur_sma
 
-    WHEN gold_rsi IS NOT NULL AND gold.close > lag(gold.close, 1)
-    THEN LOG "atto-fan gold up close={c} rsi={r}" c=gold.close r=gold_rsi
-    WHEN gold_rsi IS NOT NULL AND gold.close <= lag(gold.close, 1)
-    THEN LOG "atto-fan gold down close={c} rsi={r}" c=gold.close r=gold_rsi
+    WHEN gold_sd IS NOT NULL AND gold.close > lag(gold.close, 1)
+    THEN LOG "atto-fan gold up close={c} sd={r}" c=gold.close r=gold_sd
+    WHEN gold_sd IS NOT NULL AND gold.close <= lag(gold.close, 1)
+    THEN LOG "atto-fan gold down close={c} sd={r}" c=gold.close r=gold_sd
 
-    WHEN btc_atr IS NOT NULL AND btc5_ema IS NOT NULL AND btc.close > lag(btc.close, 1)
-    THEN LOG "atto-fan btc up close={c} atr={a}" c=btc.close a=btc_atr
-    WHEN btc_atr IS NOT NULL AND btc5_ema IS NOT NULL AND btc.close <= lag(btc.close, 1)
-    THEN LOG "atto-fan btc down close={c} atr={a}" c=btc.close a=btc_atr
+    WHEN btc_range IS NOT NULL AND btc5_sma IS NOT NULL AND btc.close > lag(btc.close, 1)
+    THEN LOG "atto-fan btc up close={c} range={a}" c=btc.close a=btc_range
+    WHEN btc_range IS NOT NULL AND btc5_sma IS NOT NULL AND btc.close <= lag(btc.close, 1)
+    THEN LOG "atto-fan btc down close={c} range={a}" c=btc.close a=btc_range
