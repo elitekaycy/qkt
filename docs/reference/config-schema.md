@@ -511,7 +511,11 @@ history, so a fill is never lost or booked twice. A submit the gateway never ans
 until a deadline, then resolved by id. The gateway's identity is checked at startup and whenever its
 event log restarts; a gateway on another account refuses every order. The kill switch at the gateway
 refuses orders that add risk; an order that reduces both its strategy's and the account's position is
-sent `reduce_only` and passes. The account's prices come from the gateway's quotes socket: its
+sent `reduce_only` and passes. Limit and stop levels are sent on the tick grid the gateway lists for
+the contract, rounded as the backtest exchange rounds them: buy limits and sell stops down, sell limits
+and buy stops up, so an order never fills or triggers before its level and a protective stop can sit up
+to one tick wider than asked (a backtest does the same for a contract of a declared `futures:` root;
+without one it keeps the level as computed). The account's prices come from the gateway's quotes socket: its
 contracts, and its option roots as whole feeds (`OPTIONS:<ACCOUNT>.<ROOT>`, so name the account after
 the venue, e.g. `deribit`, to match `instruments.yaml`). Venues list new option expiries every day: schedule
 `qkt fetch DERIBIT:<ROOT> --catalog` (daily is enough) and a running daemon picks the new catalog up

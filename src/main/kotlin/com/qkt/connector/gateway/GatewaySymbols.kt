@@ -1,6 +1,7 @@
 package com.qkt.connector.gateway
 
 import com.qkt.instrument.OptionSymbols
+import java.math.BigDecimal
 
 /**
  * The map between a gateway's venue codes and qkt symbols. A qkt symbol is [prefix] plus the code with
@@ -19,6 +20,8 @@ class GatewaySymbols(
 ) {
     @Volatile private var toVenue: Map<String, String> = emptyMap()
 
+    @Volatile private var ticks: Map<String, BigDecimal> = emptyMap()
+
     /** Takes [codes] as the gateway's listing now. */
     fun update(codes: Collection<String>) {
         val listed = codes.groupBy(::qkt)
@@ -26,6 +29,18 @@ class GatewaySymbols(
         require(collision == null) { "gateway codes collide once '-' is written '_': $collision" }
         toVenue = listed.mapValues { (_, same) -> same.single() }
     }
+
+    /** Takes [listing] as the gateway's listing now: its codes, and the price tick of each. */
+    fun updateListing(listing: List<WireInstrument>) {
+        update(listing.map { it.code })
+        ticks =
+            listing
+                .mapNotNull { i -> i.tickSize.toBigDecimalOrNull()?.takeIf { it.signum() > 0 }?.let { i.code to it } }
+                .associate { (code, tick) -> qkt(code) to tick }
+    }
+
+    /** The price tick of [qktSymbol] in the latest listing, or null when the listing gave none. */
+    fun tick(qktSymbol: String): BigDecimal? = ticks[qktSymbol]
 
     /** The qkt symbol of venue [code]. */
     fun qkt(code: String): String = prefix + code.replace('-', '_')

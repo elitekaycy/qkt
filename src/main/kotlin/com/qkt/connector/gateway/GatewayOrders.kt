@@ -1,8 +1,10 @@
 package com.qkt.connector.gateway
 
 import com.qkt.common.Side
+import com.qkt.derivatives.futures.PriceSpace
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.TimeInForce
+import com.qkt.instrument.PriceAdjustment
 import com.qkt.positions.PositionProvider
 import java.math.BigDecimal
 
@@ -26,13 +28,26 @@ internal sealed interface GatewayOrderMapping {
  * gateway's kill switch then lets a flatten through and never an opening.
  */
 internal object GatewayOrders {
-    /** The VGP v1 form of [request] on venue [code], judged against [positions] and the account's [accountHeld]. */
+    /**
+     * The VGP v1 form of [request] on venue [code], judged against [positions] and the account's [accountHeld].
+     * Venues refuse a price off the contract's grid, so limit and stop levels are snapped to [tick] the way
+     * the backtest exchange does ([PriceSpace]): never filling or triggering before the strategy's level.
+     */
     fun map(
         request: OrderRequest,
         code: String,
         positions: PositionProvider,
         accountHeld: BigDecimal,
+        tick: BigDecimal?,
     ): GatewayOrderMapping {
+        val grid = tick?.let { PriceSpace(PriceAdjustment.NONE, BigDecimal.ZERO, it) }
+
+        fun limit(level: BigDecimal) =
+            (grid?.takeIf { level.signum() > 0 }?.limitToContract(level, request.side) ?: level).toPlainString()
+
+        fun stop(level: BigDecimal) =
+            (grid?.takeIf { level.signum() > 0 }?.stopToContract(level, request.side) ?: level).toPlainString()
+
         val tif =
             when (request.timeInForce) {
                 TimeInForce.GTC -> "gtc"
@@ -73,7 +88,7 @@ internal object GatewayOrders {
                         side,
                         "limit",
                         quantity,
-                        request.limitPrice.toPlainString(),
+                        limit(request.limitPrice),
                         null,
                         tif,
                         reduceOnly,
@@ -86,7 +101,7 @@ internal object GatewayOrders {
                         "stop",
                         quantity,
                         null,
-                        request.stopPrice.toPlainString(),
+                        stop(request.stopPrice),
                         tif,
                         reduceOnly,
                     )
@@ -97,8 +112,8 @@ internal object GatewayOrders {
                         side,
                         "stop_limit",
                         quantity,
-                        request.limitPrice.toPlainString(),
-                        request.stopPrice.toPlainString(),
+                        limit(request.limitPrice),
+                        stop(request.stopPrice),
                         tif,
                         reduceOnly,
                     )

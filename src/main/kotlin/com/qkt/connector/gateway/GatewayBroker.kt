@@ -52,8 +52,9 @@ class GatewayBroker internal constructor(
             session.refreshListing()
             return refuse(request, "${request.symbol} is not in the gateway's listing (refreshing it)")
         }
+        val tick = session.symbols.tick(request.symbol)
         val body =
-            when (val mapping = GatewayOrders.map(request, code, positions, session.account.quantity(code))) {
+            when (val mapping = GatewayOrders.map(request, code, positions, session.account.quantity(code), tick)) {
                 is GatewayOrderMapping.Unsupported -> return refuse(request, mapping.reason)
                 is GatewayOrderMapping.Send -> mapping.body
             }
