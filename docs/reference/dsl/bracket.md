@@ -48,6 +48,10 @@ BRACKET {
 
 For BTC at $67,000 long, stop at $66,900, target at $67,300. The units match the symbol's quote (USD for crypto, pips for FX *but converted to price points*).
 
+The distance must be greater than 0: a literal `0` or negative distance is a compile error, and one computed
+from an expression (`BY atr(btc, 14) - 50`) that comes out 0 or negative skips the order, since it would put
+the level on the wrong side of entry. An out-of-range computed `PCT` skips the order the same way.
+
 ### `BY <pct> PCT` — percent of entry price
 
 ```qkt

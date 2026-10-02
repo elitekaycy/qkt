@@ -108,9 +108,13 @@ class ChildPriceResolver(
                 require(child.ratchet == null || kind == ChildKind.STOP_LOSS) {
                     "stop ratchets are only valid for STOP LOSS"
                 }
+                numericLiteral(child.distance)?.let {
+                    require(it.signum() > 0) { "${kind.name.replace('_', ' ')} BY must be greater than 0, was $it" }
+                }
                 val distExpr = exprCompiler.compile(child.distance)
                 CompiledChildPrice { ec, side, entry, _ ->
-                    val v = distExpr.evaluateNumber(ec) ?: return@CompiledChildPrice null
+                    // A distance that is not positive puts the level on the wrong side of entry: skip the order.
+                    val v = distExpr.evaluateNumber(ec)?.takeIf { it.signum() > 0 } ?: return@CompiledChildPrice null
                     applyDistance(side, entry, v, kind)
                 }
             }
@@ -121,7 +125,13 @@ class ChildPriceResolver(
                 val percentExpr = exprCompiler.compile(child.percent)
                 CompiledChildPrice { ec, side, entry, _ ->
                     val percent = percentExpr.evaluateNumber(ec) ?: return@CompiledChildPrice null
-                    val fraction = BracketPercent.fraction(percent, kind == ChildKind.STOP_LOSS)
+                    // A percentage out of range would place the level wrong: skip the order, as for BY.
+                    val fraction =
+                        try {
+                            BracketPercent.fraction(percent, kind == ChildKind.STOP_LOSS)
+                        } catch (_: IllegalArgumentException) {
+                            return@CompiledChildPrice null
+                        }
                     val dist = entry.multiply(fraction, Money.CONTEXT)
                     applyDistance(side, entry, dist, kind)
                 }

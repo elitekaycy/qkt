@@ -11,10 +11,12 @@ internal class TrailingOrderCompiler(
     private val exprCompiler: ExprCompiler,
 ) {
     fun compileTrailingBy(o: TrailingBy): CompiledOrderType {
+        numericLiteral(o.distance)?.let { require(it.signum() > 0) { "TRAILING BY must be greater than 0, was $it" } }
         val distEval = exprCompiler.compile(o.distance)
         val build =
             BuildRequest { ec, id, symbol, side, qty, tif, strategyId, ts ->
-                val d = distEval.evaluateNumber(ec) ?: return@BuildRequest null
+                // A computed distance that is not positive skips the order rather than stopping the run.
+                val d = distEval.evaluateNumber(ec)?.takeIf { it.signum() > 0 } ?: return@BuildRequest null
                 OrderRequest.TrailingStop(
                     id,
                     symbol,
@@ -32,12 +34,18 @@ internal class TrailingOrderCompiler(
     }
 
     fun compileTrailingPct(o: TrailingPct): CompiledOrderType {
+        numericLiteral(o.percent)?.let {
+            require(
+                it.signum() > 0 && it < HUNDRED,
+            ) { "TRAILING PCT must be greater than 0 and less than 100, was $it" }
+        }
         val percentEval = exprCompiler.compile(o.percent)
         val build =
             BuildRequest { ec, id, symbol, side, qty, tif, strategyId, ts ->
-                val percent = percentEval.evaluateNumber(ec) ?: return@BuildRequest null
-                require(percent.signum() > 0) { "TRAILING PCT must be greater than 0, was $percent" }
-                require(percent < BigDecimal("100")) { "TRAILING PCT must be less than 100, was $percent" }
+                // A computed percentage out of range skips the order rather than stopping the run.
+                val percent =
+                    percentEval.evaluateNumber(ec)?.takeIf { it.signum() > 0 && it < HUNDRED }
+                        ?: return@BuildRequest null
                 OrderRequest.TrailingStop(
                     id,
                     symbol,
@@ -55,4 +63,8 @@ internal class TrailingOrderCompiler(
     }
 
     private fun CompiledExpr.evaluateNumber(ec: EvalContext): BigDecimal? = (evaluate(ec) as? Value.Num)?.v
+
+    private companion object {
+        val HUNDRED = BigDecimal("100")
+    }
 }
