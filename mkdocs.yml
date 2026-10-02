@@ -149,6 +149,11 @@ nav:
       - Broker integration: concepts/broker-integration.md
       - Order management: concepts/order-management.md
       - Why qkt vs alternatives: concepts/why-qkt.md
+  - Instruments:
+      - instruments/index.md
+      - CFDs: instruments/cfds.md
+      - Futures: instruments/futures.md
+      - Options: instruments/options.md
   - Backtesting:
       - How a backtest runs: concepts/backtest-model.md
       - Getting & storing data: how-to/backtest-data.md
