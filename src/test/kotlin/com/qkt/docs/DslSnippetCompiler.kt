@@ -58,7 +58,18 @@ internal object DslSnippetCompiler {
                 val names = refs.keys.toList()
                 for (combination in combinations(names.size)) {
                     val attempt = LinkedHashMap(names.zip(combination).toMap())
-                    if (compile(assemble(sections, aliases, attempt), tempDir) == null) return null
+                    val attemptError = compile(assemble(sections, aliases, attempt), tempDir) ?: return null
+                    // These types compile up to the next undeclared name: keep them and declare that one.
+                    if (UNKNOWN_REFERENCE
+                            .find(attemptError)
+                            ?.groupValues
+                            ?.get(1)
+                            ?.let { it !in attempt } == true
+                    ) {
+                        refs.putAll(attempt)
+                        error = attemptError
+                        return@repeat
+                    }
                 }
             }
             return current
