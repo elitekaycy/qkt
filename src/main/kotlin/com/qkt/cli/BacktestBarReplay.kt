@@ -26,13 +26,16 @@ internal object BacktestBarReplay {
         from: LocalDate,
         to: LocalDate,
     ): Boolean {
-        var day = from
-        val timeframe = window.canonicalSpec()
-        while (!day.isAfter(to)) {
-            if (!barStore.hasDay(stream.broker, stream.bareSymbol, timeframe, day)) return false
-            day = day.plusDays(1)
+        // Bars at the window's own timeframe, or at a finer stored one the reader rolls up from.
+        val finer = barStore.finerTimeframe(stream.broker, stream.bareSymbol, window)
+        return listOfNotNull(window, finer).any { tf ->
+            var day = from
+            while (!day.isAfter(to)) {
+                if (!barStore.hasDay(stream.broker, stream.bareSymbol, tf.canonicalSpec(), day)) return@any false
+                day = day.plusDays(1)
+            }
+            true
         }
-        return true
     }
 
     data class BarReplayConfig(
