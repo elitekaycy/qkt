@@ -7,6 +7,7 @@ import com.qkt.common.TimeRange
 import com.qkt.connector.mt5.MT5ServerTimeZone
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
+import com.qkt.marketdata.rollUpToGrid
 import java.time.Instant
 import okhttp3.OkHttpClient
 
@@ -75,7 +76,7 @@ class Mt5BarFetcher(
     ): Sequence<Candle> {
         val alignedFrom = Instant.ofEpochMilli((range.from.toEpochMilli() / window.durationMs) * window.durationMs)
         val native = fetchRangeRaw(symbol, base, TimeRange(alignedFrom, range.to))
-        return aggregateToGrid(native, window, range.to.toEpochMilli(), base)
+        return rollUpToGrid(native.onEach { checkAligned(it, base) }, window, range.to.toEpochMilli())
     }
 
     /**
@@ -173,44 +174,6 @@ class Mt5BarFetcher(
                         it.startTime >= chunkFromMs &&
                             it.endTime <= chunkToMs
                     }
-            }
-    }
-
-    /**
-     * Rebuilds [window]-sized bars on the epoch-aligned UTC grid from native [base] bars.
-     *
-     * A bucket is emitted when it holds at least one native bar and closes at or before
-     * [upperMs] — partial-coverage buckets are legitimate (a week-open 4h bucket only has
-     * the hours the venue traded, exactly like a bar built live from ticks).
-     */
-    private fun aggregateToGrid(
-        native: Sequence<Candle>,
-        window: TimeWindow,
-        upperMs: Long,
-        base: TimeWindow,
-    ): Sequence<Candle> {
-        val durationMs = window.durationMs
-        val buckets = linkedMapOf<Long, MutableList<Candle>>()
-        for (bar in native.sortedBy { it.startTime }) {
-            checkAligned(bar, base)
-            buckets.getOrPut((bar.startTime / durationMs) * durationMs) { mutableListOf() }.add(bar)
-        }
-        return buckets
-            .asSequence()
-            .filter { (start, _) -> start + durationMs <= upperMs }
-            .map { (start, bars) ->
-                Candle(
-                    symbol = bars.first().symbol,
-                    open = bars.first().open,
-                    high = bars.maxOf { it.high },
-                    low = bars.minOf { it.low },
-                    close = bars.last().close,
-                    volume = bars.sumOf { it.volume },
-                    startTime = start,
-                    endTime = start + durationMs,
-                    bid = bars.last().bid,
-                    ask = bars.last().ask,
-                )
             }
     }
 
