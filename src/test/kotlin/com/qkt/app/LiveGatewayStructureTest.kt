@@ -3,8 +3,8 @@ package com.qkt.app
 import com.qkt.candles.TimeWindow
 import com.qkt.cli.InstrumentFiles
 import com.qkt.cli.MarketSourceFactory
+import com.qkt.common.Clock
 import com.qkt.common.Money
-import com.qkt.common.SystemClock
 import com.qkt.common.TradingCalendar
 import com.qkt.connectivity.AccountConfig
 import com.qkt.connectivity.AccountDirectory
@@ -88,6 +88,12 @@ class LiveGatewayStructureTest {
         copyCatalog(dir)
         val registry = InstrumentFiles.registry(dir, explicit = null)
         val snapshots = ChainSnapshotStore(fixture, QuoteSource.BOOK).readDay(root, LocalDate.parse("2026-10-01"))
+        // Real time, set back to the day the chain was recorded, so its expiries stay in the rule's DTE window.
+        val offset = System.currentTimeMillis() - (snapshots.last().atMs + 60_000)
+        val clock =
+            object : Clock {
+                override fun now() = System.currentTimeMillis() - offset
+            }
         val fake = FakeGateway(snapshots.first().quotes.map { it.contract })
         val settings =
             mapOf(
@@ -99,7 +105,7 @@ class LiveGatewayStructureTest {
                 "expected_trade_mode" to "demo",
                 "chain_snapshot_seconds" to "60",
             )
-        val context = ConnectorContext(null, mapOf("GW_KEY" to "secret"), SystemClock(), instruments = registry)
+        val context = ConnectorContext(null, mapOf("GW_KEY" to "secret"), clock, instruments = registry)
         val accounts =
             AccountDirectory.open(
                 listOf(AccountConfig("deribit", "gateway", settings)),
@@ -120,7 +126,7 @@ class LiveGatewayStructureTest {
                     )(symbols),
                 symbols = symbols,
                 candleWindow = TimeWindow.ONE_MINUTE,
-                clock = SystemClock(),
+                clock = clock,
                 calendar = TradingCalendar.crypto(),
                 brokerFactories = accounts.orderEntry(),
                 instrumentRegistry = registry,
@@ -130,7 +136,7 @@ class LiveGatewayStructureTest {
         try {
             await(10) { fake.quotes.open > 0 }
             // Snapshot i inside minute i of the last four, then the venue keeps quoting the last book live.
-            val base = System.currentTimeMillis() / 60_000 * 60_000 - 4 * 60_000
+            val base = clock.now() / 60_000 * 60_000 - 4 * 60_000
             snapshots.forEachIndexed {
                 i,
                 snapshot,
@@ -140,7 +146,7 @@ class LiveGatewayStructureTest {
             val live =
                 Thread {
                     while (!Thread.currentThread().isInterrupted && fake.submits.size < 2) {
-                        quotesOf(snapshots.last(), System.currentTimeMillis()).forEach(fake.quotes::send)
+                        quotesOf(snapshots.last(), clock.now()).forEach(fake.quotes::send)
                         runCatching { Thread.sleep(2_000) }.onFailure { return@Thread }
                     }
                 }.apply { isDaemon = true }.also { it.start() }
@@ -162,7 +168,7 @@ class LiveGatewayStructureTest {
                         "f$i",
                         leg.quantity,
                         requireNotNull(price).toPlainString(),
-                        System.currentTimeMillis(),
+                        clock.now(),
                     )
                 }
             }
@@ -172,7 +178,7 @@ class LiveGatewayStructureTest {
             )
             val recorded = ChainSnapshotStore(dir, QuoteSource.BOOK)
             val days =
-                listOf(base, System.currentTimeMillis()).map {
+                listOf(base, clock.now()).map {
                     java.time.Instant
                         .ofEpochMilli(it)
                         .atZone(java.time.ZoneOffset.UTC)
