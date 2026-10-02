@@ -16,7 +16,7 @@ daemon until it has made `fills` fills (or its budget ends), then is judged:
   - replay-same-legs (`replay: chain`): a backtest on the chain the account recorded opens the same legs.
 Writes OUT/result.json and prints one `passed|failed <id> ...` line; exits non-zero on failure.
 """
-import argparse, csv, datetime, json, os, re, shutil, subprocess, sys, time, urllib.request
+import argparse, csv, datetime, json, os, re, shutil, subprocess, sys, time, urllib.error, urllib.parse, urllib.request
 from decimal import Decimal
 
 import yaml
@@ -41,6 +41,10 @@ def main():
         problems = [f"runner error: {error}"]
     finally:
         run.stop_daemon()
+        try:
+            run.sweep()
+        except Exception as error:
+            problems = problems + [f"sweep: the account may not be flat: {error}"]
     return run.verdict(problems)
 
 
@@ -71,10 +75,32 @@ class Run:
             try:
                 with urllib.request.urlopen(request, data, timeout=30) as response:
                     return json.load(response)
+            except urllib.error.HTTPError as error:
+                if error.code < 500 or attempt == 4:  # a refusal is the gateway's answer; only 5xx may pass
+                    raise
+                time.sleep(attempt)
             except OSError:
                 if attempt == 4:
                     raise
                 time.sleep(attempt)
+
+    def sweep(self):
+        """Leaves the account flat once the case has taken it, however the case ended (a venue outage mid-trade)."""
+        if not getattr(self, "owns_account", False):
+            return
+        for order in self.get("/v1/orders")["orders"]:
+            try:
+                self.get(f"/v1/orders/{urllib.parse.quote(order['client_order_id'])}", method="DELETE")
+            except urllib.error.HTTPError as error:
+                if error.code != 404:  # not_found: the order already ended (the venue cancelled it)
+                    raise
+        for position in self.get("/v1/positions")["positions"]:
+            self.get("/v1/positions/close", {"symbol": position["symbol"]}, "POST")
+        deadline = time.time() + 30
+        while not self.flat():
+            if time.time() > deadline:
+                raise RuntimeError("still holds a position or a working order")
+            time.sleep(2)
 
     def flat(self):
         return not self.get("/v1/positions")["positions"] and not self.get("/v1/orders")["orders"]
@@ -87,13 +113,12 @@ class Run:
             raise RuntimeError("gateway has no venue link")
         if not self.flat():
             raise RuntimeError("the account is not flat: a netting account cannot attribute the case's positions")
+        self.owns_account = True  # it was flat, so whatever is on it from here on is this case's
         self.prepare(health["adapter"])
         self.run_daemon(budget)
         problems = []
         if not self.flat():
             problems.append("flat-account: the account holds a position or a working order after the case")
-            for position in self.get("/v1/positions")["positions"]:
-                self.get("/v1/positions/close", {"symbol": position["symbol"]}, "POST")
         fills = self.live_fills()
         if len(fills) < int(self.case["fills"]):
             problems.append(f"expected {self.case['fills']} fills within the budget, saw {len(fills)}")
