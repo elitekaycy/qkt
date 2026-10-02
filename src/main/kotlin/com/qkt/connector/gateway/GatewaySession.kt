@@ -153,7 +153,7 @@ internal class GatewaySession(
     }
 
     /** Refreshes the gateway's listing off the caller's thread. */
-    fun refreshListing() = placement.background { symbols.update(client.instruments().map { it.code }) }
+    fun refreshListing() = placement.background { symbols.updateListing(client.instruments()) }
 
     /** Closes the connection with the account. */
     fun close() {
@@ -163,7 +163,7 @@ internal class GatewaySession(
 
     private fun reconcile(reason: String) {
         log.info("gateway resync: {}", reason)
-        symbols.update(client.instruments().map { it.code })
+        symbols.updateListing(client.instruments())
         account.apply(sync.run(ledger.openOrders))
     }
 
