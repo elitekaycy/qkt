@@ -166,6 +166,8 @@ class Run:
         while len(self.live_fills()) < int(self.case["fills"]) and time.time() < deadline:
             time.sleep(3)
         time.sleep(5)  # the last fill's venue events and costs settle
+        if self.case["replay"] == "chain":  # a replay fills on the snapshot after the entry: record one past the fills
+            time.sleep(MINUTE / 1000 - time.time() % 60 + 15)
         self.stop_daemon()
         self.ended_ms = int(time.time() * 1000)
 
