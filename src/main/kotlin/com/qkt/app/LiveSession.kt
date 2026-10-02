@@ -520,11 +520,11 @@ class LiveSession(
                 equity = riskState.equityTracker::liveEquity,
             )
         val marketDataAlerts = MarketDataHealthAlerts(strategies, sessionNotifier, insights)
-        // Suppresses NEW orders on frozen data and drops implausible ticks before they poison indicators.
         val marketDataGate =
             liveMarketDataGate(
                 clock,
                 marketDataGateConfig,
+                instruments,
                 venues = { brokers.built.ifEmpty { listOf(broker) } },
                 alerts = marketDataAlerts,
             )
