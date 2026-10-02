@@ -10,6 +10,7 @@ attestation/
   cases/<lane>/<id>/
     case.yaml             what the case proves, what it needs, how long it may take
     strategy.qkt          the strategy (order and shadow lanes) - optional for daemon/engine cases
+    instruments.yaml      derivatives lane: the `futures:`/`options:` roots the strategy trades
   lib/validate.py         schema check + coverage gate; run by CI
 ```
 
@@ -40,6 +41,20 @@ attestation/
 | `budget_seconds` | Hard deadline; omitted means the lane default. Never above 600 |
 | `steps` | Daemon/engine lanes: ordered operator commands with the exit code and state expected after each |
 | `assertions` | Named checks the runner applies, e.g. `trace-parity`, `journal-byte-exact`, `flat-by-magic` |
+| `fills` | Derivatives lane: the fills the strategy makes before it is judged |
+| `replay` | Derivatives lane: `bars` (replay the gateway's own bars) or `chain` (replay the chain the account recorded) |
+| `dated_from_root` | Derivatives lane: trade the root's dated contract listed 7 to 45 days from expiry in place of the case's symbol |
+
+## The derivatives lane
+
+Futures, perpetuals and options run on a VGP gateway account (the Deribit testnet), not the MT5 demo, so
+the lane is opt-in: `run-attestation-catalog.sh --lanes ...,derivatives --deriv-gateway-url URL
+--deriv-expected-login LOGIN` with the trader token in `QKT_DERIV_GATEWAY_KEY`, or `deriv_gateway_url` and
+`deriv_expected_login` in the attestation profile. One netting account cannot tell two cases' positions
+apart, so its cases run one after another on a flat account (`run-derivatives-lane-case.py`). Each proves
+that the account ends flat, that qkt's realized PnL equals the venue's deals net with fees to the last
+digit, and that replaying the venue's bars (or the recorded chain) makes the same fills (or opens the same
+legs).
 
 ## Rules
 

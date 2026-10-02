@@ -9,3 +9,7 @@ bundle_root=/var/lib/qkt/soak
 image_repository=ghcr.io/elitekaycy/qkt
 insights_image=ghcr.io/elitekaycy/qkt-insights:latest
 magic_base=994000
+# Optional: a VGP gateway on a demo/testnet account (e.g. Deribit testnet) adds the derivatives lane.
+# Its trader token comes from QKT_DERIV_GATEWAY_KEY in the environment.
+#deriv_gateway_url=http://127.0.0.1:8444
+#deriv_expected_login=g-aVrEeP
