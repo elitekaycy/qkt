@@ -74,5 +74,6 @@ class TradeChainBuilder(
         rate = null,
         markAgeMs = atMs - trade.timestampMs,
         source = QuoteSource.TRADE,
+        index = trade.indexPrice,
     )
 }

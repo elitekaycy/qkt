@@ -8,6 +8,7 @@ import java.math.BigDecimal
  * and mark implied volatility ([markIv], in percent), the [underlying] price it was valued against
  * (the index at a trade, the expiry's forward in a book), the venue's [rate] when given, and
  * [markAgeMs], how old the mark was at [atMs] (time since the book row or the trade it came from).
+ * [index] is the spot index the venue charges fees on, when the source recorded it.
  * [contract] is the code without venue, e.g. `BTC_USDC-27SEP24-60000-C`.
  */
 data class ChainQuote(
@@ -21,6 +22,7 @@ data class ChainQuote(
     val rate: BigDecimal?,
     val markAgeMs: Long,
     val source: QuoteSource,
+    val index: BigDecimal? = null,
 ) {
     init {
         require(
@@ -28,6 +30,7 @@ data class ChainQuote(
         ) { "ChainQuote.contract must be a code without commas: '$contract'" }
         require(markAgeMs >= 0) { "ChainQuote.markAgeMs must be >= 0: $markAgeMs" }
         require(underlying.signum() > 0) { "ChainQuote.underlying must be > 0: $underlying" }
+        require(index == null || index.signum() > 0) { "ChainQuote.index must be > 0: $index" }
     }
 }
 

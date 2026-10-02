@@ -209,9 +209,11 @@ option of a root (an instrument's `underlying`), including options listed after 
 code subscribed both ways is sent once. Each message is one quote:
 ```json
 {"symbol": "BTC_USDC-25DEC26-92000-C", "bid": "640", "ask": "655", "bid_size": "1.2", "ask_size": "0.8",
- "mark": "648.5", "mark_iv": "52.3", "underlying": "84437.55", "time": 1790835377133}
+ "mark": "648.5", "mark_iv": "52.3", "underlying": "84437.55", "time": 1790835377133, "index": "84301.2"}
 ```
 Any field but `symbol` and `time` may be null (no bid, no mark yet). `mark_iv` is in volatility points.
+`underlying` is the price the contract is valued against (an option's forward for its expiry); `index`
+is the spot index the venue charges fees on (Deribit's option fee is a share of it).
 
 `time` is the instant the gateway last knew the quote to hold, not when it last changed. While a
 subscribed quote holds, the gateway sends it again with `time` advanced at least every **5 seconds**:

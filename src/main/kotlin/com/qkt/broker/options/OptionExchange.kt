@@ -140,7 +140,8 @@ class OptionExchange(
         looked.remove(request.id)
         val costs =
             OptionFee.costs(
-                OptionFee.trade(order.root, request.quantity, price, quote.underlying),
+                // The venue charges on the index; a series that did not record it falls back to the forward.
+                OptionFee.trade(order.root, request.quantity, price, quote.index ?: quote.underlying),
                 order.root,
                 at,
             )

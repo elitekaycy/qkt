@@ -62,6 +62,7 @@ class TradeChainBuilderTest {
         val quote = six.getValue(call)
         assertThat(listOf(quote.bid, quote.ask, quote.rate)).containsOnlyNulls()
         assertThat(quote.underlying).isEqualByComparingTo("83551.57")
+        assertThat(quote.index).isEqualByComparingTo("83551.57")
         assertThat(quote.markIv).isEqualByComparingTo("48.7")
         assertThat(quote.source).isEqualTo(QuoteSource.TRADE)
     }

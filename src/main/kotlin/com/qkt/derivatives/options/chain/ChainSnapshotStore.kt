@@ -113,7 +113,9 @@ class ChainSnapshotStore(
         if (!Files.exists(file)) return emptyList()
         return try {
             val lines = GZIPInputStream(Files.newInputStream(file)).bufferedReader().use { it.readLines() }
-            require(lines.firstOrNull() == ChainCsv.HEADER) { "header is not '${ChainCsv.HEADER}'" }
+            require(lines.firstOrNull() == ChainCsv.HEADER || lines.firstOrNull() == ChainCsv.LEGACY_HEADER) {
+                "header is not '${ChainCsv.HEADER}'"
+            }
             val rows = lines.drop(1).filter { it.isNotBlank() }
             val kept = known.dropLast(1)
             val start = kept.sumOf { it.quotes.size }

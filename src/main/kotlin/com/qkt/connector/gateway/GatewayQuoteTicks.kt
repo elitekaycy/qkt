@@ -34,7 +34,7 @@ internal fun gatewayQuoteTick(
 
 /**
  * [quote] as a book chain quote of its venue code, as chain history keeps it: its own bid, ask, mark,
- * mark IV (volatility points) and underlying (the expiry's forward), fresh at its own time. Null when it
+ * mark IV (volatility points), underlying (the expiry's forward) and fee index, fresh at its own time. Null when it
  * has no positive mark or underlying, which no chain quote can be without.
  */
 internal fun gatewayChainQuote(quote: WireQuote): ChainQuote? {
@@ -51,5 +51,6 @@ internal fun gatewayChainQuote(quote: WireQuote): ChainQuote? {
         rate = null,
         markAgeMs = 0L,
         source = QuoteSource.BOOK,
+        index = quote.index?.let(::BigDecimal)?.takeIf { it.signum() > 0 },
     )
 }
