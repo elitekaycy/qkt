@@ -214,12 +214,12 @@ class CompositeBroker(
         target.modifyPositionAsync(ticket, sl, tp, onResult)
     }
 
+    override fun isAccountWide(symbol: String): Boolean = brokerFor(symbol)?.isAccountWide(symbol) == true
+
     override fun getOpenPositions(): Map<String, List<com.qkt.positions.Position>> {
         val merged = LinkedHashMap<String, MutableList<com.qkt.positions.Position>>()
         for (leaf in allLeaves()) {
-            // A failing leaf must surface, not vanish from the merged view — a caller
-            // reconciling against a silently-partial snapshot believes it is flat on
-            // that venue and trades on assumed state (#376).
+            // A failing leaf must surface: a silently-partial snapshot reads as flat on that venue (#376).
             val leafPositions =
                 runCatching { leaf.getOpenPositions() }.getOrElse {
                     log.warn("CompositeBroker.getOpenPositions: leaf {} failed: {}", leaf.name, it.message)

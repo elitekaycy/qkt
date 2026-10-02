@@ -10,6 +10,7 @@ import com.qkt.strategy.Strategy
 import com.qkt.strategy.StrategyContext
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 
 class ExecutionSimulationBacktestTest {
@@ -124,5 +125,13 @@ class ExecutionSimulationBacktestTest {
                 }
 
         assertThat(run()).isEqualTo(run())
+    }
+
+    @Test
+    fun `the paper preset refuses execution knobs it does not model rather than recording them`() {
+        val paper = ExecutionSimulationConfig.defaultsFor(ExecutionPreset.PAPER_FAST, null)
+
+        assertThatThrownBy { paper.copy(latencyMs = 1_000L, partialFillFraction = BigDecimal("0.5")) }
+            .hasMessageContaining("does not model latency, partial fill")
     }
 }

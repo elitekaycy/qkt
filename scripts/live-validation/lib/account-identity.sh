@@ -64,11 +64,15 @@ qkt_assert_no_retained_account_identity() {
     local root="$1"
     local login="$2"
     local server="$3"
-    local leaked=()
-    mapfile -d '' -t leaked < <(
-        rg --files-with-matches --null --text --fixed-strings \
-            -e "$login" -e "$server" "$root" 2>/dev/null || true
-    )
+    local leaked=() matches status=0
+    # grep is always present (rg may not be); exit 1 is "no match", 2+ means the scan failed and
+    # must not pass as clean.
+    matches="$(grep -rlZaF -e "$login" -e "$server" -- "$root" | tr '\0' '\n'; exit "${PIPESTATUS[0]}")" || status=$?
+    if [ "$status" -ge 2 ]; then
+        printf 'account identity scan failed under %s\n' "$root" >&2
+        return 1
+    fi
+    [ -n "$matches" ] && mapfile -t leaked <<< "$matches"
     [ "${#leaked[@]}" -eq 0 ] && return 0
     rm -f -- "${leaked[@]}"
     printf 'removed %d artifact(s) that retained account identity\n' "${#leaked[@]}" >&2

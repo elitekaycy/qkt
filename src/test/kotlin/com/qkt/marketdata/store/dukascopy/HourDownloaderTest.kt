@@ -45,6 +45,22 @@ class HourDownloaderTest {
     }
 
     @Test
+    fun `retries a rate limit and a server error then succeeds`() {
+        val server = MockWebServer()
+        server.enqueue(MockResponse().setResponseCode(429))
+        server.enqueue(MockResponse().setResponseCode(503))
+        server.enqueue(MockResponse().setBody(Buffer().write(byteArrayOf(4, 5))))
+        server.start()
+
+        val dl = OkHttpHourDownloader(baseUrl = server.url("/").toString().removeSuffix("/"))
+        val bytes = dl.download("XAUUSD", LocalDate.of(2024, 3, 5), hour = 9)
+
+        assertThat(bytes).containsExactly(4, 5)
+        assertThat(server.requestCount).isEqualTo(3)
+        server.shutdown()
+    }
+
+    @Test
     fun `gives up after max attempts on persistent failure`() {
         val server = MockWebServer()
         repeat(3) { server.enqueue(MockResponse().apply { socketPolicy = SocketPolicy.DISCONNECT_AT_START }) }

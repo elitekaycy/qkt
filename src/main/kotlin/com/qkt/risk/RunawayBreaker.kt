@@ -53,7 +53,7 @@ class RunawayBreaker(
     private val activeRoundTripStrategies = mutableSetOf<String>()
     private val activeRejectionStrategies = mutableSetOf<String>()
 
-    /** Record a closing fill (realized PnL != 0) for [strategyId]. */
+    /** Record a closing fill for [strategyId], whatever it realized. */
     fun recordClose(strategyId: String) {
         if (maxRoundTrips <= 0 || strategyId.isBlank()) return
         evaluate(

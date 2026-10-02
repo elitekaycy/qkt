@@ -7,6 +7,7 @@ import com.qkt.connector.bybit.marketdata.BybitKlineClient
 import com.qkt.connector.mt5.MT5Symbol
 import com.qkt.connector.mt5.marketdata.Mt5BarFetcher
 import com.qkt.marketdata.Candle
+import com.qkt.marketdata.source.MarketSource
 
 /** Thin adapter so MT5 and Bybit fetchers share a common shape for `qkt fetch`. */
 internal fun interface BarFetcher {
@@ -58,4 +59,16 @@ internal class BybitFetcher(
         window: TimeWindow,
         range: TimeRange,
     ): List<Candle> = inner.fetchRange(symbol, window, range).toList()
+}
+
+/** Fetches through an account's own feed, which names the store's bare [symbol] with the account's [prefix]. */
+internal class SourceFetcher(
+    private val source: MarketSource,
+    private val prefix: String,
+) : BarFetcher {
+    override fun fetch(
+        symbol: String,
+        window: TimeWindow,
+        range: TimeRange,
+    ): List<Candle> = source.bars(prefix + symbol, window, range).toList()
 }

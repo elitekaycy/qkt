@@ -2,6 +2,8 @@ package com.qkt.backtest
 
 import com.qkt.candles.TimeWindow
 import com.qkt.common.TimeRange
+import com.qkt.derivatives.options.chain.ChainAnalyticsSymbol
+import com.qkt.derivatives.options.chain.OptionRootSymbol
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.MergingTickFeed
 import com.qkt.marketdata.Tick
@@ -17,6 +19,37 @@ import com.qkt.marketdata.source.SequenceTickFeed
  * series and tick slicer the tick-resolved fill tier reads.
  */
 internal object ReplayFeeds {
+    /**
+     * One feed per symbol in [symbols], merged when there is more than one, with the symbols it
+     * synthesizes from bars ([BarFills]). Tick-resolved fills ([tickFills]) fill on real ticks, so they
+     * fill at no level. A symbol the source has no ticks for is synthesized from its bars even without
+     * [forceBars]; under [BrokerKind.MT5_SIM] that is refused like `--bars` is, since bar extremes
+     * carry neither MT5 trigger prices nor spread. [positionSign] reads net position signs from the
+     * engine that ends up pulling this feed (bound by [Backtest.toEngine]), so each bar emits the open
+     * position's adverse extreme first; unbound (fan-out shared feeds) it reads 0 and the feed keeps the
+     * flat-default Low-first order.
+     */
+    fun replay(
+        source: MarketSource,
+        symbols: List<String>,
+        range: TimeRange,
+        barWindows: Map<String, TimeWindow>,
+        candleWindow: TimeWindow?,
+        forceBars: Boolean,
+        positionSign: (String) -> Int,
+        tickFills: Boolean = false,
+        brokerKind: BrokerKind = BrokerKind.PAPER,
+    ): Pair<TickFeed, BarFills> {
+        val synthesized = mutableSetOf<String>()
+        val feed = merged(source, symbols, range, barWindows, candleWindow, forceBars, positionSign, synthesized)
+        val fallback = if (forceBars) emptySet() else synthesized
+        require(brokerKind != BrokerKind.MT5_SIM || tickFills || fallback.isEmpty()) {
+            "--broker mt5-sim cannot replay ${fallback.sorted()} from bars: synthetic bar extremes do not " +
+                "preserve MT5 trigger prices or market spread. Provide ticks for them, or use --bars --tick-fills"
+        }
+        return feed to if (tickFills) BarFills.NONE else BarFills(synthesized)
+    }
+
     /** One feed per symbol in [symbols], merged when there is more than one. */
     fun merged(
         source: MarketSource,
@@ -26,10 +59,15 @@ internal object ReplayFeeds {
         candleWindow: TimeWindow?,
         forceBars: Boolean,
         positionSign: (String) -> Int,
+        synthesized: MutableSet<String> = mutableSetOf(),
     ): TickFeed {
+        // A fed option root (OPTIONS:<VENUE>.<ROOT>) carries every contract of the root; a contract of a
+        // fed root is never fed a second time, so each of its quotes arrives once.
+        val fedRoots = symbols.mapNotNull { OptionRootSymbol.parse(it).getOrNull() }
         val perSymbolFeeds: List<TickFeed> =
-            symbols.map { sym ->
+            symbols.filterNot { sym -> fedRoots.any { it.covers(sym) } }.map { sym ->
                 replayFeed(source, sym, range, barWindows[sym] ?: candleWindow, forceBars, positionSign)
+                    .also { if (it is BarTickFeed) synthesized += sym }
             }
         return if (perSymbolFeeds.size == 1) perSymbolFeeds[0] else MergingTickFeed(perSymbolFeeds)
     }
@@ -87,6 +125,11 @@ internal object ReplayFeeds {
         forceBars: Boolean,
         positionSign: (String) -> Int = { 0 },
     ): TickFeed {
+        // A chain analytics stream has values only where the chain allows one; an empty stream is a
+        // stream whose rules never fire, not missing data (coverage of its chain days is checked at setup).
+        if (symbol.startsWith(ChainAnalyticsSymbol.PREFIX) || symbol.startsWith(OptionRootSymbol.PREFIX)) {
+            return SequenceTickFeed(source.ticks(symbol, range))
+        }
         val caps = source.capabilities
         val ticksAvailable = MarketSourceCapability.TICKS in caps
         // The `--bars` research tier forces synthesis from bars; otherwise prefer real ticks,

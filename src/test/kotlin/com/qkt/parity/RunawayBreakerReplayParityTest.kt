@@ -132,6 +132,36 @@ class RunawayBreakerReplayParityTest {
     }
 
     @Test
+    fun `break-even round trips on a flat price trip the breaker in replay and live`() {
+        val flat = (0 until 10).map { i -> Tick(symbol, Money.of("100"), initialTs + i * 1_000L) }
+        val replay =
+            Backtest(
+                strategies = listOf("fast" to rapidRoundTripStrategy()),
+                ticks = flat,
+                initialTimestamp = initialTs,
+                enforceLiveBreakers = true,
+                runawayMaxRoundTrips = 2,
+                runawayMaxRejections = 0,
+            ).run()
+        val liveTrades = mutableListOf<Trade>()
+        val live =
+            LiveSession(
+                strategies = listOf("fast" to rapidRoundTripStrategy()),
+                source = FakeSource(flat),
+                symbols = listOf(symbol),
+                clock = FixedClock(initialTs),
+                runawayMaxRoundTrips = 2,
+                runawayMaxRejections = 0,
+                onTrade = { trade, _, _ -> liveTrades.add(trade) },
+            ).start()
+        check(live.awaitTermination(Duration.ofSeconds(10))) { "live session did not terminate" }
+
+        assertThat(replay.halts).hasSize(1)
+        assertThat(replay.trades).hasSize(6)
+        assertThat(replay.trades.map { it.trade }).containsExactlyElementsOf(liveTrades)
+    }
+
+    @Test
     fun `strict replay matches live across 500 generated tick and signal cases`() {
         withQuietParityLogs {
             for (seed in 1L..500L) {

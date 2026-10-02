@@ -133,4 +133,6 @@ internal inline fun botRun(
         botFail(json, e.message ?: "invalid arguments")
     } catch (e: IllegalStateException) {
         botFail(json, e.message ?: "command failed")
+    } catch (e: com.qkt.backtest.IncompleteDataException) {
+        botFail(json, e.message ?: "incomplete market data")
     }

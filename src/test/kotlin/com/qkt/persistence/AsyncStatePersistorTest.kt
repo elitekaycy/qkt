@@ -169,4 +169,18 @@ class AsyncStatePersistorTest {
             assertThat(delegate.loadPendingOrders("alpha")).containsOnlyKeys("intent")
         }
     }
+
+    @Test
+    fun `trade history and every other state reach the delegate and read back through the decorator`(
+        @TempDir tmp: Path,
+    ) {
+        val history = PersistedTradeHistory(listOf(PersistedTradeOutcome(5L, BigDecimal("-12.5"), "XAUUSDm")))
+        AsyncStatePersistor(FileStatePersistor(tmp)).use { async ->
+            async.saveTradeHistory("hedge", history)
+            assertThat(async.awaitDrain()).isTrue
+
+            assertThat(async.loadTradeHistory("hedge")).isEqualTo(history)
+        }
+        assertThat(FileStatePersistor(tmp).loadTradeHistory("hedge")).isEqualTo(history)
+    }
 }

@@ -102,4 +102,18 @@ if verify > "$tmp_dir/artifact.out" 2>&1; then
 fi
 grep -q 'journal artifact SHA-256 mismatch' "$tmp_dir/artifact.out"
 
+write_attestation "2026-08-05T00:00:00Z" 0
+if python3 "$subject" "$attestation" --expected-git-sha "$sha" --expected-image-repository "$repository" \
+    --min-continuous-hours 72 > "$tmp_dir/hours.out" 2>&1; then
+    echo "a run shorter than --min-continuous-hours must fail closed" >&2
+    exit 1
+fi
+grep -q 'below the required 72h' "$tmp_dir/hours.out"
+if python3 "$subject" "$attestation" --expected-git-sha "$sha" --expected-image-repository "$repository" \
+    --min-trading-days 5 > "$tmp_dir/days.out" 2>&1; then
+    echo "fewer trading days than --min-trading-days must fail closed" >&2
+    exit 1
+fi
+grep -q 'below the required 5' "$tmp_dir/days.out"
+
 echo "paper-soak attestation verifier tests passed"

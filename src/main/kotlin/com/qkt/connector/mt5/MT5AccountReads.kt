@@ -2,6 +2,7 @@ package com.qkt.connector.mt5
 
 import java.math.BigDecimal
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -104,6 +105,17 @@ internal class MT5AccountReads(
             contractSize =
                 obj["trade_contract_size"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull()
                     ?: BigDecimal.ONE,
+            swap = symbolSwap(obj),
+        )
+    }
+
+    private fun symbolSwap(obj: JsonObject): MT5SymbolSwap? {
+        fun field(key: String) = obj[key]?.jsonPrimitive?.contentOrNull
+        return MT5SymbolSwap(
+            mode = field("swap_mode")?.toIntOrNull() ?: return null,
+            long = field("swap_long")?.toBigDecimalOrNull() ?: return null,
+            short = field("swap_short")?.toBigDecimalOrNull() ?: return null,
+            tripleDay = field("swap_rollover3days")?.toIntOrNull() ?: return null,
         )
     }
 

@@ -27,7 +27,7 @@ internal class ResizeActionCompiler(
      * or when `|target - current|` is below the [Resize.minStep] deadband (default 5% of target).
      */
     fun compile(action: Resize): (EvalContext) -> List<Signal> {
-        val compiledTarget = sizingCompiler.compile(action.target, stopDistance = null, streamAlias = action.stream)
+        val compiledTarget = sizingCompiler.compileRaw(action.target, stopDistance = null, streamAlias = action.stream)
         val compiledMinStep = action.minStep?.let { exprCompiler.compile(it) }
         return resize@{ ctx ->
             val symbol =
@@ -39,7 +39,7 @@ internal class ResizeActionCompiler(
                     .firstOrNull { it.role == com.qkt.positions.LegRole.PRIMARY }
                     ?: return@resize emptyList()
             val refPrice = ctx.candle.close
-            val rawTarget = compiledTarget.evaluate(ctx, refPrice)
+            val rawTarget = compiledTarget.evaluate(ctx, refPrice) ?: return@resize emptyList()
             val target = if (rawTarget.signum() < 0) BigDecimal.ZERO else rawTarget
             val cur = primary.quantity.abs()
             val delta = target.subtract(cur, Money.CONTEXT)

@@ -20,6 +20,7 @@ internal class OcoSequencer(
     private val guard: OcoExecutionGuard,
     private val clock: Clock,
     private val ops: OrderOps,
+    private val exitRefusal: BracketExitRefusal,
 ) {
     private class Sequence(
         val ocoId: String,
@@ -95,7 +96,7 @@ internal class OcoSequencer(
         if (book[req.id]?.state == OrderState.REJECTED) {
             return SubmitAck(req.id, req.id, accepted = false, rejectReason = "leg ${req.leg1.id} rejected")
         }
-        if (!ack1.accepted) {
+        if (!ack1.accepted && !seq.leg2Placed) {
             // Local rejection that carried no event (e.g. a capability reject) — abandon the
             // OCO; leg2 was never dispatched.
             exposure.remove(leg2AckId)
@@ -130,10 +131,17 @@ internal class OcoSequencer(
 
     /**
      * Abandon an OCO whose leg the venue rejected. A leg1 rejection means leg2 was never sent —
-     * nothing to unwind. A leg2 rejection cancels the still-live leg1.
+     * nothing to unwind. A leg2 rejection cancels the still-live leg1. A bracket's exit OCO is
+     * never abandoned while it protects a position: see [BracketExitRefusal].
      */
     fun onRejected(ackId: String) {
         byLeg1[ackId]?.let { seq ->
+            if (!seq.leg2Placed && exitRefusal.protectsPosition(seq.ocoId)) {
+                exitRefusal.targetRefused(seq.leg1)
+                seq.leg2Placed = true
+                ops.dispatch(seq.leg2)
+                return
+            }
             if (!seq.leg2Placed) {
                 exposure.remove(seq.leg2AckId)
                 clear(seq)
@@ -143,6 +151,10 @@ internal class OcoSequencer(
         }
         byLeg2[ackId]?.let { seq ->
             clear(seq)
+            if (exitRefusal.protectsPosition(seq.ocoId)) {
+                exitRefusal.holdRefusedStop(seq.ocoId, seq.leg2, seq.leg1, seq.leg1AckId)
+                return
+            }
             ops.cancel(seq.leg1.id)
             reject(seq.ocoId, "leg ${seq.leg2.id} rejected")
         }

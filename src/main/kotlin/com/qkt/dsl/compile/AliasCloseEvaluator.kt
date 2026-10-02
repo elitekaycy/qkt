@@ -19,9 +19,15 @@ internal class AliasCloseEvaluator(
 ) {
     var evaluationObserver: (String, HubKey, Candle, Int) -> Unit = { _, _, _, _ -> }
 
-    // Rules grouped by their alias — fireRulesForAlias runs per bar close, and scanning every
-    // rule with a string compare to find the alias's few was per-bar overhead.
-    val rulesByAlias: Map<String, List<CompiledRule>> by lazy { rules.groupBy { it.ruleAlias } }
+    // Rules grouped by the aliases whose close evaluates them — fireRulesForAlias runs per bar close,
+    // and scanning every rule with a string compare to find the alias's few was per-bar overhead.
+    val rulesByAlias: Map<String, List<CompiledRule>> by lazy {
+        rules.flatMap { rule -> rule.triggerAliases.map { it to rule } }.groupBy({ it.first }, { it.second })
+    }
+
+    // A rule several streams trigger runs once per close instant: streams closing together (a sync
+    // group, or equal timeframes) must not evaluate it twice.
+    private val lastEvaluatedMs = HashMap<CompiledRule, Long>()
 
     fun evaluate(
         alias: String,
@@ -85,6 +91,7 @@ internal class AliasCloseEvaluator(
         var consumerFired = false
         var consumerAccepted = false
         for (rule in aliasRules) {
+            if (rule.triggerAliases.size > 1 && lastEvaluatedMs.put(rule, candle.endTime) == candle.endTime) continue
             if (!warmupGate.isWarm(rule.referencedAliases)) continue
             when (ledger.fireAndCommit(rule, ec, ctx, emit)) {
                 SequenceFireOutcome.ACCEPTED -> {

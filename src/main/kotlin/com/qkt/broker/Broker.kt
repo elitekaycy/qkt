@@ -86,18 +86,18 @@ interface Broker {
     }
 
     /**
-     * Snapshot of currently-open positions on the venue, keyed by qkt-side symbol.
-     *
-     * Returns a **list per symbol** because hedge-mode-capable brokers (MT5, Bybit linear)
-     * can hold a long and a short on the same symbol as two distinct tickets — the
-     * reconciler needs to see each one separately to match against persisted legs.
-     * One-way-mode brokers and PaperBroker return at most one entry per symbol.
-     *
-     * Used at strategy deploy time by [com.qkt.persistence.LegBookReconciler] to merge
-     * broker reality with persisted state. Default returns an empty map — only brokers
-     * with venue-side state override.
+     * Snapshot of currently-open positions on the venue, keyed by qkt-side symbol: a list per symbol,
+     * since hedge-mode brokers (MT5, Bybit linear) hold a long and a short as two tickets the reconciler
+     * matches separately; one-way brokers and PaperBroker return at most one entry. Used at deploy time
+     * by [com.qkt.persistence.LegBookReconciler]; empty by default (no venue-side state).
      */
     fun getOpenPositions(): Map<String, List<com.qkt.positions.Position>> = emptyMap()
+
+    /**
+     * True when [symbol]'s venue position is the net of several strategies sharing one netting account:
+     * startup reconcile then trusts each strategy's persisted book, and the broker checks the total.
+     */
+    fun isAccountWide(symbol: String): Boolean = false
 
     /**
      * Re-establish venue-side tracking for OCO legs recovered from the persistor on

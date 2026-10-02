@@ -29,6 +29,20 @@ class IncompleteDataException(
 class BacktestDataProvisioner(
     private val store: DefaultDataStore,
 ) {
+    /** A fetch that fails after its retries is incomplete data, reported like any other hole. */
+    private fun prefetch(
+        request: MarketRequest,
+        symbol: String,
+    ) {
+        try {
+            store.prefetch(request)
+        } catch (e: java.io.IOException) {
+            throw IncompleteDataException("could not fetch ticks for $symbol: ${e.message}; rerun later")
+        } catch (e: IllegalStateException) {
+            throw IncompleteDataException("could not fetch ticks for $symbol: ${e.message}")
+        }
+    }
+
     fun ensure(
         streams: List<ProvisionStream>,
         from: LocalDate,
@@ -42,14 +56,14 @@ class BacktestDataProvisioner(
 
         for (s in streams.distinctBy { it.bareSymbol }) {
             val request = MarketRequest(symbols = listOf(s.bareSymbol), from = fromInstant, to = toInstant)
-            if (fetchEnabled) store.prefetch(request)
+            if (fetchEnabled) prefetch(request, s.bareSymbol)
 
             var report = TickCompletenessValidator.validate(store, s.bareSymbol, from, to, calendarFor(s.bareSymbol))
 
             if (report.hasHoles && fetchEnabled) {
                 // A prior interrupted fetch can leave a day partial. Delete + refetch those once.
                 for (hole in report.holes) store.dropDay(s.bareSymbol, hole.day)
-                store.prefetch(request)
+                prefetch(request, s.bareSymbol)
                 report = TickCompletenessValidator.validate(store, s.bareSymbol, from, to, calendarFor(s.bareSymbol))
             }
 

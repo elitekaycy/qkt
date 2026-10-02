@@ -102,7 +102,7 @@ internal class EntryOrderCompiler(
                         // cross-stream order is otherwise invisible in the trade record, and it
                         // is the kind of silence that costs a leg of a hedge without a trace.
                         // The same-stream case is ordinary warm-up and stays quiet.
-                        if (crossStream(ctx, stream)) {
+                        if (ctx.isCrossStream(stream)) {
                             return@buySell listOf(
                                 Signal.Suppressed(
                                     symbol = symbol,
@@ -121,7 +121,9 @@ internal class EntryOrderCompiler(
                 } else {
                     null
                 }
-            val qty = compiledSize.evaluate(ctx, entry, resolvedBracket?.stopDistance)
+            val qty =
+                compiledSize.evaluate(ctx, entry, resolvedBracket?.stopDistance)
+                    ?: return@buySell emptyList<Signal>().also { skipLog.skipped("size", ctx, stream) }
             val entryReq =
                 compiledOrderType.buildRequest.evaluate(ctx, ids.next(), symbol, side, qty, tif, "", ts)
                     ?: run {
@@ -182,18 +184,5 @@ internal class EntryOrderCompiler(
                 if (holdMs != null && exitId != null) timedExit(exitId, finalRequest, holdMs, ts) else finalRequest
             listOf(Signal.Submit(submitted))
         }
-    }
-
-    /**
-     * True when [stream] is not the stream whose bar is being evaluated — i.e. this action is
-     * ordering on a symbol other than the one that triggered the rule.
-     */
-    private fun crossStream(
-        ctx: EvalContext,
-        stream: String,
-    ): Boolean {
-        val target = ctx.streams[stream] ?: return false
-        val current = ctx.currentAlias
-        return if (current != null) current != stream else ctx.candle.symbol != target.qktSymbol
     }
 }

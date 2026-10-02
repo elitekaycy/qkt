@@ -47,6 +47,18 @@ internal fun signalToJson(sig: com.qkt.strategy.Signal) =
                 put("kind", JsonPrimitive("cancel_stacks"))
                 put("symbol", JsonPrimitive(sig.symbol))
             }
+            is com.qkt.strategy.Signal.SubmitGroup -> {
+                put("kind", JsonPrimitive("structure"))
+                put("structureId", JsonPrimitive(sig.structureId))
+                put("alias", JsonPrimitive(sig.alias))
+                sig.closes?.let { put("closes", JsonPrimitive(it)) }
+                put(
+                    "legs",
+                    JsonPrimitive(
+                        sig.requests.joinToString(";") { "${it.side} ${it.quantity.toPlainString()} ${it.symbol}" },
+                    ),
+                )
+            }
             is com.qkt.strategy.Signal.ArmLatch -> {
                 put("kind", JsonPrimitive("arm_latch"))
                 put("name", JsonPrimitive(sig.compiled.name ?: ""))

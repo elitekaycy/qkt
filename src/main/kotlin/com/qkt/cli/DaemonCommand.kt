@@ -163,10 +163,18 @@ class DaemonCommand(
         // Forward reference so the connector context can ask which deployed strategies trade an
         // account. Recovery runs strictly after the broker is built, so by the time a broker asks,
         // `registryRef.get()` is populated. See #154.
+        val daemonInstrumentRegistry =
+            try {
+                InstrumentFiles.registry(Path.of(cfg.dataRoot), null, liveClock = com.qkt.common.SystemClock())
+            } catch (e: Exception) {
+                System.err.println("qkt: instrument registry load failed: ${e.message}")
+                runCatching { insightsSink?.close() }
+                return ExitCodes.USER_ERROR
+            }
         val registryRef = AtomicReference<StrategyRegistry?>(null)
         val accounts =
             try {
-                cfg.openAccounts(stateDir.stateRoot) { accountName ->
+                cfg.openAccounts(stateDir.stateRoot, daemonInstrumentRegistry) { accountName ->
                     registryRef
                         .get()
                         ?.list()
@@ -195,25 +203,6 @@ class DaemonCommand(
         val daemonCalendarFor: (String) -> com.qkt.common.TradingCalendar = { qktSymbol ->
             liveCalendarFor(qktSymbol, accounts)
         }
-        val daemonInstrumentRegistry =
-            try {
-                com.qkt.instrument.LayeredInstrumentRegistry(
-                    buildList {
-                        val configured = Path.of(cfg.dataRoot).resolve("instruments.yaml")
-                        if (Files.isRegularFile(configured)) {
-                            add(
-                                com.qkt.instrument.YamlInstrumentRegistry
-                                    .load(configured),
-                            )
-                        }
-                        add(com.qkt.instrument.StandardInstrumentRegistry)
-                    },
-                )
-            } catch (e: Exception) {
-                System.err.println("qkt: instrument registry load failed: ${e.message}")
-                runCatching { insightsSink?.close() }
-                return ExitCodes.USER_ERROR
-            }
         val liveAccounts = verifiedAccounts.filter { it.second.type == com.qkt.connectivity.AccountType.LIVE }
         if (!cfg.runtimeMode.production && liveAccounts.isNotEmpty()) {
             System.err.println(
@@ -258,7 +247,8 @@ class DaemonCommand(
 
         val effectiveSourceFactory: (List<String>) -> MarketSource =
             sourceFactory
-                ?: MarketSourceFactory.composite(accounts.marketDataRoutes(), source = cfg.source, hub = cfg.hub)
+                ?: MarketSourceFactory
+                    .composite(accounts.marketDataRoutes(), cfg.source, cfg.hub, daemonInstrumentRegistry)
 
         val statePersistor =
             statePersistorFactory?.invoke(cfg, stateDir.stateRoot)
@@ -602,9 +592,7 @@ class DaemonCommand(
         onDeployError: (name: String, message: String) -> Unit = { _, _ -> },
     ): List<FailedAutoDeploy> {
         if (dir == null) return emptyList()
-        val path =
-            java.nio.file.Path
-                .of(dir)
+        val path = Path.of(dir)
         if (!java.nio.file.Files
                 .isDirectory(path)
         ) {

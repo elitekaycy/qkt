@@ -53,4 +53,7 @@ enum class ProductType {
 
     /** A dated futures contract that expires and settles, e.g. CME MES or a BTC quarterly. */
     FUTURE,
+
+    /** A dated option that expires and settles at its intrinsic value, e.g. a Deribit BTC_USDC call. */
+    OPTION,
 }

@@ -2,6 +2,8 @@ package com.qkt.observe
 
 import com.qkt.events.BrokerEvent
 import com.qkt.events.CandleEvent
+import com.qkt.events.ContractSettled
+import com.qkt.events.CostIncurred
 import com.qkt.events.DecisionOrderLinkedEvent
 import com.qkt.events.Event
 import com.qkt.events.FillAccountedEvent
@@ -13,6 +15,7 @@ import com.qkt.events.SignalEvent
 import com.qkt.events.SignalSuppressedEvent
 import com.qkt.events.StrategyCandleEvaluatedEvent
 import com.qkt.events.StreamCandleEvent
+import com.qkt.events.StructureEvent
 import com.qkt.events.TickEvent
 import com.qkt.events.TradeEvent
 import com.qkt.events.WarmupTickEvent
@@ -32,6 +35,8 @@ internal fun auditStrategyId(event: Event): String? =
         is FillAccountedEvent -> event.strategyId.takeIf { it.isNotBlank() }
         is TradeEvent -> event.strategyId.takeIf { it.isNotBlank() }
         is SignalSuppressedEvent -> event.strategyId.takeIf { it.isNotBlank() }
+        is CostIncurred -> event.strategyId.takeIf { it.isNotBlank() }
+        is StructureEvent -> event.strategyId.takeIf { it.isNotBlank() }
         else -> null
     }
 
@@ -55,6 +60,8 @@ internal fun auditSymbol(event: Event): String? =
         is BrokerEvent.OrderFilled -> event.symbol
         is BrokerEvent.OrderPartiallyFilled -> event.symbol
         is BrokerEvent.PositionReconciled -> event.symbol
+        is CostIncurred -> event.symbol
+        is ContractSettled -> event.symbol
         is TradeEvent -> event.trade.symbol
         is TickEvent -> event.tick.symbol
         is WarmupTickEvent -> event.tick.symbol
@@ -74,5 +81,6 @@ private fun com.qkt.strategy.Signal.symbolOrNull(): String? =
         is com.qkt.strategy.Signal.Submit -> request.symbol
         is com.qkt.strategy.Signal.CancelPendingForSymbol -> symbol
         is com.qkt.strategy.Signal.ArmLatch -> null
+        is com.qkt.strategy.Signal.SubmitGroup -> null
         is com.qkt.strategy.Signal.Suppressed -> symbol
     }

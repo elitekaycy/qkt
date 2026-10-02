@@ -240,9 +240,9 @@ class SizingCompilerTest {
     }
 
     @Test
-    fun `SizePositionFull returns absolute quantity when flat`() {
+    fun `SizePositionFull has no size when flat, so its order is skipped`() {
         val s = compiler().compile(SizePositionFull("btc"), stopDistance = null, streamAlias = "btc")
-        assertThat(s.evaluate(ec, entryPrice = BigDecimal("100"))).isEqualByComparingTo("0")
+        assertThat(s.evaluate(ec, entryPrice = BigDecimal("100"))).isNull()
     }
 
     @Test
