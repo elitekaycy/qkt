@@ -3,7 +3,6 @@ package com.qkt.cli
 import com.qkt.candles.TimeWindow
 import com.qkt.cli.fetch.CatalogFetch
 import com.qkt.cli.fetch.ChainFetch
-import com.qkt.cli.fetch.OptionCatalogFetch
 import com.qkt.cli.fetch.RollsFetch
 import com.qkt.cli.fetch.buildFetcher
 import com.qkt.cli.fetch.resolveFetchRange
@@ -35,7 +34,7 @@ import java.time.ZoneOffset
  * - BINANCE_UM — Binance USDⓈ-M quarterly futures from the free `data.binance.vision` archive.
  * - BACKTEST — refused; nothing to fetch (the local store IS the backtest source).
  *
- * `qkt fetch VENUE:ROOT --catalog` writes the root's futures contract catalog instead of bars, and
+ * `qkt fetch VENUE:ROOT --catalog` writes the root's contract catalogs instead of bars (see [CatalogFetch]), and
  * `qkt fetch VENUE:ROOT --rolls` measures its roll history from stored (and fetched) 1m bars, and
  * `qkt fetch DERIBIT:ROOT --chains` builds an option root's chain snapshots from trade history.
  */
@@ -65,7 +64,7 @@ class FetchCommand(
             System.err.println("qkt: $it")
             return ExitCodes.ARG_ERROR
         }
-        if (args.flag("catalog")) return catalog(target, broker)
+        if (args.flag("catalog")) return catalog(target)
         if (args.flag("rolls")) return rolls(target, broker)
         if (args.flag("chains")) return ChainFetch.run(target, args)
         val tfArg =
@@ -157,20 +156,8 @@ class FetchCommand(
         return ExitCodes.SUCCESS
     }
 
-    private fun catalog(
-        target: String,
-        venue: String,
-    ): Int {
-        val dataRoot = DataRoot.forDataRoot(args.option("data-root"))
-        return if (OptionCatalogFetch.handles(
-                venue,
-            )
-        ) {
-            OptionCatalogFetch.run(target, dataRoot)
-        } else {
-            CatalogFetch.run(target, dataRoot)
-        }
-    }
+    private fun catalog(target: String): Int =
+        CatalogFetch.forTarget(target, DataRoot.forDataRoot(args.option("data-root")), args.option("config"))
 
     private fun rolls(
         target: String,

@@ -44,6 +44,9 @@ interface TradingAccount : AutoCloseable {
      */
     fun instrumentSpec(qktSymbol: String): com.qkt.instrument.VenueInstrumentSpec? = null
 
+    /** Builds the catalogs of this account's futures roots from the venue's listing, or null when it lists none. */
+    val contractCatalogs: com.qkt.instrument.ContractCatalogSource? get() = null
+
     /** Releases the connections and files this account holds. Idempotent. */
     override fun close()
 }

@@ -1,6 +1,7 @@
 package com.qkt.marketdata.store.binance
 
 import com.qkt.instrument.ContractCatalog
+import com.qkt.instrument.ContractCatalogSource
 import com.qkt.instrument.ListedContract
 import java.io.IOException
 
@@ -10,16 +11,16 @@ import java.io.IOException
  */
 class BinanceContractCatalog(
     private val client: BinanceVisionClient,
-) {
+) : ContractCatalogSource {
     /**
      * The catalog of [root], e.g. `BINANCE_UM:BTCUSDT`. Contracts come from both the monthly and the
      * daily file listings (a newly listed quarterly has daily files before its first monthly file).
      * Delivery prices are optional: when the endpoint cannot be read the catalog is built without
      * them and the reason goes to [warn].
      */
-    fun build(
+    override fun build(
         root: String,
-        warn: (String) -> Unit = {},
+        warn: (String) -> Unit,
     ): ContractCatalog {
         require(root.startsWith("$VENUE:")) { "Binance catalogs are for $VENUE roots, got '$root'" }
         val pair = root.substringAfter(':')
