@@ -162,18 +162,9 @@ class ReplayEngine(
         val dslStrategies = strategies.mapNotNull { (_, s) -> s as? DslCompiledStrategy }
         warnQuoteFieldReads(dslStrategies)
         val brokerSymbols = brokerSymbolsOf(dslStrategies)
-        requireReplaySymbolsResolvable(tradedSymbols + brokerSymbols.values.flatten(), books.accounting, instruments)
-        val broker =
-            replayBroker(
-                executionConfig,
-                bus,
-                clock,
-                books,
-                barFills,
-                calendar,
-                brokerSymbols,
-                tradedSymbols + brokerSymbols.values.flatten(),
-            )
+        val allSymbols = tradedSymbols + brokerSymbols.values.flatten()
+        requireReplaySymbolsResolvable(allSymbols, books.accounting, instruments)
+        val broker = replayBroker(executionConfig, bus, clock, books, barFills, calendar, brokerSymbols, allSymbols)
         val risk =
             ReplayRisk(
                 rules = rules,
@@ -284,15 +275,7 @@ class ReplayEngine(
         // positions when it is marked. Without it the backtest would never release a reservation.
         bookRiskController?.let { controller -> wireBookReservations(bus, controller) }
         holder[0] = pipeline
-        swapBook =
-            SwapFinancingBook(
-                instruments = instruments,
-                strategyPositions = books.strategyPositions,
-                accounting = books.accounting,
-                prices = books.priceTracker,
-                strategyIds = strategies.map { it.first },
-                symbols = tradedSymbols + brokerSymbols.values.flatten(),
-            )
+        swapBook = replaySwapBook(instruments, books, strategies.map { it.first }, allSymbols)
         subscribeHaltKillSwitch(bus, pipeline, strategies, books.strategyPositions, ids, clock, bookCapital)
 
         // Tick-resolved fills: replace the bar feed with one that loads real ticks for fill-possible
