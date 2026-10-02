@@ -214,6 +214,16 @@ if run_subject \
 fi
 grep -q 'no successful paper-soak run exists for current testing' "$tmp_dir/mixed-soak.out"
 
+# The compare API stops listing at 300 files, so a list that long is never trusted as docs-only.
+: > "$log_file"
+if run_subject \
+    FAKE_CHANGED_FILES="$(for i in $(seq 1 300); do echo "docs/page-$i.md"; done)" \
+    FAKE_SOAK_MISSING=true > "$tmp_dir/capped-soak.out" 2>&1; then
+    echo "a capped file list must not waive the soak" >&2
+    exit 1
+fi
+grep -q 'no successful paper-soak run exists for current testing' "$tmp_dir/capped-soak.out"
+
 if ! grep -q '^          ref: testing$' "$workflow"; then
     echo "promotion workflow must checkout the integration-tested testing ref" >&2
     exit 1
