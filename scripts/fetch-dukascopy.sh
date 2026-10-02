@@ -43,16 +43,21 @@ npx --yes dukascopy-node@^4 \
     -d "$tmpdir" \
     -fn raw >/dev/null
 
+# A missing raw file means the download produced nothing; fail rather than cache an empty day
+# the backtest would then trust. %.15g keeps every digit of a 5-digit FX or 3-digit metal mid.
+if [[ ! -f "$tmpdir/raw.csv" ]]; then
+    echo "dukascopy-node wrote no data for $symbol on $day" >&2
+    exit 1
+fi
+partial="$target.partial.$$"
 {
     echo "timestamp,symbol,price,volume,bid,ask,bidVolume,askVolume"
-    if [[ -f "$tmpdir/raw.csv" ]]; then
-        awk -F',' -v sym="$symbol" '
-            NR > 1 && NF >= 5 {
-                mid = ($2 + $3) / 2.0
-                printf "%s,%s,%s,,%s,%s,%s,%s\n", $1, sym, mid, $3, $2, $5, $4
-            }
-        ' "$tmpdir/raw.csv"
-    fi
-} | gzip > "$target"
+    awk -F',' -v sym="$symbol" '
+        NR > 1 && NF >= 5 {
+            printf "%s,%s,%.15g,,%s,%s,%s,%s\n", $1, sym, ($2 + $3) / 2.0, $3, $2, $5, $4
+        }
+    ' "$tmpdir/raw.csv"
+} | gzip > "$partial"
+mv -f "$partial" "$target"
 
 echo "wrote $target"

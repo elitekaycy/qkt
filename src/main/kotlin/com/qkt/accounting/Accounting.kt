@@ -8,72 +8,6 @@ import java.util.concurrent.ConcurrentHashMap
 
 private fun normalizeCurrencyPair(raw: String): String = raw.uppercase().filter { it in 'A'..'Z' }
 
-// A 3-5 letter currency code — equivalent to the regex [A-Za-z]{3,5}, but as a char check so the
-// per-tick MoneyAmount construction compiles no pattern and allocates no Matcher (that regex
-// dominated the backtest hot path). e.g. "USD" -> true, "us" -> false, "DOLLAR" -> false.
-private fun isCurrencyCode(code: String): Boolean {
-    val trimmed = code.trim()
-    return trimmed.length in 3..5 && trimmed.all { it in 'A'..'Z' || it in 'a'..'z' }
-}
-
-@JvmInline
-value class AccountCurrency(
-    val code: String,
-) {
-    init {
-        require(isCurrencyCode(code)) {
-            "account currency must be a 3-5 letter code: $code"
-        }
-    }
-
-    val normalized: String get() = code.trim().uppercase()
-
-    override fun toString(): String = normalized
-}
-
-data class MoneyAmount(
-    val amount: BigDecimal,
-    val currency: String,
-) {
-    init {
-        require(isCurrencyCode(currency)) {
-            "money currency must be a 3-5 letter code: $currency"
-        }
-    }
-
-    val normalizedCurrency: String get() = currency.trim().uppercase()
-}
-
-data class FxConversion(
-    val from: String,
-    val to: String,
-    val rate: BigDecimal,
-    val timestamp: Long,
-    val source: String,
-)
-
-data class ConvertedMoney(
-    val native: MoneyAmount,
-    val account: MoneyAmount,
-    val conversion: FxConversion?,
-)
-
-enum class CostKind {
-    COMMISSION,
-    SWAP,
-    FUNDING,
-    BORROW,
-    EXCHANGE_FEE,
-    SPREAD_COST,
-    TAX,
-}
-
-data class VenueCost(
-    val kind: CostKind,
-    val amount: MoneyAmount,
-    val timestamp: Long,
-)
-
 enum class FxMissingPolicy {
     WARN,
     FAIL,
@@ -137,6 +71,8 @@ private class MarketPriceFxRateProvider(
  * The hot path stays cheap for the common case: account-quoted symbols return identity without
  * touching the market-price provider. Non-account FX pairs can use the traded symbol itself
  * (e.g. USDJPY converts JPY PnL to USD as 1 / USDJPY) or configured conversion symbols.
+ * [currencyOf] names a symbol's explicit quote currency; when it returns null the currency is
+ * inferred from the symbol suffix.
  */
 class AccountingEngine(
     private val config: AccountingConfig = AccountingConfig(),
@@ -144,6 +80,7 @@ class AccountingEngine(
     private val fxRates: FxRateProvider =
         prices?.let(::MarketPriceFxRateProvider)
             ?: FxRateProvider { _, _ -> null },
+    private val currencyOf: (String) -> String? = { null },
 ) {
     private val conversions: MutableMap<String, FxConversion> = ConcurrentHashMap()
     private val warnings: MutableMap<String, String> = ConcurrentHashMap()
@@ -161,7 +98,16 @@ class AccountingEngine(
             configuredPair(from = quote, to = accountCurrency) != null
     }
 
-    fun pnlCurrencyFor(symbol: String): String = QuoteCurrencyGuard.quoteOf(symbol)?.uppercase() ?: accountCurrency
+    /** [symbol]'s quote currency: explicit when declared, else inferred from its suffix, else null. */
+    fun quoteCurrencyOf(symbol: String): String? =
+        currencyOf(symbol)?.uppercase() ?: QuoteCurrencyGuard.quoteOf(symbol)?.uppercase()
+
+    /** The currency [symbol]'s P&L is booked in natively; the account currency when it cannot be told. */
+    fun pnlCurrencyFor(symbol: String): String =
+        pnlCurrencyCache.getOrPut(symbol) {
+            quoteCurrencyOf(symbol)
+                ?: accountCurrency
+        }
 
     fun convertPnl(
         symbol: String,
@@ -191,7 +137,7 @@ class AccountingEngine(
         timestamp: Long,
         referencePrice: BigDecimal?,
     ): BigDecimal {
-        val from = pnlCurrencyCache.getOrPut(symbol) { pnlCurrencyFor(symbol) }
+        val from = pnlCurrencyFor(symbol)
         val scaled = nativeAmount.setScale(Money.SCALE, Money.ROUNDING)
         if (scaled.signum() == 0 || compatible(from, accountCurrency)) return scaled
         return convertPnl(symbol, nativeAmount, timestamp, referencePrice).account.amount
@@ -210,7 +156,7 @@ class AccountingEngine(
         timestamp: Long,
         referencePrice: BigDecimal,
     ): BigDecimal {
-        val from = pnlCurrencyCache.getOrPut(symbol) { pnlCurrencyFor(symbol) }
+        val from = pnlCurrencyFor(symbol)
         if (compatible(from, accountCurrency)) return BigDecimal.ONE
         return requireNotNull(convertPnl(symbol, BigDecimal.ONE, timestamp, referencePrice).conversion) {
             "missing FX conversion $from->$accountCurrency at $timestamp for $symbol; refusing to size order"
@@ -380,14 +326,10 @@ class AccountingEngine(
     )
 
     private companion object {
-        private val DOLLAR_FAMILY = setOf("USD", "USDT", "USDC")
-
         fun compatible(
             from: String,
             to: String,
-        ): Boolean =
-            from.equals(to, ignoreCase = true) ||
-                (from.uppercase() in DOLLAR_FAMILY && to.uppercase() in DOLLAR_FAMILY)
+        ): Boolean = QuoteCurrencyGuard.sameCurrency(from, to)
 
         fun currencyPair(symbol: String): CurrencyPair? {
             val bare = symbol.substringAfter(':').uppercase()

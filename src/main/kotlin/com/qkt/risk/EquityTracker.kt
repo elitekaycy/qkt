@@ -32,8 +32,15 @@ class EquityTracker(
     private val perStrategyCurrent: MutableMap<String, BigDecimal> = ConcurrentHashMap()
     private val perStrategyPeak: MutableMap<String, BigDecimal> = ConcurrentHashMap()
 
+    /**
+     * Account equity as the books stand now (starting balance + realized + unrealized), computed on
+     * every call; [currentEquity] is the value as of the last [update]. For readers that act between
+     * updates, such as a pre-trade margin check after a fill in the same tick.
+     */
+    fun liveEquity(): BigDecimal = startingBalance.add(pnl.realizedTotal()).add(pnl.unrealizedTotal())
+
     fun update(): Boolean {
-        val total = startingBalance.add(pnl.realizedTotal()).add(pnl.unrealizedTotal())
+        val total = liveEquity()
         currentTotalEquity = total
         if (total <= peakTotalEquity) return false
         peakTotalEquity = total

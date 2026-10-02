@@ -36,6 +36,18 @@ class BinaryBarStore(
         date: LocalDate,
     ): Boolean = Files.exists(dayFile(broker, symbol, tf, date))
 
+    /** Whether the day's bars exist and were built no earlier than [source] last changed. */
+    fun isBuiltFrom(
+        broker: String,
+        symbol: String,
+        tf: TimeWindow,
+        date: LocalDate,
+        source: Path,
+    ): Boolean {
+        val built = dayFile(broker, symbol, tf, date)
+        return Files.exists(built) && Files.getLastModifiedTime(built) >= Files.getLastModifiedTime(source)
+    }
+
     fun writeDay(
         broker: String,
         symbol: String,

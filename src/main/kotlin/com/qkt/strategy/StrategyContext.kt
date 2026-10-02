@@ -94,6 +94,8 @@ data class StrategyContext(
     val book: BookBalanceView? = null,
     /** Written by the pipeline as it processes each emitted signal; read by rule edge gating. */
     val submissions: SubmissionOutcomes = SubmissionOutcomes(),
+    /** The strategy's option structures, exposed to DSL via `POSITION.<structure>` and `CLOSE`. */
+    val structures: StructureView = StructureView.EMPTY,
 )
 
 /**

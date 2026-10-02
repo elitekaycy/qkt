@@ -30,7 +30,10 @@ internal class InsightsBusWiring(
     ) {
         val t = InsightsTranslate
         if (InsightsEventFamily.SIGNAL in insightsEvents) {
-            bus.subscribe<SignalEvent> { e -> t.fromSignal(e)?.let(sink::offer) }
+            val structures = InsightsEventFamily.STRUCTURE in insightsEvents
+            bus.subscribe<SignalEvent> { e ->
+                if (e.signal !is com.qkt.strategy.Signal.SubmitGroup || structures) t.fromSignal(e)?.let(sink::offer)
+            }
             bus.subscribe<com.qkt.events.RuleDecisionEvent> { e -> sink.offer(t.fromRuleDecision(e)) }
         }
         if (InsightsEventFamily.ORDER in insightsEvents) {

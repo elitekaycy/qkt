@@ -170,6 +170,7 @@ fun collectStreamAliases(rule: WhenThen): Set<String> {
                 OrderPartExprs.sizing(a.target, ::walkExpr) { out.add(it) }
                 a.minStep?.let { walkExpr(it) }
             }
+            is com.qkt.dsl.ast.OpenStructure -> OrderPartExprs.sizing(a.sizing, ::walkExpr) { out.add(it) }
             is com.qkt.dsl.ast.Latch -> {
                 out.add(a.stream)
                 a.entries.mapNotNullTo(out) { it.stream }

@@ -132,8 +132,9 @@ interface LiveSessionHandle : HaltReads {
             .Report(enabled = false, strategies = emptyMap())
 
     /**
-     * Per-strategy alias → broker label map for DSL-compiled strategies (#139). Lets
-     * `qkt status --deep` show which broker each declared stream routes to. Default is
+     * Per-strategy alias → broker label map for DSL-compiled strategies (#139); an option root feed
+     * maps to its venue's account ([tradingBroker]). Lets `qkt status --deep` show which broker each
+     * declared stream routes to, and the daemon find the strategies trading an account. Default is
      * empty for non-live handles or plain strategies.
      */
     fun streamBrokers(): Map<String, String> = emptyMap()

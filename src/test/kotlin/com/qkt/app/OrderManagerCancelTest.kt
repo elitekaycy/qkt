@@ -84,4 +84,23 @@ class OrderManagerCancelTest {
         om.cancel("does-not-exist")
         assertThat(om.getOrder("does-not-exist")).isNull()
     }
+
+    @Test
+    fun `a cancel scoped to one strategy leaves another strategy's order on the symbol working`() {
+        val bus = newBus()
+        val clock = FixedClock(time = 0L)
+        val om = OrderManager(LogBroker(bus, clock), bus, MarketPriceTracker(), clock)
+
+        fun limit(
+            id: String,
+            strategyId: String,
+        ) = OrderRequest.Limit(id, "EURUSD", Side.BUY, Money.of("1"), Money.of("1.10"), TimeInForce.GTC, 0L, strategyId)
+        om.submit(limit("mine", "a"))
+        om.submit(limit("theirs", "b"))
+
+        om.cancelOwnOrders("a", "EURUSD")
+
+        assertThat(om.getOrder("mine")?.state).isEqualTo(OrderState.CANCELLED)
+        assertThat(om.getOrder("theirs")?.state).isEqualTo(OrderState.WORKING)
+    }
 }

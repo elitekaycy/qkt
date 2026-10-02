@@ -8,7 +8,9 @@
 #
 # It pages via Telegram when:
 #   - the daemon's /health stops answering (host down, OOM, docker failure), or
-#   - any strategy's last-event age exceeds MAX_EVENT_AGE_SECS while running
+#   - the answer is not health JSON, or the daemon reports a status other than ok,
+#   - a strategy is not running or is halted, or
+#   - a running strategy's last-event age exceeds MAX_EVENT_AGE_SECS
 #     (wedged session: alive process, dead engine).
 #
 # Required environment (put them in the crontab line or an EnvironmentFile):
@@ -33,14 +35,14 @@ page() {
         --data-urlencode text="DEADMAN: ${msg}" >/dev/null 2>&1
 }
 
-# Page once per distinct failure, and once on recovery.
+# Page once per distinct state, and once on recovery. The state is recorded only after the page
+# is delivered, so a page that fails is retried on the next run.
 transition() {
     local new_state="$1" msg="$2"
     local old_state=""
     [ -f "$STATE_FILE" ] && old_state="$(cat "$STATE_FILE")"
     if [ "$new_state" != "$old_state" ]; then
-        echo "$new_state" > "$STATE_FILE"
-        page "$msg"
+        page "$msg" && echo "$new_state" > "$STATE_FILE"
     fi
 }
 
@@ -50,22 +52,44 @@ if [ -z "$body" ]; then
     exit 1
 fi
 
-stale="$(printf '%s' "$body" | python3 -c '
+# Prints two lines: a stable state key (no ages, so a lasting problem pages once) and the message.
+# Anything but well-formed health JSON is a failure, never "ok".
+verdict="$(printf '%s' "$body" | python3 -c '
 import json, sys
 max_age_ms = int(sys.argv[1]) * 1000
-h = json.load(sys.stdin)
-out = []
-for s in h.get("perStrategy", []):
+try:
+    h = json.load(sys.stdin)
+    strategies = h["perStrategy"]
+except Exception as e:
+    print("unreadable")
+    print("health answer is not qkt health JSON: " + type(e).__name__)
+    sys.exit(0)
+keys, notes = [], []
+if h.get("status") != "ok":
+    keys.append("status:" + str(h.get("status")))
+    notes.append("daemon status " + str(h.get("status")) + " (pending deploys: " + str(len(h.get("pendingAutoDeploys") or [])) + ")")
+for s in strategies:
+    name = s.get("name")
     age = s.get("lastEventAgeMs")
-    if s.get("running") and age is not None and age > max_age_ms:
-        out.append(f"{s[\"name\"]} (last event {age//1000}s ago, queue {s.get(\"inboundQueueDepth\")})")
-print("; ".join(out))
-' "$MAX_AGE" 2>/dev/null)"
+    if not s.get("running"):
+        keys.append("stopped:" + str(name))
+        notes.append(str(name) + " is not running")
+    elif s.get("halted"):
+        keys.append("halted:" + str(name))
+        notes.append(str(name) + " is halted (" + str(s.get("haltReason")) + ")")
+    elif age is not None and age > max_age_ms:
+        keys.append("stale:" + str(name))
+        notes.append(str(name) + " silent " + str(age // 1000) + "s, queue " + str(s.get("inboundQueueDepth")))
+print(",".join(sorted(keys)) or "ok")
+print("; ".join(notes))
+' "$MAX_AGE" 2>&1)"
+state="$(printf '%s\n' "$verdict" | sed -n 1p)"
+detail="$(printf '%s\n' "$verdict" | sed -n '2,$p')"
 
-if [ -n "$stale" ]; then
-    transition "stale:$stale" "qkt strategy wedged — running but silent past ${MAX_AGE}s: ${stale}"
+if [ "$state" != "ok" ]; then
+    transition "${state:-unreadable}" "qkt needs attention at ${HEALTH_URL}: ${detail:-$verdict}"
     exit 1
 fi
 
-transition "ok" "qkt daemon recovered: ${HEALTH_URL} answering, all strategies emitting events."
+transition "ok" "qkt daemon recovered: ${HEALTH_URL} answering, all strategies running and emitting events."
 exit 0

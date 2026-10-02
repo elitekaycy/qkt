@@ -2,7 +2,10 @@ package com.qkt.backtest.report
 
 import com.qkt.events.RiskRejectedEvent
 
-/** The `rejections.csv` artifact: one row per risk-rejected order request, in event order. */
+/**
+ * The `rejections.csv` artifact: one row per order request refused by risk or by the venue (a `venue: `
+ * reason), in event order.
+ */
 internal object RejectionsCsv {
     fun render(rejections: List<RiskRejectedEvent>): String {
         val sb = StringBuilder("timestamp,reason,strategy,symbol\n")

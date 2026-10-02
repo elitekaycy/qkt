@@ -56,7 +56,7 @@ internal class ReplayResultBuilder(
                 finalUnrealized = pnl.unrealizedTotal(),
                 annualizationFactor = annualizationFactor,
                 metrics = collector.globalMetrics(),
-                commissionPaid = commissionBook.total(),
+                commissionPaid = commissionBook.total().add(recorder.venueCostsPaid()),
                 swapPaid = swapBook.totalPaid(),
                 dailyAdjustments = swapBook.dailyNet(),
                 tradedNotional = tradedNotional(tradeRecords),
@@ -72,7 +72,7 @@ internal class ReplayResultBuilder(
                         finalUnrealized = strategyPnL.unrealizedTotalFor(id),
                         annualizationFactor = annualizationFactor,
                         metrics = collector.metricsFor(id),
-                        commissionPaid = commissionBook.totalFor(id),
+                        commissionPaid = commissionBook.totalFor(id).add(recorder.venueCostsPaid(id)),
                         swapPaid = swapBook.totalPaidFor(id),
                         dailyAdjustments = swapBook.dailyNetFor(id),
                         tradedNotional = tradedNotional(tradeRecords.filter { it.strategyId == id }),
@@ -83,8 +83,11 @@ internal class ReplayResultBuilder(
             rejections = recorder.rejections.toList(),
             halts = recorder.halts.toList(),
             finalPositions = books.positions.allPositions(),
-            global = globalReport,
-            perStrategy = perStrategy,
+            global = globalReport.copy(rollCostsPaid = recorder.rollCostsPaid()),
+            perStrategy =
+                perStrategy.mapValues { (id, report) ->
+                    report.copy(rollCostsPaid = recorder.rollCostsPaid(id))
+                },
             cadence = cadence,
             latencyReport = if (latencyEnabled) pipeline.latency.snapshot() else null,
             conditionalAutocorr = analytics.autocorr.snapshot(),
@@ -111,6 +114,11 @@ internal class ReplayResultBuilder(
             dailyEquity = collector.dailyEquity(),
             monthlyReturns = monthlyReturns(collector.dailyEquity()),
             windows = collector.windows().map { windowReport(it, tradeRecords, annualizationFactor) },
+            rolls = books.rolls.entries,
+            contractFills = books.contractFills.entries,
+            settlements = books.settlements.entries,
+            structures = books.structures.entries,
+            marginDaily = books.marginDaily.rows,
         )
     }
 

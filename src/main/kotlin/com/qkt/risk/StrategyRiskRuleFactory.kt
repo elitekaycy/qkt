@@ -68,6 +68,7 @@ internal object StrategyRiskRuleFactory {
                         strategyId = strategyId,
                         maxLosses = it,
                         ledger = pacerLedger,
+                        clock = clock,
                         scope = limits.lossStreakHaltScope,
                     ),
                 )

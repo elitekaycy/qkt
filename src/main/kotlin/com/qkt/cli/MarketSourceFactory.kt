@@ -1,9 +1,12 @@
 package com.qkt.cli
 
+import com.qkt.derivatives.options.chain.ChainAnalyticsSymbol
+import com.qkt.instrument.InstrumentRegistry
 import com.qkt.marketdata.hub.HubMarketSource
 import com.qkt.marketdata.hub.HubStoreConfig
 import com.qkt.marketdata.hub.liveHubRoot
 import com.qkt.marketdata.live.tv.TradingViewMarketSource
+import com.qkt.marketdata.source.ChainAnalyticsMarketSource
 import com.qkt.marketdata.source.CompositeMarketSource
 import com.qkt.marketdata.source.MacroMarketSource
 import com.qkt.marketdata.source.MarketSource
@@ -19,7 +22,8 @@ import java.nio.file.Path
  * Shared composite-source construction for `qkt daemon` and `qkt run`.
  *
  * Routes, first match wins: the data hub (`HUB:`) when a store is configured, the cataloged macro
- * policy-rate series, then [accountRoutes] — one prefix route per trading account that supplies
+ * policy-rate series, chain analytics streams (`CHAIN:`) when [instruments] declares option roots,
+ * then [accountRoutes] — one prefix route per trading account that supplies
  * its own prices, as built by [com.qkt.connectivity.AccountDirectory.marketDataRoutes]. How an
  * account's feed is built and shared (MT5 accounts on one gateway share one poller, for example)
  * is its connector's business, not this factory's. Anything unmatched goes to [fallbackProvider].
@@ -47,6 +51,7 @@ object MarketSourceFactory {
         source: String = "tv",
         // Declared before the fallback so a trailing-lambda caller still binds to fallbackProvider.
         hub: HubStoreConfig = HubStoreConfig.NONE,
+        instruments: InstrumentRegistry? = null,
         fallbackProvider: () -> MarketSource = { defaultFallback(source) },
     ): (List<String>) -> MarketSource {
         val routes = mutableListOf<Pair<SymbolPattern, MarketSource>>()
@@ -63,6 +68,10 @@ object MarketSourceFactory {
             SymbolPattern.exactSet(policySymbols) to
                 MacroMarketSource(MacroSeriesStore(DataRoot.resolve())),
         )
+        // Chain analytics streams are computed from the stored chains the live recorder appends to.
+        if (instruments?.options() != null) {
+            routes.add(SymbolPattern.prefix(ChainAnalyticsSymbol.PREFIX) to ChainAnalyticsMarketSource(instruments))
+        }
         routes.addAll(accountRoutes)
         val composite = CompositeMarketSource(routes = routes, fallback = fallbackProvider())
         return { _ -> composite }

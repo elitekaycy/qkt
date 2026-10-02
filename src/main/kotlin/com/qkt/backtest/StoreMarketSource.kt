@@ -1,13 +1,23 @@
 package com.qkt.backtest
 
 import com.qkt.common.FixedClock
+import com.qkt.derivatives.futures.ContinuousChains
+import com.qkt.derivatives.options.chain.ChainAnalyticsSymbol
+import com.qkt.derivatives.options.chain.OptionRootSymbol
+import com.qkt.instrument.InstrumentRegistry
+import com.qkt.instrument.NoopInstrumentRegistry
+import com.qkt.instrument.optionSymbols
 import com.qkt.marketdata.hub.HubMarketSource
 import com.qkt.marketdata.hub.hubRoot
 import com.qkt.marketdata.hub.validateHubStreams
+import com.qkt.marketdata.source.ChainAnalyticsMarketSource
 import com.qkt.marketdata.source.CompositeMarketSource
+import com.qkt.marketdata.source.ContinuousMarketSource
 import com.qkt.marketdata.source.LocalMarketSource
 import com.qkt.marketdata.source.MacroMarketSource
 import com.qkt.marketdata.source.MarketSource
+import com.qkt.marketdata.source.OptionChainMarketSource
+import com.qkt.marketdata.source.OptionRootMarketSource
 import com.qkt.marketdata.source.SymbolPattern
 import com.qkt.marketdata.store.BinaryBarStore
 import com.qkt.marketdata.store.DataStore
@@ -18,7 +28,8 @@ import java.time.Instant
 
 /**
  * The [MarketSource] a store-backed backtest reads: the local tick/bar store, with `MACRO:` and
- * `HUB:` streams routed to their own point-in-time sources only when [symbols] declares one.
+ * `HUB:` streams routed to their own point-in-time sources only when [symbols] declares one, and
+ * futures streams stitched from per-contract data when [instruments] declares futures.
  * Fails before the first tick when a declared hub stream is malformed.
  */
 internal fun storeMarketSource(
@@ -29,8 +40,9 @@ internal fun storeMarketSource(
     barStore: LocalBarStore?,
     forceBars: Boolean,
     binaryBarStore: BinaryBarStore?,
+    instruments: InstrumentRegistry = NoopInstrumentRegistry,
 ): MarketSource {
-    val localSource =
+    val storeSource =
         LocalMarketSource(
             store,
             FixedClock(time = to.toEpochMilli()),
@@ -39,12 +51,45 @@ internal fun storeMarketSource(
             // ticks (or the fetched CSV bar store for bars-only venues), unchanged.
             binaryBarStore = if (forceBars) binaryBarStore else null,
         )
+    // Futures streams (continuous `ROOT@front` or listed contracts) read per-contract data through the
+    // continuous source; a run with none builds exactly the source it built before futures existed.
+    val futures = instruments.futures()
+    val localSource =
+        if (futures != null &&
+            symbols.any { futures.rootOfContinuous(it) != null || instruments.lookup(it)?.derivative != null }
+        ) {
+            ContinuousMarketSource(storeSource, ContinuousChains(futures), instruments)
+        } else {
+            storeSource
+        }
     // MACRO: streams (daily yields/real rates) read from the macro store via a point-in-time
     // source, and HUB: streams read a qkt-data-hub store the same way. Both are routed only
     // when a run actually declares one, so a run that binds neither constructs exactly the
     // object graph it constructed before either existed and cannot change behaviour.
     val observationRoutes: List<Pair<SymbolPattern, MarketSource>> =
         buildList {
+            // Option contracts replay their roots' stored chains; only a run that names one routes them.
+            val options = instruments.optionSymbols(symbols)
+            if (options.isNotEmpty()) {
+                val chains =
+                    requireNotNull(instruments.options()?.dataRoot) { "option symbols have no chain data root" }
+                add(SymbolPattern.exactSet(options) to OptionChainMarketSource(chains, instruments))
+            }
+            val analytics = symbols.filter { it.startsWith(ChainAnalyticsSymbol.PREFIX) }
+            if (analytics.isNotEmpty()) {
+                val problems = analytics.mapNotNull { chainStreamProblem(it, instruments) }
+                require(problems.isEmpty()) { "chain analytics problems:\n  " + problems.joinToString("\n  ") }
+                add(SymbolPattern.prefix(ChainAnalyticsSymbol.PREFIX) to ChainAnalyticsMarketSource(instruments))
+            }
+            val fedRoots = symbols.filter { it.startsWith(OptionRootSymbol.PREFIX) }
+            if (fedRoots.isNotEmpty()) {
+                val problems =
+                    fedRoots.mapNotNull { s ->
+                        OptionRootSymbol.parse(s).fold({ optionRootProblem(s, it.root, instruments) }, { it.message })
+                    }
+                require(problems.isEmpty()) { "option root feed problems:\n  " + problems.joinToString("\n  ") }
+                add(SymbolPattern.prefix(OptionRootSymbol.PREFIX) to OptionRootMarketSource(instruments))
+            }
             if (symbols.any { it.startsWith("MACRO:") }) {
                 add(SymbolPattern.prefix("MACRO:") to MacroMarketSource(MacroSeriesStore(store.root)))
             }
@@ -63,5 +108,29 @@ internal fun storeMarketSource(
         CompositeMarketSource(routes = observationRoutes, fallback = localSource)
     } else {
         localSource
+    }
+}
+
+/** Why chain analytics stream [symbol] cannot run, or null: a malformed symbol or a root not declared to trade a chain. */
+private fun chainStreamProblem(
+    symbol: String,
+    instruments: InstrumentRegistry,
+): String? {
+    val stream = ChainAnalyticsSymbol.parse(symbol).getOrElse { return it.message }
+    return optionRootProblem(symbol, stream.root, instruments)
+}
+
+/** Why [symbol], which reads option root [root]'s chain, cannot run, or null. */
+private fun optionRootProblem(
+    symbol: String,
+    root: String,
+    instruments: InstrumentRegistry,
+): String? {
+    val options = instruments.options()
+    val declared = options?.root(root) ?: return "$root of $symbol is not declared under options:"
+    return when {
+        declared.chains == null -> "$root of $symbol declares no chain series (chains: trade | book)"
+        options.listings(root).isEmpty() -> "$root of $symbol has no catalog; run: qkt fetch $root --catalog"
+        else -> null
     }
 }

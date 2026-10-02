@@ -39,6 +39,11 @@ internal class EngineMailbox {
         if (running.get()) control.put(Inbound.BusEvent(ev))
     }
 
+    /** Queue [action] to run on the engine thread; dropped once the session stopped running. */
+    fun postOnEngine(action: () -> Unit) {
+        if (running.get()) control.put(Inbound.Query(action))
+    }
+
     /** Queue a feed tick, shedding the oldest queued tick when the queue is full. */
     fun postTick(msg: Inbound.FeedTick) {
         while (!tickQueue.offer(msg)) {

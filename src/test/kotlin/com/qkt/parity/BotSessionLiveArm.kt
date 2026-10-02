@@ -12,6 +12,9 @@ import com.qkt.parity.BotSessionParityScript.decisions
 import com.qkt.parity.BotSessionParityScript.key
 import com.qkt.parity.BotSessionParityScript.symbol
 import com.qkt.parity.BotSessionParityScript.ticks
+import com.qkt.strategy.Signal
+import com.qkt.strategy.Strategy
+import com.qkt.strategy.StrategyContext
 import com.qkt.trade.session.BarHistory
 import com.qkt.trade.session.BotBridgeStrategy
 import com.qkt.trade.session.BotRunSession
@@ -98,10 +101,23 @@ internal object BotSessionLiveArm {
             val bridge = BotBridgeStrategy()
             val feed = GatedTickFeed(tickSeq)
             val liveTrades = mutableListOf<Trade>()
+            // Strategies see a tick in list order, so once this probe has seen a tick the bridge has
+            // drained its intents on it: a submit after that lands on the next tick, as in the backtest.
+            val ticksSeen = AtomicInteger(0)
+            val probe =
+                object : Strategy {
+                    override fun onTick(
+                        tick: Tick,
+                        ctx: StrategyContext,
+                        emit: (Signal) -> Unit,
+                    ) {
+                        ticksSeen.incrementAndGet()
+                    }
+                }
             val handle =
                 com.qkt.app
                     .LiveSession(
-                        strategies = listOf("brain" to bridge, BotSessionRecorder.ID to recorder),
+                        strategies = listOf("brain" to bridge, "probe" to probe, BotSessionRecorder.ID to recorder),
                         source = GatedSource(feed),
                         symbols = listOf(symbol),
                         candleWindow = TimeWindow.parse("1m"),
@@ -129,20 +145,22 @@ internal object BotSessionLiveArm {
                     history = history,
                     recorder = recorder,
                 )
+            // ticks needed (cumulative) for bar N's candle to close: the two ticks
+            // inside bar N plus the first tick of bar N+1 (or, for the last bar, the
+            // extra trailing tick ticks() appends instead of a bar-N+1 tick).
+            val closesAfterTicks = (1..lastBar).map { bar -> if (bar < lastBar) 2 * bar + 1 else tickSeq.size }
             val decisionThread =
                 Thread {
                     for (bar in 1..lastBar) {
                         checkNotNull(session.next(symbol)) { "bar $bar should be available" }
+                        // The bar is in history before its closing tick reaches the bridge; wait for it.
+                        while (ticksSeen.get() < closesAfterTicks[bar - 1]) Thread.sleep(1)
                         decisions()[bar]?.let { session.submit("brain", it) }
                         decided.set(bar)
                     }
                 }
             decisionThread.start()
 
-            // ticks needed (cumulative) for bar N's candle to close: the two ticks
-            // inside bar N plus the first tick of bar N+1 (or, for the last bar, the
-            // extra trailing tick ticks() appends instead of a bar-N+1 tick).
-            val closesAfterTicks = (1..lastBar).map { bar -> if (bar < lastBar) 2 * bar + 1 else tickSeq.size }
             val deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos()
             var released = 0
             for (bar in 1..lastBar) {

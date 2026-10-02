@@ -32,6 +32,13 @@ class VarianceTest {
     }
 
     @Test
+    fun `keeps an FX price variance far below eight decimals`() {
+        val v = Variance(5)
+        listOf("1.10000", "1.10001", "1.10001", "1.10002", "1.10004").forEach { v.update(Money.of(it)) }
+        assertThat(v.value()).isEqualByComparingTo("2.3E-10")
+    }
+
+    @Test
     fun `rejects period below 2`() {
         assertThatThrownBy { Variance(1) }.isInstanceOf(IllegalArgumentException::class.java)
     }

@@ -3,6 +3,7 @@ package com.qkt.app
 import com.qkt.broker.Broker
 import com.qkt.broker.BrokerFactory
 import com.qkt.broker.PaperBroker
+import com.qkt.broker.bookedLegs
 import com.qkt.bus.EventBus
 import com.qkt.candles.TimeWindow
 import com.qkt.common.Clock
@@ -26,6 +27,7 @@ import com.qkt.notify.DailyRollingTracker
 import com.qkt.notify.NoopNotifier
 import com.qkt.notify.Notifier
 import com.qkt.notify.NotifyEventKind
+import com.qkt.observe.insights.TicketAttribution
 import com.qkt.pnl.PnLCalculator
 import com.qkt.pnl.StrategyPnL
 import com.qkt.positions.PositionProvider
@@ -66,7 +68,7 @@ class LiveSession(
     private val strategyCommentNames: Map<String, String> = emptyMap(),
     private val rules: List<RiskRule> = emptyList(),
     private val haltRules: List<HaltRule> = emptyList(),
-    private val source: MarketSource,
+    source: MarketSource,
     private val symbols: List<String>,
     /** Market-data subscriptions, including non-traded FX conversion symbols. */
     private val feedSymbols: List<String> = symbols,
@@ -287,6 +289,11 @@ class LiveSession(
     /** Accumulates trades/halts/equity-delta for the daily summary. */
     private val dailyTracker = DailyRollingTracker()
 
+    /** The strategy whose state holds what belongs to the whole session: its risk state and stream lanes. */
+    private val stateOwner = strategies.firstOrNull()?.first ?: "session"
+    private val continuous = ContinuousWiring(feedSymbols, instrumentRegistry, source, clock, persistor, stateOwner)
+    private val source: MarketSource = continuous.source
+
     /** Builds and remembers this session's venue brokers so the session can ask them for their abilities. */
     private val brokers = SessionBrokers(strategies, symbols, brokerFactories, instrumentRegistry)
 
@@ -295,12 +302,7 @@ class LiveSession(
      * engine thread (fills) and at startup (recovery-seeded orphans); the poller only
      * reads, so it never touches engine-thread-only trackers.
      */
-    internal val ticketAttribution =
-        com.qkt.observe.insights
-            .TicketAttribution()
-            .also { attribution ->
-                strategyCommentNames.forEach { (strategyId, name) -> attribution.alias(name, strategyId) }
-            }
+    internal val ticketAttribution = TicketAttribution.aliasing(strategyCommentNames)
 
     // Kept as a member: LiveSessionBrokerCoverageTest reaches it reflectively by this name.
     private fun buildBroker(
@@ -309,7 +311,7 @@ class LiveSession(
         clock: Clock,
         priceTracker: MarketPriceTracker,
         positions: PositionProvider,
-    ): Broker = brokers.buildBroker(paperBroker, bus, clock, priceTracker, positions)
+    ): Broker = brokers.buildBroker(paperBroker, bus, clock, priceTracker, positions, continuous)
 
     private val perStrategyLimits =
         PerStrategyRiskLimits(
@@ -344,13 +346,8 @@ class LiveSession(
         val ids = SequentialIdGenerator.forSession(strategies.map { it.first })
         val sequencer = MonotonicSequenceGenerator.resumingAfter(auditJournal?.lastSequence())
         val priceTracker = MarketPriceTracker()
-        val accounting = com.qkt.accounting.AccountingEngine(accountingConfig, priceTracker)
-        com.qkt.instrument.QuoteCurrencyGuard
-            .assertAccountQuoted(
-                symbols,
-                accountCurrency = accounting.accountCurrency,
-                canConvert = { symbol, _ -> accounting.canConvertSymbol(symbol) },
-            )
+        val accounting = com.qkt.accounting.accountingEngine(accountingConfig, priceTracker, instrumentRegistry)
+        requireLiveTradable(symbols, accounting, continuous.chains)
         val strategyPositions = StrategyPositionTracker(persistor)
         val positions = strategyPositions.account
         val bus = busOverride ?: EventBus(clock, sequencer)
@@ -360,6 +357,7 @@ class LiveSession(
         // They queue here and drain, in order, once the engine loop starts.
         val mailbox = EngineMailbox()
         bus.bindSink(mailbox::postBusEvent)
+        continuous.bindMailbox(mailbox)
         val paperInstruments =
             java.util.concurrent.atomic.AtomicReference<com.qkt.instrument.InstrumentRegistry>(
                 instrumentRegistry ?: com.qkt.instrument.NoopInstrumentRegistry,
@@ -454,13 +452,10 @@ class LiveSession(
             ).run(strategyPositions, broker, downtimeCloses::onLegRetired)
 
         val engine = Engine(bus, priceTracker)
-        val riskPersistId = strategies.firstOrNull()?.first ?: "session"
-        val persistedRiskState = persistor.loadRiskState(riskPersistId)
+        val persistedRiskState = persistor.loadRiskState(stateOwner)
         val restoredGlobalRealized =
             persistedRiskState?.globalRealizedTotal
-                ?: strategies.fold(java.math.BigDecimal.ZERO) { total, (id, _) ->
-                    total + strategyPnL.realizedFor(id)
-                }
+                ?: strategies.fold(java.math.BigDecimal.ZERO) { total, (id, _) -> total + strategyPnL.realizedFor(id) }
         pnl.restoreRealizedTotal(restoredGlobalRealized)
         val riskState =
             RiskState(
@@ -471,7 +466,7 @@ class LiveSession(
                 initialBalance,
                 dailyDdBasis,
                 persist = { snap ->
-                    runCatching { persistor.saveRiskState(riskPersistId, snap) }
+                    runCatching { persistor.saveRiskState(stateOwner, snap) }
                         .onFailure { e -> log.warn("risk-state persist failed: ${e.message}") }
                 },
             )
@@ -479,7 +474,7 @@ class LiveSession(
         persistedRiskState?.let { persisted ->
             riskState.restore(persisted)
             if (riskState.halted) {
-                log.warn("restored HALTED risk state for {}: {}", riskPersistId, riskState.haltReason)
+                log.warn("restored HALTED risk state for {}: {}", stateOwner, riskState.haltReason)
             }
         }
         riskState.initializeAnchors(strategies.map { it.first })
@@ -522,22 +517,21 @@ class LiveSession(
                 maxOrderNotional = maxOrderNotional,
                 priceCollarFrac = priceCollarFrac,
                 accounting = accounting,
+                equity = riskState.equityTracker::liveEquity,
             )
         val marketDataAlerts = MarketDataHealthAlerts(strategies, sessionNotifier, insights)
-        // Suppresses NEW orders on frozen data and drops implausible ticks before they poison indicators.
         val marketDataGate =
             liveMarketDataGate(
                 clock,
                 marketDataGateConfig,
+                instruments,
                 venues = { brokers.built.ifEmpty { listOf(broker) } },
                 alerts = marketDataAlerts,
             )
-        val entryGuards = EntryGuardRules(clock, marginFloorPct, measuredUsageHours, measuredUsageMaxQty)
-        val marginRules = entryGuards.marginRules(broker)
-        val measuredRules = entryGuards.measuredRules()
+        val guardRules = EntryGuardRules(clock, marginFloorPct, measuredUsageHours, measuredUsageMaxQty).rules(broker)
         val riskEngine =
             RiskEngine(
-                rules + perStrategyRules.riskRules + preTradeRules + marginRules + measuredRules +
+                rules + perStrategyRules.riskRules + preTradeRules + guardRules +
                     listOfNotNull(
                         bookRiskController?.let {
                             com.qkt.risk.rules
@@ -557,8 +551,7 @@ class LiveSession(
                 .CandleHub()
 
         val now = Instant.ofEpochMilli(clock.now())
-        val warmupCoordinator =
-            PerStreamWarmupCoordinator(strategies, source, pipelineCandleHub, now)
+        val warmupCoordinator = PerStreamWarmupCoordinator(strategies, source, pipelineCandleHub, now)
 
         // Phase 25B: per-stream pre-fetch + hub seeding for DSL strategies. Seeding
         // must happen BEFORE TradingPipeline binds strategies to the hub: bindToHub
@@ -713,26 +706,7 @@ class LiveSession(
         downtimeCloses.bookInto(pipeline)
         // The broker keeps the ledger honest against venue truth from here on (#1097).
         val watchedStrategyIds = strategies.map { it.first }
-        broker.watchBookedLegs {
-            val legs = ArrayList<com.qkt.broker.BookedLeg>()
-            for (strategyId in watchedStrategyIds) {
-                for (leg in strategyPositions.allLegsFor(strategyId)) {
-                    val ticket = leg.brokerTicket ?: continue
-                    legs +=
-                        com.qkt.broker.BookedLeg(
-                            strategyId = strategyId,
-                            legId = leg.legId,
-                            ticket = ticket,
-                            symbol = leg.symbol,
-                            side = leg.side,
-                            quantity = leg.quantity,
-                            entryPrice = leg.entryPrice,
-                            openedAt = leg.openedAt,
-                        )
-                }
-            }
-            legs
-        }
+        broker.watchBookedLegs { strategyPositions.bookedLegs(watchedStrategyIds) }
         // Keep the daily-summary tracker's halt count current. The daemon owns the one
         // DailySummaryScheduler; this session just feeds its tracker.
         val ownerStrategyId = strategies.firstOrNull()?.first.orEmpty()
@@ -803,6 +777,7 @@ class LiveSession(
         // Route every publish from a non-engine thread (broker pollers, WS readers) onto this
         // loop's queue, so subscribers only ever run on the engine thread.
         bus.bindEngineLoop(thread, mailbox::postBusEvent)
+        continuous.attach(thread)
         mailbox.control.put(Inbound.PersistenceHealthCheck)
         thread.start()
 

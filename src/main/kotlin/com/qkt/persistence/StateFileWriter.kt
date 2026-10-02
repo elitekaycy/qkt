@@ -119,6 +119,13 @@ internal class StateFileWriter(
         }
     }
 
+    /** The names of [strategyName]'s state files; empty when it has none. */
+    fun list(strategyName: String): List<String> {
+        val dir = rootDir.resolve(strategyName)
+        if (!Files.isDirectory(dir)) return emptyList()
+        return Files.list(dir).use { files -> files.map { it.fileName.toString() }.toList() }
+    }
+
     fun recordFailure(
         operation: String,
         error: Throwable,

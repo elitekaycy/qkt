@@ -1,6 +1,8 @@
 package com.qkt.backtest
 
+import com.qkt.common.SequentialIdGenerator
 import com.qkt.dsl.compile.DslCompiledStrategy
+import com.qkt.dsl.compile.StructureCloses
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
 import com.qkt.strategy.Signal
@@ -13,7 +15,8 @@ import java.math.BigDecimal
  *
  * - When the portfolio gate is active the inner strategy sees ticks and candles normally.
  * - When the gate transitions from active to inactive and [hold] is false, the wrapper emits
- *   market orders that flatten every traded symbol before the strategy is paused.
+ *   market orders that flatten every traded symbol, and ends its option structures, before the
+ *   strategy is paused.
  * - When [hold] is true the strategy keeps running (so it can manage existing positions with
  *   exits) but the pipeline's [gateFor] still suppresses new risk-increasing entries.
  *
@@ -34,6 +37,7 @@ class GatedChild(
 ) : DslCompiledStrategy by inner,
     com.qkt.strategy.PerStreamWarmable {
     private var wasActive: Boolean = gateFor(strategyId)
+    private val structureIds = SequentialIdGenerator(prefix = "gate-$strategyId-")
 
     /**
      * Warmup seeding keys off [com.qkt.strategy.PerStreamWarmable], which the compiled child
@@ -73,8 +77,12 @@ class GatedChild(
         ctx: StrategyContext,
         emit: (Signal) -> Unit,
     ) {
+        StructureCloses.endAll(ctx.structures, ctx.strategyId, ctx.clock.now(), structureIds).forEach(emit)
+        // Structures close their own legs; a stream they hold flattens only the rest.
+        val structureHeld = StructureCloses.heldBySymbol(ctx.structures)
         for (symbol in flattenSymbols) {
-            val qty = ctx.positions.positionFor(symbol)?.quantity ?: BigDecimal.ZERO
+            val held = ctx.positions.positionFor(symbol)?.quantity ?: BigDecimal.ZERO
+            val qty = held.subtract(structureHeld[symbol] ?: BigDecimal.ZERO)
             when {
                 qty.signum() > 0 -> emit(Signal.Sell(symbol, qty, force = true))
                 qty.signum() < 0 -> emit(Signal.Buy(symbol, qty.abs(), force = true))

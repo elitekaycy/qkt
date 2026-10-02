@@ -48,6 +48,10 @@ BRACKET {
 
 For BTC at $67,000 long, stop at $66,900, target at $67,300. The units match the symbol's quote (USD for crypto, pips for FX *but converted to price points*).
 
+The distance must be greater than 0: a literal `0` or negative distance is a compile error, and one computed
+from an expression (`BY atr(btc, 14) - 50`) that comes out 0 or negative skips the order, since it would put
+the level on the wrong side of entry. An out-of-range computed `PCT` skips the order the same way.
+
 ### `BY <pct> PCT` — percent of entry price
 
 ```qkt
@@ -208,9 +212,15 @@ continues protecting it if qkt goes offline.
 
 The DSL submits one `BRACKET` request to the order manager. From there:
 
-1. **If the broker supports `BRACKET` natively** (MT5 brokers, PaperBroker): the order manager submits the entry + stop + target as one atomic group. The venue handles OCO semantics.
+1. **If the broker attaches brackets** (live MT5): the entry goes out with its stop and target attached. If the
+   venue refuses to attach them to the filled position, qkt holds the stop (and a fill-anchored target) itself
+   and alerts the operator.
 
-2. **If the broker doesn't** (Bybit Spot via REST): the order manager submits the entry alone. On fill, it submits the stop and target as separate orders linked by OCO state. When one fills, the other auto-cancels via the engine.
+2. **Otherwise** (`paper`, `mt5-sim`, `type: gateway` venues such as Deribit, Bybit): the order manager submits
+   the entry alone. On fill, it submits the target and then the stop as separate orders linked by OCO state;
+   when one fills, the engine cancels the other. If the venue refuses the stop, qkt holds it itself (it fires a
+   market close at the level) and keeps the target; if it refuses the target, the stop still goes out. Either
+   way the operator is alerted, and the position is never left without its stop.
 
 The DSL is the same either way. See [Broker integration](../../concepts/broker-integration.md) for the capability matrix.
 

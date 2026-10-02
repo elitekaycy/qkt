@@ -53,6 +53,12 @@ internal class LegBookFile(
             legs = dto.legs.map { it.toDomain() },
         )
     }
+
+    /** The symbols of [strategyId]'s leg book files. */
+    fun symbols(strategyId: String): Set<String> =
+        writer.list(strategyId).mapNotNullTo(sortedSetOf()) { name ->
+            name.takeIf { it.endsWith("-$LEGBOOK_FILE") }?.removeSuffix("-$LEGBOOK_FILE")
+        }
 }
 
 private const val LEGBOOK_FILE = "legbook.json"

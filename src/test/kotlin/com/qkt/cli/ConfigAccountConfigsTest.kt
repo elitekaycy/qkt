@@ -60,6 +60,6 @@ class ConfigAccountConfigsTest {
 
     @Test
     fun `the built-in connectors are discovered as services`() {
-        assertThat(ConnectorRegistry.discover().types).containsExactly("bybit", "mt5")
+        assertThat(ConnectorRegistry.discover().types).containsExactly("bybit", "gateway", "mt5")
     }
 }

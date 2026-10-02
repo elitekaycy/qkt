@@ -17,7 +17,7 @@ import java.time.LocalDate
  *
  * Decodes the cached tick store for `<symbol>` ONCE, aggregates it to `<interval>` OHLC bars, and
  * writes a binary bar store (`bars/BACKTEST/<symbol>/<tf>/<day>.bin`). Backtests run with `--bars`
- * then replay these bars (no tick decode). Incremental: days already built are skipped.
+ * then replay these bars (no tick decode). Incremental: a day whose bars are newer than its tick file is skipped.
  */
 internal fun dataBuildBars(args: Args): Int {
     val symbol =
@@ -72,7 +72,8 @@ internal fun dataBuildBars(args: Args): Int {
     for ((day, path) in byDay) {
         if (from != null && day.isBefore(from)) continue
         if (to != null && !day.isBefore(to)) continue
-        if (store.hasDay(broker, symbol, tf, day)) {
+        // A tick day that changed since its bars were built (a partial day completed later) is rebuilt.
+        if (store.isBuiltFrom(broker, symbol, tf, day, path)) {
             skipped++
             continue
         }

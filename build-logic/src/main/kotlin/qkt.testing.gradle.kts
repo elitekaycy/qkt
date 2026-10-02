@@ -22,6 +22,8 @@ tasks.test {
         events("passed", "failed", "skipped")
         showStandardStreams = true
     }
+    // The CLI logs to stderr, which test reports keep; tests log to stdout so suites stay within their log budget.
+    systemProperty("QKT_CONSOLE_TARGET", "System.out")
     // DslReferenceCodeBlocksTest reads these pages; without the input a docs-only edit leaves `test` up to date.
     inputs
         .dir("docs/reference/dsl")

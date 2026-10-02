@@ -34,7 +34,8 @@ interface TradingCalendar {
      * break such as the metals/energy close at 17:00 New York. Distinct from [isInSession]:
      * feed polling and venue-state pollers key off the session (a break is too short to back
      * off for), while the market-data gate uses the break to classify a quote gap as expected
-     * rather than as a feed fault. Defaults to never.
+     * rather than as a feed fault. A venue whose pause closes the market (the CME Globex
+     * 16:00–17:00 halt) may report it both as a break and as out of session. Defaults to never.
      */
     fun isScheduledBreak(
         symbol: String,
@@ -47,5 +48,18 @@ interface TradingCalendar {
         fun fxDefault(): TradingCalendar = FxCalendar
 
         fun nyse(): TradingCalendar = NyseCalendar
+
+        /** The names [named] knows, for messages. */
+        val names: List<String> = listOf("crypto", "fx", "nyse", "cme_globex")
+
+        /** The calendar called [name] — `crypto`, `fx`, `nyse` or `cme_globex` — or null. */
+        fun named(name: String): TradingCalendar? =
+            when (name) {
+                "crypto" -> CryptoCalendar
+                "fx" -> FxCalendar
+                "nyse" -> NyseCalendar
+                "cme_globex" -> CmeGlobexCalendar
+                else -> null
+            }
     }
 }

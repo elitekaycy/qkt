@@ -11,7 +11,6 @@ import com.qkt.broker.SlippageModel
 import com.qkt.broker.TakeProfitFill
 import com.qkt.broker.UniformRandomSlippage
 import com.qkt.broker.ZeroSlippage
-import com.qkt.evidence.ExecutionEvidence
 import java.math.BigDecimal
 
 enum class ExecutionPreset(
@@ -93,6 +92,20 @@ data class ExecutionSimulationConfig(
                 "execution partialFillFraction must be in (0, 1): $it"
             }
         }
+        if (preset == ExecutionPreset.PAPER_FAST) {
+            // Neither the paper broker nor the exchange simulator models these: refused, never recorded as applied.
+            val unmodelled =
+                listOfNotNull(
+                    "latency".takeIf { latencyMs > 0L },
+                    "stop latency".takeIf { stopLatencyMs > 0L },
+                    "order spacing".takeIf { orderSpacingMs > 0L },
+                    "reject-every".takeIf { rejectEvery != null },
+                    "partial fill".takeIf { partialFillFraction != null },
+                )
+            require(unmodelled.isEmpty()) {
+                "the paper broker does not model ${unmodelled.joinToString()}; use --broker mt5-sim for them"
+            }
+        }
     }
 
     val brokerKind: BrokerKind
@@ -114,46 +127,6 @@ data class ExecutionSimulationConfig(
 
     fun partialFillModel(): PartialFillModel =
         partialFillFraction?.let { com.qkt.broker.FractionalPartialFill(it) } ?: FullFill
-
-    fun toEvidence(): ExecutionEvidence =
-        ExecutionEvidence(
-            preset = preset.id,
-            broker = brokerKind.id,
-            seed = seed,
-            realistic = preset == ExecutionPreset.MT5_REALISTIC || preset == ExecutionPreset.STRESS,
-            warning =
-                when (preset) {
-                    ExecutionPreset.PAPER_FAST ->
-                        "Optimistic fills: no spread, slippage, latency, rejection, queue, or partial-fill model."
-                    ExecutionPreset.MT5_BASIC ->
-                        "MT5 basic models spread/slippage and venue sizing but not strict stop-distance/latency stress."
-                    ExecutionPreset.MT5_REALISTIC -> null
-                    ExecutionPreset.STRESS -> "Adverse stress execution; use for robustness, not base-case expectation."
-                },
-            fillPriceSource =
-                when (preset) {
-                    ExecutionPreset.PAPER_FAST -> "latest tracked price / trigger level for bars"
-                    else -> "bid/ask when available, synthetic spread fallback"
-                },
-            latencyModel = latencyLabel(),
-            stopLatencyModel = if (stopLatencyMs == 0L) "on-trigger" else "fixed:${stopLatencyMs}ms",
-            takeProfitFillModel = takeProfitFill.id,
-            candleCloseModel = "heartbeat:${heartbeatIntervalMs}ms grace:${candleCloseGraceMs}ms",
-            slippageModel = slippageLabel(),
-            rejectionModel = rejectEvery?.let { "reject-every:$it" } ?: "none",
-            partialFillModel = partialFillFraction?.let { "fraction:$it" } ?: "none",
-            venueRules =
-                if (enforceStopsLevel) {
-                    "volume step/min, price digits, bid/ask, tradeStopsLevel"
-                } else if (brokerKind == BrokerKind.MT5_SIM) {
-                    "volume step/min, price digits, bid/ask"
-                } else {
-                    "none"
-                },
-            commissionModel = "per-lot instruments.yaml commissionPerLot",
-            financingModel = "signed swap points at configured UTC rollover; triple configured weekday",
-            ocoMode = "engine-managed deterministic siblings",
-        )
 
     companion object {
         private const val DEFAULT_SEED = 42L

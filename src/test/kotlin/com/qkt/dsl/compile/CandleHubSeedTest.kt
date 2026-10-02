@@ -1,6 +1,7 @@
 package com.qkt.dsl.compile
 
 import com.qkt.marketdata.Candle
+import com.qkt.marketdata.Tick
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
@@ -129,5 +130,22 @@ class CandleHubSeedTest {
         hub.onClosed(key, "s") { fired.add(it) }
         hub.seed(key, listOf(candle(0L), candle(60_000L)))
         assertThat(fired).isEmpty()
+    }
+
+    @Test
+    fun `a quote stamped inside seeded history never closes a bar in the past`() {
+        // A venue re-sends its last quote on subscribe, stamped when it last changed: here 11 minutes back.
+        val hub = CandleHub()
+        hub.register(key, retention = 10, strategyId = "s")
+        val closed = mutableListOf<Long>()
+        hub.onClosed(key, "s") { closed += it.endTime }
+        hub.seed(key, (0..9).map { candle(it * 60_000L) })
+
+        hub.feed(Tick("BACKTEST:BTCUSDT", BigDecimal("99"), 41_000L))
+        hub.feed(Tick("BACKTEST:BTCUSDT", BigDecimal("101"), 600_500L))
+        hub.feed(Tick("BACKTEST:BTCUSDT", BigDecimal("102"), 660_500L))
+
+        assertThat(closed).containsExactly(660_000L)
+        assertThat(hub.droppedLateTicks()).isEqualTo(1L)
     }
 }

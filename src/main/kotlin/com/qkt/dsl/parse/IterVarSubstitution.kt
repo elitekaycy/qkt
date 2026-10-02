@@ -106,6 +106,7 @@ private fun subst(
                 target = subst(action.target, v, alias),
                 minStep = action.minStep?.let { subst(it, v, alias) },
             )
+        is com.qkt.dsl.ast.OpenStructure -> action.copy(sizing = subst(action.sizing, v, alias))
         else -> action
     }
 

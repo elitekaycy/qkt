@@ -172,6 +172,7 @@ internal fun collectMetaRefs(
                 a.minStep?.let { walkExpr(it) }
             }
             is com.qkt.dsl.ast.Latch -> Unit
+            is com.qkt.dsl.ast.OpenStructure -> OrderPartExprs.sizing(a.sizing, ::walkExpr)
         }
     }
 

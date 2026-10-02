@@ -1,9 +1,12 @@
 package com.qkt.dsl.parse
 
+import com.qkt.dsl.ast.CHAIN_BROKER
 import com.qkt.dsl.ast.HUB_BROKER
+import com.qkt.dsl.ast.OPTIONS_BROKER
 import com.qkt.dsl.ast.SeriesDecl
 import com.qkt.dsl.ast.SeriesSource
 import com.qkt.dsl.ast.StreamDecl
+import com.qkt.instrument.ContinuousSelector
 
 /**
  * Parses the right-hand side of one `SYMBOLS` declaration: a venue stream
@@ -14,15 +17,27 @@ internal class StreamDeclParser(
     private val cursor: TokenCursor,
     private val literalParser: LiteralParser,
 ) {
-    /** Parse the stream body after `<alias> =`: `<broker>:<symbol> EVERY <tf> [WARMUP <n> BARS]`. */
+    /**
+     * Parse the stream body after `<alias> =`: `<broker>:<symbol>[@front|@next] EVERY <tf> [WARMUP <n> BARS]`.
+     * A continuous-futures selector stays part of the symbol (`BTCUSDT@front`), so the stream's
+     * identity, and every existing strategy's AST, are unchanged by the syntax.
+     */
     fun parseStream(alias: String): StreamDecl {
         val broker = cursor.expect(TokenKind.IDENT, "expected broker prefix").lexeme
+        for (reserved in listOf(CHAIN_BROKER, OPTIONS_BROKER)) {
+            if (broker.equals(reserved, ignoreCase = true) &&
+                broker != reserved
+            ) {
+                cursor.error("write the prefix as $reserved, not '$broker'")
+            }
+        }
         cursor.expect(TokenKind.COLON, "expected ':' between broker and symbol")
         val symbol =
-            if (broker.equals(HUB_BROKER, ignoreCase = true)) {
+            if (broker.equals(HUB_BROKER, ignoreCase = true) || broker == CHAIN_BROKER || broker == OPTIONS_BROKER) {
                 parseDottedSymbol()
             } else {
-                cursor.expect(TokenKind.IDENT, "expected symbol after ':'").lexeme
+                val name = cursor.expect(TokenKind.IDENT, "expected symbol after ':'").lexeme
+                if (cursor.peek().kind == TokenKind.AT_SIGN) "$name@${parseSelector()}" else name
             }
         cursor.expect(TokenKind.EVERY, "expected EVERY")
         val timeframe = literalParser.parseTimeframe()
@@ -48,8 +63,23 @@ internal class StreamDeclParser(
         )
     }
 
+    /** The continuous-futures selector after `@` (`front`, `next`), validated against [ContinuousSelector]. */
+    private fun parseSelector(): String {
+        cursor.advance()
+        val token = cursor.expect(TokenKind.IDENT, "expected a continuous selector after '@'").lexeme
+        if (ContinuousSelector.parse(token) == null) {
+            cursor.error(
+                "unknown continuous selector '@$token'; use ${ContinuousSelector.entries.joinToString {
+                    "@${it.token}"
+                }}",
+            )
+        }
+        return token
+    }
+
     /**
-     * A hub dataset name, which is dotted: `HUB:cal.high_impact` or `HUB:cal.high_impact.USD`.
+     * A hub dataset or chain analytics name, which is dotted: `HUB:cal.high_impact`,
+     * `HUB:cal.high_impact.USD`, `CHAIN:DERIBIT.BTC_USDC.atm_iv.30d`.
      *
      * Every other venue names an instrument with one identifier, so the general symbol rule is a
      * single IDENT. A hub dataset is addressed by a hierarchical name instead, and the lexer
@@ -77,7 +107,7 @@ internal class StreamDeclParser(
     private fun nameSegment(): String {
         val token = cursor.peek()
         require(token.lexeme.isNotEmpty() && token.lexeme.all { it.isLetterOrDigit() || it == '_' }) {
-            "expected a name segment in a hub dataset, got '${token.lexeme}'"
+            "expected a letters, digits or '_' name segment in a dotted HUB, CHAIN or OPTIONS symbol, got '${token.lexeme}'"
         }
         cursor.advance()
         return token.lexeme

@@ -9,6 +9,7 @@ import com.qkt.marketdata.Tick
 import com.qkt.marketdata.store.BinaryBarStore
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.FileTime
 import java.time.LocalDate
 import java.time.ZoneOffset
 import kotlin.math.sin
@@ -71,5 +72,35 @@ class DataBuildBarsTest {
         val expected = aggregate(ticks, tf).map { it.copy(symbol = "BACKTEST:XAUUSD") }
         assertThat(BinaryBarStore(dataRoot).readDay("BACKTEST", "XAUUSD", tf, day)).isEqualTo(expected)
         assertThat(expected.size).isGreaterThan(0)
+    }
+
+    @Test
+    fun `a tick day that grew after its bars were built is rebuilt, an unchanged one is skipped`(
+        @TempDir dir: Path,
+    ) {
+        val day = LocalDate.parse("2024-01-04")
+        val dataRoot = dir.resolve("data")
+        val tickFile = dataRoot.resolve("symbols").resolve("XAUUSD").resolve("$day.bin")
+        Files.createDirectories(tickFile.parent)
+        val tf = TimeWindow.parse("15m")
+        val build = {
+            val args = arrayOf("data", "build-bars", "XAUUSD", "--tf", "15m", "--data-root", dataRoot.toString())
+            assertThat(DataCommand(Args(args)).run()).isEqualTo(ExitCodes.SUCCESS)
+            BinaryBarStore(dataRoot).readDay("BACKTEST", "XAUUSD", tf, day)
+        }
+        BinaryTickWriter().write(tickFile, "XAUUSD", dayTicks(day).take(600))
+        val partial = build()
+
+        BinaryTickWriter().write(tickFile, "XAUUSD", dayTicks(day))
+        Files.setLastModifiedTime(tickFile, FileTime.fromMillis(System.currentTimeMillis() + 60_000L))
+        val complete = build()
+        val barFile = dataRoot.resolve("bars/BACKTEST/XAUUSD/${tf.canonicalSpec()}/$day.bin")
+        Files.setLastModifiedTime(barFile, FileTime.fromMillis(System.currentTimeMillis() + 120_000L))
+        val again = build()
+
+        assertThat(complete.size).isGreaterThan(partial.size)
+        assertThat(complete).isEqualTo(aggregate(dayTicks(day), tf).map { it.copy(symbol = "BACKTEST:XAUUSD") })
+        assertThat(again).isEqualTo(complete)
+        assertThat(Files.getLastModifiedTime(barFile).toMillis()).isGreaterThan(System.currentTimeMillis() + 60_000L)
     }
 }

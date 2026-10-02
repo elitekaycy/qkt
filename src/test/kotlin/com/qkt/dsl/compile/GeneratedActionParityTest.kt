@@ -4,7 +4,6 @@ import ch.qos.logback.classic.Logger
 import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.core.read.ListAppender
 import com.qkt.candles.TimeWindow
-import com.qkt.dsl.ast.ActionAst
 import com.qkt.marketdata.Candle
 import java.math.BigDecimal
 import java.nio.file.Files
@@ -148,7 +147,7 @@ class GeneratedActionParityTest {
     ): List<DynamicTest> {
         assertThat(cases.map { it.capability })
             .doesNotHaveDuplicates()
-            .containsExactlyInAnyOrderElementsOf(ActionAst::class.java.permittedSubclasses.map { it.simpleName })
+            .containsExactlyInAnyOrderElementsOf(PARITY_ACTIONS)
 
         return cases.map { case ->
             DynamicTest.dynamicTest(case.capability) {

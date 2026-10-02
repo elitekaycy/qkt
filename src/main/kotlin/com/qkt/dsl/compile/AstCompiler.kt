@@ -51,14 +51,9 @@ class AstCompiler {
         val letRhsByName: Map<String, ExprAst> = ast.lets.associate { it.name to resolver.resolveDeclaration(it) }
         val bindings = IndicatorBinding.Bag()
         val aggregates = AggregateBinding.Bag()
-        val exprCompiler = ExprCompiler(bindings, aggregates, basketConstituents)
-        val exitExprCompiler =
-            ExprCompiler(
-                bindings = bindings,
-                aggregates = aggregates,
-                baskets = basketConstituents,
-                allowExitAccess = true,
-            )
+        val exprCompiler =
+            ExprCompiler(bindings, aggregates, basketConstituents, structures = StructureSupport(structureAliases(ast)))
+        val exitExprCompiler = exprCompiler.forExitHooks()
         val strategyLogger = org.slf4j.LoggerFactory.getLogger("com.qkt.dsl.strategy.${ast.name}")
         val ids = com.qkt.common.SequentialIdGenerator(prefix = "dsl-${ast.name}-")
         val pendingStacks = PendingStacks()
@@ -84,12 +79,15 @@ class AstCompiler {
         whenThens.forEach { rule -> compilingRule(rule) { rejectReadOnlyOrders(rule.action, readOnlyAliases) } }
         ast.schedules.forEach { rejectReadOnlyOrders(it.action, readOnlyAliases) }
         validateBaskets(ast)
+        requireValidStructures(ast)
         whenThens.forEach { rule -> compilingRule(rule) { validateCompleteBracket(rule.action, ast.defaults) } }
         ast.schedules.forEach { validateCompleteBracket(it.action, ast.defaults) }
         validateResizeProtection(ast)
         val resolvedConditions: List<ExprAst> =
             whenThens.map { rule ->
-                compilingRule(rule) { resolver.resolve(rule.cond).also(::rejectChainedComparisons) }
+                compilingRule(rule) {
+                    resolver.resolve(rule.cond).also(::rejectChainedComparisons).also(::rejectNonBooleanCondition)
+                }
             }
         val resolvedSequenceConditions: List<ExprAst> =
             ast.sequences.flatMap { sequence -> sequence.stages.map { resolver.resolve(it.condition) } }

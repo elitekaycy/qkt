@@ -743,11 +743,19 @@ readonly_post_5m_matches="$(qkt_count_matched_evaluations "$readonly_name" eur5 
 [ "$readonly_post_1m_matches" -gt 0 ] || fail "post-restart read-only audit retained no matched 1m evaluation"
 [ "$readonly_post_5m_matches" -gt 0 ] || fail "post-restart read-only audit retained no matched 5m evaluation"
 
+# A 5m stream started mid-bar also seeds its forming bar from the minutes already elapsed, as 1m pseudo-ticks.
+forming_minutes() {
+    { grep -o "seeded forming bar strategy=$1 alias=[^ ]* minutes=[0-9]*" "$scenario/logs/daemon.log" || true; } |
+        awk -F'minutes=' '{sum += $2} END {print sum + 0}'
+}
+readonly_forming_ticks=$((4 * $(forming_minutes "$readonly_name")))
+armed_forming_ticks=$((4 * $(forming_minutes "$armed_name")))
 readonly_pre_1m_warmups="$(qkt_count_warmup_pseudo_ticks EXNESS:EURUSD 60000 "$daemon_started_ms" "$restart_started_ms" "${readonly_audit_journals[@]}")"
 readonly_pre_5m_warmups="$(qkt_count_warmup_pseudo_ticks EXNESS:EURUSD 300000 "$daemon_started_ms" "$restart_started_ms" "${readonly_audit_journals[@]}")"
 readonly_post_1m_warmups="$(qkt_count_warmup_pseudo_ticks EXNESS:EURUSD 60000 "$restart_started_ms" -1 "${readonly_audit_journals[@]}")"
 readonly_post_5m_warmups="$(qkt_count_warmup_pseudo_ticks EXNESS:EURUSD 300000 "$restart_started_ms" -1 "${readonly_audit_journals[@]}")"
-[ "$readonly_pre_1m_warmups" -eq 80 ] || fail "pre-restart read-only 1m warmup count was $readonly_pre_1m_warmups; expected 80 pseudo-ticks"
+[ "$readonly_pre_1m_warmups" -eq $((80 + readonly_forming_ticks)) ] ||
+    fail "pre-restart read-only 1m warmup count was $readonly_pre_1m_warmups; expected $((80 + readonly_forming_ticks)) pseudo-ticks"
 [ "$readonly_pre_5m_warmups" -eq 80 ] || fail "pre-restart read-only 5m warmup count was $readonly_pre_5m_warmups; expected 80 pseudo-ticks"
 [ "$readonly_post_1m_warmups" -eq 0 ] || fail "post-restart read-only 1m warmup count was $readonly_post_1m_warmups; expected no reconnect warmup"
 [ "$readonly_post_5m_warmups" -eq 0 ] || fail "post-restart read-only 5m warmup count was $readonly_post_5m_warmups; expected no reconnect warmup"
@@ -760,7 +768,8 @@ armed_post_1m_warmups="$(qkt_count_warmup_pseudo_ticks "$armed_symbol" 60000 "$r
 armed_post_5m_warmups="$(qkt_count_warmup_pseudo_ticks "$armed_symbol" 300000 "$restart_started_ms" -1 "${armed_audit_journals[@]}")"
 [ "$armed_post_1m_matches" -gt 0 ] || fail "post-restart armed audit retained no matched 1m evaluation"
 [ "$armed_post_5m_matches" -gt 0 ] || fail "post-restart armed audit retained no matched 5m evaluation"
-[ "$armed_total_1m_warmups" -eq 40 ] || fail "armed 1m warmup count was $armed_total_1m_warmups; expected 40 pseudo-ticks"
+[ "$armed_total_1m_warmups" -eq $((40 + armed_forming_ticks)) ] ||
+    fail "armed 1m warmup count was $armed_total_1m_warmups; expected $((40 + armed_forming_ticks)) pseudo-ticks"
 [ "$armed_total_5m_warmups" -eq 40 ] || fail "armed 5m warmup count was $armed_total_5m_warmups; expected 40 pseudo-ticks"
 [ "$armed_post_1m_warmups" -eq 0 ] || fail "post-restart armed 1m warmup count was $armed_post_1m_warmups; expected no reconnect warmup"
 [ "$armed_post_5m_warmups" -eq 0 ] || fail "post-restart armed 5m warmup count was $armed_post_5m_warmups; expected no reconnect warmup"

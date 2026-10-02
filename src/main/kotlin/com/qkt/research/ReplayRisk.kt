@@ -4,6 +4,7 @@ import com.qkt.bus.EventBus
 import com.qkt.candles.TimeWindow
 import com.qkt.common.FixedClock
 import com.qkt.common.TradingCalendar
+import com.qkt.events.TickEvent
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.risk.DailyDrawdownBasis
 import com.qkt.risk.DrawdownBasis
@@ -54,6 +55,10 @@ internal class ReplayRisk(
 
     init {
         riskState.warmupComplete = true
+        if (instruments.futures() != null || instruments.options() != null) {
+            books.marginDaily.bind(riskState.equityTracker::liveEquity)
+            bus.subscribe<TickEvent> { e -> books.marginDaily.onTime(e.tick.timestamp) }
+        }
         val strategyRuleSet =
             StrategyRiskRuleFactory.build(
                 strategyIds = strategyIds,
@@ -75,6 +80,7 @@ internal class ReplayRisk(
                 maxOrderNotional = maxOrderNotional,
                 priceCollarFrac = priceCollarFrac,
                 accounting = books.accounting,
+                equity = riskState.equityTracker::liveEquity,
             )
         val bookAnnualization =
             if (candleWindow != null) calendar.tradingPeriodsPerYear(candleWindow) else BigDecimal("252")

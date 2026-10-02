@@ -1,0 +1,189 @@
+package com.qkt.derivatives.futures
+
+import com.qkt.instrument.ContinuousSelector
+import com.qkt.instrument.ContractCatalog
+import com.qkt.instrument.FuturesRoot
+import com.qkt.instrument.ListedContract
+import com.qkt.instrument.PriceAdjustment
+import com.qkt.instrument.RollHistory
+import com.qkt.instrument.RollPolicy
+import com.qkt.instrument.RollRecord
+import java.math.BigDecimal
+import java.time.Instant
+import java.time.LocalTime
+import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
+import org.junit.jupiter.api.Test
+
+class ContinuousChainTest {
+    private fun ms(iso: String) = Instant.parse(iso).toEpochMilli()
+
+    private val policy = RollPolicy(8, LocalTime.of(8, 0), PriceAdjustment.PANAMA)
+    private val root =
+        FuturesRoot(
+            "BINANCE_UM:BTCUSDT",
+            "USDT",
+            BigDecimal.ONE,
+            BigDecimal("0.1"),
+            BigDecimal("0.001"),
+            BigDecimal("0.001"),
+            null,
+            "crypto",
+            BigDecimal.ZERO,
+            BigDecimal.ZERO,
+            null,
+            policy,
+        )
+    private val catalog =
+        ContractCatalog(
+            root.root,
+            listOf(
+                ListedContract("BTCUSDT_240927", ms("2024-09-27T08:00:00Z")),
+                ListedContract("BTCUSDT_241227", ms("2024-12-27T08:00:00Z")),
+                ListedContract("BTCUSDT_250328", ms("2025-03-28T08:00:00Z")),
+            ),
+        )
+    private val history =
+        RollHistory(
+            root.root,
+            "8d@08:00",
+            listOf(
+                RollRecord(ms("2024-09-19T08:00:00Z"), "BTCUSDT_240927", "BTCUSDT_241227", "63000", "63800"),
+                RollRecord(ms("2024-12-19T08:00:00Z"), "BTCUSDT_241227", "BTCUSDT_250328", "97000", "98500"),
+                RollRecord(ms("2024-09-19T08:00:00Z"), "BTCUSDT_241227", "BTCUSDT_250328", "63800", "64700"),
+            ),
+        )
+    private val front = ContinuousChain(root, catalog, history, ContinuousSelector.FRONT)
+
+    @Test
+    fun `front follows the schedule and shifts forward from the anchor`() {
+        assertThat(front.symbol).isEqualTo("BINANCE_UM:BTCUSDT@front")
+        assertThat(front.contractSymbolAt(ms("2024-09-01T00:00:00Z"))).isEqualTo("BINANCE_UM:BTCUSDT_240927")
+        assertThat(front.contractSymbolAt(ms("2024-10-01T00:00:00Z"))).isEqualTo("BINANCE_UM:BTCUSDT_241227")
+        assertThat(front.spaceFor(0).toContinuous(BigDecimal("63000"))).isEqualByComparingTo("63000")
+        assertThat(front.spaceFor(1).toContinuous(BigDecimal("63800"))).isEqualByComparingTo("63000")
+        assertThat(front.spaceFor(2).toContinuous(BigDecimal("98500"))).isEqualByComparingTo("96200")
+    }
+
+    @Test
+    fun `next uses its own roll pair`() {
+        val next = ContinuousChain(root, catalog, history, ContinuousSelector.NEXT)
+        assertThat(next.contractSymbolAt(ms("2024-09-01T00:00:00Z"))).isEqualTo("BINANCE_UM:BTCUSDT_241227")
+        assertThat(next.anchorIndex).isEqualTo(1)
+        assertThat(next.spaceFor(2).toContinuous(BigDecimal("64700"))).isEqualByComparingTo("63800")
+        assertThat(next.contractSymbolAt(ms("2025-01-01T00:00:00Z"))).isNull()
+    }
+
+    @Test
+    fun `segments start at the first measured roll and split exactly at later rolls`() {
+        assertThat(front.servedFromMs).isEqualTo(ms("2024-09-19T08:00:00Z"))
+        assertThat(front.segments(ms("2024-09-18T00:00:00Z"), ms("2024-09-20T00:00:00Z")))
+            .containsExactly(ChainSegment(1, ms("2024-09-19T08:00:00Z"), ms("2024-09-20T00:00:00Z")))
+        assertThat(front.segments(ms("2024-12-18T00:00:00Z"), ms("2024-12-20T00:00:00Z"))).containsExactly(
+            ChainSegment(1, ms("2024-12-18T00:00:00Z"), ms("2024-12-19T08:00:00Z")),
+            ChainSegment(2, ms("2024-12-19T08:00:00Z"), ms("2024-12-20T00:00:00Z")),
+        )
+        assertThat(front.segments(ms("2024-09-01T00:00:00Z"), ms("2024-09-02T00:00:00Z"))).isEmpty()
+    }
+
+    @Test
+    fun `a window past the last measured roll names the command that builds it`() {
+        val short = history.copy(rolls = history.rolls.take(1))
+        val chain = ContinuousChain(root, catalog, short, ContinuousSelector.FRONT)
+        assertThatThrownBy { chain.spaceFor(2) }.hasMessageContaining("qkt fetch BINANCE_UM:BTCUSDT --rolls")
+    }
+
+    @Test
+    fun `a history built under another policy is refused`() {
+        assertThatThrownBy {
+            ContinuousChain(
+                root,
+                catalog,
+                history.copy(policy = "5d@08:00"),
+                ContinuousSelector.FRONT,
+            )
+        }.hasMessageContaining("5d@08:00")
+            .hasMessageContaining("8d@08:00")
+    }
+
+    @Test
+    fun `a root without a roll policy cannot back a continuous stream`() {
+        assertThatThrownBy { ContinuousChain(root.copy(roll = null), catalog, history, ContinuousSelector.FRONT) }
+            .hasMessageContaining("roll")
+    }
+
+    @Test
+    fun `a history that skips a roll is refused`() {
+        val later = ListedContract("BTCUSDT_250627", ms("2025-06-27T08:00:00Z"))
+        val gappy =
+            history.copy(
+                rolls =
+                    listOf(
+                        history.rolls[0],
+                        RollRecord(ms("2025-03-20T08:00:00Z"), "BTCUSDT_250328", "BTCUSDT_250627", "80000", "81000"),
+                    ),
+            )
+        assertThatThrownBy {
+            ContinuousChain(root, catalog.copy(contracts = catalog.contracts + later), gappy, ContinuousSelector.FRONT)
+        }.hasMessageContaining("skips")
+    }
+
+    @Test
+    fun `each measured roll is found by the contract it leaves`() {
+        val next = ContinuousChain(root, catalog, history, ContinuousSelector.NEXT)
+
+        assertThat(front.rollOutOf(0)).isEqualTo(
+            MeasuredRoll(ms("2024-09-19T08:00:00Z"), RollPrices(BigDecimal("63000"), BigDecimal("63800"))),
+        )
+        assertThat(front.rollOutOf(1).atMs).isEqualTo(ms("2024-12-19T08:00:00Z"))
+        assertThat(next.rollOutOf(1).prices).isEqualTo(RollPrices(BigDecimal("63800"), BigDecimal("64700")))
+        assertThatThrownBy { front.rollOutOf(2) }.hasMessageContaining("BINANCE_UM:BTCUSDT_250328")
+    }
+
+    @Test
+    fun `a roll inside the expiry guard window is refused`() {
+        val late = root.copy(roll = RollPolicy(0, LocalTime.of(0, 0), PriceAdjustment.PANAMA), expiryGuardHours = 24)
+        assertThatThrownBy { ContinuousChain(late, catalog, history0, ContinuousSelector.FRONT) }
+            .hasMessageContaining("expiryGuardHours")
+            .hasMessageContaining("BTCUSDT_240927")
+    }
+
+    @Test
+    fun `streams that cannot trade or never hold an expiring contract are not held to the guard`() {
+        val policy0 = RollPolicy(0, LocalTime.of(0, 0), PriceAdjustment.RATIO)
+        val readOnly = root.copy(roll = policy0, expiryGuardHours = 24)
+        val tradedNext = root.copy(roll = policy0.copy(adjust = PriceAdjustment.PANAMA), expiryGuardHours = 24)
+        assertThat(ContinuousChain(readOnly, catalog, history0, ContinuousSelector.FRONT).symbol).endsWith("@front")
+        assertThat(ContinuousChain(tradedNext, catalog, history0, ContinuousSelector.NEXT).symbol).endsWith("@next")
+    }
+
+    @Test
+    fun `a stream ends when its last contract expires, or for next when that contract becomes front`() {
+        val next = ContinuousChain(root, catalog, history, ContinuousSelector.NEXT)
+
+        assertThat(front.endsAtMs).isEqualTo(ms("2025-03-28T08:00:00Z"))
+        assertThat(next.endsAtMs).isEqualTo(ms("2024-12-19T08:00:00Z"))
+    }
+
+    @Test
+    fun `a next stream with too few contracts ends before it starts`() {
+        val one = catalog.copy(contracts = catalog.contracts.take(1))
+        val oneHistory = history.copy(rolls = emptyList())
+
+        assertThatThrownBy {
+            ContinuousChain(root, one, oneHistory, ContinuousSelector.NEXT)
+        }.isInstanceOf(IllegalArgumentException::class.java)
+    }
+
+    /** The fixture's rolls measured under a roll at 00:00 on each expiry day. */
+    private val history0 =
+        RollHistory(
+            root.root,
+            "0d@00:00",
+            listOf(
+                RollRecord(ms("2024-09-27T00:00:00Z"), "BTCUSDT_240927", "BTCUSDT_241227", "63000", "63800"),
+                RollRecord(ms("2024-12-27T00:00:00Z"), "BTCUSDT_241227", "BTCUSDT_250328", "97000", "98500"),
+                RollRecord(ms("2024-09-27T00:00:00Z"), "BTCUSDT_241227", "BTCUSDT_250328", "63800", "64700"),
+            ),
+        )
+}
