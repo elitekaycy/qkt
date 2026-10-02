@@ -11,6 +11,8 @@ import com.qkt.connectivity.ConnectorContext
 import com.qkt.connectivity.ConnectorSpec
 import com.qkt.connectivity.ProductType
 import com.qkt.connectivity.TradingAccount
+import com.qkt.instrument.InstrumentRegistry
+import com.qkt.instrument.OptionTerms
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.marketdata.source.SymbolPattern
 
@@ -41,6 +43,7 @@ class GatewayConnector : Connector {
                 context.clock,
                 { context.strategiesTrading(account.name).toSet() },
                 GatewayChainRecording(context.instruments, settings.chainSnapshotMs),
+                context.instruments,
             )
         }
 }
@@ -52,6 +55,7 @@ class GatewayTradingAccount internal constructor(
     private val clock: Clock,
     private val strategies: () -> Set<String>,
     private val recording: GatewayChainRecording,
+    private val instruments: InstrumentRegistry?,
 ) : TradingAccount {
     private val identity = GatewayIdentity(settings.adapter, settings.accountLogin, settings.tradeMode)
     private val client by lazy {
@@ -88,7 +92,9 @@ class GatewayTradingAccount internal constructor(
     override val marketDataPattern: SymbolPattern = SymbolPattern(quotes::supports)
 
     override val orderEntry: BrokerFactory = { bus, clock, _, positions, strategyName ->
-        GatewayBroker(opened.value, bus, clock, positions, strategyName)
+        GatewayBroker(opened.value, bus, clock, positions, strategyName) { symbol ->
+            (instruments?.lookup(symbol)?.derivative as? OptionTerms)?.tickSteps
+        }
     }
 
     /** Checks the gateway before anything trades: it must speak `vgp1` and report the expected identity. */

@@ -1,10 +1,9 @@
 package com.qkt.connector.gateway
 
 import com.qkt.common.Side
-import com.qkt.derivatives.futures.PriceSpace
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.TimeInForce
-import com.qkt.instrument.PriceAdjustment
+import com.qkt.instrument.TickSteps
 import com.qkt.positions.PositionProvider
 import java.math.BigDecimal
 
@@ -30,23 +29,30 @@ internal sealed interface GatewayOrderMapping {
 internal object GatewayOrders {
     /**
      * The VGP v1 form of [request] on venue [code], judged against [positions] and the account's [accountHeld].
-     * Venues refuse a price off the contract's grid, so limit and stop levels are snapped to [tick] the way
-     * the backtest exchange does ([PriceSpace]): never filling or triggering before the strategy's level.
+     * Venues refuse a price off the contract's [grid], so limit and stop levels are snapped to it the way
+     * the backtest venues do, never filling or triggering before the strategy's level: buy limits and sell
+     * stops round down, sell limits and buy stops up.
      */
     fun map(
         request: OrderRequest,
         code: String,
         positions: PositionProvider,
         accountHeld: BigDecimal,
-        tick: BigDecimal?,
+        grid: TickSteps?,
     ): GatewayOrderMapping {
-        val grid = tick?.let { PriceSpace(PriceAdjustment.NONE, BigDecimal.ZERO, it) }
+        val buy = request.side == Side.BUY
 
-        fun limit(level: BigDecimal) =
-            (grid?.takeIf { level.signum() > 0 }?.limitToContract(level, request.side) ?: level).toPlainString()
+        fun snap(
+            level: BigDecimal,
+            down: Boolean,
+        ): String {
+            val onGrid = grid?.takeIf { level.signum() > 0 }?.let { if (down) it.floor(level) else it.ceil(level) }
+            return (onGrid ?: level).toPlainString()
+        }
 
-        fun stop(level: BigDecimal) =
-            (grid?.takeIf { level.signum() > 0 }?.stopToContract(level, request.side) ?: level).toPlainString()
+        fun limit(level: BigDecimal) = snap(level, down = buy)
+
+        fun stop(level: BigDecimal) = snap(level, down = !buy)
 
         val tif =
             when (request.timeInForce) {
