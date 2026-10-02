@@ -56,6 +56,9 @@ class PacerLedger {
     /** Consecutive losing closed outcomes for [strategyId]. */
     fun lossStreak(strategyId: String): Int = lossStreakByStrategy[strategyId] ?: 0
 
+    /** When [strategyId]'s most recent losing close happened, or null before its first. */
+    fun lastLossAt(strategyId: String): Long? = lastLossAtByStrategy[strategyId]
+
     /** Remaining cooldown in milliseconds for [strategyId], or zero when inactive. */
     fun cooldownRemainingMs(
         strategyId: String,
