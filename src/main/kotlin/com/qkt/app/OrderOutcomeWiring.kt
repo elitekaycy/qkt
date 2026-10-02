@@ -14,7 +14,8 @@ import org.slf4j.LoggerFactory
 /**
  * Subscribes the pipeline's handlers for order outcomes: fills and partial fills are booked,
  * folded into the accumulators, handed to exit hooks and reported; rejections and cancels reach
- * the exit hooks, the runaway breaker and the owning DSL strategy. [subscribe] registers them in
+ * the exit hooks, the runaway breaker and the owning DSL strategy, and a venue rejection is reported
+ * through [onRejected] like a risk rejection. [subscribe] registers them in
  * the one order the pipeline depends on, so it must run exactly where the pipeline calls it.
  */
 internal class OrderOutcomeWiring(
@@ -124,6 +125,10 @@ internal class OrderOutcomeWiring(
         bus.subscribe<BrokerEvent.OrderRejected> { e ->
             log.warn("Order rejected: ${e.clientOrderId} reason=${e.reason}")
             dslStrategiesById[e.strategyId]?.onOrderRejected(e.clientOrderId)
+            // Reported beside risk rejections, so a run's rejections include what the venue refused.
+            orderManager.getOrder(e.clientOrderId)?.let {
+                onRejected(RiskRejectedEvent(it.request, "venue: ${e.reason}", e.timestamp))
+            }
         }
         bus.subscribe<BrokerEvent.OrderCancelled> { e ->
             exitHookManager.onCancelled(e)

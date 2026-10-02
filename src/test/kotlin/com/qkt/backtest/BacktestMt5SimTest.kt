@@ -150,4 +150,34 @@ class BacktestMt5SimTest {
         assertThat(resultDefault.trades.map { it.trade.price })
             .isEqualTo(resultExplicitPaper.trades.map { it.trade.price })
     }
+
+    @Test
+    fun `a venue rejection is reported with the backtest's rejections`() {
+        val tooSmall =
+            object : Strategy {
+                private var seen = 0
+
+                override fun onTick(
+                    tick: Tick,
+                    ctx: StrategyContext,
+                    emit: (Signal) -> Unit,
+                ) {
+                    if (++seen == 5) emit(Signal.Buy(tick.symbol, Money.of("0.004")))
+                }
+            }
+        val result =
+            Backtest(
+                strategies = listOf("s1" to tooSmall),
+                ticks = ticksWithBidAsk(8),
+                candleWindow = TimeWindow.ONE_MINUTE,
+                instruments = registry(xauusd),
+                brokerKind = BrokerKind.MT5_SIM,
+            ).run()
+
+        assertThat(result.trades).isEmpty()
+        assertThat(result.rejections.map { it.request.symbol to it.reason })
+            .containsExactly(
+                "EXNESS:XAUUSD" to "venue: quantized volume 0.00 below venue volumeMin 0.01 for EXNESS:XAUUSD",
+            )
+    }
 }
