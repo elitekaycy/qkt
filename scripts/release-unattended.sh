@@ -103,7 +103,7 @@ log "attested in $(( $(date +%s) - started ))s"
 
 # 3. paper-soak on the self-hosted runner.
 sleep 30
-soak="$(gh run list -R "$repo" --workflow paper-soak.yml --limit 1 --json databaseId -q '.[0].databaseId')"
+soak="$(gh run list -R "$repo" --workflow paper-soak.yml --commit "$testing" --limit 1 --json databaseId -q '.[0].databaseId')"
 for _ in $(seq 1 60); do
     state="$(gh run view "$soak" -R "$repo" --json status,conclusion -q '.status + " " + (.conclusion // "")')"
     case "$state" in completed*) break ;; esac; sleep 30
@@ -114,7 +114,7 @@ log "paper-soak $soak green"
 # 4. the promotion PR, on exactly the attested commit.
 gh workflow run promote-to-main.yml -R "$repo" --ref testing > /dev/null
 sleep 40
-promote="$(gh run list -R "$repo" --workflow promote-to-main.yml --limit 1 --json databaseId -q '.[0].databaseId')"
+promote="$(gh run list -R "$repo" --workflow promote-to-main.yml --commit "$testing" --limit 1 --json databaseId -q '.[0].databaseId')"
 for _ in $(seq 1 30); do
     state="$(gh run view "$promote" -R "$repo" --json status,conclusion -q '.status + " " + (.conclusion // "")')"
     case "$state" in completed*) break ;; esac; sleep 20
