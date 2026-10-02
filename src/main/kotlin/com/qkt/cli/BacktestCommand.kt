@@ -111,6 +111,9 @@ class BacktestCommand(
             ReportPrinter.print(result, format, System.out, ctx.brokerKind, futures, options)
             printExecutionNotes(ctx.symbols, futures, options, ctx.brokerKind)
             ExitCodes.SUCCESS
+        } catch (e: com.qkt.dsl.compile.CompileError) {
+            System.err.println("qkt: error: ${e.message}")
+            ExitCodes.USER_ERROR
         } catch (e: IllegalStateException) {
             System.err.println("qkt: error: ${e.message}")
             if (args.flag("debug")) e.printStackTrace(System.err)
