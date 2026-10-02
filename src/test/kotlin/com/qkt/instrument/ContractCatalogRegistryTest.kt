@@ -56,6 +56,26 @@ class ContractCatalogRegistryTest {
     }
 
     @Test
+    fun `a root's perpetual resolves as a futures contract that never expires`() {
+        val perp = ContractCatalogRegistry(listOf(btc.copy(perpetual = "BTCUSDT")), mapOf(btc.root to catalog))
+        val terms = perp.lookup("BINANCE_UM:BTCUSDT")?.derivative as FutureTerms
+
+        assertThat(terms.perpetual).isTrue()
+        assertThat(terms.expiryMs).isNull()
+        assertThat(terms.takerFeeRate).isEqualByComparingTo("0.0005")
+        assertThat(perp.listedContract("BINANCE_UM:BTCUSDT")).isNull()
+        assertThat(perp.futuresSymbols(listOf("BINANCE_UM:BTCUSDT", "EXNESS:XAUUSD")))
+            .containsExactly("BINANCE_UM:BTCUSDT")
+    }
+
+    @Test
+    fun `a perpetual named like a listed contract is refused`() {
+        assertThatThrownBy {
+            ContractCatalogRegistry(listOf(btc.copy(perpetual = "BTCUSDT_240927")), mapOf(btc.root to catalog))
+        }.hasMessageContaining("BINANCE_UM:BTCUSDT_240927")
+    }
+
+    @Test
     fun `selector tokens parse case-sensitively to known values only`() {
         assertThat(ContinuousSelector.parse("front")).isEqualTo(ContinuousSelector.FRONT)
         assertThat(ContinuousSelector.parse("next")).isEqualTo(ContinuousSelector.NEXT)

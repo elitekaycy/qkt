@@ -19,12 +19,13 @@ import com.qkt.pnl.NoCommission
 import java.math.BigDecimal
 import java.time.Instant
 
-/** One BTCUSDT quarterly root with two listed contracts and an [ExchangeSimulator] over them. */
+/** One BTCUSDT root with two listed quarterlies, its perpetual, and an [ExchangeSimulator] over them. */
 internal class ExchangeFixture(
     slippageTicks: Int = 2,
     takerFeeRate: String = "0",
     expiryGuardHours: Int = 24,
 ) {
+    val perp = "BINANCE_UM:BTCUSDT"
     val sep = "BINANCE_UM:BTCUSDT_240927"
     val dec = "BINANCE_UM:BTCUSDT_241227"
     val sepExpiry = ms("2024-09-27T08:00:00Z")
@@ -48,6 +49,7 @@ internal class ExchangeFixture(
             margin = null,
             slippageTicks = slippageTicks,
             expiryGuardHours = expiryGuardHours,
+            perpetual = "BTCUSDT",
         )
     val registry =
         ContractCatalogRegistry(

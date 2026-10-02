@@ -20,8 +20,8 @@ internal class ExchangeRules(
     private val settlement: ExpirySettlement,
 ) {
     /**
-     * Why the exchange refuses [request] on the dated contract described by [meta] and [terms], or
-     * null. [pending] is the signed quantity of the strategy's other working orders on the contract.
+     * Why the exchange refuses [request] on the dated or perpetual contract described by [meta] and
+     * [terms], or null. [pending] is the signed quantity of the strategy's other working orders on it.
      */
     fun refusal(
         request: OrderRequest,
@@ -29,8 +29,10 @@ internal class ExchangeRules(
         terms: FutureTerms,
         pending: BigDecimal,
     ): String? {
-        val expiryMs = requireNotNull(terms.expiryMs)
-        if (clock.now() >= expiryMs) return "${request.symbol} expired at ${Instant.ofEpochMilli(expiryMs)}"
+        val expiryMs = terms.expiryMs
+        if (expiryMs != null && clock.now() >= expiryMs) {
+            return "${request.symbol} expired at ${Instant.ofEpochMilli(expiryMs)}"
+        }
         guardRefusal(request, terms, pending)?.let { return it }
         if (request !is OrderRequest.Market &&
             request !is OrderRequest.Limit &&
@@ -51,14 +53,14 @@ internal class ExchangeRules(
     /**
      * Why [request] may not stand inside [terms]' expiry guard window, or null: it would grow the
      * strategy's position or turn it to the other side once it and the strategy's other working
-     * orders ([pending], signed) have filled.
+     * orders ([pending], signed) have filled. A perpetual has no window.
      */
     fun guardRefusal(
         request: OrderRequest,
         terms: FutureTerms,
         pending: BigDecimal,
     ): String? {
-        val expiryMs = requireNotNull(terms.expiryMs)
+        val expiryMs = terms.expiryMs ?: return null
         val guardMs = terms.expiryGuardHours * HOUR_MS
         if (guardMs == 0L || clock.now() < expiryMs - guardMs) return null
         val held = settlement.netOf(request.symbol, request.strategyId)

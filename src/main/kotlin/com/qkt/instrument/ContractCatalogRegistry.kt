@@ -27,6 +27,10 @@ class ContractCatalogRegistry(
                     val symbol = selector.symbolFor(root.root)
                     add(symbol) { root.metaFor(symbol, expiryMs = null) }
                 }
+                root.perpetual?.let { name ->
+                    val symbol = "${root.venue}:$name"
+                    add(symbol) { root.metaFor(symbol, expiryMs = null, isPerpetual = true) }
+                }
                 for (contract in catalogs[root.root]?.sorted()?.contracts.orEmpty()) {
                     require(contract.symbol.startsWith(root.symbol) && contract.symbol.length > root.symbol.length) {
                         "contract ${contract.symbol} does not belong to root ${root.root}"

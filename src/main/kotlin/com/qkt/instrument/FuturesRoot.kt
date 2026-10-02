@@ -9,6 +9,7 @@ import java.math.BigDecimal
  * root and unused by explicit contract streams. [slippageTicks] is the adverse execution slip each
  * contract carries as its `slippagePoints` (ticks are the contract's points), applied when a run
  * uses instrument slippage. [expiryGuardHours] before a contract's expiry only exits are accepted.
+ * [perpetual] names the root's perpetual contract without its venue (`BTC_USDC_PERPETUAL`), if it has one.
  */
 data class FuturesRoot(
     val root: String,
@@ -25,6 +26,7 @@ data class FuturesRoot(
     val roll: RollPolicy? = null,
     val slippageTicks: Int = 0,
     val expiryGuardHours: Int = 24,
+    val perpetual: String? = null,
 ) {
     /** The venue prefix of [root]: `CME` for `CME:ES`. */
     val venue: String get() = root.substringBefore(':')
@@ -32,10 +34,14 @@ data class FuturesRoot(
     /** The family name of [root]: `ES` for `CME:ES`. */
     val symbol: String get() = root.substringAfter(':')
 
-    /** Metadata for [qktSymbol], a contract of this root expiring at [expiryMs] (null for a continuous view). */
+    /**
+     * Metadata for [qktSymbol], a contract of this root expiring at [expiryMs] (null for a continuous
+     * view, or for the [perpetual] contract when [isPerpetual]).
+     */
     fun metaFor(
         qktSymbol: String,
         expiryMs: Long?,
+        isPerpetual: Boolean = false,
     ): InstrumentMeta =
         InstrumentMeta(
             qktSymbol = qktSymbol,
@@ -48,6 +54,15 @@ data class FuturesRoot(
             tradeStopsLevelPoints = 0,
             slippagePoints = slippageTicks,
             currency = currency,
-            derivative = FutureTerms(root, expiryMs, margin, exchangeFeePerContract, takerFeeRate, expiryGuardHours),
+            derivative =
+                FutureTerms(
+                    root,
+                    expiryMs,
+                    margin,
+                    exchangeFeePerContract,
+                    takerFeeRate,
+                    expiryGuardHours,
+                    isPerpetual,
+                ),
         )
 }
