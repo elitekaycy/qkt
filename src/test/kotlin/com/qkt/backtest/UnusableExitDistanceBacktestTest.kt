@@ -43,6 +43,17 @@ class UnusableExitDistanceBacktestTest {
         val result = run(order)
 
         assertThat(result.trades).isEmpty()
+        assertThat(result.rejections).isEmpty()
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = ["BRACKET { STOP_LOSS AT 1000, TAKE_PROFIT BY 6 }"])
+    fun `an absolute stop already crossed is refused and reported with the run's rejections`(order: String) {
+        val result = run(order)
+
+        assertThat(result.trades).isEmpty()
+        assertThat(result.rejections).isNotEmpty
+        assertThat(result.rejections.map { it.reason }).allMatch { it.startsWith("venue: invalid stops") }
     }
 
     private fun run(order: String): BacktestResult {
