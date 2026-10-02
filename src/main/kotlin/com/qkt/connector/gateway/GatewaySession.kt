@@ -75,8 +75,7 @@ internal class GatewaySession(
         private set
 
     /** Why no order that adds risk may be sent (holdings disagreed with the account when last checked), or null. */
-    @Volatile var riskRefused: String? = null
-        private set
+    val riskRefused: String? get() = holders.riskRefused
 
     /** Attaches a broker for [strategy] (null: every strategy); the first one opens the stream. Throws when the gateway cannot answer. */
     fun attach(
@@ -109,11 +108,7 @@ internal class GatewaySession(
         GatewayRecovery.settleHeld(client, held) { settlement -> ledger.settleFor(broker, settlement) }
         synchronized(lock) {
             holders.ready(broker)
-            val expected = expectedStrategies() + routing.brokers.mapNotNull { it.strategy }
-            val verdict = holders.check(routing.brokers, expected, account.positions) ?: return
-            if (verdict.mismatch != null) log.error("gateway account check failed: {}", verdict.mismatch)
-            if (verdict.mismatch == null && riskRefused != null) log.info("gateway account check agrees again")
-            riskRefused = verdict.mismatch
+            judgeHoldings()
         }
     }
 
@@ -127,7 +122,8 @@ internal class GatewaySession(
         body: WireSubmit,
         reject: (String) -> Unit,
     ) {
-        val blocked = refused ?: riskRefused?.takeUnless { body.reduceOnly }
+        // A disagreement may have been a fill the venue had not yet reported: judge again before refusing.
+        val blocked = refused ?: riskRefused?.takeUnless { body.reduceOnly }?.let { judgeHoldings() }
         if (blocked != null) return reject(blocked)
         ledger.own(body.clientOrderId, strategy, BigDecimal(body.quantity), sender)
         placement.submit(body, reject)
@@ -166,6 +162,13 @@ internal class GatewaySession(
         symbols.updateListing(client.instruments())
         account.apply(sync.run(ledger.openOrders))
     }
+
+    private fun judgeHoldings(): String? =
+        synchronized(lock) {
+            val expected = expectedStrategies() + routing.brokers.mapNotNull { it.strategy }
+            holders.judge(routing.brokers, expected, account.positions)
+            holders.riskRefused
+        }
 
     private fun alertUnreachable(failures: Int) =
         synchronized(lock) { routing.broadcast(BrokerEvent.GatewayUnreachable("Gateway", failures, clock.now())) }

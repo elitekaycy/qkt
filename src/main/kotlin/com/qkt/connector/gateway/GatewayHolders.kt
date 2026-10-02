@@ -1,6 +1,7 @@
 package com.qkt.connector.gateway
 
 import java.math.BigDecimal
+import org.slf4j.LoggerFactory
 
 /**
  * The account-level check of a gateway account: once every strategy expected on the account has a
@@ -11,11 +12,33 @@ import java.math.BigDecimal
 internal class GatewayHolders(
     private val symbols: GatewaySymbols,
 ) {
+    private val log = LoggerFactory.getLogger(GatewayHolders::class.java)
     private val ready = HashSet<GatewayRouting.Attached>()
+
+    /** Why no order that adds risk may be sent (holdings disagreed with the account when last judged), or null. */
+    @Volatile var riskRefused: String? = null
+        private set
 
     /** [broker]'s session has restored its positions. */
     fun ready(broker: GatewayRouting.Attached) {
         ready += broker
+    }
+
+    /**
+     * Judges the account now ([check]) and keeps the verdict in [riskRefused]; while some expected strategy
+     * is not ready, the last verdict stands.
+     */
+    fun judge(
+        attached: List<GatewayRouting.Attached>,
+        expected: Set<String>,
+        account: Map<String, BigDecimal>,
+    ) {
+        val verdict = check(attached, expected, account) ?: return
+        if (verdict.mismatch != null && verdict.mismatch != riskRefused) {
+            log.error("gateway account check failed: {}", verdict.mismatch)
+        }
+        if (verdict.mismatch == null && riskRefused != null) log.info("gateway account check agrees again")
+        riskRefused = verdict.mismatch
     }
 
     /** A judgement of the account: [mismatch] says why the strategies disagree with it, null when they agree. */
