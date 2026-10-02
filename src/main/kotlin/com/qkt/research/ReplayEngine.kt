@@ -318,13 +318,7 @@ class ReplayEngine(
      * pushed and pulled ticks take an identical path.
      */
     fun ingest(tick: Tick) {
-        if (ticksIngested > 0L) {
-            swapBook.accrueBetween(currentTimestamp, tick.timestamp) { strategyId, boundaryMs, amount ->
-                currentTimestamp = boundaryMs
-                clock.time = boundaryMs
-                pipeline.applyFinancing(strategyId, amount)
-            }
-        }
+        if (ticksIngested > 0L) accrueFinancing(tick.timestamp)
         currentTimestamp = tick.timestamp
         ticksIngested++
         clock.time = tick.timestamp
@@ -353,8 +347,17 @@ class ReplayEngine(
     fun runToEnd(): BacktestResult {
         advanceToEnd()
         flushCompletedReplayBoundary()
+        // A rollover after the last tick (the market closed first) still falls inside the replay: charge it.
+        replayEndTimestamp?.takeIf { ticksIngested > 0L }?.let(::accrueFinancing)
         return snapshot()
     }
+
+    private fun accrueFinancing(toMs: Long) =
+        swapBook.accrueBetween(currentTimestamp, toMs) { strategyId, boundaryMs, amount ->
+            currentTimestamp = boundaryMs
+            clock.time = boundaryMs
+            pipeline.applyFinancing(strategyId, amount)
+        }
 
     private fun flushCompletedReplayBoundary() {
         val window = candleWindow ?: return
@@ -362,6 +365,7 @@ class ReplayEngine(
         if (ticksIngested == 0L) return
         val boundary = window.windowEndFor(currentTimestamp)
         if (boundary > replayEnd) return
+        accrueFinancing(boundary)
         currentTimestamp = boundary
         clock.time = boundary
         pipeline.flushReplayCandles(boundary)
