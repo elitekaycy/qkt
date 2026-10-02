@@ -313,12 +313,13 @@ Daemon-wide and per-strategy risk controls. Values are parsed as decimals unless
 | `max_drawdown_pct` | unset | backtest and daemon halt rules | Percent in `(0, 100]`. Global total-drawdown halt. |
 | `max_daily_drawdown_pct` | unset | backtest and daemon halt rules | Percent in `(0, 100]`. Global daily-drawdown halt. |
 | `total_dd_basis` | `static` | halt rules | `static` uses initial balance. `trailing` uses high-water equity. |
-| `daily_dd_basis` | `balance` | halt rules | `balance` uses day-start closed balance. `equity` includes open float. |
+| `daily_dd_basis` | `balance` | halt rules | The day-start reference: `balance` is the closed balance at UTC midnight, `equity` adds the float open at midnight. Either way the day's drawdown is measured against current equity, open loss included. |
 | `live_equity_basis` | `venue` | standalone live sizing and drawdown | `venue` consumes broker account equity. `modeled` pins live to `starting_balance + qkt realized + qkt unrealized`, matching backtest accounting. Portfolio children always use their allocated modeled capital. |
 
-`balance` is retained as the compatibility default, but it ignores intraday open
-loss. Accounts governed by equity-based daily-loss mandates (including many funded
-account programs) should set `daily_dd_basis: equity` explicitly.
+`balance` is the compatibility default. With a position carried over midnight it measures the day's
+drawdown from the closed balance, so overnight float already lost counts toward today; accounts whose
+daily-loss mandate is measured from day-start equity (including many funded account programs) should
+set `daily_dd_basis: equity` explicitly.
 | `per_strategy.<name>.max_daily_loss` | unset | daemon and backtest risk layering | Per-strategy daily realized-loss halt. |
 | `per_strategy.<name>.max_position_size` | unset | daemon pre-trade controls | Caps absolute position size for one strategy. |
 | `per_strategy.<name>.max_open_positions` | unset | daemon pre-trade controls | Caps non-zero symbols for one strategy. |

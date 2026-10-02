@@ -57,9 +57,13 @@ Returns are measured on a constant capital base — each strategy's P&L change o
 
 Two simulated brokers, chosen with `--broker`:
 
-- **`paper`** (default): market orders fill at the `MarketPriceTracker`'s last-known price for the
-  symbol; stop and limit orders fill at their trigger price the moment the trigger condition is true;
-  bracket SL/TP fill at their level. No spread, slippage, rounding or latency. A symbol replayed from
+- **`paper`** (default): fills at mid. A market order fills at the `MarketPriceTracker`'s last-known
+  price for the symbol. A stop, limit or bracket exit triggers on the first tick whose quote for its
+  side reaches the level (the ask for a buy, the bid for a sell, as at the venue) and fills at that
+  tick's mid, so it can fill up to half a spread better than its level, or beyond it on a gap. No
+  spread, slippage or latency. Volume rounds down to `volumeStep` and an order below `volumeMin` is
+  rejected (`volumeMax` is not checked). `--execution-latency`, `--reject-every` and `--partial-fill`
+  apply to `mt5-sim` only. A symbol replayed from
   bars (`--bars`, or one the store has only bars for, such as fetched crypto or broker bars) has no
   prints between a bar's open, low, high and close: an exit the bar trades through fills at its
   level, and one the next bar opens beyond (a gap) fills at that open.
@@ -84,9 +88,10 @@ model used in `evidence.execution`.
 
 ## Slippage
 
-`paper` fills have none. `mt5-sim` slips every fill against you by the instrument's `slippagePoints`
-(`instruments.yaml`, each point one `pointSize` wide) under `mt5-basic` and `mt5-realistic`, or as the
-`--slippage` option states.
+`paper` fills have none. `mt5-sim` slips market and stop fills against you by the instrument's
+`slippagePoints` (`instruments.yaml`, each point one `pointSize` wide) under `mt5-basic` and
+`mt5-realistic`, or as the `--slippage` option states. A limit, take-profit included, is never filled
+worse than its price, so it is not slipped.
 
 ## Spread
 
@@ -108,7 +113,8 @@ priced this way are listed in `evidence.execution.fillPriceSource`. Live runs ig
 ## Partial fills
 
 `paper` and the `mt5-basic` and `mt5-realistic` presets fill every order fully or reject it.
-`--partial-fill <fraction>` (on by default in `stress`) fills that fraction of each order first.
+`--partial-fill <fraction>` (on by default in `stress`) fills each order in two slices on the same
+tick: that fraction, then the rest. A bracket's exits protect the whole filled quantity.
 
 ## Overnight swap
 
@@ -170,8 +176,6 @@ Assumes trade returns are i.i.d. — strategies with clustered wins/losses (mome
 ## What's not in the model
 
 - Funding fees (perpetual swaps)
-- Overnight financing (CFDs)
-- Commission per trade (configurable in a future enhancement)
 - FX conversion of cross-currency positions
 - Borrowing costs for shorts
 - Tax effects
