@@ -112,12 +112,11 @@ aggregation.
 Notes:
 
 - **One timeframe per run.** Want 1m and 5m? Run `qkt fetch` twice; the store keys by timeframe.
-- **Gateway contracts in a backtest.** Declare a dated future's root under `futures:` (a catalog of its
-  contracts, its `takerFeeRate`) so it fills on the exchange simulator with the venue's fees, and run
-  `--position-mode netting` for a netting venue such as Deribit. A perpetual has no root: it fills as a
-  plain instrument whose fee is `commissionPerLot`, so a venue's percentage fee is exact only at the
-  price you set it for (Deribit's 0.05% at 86,321: 43.16 per lot, 7e-6 USDC from the venue's figure on a
-  testnet round trip of 0.001).
+- **Gateway contracts in a backtest.** Declare the contracts' root under `futures:` (its
+  `takerFeeRate`, a catalog of its dated contracts, and `perpetual:` for its perpetual) so they fill on
+  the exchange simulator with the venue's fees, and run `--position-mode netting` for a netting venue
+  such as Deribit. A Deribit testnet perpetual and dated future round trip each reproduced the venue's
+  realized PnL to the last digit this way.
 - **Idempotent per day-file.** An existing day file is skipped without hitting the broker. To
   re-fetch a corrupt day, delete the file and re-run.
 - MT5 history APIs are broker-dependent — some throttle hard or serve only a limited window.
@@ -152,6 +151,7 @@ futures:
     volumeStep: 0.001
     volumeMin: 0.001
     takerFeeRate: 0.0005
+    perpetual: BTCUSDT   # optional: the root's perpetual (BINANCE_UM:BTCUSDT), which needs no catalog
 ```
 
 A day before a contract listed, or after it delivered, has no file and is recorded empty only after
@@ -163,7 +163,9 @@ price and then slip by the run's slippage model; with `--slippage instrument` th
 optional `slippageTicks` (whole ticks against the order). Limit and stop prices off the contract's
 tick grid are snapped to it in the direction that never fills early. The root's fees are charged on every fill and included in the report's
 `commissionPaid`. A contract held into expiry is settled at the catalog's delivery price (exit reason
-`EXPIRY`), and orders on it after expiry are rejected. In the last `expiryGuardHours` before expiry
+`EXPIRY`), and orders on it after expiry are rejected. The root's `perpetual` fills the same way with
+the same fees and tick grid, but never expires, settles or enters the guard window; its funding is not
+modelled. In the last `expiryGuardHours` before expiry
 (a root key, default 24; 0 turns it off) the exchange takes only orders that reduce a position; a
 root whose roll would fall inside that window is refused when a continuous stream is built from it.
 Give a root `margin: { initial, maintenance, basis: notional | per_contract }` and the backtest

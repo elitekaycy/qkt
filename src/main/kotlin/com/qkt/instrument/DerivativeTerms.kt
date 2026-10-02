@@ -22,8 +22,9 @@ sealed interface DerivativeTerms {
 }
 
 /**
- * A dated futures contract, or a continuous view of its root when [expiryMs] is null. The
- * instrument's `contractSize` is the multiplier and `pointSize` the tick size.
+ * A dated futures contract, or, when [expiryMs] is null, a continuous view of its root or its
+ * [perpetual] contract, which never expires. The instrument's `contractSize` is the multiplier and
+ * `pointSize` the tick size.
  */
 data class FutureTerms(
     override val root: String,
@@ -33,10 +34,13 @@ data class FutureTerms(
     override val takerFeeRate: BigDecimal = BigDecimal.ZERO,
     /** Hours before [expiryMs] in which the exchange accepts only orders that reduce a position; 0 turns it off. */
     val expiryGuardHours: Int = 24,
+    /** The root's perpetual contract: traded like a dated one, but never settled or guarded. */
+    val perpetual: Boolean = false,
 ) : DerivativeTerms {
     init {
         require(ROOT_FORMAT.matches(root)) { "FutureTerms.root must be VENUE:ROOT: '$root'" }
         require(expiryMs == null || expiryMs > 0) { "FutureTerms.expiryMs must be > 0: $expiryMs" }
+        require(!perpetual || expiryMs == null) { "FutureTerms: a perpetual has no expiry: $expiryMs" }
         require(expiryGuardHours >= 0) { "FutureTerms.expiryGuardHours must be >= 0: $expiryGuardHours" }
         require(exchangeFeePerContract.signum() >= 0) {
             "FutureTerms.exchangeFeePerContract must be >= 0: $exchangeFeePerContract"

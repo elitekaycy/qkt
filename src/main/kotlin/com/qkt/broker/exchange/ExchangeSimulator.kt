@@ -28,7 +28,8 @@ import java.math.BigDecimal
 import java.time.Instant
 
 /**
- * A paper exchange for dated futures contracts. Matching is [PaperBroker]'s, run on a private bus
+ * A paper exchange for dated futures contracts and a root's perpetual, which is never guarded or
+ * settled. Matching is [PaperBroker]'s, run on a private bus
  * whose events are relayed to [bus]; on top of it the simulator enforces the exchange's rules:
  *
  * - netting only;
@@ -106,12 +107,14 @@ class ExchangeSimulator(
         val meta =
             instruments.lookup(request.symbol) ?: return reject(request, "no instrument metadata for ${request.symbol}")
         val terms = meta.derivative as? FutureTerms
-        val expiry = terms?.expiryMs ?: return reject(request, "${request.symbol} is not a dated futures contract")
+        if (terms == null || (terms.expiryMs == null && !terms.perpetual)) {
+            return reject(request, "${request.symbol} is not a dated or perpetual futures contract")
+        }
         rules.refusal(request, meta, terms, pendingOf(request))?.let { return reject(request, it) }
         val grid = PriceSpace(PriceAdjustment.NONE, BigDecimal.ZERO, meta.pointSize)
         val onGrid = requireNotNull(toContract(request, request.id, request.symbol, grid))
         working[request.id] = onGrid
-        settlement.track(request.symbol, expiry)
+        terms.expiryMs?.let { settlement.track(request.symbol, it) }
         return matching.submit(onGrid)
     }
 

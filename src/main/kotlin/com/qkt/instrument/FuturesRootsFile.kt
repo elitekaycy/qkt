@@ -25,6 +25,7 @@ object FuturesRootsFile {
             "roll",
             "slippageTicks",
             "expiryGuardHours",
+            "perpetual",
         )
     private val fields = RootFields("futures")
     private val ROLL_KEYS = setOf("daysBeforeExpiry", "atUtc", "adjust")
@@ -92,6 +93,7 @@ object FuturesRootsFile {
                 entry["slippageTicks"]?.let { fields.wholeNumber(name, "slippageTicks", it.toString()) } ?: 0,
             expiryGuardHours =
                 entry["expiryGuardHours"]?.let { fields.wholeNumber(name, "expiryGuardHours", it.toString()) } ?: 24,
+            perpetual = entry["perpetual"]?.toString(),
         ).also { validate(it, name) }
     }
 

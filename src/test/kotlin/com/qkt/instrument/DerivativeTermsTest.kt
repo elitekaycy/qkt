@@ -34,4 +34,9 @@ class DerivativeTermsTest {
     fun `a continuous view has no expiry`() {
         assertThat(FutureTerms("CME:ES", expiryMs = null).expiryMs).isNull()
     }
+
+    @Test
+    fun `a perpetual with an expiry is refused`() {
+        assertThatThrownBy { FutureTerms("DERIBIT:BTC_USDC", 1L, perpetual = true) }.hasMessageContaining("perpetual")
+    }
 }

@@ -38,6 +38,7 @@ class FuturesRootsFileTest {
                         volumeMin: 0.001
                         takerFeeRate: 0.0005
                         margin: { initial: 0.05, maintenance: 0.025, basis: notional }
+                        perpetual: BTCUSDT
                     """,
                 ),
             )
@@ -48,6 +49,7 @@ class FuturesRootsFileTest {
         assertThat(btc.volumeMax).isNull()
         assertThat(btc.calendar).isNull()
         assertThat(btc.margin?.basis).isEqualTo(MarginBasis.NOTIONAL)
+        assertThat(btc.perpetual).isEqualTo("BTCUSDT")
     }
 
     @Test

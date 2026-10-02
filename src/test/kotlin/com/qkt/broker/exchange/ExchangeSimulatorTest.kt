@@ -70,11 +70,11 @@ class ExchangeSimulatorTest {
     }
 
     @Test
-    fun `orders on a symbol that is not a dated contract are rejected`() {
+    fun `orders on a symbol that is not a dated or perpetual contract are rejected`() {
         val continuous = f.sim.submit(f.market("c", Side.BUY, "0.01", symbol = "BINANCE_UM:BTCUSDT@front"))
         val unknown = f.sim.submit(f.market("u", Side.BUY, "0.01", symbol = "EXNESS:XAUUSD"))
 
-        assertThat(continuous.rejectReason).contains("not a dated futures contract")
+        assertThat(continuous.rejectReason).contains("not a dated or perpetual futures contract")
         assertThat(unknown.rejectReason).contains("no instrument metadata")
     }
 
