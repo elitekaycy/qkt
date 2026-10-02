@@ -36,12 +36,26 @@ internal object CatalogFetch {
             } catch (e: IllegalArgumentException) {
                 return failed(target, e)
             }
-        ContractCatalogStore(dataRoot).write(catalog)
-        println(
-            "qkt fetch: ${catalog.contracts.size} contracts for $target -> ${ContractCatalogStore(
-                dataRoot,
-            ).path(target)}",
+        val store = ContractCatalogStore(dataRoot)
+        // A settled delivery price never changes, so one stored earlier outlives an endpoint outage now.
+        val stored =
+            store
+                .read(target)
+                ?.contracts
+                .orEmpty()
+                .associate { it.symbol to it.deliveryPrice }
+        store.write(
+            catalog.copy(
+                contracts =
+                    catalog.contracts.map {
+                        it.copy(
+                            deliveryPrice =
+                                it.deliveryPrice ?: stored[it.symbol],
+                        )
+                    },
+            ),
         )
+        println("qkt fetch: ${catalog.contracts.size} contracts for $target -> ${store.path(target)}")
         return ExitCodes.SUCCESS
     }
 
