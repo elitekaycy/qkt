@@ -106,6 +106,7 @@ aggregation.
 |---|---|---|
 | `EXNESS`, `ICMARKETS`, `FTMO`, `PEPPERSTONE`, … | MT5 gateway (per broker profile in `qkt.config.yaml`) | The profile's `gatewayUrl` must be reachable. `qkt brokers list` shows what's resolved. |
 | `BYBIT_SPOT` / `BYBIT_LINEAR` | `api.bybit.com /v5/market/kline` | Public kline, no auth. |
+| A `type: gateway` account (`DERIBIT`, …) | The venue gateway's `GET /v1/bars` | Contracts the gateway lists (futures, perpetuals); the entry's `api_key` must resolve. The bars live warmup reads, so a backtest and its live warmup see the same history. |
 | `BACKTEST` | (refused) | `BACKTEST` *is* the local store — nothing to fetch from. Use a real broker prefix. |
 
 Notes:
