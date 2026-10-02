@@ -511,8 +511,8 @@ history, so a fill is never lost or booked twice. A submit the gateway never ans
 until a deadline, then resolved by id. The gateway's identity is checked at startup and whenever its
 event log restarts; a gateway on another account refuses every order. The kill switch at the gateway
 refuses orders that add risk; an order that reduces both its strategy's and the account's position is
-sent `reduce_only` and passes. Limit and stop levels are sent on the tick grid the gateway lists for
-the contract, rounded as the backtest exchange rounds them: buy limits and sell stops down, sell limits
+sent `reduce_only` and passes. Limit and stop levels are sent on the contract's tick grid (an option's
+declared `tickSteps`, otherwise the tick the gateway lists), rounded as the backtest exchange rounds them: buy limits and sell stops down, sell limits
 and buy stops up, so an order never fills or triggers before its level and a protective stop can sit up
 to one tick wider than asked (a backtest does the same for a contract of a declared `futures:` root;
 without one it keeps the level as computed). The account's prices come from the gateway's quotes socket: its
