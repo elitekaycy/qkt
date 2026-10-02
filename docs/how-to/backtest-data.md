@@ -113,9 +113,13 @@ Notes:
 
 - **One timeframe per run.** Want 1m and 5m? Run `qkt fetch` twice; the store keys by timeframe.
 - **Gateway contracts in a backtest.** Declare the contracts' root under `futures:` (its
-  `takerFeeRate`, a catalog of its dated contracts, and `perpetual:` for its perpetual) so they fill on
-  the exchange simulator with the venue's fees, and run `--position-mode netting` for a netting venue
-  such as Deribit. A Deribit testnet perpetual and dated future round trip each reproduced the venue's
+  `takerFeeRate`, and `perpetual:` for its perpetual) so they fill on the exchange simulator with the
+  venue's fees, and run `--position-mode netting` for a netting venue such as Deribit. `qkt fetch
+  DERIBIT:BTC_USDC --catalog --config qkt.config.yaml` writes the root's catalog from the account's
+  listing: every dated contract with its expiry, keeping contracts the gateway has stopped listing. A
+  gateway reports settlements only for contracts the account held, so a contract it never held has no
+  delivery price and a backtest holding it into expiry settles it at its last price. A root declared
+  under both `options:` and `futures:` gets both catalogs. A Deribit testnet perpetual and dated future round trip each reproduced the venue's
   realized PnL to the last digit this way.
 - **Idempotent per day-file.** An existing day file is skipped without hitting the broker. To
   re-fetch a corrupt day, delete the file and re-run.
