@@ -52,8 +52,8 @@ internal class ExchangeRules(
 
     /**
      * Why [request] may not stand inside [terms]' expiry guard window, or null: it would grow the
-     * strategy's position or turn it to the other side once it and the strategy's other working
-     * orders ([pending], signed) have filled. A perpetual has no window.
+     * strategy's position or turn it to the other side once it and the strategy's other working orders
+     * that could fill on the same tick ([pending], signed) have filled. A perpetual has no window.
      */
     fun guardRefusal(
         request: OrderRequest,
