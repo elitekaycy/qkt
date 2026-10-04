@@ -12,9 +12,10 @@ import java.math.BigDecimal
 import java.time.LocalDate
 
 /**
- * Deterministic backtest ledger of perpetual funding: at each stored rate's time, every strategy leg held
- * on that perpetual from before it is charged `quantity × contract size × price × rate`, a long paying a
- * positive rate and a short paid it, at the rate's price (the perpetual's last price when it has none).
+ * Deterministic backtest ledger of perpetual funding: at each stored rate's time, every strategy holding
+ * that perpetual from before it is charged `quantity × contract size × price × rate`, a long paying a
+ * positive rate and a short paid it (nothing when the strategies' holdings net to zero, as a venue charges
+ * the account's net position), at the rate's price (the perpetual's last price when it has none).
  * Rates come from the registry's stored series ([com.qkt.instrument.FuturesDirectory.fundingRates]); a
  * perpetual without one accrues nothing, which the backtest refuses unless funding is turned off. Normal
  * ticks only compare the next rate's time; legs are read when one is crossed.
@@ -93,29 +94,14 @@ internal class FundingBook(
     ) {
         val price = rate.price ?: prices.lastPrice(symbol) ?: return
         val date = LocalDate.ofEpochDay(Math.floorDiv(rate.timeMs, DAY_MS))
-        for (strategyId in strategyIds) {
-            val held =
-                strategyPositions
-                    .allLegsFor(strategyId)
-                    .filter { it.symbol == symbol && it.openedAt < rate.timeMs }
-                    .fold(BigDecimal.ZERO) { q, leg ->
-                        q.add(
-                            if (leg.side ==
-                                Side.BUY
-                            ) {
-                                leg.quantity.abs()
-                            } else {
-                                leg.quantity.abs().negate()
-                            },
-                        )
-                    }
-            if (held.signum() == 0) continue
+        val held = strategyIds.associateWith { heldBefore(it, symbol, rate.timeMs) }.filterValues { it.signum() != 0 }
+        // A venue charges the account's net position: strategies netting to nothing pay nothing, as live.
+        if (held.values.fold(BigDecimal.ZERO, BigDecimal::add).signum() == 0) return
+        for ((strategyId, quantity) in held) {
             val native =
-                held
-                    .multiply(
-                        contractSize.getValue(symbol),
-                        Money.CONTEXT,
-                    ).multiply(price, Money.CONTEXT)
+                quantity
+                    .multiply(contractSize.getValue(symbol), Money.CONTEXT)
+                    .multiply(price, Money.CONTEXT)
                     .multiply(rate.rate, Money.CONTEXT)
                     .negate()
             val amount =
@@ -135,6 +121,25 @@ internal class FundingBook(
             dailyNetByStrategy.getOrPut(strategyId) { linkedMapOf() }.merge(date, amount, BigDecimal::add)
         }
     }
+
+    /** [strategyId]'s signed holding of [symbol] from before [timeMs]. */
+    private fun heldBefore(
+        strategyId: String,
+        symbol: String,
+        timeMs: Long,
+    ): BigDecimal =
+        strategyPositions
+            .allLegsFor(strategyId)
+            .filter { it.symbol == symbol && it.openedAt < timeMs }
+            .fold(BigDecimal.ZERO) { q, leg ->
+                if (leg.side ==
+                    Side.BUY
+                ) {
+                    q.add(leg.quantity.abs())
+                } else {
+                    q.subtract(leg.quantity.abs())
+                }
+            }
 
     private companion object {
         const val DAY_MS = 86_400_000L

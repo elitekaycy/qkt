@@ -46,20 +46,22 @@ internal class GatewayFundingTest : GatewayHarness() {
     }
 
     @Test
-    fun `a record without a position is charged on the account's last known position`() {
+    fun `a record without a position is shared over what the attached sessions hold, so none books another's part`() {
         fake.capabilities = listOf("funding")
-        val shared = session()
-        val a = Strategy()
-        val heard = a.funding()
-        broker(shared, a, "a").submit(market("a-1", "a"))
-        await { a.of<BrokerEvent.OrderAccepted>().isNotEmpty() }
-        fake.act { fill(wire("a-1"), "f1", "0.1", "650", FakeGateway.TIME) }
-        await { a.of<BrokerEvent.OrderFilled>().isNotEmpty() }
+        val shared = session(setOf("a", "b"))
+        val a = Strategy().apply { held[symbol] = BigDecimal("0.1") }
+        val b = Strategy().apply { held[symbol] = BigDecimal("0.3") }
+        val heardA = a.funding()
+        val heardB = b.funding()
+        broker(shared, a, "a")
+        broker(shared, b, "b")
 
         fake.act { fund(record("tx-1", null)) }
 
-        await { heard.isNotEmpty() }
-        assertThat(heard.single().basis).isEqualByComparingTo("0.1")
+        await { heardA.isNotEmpty() && heardB.isNotEmpty() }
+        assertThat(
+            listOf(heardA.single().basis, heardB.single().basis),
+        ).allMatch { it.compareTo(BigDecimal("0.4")) == 0 }
     }
 
     @Test

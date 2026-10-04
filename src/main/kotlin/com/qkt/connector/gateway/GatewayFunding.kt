@@ -10,8 +10,8 @@ import java.math.BigDecimal
  * ([declared], from `/v1/health`); without it, an order that could open or add to a perpetual position is
  * refused ([refusal]), since its funding would never be booked. Each `funding` record ([record], or read
  * by a resynchronization through [readWindow]) becomes a [FundingCharged] for every attached broker
- * ([routing], under [lock]), charged on the record's position, or on the account's
- * last known position when the venue gave none ([positionOf]); each session books its strategies' own
+ * ([routing], under [lock]), charged on the record's position, or, when the venue gave none, on what the
+ * attached sessions hold together, so none books another's share; each session books its strategies' own
  * parts and drops what it already booked. A broker whose session is ready gets the last
  * [FUNDING_REPLAY_MS] of funding again ([replay]), so what was funded while qkt was away is booked.
  */
@@ -19,7 +19,6 @@ internal class GatewayFunding(
     private val client: GatewayClient,
     private val symbols: GatewaySymbols,
     private val clock: Clock,
-    private val positionOf: (String) -> BigDecimal,
     private val routing: GatewayRouting,
     private val lock: Any,
 ) {
@@ -54,7 +53,9 @@ internal class GatewayFunding(
 
     /** Reads the funding over [window] (from, to) for every attached broker, when the gateway reports it. */
     fun readWindow(window: Pair<Long, Long>) {
-        if (declared) client.funding(window.first, window.second).forEach(::record)
+        // Never further back than a replay reaches, so no record outlives what sessions remember booking.
+        val from = maxOf(window.first, window.second - FUNDING_REPLAY_MS)
+        if (declared) client.funding(from, window.second).forEach(::record)
     }
 
     /** The event a `funding` record means for every session. */
@@ -71,10 +72,14 @@ internal class GatewayFunding(
             symbols.qkt(funding.symbol),
             amount,
             funding.currency,
-            basis ?: positionOf(funding.symbol),
+            basis ?: attachedHolding(symbols.qkt(funding.symbol)),
             funding.time,
         )
     }
+
+    /** What every attached session holds of [symbol], signed: who shares a record that names no position. */
+    private fun attachedHolding(symbol: String): BigDecimal =
+        routing.brokers.fold(BigDecimal.ZERO) { sum, broker -> sum.add(broker.holding(symbol)) }
 
     /** Hands [broker] the account's funding of the last [FUNDING_REPLAY_MS], when the gateway reports it. */
     fun replay(broker: GatewayRouting.Attached) {

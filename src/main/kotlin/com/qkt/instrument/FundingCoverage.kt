@@ -4,8 +4,9 @@ import java.time.Instant
 
 /**
  * Whether a backtest from `fromMs` to `toMs` has the funding rates of every perpetual it trades: stored
- * rates must start within [MAX_GAP_MS] of the run's start, end within it of its end, and never leave a
- * longer gap between them (no venue funds less often than daily). A perpetual held without its rates would
+ * rates must start within three of the series' own intervals of the run's start, end within them of its
+ * end, and never leave a longer gap between them (an hourly series may miss two rates, an 8-hourly one a
+ * day's worth). A perpetual held without its rates would
  * silently drift from the venue by its funding, so a gap is a refusal, never a zero.
  */
 object FundingCoverage {
@@ -28,17 +29,18 @@ object FundingCoverage {
                     ?.fundingRates(symbol)
                     .orEmpty()
                     .map { it.timeMs }
-            val inRun = rates.filter { it in fromMs - MAX_GAP_MS..toMs + MAX_GAP_MS }
+            val maxGap = maxGap(rates)
+            val inRun = rates.filter { it in fromMs - maxGap..toMs + maxGap }
             val gap =
                 when {
                     inRun.isEmpty() -> "it has no stored funding rates over the run"
-                    inRun.first() > fromMs + MAX_GAP_MS -> "its stored rates start ${day(inRun.first())}"
-                    inRun.last() < toMs - MAX_GAP_MS -> "its stored rates end ${day(inRun.last())}"
+                    inRun.first() > fromMs + maxGap -> "its stored rates start ${day(inRun.first())}"
+                    inRun.last() < toMs - maxGap -> "its stored rates end ${day(inRun.last())}"
                     else ->
                         inRun
                             .zipWithNext()
                             .firstOrNull { (a, b) ->
-                                b - a > MAX_GAP_MS
+                                b - a > maxGap
                             }?.let { (a, b) -> "its stored rates skip ${day(a)} to ${day(b)}" }
                 } ?: return@firstNotNullOfOrNull null
             "$symbol is a perpetual and $gap, so its funding would be missing: run " +
@@ -46,7 +48,14 @@ object FundingCoverage {
                 "backtest without funding"
         }
 
+    /** Three of the series' own intervals (its median spacing), so one missed rate passes and a run of them does not. */
+    private fun maxGap(times: List<Long>): Long {
+        val spacings = times.zipWithNext { a, b -> b - a }.sorted()
+        return if (spacings.isEmpty()) DAY_MS else GAP_INTERVALS * spacings[(spacings.size - 1) / 2]
+    }
+
     private fun day(ms: Long) = Instant.ofEpochMilli(ms).toString().substringBefore('T')
 
-    private const val MAX_GAP_MS = 86_400_000L
+    private const val DAY_MS = 86_400_000L
+    private const val GAP_INTERVALS = 3
 }

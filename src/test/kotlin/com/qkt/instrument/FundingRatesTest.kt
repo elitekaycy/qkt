@@ -58,7 +58,7 @@ class FundingRatesTest {
     }
 
     @Test
-    fun `a backtest's perpetual needs rates from its start to its end with no day-long gap, a dated contract none`(
+    fun `a backtest's perpetual needs rates from its start to its end with no gap of three intervals, a dated contract none`(
         @TempDir dir: Path,
     ) {
         val root =
@@ -101,7 +101,7 @@ class FundingRatesTest {
         assertThat(problem((0..9).map { it * 8 * hour })).isNull()
         assertThat(problem(emptyList())).contains("has no stored funding rates").contains("--funding off")
         assertThat(problem(listOf(0L, 8 * hour, 3 * day))).contains("skip 1970-01-01 to 1970-01-04")
-        assertThat(problem(listOf(2 * day, 3 * day))).contains("start 1970-01-03")
+        assertThat(problem((6..9).map { it * 8 * hour })).contains("start 1970-01-03")
         assertThat(problem(emptyList(), listOf("DERIBIT:BTC_USDC@front"))).isNull()
     }
 }
