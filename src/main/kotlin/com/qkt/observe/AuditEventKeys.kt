@@ -4,6 +4,7 @@ import com.qkt.events.BrokerEvent
 import com.qkt.events.CandleEvent
 import com.qkt.events.ContractSettled
 import com.qkt.events.CostIncurred
+import com.qkt.events.FundingCharged
 import com.qkt.events.DecisionOrderLinkedEvent
 import com.qkt.events.Event
 import com.qkt.events.FillAccountedEvent
@@ -62,6 +63,7 @@ internal fun auditSymbol(event: Event): String? =
         is BrokerEvent.PositionReconciled -> event.symbol
         is CostIncurred -> event.symbol
         is ContractSettled -> event.symbol
+        is FundingCharged -> event.symbol
         is TradeEvent -> event.trade.symbol
         is TickEvent -> event.tick.symbol
         is WarmupTickEvent -> event.tick.symbol

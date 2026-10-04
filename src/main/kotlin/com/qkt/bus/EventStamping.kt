@@ -7,6 +7,7 @@ import com.qkt.events.CostIncurred
 import com.qkt.events.DecisionOrderLinkedEvent
 import com.qkt.events.Event
 import com.qkt.events.FillAccountedEvent
+import com.qkt.events.FundingCharged
 import com.qkt.events.OrderEvent
 import com.qkt.events.RiskEvent
 import com.qkt.events.RiskRejectedEvent
@@ -60,6 +61,7 @@ internal fun stampEvent(
         is BrokerEvent.PositionModificationCompleted -> event.copy(timestamp = ts, sequenceId = seq)
         is CostIncurred -> event.copy(timestamp = ts, sequenceId = seq)
         is ContractSettled -> event.copy(timestamp = ts, sequenceId = seq)
+        is FundingCharged -> event.copy(timestamp = ts, sequenceId = seq)
         is RiskEvent.Halted -> event.copy(timestamp = ts, sequenceId = seq)
         is RiskEvent.Resumed -> event.copy(timestamp = ts, sequenceId = seq)
         is StructureOpened -> event.copy(timestamp = ts, sequenceId = seq)

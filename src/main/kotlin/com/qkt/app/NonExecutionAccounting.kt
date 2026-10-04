@@ -22,11 +22,11 @@ internal class NonExecutionAccounting(
     private val accounting: AccountingEngine,
     private val clock: Clock,
 ) {
-    /** Book every [CostIncurred] on the bus as a realized loss of kind [FillAccountingKind.COST]. */
+    /** Book every [CostIncurred] on the bus as a realized loss of its kind ([FillAccountingKind.COST] unless it says). */
     fun subscribeCosts() {
         bus.subscribe<CostIncurred> { e ->
             val charged = accounting.convertPnlAmount(e.symbol, e.amount.negate(), e.timestamp, e.referencePrice)
-            publish(e.strategyId, charged, FillAccountingKind.COST, "cost:${e.reason}", symbol = e.symbol)
+            publish(e.strategyId, charged, e.kind, "cost:${e.reason}", symbol = e.symbol)
         }
     }
 
