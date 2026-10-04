@@ -51,6 +51,9 @@ internal class FakeGateway(
     /** Answers `500` to this many requests on each path before serving one. */
     val failing = HashMap<String, Int>()
 
+    /** Funding rates by venue code, served by `GET /v1/funding-rates` [barsPage] at a time. */
+    val rates = HashMap<String, List<WireFundingRate>>()
+
     /** The capabilities `/v1/health` reports; none, as a gateway from before capabilities. */
     @Volatile var capabilities: List<String> = emptyList()
 
@@ -141,6 +144,7 @@ internal class FakeGateway(
             path == "/v1/stream" -> stream(url.queryParameter("since")?.toLong())
             path == "/v1/quotes" -> quotes.upgrade(url)
             path == "/v1/bars" -> FakeWire.bars(url, bars, barsPage)
+            path == "/v1/funding-rates" -> FakeWire.rates(rates[symbol].orEmpty().filter { inWindow(it.time) }, barsPage)
             path == "/v1/funding" ->
                 FakeWire.ok(json.encodeToString(WireFundings.serializer(), WireFundings(venue.funding.filter { inWindow(it.time) })))
             else -> MockResponse().setResponseCode(404)

@@ -48,6 +48,15 @@ internal object FakeWire {
         return ok(json.encodeToString(WireBars.serializer(), WireBars(inRange.take(pageSize), next)))
     }
 
+    /** `GET /v1/funding-rates` over [inRange], [pageSize] at a time, `next` the following page's first time. */
+    fun rates(
+        inRange: List<WireFundingRate>,
+        pageSize: Int,
+    ): MockResponse {
+        val next = inRange.getOrNull(pageSize)?.time
+        return ok(json.encodeToString(WireFundingRates.serializer(), WireFundingRates(inRange.take(pageSize), next)))
+    }
+
     /** A `200` JSON answer. */
     fun ok(body: String) = MockResponse().setHeader("Content-Type", "application/json").setBody(body)
 

@@ -47,6 +47,9 @@ interface TradingAccount : AutoCloseable {
     /** Builds the catalogs of this account's futures roots from the venue's listing, or null when it lists none. */
     val contractCatalogs: com.qkt.instrument.ContractCatalogSource? get() = null
 
+    /** The venue's published funding rates of its perpetuals, or null when the connector cannot read them. */
+    val fundingRates: com.qkt.instrument.FundingRateSource? get() = null
+
     /** Releases the connections and files this account holds. Idempotent. */
     override fun close()
 }
