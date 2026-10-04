@@ -58,7 +58,7 @@ class FundingRatesTest {
     }
 
     @Test
-    fun `a backtest's perpetual needs rates from its start to its end with no gap of three intervals, a dated contract none`(
+    fun `a perpetual needs rates across the run with no gap of three intervals, a dated contract none`(
         @TempDir dir: Path,
     ) {
         val root =
