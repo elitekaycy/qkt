@@ -1,0 +1,21 @@
+id: perpetual-funding-soak-deribit
+title: A perpetual held through Deribit's daily settlement books the funding Deribit realizes, to the cent
+why: 'Deribit accrues perpetual funding by the millisecond and realizes it into the account at its 08:00 UTC
+  settlement; qkt must book exactly that amount, against the strategy that held the position.'
+status: soak
+symbols:
+- DERIBIT:SOL_USDC_PERPETUAL
+timeframes:
+- 1m
+proves:
+- behaviour:perpetual-funding
+fills: 2
+replay: bars
+config:
+  risk:
+    measured_usage_hours: 0
+assertions:
+- flat-account
+- deals-net-equals-realized
+- funding-charged
+- replay-same-fills
