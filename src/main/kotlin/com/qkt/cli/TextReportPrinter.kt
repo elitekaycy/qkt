@@ -26,6 +26,7 @@ internal object TextReportPrinter {
         out.println("Commission paid:  ${g.commissionPaid.toPlainString()}")
         out.println("Swap paid:        ${g.swapPaid.toPlainString()}")
         if (g.rollCostsPaid.signum() != 0) out.println("Roll costs paid:  ${g.rollCostsPaid.toPlainString()}")
+        if (g.fundingPaid.signum() != 0) out.println("Funding paid:     ${g.fundingPaid.toPlainString()}")
         out.println("Win rate:         ${g.winRate.toPlainString()}")
         out.println("Sharpe (annual):  ${g.sharpeRatio?.toPlainString() ?: "n/a"}")
         out.println("Sortino (annual): ${g.sortinoRatio?.toPlainString() ?: "n/a"}")

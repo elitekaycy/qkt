@@ -32,7 +32,7 @@
 420 src/main/kotlin/com/qkt/lsp/QktDocs.kt
 411 src/main/kotlin/com/qkt/broker/PaperBroker.kt
 411 src/test/kotlin/com/qkt/connector/mt5/MT5BrokerProfileLoaderTest.kt
-401 src/main/kotlin/com/qkt/research/ReplayEngine.kt
+400 src/main/kotlin/com/qkt/research/ReplayEngine.kt
 393 src/test/kotlin/com/qkt/dsl/compile/GeneratedStrategyReplay.kt
 382 src/test/kotlin/com/qkt/connector/bybit/spot/BybitSpotStateRecoveryTest.kt
 382 src/test/kotlin/com/qkt/connector/mt5/marketdata/Mt5MarketSourceTimeBaseTest.kt
@@ -43,7 +43,6 @@
 327 src/test/kotlin/com/qkt/connector/mt5/MT5PollerRaceTest.kt
 326 src/main/kotlin/com/qkt/observe/insights/InsightsSink.kt
 306 src/main/kotlin/com/qkt/connector/mt5/MT5WireTypes.kt
-299 src/main/kotlin/com/qkt/persistence/StatePersistor.kt
 298 src/main/kotlin/com/qkt/broker/CompositeBroker.kt
 295 src/test/kotlin/com/qkt/dsl/compile/SizingCompilerTest.kt
 288 src/main/kotlin/com/qkt/cli/RunCommand.kt
@@ -52,6 +51,7 @@
 275 src/test/kotlin/com/qkt/dsl/compile/GeneratedDslStructureParityTest.kt
 273 src/main/kotlin/com/qkt/connector/mt5/marketdata/Mt5TickFeedSource.kt
 273 src/test/kotlin/com/qkt/connector/bybit/linear/BybitLinearBrokerTest.kt
+270 src/main/kotlin/com/qkt/persistence/StatePersistor.kt
 270 src/main/kotlin/com/qkt/pnl/TradeHistory.kt
 270 src/main/kotlin/com/qkt/risk/book/BookRiskController.kt
 268 src/main/kotlin/com/qkt/connector/mt5/MT5OrderTranslator.kt

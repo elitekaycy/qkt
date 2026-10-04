@@ -40,6 +40,7 @@ internal class GatewaySession(
     private val routing = GatewayRouting()
     private val ledger: GatewayLedger = GatewayLedger(symbols, routing, lock, ::fetchDeals)
     private val holders = GatewayHolders(symbols)
+    private val funding = GatewayFunding(client, symbols, clock, routing, lock)
     private val placement = GatewayPlacement(client, clock, ledger::onOrder, ledger::onFill, submitDeadlineMs, retryMs)
     private val sync =
         GatewaySync(
@@ -47,6 +48,7 @@ internal class GatewaySession(
             ledger::onOrder,
             ledger::onFill,
             ledger::onSettlement,
+            funding::readWindow,
             ledger::owns,
             clock.now() - recoveryWindowMs,
             clock::now,
@@ -55,18 +57,11 @@ internal class GatewaySession(
         GatewayResyncer(
             clock,
             ::reconcile,
-            { identity.mismatch(client.health())?.let(::refuse) },
+            { identity.mismatch(client.health().also(funding::heard))?.let(::refuse) },
             ::alertUnreachable,
             resyncRetryMs,
         )
-    private val decoder =
-        GatewayEventDecoder(
-            ledger::onOrder,
-            ledger::onFill,
-            ledger::onSettlement,
-            account::position,
-            account::account,
-        )
+    private val decoder = GatewayEventDecoder(ledger, account, funding::record)
     private val stream = streamFactory(::onEvent, { reason -> resyncer.resync("stream $reason") }, ::onConnection)
     private var started = false
 
@@ -90,6 +85,7 @@ internal class GatewaySession(
                 try {
                     val health = client.health()
                     identity.mismatch(health)?.let { error(it) }
+                    funding.heard(health)
                     reconcile("start")
                     stream.anchor(health.stream, health.seq)
                     stream.start()
@@ -106,6 +102,7 @@ internal class GatewaySession(
     fun ready(broker: GatewayRouting.Attached) {
         val held = broker.positions.symbols().mapNotNull(symbols::code)
         GatewayRecovery.settleHeld(client, held) { settlement -> ledger.settleFor(broker, settlement) }
+        funding.replay(broker)
         synchronized(lock) {
             holders.ready(broker)
             judgeHoldings()
@@ -123,7 +120,8 @@ internal class GatewaySession(
         reject: (String) -> Unit,
     ) {
         // A disagreement may have been a fill the venue had not yet reported: judge again before refusing.
-        val blocked = refused ?: riskRefused?.takeUnless { body.reduceOnly }?.let { judgeHoldings() }
+        val blocked =
+            refused ?: funding.refusal(body) ?: riskRefused?.takeUnless { body.reduceOnly }?.let { judgeHoldings() }
         if (blocked != null) return reject(blocked)
         ledger.own(body.clientOrderId, strategy, BigDecimal(body.quantity), sender)
         placement.submit(body) { reason -> reject(reason).also { ledger.disown(body.clientOrderId) } }
@@ -144,7 +142,7 @@ internal class GatewaySession(
     ): Set<String> = ledger.recover(client, orders, sender)
 
     /** Refreshes the gateway's listing off the caller's thread. */
-    fun refreshListing() = placement.background { symbols.updateListing(client.instruments()) }
+    fun refreshListing() = placement.background(::readListing)
 
     /** Closes the connection with the account. */
     fun close() {
@@ -155,9 +153,11 @@ internal class GatewaySession(
 
     private fun reconcile(reason: String) {
         log.info("gateway resync: {}", reason)
-        symbols.updateListing(client.instruments())
+        readListing()
         account.apply(sync.run(ledger.openOrders))
     }
+
+    private fun readListing() = client.instruments().also(symbols::updateListing).let(funding::listed)
 
     private fun judgeHoldings(): String? =
         synchronized(lock) {

@@ -125,7 +125,7 @@ class GatewayClient(
         return json.decodeFromString(WireOrder.serializer(), text)
     }
 
-    private fun <T> read(
+    internal fun <T> read(
         path: String,
         serializer: KSerializer<T>,
     ): T {

@@ -175,7 +175,6 @@ Assumes trade returns are i.i.d. — strategies with clustered wins/losses (mome
 
 ## What's not in the model
 
-- Funding fees (perpetual swaps)
 - FX conversion of cross-currency positions
 - Borrowing costs for shorts
 - Tax effects

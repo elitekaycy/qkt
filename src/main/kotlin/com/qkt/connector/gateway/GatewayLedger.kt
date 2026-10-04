@@ -98,8 +98,10 @@ internal class GatewayLedger(
 
     /** A `settlement`, delivered to every broker with its costs shared by holding. */
     fun onSettlement(settlement: WireSettlement) {
-        if (!settled.add("${settlement.symbol}@${settlement.time}")) return
-        synchronized(lock) { routing.settle(translator.settlement(settlement)) }
+        // Read first: one that cannot be read is reported, and not marked delivered for a later read.
+        val settled = synchronized(lock) { translator.settlement(settlement) }
+        if (!this.settled.add("${settlement.symbol}@${settlement.time}")) return
+        synchronized(lock) { routing.settle(settled) }
     }
 
     /** A settlement for [broker] alone (a contract it still holds that settled while it was away). */

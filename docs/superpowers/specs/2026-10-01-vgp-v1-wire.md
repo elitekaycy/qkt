@@ -1,6 +1,7 @@
 # VGP v1 wire format — design
 
-**Status:** design for phase 44 (amends `2026-09-30-futures-options-design.md` §7). The endpoint list
+**Status:** design for phase 44 (amends `2026-09-30-futures-options-design.md` §7); capabilities and
+perpetual funding added by `2026-10-04-perpetual-funding-and-venue-capabilities.md`. The endpoint list
 and semantics come from `docs/research/2026-09-18-venue-plugin-architecture.md` §6; this document
 fixes what that list left to implementations: the JSON, the event stream, errors, resume and the
 kill switch. The qkt client (`connector/gateway`) and any gateway (`qkt-venue-gateway`) implement exactly
@@ -34,6 +35,7 @@ Every non-2xx response has the body `{"error": {"code": "<code>", "message": "<t
 | 409 | `conflict` | `client_order_id` reused with a different body |
 | 422 | `venue_rejected` | the venue refused the request; `message` is its reason |
 | 423 | `kill_switch` | the request adds or changes risk while a kill scope covers its symbol |
+| 501 | `unsupported` | the gateway's adapter does not serve what was asked (a capability it does not declare) |
 | 503 | `venue_unavailable` | the gateway cannot reach the venue; safe to retry reads, and submits (idempotent on `client_order_id`) |
 
 ## 3. Endpoints
@@ -43,13 +45,22 @@ Every non-2xx response has the body `{"error": {"code": "<code>", "message": "<t
 {"protocol": "vgp1", "adapter": "deribit", "adapter_version": "0.1.0",
  "account_login": "12345", "trade_mode": "demo", "venue_connected": true,
  "kill_switch": {"all": false, "symbols": []}, "server_time": 1790835316271,
- "stream": "4f1c...", "seq": 1041}
+ "stream": "4f1c...", "seq": 1041, "capabilities": ["bars", "funding", "funding_rates", "quotes"]}
 ```
 `stream` and `seq` are the event log's identity and its latest sequence number: a client that reads
 them before reconciling from REST, then opens the stream with `since=<seq>`, loses nothing that
 happened in between.
 `trade_mode` is `demo` or `real`. The client checks `protocol`, `adapter`, `account_login` and
 `trade_mode` against the account's `expected_*` settings before trading.
+
+`capabilities` names the optional services the gateway's adapter serves: `bars` (`/v1/bars`), `quotes`
+(`/v1/quotes`), `settlements` (the venue's settlements reach `/v1/settlements` and the stream), `funding`
+(what the venue charged or credited the account for holding perpetuals: `/v1/funding` and the `funding`
+event) and `funding_rates` (`/v1/funding-rates`). An endpoint whose capability is not declared answers
+`501 unsupported` (`/v1/settlements` is still served, from what the journal holds). A gateway that
+predates the field omits it; a client treats that as none declared. A client ignores a name it does not
+know. Funding is the cash a venue moves between longs and shorts of a perpetual; a client books it, so it
+does not trade perpetuals on a gateway that does not declare `funding`.
 
 ### `GET /v1/account`
 ```json
@@ -156,6 +167,23 @@ one order (complete for as long as the gateway keeps the order).
 the settlement of one contract (empty until it expires). A client reconciling after an outage reads
 the ones it missed here; for contracts its strategies still hold, it asks by symbol.
 
+### `GET /v1/funding?from=<ms>&to=<ms>`
+`{"funding": [<Funding>]}`, oldest first (§4 `funding`): what the venue charged or credited the account
+for holding perpetuals in the window. A client reconciling after an outage reads the records it missed
+here. `501 unsupported` unless `funding` is declared.
+
+### `GET /v1/funding-rates?symbol=<code>&from=<ms>&to=<ms>`
+A perpetual's published funding rates, oldest first, each `time` in `[from, min(to, now)]`:
+```json
+{"rates": [{"time": 1791126000000, "rate": "0.0000418", "price": "121.69"}], "next": 1794726000000}
+```
+A unit long held through `time` pays `rate × price` per unit of the underlying (times the instrument's
+`contract_size`); a negative `rate` pays the short. `price` is the price the venue applied (its mark or
+index), absent when it publishes none, and the client then uses its own last price. A response covers at
+most 1000 hours and holds at most 1000 rates; `next` is the `from` of the following page and is absent
+on the last one. The client stores these for backtests (`qkt fetch --funding`). `501 unsupported` unless
+`funding_rates` is declared.
+
 ### `POST /v1/kill`, `POST /v1/kill/release`
 Body `{"scope": "all"}` or `{"scope": "symbols", "symbols": ["<code>", ...]}`. Response `200` with the
 `kill_switch` object of `/v1/health`. While a scope covers a symbol, `POST /v1/orders` is
@@ -185,6 +213,7 @@ Event `type` and `data`:
 | `order` | an `Order` (§3): every status change |
 | `fill` | `{"client_order_id", "venue_order_id", "fill_id", "symbol", "side", "quantity", "price", "time", "costs": [{"kind", "amount", "currency"}]}` |
 | `settlement` | `{"symbol", "price", "time", "costs": [{"kind", "amount", "currency"}]}` |
+| `funding` | `{"funding_id", "symbol", "amount", "currency", "position", "time"}` |
 | `position` | a `Position` (§3) after a change, `quantity` `"0"` when flat |
 | `account` | the `/v1/account` object |
 | `kill` | the `kill_switch` object |
@@ -199,7 +228,16 @@ Event `type` and `data`:
   holder settles at (an option's intrinsic value, a future's delivery price) and the costs the venue
   charged the account. It is sent even when the account's net position is zero, so a client that
   runs several strategies on one account settles each one's own holding.
+- A `funding` is the venue charging (`amount` positive) or crediting (`amount` negative) the account for
+  holding perpetual `symbol`, at `time`, in `currency`. `position` is the account's signed quantity the
+  venue charged on (absent when the venue does not say), so a client running several strategies, or
+  sharing the account with another tool, books only its own part. `funding_id` is unique per venue
+  record, so a record seen twice is one record. A venue that funds continuously reports funding when it
+  realizes it (Deribit: at its daily settlement and when a position is reduced).
 - v1 defines no liquidation event (qkt has no liquidation semantics yet).
+- A client ignores, logging it, an event `type` it does not know, so events can be added without a new
+  protocol. (qkt 0.55 and earlier predate this rule and stop on a `funding` event: upgrade the client
+  with the gateway.)
 
 ## 4a. Quotes: `GET /v1/quotes?symbols=<code>,<code>&roots=<root>,<root>` (WebSocket)
 
@@ -229,8 +267,9 @@ whose refreshes stop is stale and new orders on it wait.
 - **Reconnect:** reopen with `since=<last seq>`; events with `seq <=` the last processed one are
   dropped, and so is a `fill` whose `fill_id` was already booked.
 - **Reset:** on a `reset` event, or a `stream` change, reconcile from `/v1/orders`, `/v1/positions`,
-  `/v1/deals` and `/v1/settlements` since the last processed fill, book missing fills by `fill_id` and
-  missing settlements by symbol and time, then continue from the reset's `seq`.
+  `/v1/deals` and `/v1/settlements` since the last processed fill (and `/v1/funding` since the last booked
+  funding record, when declared), book missing fills by `fill_id`, missing settlements by symbol and
+  time and missing funding by `funding_id`, then continue from the reset's `seq`.
 - **Submit:** POST once; on a timeout or `503`, resubmit the same body (idempotent); on `422` or
   `423` the order is rejected with the gateway's message.
 - **Several strategies on one account:** one stream and one client per account. Fills are attributed
@@ -238,6 +277,7 @@ whose refreshes stop is stale and new orders on it wait.
   costs are shared once, by holding, across them.
 - **Restart:** every order the client restores is resolved by id (`GET /v1/orders/{id}` and its
   deals); fills it booked before the restart are matched against its booked quantity, oldest first,
-  in that complete history. Settlements of contracts still held are read by symbol.
+  in that complete history. Settlements of contracts still held are read by symbol. Funding since the
+  last record it booked (persisted) is read from `/v1/funding`; a first start books none from before it.
 - **Unanswered submit:** resend the same body until a deadline, then resolve it by id: `404` means
   it was never placed.

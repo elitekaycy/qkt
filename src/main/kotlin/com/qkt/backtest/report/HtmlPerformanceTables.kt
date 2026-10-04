@@ -62,6 +62,11 @@ internal object HtmlPerformanceTables {
             if (r.rollCostsPaid.signum() != 0) {
                 append("<tr><td>Roll costs paid</td><td>${r.rollCostsPaid.toPlainString()}</td></tr>")
             }
+            if (r.fundingPaid.signum() !=
+                0
+            ) {
+                append("<tr><td>Funding paid</td><td>${r.fundingPaid.toPlainString()}</td></tr>")
+            }
             append("</tbody></table>")
         }
 

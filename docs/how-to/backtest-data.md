@@ -168,8 +168,14 @@ optional `slippageTicks` (whole ticks against the order). Limit and stop prices 
 tick grid are snapped to it in the direction that never fills early. The root's fees are charged on every fill and included in the report's
 `commissionPaid`. A contract held into expiry is settled at the catalog's delivery price (exit reason
 `EXPIRY`), and orders on it after expiry are rejected. The root's `perpetual` fills the same way with
-the same fees and tick grid, but never expires, settles or enters the guard window; its funding is not
-modelled. In the last `expiryGuardHours` before expiry
+the same fees and tick grid, but never expires, settles or enters the guard window. It pays funding:
+store its published rates with `qkt fetch <VENUE:PERPETUAL> --funding --from <date> --to <date>` (from
+Binance's public API for `BINANCE_UM`, else from the `type: gateway` account named after the venue), and
+the backtest charges every leg held through each rate `quantity × multiplier × price × rate` at the rate's
+own price (a long pays a positive rate, a short is paid it), reported as `fundingPaid` and in
+`financing.csv`. A backtest holding a perpetual whose stored rates do not cover the run (from its start to
+its end, no gap over a day) is refused with the fetch that would fix it; `--funding off` backtests
+without funding instead. Rates live in `funding/<VENUE>/<NAME>.csv` (`time,rate,price`). In the last `expiryGuardHours` before expiry
 (a root key, default 24; 0 turns it off) the exchange takes only orders that reduce a position; a
 root whose roll would fall inside that window is refused when a continuous stream is built from it.
 Give a root `margin: { initial, maintenance, basis: notional | per_contract }` and the backtest

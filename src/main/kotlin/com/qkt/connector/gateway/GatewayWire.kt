@@ -14,7 +14,7 @@ data class WireKillSwitch(
     val symbols: List<String> = emptyList(),
 )
 
-/** `GET /v1/health`: the gateway's protocol, adapter and account identity, and its venue link. */
+/** `GET /v1/health`: the gateway's protocol, adapter and account identity, its venue link, and the [capabilities] its adapter serves. */
 @Serializable
 data class WireHealth(
     val protocol: String,
@@ -27,6 +27,7 @@ data class WireHealth(
     @SerialName("server_time") val serverTime: Long,
     val stream: String,
     val seq: Long,
+    val capabilities: List<String> = emptyList(),
 )
 
 /** `GET /v1/account` and the `account` event. */

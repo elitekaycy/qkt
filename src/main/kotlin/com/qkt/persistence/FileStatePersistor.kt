@@ -6,8 +6,7 @@ import java.nio.file.Path
 import kotlinx.serialization.json.Json
 
 /**
- * On-disk [StatePersistor]. Serializes engine state to atomic JSON files under
- * `<rootDir>/<strategyId>/`.
+ * On-disk [StatePersistor]. Serializes engine state to atomic JSON files under `<rootDir>/<strategyId>/`.
  *
  * Writes log and count failures; [com.qkt.app.LiveSession] turns a non-zero failure count into
  * an entry-only risk halt. Existing state that cannot be read, parsed, or validated fails startup
@@ -16,10 +15,11 @@ import kotlinx.serialization.json.Json
  * Each state file is owned by one `*File` collaborator (for example [PendingOrdersFile]) that
  * holds its on-disk shape and its save/load rules; this class routes each call to its owner.
  */
-class FileStatePersistor(
-    rootDir: Path,
-) : StatePersistor {
-    private val writer = StateFileWriter(rootDir)
+class FileStatePersistor private constructor(
+    private val writer: StateFileWriter,
+) : StatePersistor,
+    FundingPersistence by FundingFile(writer) {
+    constructor(rootDir: Path) : this(StateFileWriter(rootDir))
 
     /** Cumulative count of save operations that hit disk. */
     val totalWrites: Long get() = writer.totalWrites.get()

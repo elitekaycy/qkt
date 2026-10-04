@@ -1,0 +1,9 @@
+futures:
+  - root: DERIBIT:SOL_USDC
+    currency: USDC
+    multiplier: 1
+    tickSize: 0.001
+    volumeStep: 0.001
+    volumeMin: 0.001
+    takerFeeRate: 0.0005
+    perpetual: SOL_USDC_PERPETUAL

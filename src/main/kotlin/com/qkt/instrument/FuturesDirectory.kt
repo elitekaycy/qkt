@@ -20,4 +20,7 @@ interface FuturesDirectory {
 
     /** Where the roll histories were read from, so a live session can append the rolls it measures; null when not from disk. */
     fun historyStore(): RollHistoryStore? = null
+
+    /** The stored funding rates of perpetual [symbol], oldest first, or null when none were fetched. */
+    fun fundingRates(symbol: String): List<FundingRate>? = null
 }

@@ -50,6 +50,13 @@ For a continuous stream, give the root a roll policy in `instruments.yaml` and
 measure its rolls once with `qkt fetch BINANCE_UM:BTCUSDT --rolls`. Live, a
 continuous stream trades on a `type: gateway` account (parity rows A53-A57).
 
+A root's perpetual (`perpetual: BTCUSDT`) pays funding. Store its rates once
+with `qkt fetch BINANCE_UM:BTCUSDT --funding --from 2024-06-01 --to 2024-09-27`;
+a backtest charges them on every leg held through each one (`fundingPaid`), and
+refuses to run without them unless `--funding off`. Live, the gateway reports
+what the venue charged and each strategy books its own part; qkt trades a
+perpetual only on a gateway that declares `funding` (parity row A58).
+
 Deep dives: [Getting & storing data, Scenario 2b (Binance quarterlies + continuous streams)](../how-to/backtest-data.md) ·
 [Backtest report artifacts](../reference/cli-commands.md#backtest-report-artifacts) ·
 [qkt-venue-gateway](https://github.com/elitekaycy/qkt-venue-gateway)
