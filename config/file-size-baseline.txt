@@ -23,7 +23,7 @@
 519 src/test/kotlin/com/qkt/connector/mt5/MT5OrderTranslatorTest.kt
 476 src/test/kotlin/com/qkt/broker/CompositeBrokerTest.kt
 470 src/main/kotlin/com/qkt/backtest/Backtest.kt
-467 src/main/kotlin/com/qkt/connector/bybit/linear/BybitLinearBroker.kt
+457 src/main/kotlin/com/qkt/connector/bybit/linear/BybitLinearBroker.kt
 451 src/main/kotlin/com/qkt/connector/mt5/MT5PositionPoller.kt
 450 src/main/kotlin/com/qkt/cli/daemon/StrategyHandle.kt
 448 src/main/kotlin/com/qkt/cli/bot/BotSessionCommand.kt
@@ -81,7 +81,6 @@
 225 src/main/kotlin/com/qkt/connector/mt5/MT5StateRecovery.kt
 223 src/main/kotlin/com/qkt/tools/parity/ParityDukascopyMt5Xauusd.kt
 216 src/main/kotlin/com/qkt/evidence/Evidence.kt
-212 src/main/kotlin/com/qkt/connector/bybit/linear/BybitLinearStateRecovery.kt
 210 src/main/kotlin/com/qkt/cli/daemon/portfolio/PortfolioSupervisor.kt
 210 src/main/kotlin/com/qkt/trade/BotGateway.kt
 209 src/main/kotlin/com/qkt/dsl/parse/TokenKind.kt
