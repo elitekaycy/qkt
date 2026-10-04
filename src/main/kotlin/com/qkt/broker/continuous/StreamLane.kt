@@ -9,13 +9,11 @@ import com.qkt.derivatives.futures.PriceSpace
 import com.qkt.events.BrokerEvent
 import com.qkt.execution.ManagedOrder
 import com.qkt.execution.OrderRequest
-import com.qkt.instrument.PriceAdjustment
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.marketdata.Tick
 import com.qkt.positions.PositionProvider
 import com.qkt.positions.StrategyPositionTracker
 import java.math.BigDecimal
-import java.time.Instant
 
 /**
  * One continuous stream's translation to its contracts. The stream's venue runs on a private bus
@@ -94,7 +92,7 @@ internal class StreamLane(
 
     fun submit(request: OrderRequest): SubmitAck {
         val now = clock.now()
-        refusal(now)?.let { return reject(request, it) }
+        chain.orderRefusal(now, rolls.inFlight)?.let { return reject(request, it) }
         val index = requireNotNull(catchUp(now))
         stops[request.strategyId]?.let { return reject(request, it) }
         val space =
@@ -172,17 +170,6 @@ internal class StreamLane(
 
     /** Contract [index]'s price mapping, built once per contract. */
     private fun space(index: Int): PriceSpace = spaces.getOrPut(index) { chain.spaceFor(index) }
-
-    private fun refusal(now: Long): String? {
-        val stream = chain.symbol
-        if (chain.adjust != PriceAdjustment.PANAMA) {
-            return "continuous futures orders need adjust: panama; $stream uses ${chain.adjust.name.lowercase()}"
-        }
-        if (now < chain.servedFromMs) return "$stream is served from ${Instant.ofEpochMilli(chain.servedFromMs)}"
-        if (chain.indexAt(now) == null) return "$stream has no contract at ${Instant.ofEpochMilli(now)}"
-        if (rolls.inFlight) return "$stream is rolling to its next contract; resend once the roll is done"
-        return null
-    }
 
     private fun reject(
         request: OrderRequest,
