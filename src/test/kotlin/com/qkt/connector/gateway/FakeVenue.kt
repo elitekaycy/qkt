@@ -58,6 +58,36 @@ internal class FakeVenue(
         emit("position", positions().firstOrNull { it.symbol == order.symbol } ?: WirePosition(order.symbol, "0", "0"))
     }
 
+    /**
+     * Fills [quantity] of [clientOrderId], then cancels the rest, reporting the order's end before the fill
+     * (as a gateway that journals the venue's answer ahead of the trade push does); [pushFill] false keeps
+     * the fill off the stream, so it is only in the deals.
+     */
+    fun cancelAfterFilling(
+        clientOrderId: String,
+        fillId: String,
+        quantity: String,
+        price: String,
+        pushFill: Boolean = true,
+    ) {
+        val order = orders.getValue(clientOrderId)
+        val fill =
+            WireFill(
+                clientOrderId,
+                order.venueOrderId,
+                fillId,
+                order.symbol,
+                order.side,
+                quantity,
+                price,
+                FakeGateway.TIME,
+            )
+        deals += fill
+        orders[clientOrderId] = order.copy(status = "cancelled", filledQuantity = quantity)
+        emit("order", orders.getValue(clientOrderId))
+        if (pushFill) emit("fill", fill)
+    }
+
     /** Ends [clientOrderId] at the venue, when it is still working. */
     fun cancel(clientOrderId: String): WireOrder {
         val order = orders.getValue(clientOrderId)

@@ -38,7 +38,7 @@ internal class GatewaySession(
     /** What the account last reported. */
     val account = GatewayAccountState()
     private val routing = GatewayRouting()
-    private val ledger = GatewayLedger(symbols, routing, lock)
+    private val ledger: GatewayLedger = GatewayLedger(symbols, routing, lock, ::fetchDeals)
     private val holders = GatewayHolders(symbols)
     private val placement = GatewayPlacement(client, clock, ledger::onOrder, ledger::onFill, submitDeadlineMs, retryMs)
     private val sync =
@@ -126,7 +126,7 @@ internal class GatewaySession(
         val blocked = refused ?: riskRefused?.takeUnless { body.reduceOnly }?.let { judgeHoldings() }
         if (blocked != null) return reject(blocked)
         ledger.own(body.clientOrderId, strategy, BigDecimal(body.quantity), sender)
-        placement.submit(body, reject)
+        placement.submit(body) { reason -> reject(reason).also { ledger.disown(body.clientOrderId) } }
     }
 
     /** Cancels engine order [engineId] if it is open here; the order's end arrives as its events. */
@@ -141,12 +141,7 @@ internal class GatewaySession(
     fun recover(
         orders: List<RecoveredOrder>,
         sender: GatewayRouting.Attached,
-    ): Set<String> {
-        orders.forEach { ledger.own(it.clientOrderId, it.strategyId, it.quantity, sender, it.alreadyFilled) }
-        return GatewayRecovery
-            .recover(client, orders, ledger::markBooked, ledger::onFill, ledger::onOrder)
-            .mapTo(HashSet(), GatewayClientIds::engineId)
-    }
+    ): Set<String> = ledger.recover(client, orders, sender)
 
     /** Refreshes the gateway's listing off the caller's thread. */
     fun refreshListing() = placement.background { symbols.updateListing(client.instruments()) }
@@ -155,6 +150,7 @@ internal class GatewaySession(
     fun close() {
         stream.stop()
         placement.shutdown()
+        resyncer.close()
     }
 
     private fun reconcile(reason: String) {
@@ -177,6 +173,10 @@ internal class GatewaySession(
         log.error("gateway refused: {}", reason)
         refused = reason
     }
+
+    /** Books [clientOrderId]'s fills: it ended at the gateway with fills the engine has not heard. */
+    private fun fetchDeals(clientOrderId: String) =
+        placement.background { client.dealsOf(clientOrderId).forEach(ledger::onFill) }
 
     private fun onEvent(event: WireEvent) {
         resyncer.retryOwed()
