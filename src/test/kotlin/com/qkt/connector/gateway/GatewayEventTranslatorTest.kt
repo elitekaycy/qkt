@@ -56,8 +56,8 @@ class GatewayEventTranslatorTest {
     fun `fills are partial until the order's quantity is reached, then the last one completes it`() {
         translator.order(order("working"))
 
-        val partial = translator.fill(fill("f1", "0.1")) as BrokerEvent.OrderPartiallyFilled
-        val done = translator.fill(fill("f2", "0.2")) as BrokerEvent.OrderFilled
+        val partial = translator.fill(fill("f1", "0.1")).single() as BrokerEvent.OrderPartiallyFilled
+        val done = translator.fill(fill("f2", "0.2")).single() as BrokerEvent.OrderFilled
 
         assertThat(partial.cumulativeFilled).isEqualByComparingTo("0.1")
         assertThat(partial.symbol).isEqualTo(symbol)
@@ -71,8 +71,8 @@ class GatewayEventTranslatorTest {
     fun `a replayed fill is booked once`() {
         translator.expect("c1", BigDecimal("0.3"))
 
-        assertThat(translator.fill(fill("f1", "0.1"))).isNotNull()
-        assertThat(translator.fill(fill("f1", "0.1"))).isNull()
+        assertThat(translator.fill(fill("f1", "0.1"))).hasSize(1)
+        assertThat(translator.fill(fill("f1", "0.1"))).isEmpty()
     }
 
     @Test
@@ -80,7 +80,10 @@ class GatewayEventTranslatorTest {
         translator.expect("c1", BigDecimal("0.3"))
 
         val filled =
-            translator.fill(fill("f1", "0.3", listOf(WireCost("commission", "0.5", "USDC")))) as BrokerEvent.OrderFilled
+            translator
+                .fill(
+                    fill("f1", "0.3", listOf(WireCost("commission", "0.5", "USDC"))),
+                ).single() as BrokerEvent.OrderFilled
         val settled =
             translator.settlement(
                 WireSettlement(code, "1000", 9, listOf(WireCost("delivery_fee", "1.25", "USDC"))),
@@ -98,9 +101,23 @@ class GatewayEventTranslatorTest {
         assertThat(translator.order(order("rejected", reason = "post-only would cross")))
             .isEqualTo(BrokerEvent.OrderRejected("c1", "9", "post-only would cross", "strat"))
         assertThat(translator.order(order("rejected", reason = "post-only would cross"))).isNull()
-        val other = GatewayEventTranslator(GatewaySymbols("DERIBIT:").apply { update(listOf(code)) }) { "strat" }
-        assertThat(other.order(order("cancelled", filled = "0.1")))
-            .isInstanceOf(BrokerEvent.OrderCancelled::class.java)
+    }
+
+    @Test
+    fun `an order that ends with fills not yet heard ends only once they are, after them`() {
+        translator.expect("c1", BigDecimal("0.3"))
+
+        assertThat(translator.order(order("cancelled", filled = "0.1"))).isNull()
+        assertThat(translator.awaitingFills("c1")).isTrue()
+        val events = translator.fill(fill("f1", "0.1"))
+
+        assertThat(
+            events.map {
+                it::class
+            },
+        ).containsExactly(BrokerEvent.OrderPartiallyFilled::class, BrokerEvent.OrderCancelled::class)
+        assertThat(translator.awaitingFills("c1")).isFalse()
+        assertThat(translator.order(order("cancelled", filled = "0.1"))).isNull()
     }
 
     @Test
