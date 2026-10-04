@@ -37,7 +37,7 @@ class BybitLinearStateRecoveryTest {
         val client = FakeBybitClient()
         seedAllEmpty(client)
         client.responses["/v5/execution/list"] =
-            """{"retCode":0,"retMsg":"OK","result":{"list":[{"orderLinkId":"c1","orderId":"abc","symbol":"BTCUSDT","side":"Buy","execPrice":"80000","execQty":"0.01","execId":"e1","category":"linear"}]}}"""
+            """{"retCode":0,"retMsg":"OK","result":{"list":[{"orderLinkId":"c1","orderId":"abc","symbol":"BTCUSDT","side":"Buy","execPrice":"80000","execQty":"0.01","execType":"Trade","execId":"e1","category":"linear"}]}}"""
 
         val bus = newBus()
         val events = mutableListOf<BrokerEvent>()

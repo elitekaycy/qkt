@@ -7,6 +7,7 @@ import com.qkt.broker.SubmitAck
 import com.qkt.bus.EventBus
 import com.qkt.common.Clock
 import com.qkt.common.net.PeriodicReconciler
+import com.qkt.connector.bybit.BybitExecutionStream
 import com.qkt.connector.bybit.BybitOrderTranslator
 import com.qkt.connector.bybit.BybitSymbol
 import com.qkt.connector.bybit.BybitTransport
@@ -31,8 +32,9 @@ import org.slf4j.LoggerFactory
  * Routes orders to Bybit USDT-denominated linear perpetuals.
  *
  * Linear futures expose a dedicated position endpoint (unlike Spot), so this broker
- * uses [PositionProvider] to mirror authoritative venue positions. Otherwise the
- * structure parallels [BybitSpotBroker].
+ * uses [PositionProvider] to mirror authoritative venue positions. Only `Trade` executions become
+ * fills; the perpetuals' `Funding` executions are booked as funding through [BybitLinearFunding].
+ * Otherwise the structure parallels [BybitSpotBroker].
  */
 class BybitLinearBroker(
     private val transport: BybitTransport,
@@ -70,7 +72,18 @@ class BybitLinearBroker(
 
     init {
         transport.subscribe("order") { frame -> onOrderFrame(frame) }
-        transport.subscribe("execution") { frame -> onExecutionFrame(frame) }
+        val funding = BybitLinearFunding(transport, bus, clock, seenExecIds)
+        val executions =
+            BybitExecutionStream(
+                "linear",
+                bus,
+                clock,
+                seenExecIds,
+                lastFillTime,
+                strategyByClientOrderId::get,
+                funding::take,
+            )
+        transport.subscribe("execution", executions::onFrame)
 
         val recovery =
             BybitLinearStateRecovery(
@@ -81,6 +94,7 @@ class BybitLinearBroker(
                 getKnownOrders = { knownOrders.toMap() },
                 lastFillTimeProvider = lastFillTime::get,
                 seenExecIds = seenExecIds,
+                funding = funding,
             )
         transport.onDisconnect { reason ->
             bus.publish(
@@ -434,30 +448,6 @@ class BybitLinearBroker(
                     )
             }
             symbolByClientOrderId[parsed.clientOrderId] = qktSymbol
-        }
-    }
-
-    private fun onExecutionFrame(frame: JsonObject) {
-        val list = frame["data"]?.jsonArray ?: return
-        for (entry in list) {
-            val exec = BybitOrderTranslator.parseExecution(entry.jsonObject)
-            if (!seenExecIds.add(exec.execId)) continue
-            val qktSymbol = "BYBIT_LINEAR:${exec.bareSymbol}"
-            val strategyId = strategyByClientOrderId[exec.clientOrderId] ?: ""
-            bus.publish(
-                BrokerEvent.OrderFilled(
-                    clientOrderId = exec.clientOrderId,
-                    brokerOrderId = exec.brokerOrderId,
-                    symbol = qktSymbol,
-                    strategyId = strategyId,
-                    side = exec.side,
-                    price = exec.price,
-                    quantity = exec.quantity,
-                    timestamp = clock.now(),
-                    venueCosts = exec.fee,
-                ),
-            )
-            lastFillTime.set(clock.now())
         }
     }
 

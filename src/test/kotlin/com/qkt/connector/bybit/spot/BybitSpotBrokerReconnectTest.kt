@@ -138,7 +138,7 @@ class BybitSpotBrokerReconnectTest {
         val liveFrame =
             Json
                 .parseToJsonElement(
-                    """{"topic":"execution","data":[{"orderLinkId":"c1","orderId":"abc","symbol":"BTCUSDT","side":"Buy","execPrice":"80000","execQty":"0.01","execId":"e1","category":"spot"}]}""",
+                    """{"topic":"execution","data":[{"orderLinkId":"c1","orderId":"abc","symbol":"BTCUSDT","side":"Buy","execPrice":"80000","execQty":"0.01","execType":"Trade","execId":"e1","category":"spot"}]}""",
                 ).jsonObject
         client.emitWsFrame("execution", liveFrame)
 
