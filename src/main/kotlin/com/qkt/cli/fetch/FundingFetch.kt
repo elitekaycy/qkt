@@ -24,15 +24,24 @@ internal object FundingFetch {
         target: String,
         args: Args,
     ): Int {
-        val (from, to) = resolveFetchRange(args.option("from"), args.option("to"), args.option("last")) ?: return ExitCodes.ARG_ERROR
+        val (from, to) =
+            resolveFetchRange(args.option("from"), args.option("to"), args.option("last"))
+                ?: return ExitCodes.ARG_ERROR
         val venue = target.substringBefore(':')
         val source =
             sourceFor(venue, args.option("config")) ?: run {
-                System.err.println("qkt: no funding-rate source for '$venue' (BINANCE_UM, or a type: gateway account of that name in --config)")
+                System.err.println(
+                    "qkt: no funding-rate source for '$venue' (BINANCE_UM, or a type: gateway account of that name in --config)",
+                )
                 return ExitCodes.USER_ERROR
             }
         val fromMs = from.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
-        val toMs = to.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli() - 1
+        val toMs =
+            to
+                .plusDays(1)
+                .atStartOfDay(ZoneOffset.UTC)
+                .toInstant()
+                .toEpochMilli() - 1
         val rates =
             try {
                 source.rates(target, fromMs, toMs)
@@ -43,7 +52,11 @@ internal object FundingFetch {
             }
         val store = FundingRateStore(DataRoot.forDataRoot(args.option("data-root")))
         val held = store.merge(target, rates)
-        println("qkt fetch: ${rates.size} funding rates for $target from $from to $to ($held stored) -> ${store.path(target)}")
+        println(
+            "qkt fetch: ${rates.size} funding rates for $target from $from to $to ($held stored) -> ${store.path(
+                target,
+            )}",
+        )
         return ExitCodes.SUCCESS
     }
 

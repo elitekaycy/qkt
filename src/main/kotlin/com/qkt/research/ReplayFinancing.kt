@@ -18,7 +18,14 @@ internal class ReplayFinancing(
     symbols: List<String>,
 ) {
     private val swap =
-        SwapFinancingBook(instruments, books.strategyPositions, books.accounting, books.priceTracker, strategyIds, symbols)
+        SwapFinancingBook(
+            instruments,
+            books.strategyPositions,
+            books.accounting,
+            books.priceTracker,
+            strategyIds,
+            symbols,
+        )
     private val funding =
         FundingBook(instruments, books.strategyPositions, books.accounting, books.priceTracker, strategyIds, symbols)
 
@@ -38,7 +45,8 @@ internal class ReplayFinancing(
     fun swapPaid(strategyId: String? = null): BigDecimal = strategyId?.let(swap::totalPaidFor) ?: swap.totalPaid()
 
     /** Net perpetual funding paid ([strategyId]'s, or the run's when null): positive a charge. */
-    fun fundingPaid(strategyId: String? = null): BigDecimal = strategyId?.let(funding::totalPaidFor) ?: funding.totalPaid()
+    fun fundingPaid(strategyId: String? = null): BigDecimal =
+        strategyId?.let(funding::totalPaidFor) ?: funding.totalPaid()
 
     /** Swap and funding P&L by UTC date ([strategyId]'s, or the run's when null). */
     fun dailyNet(strategyId: String? = null): Map<LocalDate, BigDecimal> {

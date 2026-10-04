@@ -99,13 +99,13 @@ internal class FakeVenue(
         return orders.getValue(clientOrderId)
     }
 
-    /** Settles [code] at [price]. */
     /** The venue charges or credits the account [funding]. */
     fun fund(funding: WireFunding) {
         this.funding += funding
         emit("funding", funding)
     }
 
+    /** Settles [code] at [price]. */
     fun settle(settlement: WireSettlement) {
         settlements += settlement
         emit("settlement", settlement)

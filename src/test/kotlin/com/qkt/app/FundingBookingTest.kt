@@ -6,7 +6,6 @@ import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.Side
 import com.qkt.events.BrokerEvent
 import com.qkt.events.CostIncurred
-import com.qkt.events.FillAccountedEvent
 import com.qkt.events.FillAccountingKind
 import com.qkt.events.FundingCharged
 import com.qkt.execution.LegIntent
@@ -14,7 +13,6 @@ import com.qkt.marketdata.MarketPriceProvider
 import com.qkt.persistence.FundingPersistence
 import com.qkt.persistence.PersistedFunding
 import com.qkt.positions.LegRole
-import com.qkt.positions.Position
 import com.qkt.positions.StrategyPositionTracker
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
@@ -53,7 +51,8 @@ class FundingBookingTest {
         bus.subscribe<CostIncurred> { costs += it }
     }
 
-    private fun bind(vararg strategies: String) = FundingBooking(bus, positions, saved, prices, clock).bind(strategies.toList())
+    private fun bind(vararg strategies: String) =
+        FundingBooking(bus, positions, saved, prices, clock).bind(strategies.toList())
 
     private fun hold(
         strategy: String,
@@ -93,7 +92,13 @@ class FundingBookingTest {
 
         bus.publish(funding("tx-1", "-2", "200"))
 
-        assertThat(costs.single().amount.stripTrailingZeros().toPlainString()).isEqualTo("-0.5")
+        assertThat(
+            costs
+                .single()
+                .amount
+                .stripTrailingZeros()
+                .toPlainString(),
+        ).isEqualTo("-0.5")
     }
 
     @Test
@@ -116,48 +121,30 @@ class FundingBookingTest {
         val since = saved.byOwner.getValue("a").sinceMs
 
         clock.advanceTo(clock.now() + 9 * day)
-        val restarted = EventBus(clock, MonotonicSequenceGenerator()).also { it.subscribe<CostIncurred> { c -> costs += c } }
+        val restarted =
+            EventBus(clock, MonotonicSequenceGenerator()).also {
+                it.subscribe<CostIncurred> { c ->
+                    costs +=
+                        c
+                }
+            }
         FundingBooking(restarted, positions, saved, prices, clock).bind(listOf("a"))
         restarted.publish(funding("tx-1", "1", "10", atMs = since + 1))
         restarted.publish(funding("tx-2", "1", "10"))
 
         assertThat(saved.byOwner.getValue("a").sinceMs).isEqualTo(since)
-        assertThat(saved.byOwner.getValue("a").booked.keys).containsExactly("tx-2")
+        assertThat(
+            saved.byOwner
+                .getValue("a")
+                .booked.keys,
+        ).containsExactly("tx-2")
         assertThat(costs.map { it.reason }).containsExactly("funding tx-1", "funding tx-2")
     }
 
     private fun closed(
         strategy: String,
         before: String,
-    ) = FillAccountedEvent(
-        orderId = "c-$strategy",
-        strategyId = strategy,
-        symbol = perp,
-        fillSliceId = "c-$strategy:1",
-        sourceFillSequenceId = 1L,
-        cumulativeFilled = null,
-        modeledCommissionAccount = BigDecimal.ZERO,
-        venueCostsAccount = BigDecimal.ZERO,
-        totalCostsAccount = BigDecimal.ZERO,
-        accountNativeRealized = BigDecimal.ZERO,
-        strategyNativeRealized = BigDecimal.ZERO,
-        nativeCurrency = "USDC",
-        grossAccountRealized = BigDecimal.ZERO,
-        grossStrategyAccountRealized = BigDecimal.ZERO,
-        accountCurrency = "USDC",
-        netAccountRealized = BigDecimal.ZERO,
-        netStrategyAccountRealized = BigDecimal.ZERO,
-        conversionRate = null,
-        conversionTimestampMs = null,
-        conversionSource = null,
-        contractSize = BigDecimal.ONE,
-        accountPositionBefore = null,
-        accountPositionAfter = null,
-        strategyPositionBefore = Position(perp, BigDecimal(before), BigDecimal("120")),
-        strategyPositionAfter = null,
-        reducedExposure = true,
-        partial = false,
-    )
+    ) = closingFill(strategy, perp, before)
 
     @Test
     fun `funding realized once the positions are gone is shared by what each closed since, then forgotten`() {
@@ -184,7 +171,12 @@ class FundingBookingTest {
         bus.publish(closed("a", "10"))
 
         assertThat(saved.saves).isEqualTo(atStart + 2)
-        assertThat(saved.byOwner.getValue("a").closed.getValue(perp)).containsEntry("a", BigDecimal("10"))
+        assertThat(
+            saved.byOwner
+                .getValue("a")
+                .closed
+                .getValue(perp),
+        ).containsEntry("a", BigDecimal("10"))
     }
 
     @Test

@@ -45,7 +45,9 @@ class BinanceFundingRates(
         val url = "$apiBaseUrl/fapi/v1/fundingRate?symbol=$symbol&startTime=$fromMs&endTime=$toMs&limit=$PAGE"
         val body =
             http.newCall(Request.Builder().url(url).build()).execute().use { resp ->
-                check(resp.isSuccessful) { "HTTP ${resp.code} reading Binance funding rates of $symbol: ${resp.body?.string()?.take(200)}" }
+                check(resp.isSuccessful) {
+                    "HTTP ${resp.code} reading Binance funding rates of $symbol: ${resp.body?.string()?.take(200)}"
+                }
                 resp.body?.string() ?: error("empty funding-rate body for $symbol")
             }
         return parse(body)
@@ -59,7 +61,14 @@ class BinanceFundingRates(
             Json.parseToJsonElement(body).jsonArray.map { row ->
                 val o = row.jsonObject
                 val text = { key: String -> (o.getValue(key) as JsonPrimitive).content }
-                FundingRate(text("fundingTime").toLong(), BigDecimal(text("fundingRate")), text("markPrice").takeIf { it.isNotEmpty() }?.let(::BigDecimal))
+                FundingRate(
+                    text("fundingTime").toLong(),
+                    BigDecimal(text("fundingRate")),
+                    text("markPrice")
+                        .takeIf {
+                            it.isNotEmpty()
+                        }?.let(::BigDecimal),
+                )
             }
     }
 }

@@ -44,12 +44,21 @@ internal class FundingBooking(
         val funded = HashSet(state.closed.keys)
         bus.subscribe<FillAccountedEvent> { a ->
             val before = a.strategyPositionBefore?.quantity ?: BigDecimal.ZERO
-            if (a.kind != FillAccountingKind.EXECUTION || a.strategyId !in strategyIds || before.signum() == 0) return@subscribe
+            if (a.kind != FillAccountingKind.EXECUTION ||
+                a.strategyId !in strategyIds ||
+                before.signum() == 0
+            ) {
+                return@subscribe
+            }
             if ((a.strategyPositionAfter?.quantity ?: BigDecimal.ZERO).signum() != 0) return@subscribe
             val held = state.closed[a.symbol].orEmpty() + (a.strategyId to before)
             state = state.copy(closed = state.closed + (a.symbol to held))
             // Only a symbol funding was heard for is a perpetual worth a write; others never pay funding.
-            if (a.symbol in funded) persistence.saveFunding(owner, state.copy(closed = state.closed.filterKeys(funded::contains)))
+            if (a.symbol in
+                funded
+            ) {
+                persistence.saveFunding(owner, state.copy(closed = state.closed.filterKeys(funded::contains)))
+            }
         }
         bus.subscribe<FundingCharged> { e ->
             funded += e.symbol
@@ -72,8 +81,13 @@ internal class FundingBooking(
         closed: Map<String, BigDecimal>,
     ): Map<String, BigDecimal> =
         strategyIds
-            .mapNotNull { id -> positions.positionFor(id, symbol)?.quantity?.takeIf { it.signum() != 0 }?.let { id to it } }
-            .toMap()
+            .mapNotNull { id ->
+                positions
+                    .positionFor(id, symbol)
+                    ?.quantity
+                    ?.takeIf { it.signum() != 0 }
+                    ?.let { id to it }
+            }.toMap()
             .ifEmpty { closed }
 
     private fun book(

@@ -128,7 +128,8 @@ internal class GatewaySession(
         reject: (String) -> Unit,
     ) {
         // A disagreement may have been a fill the venue had not yet reported: judge again before refusing.
-        val blocked = refused ?: funding.refusal(body) ?: riskRefused?.takeUnless { body.reduceOnly }?.let { judgeHoldings() }
+        val blocked =
+            refused ?: funding.refusal(body) ?: riskRefused?.takeUnless { body.reduceOnly }?.let { judgeHoldings() }
         if (blocked != null) return reject(blocked)
         ledger.own(body.clientOrderId, strategy, BigDecimal(body.quantity), sender)
         placement.submit(body) { reason -> reject(reason).also { ledger.disown(body.clientOrderId) } }

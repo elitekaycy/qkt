@@ -16,7 +16,11 @@ class FundingRateStore(
     /** Where [qktSymbol]'s rates live. */
     fun path(qktSymbol: String): Path {
         QktSymbols.requireFileSafe(qktSymbol)
-        return dataRoot.resolve("funding").resolve(qktSymbol.substringBefore(':')).resolve("${qktSymbol.substringAfter(':')}.csv")
+        return dataRoot
+            .resolve(
+                "funding",
+            ).resolve(qktSymbol.substringBefore(':'))
+            .resolve("${qktSymbol.substringAfter(':')}.csv")
     }
 
     /** [qktSymbol]'s rates, oldest first, or null when none were fetched; a malformed line fails naming the file. */
@@ -39,7 +43,10 @@ class FundingRateStore(
         val file = path(qktSymbol)
         Files.createDirectories(file.parent)
         val staged = file.resolveSibling("${file.fileName}.tmp")
-        val text = all.joinToString("") { "${it.timeMs},${it.rate.toPlainString()},${it.price?.toPlainString().orEmpty()}\n" }
+        val text =
+            all.joinToString(
+                "",
+            ) { "${it.timeMs},${it.rate.toPlainString()},${it.price?.toPlainString().orEmpty()}\n" }
         Files.writeString(staged, HEADER + text)
         Files.move(staged, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
         return all.size

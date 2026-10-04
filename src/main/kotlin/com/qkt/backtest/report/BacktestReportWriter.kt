@@ -36,7 +36,10 @@ class BacktestReportWriter(
             Files.writeString(dir.resolve(EquityCsv.fileName(id)), EquityCsv.render(report.equityCurve))
         }
         Files.writeString(dir.resolve("trades.csv"), TradesCsv.render(result.trades))
-        Files.writeString(dir.resolve("financing.csv"), FinancingCsv.render(result.global.swapPaid, result.global.fundingPaid))
+        Files.writeString(
+            dir.resolve("financing.csv"),
+            FinancingCsv.render(result.global.swapPaid, result.global.fundingPaid),
+        )
         Files.writeString(dir.resolve("rejections.csv"), RejectionsCsv.render(result.rejections))
         Files.writeString(dir.resolve("orders.jsonl"), OrderDecisionsJsonl.render(result))
         Files.writeString(dir.resolve("pnl_components.csv"), PnlComponentsCsv.render(result))

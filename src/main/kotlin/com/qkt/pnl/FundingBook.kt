@@ -31,9 +31,20 @@ internal class FundingBook(
         symbols
             .distinct()
             .filter { (instruments.lookup(it)?.derivative as? FutureTerms)?.perpetual == true }
-            .mapNotNull { s -> instruments.futures()?.fundingRates(s)?.takeIf { it.isNotEmpty() }?.let { s to it } }
-            .toMap()
-    private val contractSize: Map<String, BigDecimal> = series.keys.associateWith { instruments.require(it).contractSize }
+            .mapNotNull { s ->
+                instruments
+                    .futures()
+                    ?.fundingRates(s)
+                    ?.takeIf { it.isNotEmpty() }
+                    ?.let { s to it }
+            }.toMap()
+    private val contractSize: Map<String, BigDecimal> =
+        series.keys.associateWith {
+            instruments
+                .require(
+                    it,
+                ).contractSize
+        }
     private val next = HashMap<String, Int>()
     private val paidByStrategy = HashMap<String, BigDecimal>()
     private val dailyNet = linkedMapOf<LocalDate, BigDecimal>()
@@ -48,12 +59,17 @@ internal class FundingBook(
     ) {
         if (series.isEmpty() || toInclusiveMs <= fromExclusiveMs) return
         val due =
-            series.flatMap { (symbol, rates) ->
-                var i = next.getOrPut(symbol) { rates.indexOfFirst { it.timeMs > fromExclusiveMs }.takeIf { it >= 0 } ?: rates.size }
-                buildList {
-                    while (i < rates.size && rates[i].timeMs <= toInclusiveMs) add(symbol to rates[i++])
-                }.also { next[symbol] = i }
-            }.sortedBy { it.second.timeMs }
+            series
+                .flatMap { (symbol, rates) ->
+                    var i =
+                        next.getOrPut(symbol) {
+                            rates.indexOfFirst { it.timeMs > fromExclusiveMs }.takeIf { it >= 0 }
+                                ?: rates.size
+                        }
+                    buildList {
+                        while (i < rates.size && rates[i].timeMs <= toInclusiveMs) add(symbol to rates[i++])
+                    }.also { next[symbol] = i }
+                }.sortedBy { it.second.timeMs }
         for ((symbol, rate) in due) accrue(symbol, rate, onAccrued)
     }
 
@@ -67,7 +83,8 @@ internal class FundingBook(
     fun dailyNet(): Map<LocalDate, BigDecimal> = dailyNet.toMap()
 
     /** Account-currency funding P&L of [strategyId] by UTC date. */
-    fun dailyNetFor(strategyId: String): Map<LocalDate, BigDecimal> = dailyNetByStrategy[strategyId]?.toMap() ?: emptyMap()
+    fun dailyNetFor(strategyId: String): Map<LocalDate, BigDecimal> =
+        dailyNetByStrategy[strategyId]?.toMap() ?: emptyMap()
 
     private fun accrue(
         symbol: String,
@@ -81,11 +98,35 @@ internal class FundingBook(
                 strategyPositions
                     .allLegsFor(strategyId)
                     .filter { it.symbol == symbol && it.openedAt < rate.timeMs }
-                    .fold(BigDecimal.ZERO) { q, leg -> q.add(if (leg.side == Side.BUY) leg.quantity.abs() else leg.quantity.abs().negate()) }
+                    .fold(BigDecimal.ZERO) { q, leg ->
+                        q.add(
+                            if (leg.side ==
+                                Side.BUY
+                            ) {
+                                leg.quantity.abs()
+                            } else {
+                                leg.quantity.abs().negate()
+                            },
+                        )
+                    }
             if (held.signum() == 0) continue
-            val native = held.multiply(contractSize.getValue(symbol), Money.CONTEXT).multiply(price, Money.CONTEXT).multiply(rate.rate, Money.CONTEXT).negate()
+            val native =
+                held
+                    .multiply(
+                        contractSize.getValue(symbol),
+                        Money.CONTEXT,
+                    ).multiply(price, Money.CONTEXT)
+                    .multiply(rate.rate, Money.CONTEXT)
+                    .negate()
             val amount =
-                accounting.convertPnl(symbol, native, rate.timeMs, price).account.amount.setScale(Money.SCALE, Money.ROUNDING)
+                accounting
+                    .convertPnl(
+                        symbol,
+                        native,
+                        rate.timeMs,
+                        price,
+                    ).account.amount
+                    .setScale(Money.SCALE, Money.ROUNDING)
             if (amount.signum() == 0) continue
             onAccrued(strategyId, rate.timeMs, amount)
             totalPaid = totalPaid.subtract(amount)

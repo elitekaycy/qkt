@@ -59,8 +59,13 @@ internal class GatewayFunding(
 
     /** The event a `funding` record means for every session. */
     fun charged(funding: WireFunding): FundingCharged {
-        val amount = funding.amount.toBigDecimalOrNull() ?: throw GatewayProtocolException("funding amount '${funding.amount}'")
-        val basis = funding.position?.let { it.toBigDecimalOrNull() ?: throw GatewayProtocolException("funding position '$it'") }
+        val amount =
+            funding.amount.toBigDecimalOrNull() ?: throw GatewayProtocolException("funding amount '${funding.amount}'")
+        val basis =
+            funding.position?.let {
+                it.toBigDecimalOrNull()
+                    ?: throw GatewayProtocolException("funding position '$it'")
+            }
         return FundingCharged(
             funding.fundingId,
             symbols.qkt(funding.symbol),

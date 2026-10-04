@@ -10,7 +10,13 @@ import org.junit.jupiter.api.Test
 
 /** A gateway account's perpetual funding, reaching each session to book its own part. */
 internal class GatewayFundingTest : GatewayHarness() {
-    private fun Strategy.funding() = CopyOnWriteArrayList<FundingCharged>().also { heard -> bus.subscribe<FundingCharged> { heard += it } }
+    private fun Strategy.funding() =
+        CopyOnWriteArrayList<FundingCharged>().also { heard ->
+            bus.subscribe<FundingCharged> {
+                heard +=
+                    it
+            }
+        }
 
     private fun record(
         id: String,

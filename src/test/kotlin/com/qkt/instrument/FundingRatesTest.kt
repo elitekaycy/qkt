@@ -18,7 +18,9 @@ class FundingRatesTest {
         val recent = BinanceFundingRates.parse(fixture("funding-rate-btcusdt.json"))
         val old = BinanceFundingRates.parse(fixture("funding-rate-btcusdt-2020.json"))
 
-        assertThat(recent.first()).isEqualTo(FundingRate(1_790_812_800_001L, BigDecimal("0.00007981"), BigDecimal("83582.73222464")))
+        assertThat(
+            recent.first(),
+        ).isEqualTo(FundingRate(1_790_812_800_001L, BigDecimal("0.00007981"), BigDecimal("83582.73222464")))
         // Binance stamps each payment a few milliseconds off the hour, either side of it.
         assertThat(recent.map { it.timeMs }.zipWithNext { a, b -> (b - a + hour / 2) / hour }).containsOnly(8L)
         assertThat(old.first().rate).isEqualByComparingTo("-0.00012359")
@@ -32,11 +34,26 @@ class FundingRatesTest {
         val store = FundingRateStore(dir)
         store.merge("DERIBIT:BTC_USDC_PERPETUAL", listOf(FundingRate(2 * hour, BigDecimal("0.1"), null)))
 
-        val held = store.merge("DERIBIT:BTC_USDC_PERPETUAL", listOf(FundingRate(hour, BigDecimal("0.2"), BigDecimal("5")), FundingRate(2 * hour, BigDecimal("0.3"), null)))
+        val held =
+            store.merge(
+                "DERIBIT:BTC_USDC_PERPETUAL",
+                listOf(
+                    FundingRate(hour, BigDecimal("0.2"), BigDecimal("5")),
+                    FundingRate(
+                        2 * hour,
+                        BigDecimal("0.3"),
+                        null,
+                    ),
+                ),
+            )
 
         assertThat(held).isEqualTo(2)
-        assertThat(store.read("DERIBIT:BTC_USDC_PERPETUAL")!!.map { it.rate.toPlainString() }).containsExactly("0.2", "0.3")
-        assertThat(store.path("DERIBIT:BTC_USDC_PERPETUAL")).isEqualTo(dir.resolve("funding/DERIBIT/BTC_USDC_PERPETUAL.csv"))
+        assertThat(
+            store.read("DERIBIT:BTC_USDC_PERPETUAL")!!.map { it.rate.toPlainString() },
+        ).containsExactly("0.2", "0.3")
+        assertThat(
+            store.path("DERIBIT:BTC_USDC_PERPETUAL"),
+        ).isEqualTo(dir.resolve("funding/DERIBIT/BTC_USDC_PERPETUAL.csv"))
         assertThat(store.read("DERIBIT:ETH_USDC_PERPETUAL")).isNull()
     }
 
@@ -46,18 +63,39 @@ class FundingRatesTest {
     ) {
         val root =
             FuturesRoot(
-                "DERIBIT:BTC_USDC", "USDC", BigDecimal.ONE, BigDecimal("0.5"), BigDecimal("0.001"), BigDecimal("0.001"),
-                null, "crypto", BigDecimal.ZERO, BigDecimal.ZERO, null, perpetual = "BTC_USDC_PERPETUAL",
+                "DERIBIT:BTC_USDC",
+                "USDC",
+                BigDecimal.ONE,
+                BigDecimal("0.5"),
+                BigDecimal("0.001"),
+                BigDecimal("0.001"),
+                null,
+                "crypto",
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                null,
+                perpetual = "BTC_USDC_PERPETUAL",
             )
         val day = 24 * hour
         val perp = listOf("DERIBIT:BTC_USDC_PERPETUAL")
+
         fun problem(
             times: List<Long>,
             symbols: List<String> = perp,
         ): String? {
             val store = FundingRateStore(dir.resolve("r${times.hashCode()}"))
-            if (times.isNotEmpty()) store.merge(perp.single(), times.map { FundingRate(it, BigDecimal("0.0001"), null) })
-            return FundingCoverage.problem(ContractCatalogRegistry(listOf(root), emptyMap(), fundingStore = store), symbols, 0, 3 * day)
+            if (times.isNotEmpty()) {
+                store.merge(
+                    perp.single(),
+                    times.map { FundingRate(it, BigDecimal("0.0001"), null) },
+                )
+            }
+            return FundingCoverage.problem(
+                ContractCatalogRegistry(listOf(root), emptyMap(), fundingStore = store),
+                symbols,
+                0,
+                3 * day,
+            )
         }
 
         assertThat(problem((0..9).map { it * 8 * hour })).isNull()

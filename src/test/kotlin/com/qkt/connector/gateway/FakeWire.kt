@@ -43,7 +43,11 @@ internal object FakeWire {
         val window = requireNotNull(url.queryParameter("window_ms")).toLong()
         val from = requireNotNull(url.queryParameter("from")).toLong()
         val to = requireNotNull(url.queryParameter("to")).toLong()
-        val inRange = all[requireNotNull(url.queryParameter("symbol")) to window].orEmpty().filter { it.start in from until to }
+        val inRange =
+            all[requireNotNull(url.queryParameter("symbol")) to window].orEmpty().filter {
+                it.start in
+                    from until to
+            }
         val next = inRange.getOrNull(pageSize)?.start
         return ok(json.encodeToString(WireBars.serializer(), WireBars(inRange.take(pageSize), next)))
     }
@@ -56,6 +60,16 @@ internal object FakeWire {
         val next = inRange.getOrNull(pageSize)?.time
         return ok(json.encodeToString(WireFundingRates.serializer(), WireFundingRates(inRange.take(pageSize), next)))
     }
+
+    /** `/v1/health` for account [login] at [seq], kill switch [killed], declaring [capabilities]. */
+    fun health(
+        login: String,
+        killed: Boolean,
+        seq: Int,
+        capabilities: List<String>,
+    ) = """{"protocol":"vgp1","adapter":"fake","adapter_version":"1","account_login":"$login","trade_mode":"demo",""" +
+        """"venue_connected":true,"kill_switch":{"all":$killed},"server_time":${FakeGateway.TIME},""" +
+        """"stream":"s1","seq":$seq,"capabilities":${capabilities.joinToString(",", "[", "]") { "\"$it\"" }}}"""
 
     /** A `200` JSON answer. */
     fun ok(body: String) = MockResponse().setHeader("Content-Type", "application/json").setBody(body)

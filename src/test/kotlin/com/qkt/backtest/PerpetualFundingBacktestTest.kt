@@ -71,9 +71,22 @@ class PerpetualFundingBacktestTest {
                 BacktestCommand(
                     Args(
                         arrayOf(
-                            "backtest", strategy.toString(), "--from", "2024-09-02", "--to", "2024-09-04",
-                            "--data-root", data.toString(), "--no-fetch", "--allow-incomplete", "--position-mode", "netting",
-                            "--json", "--report-dir", dir.resolve("report").toString(), *extra,
+                            "backtest",
+                            strategy.toString(),
+                            "--from",
+                            "2024-09-02",
+                            "--to",
+                            "2024-09-04",
+                            "--data-root",
+                            data.toString(),
+                            "--no-fetch",
+                            "--allow-incomplete",
+                            "--position-mode",
+                            "netting",
+                            "--json",
+                            "--report-dir",
+                            dir.resolve("report").toString(),
+                            *extra,
                         ),
                     ),
                 ).run()
@@ -84,9 +97,17 @@ class PerpetualFundingBacktestTest {
         return code to out.toString()
     }
 
-    private fun every8h(rate: String) = (0..6).map { FundingRate(start + it * 8 * hour, BigDecimal(rate), BigDecimal("57100")) }
+    private fun every8h(rate: String) =
+        (0..6).map {
+            FundingRate(start + it * 8 * hour, BigDecimal(rate), BigDecimal("57100"))
+        }
 
-    private fun paid(output: String) = Regex("\"fundingPaid\":(-?[0-9.]+)").find(output)?.groupValues?.get(1)?.let(::BigDecimal)
+    private fun paid(output: String) =
+        Regex("\"fundingPaid\":(-?[0-9.]+)")
+            .find(output)
+            ?.groupValues
+            ?.get(1)
+            ?.let(::BigDecimal)
 
     @Test
     fun `a long pays each rate after its entry at the rate's price, and its realized pnl is net of it`(

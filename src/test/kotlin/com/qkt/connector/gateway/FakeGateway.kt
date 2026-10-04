@@ -144,9 +144,18 @@ internal class FakeGateway(
             path == "/v1/stream" -> stream(url.queryParameter("since")?.toLong())
             path == "/v1/quotes" -> quotes.upgrade(url)
             path == "/v1/bars" -> FakeWire.bars(url, bars, barsPage)
-            path == "/v1/funding-rates" -> FakeWire.rates(rates[symbol].orEmpty().filter { inWindow(it.time) }, barsPage)
+            path == "/v1/funding-rates" ->
+                FakeWire.rates(
+                    rates[symbol].orEmpty().filter { inWindow(it.time) },
+                    barsPage,
+                )
             path == "/v1/funding" ->
-                FakeWire.ok(json.encodeToString(WireFundings.serializer(), WireFundings(venue.funding.filter { inWindow(it.time) })))
+                FakeWire.ok(
+                    json.encodeToString(
+                        WireFundings.serializer(),
+                        WireFundings(venue.funding.filter { inWindow(it.time) }),
+                    ),
+                )
             else -> MockResponse().setResponseCode(404)
         }
     }
@@ -200,10 +209,7 @@ internal class FakeGateway(
         sockets.forEach { it.send(event) }
     }
 
-    private fun health() =
-        """{"protocol":"vgp1","adapter":"fake","adapter_version":"1","account_login":"$login","trade_mode":"demo",""" +
-            """"venue_connected":true,"kill_switch":{"all":$killed},"server_time":$TIME,"stream":"s1","seq":${log.size},""" +
-            """"capabilities":${capabilities.joinToString(",", "[", "]") { "\"$it\"" }}}"""
+    private fun health() = FakeWire.health(login, killed, log.size, capabilities)
 
     companion object {
         const val TIME = 1_790_835_377_133L

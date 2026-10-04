@@ -25,7 +25,8 @@ class FundingFetchTest {
     ) {
         val fake = FakeGateway(listOf(code))
         fake.instruments[code] = WireInstrument(code, "perpetual", "USDC", "1", "0.001", "0.1", "0.1")
-        fake.rates[code] = (1..5).map { WireFundingRate(dayStart + it * hour, "0.0000${it}1", if (it == 3) null else "121.5") }
+        fake.rates[code] =
+            (1..5).map { WireFundingRate(dayStart + it * hour, "0.0000${it}1", if (it == 3) null else "121.5") }
         val config = tmp.resolve("qkt.config.yaml")
         Files.writeString(
             config,
@@ -36,8 +37,17 @@ class FundingFetchTest {
             FetchCommand(
                 Args(
                     arrayOf(
-                        "fetch", "DERIBIT:SOL_USDC_PERPETUAL", "--funding", "--from", from, "--to", to,
-                        "--config", config.toString(), "--data-root", tmp.resolve("data").toString(),
+                        "fetch",
+                        "DERIBIT:SOL_USDC_PERPETUAL",
+                        "--funding",
+                        "--from",
+                        from,
+                        "--to",
+                        to,
+                        "--config",
+                        config.toString(),
+                        "--data-root",
+                        tmp.resolve("data").toString(),
                     ),
                 ),
             ).run()

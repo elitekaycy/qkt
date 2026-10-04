@@ -17,15 +17,29 @@ object FundingCoverage {
         toMs: Long,
     ): String? =
         symbols.distinct().firstNotNullOfOrNull { symbol ->
-            if ((registry.lookup(symbol)?.derivative as? FutureTerms)?.perpetual != true) return@firstNotNullOfOrNull null
-            val rates = registry.futures()?.fundingRates(symbol).orEmpty().map { it.timeMs }
+            if ((registry.lookup(symbol)?.derivative as? FutureTerms)?.perpetual !=
+                true
+            ) {
+                return@firstNotNullOfOrNull null
+            }
+            val rates =
+                registry
+                    .futures()
+                    ?.fundingRates(symbol)
+                    .orEmpty()
+                    .map { it.timeMs }
             val inRun = rates.filter { it in fromMs - MAX_GAP_MS..toMs + MAX_GAP_MS }
             val gap =
                 when {
                     inRun.isEmpty() -> "it has no stored funding rates over the run"
                     inRun.first() > fromMs + MAX_GAP_MS -> "its stored rates start ${day(inRun.first())}"
                     inRun.last() < toMs - MAX_GAP_MS -> "its stored rates end ${day(inRun.last())}"
-                    else -> inRun.zipWithNext().firstOrNull { (a, b) -> b - a > MAX_GAP_MS }?.let { (a, b) -> "its stored rates skip ${day(a)} to ${day(b)}" }
+                    else ->
+                        inRun
+                            .zipWithNext()
+                            .firstOrNull { (a, b) ->
+                                b - a > MAX_GAP_MS
+                            }?.let { (a, b) -> "its stored rates skip ${day(a)} to ${day(b)}" }
                 } ?: return@firstNotNullOfOrNull null
             "$symbol is a perpetual and $gap, so its funding would be missing: run " +
                 "`qkt fetch $symbol --funding --from ${day(fromMs)} --to ${day(toMs)}`, or pass --funding off to " +

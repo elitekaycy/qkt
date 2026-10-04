@@ -11,6 +11,10 @@ internal object FinancingCsv {
         buildString {
             append("component,paid,netPnlImpact\n")
             append("swap,${swapPaid.toPlainString()},${swapPaid.negate().toPlainString()}\n")
-            if (fundingPaid.signum() != 0) append("funding,${fundingPaid.toPlainString()},${fundingPaid.negate().toPlainString()}\n")
+            if (fundingPaid.signum() !=
+                0
+            ) {
+                append("funding,${fundingPaid.toPlainString()},${fundingPaid.negate().toPlainString()}\n")
+            }
         }
 }
