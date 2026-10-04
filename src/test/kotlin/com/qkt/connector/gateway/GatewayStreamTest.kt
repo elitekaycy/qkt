@@ -80,7 +80,7 @@ class GatewayStreamTest {
     }
 
     @Test
-    fun `a dropped socket reconnects from the last seq it processed`() {
+    fun `a dropped socket reconnects from the last seq it processed, naming its stream`() {
         server.enqueue(socket(event(1), event(2), close = true))
         server.enqueue(socket(event(3)))
 
@@ -88,7 +88,7 @@ class GatewayStreamTest {
 
         assertThat(events).containsExactly(1L, 2L, 3L)
         assertThat(server.takeRequest().path).isEqualTo("/v1/stream")
-        assertThat(server.takeRequest(5, TimeUnit.SECONDS)?.path).isEqualTo("/v1/stream?since=2")
+        assertThat(server.takeRequest(5, TimeUnit.SECONDS)?.path).isEqualTo("/v1/stream?since=2&stream=s1")
         assertThat(connections).startsWith(true, false, true)
     }
 
