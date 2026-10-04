@@ -498,6 +498,14 @@ brokers:
 | `chain_snapshot_seconds` | int | no | `300` | How often the live chain of each fed option root declared `chains: book` is appended to its book series (structures and `CHAIN:` streams read it). |
 | `calendars` | as above | no | `crypto` | Set it for venues that close, such as CME futures. |
 
+A perpetual's funding is booked as the venue charges it: the gateway reports each charge with the
+position it was charged on, and each strategy holding the perpetual books `amount × its holding /
+position` as financing, so a strategy long and one short each get their own sign and a position another
+tool holds on the account keeps its own part. What was booked persists (`funding.json` in the session
+owner's state), so a restart books what was charged while qkt was down, from the last 7 days, and never
+twice. A gateway that does not declare the `funding` capability cannot report it, so qkt refuses orders
+that could open or add to a perpetual there (reductions still pass).
+
 Several strategies may share one gateway account, as a portfolio. They share one connection; each
 fill reaches the strategy whose order it was (and waits for it while its session is stopped), and a
 contract settlement at expiry closes each strategy's own holding at the settlement price, sharing the
