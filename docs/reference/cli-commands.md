@@ -78,7 +78,7 @@ Every `qkt` subcommand. Run `qkt <command> --help` for the authoritative flag li
   closed trades) holds the equity percentiles across every resampled path after
   each trade: `tradeIndex,p5,p25,p50,p75,p95`. It is the fan `report.html`
   draws; its last row is the final-equity P5/P25/P50/P75/P95.
-- Futures runs add up to four files, each only when it has rows (a run without
+- Futures runs add up to five files, each only when it has rows (a run without
   futures writes none of them): `rolls.csv`
   (`timestamp,stream,strategy,from,to,quantity,multiplier,fromReference,toReference,gap,fromFill,toFill,fees,rollCost`;
   signed quantities, prices and costs in the root's currency)
@@ -89,7 +89,11 @@ Every `qkt` subcommand. Run `qkt <command> --help` for the authoritative flag li
   contract's expiry; `margin_daily.csv` (`date,marginUsed,maintenance,equity,marginCall`) each UTC
   day's margin at its last sample, for days that ended holding positions with margin terms or options
   (an option position counts its worst-case expiry loss, the one requirement the margin rule applies,
-  in both columns);
+  in both columns); `liquidations.csv`
+  (`timestamp,strategy,symbol,side,quantity,price,fee,equity,maintenance`) every position the venue
+  liquidated because account equity fell below the maintenance margin of the positions held whose roots declare `margin` (price and
+  fee in the root's currency, `equity` and `maintenance` as they stood when it triggered, in account
+  currency; `result.json` indexes it as `liquidationsCsv`);
   `structures.csv` (`openedAt,closedAt,strategy,structure,alias,outcome,legs,credit,realized`) every
   option structure, with its legs as `SIDE quantity symbol @ entry`, its outcome (`CLOSED`, `UNWOUND`
   or `SETTLED`), its credit and its premium P&L before fees; times, outcome and amounts stay empty
