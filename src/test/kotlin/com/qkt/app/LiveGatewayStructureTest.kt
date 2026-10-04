@@ -123,6 +123,7 @@ class LiveGatewayStructureTest {
                         accounts.marketDataRoutes(),
                         "local",
                         instruments = registry,
+                        clock = clock,
                     )(symbols),
                 symbols = symbols,
                 candleWindow = TimeWindow.ONE_MINUTE,
