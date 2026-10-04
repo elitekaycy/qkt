@@ -12,6 +12,7 @@ internal class FakeVenue(
     val orders = LinkedHashMap<String, WireOrder>()
     val deals = ArrayList<WireFill>()
     val settlements = ArrayList<WireSettlement>()
+    val funding = ArrayList<WireFunding>()
 
     /** Places [body] as a working order. */
     fun place(body: WireSubmit): WireOrder {
@@ -99,6 +100,12 @@ internal class FakeVenue(
     }
 
     /** Settles [code] at [price]. */
+    /** The venue charges or credits the account [funding]. */
+    fun fund(funding: WireFunding) {
+        this.funding += funding
+        emit("funding", funding)
+    }
+
     fun settle(settlement: WireSettlement) {
         settlements += settlement
         emit("settlement", settlement)

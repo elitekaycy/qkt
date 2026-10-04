@@ -51,6 +51,9 @@ internal class FakeGateway(
     /** Answers `500` to this many requests on each path before serving one. */
     val failing = HashMap<String, Int>()
 
+    /** The capabilities `/v1/health` reports; none, as a gateway from before capabilities. */
+    @Volatile var capabilities: List<String> = emptyList()
+
     /** The account login `/v1/health` reports. */
     @Volatile var login = "7"
 
@@ -137,7 +140,9 @@ internal class FakeGateway(
             path.startsWith("/v1/orders/") -> byId(path.removePrefix("/v1/orders/"), request.method ?: "GET")
             path == "/v1/stream" -> stream(url.queryParameter("since")?.toLong())
             path == "/v1/quotes" -> quotes.upgrade(url)
-            path == "/v1/bars" -> bars(url)
+            path == "/v1/bars" -> FakeWire.bars(url, bars, barsPage)
+            path == "/v1/funding" ->
+                FakeWire.ok(json.encodeToString(WireFundings.serializer(), WireFundings(venue.funding.filter { inWindow(it.time) })))
             else -> MockResponse().setResponseCode(404)
         }
     }
@@ -164,20 +169,6 @@ internal class FakeGateway(
         }
         val order = if (method == "DELETE") venue.cancel(id) else venue.orders.getValue(id)
         return FakeWire.ok(json.encodeToString(WireOrder.serializer(), order))
-    }
-
-    private fun bars(url: okhttp3.HttpUrl): MockResponse {
-        val window = requireNotNull(url.queryParameter("window_ms")).toLong()
-        val from = requireNotNull(url.queryParameter("from")).toLong()
-        val to = requireNotNull(url.queryParameter("to")).toLong()
-        val all =
-            bars[requireNotNull(url.queryParameter("symbol")) to window].orEmpty().filter {
-                it.start in
-                    from until to
-            }
-        val page = all.take(barsPage)
-        val next = all.getOrNull(barsPage)?.start
-        return FakeWire.ok(json.encodeToString(WireBars.serializer(), WireBars(page, next)))
     }
 
     private fun stream(since: Long?): MockResponse =
@@ -207,7 +198,8 @@ internal class FakeGateway(
 
     private fun health() =
         """{"protocol":"vgp1","adapter":"fake","adapter_version":"1","account_login":"$login","trade_mode":"demo",""" +
-            """"venue_connected":true,"kill_switch":{"all":$killed},"server_time":$TIME,"stream":"s1","seq":${log.size}}"""
+            """"venue_connected":true,"kill_switch":{"all":$killed},"server_time":$TIME,"stream":"s1","seq":${log.size},""" +
+            """"capabilities":${capabilities.joinToString(",", "[", "]") { "\"$it\"" }}}"""
 
     companion object {
         const val TIME = 1_790_835_377_133L

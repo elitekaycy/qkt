@@ -14,7 +14,8 @@ internal data class GatewaySyncState(
 /**
  * Brings the engine back to the gateway's truth after a start, a `reset` or a lost sequence: every
  * working order, every deal and every settlement since the last booked deal go through [onOrder],
- * [onFill] and [onSettlement] (each drops what was already reported); an order still open in the engine
+ * [onFill] and [onSettlement] (each drops what was already reported), and [readFunding] reads the
+ * funding over the same window; an order still open in the engine
  * but no longer working at the gateway is resolved by id, so one the venue ended meanwhile ends here
  * too. The deal window starts at [fromMs] and moves only with deals of orders [isOwned].
  */
@@ -23,6 +24,7 @@ internal class GatewaySync(
     private val onOrder: (WireOrder) -> Unit,
     private val onFill: (WireFill) -> Unit,
     private val onSettlement: (WireSettlement) -> Unit,
+    private val readFunding: (Pair<Long, Long>) -> Unit,
     private val isOwned: (String) -> Boolean,
     @Volatile private var fromMs: Long,
     private val now: () -> Long,
@@ -44,6 +46,7 @@ internal class GatewaySync(
         working.forEach(onOrder)
         deals.forEach(onFill)
         settlements.forEach(onSettlement)
+        readFunding(fromMs to to)
         for (id in open - working.map { it.clientOrderId }.toSet()) {
             client.order(id)?.let { ended ->
                 client.dealsOf(id).forEach(onFill)

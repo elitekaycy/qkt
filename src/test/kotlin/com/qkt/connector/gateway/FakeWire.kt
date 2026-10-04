@@ -17,6 +17,7 @@ internal object FakeWire {
             is WireFill -> json.encodeToJsonElement(WireFill.serializer(), data)
             is WireSettlement -> json.encodeToJsonElement(WireSettlement.serializer(), data)
             is WirePosition -> json.encodeToJsonElement(WirePosition.serializer(), data)
+            is WireFunding -> json.encodeToJsonElement(WireFunding.serializer(), data)
             else -> error("no event for $data")
         }
 
@@ -32,6 +33,20 @@ internal object FakeWire {
             "0.01",
             underlying = code.substringBefore('-'),
         )
+
+    /** `GET /v1/bars` over [all] bars by code and window, [pageSize] at a time. */
+    fun bars(
+        url: okhttp3.HttpUrl,
+        all: Map<Pair<String, Long>, List<WireBar>>,
+        pageSize: Int,
+    ): MockResponse {
+        val window = requireNotNull(url.queryParameter("window_ms")).toLong()
+        val from = requireNotNull(url.queryParameter("from")).toLong()
+        val to = requireNotNull(url.queryParameter("to")).toLong()
+        val inRange = all[requireNotNull(url.queryParameter("symbol")) to window].orEmpty().filter { it.start in from until to }
+        val next = inRange.getOrNull(pageSize)?.start
+        return ok(json.encodeToString(WireBars.serializer(), WireBars(inRange.take(pageSize), next)))
+    }
 
     /** A `200` JSON answer. */
     fun ok(body: String) = MockResponse().setHeader("Content-Type", "application/json").setBody(body)
