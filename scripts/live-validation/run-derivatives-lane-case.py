@@ -223,7 +223,8 @@ class Run:
         deals = self.get(f"/v1/deals?from={self.started_ms}&to={self.ended_ms + MINUTE}")["deals"]
         net = Decimal(0)
         for deal in deals:
-            if not deal["client_order_id"].startswith(f"dsl-{self.strategy}-"):
+            # A rule's own orders are `dsl-<strategy>-…`; one a signal sized (a plain BUY) is `ORD-<strategy>-…`.
+            if not deal["client_order_id"].startswith((f"dsl-{self.strategy}-", f"ORD-{self.strategy}-")):
                 continue
             value = Decimal(deal["price"]) * Decimal(deal["quantity"]) * sizes.get(deal["symbol"], Decimal(1))
             net += value if deal["side"] == "sell" else -value
