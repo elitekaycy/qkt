@@ -1,5 +1,7 @@
 package com.qkt.cli
 
+import com.qkt.common.Clock
+import com.qkt.common.SystemClock
 import com.qkt.derivatives.options.chain.ChainAnalyticsSymbol
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.marketdata.hub.HubMarketSource
@@ -46,12 +48,14 @@ import java.nio.file.Path
  * share the same routing.
  */
 object MarketSourceFactory {
+    /** The composite market source for [accountRoutes] and the built-in routes; [clock] paces the live chain-analytics feed. */
     fun composite(
         accountRoutes: List<Pair<SymbolPattern, MarketSource>>,
         source: String = "tv",
         // Declared before the fallback so a trailing-lambda caller still binds to fallbackProvider.
         hub: HubStoreConfig = HubStoreConfig.NONE,
         instruments: InstrumentRegistry? = null,
+        clock: Clock = SystemClock(),
         fallbackProvider: () -> MarketSource = { defaultFallback(source) },
     ): (List<String>) -> MarketSource {
         val routes = mutableListOf<Pair<SymbolPattern, MarketSource>>()
@@ -70,7 +74,9 @@ object MarketSourceFactory {
         )
         // Chain analytics streams are computed from the stored chains the live recorder appends to.
         if (instruments?.options() != null) {
-            routes.add(SymbolPattern.prefix(ChainAnalyticsSymbol.PREFIX) to ChainAnalyticsMarketSource(instruments))
+            routes.add(
+                SymbolPattern.prefix(ChainAnalyticsSymbol.PREFIX) to ChainAnalyticsMarketSource(instruments, clock),
+            )
         }
         routes.addAll(accountRoutes)
         val composite = CompositeMarketSource(routes = routes, fallback = fallbackProvider())
