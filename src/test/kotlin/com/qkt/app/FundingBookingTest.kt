@@ -36,12 +36,14 @@ class FundingBookingTest {
     private val saved =
         object : FundingPersistence {
             val byOwner = HashMap<String, PersistedFunding>()
+            var saves = 0
 
             override fun saveFunding(
                 ownerId: String,
                 funding: PersistedFunding,
             ) {
                 byOwner[ownerId] = funding
+                saves++
             }
 
             override fun loadFunding(ownerId: String) = byOwner[ownerId]
@@ -169,6 +171,20 @@ class FundingBookingTest {
         assertThat(costs.map { it.strategyId to it.amount.stripTrailingZeros().toPlainString() })
             .containsExactly("a" to "6", "b" to "-2")
         assertThat(saved.byOwner.getValue("a").closed).isEmpty()
+    }
+
+    @Test
+    fun `a close is written only for a symbol funding was heard for, so trading anything else costs no io`() {
+        bind("a")
+        val atStart = saved.saves
+        bus.publish(closed("a", "30"))
+        assertThat(saved.saves).isEqualTo(atStart)
+
+        bus.publish(funding("tx-1", "1", "0"))
+        bus.publish(closed("a", "10"))
+
+        assertThat(saved.saves).isEqualTo(atStart + 2)
+        assertThat(saved.byOwner.getValue("a").closed.getValue(perp)).containsEntry("a", BigDecimal("10"))
     }
 
     @Test

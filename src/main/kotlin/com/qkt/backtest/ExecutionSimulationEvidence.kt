@@ -39,8 +39,6 @@ fun ExecutionSimulationConfig.toEvidence(): ExecutionEvidence =
                 "none"
             },
         commissionModel = "per-lot instruments.yaml commissionPerLot",
-        financingModel =
-            "signed swap points at configured UTC rollover; triple configured weekday; perpetual funding at " +
-                "stored venue rates (quantity x contract size x price x rate at each rate's time)",
+        financingModel = "signed swap points at configured UTC rollover; triple configured weekday",
         ocoMode = "engine-managed deterministic siblings",
     )
