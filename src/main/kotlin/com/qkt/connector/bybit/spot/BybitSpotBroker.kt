@@ -8,6 +8,7 @@ import com.qkt.broker.SubmitAck
 import com.qkt.bus.EventBus
 import com.qkt.common.Clock
 import com.qkt.common.net.PeriodicReconciler
+import com.qkt.connector.bybit.BybitExecutionStream
 import com.qkt.connector.bybit.BybitOrderTranslator
 import com.qkt.connector.bybit.BybitSymbol
 import com.qkt.connector.bybit.BybitTransport
@@ -71,7 +72,10 @@ class BybitSpotBroker(
 
     init {
         transport.subscribe("order") { frame -> onOrderFrame(frame) }
-        transport.subscribe("execution") { frame -> onExecutionFrame(frame) }
+        transport.subscribe(
+            "execution",
+            BybitExecutionStream("spot", bus, clock, seenExecIds, lastFillTime, strategyByClientOrderId::get)::onFrame,
+        )
 
         val recovery =
             BybitSpotStateRecovery(
@@ -419,30 +423,6 @@ class BybitSpotBroker(
                     )
                 else -> log.debug("Bybit order frame status={} (no event)", status)
             }
-        }
-    }
-
-    private fun onExecutionFrame(frame: JsonObject) {
-        val data = frame["data"]?.jsonArray ?: return
-        for (entry in data) {
-            val exec = BybitOrderTranslator.parseExecution(entry.jsonObject)
-            if (!seenExecIds.add(exec.execId)) continue
-            val qktSymbol = BybitSymbol.toQkt(category = "spot", bare = exec.bareSymbol)
-            val strategyId = strategyByClientOrderId[exec.clientOrderId] ?: ""
-            bus.publish(
-                BrokerEvent.OrderFilled(
-                    clientOrderId = exec.clientOrderId,
-                    brokerOrderId = exec.brokerOrderId,
-                    symbol = qktSymbol,
-                    side = exec.side,
-                    price = exec.price,
-                    quantity = exec.quantity,
-                    strategyId = strategyId,
-                    timestamp = clock.now(),
-                    venueCosts = exec.fee,
-                ),
-            )
-            lastFillTime.set(clock.now())
         }
     }
 
