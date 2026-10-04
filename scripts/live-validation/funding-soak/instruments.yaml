@@ -1,0 +1,9 @@
+futures:
+  - root: DERIBIT:BTC_USDC
+    currency: USDC
+    multiplier: 1
+    tickSize: 0.1
+    volumeStep: 0.0001
+    volumeMin: 0.0001
+    takerFeeRate: 0.0005
+    perpetual: BTC_USDC_PERPETUAL

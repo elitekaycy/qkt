@@ -2,14 +2,17 @@
 """One derivatives attestation case on a VGP gateway account (futures, perpetuals, options).
 
     run-derivatives-lane-case.py --case DIR --out DIR --gateway-url URL --expected-login LOGIN
-        --arm I_UNDERSTAND_DEMO_ORDER_0.01 [--cli PATH]
+        --arm I_UNDERSTAND_DEMO_ORDER_0.01 [--cli PATH] [--budget-seconds N]
 
 Needs QKT_DERIV_GATEWAY_KEY (the gateway's trader token) and QKT_LIVE_DEMO_ORDER_APPROVAL=LOCALHOST_DEMO_ONLY.
 The gateway must be on loopback, in demo trade mode, logged into --expected-login, and the account flat:
 a netting account cannot tell the case's positions from anyone else's. The case's strategy runs in a
 daemon until it has made `fills` fills (or its budget ends), then is judged:
   - flat-account: the account ends with no position and no working order;
-  - deals-net-equals-realized: qkt's realized PnL equals the venue's deals net, fees included, exactly;
+  - deals-net-equals-realized: qkt's realized PnL equals the venue's deals net, fees included, less the
+    funding the venue charged the account over the run (`/v1/funding`, when the gateway reports it), exactly;
+  - funding-charged: the venue charged the account funding at least once during the run (a soak case that
+    holds a perpetual long enough, such as `scripts/live-validation/funding-soak`, run with --budget-seconds);
   - replay-same-fills (`replay: bars`): a backtest of the same minutes on the gateway's own bars makes the
     same fills, in order, on the same sides and sizes (a bar replay fills at the next bar's open, so each
     fill's price difference from live is recorded, as the MT5 order lane does, not judged);
@@ -30,10 +33,11 @@ def main():
     for name in ("--case", "--out", "--gateway-url", "--expected-login", "--arm"):
         ap.add_argument(name, required=True)
     ap.add_argument("--cli", default=os.path.join(os.path.dirname(__file__), "../../build/install/qkt/bin/qkt"))
+    ap.add_argument("--budget-seconds", type=int, help="a soak run's budget, beyond the catalog's ten minutes")
     args = ap.parse_args()
     case = yaml.safe_load(open(os.path.join(args.case, "case.yaml")))
     lane = yaml.safe_load(open(os.path.join(os.path.dirname(__file__), "../../attestation/lanes.yaml")))["lanes"]
-    budget = int(case.get("budget_seconds", lane["derivatives"]["budget_seconds"]))
+    budget = args.budget_seconds or int(case.get("budget_seconds", lane["derivatives"]["budget_seconds"]))
     run = Run(args, case)
     try:
         problems = run.execute(budget)
@@ -123,12 +127,15 @@ class Run:
         if len(fills) < int(self.case["fills"]):
             problems.append(f"expected {self.case['fills']} fills within the budget, saw {len(fills)}")
         realized = Decimal(json.load(open(f"{self.out}/state/state/{self.strategy}/pnl.json"))["realized"])
-        venue = self.venue_net()
+        funding = self.venue_funding()
+        venue = self.venue_net() - sum((Decimal(f["amount"]) for f in funding), Decimal(0))
         if venue != realized:
             problems.append(f"deals-net-equals-realized: venue net {venue} != qkt realized {realized}")
+        if "funding-charged" in self.case["assertions"] and not funding:
+            problems.append("funding-charged: the venue charged no funding during the run")
         if fills:
             problems += self.replay(fills)
-        self.evidence = {"fills": fills, "qktRealized": str(realized), "venueNet": str(venue),
+        self.evidence = {"fills": fills, "qktRealized": str(realized), "venueNet": str(venue), "funding": funding,
                          "replayPriceDrift": getattr(self, "drift", [])}
         return problems
 
@@ -147,9 +154,10 @@ class Run:
         account = {"type": "gateway", "gateway_url": self.args.gateway_url, "api_key": "env:QKT_DERIV_GATEWAY_KEY",
                    "expected_adapter": adapter, "expected_account_login": self.args.expected_login,
                    "expected_trade_mode": "demo", "chain_snapshot_seconds": 60}
-        yaml.safe_dump({"source": "local", "data_root": f"{self.out}/data", "starting_balance": 100000,
-                        "brokers": {venue.lower(): account}},
-                       open(f"{self.out}/qkt.config.yaml", "w"), sort_keys=False)
+        config = {"source": "local", "data_root": f"{self.out}/data", "starting_balance": 100000,
+                  "brokers": {venue.lower(): account}}
+        config.update(self.case.get("config", {}))  # a soak case's demo-only settings, such as risk limits
+        yaml.safe_dump(config, open(f"{self.out}/qkt.config.yaml", "w"), sort_keys=False)
         roots = {r["root"] for kind in ("futures", "options") for r in
                  (yaml.safe_load(open(f"{self.out}/data/instruments.yaml")).get(kind) or [])}
         for root in sorted(roots):
@@ -215,12 +223,19 @@ class Run:
         deals = self.get(f"/v1/deals?from={self.started_ms}&to={self.ended_ms + MINUTE}")["deals"]
         net = Decimal(0)
         for deal in deals:
-            if not deal["client_order_id"].startswith(f"dsl-{self.strategy}-"):
+            # A rule's own orders are `dsl-<strategy>-…`; one a signal sized (a plain BUY) is `ORD-<strategy>-…`.
+            if not deal["client_order_id"].startswith((f"dsl-{self.strategy}-", f"ORD-{self.strategy}-")):
                 continue
             value = Decimal(deal["price"]) * Decimal(deal["quantity"]) * sizes.get(deal["symbol"], Decimal(1))
             net += value if deal["side"] == "sell" else -value
             net -= sum(Decimal(cost["amount"]) for cost in deal["costs"])
         return net
+
+    def venue_funding(self):
+        """The funding the venue charged the account over the run; the account was flat at its start, so all of it is the case's."""
+        if "funding" not in self.get("/v1/health").get("capabilities", []):
+            return []
+        return self.get(f"/v1/funding?from={self.started_ms}&to={self.ended_ms + MINUTE}")["funding"]
 
     def replay(self, fills):
         start = self.started_ms // MINUTE * MINUTE
@@ -236,9 +251,10 @@ class Run:
         else:
             data = f"{self.out}/data"
         report = f"{self.out}/replay-report"
+        funding = self.replay_funding(data, sorted({f["symbol"] for f in fills}), start, end)
         self.cli_run(["backtest", f"{self.out}/strategies/{self.strategy}.qkt", "--from", when(start), "--to", when(end),
                       "--no-fetch", "--allow-incomplete", "--position-mode", "netting", "--data-root", data,
-                      "--config", f"{self.out}/qkt.config.yaml", "--report-dir", report], "replay", self.env())
+                      "--config", f"{self.out}/qkt.config.yaml", "--report-dir", report, *funding], "replay", self.env())
         trades = list(csv.DictReader(open(f"{report}/trades.csv")))
         replayed = [{"side": t["side"], "symbol": t["symbol"], "qty": t["quantity"], "price": t["price"]} for t in trades]
         if self.case["replay"] == "bars":
@@ -249,6 +265,20 @@ class Run:
         opening = fills[: len(fills) // 2]
         return [] if legs(opening) == legs(replayed[: len(opening)]) \
             else [f"replay-same-legs: live opened {opening}, replay {replayed[: len(opening)]}"]
+
+    def replay_funding(self, data, symbols, start, end):
+        """Stores the traded perpetuals' funding rates for the replay from the gateway; without them, replays without funding."""
+        perpetual = {i["code"].replace("-", "_") for i in self.get("/v1/instruments") if i["kind"] == "perpetual"}
+        perps = [s for s in symbols if s.split(":")[1] in perpetual]
+        if not perps:
+            return []
+        if "funding_rates" not in self.get("/v1/health").get("capabilities", []):
+            return ["--funding", "off"]
+        days = [when(start - 86_400_000).split("T")[0], when(end + 86_400_000).split("T")[0]]
+        for symbol in perps:
+            self.cli_run(["fetch", symbol, "--funding", "--from", days[0], "--to", days[1], "--config",
+                          f"{self.out}/qkt.config.yaml", "--data-root", data], "funding-fetch", self.env())
+        return []
 
     def store_bars(self, root, symbol, start, end):
         """The gateway's closed 1m bars of [symbol] from its day's start, in the fetch store's layout."""

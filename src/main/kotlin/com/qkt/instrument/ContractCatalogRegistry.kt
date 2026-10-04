@@ -2,7 +2,7 @@ package com.qkt.instrument
 
 /**
  * Metadata for futures contracts and continuous streams, joined from the `futures:` roots and the
- * per-root contract catalogs. Precomputed at construction so lookups on the hot path are one map
+ * per-root contract catalogs, and each perpetual's stored funding rates ([fundingRates], read once). Precomputed at construction so lookups on the hot path are one map
  * read. Answers only symbols of declared roots; everything else falls through to the next layer.
  */
 class ContractCatalogRegistry(
@@ -10,6 +10,7 @@ class ContractCatalogRegistry(
     private val catalogs: Map<String, ContractCatalog>,
     private val histories: Map<String, RollHistory> = emptyMap(),
     private val historyStore: RollHistoryStore? = null,
+    private val fundingStore: FundingRateStore? = null,
 ) : InstrumentRegistry,
     FuturesDirectory {
     private val table: Map<String, InstrumentMeta> =
@@ -53,6 +54,11 @@ class ContractCatalogRegistry(
 
     override fun historyStore(): RollHistoryStore? = historyStore
 
+    private val funding = java.util.concurrent.ConcurrentHashMap<String, List<FundingRate>>()
+
+    override fun fundingRates(symbol: String): List<FundingRate>? =
+        funding[symbol] ?: fundingStore?.read(symbol)?.also { funding[symbol] = it }
+
     override fun rootOfContinuous(symbol: String): String? {
         val root = symbol.substringBefore('@', missingDelimiterValue = "")
         val selector = ContinuousSelector.parse(symbol.substringAfter('@', missingDelimiterValue = ""))
@@ -76,17 +82,22 @@ class ContractCatalogRegistry(
     }
 
     companion object {
-        /** A registry for [roots] with each root's catalog and roll history read from the data root's stores. */
+        /**
+         * A registry for [roots] with each root's catalog and roll history read from the data root's stores,
+         * and its perpetual's funding rates from [funding] (null: funding is not modelled).
+         */
         fun load(
             roots: List<FuturesRoot>,
             catalogs: ContractCatalogStore,
             histories: RollHistoryStore,
+            funding: FundingRateStore? = null,
         ): ContractCatalogRegistry =
             ContractCatalogRegistry(
                 roots,
                 roots.mapNotNull { r -> catalogs.read(r.root)?.let { r.root to it } }.toMap(),
                 roots.mapNotNull { r -> histories.read(r.root)?.let { r.root to it } }.toMap(),
                 histories,
+                funding,
             )
     }
 }

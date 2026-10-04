@@ -21,7 +21,8 @@ import com.qkt.strategy.Strategy
  * Binds each strategy into the pipeline: restores its trade history, builds its context and
  * [StrategySignalEmitter], and subscribes it to ticks and candles. A DSL strategy is also
  * capability-checked, registered on the candle hub, schedules, exit hooks and latches, audited,
- * and given a stack orchestrator and a [StructureBook] for its option structures. Strategies bind in list order, which fixes their dispatch order.
+ * and given a stack orchestrator and a [StructureBook] for its option structures. Contract settlements and
+ * perpetual funding are booked for every strategy. Strategies bind in list order, which fixes their dispatch order.
  */
 internal class StrategyBinder(
     private val bus: EventBus,
@@ -47,11 +48,13 @@ internal class StrategyBinder(
     private val audit = DslEvaluationAudit(bus, candleHub)
     private val structures = StructureCoordinator(bus, clock, orderManager::cancel)
     private val settlement = ContractSettlement(bus, strategyPositions)
+    private val funding = FundingBooking(bus, strategyPositions, persistor, prices, clock)
     private val stackBinder = StackOrchestratorBinder(clock, bus, persistor, strategyPositions)
 
     /** Bind every strategy, in order. */
     fun bindAll(strategies: List<Pair<String, Strategy>>) {
         settlement.bind(strategies.map { it.first })
+        funding.bind(strategies.map { it.first })
         strategies.forEach { (strategyId, strategy) -> bind(strategyId, strategy) }
     }
 

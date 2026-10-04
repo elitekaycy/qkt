@@ -12,6 +12,7 @@ import com.qkt.connectivity.ConnectorSpec
 import com.qkt.connectivity.ProductType
 import com.qkt.connectivity.TradingAccount
 import com.qkt.instrument.ContractCatalogSource
+import com.qkt.instrument.FundingRateSource
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.OptionTerms
 import com.qkt.marketdata.source.MarketSource
@@ -92,6 +93,8 @@ class GatewayTradingAccount internal constructor(
 
     override val contractCatalogs: ContractCatalogSource
         get() = GatewayContractCatalog(client, GatewaySymbols(config.symbolPrefix), clock)
+
+    override val fundingRates: FundingRateSource = GatewayFundingRates(client, GatewaySymbols(config.symbolPrefix))
 
     override val marketDataPattern: SymbolPattern = SymbolPattern(quotes::supports)
 

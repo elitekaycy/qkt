@@ -1,0 +1,11 @@
+STRATEGY funding_soak_deribit VERSION 1
+
+SYMBOLS
+    sol = DERIBIT:SOL_USDC_PERPETUAL EVERY 1m WARMUP 3 BARS
+
+RULES
+    WHEN sol.close > 0 AND POSITION.sol = 0 AND OPEN_ORDERS.sol = 0 AND TRADES.today = 0
+    THEN BUY sol SIZING 50
+
+    WHEN POSITION.sol != 0 AND POSITION.sol.holding_duration >= 3000
+    THEN CLOSE sol

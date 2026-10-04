@@ -33,7 +33,7 @@ internal object ChainFetch {
     /** How long after a day ends its trade history is taken as complete. */
     const val SETTLE_LAG_MS = 300_000L
     private val CHAIN_ONLY = listOf("live", "every", "max-mark-age")
-    private val NOT_FOR_CHAINS = listOf("catalog", "rolls", "tf", "instruments", "config")
+    private val NOT_FOR_CHAINS = listOf("catalog", "rolls", "funding", "tf", "instruments", "config")
 
     /** Why [args] mix chain flags with another kind of fetch, or null when they do not. */
     fun misplacedFlag(args: Args): String? {
