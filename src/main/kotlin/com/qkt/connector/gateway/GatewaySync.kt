@@ -8,6 +8,7 @@ internal data class GatewaySyncState(
     val equity: BigDecimal,
     val accounting: PositionAccountingMode,
     val positions: Map<String, BigDecimal>,
+    val tickets: Map<String, Map<String, BigDecimal>> = emptyMap(),
 )
 
 /**
@@ -57,6 +58,11 @@ internal class GatewaySync(
             positions.positions
                 .groupBy { it.symbol }
                 .mapValues { (_, held) -> held.fold(BigDecimal.ZERO) { q, p -> q.add(BigDecimal(p.quantity)) } }
-        return GatewaySyncState(BigDecimal(account.equity), accounting, net)
+        val tickets =
+            positions.positions
+                .filter { it.ticket != null }
+                .groupBy { it.symbol }
+                .mapValues { (_, held) -> held.associate { it.ticket!! to BigDecimal(it.quantity) } }
+        return GatewaySyncState(BigDecimal(account.equity), accounting, net, tickets)
     }
 }
