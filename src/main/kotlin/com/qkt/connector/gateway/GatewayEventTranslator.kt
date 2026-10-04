@@ -1,9 +1,5 @@
 package com.qkt.connector.gateway
 
-import com.qkt.accounting.CostKind
-import com.qkt.accounting.MoneyAmount
-import com.qkt.accounting.VenueCost
-import com.qkt.common.Side
 import com.qkt.events.BrokerEvent
 import com.qkt.events.ContractSettled
 import java.math.BigDecimal
@@ -30,6 +26,7 @@ class GatewayEventTranslator(
     private val accepted = HashSet<String>()
     private val booked = RecentIds(RECENT)
     private val done = RecentIds(RECENT)
+    private val ending = HashMap<String, WireOrder>()
 
     /**
      * Order [clientOrderId] was sent for [quantity]: its fills complete it at that quantity. A restored
@@ -53,7 +50,7 @@ class GatewayEventTranslator(
     fun order(order: WireOrder): BrokerEvent.OrderEvent? {
         val id = order.clientOrderId
         if (done.contains(id)) return null
-        quantities[id] = decimal(order.quantity, "quantity")
+        quantities[id] = WireValues.decimal(order.quantity, "quantity")
         val strategy = strategyOf(id)
         return when (order.status) {
             "working", "filled" ->
@@ -65,30 +62,45 @@ class GatewayEventTranslator(
                 } else {
                     null
                 }
-            "cancelled" ->
-                end(
-                    id,
-                ) { BrokerEvent.OrderCancelled(id, order.venueOrderId, "cancelled at the venue", strategy) }
-            "rejected" ->
-                end(id) {
-                    BrokerEvent.OrderRejected(
-                        id,
-                        order.venueOrderId,
-                        order.rejectReason ?: "rejected by the venue",
-                        strategy,
-                    )
+            "cancelled", "rejected" ->
+                if (WireValues.decimal(order.filledQuantity, "filled_quantity") > (filled[id] ?: BigDecimal.ZERO)) {
+                    // It ended with fills not yet heard: its end waits for them, so they are never dropped.
+                    ending[id] = order
+                    null
+                } else {
+                    end(id) { ended(order, strategy) }
                 }
             else -> throw GatewayProtocolException("order $id has status '${order.status}'")
         }
     }
 
-    /** The engine event a `fill` means, or null for a fill already booked. */
-    fun fill(fill: WireFill): BrokerEvent.OrderEvent? {
+    /** Whether order [clientOrderId] ended at the venue but its end waits for fills not yet heard. */
+    fun awaitingFills(clientOrderId: String): Boolean = clientOrderId in ending
+
+    /**
+     * The engine events a `fill` means: none for a fill already booked; the fill, then the order's end when
+     * it ended at the venue before this fill was heard and the fill completes what it reported filled.
+     */
+    fun fill(fill: WireFill): List<BrokerEvent.OrderEvent> =
+        listOfNotNull(slice(fill)).let { events ->
+            val pending = ending[fill.clientOrderId]
+            val heard = filled[fill.clientOrderId] ?: BigDecimal.ZERO
+            if (events.isEmpty() ||
+                pending == null ||
+                heard < WireValues.decimal(pending.filledQuantity, "filled_quantity")
+            ) {
+                events
+            } else {
+                events + end(fill.clientOrderId) { ended(pending, strategyOf(fill.clientOrderId)) }
+            }
+        }
+
+    private fun slice(fill: WireFill): BrokerEvent.OrderEvent? {
         val symbol = symbols.qkt(fill.symbol)
-        val side = sideOf(fill.side)
-        val quantity = decimal(fill.quantity, "quantity")
-        val price = decimal(fill.price, "price")
-        val costs = costsOf(fill.costs, fill.time)
+        val side = WireValues.sideOf(fill.side)
+        val quantity = WireValues.decimal(fill.quantity, "quantity")
+        val price = WireValues.decimal(fill.price, "price")
+        val costs = WireValues.costsOf(fill.costs, fill.time)
         if (!booked.add(fill.fillId)) return null
         val id = fill.clientOrderId
         val cumulative = (filled[id] ?: BigDecimal.ZERO).add(quantity)
@@ -127,10 +139,25 @@ class GatewayEventTranslator(
     fun settlement(settlement: WireSettlement): ContractSettled =
         ContractSettled(
             symbols.qkt(settlement.symbol),
-            decimal(settlement.price, "price"),
-            costsOf(settlement.costs, settlement.time),
+            WireValues.decimal(settlement.price, "price"),
+            WireValues.costsOf(settlement.costs, settlement.time),
             settlement.time,
         )
+
+    private fun ended(
+        order: WireOrder,
+        strategy: String,
+    ): BrokerEvent.OrderEvent =
+        if (order.status == "rejected") {
+            BrokerEvent.OrderRejected(
+                order.clientOrderId,
+                order.venueOrderId,
+                order.rejectReason ?: "rejected by the venue",
+                strategy,
+            )
+        } else {
+            BrokerEvent.OrderCancelled(order.clientOrderId, order.venueOrderId, "cancelled at the venue", strategy)
+        }
 
     private fun end(
         id: String,
@@ -143,57 +170,14 @@ class GatewayEventTranslator(
     /** Order [id] has ended: its state goes, and later updates of it are not reported. */
     private fun forget(id: String) {
         done.add(id)
+        ending.remove(id)
         quantities.remove(id)
         filled.remove(id)
         accepted.remove(id)
     }
 
-    private fun costsOf(
-        costs: List<WireCost>,
-        at: Long,
-    ): List<VenueCost> =
-        costs.map { VenueCost(kindOf(it.kind), MoneyAmount(decimal(it.amount, "cost"), it.currency), at) }
-
-    private fun sideOf(side: String): Side =
-        when (side) {
-            "buy" -> Side.BUY
-            "sell" -> Side.SELL
-            else -> throw GatewayProtocolException("side '$side'")
-        }
-
-    private fun kindOf(kind: String): CostKind =
-        when (kind) {
-            "commission" -> CostKind.COMMISSION
-            // A delivery fee is an exchange fee, as the backtest option venue reports it.
-            "exchange_fee", "delivery_fee" -> CostKind.EXCHANGE_FEE
-            "funding" -> CostKind.FUNDING
-            "swap" -> CostKind.SWAP
-            else -> throw GatewayProtocolException("cost kind '$kind'")
-        }
-
-    private fun decimal(
-        text: String,
-        field: String,
-    ): BigDecimal = text.toBigDecimalOrNull() ?: throw GatewayProtocolException("$field '$text' is not a decimal")
-
     private companion object {
         /** Far more executions and orders than any reconnect replays, so a replay is always recognized. */
         const val RECENT = 10_000
     }
-}
-
-/** The last [capacity] ids added, oldest dropped first. */
-internal class RecentIds(
-    private val capacity: Int,
-) {
-    private val ids =
-        object : LinkedHashMap<String, Unit>() {
-            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Unit>?): Boolean = size > capacity
-        }
-
-    /** Adds [id]; false when it was already among the recent ones. */
-    fun add(id: String): Boolean = ids.put(id, Unit) == null
-
-    /** Whether [id] is among the recent ones. */
-    fun contains(id: String): Boolean = ids.containsKey(id)
 }
