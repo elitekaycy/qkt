@@ -466,6 +466,15 @@ brokers:
 The daemon connects each Bybit account at startup and refuses to start if the connection is
 rejected. Bybit is never enabled by environment variables alone.
 
+Only Bybit's `Trade` executions are fills. A `bybit_linear` account books its perpetuals' funding:
+Bybit settles each funding as an execution of type `Funding`, whose `execFee` is the amount the
+account paid (negative when it received) on the position of `execQty` (`side` `Sell` a short). Each
+strategy holding the perpetual books its part as financing, exactly as on a gateway account (below).
+qkt hears funding on the private execution stream and reads it back from `/v5/execution/list`, at
+startup over the last 7 days and then every 5 minutes, so funding settled while qkt was down is booked,
+once. Liquidation, auto-deleverage and delivery executions are not fills: the position reconcile
+applies them.
+
 ### `type: gateway`
 
 One entry per account on a VGP v1 venue gateway

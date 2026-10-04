@@ -90,5 +90,5 @@ Venues differ in how funding works, and qkt must not know which venue it is on:
 ## 6. Out of scope (tracked separately)
 
 The rest of #1295 (book depth, mark/index and per-contract Greeks as rule inputs, open interest,
-liquidations, aggressor side) each becomes its own capability later; the Bybit direct connector's
-funding (outside VGP).
+liquidations, aggressor side) each becomes its own capability later. The Bybit direct connector's
+funding (outside VGP) was added by #1305: its `Funding` executions become the same `FundingCharged`.
