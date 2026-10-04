@@ -1,6 +1,7 @@
 package com.qkt.broker.continuous
 
 import com.qkt.broker.SubmitAck
+import com.qkt.broker.liquidation.LiquidatingVenue
 import com.qkt.bus.EventBus
 import com.qkt.common.Clock
 import com.qkt.common.MonotonicSequenceGenerator
@@ -117,6 +118,12 @@ internal class StreamLane(
             return
         }
         venue.broker.cancel(order.venueId)
+    }
+
+    /** Has a liquidating venue close the stream's positions on its contract; nothing while a roll is in flight. */
+    fun liquidate() {
+        val index = current?.takeUnless { rolls.inFlight } ?: return
+        (venue.broker as? LiquidatingVenue)?.liquidate(chain.contractSymbol(index))
     }
 
     /** Stops the stream's venue. */
