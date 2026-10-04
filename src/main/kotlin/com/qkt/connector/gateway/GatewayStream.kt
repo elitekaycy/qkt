@@ -7,7 +7,7 @@ import kotlinx.serialization.json.Json
  * [apiKey]. New events reach [onEvent] in sequence order; an event whose `seq` was already processed
  * is dropped. A `reset` event, a change of `stream`, or a skipped `seq` (events lost) calls
  * [onReset] with the reason before anything newer is delivered, so the caller resynchronizes from REST.
- * A dropped socket reconnects with `since=<last seq>` after a backoff that starts at
+ * A dropped socket reconnects with `since=<last seq>` (and the `stream` it belongs to) after a backoff that starts at
  * [initialBackoffMs] and doubles to [maxBackoffMs]; [onConnection] hears every drop and reconnect.
  */
 class GatewayStream(
@@ -27,12 +27,22 @@ class GatewayStream(
         GatewaySocket(
             "stream",
             apiKey,
-            { baseUrl + "/v1/stream" + (synchronized(lock) { lastSeq }?.let { "?since=$it" } ?: "") },
+            { baseUrl + "/v1/stream" + resumeQuery() },
             ::receive,
             onConnection,
             initialBackoffMs,
             maxBackoffMs,
         )
+
+    /**
+     * `?since=<last seq>&stream=<its stream>` once anchored: the gateway resets a client whose stream is not
+     * its current one even when the seq happens to fit it (a restarted gateway's log).
+     */
+    private fun resumeQuery(): String =
+        synchronized(lock) {
+            val seq = lastSeq ?: return@synchronized ""
+            "?since=$seq" + (streamId?.let { "&stream=$it" } ?: "")
+        }
 
     /** Takes [stream] at [seq] as already processed, so [start] replays everything after it. */
     fun anchor(
