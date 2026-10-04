@@ -14,16 +14,39 @@ internal class GatewayAccountState {
     @Volatile var positions: Map<String, BigDecimal> = emptyMap()
         private set
 
+    /** A hedging account's positions per ticket, by venue code: a `position` event is one ticket of a code. */
+    @Volatile private var tickets: Map<String, Map<String, BigDecimal>> = emptyMap()
+
     /** Takes a resynchronization's [state]. */
+    @Synchronized
     fun apply(state: GatewaySyncState) {
         equity = state.equity
         accounting = state.accounting
         positions = state.positions
+        tickets = state.tickets
     }
 
-    /** Takes a `position` event. */
+    /** Takes a `position` event: a netting code's whole position, or one ticket of a hedging code's. */
+    @Synchronized
     fun position(position: WirePosition) {
-        positions = positions + (position.symbol to BigDecimal(position.quantity))
+        val quantity = BigDecimal(position.quantity)
+        val ticket = position.ticket
+        if (ticket == null) {
+            positions = positions + (position.symbol to quantity)
+            return
+        }
+        val held =
+            tickets[position.symbol].orEmpty().let {
+                if (quantity.signum() ==
+                    0
+                ) {
+                    it - ticket
+                } else {
+                    it + (ticket to quantity)
+                }
+            }
+        tickets = tickets + (position.symbol to held)
+        positions = positions + (position.symbol to held.values.fold(BigDecimal.ZERO, BigDecimal::add))
     }
 
     /** Takes an `account` event. */
