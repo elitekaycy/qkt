@@ -12,7 +12,6 @@ import com.qkt.bus.EventBus
 import com.qkt.common.Clock
 import com.qkt.common.Money
 import com.qkt.common.MonotonicSequenceGenerator
-import com.qkt.common.Side
 import com.qkt.common.TradingCalendar
 import com.qkt.derivatives.futures.PriceSpace
 import com.qkt.events.BrokerEvent
@@ -142,27 +141,8 @@ class ExchangeSimulator(
         return price.setScale(Money.SCALE, Money.ROUNDING)
     }
 
-    /**
-     * The signed quantity of [request]'s strategy's other working orders on its contract that could fill
-     * on the same tick as it: same side, set off the same way ([CoFill]). A bracket's take-profit (filled as
-     * the price rises) and stop (as it falls) never fill together, so neither counts against the other.
-     */
-    private fun pendingOf(request: OrderRequest): BigDecimal =
-        working.values
-            .filter {
-                it.symbol == request.symbol &&
-                    it.strategyId == request.strategyId &&
-                    it.id != request.id &&
-                    CoFill.together(it, request)
-            }.fold(BigDecimal.ZERO) { total, o ->
-                if (o.side ==
-                    Side.BUY
-                ) {
-                    total.add(o.quantity)
-                } else {
-                    total.subtract(o.quantity)
-                }
-            }
+    /** The signed quantity of [request]'s strategy's other working orders that could fill with it ([CoFill]). */
+    private fun pendingOf(request: OrderRequest): BigDecimal = CoFill.pending(working.values, request)
 
     /** Cancel working orders that would open exposure inside their contract's expiry guard window. */
     private fun cancelGuarded() {
