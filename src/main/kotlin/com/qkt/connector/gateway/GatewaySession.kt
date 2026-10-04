@@ -61,15 +61,7 @@ internal class GatewaySession(
             ::alertUnreachable,
             resyncRetryMs,
         )
-    private val decoder =
-        GatewayEventDecoder(
-            ledger::onOrder,
-            ledger::onFill,
-            ledger::onSettlement,
-            account::position,
-            account::account,
-            funding::record,
-        )
+    private val decoder = GatewayEventDecoder(ledger, account, funding::record)
     private val stream = streamFactory(::onEvent, { reason -> resyncer.resync("stream $reason") }, ::onConnection)
     private var started = false
 

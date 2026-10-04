@@ -15,6 +15,13 @@ internal class GatewayEventDecoder(
     private val onAccount: (WireAccount) -> Unit,
     private val onFunding: (WireFunding) -> Unit,
 ) {
+    /** Decodes into [ledger] (orders, fills, settlements), [account] (positions, account) and [onFunding]. */
+    constructor(
+        ledger: GatewayLedger,
+        account: GatewayAccountState,
+        onFunding: (WireFunding) -> Unit,
+    ) : this(ledger::onOrder, ledger::onFill, ledger::onSettlement, account::position, account::account, onFunding)
+
     private val log = LoggerFactory.getLogger(GatewayEventDecoder::class.java)
     private val json = Json { ignoreUnknownKeys = true }
 
