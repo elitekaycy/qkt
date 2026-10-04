@@ -6,6 +6,7 @@ import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.Side
 import com.qkt.events.BrokerEvent
 import com.qkt.events.CostIncurred
+import com.qkt.events.FillAccountedEvent
 import com.qkt.events.FillAccountingKind
 import com.qkt.events.FundingCharged
 import com.qkt.execution.LegIntent
@@ -13,6 +14,7 @@ import com.qkt.marketdata.MarketPriceProvider
 import com.qkt.persistence.FundingPersistence
 import com.qkt.persistence.PersistedFunding
 import com.qkt.positions.LegRole
+import com.qkt.positions.Position
 import com.qkt.positions.StrategyPositionTracker
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
@@ -122,12 +124,59 @@ class FundingBookingTest {
         assertThat(costs.map { it.reason }).containsExactly("funding tx-1", "funding tx-2")
     }
 
+    private fun closed(
+        strategy: String,
+        before: String,
+    ) = FillAccountedEvent(
+        orderId = "c-$strategy",
+        strategyId = strategy,
+        symbol = perp,
+        fillSliceId = "c-$strategy:1",
+        sourceFillSequenceId = 1L,
+        cumulativeFilled = null,
+        modeledCommissionAccount = BigDecimal.ZERO,
+        venueCostsAccount = BigDecimal.ZERO,
+        totalCostsAccount = BigDecimal.ZERO,
+        accountNativeRealized = BigDecimal.ZERO,
+        strategyNativeRealized = BigDecimal.ZERO,
+        nativeCurrency = "USDC",
+        grossAccountRealized = BigDecimal.ZERO,
+        grossStrategyAccountRealized = BigDecimal.ZERO,
+        accountCurrency = "USDC",
+        netAccountRealized = BigDecimal.ZERO,
+        netStrategyAccountRealized = BigDecimal.ZERO,
+        conversionRate = null,
+        conversionTimestampMs = null,
+        conversionSource = null,
+        contractSize = BigDecimal.ONE,
+        accountPositionBefore = null,
+        accountPositionAfter = null,
+        strategyPositionBefore = Position(perp, BigDecimal(before), BigDecimal("120")),
+        strategyPositionAfter = null,
+        reducedExposure = true,
+        partial = false,
+    )
+
     @Test
-    fun `a record with no position to share it by is not booked`() {
+    fun `funding realized once the positions are gone is shared by what each closed since, then forgotten`() {
+        bind("a", "b")
+        bus.publish(closed("a", "30"))
+        bus.publish(closed("b", "-10"))
+
+        bus.publish(funding("tx-day", "4", "0"))
+        bus.publish(funding("tx-next", "4", "0"))
+
+        assertThat(costs.map { it.strategyId to it.amount.stripTrailingZeros().toPlainString() })
+            .containsExactly("a" to "6", "b" to "-2")
+        assertThat(saved.byOwner.getValue("a").closed).isEmpty()
+    }
+
+    @Test
+    fun `a record no strategy here held or closed since the symbol's last funding is not booked`() {
         bind("a")
-        hold("a", Side.BUY, "10")
 
         bus.publish(funding("tx-1", "1", "0"))
+        bus.publish(funding("tx-2", "1", "10"))
 
         assertThat(costs).isEmpty()
     }

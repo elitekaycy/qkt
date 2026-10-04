@@ -14,7 +14,8 @@ internal class FundingFile(
         ownerId: String,
         funding: PersistedFunding,
     ) {
-        runCatching { json.encodeToString(FundingDto.serializer(), FundingDto(STATE_SCHEMA_VERSION, funding.sinceMs, funding.booked)) }
+        val closed = funding.closed.mapValues { (_, held) -> held.mapValues { (_, q) -> q.toPlainString() } }
+        runCatching { json.encodeToString(FundingDto.serializer(), FundingDto(STATE_SCHEMA_VERSION, funding.sinceMs, funding.booked, closed)) }
             .onSuccess { writer.write(ownerId, FUNDING_FILE, it) }
             .onFailure { e -> writer.recordFailure("saveFunding encode for $ownerId", e) }
     }
@@ -30,7 +31,7 @@ internal class FundingFile(
         require(dto.version == STATE_SCHEMA_VERSION) {
             "loadFunding schema mismatch for $ownerId: ${dto.version} != $STATE_SCHEMA_VERSION"
         }
-        return PersistedFunding(dto.sinceMs, dto.booked)
+        return PersistedFunding(dto.sinceMs, dto.booked, dto.closed.mapValues { (_, held) -> held.mapValues { (_, q) -> q.toBigDecimal() } })
     }
 
     @Serializable
@@ -38,6 +39,7 @@ internal class FundingFile(
         val version: Int,
         val sinceMs: Long,
         val booked: Map<String, Long>,
+        val closed: Map<String, Map<String, String>> = emptyMap(),
     )
 }
 

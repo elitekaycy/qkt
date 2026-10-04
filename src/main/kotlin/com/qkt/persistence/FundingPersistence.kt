@@ -3,11 +3,14 @@ package com.qkt.persistence
 /**
  * What a session has booked of a venue's perpetual funding: records funded before [sinceMs] (its first
  * start) are not its own to book, and [booked] holds each record booked since, by venue id, with the time
- * it was funded at, so a record heard again (a replay, a restart) is never booked twice.
+ * it was funded at, so a record heard again (a replay, a restart) is never booked twice. [closed] holds, by
+ * symbol, the holding each strategy closed since the symbol's last funding, for a venue that realizes a
+ * day's funding after the position is gone.
  */
 data class PersistedFunding(
     val sinceMs: Long,
     val booked: Map<String, Long>,
+    val closed: Map<String, Map<String, java.math.BigDecimal>> = emptyMap(),
 )
 
 /**
