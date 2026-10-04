@@ -23,7 +23,6 @@ import com.qkt.marketdata.TickFeed
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.marketdata.source.NullMarketSource
 import com.qkt.pnl.BookBalanceView
-import com.qkt.pnl.SwapFinancingBook
 import com.qkt.positions.Position
 import com.qkt.risk.RiskRule
 import com.qkt.risk.RunawayBreaker
@@ -139,7 +138,7 @@ class ReplayEngine(
     private val positions = books.positions
     private val recorder = ReplayRecorder(initialTimestamp)
     private val pipeline: TradingPipeline
-    private val swapBook: SwapFinancingBook
+    private val financing: ReplayFinancing
     private val analytics: ReplayAnalytics
     private val results: ReplayResultBuilder
 
@@ -275,7 +274,7 @@ class ReplayEngine(
         // positions when it is marked. Without it the backtest would never release a reservation.
         bookRiskController?.let { controller -> wireBookReservations(bus, controller) }
         holder[0] = pipeline
-        swapBook = replaySwapBook(instruments, books, strategies.map { it.first }, allSymbols)
+        financing = ReplayFinancing(instruments, books, strategies.map { it.first }, allSymbols)
         subscribeHaltKillSwitch(bus, pipeline, strategies, books.strategyPositions, ids, clock, bookCapital)
 
         // Tick-resolved fills: replace the bar feed with one that loads real ticks for fill-possible
@@ -296,7 +295,7 @@ class ReplayEngine(
                 books = books,
                 recorder = recorder,
                 analytics = analytics,
-                swapBook = swapBook,
+                financing = financing,
                 pipeline = pipeline,
                 instruments = instruments,
                 cadence = this.cadence,
@@ -353,7 +352,7 @@ class ReplayEngine(
     }
 
     private fun accrueFinancing(toMs: Long) =
-        swapBook.accrueBetween(currentTimestamp, toMs) { strategyId, boundaryMs, amount ->
+        financing.accrueBetween(currentTimestamp, toMs) { strategyId, boundaryMs, amount ->
             currentTimestamp = boundaryMs
             clock.time = boundaryMs
             pipeline.applyFinancing(strategyId, amount)
