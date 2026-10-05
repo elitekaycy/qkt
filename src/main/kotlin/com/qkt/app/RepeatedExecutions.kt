@@ -20,9 +20,15 @@ internal class RepeatedExecutions(
     private val repeatedSlices: MutableSet<BrokerEvent.OrderPartiallyFilled> =
         Collections.newSetFromMap(IdentityHashMap())
 
-    /** True when [e] repeats a completed order's fill. Read before the order manager books [e]. */
-    fun isRepeatedFill(e: BrokerEvent.OrderFilled): Boolean =
-        e.updatesOrderExecution && orderFor(e.clientOrderId)?.state == OrderState.FILLED
+    /**
+     * True when [e] repeats a completed order's fill. Read before the order manager books [e]. A fill on
+     * the order's opposite side is a venue close of the position it opened (an attached target or stop
+     * reported under the entry's id), never a repeat.
+     */
+    fun isRepeatedFill(e: BrokerEvent.OrderFilled): Boolean {
+        val order = orderFor(e.clientOrderId) ?: return false
+        return e.updatesOrderExecution && order.state == OrderState.FILLED && e.side == order.request.side
+    }
 
     /** Judges [e] against the order's executed quantity before the order manager applies it. */
     fun observeSlice(e: BrokerEvent.OrderPartiallyFilled) {
