@@ -84,6 +84,7 @@ internal class StrategyBinder(
             requireMultiPositionCapability(strategyId, strategy, broker)
             requireVolumeCapability(strategyId, strategy, source)
             requireMarkPrices(strategyId, strategy, source)
+            requireTradeFlow(strategyId, strategy, source)
             requireOptionMarks(strategyId, strategy, source, base.instruments)
             requireBookCapability(strategyId, strategy, bookBalance)
             strategy.bindStatePersistor(strategyId, persistor)

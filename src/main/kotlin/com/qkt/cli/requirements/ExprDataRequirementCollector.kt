@@ -31,7 +31,9 @@ import com.qkt.dsl.ast.StreamFieldRef
 import com.qkt.dsl.ast.StringLit
 import com.qkt.dsl.ast.TradesRef
 import com.qkt.dsl.ast.UnaryOp
+import com.qkt.dsl.compile.FlowFieldCompiler
 import com.qkt.dsl.stdlib.IndicatorRegistry
+import com.qkt.marketdata.flow.FlowKind
 
 /**
  * Walks strategy expressions and records which stream aliases they read quotes (`bid`, `ask`,
@@ -49,6 +51,9 @@ internal class ExprDataRequirementCollector {
     /** Aliases whose mark or index the strategy reads, in first-seen order. */
     val markAliases = mutableSetOf<String>()
 
+    /** Each alias and flow series the strategy reads (`x.buy_volume[n]`), with the most bars back it reads. */
+    val flowLookbacks = mutableMapOf<Pair<String, FlowKind>, Int>()
+
     /** Records the quote and volume stream aliases [expr] reads, recursing into sub-expressions. */
     fun walk(expr: ExprAst?) {
         when (expr) {
@@ -58,6 +63,15 @@ internal class ExprDataRequirementCollector {
                 if (expr.field in DslVocabulary.markFields) markAliases.add(expr.stream)
             }
             is IndicatorCall -> {
+                val flow = expr.args.firstOrNull() as? StreamFieldRef
+                if (expr.name.equals("LAG", ignoreCase = true) &&
+                    flow != null &&
+                    flow.field in DslVocabulary.flowFields
+                ) {
+                    val key = flow.stream to FlowFieldCompiler.kind(flow.field)
+                    val back = (expr.args.getOrNull(1) as? NumLit)?.value?.toInt() ?: 1
+                    flowLookbacks[key] = maxOf(back, flowLookbacks[key] ?: 0)
+                }
                 if (IndicatorRegistry.spec(expr.name)?.requiresVolume == true) {
                     val aliases = mutableSetOf<String>()
                     collectAliases(expr.args.firstOrNull(), aliases)

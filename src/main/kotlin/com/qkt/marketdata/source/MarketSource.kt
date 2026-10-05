@@ -6,6 +6,7 @@ import com.qkt.derivatives.options.chain.OptionMarks
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.TickFeed
+import com.qkt.marketdata.flow.TradeFlow
 import com.qkt.marketdata.marks.MarkPrices
 
 interface MarketSource {
@@ -33,6 +34,12 @@ interface MarketSource {
      * none. A routing source answers for the leaf that serves [symbol], as [capabilitiesFor] does.
      */
     fun optionMarksFor(symbol: String): OptionMarks? = null
+
+    /**
+     * Where [symbol]'s trade flow (aggressor and liquidated volume per window) is read ([TradeFlow]), or null when
+     * this source serves none. A routing source answers for the leaf that serves [symbol], as [capabilitiesFor] does.
+     */
+    fun tradeFlowFor(symbol: String): TradeFlow? = null
 
     fun liveTicks(symbols: List<String>): TickFeed =
         throw UnsupportedDataException(MarketSourceCapability.LIVE_TICKS, this::class.java.simpleName ?: "MarketSource")

@@ -69,7 +69,7 @@ class ExprCompiler(
             is UnaryOp -> OperatorCompiler.compileUnary(expr, ruleAlias, this)
             is CmpOp -> OperatorCompiler.compileCmp(expr, ruleAlias, this)
             is StreamFieldRef -> StreamFieldCompiler.compile(expr)
-            is IndicatorCall -> indicatorCalls.compile(expr)
+            is IndicatorCall -> FlowFieldCompiler.lookback(expr) ?: indicatorCalls.compile(expr)
             is AccountRef -> AccountStateCompiler.compileAccountRef(expr)
             is StreakRef -> AccountStateCompiler.compileStreakRef(expr)
             is TradesRef -> AccountStateCompiler.compileTradesRef(expr)

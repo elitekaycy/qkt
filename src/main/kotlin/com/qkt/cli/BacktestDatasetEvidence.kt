@@ -14,7 +14,8 @@ import java.time.ZoneOffset
 
 /**
  * Resolves `--dataset` into the evidence a report carries, validating the snapshot against the run, and
- * checks the marks the strategies read are stored under the run's data root ([BacktestMarkCoverage]).
+ * checks the marks and trade flow the strategies read are stored under the run's data root ([BacktestMarkCoverage],
+ * [BacktestFlowCoverage]).
  */
 internal object BacktestDatasetEvidence {
     data class DatasetContext(
@@ -32,6 +33,7 @@ internal object BacktestDatasetEvidence {
         snapshotContext(args, strategyAsts, symbols, from, to).also { context ->
             val root = args.option("data-root") ?: context.dataRoot ?: DataRoot.resolve().toString()
             BacktestMarkCoverage.require(Path.of(root), strategyAsts, from, to)
+            BacktestFlowCoverage.require(Path.of(root), strategyAsts, from, to)
         }
 
     private fun snapshotContext(

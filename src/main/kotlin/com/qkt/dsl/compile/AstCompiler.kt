@@ -135,6 +135,10 @@ class AstCompiler {
         val metaRefs = collectMetaRefs(ast, streams)
         val markSymbols = collectMetaRefs(ast, streams, DslVocabulary.markFields).map { it.qktSymbol }.toSet()
         val optionMarkSymbols = collectMetaRefs(ast, streams, DslVocabulary.optionFields).map { it.qktSymbol }.toSet()
+        val flowReads =
+            collectMetaRefs(ast, streams, DslVocabulary.flowFields)
+                .map { FlowRead(it.qktSymbol, FlowFieldCompiler.kind(it.field)) }
+                .toSet()
         val quoteFieldStreams = collectQuoteFieldStreams(resolvedConditions + resolvedSequenceConditions)
 
         val perStreamWarmup: Map<String, Int> = WarmupRequirements.compute(ast)
@@ -167,6 +171,7 @@ class AstCompiler {
             volumeRequiringSymbols = volumeRequiringSymbols,
             markSymbols = markSymbols,
             optionMarkSymbols = optionMarkSymbols,
+            flowReads = flowReads,
             usesBookSizing = actionCompiler.usesBookSizing,
             metaRefs = metaRefs,
             warmupGate = warmupGate,
