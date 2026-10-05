@@ -152,6 +152,13 @@ Body: the `Order` fields a client sets (`client_order_id`, `symbol`, `side`, `ty
 with the existing `Order` in its current state and never places a second order; the same id with a
 different body is `409 conflict`. A client that saw a timeout resubmits the same body.
 
+**A market order never rests.** An order of type `market`, or a `stop` once triggered, fills what the
+venue offers at that moment; any remainder is cancelled, never left working, whatever its
+`time_in_force`. The order then ends `cancelled` with its `filled_quantity`, and the fills already booked
+stand. A gateway whose venue leaves such a remainder working (Deribit turns it into a limit at its
+price-band edge) cancels it as soon as it sees it, and reports the order with the `type` the client sent.
+The client never sends the remainder again on its own: whether to trade it is the strategy's decision.
+
 A `client_order_id` is at most 64 characters (it travels in the venue's order label) and the gateway
 remembers it for ever, so a client never sends one twice for different orders. The qkt client sends
 its engine order id with the order's submit time appended (`dsl-s--4.mg8q2kv1`): an engine may hand
