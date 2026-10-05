@@ -5,6 +5,7 @@ import com.qkt.instrument.ContractCatalog
 import com.qkt.instrument.FuturesRoot
 import com.qkt.instrument.PriceAdjustment
 import com.qkt.instrument.RollHistory
+import com.qkt.instrument.RollPolicy
 import java.time.Instant
 
 /** One stretch of a continuous stream served by contract [index], over `[fromMs, toMs)`. */
@@ -16,12 +17,13 @@ data class ChainSegment(
 
 /**
  * A continuous futures stream: which contract of [root] the [selector] follows at any instant, and
- * the forward adjustment that joins them, taken from the measured [history]. Pure and immutable; the
- * same catalog, policy and history give the same answers in backtest and live.
+ * the adjustment that joins them, taken from the measured [history]. Pure and immutable; the same
+ * catalog, policy and history give the same answers in backtest and live.
  *
- * The adjustment is anchored at the first contract the history has a roll for ([anchorIndex]) and
- * covers every contract up to the last measured roll; asking for a price mapping outside that range
- * fails with the command that measures more rolls.
+ * The adjustment covers every contract from the first one the history has a roll for ([firstIndex])
+ * up to the last measured roll; asking for a price mapping outside that range fails with the command
+ * that measures more rolls. It is anchored at the policy's [RollPolicy.anchor] contract when it
+ * declares one, which must lie in that range, and otherwise at [firstIndex] (forward adjustment).
  */
 class ContinuousChain(
     /** The root this stream follows. */
@@ -42,8 +44,8 @@ class ContinuousChain(
     /** When each contract is front. */
     val schedule: RollSchedule = RollSchedule(catalog.contracts, policy)
 
-    /** The first contract this stream's adjustment is anchored at. */
-    val anchorIndex: Int
+    /** The first contract this stream's adjustment covers. */
+    val firstIndex: Int
 
     /**
      * The first instant this stream is served: the first measured roll. The anchor contract before it
@@ -61,21 +63,14 @@ class ContinuousChain(
             "roll history for ${root.root} was built for policy ${measured.policy}, " +
                 "but the root rolls ${policy.key}; rebuild it with ${buildHint()}"
         }
-        val prices = schedule.transitions.map { t -> pricesAt(measured, t) }
-        val first = prices.indexOfFirst { it != null }
-        require(first >= 0) { "roll history for ${root.root} has no roll for $symbol; build it with ${buildHint()}" }
-        val run = prices.drop(first).takeWhile { it != null }.filterNotNull()
-        val resumed = prices.drop(first + run.size).indexOfFirst { it != null }
-        require(resumed < 0) {
-            val missing = Instant.ofEpochMilli(schedule.transitions[first + run.size].atMs)
-            "roll history for ${root.root} skips the $missing roll of $symbol; rebuild it with ${buildHint()}"
-        }
-        anchorIndex = first + selector.offset
+        val run = MeasuredRun(schedule, measured, selector, symbol, buildHint())
+        val first = run.first
+        firstIndex = first + selector.offset
         servedFromMs = schedule.transitions[first].atMs
         if (policy.adjust == PriceAdjustment.PANAMA) requireRollsBeforeGuard(schedule.transitions.drop(first))
-        adjustment = AdjustmentChain(policy.adjust, run)
+        adjustment = AdjustmentChain(policy.adjust, run.rolls, anchorPosition(run.rolls.size + 1))
         measuredRolls =
-            run.withIndex().associate { (k, roll) ->
+            run.rolls.withIndex().associate { (k, roll) ->
                 val transition = schedule.transitions[first + k]
                 transition.fromIndex + selector.offset to MeasuredRoll(transition.atMs, roll)
             }
@@ -118,11 +113,11 @@ class ContinuousChain(
     fun indexOf(contract: String): Int? = schedule.contracts.indices.firstOrNull { contractSymbol(it) == contract }
 
     /** Whether contract [index] lies inside the measured history, so [spaceFor] can map it. */
-    fun covers(index: Int): Boolean = index - anchorIndex in 0 until adjustment.size
+    fun covers(index: Int): Boolean = index - firstIndex in 0 until adjustment.size
 
     /** The price mapping of contract [index]; fails outside the measured history. */
     fun spaceFor(index: Int): PriceSpace {
-        val position = index - anchorIndex
+        val position = index - firstIndex
         require(position >= 0) {
             "$symbol needs ${contractSymbol(index)}, before the roll history starts; build more with ${buildHint()}"
         }
@@ -156,18 +151,18 @@ class ContinuousChain(
             .filter { it.fromMs < it.toMs }
     }
 
-    private fun pricesAt(
-        history: RollHistory,
-        transition: RollTransition,
-    ): RollPrices? {
-        val from = schedule.contracts.getOrNull(transition.fromIndex + selector.offset) ?: return null
-        val to = schedule.contracts.getOrNull(transition.toIndex + selector.offset) ?: return null
-        return history
-            .find(
-                transition.atMs,
-                from.symbol,
-                to.symbol,
-            )?.let { RollPrices(it.fromPriceValue(), it.toPriceValue()) }
+    /** Where the policy's anchor sits among the [covered] contracts from [firstIndex]; 0 without one. */
+    private fun anchorPosition(covered: Int): Int {
+        val anchor = policy.anchor ?: return 0
+        val index = schedule.contracts.indexOfFirst { it.symbol == anchor }
+        require(index >= 0) { "futures root ${root.root}: roll.anchor $anchor is not a contract of its chain" }
+        val position = index - firstIndex
+        require(position in 0 until covered) {
+            "futures root ${root.root}: roll.anchor $anchor is outside the measured history of $symbol " +
+                "(${contractSymbol(firstIndex)} to ${contractSymbol(firstIndex + covered - 1)}); " +
+                "anchor inside it or build more with ${buildHint()}"
+        }
+        return position
     }
 
     /**

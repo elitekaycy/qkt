@@ -203,6 +203,7 @@ futures:
   - root: BINANCE_UM:BTCUSDT
     # …multiplier, tickSize, volumeStep, volumeMin as above…
     roll: { daysBeforeExpiry: 8, atUtc: "08:00", adjust: panama }   # adjust: none | panama | ratio
+    # optional: anchor: BTCUSDT_250328   # the contract that keeps raw prices (default: the first measured)
 ```
 
 ```bash
@@ -224,7 +225,17 @@ interest reaches half of theirs. Judging against neighbours, not a fixed number,
 of market growth. Contracts without the figures always chain.
 
 The series is adjusted forward from the first measured roll, so history never changes when new rolls
-are added and nothing leaks from the future. Each contract's bars must be fetched at the strategy's
+are added and nothing leaks from the future.
+
+Over a long chain in steep contango a forward panama series can fall below zero: crude's April 2020
+super-contango does it from any start year, and qkt refuses the run. `anchor:` names the contract that
+keeps raw prices instead; contracts before it are shifted backward onto it, contracts after it forward.
+Distances, P&L and roll costs are unchanged, and a roll measured after the anchor still never moves an
+earlier contract. The cost is the usual one of back-adjusted data: before the anchor, price levels
+include roll gaps from later dates, so a rule on an absolute level (`close > 50`) sees the future;
+rules on distances and changes do not. Pick an anchor that keeps the whole window positive (for crude
+2000-2022, one from `CLM20` to `CLM22`; the newest, `CLZ22`, still puts the April 2020 lows below zero).
+The anchor must lie inside the measured history. Each contract's bars must be fetched at the strategy's
 timeframe, and that timeframe must divide the roll time (an 08:00 roll works with 15m or 1h bars,
 not 1d).
 
