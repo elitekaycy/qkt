@@ -3,6 +3,7 @@ package com.qkt.connector.bybit
 import com.qkt.bus.EventBus
 import com.qkt.common.Clock
 import com.qkt.connector.bybit.spot.BybitSpotStateRecovery
+import java.math.BigDecimal
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
@@ -62,10 +63,29 @@ class BybitExecutionReplay(
         return executedOrderIds
     }
 
-    /** Replays the executions of order [clientOrderId] alone, oldest first (Bybit's default window: 7 days). */
-    fun replayOrder(clientOrderId: String) {
+    /**
+     * Replays the executions of order [clientOrderId] alone, oldest first (Bybit's default window: 7 days).
+     * The oldest that add up to [alreadyBooked] were booked before a restart: marked seen, not published.
+     */
+    fun replayOrder(
+        clientOrderId: String,
+        alreadyBooked: BigDecimal = BigDecimal.ZERO,
+    ) {
         val params = mapOf("category" to category, "orderLinkId" to clientOrderId, "limit" to "100")
-        oldestFirst(read(params, "order execution replay").first).forEach { route(it, mutableSetOf()) }
+        var skipped = BigDecimal.ZERO
+        for (execution in oldestFirst(read(params, "order execution replay").first)) {
+            val quantity = execution["execQty"]?.jsonPrimitive?.content?.toBigDecimalOrNull() ?: BigDecimal.ZERO
+            val execId = execution["execId"]?.jsonPrimitive?.content
+            if (execId != null &&
+                BybitExecutionKind.of(execution) == BybitExecutionKind.FILL &&
+                skipped + quantity <= alreadyBooked
+            ) {
+                skipped += quantity
+                seenExecIds.add(execId)
+                continue
+            }
+            route(execution, mutableSetOf())
+        }
     }
 
     private fun read(
