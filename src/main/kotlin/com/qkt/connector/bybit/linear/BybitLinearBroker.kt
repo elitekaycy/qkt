@@ -8,7 +8,9 @@ import com.qkt.bus.EventBus
 import com.qkt.common.Clock
 import com.qkt.common.net.PeriodicReconciler
 import com.qkt.connector.bybit.BybitExecutionStream
+import com.qkt.connector.bybit.BybitHeldEnds
 import com.qkt.connector.bybit.BybitOrderTranslator
+import com.qkt.connector.bybit.BybitOrders
 import com.qkt.connector.bybit.BybitSymbol
 import com.qkt.connector.bybit.BybitTransport
 import com.qkt.connector.bybit.boundedExecIdSet
@@ -47,14 +49,12 @@ class BybitLinearBroker(
     private val log = LoggerFactory.getLogger(BybitLinearBroker::class.java)
     private val json = Json { ignoreUnknownKeys = true }
 
-    private val orders = BybitLinearOrders()
+    private val orders = BybitOrders()
+    private val ends = BybitHeldEnds(orders, bus)
     private val seenExecIds: MutableSet<String> = boundedExecIdSet()
     private val lastFillTime: AtomicLong = AtomicLong(clock.now() - recoveryWindowMs)
-
     private val reconciler: PeriodicReconciler
-
     override val name: String = "BybitLinear"
-
     override val capabilities: Set<OrderTypeCapability> =
         setOf(
             OrderTypeCapability.MARKET,
@@ -79,8 +79,8 @@ class BybitLinearBroker(
                 lastFillTime,
                 orders::strategyOf,
                 funding::take,
-                skipUnowned = true,
-            ) { exec -> orders.booked(exec.clientOrderId, exec.quantity)?.let(bus::publish) }
+                afterFill = ends::booked,
+            )
         transport.subscribe("execution", executions::onFrame)
 
         val recovery =
@@ -93,7 +93,7 @@ class BybitLinearBroker(
                 lastFillTimeProvider = lastFillTime::get,
                 seenExecIds = seenExecIds,
                 funding = funding,
-                orders = orders,
+                ends = ends,
             )
         transport.onDisconnect { reason ->
             bus.publish(
@@ -419,7 +419,7 @@ class BybitLinearBroker(
                             clock.now(),
                         )
                     // Executed beyond what was booked: the end waits for those fills (#1330).
-                    if (!orders.hold(end, parsed.executed)) bus.publish(end)
+                    ends.end(end, parsed.executed)
                 }
                 "Filled" -> orders.end(parsed.clientOrderId)
                 "Rejected" ->

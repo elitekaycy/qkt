@@ -1,18 +1,18 @@
-package com.qkt.connector.bybit.linear
+package com.qkt.connector.bybit
 
 import com.qkt.connector.bybit.spot.BybitSpotStateRecovery.ManagedOrderView
 import com.qkt.events.BrokerEvent
 import java.math.BigDecimal
 
 /**
- * The orders [BybitLinearBroker] placed and whose they are. An order's owner outlives its end: Bybit can
+ * The orders one Bybit broker placed and whose they are. An order's owner outlives its end: Bybit can
  * push an execution after the order's `Filled` or `Cancelled` update, or only the `/v5/execution/list`
  * replay finds it, and a fill with no owner is never booked (#1330). Owners of ended orders are kept for
  * the last [retainEnded] ended orders. A `Cancelled` update reporting more executed (`cumExecQty`) than
  * has been booked is held until those executions are booked, so the engine hears the fill, then the end,
  * as on the gateway path (#1306).
  */
-class BybitLinearOrders(
+class BybitOrders(
     private val retainEnded: Int = 10_000,
 ) {
     private class Held(
@@ -59,10 +59,9 @@ class BybitLinearOrders(
     @Synchronized
     fun symbolOf(clientOrderId: String): String? = live[clientOrderId]?.symbol
 
-    /** The strategy that owns order [clientOrderId], open or ended; null when qkt does not know it. */
+    /** The strategy that owns order [clientOrderId], open or ended; null when this broker did not place it. */
     @Synchronized
-    fun strategyOf(clientOrderId: String): String? =
-        (live[clientOrderId]?.strategyId ?: ended[clientOrderId])?.takeIf { it.isNotBlank() }
+    fun strategyOf(clientOrderId: String): String? = live[clientOrderId]?.strategyId ?: ended[clientOrderId]
 
     /**
      * Holds [end] while less than [executed] of its order has been booked; true when held, and the order

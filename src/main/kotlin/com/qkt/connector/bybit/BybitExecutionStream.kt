@@ -13,9 +13,9 @@ import org.slf4j.LoggerFactory
 /**
  * One Bybit broker's view of the private `execution` topic: each `Trade` execution of its [category]
  * becomes an [BrokerEvent.OrderFilled] once (by `execId`, in [seenExecIds]), attributed through
- * [strategyOf], then handed to [afterFill]. With [skipUnowned], an execution of an order [strategyOf] does not
- * know (another client's on the same account) is logged and never booked; without it, it is published
- * unattributed. The all-in-one topic carries every category of
+ * [strategyOf], then handed to [afterFill]. An execution of an order [strategyOf] does not know (another
+ * client's on the same account) is logged once and never booked, nor marked seen, so a restart that restores
+ * its order can still book it. The all-in-one topic carries every category of
  * the login, so an entry naming another category is the sibling broker's and is skipped. A `Funding` execution goes to [onFunding]; any other
  * [BybitExecutionKind] is not a fill (see there) and is only logged.
  */
@@ -27,10 +27,10 @@ class BybitExecutionStream(
     private val lastFillTime: AtomicLong,
     private val strategyOf: (String) -> String?,
     private val onFunding: (JsonObject) -> Unit = {},
-    private val skipUnowned: Boolean = false,
     private val afterFill: (BybitOrderTranslator.ParsedExecution) -> Unit = {},
 ) {
     private val log = LoggerFactory.getLogger(BybitExecutionStream::class.java)
+    private val unowned = boundedExecIdSet(1_000)
 
     /** Handles one `execution` [frame]. */
     fun onFrame(frame: JsonObject) {
@@ -54,12 +54,14 @@ class BybitExecutionStream(
 
     private fun fill(execution: JsonObject) {
         val exec = BybitOrderTranslator.parseExecution(execution)
-        if (!seenExecIds.add(exec.execId)) return
-        val strategyId = strategyOf(exec.clientOrderId) ?: ""
-        if (strategyId.isBlank() && skipUnowned) {
-            log.warn("Bybit {} execution of an order qkt did not place; not booked: {}", category, execution)
+        val strategyId = strategyOf(exec.clientOrderId)
+        if (strategyId == null) {
+            if (unowned.add(exec.execId)) {
+                log.warn("Bybit {} execution of an order qkt did not place; not booked: {}", category, execution)
+            }
             return
         }
+        if (!seenExecIds.add(exec.execId)) return
         bus.publish(
             BrokerEvent.OrderFilled(
                 clientOrderId = exec.clientOrderId,
