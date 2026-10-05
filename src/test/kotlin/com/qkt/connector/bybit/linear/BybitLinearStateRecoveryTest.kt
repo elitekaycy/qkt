@@ -50,6 +50,7 @@ class BybitLinearStateRecoveryTest {
                         "c1",
                         "BYBIT_LINEAR:BTCUSDT",
                         Side.BUY,
+                        "s1",
                     ),
             )
 

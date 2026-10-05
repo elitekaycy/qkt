@@ -17,18 +17,20 @@ import org.slf4j.LoggerFactory
 
 /**
  * Replays the linear account's executions since shortly before the last fill from `/v5/execution/list`:
- * each unseen `Trade` becomes an [BrokerEvent.OrderFilled], each `Funding` goes to [funding], and any
- * other [BybitExecutionKind] (a liquidation, an auto-deleverage, a delivery) is left to the position
- * reconcile, since no order of ours filled.
+ * each unseen `Trade` of an order [strategyOf] knows becomes an [BrokerEvent.OrderFilled] with its fee, then
+ * goes to [afterFill]; one of an order qkt did not place is logged and never booked. Each `Funding` goes to
+ * [funding], and any other [BybitExecutionKind] (a liquidation, an auto-deleverage, a delivery) is left to
+ * the position reconcile, since no order of ours filled.
  */
 internal class BybitLinearExecutionReconcile(
     private val transport: BybitTransport,
     private val bus: EventBus,
     private val clock: Clock,
-    private val getKnownOrders: () -> Map<String, BybitSpotStateRecovery.ManagedOrderView>,
+    private val strategyOf: (String) -> String?,
     private val lastFillTimeProvider: () -> Long,
     private val seenExecIds: MutableSet<String>,
     private val funding: BybitLinearFunding,
+    private val afterFill: (BybitOrderTranslator.ParsedExecution) -> Unit = {},
 ) {
     private val log = LoggerFactory.getLogger(BybitLinearExecutionReconcile::class.java)
     private val json = Json { ignoreUnknownKeys = true }
@@ -72,6 +74,16 @@ internal class BybitLinearExecutionReconcile(
         return executedOrderIds
     }
 
+    /** Replays the executions of order [clientOrderId] alone (Bybit's default window: the last 7 days). */
+    fun replayOrder(clientOrderId: String) {
+        val params = mapOf("category" to "linear", "orderLinkId" to clientOrderId, "limit" to "100")
+        val tree = requireBybitOk(transport.getSigned("/v5/execution/list", params), "order execution replay", json)
+        val list =
+            tree["result"]?.jsonObject?.get("list")?.jsonArray
+                ?: throw IllegalStateException("order execution replay response omitted result.list")
+        list.forEach { route(it.jsonObject, mutableSetOf()) }
+    }
+
     /** Handles one [execution]; true when it had not been seen. */
     private fun route(
         execution: JsonObject,
@@ -94,6 +106,11 @@ internal class BybitLinearExecutionReconcile(
         val exec = BybitOrderTranslator.parseExecution(execution)
         executedOrderIds.add(exec.clientOrderId)
         if (!seenExecIds.add(exec.execId)) return false
+        val strategyId = strategyOf(exec.clientOrderId)
+        if (strategyId == null) {
+            log.warn("Bybit linear execution of an order qkt did not place; not booked: {}", execution)
+            return true
+        }
         bus.publish(
             BrokerEvent.OrderFilled(
                 clientOrderId = exec.clientOrderId,
@@ -102,10 +119,12 @@ internal class BybitLinearExecutionReconcile(
                 side = exec.side,
                 price = exec.price,
                 quantity = exec.quantity,
-                strategyId = getKnownOrders()[exec.clientOrderId]?.strategyId ?: "",
+                strategyId = strategyId,
                 timestamp = clock.now(),
+                venueCosts = exec.fee,
             ),
         )
+        afterFill(exec)
         return true
     }
 }
