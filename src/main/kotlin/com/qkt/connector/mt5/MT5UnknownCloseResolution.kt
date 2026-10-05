@@ -76,7 +76,13 @@ internal class MT5UnknownCloseResolution(
                 val fillPrice = MT5UnknownOutcomeMatching.weightedDealPrice(closingDeals)
                 if (filledQuantity.signum() > 0 && fillPrice != null && fillPrice.signum() > 0) {
                     val positionRemainsOpen = position != null
-                    engineCloses.confirmEngineClose(ticket)
+                    engineCloses.confirmEngineClose(
+                        ticket,
+                        EnginePartialClose(
+                            filledQuantity.min(requestedQuantity),
+                            closingDeals.mapTo(HashSet()) { it.ticket },
+                        ).takeIf { positionRemainsOpen },
+                    )
                     if (!positionRemainsOpen) {
                         books.positionBook.forget(ticket)
                     }

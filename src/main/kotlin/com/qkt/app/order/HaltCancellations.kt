@@ -5,9 +5,11 @@ import com.qkt.common.Clock
 import com.qkt.execution.isTerminal
 
 /**
- * Cancels issued by a risk halt, retried with backoff until the broker confirms a terminal
- * state. A halt that leaves an entry live at the venue is a halt that did not happen, so
- * unconfirmed cancels are re-sent and escalated to an operator alert after a few attempts.
+ * Cancels that must take effect, retried with backoff until the broker confirms a terminal
+ * state: those a risk halt issues, and the cancel of an OCO's other leg once one leg executed. A
+ * halt that leaves an entry live at the venue is a halt that did not happen, and an OCO whose other
+ * leg stays live can fill both, so unconfirmed cancels are re-sent and escalated to an operator
+ * alert after a few attempts.
  */
 internal class HaltCancellations(
     private val book: OrderBook,
@@ -23,7 +25,7 @@ internal class HaltCancellations(
 
     private val attempts: MutableMap<String, Attempt> = mutableMapOf()
 
-    /** Starts tracking a halt-issued cancel of [id]; the caller sends the first cancel. */
+    /** Starts tracking a cancel of [id] that must be confirmed; the caller sends the first cancel. */
     fun begin(id: String) {
         attempts[id] = Attempt(attempts = 1, nextAttemptAtMs = clock.now() + RETRY_MS)
     }
@@ -49,7 +51,7 @@ internal class HaltCancellations(
                 state.alerted = true
                 alert(
                     managed.request.strategyId,
-                    "CRITICAL halt cancellation remains unconfirmed for ${managed.id} " +
+                    "CRITICAL cancellation remains unconfirmed for ${managed.id} " +
                         "after ${state.attempts} attempts",
                 )
             }

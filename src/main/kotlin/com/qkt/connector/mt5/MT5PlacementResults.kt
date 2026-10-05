@@ -146,7 +146,7 @@ internal class MT5PlacementResults(
                 ?.let { ticket ->
                     pendingFills.registerPendingTicket(
                         ticket,
-                        MT5TicketMeta(request.id, request.strategyId, protection),
+                        MT5TicketMeta(request.id, request.strategyId, protection, placement.volume),
                     )
                 }
         }

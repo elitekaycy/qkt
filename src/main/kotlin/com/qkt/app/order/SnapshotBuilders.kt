@@ -1,6 +1,7 @@
 package com.qkt.app.order
 
 import com.qkt.execution.OrderRequest
+import com.qkt.execution.OrderState
 import com.qkt.execution.isCompositeShape
 import com.qkt.execution.isTerminal
 import com.qkt.persistence.BracketPair
@@ -119,7 +120,10 @@ internal fun bracketPairsByStrategy(
     return pairsByStrategy
 }
 
-/** Live linked legs that already carry a venue ticket, grouped by strategy. */
+/**
+ * Live linked legs that already carry a venue ticket, plus filled legs whose sibling is still live
+ * (marked executed), grouped by strategy.
+ */
 internal fun ocoLegsByStrategy(
     book: OrderBook,
     siblings: SiblingLinks,
@@ -127,7 +131,9 @@ internal fun ocoLegsByStrategy(
     val ocoLegsByStrategy: MutableMap<String, MutableList<PersistedOcoLeg>> = mutableMapOf()
     for ((legId, siblingIds) in siblings.all) {
         val managed = book[legId] ?: continue
-        if (managed.state.isTerminal) continue
+        val executed = managed.state == OrderState.FILLED
+        if (managed.state.isTerminal && !executed) continue
+        if (executed && siblingIds.none { book[it]?.state?.isTerminal == false }) continue
         val ticket = managed.brokerOrderId ?: continue
         val sid = managed.request.strategyId
         if (sid.isBlank()) continue
@@ -138,6 +144,7 @@ internal fun ocoLegsByStrategy(
                 strategyId = sid,
                 request = managed.request,
                 siblingIds = siblingIds,
+                executed = executed,
             ),
         )
     }

@@ -21,6 +21,7 @@ internal class MT5PartialEntryRecovery(
     private val seedTrackedTickets: (Set<Long>) -> Unit,
 ) {
     private val log = LoggerFactory.getLogger(MT5Broker::class.java)
+    private val bookedResume = MT5BookedPartialResume(profile, bus, clock, partialEntries, seedTrackedTickets)
 
     fun recoverPartialEntries(
         orders: List<com.qkt.execution.ManagedOrder>,
@@ -36,7 +37,11 @@ internal class MT5PartialEntryRecovery(
             if (pendingMatches.size > 1 || positionMatches.size != 1) continue
             val position = positionMatches.single()
             val requestedQuantity = order.request.quantity
-            if (position.volume.signum() <= 0 || position.volume >= requestedQuantity) continue
+            val bookedPartial =
+                position.ticket.toString() in bookedTickets &&
+                    order.cumulativeFilledQuantity.signum() > 0 &&
+                    order.cumulativeFilledQuantity < requestedQuantity
+            if (position.volume.signum() <= 0 || (!bookedPartial && position.volume >= requestedQuantity)) continue
             // A real partial entry leaves its residual resting. Joined only by a truncated prefix
             // and with no residual, a smaller position is someone else's — the seed of a stack
             // burst, say — and adopting it would book a fill that never happened.
@@ -50,11 +55,9 @@ internal class MT5PartialEntryRecovery(
                 )
             books.positionBook.track(position.ticket, meta, order.request.symbol, position.openTime)
             if (position.ticket.toString() in bookedTickets) {
-                // Already in the ledger from before the restart: keep the ticket tracked and let
-                // the residual resolve, but never republish the booked execution (#1096).
-                log.info(
-                    "MT5Broker ${profile.name} recovery: partial entry ${order.id} ticket=${position.ticket} already booked; not republishing",
-                )
+                // Already in the ledger from before the restart: never republish the booked part
+                // (#1096), but keep following the residual and book what filled while down.
+                bookedResume.resume(order, meta, position, pendingMatches.singleOrNull())
                 recovered.add(order.id)
                 continue
             }
