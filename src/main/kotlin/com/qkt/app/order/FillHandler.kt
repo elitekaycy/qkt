@@ -77,7 +77,7 @@ internal class FillHandler(
             e.quantity,
             e.price,
         )
-        val filledSibling = ocoGuard.filledSibling(e.clientOrderId)
+        val filledSibling = ocoGuard.executedSibling(e.clientOrderId)
         if (filledSibling != null) {
             discardChildrenForCompensatedOcoLeg(e.clientOrderId)
             ocoGuard.compensateDoubleFill(e, filledSibling)

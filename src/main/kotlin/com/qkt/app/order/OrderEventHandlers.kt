@@ -94,6 +94,7 @@ internal class OrderEventHandlers(
             }
         if (!applied) return
         exposure.recordFill(e.clientOrderId, e.cumulativeFilled)
+        ocoGuard.onPartialExecution(e.clientOrderId, e.brokerOrderId)
         log.info(
             "order partially filled order_id={} strategy_id={} symbol={} side={} qty={} cumulative={} price={}",
             e.clientOrderId,
@@ -129,10 +130,18 @@ internal class OrderEventHandlers(
         val unarmedChildren = children.take(e.clientOrderId)
         val pendingScaleOut = scaleOuts.pendingByBasis.remove(e.clientOrderId)
         val partialPositionTicket = scaleOuts.partialPositionTickets.remove(e.clientOrderId)
+        // An OCO leg that filled in part after its sibling executed is closed, not protected.
+        val compensated = ocoGuard.compensateCancelledExecution(e.clientOrderId)
         val held = !unarmedChildren.isNullOrEmpty() || anchoredAtFill
-        if (!bracketFills.armPartFilled(e.clientOrderId, bracket, held)) unarmedChildren?.forEach { ops.cancel(it.id) }
+        if (compensated || !bracketFills.armPartFilled(e.clientOrderId, bracket, held)) {
+            unarmedChildren?.forEach { ops.cancel(it.id) }
+        }
         attachedCompletion.onEntryEnded(e.clientOrderId, OrderState.CANCELLED)
-        scaleOutTracker.onBasisCancelled(e.clientOrderId, pendingScaleOut, partialPositionTicket)
+        scaleOutTracker.onBasisCancelled(
+            e.clientOrderId,
+            pendingScaleOut.takeUnless { compensated },
+            partialPositionTicket,
+        )
         log.info(
             "order cancelled order_id={} strategy_id={} reason={}",
             e.clientOrderId,
