@@ -6,6 +6,9 @@ import com.qkt.derivatives.options.chain.OptionMarks
 import com.qkt.derivatives.options.chain.OptionRootSymbol
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.TickFeed
+import com.qkt.marketdata.flow.FlowKind
+import com.qkt.marketdata.flow.Print
+import com.qkt.marketdata.flow.TradeFlow
 import com.qkt.marketdata.live.LiveTickFeed
 import com.qkt.marketdata.marks.MarkPrices
 import com.qkt.marketdata.source.MarketSource
@@ -25,7 +28,8 @@ import org.slf4j.LoggerFactory
  * Closed bars of a contract come from `GET /v1/bars` through [bars] (live warmup reads them); a whole
  * option root has none. Each quote's mark and index are kept for strategies to read ([GatewayMarks]), when
  * the gateway's [capabilities] include `mark_prices`, and each option quote's mark IV and forward
- * ([GatewayOptionMarks]), when they include `option_marks`.
+ * ([GatewayOptionMarks]), when they include `option_marks`. Trade flow is read from the gateway's tape through
+ * [prints] ([GatewayTradeFlow]), when they include `trades` or `liquidations`.
  */
 internal class GatewayMarketSource(
     private val prefix: String,
@@ -36,11 +40,14 @@ internal class GatewayMarketSource(
     private val bars: (code: String, windowMs: Long, fromMs: Long, toMs: Long) -> List<WireBar> = { _, _, _, _ ->
         emptyList()
     },
+    prints: (code: String, kind: FlowKind, fromMs: Long, toMs: Long) -> List<Print> = { _, _, _, _ -> emptyList() },
     capabilities: () -> Collection<String> = { emptyList() },
 ) : MarketSource {
     private val marks = GatewayMarks(prefix, capabilities)
 
     private val optionMarks = GatewayOptionMarks(prefix, capabilities)
+
+    private val flow = GatewayTradeFlow(prefix, capabilities, prints)
 
     private val rootPrefix = OptionRootSymbol.PREFIX + prefix.removeSuffix(":") + "."
 
@@ -57,6 +64,9 @@ internal class GatewayMarketSource(
 
     /** The account's contracts' quoted option marks ([GatewayOptionMarks]); an option root's whole feed has none. */
     override fun optionMarksFor(symbol: String): OptionMarks? = optionMarks.takeIf { symbol.startsWith(prefix) }
+
+    /** The account's contracts' tape and liquidations, read from the gateway ([GatewayTradeFlow]). */
+    override fun tradeFlowFor(symbol: String): TradeFlow? = flow.takeIf { symbol.startsWith(prefix) }
 
     override fun bars(
         symbol: String,
@@ -85,7 +95,7 @@ internal class GatewayMarketSource(
 
     override fun liveTicks(symbols: List<String>): TickFeed {
         require(symbols.all(::supports)) { "gateway $prefix does not serve ${symbols.filterNot(::supports)}" }
-        val instruments = listing().also(marks::listed).also(optionMarks::listed)
+        val instruments = listing().also(marks::listed).also(optionMarks::listed).also(flow::listed)
         val gatewaySymbols = GatewaySymbols(prefix).apply { update(instruments.map { it.code }) }
         val fedRoots = symbols.filter { it.startsWith(rootPrefix) }.map { OptionRootSymbol.parse(it).getOrThrow() }
         val listedRoots = instruments.mapNotNull { it.underlying }.toSet()

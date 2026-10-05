@@ -53,6 +53,9 @@ interface TradingAccount : AutoCloseable {
     /** The venue's mark and index history of its contracts, or null when the connector cannot read it. */
     val markHistory: com.qkt.marketdata.marks.MarkHistorySource? get() = null
 
+    /** The venue's public tape and liquidations of its contracts, or null when the connector cannot read them. */
+    val printHistory: com.qkt.marketdata.flow.PrintHistorySource? get() = null
+
     /** The venue's published open interest of its contracts, or null when the connector cannot read it. */
     val openInterest: com.qkt.marketdata.openinterest.OpenInterestSource? get() = null
 
