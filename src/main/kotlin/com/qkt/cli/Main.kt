@@ -1,8 +1,25 @@
 package com.qkt.cli
 
 fun main(argv: Array<String>) {
-    kotlin.system.exitProcess(runMain(argv))
+    kotlin.system.exitProcess(exitCodeOf(argv))
 }
+
+/**
+ * [runMain]'s exit code, or [ExitCodes.USER_ERROR] with the failure printed to [err] when the command throws.
+ * A command that fails must still end the process: threads it started before failing (a feed's sockets, an
+ * HTTP client's dispatcher) are not daemons, and an exception escaping `main` would leave the JVM running.
+ */
+internal fun exitCodeOf(
+    argv: Array<String>,
+    err: java.io.PrintStream = System.err,
+): Int =
+    try {
+        runMain(argv)
+    } catch (e: Throwable) {
+        err.println("qkt: error: ${e.message ?: e::class.java.name}")
+        e.printStackTrace(err)
+        ExitCodes.USER_ERROR
+    }
 
 internal fun runMain(argv: Array<String>): Int =
     try {
