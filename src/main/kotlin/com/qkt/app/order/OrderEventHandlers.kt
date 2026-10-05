@@ -26,6 +26,7 @@ internal class OrderEventHandlers(
     private val venueRecovery: VenueRecovery,
     private val attachedCompletion: AttachedBracketCompletion,
     private val bracketFills: BracketFills,
+    private val lateEntries: LateEntryExecutions,
     private val clock: Clock,
     private val ops: OrderOps,
     private val log: Logger,
@@ -84,6 +85,10 @@ internal class OrderEventHandlers(
         // A slice the order already holds is a re-report: applying it again would skew the average
         // price, or move the executed quantity back to an older report.
         val current = book[e.clientOrderId]
+        if (current == null || current.state == OrderState.CANCELLED) {
+            lateEntries.onLateExecution(e.clientOrderId, e.quantity, e.price, e.cumulativeFilled)
+            if (current != null) return
+        }
         if (current != null && e.cumulativeFilled <= current.cumulativeFilledQuantity) {
             log.warn(
                 "ignoring repeated execution slice order_id={} cumulative={} already holds {}",
@@ -145,7 +150,15 @@ internal class OrderEventHandlers(
         // An OCO leg that filled in part after its sibling executed is closed, not protected.
         val compensated = ocoGuard.compensateCancelledExecution(e.clientOrderId)
         val held = !unarmedChildren.isNullOrEmpty() || anchoredAtFill
-        if (compensated || !bracketFills.armPartFilled(e.clientOrderId, bracket, held)) {
+        val filled = book[e.clientOrderId]?.cumulativeFilledQuantity
+        if (!compensated &&
+            bracket != null &&
+            filled != null &&
+            bracketFills.armPartFilled(e.clientOrderId, bracket, held)
+        ) {
+            // Exits now cover what filled; a slice the venue reports after this end gets its own (#1349).
+            lateEntries.remember(e.clientOrderId, bracket, filled)
+        } else {
             unarmedChildren?.forEach { ops.cancel(it.id) }
         }
         attachedCompletion.onEntryEnded(e.clientOrderId, OrderState.CANCELLED)
