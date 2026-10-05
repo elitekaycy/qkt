@@ -45,3 +45,10 @@ data class PersistedLeg(
             )
     }
 }
+
+/** On-disk shape of one strategy's leg book on [symbol]. */
+data class PersistedLegBook(
+    val strategyId: String,
+    val symbol: String,
+    val legs: List<PersistedLeg>,
+)

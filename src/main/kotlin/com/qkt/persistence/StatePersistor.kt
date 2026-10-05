@@ -23,7 +23,8 @@ interface StatePersistor :
     TimedExitPersistence,
     StreamLanePersistence,
     FundingPersistence,
-    OrderFillPersistence {
+    OrderFillPersistence,
+    OrderIdPersistence {
     /** Releases persistence resources after all sessions have stopped. */
     override fun close() = Unit
 
@@ -184,26 +185,6 @@ interface StatePersistor :
     fun clearStrategy(strategyId: String)
 }
 
-/**
- * On-disk shape of a strategy's lifetime PnL: the cumulative realized amount since
- * the strategy first deployed (not the daily figure — that lives in [PersistedRiskState]).
- */
-data class PersistedPnl(
-    val realized: BigDecimal,
-)
-
-/** On-disk shape of one non-zero closed-trade outcome used by streak accessors. */
-data class PersistedTradeOutcome(
-    val timestamp: Long,
-    val pnl: BigDecimal,
-    val symbol: String,
-)
-
-/** On-disk shape of the bounded closed-trade outcome buffer for one strategy. */
-data class PersistedTradeHistory(
-    val outcomes: List<PersistedTradeOutcome>,
-)
-
 /** Persisted snapshot captured when a DSL `SEQUENCE` stage completed. */
 data class PersistedSequenceSnapshot(
     val stage: String,
@@ -241,12 +222,6 @@ data class PersistedExitHookBinding(
     val activeQuantity: BigDecimal,
     val exitQuantity: BigDecimal,
     val exitPnl: BigDecimal,
-)
-
-data class PersistedLegBook(
-    val strategyId: String,
-    val symbol: String,
-    val legs: List<PersistedLeg>,
 )
 
 data class BracketPair(
