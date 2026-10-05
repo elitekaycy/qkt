@@ -178,7 +178,19 @@ class Run:
                        and 7 * 86_400_000 <= i["expiry"] - now <= 45 * 86_400_000)
         if not dated:
             raise RuntimeError(f"{root} lists no dated contract 7 to 45 days from expiry")
-        return f"{root.split(':')[0]}:{dated[0][1].replace('-', '_')}"
+        # A thin venue (Deribit testnet) lists contracts nobody trades: no bars to warm up on, often no ask.
+        # Trade the one that traded in the most minutes over the last six hours, the nearest on a tie.
+        traded = [(self.recent_bars(code, now), -expiry, code) for expiry, code in dated]
+        bars, _, code = max(traded)
+        if bars == 0:
+            raise RuntimeError(f"venue-untradeable: {root} has no dated contract 7 to 45 days out that traded in 6 hours")
+        return f"{root.split(':')[0]}:{code.replace('-', '_')}"
+
+    def recent_bars(self, code, now):
+        """How many minutes [code] traded in over the six hours before [now] (a venue may send flat bars between)."""
+        query = {"symbol": code, "window_ms": MINUTE, "from": now - 6 * 3_600_000, "to": now}
+        bars = self.get("/v1/bars?" + urllib.parse.urlencode(query))["bars"]
+        return sum(1 for bar in bars if Decimal(bar.get("volume") or "0") > 0)
 
     def cli_run(self, argv, name, env=None):
         log = f"{self.out}/{name}.log"
