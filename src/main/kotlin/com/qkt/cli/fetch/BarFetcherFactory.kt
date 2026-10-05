@@ -2,7 +2,6 @@ package com.qkt.cli.fetch
 
 import com.qkt.cli.Config
 import com.qkt.cli.openAccounts
-import com.qkt.connector.bybit.marketdata.BybitKlineClient
 import com.qkt.connector.mt5.MT5BrokerProfileLoader
 import com.qkt.connector.mt5.MT5DefaultProfiles
 import com.qkt.connector.mt5.MT5Symbol
@@ -12,19 +11,15 @@ import com.qkt.marketdata.store.binance.BinanceVisionClient
 import java.nio.file.Path
 
 /**
- * The fetcher for [broker]: Bybit spot/linear and Binance USDⓈ-M directly; anything else is a `brokers:` entry of
- * `--config` ([configOption]) or the default config: an MT5 broker profile, or an account of another connector whose
- * own feed serves bars (a `type: gateway` venue). Null after printing the reason.
+ * The fetcher for [broker]: Binance USDⓈ-M directly; anything else is a `brokers:` entry of `--config`
+ * ([configOption]) or the default config: an MT5 broker profile, or an account of another connector whose own feed
+ * serves bars (a `type: gateway` venue, Bybit included). Null after printing the reason.
  */
 internal fun buildFetcher(
     broker: String,
     configOption: String?,
 ): BarFetcher? {
     return when (broker.uppercase()) {
-        "BYBIT_SPOT" ->
-            BybitFetcher(BybitKlineClient(category = "spot"))
-        "BYBIT_LINEAR" ->
-            BybitFetcher(BybitKlineClient(category = "linear"))
         BinanceUmFetcher.VENUE -> BinanceUmFetcher(BinanceVisionClient())
         else -> {
             // Treat as an MT5 broker — load profile and construct Mt5BarFetcher.
@@ -32,9 +27,12 @@ internal fun buildFetcher(
                 configOption?.let { Path.of(it) }
                     ?: Config.locate() ?: run {
                     System.err.println(
-                        "qkt: no qkt.config.yaml found (need it to resolve MT5 broker '$broker'); " +
-                            "pass --config <path> or place the file under " +
-                            Config.defaultSearchPaths().joinToString(", "),
+                        gatewayOnly(broker)
+                            ?: (
+                                "qkt: no qkt.config.yaml found (need it to resolve MT5 broker '$broker'); " +
+                                    "pass --config <path> or place the file under " +
+                                    Config.defaultSearchPaths().joinToString(", ")
+                            ),
                     )
                     return null
                 }
@@ -44,6 +42,12 @@ internal fun buildFetcher(
                     .firstOrNull { it.key.equals(broker, ignoreCase = true) }
                     ?.value
                     ?.get("type")
+            if (type == null) {
+                gatewayOnly(broker)?.let {
+                    System.err.println(it)
+                    return null
+                }
+            }
             if (type != null && type != "mt5") return accountFetcher(cfg, broker)
             val profiles =
                 try {
@@ -100,4 +104,15 @@ private fun accountFetcher(
         return null
     }
     return SourceFetcher(source, account.config.symbolPrefix)
+}
+
+/**
+ * Why [broker] cannot be fetched without its `brokers:` entry, when it names a venue qkt reaches only through a
+ * `type: gateway` account (Bybit, through the qkt-venue-gateway's Bybit adapter); null for any other broker.
+ */
+internal fun gatewayOnly(broker: String): String? {
+    if (!broker.uppercase().startsWith("BYBIT")) return null
+    return "qkt: no brokers: entry named '${broker.lowercase()}'; qkt reaches Bybit only through a qkt-venue-gateway " +
+        "running its Bybit adapter. Add a `type: gateway` broker named ${broker.lowercase()} to qkt.config.yaml " +
+        "(see the gateway's adapter-bybit README, or scaffold one with `qkt create template <dir> --kind bybit`)"
 }

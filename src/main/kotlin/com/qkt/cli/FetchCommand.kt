@@ -14,7 +14,6 @@ import com.qkt.cli.fetch.resolveFetchRange
 import com.qkt.common.Clock
 import com.qkt.common.SystemClock
 import com.qkt.common.TimeRange
-import com.qkt.connector.bybit.marketdata.BybitKlineClient
 import com.qkt.connector.mt5.MT5BrokerProfileLoader
 import com.qkt.connector.mt5.marketdata.Mt5BarFetcher
 import com.qkt.marketdata.Candle
@@ -35,8 +34,8 @@ import java.time.ZoneOffset
  * - MT5 brokers (EXNESS, ICMARKETS, FTMO, PEPPERSTONE, …) — resolved via
  *   [MT5BrokerProfileLoader] from `qkt.config.yaml` + built-in defaults;
  *   uses [Mt5BarFetcher] against the profile's `gatewayUrl`.
- * - BYBIT_SPOT / BYBIT_LINEAR — uses [BybitKlineClient] against the public
- *   Bybit REST endpoint (no auth needed for kline data).
+ * - `type: gateway` accounts (BYBIT_LINEAR, BYBIT_SPOT, DERIBIT, …) — the account's gateway serves the bars
+ *   (`GET /v1/bars`); a Bybit prefix with no such entry is refused naming the entry to add.
  * - BINANCE_UM — Binance USDⓈ-M quarterly futures from the free `data.binance.vision` archive.
  * - BACKTEST — refused; nothing to fetch (the local store IS the backtest source).
  *
