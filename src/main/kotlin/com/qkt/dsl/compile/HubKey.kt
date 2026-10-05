@@ -27,8 +27,8 @@ data class HubKey(
 /**
  * True for a stream that carries a published OBSERVATION rather than a tradeable price.
  *
- * Macro series, hub datasets and option chain analytics (an implied volatility, a skew that can be
- * negative) are statements about the world, not quotes: they arrive at
+ * Macro series, hub datasets, option chain analytics (an implied volatility, a skew that can be
+ * negative) and a venue's open interest are statements about the world, not quotes: they arrive at
  * irregular instants, have no bid or ask, and must become readable the moment they are published
  * rather than at the close of some arbitrary window. Two behaviours key off this -- the candle hub
  * closes an observation immediately as its own event candle, and the pipeline's malformed-tick and
@@ -39,4 +39,7 @@ data class HubKey(
  * missed in the other.
  */
 fun isObservationSymbol(qktSymbol: String): Boolean =
-    qktSymbol.startsWith("MACRO:") || qktSymbol.startsWith("HUB:") || qktSymbol.startsWith("CHAIN:")
+    qktSymbol.startsWith("MACRO:") ||
+        qktSymbol.startsWith("HUB:") ||
+        qktSymbol.startsWith("CHAIN:") ||
+        qktSymbol.startsWith(com.qkt.marketdata.openinterest.OpenInterestSymbol.PREFIX)

@@ -14,6 +14,8 @@ import com.qkt.instrument.RefreshingOptionCatalogs
 import com.qkt.instrument.RollHistoryStore
 import com.qkt.instrument.StandardInstrumentRegistry
 import com.qkt.instrument.YamlInstrumentRegistry
+import com.qkt.marketdata.openinterest.OpenInterestCoverage
+import com.qkt.marketdata.openinterest.OpenInterestStore
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
@@ -89,7 +91,8 @@ internal object InstrumentFiles {
     /**
      * The backtest's registry for [args] (`--instruments`, `--funding on|off`): perpetuals pay funding from
      * the stored rates unless `--funding off`, and a traded perpetual whose rates do not cover [from]..[to]
-     * fails setup naming the fetch that would ([FundingCoverage]).
+     * fails setup naming the fetch that would ([FundingCoverage]), as does an open-interest stream whose stored
+     * figures do not cover them ([OpenInterestCoverage]).
      */
     fun forBacktest(
         dataRoot: Path,
@@ -110,6 +113,15 @@ internal object InstrumentFiles {
                 throw BacktestContext.Companion.SetupError(it)
             }
         }
+        OpenInterestCoverage
+            .problem(
+                OpenInterestStore(dataRoot),
+                symbols,
+                from.toEpochMilli(),
+                to.toEpochMilli(),
+            )?.let {
+                throw BacktestContext.Companion.SetupError(it)
+            }
         return registry
     }
 }

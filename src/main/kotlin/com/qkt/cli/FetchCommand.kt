@@ -5,6 +5,7 @@ import com.qkt.cli.fetch.CatalogFetch
 import com.qkt.cli.fetch.ChainFetch
 import com.qkt.cli.fetch.FundingFetch
 import com.qkt.cli.fetch.MarksFetch
+import com.qkt.cli.fetch.OpenInterestFetch
 import com.qkt.cli.fetch.RollsFetch
 import com.qkt.cli.fetch.buildFetcher
 import com.qkt.cli.fetch.resolveFetchRange
@@ -39,8 +40,9 @@ import java.time.ZoneOffset
  * `qkt fetch VENUE:ROOT --catalog` writes the root's contract catalogs instead of bars (see [CatalogFetch]), and
  * `qkt fetch VENUE:ROOT --rolls` measures its roll history from stored (and fetched) 1m bars, and
  * `qkt fetch DERIBIT:ROOT --chains` builds an option root's chain snapshots from trade history, and
- * `qkt fetch VENUE:PERPETUAL --funding` stores a perpetual's funding rates (see [FundingFetch]), and
- * `qkt fetch VENUE:CONTRACT --marks --tf 1m` stores a contract's mark and index history (see [MarksFetch]).
+ * `qkt fetch VENUE:PERPETUAL --funding` stores a perpetual's funding rates (see [FundingFetch]),
+ * `qkt fetch VENUE:CONTRACT --marks --tf 1m` stores a contract's mark and index history (see [MarksFetch]), and
+ * `qkt fetch VENUE:CONTRACT --open-interest` stores a contract's open interest (see [OpenInterestFetch]).
  */
 class FetchCommand(
     private val args: Args,
@@ -73,6 +75,7 @@ class FetchCommand(
         if (args.flag("chains")) return ChainFetch.run(target, args)
         if (args.flag("funding")) return FundingFetch.run(target, args)
         if (args.flag("marks")) return MarksFetch.run(target, args, clock)
+        if (args.flag("open-interest")) return OpenInterestFetch.run(target, args)
         val tfArg =
             try {
                 args.requireOption("tf")

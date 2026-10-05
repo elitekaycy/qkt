@@ -5,6 +5,7 @@ import com.qkt.dsl.ast.NowField
 import com.qkt.dsl.ast.StateSource
 import com.qkt.dsl.parse.Lexer
 import com.qkt.dsl.parse.TokenKind
+import com.qkt.marketdata.openinterest.OpenInterestSymbol
 
 /**
  * The one place the DSL's name tables live: the fields readable off a stream alias, the
@@ -27,13 +28,14 @@ object DslVocabulary {
     /** A contract's mark and index price as its venue reports them; refused on a feed that serves none. */
     val markFields: List<String> = listOf("mark", "index")
 
-    /** Per-bar fields readable off a stream alias, e.g. `btc.close`, plus [contractFields] and [markFields]. */
+    /** Per-bar fields readable off an alias, e.g. `btc.close`, plus [contractFields], [markFields], open interest. */
     val candleFields: List<String> =
         listOf("close", "open", "high", "low", "volume", "price", "bid", "ask", "spread", "value", "timestamp") +
-            contractFields + markFields
+            contractFields + markFields + OpenInterestSymbol.FIELD
 
     /** The candle fields an indicator may consume as a numeric series. */
-    val numericCandleFields: List<String> = listOf("close", "value", "open", "high", "low", "volume", "price")
+    val numericCandleFields: List<String> =
+        listOf("close", "value", "open", "high", "low", "volume", "price", OpenInterestSymbol.FIELD)
 
     /** Instrument-metadata fields readable off a stream alias, e.g. `btc.tick_size`. */
     val metaFields: List<String> =
