@@ -11,6 +11,9 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
 class BybitSpotStateRecoveryTest {
+    private fun known(vararg ids: String) =
+        ids.associateWith { BybitSpotStateRecovery.ManagedOrderView(it, "BYBIT_SPOT:BTCUSDT", Side.BUY, "s1") }
+
     private fun newBus(): EventBus = EventBus(FixedClock(0L), MonotonicSequenceGenerator())
 
     private fun emptyOpenOrdersResponse() = """{"retCode":0,"retMsg":"OK","result":{"list":[]}}"""
@@ -102,7 +105,7 @@ class BybitSpotStateRecoveryTest {
     }
 
     @Test
-    fun `reconcile emits OrderFilled for executions in Bybit's list since lastFillTime`() {
+    fun `reconcile emits OrderFilled for executions of known orders in Bybit's list since lastFillTime`() {
         val client = FakeBybitClient()
         client.responses["/v5/order/realtime"] = emptyOpenOrdersResponse()
         client.responses["/v5/execution/list"] =
@@ -117,7 +120,7 @@ class BybitSpotStateRecoveryTest {
                 transport = client,
                 bus = bus,
                 clock = FixedClock(1_000_000L),
-                getKnownOrders = { emptyMap() },
+                getKnownOrders = { known("c1") },
                 lastFillTimeProvider = { 500_000L },
                 seenExecIds = mutableSetOf(),
             )
@@ -140,16 +143,12 @@ class BybitSpotStateRecoveryTest {
         val events = mutableListOf<BrokerEvent>()
         bus.subscribe<BrokerEvent.OrderFilled> { events.add(it) }
         bus.subscribe<BrokerEvent.OrderCancelled> { events.add(it) }
-        val known =
-            mapOf(
-                "c1" to BybitSpotStateRecovery.ManagedOrderView("c1", "BYBIT_SPOT:BTCUSDT", Side.BUY),
-            )
 
         BybitSpotStateRecovery(
             transport = client,
             bus = bus,
             clock = FixedClock(1_000_000L),
-            getKnownOrders = { known },
+            getKnownOrders = { known("c1") },
             lastFillTimeProvider = { 500_000L },
             seenExecIds = mutableSetOf(),
         ).reconcile()
@@ -206,7 +205,7 @@ class BybitSpotStateRecoveryTest {
             transport = client,
             bus = bus,
             clock = FixedClock(0L),
-            getKnownOrders = { emptyMap() },
+            getKnownOrders = { known("c1", "c2") },
             lastFillTimeProvider = { 0L },
             seenExecIds = mutableSetOf(),
         ).reconcile()
@@ -247,7 +246,7 @@ class BybitSpotStateRecoveryTest {
             transport = client,
             bus = bus,
             clock = FixedClock(0L),
-            getKnownOrders = { emptyMap() },
+            getKnownOrders = { known(*(1..10).flatMap { n -> (1..50).map { "c-$n-$it" } }.toTypedArray()) },
             lastFillTimeProvider = { 0L },
             seenExecIds = mutableSetOf(),
         ).reconcile()

@@ -33,7 +33,8 @@ internal class OrderCancellation(
     /**
      * Cancels [clientOrderId]; a composite cascades to its children, engine-held orders end locally.
      * [closing] marks a cancel that comes with a close of the position (`CLOSE`, a flatten): a
-     * bracket's held exits go at once instead of waiting for the entry's end ([HeldBracketExits]).
+     * bracket's held exits ([HeldBracketExits]) and a scale-out's pending exits ([ScaleOutBook.dropPending])
+     * go at once instead of being armed for the part filled when the entry ends.
      */
     fun cancel(
         clientOrderId: String,
@@ -41,7 +42,10 @@ internal class OrderCancellation(
     ) {
         val managed = book[clientOrderId] ?: return
         if (managed.state.isTerminal) return
-        if (closing) heldExits.drop(clientOrderId).forEach { cancel(it.id, closing = true) }
+        if (closing) {
+            heldExits.drop(clientOrderId).forEach { cancel(it.id, closing = true) }
+            scaleOuts.dropPending(clientOrderId)
+        }
         if (managed.request is OrderRequest.Stack) {
             stacks.get(clientOrderId)?.let { state ->
                 for (pid in state.pendingLayerIds.toList()) cancel(pid, closing)
@@ -52,16 +56,10 @@ internal class OrderCancellation(
             return
         }
         if (managed.childClientOrderIds.isNotEmpty()) {
-            val scaleOutCancellation = managed.request is OrderRequest.ScaleOut
-            if (scaleOutCancellation) scaleOuts.cancellingWrappers.add(clientOrderId)
             val deferred = if (closing) emptySet() else heldExits.deferredBy(managed)
-            try {
-                for (childId in managed.childClientOrderIds) if (childId !in deferred) cancel(childId, closing)
-                ops.update(clientOrderId) { it.copy(state = OrderState.CANCELLED, lastUpdatedAt = clock.now()) }
-                exposure.remove(clientOrderId)
-            } finally {
-                if (scaleOutCancellation) scaleOuts.cancellingWrappers.remove(clientOrderId)
-            }
+            for (childId in managed.childClientOrderIds) if (childId !in deferred) cancel(childId, closing)
+            ops.update(clientOrderId) { it.copy(state = OrderState.CANCELLED, lastUpdatedAt = clock.now()) }
+            exposure.remove(clientOrderId)
             return
         }
         when (managed.state) {

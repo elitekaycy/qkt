@@ -1,4 +1,4 @@
-package com.qkt.connector.bybit.linear
+package com.qkt.connector.bybit
 
 import com.qkt.common.Side
 import com.qkt.connector.bybit.spot.BybitSpotStateRecovery.ManagedOrderView
@@ -8,8 +8,8 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
 /** The linear broker's orders: an owner outlives the order's end, and a cancel waits for its fills. */
-class BybitLinearOrdersTest {
-    private val orders = BybitLinearOrders(retainEnded = 2)
+class BybitOrdersTest {
+    private val orders = BybitOrders(retainEnded = 2)
 
     private fun place(id: String) = orders.register(ManagedOrderView(id, "BYBIT_LINEAR:BTCUSDT", Side.BUY, "s1"))
 
@@ -35,12 +35,12 @@ class BybitLinearOrdersTest {
     }
 
     @Test
-    fun `an order never placed, or placed by no strategy, has no owner`() {
+    fun `an order never placed has no owner, one placed by no strategy is still this broker's`() {
         orders.register(ManagedOrderView("c0", "BYBIT_LINEAR:BTCUSDT", Side.BUY, ""))
         place("c1")
         orders.forget("c1")
 
-        assertThat(listOf("c0", "c1", "other").map(orders::strategyOf)).containsOnlyNulls()
+        assertThat(listOf("c0", "c1", "other").map(orders::strategyOf)).containsExactly("", null, null)
     }
 
     @Test

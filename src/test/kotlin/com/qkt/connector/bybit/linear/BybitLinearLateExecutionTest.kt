@@ -9,13 +9,14 @@ import com.qkt.common.FixedClock
 import com.qkt.common.Money
 import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.Side
+import com.qkt.connector.bybit.BybitDocPayloads.frame
+import com.qkt.connector.bybit.BybitDocPayloads.page
+import com.qkt.connector.bybit.BybitDocPayloads.restExecution
+import com.qkt.connector.bybit.BybitDocPayloads.wsExecution
+import com.qkt.connector.bybit.BybitDocPayloads.wsOrder
+import com.qkt.connector.bybit.BybitExecutionReplay
 import com.qkt.connector.bybit.BybitExecutionStream
 import com.qkt.connector.bybit.FakeBybitClient
-import com.qkt.connector.bybit.linear.BybitDocPayloads.frame
-import com.qkt.connector.bybit.linear.BybitDocPayloads.page
-import com.qkt.connector.bybit.linear.BybitDocPayloads.restExecution
-import com.qkt.connector.bybit.linear.BybitDocPayloads.wsExecution
-import com.qkt.connector.bybit.linear.BybitDocPayloads.wsOrder
 import com.qkt.events.BrokerEvent
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.TimeInForce
@@ -32,7 +33,7 @@ class BybitLinearLateExecutionTest {
     private val client = FakeBybitClient()
     private val events = mutableListOf<BrokerEvent>()
     private val loggers =
-        listOf(BybitExecutionStream::class.java, BybitLinearExecutionReconcile::class.java)
+        listOf(BybitExecutionStream::class.java, BybitExecutionReplay::class.java)
             .map { LoggerFactory.getLogger(it) as Logger }
     private val logs = ListAppender<ILoggingEvent>().also { it.start() }
 

@@ -9,7 +9,9 @@ import com.qkt.bus.EventBus
 import com.qkt.common.Clock
 import com.qkt.common.net.PeriodicReconciler
 import com.qkt.connector.bybit.BybitExecutionStream
+import com.qkt.connector.bybit.BybitHeldEnds
 import com.qkt.connector.bybit.BybitOrderTranslator
+import com.qkt.connector.bybit.BybitOrders
 import com.qkt.connector.bybit.BybitSymbol
 import com.qkt.connector.bybit.BybitTransport
 import com.qkt.connector.bybit.boundedExecIdSet
@@ -17,7 +19,7 @@ import com.qkt.connector.bybit.requireBybitOk
 import com.qkt.connector.bybit.resolveBybitOrder
 import com.qkt.events.BrokerEvent
 import com.qkt.execution.OrderRequest
-import java.util.concurrent.ConcurrentHashMap
+import java.math.BigDecimal
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.serialization.json.Json
@@ -46,9 +48,8 @@ class BybitSpotBroker(
     private val log = LoggerFactory.getLogger(BybitSpotBroker::class.java)
     private val json = Json { ignoreUnknownKeys = true }
 
-    private val symbolByClientOrderId: MutableMap<String, String> = ConcurrentHashMap()
-    private val strategyByClientOrderId: MutableMap<String, String> = ConcurrentHashMap()
-    private val knownOrders: MutableMap<String, BybitSpotStateRecovery.ManagedOrderView> = ConcurrentHashMap()
+    private val orders = BybitOrders()
+    private val ends = BybitHeldEnds(orders, bus)
     private val seenExecIds: MutableSet<String> = boundedExecIdSet()
     private val lastFillTime: AtomicLong = AtomicLong(clock.now() - recoveryWindowMs)
 
@@ -72,19 +73,27 @@ class BybitSpotBroker(
 
     init {
         transport.subscribe("order") { frame -> onOrderFrame(frame) }
-        transport.subscribe(
-            "execution",
-            BybitExecutionStream("spot", bus, clock, seenExecIds, lastFillTime, strategyByClientOrderId::get)::onFrame,
-        )
+        val executions =
+            BybitExecutionStream(
+                "spot",
+                bus,
+                clock,
+                seenExecIds,
+                lastFillTime,
+                orders::strategyOf,
+                afterFill = ends::booked,
+            )
+        transport.subscribe("execution", executions::onFrame)
 
         val recovery =
             BybitSpotStateRecovery(
                 transport = transport,
                 bus = bus,
                 clock = clock,
-                getKnownOrders = { knownOrders.toMap() },
+                getKnownOrders = orders::open,
                 lastFillTimeProvider = lastFillTime::get,
                 seenExecIds = seenExecIds,
+                ends = ends,
             )
         transport.onDisconnect { reason ->
             bus.publish(
@@ -125,9 +134,10 @@ class BybitSpotBroker(
             }
         reconciler.start()
 
-        bus.subscribe<BrokerEvent.OrderFilled> { e -> forgetTracking(e.clientOrderId) }
-        bus.subscribe<BrokerEvent.OrderCancelled> { e -> forgetTracking(e.clientOrderId) }
-        bus.subscribe<BrokerEvent.OrderRejected> { e -> forgetTracking(e.clientOrderId) }
+        // An end keeps the order's owner: an execution can still follow it (#1333).
+        bus.subscribe<BrokerEvent.OrderFilled> { e -> orders.end(e.clientOrderId) }
+        bus.subscribe<BrokerEvent.OrderCancelled> { e -> orders.end(e.clientOrderId) }
+        bus.subscribe<BrokerEvent.OrderRejected> { e -> orders.end(e.clientOrderId) }
     }
 
     override fun submit(request: OrderRequest): SubmitAck {
@@ -143,31 +153,15 @@ class BybitSpotBroker(
         // Register tracking BEFORE the send: Bybit's private WS order/execution frame can arrive
         // ahead of the REST reply, and onOrderFrame/onExecutionFrame read these maps to attribute
         // the strategy. A rejected placement forgets them in [handlePlacementResult].
-        registerTracking(request)
+        orders.register(
+            BybitSpotStateRecovery.ManagedOrderView(request.id, request.symbol, request.side, request.strategyId),
+        )
         // Non-blocking placement: the HTTP send runs on the dispatcher and the venue result returns
         // as bus events via [handlePlacementResult]. submit returns an optimistic ack at once so the
         // engine thread never waits on the order round-trip — the real accept/reject/fill follows on
         // the bus, which is what the event-driven OCO/OTO sequencing consumes.
         transport.postSignedAsync("/v5/order/create", body) { result -> handlePlacementResult(request, result) }
         return SubmitAck(clientOrderId = request.id, brokerOrderId = null, accepted = true)
-    }
-
-    private fun registerTracking(request: OrderRequest) {
-        strategyByClientOrderId[request.id] = request.strategyId
-        symbolByClientOrderId[request.id] = request.symbol
-        knownOrders[request.id] =
-            BybitSpotStateRecovery.ManagedOrderView(
-                clientOrderId = request.id,
-                symbol = request.symbol,
-                side = request.side,
-                strategyId = request.strategyId,
-            )
-    }
-
-    private fun forgetTracking(clientOrderId: String) {
-        strategyByClientOrderId.remove(clientOrderId)
-        symbolByClientOrderId.remove(clientOrderId)
-        knownOrders.remove(clientOrderId)
     }
 
     /**
@@ -184,7 +178,7 @@ class BybitSpotBroker(
         result.fold(
             onSuccess = { body ->
                 val ack = parseSubmitResponse(request.id, body, request.strategyId)
-                if (!ack.accepted) forgetTracking(request.id)
+                if (!ack.accepted) orders.forget(request.id)
             },
             onFailure = { e ->
                 resolvePlacementFailure(request, e)
@@ -208,7 +202,7 @@ class BybitSpotBroker(
         }
         val resolution = attempt.getOrNull()
         if (resolution == null) {
-            forgetTracking(request.id)
+            orders.forget(request.id)
             bus.publish(
                 BrokerEvent.OrderRejected(
                     clientOrderId = request.id,
@@ -254,7 +248,7 @@ class BybitSpotBroker(
     }
 
     override fun cancel(orderId: String) {
-        val symbol = symbolByClientOrderId[orderId] ?: return
+        val symbol = orders.symbolOf(orderId) ?: return
         val body = BybitOrderTranslator.toCancelBody(symbol = symbol, orderLinkId = orderId)
         runCatching {
             requireBybitOk(transport.postSigned("/v5/order/cancel", body), "order cancel", json)
@@ -265,7 +259,7 @@ class BybitSpotBroker(
                     clientOrderId = orderId,
                     brokerOrderId = null,
                     reason = e.message ?: "cancel failure",
-                    strategyId = strategyByClientOrderId[orderId].orEmpty(),
+                    strategyId = orders.strategyOf(orderId).orEmpty(),
                     timestamp = clock.now(),
                 ),
             )
@@ -277,9 +271,9 @@ class BybitSpotBroker(
         changes: OrderModification,
     ): SubmitAck {
         val symbol =
-            symbolByClientOrderId[orderId]
+            orders.symbolOf(orderId)
                 ?: return SubmitAck(orderId, null, accepted = false, rejectReason = "unknown orderId $orderId")
-        val strategyId = strategyByClientOrderId[orderId] ?: ""
+        val strategyId = orders.strategyOf(orderId).orEmpty()
         val parsed = BybitSymbol.parse(symbol)
         val sb = StringBuilder("{")
         sb.append("\"category\":\"${parsed.category}\",")
@@ -390,7 +384,7 @@ class BybitSpotBroker(
             val brokerOrderId = obj["orderId"]?.jsonPrimitive?.content
             val status = obj["orderStatus"]?.jsonPrimitive?.content ?: continue
             val now = clock.now()
-            val strategyId = strategyByClientOrderId[clientOrderId] ?: ""
+            val strategyId = orders.strategyOf(clientOrderId).orEmpty()
             when (status) {
                 "New" ->
                     bus.publish(
@@ -401,16 +395,13 @@ class BybitSpotBroker(
                             timestamp = now,
                         ),
                     )
-                "Cancelled" ->
-                    bus.publish(
-                        BrokerEvent.OrderCancelled(
-                            clientOrderId = clientOrderId,
-                            brokerOrderId = brokerOrderId,
-                            reason = "broker cancel",
-                            strategyId = strategyId,
-                            timestamp = now,
-                        ),
+                // Spot ends a part-filled order as PartiallyFilledCanceled; either waits for its fills (#1333).
+                "Cancelled", "PartiallyFilledCanceled" ->
+                    ends.end(
+                        BrokerEvent.OrderCancelled(clientOrderId, brokerOrderId, "broker cancel", strategyId, now),
+                        obj["cumExecQty"]?.jsonPrimitive?.content?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
                     )
+                "Filled" -> orders.end(clientOrderId)
                 "Rejected" ->
                     bus.publish(
                         BrokerEvent.OrderRejected(

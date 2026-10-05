@@ -1,11 +1,11 @@
-package com.qkt.connector.bybit.linear
+package com.qkt.connector.bybit
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 
 /**
- * Bybit's own v5 response examples, as payloads for the linear broker. Each starts from the documented
+ * Bybit's own v5 response examples, as payloads for the Bybit brokers. Each starts from the documented
  * record verbatim; only the fields a scenario needs (named per function) are substituted.
  */
 object BybitDocPayloads {
@@ -50,7 +50,8 @@ object BybitDocPayloads {
 
     /**
      * The documented execution as a slice of [execQty] with [leavesQty] left, id [execId], for [orderLinkId];
-     * the fee is the documented `feeRate` (0.00055) on the slice's value, as Bybit computes it.
+     * the fee is the documented `feeRate` (0.00055) on the slice's value, as Bybit computes it. [category]
+     * replaces the documented `linear`.
      */
     fun wsExecution(
         orderLinkId: String,
@@ -58,24 +59,27 @@ object BybitDocPayloads {
         execQty: String = "0.5",
         leavesQty: String = "0",
         execFee: String = "26.3725275",
+        category: String = "linear",
     ): String =
         WS_EXECUTION
+            .replace("\"category\":\"linear\"", "\"category\":\"$category\"")
             .replace("\"orderLinkId\":\"\"", "\"orderLinkId\":\"$orderLinkId\"")
             .replace("\"execId\":\"0ab1bdf7-4219-438b-b30a-32ec863018f7\"", "\"execId\":\"$execId\"")
             .replace("\"execQty\":\"0.5\"", "\"execQty\":\"$execQty\"")
             .replace("\"leavesQty\":\"0\"", "\"leavesQty\":\"$leavesQty\"")
             .replace("\"execFee\":\"26.3725275\"", "\"execFee\":\"$execFee\"")
 
-    /** The documented order update as linear order [orderLinkId] on BTCUSDT, at [status] with [cumExecQty]. */
+    /** The documented order update as [category] order [orderLinkId] on BTCUSDT, at [status] with [cumExecQty]. */
     fun wsOrder(
         orderLinkId: String,
         status: String,
         cumExecQty: String,
+        category: String = "linear",
     ): String =
         WS_ORDER
             .replace("\"symbol\":\"ETH-30DEC22-1400-C\"", "\"symbol\":\"BTCUSDT\"")
             .replace("\"orderId\":\"5cf98598-39a7-459e-97bf-76ca765ee020\"", "\"orderId\":\"$WS_ORDER_ID\"")
-            .replace("\"category\":\"option\"", "\"category\":\"linear\"")
+            .replace("\"category\":\"option\"", "\"category\":\"$category\"")
             .replace("\"orderLinkId\":\"\"", "\"orderLinkId\":\"$orderLinkId\"")
             .replace("\"orderStatus\":\"Filled\"", "\"orderStatus\":\"$status\"")
             .replace("\"qty\":\"1\"", "\"qty\":\"0.5\"")
