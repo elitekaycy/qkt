@@ -23,7 +23,8 @@ interface StatePersistor :
     TimedExitPersistence,
     StreamLanePersistence,
     FundingPersistence,
-    OrderFillPersistence {
+    OrderFillPersistence,
+    OrderIdPersistence {
     /** Releases persistence resources after all sessions have stopped. */
     override fun close() = Unit
 

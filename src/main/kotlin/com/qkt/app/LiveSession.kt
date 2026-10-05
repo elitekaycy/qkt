@@ -691,7 +691,7 @@ class LiveSession(
         pipeline.orderManager.restore(strategies.map { it.first })
         // Restored orders and legs carry ids the strategy minted before the restart; its
         // sequence must continue past them or the next submit collides with a restored one.
-        OrderIdResumption.resume(strategies, pipeline.orderManager, strategyPositions, ids)
+        OrderIdResumption.resume(strategies, pipeline.orderManager, strategyPositions, ids, persistor, bus)
         downtimeCloses.bookInto(pipeline)
         // The broker keeps the ledger honest against venue truth from here on (#1097).
         val watchedStrategyIds = strategies.map { it.first }

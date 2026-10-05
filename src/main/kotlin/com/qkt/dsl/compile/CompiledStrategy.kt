@@ -61,6 +61,8 @@ internal class CompiledStrategy(
 
     override fun resumeOrderIds(usedIds: Collection<String>) = ids.resumePast(usedIds)
 
+    override val orderIds get() = ids
+
     override fun observeCandleEvaluations(
         observer: (alias: String, key: HubKey, candle: Candle, rulesEvaluated: Int) -> Unit,
     ) {

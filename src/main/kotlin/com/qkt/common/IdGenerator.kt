@@ -5,7 +5,8 @@ interface IdGenerator {
 }
 
 class SequentialIdGenerator(
-    private val prefix: String = "ORD",
+    /** What every id this generator mints starts with, before `-<sequence>`. */
+    val prefix: String = "ORD",
 ) : IdGenerator {
     companion object {
         /**
@@ -26,6 +27,9 @@ class SequentialIdGenerator(
     fun resumeAfter(last: Long) {
         if (last >= counter) counter = last + 1
     }
+
+    /** The sequence of the last id minted (or resumed past), or null when none was. */
+    fun lastIssued(): Long? = (counter - 1).takeIf { it >= 0 }
 
     /**
      * Resume past every id in [usedIds] minted by this generator. A session that restarts with
