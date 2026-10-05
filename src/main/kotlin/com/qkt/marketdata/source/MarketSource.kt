@@ -5,6 +5,7 @@ import com.qkt.common.TimeRange
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.TickFeed
+import com.qkt.marketdata.marks.MarkPrices
 
 interface MarketSource {
     val name: String
@@ -19,6 +20,12 @@ interface MarketSource {
      * basket where different symbols route to different feeds.
      */
     fun capabilitiesFor(symbol: String): Set<MarketSourceCapability> = capabilities
+
+    /**
+     * Where [symbol]'s mark and index prices are read ([MarkPrices]), or null when this source serves none. A
+     * routing source answers for the leaf that serves [symbol], as [capabilitiesFor] does.
+     */
+    fun marksFor(symbol: String): MarkPrices? = null
 
     fun liveTicks(symbols: List<String>): TickFeed =
         throw UnsupportedDataException(MarketSourceCapability.LIVE_TICKS, this::class.java.simpleName ?: "MarketSource")

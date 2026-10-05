@@ -35,7 +35,7 @@ internal val toolingOptionSchemas: Map<String, CliOptionSchema> =
                         "every",
                         "max-mark-age",
                     ),
-                flags = setOf("catalog", "rolls", "chains", "live", "funding"),
+                flags = setOf("catalog", "rolls", "chains", "live", "funding", "marks"),
             ),
         "data" to
             CliOptionSchema(

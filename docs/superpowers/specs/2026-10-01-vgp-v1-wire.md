@@ -1,7 +1,8 @@
 # VGP v1 wire format — design
 
 **Status:** design for phase 44 (amends `2026-09-30-futures-options-design.md` §7); capabilities and
-perpetual funding added by `2026-10-04-perpetual-funding-and-venue-capabilities.md`. The endpoint list
+perpetual funding added by `2026-10-04-perpetual-funding-and-venue-capabilities.md`, mark prices by
+`2026-10-04-mark-and-index-stream-fields.md`. The endpoint list
 and semantics come from `docs/research/2026-09-18-venue-plugin-architecture.md` §6; this document
 fixes what that list left to implementations: the JSON, the event stream, errors, resume and the
 kill switch. The qkt client (`connector/gateway`) and any gateway (`qkt-venue-gateway`) implement exactly
@@ -57,11 +58,13 @@ happened in between.
 `capabilities` names the optional services the gateway's adapter serves: `bars` (`/v1/bars`), `quotes`
 (`/v1/quotes`), `settlements` (the venue's settlements reach `/v1/settlements` and the stream), `funding`
 (what the venue charged or credited the account for holding perpetuals: `/v1/funding` and the `funding`
-event) and `funding_rates` (`/v1/funding-rates`). An endpoint whose capability is not declared answers
+event), `funding_rates` (`/v1/funding-rates`) and `mark_prices` (`/v1/marks`, and quotes that carry `mark`
+and `index` where the venue reports them). An endpoint whose capability is not declared answers
 `501 unsupported` (`/v1/settlements` is still served, from what the journal holds). A gateway that
 predates the field omits it; a client treats that as none declared. A client ignores a name it does not
 know. Funding is the cash a venue moves between longs and shorts of a perpetual; a client books it, so it
-does not trade perpetuals on a gateway that does not declare `funding`.
+does not trade perpetuals on a gateway that does not declare `funding`. A client reads a contract's mark
+and index (as strategy inputs) only from a gateway that declares `mark_prices`.
 
 ### `GET /v1/account`
 ```json
@@ -192,6 +195,19 @@ index), absent when it publishes none, and the client then uses its own last pri
 most 1000 hours and holds at most 1000 rates; `next` is the `from` of the following page and is absent
 on the last one. The client stores these for backtests (`qkt fetch --funding`). `501 unsupported` unless
 `funding_rates` is declared.
+
+### `GET /v1/marks?symbol=<code>&window_ms=<ms>&from=<ms>&to=<ms>`
+One contract's mark and index price history, sampled once per window: for each closed window starting in
+`[from, to)` in which the venue reported them, the last report in it, at its own `time`, oldest first:
+```json
+{"marks": [{"time": 1791154649967, "mark": "86432.49", "index": "86403.5"}], "next": 1791160640000}
+```
+`window_ms` follows `/v1/bars`. `mark` is the price the venue values positions and liquidates at, `index`
+the spot index it tracks (the same fields as a quote's, §4a); either is absent when the venue did not
+report it. A window in which the venue reported nothing has no entry: the value known is still the
+previous one. A response covers at most 100 windows; `next` is the `from` of the following page and is
+absent on the last one. The client stores these for backtests (`qkt fetch --marks`), which see each value
+from its `time` on. `501 unsupported` unless `mark_prices` is declared.
 
 ### `POST /v1/kill`, `POST /v1/kill/release`
 Body `{"scope": "all"}` or `{"scope": "symbols", "symbols": ["<code>", ...]}`. Response `200` with the

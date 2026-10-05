@@ -83,6 +83,7 @@ internal class StrategyBinder(
         if (strategy is DslCompiledStrategy) {
             requireMultiPositionCapability(strategyId, strategy, broker)
             requireVolumeCapability(strategyId, strategy, source)
+            requireMarkPrices(strategyId, strategy, source)
             requireBookCapability(strategyId, strategy, bookBalance)
             strategy.bindStatePersistor(strategyId, persistor)
             val kept = StructurePersistence(strategyId, book, persistor).also { it.restore() }
