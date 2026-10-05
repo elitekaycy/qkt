@@ -220,6 +220,49 @@ RULES
     THEN BUY c SIZING 0.1
 ```
 
+### Trade flow and liquidations (`<alias>.buy_volume[1]`, ...)
+
+A venue stream's public trade tape gives four volumes per bar of the stream's timeframe, in the contract's
+quantity (base coins on a Deribit USDC-linear contract):
+
+```qkt
+perp.buy_volume[1]        -- traded by buyers taking liquidity (aggressor buys), one bar back
+perp.sell_volume[1]       -- traded by sellers taking liquidity
+perp.long_liq_volume[1]   -- longs the venue liquidated (liquidation orders that sold)
+perp.short_liq_volume[1]  -- shorts the venue liquidated (liquidation orders that bought)
+```
+
+They are read **one bar back or more**: `perp.buy_volume[1]` is the bar before the one closing, `[n]` the bar `n`
+before it. A bare `perp.buy_volume` (the bar closing) is refused when the strategy compiles. A bar's flow is
+known only after it closes, and live reads it from the gateway's tape after that, so at the close itself its
+last prints may not have arrived; a bar later they have, and live and backtest read the same sums. A bar with
+no print is `0`. `[n]` reads the series directly, so it needs no warmup of its own, and it works inside
+indicators and rolling functions:
+
+```qkt
+STRATEGY flow_imbalance VERSION 1
+SYMBOLS
+    perp = DERIBIT:BTC_USDC_PERPETUAL EVERY 5m
+RULES
+    -- Aggressive buying, well above its recent pace, after a flush of liquidated longs.
+    WHEN perp.buy_volume[1] > 2 * perp.sell_volume[1]
+     AND perp.buy_volume[1] > avg(perp.buy_volume[1], 12) * 1.5
+     AND perp.long_liq_volume[2] > 0 AND POSITION.perp = 0
+    THEN BUY perp SIZING 0.01
+```
+
+- **Live:** read from the account's gateway (`/v1/trades`, `/v1/liquidations`) in the background, each bar a
+  couple of seconds after it closes; the gateway must declare `trades` (for `buy_volume`, `sell_volume`) or
+  `liquidations` (for the `_liq_` fields). A strategy reading them anywhere else fails at start. On the first
+  bars after a start, and while the gateway cannot be reached, a bar not yet read is Undefined.
+- **Backtest:** read from the stored tape, `tape/<VENUE>/<NAME>/<day>.csv.gz` and
+  `liquidations/<VENUE>/<NAME>/<day>.csv.gz`, written by `qkt fetch <VENUE>:<NAME> --tape` and
+  `--liquidations` (`--from <date> --to <date>`). A run is refused, naming that fetch, when a day its reads need
+  is not stored, from the day its first bar's warmup and lookback reach back to.
+- A continuous futures stream (`@front`) has no tape of its own: read a listed contract or a perpetual.
+- Deribit marks liquidations on its tape. Its testnet keeps about a day of prints and rarely liquidates; mainnet's
+  whole history is served by a mainnet or paper gateway.
+
 ### Open interest (`<alias>.open_interest`)
 
 `perp.open_interest` is the open interest of the contract the stream trades: the contracts outstanding, in
