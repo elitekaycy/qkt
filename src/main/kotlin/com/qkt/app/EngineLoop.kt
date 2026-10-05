@@ -52,6 +52,14 @@ internal class EngineLoop(
         t: Throwable,
     ) = faults.onEngineFault(stage, t)
 
+    /** A flatten that ran but could not see or close everything: say so as loudly as a fault, no halt. */
+    private fun reportFlattenGap(gap: String) {
+        log.error("flatten incomplete: {}", gap)
+        sessionNotifier.strategyError(strategies.firstOrNull()?.first.orEmpty(), "FlattenIncomplete") {
+            "flatten incomplete: $gap"
+        }
+    }
+
     private fun processTick(msg: Inbound.FeedTick) {
         val latencyStartNanos = if (pipeline.latency.enabled) System.nanoTime() else 0L
         try {
@@ -76,6 +84,7 @@ internal class EngineLoop(
         if (mdcStrategy != null) org.slf4j.MDC.put("strategy", mdcStrategy)
         try {
             var stopDeadlineNanos: Long? = null
+            var stopGraceNanos = 0L
             while (running.get()) {
                 val msg: Inbound? =
                     control.poll()
@@ -111,12 +120,18 @@ internal class EngineLoop(
                         }.onFailure { t -> onEngineFault("schedule heartbeat", t) }
                     Inbound.PersistenceHealthCheck -> persistenceWatch.checkPersistenceHealth()
                     is Inbound.Query -> msg.execute()
-                    Inbound.Flatten ->
+                    Inbound.Flatten -> {
                         // A failed FLATTEN is the emergency path failing — the loudest case.
                         // Then the venue's own list: a resting order whose placement response was
                         // lost is not among the orders the engine knows, and must not outlive a flatten.
                         runCatching { flatten.flattenAndSweep() }
+                            .onSuccess { gap -> gap?.let(::reportFlattenGap) }
                             .onFailure { t -> onEngineFault("flatten", t) }
+                        mailbox.lastFlattenEndNanos.set(System.nanoTime())
+                        mailbox.pendingFlattens.decrementAndGet()
+                        // A flatten run while stopping: let its closes' fills land before the loop ends.
+                        stopDeadlineNanos = stopDeadlineNanos?.let { maxOf(it, System.nanoTime() + stopGraceNanos) }
+                    }
                     is Inbound.FeedEnded -> {
                         // Feed ended (finite source drained): process every tick already
                         // queued before stopping, so no tick is dropped.
@@ -126,7 +141,10 @@ internal class EngineLoop(
                             running.set(false)
                         }
                     }
-                    is Inbound.GracefulStop -> stopDeadlineNanos = msg.deadlineNanos
+                    is Inbound.GracefulStop -> {
+                        stopDeadlineNanos = msg.deadlineNanos
+                        stopGraceNanos = msg.graceNanos
+                    }
                 }
                 val deadline = stopDeadlineNanos
                 if (deadline != null && System.nanoTime() >= deadline && control.isEmpty()) {

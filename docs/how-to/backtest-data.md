@@ -203,14 +203,39 @@ futures:
   - root: BINANCE_UM:BTCUSDT
     # …multiplier, tickSize, volumeStep, volumeMin as above…
     roll: { daysBeforeExpiry: 8, atUtc: "08:00", adjust: panama }   # adjust: none | panama | ratio
+    # optional: anchor: BTCUSDT_250328   # the contract that keeps raw prices (default: the first measured)
 ```
 
 ```bash
 qkt fetch BINANCE_UM:BTCUSDT --rolls   # fetches missing roll days, writes contracts/BINANCE_UM/BTCUSDT.rolls.json
+qkt fetch CME:CL --rolls --tf 1d       # a root with only daily bars, e.g. from a vendor archive
 ```
 
+Each roll is priced at each contract's last stored bar (fetched, or built into the binary store)
+closed at or before the roll instant: from 1m bars by default, or from the bars `--tf` names (1d at
+most). Daily bars are looked for over the week before the roll, so a Monday roll takes Friday's close. Days the stored bars cannot price are fetched when qkt has a
+bar source for the venue; otherwise the history is measured from what is stored. A live session prices
+the rolls it adds from 1m bars.
+
+A catalog written from a vendor archive (any venue `--catalog` has no source for) may give each
+contract's `lifetimeVolume` and `peakOpenInterest`. A continuous chain then skips delivery months that
+are listed but never traded (COMEX gold lists every month, trades G/J/M/Q/V/Z): a contract is left out
+when its volume is under 10% of the median of its six neighbours on each side, unless its peak open
+interest reaches half of theirs. Judging against neighbours, not a fixed number, holds across decades
+of market growth. Contracts without the figures always chain.
+
 The series is adjusted forward from the first measured roll, so history never changes when new rolls
-are added and nothing leaks from the future. Each contract's bars must be fetched at the strategy's
+are added and nothing leaks from the future.
+
+Over a long chain in steep contango a forward panama series can fall below zero: crude's April 2020
+super-contango does it from any start year, and qkt refuses the run. `anchor:` names the contract that
+keeps raw prices instead; contracts before it are shifted backward onto it, contracts after it forward.
+Distances, P&L and roll costs are unchanged, and a roll measured after the anchor still never moves an
+earlier contract. The cost is the usual one of back-adjusted data: before the anchor, price levels
+include roll gaps from later dates, so a rule on an absolute level (`close > 50`) sees the future;
+rules on distances and changes do not. Pick an anchor that keeps the whole window positive (for crude
+2000-2022, one from `CLM20` to `CLM22`; the newest, `CLZ22`, still puts the April 2020 lows below zero).
+The anchor must lie inside the measured history. Each contract's bars must be fetched at the strategy's
 timeframe, and that timeframe must divide the roll time (an 08:00 roll works with 15m or 1h bars,
 not 1d).
 

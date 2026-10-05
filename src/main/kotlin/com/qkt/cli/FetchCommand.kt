@@ -41,7 +41,7 @@ import java.time.ZoneOffset
  * - BACKTEST — refused; nothing to fetch (the local store IS the backtest source).
  *
  * `qkt fetch VENUE:ROOT --catalog` writes the root's contract catalogs instead of bars (see [CatalogFetch]), and
- * `qkt fetch VENUE:ROOT --rolls` measures its roll history from stored (and fetched) 1m bars, and
+ * `qkt fetch VENUE:ROOT --rolls [--tf 1d]` measures its roll history from stored (and fetched) bars, and
  * `qkt fetch DERIBIT:ROOT --chains` builds an option root's chain snapshots from trade history, and
  * `qkt fetch VENUE:PERPETUAL --funding` stores a perpetual's funding rates (see [FundingFetch]),
  * `qkt fetch VENUE:CONTRACT --marks --tf 1m` stores a contract's mark and index history (see [MarksFetch]),
@@ -76,7 +76,7 @@ class FetchCommand(
             return ExitCodes.ARG_ERROR
         }
         if (args.flag("catalog")) return catalog(target)
-        if (args.flag("rolls")) return rolls(target, broker)
+        if (args.flag("rolls")) return RollsFetch.forArgs(target, broker, args)
         if (args.flag("chains")) return ChainFetch.run(target, args)
         if (args.flag("funding")) return FundingFetch.run(target, args)
         if (args.flag("marks")) return MarksFetch.run(target, args, clock)
@@ -175,23 +175,4 @@ class FetchCommand(
 
     private fun catalog(target: String): Int =
         CatalogFetch.forTarget(target, DataRoot.forDataRoot(args.option("data-root")), args.option("config"))
-
-    private fun rolls(
-        target: String,
-        broker: String,
-    ): Int {
-        val dataRoot = DataRoot.forDataRoot(args.option("data-root"))
-        val fetcher = buildFetcher(broker, args.option("config")) ?: return ExitCodes.USER_ERROR
-        val store = LocalBarStore(root = dataRoot)
-        return RollsFetch.run(
-            target,
-            dataRoot,
-            args.option("instruments")?.let {
-                java.nio.file.Path
-                    .of(it)
-            },
-        ) { contract, day ->
-            RollsFetch.fetchOneDay(fetcher, store, broker, contract, day)
-        }
-    }
 }

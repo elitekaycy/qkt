@@ -38,6 +38,14 @@ internal class MT5AcknowledgedCloseFill(
         val filledQuantity: BigDecimal,
         val closeStartedAtMs: Long,
         val positionClosed: Boolean,
+        /** Filled across the close order so far, this slice included. */
+        val cumulativeFilled: BigDecimal = filledQuantity,
+        /** False for a slice of a close the venue filled in part: the order stays open for the rest. */
+        val orderComplete: Boolean = true,
+        /** Deals of the order's earlier slices. */
+        val earlierDeals: Set<Long> = emptySet(),
+        /** Runs once the slice is on the bus. */
+        val onBooked: () -> Unit = {},
     )
 
     /**
@@ -106,39 +114,66 @@ internal class MT5AcknowledgedCloseFill(
         price: BigDecimal,
         venueCosts: BigDecimal,
     ) {
-        engineCloses.confirmEngineClose(
-            close.ticket,
-            EnginePartialClose(close.filledQuantity, setOfNotNull(close.ack.deal.takeIf { it > 0L }))
-                .takeUnless { close.positionClosed },
-        )
+        if (close.orderComplete) {
+            val deals = close.earlierDeals + setOfNotNull(close.ack.deal.takeIf { it > 0L })
+            engineCloses.confirmEngineClose(
+                close.ticket,
+                EnginePartialClose(close.cumulativeFilled, deals).takeUnless { close.positionClosed },
+            )
+        }
         if (close.positionClosed) {
             books.positionBook.forgetAttribution(close.ticket)
             books.positionBook.forgetOpenedAt(close.ticket)
         }
         val request = close.request
-        bus.publish(
-            BrokerEvent.OrderAccepted(
-                clientOrderId = request.id,
-                brokerOrderId = close.ticket.toString(),
-                strategyId = request.strategyId,
-                timestamp = clock.now(),
-            ),
-        )
-        bus.publish(
-            BrokerEvent.OrderFilled(
-                clientOrderId = request.id,
-                brokerOrderId = close.ticket.toString(),
-                symbol = request.symbol,
-                side = request.side,
-                price = price,
-                quantity = close.filledQuantity,
-                strategyId = request.strategyId,
-                timestamp = clock.now(),
-                venueCosts = venueCosts,
-                exitReason = ExitReason.CLOSE,
-            ),
-        )
+        if (close.cumulativeFilled.compareTo(close.filledQuantity) == 0) {
+            bus.publish(
+                BrokerEvent.OrderAccepted(
+                    clientOrderId = request.id,
+                    brokerOrderId = close.ticket.toString(),
+                    strategyId = request.strategyId,
+                    timestamp = clock.now(),
+                ),
+            )
+        }
+        bus.publish(if (close.orderComplete) filled(close, price, venueCosts) else slice(close, price, venueCosts))
+        close.onBooked()
     }
+
+    private fun filled(
+        close: AcknowledgedClose,
+        price: BigDecimal,
+        venueCosts: BigDecimal,
+    ) = BrokerEvent.OrderFilled(
+        clientOrderId = close.request.id,
+        brokerOrderId = close.ticket.toString(),
+        symbol = close.request.symbol,
+        side = close.request.side,
+        price = price,
+        quantity = close.filledQuantity,
+        strategyId = close.request.strategyId,
+        timestamp = clock.now(),
+        venueCosts = venueCosts,
+        exitReason = ExitReason.CLOSE,
+    )
+
+    private fun slice(
+        close: AcknowledgedClose,
+        price: BigDecimal,
+        venueCosts: BigDecimal,
+    ) = BrokerEvent.OrderPartiallyFilled(
+        clientOrderId = close.request.id,
+        brokerOrderId = close.ticket.toString(),
+        symbol = close.request.symbol,
+        side = close.request.side,
+        price = price,
+        quantity = close.filledQuantity,
+        cumulativeFilled = close.cumulativeFilled,
+        strategyId = close.request.strategyId,
+        timestamp = clock.now(),
+        venueCosts = venueCosts,
+        exitReason = ExitReason.CLOSE,
+    )
 
     private companion object {
         /** Deal-history reads for an unpriced close ack before falling back to the market price. */
