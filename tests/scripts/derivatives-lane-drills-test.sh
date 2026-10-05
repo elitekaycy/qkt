@@ -83,7 +83,7 @@ run.args, run.key = types.SimpleNamespace(gateway_url=f"http://127.0.0.1:{server
 run.out, run.strategy, run.started_ms, run.ended_ms = "/nonexistent", "s", 0, 0
 
 kills = drills.Drills(run, drills.check([{"at_s": 0, "kind": "kill_switch", "hold_s": 0}]), "guardian")
-kills.heard_kill = lambda: ["{all=true}", "{all=false}"]
+kills.heard_kill = lambda: ['{"all":true,"symbols":[]}', '{"all":false,"symbols":[]}']
 
 real_sleep, drills.time.sleep = drills.time.sleep, lambda s: None
 kills.tick([{"side": "BUY"}])
@@ -110,8 +110,26 @@ drills.time.sleep = real_sleep
 
 late = drills.Drills(run, drills.check([{"at_s": 3600, "kind": "qkt_restart"}]), None)
 late.tick([{"side": "BUY"}])
-assert late.problems() == ["qkt_restart: never fired (3600 s after the first fill)"], late.problems()
+assert late.problems() == ["qkt_restart: never fired (3600 s after fill 1)"], late.problems()
 print("ok a drill that never fired fails the case")
+
+deaf = drills.Drills(run, drills.check([{"at_s": 0, "kind": "kill_switch", "hold_s": 0}]), "guardian")
+deaf.heard_kill = lambda: ['{"all":true,"symbols":[]}']
+drills.time.sleep, clock = (lambda s: None), [0.0]
+real_time, drills.time.time = drills.time.time, lambda: clock.__setitem__(0, clock[0] + 1) or clock[0]
+deaf.tick([{"side": "BUY"}])
+drills.time.sleep, drills.time.time = real_sleep, real_time
+assert any("did not log the switch engaging then releasing" in p for p in deaf.problems()), deaf.problems()
+print("ok a kill-switch drill fails when the daemon never logs the switch's release from its stream")
+
+fired = []
+second = drills.Drills(run, drills.check([{"at_s": 0, "after_fills": 2, "flat": True, "kind": "qkt_restart"}]), None)
+second.qkt_restart = lambda drill, line, held: fired.append(held)
+second.tick([{"side": "BUY"}])
+assert fired == [], "a drill anchored on the second fill fired after the first"
+second.tick([{"side": "BUY"}, {"side": "SELL"}])
+assert len(fired) == 1 and second.records[0]["problems"] == ["qkt_restart: the case held [{'symbol': 'BTC_USDC-PERPETUAL', 'avg_price': '86000.3'}] when a drill meant for a flat account fired"], second.records
+print("ok a drill fires from its after_fills-th fill, and a flat drill fails when the case still holds")
 
 for bad in ({"at_s": 1, "kind": "reboot"}, {"kind": "qkt_restart"}):
     try:
