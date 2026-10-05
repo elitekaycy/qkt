@@ -81,6 +81,18 @@ internal class OrderEventHandlers(
 
     /** An order partially filled; its first execution slice already cancels its siblings. */
     fun onPartiallyFilled(e: BrokerEvent.OrderPartiallyFilled) {
+        // A slice the order already holds is a re-report: applying it again would skew the average
+        // price, or move the executed quantity back to an older report.
+        val current = book[e.clientOrderId]
+        if (current != null && e.cumulativeFilled <= current.cumulativeFilledQuantity) {
+            log.warn(
+                "ignoring repeated execution slice order_id={} cumulative={} already holds {}",
+                e.clientOrderId,
+                e.cumulativeFilled,
+                current.cumulativeFilledQuantity,
+            )
+            return
+        }
         // Before the update: its snapshot persists the fill progress with the ticket this execution reported.
         scaleOutTracker.onBasisPartiallyFilled(e)
         val applied =
