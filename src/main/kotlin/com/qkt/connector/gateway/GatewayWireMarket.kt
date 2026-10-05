@@ -41,3 +41,18 @@ data class WireBars(
     val bars: List<WireBar>,
     val next: Long? = null,
 )
+
+/** A contract's [mark] and [index] as the venue reported them at [time]; null when it did not report one. */
+@Serializable
+data class WireMark(
+    val time: Long,
+    val mark: String? = null,
+    val index: String? = null,
+)
+
+/** `GET /v1/marks`: one page of [marks], oldest first; [next] is the `from` of the next page, null on the last. */
+@Serializable
+data class WireMarks(
+    val marks: List<WireMark>,
+    val next: Long? = null,
+)

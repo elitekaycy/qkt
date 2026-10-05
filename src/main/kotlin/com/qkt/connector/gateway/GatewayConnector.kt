@@ -15,6 +15,7 @@ import com.qkt.instrument.ContractCatalogSource
 import com.qkt.instrument.FundingRateSource
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.OptionTerms
+import com.qkt.marketdata.marks.MarkHistorySource
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.marketdata.source.SymbolPattern
 
@@ -87,6 +88,7 @@ class GatewayTradingAccount internal constructor(
             listing = { client.instruments() },
             recorderFor = recording::sinkFor,
             bars = client::bars,
+            capabilities = { client.health().capabilities },
         )
 
     override val marketData: MarketSource = quotes
@@ -95,6 +97,19 @@ class GatewayTradingAccount internal constructor(
         get() = GatewayContractCatalog(client, GatewaySymbols(config.symbolPrefix), clock)
 
     override val fundingRates: FundingRateSource = GatewayFundingRates(client, GatewaySymbols(config.symbolPrefix))
+
+    /** On a client of its own whose calls may take [MARKS_TIMEOUT_MS]: a page of marks can cost the venue a call per window. */
+    override val markHistory: MarkHistorySource
+        get() =
+            GatewayMarkHistory(
+                GatewayClient(
+                    settings.url,
+                    settings.apiKey,
+                    maxOf(settings.httpTimeoutMs, MARKS_TIMEOUT_MS),
+                    settings.retryAttempts,
+                ),
+                GatewaySymbols(config.symbolPrefix),
+            )
 
     override val marketDataPattern: SymbolPattern = SymbolPattern(quotes::supports)
 
@@ -128,3 +143,5 @@ class GatewayTradingAccount internal constructor(
         recording.close()
     }
 }
+
+private const val MARKS_TIMEOUT_MS = 60_000L

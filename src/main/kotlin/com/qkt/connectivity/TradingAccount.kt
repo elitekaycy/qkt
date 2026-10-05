@@ -50,6 +50,9 @@ interface TradingAccount : AutoCloseable {
     /** The venue's published funding rates of its perpetuals, or null when the connector cannot read them. */
     val fundingRates: com.qkt.instrument.FundingRateSource? get() = null
 
+    /** The venue's mark and index history of its contracts, or null when the connector cannot read it. */
+    val markHistory: com.qkt.marketdata.marks.MarkHistorySource? get() = null
+
     /** Releases the connections and files this account holds. Idempotent. */
     override fun close()
 }
