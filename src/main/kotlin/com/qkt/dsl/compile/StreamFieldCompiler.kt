@@ -8,8 +8,8 @@ import java.math.BigDecimal
 /**
  * Compiles `<stream>.<field>`: a candle field (close, high, bid, timestamp, ...) read from the
  * current bar or the candle hub, or an instrument-meta field (tick_size, contract_size, ...)
- * read from the instrument catalog, a futures contract field ([FuturesFieldCompiler]), or a contract's mark or
- * index ([MarkFieldCompiler]).
+ * read from the instrument catalog, a futures contract field ([FuturesFieldCompiler]), a contract's mark or
+ * index ([MarkFieldCompiler]), or an option's mark IV or Greek ([OptionFieldCompiler]).
  */
 internal object StreamFieldCompiler {
     private val candleFields: Set<String> = DslVocabulary.candleFields.toSet()
@@ -28,6 +28,7 @@ internal object StreamFieldCompiler {
             in metaFields -> compileMetaField(ref)
             in FuturesFieldCompiler.fields -> FuturesFieldCompiler.compile(ref)
             in MarkFieldCompiler.fields -> MarkFieldCompiler.compile(ref)
+            in OptionFieldCompiler.fields -> OptionFieldCompiler.compile(ref)
             else -> compileCandleField(ref)
         }
     }

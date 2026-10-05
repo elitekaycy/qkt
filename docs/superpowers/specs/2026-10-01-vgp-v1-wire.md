@@ -2,7 +2,8 @@
 
 **Status:** design for phase 44 (amends `2026-09-30-futures-options-design.md` §7); capabilities and
 perpetual funding added by `2026-10-04-perpetual-funding-and-venue-capabilities.md`, mark prices by
-`2026-10-04-mark-and-index-stream-fields.md`, open interest by `2026-10-04-open-interest.md`. The endpoint list
+`2026-10-04-mark-and-index-stream-fields.md`, open interest by `2026-10-04-open-interest.md`, option marks by
+`2026-10-05-option-marks-as-rule-inputs.md`. The endpoint list
 and semantics come from `docs/research/2026-09-18-venue-plugin-architecture.md` §6; this document
 fixes what that list left to implementations: the JSON, the event stream, errors, resume and the
 kill switch. The qkt client (`connector/gateway`) and any gateway (`qkt-venue-gateway`) implement exactly
@@ -59,13 +60,14 @@ happened in between.
 (`/v1/quotes`), `settlements` (the venue's settlements reach `/v1/settlements` and the stream), `funding`
 (what the venue charged or credited the account for holding perpetuals: `/v1/funding` and the `funding`
 event), `funding_rates` (`/v1/funding-rates`), `mark_prices` (`/v1/marks`, and quotes that carry `mark`
-and `index` where the venue reports them) and `open_interest` (`/v1/open-interest`). An endpoint whose
-capability is not declared answers
+and `index` where the venue reports them), `open_interest` (`/v1/open-interest`) and `option_marks` (option
+quotes that carry `mark_iv` and `underlying`, §4a). An endpoint whose capability is not declared answers
 `501 unsupported` (`/v1/settlements` is still served, from what the journal holds). A gateway that
 predates the field omits it; a client treats that as none declared. A client ignores a name it does not
 know. Funding is the cash a venue moves between longs and shorts of a perpetual; a client books it, so it
 does not trade perpetuals on a gateway that does not declare `funding`. A client reads a contract's mark
-and index (as strategy inputs) only from a gateway that declares `mark_prices`.
+and index (as strategy inputs) only from a gateway that declares `mark_prices`, and an option's implied
+volatility and Greeks only from one that declares `option_marks`.
 
 ### `GET /v1/account`
 ```json
@@ -295,7 +297,10 @@ code subscribed both ways is sent once. Each message is one quote:
 ```
 Any field but `symbol` and `time` may be null (no bid, no mark yet). `mark_iv` is in volatility points.
 `underlying` is the price the contract is valued against (an option's forward for its expiry); `index`
-is the spot index the venue charges fees on (Deribit's option fee is a share of it).
+is the spot index the venue charges fees on (Deribit's option fee is a share of it). A gateway declaring
+`option_marks` sends both `mark_iv` and `underlying` on an option's quotes once the venue reports them;
+the client prices the option's Greeks from them (Black-76, rate 0), so the venue's own Greeks are not
+carried.
 
 `time` is the instant the gateway last knew the quote to hold, not when it last changed. While a
 subscribed quote holds, the gateway sends it again with `time` advanced at least every **5 seconds**:

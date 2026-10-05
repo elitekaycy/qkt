@@ -2,6 +2,7 @@ package com.qkt.connector.gateway
 
 import com.qkt.candles.TimeWindow
 import com.qkt.common.TimeRange
+import com.qkt.derivatives.options.chain.OptionMarks
 import com.qkt.derivatives.options.chain.OptionRootSymbol
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.TickFeed
@@ -23,7 +24,8 @@ import org.slf4j.LoggerFactory
  * The quotes of a fed root also go to [recorderFor] the root (`DERIBIT:BTC_USDC`), when it records one.
  * Closed bars of a contract come from `GET /v1/bars` through [bars] (live warmup reads them); a whole
  * option root has none. Each quote's mark and index are kept for strategies to read ([GatewayMarks]), when
- * the gateway's [capabilities] include `mark_prices`.
+ * the gateway's [capabilities] include `mark_prices`, and each option quote's mark IV and forward
+ * ([GatewayOptionMarks]), when they include `option_marks`.
  */
 internal class GatewayMarketSource(
     private val prefix: String,
@@ -38,6 +40,8 @@ internal class GatewayMarketSource(
 ) : MarketSource {
     private val marks = GatewayMarks(prefix, capabilities)
 
+    private val optionMarks = GatewayOptionMarks(prefix, capabilities)
+
     private val rootPrefix = OptionRootSymbol.PREFIX + prefix.removeSuffix(":") + "."
 
     private val log = LoggerFactory.getLogger(GatewayMarketSource::class.java)
@@ -50,6 +54,9 @@ internal class GatewayMarketSource(
 
     /** The account's contracts' quoted marks ([GatewayMarks]); an option root's whole feed has none. */
     override fun marksFor(symbol: String): MarkPrices? = marks.takeIf { symbol.startsWith(prefix) }
+
+    /** The account's contracts' quoted option marks ([GatewayOptionMarks]); an option root's whole feed has none. */
+    override fun optionMarksFor(symbol: String): OptionMarks? = optionMarks.takeIf { symbol.startsWith(prefix) }
 
     override fun bars(
         symbol: String,
@@ -78,7 +85,7 @@ internal class GatewayMarketSource(
 
     override fun liveTicks(symbols: List<String>): TickFeed {
         require(symbols.all(::supports)) { "gateway $prefix does not serve ${symbols.filterNot(::supports)}" }
-        val instruments = listing().also(marks::listed)
+        val instruments = listing().also(marks::listed).also(optionMarks::listed)
         val gatewaySymbols = GatewaySymbols(prefix).apply { update(instruments.map { it.code }) }
         val fedRoots = symbols.filter { it.startsWith(rootPrefix) }.map { OptionRootSymbol.parse(it).getOrThrow() }
         val listedRoots = instruments.mapNotNull { it.underlying }.toSet()
@@ -105,6 +112,7 @@ internal class GatewayMarketSource(
 
         fun record(quote: WireQuote) {
             marks.heard(quote)
+            optionMarks.heard(quote)
             recorders[quote.symbol.substringBefore('-')]?.invoke(quote)
         }
         return LiveTickFeed(GatewayQuoteSource(url, apiKey, gatewaySymbols::qkt, ::record))

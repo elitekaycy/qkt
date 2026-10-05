@@ -1,6 +1,8 @@
 package com.qkt.derivatives.options.chain
 
 import com.qkt.derivatives.options.pricing.Black76
+import com.qkt.derivatives.options.pricing.OptionValue
+import com.qkt.instrument.OptionContract
 import com.qkt.instrument.OptionListing
 import java.math.BigDecimal
 
@@ -55,10 +57,8 @@ object StructureGreeks {
         for (leg in legs) {
             val quote = byContract[leg.contract] ?: return null
             val contract = listings.getValue(leg.contract).toContract()
-            val years = (contract.expiryMs - nowMs) / YEAR_MS
             val forward = medianForward(byExpiry.getValue(contract.expiryMs))
-            val sigma = requireNotNull(quote.markIv).toDouble() / VOL_POINTS
-            val value = Black76.value(contract.right, forward, contract.strike.toDouble(), years, 0.0, sigma)
+            val value = black76(contract, forward, requireNotNull(quote.markIv).toDouble(), nowMs)
             val units = leg.quantity.multiply(leg.contractSize).toDouble()
             total =
                 PositionGreeks(
@@ -69,5 +69,29 @@ object StructureGreeks {
                 )
         }
         return total
+    }
+
+    /**
+     * One unit of the underlying's worth of [contract] at [nowMs] (before its expiry): Black-76 on [forward] and
+     * [markIv] (volatility points) at rate 0, in [PositionGreeks]' units.
+     */
+    fun perUnit(
+        contract: OptionContract,
+        forward: Double,
+        markIv: Double,
+        nowMs: Long,
+    ): PositionGreeks {
+        val value = black76(contract, forward, markIv, nowMs)
+        return PositionGreeks(value.delta, value.gamma, value.vega / VOL_POINTS, value.theta / DAYS_PER_YEAR)
+    }
+
+    private fun black76(
+        contract: OptionContract,
+        forward: Double,
+        markIv: Double,
+        nowMs: Long,
+    ): OptionValue {
+        val years = (contract.expiryMs - nowMs) / YEAR_MS
+        return Black76.value(contract.right, forward, contract.strike.toDouble(), years, 0.0, markIv / VOL_POINTS)
     }
 }

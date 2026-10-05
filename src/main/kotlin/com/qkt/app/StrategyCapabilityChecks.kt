@@ -3,6 +3,8 @@ package com.qkt.app
 import com.qkt.broker.Broker
 import com.qkt.broker.OrderTypeCapability
 import com.qkt.dsl.compile.DslCompiledStrategy
+import com.qkt.instrument.InstrumentRegistry
+import com.qkt.instrument.OptionTerms
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.marketdata.source.MarketSourceCapability
 import com.qkt.pnl.BookBalanceView
@@ -76,6 +78,32 @@ internal fun requireMarkPrices(
                 marks.problem(symbol)
             }
         require(problem == null) { "Strategy '$strategyId' reads the mark or index of $symbol but $problem" }
+    }
+}
+
+/**
+ * Refuse to start a strategy that reads an option's mark IV or Greeks (`<alias>.iv`, `.delta`, ...) on a symbol
+ * that is not a catalogued option, or whose data source serves no option marks or serves them with a problem
+ * (a gateway that does not declare `option_marks`, a root with no chain series), so a rule never reads an
+ * Undefined that nothing will ever fill. Per symbol, through [MarketSource.optionMarksFor].
+ */
+internal fun requireOptionMarks(
+    strategyId: String,
+    strategy: DslCompiledStrategy,
+    source: MarketSource,
+    instruments: InstrumentRegistry,
+) {
+    for (symbol in strategy.optionMarkSymbols) {
+        val marks = source.optionMarksFor(symbol)
+        val problem =
+            when {
+                instruments.lookup(symbol)?.derivative !is OptionTerms -> "it is not a catalogued option contract"
+                marks == null -> "its data feed ('${source.name}') serves no option marks"
+                else -> marks.problem(symbol)
+            }
+        require(
+            problem == null,
+        ) { "Strategy '$strategyId' reads the implied volatility or Greeks of $symbol but $problem" }
     }
 }
 

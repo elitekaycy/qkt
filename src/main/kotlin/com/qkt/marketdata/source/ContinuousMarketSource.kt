@@ -6,6 +6,7 @@ import com.qkt.derivatives.futures.ChainSegment
 import com.qkt.derivatives.futures.ContinuousChain
 import com.qkt.derivatives.futures.ContinuousChains
 import com.qkt.derivatives.futures.PriceSpace
+import com.qkt.derivatives.options.chain.OptionMarks
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
@@ -39,6 +40,10 @@ class ContinuousMarketSource(
 
     override fun capabilitiesFor(symbol: String): Set<MarketSourceCapability> =
         if (chains.isContinuous(symbol)) inner.capabilities else inner.capabilitiesFor(symbol)
+
+    /** A continuous futures stream is no option; any other symbol's option marks are the inner source's. */
+    override fun optionMarksFor(symbol: String): OptionMarks? =
+        if (chains.isContinuous(symbol)) null else inner.optionMarksFor(symbol)
 
     override fun supports(symbol: String): Boolean = chains.isContinuous(symbol) || inner.supports(symbol)
 

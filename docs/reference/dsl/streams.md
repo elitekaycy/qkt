@@ -174,6 +174,16 @@ btc.mark          -- the venue's mark price: what it values positions and liquid
 btc.index         -- the spot index the contract tracks (gateway feeds)
 ```
 
+An option contract's stream also has its mark implied volatility and Greeks:
+
+```qkt
+c.iv              -- mark implied volatility, in volatility points (45.5 is 45.5%)
+c.delta           -- per contract, in units of the underlying
+c.gamma           -- per contract, delta's change per unit of the underlying's price
+c.vega            -- per contract, quote currency per volatility point
+c.theta           -- per contract, quote currency per calendar day
+```
+
 `btc.timestamp` is the bar's start time in epoch milliseconds; `btc.timestamp[1]` is the previous bar's start. For the strategy's clock, use [`NOW`](now.md).
 
 `bid`, `ask`, and `spread` are populated only on feeds that carry a quote: live MT5 streams, and tick backtests over quote data (bid/ask ticks). A backtest over bars, or over trade-only ticks, has no quote. When a quote is unavailable they resolve to undefined and a condition referencing them does not fire (the same null-tolerant behaviour as out-of-range lookback). They are the quote from the last tick before the candle closed — the freshest value the engine holds, not the live quote at order-placement instant.
@@ -190,6 +200,24 @@ Undefined. A continuous futures stream (`@front`) has none: read a listed contra
 ```qkt
 WHEN perp.mark - perp.index > 25 AND POSITION.perp = 0   -- rich premium: fade it
 THEN SELL perp SIZING 0.01
+```
+
+`iv` is the venue's mark IV of the contract; the Greeks are Black-76 on it and the forward the venue values
+the contract against, at rate 0, times the contract size: the same model `POSITION.<structure>.delta`
+uses, so a one-contract structure's delta is its leg's. Live they come from the newest quote, on a
+`type: gateway` account whose gateway declares the `option_marks` capability. In a backtest they come from
+the root's declared chain series (`chains: book | trade`), the newest snapshot at or before the bar's close;
+a trade-built series carries the trade's IV and index, not the mark IV and forward. They are Undefined until
+a usable quote is known (a positive mark IV no older than the root's `maxQuoteAgeMinutes`) and from the
+contract's expiry. A strategy reading them on a stream that is not a catalogued option contract, or on a feed
+that serves no option marks, does not start.
+
+```qkt
+SYMBOLS
+    c = DERIBIT:BTC_USDC_30OCT26_90000_C EVERY 1h
+RULES
+    WHEN c.iv < 40 AND c.delta > 0.3 AND c.delta < 0.5 AND POSITION.c = 0   -- cheap vol, near the money
+    THEN BUY c SIZING 0.1
 ```
 
 ### Open interest (`<alias>.open_interest`)
