@@ -262,7 +262,7 @@ Pre-1.0 and under active development. Breaking changes can land in minor release
 - **Parameter sweep harness** — sequential or fixed-pool parallel execution with ranked summaries.
 - **Backtest HTML report** — self-contained `report.html` with SVG equity + drawdown charts, Monte Carlo fan, drawdown-period table, per-trade risk.
 - **MT5 broker (multi-profile)** — per-broker `mt5-gateway` services; built-in defaults for Exness, ICMarkets, FTMO, Pepperstone; Market + Bracket + native pending entries, with client-managed OCO and trailing behavior.
-- **Bybit Spot + Linear (USDT)** live trading with reconciliation, rate limiting, connection resilience.
+- **Venue gateway** (`type: gateway`) — Bybit, Deribit and any other [qkt-venue-gateway](https://github.com/elitekaycy/qkt-venue-gateway) adapter: futures, perpetuals, spot and options, with recovery from the gateway's journal.
 - **TradingView live vendor** (anonymous, free-tier) for paper trading.
 - **Multi-source market data** — one strategy can pull different streams from different vendors at once.
 - **On-disk content-addressable data store** with Dukascopy auto-fetch and bring-your-own CSV.
@@ -286,7 +286,7 @@ Each capability links to a full changelog under [`docs/phases/`](docs/phases/).
 src/main/kotlin/com/qkt/
 ├── app/             entry points: Main, LiveSession, TradingPipeline, IndicatorWarmer
 ├── backtest/        Backtest, BacktestResult, PerformanceReport, metrics/, report/, sweep/
-├── broker/          Broker, PaperBroker, BybitBroker, MT5Broker, CompositeBroker
+├── broker/          Broker, PaperBroker, CompositeBroker (venue brokers live under connector/)
 ├── bus/             EventBus
 ├── candles/         CandleAggregator, CandleHub, TimeWindow
 ├── cli/             the qkt CLI — command parsing, subcommands, daemon control

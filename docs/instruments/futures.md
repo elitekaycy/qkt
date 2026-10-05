@@ -69,9 +69,8 @@ continuous stream trades on a `type: gateway` account (parity rows A53-A57).
 A root's perpetual (`perpetual: BTCUSDT`) pays funding. Store its rates once
 with `qkt fetch BINANCE_UM:BTCUSDT --funding --from 2024-06-01 --to 2024-09-27`;
 a backtest charges them on every leg held through each one (`fundingPaid`), and
-refuses to run without them unless `--funding off`. Live, the gateway (or the
-Bybit linear connector, from its `Funding` executions) reports what the venue
-charged and each strategy books its own part; qkt trades a perpetual on a
+refuses to run without them unless `--funding off`. Live, the gateway reports
+what the venue charged and each strategy books its own part; qkt trades a perpetual on a
 gateway only when it declares `funding` (parity row A58). A strategy reads a contract's mark and
 index as `perp.mark` and `perp.index` (the premium is their difference): live from a gateway declaring
 `mark_prices`, in a backtest from marks stored with `qkt fetch <VENUE:CONTRACT> --marks --tf <tf>` (row A60).

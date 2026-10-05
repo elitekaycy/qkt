@@ -13,10 +13,16 @@ data_root: ./data                     # historical-data store
 starting_balance: 10000               # default starting balance for backtest reports
 log_level: info
 
-# Optional Bybit credentials — only used if a strategy declares a BYBIT: stream
-# bybit:
-#   api_key: ${BYBIT_API_KEY}
-#   api_secret: ${BYBIT_API_SECRET}
+# Optional Bybit account, reached through the qkt-venue-gateway running its Bybit adapter
+# (https://github.com/elitekaycy/qkt-venue-gateway/blob/main/adapter-bybit/README.md).
+# The entry name is the prefix strategies use: bybit_linear serves BYBIT_LINEAR: streams.
+# bybit_linear:
+#   type: gateway
+#   gateway_url: http://127.0.0.1:8444
+#   api_key: env:BYBIT_TRADER_TOKEN
+#   expected_adapter: bybit
+#   expected_account_login: "<the account_login the gateway reports>"
+#   expected_trade_mode: demo
 
 brokers:
   mt5:

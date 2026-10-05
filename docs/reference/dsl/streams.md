@@ -56,25 +56,31 @@ Strategies that combine signals across instruments are common — momentum on on
 
 ## Broker prefixes
 
-The broker prefix tells the engine which venue this stream lives on. Built-in prefixes:
+The broker prefix tells the engine which venue this stream lives on: `BACKTEST`, or the name of a
+`brokers:` entry in `qkt.config.yaml`, upper-cased. Common ones:
 
 | Prefix | What it means | When to use |
 | --- | --- | --- |
 | `BACKTEST` | The historical data store (`~/.qkt/data/`) | Backtesting; `qkt backtest`, `qkt run` in paper mode |
-| `BYBIT_SPOT` | Bybit Spot via REST + WebSocket | Live trading spot crypto |
-| `BYBIT_LINEAR` | Bybit USDT-denominated perpetuals | Live trading futures |
+| `BYBIT_SPOT` | Bybit Spot, a `type: gateway` entry named `bybit_spot` on a gateway running the [Bybit adapter](https://github.com/elitekaycy/qkt-venue-gateway/blob/main/adapter-bybit/README.md) | Live trading spot crypto |
+| `BYBIT_LINEAR` | Bybit USDT perpetuals, a `type: gateway` entry named `bybit_linear` | Live trading perpetuals |
+| `DERIBIT` | Deribit, a `type: gateway` entry named `deribit` | Futures, perpetuals and options |
 | `EXNESS`, `ICMARKETS`, `FTMO`, `PEPPERSTONE` | MT5 brokers via `mt5-gateway` | Live trading FX, indices, commodities |
 
 Plus any custom profile you define in `qkt.config.yaml`:
 
 ```yaml title="qkt.config.yaml"
 brokers:
-  myalpaca:
-    type: alpaca           # (when supported)
-    api_key: ${ALPACA_KEY}
+  mybybit:
+    type: gateway
+    gateway_url: http://127.0.0.1:8444
+    api_key: env:BYBIT_TRADER_TOKEN
+    expected_adapter: bybit
+    expected_account_login: "1234"
+    expected_trade_mode: demo
 ```
 
-You'd then write `MYALPACA:SPY` in your strategy.
+You'd then write `MYBYBIT:BTCUSDT` in your strategy.
 
 Run `qkt brokers list` to see what's configured in the current environment.
 
@@ -193,7 +199,7 @@ c.theta           -- per contract, quote currency per calendar day
 gateway declares the `mark_prices` capability. In a backtest they are the stored series
 (`qkt fetch <SYMBOL> --marks --tf <window> --from <date> --to <date>`, sampled at the stream's window), each
 value seen only after its time: at a bar's close, the last one inside the bar. A strategy that reads them
-does not start on a feed that serves none (MT5, Bybit, a gateway without `mark_prices`), and a backtest
+does not start on a feed that serves none (MT5, a gateway without `mark_prices`), and a backtest
 whose stored marks miss a day of the run is refused naming the fetch; until a first value is known they are
 Undefined. A continuous futures stream (`@front`) has none: read a listed contract or a perpetual.
 
