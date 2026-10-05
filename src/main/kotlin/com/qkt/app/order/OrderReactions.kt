@@ -33,6 +33,7 @@ internal class OrderReactions(
             s.broker,
             s.bookedVenueTickets,
             s.persistor,
+            store.scaleOutRecovery::restorePartialTicket,
             clock,
             ops,
             log,

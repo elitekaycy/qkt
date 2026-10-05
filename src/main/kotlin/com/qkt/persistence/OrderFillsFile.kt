@@ -17,7 +17,7 @@ internal class OrderFillsFile(
     ) {
         val orders =
             fills.mapValues { (_, f) ->
-                OrderFillDto(f.filledQuantity.toPlainString(), f.avgFillPrice?.toPlainString())
+                OrderFillDto(f.filledQuantity.toPlainString(), f.avgFillPrice?.toPlainString(), f.positionTicket)
             }
         runCatching { json.encodeToString(OrderFillsDto.serializer(), OrderFillsDto(STATE_SCHEMA_VERSION, orders)) }
             .onSuccess { writer.write(strategyId, ORDER_FILLS_FILE, it) }
@@ -36,7 +36,7 @@ internal class OrderFillsFile(
             "loadOrderFills schema mismatch for $strategyId: ${dto.version} != $STATE_SCHEMA_VERSION"
         }
         return dto.orders.mapValues { (_, f) ->
-            PersistedOrderFill(BigDecimal(f.filled), f.avgPrice?.let(::BigDecimal))
+            PersistedOrderFill(BigDecimal(f.filled), f.avgPrice?.let(::BigDecimal), f.ticket)
         }
     }
 }
@@ -53,4 +53,5 @@ private data class OrderFillsDto(
 private data class OrderFillDto(
     val filled: String,
     val avgPrice: String? = null,
+    val ticket: String? = null,
 )
