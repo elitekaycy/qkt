@@ -21,6 +21,10 @@ RULES
 - **Analytics**: `atm_iv` (at-the-money IV, in percent) and `skew_25d`
   (put-less-call wing IV) per tenor (`7d`, `30d`). Every indicator applies to
   them; `BUY iv` fails to compile — they are observations.
+- **One contract's IV and Greeks**: an option contract stream reads `c.iv`, `c.delta`, `c.gamma`,
+  `c.vega` and `c.theta` before anything is held (see
+  [streams](../reference/dsl/streams.md#stream-field-access)); live from a gateway declaring
+  `option_marks`, in a backtest from the root's chain series.
 - **Leg choice** happens when the rule fires: nearest expiry in the `DTE`
   window, nearest Black-76 delta to target. A leg that finds nothing means the
   structure does not open at all — never partially.
