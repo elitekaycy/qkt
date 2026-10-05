@@ -227,9 +227,11 @@ A contract's published open interest, oldest first, each `time` in `[from, min(t
 the venue stamps with the start of the period it summarizes is served at that period's end. A response
 covers at most 1000 minutes and holds at most 1000 figures; `next` is the `from` of the following page
 and is absent on the last one. A venue that publishes no history serves the figures its adapter recorded
-(the adapter's README says so); such a series starts when the gateway first recorded it. The client
-stores these for backtests (`qkt fetch --open-interest`) and reads the newest live. `501 unsupported`
-unless `open_interest` is declared.
+(the adapter's README says so); such a series starts when the gateway first recorded it. A gateway may
+keep a recorded series for a bounded window only (a retention its adapter's README names, off by default):
+what falls out of the window is gone for good, and a read reaching before it answers what remains, never
+an error. The client stores these for backtests (`qkt fetch --open-interest`), fetching within the
+gateway's window, and reads the newest live. `501 unsupported` unless `open_interest` is declared.
 
 ### `GET /v1/trades?symbol=<code>&from=<ms>&to=<ms>`
 One contract's public trade tape: every print whose `time` is in `[from, min(to, now))`, oldest first:
@@ -272,8 +274,10 @@ recorded: a read whose window reaches the present (within a minute) first record
 stands, then serves what was recorded. A series therefore has one snapshot per such read (qkt's live feed
 reads every 10 seconds), starts when the gateway first recorded it, and has a gap wherever nothing read
 it. Paging is as for open interest: at most 1000 minutes and 1000 snapshots a response, `next` the `from`
-of the following page, absent on the last. The client stores these for backtests (`qkt fetch --depth`)
-and reads the newest live. `501 unsupported` unless `depth` is declared.
+of the following page, absent on the last. As there, a gateway may keep the record for a bounded window
+only, and a read reaching before it answers what remains. The client stores these for backtests
+(`qkt fetch --depth`), fetching within the gateway's window, and reads the newest live. `501 unsupported`
+unless `depth` is declared.
 
 ### `POST /v1/kill`, `POST /v1/kill/release`
 Body `{"scope": "all"}` or `{"scope": "symbols", "symbols": ["<code>", ...]}`. Response `200` with the
