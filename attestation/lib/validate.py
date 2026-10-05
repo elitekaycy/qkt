@@ -81,6 +81,9 @@ def main():
                     errors.append(f"{where}: drills run in the derivatives lane only")
                 if drill.get("kind") not in DRILLS or not isinstance(drill.get("at_s"), int) or drill["at_s"] < 0:
                     errors.append(f"{where}: drill {drill} needs a kind in {DRILLS} and whole seconds at_s")
+                if not isinstance(drill.get("after_fills", 1), int) or drill.get("after_fills", 1) < 1 \
+                        or not isinstance(drill.get("flat", False), bool):
+                    errors.append(f"{where}: drill {drill}: after_fills is a fill count from 1, flat true or false")
             if doc.get("expect_startup_refusal"):
                 try:
                     re.compile(str(doc["expect_startup_refusal"]))
