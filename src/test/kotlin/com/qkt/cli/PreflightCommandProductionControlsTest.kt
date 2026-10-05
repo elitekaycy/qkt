@@ -70,8 +70,13 @@ class PreflightCommandProductionControlsTest : PreflightCommandFixture() {
             risk:
               max_daily_loss: 100
             brokers:
-              bybit:
-                type: bybit
+              bybit_linear:
+                type: gateway
+                gateway_url: http://127.0.0.1:1
+                api_key: token
+                expected_adapter: bybit
+                expected_account_login: "1"
+                expected_trade_mode: demo
             state:
               disk_free_alert_gb: 0
             """.trimIndent(),
@@ -118,8 +123,13 @@ class PreflightCommandProductionControlsTest : PreflightCommandFixture() {
             risk:
               max_daily_loss: 100
             brokers:
-              bybit:
-                type: bybit
+              bybit_linear:
+                type: gateway
+                gateway_url: http://127.0.0.1:1
+                api_key: token
+                expected_adapter: bybit
+                expected_account_login: "1"
+                expected_trade_mode: demo
             notify:
               telegram:
                 enabled: true
