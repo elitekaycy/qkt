@@ -253,7 +253,7 @@ class BybitLinearBrokerTest {
     }
 
     @Test
-    fun `init triggers reconcile with all four REST paths including position-list`() {
+    fun `init reconciles executions, orders and balances, leaving the position to after order recovery`() {
         val client = FakeBybitClient()
         client.responses["/v5/order/realtime"] = emptyOk()
         client.responses["/v5/execution/list"] = emptyOk()
@@ -263,11 +263,7 @@ class BybitLinearBrokerTest {
         BybitLinearBroker(client, newBus(), FixedClock(0L), StrategyPositionTracker().account)
 
         val paths = client.posts.map { it.path }
-        assertThat(paths).contains(
-            "/v5/order/realtime",
-            "/v5/execution/list",
-            "/v5/account/wallet-balance",
-            "/v5/position/list",
-        )
+        assertThat(paths).contains("/v5/order/realtime", "/v5/execution/list", "/v5/account/wallet-balance")
+        assertThat(paths).doesNotContain("/v5/position/list")
     }
 }

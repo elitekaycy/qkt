@@ -10,7 +10,9 @@ import com.qkt.common.net.PeriodicReconciler
 import com.qkt.connector.bybit.BybitExecutionStream
 import com.qkt.connector.bybit.BybitHeldEnds
 import com.qkt.connector.bybit.BybitOrderTranslator
+import com.qkt.connector.bybit.BybitOrderUpdates
 import com.qkt.connector.bybit.BybitOrders
+import com.qkt.connector.bybit.BybitRestartRecovery
 import com.qkt.connector.bybit.BybitSymbol
 import com.qkt.connector.bybit.BybitTransport
 import com.qkt.connector.bybit.boundedExecIdSet
@@ -18,12 +20,12 @@ import com.qkt.connector.bybit.requireBybitOk
 import com.qkt.connector.bybit.resolveBybitOrder
 import com.qkt.connector.bybit.spot.BybitSpotStateRecovery
 import com.qkt.events.BrokerEvent
+import com.qkt.execution.ManagedOrder
 import com.qkt.execution.OrderRequest
 import com.qkt.positions.PositionProvider
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -51,6 +53,7 @@ class BybitLinearBroker(
 
     private val orders = BybitOrders()
     private val ends = BybitHeldEnds(orders, bus, clock, "linear")
+    private val restart: BybitRestartRecovery
     private val seenExecIds: MutableSet<String> = boundedExecIdSet()
     private val lastFillTime: AtomicLong = AtomicLong(clock.now() - recoveryWindowMs)
     private val reconciler: PeriodicReconciler
@@ -67,8 +70,16 @@ class BybitLinearBroker(
 
     override fun supports(symbol: String): Boolean = symbol.startsWith("BYBIT_LINEAR:")
 
+    /**
+     * Orders go in one-way mode (`positionIdx` 0), so a symbol's position is the net of every strategy on
+     * the account: a restart trusts each strategy's persisted book, then [recoverPendingOrders] books what
+     * filled while qkt was down, and the position reconcile checks the total.
+     */
+    override fun isAccountWide(symbol: String): Boolean = supports(symbol)
+
     init {
-        transport.subscribe("order") { frame -> onOrderFrame(frame) }
+        val updates = BybitOrderUpdates(ends, bus, clock)
+        transport.subscribe("order", updates::onFrame)
         val funding = BybitLinearFunding(transport, bus, clock, seenExecIds)
         val executions =
             BybitExecutionStream(
@@ -95,6 +106,7 @@ class BybitLinearBroker(
                 funding = funding,
                 ends = ends,
             )
+        restart = BybitRestartRecovery("linear", transport, ends, updates, recovery::replayOrder)
         transport.onDisconnect { reason ->
             bus.publish(
                 BrokerEvent.ConnectionChanged(
@@ -116,7 +128,7 @@ class BybitLinearBroker(
             )
             recovery.reconcile()
         }
-        recovery.reconcile()
+        recovery.reconcile(positions = false)
 
         reconciler =
             if (pollExecutor != null) {
@@ -394,47 +406,10 @@ class BybitLinearBroker(
         return SubmitAck(clientOrderId, brokerOrderId, accepted = true)
     }
 
-    private fun onOrderFrame(frame: JsonObject) {
-        val list = frame["data"]?.jsonArray ?: return
-        for (entry in list) {
-            val parsed = BybitOrderTranslator.parseOpenOrder(entry.jsonObject)
-            val strategyId = orders.strategyOf(parsed.clientOrderId).orEmpty()
-            when (parsed.status) {
-                "New" ->
-                    bus.publish(
-                        BrokerEvent.OrderAccepted(
-                            clientOrderId = parsed.clientOrderId,
-                            brokerOrderId = parsed.brokerOrderId,
-                            strategyId = strategyId,
-                            timestamp = clock.now(),
-                        ),
-                    )
-                "Cancelled" -> {
-                    val end =
-                        BrokerEvent.OrderCancelled(
-                            parsed.clientOrderId,
-                            parsed.brokerOrderId,
-                            "WS-reported cancel",
-                            strategyId,
-                            clock.now(),
-                        )
-                    // Executed beyond what was booked: the end waits for those fills (#1330).
-                    ends.end(end, parsed.executed)
-                }
-                "Filled" -> orders.end(parsed.clientOrderId)
-                "Rejected" ->
-                    bus.publish(
-                        BrokerEvent.OrderRejected(
-                            clientOrderId = parsed.clientOrderId,
-                            brokerOrderId = parsed.brokerOrderId,
-                            reason = "WS-reported reject",
-                            strategyId = strategyId,
-                            timestamp = clock.now(),
-                        ),
-                    )
-            }
-        }
-    }
+    override fun recoverPendingOrders(
+        orders: List<ManagedOrder>,
+        bookedTickets: Set<String>,
+    ): Set<String> = restart.recover(orders)
 
     override fun shutdown() {
         reconciler.stop()

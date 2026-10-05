@@ -489,6 +489,15 @@ order. So an entry filled in several executions completes once, and its bracket 
 armed then, for the whole quantity. Executions replayed from `/v5/execution/list` are applied oldest
 first, and an order's last execution heard before an earlier one waits for it.
 
+A restart keeps this: each order the session restores is taken back by id, so qkt owns it again and
+books an execution Bybit reports for it later. Its executions are read back
+(`/v5/execution/list?orderLinkId=`), the oldest that add up to the fills it had booked are skipped, the
+rest are booked, and its current state (`/v5/order/realtime`, else `/v5/order/history`, 7 days) ends it
+if it ended while qkt was down. An order Bybit no longer lists is retired by the engine. On a
+`bybit_linear` account the position is the net of every strategy (one-way mode): a restart trusts each
+strategy's saved book and checks the venue position at the first reconcile after the orders are taken
+back, not before.
+
 ### `type: gateway`
 
 One entry per account on a VGP v1 venue gateway
