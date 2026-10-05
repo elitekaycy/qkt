@@ -35,7 +35,7 @@ import java.time.ZoneOffset
  *   [MT5BrokerProfileLoader] from `qkt.config.yaml` + built-in defaults;
  *   uses [Mt5BarFetcher] against the profile's `gatewayUrl`.
  * - `type: gateway` accounts (BYBIT_LINEAR, BYBIT_SPOT, DERIBIT, …) — the account's gateway serves the bars
- *   (`GET /v1/bars`); a Bybit prefix with no such entry is refused naming the entry to add.
+ *   (`GET /v1/bars`). A prefix with no `brokers:` entry is refused naming the entry to add.
  * - BINANCE_UM — Binance USDⓈ-M quarterly futures from the free `data.binance.vision` archive.
  * - BACKTEST — refused; nothing to fetch (the local store IS the backtest source).
  *

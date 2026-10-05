@@ -16,7 +16,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 
-/** Bybit bars come only through a `type: gateway` account named for the prefix strategies use. */
+/** Bars of a gateway venue come through the `type: gateway` account named for the prefix strategies use. */
 class BybitGatewayFetchTest {
     @Test
     fun `a bybit_linear gateway account serves BYBIT_LINEAR bars, stored under that prefix`(
@@ -64,7 +64,7 @@ class BybitGatewayFetchTest {
     }
 
     @Test
-    fun `a Bybit prefix with no gateway account is refused, naming the entry to add`(
+    fun `a prefix with no brokers entry is refused, naming the entry to add`(
         @TempDir tmp: Path,
     ) {
         val config = tmp.resolve("qkt.config.yaml")
@@ -81,6 +81,7 @@ class BybitGatewayFetchTest {
             }
 
         assertThat(fetcher).isNull()
-        assertThat(err.toString()).contains("bybit_spot", "type: gateway", "qkt-venue-gateway")
+        assertThat(err.toString()).contains("'BYBIT_SPOT'", "named 'bybit_spot'", "type: gateway")
+        assertThat(err.toString()).doesNotContain("qkt-venue-gateway")
     }
 }
