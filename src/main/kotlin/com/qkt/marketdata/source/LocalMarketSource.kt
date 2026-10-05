@@ -6,6 +6,9 @@ import com.qkt.common.TimeRange
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.TickFeed
+import com.qkt.marketdata.flow.StoredTradeFlow
+import com.qkt.marketdata.flow.TapeStore
+import com.qkt.marketdata.flow.TradeFlow
 import com.qkt.marketdata.marks.MarkPrices
 import com.qkt.marketdata.marks.MarkStore
 import com.qkt.marketdata.marks.StoredMarkPrices
@@ -48,6 +51,11 @@ class LocalMarketSource(
 
     /** The marks `qkt fetch --marks` stored under the store's data root ([StoredMarkPrices]). */
     override fun marksFor(symbol: String): MarkPrices = marks
+
+    private val flow by lazy { StoredTradeFlow(TapeStore(store.root)) }
+
+    /** The tape and liquidations `qkt fetch --tape`/`--liquidations` stored under the data root ([StoredTradeFlow]). */
+    override fun tradeFlowFor(symbol: String): TradeFlow = flow
 
     private val volumeBySymbol: MutableMap<String, Boolean> = mutableMapOf()
 

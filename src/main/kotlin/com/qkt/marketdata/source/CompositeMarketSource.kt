@@ -6,6 +6,7 @@ import com.qkt.derivatives.options.chain.OptionMarks
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.TickFeed
+import com.qkt.marketdata.flow.TradeFlow
 import com.qkt.marketdata.marks.MarkPrices
 
 class CompositeMarketSource(
@@ -28,6 +29,8 @@ class CompositeMarketSource(
     override fun marksFor(symbol: String): MarkPrices? = sourceFor(symbol).marksFor(symbol)
 
     override fun optionMarksFor(symbol: String): OptionMarks? = sourceFor(symbol).optionMarksFor(symbol)
+
+    override fun tradeFlowFor(symbol: String): TradeFlow? = sourceFor(symbol).tradeFlowFor(symbol)
 
     private fun sourceFor(symbol: String): MarketSource =
         routes.firstOrNull { (pat, _) -> pat.matches(symbol) }?.second ?: fallback
