@@ -1,10 +1,12 @@
 package com.qkt.broker.continuous
 
+import com.qkt.broker.closesFor
 import com.qkt.bus.EventBus
 import com.qkt.common.Clock
 import com.qkt.derivatives.futures.ContinuousChain
 import com.qkt.derivatives.futures.PriceSpace
 import com.qkt.events.BrokerEvent
+import com.qkt.events.ContractSettled
 import com.qkt.execution.LegIntent
 import com.qkt.positions.StrategyPositionTracker
 import java.math.BigDecimal
@@ -16,7 +18,8 @@ import java.math.BigDecimal
  * execution, sliced or whole, roll legs too, is booked in the stream's contract [book] and in each
  * strategy's [positions] on the stream; a slice reaches the engine as the partial fill it is, after the
  * lane is [save]d, so a crash between the two cannot book it twice. A resting order's cancel at a roll,
- * once confirmed, is handed to [pulled].
+ * once confirmed, is handed to [pulled]. A contract the venue settles ([ContractSettled]) closes every
+ * strategy's holding of it at the settlement price, as an `EXPIRY` fill on the stream.
  */
 internal class LaneVenueEvents(
     private val bus: EventBus,
@@ -60,6 +63,18 @@ internal class LaneVenueEvents(
             if (!legs.onPartiallyFilled(e)) onPartiallyFilled(e)
         }
         venueBus.subscribe<BrokerEvent.OrderFilled> { e -> if (!legs.onFilled(e)) onFilled(e) }
+        // A live venue settles an expired contract with no fill: each holding of it closes here, through
+        // the venue's own bus, as the backtest's exchange settles it. Once closed, a repeat finds none held.
+        venueBus.subscribe<ContractSettled> { e ->
+            val holders =
+                book.allByStrategy().keys.mapNotNull { id ->
+                    book.positionFor(id, e.symbol)?.let {
+                        id to
+                            it.quantity
+                    }
+                }
+            e.closesFor(holders).forEach(venueBus::publish)
+        }
     }
 
     private fun onRejected(e: BrokerEvent.OrderRejected) {
