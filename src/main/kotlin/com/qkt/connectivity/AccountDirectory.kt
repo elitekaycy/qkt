@@ -2,6 +2,9 @@ package com.qkt.connectivity
 
 import com.qkt.broker.BrokerFactory
 import com.qkt.common.TradingCalendar
+import com.qkt.marketdata.depth.BookDepth
+import com.qkt.marketdata.depth.BookDepthMarketSource
+import com.qkt.marketdata.depth.BookDepthSymbol
 import com.qkt.marketdata.openinterest.OpenInterest
 import com.qkt.marketdata.openinterest.OpenInterestMarketSource
 import com.qkt.marketdata.openinterest.OpenInterestSymbol
@@ -34,14 +37,28 @@ class AccountDirectory private constructor(
 
     /**
      * One route per account that supplies market data ([TradingAccount.marketDataPattern]), in config order,
-     * after the open-interest streams (`OI:<ACCOUNT>:<NAME>`) when an account reads open interest, each read from
-     * the account named by its contract.
+     * after the open-interest (`OI:<ACCOUNT>:<NAME>`) and depth (`DEPTH:<SIDE>:<ACCOUNT>:<NAME>`) streams when an
+     * account reads them, each read from the account named by its contract.
      */
     fun marketDataRoutes(): List<Pair<SymbolPattern, MarketSource>> =
         listOfNotNull(
             (SymbolPattern.prefix(OpenInterestSymbol.PREFIX) to OpenInterestMarketSource(::openInterest))
                 .takeIf { accounts.any { it.openInterest != null } },
+            (SymbolPattern.prefix(BookDepthSymbol.PREFIX) to BookDepthMarketSource(::bookDepth))
+                .takeIf { accounts.any { it.bookDepth != null } },
         ) + accounts.mapNotNull { account -> account.marketData?.let { account.marketDataPattern to it } }
+
+    /** [qktSymbol]'s book snapshots from the account serving it; refused naming the account that cannot. */
+    private fun bookDepth(
+        qktSymbol: String,
+        fromMs: Long,
+        toMs: Long,
+    ): List<BookDepth> {
+        val account = forSymbol(qktSymbol) ?: error("no account serves $qktSymbol, so none serves its depth")
+        val source =
+            account.bookDepth ?: error("${account.config.name} (type ${account.config.type}) does not read depth")
+        return source.snapshots(qktSymbol, fromMs, toMs)
+    }
 
     /** [qktSymbol]'s open interest from the account serving it; refused naming the account that cannot. */
     private fun openInterest(

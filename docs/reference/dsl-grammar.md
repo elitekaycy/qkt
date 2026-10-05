@@ -275,6 +275,9 @@ fill and checked every tick. Also applies to its `STACK_AT` legs. See
 - Option contract: `.iv` (mark implied volatility), `.delta`, `.gamma`, `.vega`, `.theta` (per contract);
   refused at start on any other stream or on a feed without option marks (see
   [streams](dsl/streams.md#stream-field-access))
+- Order-book depth: `.bid_depth`, `.ask_depth` (quantity on the ten best levels a side), `.book_imbalance`
+  (−1 to 1); a venue stream only, refused at start on a feed whose gateway does not declare `depth` (see
+  [streams](dsl/streams.md#order-book-depth-aliasbid_depth-ask_depth-book_imbalance))
 
 ### Indicators
 

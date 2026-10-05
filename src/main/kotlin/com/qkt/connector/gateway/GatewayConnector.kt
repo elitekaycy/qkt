@@ -15,6 +15,7 @@ import com.qkt.instrument.ContractCatalogSource
 import com.qkt.instrument.FundingRateSource
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.OptionTerms
+import com.qkt.marketdata.depth.BookDepthSource
 import com.qkt.marketdata.flow.PrintHistorySource
 import com.qkt.marketdata.marks.MarkHistorySource
 import com.qkt.marketdata.openinterest.OpenInterestSource
@@ -122,6 +123,8 @@ class GatewayTradingAccount internal constructor(
 
     override val openInterest: OpenInterestSource =
         GatewayOpenInterest(client, GatewaySymbols(config.symbolPrefix), config.name)
+
+    override val bookDepth: BookDepthSource = GatewayBookDepth(client, GatewaySymbols(config.symbolPrefix), config.name)
 
     override val marketDataPattern: SymbolPattern = SymbolPattern(quotes::supports)
 

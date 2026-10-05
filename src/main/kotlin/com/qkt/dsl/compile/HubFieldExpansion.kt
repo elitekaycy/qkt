@@ -46,8 +46,8 @@ object HubFieldExpansion {
     )
 
     fun apply(parsed: StrategyAst): Expanded {
-        // Open interest is expanded first, the same way: `btc.open_interest` becomes its own hidden stream.
-        val ast = OpenInterestFieldExpansion.apply(parsed)
+        // Open interest and depth are expanded first, the same way: `btc.open_interest` becomes its own hidden stream.
+        val ast = BookDepthFieldExpansion.apply(OpenInterestFieldExpansion.apply(parsed))
         // Only dataset-level declarations expand. A field stream already carries `/` in its symbol,
         // so running this pass twice -- once at the parse boundary, once in the compiler for ASTs
         // built by hand -- is a no-op the second time rather than a second level of nesting.

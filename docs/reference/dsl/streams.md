@@ -294,6 +294,41 @@ RULES
   history, so its gateway records the present figure each time it is read and serves what it recorded
   (a series that starts when the gateway first read it).
 
+### Order-book depth (`<alias>.bid_depth`, `.ask_depth`, `.book_imbalance`)
+
+Three fields read the order book of the contract the stream trades, from its ten best levels a side:
+
+| Field | Value |
+|---|---|
+| `perp.bid_depth` | the quantity resting on the ten best bid levels, in the unit the strategy's quantities are written in |
+| `perp.ask_depth` | the same on the ask side |
+| `perp.book_imbalance` | `(bid_depth − ask_depth) / (bid_depth + ask_depth)`: 1 when only bids rest, −1 when only offers, 0 when balanced or empty |
+
+All three come from one snapshot of the book, each visible from the instant the venue stamped it, never
+earlier. They read like candle fields, so indicators and lookback work on them:
+
+```qkt
+STRATEGY book_lean VERSION 1
+SYMBOLS
+    perp = DERIBIT:BTC_USDC_PERPETUAL EVERY 1m
+RULES
+    -- Buy when the book leans to the bid and enough rests on the offer to fill.
+    WHEN perp.book_imbalance > 0.3 AND perp.ask_depth > 0.5 AND POSITION.perp = 0
+    THEN BUY perp SIZING 0.01
+```
+
+- **Live:** read from the account's gateway every 10 seconds, which must declare the `depth` capability; a
+  strategy reading depth on any other account fails at start, naming the account. A rule therefore sees the
+  book as of the last read, up to 10 seconds old, not the book at the instant it evaluates.
+- **Backtest:** read from `depth/<VENUE>/<NAME>/<day>.csv.gz` under the data root, stored by
+  `qkt fetch <VENUE>:<NAME> --depth --from <date> --to <date>`. No venue publishes book history: the gateway
+  records the book each time a live strategy reads it and serves what it recorded, so a backtest replays
+  exactly the snapshots live saw, and history exists only from when something first read the contract on
+  that gateway. A backtest whose stored snapshots do not cover the run (no gap over three of the series' own
+  intervals) is refused with that fetch.
+- Each snapshot is an observation of its own, like a `HUB:` record. Until the first one arrives the fields
+  are undefined.
+
 For historical lookback (the N-th candle ago):
 
 ```qkt

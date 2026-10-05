@@ -46,6 +46,7 @@ internal val toolingOptionSchemas: Map<String, CliOptionSchema> =
                         "open-interest",
                         "tape",
                         "liquidations",
+                        "depth",
                     ),
             ),
         "data" to

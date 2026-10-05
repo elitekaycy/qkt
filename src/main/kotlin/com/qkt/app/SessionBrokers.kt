@@ -14,6 +14,7 @@ import com.qkt.derivatives.options.chain.OptionRootSymbol
 import com.qkt.derivatives.options.chain.isOptionFeed
 import com.qkt.dsl.ast.CHAIN_BROKER
 import com.qkt.marketdata.MarketPriceTracker
+import com.qkt.marketdata.depth.BookDepthSymbol
 import com.qkt.marketdata.openinterest.OpenInterestSymbol
 import com.qkt.marketdata.source.SymbolPattern
 import com.qkt.positions.PositionProvider
@@ -66,6 +67,7 @@ internal class SessionBrokers(
                 when {
                     key.broker.equals(CHAIN_BROKER, ignoreCase = true) -> Unit
                     key.broker == OpenInterestSymbol.BROKER -> Unit
+                    key.broker == BookDepthSymbol.BROKER -> Unit
                     root != null -> fedRoots.getOrPut(tradingBroker(key).lowercase()) { mutableSetOf() } += root
                     else -> brokerSymbols.getOrPut(key.broker.lowercase()) { mutableSetOf() }.add(key.qktSymbol)
                 }
