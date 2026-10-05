@@ -8,8 +8,9 @@ import org.slf4j.LoggerFactory
 /**
  * Decides what it meant when a resting order left the venue's order list: filled, or cancelled.
  * E.g. ticket 3258722177 vanishes from `/orders`; if `/positions` now holds it the fill is
- * published, otherwise the owner gets `OrderCancelled` ("external or gtd-expired"). A failed
- * `/positions` read decides nothing and the ticket is asked about again next round.
+ * published; if deal history shows it filled and closed again, both legs are booked; otherwise the
+ * owner gets `OrderCancelled` ("external or gtd-expired"). A failed `/positions` or deal-history
+ * read decides nothing and the ticket is asked about again next round.
  */
 internal class MT5PendingDisappearance(
     private val profile: MT5BrokerProfile,
@@ -19,6 +20,8 @@ internal class MT5PendingDisappearance(
     private val books: MT5BrokerState,
     private val partialEntries: MT5PartialEntries,
     private val pendingFills: MT5PendingFills,
+    private val vanishedReplay: MT5VanishedPendingReplay =
+        MT5VanishedPendingReplay(profile, client, bus, clock, MT5Symbol(profile.symbolPolicy), books),
 ) {
     private val log = LoggerFactory.getLogger(MT5Broker::class.java)
 
@@ -77,6 +80,10 @@ internal class MT5PendingDisappearance(
                 return true
             }
             pendingFills.onPendingPositionOpened(asPosition)
+            // A part fill seen only now: the order already left the venue, so its rest is gone.
+            if (books.partialPositionByResidualTicket.containsKey(ticket)) {
+                partialEntries.cancelPartialEntryResidual(ticket, "residual disappeared from venue after partial fill")
+            }
             return true
         }
 
@@ -88,6 +95,12 @@ internal class MT5PendingDisappearance(
             return true
         }
 
+        // In neither list: it may have filled and been closed again before anyone looked.
+        when (vanishedReplay.settle(ticket, meta)) {
+            MT5VanishedPendingReplay.Outcome.FILLED_AND_CLOSED -> return true
+            MT5VanishedPendingReplay.Outcome.UNKNOWN -> return false
+            MT5VanishedPendingReplay.Outcome.NOT_FILLED -> Unit
+        }
         books.pendingBook.forgetTicket(ticket)
         // Evict stale entries opportunistically — cheap and prevents unbounded growth
         // if positions close before their pending-disappearance signal arrives.

@@ -90,7 +90,11 @@ class Run:
                                                 os.environ.get("QKT_DERIV_GUARDIAN_KEY"))
 
     def get(self, path, body=None, method=None, key=None):
-        for attempt in range(1, 5):
+        # A venue blip makes the gateway answer 503 until its link is back (Deribit testnet drops a socket for
+        # ~10-20 s now and then), so a 5xx or a refused connection is retried for up to 90 s; a 4xx is the answer.
+        deadline, attempt = time.time() + 90, 0
+        while True:
+            attempt += 1
             request = urllib.request.Request(self.args.gateway_url + path, method=method)
             request.add_header("Authorization", f"Bearer {key or self.key}")
             data = None
@@ -101,13 +105,12 @@ class Run:
                 with urllib.request.urlopen(request, data, timeout=30) as response:
                     return json.load(response)
             except urllib.error.HTTPError as error:
-                if error.code < 500 or attempt == 4:  # a refusal is the gateway's answer; only 5xx may pass
+                if error.code < 500 or time.time() > deadline:
                     raise
-                time.sleep(attempt)
             except OSError:
-                if attempt == 4:
+                if time.time() > deadline:
                     raise
-                time.sleep(attempt)
+            time.sleep(min(attempt, 5))
 
     def sweep(self):
         """Leaves the account flat once the case has taken it, however the case ended (a venue outage mid-trade)."""

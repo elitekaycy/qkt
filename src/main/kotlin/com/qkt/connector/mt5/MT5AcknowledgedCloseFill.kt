@@ -106,7 +106,11 @@ internal class MT5AcknowledgedCloseFill(
         price: BigDecimal,
         venueCosts: BigDecimal,
     ) {
-        engineCloses.confirmEngineClose(close.ticket)
+        engineCloses.confirmEngineClose(
+            close.ticket,
+            EnginePartialClose(close.filledQuantity, setOfNotNull(close.ack.deal.takeIf { it > 0L }))
+                .takeUnless { close.positionClosed },
+        )
         if (close.positionClosed) {
             books.positionBook.forgetAttribution(close.ticket)
             books.positionBook.forgetOpenedAt(close.ticket)

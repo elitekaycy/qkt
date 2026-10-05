@@ -68,7 +68,10 @@ internal class MT5CompositePlacement(
             val ticket = resp.result.order
             if (ticket != 0L) {
                 val legOrderId = decodeOcoLegOrderId(wire.comment) ?: request.id
-                pendingFills.registerPendingTicket(ticket, MT5TicketMeta(legOrderId, request.strategyId))
+                pendingFills.registerPendingTicket(
+                    ticket,
+                    MT5TicketMeta(legOrderId, request.strategyId, requestedQuantity = wire.volume),
+                )
                 placed.add(PlacedLeg(ticket, legOrderId))
             }
         }

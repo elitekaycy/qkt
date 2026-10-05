@@ -146,8 +146,7 @@ class MT5BrokerIntegrationTest {
 
         broker.recoverPendingOrders(listOf(order))
 
-        server.enqueue(MockResponse().setBody("[]"))
-        server.enqueue(MockResponse().setBody("[]"))
+        repeat(3) { server.enqueue(MockResponse().setBody("[]")) } // orders, positions, deal history
         broker.pendingPoller.tickForTesting()
         assertThat(captured.filterIsInstance<BrokerEvent.OrderCancelled>().map { it.clientOrderId })
             .containsExactly("ord-recovered")
@@ -2017,6 +2016,7 @@ class MT5BrokerIntegrationTest {
                     val path = request.path.orEmpty()
                     return when {
                         path.startsWith("/get_positions") -> MockResponse().setBody("[]")
+                        path.startsWith("/history_deals_get") -> MockResponse().setBody("[]")
                         path.startsWith("/orders") -> {
                             if (ordersHasTicket) {
                                 MockResponse().setBody(
@@ -2061,9 +2061,8 @@ class MT5BrokerIntegrationTest {
             )
         captured.clear()
         fastBroker.submit(req)
-        // Pending poller will tick. First make /orders return the ticket so the poller's
-        // snapshot picks it up. Wait one poll-cycle, then flip to empty so the next tick
-        // sees the disappearance.
+        // /orders holds the ticket for one poll cycle, then empties: the next tick sees it disappear
+        // with no position and no deal, a real cancel.
         ordersHasTicket = true
         Thread.sleep(300)
         ordersHasTicket = false
