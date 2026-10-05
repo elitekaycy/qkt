@@ -10,6 +10,9 @@ import com.qkt.instrument.optionSymbols
 import com.qkt.marketdata.hub.HubMarketSource
 import com.qkt.marketdata.hub.hubRoot
 import com.qkt.marketdata.hub.validateHubStreams
+import com.qkt.marketdata.openinterest.OpenInterestMarketSource
+import com.qkt.marketdata.openinterest.OpenInterestStore
+import com.qkt.marketdata.openinterest.OpenInterestSymbol
 import com.qkt.marketdata.source.ChainAnalyticsMarketSource
 import com.qkt.marketdata.source.CompositeMarketSource
 import com.qkt.marketdata.source.ContinuousMarketSource
@@ -27,8 +30,8 @@ import java.nio.file.Path
 import java.time.Instant
 
 /**
- * The [MarketSource] a store-backed backtest reads: the local tick/bar store, with `MACRO:` and
- * `HUB:` streams routed to their own point-in-time sources only when [symbols] declares one, and
+ * The [MarketSource] a store-backed backtest reads: the local tick/bar store, with `MACRO:`, `HUB:` and
+ * open-interest (`OI:`) streams routed to their own point-in-time sources only when [symbols] declares one, and
  * futures streams stitched from per-contract data when [instruments] declares futures.
  * Fails before the first tick when a declared hub stream is malformed.
  */
@@ -89,6 +92,12 @@ internal fun storeMarketSource(
                     }
                 require(problems.isEmpty()) { "option root feed problems:\n  " + problems.joinToString("\n  ") }
                 add(SymbolPattern.prefix(OptionRootSymbol.PREFIX) to OptionRootMarketSource(instruments))
+            }
+            if (symbols.any { it.startsWith(OpenInterestSymbol.PREFIX) }) {
+                add(
+                    SymbolPattern.prefix(OpenInterestSymbol.PREFIX) to
+                        OpenInterestMarketSource(OpenInterestStore(store.root)),
+                )
             }
             if (symbols.any { it.startsWith("MACRO:") }) {
                 add(SymbolPattern.prefix("MACRO:") to MacroMarketSource(MacroSeriesStore(store.root)))

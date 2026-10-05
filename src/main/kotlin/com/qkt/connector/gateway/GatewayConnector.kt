@@ -16,6 +16,7 @@ import com.qkt.instrument.FundingRateSource
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.OptionTerms
 import com.qkt.marketdata.marks.MarkHistorySource
+import com.qkt.marketdata.openinterest.OpenInterestSource
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.marketdata.source.SymbolPattern
 
@@ -110,6 +111,9 @@ class GatewayTradingAccount internal constructor(
                 ),
                 GatewaySymbols(config.symbolPrefix),
             )
+
+    override val openInterest: OpenInterestSource =
+        GatewayOpenInterest(client, GatewaySymbols(config.symbolPrefix), config.name)
 
     override val marketDataPattern: SymbolPattern = SymbolPattern(quotes::supports)
 

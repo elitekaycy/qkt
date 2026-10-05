@@ -8,6 +8,7 @@ import com.qkt.dsl.ast.HUB_BROKER
 import com.qkt.dsl.ast.OPTIONS_BROKER
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.optionSymbols
+import com.qkt.marketdata.openinterest.OpenInterestSymbol
 import com.qkt.marketdata.store.DefaultDataStore
 import com.qkt.marketdata.store.LocalBarStore
 import com.qkt.marketdata.store.dukascopy.DukascopyInstrument
@@ -43,6 +44,7 @@ internal object BacktestTickProvisioning {
                         broker != "BYBIT" &&
                         broker != HUB_BROKER &&
                         broker != CHAIN_BROKER &&
+                        broker != OpenInterestSymbol.BROKER &&
                         broker != OPTIONS_BROKER
                 }.distinct()
                 .map { (broker, bare) -> ProvisionStream(broker = broker, bareSymbol = bare) }

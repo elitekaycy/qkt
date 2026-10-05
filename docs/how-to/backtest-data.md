@@ -328,6 +328,30 @@ RULES
 - The chain's implied volatility and skew can drive rules as read-only streams:
   `iv = CHAIN:DERIBIT.BTC_USDC.atm_iv.30d EVERY 1h` (see [chain analytics](../reference/dsl/chain.md)).
 
+## Scenario 2d — Open interest (`<alias>.open_interest`)
+
+A strategy that reads [`perp.open_interest`](../reference/dsl/streams.md#open-interest-aliasopen_interest)
+replays the contract's stored open interest, each figure from the instant the venue made it known:
+
+```bash
+# Binance USDⓈ-M, public API, no key: five-minute figures, the last 30 days only.
+qkt fetch BINANCE_UM:BTCUSDT --open-interest --from 2026-09-10 --to 2026-10-03
+
+# A gateway account (type: gateway in qkt.config.yaml) whose gateway declares open_interest.
+qkt fetch DERIBIT:BTC_USDC_PERPETUAL --open-interest --from 2026-10-01 --to 2026-10-03
+```
+
+Figures are merged into `open_interest/<VENUE>/<NAME>.csv` (`time,open_interest`, `time` the instant the
+figure became known), so repeated fetches extend the file and a fetch is never needed twice. Binance stamps
+each figure with the start of its five minutes and publishes it about 95 seconds later; qkt stores it at the
+end of the five minutes. Binance keeps only the last 30 days, so fetch regularly to keep a longer history.
+Deribit publishes no open-interest history at all: its gateway records the present figure each time it is read
+(qkt's live sessions read it every minute) and serves what it recorded, so its history starts when the gateway
+first read it.
+
+A backtest reading open interest that the store does not cover from the run's start to its end (no gap over
+three of the series' own intervals) is refused with the fetch that would fill it.
+
 ## Scenario 3 — Speed up repeated backtests (CSV → binary)
 
 Cached ticks start life as gzipped CSV (`*.csv.gz`). Converting them to the binary format decodes
@@ -457,6 +481,8 @@ from the broker before a cost-sensitive run because broker schedules can change.
 │   └── EXNESS/XAUUSD/5m/
 │       ├── 2024-01-01.csv
 │       └── manifest.json
+├── funding/<VENUE>/<NAME>.csv     # perpetual funding rates (`qkt fetch … --funding`)
+├── open_interest/<VENUE>/<NAME>.csv  # open interest (`qkt fetch … --open-interest`)
 └── instruments.yaml              # optional contract-spec / commission overrides
 ```
 
@@ -490,6 +516,7 @@ Read precedence for a tick day: `.bin` → `.csv.gz` → `.csv`.
 | `dukascopy fetch failed: HTTP 503` | Dukascopy throttling a month-block. Retry later, or fetch in smaller ranges. |
 | `no dukascopy mapping for <SYM>` | Symbol isn't in `DukascopyInstrument`. Use a mapped symbol, place data manually, or add the mapping. |
 | `unexpected header at …` | A manual tick CSV's header doesn't match exactly. Use the header in File formats above. |
+| `the strategy reads the open interest of <SYM> and the run has no stored open interest …` | Run the `qkt fetch <SYM> --open-interest …` the message names (Scenario 2d). |
 | Backtest re-downloads data you placed by hand | Pass `--no-fetch`, or record the days in `manifest.json` (Scenario 4). |
 | Backtest can't find data you fetched | `fetch`/`convert`/`backtest` pointed at different roots. Use the same `--data-root` (or none — they all default to `~/.qkt/data`). |
 
