@@ -40,12 +40,24 @@ internal class OrderReactions(
         ) { event ->
             eventHandlers.onCancelled(event)
         }
+    private val engineHeldRestore = EngineHeldRestore(book, store.stops, store.exposure, s.broker, clock)
     val restorer =
         OrderRestorer(
             persistor = s.persistor,
             book = book,
             siblings = store.siblings,
-            ocoGuard = w.ocoGuard,
+            ocoLegs =
+                OcoLegRestore(
+                    s.persistor,
+                    book,
+                    store.siblings,
+                    w.ocoGuard,
+                    store.exposure,
+                    engineHeldRestore,
+                    w.siblingCancels::onExecution,
+                    clock,
+                    log,
+                ),
             exposure = store.exposure,
             scaleOuts = store.scaleOuts,
             scaleOutRecovery = store.scaleOutRecovery,
@@ -60,7 +72,7 @@ internal class OrderReactions(
                     clock,
                     ops,
                 ),
-            engineHeld = EngineHeldRestore(book, store.stops, store.exposure, s.broker, clock),
+            engineHeld = engineHeldRestore,
             venueRecovery = venueRecovery,
             snapshots = store.snapshots,
             timeExits = w.timeExits,
