@@ -37,10 +37,14 @@ class SequentialIdGenerator(
         usedIds.mapNotNull { sequenceOf(it) }.maxOrNull()?.let(::resumeAfter)
     }
 
-    /** The counter that produced [id], or null when [id] is not one of this generator's. */
+    /**
+     * The counter that produced [id], or null when [id] is not one of this generator's. An id derived
+     * from one of its ids (a bracket's exits `<id>-tp` and `<id>-sl`, a stack tier's `<id>-tier0-sl`)
+     * counts as that id: after its entry fills, those exits are all a restart restores of a bracket.
+     */
     fun sequenceOf(id: String): Long? {
         if (!id.startsWith("$prefix-")) return null
-        return id.substring(prefix.length + 1).toLongOrNull()
+        return id.substring(prefix.length + 1).substringBefore('-').toLongOrNull()
     }
 }
 
