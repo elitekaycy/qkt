@@ -87,6 +87,13 @@ interface DslCompiledStrategy : Strategy {
         get() = emptySet()
 
     /**
+     * Symbols whose mark or index (`<alias>.mark`, `.index`) the strategy reads. The runtime verifies its data
+     * source serves their marks ([com.qkt.marketdata.source.MarketSource.marksFor]) before it goes live.
+     */
+    val markSymbols: Set<String>
+        get() = emptySet()
+
+    /**
      * True when any action sizes with `RISK … OF BOOK`. The runtime verifies a portfolio
      * book is bound before the strategy goes live — a standalone deploy has no book, and
      * failing at deploy beats erroring on the first signal. False for every other sizing.

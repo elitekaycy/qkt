@@ -10,6 +10,7 @@ import com.qkt.instrument.InstrumentRegistry
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.TickFeed
+import com.qkt.marketdata.marks.MarkPrices
 import java.time.Instant
 import org.slf4j.LoggerFactory
 
@@ -40,6 +41,10 @@ class ContinuousMarketSource(
         if (chains.isContinuous(symbol)) inner.capabilities else inner.capabilitiesFor(symbol)
 
     override fun supports(symbol: String): Boolean = chains.isContinuous(symbol) || inner.supports(symbol)
+
+    /** A listed contract's marks are its own; a continuous stream follows several contracts, so it has none. */
+    override fun marksFor(symbol: String): MarkPrices? =
+        if (chains.isContinuous(symbol)) null else inner.marksFor(symbol)
 
     override fun liveTicks(symbols: List<String>): TickFeed {
         val continuous = symbols.filter(chains::isContinuous)

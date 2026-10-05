@@ -29,6 +29,7 @@ internal class CompiledStrategy(
     override val pendingStacks: PendingStacks,
     override val multiPositionPerSymbolSymbols: Set<String>,
     override val volumeRequiringSymbols: Set<String>,
+    override val markSymbols: Set<String>,
     override val usesBookSizing: Boolean,
     private val metaRefs: List<MetaRef>,
     private val warmupGate: WarmupGate,

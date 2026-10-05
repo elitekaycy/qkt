@@ -5,6 +5,7 @@ import com.qkt.common.TimeRange
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.TickFeed
+import com.qkt.marketdata.marks.MarkPrices
 
 class CompositeMarketSource(
     private val routes: List<Pair<SymbolPattern, MarketSource>>,
@@ -22,6 +23,8 @@ class CompositeMarketSource(
     // so e.g. a volume check on an MT5-routed symbol isn't masked by a crypto leaf that has volume.
     override fun capabilitiesFor(symbol: String): Set<MarketSourceCapability> =
         sourceFor(symbol).capabilitiesFor(symbol)
+
+    override fun marksFor(symbol: String): MarkPrices? = sourceFor(symbol).marksFor(symbol)
 
     private fun sourceFor(symbol: String): MarketSource =
         routes.firstOrNull { (pat, _) -> pat.matches(symbol) }?.second ?: fallback

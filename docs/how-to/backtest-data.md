@@ -175,7 +175,13 @@ the backtest charges every leg held through each rate `quantity × multiplier ×
 own price (a long pays a positive rate, a short is paid it), reported as `fundingPaid` and in
 `financing.csv`. A backtest holding a perpetual whose stored rates do not cover the run (from its start to
 its end, no gap over a day) is refused with the fetch that would fix it; `--funding off` backtests
-without funding instead. Rates live in `funding/<VENUE>/<NAME>.csv` (`time,rate,price`). In the last `expiryGuardHours` before expiry
+without funding instead. Rates live in `funding/<VENUE>/<NAME>.csv` (`time,rate,price`). A strategy reading a
+contract's mark or index (`perp.mark`, `perp.index`) replays them from
+`marks/<VENUE>/<NAME>/<tf>/<day>.csv` (`time,mark,index`, one whole UTC day a file): store them with
+`qkt fetch <VENUE:CONTRACT> --marks --tf <tf> --from <date> --to <date>` from the `type: gateway` account named
+after the venue (its gateway must declare `mark_prices`; days not yet over are not stored), at the window of
+the stream that reads them. Each value is seen only after its time, and a run missing a day of them is refused
+with the fetch. In the last `expiryGuardHours` before expiry
 (a root key, default 24; 0 turns it off) the exchange takes only orders that reduce a position; a
 root whose roll would fall inside that window is refused when a continuous stream is built from it.
 Give a root `margin: { initial, maintenance, basis: notional | per_contract }` and the backtest

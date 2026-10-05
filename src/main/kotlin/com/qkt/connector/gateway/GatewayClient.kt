@@ -13,7 +13,8 @@ import okhttp3.RequestBody.Companion.toRequestBody
  * The REST half of a VGP v1 gateway (`docs/superpowers/specs/2026-10-01-vgp-v1-wire.md`) at
  * [baseUrl], authenticated by [apiKey]. Reads, and submits, are tried up to [retryAttempts] times
  * on a timeout or `503`: a submit is idempotent on its `client_order_id`, so resending the same body
- * can never place a second order. `422` and `423` refuse a submit; any other error is thrown.
+ * can never place a second order. `422` and `423` refuse a submit; any other error is thrown. A request
+ * may take `httpTimeoutMs` in all, its wait for the answer included.
  */
 class GatewayClient(
     private val baseUrl: String,
@@ -32,6 +33,7 @@ class GatewayClient(
             .Builder()
             .callTimeout(Duration.ofMillis(httpTimeoutMs))
             .connectTimeout(Duration.ofMillis(httpTimeoutMs))
+            .readTimeout(Duration.ofMillis(httpTimeoutMs))
             .build()
 
     init {

@@ -513,7 +513,9 @@ position` as financing, so a strategy long and one short each get their own sign
 tool holds on the account keeps its own part. What was booked persists (`funding.json` in the session
 owner's state), so a restart books what was charged while qkt was down, from the last 7 days, and never
 twice. A gateway that does not declare the `funding` capability cannot report it, so qkt refuses orders
-that could open or add to a perpetual there (reductions still pass).
+that could open or add to a perpetual there (reductions still pass). A strategy reading a contract's mark or
+index (`.mark`, `.index`) starts only on a gateway that declares `mark_prices`, and reads the newest the
+gateway quoted.
 
 Several strategies may share one gateway account, as a portfolio. They share one connection; each
 fill reaches the strategy whose order it was (and waits for it while its session is stopped), and a

@@ -4,6 +4,7 @@ import com.qkt.cli.BacktestContext.Companion.SetupError
 import com.qkt.dsl.ast.StrategyAst
 import com.qkt.evidence.DatasetEvidence
 import com.qkt.evidence.EvidenceHasher
+import com.qkt.marketdata.store.DataRoot
 import com.qkt.marketdata.store.DatasetSnapshot
 import com.qkt.marketdata.store.DatasetSnapshots
 import java.nio.file.Path
@@ -11,7 +12,10 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
 
-/** Resolves `--dataset` into the evidence a report carries, validating the snapshot against the run. */
+/**
+ * Resolves `--dataset` into the evidence a report carries, validating the snapshot against the run, and
+ * checks the marks the strategies read are stored under the run's data root ([BacktestMarkCoverage]).
+ */
 internal object BacktestDatasetEvidence {
     data class DatasetContext(
         val evidence: DatasetEvidence,
@@ -19,6 +23,18 @@ internal object BacktestDatasetEvidence {
     )
 
     fun datasetContext(
+        args: Args,
+        strategyAsts: List<StrategyAst>,
+        symbols: List<String>,
+        from: Instant,
+        to: Instant,
+    ): DatasetContext =
+        snapshotContext(args, strategyAsts, symbols, from, to).also { context ->
+            val root = args.option("data-root") ?: context.dataRoot ?: DataRoot.resolve().toString()
+            BacktestMarkCoverage.require(Path.of(root), strategyAsts, from, to)
+        }
+
+    private fun snapshotContext(
         args: Args,
         strategyAsts: List<StrategyAst>,
         symbols: List<String>,
