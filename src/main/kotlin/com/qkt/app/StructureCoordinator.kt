@@ -23,7 +23,9 @@ import com.qkt.strategy.StructureState
  * - its filled legs are closed by one forced group of market orders, which the margin rule judges
  *   with every close filled and the gate never drops, since it only removes risk.
  *
- * An opening leg filling after the unwind began is closed as it fills. A closing leg the venue
+ * A leg's order counts every slice as it fills (a partial fill is held, or closed, at once), so a leg
+ * cancelled after part of it filled unwinds or closes exactly what filled. An opening leg filling after the
+ * unwind began is closed as it fills. A closing leg the venue
  * cancels (no quote in time) is sent again for what it still holds; one the venue rejects is final.
  * Legs whose contract has expired are never closed: they settle at the venue's settlement price (its
  * print, or a contract-level [ContractSettled]), or from the catalog's delivery price on the first tick
@@ -92,6 +94,25 @@ internal class StructureCoordinator(
             book.refused(e.request.id)
             save()
         }
+
+        // Every slice of a leg's order counts: a partial fill is held (or closed) as it fills, never only the last.
+        fun filled(
+            e: BrokerEvent.OrderEvent,
+            symbol: String,
+            side: Side,
+            quantity: java.math.BigDecimal,
+            price: java.math.BigDecimal,
+            final: Boolean,
+        ) {
+            val owner = book.filled(e.clientOrderId, quantity, price, final)
+            if (owner == null) {
+                book.external(symbol, side, quantity, price)
+            } else if (owner.opening && owner.structure.state == StructureState.UNWINDING) {
+                close(owner.structure, listOf(owner.leg))
+            }
+            save()
+        }
+
         bus.subscribe<BrokerEvent.OrderFilled> { e ->
             if (e.strategyId != strategyId) return@subscribe
             // A settlement print is no structure order: its legs on that contract settle at its price.
@@ -99,13 +120,10 @@ internal class StructureCoordinator(
                 if (book.settleAt(e.symbol, e.price)) save()
                 return@subscribe
             }
-            val owner = book.filled(e.clientOrderId, e.quantity, e.price)
-            if (owner == null) {
-                book.external(e.symbol, e.side, e.quantity, e.price)
-            } else if (owner.opening && owner.structure.state == StructureState.UNWINDING) {
-                close(owner.structure, listOf(owner.leg))
-            }
-            save()
+            filled(e, e.symbol, e.side, e.quantity, e.price, final = true)
+        }
+        bus.subscribe<BrokerEvent.OrderPartiallyFilled> { e ->
+            if (e.strategyId == strategyId) filled(e, e.symbol, e.side, e.quantity, e.price, final = false)
         }
         bus.subscribe<BrokerEvent.OrderCancelled> { e ->
             if (e.strategyId != strategyId) return@subscribe

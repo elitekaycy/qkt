@@ -77,22 +77,26 @@ internal class StructureBook(
         }
     }
 
-    /** Order [orderId] filled [quantity] at [price]; returns what it belonged to, or null. */
+    /**
+     * Order [orderId] filled a slice of [quantity] at [price], its last one unless [final] is false (a partial
+     * fill: the order works on); returns what it belonged to, or null.
+     */
     fun filled(
         orderId: String,
         quantity: BigDecimal,
         price: BigDecimal,
+        final: Boolean = true,
     ): Owner? {
-        val owner = owners.remove(orderId) ?: return null
+        val owner = (if (final) owners.remove(orderId) else owners[orderId]) ?: return null
         val (structure, leg, opening) = owner
         if (opening) {
-            leg.open(quantity, price)
+            leg.open(quantity, price, final)
             if (structure.state == StructureState.PENDING && structure.legs.all { it.openEnded }) {
                 structure.state = StructureState.OPEN
                 publish(structure.opened(strategyId))
             }
         } else {
-            leg.endClose(orderId)
+            leg.closeSlice(orderId, quantity, final)
             leg.realize(quantity, price)
             structure.exit = StructureOutcome.CLOSED
         }

@@ -1,5 +1,6 @@
 package com.qkt.app
 
+import com.qkt.common.Money
 import com.qkt.common.Side
 import com.qkt.events.StructureClosed
 import com.qkt.events.StructureOpened
@@ -41,14 +42,17 @@ internal class StructureLeg(
     /** What is held and not already being closed. */
     val unclosed: BigDecimal get() = held.subtract(closing.values.fold(BigDecimal.ZERO, BigDecimal::add))
 
+    /** Opens [quantity] more at [price], entering at the average of every slice; [final] is the order's last slice. */
     internal fun open(
         quantity: BigDecimal,
         price: BigDecimal,
+        final: Boolean = true,
     ) {
-        opened = quantity
-        entryPrice = price
-        held = quantity
-        openEnded = true
+        val total = opened.add(quantity)
+        entryPrice = entryPrice?.multiply(opened)?.add(price.multiply(quantity))?.divide(total, Money.CONTEXT) ?: price
+        opened = total
+        held = held.add(quantity)
+        if (final) openEnded = true
     }
 
     internal fun endOpen() {
@@ -82,6 +86,16 @@ internal class StructureLeg(
 
     internal fun endClose(orderId: String) {
         closing.remove(orderId)
+    }
+
+    /** Closing order [orderId] filled a slice of [quantity]: it works on for the rest unless [final]. */
+    internal fun closeSlice(
+        orderId: String,
+        quantity: BigDecimal,
+        final: Boolean,
+    ) {
+        if (final) return endClose(orderId)
+        closing.computeIfPresent(orderId) { _, working -> working.subtract(quantity).max(BigDecimal.ZERO) }
     }
 
     /** Closes [quantity] at [price], never more than is held: a close that overshoots is the account's, not the leg's. */
