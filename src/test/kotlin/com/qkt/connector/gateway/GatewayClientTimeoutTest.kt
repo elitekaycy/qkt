@@ -22,7 +22,8 @@ class GatewayClientTimeoutTest {
                 .setBody("""{"marks":[{"time":1,"mark":"2"}]}""")
                 .setHeadersDelay(10_500, TimeUnit.MILLISECONDS),
         )
-        val client = GatewayClient(server.url("/").toString().trimEnd('/'), "k", httpTimeoutMs = 20_000, retryAttempts = 1)
+        val client =
+            GatewayClient(server.url("/").toString().trimEnd('/'), "k", httpTimeoutMs = 20_000, retryAttempts = 1)
 
         val marks = client.marks("BTC_USDC-PERPETUAL", 60_000L, 0L, 60_000L)
 
