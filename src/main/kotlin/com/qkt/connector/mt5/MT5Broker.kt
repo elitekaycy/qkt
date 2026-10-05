@@ -194,7 +194,6 @@ class MT5Broker(
             requestedProtection,
             placementResults,
         )
-
     private val compositePlacement =
         MT5CompositePlacement(profile, client, bus, clock, placementPrep, placementIds, state, events, pendingFills)
 
@@ -247,6 +246,7 @@ class MT5Broker(
             isExpectedProtectionChange = positionModify::isExpectedProtectionChange,
             engineCloseState = engineCloses::engineCloseState,
             takeEnginePartial = engineCloses::takeEnginePartial,
+            entryGrowthBeside = MT5PartialEntryHistory(profile, client, clock, partialEntries)::growthBeside,
             venueCostsForClose = closeTruth::bookVenueCloseCosts,
             priceProvider = priceTracker,
             sessionGate = profile.symbolCalendars::anyCalendarInSession,

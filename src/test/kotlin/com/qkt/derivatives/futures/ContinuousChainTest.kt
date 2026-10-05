@@ -69,7 +69,7 @@ class ContinuousChainTest {
     fun `next uses its own roll pair`() {
         val next = ContinuousChain(root, catalog, history, ContinuousSelector.NEXT)
         assertThat(next.contractSymbolAt(ms("2024-09-01T00:00:00Z"))).isEqualTo("BINANCE_UM:BTCUSDT_241227")
-        assertThat(next.anchorIndex).isEqualTo(1)
+        assertThat(next.firstIndex).isEqualTo(1)
         assertThat(next.spaceFor(2).toContinuous(BigDecimal("64700"))).isEqualByComparingTo("63800")
         assertThat(next.contractSymbolAt(ms("2025-01-01T00:00:00Z"))).isNull()
     }

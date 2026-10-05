@@ -67,6 +67,12 @@ class MT5PositionPoller(
     private val engineCloseState: ((Long) -> EngineCloseState)? = null,
     /** For a confirmed engine close that left the position open, its part not yet seen here. */
     private val takeEnginePartial: ((Long) -> EnginePartialClose?)? = null,
+    /**
+     * For a ticket the venue's history may know more about (a part-filled entry, #1354): the entry
+     * lots booked beyond this poller's snapshot, after reading history when given the venue volume
+     * now (zero when gone); null when that history cannot be trusted yet and the change waits.
+     */
+    private val entryGrowthBeside: ((Long, BigDecimal?) -> BigDecimal?)? = null,
     /** Deduplicates venue costs shared with engine-initiated close callbacks. */
     private val venueCostsForClose: ((Long, List<MT5Deal>, Boolean) -> BigDecimal)? = null,
     /**
@@ -122,6 +128,8 @@ class MT5PositionPoller(
     private val foreignRuntimeTickets: MutableSet<Long> = ConcurrentHashMap.newKeySet()
     private val closeFills =
         MT5VenueCloseFills(client, profile, bus, closedTicketMeta, venueCostsForClose, priceProvider)
+    private val protectionChanges =
+        MT5ProtectionChanges(profile, symbol, bus, closedTicketMeta, isExpectedProtectionChange)
 
     fun start() {
         if (!running.compareAndSet(false, true)) return
@@ -203,54 +211,28 @@ class MT5PositionPoller(
         for (ticket in lastSnapshot.keys.intersect(current.keys)) {
             val previous = lastSnapshot[ticket] ?: continue
             val latest = current[ticket] ?: continue
-            if (previous.sl.compareTo(latest.sl) != 0 || previous.tp.compareTo(latest.tp) != 0) {
-                if (isForeignWithoutOwner(ticket)) continue
-                val event =
-                    BrokerEvent.PositionProtectionChanged(
-                        broker = profile.name,
-                        symbol = "${profile.name.uppercase()}:${symbol.toQkt(latest.symbol)}",
-                        ticket = ticket.toString(),
-                        oldStopLoss = previous.sl,
-                        newStopLoss = latest.sl,
-                        oldTakeProfit = previous.tp,
-                        newTakeProfit = latest.tp,
-                        strategyId = closedTicketMeta?.invoke(ticket)?.strategyId ?: "",
-                        timestamp = now,
-                    )
-                if (isExpectedProtectionChange?.invoke(event) != true) {
-                    log.error(
-                        "MT5 position protection changed broker={} ticket={} sl={}->{} tp={}->{}",
-                        profile.name,
-                        ticket,
-                        previous.sl,
-                        latest.sl,
-                        previous.tp,
-                        latest.tp,
-                    )
-                    bus.publish(event)
-                }
+            if (!isForeignWithoutOwner(ticket)) protectionChanges.report(previous, latest, now)
+            val growth = growthBeside(ticket, latest.volume.takeIf { it < previous.volume })
+            if (growth == null) {
+                current[ticket] = previous.copy(sl = latest.sl, tp = latest.tp)
+                continue
             }
-            if (latest.volume < previous.volume) {
+            val seen = previous.volume + growth
+            if (latest.volume < seen) {
                 if (isForeignWithoutOwner(ticket)) continue
                 when (engineCloseState?.invoke(ticket) ?: EngineCloseState.NONE) {
                     EngineCloseState.PENDING -> {
-                        current[ticket] = previous
+                        current[ticket] = previous.copy(volume = seen)
                         continue
                     }
                     EngineCloseState.CONFIRMED -> {
-                        val venuePart = venuePartBeside(ticket, previous.volume - latest.volume) ?: continue
+                        val venuePart = venuePartBeside(ticket, seen - latest.volume) ?: continue
                         publishClose(previous, venuePart, ticket, now, positionClosed = false)
                     }
                     EngineCloseState.NONE ->
-                        publishClose(
-                            previous,
-                            previous.volume - latest.volume,
-                            ticket,
-                            now,
-                            positionClosed = false,
-                        )
+                        publishClose(previous, seen - latest.volume, ticket, now, positionClosed = false)
                 }
-            } else if (latest.volume > previous.volume) {
+            } else if (latest.volume > seen) {
                 onPositionIncreased?.invoke(previous, latest)
             }
         }
@@ -258,10 +240,15 @@ class MT5PositionPoller(
         val closed = lastSnapshot.keys - current.keys
         for (ticket in closed) {
             val p = lastSnapshot[ticket] ?: continue
-            var quantity = p.volume
+            val growth = growthBeside(ticket, BigDecimal.ZERO)
+            if (growth == null) {
+                current[ticket] = p
+                continue
+            }
+            var quantity = p.volume + growth
             when (engineCloseState?.invoke(ticket) ?: EngineCloseState.NONE) {
                 EngineCloseState.PENDING -> {
-                    current[ticket] = p
+                    current[ticket] = p.copy(volume = quantity)
                     continue
                 }
                 EngineCloseState.CONFIRMED -> {
@@ -298,6 +285,11 @@ class MT5PositionPoller(
         closeFills.markSeen(ticket, partial.dealTickets)
         return (observed - partial.unseenQuantity).takeIf { it.signum() > 0 }
     }
+
+    private fun growthBeside(
+        ticket: Long,
+        openVolume: BigDecimal?,
+    ): BigDecimal? = if (entryGrowthBeside == null) BigDecimal.ZERO else entryGrowthBeside.invoke(ticket, openVolume)
 
     private fun isForeignWithoutOwner(ticket: Long): Boolean =
         ticket in foreignRuntimeTickets && closedTicketMeta?.invoke(ticket) == null

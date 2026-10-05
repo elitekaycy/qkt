@@ -151,12 +151,10 @@ internal class RunningSessionHandle(
         VerifiedFlatten(broker, ticketAttribution, clock, strategies.map { it.first }, ::flatten).run(timeout)
 
     // Legacy fire-and-forget flatten stays engine-thread confined for internal callers.
-    override fun flatten() {
-        control.put(Inbound.Flatten)
-    }
+    override fun flatten() = mailbox.requestFlatten()
 
     override fun flattenForStop() {
         clearRuleEdgesAtStop.set(true)
-        control.put(Inbound.Flatten)
+        mailbox.requestFlatten()
     }
 }

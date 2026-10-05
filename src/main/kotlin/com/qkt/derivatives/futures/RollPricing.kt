@@ -9,14 +9,23 @@ import java.time.ZoneOffset
 /**
  * The one rule that prices a roll, shared by the history built from stored bars
  * ([RollHistoryBuilder]) and the roll measured live ([LiveRollMeasurer]), so both give the same
- * record: a contract's reference price is the close of its last 1-minute bar that has closed at or
- * before the roll instant, looked for over the roll's UTC day and the day before.
+ * record: a contract's reference price is the close of its last bar that has closed at or before the
+ * roll instant. Intraday bars (1-minute ones live) are looked for over the roll's UTC day and the day
+ * before; daily bars over the week up to the roll, since a weekend or holiday leaves no daily bar the
+ * day before a Monday roll.
  */
 internal object RollPricing {
-    /** The UTC days a roll at [atMs] is priced from: its own and the day before. */
-    fun days(atMs: Long): List<LocalDate> {
+    private const val DAY_MS = 86_400_000L
+    private const val DAILY_LOOKBACK_DAYS = 7L
+
+    /** The UTC days a roll at [atMs] is priced from with bars [barMs] long, newest first. */
+    fun days(
+        atMs: Long,
+        barMs: Long = 60_000L,
+    ): List<LocalDate> {
         val day = Instant.ofEpochMilli(atMs).atZone(ZoneOffset.UTC).toLocalDate()
-        return listOf(day, day.minusDays(1))
+        val back = if (barMs >= DAY_MS) DAILY_LOOKBACK_DAYS else 1L
+        return (0L..back).map(day::minusDays)
     }
 
     /** The first instant whose bars can price a roll at [atMs]: the start of the day before its day. */

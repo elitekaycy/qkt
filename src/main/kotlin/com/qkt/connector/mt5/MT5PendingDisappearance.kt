@@ -3,6 +3,7 @@ package com.qkt.connector.mt5
 import com.qkt.bus.EventBus
 import com.qkt.common.Clock
 import com.qkt.events.BrokerEvent
+import java.math.BigDecimal
 import org.slf4j.LoggerFactory
 
 /**
@@ -22,6 +23,7 @@ internal class MT5PendingDisappearance(
     private val pendingFills: MT5PendingFills,
     private val vanishedReplay: MT5VanishedPendingReplay =
         MT5VanishedPendingReplay(profile, client, bus, clock, MT5Symbol(profile.symbolPolicy), books),
+    private val entryHistory: MT5PartialEntryHistory = MT5PartialEntryHistory(profile, client, clock, partialEntries),
 ) {
     private val log = LoggerFactory.getLogger(MT5Broker::class.java)
 
@@ -87,11 +89,12 @@ internal class MT5PendingDisappearance(
             return true
         }
 
-        if (books.partialPositionByResidualTicket.containsKey(ticket)) {
-            partialEntries.cancelPartialEntryResidual(
-                ticket,
-                "residual disappeared from venue after partial fill",
-            )
+        if (partialPositionTicket != null) {
+            // The rest may have filled and the position closed before either poller looked (#1354).
+            if (entryHistory.replay(partialPositionTicket, BigDecimal.ZERO) == MT5PartialEntryHistory.Replay.UNKNOWN) {
+                return false
+            }
+            partialEntries.cancelPartialEntryResidual(ticket, "residual disappeared from venue after partial fill")
             return true
         }
 

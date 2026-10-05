@@ -4,6 +4,8 @@ import com.qkt.app.LiveSession.Companion.TICK_QUEUE_CAPACITY
 import com.qkt.events.Event
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import org.slf4j.LoggerFactory
 
 /**
@@ -30,6 +32,18 @@ internal class EngineMailbox {
     val droppedInboundTicks =
         java.util.concurrent.atomic
             .AtomicLong(0)
+
+    /** Flattens queued or running on the engine thread; a stop waits for them rather than interrupt one. */
+    val pendingFlattens = AtomicInteger(0)
+
+    /** [System.nanoTime] when the last flatten finished on the engine thread, 0 before any. */
+    val lastFlattenEndNanos = AtomicLong(0L)
+
+    /** Queue a flatten for the engine thread. */
+    fun requestFlatten() {
+        pendingFlattens.incrementAndGet()
+        control.put(Inbound.Flatten)
+    }
 
     /** Counted down by the engine thread once its final drain is done. */
     val terminated = CountDownLatch(1)
