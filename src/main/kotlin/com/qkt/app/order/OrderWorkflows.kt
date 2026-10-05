@@ -39,7 +39,7 @@ internal class OrderWorkflows(
             ops,
             BracketExitRefusal(book, store.exposure, store.siblings, ocoGuard, clock, ops),
         )
-    val siblingCancels = SiblingCancellation(book, store.siblings, ocoSequencer, ops)
+    val siblingCancels = SiblingCancellation(book, store.siblings, ocoSequencer, ops, haltCancels::begin)
     val venueProtection: VenuePositionProtection =
         VenuePositionProtection(
             broker = s.broker,
