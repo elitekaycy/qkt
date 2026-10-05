@@ -1,0 +1,33 @@
+id: perpetual-drill-gateway-outage
+title: A perpetual bracket held through 90 seconds without its gateway, then closed by its timed exit
+why: 'While the gateway is unreachable the daemon loses its event stream, quotes and REST; it must report
+  the link down, reconnect when it returns, resynchronize from the venue and close once. A reconnect that
+  replays a fill twice, misses one, or resubmits an order shows here as fills or orders the venue and qkt
+  disagree on, or realized PnL off the venue deals net.'
+status: ready
+symbols:
+- DERIBIT:BTC_USDC_PERPETUAL
+timeframes:
+- 1m
+warmup_bars:
+  1m: 3
+proves:
+- behaviour:market-entry
+- behaviour:bracket
+- behaviour:timed-exit
+- behaviour:gateway-reconnect
+fills: 2
+replay: bars
+drills:
+- at_s: 60
+  kind: gateway_outage
+  seconds: 90
+assertions:
+- flat-account
+- deals-net-equals-realized
+- replay-same-fills
+- venue-fills-equal-qkt-fills
+- no-duplicate-order
+- order-id-continuity
+- link-down-and-up
+budget_seconds: 600
