@@ -170,11 +170,27 @@ btc.volume        -- traded volume; on quote-only venues (MT5 FX, metals) the nu
 btc.bid           -- best bid from the last tick in the window (quote feeds only)
 btc.ask           -- best ask from the last tick in the window (quote feeds only)
 btc.spread        -- ask - bid (quote feeds only)
+btc.mark          -- the venue's mark price: what it values positions and liquidates at (gateway feeds)
+btc.index         -- the spot index the contract tracks (gateway feeds)
 ```
 
 `btc.timestamp` is the bar's start time in epoch milliseconds; `btc.timestamp[1]` is the previous bar's start. For the strategy's clock, use [`NOW`](now.md).
 
 `bid`, `ask`, and `spread` are populated only on feeds that carry a quote: live MT5 streams, and tick backtests over quote data (bid/ask ticks). A backtest over bars, or over trade-only ticks, has no quote. When a quote is unavailable they resolve to undefined and a condition referencing them does not fire (the same null-tolerant behaviour as out-of-range lookback). They are the quote from the last tick before the candle closed — the freshest value the engine holds, not the live quote at order-placement instant.
+
+`mark` and `index` are the contract's own, as its venue reports them; a perpetual's premium is
+`btc.mark - btc.index`. Live they are the newest the venue quoted, on a `type: gateway` account whose
+gateway declares the `mark_prices` capability. In a backtest they are the stored series
+(`qkt fetch <SYMBOL> --marks --tf <window> --from <date> --to <date>`, sampled at the stream's window), each
+value seen only after its time: at a bar's close, the last one inside the bar. A strategy that reads them
+does not start on a feed that serves none (MT5, Bybit, a gateway without `mark_prices`), and a backtest
+whose stored marks miss a day of the run is refused naming the fetch; until a first value is known they are
+Undefined. A continuous futures stream (`@front`) has none: read a listed contract or a perpetual.
+
+```qkt
+WHEN perp.mark - perp.index > 25 AND POSITION.perp = 0   -- rich premium: fade it
+THEN SELL perp SIZING 0.01
+```
 
 For historical lookback (the N-th candle ago):
 

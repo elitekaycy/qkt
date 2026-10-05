@@ -267,6 +267,8 @@ fill and checked every tick. Also applies to its `STACK_AT` legs. See
 - Instrument meta: `.tick_size`, `.contract_size`, `.volume_step`, `.volume_min`,
   `.swap_long_points`, `.swap_short_points`, `.tick_value`, `.multiplier`
 - Futures contract: `.contract` (string), `.dte`, `.days_to_roll`; Undefined on non-futures streams
+- Mark and index: `.mark`, `.index`, the contract's venue mark and index price; refused at start on a feed
+  that serves none (see [streams](dsl/streams.md#stream-field-access))
 
 ### Indicators
 

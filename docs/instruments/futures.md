@@ -69,7 +69,9 @@ a backtest charges them on every leg held through each one (`fundingPaid`), and
 refuses to run without them unless `--funding off`. Live, the gateway (or the
 Bybit linear connector, from its `Funding` executions) reports what the venue
 charged and each strategy books its own part; qkt trades a perpetual on a
-gateway only when it declares `funding` (parity row A58).
+gateway only when it declares `funding` (parity row A58). A strategy reads a contract's mark and
+index as `perp.mark` and `perp.index` (the premium is their difference): live from a gateway declaring
+`mark_prices`, in a backtest from marks stored with `qkt fetch <VENUE:CONTRACT> --marks --tf <tf>` (row A60).
 
 Deep dives: [Getting & storing data, Scenario 2b (Binance quarterlies + continuous streams)](../how-to/backtest-data.md) ·
 [Backtest report artifacts](../reference/cli-commands.md#backtest-report-artifacts) ·
