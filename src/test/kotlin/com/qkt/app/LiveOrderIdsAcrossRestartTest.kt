@@ -163,4 +163,22 @@ class LiveOrderIdsAcrossRestartTest {
         assertThat(first).doesNotHaveDuplicates()
         assertThat(first).doesNotContain(again)
     }
+
+    @Test
+    fun `an operator halt and resume keeps the running sequence`(
+        @TempDir state: Path,
+    ) {
+        val running = start(state)
+        val ids =
+            try {
+                val first = trade(running, Signal.Buy(symbol, BigDecimal("0.001")), "0.001")
+                running.handle.halt("operator")
+                running.handle.resume()
+                listOf(first, trade(running, Signal.Sell(symbol, BigDecimal("0.001")), "0"))
+            } finally {
+                running.stop()
+            }
+
+        assertThat(ids).doesNotHaveDuplicates()
+    }
 }
