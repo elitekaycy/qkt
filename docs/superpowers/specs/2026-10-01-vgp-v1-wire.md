@@ -3,7 +3,8 @@
 **Status:** design for phase 44 (amends `2026-09-30-futures-options-design.md` §7); capabilities and
 perpetual funding added by `2026-10-04-perpetual-funding-and-venue-capabilities.md`, mark prices by
 `2026-10-04-mark-and-index-stream-fields.md`, open interest by `2026-10-04-open-interest.md`, option marks by
-`2026-10-05-option-marks-as-rule-inputs.md`. The endpoint list
+`2026-10-05-option-marks-as-rule-inputs.md`, the public tape and liquidations by
+`2026-10-05-trade-flow-and-liquidations.md`. The endpoint list
 and semantics come from `docs/research/2026-09-18-venue-plugin-architecture.md` §6; this document
 fixes what that list left to implementations: the JSON, the event stream, errors, resume and the
 kill switch. The qkt client (`connector/gateway`) and any gateway (`qkt-venue-gateway`) implement exactly
@@ -60,14 +61,16 @@ happened in between.
 (`/v1/quotes`), `settlements` (the venue's settlements reach `/v1/settlements` and the stream), `funding`
 (what the venue charged or credited the account for holding perpetuals: `/v1/funding` and the `funding`
 event), `funding_rates` (`/v1/funding-rates`), `mark_prices` (`/v1/marks`, and quotes that carry `mark`
-and `index` where the venue reports them), `open_interest` (`/v1/open-interest`) and `option_marks` (option
-quotes that carry `mark_iv` and `underlying`, §4a). An endpoint whose capability is not declared answers
+and `index` where the venue reports them), `open_interest` (`/v1/open-interest`), `option_marks` (option
+quotes that carry `mark_iv` and `underlying`, §4a), `trades` (`/v1/trades`) and `liquidations`
+(`/v1/liquidations`). An endpoint whose capability is not declared answers
 `501 unsupported` (`/v1/settlements` is still served, from what the journal holds). A gateway that
 predates the field omits it; a client treats that as none declared. A client ignores a name it does not
 know. Funding is the cash a venue moves between longs and shorts of a perpetual; a client books it, so it
 does not trade perpetuals on a gateway that does not declare `funding`. A client reads a contract's mark
 and index (as strategy inputs) only from a gateway that declares `mark_prices`, and an option's implied
-volatility and Greeks only from one that declares `option_marks`.
+volatility and Greeks only from one that declares `option_marks`, and a contract's traded or liquidated
+volume only from one that declares `trades` or `liquidations`.
 
 ### `GET /v1/account`
 ```json
@@ -225,6 +228,32 @@ and is absent on the last one. A venue that publishes no history serves the figu
 (the adapter's README says so); such a series starts when the gateway first recorded it. The client
 stores these for backtests (`qkt fetch --open-interest`) and reads the newest live. `501 unsupported`
 unless `open_interest` is declared.
+
+### `GET /v1/trades?symbol=<code>&from=<ms>&to=<ms>`
+One contract's public trade tape: every print whose `time` is in `[from, min(to, now))`, oldest first:
+```json
+{"trades": [{"id": "USDC-55597050", "time": 1791154801271, "price": "86457.1", "size": "0.005",
+  "side": "buy"}], "next": 1791154873114}
+```
+`side` is the aggressor's, the side that took liquidity (`buy` lifted an offer). `size` is in the contract's
+order quantity (the unit an order's `quantity` is written in). `id` is the venue's trade id, unique per
+contract. A response holds at most 1000 prints; a full one ends before its last millisecond, whose prints all
+open the next page, so `next` (absent on the last page) is that millisecond and no print is served twice. The
+client stores these for backtests (`qkt fetch --tape`). `501 unsupported` unless `trades` is declared.
+
+### `GET /v1/liquidations?symbol=<code>&from=<ms>&to=<ms>`
+The prints of one contract that liquidated a position, `time` in `[from, min(to, now))`, oldest first, in the
+shape of `/v1/trades`:
+```json
+{"liquidations": [{"id": "USDC-65965358", "time": 1791096882272, "price": "85070.2", "size": "0.0011",
+  "side": "buy"}], "next": 1791100482272}
+```
+`side` is the liquidation order's: `sell` closed a liquidated long, `buy` a liquidated short. A print that
+liquidated both its buyer and its seller is two entries, one of each side, under the same `id`. Where the venue
+marks liquidations on its tape, each is also one of `/v1/trades`' prints. A response covers at most one hour
+(finding liquidations may cost a read of the whole tape); `next` is the `from` of the following page and is
+absent on the last one. The client stores these for backtests (`qkt fetch --liquidations`). `501 unsupported`
+unless `liquidations` is declared. The account's own liquidations are fills on the stream, not these.
 
 ### `POST /v1/kill`, `POST /v1/kill/release`
 Body `{"scope": "all"}` or `{"scope": "symbols", "symbols": ["<code>", ...]}`. Response `200` with the

@@ -7,6 +7,7 @@ import com.qkt.cli.fetch.FundingFetch
 import com.qkt.cli.fetch.MarksFetch
 import com.qkt.cli.fetch.OpenInterestFetch
 import com.qkt.cli.fetch.RollsFetch
+import com.qkt.cli.fetch.TapeFetch
 import com.qkt.cli.fetch.buildFetcher
 import com.qkt.cli.fetch.resolveFetchRange
 import com.qkt.common.Clock
@@ -16,6 +17,7 @@ import com.qkt.connector.bybit.marketdata.BybitKlineClient
 import com.qkt.connector.mt5.MT5BrokerProfileLoader
 import com.qkt.connector.mt5.marketdata.Mt5BarFetcher
 import com.qkt.marketdata.Candle
+import com.qkt.marketdata.flow.FlowKind
 import com.qkt.marketdata.store.DataRoot
 import com.qkt.marketdata.store.LocalBarStore
 import java.time.ZoneOffset
@@ -41,8 +43,9 @@ import java.time.ZoneOffset
  * `qkt fetch VENUE:ROOT --rolls` measures its roll history from stored (and fetched) 1m bars, and
  * `qkt fetch DERIBIT:ROOT --chains` builds an option root's chain snapshots from trade history, and
  * `qkt fetch VENUE:PERPETUAL --funding` stores a perpetual's funding rates (see [FundingFetch]),
- * `qkt fetch VENUE:CONTRACT --marks --tf 1m` stores a contract's mark and index history (see [MarksFetch]), and
- * `qkt fetch VENUE:CONTRACT --open-interest` stores a contract's open interest (see [OpenInterestFetch]).
+ * `qkt fetch VENUE:CONTRACT --marks --tf 1m` stores a contract's mark and index history (see [MarksFetch]),
+ * `qkt fetch VENUE:CONTRACT --open-interest` stores a contract's open interest (see [OpenInterestFetch]), and
+ * `qkt fetch VENUE:CONTRACT --tape` or `--liquidations` stores its trade tape or liquidations (see [TapeFetch]).
  */
 class FetchCommand(
     private val args: Args,
@@ -76,6 +79,8 @@ class FetchCommand(
         if (args.flag("funding")) return FundingFetch.run(target, args)
         if (args.flag("marks")) return MarksFetch.run(target, args, clock)
         if (args.flag("open-interest")) return OpenInterestFetch.run(target, args)
+        if (args.flag("tape")) return TapeFetch.run(target, FlowKind.TRADES, args, clock)
+        if (args.flag("liquidations")) return TapeFetch.run(target, FlowKind.LIQUIDATIONS, args, clock)
         val tfArg =
             try {
                 args.requireOption("tf")

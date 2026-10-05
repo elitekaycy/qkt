@@ -34,10 +34,16 @@ object DslVocabulary {
      */
     val optionFields: List<String> = listOf("iv", "delta", "gamma", "vega", "theta")
 
-    /** Per-bar fields readable off an alias, e.g. `btc.close`, plus contract, mark, open interest and option fields. */
+    /**
+     * A contract's volume per bar from its public tape: aggressor buys and sells, and longs and shorts liquidated.
+     * Read only a bar back or more (`btc.buy_volume[1]`); refused on a feed that serves no tape.
+     */
+    val flowFields: List<String> = listOf("buy_volume", "sell_volume", "long_liq_volume", "short_liq_volume")
+
+    /** Per-bar fields readable off an alias, e.g. `btc.close`, plus contract, mark, open interest, option and flow fields. */
     val candleFields: List<String> =
         listOf("close", "open", "high", "low", "volume", "price", "bid", "ask", "spread", "value", "timestamp") +
-            contractFields + markFields + OpenInterestSymbol.FIELD + optionFields
+            contractFields + markFields + OpenInterestSymbol.FIELD + optionFields + flowFields
 
     /** The candle fields an indicator may consume as a numeric series. */
     val numericCandleFields: List<String> =

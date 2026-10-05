@@ -95,7 +95,11 @@ class DslVocabularyTest {
 
     @Test
     fun `every stream field and both series selectors compile`() {
-        for (field in DslVocabulary.candleFields + DslVocabulary.metaFields) compiles(strategy("g.$field > 0"))
+        for (field in DslVocabulary.candleFields + DslVocabulary.metaFields) {
+            // Trade flow is read a bar back or more: the bar closing is refused (FlowStreamFieldsTest).
+            val read = if (field in DslVocabulary.flowFields) "g.$field[1]" else "g.$field"
+            compiles(strategy("$read > 0"))
+        }
         compiles(strategy("atr(g.${DslVocabulary.CANDLE_SELECTOR}, 14) > 0"))
         compiles(strategy("vwap(g.${DslVocabulary.TICK_SELECTOR}, 20) > 0"))
     }

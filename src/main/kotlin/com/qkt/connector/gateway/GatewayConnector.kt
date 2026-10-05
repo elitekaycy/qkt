@@ -15,6 +15,7 @@ import com.qkt.instrument.ContractCatalogSource
 import com.qkt.instrument.FundingRateSource
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.OptionTerms
+import com.qkt.marketdata.flow.PrintHistorySource
 import com.qkt.marketdata.marks.MarkHistorySource
 import com.qkt.marketdata.openinterest.OpenInterestSource
 import com.qkt.marketdata.source.MarketSource
@@ -90,6 +91,7 @@ class GatewayTradingAccount internal constructor(
             recorderFor = recording::sinkFor,
             bars = client::bars,
             capabilities = { client.health().capabilities },
+            prints = { code, kind, fromMs, toMs -> historyClient.prints(code, kind, fromMs, toMs) },
         )
 
     override val marketData: MarketSource = quotes
@@ -99,18 +101,24 @@ class GatewayTradingAccount internal constructor(
 
     override val fundingRates: FundingRateSource = GatewayFundingRates(client, GatewaySymbols(config.symbolPrefix))
 
-    /** On a client of its own whose calls may take [MARKS_TIMEOUT_MS]: a page of marks can cost the venue a call per window. */
+    /**
+     * Histories read on a client of their own whose calls may take [MARKS_TIMEOUT_MS]: a page of marks can cost the
+     * venue a call per window, and a page of liquidations a read of an hour of its tape.
+     */
+    private val historyClient by lazy {
+        GatewayClient(
+            settings.url,
+            settings.apiKey,
+            maxOf(settings.httpTimeoutMs, MARKS_TIMEOUT_MS),
+            settings.retryAttempts,
+        )
+    }
+
     override val markHistory: MarkHistorySource
-        get() =
-            GatewayMarkHistory(
-                GatewayClient(
-                    settings.url,
-                    settings.apiKey,
-                    maxOf(settings.httpTimeoutMs, MARKS_TIMEOUT_MS),
-                    settings.retryAttempts,
-                ),
-                GatewaySymbols(config.symbolPrefix),
-            )
+        get() = GatewayMarkHistory(historyClient, GatewaySymbols(config.symbolPrefix))
+
+    override val printHistory: PrintHistorySource
+        get() = GatewayPrintHistory(historyClient, GatewaySymbols(config.symbolPrefix))
 
     override val openInterest: OpenInterestSource =
         GatewayOpenInterest(client, GatewaySymbols(config.symbolPrefix), config.name)
