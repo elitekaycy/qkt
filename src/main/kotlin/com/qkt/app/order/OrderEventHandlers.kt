@@ -25,6 +25,7 @@ internal class OrderEventHandlers(
     private val scaleOutExits: ScaleOutExits,
     private val venueRecovery: VenueRecovery,
     private val attachedCompletion: AttachedBracketCompletion,
+    private val bracketFills: BracketFills,
     private val clock: Clock,
     private val ops: OrderOps,
     private val log: Logger,
@@ -107,9 +108,13 @@ internal class OrderEventHandlers(
         }
     }
 
-    /** An order was cancelled: release its exposure, cancel held children, arm partial scale-outs. */
+    /**
+     * An order was cancelled: release its exposure, cancel held children, arm partial scale-outs and
+     * the exits of a bracket entry the venue filled in part.
+     */
     fun onCancelled(e: BrokerEvent.OrderCancelled) {
         haltCancels.forget(e.clientOrderId)
+        val bracket = brackets.preFill[e.clientOrderId]
         brackets.forgetEntry(e.clientOrderId)
         val applied =
             ops.update(e.clientOrderId) {
@@ -122,7 +127,7 @@ internal class OrderEventHandlers(
         val unarmedChildren = children.take(e.clientOrderId)
         val pendingScaleOut = scaleOuts.pendingByBasis.remove(e.clientOrderId)
         val partialPositionTicket = scaleOuts.partialPositionTickets.remove(e.clientOrderId)
-        unarmedChildren?.forEach { child -> ops.cancel(child.id) }
+        if (!bracketFills.armPartFilled(e.clientOrderId, bracket)) unarmedChildren?.forEach { ops.cancel(it.id) }
         attachedCompletion.onEntryEnded(e.clientOrderId, OrderState.CANCELLED)
         scaleOutTracker.onBasisCancelled(e.clientOrderId, pendingScaleOut, partialPositionTicket)
         log.info(

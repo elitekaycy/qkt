@@ -27,6 +27,11 @@ internal class OrderCancellation(
     private val ops: OrderOps,
     private val isRiskReducingForHalt: (OrderRequest) -> Boolean,
 ) {
+    private val cancellingWrappers = HashSet<String>()
+
+    /** Whether wrapper [clientOrderId] is being cancelled as a whole, its children one by one, right now. */
+    fun isCancelling(clientOrderId: String): Boolean = clientOrderId in cancellingWrappers
+
     /** Cancels [clientOrderId]; a composite cascades to its children, engine-held orders end locally. */
     fun cancel(clientOrderId: String) {
         val managed = book[clientOrderId] ?: return
@@ -43,11 +48,13 @@ internal class OrderCancellation(
         if (managed.childClientOrderIds.isNotEmpty()) {
             val scaleOutCancellation = managed.request is OrderRequest.ScaleOut
             if (scaleOutCancellation) scaleOuts.cancellingWrappers.add(clientOrderId)
+            cancellingWrappers += clientOrderId
             try {
                 for (childId in managed.childClientOrderIds) cancel(childId)
                 ops.update(clientOrderId) { it.copy(state = OrderState.CANCELLED, lastUpdatedAt = clock.now()) }
                 exposure.remove(clientOrderId)
             } finally {
+                cancellingWrappers -= clientOrderId
                 if (scaleOutCancellation) scaleOuts.cancellingWrappers.remove(clientOrderId)
             }
             return

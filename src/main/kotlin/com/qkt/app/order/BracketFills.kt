@@ -26,6 +26,8 @@ internal class BracketFills(
     private val venueProtection: VenuePositionProtection,
     private val clock: Clock,
     private val ops: OrderOps,
+    /** Whether a wrapper is being cancelled as a whole right now (its children's ends arrive inside that). */
+    private val cancellingWrapper: (String) -> Boolean = { false },
 ) {
     /** Arms whatever was waiting on the entry's [last] fill; [pending] are the children held for it. */
     fun armExits(
@@ -46,6 +48,26 @@ internal class BracketFills(
             attachedBracket != null -> armAttached(e, attachedBracket, pending)
             else -> pending?.forEach { ops.dispatch(it) }
         }
+    }
+
+    /**
+     * A decomposed bracket's [entryId] ended (the venue cancelled the rest) with only part of it filled:
+     * that part gets the bracket's exits, sized to it and anchored on its average price, as a whole fill
+     * would. False, arming nothing, when no part filled, the bracket is venue-attached (the venue holds
+     * its SL/TP) or was itself cancelled; the held exits then go with the entry.
+     */
+    fun armPartFilled(
+        entryId: String,
+        bracket: OrderRequest.Bracket?,
+    ): Boolean {
+        val entry = book[entryId] ?: return false
+        val price = entry.avgFillPrice
+        val wrapper = entry.parentClientOrderId?.let { book[it] }
+        if (bracket == null || entry.request is OrderRequest.Bracket || price == null) return false
+        if (entry.cumulativeFilledQuantity.signum() <= 0 || wrapper == null) return false
+        if (wrapper.state.isTerminal || cancellingWrapper(wrapper.id)) return false
+        ops.dispatch(exits.exitOco(bracket, price, entry.cumulativeFilledQuantity))
+        return true
     }
 
     private fun armAttached(
