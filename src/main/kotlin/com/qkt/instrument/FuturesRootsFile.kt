@@ -28,7 +28,7 @@ object FuturesRootsFile {
             "perpetual",
         )
     private val fields = RootFields("futures")
-    private val ROLL_KEYS = setOf("daysBeforeExpiry", "atUtc", "adjust")
+    private val ROLL_KEYS = setOf("daysBeforeExpiry", "atUtc", "adjust", "anchor")
 
     /** Every root declared in [path], in file order; empty when the file has no `futures:` section. */
     fun load(path: Path): List<FuturesRoot> {
@@ -125,7 +125,7 @@ object FuturesRootsFile {
                     }}",
                 )
         require(days >= 0) { "futures root $name: roll.daysBeforeExpiry must be >= 0, got $days" }
-        return RollPolicy(days, at, adjust)
+        return RollPolicy(days, at, adjust, raw["anchor"]?.toString())
     }
 
     private fun calendar(

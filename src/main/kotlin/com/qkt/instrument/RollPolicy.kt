@@ -7,15 +7,18 @@ import java.time.ZoneOffset
 /**
  * When a continuous series leaves a contract: [daysBeforeExpiry] calendar days before the expiry
  * date, at [atUtc]. Depends only on the contract's expiry, so backtest and live roll at the same
- * instant. [adjust] says how the series joins the next contract.
+ * instant. [adjust] says how the series joins the next contract, and [anchor] which contract (its
+ * code without the venue, e.g. `CLN20`) keeps raw prices; null anchors at the first measured one.
  */
 data class RollPolicy(
     val daysBeforeExpiry: Int,
     val atUtc: LocalTime,
     val adjust: PriceAdjustment,
+    val anchor: String? = null,
 ) {
     init {
         require(daysBeforeExpiry >= 0) { "RollPolicy.daysBeforeExpiry must be >= 0: $daysBeforeExpiry" }
+        require(anchor == null || anchor.isNotBlank()) { "RollPolicy.anchor must not be blank" }
     }
 
     /** Identifies the roll instants this policy produces; histories built under another key do not apply. */

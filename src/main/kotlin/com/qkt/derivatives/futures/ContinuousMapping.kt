@@ -6,7 +6,8 @@ import java.math.BigDecimal
 
 /**
  * A contract price in its continuous series, for a contract at [shift] under [adjustment]. Fails when
- * the series would reach zero or below — panama over a long, falling chain can do that, ratio cannot.
+ * the series would reach zero or below — panama over a long chain in steep contango can do that
+ * (crude in 2020), ratio cannot.
  */
 internal fun continuousPrice(
     adjustment: PriceAdjustment,
@@ -20,7 +21,8 @@ internal fun continuousPrice(
             PriceAdjustment.RATIO -> raw.multiply(shift, Money.CONTEXT)
         }
     require(continuous.signum() > 0) {
-        "continuous price $continuous (raw $raw) is not positive; use 'adjust: ratio' for this root"
+        "continuous price $continuous (raw $raw) is not positive; anchor the series nearer this contract " +
+            "with roll.anchor, or use 'adjust: ratio' (read-only) for this root"
     }
     return continuous
 }

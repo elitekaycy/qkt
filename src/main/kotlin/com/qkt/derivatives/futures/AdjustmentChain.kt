@@ -5,15 +5,21 @@ import com.qkt.instrument.PriceAdjustment
 import java.math.BigDecimal
 
 /**
- * Forward adjustment of a contract chain, anchored at the first contract: contract 0 keeps raw
- * prices and each later contract is shifted onto the series so far. Appending a roll never changes
- * an earlier contract's shift, which is what makes the series free of look-ahead.
+ * Adjustment of a contract chain, anchored at contract [anchor]: it keeps raw prices and every other
+ * contract is shifted onto it. Anchored at the first contract (the default) the adjustment is forward:
+ * each later contract is shifted onto the series so far, and appending a roll never changes an earlier
+ * contract's shift, which is what makes the series free of look-ahead. A later anchor shifts the
+ * contracts before it by the roll gaps up to it (backward adjustment); appending a roll after it still
+ * changes no earlier shift.
  */
 class AdjustmentChain(
     private val adjustment: PriceAdjustment,
     rolls: List<RollPrices>,
+    anchor: Int = 0,
 ) {
-    private val shifts: List<BigDecimal> =
+    private val shifts: List<BigDecimal> = anchored(forward(rolls), anchor)
+
+    private fun forward(rolls: List<RollPrices>): List<BigDecimal> =
         rolls.runningFold(identity()) { shift, roll ->
             when (adjustment) {
                 PriceAdjustment.NONE -> shift
@@ -25,6 +31,23 @@ class AdjustmentChain(
                     )
             }
         }
+
+    /** [forward] shifts re-based so contract [anchor] keeps raw prices; unchanged for the first contract. */
+    private fun anchored(
+        forward: List<BigDecimal>,
+        anchor: Int,
+    ): List<BigDecimal> {
+        require(
+            anchor in forward.indices,
+        ) { "anchor index $anchor is outside the adjusted chain (0..${forward.lastIndex})" }
+        if (anchor == 0) return forward
+        val base = forward[anchor]
+        return when (adjustment) {
+            PriceAdjustment.NONE -> forward
+            PriceAdjustment.PANAMA -> forward.map { it.subtract(base) }
+            PriceAdjustment.RATIO -> forward.map { it.divide(base, Money.CONTEXT) }
+        }
+    }
 
     /** Number of contracts this chain covers. */
     val size: Int get() = shifts.size
