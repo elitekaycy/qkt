@@ -7,7 +7,7 @@
 Needs QKT_DERIV_GATEWAY_KEY (the gateway's trader token) and QKT_LIVE_DEMO_ORDER_APPROVAL=LOCALHOST_DEMO_ONLY.
 The gateway must be on loopback, in demo trade mode, logged into --expected-login, and the account flat:
 a netting account cannot tell the case's positions from anyone else's. The case's strategy runs in a
-daemon until it has made `fills` fills (or its budget ends), then is judged:
+daemon until it has made `fills` fills and, when it asserts flat-account, is flat (or its budget ends), then is judged:
   - flat-account: the account ends with no position and no working order;
   - deals-net-equals-realized: qkt's realized PnL equals the venue's deals net, fees included, less the
     funding the venue charged the account over the run (`/v1/funding`, when the gateway reports it), exactly;
@@ -196,13 +196,20 @@ class Run:
                 raise RuntimeError("the daemon never became ready")
             time.sleep(1)
         self.started_ms = int(time.time() * 1000)
-        while len(self.live_fills()) < int(self.case["fills"]) and time.time() < deadline:
+        while not self.done() and time.time() < deadline:
             time.sleep(3)
         time.sleep(5)  # the last fill's venue events and costs settle
         if self.case["replay"] == "chain":  # a replay fills on the snapshot after the entry: record one past the fills
             time.sleep(MINUTE / 1000 - time.time() % 60 + 15)
         self.stop_daemon()
         self.ended_ms = int(time.time() * 1000)
+
+    def done(self):
+        """The case has made its fills and, when it must end flat, is flat: a partial fill is a fill event, so the
+        count alone would end a case whose entry is still working (its remainder filling minutes later)."""
+        if len(self.live_fills()) < int(self.case["fills"]):
+            return False
+        return "flat-account" not in self.case["assertions"] or self.flat()
 
     def stop_daemon(self):
         if self.daemon and self.daemon.poll() is None:
