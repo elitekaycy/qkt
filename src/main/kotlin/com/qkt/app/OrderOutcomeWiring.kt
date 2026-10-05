@@ -38,6 +38,7 @@ internal class OrderOutcomeWiring(
             .mapNotNull { (id, strategy) ->
                 (strategy as? DslCompiledStrategy)?.let { id to it }
             }.toMap()
+    private val repeats = RepeatedExecutions(orderManager::getOrder)
 
     /** Register every order-outcome handler on the bus, in dispatch order. */
     fun subscribe() {
@@ -75,6 +76,15 @@ internal class OrderOutcomeWiring(
                 )
                 return@subscribeFirst
             }
+            if (repeats.isRepeatedFill(e)) {
+                log.warn(
+                    "repeated fill not booked: order_id={} broker_order_id={} qty={} — the order already filled",
+                    e.clientOrderId,
+                    e.brokerOrderId,
+                    e.quantity,
+                )
+                return@subscribeFirst
+            }
             if (latencyEnabled) latency.observeFill(e.clientOrderId, e.strategyId)
             val accounted =
                 booker.book(e, cumulativeFilled = cumulativeAfter(e.clientOrderId, e.quantity), partial = false)
@@ -90,7 +100,17 @@ internal class OrderOutcomeWiring(
             reporter.report(e, accounted)
         }
         bus.subscribe<BrokerEvent.OrderFilled> { e -> exitHookManager.dispatchReady(e) }
+        // First: judged against the order before the order manager applies the slice.
+        bus.subscribeFirst<BrokerEvent.OrderPartiallyFilled> { e -> repeats.observeSlice(e) }
         bus.subscribe<BrokerEvent.OrderPartiallyFilled> { e ->
+            if (repeats.takeRepeatedSlice(e)) {
+                log.warn(
+                    "repeated execution slice not booked: order_id={} cumulative={} — the order already holds it",
+                    e.clientOrderId,
+                    e.cumulativeFilled,
+                )
+                return@subscribe
+            }
             if (e.strategyId.isBlank()) return@subscribe
             val asFill =
                 BrokerEvent.OrderFilled(
