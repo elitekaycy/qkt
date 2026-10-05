@@ -41,25 +41,55 @@ internal class MT5PartialEntries(
      * Advances a partially filled entry from the position poller's cumulative venue volume.
      * Returns true when [position] belongs to a partial entry, including a duplicate snapshot.
      */
-    fun reconcilePartialEntry(position: MT5Position): Boolean {
+    fun reconcilePartialEntry(position: MT5Position): Boolean =
+        advance(position.ticket, position.volume, position.priceOpen, position.openTime, fromHistory = false)
+
+    fun isPartialEntry(positionTicket: Long): Boolean =
+        synchronized(books.pendingTransitionLock) { positionTicket in books.partialEntryByPositionTicket }
+
+    /**
+     * Advances the entry on [positionTicket] to the [opened] lots its opening deals show at [averagePrice].
+     * What this books beyond the poller's last snapshot is held for [takeUnseenGrowth].
+     */
+    fun advanceFromHistory(
+        positionTicket: Long,
+        opened: BigDecimal,
+        averagePrice: BigDecimal,
+        openedAtMs: Long,
+    ): Boolean = advance(positionTicket, opened, averagePrice, openedAtMs, fromHistory = true)
+
+    /** Entry lots booked from deal history that the position poller has not seen in a snapshot. */
+    fun takeUnseenGrowth(positionTicket: Long): BigDecimal =
+        synchronized(books.pendingTransitionLock) { unseenGrowth.remove(positionTicket) } ?: BigDecimal.ZERO
+
+    private val unseenGrowth = HashMap<Long, BigDecimal>()
+
+    private fun advance(
+        positionTicket: Long,
+        venueVolume: BigDecimal,
+        venueAveragePrice: BigDecimal,
+        openedAtMs: Long,
+        fromHistory: Boolean,
+    ): Boolean {
         var event: BrokerEvent? = null
         synchronized(books.pendingTransitionLock) {
-            val state = books.partialEntryByPositionTicket[position.ticket] ?: return false
-            val venueCumulative = position.volume.min(state.requestedQuantity)
+            val state = books.partialEntryByPositionTicket[positionTicket] ?: return false
+            val venueCumulative = venueVolume.min(state.requestedQuantity)
             if (venueCumulative <= state.cumulativeFilled) return true
 
             val sliceQuantity = venueCumulative - state.cumulativeFilled
-            val slicePrice = incrementalEntryPrice(state, venueCumulative, position.priceOpen, sliceQuantity)
-            books.positionBook.setOpenedAt(position.ticket, position.openTime)
+            val slicePrice = incrementalEntryPrice(state, venueCumulative, venueAveragePrice, sliceQuantity)
+            books.positionBook.setOpenedAt(positionTicket, openedAtMs)
+            if (fromHistory) unseenGrowth.merge(positionTicket, sliceQuantity, BigDecimal::add)
             if (venueCumulative >= state.requestedQuantity) {
-                books.partialEntryByPositionTicket.remove(position.ticket)
-                books.partialPositionByResidualTicket.remove(state.residualTicket, position.ticket)
+                books.partialEntryByPositionTicket.remove(positionTicket)
+                books.partialPositionByResidualTicket.remove(state.residualTicket, positionTicket)
                 books.pendingBook.forgetIfStill(state.meta.orderId, state.residualTicket, state.meta)
                 books.recentlyFilledTickets[state.residualTicket] = clock.now()
                 event =
                     BrokerEvent.OrderFilled(
                         clientOrderId = state.meta.orderId,
-                        brokerOrderId = position.ticket.toString(),
+                        brokerOrderId = positionTicket.toString(),
                         symbol = state.symbol,
                         side = state.side,
                         price = slicePrice,
@@ -68,15 +98,15 @@ internal class MT5PartialEntries(
                         timestamp = clock.now(),
                     )
             } else {
-                books.partialEntryByPositionTicket[position.ticket] =
+                books.partialEntryByPositionTicket[positionTicket] =
                     state.copy(
                         cumulativeFilled = venueCumulative,
-                        averageFillPrice = position.priceOpen,
+                        averageFillPrice = venueAveragePrice,
                     )
                 event =
                     BrokerEvent.OrderPartiallyFilled(
                         clientOrderId = state.meta.orderId,
-                        brokerOrderId = position.ticket.toString(),
+                        brokerOrderId = positionTicket.toString(),
                         symbol = state.symbol,
                         side = state.side,
                         price = slicePrice,
