@@ -10,6 +10,7 @@ import com.qkt.connector.bybit.BybitHeldEnds
 import com.qkt.connector.bybit.BybitTransport
 import com.qkt.connector.bybit.requireBybitOk
 import com.qkt.events.BrokerEvent
+import java.math.BigDecimal
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -49,6 +50,12 @@ class BybitSpotStateRecovery(
         val side: Side,
         val strategyId: String = "",
     )
+
+    /** Replays order [clientOrderId]'s executions beyond the [alreadyBooked] it had before a restart. */
+    fun replayOrder(
+        clientOrderId: String,
+        alreadyBooked: BigDecimal,
+    ) = synchronized(lock) { executions.replayOrder(clientOrderId, alreadyBooked) }
 
     override fun reconcile() {
         synchronized(lock) {

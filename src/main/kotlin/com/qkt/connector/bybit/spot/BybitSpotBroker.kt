@@ -11,20 +11,20 @@ import com.qkt.common.net.PeriodicReconciler
 import com.qkt.connector.bybit.BybitExecutionStream
 import com.qkt.connector.bybit.BybitHeldEnds
 import com.qkt.connector.bybit.BybitOrderTranslator
+import com.qkt.connector.bybit.BybitOrderUpdates
 import com.qkt.connector.bybit.BybitOrders
+import com.qkt.connector.bybit.BybitRestartRecovery
 import com.qkt.connector.bybit.BybitSymbol
 import com.qkt.connector.bybit.BybitTransport
 import com.qkt.connector.bybit.boundedExecIdSet
 import com.qkt.connector.bybit.requireBybitOk
 import com.qkt.connector.bybit.resolveBybitOrder
 import com.qkt.events.BrokerEvent
+import com.qkt.execution.ManagedOrder
 import com.qkt.execution.OrderRequest
-import java.math.BigDecimal
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.slf4j.LoggerFactory
@@ -50,6 +50,7 @@ class BybitSpotBroker(
 
     private val orders = BybitOrders()
     private val ends = BybitHeldEnds(orders, bus, clock, "spot")
+    private val restart: BybitRestartRecovery
     private val seenExecIds: MutableSet<String> = boundedExecIdSet()
     private val lastFillTime: AtomicLong = AtomicLong(clock.now() - recoveryWindowMs)
 
@@ -72,7 +73,8 @@ class BybitSpotBroker(
     override fun supports(symbol: String): Boolean = symbol.startsWith("BYBIT_SPOT:")
 
     init {
-        transport.subscribe("order") { frame -> onOrderFrame(frame) }
+        val updates = BybitOrderUpdates(ends, bus, clock)
+        transport.subscribe("order", updates::onFrame)
         val executions =
             BybitExecutionStream(
                 "spot",
@@ -95,6 +97,7 @@ class BybitSpotBroker(
                 seenExecIds = seenExecIds,
                 ends = ends,
             )
+        restart = BybitRestartRecovery("spot", transport, ends, updates, recovery::replayOrder)
         transport.onDisconnect { reason ->
             bus.publish(
                 BrokerEvent.ConnectionChanged(
@@ -376,46 +379,10 @@ class BybitSpotBroker(
         )
     }
 
-    private fun onOrderFrame(frame: JsonObject) {
-        val data = frame["data"]?.jsonArray ?: return
-        for (entry in data) {
-            val obj = entry.jsonObject
-            val clientOrderId = obj["orderLinkId"]?.jsonPrimitive?.content ?: continue
-            val brokerOrderId = obj["orderId"]?.jsonPrimitive?.content
-            val status = obj["orderStatus"]?.jsonPrimitive?.content ?: continue
-            val now = clock.now()
-            val strategyId = orders.strategyOf(clientOrderId).orEmpty()
-            when (status) {
-                "New" ->
-                    bus.publish(
-                        BrokerEvent.OrderAccepted(
-                            clientOrderId = clientOrderId,
-                            brokerOrderId = brokerOrderId,
-                            strategyId = strategyId,
-                            timestamp = now,
-                        ),
-                    )
-                // Spot ends a part-filled order as PartiallyFilledCanceled; either waits for its fills (#1333).
-                "Cancelled", "PartiallyFilledCanceled" ->
-                    ends.end(
-                        BrokerEvent.OrderCancelled(clientOrderId, brokerOrderId, "broker cancel", strategyId, now),
-                        obj["cumExecQty"]?.jsonPrimitive?.content?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
-                    )
-                "Filled" -> orders.end(clientOrderId)
-                "Rejected" ->
-                    bus.publish(
-                        BrokerEvent.OrderRejected(
-                            clientOrderId = clientOrderId,
-                            brokerOrderId = brokerOrderId,
-                            reason = obj["rejectReason"]?.jsonPrimitive?.content ?: "broker rejected",
-                            strategyId = strategyId,
-                            timestamp = now,
-                        ),
-                    )
-                else -> log.debug("Bybit order frame status={} (no event)", status)
-            }
-        }
-    }
+    override fun recoverPendingOrders(
+        orders: List<ManagedOrder>,
+        bookedTickets: Set<String>,
+    ): Set<String> = restart.recover(orders)
 
     override fun shutdown() {
         reconciler.stop()

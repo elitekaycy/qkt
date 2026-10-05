@@ -50,13 +50,26 @@ class BybitLinearStateRecovery(
             onFill = ends?.let { it::fill },
         )
 
-    override fun reconcile() {
+    /** Replays order [clientOrderId]'s executions beyond the [alreadyBooked] it had before a restart. */
+    fun replayOrder(
+        clientOrderId: String,
+        alreadyBooked: BigDecimal,
+    ) = synchronized(lock) { executions.replayOrder(clientOrderId, alreadyBooked) }
+
+    override fun reconcile() = reconcile(positions = true)
+
+    /**
+     * Reconciles all but, without [positions], the venue position: at startup it would adopt what filled
+     * while qkt was down before the restored orders book those fills ([BybitRestartRecovery]), so the
+     * position waits for the next reconcile.
+     */
+    fun reconcile(positions: Boolean) {
         synchronized(lock) {
             val executedOrderIds = executions.reconcile()
             ends?.resolve(executions)
             reconcileOpenOrders(executedOrderIds)
             reconcileBalances()
-            reconcilePositions()
+            if (positions) reconcilePositions()
             funding.poll()
         }
     }
