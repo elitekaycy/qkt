@@ -1,26 +1,29 @@
-# qkt daemon config. Each `brokers:` entry is one trading account, and its name is the prefix
-# strategies use: `bybit_spot` serves BYBIT_SPOT:... symbols, `bybit_linear` serves
-# BYBIT_LINEAR:... symbols. Credentials come from the environment (see .env); both entries share
-# one Bybit connection. Delete the entry you don't trade. To run paper-only against BACKTEST
-# symbols, delete both. Add other accounts (e.g. a `type: mt5` entry) to trade them from the
-# same daemon.
+# qkt daemon config. qkt trades Bybit through the qkt-venue-gateway running its Bybit adapter
+# (docker-compose.yml starts it), exactly as it trades any other gateway venue. Each `brokers:`
+# entry is one trading account, and its name is the prefix strategies use: `bybit_linear` serves
+# BYBIT_LINEAR:... symbols, `bybit_spot` serves BYBIT_SPOT:... symbols. One gateway serves one
+# Bybit category. To trade spot too, start its gateway (`docker compose --profile spot up -d`)
+# and uncomment `bybit_spot` below. qkt checks each gateway's adapter, account and trade mode at
+# startup and refuses to start on a mismatch.
 
 state:
   enabled: true
 
 brokers:
-  bybit_spot:
-    type: bybit
-    category: spot
-    api_key: env:BYBIT_API_KEY
-    api_secret: env:BYBIT_API_SECRET
-    testnet: ${BYBIT_TESTNET:-true}
   bybit_linear:
-    type: bybit
-    category: linear
-    api_key: env:BYBIT_API_KEY
-    api_secret: env:BYBIT_API_SECRET
-    testnet: ${BYBIT_TESTNET:-true}
+    type: gateway
+    gateway_url: http://gateway-bybit-linear:8443
+    api_key: env:BYBIT_TRADER_TOKEN
+    expected_adapter: bybit
+    expected_account_login: "${BYBIT_ACCOUNT_LOGIN}"
+    expected_trade_mode: ${BYBIT_TRADE_MODE:-demo}
+  # bybit_spot:
+  #   type: gateway
+  #   gateway_url: http://gateway-bybit-spot:8443
+  #   api_key: env:BYBIT_TRADER_TOKEN
+  #   expected_adapter: bybit
+  #   expected_account_login: "${BYBIT_ACCOUNT_LOGIN}"
+  #   expected_trade_mode: ${BYBIT_TRADE_MODE:-demo}
 
 notify:
   telegram:

@@ -26,8 +26,8 @@ class ConfigAccountConfigsTest {
                   "BTC*": crypto
                   "*": fx
               bybit_linear:
-                type: bybit
-                category: linear
+                type: gateway
+                gateway_url: http://gateway-bybit-linear:8443
             """.trimIndent(),
         )
 
@@ -36,11 +36,11 @@ class ConfigAccountConfigsTest {
         assertThat(accounts.map { it.name }).containsExactly("prop_s01", "bybit_linear")
         assertThat(accounts[0].type).isEqualTo("mt5")
         assertThat(accounts[0].tradingHours).containsExactly("BTC*" to "crypto", "*" to "fx")
-        assertThat(accounts[1].setting("category")).isEqualTo("linear")
+        assertThat(accounts[1].setting("gateway_url")).isEqualTo("http://gateway-bybit-linear:8443")
     }
 
     @Test
-    fun `the bybit scaffold declares one account per category and opens through the connectors`(
+    fun `the bybit scaffold declares a gateway account that serves BYBIT_LINEAR symbols`(
         @TempDir dir: Path,
     ) {
         val template =
@@ -51,10 +51,13 @@ class ConfigAccountConfigsTest {
 
         val accounts = Config.load(file).accountConfigs()
 
-        assertThat(accounts.map { it.name to it.type })
-            .containsExactly("bybit_spot" to "bybit", "bybit_linear" to "bybit")
+        assertThat(accounts.map { it.name to it.type }).containsExactly("bybit_linear" to "gateway")
+        assertThat(accounts.single().setting("expected_adapter")).isEqualTo("bybit")
         TestAccounts.directory(*accounts.toTypedArray()).use { opened ->
-            assertThat(opened.forSymbol("BYBIT_LINEAR:BTCUSDT")?.config?.name).isEqualTo("bybit_linear")
+            val account = opened.forSymbol("BYBIT_LINEAR:BTCUSDT")
+            assertThat(account?.config?.name).isEqualTo("bybit_linear")
+            assertThat(account?.marketDataPattern?.matches("BYBIT_LINEAR:BTCUSDT")).isTrue()
+            assertThat(opened.forSymbol("BYBIT_SPOT:BTCUSDT")).isNull()
         }
     }
 
