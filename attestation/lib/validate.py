@@ -7,7 +7,7 @@
 
 Fails when a case breaks the schema, an id is reused, a budget exceeds ten minutes, a `proves`
 capability is not in the catalog, a catalog capability is neither proven by a ready case nor
-listed in gaps.yaml, or a listed gap is already proven.
+listed in gaps.yaml, a listed gap is already proven, or a drill names an unknown kind.
 """
 import argparse, json, os, re, subprocess, sys
 import yaml
@@ -16,6 +16,7 @@ REQUIRED = ("id", "title", "why", "status", "symbols", "timeframes", "proves", "
 STATUSES = {"ready", "planned"}
 TIMEFRAME = re.compile(r"^\d+(s|m|h|d)$")
 MAX_BUDGET = 600
+DRILLS = ("qkt_restart", "gateway_outage", "kill_switch")  # scripts/live-validation/lib/derivatives_drills.py
 
 
 def main():
@@ -75,6 +76,11 @@ def main():
                             re.compile(str(step[field]))
                         except re.error as error:
                             errors.append(f"{where}: step {number} {field} is not a valid regex: {error}")
+            for drill in doc.get("drills") or []:
+                if lane != "derivatives":
+                    errors.append(f"{where}: drills run in the derivatives lane only")
+                if drill.get("kind") not in DRILLS or not isinstance(drill.get("at_s"), int) or drill["at_s"] < 0:
+                    errors.append(f"{where}: drill {drill} needs a kind in {DRILLS} and whole seconds at_s")
             if doc.get("expect_startup_refusal"):
                 try:
                     re.compile(str(doc["expect_startup_refusal"]))

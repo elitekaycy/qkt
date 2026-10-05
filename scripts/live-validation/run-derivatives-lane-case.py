@@ -18,13 +18,22 @@ daemon until it has made `fills` fills and, when it asserts flat-account, is fla
   - replay-same-fills (`replay: bars`): a backtest of the same minutes on the gateway's own bars makes the
     same fills, in order, on the same sides and sizes (a bar replay fills at the next bar's open, so each
     fill's price difference from live is recorded, as the MT5 order lane does, not judged);
-  - replay-same-legs (`replay: chain`): a backtest on the chain the account recorded opens the same legs.
+  - replay-same-legs (`replay: chain`): a backtest on the chain the account recorded opens the same legs;
+  - with `drills` (lib/derivatives_drills.py: a daemon restart, a gateway outage or the kill switch, fired while the
+    case holds): each drill did what it claims, the venue's fills of the strategy are exactly the fills qkt booked
+    (venue-fills-equal-qkt-fills: none lost, none booked twice), each engine order reached the venue once
+    (no-duplicate-order) and no engine id named two orders (order-id-continuity). A kill-switch drill needs the
+    gateway's guardian token in QKT_DERIV_GUARDIAN_KEY.
 Writes OUT/result.json and prints one `passed|failed <id> ...` line; exits non-zero on failure.
 """
-import argparse, csv, datetime, json, os, re, shutil, subprocess, sys, time, urllib.error, urllib.parse, urllib.request
+import argparse, csv, datetime, json, os, re, shutil, signal, subprocess, sys, time, urllib.error, urllib.parse, urllib.request
+from collections import Counter
 from decimal import Decimal
 
 import yaml
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "lib"))
+import derivatives_drills  # noqa: E402
 
 TRADE = re.compile(r"qkt\.trade - trade (BUY|SELL) (\S+) qty=(\S+) px=(\S+)")
 MINUTE = 60_000
@@ -42,12 +51,19 @@ def main():
     lane = yaml.safe_load(open(os.path.join(os.path.dirname(__file__), "../../attestation/lanes.yaml")))["lanes"]
     budget = args.budget_seconds or int(case.get("budget_seconds", lane["derivatives"]["budget_seconds"]))
     run = Run(args, case)
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))  # a stopped runner still releases and sweeps
     try:
         problems = run.execute(budget)
     except Exception as error:  # the verdict is always written, whatever went wrong
         problems = [f"runner error: {error}"]
     finally:
+        try:
+            run.drills.release()  # never leave the account's kill switch on, whatever failed
+        except Exception as error:
+            problems = problems + [f"kill switch: could not release it: {error}"]
         run.stop_daemon()
+        if run.proxy:
+            run.proxy.close()
         try:
             run.sweep()
         except Exception as error:
@@ -68,13 +84,15 @@ class Run:
             sys.exit(f"output already exists: {args.out}")
         self.args, self.case, self.out = args, case, os.path.abspath(args.out)
         self.cli = os.path.abspath(args.cli)
-        self.daemon = None
+        self.daemon = self.proxy = None
         self.started_ms = self.ended_ms = 0
+        self.drills = derivatives_drills.Drills(self, derivatives_drills.check(case.get("drills") or []),
+                                                os.environ.get("QKT_DERIV_GUARDIAN_KEY"))
 
-    def get(self, path, body=None, method=None):
+    def get(self, path, body=None, method=None, key=None):
         for attempt in range(1, 5):
             request = urllib.request.Request(self.args.gateway_url + path, method=method)
-            request.add_header("Authorization", f"Bearer {self.key}")
+            request.add_header("Authorization", f"Bearer {key or self.key}")
             data = None
             if body is not None:
                 request.add_header("Content-Type", "application/json")
@@ -118,6 +136,10 @@ class Run:
             raise RuntimeError("gateway is not the expected DEMO account")
         if not health["venue_connected"]:
             raise RuntimeError("gateway has no venue link")
+        if health["kill_switch"].get("all") or health["kill_switch"].get("symbols"):
+            raise RuntimeError(f"the gateway's kill switch is on: {health['kill_switch']}")
+        if any(d["kind"] == "kill_switch" for d in self.drills.pending) and not self.drills.guardian:
+            raise RuntimeError("a kill_switch drill needs the guardian token in QKT_DERIV_GUARDIAN_KEY")
         if not self.flat():
             raise RuntimeError("the account is not flat: a netting account cannot attribute the case's positions")
         self.owns_account = True  # it was flat, so whatever is on it from here on is this case's
@@ -139,10 +161,32 @@ class Run:
         unbooked = self.unbooked_funding(self.ended_ms + MINUTE) if funding else []
         if unbooked:
             problems.append(f"funding-booked: the venue charged {unbooked} that the strategy never booked")
+        if self.drills.records or self.drills.pending:
+            problems += self.drills.problems() + self.judge_drilled(fills)
         if fills:
             problems += self.replay(fills)
         self.evidence = {"fills": fills, "qktRealized": str(realized), "venueNet": str(venue), "funding": funding,
                          "replayPriceDrift": getattr(self, "drift", [])}
+        return problems
+
+    def judge_drilled(self, fills):
+        """After a drill: the venue filled exactly what qkt booked, each engine order placed at the venue once."""
+        deals = self.strategy_deals()
+        venue = Counter((d["side"].upper(), Decimal(d["quantity"]), Decimal(d["price"])) for d in deals)
+        booked = Counter((f["side"], Decimal(f["qty"]), Decimal(f["price"])) for f in fills)
+        problems = []
+        if venue != booked:
+            problems.append(f"venue-fills-equal-qkt-fills: venue only {dict(venue - booked)}, qkt only {dict(booked - venue)}")
+        placed = {}
+        for deal in deals:  # `<engine id>.<submit time>`: one engine id under two venue ids was sent twice
+            placed.setdefault(deal["client_order_id"].rsplit(".", 1)[0], {})[deal["client_order_id"]] = deal["side"]
+        for engine, sent in sorted(placed.items()):
+            if len(sent) < 2:
+                continue
+            if len(set(sent.values())) == 1:  # the same order placed again
+                problems.append(f"no-duplicate-order: engine order {engine} filled at the venue as {sorted(sent)}")
+            else:  # another order under an id the engine had already used (a restart restarted the sequence)
+                problems.append(f"order-id-continuity: engine id {engine} named different orders {sent}")
         return problems
 
     def prepare(self, adapter):
@@ -157,7 +201,11 @@ class Run:
         shutil.copy(os.path.join(self.args.case, "instruments.yaml"), f"{self.out}/data/instruments.yaml")
         venue = self.case["symbols"][0].split(":")[1].split(".")[0] if self.case["symbols"][0].startswith(
             ("OPTIONS:", "CHAIN:")) else self.case["symbols"][0].split(":")[0]
-        account = {"type": "gateway", "gateway_url": self.args.gateway_url, "api_key": "env:QKT_DERIV_GATEWAY_KEY",
+        url = self.args.gateway_url
+        if any(d["kind"] == "gateway_outage" for d in self.drills.pending):  # the daemon reaches it through a proxy
+            self.proxy = derivatives_drills.TcpProxy(*urllib.parse.urlsplit(url).netloc.split(":"))
+            url = self.proxy.url
+        account = {"type": "gateway", "gateway_url": url, "api_key": "env:QKT_DERIV_GATEWAY_KEY",
                    "expected_adapter": adapter, "expected_account_login": self.args.expected_login,
                    "expected_trade_mode": "demo", "chain_snapshot_seconds": 60}
         config = {"source": "local", "data_root": f"{self.out}/data", "starting_balance": 100000,
@@ -202,19 +250,25 @@ class Run:
     def env(self):
         return dict(os.environ, QKT_DATA_HOME=f"{self.out}/data")
 
-    def run_daemon(self, budget):
-        log = open(f"{self.out}/daemon.log", "w")
+    def start_daemon(self, deadline):
+        """Starts the daemon on the case's state directory (again, after a restart drill) and waits until it is ready."""
+        log = f"{self.out}/daemon.log"
+        seen = open(log).read().count("daemon ready") if os.path.exists(log) else 0
         self.daemon = subprocess.Popen(
             [self.cli, "daemon", "start", "--config", f"{self.out}/qkt.config.yaml",
              "--state-dir", f"{self.out}/state", "--load-dir", f"{self.out}/strategies"],
-            stdout=log, stderr=subprocess.STDOUT, env=self.env())
-        deadline = time.time() + budget
-        while "daemon ready" not in open(f"{self.out}/daemon.log").read():
+            stdout=open(log, "a"), stderr=subprocess.STDOUT, env=self.env())
+        while open(log).read().count("daemon ready") <= seen:
             if self.daemon.poll() is not None or time.time() > deadline:
                 raise RuntimeError("the daemon never became ready")
             time.sleep(1)
+
+    def run_daemon(self, budget):
+        deadline = time.time() + budget
+        self.start_daemon(deadline)
         self.started_ms = int(time.time() * 1000)
         while not self.done() and time.time() < deadline:
+            self.drills.tick(self.live_fills())
             time.sleep(3)
         time.sleep(5)  # the last fill's venue events and costs settle
         self.await_funding(deadline)
@@ -249,6 +303,7 @@ class Run:
         return sorted(charged - booked)
 
     def stop_daemon(self):
+        """Stops the daemon with `qkt daemon stop`; False when it had to be killed."""
         if self.daemon and self.daemon.poll() is None:
             subprocess.call([self.cli, "daemon", "stop", "--state-dir", f"{self.out}/state"],
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=self.env())
@@ -256,20 +311,25 @@ class Run:
                 self.daemon.wait(60)
             except subprocess.TimeoutExpired:
                 self.daemon.kill()
+                self.daemon.wait()
+                return False
+        return True
 
     def live_fills(self):
         text = open(f"{self.out}/daemon.log").read()
         return [{"side": m[0], "symbol": m[1], "qty": m[2], "price": m[3]} for m in TRADE.findall(text)]
 
-    def venue_net(self):
-        sizes = {i["code"]: Decimal(i["contract_size"]) for i in self.get("/v1/instruments")}
+    def strategy_deals(self):
+        """The venue's fills of the strategy's orders over the run."""
         # From the session's start: an earlier run of the same case placed orders under the same ids' prefix.
         deals = self.get(f"/v1/deals?from={self.started_ms}&to={self.ended_ms + MINUTE}")["deals"]
+        # A rule's own orders are `dsl-<strategy>-…`; one a signal sized (a plain BUY) is `ORD-<strategy>-…`.
+        return [d for d in deals if d["client_order_id"].startswith((f"dsl-{self.strategy}-", f"ORD-{self.strategy}-"))]
+
+    def venue_net(self):
+        sizes = {i["code"]: Decimal(i["contract_size"]) for i in self.get("/v1/instruments")}
         net = Decimal(0)
-        for deal in deals:
-            # A rule's own orders are `dsl-<strategy>-…`; one a signal sized (a plain BUY) is `ORD-<strategy>-…`.
-            if not deal["client_order_id"].startswith((f"dsl-{self.strategy}-", f"ORD-{self.strategy}-")):
-                continue
+        for deal in self.strategy_deals():
             value = Decimal(deal["price"]) * Decimal(deal["quantity"]) * sizes.get(deal["symbol"], Decimal(1))
             net += value if deal["side"] == "sell" else -value
             net -= sum(Decimal(cost["amount"]) for cost in deal["costs"])
@@ -372,6 +432,8 @@ class Run:
         result = {"schema": "qkt-attestation-derivatives-case-v1", "id": case_id, "lane": "derivatives",
                   "status": "failed" if problems else "passed", "problems": problems,
                   **getattr(self, "evidence", {})}
+        if self.drills.records or self.drills.pending:
+            result["drills"] = self.drills.records
         os.makedirs(self.out, exist_ok=True)
         json.dump(result, open(f"{self.out}/result.json", "w"), indent=2)
         print(f"{result['status']} {case_id} " + ("; ".join(problems) if problems else

@@ -64,6 +64,8 @@ jobs:
         run: bash tests/scripts/run-attestation-catalog-derivatives-test.sh
       - name: Test derivatives case leftover sweep
         run: bash tests/scripts/run-derivatives-lane-sweep-test.sh
+      - name: Test derivatives case failure drills
+        run: bash tests/scripts/derivatives-lane-drills-test.sh
       - name: Test attestation leftover sweep
         run: bash tests/scripts/sweep-attestation-leftovers-test.sh
       - name: Test fill-attached protection wait
