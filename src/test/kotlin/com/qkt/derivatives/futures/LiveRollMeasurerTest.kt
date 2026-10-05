@@ -92,7 +92,7 @@ class LiveRollMeasurerTest {
 
     private fun storeWithFirstRoll(dir: Path): RollHistoryStore {
         val store = RollHistoryStore(dir)
-        val built = RollHistoryBuilder(::byDay).build(root, catalog, setOf(ContinuousSelector.FRONT))
+        val built = RollHistoryBuilder(bars = ::byDay).build(root, catalog, setOf(ContinuousSelector.FRONT))
         store.write(built.copy(rolls = built.rolls.filter { it.atMs == first.atMs }))
         return store
     }
@@ -105,7 +105,7 @@ class LiveRollMeasurerTest {
 
         val live = LiveRollMeasurer(::minuteBars, store).measure(root, catalog, ContinuousSelector.FRONT, second)
 
-        val later = RollHistoryBuilder(::byDay).build(root, catalog, setOf(ContinuousSelector.FRONT))
+        val later = RollHistoryBuilder(bars = ::byDay).build(root, catalog, setOf(ContinuousSelector.FRONT))
         val expected = later.find(second.atMs, "BTCUSDT_241227", "BTCUSDT_250328")!!
         assertThat((live as LiveRoll.Measured).record).isEqualTo(expected)
         assertThat(expected.fromPrice).isEqualTo("97000.5")

@@ -10,13 +10,14 @@ import java.math.BigDecimal
 import java.time.LocalDate
 
 /**
- * Measures a root's rolls from stored bars by [RollPricing]: at each roll instant, the last close at or
+ * Measures a root's rolls from stored bars [barMs] long by [RollPricing]: at each roll instant, the last close at or
  * before it for the contract being left and the contract being entered. It keeps the latest contiguous run of rolls
  * it can price: a roll it cannot price (no data, or, as on Binance before late 2023, the next
  * contract not yet listed at the roll instant) ends everything before it, so a history is always one
  * contiguous run and never mixes eras separated by a gap.
  */
 class RollHistoryBuilder(
+    private val barMs: Long = 60_000L,
     private val bars: (contract: String, day: LocalDate) -> List<Candle>,
 ) {
     /** The history of [root] over [catalog] for [selectors]. */
@@ -58,5 +59,5 @@ class RollHistoryBuilder(
     private fun priceAt(
         contract: String,
         atMs: Long,
-    ): BigDecimal? = RollPricing.closeAtOrBefore(RollPricing.days(atMs).flatMap { bars(contract, it) }, atMs)
+    ): BigDecimal? = RollPricing.closeAtOrBefore(RollPricing.days(atMs, barMs).flatMap { bars(contract, it) }, atMs)
 }
