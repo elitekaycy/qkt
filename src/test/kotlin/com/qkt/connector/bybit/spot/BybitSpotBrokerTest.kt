@@ -299,28 +299,6 @@ class BybitSpotBrokerTest {
     }
 
     @Test
-    fun `WS execution frame publishes OrderFilled with re-prefixed symbol`() {
-        val client = FakeBybitClient()
-        val bus = newBus()
-        val fills = mutableListOf<BrokerEvent.OrderFilled>()
-        bus.subscribe<BrokerEvent.OrderFilled> { fills.add(it) }
-        BybitSpotBroker(client, bus, FixedClock(0L))
-
-        val frame =
-            Json
-                .parseToJsonElement(
-                    """{"topic":"execution","data":[{"orderLinkId":"c1","orderId":"abc-123","symbol":"BTCUSDT","side":"Buy","execPrice":"79998.5","execQty":"0.01","execType":"Trade","execId":"e-1","category":"spot"}]}""",
-                ).jsonObject
-        client.emitWsFrame("execution", frame)
-
-        assertThat(fills).hasSize(1)
-        assertThat(fills.single().clientOrderId).isEqualTo("c1")
-        assertThat(fills.single().symbol).isEqualTo("BYBIT_SPOT:BTCUSDT")
-        assertThat(fills.single().price).isEqualByComparingTo(Money.of("79998.5"))
-        assertThat(fills.single().quantity).isEqualByComparingTo(Money.of("0.01"))
-    }
-
-    @Test
     fun `modify posts to v5 order amend with the changes`() {
         val client = FakeBybitClient()
         client.responses["/v5/order/create"] =

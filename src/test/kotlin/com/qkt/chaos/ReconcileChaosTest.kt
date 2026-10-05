@@ -25,6 +25,10 @@ class ReconcileChaosTest {
         """{"retCode":0,"retMsg":"OK","result":{"list":[{"orderLinkId":"c1","orderId":"abc",""" +
             """"symbol":"BTCUSDT","side":"Buy","execPrice":"80000","execQty":"0.01","execId":"$execId","category":"spot"}]}}"""
 
+    // The order qkt placed: a replayed execution is booked only for an order of ours (#1333).
+    private val ours =
+        mapOf("c1" to BybitSpotStateRecovery.ManagedOrderView("c1", "BYBIT_SPOT:BTCUSDT", Side.BUY, "s1"))
+
     private fun recovery(
         client: FakeBybitClient,
         bus: EventBus,
@@ -47,7 +51,7 @@ class ReconcileChaosTest {
         val bus = bus()
         val fills = mutableListOf<BrokerEvent.OrderFilled>()
         bus.subscribe<BrokerEvent.OrderFilled> { fills.add(it) }
-        val rec = recovery(client, bus, emptyMap(), mutableSetOf())
+        val rec = recovery(client, bus, ours, mutableSetOf())
         client.onReconnect { rec.reconcile() }
 
         client.fireOnReconnect()
@@ -63,7 +67,7 @@ class ReconcileChaosTest {
         val bus = bus()
         val fills = mutableListOf<BrokerEvent.OrderFilled>()
         bus.subscribe<BrokerEvent.OrderFilled> { fills.add(it) }
-        val rec = recovery(client, bus, emptyMap(), mutableSetOf())
+        val rec = recovery(client, bus, ours, mutableSetOf())
         client.onReconnect { rec.reconcile() }
 
         client.fireOnReconnect()

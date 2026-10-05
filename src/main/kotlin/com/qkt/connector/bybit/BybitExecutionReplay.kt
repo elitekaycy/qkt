@@ -1,11 +1,7 @@
-package com.qkt.connector.bybit.linear
+package com.qkt.connector.bybit
 
 import com.qkt.bus.EventBus
 import com.qkt.common.Clock
-import com.qkt.connector.bybit.BybitExecutionKind
-import com.qkt.connector.bybit.BybitOrderTranslator
-import com.qkt.connector.bybit.BybitTransport
-import com.qkt.connector.bybit.requireBybitOk
 import com.qkt.connector.bybit.spot.BybitSpotStateRecovery
 import com.qkt.events.BrokerEvent
 import kotlinx.serialization.json.Json
@@ -16,24 +12,26 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.slf4j.LoggerFactory
 
 /**
- * Replays the linear account's executions since shortly before the last fill from `/v5/execution/list`:
- * each unseen `Trade` of an order [strategyOf] knows becomes an [BrokerEvent.OrderFilled] with its fee, then
- * goes to [afterFill]; one of an order qkt did not place is logged and never booked. Each `Funding` goes to
- * [funding], and any other [BybitExecutionKind] (a liquidation, an auto-deleverage, a delivery) is left to
+ * Replays one [category]'s executions since shortly before the last fill from `/v5/execution/list`: each
+ * unseen `Trade` of an order [strategyOf] knows becomes an [BrokerEvent.OrderFilled] with its fee, then goes
+ * to [afterFill]; one of an order qkt did not place is logged once and never booked. Each `Funding` goes to
+ * [onFunding], and any other [BybitExecutionKind] (a liquidation, an auto-deleverage, a delivery) is left to
  * the position reconcile, since no order of ours filled.
  */
-internal class BybitLinearExecutionReconcile(
+class BybitExecutionReplay(
+    private val category: String,
     private val transport: BybitTransport,
     private val bus: EventBus,
     private val clock: Clock,
     private val strategyOf: (String) -> String?,
     private val lastFillTimeProvider: () -> Long,
     private val seenExecIds: MutableSet<String>,
-    private val funding: BybitLinearFunding,
+    private val onFunding: (JsonObject) -> Unit = {},
     private val afterFill: (BybitOrderTranslator.ParsedExecution) -> Unit = {},
 ) {
-    private val log = LoggerFactory.getLogger(BybitLinearExecutionReconcile::class.java)
+    private val log = LoggerFactory.getLogger(BybitExecutionReplay::class.java)
     private val json = Json { ignoreUnknownKeys = true }
+    private val unowned = boundedExecIdSet(1_000)
 
     /** Replays what was missed; returns the client order ids that filled in the window. */
     fun reconcile(): Set<String> {
@@ -45,7 +43,7 @@ internal class BybitLinearExecutionReconcile(
         while (totalProcessed < cap) {
             val params =
                 buildMap {
-                    put("category", "linear")
+                    put("category", category)
                     put("startTime", startTime.toString())
                     put("limit", "50")
                     if (cursor.isNotEmpty()) put("cursor", cursor)
@@ -76,7 +74,7 @@ internal class BybitLinearExecutionReconcile(
 
     /** Replays the executions of order [clientOrderId] alone (Bybit's default window: the last 7 days). */
     fun replayOrder(clientOrderId: String) {
-        val params = mapOf("category" to "linear", "orderLinkId" to clientOrderId, "limit" to "100")
+        val params = mapOf("category" to category, "orderLinkId" to clientOrderId, "limit" to "100")
         val tree = requireBybitOk(transport.getSigned("/v5/execution/list", params), "order execution replay", json)
         val list =
             tree["result"]?.jsonObject?.get("list")?.jsonArray
@@ -93,29 +91,32 @@ internal class BybitLinearExecutionReconcile(
         when (BybitExecutionKind.of(execution)) {
             BybitExecutionKind.FUNDING -> {
                 if (execId in seenExecIds) return false
-                funding.take(execution)
+                onFunding(execution)
                 return true
             }
             BybitExecutionKind.OTHER -> {
                 if (!seenExecIds.add(execId)) return false
-                log.info("Bybit linear execution is not a fill; the position reconcile applies it: {}", execution)
+                log.info("Bybit {} execution is not a fill; the position reconcile applies it: {}", category, execution)
                 return true
             }
             BybitExecutionKind.FILL -> Unit
         }
         val exec = BybitOrderTranslator.parseExecution(execution)
         executedOrderIds.add(exec.clientOrderId)
-        if (!seenExecIds.add(exec.execId)) return false
         val strategyId = strategyOf(exec.clientOrderId)
         if (strategyId == null) {
-            log.warn("Bybit linear execution of an order qkt did not place; not booked: {}", execution)
-            return true
+            // Not marked seen: a restart that restores its order still books it.
+            if (unowned.add(execId)) {
+                log.warn("Bybit {} execution of an order qkt did not place; not booked: {}", category, execution)
+            }
+            return false
         }
+        if (!seenExecIds.add(exec.execId)) return false
         bus.publish(
             BrokerEvent.OrderFilled(
                 clientOrderId = exec.clientOrderId,
                 brokerOrderId = exec.brokerOrderId,
-                symbol = "BYBIT_LINEAR:${exec.bareSymbol}",
+                symbol = BybitSymbol.toQkt(category, exec.bareSymbol),
                 side = exec.side,
                 price = exec.price,
                 quantity = exec.quantity,

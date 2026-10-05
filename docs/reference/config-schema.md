@@ -475,10 +475,10 @@ startup over the last 7 days and then every 5 minutes, so funding settled while 
 once. Liquidation, auto-deleverage and delivery executions are not fills: the position reconcile
 applies them.
 
-On a `bybit_linear` account a fill is booked to the strategy that placed its order even when Bybit
-reports it after the order ended (`Filled` or `Cancelled`), whether on the private stream or only in
-the `/v5/execution/list` replay, with its `execFee`, and once. A `Cancelled` update that reports more
-executed (`cumExecQty`) than qkt has booked waits for those executions (read back by order id if the
+On a Bybit account (linear or spot) a fill is booked to the strategy that placed its order even when
+Bybit reports it after the order ended (`Filled`, `Cancelled`, or spot's `PartiallyFilledCanceled`),
+whether on the private stream or only in the `/v5/execution/list` replay, with its `execFee`, and once.
+A cancel update that reports more executed (`cumExecQty`) than qkt has booked waits for those executions (read back by order id if the
 stream does not carry them), so the engine sees the fill, then the cancel; an end whose executions
 never appear is released, with a warning, at the next reconcile. An execution of an order qkt did not
 place on that account (another client's) is logged and never booked.
