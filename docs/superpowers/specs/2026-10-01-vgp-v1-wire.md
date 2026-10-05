@@ -4,7 +4,8 @@
 perpetual funding added by `2026-10-04-perpetual-funding-and-venue-capabilities.md`, mark prices by
 `2026-10-04-mark-and-index-stream-fields.md`, open interest by `2026-10-04-open-interest.md`, option marks by
 `2026-10-05-option-marks-as-rule-inputs.md`, the public tape and liquidations by
-`2026-10-05-trade-flow-and-liquidations.md`. The endpoint list
+`2026-10-05-trade-flow-and-liquidations.md`, order-book depth by `2026-10-05-order-book-depth.md`. The
+endpoint list
 and semantics come from `docs/research/2026-09-18-venue-plugin-architecture.md` §6; this document
 fixes what that list left to implementations: the JSON, the event stream, errors, resume and the
 kill switch. The qkt client (`connector/gateway`) and any gateway (`qkt-venue-gateway`) implement exactly
@@ -62,15 +63,16 @@ happened in between.
 (what the venue charged or credited the account for holding perpetuals: `/v1/funding` and the `funding`
 event), `funding_rates` (`/v1/funding-rates`), `mark_prices` (`/v1/marks`, and quotes that carry `mark`
 and `index` where the venue reports them), `open_interest` (`/v1/open-interest`), `option_marks` (option
-quotes that carry `mark_iv` and `underlying`, §4a), `trades` (`/v1/trades`) and `liquidations`
-(`/v1/liquidations`). An endpoint whose capability is not declared answers
+quotes that carry `mark_iv` and `underlying`, §4a), `trades` (`/v1/trades`), `liquidations`
+(`/v1/liquidations`) and `depth` (`/v1/depth`). An endpoint whose capability is not declared answers
 `501 unsupported` (`/v1/settlements` is still served, from what the journal holds). A gateway that
 predates the field omits it; a client treats that as none declared. A client ignores a name it does not
 know. Funding is the cash a venue moves between longs and shorts of a perpetual; a client books it, so it
 does not trade perpetuals on a gateway that does not declare `funding`. A client reads a contract's mark
-and index (as strategy inputs) only from a gateway that declares `mark_prices`, and an option's implied
-volatility and Greeks only from one that declares `option_marks`, and a contract's traded or liquidated
-volume only from one that declares `trades` or `liquidations`.
+and index (as strategy inputs) only from a gateway that declares `mark_prices`, an option's implied
+volatility and Greeks only from one that declares `option_marks`, a contract's traded or liquidated
+volume only from one that declares `trades` or `liquidations`, and a contract's order-book depth only from
+one that declares `depth`.
 
 ### `GET /v1/account`
 ```json
@@ -254,6 +256,24 @@ marks liquidations on its tape, each is also one of `/v1/trades`' prints. A resp
 (finding liquidations may cost a read of the whole tape); `next` is the `from` of the following page and is
 absent on the last one. The client stores these for backtests (`qkt fetch --liquidations`). `501 unsupported`
 unless `liquidations` is declared. The account's own liquidations are fills on the stream, not these.
+
+### `GET /v1/depth?symbol=<code>&from=<ms>&to=<ms>`
+A contract's order book as the gateway recorded it, snapshots oldest first, each `time` in
+`[from, min(to, now)]`:
+```json
+{"depth": [{"time": 1791170721647, "bids": [["86490.6", "10"], ["86487", "0.005"]],
+  "asks": [["86490.7", "10"]]}], "next": 1791230721647}
+```
+A snapshot holds at most the best 10 price levels of each side: `bids` from the highest price down, `asks`
+from the lowest up, each level `[price, amount]`, `amount` the quantity resting at that price in the
+contract's order quantity. A side the book does not hold is `[]`. `time` is the instant the venue stamped
+the book, never earlier. Venues publish no book history, so a gateway serves the snapshots its adapter
+recorded: a read whose window reaches the present (within a minute) first records the venue's book as it
+stands, then serves what was recorded. A series therefore has one snapshot per such read (qkt's live feed
+reads every 10 seconds), starts when the gateway first recorded it, and has a gap wherever nothing read
+it. Paging is as for open interest: at most 1000 minutes and 1000 snapshots a response, `next` the `from`
+of the following page, absent on the last. The client stores these for backtests (`qkt fetch --depth`)
+and reads the newest live. `501 unsupported` unless `depth` is declared.
 
 ### `POST /v1/kill`, `POST /v1/kill/release`
 Body `{"scope": "all"}` or `{"scope": "symbols", "symbols": ["<code>", ...]}`. Response `200` with the
