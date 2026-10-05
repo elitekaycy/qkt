@@ -13,9 +13,6 @@ internal class ScaleOutBook {
     /** Owned position ticket reported by the latest partial execution of a basis. */
     val partialPositionTickets: MutableMap<String, String> = mutableMapOf()
 
-    /** Wrappers currently cascading an explicit user cancellation to their children. */
-    val cancellingWrappers: MutableSet<String> = mutableSetOf()
-
     /** Filled wrappers retained while at least one ticketed exit remains live. */
     val activeById: MutableMap<String, OrderRequest.ScaleOut> = mutableMapOf()
     val wrapperByExitId: MutableMap<String, String> = mutableMapOf()
@@ -24,11 +21,19 @@ internal class ScaleOutBook {
     /** The wrapper that owns the exit [exitId], if any. */
     fun wrapperOf(exitId: String): String? = wrapperByExitId[exitId]
 
+    /**
+     * Forgets the pending wrapper of basis [basisId], so its end arms no exits: a closing cancel
+     * (`CLOSE`, a flatten) closes the part that filled itself (#1336).
+     */
+    fun dropPending(basisId: String) {
+        pendingByBasis.remove(basisId)
+        partialPositionTickets.remove(basisId)
+    }
+
     /** Drops per-order state for [id]; its order was reclaimed. */
     fun forget(id: String) {
         pendingByBasis.remove(id)
         partialPositionTickets.remove(id)
-        cancellingWrappers.remove(id)
         wrapperByExitId.remove(id)
     }
 }

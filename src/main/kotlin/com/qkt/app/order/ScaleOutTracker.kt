@@ -11,8 +11,9 @@ import com.qkt.execution.withStrategyId
 /**
  * [OrderRequest.ScaleOut] wrappers from submit until their basis resolves: an entry (the basis)
  * that, once filled, arms one engine-held take-profit per leg via [ScaleOutExits]. A basis that
- * fills only partially before it is cancelled still arms exits sized to what filled — unless the
- * user cancelled the whole wrapper.
+ * fills only partially before it ends arms exits sized to what filled, whoever ended it: the venue,
+ * a strategy `CANCEL` of the wrapper or a risk halt. Only a closing cancel (`CLOSE`, a flatten),
+ * which closes that part itself, takes the pending wrapper away first ([ScaleOutBook.dropPending]).
  */
 internal class ScaleOutTracker(
     private val scaleOuts: ScaleOutBook,
@@ -73,8 +74,8 @@ internal class ScaleOutTracker(
 
     /**
      * A basis was cancelled after [pendingScaleOut] and [partialPositionTicket] were taken off
-     * the book: arm exits for whatever part filled, unless the user cancelled the wrapper itself
-     * (then the partial position is theirs to manage).
+     * the book: arm exits for whatever part filled (#1336). Null [pendingScaleOut] (a closing
+     * cancel dropped it) arms nothing.
      */
     fun onBasisCancelled(
         clientOrderId: String,
@@ -82,15 +83,7 @@ internal class ScaleOutTracker(
         partialPositionTicket: String?,
     ) {
         val cancelled = book[clientOrderId]
-        val wrapperId = cancelled?.parentClientOrderId
-        val wrapperWasExplicitlyCancelled =
-            wrapperId != null &&
-                (wrapperId in scaleOuts.cancellingWrappers || book[wrapperId]?.state == OrderState.CANCELLED)
-        if (pendingScaleOut != null &&
-            cancelled != null &&
-            cancelled.cumulativeFilledQuantity.signum() > 0 &&
-            !wrapperWasExplicitlyCancelled
-        ) {
+        if (pendingScaleOut != null && cancelled != null && cancelled.cumulativeFilledQuantity.signum() > 0) {
             exits.activate(
                 scaleOut = pendingScaleOut,
                 basisQuantity = cancelled.cumulativeFilledQuantity,
