@@ -217,10 +217,8 @@ class MT5PollerRaceTest {
         )
         broker.pendingPoller.tickForTesting()
 
-        // Pending disappears from /orders, and the cross-check finds /positions empty
-        // (the user cancelled the pending in MetaTrader, or GTD expired).
-        server.enqueue(MockResponse().setBody("[]"))
-        server.enqueue(MockResponse().setBody("[]"))
+        // Pending leaves /orders; /positions and its deal history are empty (cancelled in MetaTrader, or GTD expired).
+        repeat(3) { server.enqueue(MockResponse().setBody("[]")) }
         broker.pendingPoller.tickForTesting()
 
         assertThat(fills).isEmpty()
