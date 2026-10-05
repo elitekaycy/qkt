@@ -236,6 +236,12 @@ filled, what happens to them depends on what ended it:
 | `CLOSE <stream>`, `CLOSE_ALL`, `qkt stop --flatten` | Dropped. The close flattens the filled part itself, so a stop or target left behind would face a position that is already flat. |
 | Nothing filled | Dropped with the entry. |
 
+When the entry's exits went out for its filled part and the venue later reports more of the entry
+executed (it executed before the cancel took effect, and was heard after the entry's end), that
+quantity gets the bracket's exits too, as their own stop and target (`<bracket>-late1-sl`,
+`<bracket>-late1-tp`, then `-late2-`...), sized to it and anchored on its price. A repeat of the same
+report arms nothing more (#1349).
+
 The same holds after a restart: an entry whose remainder the venue cancelled while qkt was down comes back
 cancelled with its filled part, the position holds exactly the fills, the exits go out for that part, and
 nothing is sent again.
