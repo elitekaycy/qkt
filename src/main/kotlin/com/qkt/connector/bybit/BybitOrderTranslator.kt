@@ -103,6 +103,8 @@ object BybitOrderTranslator {
         val bareSymbol: String,
         val side: Side,
         val status: String,
+        /** `cumExecQty`: how much of the order has executed, zero when the update leaves it blank. */
+        val executed: BigDecimal = BigDecimal.ZERO,
     )
 
     data class ParsedExecution(
@@ -125,6 +127,7 @@ object BybitOrderTranslator {
             bareSymbol = json["symbol"]?.jsonPrimitive?.content ?: error("missing symbol: $json"),
             side = if (sideStr == "Buy") Side.BUY else Side.SELL,
             status = json["orderStatus"]?.jsonPrimitive?.content ?: error("missing orderStatus: $json"),
+            executed = json["cumExecQty"]?.jsonPrimitive?.content?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
         )
     }
 
