@@ -13,6 +13,14 @@ class SequentialIdGeneratorTest {
     }
 
     @Test
+    fun `resumes past the exit legs of a restored bracket whose entry already filled`() {
+        val ids = SequentialIdGenerator(prefix = "dsl-atto_drill_restart-")
+        // A gateway account restores only the bracket's working exits; its entry (--0) is terminal.
+        ids.resumePast(listOf("dsl-atto_drill_restart--1-tp", "dsl-atto_drill_restart--1-sl"))
+        assertThat(ids.next()).isEqualTo("dsl-atto_drill_restart--2")
+    }
+
+    @Test
     fun `resume never moves the counter backwards`() {
         val ids = SequentialIdGenerator(prefix = "dsl-x-")
         repeat(5) { ids.next() }
@@ -40,5 +48,8 @@ class SequentialIdGeneratorTest {
         assertThat(ids.sequenceOf("dsl-xy--12")).isNull()
         assertThat(ids.sequenceOf("dsl-x--abc")).isNull()
         assertThat(ids.sequenceOf("ORD-3")).isNull()
+        assertThat(ids.sequenceOf("dsl-x--12-tp")).isEqualTo(12L)
+        assertThat(ids.sequenceOf("dsl-x--3-tier0-sl")).isEqualTo(3L)
+        assertThat(ids.sequenceOf("dsl-x--12tp")).isNull()
     }
 }
