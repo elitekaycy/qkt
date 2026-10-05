@@ -5,11 +5,14 @@ import java.math.BigDecimal
 /**
  * What a live order had filled when last saved: [filledQuantity] at [avgFillPrice]. A restart hands it
  * back with the order, so the venue's recovery books only the fills made since and never one the
- * position ledger already holds (#1329).
+ * position ledger already holds (#1329). [positionTicket] is the venue position the fills opened, when
+ * the venue reported one: exits that close by ticket (a scale-out's legs on a hedging account) need it
+ * after a restart too (#1342).
  */
 data class PersistedOrderFill(
     val filledQuantity: BigDecimal,
     val avgFillPrice: BigDecimal?,
+    val positionTicket: String? = null,
 )
 
 /**

@@ -20,6 +20,7 @@ internal class VenueRecovery(
     private val broker: Broker,
     private val bookedVenueTickets: (strategyId: String) -> Set<String>,
     private val persistor: OrderFillPersistence,
+    private val restoreTicket: (orderId: String, ticket: String) -> Unit,
     private val clock: Clock,
     private val ops: OrderOps,
     private val log: Logger,
@@ -73,7 +74,8 @@ internal class VenueRecovery(
     /**
      * [recovered], each order carrying what it had filled before the restart (its record too), so the
      * venue's recovery books only the fills made since: the position ledger already holds the others,
-     * and an order restored as unfilled would have them all booked again (#1329).
+     * and an order restored as unfilled would have them all booked again (#1329). The position ticket
+     * the fills opened goes back too, for exits that close by it (#1342).
      */
     private fun withBookedFills(
         strategyIds: List<String>,
@@ -83,6 +85,7 @@ internal class VenueRecovery(
         if (fills.isEmpty()) return recovered
         return recovered.map { order ->
             val fill = fills[order.id] ?: return@map order
+            fill.positionTicket?.let { restoreTicket(order.id, it) }
             ops.update(
                 order.id,
             ) { it.copy(cumulativeFilledQuantity = fill.filledQuantity, avgFillPrice = fill.avgFillPrice) }

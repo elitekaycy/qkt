@@ -1,0 +1,35 @@
+id: perpetual-drill-flat-restart
+title: Two perpetual round trips with a qkt daemon restart while flat between them
+why: 'A daemon restarted with nothing to restore used to start its order ids at 0 again, so the second
+  round trip went out under the first one''s ids (#1338), and a restart that forgets the day''s entry
+  count trades a third time; either shows here as one engine id naming two orders, extra fills, or
+  realized PnL off the venue deals net.'
+status: ready
+symbols:
+- DERIBIT:BTC_USDC_PERPETUAL
+timeframes:
+- 1m
+warmup_bars:
+  1m: 3
+proves:
+- behaviour:market-entry
+- behaviour:bracket
+- behaviour:timed-exit
+- behaviour:graceful-restart
+- behaviour:order-id-continuity
+fills: 4
+replay: bars
+drills:
+- at_s: 5
+  after_fills: 2
+  flat: true
+  kind: qkt_restart
+  down_s: 15
+assertions:
+- flat-account
+- deals-net-equals-realized
+- replay-same-fills
+- venue-fills-equal-qkt-fills
+- no-duplicate-order
+- order-id-continuity
+budget_seconds: 600

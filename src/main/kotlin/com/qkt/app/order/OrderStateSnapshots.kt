@@ -39,7 +39,7 @@ internal class OrderStateSnapshots(
             val ocoLegsByStrategy = ocoLegsByStrategy(book, siblings)
             val trailingStopsByStrategy = trailingStopSnapshot(book.orders, stops)
             val timedExitsByStrategy = timedExits.byStrategy()
-            val fillsByStrategy = orderFillsByStrategy(book)
+            val fillsByStrategy = orderFillsByStrategy(book, scaleOuts::partialTicketOf)
             val strategies =
                 (
                     persistedStrategies + pendingByStrategy.keys + pairsByStrategy.keys + ocoLegsByStrategy.keys +

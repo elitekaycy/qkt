@@ -61,6 +61,9 @@ interface DslCompiledStrategy : Strategy {
      */
     fun resumeOrderIds(usedIds: Collection<String>) = Unit
 
+    /** The generator of the strategy's own order ids, or null when it mints none; a restart resumes it. */
+    val orderIds: com.qkt.common.SequentialIdGenerator? get() = null
+
     /** Execute one validated exit hook against the strategy's latest evaluation state. */
     fun executeExitHook(
         ref: ExitHookRef,

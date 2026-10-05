@@ -1,6 +1,7 @@
 """Failure drills for a derivatives lane case (`run-derivatives-lane-case.py`), fired while the case holds.
 
-A case declares them in `case.yaml`, timed from its first fill:
+A case declares them in `case.yaml`, timed from its first fill (from its `after_fills`-th fill, when set; with
+`flat: true` the case must hold nothing when it fires, as a restart between two round trips):
 
     drills:
     - {at_s: 60, kind: qkt_restart, down_s: 20}      # `qkt daemon stop`, wait, start on the same state dir
@@ -27,6 +28,8 @@ def check(drills):
             raise ValueError(f"drill kind must be one of {KINDS}: {drill}")
         if not isinstance(drill.get("at_s"), int) or drill["at_s"] < 0:
             raise ValueError(f"drill at_s must be whole seconds from the first fill: {drill}")
+        if not isinstance(drill.get("after_fills", 1), int) or drill.get("after_fills", 1) < 1:
+            raise ValueError(f"drill after_fills must be a fill count from 1: {drill}")
     return [dict(d) for d in drills]
 
 
@@ -144,14 +147,16 @@ class Drills:
 
     def __init__(self, run, drills, guardian):
         self.run, self.pending, self.guardian = run, list(drills), guardian
-        self.records, self.first_fill_at, self.engaged = [], None, False
+        self.records, self.fill_seen_at, self.engaged = [], {}, False
 
     def tick(self, fills):
-        """Called while the case runs: fires every drill whose time from the first fill has come."""
-        if fills and self.first_fill_at is None:
-            self.first_fill_at = time.time()
-        while self.pending and self.first_fill_at is not None and \
-                time.time() >= self.first_fill_at + self.pending[0]["at_s"]:
+        """Called while the case runs: fires every drill whose time from its anchoring fill has come."""
+        for count in range(1, len(fills) + 1):
+            self.fill_seen_at.setdefault(count, time.time())
+        while self.pending:
+            anchored = self.fill_seen_at.get(int(self.pending[0].get("after_fills", 1)))
+            if anchored is None or time.time() < anchored + self.pending[0]["at_s"]:
+                return
             self.fire(self.pending.pop(0))
 
     def fire(self, drill):
@@ -159,14 +164,17 @@ class Drills:
         self.records.append(line.record)
         held = self.run.get("/v1/positions")["positions"]
         line.mark("fired", positions=held)
-        if not held:
+        if drill.get("flat") and held:
+            line.problem(f"the case held {held} when a drill meant for a flat account fired")
+        elif not drill.get("flat") and not held:
             line.problem("the case held no position when the drill fired; it proves nothing")
         getattr(self, drill["kind"])(drill, line, held)
 
     def problems(self):
         """What the drills found wrong, a drill that never fired included."""
         found = [p for r in self.records for p in r["problems"]]
-        return found + [f"{d['kind']}: never fired ({d['at_s']} s after the first fill)" for d in self.pending]
+        return found + [f"{d['kind']}: never fired ({d['at_s']} s after fill {d.get('after_fills', 1)})"
+                        for d in self.pending]
 
     def qkt_restart(self, drill, line, held):
         line.mark("daemon stop")
@@ -230,10 +238,20 @@ class Drills:
             time.sleep(int(drill.get("hold_s", 30)))
         finally:
             self.release(line)
-        # Recorded, not judged: the wire's `kill` event is informational for qkt, and qkt-venue-gateway does not
-        # send it yet (elitekaycy/qkt-venue-gateway#55); enforcement is the gateway's and is judged above.
-        time.sleep(5)
-        line.mark("qkt heard", kill_events=self.heard_kill())
+        # The gateway sends each change of the switch on the stream (qkt-venue-gateway#55); the daemon logs it.
+        deadline = time.time() + 15
+        while time.time() < deadline and not self.heard_flip(self.heard_kill()):
+            time.sleep(1)
+        heard = self.heard_kill()
+        line.mark("qkt heard", kill_events=heard)
+        if not self.heard_flip(heard):
+            line.problem(f"the daemon did not log the switch engaging then releasing from its stream: {heard}")
+
+    @staticmethod
+    def heard_flip(heard):
+        """Whether [heard] holds the switch on for every symbol, then off again."""
+        on = next((i for i, state in enumerate(heard) if '"all":true' in state.replace(" ", "")), None)
+        return on is not None and any('"all":false' in state.replace(" ", "") for state in heard[on + 1:])
 
     def probe(self, line, position):
         """A risk-adding order (a buy far under the market, smallest size) must be refused with 423 kill_switch."""

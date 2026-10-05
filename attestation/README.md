@@ -59,8 +59,9 @@ legs).
 
 ### Failure drills
 
-A derivatives case may declare `drills`, fired by the runner `at_s` seconds after the case's first fill, while
-it holds (`scripts/live-validation/lib/derivatives_drills.py`):
+A derivatives case may declare `drills`, fired by the runner `at_s` seconds after the case's first fill (its
+`after_fills`-th fill, when set) while it holds, or with `flat: true` while it holds nothing
+(`scripts/live-validation/lib/derivatives_drills.py`):
 
 | `kind` | What happens | Extra keys |
 |---|---|---|
@@ -69,11 +70,11 @@ it holds (`scripts/live-validation/lib/derivatives_drills.py`):
 | `kill_switch` | With the gateway's guardian token (`QKT_DERIV_GUARDIAN_KEY`), the switch is engaged for the whole account, a risk-adding probe order (a buy at half the price, smallest size) must be refused `423 kill_switch`, then it is released | `hold_s` (30) |
 
 On top of the case's own assertions, a drilled case passes only if every drill fired while the case held a
-position, the venue's fills of the strategy are exactly the fills qkt booked (none lost, none booked twice:
+position (held none, for a `flat` drill), the venue's fills of the strategy are exactly the fills qkt booked (none lost, none booked twice:
 `venue-fills-equal-qkt-fills`), and each engine order reached the venue under one id (`no-duplicate-order`).
 An outage must show in the daemon's audit journal as the link going down and coming back up; a kill-switch
-drill must see the probe refused (the `kill` events the daemon heard are recorded, not judged). The
-switch is released whatever fails after it engaged (and on SIGTERM), and a case refuses to start while the
+drill must see the probe refused and the daemon log the switch engaging and releasing from its event
+stream (qkt-venue-gateway sends it from the release that fixed its #55). The switch is released whatever fails after it engaged (and on SIGTERM), and a case refuses to start while the
 gateway's switch is on. Each drill's timeline is written to `result.json` under `drills`.
 
 ## Rules

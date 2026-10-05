@@ -81,6 +81,8 @@ internal class OrderEventHandlers(
 
     /** An order partially filled; its first execution slice already cancels its siblings. */
     fun onPartiallyFilled(e: BrokerEvent.OrderPartiallyFilled) {
+        // Before the update: its snapshot persists the fill progress with the ticket this execution reported.
+        scaleOutTracker.onBasisPartiallyFilled(e)
         val applied =
             ops.update(e.clientOrderId) {
                 it.copy(
@@ -91,7 +93,6 @@ internal class OrderEventHandlers(
                 )
             }
         if (!applied) return
-        scaleOutTracker.onBasisPartiallyFilled(e)
         exposure.recordFill(e.clientOrderId, e.cumulativeFilled)
         log.info(
             "order partially filled order_id={} strategy_id={} symbol={} side={} qty={} cumulative={} price={}",

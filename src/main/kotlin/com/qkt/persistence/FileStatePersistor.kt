@@ -18,7 +18,8 @@ class FileStatePersistor private constructor(
     private val writer: StateFileWriter,
 ) : StatePersistor,
     FundingPersistence by FundingFile(writer),
-    OrderFillPersistence by OrderFillsFile(writer) {
+    OrderFillPersistence by OrderFillsFile(writer),
+    OrderIdPersistence by OrderIdsFile(writer) {
     constructor(rootDir: Path) : this(StateFileWriter(rootDir))
 
     /** Cumulative count of save operations that hit disk. */
@@ -46,7 +47,6 @@ class FileStatePersistor private constructor(
     private val json =
         Json {
             ignoreUnknownKeys = true
-            prettyPrint = false
         }
 
     private val sequences = SequencesFile(writer, json)
