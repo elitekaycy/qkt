@@ -18,7 +18,6 @@ import com.qkt.connector.bybit.spot.BybitSpotStateRecovery
 import com.qkt.events.BrokerEvent
 import com.qkt.execution.OrderRequest
 import com.qkt.positions.PositionProvider
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.serialization.json.Json
@@ -48,9 +47,7 @@ class BybitLinearBroker(
     private val log = LoggerFactory.getLogger(BybitLinearBroker::class.java)
     private val json = Json { ignoreUnknownKeys = true }
 
-    private val symbolByClientOrderId: MutableMap<String, String> = ConcurrentHashMap()
-    private val strategyByClientOrderId: MutableMap<String, String> = ConcurrentHashMap()
-    private val knownOrders: MutableMap<String, BybitSpotStateRecovery.ManagedOrderView> = ConcurrentHashMap()
+    private val orders = BybitLinearOrders()
     private val seenExecIds: MutableSet<String> = boundedExecIdSet()
     private val lastFillTime: AtomicLong = AtomicLong(clock.now() - recoveryWindowMs)
 
@@ -80,9 +77,10 @@ class BybitLinearBroker(
                 clock,
                 seenExecIds,
                 lastFillTime,
-                strategyByClientOrderId::get,
+                orders::strategyOf,
                 funding::take,
-            )
+                skipUnowned = true,
+            ) { exec -> orders.booked(exec.clientOrderId, exec.quantity)?.let(bus::publish) }
         transport.subscribe("execution", executions::onFrame)
 
         val recovery =
@@ -91,10 +89,11 @@ class BybitLinearBroker(
                 bus = bus,
                 clock = clock,
                 positionProvider = positionProvider,
-                getKnownOrders = { knownOrders.toMap() },
+                getKnownOrders = orders::open,
                 lastFillTimeProvider = lastFillTime::get,
                 seenExecIds = seenExecIds,
                 funding = funding,
+                orders = orders,
             )
         transport.onDisconnect { reason ->
             bus.publish(
@@ -134,9 +133,10 @@ class BybitLinearBroker(
             }
         reconciler.start()
 
-        bus.subscribe<BrokerEvent.OrderFilled> { e -> forgetTracking(e.clientOrderId) }
-        bus.subscribe<BrokerEvent.OrderCancelled> { e -> forgetTracking(e.clientOrderId) }
-        bus.subscribe<BrokerEvent.OrderRejected> { e -> forgetTracking(e.clientOrderId) }
+        // An end keeps the order's owner: an execution can still follow it (#1330).
+        bus.subscribe<BrokerEvent.OrderFilled> { e -> orders.end(e.clientOrderId) }
+        bus.subscribe<BrokerEvent.OrderCancelled> { e -> orders.end(e.clientOrderId) }
+        bus.subscribe<BrokerEvent.OrderRejected> { e -> orders.end(e.clientOrderId) }
     }
 
     override fun submit(request: OrderRequest): SubmitAck {
@@ -152,31 +152,15 @@ class BybitLinearBroker(
         // Register tracking BEFORE the send: Bybit's private WS order/execution frame can arrive
         // ahead of the REST reply, and onOrderFrame/onExecutionFrame read these maps to attribute
         // the strategy. A rejected placement forgets them in [handlePlacementResult].
-        registerTracking(request)
+        orders.register(
+            BybitSpotStateRecovery.ManagedOrderView(request.id, request.symbol, request.side, request.strategyId),
+        )
         // Non-blocking placement: the HTTP send runs on the dispatcher and the venue result returns
         // as bus events via [handlePlacementResult]. submit returns an optimistic ack at once so the
         // engine thread never waits on the order round-trip — the real accept/reject/fill follows on
         // the bus, which is what the event-driven OCO/OTO sequencing consumes.
         transport.postSignedAsync("/v5/order/create", body) { result -> handlePlacementResult(request, result) }
         return SubmitAck(clientOrderId = request.id, brokerOrderId = null, accepted = true)
-    }
-
-    private fun registerTracking(request: OrderRequest) {
-        strategyByClientOrderId[request.id] = request.strategyId
-        symbolByClientOrderId[request.id] = request.symbol
-        knownOrders[request.id] =
-            BybitSpotStateRecovery.ManagedOrderView(
-                clientOrderId = request.id,
-                symbol = request.symbol,
-                side = request.side,
-                strategyId = request.strategyId,
-            )
-    }
-
-    private fun forgetTracking(clientOrderId: String) {
-        strategyByClientOrderId.remove(clientOrderId)
-        symbolByClientOrderId.remove(clientOrderId)
-        knownOrders.remove(clientOrderId)
     }
 
     /**
@@ -193,7 +177,7 @@ class BybitLinearBroker(
         result.fold(
             onSuccess = { body ->
                 val ack = parseSubmitResponse(request.id, body, request.strategyId)
-                if (!ack.accepted) forgetTracking(request.id)
+                if (!ack.accepted) orders.forget(request.id)
             },
             onFailure = { e ->
                 resolvePlacementFailure(request, e)
@@ -217,7 +201,7 @@ class BybitLinearBroker(
         }
         val resolution = attempt.getOrNull()
         if (resolution == null) {
-            forgetTracking(request.id)
+            orders.forget(request.id)
             bus.publish(
                 BrokerEvent.OrderRejected(
                     clientOrderId = request.id,
@@ -290,7 +274,7 @@ class BybitLinearBroker(
     }
 
     override fun cancel(orderId: String) {
-        val symbol = symbolByClientOrderId[orderId] ?: return
+        val symbol = orders.symbolOf(orderId) ?: return
         val body = BybitOrderTranslator.toCancelBody(symbol = symbol, orderLinkId = orderId)
         runCatching {
             requireBybitOk(transport.postSigned("/v5/order/cancel", body), "order cancel", json)
@@ -301,7 +285,7 @@ class BybitLinearBroker(
                     clientOrderId = orderId,
                     brokerOrderId = null,
                     reason = e.message ?: "cancel failure",
-                    strategyId = strategyByClientOrderId[orderId].orEmpty(),
+                    strategyId = orders.strategyOf(orderId).orEmpty(),
                     timestamp = clock.now(),
                 ),
             )
@@ -313,9 +297,9 @@ class BybitLinearBroker(
         changes: OrderModification,
     ): SubmitAck {
         val symbol =
-            symbolByClientOrderId[orderId]
+            orders.symbolOf(orderId)
                 ?: return SubmitAck(orderId, null, accepted = false, rejectReason = "unknown orderId $orderId")
-        val strategyId = strategyByClientOrderId[orderId] ?: ""
+        val strategyId = orders.strategyOf(orderId).orEmpty()
         val parsed = BybitSymbol.parse(symbol)
         val sb = StringBuilder("{")
         sb.append("\"category\":\"linear\",")
@@ -414,8 +398,7 @@ class BybitLinearBroker(
         val list = frame["data"]?.jsonArray ?: return
         for (entry in list) {
             val parsed = BybitOrderTranslator.parseOpenOrder(entry.jsonObject)
-            val qktSymbol = "BYBIT_LINEAR:${parsed.bareSymbol}"
-            val strategyId = strategyByClientOrderId[parsed.clientOrderId] ?: ""
+            val strategyId = orders.strategyOf(parsed.clientOrderId).orEmpty()
             when (parsed.status) {
                 "New" ->
                     bus.publish(
@@ -426,16 +409,19 @@ class BybitLinearBroker(
                             timestamp = clock.now(),
                         ),
                     )
-                "Cancelled" ->
-                    bus.publish(
+                "Cancelled" -> {
+                    val end =
                         BrokerEvent.OrderCancelled(
-                            clientOrderId = parsed.clientOrderId,
-                            brokerOrderId = parsed.brokerOrderId,
-                            reason = "WS-reported cancel",
-                            strategyId = strategyId,
-                            timestamp = clock.now(),
-                        ),
-                    )
+                            parsed.clientOrderId,
+                            parsed.brokerOrderId,
+                            "WS-reported cancel",
+                            strategyId,
+                            clock.now(),
+                        )
+                    // Executed beyond what was booked: the end waits for those fills (#1330).
+                    if (!orders.hold(end, parsed.executed)) bus.publish(end)
+                }
+                "Filled" -> orders.end(parsed.clientOrderId)
                 "Rejected" ->
                     bus.publish(
                         BrokerEvent.OrderRejected(
@@ -447,7 +433,6 @@ class BybitLinearBroker(
                         ),
                     )
             }
-            symbolByClientOrderId[parsed.clientOrderId] = qktSymbol
         }
     }
 

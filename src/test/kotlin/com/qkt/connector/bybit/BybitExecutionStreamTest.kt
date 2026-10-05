@@ -25,9 +25,8 @@ class BybitExecutionStreamTest {
             boundedExecIdSet(),
             lastFill,
             mapOf("c1" to "s1")::get,
-        ) {
-            funded += it
-        }
+            onFunding = { funded += it },
+        )
 
     init {
         bus.subscribe<BrokerEvent.OrderFilled> { fills += it }

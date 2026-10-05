@@ -14,10 +14,13 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import org.slf4j.LoggerFactory
 
 /**
  * State reconciliation for [BybitLinearBroker], on startup and periodically: replays executions, open
- * orders, balances and positions, then the account's perpetual funding through [funding].
+ * orders, balances and positions, then the account's perpetual funding through [funding]. With [orders],
+ * fills are attributed through it (ended orders included), and an order end held for its executions has
+ * them replayed by id; an end still held at the next reconcile is released, logged, without them.
  */
 class BybitLinearStateRecovery(
     private val transport: BybitTransport,
@@ -29,28 +32,43 @@ class BybitLinearStateRecovery(
     private val seenExecIds: MutableSet<String>,
     private val positionTolerance: BigDecimal = BigDecimal("0.00000001"),
     private val funding: BybitLinearFunding = BybitLinearFunding(transport, bus, clock, seenExecIds),
+    private val orders: BybitLinearOrders? = null,
 ) : BrokerStateRecovery {
+    private val log = LoggerFactory.getLogger(BybitLinearStateRecovery::class.java)
     private val json = Json { ignoreUnknownKeys = true }
     private val lock = Any()
+    private var awaitingLastTime = emptySet<String>()
     private val executions =
         BybitLinearExecutionReconcile(
             transport,
             bus,
             clock,
-            getKnownOrders,
+            orders?.let { it::strategyOf } ?: { id -> getKnownOrders()[id]?.strategyId?.takeIf(String::isNotBlank) },
             lastFillTimeProvider,
             seenExecIds,
             funding,
-        )
+        ) { exec -> orders?.booked(exec.clientOrderId, exec.quantity)?.let(bus::publish) }
 
     override fun reconcile() {
         synchronized(lock) {
             val executedOrderIds = executions.reconcile()
+            releaseHeldEnds()
             reconcileOpenOrders(executedOrderIds)
             reconcileBalances()
             reconcilePositions()
             funding.poll()
         }
+    }
+
+    private fun releaseHeldEnds() {
+        val awaiting = orders?.awaitingFills() ?: return
+        awaiting.forEach(executions::replayOrder)
+        for (id in awaiting intersect awaitingLastTime) {
+            val end = orders.release(id) ?: continue
+            log.warn("Bybit linear order {} ended with executions never seen; releasing its end", id)
+            bus.publish(end)
+        }
+        awaitingLastTime = orders.awaitingFills()
     }
 
     private fun reconcileOpenOrders(executedOrderIds: Set<String>) {
