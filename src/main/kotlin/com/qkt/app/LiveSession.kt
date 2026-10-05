@@ -582,7 +582,7 @@ class LiveSession(
         // Resolver for `SCHEDULE … BROKER`: the server clock of the first broker in this
         // session's route list that has one. LiveSession is per-strategy in the daemon model,
         // so all calls return the same zone — strategy id is ignored. Null when no broker
-        // reports a server clock (paper-only / Bybit-only sessions).
+        // reports a server clock (paper-only / gateway-only sessions).
         val brokerZoneIdFor: ((String) -> java.time.ZoneId?)? =
             serverTimeZoneOf(brokers.built)?.let { zone -> { _: String -> zone } }
 

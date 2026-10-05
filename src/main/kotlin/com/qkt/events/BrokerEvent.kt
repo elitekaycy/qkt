@@ -9,7 +9,7 @@ import java.math.BigDecimal
 /**
  * Events emitted by a [com.qkt.broker.Broker] after order submission.
  *
- * Every broker — paper, MT5, Bybit, composite — publishes through this hierarchy so the
+ * Every broker — paper, MT5, venue gateway, composite — publishes through this hierarchy so the
  * rest of the engine can treat all venues uniformly. The order-event subset
  * ([OrderEvent]) is keyed by `clientOrderId` so the engine can correlate broker
  * responses back to the originating [com.qkt.execution.OrderRequest].

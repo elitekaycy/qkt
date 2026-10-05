@@ -24,7 +24,7 @@ import com.qkt.strategy.Strategy
  * Builds the brokers one live session routes orders to, and the instrument specs they bring.
  * With no configured factories the session fills on paper; otherwise each `BROKER:` prefix the
  * strategies declare gets its own venue broker, e.g. streams on `EXNESS:XAUUSD` and
- * `BYBIT:BTCUSDT` build two brokers behind one fail-closed [CompositeBroker]. Chain streams need no
+ * `BYBIT_LINEAR:BTCUSDT` build two brokers behind one fail-closed [CompositeBroker]. Chain streams need no
  * broker, and a fed option root (`OPTIONS:DERIBIT.BTC_USDC`) routes every catalogued contract of the
  * root to its venue's account (`deribit`), as a backtest routes them to its option exchange.
  */

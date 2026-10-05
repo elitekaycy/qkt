@@ -9,7 +9,7 @@ import java.nio.file.Path
  * `MarketSource` that streams ticks from a CSV file as if they were arriving live.
  *
  * Used by CI to verify that a deployed strategy actually processes live market data
- * without depending on a third-party WebSocket (Bybit, TradingView). Ticks are emitted
+ * without depending on a third-party feed (a venue gateway, TradingView). Ticks are emitted
  * as fast as the consumer can read them — pacing is deliberately uncontrolled because
  * the strategy's candle aggregator drives bar closures off `tick.timestamp`, not the
  * wall clock, so a fixture with timestamps spanning N seconds produces the same closed

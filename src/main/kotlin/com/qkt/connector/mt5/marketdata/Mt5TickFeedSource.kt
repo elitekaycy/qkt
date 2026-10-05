@@ -182,7 +182,7 @@ class Mt5TickFeedSource(
                                         (if (tick.last.signum() > 0) tick.last else tick.mid)
                                             .setScale(Money.SCALE, Money.ROUNDING),
                                     // Stamp the broker's authoritative tick time, not local wall-clock,
-                                    // so candle boundaries match MT5 replay and the Bybit convention.
+                                    // so candle boundaries match MT5 replay and venue-gateway bars.
                                     timestamp = tick.brokerTimeMs,
                                     bid = tick.bid.setScale(Money.SCALE, Money.ROUNDING),
                                     ask = tick.ask.setScale(Money.SCALE, Money.ROUNDING),

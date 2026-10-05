@@ -46,7 +46,7 @@ class LegBookReconciler(
      *
      * [brokerPositions] is the list of broker-side positions on this symbol. Most
      * brokers report at most one net position per symbol, but multi-position-capable
-     * brokers (Bybit linear) may report several.
+     * brokers (MT5 hedging accounts) may report several.
      */
     fun reconcile(
         strategyId: String,
