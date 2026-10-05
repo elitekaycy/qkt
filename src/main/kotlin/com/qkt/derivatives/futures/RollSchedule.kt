@@ -16,14 +16,15 @@ data class RollTransition(
  * the same catalog and policy give the same schedule in backtest and live. Lookups are a binary
  * search over the transitions. The catalog carries no listing times, so on a venue that lists
  * only two quarterlies at once `NEXT` can name a contract that is not trading yet; its data simply
- * starts later.
+ * starts later. Delivery months the catalog shows were never traded are left out of the chain
+ * ([ActiveDeliveryMonths]).
  */
 class RollSchedule(
     contracts: List<ListedContract>,
     policy: RollPolicy,
 ) {
-    /** The chain in expiry order. */
-    val contracts: List<ListedContract> = contracts.sortedBy { it.expiryMs }
+    /** The chain in expiry order: the catalog's contracts that traded ([ActiveDeliveryMonths]). */
+    val contracts: List<ListedContract> = ActiveDeliveryMonths.of(contracts.sortedBy { it.expiryMs })
 
     /** One transition per consecutive pair, strictly ascending. */
     val transitions: List<RollTransition>
