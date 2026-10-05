@@ -65,8 +65,51 @@ internal class MT5PendingFills(
             )
             return false
         }
+        if (meta.requestedQuantity != null && position.volume < meta.requestedQuantity) {
+            publishPartialPositionOpened(position, meta, meta.requestedQuantity)
+            return true
+        }
         publishPendingPositionOpened(position, meta)
         return true
+    }
+
+    /**
+     * The resting order filled only in part: the position (numbered after the order) is followed as
+     * a partial entry whose residual is the order itself, until it fills up or leaves the venue.
+     */
+    private fun publishPartialPositionOpened(
+        position: MT5Position,
+        meta: MT5TicketMeta,
+        requested: java.math.BigDecimal,
+    ) {
+        val qktSymbol = "${profile.name.uppercase()}:${mt5Symbol.toQkt(position.symbol)}"
+        val side = if (position.type == 0) com.qkt.common.Side.BUY else com.qkt.common.Side.SELL
+        partialEntries.registerPartialEntry(
+            PartialEntryState(
+                meta = meta,
+                residualTicket = position.ticket,
+                positionTicket = position.ticket,
+                symbol = qktSymbol,
+                side = side,
+                requestedQuantity = requested,
+                cumulativeFilled = position.volume,
+                averageFillPrice = position.priceOpen,
+            ),
+            openedAtMs = position.openTime,
+        )
+        bus.publish(
+            BrokerEvent.OrderPartiallyFilled(
+                clientOrderId = meta.orderId,
+                brokerOrderId = position.ticket.toString(),
+                symbol = qktSymbol,
+                side = side,
+                price = position.priceOpen,
+                quantity = position.volume,
+                cumulativeFilled = position.volume,
+                strategyId = meta.strategyId,
+                timestamp = clock.now(),
+            ),
+        )
     }
 
     fun registerPendingTicket(

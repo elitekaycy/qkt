@@ -9,11 +9,15 @@ internal data class MT5PositionProtection(
     val takeProfit: BigDecimal?,
 )
 
-/** Who a venue ticket belongs to: the engine order that created it, its strategy, the protection it asked for. */
+/**
+ * Who a venue ticket belongs to: the engine order that created it, its strategy, the protection it
+ * asked for, and, for a resting order, the size it asked for (so a part fill is told from a whole one).
+ */
 internal data class MT5TicketMeta(
     val orderId: String,
     val strategyId: String,
     val protection: MT5PositionProtection? = null,
+    val requestedQuantity: BigDecimal? = null,
 )
 
 /**

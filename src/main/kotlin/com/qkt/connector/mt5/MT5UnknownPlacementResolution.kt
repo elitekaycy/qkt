@@ -107,7 +107,7 @@ internal class MT5UnknownPlacementResolution(
                     val pendingMatch = match.order
                     pendingFills.registerPendingTicket(
                         pendingMatch.ticket,
-                        MT5TicketMeta(request.id, request.strategyId, protection),
+                        MT5TicketMeta(request.id, request.strategyId, protection, placement.volume),
                     )
                     bus.publish(
                         BrokerEvent.OrderAccepted(
