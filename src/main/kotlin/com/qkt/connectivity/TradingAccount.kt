@@ -59,6 +59,9 @@ interface TradingAccount : AutoCloseable {
     /** The venue's published open interest of its contracts, or null when the connector cannot read it. */
     val openInterest: com.qkt.marketdata.openinterest.OpenInterestSource? get() = null
 
+    /** The venue's order-book snapshots of its contracts, or null when the connector cannot read them. */
+    val bookDepth: com.qkt.marketdata.depth.BookDepthSource? get() = null
+
     /** Releases the connections and files this account holds. Idempotent. */
     override fun close()
 }

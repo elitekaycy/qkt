@@ -2,6 +2,7 @@ package com.qkt.dsl.compile
 
 import com.qkt.dsl.DslVocabulary
 import com.qkt.dsl.ast.StreamFieldRef
+import com.qkt.marketdata.depth.BookDepthSymbol
 import com.qkt.marketdata.openinterest.OpenInterestSymbol
 import java.math.BigDecimal
 
@@ -20,9 +21,9 @@ internal object StreamFieldCompiler {
         require(ref.field in candleFields || ref.field in metaFields) {
             "Unknown stream field for ${ref.stream}: ${ref.field}"
         }
-        // A venue stream's open interest was rewritten into its own stream before compiling
-        // (OpenInterestFieldExpansion); one left here is on an alias with none, such as a basket.
-        require(ref.field != OpenInterestSymbol.FIELD) {
+        // A venue stream's open interest and depth were rewritten into their own streams before compiling
+        // (VenueFieldExpansion); one left here is on an alias with none, such as a basket.
+        require(ref.field != OpenInterestSymbol.FIELD && ref.field !in BookDepthSymbol.FIELDS) {
             "${ref.stream}.${ref.field} reads a venue's published series: only a stream declared BROKER:SYMBOL has one"
         }
         return when (ref.field) {

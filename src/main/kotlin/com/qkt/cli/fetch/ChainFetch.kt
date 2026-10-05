@@ -34,7 +34,7 @@ internal object ChainFetch {
     const val SETTLE_LAG_MS = 300_000L
     private val CHAIN_ONLY = listOf("live", "every", "max-mark-age")
     private val NOT_FOR_CHAINS =
-        listOf("catalog", "rolls", "funding", "marks", "open-interest", "tf", "instruments", "config")
+        listOf("catalog", "rolls", "funding", "marks", "open-interest", "depth", "tf", "instruments", "config")
 
     /** Why [args] mix chain flags with another kind of fetch, or null when they do not. */
     fun misplacedFlag(args: Args): String? {

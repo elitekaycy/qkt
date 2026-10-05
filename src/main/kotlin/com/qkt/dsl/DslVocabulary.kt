@@ -5,6 +5,7 @@ import com.qkt.dsl.ast.NowField
 import com.qkt.dsl.ast.StateSource
 import com.qkt.dsl.parse.Lexer
 import com.qkt.dsl.parse.TokenKind
+import com.qkt.marketdata.depth.BookDepthSymbol
 import com.qkt.marketdata.openinterest.OpenInterestSymbol
 
 /**
@@ -40,14 +41,15 @@ object DslVocabulary {
      */
     val flowFields: List<String> = listOf("buy_volume", "sell_volume", "long_liq_volume", "short_liq_volume")
 
-    /** Per-bar fields readable off an alias, e.g. `btc.close`, plus contract, mark, open interest, option and flow fields. */
+    /** Per-bar fields readable off an alias, e.g. `btc.close`, plus contract, mark, venue-series, option and flow fields. */
     val candleFields: List<String> =
         listOf("close", "open", "high", "low", "volume", "price", "bid", "ask", "spread", "value", "timestamp") +
-            contractFields + markFields + OpenInterestSymbol.FIELD + optionFields + flowFields
+            contractFields + markFields + OpenInterestSymbol.FIELD + BookDepthSymbol.FIELDS + optionFields + flowFields
 
     /** The candle fields an indicator may consume as a numeric series. */
     val numericCandleFields: List<String> =
-        listOf("close", "value", "open", "high", "low", "volume", "price", OpenInterestSymbol.FIELD)
+        listOf("close", "value", "open", "high", "low", "volume", "price", OpenInterestSymbol.FIELD) +
+            BookDepthSymbol.FIELDS
 
     /** Instrument-metadata fields readable off a stream alias, e.g. `btc.tick_size`. */
     val metaFields: List<String> =

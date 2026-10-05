@@ -375,6 +375,27 @@ A Deribit testnet gateway keeps only about a day: fetch longer histories through
 A backtest is refused, naming the fetch, when a day its flow reads need is not stored, counted from the earliest
 bar the run's warmup and lookbacks reach (usually the day before `--from`).
 
+## Scenario 2f — Order-book depth (`<alias>.bid_depth`, `.ask_depth`, `.book_imbalance`)
+
+A strategy that reads [depth](../reference/dsl/streams.md#order-book-depth-aliasbid_depth-ask_depth-book_imbalance)
+replays the contract's stored book snapshots, each from the instant the venue stamped it:
+
+```bash
+# A gateway account (type: gateway in qkt.config.yaml) whose gateway declares depth.
+qkt fetch DERIBIT:BTC_USDC_PERPETUAL --depth --from 2026-10-05 --to 2026-10-05
+```
+
+Snapshots are merged into `depth/<VENUE>/<NAME>/<yyyy-MM-dd>.csv.gz` (`time,bids,asks`, each side its ten
+best levels as `price:amount`), so repeated fetches extend the days. No venue publishes order-book history:
+a gateway records the book each time something reads it (a live strategy reading depth, every 10 seconds)
+and serves what it recorded, so a contract's history starts when a live strategy first read it on that
+gateway, and fetching it is the only way to keep it. At one snapshot every 10 seconds a contract stores
+about 2.3 MB a day on the gateway and an eighth of that here, gzipped (measured on Deribit's testnet
+BTC_USDC-PERPETUAL: 270 and 36 bytes a snapshot).
+
+A backtest reading depth that the store does not cover from the run's start to its end (no gap over three
+of the series' own intervals) is refused with the fetch that would fill it.
+
 ## Scenario 3 — Speed up repeated backtests (CSV → binary)
 
 Cached ticks start life as gzipped CSV (`*.csv.gz`). Converting them to the binary format decodes
@@ -508,6 +529,7 @@ from the broker before a cost-sensitive run because broker schedules can change.
 ├── open_interest/<VENUE>/<NAME>.csv  # open interest (`qkt fetch … --open-interest`)
 ├── tape/<VENUE>/<NAME>/<day>.csv.gz  # public trade tape (`qkt fetch … --tape`)
 ├── liquidations/<VENUE>/<NAME>/<day>.csv.gz  # liquidation prints (`qkt fetch … --liquidations`)
+├── depth/<VENUE>/<NAME>/<day>.csv.gz # order-book snapshots (`qkt fetch … --depth`)
 └── instruments.yaml              # optional contract-spec / commission overrides
 ```
 
@@ -543,6 +565,7 @@ Read precedence for a tick day: `.bin` → `.csv.gz` → `.csv`.
 | `unexpected header at …` | A manual tick CSV's header doesn't match exactly. Use the header in File formats above. |
 | `the strategy reads the open interest of <SYM> and the run has no stored open interest …` | Run the `qkt fetch <SYM> --open-interest …` the message names (Scenario 2d). |
 | `<SYM> reads its trades but N day(s) of the run, its warmup and lookback are not stored …` | Run the `qkt fetch <SYM> --tape …` (or `--liquidations`) the message names (Scenario 2e). |
+| `the strategy reads the order-book depth of <SYM> and the run has no stored depth …` | Run the `qkt fetch <SYM> --depth …` the message names against the gateway that recorded it (Scenario 2f). |
 | Backtest re-downloads data you placed by hand | Pass `--no-fetch`, or record the days in `manifest.json` (Scenario 4). |
 | Backtest can't find data you fetched | `fetch`/`convert`/`backtest` pointed at different roots. Use the same `--data-root` (or none — they all default to `~/.qkt/data`). |
 

@@ -1,6 +1,7 @@
 package com.qkt.cli
 
 import com.qkt.candles.TimeWindow
+import com.qkt.cli.fetch.BookDepthFetch
 import com.qkt.cli.fetch.CatalogFetch
 import com.qkt.cli.fetch.ChainFetch
 import com.qkt.cli.fetch.FundingFetch
@@ -44,8 +45,9 @@ import java.time.ZoneOffset
  * `qkt fetch DERIBIT:ROOT --chains` builds an option root's chain snapshots from trade history, and
  * `qkt fetch VENUE:PERPETUAL --funding` stores a perpetual's funding rates (see [FundingFetch]),
  * `qkt fetch VENUE:CONTRACT --marks --tf 1m` stores a contract's mark and index history (see [MarksFetch]),
- * `qkt fetch VENUE:CONTRACT --open-interest` stores a contract's open interest (see [OpenInterestFetch]), and
- * `qkt fetch VENUE:CONTRACT --tape` or `--liquidations` stores its trade tape or liquidations (see [TapeFetch]).
+ * `qkt fetch VENUE:CONTRACT --open-interest` stores a contract's open interest (see [OpenInterestFetch]),
+ * `qkt fetch VENUE:CONTRACT --tape` or `--liquidations` stores its trade tape or liquidations (see [TapeFetch]), and
+ * `qkt fetch VENUE:CONTRACT --depth` stores a contract's recorded order book (see [BookDepthFetch]).
  */
 class FetchCommand(
     private val args: Args,
@@ -81,6 +83,7 @@ class FetchCommand(
         if (args.flag("open-interest")) return OpenInterestFetch.run(target, args)
         if (args.flag("tape")) return TapeFetch.run(target, FlowKind.TRADES, args, clock)
         if (args.flag("liquidations")) return TapeFetch.run(target, FlowKind.LIQUIDATIONS, args, clock)
+        if (args.flag("depth")) return BookDepthFetch.run(target, args)
         val tfArg =
             try {
                 args.requireOption("tf")
