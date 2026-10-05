@@ -39,6 +39,21 @@ class BybitLinearLateExecutionTest {
 
     init {
         bus.subscribe<BrokerEvent.OrderFilled> { events += it }
+        // Booked here either way; partial versus completing fills are pinned by BybitLinearPartialFillTest.
+        bus.subscribe<BrokerEvent.OrderPartiallyFilled> { p ->
+            events +=
+                BrokerEvent.OrderFilled(
+                    p.clientOrderId,
+                    p.brokerOrderId,
+                    p.symbol,
+                    p.side,
+                    p.price,
+                    p.quantity,
+                    p.strategyId,
+                    p.timestamp,
+                    venueCosts = p.venueCosts,
+                )
+        }
         bus.subscribe<BrokerEvent.OrderCancelled> { events += it }
         loggers.forEach { it.addAppender(logs) }
     }

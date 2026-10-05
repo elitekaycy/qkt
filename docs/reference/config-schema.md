@@ -483,6 +483,12 @@ stream does not carry them), so the engine sees the fill, then the cancel; an en
 never appear is released, with a warning, at the next reconcile. An execution of an order qkt did not
 place on that account (another client's) is logged and never booked.
 
+Each Bybit execution that leaves part of its order to fill (`leavesQty` above zero) is a partial fill
+whose cumulative is Bybit's own (`orderQty - leavesQty`); the execution that leaves nothing completes the
+order. So an entry filled in several executions completes once, and its bracket or scale-out exits are
+armed then, for the whole quantity. Executions replayed from `/v5/execution/list` are applied oldest
+first, and an order's last execution heard before an earlier one waits for it.
+
 ### `type: gateway`
 
 One entry per account on a VGP v1 venue gateway
