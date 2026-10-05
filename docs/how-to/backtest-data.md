@@ -209,6 +209,13 @@ futures:
 qkt fetch BINANCE_UM:BTCUSDT --rolls   # fetches missing roll days, writes contracts/BINANCE_UM/BTCUSDT.rolls.json
 ```
 
+A catalog written from a vendor archive (any venue `--catalog` has no source for) may give each
+contract's `lifetimeVolume` and `peakOpenInterest`. A continuous chain then skips delivery months that
+are listed but never traded (COMEX gold lists every month, trades G/J/M/Q/V/Z): a contract is left out
+when its volume is under 10% of the median of its six neighbours on each side, unless its peak open
+interest reaches half of theirs. Judging against neighbours, not a fixed number, holds across decades
+of market growth. Contracts without the figures always chain.
+
 The series is adjusted forward from the first measured roll, so history never changes when new rolls
 are added and nothing leaks from the future. Each contract's bars must be fetched at the strategy's
 timeframe, and that timeframe must divide the roll time (an 08:00 roll works with 15m or 1h bars,
