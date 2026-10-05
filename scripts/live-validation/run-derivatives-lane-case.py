@@ -11,14 +11,22 @@ daemon until it has made `fills` fills and, when it asserts flat-account, is fla
   - flat-account: the account ends with no position and no working order;
   - funding-booked (whenever the venue charged funding): the strategy booked every funding record the venue made
     during the run, the one realized at the close included;
-  - deals-net-equals-realized: qkt's realized PnL equals the venue's deals net, fees included, less the
-    funding the venue charged the account over the run (`/v1/funding`, when the gateway reports it), exactly;
+  - deals-net-equals-realized: qkt's realized PnL equals the venue's deals net, fees included, plus the cash
+    of every expiry the venue settled while the strategy held the contract (`/v1/settlements`: the holding
+    times the settlement price and contract size, less the settlement's costs), less the funding the venue
+    charged the account over the run (`/v1/funding`, when the gateway reports it), exactly;
+  - settlement-booked-once (a case that holds through an expiry, `settles: N`): each contract the strategy held
+    that the venue settled was booked by qkt exactly once (its journal's `settle:<symbol>:<strategy>` fill),
+    closing the whole holding at the venue's settlement price; qkt booked no settlement the venue never made;
+  - account-balance-equals-realized: the account's balance moved over the case by exactly qkt's realized PnL
+    (the venue's own cash, independent of how the gateway reports deals, settlements and fees);
   - funding-charged: the venue charged the account funding at least once during the run (a soak case that
     holds a perpetual long enough, such as `scripts/live-validation/funding-soak`, run with --budget-seconds);
   - replay-same-fills (`replay: bars`): a backtest of the same minutes on the gateway's own bars makes the
     same fills, in order, on the same sides and sizes (a bar replay fills at the next bar's open, so each
     fill's price difference from live is recorded, as the MT5 order lane does, not judged);
-  - replay-same-legs (`replay: chain`): a backtest on the chain the account recorded opens the same legs;
+  - replay-same-legs (`replay: chain`): a backtest on the chain the account recorded opens the same legs
+    (`replay: none` skips the replay: a backtest does not reproduce a venue's live expiry settlement);
   - with `drills` (lib/derivatives_drills.py: a daemon restart, a gateway outage or the kill switch, fired while the
     case holds): each drill did what it claims, the venue's fills of the strategy are exactly the fills qkt booked
     (venue-fills-equal-qkt-fills: none lost, none booked twice), each engine order reached the venue once
@@ -34,6 +42,7 @@ import yaml
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "lib"))
 import derivatives_drills  # noqa: E402
+import derivatives_settlement as settlement  # noqa: E402
 
 TRADE = re.compile(r"qkt\.trade - trade (BUY|SELL) (\S+) qty=(\S+) px=(\S+)")
 MINUTE = 60_000
@@ -146,19 +155,29 @@ class Run:
         if not self.flat():
             raise RuntimeError("the account is not flat: a netting account cannot attribute the case's positions")
         self.owns_account = True  # it was flat, so whatever is on it from here on is this case's
+        balance = Decimal(self.get("/v1/account")["balance"])
         self.prepare(health["adapter"])
         self.run_daemon(budget)
         problems = []
-        if not self.flat():
+        flat = self.flat()
+        if not flat:
             problems.append("flat-account: the account holds a position or a working order after the case")
-        fills = self.live_fills()
+        fills = self.order_fills()
         if len(fills) < int(self.case["fills"]):
             problems.append(f"expected {self.case['fills']} fills within the budget, saw {len(fills)}")
         realized = Decimal(json.load(open(f"{self.out}/state/state/{self.strategy}/pnl.json"))["realized"])
         funding = self.venue_funding()
-        venue = self.venue_net() - sum((Decimal(f["amount"]) for f in funding), Decimal(0))
+        held = settlement.held_settlements(self.venue_settlements(), self.strategy_deals())
+        venue = self.venue_net() + settlement.settlement_cash(held, self.contract_sizes()) \
+            - sum((Decimal(f["amount"]) for f in funding), Decimal(0))
         if venue != realized:
             problems.append(f"deals-net-equals-realized: venue net {venue} != qkt realized {realized}")
+        booked = settlement.booked_settlements(f"{self.out}/state/state", self.strategy)
+        if held or booked or self.case.get("settles"):
+            problems += settlement.judge(held, booked, self.venue, int(self.case.get("settles", 0)))
+        moved = Decimal(self.get("/v1/account")["balance"]) - balance
+        if "account-balance-equals-realized" in self.case["assertions"] and flat and moved != realized:
+            problems.append(f"account-balance-equals-realized: the balance moved {moved}, qkt realized {realized}")
         if "funding-charged" in self.case["assertions"] and not funding:
             problems.append("funding-charged: the venue charged no funding during the run")
         unbooked = self.unbooked_funding(self.ended_ms + MINUTE) if funding else []
@@ -166,10 +185,13 @@ class Run:
             problems.append(f"funding-booked: the venue charged {unbooked} that the strategy never booked")
         if self.drills.records or self.drills.pending:
             problems += self.drills.problems() + self.judge_drilled(fills)
-        if fills:
+        if fills and self.case.get("replay", "none") != "none":
             problems += self.replay(fills)
         self.evidence = {"fills": fills, "qktRealized": str(realized), "venueNet": str(venue), "funding": funding,
                          "replayPriceDrift": getattr(self, "drift", [])}
+        if held or booked or self.case.get("settles"):
+            self.evidence.update(settlements=[dict(s, holding=str(s["holding"])) for s in held], booked=booked,
+                                 balanceMoved=str(moved), selected=getattr(self, "selected", None))
         return problems
 
     def judge_drilled(self, fills):
@@ -199,11 +221,14 @@ class Run:
         root = self.case.get("dated_from_root")
         if root:  # the case's contract expires; trade the root's dated contract the venue lists now
             text = text.replace(self.case["symbols"][0], self.dated_contract(root))
+        if self.case.get("expiring_option"):  # hold an option through its expiry: the one about to expire now
+            text = text.replace(self.case["symbols"][0], self.expiring_option(self.case["expiring_option"]))
         self.strategy = re.search(r"^STRATEGY\s+(\w+)", text, re.M).group(1)
         open(f"{self.out}/strategies/{self.strategy}.qkt", "w").write(text)
         shutil.copy(os.path.join(self.args.case, "instruments.yaml"), f"{self.out}/data/instruments.yaml")
-        venue = self.case["symbols"][0].split(":")[1].split(".")[0] if self.case["symbols"][0].startswith(
+        venue = self.venue = self.case["symbols"][0].split(":")[1].split(".")[0] if self.case["symbols"][0].startswith(
             ("OPTIONS:", "CHAIN:")) else self.case["symbols"][0].split(":")[0]
+        self.contract_sizes()  # a contract leaves the listing once it expires: remember its size now
         url = self.args.gateway_url
         if any(d["kind"] == "gateway_outage" for d in self.drills.pending):  # the daemon reaches it through a proxy
             self.proxy = derivatives_drills.TcpProxy(*urllib.parse.urlsplit(url).netloc.split(":"))
@@ -236,6 +261,32 @@ class Run:
         if bars == 0:
             raise RuntimeError(f"venue-untradeable: {root} has no dated contract 7 to 45 days out that traded in 6 hours")
         return f"{root.split(':')[0]}:{code.replace('-', '_')}"
+
+    def expiring_option(self, spec):
+        """The qkt symbol of the option [spec] picks to hold through its expiry (lib/derivatives_settlement.py)."""
+        now = int(time.time() * 1000)
+        venue, name = spec["index_symbol"].split(":")
+        instruments = self.get("/v1/instruments")
+        index_code = next(i["code"] for i in instruments if i["code"].replace("-", "_") == name)
+        query = {"symbol": index_code, "window_ms": MINUTE, "from": now - 10 * MINUTE, "to": now}
+        marks = [m for m in self.get("/v1/marks?" + urllib.parse.urlencode(query))["marks"] if m.get("index")]
+        if not marks:
+            raise RuntimeError(f"venue-untradeable: {spec['index_symbol']} reported no index in 10 minutes")
+
+        def book(code):
+            snapshots = self.get(f"/v1/depth?symbol={urllib.parse.quote(code)}&from={now - MINUTE}&to={now + 1000}")["depth"]
+            return snapshots[-1] if snapshots else None
+
+        code, self.selected = settlement.expiring_option(instruments, spec,
+                                                         Decimal(marks[-1]["index"]), book, now)
+        return settlement.qkt_symbol(venue, code)
+
+    def contract_sizes(self):
+        """Each contract's size by venue code: the listing now, over the sizes remembered from earlier reads."""
+        sizes = getattr(self, "sizes", {})
+        sizes.update({i["code"]: Decimal(i["contract_size"]) for i in self.get("/v1/instruments")})
+        self.sizes = sizes
+        return sizes
 
     def recent_bars(self, code, now):
         """How many minutes [code] traded in over the six hours before [now] (a venue may send flat bars between)."""
@@ -275,15 +326,19 @@ class Run:
             time.sleep(3)
         time.sleep(5)  # the last fill's venue events and costs settle
         self.await_funding(deadline)
-        if self.case["replay"] == "chain":  # a replay fills on the snapshot after the entry: record one past the fills
+        if self.case.get("replay") == "chain":  # a replay fills on the snapshot after the entry: record one past the fills
             time.sleep(MINUTE / 1000 - time.time() % 60 + 15)
         self.stop_daemon()
         self.ended_ms = int(time.time() * 1000)
 
     def done(self):
-        """The case has made its fills and, when it must end flat, is flat: a partial fill is a fill event, so the
-        count alone would end a case whose entry is still working (its remainder filling minutes later)."""
-        if len(self.live_fills()) < int(self.case["fills"]):
+        """The case has made its fills, booked its `settles` expiry settlements and, when it must end flat, is flat: a
+        partial fill is a fill event, so the count alone would end a case whose entry is still working (its remainder
+        filling minutes later), and a case holding through an expiry is not done until qkt has booked the settlement."""
+        if len(self.order_fills()) < int(self.case["fills"]):
+            return False
+        settles = int(self.case.get("settles", 0))
+        if settles and len(settlement.booked_settlements(f"{self.out}/state/state", self.strategy)) < settles:
             return False
         return "flat-account" not in self.case["assertions"] or self.flat()
 
@@ -319,8 +374,24 @@ class Run:
         return True
 
     def live_fills(self):
+        """Every fill the daemon logged, an expiry settlement's close (a fill of no order) included."""
         text = open(f"{self.out}/daemon.log").read()
         return [{"side": m[0], "symbol": m[1], "qty": m[2], "price": m[3]} for m in TRADE.findall(text)]
+
+    def order_fills(self):
+        """The fills of the strategy's orders: the logged fills less the settlement closes its journal names."""
+        fills = self.live_fills()
+        for booked in settlement.booked_settlements(f"{self.out}/state/state", self.strategy):
+            close = next((f for f in fills if f["side"] == booked["side"] and f["symbol"] == booked["symbol"]
+                          and Decimal(f["qty"]) == Decimal(booked["qty"])
+                          and Decimal(f["price"]) == Decimal(booked["price"])), None)
+            if close:
+                fills.remove(close)
+        return fills
+
+    def venue_settlements(self):
+        """The expiries the venue settled over the run (`/v1/settlements`, served from the gateway's journal)."""
+        return self.get(f"/v1/settlements?from={self.started_ms}&to={self.ended_ms + MINUTE}")["settlements"]
 
     def strategy_deals(self):
         """The venue's fills of the strategy's orders over the run."""
@@ -330,7 +401,7 @@ class Run:
         return [d for d in deals if d["client_order_id"].startswith((f"dsl-{self.strategy}-", f"ORD-{self.strategy}-"))]
 
     def venue_net(self):
-        sizes = {i["code"]: Decimal(i["contract_size"]) for i in self.get("/v1/instruments")}
+        sizes = self.contract_sizes()
         net = Decimal(0)
         for deal in self.strategy_deals():
             value = Decimal(deal["price"]) * Decimal(deal["quantity"]) * sizes.get(deal["symbol"], Decimal(1))
