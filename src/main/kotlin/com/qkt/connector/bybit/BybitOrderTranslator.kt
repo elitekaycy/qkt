@@ -117,6 +117,9 @@ object BybitOrderTranslator {
         val quantity: BigDecimal,
         /** Venue execution fee for this slice — positive = charge, negative = maker rebate. */
         val fee: BigDecimal = Money.ZERO,
+        /** `orderQty` and `leavesQty`: the order's size, and what it still had to fill after this slice. */
+        val orderQuantity: BigDecimal? = null,
+        val leavesQuantity: BigDecimal? = null,
     )
 
     fun parseOpenOrder(json: JsonObject): ParsedOpenOrder {
@@ -161,6 +164,16 @@ object BybitOrderTranslator {
                     ?.toBigDecimalOrNull()
                     ?.setScale(Money.SCALE, Money.ROUNDING)
                     ?: Money.ZERO,
+            orderQuantity =
+                json["orderQty"]?.jsonPrimitive?.content?.toBigDecimalOrNull()?.setScale(
+                    Money.SCALE,
+                    Money.ROUNDING,
+                ),
+            leavesQuantity =
+                json["leavesQty"]?.jsonPrimitive?.content?.toBigDecimalOrNull()?.setScale(
+                    Money.SCALE,
+                    Money.ROUNDING,
+                ),
         )
     }
 }

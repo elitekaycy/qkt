@@ -49,8 +49,8 @@ class BybitOrdersTest {
 
         assertThat(orders.hold(cancel("c1"), BigDecimal("0.5"))).isTrue
         assertThat(orders.awaitingFills()).containsExactly("c1")
-        assertThat(orders.booked("c1", BigDecimal("0.2"))).isNull()
-        assertThat(orders.booked("c1", BigDecimal("0.3"))?.clientOrderId).isEqualTo("c1")
+        assertThat(orders.booked("c1", BigDecimal("0.2"))).isEmpty()
+        assertThat(orders.booked("c1", BigDecimal("0.3")).map { it.clientOrderId }).containsExactly("c1")
         assertThat(orders.awaitingFills()).isEmpty()
     }
 
@@ -68,7 +68,27 @@ class BybitOrdersTest {
         place("c1")
         orders.hold(cancel("c1"), BigDecimal("0.5"))
 
-        assertThat(orders.release("c1")?.clientOrderId).isEqualTo("c1")
-        assertThat(orders.release("c1")).isNull()
+        assertThat(orders.release("c1").map { it.clientOrderId }).containsExactly("c1")
+        assertThat(orders.release("c1")).isEmpty()
+    }
+
+    @Test
+    fun `a last fill held for an earlier one is released after it, then a cancel waiting on both`() {
+        place("c1")
+        val last =
+            BrokerEvent.OrderFilled(
+                "c1",
+                null,
+                "BYBIT_LINEAR:BTCUSDT",
+                Side.BUY,
+                BigDecimal.ONE,
+                BigDecimal("0.3"),
+            )
+
+        assertThat(orders.hold(last, after = BigDecimal("0.2"), quantity = BigDecimal("0.3"))).isTrue
+        assertThat(orders.hold(cancel("c1"), BigDecimal("0.5"))).isTrue
+
+        assertThat(orders.booked("c1", BigDecimal("0.2"))).containsExactly(last, cancel("c1"))
+        assertThat(orders.bookedOf("c1")).isEqualByComparingTo("0.5")
     }
 }

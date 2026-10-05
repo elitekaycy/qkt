@@ -47,7 +47,8 @@ class BybitLinearStateRecovery(
             lastFillTimeProvider,
             seenExecIds,
             funding::take,
-        ) { exec -> ends?.booked(exec) }
+            onFill = ends?.let { it::fill },
+        )
 
     override fun reconcile() {
         synchronized(lock) {
