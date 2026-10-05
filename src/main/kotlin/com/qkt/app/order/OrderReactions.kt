@@ -26,7 +26,17 @@ internal class OrderReactions(
             log,
         )
     private val venueRecovery: VenueRecovery =
-        VenueRecovery(book, store.brackets, store.exposure, s.broker, s.bookedVenueTickets, clock, ops, log) { event ->
+        VenueRecovery(
+            book,
+            store.brackets,
+            store.exposure,
+            s.broker,
+            s.bookedVenueTickets,
+            s.persistor,
+            clock,
+            ops,
+            log,
+        ) { event ->
             eventHandlers.onCancelled(event)
         }
     val restorer =

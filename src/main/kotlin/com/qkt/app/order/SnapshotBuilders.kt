@@ -5,6 +5,7 @@ import com.qkt.execution.isCompositeShape
 import com.qkt.execution.isTerminal
 import com.qkt.persistence.BracketPair
 import com.qkt.persistence.PersistedOcoLeg
+import com.qkt.persistence.PersistedOrderFill
 
 // Builders for the persisted views of order state. Each reads the books and returns what the
 // persistor stores; none mutates anything. Composite wrappers (OTO, ScaleOut, a pre-fill
@@ -141,4 +142,19 @@ internal fun ocoLegsByStrategy(
         )
     }
     return ocoLegsByStrategy
+}
+
+/**
+ * What every strategy's live, partly filled orders have filled, by order id: a restart hands it back
+ * with each restored order so the venue's recovery books only the fills made while qkt was down.
+ */
+internal fun orderFillsByStrategy(book: OrderBook): Map<String, Map<String, PersistedOrderFill>> {
+    val fills: MutableMap<String, MutableMap<String, PersistedOrderFill>> = mutableMapOf()
+    for ((id, managed) in book.orders) {
+        val sid = managed.request.strategyId
+        if (managed.state.isTerminal || managed.cumulativeFilledQuantity.signum() <= 0 || sid.isBlank()) continue
+        fills.getOrPut(sid) { mutableMapOf() }[id] =
+            PersistedOrderFill(managed.cumulativeFilledQuantity, managed.avgFillPrice)
+    }
+    return fills
 }
