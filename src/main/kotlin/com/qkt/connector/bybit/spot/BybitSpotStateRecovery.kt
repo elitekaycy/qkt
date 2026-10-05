@@ -40,7 +40,8 @@ class BybitSpotStateRecovery(
             ends?.orders?.let { it::strategyOf } ?: { getKnownOrders()[it]?.strategyId },
             lastFillTimeProvider,
             seenExecIds,
-        ) { exec -> ends?.booked(exec) }
+            onFill = ends?.let { it::fill },
+        )
 
     data class ManagedOrderView(
         val clientOrderId: String,

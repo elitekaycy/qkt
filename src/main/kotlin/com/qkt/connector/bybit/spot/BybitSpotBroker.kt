@@ -49,7 +49,7 @@ class BybitSpotBroker(
     private val json = Json { ignoreUnknownKeys = true }
 
     private val orders = BybitOrders()
-    private val ends = BybitHeldEnds(orders, bus)
+    private val ends = BybitHeldEnds(orders, bus, clock, "spot")
     private val seenExecIds: MutableSet<String> = boundedExecIdSet()
     private val lastFillTime: AtomicLong = AtomicLong(clock.now() - recoveryWindowMs)
 
@@ -81,7 +81,7 @@ class BybitSpotBroker(
                 seenExecIds,
                 lastFillTime,
                 orders::strategyOf,
-                afterFill = ends::booked,
+                onFill = ends::fill,
             )
         transport.subscribe("execution", executions::onFrame)
 

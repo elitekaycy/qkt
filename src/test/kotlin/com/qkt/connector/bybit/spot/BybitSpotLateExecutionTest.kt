@@ -38,6 +38,21 @@ class BybitSpotLateExecutionTest {
 
     init {
         bus.subscribe<BrokerEvent.OrderFilled> { events += it }
+        // Booked here either way; partial versus completing fills are pinned by BybitLinearPartialFillTest.
+        bus.subscribe<BrokerEvent.OrderPartiallyFilled> { p ->
+            events +=
+                BrokerEvent.OrderFilled(
+                    p.clientOrderId,
+                    p.brokerOrderId,
+                    p.symbol,
+                    p.side,
+                    p.price,
+                    p.quantity,
+                    p.strategyId,
+                    p.timestamp,
+                    venueCosts = p.venueCosts,
+                )
+        }
         bus.subscribe<BrokerEvent.OrderCancelled> { events += it }
         loggers.forEach { it.addAppender(logs) }
     }
@@ -109,6 +124,19 @@ class BybitSpotLateExecutionTest {
             "OrderFilled" to "s1",
             "OrderCancelled" to "s1",
         )
+    }
+
+    @Test
+    fun `an execution with quantity left is a partial fill with the venue's cumulative, the last completes it`() {
+        val partials = mutableListOf<BrokerEvent.OrderPartiallyFilled>()
+        bus.subscribe<BrokerEvent.OrderPartiallyFilled> { partials += it }
+        broker().place("c1")
+
+        execution(slice("e-a", "0.2", "0.3", "10.549011"))
+        execution(slice("e-b", "0.3", "0", "15.8235165"))
+
+        assertThat(partials.single().cumulativeFilled).isEqualByComparingTo("0.2")
+        assertThat(events.filterIsInstance<BrokerEvent.OrderFilled>().last().quantity).isEqualByComparingTo("0.3")
     }
 
     @Test

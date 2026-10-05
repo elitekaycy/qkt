@@ -50,7 +50,7 @@ class BybitLinearBroker(
     private val json = Json { ignoreUnknownKeys = true }
 
     private val orders = BybitOrders()
-    private val ends = BybitHeldEnds(orders, bus)
+    private val ends = BybitHeldEnds(orders, bus, clock, "linear")
     private val seenExecIds: MutableSet<String> = boundedExecIdSet()
     private val lastFillTime: AtomicLong = AtomicLong(clock.now() - recoveryWindowMs)
     private val reconciler: PeriodicReconciler
@@ -79,7 +79,7 @@ class BybitLinearBroker(
                 lastFillTime,
                 orders::strategyOf,
                 funding::take,
-                afterFill = ends::booked,
+                onFill = ends::fill,
             )
         transport.subscribe("execution", executions::onFrame)
 
