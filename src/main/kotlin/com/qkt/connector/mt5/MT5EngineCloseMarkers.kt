@@ -1,6 +1,7 @@
 package com.qkt.connector.mt5
 
 import com.qkt.common.Clock
+import java.math.BigDecimal
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -20,6 +21,8 @@ internal class MT5EngineCloseMarkers(
         val startedAtMs: Long,
         val confirmed: Boolean = false,
         val confirmedAtMs: Long? = null,
+        /** Set when the confirmed close left the position open: the part the poller has yet to see. */
+        val partial: EnginePartialClose? = null,
     )
 
     /** Set BEFORE the close is sent: the poller could see the position gone before the reply lands. */
@@ -57,9 +60,38 @@ internal class MT5EngineCloseMarkers(
         return EngineCloseState.CONFIRMED
     }
 
-    fun confirmEngineClose(ticket: Long) {
+    /**
+     * The venue confirmed the close. [partial] is given when the position stays open (a partial
+     * close, or a close the venue filled only in part), so a later venue close of the rest is told
+     * apart from this one.
+     */
+    fun confirmEngineClose(
+        ticket: Long,
+        partial: EnginePartialClose? = null,
+    ) {
         recentlyClosedByTicket.computeIfPresent(ticket) { _, marker ->
-            marker.copy(confirmed = true, confirmedAtMs = clock.now())
+            marker.copy(confirmed = true, confirmedAtMs = clock.now(), partial = partial)
         }
     }
+
+    /**
+     * For a confirmed partial close of [ticket], the quantity the poller has not yet seen leave
+     * the position plus its deals; the quantity is reported once, later calls return zero. Null
+     * when the confirmed close (if any) closed the whole position.
+     */
+    fun takeEnginePartial(ticket: Long): EnginePartialClose? {
+        var taken: EnginePartialClose? = null
+        recentlyClosedByTicket.computeIfPresent(ticket) { _, marker ->
+            val partial = marker.partial?.takeIf { marker.confirmed } ?: return@computeIfPresent marker
+            taken = partial
+            marker.copy(partial = partial.copy(unseenQuantity = BigDecimal.ZERO))
+        }
+        return taken
+    }
 }
+
+/** A confirmed engine close that left the position open: its size not yet seen by the poller, and its deals. */
+data class EnginePartialClose(
+    val unseenQuantity: BigDecimal,
+    val dealTickets: Set<Long>,
+)
