@@ -56,6 +56,30 @@ internal fun requireVolumeCapability(
 }
 
 /**
+ * Refuse to start a strategy that reads a contract's mark or index on a symbol whose data source serves no
+ * marks, or serves them with a problem (a gateway that does not declare `mark_prices`), so a rule never reads
+ * an Undefined that no venue will ever fill. Per symbol, through [MarketSource.marksFor].
+ */
+internal fun requireMarkPrices(
+    strategyId: String,
+    strategy: DslCompiledStrategy,
+    source: MarketSource,
+) {
+    for (symbol in strategy.markSymbols) {
+        val marks = source.marksFor(symbol)
+        val problem =
+            if (marks ==
+                null
+            ) {
+                "its data feed ('${source.name}') serves no mark prices"
+            } else {
+                marks.problem(symbol)
+            }
+        require(problem == null) { "Strategy '$strategyId' reads the mark or index of $symbol but $problem" }
+    }
+}
+
+/**
  * Refuse to deploy a strategy that sizes with `RISK OF BOOK` when no portfolio book is bound, so
  * the missing capability fails at deploy rather than at the first signal.
  */

@@ -24,10 +24,13 @@ object DslVocabulary {
     /** Fields describing the contract a futures stream follows right now; Undefined on other streams. */
     val contractFields: List<String> = listOf("contract", "dte", "days_to_roll")
 
-    /** Per-bar fields readable off a stream alias, e.g. `btc.close`, plus the futures [contractFields]. */
+    /** A contract's mark and index price as its venue reports them; refused on a feed that serves none. */
+    val markFields: List<String> = listOf("mark", "index")
+
+    /** Per-bar fields readable off a stream alias, e.g. `btc.close`, plus [contractFields] and [markFields]. */
     val candleFields: List<String> =
         listOf("close", "open", "high", "low", "volume", "price", "bid", "ask", "spread", "value", "timestamp") +
-            contractFields
+            contractFields + markFields
 
     /** The candle fields an indicator may consume as a numeric series. */
     val numericCandleFields: List<String> = listOf("close", "value", "open", "high", "low", "volume", "price")

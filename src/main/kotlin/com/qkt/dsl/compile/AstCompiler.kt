@@ -1,5 +1,6 @@
 package com.qkt.dsl.compile
 
+import com.qkt.dsl.DslVocabulary
 import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.StrategyAst
 import com.qkt.dsl.ast.WhenThen
@@ -132,6 +133,7 @@ class AstCompiler {
         val volumeRequiringSymbols: Set<String> = volumeRequiringSymbols(bindings, streams)
 
         val metaRefs = collectMetaRefs(ast, streams)
+        val markSymbols = collectMetaRefs(ast, streams, DslVocabulary.markFields).map { it.qktSymbol }.toSet()
         val quoteFieldStreams = collectQuoteFieldStreams(resolvedConditions + resolvedSequenceConditions)
 
         val perStreamWarmup: Map<String, Int> = WarmupRequirements.compute(ast)
@@ -162,6 +164,7 @@ class AstCompiler {
             pendingStacks = pendingStacks,
             multiPositionPerSymbolSymbols = stackAtSymbols,
             volumeRequiringSymbols = volumeRequiringSymbols,
+            markSymbols = markSymbols,
             usesBookSizing = actionCompiler.usesBookSizing,
             metaRefs = metaRefs,
             warmupGate = warmupGate,
