@@ -9,6 +9,8 @@ The gateway must be on loopback, in demo trade mode, logged into --expected-logi
 a netting account cannot tell the case's positions from anyone else's. The case's strategy runs in a
 daemon until it has made `fills` fills and, when it asserts flat-account, is flat (or its budget ends), then is judged:
   - flat-account: the account ends with no position and no working order;
+  - funding-booked (whenever the venue charged funding): the strategy booked every funding record the venue made
+    during the run, the one realized at the close included;
   - deals-net-equals-realized: qkt's realized PnL equals the venue's deals net, fees included, less the
     funding the venue charged the account over the run (`/v1/funding`, when the gateway reports it), exactly;
   - funding-charged: the venue charged the account funding at least once during the run (a soak case that
@@ -26,6 +28,7 @@ import yaml
 
 TRADE = re.compile(r"qkt\.trade - trade (BUY|SELL) (\S+) qty=(\S+) px=(\S+)")
 MINUTE = 60_000
+FUNDING_RECONCILE_S = 90  # a gateway reconciles venue history every minute; one cycle past the last fill, with margin
 
 
 def main():
@@ -133,6 +136,9 @@ class Run:
             problems.append(f"deals-net-equals-realized: venue net {venue} != qkt realized {realized}")
         if "funding-charged" in self.case["assertions"] and not funding:
             problems.append("funding-charged: the venue charged no funding during the run")
+        unbooked = self.unbooked_funding(self.ended_ms + MINUTE) if funding else []
+        if unbooked:
+            problems.append(f"funding-booked: the venue charged {unbooked} that the strategy never booked")
         if fills:
             problems += self.replay(fills)
         self.evidence = {"fills": fills, "qktRealized": str(realized), "venueNet": str(venue), "funding": funding,
@@ -199,6 +205,7 @@ class Run:
         while not self.done() and time.time() < deadline:
             time.sleep(3)
         time.sleep(5)  # the last fill's venue events and costs settle
+        self.await_funding(deadline)
         if self.case["replay"] == "chain":  # a replay fills on the snapshot after the entry: record one past the fills
             time.sleep(MINUTE / 1000 - time.time() % 60 + 15)
         self.stop_daemon()
@@ -210,6 +217,24 @@ class Run:
         if len(self.live_fills()) < int(self.case["fills"]):
             return False
         return "flat-account" not in self.case["assertions"] or self.flat()
+
+    def await_funding(self, deadline):
+        """Deribit realizes funding at every fill that changes a position, the close included, and a gateway reads it
+        from the venue on its reconcile cycle: wait for that cycle to pass the last fill, then for the strategy to book
+        every record, so funding realized at the close is judged, not cut off."""
+        if "funding" not in self.get("/v1/health").get("capabilities", []):
+            return
+        last_fill = int(time.time() * 1000)
+        time.sleep(FUNDING_RECONCILE_S)
+        while time.time() < deadline and self.unbooked_funding(last_fill):
+            time.sleep(5)
+
+    def unbooked_funding(self, to_ms):
+        """The ids of the venue's funding records from the run's start to [to_ms] the strategy has not booked."""
+        charged = {f["funding_id"] for f in self.get(f"/v1/funding?from={self.started_ms}&to={to_ms}")["funding"]}
+        path = f"{self.out}/state/state/{self.strategy}/funding.json"
+        booked = set(json.load(open(path))["booked"]) if os.path.exists(path) else set()
+        return sorted(charged - booked)
 
     def stop_daemon(self):
         if self.daemon and self.daemon.poll() is None:
