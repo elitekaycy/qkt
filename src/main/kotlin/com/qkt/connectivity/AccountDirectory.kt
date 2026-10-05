@@ -2,6 +2,9 @@ package com.qkt.connectivity
 
 import com.qkt.broker.BrokerFactory
 import com.qkt.common.TradingCalendar
+import com.qkt.marketdata.openinterest.OpenInterest
+import com.qkt.marketdata.openinterest.OpenInterestMarketSource
+import com.qkt.marketdata.openinterest.OpenInterestSymbol
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.marketdata.source.SymbolPattern
 
@@ -29,9 +32,29 @@ class AccountDirectory private constructor(
     /** Each account's order-entry factory, keyed by lower-case account name. */
     fun orderEntry(): Map<String, BrokerFactory> = accounts.associate { it.config.name.lowercase() to it.orderEntry }
 
-    /** One route per account that supplies market data ([TradingAccount.marketDataPattern]), in config order. */
+    /**
+     * One route per account that supplies market data ([TradingAccount.marketDataPattern]), in config order,
+     * after the open-interest streams (`OI:<ACCOUNT>:<NAME>`) when an account reads open interest, each read from
+     * the account named by its contract.
+     */
     fun marketDataRoutes(): List<Pair<SymbolPattern, MarketSource>> =
-        accounts.mapNotNull { account -> account.marketData?.let { account.marketDataPattern to it } }
+        listOfNotNull(
+            (SymbolPattern.prefix(OpenInterestSymbol.PREFIX) to OpenInterestMarketSource(::openInterest))
+                .takeIf { accounts.any { it.openInterest != null } },
+        ) + accounts.mapNotNull { account -> account.marketData?.let { account.marketDataPattern to it } }
+
+    /** [qktSymbol]'s open interest from the account serving it; refused naming the account that cannot. */
+    private fun openInterest(
+        qktSymbol: String,
+        fromMs: Long,
+        toMs: Long,
+    ): List<OpenInterest> {
+        val account = forSymbol(qktSymbol) ?: error("no account serves $qktSymbol, so none serves its open interest")
+        val source =
+            account.openInterest
+                ?: error("${account.config.name} (type ${account.config.type}) does not read open interest")
+        return source.figures(qktSymbol, fromMs, toMs)
+    }
 
     /** The trading hours governing [qktSymbol] on its account, or null when no account serves it. */
     fun tradingHoursFor(qktSymbol: String): TradingCalendar? =

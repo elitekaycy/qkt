@@ -76,8 +76,9 @@ class GatewayConnectorTest {
     fun `the account's prices are routed for its contracts and its option roots only`() {
         val routes = AccountDirectory.open(listOf(account()), ConnectorRegistry.discover(), context).marketDataRoutes()
 
-        val (pattern, source) = routes.single()
-        assertThat(source).isInstanceOf(GatewayMarketSource::class.java)
+        val (pattern, source) = routes.single { it.second is GatewayMarketSource }
+        val openInterest = routes.single { it.second !is GatewayMarketSource }.first
+        assertThat(openInterest.matches("OI:DERIBIT_MAIN:BTC_USDC_PERPETUAL")).isTrue()
         assertThat(pattern.matches("DERIBIT_MAIN:BTC_USDC_25DEC26_92000_C")).isTrue()
         assertThat(pattern.matches("OPTIONS:DERIBIT_MAIN.BTC_USDC")).isTrue()
         assertThat(pattern.matches("OPTIONS:DERIBIT.BTC_USDC")).isFalse()

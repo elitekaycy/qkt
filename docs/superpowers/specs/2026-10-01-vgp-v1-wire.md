@@ -2,7 +2,7 @@
 
 **Status:** design for phase 44 (amends `2026-09-30-futures-options-design.md` §7); capabilities and
 perpetual funding added by `2026-10-04-perpetual-funding-and-venue-capabilities.md`, mark prices by
-`2026-10-04-mark-and-index-stream-fields.md`. The endpoint list
+`2026-10-04-mark-and-index-stream-fields.md`, open interest by `2026-10-04-open-interest.md`. The endpoint list
 and semantics come from `docs/research/2026-09-18-venue-plugin-architecture.md` §6; this document
 fixes what that list left to implementations: the JSON, the event stream, errors, resume and the
 kill switch. The qkt client (`connector/gateway`) and any gateway (`qkt-venue-gateway`) implement exactly
@@ -58,8 +58,9 @@ happened in between.
 `capabilities` names the optional services the gateway's adapter serves: `bars` (`/v1/bars`), `quotes`
 (`/v1/quotes`), `settlements` (the venue's settlements reach `/v1/settlements` and the stream), `funding`
 (what the venue charged or credited the account for holding perpetuals: `/v1/funding` and the `funding`
-event), `funding_rates` (`/v1/funding-rates`) and `mark_prices` (`/v1/marks`, and quotes that carry `mark`
-and `index` where the venue reports them). An endpoint whose capability is not declared answers
+event), `funding_rates` (`/v1/funding-rates`), `mark_prices` (`/v1/marks`, and quotes that carry `mark`
+and `index` where the venue reports them) and `open_interest` (`/v1/open-interest`). An endpoint whose
+capability is not declared answers
 `501 unsupported` (`/v1/settlements` is still served, from what the journal holds). A gateway that
 predates the field omits it; a client treats that as none declared. A client ignores a name it does not
 know. Funding is the cash a venue moves between longs and shorts of a perpetual; a client books it, so it
@@ -208,6 +209,20 @@ report it. A window in which the venue reported nothing has no entry: the value 
 previous one. A response covers at most 100 windows; `next` is the `from` of the following page and is
 absent on the last one. The client stores these for backtests (`qkt fetch --marks`), which see each value
 from its `time` on. `501 unsupported` unless `mark_prices` is declared.
+
+### `GET /v1/open-interest?symbol=<code>&from=<ms>&to=<ms>`
+A contract's published open interest, oldest first, each `time` in `[from, min(to, now)]`:
+```json
+{"open_interest": [{"time": 1790864291655, "open_interest": "1477.6341"}], "next": 1790924291655}
+```
+`open_interest` is the contracts outstanding, in the contract's order quantity (the unit an order's
+`quantity` is written in). `time` is the instant the venue made the figure known, never earlier: a figure
+the venue stamps with the start of the period it summarizes is served at that period's end. A response
+covers at most 1000 minutes and holds at most 1000 figures; `next` is the `from` of the following page
+and is absent on the last one. A venue that publishes no history serves the figures its adapter recorded
+(the adapter's README says so); such a series starts when the gateway first recorded it. The client
+stores these for backtests (`qkt fetch --open-interest`) and reads the newest live. `501 unsupported`
+unless `open_interest` is declared.
 
 ### `POST /v1/kill`, `POST /v1/kill/release`
 Body `{"scope": "all"}` or `{"scope": "symbols", "symbols": ["<code>", ...]}`. Response `200` with the

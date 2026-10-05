@@ -192,6 +192,37 @@ WHEN perp.mark - perp.index > 25 AND POSITION.perp = 0   -- rich premium: fade i
 THEN SELL perp SIZING 0.01
 ```
 
+### Open interest (`<alias>.open_interest`)
+
+`perp.open_interest` is the open interest of the contract the stream trades: the contracts outstanding, in
+the unit the strategy's quantities are written in (base coins on a Deribit USDC-linear or Binance USDⓈ-M
+contract). It is a series of its own, the venue's published figures, each visible from the instant the venue
+made it known, never earlier: a figure Binance stamps with the start of its five minutes is visible at their
+end. It reads like a candle field, so indicators and lookback work on it:
+
+```qkt
+STRATEGY oi_breakout VERSION 1
+SYMBOLS
+    perp = DERIBIT:BTC_USDC_PERPETUAL EVERY 15m
+RULES
+    -- Open interest rising fast while price breaks out.
+    WHEN perp.open_interest > ema(perp.open_interest, 20) * 1.05 AND perp.close > perp.high[1]
+     AND POSITION.perp = 0
+    THEN BUY perp SIZING 0.01
+```
+
+- **Backtest:** read from `open_interest/<VENUE>/<NAME>.csv` under the data root, stored by
+  `qkt fetch <VENUE>:<NAME> --open-interest --from <date> --to <date>`. A backtest whose stored figures do
+  not cover the run (no gap over three of the series' own intervals) is refused with that fetch.
+- **Live:** read from the account's gateway every minute, which must declare the `open_interest`
+  capability; a strategy reading it on any other account fails at start, naming the account.
+- Each new figure is an observation of its own, like a `HUB:` record: from its arrival every evaluation
+  reads it (a backtest test proves a rule fires on the first bar close after the figure that crosses, not
+  before). Until the first figure arrives the field is undefined.
+- Venues differ in what they publish: Binance keeps 30 days of five-minute history; Deribit publishes no
+  history, so its gateway records the present figure each time it is read and serves what it recorded
+  (a series that starts when the gateway first read it).
+
 For historical lookback (the N-th candle ago):
 
 ```qkt
