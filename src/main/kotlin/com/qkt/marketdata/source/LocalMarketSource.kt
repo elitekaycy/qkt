@@ -6,6 +6,9 @@ import com.qkt.common.TimeRange
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.TickFeed
+import com.qkt.marketdata.marks.MarkPrices
+import com.qkt.marketdata.marks.MarkStore
+import com.qkt.marketdata.marks.StoredMarkPrices
 import com.qkt.marketdata.openDayFeed
 import com.qkt.marketdata.store.BinaryBarStore
 import com.qkt.marketdata.store.DataStore
@@ -40,6 +43,11 @@ class LocalMarketSource(
         setOf(MarketSourceCapability.BARS, MarketSourceCapability.TICKS)
 
     override fun supports(symbol: String): Boolean = true
+
+    private val marks by lazy { StoredMarkPrices(MarkStore(store.root)) }
+
+    /** The marks `qkt fetch --marks` stored under the store's data root ([StoredMarkPrices]). */
+    override fun marksFor(symbol: String): MarkPrices = marks
 
     private val volumeBySymbol: MutableMap<String, Boolean> = mutableMapOf()
 
