@@ -179,14 +179,14 @@ class Run:
             problems.append(f"venue-fills-equal-qkt-fills: venue only {dict(venue - booked)}, qkt only {dict(booked - venue)}")
         placed = {}
         for deal in deals:  # `<engine id>.<submit time>`: one engine id under two venue ids was sent twice
-            placed.setdefault(deal["client_order_id"].rsplit(".", 1)[0], {})[deal["client_order_id"]] = deal["side"]
+            placed.setdefault(deal["client_order_id"].rsplit(".", 1)[0], set()).add(deal["client_order_id"])
         for engine, sent in sorted(placed.items()):
             if len(sent) < 2:
                 continue
-            if len(set(sent.values())) == 1:  # the same order placed again
+            if venue != booked:  # a fill qkt never booked under a second id: the same order placed again
                 problems.append(f"no-duplicate-order: engine order {engine} filled at the venue as {sorted(sent)}")
-            else:  # another order under an id the engine had already used (a restart restarted the sequence)
-                problems.append(f"order-id-continuity: engine id {engine} named different orders {sent}")
+            else:  # qkt booked both: another order under an id the engine had already used
+                problems.append(f"order-id-continuity: engine id {engine} named different orders {sorted(sent)}")
         return problems
 
     def prepare(self, adapter):

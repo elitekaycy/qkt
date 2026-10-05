@@ -153,5 +153,11 @@ deals[:] = [fill("dsl-s--0.a1", "buy", "86000"), fill("dsl-s--0.b7", "sell", "86
 problems = run.judge_drilled(qkt)
 assert len(problems) == 1 and problems[0].startswith("order-id-continuity") and "dsl-s--0" in problems[0], problems
 print("ok a drilled case fails when one engine id names two different orders")
+# Seen live on a flat restart (#1338): two round trips, each under the same engine ids, all fills booked.
+deals[:] = [fill("dsl-s--0.a1", "buy", "86000"), fill("dsl-s--2.a2", "sell", "86100"),
+            fill("dsl-s--0.b1", "buy", "86000"), fill("dsl-s--2.b2", "sell", "86100")]
+problems = run.judge_drilled(qkt + qkt)
+assert [p.split(":")[0] for p in problems] == ["order-id-continuity", "order-id-continuity"], problems
+print("ok two orders on one side under one engine id, both booked, are id reuse, not a duplicate")
 server.shutdown()
 PY
