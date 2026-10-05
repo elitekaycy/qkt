@@ -80,6 +80,10 @@ internal class MT5PendingDisappearance(
                 return true
             }
             pendingFills.onPendingPositionOpened(asPosition)
+            // A part fill seen only now: the order already left the venue, so its rest is gone.
+            if (books.partialPositionByResidualTicket.containsKey(ticket)) {
+                partialEntries.cancelPartialEntryResidual(ticket, "residual disappeared from venue after partial fill")
+            }
             return true
         }
 
