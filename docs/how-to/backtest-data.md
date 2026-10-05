@@ -325,6 +325,9 @@ RULES
   the capped delivery fee: a long receives it, a short pays it. Out of the money it settles at zero.
 - The run checks that every day up to each contract's expiry has a stored chain day of the declared series,
   and names the `qkt fetch … --chains` that fills a gap.
+- One contract's mark IV and Greeks (`c.iv`, `c.delta`, `c.gamma`, `c.vega`, `c.theta`) are read from the
+  same series: the contract's quote in the newest snapshot at or before the bar's close, the Greeks priced
+  with Black-76 on its mark IV and forward.
 - The chain's implied volatility and skew can drive rules as read-only streams:
   `iv = CHAIN:DERIBIT.BTC_USDC.atm_iv.30d EVERY 1h` (see [chain analytics](../reference/dsl/chain.md)).
 

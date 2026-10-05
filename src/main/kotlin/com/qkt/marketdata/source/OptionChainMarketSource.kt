@@ -3,6 +3,8 @@ package com.qkt.marketdata.source
 import com.qkt.common.TimeRange
 import com.qkt.derivatives.options.OptionPayoff
 import com.qkt.derivatives.options.chain.ChainSnapshotStore
+import com.qkt.derivatives.options.chain.OptionMarks
+import com.qkt.derivatives.options.chain.StoredOptionMarks
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.OptionTerms
 import com.qkt.marketdata.Tick
@@ -27,6 +29,11 @@ class OptionChainMarketSource(
     override val capabilities: Set<MarketSourceCapability> = setOf(MarketSourceCapability.TICKS)
 
     override fun supports(symbol: String): Boolean = instruments.options()?.optionRoot(symbol) != null
+
+    private val marks by lazy { StoredOptionMarks(instruments) }
+
+    /** The contracts' quotes in their roots' stored chains, newest snapshot first ([StoredOptionMarks]). */
+    override fun optionMarksFor(symbol: String): OptionMarks = marks
 
     override fun ticks(
         symbol: String,

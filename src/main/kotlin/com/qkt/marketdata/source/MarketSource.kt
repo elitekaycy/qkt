@@ -2,6 +2,7 @@ package com.qkt.marketdata.source
 
 import com.qkt.candles.TimeWindow
 import com.qkt.common.TimeRange
+import com.qkt.derivatives.options.chain.OptionMarks
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.TickFeed
@@ -26,6 +27,12 @@ interface MarketSource {
      * routing source answers for the leaf that serves [symbol], as [capabilitiesFor] does.
      */
     fun marksFor(symbol: String): MarkPrices? = null
+
+    /**
+     * Where option [symbol]'s mark IV and forward are read ([OptionMarks]), or null when this source serves
+     * none. A routing source answers for the leaf that serves [symbol], as [capabilitiesFor] does.
+     */
+    fun optionMarksFor(symbol: String): OptionMarks? = null
 
     fun liveTicks(symbols: List<String>): TickFeed =
         throw UnsupportedDataException(MarketSourceCapability.LIVE_TICKS, this::class.java.simpleName ?: "MarketSource")
