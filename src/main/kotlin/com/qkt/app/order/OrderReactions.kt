@@ -90,7 +90,7 @@ internal class OrderReactions(
     private val attachedCompletion =
         AttachedBracketCompletion(book, store.brackets, store.closeTickets, store.exposure, clock, ops)
     private val bracketFills =
-        BracketFills(book, store.brackets, w.bracketExits, w.venueProtection, clock, ops, w.cancellation::isCancelling)
+        BracketFills(book, store.brackets, w.bracketExits, w.venueProtection, clock, ops)
     val eventHandlers: OrderEventHandlers =
         OrderEventHandlers(
             book,

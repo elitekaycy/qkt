@@ -22,7 +22,7 @@ internal class CloseActionCompiler(
             val out = mutableListOf<Signal>()
             for (streamAlias in ctx.streams.keys) {
                 val sym = ctx.streams[streamAlias]?.qktSymbol ?: continue
-                out.add(Signal.CancelPendingForSymbol(sym))
+                out.add(Signal.CancelPendingForSymbol(sym, closing = true))
             }
             val structures = ctx.strategyContext.structures
             val strategyId = ctx.strategyContext.strategyId
@@ -49,7 +49,7 @@ internal class CloseActionCompiler(
                 val signals = mutableListOf<Signal>()
                 for (alias in constituents) {
                     val symbol = ctx.streams[alias]?.qktSymbol ?: error("Unknown basket constituent alias: $alias")
-                    signals.add(Signal.CancelPendingForSymbol(symbol))
+                    signals.add(Signal.CancelPendingForSymbol(symbol, closing = true))
                     signals.addAll(closeSignalsFor(ctx, symbol))
                 }
                 signals
@@ -58,7 +58,7 @@ internal class CloseActionCompiler(
         return { ctx ->
             val symbol = ctx.streams[streamAlias]?.qktSymbol ?: error("Unknown stream alias: $streamAlias")
             val signals = mutableListOf<Signal>()
-            signals.add(Signal.CancelPendingForSymbol(symbol))
+            signals.add(Signal.CancelPendingForSymbol(symbol, closing = true))
             signals.addAll(closeSignalsFor(ctx, symbol))
             signals
         }

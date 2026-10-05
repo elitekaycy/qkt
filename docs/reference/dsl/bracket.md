@@ -224,6 +224,22 @@ The DSL submits one `BRACKET` request to the order manager. From there:
 
 The DSL is the same either way. See [Broker integration](../../concepts/broker-integration.md) for the capability matrix.
 
+### An entry that fills only in part
+
+In case 2 the stop and target wait, unsent, until the entry ends. If the entry ends with only part of it
+filled, what happens to them depends on what ended it:
+
+| What ended the entry | Its exits |
+|---|---|
+| The venue cancelled the rest (a market remainder, an IOC, an expiry) | Sent for the filled part: sized to it, anchored on its average price. |
+| `CANCEL <stream>`, `CANCEL_ALL`, a risk halt | The same: qkt cancels the rest of the entry and keeps the filled part protected. Whatever fills before the venue confirms the cancel is protected too, and an entry that fills whole first gets its full exits. |
+| `CLOSE <stream>`, `CLOSE_ALL`, `qkt stop --flatten` | Dropped. The close flattens the filled part itself, so a stop or target left behind would face a position that is already flat. |
+| Nothing filled | Dropped with the entry. |
+
+The same holds after a restart: an entry whose remainder the venue cancelled while qkt was down comes back
+cancelled with its filled part, the position holds exactly the fills, the exits go out for that part, and
+nothing is sent again.
+
 ## Defaults via `DEFAULTS`
 
 If most of your strategies use the same bracket pattern, hoist it:

@@ -46,6 +46,8 @@ sealed class Signal {
         val symbol: String,
         /** True for a cancel that ends an option structure: it only removes risk, so the gate never drops it. */
         val force: Boolean = false,
+        /** True for the cancel of a `CLOSE`: the close flattens the position, so no bracket exit is kept for it. */
+        val closing: Boolean = false,
     ) : Signal()
 
     /**
