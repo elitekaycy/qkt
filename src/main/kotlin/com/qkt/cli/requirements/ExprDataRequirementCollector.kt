@@ -1,5 +1,6 @@
 package com.qkt.cli.requirements
 
+import com.qkt.dsl.DslVocabulary
 import com.qkt.dsl.ast.AccountRef
 import com.qkt.dsl.ast.Aggregate
 import com.qkt.dsl.ast.Between
@@ -34,7 +35,7 @@ import com.qkt.dsl.stdlib.IndicatorRegistry
 
 /**
  * Walks strategy expressions and records which stream aliases they read quotes (`bid`, `ask`,
- * `spread`) or volume from, including the source series of volume-requiring indicators.
+ * `spread`), volume or marks (`mark`, `index`) from, including the source series of volume-requiring indicators.
  */
 internal class ExprDataRequirementCollector {
     private val quoteFields = setOf("bid", "ask", "spread")
@@ -45,12 +46,16 @@ internal class ExprDataRequirementCollector {
     /** Aliases whose volume the strategy reads, in first-seen order. */
     val volumeAliases = mutableSetOf<String>()
 
+    /** Aliases whose mark or index the strategy reads, in first-seen order. */
+    val markAliases = mutableSetOf<String>()
+
     /** Records the quote and volume stream aliases [expr] reads, recursing into sub-expressions. */
     fun walk(expr: ExprAst?) {
         when (expr) {
             is StreamFieldRef -> {
                 if (expr.field in quoteFields) quoteAliases.add(expr.stream)
                 if (expr.field == "volume") volumeAliases.add(expr.stream)
+                if (expr.field in DslVocabulary.markFields) markAliases.add(expr.stream)
             }
             is IndicatorCall -> {
                 if (IndicatorRegistry.spec(expr.name)?.requiresVolume == true) {
