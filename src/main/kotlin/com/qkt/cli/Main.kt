@@ -5,16 +5,17 @@ fun main(argv: Array<String>) {
 }
 
 /**
- * [runMain]'s exit code, or [ExitCodes.USER_ERROR] with the failure printed to [err] when the command throws.
+ * [command]'s exit code ([runMain] by default), or [ExitCodes.USER_ERROR] with the failure printed to [err] when the command throws.
  * A command that fails must still end the process: threads it started before failing (a feed's sockets, an
  * HTTP client's dispatcher) are not daemons, and an exception escaping `main` would leave the JVM running.
  */
 internal fun exitCodeOf(
     argv: Array<String>,
     err: java.io.PrintStream = System.err,
+    command: (Array<String>) -> Int = ::runMain,
 ): Int =
     try {
-        runMain(argv)
+        command(argv)
     } catch (e: Throwable) {
         err.println("qkt: error: ${e.message ?: e::class.java.name}")
         e.printStackTrace(err)
