@@ -5,6 +5,7 @@ import com.qkt.common.Clock
 import com.qkt.events.BrokerEvent
 import com.qkt.execution.ManagedOrder
 import com.qkt.execution.OrderState
+import com.qkt.persistence.OrderFillPersistence
 import org.slf4j.Logger
 
 /**
@@ -18,6 +19,7 @@ internal class VenueRecovery(
     private val exposure: PendingExposureBook,
     private val broker: Broker,
     private val bookedVenueTickets: (strategyId: String) -> Set<String>,
+    private val persistor: OrderFillPersistence,
     private val clock: Clock,
     private val ops: OrderOps,
     private val log: Logger,
@@ -30,7 +32,7 @@ internal class VenueRecovery(
     ) {
         if (recovered.isEmpty()) return
         val booked = strategyIds.flatMapTo(LinkedHashSet()) { bookedVenueTickets(it) }
-        val accounted = broker.recoverPendingOrders(recovered, booked)
+        val accounted = broker.recoverPendingOrders(withBookedFills(strategyIds, recovered), booked)
         // A restored working order the venue cannot account for — no pending ticket, no
         // position, nothing to track — is a phantom: pre-#1048 attached-bracket wrappers
         // whose position closed long ago. Left alone it holds exposure for the whole
@@ -65,6 +67,26 @@ internal class VenueRecovery(
         for (id in brackets.restoredAttachedEntries.toList()) {
             val ticket = book[id]?.brokerOrderId ?: continue
             markAttachedEntryFilled(id, ticket)
+        }
+    }
+
+    /**
+     * [recovered], each order carrying what it had filled before the restart (its record too), so the
+     * venue's recovery books only the fills made since: the position ledger already holds the others,
+     * and an order restored as unfilled would have them all booked again (#1329).
+     */
+    private fun withBookedFills(
+        strategyIds: List<String>,
+        recovered: List<ManagedOrder>,
+    ): List<ManagedOrder> {
+        val fills = strategyIds.flatMap { persistor.loadOrderFills(it).entries }.associate { it.key to it.value }
+        if (fills.isEmpty()) return recovered
+        return recovered.map { order ->
+            val fill = fills[order.id] ?: return@map order
+            ops.update(
+                order.id,
+            ) { it.copy(cumulativeFilledQuantity = fill.filledQuantity, avgFillPrice = fill.avgFillPrice) }
+            book[order.id] ?: order
         }
     }
 
