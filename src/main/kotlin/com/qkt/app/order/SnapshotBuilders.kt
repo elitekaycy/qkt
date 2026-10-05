@@ -145,16 +145,20 @@ internal fun ocoLegsByStrategy(
 }
 
 /**
- * What every strategy's live, partly filled orders have filled, by order id: a restart hands it back
- * with each restored order so the venue's recovery books only the fills made while qkt was down.
+ * What every strategy's live, partly filled orders have filled, by order id, with the position ticket
+ * [ticketOf] knows for each: a restart hands it back with each restored order so the venue's recovery
+ * books only the fills made while qkt was down, and exits close the ticket the fills opened.
  */
-internal fun orderFillsByStrategy(book: OrderBook): Map<String, Map<String, PersistedOrderFill>> {
+internal fun orderFillsByStrategy(
+    book: OrderBook,
+    ticketOf: (String) -> String?,
+): Map<String, Map<String, PersistedOrderFill>> {
     val fills: MutableMap<String, MutableMap<String, PersistedOrderFill>> = mutableMapOf()
     for ((id, managed) in book.orders) {
         val sid = managed.request.strategyId
         if (managed.state.isTerminal || managed.cumulativeFilledQuantity.signum() <= 0 || sid.isBlank()) continue
         fills.getOrPut(sid) { mutableMapOf() }[id] =
-            PersistedOrderFill(managed.cumulativeFilledQuantity, managed.avgFillPrice)
+            PersistedOrderFill(managed.cumulativeFilledQuantity, managed.avgFillPrice, ticketOf(id))
     }
     return fills
 }

@@ -97,5 +97,12 @@ class OrderManagerRestoreFillProgressTest {
         FileStatePersistor(tmp).saveOrderFills("beta", mapOf("l2" to PersistedOrderFill(BigDecimal("1"), null)))
         assertThat(FileStatePersistor(tmp).loadOrderFills("beta")["l2"]?.avgFillPrice).isNull()
         assertThat(FileStatePersistor(tmp).loadOrderFills("gamma")).isEmpty()
+        FileStatePersistor(tmp).saveOrderFills(
+            "delta",
+            mapOf(
+                "l3" to PersistedOrderFill(BigDecimal("1"), null, "position-9"),
+            ),
+        )
+        assertThat(FileStatePersistor(tmp).loadOrderFills("delta")["l3"]?.positionTicket).isEqualTo("position-9")
     }
 }
