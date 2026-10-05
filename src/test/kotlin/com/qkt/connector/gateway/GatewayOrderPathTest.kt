@@ -85,6 +85,30 @@ internal class GatewayOrderPathTest : GatewayHarness() {
     }
 
     @Test
+    fun `a market order answered already cancelled with a part filled books that part, ends, and is sent once`() {
+        val a = Strategy()
+        val broker = broker(session(), a, "a")
+        // The gateway already holds it ended, so the POST answers with it, as a 201 for an IOC remainder would.
+        fake.quiet = true
+        fake.act {
+            place(WireSubmit(wire("a-1"), code, "buy", "market", "0.5", null, null, "gtc", false))
+            cancelAfterFilling(wire("a-1"), "f1", "0.3", "650")
+        }
+        fake.quiet = false
+
+        broker.submit(market("a-1", "a", Side.BUY, "0.5"))
+
+        await { a.of<BrokerEvent.OrderCancelled>().isNotEmpty() }
+        assertThat(a.trail()).containsExactly("OrderPartiallyFilled", "OrderCancelled")
+        assertThat(a.of<BrokerEvent.OrderPartiallyFilled>().single().cumulativeFilled).isEqualByComparingTo("0.3")
+        Thread.sleep(200)
+        // Nothing places the remainder: the gateway's only order is the ended one.
+        assertThat(fake.venue.orders.keys).containsExactly(wire("a-1"))
+        assertThat(fake.submits).isEmpty()
+        assertThat(a.trail()).hasSize(2)
+    }
+
+    @Test
     fun `a refused submit is rejected once, though the gateway also reports the rejection`() {
         val shared = session()
         val a = Strategy()

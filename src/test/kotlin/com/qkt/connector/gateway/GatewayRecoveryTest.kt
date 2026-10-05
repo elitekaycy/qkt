@@ -64,6 +64,23 @@ internal class GatewayRecoveryTest : GatewayHarness() {
     }
 
     @Test
+    fun `an order whose remainder was cancelled while qkt was down books its filled part, then ends`() {
+        val before = Strategy()
+        broker(session(), before, "a").submit(market("a-1", "a", quantity = "0.5"))
+        await { before.of<BrokerEvent.OrderAccepted>().isNotEmpty() }
+        fake.act { cancelAfterFilling(wire("a-1"), "f1", "0.3", "650", pushFill = false) }
+
+        val after = Strategy()
+        broker(session(), after, "a").recoverPendingOrders(listOf(restored("a-1", "0.5", "0")), emptySet())
+
+        await { after.of<BrokerEvent.OrderCancelled>().isNotEmpty() }
+        val trail = after.events.filterIsInstance<BrokerEvent.OrderEvent>().map { it::class.simpleName }
+        assertThat(trail).containsExactly("OrderPartiallyFilled", "OrderCancelled")
+        assertThat(after.of<BrokerEvent.OrderPartiallyFilled>().single().quantity).isEqualByComparingTo("0.3")
+        assertThat(fake.submits).hasSize(1)
+    }
+
+    @Test
     fun `a contract still held that settled while qkt was down settles at its price once restored`() {
         fake.act {
             settle(
