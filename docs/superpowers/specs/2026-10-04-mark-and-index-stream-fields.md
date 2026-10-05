@@ -53,7 +53,7 @@ read them: a perpetual's premium (`mark − index`), the price it would be liqui
 - Backtest: `LocalMarketSource` serves `StoredMarkPrices`: at an instant, the newest sample of the stream's
   window strictly before it (at a bar close, the last inside the bar). `BacktestMarkCoverage` refuses a run
   with a day of a mark-reading stream not stored.
-- Parity row A59.
+- Parity row A60.
 
 ## 6. Out of scope
 
