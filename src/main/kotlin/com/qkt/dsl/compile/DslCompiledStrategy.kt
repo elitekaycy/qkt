@@ -94,6 +94,13 @@ interface DslCompiledStrategy : Strategy {
         get() = emptySet()
 
     /**
+     * Symbols whose option mark IV or Greeks (`<alias>.iv`, `.delta`, ...) the strategy reads. The runtime verifies
+     * each is a catalogued option its data source serves marks of ([com.qkt.marketdata.source.MarketSource.optionMarksFor]).
+     */
+    val optionMarkSymbols: Set<String>
+        get() = emptySet()
+
+    /**
      * True when any action sizes with `RISK … OF BOOK`. The runtime verifies a portfolio
      * book is bound before the strategy goes live — a standalone deploy has no book, and
      * failing at deploy beats erroring on the first signal. False for every other sizing.

@@ -14,15 +14,21 @@ internal fun usableQuotes(
     nowMs: Long,
 ): List<ChainQuote> {
     require(nowMs >= snapshot.atMs) { "a snapshot at ${snapshot.atMs} is read at $nowMs, before it was taken" }
-    val since = nowMs - snapshot.atMs
     return snapshot.quotes.filter { q ->
         val listing = listings[q.contract]
-        listing != null &&
-            listing.expiryMs > nowMs &&
-            (q.markIv?.signum() ?: 0) > 0 &&
-            q.markAgeMs + since <= maxQuoteAgeMs
+        listing != null && q.usableAt(nowMs, listing.expiryMs, maxQuoteAgeMs)
     }
 }
+
+/**
+ * Whether a model may trust this quote of a contract expiring at [expiryMs] at [nowMs]: unexpired, with a
+ * positive mark IV whose age at [nowMs] (its age when quoted plus the time since) is within [maxQuoteAgeMs].
+ */
+internal fun ChainQuote.usableAt(
+    nowMs: Long,
+    expiryMs: Long,
+    maxQuoteAgeMs: Long,
+): Boolean = expiryMs > nowMs && (markIv?.signum() ?: 0) > 0 && markAgeMs + (nowMs - atMs) <= maxQuoteAgeMs
 
 /** One expiry's forward: the median `underlying` of its usable [quotes] (not empty). */
 internal fun medianForward(quotes: List<ChainQuote>): Double {

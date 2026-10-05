@@ -2,6 +2,7 @@ package com.qkt.marketdata.source
 
 import com.qkt.candles.TimeWindow
 import com.qkt.common.TimeRange
+import com.qkt.derivatives.options.chain.OptionMarks
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.TickFeed
@@ -25,6 +26,8 @@ class CompositeMarketSource(
         sourceFor(symbol).capabilitiesFor(symbol)
 
     override fun marksFor(symbol: String): MarkPrices? = sourceFor(symbol).marksFor(symbol)
+
+    override fun optionMarksFor(symbol: String): OptionMarks? = sourceFor(symbol).optionMarksFor(symbol)
 
     private fun sourceFor(symbol: String): MarketSource =
         routes.firstOrNull { (pat, _) -> pat.matches(symbol) }?.second ?: fallback

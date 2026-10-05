@@ -28,10 +28,16 @@ object DslVocabulary {
     /** A contract's mark and index price as its venue reports them; refused on a feed that serves none. */
     val markFields: List<String> = listOf("mark", "index")
 
-    /** Per-bar fields readable off an alias, e.g. `btc.close`, plus [contractFields], [markFields], open interest. */
+    /**
+     * An option contract's mark implied volatility and the Greeks qkt prices from it; refused on a stream that is
+     * not a catalogued option or on a feed that serves no option marks.
+     */
+    val optionFields: List<String> = listOf("iv", "delta", "gamma", "vega", "theta")
+
+    /** Per-bar fields readable off an alias, e.g. `btc.close`, plus contract, mark, open interest and option fields. */
     val candleFields: List<String> =
         listOf("close", "open", "high", "low", "volume", "price", "bid", "ask", "spread", "value", "timestamp") +
-            contractFields + markFields + OpenInterestSymbol.FIELD
+            contractFields + markFields + OpenInterestSymbol.FIELD + optionFields
 
     /** The candle fields an indicator may consume as a numeric series. */
     val numericCandleFields: List<String> =
