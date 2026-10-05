@@ -4,7 +4,7 @@ why: 'A daemon restarted with nothing to restore used to start its order ids at 
   round trip went out under the first one''s ids (#1338), and a restart that forgets the day''s entry
   count trades a third time; either shows here as one engine id naming two orders, extra fills, or
   realized PnL off the venue deals net.'
-status: planned
+status: ready
 symbols:
 - DERIBIT:BTC_USDC_PERPETUAL
 timeframes:
