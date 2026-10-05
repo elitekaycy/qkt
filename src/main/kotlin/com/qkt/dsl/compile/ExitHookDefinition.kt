@@ -26,7 +26,7 @@ internal data class CompiledExitHookDefinition(
             when (reason) {
                 ExitReason.STOP -> onStop
                 ExitReason.TAKE_PROFIT -> onTakeProfit
-                ExitReason.CLOSE, ExitReason.EXPIRY, ExitReason.ROLL_FAILED -> onClose
+                ExitReason.CLOSE, ExitReason.EXPIRY, ExitReason.ROLL_FAILED, ExitReason.LIQUIDATION -> onClose
             }
         return actions.flatMap { it(context) }
     }

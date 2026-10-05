@@ -23,7 +23,8 @@ private val log = LoggerFactory.getLogger("com.qkt.research.ReplayFuturesRoutes"
  * Routes a replay's futures symbols to the exchange stack: continuous streams to one
  * [ContinuousContractBroker] (each stream on its own [ExchangeSimulator], rolls recorded in the
  * books' ledger) and listed contracts to an [ExchangeSimulator] that matches on the engine's ticks.
- * Every exchange uses the run's slippage model and charges each root's fees on its fills. Empty
+ * Every exchange uses the run's slippage model, charges each root's fees on its fills and is
+ * registered with the books' liquidator for the symbols it routes. Empty
  * when the run trades no futures.
  */
 internal fun replayFuturesRoutes(
@@ -73,11 +74,13 @@ internal fun replayFuturesRoutes(
                         exchange(venueBus, prices).let { ContractVenue(it, it::onTick) }
                     }
                 add(SymbolPattern.exactSet(continuous) to broker)
+                books.liquidator.register(SymbolPattern.exactSet(continuous), broker)
             }
             if (listed.isNotEmpty()) {
                 val simulator = exchange(bus, books.priceTracker)
                 bus.subscribe<TickEvent> { e -> simulator.onTick(e.tick) }
                 add(SymbolPattern.exactSet(listed) to simulator)
+                books.liquidator.register(SymbolPattern.exactSet(listed), simulator)
             }
         }
     return ReplayExchangeRoutes(routes, continuous + listed)

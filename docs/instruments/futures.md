@@ -30,10 +30,23 @@ RULES
 - **Contract fields** on every futures stream: `.contract` (followed code),
   `.dte` (days to expiry), `.days_to_roll`.
 - **Backtest reports** carry the full derivatives tape: `rolls.csv`,
-  `contracts.csv`, `settlements.csv`, `margin_daily.csv`, plus `rollCostsPaid`
-  in the gross-to-net bridge.
+  `contracts.csv`, `settlements.csv`, `margin_daily.csv`, `liquidations.csv`,
+  plus `rollCostsPaid` in the gross-to-net bridge.
 - Margin is judged per position each day; a run without futures writes none of
   these files.
+- **Liquidation (backtest).** Every tick compares account equity, marked at
+  that tick's prices, with the maintenance margin of every position whose root
+  declares `margin` (an option root without `margin` is checked only on entry,
+  at its worst-case expiry loss, and never triggers it). Below it, the venue
+  liquidates them all, symbol by symbol: each position closes at the tick's
+  executable price (a long at the bid, a short at the ask, no slippage), pays
+  the root's taker fee, and reaches the strategy as a venue close with exit
+  reason `LIQUIDATION` (it runs `ON_CLOSE`). The contract's working orders are
+  cancelled first. While equity stays below maintenance (a position the venue
+  could not close yet), orders that add risk are refused. Each close is a row of
+  `liquidations.csv` with the equity and maintenance that triggered it. A root
+  without `margin` is never liquidated, and live trading leaves liquidation to
+  the venue (parity row A59).
 
 ## Getting data
 
