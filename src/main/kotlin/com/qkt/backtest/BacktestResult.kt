@@ -4,6 +4,7 @@ import com.qkt.accounting.margin.MarginDay
 import com.qkt.broker.continuous.ContractFill
 import com.qkt.broker.continuous.RollEntry
 import com.qkt.broker.exchange.Settlement
+import com.qkt.broker.liquidation.Liquidation
 import com.qkt.events.DecisionOrderLinkedEvent
 import com.qkt.events.FillAccountedEvent
 import com.qkt.events.OrderEvent
@@ -115,6 +116,8 @@ data class BacktestResult(
     val settlements: List<Settlement> = emptyList(),
     /** Each UTC day's futures margin at its last sample, for days that ended holding margined positions. */
     val marginDaily: List<MarginDay> = emptyList(),
+    /** Every position a venue liquidated below maintenance margin, oldest first; empty otherwise. */
+    val liquidations: List<Liquidation> = emptyList(),
     /** Every option structure the strategies opened, oldest first; empty when none did. */
     val structures: List<StructureRow> = emptyList(),
 )

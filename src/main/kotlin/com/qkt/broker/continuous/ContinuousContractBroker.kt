@@ -5,6 +5,7 @@ import com.qkt.broker.Broker
 import com.qkt.broker.OrderTypeCapability
 import com.qkt.broker.PositionAccountingMode
 import com.qkt.broker.SubmitAck
+import com.qkt.broker.liquidation.LiquidatingVenue
 import com.qkt.bus.EventBus
 import com.qkt.common.Clock
 import com.qkt.derivatives.futures.ContinuousChains
@@ -26,6 +27,9 @@ import com.qkt.positions.PositionProvider
  * every engine fill is recorded in [fills] with the contract and price it executed at. A live session's
  * lanes keep their state in [store] across restarts; a backtest passes none.
  *
+ * A stream is liquidated ([liquidate]) on the contract it follows, by its venue when that venue is a
+ * [LiquidatingVenue]; the venue's closes reach the engine as the stream's.
+ *
  * Orders are accepted only on streams adjusted by panama: there continuous-space P&L plus the
  * booked roll costs equals the P&L of the contract legs exactly.
  *
@@ -44,7 +48,8 @@ class ContinuousContractBroker(
     fills: ContractFillLog,
     store: LaneStateStore? = null,
     venueFactory: (EventBus, MarketPriceTracker, PositionProvider) -> ContractVenue,
-) : Broker {
+) : Broker,
+    LiquidatingVenue {
     private val lanes: Map<String, StreamLane> =
         symbols.associateWith { symbol ->
             requireNotNull(chains.chainFor(symbol)) { "$symbol is not a continuous futures stream" }
@@ -91,6 +96,11 @@ class ContinuousContractBroker(
 
     override fun cancel(orderId: String) {
         lanes.values.firstOrNull { it.owns(orderId) }?.cancel(orderId)
+    }
+
+    /** The stream's lane has its venue liquidate the contract the stream follows, when that venue can. */
+    override fun liquidate(symbol: String) {
+        lanes[symbol]?.liquidate()
     }
 
     override fun shutdown() = lanes.values.forEach { runCatching { it.shutdown() } }

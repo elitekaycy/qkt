@@ -8,6 +8,8 @@ import com.qkt.broker.SlippageModel
 import com.qkt.broker.SubmitAck
 import com.qkt.broker.ZeroSlippage
 import com.qkt.broker.continuous.toContract
+import com.qkt.broker.liquidation.LiquidatingVenue
+import com.qkt.broker.liquidation.liquidationReason
 import com.qkt.bus.EventBus
 import com.qkt.common.Clock
 import com.qkt.common.Money
@@ -44,7 +46,9 @@ import java.time.Instant
  *   accepted;
  * - nothing is accepted on a contract at or after its expiry, and on the first tick at or after it
  *   the contract's working orders are cancelled and every net position is settled
- *   ([ExpirySettlement]).
+ *   ([ExpirySettlement]);
+ * - [liquidate] cancels a contract's working orders and closes its positions at the executable price
+ *   ([ExchangeLiquidation]).
  *
  * The simulator does not subscribe to ticks: its owner calls [onTick] after marking [prices].
  *
@@ -63,13 +67,15 @@ class ExchangeSimulator(
     fillAtTriggerPrice: (String) -> Boolean = { false },
     calendar: TradingCalendar = TradingCalendar.crypto(),
     settlements: SettlementLog = SettlementLog(),
-) : Broker {
+) : Broker,
+    LiquidatingVenue {
     private val venueBus = EventBus(clock, MonotonicSequenceGenerator())
     private val matching =
         PaperBroker(venueBus, clock, prices, instruments, fillAtTriggerPrice, calendar, PositionAccountingMode.NETTING)
     private val settlement = ExpirySettlement(bus, clock, prices, instruments, settlements)
     private val working = LinkedHashMap<String, OrderRequest>()
-    private val expiringOrders = HashMap<String, String>()
+    private val cancelReasons = HashMap<String, String>()
+    private val liquidation = ExchangeLiquidation(bus, clock, prices, instruments, fees, settlement)
 
     override val name: String = "ExchangeSim"
     private val rules = ExchangeRules(name, clock, settlement)
@@ -92,7 +98,7 @@ class ExchangeSimulator(
         }
         venueBus.subscribe<BrokerEvent.OrderCancelled> { e ->
             working.remove(e.clientOrderId)
-            bus.publish(expiringOrders.remove(e.clientOrderId)?.let { e.copy(reason = it) } ?: e)
+            bus.publish(cancelReasons.remove(e.clientOrderId)?.let { e.copy(reason = it) } ?: e)
         }
         venueBus.subscribe<BrokerEvent.OrderFilled> { e ->
             val priced = e.copy(price = executed(working.remove(e.clientOrderId), e))
@@ -121,7 +127,9 @@ class ExchangeSimulator(
 
     /** Settle contracts that expired by [tick]'s time, then match [tick] unless its contract has expired. */
     fun onTick(tick: Tick) {
-        settlement.settleDue(tick.timestamp, ::cancelWorkingOn)
+        settlement.settleDue(tick.timestamp) { symbol ->
+            cancelWorkingOn(symbol, "$symbol expired at ${Instant.ofEpochMilli(clock.now())}")
+        }
         cancelGuarded()
         if (!settlement.isExpired(tick.symbol)) matching.onTick(tick)
     }
@@ -151,15 +159,23 @@ class ExchangeSimulator(
             if (order.id !in working) continue
             val terms = instruments.lookup(order.symbol)?.derivative as? FutureTerms ?: continue
             val reason = rules.guardRefusal(order, terms, pendingOf(order)) ?: continue
-            expiringOrders[order.id] = reason
+            cancelReasons[order.id] = reason
             matching.cancel(order.id)
         }
     }
 
-    private fun cancelWorkingOn(symbol: String) {
+    override fun liquidate(symbol: String) {
+        cancelWorkingOn(symbol, liquidationReason(symbol))
+        liquidation.close(symbol)
+    }
+
+    private fun cancelWorkingOn(
+        symbol: String,
+        reason: String,
+    ) {
         val ids = working.values.filter { it.symbol == symbol }.map { it.id }
         for (id in ids) {
-            expiringOrders[id] = "$symbol expired at ${Instant.ofEpochMilli(clock.now())}"
+            cancelReasons[id] = reason
             matching.cancel(id)
         }
     }

@@ -52,6 +52,9 @@ internal class ExpirySettlement(
         strategyId: String,
     ): BigDecimal = net[symbol]?.get(strategyId) ?: BigDecimal.ZERO
 
+    /** Every strategy's non-zero net position in [symbol], positive long, in the order they first traded it. */
+    fun holdersOf(symbol: String): Map<String, BigDecimal> = net[symbol]?.filterValues { it.signum() != 0 }.orEmpty()
+
     /** Apply one of the simulator's fills to its strategy's net position. */
     fun onFill(fill: BrokerEvent.OrderFilled) {
         val signed = if (fill.side == Side.BUY) fill.quantity else fill.quantity.negate()

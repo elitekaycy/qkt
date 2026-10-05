@@ -5,6 +5,8 @@ import com.qkt.broker.OrderTypeCapability
 import com.qkt.broker.PositionAccountingMode
 import com.qkt.broker.SubmitAck
 import com.qkt.broker.exchange.SettlementLog
+import com.qkt.broker.liquidation.LiquidatingVenue
+import com.qkt.broker.liquidation.liquidationReason
 import com.qkt.bus.EventBus
 import com.qkt.common.Clock
 import com.qkt.common.Money
@@ -21,6 +23,8 @@ import com.qkt.marketdata.Tick
 import java.math.BigDecimal
 import java.time.Instant
 
+private const val MS_PER_MINUTE = 60_000L
+
 /**
  * A paper venue for option contracts that trades on the stored chain, never on the snapshot an order
  * was decided on:
@@ -33,7 +37,8 @@ import java.time.Instant
  *   IOC and FOK get one look, GTD and DAY orders lapse at their time;
  * - each fill carries its [OptionFee] as an [CostKind.EXCHANGE_FEE] cost in the root's currency;
  * - positions are netted, long or short (the margin rule decides what can be carried);
- * - at a contract's expiry its working orders lapse and its positions are cash-settled ([OptionExpiry]).
+ * - at a contract's expiry its working orders lapse and its positions are cash-settled ([OptionExpiry]);
+ * - [liquidate] cancels a contract's working orders and closes its positions at the quote ([OptionLiquidation]).
  *
  * Like the futures exchange it does not subscribe to ticks: its owner calls [onTick].
  */
@@ -44,7 +49,8 @@ class OptionExchange(
     private val quotes: ChainQuoteLookup,
     calendar: TradingCalendar = TradingCalendar.crypto(),
     settlements: SettlementLog = SettlementLog(),
-) : Broker {
+) : Broker,
+    LiquidatingVenue {
     override val name: String = "OptionSim"
     override val capabilities: Set<OrderTypeCapability> = setOf(OrderTypeCapability.MARKET, OrderTypeCapability.LIMIT)
     private val positions = OptionPositions()
@@ -52,6 +58,7 @@ class OptionExchange(
     private val working = LinkedHashMap<String, WorkingOption>()
     private val looked = HashSet<String>()
     private val expiry = OptionExpiry(bus, instruments, positions, settlements)
+    private val liquidation = OptionLiquidation(bus, instruments, quotes, positions)
 
     override fun positionAccountingMode(symbol: String): PositionAccountingMode = PositionAccountingMode.NETTING
 
@@ -70,6 +77,11 @@ class OptionExchange(
 
     override fun cancel(orderId: String) {
         working[orderId]?.let { cancelWorking(it, "cancelled") }
+    }
+
+    override fun liquidate(symbol: String) {
+        working.values.filter { it.request.symbol == symbol }.forEach { cancelWorking(it, liquidationReason(symbol)) }
+        liquidation.close(symbol, clock.now())
     }
 
     /**
@@ -183,9 +195,5 @@ class OptionExchange(
     ): SubmitAck {
         bus.publish(BrokerEvent.OrderRejected(request.id, null, reason, request.strategyId, clock.now()))
         return SubmitAck(clientOrderId = request.id, brokerOrderId = null, accepted = false, rejectReason = reason)
-    }
-
-    private companion object {
-        const val MS_PER_MINUTE = 60_000L
     }
 }

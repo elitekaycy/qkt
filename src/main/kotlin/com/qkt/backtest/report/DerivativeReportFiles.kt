@@ -6,16 +6,19 @@ import com.qkt.backtest.StructureRow
 import com.qkt.broker.continuous.ContractFill
 import com.qkt.broker.continuous.RollEntry
 import com.qkt.broker.exchange.Settlement
+import com.qkt.broker.liquidation.Liquidation
 
 /**
  * The futures and options artifacts of a report — `rolls.csv`, `contracts.csv`, `settlements.csv`,
- * `margin_daily.csv`, `structures.csv` — each present only when its ledger has entries, so a report of
- * a run without derivatives is unchanged. The writer,
- * the artifact index and the manifest all list files from here. Columns follow `trades.csv`:
- * epoch-ms `timestamp`, plain decimals, quoted text. `rolls.csv` quantities are signed (negative
- * short) and its prices, fees and `rollCost` are in the root's currency; `margin_daily.csv` is in
- * account currency; `structures.csv` legs read `SIDE quantity symbol @ entry`, separated by `;`, and
- * its `credit` and `realized` (premium P&L before fees) are in the root's currency, empty while unknown.
+ * `margin_daily.csv`, `liquidations.csv`, `structures.csv` — each present only when its ledger has
+ * entries, so a report of a run without derivatives is unchanged. The writer, the artifact index and
+ * the manifest all list files from here. Columns follow `trades.csv`: epoch-ms `timestamp`, plain
+ * decimals, quoted text. `rolls.csv` quantities are signed (negative short) and its prices, fees and
+ * `rollCost` are in the root's currency; `margin_daily.csv` is in account currency;
+ * `liquidations.csv` prices and fees are in the root's currency, its `equity` and `maintenance`
+ * (what triggered the liquidation) in account currency; `structures.csv` legs read
+ * `SIDE quantity symbol @ entry`, separated by `;`, and its `credit` and `realized` (premium P&L
+ * before fees) are in the root's currency, empty while unknown.
  */
 internal object DerivativeReportFiles {
     /** Artifact index key of each file. */
@@ -25,13 +28,14 @@ internal object DerivativeReportFiles {
             "contracts.csv" to "contractsCsv",
             "settlements.csv" to "settlementsCsv",
             "margin_daily.csv" to "marginDailyCsv",
+            "liquidations.csv" to "liquidationsCsv",
             "structures.csv" to "structuresCsv",
         )
 
     /** The futures and options files of [result], name to content. */
     fun render(result: BacktestResult): List<Pair<String, String>> =
         render(result.rolls, result.contractFills, result.settlements) + marginDaily(result.marginDaily) +
-            structures(result.structures)
+            liquidations(result.liquidations) + structures(result.structures)
 
     /** The files for these ledgers, name to content, omitting empty ones. */
     fun render(
@@ -109,6 +113,25 @@ internal object DerivativeReportFiles {
                 )
             }
         return listOf("margin_daily.csv" to body)
+    }
+
+    private fun liquidations(entries: List<Liquidation>): List<Pair<String, String>> {
+        if (entries.isEmpty()) return emptyList()
+        val body =
+            csv("timestamp,strategy,symbol,side,quantity,price,fee,equity,maintenance", entries) {
+                listOf(
+                    it.atMs.toString(),
+                    csvField(it.strategyId),
+                    csvField(it.symbol),
+                    it.side.name,
+                    plain(it.quantity),
+                    plain(it.price),
+                    plain(it.fee),
+                    plain(it.equity),
+                    plain(it.maintenance),
+                )
+            }
+        return listOf("liquidations.csv" to body)
     }
 
     /** `structures.csv` for [rows], name to content; nothing when there are none. */

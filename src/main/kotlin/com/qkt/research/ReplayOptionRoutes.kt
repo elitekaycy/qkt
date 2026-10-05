@@ -15,9 +15,9 @@ import com.qkt.marketdata.source.SymbolPattern
 
 /**
  * Routes a replay's option contracts to one [OptionExchange] that fills on the stored chain of the
- * option roots' data root, settles expiries into the books' settlement log, and records the structures
- * the strategies' books report. The declared contracts
- * are routed, and every contract of a fed root (`OPTIONS:<VENUE>.<ROOT>`). Empty when the run neither
+ * option roots' data root, settles expiries into the books' settlement log, liquidates for the books'
+ * liquidator, and records the structures the strategies' books report. The declared contracts are
+ * routed, and every contract of a fed root (`OPTIONS:<VENUE>.<ROOT>`). Empty when the run neither
  * trades options nor feeds a root, so other runs build exactly what they built before.
  */
 internal fun replayOptionRoutes(
@@ -42,5 +42,6 @@ internal fun replayOptionRoutes(
         SymbolPattern { s ->
             s in options || (fedRoots.any { it.covers(s) } && instruments.lookup(s) != null)
         }
+    books.liquidator.register(pattern, exchange)
     return ReplayExchangeRoutes(listOf<Pair<SymbolPattern, Broker>>(pattern to exchange), options)
 }
