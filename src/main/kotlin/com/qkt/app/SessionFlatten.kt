@@ -16,6 +16,8 @@ import org.slf4j.LoggerFactory
  * thread — the HTTP control path enqueues [Inbound.Flatten] rather than touching engine
  * state from its own worker thread. On a ticketed venue the venue's own list leads, e.g. venue
  * ticket 9001 attributed to `gold` is closed by ticket even when the ledger holds no leg for it.
+ * Its cancels are closing ones ([OrderManager.closePendingForSymbol]): the part of a bracket entry that
+ * filled is closed with the position, and no stop or target is sent for it (#1328).
  */
 internal class SessionFlatten(
     private val strategies: List<Pair<String, Strategy>>,
@@ -66,7 +68,7 @@ internal class SessionFlatten(
                     }
                     continue
                 }
-                pipeline.orderManager.cancelPendingForSymbol(ticket.symbol)
+                pipeline.orderManager.closePendingForSymbol(ticket.symbol)
                 val leg = strategyPositions.legBookFor(strategyId, ticket.symbol)?.legByTicket(ticket.ticket)
                 val request =
                     if (leg != null) {
@@ -89,7 +91,7 @@ internal class SessionFlatten(
                 )
                 continue
             }
-            pipeline.orderManager.cancelPendingForSymbol(leg.symbol)
+            pipeline.orderManager.closePendingForSymbol(leg.symbol)
             bus.publish(com.qkt.events.OrderEvent(LegFlattener.closeLeg(strategyId, leg, ids.next(), now)))
         }
     }

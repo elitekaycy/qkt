@@ -79,7 +79,7 @@ class ActionCompilerExtensionsTest {
                 ).invoke(ec)
         assertThat(sigs).containsExactly(
             com.qkt.strategy.Signal
-                .CancelPendingForSymbol("BACKTEST:BTCUSDT"),
+                .CancelPendingForSymbol("BACKTEST:BTCUSDT", closing = true),
             com.qkt.strategy.Signal
                 .Sell("BACKTEST:BTCUSDT", BigDecimal("2.5")),
         )
@@ -113,7 +113,7 @@ class ActionCompilerExtensionsTest {
                 ).invoke(ec)
         assertThat(sigs).containsExactly(
             com.qkt.strategy.Signal
-                .CancelPendingForSymbol("BACKTEST:BTCUSDT"),
+                .CancelPendingForSymbol("BACKTEST:BTCUSDT", closing = true),
             com.qkt.strategy.Signal
                 .Buy("BACKTEST:BTCUSDT", BigDecimal("1.5")),
         )
@@ -129,7 +129,7 @@ class ActionCompilerExtensionsTest {
                 ).invoke(ctx)
         assertThat(sigs).containsExactly(
             com.qkt.strategy.Signal
-                .CancelPendingForSymbol("BACKTEST:BTCUSDT"),
+                .CancelPendingForSymbol("BACKTEST:BTCUSDT", closing = true),
         )
     }
 
@@ -200,7 +200,7 @@ class ActionCompilerExtensionsTest {
                 .invoke(ec)
         assertThat(sigs).containsExactlyInAnyOrder(
             com.qkt.strategy.Signal
-                .CancelPendingForSymbol("BACKTEST:BTCUSDT"),
+                .CancelPendingForSymbol("BACKTEST:BTCUSDT", closing = true),
             com.qkt.strategy.Signal
                 .Sell("BACKTEST:BTCUSDT", BigDecimal("2")),
             com.qkt.strategy.Signal

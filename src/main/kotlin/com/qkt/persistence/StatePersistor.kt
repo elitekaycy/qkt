@@ -22,7 +22,8 @@ interface StatePersistor :
     AutoCloseable,
     TimedExitPersistence,
     StreamLanePersistence,
-    FundingPersistence {
+    FundingPersistence,
+    OrderFillPersistence {
     /** Releases persistence resources after all sessions have stopped. */
     override fun close() = Unit
 
@@ -240,20 +241,6 @@ data class PersistedExitHookBinding(
     val activeQuantity: BigDecimal,
     val exitQuantity: BigDecimal,
     val exitPnl: BigDecimal,
-)
-
-/**
- * Excursion marks of one leg. [legId], [side] and [entryPrice] identify the leg the marks belong
- * to: a restore applies them only to that same leg, so a record left behind by a closed leg can
- * never inflate its successor's excursion.
- */
-data class PersistedExcursion(
-    val legId: String,
-    val side: Side,
-    val entryPrice: BigDecimal,
-    val mfe: BigDecimal,
-    val mae: BigDecimal,
-    val adverseExtremePrice: BigDecimal?,
 )
 
 data class PersistedLegBook(

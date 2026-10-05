@@ -202,7 +202,10 @@ THEN CLOSE_ALL ;
 
 ## `CANCEL <stream>` and `CANCEL_ALL`
 
-Cancels working orders without touching open positions.
+Cancels working orders without touching open positions. A bracket whose entry has filled in part keeps
+that part protected: the rest of the entry is cancelled and the filled part gets its stop and target. `CLOSE`
+also cancels the stream's working orders, but drops those exits, because it closes the filled part itself. See
+[BRACKET: an entry that fills only in part](bracket.md#an-entry-that-fills-only-in-part).
 
 ```qkt
 CANCEL btc           -- cancel any pending orders on btc, leaves the position alone

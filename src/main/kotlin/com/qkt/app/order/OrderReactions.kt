@@ -26,7 +26,17 @@ internal class OrderReactions(
             log,
         )
     private val venueRecovery: VenueRecovery =
-        VenueRecovery(book, store.brackets, store.exposure, s.broker, s.bookedVenueTickets, clock, ops, log) { event ->
+        VenueRecovery(
+            book,
+            store.brackets,
+            store.exposure,
+            s.broker,
+            s.bookedVenueTickets,
+            s.persistor,
+            clock,
+            ops,
+            log,
+        ) { event ->
             eventHandlers.onCancelled(event)
         }
     val restorer =
@@ -90,7 +100,7 @@ internal class OrderReactions(
     private val attachedCompletion =
         AttachedBracketCompletion(book, store.brackets, store.closeTickets, store.exposure, clock, ops)
     private val bracketFills =
-        BracketFills(book, store.brackets, w.bracketExits, w.venueProtection, clock, ops, w.cancellation::isCancelling)
+        BracketFills(book, store.brackets, w.bracketExits, w.venueProtection, clock, ops)
     val eventHandlers: OrderEventHandlers =
         OrderEventHandlers(
             book,

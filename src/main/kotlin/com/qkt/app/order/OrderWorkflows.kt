@@ -98,6 +98,7 @@ internal class OrderWorkflows(
             store.scaleOuts,
             scaleOutExits,
             haltCancels,
+            HeldBracketExits(book, store.children, store.brackets),
             store.closeTickets,
             s.broker,
             clock,

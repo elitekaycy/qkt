@@ -12,7 +12,9 @@ import com.qkt.execution.isTerminal
  * Cancelling orders, and what a risk halt may cancel. A composite cancels its children first;
  * an engine-held or not-yet-sent order ends locally, a venue order asks the broker. A halt
  * cancels risk-increasing entries only: protective stops, risk-reducing exits and the wrappers
- * that carry them stay live, or the halt would strip the stops off open positions.
+ * that carry them stay live, or the halt would strip the stops off open positions. A bracket
+ * cancelled while the venue still works its entry keeps its exits for whatever part fills, unless
+ * the cancel is a closing one ([HeldBracketExits]).
  */
 internal class OrderCancellation(
     private val book: OrderBook,
@@ -21,24 +23,28 @@ internal class OrderCancellation(
     private val scaleOuts: ScaleOutBook,
     private val scaleOutExits: ScaleOutExits,
     private val haltCancels: HaltCancellations,
+    private val heldExits: HeldBracketExits,
     private val closeTickets: EngineHeldCloseTickets,
     private val broker: Broker,
     private val clock: Clock,
     private val ops: OrderOps,
     private val isRiskReducingForHalt: (OrderRequest) -> Boolean,
 ) {
-    private val cancellingWrappers = HashSet<String>()
-
-    /** Whether wrapper [clientOrderId] is being cancelled as a whole, its children one by one, right now. */
-    fun isCancelling(clientOrderId: String): Boolean = clientOrderId in cancellingWrappers
-
-    /** Cancels [clientOrderId]; a composite cascades to its children, engine-held orders end locally. */
-    fun cancel(clientOrderId: String) {
+    /**
+     * Cancels [clientOrderId]; a composite cascades to its children, engine-held orders end locally.
+     * [closing] marks a cancel that comes with a close of the position (`CLOSE`, a flatten): a
+     * bracket's held exits go at once instead of waiting for the entry's end ([HeldBracketExits]).
+     */
+    fun cancel(
+        clientOrderId: String,
+        closing: Boolean = false,
+    ) {
         val managed = book[clientOrderId] ?: return
         if (managed.state.isTerminal) return
+        if (closing) heldExits.drop(clientOrderId).forEach { cancel(it.id, closing = true) }
         if (managed.request is OrderRequest.Stack) {
             stacks.get(clientOrderId)?.let { state ->
-                for (pid in state.pendingLayerIds.toList()) cancel(pid)
+                for (pid in state.pendingLayerIds.toList()) cancel(pid, closing)
             }
             stacks.terminate(clientOrderId)
             ops.update(clientOrderId) { it.copy(state = OrderState.CANCELLED, lastUpdatedAt = clock.now()) }
@@ -48,13 +54,12 @@ internal class OrderCancellation(
         if (managed.childClientOrderIds.isNotEmpty()) {
             val scaleOutCancellation = managed.request is OrderRequest.ScaleOut
             if (scaleOutCancellation) scaleOuts.cancellingWrappers.add(clientOrderId)
-            cancellingWrappers += clientOrderId
+            val deferred = if (closing) emptySet() else heldExits.deferredBy(managed)
             try {
-                for (childId in managed.childClientOrderIds) cancel(childId)
+                for (childId in managed.childClientOrderIds) if (childId !in deferred) cancel(childId, closing)
                 ops.update(clientOrderId) { it.copy(state = OrderState.CANCELLED, lastUpdatedAt = clock.now()) }
                 exposure.remove(clientOrderId)
             } finally {
-                cancellingWrappers -= clientOrderId
                 if (scaleOutCancellation) scaleOuts.cancellingWrappers.remove(clientOrderId)
             }
             return
@@ -69,8 +74,14 @@ internal class OrderCancellation(
         }
     }
 
-    /** Cancels every pending stack and resting or engine-held order on [symbol]. */
-    fun cancelPendingForSymbol(symbol: String) {
+    /**
+     * Cancels every pending stack and resting or engine-held order on [symbol], and the remainder of
+     * a partly filled order no live composite owns; [closing] as for [cancel].
+     */
+    fun cancelPendingForSymbol(
+        symbol: String,
+        closing: Boolean = false,
+    ) {
         // Cancel pending stacks targeting this symbol.
         val stackIds =
             stacks
@@ -79,17 +90,22 @@ internal class OrderCancellation(
                     val managed = book[state.id] ?: return@filter false
                     (managed.request as? OrderRequest.Stack)?.symbol == symbol
                 }.map { it.id }
-        for (id in stackIds) cancel(id)
+        for (id in stackIds) cancel(id, closing)
         // Cancel any remaining (non-stack) engine-held or venue-resting orders for the symbol
         // that aren't already children of a stack we just cancelled.
         val pending =
             book.orders.values
                 .filter {
-                    (it.state == OrderState.PENDING || it.state == OrderState.WORKING) &&
+                    (it.state == OrderState.PENDING || it.state == OrderState.WORKING || isUnownedPartFill(it)) &&
                         it.request.symbol == symbol
                 }.map { it.id }
-        for (id in pending) cancel(id)
+        for (id in pending) cancel(id, closing)
     }
+
+    // A live composite cancels its own children; a bracket entry restored by a restart has none.
+    private fun isUnownedPartFill(managed: ManagedOrder): Boolean =
+        managed.state == OrderState.PARTIALLY_FILLED &&
+            managed.parentClientOrderId?.let { book[it]?.state?.isTerminal == false } != true
 
     /**
      * Cancel active entry intent after a risk halt, optionally limited to [strategyId].

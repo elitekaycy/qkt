@@ -31,6 +31,9 @@ internal class PendingChildBook {
         if (oto != null) otosByParent[parentId] = oto
     }
 
+    /** The children waiting on [parentId], left in place; null when there are none. */
+    fun heldFor(parentId: String): List<OrderRequest>? = childrenByParent[parentId]
+
     /** Removes and returns the children waiting on [parentId]; null when there are none. */
     fun take(parentId: String): List<OrderRequest>? {
         val children = childrenByParent.remove(parentId)

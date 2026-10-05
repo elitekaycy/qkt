@@ -84,25 +84,4 @@ class OrderManagerBracketPartEntryTest {
         assertThat(exits()).isEmpty()
         assertThat(manager.getOrder("b1-oco")?.state).isEqualTo(OrderState.CANCELLED)
     }
-
-    @Test
-    fun `a bracket the strategy cancels as a whole arms nothing for its part-filled entry`() {
-        submitBracket()
-        bus.publish(
-            BrokerEvent.OrderPartiallyFilled(
-                "e1",
-                "v1",
-                "X",
-                Side.BUY,
-                BigDecimal("100"),
-                BigDecimal("30"),
-                BigDecimal("30"),
-                "alpha",
-            ),
-        )
-
-        manager.cancel("b1")
-
-        assertThat(exits()).isEmpty()
-    }
 }

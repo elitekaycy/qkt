@@ -115,6 +115,7 @@ internal class OrderEventHandlers(
     fun onCancelled(e: BrokerEvent.OrderCancelled) {
         haltCancels.forget(e.clientOrderId)
         val bracket = brackets.preFill[e.clientOrderId]
+        val anchoredAtFill = e.clientOrderId in brackets.fillAnchoredFallback
         brackets.forgetEntry(e.clientOrderId)
         val applied =
             ops.update(e.clientOrderId) {
@@ -127,7 +128,8 @@ internal class OrderEventHandlers(
         val unarmedChildren = children.take(e.clientOrderId)
         val pendingScaleOut = scaleOuts.pendingByBasis.remove(e.clientOrderId)
         val partialPositionTicket = scaleOuts.partialPositionTickets.remove(e.clientOrderId)
-        if (!bracketFills.armPartFilled(e.clientOrderId, bracket)) unarmedChildren?.forEach { ops.cancel(it.id) }
+        val held = !unarmedChildren.isNullOrEmpty() || anchoredAtFill
+        if (!bracketFills.armPartFilled(e.clientOrderId, bracket, held)) unarmedChildren?.forEach { ops.cancel(it.id) }
         attachedCompletion.onEntryEnded(e.clientOrderId, OrderState.CANCELLED)
         scaleOutTracker.onBasisCancelled(e.clientOrderId, pendingScaleOut, partialPositionTicket)
         log.info(

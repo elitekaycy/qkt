@@ -12,13 +12,13 @@ import kotlinx.serialization.json.Json
  * an entry-only risk halt. Existing state that cannot be read, parsed, or validated fails startup
  * so a live session cannot silently reset durable risk or execution state.
  *
- * Each state file is owned by one `*File` collaborator (for example [PendingOrdersFile]) that
- * holds its on-disk shape and its save/load rules; this class routes each call to its owner.
+ * Each state file is owned by one `*File` collaborator (for example [PendingOrdersFile]): its shape and rules.
  */
 class FileStatePersistor private constructor(
     private val writer: StateFileWriter,
 ) : StatePersistor,
-    FundingPersistence by FundingFile(writer) {
+    FundingPersistence by FundingFile(writer),
+    OrderFillPersistence by OrderFillsFile(writer) {
     constructor(rootDir: Path) : this(StateFileWriter(rootDir))
 
     /** Cumulative count of save operations that hit disk. */

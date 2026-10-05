@@ -179,6 +179,14 @@ class AsyncStatePersistor(
         submit("saveTimedExits $strategyId") { delegate.saveTimedExits(strategyId, snapshot) }
     }
 
+    override fun saveOrderFills(
+        strategyId: String,
+        fills: Map<String, PersistedOrderFill>,
+    ) {
+        val snapshot = fills.toMap()
+        submit("saveOrderFills $strategyId") { delegate.saveOrderFills(strategyId, snapshot) }
+    }
+
     override fun saveRiskState(
         strategyId: String,
         state: PersistedRiskState,
@@ -213,13 +221,7 @@ class AsyncStatePersistor(
         strategyId: String,
         states: Map<String, PersistedSequenceState>,
     ) {
-        val snapshot =
-            states.mapValues { (_, state) ->
-                state.copy(
-                    snapshots = state.snapshots.toList(),
-                    lastValues = state.lastValues.toMap(),
-                )
-            }
+        val snapshot = detachedSequences(states)
         submit("saveSequences($strategyId)") { delegate.saveSequences(strategyId, snapshot) }
     }
 
@@ -227,16 +229,7 @@ class AsyncStatePersistor(
         strategyId: String,
         bindings: List<PersistedExitHookBinding>,
     ) {
-        val snapshot =
-            bindings.map {
-                it.copy(
-                    entryOrderIds = it.entryOrderIds.toList(),
-                    stopOrderIds = it.stopOrderIds.toList(),
-                    takeProfitOrderIds = it.takeProfitOrderIds.toList(),
-                    closeOrderIds = it.closeOrderIds.toList(),
-                    brokerTickets = it.brokerTickets.toList(),
-                )
-            }
+        val snapshot = detachedExitHooks(bindings)
         submit("saveExitHooks($strategyId)") { delegate.saveExitHooks(strategyId, snapshot) }
     }
 
