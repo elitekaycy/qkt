@@ -33,17 +33,19 @@ attestation/
 | `id` | Same as the directory name |
 | `title` | One line |
 | `why` | The specific failure this case exists to catch |
-| `status` | `ready` (runs in the attestation) or `planned` (designed, not yet runnable) |
+| `status` | `ready` (runs in the attestation), `planned` (designed, not yet runnable) or `scheduled` (a derivatives case run at a set time outside the catalog, e.g. across an expiry; its budget may reach four hours) |
 | `symbols` | Venue-neutral symbols, e.g. `[EURUSD, XAUUSD]` |
 | `timeframes` | Every timeframe a stream uses, e.g. `[1m, 15m, 1h]` |
 | `warmup_bars` | Per-timeframe warmup depth, e.g. `{1m: 6, 15m: 20}` |
 | `proves` | Capability names from `oracle-evidence.json`, plus free-form `behaviour:` tags |
-| `budget_seconds` | Hard deadline; omitted means the lane default. Never above 600 |
+| `budget_seconds` | Hard deadline; omitted means the lane default. Never above 600 (14400 for a `scheduled` case) |
 | `steps` | Daemon/engine lanes: ordered operator commands with the exit code and state expected after each |
 | `assertions` | Named checks the runner applies, e.g. `trace-parity`, `journal-byte-exact`, `flat-by-magic` |
 | `fills` | Derivatives lane: the fills the strategy makes before it is judged |
-| `replay` | Derivatives lane: `bars` (replay the gateway's own bars) or `chain` (replay the chain the account recorded) |
+| `replay` | Derivatives lane: `bars` (replay the gateway's own bars), `chain` (replay the chain the account recorded) or `none` |
 | `dated_from_root` | Derivatives lane: trade the root's dated contract listed 7 to 45 days from expiry in place of the case's symbol |
+| `expiring_option` | Derivatives lane: trade the option about to expire in place of the case's symbol (below) |
+| `settles` | Derivatives lane: the expiry settlements qkt must book before the case is judged |
 | `drills` | Derivatives lane: failures fired while the case holds, each `{kind, at_s}` timed from the first fill (below) |
 
 ## The derivatives lane
@@ -56,6 +58,37 @@ apart, so its cases run one after another on a flat account (`run-derivatives-la
 that the account ends flat, that qkt's realized PnL equals the venue's deals net with fees to the last
 digit, and that replaying the venue's bars (or the recorded chain) makes the same fills (or opens the same
 legs).
+
+### Holding through an expiry
+
+A settlement is not a deal. When a contract the account holds expires, the venue closes it at the settlement
+price (an option's intrinsic value from the delivery price, a future's delivery price) and the gateway reports
+it on `/v1/settlements` and the event stream, never on `/v1/deals`; qkt books it as a fill that is no order's
+(id `settle:<symbol>:<strategy>`, exit reason `EXPIRY`, `ContractSettlement`), which the strategy's order
+journal records. So `deals-net-equals-realized` adds, for every settlement in the run of a contract the
+strategy's deals left it holding, the holding x the price x the contract size, less the settlement's costs
+(Deribit's delivery fee), to the deals net: a long 0.01 call bought at 3060 (fee 0.25) and settled at 2120.5
+(fee 0.12768) is venue net `-30.60 - 0.25 + 21.205 - 0.12768 = -9.77268`, which qkt's realized must equal. A
+contract's size is read before it expires, because the venue delists it then. A case that declares `settles: N` is
+done only once qkt has booked N settlements and the account is flat, and it also asserts:
+
+- `settlement-booked-once`: each held contract the venue settled was booked exactly once, closing the whole
+  holding; qkt booked no settlement the venue never made;
+- `settlement-at-venue-price`: at exactly the venue's settlement price;
+- `account-balance-equals-realized` (any case may assert it): the account's balance moved by exactly qkt's
+  realized over the case, so the venue's own cash agrees, whatever the gateway reports as deals and fees.
+
+`expiring_option` picks the contract when the case starts: of `underlying`'s `right` options expiring soonest
+within `min_minutes` to `max_minutes`, the one nearest the money that is at least `in_the_money` (a fraction)
+in the money against the index of `index_symbol` (its newest `/v1/marks` index), with a two-sided book
+(`/v1/depth`) whose spread is within `max_spread` of the ask. In the money, so the settlement pays cash. The
+choice is in `result.json` (`selected`), with the venue's settlements, qkt's bookings and the balance moved.
+
+`option-held-through-expiry` is `scheduled`: Deribit expires options daily at 08:00 UTC, so it runs from about
+06:30 with `--budget-seconds 7200`, holding the lock on the one account for the whole hold. It replays
+nothing (`replay: none`): a backtest settles at the catalog's delivery price, not the venue's live settlement.
+The offline tests (`python3 -m unittest discover -s scripts/live-validation/tests`) run the whole case against
+a fake gateway and qkt: booked once passes; booked twice, at another price, or never fails.
 
 ### Failure drills
 

@@ -1,0 +1,32 @@
+id: option-held-through-expiry
+title: An in-the-money option held through its expiry is settled once, at the venue's price
+why: 'An expiry is no order: the venue closes the held option at its intrinsic value from the delivery price
+  and reports it only as a settlement. If qkt misses it the strategy holds a contract that no longer exists;
+  if a stream event and a resync both deliver it, it is booked twice; if it is booked at the mark or the last
+  trade, realized PnL and the account disagree.'
+status: scheduled
+symbols:
+- DERIBIT:BTC_USDC_6OCT26_83000_C
+timeframes:
+- 1m
+proves:
+- behaviour:option-expiry-settlement
+- behaviour:gateway-settlement-stream
+fills: 1
+settles: 1
+expiring_option:
+  underlying: BTC_USDC
+  right: call
+  index_symbol: DERIBIT:BTC_USDC_PERPETUAL
+  min_minutes: 20
+  max_minutes: 150
+  in_the_money: 0.02
+  max_spread: 0.15
+replay: none
+budget_seconds: 7200
+assertions:
+- flat-account
+- deals-net-equals-realized
+- settlement-booked-once
+- settlement-at-venue-price
+- account-balance-equals-realized
