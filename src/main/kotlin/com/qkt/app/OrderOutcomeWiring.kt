@@ -14,7 +14,8 @@ import org.slf4j.LoggerFactory
 /**
  * Subscribes the pipeline's handlers for order outcomes: fills and partial fills are booked,
  * folded into the accumulators, handed to exit hooks and reported; rejections and cancels reach
- * the exit hooks, the runaway breaker and the owning DSL strategy, and a venue rejection is reported
+ * the exit hooks, the runaway breaker and the owning DSL strategy (a rule's unfilled market exit re-arms
+ * its rule, see [UnfilledExitAlerts]), and a venue rejection is reported
  * through [onRejected] like a risk rejection. [subscribe] registers them in
  * the one order the pipeline depends on, so it must run exactly where the pipeline calls it.
  */
@@ -28,7 +29,7 @@ internal class OrderOutcomeWiring(
     private val runawayBreaker: RunawayBreaker?,
     private val onRejected: (RiskRejectedEvent) -> Unit,
     private val latency: LatencyRegistry,
-    private val latencyEnabled: Boolean,
+    onProtectionFailure: (strategyId: String, message: String) -> Unit,
     strategies: List<Pair<String, Strategy>>,
 ) {
     // Logged under the pipeline's category so existing log filters keep matching.
@@ -39,6 +40,7 @@ internal class OrderOutcomeWiring(
                 (strategy as? DslCompiledStrategy)?.let { id to it }
             }.toMap()
     private val repeats = RepeatedExecutions(orderManager::getOrder)
+    private val unfilledExits = UnfilledExitAlerts(onProtectionFailure)
 
     /** Register every order-outcome handler on the bus, in dispatch order. */
     fun subscribe() {
@@ -85,7 +87,7 @@ internal class OrderOutcomeWiring(
                 )
                 return@subscribeFirst
             }
-            if (latencyEnabled) latency.observeFill(e.clientOrderId, e.strategyId)
+            if (latency.enabled) latency.observeFill(e.clientOrderId, e.strategyId)
             val accounted =
                 booker.book(e, cumulativeFilled = cumulativeAfter(e.clientOrderId, e.quantity), partial = false)
                     ?: return@subscribeFirst
@@ -100,6 +102,7 @@ internal class OrderOutcomeWiring(
             reporter.report(e, accounted)
         }
         bus.subscribe<BrokerEvent.OrderFilled> { e -> exitHookManager.dispatchReady(e) }
+        bus.subscribe<BrokerEvent.OrderFilled> { e -> dslStrategiesById[e.strategyId]?.onOrderFilled(e.clientOrderId) }
         // First: judged against the order before the order manager applies the slice.
         bus.subscribeFirst<BrokerEvent.OrderPartiallyFilled> { e -> repeats.observeSlice(e) }
         bus.subscribe<BrokerEvent.OrderPartiallyFilled> { e ->
@@ -144,6 +147,7 @@ internal class OrderOutcomeWiring(
         bus.subscribe<BrokerEvent.OrderRejected> { e -> exitHookManager.onRejected(e) }
         bus.subscribe<BrokerEvent.OrderRejected> { e ->
             log.warn("Order rejected: ${e.clientOrderId} reason=${e.reason}")
+            ownerOf(e).let { id -> unfilledExits.onEnded(id, dslStrategiesById[id], e.clientOrderId, e.reason) }
             dslStrategiesById[e.strategyId]?.onOrderRejected(e.clientOrderId)
             // Reported beside risk rejections, so a run's rejections include what the venue refused.
             orderManager.getOrder(e.clientOrderId)?.let {
@@ -152,6 +156,7 @@ internal class OrderOutcomeWiring(
         }
         bus.subscribe<BrokerEvent.OrderCancelled> { e ->
             exitHookManager.onCancelled(e)
+            ownerOf(e).let { id -> unfilledExits.onEnded(id, dslStrategiesById[id], e.clientOrderId, e.reason) }
             dslStrategiesById[e.strategyId]?.onOrderTerminal(e.clientOrderId)
         }
         bus.subscribe<RiskRejectedEvent> { e ->
@@ -159,6 +164,16 @@ internal class OrderOutcomeWiring(
             onRejected(e)
         }
     }
+
+    // A venue event may leave the owner blank; the order book knows it.
+    private fun ownerOf(e: BrokerEvent.OrderEvent): String =
+        e.strategyId.ifBlank {
+            orderManager
+                .getOrder(e.clientOrderId)
+                ?.request
+                ?.strategyId
+                .orEmpty()
+        }
 
     /**
      * The order's executed quantity once [sliceQuantity] is included: the manager's running

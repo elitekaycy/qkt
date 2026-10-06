@@ -109,6 +109,11 @@ internal class CompiledStrategy(
         sequenceRuntime.persistRuleEdges()
     }
 
+    override fun onExitOrderUnfilled(clientOrderId: String): ExitRetry? =
+        ledger.onExitOrderUnfilled(clientOrderId).also { sequenceRuntime.persistRuleEdges() }
+
+    override fun onOrderFilled(clientOrderId: String) = ledger.onOrderFilled(clientOrderId)
+
     override fun onOrderSubmitted(
         signal: Signal,
         clientOrderId: String,

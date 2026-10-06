@@ -46,6 +46,26 @@ THEN BUY btc SIZING 0.1     -- fires once per bar where we're flat AND above 50k
                             -- (after a fill, POSITION.btc != 0 so it doesn't re-fire)
 ```
 
+### An exit the venue does not fill is sent again
+
+A rule's market exit — `CLOSE`, `CLOSE_ALL`, or a `BUY`/`SELL` that reduces the position the
+strategy holds when the rule fires — can end at the venue with nothing or only part filled: a
+thin book, a price band (Deribit rests a market order at its band price, and the gateway cancels
+it), a transient refusal. Its rule's condition usually still holds, so plain edge gating would never
+fire it again and the position would stay open. Instead the rule **re-arms** (#1359):
+
+- It fires again on its **next bar** while its condition still holds, so at most once a bar.
+- A retry only **reduces** what is still held: a `BUY`/`SELL` is cut to the open quantity (a
+  part-filled exit resends its remainder and never reverses), `CLOSE` closes what is held, and any
+  entry in the same action is dropped. **Entries are never retried.**
+- After 3 failed fires in a row, and again at 6, 12, ..., qkt raises the operator alert (the
+  protection-failure channel: Telegram when configured, and the log) naming the strategy, symbol
+  and position still open. Retrying goes on regardless.
+- The re-arm is persisted with the rule edges, so a restart before the retry still retries.
+
+Backtests are unchanged: the simulators fill every market exit. Limit and stop exits, bracket
+children and `EXIT AFTER` closes are not covered by this retry.
+
 ### Re-entry after a position closes
 
 A rule gated on the position — `POSITION.btc = 0` on an entry, `POSITION.btc != 0` on an exit —

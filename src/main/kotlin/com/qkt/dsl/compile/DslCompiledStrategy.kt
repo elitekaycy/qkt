@@ -152,6 +152,16 @@ interface DslCompiledStrategy : Strategy {
         clientOrderId: String,
     ): DecisionOrderLink? = null
 
+    /**
+     * A market exit this strategy's rule sent ended at the venue cancelled or rejected without filling
+     * in full: re-arm that rule so it sends what is still held again on its next bar (#1359). Null
+     * when [clientOrderId] was no rule's exit, or nothing is held any more.
+     */
+    fun onExitOrderUnfilled(clientOrderId: String): ExitRetry? = null
+
+    /** Order [clientOrderId] filled in full. */
+    fun onOrderFilled(clientOrderId: String) = Unit
+
     /** Forget rule ownership after an order reaches a non-rejected terminal state. */
     fun onOrderTerminal(clientOrderId: String) {
         // default no-op
