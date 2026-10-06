@@ -223,7 +223,7 @@ class TradingPipeline(
             runawayBreaker,
             onRejected,
             latency,
-            latencyEnabled,
+            onProtectionFailure,
             strategies,
         )
     private val nonExecution = NonExecutionAccounting(riskState, bus, accounting, clock).also { it.subscribeCosts() }

@@ -9,6 +9,8 @@ import java.math.BigDecimal
  *
  * [legId] is the leg the exit closes on a hedging venue (null when the venue nets), [ticket] its
  * venue ticket once known, and [protectiveIds] the bracket orders to cancel before closing.
+ * Once its close is sent the exit stays armed until that close fills (#1360): [closeId] is the close
+ * last sent, [attempts] how many were sent, [failures] how many in a row the venue ended unfilled.
  */
 data class PersistedTimeExit(
     val id: String,
@@ -20,6 +22,9 @@ data class PersistedTimeExit(
     val ticket: String?,
     val deadlineMs: Long,
     val protectiveIds: List<String> = emptyList(),
+    val closeId: String? = null,
+    val attempts: Int = 0,
+    val failures: Int = 0,
 )
 
 /**
