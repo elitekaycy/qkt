@@ -121,8 +121,9 @@ class FakeGateway:
         self.code = CALL
         self.instruments = [option(CALL, "83000", self.expiry), option("BTC_USDC-6OCT26-84500-C", "84500", self.expiry),
                             dict(option("BTC_USDC-PERPETUAL", None, None), kind="perpetual", contract_size="1")]
-        self.positions, self.deals, self.settlements = [], [], []
+        self.positions, self.deals, self.settlements, self.funding = [], [], [], []
         self.balance = Decimal("99681.56497625")
+        self.others = False
         gateway = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -173,7 +174,7 @@ class FakeGateway:
         if path == "/v1/settlements":
             return {"settlements": [s for s in self.settlements if int(query["from"]) <= s["time"] <= int(query["to"])]}
         if path == "/v1/funding":
-            return {"funding": []}
+            return {"funding": [f for f in self.funding if int(query["from"]) <= f["time"] <= int(query["to"])]}
         raise AssertionError(f"unexpected GET {path}")
 
     def act(self, path):
@@ -189,6 +190,10 @@ class FakeGateway:
             self.positions = []
             self.instruments = [i for i in self.instruments if i["code"] != CALL]
             self.balance += Decimal("21.205") - Decimal("0.12768")
+            if self.others:  # Deribit's 08:00 settlement also books the day's funding on a perpetual traded earlier
+                self.funding.append({"funding_id": "tx-1", "symbol": "BTC_USDC-PERPETUAL", "amount": "0.24943646",
+                                     "currency": "USDC", "time": now})
+                self.balance -= Decimal("0.24943646")
             return settled
         if path == "/v1/positions/close":
             self.positions = []
@@ -199,8 +204,9 @@ class FakeGateway:
 class CaseRun(unittest.TestCase):
     """The whole runner, as the timer starts it, on the expiry case."""
 
-    def run_case(self, mode, budget=30):
+    def run_case(self, mode, budget=30, others=False):
         gateway = FakeGateway()
+        gateway.others = others
         self.addCleanup(gateway.server.server_close)
         self.addCleanup(gateway.server.shutdown)
         out = os.path.join(tempfile.mkdtemp(), "run")
@@ -224,6 +230,11 @@ class CaseRun(unittest.TestCase):
         self.assertEqual(Decimal(result["venueNet"]), expected)
         self.assertEqual(Decimal(result["qktRealized"]), expected)
         self.assertEqual(Decimal(result["balanceMoved"]), expected)
+
+    def test_another_contract_settled_beside_it_makes_the_balance_not_comparable(self):
+        done, result = self.run_case("once", others=True)
+        self.assertEqual(result["status"], "passed", result["problems"])
+        self.assertIn("BTC_USDC-PERPETUAL", result["balanceNote"])
 
     def test_a_settlement_booked_twice_fails(self):
         done, result = self.run_case("twice")

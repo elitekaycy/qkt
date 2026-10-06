@@ -176,8 +176,17 @@ class Run:
         if held or booked or self.case.get("settles"):
             problems += settlement.judge(held, booked, self.venue, int(self.case.get("settles", 0)))
         moved = Decimal(self.get("/v1/account")["balance"]) - balance
+        # Deribit's daily 08:00 settlement also books the session's funding and fees on every contract the account
+        # traded that day, closed or not; when it charged other contracts during the case the balance is not the
+        # case's alone, so the check is reported as not comparable rather than judged.
+        traded = {f["symbol"].split(":")[-1].replace("-", "_") for f in fills}
+        others = sorted({f["symbol"] for f in self.get(f"/v1/funding?from={self.started_ms}&to={self.ended_ms + MINUTE}")
+                         ["funding"] if f["symbol"].replace("-", "_") not in traded})
         if "account-balance-equals-realized" in self.case["assertions"] and flat and moved != realized:
-            problems.append(f"account-balance-equals-realized: the balance moved {moved}, qkt realized {realized}")
+            if others:
+                self.balance_note = f"not comparable: the venue also settled {others} during the case"
+            else:
+                problems.append(f"account-balance-equals-realized: the balance moved {moved}, qkt realized {realized}")
         if "funding-charged" in self.case["assertions"] and not funding:
             problems.append("funding-charged: the venue charged no funding during the run")
         unbooked = self.unbooked_funding(self.ended_ms + MINUTE) if funding else []
@@ -191,7 +200,8 @@ class Run:
                          "replayPriceDrift": getattr(self, "drift", [])}
         if held or booked or self.case.get("settles"):
             self.evidence.update(settlements=[dict(s, holding=str(s["holding"])) for s in held], booked=booked,
-                                 balanceMoved=str(moved), selected=getattr(self, "selected", None))
+                                 balanceMoved=str(moved), balanceNote=getattr(self, "balance_note", None),
+                                 selected=getattr(self, "selected", None))
         return problems
 
     def judge_drilled(self, fills):
