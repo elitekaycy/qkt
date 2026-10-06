@@ -43,15 +43,18 @@ internal class UnfilledExitAlerts(
         runCatching { alert(strategyId, message) }.onFailure { log.error("exit alert failed for {}", strategyId, it) }
     }
 
-    // ALERT_AFTER, then 2x, 4x, ...: a book that stays dead keeps reminding without paging every bar.
-    private fun alertsAt(failures: Int): Boolean {
-        if (failures < ALERT_AFTER || failures % ALERT_AFTER != 0) return false
-        val multiple = failures / ALERT_AFTER
-        return multiple and (multiple - 1) == 0
-    }
-
     companion object {
         /** Consecutive failed exit fires before the first operator alert. */
         const val ALERT_AFTER = 3
+
+        /**
+         * Whether the [failures]th consecutive failed exit raises the operator alert: [ALERT_AFTER], then
+         * 2x, 4x, ... so a book that stays dead keeps reminding without paging every bar.
+         */
+        fun alertsAt(failures: Int): Boolean {
+            if (failures < ALERT_AFTER || failures % ALERT_AFTER != 0) return false
+            val multiple = failures / ALERT_AFTER
+            return multiple and (multiple - 1) == 0
+        }
     }
 }

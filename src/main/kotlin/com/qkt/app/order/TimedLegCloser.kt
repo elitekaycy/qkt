@@ -26,12 +26,17 @@ internal class TimedLegCloser(
 ) {
     // Closes only what is still open of the leg, and stands its protective exits down first so a
     // resting TP/SL cannot fire against a position that is already gone.
-    fun close(exit: PersistedTimeExit) {
+    // [id] names the close order; false when nothing of the leg is open, so nothing was sent.
+    fun close(
+        exit: PersistedTimeExit,
+        id: String = "${exit.id}-close",
+    ): Boolean {
         val qty = openQuantity(exit)
-        if (qty == null || qty.signum() <= 0) return
-        for (id in exit.protectiveIds) ops.cancel(id)
+        if (qty == null || qty.signum() <= 0) return false
+        for (protective in exit.protectiveIds) ops.cancel(protective)
         val ticket = exit.legId?.let { closeTicketFor?.invoke(exit.strategyId, it) } ?: exit.ticket
-        ops.submit(closeOrder("${exit.id}-close", exit.strategyId, exit.symbol, exit.side, qty, exit.legId, ticket))
+        ops.submit(closeOrder(id, exit.strategyId, exit.symbol, exit.side, qty, exit.legId, ticket))
+        return true
     }
 
     fun closeOrder(

@@ -31,6 +31,9 @@ internal class TimedExitsFile(
                             ticket = it.ticket,
                             deadlineMs = it.deadlineMs,
                             protectiveIds = it.protectiveIds,
+                            closeId = it.closeId,
+                            attempts = it.attempts,
+                            failures = it.failures,
                         )
                     },
             )
@@ -61,6 +64,9 @@ internal class TimedExitsFile(
                 ticket = it.ticket,
                 deadlineMs = it.deadlineMs,
                 protectiveIds = it.protectiveIds,
+                closeId = it.closeId,
+                attempts = it.attempts,
+                failures = it.failures,
             )
         }
     }
@@ -86,4 +92,7 @@ private data class TimedExitDto(
     val ticket: String? = null,
     val deadlineMs: Long,
     val protectiveIds: List<String> = emptyList(),
+    val closeId: String? = null,
+    val attempts: Int = 0,
+    val failures: Int = 0,
 )

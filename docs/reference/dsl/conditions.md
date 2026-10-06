@@ -63,8 +63,8 @@ fire it again and the position would stay open. Instead the rule **re-arms** (#1
   and position still open. Retrying goes on regardless.
 - The re-arm is persisted with the rule edges, so a restart before the retry still retries.
 
-Backtests are unchanged: the simulators fill every market exit. Limit and stop exits, bracket
-children and `EXIT AFTER` closes are not covered by this retry.
+Backtests are unchanged: the simulators fill every market exit. `EXIT AFTER` closes retry the same
+way ([exit-after](exit-after.md)). Limit and stop exits and bracket children are not covered.
 
 ### Re-entry after a position closes
 
