@@ -36,7 +36,7 @@ qkt create template <path> \
 | `backtest` | Local-data research configuration and a runnable single-strategy backtest. |
 | `portfolio` | Local-data research configuration, book risk limits, a weighted portfolio, and two child strategies. |
 | `minimal` | Broker-free QKT daemon and a small sample strategy. |
-| `bybit` | QKT configured for Bybit REST, using testnet by default. |
+| `bybit` | QKT beside the qkt-venue-gateway running its [Bybit adapter](https://github.com/elitekaycy/qkt-venue-gateway/blob/main/adapter-bybit/README.md): a `type: gateway` broker named `bybit_linear` (prefix `BYBIT_LINEAR:`), testnet first. |
 
 Specialized templates are layered on tested base projects, so `mt5-ci` retains
 the complete MT5 deployment and the research templates retain the standard

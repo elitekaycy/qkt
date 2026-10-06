@@ -12,9 +12,8 @@ import java.math.BigDecimal
  * around it: order management, P&L attribution, position tracking, risk.
  *
  * Implementations: [PaperBroker] (in-process simulator), [com.qkt.connector.mt5.MT5Broker]
- * (MetaTrader 5 via gateway), [com.qkt.connector.bybit.spot.BybitSpotBroker] /
- * [com.qkt.connector.bybit.linear.BybitLinearBroker] (Bybit REST/WS),
- * [CompositeBroker] (multi-venue router).
+ * (MetaTrader 5 via gateway), [com.qkt.connector.gateway.GatewayBroker]
+ * (any VGP venue gateway: Bybit, Deribit, …), [CompositeBroker] (multi-venue router).
  */
 interface Broker {
     /** Human-readable broker identifier — appears in logs and status output. */
@@ -87,7 +86,7 @@ interface Broker {
 
     /**
      * Snapshot of currently-open positions on the venue, keyed by qkt-side symbol: a list per symbol,
-     * since hedge-mode brokers (MT5, Bybit linear) hold a long and a short as two tickets the reconciler
+     * since hedge-mode brokers (MT5) hold a long and a short as two tickets the reconciler
      * matches separately; one-way brokers and PaperBroker return at most one entry. Used at deploy time
      * by [com.qkt.persistence.LegBookReconciler]; empty by default (no venue-side state).
      */

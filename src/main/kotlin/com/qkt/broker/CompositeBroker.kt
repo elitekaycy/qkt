@@ -11,7 +11,7 @@ import org.slf4j.LoggerFactory
  * Multi-venue router that dispatches each [OrderRequest] to the leaf broker whose
  * [SymbolPattern] matches the order's symbol.
  *
- * Combines several brokers (e.g. MT5 for FX + Bybit for crypto) behind one [Broker]. Routes are
+ * Combines several brokers (e.g. MT5 for FX + a venue gateway for crypto) behind one [Broker]. Routes are
  * evaluated in order, first match wins; an optional [fallback] catches the rest. Composite tracks
  * `orderId → broker` so [cancel] and [modify] reach the right leaf.
  *

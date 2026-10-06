@@ -109,6 +109,11 @@ internal class CompiledStrategy(
         sequenceRuntime.persistRuleEdges()
     }
 
+    override fun onExitOrderUnfilled(clientOrderId: String): ExitRetry? =
+        ledger.onExitOrderUnfilled(clientOrderId).also { sequenceRuntime.persistRuleEdges() }
+
+    override fun onOrderFilled(clientOrderId: String) = ledger.onOrderFilled(clientOrderId)
+
     override fun onOrderSubmitted(
         signal: Signal,
         clientOrderId: String,
@@ -153,43 +158,6 @@ internal class CompiledStrategy(
     ) {
         if (binding.hubBound) return
         if (candle.symbol !in subscribedSymbols) return
-
-        for ((alias, key) in streams) {
-            if (key.qktSymbol == candle.symbol) warmupGate.onClosedCandle(alias)
-        }
-
-        val ec =
-            EvalContext(
-                candle = candle,
-                streams = streams,
-                lets = emptyMap(),
-                strategyContext = ctx,
-                snapshotStore = snapshotStore,
-                evaluationTimeMs = candle.endTime,
-                sequences = sequenceRuntime,
-            )
-
-        // 1-4. Position transitions, indicators, rolling snapshots, aggregates
-        updater.updateForCandle(candle, ec, ctx)
-
-        // 5. Sequence state machines
-        sequenceRuntime.onCandle(candle, ec) { aliases -> warmupGate.isWarm(aliases) }
-
-        // 6. Rules
-        var consumerFired = false
-        var consumerAccepted = false
-        for (rule in rules) {
-            if (!warmupGate.isWarm(rule.referencedAliases)) continue
-            when (ledger.fireAndCommit(rule, ec, ctx, emit)) {
-                SequenceFireOutcome.ACCEPTED -> {
-                    consumerFired = true
-                    consumerAccepted = true
-                }
-                SequenceFireOutcome.SUPPRESSED -> consumerFired = true
-                SequenceFireOutcome.NOT_CONSUMING -> Unit
-            }
-        }
-        sequenceRuntime.persistRuleEdges()
-        sequenceRuntime.afterRulePass(consumerFired && !consumerAccepted)
+        evaluator.evaluateUnbound(candle, ctx, emit)
     }
 }

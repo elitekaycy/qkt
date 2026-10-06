@@ -1,3 +1,28 @@
+# qkt and the qkt-venue-gateway it trades Bybit through: one gateway per Bybit category, each
+# with its own journal volume. Copy .env.example to .env first.
+#   make up                                  qkt and the linear (perpetuals) gateway
+#   docker compose --profile spot up -d      the spot gateway too (uncomment bybit_spot in qkt.config.yaml)
+# Each gateway is also published on loopback for curl and guardrails' kill switch.
+
+x-bybit-gateway: &bybit-gateway
+  image: ${GATEWAY_IMAGE:-qkt-venue-gateway:local}
+  build: ${GATEWAY_BUILD_CONTEXT:-https://github.com/elitekaycy/qkt-venue-gateway.git#main}
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "5"
+
+x-bybit-env: &bybit-env
+  GATEWAY_ADAPTER: bybit
+  GATEWAY_TRADER_TOKEN: ${BYBIT_TRADER_TOKEN:?BYBIT_TRADER_TOKEN must be set in .env}
+  GATEWAY_GUARDIAN_TOKEN: ${BYBIT_GUARDIAN_TOKEN:?BYBIT_GUARDIAN_TOKEN must be set in .env}
+  GATEWAY_LOGIN: ${BYBIT_API_KEY:-}
+  GATEWAY_SECRET: ${BYBIT_API_SECRET:-}
+  # Required, never defaulted: testnet, or mainnet for real money. Unset is refused at startup.
+  GATEWAY_SETTING_ENVIRONMENT: ${BYBIT_ENVIRONMENT:-}
+
 services:
   init-perms:
     image: alpine:3
@@ -9,6 +34,23 @@ services:
       - ./state:/qkt-state
     restart: "no"
 
+  gateway-bybit-linear:
+    <<: *bybit-gateway
+    environment:
+      <<: *bybit-env
+      GATEWAY_SETTING_CATEGORY: linear
+    ports: ["127.0.0.1:${BYBIT_LINEAR_GATEWAY_PORT:-8444}:8443"]
+    volumes: ["bybit-linear-state:/data"]
+
+  gateway-bybit-spot:
+    <<: *bybit-gateway
+    profiles: ["spot"]
+    environment:
+      <<: *bybit-env
+      GATEWAY_SETTING_CATEGORY: spot
+    ports: ["127.0.0.1:${BYBIT_SPOT_GATEWAY_PORT:-8445}:8443"]
+    volumes: ["bybit-spot-state:/data"]
+
   qkt:
     image: ghcr.io/elitekaycy/qkt:${QKT_IMAGE_TAG:?QKT_IMAGE_TAG must be set in .env}
     container_name: qkt
@@ -17,16 +59,15 @@ services:
     depends_on:
       init-perms:
         condition: service_completed_successfully
+      gateway-bybit-linear:
+        condition: service_healthy
     command: ["--config", "/etc/qkt/qkt.config.yaml", "--control-port", "47000"]
     environment:
       QKT_STATE_DIR: /var/lib/qkt
-      # Bybit credentials, read by the bybit_spot / bybit_linear entries in qkt.config.yaml.
-      # To run paper-only against BACKTEST symbols, delete those entries rather than blanking these.
-      BYBIT_API_KEY: ${BYBIT_API_KEY:-}
-      BYBIT_API_SECRET: ${BYBIT_API_SECRET:-}
-      # Testnet vs mainnet selector. Default `true` keeps you on api-testnet.bybit.com
-      # until you explicitly flip to mainnet by setting `BYBIT_TESTNET=false`.
-      BYBIT_TESTNET: ${BYBIT_TESTNET:-true}
+      # Read by the bybit_* gateway entries in qkt.config.yaml.
+      BYBIT_TRADER_TOKEN: ${BYBIT_TRADER_TOKEN:?BYBIT_TRADER_TOKEN must be set in .env}
+      BYBIT_ACCOUNT_LOGIN: ${BYBIT_ACCOUNT_LOGIN:?BYBIT_ACCOUNT_LOGIN must be set in .env}
+      BYBIT_TRADE_MODE: ${BYBIT_TRADE_MODE:-demo}
       TELEGRAM_ENABLED: ${TELEGRAM_ENABLED:-false}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
@@ -47,3 +88,7 @@ services:
       options:
         max-size: "10m"
         max-file: "5"
+
+volumes:
+  bybit-linear-state:
+  bybit-spot-state:

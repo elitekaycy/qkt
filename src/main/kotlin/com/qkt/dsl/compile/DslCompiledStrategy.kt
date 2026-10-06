@@ -6,28 +6,6 @@ import com.qkt.strategy.Signal
 import com.qkt.strategy.Strategy
 import com.qkt.strategy.StrategyContext
 
-/** Deterministic provenance for a DSL rule edge, including signal-less actions such as LOG. */
-data class RuleDecisionAudit(
-    val decisionId: String,
-    val ruleId: String,
-    val strategyFingerprint: String,
-    val ruleFingerprint: String,
-    val conditionFingerprint: String,
-    val conditionResult: Boolean,
-    val alias: String,
-    val key: HubKey,
-    val candle: Candle,
-    val signalCount: Int,
-)
-
-/** Correlation between one signal from a DSL rule decision and its normalized order. */
-data class DecisionOrderLink(
-    val decisionId: String,
-    val ruleId: String,
-    val signalIndex: Int,
-    val orderId: String,
-)
-
 /**
  * Marker for strategies produced by the qkt DSL parser/compiler.
  *
@@ -173,6 +151,16 @@ interface DslCompiledStrategy : Strategy {
         signal: Signal,
         clientOrderId: String,
     ): DecisionOrderLink? = null
+
+    /**
+     * A market exit this strategy's rule sent ended at the venue cancelled or rejected without filling
+     * in full: re-arm that rule so it sends what is still held again on its next bar (#1359). Null
+     * when [clientOrderId] was no rule's exit, or nothing is held any more.
+     */
+    fun onExitOrderUnfilled(clientOrderId: String): ExitRetry? = null
+
+    /** Order [clientOrderId] filled in full. */
+    fun onOrderFilled(clientOrderId: String) = Unit
 
     /** Forget rule ownership after an order reaches a non-rejected terminal state. */
     fun onOrderTerminal(clientOrderId: String) {

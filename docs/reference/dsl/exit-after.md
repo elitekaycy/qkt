@@ -86,8 +86,23 @@ ticket, and the absolute deadline. After a restart it is re-armed for the restor
 - A leg that no longer exists at the venue (closed by its stop or target, or by hand, while the
   daemon was down) drops its timer without sending anything.
 
-The record is removed when the timer fires, when the leg exits first, or when the entry never
-fills. `OrderManagerTimeExitRestartTest` covers each case against the on-disk state store.
+The record is removed when the timer's close fills, when the leg exits first, or when the entry
+never fills. `OrderManagerTimeExitRestartTest` covers each case against the on-disk state store.
+
+## A close the venue does not fill
+
+The close can end at the venue with nothing or only part filled: a thin book, a price band (Deribit
+rests a market order at its band price and the gateway cancels it), a transient refusal. The timer
+therefore stays armed until its close fills (#1360):
+
+- A minute after each close is sent, a close the venue cancelled or rejected is sent again
+  (`<exit>-close-r1`, `-r2`, ...), for only what is still open of the leg. A close still working is
+  waited for; a filled one ends the timer.
+- After 3 failures in a row, and again at 6, 12, ..., qkt raises the operator alert (as for rule exits,
+  see [conditions](conditions.md)) naming the strategy, symbol and position still open. Retrying goes on.
+- The retry state is persisted with the timer, so a restart resumes it.
+
+Backtests are unchanged: the simulators fill every market close.
 
 `STACK_AT` tiers that have not fired yet keep the hold too: it is saved with the tier state, so a
 leg that fires after a restart still gets `EXIT AFTER`, timed from its own fill

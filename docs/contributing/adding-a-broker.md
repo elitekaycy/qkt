@@ -1,10 +1,16 @@
 # Adding a connector
 
 This guide walks through connecting qkt to a new venue technology end-to-end — a futures API, a
-crypto exchange, another trading platform. The two reference implementations are
+crypto exchange, another trading platform. The two in-tree connectors are
 `com.qkt.connector.mt5` (MetaTrader 5 via HTTP gateway, poll-based fill detection) and
-`com.qkt.connector.bybit` (Bybit REST + WebSocket, push-based fills). Read this guide alongside one
-of those — the patterns are intentionally regular. The model and the contracts are described in
+`com.qkt.connector.gateway` (any venue behind a VGP v1 gateway, push-based fills). Read this guide alongside one
+of those — the patterns are intentionally regular.
+
+!!! tip "Most new venues are a gateway adapter, not a connector"
+    A crypto exchange or futures API is normally added as an adapter in the
+    [qkt-venue-gateway](https://github.com/elitekaycy/qkt-venue-gateway) (see its `docs/writing-an-adapter.md`), which qkt then reaches with a
+    `type: gateway` entry and no qkt change. Bybit and Deribit work this way (the
+    [Bybit adapter](https://github.com/elitekaycy/qkt-venue-gateway/blob/main/adapter-bybit/README.md)). Write a connector only for a technology the gateway protocol cannot carry. The model and the contracts are described in
 [Broker integration](../concepts/broker-integration.md).
 
 ## What "adding a connector" means
@@ -40,7 +46,7 @@ interface Broker {
 
 | Member | Purpose |
 | --- | --- |
-| `name` | Stable, human-readable venue id. Appears in logs and status output. Use the venue's common name lowercased (`exness`, `bybit-linear`, `coinbase`). |
+| `name` | Stable, human-readable venue id. Appears in logs and status output. Use the venue's common name lowercased (`exness`, `deribit`, `coinbase`). |
 | `capabilities` | What `OrderRequest` shapes route through this broker natively. The engine consults this before sending — strategies that use unsupported shapes fail at submit time, not silently. |
 | `supports(symbol)` | Used by `CompositeBroker` to pick the right leaf. Default `true` is fine if the broker handles every symbol the engine routes to it. |
 | `submit` | Returns `SubmitAck` synchronously. Fill or rejection arrives async via `BrokerEvent` on the bus. **Don't block here.** |
@@ -64,7 +70,7 @@ Put your broker in `src/main/kotlin/com/qkt/connector/<venue>/`. The conventiona
 | `<Venue>Signer.kt` | API request signing (HMAC, JWT, etc.). | If venue uses signed requests |
 | `<Venue>BrokerProfile.kt` + `<Venue>DefaultProfiles.kt` | Per-account configuration (credentials, magic number, symbol policy, capability restrictions). | If multiple accounts/sub-venues share the same protocol |
 
-Multi-variant venues (Bybit Spot vs Bybit Linear, MT5 Exness vs MT5 ICMarkets) keep the shared parts at the package root and add variant-specific files alongside. See `com.qkt.connector.bybit` for the pattern — `BybitClient.kt`, `BybitOrderTranslator.kt`, `BybitSymbol.kt`, `BybitSigner.kt` are shared; `BybitSpotBroker.kt`/`BybitSpotStateRecovery.kt` and `BybitLinearBroker.kt`/`BybitLinearStateRecovery.kt` are the variants.
+Multi-variant venues (MT5 Exness vs MT5 ICMarkets) keep the shared parts at the package root and add variant-specific files alongside. See `com.qkt.connector.mt5` for the pattern — the client, symbol policy and translation are shared; each account is a profile.
 
 ## Implementation walkthrough
 
@@ -91,7 +97,7 @@ data class VenueOrderResponse(
 )
 ```
 
-Reference: `MT5WireTypes.kt`. Bybit chose to inline these into `BybitClient.kt`; either is fine.
+Reference: `MT5WireTypes.kt`; the gateway connector keeps them in `GatewayWire.kt`.
 
 ### Step 2 — Symbol policy
 
@@ -149,13 +155,13 @@ class VenueClient(
 }
 ```
 
-Use `OkHttp` for HTTP (already a project dependency). For signed requests, the signer is a separate class — see `BybitSigner.kt`.
+Use `OkHttp` for HTTP (already a project dependency). For signed requests, keep the signer a separate class with its own test.
 
 ### Step 5 — Fill detection (the hard part)
 
 **Two strategies depending on what the venue offers:**
 
-#### Strategy A: Push (preferred — Bybit, Coinbase, Kraken)
+#### Strategy A: Push (preferred — the venue gateway, Coinbase, Kraken)
 
 The venue has WebSocket that pushes order/fill events. Subscribe at broker startup, parse incoming messages, emit `BrokerEvent.OrderFilled` directly.
 
@@ -260,7 +266,7 @@ The `init` block degrades gracefully — if state recovery fails or the poller c
 
 ### Step 8 — Profile + DefaultProfiles
 
-If the broker has variants (multiple Exness accounts, Bybit Spot vs Linear) or per-instrument quirks, define a profile data class:
+If the broker has variants (multiple Exness accounts) or per-instrument quirks, define a profile data class:
 
 ```kotlin
 data class VenueBrokerProfile(
@@ -400,7 +406,7 @@ Both follow the patterns above and call out where the convention bent (e.g. `MT5
 
 ## When to consider an abstraction
 
-There's no `AbstractBroker` base class in qkt today. With two broker families (MT5 and Bybit), the variation in wire protocols and fill semantics outweighs the shared surface. The `Broker` interface alone is enough.
+There's no `AbstractBroker` base class in qkt today. With two broker families (MT5 and the venue gateway), the variation in wire protocols and fill semantics outweighs the shared surface. The `Broker` interface alone is enough.
 
 When a **third** broker family lands (Alpaca? Coinbase? IBKR via FIX?), the right abstractions become more visible. Likely candidates:
 - `AbstractPollingBroker` — shared poll loop + delta detection for poll-based venues

@@ -130,8 +130,8 @@ RULES
 <alias> = <BROKER>:<symbol> EVERY <timeframe> [ WARMUP <N> BARS ]
 ```
 
-- `<BROKER>` resolves against the broker registry: built-ins (`BACKTEST`, `BYBIT_SPOT`,
-  `BYBIT_LINEAR`) plus any profile in `qkt.config.yaml` (e.g. `EXNESS`, `ICMARKETS`). The parser
+- `<BROKER>` resolves against the broker registry: `BACKTEST` plus any `brokers:` entry in
+  `qkt.config.yaml`, upper-cased (e.g. `EXNESS`, `BYBIT_LINEAR`, `DERIBIT`). The parser
   accepts the prefix in any case; the registry lookup is what decides whether it exists.
 - `<symbol>` is the canonical symbol qkt sees (`EURUSD`, `BTCUSDT`). Per-broker translation
   (suffix, alias) happens at the broker boundary — see

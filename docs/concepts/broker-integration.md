@@ -8,7 +8,7 @@ Futures made "broker" ambiguous, so qkt names each real thing separately.
 
 | Real-world thing | Examples | In qkt |
 |---|---|---|
-| The technology you connect through | MetaTrader 5 (via mt5-gateway), Bybit v5 API | a **connector** — `com.qkt.connector.<type>` |
+| The technology you connect through | MetaTrader 5 (via mt5-gateway), a VGP venue gateway (Bybit, Deribit) | a **connector** — `com.qkt.connector.<type>` |
 | What that technology can trade | CFDs, spot, perpetual swaps, dated futures | `ProductType` |
 | One login at a broker, exchange or prop firm | an Exness demo, a prop-firm account | a **trading account** — one `brokers:` entry |
 | A strategy's channel for orders on that account | market, limit, stop, bracket orders | an order-entry session (the `Broker` interface) |
@@ -57,18 +57,18 @@ interface Broker {
 }
 ```
 
-Every order-entry session (Paper, Bybit, MT5) implements this. The CompositeBroker routes by symbol
+Every order-entry session (Paper, venue gateway, MT5) implements this. The CompositeBroker routes by symbol
 or by DSL stream label.
 
 ## Capability matrix
 
-| Order type | PaperBroker | MT5Broker (v1) | BybitBroker | Else (engine-managed) |
+| Order type | PaperBroker | MT5Broker (v1) | GatewayBroker | Else (engine-managed) |
 |---|---|---|---|---|
 | Market | ✅ | ✅ | ✅ | — |
 | Limit | ✅ | engine | ✅ | engine fallback |
 | Stop | ✅ | engine | ✅ | engine fallback |
 | StopLimit | ✅ | engine | ✅ | engine fallback |
-| Bracket | ✅ | ✅ | ✅ | — |
+| Bracket | ✅ | ✅ | engine | — |
 | TrailingStop | engine | engine | engine | engine fallback |
 | OCO / OTO | engine | engine | engine | engine fallback |
 | ScaleOut / TimeExit | engine | engine | engine | engine fallback |

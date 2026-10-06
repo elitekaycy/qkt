@@ -110,7 +110,8 @@ you're not re-downloading it every time), keep it inside your `/work` folder:
   qkt fetch BYBIT_SPOT:BTCUSDT --tf 5m --last 30d --data-root /work/data
   ```
 
-Crypto history (the `BYBIT_*` symbols) downloads on its own with no extra setup. Gold and forex
+Crypto history comes from the venue's gateway (`BYBIT_*` symbols need a `bybit_linear` or
+`bybit_spot` gateway entry; `BINANCE_UM` needs nothing). Gold and forex
 (like `EXNESS:XAUUSD`) currently need a connection to a broker; once seamless auto-download lands,
 those will fetch themselves too, and a backtest will need nothing but the command.
 

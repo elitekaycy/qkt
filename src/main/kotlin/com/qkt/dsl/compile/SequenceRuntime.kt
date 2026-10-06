@@ -47,6 +47,7 @@ class SequenceRuntime(
         if (restoredRuleEdges.isEmpty() || ruleEdges.isEmpty()) return
         for (rule in ruleEdges) {
             restoredRuleEdges[rule.edgeStateKey]?.let(rule::restoreEdgeState)
+            restoredRuleEdges[rule.exitRetryKey]?.let(rule::restoreExitRetry)
         }
     }
 
@@ -176,11 +177,16 @@ class SequenceRuntime(
                     name = RULE_EDGE_STATE,
                     stage = 0,
                     snapshots = emptyList(),
-                    lastValues = ruleEdges.associate { it.edgeStateKey to it.edgeState },
+                    lastValues =
+                        ruleEdges.associate { it.edgeStateKey to it.edgeState } +
+                            ruleEdges.filter { it.exitRetryPending }.associate { it.exitRetryKey to true },
                 )
         }
         runCatching { p.saveSequences(strategyId, persisted) }
     }
+
+    // A pending exit retry (#1359) rides beside the edge under its own key; older builds ignore it.
+    private val CompiledRule.exitRetryKey: String get() = "$edgeStateKey#exit-retry"
 
     private companion object {
         const val RULE_EDGE_STATE = "__qkt_rule_edges__"

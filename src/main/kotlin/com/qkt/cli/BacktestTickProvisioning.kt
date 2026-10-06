@@ -19,8 +19,8 @@ import java.time.ZoneOffset
 
 /**
  * The market-data provisioning every backtest entry point shares: fetch (unless `noFetch`) and
- * validate the tick days of each replayed symbol that reads the tick store (not MACRO, BYBIT, HUB or
- * option streams, nor streams whose fetched bars already cover the window; `--bars` replays read no
+ * validate the tick days of each replayed symbol that reads the tick store (not MACRO, HUB or option
+ * streams, nor streams whose fetched bars already cover the window; `--bars` replays read no
  * ticks at all), then check the stored chain days of option contracts ([OptionChainCoverage]).
  */
 internal object BacktestTickProvisioning {
@@ -42,7 +42,6 @@ internal object BacktestTickProvisioning {
                 .map { BacktestBarReplay.brokerAndBare(it) }
                 .filter { (broker, _) ->
                     broker != "MACRO" &&
-                        broker != "BYBIT" &&
                         broker != HUB_BROKER &&
                         broker != CHAIN_BROKER &&
                         broker != OpenInterestSymbol.BROKER &&

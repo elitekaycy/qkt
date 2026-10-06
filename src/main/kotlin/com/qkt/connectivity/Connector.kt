@@ -1,7 +1,8 @@
 package com.qkt.connectivity
 
 /**
- * A technology qkt trades through — MetaTrader 5 via mt5-gateway, the Bybit v5 API, Rithmic.
+ * A technology qkt trades through — MetaTrader 5 via mt5-gateway, a VGP venue gateway
+ * (Bybit, Deribit, …), Rithmic.
  *
  * One implementation per connector type, discovered by [ConnectorRegistry]. A connector knows how
  * to open trading accounts of its type; everything specific to it stays in its own package, and

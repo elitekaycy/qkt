@@ -8,7 +8,7 @@ import com.qkt.connectivity.ConnectorRegistry
 
 /** Builds account directories through the real, discovered connectors for wiring tests. */
 internal object TestAccounts {
-    private val env = mapOf("BYBIT_API_KEY" to "k", "BYBIT_API_SECRET" to "s")
+    private val env = mapOf("BYBIT_TRADER_TOKEN" to "k")
 
     fun directory(vararg accounts: AccountConfig): AccountDirectory =
         AccountDirectory.open(
@@ -32,17 +32,22 @@ internal object TestAccounts {
             tradingHours = tradingHours,
         )
 
-    /** A Bybit account for [category] with credentials read from the test environment. */
+    /**
+     * A Bybit account for [category]: a `type: gateway` entry named `bybit_<category>` on the gateway running the
+     * Bybit adapter for that category, its token read from the test environment. Nothing connects until it trades.
+     */
     fun bybit(category: String): AccountConfig =
         AccountConfig(
             name = "bybit_$category",
-            type = "bybit",
+            type = "gateway",
             settings =
                 mapOf(
-                    "type" to "bybit",
-                    "category" to category,
-                    "api_key" to "env:BYBIT_API_KEY",
-                    "api_secret" to "env:BYBIT_API_SECRET",
+                    "type" to "gateway",
+                    "gateway_url" to "http://gateway-bybit-$category:8443",
+                    "api_key" to "env:BYBIT_TRADER_TOKEN",
+                    "expected_adapter" to "bybit",
+                    "expected_account_login" to "1",
+                    "expected_trade_mode" to "demo",
                 ),
         )
 }

@@ -37,7 +37,11 @@ Edit `.env`:
 ```dotenv title=".env"
 BYBIT_API_KEY=your-bybit-testnet-key
 BYBIT_API_SECRET=your-bybit-testnet-secret
-BYBIT_TESTNET=true                     # important — testnet first
+BYBIT_ENVIRONMENT=testnet              # important — testnet first
+BYBIT_TRADE_MODE=demo
+BYBIT_ACCOUNT_LOGIN=                   # from the gateway's /v1/health once it runs
+BYBIT_TRADER_TOKEN=a-long-random-value
+BYBIT_GUARDIAN_TOKEN=another-long-random-value
 
 MT5_LOGIN=12345678
 MT5_PASSWORD=your-exness-demo-password
@@ -49,7 +53,7 @@ VNC_PASSWORD=changeme
 QKT_BROKER_EXNESS_GATEWAY_URL=http://mt5-gateway:5001
 ```
 
-For Bybit testnet API keys: [testnet.bybit.com → API Management](https://testnet.bybit.com/app/user/api-management). Real and testnet keys are different — don't mix them.
+For Bybit testnet API keys: [testnet.bybit.com → API Management](https://testnet.bybit.com/app/user/api-management). Real and testnet keys are different — don't mix them. The keys go to the `gateway-bybit-spot` service (the qkt-venue-gateway running its [Bybit adapter](https://github.com/elitekaycy/qkt-venue-gateway/blob/main/adapter-bybit/README.md)); qkt itself only holds the gateway's trader token.
 
 For Exness demo: any phone signup gets you `Exness-MT5Trial` server credentials within a minute.
 
@@ -113,11 +117,12 @@ docker compose exec qkt qkt brokers list
 Expected output:
 
 ```text
-NAME              KIND  GATEWAY                  SUFFIX  TZ  MAGIC
-bybit_spot        bybit -                        -       -   -
-exness            mt5   http://mt5-gateway:5001  m       2   4242
+NAME              KIND  GATEWAY                  SUFFIX  SERVER TIME       MAGIC
+exness            mt5   http://mt5-gateway:5001 m       new_york_close    4242
 ```
 
+`brokers list` shows MT5 profiles; the `bybit_spot` gateway account is checked when the daemon
+starts (it refuses to start if the gateway reports another adapter, account or trade mode).
 If `exness` is missing, the `qkt.config.yaml` didn't load — check the bind-mount path in `docker-compose.yml`.
 
 ## 8. Audit the live feeds before deploying
@@ -225,7 +230,7 @@ docker compose down -v              # full wipe — state + logs gone
 
 - **Compose can't pull the gateway image.** Verify Docker Hub access to `elitekaycy/mt5-gateway-api:0.3.2`, or override `MT5_GATEWAY_IMAGE` with a digest-pinned/private-registry image.
 - **MT5 logs out periodically.** Some brokers force daily re-auth. VNC back in, or restart `mt5-gateway` to trigger a re-login attempt.
-- **Bybit testnet vs mainnet.** `BYBIT_TESTNET=true` routes to testnet; positions/keys/symbols all live there. Don't mix testnet and mainnet keys in the same `.env`.
+- **Bybit testnet vs mainnet.** `BYBIT_ENVIRONMENT=testnet` keeps the gateway on testnet; positions/keys/symbols all live there. Don't mix testnet and mainnet keys in the same `.env`, and set `BYBIT_TRADE_MODE=real` only together with `BYBIT_ENVIRONMENT=mainnet`.
 - **Bind-mount path issues on Mac/Windows.** Docker Desktop sometimes needs explicit file-sharing permissions for paths outside your home directory. Keep the project under `~/`.
 - **Port collisions.** If something else is already on `47291`, the daemon picks the next available. Check `qkt list` for the actual ports.
 

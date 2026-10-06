@@ -55,7 +55,7 @@ Spec: [`docs/superpowers/specs/2026-05-12-phase27-conditional-bracketed-stacks-d
 | `STACK_AT MFE >= N WITHIN M BRACKET { ... }` (one clause per stack tier) | Independent micro-trades opened opportunistically when the primary winner proves conviction | None — qkt's `STACK` clause models pyramiding-into-trend with shared bracket and sequential triggering; hedge-straddle stacks need per-layer brackets, simultaneous firing, and conditional triggering during WINNER phase |
 | `LegBook` replaces singular `Position` per symbol | Each stack tracked with its own broker ticket, leg id, and bracket | None — the position model assumes one net position per symbol |
 | `POSITION.<stream>.mfe` accessor | Max favorable excursion since the position opened, available in DSL conditions | None — strategies can't read MFE from the DSL |
-| `OrderTypeCapability.MULTI_POSITION_PER_SYMBOL` declaration | Compile-time error if a strategy uses `STACK_AT` against a netting-only broker (Bybit Spot, Bybit Linear in one-way mode) | None — runtime failures only |
+| `OrderTypeCapability.MULTI_POSITION_PER_SYMBOL` declaration | Compile-time error if a strategy uses `STACK_AT` against a netting-only broker (a `type: gateway` venue such as Bybit) | None — runtime failures only |
 
 ## Phase 28+ — exploratory
 

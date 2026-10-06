@@ -72,7 +72,7 @@ internal class TickEvaluation(
 
         // Phase 38: sweep pending GTD orders past their deadline when the broker doesn't
         // self-cancel. Only runs when the venue can't self-expire — MT5 returns
-        // supportsNativeGtd=true and skips it; PaperBroker, Bybit, and LogBroker fall through here.
+        // supportsNativeGtd=true and skips it; PaperBroker, gateway brokers and LogBroker fall through here.
         // Walks the GTD index (deadline-bearing orders only) and compares longs; the live order is
         // resolved only for the few that actually expired, in the same order a full scan would cancel.
         // One timestamp per pass: GTD, time-exit, and stack deadlines all compare against the same
