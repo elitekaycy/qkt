@@ -191,6 +191,8 @@ Both items below have shipped.
   ([#34](https://github.com/elitekaycy/qkt/issues/34))
   Superseded by the connector contracts (2026-09-18): Bybit routes now come from `type: bybit`
   account entries in `brokers:`, never from the environment alone.
+  Superseded again (2026-10): the in-process Bybit connector is gone; Bybit routes come from
+  `type: gateway` entries on a qkt-venue-gateway running its Bybit adapter.
 
 - `done` — v0.28.6: `MT5StateRecovery` now correlates venue-side orphan positions back
   to the owning strategy via comment-prefix match and seeds `positionMetaByTicket` so a
@@ -287,8 +289,8 @@ pa-quant.
 
 ### Tier 6 — Asset-class expansion (multi-phase)
 
-- `tbd` — **Crypto exercised end-to-end on Bybit.** Code paths exist (`BybitSpotBroker`,
-  `BybitLinearBroker`, market sources). Never run in qkt-prod. First Bybit strategy will
+- `tbd` — **Crypto exercised end-to-end on Bybit.** Bybit is reached through the
+  qkt-venue-gateway's Bybit adapter (`type: gateway`). Never run in qkt-prod. First Bybit strategy will
   find latent bugs. ([#73](https://github.com/elitekaycy/qkt/issues/73))
 - `tbd` — **Equity / stocks broker adapter.** No equity broker exists. Needs new broker
   like `MT5Broker` (Interactive Brokers / Alpaca / TradeStation) plus stock-specific

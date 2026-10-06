@@ -37,10 +37,11 @@ data class PerformanceReport(
     val drawdownPeriods: List<DrawdownPeriod> = emptyList(),
     val monteCarlo: MonteCarloSummary? = null,
     /**
-     * Total commission charged over the run (#335). The realized/total PnL above are already
-     * net of this; it is reported separately as one part of the bridge from gross PnL to net.
-     * With swap, `preCostPnL = totalPnL + commissionPaid + swapPaid`. Zero when no commission
-     * was configured.
+     * Total commission charged over the run (#335), including the execution fees a venue reported
+     * on fills (the futures exchange simulator's). The realized/total PnL above are already net of
+     * this; it is reported separately as one part of the bridge from gross PnL to net. With swap, rolls and
+     * funding, `preCostPnL = totalPnL + commissionPaid + swapPaid + rollCostsPaid + fundingPaid`. Zero when no
+     * commission was configured.
      */
     val commissionPaid: BigDecimal = BigDecimal.ZERO,
     /**
@@ -48,6 +49,17 @@ data class PerformanceReport(
      * Realized and total PnL are already net of this amount.
      */
     val swapPaid: BigDecimal = BigDecimal.ZERO,
+    /**
+     * What rolling futures positions cost over the run (slippage and fees against each roll's
+     * reference prices; negative when the rolls beat them). Realized and total PnL are already net
+     * of it. Zero without rolls.
+     */
+    val rollCostsPaid: BigDecimal = BigDecimal.ZERO,
+    /**
+     * Net perpetual funding paid over the run, from the stored funding rates: positive a charge, negative a
+     * credit. Realized and total PnL are already net of it. Zero without perpetuals.
+     */
+    val fundingPaid: BigDecimal = BigDecimal.ZERO,
     /**
      * Realized PnL bucketed by UTC day (#348) — `{ 2026-06-04: +120.50, ... }`. Includes trade
      * closes and financing cash on its rollover date; empty when neither occurred.

@@ -24,6 +24,8 @@ class CompiledRule(
     internal val edgeStateKey: String = ruleAlias,
     /** What the condition requires of the position on the rule's own symbol; see [PositionGate]. */
     internal val positionGate: PositionGate = PositionGate.NONE,
+    /** The streams whose bar close evaluates this rule; see [WhenThenCompiler]. */
+    val triggerAliases: Set<String> = setOf(ruleAlias),
 ) {
     internal val ruleId: String
         get() = edgeStateKey
@@ -38,6 +40,11 @@ class CompiledRule(
     private var rejectedDuringCommit = false
     private var edgeDirty = false
     private var openedDuringCommit = false
+
+    // An exit this rule sent ended at the venue without filling in full; its next fire is a retry
+    // that sends only what still reduces the position ([ExitRetryClamp]). Persisted with the edge.
+    internal var exitRetryPending = false
+        private set
 
     // When the position last went flat, for a rule gated on being flat. A bar is judged on the
     // world as it stood when that bar ended.
@@ -56,8 +63,9 @@ class CompiledRule(
      * position this edge's fire opened: the next bar the condition holds fires again.
      */
     internal fun clearEdge() {
-        if (wasTrue) edgeDirty = true
+        if (wasTrue || exitRetryPending) edgeDirty = true
         wasTrue = false
+        exitRetryPending = false
         pendingCommit = false
         rejectedDuringCommit = false
         openedDuringCommit = false
@@ -107,8 +115,9 @@ class CompiledRule(
         val gateMetAfterBar = gateSatisfiedSinceMs?.let { it >= ec.candle.endTime } ?: false
         val isTrue = v is Value.Bool && v.v && !gateMetAfterBar
         if (!isTrue) {
-            if (wasTrue) edgeDirty = true
+            if (wasTrue || exitRetryPending) edgeDirty = true
             wasTrue = false
+            exitRetryPending = false
             pendingCommit = false
             rejectedDuringCommit = false
             return emptyList()
@@ -126,7 +135,11 @@ class CompiledRule(
         if (isSell) capture(onSellCaptures, SnapshotSell, ec)
         if (isOpening) capture(onOpenCaptures, SnapshotOpen, ec)
 
-        return action(ec)
+        val signals = action(ec)
+        if (!exitRetryPending) return signals
+        exitRetryPending = false
+        edgeDirty = true
+        return ExitRetryClamp.clamp(signals, ctx.positions)
     }
 
     /**
@@ -159,6 +172,19 @@ class CompiledRule(
         }
     }
 
+    /**
+     * Re-arm this edge for a retry after an exit it sent ended at the venue cancelled or rejected
+     * with the position not fully closed (#1359): the next bar the condition holds, the rule fires
+     * again, sending only what still reduces the position.
+     */
+    internal fun rearmForExitRetry() {
+        rearmAfterRejection()
+        if (!exitRetryPending) edgeDirty = true
+        exitRetryPending = true
+    }
+
+    internal fun restoreExitRetry(value: Boolean) = run { exitRetryPending = value }
+
     private fun capture(
         captures: List<Pair<String, CompiledExpr>>,
         kind: com.qkt.dsl.ast.SnapshotKind,
@@ -169,9 +195,4 @@ class CompiledRule(
             if (r is Value.Num) ec.snapshotStore.captureSlot(ruleAlias, name, kind, r.v)
         }
     }
-}
-
-internal enum class RuleCommitOutcome {
-    ACCEPTED,
-    REARMED,
 }

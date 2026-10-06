@@ -194,7 +194,6 @@ class MT5Broker(
             requestedProtection,
             placementResults,
         )
-
     private val compositePlacement =
         MT5CompositePlacement(profile, client, bus, clock, placementPrep, placementIds, state, events, pendingFills)
 
@@ -246,6 +245,8 @@ class MT5Broker(
             onPositionClosed = ::removeClosedTicketMeta,
             isExpectedProtectionChange = positionModify::isExpectedProtectionChange,
             engineCloseState = engineCloses::engineCloseState,
+            takeEnginePartial = engineCloses::takeEnginePartial,
+            entryGrowthBeside = MT5PartialEntryHistory(profile, client, clock, partialEntries)::growthBeside,
             venueCostsForClose = closeTruth::bookVenueCloseCosts,
             priceProvider = priceTracker,
             sessionGate = profile.symbolCalendars::anyCalendarInSession,
@@ -283,10 +284,9 @@ class MT5Broker(
         if (profile.hasExpectedAccount) {
             accountReads.recordAccountingMode(MT5AccountVerifier.fetchAndVerify(profile, client))
         }
-        // Pollers start UNCONDITIONALLY: if recovery throws (one malformed gateway
-        // response) but the pollers never start, the broker still accepts orders and
-        // the session trades all day with no fill/close detection. Only recovery may
-        // degrade, and loudly.
+        // Pollers start UNCONDITIONALLY: if recovery throws (one malformed gateway response) but the
+        // pollers never start, the broker still trades all day with no fill/close detection. Only
+        // recovery may degrade, and loudly.
         try {
             stateRecovery.recover()
         } catch (e: Exception) {

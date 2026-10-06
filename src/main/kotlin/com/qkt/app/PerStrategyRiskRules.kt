@@ -107,6 +107,7 @@ internal class PerStrategyRiskRules(
                                 strategyId = riskOwnerStrategyId,
                                 maxLosses = it,
                                 ledger = pacerLedger,
+                                clock = clock,
                                 scope = perStrategyLossStreakHaltScope,
                             ),
                     )

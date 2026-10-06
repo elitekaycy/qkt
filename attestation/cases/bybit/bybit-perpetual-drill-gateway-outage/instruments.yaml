@@ -1,0 +1,9 @@
+futures:
+  - root: BYBIT_LINEAR:BTCUSDT
+    currency: USDT
+    multiplier: 1
+    tickSize: 0.1
+    volumeStep: 0.001
+    volumeMin: 0.001
+    takerFeeRate: 0.00055
+    perpetual: BTCUSDT

@@ -5,12 +5,15 @@ import com.qkt.execution.isTerminal
 /**
  * Cancels an executing order's linked siblings exactly once, starting with its first positive
  * execution slice — so a partial fill of one OCO leg already stops the other from filling too.
+ * Each cancel is followed until the venue confirms it ([confirmCancel]): a venue that refuses it
+ * (an MT5 requote) leaves the sibling live and able to fill, so it is sent again.
  */
 internal class SiblingCancellation(
     private val book: OrderBook,
     private val siblings: SiblingLinks,
     private val sequencer: OcoSequencer,
     private val ops: OrderOps,
+    private val confirmCancel: (String) -> Unit,
 ) {
     /** Orders whose first execution slice already started cancelling their siblings. */
     private val started: MutableSet<String> = mutableSetOf()
@@ -28,6 +31,7 @@ internal class SiblingCancellation(
             if (sequencer.deferCancelUntilAccepted(sibId)) {
                 deferredSiblingCancel = true
             } else {
+                confirmCancel(sibId)
                 ops.cancel(sibId)
             }
         }

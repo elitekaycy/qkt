@@ -61,7 +61,7 @@ internal data class MetaRef(
 )
 
 /**
- * Walk every [ExprAst] reachable from [ast] and return the meta-field [StreamFieldRef]s
+ * Walk every [ExprAst] reachable from [ast] and return the [StreamFieldRef]s of [fields] (the meta fields by default)
  * paired with the `HubKey.qktSymbol` they resolve against. Exhaustive over the sealed
  * `ExprAst` / `ActionAst` / `SizingAst` / `OrderTypeAst` / `ChildPriceAst` / `TifAst` /
  * `StackAst` hierarchies — `when` blocks omit `else` so any new variant breaks the build.
@@ -69,6 +69,7 @@ internal data class MetaRef(
 internal fun collectMetaRefs(
     ast: StrategyAst,
     streams: Map<String, HubKey>,
+    fields: Collection<String> = DslVocabulary.metaFields,
 ): List<MetaRef> {
     val out = mutableListOf<MetaRef>()
 
@@ -81,7 +82,7 @@ internal fun collectMetaRefs(
             StackEntryRef, EntryQty, LastTradingDayOfMonth, is com.qkt.dsl.ast.ExitRef,
             -> Unit
             is StreamFieldRef -> {
-                if (e.field in DslVocabulary.metaFields) {
+                if (e.field in fields) {
                     val sym = streams[e.stream]?.qktSymbol
                     if (sym != null) out.add(MetaRef(e.stream, e.field, sym))
                 }
@@ -172,6 +173,7 @@ internal fun collectMetaRefs(
                 a.minStep?.let { walkExpr(it) }
             }
             is com.qkt.dsl.ast.Latch -> Unit
+            is com.qkt.dsl.ast.OpenStructure -> OrderPartExprs.sizing(a.sizing, ::walkExpr)
         }
     }
 
@@ -187,6 +189,7 @@ internal fun collectMetaRefs(
     ast.lets.forEach { walkExpr(it.expr) }
     ast.rules.forEach { walkRule(it) }
     ast.sequences.forEach { sequence -> sequence.stages.forEach { walkExpr(it.condition) } }
+    ast.schedules.forEach { walkAction(it.action) }
 
     return out.distinct()
 }

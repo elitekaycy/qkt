@@ -62,6 +62,7 @@ class ActionCompiler(
     private val closes = CloseActionCompiler(ids, baskets)
     private val resizes = ResizeActionCompiler(exprCompiler, sizingCompiler, ids)
     private val logs = LogActionCompiler(exprCompiler, strategyLogger)
+    private val structures = StructureCompiler(exprCompiler, ids)
 
     /** True once any compiled action (or latch entry) sized `RISK … OF BOOK`. */
     val usesBookSizing: Boolean get() = sizingCompiler.compiledBookSizing
@@ -79,7 +80,12 @@ class ActionCompiler(
             is Buy -> compileBuySell(action.stream, action.opts, Side.BUY)
             is Sell -> compileBuySell(action.stream, action.opts, Side.SELL)
             is Log -> logs.compile(action, ruleAlias)
-            is Close -> closes.compileClose(action.stream)
+            is Close ->
+                if (action.stream in exprCompiler.structures.aliases) {
+                    structures.compileClose(action.stream)
+                } else {
+                    closes.compileClose(action.stream)
+                }
             is CloseAll -> closes.compileCloseAll()
             is Cancel -> compileCancel(action.stream)
             is CancelAll -> compileCancelAll()
@@ -89,6 +95,7 @@ class ActionCompiler(
                 listOf(Signal.ArmLatch(latchCompiler.compile(action, ec.strategyContext.strategyId), ec))
             }
             is Resize -> resizes.compile(action)
+            is com.qkt.dsl.ast.OpenStructure -> structures.compile(action)
             else -> error("Action ${action::class.simpleName} is not supported in 11d1")
         }
 

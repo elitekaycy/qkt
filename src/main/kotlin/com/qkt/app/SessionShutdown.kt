@@ -10,6 +10,9 @@ import com.qkt.strategy.Strategy
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 
+/** How long a stop waits for a flatten in progress before interrupting the engine thread. */
+internal const val STOP_FLATTEN_GRACE_MS: Long = 30_000L
+
 /**
  * Stops a live session in order: stop the inputs (feed, pollers, heartbeat), let the engine loop
  * drain what is already queued, then release brokers and announce the stop. A session with venue
@@ -39,9 +42,14 @@ internal class SessionShutdown(
     private val terminated = mailbox.terminated
 
     private val drainGraceMs = if (builtBrokers.isEmpty()) 0L else STOP_DRAIN_GRACE_MS
+    private val log = org.slf4j.LoggerFactory.getLogger(LiveSession::class.java)
+
+    @Volatile
+    private var stopRequestedNanos = 0L
 
     fun requestStop() {
         if (!stopping.compareAndSet(false, true)) return
+        stopRequestedNanos = System.nanoTime()
         feedThread.interrupt()
         runCatching { feed.close() }
         runCatching { brokerStatePoller?.close() }
@@ -56,18 +64,32 @@ internal class SessionShutdown(
         control.put(
             Inbound.GracefulStop(
                 deadlineNanos = System.nanoTime() + drainGraceMs * 1_000_000L,
+                graceNanos = drainGraceMs * 1_000_000L,
             ),
         )
+    }
+
+    /**
+     * A flatten still queued or running when the drain grace runs out is the operator's emergency
+     * exit: interrupting it mid venue read used to fault it with nothing closed (#1357). Wait for it,
+     * bounded by [STOP_FLATTEN_GRACE_MS]; true when the loop then ended on its own.
+     */
+    private fun awaitFlatten(): Boolean {
+        // Also a flatten that just finished: the loop is giving its closes' fills a drain grace.
+        val flattenedSinceStop = mailbox.lastFlattenEndNanos.get() - stopRequestedNanos > 0
+        if (mailbox.pendingFlattens.get() <= 0 && !flattenedSinceStop) return false
+        log.warn("stop is waiting up to {}ms for a flatten still in progress", STOP_FLATTEN_GRACE_MS)
+        return terminated.await(STOP_FLATTEN_GRACE_MS, TimeUnit.MILLISECONDS)
     }
 
     fun stop() {
         requestStop()
         if (!stopFinishing.compareAndSet(false, true)) return
-        if (!terminated.await(drainGraceMs + 500L, TimeUnit.MILLISECONDS)) {
+        if (!terminated.await(drainGraceMs + 500L, TimeUnit.MILLISECONDS) && !awaitFlatten()) {
             running.set(false)
             thread.interrupt()
         }
-        // Release venue-side lifecycle resources (MT5 pollers, Bybit reconcilers)
+        // Release venue-side lifecycle resources (MT5 pollers, gateway sessions)
         // so a long-running daemon cycling strategies doesn't accumulate threads.
         for (b in builtBrokers) runCatching { b.shutdown() }
         runCatching { riskState.persistAnchorsIfDirty() }

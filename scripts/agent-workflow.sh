@@ -215,6 +215,9 @@ validate_commit_message() {
     if [[ "$message" =~ (AI|Claude|GPT|Co-Authored-By|Generated\ with) ]]; then
         die "commit message contains forbidden attribution"
     fi
+    if { git var GIT_AUTHOR_IDENT; git var GIT_COMMITTER_IDENT; } | grep -iqE 'anthropic|claude|openai|copilot|codex|gemini'; then
+        die "the commit would be authored as a tool identity; set git user.name and user.email to the human author"
+    fi
 }
 
 commit_command() {

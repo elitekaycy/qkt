@@ -9,9 +9,9 @@ import java.nio.file.Path
  * so a new operator can go from "I have qkt installed" to "I have a daemon running
  * on docker-compose" in two commands. Default kind is `mt5` — the canonical full
  * stack with `mt5-gateway`; `minimal` skips the gateway for paper-only / backtest
- * exploration; `bybit` swaps MT5 out for direct Bybit REST API (testnet by default);
- * `bot` layers the `qkt bot` AI-agent files (system prompt, bot guide) on the
- * mt5 stack.
+ * exploration; `bybit` swaps MT5 out for the qkt-venue-gateway running its Bybit adapter
+ * (a `type: gateway` broker, testnet first); `bot` layers the `qkt bot` AI-agent files
+ * (system prompt, bot guide) on the mt5 stack.
  */
 class CreateCommand(
     private val args: Args,

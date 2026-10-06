@@ -48,6 +48,10 @@ BRACKET {
 
 For BTC at $67,000 long, stop at $66,900, target at $67,300. The units match the symbol's quote (USD for crypto, pips for FX *but converted to price points*).
 
+The distance must be greater than 0: a literal `0` or negative distance is a compile error, and one computed
+from an expression (`BY atr(btc, 14) - 50`) that comes out 0 or negative skips the order, since it would put
+the level on the wrong side of entry. An out-of-range computed `PCT` skips the order the same way.
+
 ### `BY <pct> PCT` — percent of entry price
 
 ```qkt
@@ -208,11 +212,39 @@ continues protecting it if qkt goes offline.
 
 The DSL submits one `BRACKET` request to the order manager. From there:
 
-1. **If the broker supports `BRACKET` natively** (MT5 brokers, PaperBroker): the order manager submits the entry + stop + target as one atomic group. The venue handles OCO semantics.
+1. **If the broker attaches brackets** (live MT5): the entry goes out with its stop and target attached. If the
+   venue refuses to attach them to the filled position, qkt holds the stop (and a fill-anchored target) itself
+   and alerts the operator.
 
-2. **If the broker doesn't** (Bybit Spot via REST): the order manager submits the entry alone. On fill, it submits the stop and target as separate orders linked by OCO state. When one fills, the other auto-cancels via the engine.
+2. **Otherwise** (`paper`, `mt5-sim`, `type: gateway` venues such as Deribit, Bybit): the order manager submits
+   the entry alone. On fill, it submits the target and then the stop as separate orders linked by OCO state;
+   when one fills, the engine cancels the other. If the venue refuses the stop, qkt holds it itself (it fires a
+   market close at the level) and keeps the target; if it refuses the target, the stop still goes out. Either
+   way the operator is alerted, and the position is never left without its stop.
 
 The DSL is the same either way. See [Broker integration](../../concepts/broker-integration.md) for the capability matrix.
+
+### An entry that fills only in part
+
+In case 2 the stop and target wait, unsent, until the entry ends. If the entry ends with only part of it
+filled, what happens to them depends on what ended it:
+
+| What ended the entry | Its exits |
+|---|---|
+| The venue cancelled the rest (a market remainder, an IOC, an expiry) | Sent for the filled part: sized to it, anchored on its average price. |
+| `CANCEL <stream>`, `CANCEL_ALL`, a risk halt | The same: qkt cancels the rest of the entry and keeps the filled part protected. Whatever fills before the venue confirms the cancel is protected too, and an entry that fills whole first gets its full exits. |
+| `CLOSE <stream>`, `CLOSE_ALL`, `qkt stop --flatten` | Dropped. The close flattens the filled part itself, so a stop or target left behind would face a position that is already flat. |
+| Nothing filled | Dropped with the entry. |
+
+When the entry's exits went out for its filled part and the venue later reports more of the entry
+executed (it executed before the cancel took effect, and was heard after the entry's end), that
+quantity gets the bracket's exits too, as their own stop and target (`<bracket>-late1-sl`,
+`<bracket>-late1-tp`, then `-late2-`...), sized to it and anchored on its price. A repeat of the same
+report arms nothing more (#1349).
+
+The same holds after a restart: an entry whose remainder the venue cancelled while qkt was down comes back
+cancelled with its filled part, the position holds exactly the fills, the exits go out for that part, and
+nothing is sent again.
 
 ## Defaults via `DEFAULTS`
 

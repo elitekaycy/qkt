@@ -5,7 +5,8 @@ interface IdGenerator {
 }
 
 class SequentialIdGenerator(
-    private val prefix: String = "ORD",
+    /** What every id this generator mints starts with, before `-<sequence>`. */
+    val prefix: String = "ORD",
 ) : IdGenerator {
     companion object {
         /**
@@ -27,6 +28,9 @@ class SequentialIdGenerator(
         if (last >= counter) counter = last + 1
     }
 
+    /** The sequence of the last id minted (or resumed past), or null when none was. */
+    fun lastIssued(): Long? = (counter - 1).takeIf { it >= 0 }
+
     /**
      * Resume past every id in [usedIds] minted by this generator. A session that restarts with
      * live state restores orders and legs whose ids this generator issued before; starting at
@@ -37,10 +41,14 @@ class SequentialIdGenerator(
         usedIds.mapNotNull { sequenceOf(it) }.maxOrNull()?.let(::resumeAfter)
     }
 
-    /** The counter that produced [id], or null when [id] is not one of this generator's. */
+    /**
+     * The counter that produced [id], or null when [id] is not one of this generator's. An id derived
+     * from one of its ids (a bracket's exits `<id>-tp` and `<id>-sl`, a stack tier's `<id>-tier0-sl`)
+     * counts as that id: after its entry fills, those exits are all a restart restores of a bracket.
+     */
     fun sequenceOf(id: String): Long? {
         if (!id.startsWith("$prefix-")) return null
-        return id.substring(prefix.length + 1).toLongOrNull()
+        return id.substring(prefix.length + 1).substringBefore('-').toLongOrNull()
     }
 }
 

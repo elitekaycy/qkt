@@ -3,6 +3,7 @@ package com.qkt.connectivity
 import com.qkt.broker.BrokerFactory
 import com.qkt.common.SymbolCalendars
 import com.qkt.marketdata.source.MarketSource
+import com.qkt.marketdata.source.SymbolPattern
 
 /**
  * One login at one broker, exchange or prop firm, opened through a [Connector].
@@ -30,15 +31,36 @@ interface TradingAccount : AutoCloseable {
     /** Prices from this account's own feed, or null when the connector supplies none. */
     val marketData: MarketSource?
 
+    /** The symbols [marketData] is routed: the account's prefix, plus any feeds its connector derives from it. */
+    val marketDataPattern: SymbolPattern get() = SymbolPattern.prefix(symbolPrefix)
+
     /** When each of this account's symbols trades. */
     val tradingHours: SymbolCalendars
 
     /**
-     * The venue's own contract spec for [qktSymbol] (`PROP_S01:XAUUSD`), or null when the
-     * connector cannot report one. Read-only and outside the trading path: it lets an operator
-     * copy the specs live trades with into the file a backtest reads.
+     * The venue's own contract spec for [qktSymbol] (`PROP_S01:XAUUSD`), with the costs it cannot
+     * report, or null when the connector cannot report one. Read-only and outside the trading path:
+     * it lets an operator copy the specs live trades with into the file a backtest reads.
      */
-    fun instrumentSpec(qktSymbol: String): com.qkt.instrument.InstrumentMeta? = null
+    fun instrumentSpec(qktSymbol: String): com.qkt.instrument.VenueInstrumentSpec? = null
+
+    /** Builds the catalogs of this account's futures roots from the venue's listing, or null when it lists none. */
+    val contractCatalogs: com.qkt.instrument.ContractCatalogSource? get() = null
+
+    /** The venue's published funding rates of its perpetuals, or null when the connector cannot read them. */
+    val fundingRates: com.qkt.instrument.FundingRateSource? get() = null
+
+    /** The venue's mark and index history of its contracts, or null when the connector cannot read it. */
+    val markHistory: com.qkt.marketdata.marks.MarkHistorySource? get() = null
+
+    /** The venue's public tape and liquidations of its contracts, or null when the connector cannot read them. */
+    val printHistory: com.qkt.marketdata.flow.PrintHistorySource? get() = null
+
+    /** The venue's published open interest of its contracts, or null when the connector cannot read it. */
+    val openInterest: com.qkt.marketdata.openinterest.OpenInterestSource? get() = null
+
+    /** The venue's order-book snapshots of its contracts, or null when the connector cannot read them. */
+    val bookDepth: com.qkt.marketdata.depth.BookDepthSource? get() = null
 
     /** Releases the connections and files this account holds. Idempotent. */
     override fun close()

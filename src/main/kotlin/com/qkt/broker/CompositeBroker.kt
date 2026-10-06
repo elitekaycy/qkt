@@ -11,7 +11,7 @@ import org.slf4j.LoggerFactory
  * Multi-venue router that dispatches each [OrderRequest] to the leaf broker whose
  * [SymbolPattern] matches the order's symbol.
  *
- * Combines several brokers (e.g. MT5 for FX + Bybit for crypto) behind one [Broker]. Routes are
+ * Combines several brokers (e.g. MT5 for FX + a venue gateway for crypto) behind one [Broker]. Routes are
  * evaluated in order, first match wins; an optional [fallback] catches the rest. Composite tracks
  * `orderId → broker` so [cancel] and [modify] reach the right leaf.
  *
@@ -214,12 +214,12 @@ class CompositeBroker(
         target.modifyPositionAsync(ticket, sl, tp, onResult)
     }
 
+    override fun isAccountWide(symbol: String): Boolean = brokerFor(symbol)?.isAccountWide(symbol) == true
+
     override fun getOpenPositions(): Map<String, List<com.qkt.positions.Position>> {
         val merged = LinkedHashMap<String, MutableList<com.qkt.positions.Position>>()
         for (leaf in allLeaves()) {
-            // A failing leaf must surface, not vanish from the merged view — a caller
-            // reconciling against a silently-partial snapshot believes it is flat on
-            // that venue and trades on assumed state (#376).
+            // A failing leaf must surface: a silently-partial snapshot reads as flat on that venue (#376).
             val leafPositions =
                 runCatching { leaf.getOpenPositions() }.getOrElse {
                     log.warn("CompositeBroker.getOpenPositions: leaf {} failed: {}", leaf.name, it.message)

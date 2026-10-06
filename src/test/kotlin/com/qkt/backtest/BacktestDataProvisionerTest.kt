@@ -88,4 +88,25 @@ class BacktestDataProvisionerTest {
             calendarFor = { TradingCalendar.fxDefault() },
         )
     }
+
+    @Test
+    fun `a fetch that keeps failing is reported as incomplete data, not a crash`(
+        @TempDir tmp: Path,
+    ) {
+        val failing =
+            object : DataFetcher {
+                override fun fetch(
+                    symbol: String,
+                    day: LocalDate,
+                    target: Path,
+                ): Unit = throw java.io.IOException("dukascopy fetch failed after 3 attempts")
+            }
+        val provisioner = BacktestDataProvisioner(store = DefaultDataStore(root = tmp, fetcher = failing))
+        val day = LocalDate.of(2024, 3, 6)
+
+        assertThatThrownBy {
+            provisioner.ensure(listOf(stream("EURUSD")), day, day, true, false) { TradingCalendar.fxDefault() }
+        }.isInstanceOf(IncompleteDataException::class.java)
+            .hasMessageContaining("could not fetch ticks for EURUSD")
+    }
 }

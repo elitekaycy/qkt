@@ -23,6 +23,7 @@ internal class FillHandler(
     private val ocoSequencer: OcoSequencer,
     private val siblingCancels: SiblingCancellation,
     private val bracketFills: BracketFills,
+    private val lateEntries: LateEntryExecutions,
     private val attachedCompletion: AttachedBracketCompletion,
     private val scaleOutTracker: ScaleOutTracker,
     private val scaleOutExits: ScaleOutExits,
@@ -45,6 +46,10 @@ internal class FillHandler(
         }
         brackets.preFill.remove(e.clientOrderId)
         val existing = book[e.clientOrderId]
+        if (existing == null || existing.state == OrderState.CANCELLED) {
+            // A fill heard after its entry ended (#1349): protect it if that entry's bracket had armed exits.
+            if (lateEntries.onLateExecution(e.clientOrderId, e.quantity, e.price, null)) return
+        }
         if (existing?.state?.isTerminal == true) {
             log.error(
                 "ignoring duplicate fill for terminal order {} in state {} — cumulative execution is immutable",
@@ -77,7 +82,7 @@ internal class FillHandler(
             e.quantity,
             e.price,
         )
-        val filledSibling = ocoGuard.filledSibling(e.clientOrderId)
+        val filledSibling = ocoGuard.executedSibling(e.clientOrderId)
         if (filledSibling != null) {
             discardChildrenForCompensatedOcoLeg(e.clientOrderId)
             ocoGuard.compensateDoubleFill(e, filledSibling)

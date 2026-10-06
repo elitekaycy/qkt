@@ -1,0 +1,162 @@
+package com.qkt.connector.gateway
+
+import com.qkt.broker.BrokerFactory
+import com.qkt.common.Clock
+import com.qkt.common.SymbolCalendars
+import com.qkt.connectivity.AccountConfig
+import com.qkt.connectivity.AccountProfile
+import com.qkt.connectivity.AccountType
+import com.qkt.connectivity.Connector
+import com.qkt.connectivity.ConnectorContext
+import com.qkt.connectivity.ConnectorSpec
+import com.qkt.connectivity.ProductType
+import com.qkt.connectivity.TradingAccount
+import com.qkt.instrument.ContractCatalogSource
+import com.qkt.instrument.FundingRateSource
+import com.qkt.instrument.InstrumentRegistry
+import com.qkt.instrument.OptionTerms
+import com.qkt.marketdata.depth.BookDepthSource
+import com.qkt.marketdata.flow.PrintHistorySource
+import com.qkt.marketdata.marks.MarkHistorySource
+import com.qkt.marketdata.openinterest.OpenInterestSource
+import com.qkt.marketdata.source.MarketSource
+import com.qkt.marketdata.source.SymbolPattern
+
+/**
+ * Any venue served by a VGP v1 gateway (`docs/superpowers/specs/2026-10-01-vgp-v1-wire.md`): futures,
+ * perpetuals, spot and options. Each `type: gateway` entry is one account on one gateway; several
+ * strategies may share it through one [GatewaySession] (fills are attributed by client order id, and a
+ * settlement closes each strategy's own holding). See [GatewaySettings] for the entry.
+ */
+class GatewayConnector : Connector {
+    override val spec: ConnectorSpec =
+        ConnectorSpec(
+            type = "gateway",
+            displayName = "VGP gateway",
+            productTypes = setOf(ProductType.FUTURE, ProductType.PERPETUAL, ProductType.SPOT, ProductType.OPTION),
+            settings = GatewaySettings.KEYS,
+        )
+
+    override fun open(
+        accounts: List<AccountConfig>,
+        context: ConnectorContext,
+    ): List<TradingAccount> =
+        accounts.map { account ->
+            val settings = GatewaySettings.of(account, context)
+            GatewayTradingAccount(
+                account,
+                settings,
+                context.clock,
+                { context.strategiesTrading(account.name).toSet() },
+                GatewayChainRecording(context.instruments, settings.chainSnapshotMs),
+                context.instruments,
+            )
+        }
+}
+
+/** One account on a VGP v1 gateway, opened by [GatewayConnector]. Nothing connects until it verifies or trades. */
+class GatewayTradingAccount internal constructor(
+    override val config: AccountConfig,
+    private val settings: GatewaySettings,
+    private val clock: Clock,
+    private val strategies: () -> Set<String>,
+    private val recording: GatewayChainRecording,
+    private val instruments: InstrumentRegistry?,
+) : TradingAccount {
+    private val identity = GatewayIdentity(settings.adapter, settings.accountLogin, settings.tradeMode)
+    private val client by lazy {
+        GatewayClient(settings.url, settings.apiKey, settings.httpTimeoutMs, settings.retryAttempts)
+    }
+    private val opened =
+        lazy {
+            GatewaySession(
+                client,
+                GatewaySymbols(config.symbolPrefix),
+                clock,
+                identity,
+                strategies,
+                streamFactory = { onEvent, onReset, onConnection ->
+                    GatewayStream(settings.url, settings.apiKey, onEvent, onReset, onConnection)
+                },
+            )
+        }
+
+    override val tradingHours: SymbolCalendars = GatewaySettings.calendars(config)
+
+    private val quotes =
+        GatewayMarketSource(
+            config.symbolPrefix,
+            settings.url,
+            settings.apiKey,
+            listing = { client.instruments() },
+            recorderFor = recording::sinkFor,
+            bars = client::bars,
+            capabilities = { client.health().capabilities },
+            prints = { code, kind, fromMs, toMs -> historyClient.prints(code, kind, fromMs, toMs) },
+        )
+
+    override val marketData: MarketSource = quotes
+
+    override val contractCatalogs: ContractCatalogSource
+        get() = GatewayContractCatalog(client, GatewaySymbols(config.symbolPrefix), clock)
+
+    override val fundingRates: FundingRateSource = GatewayFundingRates(client, GatewaySymbols(config.symbolPrefix))
+
+    /**
+     * Histories read on a client of their own whose calls may take [MARKS_TIMEOUT_MS]: a page of marks can cost the
+     * venue a call per window, and a page of liquidations a read of an hour of its tape.
+     */
+    private val historyClient by lazy {
+        GatewayClient(
+            settings.url,
+            settings.apiKey,
+            maxOf(settings.httpTimeoutMs, MARKS_TIMEOUT_MS),
+            settings.retryAttempts,
+        )
+    }
+
+    override val markHistory: MarkHistorySource
+        get() = GatewayMarkHistory(historyClient, GatewaySymbols(config.symbolPrefix))
+
+    override val printHistory: PrintHistorySource
+        get() = GatewayPrintHistory(historyClient, GatewaySymbols(config.symbolPrefix))
+
+    override val openInterest: OpenInterestSource =
+        GatewayOpenInterest(client, GatewaySymbols(config.symbolPrefix), config.name)
+
+    override val bookDepth: BookDepthSource = GatewayBookDepth(client, GatewaySymbols(config.symbolPrefix), config.name)
+
+    override val marketDataPattern: SymbolPattern = SymbolPattern(quotes::supports)
+
+    override val orderEntry: BrokerFactory = { bus, clock, _, positions, strategyName ->
+        GatewayBroker(opened.value, bus, clock, positions, strategyName) { symbol ->
+            (instruments?.lookup(symbol)?.derivative as? OptionTerms)?.tickSteps
+        }
+    }
+
+    /** Checks the gateway before anything trades: it must speak `vgp1` and report the expected identity. */
+    override fun verify(): AccountProfile {
+        val health = client.health()
+        identity.mismatch(health)?.let { error("${config.name}: $it") }
+        val account = client.account()
+        return AccountProfile(
+            accountName = config.name,
+            accountId = health.accountLogin,
+            server = settings.url,
+            type = if (health.tradeMode == "real") AccountType.LIVE else AccountType.DEMO,
+            currency = account.currency,
+            leverage = null,
+            description =
+                "${config.name}: gateway ${health.adapter} ${health.adapterVersion} account ${health.accountLogin} " +
+                    "(${health.tradeMode})${if (health.venueConnected) "" else ", venue disconnected"}",
+        )
+    }
+
+    /** Closes the account's gateway connection, if it was ever opened. */
+    override fun close() {
+        if (opened.isInitialized()) opened.value.close()
+        recording.close()
+    }
+}
+
+private const val MARKS_TIMEOUT_MS = 60_000L

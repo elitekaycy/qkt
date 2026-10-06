@@ -4,7 +4,6 @@ import com.qkt.dsl.ast.HUB_BROKER
 import com.qkt.dsl.ast.StrategyAst
 import com.qkt.dsl.ast.StreamDecl
 import com.qkt.dsl.ast.StreamFieldRef
-import com.qkt.dsl.ast.WhenThen
 
 /**
  * Rewrites a hub alias into one first-class stream per field the strategy actually reads.
@@ -46,7 +45,9 @@ object HubFieldExpansion {
         val datasetAliases: Set<String>,
     )
 
-    fun apply(ast: StrategyAst): Expanded {
+    fun apply(parsed: StrategyAst): Expanded {
+        // Open interest and depth are expanded first, the same way: `btc.open_interest` becomes its own hidden stream.
+        val ast = BookDepthFieldExpansion.apply(OpenInterestFieldExpansion.apply(parsed))
         // Only dataset-level declarations expand. A field stream already carries `/` in its symbol,
         // so running this pass twice -- once at the parse boundary, once in the compiler for ASTs
         // built by hand -- is a no-op the second time rather than a second level of nesting.
@@ -82,32 +83,7 @@ object HubFieldExpansion {
                 },
             )
 
-        val rewritten =
-            ast.copy(
-                lets = ast.lets.map { it.copy(expr = transform.expr(it.expr)) },
-                rules =
-                    ast.rules.map { rule ->
-                        when (rule) {
-                            is WhenThen ->
-                                WhenThen(
-                                    cond = transform.expr(rule.cond),
-                                    action = transform.action(rule.action),
-                                    line = rule.line,
-                                )
-                        }
-                    },
-                schedules = ast.schedules.map { it.copy(action = transform.action(it.action)) },
-                sequences =
-                    ast.sequences.map { sequence ->
-                        sequence.copy(
-                            stages =
-                                sequence.stages.map { stage ->
-                                    stage.copy(condition = transform.expr(stage.condition))
-                                },
-                        )
-                    },
-                defaults = ast.defaults?.let { transform.defaultsBlock(it) },
-            )
+        val rewritten = rewriteExprs(ast, transform)
         val streams = rewritten.streams.filter { it.alias !in byAlias } + hidden.values
         return Expanded(rewritten.copy(streams = streams), byAlias.keys)
     }

@@ -1,5 +1,6 @@
 package com.qkt.dsl.compile
 
+import com.qkt.dsl.DslVocabulary
 import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.StrategyAst
 import com.qkt.dsl.ast.WhenThen
@@ -51,14 +52,9 @@ class AstCompiler {
         val letRhsByName: Map<String, ExprAst> = ast.lets.associate { it.name to resolver.resolveDeclaration(it) }
         val bindings = IndicatorBinding.Bag()
         val aggregates = AggregateBinding.Bag()
-        val exprCompiler = ExprCompiler(bindings, aggregates, basketConstituents)
-        val exitExprCompiler =
-            ExprCompiler(
-                bindings = bindings,
-                aggregates = aggregates,
-                baskets = basketConstituents,
-                allowExitAccess = true,
-            )
+        val exprCompiler =
+            ExprCompiler(bindings, aggregates, basketConstituents, structures = StructureSupport(structureAliases(ast)))
+        val exitExprCompiler = exprCompiler.forExitHooks()
         val strategyLogger = org.slf4j.LoggerFactory.getLogger("com.qkt.dsl.strategy.${ast.name}")
         val ids = com.qkt.common.SequentialIdGenerator(prefix = "dsl-${ast.name}-")
         val pendingStacks = PendingStacks()
@@ -84,12 +80,15 @@ class AstCompiler {
         whenThens.forEach { rule -> compilingRule(rule) { rejectReadOnlyOrders(rule.action, readOnlyAliases) } }
         ast.schedules.forEach { rejectReadOnlyOrders(it.action, readOnlyAliases) }
         validateBaskets(ast)
+        requireValidStructures(ast)
         whenThens.forEach { rule -> compilingRule(rule) { validateCompleteBracket(rule.action, ast.defaults) } }
         ast.schedules.forEach { validateCompleteBracket(it.action, ast.defaults) }
         validateResizeProtection(ast)
         val resolvedConditions: List<ExprAst> =
             whenThens.map { rule ->
-                compilingRule(rule) { resolver.resolve(rule.cond).also(::rejectChainedComparisons) }
+                compilingRule(rule) {
+                    resolver.resolve(rule.cond).also(::rejectChainedComparisons).also(::rejectNonBooleanCondition)
+                }
             }
         val resolvedSequenceConditions: List<ExprAst> =
             ast.sequences.flatMap { sequence -> sequence.stages.map { resolver.resolve(it.condition) } }
@@ -134,6 +133,12 @@ class AstCompiler {
         val volumeRequiringSymbols: Set<String> = volumeRequiringSymbols(bindings, streams)
 
         val metaRefs = collectMetaRefs(ast, streams)
+        val markSymbols = collectMetaRefs(ast, streams, DslVocabulary.markFields).map { it.qktSymbol }.toSet()
+        val optionMarkSymbols = collectMetaRefs(ast, streams, DslVocabulary.optionFields).map { it.qktSymbol }.toSet()
+        val flowReads =
+            collectMetaRefs(ast, streams, DslVocabulary.flowFields)
+                .map { FlowRead(it.qktSymbol, FlowFieldCompiler.kind(it.field)) }
+                .toSet()
         val quoteFieldStreams = collectQuoteFieldStreams(resolvedConditions + resolvedSequenceConditions)
 
         val perStreamWarmup: Map<String, Int> = WarmupRequirements.compute(ast)
@@ -164,6 +169,9 @@ class AstCompiler {
             pendingStacks = pendingStacks,
             multiPositionPerSymbolSymbols = stackAtSymbols,
             volumeRequiringSymbols = volumeRequiringSymbols,
+            markSymbols = markSymbols,
+            optionMarkSymbols = optionMarkSymbols,
+            flowReads = flowReads,
             usesBookSizing = actionCompiler.usesBookSizing,
             metaRefs = metaRefs,
             warmupGate = warmupGate,

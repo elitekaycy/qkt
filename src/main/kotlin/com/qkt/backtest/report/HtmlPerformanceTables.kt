@@ -59,6 +59,14 @@ internal object HtmlPerformanceTables {
             append("<tr><td>Max consecutive losses</td><td>${r.maxConsecutiveLosses}</td></tr>")
             append("<tr><td>Commission paid</td><td>${r.commissionPaid.toPlainString()}</td></tr>")
             append("<tr><td>Swap paid</td><td>${r.swapPaid.toPlainString()}</td></tr>")
+            if (r.rollCostsPaid.signum() != 0) {
+                append("<tr><td>Roll costs paid</td><td>${r.rollCostsPaid.toPlainString()}</td></tr>")
+            }
+            if (r.fundingPaid.signum() !=
+                0
+            ) {
+                append("<tr><td>Funding paid</td><td>${r.fundingPaid.toPlainString()}</td></tr>")
+            }
             append("</tbody></table>")
         }
 

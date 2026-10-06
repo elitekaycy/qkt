@@ -3,6 +3,9 @@ package com.qkt.app
 import com.qkt.broker.Broker
 import com.qkt.broker.OrderTypeCapability
 import com.qkt.dsl.compile.DslCompiledStrategy
+import com.qkt.dsl.compile.TradeFlowReader
+import com.qkt.instrument.InstrumentRegistry
+import com.qkt.instrument.OptionTerms
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.marketdata.source.MarketSourceCapability
 import com.qkt.pnl.BookBalanceView
@@ -52,6 +55,83 @@ internal fun requireVolumeCapability(
             "Strategy '$strategyId' binds a volume-weighted indicator (VWAP/OBV) on $symbol but its " +
                 "data feed ('${source.name}') does not supply volume — bind a volume-bearing feed or remove the indicator"
         }
+    }
+}
+
+/**
+ * Refuse to start a strategy that reads a contract's mark or index on a symbol whose data source serves no
+ * marks, or serves them with a problem (a gateway that does not declare `mark_prices`), so a rule never reads
+ * an Undefined that no venue will ever fill. Per symbol, through [MarketSource.marksFor].
+ */
+internal fun requireMarkPrices(
+    strategyId: String,
+    strategy: DslCompiledStrategy,
+    source: MarketSource,
+) {
+    for (symbol in strategy.markSymbols) {
+        val marks = source.marksFor(symbol)
+        val problem =
+            if (marks ==
+                null
+            ) {
+                "its data feed ('${source.name}') serves no mark prices"
+            } else {
+                marks.problem(symbol)
+            }
+        require(problem == null) { "Strategy '$strategyId' reads the mark or index of $symbol but $problem" }
+    }
+}
+
+/**
+ * Refuse to start a strategy that reads an option's mark IV or Greeks (`<alias>.iv`, `.delta`, ...) on a symbol
+ * that is not a catalogued option, or whose data source serves no option marks or serves them with a problem
+ * (a gateway that does not declare `option_marks`, a root with no chain series), so a rule never reads an
+ * Undefined that nothing will ever fill. Per symbol, through [MarketSource.optionMarksFor].
+ */
+internal fun requireOptionMarks(
+    strategyId: String,
+    strategy: DslCompiledStrategy,
+    source: MarketSource,
+    instruments: InstrumentRegistry,
+) {
+    for (symbol in strategy.optionMarkSymbols) {
+        val marks = source.optionMarksFor(symbol)
+        val problem =
+            when {
+                instruments.lookup(symbol)?.derivative !is OptionTerms -> "it is not a catalogued option contract"
+                marks == null -> "its data feed ('${source.name}') serves no option marks"
+                else -> marks.problem(symbol)
+            }
+        require(
+            problem == null,
+        ) { "Strategy '$strategyId' reads the implied volatility or Greeks of $symbol but $problem" }
+    }
+}
+
+/**
+ * Refuse to start a strategy that reads trade flow (`<alias>.buy_volume[1]`, `.long_liq_volume[1]`, ...) on a symbol
+ * whose data source serves none, or serves it with a problem (a gateway not declaring `trades` or `liquidations`),
+ * so a rule never reads an Undefined that no venue will ever fill. Per symbol and series.
+ */
+internal fun requireTradeFlow(
+    strategyId: String,
+    strategy: DslCompiledStrategy,
+    source: MarketSource,
+) {
+    val reads = (strategy as? TradeFlowReader)?.flowReads ?: return
+    for (read in reads) {
+        val flow = source.tradeFlowFor(read.symbol)
+        val problem =
+            if (flow ==
+                null
+            ) {
+                "its data feed ('${source.name}') serves no trade tape"
+            } else {
+                flow.problem(read.symbol, read.kind)
+            }
+        require(
+            problem == null,
+        ) { "Strategy '$strategyId' reads the ${read.kind.capability} of ${read.symbol} but $problem" }
     }
 }
 

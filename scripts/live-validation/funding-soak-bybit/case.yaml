@@ -1,0 +1,21 @@
+id: bybit-perpetual-funding-soak
+title: A perpetual held through a Bybit funding time books the funding Bybit charges, to the cent
+why: 'Bybit settles perpetual funding every 8 hours (00:00, 08:00, 16:00 UTC on BTCUSDT) as a Funding execution
+  on the held position; qkt must book exactly that amount, against the strategy that held the position.'
+status: soak
+symbols:
+- BYBIT_LINEAR:BTCUSDT
+timeframes:
+- 1m
+proves:
+- behaviour:perpetual-funding
+fills: 2
+replay: bars
+config:
+  risk:
+    measured_usage_hours: 0
+assertions:
+- flat-account
+- deals-net-equals-realized
+- funding-charged
+- replay-same-fills

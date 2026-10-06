@@ -27,11 +27,18 @@ internal class BracketFills(
     private val clock: Clock,
     private val ops: OrderOps,
 ) {
-    /** Arms whatever was waiting on the fill [e]; [pending] are the children held for it. */
+    /** Arms whatever was waiting on the entry's [last] fill; [pending] are the children held for it. */
     fun armExits(
-        e: BrokerEvent.OrderFilled,
+        last: BrokerEvent.OrderFilled,
         pending: List<OrderRequest>?,
     ) {
+        // An entry filled in slices completes on its last one: protect the whole fill at its average price.
+        val order = book[last.clientOrderId]
+        val e =
+            last.copy(
+                quantity = order?.cumulativeFilledQuantity?.takeIf { it.signum() > 0 } ?: last.quantity,
+                price = order?.avgFillPrice ?: last.price,
+            )
         val fallbackBracket = brackets.fillAnchoredFallback.remove(e.clientOrderId)
         val attachedBracket = brackets.fillAnchoredAttached.remove(e.clientOrderId)
         when {
@@ -39,6 +46,26 @@ internal class BracketFills(
             attachedBracket != null -> armAttached(e, attachedBracket, pending)
             else -> pending?.forEach { ops.dispatch(it) }
         }
+    }
+
+    /**
+     * A decomposed bracket's [entryId] ended (the venue cancelled the rest, or a plain cancel of the
+     * bracket did, see [HeldBracketExits]) with only part of it filled: that part gets the bracket's
+     * exits, sized to it and anchored on its average price, as a whole fill would. False, arming
+     * nothing, when no part filled, the bracket is venue-attached (the venue holds its SL/TP), or its
+     * exits were no longer [held] (a closing cancel dropped them); the entry's end then cancels them.
+     */
+    fun armPartFilled(
+        entryId: String,
+        bracket: OrderRequest.Bracket?,
+        held: Boolean,
+    ): Boolean {
+        val entry = book[entryId] ?: return false
+        val price = entry.avgFillPrice
+        if (!held || bracket == null || entry.request is OrderRequest.Bracket || price == null) return false
+        if (entry.cumulativeFilledQuantity.signum() <= 0) return false
+        ops.dispatch(exits.exitOco(bracket, price, entry.cumulativeFilledQuantity))
+        return true
     }
 
     private fun armAttached(

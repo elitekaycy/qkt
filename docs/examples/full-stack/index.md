@@ -10,7 +10,7 @@ This is what a production-shape qkt deployment looks like. The recipe pages cove
 my-trading-stack/
 ├── .env                          # broker credentials (gitignored)
 ├── .env.example                  # template for new contributors
-├── docker-compose.yml            # qkt + mt5-gateway services
+├── docker-compose.yml            # qkt + mt5-gateway + Bybit venue gateway services
 ├── qkt.config.yaml               # broker profiles + risk rules
 ├── strategies/
 │   ├── btc-trend.qkt             # Bybit-side strategy
@@ -26,12 +26,16 @@ Every file is real. Copy-paste into a fresh directory and follow the [walkthroug
 # Copy this to `.env` and fill in real values.
 # .env is gitignored — never commit credentials.
 
-# ---- Bybit ----
+# ---- Bybit (through the qkt-venue-gateway's Bybit adapter) ----
 # Generate an API key at https://www.bybit.com/app/user/api-management
 # Permissions: Read + Trade. NO Withdrawal. Set spending limits.
 BYBIT_API_KEY=
 BYBIT_API_SECRET=
-BYBIT_TESTNET=false                # set true for paper-testing first
+BYBIT_ENVIRONMENT=testnet          # testnet first; mainnet is real money
+BYBIT_TRADE_MODE=demo              # what qkt expects the gateway to report: demo, or real on mainnet
+BYBIT_ACCOUNT_LOGIN=               # the account_login the gateway's /v1/health reports
+BYBIT_TRADER_TOKEN=                # any long random strings (openssl rand -hex 32)
+BYBIT_GUARDIAN_TOKEN=
 
 # ---- Exness MT5 (demo) ----
 # Get demo credentials from https://my.exness.com/
@@ -55,6 +59,23 @@ QKT_BROKER_EXNESS_GATEWAY_URL=http://mt5-gateway:5001
 version: '3.9'
 
 services:
+  gateway-bybit-spot:
+    # The qkt-venue-gateway, built from github.com/elitekaycy/qkt-venue-gateway.
+    image: qkt-venue-gateway:local
+    build: https://github.com/elitekaycy/qkt-venue-gateway.git#main
+    environment:
+      GATEWAY_ADAPTER: bybit
+      GATEWAY_SETTING_CATEGORY: spot
+      GATEWAY_SETTING_ENVIRONMENT: ${BYBIT_ENVIRONMENT}
+      GATEWAY_LOGIN: ${BYBIT_API_KEY}
+      GATEWAY_SECRET: ${BYBIT_API_SECRET}
+      GATEWAY_TRADER_TOKEN: ${BYBIT_TRADER_TOKEN}
+      GATEWAY_GUARDIAN_TOKEN: ${BYBIT_GUARDIAN_TOKEN}
+    volumes:
+      - bybit-spot-state:/data
+    restart: unless-stopped
+    networks: [qkt-net]
+
   mt5-gateway:
     image: elitekaycy/mt5-gateway-api:0.3.2
     container_name: mt5-gateway
@@ -83,10 +104,12 @@ services:
     depends_on:
       mt5-gateway:
         condition: service_healthy
+      gateway-bybit-spot:
+        condition: service_healthy
     environment:
-      BYBIT_API_KEY: ${BYBIT_API_KEY}
-      BYBIT_API_SECRET: ${BYBIT_API_SECRET}
-      BYBIT_TESTNET: ${BYBIT_TESTNET}
+      BYBIT_TRADER_TOKEN: ${BYBIT_TRADER_TOKEN}
+      BYBIT_ACCOUNT_LOGIN: ${BYBIT_ACCOUNT_LOGIN}
+      BYBIT_TRADE_MODE: ${BYBIT_TRADE_MODE}
       QKT_BROKER_EXNESS_GATEWAY_URL: ${QKT_BROKER_EXNESS_GATEWAY_URL}
       QKT_BROKER_EXNESS_API_KEY: ${MT5_API_KEY}
       QKT_STATE_DIR: /var/lib/qkt
@@ -112,6 +135,7 @@ networks:
 
 volumes:
   qkt-state:
+  bybit-spot-state:
 ```
 
 ## `qkt.config.yaml`
@@ -130,14 +154,15 @@ log_level: info                       # debug | info | warn | error
 #       btc = BYBIT_SPOT:BTCUSDT EVERY 1h
 brokers:
 
-  # Bybit Spot — REST + WebSocket; no gateway container needed
+  # Bybit Spot — through the venue gateway running its Bybit adapter (gateway-bybit-spot in compose).
+  # The entry name is the prefix: bybit_spot serves BYBIT_SPOT:... See https://github.com/elitekaycy/qkt-venue-gateway/blob/main/adapter-bybit/README.md
   bybit_spot:
-    type: bybit
-    category: spot                      # spot | linear; the name must be bybit_<category>
-    api_key: ${BYBIT_API_KEY}
-    api_secret: ${BYBIT_API_SECRET}
-    testnet: ${BYBIT_TESTNET}
-    account_type: UNIFIED
+    type: gateway
+    gateway_url: http://gateway-bybit-spot:8443
+    api_key: env:BYBIT_TRADER_TOKEN
+    expected_adapter: bybit
+    expected_account_login: "${BYBIT_ACCOUNT_LOGIN}"
+    expected_trade_mode: ${BYBIT_TRADE_MODE}
 
   # Exness MT5 — via mt5-gateway service in compose
   exness:

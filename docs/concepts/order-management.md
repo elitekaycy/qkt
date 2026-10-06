@@ -50,9 +50,21 @@ submit(request)
 
 - **Terminal outcomes are immutable.** `OrderStore.update` refuses to move an order out of a
   terminal state.
+- **An execution heard twice is booked once.** A full fill reported again for an order that already
+  filled, or a slice whose cumulative quantity the order already holds (a stream replay after a
+  reconnect, a recovery re-report), changes neither the order nor the position ledger
+  (`RepeatedExecutions`). A fill that only reports a venue position close is never a repeat.
 - **One writer per record.** Workflows never write the book directly for state changes; they
   call `track`/`update` through `OrderOps`, so every change is persisted and indexed.
 - **Hot path is keyed by symbol.** `TickEvaluation` touches only the tick's symbol's live orders
   and reuses scratch buffers, so steady-state per-tick allocation is zero.
 - **Logs keep one name.** Every class here logs under `OrderManager`'s logger, so operator log
   routing and filters do not depend on the internal structure.
+- **A partly filled entry keeps its exits for what filled.** When a bracket entry or a scale-out
+  basis ends with only part of it filled, the exits are armed for that part, sized to it. This holds
+  whether the venue cancelled the remainder or qkt cancelled the composite: a strategy `CANCEL`, a
+  risk halt or `OrderManager.cancel`. A closing cancel arms nothing, because the close flattens the
+  filled part itself (`CLOSE`, `CLOSE_ALL`, `qkt stop --flatten`, `OrderManager.closePendingForSymbol`).
+  The same holds across a restart, since live orders persist their fill progress (`order-fills.json`).
+  See [BRACKET: an entry that fills only in part](../reference/dsl/bracket.md#an-entry-that-fills-only-in-part)
+  (#1328, #1336).

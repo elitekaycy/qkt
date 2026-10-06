@@ -4,6 +4,7 @@ import com.qkt.accounting.AccountingEngine
 import com.qkt.bus.EventBus
 import com.qkt.common.Clock
 import com.qkt.common.Money
+import com.qkt.events.CostIncurred
 import com.qkt.events.FillAccountedEvent
 import com.qkt.events.FillAccountingKind
 import com.qkt.risk.RiskState
@@ -12,7 +13,8 @@ import java.math.BigDecimal
 /**
  * Publishes realized amounts that no execution produced — a financing accrual (swap) or what the
  * venue realized on a leg that closed while the daemon was down — as a [FillAccountedEvent], so
- * they pass through the same fold, accumulators and audit trail as an execution.
+ * they pass through the same fold, accumulators and audit trail as an execution. A venue cost a
+ * broker reports ([CostIncurred]) is booked here too, once [subscribeCosts] has run.
  */
 internal class NonExecutionAccounting(
     private val riskState: RiskState,
@@ -20,13 +22,22 @@ internal class NonExecutionAccounting(
     private val accounting: AccountingEngine,
     private val clock: Clock,
 ) {
-    /** Publish [amount] for [strategyId] as a non-execution accounted event of [kind]. */
+    /** Book every [CostIncurred] on the bus as a realized loss of its kind ([FillAccountingKind.COST] unless it says). */
+    fun subscribeCosts() {
+        bus.subscribe<CostIncurred> { e ->
+            val charged = accounting.convertPnlAmount(e.symbol, e.amount.negate(), e.timestamp, e.referencePrice)
+            publish(e.strategyId, charged, e.kind, "cost:${e.reason}", symbol = e.symbol)
+        }
+    }
+
+    /** Publish [amount] for [strategyId] as a non-execution accounted event of [kind], attributed to [symbol] when known. */
     fun publish(
         strategyId: String,
         amount: BigDecimal,
         kind: FillAccountingKind,
         id: String,
         legId: String? = null,
+        symbol: String = "",
     ) {
         riskState.beforeFill(strategyId)
         val scaled = amount.setScale(Money.SCALE, Money.ROUNDING)
@@ -34,7 +45,7 @@ internal class NonExecutionAccounting(
             FillAccountedEvent(
                 orderId = id,
                 strategyId = strategyId,
-                symbol = "",
+                symbol = symbol,
                 fillSliceId = id,
                 sourceFillSequenceId = 0L,
                 cumulativeFilled = null,

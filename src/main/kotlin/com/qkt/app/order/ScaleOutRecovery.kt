@@ -32,6 +32,17 @@ internal class ScaleOutRecovery(
         return result
     }
 
+    /** The position ticket the partial executions of basis [basisId] reported, if any. */
+    fun partialTicketOf(basisId: String): String? = scaleOuts.partialPositionTickets[basisId]
+
+    /** Puts back the ticket a restored basis's partial executions had reported before the restart (#1342). */
+    fun restorePartialTicket(
+        basisId: String,
+        ticket: String,
+    ) {
+        if (basisId in scaleOuts.pendingByBasis) scaleOuts.partialPositionTickets[basisId] = ticket
+    }
+
     /** Overlays every strategy's live wrappers onto [pendingByStrategy] for the routine snapshot. */
     fun overlay(pendingByStrategy: MutableMap<String, MutableMap<String, OrderRequest>>) {
         for ((basisId, scaleOut) in scaleOuts.pendingByBasis) {

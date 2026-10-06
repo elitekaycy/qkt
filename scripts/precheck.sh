@@ -30,7 +30,7 @@ else
 fi
 
 touches_src=false
-if printf '%s\n' "$changed" | grep -qE '^(src/|build\.gradle\.kts$|settings\.gradle\.kts$|gradle/|gradlew|gradlew\.bat$)'; then
+if printf '%s\n' "$changed" | grep -qE '^(src/|build-logic/|config/|build\.gradle\.kts$|settings\.gradle\.kts$|gradle/|gradlew|gradlew\.bat$)'; then
     touches_src=true
 fi
 
@@ -67,7 +67,15 @@ else
 fi
 
 step "Step 6: scan for emojis in source code"
-if git grep -lE '[\x{1F300}-\x{1FAFF}\x{2600}-\x{27BF}]' -- 'src/**' '*.kt' '*.kts' '*.md' ':!.claude/' ':!scripts/precheck.sh' 2>/dev/null; then
+# PCRE (-P) understands \x{...}; -I skips binaries. Exit 1 means no match; 2+ means the scan
+# itself failed, which must not read as clean.
+emoji_status=0
+emoji_scan="$(LC_ALL=C.UTF-8 git grep -lIP '[\x{1F300}-\x{1FAFF}]' -- 'src/**' '*.kt' '*.kts' '*.md' ':!.claude/' ':!scripts/precheck.sh' 2>&1)" ||
+    emoji_status=$?
+if [ "$emoji_status" -ge 2 ]; then
+    fail "emoji scan failed: $emoji_scan"
+elif [ "$emoji_status" -eq 0 ]; then
+    printf '%s\n' "$emoji_scan"
     fail "found emojis in source/docs — remove them"
 else
     ok "no emojis in source"

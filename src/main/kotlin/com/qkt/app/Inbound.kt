@@ -30,7 +30,9 @@ internal sealed interface Inbound {
         val reason: String,
     ) : Inbound
 
+    /** Stop once [deadlineNanos] passes with nothing queued; a flatten run meanwhile earns [graceNanos] more. */
     data class GracefulStop(
         val deadlineNanos: Long,
+        val graceNanos: Long = 0L,
     ) : Inbound
 }

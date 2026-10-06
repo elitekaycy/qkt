@@ -3,6 +3,7 @@ package com.qkt.cli
 import com.qkt.app.LiveSession
 import com.qkt.app.SessionPnl
 import com.qkt.candles.TimeWindow
+import com.qkt.cli.daemon.signalToJson
 import com.qkt.cli.observe.EventRing
 import com.qkt.cli.observe.ObservabilityServer
 import com.qkt.cli.observe.PendingStackLayer
@@ -115,7 +116,7 @@ class RunCommand(
                 runawayMaxRoundTrips = cfg.runawayMaxRoundTrips
                 runawayMaxRejections = cfg.runawayMaxRejections
                 candleCloseGraceMs = cfg.candleCloseGraceMs
-                MarketSourceFactory.composite(cfg.accountMarketDataRoutes(), hub = cfg.hub)
+                MarketSourceFactory.composite(cfg.accountMarketDataRoutes(), cfg.source, hub = cfg.hub)
             }
         val feedSymbols = (symbols + accountingConfig.normalizedSymbols.values).distinct()
         val marketSource = effectiveSourceFactory(feedSymbols)
@@ -231,40 +232,6 @@ class RunCommand(
         put("price", JsonPrimitive(trade.price.toPlainString()))
         put("realized", JsonPrimitive(realized.toPlainString()))
     }
-
-    private fun signalToJson(sig: com.qkt.strategy.Signal) =
-        buildJsonObject {
-            when (sig) {
-                is com.qkt.strategy.Signal.Buy -> {
-                    put("kind", JsonPrimitive("buy"))
-                    put("symbol", JsonPrimitive(sig.symbol))
-                    put("size", JsonPrimitive(sig.size.toPlainString()))
-                }
-                is com.qkt.strategy.Signal.Sell -> {
-                    put("kind", JsonPrimitive("sell"))
-                    put("symbol", JsonPrimitive(sig.symbol))
-                    put("size", JsonPrimitive(sig.size.toPlainString()))
-                }
-                is com.qkt.strategy.Signal.Submit -> {
-                    put("kind", JsonPrimitive("submit"))
-                    put("symbol", JsonPrimitive(sig.request.symbol))
-                    put("size", JsonPrimitive(sig.request.quantity.toPlainString()))
-                }
-                is com.qkt.strategy.Signal.CancelPendingForSymbol -> {
-                    put("kind", JsonPrimitive("cancel_stacks"))
-                    put("symbol", JsonPrimitive(sig.symbol))
-                }
-                is com.qkt.strategy.Signal.ArmLatch -> {
-                    put("kind", JsonPrimitive("arm_latch"))
-                    put("name", JsonPrimitive(sig.compiled.name ?: ""))
-                }
-                is com.qkt.strategy.Signal.Suppressed -> {
-                    put("kind", JsonPrimitive("suppressed"))
-                    put("symbol", JsonPrimitive(sig.symbol))
-                    put("reason", JsonPrimitive(sig.reason))
-                }
-            }
-        }
 
     private fun buildSnapshot(
         strategyName: String,

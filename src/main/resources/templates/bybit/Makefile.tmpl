@@ -1,6 +1,6 @@
-.PHONY: up down restart logs status list deploy resync resync-dry-run reconcile stop shell
+.PHONY: up down restart logs gateway-logs gateway-health status list deploy resync resync-dry-run reconcile stop shell
 
-# Bring up the qkt daemon. Bybit is REST API direct — no gateway service to wait on.
+# Bring up the Bybit gateway and the qkt daemon (qkt waits for the gateway to be healthy).
 up:
 	docker compose up -d
 
@@ -14,6 +14,14 @@ restart:
 # Tail the qkt daemon logs.
 logs:
 	docker compose logs -f --tail 200 qkt
+
+# Tail the Bybit gateway logs.
+gateway-logs:
+	docker compose logs -f --tail 200 gateway-bybit-linear
+
+# The gateway's health: adapter, account, trade mode and whether the venue is connected.
+gateway-health:
+	docker compose exec gateway-bybit-linear sh -c 'curl -fsS -H "Authorization: Bearer $$GATEWAY_TRADER_TOKEN" http://127.0.0.1:8443/v1/health'
 
 # Snapshot of all deployed strategies.
 status:

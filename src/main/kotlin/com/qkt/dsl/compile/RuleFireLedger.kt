@@ -19,11 +19,13 @@ internal class RuleFireLedger(
     private val streams: Map<String, HubKey>,
 ) {
     private val ruleByOrderId: MutableMap<String, CompiledRule> = mutableMapOf()
+    private val exits = ExitOrderTracker()
 
     private data class RuleSignalCause(
         val rule: CompiledRule,
         val decisionId: String,
         val signalIndex: Int,
+        val exit: ExitOrderTracker.Sent?,
     )
 
     private val ruleBySignal: java.util.IdentityHashMap<Signal, RuleSignalCause> = java.util.IdentityHashMap()
@@ -31,7 +33,13 @@ internal class RuleFireLedger(
 
     fun clear() {
         ruleByOrderId.clear()
+        exits.clear()
     }
+
+    /** See [ExitOrderTracker.onUnfilled]. */
+    fun onExitOrderUnfilled(clientOrderId: String): ExitRetry? = exits.onUnfilled(clientOrderId)
+
+    fun onOrderFilled(clientOrderId: String) = exits.onFilled(clientOrderId)
 
     fun onOrderRejected(clientOrderId: String) {
         ruleByOrderId.remove(clientOrderId)?.rearmAfterRejection()
@@ -43,8 +51,12 @@ internal class RuleFireLedger(
     ): DecisionOrderLink? {
         val cause = ruleBySignal.remove(signal) ?: return null
         ruleByOrderId[clientOrderId] = cause.rule
+        cause.exit?.let { exits.track(clientOrderId, it) }
         if (signal is Signal.Submit) {
             correlationIds(signal.request).forEach { ruleByOrderId[it] = cause.rule }
+        }
+        if (signal is Signal.SubmitGroup) {
+            signal.requests.forEach { ruleByOrderId[it.id] = cause.rule }
         }
         return DecisionOrderLink(
             decisionId = cause.decisionId,
@@ -70,6 +82,7 @@ internal class RuleFireLedger(
         ctx: StrategyContext,
         emit: (Signal) -> Unit,
     ): SequenceFireOutcome {
+        val retry = rule.exitRetryPending
         val fired = rule.fire(ec, ctx)
         if (fired.isEmpty()) {
             val committed = rule.commitFire(true)
@@ -96,8 +109,10 @@ internal class RuleFireLedger(
                 .flatMap { correlationIds(it.request) }
         val decision = ruleDecision(rule, ec, ctx, fired.size)
         ruleDecisionObserver(decision)
+        val fire = exits.beginFire(rule, retry)
         fired.forEachIndexed { index, signal ->
-            ruleBySignal[signal] = RuleSignalCause(rule, decision.decisionId, index)
+            ruleBySignal[signal] =
+                RuleSignalCause(rule, decision.decisionId, index, exits.exitOf(signal, rule, fire, ctx.positions))
         }
         orderIds.forEach { ruleByOrderId[it] = rule }
         val acceptedBefore = ctx.submissions.accepted

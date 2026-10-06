@@ -34,6 +34,16 @@ jobs:
           distribution: temurin
           java-version: '21'
       - uses: gradle/actions/setup-gradle@v4
+      - name: Check commit authors
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          git fetch --no-tags --filter=blob:none --unshallow origin
+          bash scripts/check-commit-authors.sh "$BASE_SHA..$HEAD_SHA"
+      - name: Test commit author check
+        run: bash tests/scripts/check-commit-authors-test.sh
       - name: Test promotion workflow
         run: bash tests/scripts/prepare-main-promotion-test.sh
       - name: Test dev-to-testing promotion workflow
@@ -50,6 +60,12 @@ jobs:
         run: bash tests/scripts/release-unattended-test.sh
       - name: Test attestation catalog concurrency and retry
         run: bash tests/scripts/run-attestation-catalog-retry-test.sh
+      - name: Test attestation derivatives lane
+        run: bash tests/scripts/run-attestation-catalog-derivatives-test.sh
+      - name: Test derivatives case leftover sweep
+        run: bash tests/scripts/run-derivatives-lane-sweep-test.sh
+      - name: Test derivatives case failure drills
+        run: bash tests/scripts/derivatives-lane-drills-test.sh
       - name: Test attestation leftover sweep
         run: bash tests/scripts/sweep-attestation-leftovers-test.sh
       - name: Test fill-attached protection wait
@@ -60,6 +76,8 @@ jobs:
         run: bash tests/scripts/run-shadow-lane-cleanup-test.sh
       - name: Validate attestation case catalog
         run: python3 attestation/lib/validate.py
+      - name: Test the derivatives lane runner offline
+        run: python3 -m unittest discover -s scripts/live-validation/tests
       - name: Build + test + ktlint
         run: ./gradlew build --no-daemon
       - name: Upload test reports

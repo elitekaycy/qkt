@@ -19,13 +19,17 @@ import com.qkt.strategy.Mode
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 
 /**
  * The ingestion validation floor: zero, negative, and crossed quotes are dropped and
  * counted; the last good price holds for PnL marks instead of being poisoned.
  */
 class TradingPipelineTickValidationTest {
-    private fun pipeline(priceTracker: MarketPriceTracker): TradingPipeline {
+    private fun pipeline(
+        priceTracker: MarketPriceTracker,
+        instruments: com.qkt.instrument.InstrumentRegistry = com.qkt.instrument.NoopInstrumentRegistry,
+    ): TradingPipeline {
         val clock = FixedClock(time = 0L)
         val strategyPositions = StrategyPositionTracker()
         val positions = strategyPositions.account
@@ -51,6 +55,7 @@ class TradingPipelineTickValidationTest {
             calendar = TradingCalendar.crypto(),
             source = NullMarketSource,
             candleWindow = TimeWindow.ONE_MINUTE,
+            instruments = instruments,
         )
     }
 
@@ -76,5 +81,24 @@ class TradingPipelineTickValidationTest {
         p.ingest(Tick("X", Money.of("102"), 6L))
         assertThat(priceTracker.lastPrice("X")).isEqualByComparingTo("102")
         assertThat(p.malformedTickCount.get()).isEqualTo(4L)
+    }
+
+    @Test
+    fun `an option's zero price is a legal print, while a zero CFD price and a negative option price are dropped`(
+        @TempDir dir: java.nio.file.Path,
+    ) {
+        val option =
+            com.qkt.derivatives.options.chain
+                .OptionChainFixture(dir)
+        val priceTracker = MarketPriceTracker()
+        val p = pipeline(priceTracker, option.registry)
+
+        p.ingest(Tick(option.symbol, Money.of("100"), 1L))
+        p.ingest(Tick(option.symbol, BigDecimal.ZERO, 2L))
+        assertThat(priceTracker.lastPrice(option.symbol)).isEqualByComparingTo("0")
+
+        p.ingest(Tick(option.symbol, Money.of("-1"), 3L))
+        p.ingest(Tick("X", BigDecimal.ZERO, 4L))
+        assertThat(p.malformedTickCount.get()).isEqualTo(2L)
     }
 }

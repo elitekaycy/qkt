@@ -3,6 +3,7 @@ package com.qkt.marketdata.source
 import com.qkt.candles.TimeWindow
 import com.qkt.common.TimeRange
 import com.qkt.marketdata.Candle
+import com.qkt.marketdata.rollUpToGrid
 import com.qkt.marketdata.store.BinaryBarStore
 import com.qkt.marketdata.store.LocalBarStore
 
@@ -75,8 +76,32 @@ internal class PrebuiltBarReader(
                         }
                     }
                 }
+                return rolledUp(bs, broker, sym, window, range, days)
             }
         }
         return null
+    }
+
+    /**
+     * [window] bars rebuilt from a finer stored timeframe, day by day (it tiles a UTC day, so no bar
+     * spans two day files): fetched 1m bars serve a 5m strategy rather than another source's ticks.
+     */
+    private fun rolledUp(
+        bs: LocalBarStore,
+        broker: String,
+        sym: String,
+        window: TimeWindow,
+        range: TimeRange,
+        days: List<java.time.LocalDate>,
+    ): Sequence<Candle>? {
+        val base = bs.finerTimeframe(broker, sym, window)?.canonicalSpec() ?: return null
+        val available = days.filter { bs.hasDay(broker, sym, base, it) }
+        if (available.isEmpty()) return null
+        val rangeFromMs = range.from.toEpochMilli()
+        val rangeToMs = range.to.toEpochMilli()
+        return available.asSequence().flatMap { day ->
+            rollUpToGrid(bs.readDay(broker, sym, base, day).asSequence(), window, Long.MAX_VALUE)
+                .filter { it.startTime >= rangeFromMs && it.endTime <= rangeToMs }
+        }
     }
 }

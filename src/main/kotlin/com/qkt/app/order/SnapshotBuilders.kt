@@ -1,10 +1,12 @@
 package com.qkt.app.order
 
 import com.qkt.execution.OrderRequest
+import com.qkt.execution.OrderState
 import com.qkt.execution.isCompositeShape
 import com.qkt.execution.isTerminal
 import com.qkt.persistence.BracketPair
 import com.qkt.persistence.PersistedOcoLeg
+import com.qkt.persistence.PersistedOrderFill
 
 // Builders for the persisted views of order state. Each reads the books and returns what the
 // persistor stores; none mutates anything. Composite wrappers (OTO, ScaleOut, a pre-fill
@@ -118,7 +120,10 @@ internal fun bracketPairsByStrategy(
     return pairsByStrategy
 }
 
-/** Live linked legs that already carry a venue ticket, grouped by strategy. */
+/**
+ * Live linked legs that already carry a venue ticket, plus filled legs whose sibling is still live
+ * (marked executed), grouped by strategy.
+ */
 internal fun ocoLegsByStrategy(
     book: OrderBook,
     siblings: SiblingLinks,
@@ -126,7 +131,9 @@ internal fun ocoLegsByStrategy(
     val ocoLegsByStrategy: MutableMap<String, MutableList<PersistedOcoLeg>> = mutableMapOf()
     for ((legId, siblingIds) in siblings.all) {
         val managed = book[legId] ?: continue
-        if (managed.state.isTerminal) continue
+        val executed = managed.state == OrderState.FILLED
+        if (managed.state.isTerminal && !executed) continue
+        if (executed && siblingIds.none { book[it]?.state?.isTerminal == false }) continue
         val ticket = managed.brokerOrderId ?: continue
         val sid = managed.request.strategyId
         if (sid.isBlank()) continue
@@ -137,8 +144,28 @@ internal fun ocoLegsByStrategy(
                 strategyId = sid,
                 request = managed.request,
                 siblingIds = siblingIds,
+                executed = executed,
             ),
         )
     }
     return ocoLegsByStrategy
+}
+
+/**
+ * What every strategy's live, partly filled orders have filled, by order id, with the position ticket
+ * [ticketOf] knows for each: a restart hands it back with each restored order so the venue's recovery
+ * books only the fills made while qkt was down, and exits close the ticket the fills opened.
+ */
+internal fun orderFillsByStrategy(
+    book: OrderBook,
+    ticketOf: (String) -> String?,
+): Map<String, Map<String, PersistedOrderFill>> {
+    val fills: MutableMap<String, MutableMap<String, PersistedOrderFill>> = mutableMapOf()
+    for ((id, managed) in book.orders) {
+        val sid = managed.request.strategyId
+        if (managed.state.isTerminal || managed.cumulativeFilledQuantity.signum() <= 0 || sid.isBlank()) continue
+        fills.getOrPut(sid) { mutableMapOf() }[id] =
+            PersistedOrderFill(managed.cumulativeFilledQuantity, managed.avgFillPrice, ticketOf(id))
+    }
+    return fills
 }

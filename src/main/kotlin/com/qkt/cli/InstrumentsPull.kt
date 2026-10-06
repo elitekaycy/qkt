@@ -1,7 +1,7 @@
 package com.qkt.cli
 
 import com.qkt.connectivity.AccountDirectory
-import com.qkt.instrument.InstrumentMeta
+import com.qkt.instrument.VenueInstrumentSpec
 import com.qkt.instrument.YamlInstrumentRegistry
 import java.nio.file.Files
 import java.nio.file.Path
@@ -21,73 +21,63 @@ internal object InstrumentsPull {
         accounts: AccountDirectory,
         symbols: List<String>,
         asPrefix: String?,
-    ): List<InstrumentMeta> =
+    ): List<VenueInstrumentSpec> =
         symbols.map { symbol ->
             val account = accounts.forSymbol(symbol) ?: error("no configured account serves $symbol")
             val spec = account.instrumentSpec(symbol) ?: error("${account.config.name} reports no spec for $symbol")
-            if (asPrefix ==
-                null
-            ) {
+            if (asPrefix == null) {
                 spec
             } else {
-                spec.copy(qktSymbol = "${asPrefix.uppercase()}:${symbol.substringAfter(':')}")
+                spec.copy(meta = spec.meta.copy(qktSymbol = "${asPrefix.uppercase()}:${symbol.substringAfter(':')}"))
             }
         }
 
-    /** [pulled] merged over the entries already at [path], by symbol, sorted for a stable diff. */
-    fun merge(
+    /**
+     * Writes [pulled] into the `instruments:` entries at [path]: each pulled symbol's entry is
+     * rewritten, keeping what it sets by hand ([keeping]); every other entry, and every other
+     * top-level section of the file (such as `futures:`), stays exactly as it was. Entries are sorted
+     * by symbol for a stable diff.
+     */
+    fun write(
         path: Path,
-        pulled: List<InstrumentMeta>,
-    ): List<InstrumentMeta> {
+        pulled: List<VenueInstrumentSpec>,
+        source: String,
+    ) {
+        val text = if (Files.exists(path)) Files.readString(path) else ""
+        val blocks = InstrumentEntryBlocks.of(text)
         val existing = if (Files.exists(path)) YamlInstrumentRegistry.load(path).all() else emptyList()
-        return (
-            existing.associateBy {
-                it.qktSymbol
-            } + pulled.associateBy { it.qktSymbol }
-        ).values.sortedBy { it.qktSymbol }
+        val entries =
+            existing.associate {
+                it.qktSymbol to (
+                    blocks[it.qktSymbol] ?: VenueInstrumentSpec(
+                        it,
+                    ).entryText()
+                )
+            }
+        val bySymbol = existing.associateBy { it.qktSymbol }
+        val fresh =
+            pulled.associate {
+                it.meta.qktSymbol to
+                    it
+                        .keeping(
+                            bySymbol[it.meta.qktSymbol],
+                            blocks,
+                        ).entryText()
+            }
+        val body = (entries + fresh).toSortedMap().values.joinToString("")
+        Files.writeString(path, header(source) + body + YamlSections.except(text, "instruments"))
     }
 
+    /** [entries] as a fresh `instruments:` section. */
     fun render(
-        entries: List<InstrumentMeta>,
+        entries: List<VenueInstrumentSpec>,
         source: String,
-    ): String =
-        buildString {
-            appendLine("# Venue contract specs. Pulled entries come from: $source")
-            appendLine("# Commission and swaps are not reported by the venue's symbol endpoint; set them by hand.")
-            appendLine("instruments:")
-            for (e in entries) {
-                appendLine("  - qktSymbol: ${e.qktSymbol}")
-                appendLine("    contractSize: ${e.contractSize.toPlainString()}")
-                appendLine("    volumeStep: ${e.volumeStep.toPlainString()}")
-                appendLine("    volumeMin: ${e.volumeMin.toPlainString()}")
-                e.volumeMax?.let { appendLine("    volumeMax: ${it.toPlainString()}") }
-                appendLine("    pointSize: ${e.pointSize.toPlainString()}")
-                appendLine("    digits: ${e.digits}")
-                appendLine("    tradeStopsLevelPoints: ${e.tradeStopsLevelPoints}")
-                if (e.commissionPerLot.signum() !=
-                    0
-                ) {
-                    appendLine("    commissionPerLot: ${e.commissionPerLot.toPlainString()}")
-                }
-                if (e.slippagePoints != 0) appendLine("    slippagePoints: ${e.slippagePoints}")
-                if (e.swapLongPoints.signum() !=
-                    0
-                ) {
-                    appendLine("    swapLongPoints: ${e.swapLongPoints.toPlainString()}")
-                }
-                if (e.swapShortPoints.signum() !=
-                    0
-                ) {
-                    appendLine("    swapShortPoints: ${e.swapShortPoints.toPlainString()}")
-                }
-                if (e.swapRolloverHourUtc != 21) appendLine("    swapRolloverHourUtc: ${e.swapRolloverHourUtc}")
-                if (e.swapTripleDay !=
-                    java.time.DayOfWeek.WEDNESDAY
-                ) {
-                    appendLine("    swapTripleDay: ${e.swapTripleDay}")
-                }
-            }
-        }
+    ): String = header(source) + entries.sortedBy { it.meta.qktSymbol }.joinToString("") { it.entryText() }
+
+    private fun header(source: String): String =
+        "# Venue contract specs. Pulled entries come from: $source\n" +
+            "# A commented cost field was not reported by the venue; set it by hand.\n" +
+            "instruments:\n"
 
     /** The `pull` subcommand: exit code, with the YAML on stdout when no --out is given. */
     fun run(args: Args): Int {
@@ -110,9 +100,21 @@ internal object InstrumentsPull {
                 return usage(e.message ?: e.toString())
             }
         val out = args.option("out")?.let(Path::of)
-        val yaml = render(if (out == null) pulled else merge(out, pulled), source = configPath.toString())
-        if (out == null) print(yaml) else Files.writeString(out, yaml)
+        if (out ==
+            null
+        ) {
+            print(render(pulled, source = configPath.toString()))
+        } else {
+            write(out, pulled, configPath.toString())
+        }
         if (out != null) println("qkt: wrote ${pulled.size} instrument spec(s) to $out")
+        for (spec in pulled) {
+            for ((cost, reason) in spec.unreported) {
+                System.err.println(
+                    "qkt: ${spec.meta.qktSymbol}: ${cost.name.lowercase()} not reported by the venue ($reason)",
+                )
+            }
+        }
         return ExitCodes.SUCCESS
     }
 

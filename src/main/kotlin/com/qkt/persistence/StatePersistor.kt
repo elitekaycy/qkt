@@ -3,14 +3,12 @@ package com.qkt.persistence
 import com.qkt.common.Side
 import com.qkt.execution.OrderRequest
 import com.qkt.positions.LegBook
-import com.qkt.positions.LegRole
-import com.qkt.positions.PositionLeg
 import java.math.BigDecimal
 
 /**
- * Durable storage for the in-memory engine state that doesn't survive restart:
- * leg metadata, bracket linkages, in-flight orders, STACK_AT tier-fired state,
- * and active DSL exit hooks.
+ * Durable storage for the in-memory engine state that doesn't survive restart: leg metadata,
+ * bracket linkages, in-flight orders, STACK_AT tier-fired state, active DSL exit hooks, and
+ * continuous futures stream lanes.
  *
  * Production implementations ([FileStatePersistor]) write atomic JSON files under
  * `<stateRoot>/<strategyId>/`, where the root is the daemon state directory (honors
@@ -22,7 +20,11 @@ import java.math.BigDecimal
  */
 interface StatePersistor :
     AutoCloseable,
-    TimedExitPersistence {
+    TimedExitPersistence,
+    StreamLanePersistence,
+    FundingPersistence,
+    OrderFillPersistence,
+    OrderIdPersistence {
     /** Releases persistence resources after all sessions have stopped. */
     override fun close() = Unit
 
@@ -39,6 +41,18 @@ interface StatePersistor :
         strategyId: String,
         symbol: String,
     ): PersistedLegBook?
+
+    /** Persists [strategyId]'s live option structures, replacing the last save; an empty list clears them. */
+    fun saveStructures(
+        strategyId: String,
+        structures: List<PersistedStructure>,
+    ) {}
+
+    /** [strategyId]'s persisted live option structures; empty when there are none. */
+    fun loadStructures(strategyId: String): List<PersistedStructure> = emptyList()
+
+    /** Every symbol [strategyId] has a persisted leg book for, declared or not (an option leg a structure picked). */
+    fun legBookSymbols(strategyId: String): Set<String> = emptySet()
 
     fun saveBracketPairs(
         strategyId: String,
@@ -129,10 +143,9 @@ interface StatePersistor :
     fun loadRiskState(strategyId: String): PersistedRiskState? = null
 
     /**
-     * Persist a strategy's lifetime realized PnL. Without this, every restart
-     * resets realized to zero and equity snaps back to the starting balance —
-     * downstream consumers (dashboards, drawdown stats) see a cliff that never
-     * happened. Default no-op keeps persistors that predate PnL persistence compiling.
+     * Persist a strategy's lifetime realized PnL. Without this, every restart resets realized to zero
+     * and equity snaps back to the starting balance — downstream consumers (dashboards, drawdown stats)
+     * see a cliff that never happened. Default no-op keeps persistors that predate it compiling.
      */
     fun savePnl(
         strategyId: String,
@@ -171,26 +184,6 @@ interface StatePersistor :
 
     fun clearStrategy(strategyId: String)
 }
-
-/**
- * On-disk shape of a strategy's lifetime PnL: the cumulative realized amount since
- * the strategy first deployed (not the daily figure — that lives in [PersistedRiskState]).
- */
-data class PersistedPnl(
-    val realized: BigDecimal,
-)
-
-/** On-disk shape of one non-zero closed-trade outcome used by streak accessors. */
-data class PersistedTradeOutcome(
-    val timestamp: Long,
-    val pnl: BigDecimal,
-    val symbol: String,
-)
-
-/** On-disk shape of the bounded closed-trade outcome buffer for one strategy. */
-data class PersistedTradeHistory(
-    val outcomes: List<PersistedTradeOutcome>,
-)
 
 /** Persisted snapshot captured when a DSL `SEQUENCE` stage completed. */
 data class PersistedSequenceSnapshot(
@@ -231,128 +224,9 @@ data class PersistedExitHookBinding(
     val exitPnl: BigDecimal,
 )
 
-data class PersistedLeg(
-    val legId: String,
-    val parentLegId: String?,
-    val role: LegRole,
-    val side: Side,
-    val symbol: String,
-    val quantity: BigDecimal,
-    val entryPrice: BigDecimal,
-    val openedAt: Long,
-    val brokerTicket: String? = null,
-) {
-    fun toPositionLeg(): PositionLeg =
-        PositionLeg(
-            legId = legId,
-            parentLegId = parentLegId,
-            role = role,
-            side = side,
-            symbol = symbol,
-            quantity = quantity,
-            entryPrice = entryPrice,
-            openedAt = openedAt,
-            brokerTicket = brokerTicket,
-        )
-
-    companion object {
-        fun fromPositionLeg(leg: PositionLeg): PersistedLeg =
-            PersistedLeg(
-                legId = leg.legId,
-                parentLegId = leg.parentLegId,
-                role = leg.role,
-                side = leg.side,
-                symbol = leg.symbol,
-                quantity = leg.quantity,
-                entryPrice = leg.entryPrice,
-                openedAt = leg.openedAt,
-                brokerTicket = leg.brokerTicket,
-            )
-    }
-}
-
-/**
- * Excursion marks of one leg. [legId], [side] and [entryPrice] identify the leg the marks belong
- * to: a restore applies them only to that same leg, so a record left behind by a closed leg can
- * never inflate its successor's excursion.
- */
-data class PersistedExcursion(
-    val legId: String,
-    val side: Side,
-    val entryPrice: BigDecimal,
-    val mfe: BigDecimal,
-    val mae: BigDecimal,
-    val adverseExtremePrice: BigDecimal?,
-)
-
-data class PersistedLegBook(
-    val strategyId: String,
-    val symbol: String,
-    val legs: List<PersistedLeg>,
-)
-
 data class BracketPair(
     val entryClientOrderId: String,
     val stopLossClientOrderId: String?,
     val takeProfitClientOrderId: String?,
     val legId: String?,
-)
-
-data class PersistedTier(
-    val index: Int,
-    val mfeThreshold: BigDecimal,
-    val withinMs: Long,
-    val stackQuantity: BigDecimal,
-    val slDistance: BigDecimal,
-    val tpDistance: BigDecimal,
-    val maeRecoverDistance: BigDecimal? = null,
-    val armedAdverseExtreme: BigDecimal? = null,
-    val fired: Boolean,
-    val firedAt: Long?,
-    val firedLegId: String?,
-    /** True when this tier's MFE window elapsed unfired — it must not fire after a restart. */
-    val abandoned: Boolean = false,
-)
-
-data class PersistedTierState(
-    val primaryClientOrderId: String,
-    val tiers: List<PersistedTier>,
-    /**
-     * When the parent leg opened (the engine's MFE-window anchor). Restored engines
-     * keep counting their `WITHIN` windows from the ORIGINAL open, not the restart.
-     * Null in pre-restore state files; restore falls back to "now" with a warning.
-     */
-    val openedAtMs: Long? = null,
-    /** The parent's `EXIT AFTER` hold, re-applied to legs that fire after a restore; null without one. */
-    val exitAfterMs: Long? = null,
-)
-
-/**
- * On-disk shape of [com.qkt.risk.RiskState]: realized PnL, drawdown references,
- * trailing peaks, pacing state, and active halts.
- */
-data class PersistedRiskState(
-    val epochDay: Long,
-    val realizedToday: java.math.BigDecimal,
-    val perStrategyRealizedToday: Map<String, java.math.BigDecimal>,
-    val halted: Boolean,
-    val haltReason: String?,
-    val haltScope: String,
-    val haltEpochDay: Long,
-    val strategyHalts: List<PersistedStrategyHalt>,
-    /** When the global halt tripped, epoch ms; 0 when not halted or recorded before this was tracked. */
-    val haltedAtMs: Long = 0L,
-    val globalRealizedTotal: java.math.BigDecimal? = null,
-    val dailyDrawdownEpochDay: Long? = null,
-    val globalDailyDrawdownRef: java.math.BigDecimal? = null,
-    val perStrategyDailyDrawdownRefs: Map<String, java.math.BigDecimal> = emptyMap(),
-    val peakTotalEquity: java.math.BigDecimal? = null,
-    val perStrategyPeakEquity: Map<String, java.math.BigDecimal> = emptyMap(),
-    val pacerEntryFillsByStrategy: Map<String, List<Long>> = emptyMap(),
-    val pacerLossStreakByStrategy: Map<String, Int> = emptyMap(),
-    val pacerLastLossAtByStrategy: Map<String, Long> = emptyMap(),
-    /** UTC month key (months since 1970-01) of [realizedMonth]; null in files written before #855. */
-    val monthKey: Long? = null,
-    val realizedMonth: java.math.BigDecimal? = null,
-    val perStrategyRealizedMonth: Map<String, java.math.BigDecimal> = emptyMap(),
 )

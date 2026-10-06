@@ -1,0 +1,11 @@
+STRATEGY bb_funding VERSION 1
+
+SYMBOLS
+    btc = BYBIT_LINEAR:BTCUSDT EVERY 1m WARMUP 3 BARS
+
+RULES
+    WHEN btc.close > 0 AND POSITION.btc = 0 AND OPEN_ORDERS.btc = 0 AND TRADES.today = 0
+    THEN BUY btc SIZING 0.001
+
+    WHEN POSITION.btc != 0 AND POSITION.btc.holding_duration >= 3900
+    THEN CLOSE btc

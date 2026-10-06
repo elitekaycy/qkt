@@ -12,6 +12,8 @@ import com.qkt.execution.ManagedOrder
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.OrderState
 import com.qkt.execution.TriggerType
+import com.qkt.execution.exitLegIntent
+import com.qkt.execution.isTerminal
 import java.math.BigDecimal
 
 /**
@@ -44,6 +46,8 @@ internal class ScaleOutExits(
         }
         scaleOuts.remainingExitIds.remove(scaleOutId)
         scaleOuts.activeById.remove(scaleOutId)
+        // A wrapper cancelled while its basis was partly filled already ended; its exits outlive it.
+        if (book[scaleOutId]?.state?.isTerminal == true) return
         ops.update(scaleOutId) { it.copy(state = terminalState, lastUpdatedAt = clock.now()) }
     }
 
@@ -84,10 +88,23 @@ internal class ScaleOutExits(
                     strategyId = scaleOut.strategyId,
                     closesTicket = positionTicket,
                     partialClose = legQuantity < basisQuantity,
-                    legIntent = LegIntent.Close(ticket = positionTicket, partial = legQuantity < basisQuantity),
+                    legIntent = exitIntent(scaleOut, positionTicket, legQuantity < basisQuantity),
                 )
             }
         armExits(scaleOut, exitRequests)
+    }
+
+    // A restart does not keep the ticket a partial execution reported (#1336): a basis whose remainder the
+    // venue ended while qkt was down arms with none, and its exits close the leg the basis opened instead
+    // (a netting exit for a netting basis). A venue that needs the ticket is refused above.
+    private fun exitIntent(
+        scaleOut: OrderRequest.ScaleOut,
+        positionTicket: String?,
+        partial: Boolean,
+    ): LegIntent {
+        if (positionTicket != null) return LegIntent.Close(ticket = positionTicket, partial = partial)
+        val exit = scaleOut.exitLegIntent()
+        return if (exit is LegIntent.Close) exit.copy(partial = partial) else exit
     }
 
     private fun armExits(

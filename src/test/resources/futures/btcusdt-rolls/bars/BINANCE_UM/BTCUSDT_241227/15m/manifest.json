@@ -1,0 +1,12 @@
+{
+    "broker": "BINANCE_UM",
+    "symbol": "BTCUSDT_241227",
+    "timeframe": "15m",
+    "ranges": [
+        {
+            "from": "2024-09-16",
+            "to": "2024-09-22"
+        }
+    ],
+    "lastUpdated": "2026-09-30T21:29:09.964Z"
+}

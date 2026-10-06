@@ -15,7 +15,6 @@ import com.qkt.common.TradingCalendar
 import com.qkt.dsl.compile.CandleHub
 import com.qkt.dsl.compile.DslCompiledStrategy
 import com.qkt.engine.Engine
-import com.qkt.events.RiskEvent
 import com.qkt.events.SignalEvent
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.NoopInstrumentRegistry
@@ -24,7 +23,6 @@ import com.qkt.marketdata.TickFeed
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.marketdata.source.NullMarketSource
 import com.qkt.pnl.BookBalanceView
-import com.qkt.pnl.SwapFinancingBook
 import com.qkt.positions.Position
 import com.qkt.risk.RiskRule
 import com.qkt.risk.RunawayBreaker
@@ -97,11 +95,11 @@ class ReplayEngine(
      */
     private val regimeWeights: () -> Map<String, BigDecimal> = { emptyMap() },
     /**
-     * `--bars` research tier: fill triggered Stop/Limit exits at their own price level
+     * Symbols replayed from bars: their triggered Stop/Limit exits fill at their own price level
      * rather than the synthetic bar extreme the triggering tick carries. See
-     * [com.qkt.broker.PaperBroker.fillAtTriggerPrice]. Off (and unused) on the tick path.
+     * [com.qkt.broker.PaperBroker]. Empty on the tick path.
      */
-    private val barFills: Boolean = false,
+    private val barFills: com.qkt.backtest.BarFills = com.qkt.backtest.BarFills.NONE,
     /**
      * Tick-resolved fills: when both are non-null, the `--bars` replay is driven by these bars but
      * fills resolve on real ticks for any bar where one is possible (see [BarResolvedFeed]). The
@@ -140,7 +138,7 @@ class ReplayEngine(
     private val positions = books.positions
     private val recorder = ReplayRecorder(initialTimestamp)
     private val pipeline: TradingPipeline
-    private val swapBook: SwapFinancingBook
+    private val financing: ReplayFinancing
     private val analytics: ReplayAnalytics
     private val results: ReplayResultBuilder
 
@@ -163,18 +161,9 @@ class ReplayEngine(
         val dslStrategies = strategies.mapNotNull { (_, s) -> s as? DslCompiledStrategy }
         warnQuoteFieldReads(dslStrategies)
         val brokerSymbols = brokerSymbolsOf(dslStrategies)
-        requireReplaySymbolsResolvable(tradedSymbols + brokerSymbols.values.flatten(), books.accounting, instruments)
-        val broker =
-            replayBroker(
-                executionConfig,
-                bus,
-                clock,
-                books.priceTracker,
-                instruments,
-                barFills,
-                calendar,
-                brokerSymbols,
-            )
+        val allSymbols = tradedSymbols + brokerSymbols.values.flatten()
+        requireReplaySymbolsResolvable(allSymbols, books.accounting, instruments)
+        val broker = replayBroker(executionConfig, bus, clock, books, barFills, calendar, brokerSymbols, allSymbols)
         val risk =
             ReplayRisk(
                 rules = rules,
@@ -199,7 +188,6 @@ class ReplayEngine(
             )
         val riskState = risk.riskState
         val bookRiskController = risk.bookRiskController
-        bus.subscribe<RiskEvent.Halted> { recorder.halts.add(it) }
 
         analytics =
             ReplayAnalytics(
@@ -232,7 +220,7 @@ class ReplayEngine(
                 strategies = strategies,
                 riskEngine = risk.riskEngine,
                 riskState = riskState,
-                positionMode = { executionConfig.positionMode },
+                positionMode = broker::positionAccountingMode,
                 runawayBreaker =
                     RunawayBreaker(
                         clock = clock,
@@ -286,15 +274,7 @@ class ReplayEngine(
         // positions when it is marked. Without it the backtest would never release a reservation.
         bookRiskController?.let { controller -> wireBookReservations(bus, controller) }
         holder[0] = pipeline
-        swapBook =
-            SwapFinancingBook(
-                instruments = instruments,
-                strategyPositions = books.strategyPositions,
-                accounting = books.accounting,
-                prices = books.priceTracker,
-                strategyIds = strategies.map { it.first },
-                symbols = tradedSymbols + brokerSymbols.values.flatten(),
-            )
+        financing = ReplayFinancing(instruments, books, strategies.map { it.first }, allSymbols)
         subscribeHaltKillSwitch(bus, pipeline, strategies, books.strategyPositions, ids, clock, bookCapital)
 
         // Tick-resolved fills: replace the bar feed with one that loads real ticks for fill-possible
@@ -315,7 +295,7 @@ class ReplayEngine(
                 books = books,
                 recorder = recorder,
                 analytics = analytics,
-                swapBook = swapBook,
+                financing = financing,
                 pipeline = pipeline,
                 instruments = instruments,
                 cadence = this.cadence,
@@ -337,13 +317,7 @@ class ReplayEngine(
      * pushed and pulled ticks take an identical path.
      */
     fun ingest(tick: Tick) {
-        if (ticksIngested > 0L) {
-            swapBook.accrueBetween(currentTimestamp, tick.timestamp) { strategyId, boundaryMs, amount ->
-                currentTimestamp = boundaryMs
-                clock.time = boundaryMs
-                pipeline.applyFinancing(strategyId, amount)
-            }
-        }
+        if (ticksIngested > 0L) accrueFinancing(tick.timestamp)
         currentTimestamp = tick.timestamp
         ticksIngested++
         clock.time = tick.timestamp
@@ -372,8 +346,17 @@ class ReplayEngine(
     fun runToEnd(): BacktestResult {
         advanceToEnd()
         flushCompletedReplayBoundary()
+        // A rollover after the last tick (the market closed first) still falls inside the replay: charge it.
+        replayEndTimestamp?.takeIf { ticksIngested > 0L }?.let(::accrueFinancing)
         return snapshot()
     }
+
+    private fun accrueFinancing(toMs: Long) =
+        financing.accrueBetween(currentTimestamp, toMs) { strategyId, boundaryMs, amount ->
+            currentTimestamp = boundaryMs
+            clock.time = boundaryMs
+            pipeline.applyFinancing(strategyId, amount)
+        }
 
     private fun flushCompletedReplayBoundary() {
         val window = candleWindow ?: return
@@ -381,6 +364,7 @@ class ReplayEngine(
         if (ticksIngested == 0L) return
         val boundary = window.windowEndFor(currentTimestamp)
         if (boundary > replayEnd) return
+        accrueFinancing(boundary)
         currentTimestamp = boundary
         clock.time = boundary
         pipeline.flushReplayCandles(boundary)

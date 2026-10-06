@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Test
 
 class SecretResolverTest {
     private fun account(vararg settings: Pair<String, String>) =
-        AccountConfig(name = "bybit_linear", type = "bybit", settings = mapOf(*settings))
+        AccountConfig(name = "bybit_linear", type = "gateway", settings = mapOf(*settings))
 
     @Test
     fun `env override beats the config value`() {

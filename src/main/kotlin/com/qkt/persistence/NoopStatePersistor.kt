@@ -5,9 +5,8 @@ import com.qkt.positions.LegBook
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * In-memory [StatePersistor]. Tests use this to inspect what would have been persisted
- * without touching disk. Production code can also use it to disable persistence entirely
- * (e.g. `state.enabled = false` in `qkt.config.yaml`).
+ * In-memory [StatePersistor]. Tests use this to inspect what would have been persisted without touching
+ * disk. Production code can also use it to disable persistence entirely (`state.enabled = false`).
  */
 class NoopStatePersistor : StatePersistor {
     private data class StrategyState(
@@ -24,6 +23,8 @@ class NoopStatePersistor : StatePersistor {
         var sequences: Map<String, PersistedSequenceState> = emptyMap(),
         var exitHooks: List<PersistedExitHookBinding> = emptyList(),
         val excursions: ConcurrentHashMap<String, PersistedExcursion> = ConcurrentHashMap(),
+        var structures: List<PersistedStructure> = emptyList(),
+        val streamLanes: ConcurrentHashMap<String, PersistedStreamLane> = ConcurrentHashMap(),
     )
 
     private val state: ConcurrentHashMap<String, StrategyState> = ConcurrentHashMap()
@@ -48,6 +49,22 @@ class NoopStatePersistor : StatePersistor {
         symbol: String,
     ): PersistedLegBook? = state[strategyId]?.legBooks?.get(symbol)
 
+    override fun legBookSymbols(strategyId: String): Set<String> =
+        state[strategyId]
+            ?.legBooks
+            ?.keys
+            ?.toSet()
+            .orEmpty()
+
+    override fun saveStructures(
+        strategyId: String,
+        structures: List<PersistedStructure>,
+    ) {
+        stateFor(strategyId).structures = structures.toList()
+    }
+
+    override fun loadStructures(strategyId: String): List<PersistedStructure> = state[strategyId]?.structures.orEmpty()
+
     override fun saveExcursion(
         strategyId: String,
         symbol: String,
@@ -68,8 +85,7 @@ class NoopStatePersistor : StatePersistor {
         stateFor(strategyId).bracketPairs = pairs
     }
 
-    override fun loadBracketPairs(strategyId: String): List<BracketPair> =
-        state[strategyId]?.bracketPairs ?: emptyList()
+    override fun loadBracketPairs(strategyId: String): List<BracketPair> = state[strategyId]?.bracketPairs.orEmpty()
 
     override fun savePendingOrders(
         strategyId: String,
@@ -117,8 +133,19 @@ class NoopStatePersistor : StatePersistor {
         stateFor(strategyId).timedExits = exits
     }
 
-    override fun loadTimedExits(strategyId: String): List<PersistedTimeExit> =
-        state[strategyId]?.timedExits ?: emptyList()
+    override fun loadTimedExits(strategyId: String): List<PersistedTimeExit> = state[strategyId]?.timedExits.orEmpty()
+
+    override fun saveStreamLane(
+        ownerId: String,
+        lane: PersistedStreamLane,
+    ) {
+        stateFor(ownerId).streamLanes[lane.stream] = lane
+    }
+
+    override fun loadStreamLane(
+        ownerId: String,
+        stream: String,
+    ): PersistedStreamLane? = state[ownerId]?.streamLanes?.get(stream)
 
     override fun saveRiskState(
         strategyId: String,

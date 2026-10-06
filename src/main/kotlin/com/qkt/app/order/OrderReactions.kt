@@ -26,15 +26,38 @@ internal class OrderReactions(
             log,
         )
     private val venueRecovery: VenueRecovery =
-        VenueRecovery(book, store.brackets, store.exposure, s.broker, s.bookedVenueTickets, clock, ops, log) { event ->
+        VenueRecovery(
+            book,
+            store.brackets,
+            store.exposure,
+            s.broker,
+            s.bookedVenueTickets,
+            s.persistor,
+            store.scaleOutRecovery::restorePartialTicket,
+            clock,
+            ops,
+            log,
+        ) { event ->
             eventHandlers.onCancelled(event)
         }
+    private val engineHeldRestore = EngineHeldRestore(book, store.stops, store.exposure, s.broker, clock)
     val restorer =
         OrderRestorer(
             persistor = s.persistor,
             book = book,
             siblings = store.siblings,
-            ocoGuard = w.ocoGuard,
+            ocoLegs =
+                OcoLegRestore(
+                    s.persistor,
+                    book,
+                    store.siblings,
+                    w.ocoGuard,
+                    store.exposure,
+                    engineHeldRestore,
+                    w.siblingCancels::onExecution,
+                    clock,
+                    log,
+                ),
             exposure = store.exposure,
             scaleOuts = store.scaleOuts,
             scaleOutRecovery = store.scaleOutRecovery,
@@ -49,7 +72,7 @@ internal class OrderReactions(
                     clock,
                     ops,
                 ),
-            engineHeld = EngineHeldRestore(book, store.stops, store.exposure, s.broker, clock),
+            engineHeld = engineHeldRestore,
             venueRecovery = venueRecovery,
             snapshots = store.snapshots,
             timeExits = w.timeExits,
@@ -89,6 +112,9 @@ internal class OrderReactions(
         )
     private val attachedCompletion =
         AttachedBracketCompletion(book, store.brackets, store.closeTickets, store.exposure, clock, ops)
+    private val bracketFills =
+        BracketFills(book, store.brackets, w.bracketExits, w.venueProtection, clock, ops)
+    private val lateEntries = LateEntryExecutions(w.bracketExits, ops, log)
     val eventHandlers: OrderEventHandlers =
         OrderEventHandlers(
             book,
@@ -105,6 +131,8 @@ internal class OrderReactions(
             w.scaleOutExits,
             venueRecovery,
             attachedCompletion,
+            bracketFills,
+            lateEntries,
             clock,
             ops,
             log,
@@ -119,7 +147,8 @@ internal class OrderReactions(
             w.ocoGuard,
             w.ocoSequencer,
             w.siblingCancels,
-            BracketFills(book, store.brackets, w.bracketExits, w.venueProtection, clock, ops),
+            bracketFills,
+            lateEntries,
             attachedCompletion,
             w.scaleOutTracker,
             w.scaleOutExits,

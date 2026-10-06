@@ -195,6 +195,8 @@ regression_slope(<value>, <period>)  -- least-squares slope through the last N v
 `stddev` is the plain N-bar volatility estimator (`zscore` uses the same divisor);
 `regression_slope` fits the window against bar index 0…N−1, so a clean ramp of one unit per bar
 reads 1.0 and the sign is a smoothed trend direction. `<period>` must be at least 2 for the slope.
+`variance` and `regression_slope` keep 16 significant digits, not the 8 decimals other indicators
+round to: on FX prices a variance is around 1e-10 and a per-bar slope around 1e-6.
 
 ```qkt
 -- Vol-scaled sizing with a slope filter: size to a 1% move per unit of 20-bar vol, only uptrend.
@@ -211,8 +213,10 @@ obv(<stream>)                 -- cumulative volume: +volume on an up close, −v
 ```
 
 `obv` has no period: it starts at zero on the first candle and accumulates from there, so read it
-relative to its own past (`lag(obv(btc), 20)`) rather than as a level. It needs a volume-bearing
-feed; on a quote-only venue where `volume` is the tick count it still compiles but says little.
+relative to its own past (`lag(obv(btc), 20)`) rather than as a level. It needs a feed that reports
+traded volume, and a strategy binding it to any other feed is refused when it starts, live and in a
+backtest alike: live, a Bybit feed qualifies and an MT5 feed (whose `volume` is a tick count) does not;
+in a backtest, a tick store whose ticks carry volume qualifies, while fetched bars alone do not.
 
 ```qkt
 -- Price at a 20-bar high that OBV does not confirm: thinning participation, stand aside.
@@ -410,7 +414,7 @@ LET band = vwap + 2 * vwap_session_stdev(gold.candle, 12)
 WHEN gold.close >= band AND POSITION.gold = 0 THEN SELL gold SIZING 0.1
 ```
 
-Volume-less candles contribute nothing, like `vwap`. Both return `null` until a volume-bearing candle is seen in the current session. (Note: a broker that does not report volume — e.g. the MT5 gateway on FX/metals — leaves these inert live; they are backtest-faithful where the data carries volume.)
+Volume-less candles contribute nothing, like `vwap`. Both return `null` until a volume-bearing candle is seen in the current session. (Note: like `obv`, they need a feed that reports traded volume; a strategy binding them to an MT5 feed, whose `volume` is a tick count, is refused when it starts.)
 
 ### Session range
 

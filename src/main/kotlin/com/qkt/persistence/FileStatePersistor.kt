@@ -6,20 +6,21 @@ import java.nio.file.Path
 import kotlinx.serialization.json.Json
 
 /**
- * On-disk [StatePersistor]. Serializes engine state to atomic JSON files under
- * `<rootDir>/<strategyId>/`.
+ * On-disk [StatePersistor]. Serializes engine state to atomic JSON files under `<rootDir>/<strategyId>/`.
  *
  * Writes log and count failures; [com.qkt.app.LiveSession] turns a non-zero failure count into
  * an entry-only risk halt. Existing state that cannot be read, parsed, or validated fails startup
  * so a live session cannot silently reset durable risk or execution state.
  *
- * Each state file is owned by one `*File` collaborator (for example [PendingOrdersFile]) that
- * holds its on-disk shape and its save/load rules; this class routes each call to its owner.
+ * Each state file is owned by one `*File` collaborator (for example [PendingOrdersFile]): its shape and rules.
  */
-class FileStatePersistor(
-    rootDir: Path,
-) : StatePersistor {
-    private val writer = StateFileWriter(rootDir)
+class FileStatePersistor private constructor(
+    private val writer: StateFileWriter,
+) : StatePersistor,
+    FundingPersistence by FundingFile(writer),
+    OrderFillPersistence by OrderFillsFile(writer),
+    OrderIdPersistence by OrderIdsFile(writer) {
+    constructor(rootDir: Path) : this(StateFileWriter(rootDir))
 
     /** Cumulative count of save operations that hit disk. */
     val totalWrites: Long get() = writer.totalWrites.get()
@@ -46,7 +47,6 @@ class FileStatePersistor(
     private val json =
         Json {
             ignoreUnknownKeys = true
-            prettyPrint = false
         }
 
     private val sequences = SequencesFile(writer, json)
@@ -55,6 +55,7 @@ class FileStatePersistor(
     private val pnl = PnlFile(writer, json)
     private val riskState = RiskStateFile(writer, json)
     private val legBooks = LegBookFile(writer, json)
+    private val structures = StructuresFile(writer, json)
     private val excursions = ExcursionFile(writer, json)
     private val bracketPairs = BracketPairsFile(writer, json)
     private val pendingOrders = PendingOrdersFile(writer, json)
@@ -62,6 +63,7 @@ class FileStatePersistor(
     private val ocoLegs = OcoLegsFile(writer, json)
     private val trailingStops = TrailingStopsFile(writer, json)
     private val timedExits = TimedExitsFile(writer, json)
+    private val streamLanes = StreamLaneFile(writer, json)
 
     override fun saveSequences(
         strategyId: String,
@@ -120,6 +122,15 @@ class FileStatePersistor(
         symbol: String,
     ): PersistedLegBook? = legBooks.load(strategyId, symbol)
 
+    override fun legBookSymbols(strategyId: String): Set<String> = legBooks.symbols(strategyId)
+
+    override fun saveStructures(
+        strategyId: String,
+        structures: List<PersistedStructure>,
+    ) = this.structures.save(strategyId, structures)
+
+    override fun loadStructures(strategyId: String): List<PersistedStructure> = structures.load(strategyId)
+
     override fun saveBracketPairs(
         strategyId: String,
         pairs: List<BracketPair>,
@@ -172,6 +183,16 @@ class FileStatePersistor(
     ) = timedExits.save(strategyId, exits)
 
     override fun loadTimedExits(strategyId: String): List<PersistedTimeExit> = timedExits.load(strategyId)
+
+    override fun saveStreamLane(
+        ownerId: String,
+        lane: PersistedStreamLane,
+    ) = streamLanes.save(ownerId, lane)
+
+    override fun loadStreamLane(
+        ownerId: String,
+        stream: String,
+    ): PersistedStreamLane? = streamLanes.load(ownerId, stream)
 
     override fun clearStrategy(strategyId: String) {
         writer.deleteStrategy(strategyId)

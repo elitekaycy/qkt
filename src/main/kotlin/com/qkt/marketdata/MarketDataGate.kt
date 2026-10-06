@@ -55,6 +55,8 @@ class MarketDataGate(
      * new orders still wait for a fresh tick). Defaults to always open, as for 24/7 crypto.
      */
     private val inSession: (symbol: String, nowMs: Long) -> Boolean = { _, _ -> true },
+    /** Whether [symbol]'s prices are judged for outliers; a crossed book is rejected either way. */
+    private val judgesOutliers: (symbol: String) -> Boolean = { true },
     /**
      * Whether [symbol] is inside a venue-scheduled pause at the given time. A quote gap that
      * starts inside a pause is reported as PAUSED (info, no unhealthy alert) instead of STALE;
@@ -97,7 +99,8 @@ class MarketDataGate(
 
         val crossed = tick.bid != null && tick.ask != null && tick.bid > tick.ask
         val price = tick.price.toDouble()
-        val outlier = crossed || state.isOutlier(price, now, outlierWindowMs, outlierSigma)
+        val outlier =
+            crossed || judgesOutliers(tick.symbol) && state.isOutlier(price, now, outlierWindowMs, outlierSigma)
         if (outlier) {
             state.rejectedOutlierRun++
             if (!crossed && state.recordRebaselineCandidate(price)) {

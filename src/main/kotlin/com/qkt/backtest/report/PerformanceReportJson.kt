@@ -38,6 +38,8 @@ internal object PerformanceReportJson {
         field("totalPnL", ReportSerializer.jsonBigDecimal(r.totalPnL))
         field("commissionPaid", ReportSerializer.jsonBigDecimal(r.commissionPaid))
         field("swapPaid", ReportSerializer.jsonBigDecimal(r.swapPaid))
+        if (r.rollCostsPaid.signum() != 0) field("rollCostsPaid", ReportSerializer.jsonBigDecimal(r.rollCostsPaid))
+        if (r.fundingPaid.signum() != 0) field("fundingPaid", ReportSerializer.jsonBigDecimal(r.fundingPaid))
         field("tradeCount", r.tradeCount.toString())
         field("winRate", ReportSerializer.jsonBigDecimal(r.winRate))
         field("maxDrawdown", ReportSerializer.jsonBigDecimal(r.maxDrawdown))

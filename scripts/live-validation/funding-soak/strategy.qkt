@@ -1,0 +1,11 @@
+STRATEGY funding_soak VERSION 1
+
+SYMBOLS
+    btc = DERIBIT:BTC_USDC_PERPETUAL EVERY 1m WARMUP 3 BARS
+
+RULES
+    WHEN btc.close > 0 AND POSITION.btc = 0 AND OPEN_ORDERS.btc = 0 AND TRADES.today = 0
+    THEN BUY btc SIZING 0.01
+
+    WHEN POSITION.btc != 0 AND POSITION.btc.holding_duration >= 4800
+    THEN CLOSE btc

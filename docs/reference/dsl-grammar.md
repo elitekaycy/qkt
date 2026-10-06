@@ -130,8 +130,8 @@ RULES
 <alias> = <BROKER>:<symbol> EVERY <timeframe> [ WARMUP <N> BARS ]
 ```
 
-- `<BROKER>` resolves against the broker registry: built-ins (`BACKTEST`, `BYBIT_SPOT`,
-  `BYBIT_LINEAR`) plus any profile in `qkt.config.yaml` (e.g. `EXNESS`, `ICMARKETS`). The parser
+- `<BROKER>` resolves against the broker registry: `BACKTEST` plus any `brokers:` entry in
+  `qkt.config.yaml`, upper-cased (e.g. `EXNESS`, `BYBIT_LINEAR`, `DERIBIT`). The parser
   accepts the prefix in any case; the registry lookup is what decides whether it exists.
 - `<symbol>` is the canonical symbol qkt sees (`EURUSD`, `BTCUSDT`). Per-broker translation
   (suffix, alias) happens at the broker boundary — see
@@ -265,7 +265,19 @@ fill and checked every tick. Also applies to its `STACK_AT` legs. See
 - `<stream>.close` (alias `.price`), `.open`, `.high`, `.low`, `.volume`, `.bid`, `.ask`,
   `.spread`, `.timestamp`; `.close[n]` is the value `n` bars ago
 - Instrument meta: `.tick_size`, `.contract_size`, `.volume_step`, `.volume_min`,
-  `.swap_long_points`, `.swap_short_points`
+  `.swap_long_points`, `.swap_short_points`, `.tick_value`, `.multiplier`
+- Futures contract: `.contract` (string), `.dte`, `.days_to_roll`; Undefined on non-futures streams
+- Mark and index: `.mark`, `.index`, the contract's venue mark and index price; refused at start on a feed
+  that serves none (see [streams](dsl/streams.md#stream-field-access))
+- Trade flow, one bar back or more: `.buy_volume[n]`, `.sell_volume[n]` (aggressor volume),
+  `.long_liq_volume[n]`, `.short_liq_volume[n]` (liquidated volume); the bar closing (`n` = 0) is refused (see
+  [streams](dsl/streams.md#trade-flow-and-liquidations-aliasbuy_volume1-))
+- Option contract: `.iv` (mark implied volatility), `.delta`, `.gamma`, `.vega`, `.theta` (per contract);
+  refused at start on any other stream or on a feed without option marks (see
+  [streams](dsl/streams.md#stream-field-access))
+- Order-book depth: `.bid_depth`, `.ask_depth` (quantity on the ten best levels a side), `.book_imbalance`
+  (−1 to 1); a venue stream only, refused at start on a feed whose gateway does not declare `depth` (see
+  [streams](dsl/streams.md#order-book-depth-aliasbid_depth-ask_depth-book_imbalance))
 
 ### Indicators
 
@@ -305,6 +317,8 @@ WHEN btc.close % 2 > 0 THEN LOG "no modulo operator"
 - `POSITION.<stream>.entry_price` (`avg_price`, `avg_entry_price`, or `POSITION_AVG_PRICE.<stream>`),
   `.pnl`, `.unrealized_pnl`, `.realized_pnl`, `.holding_duration`, `.mfe`, `.mae`, `.count`,
   `.longs`, `.shorts`, `.gross`, `.trades_today`, `.last_trade_at`
+- `POSITION.<structure>` and `.pnl`, `.credit`, `.max_loss`, `.pnl_pct`, `.dte`, `.delta`, `.gamma`,
+  `.vega`, `.theta` on an option structure alias ([Option structures](dsl/structures.md))
 
 See [Expressions](dsl/expressions.md#position-references) for the full list.
 

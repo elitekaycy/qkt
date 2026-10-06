@@ -100,7 +100,7 @@ internal class RunningSessionHandle(
             if (strategy !is DslCompiledStrategy) continue
             for ((alias, key) in strategy.declaredStreams) {
                 // Preserve declared casing for operator readability ("EXNESS" not "exness").
-                out[alias] = key.broker
+                out[alias] = tradingBroker(key)
             }
         }
         return out
@@ -151,12 +151,10 @@ internal class RunningSessionHandle(
         VerifiedFlatten(broker, ticketAttribution, clock, strategies.map { it.first }, ::flatten).run(timeout)
 
     // Legacy fire-and-forget flatten stays engine-thread confined for internal callers.
-    override fun flatten() {
-        control.put(Inbound.Flatten)
-    }
+    override fun flatten() = mailbox.requestFlatten()
 
     override fun flattenForStop() {
         clearRuleEdgesAtStop.set(true)
-        control.put(Inbound.Flatten)
+        mailbox.requestFlatten()
     }
 }

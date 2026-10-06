@@ -92,7 +92,13 @@ class TicketAttribution {
         return hits.values.distinct().singleOrNull()
     }
 
-    private companion object {
-        const val RETAIN_MISSING_CYCLES = 300
+    companion object {
+        private const val RETAIN_MISSING_CYCLES = 300
+
+        /** A fresh attribution knowing each strategy (key) by its broker comment [names] (value) too. */
+        fun aliasing(names: Map<String, String>): TicketAttribution =
+            TicketAttribution().also { attribution ->
+                names.forEach { (strategyId, name) -> attribution.alias(name, strategyId) }
+            }
     }
 }

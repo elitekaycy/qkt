@@ -19,7 +19,7 @@ import org.slf4j.Logger
  * (CLOSE_AT_MARKET). A fill-anchored exit ([OrderRequest.TimeExit.holdMs]) is armed in [armed]
  * when its entry fills, persisted there, and re-armed by [restore] after a restart. Deadlines are
  * compared against the tick clock on the engine thread, so exits fire on the first tick at or
- * after the deadline in backtest and live.
+ * after the deadline in backtest and live. A fired exit stays armed until its close fills ([TimedCloseRetries]).
  */
 internal class TimeExits(
     private val book: OrderBook,
@@ -33,6 +33,7 @@ internal class TimeExits(
     private val strategyNetQty: ((String, String) -> BigDecimal)? = null,
 ) {
     private val closer = TimedLegCloser(book, clock, ops, closeTicketFor, openLegQuantity, strategyNetQty)
+    private val retries = TimedCloseRetries(book, closer, ops, log)
     private val byId: MutableMap<String, OrderRequest.TimeExit> = mutableMapOf()
     private val deadlines: MutableMap<String, Long> = mutableMapOf()
     private val awaitingFill: MutableMap<String, String> = mutableMapOf()
@@ -66,9 +67,7 @@ internal class TimeExits(
             ),
         )
         byId[req.id] = req
-        if (req.holdMs ==
-            null
-        ) {
+        if (req.holdMs == null) {
             deadlines[req.id] = req.deadline.toEpochMilli()
         } else {
             awaitingFill[req.entryFillId] = req.id
@@ -144,7 +143,7 @@ internal class TimeExits(
         for (exit in armed.values) if (now >= exit.deadlineMs) expiredScratch.add(exit.id)
         for (i in expiredScratch.indices) {
             val exit = armed.remove(expiredScratch[i]) ?: continue
-            closer.close(exit)
+            retries.fire(exit, now)?.let { armed[exit.id] = it }
             changed = true
         }
         if (changed) ops.persistAll()

@@ -43,14 +43,17 @@ class ExprCompiler(
     private val aggregates: AggregateBinding.Bag = AggregateBinding.Bag(),
     private val baskets: Map<String, List<String>> = emptyMap(),
     private val allowExitAccess: Boolean = false,
+    /** The strategy's option structures, read by `POSITION.<structure>` fields. */
+    val structures: StructureSupport = StructureSupport(),
 ) {
+    private val structureFields = StructureFieldCompiler(structures)
     private val indicatorCalls = IndicatorCallCompiler(bindings, this)
 
     internal fun forExitHooks(): ExprCompiler =
         if (allowExitAccess) {
             this
         } else {
-            ExprCompiler(bindings, aggregates, baskets, allowExitAccess = true)
+            ExprCompiler(bindings, aggregates, baskets, allowExitAccess = true, structures = structures)
         }
 
     fun compile(
@@ -66,13 +69,19 @@ class ExprCompiler(
             is UnaryOp -> OperatorCompiler.compileUnary(expr, ruleAlias, this)
             is CmpOp -> OperatorCompiler.compileCmp(expr, ruleAlias, this)
             is StreamFieldRef -> StreamFieldCompiler.compile(expr)
-            is IndicatorCall -> indicatorCalls.compile(expr)
+            is IndicatorCall -> FlowFieldCompiler.lookback(expr) ?: indicatorCalls.compile(expr)
             is AccountRef -> AccountStateCompiler.compileAccountRef(expr)
             is StreakRef -> AccountStateCompiler.compileStreakRef(expr)
             is TradesRef -> AccountStateCompiler.compileTradesRef(expr)
             is CooldownRef -> AccountStateCompiler.compileCooldownRef(expr)
-            is PositionRef -> PositionRefCompiler.compile(expr, baskets)
-            is StateAccessor -> StateAccessorCompiler.compile(expr)
+            is PositionRef ->
+                if (expr.stream in structures.aliases) {
+                    structureFields.size(expr.stream)
+                } else {
+                    PositionRefCompiler.compile(expr, baskets)
+                }
+            is StateAccessor ->
+                if (expr.key in structures.aliases) structureFields.field(expr) else StateAccessorCompiler.compile(expr)
             is SequenceAccessor -> SequenceAccessorCompiler.compile(expr)
             is Between -> PredicateCompiler.compileBetween(expr, ruleAlias, this)
             is InList -> PredicateCompiler.compileInList(expr, ruleAlias, this)

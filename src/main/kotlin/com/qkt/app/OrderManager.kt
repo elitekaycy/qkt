@@ -124,20 +124,19 @@ class OrderManager(
     /** Cancels every pending stack and resting or engine-held order on [symbol]. */
     fun cancelPendingForSymbol(symbol: String) = workflows.cancellation.cancelPendingForSymbol(symbol)
 
-    /**
-     * Cancel active entry intent after a risk halt, optionally limited to [strategyId]. Protective
-     * monitors, risk-reducing exits, and composite containers whose entry has filled remain active.
-     */
+    /** [cancelPendingForSymbol] for a close or flatten of [symbol]: held bracket exits go too (#1328). */
+    fun closePendingForSymbol(symbol: String) = workflows.cancellation.cancelPendingForSymbol(symbol, closing = true)
+
+    /** Cancels entries after a risk halt (of [strategyId], or all); protective exits and filled composites stay. */
     fun cancelEntriesForHalt(strategyId: String? = null) = workflows.cancellation.cancelEntriesForHalt(strategyId)
 
     /** Retry halt-owned cancellations that have not produced a terminal broker event. */
     fun retryHaltCancellations(nowMs: Long) = workflows.haltCancels.retry(nowMs)
 
     /**
-     * Rebuild pending order tracking and sibling linkage from the persistor for [strategyIds].
-     * Venue-held orders are handed to the broker for reconciliation; engine-held orders resume as
-     * [OrderState.PENDING] monitors. Called once at session startup; a persistence read failure
-     * aborts startup rather than silently discarding live order state.
+     * Rebuilds [strategyIds]' order tracking and sibling links from the persistor, once at startup: venue-held
+     * orders go to the broker to reconcile, engine-held ones resume as [OrderState.PENDING] monitors, and a
+     * persistence read failure aborts startup rather than silently discarding live order state.
      */
     fun restore(strategyIds: List<String>) = reactions.restorer.restore(strategyIds)
 

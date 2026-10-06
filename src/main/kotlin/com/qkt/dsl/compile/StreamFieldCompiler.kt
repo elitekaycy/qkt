@@ -2,12 +2,16 @@ package com.qkt.dsl.compile
 
 import com.qkt.dsl.DslVocabulary
 import com.qkt.dsl.ast.StreamFieldRef
+import com.qkt.marketdata.depth.BookDepthSymbol
+import com.qkt.marketdata.openinterest.OpenInterestSymbol
 import java.math.BigDecimal
 
 /**
  * Compiles `<stream>.<field>`: a candle field (close, high, bid, timestamp, ...) read from the
  * current bar or the candle hub, or an instrument-meta field (tick_size, contract_size, ...)
- * read from the instrument catalog.
+ * read from the instrument catalog, a futures contract field ([FuturesFieldCompiler]), a contract's mark or
+ * index ([MarkFieldCompiler]), an option's mark IV or Greek ([OptionFieldCompiler]), or (a bar back) its trade flow
+ * ([FlowFieldCompiler]).
  */
 internal object StreamFieldCompiler {
     private val candleFields: Set<String> = DslVocabulary.candleFields.toSet()
@@ -17,7 +21,19 @@ internal object StreamFieldCompiler {
         require(ref.field in candleFields || ref.field in metaFields) {
             "Unknown stream field for ${ref.stream}: ${ref.field}"
         }
-        return if (ref.field in metaFields) compileMetaField(ref) else compileCandleField(ref)
+        // A venue stream's open interest and depth were rewritten into their own streams before compiling
+        // (VenueFieldExpansion); one left here is on an alias with none, such as a basket.
+        require(ref.field != OpenInterestSymbol.FIELD && ref.field !in BookDepthSymbol.FIELDS) {
+            "${ref.stream}.${ref.field} reads a venue's published series: only a stream declared BROKER:SYMBOL has one"
+        }
+        return when (ref.field) {
+            in metaFields -> compileMetaField(ref)
+            in FuturesFieldCompiler.fields -> FuturesFieldCompiler.compile(ref)
+            in MarkFieldCompiler.fields -> MarkFieldCompiler.compile(ref)
+            in OptionFieldCompiler.fields -> OptionFieldCompiler.compile(ref)
+            in FlowFieldCompiler.fields -> FlowFieldCompiler.refuseClosingBar(ref)
+            else -> compileCandleField(ref)
+        }
     }
 
     private fun compileCandleField(ref: StreamFieldRef): CompiledExpr =
@@ -70,6 +86,8 @@ internal object StreamFieldCompiler {
                     "volume_min" -> meta.volumeMin
                     "swap_long_points" -> meta.swapLongPoints
                     "swap_short_points" -> meta.swapShortPoints
+                    "tick_value" -> meta.pointSize.multiply(meta.contractSize)
+                    "multiplier" -> meta.contractSize
                     else -> error("unreachable: ${ref.field}")
                 }
             Value.Num(value)

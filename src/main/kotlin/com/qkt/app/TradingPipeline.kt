@@ -197,7 +197,7 @@ class TradingPipeline(
             gate,
             gateFor,
             latency,
-            latencyEnabled,
+            priceTracker,
         )
     private val booker =
         ExecutionBooker(
@@ -223,25 +223,34 @@ class TradingPipeline(
             runawayBreaker,
             onRejected,
             latency,
-            latencyEnabled,
+            onProtectionFailure,
             strategies,
         )
-    private val nonExecution = NonExecutionAccounting(riskState, bus, accounting, clock)
+    private val nonExecution = NonExecutionAccounting(riskState, bus, accounting, clock).also { it.subscribeCosts() }
     private val equitySampler = AccountEquitySeriesSampler(strategies, candleHub, riskState)
     private val candleCloser: CandleWindowCloser
     private val tickIngest: TickIngest
 
     init {
         riskEngine.bindPendingExposure(orderManager)
-        require(strategies.map { it.first }.toSet().size == strategies.size) {
-            "Strategy IDs must be unique: ${strategies.map { it.first }}"
-        }
-        require(strategies.all { it.first.isNotBlank() }) { "Strategy ID must be non-blank" }
-        val windowAggregator = if (candleWindow != null) CandleAggregator(bus, candleWindow) else null
+        requireValidStrategyIds(strategies)
+        val windowAggregator =
+            candleWindow?.let {
+                CandleAggregator(bus, it, aggregates = optionCandleFilter(strategies, instruments))
+            }
         candleCloser =
             CandleWindowCloser(windowAggregator, candleHub, replayCandleCloseGraceMs, replayHeartbeatIntervalMs)
         tickIngest =
-            TickIngest(engine, marketDataGate, equitySampler, candleCloser, candleHub, scheduleRunner, mode)
+            TickIngest(
+                engine,
+                marketDataGate,
+                equitySampler,
+                candleCloser,
+                candleHub,
+                scheduleRunner,
+                mode,
+                instruments,
+            )
         bus.subscribe<WarmupTickEvent> { e -> priceTracker.update(e.tick) }
         bus.subscribe<CandleEvent> { e -> preCandle(e.candle) }
         strategyBinder.bindAll(strategies)
@@ -260,17 +269,7 @@ class TradingPipeline(
             if (latencyEnabled) latency.recordSubmit(e.request.id)
             orderManager.submit(e.request)
         }
-        bus.subscribe<BrokerEvent.PositionReconciled> { e ->
-            strategyPositions.reconcileNet(
-                e.symbol,
-                e.newQty,
-                e.newAvgPx,
-                openedAt = e.timestamp,
-                source = e.source,
-                ticket = e.ticket,
-                strategyId = e.strategyId,
-            )
-        }
+        bus.subscribe<BrokerEvent.PositionReconciled> { e -> strategyPositions.reconcile(e) }
         outcomes.subscribe()
         bus.subscribe<CandleEvent> { e -> onCandle(e.candle) }
     }

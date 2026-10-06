@@ -12,15 +12,17 @@
 set -euo pipefail
 # This script checks out `testing` in its own clone, and bash reads a script as it runs it: a
 # checkout that rewrites this file would change the program mid-flight. Run from a private copy.
-if [ -z "${QKT_RELEASE_REPO_ROOT:-}" ]; then
-    QKT_RELEASE_REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-    copy="$(mktemp "${TMPDIR:-/tmp}/release-unattended.XXXXXX")"
-    cp "${BASH_SOURCE[0]}" "$copy"
-    export QKT_RELEASE_REPO_ROOT
-    exec bash "$copy" "$@"
+# The copy is marked by its own path, so only the private copy ever deletes itself: a preset
+# QKT_RELEASE_REPO_ROOT can never make the real script remove itself.
+if [ "${QKT_RELEASE_PRIVATE_COPY:-}" != "${BASH_SOURCE[0]}" ]; then
+    QKT_RELEASE_REPO_ROOT="${QKT_RELEASE_REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+    QKT_RELEASE_PRIVATE_COPY="$(mktemp "${TMPDIR:-/tmp}/release-unattended.XXXXXX")"
+    cp "${BASH_SOURCE[0]}" "$QKT_RELEASE_PRIVATE_COPY"
+    export QKT_RELEASE_REPO_ROOT QKT_RELEASE_PRIVATE_COPY
+    exec bash "$QKT_RELEASE_PRIVATE_COPY" "$@"
 fi
 repo_root="$QKT_RELEASE_REPO_ROOT"
-trap 'rm -f "${BASH_SOURCE[0]}"' EXIT
+trap 'rm -f "$QKT_RELEASE_PRIVATE_COPY"' EXIT
 
 usage() {
     cat <<'USAGE'
@@ -101,7 +103,7 @@ log "attested in $(( $(date +%s) - started ))s"
 
 # 3. paper-soak on the self-hosted runner.
 sleep 30
-soak="$(gh run list -R "$repo" --workflow paper-soak.yml --limit 1 --json databaseId -q '.[0].databaseId')"
+soak="$(gh run list -R "$repo" --workflow paper-soak.yml --commit "$testing" --limit 1 --json databaseId -q '.[0].databaseId')"
 for _ in $(seq 1 60); do
     state="$(gh run view "$soak" -R "$repo" --json status,conclusion -q '.status + " " + (.conclusion // "")')"
     case "$state" in completed*) break ;; esac; sleep 30
@@ -112,7 +114,7 @@ log "paper-soak $soak green"
 # 4. the promotion PR, on exactly the attested commit.
 gh workflow run promote-to-main.yml -R "$repo" --ref testing > /dev/null
 sleep 40
-promote="$(gh run list -R "$repo" --workflow promote-to-main.yml --limit 1 --json databaseId -q '.[0].databaseId')"
+promote="$(gh run list -R "$repo" --workflow promote-to-main.yml --commit "$testing" --limit 1 --json databaseId -q '.[0].databaseId')"
 for _ in $(seq 1 30); do
     state="$(gh run view "$promote" -R "$repo" --json status,conclusion -q '.status + " " + (.conclusion // "")')"
     case "$state" in completed*) break ;; esac; sleep 20

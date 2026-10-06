@@ -72,9 +72,9 @@ internal class ExecutionBooker(
         val contractSize = instruments.lookup(e.symbol)?.contractSize
         val cs = contractSize ?: BigDecimal.ONE
         // Commission is a per-fill cash charge (#335); venue-reported costs (MT5 deal
-        // commission/swap, Bybit execFee) net out the same way — equity and halt inputs must be
+        // commission/swap, a gateway fill's fee) net out the same way — equity and halt inputs must be
         // cost-true, or a strategy bleeding costs looks healthier than it is.
-        val commission = commissionBook.charge(e.strategyId, e.symbol, e.quantity)
+        val commission = commissionBook.charge(e.strategyId, e.symbol, e.quantity, e.price)
         val venueCosts =
             if (e.typedVenueCosts.isNotEmpty()) {
                 typedVenueCostAmount(e.typedVenueCosts, e.symbol, e.timestamp, e.price)

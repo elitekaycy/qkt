@@ -19,9 +19,15 @@ internal class AliasCloseEvaluator(
 ) {
     var evaluationObserver: (String, HubKey, Candle, Int) -> Unit = { _, _, _, _ -> }
 
-    // Rules grouped by their alias — fireRulesForAlias runs per bar close, and scanning every
-    // rule with a string compare to find the alias's few was per-bar overhead.
-    val rulesByAlias: Map<String, List<CompiledRule>> by lazy { rules.groupBy { it.ruleAlias } }
+    // Rules grouped by the aliases whose close evaluates them — fireRulesForAlias runs per bar close,
+    // and scanning every rule with a string compare to find the alias's few was per-bar overhead.
+    val rulesByAlias: Map<String, List<CompiledRule>> by lazy {
+        rules.flatMap { rule -> rule.triggerAliases.map { it to rule } }.groupBy({ it.first }, { it.second })
+    }
+
+    // A rule several streams trigger runs once per close instant: streams closing together (a sync
+    // group, or equal timeframes) must not evaluate it twice.
+    private val lastEvaluatedMs = HashMap<CompiledRule, Long>()
 
     fun evaluate(
         alias: String,
@@ -85,6 +91,7 @@ internal class AliasCloseEvaluator(
         var consumerFired = false
         var consumerAccepted = false
         for (rule in aliasRules) {
+            if (rule.triggerAliases.size > 1 && lastEvaluatedMs.put(rule, candle.endTime) == candle.endTime) continue
             if (!warmupGate.isWarm(rule.referencedAliases)) continue
             when (ledger.fireAndCommit(rule, ec, ctx, emit)) {
                 SequenceFireOutcome.ACCEPTED -> {
@@ -97,5 +104,53 @@ internal class AliasCloseEvaluator(
         }
         sequenceRuntime.persistRuleEdges()
         return consumerFired && !consumerAccepted
+    }
+
+    /**
+     * Evaluate a closed [candle] for a strategy driven by raw candles rather than a [CandleHub]:
+     * position transitions, indicators, snapshots and aggregates, then sequences, then every rule.
+     */
+    fun evaluateUnbound(
+        candle: Candle,
+        ctx: StrategyContext,
+        emit: (Signal) -> Unit,
+    ) {
+        for ((alias, key) in streams) {
+            if (key.qktSymbol == candle.symbol) warmupGate.onClosedCandle(alias)
+        }
+
+        val ec =
+            EvalContext(
+                candle = candle,
+                streams = streams,
+                lets = emptyMap(),
+                strategyContext = ctx,
+                snapshotStore = snapshotStore,
+                evaluationTimeMs = candle.endTime,
+                sequences = sequenceRuntime,
+            )
+
+        // 1-4. Position transitions, indicators, rolling snapshots, aggregates
+        updater.updateForCandle(candle, ec, ctx)
+
+        // 5. Sequence state machines
+        sequenceRuntime.onCandle(candle, ec) { aliases -> warmupGate.isWarm(aliases) }
+
+        // 6. Rules
+        var consumerFired = false
+        var consumerAccepted = false
+        for (rule in rules) {
+            if (!warmupGate.isWarm(rule.referencedAliases)) continue
+            when (ledger.fireAndCommit(rule, ec, ctx, emit)) {
+                SequenceFireOutcome.ACCEPTED -> {
+                    consumerFired = true
+                    consumerAccepted = true
+                }
+                SequenceFireOutcome.SUPPRESSED -> consumerFired = true
+                SequenceFireOutcome.NOT_CONSUMING -> Unit
+            }
+        }
+        sequenceRuntime.persistRuleEdges()
+        sequenceRuntime.afterRulePass(consumerFired && !consumerAccepted)
     }
 }

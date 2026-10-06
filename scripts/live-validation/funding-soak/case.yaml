@@ -1,0 +1,18 @@
+id: perpetual-funding-soak
+title: A perpetual held through funding on a gateway account books the venue's funding to the cent
+why: 'Funding is cash a venue moves between longs and shorts of a perpetual while a position is held; before
+  qkt booked it, a perpetual held for days drifted from the venue balance by the cumulative funding.'
+status: soak
+symbols:
+- DERIBIT:BTC_USDC_PERPETUAL
+timeframes:
+- 1m
+proves:
+- behaviour:perpetual-funding
+fills: 2
+replay: bars
+assertions:
+- flat-account
+- deals-net-equals-realized
+- funding-charged
+- replay-same-fills

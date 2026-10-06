@@ -1,11 +1,11 @@
 package com.qkt.marketdata.store
 
-import com.qkt.marketdata.CsvTickFeed
+import com.qkt.marketdata.openDayFeed
 import java.nio.file.Path
 
 /**
  * Quality summary of one cached day file: how many ticks it holds and the largest gap between
- * consecutive ticks. [readable] is false when the file failed to parse (corrupt or truncated gzip).
+ * consecutive ticks. [readable] is false when the file failed to parse (corrupt binary, truncated gzip).
  */
 data class DayQuality(
     val tickCount: Int,
@@ -31,7 +31,7 @@ object DayFileIntegrity {
         var maxGap = 0L
         var last = Long.MIN_VALUE
         return try {
-            val feed = CsvTickFeed(path)
+            val feed = openDayFeed(path)
             try {
                 while (true) {
                     val tick = feed.next() ?: break

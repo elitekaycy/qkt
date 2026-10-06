@@ -25,6 +25,8 @@ internal class OrderEventHandlers(
     private val scaleOutExits: ScaleOutExits,
     private val venueRecovery: VenueRecovery,
     private val attachedCompletion: AttachedBracketCompletion,
+    private val bracketFills: BracketFills,
+    private val lateEntries: LateEntryExecutions,
     private val clock: Clock,
     private val ops: OrderOps,
     private val log: Logger,
@@ -80,6 +82,24 @@ internal class OrderEventHandlers(
 
     /** An order partially filled; its first execution slice already cancels its siblings. */
     fun onPartiallyFilled(e: BrokerEvent.OrderPartiallyFilled) {
+        // A slice the order already holds is a re-report: applying it again would skew the average
+        // price, or move the executed quantity back to an older report.
+        val current = book[e.clientOrderId]
+        if (current == null || current.state == OrderState.CANCELLED) {
+            lateEntries.onLateExecution(e.clientOrderId, e.quantity, e.price, e.cumulativeFilled)
+            if (current != null) return
+        }
+        if (current != null && e.cumulativeFilled <= current.cumulativeFilledQuantity) {
+            log.warn(
+                "ignoring repeated execution slice order_id={} cumulative={} already holds {}",
+                e.clientOrderId,
+                e.cumulativeFilled,
+                current.cumulativeFilledQuantity,
+            )
+            return
+        }
+        // Before the update: its snapshot persists the fill progress with the ticket this execution reported.
+        scaleOutTracker.onBasisPartiallyFilled(e)
         val applied =
             ops.update(e.clientOrderId) {
                 it.copy(
@@ -90,8 +110,8 @@ internal class OrderEventHandlers(
                 )
             }
         if (!applied) return
-        scaleOutTracker.onBasisPartiallyFilled(e)
         exposure.recordFill(e.clientOrderId, e.cumulativeFilled)
+        ocoGuard.onPartialExecution(e.clientOrderId, e.brokerOrderId)
         log.info(
             "order partially filled order_id={} strategy_id={} symbol={} side={} qty={} cumulative={} price={}",
             e.clientOrderId,
@@ -107,9 +127,14 @@ internal class OrderEventHandlers(
         }
     }
 
-    /** An order was cancelled: release its exposure, cancel held children, arm partial scale-outs. */
+    /**
+     * An order was cancelled: release its exposure, cancel held children, arm partial scale-outs and
+     * the exits of a bracket entry the venue filled in part.
+     */
     fun onCancelled(e: BrokerEvent.OrderCancelled) {
         haltCancels.forget(e.clientOrderId)
+        val bracket = brackets.preFill[e.clientOrderId]
+        val anchoredAtFill = e.clientOrderId in brackets.fillAnchoredFallback
         brackets.forgetEntry(e.clientOrderId)
         val applied =
             ops.update(e.clientOrderId) {
@@ -122,9 +147,26 @@ internal class OrderEventHandlers(
         val unarmedChildren = children.take(e.clientOrderId)
         val pendingScaleOut = scaleOuts.pendingByBasis.remove(e.clientOrderId)
         val partialPositionTicket = scaleOuts.partialPositionTickets.remove(e.clientOrderId)
-        unarmedChildren?.forEach { child -> ops.cancel(child.id) }
+        // An OCO leg that filled in part after its sibling executed is closed, not protected.
+        val compensated = ocoGuard.compensateCancelledExecution(e.clientOrderId)
+        val held = !unarmedChildren.isNullOrEmpty() || anchoredAtFill
+        val filled = book[e.clientOrderId]?.cumulativeFilledQuantity
+        if (!compensated &&
+            bracket != null &&
+            filled != null &&
+            bracketFills.armPartFilled(e.clientOrderId, bracket, held)
+        ) {
+            // Exits now cover what filled; a slice the venue reports after this end gets its own (#1349).
+            lateEntries.remember(e.clientOrderId, bracket, filled)
+        } else {
+            unarmedChildren?.forEach { ops.cancel(it.id) }
+        }
         attachedCompletion.onEntryEnded(e.clientOrderId, OrderState.CANCELLED)
-        scaleOutTracker.onBasisCancelled(e.clientOrderId, pendingScaleOut, partialPositionTicket)
+        scaleOutTracker.onBasisCancelled(
+            e.clientOrderId,
+            pendingScaleOut.takeUnless { compensated },
+            partialPositionTicket,
+        )
         log.info(
             "order cancelled order_id={} strategy_id={} reason={}",
             e.clientOrderId,

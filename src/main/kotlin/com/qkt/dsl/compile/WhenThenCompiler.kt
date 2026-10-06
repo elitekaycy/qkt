@@ -10,6 +10,7 @@ import com.qkt.dsl.ast.CloseAll
 import com.qkt.dsl.ast.DefaultsBlock
 import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.Log
+import com.qkt.dsl.ast.OPTIONS_BROKER
 import com.qkt.dsl.ast.OcoEntry
 import com.qkt.dsl.ast.Sell
 import com.qkt.dsl.ast.WhenThen
@@ -66,25 +67,38 @@ internal object WhenThenCompiler {
                 is OcoEntry -> a.leg1
                 else -> a
             }
+        // A structure alias (`OPEN ps = …`) is not a stream: its rule reads and closes the structure.
+        val structures = exprCompiler.structures.aliases
         val streamAlias: String? =
             when (primary) {
                 is Buy -> primary.stream
                 is Sell -> primary.stream
-                is Close -> primary.stream
+                is Close -> primary.stream.takeUnless { it in structures }
                 is Cancel -> primary.stream
                 is CloseAll, is CancelAll, is Log -> null
                 else -> null
             }
-        val referencedAliases = collectStreamAliases(rule.copy(cond = cond))
+        val referencedAliases = collectStreamAliases(rule.copy(cond = cond)) - structures
         // Every alias a rule touches must be declared, whatever else the rule reads: an
         // undeclared one used to fail only at first evaluation (or never, when another
         // alias became the rule's stream).
         referencedAliases.firstOrNull { it !in streams }?.let { error("Unknown stream alias: $it") }
+        val runsOn = RuleTriggers.runsOn(referencedAliases, streams)
+        // A rule that reads no stream runs on the first one with candles: an OPTIONS: root feed has none
+        // under its own alias (its ticks carry contract symbols), so a rule bound to it would never run.
         val ruleAlias =
             streamAlias
-                ?: referencedAliases.singleOrNull()
-                ?: streams.keys.firstOrNull()
-                ?: error("Strategy must declare at least one stream")
+                ?: runsOn.singleOrNull()
+                ?: streams.entries.firstOrNull { !it.value.broker.equals(OPTIONS_BROKER, ignoreCase = true) }?.key
+                ?: error("rule needs a stream with candles to run on; an OPTIONS: feed has no candles")
+        // A rule acting on no stream runs on every close of the streams it reads, or of every stream with
+        // candles when it reads none (an ACCOUNT kill switch must not wait for one market to reopen).
+        val triggerAliases =
+            when {
+                streamAlias != null || runsOn.size == 1 -> setOf(ruleAlias)
+                runsOn.isNotEmpty() -> runsOn
+                else -> streams.filterValues { !it.broker.equals(OPTIONS_BROKER, ignoreCase = true) }.keys
+            }
         val ruleSymbol =
             streams[ruleAlias]?.qktSymbol
                 ?: error("Unknown stream alias: $ruleAlias")
@@ -109,6 +123,7 @@ internal object WhenThenCompiler {
             consumesSequenceCompletion = readsSequenceCompletion(cond),
             edgeStateKey = "$ruleAlias#$ruleIndex",
             positionGate = PositionGate.of(cond, ruleAlias),
+            triggerAliases = triggerAliases,
         )
     }
 

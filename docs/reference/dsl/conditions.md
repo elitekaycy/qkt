@@ -46,6 +46,26 @@ THEN BUY btc SIZING 0.1     -- fires once per bar where we're flat AND above 50k
                             -- (after a fill, POSITION.btc != 0 so it doesn't re-fire)
 ```
 
+### An exit the venue does not fill is sent again
+
+A rule's market exit — `CLOSE`, `CLOSE_ALL`, or a `BUY`/`SELL` that reduces the position the
+strategy holds when the rule fires — can end at the venue with nothing or only part filled: a
+thin book, a price band (Deribit rests a market order at its band price, and the gateway cancels
+it), a transient refusal. Its rule's condition usually still holds, so plain edge gating would never
+fire it again and the position would stay open. Instead the rule **re-arms** (#1359):
+
+- It fires again on its **next bar** while its condition still holds, so at most once a bar.
+- A retry only **reduces** what is still held: a `BUY`/`SELL` is cut to the open quantity (a
+  part-filled exit resends its remainder and never reverses), `CLOSE` closes what is held, and any
+  entry in the same action is dropped. **Entries are never retried.**
+- After 3 failed fires in a row, and again at 6, 12, ..., qkt raises the operator alert (the
+  protection-failure channel: Telegram when configured, and the log) naming the strategy, symbol
+  and position still open. Retrying goes on regardless.
+- The re-arm is persisted with the rule edges, so a restart before the retry still retries.
+
+Backtests are unchanged: the simulators fill every market exit. `EXIT AFTER` closes retry the same
+way ([exit-after](exit-after.md)). Limit and stop exits and bracket children are not covered.
+
 ### Re-entry after a position closes
 
 A rule gated on the position — `POSITION.btc = 0` on an entry, `POSITION.btc != 0` on an exit —
@@ -289,7 +309,8 @@ Both streams are evaluated on every candle close (whoever closes first triggers 
 ## Common gotchas
 
 - **Bare comparisons don't repeat-fire.** A rule with `WHEN btc.close > 50000` fires once when the condition first becomes true. To fire repeatedly, gate with position-state (`AND POSITION.btc = 0`) and act on every tick the gate is open.
-- **`null` mostly propagates.** If an indicator in a condition isn't warm yet, comparisons against it are undefined and the rule won't fire. The exception is short-circuit logic: `TRUE OR <unwarm>` is `TRUE` and `FALSE AND <unwarm>` is `FALSE` — a side that can't change the outcome doesn't suppress it. e.g. `WHEN in_session OR slow_signal` fires on `in_session` even while `slow_signal`'s indicator is warming.
+- **A rule waits for its streams' warmup.** A stream is warm once it has closed as many bars as the longest indicator anywhere in the strategy reads from it (or its `WARMUP N BARS`, if larger). Until then no rule that references the stream is evaluated, so `WHEN in_session OR slow_signal` does not fire on `in_session` while `slow_signal`'s 200-bar indicator on the same stream is warming. Live trading seeds that history before the first live bar, so this only delays the start of a backtest.
+- **`null` mostly propagates.** After warmup a value can still be undefined (a missing quote, a series with no data, an undefined ratio); comparisons against it are undefined and the rule won't fire. The exception is short-circuit logic: `TRUE OR <undefined>` is `TRUE` and `FALSE AND <undefined>` is `FALSE` — a side that can't change the outcome doesn't suppress it.
 - **Precedence trap.** `WHEN a AND b OR c` is `(a AND b) OR c`, which is often not what you meant. Use parentheses.
 - **`=` vs `==`.** Both work — the parser accepts either. Pick a convention for your project and stick with it.
 - **`btc.close[0]` is the current bar.** It's the same as `btc.close` (no `[]`). `btc.close[1]` is the previous bar. Don't off-by-one yourself.

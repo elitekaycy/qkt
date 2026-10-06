@@ -5,17 +5,20 @@
                 [--cli PATH]   # also parse every strategy.qkt with this qkt binary
                 [--write-gaps] # rewrite gaps.yaml from what ready cases do not prove yet
 
-Fails when a case breaks the schema, an id is reused, a budget exceeds ten minutes, a `proves`
+Fails when a case breaks the schema, an id is reused, a budget exceeds ten minutes (four hours for a
+`scheduled` case of a venue-gateway lane, run at a set time outside the catalog, e.g. across an expiry), a `proves`
 capability is not in the catalog, a catalog capability is neither proven by a ready case nor
-listed in gaps.yaml, or a listed gap is already proven.
+listed in gaps.yaml, a listed gap is already proven, or a drill names an unknown kind.
 """
 import argparse, json, os, re, subprocess, sys
 import yaml
 
 REQUIRED = ("id", "title", "why", "status", "symbols", "timeframes", "proves", "assertions")
-STATUSES = {"ready", "planned"}
+STATUSES = {"ready", "planned", "scheduled"}
 TIMEFRAME = re.compile(r"^\d+(s|m|h|d)$")
 MAX_BUDGET = 600
+MAX_SCHEDULED_BUDGET = 4 * 3600
+DRILLS = ("qkt_restart", "gateway_outage", "kill_switch")  # scripts/live-validation/lib/derivatives_drills.py
 
 
 def main():
@@ -54,6 +57,8 @@ def main():
             seen[cid] = where
             if doc.get("status") not in STATUSES:
                 errors.append(f"{where}: status must be one of {sorted(STATUSES)}")
+            if doc.get("status") == "scheduled" and not lanes[lane].get("venue_gateway"):
+                errors.append(f"{where}: only a venue-gateway lane's case is scheduled")
             if len(str(doc.get("why", "")).split()) < 12:
                 errors.append(f"{where}: 'why' must name the failure this case catches, in a sentence")
             for tf in doc.get("timeframes", []):
@@ -63,8 +68,9 @@ def main():
                 if tf not in doc.get("timeframes", []):
                     errors.append(f"{where}: warmup_bars names {tf}, which is not in timeframes")
             budget = doc.get("budget_seconds", lanes[lane]["budget_seconds"])
-            if not isinstance(budget, int) or not 0 < budget <= MAX_BUDGET:
-                errors.append(f"{where}: budget_seconds must be 1..{MAX_BUDGET}")
+            most = MAX_SCHEDULED_BUDGET if doc.get("status") == "scheduled" else MAX_BUDGET
+            if not isinstance(budget, int) or not 0 < budget <= most:
+                errors.append(f"{where}: budget_seconds must be 1..{most}")
             for proof in doc.get("proves", []):
                 if not str(proof).startswith("behaviour:") and proof not in capabilities:
                     errors.append(f"{where}: proves '{proof}', which is not a catalog capability")
@@ -75,6 +81,14 @@ def main():
                             re.compile(str(step[field]))
                         except re.error as error:
                             errors.append(f"{where}: step {number} {field} is not a valid regex: {error}")
+            for drill in doc.get("drills") or []:
+                if not lanes[lane].get("venue_gateway"):
+                    errors.append(f"{where}: drills run in a venue-gateway lane only")
+                if drill.get("kind") not in DRILLS or not isinstance(drill.get("at_s"), int) or drill["at_s"] < 0:
+                    errors.append(f"{where}: drill {drill} needs a kind in {DRILLS} and whole seconds at_s")
+                if not isinstance(drill.get("after_fills", 1), int) or drill.get("after_fills", 1) < 1 \
+                        or not isinstance(drill.get("flat", False), bool):
+                    errors.append(f"{where}: drill {drill}: after_fills is a fill count from 1, flat true or false")
             if doc.get("expect_startup_refusal"):
                 try:
                     re.compile(str(doc["expect_startup_refusal"]))
@@ -109,12 +123,12 @@ def main():
 
     by_lane = {}
     for lane, doc in cases:
-        counts = by_lane.setdefault(lane, {"ready": 0, "planned": 0})
+        counts = by_lane.setdefault(lane, {"ready": 0, "planned": 0, "scheduled": 0})
         if doc.get("status") in counts:
             counts[doc["status"]] += 1
     for lane in lanes:
-        counts = by_lane.get(lane, {"ready": 0, "planned": 0})
-        print(f"{lane:8} ready={counts['ready']:<3} planned={counts['planned']}")
+        counts = by_lane.get(lane, {"ready": 0, "planned": 0, "scheduled": 0})
+        print(f"{lane:8} ready={counts['ready']:<3} planned={counts['planned']:<3} scheduled={counts['scheduled']}")
     print(f"capabilities proven {len(proven)}/{len(capabilities)}, declared gaps {len(gaps)}")
     for error in errors:
         print(f"ERROR {error}", file=sys.stderr)

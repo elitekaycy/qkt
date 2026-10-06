@@ -7,8 +7,8 @@ import kotlinx.serialization.json.Json
 import org.slf4j.LoggerFactory
 
 /**
- * Reads and writes `oco-legs.json`: the working legs of standalone OCO groups and their sibling
- * ids. Legs whose order shape cannot be persisted are skipped with a warning.
+ * Reads and writes `oco-legs.json`: the working legs of standalone OCO groups, the executed legs
+ * whose other leg is still live, and their sibling ids. Legs whose order shape cannot be persisted are skipped with a warning.
  */
 internal class OcoLegsFile(
     private val writer: StateFileWriter,
@@ -37,6 +37,7 @@ internal class OcoLegsFile(
                         strategyId = leg.strategyId,
                         request = req,
                         siblingIds = leg.siblingIds,
+                        executed = leg.executed,
                     )
                 }
             }
@@ -64,6 +65,7 @@ internal class OcoLegsFile(
                 strategyId = it.strategyId,
                 request = it.request.toDomain(),
                 siblingIds = it.siblingIds,
+                executed = it.executed,
             )
         }
     }
@@ -85,4 +87,5 @@ private data class OcoLegDto(
     val strategyId: String,
     val request: OrderRequestDto,
     val siblingIds: List<String>,
+    val executed: Boolean = false,
 )

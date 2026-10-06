@@ -80,6 +80,7 @@ internal class MT5RestartRecovery(
                         a.order.id,
                         a.order.request.strategyId,
                         requestedProtection.protectionFor(a.order.request),
+                        a.order.request.quantity,
                     ),
                 )
                 log.info(

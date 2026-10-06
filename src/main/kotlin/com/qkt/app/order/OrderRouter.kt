@@ -51,9 +51,6 @@ internal class OrderRouter(
                 accepted = true,
             )
         }
-        if (request is OrderRequest.Bracket) {
-            venue.crossedProtectionRejection(request)?.let { return it }
-        }
         val now = clock.now()
         ops.track(
             ManagedOrder(
@@ -64,6 +61,10 @@ internal class OrderRouter(
                 lastUpdatedAt = now,
             ),
         )
+        // Checked once tracked, so the rejection unwinds the order like any other venue rejection.
+        if (request is OrderRequest.Bracket) {
+            venue.crossedProtectionRejection(request)?.let { return it }
+        }
         if (!request.isCompositeShape()) exposure.register(request)
         return dispatch(request)
     }

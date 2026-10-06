@@ -9,9 +9,15 @@ usage() {
     cat <<'USAGE'
 Usage: run-attestation-catalog.sh --out DIR --gateway-url URL --expected-login N
          --expected-server NAME --magic-base N --arm I_UNDERSTAND_DEMO_ORDER_0.01
-         [--lanes shadow,orders,risk,book,engine,daemon,stress] [--max-parallel N] [--cli PATH]
+         [--lanes shadow,orders,risk,book,engine,daemon,stress[,derivatives][,bybit]] [--max-parallel N]
+         [--cli PATH] [--deriv-gateway-url URL --deriv-expected-login LOGIN]
+         [--bybit-gateway-url URL --bybit-expected-login LOGIN]
 
 Needs QKT_BROKER_API_KEY and QKT_LIVE_DEMO_ORDER_APPROVAL=LOCALHOST_DEMO_ONLY. Demo, loopback only.
+The derivatives lane (futures, perpetuals, options) runs on a VGP gateway account instead: it needs the
+--deriv-* flags and QKT_DERIV_GATEWAY_KEY, and its cases run one after another (one netting account).
+The bybit lane is the same on a gateway running the Bybit adapter: the --bybit-* flags and
+QKT_BYBIT_GATEWAY_KEY (QKT_BYBIT_GUARDIAN_KEY for its kill-switch drill); it runs beside the derivatives lane.
 Writes DIR/result.json: per-case verdicts, the capabilities proven, the wall-clock, and
 `status: passed` only when every ready case passed. Exits non-zero otherwise.
 At most --max-parallel daemons (default 8) run at once: one gateway serves them all, and past that
@@ -23,7 +29,7 @@ fail() { printf 'run-attestation-catalog: %s\n' "$1" >&2; exit 1; }
 
 out=""; gateway_url=""; expected_login=""; expected_server=""; magic_base=""; arm=""
 lanes="shadow,orders,risk,book,engine,daemon,stress"; cli="$repo_root/build/install/qkt/bin/qkt"
-max_parallel=8
+max_parallel=8; deriv_gateway_url=""; deriv_expected_login=""; bybit_gateway_url=""; bybit_expected_login=""
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --out) out="${2:-}"; shift 2 ;;
@@ -35,6 +41,10 @@ while [ "$#" -gt 0 ]; do
         --lanes) lanes="${2:-}"; shift 2 ;;
         --max-parallel) max_parallel="${2:-}"; shift 2 ;;
         --cli) cli="${2:-}"; shift 2 ;;
+        --deriv-gateway-url) deriv_gateway_url="${2:-}"; shift 2 ;;
+        --deriv-expected-login) deriv_expected_login="${2:-}"; shift 2 ;;
+        --bybit-gateway-url) bybit_gateway_url="${2:-}"; shift 2 ;;
+        --bybit-expected-login) bybit_expected_login="${2:-}"; shift 2 ;;
         --help|-h) usage; exit 0 ;;
         *) fail "unknown argument: $1" ;;
     esac
@@ -82,6 +92,43 @@ for lane in orders risk book engine daemon stress; do
         magic=$((magic + 1))
     done
 done
+# A venue-gateway lane (derivatives: Deribit; bybit: the Bybit adapter) runs its ready cases one after another on
+# its own netting account; the lanes run beside each other. gateway_ids holds "lane/id" for the verdicts.
+gateway_ids=()
+run_gateway_lane() {  # lane url login key guardian
+    local lane="$1" url="$2" login="$3" id code=0
+    export QKT_DERIV_GATEWAY_KEY="$4" QKT_DERIV_GUARDIAN_KEY="$5"
+    for case_yaml in "$repo_root/attestation/cases/$lane"/*/case.yaml; do
+        [ "$(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["status"])' "$case_yaml")" = ready ] ||
+            continue
+        id="$(basename "$(dirname "$case_yaml")")"
+        python3 "$repo_root/scripts/live-validation/run-derivatives-lane-case.py" \
+            --case "$repo_root/attestation/cases/$lane/$id" --out "$out/$lane-$id" \
+            --gateway-url "$url" --expected-login "$login" --arm "$arm" --cli "$cli" || code=1
+    done
+    return "$code"
+}
+gateway_lane() {  # lane url login key guardian
+    local lane="$1" case_yaml
+    for case_yaml in "$repo_root/attestation/cases/$lane"/*/case.yaml; do
+        [ "$(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["status"])' "$case_yaml")" = ready ] &&
+            gateway_ids+=("$lane/$(basename "$(dirname "$case_yaml")")")
+    done
+    launch "$lane" run_gateway_lane "$@"
+}
+if [[ ",$lanes," == *,derivatives,* ]]; then
+    [ -n "$deriv_gateway_url" ] && [ -n "$deriv_expected_login" ] ||
+        fail "--lanes derivatives needs --deriv-gateway-url and --deriv-expected-login"
+    gateway_lane derivatives "$deriv_gateway_url" "$deriv_expected_login" "${QKT_DERIV_GATEWAY_KEY:-}" \
+        "${QKT_DERIV_GUARDIAN_KEY:-}"
+fi
+if [[ ",$lanes," == *,bybit,* ]]; then
+    [ -n "$bybit_gateway_url" ] && [ -n "$bybit_expected_login" ] ||
+        fail "--lanes bybit needs --bybit-gateway-url and --bybit-expected-login"
+    [ -n "${QKT_BYBIT_GATEWAY_KEY:-}" ] || fail "--lanes bybit needs QKT_BYBIT_GATEWAY_KEY"
+    gateway_lane bybit "$bybit_gateway_url" "$bybit_expected_login" "$QKT_BYBIT_GATEWAY_KEY" \
+        "${QKT_BYBIT_GUARDIAN_KEY:-}"
+fi
 [ "${#pids[@]}" -gt 0 ] || fail "no ready case in lanes: $lanes"
 
 codes=()
@@ -109,8 +156,14 @@ for i in "${!pids[@]}"; do
 done
 
 verdicts=()
+for lane_id in "${gateway_ids[@]}"; do  # one verdict per venue-gateway case, from the result it wrote
+    name="${lane_id%%/*}-${lane_id#*/}"; result="$out/$name/result.json"
+    verdicts+=("$(jq -c --arg name "$name" '{name:$name, status, summary:((.problems // []) | join("; "))}' "$result" 2>/dev/null ||
+        jq -n --arg name "$name" '{name:$name, status:"failed", summary:"the case wrote no result"}')")
+done
 for i in "${!pids[@]}"; do
     name="${names[$i]}"; code="${codes[$i]}"; last="$out/logs/$name.log"
+    [ "$name" = derivatives ] || [ "$name" = bybit ] && continue
     if [ -n "${retry_pid[$name]:-}" ]; then
         code=0; wait "${retry_pid[$name]}" || code=$?
         last="$out/logs/$name-retry.log"

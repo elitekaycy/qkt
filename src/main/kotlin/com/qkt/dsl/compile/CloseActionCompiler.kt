@@ -9,7 +9,9 @@ import java.math.BigDecimal
 
 /**
  * Compiles `CLOSE <stream>` and `CLOSE_ALL`: cancel the symbol's pending orders, then flatten
- * its position leg by leg (by ticket), or a basket's constituents one by one.
+ * its position leg by leg (by ticket), or a basket's constituents one by one. `CLOSE_ALL` also ends
+ * every live option structure ([StructureCloses.endAll]) and leaves its legs out of the per-symbol
+ * closes, so no leg is closed twice.
  */
 internal class CloseActionCompiler(
     private val ids: IdGenerator,
@@ -20,11 +22,22 @@ internal class CloseActionCompiler(
             val out = mutableListOf<Signal>()
             for (streamAlias in ctx.streams.keys) {
                 val sym = ctx.streams[streamAlias]?.qktSymbol ?: continue
-                out.add(Signal.CancelPendingForSymbol(sym))
+                out.add(Signal.CancelPendingForSymbol(sym, closing = true))
             }
-            val open = ctx.strategyContext.positions.allPositions()
-            for (symbol in open.keys) {
-                out.addAll(closeSignalsFor(ctx, symbol))
+            val structures = ctx.strategyContext.structures
+            val strategyId = ctx.strategyContext.strategyId
+            out.addAll(StructureCloses.endAll(structures, strategyId, ctx.strategyContext.clock.now(), ids))
+            val structureHeld = StructureCloses.heldBySymbol(structures)
+            for ((symbol, position) in ctx.strategyContext.positions.allPositions()) {
+                val held = structureHeld[symbol]
+                if (held == null) {
+                    out.addAll(closeSignalsFor(ctx, symbol))
+                    continue
+                }
+                // Structures close their own legs; only what they do not hold closes here, by net quantity.
+                val rest = position.quantity.subtract(held)
+                if (rest.signum() > 0) out.add(Signal.Sell(symbol, rest))
+                if (rest.signum() < 0) out.add(Signal.Buy(symbol, rest.abs()))
             }
             out
         }
@@ -36,7 +49,7 @@ internal class CloseActionCompiler(
                 val signals = mutableListOf<Signal>()
                 for (alias in constituents) {
                     val symbol = ctx.streams[alias]?.qktSymbol ?: error("Unknown basket constituent alias: $alias")
-                    signals.add(Signal.CancelPendingForSymbol(symbol))
+                    signals.add(Signal.CancelPendingForSymbol(symbol, closing = true))
                     signals.addAll(closeSignalsFor(ctx, symbol))
                 }
                 signals
@@ -45,7 +58,7 @@ internal class CloseActionCompiler(
         return { ctx ->
             val symbol = ctx.streams[streamAlias]?.qktSymbol ?: error("Unknown stream alias: $streamAlias")
             val signals = mutableListOf<Signal>()
-            signals.add(Signal.CancelPendingForSymbol(symbol))
+            signals.add(Signal.CancelPendingForSymbol(symbol, closing = true))
             signals.addAll(closeSignalsFor(ctx, symbol))
             signals
         }

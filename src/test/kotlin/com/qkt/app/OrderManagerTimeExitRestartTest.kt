@@ -113,6 +113,9 @@ class OrderManagerTimeExitRestartTest {
         assertThat(close.side).isEqualTo(Side.SELL)
         assertThat(close.closesLegId).isEqualTo("e1")
         assertThat(close.closesTicket).isEqualTo("T-e1")
+        restarted.openQty = null // the record stays until its close fills (#1360)
+        restarted.broker.emitFill(close, price = Money.of("100"))
+        restarted.tickAt(100_001L)
         assertThat(FileStatePersistor(tmp).loadTimedExits(sid)).isEmpty()
     }
 
@@ -163,7 +166,7 @@ class OrderManagerTimeExitRestartTest {
     }
 
     @Test
-    fun `a normal fire clears the persisted exit`(
+    fun `a normal fire keeps the persisted exit until its close fills, then clears it`(
         @TempDir tmp: Path,
     ) {
         val session = armSeed(FileStatePersistor(tmp))
@@ -171,6 +174,10 @@ class OrderManagerTimeExitRestartTest {
         session.tickAt(100_000L)
 
         assertThat(session.closes()).hasSize(1)
+        assertThat(FileStatePersistor(tmp).loadTimedExits(sid).single().closeId).isEqualTo("e1-exit-close")
+        session.openQty = null
+        session.broker.emitFill(session.closes().single(), price = Money.of("100"))
+        session.tickAt(100_001L)
         assertThat(FileStatePersistor(tmp).loadTimedExits(sid)).isEmpty()
     }
 

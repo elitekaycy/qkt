@@ -11,7 +11,7 @@ import org.slf4j.Logger
 
 /**
  * Rebuilds order tracking and sibling linkage from the persistor at session startup, strategy by
- * strategy: live OCO legs, bracket stop/target pairs, then pending orders (composites re-created
+ * strategy: OCO legs ([OcoLegRestore]), bracket stop/target pairs, then pending orders (composites re-created
  * whole, engine-held orders resumed as monitors), then legacy trailing-stop snapshots. Orders the
  * venue must confirm are reconciled by [VenueRecovery] at the end. A persistence read failure
  * aborts startup rather than silently discarding live order state.
@@ -20,7 +20,7 @@ internal class OrderRestorer(
     private val persistor: StatePersistor,
     private val book: OrderBook,
     private val siblings: SiblingLinks,
-    private val ocoGuard: OcoExecutionGuard,
+    private val ocoLegs: OcoLegRestore,
     private val exposure: PendingExposureBook,
     private val scaleOuts: ScaleOutBook,
     private val scaleOutRecovery: ScaleOutRecovery,
@@ -43,7 +43,7 @@ internal class OrderRestorer(
                     .loadTrailingStops(sid)
                     .associateBy { it.clientOrderId }
                     .toMutableMap()
-            restoreOcoLegs(sid, dynamicStops, recovered)
+            ocoLegs.restore(sid, dynamicStops, recovered)
             restoreBracketPairs(sid)
             restorePendingOrders(sid, dynamicStops, recovered)
             timeExits.restore(persistor.loadTimedExits(sid))
@@ -61,58 +61,15 @@ internal class OrderRestorer(
             }
         }
         venueRecovery.reconcile(strategyIds, recovered)
-    }
-
-    private fun restoreOcoLegs(
-        sid: String,
-        dynamicStops: MutableMap<String, PersistedTrailingStop>,
-        recovered: MutableList<ManagedOrder>,
-    ) {
-        for (leg in persistor.loadOcoLegs(sid)) {
-            if (book.contains(leg.clientOrderId)) continue
-            val groupId =
-                (leg.siblingIds + leg.clientOrderId)
-                    .sorted()
-                    .joinToString(prefix = "restored-oco:", separator = "|")
-            ocoGuard.markEmulated(leg.clientOrderId, groupId)
-            if (engineHeld.isEngineHeld(leg.request)) {
-                siblings[leg.clientOrderId] = leg.siblingIds
-                val persisted = dynamicStops.remove(leg.clientOrderId)
-                if (persisted == null && hasPersistentDynamicState(leg.request)) {
-                    log.warn(
-                        "[restore] dynamic state missing for {}; restarting from its available anchor",
-                        leg.clientOrderId,
-                    )
-                }
-                engineHeld.restore(
-                    clientOrderId = leg.clientOrderId,
-                    brokerOrderId = leg.brokerOrderId,
-                    request = leg.request,
-                    dynamicState = persisted,
-                    groupId = groupId,
-                )
-                continue
-            }
-            val now = clock.now()
-            val managed =
-                ManagedOrder(
-                    id = leg.clientOrderId,
-                    request = leg.request,
-                    state = OrderState.WORKING,
-                    brokerOrderId = leg.brokerOrderId,
-                    createdAt = now,
-                    lastUpdatedAt = now,
-                )
-            book.put(managed)
-            siblings[leg.clientOrderId] = leg.siblingIds
-            exposure.register(leg.request, groupId)
-            recovered += managed
-        }
+        ocoLegs.cancelSiblingsOfExecuted()
     }
 
     private fun restoreBracketPairs(sid: String) {
         for (pair in persistor.loadBracketPairs(sid)) {
             val exitIds = listOfNotNull(pair.stopLossClientOrderId, pair.takeProfitClientOrderId)
+            // A lone exit links to nothing; writing its empty link would erase one restored above
+            // (an OCO leg is persisted as a one-sided pair, and would lose its cancel-on-fill).
+            if (exitIds.size < 2) continue
             for (exitId in exitIds) {
                 siblings[exitId] = exitIds.filter { it != exitId }
             }

@@ -1,0 +1,21 @@
+id: option-put-spread-open-close
+title: An option put spread opened from the live chain and closed one snapshot later
+why: 'A structure chooses its legs from the chain the gateway account records; if live picks other
+  legs than replay of that recorded chain, sizes them differently, or books fees qkt and the venue do
+  not agree on, the strategy trades one structure live and backtests another.'
+status: ready
+symbols:
+- OPTIONS:DERIBIT.BTC_USDC
+- CHAIN:DERIBIT.BTC_USDC.atm_iv.30d
+timeframes:
+- 1m
+proves:
+- behaviour:option-structure
+- behaviour:chain-recording
+- behaviour:option-fees
+fills: 4
+replay: chain
+assertions:
+- flat-account
+- deals-net-equals-realized
+- replay-same-legs

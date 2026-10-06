@@ -1,13 +1,23 @@
 package com.qkt.cli
 
 import com.qkt.candles.TimeWindow
+import com.qkt.cli.fetch.BookDepthFetch
+import com.qkt.cli.fetch.CatalogFetch
+import com.qkt.cli.fetch.ChainFetch
+import com.qkt.cli.fetch.FundingFetch
+import com.qkt.cli.fetch.MarksFetch
+import com.qkt.cli.fetch.OpenInterestFetch
+import com.qkt.cli.fetch.RollsFetch
+import com.qkt.cli.fetch.TapeFetch
 import com.qkt.cli.fetch.buildFetcher
 import com.qkt.cli.fetch.resolveFetchRange
+import com.qkt.common.Clock
+import com.qkt.common.SystemClock
 import com.qkt.common.TimeRange
-import com.qkt.connector.bybit.marketdata.BybitKlineClient
 import com.qkt.connector.mt5.MT5BrokerProfileLoader
 import com.qkt.connector.mt5.marketdata.Mt5BarFetcher
 import com.qkt.marketdata.Candle
+import com.qkt.marketdata.flow.FlowKind
 import com.qkt.marketdata.store.DataRoot
 import com.qkt.marketdata.store.LocalBarStore
 import java.time.ZoneOffset
@@ -24,12 +34,23 @@ import java.time.ZoneOffset
  * - MT5 brokers (EXNESS, ICMARKETS, FTMO, PEPPERSTONE, …) — resolved via
  *   [MT5BrokerProfileLoader] from `qkt.config.yaml` + built-in defaults;
  *   uses [Mt5BarFetcher] against the profile's `gatewayUrl`.
- * - BYBIT_SPOT / BYBIT_LINEAR — uses [BybitKlineClient] against the public
- *   Bybit REST endpoint (no auth needed for kline data).
+ * - `type: gateway` accounts (BYBIT_LINEAR, BYBIT_SPOT, DERIBIT, …) — the account's gateway serves the bars
+ *   (`GET /v1/bars`). A prefix with no `brokers:` entry is refused naming the entry to add.
+ * - BINANCE_UM — Binance USDⓈ-M quarterly futures from the free `data.binance.vision` archive.
  * - BACKTEST — refused; nothing to fetch (the local store IS the backtest source).
+ *
+ * `qkt fetch VENUE:ROOT --catalog` writes the root's contract catalogs instead of bars (see [CatalogFetch]), and
+ * `qkt fetch VENUE:ROOT --rolls [--tf 1d]` measures its roll history from stored (and fetched) bars, and
+ * `qkt fetch DERIBIT:ROOT --chains` builds an option root's chain snapshots from trade history, and
+ * `qkt fetch VENUE:PERPETUAL --funding` stores a perpetual's funding rates (see [FundingFetch]),
+ * `qkt fetch VENUE:CONTRACT --marks --tf 1m` stores a contract's mark and index history (see [MarksFetch]),
+ * `qkt fetch VENUE:CONTRACT --open-interest` stores a contract's open interest (see [OpenInterestFetch]),
+ * `qkt fetch VENUE:CONTRACT --tape` or `--liquidations` stores its trade tape or liquidations (see [TapeFetch]), and
+ * `qkt fetch VENUE:CONTRACT --depth` stores a contract's recorded order book (see [BookDepthFetch]).
  */
 class FetchCommand(
     private val args: Args,
+    private val clock: Clock = SystemClock(),
 ) {
     /** Fetch every missing day in the range and return a process exit code. */
     fun run(): Int {
@@ -49,6 +70,19 @@ class FetchCommand(
         }
         val broker = parts[0]
         val symbol = parts[1]
+        ChainFetch.misplacedFlag(args)?.let {
+            System.err.println("qkt: $it")
+            return ExitCodes.ARG_ERROR
+        }
+        if (args.flag("catalog")) return catalog(target)
+        if (args.flag("rolls")) return RollsFetch.forArgs(target, broker, args)
+        if (args.flag("chains")) return ChainFetch.run(target, args)
+        if (args.flag("funding")) return FundingFetch.run(target, args)
+        if (args.flag("marks")) return MarksFetch.run(target, args, clock)
+        if (args.flag("open-interest")) return OpenInterestFetch.run(target, args)
+        if (args.flag("tape")) return TapeFetch.run(target, FlowKind.TRADES, args, clock)
+        if (args.flag("liquidations")) return TapeFetch.run(target, FlowKind.LIQUIDATIONS, args, clock)
+        if (args.flag("depth")) return BookDepthFetch.run(target, args)
         val tfArg =
             try {
                 args.requireOption("tf")
@@ -67,6 +101,10 @@ class FetchCommand(
         val (fromDate, toDate) =
             resolveFetchRange(args.option("from"), args.option("to"), args.option("last"))
                 ?: return ExitCodes.ARG_ERROR
+        if (fromDate.isAfter(toDate)) {
+            System.err.println("qkt: --from $fromDate is after --to $toDate")
+            return ExitCodes.ARG_ERROR
+        }
 
         if (broker == "BACKTEST") {
             System.err.println(
@@ -100,6 +138,12 @@ class FetchCommand(
             }
             val rangeStart = day.atStartOfDay(ZoneOffset.UTC).toInstant()
             val rangeEnd = day.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant()
+            // A day still in progress would be stored partial and then skipped as on disk forever.
+            if (rangeEnd.toEpochMilli() > clock.now()) {
+                println("  [$idx/$totalDays] $day  not stored (the UTC day has not ended)")
+                day = day.plusDays(1)
+                continue
+            }
             val bars: List<Candle> =
                 try {
                     fetcher.fetch(symbol, window, TimeRange(rangeStart, rangeEnd))
@@ -127,4 +171,7 @@ class FetchCommand(
         println("qkt fetch: done — fetched=$fetched empty=$empty skipped=$skipped total=$totalDays")
         return ExitCodes.SUCCESS
     }
+
+    private fun catalog(target: String): Int =
+        CatalogFetch.forTarget(target, DataRoot.forDataRoot(args.option("data-root")), args.option("config"))
 }

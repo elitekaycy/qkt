@@ -77,7 +77,7 @@ qkt status --deep || echo "qkt is unhealthy — check logs"
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
 | `Parse error at line N:M` | DSL syntax bug | Run `qkt parse <file>` for the full diagnostic; check [DSL reference](../reference/dsl/index.md) |
-| `unknown broker prefix: FOO` | The prefix isn't a built-in and isn't in your `qkt.config.yaml` | Add a `brokers:` entry or use a built-in (BACKTEST, BYBIT_SPOT, EXNESS, etc.) |
+| `unknown broker prefix: FOO` | The prefix isn't a built-in and isn't in your `qkt.config.yaml` | Add a `brokers:` entry or use a built-in (BACKTEST, EXNESS, etc.); `BYBIT_LINEAR` and `BYBIT_SPOT` are `type: gateway` entries named `bybit_linear` / `bybit_spot` |
 | `Unknown indicator: ADX` | The indicator isn't registered with the DSL | Check the [indicator catalog](../reference/dsl/indicators.md); `ADX` is on the backlog |
 | `Daemon not running` | You forgot to start the daemon | `qkt daemon &` or `docker compose up -d` |
 | `Strategy with name X already exists` | Already deployed under that name | For edits, use `qkt resync <file> --as X`; for a separate copy, pass `--as <newname>` |
@@ -129,8 +129,7 @@ This is the most common complaint. Six things, in order of how often they happen
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
 | MT5 connection drops daily | Some brokers force re-auth | VNC back in and log in again; or build a watchdog |
-| Bybit `retCode=10001` | Invalid API permissions | Re-issue keys with Read + Trade enabled |
-| Bybit rate-limit errors | Too many orders/second | The `BybitTransport` retries with backoff; if persistent, reduce strategy frequency |
+| qkt refuses to start: gateway `bybit_linear` reports another adapter, account or trade mode | `expected_*` settings do not match the gateway's `/v1/health` | Set `expected_account_login` / `expected_trade_mode` to what the gateway reports (`demo` on testnet). Bybit API errors and rate limits are the gateway's: see the [Bybit adapter page](https://github.com/elitekaycy/qkt-venue-gateway/blob/main/adapter-bybit/README.md) |
 | Symbol rejected on MT5 (`symbol not found`) | Broker uses a different symbol name | Check `symbolPolicy` in your broker profile — Exness adds `m` suffix |
 | ERROR `... booking at market ... realized PnL is PROVISIONAL` | Async-execution venue acknowledged a close with price 0.0 and the closing deal was not in history within ~3 s | The trade was booked at the closing-side quote; compare it with the venue's closing deal and correct the realized PnL. See [engine close pricing](../concepts/broker-integration.md#engine-close-pricing) |
 | Position drift between qkt and broker | Manual trade on the venue, or magic-number collision | qkt's `MT5StateRecovery` reconciles on next daemon start; or restart |

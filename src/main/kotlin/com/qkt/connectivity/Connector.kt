@@ -1,7 +1,8 @@
 package com.qkt.connectivity
 
 /**
- * A technology qkt trades through — MetaTrader 5 via mt5-gateway, the Bybit v5 API, Rithmic.
+ * A technology qkt trades through — MetaTrader 5 via mt5-gateway, a VGP venue gateway
+ * (Bybit, Deribit, …), Rithmic.
  *
  * One implementation per connector type, discovered by [ConnectorRegistry]. A connector knows how
  * to open trading accounts of its type; everything specific to it stays in its own package, and
@@ -53,4 +54,7 @@ enum class ProductType {
 
     /** A dated futures contract that expires and settles, e.g. CME MES or a BTC quarterly. */
     FUTURE,
+
+    /** A dated option that expires and settles at its intrinsic value, e.g. a Deribit BTC_USDC call. */
+    OPTION,
 }

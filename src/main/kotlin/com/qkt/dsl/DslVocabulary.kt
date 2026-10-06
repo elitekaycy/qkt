@@ -5,6 +5,8 @@ import com.qkt.dsl.ast.NowField
 import com.qkt.dsl.ast.StateSource
 import com.qkt.dsl.parse.Lexer
 import com.qkt.dsl.parse.TokenKind
+import com.qkt.marketdata.depth.BookDepthSymbol
+import com.qkt.marketdata.openinterest.OpenInterestSymbol
 
 /**
  * The one place the DSL's name tables live: the fields readable off a stream alias, the
@@ -21,16 +23,38 @@ object DslVocabulary {
     /** Every keyword and operator-word spelling the lexer reserves, excluding the `->` token. */
     val keywords: List<String> = (Lexer.keywordSpellings() - TokenKind.ARROW.name).sorted()
 
-    /** Per-bar fields readable off a stream alias, e.g. `btc.close`. */
+    /** Fields describing the contract a futures stream follows right now; Undefined on other streams. */
+    val contractFields: List<String> = listOf("contract", "dte", "days_to_roll")
+
+    /** A contract's mark and index price as its venue reports them; refused on a feed that serves none. */
+    val markFields: List<String> = listOf("mark", "index")
+
+    /**
+     * An option contract's mark implied volatility and the Greeks qkt prices from it; refused on a stream that is
+     * not a catalogued option or on a feed that serves no option marks.
+     */
+    val optionFields: List<String> = listOf("iv", "delta", "gamma", "vega", "theta")
+
+    /**
+     * A contract's volume per bar from its public tape: aggressor buys and sells, and longs and shorts liquidated.
+     * Read only a bar back or more (`btc.buy_volume[1]`); refused on a feed that serves no tape.
+     */
+    val flowFields: List<String> = listOf("buy_volume", "sell_volume", "long_liq_volume", "short_liq_volume")
+
+    /** Per-bar fields readable off an alias, e.g. `btc.close`, plus contract, mark, venue-series, option and flow fields. */
     val candleFields: List<String> =
-        listOf("close", "open", "high", "low", "volume", "price", "bid", "ask", "spread", "value", "timestamp")
+        listOf("close", "open", "high", "low", "volume", "price", "bid", "ask", "spread", "value", "timestamp") +
+            contractFields + markFields + OpenInterestSymbol.FIELD + BookDepthSymbol.FIELDS + optionFields + flowFields
 
     /** The candle fields an indicator may consume as a numeric series. */
-    val numericCandleFields: List<String> = listOf("close", "value", "open", "high", "low", "volume", "price")
+    val numericCandleFields: List<String> =
+        listOf("close", "value", "open", "high", "low", "volume", "price", OpenInterestSymbol.FIELD) +
+            BookDepthSymbol.FIELDS
 
     /** Instrument-metadata fields readable off a stream alias, e.g. `btc.tick_size`. */
     val metaFields: List<String> =
-        listOf("tick_size", "contract_size", "volume_step", "volume_min", "swap_long_points", "swap_short_points")
+        listOf("tick_size", "contract_size", "volume_step", "volume_min", "swap_long_points", "swap_short_points") +
+            listOf("tick_value", "multiplier")
 
     /** `<alias>.candle`: the whole closed candle, for candle-fed indicators such as `atr`. */
     const val CANDLE_SELECTOR = "candle"
@@ -43,31 +67,11 @@ object DslVocabulary {
 
     /**
      * `POSITION.<alias>.<member>` spellings and what each compiles to: a null source is the
-     * signed net quantity ([com.qkt.dsl.ast.PositionRef]); any other is a [StateSource] read.
+     * signed net quantity ([com.qkt.dsl.ast.PositionRef]); any other is a [StateSource] read. On a
+     * structure alias (`OPEN <alias> = OPTIONS ON …`) quantity is the structure's size, `pnl` its
+     * premium P&L, and `delta` through `pnl_pct` its structure fields.
      */
-    val positionAccessors: Map<String, StateSource?> =
-        linkedMapOf(
-            "quantity" to null,
-            "qty" to null,
-            "entry_price" to StateSource.POSITION_AVG_PRICE,
-            "avg_price" to StateSource.POSITION_AVG_PRICE,
-            "avg_entry_price" to StateSource.POSITION_AVG_PRICE,
-            "pnl" to StateSource.POSITION_PNL,
-            "realized_pnl" to StateSource.POSITION_REALIZED_PNL,
-            "unrealized_pnl" to StateSource.POSITION_UNREALIZED_PNL,
-            "holding_duration" to StateSource.POSITION_HOLDING_DURATION,
-            "mfe" to StateSource.POSITION_MFE,
-            "mae" to StateSource.POSITION_MAE,
-            "count" to StateSource.POSITION_OPEN_COUNT,
-            "open_count" to StateSource.POSITION_OPEN_COUNT,
-            "longs" to StateSource.POSITION_LONG_COUNT,
-            "long_count" to StateSource.POSITION_LONG_COUNT,
-            "shorts" to StateSource.POSITION_SHORT_COUNT,
-            "short_count" to StateSource.POSITION_SHORT_COUNT,
-            "gross" to StateSource.POSITION_GROSS,
-            "trades_today" to StateSource.POSITION_TRADES_TODAY,
-            "last_trade_at" to StateSource.POSITION_LAST_TRADE_AT,
-        )
+    val positionAccessors: Map<String, StateSource?> = PositionMembers.accessors
 
     /** `NOW.<member>` spellings and the clock field each reads. */
     val nowFields: Map<String, NowField> =

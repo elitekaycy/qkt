@@ -15,6 +15,8 @@ internal object TextReportPrinter {
         r: BacktestResult,
         out: PrintStream,
         brokerKind: BrokerKind,
+        futures: Set<String> = emptySet(),
+        options: Set<String> = emptySet(),
     ) {
         val g = r.global
         out.println("Trades:           ${g.tradeCount}")
@@ -23,6 +25,8 @@ internal object TextReportPrinter {
         out.println("Total PnL:        ${g.totalPnL.toPlainString()}")
         out.println("Commission paid:  ${g.commissionPaid.toPlainString()}")
         out.println("Swap paid:        ${g.swapPaid.toPlainString()}")
+        if (g.rollCostsPaid.signum() != 0) out.println("Roll costs paid:  ${g.rollCostsPaid.toPlainString()}")
+        if (g.fundingPaid.signum() != 0) out.println("Funding paid:     ${g.fundingPaid.toPlainString()}")
         out.println("Win rate:         ${g.winRate.toPlainString()}")
         out.println("Sharpe (annual):  ${g.sharpeRatio?.toPlainString() ?: "n/a"}")
         out.println("Sortino (annual): ${g.sortinoRatio?.toPlainString() ?: "n/a"}")
@@ -75,6 +79,16 @@ internal object TextReportPrinter {
         out.println("  Execution:  ${executionModel(brokerKind)}")
         out.println("  Commission: ${commissionNote(g.commissionPaid)}")
         out.println("  Swap:       ${swapNote(g.swapPaid)}")
+        if (futures.isNotEmpty()) {
+            out.println(
+                "  Futures:    exchange simulator — executable price + slippage, root fees per fill, rolls as roll costs",
+            )
+        }
+        if (options.isNotEmpty()) {
+            out.println(
+                "  Options:    option venue — next chain snapshot's bid/ask, capped venue fees, cash settlement at delivery",
+            )
+        }
         out.println("  Win rate:   wins / decided trades; break-even trades excluded")
         out.println("  Calmar:     total return / max drawdown (NOT annualized)")
         out.println("  Sharpe:     annualized from average sample spacing; risk-free rate 0")

@@ -81,6 +81,35 @@ class RiskEngine(
         return Decision.Approve
     }
 
+    /**
+     * Run the rules over [requests] as one position (an option structure's legs): a halted strategy
+     * may only send a group of risk-reducing legs; a [GroupAwareRule] judges the legs together and
+     * every other rule judges each leg; the first refusal refuses the whole group.
+     */
+    fun approveGroup(requests: List<OrderRequest>): Decision {
+        val strategyId = requests.firstOrNull()?.strategyId ?: return Decision.Approve
+        if (riskState.isStrategyHalted(strategyId) && !requests.all { isRiskReducing(it, positions) }) {
+            return Decision.Reject("halted: ${riskState.haltReasonFor(strategyId) ?: "halted"}")
+        }
+        for (rule in rules) {
+            val decision =
+                if (rule is GroupAwareRule) {
+                    rule.evaluateGroup(requests, positionsWithPendingExposure)
+                } else {
+                    requests
+                        .map {
+                            rule.evaluate(
+                                it,
+                                positionsWithPendingExposure,
+                            )
+                        }.firstOrNull { it is Decision.Reject }
+                        ?: Decision.Approve
+                }
+            if (decision is Decision.Reject) return decision
+        }
+        return Decision.Approve
+    }
+
     fun evaluateHaltRules() {
         if (!riskState.warmupComplete) return
         riskState.clearExpiredDailyHalts()

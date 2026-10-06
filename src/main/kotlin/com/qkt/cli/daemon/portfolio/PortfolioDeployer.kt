@@ -9,6 +9,9 @@ import com.qkt.cli.daemon.signalToJson
 import com.qkt.cli.daemon.tradeToJson
 import com.qkt.cli.observe.EventRing
 import com.qkt.cli.observe.ObservabilityServer
+import com.qkt.cli.strategyCalendar
+import com.qkt.common.TradingCalendar
+import com.qkt.derivatives.options.chain.isOptionFeed
 import com.qkt.dsl.ast.AlwaysRun
 import com.qkt.dsl.ast.WhenRun
 import com.qkt.dsl.portfolio.CompiledChild
@@ -72,11 +75,9 @@ class PortfolioDeployer(
     private val measuredUsageMaxQty: java.math.BigDecimal =
         com.qkt.risk.rules.MeasuredUsage.DEFAULT_MEASURED_MAX_QTY,
     private val clock: com.qkt.common.Clock = com.qkt.common.SystemClock(),
-    private val calendar: com.qkt.common.TradingCalendar =
-        com.qkt.common.TradingCalendar
-            .fxDefault(),
+    private val calendar: TradingCalendar = TradingCalendar.fxDefault(),
     /** Resolves the live calendar per routed qkt symbol; null retains [calendar]. */
-    private val calendarFor: ((String) -> com.qkt.common.TradingCalendar)? = null,
+    private val calendarFor: ((String) -> TradingCalendar)? = null,
     private val persistor: com.qkt.persistence.StatePersistor = com.qkt.persistence.NoopStatePersistor(),
     /**
      * Append-only order-event journal root. When non-null, every portfolio child writes
@@ -204,7 +205,7 @@ class PortfolioDeployer(
                 PortfolioGate(
                     ast = compiled.ast,
                     clock = clock,
-                    calendar = calendarFor?.invoke(symbols.firstOrNull() ?: "") ?: calendar,
+                    calendar = calendarFor?.let { strategyCalendar(symbols, instrumentRegistry, it) } ?: calendar,
                 ).also { it.prepare() }
             val riskAggregator =
                 buildRiskAggregator(
@@ -517,7 +518,7 @@ class PortfolioDeployer(
                 .firstOrNull()
                 ?.timeframe
                 ?.let { TimeWindow.parse(it) }
-        val childCalendar = symbols.firstOrNull()?.let(::calendarForSymbol) ?: calendar
+        val childCalendar = strategyCalendar(symbols, instrumentRegistry, ::calendarForSymbol)
 
         // Match the shared-account portfolio backtest: this cap is book-wide, not N
         // independent child budgets that multiply the configured loss limit.
@@ -670,11 +671,10 @@ class PortfolioDeployer(
         return handle to wrapper
     }
 
-    private fun calendarForSymbol(qktSymbol: String): com.qkt.common.TradingCalendar =
-        calendarFor?.invoke(qktSymbol) ?: calendar
+    private fun calendarForSymbol(qktSymbol: String): TradingCalendar = calendarFor?.invoke(qktSymbol) ?: calendar
 
     internal fun bookAnnualization(compiled: PortfolioCompiled): java.math.BigDecimal {
-        val stream = compiled.ast.streams.firstOrNull() ?: return java.math.BigDecimal("252")
+        val stream = compiled.ast.streams.find { !isOptionFeed(it.qktSymbol) } ?: return java.math.BigDecimal("252")
         val window = TimeWindow.parse(stream.timeframe)
         return calendarForSymbol(stream.qktSymbol).tradingPeriodsPerYear(window)
     }

@@ -43,8 +43,13 @@ class DaemonProductionPreflightTest {
             risk:
               max_daily_loss: 100
             brokers:
-              bybit:
-                type: bybit
+              bybit_linear:
+                type: gateway
+                gateway_url: http://127.0.0.1:1
+                api_key: token
+                expected_adapter: bybit
+                expected_account_login: "1"
+                expected_trade_mode: demo
             notify:
               telegram:
                 enabled: true
@@ -88,8 +93,13 @@ class DaemonProductionPreflightTest {
             risk:
               max_daily_loss: 100
             brokers:
-              bybit:
-                type: bybit
+              bybit_linear:
+                type: gateway
+                gateway_url: http://127.0.0.1:1
+                api_key: token
+                expected_adapter: bybit
+                expected_account_login: "1"
+                expected_trade_mode: demo
             """.trimIndent(),
         )
         val stateRoot = tmp.resolve("state")

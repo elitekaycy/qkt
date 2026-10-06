@@ -1,0 +1,8 @@
+futures:
+  - root: DERIBIT:BTC_USDC
+    currency: USDC
+    multiplier: 1
+    tickSize: 2.5
+    volumeStep: 0.0001
+    volumeMin: 0.0001
+    takerFeeRate: 0.0005

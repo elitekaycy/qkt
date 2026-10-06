@@ -65,6 +65,14 @@ class MT5PositionPoller(
      * because their fill was already published by the submission callback.
      */
     private val engineCloseState: ((Long) -> EngineCloseState)? = null,
+    /** For a confirmed engine close that left the position open, its part not yet seen here. */
+    private val takeEnginePartial: ((Long) -> EnginePartialClose?)? = null,
+    /**
+     * For a ticket the venue's history may know more about (a part-filled entry, #1354): the entry
+     * lots booked beyond this poller's snapshot, after reading history when given the venue volume
+     * now (zero when gone); null when that history cannot be trusted yet and the change waits.
+     */
+    private val entryGrowthBeside: ((Long, BigDecimal?) -> BigDecimal?)? = null,
     /** Deduplicates venue costs shared with engine-initiated close callbacks. */
     private val venueCostsForClose: ((Long, List<MT5Deal>, Boolean) -> BigDecimal)? = null,
     /**
@@ -118,7 +126,10 @@ class MT5PositionPoller(
 
     /** Runtime-opened tickets rejected by this broker instance's local correlation. */
     private val foreignRuntimeTickets: MutableSet<Long> = ConcurrentHashMap.newKeySet()
-    private val observedClosingDeals: MutableMap<Long, MutableSet<Long>> = mutableMapOf()
+    private val closeFills =
+        MT5VenueCloseFills(client, profile, bus, closedTicketMeta, venueCostsForClose, priceProvider)
+    private val protectionChanges =
+        MT5ProtectionChanges(profile, symbol, bus, closedTicketMeta, isExpectedProtectionChange)
 
     fun start() {
         if (!running.compareAndSet(false, true)) return
@@ -200,74 +211,58 @@ class MT5PositionPoller(
         for (ticket in lastSnapshot.keys.intersect(current.keys)) {
             val previous = lastSnapshot[ticket] ?: continue
             val latest = current[ticket] ?: continue
-            if (previous.sl.compareTo(latest.sl) != 0 || previous.tp.compareTo(latest.tp) != 0) {
-                if (isForeignWithoutOwner(ticket)) continue
-                val event =
-                    BrokerEvent.PositionProtectionChanged(
-                        broker = profile.name,
-                        symbol = "${profile.name.uppercase()}:${symbol.toQkt(latest.symbol)}",
-                        ticket = ticket.toString(),
-                        oldStopLoss = previous.sl,
-                        newStopLoss = latest.sl,
-                        oldTakeProfit = previous.tp,
-                        newTakeProfit = latest.tp,
-                        strategyId = closedTicketMeta?.invoke(ticket)?.strategyId ?: "",
-                        timestamp = now,
-                    )
-                if (isExpectedProtectionChange?.invoke(event) != true) {
-                    log.error(
-                        "MT5 position protection changed broker={} ticket={} sl={}->{} tp={}->{}",
-                        profile.name,
-                        ticket,
-                        previous.sl,
-                        latest.sl,
-                        previous.tp,
-                        latest.tp,
-                    )
-                    bus.publish(event)
-                }
+            if (!isForeignWithoutOwner(ticket)) protectionChanges.report(previous, latest, now)
+            val growth = growthBeside(ticket, latest.volume.takeIf { it < previous.volume })
+            if (growth == null) {
+                current[ticket] = previous.copy(sl = latest.sl, tp = latest.tp)
+                continue
             }
-            if (latest.volume < previous.volume) {
+            val seen = previous.volume + growth
+            if (latest.volume < seen) {
                 if (isForeignWithoutOwner(ticket)) continue
                 when (engineCloseState?.invoke(ticket) ?: EngineCloseState.NONE) {
                     EngineCloseState.PENDING -> {
-                        current[ticket] = previous
+                        current[ticket] = previous.copy(volume = seen)
                         continue
                     }
-                    EngineCloseState.CONFIRMED -> continue
+                    EngineCloseState.CONFIRMED -> {
+                        val venuePart = venuePartBeside(ticket, seen - latest.volume) ?: continue
+                        publishClose(previous, venuePart, ticket, now, positionClosed = false)
+                    }
                     EngineCloseState.NONE ->
-                        publishClose(
-                            previous,
-                            previous.volume - latest.volume,
-                            ticket,
-                            now,
-                            positionClosed = false,
-                        )
+                        publishClose(previous, seen - latest.volume, ticket, now, positionClosed = false)
                 }
-            } else if (latest.volume > previous.volume) {
+            } else if (latest.volume > seen) {
                 onPositionIncreased?.invoke(previous, latest)
             }
         }
         retireVanishedBookedLegs(current, now)
         val closed = lastSnapshot.keys - current.keys
         for (ticket in closed) {
+            val p = lastSnapshot[ticket] ?: continue
+            val growth = growthBeside(ticket, BigDecimal.ZERO)
+            if (growth == null) {
+                current[ticket] = p
+                continue
+            }
+            var quantity = p.volume + growth
             when (engineCloseState?.invoke(ticket) ?: EngineCloseState.NONE) {
                 EngineCloseState.PENDING -> {
-                    lastSnapshot[ticket]?.let { current[ticket] = it }
+                    current[ticket] = p.copy(volume = quantity)
                     continue
                 }
                 EngineCloseState.CONFIRMED -> {
                     closedTickets[ticket] = now
-                    continue
+                    // A confirmed partial close did not close the rest: the venue did.
+                    quantity = venuePartBeside(ticket, p.volume) ?: continue
                 }
                 EngineCloseState.NONE -> closedTickets[ticket] = now
             }
-            val p = lastSnapshot[ticket] ?: continue
             if (!isForeignWithoutOwner(ticket)) {
-                publishClose(p, p.volume, ticket, now, positionClosed = true)
+                publishClose(p, quantity, ticket, now, positionClosed = true)
             }
             foreignRuntimeTickets.remove(ticket)
-            observedClosingDeals.remove(ticket)
+            closeFills.forget(ticket)
             onPositionClosed?.invoke(ticket)
         }
         val opened = current.keys - lastSnapshot.keys
@@ -278,6 +273,24 @@ class MT5PositionPoller(
         lastSnapshot = current
     }
 
+    /**
+     * Of [observed] leaving a ticket that a confirmed engine close reduced, the part the venue
+     * closed on its own; null when the engine close accounts for all of it, or closed the ticket.
+     */
+    private fun venuePartBeside(
+        ticket: Long,
+        observed: BigDecimal,
+    ): BigDecimal? {
+        val partial = takeEnginePartial?.invoke(ticket) ?: return null
+        closeFills.markSeen(ticket, partial.dealTickets)
+        return (observed - partial.unseenQuantity).takeIf { it.signum() > 0 }
+    }
+
+    private fun growthBeside(
+        ticket: Long,
+        openVolume: BigDecimal?,
+    ): BigDecimal? = if (entryGrowthBeside == null) BigDecimal.ZERO else entryGrowthBeside.invoke(ticket, openVolume)
+
     private fun isForeignWithoutOwner(ticket: Long): Boolean =
         ticket in foreignRuntimeTickets && closedTicketMeta?.invoke(ticket) == null
 
@@ -287,7 +300,7 @@ class MT5PositionPoller(
         ticket: Long,
         now: Long,
         positionClosed: Boolean,
-    ) = publishCloseFill(
+    ) = closeFills.publish(
         qktSymbol = "${profile.name.uppercase()}:${symbol.toQkt(position.symbol)}",
         closeSide = if (position.type == 0) Side.SELL else Side.BUY,
         quantity = quantity,
@@ -333,7 +346,7 @@ class MT5PositionPoller(
                 leg.strategyId,
                 ticket,
             )
-            publishCloseFill(
+            closeFills.publish(
                 qktSymbol = leg.symbol,
                 closeSide = if (leg.side == Side.BUY) Side.SELL else Side.BUY,
                 quantity = leg.quantity,
@@ -344,85 +357,12 @@ class MT5PositionPoller(
                 positionClosed = true,
                 strategyId = leg.strategyId,
             )
-            observedClosingDeals.remove(ticket)
+            closeFills.forget(ticket)
             onPositionClosed?.invoke(ticket)
         }
         missingBooked.keys.retainAll(stillMissing)
         missingBooked.keys.removeAll(closedTickets.keys)
     }
-
-    private fun publishCloseFill(
-        qktSymbol: String,
-        closeSide: Side,
-        quantity: java.math.BigDecimal,
-        ticket: Long,
-        now: Long,
-        dealsFromUtcMs: Long,
-        fallbackPrice: BigDecimal,
-        positionClosed: Boolean,
-        /** Owner when the ticket has no qkt-side meta (a leg restored before this session). */
-        strategyId: String?,
-    ) {
-        val meta = closedTicketMeta?.invoke(ticket)
-        val clientOrderId =
-            meta?.clientOrderId
-                ?: "mt5-close-$ticket".also {
-                    log.warn(
-                        "MT5 poller for {} saw ticket {} close with no qkt-side meta — using synthetic attribution",
-                        profile.name,
-                        ticket,
-                    )
-                }
-        val deal = client.getClosingDeal(ticket, fromUtcMs = dealsFromUtcMs, toUtcMs = now)
-        val seenDeals = observedClosingDeals.getOrPut(ticket) { mutableSetOf() }
-        val newDeals = deal?.deals.orEmpty().filter { seenDeals.add(it.ticket) }
-        val newClosingDeals = newDeals.filter { it.entry != 0 && it.volume.signum() > 0 && it.price.signum() > 0 }
-        val venueCosts =
-            venueCostsForClose?.invoke(ticket, deal?.deals.orEmpty(), positionClosed)
-                ?: costsForDeals(newDeals)
-                ?: BigDecimal.ZERO
-        val closePrice =
-            closingPrice(newClosingDeals)
-                ?: deal?.price
-                ?: (priceProvider?.lastPrice(qktSymbol) ?: fallbackPrice).also { fallback ->
-                    log.warn(
-                        "MT5 poller for {} pricing close of ticket {} from local proxy {} — closing deal unavailable",
-                        profile.name,
-                        ticket,
-                        fallback.toPlainString(),
-                    )
-                }
-        bus.publish(
-            BrokerEvent.OrderFilled(
-                clientOrderId = clientOrderId,
-                brokerOrderId = ticket.toString(),
-                symbol = qktSymbol,
-                side = closeSide,
-                price = closePrice,
-                quantity = quantity,
-                strategyId = meta?.strategyId ?: strategyId ?: "",
-                timestamp = now,
-                updatesOrderExecution = false,
-                venueCosts = venueCosts,
-                exitReason = closingDealExitReason(newClosingDeals),
-            ),
-        )
-    }
-
-    private fun closingPrice(deals: List<MT5Deal>): BigDecimal? {
-        if (deals.isEmpty()) return null
-        val volume = deals.fold(BigDecimal.ZERO) { total, deal -> total + deal.volume }
-        if (volume.signum() == 0) return null
-        val notional = deals.fold(BigDecimal.ZERO) { total, deal -> total + deal.price.multiply(deal.volume) }
-        return notional.divide(volume, com.qkt.common.Money.CONTEXT)
-    }
-
-    private fun costsForDeals(deals: List<MT5Deal>): BigDecimal? =
-        deals
-            .takeIf { it.isNotEmpty() }
-            ?.fold(BigDecimal.ZERO) { total, deal ->
-                total - deal.commission - deal.swap - deal.fee
-            }
 
     private companion object {
         /** Multiples of the poll interval to retain a closed ticket before reaping. */

@@ -6,28 +6,6 @@ import com.qkt.strategy.Signal
 import com.qkt.strategy.Strategy
 import com.qkt.strategy.StrategyContext
 
-/** Deterministic provenance for a DSL rule edge, including signal-less actions such as LOG. */
-data class RuleDecisionAudit(
-    val decisionId: String,
-    val ruleId: String,
-    val strategyFingerprint: String,
-    val ruleFingerprint: String,
-    val conditionFingerprint: String,
-    val conditionResult: Boolean,
-    val alias: String,
-    val key: HubKey,
-    val candle: Candle,
-    val signalCount: Int,
-)
-
-/** Correlation between one signal from a DSL rule decision and its normalized order. */
-data class DecisionOrderLink(
-    val decisionId: String,
-    val ruleId: String,
-    val signalIndex: Int,
-    val orderId: String,
-)
-
 /**
  * Marker for strategies produced by the qkt DSL parser/compiler.
  *
@@ -61,6 +39,9 @@ interface DslCompiledStrategy : Strategy {
      */
     fun resumeOrderIds(usedIds: Collection<String>) = Unit
 
+    /** The generator of the strategy's own order ids, or null when it mints none; a restart resumes it. */
+    val orderIds: com.qkt.common.SequentialIdGenerator? get() = null
+
     /** Execute one validated exit hook against the strategy's latest evaluation state. */
     fun executeExitHook(
         ref: ExitHookRef,
@@ -84,6 +65,20 @@ interface DslCompiledStrategy : Strategy {
      * becomes ready and the strategy silently never fires. Empty when no such indicator is used.
      */
     val volumeRequiringSymbols: Set<String>
+        get() = emptySet()
+
+    /**
+     * Symbols whose mark or index (`<alias>.mark`, `.index`) the strategy reads. The runtime verifies its data
+     * source serves their marks ([com.qkt.marketdata.source.MarketSource.marksFor]) before it goes live.
+     */
+    val markSymbols: Set<String>
+        get() = emptySet()
+
+    /**
+     * Symbols whose option mark IV or Greeks (`<alias>.iv`, `.delta`, ...) the strategy reads. The runtime verifies
+     * each is a catalogued option its data source serves marks of ([com.qkt.marketdata.source.MarketSource.optionMarksFor]).
+     */
+    val optionMarkSymbols: Set<String>
         get() = emptySet()
 
     /**
@@ -156,6 +151,16 @@ interface DslCompiledStrategy : Strategy {
         signal: Signal,
         clientOrderId: String,
     ): DecisionOrderLink? = null
+
+    /**
+     * A market exit this strategy's rule sent ended at the venue cancelled or rejected without filling
+     * in full: re-arm that rule so it sends what is still held again on its next bar (#1359). Null
+     * when [clientOrderId] was no rule's exit, or nothing is held any more.
+     */
+    fun onExitOrderUnfilled(clientOrderId: String): ExitRetry? = null
+
+    /** Order [clientOrderId] filled in full. */
+    fun onOrderFilled(clientOrderId: String) = Unit
 
     /** Forget rule ownership after an order reaches a non-rejected terminal state. */
     fun onOrderTerminal(clientOrderId: String) {

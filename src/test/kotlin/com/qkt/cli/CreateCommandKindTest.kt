@@ -38,7 +38,7 @@ class CreateCommandKindTest : CreateCommandFixture() {
     }
 
     @Test
-    fun `--kind bybit scaffolds the no-gateway tree wired for Bybit REST`(
+    fun `--kind bybit scaffolds qkt beside a venue gateway running the Bybit adapter`(
         @TempDir tmp: Path,
     ) {
         val target = tmp.resolve("project")
@@ -52,18 +52,19 @@ class CreateCommandKindTest : CreateCommandFixture() {
         }
         val compose = Files.readString(target.resolve("docker-compose.yml"))
         assertThat(compose).contains("stop_grace_period: 30s")
-        assertThat(compose)
-            .withFailMessage("bybit compose should not declare mt5-gateway")
-            .doesNotContain("mt5-gateway")
-        assertThat(compose)
-            .withFailMessage("bybit compose should expose BYBIT_API_KEY env var")
-            .contains("BYBIT_API_KEY")
-        assertThat(compose)
-            .withFailMessage("bybit compose should default BYBIT_TESTNET to true")
-            .contains("BYBIT_TESTNET:-true")
+        assertThat(compose).doesNotContain("mt5-gateway")
+        assertThat(compose).contains(
+            "GATEWAY_ADAPTER: bybit",
+            "GATEWAY_SETTING_CATEGORY: linear",
+            "GATEWAY_SETTING_ENVIRONMENT: \${BYBIT_ENVIRONMENT:-}",
+            "GATEWAY_LOGIN: \${BYBIT_API_KEY:-}",
+            "condition: service_healthy",
+        )
+        val config = Files.readString(target.resolve("qkt.config.yaml"))
+        assertThat(config).contains("bybit_linear:", "type: gateway", "expected_adapter: bybit")
+        assertThat(config).doesNotContain("type: bybit")
         val env = Files.readString(target.resolve(".env.example"))
-        assertThat(env).contains("BYBIT_API_KEY=")
-        assertThat(env).contains("BYBIT_TESTNET=true")
+        assertThat(env).contains("BYBIT_API_KEY=", "BYBIT_TRADER_TOKEN=", "BYBIT_ENVIRONMENT=testnet")
         val strat = Files.readString(target.resolve("strategies/ema_cross.qkt"))
         assertThat(strat).contains("BYBIT_LINEAR:BTCUSDT")
         val makefile = Files.readString(target.resolve("Makefile"))

@@ -17,6 +17,16 @@ interface CommissionModel {
         symbol: String,
         quantity: BigDecimal,
     ): BigDecimal
+
+    /**
+     * Commission for filling [quantity] of [symbol] at [price]. Models whose cost does not depend on
+     * price (per lot, per contract) keep the default, which ignores [price].
+     */
+    fun cost(
+        symbol: String,
+        quantity: BigDecimal,
+        price: BigDecimal,
+    ): BigDecimal = cost(symbol, quantity)
 }
 
 /** No trading cost — every fill is free. The live default, since the venue bills for real. */

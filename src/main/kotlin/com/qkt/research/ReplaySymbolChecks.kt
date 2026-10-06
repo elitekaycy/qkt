@@ -1,6 +1,7 @@
 package com.qkt.research
 
 import com.qkt.accounting.AccountingEngine
+import com.qkt.accounting.requireBookable
 import com.qkt.dsl.compile.DslCompiledStrategy
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.NoopInstrumentRegistry
@@ -46,12 +47,7 @@ internal fun requireReplaySymbolsResolvable(
     accounting: AccountingEngine,
     instruments: InstrumentRegistry,
 ) {
-    QuoteCurrencyGuard
-        .assertAccountQuoted(
-            symbols,
-            accountCurrency = accounting.accountCurrency,
-            canConvert = { symbol, _ -> accounting.canConvertSymbol(symbol) },
-        )
+    accounting.requireBookable(symbols)
     // Same deploy-time contract as live: a real registry that cannot resolve a traded
     // symbol fails the run up front instead of silently booking contractSize=1.
     if (instruments !is NoopInstrumentRegistry) {
@@ -67,4 +63,5 @@ internal fun requireReplaySymbolsResolvable(
             }
         }
     }
+    requireDerivativeSymbolsResolvable(symbols, accounting, instruments)
 }

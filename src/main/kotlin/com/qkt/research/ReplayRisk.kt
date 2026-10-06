@@ -4,6 +4,7 @@ import com.qkt.bus.EventBus
 import com.qkt.candles.TimeWindow
 import com.qkt.common.FixedClock
 import com.qkt.common.TradingCalendar
+import com.qkt.events.TickEvent
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.risk.DailyDrawdownBasis
 import com.qkt.risk.DrawdownBasis
@@ -17,13 +18,16 @@ import com.qkt.risk.StrategyRiskRuleFactory
 import com.qkt.risk.book.BookRiskConfig
 import com.qkt.risk.book.BookRiskController
 import com.qkt.risk.rules.BookExposureLimit
+import com.qkt.risk.rules.MaintenanceMarginGate
 import com.qkt.risk.rules.PreTradeControls
 import java.math.BigDecimal
 
 /**
  * A replay's risk stack, built the way a live deploy builds it: the [RiskState] (balance basis and
  * halt rules), per-strategy limits, the always-on pre-trade controls, the optional book-level
- * [BookRiskController] and the [RiskEngine] that walks them all. Constructed once, in that order.
+ * [BookRiskController] and the [RiskEngine] that walks them all. Constructed once, in that order. A
+ * run with futures or options also checks maintenance margin on every tick, liquidating below it
+ * ([com.qkt.broker.liquidation.MarginLiquidator]), and refuses risk while still below.
  */
 internal class ReplayRisk(
     rules: List<RiskRule>,
@@ -54,6 +58,12 @@ internal class ReplayRisk(
 
     init {
         riskState.warmupComplete = true
+        val derivatives = instruments.futures() != null || instruments.options() != null
+        if (derivatives) {
+            books.liquidator.attach(bus, riskState.equityTracker::liveEquity)
+            books.marginDaily.bind(riskState.equityTracker::liveEquity)
+            bus.subscribe<TickEvent> { e -> books.marginDaily.onTime(e.tick.timestamp) }
+        }
         val strategyRuleSet =
             StrategyRiskRuleFactory.build(
                 strategyIds = strategyIds,
@@ -75,6 +85,7 @@ internal class ReplayRisk(
                 maxOrderNotional = maxOrderNotional,
                 priceCollarFrac = priceCollarFrac,
                 accounting = books.accounting,
+                equity = riskState.equityTracker::liveEquity,
             )
         val bookAnnualization =
             if (candleWindow != null) calendar.tradingPeriodsPerYear(candleWindow) else BigDecimal("252")
@@ -88,9 +99,10 @@ internal class ReplayRisk(
                     BookExposureLimit(it, books.priceTracker, instruments, books.accounting),
                 )
             } ?: emptyList()
+        val marginGate = listOfNotNull(MaintenanceMarginGate(books.liquidator::belowMaintenance).takeIf { derivatives })
         riskEngine =
             RiskEngine(
-                rules + strategyRuleSet.riskRules + preTradeRules + bookRules,
+                rules + strategyRuleSet.riskRules + preTradeRules + bookRules + marginGate,
                 haltRules + strategyRuleSet.haltRules,
                 books.positions,
                 riskState,

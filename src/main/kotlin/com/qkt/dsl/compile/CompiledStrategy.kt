@@ -29,6 +29,9 @@ internal class CompiledStrategy(
     override val pendingStacks: PendingStacks,
     override val multiPositionPerSymbolSymbols: Set<String>,
     override val volumeRequiringSymbols: Set<String>,
+    override val markSymbols: Set<String>,
+    override val optionMarkSymbols: Set<String>,
+    override val flowReads: Set<FlowRead>,
     override val usesBookSizing: Boolean,
     private val metaRefs: List<MetaRef>,
     private val warmupGate: WarmupGate,
@@ -40,6 +43,7 @@ internal class CompiledStrategy(
     private val sequenceRuntime: SequenceRuntime,
     private val exitHookCatalog: ExitHookCatalog,
 ) : DslCompiledStrategy,
+    TradeFlowReader,
     com.qkt.strategy.PerStreamWarmable {
     private val subscribedSymbols: Set<String> = streams.values.map { it.qktSymbol }.toSet()
     private val binding = StrategyHubBinding(streams)
@@ -56,6 +60,8 @@ internal class CompiledStrategy(
     override val declaredStreams: Map<String, HubKey> get() = streams
 
     override fun resumeOrderIds(usedIds: Collection<String>) = ids.resumePast(usedIds)
+
+    override val orderIds get() = ids
 
     override fun observeCandleEvaluations(
         observer: (alias: String, key: HubKey, candle: Candle, rulesEvaluated: Int) -> Unit,
@@ -103,6 +109,11 @@ internal class CompiledStrategy(
         sequenceRuntime.persistRuleEdges()
     }
 
+    override fun onExitOrderUnfilled(clientOrderId: String): ExitRetry? =
+        ledger.onExitOrderUnfilled(clientOrderId).also { sequenceRuntime.persistRuleEdges() }
+
+    override fun onOrderFilled(clientOrderId: String) = ledger.onOrderFilled(clientOrderId)
+
     override fun onOrderSubmitted(
         signal: Signal,
         clientOrderId: String,
@@ -147,43 +158,6 @@ internal class CompiledStrategy(
     ) {
         if (binding.hubBound) return
         if (candle.symbol !in subscribedSymbols) return
-
-        for ((alias, key) in streams) {
-            if (key.qktSymbol == candle.symbol) warmupGate.onClosedCandle(alias)
-        }
-
-        val ec =
-            EvalContext(
-                candle = candle,
-                streams = streams,
-                lets = emptyMap(),
-                strategyContext = ctx,
-                snapshotStore = snapshotStore,
-                evaluationTimeMs = candle.endTime,
-                sequences = sequenceRuntime,
-            )
-
-        // 1-4. Position transitions, indicators, rolling snapshots, aggregates
-        updater.updateForCandle(candle, ec, ctx)
-
-        // 5. Sequence state machines
-        sequenceRuntime.onCandle(candle, ec) { aliases -> warmupGate.isWarm(aliases) }
-
-        // 6. Rules
-        var consumerFired = false
-        var consumerAccepted = false
-        for (rule in rules) {
-            if (!warmupGate.isWarm(rule.referencedAliases)) continue
-            when (ledger.fireAndCommit(rule, ec, ctx, emit)) {
-                SequenceFireOutcome.ACCEPTED -> {
-                    consumerFired = true
-                    consumerAccepted = true
-                }
-                SequenceFireOutcome.SUPPRESSED -> consumerFired = true
-                SequenceFireOutcome.NOT_CONSUMING -> Unit
-            }
-        }
-        sequenceRuntime.persistRuleEdges()
-        sequenceRuntime.afterRulePass(consumerFired && !consumerAccepted)
+        evaluator.evaluateUnbound(candle, ctx, emit)
     }
 }

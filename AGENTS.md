@@ -25,6 +25,8 @@ Changes flow one way: `feature -> dev -> testing -> main`.
 
 - Use Conventional Commit subjects only: `<type>(<scope>): <subject>`.
 - No commit body, no footer, no tool attribution, no emoji.
+- Commits are authored and committed by their human author, never by a tool identity;
+  `scripts/check-commit-authors.sh` enforces this on every PR.
 - Allowed source scopes follow `com.qkt.*`: `common`, `marketdata`,
   `execution`, `strategy`, `broker`, `engine`, `risk`, `backtesting`, `dsl`,
   `app`, `research`. Non-source scopes include `build`, `ci`, `docs`,

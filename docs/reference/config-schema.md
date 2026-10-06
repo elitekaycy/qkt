@@ -266,7 +266,7 @@ book_risk:
 
 | Key | Type | Default | Used by | Notes |
 |---|---|---|---|---|
-| `source` | string | `tv` when file exists, `local` from built-in defaults on missing file | `daemon`, `run` market-source fallback | `tv` opens TradingView fallback. `replay` reads `QKT_REPLAY_TICKS`. Any other value uses a null fallback. MT5 and Bybit routed symbols still use their own routes. |
+| `source` | string | `tv` when file exists, `local` from built-in defaults on missing file | `daemon`, `run` market-source fallback | `tv` opens TradingView fallback. `replay` reads `QKT_REPLAY_TICKS`. Any other value uses a null fallback. MT5 and gateway-routed symbols (Bybit, Deribit) still use their own routes. |
 | `data_root` | path string | `./data` in config object, but backtest CLI defaults to `DataRoot.resolve()` unless `--data-root` is passed | historical data commands and examples | Prefer explicit `--data-root` for research runs that need reproducibility. |
 | `starting_balance` | decimal | `0` (unset) | daemon risk, live PnL, reports, backtest basis | Must be greater than zero when a live drawdown limit is configured. A single-strategy backtest uses it too when `--starting-balance` is not given, so its drawdown halts and percent sizing sit on the daemon's balance; with neither set a backtest starts at `10000`. The chosen source is printed to stderr. Set explicitly for production and portfolio work. |
 | `log_level` | string | `info` | process logging setup where honored | Expected values are conventional log levels such as `debug`, `info`, `warn`, `error`. |
@@ -313,12 +313,13 @@ Daemon-wide and per-strategy risk controls. Values are parsed as decimals unless
 | `max_drawdown_pct` | unset | backtest and daemon halt rules | Percent in `(0, 100]`. Global total-drawdown halt. |
 | `max_daily_drawdown_pct` | unset | backtest and daemon halt rules | Percent in `(0, 100]`. Global daily-drawdown halt. |
 | `total_dd_basis` | `static` | halt rules | `static` uses initial balance. `trailing` uses high-water equity. |
-| `daily_dd_basis` | `balance` | halt rules | `balance` uses day-start closed balance. `equity` includes open float. |
+| `daily_dd_basis` | `balance` | halt rules | The day-start reference: `balance` is the closed balance at UTC midnight, `equity` adds the float open at midnight. Either way the day's drawdown is measured against current equity, open loss included. |
 | `live_equity_basis` | `venue` | standalone live sizing and drawdown | `venue` consumes broker account equity. `modeled` pins live to `starting_balance + qkt realized + qkt unrealized`, matching backtest accounting. Portfolio children always use their allocated modeled capital. |
 
-`balance` is retained as the compatibility default, but it ignores intraday open
-loss. Accounts governed by equity-based daily-loss mandates (including many funded
-account programs) should set `daily_dd_basis: equity` explicitly.
+`balance` is the compatibility default. With a position carried over midnight it measures the day's
+drawdown from the closed balance, so overnight float already lost counts toward today; accounts whose
+daily-loss mandate is measured from day-start equity (including many funded account programs) should
+set `daily_dd_basis: equity` explicitly.
 | `per_strategy.<name>.max_daily_loss` | unset | daemon and backtest risk layering | Per-strategy daily realized-loss halt. |
 | `per_strategy.<name>.max_position_size` | unset | daemon pre-trade controls | Caps absolute position size for one strategy. |
 | `per_strategy.<name>.max_open_positions` | unset | daemon pre-trade controls | Caps non-zero symbols for one strategy. |
@@ -413,7 +414,7 @@ Built-in MT5 profile names: `exness`, `icmarkets`, `ftmo`, `pepperstone`.
 
 | Key | Type | Required | Default/inheritance | Notes |
 |---|---|---|---|---|
-| `brokers.<name>.type` | string | yes | none | `mt5` (this table) or `bybit` (below). |
+| `brokers.<name>.type` | string | yes | none | `mt5` (this table) or `gateway` (below). |
 | `extends` | profile name | no | same-name built-in if present | Inherit from a built-in or earlier user profile. |
 | `gateway_url` | URL | yes for fresh profile | inherited or built-in | MT5 gateway HTTP base URL. |
 | `api_key` | string | no | inherited or empty | Bearer token matching the gateway `API_KEY`; use a neutral variable such as `${QKT_BROKER_API_KEY}` in reusable scaffolds. |
@@ -437,33 +438,95 @@ Built-in MT5 profile names: `exness`, `icmarkets`, `ftmo`, `pepperstone`.
 | `capability_restrictions` | list of `OrderTypeCapability` names | no | inherited plus overrides | Disables venue capabilities by enum name. |
 | `instrument_overrides.<symbol>` | map | no | inherited plus overrides | Requires `min_volume`, `volume_step`, `point_size`, `digits`, `trade_stops_level_points`; optional `max_volume` is enforced when present. |
 
-### `type: bybit`
+### Bybit
 
-One entry per Bybit product category. The Bybit brokers serve fixed prefixes, so the entry must be
-named after its category: `bybit_spot` (`BYBIT_SPOT:`) or `bybit_linear` (`BYBIT_LINEAR:`).
-Entries with the same credentials and endpoint share one Bybit connection.
+qkt reaches Bybit only through the [qkt-venue-gateway](https://github.com/elitekaycy/qkt-venue-gateway)
+running its Bybit adapter (`GATEWAY_ADAPTER=bybit`), as a `type: gateway` entry (below), exactly as it
+reaches Deribit. One gateway serves one Bybit category (`GATEWAY_SETTING_CATEGORY`). Name the entry after
+the prefix your strategies use: `bybit_linear` serves `BYBIT_LINEAR:` symbols, `bybit_spot` serves
+`BYBIT_SPOT:` symbols.
 
 ```yaml
 brokers:
   bybit_linear:
-    type: bybit
-    category: linear
-    api_key: env:BYBIT_API_KEY
-    api_secret: env:BYBIT_API_SECRET
-    testnet: "true"
+    type: gateway
+    gateway_url: http://127.0.0.1:8444
+    api_key: env:BYBIT_TRADER_TOKEN       # the gateway's GATEWAY_TRADER_TOKEN
+    expected_adapter: bybit
+    expected_account_login: "<the account_login the gateway's /v1/health reports>"
+    expected_trade_mode: demo             # real on mainnet
+```
+
+The Bybit API key goes to the gateway (`GATEWAY_LOGIN`/`GATEWAY_SECRET`), never to qkt. The adapter's
+settings, and how it reports Bybit's fills, funding and restarts, are on its
+[page](https://github.com/elitekaycy/qkt-venue-gateway/blob/main/adapter-bybit/README.md). `qkt create template <dir> --kind bybit` scaffolds this setup, gateway included.
+
+### `type: gateway`
+
+One entry per account on a VGP v1 venue gateway
+([wire format](../superpowers/specs/2026-10-01-vgp-v1-wire.md)): futures, perpetuals, spot and
+options at any venue the gateway's adapter serves. The entry name is the strategy prefix, and venue
+codes are written with `-` as `_`: an entry named `deribit` trades `DERIBIT:BTC_USDC_25DEC26_92000_C`.
+Name the entry after the venue the instrument catalogs use (`deribit`, `binance_um`), so live
+strategies, structures and backtests name the same symbols.
+
+```yaml
+brokers:
+  deribit:
+    type: gateway
+    gateway_url: https://venue-gateway.internal:8443
+    api_key: env:DERIBIT_GATEWAY_KEY
+    expected_adapter: deribit
+    expected_account_login: "4421"
+    expected_trade_mode: demo
 ```
 
 | Key | Type | Required | Default | Notes |
 |---|---|---|---|---|
-| `category` | `spot` or `linear` | yes | none | Must match the entry name. |
-| `api_key` | credential | yes | none | Refuses startup when missing or empty. |
-| `api_secret` | credential | yes | none | Refuses startup when missing or empty. |
-| `testnet` | bool | no | `true` | Only an explicit `false` trades mainnet. |
-| `recv_window_ms` | long | no | `5000` | Bybit signed-request receive window. |
-| `account_type` | string | no | `UNIFIED` | Bybit account type for balance reads. |
+| `gateway_url` | URL | yes | none | The gateway's base URL. |
+| `api_key` | credential | yes | none | Bearer token; `env:` and `file:` forms resolve as for every broker. |
+| `expected_adapter` | string | yes | none | Startup refuses a gateway reporting another adapter. |
+| `expected_account_login` | string | yes | none | Startup refuses a gateway logged into another account. |
+| `expected_trade_mode` | `demo` or `real` | yes | none | Startup refuses a gateway in the other mode. |
+| `http_timeout_ms` | long | no | `5000` | Per request. |
+| `retry_attempts` | int | no | `3` | Reads, and submits, are sent again on a timeout or `503`; a submit is idempotent on its client order id, so this never places a second order. |
+| `chain_snapshot_seconds` | int | no | `300` | How often the live chain of each fed option root declared `chains: book` is appended to its book series (structures and `CHAIN:` streams read it). |
+| `calendars` | as above | no | `crypto` | Set it for venues that close, such as CME futures. |
 
-The daemon connects each Bybit account at startup and refuses to start if the connection is
-rejected. Bybit is never enabled by environment variables alone.
+A perpetual's funding is booked as the venue charges it: the gateway reports each charge with the
+position it was charged on, and each strategy holding the perpetual books `amount × its holding /
+position` as financing, so a strategy long and one short each get their own sign and a position another
+tool holds on the account keeps its own part. What was booked persists (`funding.json` in the session
+owner's state), so a restart books what was charged while qkt was down, from the last 7 days, and never
+twice. A gateway that does not declare the `funding` capability cannot report it, so qkt refuses orders
+that could open or add to a perpetual there (reductions still pass). A strategy reading a contract's mark or
+index (`.mark`, `.index`) starts only on a gateway that declares `mark_prices`, and reads the newest the
+gateway quoted. A strategy reading an option's implied volatility or Greeks (`.iv`, `.delta`, `.gamma`,
+`.vega`, `.theta`) starts only on a gateway that declares `option_marks`, and reads the newest quote it sent.
+
+Several strategies may share one gateway account, as a portfolio. They share one connection; each
+fill reaches the strategy whose order it was (and waits for it while its session is stopped), and a
+contract settlement at expiry closes each strategy's own holding at the settlement price, sharing the
+venue's costs once by holding. The venue only knows the account's total, so a gateway account is
+account-wide even when one strategy trades it: startup trusts each strategy's persisted book (a venue
+position no book holds is never adopted), and each time a strategy comes up, once every strategy
+deployed on the account is running, their holdings must add up to the account's. While they do not,
+only orders that reduce a position are sent; the check clears itself when a later one agrees (as
+strategies deploy one after another, and it is judged again before any order adding risk is refused, so
+a fill the venue had not yet reported when last checked blocks nothing), or after an operator resolves the difference. After a restart every restored order is resolved by id, with its complete fill
+history, so a fill is never lost or booked twice. A submit the gateway never answers is sent again
+until a deadline, then resolved by id. The gateway's identity is checked at startup and whenever its
+event log restarts; a gateway on another account refuses every order. The kill switch at the gateway
+refuses orders that add risk; an order that reduces both its strategy's and the account's position is
+sent `reduce_only` and passes. Limit and stop levels are sent on the contract's tick grid (an option's
+declared `tickSteps`, otherwise the tick the gateway lists), rounded as the backtest exchange rounds them: buy limits and sell stops down, sell limits
+and buy stops up, so an order never fills or triggers before its level and a protective stop can sit up
+to one tick wider than asked (a backtest does the same for a contract of a declared `futures:` root;
+without one it keeps the level as computed). The account's prices come from the gateway's quotes socket: its
+contracts, and its option roots as whole feeds (`OPTIONS:<ACCOUNT>.<ROOT>`, so name the account after
+the venue, e.g. `deribit`, to match `instruments.yaml`). Venues list new option expiries every day: schedule
+`qkt fetch DERIBIT:<ROOT> --catalog` (daily is enough) and a running daemon picks the new catalog up
+within a minute; a contract missing from the catalog is never routed or recorded.
 
 Policy-rate artifacts are also configured through the environment. `QKT_RBA_POLICY_RATE_SOURCE`
 and `QKT_RBNZ_POLICY_RATE_SOURCE` accept an absolute path, `file:` URI, or HTTPS URL for the

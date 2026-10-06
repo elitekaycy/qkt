@@ -14,7 +14,6 @@ import com.qkt.candles.TimeWindow
 import com.qkt.common.Money
 import com.qkt.common.TradingCalendar
 import com.qkt.instrument.InstrumentRegistry
-import com.qkt.pnl.SwapFinancingBook
 import com.qkt.strategy.Strategy
 import java.math.BigDecimal
 
@@ -27,7 +26,7 @@ internal class ReplayResultBuilder(
     private val books: ReplayBooks,
     private val recorder: ReplayRecorder,
     private val analytics: ReplayAnalytics,
-    private val swapBook: SwapFinancingBook,
+    private val financing: ReplayFinancing,
     private val pipeline: TradingPipeline,
     private val instruments: InstrumentRegistry,
     private val cadence: SampleCadence,
@@ -56,9 +55,9 @@ internal class ReplayResultBuilder(
                 finalUnrealized = pnl.unrealizedTotal(),
                 annualizationFactor = annualizationFactor,
                 metrics = collector.globalMetrics(),
-                commissionPaid = commissionBook.total(),
-                swapPaid = swapBook.totalPaid(),
-                dailyAdjustments = swapBook.dailyNet(),
+                commissionPaid = commissionBook.total().add(recorder.venueCostsPaid()),
+                swapPaid = financing.swapPaid(),
+                dailyAdjustments = financing.dailyNet(),
                 tradedNotional = tradedNotional(tradeRecords),
             )
         val perStrategy =
@@ -72,9 +71,9 @@ internal class ReplayResultBuilder(
                         finalUnrealized = strategyPnL.unrealizedTotalFor(id),
                         annualizationFactor = annualizationFactor,
                         metrics = collector.metricsFor(id),
-                        commissionPaid = commissionBook.totalFor(id),
-                        swapPaid = swapBook.totalPaidFor(id),
-                        dailyAdjustments = swapBook.dailyNetFor(id),
+                        commissionPaid = commissionBook.totalFor(id).add(recorder.venueCostsPaid(id)),
+                        swapPaid = financing.swapPaid(id),
+                        dailyAdjustments = financing.dailyNet(id),
                         tradedNotional = tradedNotional(tradeRecords.filter { it.strategyId == id }),
                     )
             }
@@ -83,8 +82,11 @@ internal class ReplayResultBuilder(
             rejections = recorder.rejections.toList(),
             halts = recorder.halts.toList(),
             finalPositions = books.positions.allPositions(),
-            global = globalReport,
-            perStrategy = perStrategy,
+            global = globalReport.copy(rollCostsPaid = recorder.rollCostsPaid(), fundingPaid = financing.fundingPaid()),
+            perStrategy =
+                perStrategy.mapValues { (id, report) ->
+                    report.copy(rollCostsPaid = recorder.rollCostsPaid(id), fundingPaid = financing.fundingPaid(id))
+                },
             cadence = cadence,
             latencyReport = if (latencyEnabled) pipeline.latency.snapshot() else null,
             conditionalAutocorr = analytics.autocorr.snapshot(),
@@ -111,6 +113,12 @@ internal class ReplayResultBuilder(
             dailyEquity = collector.dailyEquity(),
             monthlyReturns = monthlyReturns(collector.dailyEquity()),
             windows = collector.windows().map { windowReport(it, tradeRecords, annualizationFactor) },
+            rolls = books.rolls.entries,
+            contractFills = books.contractFills.entries,
+            settlements = books.settlements.entries,
+            structures = books.structures.entries,
+            marginDaily = books.marginDaily.rows,
+            liquidations = books.liquidator.log.entries,
         )
     }
 

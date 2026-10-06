@@ -3,8 +3,8 @@ package com.qkt.app.order
 import com.qkt.persistence.StatePersistor
 
 /**
- * Writes order state for restart recovery, per strategy, into five slots: pending orders,
- * bracket pairs, OCO legs, trailing stops and armed timed exits.
+ * Writes order state for restart recovery, per strategy, into six slots: pending orders,
+ * bracket pairs, OCO legs, trailing stops, armed timed exits and live orders' fill progress.
  *
  * Routine mutation snapshots ([persistAll]) are best-effort so an asynchronous persistence
  * failure does not block event dispatch, and a slot is rewritten only when its content changed —
@@ -39,10 +39,11 @@ internal class OrderStateSnapshots(
             val ocoLegsByStrategy = ocoLegsByStrategy(book, siblings)
             val trailingStopsByStrategy = trailingStopSnapshot(book.orders, stops)
             val timedExitsByStrategy = timedExits.byStrategy()
+            val fillsByStrategy = orderFillsByStrategy(book, scaleOuts::partialTicketOf)
             val strategies =
                 (
                     persistedStrategies + pendingByStrategy.keys + pairsByStrategy.keys + ocoLegsByStrategy.keys +
-                        trailingStopsByStrategy.keys + timedExitsByStrategy.keys
+                        trailingStopsByStrategy.keys + timedExitsByStrategy.keys + fillsByStrategy.keys
                 ).toSet()
             for (sid in strategies) {
                 persistIfChanged(sid, PENDING_SLOT, pendingByStrategy[sid] ?: emptyMap(), persistor::savePendingOrders)
@@ -55,6 +56,7 @@ internal class OrderStateSnapshots(
                     persistor::saveTrailingStops,
                 )
                 persistIfChanged(sid, TIMED_SLOT, timedExitsByStrategy[sid] ?: emptyList(), persistor::saveTimedExits)
+                persistIfChanged(sid, FILLS_SLOT, fillsByStrategy[sid] ?: emptyMap(), persistor::saveOrderFills)
             }
             stops.dirty = false
         }
@@ -98,5 +100,6 @@ internal class OrderStateSnapshots(
         const val OCO_SLOT = "oco-legs"
         const val TRAILING_SLOT = "trailing-stops"
         const val TIMED_SLOT = "timed-exits"
+        const val FILLS_SLOT = "order-fills"
     }
 }

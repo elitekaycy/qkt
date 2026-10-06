@@ -31,7 +31,9 @@ internal class StrategySignalEmitter(
     override fun invoke(sig: Signal) {
         val force =
             (sig is Signal.Buy && sig.force) ||
-                (sig is Signal.Sell && sig.force)
+                (sig is Signal.Sell && sig.force) ||
+                (sig is Signal.SubmitGroup && sig.force) ||
+                (sig is Signal.CancelPendingForSymbol && sig.force)
         if (force || (gate() && gateFor(strategyId))) {
             route(sig)
         } else {
@@ -61,7 +63,12 @@ internal class StrategySignalEmitter(
                 ),
             )
         } else if (sig is Signal.CancelPendingForSymbol) {
-            orderManager.cancelPendingForSymbol(sig.symbol)
+            // A forced cancel ends this strategy's structure: it must not reach another strategy's orders.
+            when {
+                sig.force -> orderManager.cancelOwnOrders(strategyId, sig.symbol)
+                sig.closing -> orderManager.closePendingForSymbol(sig.symbol)
+                else -> orderManager.cancelPendingForSymbol(sig.symbol)
+            }
             ctx.submissions.recordAccepted()
         } else if (sig is Signal.ArmLatch) {
             latchManager.arm(
@@ -70,6 +77,8 @@ internal class StrategySignalEmitter(
                 emit = { request -> invoke(Signal.Submit(request)) },
             )
             ctx.submissions.recordAccepted()
+        } else if (sig is Signal.SubmitGroup) {
+            submitter.submitGroup(strategyId, strategy, ctx, sig)
         } else {
             submitter.submit(strategyId, strategy, ctx, sig)
         }

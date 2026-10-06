@@ -145,7 +145,7 @@ class CrossStreamWarmupEdgeCasesTest {
     fun `seeded replay equals a continuous run bar for bar`() {
         // The parity property behind the fix: the strategy's indicator values after
         // seeding N bars and going live must equal the values a continuous run holds at
-        // the same bars. Compare the first live fire on both paths.
+        // the same bars. Compare the live fires on both paths, each stamped with the close that fired it.
         val src =
             """
             STRATEGY t VERSION 1
@@ -166,7 +166,10 @@ class CrossStreamWarmupEdgeCasesTest {
         hubC.register(cS, retention = 30, strategyId = "t")
         hubC.register(cO, retention = 30, strategyId = "t")
         val firesC = mutableListOf<Long>()
-        cont.bindToHub(hubC, testStrategyContext()) { firesC += hubC.latest(cS)!!.endTime }
+        cont.bindToHub(hubC, testStrategyContext()) {
+            firesC +=
+                maxOf(hubC.latest(cS)!!.endTime, hubC.latest(cO)!!.endTime)
+        }
         for (i in 0 until 24) {
             val (a, b) = closes(i)
             hubC.feed(Tick("EXNESS:XAGUSD", BigDecimal(b), i * minute))
@@ -185,7 +188,10 @@ class CrossStreamWarmupEdgeCasesTest {
         hubS.seed(sS, (0 until 8).map { candle("EXNESS:XAUUSD", it * minute, minute, closes(it).first) })
         hubS.seed(sO, (0 until 8).map { candle("EXNESS:XAGUSD", it * minute, minute, closes(it).second) })
         val firesS = mutableListOf<Long>()
-        seeded.bindToHub(hubS, testStrategyContext()) { firesS += hubS.latest(sS)!!.endTime }
+        seeded.bindToHub(hubS, testStrategyContext()) {
+            firesS +=
+                maxOf(hubS.latest(sS)!!.endTime, hubS.latest(sO)!!.endTime)
+        }
         for (i in 8 until 24) {
             val (a, b) = closes(i)
             hubS.feed(Tick("EXNESS:XAGUSD", BigDecimal(b), i * minute))
@@ -194,8 +200,10 @@ class CrossStreamWarmupEdgeCasesTest {
         hubS.feed(Tick("EXNESS:XAGUSD", BigDecimal("1"), 24 * minute))
         hubS.feed(Tick("EXNESS:XAUUSD", BigDecimal("1"), 24 * minute))
 
-        val liveWindow = firesC.filter { it > 8 * minute }
+        // The seeded path never evaluated its history, so a condition already true there fires on the first
+        // live close and not on the continuous path: compare from the second live close on.
+        val liveWindow = firesC.filter { it > 9 * minute }
         assertThat(liveWindow).isNotEmpty()
-        assertThat(firesS).containsExactlyElementsOf(liveWindow)
+        assertThat(firesS.filter { it > 9 * minute }).containsExactlyElementsOf(liveWindow)
     }
 }

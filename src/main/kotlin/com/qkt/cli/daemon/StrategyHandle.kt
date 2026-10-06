@@ -286,10 +286,7 @@ class StrategyHandle(
                     .firstOrNull()
                     ?.timeframe
                     ?.let { TimeWindow.parse(it) }
-            val calendar =
-                symbols.firstOrNull()?.let(calendarFor)
-                    ?: com.qkt.common.TradingCalendar
-                        .fxDefault()
+            val calendar = com.qkt.cli.strategyCalendar(symbols, instrumentRegistry, calendarFor)
 
             val feedSymbols = (symbols + accountingConfig.normalizedSymbols.values).distinct()
             val source = marketSourceProvider(feedSymbols)
