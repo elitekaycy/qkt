@@ -105,4 +105,52 @@ internal class AliasCloseEvaluator(
         sequenceRuntime.persistRuleEdges()
         return consumerFired && !consumerAccepted
     }
+
+    /**
+     * Evaluate a closed [candle] for a strategy driven by raw candles rather than a [CandleHub]:
+     * position transitions, indicators, snapshots and aggregates, then sequences, then every rule.
+     */
+    fun evaluateUnbound(
+        candle: Candle,
+        ctx: StrategyContext,
+        emit: (Signal) -> Unit,
+    ) {
+        for ((alias, key) in streams) {
+            if (key.qktSymbol == candle.symbol) warmupGate.onClosedCandle(alias)
+        }
+
+        val ec =
+            EvalContext(
+                candle = candle,
+                streams = streams,
+                lets = emptyMap(),
+                strategyContext = ctx,
+                snapshotStore = snapshotStore,
+                evaluationTimeMs = candle.endTime,
+                sequences = sequenceRuntime,
+            )
+
+        // 1-4. Position transitions, indicators, rolling snapshots, aggregates
+        updater.updateForCandle(candle, ec, ctx)
+
+        // 5. Sequence state machines
+        sequenceRuntime.onCandle(candle, ec) { aliases -> warmupGate.isWarm(aliases) }
+
+        // 6. Rules
+        var consumerFired = false
+        var consumerAccepted = false
+        for (rule in rules) {
+            if (!warmupGate.isWarm(rule.referencedAliases)) continue
+            when (ledger.fireAndCommit(rule, ec, ctx, emit)) {
+                SequenceFireOutcome.ACCEPTED -> {
+                    consumerFired = true
+                    consumerAccepted = true
+                }
+                SequenceFireOutcome.SUPPRESSED -> consumerFired = true
+                SequenceFireOutcome.NOT_CONSUMING -> Unit
+            }
+        }
+        sequenceRuntime.persistRuleEdges()
+        sequenceRuntime.afterRulePass(consumerFired && !consumerAccepted)
+    }
 }

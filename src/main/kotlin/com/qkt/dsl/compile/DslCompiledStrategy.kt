@@ -6,28 +6,6 @@ import com.qkt.strategy.Signal
 import com.qkt.strategy.Strategy
 import com.qkt.strategy.StrategyContext
 
-/** Deterministic provenance for a DSL rule edge, including signal-less actions such as LOG. */
-data class RuleDecisionAudit(
-    val decisionId: String,
-    val ruleId: String,
-    val strategyFingerprint: String,
-    val ruleFingerprint: String,
-    val conditionFingerprint: String,
-    val conditionResult: Boolean,
-    val alias: String,
-    val key: HubKey,
-    val candle: Candle,
-    val signalCount: Int,
-)
-
-/** Correlation between one signal from a DSL rule decision and its normalized order. */
-data class DecisionOrderLink(
-    val decisionId: String,
-    val ruleId: String,
-    val signalIndex: Int,
-    val orderId: String,
-)
-
 /**
  * Marker for strategies produced by the qkt DSL parser/compiler.
  *
