@@ -21,6 +21,16 @@ Every `qkt` subcommand. Run `qkt <command> --help` for the authoritative flag li
 | `qkt stop <name> [--flatten]` | Stop a strategy. Cascades for portfolios. `--flatten` cancels its working orders and closes its positions at market; a bracket entry that filled in part has its remainder cancelled and the filled part closed, with no stop or target sent for it. |
 | `qkt start <portfolio>/<child>` | Resume an operator-stopped child of a portfolio. |
 
+**Gateway outages.** At boot the daemon verifies every `brokers:` account before anything trades. An
+account whose gateway does not answer is retried every 2 s doubling to 30 s, for up to
+`QKT_PREFLIGHT_RETRY_SECONDS` (default `300`; `0` refuses at once), with one log line per retry; a
+login, server, trade-mode, currency, leverage or margin-mode mismatch is refused at once. Once
+running, a strategy whose live feed stays disconnected past its reconnect budget (120 s) stops rather
+than trade on stale prices, and the daemon redeploys it from its file the way it deploys at boot
+(state recovery, position re-adoption), retrying after 1, 2, 5 and then every 15 minutes until the
+gateway is back; `/health` reports `degraded` meanwhile. Portfolio children are not redeployed this
+way.
+
 ## Project scaffolding
 
 | Command | What it does |

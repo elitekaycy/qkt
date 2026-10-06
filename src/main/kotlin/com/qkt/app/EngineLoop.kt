@@ -137,7 +137,11 @@ internal class EngineLoop(
                         // queued before stopping, so no tick is dropped.
                         if (!stopping.get()) {
                             while (true) processTick(tickQueue.poll() ?: break)
-                            if (msg.unexpected) sessionNotifier.unexpectedFeedEnd(msg.reason)
+                            if (msg.unexpected) {
+                                // Before running clears, so whoever sees the session stopped sees why.
+                                mailbox.unexpectedFeedEnd.set(msg.reason)
+                                sessionNotifier.unexpectedFeedEnd(msg.reason)
+                            }
                             running.set(false)
                         }
                     }

@@ -45,6 +45,11 @@ internal class EngineMailbox {
         control.put(Inbound.Flatten)
     }
 
+    /** Why the live feed ended without a stop being asked for (reconnect budget spent); null otherwise. */
+    val unexpectedFeedEnd =
+        java.util.concurrent.atomic
+            .AtomicReference<String?>(null)
+
     /** Counted down by the engine thread once its final drain is done. */
     val terminated = CountDownLatch(1)
 

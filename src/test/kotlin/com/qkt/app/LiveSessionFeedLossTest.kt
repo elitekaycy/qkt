@@ -34,6 +34,7 @@ class LiveSessionFeedLossTest {
         assertThat(stopped.single().unexpected).isTrue()
         assertThat(stopped.single().severity).isEqualTo(NotificationEvent.Severity.CRITICAL)
         assertThat(stopped.single().reason).contains("reconnect budget")
+        assertThat(handle.unexpectedFeedEnd()).contains("reconnect budget")
 
         handle.stop()
     }
