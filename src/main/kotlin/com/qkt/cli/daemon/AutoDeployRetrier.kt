@@ -38,6 +38,7 @@ class AutoDeployRetrier(
 
     private val pending = ConcurrentHashMap<String, Pending>()
     private val running = AtomicBoolean(false)
+    private val closed = AtomicBoolean(false)
 
     @Volatile
     private var thread: Thread? = null
@@ -103,9 +104,12 @@ class AutoDeployRetrier(
         return deployed
     }
 
-    /** Start the background loop; idempotent. Returns immediately when nothing is pending. */
+    /**
+     * Start the background loop; idempotent. Returns immediately when nothing is pending. A file
+     * [schedule]d while the loop is winding down is still picked up: the loop restarts itself.
+     */
     fun start() {
-        if (pending.isEmpty() || !running.compareAndSet(false, true)) return
+        if (closed.get() || pending.isEmpty() || !running.compareAndSet(false, true)) return
         thread =
             Thread({
                 while (running.get() && pending.isNotEmpty()) {
@@ -117,11 +121,13 @@ class AutoDeployRetrier(
                     }
                 }
                 running.set(false)
+                start()
             }, "qkt-auto-deploy-retry").apply { isDaemon = true }
         thread?.start()
     }
 
     override fun close() {
+        closed.set(true)
         running.set(false)
         thread?.interrupt()
     }

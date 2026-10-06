@@ -14,7 +14,9 @@ import java.time.Duration
  * `qkt stop`, `qkt status`, and `qkt flatten` reach into a live session without
  * coupling them to the full [LiveSession] type.
  */
-interface LiveSessionHandle : HaltReads {
+interface LiveSessionHandle :
+    HaltReads,
+    FeedLossReads {
     /** `true` while the session's tick loop is running. */
     val running: Boolean
 
@@ -148,13 +150,6 @@ interface LiveSessionHandle : HaltReads {
     /** Current valued legs for account-wide live book-risk aggregation. */
     fun bookLegs(strategyId: String): List<com.qkt.risk.book.Leg> = emptyList()
 }
-
-/** Result returned to an operator after an emergency flatten attempt. */
-data class FlattenResult(
-    val verifiedFlat: Boolean,
-    val remainingTickets: List<String> = emptyList(),
-    val detail: String? = null,
-)
 
 /** A point-in-time P&L reading for one strategy, surfaced through `/status`. */
 data class SessionPnl(
