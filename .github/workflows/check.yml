@@ -76,6 +76,8 @@ jobs:
         run: bash tests/scripts/run-shadow-lane-cleanup-test.sh
       - name: Validate attestation case catalog
         run: python3 attestation/lib/validate.py
+      - name: Test the derivatives lane runner offline
+        run: python3 -m unittest discover -s scripts/live-validation/tests
       - name: Build + test + ktlint
         run: ./gradlew build --no-daemon
       - name: Upload test reports

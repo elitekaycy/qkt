@@ -1,0 +1,14 @@
+options:
+  - root: DERIBIT:BTC_USDC
+    currency: USDC
+    contractSize: 1
+    tickSize: 5
+    tickSteps: [{above: 1000, tick: 20}]
+    volumeStep: 0.01
+    volumeMin: 0.01
+    underlyingIndex: btc_usdc
+    chains: book
+    maxQuoteAgeMinutes: 10
+    takerFeeRate: 0.0003
+    deliveryFeeRate: 0.00015
+    feeCapRate: 0.125
