@@ -92,13 +92,18 @@ done
 # each under its own magic. The shadow lane already ran inside the wave. Any failed case fails the
 # attestation: promotion to main means the whole catalog passed on this exact build. A profile that
 # names a derivatives gateway (deriv_gateway_url, deriv_expected_login; key in QKT_DERIV_GATEWAY_KEY)
-# adds the derivatives lane: futures, perpetuals and options on that account.
+# adds the derivatives lane: futures, perpetuals and options on that account. One that names a Bybit gateway
+# (bybit_gateway_url, bybit_expected_login; key in QKT_BYBIT_GATEWAY_KEY) adds the bybit lane.
 stage_write catalog
 catalog="$wave_root/attest-$short-catalog"; rm -rf "$catalog"
 lanes=orders,risk,book,engine,daemon,stress; deriv=()
 if [ -n "${deriv_gateway_url:-}" ]; then
     lanes="$lanes,derivatives"
     deriv=(--deriv-gateway-url "$deriv_gateway_url" --deriv-expected-login "${deriv_expected_login:?profile sets deriv_gateway_url without deriv_expected_login}")
+fi
+if [ -n "${bybit_gateway_url:-}" ]; then
+    lanes="$lanes,bybit"
+    deriv+=(--bybit-gateway-url "$bybit_gateway_url" --bybit-expected-login "${bybit_expected_login:?profile sets bybit_gateway_url without bybit_expected_login}")
 fi
 bash scripts/live-validation/run-attestation-catalog.sh --out "$catalog" --gateway-url "$gateway_url" \
     --expected-login "$expected_login" --expected-server "$expected_server" --magic-base "$((magic_base + 100))" \

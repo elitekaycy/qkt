@@ -6,7 +6,7 @@
                 [--write-gaps] # rewrite gaps.yaml from what ready cases do not prove yet
 
 Fails when a case breaks the schema, an id is reused, a budget exceeds ten minutes (four hours for a
-`scheduled` derivatives case, run at a set time outside the catalog, e.g. across an expiry), a `proves`
+`scheduled` case of a venue-gateway lane, run at a set time outside the catalog, e.g. across an expiry), a `proves`
 capability is not in the catalog, a catalog capability is neither proven by a ready case nor
 listed in gaps.yaml, a listed gap is already proven, or a drill names an unknown kind.
 """
@@ -57,8 +57,8 @@ def main():
             seen[cid] = where
             if doc.get("status") not in STATUSES:
                 errors.append(f"{where}: status must be one of {sorted(STATUSES)}")
-            if doc.get("status") == "scheduled" and lane != "derivatives":
-                errors.append(f"{where}: only a derivatives case is scheduled")
+            if doc.get("status") == "scheduled" and not lanes[lane].get("venue_gateway"):
+                errors.append(f"{where}: only a venue-gateway lane's case is scheduled")
             if len(str(doc.get("why", "")).split()) < 12:
                 errors.append(f"{where}: 'why' must name the failure this case catches, in a sentence")
             for tf in doc.get("timeframes", []):
@@ -82,8 +82,8 @@ def main():
                         except re.error as error:
                             errors.append(f"{where}: step {number} {field} is not a valid regex: {error}")
             for drill in doc.get("drills") or []:
-                if lane != "derivatives":
-                    errors.append(f"{where}: drills run in the derivatives lane only")
+                if not lanes[lane].get("venue_gateway"):
+                    errors.append(f"{where}: drills run in a venue-gateway lane only")
                 if drill.get("kind") not in DRILLS or not isinstance(drill.get("at_s"), int) or drill["at_s"] < 0:
                     errors.append(f"{where}: drill {drill} needs a kind in {DRILLS} and whole seconds at_s")
                 if not isinstance(drill.get("after_fills", 1), int) or drill.get("after_fills", 1) < 1 \

@@ -13,3 +13,7 @@ magic_base=994000
 # Its trader token comes from QKT_DERIV_GATEWAY_KEY in the environment.
 #deriv_gateway_url=http://127.0.0.1:8444
 #deriv_expected_login=g-aVrEeP
+# Optional: a gateway running the Bybit adapter on a Bybit testnet account adds the bybit lane.
+# Its trader token comes from QKT_BYBIT_GATEWAY_KEY (guardian: QKT_BYBIT_GUARDIAN_KEY).
+#bybit_gateway_url=http://127.0.0.1:18445
+#bybit_expected_login=<the account_login its /v1/health reports>

@@ -1,0 +1,33 @@
+id: bybit-perpetual-drill-qkt-restart
+title: A perpetual bracket held across a qkt daemon restart, then closed by its timed exit
+why: 'A daemon stopped and started over a held position must adopt it from the venue, keep its bracket
+  legs, never send its entry again and book the close once; a restart that resubmits, loses a fill,
+  re-enters after the close or forgets the hold shows here as an extra venue order, a fill qkt never
+  booked, or realized PnL off the venue deals net.'
+status: ready
+symbols:
+- BYBIT_LINEAR:BTCUSDT
+timeframes:
+- 1m
+warmup_bars:
+  1m: 3
+proves:
+- behaviour:market-entry
+- behaviour:bracket
+- behaviour:timed-exit
+- behaviour:graceful-restart
+- behaviour:state-recovery
+fills: 2
+replay: bars
+drills:
+- at_s: 60
+  kind: qkt_restart
+  down_s: 20
+assertions:
+- flat-account
+- deals-net-equals-realized
+- replay-same-fills
+- venue-fills-equal-qkt-fills
+- no-duplicate-order
+- order-id-continuity
+budget_seconds: 600
