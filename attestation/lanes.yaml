@@ -41,4 +41,11 @@ lanes:
     purpose: Futures, perpetuals and options on a VGP gateway account (Deribit testnet) - orders reach the venue on its tick grid, qkt's realized equals the venue's deals net with fees, and replaying the venue's own bars or the account's recorded chain reproduces the decisions. One netting account, so cases run one after another.
     concurrency: exclusive
     places_orders: true
+    venue_gateway: true
+    budget_seconds: 420
+  bybit:
+    purpose: Bybit linear perpetuals on a VGP gateway account running the qkt-venue-gateway's Bybit adapter (Bybit testnet), with no Bybit code in qkt - the derivatives lane's proofs (venue tick grid, realized equals the venue's deals net with fees, bars replay makes the same fills, restart, outage and kill-switch drills) on a second venue. Its own netting account, so cases run one after another, beside the derivatives lane.
+    concurrency: exclusive
+    places_orders: true
+    venue_gateway: true
     budget_seconds: 420

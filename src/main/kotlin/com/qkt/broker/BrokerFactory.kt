@@ -15,8 +15,8 @@ import com.qkt.positions.PositionProvider
  * SDK, ...) — the venue label is the public identity, the protocol is an implementation detail.
  *
  * The [PositionProvider] is the session's engine-side view of open positions; brokers that
- * reconcile against venue positions (Bybit linear) compare against it, while balance- or
- * order-only brokers (MT5, Bybit spot, Paper) ignore it.
+ * judge orders against it (a venue gateway's `reduce_only`) read it, while balance- or
+ * order-only brokers (MT5, Paper) ignore it.
  *
  * The final `String?` is the owning strategy name when the session hosts a single
  * strategy (daemon path); null for multi-strategy or test paths. Stateful brokers (MT5)

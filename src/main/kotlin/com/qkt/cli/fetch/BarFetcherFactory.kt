@@ -2,7 +2,6 @@ package com.qkt.cli.fetch
 
 import com.qkt.cli.Config
 import com.qkt.cli.openAccounts
-import com.qkt.connector.bybit.marketdata.BybitKlineClient
 import com.qkt.connector.mt5.MT5BrokerProfileLoader
 import com.qkt.connector.mt5.MT5DefaultProfiles
 import com.qkt.connector.mt5.MT5Symbol
@@ -12,19 +11,15 @@ import com.qkt.marketdata.store.binance.BinanceVisionClient
 import java.nio.file.Path
 
 /**
- * The fetcher for [broker]: Bybit spot/linear and Binance USDⓈ-M directly; anything else is a `brokers:` entry of
- * `--config` ([configOption]) or the default config: an MT5 broker profile, or an account of another connector whose
- * own feed serves bars (a `type: gateway` venue). Null after printing the reason.
+ * The fetcher for [broker]: Binance USDⓈ-M directly; anything else is a `brokers:` entry of `--config`
+ * ([configOption]) or the default config: an MT5 broker profile, or an account of another connector whose own feed
+ * serves bars (a `type: gateway` venue). Null after printing the reason.
  */
 internal fun buildFetcher(
     broker: String,
     configOption: String?,
 ): BarFetcher? {
     return when (broker.uppercase()) {
-        "BYBIT_SPOT" ->
-            BybitFetcher(BybitKlineClient(category = "spot"))
-        "BYBIT_LINEAR" ->
-            BybitFetcher(BybitKlineClient(category = "linear"))
         BinanceUmFetcher.VENUE -> BinanceUmFetcher(BinanceVisionClient())
         else -> {
             // Treat as an MT5 broker — load profile and construct Mt5BarFetcher.
@@ -32,7 +27,7 @@ internal fun buildFetcher(
                 configOption?.let { Path.of(it) }
                     ?: Config.locate() ?: run {
                     System.err.println(
-                        "qkt: no qkt.config.yaml found (need it to resolve MT5 broker '$broker'); " +
+                        "qkt: no qkt.config.yaml found (need it to resolve broker '$broker'); " +
                             "pass --config <path> or place the file under " +
                             Config.defaultSearchPaths().joinToString(", "),
                     )
@@ -62,10 +57,7 @@ internal fun buildFetcher(
                 }
             val profile =
                 profiles.firstOrNull { it.name.equals(broker, ignoreCase = true) } ?: run {
-                    System.err.println(
-                        "qkt: no broker profile named '$broker' in qkt.config.yaml; " +
-                            "known: ${profiles.joinToString(", ") { it.name }}",
-                    )
+                    System.err.println(noEntry(broker, profiles.map { it.name }))
                     return null
                 }
             Mt5Fetcher(
@@ -101,3 +93,12 @@ private fun accountFetcher(
     }
     return SourceFetcher(source, account.config.symbolPrefix)
 }
+
+/** Why [broker] cannot be fetched: no `brokers:` entry is named for it; [known] are the entries that are. */
+internal fun noEntry(
+    broker: String,
+    known: List<String>,
+): String =
+    "qkt: no brokers: entry for prefix '${broker.uppercase()}'; add one named '${broker.lowercase()}' to " +
+        "qkt.config.yaml (for example a `type: gateway` entry, or a `type: mt5` profile); " +
+        "known: ${known.joinToString(", ").ifEmpty { "none" }}"

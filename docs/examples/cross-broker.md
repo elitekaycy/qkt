@@ -62,12 +62,13 @@ source: live
 starting_balance: 10000
 
 brokers:
-  bybit_spot:
-    type: bybit
-    category: spot                      # spot | linear; the name must be bybit_<category>
-    api_key: ${BYBIT_API_KEY}
-    api_secret: ${BYBIT_API_SECRET}
-    testnet: false
+  bybit_spot:                           # the name is the prefix: BYBIT_SPOT:...
+    type: gateway                       # Bybit through the qkt-venue-gateway's Bybit adapter
+    gateway_url: http://gateway-bybit-spot:8443
+    api_key: ${BYBIT_TRADER_TOKEN}
+    expected_adapter: bybit
+    expected_account_login: "${BYBIT_ACCOUNT_LOGIN}"
+    expected_trade_mode: real           # demo on testnet
 
   exness:
     type: mt5
@@ -94,6 +95,21 @@ The `brokers:` block defines what `BYBIT_SPOT:` and `EXNESS:` mean in the strate
 version: '3.9'
 
 services:
+  gateway-bybit-spot:
+    image: qkt-venue-gateway:local
+    build: https://github.com/elitekaycy/qkt-venue-gateway.git#main
+    environment:
+      - GATEWAY_ADAPTER=bybit
+      - GATEWAY_SETTING_CATEGORY=spot
+      - GATEWAY_SETTING_ENVIRONMENT=mainnet
+      - GATEWAY_LOGIN=${BYBIT_API_KEY}
+      - GATEWAY_SECRET=${BYBIT_API_SECRET}
+      - GATEWAY_TRADER_TOKEN=${BYBIT_TRADER_TOKEN}
+      - GATEWAY_GUARDIAN_TOKEN=${BYBIT_GUARDIAN_TOKEN}
+    volumes:
+      - bybit-spot-state:/data
+    restart: unless-stopped
+
   mt5-gateway:
     image: elitekaycy/mt5-gateway-api:0.3.2
     environment:
@@ -118,9 +134,11 @@ services:
     depends_on:
       mt5-gateway:
         condition: service_healthy
+      gateway-bybit-spot:
+        condition: service_healthy
     environment:
-      - BYBIT_API_KEY=${BYBIT_API_KEY}
-      - BYBIT_API_SECRET=${BYBIT_API_SECRET}
+      - BYBIT_TRADER_TOKEN=${BYBIT_TRADER_TOKEN}
+      - BYBIT_ACCOUNT_LOGIN=${BYBIT_ACCOUNT_LOGIN}
       - QKT_BROKER_EXNESS_GATEWAY_URL=http://mt5-gateway:5001
       - QKT_BROKER_EXNESS_API_KEY=${MT5_API_KEY}
     volumes:
@@ -132,16 +150,22 @@ services:
 
 volumes:
   qkt-state:
+  bybit-spot-state:
 ```
 
-Bybit doesn't need a gateway — it's accessed via REST + WebSocket directly from the qkt container. Only MT5 needs the Wine-in-Docker gateway service.
+qkt reaches Bybit only through the [qkt-venue-gateway](https://github.com/elitekaycy/qkt-venue-gateway)
+running its Bybit adapter, one gateway per Bybit category; its settings are on the
+[adapter's page](https://github.com/elitekaycy/qkt-venue-gateway/blob/main/adapter-bybit/README.md). MT5 goes through the Wine-in-Docker mt5-gateway service.
 
 ## The env file
 
 ```dotenv title=".env"
-# Bybit
+# Bybit (read by the gateway; qkt only holds the gateway token)
 BYBIT_API_KEY=xxx
 BYBIT_API_SECRET=xxx
+BYBIT_TRADER_TOKEN=a-long-random-string
+BYBIT_GUARDIAN_TOKEN=another-long-random-string
+BYBIT_ACCOUNT_LOGIN=the-account-login-the-gateway-reports
 
 # MT5 (Exness demo)
 MT5_LOGIN=12345678
@@ -197,7 +221,7 @@ docker compose down
 
 Bybit + MT5 + TradingView (for free-tier ticks):
 
-Bybit + MT5 already gives you crypto + FX/indices/commodities. Adding more brokers is mostly a matter of writing a new `type:` adapter and exposing its prefix.
+Bybit + MT5 already gives you crypto + FX/indices/commodities. Adding more venues is mostly a matter of writing a gateway adapter and adding a `type: gateway` entry named for its prefix.
 
 !!! info "TradingView is a data source, not a broker"
     TradingView is supported as a **market-data vendor** for ticks (used in paper trading and the `qkt run` foreground mode), but it's not a broker — you can't route orders through it. Strategies that want SPX exposure today need a broker that supports it (IBKR adapter is on the [roadmap](../planned.md)).

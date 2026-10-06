@@ -105,9 +105,11 @@ aggregation.
 | Broker prefix | Backend | Notes |
 |---|---|---|
 | `EXNESS`, `ICMARKETS`, `FTMO`, `PEPPERSTONE`, … | MT5 gateway (per broker profile in `qkt.config.yaml`) | The profile's `gatewayUrl` must be reachable. `qkt brokers list` shows what's resolved. |
-| `BYBIT_SPOT` / `BYBIT_LINEAR` | `api.bybit.com /v5/market/kline` | Public kline, no auth. |
-| A `type: gateway` account (`DERIBIT`, …) | The venue gateway's `GET /v1/bars` | Contracts the gateway lists (futures, perpetuals); the entry's `api_key` must resolve. The bars live warmup reads, so a backtest and its live warmup see the same history. |
+| A `type: gateway` account (`DERIBIT`, `BYBIT_LINEAR`, `BYBIT_SPOT`, …) | The venue gateway's `GET /v1/bars` | Contracts the gateway lists (futures, perpetuals); the entry's `api_key` must resolve. The bars live warmup reads, so a backtest and its live warmup see the same history. |
 | `BACKTEST` | (refused) | `BACKTEST` *is* the local store — nothing to fetch from. Use a real broker prefix. |
+
+Bybit bars come only through a gateway running the [Bybit adapter](https://github.com/elitekaycy/qkt-venue-gateway/blob/main/adapter-bybit/README.md): `qkt fetch BYBIT_LINEAR:BTCUSDT`
+reads the `bybit_linear` entry, and without one it is refused naming the entry to add.
 
 Notes:
 

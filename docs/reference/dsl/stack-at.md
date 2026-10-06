@@ -172,12 +172,12 @@ Both accessors return `0` if no primary leg exists.
 
 ## Broker capability gate
 
-A strategy that uses `STACK_AT` is rejected at deploy time if the routing broker doesn't declare `MULTI_POSITION_PER_SYMBOL`. PaperBroker and MT5 (any venue) support it natively. Bybit Spot does NOT (netting-only); Bybit Linear supports it in hedge mode only.
+A strategy that uses `STACK_AT` is rejected at deploy time if the routing broker doesn't declare `MULTI_POSITION_PER_SYMBOL`. PaperBroker and MT5 (any venue) support it natively. A `type: gateway` account (Bybit, Deribit) does NOT: the gateway nets each symbol into one position.
 
 The error names the strategy, symbol, and broker so the fix is unambiguous:
 
 ```
-Strategy 'hedge_straddle' uses STACK_AT on XAUUSD but routing broker 'BybitSpot'
+Strategy 'hedge_straddle' uses STACK_AT on XAUUSD but routing broker 'Gateway'
 does not declare MULTI_POSITION_PER_SYMBOL
 ```
 

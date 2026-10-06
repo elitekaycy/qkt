@@ -156,7 +156,7 @@ A few examples of what people use qkt for:
 
     ---
 
-    Bybit (spot + linear), MT5 brokers (Exness, ICMarkets, FTMO, Pepperstone), TradingView feeds. Adding a new broker is a small adapter — Alpaca and IBKR are on the roadmap.
+    Bybit and Deribit through the qkt-venue-gateway, MT5 brokers (Exness, ICMarkets, FTMO, Pepperstone), TradingView feeds. Adding a new venue is a small gateway adapter — Alpaca and IBKR are on the roadmap.
 
 - :material-source-branch:{ .lg .middle } **Read and modify the engine**
 

@@ -33,7 +33,7 @@ attestation/
 | `id` | Same as the directory name |
 | `title` | One line |
 | `why` | The specific failure this case exists to catch |
-| `status` | `ready` (runs in the attestation), `planned` (designed, not yet runnable) or `scheduled` (a derivatives case run at a set time outside the catalog, e.g. across an expiry; its budget may reach four hours) |
+| `status` | `ready` (runs in the attestation), `planned` (designed, not yet runnable) or `scheduled` (a venue-gateway lane's case run at a set time outside the catalog, e.g. across an expiry; its budget may reach four hours) |
 | `symbols` | Venue-neutral symbols, e.g. `[EURUSD, XAUUSD]` |
 | `timeframes` | Every timeframe a stream uses, e.g. `[1m, 15m, 1h]` |
 | `warmup_bars` | Per-timeframe warmup depth, e.g. `{1m: 6, 15m: 20}` |
@@ -58,6 +58,19 @@ apart, so its cases run one after another on a flat account (`run-derivatives-la
 that the account ends flat, that qkt's realized PnL equals the venue's deals net with fees to the last
 digit, and that replaying the venue's bars (or the recorded chain) makes the same fills (or opens the same
 legs).
+
+### The bybit lane
+
+`cases/bybit/` holds the derivatives lane's perpetual cases on a second venue: Bybit linear perpetuals
+(`BYBIT_LINEAR:BTCUSDT`) on a Bybit testnet account behind a gateway running the qkt-venue-gateway's Bybit
+adapter, reached as a `type: gateway` broker named `bybit_linear`; qkt has no Bybit code of its own. The
+cases, assertions and drills are the derivatives lane's, run by the same `run-derivatives-lane-case.py`; the
+lane is opt-in with `run-attestation-catalog.sh --lanes ...,bybit --bybit-gateway-url URL
+--bybit-expected-login LOGIN` (the gateway's `account_login`) and the trader token in `QKT_BYBIT_GATEWAY_KEY`
+(the guardian token in `QKT_BYBIT_GUARDIAN_KEY` for the kill-switch drill), or `bybit_gateway_url` and
+`bybit_expected_login` in the attestation profile. It runs beside the derivatives lane: the accounts are
+separate. Funding, which Bybit charges at 00:00, 08:00 and 16:00 UTC, is proven by the soak in
+`scripts/live-validation/funding-soak-bybit`, run before one of those times.
 
 ### Holding through an expiry
 

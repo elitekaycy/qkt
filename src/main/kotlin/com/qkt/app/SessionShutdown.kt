@@ -89,7 +89,7 @@ internal class SessionShutdown(
             running.set(false)
             thread.interrupt()
         }
-        // Release venue-side lifecycle resources (MT5 pollers, Bybit reconcilers)
+        // Release venue-side lifecycle resources (MT5 pollers, gateway sessions)
         // so a long-running daemon cycling strategies doesn't accumulate threads.
         for (b in builtBrokers) runCatching { b.shutdown() }
         runCatching { riskState.persistAnchorsIfDirty() }

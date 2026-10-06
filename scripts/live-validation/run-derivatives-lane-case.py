@@ -57,8 +57,10 @@ def main():
     ap.add_argument("--budget-seconds", type=int, help="a soak run's budget, beyond the catalog's ten minutes")
     args = ap.parse_args()
     case = yaml.safe_load(open(os.path.join(args.case, "case.yaml")))
-    lane = yaml.safe_load(open(os.path.join(os.path.dirname(__file__), "../../attestation/lanes.yaml")))["lanes"]
-    budget = args.budget_seconds or int(case.get("budget_seconds", lane["derivatives"]["budget_seconds"]))
+    lanes = yaml.safe_load(open(os.path.join(os.path.dirname(__file__), "../../attestation/lanes.yaml")))["lanes"]
+    lane = os.path.basename(os.path.dirname(os.path.abspath(args.case)))  # its catalog lane; a soak runs as derivatives
+    case["lane"] = lane if lanes.get(lane, {}).get("venue_gateway") else "derivatives"
+    budget = args.budget_seconds or int(case.get("budget_seconds", lanes[case["lane"]]["budget_seconds"]))
     run = Run(args, case)
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))  # a stopped runner still releases and sweeps
     try:
@@ -513,7 +515,8 @@ class Run:
     def verdict(self, problems):
         """Writes result.json and the one-line summary; the exit code."""
         case_id = self.case["id"]
-        result = {"schema": "qkt-attestation-derivatives-case-v1", "id": case_id, "lane": "derivatives",
+        result = {"schema": "qkt-attestation-derivatives-case-v1", "id": case_id,
+                  "lane": self.case.get("lane", "derivatives"),
                   "status": "failed" if problems else "passed", "problems": problems,
                   **getattr(self, "evidence", {})}
         if self.drills.records or self.drills.pending:

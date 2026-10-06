@@ -266,7 +266,7 @@ book_risk:
 
 | Key | Type | Default | Used by | Notes |
 |---|---|---|---|---|
-| `source` | string | `tv` when file exists, `local` from built-in defaults on missing file | `daemon`, `run` market-source fallback | `tv` opens TradingView fallback. `replay` reads `QKT_REPLAY_TICKS`. Any other value uses a null fallback. MT5 and Bybit routed symbols still use their own routes. |
+| `source` | string | `tv` when file exists, `local` from built-in defaults on missing file | `daemon`, `run` market-source fallback | `tv` opens TradingView fallback. `replay` reads `QKT_REPLAY_TICKS`. Any other value uses a null fallback. MT5 and gateway-routed symbols (Bybit, Deribit) still use their own routes. |
 | `data_root` | path string | `./data` in config object, but backtest CLI defaults to `DataRoot.resolve()` unless `--data-root` is passed | historical data commands and examples | Prefer explicit `--data-root` for research runs that need reproducibility. |
 | `starting_balance` | decimal | `0` (unset) | daemon risk, live PnL, reports, backtest basis | Must be greater than zero when a live drawdown limit is configured. A single-strategy backtest uses it too when `--starting-balance` is not given, so its drawdown halts and percent sizing sit on the daemon's balance; with neither set a backtest starts at `10000`. The chosen source is printed to stderr. Set explicitly for production and portfolio work. |
 | `log_level` | string | `info` | process logging setup where honored | Expected values are conventional log levels such as `debug`, `info`, `warn`, `error`. |
@@ -414,7 +414,7 @@ Built-in MT5 profile names: `exness`, `icmarkets`, `ftmo`, `pepperstone`.
 
 | Key | Type | Required | Default/inheritance | Notes |
 |---|---|---|---|---|
-| `brokers.<name>.type` | string | yes | none | `mt5` (this table) or `bybit` (below). |
+| `brokers.<name>.type` | string | yes | none | `mt5` (this table) or `gateway` (below). |
 | `extends` | profile name | no | same-name built-in if present | Inherit from a built-in or earlier user profile. |
 | `gateway_url` | URL | yes for fresh profile | inherited or built-in | MT5 gateway HTTP base URL. |
 | `api_key` | string | no | inherited or empty | Bearer token matching the gateway `API_KEY`; use a neutral variable such as `${QKT_BROKER_API_KEY}` in reusable scaffolds. |
@@ -438,65 +438,28 @@ Built-in MT5 profile names: `exness`, `icmarkets`, `ftmo`, `pepperstone`.
 | `capability_restrictions` | list of `OrderTypeCapability` names | no | inherited plus overrides | Disables venue capabilities by enum name. |
 | `instrument_overrides.<symbol>` | map | no | inherited plus overrides | Requires `min_volume`, `volume_step`, `point_size`, `digits`, `trade_stops_level_points`; optional `max_volume` is enforced when present. |
 
-### `type: bybit`
+### Bybit
 
-One entry per Bybit product category. The Bybit brokers serve fixed prefixes, so the entry must be
-named after its category: `bybit_spot` (`BYBIT_SPOT:`) or `bybit_linear` (`BYBIT_LINEAR:`).
-Entries with the same credentials and endpoint share one Bybit connection.
+qkt reaches Bybit only through the [qkt-venue-gateway](https://github.com/elitekaycy/qkt-venue-gateway)
+running its Bybit adapter (`GATEWAY_ADAPTER=bybit`), as a `type: gateway` entry (below), exactly as it
+reaches Deribit. One gateway serves one Bybit category (`GATEWAY_SETTING_CATEGORY`). Name the entry after
+the prefix your strategies use: `bybit_linear` serves `BYBIT_LINEAR:` symbols, `bybit_spot` serves
+`BYBIT_SPOT:` symbols.
 
 ```yaml
 brokers:
   bybit_linear:
-    type: bybit
-    category: linear
-    api_key: env:BYBIT_API_KEY
-    api_secret: env:BYBIT_API_SECRET
-    testnet: "true"
+    type: gateway
+    gateway_url: http://127.0.0.1:8444
+    api_key: env:BYBIT_TRADER_TOKEN       # the gateway's GATEWAY_TRADER_TOKEN
+    expected_adapter: bybit
+    expected_account_login: "<the account_login the gateway's /v1/health reports>"
+    expected_trade_mode: demo             # real on mainnet
 ```
 
-| Key | Type | Required | Default | Notes |
-|---|---|---|---|---|
-| `category` | `spot` or `linear` | yes | none | Must match the entry name. |
-| `api_key` | credential | yes | none | Refuses startup when missing or empty. |
-| `api_secret` | credential | yes | none | Refuses startup when missing or empty. |
-| `testnet` | bool | no | `true` | Only an explicit `false` trades mainnet. |
-| `recv_window_ms` | long | no | `5000` | Bybit signed-request receive window. |
-| `account_type` | string | no | `UNIFIED` | Bybit account type for balance reads. |
-
-The daemon connects each Bybit account at startup and refuses to start if the connection is
-rejected. Bybit is never enabled by environment variables alone.
-
-Only Bybit's `Trade` executions are fills. A `bybit_linear` account books its perpetuals' funding:
-Bybit settles each funding as an execution of type `Funding`, whose `execFee` is the amount the
-account paid (negative when it received) on the position of `execQty` (`side` `Sell` a short). Each
-strategy holding the perpetual books its part as financing, exactly as on a gateway account (below).
-qkt hears funding on the private execution stream and reads it back from `/v5/execution/list`, at
-startup over the last 7 days and then every 5 minutes, so funding settled while qkt was down is booked,
-once. Liquidation, auto-deleverage and delivery executions are not fills: the position reconcile
-applies them.
-
-On a Bybit account (linear or spot) a fill is booked to the strategy that placed its order even when
-Bybit reports it after the order ended (`Filled`, `Cancelled`, or spot's `PartiallyFilledCanceled`),
-whether on the private stream or only in the `/v5/execution/list` replay, with its `execFee`, and once.
-A cancel update that reports more executed (`cumExecQty`) than qkt has booked waits for those executions (read back by order id if the
-stream does not carry them), so the engine sees the fill, then the cancel; an end whose executions
-never appear is released, with a warning, at the next reconcile. An execution of an order qkt did not
-place on that account (another client's) is logged and never booked.
-
-Each Bybit execution that leaves part of its order to fill (`leavesQty` above zero) is a partial fill
-whose cumulative is Bybit's own (`orderQty - leavesQty`); the execution that leaves nothing completes the
-order. So an entry filled in several executions completes once, and its bracket or scale-out exits are
-armed then, for the whole quantity. Executions replayed from `/v5/execution/list` are applied oldest
-first, and an order's last execution heard before an earlier one waits for it.
-
-A restart keeps this: each order the session restores is taken back by id, so qkt owns it again and
-books an execution Bybit reports for it later. Its executions are read back
-(`/v5/execution/list?orderLinkId=`), the oldest that add up to the fills it had booked are skipped, the
-rest are booked, and its current state (`/v5/order/realtime`, else `/v5/order/history`, 7 days) ends it
-if it ended while qkt was down. An order Bybit no longer lists is retired by the engine. On a
-`bybit_linear` account the position is the net of every strategy (one-way mode): a restart trusts each
-strategy's saved book and checks the venue position at the first reconcile after the orders are taken
-back, not before.
+The Bybit API key goes to the gateway (`GATEWAY_LOGIN`/`GATEWAY_SECRET`), never to qkt. The adapter's
+settings, and how it reports Bybit's fills, funding and restarts, are on its
+[page](https://github.com/elitekaycy/qkt-venue-gateway/blob/main/adapter-bybit/README.md). `qkt create template <dir> --kind bybit` scaffolds this setup, gateway included.
 
 ### `type: gateway`
 

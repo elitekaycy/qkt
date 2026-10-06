@@ -80,7 +80,7 @@ greater than 0 and less than 100.
 
 **Engine-managed vs broker-managed:**
 - **MT5 brokers** route trailing stops natively via the gateway (`slDistance` in MT5 points).
-- **Other brokers** (Paper, Bybit) fall back to engine-managed: `OrderManager` tracks the HWM/LWM and fires a market order when the trail level is breached. Same DSL, same observable behavior.
+- **Other brokers** (Paper, `type: gateway` venues such as Bybit and Deribit) fall back to engine-managed: `OrderManager` tracks the HWM/LWM and fires a market order when the trail level is breached. Same DSL, same observable behavior.
 
 PERCENT mode requires a live mid-price for the symbol; MT5's native path needs a `MarketPriceProvider`. Engine-managed fallback is always available.
 
@@ -88,7 +88,7 @@ PERCENT mode requires a live mid-price for the symbol; MT5's native path needs a
 
 When the broker supports `BRACKET` natively (MT5, paper broker), qkt sends the entry + stop + target as one atomic order group. The venue manages them.
 
-When it doesn't (e.g., Bybit Spot via REST), the engine splits the bracket into separate orders:
+When it doesn't (e.g., a `type: gateway` venue such as Bybit), the engine splits the bracket into separate orders:
 
 1. Entry submitted as `Market`
 2. On fill, stop submitted as `Stop` and target as `Limit` linked by OCO (one-cancels-other)

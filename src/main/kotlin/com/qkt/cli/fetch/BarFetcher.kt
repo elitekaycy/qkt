@@ -3,13 +3,12 @@ package com.qkt.cli.fetch
 import com.qkt.candles.TimeWindow
 import com.qkt.common.SymbolCalendars
 import com.qkt.common.TimeRange
-import com.qkt.connector.bybit.marketdata.BybitKlineClient
 import com.qkt.connector.mt5.MT5Symbol
 import com.qkt.connector.mt5.marketdata.Mt5BarFetcher
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.source.MarketSource
 
-/** Thin adapter so MT5 and Bybit fetchers share a common shape for `qkt fetch`. */
+/** Thin adapter so MT5, Binance and account-feed fetchers share a common shape for `qkt fetch`. */
 internal fun interface BarFetcher {
     /** Historical bars for [symbol] at [window] inside [range]. */
     fun fetch(
@@ -48,17 +47,6 @@ internal class Mt5Fetcher(
         }
         return true
     }
-}
-
-/** Fetches klines from Bybit's public REST endpoint. */
-internal class BybitFetcher(
-    private val inner: BybitKlineClient,
-) : BarFetcher {
-    override fun fetch(
-        symbol: String,
-        window: TimeWindow,
-        range: TimeRange,
-    ): List<Candle> = inner.fetchRange(symbol, window, range).toList()
 }
 
 /** Fetches through an account's own feed, which names the store's bare [symbol] with the account's [prefix]. */
