@@ -167,7 +167,15 @@ class Run:
         fills = self.order_fills()
         if len(fills) < int(self.case["fills"]):
             problems.append(f"expected {self.case['fills']} fills within the budget, saw {len(fills)}")
-        realized = Decimal(json.load(open(f"{self.out}/state/state/{self.strategy}/pnl.json"))["realized"])
+        # qkt writes pnl.json at the strategy's first fill; a case whose entry the venue never filled (an empty
+        # testnet book cancels a market order outright) has none, and is judged by the fill count above.
+        pnl = f"{self.out}/state/state/{self.strategy}/pnl.json"
+        if os.path.exists(pnl):
+            realized = Decimal(json.load(open(pnl))["realized"])
+        else:
+            realized = Decimal(0)
+            if fills:
+                problems.append(f"qkt wrote no pnl.json for {self.strategy} although the venue reports {len(fills)} fill(s)")
         funding = self.venue_funding()
         held = settlement.held_settlements(self.venue_settlements(), self.strategy_deals())
         venue = self.venue_net() + settlement.settlement_cash(held, self.contract_sizes()) \
