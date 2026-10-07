@@ -6,6 +6,7 @@ import com.qkt.cli.daemon.ControlClient
 import com.qkt.cli.daemon.ControlPlane
 import com.qkt.cli.daemon.ControlToken
 import com.qkt.cli.daemon.DaemonInstanceLock
+import com.qkt.cli.daemon.FeedLossRedeployer
 import com.qkt.cli.daemon.OperatorJournal
 import com.qkt.cli.daemon.RegistryDaemonControl
 import com.qkt.cli.daemon.StateDir
@@ -193,7 +194,9 @@ class DaemonCommand(
             }
         val verifiedAccounts =
             try {
-                accounts.verifyAll()
+                com.qkt.connectivity.AccountPreflight
+                    .fromEnv()
+                    .verifyAll(accounts)
             } catch (e: Exception) {
                 System.err.println("qkt: broker account preflight failed: ${e.message}")
                 runCatching { accounts.close() }
@@ -426,6 +429,7 @@ class DaemonCommand(
             )
             autoDeployRetrier.start()
         }
+        val feedLossRedeployer = FeedLossRedeployer(registry, autoDeployRetrier).also { it.start() }
 
         println("[INFO] daemon ready")
 
@@ -464,6 +468,7 @@ class DaemonCommand(
         fun cleanup() {
             if (!cleanupStarted.compareAndSet(false, true)) return
             runCatching { stateDir.deleteControlPort() }
+            runCatching { feedLossRedeployer.close() }
             runCatching { autoDeployRetrier.close() }
             runCatching { plane.close() }
             commandChannels.forEach { runCatching { it.close() } }
@@ -624,14 +629,3 @@ class DaemonCommand(
         fun defaultTradingViewSource(symbols: List<String>): MarketSource = TradingViewMarketSource.connect()
     }
 }
-
-/**
- * The trading calendar for [qktSymbol]: its account's trading hours when an account serves the
- * prefix, otherwise the backtest defaults (e.g. `PAPER:SPX` resolves to NYSE hours).
- */
-internal fun liveCalendarFor(
-    qktSymbol: String,
-    accounts: com.qkt.connectivity.AccountDirectory,
-): com.qkt.common.TradingCalendar =
-    accounts.tradingHoursFor(qktSymbol)
-        ?: BacktestContext.defaultCalendars().calendarFor(qktSymbol.substringAfter(':'))

@@ -58,6 +58,8 @@ internal class RunningSessionHandle(
 
     override val running: Boolean get() = mailbox.running.get()
 
+    override fun unexpectedFeedEnd(): String? = mailbox.unexpectedFeedEnd.get()
+
     override val droppedTicks: Long
         get() =
             (if (feed is LiveTickFeed) feed.droppedTicks.get() else 0L) +

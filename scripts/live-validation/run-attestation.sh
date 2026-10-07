@@ -122,8 +122,9 @@ bash scripts/live-validation/run-insights-attribution.sh --scenario "$ins" --ins
 
 stage_write bundle
 # The token may lack read:packages, so the digest comes from the docker workflow log of this commit.
-docker_run="$(gh run list --workflow docker.yml --branch testing --limit 10 --json databaseId,headSha \
-    --jq ".[] | select(.headSha==\"$sha\") | .databaseId" | head -n 1)"
+# Looked up by commit: a branch listing is newest-first by creation and can push this commit's run out of its window.
+docker_run="$(gh run list --workflow docker.yml --branch testing --commit "$sha" --status success --json databaseId \
+    --jq ".[0].databaseId")"
 [ -n "$docker_run" ] || fail "no docker workflow run for $short on testing"
 digest="$(gh run view "$docker_run" --log 2>/dev/null | sed 's/\x1b\[[0-9;]*m//g' |
     grep "pushing manifest for $image_repository:edge@" | grep -o 'sha256:[0-9a-f]\{64\}' | head -n 1)"

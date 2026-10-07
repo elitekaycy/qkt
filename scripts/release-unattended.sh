@@ -68,7 +68,7 @@ for _ in $(seq 1 90); do
     if [ -n "$wait_for" ] && ! git merge-base --is-ancestor "$wait_for" "$testing" 2> /dev/null; then
         log "testing ${testing:0:8} does not contain ${wait_for:0:8} yet"; sleep 60; continue
     fi
-    runs="$(gh run list -R "$repo" --branch testing --limit 12 --json name,status,conclusion,headSha \
+    runs="$(gh run list -R "$repo" --branch testing --commit "$testing" --json name,status,conclusion,headSha \
         -q ".[] | select(.headSha == \"$testing\") | .name + \":\" + .status + \":\" + (.conclusion // \"\")" | tr '\n' ' ')"
     log "testing ${testing:0:8} [$runs]"
     if grep -qE '(check|integration|docker):completed:(failure|cancelled)' <<<"$runs"; then
@@ -76,7 +76,7 @@ for _ in $(seq 1 90); do
         # on 2026-09-21). Nobody is here to press "re-run", so each failed run gets exactly one.
         [ "${reran:-}" = "$testing" ] && stop "testing CI failed on $testing, again after one re-run"
         reran="$testing"
-        gh run list -R "$repo" --branch testing --limit 12 --json databaseId,conclusion,headSha \
+        gh run list -R "$repo" --branch testing --commit "$testing" --json databaseId,conclusion,headSha \
             -q ".[] | select(.headSha == \"$testing\" and (.conclusion == \"failure\" or .conclusion == \"cancelled\")) | .databaseId" |
             while read -r failed; do gh run rerun "$failed" -R "$repo" --failed > /dev/null && log "re-ran failed testing run $failed once"; done
         sleep 60

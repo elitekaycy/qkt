@@ -1,5 +1,7 @@
 package com.qkt.connector.mt5
 
+import com.qkt.connectivity.AccountUnreachableException
+
 /** Fail-closed gateway and account-identity verification for MT5 cutovers. */
 object MT5AccountVerifier {
     /** Fetches `/account`, rejects an unreachable gateway, and verifies configured expectations. */
@@ -14,7 +16,9 @@ object MT5AccountVerifier {
                 apiKey = profile.apiKey,
             ),
     ): MT5AccountInfo {
-        val account = client.getAccount() ?: error("MT5 profile '${profile.name}' gateway/account is unreachable")
+        val account =
+            client.getAccount()
+                ?: throw AccountUnreachableException("MT5 profile '${profile.name}' gateway/account is unreachable")
         verify(profile, account)
         return account
     }
