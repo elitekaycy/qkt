@@ -13,6 +13,7 @@ class ReportBuilderTest {
         strategyId: String = "s1",
         ts: Long = 0L,
         reducedExposure: Boolean = true,
+        legId: String? = null,
     ): TradeRecord =
         TradeRecord(
             trade =
@@ -27,6 +28,7 @@ class ReportBuilderTest {
             realized = BigDecimal(realized),
             strategyId = strategyId,
             reducedExposure = reducedExposure,
+            legId = legId,
         )
 
     @Test
@@ -108,6 +110,32 @@ class ReportBuilderTest {
         assertThat(report.winRate).isEqualByComparingTo(Money.ZERO)
         assertThat(report.profitFactor).isNull()
         assertThat(report.sharpeRatio).isNull()
+    }
+
+    @Test
+    fun `a leg's entry commission is part of its trade outcome`() {
+        // gross +0.30 less 0.21 on each fill: entry fill books -0.21, exit fill books +0.09.
+        // The round trip nets -0.12, a loser, and the outcomes sum to the realized total.
+        val trades =
+            listOf(
+                tradeRecord("-0.21", ts = 1L, reducedExposure = false, legId = "leg-1"),
+                tradeRecord("0.09", ts = 2L, legId = "leg-1"),
+                tradeRecord("-0.21", ts = 3L, reducedExposure = false, legId = "leg-2"),
+                tradeRecord("50.00", ts = 4L, legId = "leg-2"),
+            )
+        val report =
+            ReportBuilder.buildGlobal(
+                trades = trades,
+                equityCurve = listOf(EquitySample(0L, BigDecimal("100"))),
+                finalRealized = BigDecimal("49.67"),
+                finalUnrealized = Money.ZERO,
+                annualizationFactor = BigDecimal("525960"),
+            )
+
+        assertThat(report.winRate).isEqualByComparingTo(BigDecimal("0.5"))
+        assertThat(report.avgLoss).isEqualByComparingTo(BigDecimal("-0.12"))
+        assertThat(report.avgWin).isEqualByComparingTo(BigDecimal("49.79"))
+        assertThat(report.largestLoss).isEqualByComparingTo(BigDecimal("-0.12"))
     }
 
     @Test
