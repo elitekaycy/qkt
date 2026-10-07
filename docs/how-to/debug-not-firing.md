@@ -77,10 +77,11 @@ Easy mistake: you declare `EVERY 1m` but you're feeding the strategy historical 
 **Diagnose:**
 
 ```bash
-qkt status my-strategy --verbose
+qkt status my-strategy
+qkt logs my-strategy --lines 50
 ```
 
-Look at the candle source. If `candles_received: 0` despite the strategy running for minutes, the data feed doesn't match the timeframe.
+Check `staleSymbols` in the status output and look in the log for the `warmup: seeded hub` lines for each stream. If the strategy has been running for minutes with no candle activity, the data feed doesn't match the timeframe.
 
 **Fix:** either populate the data store with tick-level data (via `./scripts/fetch-dukascopy.sh` today; a `qkt fetch` CLI is on the roadmap — see [Planned features](../planned.md))…
 
@@ -121,8 +122,9 @@ qkt brokers list
 If none of the above explains it, enable DEBUG and watch every event:
 
 ```bash
-qkt deploy my-strategy.qkt --log-level DEBUG
-qkt logs my-strategy -f
+# set `log_level: debug` in qkt.config.yaml, restart the daemon, then redeploy
+qkt deploy my-strategy.qkt
+qkt logs my-strategy --follow
 ```
 
 You'll see every tick, every condition evaluation, every order decision. Grep for your strategy name. The reason will be in there.
