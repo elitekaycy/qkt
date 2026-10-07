@@ -53,7 +53,7 @@ way.
 
 ### Backtest Report Artifacts
 
-`qkt backtest --report <dir>` writes an audit bundle for downstream tooling:
+`qkt backtest --report-dir <dir>` writes an audit bundle for downstream tooling:
 
 - `result.json` uses schema `qkt-backtest-result-v1` with `schemaVersion: 1`
   and carries cadence, evidence, accounting, artifact paths, a normalized trade
@@ -153,7 +153,7 @@ inconsistent.
 
 `qkt backtest --json` uses the same result schema and includes retained equity
 curves in `global.equityCurve` plus per-strategy canonical metrics. Prefer
-`--report` bundles for audit gates because the bundle includes full CSV tapes
+`--report-dir` bundles for audit gates because the bundle includes full CSV tapes
 and manifest hashes; use `--json` for piping compact, schema-tagged summaries.
 
 ## Operations
