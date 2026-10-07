@@ -89,9 +89,8 @@ class ReplayEngine(
      */
     private val preCandle: (com.qkt.marketdata.Candle) -> Unit = {},
     /**
-     * Current regime-weight vector for [com.qkt.risk.book.AllocationMethod.REGIME_WEIGHTED].
-     * Updated once per closed candle before strategy handlers run, so order scaling uses the
-     * current bar's allocation.
+     * Current regime-weight vector for [com.qkt.risk.book.AllocationMethod.REGIME_WEIGHTED]. Updated once per
+     * closed candle before strategy handlers run, so order scaling uses the current bar's allocation.
      */
     private val regimeWeights: () -> Map<String, BigDecimal> = { emptyMap() },
     /**
