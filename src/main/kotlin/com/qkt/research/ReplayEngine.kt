@@ -348,6 +348,7 @@ class ReplayEngine(
         flushCompletedReplayBoundary()
         // A rollover after the last tick (the market closed first) still falls inside the replay: charge it.
         replayEndTimestamp?.takeIf { ticksIngested > 0L }?.let(::accrueFinancing)
+        analytics.collector.closeAt(currentTimestamp)
         return snapshot()
     }
 
