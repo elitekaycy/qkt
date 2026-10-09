@@ -56,65 +56,65 @@ internal fun runMain(argv: Array<String>): Int =
                     shortAliases = schema.shortAliases,
                 )
             }
-        when (args.subcommand) {
-            "parse" -> ParseCommand(args).run()
-            "dsl" -> DslCommand(args).run()
-            "lsp" -> LspCommand().run()
-            "backtest" -> BacktestCommand(args).run()
-            "sweep" -> SweepCommand(args).run()
-            "walkforward" -> WalkForwardCommand(args).run()
-            "experiment" -> ExperimentCommand(args).run()
-            "research" -> ResearchCommand(args).run()
-            "run" -> RunCommand(args).run()
-            "deploy" -> DeployCommand(args).run()
-            "resync" -> ResyncCommand(args).run()
-            "list" -> ListCommand(args).run()
-            "stop" -> StopCommand(args).run()
-            "start" -> StartCommand(args).run()
-            "halt" -> HaltCommand(args).run()
-            "kill" -> KillCommand(args).run()
-            "reconcile" -> ReconcileCommand(args).run()
-            "resume" -> ResumeCommand(args).run()
-            "brokers" -> BrokersCommand(args).run()
-            "instruments" -> InstrumentsCommand(args).run()
-            "editor" -> EditorCommand(args).run()
-            "create" -> CreateCommand(args).run()
-            "audit-ticks" -> AuditTicksCommand(args).run()
-            "fetch" -> FetchCommand(args).run()
-            "data" -> DataCommand(args).run()
-            "preflight" -> PreflightCommand(args).run()
-            "promotion" -> PromotionCommand(args).run()
-            "incident" -> IncidentCommand(args).run()
-            "golden" -> GoldenCommand(args).run()
-            "soak" -> SoakCommand(args).run()
-            "bot" ->
-                com.qkt.cli.bot
-                    .BotCommand(args)
-                    .run()
-            "daemon" -> DaemonCommand(args).run()
-            "logs" -> LogsCommand(args).run()
-            "status" -> StatusCommand(args).run()
-            "observe" -> ObserveCommand(args).run()
-            "--version", "-v" -> {
-                println(BuildInfo.versionLine())
-                ExitCodes.SUCCESS
-            }
-            "--help", "help" -> {
-                printHelp()
-                ExitCodes.SUCCESS
-            }
-            else -> {
-                val hint = CliHelp.suggestCommand(args.subcommand)
-                if (hint != null) {
-                    System.err.println("qkt: unknown command '${args.subcommand}'. Did you mean 'qkt $hint'?")
-                    System.err.println(CliHelp.forCommand(hint))
-                } else {
-                    System.err.println("qkt: unknown subcommand '${args.subcommand}'")
-                    System.err.println(CliTopHelp.topLevelHelp)
+            when (args.subcommand) {
+                "parse" -> ParseCommand(args).run()
+                "dsl" -> DslCommand(args).run()
+                "lsp" -> LspCommand().run()
+                "backtest" -> BacktestCommand(args).run()
+                "sweep" -> SweepCommand(args).run()
+                "walkforward" -> WalkForwardCommand(args).run()
+                "experiment" -> ExperimentCommand(args).run()
+                "research" -> ResearchCommand(args).run()
+                "run" -> RunCommand(args).run()
+                "deploy" -> DeployCommand(args).run()
+                "resync" -> ResyncCommand(args).run()
+                "list" -> ListCommand(args).run()
+                "stop" -> StopCommand(args).run()
+                "start" -> StartCommand(args).run()
+                "halt" -> HaltCommand(args).run()
+                "kill" -> KillCommand(args).run()
+                "reconcile" -> ReconcileCommand(args).run()
+                "resume" -> ResumeCommand(args).run()
+                "brokers" -> BrokersCommand(args).run()
+                "instruments" -> InstrumentsCommand(args).run()
+                "editor" -> EditorCommand(args).run()
+                "create" -> CreateCommand(args).run()
+                "audit-ticks" -> AuditTicksCommand(args).run()
+                "fetch" -> FetchCommand(args).run()
+                "data" -> DataCommand(args).run()
+                "preflight" -> PreflightCommand(args).run()
+                "promotion" -> PromotionCommand(args).run()
+                "incident" -> IncidentCommand(args).run()
+                "golden" -> GoldenCommand(args).run()
+                "soak" -> SoakCommand(args).run()
+                "bot" ->
+                    com.qkt.cli.bot
+                        .BotCommand(args)
+                        .run()
+                "daemon" -> DaemonCommand(args).run()
+                "logs" -> LogsCommand(args).run()
+                "status" -> StatusCommand(args).run()
+                "observe" -> ObserveCommand(args).run()
+                "--version", "-v" -> {
+                    println(BuildInfo.versionLine())
+                    ExitCodes.SUCCESS
                 }
-                ExitCodes.ARG_ERROR
+                "--help", "help" -> {
+                    printHelp()
+                    ExitCodes.SUCCESS
+                }
+                else -> {
+                    val hint = CliHelp.suggestCommand(args.subcommand)
+                    if (hint != null) {
+                        System.err.println("qkt: unknown command '${args.subcommand}'. Did you mean 'qkt $hint'?")
+                        System.err.println(CliHelp.forCommand(hint))
+                    } else {
+                        System.err.println("qkt: unknown subcommand '${args.subcommand}'")
+                        System.err.println(CliTopHelp.topLevelHelp)
+                    }
+                    ExitCodes.ARG_ERROR
+                }
             }
-        }
         }
     } catch (e: ArgError) {
         System.err.println("qkt: error: ${e.message}")

@@ -50,7 +50,14 @@ abstract class HtmlHumanValuesFixture {
                         EquitySample(1_727_686_800_000L, BigDecimal("10000")),
                         EquitySample(1_727_687_800_000L, BigDecimal("14423.25")),
                     ),
-                drawdownPeriods = (0 until drawdowns).map { drawdown(1_727_686_800_000L + it, "-0.0$it", 16_613_100_000L) },
+                drawdownPeriods =
+                    (0 until drawdowns).map {
+                        drawdown(
+                            1_727_686_800_000L + it,
+                            "-0.0$it",
+                            16_613_100_000L,
+                        )
+                    },
                 commissionPaid = BigDecimal("51.20"),
             )
         return BacktestResult(
@@ -59,7 +66,11 @@ abstract class HtmlHumanValuesFixture {
             finalPositions =
                 mapOf(
                     "BACKTEST:EURUSD" to
-                        Position(symbol = "BACKTEST:EURUSD", quantity = BigDecimal.ONE, avgEntryPrice = BigDecimal("1.10")),
+                        Position(
+                            symbol = "BACKTEST:EURUSD",
+                            quantity = BigDecimal.ONE,
+                            avgEntryPrice = BigDecimal("1.10"),
+                        ),
                 ),
             global = global,
             perStrategy = emptyMap(),

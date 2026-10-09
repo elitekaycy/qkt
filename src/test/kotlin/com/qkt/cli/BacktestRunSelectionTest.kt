@@ -15,7 +15,13 @@ class BacktestRunSelectionTest {
     fun `missing token falls back to the global strategy`() {
         val selection = BacktestRunSelection.select(null, section, fileExists = { false })
         assertThat(selection)
-            .isEqualTo(BacktestRunSelection.Selection.File(java.nio.file.Path.of("s/default.qkt"), configured = true))
+            .isEqualTo(
+                BacktestRunSelection.Selection.File(
+                    java.nio.file.Path
+                        .of("s/default.qkt"),
+                    configured = true,
+                ),
+            )
     }
 
     @Test
@@ -37,7 +43,12 @@ class BacktestRunSelectionTest {
     @Test
     fun `an existing file always wins`() {
         val selection = BacktestRunSelection.select("scalps", section, fileExists = { it == "scalps" })
-        assertThat(selection).isEqualTo(BacktestRunSelection.Selection.File(java.nio.file.Path.of("scalps")))
+        assertThat(selection).isEqualTo(
+            BacktestRunSelection.Selection.File(
+                java.nio.file.Path
+                    .of("scalps"),
+            ),
+        )
     }
 
     @Test
@@ -66,6 +77,11 @@ class BacktestRunSelectionTest {
     @Test
     fun `a missing dotted path flows to the file check`() {
         val selection = BacktestRunSelection.select("nope.qkt", section, fileExists = { false })
-        assertThat(selection).isEqualTo(BacktestRunSelection.Selection.File(java.nio.file.Path.of("nope.qkt")))
+        assertThat(selection).isEqualTo(
+            BacktestRunSelection.Selection.File(
+                java.nio.file.Path
+                    .of("nope.qkt"),
+            ),
+        )
     }
 }

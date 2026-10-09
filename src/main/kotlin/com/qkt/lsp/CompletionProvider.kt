@@ -42,7 +42,8 @@ object CompletionProvider {
         val lines = text.lines()
         val start = lines.indexOfFirst { it.trimStart().startsWith("SYMBOLS") }
         if (start < 0) return emptySet()
-        return lines.drop(start + 1)
+        return lines
+            .drop(start + 1)
             .takeWhile { it.isBlank() || it.startsWith(" ") || it.startsWith("\t") }
             .mapNotNull { Regex("""^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=""").find(it)?.groupValues?.get(1) }
             .toSet()

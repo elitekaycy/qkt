@@ -38,7 +38,12 @@ class SweepBacktestParityTest : SweepCommandFixture() {
             System.setOut(original)
         }
         val json = out.toString().lines().lastOrNull { it.trimStart().startsWith("[") } ?: ""
-        val row = Json.parseToJsonElement(json).jsonArray.single().jsonObject
+        val row =
+            Json
+                .parseToJsonElement(json)
+                .jsonArray
+                .single()
+                .jsonObject
         assertThat(row["label"]!!.jsonPrimitive.content).contains("fast=3")
         return row["sharpe"]!!.toString()
     }
@@ -68,8 +73,17 @@ class SweepBacktestParityTest : SweepCommandFixture() {
         } finally {
             System.setOut(original)
         }
-        val json = out.toString().trim().lines().last()
-        return Json.parseToJsonElement(json).jsonObject["global"]!!.jsonObject["sharpeRatio"].toString()
+        val json =
+            out
+                .toString()
+                .trim()
+                .lines()
+                .last()
+        return Json
+            .parseToJsonElement(json)
+            .jsonObject["global"]!!
+            .jsonObject["sharpeRatio"]
+            .toString()
     }
 
     @Test

@@ -41,50 +41,49 @@ internal object BacktestEvidence {
             reproduction = reproductionInfo(args, path, resolved),
         )
 
-
-/** A `report.dir` (or instruments path) relative to the config file stays relocatable. */
-internal fun resolveConfigRelative(
-    cfg: Config,
-    raw: String,
-): Path {
-    val candidate = Path.of(raw)
-    if (candidate.isAbsolute) return candidate
-    return cfg.configDir?.resolve(candidate) ?: candidate
-}
-
-internal fun accountingEvidence(snapshot: com.qkt.accounting.AccountingSnapshot?): AccountingEvidence? {
-    if (snapshot == null) return null
-    return AccountingEvidence(
-        accountCurrency = snapshot.accountCurrency,
-        missingPolicy = snapshot.missingPolicy,
-        source = snapshot.source,
-        configuredFxSymbols = snapshot.configuredSymbols,
-        conversions =
-            snapshot.conversions.associate { fx ->
-                "${fx.from}->${fx.to}@${fx.source}" to
-                    "rate=${fx.rate.toPlainString()} timestamp=${fx.timestamp}"
-            },
-        costKinds = snapshot.supportedCostKinds,
-        warnings = snapshot.warnings,
-    )
-}
-
-internal fun importedHashes(
-    path: Path,
-    parsedFile: ParsedFile,
-): Map<String, String> =
-    when (parsedFile) {
-        is ParsedFile.StrategyFile -> emptyMap()
-        is ParsedFile.PortfolioFile -> {
-            val parent = path.toAbsolutePath().normalize().parent ?: Path.of(".").toAbsolutePath().normalize()
-            parsedFile.ast.imports.associate { imp ->
-                imp.alias to EvidenceHasher.sha256(parent.resolve(imp.path).toAbsolutePath().normalize())
-            }
-        }
+    /** A `report.dir` (or instruments path) relative to the config file stays relocatable. */
+    internal fun resolveConfigRelative(
+        cfg: Config,
+        raw: String,
+    ): Path {
+        val candidate = Path.of(raw)
+        if (candidate.isAbsolute) return candidate
+        return cfg.configDir?.resolve(candidate) ?: candidate
     }
 
-internal fun configHash(args: Args): String? {
-    val path = Config.resolvePath(args.option("config"))
-    return if (Files.exists(path)) EvidenceHasher.sha256(path) else null
-}
+    internal fun accountingEvidence(snapshot: com.qkt.accounting.AccountingSnapshot?): AccountingEvidence? {
+        if (snapshot == null) return null
+        return AccountingEvidence(
+            accountCurrency = snapshot.accountCurrency,
+            missingPolicy = snapshot.missingPolicy,
+            source = snapshot.source,
+            configuredFxSymbols = snapshot.configuredSymbols,
+            conversions =
+                snapshot.conversions.associate { fx ->
+                    "${fx.from}->${fx.to}@${fx.source}" to
+                        "rate=${fx.rate.toPlainString()} timestamp=${fx.timestamp}"
+                },
+            costKinds = snapshot.supportedCostKinds,
+            warnings = snapshot.warnings,
+        )
+    }
+
+    internal fun importedHashes(
+        path: Path,
+        parsedFile: ParsedFile,
+    ): Map<String, String> =
+        when (parsedFile) {
+            is ParsedFile.StrategyFile -> emptyMap()
+            is ParsedFile.PortfolioFile -> {
+                val parent = path.toAbsolutePath().normalize().parent ?: Path.of(".").toAbsolutePath().normalize()
+                parsedFile.ast.imports.associate { imp ->
+                    imp.alias to EvidenceHasher.sha256(parent.resolve(imp.path).toAbsolutePath().normalize())
+                }
+            }
+        }
+
+    internal fun configHash(args: Args): String? {
+        val path = Config.resolvePath(args.option("config"))
+        return if (Files.exists(path)) EvidenceHasher.sha256(path) else null
+    }
 }

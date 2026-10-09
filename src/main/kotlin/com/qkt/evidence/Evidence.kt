@@ -102,4 +102,3 @@ object EvidenceHasher {
 
     private fun hex(bytes: ByteArray): String = bytes.joinToString("") { b -> "%02x".format(b.toInt() and 0xff) }
 }
-

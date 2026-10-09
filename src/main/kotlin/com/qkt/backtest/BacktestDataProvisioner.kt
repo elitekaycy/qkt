@@ -114,7 +114,9 @@ class BacktestDataProvisioner(
             if (covered == 0) {
                 append("no ${stream.bareSymbol} tick data for $from to $to ($covered of $requested trading days).")
             } else {
-                append("incomplete ${stream.bareSymbol} tick data for $from to $to ($covered of $requested trading days).")
+                append(
+                    "incomplete ${stream.bareSymbol} tick data for $from to $to ($covered of $requested trading days).",
+                )
             }
             append("\n  Looked in: ${store.root.resolve("symbols").resolve(stream.bareSymbol)}")
             val span = heldSpanOf(stream.bareSymbol)

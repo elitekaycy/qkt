@@ -16,6 +16,7 @@ internal object HtmlPerformanceTables {
     fun headlineCards(result: BacktestResult): String {
         val r = result.global
         val currency = result.accounting?.accountCurrency
+
         fun card(
             label: String,
             value: String,

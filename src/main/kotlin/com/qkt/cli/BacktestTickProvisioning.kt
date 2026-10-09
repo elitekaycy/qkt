@@ -111,7 +111,14 @@ internal object BacktestTickProvisioning {
                 "rerun with --bars to use them (faster, approximate fills)."
         }
         val declared = barReplay.finestDeclared["${stream.broker}:${stream.bareSymbol}"]?.canonicalSpec()
-        val build = if (declared != null) " Try qkt data build-bars ${stream.bareSymbol} --tf $declared to build them." else ""
+        val build =
+            if (declared !=
+                null
+            ) {
+                " Try qkt data build-bars ${stream.bareSymbol} --tf $declared to build them."
+            } else {
+                ""
+            }
         return "No built bars cover this window.$build"
     }
 }

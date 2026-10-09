@@ -58,7 +58,11 @@ class BacktestCostingFlagsTest : BacktestCommandFixture() {
             )
         assertThat(code).withFailMessage("stderr=$stderr stdout=$stdout").isEqualTo(ExitCodes.SUCCESS)
         val obj = Json.parseToJsonElement(stdout.trim().lines().last()) as JsonObject
-        return obj["global"]!!.jsonObject[field]?.jsonPrimitive?.content?.toBigDecimal()
+        return obj["global"]!!
+            .jsonObject[field]
+            ?.jsonPrimitive
+            ?.content
+            ?.toBigDecimal()
             ?: java.math.BigDecimal.ZERO
     }
 

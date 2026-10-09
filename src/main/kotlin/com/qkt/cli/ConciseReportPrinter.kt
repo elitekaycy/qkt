@@ -77,7 +77,9 @@ internal object ConciseReportPrinter {
         val from = LocalDate.ofInstant(Instant.ofEpochMilli(curve.first().timestamp), ZoneOffset.UTC)
         val to = LocalDate.ofInstant(Instant.ofEpochMilli(curve.last().timestamp), ZoneOffset.UTC)
         val days =
-            r.dailyEquity.size.takeIf { it > 0 }?.let { " ($it trading ${if (it == 1) "day" else "days"})" } ?: ""
+            r.dailyEquity.size
+                .takeIf { it > 0 }
+                ?.let { " ($it trading ${if (it == 1) "day" else "days"})" } ?: ""
         return "$from to $to$days"
     }
 
@@ -119,10 +121,22 @@ internal object ConciseReportPrinter {
     ): String {
         val g = r.global
         val parts = mutableListOf<String>()
-        if (g.commissionPaid.signum() != 0) parts += "commission ${HumanFormat.money(g.commissionPaid, currency, signed = false)}"
+        if (g.commissionPaid.signum() !=
+            0
+        ) {
+            parts += "commission ${HumanFormat.money(g.commissionPaid, currency, signed = false)}"
+        }
         if (g.swapPaid.signum() != 0) parts += "swap ${HumanFormat.money(g.swapPaid, currency, signed = false)}"
-        if (g.rollCostsPaid.signum() != 0) parts += "rolls ${HumanFormat.money(g.rollCostsPaid, currency, signed = false)}"
-        if (g.fundingPaid.signum() != 0) parts += "funding ${HumanFormat.money(g.fundingPaid, currency, signed = false)}"
+        if (g.rollCostsPaid.signum() !=
+            0
+        ) {
+            parts += "rolls ${HumanFormat.money(g.rollCostsPaid, currency, signed = false)}"
+        }
+        if (g.fundingPaid.signum() !=
+            0
+        ) {
+            parts += "funding ${HumanFormat.money(g.fundingPaid, currency, signed = false)}"
+        }
         if (parts.isEmpty()) return "none modeled (no spread, commission or swap)"
         return parts.joinToString(", ")
     }

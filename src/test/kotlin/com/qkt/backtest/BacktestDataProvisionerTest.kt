@@ -106,7 +106,14 @@ class BacktestDataProvisionerTest {
         val day = LocalDate.of(2024, 3, 6)
 
         assertThatThrownBy {
-            provisioner.ensure(listOf(stream("EURUSD")), day, day, true, false, calendarFor = { TradingCalendar.fxDefault() })
+            provisioner.ensure(
+                listOf(stream("EURUSD")),
+                day,
+                day,
+                true,
+                false,
+                calendarFor = { TradingCalendar.fxDefault() },
+            )
         }.isInstanceOf(IncompleteDataException::class.java)
             .hasMessageContaining("could not fetch ticks for EURUSD")
     }
@@ -133,7 +140,9 @@ class BacktestDataProvisionerTest {
             }
 
         assertThat(thrown).isInstanceOf(IncompleteDataException::class.java)
-        assertThat(thrown).hasMessageContaining("incomplete EURUSD tick data for 2024-03-04 to 2024-03-08 (2 of 5 trading days)")
+        assertThat(
+            thrown,
+        ).hasMessageContaining("incomplete EURUSD tick data for 2024-03-04 to 2024-03-08 (2 of 5 trading days)")
         assertThat(thrown).hasMessageContaining("Missing: 2024-03-06 to 2024-03-08 (1 range, 3 days)")
         assertThat(thrown).hasMessageContaining("Looked in:")
         assertThat(thrown).hasMessageContaining("has 2024-03-04 to 2024-03-08")
@@ -160,7 +169,9 @@ class BacktestDataProvisionerTest {
             }
 
         assertThat(thrown).isInstanceOf(IncompleteDataException::class.java)
-        assertThat(thrown).hasMessageContaining("no EURUSD tick data for 2024-03-06 to 2024-03-06 (0 of 1 trading days)")
+        assertThat(
+            thrown,
+        ).hasMessageContaining("no EURUSD tick data for 2024-03-06 to 2024-03-06 (0 of 1 trading days)")
         assertThat(thrown).hasMessageContaining("(empty — no tick days stored)")
         assertThat(thrown).hasMessageContaining("drop --no-fetch")
         assertThat(thrown.message).doesNotContain("Missing:")

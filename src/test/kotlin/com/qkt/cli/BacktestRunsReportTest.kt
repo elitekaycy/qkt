@@ -20,7 +20,6 @@ class BacktestRunsReportTest : BacktestCommandFixture() {
         return cfg
     }
 
-
     @Test
     fun `report-dir from config is honored and named`(
         @TempDir home: Path,
@@ -35,7 +34,7 @@ class BacktestRunsReportTest : BacktestCommandFixture() {
                   strategy: ${proj.resolve("strat.qkt")}
                   from: 2024-01-15
                   to: 2024-01-16
-                  report-dir: ${out}
+                  report-dir: $out
                 """.trimIndent(),
             )
         val (code, _, stderr) =

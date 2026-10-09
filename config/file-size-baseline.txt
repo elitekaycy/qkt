@@ -8,7 +8,7 @@
 897 src/test/kotlin/com/qkt/connector/mt5/MT5ClientTest.kt
 859 src/main/kotlin/com/qkt/app/LiveSession.kt
 755 src/test/kotlin/com/qkt/broker/PaperBrokerTest.kt
-728 src/main/kotlin/com/qkt/cli/Config.kt
+727 src/main/kotlin/com/qkt/cli/Config.kt
 691 src/test/kotlin/com/qkt/connector/mt5/MT5PositionPollerCloseTest.kt
 685 src/main/kotlin/com/qkt/cli/daemon/portfolio/PortfolioDeployer.kt
 677 src/main/kotlin/com/qkt/execution/OrderRequest.kt

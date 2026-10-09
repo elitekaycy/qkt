@@ -93,7 +93,8 @@ internal object MemberCompletion {
         extraStreamAliases: Set<String> = emptySet(),
     ): List<CompletionItem> {
         val key = alias.lowercase()
-        val streams = symbols.streamAliases.map { it.lowercase() }.toSet() + extraStreamAliases.map { it.lowercase() }.toSet()
+        val streams =
+            symbols.streamAliases.map { it.lowercase() }.toSet() + extraStreamAliases.map { it.lowercase() }.toSet()
         val baskets = symbols.basketAliases.map { it.lowercase() }.toSet()
         val series = symbols.seriesAliases.map { it.lowercase() }.toSet()
         return when (key) {

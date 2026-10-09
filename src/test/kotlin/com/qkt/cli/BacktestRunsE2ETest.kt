@@ -25,9 +25,7 @@ class BacktestRunsE2ETest : BacktestCommandFixture() {
         return cfg
     }
 
-    private fun json(
-        stdout: String,
-    ): JsonObject = Json.parseToJsonElement(stdout.trim().lines().last()) as JsonObject
+    private fun json(stdout: String): JsonObject = Json.parseToJsonElement(stdout.trim().lines().last()) as JsonObject
 
     @Test
     fun `bare backtest runs the global block and records provenance`(
