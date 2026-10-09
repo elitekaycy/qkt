@@ -33,13 +33,22 @@ class CsvTickFeed(
             }
         } catch (t: Throwable) {
             runCatching { reader.close() }
+            // A truncated gzip dies inside the header read with a bare ZLIB EOF (#1375).
+            if (t is java.io.IOException) throw java.io.IOException("unreadable tick data at $path: ${t.message}", t)
             throw t
         }
     }
 
     override fun next(): Tick? {
         while (true) {
-            val line = reader.readLine() ?: return null
+            // GZIP/deflate truncation (notably a half-written day file, #1375) surfaces lazily
+            // here, far from the open call — name the file so the error is actionable.
+            val line =
+                try {
+                    reader.readLine()
+                } catch (e: java.io.IOException) {
+                    throw java.io.IOException("unreadable tick data at $path:$lineNumber: ${e.message}", e)
+                } ?: return null
             lineNumber++
             if (line.isEmpty()) continue
             val tick =
