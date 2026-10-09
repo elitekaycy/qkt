@@ -11,7 +11,8 @@ import org.junit.jupiter.api.Test
  */
 class CliDocsSyncTest {
     private fun docs(vararg names: String): String =
-        names.map { Path.of("docs/reference/$it") }
+        names
+            .map { Path.of("docs/reference/$it") }
             .filter { Files.exists(it) }
             .joinToString("\n") { Files.readString(it) }
 
@@ -19,7 +20,8 @@ class CliDocsSyncTest {
     fun `every subcommand appears in the cli reference`() {
         val reference = docs("cli-commands.md", "bot-cli.md")
         val missing =
-            CliOptionSchemas.names()
+            CliOptionSchemas
+                .names()
                 .filter { !it.startsWith("-") && it != "help" }
                 .filter { name -> !reference.contains("qkt $name") }
         assertThat(missing).isEmpty()

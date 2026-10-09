@@ -58,36 +58,40 @@ internal object BacktestRunConfig {
         }
         return BacktestSection(defaults, defaultParams, strategy, runs, warnings)
     }
+
     private fun parseRuns(
         raw: Any?,
         warnings: MutableList<String>,
         known: Set<String>,
     ): Map<String, BacktestRun> {
-        val map = raw as? Map<String, Any?> ?: return emptyMap<String, BacktestRun>().also {
-            warnings += "backtest.runs: expected a map of run names, ignoring"
-        }
-        return map.mapNotNull { (name, value) ->
-            val runMap = value as? Map<String, Any?> ?: return@mapNotNull null.also {
-                warnings += "backtest.runs.$name: expected a map, ignoring"
+        val map =
+            raw as? Map<String, Any?> ?: return emptyMap<String, BacktestRun>().also {
+                warnings += "backtest.runs: expected a map of run names, ignoring"
             }
-            val values = mutableMapOf<String, String>()
-            val params = mutableListOf<String>()
-            var strategy: String? = null
-            for ((key, v) in runMap) {
-                when (key) {
-                    "strategy" -> strategy = v?.toString()
-                    "param" -> params += parseParams(v, "backtest.runs.$name.param", warnings)
-                    else ->
-                        if (v is Map<*, *> || v is List<*>) {
-                            warnings += "backtest.runs.$name.$key: expected a scalar value, ignoring"
-                        } else if (v != null) {
-                            if (key !in known) warnings += "backtest.runs.$name.$key: unknown key, using as-is"
-                            values[key] = v.toString()
-                        }
+        return map
+            .mapNotNull { (name, value) ->
+                val runMap =
+                    value as? Map<String, Any?> ?: return@mapNotNull null.also {
+                        warnings += "backtest.runs.$name: expected a map, ignoring"
+                    }
+                val values = mutableMapOf<String, String>()
+                val params = mutableListOf<String>()
+                var strategy: String? = null
+                for ((key, v) in runMap) {
+                    when (key) {
+                        "strategy" -> strategy = v?.toString()
+                        "param" -> params += parseParams(v, "backtest.runs.$name.param", warnings)
+                        else ->
+                            if (v is Map<*, *> || v is List<*>) {
+                                warnings += "backtest.runs.$name.$key: expected a scalar value, ignoring"
+                            } else if (v != null) {
+                                if (key !in known) warnings += "backtest.runs.$name.$key: unknown key, using as-is"
+                                values[key] = v.toString()
+                            }
+                    }
                 }
-            }
-            name.toString() to BacktestRun(values, params, strategy)
-        }.toMap()
+                name.toString() to BacktestRun(values, params, strategy)
+            }.toMap()
     }
 
     private fun parseParams(
@@ -95,9 +99,10 @@ internal object BacktestRunConfig {
         where: String,
         warnings: MutableList<String>,
     ): List<String> {
-        val map = raw as? Map<String, Any?> ?: return emptyList<String>().also {
-            warnings += "$where: expected a map like {fast: 5}, ignoring"
-        }
+        val map =
+            raw as? Map<String, Any?> ?: return emptyList<String>().also {
+                warnings += "$where: expected a map like {fast: 5}, ignoring"
+            }
         return map.map { (k, v) -> "${k.toString().trim()}=${v.toString().trim()}" }
     }
 

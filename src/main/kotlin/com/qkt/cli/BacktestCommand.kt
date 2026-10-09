@@ -1,13 +1,8 @@
 package com.qkt.cli
 
-import com.qkt.backtest.BacktestResult
 import com.qkt.dsl.parse.Dsl
 import com.qkt.dsl.parse.ParseResult
 import com.qkt.dsl.parse.ParsedFile
-import com.qkt.evidence.AccountingEvidence
-import com.qkt.evidence.DatasetEvidence
-import com.qkt.evidence.EvidenceEnvelope
-import com.qkt.evidence.EvidenceHasher
 import com.qkt.instrument.futuresSymbols
 import com.qkt.instrument.optionSymbols
 import com.qkt.marketdata.store.DataFetcher
@@ -115,7 +110,15 @@ class BacktestCommand(
                 }
                 val futures = ctx.instruments.futuresSymbols(ctx.symbols)
                 val options = ctx.instruments.optionSymbols(ctx.symbols)
-                ReportPrinter.print(result, format, System.out, ctx.brokerKind, futures, options, effective.flag("verbose"))
+                ReportPrinter.print(
+                    result,
+                    format,
+                    System.out,
+                    ctx.brokerKind,
+                    futures,
+                    options,
+                    effective.flag("verbose"),
+                )
                 printExecutionNotes(ctx.symbols, futures, options, ctx.brokerKind)
                 ExitCodes.SUCCESS
             } catch (e: com.qkt.dsl.compile.CompileError) {

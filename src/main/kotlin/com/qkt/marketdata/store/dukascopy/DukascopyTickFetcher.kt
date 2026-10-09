@@ -63,7 +63,12 @@ class DukascopyTickFetcher(
                     w.newLine()
                 }
             }
-            Files.move(tmp, target, java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+            Files.move(
+                tmp,
+                target,
+                java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+            )
         } catch (e: Exception) {
             runCatching { Files.deleteIfExists(tmp) }
             throw e

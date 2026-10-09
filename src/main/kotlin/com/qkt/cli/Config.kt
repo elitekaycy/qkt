@@ -355,7 +355,6 @@ data class Config(
             environment: Map<String, String> = System.getenv(),
         ): Path = ConfigLocate.resolvePath(explicit, searchPaths, environment)
 
-
         // Matches `${NAME}` and `${NAME:-default}`. The default is used when the env
         // var / system property is unset; without it, the literal `${...}` stays in the
         // string and broker init logs a degraded-config warning.

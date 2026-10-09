@@ -1,6 +1,5 @@
 package com.qkt.cli
 
-import com.qkt.evidence.ResolvedValue
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -34,7 +33,9 @@ internal object BacktestRunSelection {
         ) : Selection
 
         /** Fatal selection problem; message already lists runs and suggestions. */
-        data class Error(val message: String) : Selection
+        data class Error(
+            val message: String,
+        ) : Selection
     }
 
     /** Effective defaults for [Args.withDefaults]: merged values, params, and per-key provenance. */
@@ -67,6 +68,7 @@ internal object BacktestRunSelection {
         } else {
             "\n  runs: ${section.runs.keys.sorted().joinToString(", ")}"
         }
+
     fun select(
         token: String?,
         section: BacktestSection,
@@ -115,5 +117,4 @@ internal object BacktestRunSelection {
         val params = section.defaultParams + (run?.params.orEmpty())
         return Merged(values, params, provenance, paramProvenance)
     }
-
 }

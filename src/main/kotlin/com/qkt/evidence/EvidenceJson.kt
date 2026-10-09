@@ -25,9 +25,12 @@ object EvidenceJson {
     private fun resolved(resolved: Map<String, ResolvedValue>): String =
         buildString {
             append("{")
-            resolved.toSortedMap().entries.joinToString(",") { (k, v) ->
-                "${jsonString(k)}:{\"value\":${jsonString(v.value)},\"from\":${jsonString(v.from)}}"
-            }.also(::append)
+            resolved
+                .toSortedMap()
+                .entries
+                .joinToString(",") { (k, v) ->
+                    "${jsonString(k)}:{\"value\":${jsonString(v.value)},\"from\":${jsonString(v.from)}}"
+                }.also(::append)
             append("}")
         }
 

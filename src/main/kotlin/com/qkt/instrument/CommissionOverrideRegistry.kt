@@ -12,6 +12,5 @@ class CommissionOverrideRegistry(
     private val inner: InstrumentRegistry,
     private val rate: BigDecimal,
 ) : InstrumentRegistry by inner {
-    override fun lookup(qktSymbol: String): InstrumentMeta? =
-        inner.lookup(qktSymbol)?.copy(commissionPerLot = rate)
+    override fun lookup(qktSymbol: String): InstrumentMeta? = inner.lookup(qktSymbol)?.copy(commissionPerLot = rate)
 }

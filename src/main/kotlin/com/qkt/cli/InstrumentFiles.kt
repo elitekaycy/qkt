@@ -6,7 +6,6 @@ import com.qkt.dsl.ast.HUB_BROKER
 import com.qkt.dsl.ast.OPTIONS_BROKER
 import com.qkt.instrument.CommissionOverrideRegistry
 import com.qkt.instrument.ContractCatalogRegistry
-import com.qkt.instrument.SwapScaleRegistry
 import com.qkt.instrument.ContractCatalogStore
 import com.qkt.instrument.FundingCoverage
 import com.qkt.instrument.FundingRateStore
@@ -18,6 +17,7 @@ import com.qkt.instrument.OptionRootsFile
 import com.qkt.instrument.RefreshingOptionCatalogs
 import com.qkt.instrument.RollHistoryStore
 import com.qkt.instrument.StandardInstrumentRegistry
+import com.qkt.instrument.SwapScaleRegistry
 import com.qkt.instrument.YamlInstrumentRegistry
 import com.qkt.marketdata.depth.BookDepthCoverage
 import com.qkt.marketdata.depth.BookDepthStore

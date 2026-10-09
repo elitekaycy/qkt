@@ -67,5 +67,4 @@ internal object ConfigLocate {
             ?: environment["QKT_CONFIG"]?.takeIf { it.isNotBlank() }?.let(Path::of)
             ?: locate(searchPaths)
             ?: Path.of("./qkt.config.yaml")
-
 }
