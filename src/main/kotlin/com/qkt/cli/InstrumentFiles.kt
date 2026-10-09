@@ -1,6 +1,10 @@
 package com.qkt.cli
 
 import com.qkt.common.Clock
+import com.qkt.dsl.ast.CHAIN_BROKER
+import com.qkt.dsl.ast.HUB_BROKER
+import com.qkt.dsl.ast.OPTIONS_BROKER
+import com.qkt.instrument.CommissionOverrideRegistry
 import com.qkt.instrument.ContractCatalogRegistry
 import com.qkt.instrument.ContractCatalogStore
 import com.qkt.instrument.FundingCoverage
@@ -16,8 +20,11 @@ import com.qkt.instrument.StandardInstrumentRegistry
 import com.qkt.instrument.YamlInstrumentRegistry
 import com.qkt.marketdata.depth.BookDepthCoverage
 import com.qkt.marketdata.depth.BookDepthStore
+import com.qkt.marketdata.depth.BookDepthSymbol
 import com.qkt.marketdata.openinterest.OpenInterestCoverage
 import com.qkt.marketdata.openinterest.OpenInterestStore
+import com.qkt.marketdata.openinterest.OpenInterestSymbol
+import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
@@ -120,6 +127,51 @@ internal object InstrumentFiles {
             OpenInterestCoverage.problem(OpenInterestStore(dataRoot), symbols, fromMs, toMs)
                 ?: BookDepthCoverage.problem(BookDepthStore(dataRoot), symbols, fromMs, toMs)
         )?.let { throw BacktestContext.Companion.SetupError(it) }
-        return registry
+        // A run-level costing question answered without editing instruments.yaml: every fill in
+        // this run books the override rate instead of the file's per-symbol rate. Symbols without
+        // metadata bill nothing either way, so name them — otherwise the flag silently does nothing.
+        val commissionOverride =
+            args.option("commission-per-lot")?.let { raw ->
+                val rate =
+                    raw.toBigDecimalOrNull()
+                        ?: throw BacktestContext.Companion.SetupError(
+                            "bad --commission-per-lot '$raw': expected a non-negative amount per 1.0 lot",
+                        )
+                if (rate.signum() < 0) {
+                    throw BacktestContext.Companion.SetupError(
+                        "bad --commission-per-lot '$raw': expected a non-negative amount per 1.0 lot",
+                    )
+                }
+                rate
+            }
+        val withCommission =
+            if (commissionOverride != null) CommissionOverrideRegistry(registry, commissionOverride) else registry
+        if (commissionOverride != null && commissionOverride.signum() != 0) {
+            val unbillable =
+                symbols
+                    .filter { sym -> sym.substringBefore(':') !in NON_TRADABLE_BROKERS }
+                    .filter { sym ->
+                        val rate = withCommission.lookup(sym)?.commissionPerLot
+                        rate == null || rate.signum() == 0
+                    }
+            if (unbillable.isNotEmpty()) {
+                System.err.println(
+                    "qkt: WARNING — --commission-per-lot does not apply to ${unbillable.joinToString()}: " +
+                        "no instrument metadata (add it to instruments.yaml or pass --instruments <file>)",
+                )
+            }
+        }
+        return withCommission
     }
+
+    /** Stream brokers that never trade, so a missing commission rate for them is not warned about. */
+    private val NON_TRADABLE_BROKERS =
+        setOf(
+            "MACRO",
+            HUB_BROKER,
+            CHAIN_BROKER,
+            OPTIONS_BROKER,
+            BookDepthSymbol.BROKER,
+            OpenInterestSymbol.BROKER,
+        )
 }

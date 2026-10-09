@@ -24,6 +24,7 @@ internal object BacktestFlagHelp {
             "report-dir",
             "json",
             "verbose",
+            "commission-per-lot",
         )
 
     /** Flag/option name to one-line description. */
@@ -57,6 +58,7 @@ internal object BacktestFlagHelp {
             "dataset" to "pinned dataset snapshot to replay instead of the live store",
             "position-mode" to "netting or hedging position model",
             "funding" to "perpetual funding: on (default) or off",
+            "commission-per-lot" to "override every symbol's commission, e.g. --commission-per-lot 7 (account currency per 1.0 lot per side)",
             "param" to "override one PARAM/LET, e.g. --param fast=5 (repeatable; comma lists need sweep)",
             "report-dir" to "where to write the report bundle (default ~/.qkt/runs/<time>-<strategy>/)",
             "metrics-window" to "extra sub-window NAME=FROM..TO to report beside global (repeatable)",
