@@ -1,5 +1,7 @@
 package com.qkt.marketdata.store.dukascopy
 
+import com.qkt.common.Clock
+import com.qkt.common.SystemClock
 import java.io.IOException
 import java.time.Duration
 import java.time.LocalDate
@@ -44,6 +46,7 @@ class OkHttpHourDownloader(
      */
     private val fallbackBaseUrls: List<String> = listOf("https://jetta.dukascopy.com/datafeed"),
     private val sleeper: (Long) -> Unit = { Thread.sleep(it) },
+    private val clock: Clock = SystemClock(),
 ) : HourDownloader {
     override fun download(
         instrument: String,
@@ -102,7 +105,7 @@ class OkHttpHourDownloader(
         return runCatching {
             java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME
                 .parse(raw, java.time.Instant::from)
-                .toEpochMilli() - System.currentTimeMillis()
+                .toEpochMilli() - clock.now()
         }.getOrNull()?.coerceAtLeast(0L)
     }
 
