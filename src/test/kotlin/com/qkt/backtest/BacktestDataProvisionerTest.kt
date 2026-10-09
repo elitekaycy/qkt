@@ -11,6 +11,7 @@ import java.time.ZoneOffset
 import java.util.zip.GZIPOutputStream
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
+import org.assertj.core.api.Assertions.catchThrowable
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 
@@ -105,8 +106,87 @@ class BacktestDataProvisionerTest {
         val day = LocalDate.of(2024, 3, 6)
 
         assertThatThrownBy {
-            provisioner.ensure(listOf(stream("EURUSD")), day, day, true, false) { TradingCalendar.fxDefault() }
+            provisioner.ensure(listOf(stream("EURUSD")), day, day, true, false, calendarFor = { TradingCalendar.fxDefault() })
         }.isInstanceOf(IncompleteDataException::class.java)
             .hasMessageContaining("could not fetch ticks for EURUSD")
+    }
+
+    @Test
+    fun `a partial gap is reported as compact ranges with the tick dir it searched`(
+        @TempDir tmp: Path,
+    ) {
+        val from = LocalDate.of(2024, 3, 4) // Monday
+        val to = LocalDate.of(2024, 3, 8) // Friday
+        val fetcher = FullDayFetcher(fullDays = setOf(from, from.plusDays(1)))
+        val provisioner = BacktestDataProvisioner(store = DefaultDataStore(root = tmp, fetcher = fetcher))
+
+        val thrown =
+            catchThrowable {
+                provisioner.ensure(
+                    listOf(stream("EURUSD")),
+                    from,
+                    to,
+                    fetchEnabled = true,
+                    allowIncomplete = false,
+                    calendarFor = { TradingCalendar.fxDefault() },
+                )
+            }
+
+        assertThat(thrown).isInstanceOf(IncompleteDataException::class.java)
+        assertThat(thrown).hasMessageContaining("incomplete EURUSD tick data for 2024-03-04 to 2024-03-08 (2 of 5 trading days)")
+        assertThat(thrown).hasMessageContaining("Missing: 2024-03-06 to 2024-03-08 (1 range, 3 days)")
+        assertThat(thrown).hasMessageContaining("Looked in:")
+        assertThat(thrown).hasMessageContaining("has 2024-03-04 to 2024-03-08")
+        assertThat(thrown.message).doesNotContain("drop --no-fetch")
+    }
+
+    @Test
+    fun `a total miss names the empty tick dir and the no-fetch blocker`(
+        @TempDir tmp: Path,
+    ) {
+        val day = LocalDate.of(2024, 3, 6)
+        val provisioner = BacktestDataProvisioner(store = DefaultDataStore(root = tmp, fetcher = null))
+
+        val thrown =
+            catchThrowable {
+                provisioner.ensure(
+                    listOf(stream("EURUSD")),
+                    day,
+                    day,
+                    fetchEnabled = false,
+                    allowIncomplete = false,
+                    calendarFor = { TradingCalendar.fxDefault() },
+                )
+            }
+
+        assertThat(thrown).isInstanceOf(IncompleteDataException::class.java)
+        assertThat(thrown).hasMessageContaining("no EURUSD tick data for 2024-03-06 to 2024-03-06 (0 of 1 trading days)")
+        assertThat(thrown).hasMessageContaining("(empty — no tick days stored)")
+        assertThat(thrown).hasMessageContaining("drop --no-fetch")
+        assertThat(thrown.message).doesNotContain("Missing:")
+    }
+
+    @Test
+    fun `a supplied bars hint surfaces the bars suggestion`(
+        @TempDir tmp: Path,
+    ) {
+        val day = LocalDate.of(2024, 3, 6)
+        val provisioner = BacktestDataProvisioner(store = DefaultDataStore(root = tmp, fetcher = null))
+
+        val thrown =
+            catchThrowable {
+                provisioner.ensure(
+                    listOf(stream("EURUSD")),
+                    day,
+                    day,
+                    fetchEnabled = false,
+                    allowIncomplete = false,
+                    calendarFor = { TradingCalendar.fxDefault() },
+                    barsLineFor = { "Bars exist for this window (15m, 1 of 1 days): rerun with --bars to use them." },
+                )
+            }
+
+        assertThat(thrown).isInstanceOf(IncompleteDataException::class.java)
+        assertThat(thrown).hasMessageContaining("rerun with --bars")
     }
 }
