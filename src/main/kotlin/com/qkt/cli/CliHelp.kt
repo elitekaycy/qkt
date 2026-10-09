@@ -85,7 +85,7 @@ internal object CliHelp {
     ): String {
         if (!described) return head.head
         val desc = BacktestFlagHelp.descriptions[head.name] ?: ""
-        return if (desc.isEmpty()) head.head else head.head.padEnd(26) + desc
+        return if (desc.isEmpty()) head.head else head.head.padEnd(26) + " " + desc
     }
 
     /**

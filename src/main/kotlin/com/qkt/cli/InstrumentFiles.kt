@@ -6,6 +6,7 @@ import com.qkt.dsl.ast.HUB_BROKER
 import com.qkt.dsl.ast.OPTIONS_BROKER
 import com.qkt.instrument.CommissionOverrideRegistry
 import com.qkt.instrument.ContractCatalogRegistry
+import com.qkt.instrument.SwapScaleRegistry
 import com.qkt.instrument.ContractCatalogStore
 import com.qkt.instrument.FundingCoverage
 import com.qkt.instrument.FundingRateStore
@@ -127,42 +128,50 @@ internal object InstrumentFiles {
             OpenInterestCoverage.problem(OpenInterestStore(dataRoot), symbols, fromMs, toMs)
                 ?: BookDepthCoverage.problem(BookDepthStore(dataRoot), symbols, fromMs, toMs)
         )?.let { throw BacktestContext.Companion.SetupError(it) }
-        // A run-level costing question answered without editing instruments.yaml: every fill in
-        // this run books the override rate instead of the file's per-symbol rate. Symbols without
-        // metadata bill nothing either way, so name them — otherwise the flag silently does nothing.
-        val commissionOverride =
-            args.option("commission-per-lot")?.let { raw ->
-                val rate =
-                    raw.toBigDecimalOrNull()
-                        ?: throw BacktestContext.Companion.SetupError(
-                            "bad --commission-per-lot '$raw': expected a non-negative amount per 1.0 lot",
-                        )
-                if (rate.signum() < 0) {
-                    throw BacktestContext.Companion.SetupError(
-                        "bad --commission-per-lot '$raw': expected a non-negative amount per 1.0 lot",
-                    )
-                }
-                rate
-            }
-        val withCommission =
-            if (commissionOverride != null) CommissionOverrideRegistry(registry, commissionOverride) else registry
-        if (commissionOverride != null && commissionOverride.signum() != 0) {
+        // Run-level costing questions answered without editing instruments.yaml: every fill in
+        // this run books the override rates instead of the file's per-symbol ones. Symbols without
+        // metadata bill nothing either way, so name them — otherwise the flags silently do nothing.
+        val commissionOverride = nonnegativeDecimal(args, "commission-per-lot", "a non-negative amount per 1.0 lot")
+        val swapScale = nonnegativeDecimal(args, "swap-scale", "a non-negative financing multiplier")
+        var withCosts: InstrumentRegistry = registry
+        if (commissionOverride != null) withCosts = CommissionOverrideRegistry(withCosts, commissionOverride)
+        if (swapScale != null) withCosts = SwapScaleRegistry(withCosts, swapScale)
+        if ((commissionOverride != null && commissionOverride.signum() != 0) ||
+            (swapScale != null && swapScale.compareTo(BigDecimal.ONE) != 0)
+        ) {
+            val active =
+                listOfNotNull(
+                    "--commission-per-lot".takeIf { commissionOverride != null },
+                    "--swap-scale".takeIf { swapScale != null },
+                )
             val unbillable =
                 symbols
                     .filter { sym -> sym.substringBefore(':') !in NON_TRADABLE_BROKERS }
-                    .filter { sym ->
-                        val rate = withCommission.lookup(sym)?.commissionPerLot
-                        rate == null || rate.signum() == 0
-                    }
+                    .filter { sym -> withCosts.lookup(sym) == null }
             if (unbillable.isNotEmpty()) {
                 System.err.println(
-                    "qkt: WARNING — --commission-per-lot does not apply to ${unbillable.joinToString()}: " +
+                    "qkt: WARNING — ${active.joinToString(" and ")} do not apply to ${unbillable.joinToString()}: " +
                         "no instrument metadata (add it to instruments.yaml or pass --instruments <file>)",
                 )
             }
         }
-        return withCommission
+        return withCosts
     }
+
+    private fun nonnegativeDecimal(
+        args: Args,
+        flag: String,
+        what: String,
+    ): BigDecimal? =
+        args.option(flag)?.let { raw ->
+            val value =
+                raw.toBigDecimalOrNull()
+                    ?: throw BacktestContext.Companion.SetupError("bad --$flag '$raw': expected $what")
+            if (value.signum() < 0) {
+                throw BacktestContext.Companion.SetupError("bad --$flag '$raw': expected $what")
+            }
+            value
+        }
 
     /** Stream brokers that never trade, so a missing commission rate for them is not warned about. */
     private val NON_TRADABLE_BROKERS =

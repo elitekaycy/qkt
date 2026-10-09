@@ -33,6 +33,7 @@ private val backtestValues =
         "position-mode",
         "funding",
         "commission-per-lot",
+        "swap-scale",
     )
 private val backtestFlags =
     setOf("no-fetch", "bars", "allow-incomplete", "tick-fills", "enforce-live-breakers", "chaos")
