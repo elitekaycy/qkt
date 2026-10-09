@@ -16,7 +16,7 @@
 631 src/main/kotlin/com/qkt/cli/BacktestContext.kt
 631 src/main/kotlin/com/qkt/cli/DaemonCommand.kt
 585 src/main/kotlin/com/qkt/broker/MT5BrokerSimulator.kt
-574 src/main/kotlin/com/qkt/cli/PreflightCommand.kt
+567 src/main/kotlin/com/qkt/cli/PreflightCommand.kt
 552 src/main/kotlin/com/qkt/execution/OrderRequestEvidence.kt
 532 src/test/kotlin/com/qkt/dsl/portfolio/fixture/PortfolioFixtureGenerator.kt
 519 src/test/kotlin/com/qkt/connector/mt5/MT5OrderTranslatorTest.kt

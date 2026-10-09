@@ -162,4 +162,44 @@ class PreflightCommandProductionControlsTest : PreflightCommandFixture() {
         }
         assertThat(out.toString()).contains("FAIL notify.alerts: enabled alert channel is missing required credentials")
     }
+
+    @Test
+    fun `an unknown runtime mode fails as a one-line check, not a stack trace`(
+        @TempDir tmp: Path,
+    ) {
+        val cfg = tmp.resolve("qkt.config.yaml")
+        Files.writeString(
+            cfg,
+            """
+            runtime:
+              mode: research
+            state:
+              enabled: false
+            """.trimIndent(),
+        )
+        val out = ByteArrayOutputStream()
+        val original = System.out
+        try {
+            System.setOut(PrintStream(out))
+            val code =
+                PreflightCommand(
+                    Args(
+                        arrayOf(
+                            "preflight",
+                            strategy(tmp).toString(),
+                            "--config",
+                            cfg.toString(),
+                            "--state-dir",
+                            tmp.resolve("state").toString(),
+                        ),
+                    ),
+                ).run()
+            assertThat(code).isEqualTo(ExitCodes.USER_ERROR)
+        } finally {
+            System.setOut(original)
+        }
+        val text = out.toString()
+        assertThat(text).contains("FAIL config.load: runtime.mode must be one of")
+        assertThat(text).doesNotContain("at com.qkt")
+    }
 }
