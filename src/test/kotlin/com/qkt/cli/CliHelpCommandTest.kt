@@ -63,5 +63,20 @@ class CliHelpCommandTest {
         assertThat(stdout).contains("Usage: qkt backtest <strategy.qkt>")
         assertThat(stdout).contains("--from")
         assertThat(stdout).contains("window start")
+        assertThat(stdout).contains("--help --all")
+        assertThat(stdout).doesNotContain("--seed")
+    }
+
+    @Test
+    fun `help all shows every flag and help word narrows`() {
+        val (fullCode, full, _) = invoke("backtest", "--help", "--all")
+        assertThat(fullCode).isEqualTo(ExitCodes.SUCCESS)
+        assertThat(full).contains("--seed")
+        assertThat(full).contains("--no-report")
+
+        val (oneCode, one, _) = invoke("backtest", "--help", "from")
+        assertThat(oneCode).isEqualTo(ExitCodes.SUCCESS)
+        assertThat(one).contains("--from")
+        assertThat(one).doesNotContain("--broker")
     }
 }

@@ -32,7 +32,11 @@ internal fun runMain(argv: Array<String>): Int =
             args.subcommand != "bot" &&
             CliOptionSchemas.forSubcommand(args.subcommand) != null
         ) {
-            println(CliHelp.forCommand(args.subcommand))
+            // A bare word after --help narrows to matching flags (`qkt backtest --help from`); a
+            // strategy path is not a filter.
+            val tail = argv.drop(1).filter { it != "--help" && !it.startsWith("--") }
+            val filter = tail.firstOrNull { '.' !in it && '/' !in it }
+            println(CliHelp.forCommand(args.subcommand, full = "--all" in argv, filter = filter))
             ExitCodes.SUCCESS
         } else {
             CliOptionSchemas.forSubcommand(args.subcommand)?.let { schema ->

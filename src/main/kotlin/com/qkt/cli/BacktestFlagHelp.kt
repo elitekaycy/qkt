@@ -7,6 +7,25 @@ package com.qkt.cli
  * without descriptions until they grow their own map.
  */
 internal object BacktestFlagHelp {
+    /**
+     * The flags that matter on first contact: identity of the run, where data comes from, what
+     * fills model, and where output goes. Everything else waits behind `--help --all`. Account,
+     * currency and costs are config, not flags — the core list points there instead.
+     */
+    val core: Set<String> =
+        setOf(
+            "from",
+            "to",
+            "broker",
+            "data-root",
+            "bars",
+            "no-fetch",
+            "allow-incomplete",
+            "report-dir",
+            "json",
+            "verbose",
+        )
+
     /** Flag/option name to one-line description. */
     val descriptions: Map<String, String> =
         mapOf(

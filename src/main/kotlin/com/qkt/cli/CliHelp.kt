@@ -10,6 +10,9 @@ package com.qkt.cli
 internal object CliHelp {
     private val backtestCommands = setOf("backtest", "sweep", "walkforward", "research")
 
+    /** How many flag rows a non-backtest command shows before pointing at `--help --all`. */
+    private const val CORE_OTHER = 12
+
     private val usages =
         mapOf(
             "backtest" to "qkt backtest <strategy.qkt> --from DATE --to DATE [options]",
@@ -18,31 +21,71 @@ internal object CliHelp {
             "research" to "qkt research <strategy.qkt> --from DATE --to DATE [options]",
         )
 
-    /** Full help for [name]: usage line plus every known flag. */
-    fun forCommand(name: String): String =
+    /**
+     * Full help for [name]: usage line plus flags. Core only by default (the flags that matter
+     * on first contact); [full] adds the rest; [filter] narrows to flags matching one query
+     * (`qkt backtest --help from`). Account, currency and costs are config, not flags — the core
+     * list points there instead of dumping 50 rows.
+     */
+    fun forCommand(
+        name: String,
+        full: Boolean = false,
+        filter: String? = null,
+    ): String =
         buildString {
             appendLine()
             appendLine("Usage: ${usages[name] ?: "qkt $name [...]"}")
             appendLine()
             val schema = CliOptionSchemas.forSubcommand(name) ?: return@buildString
             val described = name in backtestCommands
-            for (opt in schema.values.sorted()) appendLine("  ${row("--$opt VALUE", described, opt)}")
-            for (flag in schema.flags.sorted()) appendLine("  ${row("--$flag", described, flag)}")
-            for (opt in schema.optionalValues.sorted()) appendLine("  ${row("--$opt [VALUE]", described, opt)}")
-            if (schema.shortAliases.isNotEmpty()) {
-                val aliases = schema.shortAliases.toSortedMap().map { (s, l) -> "$s = --$l" }
-                appendLine("  Short flags: ${aliases.joinToString(", ")}")
+            val allHeads = heads(schema)
+            val shown =
+                when {
+                    filter != null -> allHeads.filter { it.contains(filter) }
+                    full -> allHeads
+                    described -> allHeads.filter { it.name in BacktestFlagHelp.core }
+                    else -> allHeads.take(CORE_OTHER)
+                }
+            if (filter != null && shown.isEmpty()) {
+                appendLine("  No flag matching '$filter'.")
+                return@buildString
+            }
+            for (head in shown.sortedBy { it.name }) appendLine("  ${row(head, described)}")
+            if (!full && filter == null) {
+                val rest = allHeads.size - shown.size
+                if (rest > 0) appendLine("  ... and $rest more: qkt $name --help --all")
+            }
+            if (described && filter == null) {
+                appendLine("  Account, currency and costs come from qkt.config.yaml, not flags.")
+            }
+            val aliases = CliOptionSchemas.forSubcommand(name)?.shortAliases.orEmpty()
+            if (aliases.isNotEmpty() && filter == null) {
+                appendLine("  Short flags: ${aliases.toSortedMap().map { (s, l) -> "$s = --$l" }.joinToString(", ")}")
             }
         }
 
+    private data class Head(
+        val name: String,
+        val head: String,
+    ) {
+        fun contains(q: String): Boolean {
+            val query = q.lowercase()
+            return name.lowercase().contains(query) || head.lowercase().contains(query)
+        }
+    }
+
+    private fun heads(schema: CliOptionSchema): List<Head> =
+        schema.values.sorted().map { Head(it, "--$it VALUE") } +
+            schema.flags.sorted().map { Head(it, "--$it") } +
+            schema.optionalValues.sorted().map { Head(it, "--$it [VALUE]") }
+
     private fun row(
-        head: String,
+        head: Head,
         described: Boolean,
-        name: String,
     ): String {
-        if (!described) return head
-        val desc = BacktestFlagHelp.descriptions[name] ?: ""
-        return if (desc.isEmpty()) head else head.padEnd(26) + desc
+        if (!described) return head.head
+        val desc = BacktestFlagHelp.descriptions[head.name] ?: ""
+        return if (desc.isEmpty()) head.head else head.head.padEnd(26) + desc
     }
 
     /**
