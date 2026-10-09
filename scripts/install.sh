@@ -137,4 +137,4 @@ printf '\n'
 ok "qkt installed. Try:"
 printf '    qkt --version\n'
 printf '    qkt --help\n'
-printf '\nDocs: https://elitekaycy.github.io/qkt/\n\n'
+printf '\nDocs: https://qkt.elitekaycy.com/\n\n'
