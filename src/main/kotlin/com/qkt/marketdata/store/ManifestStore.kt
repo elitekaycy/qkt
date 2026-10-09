@@ -16,7 +16,9 @@ class ManifestStore(
     private val json =
         Json {
             prettyPrint = true
-            ignoreUnknownKeys = false
+            // Foreign tooling may add keys (e.g. `source`); ignore them rather than failing
+            // every data command on the symbol (#1376). Schema identity is still gated below.
+            ignoreUnknownKeys = true
         }
 
     fun read(symbol: String): Manifest {

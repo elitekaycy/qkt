@@ -25,8 +25,8 @@ import kotlinx.serialization.json.jsonObject
 /** Runs one [GoldenCase] offline and returns its normalized outputs. */
 internal object GoldenRun {
     /** Evidence keys that name the build or the machine, never the result. */
-    private val runVaryingEvidence = setOf("qktVersion", "gitSha", "buildTimestamp", "command", "importedFileHashes")
-
+    private val runVaryingEvidence =
+        setOf("qktVersion", "gitSha", "buildTimestamp", "command", "importedFileHashes", "resolved")
     private val pretty = Json { prettyPrint = true }
 
     /** Normalized report JSON and the raw trades CSV of [case]. */
