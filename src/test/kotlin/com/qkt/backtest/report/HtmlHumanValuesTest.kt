@@ -1,85 +1,11 @@
 package com.qkt.backtest.report
 
-import com.qkt.accounting.AccountingSnapshot
-import com.qkt.backtest.BacktestResult
-import com.qkt.backtest.DrawdownPeriod
 import com.qkt.backtest.EquitySample
-import com.qkt.backtest.PerformanceReport
-import com.qkt.backtest.SampleCadence
-import com.qkt.positions.Position
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
-class HtmlHumanValuesTest {
-    private fun drawdown(
-        peakMs: Long,
-        depth: String,
-        durationMs: Long,
-    ) = DrawdownPeriod(
-        peakTimestamp = peakMs,
-        peakEquity = BigDecimal("15000"),
-        troughTimestamp = peakMs + 1000L,
-        troughEquity = BigDecimal("14000"),
-        recoveryTimestamp = peakMs + 2000L,
-        depthPct = BigDecimal(depth),
-        durationMs = durationMs,
-        ongoing = false,
-    )
-
-    private fun result(
-        trades: Int = 1,
-        drawdowns: Int = 1,
-    ): BacktestResult {
-        val global =
-            PerformanceReport(
-                realizedTotal = BigDecimal.ZERO,
-                unrealizedTotal = BigDecimal("4423.25"),
-                totalPnL = BigDecimal("4423.25"),
-                tradeCount = trades,
-                winRate = BigDecimal.ZERO,
-                maxDrawdown = BigDecimal("0.43244333"),
-                profitFactor = null,
-                avgWin = BigDecimal.ZERO,
-                avgLoss = BigDecimal.ZERO,
-                largestWin = BigDecimal.ZERO,
-                largestLoss = BigDecimal.ZERO,
-                maxConsecutiveLosses = 0,
-                sharpeRatio = BigDecimal("0.63522786"),
-                calmarRatio = BigDecimal("1.02285079"),
-                equityCurve =
-                    listOf(
-                        EquitySample(1_727_686_800_000L, BigDecimal("10000")),
-                        EquitySample(1_727_687_800_000L, BigDecimal("14423.25")),
-                    ),
-                drawdownPeriods = (0 until drawdowns).map { drawdown(1_727_686_800_000L + it, "-0.0$it", 16_613_100_000L) },
-                commissionPaid = BigDecimal("51.20"),
-            )
-        return BacktestResult(
-            trades = emptyList(),
-            rejections = emptyList(),
-            finalPositions =
-                mapOf(
-                    "BACKTEST:EURUSD" to
-                        Position(symbol = "BACKTEST:EURUSD", quantity = BigDecimal.ONE, avgEntryPrice = BigDecimal("1.10")),
-                ),
-            global = global,
-            perStrategy = emptyMap(),
-            cadence = SampleCadence.TICK,
-            accounting =
-                AccountingSnapshot(
-                    accountCurrency = "USD",
-                    missingPolicy = "fail",
-                    source = "market",
-                    configuredSymbols = emptyMap(),
-                    conversions = emptyList(),
-                    warnings = emptyList(),
-                ),
-        )
-    }
-
-    private fun render(result: BacktestResult): String = HtmlReportWriter(HtmlReportConfig()).render(result)
-
+class HtmlHumanValuesTest : HtmlHumanValuesFixture() {
     @Test
     fun `headline shows units with raw values on hover, not raw internals`() {
         val html = render(result())
@@ -140,53 +66,6 @@ class HtmlHumanValuesTest {
             )
         assertThat(svg).contains("15,110")
         assertThat(svg).doesNotContain("e+")
-    }
-
-    @Test
-    fun `reproduce section carries the full command and sources with working copy buttons`() {
-        val html =
-            render(
-                result().copy(
-                    reproduction =
-                        ReproductionInfo(
-                            commandLine = "qkt backtest s.qkt --from 2024-09-30 --to 2024-10-01",
-                            strategyFile = "s.qkt",
-                            strategySource = "STRATEGY s VERSION 1\nWHEN a < b & c\nTHEN BUY x",
-                            configFile = "qkt.config.yaml",
-                            configSource = "starting_balance: 10000",
-                            qktVersion = "0.55.1",
-                            gitSha = "abc123",
-                        ),
-                ),
-            )
-        assertThat(html).contains("Reproduce this run")
-        assertThat(html).contains("qkt backtest s.qkt")
-        assertThat(html).contains("--from")
-        assertThat(html).contains("tok-flag")
-        assertThat(html).contains("tok-kw\">STRATEGY</span>")
-        assertThat(html).contains("b &amp; c")
-        assertThat(html).contains("tok-key\">starting_balance</span>")
-        assertThat(html).contains("tok-num")
-        assertThat(html).contains("starting_balance")
-        assertThat(html).contains("10000")
-        val buttons = "onclick=\"qktCopy\\(".toRegex().findAll(html).count()
-        assertThat(buttons).isEqualTo(3)
-        // What the copy button grabs (innerText ~ tags stripped) is the exact source.
-        val pre = "<pre id=\"repro-cmd\">(.*?)</pre>".toRegex(RegexOption.DOT_MATCHES_ALL).find(html)!!.groupValues[1]
-        assertThat(pre.replace(Regex("<[^>]*>"), ""))
-            .isEqualTo("qkt backtest s.qkt --from 2024-09-30 --to 2024-10-01")
-        assertThat(html).contains("navigator.clipboard")
-        assertThat(html).contains("execCommand")
-        assertThat(html).doesNotContain("<script src=")
-        assertThat(html).contains("codeblock")
-        assertThat(html).contains("tok-kw")
-        assertThat(html).contains("tok-flag")
-        assertThat(html).contains("codelang")
-    }
-
-    @Test
-    fun `no reproduce section without reproduction info`() {
-        assertThat(render(result())).doesNotContain("Reproduce this run")
     }
 
     @Test
