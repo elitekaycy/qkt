@@ -416,6 +416,10 @@ Every merged key is recorded with its layer (`flag`, `run:<name>`, `global`) in 
 `resolved` (`result.json`) and the report's effective-configuration table, so a surprising
 number always traces to the layer that supplied it.
 
+Any other backtest flag works as a key by its flag name (`seed: 7`, `bars: true`,
+`no-fetch: true`); `qkt backtest --help --all` is the complete list. Boolean flags take
+`true`/`false`.
+
 ## `report`
 
 | Key | Type | Default | Used by | Notes |

@@ -79,15 +79,35 @@ class CliHelpCommandTest {
     }
 
     @Test
-    fun `help all shows every flag and help word narrows`() {
+    fun `help with a run name introspects the run`() {
+        val dir = Files.createTempDirectory("qkt-run-help")
+        dir.toFile().deleteOnExit()
+        val cfg = dir.resolve("qkt.config.yaml")
+        Files.writeString(
+            cfg,
+            "backtest:\n  from: 2025-09-01\n  runs:\n    scalps:\n      strategy: s.qkt\n      broker: paper\n",
+        )
+        val (code, stdout, _) = invoke("backtest", "--help", "scalps", "--config", cfg.toString())
+        assertThat(code).isEqualTo(ExitCodes.SUCCESS)
+        assertThat(stdout).contains("Run 'scalps' (qkt backtest scalps):")
+        assertThat(stdout).contains("broker")
+        assertThat(stdout).contains("paper")
+        assertThat(stdout).contains("(run:scalps)")
+        assertThat(stdout).contains("(global)")
+    }
+
+    @Test
+    fun `help word still narrows flags when it names no run`() {
+        val (code, stdout, _) = invoke("backtest", "--help", "from")
+        assertThat(code).isEqualTo(ExitCodes.SUCCESS)
+        assertThat(stdout).contains("--from")
+    }
+
+    @Test
+    fun `help all shows every flag`() {
         val (fullCode, full, _) = invoke("backtest", "--help", "--all")
         assertThat(fullCode).isEqualTo(ExitCodes.SUCCESS)
         assertThat(full).contains("--seed")
         assertThat(full).contains("--no-report")
-
-        val (oneCode, one, _) = invoke("backtest", "--help", "from")
-        assertThat(oneCode).isEqualTo(ExitCodes.SUCCESS)
-        assertThat(one).contains("--from")
-        assertThat(one).doesNotContain("--broker")
     }
 }

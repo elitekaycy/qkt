@@ -33,10 +33,19 @@ internal fun runMain(argv: Array<String>): Int =
             CliOptionSchemas.forSubcommand(args.subcommand) != null
         ) {
             // A bare word after --help narrows to matching flags (`qkt backtest --help from`); a
-            // strategy path is not a filter.
+            // strategy path is not a filter. A configured run name instead introspects the run.
             val tail = argv.drop(1).filter { it != "--help" && !it.startsWith("--") }
             val filter = tail.firstOrNull { '.' !in it && '/' !in it }
-            println(CliHelp.forCommand(args.subcommand, full = "--all" in argv, filter = filter))
+            val runHelp =
+                if (args.subcommand == "backtest" && filter != null) {
+                    val section = Config.load(Config.resolvePath(args.option("config"))).backtest
+                    section.runs[filter]?.let { run ->
+                        CliHelp.forRun(filter, BacktestRunSelection.merge(section, run, filter))
+                    }
+                } else {
+                    null
+                }
+            println(runHelp ?: CliHelp.forCommand(args.subcommand, full = "--all" in argv, filter = filter))
             ExitCodes.SUCCESS
         } else {
             CliOptionSchemas.forSubcommand(args.subcommand)?.let { schema ->
@@ -101,7 +110,7 @@ internal fun runMain(argv: Array<String>): Int =
                     System.err.println(CliHelp.forCommand(hint))
                 } else {
                     System.err.println("qkt: unknown subcommand '${args.subcommand}'")
-                    System.err.println(CliHelp.topLevelHelp)
+                    System.err.println(CliTopHelp.topLevelHelp)
                 }
                 ExitCodes.ARG_ERROR
             }
@@ -113,5 +122,5 @@ internal fun runMain(argv: Array<String>): Int =
     }
 
 private fun printHelp() {
-    println(CliHelp.topLevelHelp)
+    println(CliTopHelp.topLevelHelp)
 }
