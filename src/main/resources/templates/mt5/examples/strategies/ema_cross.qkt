@@ -1,5 +1,5 @@
 -- Sample strategy: buy on EMA(9) crossing above EMA(21), close on cross back below.
--- Edit symbol / sizing / brackets to taste; see https://elitekaycy.github.io/qkt/
+-- Edit symbol / sizing / brackets to taste; see https://qkt.elitekaycy.com/
 
 STRATEGY ema_cross VERSION 1
 
