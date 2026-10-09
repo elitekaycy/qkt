@@ -8,12 +8,34 @@ package com.qkt.cli
  */
 class Args(
     argv: Array<String>,
+    private val defaultValues: Map<String, String> = emptyMap(),
+    private val defaultMulti: Map<String, List<String>> = emptyMap(),
 ) {
     /** Original argv tokens in order, used for provenance records. */
     val tokens: List<String> = argv.toList()
 
     /** First argv token. Defaults to `"help"` when argv is empty. */
     val subcommand: String = argv.getOrNull(0) ?: "help"
+
+    /**
+     * Config-file defaults layered beneath explicit flags (flag > config > built-in): [values]
+     * fills missing `--name value` options, [multi] appends repeatable `--name VALUE` entries
+     * (e.g. `--param`), and truthy [values] entries enable boolean flags. Tokens and validation
+     * are untouched, so provenance records keep showing the true CLI.
+     */
+    fun withDefaults(
+        values: Map<String, String> = emptyMap(),
+        multi: Map<String, List<String>> = emptyMap(),
+    ): Args = Args(tokens.toTypedArray(), values, multi)
+
+    /** True iff `--[name]` was passed explicitly on the command line (ignoring defaults). */
+    fun hasExplicitOption(name: String): Boolean {
+        val i = rest.indexOf("--$name")
+        return i >= 0 && i + 1 < rest.size
+    }
+
+    /** True iff `--[name]` was passed explicitly on the command line (ignoring defaults). */
+    fun hasExplicitFlag(name: String): Boolean = "--$name" in rest
 
     // `--name=value` is the spelling the daemon's own error text and the reference docs use
     // (`--reconcile=ignore-mismatches`); split it so both forms parse identically.
@@ -102,12 +124,13 @@ class Args(
     fun positional(idx: Int): String? = rest.takeWhile { !it.startsWith("--") }.getOrNull(idx)
 
     /** `true` iff `--[name]` is present. Use [option] for flags that carry a value. */
-    fun flag(name: String): Boolean = "--$name" in rest
+    fun flag(name: String): Boolean = "--$name" in rest || BacktestRunConfig.isTruthy(defaultValues[name] ?: "")
 
     /** Returns the value of `--[name] <value>`, or `null` if the flag is absent. */
     fun option(name: String): String? {
         val i = rest.indexOf("--$name")
-        return if (i >= 0 && i + 1 < rest.size) rest[i + 1] else null
+        if (i >= 0 && i + 1 < rest.size) return rest[i + 1]
+        return defaultValues[name]
     }
 
     /** Returns the value of every `--[name] <value>` occurrence, in argv order. */
@@ -122,7 +145,7 @@ class Args(
                 i += 1
             }
         }
-        return out
+        return out + (defaultMulti[name] ?: emptyList())
     }
 
     /** Same as [option] but throws [ArgError] when missing. Usage and flags follow the error (#1380). */

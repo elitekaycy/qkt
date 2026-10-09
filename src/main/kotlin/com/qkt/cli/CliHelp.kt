@@ -58,6 +58,9 @@ internal object CliHelp {
             if (described && filter == null) {
                 appendLine("  Account, currency and costs come from qkt.config.yaml, not flags.")
             }
+            if (name in backtestCommands && filter == null) {
+                appendLine("  Named runs: qkt $name <run> (see backtest.runs in qkt.config.yaml)")
+            }
             val aliases = CliOptionSchemas.forSubcommand(name)?.shortAliases.orEmpty()
             if (aliases.isNotEmpty() && filter == null) {
                 appendLine("  Short flags: ${aliases.toSortedMap().map { (s, l) -> "$s = --$l" }.joinToString(", ")}")

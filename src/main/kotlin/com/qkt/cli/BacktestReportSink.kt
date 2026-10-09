@@ -29,7 +29,8 @@ internal object BacktestReportSink {
     fun resolve(
         args: Args,
         strategyPath: Path,
-        home: Path = userHome(),
+        home: Path = defaultHome(),
+        reportBase: Path? = null,
     ): Path? {
         if (args.flag("no-report")) return null
         args.option("report-dir")?.let { return Path.of(it) }
@@ -41,7 +42,8 @@ internal object BacktestReportSink {
                 .replace(Regex("[^A-Za-z0-9_-]+"), "-")
                 .trim('-')
                 .ifEmpty { "strategy" }
-        return home.resolve(".qkt").resolve("runs").resolve("$stamp-$label")
+        val base = reportBase ?: home.resolve(".qkt").resolve("runs")
+        return base.resolve("$stamp-$label")
     }
 
     fun write(

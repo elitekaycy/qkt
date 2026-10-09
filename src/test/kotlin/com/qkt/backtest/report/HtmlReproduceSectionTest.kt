@@ -48,4 +48,32 @@ class HtmlReproduceSectionTest : HtmlHumanValuesFixture() {
     fun `no reproduce section without reproduction info`() {
         assertThat(render(result())).doesNotContain("Reproduce this run")
     }
+
+    @Test
+    fun `effective configuration renders with provenance`() {
+        val html =
+            render(
+                result().copy(
+                    reproduction =
+                        ReproductionInfo(
+                            commandLine = "qkt backtest late",
+                            strategyFile = "s.qkt",
+                            strategySource = "STRATEGY s VERSION 1",
+                            configFile = null,
+                            configSource = null,
+                            qktVersion = "0.55.1",
+                            gitSha = "abc123",
+                            resolved =
+                                mapOf(
+                                    "broker" to com.qkt.evidence.ResolvedValue("mt5-sim", "global"),
+                                    "to" to com.qkt.evidence.ResolvedValue("2025-11-01", "flag"),
+                                ),
+                        ),
+                ),
+            )
+        assertThat(html).contains("Effective configuration")
+        assertThat(html).contains("mt5-sim")
+        assertThat(html).contains("global")
+        assertThat(html).contains("flag")
+    }
 }

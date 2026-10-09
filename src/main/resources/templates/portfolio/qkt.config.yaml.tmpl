@@ -10,6 +10,16 @@ state:
 
 brokers: {}
 
+# Repeatable project-local backtests: `qkt backtest` runs the default, `qkt backtest <run>`
+# runs a named one (flags always win). Uncomment and adapt.
+# backtest:
+#   strategy: portfolios/main.qkt
+#   from: 2025-09-01
+#   to: 2025-10-01
+#
+# report:
+#   dir: runs/
+
 book_risk:
   capital: ${QKT_STARTING_BALANCE:-100000}
   limits:

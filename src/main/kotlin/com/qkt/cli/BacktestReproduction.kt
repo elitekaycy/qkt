@@ -12,6 +12,7 @@ import java.nio.file.Path
 internal fun reproductionInfo(
     args: Args,
     path: Path,
+    resolved: Map<String, com.qkt.evidence.ResolvedValue> = emptyMap(),
 ): ReproductionInfo {
     val commandLine = "qkt " + args.tokens.joinToString(" ") { it.shellQuote() }
     val strategySource =
@@ -31,6 +32,7 @@ internal fun reproductionInfo(
         configSource = configSource,
         qktVersion = BuildInfo.VERSION,
         gitSha = BuildInfo.GIT_SHA,
+        resolved = resolved,
     )
 }
 

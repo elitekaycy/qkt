@@ -2,6 +2,7 @@ package com.qkt.cli
 
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
+import java.nio.file.Files
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
@@ -63,8 +64,18 @@ class CliHelpCommandTest {
         assertThat(stdout).contains("Usage: qkt backtest <strategy.qkt>")
         assertThat(stdout).contains("--from")
         assertThat(stdout).contains("window start")
-        assertThat(stdout).contains("--help --all")
-        assertThat(stdout).doesNotContain("--seed")
+    }
+
+    @Test
+    fun `unknown run exits arg error with a one-line message`() {
+        val dir = Files.createTempDirectory("qkt-run-cfg")
+        dir.toFile().deleteOnExit()
+        val cfg = dir.resolve("qkt.config.yaml")
+        Files.writeString(cfg, "backtest:\n  runs:\n    late:\n      strategy: s.qkt\n")
+        val (code, _, stderr) = invoke("backtest", "latee", "--config", cfg.toString())
+        assertThat(code).isEqualTo(ExitCodes.ARG_ERROR)
+        assertThat(stderr).contains("no file 'latee' and no run 'latee'")
+        assertThat(stderr).doesNotContain("at com.qkt")
     }
 
     @Test

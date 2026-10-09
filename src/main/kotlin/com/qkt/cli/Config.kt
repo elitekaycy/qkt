@@ -36,6 +36,15 @@ data class Config(
     val fxConversionSymbols: Map<String, String> = emptyMap(),
     /** Backtest execution-simulation settings, e.g. `preset`, `seed`, `latency`, `slippage`. */
     val execution: Map<String, String> = emptyMap(),
+    /**
+     * Repeatable project-local backtests (`backtest:` block: defaults plus named `runs:`).
+     * Parsed tolerantly — unknown keys warn, never fail.
+     */
+    val backtest: BacktestSection = BacktestSection(),
+    /** Report settings (`report:` block); currently only `dir`, the base for run bundles. */
+    val reportDir: String? = null,
+    /** Directory of the file this config was loaded from (null for built-in defaults). */
+    val configDir: Path? = null,
     /** Promotion-gate settings for production deploy governance. */
     val promotion: Map<String, String> = emptyMap(),
     val tv: Map<String, String> = emptyMap(),
@@ -328,42 +337,24 @@ data class Config(
             com.qkt.risk.rules.PreTradeControls.DEFAULT_PRICE_COLLAR_FRAC
 
         /**
-         * Standard locations qkt commands look for `qkt.config.yaml` when no explicit
-         * `--config` is passed. Order is meaningful:
-         *  1. `./qkt.config.yaml` — local-dev convenience, matches the historical hard-coded default.
-         *  2. `/etc/qkt/qkt.config.yaml` — the container-standard location (the qkt-prod compose
-         *     image mounts the operator's config here).
-         *  3. `~/.qkt/qkt.config.yaml` — per-user config for non-container deployments.
+         * Standard locations qkt commands look for `qkt.config.yaml`; see [ConfigLocate].
+         * Signatures stay here so existing callers are untouched.
          */
         fun defaultSearchPaths(
             userDirs: UserDirs = UserDirs(),
             home: Path = Path.of(System.getProperty("user.home")),
-        ): List<Path> {
-            val paths = mutableListOf(Path.of("./qkt.config.yaml"))
-            if (!userDirs.isWindows) paths.add(Path.of("/etc/qkt/qkt.config.yaml"))
-            paths.add(userDirs.configHome().resolve("qkt.config.yaml"))
-            paths.add(home.resolve(".qkt").resolve("qkt.config.yaml"))
-            return paths
-        }
+            cwd: Path = Path.of("").toAbsolutePath().normalize(),
+        ): List<Path> = ConfigLocate.defaultSearchPaths(userDirs, home, cwd)
 
-        /**
-         * Return the first existing file from [searchPaths], or null if none exist.
-         * One-shot CLI commands that need a real config (brokers, audit-ticks) call this
-         * and fail loud on null. The daemon and run commands tolerate a missing config and
-         * fall back to defaults via [load].
-         */
-        fun locate(searchPaths: List<Path> = defaultSearchPaths()): Path? = searchPaths.firstOrNull { Files.exists(it) }
+        fun locate(searchPaths: List<Path> = defaultSearchPaths()): Path? = ConfigLocate.locate(searchPaths)
 
         /** Resolve `--config`, then `QKT_CONFIG`, then the first documented default location. */
         fun resolvePath(
             explicit: String?,
             searchPaths: List<Path> = defaultSearchPaths(),
             environment: Map<String, String> = System.getenv(),
-        ): Path =
-            explicit?.let(Path::of)
-                ?: environment["QKT_CONFIG"]?.takeIf { it.isNotBlank() }?.let(Path::of)
-                ?: locate(searchPaths)
-                ?: Path.of("./qkt.config.yaml")
+        ): Path = ConfigLocate.resolvePath(explicit, searchPaths, environment)
+
 
         // Matches `${NAME}` and `${NAME:-default}`. The default is used when the env
         // var / system property is unset; without it, the literal `${...}` stays in the
@@ -394,6 +385,9 @@ data class Config(
                 fxConversion = parseFlat(map["fx_conversion"]).filterKeys { it != "symbols" },
                 fxConversionSymbols = parseNestedStringMap(map["fx_conversion"], "symbols"),
                 execution = parseFlat(map["execution"]),
+                backtest = BacktestRunConfig.parse(map["backtest"]),
+                reportDir = (map["report"] as? Map<*, *>)?.get("dir")?.toString(),
+                configDir = path.toAbsolutePath().normalize().parent,
                 promotion = parseFlat(map["promotion"]),
                 tv = parseFlat(map["tv"]),
                 fetchers = parseNested(map["fetchers"]),

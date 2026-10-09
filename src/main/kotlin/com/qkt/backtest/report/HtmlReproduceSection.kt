@@ -11,6 +11,15 @@ internal object HtmlReproduceSection {
         buildString {
             append("<p>Everything below re-runs this exact backtest (qkt ${htmlEscape(info.qktVersion)}, ")
             append("git ${htmlEscape(info.gitSha)}). Send this file and the recipient needs nothing else.</p>")
+            if (info.resolved.isNotEmpty()) {
+                append("<h3>Effective configuration</h3>")
+                append("<table><thead><tr><th>Key</th><th>Value</th><th>From</th></tr></thead><tbody>")
+                for ((key, entry) in info.resolved.toSortedMap()) {
+                    append("<tr><td>${htmlEscape(key)}</td><td>${htmlEscape(entry.value)}</td>")
+                    append("<td>${htmlEscape(entry.from)}</td></tr>")
+                }
+                append("</tbody></table>")
+            }
             append(fence("bash", "Command", "repro-cmd", highlightShell(info.commandLine)))
             append(
                 fence(
