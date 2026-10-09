@@ -85,43 +85,48 @@ class BacktestCommand(
                 return ExitCodes.USER_ERROR
             }
 
+        val restoreLogs = QuietBacktestLogs.silenceUnless(args.flag("verbose"), args.flag("debug"))
         try {
-            ctx.provision()
-        } catch (e: com.qkt.backtest.IncompleteDataException) {
-            System.err.println("qkt: error: ${e.message}")
-            return ExitCodes.USER_ERROR
-        }
-
-        return try {
-            val result =
-                attachEvidence(
-                    BacktestMetricsWindows.run(ctx.backtest(overrides), args, ctx.from, ctx.to),
-                    path,
-                    parsedFile,
-                    ctx.executionEvidence(),
-                    ctx.datasetEvidence,
-                )
-            args.option("report-dir")?.let { reportDir ->
-                val dir = Path.of(reportDir)
-                Files.createDirectories(dir)
-                BacktestReportWriter(dir).write(result)
+            try {
+                ctx.provision()
+            } catch (e: com.qkt.backtest.IncompleteDataException) {
+                System.err.println("qkt: error: ${e.message}")
+                return ExitCodes.USER_ERROR
             }
-            val futures = ctx.instruments.futuresSymbols(ctx.symbols)
-            val options = ctx.instruments.optionSymbols(ctx.symbols)
-            ReportPrinter.print(result, format, System.out, ctx.brokerKind, futures, options)
-            printExecutionNotes(ctx.symbols, futures, options, ctx.brokerKind)
-            ExitCodes.SUCCESS
-        } catch (e: com.qkt.dsl.compile.CompileError) {
-            System.err.println("qkt: error: ${e.message}")
-            ExitCodes.USER_ERROR
-        } catch (e: IllegalStateException) {
-            System.err.println("qkt: error: ${e.message}")
-            if (args.flag("debug")) e.printStackTrace(System.err)
-            ExitCodes.USER_ERROR
-        } catch (e: IllegalArgumentException) {
-            System.err.println("qkt: error: ${e.message}")
-            if (args.flag("debug")) e.printStackTrace(System.err)
-            ExitCodes.USER_ERROR
+
+            return try {
+                val result =
+                    attachEvidence(
+                        BacktestMetricsWindows.run(ctx.backtest(overrides), args, ctx.from, ctx.to),
+                        path,
+                        parsedFile,
+                        ctx.executionEvidence(),
+                        ctx.datasetEvidence,
+                    )
+                args.option("report-dir")?.let { reportDir ->
+                    val dir = Path.of(reportDir)
+                    Files.createDirectories(dir)
+                    BacktestReportWriter(dir).write(result)
+                }
+                val futures = ctx.instruments.futuresSymbols(ctx.symbols)
+                val options = ctx.instruments.optionSymbols(ctx.symbols)
+                ReportPrinter.print(result, format, System.out, ctx.brokerKind, futures, options, args.flag("verbose"))
+                printExecutionNotes(ctx.symbols, futures, options, ctx.brokerKind)
+                ExitCodes.SUCCESS
+            } catch (e: com.qkt.dsl.compile.CompileError) {
+                System.err.println("qkt: error: ${e.message}")
+                ExitCodes.USER_ERROR
+            } catch (e: IllegalStateException) {
+                System.err.println("qkt: error: ${e.message}")
+                if (args.flag("debug")) e.printStackTrace(System.err)
+                ExitCodes.USER_ERROR
+            } catch (e: IllegalArgumentException) {
+                System.err.println("qkt: error: ${e.message}")
+                if (args.flag("debug")) e.printStackTrace(System.err)
+                ExitCodes.USER_ERROR
+            }
+        } finally {
+            restoreLogs()
         }
     }
 
@@ -146,6 +151,7 @@ class BacktestCommand(
                     execution = execution,
                     accounting = accountingEvidence(result.accounting),
                 ),
+            reproduction = reproductionInfo(args, path),
         )
 
     private fun accountingEvidence(snapshot: com.qkt.accounting.AccountingSnapshot?): AccountingEvidence? {

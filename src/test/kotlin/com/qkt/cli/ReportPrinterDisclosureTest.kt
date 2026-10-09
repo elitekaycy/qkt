@@ -11,7 +11,7 @@ import org.junit.jupiter.api.Test
 class ReportPrinterDisclosureTest : ReportPrinterFixture() {
     @Test
     fun `text report discloses execution assumptions and metric conventions`() {
-        val out = render(ReportFormat.Text, BrokerKind.PAPER)
+        val out = render(ReportFormat.Text, BrokerKind.PAPER, verbose = true)
         // #336 — execution disclosure.
         assertThat(out).contains("Assumptions & conventions")
         assertThat(out).contains("paper — fills at mid price; no spread, no slippage modeled")
@@ -26,14 +26,18 @@ class ReportPrinterDisclosureTest : ReportPrinterFixture() {
     fun `commission line reflects whether commission was modeled`() {
         assertThat(render(ReportFormat.Text, BrokerKind.PAPER, commissionPaid = "0"))
             .contains("none modeled")
-        assertThat(render(ReportFormat.Text, BrokerKind.PAPER, commissionPaid = "5.00"))
+        assertThat(render(ReportFormat.Text, BrokerKind.PAPER, commissionPaid = "5.00", verbose = true))
             .contains("Commission paid:  5.00")
+        assertThat(render(ReportFormat.Text, BrokerKind.PAPER, commissionPaid = "5.00"))
+            .contains("commission 5.00")
     }
 
     @Test
     fun `mt5-sim discloses its richer fill model`() {
-        assertThat(render(ReportFormat.Text, BrokerKind.MT5_SIM))
+        assertThat(render(ReportFormat.Text, BrokerKind.MT5_SIM, verbose = true))
             .contains("mt5-sim — synthetic spread")
+        assertThat(render(ReportFormat.Text, BrokerKind.MT5_SIM))
+            .contains("Fills use a synthetic spread plus configured slippage.")
     }
 
     @Test
@@ -54,7 +58,7 @@ class ReportPrinterDisclosureTest : ReportPrinterFixture() {
 
     @Test
     fun `text and json reports disclose swap charge sign`() {
-        val text = render(ReportFormat.Text, BrokerKind.PAPER, swapPaid = "2.50")
+        val text = render(ReportFormat.Text, BrokerKind.PAPER, swapPaid = "2.50", verbose = true)
         assertThat(text).contains("Final realized:   100   (net of commission and swap)")
         assertThat(text).contains("Swap paid:        2.50")
         assertThat(text).contains("2.50 charged")

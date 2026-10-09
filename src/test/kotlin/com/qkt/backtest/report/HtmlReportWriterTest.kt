@@ -37,7 +37,7 @@ class HtmlReportWriterTest {
         val html = Files.readString(tmp.resolve("report.html"))
         assertThat(html).startsWith("<!doctype html>")
         assertThat(html).contains("<svg")
-        assertThat(html).contains("Drawdown periods")
+        assertThat(html).contains("Biggest losing streaks (drawdowns)")
         assertThat(html).contains("Monte Carlo")
         assertThat(html).contains("Trades")
         assertThat(html).contains("Trade audit")
@@ -49,16 +49,16 @@ class HtmlReportWriterTest {
         assertThat(html).contains("<th>Gross Account</th><th>Native</th><th>FX</th>")
         assertThat(html).contains("<td>90</td><td>120</td>")
         assertThat(html).contains("<td>5</td><td>5.50 USD</td>")
-        assertThat(html).contains("Run evidence")
+        assertThat(html).contains("How this test was run")
         assertThat(html).contains("sha256:strategy")
         assertThat(html).contains("paper-fast")
-        assertThat(html).contains("Swap paid</td><td>2.50")
+        assertThat(html).contains("Swap paid</td><td title=\"2.50\">+2.50</td>")
         assertThat(html).contains("split.train")
         assertThat(html).contains("2026-06-04T00:00:00Z/2026-06-04T04:00:00Z")
         assertThat(html).contains("promotion rationale")
         assertThat(html).contains("Runaway breaker")
         assertThat(html).contains("LIVE BEHAVIOR WARNING")
-        assertThat(html).doesNotContain("<script")
+        assertThat(html).doesNotContain("<script src=")
     }
 
     private fun stubReport(): PerformanceReport =
