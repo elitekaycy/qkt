@@ -124,18 +124,19 @@ private fun recordResolved(
             }
         resolved["param.$name"] = ResolvedValue(value, layer)
     }
-    val schema = CliOptionSchemas.forSubcommand("backtest")
-    val universe = (schema?.values.orEmpty() + schema?.flags.orEmpty() + schema?.optionalValues.orEmpty())
-    for (key in universe) {
-        if (key == "param") continue
-        // Explicit CLI entries overwrite any configured layer.
-        if (args.hasExplicitOption(key)) {
-            resolved[key] = ResolvedValue(effective.option(key) ?: "", BacktestRunSelection.FROM_FLAG)
-        } else if (args.hasExplicitFlag(key)) {
-            resolved[key] = ResolvedValue("true", BacktestRunSelection.FROM_FLAG)
+        val schema = CliOptionSchemas.forSubcommand("backtest")
+        val valueKeys = schema?.values.orEmpty() + schema?.optionalValues.orEmpty()
+        val flagKeys = schema?.flags.orEmpty()
+        for (key in valueKeys + flagKeys) {
+            if (key == "param") continue
+            // Value options take the following token; boolean flags stand alone. Mixing them
+            // up shifts every value onto the wrong key, so the schema decides, not position.
+            if (key in valueKeys && args.hasExplicitOption(key)) {
+                resolved[key] = ResolvedValue(effective.option(key) ?: "", BacktestRunSelection.FROM_FLAG)
+            } else if (key in flagKeys && args.hasExplicitFlag(key)) {
+                resolved[key] = ResolvedValue("true", BacktestRunSelection.FROM_FLAG)
+            }
         }
+        return resolved
     }
-    return resolved
-}
-
 }

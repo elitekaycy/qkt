@@ -33,6 +33,21 @@ class BacktestRunResolutionTest {
     }
 
     @Test
+    fun `boolean flags never absorb the following token as their value`(
+        @TempDir tmp: Path,
+    ) {
+        val strat = Files.writeString(tmp.resolve("s.qkt"), "STRATEGY s VERSION 1\n")
+        val r =
+            BacktestRunResolution.resolve(
+                Args(arrayOf("backtest", strat.toString(), "--json", "--report-dir", "out", "--from", "2025-09-01")),
+                Config(),
+            )
+        assertThat(r.resolved["json"]).isEqualTo(ResolvedValue("true", "flag"))
+        assertThat(r.resolved["report-dir"]).isEqualTo(ResolvedValue("out", "flag"))
+        assertThat(r.resolved["from"]).isEqualTo(ResolvedValue("2025-09-01", "flag"))
+    }
+
+    @Test
     fun `configured strategy resolves against the config dir`(
         @TempDir tmp: Path,
     ) {

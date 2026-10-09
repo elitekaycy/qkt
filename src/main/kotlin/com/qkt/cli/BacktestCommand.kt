@@ -110,7 +110,8 @@ class BacktestCommand(
                 BacktestReportSink.resolve(effective, path, runsHome, reportBase)?.let { dir ->
                     BacktestReportSink.write(dir, result)
                     // stderr: stdout stays pure for --json piping while the console shows the path.
-                    System.err.println("Report saved: ${BacktestReportSink.display(dir, runsHome)}")
+                    // Display shortens only the real home: a redirected test root must print literally.
+                    System.err.println("Report saved: ${BacktestReportSink.display(dir)}")
                 }
                 val futures = ctx.instruments.futuresSymbols(ctx.symbols)
                 val options = ctx.instruments.optionSymbols(ctx.symbols)
