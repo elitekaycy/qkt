@@ -53,7 +53,9 @@ way.
 
 ### Backtest Report Artifacts
 
-`qkt backtest --report-dir <dir>` writes an audit bundle for downstream tooling:
+`qkt backtest` writes an audit bundle for downstream tooling — to `--report-dir <dir>`
+when given, otherwise a timestamped directory under `~/.qkt/runs` (created automatically;
+`--no-report` opts out), with `Report saved: <path>` as the last console line:
 
 - `result.json` uses schema `qkt-backtest-result-v1` with `schemaVersion: 1`
   and carries cadence, evidence, accounting, artifact paths, a normalized trade

@@ -1,7 +1,6 @@
 package com.qkt.cli
 
 import com.qkt.backtest.BacktestResult
-import com.qkt.backtest.report.BacktestReportWriter
 import com.qkt.dsl.parse.Dsl
 import com.qkt.dsl.parse.ParseResult
 import com.qkt.dsl.parse.ParsedFile
@@ -19,6 +18,7 @@ import java.nio.file.Path
 class BacktestCommand(
     private val args: Args,
     private val fetcherOverride: DataFetcher? = null,
+    private val runsRootOverride: Path? = null,
 ) {
     fun run(): Int {
         val file = args.requirePositional(0, "<strategy.qkt>")
@@ -103,10 +103,11 @@ class BacktestCommand(
                         ctx.executionEvidence(),
                         ctx.datasetEvidence,
                     )
-                args.option("report-dir")?.let { reportDir ->
-                    val dir = Path.of(reportDir)
-                    Files.createDirectories(dir)
-                    BacktestReportWriter(dir).write(result)
+                val runsHome = runsRootOverride ?: BacktestReportSink.defaultHome()
+                BacktestReportSink.resolve(args, path, runsHome)?.let { dir ->
+                    BacktestReportSink.write(dir, result)
+                    // stderr: stdout stays pure for --json piping while the console shows the path.
+                    System.err.println("Report saved: ${BacktestReportSink.display(dir, runsHome)}")
                 }
                 val futures = ctx.instruments.futuresSymbols(ctx.symbols)
                 val options = ctx.instruments.optionSymbols(ctx.symbols)
