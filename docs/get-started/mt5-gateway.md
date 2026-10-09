@@ -17,7 +17,7 @@ qkt at it. Once the gateway answers `"status":"ready"`, wire qkt to it with
 !!! abstract "mt5-gateway project"
     The gateway is a separate project with its own repo and docs:
     **[GitHub](https://github.com/elitekaycy/mt5-gateway)** ·
-    **[Documentation](https://elitekaycy.github.io/mt5-gateway/)** ·
+    **[Documentation](https://mt5.elitekaycy.com/)** ·
     **[Docker Hub](https://hub.docker.com/r/elitekaycy/mt5-gateway-api)**.
     This page is the qkt-focused quick path; the gateway docs are the full reference.
 
@@ -128,7 +128,7 @@ docker compose --profile self-hosted-resolver up
 
 The resolver container only maps server names to addresses during first boot; it
 never sees trades or credentials. Full detail:
-[gateway headless-login docs](https://elitekaycy.github.io/mt5-gateway/headless-login/).
+[gateway headless-login docs](https://mt5.elitekaycy.com/headless-login/).
 
 !!! tip "Manual login as a fallback"
     Leave `MT5_LOGIN` empty to skip headless login and sign in by hand via the VNC
@@ -146,7 +146,7 @@ never sees trades or credentials. Full detail:
 
 Every other knob — resolver tuning, pre-trade limits, audit and kill-switch paths,
 CORS, VNC — is documented in the
-[gateway configuration reference](https://elitekaycy.github.io/mt5-gateway/reference/configuration/).
+[gateway configuration reference](https://mt5.elitekaycy.com/reference/configuration/).
 
 ## Verify before wiring qkt
 
@@ -226,4 +226,4 @@ gateway on a private network behind an authenticated reverse proxy or mTLS.
 | Need to halt everything now | `POST /kill` stops trading; `POST /kill/release` resumes. `/health/ready` reports `not ready` while the kill switch is engaged. |
 
 For the complete API, safety fields, and idempotency contract, see the
-[gateway API reference](https://elitekaycy.github.io/mt5-gateway/reference/api/).
+[gateway API reference](https://mt5.elitekaycy.com/reference/api/).

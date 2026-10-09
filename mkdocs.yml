@@ -1,6 +1,6 @@
 site_name: qkt
 site_description: An event-driven trading engine in Kotlin with backtest replay, parameter sweeps, attribution-aware risk, and a SQL-like DSL.
-site_url: https://elitekaycy.github.io/qkt/
+site_url: https://qkt.elitekaycy.com/
 repo_url: https://github.com/elitekaycy/qkt
 repo_name: elitekaycy/qkt
 edit_uri: edit/main/docs/

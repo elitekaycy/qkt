@@ -109,11 +109,11 @@ GitHub Action to inject a `<link rel="icon">` tag.)
 <meta property="og:type" content="website">
 <meta property="og:title" content="qkt — event-driven trading engine in Kotlin">
 <meta property="og:description" content="Backtest replay, parameter sweeps, attribution-aware risk, SQL-like DSL.">
-<meta property="og:image" content="https://elitekaycy.github.io/qkt/assets/og-image.png">
-<meta property="og:url" content="https://elitekaycy.github.io/qkt/">
+<meta property="og:image" content="https://qkt.elitekaycy.com/assets/og-image.png">
+<meta property="og:url" content="https://qkt.elitekaycy.com/">
 
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:image" content="https://elitekaycy.github.io/qkt/assets/og-image.png">
+<meta name="twitter:image" content="https://qkt.elitekaycy.com/assets/og-image.png">
 ```
 
 ## 4 · GitHub social preview
