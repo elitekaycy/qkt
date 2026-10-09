@@ -104,17 +104,30 @@ class HtmlReportWriter(
         """
         body { font-family: system-ui, sans-serif; margin: 24px; color: #222; }
         h1 { margin: 0 0 8px 0; }
+        h2 { border-bottom: 2px solid #1f77b4; padding-bottom: 4px; }
         section { margin: 24px 0; }
         .headline { display: flex; gap: 12px; flex-wrap: wrap; }
         .card { padding: 12px 16px; border: 1px solid #ddd; border-radius: 6px; min-width: 140px; }
         .card .label { font-size: 12px; color: #666; }
         .card .value { font-size: 22px; font-weight: 600; }
-        .verdict { font-size: 15px; }
-        details { margin-top: 8px; } summary { cursor: pointer; color: #555; }
         .pos { color: #2a7d2a; } .neg { color: #b22; }
         table { border-collapse: collapse; width: 100%; font-size: 13px; }
         th, td { border-bottom: 1px solid #eee; padding: 6px 8px; text-align: right; }
         th:first-child, td:first-child { text-align: left; }
+        thead th { background: #eef3f8; color: #1f3a5f; }
+        .side-buy, .side-sell { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; font-weight: 600; }
+        .side-buy { background: #1f77b4; color: #fff; }
+        .side-sell { background: #dbeafe; color: #1d4ed8; }
+        .codeblock { border: 1px solid #d0d7de; border-radius: 6px; margin: 12px 0; overflow: hidden; }
+        .codehead { display: flex; justify-content: space-between; align-items: center; background: #eef1f4; padding: 6px 12px; font-size: 12px; color: #57606a; }
+        .codelang { font-family: ui-monospace, monospace; background: #dbeafe; color: #1d4ed8; border-radius: 4px; padding: 1px 6px; margin-right: 8px; }
+        .codehead button { cursor: pointer; }
+        .codeblock pre { margin: 0; padding: 12px; background: #f6f8fa; overflow-x: auto; font: 12px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; }
+        .tok-kw { color: #0550ae; font-weight: 600; } .tok-flag { color: #0550ae; }
+        .tok-key { color: #0550ae; } .tok-str { color: #0a3069; }
+        .tok-num { color: #6f42c1; } .tok-com { color: #6e7781; font-style: italic; }
+        .verdict { font-size: 15px; }
+        details { margin-top: 8px; } summary { cursor: pointer; color: #555; }
         @media print { .rejections { display: none; } section { page-break-inside: avoid; } }
         """.trimIndent()
 }

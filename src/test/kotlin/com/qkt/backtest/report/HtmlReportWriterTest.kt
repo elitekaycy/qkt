@@ -48,7 +48,7 @@ class HtmlReportWriterTest {
         assertThat(html).contains("<th>Stop</th><th>Target</th><th>Net Account</th>")
         assertThat(html).contains("<th>Gross Account</th><th>Native</th><th>FX</th>")
         assertThat(html).contains("<td>90</td><td>120</td>")
-        assertThat(html).contains("<td>5</td><td>5.50 USD</td>")
+        assertThat(html).contains("<td class=\"pos\">5</td><td class=\"pos\">5.50 USD</td>")
         assertThat(html).contains("How this test was run")
         assertThat(html).contains("sha256:strategy")
         assertThat(html).contains("paper-fast")

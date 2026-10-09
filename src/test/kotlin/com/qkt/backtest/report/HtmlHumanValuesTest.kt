@@ -160,19 +160,62 @@ class HtmlHumanValuesTest {
                 ),
             )
         assertThat(html).contains("Reproduce this run")
-        assertThat(html).contains("qkt backtest s.qkt --from 2024-09-30 --to 2024-10-01")
-        assertThat(html).contains("STRATEGY s VERSION 1")
-        assertThat(html).contains("WHEN a &lt; b &amp; c")
-        assertThat(html).contains("starting_balance: 10000")
+        assertThat(html).contains("qkt backtest s.qkt")
+        assertThat(html).contains("--from")
+        assertThat(html).contains("tok-flag")
+        assertThat(html).contains("tok-kw\">STRATEGY</span>")
+        assertThat(html).contains("b &amp; c")
+        assertThat(html).contains("tok-key\">starting_balance</span>")
+        assertThat(html).contains("tok-num")
+        assertThat(html).contains("starting_balance")
+        assertThat(html).contains("10000")
         val buttons = "onclick=\"qktCopy\\(".toRegex().findAll(html).count()
         assertThat(buttons).isEqualTo(3)
+        // What the copy button grabs (innerText ~ tags stripped) is the exact source.
+        val pre = "<pre id=\"repro-cmd\">(.*?)</pre>".toRegex(RegexOption.DOT_MATCHES_ALL).find(html)!!.groupValues[1]
+        assertThat(pre.replace(Regex("<[^>]*>"), ""))
+            .isEqualTo("qkt backtest s.qkt --from 2024-09-30 --to 2024-10-01")
         assertThat(html).contains("navigator.clipboard")
         assertThat(html).contains("execCommand")
         assertThat(html).doesNotContain("<script src=")
+        assertThat(html).contains("codeblock")
+        assertThat(html).contains("tok-kw")
+        assertThat(html).contains("tok-flag")
+        assertThat(html).contains("codelang")
     }
 
     @Test
     fun `no reproduce section without reproduction info`() {
         assertThat(render(result())).doesNotContain("Reproduce this run")
+    }
+
+    @Test
+    fun `trades table colors sides and pnl with readable timestamps`() {
+        fun rec(
+            side: com.qkt.common.Side,
+            realized: String,
+        ) = com.qkt.backtest.TradeRecord(
+            trade =
+                com.qkt.execution.Trade(
+                    orderId = "o",
+                    symbol = "EURUSD",
+                    price = BigDecimal("1.10"),
+                    quantity = BigDecimal.ONE,
+                    side = side,
+                    timestamp = 1_727_686_800_000L,
+                ),
+            realized = BigDecimal(realized),
+            strategyId = "s",
+        )
+        val html =
+            HtmlTradesTable.render(
+                listOf(rec(com.qkt.common.Side.BUY, "5"), rec(com.qkt.common.Side.SELL, "-2")),
+                HtmlReportConfig(),
+            )
+        assertThat(html).contains("<span class=\"side-buy\">BUY</span>")
+        assertThat(html).contains("<span class=\"side-sell\">SELL</span>")
+        assertThat(html).contains("<td class=\"pos\">5</td>")
+        assertThat(html).contains("<td class=\"neg\">-2</td>")
+        assertThat(html).contains("2024-09-30 09:00 UTC")
     }
 }
