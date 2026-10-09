@@ -1,5 +1,5 @@
 -- Sample strategy — paper-trades against a backtest data source.
--- See https://elitekaycy.github.io/qkt/ for the DSL reference.
+-- See https://qkt.elitekaycy.com/ for the DSL reference.
 
 STRATEGY ema_cross VERSION 1
 

@@ -165,7 +165,7 @@ private fun printHelp() {
             --help, help            this message
 
         DOCS
-            https://elitekaycy.github.io/qkt/
+            https://qkt.elitekaycy.com/
         """.trimIndent(),
     )
 }
