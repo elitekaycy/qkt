@@ -58,7 +58,7 @@ class Args(
                 continue
             }
             if (!token.startsWith("--")) {
-                throw ArgError("unknown flag $token")
+                throw ArgError(unknownFlagMessage(token))
             }
             val name = token.removePrefix("--")
             when (name) {
@@ -77,9 +77,18 @@ class Args(
                             1
                         }
                 }
-                else -> throw ArgError("unknown flag --$name")
+                else -> throw ArgError(unknownFlagMessage("--$name"))
             }
         }
+    }
+
+    /**
+     * The unknown-flag error: what was wrong, the closest known flag when one is close, and the
+     * subcommand's flag list (#1380). Multiline by design — [Main] prints the whole message.
+     */
+    private fun unknownFlagMessage(token: String): String {
+        val hint = CliHelp.suggestFlag(subcommand, token)?.let { ". Did you mean $it?" } ?: ""
+        return "unknown flag $token$hint${CliHelp.forCommand(subcommand)}"
     }
 
     /**
@@ -116,14 +125,18 @@ class Args(
         return out
     }
 
-    /** Same as [option] but throws [ArgError] when missing. */
-    fun requireOption(name: String): String = option(name) ?: throw ArgError("missing required flag --$name")
+    /** Same as [option] but throws [ArgError] when missing. Usage and flags follow the error (#1380). */
+    fun requireOption(name: String): String =
+        option(name) ?: throw ArgError("missing required flag --$name${CliHelp.forCommand(subcommand)}")
 
-    /** Same as [positional] but throws [ArgError] when missing. [label] appears in the error message. */
+    /**
+     * Same as [positional] but throws [ArgError] when missing. [label] appears in the error
+     * message. Usage and flags follow the error (#1380).
+     */
     fun requirePositional(
         idx: Int,
         label: String,
-    ): String = positional(idx) ?: throw ArgError("missing required argument: $label")
+    ): String = positional(idx) ?: throw ArgError("missing required argument: $label${CliHelp.forCommand(subcommand)}")
 
     /**
      * Returns the first sub-subcommand token: a positional immediately following the main subcommand
