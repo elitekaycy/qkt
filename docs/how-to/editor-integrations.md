@@ -172,10 +172,45 @@ Zed needs a small language extension to bind the `.qkt` file type; once bound, r
 
 ### VS Code
 
-The bundled extension gives you the generated syntax highlighting and snippets. It does not
-start a language client; for diagnostics, completion and hover in VS Code, install a generic LSP
-client extension and point it at `qkt lsp` for the `qkt` language, or use one of the editors
-above.
+Step 1 — install the bundled extension (syntax highlighting and snippets only):
+
+```bash
+qkt editor install vscode
+```
+
+This runs `code --install-extension` against the `.vsix` bundled in the release
+tarball (all release assets — plain, self-contained, and Windows — ship one; if you
+built from source without running `vsce package` first, the installer builds it with
+`npx @vscode/vsce` or points at the GitHub release). The extension carries **no
+language client**: colours and snippets work immediately, but live errors, completion
+and hover need step 2.
+
+Step 2 — wire the language server through a generic LSP client:
+
+1. Install [Simple LSP Client](https://marketplace.visualstudio.com/items?itemName=wdomitrz.simple-lsp-client)
+   (`wdomitrz.simple-lsp-client`) from the Marketplace.
+2. Make sure `qkt` is on your `PATH` (the client spawns it per session), then add to
+   your `settings.json` (workspace settings keep it project-local):
+
+```json
+{
+  "simpleLspClient.servers": {
+    "qkt": {
+      "cmd": ["qkt", "lsp"],
+      "filetypes": ["qkt"]
+    }
+  }
+}
+```
+
+3. Open a `.qkt` file. Break an indicator name on purpose — a diagnostic with the
+   exact line and column should appear, proving the client reached `qkt lsp`. Then
+   type a stream alias followed by `.` (e.g. `eur.`) for field completion.
+
+If nothing happens, check the client's output channel, confirm `qkt lsp` answers on
+stdin/stdout (it must print only protocol frames there), and confirm the `code`
+command resolves in the terminal you launched VS Code from (`qkt` must be on that
+`PATH`).
 
 ## What's not here
 

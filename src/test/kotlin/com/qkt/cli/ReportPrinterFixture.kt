@@ -52,9 +52,10 @@ abstract class ReportPrinterFixture {
         brokerKind: BrokerKind,
         commissionPaid: String = "0",
         swapPaid: String = "0",
+        verbose: Boolean = false,
     ): String {
         val buf = ByteArrayOutputStream()
-        ReportPrinter.print(result(commissionPaid, swapPaid), fmt, PrintStream(buf), brokerKind)
+        ReportPrinter.print(result(commissionPaid, swapPaid), fmt, PrintStream(buf), brokerKind, verbose = verbose)
         return buf.toString()
     }
 }

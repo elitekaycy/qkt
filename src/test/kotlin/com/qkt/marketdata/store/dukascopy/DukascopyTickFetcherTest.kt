@@ -73,4 +73,15 @@ class DukascopyTickFetcherTest {
         assertThat(Files.exists(target)).isTrue()
         assertThat(CsvTickFeed(target).next()).isNull()
     }
+
+    @Test
+    fun `publishes atomically with no scratch files left behind`(
+        @TempDir tmp: Path,
+    ) {
+        val target = tmp.resolve("2024-03-05.csv.gz")
+        DukascopyTickFetcher(FakeDownloader(present = setOf(8)))
+            .fetch("XAUUSD", LocalDate.of(2024, 3, 5), target)
+        assertThat(readAll(target)).hasSize(1)
+        assertThat(Files.list(tmp).toList().none { it.fileName.toString().endsWith(".part") }).isTrue()
+    }
 }

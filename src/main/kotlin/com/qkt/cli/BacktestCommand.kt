@@ -1,14 +1,8 @@
 package com.qkt.cli
 
-import com.qkt.backtest.BacktestResult
-import com.qkt.backtest.report.BacktestReportWriter
 import com.qkt.dsl.parse.Dsl
 import com.qkt.dsl.parse.ParseResult
 import com.qkt.dsl.parse.ParsedFile
-import com.qkt.evidence.AccountingEvidence
-import com.qkt.evidence.DatasetEvidence
-import com.qkt.evidence.EvidenceEnvelope
-import com.qkt.evidence.EvidenceHasher
 import com.qkt.instrument.futuresSymbols
 import com.qkt.instrument.optionSymbols
 import com.qkt.marketdata.store.DataFetcher
@@ -19,10 +13,25 @@ import java.nio.file.Path
 class BacktestCommand(
     private val args: Args,
     private val fetcherOverride: DataFetcher? = null,
+    private val runsRootOverride: Path? = null,
 ) {
     fun run(): Int {
-        val file = args.requirePositional(0, "<strategy.qkt>")
-        val path = Path.of(file)
+        // Project-local runs first: config defaults layer beneath explicit flags (flag > run >
+        // global > built-in). Evidence keeps the true CLI; the merged record lands in the report.
+        val configPath = Config.resolvePath(args.option("config"))
+        val cfg = Config.load(configPath)
+        for (warning in cfg.backtest.warnings) System.err.println("qkt: WARNING — config $warning")
+        val resolvedRun =
+            try {
+                BacktestRunResolution.resolve(args, cfg)
+            } catch (e: BacktestContext.Companion.SetupError) {
+                // Malformed values (bad --param): one line, same code as before.
+                System.err.println("qkt: error: ${e.message}")
+                return ExitCodes.USER_ERROR
+            }
+        val file = resolvedRun.strategy.toString()
+        val path = resolvedRun.strategy
+        val effective = resolvedRun.effective
         if (!Files.exists(path)) {
             System.err.println("qkt: error: file not found: $file")
             return ExitCodes.USER_ERROR
@@ -37,34 +46,20 @@ class BacktestCommand(
                 }
             }
 
-        val format: ReportFormat = if (args.flag("json")) ReportFormat.Json else ReportFormat.Text
+        val format: ReportFormat = if (effective.flag("json")) ReportFormat.Json else ReportFormat.Text
 
-        // `--param NAME=VALUE` overrides one PARAM/LET per run. A comma-list means "sweep this" —
-        // point the user at `qkt sweep` rather than silently picking one value.
-        val overrides = mutableMapOf<String, String>()
-        for (tok in args.options("param")) {
-            val eq = tok.indexOf('=')
-            if (eq <= 0) {
-                System.err.println("qkt: error: bad --param '$tok'; expected NAME=VALUE")
-                return ExitCodes.USER_ERROR
-            }
-            val name = tok.substring(0, eq).trim()
-            val value = tok.substring(eq + 1).trim()
-            if (value.contains(',')) {
-                System.err.println("qkt: error: multiple values for '$name'; use 'qkt sweep' to grid-search")
-                return ExitCodes.USER_ERROR
-            }
-            overrides[name] = value
-        }
+        // `--param NAME=VALUE` overrides, config first with explicit CLI entries winning; a
+        // comma-list means "sweep this" (resolved in BacktestRunSelection, same errors as before).
+        val overrides = resolvedRun.paramOverrides
 
         val ctx =
             try {
                 when (parsedFile) {
                     is com.qkt.dsl.parse.ParsedFile.StrategyFile ->
-                        BacktestContext.build(args, parsedFile.ast, fetcherOverride)
+                        BacktestContext.build(effective, parsedFile.ast, fetcherOverride)
                     is com.qkt.dsl.parse.ParsedFile.PortfolioFile ->
                         BacktestContext.buildPortfolio(
-                            args,
+                            effective,
                             com.qkt.dsl.portfolio.PortfolioLoader
                                 .load(path),
                             fetcherOverride,
@@ -85,102 +80,61 @@ class BacktestCommand(
                 return ExitCodes.USER_ERROR
             }
 
+        val restoreLogs = QuietBacktestLogs.silenceUnless(effective.flag("verbose"), effective.flag("debug"))
         try {
-            ctx.provision()
-        } catch (e: com.qkt.backtest.IncompleteDataException) {
-            System.err.println("qkt: error: ${e.message}")
-            return ExitCodes.USER_ERROR
-        }
-
-        return try {
-            val result =
-                attachEvidence(
-                    BacktestMetricsWindows.run(ctx.backtest(overrides), args, ctx.from, ctx.to),
-                    path,
-                    parsedFile,
-                    ctx.executionEvidence(),
-                    ctx.datasetEvidence,
-                )
-            args.option("report-dir")?.let { reportDir ->
-                val dir = Path.of(reportDir)
-                Files.createDirectories(dir)
-                BacktestReportWriter(dir).write(result)
+            try {
+                ctx.provision()
+            } catch (e: com.qkt.backtest.IncompleteDataException) {
+                System.err.println("qkt: error: ${e.message}")
+                return ExitCodes.USER_ERROR
             }
-            val futures = ctx.instruments.futuresSymbols(ctx.symbols)
-            val options = ctx.instruments.optionSymbols(ctx.symbols)
-            ReportPrinter.print(result, format, System.out, ctx.brokerKind, futures, options)
-            printExecutionNotes(ctx.symbols, futures, options, ctx.brokerKind)
-            ExitCodes.SUCCESS
-        } catch (e: com.qkt.dsl.compile.CompileError) {
-            System.err.println("qkt: error: ${e.message}")
-            ExitCodes.USER_ERROR
-        } catch (e: IllegalStateException) {
-            System.err.println("qkt: error: ${e.message}")
-            if (args.flag("debug")) e.printStackTrace(System.err)
-            ExitCodes.USER_ERROR
-        } catch (e: IllegalArgumentException) {
-            System.err.println("qkt: error: ${e.message}")
-            if (args.flag("debug")) e.printStackTrace(System.err)
-            ExitCodes.USER_ERROR
-        }
-    }
 
-    private fun attachEvidence(
-        result: BacktestResult,
-        path: Path,
-        parsedFile: ParsedFile,
-        execution: com.qkt.evidence.ExecutionEvidence,
-        datasetEvidence: DatasetEvidence,
-    ): BacktestResult =
-        result.copy(
-            evidence =
-                EvidenceEnvelope(
-                    qktVersion = BuildInfo.VERSION,
-                    gitSha = BuildInfo.GIT_SHA,
-                    buildTimestamp = BuildInfo.BUILD_TIMESTAMP,
-                    command = args.tokens,
-                    strategyHash = EvidenceHasher.sha256(path),
-                    importedFileHashes = importedHashes(path, parsedFile),
-                    configHash = configHash(),
-                    dataset = datasetEvidence,
-                    execution = execution,
-                    accounting = accountingEvidence(result.accounting),
-                ),
-        )
-
-    private fun accountingEvidence(snapshot: com.qkt.accounting.AccountingSnapshot?): AccountingEvidence? {
-        if (snapshot == null) return null
-        return AccountingEvidence(
-            accountCurrency = snapshot.accountCurrency,
-            missingPolicy = snapshot.missingPolicy,
-            source = snapshot.source,
-            configuredFxSymbols = snapshot.configuredSymbols,
-            conversions =
-                snapshot.conversions.associate { fx ->
-                    "${fx.from}->${fx.to}@${fx.source}" to
-                        "rate=${fx.rate.toPlainString()} timestamp=${fx.timestamp}"
-                },
-            costKinds = snapshot.supportedCostKinds,
-            warnings = snapshot.warnings,
-        )
-    }
-
-    private fun importedHashes(
-        path: Path,
-        parsedFile: ParsedFile,
-    ): Map<String, String> =
-        when (parsedFile) {
-            is ParsedFile.StrategyFile -> emptyMap()
-            is ParsedFile.PortfolioFile -> {
-                val parent = path.toAbsolutePath().normalize().parent ?: Path.of(".").toAbsolutePath().normalize()
-                parsedFile.ast.imports.associate { imp ->
-                    imp.alias to EvidenceHasher.sha256(parent.resolve(imp.path).toAbsolutePath().normalize())
+            return try {
+                val result =
+                    BacktestEvidence.attach(
+                        effective,
+                        BacktestMetricsWindows.run(ctx.backtest(overrides), effective, ctx.from, ctx.to),
+                        path,
+                        parsedFile,
+                        ctx.executionEvidence(),
+                        ctx.datasetEvidence,
+                        resolvedRun.resolved,
+                    )
+                val runsHome = runsRootOverride ?: BacktestReportSink.defaultHome()
+                val reportBase = cfg.reportDir?.let { BacktestEvidence.resolveConfigRelative(cfg, it) }
+                BacktestReportSink.resolve(effective, path, runsHome, reportBase)?.let { dir ->
+                    BacktestReportSink.write(dir, result)
+                    // stderr: stdout stays pure for --json piping while the console shows the path.
+                    // Display shortens only the real home: a redirected test root must print literally.
+                    System.err.println("Report saved: ${BacktestReportSink.display(dir)}")
                 }
+                val futures = ctx.instruments.futuresSymbols(ctx.symbols)
+                val options = ctx.instruments.optionSymbols(ctx.symbols)
+                ReportPrinter.print(
+                    result,
+                    format,
+                    System.out,
+                    ctx.brokerKind,
+                    futures,
+                    options,
+                    effective.flag("verbose"),
+                )
+                printExecutionNotes(ctx.symbols, futures, options, ctx.brokerKind)
+                ExitCodes.SUCCESS
+            } catch (e: com.qkt.dsl.compile.CompileError) {
+                System.err.println("qkt: error: ${e.message}")
+                ExitCodes.USER_ERROR
+            } catch (e: IllegalStateException) {
+                System.err.println("qkt: error: ${e.message}")
+                if (effective.flag("debug")) e.printStackTrace(System.err)
+                ExitCodes.USER_ERROR
+            } catch (e: IllegalArgumentException) {
+                System.err.println("qkt: error: ${e.message}")
+                if (effective.flag("debug")) e.printStackTrace(System.err)
+                ExitCodes.USER_ERROR
             }
+        } finally {
+            restoreLogs()
         }
-
-    private fun configHash(): String? {
-        val path = Config.resolvePath(args.option("config"))
-        return if (Files.exists(path)) EvidenceHasher.sha256(path) else null
     }
 }

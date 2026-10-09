@@ -24,11 +24,29 @@ object CompletionProvider {
         val offset = Cursor.offset(text, line, character)
         val wordStart = Cursor.identStart(text, offset)
         val symbols = DocumentSymbols.of(lastGoodAst)
-        return if (text.getOrNull(wordStart - 1) == '.') {
-            MemberCompletion.items(MemberCompletion.ownerChain(text, wordStart - 1), symbols)
-        } else {
-            generalItems(symbols, scopeAt(text, line))
-        }
+        if (text.getOrNull(wordStart - 1) != '.') return generalItems(symbols, scopeAt(text, line))
+        val chain = MemberCompletion.ownerChain(text, wordStart - 1)
+        val items = MemberCompletion.items(chain, symbols)
+        if (items.isNotEmpty() || chain.size != 1) return items
+        // Half-typed document: the AST is stale or missing, but the alias being typed is usually
+        // still declared in the SYMBOLS text above. Retry against those before giving up (#1376).
+        return MemberCompletion.items(chain, symbols, textualStreamAliases(text))
+    }
+
+    /**
+     * Stream aliases read straight off the document's SYMBOLS block, for when the last good AST
+     * predates the alias being typed. Only indented `alias = ...` lines under the SYMBOLS header
+     * count, mirroring how the parser scopes declarations.
+     */
+    internal fun textualStreamAliases(text: String): Set<String> {
+        val lines = text.lines()
+        val start = lines.indexOfFirst { it.trimStart().startsWith("SYMBOLS") }
+        if (start < 0) return emptySet()
+        return lines
+            .drop(start + 1)
+            .takeWhile { it.isBlank() || it.startsWith(" ") || it.startsWith("\t") }
+            .mapNotNull { Regex("""^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=""").find(it)?.groupValues?.get(1) }
+            .toSet()
     }
 
     /**

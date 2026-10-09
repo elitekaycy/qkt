@@ -62,7 +62,7 @@ class ReportPrinterAutocorrelationTest : ReportPrinterFixture() {
                 conditionalAutocorr = mapOf("XAUUSD" to autocorr()),
             )
         val buf = ByteArrayOutputStream()
-        ReportPrinter.print(res, ReportFormat.Text, PrintStream(buf), BrokerKind.PAPER)
+        ReportPrinter.print(res, ReportFormat.Text, PrintStream(buf), BrokerKind.PAPER, verbose = true)
         val text = buf.toString()
         assertThat(text).contains("Lag-1 return autocorrelation")
         assertThat(text).contains("high = |return| >= median; buckets with <3 returns omitted")

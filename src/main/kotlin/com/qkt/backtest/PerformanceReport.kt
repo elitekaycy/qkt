@@ -3,6 +3,12 @@ package com.qkt.backtest
 import java.math.BigDecimal
 
 data class PerformanceReport(
+    /**
+     * Closed-trade PnL for a full run. For a sub-window report ([WindowReport]), this is the
+     * equity change across the window (end minus start, including open-position swings and costs),
+     * NOT the sum of realized trade PnL inside it — read it beside `equityStart`/`equityEnd`,
+     * which state the same delta explicitly.
+     */
     val realizedTotal: BigDecimal,
     val unrealizedTotal: BigDecimal,
     val totalPnL: BigDecimal,

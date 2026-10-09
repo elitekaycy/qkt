@@ -32,6 +32,8 @@ private val backtestValues =
         "dataset",
         "position-mode",
         "funding",
+        "commission-per-lot",
+        "swap-scale",
     )
 private val backtestFlags =
     setOf("no-fetch", "bars", "allow-incomplete", "tick-fills", "enforce-live-breakers", "chaos")
@@ -42,7 +44,7 @@ internal val researchOptionSchemas: Map<String, CliOptionSchema> =
         "backtest" to
             CliOptionSchema(
                 values = backtestValues + setOf("param", "report-dir", "metrics-window", "oos-split"),
-                flags = backtestFlags + setOf("json", "debug"),
+                flags = backtestFlags + setOf("json", "debug", "verbose", "no-report"),
             ),
         "sweep" to
             CliOptionSchema(

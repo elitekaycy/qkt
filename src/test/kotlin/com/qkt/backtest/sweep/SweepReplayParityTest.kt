@@ -95,6 +95,19 @@ class SweepReplayParityTest {
     }
 
     @Test
+    fun `fan-out matches per-combo sharpe and annualization, not just pnl`() {
+        val legacy = perCombo(1).runs.associateBy { it.label }
+        val fan = fanned(1).runs.associateBy { it.label }
+        for (label in legacy.keys) {
+            val expected = legacy.getValue(label).result.global
+            val actual = fan.getValue(label).result.global
+            assertThat(actual.annualizationFactor).isEqualByComparingTo(expected.annualizationFactor)
+            assertThat(actual.equityCurve.size).isEqualTo(expected.equityCurve.size)
+            assertThat(actual.sharpeRatio?.toPlainString()).isEqualTo(expected.sharpeRatio?.toPlainString())
+        }
+    }
+
+    @Test
     fun `parallel fan-out matches sequential fan-out`() {
         val seq = fanned(1).runs.associateBy { it.label }
         val par = fanned(2).runs.associateBy { it.label }

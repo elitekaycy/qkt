@@ -24,7 +24,18 @@ tasks.test {
     }
     // The CLI logs to stderr, which test reports keep; tests log to stdout so suites stay within their log budget.
     systemProperty("QKT_CONSOLE_TARGET", "System.out")
+    // Backtest bundles default under ~/.qkt/runs; redirect them into the build dir in tests.
+    systemProperty(
+        "qkt.runs.home",
+        layout.buildDirectory
+            .dir("test-runs")
+            .get()
+            .asFile
+            .absolutePath,
+    )
+
     // DslReferenceCodeBlocksTest reads these pages; without the input a docs-only edit leaves `test` up to date.
+
     inputs
         .dir("docs/reference/dsl")
         .withPropertyName("dslReferenceDocs")

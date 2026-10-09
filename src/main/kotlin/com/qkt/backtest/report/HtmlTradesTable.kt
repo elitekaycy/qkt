@@ -27,11 +27,12 @@ internal object HtmlTradesTable {
             append("</tr></thead><tbody>")
             for (r in sample) {
                 val fillNotional = TradeAuditSummaries.fillNotional(r)
+                val sideClass = if (r.trade.side == com.qkt.common.Side.BUY) "side-buy" else "side-sell"
                 append("<tr>")
-                append("<td>${r.trade.timestamp}</td>")
+                append("<td>${HumanFormat.utcDate(r.trade.timestamp)}</td>")
                 append("<td>${htmlEscape(r.strategyId)}</td>")
                 append("<td>${htmlEscape(r.trade.symbol)}</td>")
-                append("<td>${htmlEscape(r.trade.side.name)}</td>")
+                append("<td><span class=\"$sideClass\">${htmlEscape(r.trade.side.name)}</span></td>")
                 append("<td>${htmlEscape(TradeAuditSummaries.positionEffect(r))}</td>")
                 append("<td>${htmlEscape(r.orderType ?: "unknown")}</td>")
                 append("<td>${r.trade.quantity.toPlainString()}</td>")
@@ -39,15 +40,9 @@ internal object HtmlTradesTable {
                 append("<td>${r.riskUsd?.toPlainString() ?: "n/a"}</td>")
                 append("<td>${r.stopLossPrice?.toPlainString() ?: "n/a"}</td>")
                 append("<td>${r.takeProfitPrice?.toPlainString() ?: "n/a"}</td>")
-                append("<td>${r.realized.toPlainString()}</td>")
-                append(
-                    "<td>${r.accountRealized?.toPlainString() ?: "n/a"}" +
-                        "${r.accountCurrency?.let { " ${htmlEscape(it)}" } ?: ""}</td>",
-                )
-                append(
-                    "<td>${r.nativeRealized?.toPlainString() ?: "n/a"}" +
-                        "${r.nativeCurrency?.let { " ${htmlEscape(it)}" } ?: ""}</td>",
-                )
+                append(pnlCell(r.realized))
+                append(pnlCell(r.accountRealized, r.accountCurrency?.let { " ${htmlEscape(it)}" } ?: ""))
+                append(pnlCell(r.nativeRealized, r.nativeCurrency?.let { " ${htmlEscape(it)}" } ?: ""))
                 append("<td>${r.fxRate?.toPlainString() ?: htmlEscape("identity")}</td>")
                 append(
                     "<td>${r.accountPositionBefore?.quantity?.toPlainString() ?: "n/a"} " +
@@ -75,5 +70,20 @@ internal object HtmlTradesTable {
                 append("of ${trades.size} trades. Full list in trades.csv.</p>")
             }
         }
+    }
+
+    /** Realized-PnL cell: green when positive, red when negative, raw value kept verbatim. */
+    private fun pnlCell(
+        amount: java.math.BigDecimal?,
+        suffix: String = "",
+    ): String {
+        if (amount == null) return "<td>n/a$suffix</td>"
+        val cls =
+            when {
+                amount.signum() < 0 -> " class=\"neg\""
+                amount.signum() > 0 -> " class=\"pos\""
+                else -> ""
+            }
+        return "<td$cls>${amount.toPlainString()}$suffix</td>"
     }
 }

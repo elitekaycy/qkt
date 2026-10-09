@@ -79,7 +79,8 @@ class EndToEndCliTest {
                 "--allow-incomplete",
             )
         assertThat(code).withFailMessage("stderr=$stderr").isEqualTo(ExitCodes.SUCCESS)
-        assertThat(stdout).contains("Trades:")
+        assertThat(stdout).contains("Profit")
+        assertThat(stdout).contains("Round trips")
     }
 
     @Test
