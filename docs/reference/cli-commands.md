@@ -181,6 +181,11 @@ and manifest hashes; use `--json` for piping compact, schema-tagged summaries.
 | `qkt preflight <file> [--production] [--offline]` | Validate production readiness against the config, failing closed with `--production`. |
 | `qkt promotion ...` | Record and query promotion states, approvals, waivers, and gates. |
 | `qkt incident collect [...]` | Build an incident zip with journal, log, and state evidence. |
+| `qkt halt [name]` | Pause new-order submission for one strategy, or all if no name. |
+| `qkt resume [name]` | Re-enable new-order submission. |
+| `qkt kill <name> [--flatten]` | Operator kill switch: halt, cancel venue-resting pendings, optionally flatten positions. |
+| `qkt reconcile <name> [--json]` | Cron-able expected-vs-actual reconciliation check over the control plane. |
+| `qkt observe ...` | Read-only go/no-go report over the running daemon. |
 | `qkt bot ...` | One-shot trading (buy/sell/close/account/...); full reference in [bot CLI](bot-cli.md). |
 | `qkt soak report <strategy> --testing-sha SHA --image REPO@sha256:DIGEST --started-at UTC --completed-at UTC --trading-days N --health JSONL --reconciliation JSON --golden ZIP --coverage JSON --parity JSON --insights JSON --out JSON` | Derive fail-closed live-parity promotion evidence from health samples, reconciliation, golden journal, coverage, parity, and Insights artifacts. |
 

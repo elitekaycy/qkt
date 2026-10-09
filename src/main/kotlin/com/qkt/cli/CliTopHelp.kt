@@ -41,6 +41,11 @@ internal object CliTopHelp {
             logs <name> [-f]        tail per-strategy log file
             stop <name> [--flatten] gracefully stop a deployed strategy
             start <portfolio>/<c>   clear operator-stop on a portfolio child
+            halt [name]             pause new-order submission for one strategy, or all
+            resume [name]           re-enable new-order submission
+            kill <name> [--flatten] operator kill switch: halt, cancel pendings, optionally flatten
+            reconcile <name>        cron-able expected-vs-actual reconciliation check
+            observe ...             read-only go/no-go report over the running daemon
 
         ONE-SHOT TRADING (AI/manual overlay)
             bot buy|sell ...        place a one-shot order (see qkt bot help)
