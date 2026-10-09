@@ -13,7 +13,7 @@ import org.snakeyaml.engine.v2.api.LoadSettings
 /**
  * Parsed `qkt.config.yaml` — the operator-facing config file.
  *
- * Source-of-truth schema: see [reference/config-schema](https://elitekaycy.github.io/qkt/reference/config-schema/).
+ * Source-of-truth schema: see [reference/config-schema](https://qkt.elitekaycy.com/reference/config-schema/).
  * Env-var references like `${EXNESS_GATEWAY_URL}` are expanded at load time.
  */
 data class Config(
