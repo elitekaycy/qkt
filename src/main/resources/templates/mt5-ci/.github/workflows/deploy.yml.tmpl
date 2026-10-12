@@ -30,7 +30,7 @@ jobs:
       MT5_VNC_PASSWORD: ${{ secrets.MT5_VNC_PASSWORD || vars.MT5_VNC_PASSWORD || 'changeme' }}
       COMPOSE_PROJECT_NAME: ${{ vars.COMPOSE_PROJECT_NAME || 'qkt-mt5' }}
       QKT_IMAGE_TAG: ${{ vars.QKT_IMAGE_TAG || 'v{{QKT_VERSION}}' }}
-      MT5_GATEWAY_IMAGE: ${{ vars.MT5_GATEWAY_IMAGE || 'elitekaycy/mt5-gateway-api:0.3.5' }}
+      MT5_GATEWAY_IMAGE: ${{ vars.MT5_GATEWAY_IMAGE || 'elitekaycy/mt5-gateway-api:0.3.19' }}
       QKT_BIND_HOST: ${{ vars.QKT_BIND_HOST || '127.0.0.1' }}
       MT5_API_HOST_PORT: ${{ vars.MT5_API_HOST_PORT || '5020' }}
       MT5_VNC_HOST_PORT: ${{ vars.MT5_VNC_HOST_PORT || '3020' }}
