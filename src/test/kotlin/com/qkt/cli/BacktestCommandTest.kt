@@ -80,9 +80,12 @@ class BacktestCommandTest : BacktestCommandFixture() {
                 "--allow-incomplete",
             )
         assertThat(code).withFailMessage("stderr=$stderr stdout=$stdout").isEqualTo(ExitCodes.SUCCESS)
-        assertThat(stdout).contains("Trades:")
-        assertThat(stdout).contains("Final realized:")
-        assertThat(stdout).contains("Max drawdown:")
+        assertThat(stdout).contains("Profit")
+        assertThat(stdout).contains("Round trips")
+        assertThat(stdout).contains("Worst drop")
+        assertThat(stdout).contains("--verbose")
+        assertThat(stdout).doesNotContain("Final realized:")
+        assertThat(stdout.lines().size).isLessThanOrEqualTo(24)
     }
 
     @Test

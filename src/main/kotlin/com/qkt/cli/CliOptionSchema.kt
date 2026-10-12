@@ -23,4 +23,7 @@ internal object CliOptionSchemas {
 
     /** The schema for [subcommand], or null when the subcommand has none. */
     fun forSubcommand(subcommand: String): CliOptionSchema? = schemas[subcommand]
+
+    /** Every known subcommand name, for typo suggestions. */
+    fun names(): Set<String> = schemas.keys
 }

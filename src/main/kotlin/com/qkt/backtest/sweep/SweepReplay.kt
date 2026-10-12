@@ -73,7 +73,13 @@ class SweepReplay<C>(
         } finally {
             feed.close()
         }
-        return engines.map { (label, cfg, engine) -> SweepRun(label, cfg, engine.snapshot()) }
+        return engines.map { (label, cfg, engine) ->
+            // runToEnd on a pushed engine only finalizes: its own feed is empty (advance is a
+            // no-op), then it flushes the replay boundary, accrues trailing financing, and closes
+            // the equity curve — the same end-of-replay every standalone backtest gets. A bare
+            // snapshot() skips that and drifts Sharpe via the inferred annualization (#1377).
+            SweepRun(label, cfg, engine.runToEnd())
+        }
     }
 
     private fun <T> partition(

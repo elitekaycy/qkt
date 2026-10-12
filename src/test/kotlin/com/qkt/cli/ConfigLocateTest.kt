@@ -63,12 +63,14 @@ class ConfigLocateTest {
     }
 
     @Test
-    fun `non-windows search list is pwd, etc-qkt, config-home, home-qkt`() {
+    fun `non-windows search list walks up from cwd then etc-qkt, config-home, home-qkt`() {
         val home = Path.of("/home/me")
         val ud = UserDirs(osName = "linux", env = emptyMap(), home = home)
-        val paths = Config.defaultSearchPaths(userDirs = ud, home = home)
+        val paths = Config.defaultSearchPaths(userDirs = ud, home = home, cwd = Path.of("/home/me/work"))
         assertThat(paths.map { it.toString() }).containsExactly(
             "./qkt.config.yaml",
+            "/home/me/work/qkt.config.yaml",
+            "/home/me/qkt.config.yaml",
             "/etc/qkt/qkt.config.yaml",
             "/home/me/.config/qkt/qkt.config.yaml",
             "/home/me/.qkt/qkt.config.yaml",
@@ -76,12 +78,33 @@ class ConfigLocateTest {
     }
 
     @Test
+    fun `upward walk stops at a git boundary`(
+        @TempDir tmp: Path,
+    ) {
+        val sub = Files.createDirectories(tmp.resolve("proj").resolve("sub"))
+        Files.createDirectories(tmp.resolve("proj").resolve(".git"))
+        val home = tmp.resolve("home")
+        val ud = UserDirs(osName = "linux", env = emptyMap(), home = home)
+        val paths = Config.defaultSearchPaths(userDirs = ud, home = home, cwd = sub).map { it.toString() }
+        assertThat(paths).contains(
+            sub.resolve("qkt.config.yaml").toString(),
+            tmp.resolve("proj").resolve("qkt.config.yaml").toString(),
+        )
+        assertThat(paths).doesNotContain(tmp.resolve("qkt.config.yaml").toString())
+    }
+
+    @Test
     fun `windows search list uses APPDATA and omits etc-qkt`() {
         val home = Path.of("/fake/home")
         val ud = UserDirs(osName = "windows 11", env = mapOf("APPDATA" to "/fake/Roaming"), home = home)
-        val paths = Config.defaultSearchPaths(userDirs = ud, home = home).map { it.toString() }
+        val paths =
+            Config.defaultSearchPaths(userDirs = ud, home = home, cwd = Path.of("/fake/home/proj")).map {
+                it.toString()
+            }
         assertThat(paths).containsExactly(
             "./qkt.config.yaml",
+            "/fake/home/proj/qkt.config.yaml",
+            "/fake/home/qkt.config.yaml",
             "/fake/Roaming/qkt/qkt.config.yaml",
             "/fake/home/.qkt/qkt.config.yaml",
         )

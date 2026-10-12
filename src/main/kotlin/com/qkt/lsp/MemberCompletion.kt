@@ -51,16 +51,18 @@ internal object MemberCompletion {
     fun items(
         chain: List<String>,
         symbols: DocumentSymbols,
+        extraStreamAliases: Set<String> = emptySet(),
     ): List<CompletionItem> {
         if (chain.isEmpty()) return emptyList()
         val head = chain.first().uppercase()
+        val positions = symbols.positionAliases.map { it.lowercase() }.toSet()
         return when {
             head in directOwners && chain.size == 1 -> fields(DslVocabulary.members.getValue(head))
             head in aliasOwners && chain.size == 1 -> variables(symbols.positionAliases)
-            head == TokenKind.POSITION.name && chain.size == 2 && chain[1] in symbols.positionAliases ->
+            head == TokenKind.POSITION.name && chain.size == 2 && chain[1].lowercase() in positions ->
                 fields(DslVocabulary.members.getValue(head))
             head == TokenKind.SEQUENCE.name -> sequenceItems(chain, symbols)
-            chain.size == 1 -> aliasItems(chain.first(), symbols)
+            chain.size == 1 -> aliasItems(chain.first(), symbols, extraStreamAliases)
             else -> emptyList()
         }
     }
@@ -85,16 +87,23 @@ internal object MemberCompletion {
         }
 
     /** After `<alias>.`: the fields the alias kind exposes, plus the series selectors. */
-    private fun aliasItems(
+    fun aliasItems(
         alias: String,
         symbols: DocumentSymbols,
-    ): List<CompletionItem> =
-        when (alias) {
-            in symbols.streamAliases -> fields(QktVocabulary.streamFields + QktVocabulary.seriesSelectors)
-            in symbols.basketAliases, in symbols.seriesAliases ->
+        extraStreamAliases: Set<String> = emptySet(),
+    ): List<CompletionItem> {
+        val key = alias.lowercase()
+        val streams =
+            symbols.streamAliases.map { it.lowercase() }.toSet() + extraStreamAliases.map { it.lowercase() }.toSet()
+        val baskets = symbols.basketAliases.map { it.lowercase() }.toSet()
+        val series = symbols.seriesAliases.map { it.lowercase() }.toSet()
+        return when (key) {
+            in streams -> fields(QktVocabulary.streamFields + QktVocabulary.seriesSelectors)
+            in baskets, in series ->
                 fields(QktVocabulary.syntheticStreamFields + QktVocabulary.seriesSelectors)
             else -> emptyList()
         }
+    }
 
     private fun fields(names: List<String>): List<CompletionItem> = names.map { item(it, CompletionItemKind.Field) }
 

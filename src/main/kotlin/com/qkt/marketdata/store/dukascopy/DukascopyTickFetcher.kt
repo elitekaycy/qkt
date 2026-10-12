@@ -50,14 +50,28 @@ class DukascopyTickFetcher(
         ticks: List<Tick>,
     ) {
         Files.createDirectories(target.parent)
-        writer(target).use { w ->
-            w.write(CsvTickFeed.EXPECTED_HEADER)
-            w.newLine()
-            for (t in ticks) {
-                // timestamp,symbol,price,volume,bid,ask,bidVolume,askVolume — price blank, mid derived.
-                w.write("${t.timestamp},${t.symbol},,${t.volume},${t.bid},${t.ask},${t.bidVolume},${t.askVolume}")
+        // Atomic publish: readers (including parallel fetch workers) see the old complete file
+        // or the new complete file, never a half-written one (#1375).
+        val tmp = Files.createTempFile(target.parent, target.fileName.toString(), ".part")
+        try {
+            writer(tmp).use { w ->
+                w.write(CsvTickFeed.EXPECTED_HEADER)
                 w.newLine()
+                for (t in ticks) {
+                    // timestamp,symbol,price,volume,bid,ask,bidVolume,askVolume — price blank, mid derived.
+                    w.write("${t.timestamp},${t.symbol},,${t.volume},${t.bid},${t.ask},${t.bidVolume},${t.askVolume}")
+                    w.newLine()
+                }
             }
+            Files.move(
+                tmp,
+                target,
+                java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+            )
+        } catch (e: Exception) {
+            runCatching { Files.deleteIfExists(tmp) }
+            throw e
         }
     }
 

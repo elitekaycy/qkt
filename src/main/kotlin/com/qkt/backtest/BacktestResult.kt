@@ -120,4 +120,10 @@ data class BacktestResult(
     val liquidations: List<Liquidation> = emptyList(),
     /** Every option structure the strategies opened, oldest first; empty when none did. */
     val structures: List<StructureRow> = emptyList(),
+    /**
+     * Everything needed to re-run this exact backtest, rendered by the HTML report's
+     * "Reproduce this run" section. Null on internal/unit-test results or older call sites;
+     * never serialized into `result.json`.
+     */
+    val reproduction: com.qkt.backtest.report.ReproductionInfo? = null,
 )

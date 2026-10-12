@@ -28,64 +28,92 @@ internal fun runMain(argv: Array<String>): Int =
         com.qkt.cli.daemon.logging.StateDirLogging
             .bind(argv)
         val args = Args(argv)
-        CliOptionSchemas.forSubcommand(args.subcommand)?.let { schema ->
-            args.validateOptions(
-                valueOptions = schema.values,
-                flags = schema.flags,
-                optionalValueOptions = schema.optionalValues,
-                shortAliases = schema.shortAliases,
-            )
-        }
-        when (args.subcommand) {
-            "parse" -> ParseCommand(args).run()
-            "dsl" -> DslCommand(args).run()
-            "lsp" -> LspCommand().run()
-            "backtest" -> BacktestCommand(args).run()
-            "sweep" -> SweepCommand(args).run()
-            "walkforward" -> WalkForwardCommand(args).run()
-            "experiment" -> ExperimentCommand(args).run()
-            "research" -> ResearchCommand(args).run()
-            "run" -> RunCommand(args).run()
-            "deploy" -> DeployCommand(args).run()
-            "resync" -> ResyncCommand(args).run()
-            "list" -> ListCommand(args).run()
-            "stop" -> StopCommand(args).run()
-            "start" -> StartCommand(args).run()
-            "halt" -> HaltCommand(args).run()
-            "kill" -> KillCommand(args).run()
-            "reconcile" -> ReconcileCommand(args).run()
-            "resume" -> ResumeCommand(args).run()
-            "brokers" -> BrokersCommand(args).run()
-            "instruments" -> InstrumentsCommand(args).run()
-            "editor" -> EditorCommand(args).run()
-            "create" -> CreateCommand(args).run()
-            "audit-ticks" -> AuditTicksCommand(args).run()
-            "fetch" -> FetchCommand(args).run()
-            "data" -> DataCommand(args).run()
-            "preflight" -> PreflightCommand(args).run()
-            "promotion" -> PromotionCommand(args).run()
-            "incident" -> IncidentCommand(args).run()
-            "golden" -> GoldenCommand(args).run()
-            "soak" -> SoakCommand(args).run()
-            "bot" ->
-                com.qkt.cli.bot
-                    .BotCommand(args)
-                    .run()
-            "daemon" -> DaemonCommand(args).run()
-            "logs" -> LogsCommand(args).run()
-            "status" -> StatusCommand(args).run()
-            "observe" -> ObserveCommand(args).run()
-            "--version", "-v" -> {
-                println(BuildInfo.versionLine())
-                ExitCodes.SUCCESS
+        if ("--help" in argv.drop(1) &&
+            args.subcommand != "bot" &&
+            CliOptionSchemas.forSubcommand(args.subcommand) != null
+        ) {
+            // A bare word after --help narrows to matching flags (`qkt backtest --help from`); a
+            // strategy path is not a filter. A configured run name instead introspects the run.
+            val tail = argv.drop(1).filter { it != "--help" && !it.startsWith("--") }
+            val filter = tail.firstOrNull { '.' !in it && '/' !in it }
+            val runHelp =
+                if (args.subcommand == "backtest" && filter != null) {
+                    val section = Config.load(Config.resolvePath(args.option("config"))).backtest
+                    section.runs[filter]?.let { run ->
+                        CliHelp.forRun(filter, BacktestRunSelection.merge(section, run, filter))
+                    }
+                } else {
+                    null
+                }
+            println(runHelp ?: CliHelp.forCommand(args.subcommand, full = "--all" in argv, filter = filter))
+            ExitCodes.SUCCESS
+        } else {
+            CliOptionSchemas.forSubcommand(args.subcommand)?.let { schema ->
+                args.validateOptions(
+                    valueOptions = schema.values,
+                    flags = schema.flags,
+                    optionalValueOptions = schema.optionalValues,
+                    shortAliases = schema.shortAliases,
+                )
             }
-            "--help", "help" -> {
-                printHelp()
-                ExitCodes.SUCCESS
-            }
-            else -> {
-                System.err.println("qkt: unknown subcommand '${args.subcommand}'")
-                ExitCodes.ARG_ERROR
+            when (args.subcommand) {
+                "parse" -> ParseCommand(args).run()
+                "dsl" -> DslCommand(args).run()
+                "lsp" -> LspCommand().run()
+                "backtest" -> BacktestCommand(args).run()
+                "sweep" -> SweepCommand(args).run()
+                "walkforward" -> WalkForwardCommand(args).run()
+                "experiment" -> ExperimentCommand(args).run()
+                "research" -> ResearchCommand(args).run()
+                "run" -> RunCommand(args).run()
+                "deploy" -> DeployCommand(args).run()
+                "resync" -> ResyncCommand(args).run()
+                "list" -> ListCommand(args).run()
+                "stop" -> StopCommand(args).run()
+                "start" -> StartCommand(args).run()
+                "halt" -> HaltCommand(args).run()
+                "kill" -> KillCommand(args).run()
+                "reconcile" -> ReconcileCommand(args).run()
+                "resume" -> ResumeCommand(args).run()
+                "brokers" -> BrokersCommand(args).run()
+                "instruments" -> InstrumentsCommand(args).run()
+                "editor" -> EditorCommand(args).run()
+                "create" -> CreateCommand(args).run()
+                "audit-ticks" -> AuditTicksCommand(args).run()
+                "fetch" -> FetchCommand(args).run()
+                "data" -> DataCommand(args).run()
+                "preflight" -> PreflightCommand(args).run()
+                "promotion" -> PromotionCommand(args).run()
+                "incident" -> IncidentCommand(args).run()
+                "golden" -> GoldenCommand(args).run()
+                "soak" -> SoakCommand(args).run()
+                "bot" ->
+                    com.qkt.cli.bot
+                        .BotCommand(args)
+                        .run()
+                "daemon" -> DaemonCommand(args).run()
+                "logs" -> LogsCommand(args).run()
+                "status" -> StatusCommand(args).run()
+                "observe" -> ObserveCommand(args).run()
+                "--version", "-v" -> {
+                    println(BuildInfo.versionLine())
+                    ExitCodes.SUCCESS
+                }
+                "--help", "help" -> {
+                    printHelp()
+                    ExitCodes.SUCCESS
+                }
+                else -> {
+                    val hint = CliHelp.suggestCommand(args.subcommand)
+                    if (hint != null) {
+                        System.err.println("qkt: unknown command '${args.subcommand}'. Did you mean 'qkt $hint'?")
+                        System.err.println(CliHelp.forCommand(hint))
+                    } else {
+                        System.err.println("qkt: unknown subcommand '${args.subcommand}'")
+                        System.err.println(CliTopHelp.topLevelHelp)
+                    }
+                    ExitCodes.ARG_ERROR
+                }
             }
         }
     } catch (e: ArgError) {
@@ -94,78 +122,5 @@ internal fun runMain(argv: Array<String>): Int =
     }
 
 private fun printHelp() {
-    println(
-        """
-        qkt — Kotlin trading-strategy DSL runtime
-
-        USAGE
-            qkt <subcommand> [arguments]
-
-        PROJECT SCAFFOLDING
-            create template <path>  scaffold a project
-                                    (--kind mt5|mt5-ci|backtest|portfolio|minimal|bybit|bot)
-
-        STRATEGY AUTHORING
-            parse <file>            parse and validate a .qkt file
-            dsl vocabulary [--json] list every keyword, indicator, function, field and member
-            lsp                     run the language server over stdio (for editors)
-            backtest <file> ...     run a backtest (--enforce-live-breakers; --chaos for seeded stress)
-            sweep <file> ...        grid-search params (--param fast=5,10,15 --rank sharpe)
-            walkforward <file> ...  rolling in-sample/out-of-sample validation
-            experiment run --plan <yaml>
-                                    governed train/validation/test research run
-            research <file> ...     interactive playback REPL over historical data
-            run <file> ...          run a strategy in foreground (paper-trading)
-
-        DAEMON LIFECYCLE
-            daemon start            start the long-lived daemon process
-            daemon stop             stop the running daemon
-            daemon status           show daemon health
-
-        DAEMON OPERATIONS
-            deploy <file> --as <n>  register and start a strategy in the daemon
-            resync <file> --as <n>  safely replace a running daemon deployment
-            list                    list deployed strategies
-            status [<name>]         show status of one strategy or all
-            status --deep           aggregated health check (exit 1 if unhealthy)
-            logs <name> [-f]        tail per-strategy log file
-            stop <name> [--flatten] gracefully stop a deployed strategy
-            start <portfolio>/<c>   clear operator-stop on a portfolio child
-
-        ONE-SHOT TRADING (AI/manual overlay)
-            bot buy|sell ...        place a one-shot order (see qkt bot help)
-            bot close|modify|cancel manage venue positions and pending orders
-            bot account|positions|orders|quote|bars|history|eval
-                                    read venue truth and evaluate indicators
-
-        VENUE / FEED
-            brokers list            list configured broker profiles
-            instruments verify      compare instruments.yaml with MT5 /symbol_info
-            audit-ticks ...         capture and audit live MT5 ticks
-            fetch BROKER:SYMBOL --tf <tf> --from <date> --to <date>
-                                    backfill historical bars into the local store
-            fetch BROKER:SYMBOL --tf <tf> --last 30d
-                                    same, but for the last N days
-            data verify <symbol>    check cached tick day files for empty/corrupt/gappy data
-            preflight <file>        validate production readiness (--production to fail closed)
-            promotion ...           record/query promotion states, approvals, waivers, gates
-            incident collect        build an incident zip with journal/log/state evidence
-            golden capture          export replayable MT5 trading or strict read-only evidence
-            golden materialize      verify a golden ZIP and build normal tick/bar replay stores
-            soak report             derive exact-image paper-soak promotion evidence
-
-        EDITOR INTEGRATIONS
-            editor list             show supported editors + what's detected on this machine
-            editor install <t>      install for vscode, nvim, vim, or all
-            editor uninstall <t>    remove a previously-installed integration
-            editor grammar          print the generated grammar (--format textmate|vim)
-
-        FLAGS
-            --version, -v           print qkt version
-            --help, help            this message
-
-        DOCS
-            https://qkt.elitekaycy.com/
-        """.trimIndent(),
-    )
+    println(CliTopHelp.topLevelHelp)
 }

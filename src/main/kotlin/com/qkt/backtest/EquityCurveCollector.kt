@@ -42,6 +42,8 @@ class EquityCurveCollector(
     private val dailyEquity = DailyEquityAccumulator()
     private val windowSamples = ArrayList<WindowSamples>()
     private var pendingCandleEndTime: Long? = null
+    private var lastSampleTs: Long? = null
+    private var lastSampleEquity: BigDecimal? = null
     private val symbolsClosedAtBoundary = mutableSetOf<String>()
 
     init {
@@ -95,10 +97,25 @@ class EquityCurveCollector(
         symbolsClosedAtBoundary.clear()
     }
 
+    /**
+     * Closes the curve at the end of a replay. The candle-close sample at the final boundary is taken before the
+     * rules that boundary triggers have filled, so a fill on the last bar (or a rollover charged after the last
+     * tick) is in the run's PnL but not on the curve. Re-sample once, at the later of [timestamp] and the last
+     * sample, when equity moved since that sample; the curve's last point then equals the reported total.
+     */
+    fun closeAt(timestamp: Long) {
+        val last = lastSampleTs ?: return
+        val equity = startingBalance.add(pnl.realizedTotal()).add(pnl.unrealizedTotal())
+        if (lastSampleEquity?.compareTo(equity) == 0) return
+        sample(maxOf(timestamp, last))
+    }
+
     private fun sample(timestamp: Long) {
         val floor = windowStartMs
         if (floor != null && timestamp < floor) return
         val globalEquity: BigDecimal = startingBalance.add(pnl.realizedTotal()).add(pnl.unrealizedTotal())
+        lastSampleTs = timestamp
+        lastSampleEquity = globalEquity
         globalMetricsAcc.accept(timestamp, globalEquity)
         globalCurve.accept(EquitySample(timestamp, globalEquity))
         dailyEquity.accept(timestamp, globalEquity)

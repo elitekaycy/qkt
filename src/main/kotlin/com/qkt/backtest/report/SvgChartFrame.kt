@@ -65,5 +65,11 @@ internal object SvgChartFrame {
         return PADDING_TOP + (max - v) / (max - min) * range
     }
 
-    private fun axisLabel(value: Double): String = String.format(Locale.US, "%.4g", value)
+    private fun axisLabel(value: Double): String =
+        // Grouped plain numbers, never scientific notation (#1378: 15110 read as "1.511e+04").
+        if (kotlin.math.abs(value) >= 1000.0) {
+            String.format(Locale.US, "%,.0f", value)
+        } else {
+            String.format(Locale.US, "%.2f", value)
+        }
 }

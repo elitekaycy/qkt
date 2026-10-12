@@ -67,7 +67,7 @@ class ReportPrinterMetricsTest : ReportPrinterFixture() {
         val res = BacktestResult(emptyList(), emptyList(), emptyMap(), r, emptyMap(), SampleCadence.TICK)
 
         val text = ByteArrayOutputStream()
-        ReportPrinter.print(res, ReportFormat.Text, PrintStream(text), BrokerKind.PAPER)
+        ReportPrinter.print(res, ReportFormat.Text, PrintStream(text), BrokerKind.PAPER, verbose = true)
         assertThat(text.toString()).contains("Max daily DD:")
 
         val json = ByteArrayOutputStream()

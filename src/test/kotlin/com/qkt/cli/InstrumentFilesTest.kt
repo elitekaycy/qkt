@@ -50,6 +50,84 @@ class InstrumentFilesTest {
     }
 
     @Test
+    fun `commission-per-lot overrides every symbol rate`(
+        @TempDir dir: Path,
+    ) {
+        val registry =
+            InstrumentFiles.forBacktest(
+                dir,
+                Args(arrayOf("backtest", "s.qkt", "--commission-per-lot", "7")),
+                listOf("BACKTEST:XAUUSD"),
+                java.time.Instant.parse("2024-01-15T00:00:00Z"),
+                java.time.Instant.parse("2024-01-16T00:00:00Z"),
+            )
+        assertThat(registry.lookup("BACKTEST:XAUUSD")?.commissionPerLot).isEqualByComparingTo("7")
+    }
+
+    @Test
+    fun `negative commission-per-lot is a setup error`(
+        @TempDir dir: Path,
+    ) {
+        assertThatThrownBy {
+            InstrumentFiles.forBacktest(
+                dir,
+                Args(arrayOf("backtest", "s.qkt", "--commission-per-lot", "-1")),
+                listOf("BACKTEST:XAUUSD"),
+                java.time.Instant.parse("2024-01-15T00:00:00Z"),
+                java.time.Instant.parse("2024-01-16T00:00:00Z"),
+            )
+        }.isInstanceOf(BacktestContext.Companion.SetupError::class.java)
+            .hasMessageContaining("--commission-per-lot")
+    }
+
+    @Test
+    fun `swap-scale multiplies both financing sides`(
+        @TempDir dir: Path,
+    ) {
+        Files.writeString(
+            dir.resolve("instruments.yaml"),
+            """
+            instruments:
+              - qktSymbol: BACKTEST:XAUUSD
+                contractSize: 100
+                volumeStep: 0.01
+                volumeMin: 0.01
+                pointSize: 0.001
+                digits: 3
+                tradeStopsLevelPoints: 0
+                swapLongPoints: -1.20
+                swapShortPoints: 0.80
+            """.trimIndent(),
+        )
+        val registry =
+            InstrumentFiles.forBacktest(
+                dir,
+                Args(arrayOf("backtest", "s.qkt", "--swap-scale", "2")),
+                listOf("BACKTEST:XAUUSD"),
+                java.time.Instant.parse("2024-01-15T00:00:00Z"),
+                java.time.Instant.parse("2024-01-16T00:00:00Z"),
+            )
+        assertThat(registry.lookup("BACKTEST:XAUUSD")?.swapLongPoints).isEqualByComparingTo("-2.40")
+        assertThat(registry.lookup("BACKTEST:XAUUSD")?.swapShortPoints).isEqualByComparingTo("1.60")
+    }
+
+    @Test
+    fun `negative swap-scale is a setup error`(
+        @TempDir dir: Path,
+    ) {
+        assertThatThrownBy {
+            InstrumentFiles.forBacktest(
+                dir,
+                Args(arrayOf("backtest", "s.qkt", "--swap-scale", "-1")),
+                listOf("BACKTEST:XAUUSD"),
+                java.time.Instant.parse("2024-01-15T00:00:00Z"),
+                java.time.Instant.parse("2024-01-16T00:00:00Z"),
+            )
+        }.isInstanceOf(BacktestContext.Companion.SetupError::class.java)
+            .hasMessageContaining("--swap-scale")
+    }
+
+    @Test
     fun `an option missing from its root's catalog fails before the run`(
         @TempDir dir: Path,
     ) {

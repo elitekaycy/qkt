@@ -28,9 +28,10 @@ object ReportPrinter {
         brokerKind: BrokerKind,
         futures: Set<String> = emptySet(),
         options: Set<String> = emptySet(),
+        verbose: Boolean = false,
     ) {
         when (fmt) {
-            ReportFormat.Text -> TextReportPrinter.print(result, out, brokerKind, futures, options)
+            ReportFormat.Text -> TextReportPrinter.print(result, out, brokerKind, futures, options, verbose)
             ReportFormat.Json -> JsonReportPrinter.print(result, out, brokerKind)
         }
     }

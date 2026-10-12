@@ -10,6 +10,8 @@ import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.optionSymbols
 import com.qkt.marketdata.depth.BookDepthSymbol
 import com.qkt.marketdata.openinterest.OpenInterestSymbol
+import com.qkt.marketdata.store.BarCompletenessValidator
+import com.qkt.marketdata.store.BinaryBarStore
 import com.qkt.marketdata.store.DefaultDataStore
 import com.qkt.marketdata.store.LocalBarStore
 import com.qkt.marketdata.store.dukascopy.DukascopyInstrument
@@ -57,6 +59,7 @@ internal object BacktestTickProvisioning {
         val (fetchableStreams, validateOnlyStreams) =
             tickProvisionStreams.partition { DukascopyInstrument.ofOrNull(it.bareSymbol) != null }
         if (!barReplay.forceBars && !provisionTo.isBefore(provisionFrom) && tickProvisionStreams.isNotEmpty()) {
+            val binaryBars = BinaryBarStore(store.root)
             for ((streams, fetch) in listOf(fetchableStreams to !noFetch, validateOnlyStreams to false)) {
                 BacktestDataProvisioner(store).ensure(
                     streams = streams,
@@ -65,9 +68,57 @@ internal object BacktestTickProvisioning {
                     fetchEnabled = fetch,
                     allowIncomplete = allowIncomplete,
                     calendarFor = { BacktestContext.defaultCalendars().calendarFor(it) },
+                    barsLineFor = { barsLine(binaryBars, barReplay, it, provisionFrom, provisionTo) },
                 )
             }
         }
         OptionChainCoverage.ensure(instruments, replaySymbols, provisionFrom, provisionTo, allowIncomplete)
+    }
+
+    /**
+     * The bars suggestion for the missing-tick error: names the coarsest built timeframe that
+     * covers the window, or states none does (with the `build-bars` fix when the strategy's
+     * timeframe is known). Reads file presence only; never fetches.
+     */
+    private fun barsLine(
+        binaryBars: BinaryBarStore,
+        barReplay: BacktestBarReplay.BarReplayConfig,
+        stream: ProvisionStream,
+        from: LocalDate,
+        to: LocalDate,
+    ): String {
+        val calendar = BacktestContext.defaultCalendars().calendarFor(stream.bareSymbol)
+        val coverages =
+            binaryBars
+                .builtTimeframes(stream.broker, stream.bareSymbol)
+                .sortedByDescending { it.durationMs }
+                .map { tf ->
+                    tf to
+                        BarCompletenessValidator.validate(
+                            binaryBars,
+                            stream.broker,
+                            stream.bareSymbol,
+                            tf,
+                            from,
+                            to,
+                            calendar,
+                        )
+                }
+        val full = coverages.firstOrNull { it.second.missingDays.isEmpty() }
+        if (full != null) {
+            return "Bars exist for this window (${full.first.canonicalSpec()}, " +
+                "${full.second.coveredTradingDays} of ${full.second.requestedTradingDays} days): " +
+                "rerun with --bars to use them (faster, approximate fills)."
+        }
+        val declared = barReplay.finestDeclared["${stream.broker}:${stream.bareSymbol}"]?.canonicalSpec()
+        val build =
+            if (declared !=
+                null
+            ) {
+                " Try qkt data build-bars ${stream.bareSymbol} --tf $declared to build them."
+            } else {
+                ""
+            }
+        return "No built bars cover this window.$build"
     }
 }

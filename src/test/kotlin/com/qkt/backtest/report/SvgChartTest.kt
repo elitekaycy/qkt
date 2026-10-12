@@ -42,9 +42,19 @@ class SvgChartTest {
 
             val svg = SvgChart.lineChart(pts, width = 400, height = 200, title = "locale")
 
-            assertThat(svg).contains(">1.500<")
-            assertThat(svg).contains(">1.250<")
-            assertThat(svg).doesNotContain(">1,500<")
+            assertThat(svg).contains(">1.50<")
+            assertThat(svg).contains(">1.25<")
+            assertThat(svg).doesNotContain(">1,50<")
+
+            val big =
+                SvgChart.lineChart(
+                    listOf(0L to BigDecimal("10000"), 1L to BigDecimal("15110")),
+                    width = 400,
+                    height = 200,
+                    title = "grouped",
+                )
+            assertThat(big).contains(">15,110<")
+            assertThat(big).doesNotContain("e+")
         } finally {
             Locale.setDefault(original)
         }

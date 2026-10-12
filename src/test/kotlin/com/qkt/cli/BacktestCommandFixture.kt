@@ -7,6 +7,16 @@ import java.nio.file.Path
 
 abstract class BacktestCommandFixture {
     protected fun runBacktest(vararg argv: String): Triple<Int, String, String> {
+        val runsHome = Files.createTempDirectory("qkt-runs-test")
+        runsHome.toFile().deleteOnExit()
+        return runBacktestWithRunsRoot(runsHome, *argv)
+    }
+
+    /** Like [runBacktest] but reports land under [runsHome] instead of the real home. */
+    protected fun runBacktestWithRunsRoot(
+        runsHome: Path,
+        vararg argv: String,
+    ): Triple<Int, String, String> {
         val out = ByteArrayOutputStream()
         val err = ByteArrayOutputStream()
         val origOut = System.out
@@ -14,7 +24,7 @@ abstract class BacktestCommandFixture {
         System.setOut(PrintStream(out))
         System.setErr(PrintStream(err))
         return try {
-            val code = BacktestCommand(Args(argv as Array<String>)).run()
+            val code = BacktestCommand(Args(argv as Array<String>), runsRootOverride = runsHome).run()
             Triple(code, out.toString(), err.toString())
         } finally {
             System.setOut(origOut)

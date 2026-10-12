@@ -17,7 +17,13 @@ internal object TextReportPrinter {
         brokerKind: BrokerKind,
         futures: Set<String> = emptySet(),
         options: Set<String> = emptySet(),
+        verbose: Boolean = false,
     ) {
+        // Default is the concise view (#1370); --verbose keeps today's full output unchanged.
+        if (!verbose) {
+            ConciseReportPrinter.print(r, out, brokerKind, futures, options)
+            return
+        }
         val g = r.global
         out.println("Trades:           ${g.tradeCount}")
         out.println("Final realized:   ${g.realizedTotal.toPlainString()}   (net of commission and swap)")

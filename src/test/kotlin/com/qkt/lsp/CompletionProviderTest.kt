@@ -56,6 +56,21 @@ class CompletionProviderTest {
     }
 
     @Test
+    fun `member access matches aliases case-insensitively`() {
+        val labels = CompletionProvider.complete(doc.replace("btc.", "BTC."), 8, 13, astOf(doc)).map { it.label }
+        assertThat(labels).contains("close", "open", "high", "low", "volume")
+    }
+
+    @Test
+    fun `half-typed document still offers the alias members from its text`() {
+        val halfTyped = doc.replace("THEN BUY btc SIZING 1", "THEN BUY btc SIZING")
+        assertThat(astOf(halfTyped)).isNull()
+        val labels = CompletionProvider.complete(halfTyped, 8, 13, null).map { it.label }
+        assertThat(labels).contains("close", "open", "high", "low", "volume")
+        assertThat(labels).doesNotContain("ema", "rsi", "STRATEGY")
+    }
+
+    @Test
     fun `an empty document offers the whole-file templates as expandable snippets`() {
         val items = CompletionProvider.complete("", 0, 0, null)
         val strategy = items.first { it.label == "strategy" && it.kind == CompletionItemKind.Snippet }

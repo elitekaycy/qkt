@@ -65,7 +65,7 @@ class ReportPrinterEvidenceTest : ReportPrinterFixture() {
         ).isEqualTo("2")
 
         val textOut = ByteArrayOutputStream()
-        ReportPrinter.print(result, ReportFormat.Text, PrintStream(textOut), BrokerKind.PAPER)
+        ReportPrinter.print(result, ReportFormat.Text, PrintStream(textOut), BrokerKind.PAPER, verbose = true)
         assertThat(textOut.toString())
             .contains(
                 "Replay inputs",
@@ -100,7 +100,7 @@ class ReportPrinterEvidenceTest : ReportPrinterFixture() {
         val result = result().copy(runawayBreaker = breaker)
 
         val text = ByteArrayOutputStream()
-        ReportPrinter.print(result, ReportFormat.Text, PrintStream(text), BrokerKind.PAPER)
+        ReportPrinter.print(result, ReportFormat.Text, PrintStream(text), BrokerKind.PAPER, verbose = true)
         assertThat(text.toString()).contains("Runaway breaker:  observe-only")
         assertThat(text.toString()).contains("LIVE BEHAVIOR WARNING")
         assertThat(text.toString()).contains("2023-11-14T22:13:20Z")
@@ -127,7 +127,7 @@ class ReportPrinterEvidenceTest : ReportPrinterFixture() {
         assertThat(json.toString()).contains("\"rationale\":\"ready for paper\"")
 
         val text = ByteArrayOutputStream()
-        ReportPrinter.print(res, ReportFormat.Text, PrintStream(text), BrokerKind.PAPER)
+        ReportPrinter.print(res, ReportFormat.Text, PrintStream(text), BrokerKind.PAPER, verbose = true)
         assertThat(text.toString()).contains("Run evidence")
         assertThat(text.toString()).contains("sha256:strategy")
         assertThat(text.toString()).contains("mutable local store")

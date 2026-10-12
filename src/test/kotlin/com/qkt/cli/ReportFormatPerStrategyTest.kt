@@ -50,15 +50,16 @@ class ReportFormatPerStrategyTest {
     private fun render(
         result: BacktestResult,
         fmt: ReportFormat,
+        verbose: Boolean = false,
     ): String {
         val baos = ByteArrayOutputStream()
-        ReportPrinter.print(result, fmt, PrintStream(baos), BrokerKind.PAPER)
+        ReportPrinter.print(result, fmt, PrintStream(baos), BrokerKind.PAPER, verbose = verbose)
         return baos.toString()
     }
 
     @Test
     fun `text output lists each strategy`() {
-        val out = render(result(), ReportFormat.Text)
+        val out = render(result(), ReportFormat.Text, verbose = true)
         assertThat(out).contains("Per-strategy")
         assertThat(out).contains("alpha")
         assertThat(out).contains("beta")
@@ -66,7 +67,7 @@ class ReportFormatPerStrategyTest {
 
     @Test
     fun `text output shows global sortino and turnover`() {
-        val out = render(result(), ReportFormat.Text)
+        val out = render(result(), ReportFormat.Text, verbose = true)
         assertThat(out).contains("Sortino (annual): 1.4")
         assertThat(out).contains("Turnover (x cap): 3.0")
     }
@@ -93,6 +94,6 @@ class ReportFormatPerStrategyTest {
     @Test
     fun `single-strategy run omits the per-strategy table in text`() {
         val single = result().copy(perStrategy = mapOf("only" to report("100", 4)))
-        assertThat(render(single, ReportFormat.Text)).doesNotContain("Per-strategy")
+        assertThat(render(single, ReportFormat.Text, verbose = true)).doesNotContain("Per-strategy")
     }
 }

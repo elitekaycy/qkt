@@ -76,7 +76,8 @@ class ArgsTest {
         assertThatThrownBy {
             args.validateOptions(valueOptions = setOf("report-dir"))
         }.isInstanceOf(ArgError::class.java)
-            .hasMessage("unknown flag --report")
+            .hasMessageStartingWith("unknown flag --report")
+            .hasMessageContaining("Usage: qkt backtest")
     }
 
     @Test
@@ -86,7 +87,8 @@ class ArgsTest {
         assertThatThrownBy {
             args.validateOptions(flags = setOf("follow"), shortAliases = mapOf("-f" to "--follow"))
         }.isInstanceOf(ArgError::class.java)
-            .hasMessage("unknown flag -x")
+            .hasMessageStartingWith("unknown flag -x")
+            .hasMessageContaining("Usage: qkt logs")
     }
 
     @Test

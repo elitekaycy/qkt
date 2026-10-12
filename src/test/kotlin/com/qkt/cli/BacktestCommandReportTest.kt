@@ -67,12 +67,63 @@ class BacktestCommandReportTest : BacktestCommandFixture() {
         assertThat(code).withFailMessage("stderr=$stderr stdout=$stdout").isEqualTo(ExitCodes.SUCCESS)
         assertThat(reportDir.resolve("result.json")).exists()
         assertThat(reportDir.resolve("trades.csv")).exists()
+        assertThat(stderr).contains("Report saved:")
         val tradesCsv = Files.readString(reportDir.resolve("trades.csv"))
         assertThat(tradesCsv.lines().first()).contains("accountPositionQtyBefore")
         assertThat(tradesCsv.lines().first()).contains("fillNotional")
         assertThat(tradesCsv.lines().first()).contains("positionEffect")
         assertThat(tradesCsv.lines().first()).contains("orderType")
         assertThat(tradesCsv.lines().drop(1)).anyMatch { it.contains(",OPEN_LONG,Market,") }
+    }
+
+    @Test
+    fun `a plain backtest saves a report under the runs home and prints the path`(
+        @TempDir home: Path,
+    ) {
+        val (code, stdout, stderr) =
+            runBacktestWithRunsRoot(
+                home,
+                "backtest",
+                "src/test/resources/cli/valid_strategy.qkt",
+                "--from",
+                "2024-01-15",
+                "--to",
+                "2024-01-16",
+                "--data-root",
+                "src/test/resources/cli/data",
+                "--allow-incomplete",
+            )
+        assertThat(code).withFailMessage("stderr=$stderr stdout=$stdout").isEqualTo(ExitCodes.SUCCESS)
+        assertThat(stderr).contains("Report saved: ")
+        val saved =
+            Files.list(home.resolve(".qkt").resolve("runs")).use { it.toList() }
+        assertThat(saved).hasSize(1)
+        assertThat(saved[0].fileName.toString()).contains("valid_strategy")
+        assertThat(saved[0].resolve("report.html")).exists()
+        assertThat(saved[0].resolve("result.json")).exists()
+    }
+
+    @Test
+    fun `no-report writes nothing and prints no path`(
+        @TempDir home: Path,
+    ) {
+        val (code, stdout, stderr) =
+            runBacktestWithRunsRoot(
+                home,
+                "backtest",
+                "src/test/resources/cli/valid_strategy.qkt",
+                "--from",
+                "2024-01-15",
+                "--to",
+                "2024-01-16",
+                "--data-root",
+                "src/test/resources/cli/data",
+                "--allow-incomplete",
+                "--no-report",
+            )
+        assertThat(code).withFailMessage("stderr=$stderr stdout=$stdout").isEqualTo(ExitCodes.SUCCESS)
+        assertThat(home.resolve(".qkt")).doesNotExist()
+        assertThat(stderr).doesNotContain("Report saved:")
     }
 
     @Test

@@ -43,25 +43,18 @@ object ProductionPreflight {
         forceProduction: Boolean = false,
         offline: Boolean = false,
     ): List<PreflightCheck> {
-        val cfg =
-            try {
-                Config.load(configPath)
-            } catch (e: Exception) {
-                return listOf(
-                    PreflightCheck(
-                        "config.load",
-                        PreflightStatus.FAIL,
-                        e.message ?: e.toString(),
-                    ),
-                )
-            }
-        val production = forceProduction || cfg.runtimeMode.production
+        val loaded = loadPreflightConfig(configPath)
+        if (loaded is PreflightConfig.Failed) return listOf(loaded.check)
+        loaded as PreflightConfig.Loaded
+        val cfg = loaded.cfg
+        val runtimeMode = loaded.runtimeMode
+        val production = forceProduction || runtimeMode.production
         val checks = mutableListOf<PreflightCheck>()
         checks.add(
             PreflightCheck(
                 "runtime.mode",
                 PreflightStatus.PASS,
-                if (production) "production" else cfg.runtimeMode.name.lowercase(),
+                if (production) "production" else runtimeMode.name.lowercase(),
             ),
         )
 

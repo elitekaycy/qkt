@@ -268,7 +268,8 @@ if "$cli" golden capture --session "$strategy" --state-dir "$out/state" --out "$
     to_utc="$(jq -er '.replayWindow.toUtc' "$out/replay-data/golden-replay-manifest.json")"
     QKT_BROKER_API_KEY=offline QKT_STATE_DIR="$out/replay-state" "$cli" backtest "$out/strategies/$strategy.qkt" \
         --from "$from_utc" --to "$to_utc" --data-root "$out/replay-data" --no-fetch --allow-incomplete \
-        --config "$out/qkt.config.yaml" --instruments "$out/instruments.yaml" --broker mt5-sim --json > "$out/replay.log" 2>&1 || true
+        --config "$out/qkt.config.yaml" --instruments "$out/instruments.yaml" --broker mt5-sim --verbose --json > "$out/replay.log" 2>&1 || true
+    # --verbose keeps the engine log lines this reads: the default console is a short summary without them.
     fills "$out/replay.log" > "$out/evidence/replay-fills.txt"
     replay_fills="$(wc -l < "$out/evidence/replay-fills.txt")"
     # The runner's flatten is excluded above, so the strategy's live fills and the replay's must be

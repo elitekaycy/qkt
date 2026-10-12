@@ -371,6 +371,61 @@ Preset defaults:
 
 No preset sets `execution.order_spacing`. Add `--order-spacing 150ms` when a strategy sends several orders at once (`STACK_AT` bursts, `TIMES`, `OCO_ENTRY`), where a single release price overstates the fills.
 
+## `backtest`
+
+Repeatable project-local backtests, read only by `qkt backtest`. The global block holds
+defaults; `runs.<name>` holds named variants inheriting them. Invocation: `qkt backtest`
+runs the default strategy, `qkt backtest <name>` a named run (`scalps.qkt` also resolves to
+run `scalps`), `qkt backtest <file>` that file. An existing file always wins; an unknown
+name fails with the run list and the closest suggestion. Precedence everywhere:
+**flag > named run > global `backtest:` > built-in default**. Unknown keys warn once and never
+fail. Sweep, walkforward, and research stay CLI-only.
+
+```yaml
+backtest:
+  strategy: strategies/first.qkt   # default for bare `qkt backtest`
+  from: 2025-09-01
+  to: 2025-10-01
+  broker: mt5-sim
+  instruments: data/instruments.yaml
+  commission-per-lot: 7
+  swap-scale: 2
+  report-dir: runs/first
+  runs:
+    scalps:                        # inherits everything except strategy/from
+      strategy: strategies/scalp.qkt
+      from: 2025-10-01
+    paper-check:
+      strategy: strategies/first.qkt
+      broker: paper                # overrides global
+```
+
+| Key | Type | Default | CLI override | Notes |
+|---|---|---|---|---|
+| `backtest.strategy` | path string | unset | positional file/run | Required for bare `qkt backtest` (else the missing-argument error lists runs). Relative paths resolve against the config file's directory. |
+| `backtest.from`, `backtest.to` | date | unset | `--from`, `--to` | Still required after merging when absent everywhere. |
+| `backtest.broker` | `paper`, `mt5-sim` | `paper` | `--broker` | Same values as the flag. |
+| `backtest.instruments` | path string | `<data-root>/instruments.yaml`, else built-in table | `--instruments` | Relative paths resolve against the config file's directory. |
+| `backtest.commission-per-lot` | decimal | per-symbol yaml rate | `--commission-per-lot` | Rebooks every fill at this account-currency rate per 1.0 lot per side. Symbols without metadata bill nothing and are named in a warning. |
+| `backtest.swap-scale` | decimal | `1` | `--swap-scale` | Multiplies both swap sides (`0` prices swap-free). Rollover hour/triple day stay from metadata. |
+| `backtest.report-dir` | path string | timestamped dir (see `report.dir`) | `--report-dir` | `--no-report` opts out. |
+| `backtest.param` | map | unset | `--param` (repeatable) | `{fast: 5}` behaves like `--param fast=5`; explicit flags win per key. Comma values are rejected with the sweep pointer, as on the CLI. |
+| `backtest.runs.<name>.*` | same keys | inherits global | flags | Any key above plus `strategy:`; `param:` maps merge the same way. |
+
+Every merged key is recorded with its layer (`flag`, `run:<name>`, `global`) in evidence
+`resolved` (`result.json`) and the report's effective-configuration table, so a surprising
+number always traces to the layer that supplied it.
+
+Any other backtest flag works as a key by its flag name (`seed: 7`, `bars: true`,
+`no-fetch: true`); `qkt backtest --help --all` is the complete list. Boolean flags take
+`true`/`false`.
+
+## `report`
+
+| Key | Type | Default | Used by | Notes |
+|---|---|---|---|---|
+| `report.dir` | path string | `~/.qkt/runs` | backtest bundles | Base for timestamped `<time>-<strategy>/` run dirs when no `report-dir` is set anywhere. Relative paths resolve against the config file's directory. `Report saved: <path>` is the last console line. |
+
 ## `promotion`
 
 Promotion gates protect production deploys. In `runtime.mode: production`, `promotion.enforce` defaults to `true`.

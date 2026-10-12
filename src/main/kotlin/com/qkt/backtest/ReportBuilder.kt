@@ -84,7 +84,7 @@ object ReportBuilder {
         dailyAdjustments: Map<java.time.LocalDate, BigDecimal>,
         tradedNotional: BigDecimal = BigDecimal.ZERO,
     ): PerformanceReport {
-        val closingRealizeds = trades.filter { it.reducedExposure }.map { it.realized }
+        val closingRealizeds = tradeOutcomes(trades)
         val outcomes = closingRealizeds.filter { it.signum() != 0 }
         val wins = outcomes.count { it.signum() > 0 }
         val winRate =

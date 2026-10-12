@@ -40,6 +40,49 @@ class EquityCurveCandleCloseTest {
     }
 
     @Test
+    fun `closeAt adds a final sample when the last bar's fills moved equity after its close`() {
+        val rig = newRig()
+        val collector =
+            EquityCurveCollector(
+                cadence = SampleCadence.CANDLE_CLOSE,
+                bus = rig.bus,
+                pnl = rig.pnl,
+                strategyPnL = rig.strategyPnL,
+                strategyIds = listOf("s1"),
+                startingBalance = Money.of("10000"),
+            )
+
+        rig.bus.publish(CandleEvent(candle("100", 60_000L)))
+        // the rule the final boundary triggers fills after the boundary's sample was taken
+        rig.pnl.recordRealized(Money.of("-2.80"))
+        collector.closeAt(60_000L)
+
+        assertThat(collector.global()).hasSize(2)
+        assertThat(collector.global().last().timestamp).isEqualTo(60_000L)
+        assertThat(collector.global().last().equity).isEqualByComparingTo(Money.of("9997.20"))
+        assertThat(collector.dailyEquity().last().close).isEqualByComparingTo(Money.of("9997.20"))
+    }
+
+    @Test
+    fun `closeAt adds nothing when equity did not move since the last sample`() {
+        val rig = newRig()
+        val collector =
+            EquityCurveCollector(
+                cadence = SampleCadence.CANDLE_CLOSE,
+                bus = rig.bus,
+                pnl = rig.pnl,
+                strategyPnL = rig.strategyPnL,
+                strategyIds = listOf("s1"),
+            )
+
+        rig.bus.publish(CandleEvent(candle("100", 60_000L)))
+        collector.closeAt(60_000L)
+
+        assertThat(collector.global()).hasSize(1)
+        assertThat(collector.globalMetrics().count).isEqualTo(1)
+    }
+
+    @Test
     fun `CANDLE_CLOSE samples once after all symbols close the same boundary`() {
         val rig = newRig()
         val collector =

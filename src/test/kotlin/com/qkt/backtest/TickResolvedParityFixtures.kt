@@ -120,7 +120,7 @@ internal object TickResolvedParityFixtures {
             }
         return JsonObject(
             root +
-                ("evidence" to JsonObject(evidence - "command")) +
+                ("evidence" to JsonObject(evidence - "command" - "resolved")) +
                 (if (inputSummary != null) mapOf("inputSummary" to inputSummary) else emptyMap()),
         )
     }

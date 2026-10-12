@@ -65,6 +65,7 @@ class WallClockSourcePolicyTest {
                 "src/main/kotlin/com/qkt/tools/parity/ParityBarsXauusd.kt" to "external capture timestamp",
                 "src/main/kotlin/com/qkt/tools/parity/ParityDukascopyMt5Xauusd.kt" to "external capture timestamp",
                 "src/main/kotlin/com/qkt/cli/ExperimentCommand.kt" to "operator-run evidence timestamp",
+                "src/main/kotlin/com/qkt/cli/BacktestReportSink.kt" to "operator-run report directory timestamp",
                 "src/main/kotlin/com/qkt/cli/PreflightCommand.kt" to "temporary probe uniqueness",
                 "src/main/kotlin/com/qkt/cli/RunCommand.kt" to "live command lifecycle timing",
                 "src/main/kotlin/com/qkt/cli/fetch/FetchDateRange.kt" to "operator-selected current date",

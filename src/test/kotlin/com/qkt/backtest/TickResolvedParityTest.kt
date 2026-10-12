@@ -55,7 +55,8 @@ class TickResolvedParityTest {
         // The whole point: a bracket strategy on a volatile path actually trades and hits brackets.
         assertThat(field(fullTick, "trades").toInt()).isGreaterThan(0)
         // Complete semantic report parity. Only the invocation command differs by design because
-        // one run includes --bars --tick-fills; no computed or model-evidence field is removed.
+        // one run includes --bars --tick-fills; evidence `resolved` records those same invocation
+        // flags per key, so the normalizer strips it too. No computed field is removed.
         assertThat(normalizedReport(resolved)).isEqualTo(normalizedReport(fullTick))
     }
 

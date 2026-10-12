@@ -105,4 +105,18 @@ class ManifestStoreTest {
         assertThat(Files.exists(symDir.resolve("manifest.json"))).isTrue()
         assertThat(Files.list(symDir).toList().none { it.fileName.toString().endsWith(".tmp") }).isTrue()
     }
+
+    @Test
+    fun `foreign keys are ignored rather than failing the read`() {
+        val store = ManifestStore(dir)
+        val symDir = dir.resolve("symbols").resolve("X")
+        Files.createDirectories(symDir)
+        Files.writeString(
+            symDir.resolve("manifest.json"),
+            """{"schemaVersion":1,"schema":"qkt-csv-v1","symbol":"X","ranges":[{"from":"2024-01-15","to":"2024-01-16"}],"lastUpdated":"","source":"dukascopy","fetchedBy":"other-tool"}""",
+        )
+        val read = store.read("X")
+        assertThat(read.symbol).isEqualTo("X")
+        assertThat(read.ranges).hasSize(1)
+    }
 }

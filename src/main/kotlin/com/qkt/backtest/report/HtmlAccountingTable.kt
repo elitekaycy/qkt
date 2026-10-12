@@ -1,10 +1,14 @@
 package com.qkt.backtest.report
 
 import com.qkt.accounting.AccountingSnapshot
+import com.qkt.backtest.PerformanceReport
 
-/** The "Accounting" table of the HTML report: account currency, FX policy and conversions, cost kinds. */
+/** The "Costs and adjustments" table of the HTML report: currency, FX policy, and only the cost kinds this run actually incurred, with amounts (#1378). */
 internal object HtmlAccountingTable {
-    fun render(snapshot: AccountingSnapshot): String =
+    fun render(
+        snapshot: AccountingSnapshot,
+        global: PerformanceReport,
+    ): String =
         buildString {
             append("<table><tbody>")
             append("<tr><td>account currency</td><td>${htmlEscape(snapshot.accountCurrency)}</td></tr>")
@@ -31,7 +35,23 @@ internal object HtmlAccountingTable {
             if (snapshot.warnings.isNotEmpty()) {
                 append("<tr><td>warnings</td><td>${htmlEscape(snapshot.warnings.joinToString("; "))}</td></tr>")
             }
-            append("<tr><td>cost kinds</td><td>${htmlEscape(snapshot.supportedCostKinds.joinToString(", "))}</td></tr>")
+            val incurred =
+                listOf(
+                    "commission" to global.commissionPaid,
+                    "swap" to global.swapPaid,
+                    "roll costs" to global.rollCostsPaid,
+                    "funding" to global.fundingPaid,
+                ).filter { it.second.signum() != 0 }
+            if (incurred.isEmpty()) {
+                append("<tr><td>costs incurred</td><td>none</td></tr>")
+            } else {
+                for ((name, amount) in incurred) {
+                    append(
+                        "<tr><td>$name</td><td title=\"${amount.toPlainString()}\">" +
+                            "${HumanFormat.money(amount, snapshot.accountCurrency)}</td></tr>",
+                    )
+                }
+            }
             append("</tbody></table>")
         }
 }

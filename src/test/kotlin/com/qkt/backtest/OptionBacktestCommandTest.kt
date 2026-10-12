@@ -48,6 +48,7 @@ class OptionBacktestCommandTest {
                             "--data-root",
                             data.toString(),
                             "--no-fetch",
+                            "--verbose",
                         ),
                     ),
                 ).run()

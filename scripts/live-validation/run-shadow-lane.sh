@@ -141,7 +141,7 @@ for id in "${ids[@]}"; do
         to_utc="$(jq -er '.replayWindow.toUtc' "$work/data/golden-replay-manifest.json")"
         QKT_STATE_DIR="$work/state" "$cli" backtest "$out/strategies/$id.qkt" --from "$from_utc" --to "$to_utc" \
             --data-root "$work/data" --no-fetch --allow-incomplete --config "$out/qkt.config.yaml" \
-            --broker paper --json > "$work/replay.log" 2>&1 || true
+            --broker paper --verbose --json > "$work/replay.log" 2>&1 || true
         # Fewer than two ticks a minute per symbol is a market that is shut or asleep, not a feed at work.
         ticks="$(jq -r '.counts.ticks // 0' "$work/data/golden-replay-manifest.json")"
         symbols="$(jq -r '.symbols | length' "$work/data/golden-replay-manifest.json")"

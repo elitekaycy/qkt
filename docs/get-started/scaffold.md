@@ -42,6 +42,11 @@ Specialized templates are layered on tested base projects, so `mt5-ci` retains
 the complete MT5 deployment and the research templates retain the standard
 container and ignore-file setup.
 
+The `backtest` and `portfolio` templates ship a commented `backtest:` block in
+`qkt.config.yaml`: uncomment it to repeat runs without flags — `qkt backtest` for the
+default strategy, `qkt backtest <name>` for a named run under `backtest.runs:`.
+See [Config reference](../reference/config-schema.md#backtest).
+
 ## Configuration model
 
 Only deployment-specific values need changing:

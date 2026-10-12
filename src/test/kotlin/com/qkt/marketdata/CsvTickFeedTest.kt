@@ -109,6 +109,23 @@ class CsvTickFeedTest {
     }
 
     @Test
+    fun `a truncated gzip names the file`() {
+        val full = "$header\n1000,XAUUSD,,1.0,1.10,1.10,1.0,1.0\n".toByteArray()
+        val gzipped = java.io.ByteArrayOutputStream()
+        GZIPOutputStream(gzipped).use { it.write(full) }
+        val cut = gzipped.toByteArray().dropLast(10).toByteArray()
+        val p = dir.resolve("cut.csv.gz")
+        Files.write(p, cut)
+        assertThatThrownBy {
+            CsvTickFeed(p).use { feed ->
+                while (feed.next() != null) {
+                    // drain
+                }
+            }
+        }.hasMessageContaining("cut.csv.gz")
+    }
+
+    @Test
     fun `wrong column count throws`() {
         val csv = "$header\n1000,XAUUSD,100"
         CsvTickFeed(writeCsv("a.csv", csv)).use { feed ->
