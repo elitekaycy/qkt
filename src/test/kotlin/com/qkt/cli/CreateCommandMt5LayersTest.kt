@@ -23,7 +23,7 @@ class CreateCommandMt5LayersTest : CreateCommandFixture() {
         assertThat(workflow)
             .contains(
                 "MT5_GATEWAY_IMAGE: \${{ vars.MT5_GATEWAY_IMAGE || " +
-                    "'elitekaycy/mt5-gateway-api:0.3.5' }}",
+                    "'elitekaycy/mt5-gateway-api:0.3.19' }}",
             )
         assertThat(workflow).contains("printf 'QKT_IMAGE_TAG=%s\\n' \"\$QKT_IMAGE_TAG\"")
         assertThat(workflow).contains("printf 'MT5_GATEWAY_IMAGE=%s\\n' \"\$MT5_GATEWAY_IMAGE\"")
