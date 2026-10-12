@@ -77,7 +77,7 @@ class CreateCommandMt5Test : CreateCommandFixture() {
         invoke("create", "template", target.toString())
         val envContent = Files.readString(target.resolve(".env.example"))
         assertThat(envContent).contains("QKT_IMAGE_TAG=v${BuildInfo.VERSION}")
-        assertThat(envContent).contains("MT5_GATEWAY_IMAGE=elitekaycy/mt5-gateway-api:0.3.5")
+        assertThat(envContent).contains("MT5_GATEWAY_IMAGE=elitekaycy/mt5-gateway-api:0.3.19")
         assertThat(envContent).contains("Required: headless MT5 login")
         assertThat(envContent).contains("Usually keep defaults")
         assertThat(envContent).contains("Diagnostic fallback only")
