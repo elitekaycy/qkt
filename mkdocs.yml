@@ -110,6 +110,7 @@ nav:
   - Home: index.md
   - Get started:
       - get-started/index.md
+      - Install: get-started/install.md
       - Quickstart: get-started/quickstart.md
       - Scaffold a project: get-started/scaffold.md
       - Deploy paper: get-started/deploy-paper.md
@@ -125,6 +126,7 @@ nav:
       - Trend-follow (EMA crossover): examples/trend-follow.md
       - Mean-reversion (RSI fade): examples/mean-reversion.md
       - Breakout (Donchian channels): examples/breakout.md
+      - Multi-timeframe gold: examples/gold-multi-timeframe.md
       - Pyramiding (STACK): examples/pyramiding.md
       - Risk-managed strategy: examples/risk-managed.md
       - Regime-gated portfolio: examples/portfolio.md
