@@ -79,3 +79,20 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+  # Fails the run when the live site is not answering, so a Pages setting that drifts (source branch,
+  # custom domain) is noticed on the next deploy instead of by a visitor.
+  verify:
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the live site answers
+        run: |
+          url=https://docs.tryqkt.com/
+          for _ in $(seq 1 8); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" "$url" || true)
+            [ "$code" = 200 ] && exit 0
+            sleep 15
+          done
+          echo "::error::$url answered ${code:-nothing} after the deploy: check Settings > Pages (source GitHub Actions, custom domain)"
+          exit 1
