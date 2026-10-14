@@ -14,7 +14,7 @@ export PATH="$PWD/build/install/qkt/bin:$PATH"
 qkt --version
 ```
 
-You should see `qkt 0.47.1` or later.
+You should see `qkt 0.56.1` or later.
 
 ## 2. Write your first strategy
 

@@ -358,5 +358,5 @@ Regime-weighted allocation and `WHEN..RUN` gating use the same `PortfolioGate` +
 - [Conditions](conditions.md) — `RUN` rules use the same condition grammar
 - [Indicators](indicators.md) — regime detectors are usually indicator-based
 - [Portfolio example](../../examples/portfolio.md) — full deployment with three regimes
-- [Regime-adaptive portfolio](../../examples/regime-adaptive/) — `REGIMES` + `ALLOCATE METHOD regime_weighted`
+- [Regime-adaptive portfolio](https://github.com/elitekaycy/qkt/tree/main/examples/regime-adaptive) — `REGIMES` + `ALLOCATE METHOD regime_weighted`
 - [Phase 13b](../../phases/phase-13b.md), [Phase 14](../../phases/phase-14.md) — design notes on portfolio fan-out

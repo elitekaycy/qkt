@@ -271,7 +271,7 @@ fill and checked every tick. Also applies to its `STACK_AT` legs. See
   that serves none (see [streams](dsl/streams.md#stream-field-access))
 - Trade flow, one bar back or more: `.buy_volume[n]`, `.sell_volume[n]` (aggressor volume),
   `.long_liq_volume[n]`, `.short_liq_volume[n]` (liquidated volume); the bar closing (`n` = 0) is refused (see
-  [streams](dsl/streams.md#trade-flow-and-liquidations-aliasbuy_volume1-))
+  [streams](dsl/streams.md#trade-flow-and-liquidations-aliasbuy_volume1))
 - Option contract: `.iv` (mark implied volatility), `.delta`, `.gamma`, `.vega`, `.theta` (per contract);
   refused at start on any other stream or on a feed without option marks (see
   [streams](dsl/streams.md#stream-field-access))
