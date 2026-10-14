@@ -45,7 +45,11 @@ class ImportRun(
                 val tf = validated.timeframe?.canonicalSpec()
                 val resolved =
                     plan.descriptor.copy(
-                        timeFormat = plan.formats.first().spec,
+                        timeFormat =
+                            plan.formats
+                                .map { it.spec }
+                                .distinct()
+                                .singleOrNull() ?: plan.descriptor.timeFormat,
                         clock = clockChoice.clock?.spec,
                         timeframe = tf ?: plan.descriptor.timeframe,
                         match = null,
