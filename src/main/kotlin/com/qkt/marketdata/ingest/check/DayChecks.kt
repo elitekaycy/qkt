@@ -126,7 +126,7 @@ class DayChecks(
             tally.duplicatesDropped++
             return Verdict.DROP
         }
-        val what = if (r is BarRecord) "two different bars open at the same time" else "two different values at the same time"
+        val what = if (r is BarRecord) "two different bars open at the same time" else SAME_TIME
         if (!keepLast) {
             tally.problem(day, r.timeMs, "$what (pass --on-conflict last to keep the later file's)")
             return Verdict.DROP
@@ -159,5 +159,6 @@ class DayChecks(
 
     private companion object {
         const val MINUTE_MS = 60_000L
+        const val SAME_TIME = "two different values at the same time"
     }
 }

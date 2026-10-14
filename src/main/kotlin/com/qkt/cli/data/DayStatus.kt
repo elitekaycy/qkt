@@ -25,11 +25,13 @@ internal object DayStatus {
         val startMs = day.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
         val first = q.firstMs
         val last = q.lastMs
+        val misplaced = first != null && last != null && (first < startMs || last >= startMs + DAY_MS)
+        val backwards = first != null && previousLastMs != null && first < previousLastMs
         return when {
             !q.readable -> "CORRUPT (unreadable)"
             q.isEmpty -> "EMPTY (0 ticks)"
-            first != null && last != null && (first < startMs || last >= startMs + DAY_MS) -> "MISPLACED (ticks outside $day UTC)"
-            first != null && previousLastMs != null && first < previousLastMs -> "BACKWARDS (starts before the previous day ended)"
+            misplaced -> "MISPLACED (ticks outside $day UTC)"
+            backwards -> "BACKWARDS (starts before the previous day ended)"
             q.maxGapMs >= SUSPICIOUS_GAP_MS -> "GAP ${q.maxGapMs / HOUR_MS}h"
             else -> "ok"
         }
