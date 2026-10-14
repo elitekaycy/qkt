@@ -11,13 +11,15 @@ import kotlin.math.ln
 /**
  * Flags likely bad prints in one day: a move more than [THRESHOLD] median absolute deviations from the
  * day's median non-zero move that the very next move, itself as extreme, takes back by at least [REVERSAL]
- * of its size (a price that jumps and returns, the signature of a bad tick, not of a trend). Flags are reported, never
+ * of its size (a price that jumps and returns, the signature of a bad tick, not of a trend), and that spans
+ * at least [RANGE_SHARE] of the day's whole range (so the bid/ask bounce between trades never counts). Flags are reported, never
  * acted on: news spikes are real, and deleting them would make a strategy's risk look smaller than it is.
  * Statistics use doubles because they only rank moves; no stored value passes through them.
  */
 internal object SpikeFlags {
     private const val THRESHOLD = 25.0
     private const val REVERSAL = 0.8
+    private const val RANGE_SHARE = 0.2
     private const val MIN_RECORDS = 30
     private const val MAX_LISTED = 20
 
@@ -34,10 +36,12 @@ internal object SpikeFlags {
         val median = moves.sorted()[moves.size / 2]
         val mad = moves.map { abs(it - median) }.sorted()[moves.size / 2]
         if (mad == 0.0) return
+        val dayRange = ln(prices.maxOf { it.second } / prices.minOf { it.second })
         returns.forEachIndexed { i, r ->
             val next = returns.getOrNull(i + 1) ?: return@forEachIndexed
             val reverts = next * r < 0 && abs(next) >= REVERSAL * abs(r) && abs(next - median) / mad > THRESHOLD
-            if (abs(r - median) / mad > THRESHOLD && reverts && tally.spikes.size < MAX_LISTED) {
+            val large = abs(r - median) / mad > THRESHOLD && abs(r) >= RANGE_SHARE * dayRange
+            if (large && reverts && tally.spikes.size < MAX_LISTED) {
                 val at = Instant.ofEpochMilli(prices[i + 1].first)
                 tally.spikes += "$day $at: ${"%+.3f".format(r * PERCENT)}% in one step"
             }
