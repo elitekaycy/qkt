@@ -6,18 +6,24 @@ import com.qkt.marketdata.ingest.record.IngestRecord
 import com.qkt.marketdata.ingest.record.OpenInterestRecord
 import com.qkt.marketdata.ingest.record.SeriesRecord
 import com.qkt.marketdata.ingest.record.TickRecord
+import java.time.Instant
 import java.time.LocalDate
 
 /**
  * Validates and cleans one UTC day of sorted records, the same way on every pass so the records checked
  * are exactly the records written. Values are never altered: a record is kept, dropped as an exact
  * duplicate or a crossed quote (both counted), or reported as a problem that refuses the import.
- * [timeframeMs] is the bar size; every bar must sit on its epoch-aligned UTC grid.
+ * [timeframeMs] is the bar size; every bar must sit on its epoch-aligned UTC grid. Two different bars,
+ * rates or figures at one time are a problem unless [keepLast] (`--on-conflict last`), which keeps the one
+ * read later (files are read in name order) and lists the time.
  */
 class DayChecks(
     private val tally: CheckTally,
     private val timeframeMs: Long? = null,
+    private val keepLast: Boolean = false,
 ) {
+    private enum class Verdict { KEEP, DROP, REPLACE }
+
     /** [records] of [day], cleaned. */
     fun clean(
         day: LocalDate,
@@ -26,30 +32,23 @@ class DayChecks(
         val out = ArrayList<IngestRecord>(records.size)
         for (r in records) {
             val previous = out.lastOrNull()
-            when (r) {
-                is TickRecord -> if (tick(day, r)) out += r
-                is BarRecord -> if (bar(day, r, previous as? BarRecord)) out += r
-                is FundingRecord ->
-                    if (sameTime(
-                            day,
-                            r,
-                            previous,
-                            r.copy(order = 0) == (previous as? FundingRecord)?.copy(order = 0),
-                        )
-                    ) {
-                        out += r
-                    }
-                is OpenInterestRecord ->
-                    if (sameTime(
-                            day,
-                            r,
-                            previous,
-                            r.copy(order = 0) == (previous as? OpenInterestRecord)?.copy(order = 0),
-                        )
-                    ) {
-                        out += r
-                    }
-                is SeriesRecord -> series(r, previous as? SeriesRecord, out)
+            val verdict =
+                when (r) {
+                    is TickRecord -> tick(day, r)
+                    is SeriesRecord -> series(r, previous as? SeriesRecord)
+                    else ->
+                        (sameTime(day, r, previous) ?: Verdict.KEEP).also {
+                            if (r is BarRecord &&
+                                it != Verdict.DROP
+                            ) {
+                                bar(day, r)
+                            }
+                        }
+                }
+            when (verdict) {
+                Verdict.KEEP -> out += r
+                Verdict.REPLACE -> out[out.size - 1] = r
+                Verdict.DROP -> Unit
             }
         }
         return out
@@ -58,7 +57,7 @@ class DayChecks(
     private fun tick(
         day: LocalDate,
         t: TickRecord,
-    ): Boolean {
+    ): Verdict {
         listOf("price" to t.price, "bid" to t.bid, "ask" to t.ask).forEach { (name, v) ->
             if (v != null && v.signum() <= 0) tally.problem(day, t.timeMs, "$name $v is not positive")
         }
@@ -67,24 +66,15 @@ class DayChecks(
         }
         if (t.bid != null && t.ask != null && t.bid > t.ask) {
             tally.crossedDropped++
-            return false
+            return Verdict.DROP
         }
-        return true
+        return Verdict.KEEP
     }
 
     private fun bar(
         day: LocalDate,
         b: BarRecord,
-        previous: BarRecord?,
-    ): Boolean {
-        if (previous != null && previous.timeMs == b.timeMs) {
-            if (previous.copy(order = 0) == b.copy(order = 0)) {
-                tally.duplicatesDropped++
-            } else {
-                tally.problem(day, b.timeMs, "two different bars open at the same time")
-            }
-            return false
-        }
+    ) {
         if (listOf(b.open, b.high, b.low, b.close).any {
                 it.signum() <= 0
             }
@@ -107,43 +97,48 @@ class DayChecks(
                 "the bar is not on the UTC ${tf / MINUTE_MS}-minute grid (wrong clock, or a close-time label?)",
             )
         }
-        return true
     }
 
+    /** The verdict for a bar, rate or figure at the same time as [previous], or null when the times differ. */
     private fun sameTime(
         day: LocalDate,
         r: IngestRecord,
         previous: IngestRecord?,
-        identical: Boolean,
-    ): Boolean {
-        if (previous == null || previous.timeMs != r.timeMs) return true
-        if (identical) {
+    ): Verdict? {
+        if (previous == null || previous.timeMs != r.timeMs) return null
+        if (withoutOrder(previous) == withoutOrder(r)) {
             tally.duplicatesDropped++
-        } else {
-            tally.problem(
-                day,
-                r.timeMs,
-                "two different values at the same time",
-            )
+            return Verdict.DROP
         }
-        return false
+        val what = if (r is BarRecord) "two different bars open at the same time" else "two different values at the same time"
+        if (!keepLast) {
+            tally.problem(day, r.timeMs, "$what (pass --on-conflict last to keep the later file's)")
+            return Verdict.DROP
+        }
+        tally.conflictsKeptLast += "${Instant.ofEpochMilli(r.timeMs)}: $what"
+        return Verdict.REPLACE
     }
+
+    private fun withoutOrder(r: IngestRecord): IngestRecord =
+        when (r) {
+            is BarRecord -> r.copy(order = 0)
+            is FundingRecord -> r.copy(order = 0)
+            is OpenInterestRecord -> r.copy(order = 0)
+            is TickRecord -> r.copy(order = 0)
+            is SeriesRecord -> r.copy(order = 0)
+        }
 
     private fun series(
         r: SeriesRecord,
         previous: SeriesRecord?,
-        out: MutableList<IngestRecord>,
-    ) {
-        if (previous == null || previous.timeMs != r.timeMs) {
-            out += r
-            return
-        }
+    ): Verdict {
+        if (previous == null || previous.timeMs != r.timeMs) return Verdict.KEEP
         if (previous.observedMs == r.observedMs && previous.value.compareTo(r.value) == 0) {
             tally.duplicatesDropped++
-            return
+            return Verdict.DROP
         }
         tally.superseded++
-        if (r.observedMs > previous.observedMs) out[out.size - 1] = r
+        return if (r.observedMs > previous.observedMs) Verdict.REPLACE else Verdict.DROP
     }
 
     private companion object {

@@ -43,6 +43,12 @@ internal object ImportReportText {
                     " · ${t.spikes.size} spike(s) flagged (kept)",
             )
             t.spikes.forEach { appendLine("           spike $it") }
+            if (t.conflictsKeptLast.isNotEmpty()) {
+                appendLine(
+                    "Conflict ${t.conflictsKeptLast.size} time(s) held two values; kept the later file's:",
+                )
+            }
+            t.conflictsKeptLast.take(CONFLICTS_SHOWN).forEach { appendLine("           $it") }
             r.warnings.forEach { appendLine("Note     $it") }
             appendLine("Days     ${r.days.size}" + span(r.days))
             val o = r.outcomes
@@ -99,5 +105,6 @@ internal object ImportReportText {
     private fun p(v: BigDecimal): String = v.stripTrailingZeros().toPlainString()
 
     private const val INPUTS_SHOWN = 5
+    private const val CONFLICTS_SHOWN = 20
     private const val RAW_WIDTH = 56
 }

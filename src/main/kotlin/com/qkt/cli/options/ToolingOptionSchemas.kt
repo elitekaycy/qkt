@@ -78,6 +78,7 @@ internal val toolingOptionSchemas: Map<String, CliOptionSchema> =
                         "decimal",
                         "delimiter",
                         "on-overlap",
+                        "on-conflict",
                         "encoding",
                         "instruments",
                         "against",

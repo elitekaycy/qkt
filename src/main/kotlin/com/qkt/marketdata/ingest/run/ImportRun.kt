@@ -40,7 +40,7 @@ class ImportRun(
         try {
             DayBuckets(scratch).use { buckets ->
                 val read = ReadStage(plan, request, clockChoice, buckets).read()
-                val validated = ValidateStage(read, kind, plan.descriptor.timeframe)
+                val validated = ValidateStage(read, kind, plan.descriptor.timeframe, request.keepLastOnConflict)
                 validated.validate()
                 val tf = validated.timeframe?.canonicalSpec()
                 val resolved =

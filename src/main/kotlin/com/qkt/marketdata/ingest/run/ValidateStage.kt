@@ -18,6 +18,7 @@ internal class ValidateStage(
     private val read: ReadResult,
     private val kind: IngestKind,
     declaredTimeframe: String?,
+    keepLast: Boolean = false,
 ) {
     val tally = CheckTally()
 
@@ -30,10 +31,10 @@ internal class ValidateStage(
         }
 
     private val gridMs = timeframe?.durationMs?.takeIf { kind == IngestKind.BARS }
-    private val checks = DayChecks(tally, gridMs)
+    private val checks = DayChecks(tally, gridMs, keepLast)
 
     /** Re-cleans for writing with its own tally, so a day written after validation is not counted twice. */
-    private val writeChecks = DayChecks(CheckTally(), gridMs)
+    private val writeChecks = DayChecks(CheckTally(), gridMs, keepLast)
 
     /** Checks every day; refuses with the problems found, if any. */
     fun validate() {

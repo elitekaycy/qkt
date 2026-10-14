@@ -98,4 +98,19 @@ class DayChecksTest {
         assertThat((kept.single() as SeriesRecord).value).isEqualByComparingTo("11")
         assertThat(tally.superseded).isEqualTo(1)
     }
+
+    @Test
+    fun `on-conflict last keeps the later file's value and lists the time`() {
+        val tally = CheckTally()
+        val r = FundingRecord(t0, 1, BigDecimal("0.0001"), null)
+        val kept =
+            DayChecks(
+                tally,
+                keepLast = true,
+            ).clean(day, listOf(r, r.copy(order = 2, rate = BigDecimal("0.0002"))))
+
+        assertThat((kept.single() as FundingRecord).rate).isEqualByComparingTo("0.0002")
+        assertThat(tally.problems).isEmpty()
+        assertThat(tally.conflictsKeptLast).hasSize(1)
+    }
 }

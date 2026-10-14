@@ -39,6 +39,8 @@ data class ImportRequest(
     val onOverlap: OverlapPolicy = OverlapPolicy.REFUSE,
     /** Sort a file whose rows are out of time order instead of refusing it. */
     val sort: Boolean = false,
+    /** Where the source holds two different values for one time, keep the later file's instead of refusing. */
+    val keepLastOnConflict: Boolean = false,
     /** Accept a stated clock even when the weekly opens contradict it. */
     val trustClock: Boolean = false,
     val charset: Charset? = null,

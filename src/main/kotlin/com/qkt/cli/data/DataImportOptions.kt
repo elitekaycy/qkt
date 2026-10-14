@@ -71,11 +71,19 @@ internal object DataImportOptions {
             planOnly = args.flag("plan"),
             onOverlap = args.option("on-overlap")?.let(OverlapPolicy::parse) ?: OverlapPolicy.REFUSE,
             sort = args.flag("sort"),
+            keepLastOnConflict = args.option("on-conflict")?.let(::conflict) ?: false,
             trustClock = args.flag("trust-clock"),
             charset = args.option("encoding")?.let(::charset),
             qktVersion = BuildInfo.VERSION,
         )
     }
+
+    private fun conflict(text: String): Boolean =
+        when (text) {
+            "last" -> true
+            "refuse" -> false
+            else -> throw IllegalArgumentException("--on-conflict must be refuse or last: $text")
+        }
 
     private fun charset(name: String): Charset =
         Charset.forName(if (name.equals("latin-1", true)) "ISO-8859-1" else name)

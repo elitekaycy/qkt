@@ -14,6 +14,9 @@ class CheckTally {
     var duplicatesDropped: Long = 0
     var crossedDropped: Long = 0
     var superseded: Long = 0
+
+    /** Times where the source held two different values and `--on-conflict last` kept the later one. */
+    val conflictsKeptLast = mutableListOf<String>()
     val spikes = mutableListOf<String>()
     val gaps = mutableListOf<String>()
 
