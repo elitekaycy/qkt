@@ -75,6 +75,7 @@ qkt data import next-month.csv --as MYBROKER:EURUSD --preset mybroker.yaml
   pattern (`yyyy.MM.dd HH:mm:ss`, `dd.MM.yyyy HH:mm:ss.SSS 'GMT'xx`). Without it qkt tries the common
   ones and refuses when two fit (`03/04/2024` could be March or April).
 - `--tz`: `UTC`, a fixed offset (`+02:00`), `ny-close`, or an IANA zone (`Europe/Athens`).
+- `--where column=value`: keep only matching rows, e.g. one ticker from a file of many.
 - `--price bid|ask|mid|last`, `--label open|close`, `--tf`, `--digits`, `--decimal`, `--delimiter`,
   `--format json --rows results`, `--encoding latin-1`.
 
@@ -90,9 +91,17 @@ clock, and getting it wrong moves every bar without any error, so qkt checks it.
   timestamp on the stated clock and refuses when the opens disagree, naming the clocks that would fit:
 
   ```text
-  qkt: the weekly opens contradict the clock (stated by --tz): Europe/Athens: 51 weekly opens,
-       47 at 17:00 New York, 4 elsewhere. Clocks that fit: ny-close.
+  qkt: the weekly opens contradict the clock (stated by --tz): Europe/Athens: 51 weekly opens, 47 at
+       17:00 New York, 4 elsewhere. Clocks that fit: ny-close. Pass the right --tz, or --trust-clock if
+       the source really opens this way
+    week opening 2024-03-10T22:00:00Z at 18:00 New York
+    week opening 2024-03-17T22:00:00Z at 18:00 New York
+    week opening 2024-03-24T22:00:00Z at 18:00 New York
+    week opening 2024-10-27T22:00:00Z at 18:00 New York
+    Nothing was written.
   ```
+
+  The four weeks are exactly those when the US had switched its clocks and Europe had not.
 
   With no `--tz`, an FX file whose opens fit exactly one candidate clock is read on it, and the report
   says so. Add `--trust-clock` only when the source really does open at an unusual time.
