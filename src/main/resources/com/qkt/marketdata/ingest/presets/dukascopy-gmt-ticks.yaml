@@ -1,0 +1,14 @@
+id: "dukascopy-gmt-ticks"
+description: "Dukascopy website / JForex tick export in GMT"
+kind: "ticks"
+time: ["Gmt time"]
+timeFormat: "dd.MM.yyyy HH:mm:ss.SSS"
+clock: "UTC"
+fields:
+  bid: "Bid"
+  ask: "Ask"
+  bidVolume: "BidVolume?"
+  askVolume: "AskVolume?"
+volume: "quoted size as Dukascopy reports it"
+match:
+  header: ["Gmt time", "Ask", "Bid"]

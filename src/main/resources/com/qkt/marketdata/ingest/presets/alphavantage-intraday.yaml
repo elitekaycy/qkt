@@ -1,0 +1,17 @@
+id: "alphavantage-intraday"
+description: "Alpha Vantage intraday CSV: US/Eastern wall-clock times, newest first, bars stamped at their open"
+kind: "bars"
+time: ["timestamp"]
+timeFormat: "yyyy-MM-dd HH:mm:ss"
+clock: "America/New_York"
+basis: "last"
+fields:
+  open: "open"
+  high: "high"
+  low: "low"
+  close: "close"
+  volume: "volume?"
+volume: "shares"
+match:
+  header: ["timestamp", "open", "high", "low", "close"]
+  firstCell: "\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}"

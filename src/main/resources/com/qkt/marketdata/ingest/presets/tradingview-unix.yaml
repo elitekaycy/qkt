@@ -1,0 +1,15 @@
+id: "tradingview-unix"
+description: "TradingView chart export with UNIX timestamps (seconds, UTC); extra indicator columns are ignored"
+kind: "bars"
+time: ["time"]
+timeFormat: "epoch"
+fields:
+  open: "open"
+  high: "high"
+  low: "low"
+  close: "close"
+  volume: "Volume?"
+volume: "as the chart's data feed reports it"
+match:
+  header: ["time", "open", "high", "low", "close"]
+  firstCell: "\\d{9,10}"

@@ -1,0 +1,20 @@
+id: "histdata-m1"
+description: "HistData.com generic ASCII M1 bars (DAT_ASCII_*_M1_*): EST all year (no DST), bid prices"
+kind: "bars"
+delimiter: ";"
+time: ["$0"]
+timeFormat: "yyyyMMdd HHmmss"
+clock: "-05:00"
+basis: "bid"
+timeframe: "1m"
+fields:
+  open: "$1"
+  high: "$2"
+  low: "$3"
+  close: "$4"
+volume: "none (HistData publishes 0)"
+match:
+  columns: 6
+  firstCell: "\\d{8} \\d{6}"
+  filename: "DAT_ASCII_.*_M1_"
+  delimiter: ";"

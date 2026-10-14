@@ -1,0 +1,11 @@
+id: "bybit-trades"
+description: "Bybit public trading archive (public.bybit.com/trading): epoch seconds with a fraction, one trade a row"
+kind: "ticks"
+time: ["timestamp"]
+timeFormat: "epoch:s"
+fields:
+  price: "price"
+  volume: "size"
+volume: "trade size (contracts on inverse symbols)"
+match:
+  header: ["timestamp", "symbol", "side", "size", "price", "tickDirection", "trdMatchID"]

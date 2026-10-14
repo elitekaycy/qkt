@@ -1,0 +1,13 @@
+id: "dukascopy-node-ticks"
+description: "dukascopy-node CSV ticks (epoch milliseconds, UTC)"
+kind: "ticks"
+time: ["timestamp"]
+timeFormat: "epoch"
+fields:
+  bid: "bidPrice"
+  ask: "askPrice"
+  bidVolume: "bidVolume?"
+  askVolume: "askVolume?"
+volume: "quoted size as Dukascopy reports it"
+match:
+  header: ["timestamp", "askPrice", "bidPrice"]

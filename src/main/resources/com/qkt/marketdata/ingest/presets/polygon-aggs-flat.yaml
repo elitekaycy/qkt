@@ -1,0 +1,17 @@
+id: "polygon-aggs-flat"
+description: "Polygon / Massive flat-file aggregates (all tickers in one file; rows for --as's symbol are kept), ns timestamps"
+kind: "bars"
+time: ["window_start"]
+timeFormat: "epoch:ns"
+basis: "last"
+where:
+  ticker: "${symbol}"
+fields:
+  open: "open"
+  high: "high"
+  low: "low"
+  close: "close"
+  volume: "volume"
+volume: "shares"
+match:
+  header: ["ticker", "volume", "open", "close", "high", "low", "window_start", "transactions"]

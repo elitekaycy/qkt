@@ -1,0 +1,9 @@
+id: "binance-funding"
+description: "Binance public-data USD-M funding rates (fundingRate archives): settlement time, rate"
+kind: "funding"
+time: ["calc_time"]
+timeFormat: "epoch"
+fields:
+  rate: "last_funding_rate"
+match:
+  header: ["calc_time", "funding_interval_hours", "last_funding_rate"]

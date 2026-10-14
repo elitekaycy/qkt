@@ -1,0 +1,15 @@
+id: "tradingview-iso"
+description: "TradingView chart export with ISO times (each carrying the chart's UTC offset)"
+kind: "bars"
+time: ["time"]
+timeFormat: "iso"
+fields:
+  open: "open"
+  high: "high"
+  low: "low"
+  close: "close"
+  volume: "Volume?"
+volume: "as the chart's data feed reports it"
+match:
+  header: ["time", "open", "high", "low", "close"]
+  firstCell: "\\d{4}-\\d{2}-\\d{2}T.*"

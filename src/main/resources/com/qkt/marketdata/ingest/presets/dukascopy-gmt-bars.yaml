@@ -1,0 +1,16 @@
+id: "dukascopy-gmt-bars"
+description: "Dukascopy website / JForex bar export in GMT; one price side per file (bid unless the file says ASK)"
+kind: "bars"
+time: ["Gmt time"]
+timeFormat: "dd.MM.yyyy HH:mm:ss.SSS"
+clock: "UTC"
+basis: "bid"
+fields:
+  open: "Open"
+  high: "High"
+  low: "Low"
+  close: "Close"
+  volume: "Volume"
+volume: "traded volume as Dukascopy reports it"
+match:
+  header: ["Gmt time", "Open", "High", "Low", "Close"]

@@ -1,0 +1,16 @@
+id: "dukascopy-node-bars"
+description: "dukascopy-node CSV bars (epoch milliseconds, UTC; bid unless --price-type ask was used)"
+kind: "bars"
+time: ["timestamp"]
+timeFormat: "epoch"
+basis: "bid"
+fields:
+  open: "open"
+  high: "high"
+  low: "low"
+  close: "close"
+  volume: "volume?"
+volume: "traded volume as Dukascopy reports it"
+match:
+  header: ["timestamp", "open", "high", "low", "close"]
+  firstCell: "\\d{13}"

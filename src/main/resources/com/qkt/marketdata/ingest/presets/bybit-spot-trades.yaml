@@ -1,0 +1,11 @@
+id: "bybit-spot-trades"
+description: "Bybit public spot archive (public.bybit.com/spot): epoch milliseconds, one trade a row"
+kind: "ticks"
+time: ["timestamp"]
+timeFormat: "epoch:ms"
+fields:
+  price: "price"
+  volume: "volume"
+volume: "trade size in the base asset"
+match:
+  header: ["id", "timestamp", "price", "volume", "side"]
