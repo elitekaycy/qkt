@@ -196,4 +196,4 @@ does not declare MULTI_POSITION_PER_SYMBOL
 - [SIZING](sizing.md) — restricted to literal lots and `ENTRY_QTY` arithmetic for stacks; full surface on the primary
 - [OCO_ENTRY](actions.md#oco_entry) — STACK_AT on each leg is the hedge-straddle shape
 - [Actions](actions.md) — `STACK_AT` attaches to `BUY` / `SELL`
-- [Phase 27 spec](../../superpowers/specs/2026-05-12-phase27-conditional-bracketed-stacks-design.md) — design notes and the LegBook semantics
+- [Phase 27 spec](https://github.com/elitekaycy/qkt/blob/main/docs/superpowers/specs/2026-05-12-phase27-conditional-bracketed-stacks-design.md) — design notes and the LegBook semantics

@@ -9,7 +9,7 @@ Every `qkt` subcommand. Run `qkt <command> --help` for the authoritative flag li
 
 | Command | What it does |
 |---|---|
-| `qkt daemon` | Start the daemon. Binds the control plane on an ephemeral 127.0.0.1 port and requires bearer authentication for mutations. |
+| `qkt daemon start` | Start the daemon (`qkt daemon` alone does the same; flags `--config`, `--control-port`, `--load-dir`, `--state-dir`, `--json`). Binds the control plane on an ephemeral 127.0.0.1 port and requires bearer authentication for mutations. |
 | `qkt daemon stop` | Stop a running daemon. |
 | `qkt daemon status` | Health + uptime of a running daemon. |
 | `qkt deploy <file> [--as <name>]` | Deploy a strategy or portfolio. |
@@ -35,7 +35,7 @@ way.
 
 | Command | What it does |
 |---|---|
-| `qkt create template <path> [--kind mt5\|mt5-ci\|backtest\|portfolio\|minimal\|bybit]` | Scaffold a deployable or research project tree. Default kind is `mt5`. See [Scaffold a project](../get-started/scaffold.md). |
+| `qkt create template <path> [--kind mt5\|mt5-ci\|backtest\|portfolio\|minimal\|bybit\|bot]` | Scaffold a deployable or research project tree. Default kind is `mt5`. See [Scaffold a project](../get-started/scaffold.md). |
 
 ## Strategy authoring
 

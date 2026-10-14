@@ -384,7 +384,7 @@ three of the series' own intervals) is refused with the fetch that would fill it
 
 ## Scenario 2e — Trade flow and liquidations (`<alias>.buy_volume[1]`, ...)
 
-A strategy that reads [trade flow](../reference/dsl/streams.md#trade-flow-and-liquidations-aliasbuy_volume1-)
+A strategy that reads [trade flow](../reference/dsl/streams.md#trade-flow-and-liquidations-aliasbuy_volume1)
 replays the contract's stored tape, every print with its aggressor side, and its liquidations:
 
 ```bash
