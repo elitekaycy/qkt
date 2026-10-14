@@ -18,7 +18,7 @@ irm https://raw.githubusercontent.com/elitekaycy/qkt/main/scripts/install.ps1 | 
 Pin a version or change the location:
 
 ```powershell
-$env:QKT_VERSION='v0.29.14'; irm https://raw.githubusercontent.com/elitekaycy/qkt/main/scripts/install.ps1 | iex
+$env:QKT_VERSION='v0.56.1'; irm https://raw.githubusercontent.com/elitekaycy/qkt/main/scripts/install.ps1 | iex
 ```
 
 Open a **new** terminal afterward (so the updated PATH takes effect), then:
