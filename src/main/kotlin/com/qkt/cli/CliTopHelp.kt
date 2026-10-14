@@ -80,6 +80,6 @@ internal object CliTopHelp {
             --help, help            this message
 
         DOCS
-            https://qkt.elitekaycy.com/
+            https://docs.tryqkt.com/
         """.trimIndent()
 }

@@ -26,7 +26,7 @@ files; see [Highlight .qkt files on GitHub](../how-to/github-syntax-highlighting
 
 ```bash
 qkt create template <path> \
-  [--kind mt5|mt5-ci|backtest|portfolio|minimal|bybit]
+  [--kind mt5|mt5-ci|backtest|portfolio|minimal|bybit|bot]
 ```
 
 | Kind | Contents |
@@ -37,6 +37,7 @@ qkt create template <path> \
 | `portfolio` | Local-data research configuration, book risk limits, a weighted portfolio, and two child strategies. |
 | `minimal` | Broker-free QKT daemon and a small sample strategy. |
 | `bybit` | QKT beside the qkt-venue-gateway running its [Bybit adapter](https://github.com/elitekaycy/qkt-venue-gateway/blob/main/adapter-bybit/README.md): a `type: gateway` broker named `bybit_linear` (prefix `BYBIT_LINEAR:`), testnet first. |
+| `bot` | The `mt5` stack plus the files for driving `qkt bot` from an AI agent: a system prompt and a bot guide. |
 
 Specialized templates are layered on tested base projects, so `mt5-ci` retains
 the complete MT5 deployment and the research templates retain the standard

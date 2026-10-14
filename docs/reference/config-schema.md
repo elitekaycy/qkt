@@ -519,7 +519,7 @@ settings, and how it reports Bybit's fills, funding and restarts, are on its
 ### `type: gateway`
 
 One entry per account on a VGP v1 venue gateway
-([wire format](../superpowers/specs/2026-10-01-vgp-v1-wire.md)): futures, perpetuals, spot and
+([wire format](https://github.com/elitekaycy/qkt/blob/main/docs/superpowers/specs/2026-10-01-vgp-v1-wire.md)): futures, perpetuals, spot and
 options at any venue the gateway's adapter serves. The entry name is the strategy prefix, and venue
 codes are written with `-` as `_`: an entry named `deribit` trades `DERIBIT:BTC_USDC_25DEC26_92000_C`.
 Name the entry after the venue the instrument catalogs use (`deribit`, `binance_um`), so live
