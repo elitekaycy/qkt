@@ -62,6 +62,10 @@ internal object CliTopHelp {
             fetch BROKER:SYMBOL --tf <tf> --last 30d
                                     same, but for the last N days
             data verify <symbol>    check cached tick day files for empty/corrupt/gappy data
+            data import <file> --as <SYMBOL>
+                                    import MT5/Dukascopy/HistData/TradingView/Binance/... files
+            data compare <A> --against <B>
+                                    compare two stored series bar by bar
             preflight <file>        validate production readiness (--production to fail closed)
             promotion ...           record/query promotion states, approvals, waivers, gates
             incident collect        build an incident zip with journal/log/state evidence

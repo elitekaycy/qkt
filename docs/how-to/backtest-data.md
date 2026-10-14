@@ -447,6 +447,11 @@ qkt data verify XAUUSD     # reports tick counts, max intra-day gap, and flags E
 
 ## Scenario 4 — Place your own tick data manually
 
+Have an export or a download in some other shape? Use [`qkt data import`](import-data.md): it reads MT5,
+Dukascopy, HistData, TradingView, Binance and other formats (or any CSV you describe with flags), checks
+the clock, writes these exact files and the manifest, and records where each day came from. The rest of
+this section is the format it writes, for when you produce qkt's CSV yourself.
+
 You can drop CSVs straight into the tick store — handy for broker-exported ticks or a private feed.
 
 **Where:** `~/.qkt/data/symbols/<BARE_SYMBOL>/<YYYY-MM-DD>.csv` (one UTC day per file). The directory
