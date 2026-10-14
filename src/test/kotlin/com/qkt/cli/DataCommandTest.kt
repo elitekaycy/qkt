@@ -38,7 +38,12 @@ class DataCommandTest {
     fun `verify exits zero when every cached day has ticks`(
         @TempDir root: Path,
     ) {
-        seedDay(root, "XAUUSD", "2024-01-01", listOf("0,XAUUSD,2000,,,,,", "60000,XAUUSD,2001,,,,,"))
+        seedDay(
+            root,
+            "XAUUSD",
+            "2024-01-01",
+            listOf("1704067200000,XAUUSD,2000,,,,,", "1704067260000,XAUUSD,2001,,,,,"),
+        )
         val code =
             DataCommand(Args(arrayOf("data", "verify", "XAUUSD", "--data-root", root.toString()))).run()
         assertThat(code).isEqualTo(ExitCodes.SUCCESS)
@@ -59,7 +64,11 @@ class DataCommandTest {
     ) {
         val dir = root.resolve("symbols").resolve("XAUUSD")
         Files.createDirectories(dir)
-        val ticks = listOf(Tick("XAUUSD", Money.of("2000"), 0L), Tick("XAUUSD", Money.of("2001"), 60_000L))
+        val ticks =
+            listOf(
+                Tick("XAUUSD", Money.of("2000"), 1_704_067_200_000L),
+                Tick("XAUUSD", Money.of("2001"), 1_704_067_260_000L),
+            )
         BinaryTickWriter().write(dir.resolve("2024-01-01.bin"), "XAUUSD", ticks)
         val verify = { DataCommand(Args(arrayOf("data", "verify", "XAUUSD", "--data-root", root.toString()))).run() }
         assertThat(verify()).isEqualTo(ExitCodes.SUCCESS)
