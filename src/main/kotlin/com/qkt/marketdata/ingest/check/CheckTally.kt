@@ -15,6 +15,9 @@ class CheckTally {
     var crossedDropped: Long = 0
     var superseded: Long = 0
 
+    /** Open-interest figures of exactly zero: venue placeholders during outages, never a live contract's. */
+    var zeroOpenInterestDropped: Long = 0
+
     /** Times where the source held two different values and `--on-conflict last` kept the later one. */
     val conflictsKeptLast = mutableListOf<String>()
     val spikes = mutableListOf<String>()

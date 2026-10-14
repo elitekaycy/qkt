@@ -15,7 +15,8 @@ import java.time.LocalDate
  * duplicate or a crossed quote (both counted), or reported as a problem that refuses the import.
  * [timeframeMs] is the bar size; every bar must sit on its epoch-aligned UTC grid. Two different bars,
  * rates or figures at one time are a problem unless [keepLast] (`--on-conflict last`), which keeps the one
- * read later (files are read in name order) and lists the time.
+ * read later (files are read in name order) and lists the time. An open-interest figure of exactly zero is
+ * dropped and counted: venues write zeros during outages, and no traded contract has none.
  */
 class DayChecks(
     private val tally: CheckTally,
@@ -36,6 +37,7 @@ class DayChecks(
                 when (r) {
                     is TickRecord -> tick(day, r)
                     is SeriesRecord -> series(r, previous as? SeriesRecord)
+                    is OpenInterestRecord -> openInterest(day, r) ?: (sameTime(day, r, previous) ?: Verdict.KEEP)
                     else ->
                         (sameTime(day, r, previous) ?: Verdict.KEEP).also {
                             if (r is BarRecord &&
@@ -97,6 +99,20 @@ class DayChecks(
                 "the bar is not on the UTC ${tf / MINUTE_MS}-minute grid (wrong clock, or a close-time label?)",
             )
         }
+    }
+
+    /** Null to go on checking, or the verdict for a figure that is not a usable open interest. */
+    private fun openInterest(
+        day: LocalDate,
+        r: OpenInterestRecord,
+    ): Verdict? {
+        if (r.openInterest.signum() < 0) {
+            tally.problem(day, r.timeMs, "open interest ${r.openInterest} is negative")
+            return Verdict.DROP
+        }
+        if (r.openInterest.signum() > 0) return null
+        tally.zeroOpenInterestDropped++
+        return Verdict.DROP
     }
 
     /** The verdict for a bar, rate or figure at the same time as [previous], or null when the times differ. */

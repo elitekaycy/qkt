@@ -43,6 +43,11 @@ internal object ImportReportText {
                     " · ${t.spikes.size} spike(s) flagged (kept)",
             )
             t.spikes.forEach { appendLine("           spike $it") }
+            if (t.zeroOpenInterestDropped > 0) {
+                appendLine(
+                    "Dropped  ${t.zeroOpenInterestDropped} open-interest figure(s) of exactly 0 (venue outage placeholders)",
+                )
+            }
             if (t.conflictsKeptLast.isNotEmpty()) {
                 appendLine(
                     "Conflict ${t.conflictsKeptLast.size} time(s) held two values; kept the later file's:",

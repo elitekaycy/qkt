@@ -48,6 +48,8 @@ internal object ImportReportJson {
                 put("duplicatesDropped", r.tally.duplicatesDropped)
                 put("crossedDropped", r.tally.crossedDropped)
                 put("superseded", r.tally.superseded)
+                put("zeroOpenInterestDropped", r.tally.zeroOpenInterestDropped)
+                put("conflictsKeptLast", JsonArray(r.tally.conflictsKeptLast.map(::JsonPrimitive)))
                 put("spikes", JsonArray(r.tally.spikes.map(::JsonPrimitive)))
             }
             put("warnings", JsonArray(r.warnings.map(::JsonPrimitive)))

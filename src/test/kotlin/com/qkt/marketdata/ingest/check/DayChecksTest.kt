@@ -2,6 +2,7 @@ package com.qkt.marketdata.ingest.check
 
 import com.qkt.marketdata.ingest.record.BarRecord
 import com.qkt.marketdata.ingest.record.FundingRecord
+import com.qkt.marketdata.ingest.record.OpenInterestRecord
 import com.qkt.marketdata.ingest.record.SeriesRecord
 import com.qkt.marketdata.ingest.record.TickRecord
 import java.math.BigDecimal
@@ -112,5 +113,18 @@ class DayChecksTest {
         assertThat((kept.single() as FundingRecord).rate).isEqualByComparingTo("0.0002")
         assertThat(tally.problems).isEmpty()
         assertThat(tally.conflictsKeptLast).hasSize(1)
+    }
+
+    @Test
+    fun `an open interest of exactly zero is a venue placeholder, dropped and counted`() {
+        val tally = CheckTally()
+        val zero = OpenInterestRecord(t0, 1, BigDecimal.ZERO)
+        val kept =
+            DayChecks(
+                tally,
+            ).clean(day, listOf(zero, zero.copy(timeMs = t0 + 300_000, openInterest = BigDecimal("39080.231"))))
+
+        assertThat(kept).hasSize(1)
+        assertThat(tally.zeroOpenInterestDropped).isEqualTo(1)
     }
 }
