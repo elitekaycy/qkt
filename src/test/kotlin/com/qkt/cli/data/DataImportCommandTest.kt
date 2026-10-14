@@ -127,4 +127,37 @@ class DataImportCommandTest {
         assertThat(code).isEqualTo(ExitCodes.SUCCESS)
         assertThat(out).contains("mt5-bars").contains("binance-klines").contains("qkt-cot")
     }
+
+    @Test
+    fun `--where keeps one symbol's rows from a file of many`() {
+        val file = dir.resolve("kaggle.csv")
+        Files.writeString(
+            file,
+            "date,ticker,close\n2024-01-02,AAPL,185.6\n2024-01-02,MSFT,370.9\n2024-01-03,AAPL,184.2\n",
+        )
+        val root = dir.resolve("root").toString()
+
+        val (code, _) =
+            run(
+                "import",
+                file.toString(),
+                "--as",
+                "YAHOO:AAPL",
+                "--kind",
+                "bars",
+                "--where",
+                "ticker=AAPL",
+                "--tf",
+                "1d",
+                "--map",
+                "time=date,open=close,high=close,low=close,close=close",
+                "--data-root",
+                root,
+            )
+
+        assertThat(code).isEqualTo(ExitCodes.SUCCESS)
+        assertThat(
+            Files.readAllLines(dir.resolve("root/bars/YAHOO/AAPL/1d/2024-01-02.csv"))[1],
+        ).startsWith("1704153600000,185.6")
+    }
 }

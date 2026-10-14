@@ -26,12 +26,7 @@ internal object DataImportOptions {
     ): ImportRequest {
         val symbol =
             args.option("as") ?: throw IllegalArgumentException("--as <SYMBOL> is required, e.g. --as EXNESS:XAUUSD")
-        val mapped =
-            args
-                .options("map")
-                .flatMap { it.split(',') }
-                .filter { it.isNotBlank() }
-                .map(::pair)
+        val mapped = pairs(args, "map")
         val time =
             mapped
                 .firstOrNull { it.first == "time" }
@@ -46,6 +41,7 @@ internal object DataImportOptions {
                 delimiter = args.option("delimiter")?.let(::delimiter),
                 decimal = args.option("decimal")?.let(::delimiter),
                 rows = args.option("rows")?.split('.').orEmpty(),
+                where = pairs(args, "where").toMap(),
                 time = time,
                 timeFormat = args.option("time-format"),
                 clock = args.option("tz"),
@@ -88,9 +84,23 @@ internal object DataImportOptions {
     private fun charset(name: String): Charset =
         Charset.forName(if (name.equals("latin-1", true)) "ISO-8859-1" else name)
 
-    private fun pair(text: String): Pair<String, String> {
+    /** Every `name=value` given to `--[flag]`, comma-separated or repeated. */
+    private fun pairs(
+        args: Args,
+        flag: String,
+    ): List<Pair<String, String>> =
+        args
+            .options(flag)
+            .flatMap { it.split(',') }
+            .filter { it.isNotBlank() }
+            .map { pair(it, "--$flag") }
+
+    private fun pair(
+        text: String,
+        flag: String,
+    ): Pair<String, String> {
         val eq = text.indexOf('=')
-        require(eq > 0 && eq < text.length - 1) { "--map takes field=column, got '$text'" }
+        require(eq > 0 && eq < text.length - 1) { "$flag takes name=value, got '$text'" }
         return text.substring(0, eq).trim() to text.substring(eq + 1).trim()
     }
 
