@@ -62,9 +62,11 @@ class BacktestDataProvisioner(
 
             var report = TickCompletenessValidator.validate(store, s.bareSymbol, from, to, calendarFor(s.bareSymbol))
 
+            val imported = ImportedTickDays(store.root.resolve("symbols").resolve(s.bareSymbol))
             if (report.hasHoles && fetchEnabled) {
-                // A prior interrupted fetch can leave a day partial. Delete + refetch those once.
-                for (hole in report.holes) store.dropDay(s.bareSymbol, hole.day)
+                // A prior interrupted fetch can leave a day partial. Delete + refetch those once; an imported
+                // day is the user's own data and is never replaced by a fetch, so its holes stand.
+                for (hole in report.holes) if (!imported.contains(hole.day)) store.dropDay(s.bareSymbol, hole.day)
                 prefetch(request, s.bareSymbol)
                 report = TickCompletenessValidator.validate(store, s.bareSymbol, from, to, calendarFor(s.bareSymbol))
             }
@@ -72,6 +74,8 @@ class BacktestDataProvisioner(
             val requested = report.days.count { it.status != DayCompleteness.Status.NON_TRADING }
             val covered = report.days.count { it.status == DayCompleteness.Status.COMPLETE }
             System.err.println("qkt: tick coverage ${report.symbol} $covered/$requested trading days")
+            val stored = report.days.filter { store.dayFile(s.bareSymbol, it.day) != null }.map { it.day }
+            imported.mixLine(s.bareSymbol, stored)?.let { System.err.println("qkt: $it") }
 
             if (report.hasHoles && !allowIncomplete) {
                 throw IncompleteDataException(
