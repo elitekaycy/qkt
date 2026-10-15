@@ -22,6 +22,9 @@ external AI  ──shell──▶  qkt bot ...  ──HTTP──▶  mt5-gateway
   only.
 - Symbols are always `BROKER:SYMBOL` (e.g. `MT5:XAUUSD`); the prefix must match a
   configured broker or the command fails closed.
+- MT5 brokers only. A `type: gateway` broker (the paper or Deribit venue gateway) is refused
+  with that reason; to trade one from the command line, deploy a one-rule strategy with
+  `qkt deploy`.
 
 A ready-to-copy starter lives in `examples/bot/`, or scaffold a full project with
 `qkt create template <path> --kind bot` (MT5 compose stack plus an AI

@@ -44,6 +44,7 @@ internal object ResultJson {
         sb.append(",\n  \"bookAnalytics\": ").append(BookJson.renderAnalytics(result.bookAnalytics))
         sb.append(",\n  \"bookRisk\": ").append(BookJson.renderRisk(result.bookRisk))
         sb.append(",\n  \"runawayBreaker\": ").append(renderRunawayBreaker(result.runawayBreaker))
+        sb.append(",\n  \"halts\": ").append(HaltsJson.render(result.halts))
         sb.append("\n}")
         return sb.toString()
     }
