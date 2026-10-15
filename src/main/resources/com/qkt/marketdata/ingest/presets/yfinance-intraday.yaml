@@ -1,0 +1,15 @@
+id: "yfinance-intraday"
+description: "yfinance intraday CSV (Datetime with the exchange's UTC offset)"
+kind: "bars"
+time: ["Datetime"]
+timeFormat: "iso"
+basis: "last"
+fields:
+  open: "Open"
+  high: "High"
+  low: "Low"
+  close: "Close"
+  volume: "Volume"
+volume: "shares (contracts for futures)"
+match:
+  header: ["Datetime", "Open", "High", "Low", "Close", "Volume"]

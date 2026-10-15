@@ -1,0 +1,17 @@
+id: "alphavantage-daily"
+description: "Alpha Vantage daily CSV (dates, newest first)"
+kind: "bars"
+time: ["timestamp"]
+timeFormat: "iso"
+timeframe: "1d"
+basis: "last"
+fields:
+  open: "open"
+  high: "high"
+  low: "low"
+  close: "close"
+  volume: "volume?"
+volume: "shares"
+match:
+  header: ["timestamp", "open", "high", "low", "close"]
+  firstCell: "\\d{4}-\\d{2}-\\d{2}"

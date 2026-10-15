@@ -1,0 +1,15 @@
+id: "binance-klines-header"
+description: "Binance public-data klines with a header row (futures archives since 2025)"
+kind: "bars"
+time: ["open_time"]
+timeFormat: "epoch"
+basis: "last"
+fields:
+  open: "open"
+  high: "high"
+  low: "low"
+  close: "close"
+  volume: "volume"
+volume: "base-asset volume (contracts on COIN-M)"
+match:
+  header: ["open_time", "open", "high", "low", "close", "volume", "close_time"]

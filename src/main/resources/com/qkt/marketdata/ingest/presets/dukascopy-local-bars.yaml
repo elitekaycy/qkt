@@ -1,0 +1,15 @@
+id: "dukascopy-local-bars"
+description: "Dukascopy website / JForex bar export in local time, each row carrying its own GMT offset"
+kind: "bars"
+time: ["Local time"]
+timeFormat: "dd.MM.yyyy HH:mm:ss.SSS 'GMT'xx"
+basis: "bid"
+fields:
+  open: "Open"
+  high: "High"
+  low: "Low"
+  close: "Close"
+  volume: "Volume"
+volume: "traded volume as Dukascopy reports it"
+match:
+  header: ["Local time", "Open", "High", "Low", "Close"]

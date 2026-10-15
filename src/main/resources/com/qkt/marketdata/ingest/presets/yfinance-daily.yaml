@@ -1,0 +1,16 @@
+id: "yfinance-daily"
+description: "yfinance / Yahoo daily CSV (Date, Open, High, Low, Close, Adj Close, Volume): Close is unadjusted"
+kind: "bars"
+time: ["Date"]
+timeFormat: "iso"
+timeframe: "1d"
+basis: "last"
+fields:
+  open: "Open"
+  high: "High"
+  low: "Low"
+  close: "Close"
+  volume: "Volume"
+volume: "shares (contracts for futures)"
+match:
+  header: ["Date", "Open", "High", "Low", "Close", "Adj Close", "Volume"]

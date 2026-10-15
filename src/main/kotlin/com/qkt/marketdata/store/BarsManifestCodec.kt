@@ -4,14 +4,15 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 /**
- * JSON codec for the bar store's `manifest.json`: pretty-printed, strict about unknown keys,
- * and rejecting a corrupt file or an unsupported schema with the file's [path] in the error.
+ * JSON codec for the bar store's `manifest.json`: pretty-printed, rejecting a corrupt file or an
+ * unsupported schema with the file's [path] in the error. Keys it does not know are ignored, as the tick
+ * manifest has done since #1376: other tools may annotate a manifest, and that must not stop a fetch.
  */
 internal object BarsManifestCodec {
     private val json =
         Json {
             prettyPrint = true
-            ignoreUnknownKeys = false
+            ignoreUnknownKeys = true
         }
 
     fun decode(

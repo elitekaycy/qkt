@@ -1,0 +1,11 @@
+id: "okx-trades"
+description: "OKX historical trades download, epoch ms"
+kind: "ticks"
+time: ["created_time"]
+timeFormat: "epoch:ms"
+fields:
+  price: "price"
+  volume: "size"
+volume: "trade size as OKX reports it"
+match:
+  header: ["instrument_name", "trade_id", "side", "price", "size", "created_time"]

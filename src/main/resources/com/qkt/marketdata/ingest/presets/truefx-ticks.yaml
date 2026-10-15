@@ -1,0 +1,15 @@
+id: "truefx-ticks"
+description: "TrueFX tick files (no header): pair, GMT time to the millisecond, bid, ask"
+kind: "ticks"
+delimiter: ","
+time: ["$1"]
+timeFormat: "yyyyMMdd HH:mm:ss.SSS"
+clock: "UTC"
+fields:
+  bid: "$2"
+  ask: "$3"
+volume: "none"
+match:
+  columns: 4
+  firstCell: "[A-Z]{3}/[A-Z]{3}"
+  delimiter: ","
