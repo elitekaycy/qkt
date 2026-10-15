@@ -42,6 +42,8 @@ adding a file, not code.
 | `dukascopy-gmt-bars`, `dukascopy-local-bars`, `dukascopy-gmt-ticks` | Dukascopy website / JForex export |
 | `dukascopy-node-bars`, `dukascopy-node-ticks` | dukascopy-node CSV |
 | `dukascopy-bi5` | Dukascopy datafeed hour files `<YYYY>/<MM from 00>/<DD>/<HH>h_ticks.bi5`, decoded as qkt's own fetcher does |
+| `databento-ohlcv`, `databento-trades`, `databento-mbp1` | Databento DBN files (versions 1 to 3, uncompressed: `zstd -d` a `.dbn.zst` first), one instrument a file, read natively: bars at `ts_event`, trades and top of book at `ts_recv`, prices exact from 1e-9 integers; a book update with an empty side is skipped and counted, its trades kept; `mbo`, `mbp-10`, definitions and statistics are refused |
+| `sierra-scid-ticks`, `sierra-scid-bars` | Sierra Chart intraday files (`.scid`), read natively: UTC times (current microsecond or old day-count format), float32 prices rounded to the instrument's digits (pass `--digits` when qkt has no spec); a file mixing trades and bars is refused |
 | `mt4-hst` | MetaTrader 4 history files (`<SYMBOL><PERIOD>.hst`, version 400 or 401), read natively: bid bars on the broker clock, shifted to mid by the stored spread, prices rounded to the header's digits (which become the instrument's unless `--digits` says otherwise) |
 | `tradingview-unix`, `tradingview-iso` | TradingView chart export |
 | `binance-klines`, `binance-klines-header`, `binance-klines-json` | Binance public data and REST klines (ms, and µs for spot since 2025) |
@@ -72,6 +74,8 @@ qkt data import broker.csv --as MYBROKER:EURUSD --kind bars --map ... --plan > m
 qkt data import next-month.csv --as MYBROKER:EURUSD --preset mybroker.yaml
 ```
 
+- With `--kind` and no matching preset, a column named exactly like a field (`open`, `bid`, `volume`, any
+  case) maps itself, and the one column named `time`, `timestamp`, `datetime` or `date` is the time.
 - `--map field=column`: columns by header name (spaces allowed), `$N` by position, `a.b` inside JSON.
   Expressions are exact: `close=<CLOSE>+<SPREAD>*point/2`. A trailing `?` makes a column optional.
 - Fields: ticks `bid ask price volume bidVolume askVolume`; bars `open high low close volume spread`;
@@ -125,7 +129,8 @@ clock, and getting it wrong moves every bar without any error, so qkt checks it.
 | bars off the UTC grid, e.g. broker H4 bars cut at broker midnight | qkt's bars are cut at UTC; import H1 or finer and let qkt build H4 and D1 |
 | daily bars dated by day only on a broker clock (MT5 D1), or FX/metals dates on no stated clock | each bar would hold another day's prices; import H1 or finer, or pass `--tz UTC` if the dates are UTC days |
 | a `series` without `--available` or `--available-lag` | stamping a published value on the date it describes leaks the future |
-| other binary files (Parquet, MT5 `.hcc`/`.tkc` caches, Sierra `.scid`, Databento DBN) | export them to CSV first: MT5 caches are undocumented and change between terminal builds, and the others need readers qkt does not ship |
+| Parquet | convert it: `duckdb -c "COPY (FROM 'x.parquet') TO 'x.csv'"` (the refusal prints the command for your file) |
+| MT5 `.hcc`/`.tkc` caches | undocumented and changed between terminal builds: export from MT5's Symbols window instead |
 
 Every refusal happens before the first write, so a refused import leaves the store as it was.
 

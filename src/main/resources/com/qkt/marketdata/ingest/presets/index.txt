@@ -10,6 +10,9 @@ binance-metrics
 bybit-spot-trades
 bybit-trades
 ccxt-ohlcv
+databento-mbp1
+databento-ohlcv
+databento-trades
 dukascopy-bi5
 dukascopy-gmt-bars
 dukascopy-gmt-ticks
@@ -31,6 +34,8 @@ okx-trades
 polygon-aggs-flat
 polygon-aggs-json
 qkt-cot
+sierra-scid-bars
+sierra-scid-ticks
 tradingview-iso
 tradingview-unix
 truefx-ticks

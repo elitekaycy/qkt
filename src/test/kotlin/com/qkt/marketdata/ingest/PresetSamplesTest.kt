@@ -47,7 +47,7 @@ class PresetSamplesTest {
 
     @Test
     fun `every built-in preset has a sample here`() {
-        val tested = PresetSampleCases.all.map { it.get()[2] as String }.toSet() + RefusedSampleCases.all.keys
+        val tested = samples().map { it.get()[2] as String }.toSet() + RefusedSampleCases.all.keys
 
         assertThat(PresetLibrary.builtIns.map { it.id }).allMatch { it in tested }
     }
@@ -66,6 +66,6 @@ class PresetSamplesTest {
 
     companion object {
         @JvmStatic
-        fun samples(): List<Arguments> = PresetSampleCases.all
+        fun samples(): List<Arguments> = PresetSampleCases.all + NativeSampleCases.all
     }
 }

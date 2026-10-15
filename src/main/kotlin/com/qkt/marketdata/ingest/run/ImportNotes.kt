@@ -62,6 +62,7 @@ internal object ImportNotes {
             count(read.stats.sumOf { it.rounded }, ROUNDED)
             count(read.stats.sumOf { it.subMillis }, SUB_MS)
             count(plan.emptyBi5Hours.toLong(), QUIET)
+            plan.inputs.forEach { input -> input.notes.forEach { add("${input.name}: $it") } }
             count(read.stats.sumOf { it.filtered }, "row(s) did not pass the row filter ${d.where}")
             if (plan.skippedFiles.isNotEmpty()) add(skipped(plan))
             if (plan.target.digits == null && (bars || kind == IngestKind.TICKS)) {

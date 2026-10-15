@@ -1,0 +1,15 @@
+id: "sierra-scid-ticks"
+description: "Sierra Chart intraday file (.scid) of trades, read natively: UTC microseconds, trade price with the bid and ask at the time, float32 prices rounded to the instrument's digits"
+kind: "ticks"
+time: ["time"]
+timeFormat: "epoch:us"
+clock: "UTC"
+fields:
+  price: "price"
+  bid: "bid"
+  ask: "ask"
+  volume: "volume"
+volume: "trade size"
+match:
+  header: ["time", "price", "bid", "ask", "volume"]
+  filename: "\\.scid$"

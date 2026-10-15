@@ -1,0 +1,17 @@
+id: "databento-ohlcv"
+description: "Databento DBN bars (ohlcv-1s, -1m, -1h, -1d), read natively: trade prices, UTC open times, timeframe from the record type"
+kind: "bars"
+time: ["ts_event"]
+timeFormat: "epoch:ns"
+clock: "UTC"
+basis: "last"
+fields:
+  open: "open"
+  high: "high"
+  low: "low"
+  close: "close"
+  volume: "volume"
+volume: "traded size"
+match:
+  header: ["ts_event", "open", "high", "low", "close", "volume"]
+  filename: "\\.dbn$"

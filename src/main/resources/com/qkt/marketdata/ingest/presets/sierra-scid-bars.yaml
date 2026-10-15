@@ -1,0 +1,17 @@
+id: "sierra-scid-bars"
+description: "Sierra Chart intraday file (.scid) of bars, read natively: UTC open times, trade prices, float32 prices rounded to the instrument's digits"
+kind: "bars"
+time: ["time"]
+timeFormat: "epoch:us"
+clock: "UTC"
+basis: "last"
+fields:
+  open: "open"
+  high: "high"
+  low: "low"
+  close: "close"
+  volume: "volume"
+volume: "traded size"
+match:
+  header: ["time", "open", "high", "low", "close", "volume"]
+  filename: "\\.scid$"
