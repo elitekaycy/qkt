@@ -74,19 +74,23 @@ internal class OrderCancellation(
 
     /**
      * Cancels every pending stack and resting or engine-held order on [symbol], and the remainder of
-     * a partly filled order no live composite owns; [closing] as for [cancel].
+     * a partly filled order no live composite owns; [closing] as for [cancel]. With [strategyId], only
+     * that strategy's orders: one portfolio child closing a symbol must never strip the stops off
+     * another child's position on it.
      */
     fun cancelPendingForSymbol(
         symbol: String,
         closing: Boolean = false,
+        strategyId: String? = null,
     ) {
+        val owned = { request: OrderRequest -> strategyId == null || request.strategyId == strategyId }
         // Cancel pending stacks targeting this symbol.
         val stackIds =
             stacks
                 .all()
                 .filter { state ->
                     val managed = book[state.id] ?: return@filter false
-                    (managed.request as? OrderRequest.Stack)?.symbol == symbol
+                    (managed.request as? OrderRequest.Stack)?.symbol == symbol && owned(managed.request)
                 }.map { it.id }
         for (id in stackIds) cancel(id, closing)
         // Cancel any remaining (non-stack) engine-held or venue-resting orders for the symbol
@@ -95,7 +99,8 @@ internal class OrderCancellation(
             book.orders.values
                 .filter {
                     (it.state == OrderState.PENDING || it.state == OrderState.WORKING || isUnownedPartFill(it)) &&
-                        it.request.symbol == symbol
+                        it.request.symbol == symbol &&
+                        owned(it.request)
                 }.map { it.id }
         for (id in pending) cancel(id, closing)
     }

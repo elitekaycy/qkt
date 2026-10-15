@@ -66,8 +66,8 @@ internal class StrategySignalEmitter(
             // A forced cancel ends this strategy's structure: it must not reach another strategy's orders.
             when {
                 sig.force -> orderManager.cancelOwnOrders(strategyId, sig.symbol)
-                sig.closing -> orderManager.closePendingForSymbol(sig.symbol)
-                else -> orderManager.cancelPendingForSymbol(sig.symbol)
+                sig.closing -> orderManager.closePendingForSymbol(sig.symbol, strategyId)
+                else -> orderManager.cancelPendingForSymbol(sig.symbol, strategyId)
             }
             ctx.submissions.recordAccepted()
         } else if (sig is Signal.ArmLatch) {
