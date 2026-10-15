@@ -21,6 +21,7 @@ histdata-mt
 histdata-ticks
 kraken-ohlcvt
 mt4-csv
+mt4-hst
 mt5-bars
 mt5-bars-daily
 mt5-ticks

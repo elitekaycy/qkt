@@ -42,6 +42,7 @@ adding a file, not code.
 | `dukascopy-gmt-bars`, `dukascopy-local-bars`, `dukascopy-gmt-ticks` | Dukascopy website / JForex export |
 | `dukascopy-node-bars`, `dukascopy-node-ticks` | dukascopy-node CSV |
 | `dukascopy-bi5` | Dukascopy datafeed hour files `<YYYY>/<MM from 00>/<DD>/<HH>h_ticks.bi5`, decoded as qkt's own fetcher does |
+| `mt4-hst` | MetaTrader 4 history files (`<SYMBOL><PERIOD>.hst`, version 400 or 401), read natively: bid bars on the broker clock, shifted to mid by the stored spread, prices rounded to the header's digits (which become the instrument's unless `--digits` says otherwise) |
 | `tradingview-unix`, `tradingview-iso` | TradingView chart export |
 | `binance-klines`, `binance-klines-header`, `binance-klines-json` | Binance public data and REST klines (ms, and µs for spot since 2025) |
 | `binance-funding`, `binance-funding-api`, `binance-metrics` | Binance funding rates and 5-minute open interest |
@@ -124,7 +125,7 @@ clock, and getting it wrong moves every bar without any error, so qkt checks it.
 | bars off the UTC grid, e.g. broker H4 bars cut at broker midnight | qkt's bars are cut at UTC; import H1 or finer and let qkt build H4 and D1 |
 | daily bars dated by day only on a broker clock (MT5 D1), or FX/metals dates on no stated clock | each bar would hold another day's prices; import H1 or finer, or pass `--tz UTC` if the dates are UTC days |
 | a `series` without `--available` or `--available-lag` | stamping a published value on the date it describes leaks the future |
-| other binary files (Parquet, MT4 `.hst`, MT5 `.hcc`, Sierra `.scid`, Databento DBN) | export them to CSV first |
+| other binary files (Parquet, MT5 `.hcc`/`.tkc` caches, Sierra `.scid`, Databento DBN) | export them to CSV first: MT5 caches are undocumented and change between terminal builds, and the others need readers qkt does not ship |
 
 Every refusal happens before the first write, so a refused import leaves the store as it was.
 

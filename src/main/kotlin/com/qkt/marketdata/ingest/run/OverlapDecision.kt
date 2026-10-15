@@ -63,9 +63,9 @@ internal class OverlapDecision(
         val summary = "stored vs incoming over ${days.size} shared day(s): ${result.summary()}"
         if (result.offsetMs != 0L && result.matched >= MIN_MATCHED && !trustClock) {
             throw ImportRefusal(
-                "the days this import shares with stored data line up only when shifted by ${result.offsetMs / MINUTE_MS} " +
-                    "minutes: one of the two sources is on the wrong clock. Check --tz on this import (or the stored " +
-                    "data's provenance); --trust-clock imports anyway",
+                "the days this import shares with stored data line up only when shifted by " +
+                    "${result.offsetMs / MINUTE_MS} minutes: one of the two sources is on the wrong clock. " +
+                    "Check --tz on this import (or the stored data's provenance); --trust-clock imports anyway",
                 listOf(summary),
             )
         }

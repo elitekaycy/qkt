@@ -16,6 +16,8 @@ data class ImportInput(
     val name: String,
     /** SHA-256 of the file on disk (the archive for a zip member), recorded in provenance. */
     val sha256: String,
+    /** The price digits the file states itself (an MT4 `.hst` header), or null when it states none. */
+    val digits: Int? = null,
     private val opener: () -> InputStream,
 ) {
     /** A fresh stream over the input's bytes, decompressed. */
@@ -40,7 +42,7 @@ data class ImportExpansion(
  */
 object ImportSources {
     private val DATA_EXTENSIONS =
-        setOf("csv", "tsv", "txt", "json", "ndjson", "jsonl", "gz", "zip", "dat", "prn", "bi5")
+        setOf("csv", "tsv", "txt", "json", "ndjson", "jsonl", "gz", "zip", "dat", "prn", "bi5", "hst")
 
     /** Every input under [paths], in a stable order (paths as given, directory entries and zip members by name). */
     fun expand(
@@ -58,6 +60,7 @@ object ImportSources {
                         else -> throw ImportRefusal("no such file or directory: $path")
                     }
                 files.flatMap { file ->
+                    if (HstBars.isHst(file)) return@flatMap listOf(HstBars.input(file, sha256(file)))
                     if (!Bi5Hours.isBi5(file)) return@flatMap fromFile(file)
                     val hour = Bi5Hours.input(file, sha256(file), bi5Divisor)
                     if (hour == null) emptyHours++
@@ -148,7 +151,11 @@ object ImportSources {
     ) {
         val reason =
             when {
-                name.endsWith(".hst", true) || name.endsWith(".hcc", true) -> "a MetaTrader history binary"
+                name.endsWith(
+                    ".hcc",
+                    true,
+                ) ||
+                    name.endsWith(".tkc", true) -> "a MetaTrader 5 cache (undocumented, changes between builds)"
                 name.endsWith(".scid", true) -> "a Sierra Chart .scid binary"
                 name.endsWith(".dbn", true) || name.endsWith(".dbn.zst", true) -> "a Databento DBN binary"
                 magic.startsWith(PARQUET) -> "a Parquet file"
