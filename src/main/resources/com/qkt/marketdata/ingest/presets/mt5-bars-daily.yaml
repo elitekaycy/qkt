@@ -1,0 +1,17 @@
+id: "mt5-bars-daily"
+description: "MetaTrader 5 D1 bar export (no <TIME> column): days cut at broker midnight, so qkt refuses them and asks for H1 or finer"
+kind: "bars"
+time: ["<DATE>"]
+timeFormat: "yyyy.MM.dd"
+clock: "ny-close"
+basis: "bid"
+timeframe: "1d"
+fields:
+  open: "<OPEN>"
+  high: "<HIGH>"
+  low: "<LOW>"
+  close: "<CLOSE>"
+  volume: "<TICKVOL>"
+volume: "tick count"
+match:
+  header: ["<DATE>", "<OPEN>", "<HIGH>", "<LOW>", "<CLOSE>", "<TICKVOL>"]

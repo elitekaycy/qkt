@@ -2,7 +2,10 @@ package com.qkt.marketdata.ingest
 
 import org.junit.jupiter.params.provider.Arguments
 
-/** One sample per built-in preset: file, `--as` symbol, the preset it must match, its first stored row, extra mappings. */
+/**
+ * One sample per built-in preset: file, `--as` symbol, the preset it must match, its first stored row, extra
+ * mappings, digits. Presets whose real files qkt must refuse are in [RefusedSampleCases].
+ */
 object PresetSampleCases {
     private fun s(
         file: String,
@@ -10,7 +13,8 @@ object PresetSampleCases {
         preset: String,
         row: String,
         fields: Map<String, String> = emptyMap(),
-    ) = Arguments.of(file, symbol, preset, row, fields)
+        digits: Int? = null,
+    ) = Arguments.of(file, symbol, preset, row, fields, digits)
 
     private const val Z = "0.00000000"
 
@@ -135,6 +139,20 @@ object PresetSampleCases {
                 "KRAKEN:XBTUSD",
                 "kraken-ohlcvt",
                 "1381095240000,122.00000000,122.00000000,122.00000000,122.00000000,0.10000000",
+            ),
+            s(
+                "EURUSD/2026/07/24/00h_ticks.bi5",
+                "EURUSD",
+                "dukascopy-bi5",
+                "1787529600090,EURUSD,,5.39999998,1.16823000,1.16824000,4.50000000,0.89999998",
+            ),
+            s("mt5-ticks-real.csv", "US100", "mt5-ticks", "1681488000846,US100,,,15790.60000000,15791.10000000,,"),
+            s(
+                "mt5-bars-real.csv",
+                "BROKER:TSLA",
+                "mt5-bars",
+                "1672754400000,243.52500000,245.74500000,241.20500000,241.21500000,10908.00000000",
+                digits = 2,
             ),
             s("truefx-ticks.csv", "EURUSD", "truefx-ticks", "1462147200959,EURUSD,,,1.14601000,1.14605000,,"),
             s(

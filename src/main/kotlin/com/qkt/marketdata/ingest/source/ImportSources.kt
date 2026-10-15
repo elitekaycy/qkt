@@ -26,31 +26,45 @@ data class ImportInput(
 data class ImportExpansion(
     val inputs: List<ImportInput>,
     val skipped: List<Path>,
+    /** Dukascopy `.bi5` hours that hold no ticks (the market was closed or quiet). */
+    val emptyHours: Int = 0,
 )
 
 /**
  * Expands the paths given to `qkt data import` into text inputs, by content rather than by extension:
- * gzip and zip are opened, a directory is walked in name order, and binary formats that need an export
- * first are refused by name. A directory walk keeps only data files (`.csv`, `.txt`, `.json`, `.gz`,
+ * gzip and zip are opened, a directory is walked in name order, Dukascopy `.bi5` hours are decoded
+ * ([Bi5Hours]), and other binary formats that need an export first are refused by name. A directory walk keeps only data files (`.csv`, `.txt`, `.json`, `.gz`,
  * `.zip`, ...) and lists the rest (checksums, download markers, notes) as skipped; a file named on the
  * command line is always read. Zip members that carry no data (`.CHECKSUM`, `MANIFEST.json`, macOS
  * metadata, and `.txt` reports beside `.csv` data, as HistData ships) are skipped.
  */
 object ImportSources {
-    private val DATA_EXTENSIONS = setOf("csv", "tsv", "txt", "json", "ndjson", "jsonl", "gz", "zip", "dat", "prn")
+    private val DATA_EXTENSIONS =
+        setOf("csv", "tsv", "txt", "json", "ndjson", "jsonl", "gz", "zip", "dat", "prn", "bi5")
 
     /** Every input under [paths], in a stable order (paths as given, directory entries and zip members by name). */
-    fun expand(paths: List<Path>): ImportExpansion {
+    fun expand(
+        paths: List<Path>,
+        bi5Divisor: Long? = null,
+    ): ImportExpansion {
         val skipped = mutableListOf<Path>()
+        var emptyHours = 0
         val inputs =
             paths.flatMap { path ->
-                when {
-                    Files.isDirectory(path) -> walk(path, skipped).flatMap(::fromFile)
-                    Files.isRegularFile(path) -> fromFile(path)
-                    else -> throw ImportRefusal("no such file or directory: $path")
+                val files =
+                    when {
+                        Files.isDirectory(path) -> walk(path, skipped)
+                        Files.isRegularFile(path) -> listOf(path)
+                        else -> throw ImportRefusal("no such file or directory: $path")
+                    }
+                files.flatMap { file ->
+                    if (!Bi5Hours.isBi5(file)) return@flatMap fromFile(file)
+                    val hour = Bi5Hours.input(file, sha256(file), bi5Divisor)
+                    if (hour == null) emptyHours++
+                    listOfNotNull(hour)
                 }
             }
-        return ImportExpansion(inputs, skipped)
+        return ImportExpansion(inputs, skipped, emptyHours)
     }
 
     private fun walk(
@@ -134,7 +148,6 @@ object ImportSources {
     ) {
         val reason =
             when {
-                name.endsWith(".bi5", true) -> "a Dukascopy .bi5 binary"
                 name.endsWith(".hst", true) || name.endsWith(".hcc", true) -> "a MetaTrader history binary"
                 name.endsWith(".scid", true) -> "a Sierra Chart .scid binary"
                 name.endsWith(".dbn", true) || name.endsWith(".dbn.zst", true) -> "a Databento DBN binary"
