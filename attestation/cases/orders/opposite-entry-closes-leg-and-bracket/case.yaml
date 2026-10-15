@@ -1,0 +1,23 @@
+id: opposite-entry-closes-leg-and-bracket
+title: A plain opposite order closes a bracketed leg and clears that leg's stop and target
+why: On a hedging account an opposite BUY or SELL is routed as a close of the open leg by ticket. If the
+  leg's bracket is left working, its stop or target fires later against a position that no longer exists -
+  booked nowhere in the engine, and on a venue that holds the exit in the engine, sent as a real order that
+  opens an unowned position. The leg must close, and nothing of its bracket may remain.
+status: ready
+symbols:
+- BTCUSD
+timeframes:
+- 1m
+warmup_bars:
+  1m: 3
+proves:
+- behaviour:hedged-opposite-close
+- behaviour:bracket
+budget_seconds: 300
+assertions:
+- flat-by-magic
+- no-pending-by-magic
+- deals-net-by-magic
+- no-engine-fault
+- replay-fill-sequence

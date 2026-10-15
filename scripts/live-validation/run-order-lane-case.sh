@@ -4,7 +4,7 @@
 # must hold, whatever order shapes the strategy uses:
 #   - the case starts and ends owning nothing under its magic (no position, no pending order);
 #   - what the engine booked for the strategy equals the venue's own deals under that magic;
-#   - the engine logged no fault, unknown outcome or unattributed fill;
+#   - the engine logged no fault, unknown outcome, unattributed fill or fill its book could not hold;
 #   - replaying the captured input through the MT5 simulation yields the same fills, in the same
 #     order, on the same sides, at the same sizes.
 set -Eeuo pipefail
@@ -215,7 +215,7 @@ if [ "$(pending)" != 0 ]; then
     done
     problems+=("magic still owned a pending order after the case; cancelled: $(echo $resting)")
 fi
-grep -Eq 'engine loop fault|unattributed fill dropped' "$out/daemon.log" &&
+grep -Eq 'engine loop fault|unattributed fill dropped|the book does not hold; nothing booked' "$out/daemon.log" &&
     problems+=("engine fault or unattributed fill in the daemon log")
 # A lost acknowledgement is not a failure - the engine is built to ask the venue and resolve it.
 # An outcome it never resolved is.
