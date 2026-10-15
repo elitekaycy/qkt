@@ -134,7 +134,7 @@ class ReplayEngine(
     private val books = ReplayBooks(instruments, accountingConfig, markTimestamp = { currentTimestamp })
     private val positions = books.positions
     private val recorder = ReplayRecorder(initialTimestamp)
-    private val replayEndRule = ReplayEndRule()
+    private val replayEndRule = ReplayEndRule { books.priceTracker.lastPrice(it) }
     private val pipeline: TradingPipeline
     private val financing: ReplayFinancing
     private val analytics: ReplayAnalytics
