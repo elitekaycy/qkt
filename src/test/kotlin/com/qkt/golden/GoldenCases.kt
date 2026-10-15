@@ -137,6 +137,17 @@ internal object GoldenCases {
                 xauRisk,
                 "2024-01-02",
                 "2024-01-05",
+                flags = listOf("--bars", "--no-tick-fills"),
+                instruments = GoldenInstruments.XAU,
+                barsTimeframe = "15m",
+            ),
+            // The default for `--bars`: signals on bars, fills resolved on the real ticks inside each bar.
+            GoldenCase(
+                "xau-bars-tickfills-paper",
+                GoldenData.XAUUSD_SINE_3D,
+                xauRisk,
+                "2024-01-02",
+                "2024-01-05",
                 flags = listOf("--bars"),
                 instruments = GoldenInstruments.XAU,
                 barsTimeframe = "15m",

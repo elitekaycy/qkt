@@ -220,7 +220,9 @@ grep -Eq 'engine loop fault|unattributed fill dropped|the book does not hold; no
 # A lost acknowledgement is not a failure - the engine is built to ask the venue and resolve it.
 # An outcome it never resolved is.
 unknown="$({ grep -c 'outcome UNKNOWN' "$out/daemon.log" || true; } | head -n 1)"
-resolved="$({ grep -cE 'resolved as [A-Z_]+' "$out/daemon.log" || true; } | head -n 1)"
+# FILLED / PENDING when the venue shows the order; "not executed" / "not placed" when, after the verified
+# retry window, it shows nothing - both are resolutions, and the engine then acts on the venue's answer.
+resolved="$({ grep -cE 'resolved as ([A-Z_]+|not executed|not placed)' "$out/daemon.log" || true; } | head -n 1)"
 [ "$unknown" -le "$resolved" ] || problems+=("$unknown unknown order outcome(s), only $resolved resolved")
 
 # Missing evidence fails the case: an empty history and a missing status would otherwise both read
@@ -284,9 +286,10 @@ else
 fi
 
 # Rejections must be the same live and in replay: a cap that binds in one and not the other, or a venue
-# refusal the simulator fills, is exactly the divergence these lanes exist to catch. Live counts both risk
-# rejections and venue refusals, as the replay's tradeSummary does. `expect_rejections` pins the count.
-rejections() { { grep -cE 'risk rejected |Order rejected: ' "$1" || true; } | head -n 1; }
+# refusal the simulator fills, is exactly the divergence these lanes exist to catch. Live counts risk
+# rejections and the venue's own refusals (HTTP 4xx), as the replay's tradeSummary does; an order whose
+# outcome was lost to a timeout and resolved as not executed is not a refusal. `expect_rejections` pins it.
+rejections() { { grep -cE 'risk rejected |Order rejected: \S+ reason=HTTP 4' "$1" || true; } | head -n 1; }
 live_rejections="$(rejections "$out/daemon.log")"; replay_rejections=0
 # A backtest reports rejections in its JSON result, not as log lines.
 [ -f "$out/replay.log" ] && replay_rejections="$({ grep -m1 '^{"schema' "$out/replay.log" || echo '{}'; } | jq -r '.tradeSummary.rejections // 0')"

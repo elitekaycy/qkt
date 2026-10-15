@@ -62,34 +62,22 @@ internal object BacktestBarReplay {
         executionConfig: ExecutionSimulationConfig,
     ): BarReplayConfig {
         val forceBars = args.flag("bars")
-        val tickFills = args.flag("tick-fills")
-        require(!tickFills || forceBars) {
+        val explicit = args.flag("tick-fills")
+        require(!explicit || forceBars) {
             "--tick-fills requires --bars (bars drive signals; ticks resolve fills)"
         }
-        require(!tickFills || symbols.none { '@' in it }) {
-            "--tick-fills is not supported for continuous futures streams yet; drop --tick-fills"
+        val blocker = tickFillsBlocker(symbols, streams, executionConfig)
+        require(!explicit || blocker == null) { "--tick-fills is not valid here: $blocker" }
+        // `qkt backtest --bars` resolves fills on real ticks by default wherever that is valid; bars without
+        // ticks still fill on their synthetic path. `--no-tick-fills` keeps the synthetic path everywhere.
+        val byDefault = forceBars && !explicit && !args.flag("no-tick-fills") && args.subcommand == "backtest"
+        if (byDefault && blocker != null) {
+            System.err.println("qkt: note: tick-resolved fills are off for this run: $blocker")
         }
+        val tickFills = explicit || (byDefault && blocker == null)
         require(!forceBars || tickFills || executionConfig.brokerKind != BrokerKind.MT5_SIM) {
             "--bars with --broker mt5-sim is unsafe: synthetic bar extremes do not preserve " +
                 "MT5 trigger prices or market spread. Use --bars --tick-fills or full tick replay"
-        }
-        require(!tickFills || (executionConfig.latencyMs == 0L && executionConfig.orderSpacingMs == 0L)) {
-            "--tick-fills is not valid with execution latency or order spacing: " +
-                "filtered ticks cannot preserve delayed-order release timing; use full tick replay"
-        }
-        require(!tickFills || executionConfig.stopLatencyMs == 0L) {
-            "--tick-fills is not valid with stop latency (${executionConfig.stopLatencyMs}ms): " +
-                "filtered ticks cannot preserve delayed stop execution; use full tick replay"
-        }
-        require(
-            !tickFills ||
-                streams
-                    .map { it.timeframe }
-                    .distinct()
-                    .size <= 1,
-        ) {
-            "--tick-fills is not valid for mixed-timeframe strategies: a finer-stream close can place " +
-                "a cross-symbol order after the other symbol's bar was already resolved"
         }
         val binaryBarStore = BinaryBarStore(Paths.get(dataRoot))
         val barTfOverride = args.option("bar-tf")?.let { TimeWindow.parse(it) }
