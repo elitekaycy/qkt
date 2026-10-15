@@ -36,7 +36,7 @@ private val backtestValues =
         "swap-scale",
     )
 private val backtestFlags =
-    setOf("no-fetch", "bars", "allow-incomplete", "tick-fills", "enforce-live-breakers", "chaos")
+    setOf("no-fetch", "bars", "allow-incomplete", "tick-fills", "no-tick-fills", "enforce-live-breakers", "chaos")
 
 /** Option schemas for the backtest-family research commands, which share the backtest data and execution flags. */
 internal val researchOptionSchemas: Map<String, CliOptionSchema> =
