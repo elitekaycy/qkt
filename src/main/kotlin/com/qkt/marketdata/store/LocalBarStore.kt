@@ -92,7 +92,8 @@ class LocalBarStore(
         val dir = barDir(manifest.broker, manifest.symbol, manifest.timeframe)
         Files.createDirectories(dir)
         val target = dir.resolve("manifest.json")
-        val tmp = dir.resolve("manifest.json.tmp")
+        // A unique scratch name, as the tick manifest uses: two writers never share one temporary file.
+        val tmp = Files.createTempFile(dir, "manifest", ".json.tmp")
         val updated = manifest.copy(lastUpdated = Instant.ofEpochMilli(clock.now()).toString())
         Files.writeString(tmp, BarsManifestCodec.encode(updated))
         Files.move(tmp, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
@@ -126,13 +127,16 @@ class LocalBarStore(
         return merged
     }
 
-    /** Records that [day] is now on disk, idempotently. */
+    /**
+     * Records that [day] is now on disk, idempotently. The read-modify-write holds the store's
+     * [ManifestLock], so parallel fetches into one data root cannot lose each other's days.
+     */
     fun recordDay(
         broker: String,
         symbol: String,
         timeframe: String,
         day: LocalDate,
-    ) {
+    ) = ManifestLock(root).withLock {
         val existing = readManifest(broker, symbol, timeframe)
         val newRange = DayRange(day.toString(), day.toString())
         val merged = coalesce(existing.ranges, newRange)

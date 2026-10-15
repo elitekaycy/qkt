@@ -1,0 +1,19 @@
+id: "mt4-csv"
+description: "MetaTrader 4 History Center CSV: no header, broker server time, bid prices without spread"
+kind: "bars"
+delimiter: ","
+time: ["$0", "$1"]
+timeFormat: "yyyy.MM.dd HH:mm"
+clock: "ny-close"
+basis: "bid"
+fields:
+  open: "$2"
+  high: "$3"
+  low: "$4"
+  close: "$5"
+  volume: "$6"
+volume: "tick count"
+match:
+  columns: 7
+  firstCell: "\\d{4}\\.\\d{2}\\.\\d{2}"
+  delimiter: ","

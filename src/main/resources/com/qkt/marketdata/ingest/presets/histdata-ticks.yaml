@@ -1,0 +1,15 @@
+id: "histdata-ticks"
+description: "HistData.com generic ASCII ticks (DAT_ASCII_*_T_*): EST all year (no DST), bid and ask"
+kind: "ticks"
+delimiter: ","
+time: ["$0"]
+timeFormat: "yyyyMMdd HHmmssSSS"
+clock: "-05:00"
+fields:
+  bid: "$1"
+  ask: "$2"
+volume: "none (HistData publishes 0)"
+match:
+  columns: 4
+  firstCell: "\\d{8} \\d{9}"
+  delimiter: ","

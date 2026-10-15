@@ -13,7 +13,7 @@ internal object BarDayCsv {
     /** The day file text for [bars], sorted by start time. */
     fun render(bars: List<Candle>): String {
         val sb = StringBuilder()
-        sb.append("timestamp,open,high,low,close,volume\n")
+        sb.append(HEADER).append('\n')
         for (b in bars.sortedBy { it.startTime }) {
             sb.append(b.startTime).append(',')
             sb.append(b.open.toPlainString()).append(',')
@@ -25,7 +25,12 @@ internal object BarDayCsv {
         return sb.toString()
     }
 
-    /** Bars in the day file at [path], stamped [qktSymbol] and [windowMs] long; rows under six fields are skipped. */
+    /**
+     * Bars in the day file at [path], stamped [qktSymbol] and [windowMs] long. The file must start with the
+     * header and hold rows of at least six fields in strictly rising time; anything else fails naming the
+     * file and line, so a damaged day is never read as a shorter one. Fields past the sixth are ignored, so
+     * files with more columns stay readable.
+     */
     fun read(
         path: Path,
         qktSymbol: String,
@@ -33,28 +38,50 @@ internal object BarDayCsv {
     ): List<Candle> {
         val out = mutableListOf<Candle>()
         Files.newBufferedReader(path).use { reader ->
-            if (reader.readLine() == null) return emptyList()
-            var line: String? = reader.readLine()
-            while (line != null) {
-                val parts = line.split(',')
-                if (parts.size >= 6) {
-                    val ts = parts[0].toLong()
-                    out.add(
-                        Candle(
-                            symbol = qktSymbol,
-                            open = BigDecimal(parts[1]),
-                            high = BigDecimal(parts[2]),
-                            low = BigDecimal(parts[3]),
-                            close = BigDecimal(parts[4]),
-                            volume = BigDecimal(parts[5]),
-                            startTime = ts,
-                            endTime = ts + windowMs,
-                        ),
-                    )
+            val header = reader.readLine() ?: return emptyList()
+            require(header.trim() == HEADER) { "unexpected header at $path:1: got '$header', expected '$HEADER'" }
+            var lineNo = 1
+            var previous: Long? = null
+            while (true) {
+                val line = reader.readLine() ?: break
+                lineNo++
+                if (line.isBlank()) continue
+                val candle = parse(line, "$path:$lineNo", qktSymbol, windowMs)
+                require(previous == null || candle.startTime > previous) {
+                    "$path:$lineNo: bar times must rise (got ${candle.startTime} after $previous): $line"
                 }
-                line = reader.readLine()
+                previous = candle.startTime
+                out.add(candle)
             }
         }
         return out
     }
+
+    private fun parse(
+        line: String,
+        where: String,
+        qktSymbol: String,
+        windowMs: Long,
+    ): Candle {
+        val parts = line.split(',')
+        require(parts.size >= FIELDS) { "$where: expected $FIELDS fields, got ${parts.size}: $line" }
+        return try {
+            val ts = parts[0].toLong()
+            Candle(
+                symbol = qktSymbol,
+                open = BigDecimal(parts[1]),
+                high = BigDecimal(parts[2]),
+                low = BigDecimal(parts[3]),
+                close = BigDecimal(parts[4]),
+                volume = BigDecimal(parts[5]),
+                startTime = ts,
+                endTime = ts + windowMs,
+            )
+        } catch (e: NumberFormatException) {
+            throw IllegalArgumentException("$where: not a number (${e.message}): $line", e)
+        }
+    }
+
+    private const val HEADER = "timestamp,open,high,low,close,volume"
+    private const val FIELDS = 6
 }

@@ -1,0 +1,17 @@
+id: "mt5-bars"
+description: "MetaTrader 5 bar export (Symbols window, Bars, Export): broker server time, bid prices, spread in points"
+kind: "bars"
+time: ["<DATE>", "<TIME>"]
+timeFormat: "yyyy.MM.dd HH:mm:ss"
+clock: "ny-close"
+basis: "bid"
+fields:
+  open: "<OPEN>"
+  high: "<HIGH>"
+  low: "<LOW>"
+  close: "<CLOSE>"
+  volume: "<TICKVOL>"
+  spread: "<SPREAD>?"
+volume: "tick count"
+match:
+  header: ["<DATE>", "<TIME>", "<OPEN>", "<HIGH>", "<LOW>", "<CLOSE>", "<TICKVOL>"]

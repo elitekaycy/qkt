@@ -2,14 +2,13 @@ package com.qkt.cli.data
 
 import com.qkt.cli.Args
 import com.qkt.cli.ExitCodes
+import com.qkt.marketdata.ingest.store.ImportProvenance
 import com.qkt.marketdata.store.DataRoot
 import com.qkt.marketdata.store.DatasetSnapshots
 import com.qkt.marketdata.store.DayFileIntegrity
 import java.nio.file.Files
 import java.nio.file.Path
-
-/** Intra-day gap (ms) above which a day file is flagged as possibly partial. 6h. */
-private const val SUSPICIOUS_GAP_MS = 6 * 60 * 60 * 1000L
+import java.time.LocalDate
 
 /**
  * `qkt data verify <symbol>` reports each cached tick day's count and largest gap, flagging empty,
@@ -44,8 +43,11 @@ internal fun dataVerify(args: Args): Int {
     }
 
     println("qkt data verify: $symbol (${dayFiles.size} day files) under $symDir")
+    val provenance = ImportProvenance.read(symDir)
     var flagged = 0
     var totalTicks = 0L
+    var previousDay: String? = null
+    var previousLastMs: Long? = null
     for (path in dayFiles) {
         val day =
             path.fileName
@@ -55,15 +57,15 @@ internal fun dataVerify(args: Args): Int {
                 .removeSuffix(".bin")
         val q = DayFileIntegrity.inspect(path)
         totalTicks += q.tickCount
-        val status =
-            when {
-                !q.readable -> "CORRUPT (unreadable)"
-                q.isEmpty -> "EMPTY (0 ticks)"
-                q.maxGapMs >= SUSPICIOUS_GAP_MS -> "GAP ${q.maxGapMs / 3_600_000}h"
-                else -> "ok"
-            }
+        val boundary = if (day != previousDay) previousLastMs else null
+        val status = DayStatus.of(q, LocalDate.parse(day), boundary)
+        if (day != previousDay) {
+            previousDay = day
+            previousLastMs = q.lastMs ?: previousLastMs
+        }
         if (status != "ok") flagged++
-        println("  $day  ticks=${q.tickCount}  maxGap=${q.maxGapMs / 60_000}m  $status")
+        val source = provenance.entryFor(day)?.let { "  imported ${it.preset}" }.orEmpty()
+        println("  $day  ticks=${q.tickCount}  maxGap=${q.maxGapMs / 60_000}m  $status$source")
     }
     println("qkt data verify: done — ${dayFiles.size} days, $totalTicks ticks, $flagged flagged")
     return if (flagged > 0) ExitCodes.USER_ERROR else ExitCodes.SUCCESS

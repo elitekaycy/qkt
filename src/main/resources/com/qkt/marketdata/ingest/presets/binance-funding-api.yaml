@@ -1,0 +1,12 @@
+id: "binance-funding-api"
+description: "Binance /fapi/v1/fundingRate JSON (array of objects with fundingTime, fundingRate, markPrice)"
+kind: "funding"
+format: "json"
+time: ["fundingTime"]
+timeFormat: "epoch"
+fields:
+  rate: "fundingRate"
+  price: "markPrice?"
+match:
+  header: ["fundingTime", "fundingRate"]
+  json: true

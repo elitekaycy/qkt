@@ -4,13 +4,16 @@ import com.qkt.marketdata.openDayFeed
 import java.nio.file.Path
 
 /**
- * Quality summary of one cached day file: how many ticks it holds and the largest gap between
- * consecutive ticks. [readable] is false when the file failed to parse (corrupt binary, truncated gzip).
+ * Quality summary of one cached day file: how many ticks it holds, the largest gap between consecutive
+ * ticks, and its first and last tick times (null when empty). [readable] is false when the file failed to
+ * parse (corrupt binary, truncated gzip).
  */
 data class DayQuality(
     val tickCount: Int,
     val maxGapMs: Long,
     val readable: Boolean,
+    val firstMs: Long? = null,
+    val lastMs: Long? = null,
 ) {
     /** No ticks at all — a non-trading day, or a fetch that wrote an empty/header-only file. */
     val isEmpty: Boolean get() = readable && tickCount == 0
@@ -30,6 +33,7 @@ object DayFileIntegrity {
         var count = 0
         var maxGap = 0L
         var last = Long.MIN_VALUE
+        var first: Long? = null
         return try {
             val feed = openDayFeed(path)
             try {
@@ -40,12 +44,23 @@ object DayFileIntegrity {
                         if (gap > maxGap) maxGap = gap
                     }
                     last = tick.timestamp
+                    if (first == null) first = last
                     count++
                 }
             } finally {
                 feed.close()
             }
-            DayQuality(tickCount = count, maxGapMs = maxGap, readable = true)
+            DayQuality(
+                tickCount = count,
+                maxGapMs = maxGap,
+                readable = true,
+                firstMs = first,
+                lastMs =
+                    last.takeIf {
+                        count >
+                            0
+                    },
+            )
         } catch (e: Exception) {
             DayQuality(tickCount = count, maxGapMs = maxGap, readable = false)
         }

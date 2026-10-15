@@ -1,0 +1,19 @@
+id: "histdata-mt"
+description: "HistData.com MetaTrader-format M1 bars: EST all year (no DST), bid prices"
+kind: "bars"
+delimiter: ","
+time: ["$0", "$1"]
+timeFormat: "yyyy.MM.dd HH:mm"
+clock: "-05:00"
+basis: "bid"
+fields:
+  open: "$2"
+  high: "$3"
+  low: "$4"
+  close: "$5"
+volume: "none (HistData publishes 0)"
+match:
+  columns: 7
+  firstCell: "\\d{4}\\.\\d{2}\\.\\d{2}"
+  filename: "DAT_MT_"
+  delimiter: ","

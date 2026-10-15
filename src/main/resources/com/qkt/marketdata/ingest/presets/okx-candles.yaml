@@ -1,0 +1,17 @@
+id: "okx-candles"
+description: "OKX historical candles download; only confirmed candles, epoch ms (file days are cut at UTC+8)"
+kind: "bars"
+time: ["open_time"]
+timeFormat: "epoch:ms"
+basis: "last"
+where:
+  confirm: "1"
+fields:
+  open: "open"
+  high: "high"
+  low: "low"
+  close: "close"
+  volume: "vol"
+volume: "vol as OKX reports it (contracts on swaps, base asset on spot)"
+match:
+  header: ["instrument_name", "open", "high", "low", "close", "vol", "open_time", "confirm"]
