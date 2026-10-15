@@ -5,13 +5,15 @@ import com.qkt.marketdata.ingest.store.DayTarget
 import com.qkt.marketdata.ingest.store.ImportProvenance
 import java.math.BigDecimal
 import java.math.MathContext
+import java.time.DayOfWeek
 import java.time.LocalDate
 
 /**
  * Lists every place where a series switches source once an import is written: the two days, the two
  * sources, and the price gap across the switch (the next source's first price minus the previous one's
  * last, in points when known). Two vendors never quote identical prices, so a switch is a step in the
- * series a strategy will see; the report makes each step visible instead of hiding it in the data.
+ * series a strategy will see; the report makes each step visible instead of hiding it in the data, along
+ * with any weekdays neither source covers between the two.
  */
 internal class SeamReport(
     private val target: DayTarget,
@@ -34,7 +36,9 @@ internal class SeamReport(
                 .toList()
         return days.zipWithNext().filter { (a, b) -> a.second != b.second }.map { (a, b) ->
             val gap = gapBetween(prices(a.first, written), prices(b.first, written))
-            "${a.first} → ${b.first}: ${a.second} → ${b.second}" + (gap?.let { ", price step $it" } ?: "")
+            val hole = weekdaysBetween(a.first, b.first)
+            "${a.first} → ${b.first}: ${a.second} → ${b.second}" + (gap?.let { ", price step $it" } ?: "") +
+                (if (hole > 0) ", $hole weekday(s) with no data between" else "")
         }
     }
 
@@ -50,6 +54,14 @@ internal class SeamReport(
         return provenance.entryFor(day.toString())?.preset?.let { "imported $it" }
             ?: "data not imported (fetched or hand-written)"
     }
+
+    private fun weekdaysBetween(
+        a: LocalDate,
+        b: LocalDate,
+    ): Int =
+        generateSequence(a.plusDays(1)) { it.plusDays(1) }
+            .takeWhile { it < b }
+            .count { it.dayOfWeek != DayOfWeek.SATURDAY && it.dayOfWeek != DayOfWeek.SUNDAY }
 
     private fun prices(
         day: LocalDate,

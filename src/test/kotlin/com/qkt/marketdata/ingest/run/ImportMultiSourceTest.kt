@@ -143,6 +143,23 @@ class ImportMultiSourceTest {
     }
 
     @Test
+    fun `a hole between two sources is named at the seam`() {
+        IngestFixtures.import(root, listOf(source("duka.csv", days("2024-03-04", "2024-03-05"))), "EURUSD", ticks)
+
+        val mt5 =
+            IngestFixtures.import(
+                root,
+                listOf(source("mt5.csv", days("2024-03-07", "2024-03-08"))),
+                "EURUSD",
+                ticks,
+            )
+
+        assertThat(
+            mt5.outcomes.seams.single(),
+        ).startsWith("2024-03-05 → 2024-03-07").endsWith("1 weekday(s) with no data between")
+    }
+
+    @Test
     fun `replace and skip still mean exactly that`() {
         IngestFixtures.import(root, listOf(source("duka.csv", days("2024-03-04", "2024-03-08"))), "EURUSD", ticks)
         val mt5 = source("mt5.csv", days("2024-03-06", "2024-03-08"), bump = 2)

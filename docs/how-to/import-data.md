@@ -166,7 +166,9 @@ Monday to Friday and an MT5 export from Wednesday to the next Friday. qkt keeps 
 
 - Re-importing the same files the same way changes nothing (`unchanged` days).
 - Every target directory has `.import.json`, recording the input files' SHA-256, the preset, the clock
-  and its evidence, and the counts. `qkt data verify <SYMBOL>` shows which days were imported.
+  and its evidence, and the counts. `qkt data verify <SYMBOL>` shows which days were imported, flags a
+  day that starts hours after the previous one ended, and lists weekdays neither source covered
+  (`MISSING`); a seam line also says how many weekdays lie between two sources.
 - A backtest never deletes an imported tick day to refetch it from Dukascopy, and says when its window
   mixes imported and fetched days.
 - `qkt data compare EXNESS:XAUUSD --against MT5:XAUUSD --from 2024-09-01 --to 2024-09-30` measures an
