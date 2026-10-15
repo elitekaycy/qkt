@@ -1,0 +1,23 @@
+id: marketable-limit-entry
+title: A limit already through the market when it arrives behaves the same live and in replay
+why: A buy limit above the ask (or a sell limit below the bid) is through the market on arrival, and an MT5
+  venue refuses it ("BUY_LIMIT price must be below current ask") rather than filling it. A simulator that parks
+  it and fills it on the next print makes every backtest of a limit-entry strategy fill orders live never
+  takes. Live and replay must both refuse the limit and both fill only the market order beside it.
+status: ready
+symbols:
+- BTCUSD
+timeframes:
+- 1m
+warmup_bars:
+  1m: 3
+proves:
+- behaviour:limit-entry
+- behaviour:marketable-limit
+budget_seconds: 300
+assertions:
+- flat-by-magic
+- no-pending-by-magic
+- deals-net-by-magic
+- no-engine-fault
+- replay-fill-sequence
