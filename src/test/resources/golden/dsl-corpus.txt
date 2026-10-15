@@ -1,6 +1,9 @@
 460c89eb5645a3736201b9c0c50dd303ba72145f8d774008fad8bca4a3c89a30  attestation/cases/book/book-cap-across-children/atto_cap_a.qkt
 ea6a1aa4e84320cd92a02d21d75ad79370c8ed71eec03fa7ba0a30672a14c658  attestation/cases/book/book-cap-across-children/atto_cap_b.qkt
 6e79072ced7cacd00f7f84ca8911e4f8cdfa3c71c61d1d58ea16a6b66d382d39  attestation/cases/book/book-cap-across-children/strategy.qkt
+e4778763fd15e3a167f9b102ea09ebad2bfb759d6a7a91209fa70f62e440b103  attestation/cases/book/child-close-keeps-sibling-stop/atto_sib_a.qkt
+9bb393c591eb1b279628dc08d37e9224e06811a7d29f8498edd8184db13401a7  attestation/cases/book/child-close-keeps-sibling-stop/atto_sib_b.qkt
+8b6464cabd2f6dd4195161f3878d6d48bb3e995bfbe043cc6a3782107b070b4e  attestation/cases/book/child-close-keeps-sibling-stop/strategy.qkt
 0d09b4f07321930adf2ce9039225093ed23a83dd0a0be6250a628c7d6020c572  attestation/cases/book/siblings-size-on-one-tick/atto_book_a.qkt
 266cc812bb332be479291615504ef1777880084efa1beab444502dd2be831e74  attestation/cases/book/siblings-size-on-one-tick/atto_book_b.qkt
 759d7eb1169bc46df003a2322eb2d912155735a0ebe4bbf44e2dd8fee196188b  attestation/cases/book/siblings-size-on-one-tick/strategy.qkt
@@ -30,7 +33,9 @@ b7c28477fbcfb372ce064fb294b3d878245f6f7070be4335f69e04a382d33a3d  attestation/ca
 826f3845228e4329b12c16a72692acc94d51e48de0e9b2ad59d8ef60c16fedf7  attestation/cases/engine/venue-closes-while-down/strategy.qkt
 b7c4ce4e9bd8977e381c7e982863186fd41230216287dd3082869ed5d0d5753a  attestation/cases/orders/limit-stop-and-cancel/strategy.qkt
 e3dfc4e885c381ef04333c2c25fb3835d45737f7cd365ea402eed81678eff9b3  attestation/cases/orders/market-bracket-timed-exit/strategy.qkt
+f347c6939d0853935a7f383dc01d47dc0bcdc547b8ea12d1433faba585a948fb  attestation/cases/orders/marketable-limit-entry/strategy.qkt
 06dd7655b771d1888e2a592b0d9bad029963dcb988544765e32018b9f6d8d7ba  attestation/cases/orders/oco-entry-one-leg-fills/strategy.qkt
+65bfe9f4810443ee567ce7e35d8a5efc95dece609fb53672fec3259ae6ecc261  attestation/cases/orders/opposite-entry-closes-leg-and-bracket/strategy.qkt
 164e8e3c503867be120febcb737fe165b3e72d1a5588fe5d20a100681f421c89  attestation/cases/orders/oto-child-rests-and-is-cleared/strategy.qkt
 fba552642ca1f10e3655d5089494b86dc1d65256f037314a7c5b226efa9f3320  attestation/cases/orders/risk-sized-entry-unknown-symbol/strategy.qkt
 dd9a4da8f2ea1703161ecd7fc3f0b29b0d37483335cb6e417b65d8eb173f9c28  attestation/cases/orders/stack-and-partial-close/strategy.qkt

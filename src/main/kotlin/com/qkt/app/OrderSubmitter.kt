@@ -42,6 +42,8 @@ internal class OrderSubmitter(
     private val exitHookManager: ExitHookManager,
     private val positionMode: (symbol: String) -> PositionAccountingMode,
     private val bookScaleFor: (String) -> BigDecimal,
+    /** Cancels the bracket of the leg named, with its exits: a leg closed whole must not keep a stop that fires later. */
+    private val cancelLegExits: (legId: String) -> Unit = {},
 ) {
     // Logged under the pipeline's category so existing log filters keep matching.
     private val log = LoggerFactory.getLogger(TradingPipeline::class.java)
@@ -89,6 +91,9 @@ internal class OrderSubmitter(
                 for (leaf in routed) {
                     val planned = LegIntentPlanner.plan(leaf, mode)
                     val isClose = planned is OrderRequest.Market && planned.closesTicket != null
+                    (planned as? OrderRequest.Market)?.takeIf { isClose && !it.partialClose }?.closesLegId?.let(
+                        cancelLegExits,
+                    )
                     if (exitHook != null && !isClose) {
                         exitHookManager.register(strategyId, planned, exitHook)
                     }

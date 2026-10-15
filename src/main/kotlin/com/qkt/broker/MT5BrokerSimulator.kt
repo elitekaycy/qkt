@@ -20,32 +20,15 @@ import java.math.RoundingMode
 import org.slf4j.LoggerFactory
 
 /**
- * Fidelity-oriented backtest broker that mirrors MT5 venue behaviour: volume
- * quantization, price rounding, ask/bid fills, and configurable spread + slippage.
+ * Fidelity-oriented backtest broker that mirrors MT5 venue behaviour (`--broker mt5-sim`; [PaperBroker] is the
+ * default): volume rounded down to [InstrumentMeta.volumeStep] and refused below [InstrumentMeta.volumeMin],
+ * prices rounded to [InstrumentMeta.digits], market BUY at the ask and SELL at the bid (synthesised as
+ * `price ± pointSize × spreadPoints / 2` when the feed carries only mid), [SlippageModel] slippage,
+ * `tradeStopsLevel` distances, and the venue's refusal of a limit on the wrong side of the market
+ * ([mt5LimitSideRefusal]). See `docs/parity/backtest-vs-live.md`.
  *
- * Closes execution-parity divergences 1, 2, 3, 4-6 in `docs/parity/backtest-vs-live.md`
- * — the gaps that make `PaperBroker` backtest fills not match what live MT5 would
- * have actually filled. Opt-in via `Backtest(brokerKind = BrokerKind.MT5_SIM)` or
- * the CLI `--broker mt5-sim` flag; `PaperBroker` remains the default.
- *
- * **What's modelled here:**
- * - Volume rounded DOWN to [InstrumentMeta.volumeStep] before fill (row 1).
- * - Orders below [InstrumentMeta.volumeMin] rejected pre-fill (row 3).
- * - Fill prices rounded to [InstrumentMeta.digits] decimals, HALF_EVEN (row 2).
- * - Market BUY fills at ask, SELL fills at bid — taken from `Tick.ask`/`Tick.bid`
- *   when present, or synthesised as `price ± (pointSize × spreadPoints / 2)` when
- *   the feed only carries mid (rows 4, 6).
- * - Slippage applied on top via [SlippageModel] (default [ZeroSlippage]).
- *
- * **Not modelled here (deferred to follow-ups):**
- * - `tradeStopsLevel` enforcement (parity row 8).
- * - OCO atomicity edge cases (row 9).
- * - Retcode semantics (row 12).
- *
- * **Threading:** single-threaded by design. `working`, `lastTickBySymbol`, and
- * [UniformRandomSlippage] state are intentionally not synchronised — the simulator
- * is only wired through [Backtest], whose tick loop and order submission run on one
- * thread. Concurrent `submit()` / `onTick()` is unsupported and may corrupt state.
+ * Single-threaded by design: `working`, `lastTickBySymbol` and [UniformRandomSlippage] state are not synchronised,
+ * because the simulator is only wired through [Backtest], whose tick loop and order submission run on one thread.
  */
 class MT5BrokerSimulator(
     private val bus: EventBus,
@@ -145,7 +128,7 @@ class MT5BrokerSimulator(
             return SubmitAck(request.id, request.id, accepted = false, rejectReason = reason)
         }
         val sized = request.withQuantity(quantized)
-        validateStopsLevel(sized, meta)?.let {
+        (validateStopsLevel(sized, meta) ?: limitSideRefusal(sized, meta))?.let {
             reject(sized, it)
             return SubmitAck(sized.id, sized.id, accepted = false, rejectReason = it)
         }
@@ -471,6 +454,15 @@ class MT5BrokerSimulator(
         qty: BigDecimal,
         meta: InstrumentMeta,
     ): BigDecimal = qty.divide(meta.volumeStep, 0, RoundingMode.DOWN).multiply(meta.volumeStep)
+
+    private fun limitSideRefusal(
+        request: OrderRequest,
+        meta: InstrumentMeta,
+    ): String? {
+        val tick = lastTickBySymbol[request.symbol]
+        val current = fillPrice.of(request.side, tick, fallback = priceProvider.lastPrice(request.symbol), meta = meta)
+        return current?.let { mt5LimitSideRefusal(request, it) }
+    }
 
     private fun validateStopsLevel(
         request: OrderRequest,

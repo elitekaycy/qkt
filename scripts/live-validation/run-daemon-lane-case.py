@@ -17,6 +17,8 @@ The case's `steps` are executed in order. Each step is a mapping:
     expect_log:     regex the daemon log must contain after the step (optional)
     expect_positions: exact number of venue positions under this case's magic after the step (optional)
     expect_pending:   exact number of resting venue orders under this case's magic after the step (optional)
+    expect_protected: exact number of venue positions under this case's magic that carry a stop loss (optional)
+    reject_log:       regex the daemon log must NOT contain after the step (optional)
     wait_log:       regex to wait for in the daemon log before the step, up to `wait_seconds` (optional)
     venue:          "close_positions" instead of `run`: close this magic's positions at the venue by
                     ticket while the daemon keeps running (an exit between two bar closes)
@@ -75,6 +77,11 @@ def gateway(path):
 
 def owned():
     return len(gateway(f"/get_positions?magic={a.magic}").get("data") or [])
+
+
+def protected():
+    """Positions under the magic whose stop loss sits at the venue: what a sibling's close must never strip."""
+    return len([p for p in gateway(f"/get_positions?magic={a.magic}").get("data") or [] if float(p.get("sl") or 0) > 0])
 
 
 def pending():
@@ -432,6 +439,12 @@ try:
                 verdict.append(f"venue holds {resting} pending order(s) under the magic, expected {step['expect_pending']}")
         if step.get("expect_log") and not re.search(step["expect_log"], open(f"{a.out}/daemon.log").read()):
             verdict.append(f"daemon log does not match /{step['expect_log']}/")
+        if step.get("reject_log") and re.search(step["reject_log"], open(f"{a.out}/daemon.log").read()):
+            verdict.append(f"daemon log matches /{step['reject_log']}/, which it must not")
+        if "expect_protected" in step:
+            guarded = protected()
+            if guarded != int(step["expect_protected"]):
+                verdict.append(f"{guarded} position(s) under the magic carry a venue stop, expected {step['expect_protected']}")
         results.append({"step": index, "run": line, "exit": code, "output": output[-600:], "problems": verdict,
                         "note": step.get("note", "")})
         problems += [f"step {index} ({line}): {v}" for v in verdict]
