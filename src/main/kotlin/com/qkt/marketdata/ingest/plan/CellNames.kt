@@ -33,7 +33,10 @@ class CellNames(
         return byName[n.lowercase()]?.let { CellRef.Index(it) }
     }
 
-    /** [text] compiled; a trailing `?` makes a missing column an absent value instead of an error. */
+    /**
+     * [text] compiled. A trailing `?` makes the field optional: when a column it names is not in the file
+     * (`Volume?`, `bidVolume + askVolume?`), the field is absent instead of an error.
+     */
     fun expr(text: String): FieldExpr {
         val optional = text.trimEnd().endsWith('?')
         val body = if (optional) text.trimEnd().dropLast(1) else text
@@ -41,13 +44,7 @@ class CellNames(
         return try {
             parser.parse(body)
         } catch (e: IllegalArgumentException) {
-            if (optional &&
-                body.trim().let { resolve(it) == null && it.none { c -> c in "+-*/()" } }
-            ) {
-                FieldExpr.Missing
-            } else {
-                throw e
-            }
+            if (optional && e.message.orEmpty().startsWith("no column")) FieldExpr.Missing else throw e
         }
     }
 

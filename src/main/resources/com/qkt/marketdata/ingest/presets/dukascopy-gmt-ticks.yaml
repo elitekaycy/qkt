@@ -9,6 +9,7 @@ fields:
   ask: "Ask"
   bidVolume: "BidVolume?"
   askVolume: "AskVolume?"
-volume: "quoted size as Dukascopy reports it"
+  volume: "BidVolume + AskVolume?"
+volume: "bid plus ask quoted size, summed exactly as qkt's Dukascopy fetcher does"
 match:
   header: ["Gmt time", "Ask", "Bid"]

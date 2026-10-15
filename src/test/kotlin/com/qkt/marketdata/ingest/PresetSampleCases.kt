@@ -63,7 +63,7 @@ object PresetSampleCases {
                 "dukascopy-gmt-ticks.csv",
                 "EURUSD",
                 "dukascopy-gmt-ticks",
-                "1456128000065,EURUSD,,,1.10560000,1.10563000,1.50000000,0.75000000",
+                "1456128000065,EURUSD,,2.25000000,1.10560000,1.10563000,1.50000000,0.75000000",
             ),
             s(
                 "dukascopy-node-bars.csv",
@@ -75,7 +75,7 @@ object PresetSampleCases {
                 "dukascopy-node-ticks.csv",
                 "US500",
                 "dukascopy-node-ticks",
-                "1517209500230,US500,,,2871.97000000,2872.63000000,0.00198000,0.00204000",
+                "1517209500230,US500,,0.00402000,2871.97000000,2872.63000000,0.00198000,0.00204000",
             ),
             s(
                 "tradingview-unix.csv",
