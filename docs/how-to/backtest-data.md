@@ -442,7 +442,7 @@ CSV can coexist and you can convert incrementally.
 Check integrity at any time:
 
 ```bash
-qkt data verify XAUUSD     # reports tick counts, max intra-day gap, and flags EMPTY/CORRUPT/GAP days
+qkt data verify XAUUSD     # reports tick counts, max gap, and flags EMPTY/CORRUPT/GAP/MISSING days
 ```
 
 ## Scenario 4 — Place your own tick data manually

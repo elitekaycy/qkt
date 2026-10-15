@@ -4,6 +4,7 @@ import com.qkt.common.Clock
 import com.qkt.marketdata.CsvTickFeed
 import com.qkt.marketdata.ingest.record.IngestRecord
 import com.qkt.marketdata.ingest.record.TickRecord
+import com.qkt.marketdata.openDayFeed
 import com.qkt.marketdata.store.DayRange
 import com.qkt.marketdata.store.ManifestLock
 import com.qkt.marketdata.store.ManifestStore
@@ -56,6 +57,18 @@ class TickDayTarget(
             }
         }
         Files.move(tmp, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+    }
+
+    override fun readStored(day: LocalDate): DayPrices {
+        val file = stored(day).firstOrNull() ?: return DayPrices(emptyList())
+        val points = mutableListOf<PricePoint>()
+        openDayFeed(file).use { feed ->
+            while (true) {
+                val t = feed.next() ?: break
+                points += PricePoint(t.timestamp, t.price)
+            }
+        }
+        return DayPrices(points)
     }
 
     override fun commit(days: Collection<LocalDate>) {

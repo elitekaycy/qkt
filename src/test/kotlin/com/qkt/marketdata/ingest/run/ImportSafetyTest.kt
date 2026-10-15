@@ -80,8 +80,14 @@ class ImportSafetyTest {
         val fetched = bars.resolve("2024-03-10.csv")
         Files.writeString(fetched, "timestamp,open,high,low,close,volume\n")
 
-        assertThatThrownBy { IngestFixtures.import(root, listOf(mt5()), "EXNESS:XAUUSD") }
-            .hasMessageContaining("already stored")
+        assertThatThrownBy {
+            IngestFixtures.import(
+                root,
+                listOf(mt5()),
+                "EXNESS:XAUUSD",
+                onOverlap = OverlapPolicy.REFUSE,
+            )
+        }.hasMessageContaining("already stored")
             .satisfies({ assertThat((it as ImportRefusal).lines.single()).contains("2024-03-10 (not imported") })
 
         val skipped = IngestFixtures.import(root, listOf(mt5()), "EXNESS:XAUUSD", onOverlap = OverlapPolicy.SKIP)

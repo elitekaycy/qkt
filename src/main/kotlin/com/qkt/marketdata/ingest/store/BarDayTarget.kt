@@ -56,6 +56,9 @@ class BarDayTarget(
         store.writeDay(source, symbol, timeframe, day, candles)
     }
 
+    override fun readStored(day: LocalDate): DayPrices =
+        DayPrices(store.readDay(source, symbol, timeframe, day).map { PricePoint(it.startTime, it.close) })
+
     override fun commit(days: Collection<LocalDate>) {
         if (days.isEmpty()) return
         ManifestLock(root).withLock {
