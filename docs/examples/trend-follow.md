@@ -4,11 +4,12 @@ The simplest momentum strategy: buy when a fast moving average crosses above a s
 
 ## What it does
 
-- **Trades** Bitcoin on 1-minute candles
+- **Trades** Bitcoin (`BTCUSD`) on 1-minute candles
 - **Buys** when EMA(9) crosses above EMA(21) — momentum has shifted up
-- **Sells** when EMA(9) crosses below EMA(21) — momentum has shifted down
-- **Bracket** caps each trade at a 50% loss / 100% gain (relative to the position's stop distance, not the position value)
-- **One position at a time** — won't pyramid into the trade
+- **Closes** when EMA(9) crosses below EMA(21) — momentum has shifted down
+- **Bracket** on every entry: a stop 1% below the fill and a target 2% above it, so a bad trade
+  cannot run
+- **One position at a time** — the entry rule only fires while flat
 
 This is the textbook trend-follower. It catches sustained moves; it underperforms in choppy markets where the EMAs whipsaw.
 
@@ -17,62 +18,78 @@ This is the textbook trend-follower. It catches sustained moves; it underperform
 ```qkt title="strategies/trend-follow.qkt"
 STRATEGY trend_follow VERSION 1
 
-LET fast = 9
-LET slow = 21
-
 SYMBOLS
-    btc = BACKTEST:BTCUSDT EVERY 1m
+    btc = BACKTEST:BTCUSD EVERY 1m
+
+PARAM fast = 9
+PARAM slow = 21
 
 RULES
     WHEN ema(btc.close, fast) CROSSES ABOVE ema(btc.close, slow)
+     AND POSITION.btc = 0
     THEN BUY btc SIZING 0.1
          BRACKET {
-           STOP_LOSS BY 50 PCT,
-           TAKE_PROFIT BY 100 PCT
+           STOP_LOSS BY 1.0 PCT,
+           TAKE_PROFIT BY 2.0 PCT
          }
-         LOG "long entry" fast=ema(btc.close, fast) slow=ema(btc.close, slow)
+       ; LOG "long entry" fast=ema(btc.close, fast) slow=ema(btc.close, slow)
 
     WHEN ema(btc.close, fast) CROSSES BELOW ema(btc.close, slow)
+     AND POSITION.btc > 0
     THEN CLOSE btc
-         LOG "exit on cross-below"
+       ; LOG "exit on cross-below"
 ```
+
+The blocks come in a fixed order (`SYMBOLS`, `PARAM`, `LET`, `RULES`), a rule is always
+`WHEN ... THEN ...`, and several actions in one rule are joined with `;`. `PARAM` makes `fast` and
+`slow` overridable from the command line (`--param fast=12`) without editing the file.
 
 ## How to run it
 
 ```bash
-# Fetch a month of Bitcoin data if you don't have it
-./scripts/fetch-dukascopy.sh BTCUSDT 2024-01-01 2024-02-01
+qkt parse strategies/trend-follow.qkt
+qkt backtest strategies/trend-follow.qkt --from 2026-07-01 --to 2026-08-01 --no-fetch
 
-# Backtest
-qkt backtest strategies/trend-follow.qkt --from 2024-01-01 --to 2024-02-01
-
-# Paper-trade
+# Paper-trade it in the foreground
 qkt run strategies/trend-follow.qkt
 ```
 
+`--no-fetch` makes the backtest fail on a missing day instead of downloading it; drop it to let qkt
+fetch ticks into `~/.qkt/data`.
+
 ## What to expect
 
-A typical month of BTC at 1-minute resolution produces 8–15 trades with the default `(9, 21)` parameters. Win rate hovers around 40–50% — trend-following strategies make money by letting winners run, not by winning often.
+qkt 0.56.2, July 2026 of `BTCUSD` ticks, the default paper broker and a 10,000 USD account:
 
 ```text
-Trades:           14
-Final realized:   234.50
-Win rate:         0.571
-Sharpe (daily):   1.34
-Max drawdown:     -180.25
+Backtest   2026-07-01 to 2026-08-01 (32 trading days)
+Account    10,000.00 USD
+
+Result
+  Profit             +154.88 USD   (+1.5%)
+  Round trips        1020 closed, 292 won (28.6%)
+  Open at the end    none
+  Worst drop         3.6%    biggest fall from a peak
+  Worst day          0.9%
+  Sharpe ratio       1.25     return per unit of risk
+  Costs              none modeled (no spread, commission or swap)
 ```
 
-If your numbers are wildly different, check the date range and that the data populated correctly (`./scripts/fetch-dukascopy.sh BTCUSDT ...` writes to `~/.qkt/data/symbols/BTCUSDT/`).
+A 1-minute EMA cross fires often: about 33 round trips a day here, fewer than 3 in 10 of them
+winners. The small profit is before any cost. The paper broker fills at the mid price with no
+spread or commission. The ticks in this window quote BTCUSD about 10 USD wide, which is 1 USD per
+0.1 BTC round trip: roughly 1,020 USD over these trades, more than the profit. Rerun with `--broker mt5-sim` and your venue's costs before reading anything into it, and try
+a slower timeframe (below) to cut the trade count.
 
 ## How to adapt it
 
 ### Different fast/slow periods
 
-Edit the `LET` lines:
+Edit the `PARAM` lines, or override them for one run with `--param fast=12 --param slow=26`:
 
 ```qkt
-LET fast = 12
-LET slow = 26
+PARAM fast = 12
+PARAM slow = 26
 ```
 
 Or sweep them — see [Run a parameter sweep](../how-to/parameter-sweep.md).
@@ -87,14 +104,15 @@ Swap the symbol declaration:
 
 ```qkt
 SYMBOLS
-    eur = BACKTEST:EURUSD EVERY 15m
+    gold = BACKTEST:XAUUSD EVERY 15m
 ```
 
-Then reference `eur` instead of `btc` in the rules. The strategy logic is symbol-agnostic.
+Then reference `gold` instead of `btc` in the rules. The strategy logic is symbol-agnostic.
 
 ### Different bracket
 
-The `50 PCT` / `100 PCT` is percent-of-entry-price, not percent-of-position. To set absolute prices instead:
+`1.0 PCT` / `2.0 PCT` are percentages of the entry price, not of the position value (a stop-loss
+percentage must be below 50). To set prices from the signal bar instead:
 
 ```qkt
 BRACKET {
@@ -113,22 +131,23 @@ LET vol = atr(btc, 14)
 RULES
     WHEN ema(btc.close, fast) CROSSES ABOVE ema(btc.close, slow)
      AND vol > 50  -- only enter when there's enough movement
-    THEN BUY btc SIZING 0.1 BRACKET { STOP_LOSS BY 50 PCT, TAKE_PROFIT BY 100 PCT }
+     AND POSITION.btc = 0
+    THEN BUY btc SIZING 0.1 BRACKET { STOP_LOSS BY 1.0 PCT, TAKE_PROFIT BY 2.0 PCT }
 ```
 
 ## Common gotchas
 
-- **First-bar bug.** If your start date happens to be already in an uptrend (EMA9 > EMA21 on bar 1), the rule won't fire until the next cross. This is correct edge-trigger behaviour, but surprises people. To trade from the start, add a different entry rule or backfill a few days of warmup.
-- **EMAs need warmup.** The first ~21 bars produce null EMA values; rules using them won't fire. The compiler infers warmup automatically from the `21` in `ema(..., 21)`. (An explicit `WARMUP N BARS` declaration is on the [roadmap](../planned.md).)
+- **The first cross waits for a cross.** If the window starts with EMA9 already above EMA21, the rule won't fire until the next cross. This is correct edge-trigger behaviour, but surprises people.
+- **EMAs need warmup.** qkt infers it from the `21` in `ema(..., 21)` and loads that history from before `--from`. To ask for more, declare it on the stream: `btc = BACKTEST:BTCUSD EVERY 1m WARMUP 200 BARS`.
 - **Bracket fills aren't free.** Even though they appear atomic in the DSL, the broker may fill the stop with slippage on a fast move. Paper-test for at least a few weeks before live deployment.
 
 ## What this example demonstrates
 
-- Single stream declaration (`btc = BACKTEST:BTCUSDT EVERY 1m`)
+- Single stream declaration (`btc = BACKTEST:BTCUSD EVERY 1m`)
 - Indicator function calls (`ema(btc.close, 9)`)
 - Edge-triggered conditions (`CROSSES ABOVE`)
 - Atomic bracket orders
-- LOG actions for inline debugging
-- `LET` variables for tunable parameters
+- LOG actions chained with `;` for inline debugging
+- `PARAM` values for tunable parameters
 
 See the [DSL reference](../reference/dsl/index.md) for everything else.

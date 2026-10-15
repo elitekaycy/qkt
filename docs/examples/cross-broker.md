@@ -1,13 +1,13 @@
 # Cross-broker portfolio — Bybit + MT5 together
 
-Run BTC on Bybit Spot and EURUSD on Exness MT5 from one daemon, with one shared risk budget. Two venues, two products, one process.
+Run BTC on Bybit Spot and gold (XAUUSD) on Exness MT5 from one daemon, with one shared risk budget. Two venues, two products, one process.
 
 ## What it does
 
 - **BTC strategy** routes through Bybit Spot
-- **EURUSD strategy** routes through Exness MT5 (via the mt5-gateway container)
-- **One daemon** hosts both, with shared per-trade risk rules
-- **Different timeframes** per child — BTC on 1h, EUR on 15m
+- **Gold strategy** routes through Exness MT5 (via the mt5-gateway container)
+- **One daemon** hosts both, with shared account-level risk rules
+- **Different timeframes** per strategy — BTC on 1h, gold on 15m
 
 This is the simplest cross-venue setup. The strategies are unaware of each other; the daemon's `BrokerFactory` registry routes orders by symbol prefix.
 
@@ -20,40 +20,41 @@ SYMBOLS
     btc = BYBIT_SPOT:BTCUSDT EVERY 1h
 
 LET btcStopDist = atr(btc, 14) * 2
-LET btcRiskQty  = ACCOUNT.equity * 0.005 / btcStopDist   # 0.5% per trade
 
 RULES
     WHEN ema(btc.close, 12) CROSSES ABOVE ema(btc.close, 48)
      AND POSITION.btc = 0
-    THEN BUY btc SIZING btcRiskQty
-         STOP_LOSS AT btc.close - btcStopDist
+    THEN BUY btc SIZING 0.5 PCT RISK
+         BRACKET {
+           STOP_LOSS AT btc.close - btcStopDist,
+           TAKE_PROFIT AT btc.close + btcStopDist * 3
+         }
 
     WHEN ema(btc.close, 12) CROSSES BELOW ema(btc.close, 48)
      AND POSITION.btc > 0
     THEN CLOSE btc
 ```
 
-```qkt title="strategies/eur-exness.qkt"
-STRATEGY eur_exness VERSION 1
+```qkt title="strategies/gold-exness.qkt"
+STRATEGY gold_exness VERSION 1
 
 SYMBOLS
-    eur = EXNESS:EURUSD EVERY 15m
+    gold = EXNESS:XAUUSD EVERY 15m
 
-LET eurStopDist = atr(eur, 14) * 2
-LET eurRiskQty  = ACCOUNT.equity * 0.005 / eurStopDist
+LET goldStopDist = atr(gold, 14) * 2
 
 RULES
-    WHEN rsi(eur.close, 2) < 5
-     AND POSITION.eur = 0
-    THEN BUY eur SIZING eurRiskQty
+    WHEN rsi(gold.close, 2) < 5
+     AND POSITION.gold = 0
+    THEN BUY gold SIZING 0.5 PCT RISK
          BRACKET {
-           STOP_LOSS AT eur.close - eurStopDist,
-           TAKE_PROFIT AT eur.close + eurStopDist * 2
+           STOP_LOSS AT gold.close - goldStopDist,
+           TAKE_PROFIT AT gold.close + goldStopDist * 2
          }
 ```
 
-!!! note "Manual risk-sizing"
-    Each strategy computes its own `riskQty` via `LET` arithmetic — `equity × risk_pct / stop_distance`. Phase 24 will collapse this into `SIZING 0.5 PCT RISK`. See [Planned features](../planned.md).
+Both size with `SIZING 0.5 PCT RISK`: each entry loses 0.5% of equity if its stop hits. The BTC
+strategy exits on the cross-below rule or its bracket, whichever comes first.
 
 ## The config
 
@@ -78,13 +79,9 @@ brokers:
     magic: 4242
 
 risk:
-  rules:
-    - type: max-daily-loss
-      pct: 3.0
-    - type: max-drawdown
-      pct: 10.0
-    - type: max-position-pct
-      pct: 5.0
+  max_daily_loss: "300"
+  max_daily_drawdown_pct: "3"
+  max_drawdown_pct: "10"
 ```
 
 The `brokers:` block defines what `BYBIT_SPOT:` and `EXNESS:` mean in the strategy files. The DSL compiler resolves these at deploy time — if a strategy references a broker that's not configured, the deploy fails fast.
@@ -177,6 +174,52 @@ VNC_PASSWORD=changeme
 QKT_BROKER_EXNESS_GATEWAY_URL=http://mt5-gateway:5001
 ```
 
+## Backtest both before deploying
+
+A backtest reads ticks by symbol and ignores the broker prefix, so `gold-exness.qkt` runs as it is
+against local `XAUUSD` ticks. There is no `BTCUSDT` in the local store used here, only `BTCUSD`, so
+the BTC file runs from a copy with its stream swapped to `BACKTEST:BTCUSD` (`--symbols` filters
+streams, it does not rename them), plus the `instruments.yaml` entry from the
+[breakout example](breakout.md#how-to-run-it) that risk sizing needs:
+
+```bash
+qkt backtest strategies/gold-exness.qkt --from 2026-07-06 --to 2026-08-29 --no-fetch
+
+sed 's/BYBIT_SPOT:BTCUSDT/BACKTEST:BTCUSD/' strategies/btc-bybit.qkt > btc-backtest.qkt
+qkt backtest btc-backtest.qkt --from 2026-01-02 --to 2026-09-15 \
+    --instruments instruments.yaml --no-fetch
+```
+
+qkt 0.56.2, the default paper broker, 10,000 USD each, run separately. Gold, 6 July to 28 August
+2026:
+
+```text
+Result
+  Profit             -50.04 USD   (-0.5%)
+  Round trips        93 closed, 30 won (32.3%)
+  Open at the end    EXNESS:XAUUSD +0.01  worth +4.85 USD
+  Worst drop         8.2%    biggest fall from a peak
+  Worst day          2.2%
+  Sharpe ratio       -0.16     return per unit of risk
+  Costs              none modeled (no spread, commission or swap)
+```
+
+BTC, 2 January to 14 September 2026:
+
+```text
+Result
+  Profit             +718.23 USD   (+7.2%)
+  Round trips        73 closed, 22 won (30.1%)
+  Open at the end    none
+  Worst drop         3.6%    biggest fall from a peak
+  Worst day          0.9%
+  Sharpe ratio       1.47     return per unit of risk
+  Costs              none modeled (no spread, commission or swap)
+```
+
+Separate backtests do not share a risk budget; in the daemon both draw on the one set of global
+rules in the config above.
+
 ## How to run it
 
 ```bash
@@ -187,7 +230,7 @@ docker compose up -d
 
 # 3. Deploy both strategies
 docker compose exec qkt qkt deploy /strategies/btc-bybit.qkt   --as btc-bybit
-docker compose exec qkt qkt deploy /strategies/eur-exness.qkt  --as eur-exness
+docker compose exec qkt qkt deploy /strategies/gold-exness.qkt --as gold-exness
 
 # 4. Verify
 docker compose exec qkt qkt list
@@ -198,18 +241,18 @@ Expected output:
 ```text
 NAME              KIND       UPTIME   PORT     TRADES   STATE
 btc-bybit         strategy   00:01:23 47291    0        running
-eur-exness        strategy   00:01:23 47292    0        running
+gold-exness       strategy   00:01:23 47292    0        running
 ```
 
 ## What to expect
 
-Each strategy runs independently — they don't share signals or coordinate. They share **only** the daemon-level risk budget. If `btc-bybit` triggers `max-daily-loss`, `eur-exness` also halts. This is by design — risk is account-level.
+Each strategy runs independently — they don't share signals or coordinate. They share **only** the daemon-level risk budget. If `btc-bybit` breaches the global `max_daily_loss`, `gold-exness` also halts. This is by design — risk is account-level.
 
 When the daemon shuts down (`docker compose down`):
 
 ```bash
 docker compose exec qkt qkt stop btc-bybit --flatten
-docker compose exec qkt qkt stop eur-exness --flatten
+docker compose exec qkt qkt stop gold-exness --flatten
 docker compose down
 ```
 

@@ -453,7 +453,7 @@ BUY btc SIZING 0.01 EXIT AFTER 4m
 ## Common gotchas
 
 - **`BUY btc` without `SIZING` and without `DEFAULTS { SIZING = ... }` is a compile error** (`BUY/SELL requires SIZING`). Sizing is required at one of: action, DEFAULTS; the action wins when both are present.
-- **`CLOSE` doesn't take a size.** It closes the whole position. To exit partially, use a `BRACKET` with scale-out targets or a `SELL` that fires when long.
+- **`CLOSE` doesn't take a size.** It closes the whole position. To exit partially, enter as several positions with one `BRACKET` each (see the [mean-reversion example](../../examples/mean-reversion.md)) or use a `SELL` that fires when long.
 - **Edge-trigger gotcha for entries.** Without `AND POSITION.<stream> = 0`, a `BUY` rule fires once on signal — then if the signal stays true, it doesn't re-fire (edge-trigger). If you want re-entry capability, ensure the position guard is in place.
 - **`LOG` is not an exit.** Logging doesn't change strategy state. Use `CLOSE` or `CANCEL` for actions; `LOG` for the audit trail.
 - **`TRAILING` order type requires the explicit `ORDER_TYPE =` keyword.** Use `BUY btc ORDER_TYPE = TRAILING BY 50` — bare `BUY btc TRAILING BY 50` parses the BUY without an order type and chokes on `TRAILING` as the next statement.
