@@ -4,7 +4,7 @@ import org.junit.jupiter.params.provider.Arguments
 
 /**
  * One sample per built-in preset: file, `--as` symbol, the preset it must match, its first stored row, extra
- * mappings, digits. [refused] are presets whose real files qkt must refuse, with the sample that proves it.
+ * mappings, digits. Presets whose real files qkt must refuse are in [RefusedSampleCases].
  */
 object PresetSampleCases {
     private fun s(
@@ -217,8 +217,4 @@ object PresetSampleCases {
                 mapOf("value" to "MANAGED_LONG"),
             ),
         )
-
-    /** Preset to its sample and the text the refusal must contain. */
-    val refused: Map<String, Pair<String, String>> =
-        mapOf("mt5-bars-daily" to ("EURUSD_D1.csv" to "qkt's daily bars are UTC days"))
 }

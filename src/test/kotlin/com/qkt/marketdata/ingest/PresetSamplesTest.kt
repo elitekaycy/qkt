@@ -47,14 +47,14 @@ class PresetSamplesTest {
 
     @Test
     fun `every built-in preset has a sample here`() {
-        val tested = PresetSampleCases.all.map { it.get()[2] as String }.toSet() + PresetSampleCases.refused.keys
+        val tested = PresetSampleCases.all.map { it.get()[2] as String }.toSet() + RefusedSampleCases.all.keys
 
         assertThat(PresetLibrary.builtIns.map { it.id }).allMatch { it in tested }
     }
 
     @Test
     fun `a real file whose meaning qkt cannot keep is refused, naming why`() {
-        for ((preset, case) in PresetSampleCases.refused) {
+        for ((preset, case) in RefusedSampleCases.all) {
             val (file, why) = case
             val sample = IngestFixtures.sample(file, dir.resolve("in"))
 
