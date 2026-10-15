@@ -347,7 +347,7 @@ RULES
 
 - `--bars` replays built bars instead of ticks. Per symbol it picks the coarsest built timeframe that divides the declared one *and covers the whole window*; a partially built coarser folder (say `4h` for two months) is skipped, with a note on stderr, in favour of a finer complete one. When no folder covers the window the coarsest one's gaps are reported.
 - `--bar-tf <tf>` pins the bar feed to a specific built timeframe (must divide every child's declared timeframe).
-- `--tick-fills` drives signals from bars but resolves fills on real ticks.
+- With `--bars`, fills resolve on the real ticks inside each bar by default where the store has them (`--no-tick-fills` keeps the synthetic bar path).
 - `--report-dir <dir>` writes the standard report bundle (`result.json`, `trades.csv`, per-strategy equity curves, etc.) in the same format as a single-strategy backtest.
 
 Regime-weighted allocation and `WHEN..RUN` gating use the same `PortfolioGate` + `BookRiskController` code in backtest and live, so results are directly comparable. A child imported without `HOLD` is flattened on deactivation in backtest exactly as the live supervisor would, while a `HOLD` child keeps its positions and continues to manage exits.

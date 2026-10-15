@@ -67,8 +67,16 @@ Two simulated brokers, chosen with `--broker`:
   bars (`--bars`, or one the store has only bars for, such as fetched crypto or broker bars) has no
   prints between a bar's open, low, high and close: an exit the bar trades through fills at its
   level, and one the next bar opens beyond (a gap) fills at that open.
-- `mt5-sim` needs ticks: it refuses a symbol it would replay from bars unless `--bars --tick-fills`
-  resolves the fills on recorded ticks.
+- `qkt backtest --bars` resolves fills on the recorded ticks inside each bar by default (tick-resolved
+  fills), wherever the store has them: signals come from bars, fills from real prints. On a golden XAUUSD
+  run this reproduced a full tick replay fill for fill (170 of 170), where the synthetic bar path matched
+  23 and overstated P&L by about 500. A bar with no ticks keeps the synthetic path. The default turns
+  off, with a note, where tick-resolved fills are not valid (execution latency, order spacing, stop
+  latency, mixed timeframes, continuous futures); `--no-tick-fills` keeps the synthetic path everywhere,
+  and an explicit `--tick-fills` refuses instead of turning off. `sweep`, `walkforward`, `research` and
+  `experiment` keep the synthetic path unless asked.
+- `mt5-sim` needs ticks: it refuses a symbol it would replay from bars on the synthetic path
+  (`--no-tick-fills`, or where tick-resolved fills are off).
 - **`mt5-sim`**: mirrors an MT5 venue. Volume is rounded down to `volumeStep` and orders below
   `volumeMin` are rejected; fill prices round to `digits`. A BUY fills at the ask and a SELL at the
   bid (see [Spread](#spread)), plus slippage. The execution preset (`--execution`, or `execution.preset`

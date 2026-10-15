@@ -86,7 +86,7 @@ class BarsReplayBarTimeframeTest : BarsReplayFixture() {
     }
 
     @Test
-    fun `plain bars reject mt5-sim because synthetic ticks void its fill model`(
+    fun `bars without tick fills reject mt5-sim because synthetic ticks void its fill model`(
         @TempDir dir: Path,
     ) {
         val originalErr = System.err
@@ -94,7 +94,7 @@ class BarsReplayBarTimeframeTest : BarsReplayFixture() {
         val code =
             try {
                 System.setErr(PrintStream(err))
-                runBarsArgs(dir, dir.resolve("data"), arrayOf("--broker", "mt5-sim"))
+                runBarsArgs(dir, dir.resolve("data"), arrayOf("--broker", "mt5-sim", "--no-tick-fills"))
             } finally {
                 System.setErr(originalErr)
             }
