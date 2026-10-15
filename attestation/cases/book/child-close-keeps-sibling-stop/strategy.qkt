@@ -1,0 +1,8 @@
+PORTFOLIO atto_sib VERSION 1
+SYMBOLS
+    btc = EXNESS:BTCUSD EVERY 1m
+IMPORT 'atto_sib_a.qkt' AS a
+IMPORT 'atto_sib_b.qkt' AS b
+RULES
+    RUN a
+    RUN b

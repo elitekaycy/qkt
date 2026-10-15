@@ -176,7 +176,7 @@ class TradingPipeline(
             exitHookManager,
             positionMode,
             bookScaleFor,
-        )
+        ) { legId -> orderManager.cancel(legId) }
     private val strategyBinder =
         StrategyBinder(
             bus,

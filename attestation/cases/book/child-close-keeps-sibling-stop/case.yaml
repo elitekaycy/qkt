@@ -1,0 +1,41 @@
+id: child-close-keeps-sibling-stop
+title: One child's CLOSE leaves its sibling's stop and target in place on a shared symbol
+why: A CLOSE cancels pending orders on its symbol before closing. When that cancel is not scoped to the
+  child that closes, it also cancels every other child's bracket exits on the same symbol, and the sibling
+  keeps an open position with no stop - in the engine and, for engine-held exits, at the venue. Here two
+  children each hold a bracketed BTCUSD position; B closes after one bar, and A must still carry its stop
+  until its own timed exit.
+status: ready
+symbols:
+- BTCUSD
+timeframes:
+- 1m
+proves:
+- behaviour:portfolio-sibling-isolation
+- behaviour:bracket
+steps:
+- run: qkt deploy {file} --state-dir {state}
+  note: a portfolio of two bracketed children entering on the same bar close
+- run: qkt list --state-dir {state}
+  wait_for: position
+  wait_count: 2
+  wait_seconds: 150
+  expect_protected: 2
+  note: both children hold a position with a stop at the venue
+- run: qkt list --state-dir {state}
+  wait_log: 'order filled order_id=\S+ strategy_id=atto_sib:b symbol=\S+ side=SELL'
+  wait_seconds: 150
+  settle_seconds: 8
+  expect_positions: 1
+  expect_protected: 1
+  reject_log: 'order cancelled order_id=\S+ strategy_id=atto_sib:a '
+  note: B closed; A's position is still there and still carries its stop, and none of A's orders was cancelled
+- run: qkt status --deep --state-dir {state}
+  note: the sibling close is not a fault
+- run: qkt list --state-dir {state}
+  wait_for: flat
+  wait_seconds: 240
+  note: A closes by its own timed exit
+assertions:
+- flat-by-magic
+budget_seconds: 540

@@ -30,16 +30,13 @@ import java.math.BigDecimal
 import org.slf4j.LoggerFactory
 
 /**
- * Manages the lifecycle of every order from signal to fill.
+ * Manages the lifecycle of every order from signal to fill: translates [com.qkt.strategy.Signal]s into
+ * [com.qkt.execution.OrderRequest]s, splits engine-managed shapes (Bracket, ScaleOut, TimeExit, Stack) into atomic
+ * broker calls, tracks the [com.qkt.execution.ManagedOrder] state machine through broker callbacks, and emits trade
+ * events for downstream consumers.
  *
- * Translates [com.qkt.strategy.Signal]s into [com.qkt.execution.OrderRequest]s, splits
- * engine-managed shapes (Bracket, ScaleOut, TimeExit, Stack) into atomic broker calls,
- * tracks the [com.qkt.execution.ManagedOrder] state machine through broker callbacks,
- * and emits trade events for downstream consumers.
- *
- * This class is the public surface; the work is done by focused collaborators in
- * [com.qkt.app.order] (routing, brackets, stacks, OCO, fills, tick triggers, restore), all of
- * which log under this class's logger so operator log routing is unchanged.
+ * This class is the public surface; the work is done by focused collaborators in [com.qkt.app.order] (routing,
+ * brackets, stacks, OCO, fills, tick triggers, restore), all logging under this class's logger.
  *
  * One per [LiveSession] / `Backtest` run; not thread-safe.
  */
@@ -49,10 +46,7 @@ class OrderManager(
     priceProvider: MarketPriceProvider,
     clock: Clock,
     persistor: StatePersistor = NoopStatePersistor(),
-    /**
-     * The venue ticket an engine-managed exit (strategyId, clientOrderId) closes, so a fired stop
-     * closes its own hedging position instead of opening a counter; null means a netting close.
-     */
+    /** The venue ticket an engine-managed exit (strategyId, clientOrderId) closes; null means a netting close. */
     closeTicketFor: ((String, String) -> String?)? = null,
     /** Fallback resolver for a plain bracket whose armed trail closes the PRIMARY position. */
     closePrimaryTicketFor: ((String, String) -> String?)? = null,
@@ -122,10 +116,16 @@ class OrderManager(
     fun cancel(clientOrderId: String) = workflows.cancellation.cancel(clientOrderId)
 
     /** Cancels every pending stack and resting or engine-held order on [symbol]. */
-    fun cancelPendingForSymbol(symbol: String) = workflows.cancellation.cancelPendingForSymbol(symbol)
+    fun cancelPendingForSymbol(
+        symbol: String,
+        strategyId: String? = null,
+    ) = workflows.cancellation.cancelPendingForSymbol(symbol, strategyId = strategyId)
 
-    /** [cancelPendingForSymbol] for a close or flatten of [symbol]: held bracket exits go too (#1328). */
-    fun closePendingForSymbol(symbol: String) = workflows.cancellation.cancelPendingForSymbol(symbol, closing = true)
+    /** [cancelPendingForSymbol] for a close or flatten of [symbol] (by [strategyId]): held bracket exits go too. */
+    fun closePendingForSymbol(
+        symbol: String,
+        strategyId: String? = null,
+    ) = workflows.cancellation.cancelPendingForSymbol(symbol, closing = true, strategyId = strategyId)
 
     /** Cancels entries after a risk halt (of [strategyId], or all); protective exits and filled composites stay. */
     fun cancelEntriesForHalt(strategyId: String? = null) = workflows.cancellation.cancelEntriesForHalt(strategyId)

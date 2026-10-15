@@ -15,7 +15,7 @@
 658 src/test/kotlin/com/qkt/connector/mt5/marketdata/Mt5BarFetcherTest.kt
 631 src/main/kotlin/com/qkt/cli/BacktestContext.kt
 631 src/main/kotlin/com/qkt/cli/DaemonCommand.kt
-585 src/main/kotlin/com/qkt/broker/MT5BrokerSimulator.kt
+577 src/main/kotlin/com/qkt/broker/MT5BrokerSimulator.kt
 567 src/main/kotlin/com/qkt/cli/PreflightCommand.kt
 552 src/main/kotlin/com/qkt/execution/OrderRequestEvidence.kt
 532 src/test/kotlin/com/qkt/dsl/portfolio/fixture/PortfolioFixtureGenerator.kt

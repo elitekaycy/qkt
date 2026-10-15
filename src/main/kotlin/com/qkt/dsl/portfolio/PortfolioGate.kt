@@ -11,6 +11,7 @@ import com.qkt.dsl.compile.EvalContext
 import com.qkt.dsl.compile.ExprCompiler
 import com.qkt.dsl.compile.HubKey
 import com.qkt.dsl.compile.IndicatorBinding
+import com.qkt.dsl.compile.LetResolver
 import com.qkt.dsl.compile.SnapshotPlan
 import com.qkt.dsl.compile.SnapshotStore
 import com.qkt.dsl.compile.Value
@@ -22,17 +23,12 @@ import com.qkt.strategy.StrategyContext
 import java.math.BigDecimal
 
 /**
- * Indicator-aware evaluator for a portfolio's `ALWAYS_RUN` and `WHEN` rules.
+ * Indicator-aware evaluator for a portfolio's `ALWAYS_RUN` and `WHEN` rules. It compiles each `WHEN` condition
+ * with full indicator binding, keeps its own [CandleHub] for cross-stream reads, and produces a deterministic
+ * [GateState] on every closed candle. The same class runs live (fed by the supervisor's market source) and in
+ * backtest (fed by engine [CandleEvent]s): the foundation of backtest = live parity for regime-aware portfolios.
  *
- * The gate compiles each `WHEN` condition with full indicator binding, maintains its own
- * [CandleHub] for cross-stream reads, and produces a deterministic [GateState] on every
- * closed candle. The same class runs in live (fed by the supervisor's market source) and
- * in backtest (fed by engine [CandleEvent]s), which is the foundation of backtest=live
- * parity for regime-aware portfolios.
- *
- * Limitations of the current implementation (fail-closed where noted):
- * - History snapshots (`foo.close[N]`) inside portfolio `WHEN` rules are not yet supported.
- * - Tick-fed indicators (e.g. `VWAP` on `.tick`) are not yet supported inside portfolio rules.
+ * Not yet supported inside portfolio rules (refused): history snapshots (`foo.close[N]`) and tick-fed indicators.
  */
 class PortfolioGate(
     private val ast: PortfolioAst,
@@ -87,12 +83,15 @@ class PortfolioGate(
                 risk = NoOpRiskView(),
             )
 
+        // A bare stream alias (`adx(btc, 14)`) means the stream's candle, as in a strategy.
+        val aliases = LetResolver(emptyList(), streamMap.keys)
         val compiler = ExprCompiler(bindingBag)
         whenRules =
             ast.rules.filterIsInstance<WhenRun>().map { rule ->
-                rule to compiler.compile(rule.cond, ruleAlias = null)
+                rule to
+                    compiler.compile(aliases.resolve(rule.cond), ruleAlias = null)
             }
-        regimes = PortfolioRegimes(ast, compiler)
+        regimes = PortfolioRegimes(ast, compiler, aliases)
 
         // Register streams with retention large enough for indicator warmup and any hub lookups.
         // The hub is only used for cross-stream reads; indicators maintain their own internal state.
