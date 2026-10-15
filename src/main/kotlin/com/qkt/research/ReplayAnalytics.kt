@@ -29,6 +29,7 @@ internal class ReplayAnalytics(
     initialTimestamp: Long,
     instruments: InstrumentRegistry,
     bookRiskController: BookRiskController?,
+    candleWindowMs: Long? = null,
 ) {
     val collector =
         EquityCurveCollector(
@@ -46,6 +47,7 @@ internal class ReplayAnalytics(
                             it.startsWith(ChainAnalyticsSymbol.PREFIX)
                     }.toSet(),
             windowStartMs = initialTimestamp,
+            candleWindowMs = candleWindowMs,
         )
 
     val autocorr = ReturnAutocorrCollector(bus)

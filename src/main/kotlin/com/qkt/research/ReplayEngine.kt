@@ -200,6 +200,7 @@ class ReplayEngine(
                 initialTimestamp = initialTimestamp,
                 instruments = instruments,
                 bookRiskController = bookRiskController,
+                candleWindowMs = candleWindow?.durationMs,
             )
 
         val holder = arrayOfNulls<TradingPipeline>(1)
@@ -310,16 +311,16 @@ class ReplayEngine(
     }
 
     /**
-     * Apply one already-decoded tick to this engine's pipeline. The fan-out sweep driver pulls each
-     * tick once from a single shared feed and pushes it into every per-combo engine via this method,
-     * so the decode happens once instead of once per combo. The internal feed loop calls it too, so
-     * pushed and pulled ticks take an identical path.
+     * Apply one already-decoded tick to this engine's pipeline. The fan-out sweep driver pulls each tick once from a
+     * single shared feed and pushes it into every per-combo engine via this method, so the decode happens once instead
+     * of once per combo. The internal feed loop calls it too, so pushed and pulled ticks take an identical path.
      */
     fun ingest(tick: Tick) {
         if (ticksIngested > 0L) accrueFinancing(tick.timestamp)
         currentTimestamp = tick.timestamp
         ticksIngested++
         clock.time = tick.timestamp
+        analytics.collector.beforeTick(tick.timestamp)
         pipeline.ingest(tick)
     }
 
@@ -380,9 +381,8 @@ class ReplayEngine(
     fun openPositions(): Map<String, Position> = positions.allPositions().filterValues { it.quantity.signum() != 0 }
 
     /**
-     * Sign of the net position on [symbol]: -1 short, 1 long, 0 flat/unknown. Cheap (one map
-     * lookup) — [com.qkt.marketdata.source.BarTickFeed] consults it once per synthesized bar to
-     * emit the open position's adverse extreme first.
+     * Sign of the net position on [symbol]: -1 short, 1 long, 0 flat/unknown. Cheap (one map lookup):
+     * [com.qkt.marketdata.source.BarTickFeed] consults it once per bar to emit the position's adverse extreme first.
      */
     fun positionSign(symbol: String): Int = positions.positionFor(symbol)?.quantity?.signum() ?: 0
 
