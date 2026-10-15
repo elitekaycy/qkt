@@ -1,0 +1,13 @@
+id: "databento-trades"
+description: "Databento DBN trades, read natively: each trade at Databento's receive time (ts_recv, UTC ns)"
+kind: "ticks"
+time: ["ts_recv"]
+timeFormat: "epoch:ns"
+clock: "UTC"
+fields:
+  price: "price"
+  volume: "size"
+volume: "trade size"
+match:
+  header: ["ts_recv", "price", "size"]
+  filename: "\\.dbn$"

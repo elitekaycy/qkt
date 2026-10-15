@@ -18,6 +18,10 @@ data class ImportInput(
     val sha256: String,
     /** The price digits the file states itself (an MT4 `.hst` header), or null when it states none. */
     val digits: Int? = null,
+    /** The bar timeframe the file states itself (a Databento record type), or null when it states none. */
+    val timeframe: String? = null,
+    /** What the reader of a binary file skipped, for the import report. */
+    val notes: List<String> = emptyList(),
     private val opener: () -> InputStream,
 ) {
     /** A fresh stream over the input's bytes, decompressed. */
@@ -42,12 +46,14 @@ data class ImportExpansion(
  */
 object ImportSources {
     private val DATA_EXTENSIONS =
-        setOf("csv", "tsv", "txt", "json", "ndjson", "jsonl", "gz", "zip", "dat", "prn", "bi5", "hst")
+        setOf("csv", "tsv", "txt", "json", "ndjson", "jsonl", "gz", "zip", "dat", "prn", "bi5") +
+            NativeBinaries.EXTENSIONS
 
     /** Every input under [paths], in a stable order (paths as given, directory entries and zip members by name). */
     fun expand(
         paths: List<Path>,
         bi5Divisor: Long? = null,
+        digits: Int? = null,
     ): ImportExpansion {
         val skipped = mutableListOf<Path>()
         var emptyHours = 0
@@ -60,7 +66,7 @@ object ImportSources {
                         else -> throw ImportRefusal("no such file or directory: $path")
                     }
                 files.flatMap { file ->
-                    if (HstBars.isHst(file)) return@flatMap listOf(HstBars.input(file, sha256(file)))
+                    NativeBinaries.input(file, digits) { sha256(file) }?.let { return@flatMap listOf(it) }
                     if (!Bi5Hours.isBi5(file)) return@flatMap fromFile(file)
                     val hour = Bi5Hours.input(file, sha256(file), bi5Divisor)
                     if (hour == null) emptyHours++
@@ -151,18 +157,18 @@ object ImportSources {
     ) {
         val reason =
             when {
-                name.endsWith(
-                    ".hcc",
-                    true,
-                ) ||
-                    name.endsWith(".tkc", true) -> "a MetaTrader 5 cache (undocumented, changes between builds)"
-                name.endsWith(".scid", true) -> "a Sierra Chart .scid binary"
-                name.endsWith(".dbn", true) || name.endsWith(".dbn.zst", true) -> "a Databento DBN binary"
-                magic.startsWith(PARQUET) -> "a Parquet file"
-                magic.startsWith(SEVEN_ZIP) || magic.startsWith(RAR) -> "a 7z/rar archive"
+                name.endsWith(".hcc", true) || name.endsWith(".tkc", true) ->
+                    "a MetaTrader 5 cache, undocumented and changed between terminal builds: export the bars or " +
+                        "ticks from MT5's Symbols window (Bars or Ticks tab, Export) and import that file"
+                magic.startsWith(PARQUET) ->
+                    "a Parquet file: convert it with `duckdb -c \"COPY (FROM '$name') TO '${name.substringBeforeLast(
+                        '.',
+                    )}" +
+                        ".csv'\"` (or pandas `read_parquet(...).to_csv(...)`) and import the CSV"
+                magic.startsWith(SEVEN_ZIP) || magic.startsWith(RAR) -> "a 7z/rar archive: extract it first"
                 else -> return
             }
-        throw ImportRefusal("$name is $reason, which qkt data import does not read: export or extract it to CSV first")
+        throw ImportRefusal("$name is $reason")
     }
 
     private fun sha256(path: Path): String {
