@@ -108,9 +108,10 @@ revisions of this page documented one that was never built.
 
 To bank a position in pieces today, choose one of:
 
-- **Repeat the entry instead of splitting the exit.** `BUY btc SIZING 0.01 TIMES 3` with a
-  different `TAKE_PROFIT` per action gives three independently-exiting positions and is the
-  closest equivalent. See [TIMES](times.md).
+- **Repeat the entry instead of splitting the exit.** Three `BUY` actions joined with `;`, each
+  with its own `BRACKET` and a different `TAKE_PROFIT`, give three independently-exiting positions
+  and are the closest equivalent. When every piece has the same bracket, `TIMES 3` writes it as one
+  action. See [TIMES](times.md) and the [mean-reversion example](../../examples/mean-reversion.md).
 - **`RESIZE`** trims an open position toward a target size, but it is not usable alongside a
   `BRACKET` on the same position — see the gotchas below.
 
@@ -277,4 +278,4 @@ RULES
 - [SIZING](sizing.md) — risk-based sizing (`PCT RISK`) requires a stop in the bracket
 - [Indicators](indicators.md) — ATR is the canonical stop input
 - [Expressions](expressions.md) — arithmetic in stop/target prices
-- [Mean-reversion example](../../examples/mean-reversion.md) — heavy use of scale-out brackets
+- [Mean-reversion example](../../examples/mean-reversion.md) — scaling out with three entries, one bracket each
