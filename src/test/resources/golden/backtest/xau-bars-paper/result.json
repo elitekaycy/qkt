@@ -1,7 +1,7 @@
 {
     "schema": "qkt-backtest-result-v1",
     "schemaVersion": 1,
-    "trades": 191,
+    "trades": 190,
     "finalRealized": -2545.756,
     "finalUnrealized": 0.0,
     "totalPnL": -2545.756,
@@ -15,17 +15,16 @@
     "largestWin": 96.0,
     "largestLoss": -58.03,
     "maxConsecutiveLosses": 13,
-    "sharpeRatio": -54.65142202,
+    "sharpeRatio": -55.13010781,
     "calmarRatio": -0.98620521,
-    "sortinoRatio": -63.42439637,
-    "turnover": 240.036418,
+    "sortinoRatio": -64.17093938,
+    "turnover": 238.9093486,
     "executionModel": "paper",
     "maxDailyDrawdown": 0.1016786,
     "dailyPnL": {
         "2024-01-02": -942.0,
         "2024-01-03": -760.03,
-        "2024-01-04": -843.726,
-        "2024-01-05": 0.0
+        "2024-01-04": -843.726
     },
     "halts": 0,
     "runawayBreaker": {
@@ -117,11 +116,11 @@
         }
     },
     "tradeSummary": {
-        "fills": 191,
-        "buyFills": 96,
+        "fills": 190,
+        "buyFills": 95,
         "sellFills": 95,
         "sideAttribution": "fill_side",
-        "longEntryFills": 96,
+        "longEntryFills": 95,
         "shortEntryFills": 0,
         "longExitFills": 95,
         "shortExitFills": 0,
@@ -131,13 +130,13 @@
         "sellRealized": -2545.756,
         "grossProfit": 876.0,
         "grossLoss": -3421.756,
-        "rejections": 0,
-        "rejectionRate": 0.0,
-        "riskAuditedFills": 96,
+        "rejections": 1,
+        "rejectionRate": 0.0052356,
+        "riskAuditedFills": 95,
         "minRiskUsd": 36.0,
-        "avgRiskUsd": 40.25,
+        "avgRiskUsd": 40.29473684,
         "maxRiskUsd": 48.0,
-        "tradedNotional": 2400364.18,
+        "tradedNotional": 2389093.486,
         "maxFillNotional": 15039.904
     },
     "global": {
@@ -146,7 +145,7 @@
         "totalPnL": -2545.756,
         "commissionPaid": 0.0,
         "swapPaid": 0.0,
-        "tradeCount": 191,
+        "tradeCount": 190,
         "winRate": 0.11578947,
         "maxDrawdown": 0.25813654,
         "profitFactor": 0.2560089,
@@ -155,17 +154,16 @@
         "largestWin": 96.0,
         "largestLoss": -58.03,
         "maxConsecutiveLosses": 13,
-        "sharpeRatio": -54.65142202,
+        "sharpeRatio": -55.13010781,
         "calmarRatio": -0.98620521,
-        "sortinoRatio": -63.42439637,
-        "turnover": 240.036418,
+        "sortinoRatio": -64.17093938,
+        "turnover": 238.9093486,
         "maxDailyDrawdown": 0.1016786,
         "annualizationFactor": 25045.71428571429,
         "dailyPnL": {
             "2024-01-02": -942.0,
             "2024-01-03": -760.03,
-            "2024-01-04": -843.726,
-            "2024-01-05": 0.0
+            "2024-01-04": -843.726
         },
         "drawdownPeriods": [
             {
@@ -693,7 +691,7 @@
             {
                 "timestamp": 1704244500000,
                 "iso": "2024-01-03T01:15:00Z",
-                "equity": 9083.97
+                "equity": 9111.424
             },
             {
                 "timestamp": 1704245400000,
@@ -1558,7 +1556,7 @@
             {
                 "timestamp": 1704400200000,
                 "iso": "2024-01-04T20:30:00Z",
-                "equity": 7598.244
+                "equity": 7621.842
             },
             {
                 "timestamp": 1704401100000,
@@ -1639,7 +1637,7 @@
             "totalPnL": -2545.756,
             "commissionPaid": 0.0,
             "swapPaid": 0.0,
-            "tradeCount": 191,
+            "tradeCount": 190,
             "winRate": 0.11578947,
             "maxDrawdown": 0.25813654,
             "profitFactor": 0.2560089,
@@ -1648,17 +1646,16 @@
             "largestWin": 96.0,
             "largestLoss": -58.03,
             "maxConsecutiveLosses": 13,
-            "sharpeRatio": -54.65142202,
+            "sharpeRatio": -55.13010781,
             "calmarRatio": -0.98620521,
-            "sortinoRatio": -63.42439637,
-            "turnover": 240.036418,
+            "sortinoRatio": -64.17093938,
+            "turnover": 238.9093486,
             "maxDailyDrawdown": 0.1016786,
             "annualizationFactor": 25045.71428571429,
             "dailyPnL": {
                 "2024-01-02": -942.0,
                 "2024-01-03": -760.03,
-                "2024-01-04": -843.726,
-                "2024-01-05": 0.0
+                "2024-01-04": -843.726
             },
             "drawdownPeriods": [
                 {
@@ -2186,7 +2183,7 @@
                 {
                     "timestamp": 1704244500000,
                     "iso": "2024-01-03T01:15:00Z",
-                    "equity": 9083.97
+                    "equity": 9111.424
                 },
                 {
                     "timestamp": 1704245400000,
@@ -3051,7 +3048,7 @@
                 {
                     "timestamp": 1704400200000,
                     "iso": "2024-01-04T20:30:00Z",
-                    "equity": 7598.244
+                    "equity": 7621.842
                 },
                 {
                     "timestamp": 1704401100000,
@@ -3125,7 +3122,7 @@
                 }
             ],
             "realized": -2545.756,
-            "trades": 191,
+            "trades": 190,
             "unrealized": 0.0
         }
     },
