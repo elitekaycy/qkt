@@ -94,16 +94,14 @@ class ReplayEngine(
      */
     private val regimeWeights: () -> Map<String, BigDecimal> = { emptyMap() },
     /**
-     * Symbols replayed from bars: their triggered Stop/Limit exits fill at their own price level
-     * rather than the synthetic bar extreme the triggering tick carries. See
-     * [com.qkt.broker.PaperBroker]. Empty on the tick path.
+     * Symbols replayed from bars: their triggered Stop/Limit exits fill at their own price level rather than the
+     * synthetic bar extreme the triggering tick carries. See [com.qkt.broker.PaperBroker]. Empty on the tick path.
      */
     private val barFills: com.qkt.backtest.BarFills = com.qkt.backtest.BarFills.NONE,
     /**
-     * Tick-resolved fills: when both are non-null, the `--bars` replay is driven by these bars but
-     * fills resolve on real ticks for any bar where one is possible (see [BarResolvedFeed]). The
-     * predicate is bound to this engine's own [OrderManager], so the result is byte-identical to a
-     * full-tick replay. Null on every other path (normal ticks, plain `--bars`, fan-out sweep).
+     * Tick-resolved fills: when both are non-null, the `--bars` replay is driven by these bars but fills resolve on
+     * real ticks for any bar where one is possible (see [BarResolvedFeed]). The predicate is bound to this engine's
+     * own [OrderManager], so the result is byte-identical to a full-tick replay. Null on every other path.
      */
     tickResolvedBars: Map<String, Sequence<com.qkt.marketdata.Candle>>? = null,
     tickSlicer: ((String, Long, Long) -> Sequence<Tick>)? = null,
@@ -136,6 +134,7 @@ class ReplayEngine(
     private val books = ReplayBooks(instruments, accountingConfig, markTimestamp = { currentTimestamp })
     private val positions = books.positions
     private val recorder = ReplayRecorder(initialTimestamp)
+    private val replayEndRule = ReplayEndRule()
     private val pipeline: TradingPipeline
     private val financing: ReplayFinancing
     private val analytics: ReplayAnalytics
@@ -165,7 +164,7 @@ class ReplayEngine(
         val broker = replayBroker(executionConfig, bus, clock, books, barFills, calendar, brokerSymbols, allSymbols)
         val risk =
             ReplayRisk(
-                rules = rules,
+                rules = rules + replayEndRule,
                 haltRules = haltRules,
                 strategyIds = strategies.map { it.first },
                 books = books,
@@ -368,6 +367,7 @@ class ReplayEngine(
         accrueFinancing(boundary)
         currentTimestamp = boundary
         clock.time = boundary
+        replayEndRule.ended = true
         pipeline.flushReplayCandles(boundary)
     }
 

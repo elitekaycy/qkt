@@ -94,8 +94,9 @@ class BarsReplayRollupTest : BarsReplayFixture() {
                 System.setOut(original)
             }
 
+        // The final bar closes and its rule runs, but no later price exists to fill the order at.
         assertThat(code).isEqualTo(ExitCodes.SUCCESS)
-        assertThat(out.toString()).contains("\"trades\":1")
+        assertThat(out.toString()).contains("\"liveCandles\":1").contains("\"trades\":0").contains("\"rejections\":1")
     }
 
     @Test

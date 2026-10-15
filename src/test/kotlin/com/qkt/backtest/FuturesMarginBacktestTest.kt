@@ -5,6 +5,9 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 
+/** Why a signal on the replay's last bar is refused; see com.qkt.research.ReplayEndRule. */
+private const val REPLAY_ENDED = "the replay ended before a later price"
+
 /** A futures backtest refuses the entries its account could not margin (`btcusdt-rolls`, ~60000 USDT per BTC). */
 class FuturesMarginBacktestTest {
     private val strategy =
@@ -39,7 +42,7 @@ class FuturesMarginBacktestTest {
 
         assertThat(result.trades).isEmpty()
         assertThat(result.rejections).isNotEmpty
-        assertThat(result.rejections.map { it.reason }).allSatisfy {
+        assertThat(result.rejections.map { it.reason }.filterNot { it.startsWith(REPLAY_ENDED) }).allSatisfy {
             assertThat(it).contains("initial margin").contains("account equity 100")
         }
     }
