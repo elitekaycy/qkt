@@ -22,6 +22,7 @@ histdata-ticks
 kraken-ohlcvt
 mt4-csv
 mt5-bars
+mt5-bars-daily
 mt5-ticks
 oanda-candles
 okx-candles
