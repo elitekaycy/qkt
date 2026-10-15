@@ -44,6 +44,30 @@ class PortfolioGateRegimeTest {
     }
 
     @Test
+    fun `a bare stream alias in a portfolio rule means the stream's candle, as in a strategy`() {
+        fun gate(series: String) =
+            buildGate(
+                """
+                PORTFOLIO p VERSION 1
+                SYMBOLS
+                    btc = BACKTEST:BTCUSDT EVERY 1m
+                IMPORT 'a.qkt' AS a
+                RULES
+                    WHEN atr($series, 3) >= 0 RUN a
+                """.trimIndent(),
+            )
+        val bare = gate("btc")
+        val candle = gate("btc.candle")
+        for (i in 0 until 6) {
+            bare.onCandle(candle("${100 + i}", i * 60_000L))
+            candle.onCandle(candle("${100 + i}", i * 60_000L))
+        }
+
+        assertThat(bare.currentState().activeByAlias).containsEntry("a", true)
+        assertThat(bare.currentState().activeByAlias).isEqualTo(candle.currentState().activeByAlias)
+    }
+
+    @Test
     fun `default regime selected when no conditional state matches`() {
         val gate =
             buildGate(
