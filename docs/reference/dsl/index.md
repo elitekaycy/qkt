@@ -120,7 +120,7 @@ If you want the one-page cheat sheet, see [DSL grammar (one-pager)](../dsl-gramm
 
     ---
 
-    Atomic stop-loss + take-profit groups. Fixed prices, percent offsets, ATR-based, scale-out targets.
+    Atomic stop-loss + take-profit groups: one stop and one target per entry. Fixed prices, percent offsets, ATR-based, trailing and ratcheting stops.
 
     [:octicons-arrow-right-24: BRACKET](bracket.md)
 

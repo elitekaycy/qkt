@@ -23,7 +23,7 @@ my-trading-stack/
 ├── qkt.config.yaml
 └── strategies/
     ├── btc-trend.qkt
-    └── eur-meanrev.qkt
+    └── gold-meanrev.qkt
 ```
 
 ## 3. Create your `.env` from the template
@@ -131,7 +131,7 @@ This is the step new operators skip and regret. Capture a minute of ticks from e
 
 ```bash
 docker compose exec qkt qkt audit-ticks \
-  --symbol EURUSD --duration 60 --mt5-profile exness \
+  --symbol XAUUSD --duration 60 --mt5-profile exness \
   --reference mt5-history
 ```
 
@@ -160,7 +160,7 @@ If you see gaps, out-of-order ticks, or duplicates — investigate before deploy
 
 ```bash
 docker compose exec qkt qkt deploy /strategies/btc-trend.qkt    --as btc-trend
-docker compose exec qkt qkt deploy /strategies/eur-meanrev.qkt  --as eur-meanrev
+docker compose exec qkt qkt deploy /strategies/gold-meanrev.qkt --as gold-meanrev
 ```
 
 Each prints a port:
@@ -169,7 +169,7 @@ Each prints a port:
 [INFO] deployed btc-trend
 QKT_PORT=47291
 
-[INFO] deployed eur-meanrev
+[INFO] deployed gold-meanrev
 QKT_PORT=47292
 ```
 
@@ -182,7 +182,7 @@ docker compose exec qkt qkt list
 ```text
 NAME              KIND       UPTIME    PORT     TRADES   STATE
 btc-trend         strategy   00:00:18  47291    0        running
-eur-meanrev       strategy   00:00:14  47292    0        running
+gold-meanrev      strategy   00:00:14  47292    0        running
 ```
 
 ## 11. Watch them work
@@ -210,7 +210,7 @@ When you're done (or want to bring everything down):
 ```bash
 # Stop strategies one at a time with --flatten to close open positions
 docker compose exec qkt qkt stop btc-trend     --flatten
-docker compose exec qkt qkt stop eur-meanrev   --flatten
+docker compose exec qkt qkt stop gold-meanrev  --flatten
 
 # Then tear down the stack
 docker compose down                 # keeps qkt-state volume + reports
@@ -223,7 +223,7 @@ docker compose down -v              # full wipe — state + logs gone
 
 - **Adapt the strategies.** Change parameters, swap symbols, try different timeframes. Validate with `qkt resync --dry-run`, then apply with `qkt resync --as <name>`.
 - **Add more strategies.** Drop more `.qkt` files into `strategies/` and deploy them. The daemon assigns each one an ephemeral loopback port.
-- **Backtest first.** Don't deploy a strategy you haven't backtested. Run `qkt backtest strategies/btc-trend.qkt --from 2024-01-01 --to 2024-06-01` to validate.
+- **Backtest first.** Don't deploy a strategy you haven't backtested. The [bundle page](index.md#backtest-results) shows the backtest commands and their results for both strategies.
 - **Set up alerts.** The observability HTTP endpoints (`/status`, `/events`, `/health`) are scrape-able by Prometheus. See [operations/logging](../../operations/logging.md).
 
 ## Common gotchas
