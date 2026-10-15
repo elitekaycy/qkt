@@ -18,7 +18,7 @@ export PATH="$PWD/build/install/qkt/bin:$PATH"
 qkt --version
 ```
 
-You should see `qkt 0.47.1` (or later).
+You should see `qkt <version> (<commit>) built <time>`, with the version in the repo's `VERSION` file.
 
 ## 2. Write a strategy
 
