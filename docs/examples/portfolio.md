@@ -82,11 +82,6 @@ A portfolio has no `LET` or `DEFAULTS` block, so the regime test is written into
 ADX is direction-blind: it rises in strong trends either way. Adjust the thresholds to your asset;
 what counts as a strong trend on BTC at 1h isn't the same as on gold at 5m.
 
-!!! warning "Write `adx(btc.candle, 14)` in portfolio rules"
-    `adx(btc, 14)` passes `qkt parse` in a portfolio rule but stops the backtest with
-    `Indicator adx expression-fed series must reference at least one stream`. Passing the candle
-    series, `btc.candle`, runs.
-
 ## How to run it
 
 ```bash
@@ -138,12 +133,6 @@ per round trip):
 
 The three add up to the 42.16 USD total: the trend child traded 7 times, and mean-reversion lost
 what breakout made.
-
-!!! warning "Per-child accounting"
-    This run also logs 78 `ERROR` lines from `StrategyPositionTracker` of the form
-    `close for btc_regimes:meanrev on BACKTEST:BTCUSD names leg dsl-meanrev--17 / ticket null the book
-    does not hold; nothing booked`, for the meanrev and breakout children. The account total is what
-    the engine booked; read the per-child split of a gated portfolio with that in mind.
 
 ## How to adapt it
 
