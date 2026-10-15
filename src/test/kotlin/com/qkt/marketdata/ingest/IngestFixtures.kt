@@ -24,8 +24,9 @@ object IngestFixtures {
     ): Path {
         val stream = IngestFixtures::class.java.getResourceAsStream("$SAMPLES$name") ?: error("no sample $name")
         val bytes = stream.use { it.readAllBytes() }
-        Files.createDirectories(dir)
-        return dir.resolve(name).also { Files.write(it, bytes) }
+        val target = dir.resolve(name)
+        Files.createDirectories(target.parent)
+        return target.also { Files.write(it, bytes) }
     }
 
     /** Runs an import of [paths] as [symbol] into [root]. */

@@ -1,9 +1,11 @@
 package com.qkt.marketdata.ingest
 
+import com.qkt.marketdata.ingest.ImportRefusal
 import com.qkt.marketdata.ingest.plan.ImportDescriptor
 import com.qkt.marketdata.ingest.plan.PresetLibrary
 import java.nio.file.Path
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import org.junit.jupiter.params.ParameterizedTest
@@ -26,14 +28,16 @@ class PresetSamplesTest {
         preset: String,
         firstRow: String,
         fields: Map<String, String>,
+        digits: Int?,
     ) {
         val root = dir.resolve("root")
+        val sample = IngestFixtures.sample(file, dir.resolve("in"))
         val report =
             IngestFixtures.import(
                 root,
-                listOf(IngestFixtures.sample(file, dir.resolve("in"))),
+                listOf(sample),
                 symbol,
-                ImportDescriptor(fields = fields),
+                ImportDescriptor(fields = fields, digits = digits),
             )
 
         assertThat(report.preset).isEqualTo(preset)
@@ -43,9 +47,21 @@ class PresetSamplesTest {
 
     @Test
     fun `every built-in preset has a sample here`() {
-        val tested = PresetSampleCases.all.map { it.get()[2] as String }.toSet()
+        val tested = PresetSampleCases.all.map { it.get()[2] as String }.toSet() + RefusedSampleCases.all.keys
 
         assertThat(PresetLibrary.builtIns.map { it.id }).allMatch { it in tested }
+    }
+
+    @Test
+    fun `a real file whose meaning qkt cannot keep is refused, naming why`() {
+        for ((preset, case) in RefusedSampleCases.all) {
+            val (file, why) = case
+            val sample = IngestFixtures.sample(file, dir.resolve("in"))
+
+            assertThatThrownBy { IngestFixtures.import(dir.resolve("root-$preset"), listOf(sample), "BROKER:EURUSD") }
+                .isInstanceOf(ImportRefusal::class.java)
+                .hasMessageContaining(why)
+        }
     }
 
     companion object {

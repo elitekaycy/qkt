@@ -27,7 +27,9 @@ internal class ClockDecision(
     private val request: ImportRequest,
 ) {
     fun decide(): ClockChoice {
-        val naive = plan.inputs.indices.any { i -> sampleTimes(i, SAMPLE).any { it is ParsedTime.Local } }
+        val samples = plan.inputs.indices.flatMap { i -> sampleTimes(i, SAMPLE) }
+        if (samples.isNotEmpty() && samples.all { it is ParsedTime.Date }) return dates()
+        val naive = samples.any { it is ParsedTime.Local }
         if (!naive) {
             if (request.overrides.clock != null) {
                 throw ImportRefusal(
@@ -62,6 +64,33 @@ internal class ClockDecision(
             evidence.map { it.summary() + if (it.passes) " ✓" else "" },
         )
     }
+
+    /**
+     * Calendar dates name a day without saying whose midnight starts it. qkt's daily bars are UTC days, so
+     * dates on any other clock (a broker's D1 bars run from 21:00 or 22:00 UTC) would put every bar's prices
+     * in the wrong day: refused, with the fix. Undeclared dates are accepted as UTC days except for FX and
+     * metals, which trade through UTC midnight and whose dates are almost always a broker's or a vendor's.
+     */
+    private fun dates(): ClockChoice {
+        val stated = plan.descriptor.clock?.let(::parseClock)
+        val utc = stated == ImportClock.Utc
+        if ((stated != null && !utc) || (stated == null && plan.target.fxOrMetal)) {
+            val whose = stated?.let { "the ${it.spec} clock" } ?: "a clock the file does not name"
+            throw ImportRefusal(
+                "the bars are dated by day only, on $whose; qkt's daily bars are UTC days, so each bar would hold " +
+                    "another day's prices. Import H1 or finer bars and let qkt build 1d, or pass --tz UTC if these " +
+                    "dates really are UTC days",
+            )
+        }
+        return ClockChoice(null, if (utc) "UTC calendar days" else "calendar days (session dates)")
+    }
+
+    private fun parseClock(text: String): ImportClock =
+        try {
+            ImportClock.parse(text)
+        } catch (e: IllegalArgumentException) {
+            throw ImportRefusal(e.message ?: "invalid clock '$text'")
+        }
 
     private fun sampleTimes(
         index: Int,

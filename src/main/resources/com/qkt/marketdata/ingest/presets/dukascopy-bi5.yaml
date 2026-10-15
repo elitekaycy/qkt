@@ -1,0 +1,15 @@
+id: "dukascopy-bi5"
+description: "Dukascopy datafeed hour files (<YYYY>/<MM from 00>/<DD>/<HH>h_ticks.bi5), decoded as qkt's own Dukascopy fetcher decodes them"
+kind: "ticks"
+time: ["time"]
+timeFormat: "epoch:ms"
+fields:
+  bid: "bid"
+  ask: "ask"
+  bidVolume: "bidVolume"
+  askVolume: "askVolume"
+  volume: "volume"
+volume: "bid plus ask quoted size, as qkt's Dukascopy fetcher stores it"
+match:
+  header: ["time", "bid", "ask", "bidVolume", "askVolume", "volume"]
+  filename: "h_ticks\\.bi5$"
