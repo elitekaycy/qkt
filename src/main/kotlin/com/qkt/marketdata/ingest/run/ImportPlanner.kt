@@ -11,6 +11,7 @@ import com.qkt.marketdata.ingest.plan.IngestKind
 import com.qkt.marketdata.ingest.plan.InputShape
 import com.qkt.marketdata.ingest.plan.PresetChooser
 import com.qkt.marketdata.ingest.plan.PresetLibrary
+import com.qkt.marketdata.ingest.plan.SelfNamedColumns
 import com.qkt.marketdata.ingest.rows.InputLayout
 import com.qkt.marketdata.ingest.rows.sampleRows
 import com.qkt.marketdata.ingest.source.ImportInput
@@ -47,7 +48,7 @@ class ImportPlanner(
         val early = ImportTarget.of(request.symbol, registry, request.overrides.digits)
         val divisor =
             DukascopyInstrument.ofOrNull(early.bare)?.priceDivisor ?: early.digits?.let { TEN.pow(it).toLong() }
-        val expansion = ImportSources.expand(request.paths, divisor)
+        val expansion = ImportSources.expand(request.paths, divisor, early.digits)
         val inputs = expansion.inputs
         if (inputs.isEmpty()) {
             throw ImportRefusal(
@@ -62,7 +63,11 @@ class ImportPlanner(
                 request.preset != null -> PresetLibrary.resolve(request.preset) to "--preset ${request.preset}"
                 else -> choosePreset(first, hint, request)?.let { it to "matched" } ?: (ImportDescriptor() to "flags")
             }
-        val descriptor = base.overlaidBy(o)
+        val descriptor =
+            base.overlaidBy(o).let { d ->
+                d.timeframe?.let { d }
+                    ?: d.copy(timeframe = fileTimeframe(inputs))
+            }
         val layouts =
             inputs.map {
                 InputLayout.of(
@@ -74,11 +79,12 @@ class ImportPlanner(
                     request.charset,
                 )
             }
-        val target = ImportTarget.of(request.symbol, registry, descriptor.digits ?: fileDigits(inputs))
-        descriptor.kind?.let { requireSymbolFits(it, target) }
-        val stated = descriptor.timeFormat?.let { parseFormat(it) }
-        val formats = inputs.indices.map { i -> formatFor(inputs[i], layouts[i], descriptor, stated) }
-        return ImportPlan(descriptor, source, target, inputs, layouts, formats, expansion.skipped, expansion.emptyHours)
+        val mapped = if (source == "flags") SelfNamedColumns.fill(descriptor, layouts.first().names) else descriptor
+        val target = ImportTarget.of(request.symbol, registry, mapped.digits ?: fileDigits(inputs))
+        mapped.kind?.let { requireSymbolFits(it, target) }
+        val stated = mapped.timeFormat?.let { parseFormat(it) }
+        val formats = inputs.indices.map { i -> formatFor(inputs[i], layouts[i], mapped, stated) }
+        return ImportPlan(mapped, source, target, inputs, layouts, formats, expansion.skipped, expansion.emptyHours)
     }
 
     /** The digits the inputs state themselves, refusing inputs that disagree. */
@@ -86,6 +92,17 @@ class ImportPlanner(
         val stated = inputs.mapNotNull { it.digits }.distinct()
         if (stated.size > 1) {
             throw ImportRefusal("the inputs state different price digits ${stated.sorted()}: import them separately")
+        }
+        return stated.singleOrNull()
+    }
+
+    /** The bar timeframe the inputs state themselves, refusing inputs that disagree. */
+    private fun fileTimeframe(inputs: List<ImportInput>): String? {
+        val stated = inputs.mapNotNull { it.timeframe }.distinct()
+        if (stated.size >
+            1
+        ) {
+            throw ImportRefusal("the inputs hold bars of different timeframes $stated: import them separately")
         }
         return stated.singleOrNull()
     }
