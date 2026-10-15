@@ -10,6 +10,7 @@ binance-metrics
 bybit-spot-trades
 bybit-trades
 ccxt-ohlcv
+dukascopy-bi5
 dukascopy-gmt-bars
 dukascopy-gmt-ticks
 dukascopy-local-bars

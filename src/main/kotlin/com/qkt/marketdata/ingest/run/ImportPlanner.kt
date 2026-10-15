@@ -15,6 +15,8 @@ import com.qkt.marketdata.ingest.rows.InputLayout
 import com.qkt.marketdata.ingest.rows.sampleRows
 import com.qkt.marketdata.ingest.source.ImportInput
 import com.qkt.marketdata.ingest.source.ImportSources
+import com.qkt.marketdata.store.dukascopy.DukascopyInstrument
+import java.math.BigInteger
 import java.nio.file.Path
 
 /** The resolved plan for an import: its inputs, how each is laid out and timed, and the descriptor. */
@@ -27,6 +29,8 @@ data class ImportPlan(
     val formats: List<TimeFormat>,
     /** Files a directory walk passed over as not data. */
     val skippedFiles: List<Path> = emptyList(),
+    /** Dukascopy hour files with no ticks. */
+    val emptyBi5Hours: Int = 0,
 )
 
 /**
@@ -40,7 +44,10 @@ class ImportPlanner(
 ) {
     /** The plan for [request]. */
     fun plan(request: ImportRequest): ImportPlan {
-        val expansion = ImportSources.expand(request.paths)
+        val early = ImportTarget.of(request.symbol, registry, request.overrides.digits)
+        val divisor =
+            DukascopyInstrument.ofOrNull(early.bare)?.priceDivisor ?: early.digits?.let { TEN.pow(it).toLong() }
+        val expansion = ImportSources.expand(request.paths, divisor)
         val inputs = expansion.inputs
         if (inputs.isEmpty()) {
             throw ImportRefusal(
@@ -71,7 +78,7 @@ class ImportPlanner(
         descriptor.kind?.let { requireSymbolFits(it, target) }
         val stated = descriptor.timeFormat?.let { parseFormat(it) }
         val formats = inputs.indices.map { i -> formatFor(inputs[i], layouts[i], descriptor, stated) }
-        return ImportPlan(descriptor, source, target, inputs, layouts, formats, expansion.skipped)
+        return ImportPlan(descriptor, source, target, inputs, layouts, formats, expansion.skipped, expansion.emptyHours)
     }
 
     private fun choosePreset(
@@ -159,6 +166,7 @@ class ImportPlanner(
     )
 
     private companion object {
+        val TEN: BigInteger = BigInteger.TEN
         const val SAMPLE = 1000
     }
 }

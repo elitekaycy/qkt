@@ -89,6 +89,11 @@ internal object ImportNotes {
                         kinds.entries.joinToString { "${it.value} .${it.key}" },
                 )
             }
+            if (plan.emptyBi5Hours >
+                0
+            ) {
+                add("${plan.emptyBi5Hours} Dukascopy hour file(s) hold no ticks (market closed or quiet)")
+            }
             val filtered = read.stats.sumOf { it.filtered }
             if (filtered > 0) add("$filtered row(s) did not pass the row filter ${d.where} and were not imported")
             if (plan.target.digits == null && (kind == IngestKind.BARS || kind == IngestKind.TICKS)) {

@@ -136,6 +136,12 @@ object PresetSampleCases {
                 "kraken-ohlcvt",
                 "1381095240000,122.00000000,122.00000000,122.00000000,122.00000000,0.10000000",
             ),
+            s(
+                "EURUSD/2026/07/24/00h_ticks.bi5",
+                "EURUSD",
+                "dukascopy-bi5",
+                "1787529600090,EURUSD,,5.39999998,1.16823000,1.16824000,4.50000000,0.89999998",
+            ),
             s("truefx-ticks.csv", "EURUSD", "truefx-ticks", "1462147200959,EURUSD,,,1.14601000,1.14605000,,"),
             s(
                 "yfinance-daily.csv",
