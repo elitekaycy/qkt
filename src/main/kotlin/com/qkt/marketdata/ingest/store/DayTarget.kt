@@ -23,6 +23,9 @@ interface DayTarget {
         records: List<IngestRecord>,
     )
 
+    /** [day]'s stored prices, read back through qkt's own readers (empty when nothing is stored). */
+    fun readStored(day: LocalDate): DayPrices
+
     /** Records [days] as present in the store's manifest. */
     fun commit(days: Collection<LocalDate>)
 

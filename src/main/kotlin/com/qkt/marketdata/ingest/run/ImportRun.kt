@@ -111,6 +111,9 @@ class ImportRun(
                     request.onOverlap,
                     fillEmpty = false,
                     stamp,
+                    request.trustClock,
+                    MINUTE_MS,
+                    plan.target.point,
                 ).write(entry) { day, n ->
                     StoreReadBack.ticks(target.dir.resolve("$day.csv.gz"), n)
                 }
@@ -127,6 +130,9 @@ class ImportRun(
                     request.onOverlap,
                     fillEmpty = true,
                     stamp,
+                    request.trustClock,
+                    window.durationMs,
+                    plan.target.point,
                 ).write(entry) { day, n ->
                     StoreReadBack.bars(target.dir.resolve("$day.csv"), window.canonicalSpec(), n)
                 }
@@ -174,6 +180,7 @@ class ImportRun(
 
     private companion object {
         const val DAY_MS = 86_400_000L
+        const val MINUTE_MS = 60_000L
         const val ID_LENGTH = 16
     }
 }

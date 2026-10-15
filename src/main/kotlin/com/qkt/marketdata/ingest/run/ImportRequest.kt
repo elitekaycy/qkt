@@ -6,7 +6,10 @@ import java.nio.file.Path
 
 /** What to do with stored data an import would overwrite. */
 enum class OverlapPolicy {
-    /** Refuse, listing the days (the default). */
+    /** Keep each stored day unless the incoming one covers more hours of it (the default). */
+    FILL,
+
+    /** Refuse, listing the days. */
     REFUSE,
 
     /** Keep the stored days, import the rest. */
@@ -20,7 +23,7 @@ enum class OverlapPolicy {
         /** The policy `--on-overlap` names. */
         fun parse(text: String): OverlapPolicy =
             entries.firstOrNull { it.name.equals(text.trim(), ignoreCase = true) }
-                ?: throw IllegalArgumentException("--on-overlap must be refuse, skip or replace: '$text'")
+                ?: throw IllegalArgumentException("--on-overlap must be fill, refuse, skip or replace: '$text'")
     }
 }
 
@@ -36,7 +39,7 @@ data class ImportRequest(
     val preset: String? = null,
     val dryRun: Boolean = false,
     val planOnly: Boolean = false,
-    val onOverlap: OverlapPolicy = OverlapPolicy.REFUSE,
+    val onOverlap: OverlapPolicy = OverlapPolicy.FILL,
     /** Sort a file whose rows are out of time order instead of refusing it. */
     val sort: Boolean = false,
     /** Where the source holds two different values for one time, keep the later file's instead of refusing. */

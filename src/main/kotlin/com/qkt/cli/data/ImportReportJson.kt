@@ -60,6 +60,9 @@ internal object ImportReportJson {
                 put("unchanged", days(r.outcomes.unchanged))
                 put("skipped", days(r.outcomes.skipped))
                 put("emptyFilled", days(r.outcomes.emptyFilled))
+                put("kept", days(r.outcomes.kept))
+                put("overlap", r.outcomes.overlap)
+                put("seams", JsonArray(r.outcomes.seams.map(::JsonPrimitive)))
             }
             putJsonArray("preview") {
                 r.preview.forEach { (raw, rec) ->

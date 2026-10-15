@@ -40,7 +40,8 @@ internal class PointWrite(
                 clashes.sorted().map { Instant.ofEpochMilli(it).toString() },
             )
         }
-        val kept = if (policy == OverlapPolicy.SKIP) records.filter { it.timeMs !in clashes } else records
+        val keepStored = policy == OverlapPolicy.SKIP || policy == OverlapPolicy.FILL
+        val kept = if (keepStored) records.filter { it.timeMs !in clashes } else records
         val before = store.storedCount()
         val after = store.write(kept)
         val (count, _, _) = store.readBack()
@@ -49,7 +50,7 @@ internal class PointWrite(
         val clashDays = clashes.map { DayBuckets.dayOf(it) }.distinct().sorted()
         return DayOutcomes(
             written = days,
-            skipped = if (policy == OverlapPolicy.SKIP) clashDays else emptyList(),
+            skipped = if (keepStored) clashDays else emptyList(),
             replaced = if (policy == OverlapPolicy.REPLACE) clashDays else emptyList(),
         ).also { check(after >= before) { "the store shrank from $before to $after values" } }
     }

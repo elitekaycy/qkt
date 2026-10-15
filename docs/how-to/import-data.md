@@ -124,7 +124,6 @@ clock, and getting it wrong moves every bar without any error, so qkt checks it.
 | bars off the UTC grid, e.g. broker H4 bars cut at broker midnight | qkt's bars are cut at UTC; import H1 or finer and let qkt build H4 and D1 |
 | daily bars dated by day only on a broker clock (MT5 D1), or FX/metals dates on no stated clock | each bar would hold another day's prices; import H1 or finer, or pass `--tz UTC` if the dates are UTC days |
 | a `series` without `--available` or `--available-lag` | stamping a published value on the date it describes leaks the future |
-| days already stored by something else | use `--on-overlap skip` or `--on-overlap replace` (the old files go to `.import-backup/`) |
 | other binary files (Parquet, MT4 `.hst`, MT5 `.hcc`, Sierra `.scid`, Databento DBN) | export them to CSV first |
 
 Every refusal happens before the first write, so a refused import leaves the store as it was.
@@ -135,6 +134,32 @@ Some things are fixed or flagged rather than refused, and the report counts each
 - price spikes that jump and immediately revert are flagged and kept;
 - digits past the eighth decimal are rounded to qkt's precision;
 - bid bars without a spread column are stored as they are, with a note that qkt reads bar prices as mid.
+
+## Several sources for one symbol
+
+A symbol's ticks (and one `SOURCE:SYMBOL` bar series) can come from several imports, say Dukascopy for
+Monday to Friday and an MT5 export from Wednesday to the next Friday. qkt keeps the series consistent:
+
+- **A day comes whole from one source.** Days are never spliced: a switch inside a day would be a jump at
+  an arbitrary minute.
+- **`--on-overlap fill` (the default)** writes the days the store lacks and keeps each stored day unless
+  the incoming one covers more hours of it. A source's partial first or last day therefore never replaces a
+  complete one, and a complete day replaces a partial one (the old file goes to `.import-backup/`).
+  `--on-overlap skip` always keeps stored days, `replace` always takes the incoming ones, `refuse` stops.
+- **Shared days are checked first.** The stored and incoming prices are compared minute by minute; if they
+  line up only when shifted (one source on the wrong clock), the import refuses. The report shows the price
+  difference between the sources, which is how an unknown source is checked against a trusted one:
+
+  ```text
+  Overlap  stored vs incoming over 3 shared day(s): matches: 3960 bars matched, ... offset 0m,
+           close Δ median 2 pt ...
+  Seam     2024-03-08 → 2024-03-11: imported dukascopy-bi5 → this import (mt5-ticks), price step 3 pt
+  ```
+- **Every switch of source is a seam**, listed with the price step across it. Two vendors never quote the
+  same prices, so a strategy sees that step; the report and `.import.json` make it visible. Prices are never
+  adjusted to hide it.
+- Funding and open interest merge by time: `fill` adds the times the store lacks and keeps stored values
+  where the two disagree (listed); `replace` overwrites them.
 
 ## After importing
 

@@ -65,7 +65,7 @@ internal object DataImportOptions {
             preset = args.option("preset"),
             dryRun = args.flag("dry-run"),
             planOnly = args.flag("plan"),
-            onOverlap = args.option("on-overlap")?.let(OverlapPolicy::parse) ?: OverlapPolicy.REFUSE,
+            onOverlap = args.option("on-overlap")?.let(OverlapPolicy::parse) ?: OverlapPolicy.FILL,
             sort = args.flag("sort"),
             keepLastOnConflict = args.option("on-conflict")?.let(::conflict) ?: false,
             trustClock = args.flag("trust-clock"),
