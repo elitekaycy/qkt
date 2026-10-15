@@ -33,7 +33,8 @@ internal object Bi5Hours {
         val m =
             HOUR.find(text)
                 ?: throw ImportRefusal(
-                    "$text: a .bi5 file holds no date of its own; keep Dukascopy's layout <YYYY>/<MM from 00>/<DD>/<HH>h_ticks.bi5",
+                    "$text: a .bi5 file holds no date of its own; " +
+                        "keep Dukascopy's layout <YYYY>/<MM from 00>/<DD>/<HH>h_ticks.bi5",
                 )
         val (y, month0, d, h) = m.destructured
         val hourStartMs =

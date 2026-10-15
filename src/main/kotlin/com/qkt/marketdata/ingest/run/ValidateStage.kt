@@ -4,6 +4,7 @@ import com.qkt.candles.TimeWindow
 import com.qkt.marketdata.ingest.ImportRefusal
 import com.qkt.marketdata.ingest.check.CheckTally
 import com.qkt.marketdata.ingest.check.DayChecks
+import com.qkt.marketdata.ingest.check.QuoteBarPairing
 import com.qkt.marketdata.ingest.check.SpikeFlags
 import com.qkt.marketdata.ingest.plan.IngestKind
 import com.qkt.marketdata.ingest.record.IngestRecord
@@ -32,6 +33,12 @@ internal class ValidateStage(
 
     private val gridMs = timeframe?.durationMs?.takeIf { kind == IngestKind.BARS }
     private val checks = DayChecks(tally, gridMs, keepLast)
+    private val sides = read.stats.mapNotNull { s -> QuoteBarPairing.sideOf(s.name)?.let { s.index to it } }.toMap()
+    private val pairing = QuoteBarPairing(if (kind == IngestKind.BARS) sides else emptyMap(), tally)
+    private val writePairing = QuoteBarPairing(if (kind == IngestKind.BARS) sides else emptyMap(), CheckTally())
+
+    /** True when bid and ask bar files were joined into mid bars. */
+    val pairedQuotes: Boolean get() = pairing.active
 
     /** Re-cleans for writing with its own tally, so a day written after validation is not counted twice. */
     private val writeChecks = DayChecks(CheckTally(), gridMs, keepLast)
@@ -39,7 +46,7 @@ internal class ValidateStage(
     /** Checks every day; refuses with the problems found, if any. */
     fun validate() {
         for (day in read.buckets.days.keys) {
-            val records = checks.clean(day, read.buckets.day(day, read::orderKey))
+            val records = checks.clean(day, pairing.join(day, read.buckets.day(day, read::orderKey), ::inputOf))
             if (kind == IngestKind.BARS || kind == IngestKind.TICKS) SpikeFlags.scan(day, records, tally)
         }
         if (tally.problems.isNotEmpty()) {
@@ -48,7 +55,10 @@ internal class ValidateStage(
     }
 
     /** [day]'s records, sorted and cleaned exactly as validation cleaned them. */
-    fun clean(day: LocalDate): List<IngestRecord> = writeChecks.clean(day, read.buckets.day(day, read::orderKey))
+    fun clean(day: LocalDate): List<IngestRecord> =
+        writeChecks.clean(day, writePairing.join(day, read.buckets.day(day, read::orderKey), ::inputOf))
+
+    private fun inputOf(order: Long): Int = (order ushr InputPass.LINE_BITS).toInt()
 
     private fun inferTimeframe(): TimeWindow {
         val spacing = mutableMapOf<Long, Int>()
