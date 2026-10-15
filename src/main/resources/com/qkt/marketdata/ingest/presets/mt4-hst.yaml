@@ -1,0 +1,18 @@
+id: "mt4-hst"
+description: "MetaTrader 4 history file (.hst, version 400 or 401): broker server time, bid prices, spread in points (401)"
+kind: "bars"
+time: ["time"]
+timeFormat: "yyyy-MM-dd HH:mm:ss"
+clock: "ny-close"
+basis: "bid"
+fields:
+  open: "open"
+  high: "high"
+  low: "low"
+  close: "close"
+  volume: "volume"
+  spread: "spread"
+volume: "tick count"
+match:
+  header: ["time", "open", "high", "low", "close", "volume", "spread"]
+  filename: "\\.hst$"

@@ -62,10 +62,12 @@ internal object ImportReportText {
             } else {
                 appendLine(
                     "Wrote    ${o.written.size} day(s) · ${o.replaced.size} replaced · " +
-                        "${o.unchanged.size} unchanged · " +
+                        "${o.unchanged.size} unchanged · ${o.kept.size} kept (stored day as full or fuller) · " +
                         "${o.skipped.size} skipped · ${o.emptyFilled.size} empty day(s) recorded → ${r.target}",
                 )
             }
+            o.overlap?.let { appendLine("Overlap  $it") }
+            o.seams.forEach { appendLine("Seam     $it") }
         }
 
     private fun skipped(

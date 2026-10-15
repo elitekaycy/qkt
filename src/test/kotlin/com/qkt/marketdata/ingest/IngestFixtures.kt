@@ -37,7 +37,7 @@ object IngestFixtures {
         overrides: ImportDescriptor = ImportDescriptor(),
         preset: String? = null,
         dryRun: Boolean = false,
-        onOverlap: OverlapPolicy = OverlapPolicy.REFUSE,
+        onOverlap: OverlapPolicy = OverlapPolicy.FILL,
         sort: Boolean = false,
         trustClock: Boolean = false,
     ): ImportReport =

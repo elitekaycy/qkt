@@ -74,11 +74,20 @@ class ImportPlanner(
                     request.charset,
                 )
             }
-        val target = ImportTarget.of(request.symbol, registry, descriptor.digits)
+        val target = ImportTarget.of(request.symbol, registry, descriptor.digits ?: fileDigits(inputs))
         descriptor.kind?.let { requireSymbolFits(it, target) }
         val stated = descriptor.timeFormat?.let { parseFormat(it) }
         val formats = inputs.indices.map { i -> formatFor(inputs[i], layouts[i], descriptor, stated) }
         return ImportPlan(descriptor, source, target, inputs, layouts, formats, expansion.skipped, expansion.emptyHours)
+    }
+
+    /** The digits the inputs state themselves, refusing inputs that disagree. */
+    private fun fileDigits(inputs: List<ImportInput>): Int? {
+        val stated = inputs.mapNotNull { it.digits }.distinct()
+        if (stated.size > 1) {
+            throw ImportRefusal("the inputs state different price digits ${stated.sorted()}: import them separately")
+        }
+        return stated.singleOrNull()
     }
 
     private fun choosePreset(

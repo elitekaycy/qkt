@@ -12,6 +12,12 @@ data class DayOutcomes(
     val replaced: List<LocalDate> = emptyList(),
     /** Days inside the imported span with no rows, written header-only (bars) so the store covers them. */
     val emptyFilled: List<LocalDate> = emptyList(),
+    /** Shared days where `fill` kept the stored day because it covered at least as much of the day. */
+    val kept: List<LocalDate> = emptyList(),
+    /** How the shared days compared, stored against incoming. */
+    val overlap: String? = null,
+    /** Every switch of source in the resulting series, with its price step. */
+    val seams: List<String> = emptyList(),
 )
 
 /**

@@ -1,17 +1,20 @@
 package com.qkt.marketdata.ingest.run
 
 import com.qkt.marketdata.ingest.ImportRefusal
+import com.qkt.marketdata.ingest.store.DayPrices
 import com.qkt.marketdata.ingest.store.DayTarget
 import com.qkt.marketdata.ingest.store.ImportEntry
 import com.qkt.marketdata.ingest.store.ImportProvenance
+import java.math.BigDecimal
 import java.time.LocalDate
 
 /**
  * Writes a validated import day by day into a [DayTarget]. Every decision is made before the first write:
- * a day already stored by this same import is unchanged; one stored otherwise follows the overlap policy
- * (refusing lists every such day, so nothing is half-done). Days inside the imported span that had no rows
- * are written empty only where the store has nothing (bars), never over stored data. Each written day is
- * read back by [verify] and the manifest and provenance are updated last.
+ * a day already stored by this same import is unchanged; a day stored from elsewhere goes through
+ * [OverlapDecision] (compared with the incoming one first, then kept or replaced whole, never spliced).
+ * Days inside the imported span that had no rows are written empty only where the store has nothing
+ * (bars), never over stored data. Each written day is read back by [verify]; the manifest and provenance
+ * are updated last, and every switch of source in the resulting series is reported ([SeamReport]).
  */
 internal class DayWriteStage(
     private val target: DayTarget,
@@ -20,6 +23,9 @@ internal class DayWriteStage(
     private val policy: OverlapPolicy,
     private val fillEmpty: Boolean,
     private val stamp: String,
+    private val trustClock: Boolean = false,
+    private val stepMs: Long = MINUTE_MS,
+    private val point: BigDecimal? = null,
 ) {
     fun write(
         entry: ImportEntry,
@@ -39,29 +45,38 @@ internal class DayWriteStage(
                 else -> clashes += day
             }
         }
+        val decision = OverlapDecision(target, policy, trustClock, stepMs, point)
+        val plan = decision.decide(clashes) { DayPrices.of(validated.clean(it)) }
         if (clashes.isNotEmpty() && policy == OverlapPolicy.REFUSE) {
             throw ImportRefusal(
-                "${clashes.size} day(s) are already stored in ${target.dir}: pass --on-overlap skip to keep them or " +
-                    "--on-overlap replace to replace them (the stored files are moved to ${DayTarget.BACKUP}/)",
-                clashes.map { day -> "$day (${origin(provenance, day)})" },
+                "${clashes.size} day(s) are already stored in ${target.dir}: pass --on-overlap fill (keep the fuller " +
+                    "day), skip, or replace (the stored files are moved to ${DayTarget.BACKUP}/)",
+                clashes.map { day -> "$day (${origin(provenance, day)})" } + listOfNotNull(plan.evidence),
             )
         }
-        val replaced = if (policy == OverlapPolicy.REPLACE) clashes.toList() else emptyList()
-        val skipped = if (policy == OverlapPolicy.SKIP) clashes.toList() else emptyList()
-        replaced.forEach { target.backup(it, stamp) }
-        for (day in fresh + replaced) {
+        plan.replace.forEach { target.backup(it, stamp) }
+        val writtenPrices = mutableMapOf<LocalDate, DayPrices>()
+        for (day in fresh + plan.replace) {
             val records = validated.clean(day)
             target.write(day, records)
             verify(day, records.size)
+            writtenPrices[day] = DayPrices.of(records)
         }
         for (day in empties) {
             target.write(day, emptyList())
             verify(day, 0)
         }
-        val touched = (fresh + replaced + empties).sorted()
+        val touched = (fresh + plan.replace + empties).sorted()
         target.commit(touched)
         if (touched.isNotEmpty()) ImportProvenance.record(target.dir, entry, touched.map { it.toString() })
-        return DayOutcomes(fresh.sorted(), unchanged, skipped, replaced, empties)
+        val seams =
+            SeamReport(
+                target,
+                point,
+            ).seams(writtenPrices, "this import (${entry.preset})", provenance, entry.id)
+        val skipped = if (policy == OverlapPolicy.SKIP) plan.keep else emptyList()
+        val kept = if (policy == OverlapPolicy.SKIP) emptyList() else plan.keep
+        return DayOutcomes(fresh.sorted(), unchanged, skipped, plan.replace, empties, kept, plan.evidence, seams)
     }
 
     private fun origin(
@@ -75,4 +90,8 @@ internal class DayWriteStage(
         from: LocalDate,
         to: LocalDate,
     ): List<LocalDate> = generateSequence(from) { it.plusDays(1) }.takeWhile { !it.isAfter(to) }.toList()
+
+    private companion object {
+        const val MINUTE_MS = 60_000L
+    }
 }
