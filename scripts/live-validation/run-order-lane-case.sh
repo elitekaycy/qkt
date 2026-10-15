@@ -283,9 +283,10 @@ else
     problems+=("capture or materialize failed: ${why:-no log}")
 fi
 
-# Risk rejections must be the same live and in replay: a cap that binds in one and not the other is
-# exactly the divergence the risk lane exists to catch. `expect_rejections` in case.yaml pins the count.
-rejections() { { grep -cE 'risk rejected ' "$1" || true; } | head -n 1; }
+# Rejections must be the same live and in replay: a cap that binds in one and not the other, or a venue
+# refusal the simulator fills, is exactly the divergence these lanes exist to catch. Live counts both risk
+# rejections and venue refusals, as the replay's tradeSummary does. `expect_rejections` pins the count.
+rejections() { { grep -cE 'risk rejected |Order rejected: ' "$1" || true; } | head -n 1; }
 live_rejections="$(rejections "$out/daemon.log")"; replay_rejections=0
 # A backtest reports rejections in its JSON result, not as log lines.
 [ -f "$out/replay.log" ] && replay_rejections="$({ grep -m1 '^{"schema' "$out/replay.log" || echo '{}'; } | jq -r '.tradeSummary.rejections // 0')"

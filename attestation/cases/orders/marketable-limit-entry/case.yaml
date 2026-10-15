@@ -15,6 +15,7 @@ proves:
 - behaviour:limit-entry
 - behaviour:marketable-limit
 budget_seconds: 300
+expect_rejections: 1
 assertions:
 - flat-by-magic
 - no-pending-by-magic
