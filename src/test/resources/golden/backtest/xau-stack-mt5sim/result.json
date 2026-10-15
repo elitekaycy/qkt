@@ -15,9 +15,9 @@
     "largestWin": 0.0,
     "largestLoss": -119.95,
     "maxConsecutiveLosses": 32,
-    "sharpeRatio": -42.58531705,
+    "sharpeRatio": -44.6938665,
     "calmarRatio": -1.0,
-    "sortinoRatio": -41.18950216,
+    "sortinoRatio": -43.08112202,
     "turnover": 119.66793,
     "executionModel": "mt5_sim",
     "maxDailyDrawdown": 0.13602735,
@@ -154,9 +154,9 @@
         "largestWin": 0.0,
         "largestLoss": -119.95,
         "maxConsecutiveLosses": 32,
-        "sharpeRatio": -42.58531705,
+        "sharpeRatio": -44.6938665,
         "calmarRatio": -1.0,
-        "sortinoRatio": -41.18950216,
+        "sortinoRatio": -43.08112202,
         "turnover": 119.66793,
         "maxDailyDrawdown": 0.13602735,
         "annualizationFactor": 25045.71428571429,
@@ -251,7 +251,7 @@
             {
                 "timestamp": 1704165300000,
                 "iso": "2024-01-02T03:15:00Z",
-                "equity": 9649.3
+                "equity": 9724.93
             },
             {
                 "timestamp": 1704166200000,
@@ -266,7 +266,7 @@
             {
                 "timestamp": 1704168000000,
                 "iso": "2024-01-02T04:00:00Z",
-                "equity": 9287.74
+                "equity": 9328.07
             },
             {
                 "timestamp": 1704168900000,
@@ -676,7 +676,7 @@
             {
                 "timestamp": 1704241800000,
                 "iso": "2024-01-03T00:30:00Z",
-                "equity": 8814.36
+                "equity": 8887.0
             },
             {
                 "timestamp": 1704242700000,
@@ -691,7 +691,7 @@
             {
                 "timestamp": 1704244500000,
                 "iso": "2024-01-03T01:15:00Z",
-                "equity": 8423.33
+                "equity": 8462.56
             },
             {
                 "timestamp": 1704245400000,
@@ -1646,9 +1646,9 @@
             "largestWin": 0.0,
             "largestLoss": -119.95,
             "maxConsecutiveLosses": 32,
-            "sharpeRatio": -42.58531705,
+            "sharpeRatio": -44.6938665,
             "calmarRatio": -1.0,
-            "sortinoRatio": -41.18950216,
+            "sortinoRatio": -43.08112202,
             "turnover": 119.66793,
             "maxDailyDrawdown": 0.13602735,
             "annualizationFactor": 25045.71428571429,
@@ -1743,7 +1743,7 @@
                 {
                     "timestamp": 1704165300000,
                     "iso": "2024-01-02T03:15:00Z",
-                    "equity": 9649.3
+                    "equity": 9724.93
                 },
                 {
                     "timestamp": 1704166200000,
@@ -1758,7 +1758,7 @@
                 {
                     "timestamp": 1704168000000,
                     "iso": "2024-01-02T04:00:00Z",
-                    "equity": 9287.74
+                    "equity": 9328.07
                 },
                 {
                     "timestamp": 1704168900000,
@@ -2168,7 +2168,7 @@
                 {
                     "timestamp": 1704241800000,
                     "iso": "2024-01-03T00:30:00Z",
-                    "equity": 8814.36
+                    "equity": 8887.0
                 },
                 {
                     "timestamp": 1704242700000,
@@ -2183,7 +2183,7 @@
                 {
                     "timestamp": 1704244500000,
                     "iso": "2024-01-03T01:15:00Z",
-                    "equity": 8423.33
+                    "equity": 8462.56
                 },
                 {
                     "timestamp": 1704245400000,

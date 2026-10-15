@@ -115,7 +115,7 @@ class PaperBroker(
             -> {
                 if (sized.timeInForce == TimeInForce.IOC || sized.timeInForce == TimeInForce.FOK) {
                     fillImmediateOrCancel(sized)
-                } else {
+                } else if (!fillIfMarketable(sized)) {
                     working.add(sized)
                 }
             }
@@ -138,6 +138,19 @@ class PaperBroker(
         }
         fillFromTrigger(request, tick, from = null)
         if (working.removeAll { it.id == request.id }) publishImmediateCancel(request)
+    }
+
+    /**
+     * A limit already marketable when it arrives fills now at the current price, as a market order would,
+     * never at a later print: on bars that later print is the next synthetic extreme (a buy limit at 103
+     * placed at an open of 101 would otherwise fill at the bar's low).
+     */
+    private fun fillIfMarketable(request: OrderRequest): Boolean {
+        if (request !is OrderRequest.Limit) return false
+        val tick = priceProvider.lastPrice(request.symbol)?.let { Tick(request.symbol, it, clock.now()) }
+        if (tick == null || !checkTrigger(request, tick)) return false
+        fillFromTrigger(request, tick, from = null)
+        return true
     }
 
     private fun publishImmediateCancel(request: OrderRequest) {
@@ -374,29 +387,6 @@ class PaperBroker(
                 timestamp = clock.now(),
             ),
         )
-    }
-
-    // Side-aware like the venue: a BUY executes at the ask, a SELL at the bid, so each
-    // side's trigger compares against ITS execution price (mid only when the feed has
-    // no quote depth). See com.qkt.marketdata.buyExecPrice.
-    private fun checkTrigger(
-        req: OrderRequest,
-        tick: Tick,
-    ): Boolean {
-        val exec =
-            if (req.side == Side.BUY) tick.buyExecPrice() else tick.sellExecPrice()
-        return when (req) {
-            is OrderRequest.Limit ->
-                if (req.side == Side.BUY) exec <= req.limitPrice else exec >= req.limitPrice
-            is OrderRequest.Stop ->
-                if (req.side == Side.BUY) exec >= req.stopPrice else exec <= req.stopPrice
-            is OrderRequest.StopLimit ->
-                if (req.side == Side.BUY) exec >= req.stopPrice else exec <= req.stopPrice
-            is OrderRequest.IfTouched ->
-                if (req.side == Side.BUY) exec <= req.triggerPrice else exec >= req.triggerPrice
-            is OrderRequest.Market -> false
-            else -> false
-        }
     }
 
     private fun OrderRequest.withQuantity(quantity: BigDecimal): OrderRequest =

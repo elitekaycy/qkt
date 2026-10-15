@@ -15,9 +15,9 @@
     "largestWin": 99.152,
     "largestLoss": -68.159,
     "maxConsecutiveLosses": 23,
-    "sharpeRatio": -60.35690421,
+    "sharpeRatio": -60.73640239,
     "calmarRatio": -0.99173633,
-    "sortinoRatio": -64.87612075,
+    "sortinoRatio": -65.34529944,
     "turnover": 207.78824,
     "executionModel": "paper",
     "maxDailyDrawdown": 0.12652863,
@@ -154,9 +154,9 @@
         "largestWin": 99.152,
         "largestLoss": -68.159,
         "maxConsecutiveLosses": 23,
-        "sharpeRatio": -60.35690421,
+        "sharpeRatio": -60.73640239,
         "calmarRatio": -0.99173633,
-        "sortinoRatio": -64.87612075,
+        "sortinoRatio": -65.34529944,
         "turnover": 207.78824,
         "maxDailyDrawdown": 0.12652863,
         "annualizationFactor": 25045.71428571429,
@@ -691,7 +691,7 @@
             {
                 "timestamp": 1704244500000,
                 "iso": "2024-01-03T01:15:00Z",
-                "equity": 8995.025
+                "equity": 9022.479
             },
             {
                 "timestamp": 1704245400000,
@@ -1556,7 +1556,7 @@
             {
                 "timestamp": 1704400200000,
                 "iso": "2024-01-04T20:30:00Z",
-                "equity": 7054.032
+                "equity": 7073.697
             },
             {
                 "timestamp": 1704401100000,
@@ -1646,9 +1646,9 @@
             "largestWin": 99.152,
             "largestLoss": -68.159,
             "maxConsecutiveLosses": 23,
-            "sharpeRatio": -60.35690421,
+            "sharpeRatio": -60.73640239,
             "calmarRatio": -0.99173633,
-            "sortinoRatio": -64.87612075,
+            "sortinoRatio": -65.34529944,
             "turnover": 207.78824,
             "maxDailyDrawdown": 0.12652863,
             "annualizationFactor": 25045.71428571429,
@@ -2183,7 +2183,7 @@
                 {
                     "timestamp": 1704244500000,
                     "iso": "2024-01-03T01:15:00Z",
-                    "equity": 8995.025
+                    "equity": 9022.479
                 },
                 {
                     "timestamp": 1704245400000,
@@ -3048,7 +3048,7 @@
                 {
                     "timestamp": 1704400200000,
                     "iso": "2024-01-04T20:30:00Z",
-                    "equity": 7054.032
+                    "equity": 7073.697
                 },
                 {
                     "timestamp": 1704401100000,

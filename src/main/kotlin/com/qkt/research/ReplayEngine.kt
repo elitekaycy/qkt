@@ -94,16 +94,14 @@ class ReplayEngine(
      */
     private val regimeWeights: () -> Map<String, BigDecimal> = { emptyMap() },
     /**
-     * Symbols replayed from bars: their triggered Stop/Limit exits fill at their own price level
-     * rather than the synthetic bar extreme the triggering tick carries. See
-     * [com.qkt.broker.PaperBroker]. Empty on the tick path.
+     * Symbols replayed from bars: their triggered Stop/Limit exits fill at their own price level rather than the
+     * synthetic bar extreme the triggering tick carries. See [com.qkt.broker.PaperBroker]. Empty on the tick path.
      */
     private val barFills: com.qkt.backtest.BarFills = com.qkt.backtest.BarFills.NONE,
     /**
-     * Tick-resolved fills: when both are non-null, the `--bars` replay is driven by these bars but
-     * fills resolve on real ticks for any bar where one is possible (see [BarResolvedFeed]). The
-     * predicate is bound to this engine's own [OrderManager], so the result is byte-identical to a
-     * full-tick replay. Null on every other path (normal ticks, plain `--bars`, fan-out sweep).
+     * Tick-resolved fills: when both are non-null, the `--bars` replay is driven by these bars but fills resolve on
+     * real ticks for any bar where one is possible (see [BarResolvedFeed]). The predicate is bound to this engine's
+     * own [OrderManager], so the result is byte-identical to a full-tick replay. Null on every other path.
      */
     tickResolvedBars: Map<String, Sequence<com.qkt.marketdata.Candle>>? = null,
     tickSlicer: ((String, Long, Long) -> Sequence<Tick>)? = null,
@@ -136,6 +134,7 @@ class ReplayEngine(
     private val books = ReplayBooks(instruments, accountingConfig, markTimestamp = { currentTimestamp })
     private val positions = books.positions
     private val recorder = ReplayRecorder(initialTimestamp)
+    private val replayEndRule = ReplayEndRule { books.priceTracker.lastPrice(it) }
     private val pipeline: TradingPipeline
     private val financing: ReplayFinancing
     private val analytics: ReplayAnalytics
@@ -165,7 +164,7 @@ class ReplayEngine(
         val broker = replayBroker(executionConfig, bus, clock, books, barFills, calendar, brokerSymbols, allSymbols)
         val risk =
             ReplayRisk(
-                rules = rules,
+                rules = rules + replayEndRule,
                 haltRules = haltRules,
                 strategyIds = strategies.map { it.first },
                 books = books,
@@ -200,6 +199,7 @@ class ReplayEngine(
                 initialTimestamp = initialTimestamp,
                 instruments = instruments,
                 bookRiskController = bookRiskController,
+                candleWindowMs = candleWindow?.durationMs,
             )
 
         val holder = arrayOfNulls<TradingPipeline>(1)
@@ -310,16 +310,16 @@ class ReplayEngine(
     }
 
     /**
-     * Apply one already-decoded tick to this engine's pipeline. The fan-out sweep driver pulls each
-     * tick once from a single shared feed and pushes it into every per-combo engine via this method,
-     * so the decode happens once instead of once per combo. The internal feed loop calls it too, so
-     * pushed and pulled ticks take an identical path.
+     * Apply one already-decoded tick to this engine's pipeline. The fan-out sweep driver pulls each tick once from a
+     * single shared feed and pushes it into every per-combo engine via this method, so the decode happens once instead
+     * of once per combo. The internal feed loop calls it too, so pushed and pulled ticks take an identical path.
      */
     fun ingest(tick: Tick) {
         if (ticksIngested > 0L) accrueFinancing(tick.timestamp)
         currentTimestamp = tick.timestamp
         ticksIngested++
         clock.time = tick.timestamp
+        analytics.collector.beforeTick(tick.timestamp)
         pipeline.ingest(tick)
     }
 
@@ -367,6 +367,7 @@ class ReplayEngine(
         accrueFinancing(boundary)
         currentTimestamp = boundary
         clock.time = boundary
+        replayEndRule.ended = true
         pipeline.flushReplayCandles(boundary)
     }
 
@@ -380,9 +381,8 @@ class ReplayEngine(
     fun openPositions(): Map<String, Position> = positions.allPositions().filterValues { it.quantity.signum() != 0 }
 
     /**
-     * Sign of the net position on [symbol]: -1 short, 1 long, 0 flat/unknown. Cheap (one map
-     * lookup) — [com.qkt.marketdata.source.BarTickFeed] consults it once per synthesized bar to
-     * emit the open position's adverse extreme first.
+     * Sign of the net position on [symbol]: -1 short, 1 long, 0 flat/unknown. Cheap (one map lookup):
+     * [com.qkt.marketdata.source.BarTickFeed] consults it once per bar to emit the position's adverse extreme first.
      */
     fun positionSign(symbol: String): Int = positions.positionFor(symbol)?.quantity?.signum() ?: 0
 
