@@ -139,7 +139,7 @@ class ReportBuilderTest {
     }
 
     @Test
-    fun `entry costs do not become losing outcomes or Monte Carlo samples`() {
+    fun `entry costs fold into the round trip and never become outcomes of their own`() {
         val entries =
             (0 until 30).map { index ->
                 tradeRecord("-1", ts = index.toLong(), reducedExposure = false)
@@ -153,10 +153,10 @@ class ReportBuilderTest {
                 annualizationFactor = BigDecimal("525960"),
             )
 
-        assertThat(report.winRate).isEqualByComparingTo(BigDecimal.ONE)
-        assertThat(report.profitFactor).isNull()
-        assertThat(report.avgLoss).isEqualByComparingTo(Money.ZERO)
-        assertThat(report.maxConsecutiveLosses).isZero()
+        // One round trip: +10 on the exit less the 30 entry fills' costs is a -20 loser, not a +10 winner.
+        assertThat(report.winRate).isEqualByComparingTo(Money.ZERO)
+        assertThat(report.avgLoss).isEqualByComparingTo(BigDecimal("-20"))
+        assertThat(report.maxConsecutiveLosses).isEqualTo(1)
         assertThat(report.monteCarlo).isNull()
     }
 

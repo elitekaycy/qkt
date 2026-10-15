@@ -11,6 +11,9 @@ import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 
+/** Why a signal on the replay's last bar is refused; see com.qkt.research.ReplayEndRule. */
+private const val REPLAY_ENDED = "the replay ended before a later price"
+
 /**
  * A stop or target distance that is not positive would place the level on the wrong side of entry
  * (a BUY whose stop sits above its fill is stopped out at once). As a literal it is a compile error;
@@ -53,7 +56,8 @@ class UnusableExitDistanceBacktestTest {
 
         assertThat(result.trades).isEmpty()
         assertThat(result.rejections).isNotEmpty
-        assertThat(result.rejections.map { it.reason }).allMatch { it.startsWith("venue: invalid stops") }
+        assertThat(result.rejections.map { it.reason }.filterNot { it.startsWith(REPLAY_ENDED) })
+            .allMatch { it.startsWith("venue: invalid stops") }
     }
 
     private fun run(order: String): BacktestResult {
