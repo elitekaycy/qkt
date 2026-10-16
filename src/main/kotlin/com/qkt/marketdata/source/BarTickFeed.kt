@@ -46,20 +46,30 @@ fun candleToTicks(candle: Candle): List<Tick> {
  * intra-bar High/Low order is still unknowable from OHLC alone. Timestamps keep the same four
  * strictly increasing slots regardless of ordering, so bars re-aggregate exactly (first=open,
  * min=low, max=high, last=close, volume on close).
+ *
+ * When the bars end before the replay does, [tail] supplies the real ticks recorded after the last bar's
+ * end (the store's ticks for a bar not yet complete): a signal on the last complete bar then fills at the
+ * price the venue really printed next, as it did live, instead of finding no later price at all.
  */
 class BarTickFeed(
     bars: Sequence<Candle>,
     private val positionSign: (symbol: String) -> Int = { 0 },
+    private val tail: (afterMs: Long) -> Sequence<Tick> = { emptySequence() },
 ) : TickFeed {
     private val barIter = bars.iterator()
     private var current: Candle? = null
     private var emitted = 0
     private var highFirst = false
+    private var tailTicks: Iterator<Tick>? = null
 
     override fun next(): Tick? {
+        tailTicks?.let { return if (it.hasNext()) it.next() else null }
         var bar = current
         if (bar == null || emitted == 4) {
-            if (!barIter.hasNext()) return null
+            if (!barIter.hasNext()) {
+                val after = bar?.endTime ?: return null
+                return tail(after).iterator().also { tailTicks = it }.let { if (it.hasNext()) it.next() else null }
+            }
             bar = barIter.next()
             current = bar
             emitted = 0
