@@ -150,19 +150,31 @@ builds its own from 1h or finer.
 
 ## Check your data
 
+Give `verify` the name your strategy uses: a bare symbol checks ticks, `SOURCE:SYMBOL` checks bars.
+
 ```bash
-qkt data verify EURUSD
+qkt data verify EURUSD             # ticks
+qkt data verify BINANCE:BTCUSDT    # bars (every timeframe stored; --tf 1m for one)
 ```
 
 ```text
-  2026-08-24  ticks=53885  maxGap=4m  ok
-  2026-08-28  ticks=59925  maxGap=1m  ok
-  2026-08-31  MISSING (1 weekday(s) with no file between stored days: a hole or a holiday)
+qkt data verify: BINANCE:BTCUSDT 1m .csv bars, read by backtests (2 day files) under ~/.qkt/data/bars/BINANCE/BTCUSDT/1m
+  2026-10-13  bars=1440  maxGap=1m  ok  imported binance-klines
+  2026-10-14  bars=1440  maxGap=1m  ok  imported binance-klines
+qkt data verify: done — 2 days, 2880 bars, 0 flagged
 ```
 
-`verify` checks tick days: their count, the longest gap, and weekdays with no data. Imported bars are checked by the
-import report itself; to measure them against your broker, `qkt data compare` them with bars you `qkt fetch`. A backtest
-also checks coverage before it runs, and refuses to run on missing days unless you pass `--allow-incomplete`.
+Each day shows how many ticks or bars it holds and the longest gap. A day is flagged when its file can't be read, its
+bars are out of order or off the timeframe's grid, or a price is impossible (a high below the close, say). Weekdays
+with no file between stored days are listed as `MISSING`, a hole or a holiday:
+
+```text
+  2026-04-16 … 2026-09-07  MISSING (103 weekday(s) with no file between stored days: a hole or a holiday)
+```
+
+The exit code is non-zero when anything is flagged. To measure your data against your broker's, `qkt data compare` it
+with bars you `qkt fetch`. A backtest also checks coverage before it runs, and refuses to run on missing days unless
+you pass `--allow-incomplete`.
 
 ## How the cache works
 
