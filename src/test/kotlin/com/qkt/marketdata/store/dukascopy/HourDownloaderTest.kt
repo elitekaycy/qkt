@@ -166,4 +166,26 @@ class HourDownloaderTest {
         primary.shutdown()
         fallback.shutdown()
     }
+
+    @Test
+    fun `a rate-limited download says it is waiting instead of going silent`() {
+        val server = MockWebServer()
+        server.enqueue(MockResponse().setResponseCode(429))
+        server.enqueue(MockResponse().setBody(Buffer().write(byteArrayOf(1))))
+        server.start()
+
+        val notices = mutableListOf<String>()
+        val dl =
+            OkHttpHourDownloader(
+                baseUrl = server.url("/").toString().removeSuffix("/"),
+                sleeper = {},
+                notice = { notices += it },
+            )
+        dl.download("EURUSD", LocalDate.of(2026, 10, 13), hour = 7)
+
+        assertThat(notices).containsExactly(
+            "qkt: dukascopy did not answer EURUSD/2026/09/13/07h_ticks.bi5 (HTTP 429); retrying in 1s (attempt 2 of 5)",
+        )
+        server.shutdown()
+    }
 }
