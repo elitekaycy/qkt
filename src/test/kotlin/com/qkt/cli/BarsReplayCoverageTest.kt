@@ -100,6 +100,6 @@ class BarsReplayCoverageTest : BarsReplayFixture() {
         val (code, err) = runStrict(dir, dataRoot)
 
         assertThat(code).isEqualTo(ExitCodes.USER_ERROR)
-        assertThat(err).contains("incomplete built bars for BACKTEST:XAUUSD: 1/3 trading days")
+        assertThat(err).contains("incomplete bars for BACKTEST:XAUUSD: 1/3 trading days")
     }
 }

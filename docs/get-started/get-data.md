@@ -133,7 +133,8 @@ The prefix on a strategy's symbol decides where qkt looks:
 | `BACKTEST:EURUSD` | ticks in `symbols/EURUSD/` | the backtest itself (Dukascopy), or an imported tick file |
 | `EXNESS:XAUUSD`, `BINANCE:BTCUSDT`, any `SOURCE:SYMBOL` | bars in `bars/SOURCE/SYMBOL/`; any day missing there is built from the ticks in `symbols/SYMBOL/` | `qkt fetch`, `qkt data import` |
 
-Bars you import or fetch need no special flag: `qkt backtest` uses them as they are.
+Bars you import or fetch need no special flag: `qkt backtest` uses them as they are, and `qkt backtest --bars` reads
+them too (each day's built bars first, else that day's imported ones).
 
 ## Timeframes: bars from bars
 
