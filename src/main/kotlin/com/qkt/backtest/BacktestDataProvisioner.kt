@@ -5,6 +5,7 @@ import com.qkt.marketdata.source.MarketRequest
 import com.qkt.marketdata.store.DayCompleteness
 import com.qkt.marketdata.store.DefaultDataStore
 import com.qkt.marketdata.store.TickCompletenessValidator
+import com.qkt.marketdata.store.dayList
 import java.time.LocalDate
 import java.time.ZoneOffset
 
@@ -28,14 +29,37 @@ class IncompleteDataException(
  */
 class BacktestDataProvisioner(
     private val store: DefaultDataStore,
+    /** Where status lines go, e.g. `qkt: fetching EURUSD ticks for 2024-03-05 (2 of 3)`; stderr by default. */
+    private val progress: (String) -> Unit = { System.err.println(it) },
 ) {
-    /** A fetch that fails after its retries is incomplete data, reported like any other hole. */
+    /**
+     * Fetches [symbol]'s days in `[from, to]` that are not on disk, one at a time, announcing each: a first run
+     * can take minutes, and a day is committed to the store as soon as it lands, so an interrupted fetch keeps
+     * the days it finished. A fetch that fails after its retries is incomplete data, reported like a hole.
+     */
     private fun prefetch(
-        request: MarketRequest,
         symbol: String,
+        from: LocalDate,
+        to: LocalDate,
     ) {
+        val stored =
+            store
+                .manifest(symbol)
+                .ranges
+                .flatMap { dayList(it) }
+                .toSet()
+        val missing =
+            generateSequence(from) {
+                it.plusDays(1)
+            }.takeWhile { it <= to }.filter { it.toString() !in stored }.toList()
         try {
-            store.prefetch(request)
+            missing.forEachIndexed { i, day ->
+                progress("qkt: fetching $symbol ticks for $day (${i + 1} of ${missing.size})")
+                val start = day.atStartOfDay(ZoneOffset.UTC).toInstant()
+                store.prefetch(
+                    MarketRequest(symbols = listOf(symbol), from = start, to = start.plusSeconds(DAY_SECONDS)),
+                )
+            }
         } catch (e: java.io.IOException) {
             throw IncompleteDataException("could not fetch ticks for $symbol: ${e.message}; rerun later")
         } catch (e: IllegalStateException) {
@@ -53,12 +77,8 @@ class BacktestDataProvisioner(
         /** One-line bars suggestion for the missing-data error (e.g. "Bars exist ... rerun with --bars"); null omits it. */
         barsLineFor: (ProvisionStream) -> String? = { null },
     ) {
-        val fromInstant = from.atStartOfDay(ZoneOffset.UTC).toInstant()
-        val toInstant = to.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant()
-
         for (s in streams.distinctBy { it.bareSymbol }) {
-            val request = MarketRequest(symbols = listOf(s.bareSymbol), from = fromInstant, to = toInstant)
-            if (fetchEnabled) prefetch(request, s.bareSymbol)
+            if (fetchEnabled) prefetch(s.bareSymbol, from, to)
 
             var report = TickCompletenessValidator.validate(store, s.bareSymbol, from, to, calendarFor(s.bareSymbol))
 
@@ -67,15 +87,15 @@ class BacktestDataProvisioner(
                 // A prior interrupted fetch can leave a day partial. Delete + refetch those once; an imported
                 // day is the user's own data and is never replaced by a fetch, so its holes stand.
                 for (hole in report.holes) if (!imported.contains(hole.day)) store.dropDay(s.bareSymbol, hole.day)
-                prefetch(request, s.bareSymbol)
+                prefetch(s.bareSymbol, from, to)
                 report = TickCompletenessValidator.validate(store, s.bareSymbol, from, to, calendarFor(s.bareSymbol))
             }
 
             val requested = report.days.count { it.status != DayCompleteness.Status.NON_TRADING }
             val covered = report.days.count { it.status == DayCompleteness.Status.COMPLETE }
-            System.err.println("qkt: tick coverage ${report.symbol} $covered/$requested trading days")
+            progress("qkt: tick coverage ${report.symbol} $covered/$requested trading days")
             val stored = report.days.filter { store.dayFile(s.bareSymbol, it.day) != null }.map { it.day }
-            imported.mixLine(s.bareSymbol, stored)?.let { System.err.println("qkt: $it") }
+            imported.mixLine(s.bareSymbol, stored)?.let { progress("qkt: $it") }
 
             if (report.hasHoles && !allowIncomplete) {
                 throw IncompleteDataException(
@@ -92,9 +112,7 @@ class BacktestDataProvisioner(
                 )
             }
             if (report.hasHoles) {
-                System.err.println(
-                    "qkt: WARNING — running with incomplete data: ${collapseRanges(report.holes.map { it.day })}",
-                )
+                progress("qkt: WARNING — running with incomplete data: ${collapseRanges(report.holes.map { it.day })}")
             }
         }
     }
@@ -164,5 +182,9 @@ class BacktestDataProvisioner(
         val rangeWord = if (ranges.size == 1) "1 range" else "${ranges.size} ranges"
         val dayWord = if (sorted.size == 1) "1 day" else "${sorted.size} days"
         return "$text ($rangeWord, $dayWord)"
+    }
+
+    private companion object {
+        const val DAY_SECONDS = 86_400L
     }
 }
