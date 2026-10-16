@@ -24,6 +24,7 @@ hide:
         <span>Run your first strategy in 5 min</span>
         <span class="qkt-btn__arrow">→</span>
       </a>
+      <a class="qkt-btn" href="get-started/get-data/">Get data</a>
       <a class="qkt-btn" href="how-to/ema-crossover/">See a worked example</a>
       <a class="qkt-btn" href="concepts/broker-integration/">Which brokers work?</a>
     </div>
@@ -103,7 +104,7 @@ hide:
 <div class="qkt-step">
 <div class="qkt-step__num">2</div>
 <h3>Test it on real data</h3>
-<p>Run the same file against years of historical market data — Bitcoin, EURUSD, gold, stocks. qkt reports how the strategy would have performed: how many trades, win rate, profit, the deepest drawdown. You'll know whether the idea is worth more time before you risk anything.</p>
+<p>Run the same file against years of historical market data — Bitcoin, EURUSD, gold, stocks. qkt reports how the strategy would have performed: how many trades, win rate, profit, the deepest drawdown. You'll know whether the idea is worth more time before you risk anything. Free FX and gold data downloads itself; your own CSVs, MT5 exports or broker history come in with one command: <a href="get-started/get-data/">get data</a>.</p>
 </div>
 <div class="qkt-step">
 <div class="qkt-step__num">3</div>

@@ -78,7 +78,8 @@ qkt parse momentum.qkt
 qkt backtest momentum.qkt --from 2026-08-01 --to 2026-09-01
 ```
 
-Missing days are downloaded once from Dukascopy and cached.
+Missing days are downloaded once from Dukascopy and cached in `~/.qkt/data`. Have your own CSVs, MT5 exports or a
+broker account? [Get data](docs/get-started/get-data.md) shows how to bring them in.
 
 **4. Read the result**
 
@@ -98,7 +99,7 @@ When you are ready to go further, `qkt run momentum.qkt` paper-trades the same f
 | Learn the language | [DSL grammar](docs/reference/dsl-grammar.md) · [Indicators](docs/reference/dsl/indicators.md) |
 | See more strategies | [Examples](docs/examples/index.md) |
 | Look up a command | [CLI reference](docs/reference/cli-commands.md) |
-| Bring my own data | [Backtest data](docs/how-to/backtest-data.md) |
+| Bring my own data | [Get data](docs/get-started/get-data.md) · [Import any source](docs/how-to/import-data.md) |
 | Trade CFDs, futures or options | [Instruments](docs/instruments/cfds.md) · [Deploy MT5](docs/get-started/deploy-mt5.md) |
 | Compare with other tools | [Why qkt](docs/concepts/why-qkt.md) |
 | Understand the design | [Architecture](docs/concepts/architecture.md) · [Determinism](docs/concepts/determinism.md) |
