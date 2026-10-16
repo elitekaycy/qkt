@@ -45,8 +45,8 @@ Flags:
 
 Run during liquid market hours so both feeds are active. Avoid:
 
-- The 22:00–23:00 UTC daily MT5 server break.
-- Friday 22:00 UTC → Sunday 22:00 UTC (XAUUSD venue closed).
+- The daily MT5 server break around 17:00 New York (21:00 UTC in summer, 22:00 UTC in winter).
+- Friday 17:00 → Sunday 17:00 New York (XAUUSD venue closed).
 - The 60 s either side of high-impact news, which produces drift that
   reflects the news, not the feeds.
 
