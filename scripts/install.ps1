@@ -7,7 +7,7 @@
 #   irm https://raw.githubusercontent.com/elitekaycy/qkt/main/scripts/install.ps1 | iex
 #
 #   # Pin a version:
-#   $env:QKT_VERSION='v0.56.2'; irm .../install.ps1 | iex
+#   $env:QKT_VERSION='v0.57.0'; irm .../install.ps1 | iex
 #
 #   # Install from a local zip instead of downloading (used by CI smoke):
 #   $env:QKT_ARCHIVE='C:\path\qkt-0.29.14-windows-x64.zip'; irm .../install.ps1 | iex
