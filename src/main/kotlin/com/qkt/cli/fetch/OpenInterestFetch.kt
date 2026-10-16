@@ -1,12 +1,12 @@
 package com.qkt.cli.fetch
 
 import com.qkt.cli.Args
+import com.qkt.cli.CliDataRoot
 import com.qkt.cli.Config
 import com.qkt.cli.ExitCodes
 import com.qkt.cli.openAccounts
 import com.qkt.marketdata.openinterest.OpenInterestSource
 import com.qkt.marketdata.openinterest.OpenInterestStore
-import com.qkt.marketdata.store.DataRoot
 import com.qkt.marketdata.store.binance.BinanceOpenInterest
 import java.io.IOException
 import java.nio.file.Path
@@ -51,7 +51,7 @@ internal object OpenInterestFetch {
             } catch (e: RuntimeException) {
                 return failed(target, e)
             }
-        val store = OpenInterestStore(DataRoot.forDataRoot(args.option("data-root")))
+        val store = OpenInterestStore(CliDataRoot.of(args))
         val held = store.merge(target, figures)
         val path = store.path(target)
         println(

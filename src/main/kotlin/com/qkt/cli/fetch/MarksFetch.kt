@@ -2,13 +2,13 @@ package com.qkt.cli.fetch
 
 import com.qkt.candles.TimeWindow
 import com.qkt.cli.Args
+import com.qkt.cli.CliDataRoot
 import com.qkt.cli.Config
 import com.qkt.cli.ExitCodes
 import com.qkt.cli.openAccounts
 import com.qkt.common.Clock
 import com.qkt.marketdata.marks.MarkHistorySource
 import com.qkt.marketdata.marks.MarkStore
-import com.qkt.marketdata.store.DataRoot
 import java.io.IOException
 import java.nio.file.Path
 import java.time.LocalDate
@@ -44,7 +44,7 @@ internal object MarksFetch {
                 )
                 return ExitCodes.USER_ERROR
             }
-        val store = MarkStore(DataRoot.forDataRoot(args.option("data-root")))
+        val store = MarkStore(CliDataRoot.of(args))
         val over = generateSequence(from) { it.plusDays(1) }.takeWhile { !it.isAfter(to) && endMs(it) <= clock.now() }
         var stored = 0
         var samples = 0

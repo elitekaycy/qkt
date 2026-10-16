@@ -1,9 +1,9 @@
 package com.qkt.cli.data
 
 import com.qkt.cli.Args
+import com.qkt.cli.CliDataRoot
 import com.qkt.cli.ExitCodes
 import com.qkt.marketdata.ingest.store.ImportProvenance
-import com.qkt.marketdata.store.DataRoot
 import com.qkt.marketdata.store.DatasetSnapshots
 import com.qkt.marketdata.store.DayFileIntegrity
 import java.nio.file.Files
@@ -27,7 +27,7 @@ internal fun dataVerify(args: Args): Int {
             )
             return ExitCodes.ARG_ERROR
         }
-    val root = DataRoot.forDataRoot(args.option("data-root"))
+    val root = CliDataRoot.of(args)
     if (':' in symbol) return dataVerifyBars(root, symbol, args.option("tf"))
     val symDir = root.resolve("symbols").resolve(symbol)
     if (!Files.isDirectory(symDir)) {

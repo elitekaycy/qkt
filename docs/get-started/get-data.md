@@ -27,10 +27,19 @@ To use a different folder:
 |---|---|---|
 | `--data-root <dir>` | that one command | `qkt backtest s.qkt --data-root ./data` |
 | `QKT_DATA_HOME` | every command in that shell | `export QKT_DATA_HOME=/mnt/ssd/qkt-data` (add it to `~/.bashrc` to keep it) |
+| `data_root:` in `qkt.config.yaml` | every command run in that project | `data_root: ./data` (relative to the config file) |
 | nothing | everything | `~/.qkt/data` |
 
-`--data-root` beats `QKT_DATA_HOME`, which beats the default. The `data_root:` key in `qkt.config.yaml` does **not**
-move this folder: backtests, `qkt fetch` and `qkt data` ignore it. Use the flag or the variable.
+The first one set wins, in that order. Every command prints the folder it uses and why, e.g.
+`qkt: data root /home/me/proj/data (from data_root in /home/me/proj/qkt.config.yaml)`.
+
+- **Per project:** a `data_root` in the project's `qkt.config.yaml` is found from the project folder or any folder
+  inside it, and a relative path means the project's own folder, wherever you run the command from. Projects made
+  with `qkt create template` already have it: `data_root: ${QKT_DATA_HOME:-./data}` means `data/` next to the
+  config, and `/data` inside their Docker container.
+- **A folder that isn't there:** an absolute `data_root` that doesn't exist (for example `/data` copied from a
+  Docker setup and run on your machine) is refused, never swapped for another folder: pass `--data-root` or fix the
+  path. A missing relative folder is created when data is first written.
 
 ## 1. No data yet: let the backtest fetch it
 
@@ -124,7 +133,8 @@ The prefix on a strategy's symbol decides where qkt looks:
 | `BACKTEST:EURUSD` | ticks in `symbols/EURUSD/` | the backtest itself (Dukascopy), or an imported tick file |
 | `EXNESS:XAUUSD`, `BINANCE:BTCUSDT`, any `SOURCE:SYMBOL` | bars in `bars/SOURCE/SYMBOL/`; any day missing there is built from the ticks in `symbols/SYMBOL/` | `qkt fetch`, `qkt data import` |
 
-Bars you import or fetch need no special flag: `qkt backtest` uses them as they are.
+Bars you import or fetch need no special flag: `qkt backtest` uses them as they are, and `qkt backtest --bars` reads
+them too (each day's built bars first, else that day's imported ones).
 
 ## Timeframes: bars from bars
 

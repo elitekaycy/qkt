@@ -2,6 +2,7 @@ package com.qkt.cli.fetch
 
 import com.qkt.candles.TimeWindow
 import com.qkt.cli.Args
+import com.qkt.cli.CliDataRoot
 import com.qkt.cli.ExitCodes
 import com.qkt.common.TimeRange
 import com.qkt.derivatives.futures.RollHistoryBuilder
@@ -12,7 +13,6 @@ import com.qkt.instrument.ContractCatalogStore
 import com.qkt.instrument.FuturesRootsFile
 import com.qkt.instrument.RollHistory
 import com.qkt.instrument.RollHistoryStore
-import com.qkt.marketdata.store.DataRoot
 import com.qkt.marketdata.store.LocalBarStore
 import java.io.IOException
 import java.nio.file.Path
@@ -46,7 +46,7 @@ internal object RollsFetch {
                 System.err.println("qkt: invalid --tf '${args.option("tf")}': ${e.message}")
                 return ExitCodes.ARG_ERROR
             }
-        val dataRoot = DataRoot.forDataRoot(args.option("data-root"))
+        val dataRoot = CliDataRoot.of(args)
         val store = LocalBarStore(root = dataRoot)
         val fetcher = lazy { buildFetcher(broker, args.option("config")).also { if (it == null) noSource(broker) } }
         return run(target, dataRoot, args.option("instruments")?.let(Path::of), timeframe) { contract, day ->
