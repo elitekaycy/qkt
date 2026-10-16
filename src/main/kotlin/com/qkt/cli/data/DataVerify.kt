@@ -12,20 +12,23 @@ import java.time.LocalDate
 
 /**
  * `qkt data verify <symbol>` reports each cached tick day's count and largest gap, flagging empty,
- * corrupt or gappy days and the days with no file inside the stored span ([MissingDays]); `--snapshot
- * <file>` instead verifies a dataset snapshot. Non-zero when flagged.
+ * corrupt or gappy days and the days with no file inside the stored span ([MissingDays]); a
+ * `SOURCE:SYMBOL` name checks that series' stored bars instead ([dataVerifyBars], `--tf` for one
+ * timeframe); `--snapshot <file>` verifies a dataset snapshot. Non-zero when flagged.
  */
 internal fun dataVerify(args: Args): Int {
     args.option("snapshot")?.let { return verifySnapshot(args, Path.of(it)) }
     val symbol =
         args.positional(1) ?: run {
             System.err.println(
-                "qkt: missing symbol. usage: qkt data verify <symbol> [--data-root <dir>] or " +
+                "qkt: missing symbol. usage: qkt data verify <symbol|SOURCE:SYMBOL> [--tf <tf>] " +
+                    "[--data-root <dir>] or " +
                     "qkt data verify --snapshot <file> [--strict]",
             )
             return ExitCodes.ARG_ERROR
         }
     val root = DataRoot.forDataRoot(args.option("data-root"))
+    if (':' in symbol) return dataVerifyBars(root, symbol, args.option("tf"))
     val symDir = root.resolve("symbols").resolve(symbol)
     if (!Files.isDirectory(symDir)) {
         System.err.println("qkt: no cached tick data for '$symbol' at $symDir")
