@@ -101,8 +101,10 @@ class BacktestReportWindowsTest : BarsReplayFixture() {
 
         val daily = Files.readAllLines(dir.resolve("report/equity_daily.csv"))
         assertThat(daily.first()).isEqualTo("date,open,high,low,close")
-        // Three trading days plus the bar that closes exactly at --to, stamped on the fourth.
-        assertThat(daily.drop(1)).hasSize(4)
+        // Three trading days: the bar closing exactly at --to closes the third day, not a fourth the run never covered.
+        assertThat(
+            daily.drop(1).map { it.substringBefore(',') },
+        ).containsExactly("2024-01-02", "2024-01-03", "2024-01-04")
         val lastClose = daily.last().split(",")[4]
         assertThat(lastClose).isEqualTo(all.getValue("equityEnd").jsonPrimitive.content)
         val firstOpen = java.math.BigDecimal(daily[1].split(",")[1])
