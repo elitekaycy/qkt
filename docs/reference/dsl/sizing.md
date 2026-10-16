@@ -217,6 +217,12 @@ See [STACK](stack.md).
 - **Sizing is required.** Either on the action or via `DEFAULTS { SIZING = ... }`. Both missing = compile error (`BUY/SELL requires SIZING`).
 - **Percent-of-equity ignores stop distance.** A 5% position with a tight stop loses very little; with a wide stop loses a lot. Use the manual workaround above to factor in the stop.
 - **Broker volume bounds.** MT5 brokers enforce minimum/maximum lots (`volumeMin`, `volumeMax`) and a step (`volumeStep`). A computed size outside the bounds rejects after downward step quantization.
+- **Risk sizing on a small account risks less than asked, never more.** The lot count is rounded
+  *down* to `volumeStep`, so the real risk is at or below the requested fraction, and an order
+  that rounds below `volumeMin` is rejected (counted in the report's rejections), never sent at
+  the minimum. On a 10k XAUUSD account with 0.01-lot steps, "0.5% risk" measured 0.27%–0.52% real
+  risk per trade (average 0.43%); at 100k it was 0.48%–0.52%. Results therefore do not scale
+  linearly with balance on small accounts: compare strategies at the balance you will trade.
 - **Whole-number lots on some venues.** Futures often require integer contracts. A computed size of `0.327` will round (typically down) or reject. Check your venue's specs.
 - **Sizing units are venue-side.** A "size of 0.1" means 0.1 of the venue's unit (lots, contracts, base currency) — not 0.1 USD or 0.1% of anything.
 - **Computed entry sizing is set once.** It does not track the expression after QKT emits the order. Use `RESIZE` for deliberate per-bar rebalancing.

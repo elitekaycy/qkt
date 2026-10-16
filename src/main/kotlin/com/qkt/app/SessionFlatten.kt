@@ -81,7 +81,7 @@ internal class SessionFlatten(
                     }
                     continue
                 }
-                pipeline.orderManager.closePendingForSymbol(ticket.symbol)
+                pipeline.orderManager.closePendingForSymbol(ticket.symbol, strategyId)
                 val leg = strategyPositions.legBookFor(strategyId, ticket.symbol)?.legByTicket(ticket.ticket)
                 val request =
                     if (leg != null) {
@@ -104,7 +104,7 @@ internal class SessionFlatten(
                 )
                 continue
             }
-            pipeline.orderManager.closePendingForSymbol(leg.symbol)
+            pipeline.orderManager.closePendingForSymbol(leg.symbol, strategyId)
             bus.publish(com.qkt.events.OrderEvent(LegFlattener.closeLeg(strategyId, leg, ids.next(), now)))
         }
         return null
@@ -144,7 +144,7 @@ internal class SessionFlatten(
                 unpinned += "${leg.legId} (${leg.symbol})"
                 continue
             }
-            pipeline.orderManager.closePendingForSymbol(leg.symbol)
+            pipeline.orderManager.closePendingForSymbol(leg.symbol, strategyId)
             bus.publish(com.qkt.events.OrderEvent(LegFlattener.closeLeg(strategyId, leg, ids.next(), now)))
             closed += ticket
         }

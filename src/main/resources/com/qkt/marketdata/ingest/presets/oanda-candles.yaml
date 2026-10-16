@@ -1,0 +1,20 @@
+id: "oanda-candles"
+description: "OANDA v20 candles JSON ({candles: [{time, mid: {o,h,l,c}, volume, complete}]}); only complete candles, mid prices"
+kind: "bars"
+format: "json"
+rows: ["candles"]
+where:
+  complete: "true"
+time: ["time"]
+timeFormat: "iso"
+basis: "mid"
+fields:
+  open: "mid.o"
+  high: "mid.h"
+  low: "mid.l"
+  close: "mid.c"
+  volume: "volume"
+volume: "tick count"
+match:
+  header: ["time", "mid", "volume", "complete"]
+  json: true

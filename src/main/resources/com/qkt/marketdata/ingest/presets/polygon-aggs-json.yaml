@@ -1,0 +1,18 @@
+id: "polygon-aggs-json"
+description: "Polygon / Massive REST aggregates JSON ({results: [{t, o, h, l, c, v}]}), t in epoch ms at the bar's start"
+kind: "bars"
+format: "json"
+rows: ["results"]
+time: ["t"]
+timeFormat: "epoch:ms"
+basis: "last"
+fields:
+  open: "o"
+  high: "h"
+  low: "l"
+  close: "c"
+  volume: "v"
+volume: "shares"
+match:
+  header: ["t", "o", "h", "l", "c"]
+  json: true

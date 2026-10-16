@@ -1,0 +1,12 @@
+id: "binance-metrics"
+description: "Binance public-data USD-M metrics (5-minute open interest); a figure is known 10 minutes after create_time"
+kind: "open-interest"
+time: ["create_time"]
+timeFormat: "yyyy-MM-dd HH:mm:ss"
+clock: "UTC"
+availableLag: "10m"
+fields:
+  openInterest: "sum_open_interest"
+volume: "open interest in contracts (base asset)"
+match:
+  header: ["create_time", "symbol", "sum_open_interest", "sum_open_interest_value"]

@@ -1,0 +1,17 @@
+id: "databento-mbp1"
+description: "Databento DBN top of book (mbp-1, tbbo), read natively: best bid and ask after each event at ts_recv (UTC ns); trades also carry price and size"
+kind: "ticks"
+time: ["ts_recv"]
+timeFormat: "epoch:ns"
+clock: "UTC"
+fields:
+  bid: "bid"
+  ask: "ask"
+  bidVolume: "bid_size"
+  askVolume: "ask_size"
+  price: "price?"
+  volume: "size?"
+volume: "trade size on trades, empty on book updates"
+match:
+  header: ["ts_recv", "bid", "ask", "bid_size", "ask_size", "price", "size"]
+  filename: "\\.dbn$"

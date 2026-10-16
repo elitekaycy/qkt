@@ -1,0 +1,17 @@
+id: "ccxt-ohlcv"
+description: "ccxt fetch_ohlcv JSON dump: [[ms, open, high, low, close, volume], ...]"
+kind: "bars"
+format: "json"
+time: ["[0]"]
+timeFormat: "epoch:ms"
+basis: "last"
+fields:
+  open: "[1]"
+  high: "[2]"
+  low: "[3]"
+  close: "[4]"
+  volume: "[5]"
+volume: "base-asset volume (usually)"
+match:
+  columns: 6
+  json: true

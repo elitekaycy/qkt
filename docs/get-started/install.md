@@ -3,7 +3,7 @@
 Pick one. All of them give you the same `qkt` command; check with `qkt --version`.
 
 The GitHub release is the canonical stable distribution. A versioned image such as
-`ghcr.io/elitekaycy/qkt:v0.56.1` is built from the same tag; `:latest`, `:dev` and `:edge` are moving
+`ghcr.io/elitekaycy/qkt:v0.56.2` is built from the same tag; `:latest`, `:dev` and `:edge` are moving
 main, authoring and testing channels, not release pins.
 
 ## Linux (x64): self-contained binary

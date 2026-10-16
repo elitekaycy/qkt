@@ -1,0 +1,9 @@
+id: "qkt-cot"
+description: "COT report table (report_date, release_date, visible_session, ...): each value usable from its visible session; pick the column with --map value=<column>"
+kind: "series"
+time: ["report_date"]
+timeFormat: "iso"
+available: "visible_session"
+availableFormat: "iso"
+match:
+  header: ["report_date", "release_date", "visible_session"]

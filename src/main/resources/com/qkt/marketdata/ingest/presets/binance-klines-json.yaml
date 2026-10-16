@@ -1,0 +1,17 @@
+id: "binance-klines-json"
+description: "Binance REST /klines JSON: arrays of 12 with prices as strings, epoch ms"
+kind: "bars"
+format: "json"
+time: ["[0]"]
+timeFormat: "epoch"
+basis: "last"
+fields:
+  open: "[1]"
+  high: "[2]"
+  low: "[3]"
+  close: "[4]"
+  volume: "[5]"
+volume: "base-asset volume"
+match:
+  columns: 12
+  json: true

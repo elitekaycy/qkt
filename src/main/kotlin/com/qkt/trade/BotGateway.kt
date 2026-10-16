@@ -185,10 +185,7 @@ class BotGateway(
             val profile =
                 if (brokerName != null) {
                     profiles.firstOrNull { it.name.equals(brokerName, ignoreCase = true) }
-                        ?: error(
-                            "no mt5 broker '$brokerName' in config; configured: " +
-                                (profiles.map { it.name }.ifEmpty { listOf("none") }).joinToString(),
-                        )
+                        ?: error(BotBrokerErrors.missing(cfg.brokers, brokerName, profiles.map { it.name }))
                 } else {
                     profiles.singleOrNull()
                         ?: error(

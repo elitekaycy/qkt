@@ -8,6 +8,7 @@ import com.qkt.dsl.ast.RegimeState
 import com.qkt.dsl.compile.CompiledExpr
 import com.qkt.dsl.compile.EvalContext
 import com.qkt.dsl.compile.ExprCompiler
+import com.qkt.dsl.compile.LetResolver
 import com.qkt.dsl.compile.Value
 import java.math.BigDecimal
 
@@ -19,12 +20,14 @@ import java.math.BigDecimal
 internal class PortfolioRegimes(
     private val ast: PortfolioAst,
     compiler: ExprCompiler,
+    /** Resolves a bare stream alias in a regime condition to the stream's candle, as in a strategy. */
+    aliases: LetResolver = LetResolver(emptyList()),
 ) {
     private val regimeStates: List<Pair<RegimeState, CompiledExpr?>> =
         ast.regimes?.states.orEmpty().map { state ->
             val compiled =
                 when (state) {
-                    is RegimeConditionalState -> compiler.compile(state.cond, ruleAlias = null)
+                    is RegimeConditionalState -> compiler.compile(aliases.resolve(state.cond), ruleAlias = null)
                     is RegimeDefaultState -> null
                 }
             state to compiled

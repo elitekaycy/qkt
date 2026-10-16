@@ -9,8 +9,14 @@ Each example is one page with the same shape:
 1. **What it does** — the trading idea in plain English
 2. **The strategy file** — copy-paste ready
 3. **How to run it** — exact commands
-4. **What to expect** — what the backtest output should look like
+4. **What to expect** — the real output of the command above, on a stated window
 5. **How to adapt it** — common modifications and gotchas
+
+Every complete strategy on these pages passes `qkt parse`; `ExampleStrategyBlocksTest` checks
+that on every build. The results were produced by qkt 0.56.2 from local tick data (`BTCUSD`,
+`XAUUSD`, 2026) with the default paper broker and a 10,000 USD account. The paper broker fills at
+the mid price with no spread, commission or swap, so every number is optimistic; none of these
+strategies is shown because it makes money.
 
 ## Single-strategy examples
 
@@ -28,7 +34,7 @@ Each example is one page with the same shape:
 
     ---
 
-    Fade extreme oversold readings on RSI(2). Scale-out at three price targets to bank profit progressively.
+    Fade extreme oversold readings on RSI(2) on gold. Three entries, one bracket each, exit at three price targets.
 
     [:octicons-arrow-right-24: Mean-reversion](mean-reversion.md)
 
@@ -44,7 +50,7 @@ Each example is one page with the same shape:
 
     ---
 
-    Layer in three entries as the trade moves in your favor — each layer carries its own size with a shared bracket.
+    Layer in three entries as the trade moves in your favor — each layer carries its own copy of the bracket.
 
     [:octicons-arrow-right-24: Pyramiding](pyramiding.md)
 
@@ -74,7 +80,7 @@ Each example is one page with the same shape:
 
     ---
 
-    BTC on Bybit and EURUSD on Exness MT5, running side by side in one daemon. Same risk engine, different venues.
+    BTC on Bybit and gold on Exness MT5, running side by side in one daemon. Same risk engine, different venues.
 
     [:octicons-arrow-right-24: Cross-broker](cross-broker.md)
 

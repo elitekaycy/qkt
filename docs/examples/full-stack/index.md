@@ -14,7 +14,7 @@ my-trading-stack/
 ├── qkt.config.yaml               # broker profiles + risk rules
 ├── strategies/
 │   ├── btc-trend.qkt             # Bybit-side strategy
-│   └── eur-meanrev.qkt           # MT5-side strategy
+│   └── gold-meanrev.qkt          # MT5-side strategy
 └── reports/                      # backtest outputs (gitignored)
 ```
 
@@ -176,24 +176,12 @@ brokers:
 # ---- Account-level risk rules ------------------------------------------
 # These apply across every strategy hosted in the daemon.
 risk:
-  rules:
-    # Stop trading on a bad day (auto-resets at UTC midnight)
-    - type: max-daily-loss
-      pct: 3.0
-      reset: daily
-
-    # Permanent halt on deep drawdown (manual operator resume)
-    - type: max-drawdown
-      pct: 10.0
-      reset: manual
-
-    # Reject single trades that would exceed 5% of equity
-    - type: max-position-pct
-      pct: 5.0
-
-    # Cap simultaneous open positions across all strategies
-    - type: max-open-positions
-      count: 5
+  max_daily_loss: "300"             # halt for the rest of the UTC day after -300 USD realized
+  max_daily_drawdown_pct: "3"       # halt for the day at -3% from the day's starting balance
+  max_drawdown_pct: "10"            # persistent halt at -10%; clear with `qkt resume`
+  per_strategy:                     # keyed by strategy name; layers on top of the global rules
+    gold_meanrev:
+      max_open_positions: "1"
 ```
 
 ## `strategies/btc-trend.qkt`
@@ -204,22 +192,23 @@ risk:
 
 STRATEGY btc_trend VERSION 1
 
-LET fast = 12
-LET slow = 48
-
-# Manual risk-sizing — Phase 24 will add `SIZING 1.0 PCT RISK` as a shortcut
-LET btcStopDist = atr(btc, 14) * 2
-LET btcRiskQty  = ACCOUNT.equity * 0.01 / btcStopDist     # 1% risk per trade
-
 SYMBOLS
     btc = BYBIT_SPOT:BTCUSDT EVERY 1h
+
+PARAM fast = 12
+PARAM slow = 48
+
+LET btcStopDist = atr(btc, 14) * 2
 
 RULES
     WHEN ema(btc.close, fast) CROSSES ABOVE ema(btc.close, slow)
      AND POSITION.btc = 0
-    THEN BUY btc SIZING btcRiskQty
-         STOP_LOSS AT btc.close - btcStopDist
-         LOG "long entry"
+    THEN BUY btc SIZING 1.0 PCT RISK
+         BRACKET {
+           STOP_LOSS AT btc.close - btcStopDist,
+           TAKE_PROFIT AT btc.close + btcStopDist * 3
+         }
+       ; LOG "long entry"
              fast=ema(btc.close, fast)
              slow=ema(btc.close, slow)
              atr=atr(btc, 14)
@@ -227,38 +216,81 @@ RULES
     WHEN ema(btc.close, fast) CROSSES BELOW ema(btc.close, slow)
      AND POSITION.btc > 0
     THEN CLOSE btc
-         LOG "exit on cross-below"
+       ; LOG "exit on cross-below"
 ```
 
-## `strategies/eur-meanrev.qkt`
+## `strategies/gold-meanrev.qkt`
 
-```qkt title="strategies/eur-meanrev.qkt"
--- EUR/USD mean-reversion on Exness MT5, 15m
--- Risk: 1% per trade, scale-out at 3 targets
+```qkt title="strategies/gold-meanrev.qkt"
+-- XAUUSD mean-reversion on Exness MT5, 15m
+-- Risk: 1% per signal, split over three entries that exit at three targets
 
-STRATEGY eur_meanrev VERSION 1
+STRATEGY gold_meanrev VERSION 1
 
 SYMBOLS
-    eur = EXNESS:EURUSD EVERY 15m
+    gold = EXNESS:XAUUSD EVERY 15m
 
-LET eurStopDist = atr(eur, 14) * 2
-LET eurRiskQty  = ACCOUNT.equity * 0.01 / eurStopDist     # 1% risk per trade
+LET goldStopPrice = gold.close - atr(gold, 14) * 2
 
 RULES
-    WHEN rsi(eur.close, 2) < 10
-     AND eur.close > sma(eur.close, 200)        -- trend filter
-     AND POSITION.eur = 0
-    THEN BUY eur SIZING eurRiskQty
-         BRACKET {
-           STOP_LOSS AT eur.close - eurStopDist,
-           TAKE_PROFIT {
-             0.33 AT eur.close * 1.001,
-             0.33 AT eur.close * 1.002,
-             0.34 AT eur.close * 1.004
-           }
-         }
-         LOG "oversold entry" rsi=rsi(eur.close, 2)
+    WHEN rsi(gold.close, 2) < 10
+     AND gold.close > sma(gold.close, 200)        -- trend filter
+     AND POSITION.gold = 0
+    THEN BUY gold SIZING 0.33 PCT RISK
+         BRACKET { STOP_LOSS AT goldStopPrice, TAKE_PROFIT AT gold.close * 1.001 }
+       ; BUY gold SIZING 0.33 PCT RISK
+         BRACKET { STOP_LOSS AT goldStopPrice, TAKE_PROFIT AT gold.close * 1.002 }
+       ; BUY gold SIZING 0.34 PCT RISK
+         BRACKET { STOP_LOSS AT goldStopPrice, TAKE_PROFIT AT gold.close * 1.004 }
+       ; LOG "oversold entry" rsi=rsi(gold.close, 2)
 ```
+
+A bracket has one target, so the scale-out is three entries with one bracket each; see the
+[mean-reversion example](../mean-reversion.md).
+
+## Backtest results
+
+qkt 0.56.2, the default paper broker (mid fills, no costs), 10,000 USD, each strategy on its own.
+`gold-meanrev.qkt` runs as it is against `XAUUSD` ticks; the BTC file runs from a copy with its
+stream swapped to the local `BACKTEST:BTCUSD`, with the `instruments.yaml` entry from the
+[breakout example](../breakout.md#how-to-run-it):
+
+```bash
+qkt backtest strategies/gold-meanrev.qkt --from 2026-07-06 --to 2026-08-29 --no-fetch
+
+sed 's/BYBIT_SPOT:BTCUSDT/BACKTEST:BTCUSD/' strategies/btc-trend.qkt > btc-trend-backtest.qkt
+qkt backtest btc-trend-backtest.qkt --from 2026-01-02 --to 2026-09-15 \
+    --instruments instruments.yaml --no-fetch
+```
+
+`gold-meanrev`, 6 July to 28 August 2026:
+
+```text
+Result
+  Profit             +260.42 USD   (+2.6%)
+  Round trips        237 closed, 156 won (65.8%)
+  Open at the end    none
+  Worst drop         2.8%    biggest fall from a peak
+  Worst day          1.7%
+  Sharpe ratio       1.44     return per unit of risk
+  Costs              none modeled (no spread, commission or swap)
+```
+
+`btc-trend`, 2 January to 14 September 2026:
+
+```text
+Result
+  Profit             +1,649.10 USD   (+16.5%)
+  Round trips        73 closed, 22 won (30.1%)
+  Open at the end    none
+  Worst drop         7.8%    biggest fall from a peak
+  Worst day          1.9%
+  Sharpe ratio       1.57     return per unit of risk
+  Costs              none modeled (no spread, commission or swap)
+```
+
+Each gold signal is three round trips. These are paper numbers on one window each; rerun with
+`--broker mt5-sim` and your venue's costs before deploying.
 
 ## See also
 

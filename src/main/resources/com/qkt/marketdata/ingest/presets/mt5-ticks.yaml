@@ -1,0 +1,15 @@
+id: "mt5-ticks"
+description: "MetaTrader 5 tick export (Symbols window, Ticks, Export): broker server time; a blank bid or ask repeats the last one"
+kind: "ticks"
+time: ["<DATE>", "<TIME>"]
+timeFormat: "yyyy.MM.dd HH:mm:ss.SSS"
+clock: "ny-close"
+carryForward: true
+fields:
+  bid: "<BID>"
+  ask: "<ASK>"
+  price: "<LAST>?"
+  volume: "<VOLUME>?"
+volume: "traded volume (zero on quote-only symbols)"
+match:
+  header: ["<DATE>", "<TIME>", "<BID>", "<ASK>"]

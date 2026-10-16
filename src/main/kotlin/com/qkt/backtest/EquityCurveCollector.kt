@@ -34,6 +34,12 @@ class EquityCurveCollector(
      * every return-based statistic by one flat sample. Null (live) disables the floor.
      */
     private val windowStartMs: Long? = null,
+    /**
+     * The candle window a candle-close run samples on. With it, each candle-close sample is equity as of
+     * that candle's close ([beforeTick]); without it, equity when the closing event fires, which is
+     * already marked at the next bar's first price.
+     */
+    private val candleWindowMs: Long? = null,
 ) {
     private val globalMetricsAcc = EquityMetrics()
     private val globalCurve = DecimatedCurve(curveCap)
@@ -45,6 +51,13 @@ class EquityCurveCollector(
     private var lastSampleTs: Long? = null
     private var lastSampleEquity: BigDecimal? = null
     private val symbolsClosedAtBoundary = mutableSetOf<String>()
+    private val boundaryEquity = HashMap<Long, Snapshot>()
+    private var lastTickWindow: Long? = null
+
+    private class Snapshot(
+        val global: BigDecimal,
+        val strategies: Map<String, BigDecimal>,
+    )
 
     init {
         when (cadence) {
@@ -81,6 +94,23 @@ class EquityCurveCollector(
         windowSamples.add(WindowSamples(window))
     }
 
+    /**
+     * Called before each tick is applied. On the first tick of a new candle window prices still stand at the
+     * previous window's last tick, so equity now is equity at that window's close: the candle-close sample for
+     * that boundary uses it, not equity marked at the next bar's open (a bar closing at 80 and the next opening
+     * at 99 otherwise never shows the drawdown to 80).
+     */
+    fun beforeTick(timestamp: Long) {
+        val w = candleWindowMs ?: return
+        if (cadence != SampleCadence.CANDLE_CLOSE) return
+        val window = Math.floorDiv(timestamp, w)
+        val last = lastTickWindow
+        lastTickWindow = window
+        if (last == null || window <= last) return
+        boundaryEquity[(last + 1) * w] =
+            Snapshot(globalEquity(), strategyPnL.let { p -> strategyMetricsAcc.keys.associateWith { p.equityFor(it) } })
+    }
+
     private fun onCandleClose(event: CandleEvent) {
         if (candleSymbols.isEmpty()) {
             sample(event.candle.endTime)
@@ -105,15 +135,19 @@ class EquityCurveCollector(
      */
     fun closeAt(timestamp: Long) {
         val last = lastSampleTs ?: return
-        val equity = startingBalance.add(pnl.realizedTotal()).add(pnl.unrealizedTotal())
+        val equity = globalEquity()
         if (lastSampleEquity?.compareTo(equity) == 0) return
         sample(maxOf(timestamp, last))
     }
 
+    private fun globalEquity(): BigDecimal = startingBalance.add(pnl.realizedTotal()).add(pnl.unrealizedTotal())
+
     private fun sample(timestamp: Long) {
         val floor = windowStartMs
         if (floor != null && timestamp < floor) return
-        val globalEquity: BigDecimal = startingBalance.add(pnl.realizedTotal()).add(pnl.unrealizedTotal())
+        val atBoundary = boundaryEquity.remove(timestamp)
+        boundaryEquity.keys.removeIf { it < timestamp }
+        val globalEquity: BigDecimal = atBoundary?.global ?: globalEquity()
         lastSampleTs = timestamp
         lastSampleEquity = globalEquity
         globalMetricsAcc.accept(timestamp, globalEquity)
@@ -121,7 +155,7 @@ class EquityCurveCollector(
         dailyEquity.accept(timestamp, globalEquity)
         for (w in windowSamples) w.accept(timestamp, globalEquity)
         for ((strategyId, metrics) in strategyMetricsAcc) {
-            val equity = strategyPnL.equityFor(strategyId)
+            val equity = atBoundary?.strategies?.get(strategyId) ?: strategyPnL.equityFor(strategyId)
             metrics.accept(timestamp, equity)
             strategyCurve.getValue(strategyId).accept(EquitySample(timestamp, equity))
         }

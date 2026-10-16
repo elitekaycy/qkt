@@ -116,12 +116,14 @@ class FetchCommand(
 
         val fetcher = buildFetcher(broker, args.option("config")) ?: return ExitCodes.USER_ERROR
         val store = LocalBarStore(root = DataRoot.forDataRoot(args.option("data-root")))
+        // The folder is named by the canonical spec readers look up: `--tf 60m` lands in `1h/`, not a `60m/` no one reads.
+        val tf = window.canonicalSpec()
 
         val totalDays =
             java.time.temporal.ChronoUnit.DAYS
                 .between(fromDate, toDate.plusDays(1))
                 .toInt()
-        println("qkt fetch: $broker:$symbol @ $tfArg from $fromDate to $toDate ($totalDays days)")
+        println("qkt fetch: $broker:$symbol @ $tf from $fromDate to $toDate ($totalDays days)")
 
         var fetched = 0
         var empty = 0
@@ -130,7 +132,7 @@ class FetchCommand(
         var day = fromDate
         while (!day.isAfter(toDate)) {
             idx++
-            if (store.hasDay(broker, symbol, tfArg, day)) {
+            if (store.hasDay(broker, symbol, tf, day)) {
                 println("  [$idx/$totalDays] $day  skipped (already on disk)")
                 skipped++
                 day = day.plusDays(1)
@@ -153,16 +155,16 @@ class FetchCommand(
                 }
             if (bars.isEmpty()) {
                 if (fetcher.isExpectedEmpty(symbol, TimeRange(rangeStart, rangeEnd))) {
-                    store.writeDay(broker, symbol, tfArg, day, bars)
-                    store.recordDay(broker, symbol, tfArg, day)
+                    store.writeDay(broker, symbol, tf, day, bars)
+                    store.recordDay(broker, symbol, tf, day)
                     empty++
                     println("  [$idx/$totalDays] $day  recorded empty (market closed)")
                 } else {
                     println("  [$idx/$totalDays] $day  empty (open session; left uncovered for retry)")
                 }
             } else {
-                store.writeDay(broker, symbol, tfArg, day, bars)
-                store.recordDay(broker, symbol, tfArg, day)
+                store.writeDay(broker, symbol, tf, day, bars)
+                store.recordDay(broker, symbol, tf, day)
                 fetched++
                 println("  [$idx/$totalDays] $day  fetched ${bars.size} bars")
             }
