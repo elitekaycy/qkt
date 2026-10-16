@@ -31,6 +31,9 @@ internal class SymbolFeedState {
     // when that alert fired. Only faults open one; venue-closed and paused gaps never do.
     var unhealthyFault: FeedFault? = null
     var unhealthySinceMs = 0L
+
+    /** When the open stale episode's current unplanned stretch began (0 while none, e.g. in a break). */
+    var quietSinceMs = 0L
     var rejectedOutlierRun = 0
     var rebaselineCandidate = 0.0
     var rebaselineCandidateCount = 0
