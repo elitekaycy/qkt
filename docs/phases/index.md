@@ -2,6 +2,11 @@
 
 qkt is built in numbered phases. Each phase has a post-merge changelog with usage examples, migration notes, and known limitations.
 
+!!! note "Historical record"
+    These pages describe each phase as it shipped, so version numbers in them (0.20 to 0.30 and so on) are
+    the release of that time, not the current one. For current behaviour use the [reference](../reference/index.md) and the
+    [install page](../get-started/install.md).
+
 ## Recent
 
 - [Phase 32 — bid/ask DSL exposure](phase-32-bid-ask.md)
