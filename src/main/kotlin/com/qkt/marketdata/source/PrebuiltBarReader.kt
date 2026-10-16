@@ -8,8 +8,8 @@ import com.qkt.marketdata.store.BinaryBarStore
 import com.qkt.marketdata.store.LocalBarStore
 
 /**
- * Reads [LocalMarketSource.bars] from pre-built bar stores: the `--bars` binary tier when
- * injected (exclusively), else the fetched bar store for any covered day. Returns null when
+ * Reads [LocalMarketSource.bars] from pre-built bar stores: the `--bars` tier when injected (each day's built
+ * `.bin`, else that day's fetched or imported `.csv`), else the fetched bar store for any covered day. Returns null when
  * neither store can serve the range, so the caller aggregates ticks instead.
  */
 internal class PrebuiltBarReader(
@@ -33,8 +33,15 @@ internal class PrebuiltBarReader(
             val rangeToMs = range.to.toEpochMilli()
             return sequence {
                 for (day in days) {
-                    if (!bin.hasDay(broker, sym, window, day)) continue
-                    for (candle in bin.readDay(broker, sym, window, day)) {
+                    // A built day first, else the same day's fetched or imported bars at this timeframe.
+                    val bars =
+                        when {
+                            bin.hasDay(broker, sym, window, day) -> bin.readDay(broker, sym, window, day)
+                            barStore?.hasDay(broker, sym, window.canonicalSpec(), day) == true ->
+                                barStore.readDay(broker, sym, window.canonicalSpec(), day)
+                            else -> continue
+                        }
+                    for (candle in bars) {
                         if (candle.startTime < rangeFromMs) continue
                         if (candle.endTime > rangeToMs) continue
                         yield(candle)
