@@ -33,6 +33,7 @@ internal fun liveMarketDataGate(
         scheduledBreak = { symbol, nowMs -> venues().any { it.scheduledBreak(symbol, nowMs) } },
         onUnhealthy = alerts::onUnhealthy,
         onRecovered = alerts::onRecovered,
+        onStillStale = alerts::onStillStale,
         judgesOutliers = { symbol -> instruments.lookup(symbol)?.derivative !is OptionTerms },
     )
 

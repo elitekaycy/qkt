@@ -63,6 +63,11 @@ class MarketDataGate(
      * new orders are suppressed either way. Defaults to never paused.
      */
     private val scheduledBreak: (symbol: String, nowMs: Long) -> Boolean = { _, _ -> false },
+    /**
+     * Invoked on each health check while [symbol]'s stale episode stays open, in session and outside a
+     * scheduled break, with how long it has been silent since its alert or the venue's last planned gap.
+     */
+    private val onStillStale: (symbol: String, unhealthyForMs: Long) -> Unit = { _, _ -> },
 ) {
     private val log = LoggerFactory.getLogger(MarketDataGate::class.java)
 
@@ -77,6 +82,7 @@ class MarketDataGate(
             inSession,
             scheduledBreak,
             log,
+            onStillStale,
         )
 
     private val bySymbol: MutableMap<String, SymbolFeedState> = ConcurrentHashMap()

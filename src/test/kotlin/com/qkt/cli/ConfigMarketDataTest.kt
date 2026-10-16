@@ -21,10 +21,11 @@ class ConfigMarketDataTest {
         assertThat(c.marketData.minStaleAgeMs).isEqualTo(MarketDataGate.DEFAULT_MIN_STALE_AGE_MS)
         assertThat(c.marketData.outlierSigma).isEqualTo(MarketDataGate.DEFAULT_OUTLIER_SIGMA)
         assertThat(c.marketData.maxClockSkewMs).isEqualTo(MarketDataGate.DEFAULT_MAX_CLOCK_SKEW_MS)
+        assertThat(c.marketData.quietAlertAfterMs).isEqualTo(MarketDataGateConfig.DEFAULT_QUIET_ALERT_AFTER_MS)
     }
 
     @Test
-    fun `market_data block parses all four gate thresholds`(
+    fun `market_data block parses all gate thresholds and the quiet alert delay`(
         @TempDir tmp: Path,
     ) {
         val cfg = tmp.resolve("qkt.config.yaml")
@@ -36,9 +37,11 @@ class ConfigMarketDataTest {
               min_stale_age_ms: 30000
               outlier_sigma: 4.5
               max_clock_skew_ms: 120000
+              quiet_alert_after_ms: 0
             """.trimIndent(),
         )
         val c = Config.load(cfg)
+        assertThat(c.marketData.quietAlertAfterMs).isEqualTo(0L)
         assertThat(c.marketData.staleAgeMultiple).isEqualTo(8.0)
         assertThat(c.marketData.minStaleAgeMs).isEqualTo(30_000L)
         assertThat(c.marketData.outlierSigma).isEqualTo(4.5)
@@ -105,6 +108,18 @@ class ConfigMarketDataTest {
         assertThat(failure)
             .isInstanceOf(IllegalArgumentException::class.java)
             .hasMessageContaining("market_data.stale_age_multiple must be a finite positive number")
+    }
+
+    @Test
+    fun `market_data block rejects a negative quiet alert delay`(
+        @TempDir tmp: Path,
+    ) {
+        val cfg = tmp.resolve("qkt.config.yaml")
+        Files.writeString(cfg, "market_data:\n  quiet_alert_after_ms: -1\n")
+
+        assertThat(loadFailure(cfg))
+            .isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageContaining("market_data.quiet_alert_after_ms must be non-negative")
     }
 
     private fun loadFailure(cfg: Path): Throwable? =
