@@ -2,13 +2,13 @@ package com.qkt.cli.fetch
 
 import com.qkt.candles.TimeWindow
 import com.qkt.cli.Args
+import com.qkt.cli.CliDataRoot
 import com.qkt.cli.ExitCodes
 import com.qkt.derivatives.options.chain.ChainSnapshotStore
 import com.qkt.derivatives.options.chain.OptionTrade
 import com.qkt.derivatives.options.chain.TradeChainBuilder
 import com.qkt.instrument.OptionRoot
 import com.qkt.instrument.QuoteSource
-import com.qkt.marketdata.store.DataRoot
 import com.qkt.marketdata.store.deribit.DeribitClient
 import com.qkt.marketdata.store.deribit.DeribitTradeHistory
 import java.io.IOException
@@ -68,7 +68,7 @@ internal object ChainFetch {
             System.err.println("qkt: --chains is available for ${DeribitClient.VENUE} option roots, not $target")
             return ExitCodes.USER_ERROR
         }
-        val dataRoot = DataRoot.forDataRoot(args.option("data-root"))
+        val dataRoot = CliDataRoot.of(args)
         if (args.flag("live")) {
             if (listOf("from", "to", "last", "every", "max-mark-age").any { args.option(it) != null }) {
                 System.err.println("qkt: --chains --live takes one snapshot now; it has no range or interval")

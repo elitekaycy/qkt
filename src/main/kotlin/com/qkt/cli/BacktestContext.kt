@@ -22,7 +22,6 @@ import com.qkt.marketdata.source.MarketRequest
 import com.qkt.marketdata.source.SequenceTickFeed
 import com.qkt.marketdata.store.BinaryBarStore
 import com.qkt.marketdata.store.DataFetcher
-import com.qkt.marketdata.store.DataRoot
 import com.qkt.marketdata.store.DefaultDataStore
 import com.qkt.marketdata.store.LocalBarStore
 import com.qkt.marketdata.store.ScriptDataFetcher
@@ -259,7 +258,7 @@ class BacktestContext private constructor(
             // Default to the shared store (~/.qkt/data) so `qkt backtest` reads the same place
             // `qkt fetch` / `qkt data convert` write. A pinned dataset carries its own root unless
             // the caller explicitly overrides it with --data-root for relocated snapshots.
-            val dataRoot = args.option("data-root") ?: datasetContext.dataRoot ?: DataRoot.resolve().toString()
+            val dataRoot = args.option("data-root") ?: datasetContext.dataRoot ?: CliDataRoot.of(args).toString()
 
             // Legacy `--fetcher dukascopy --fetcher-script <path>` still wins when set.
             val legacyFetcher: DataFetcher? =
@@ -434,7 +433,7 @@ class BacktestContext private constructor(
                     from,
                     to,
                 )
-            val dataRoot = args.option("data-root") ?: datasetContext.dataRoot ?: DataRoot.resolve().toString()
+            val dataRoot = args.option("data-root") ?: datasetContext.dataRoot ?: CliDataRoot.of(args).toString()
 
             val legacyFetcher: DataFetcher? =
                 when (val name = args.option("fetcher")) {

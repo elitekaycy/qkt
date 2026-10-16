@@ -20,6 +20,8 @@ services:
     command: ["--config", "/etc/qkt/qkt.config.yaml", "--control-port", "47000"]
     environment:
       QKT_STATE_DIR: /var/lib/qkt
+      # The project's ./data, mounted below; wins over data_root, which names the same folder on the host.
+      QKT_DATA_HOME: /data
     volumes:
       - ./strategies:/strategies:ro
       - ./qkt.config.yaml:/etc/qkt/qkt.config.yaml:ro

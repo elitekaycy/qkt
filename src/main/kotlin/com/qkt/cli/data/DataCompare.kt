@@ -2,13 +2,13 @@ package com.qkt.cli.data
 
 import com.qkt.candles.TimeWindow
 import com.qkt.cli.Args
+import com.qkt.cli.CliDataRoot
 import com.qkt.cli.ExitCodes
 import com.qkt.cli.InstrumentFiles
 import com.qkt.common.SystemClock
 import com.qkt.common.TimeRange
 import com.qkt.marketdata.ingest.compare.SeriesCompare
 import com.qkt.marketdata.source.LocalMarketSource
-import com.qkt.marketdata.store.DataRoot
 import com.qkt.marketdata.store.DefaultDataStore
 import com.qkt.marketdata.store.LocalBarStore
 import java.nio.file.Path
@@ -37,7 +37,7 @@ internal fun dataCompare(args: Args): Int {
         return ExitCodes.ARG_ERROR
     }
     val window = TimeWindow.parse(args.option("tf") ?: "1m")
-    val root = DataRoot.forDataRoot(args.option("data-root"))
+    val root = CliDataRoot.of(args)
     val source = LocalMarketSource(DefaultDataStore(root), SystemClock(), LocalBarStore(root))
     val range =
         TimeRange(
