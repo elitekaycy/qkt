@@ -1,13 +1,21 @@
 package com.qkt.common
 
-import java.time.Duration
+import java.time.DayOfWeek
 import java.time.Instant
-import java.time.ZoneOffset
+import java.time.LocalTime
+import java.time.ZoneId
 
+/**
+ * The FX week and day on New York time: the week opens Sunday 17:00 America/New_York and closes Friday
+ * 17:00, and each FX day runs from one 17:00 New York to the next. In UTC that is 21:00 during US daylight
+ * saving and 22:00 otherwise, matching brokers that run on New York-close server time (a summer EURUSD
+ * week's last tick is Friday 20:59:59 UTC). A day spanning a daylight-saving change is 23 or 25 hours.
+ */
 object FxCalendar : TradingCalendar {
     override val name: String = "fx"
 
-    private const val SESSION_START_UTC_HOUR = 22
+    private val NEW_YORK: ZoneId = ZoneId.of("America/New_York")
+    private val CLOSE: LocalTime = LocalTime.of(17, 0)
 
     /**
      * FX trades ~24h x 5 days: 5/7 of the year's minutes. Powers Sharpe
@@ -28,13 +36,12 @@ object FxCalendar : TradingCalendar {
         symbol: String,
         t: Instant,
     ): Boolean {
-        val zdt = t.atZone(ZoneOffset.UTC)
-        val dow = zdt.dayOfWeek.value
-        val hour = zdt.hour
-        return when (dow) {
-            6 -> false
-            7 -> hour >= SESSION_START_UTC_HOUR
-            5 -> hour < SESSION_START_UTC_HOUR
+        val ny = t.atZone(NEW_YORK)
+        val beforeClose = ny.toLocalTime().isBefore(CLOSE)
+        return when (ny.dayOfWeek) {
+            DayOfWeek.SATURDAY -> false
+            DayOfWeek.SUNDAY -> !beforeClose
+            DayOfWeek.FRIDAY -> beforeClose
             else -> true
         }
     }
@@ -44,15 +51,29 @@ object FxCalendar : TradingCalendar {
         t: Instant,
     ): TimeRange {
         val end = sessionEnd(t)
-        val start = end.minus(Duration.ofDays(1))
-        return TimeRange(start, end)
+        return TimeRange(dayBefore(end), end)
     }
 
     private fun sessionEnd(t: Instant): Instant {
-        val day = t.atZone(ZoneOffset.UTC).toLocalDate()
-        val candidate = day.atTime(SESSION_START_UTC_HOUR, 0).toInstant(ZoneOffset.UTC)
-        return if (t < candidate) candidate else candidate.plus(Duration.ofDays(1))
+        val day = t.atZone(NEW_YORK).toLocalDate()
+        val candidate = day.atTime(CLOSE).atZone(NEW_YORK).toInstant()
+        return if (t < candidate) {
+            candidate
+        } else {
+            day
+                .plusDays(1)
+                .atTime(CLOSE)
+                .atZone(NEW_YORK)
+                .toInstant()
+        }
     }
+
+    /** The 17:00 New York one day before [close], which is 23 or 25 hours earlier across a DST change. */
+    private fun dayBefore(close: Instant): Instant =
+        close
+            .atZone(NEW_YORK)
+            .minusDays(1)
+            .toInstant()
 
     override fun anchorEpochFor(
         anchor: SessionAnchor,
@@ -63,7 +84,7 @@ object FxCalendar : TradingCalendar {
             SessionAnchor.CurrentSession -> end.toEpochMilli()
             SessionAnchor.PreviousDay,
             SessionAnchor.PreviousSession,
-            -> end.minus(Duration.ofDays(1)).toEpochMilli()
+            -> dayBefore(end).toEpochMilli()
             is SessionAnchor.Rolling -> t.toEpochMilli()
         }
     }
@@ -77,7 +98,7 @@ object FxCalendar : TradingCalendar {
             SessionAnchor.CurrentSession,
             SessionAnchor.PreviousDay,
             SessionAnchor.PreviousSession,
-            -> TimeRange(end.minus(Duration.ofDays(1)), end)
+            -> TimeRange(dayBefore(end), end)
             is SessionAnchor.Rolling -> TimeRange(end.minus(anchor.duration), end)
         }
     }

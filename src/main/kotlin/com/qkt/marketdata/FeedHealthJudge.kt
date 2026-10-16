@@ -20,6 +20,7 @@ internal class FeedHealthJudge(
     private val inSession: (symbol: String, nowMs: Long) -> Boolean,
     private val scheduledBreak: (symbol: String, nowMs: Long) -> Boolean,
     private val log: Logger,
+    private val onStillStale: (symbol: String, unhealthyForMs: Long) -> Unit = { _, _ -> },
 ) {
     private val clockJudge = FeedClockJudge(clock, maxClockSkewMs, inSession, log, ::raise)
 
@@ -41,6 +42,7 @@ internal class FeedHealthJudge(
         }
         if (state.staleAlerted) {
             state.staleAlerted = false
+            state.quietSinceMs = 0L
             log.info("market data for {} healthy again", symbol)
         }
         if (state.closedAlerted && kotlin.math.abs(state.lastSkewMs) <= maxClockSkewMs) {
@@ -170,7 +172,23 @@ internal class FeedHealthJudge(
             )
             raise(symbol, state, "quote age ${age}ms exceeds ${threshold}ms threshold", FeedFault.STALE)
         }
+        if (!healthy && state.staleAlerted && state.unhealthyFault == FeedFault.STALE) reportQuiet(symbol, state, now)
         return healthy
+    }
+
+    // Silence counted in session only, from the stale alert or the end of the venue's last planned gap
+    // (scheduled break, out of session): a weekend after a stale Friday restarts the count at the open.
+    private fun reportQuiet(
+        symbol: String,
+        state: SymbolFeedState,
+        now: Long,
+    ) {
+        if (!inSession(symbol, now) || scheduledBreak(symbol, now)) {
+            state.quietSinceMs = 0L
+            return
+        }
+        if (state.quietSinceMs == 0L) state.quietSinceMs = now
+        onStillStale(symbol, now - state.quietSinceMs)
     }
 
     /** Quote age past which [state]'s symbol is stale: its smoothed gap times the multiple, floored. */
