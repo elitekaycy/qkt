@@ -38,9 +38,14 @@ class CandleAggregator private constructor(
 
     private val open = mutableMapOf<String, MutableCandle>()
     private val lastClosedEnd = mutableMapOf<String, Long>()
+    private val historyClosedEnd = mutableMapOf<String, Long>()
 
     /** Live ticks rejected after their candle was finalized; synthetic warmup reordering is excluded. */
     var droppedLateTicks: Long = 0
+        private set
+
+    /** Live ticks inside a window seeded from venue history: that bar already holds them, so nothing is lost. */
+    var historyCoveredTicks: Long = 0
         private set
 
     init {
@@ -58,7 +63,9 @@ class CandleAggregator private constructor(
         // A heartbeat can close a window while older ticks remain queued. Never reopen
         // or mutate an already-emitted window: doing so double-feeds every indicator.
         if (tick.timestamp < (lastClosedEnd[tick.symbol] ?: Long.MIN_VALUE)) {
-            if (countLateDrop) {
+            if (countLateDrop && tick.timestamp < (historyClosedEnd[tick.symbol] ?: Long.MIN_VALUE)) {
+                historyCoveredTicks++
+            } else if (countLateDrop) {
                 droppedLateTicks++
                 // A dropped late tick is a bar that silently disagrees with the venue's own, so
                 // it must never be a counter nobody reads. Throttled: a feed stall drops a burst.
@@ -120,23 +127,22 @@ class CandleAggregator private constructor(
     }
 
     /**
-     * Treat [symbol]'s windows ending at or before [endTime] as closed: they were seeded from history,
-     * so a tick stamped inside one (a venue re-sending its last quote on subscribe) is late, never the
-     * open of a bar the strategy already holds.
+     * Treat [symbol]'s windows ending at or before [endTime] as closed: they were seeded from the venue's
+     * history, so a live tick stamped inside one (the feed's catch-up on subscribe) is already in that
+     * bar. It is never applied again, and it is counted as covered, not as a dropped tick.
      */
     fun closedThrough(
         symbol: String,
         endTime: Long,
     ) {
         if (endTime > (lastClosedEnd[symbol] ?: Long.MIN_VALUE)) lastClosedEnd[symbol] = endTime
+        if (endTime > (historyClosedEnd[symbol] ?: Long.MIN_VALUE)) historyClosedEnd[symbol] = endTime
     }
 
     /**
-     * Close every in-progress candle whose window already ended at [nowMs] — the
-     * time-driven close for quiet symbols. Without it a candle only closes when the
-     * NEXT tick arrives: on a thin session edge the last bar never closes, its rules
-     * never evaluate, and partial sync windows are immortal. The live heartbeat drives
-     * this from the wall clock; replay drives it from each tick's event time (#1134).
+     * Close every in-progress candle whose window already ended at [nowMs], the time-driven close for quiet
+     * symbols: otherwise a thin session edge's last bar never closes and its rules never evaluate. The live
+     * heartbeat drives this from the wall clock; replay from each tick's event time (#1134).
      */
     fun flushClosed(nowMs: Long) {
         val it = open.entries.iterator()
