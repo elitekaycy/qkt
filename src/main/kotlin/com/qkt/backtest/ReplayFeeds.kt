@@ -148,7 +148,14 @@ internal object ReplayFeeds {
             require(iter.hasNext()) {
                 "no market data for $symbol in requested range ${range.from}..${range.to}"
             }
-            return BarTickFeed(sequenceOf(iter.next()) + iter.asSequence(), positionSign)
+            val tail = { afterMs: Long ->
+                if (ticksAvailable && afterMs < range.to.toEpochMilli()) {
+                    source.tickSlice(symbol, afterMs, range.to.toEpochMilli())
+                } else {
+                    emptySequence()
+                }
+            }
+            return BarTickFeed(sequenceOf(iter.next()) + iter.asSequence(), positionSign, tail)
         }
         if (forceBars) {
             error("--bars: cannot replay bars for $symbol (source has no BARS capability or no candle window)")
