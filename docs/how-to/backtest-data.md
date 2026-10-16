@@ -5,8 +5,8 @@ to fill that store — let the backtest fetch ticks for you, pull broker bars wi
 drop in your own CSVs, or convert to the fast binary format — and exactly where each lands.
 
 If you only remember one thing: **the store lives at `~/.qkt/data`, and every command reads
-and writes the same place** (override with `--data-root <dir>` or the `QKT_DATA_HOME` env var;
-the flag wins). Point `fetch`, `convert`, and `backtest` at the same root and they find each
+and writes the same place** (override with `--data-root <dir>`, the `QKT_DATA_HOME` env var, or
+`data_root:` in the project's `qkt.config.yaml`, in that order). Point `fetch`, `convert`, and `backtest` at the same root and they find each
 other's data.
 
 ## Two kinds of data, two layouts
@@ -572,7 +572,7 @@ Read precedence for a tick day: `.bin` → `.csv.gz` → `.csv`.
 | Flag | Default | Effect |
 |---|---|---|
 | `--from <date>` / `--to <date>` | required | Backtest range. `--from` inclusive, `--to` exclusive. ISO date or datetime. |
-| `--data-root <dir>` | `~/.qkt/data` (or `$QKT_DATA_HOME`) | Store root; flag wins over env var. |
+| `--data-root <dir>` | `$QKT_DATA_HOME`, else `data_root` in `qkt.config.yaml`, else `~/.qkt/data` | Store root; the flag wins. |
 | `--no-fetch` | off (fetch enabled) | Use only cached data; never download. |
 | `--allow-incomplete` | off (strict) | Proceed despite holes; print what's ignored. |
 | `--fetcher dukascopy --fetcher-script <p>` | built-in client | Use a custom downloader script (takes precedence). |

@@ -1,12 +1,12 @@
 package com.qkt.cli.fetch
 
 import com.qkt.cli.Args
+import com.qkt.cli.CliDataRoot
 import com.qkt.cli.Config
 import com.qkt.cli.ExitCodes
 import com.qkt.cli.openAccounts
 import com.qkt.marketdata.depth.BookDepthSource
 import com.qkt.marketdata.depth.BookDepthStore
-import com.qkt.marketdata.store.DataRoot
 import java.io.IOException
 import java.nio.file.Path
 import java.time.ZoneOffset
@@ -51,7 +51,7 @@ internal object BookDepthFetch {
             } catch (e: RuntimeException) {
                 return failed(target, e)
             }
-        val store = BookDepthStore(DataRoot.forDataRoot(args.option("data-root")))
+        val store = BookDepthStore(CliDataRoot.of(args))
         val held = store.merge(target, snapshots)
         println(
             "qkt fetch: ${snapshots.size} depth snapshots for $target from $from to $to " +

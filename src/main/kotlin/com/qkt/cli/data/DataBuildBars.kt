@@ -3,11 +3,11 @@ package com.qkt.cli.data
 import com.qkt.candles.CandleAggregator
 import com.qkt.candles.TimeWindow
 import com.qkt.cli.Args
+import com.qkt.cli.CliDataRoot
 import com.qkt.cli.ExitCodes
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.openDayFeed
 import com.qkt.marketdata.store.BinaryBarStore
-import com.qkt.marketdata.store.DataRoot
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.LocalDate
@@ -39,7 +39,7 @@ internal fun dataBuildBars(args: Args): Int {
             System.err.println("qkt: error: ${e.message}")
             return ExitCodes.USER_ERROR
         }
-    val root = DataRoot.forDataRoot(args.option("data-root"))
+    val root = CliDataRoot.of(args)
     val symDir = root.resolve("symbols").resolve(symbol)
     if (!Files.isDirectory(symDir)) {
         System.err.println("qkt: no cached tick data for '$symbol' at $symDir")

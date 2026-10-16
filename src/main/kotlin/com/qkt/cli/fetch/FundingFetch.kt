@@ -1,12 +1,12 @@
 package com.qkt.cli.fetch
 
 import com.qkt.cli.Args
+import com.qkt.cli.CliDataRoot
 import com.qkt.cli.Config
 import com.qkt.cli.ExitCodes
 import com.qkt.cli.openAccounts
 import com.qkt.instrument.FundingRateSource
 import com.qkt.instrument.FundingRateStore
-import com.qkt.marketdata.store.DataRoot
 import com.qkt.marketdata.store.binance.BinanceFundingRates
 import java.io.IOException
 import java.nio.file.Path
@@ -50,7 +50,7 @@ internal object FundingFetch {
             } catch (e: RuntimeException) {
                 return failed(target, e)
             }
-        val store = FundingRateStore(DataRoot.forDataRoot(args.option("data-root")))
+        val store = FundingRateStore(CliDataRoot.of(args))
         val held = store.merge(target, rates)
         println(
             "qkt fetch: ${rates.size} funding rates for $target from $from to $to ($held stored) -> ${store.path(

@@ -2,9 +2,9 @@ package com.qkt.cli.data
 
 import com.qkt.cli.Args
 import com.qkt.cli.BuildInfo
+import com.qkt.cli.CliDataRoot
 import com.qkt.cli.ExitCodes
 import com.qkt.marketdata.store.DataQualityPolicy
-import com.qkt.marketdata.store.DataRoot
 import com.qkt.marketdata.store.DatasetSnapshots
 import java.nio.file.Files
 import java.nio.file.Path
@@ -26,7 +26,7 @@ internal fun dataSnapshot(args: Args): Int {
         System.err.println("qkt: data snapshot requires --from, --to, and --out")
         return ExitCodes.ARG_ERROR
     }
-    val root = DataRoot.forDataRoot(args.option("data-root"))
+    val root = CliDataRoot.of(args)
     val vendor = args.option("vendor") ?: "local"
     val policy = qualityPolicy(args)
     val snapshot =

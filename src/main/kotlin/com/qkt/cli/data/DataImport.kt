@@ -1,12 +1,12 @@
 package com.qkt.cli.data
 
 import com.qkt.cli.Args
+import com.qkt.cli.CliDataRoot
 import com.qkt.cli.ExitCodes
 import com.qkt.cli.InstrumentFiles
 import com.qkt.common.SystemClock
 import com.qkt.marketdata.ingest.ImportRefusal
 import com.qkt.marketdata.ingest.run.ImportRun
-import com.qkt.marketdata.store.DataRoot
 import java.nio.file.Path
 
 /**
@@ -27,7 +27,7 @@ internal fun dataImport(args: Args): Int {
         return ExitCodes.ARG_ERROR
     }
     val json = args.flag("json")
-    val dataRoot = DataRoot.forDataRoot(args.option("data-root"))
+    val dataRoot = CliDataRoot.of(args)
     val request =
         try {
             DataImportOptions.request(args, paths, dataRoot)

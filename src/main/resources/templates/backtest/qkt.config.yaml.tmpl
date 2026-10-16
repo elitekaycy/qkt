@@ -1,5 +1,6 @@
 source: local
-data_root: /data
+# This project's data/ folder: /data inside the container (QKT_DATA_HOME), ./data next to this file elsewhere.
+data_root: ${QKT_DATA_HOME:-./data}
 starting_balance: ${QKT_STARTING_BALANCE:-10000}
 
 runtime:

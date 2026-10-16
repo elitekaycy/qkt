@@ -1,11 +1,11 @@
 package com.qkt.cli.data
 
 import com.qkt.cli.Args
+import com.qkt.cli.CliDataRoot
 import com.qkt.cli.ExitCodes
 import com.qkt.marketdata.BinaryTickWriter
 import com.qkt.marketdata.CsvTickFeed
 import com.qkt.marketdata.Tick
-import com.qkt.marketdata.store.DataRoot
 import java.nio.file.Files
 import java.time.LocalDate
 
@@ -25,7 +25,7 @@ internal fun dataConvert(args: Args): Int {
             )
             return ExitCodes.ARG_ERROR
         }
-    val root = DataRoot.forDataRoot(args.option("data-root"))
+    val root = CliDataRoot.of(args)
     val symDir = root.resolve("symbols").resolve(symbol)
     if (!Files.isDirectory(symDir)) {
         System.err.println("qkt: no cached tick data for '$symbol' at $symDir")
