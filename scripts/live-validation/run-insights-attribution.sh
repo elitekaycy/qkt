@@ -15,7 +15,7 @@ fail() {
 usage() {
     cat <<'EOF'
 Usage: run-insights-attribution.sh --scenario DIR --insights-image IMAGE
-       [--cli PATH] [--port N] [--timeout-seconds N]
+       [--cli PATH] [--port N (default: first free in 18420..18519)] [--timeout-seconds N]
        [--arm I_UNDERSTAND_DEMO_ORDER_0.01]
        run-insights-attribution.sh --scenario DIR --insights-image IMAGE --verify-only
 
@@ -31,7 +31,7 @@ EOF
 scenario=""
 insights_image=""
 cli="$repo_root/build/install/qkt/bin/qkt"
-port=18420
+port=""
 timeout_seconds=360
 arm=""
 verify_only=false
@@ -54,7 +54,17 @@ done
 scenario="$(realpath "$scenario")"
 [ -d "$scenario" ] || fail "scenario directory does not exist: $scenario"
 [ -x "$cli" ] || fail "QKT CLI is not executable: $cli"
+# The collector runs on the host network, so anything already listening on its port would answer the health
+# check and the ingest probe in its place (seen: an ssh forward to a production collector on 18420).
+port_in_use() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
+if [ -z "$port" ]; then
+    for candidate in $(seq 18420 18519); do
+        port_in_use "$candidate" || { port="$candidate"; break; }
+    done
+    [ -n "$port" ] || fail "no free port in 18420..18519 for the isolated Insights collector"
+fi
 [[ "$port" =~ ^[0-9]+$ ]] && [ "$port" -ge 1024 ] && [ "$port" -le 65535 ] || fail "--port must be in 1024..65535"
+! port_in_use "$port" || fail "port $port is already in use; the isolated Insights collector needs its own"
 [[ "$timeout_seconds" =~ ^[0-9]+$ ]] && [ "$timeout_seconds" -ge 180 ] && [ "$timeout_seconds" -le 600 ] ||
     fail "--timeout-seconds must be in 180..600"
 for command in cmp find git jq realpath rg sha256sum sort stat; do
@@ -215,6 +225,8 @@ for _ in $(seq 1 60); do
     sleep 1
 done
 jq -e '.ok == true and .mode == "run"' "$evidence/insights-health-initial.json" >/dev/null || fail "Insights did not become healthy"
+collector_running() { [ "$(docker container inspect --format '{{.State.Running}}' "$container" 2>/dev/null)" = true ]; }
+collector_running || fail "the isolated Insights collector is not running; another service answered on port $port"
 
 # Reject an image that predates the causal execution contract before touching the broker.
 probe_instance="qkt-insights-contract-probe-$scenario_id"
@@ -357,6 +369,7 @@ for _ in $(seq 1 60); do
     sleep 1
 done
 jq -e '.ok == true' "$evidence/insights-health-recovered.json" >/dev/null || fail "Insights did not recover"
+collector_running || fail "the isolated Insights collector is not running after recovery"
 curl -fsS -c "$cookie" -H 'Content-Type: application/json' \
     --data "{\"username\":\"admin\",\"password\":\"$admin_password\"}" \
     "http://127.0.0.1:$port/auth/login" >/dev/null
