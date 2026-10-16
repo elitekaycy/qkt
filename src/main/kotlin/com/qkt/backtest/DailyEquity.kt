@@ -34,6 +34,9 @@ class DailyEquityAccumulator {
     private var low: BigDecimal = Money.ZERO
     private var close: BigDecimal = Money.ZERO
 
+    /** Whether the day in progress holds only one sample, taken at exactly its midnight. */
+    private var onlyMidnight = false
+
     fun accept(
         timestamp: Long,
         equity: BigDecimal,
@@ -45,16 +48,32 @@ class DailyEquityAccumulator {
             open = equity
             high = equity
             low = equity
+            onlyMidnight = Math.floorMod(timestamp, MS_PER_DAY) == 0L
+        } else {
+            onlyMidnight = false
         }
         if (equity > high) high = equity
         if (equity < low) low = equity
         close = equity
     }
 
-    /** Every completed day plus the day in progress, in order. Non-destructive. */
+    /**
+     * Every completed day plus the day in progress, in order. Non-destructive. A last day holding a single sample
+     * at exactly its midnight is the previous day's close, not a day of its own: equity is sampled before the
+     * boundary tick, so a run ending at midnight (`--to 2026-10-15`) closes 2026-10-14 there and never reports a
+     * 2026-10-15 row, which would count a day the run did not cover.
+     */
     fun result(): List<DailyEquity> {
         if (currentDay == Long.MIN_VALUE) return emptyList()
-        return days + current()
+        val previous = days.lastOrNull()
+        if (!onlyMidnight || previous == null || previous.date.toEpochDay() != currentDay - 1) return days + current()
+        val closing = current()
+        return days.dropLast(1) +
+            previous.copy(
+                high = previous.high.max(closing.close),
+                low = previous.low.min(closing.close),
+                close = closing.close,
+            )
     }
 
     private fun flush() {

@@ -74,8 +74,13 @@ internal object ConciseReportPrinter {
     private fun windowLine(r: BacktestResult): String {
         val curve = r.global.equityCurve
         if (curve.isEmpty()) return "(no equity samples)"
-        val from = LocalDate.ofInstant(Instant.ofEpochMilli(curve.first().timestamp), ZoneOffset.UTC)
-        val to = LocalDate.ofInstant(Instant.ofEpochMilli(curve.last().timestamp), ZoneOffset.UTC)
+        // The daily rows know which day a midnight close belongs to; the curve's last stamp is the next day's 00:00.
+        val from =
+            r.dailyEquity.firstOrNull()?.date
+                ?: LocalDate.ofInstant(Instant.ofEpochMilli(curve.first().timestamp), ZoneOffset.UTC)
+        val to =
+            r.dailyEquity.lastOrNull()?.date
+                ?: LocalDate.ofInstant(Instant.ofEpochMilli(curve.last().timestamp), ZoneOffset.UTC)
         val days =
             r.dailyEquity.size
                 .takeIf { it > 0 }
