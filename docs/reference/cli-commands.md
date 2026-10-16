@@ -181,6 +181,9 @@ and manifest hashes; use `--json` for piping compact, schema-tagged summaries.
 | `qkt data import <file\|dir>... --as <SYMBOL> [--dry-run] [--plan] [--json] [...]` | Import ticks, bars, funding, open interest or published series from any source (MT5, Dukascopy, HistData, TradingView, Binance, exchanges, any CSV/JSON) into the store, exactly; refuses what it cannot prove. See [Import data from any source](../how-to/import-data.md). |
 | `qkt data compare <SYMBOL> --against <SYMBOL> --from D --to D [--tf 1m] [--json]` | Compare two stored series bar by bar: clock offset, price difference in points, missing bars. |
 | `qkt data presets [--json]` | List the built-in import presets. |
+| `qkt data build-bars <symbol> --tf <tf> [--from D] [--to D]` | Build bars from a symbol's stored ticks into `bars/BACKTEST/<symbol>/<tf>/<day>.bin`, which `qkt backtest --bars` reads for fast research runs. Prints `built=… skipped=… bars=…`. `--to` is exclusive. |
+| `qkt data convert <symbol> [--from D] [--to D] [--prune]` | Write a compact `<day>.bin` beside each stored tick day; qkt reads `.bin` before `.csv.gz`, so repeated backtests decode faster. Days already converted are skipped; `--prune` deletes the CSV after a successful convert. |
+| `qkt data snapshot <symbol> --from D --to D --out <file> [--vendor V] [--quality Q]` | Pin a dataset: record every day file's hash, the range and the vendor in a JSON snapshot. `qkt backtest --dataset <file>` then refuses to run if the data changed; `qkt data verify --snapshot <file>` checks it. |
 | `qkt preflight <file> [--production] [--offline]` | Validate production readiness against the config, failing closed with `--production`. |
 | `qkt promotion ...` | Record and query promotion states, approvals, waivers, and gates. |
 | `qkt incident collect [...]` | Build an incident zip with journal, log, and state evidence. |
