@@ -10,18 +10,21 @@ source "$repo_root/scripts/live-validation/lib/process-stop.sh"
 usage() {
     cat <<'USAGE'
 Usage: run-shadow-lane.sh --out DIR --gateway-url URL --expected-login N --expected-server NAME
-         --magic N [--duration-seconds N] [--cases DIR] [--cli PATH]
+         --magic N [--duration-seconds N] [--cases DIR] [--cli PATH] [--crypto-symbols]
 
 Loads every `status: ready` case under --cases (default attestation/cases/shadow) into one
 daemon, observes for --duration-seconds (default 420, at most 570), captures each strategy's
 input, replays it through full-tick paper, and runs compare-trace-vectors.py per case.
 Writes DIR/result.json; exits non-zero when any case fails or logged nothing.
+--crypto-symbols runs each case on 24/7 symbols instead of its FX and metals ones (the first becomes
+BTCUSD, a second ETHUSD), so the lane observes a live market at the weekend; the indicators and the
+live-against-replay comparison are unchanged.
 QKT_BROKER_API_KEY comes from the environment. No order is ever submitted.
 USAGE
 }
 fail() { printf 'run-shadow-lane: %s\n' "$1" >&2; exit 1; }
 
-out=""; gateway_url=""; expected_login=""; expected_server=""; magic=""; duration=420
+out=""; gateway_url=""; expected_login=""; expected_server=""; magic=""; duration=420; crypto=false
 cases_dir="$repo_root/attestation/cases/shadow"; cli="$repo_root/build/install/qkt/bin/qkt"
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -33,6 +36,7 @@ while [ "$#" -gt 0 ]; do
         --duration-seconds) duration="${2:-}"; shift 2 ;;
         --cases) cases_dir="${2:-}"; shift 2 ;;
         --cli) cli="${2:-}"; shift 2 ;;
+        --crypto-symbols) crypto=true; shift ;;
         --help|-h) usage; exit 0 ;;
         *) fail "unknown argument: $1" ;;
     esac
@@ -53,6 +57,31 @@ for case_yaml in "$cases_dir"/*/case.yaml; do
     [ "$status" = ready ] && [ -f "$dir/strategy.qkt" ] || continue
     id="$(basename "$dir")"; ids+=("$id")
     cp "$dir/strategy.qkt" "$out/strategies/$id.qkt"
+    if $crypto; then
+        # Each FX or metals symbol, in order of first use, becomes the next 24/7 one the case does not
+        # already trade: EXNESS:EURUSD + EXNESS:XAUUSD -> EXNESS:BTCUSD + EXNESS:ETHUSD.
+        python3 - "$out/strategies/$id.qkt" <<'REMAP' || fail "could not move $id to 24/7 symbols"
+import re, sys
+path = sys.argv[1]
+text = open(path).read()
+crypto = ["BTCUSD", "ETHUSD"]
+seen = []
+for sym in re.findall(r"EXNESS:([A-Z]{6})", text):
+    if sym not in seen:
+        seen.append(sym)
+free = [c for c in crypto if c not in seen]
+mapping = {}
+for sym in seen:
+    if sym in crypto:
+        continue
+    if not free:
+        sys.exit(f"{path}: more FX and metals symbols than 24/7 replacements")
+    mapping[sym] = free.pop(0)
+for old, new in mapping.items():
+    text = re.sub(rf"EXNESS:{old}\b", f"EXNESS:{new}", text)
+open(path, "w").write(text)
+REMAP
+    fi
 done
 [ "${#ids[@]}" -gt 0 ] || fail "no ready shadow case under $cases_dir"
 
@@ -70,6 +99,7 @@ brokers:
     extends: exness
     calendars:
       "BTC*": crypto
+      "ETH*": crypto
     gateway_url: $gateway_url
     magic: $magic
     server_time_zone: Etc/UTC

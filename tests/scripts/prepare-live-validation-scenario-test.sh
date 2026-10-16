@@ -695,7 +695,10 @@ grep -F 'exec {live_lock_fd}>> "$live_lock_path"' "$repo_root/scripts/live-valid
 grep -F 'cp "$evidence/live-lock.txt" "$live_lock_path"' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 # Shared-account runs reconcile against their own magic, never against the account balance.
 grep -F 'fail "scenario magic still owns a position after the scenario"' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
-grep -F '[ "$engine_realized" = "$deal_net" ] ||' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+# The engine's exact realized PnL reconciles to the venue's whole-cent deals within one cent per closing deal.
+grep -F 'allowed = Decimal("0.01") * closing' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'realized-reconciliation.json' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
+grep -F 'does not reconcile to this magic'"'"'s deal net' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 grep -F 'if $live_lock_acquired; then' "$repo_root/scripts/live-validation/run-market-bracket.sh" >/dev/null
 if rg --quiet 'Order(Accepted|Filled)Event' "$repo_root/scripts/live-validation/run-market-bracket.sh"; then
     echo 'order runner uses obsolete broker audit event names' >&2

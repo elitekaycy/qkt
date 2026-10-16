@@ -164,16 +164,24 @@ jq -e --argjson now "$captured_now_ms" '
     ([.[].t] == ([.[].t] | sort | unique))
 ' "$evidence/bars-5m.json" >/dev/null || fail "M5 history contains forming, misaligned, duplicate, or missing bars"
 
+# Exact decimal arithmetic, rounded half-even at eight places as qkt's Money is. Binary floats cannot
+# hold an exact half: on BTCUSD the EMA landed exactly on ...0078125, which qkt rounds to ...0781 2 and
+# a float printf rounded to ...0781 3, failing a correct engine.
 ema_oracle="$(
     jq -r '.[].c' "$evidence/bars-1m.json" |
-        awk '
-            NR <= 3 { seed += $1 }
-            NR == 3 { ema = seed / 3 }
-            NR > 3 { ema = (0.5 * $1) + (0.5 * ema) }
-            END { printf "%.8f", ema }
-        '
+        python3 -c '
+import sys
+from decimal import Decimal, getcontext, ROUND_HALF_EVEN
+getcontext().prec = 50
+closes = [Decimal(line) for line in sys.stdin.read().split()]
+ema = sum(closes[:3]) / 3
+for close in closes[3:]:
+    ema = Decimal("0.5") * close + Decimal("0.5") * ema
+print(ema.quantize(Decimal("1e-8"), rounding=ROUND_HALF_EVEN), end="")
+'
 )"
-ema_actual="$(jq -r '.value | tonumber' "$evidence/ema3-1m.json" | awk '{ printf "%.8f", $1 }')"
+ema_actual="$(jq -r '.value' "$evidence/ema3-1m.json" |
+    python3 -c 'import sys; from decimal import Decimal, ROUND_HALF_EVEN; print(Decimal(sys.stdin.read().strip()).quantize(Decimal("1e-8"), rounding=ROUND_HALF_EVEN), end="")')"
 [ "$ema_oracle" = "$ema_actual" ] || fail "independent EMA oracle mismatch: expected $ema_oracle, got $ema_actual"
 jq -n \
     --arg oracle "$ema_oracle" \
