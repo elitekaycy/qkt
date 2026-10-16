@@ -146,6 +146,7 @@ class CandleHubSeedTest {
         hub.feed(Tick("BACKTEST:BTCUSDT", BigDecimal("102"), 660_500L))
 
         assertThat(closed).containsExactly(660_000L)
-        assertThat(hub.droppedLateTicks()).isEqualTo(1L)
+        // The re-sent quote sits inside a bar seeded from history, which already holds it: not a lost tick.
+        assertThat(hub.droppedLateTicks()).isZero()
     }
 }
