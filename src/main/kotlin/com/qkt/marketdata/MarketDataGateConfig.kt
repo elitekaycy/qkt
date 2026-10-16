@@ -11,6 +11,7 @@ package com.qkt.marketdata
  *   min_stale_age_ms: 10000
  *   outlier_sigma: 6.0
  *   max_clock_skew_ms: 60000
+ *   quiet_alert_after_ms: 600000
  * ```
  */
 data class MarketDataGateConfig(
@@ -22,6 +23,11 @@ data class MarketDataGateConfig(
     val outlierSigma: Double,
     /** Tolerance between broker tick timestamps and the local clock, in milliseconds. */
     val maxClockSkewMs: Long,
+    /**
+     * How long a stale quote on a symbol the session holds nothing in may last, in session, before it
+     * pages the operator; 0 pages every stale quote at once. Exposed symbols page at once regardless.
+     */
+    val quietAlertAfterMs: Long = DEFAULT_QUIET_ALERT_AFTER_MS,
 ) {
     init {
         if (!staleAgeMultiple.isFinite() || staleAgeMultiple <= 0.0) {
@@ -36,9 +42,15 @@ data class MarketDataGateConfig(
         if (maxClockSkewMs < 0L) {
             throw IllegalArgumentException("market_data.max_clock_skew_ms must be non-negative")
         }
+        if (quietAlertAfterMs < 0L) {
+            throw IllegalArgumentException("market_data.quiet_alert_after_ms must be non-negative")
+        }
     }
 
     companion object {
+        /** Ten minutes: past the longest quiet spell measured on a thin venue symbol (prop copper, 455s). */
+        const val DEFAULT_QUIET_ALERT_AFTER_MS: Long = 600_000L
+
         /** The gate's built-in thresholds — what every deployment ran before this knob existed. */
         val DEFAULT: MarketDataGateConfig =
             MarketDataGateConfig(
@@ -56,6 +68,7 @@ data class MarketDataGateConfig(
                 minStaleAgeMs = parseLong(map, "min_stale_age_ms", DEFAULT.minStaleAgeMs),
                 outlierSigma = parseDouble(map, "outlier_sigma", DEFAULT.outlierSigma),
                 maxClockSkewMs = parseLong(map, "max_clock_skew_ms", DEFAULT.maxClockSkewMs),
+                quietAlertAfterMs = parseLong(map, "quiet_alert_after_ms", DEFAULT.quietAlertAfterMs),
             )
         }
 

@@ -40,7 +40,7 @@ qkt --version
 Expected output:
 
 ```text
-qkt 0.56.2 (<git-sha>) built <timestamp>
+qkt 0.57.0 (<git-sha>) built <timestamp>
 ```
 
 If you see that, you're set. The PATH export only lasts for this shell session — for permanent use, add it to your `~/.bashrc` or `~/.zshrc`.

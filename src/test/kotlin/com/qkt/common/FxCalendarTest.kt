@@ -14,17 +14,41 @@ class FxCalendarTest {
     }
 
     @Test
-    fun `weekend boundary is fixed UTC and does not follow New York DST`() {
-        // The FX calendar models the weekend close at a FIXED UTC hour year-round.
-        // The real market closes at NY 17:00, which is 22:00 UTC in summer (EDT) but
-        // 21:00 UTC in winter (EST) — so in winter the calendar is up to an hour
-        // optimistic at the Friday close and pessimistic at the Sunday open. Pinned
-        // here so the approximation is a documented choice, not an accident; the
-        // backtest=live divergence catalog carries the row.
-        val julyFriday2259 = Instant.parse("2024-07-19T21:59:00Z")
-        val januaryFriday2159 = Instant.parse("2024-01-19T21:59:00Z")
-        assertThat(cal.isInSession("EURUSD", julyFriday2259))
-            .isEqualTo(cal.isInSession("EURUSD", januaryFriday2159))
+    fun `the week closes at 17 New York, 21 UTC in summer and 22 UTC in winter`() {
+        // FX trades on New York time. The summer close is 21:00 UTC (EDT, UTC-4): a hg20k Friday on the
+        // fixed 22:00 rule raised STALE at 21:10 UTC on 2026-10-09 and held it all weekend, and the EURUSD
+        // store's last summer Friday tick is 20:59:59 UTC.
+        assertThat(cal.isInSession("EURUSD", Instant.parse("2026-10-09T20:59:00Z"))).isTrue()
+        assertThat(cal.isInSession("EURUSD", Instant.parse("2026-10-09T21:00:00Z"))).isFalse()
+        assertThat(cal.isInSession("EURUSD", Instant.parse("2026-01-16T21:59:00Z"))).isTrue()
+        assertThat(cal.isInSession("EURUSD", Instant.parse("2026-01-16T22:00:00Z"))).isFalse()
+    }
+
+    @Test
+    fun `the week opens at 17 New York on Sunday in either season`() {
+        assertThat(cal.isInSession("EURUSD", Instant.parse("2026-10-11T20:59:00Z"))).isFalse()
+        assertThat(cal.isInSession("EURUSD", Instant.parse("2026-10-11T21:00:00Z"))).isTrue()
+        assertThat(cal.isInSession("EURUSD", Instant.parse("2026-01-18T21:59:00Z"))).isFalse()
+        assertThat(cal.isInSession("EURUSD", Instant.parse("2026-01-18T22:00:00Z"))).isTrue()
+    }
+
+    @Test
+    fun `a summer FX day runs from 21 UTC to 21 UTC`() {
+        val r = cal.sessionRange("EURUSD", Instant.parse("2026-10-14T10:00:00Z"))
+        assertThat(r.from).isEqualTo(Instant.parse("2026-10-13T21:00:00Z"))
+        assertThat(r.to).isEqualTo(Instant.parse("2026-10-14T21:00:00Z"))
+    }
+
+    @Test
+    fun `the day across the daylight saving change is 25 hours and both ends sit on 17 New York`() {
+        // DST ends Sunday 2026-11-01 02:00 New York: the previous day of Monday the 2nd opens Saturday 17:00 EDT.
+        val mon = Instant.parse("2026-11-02T10:00:00Z")
+        val current = cal.rangeFor(SessionAnchor.CurrentSession, cal.anchorEpochFor(SessionAnchor.CurrentSession, mon))
+        assertThat(current.from).isEqualTo(Instant.parse("2026-11-01T22:00:00Z"))
+        assertThat(current.to).isEqualTo(Instant.parse("2026-11-02T22:00:00Z"))
+        val previous = cal.rangeFor(SessionAnchor.PreviousDay, cal.anchorEpochFor(SessionAnchor.PreviousDay, mon))
+        assertThat(previous.from).isEqualTo(Instant.parse("2026-10-31T21:00:00Z"))
+        assertThat(previous.to).isEqualTo(Instant.parse("2026-11-01T22:00:00Z"))
     }
 
     @Test

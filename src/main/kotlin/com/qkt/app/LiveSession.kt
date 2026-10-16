@@ -518,7 +518,7 @@ class LiveSession(
                 accounting = accounting,
                 equity = riskState.equityTracker::liveEquity,
             )
-        val marketDataAlerts = MarketDataHealthAlerts(strategies, sessionNotifier, insights)
+        val marketDataAlerts = MarketDataHealthAlerts(strategies, sessionNotifier, insights, marketDataGateConfig)
         val marketDataGate =
             liveMarketDataGate(
                 clock,
@@ -638,7 +638,7 @@ class LiveSession(
                 latencyEnabled = latencyEnabled,
             )
         downtimeCloses.clearRuleEdges(strategies)
-        marketDataAlerts.engineHeldProtectiveStopCount = pipeline.orderManager::engineHeldProtectiveStopCount
+        marketDataAlerts.bind(pipeline)
 
         bus.subscribe<WarmupTickEvent> { e -> onWarmupTick(e.tick) }
         bus.subscribe<SignalEvent> { e -> onSignal(e.signal) }

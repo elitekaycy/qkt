@@ -599,10 +599,19 @@ Thresholds for the live market-data quality gate (`MarketDataGate`) every daemon
 | `market_data.min_stale_age_ms` | long | `10000` | live sessions | Floor for the staleness threshold. |
 | `market_data.outlier_sigma` | double | `6.0` | live sessions | Standard deviations from the short-window mean beyond which a tick is rejected. |
 | `market_data.max_clock_skew_ms` | long | `60000` | live sessions | Tolerance between broker tick timestamps and the local clock before new orders are suppressed. |
+| `market_data.quiet_alert_after_ms` | long | `600000` | live sessions | How long a `STALE` episode on a symbol the session holds nothing in may last, in session, before it sends the `MarketDataUnhealthy` alert. `0` alerts every `STALE` at once. Must be zero or more. |
 
 The gate suppresses new orders for a symbol in every case below; only the faults alert. A fault
-logs at ERROR, sends a `MarketDataUnhealthy` strategy error (when `strategy_error` notifications
-are on) and ships `marketdata.stale` to insights once per episode.
+logs at ERROR and ships `marketdata.stale` to insights once per episode. It also sends one
+`MarketDataUnhealthy` strategy error per episode (when `strategy_error` notifications are on):
+
+- **Clock skew or outlier run:** the alert is sent at once.
+- **`STALE` on a symbol the session holds a position or working orders in:** the alert is sent at
+  once and names them, because engine-held stops and exits cannot trigger without ticks.
+- **`STALE` with nothing open on the symbol:** the alert waits until the symbol has been silent for
+  `quiet_alert_after_ms` in session, or until exposure appears. The count stops in a `pause` or out
+  of session and restarts at the reopen. A thin market's quiet minutes are not paged (prop copper measured up to 455 s without a
+  quote in the broker's own tick history), but a feed that stays dead is.
 
 | Condition | Log | Alerts | `marketdata.stale` `kind` |
 |---|---|---|---|

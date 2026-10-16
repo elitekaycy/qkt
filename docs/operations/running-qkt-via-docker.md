@@ -127,4 +127,4 @@ docker pull ghcr.io/elitekaycy/qkt:dev
 ```
 
 If you'd rather stay on one exact version (so results don't shift under you), use a version name
-instead, like `ghcr.io/elitekaycy/qkt:v0.56.2`.
+instead, like `ghcr.io/elitekaycy/qkt:v0.57.0`.
