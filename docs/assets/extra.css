@@ -277,7 +277,7 @@ body,
 
 /* version chip next to the logo */
 .md-header__topic .md-ellipsis::after {
-  content: "0.24";
+  content: "0.57";
   font-family: var(--qkt-font-mono);
   font-size: 0.62rem;
   font-weight: 500;

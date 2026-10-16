@@ -116,6 +116,10 @@ nav:
       - Deploy paper: get-started/deploy-paper.md
       - The MT5 gateway: get-started/mt5-gateway.md
       - Deploy MT5: get-started/deploy-mt5.md
+  - Data:
+      - Get data (start here): get-started/get-data.md
+      - Import data from any source: how-to/import-data.md
+      - Fetching, storing and data types: how-to/backtest-data.md
   - Tutorials:
       - tutorials/index.md
       - Tutorial 1 — Your first strategy: tutorials/first-strategy.md
@@ -158,8 +162,6 @@ nav:
       - Options: instruments/options.md
   - Backtesting:
       - How a backtest runs: concepts/backtest-model.md
-      - Getting & storing data: how-to/backtest-data.md
-      - Import data from any source: how-to/import-data.md
       - Trust & parity overview: parity/README.md
       - Backtest vs live execution: parity/backtest-vs-live.md
       - Data source — dukascopy vs MT5: parity/parity-dukascopy-vs-mt5-xauusd.md
