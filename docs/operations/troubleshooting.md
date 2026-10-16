@@ -16,7 +16,7 @@ to read.
 ```text
 qkt: HEALTHY
 
-qkt 0.28.9 (424d5d9) built 2026-05-25T21:08:37Z
+qkt 0.56.2 (fc481a07) built 2026-10-14T17:28:28Z
 
 DAEMON       running (uptime 12h5m)
 CONTROL      reachable
