@@ -58,29 +58,8 @@ for case_yaml in "$cases_dir"/*/case.yaml; do
     id="$(basename "$dir")"; ids+=("$id")
     cp "$dir/strategy.qkt" "$out/strategies/$id.qkt"
     if $crypto; then
-        # Each FX or metals symbol, in order of first use, becomes the next 24/7 one the case does not
-        # already trade: EXNESS:EURUSD + EXNESS:XAUUSD -> EXNESS:BTCUSD + EXNESS:ETHUSD.
-        python3 - "$out/strategies/$id.qkt" <<'REMAP' || fail "could not move $id to 24/7 symbols"
-import re, sys
-path = sys.argv[1]
-text = open(path).read()
-crypto = ["BTCUSD", "ETHUSD"]
-seen = []
-for sym in re.findall(r"EXNESS:([A-Z]{6})", text):
-    if sym not in seen:
-        seen.append(sym)
-free = [c for c in crypto if c not in seen]
-mapping = {}
-for sym in seen:
-    if sym in crypto:
-        continue
-    if not free:
-        sys.exit(f"{path}: more FX and metals symbols than 24/7 replacements")
-    mapping[sym] = free.pop(0)
-for old, new in mapping.items():
-    text = re.sub(rf"EXNESS:{old}\b", f"EXNESS:{new}", text)
-open(path, "w").write(text)
-REMAP
+        python3 "$repo_root/scripts/live-validation/lib/crypto-symbols.py" "$out/strategies/$id.qkt" ||
+            fail "could not move $id to 24/7 symbols"
     fi
 done
 [ "${#ids[@]}" -gt 0 ] || fail "no ready shadow case under $cases_dir"
@@ -100,6 +79,7 @@ brokers:
     calendars:
       "BTC*": crypto
       "ETH*": crypto
+      "XRP*": crypto
     gateway_url: $gateway_url
     magic: $magic
     server_time_zone: Etc/UTC
