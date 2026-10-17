@@ -11,7 +11,10 @@ data class BarCoverage(
     val missingDays: List<LocalDate>,
 )
 
-/** File-level coverage validation for the prebuilt-bars research tier. */
+/**
+ * File-level coverage validation for the prebuilt-bars research tier. A day is covered by a built `<day>.bin` or,
+ * when [fetched] is given, by a fetched or imported `<day>.csv` at the same timeframe: `--bars` reads either.
+ */
 object BarCompletenessValidator {
     fun validate(
         store: BinaryBarStore,
@@ -21,6 +24,7 @@ object BarCompletenessValidator {
         from: LocalDate,
         to: LocalDate,
         calendar: TradingCalendar,
+        fetched: LocalBarStore? = null,
     ): BarCoverage {
         val expected = mutableListOf<LocalDate>()
         var day = from
@@ -35,7 +39,11 @@ object BarCompletenessValidator {
             if (hasSession) expected += day
             day = day.plusDays(1)
         }
-        val missing = expected.filterNot { store.hasDay(broker, symbol, timeframe, it) }
+        val missing =
+            expected.filterNot {
+                store.hasDay(broker, symbol, timeframe, it) ||
+                    fetched?.hasDay(broker, symbol, timeframe.canonicalSpec(), it) == true
+            }
         return BarCoverage(expected.size, expected.size - missing.size, missing)
     }
 }

@@ -9,7 +9,10 @@ usage() {
 Usage: prepare-generated-parity-wave.sh --output DIR --id ID --gateway-url URL \
   --expected-login N --expected-server NAME --expected-balance DECIMAL \
   --expected-leverage N --magic-base N [--cli PATH]
-  [--ema-fast N --ema-slow N]
+  [--ema-fast N --ema-slow N] [--symbol BTCUSD]
+
+--symbol runs all four cases on one symbol (e.g. BTCUSD, which trades at the weekend while FX is
+closed); without it the cases trade EURUSD and GBPUSD.
 
 Prepares a first generated order-bearing live/replay parity wave using four
 bounded 0.01-lot scenarios built for the existing read-only, live, and replay
@@ -48,6 +51,7 @@ while [ "$#" -gt 0 ]; do
         --cli) cli="${2:-}"; shift 2 ;;
         --ema-fast) ema_fast="${2:-}"; shift 2 ;;
         --ema-slow) ema_slow="${2:-}"; shift 2 ;;
+        --symbol) only_symbol="${2:-}"; shift 2 ;;
         --help|-h) usage; exit 0 ;;
         *) fail "unknown argument: $1" ;;
     esac
@@ -77,10 +81,19 @@ git_sha="$(git -C "$repo_root" rev-parse HEAD)"
 
 mkdir -m 700 -p "$output/cases"
 
-case_ids=("ema-eurusd" "rsi-gbpusd" "atr-eurusd" "case-gbpusd")
+prefixes=("ema" "rsi" "atr" "case")
 symbols=("EURUSD" "GBPUSD" "EURUSD" "GBPUSD")
 variants=("ema_cross" "rsi_reversion" "atr_channel" "case_math")
+if [ -n "${only_symbol:-}" ]; then
+    [[ "$only_symbol" =~ ^[A-Z]{6}$ ]] || fail "--symbol must be a six-letter symbol such as BTCUSD"
+    symbols=("$only_symbol" "$only_symbol" "$only_symbol" "$only_symbol")
+fi
+case_ids=()
+for index in 0 1 2 3; do
+    case_ids+=("${prefixes[$index]}-$(printf '%s' "${symbols[$index]}" | tr '[:upper:]' '[:lower:]')")
+done
 
+manifest_cases="[]"
 for index in 0 1 2 3; do
     case_id="${case_ids[$index]}"
     symbol="${symbols[$index]}"
@@ -103,6 +116,10 @@ for index in 0 1 2 3; do
         --symbol "$symbol" \
         --variant "$variant" \
         >/dev/null
+    manifest_cases="$(jq -c --arg id "$case_id" --arg scenario "$scenario_id" --arg symbol "EXNESS:$symbol" \
+        --arg variant "$variant" --argjson magic "$magic" \
+        '. + [{id:$id, path:("cases/" + $id), scenarioId:$scenario, symbol:$symbol, variant:$variant, magic:$magic}]' \
+        <<< "$manifest_cases")"
     jq '.qktDirty = false' "$scenario_output/scenario.json" > "$scenario_output/.scenario.json.tmp"
     mv "$scenario_output/.scenario.json.tmp" "$scenario_output/scenario.json"
     (
@@ -119,7 +136,8 @@ jq -n \
     --argjson login "$expected_login" \
     --arg server "$expected_server" \
     --arg balance "$expected_balance" \
-    --argjson leverage "$expected_leverage" '
+    --argjson leverage "$expected_leverage" \
+    --argjson cases "$manifest_cases" '
     {
       schema:"qkt-live-generated-parity-wave-v1",
       suiteId:$suiteId,
@@ -146,40 +164,7 @@ jq -n \
         readOnlyRunner:"scripts/live-validation/run-readonly.sh",
         replayRunner:"scripts/live-validation/compare-golden-replay.sh"
       },
-      cases:[
-        {
-          id:"ema-eurusd",
-          path:"cases/ema-eurusd",
-          scenarioId:($suiteId + "_ema_eurusd"),
-          symbol:"EXNESS:EURUSD",
-          variant:"ema_cross",
-          magic:('"$magic_base"' + 0)
-        },
-        {
-          id:"rsi-gbpusd",
-          path:"cases/rsi-gbpusd",
-          scenarioId:($suiteId + "_rsi_gbpusd"),
-          symbol:"EXNESS:GBPUSD",
-          variant:"rsi_reversion",
-          magic:('"$magic_base"' + 1)
-        },
-        {
-          id:"atr-eurusd",
-          path:"cases/atr-eurusd",
-          scenarioId:($suiteId + "_atr_eurusd"),
-          symbol:"EXNESS:EURUSD",
-          variant:"atr_channel",
-          magic:('"$magic_base"' + 2)
-        },
-        {
-          id:"case-gbpusd",
-          path:"cases/case-gbpusd",
-          scenarioId:($suiteId + "_case_gbpusd"),
-          symbol:"EXNESS:GBPUSD",
-          variant:"case_math",
-          magic:('"$magic_base"' + 3)
-        }
-      ]
+      cases:$cases
     }
 ' > "$output/suite.json"
 

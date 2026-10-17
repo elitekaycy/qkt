@@ -219,7 +219,7 @@ test class that pins it.
 | #630/#641 | `--bars` validates bar-store coverage per trading day (fail-loud, `--allow-incomplete` escape); non-Dukascopy streams are completeness-validated; empty feeds error instead of replaying nothing | `BarCompletenessValidatorTest`, `BacktestFromStoreTest` |
 | #631 | MT5 warmup bars normalize bid OHLC to mid via half-spread, matching the backtest's mid bars | `Mt5BarFetcherTest` |
 | #632/#633 | `NOW.*` and schedule actions evaluate at event time (bar close / scheduled fire time), and missed schedule occurrences replay one-by-one instead of coalescing | `NowAccessorEvalTest`, `ScheduleRunnerTest` |
-| #634 | `CandleAggregator` never reopens a closed window; late ticks are dropped and counted | `CandleAggregatorTest` |
+| #634 | `CandleAggregator` never reopens a closed window. Late ticks are dropped and counted; a live tick inside a window seeded from venue history is already in that bar and is counted as covered, not dropped | `CandleAggregatorTest`, `CandleAggregatorLateTickTest` |
 | #635 | Sim StopLimit/IfTouched-LIMIT activate a resting limit (no instant fill at the limit); limit fills are limit-or-better, never slipped adversely | `PaperBrokerTest`, `MT5BrokerSimulatorTest` |
 | #636 | Expiry wins the deadline instant in both venue-held (sim `expireGtd` before the trigger pass) and engine-held (`now >= deadline`) paths | `OrderManagerGtdSweepTest` |
 | #637 | A triggered order re-checks its live state before broker submission — a same-pass cancel can no longer double-submit | `OrderManagerBracketDecompositionTest` |

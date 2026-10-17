@@ -34,4 +34,35 @@ class CandleAggregatorLateTickTest : CandleAggregatorFixture() {
         publishTick("X", Money.of("98"), 2_000L)
         assertThat(agg.droppedLateTicks).isEqualTo(1L)
     }
+
+    @Test
+    fun `a live tick inside a window seeded from venue history is covered, not dropped`() {
+        // Seen at the v0.57.1 attestation: warmup at 14:13:00.7 closed the 14:12 bar from the broker's own
+        // history, then the feed replayed its 14:12:59.970 tick. That tick is the broker bar's close: the bar
+        // already holds it, so it is neither applied again nor reported as a bar that under-reports the venue.
+        val emitted = mutableListOf<Candle>()
+        val agg = CandleAggregator.standalone(TimeWindow.ONE_MINUTE) { emitted.add(it) }
+        agg.closedThrough("X", 60_000L)
+        agg.onTick(Tick("X", Money.of("1.12547"), 59_970L))
+
+        assertThat(agg.droppedLateTicks).isZero()
+        assertThat(agg.historyCoveredTicks).isEqualTo(1L)
+
+        agg.onTick(Tick("X", Money.of("1.12545"), 60_227L))
+        agg.flushClosed(120_000L)
+        assertThat(emitted.single().startTime).isEqualTo(60_000L)
+        assertThat(emitted.single().open).isEqualByComparingTo("1.12545")
+    }
+
+    @Test
+    fun `a late tick for a bar the engine closed itself still counts as dropped`() {
+        val agg = CandleAggregator.standalone(TimeWindow.ONE_MINUTE) {}
+        agg.closedThrough("X", 60_000L)
+        agg.onTick(Tick("X", Money.of("100"), 61_000L))
+        agg.flushClosed(120_000L)
+        agg.onTick(Tick("X", Money.of("101"), 119_000L))
+
+        assertThat(agg.droppedLateTicks).isEqualTo(1L)
+        assertThat(agg.historyCoveredTicks).isZero()
+    }
 }

@@ -18,7 +18,6 @@ import com.qkt.connector.mt5.MT5BrokerProfileLoader
 import com.qkt.connector.mt5.marketdata.Mt5BarFetcher
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.flow.FlowKind
-import com.qkt.marketdata.store.DataRoot
 import com.qkt.marketdata.store.LocalBarStore
 import java.time.ZoneOffset
 
@@ -115,7 +114,7 @@ class FetchCommand(
         }
 
         val fetcher = buildFetcher(broker, args.option("config")) ?: return ExitCodes.USER_ERROR
-        val store = LocalBarStore(root = DataRoot.forDataRoot(args.option("data-root")))
+        val store = LocalBarStore(root = CliDataRoot.of(args))
         // The folder is named by the canonical spec readers look up: `--tf 60m` lands in `1h/`, not a `60m/` no one reads.
         val tf = window.canonicalSpec()
 
@@ -175,5 +174,5 @@ class FetchCommand(
     }
 
     private fun catalog(target: String): Int =
-        CatalogFetch.forTarget(target, DataRoot.forDataRoot(args.option("data-root")), args.option("config"))
+        CatalogFetch.forTarget(target, CliDataRoot.of(args), args.option("config"))
 }

@@ -79,11 +79,14 @@ mapfile -t armed_sources < <(find "$scenario/strategies/armed" -maxdepth 1 -type
 readonly_name="$(basename "${readonly_sources[0]}" .qkt)"
 armed_name="$(basename "${armed_sources[0]}" .qkt)"
 armed_symbol="$(jq -er '.armedScenario.symbol' "$scenario/expected.json")"
+# The reviewed bounded bracket per symbol, as prepare-scenario.sh writes it: FX in price units, and
+# BTCUSD (24/7, for an attestation while FX is closed) at the same 1:2 stop-to-target shape.
 case "$armed_symbol" in
-    EXNESS:EURUSD) venue_symbol=EURUSDm ;;
-    EXNESS:GBPUSD) venue_symbol=GBPUSDm ;;
-    *) fail "armed scenario symbol is outside the reviewed FX set: $armed_symbol" ;;
+    EXNESS:EURUSD | EXNESS:GBPUSD) stop_distance="0.0030"; take_profit_distance="0.0060" ;;
+    EXNESS:BTCUSD) stop_distance="1500.00"; take_profit_distance="3000.00" ;;
+    *) fail "armed scenario symbol is outside the reviewed set: $armed_symbol" ;;
 esac
+venue_symbol="${armed_symbol#EXNESS:}m"
 grep -F 'EVERY 1m' "${readonly_sources[0]}" >/dev/null || fail "read-only strategy is missing M1 bars"
 grep -F 'EVERY 5m' "${readonly_sources[0]}" >/dev/null || fail "read-only strategy is missing M5 bars"
 grep -F 'SIZING 0.01' "${armed_sources[0]}" >/dev/null || fail "armed strategy is not fixed at 0.01 lots"
@@ -91,7 +94,8 @@ grep -F 'TRADES.today = 0' "${armed_sources[0]}" >/dev/null || fail "armed strat
 grep -F 'POSITION.asset1.holding_duration >= 1' "${armed_sources[0]}" >/dev/null ||
     fail "armed strategy does not contain the reviewed DSL close delay"
 grep -F 'THEN CLOSE asset1' "${armed_sources[0]}" >/dev/null || fail "armed strategy has no strategy-owned close"
-jq -e --arg strategy "$armed_name" --arg symbol "$armed_symbol" '
+jq -e --arg strategy "$armed_name" --arg symbol "$armed_symbol" \
+    --arg stop "$stop_distance" --arg target "$take_profit_distance" '
     .schema == "qkt-live-validation-expected-v2" and
     .account.identitySource == "runtimeEnvironment" and
     (.account | has("login") or has("server") | not) and
@@ -103,7 +107,7 @@ jq -e --arg strategy "$armed_name" --arg symbol "$armed_symbol" '
     all(.armedScenario.streams[]; .symbol == $symbol and .warmupBars == 10) and
     .armedScenario.quantityLots == "0.01" and .armedScenario.maximumEntries == 1 and
     .armedScenario.maximumExits == 1 and .armedScenario.minimumHoldingSeconds == 1 and
-    .armedScenario.stopDistance == "0.0030" and .armedScenario.takeProfitDistance == "0.0060"
+    .armedScenario.stopDistance == $stop and .armedScenario.takeProfitDistance == $target
 ' "$scenario/expected.json" >/dev/null || fail "expected metadata is not the bounded DSL round trip"
 
 if $verify_only; then
@@ -531,7 +535,7 @@ cmp -s "$evidence/engine-rule-decisions.tsv" "$evidence/collector-rule-decisions
 bracket_entry_id="$(sqlite3 "$db" "select json_extract(payload,'$.orderId') from events where instance_id='$instance' and type='order.submit' and json_extract(payload,'$.orderType')='Bracket';")"
 bracket_plan_id="$(sqlite3 "$db" "select json_extract(payload,'$.planOrderId') from events where instance_id='$instance' and type='order.submit' and json_extract(payload,'$.orderType')='Bracket';")"
 [ -n "$bracket_entry_id" ] && [ -n "$bracket_plan_id" ] || fail "canonical bracket identity is missing"
-[ "$(sqlite3 "$db" "select count(*) from events where instance_id='$instance' and type='order.submit' and json_extract(payload,'$.orderSchemaVersion')=1 and json_extract(payload,'$.orderType')='Bracket' and json_extract(payload,'$.symbol')='$armed_symbol' and json_extract(payload,'$.qty')=0.01 and json_extract(payload,'$.entry.orderType')='Market' and json_extract(payload,'$.stopLossAst.type')='By' and json_extract(payload,'$.stopLossAst.distance.type')='NumLit' and json_extract(payload,'$.stopLossAst.distance.value')=0.0030 and json_extract(payload,'$.takeProfitAst.type')='By' and json_extract(payload,'$.takeProfitAst.distance.type')='NumLit' and json_extract(payload,'$.takeProfitAst.distance.value')=0.0060;")" -eq 1 ] ||
+[ "$(sqlite3 "$db" "select count(*) from events where instance_id='$instance' and type='order.submit' and json_extract(payload,'$.orderSchemaVersion')=1 and json_extract(payload,'$.orderType')='Bracket' and json_extract(payload,'$.symbol')='$armed_symbol' and json_extract(payload,'$.qty')=0.01 and json_extract(payload,'$.entry.orderType')='Market' and json_extract(payload,'$.stopLossAst.type')='By' and json_extract(payload,'$.stopLossAst.distance.type')='NumLit' and json_extract(payload,'$.stopLossAst.distance.value')=$stop_distance and json_extract(payload,'$.takeProfitAst.type')='By' and json_extract(payload,'$.takeProfitAst.distance.type')='NumLit' and json_extract(payload,'$.takeProfitAst.distance.value')=$take_profit_distance;")" -eq 1 ] ||
     fail "collector lacks the canonical bracket AST and reviewed distances"
 [ "$(sqlite3 "$db" "select count(*) from orders where instance_id='$instance' and order_id='$bracket_plan_id';")" -eq 0 ] ||
     fail "bracket plan created an orphan order row"

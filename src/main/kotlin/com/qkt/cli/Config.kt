@@ -698,7 +698,7 @@ data class Config(
                 )
             }
 
-        private fun expandVars(s: String): String =
+        internal fun expandVars(s: String): String =
             varRegex.replace(s) { m ->
                 val name = m.groupValues[1]
                 val default = m.groups[2]?.value

@@ -22,6 +22,7 @@ class DailyEquityTest {
         acc.accept(ms("2024-01-02", 9), Money.of("90"))
         acc.accept(ms("2024-01-02", 23), Money.of("110"))
         acc.accept(ms("2024-01-03", 0), Money.of("111"))
+        acc.accept(ms("2024-01-03", 4), Money.of("111"))
 
         val rows = acc.result()
         assertThat(rows).hasSize(2)
@@ -97,5 +98,28 @@ class DailyEquityTest {
     fun `an empty series has no rows and no months`() {
         assertThat(DailyEquityAccumulator().result()).isEmpty()
         assertThat(monthlyReturns(emptyList())).isEmpty()
+    }
+
+    @Test
+    fun `a run ending at midnight closes its last day there instead of reporting a day it did not cover`() {
+        // --to 2024-01-04: the last 15m bar closes at 2024-01-04T00:00, sampled before that instant's tick.
+        val acc = DailyEquityAccumulator()
+        acc.accept(ms("2024-01-02", 1), Money.of("100"))
+        acc.accept(ms("2024-01-03", 12), Money.of("105"))
+        acc.accept(ms("2024-01-04", 0), Money.of("108"))
+
+        val rows = acc.result()
+        assertThat(rows.map { it.date.toString() }).containsExactly("2024-01-02", "2024-01-03")
+        assertThat(rows.last().close).isEqualByComparingTo("108")
+        assertThat(rows.last().high).isEqualByComparingTo("108")
+    }
+
+    @Test
+    fun `a lone midnight sample after a gap still opens its own day`() {
+        val acc = DailyEquityAccumulator()
+        acc.accept(ms("2024-01-05", 20), Money.of("100"))
+        acc.accept(ms("2024-01-08", 0), Money.of("101"))
+
+        assertThat(acc.result().map { it.date.toString() }).containsExactly("2024-01-05", "2024-01-08")
     }
 }

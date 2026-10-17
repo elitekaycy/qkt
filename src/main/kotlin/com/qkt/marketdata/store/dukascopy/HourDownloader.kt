@@ -47,6 +47,8 @@ class OkHttpHourDownloader(
     private val fallbackBaseUrls: List<String> = listOf("https://jetta.dukascopy.com/datafeed"),
     private val sleeper: (Long) -> Unit = { Thread.sleep(it) },
     private val clock: Clock = SystemClock(),
+    /** Says why a download is waiting, so a rate-limited first fetch never looks like a hang; stderr by default. */
+    private val notice: (String) -> Unit = { System.err.println(it) },
 ) : HourDownloader {
     override fun download(
         instrument: String,
@@ -76,15 +78,35 @@ class OkHttpHourDownloader(
                     }
                 } catch (e: RetryableFetch) {
                     lastError = IOException("HTTP ${e.message} for $url", e)
-                    if (attempt < maxAttempts - 1) sleeper(backoffMs(attempt, e.retryAfterMs))
+                    if (attempt <
+                        maxAttempts - 1
+                    ) {
+                        wait(backoffMs(attempt, e.retryAfterMs), "${e.message}", path, attempt)
+                    }
                 } catch (e: IOException) {
                     lastError = e
-                    if (attempt < maxAttempts - 1) sleeper(backoffMs(attempt, null))
+                    if (attempt <
+                        maxAttempts - 1
+                    ) {
+                        wait(backoffMs(attempt, null), e.message ?: "IO error", path, attempt)
+                    }
                 }
                 attempt++
             }
         }
         throw IOException("dukascopy fetch failed after $maxAttempts attempts per host for $path", lastError)
+    }
+
+    private fun wait(
+        ms: Long,
+        why: String,
+        path: String,
+        attempt: Int,
+    ) {
+        notice(
+            "qkt: dukascopy did not answer $path ($why); retrying in ${ms / 1000}s (attempt ${attempt + 2} of $maxAttempts)",
+        )
+        sleeper(ms)
     }
 
     /**

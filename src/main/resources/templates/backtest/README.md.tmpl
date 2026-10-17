@@ -44,8 +44,8 @@ make shell     # open a shell in the QKT container
 
 ## Data
 
-Put local market data under `data/` using the layout expected by
-`qkt.config.yaml`. The generated config uses `source: local` and
-`data_root: /data`.
+Put local market data under `data/`, or bring it in with `qkt data import <file> --as SOURCE:SYMBOL`. The
+generated config says `data_root: ./data`, so `qkt` run in this folder reads and writes `data/`; inside the
+container the same folder is mounted at `/data`. See https://docs.tryqkt.com/get-started/get-data/.
 
 Scaffolded by qkt v{{QKT_VERSION}}.

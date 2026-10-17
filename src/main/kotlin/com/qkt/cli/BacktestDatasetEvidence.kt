@@ -4,7 +4,6 @@ import com.qkt.cli.BacktestContext.Companion.SetupError
 import com.qkt.dsl.ast.StrategyAst
 import com.qkt.evidence.DatasetEvidence
 import com.qkt.evidence.EvidenceHasher
-import com.qkt.marketdata.store.DataRoot
 import com.qkt.marketdata.store.DatasetSnapshot
 import com.qkt.marketdata.store.DatasetSnapshots
 import java.nio.file.Path
@@ -31,7 +30,7 @@ internal object BacktestDatasetEvidence {
         to: Instant,
     ): DatasetContext =
         snapshotContext(args, strategyAsts, symbols, from, to).also { context ->
-            val root = args.option("data-root") ?: context.dataRoot ?: DataRoot.resolve().toString()
+            val root = args.option("data-root") ?: context.dataRoot ?: CliDataRoot.resolve(args).path.toString()
             BacktestMarkCoverage.require(Path.of(root), strategyAsts, from, to)
             BacktestFlowCoverage.require(Path.of(root), strategyAsts, from, to)
         }

@@ -12,6 +12,14 @@ Three paths from clone to running strategy. Pick the one that matches what you w
 
     [:octicons-arrow-right-24: Quickstart](quickstart.md)
 
+- :material-database-arrow-down:{ .lg .middle } **Get data**
+
+    ---
+
+    Free ticks that download themselves, your broker's bars, or your own CSVs and exports: where they go and how qkt reads them.
+
+    [:octicons-arrow-right-24: Get data](get-data.md)
+
 - :material-package-variant:{ .lg .middle } **Scaffold a project**
 
     ---
