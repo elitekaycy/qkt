@@ -10,6 +10,7 @@ usage() {
 Usage: run-attestation-catalog.sh --out DIR --gateway-url URL --expected-login N
          --expected-server NAME --magic-base N --arm I_UNDERSTAND_DEMO_ORDER_0.01
          [--lanes shadow,orders,risk,book,engine,daemon,stress[,derivatives][,bybit]] [--max-parallel N]
+         [--crypto-symbols]   (the shadow lane on 24/7 symbols, for a weekend run)
          [--cli PATH] [--deriv-gateway-url URL --deriv-expected-login LOGIN]
          [--bybit-gateway-url URL --bybit-expected-login LOGIN]
 
@@ -39,6 +40,7 @@ while [ "$#" -gt 0 ]; do
         --magic-base) magic_base="${2:-}"; shift 2 ;;
         --arm) arm="${2:-}"; shift 2 ;;
         --lanes) lanes="${2:-}"; shift 2 ;;
+        --crypto-symbols) crypto_symbols=true; shift ;;
         --max-parallel) max_parallel="${2:-}"; shift 2 ;;
         --cli) cli="${2:-}"; shift 2 ;;
         --deriv-gateway-url) deriv_gateway_url="${2:-}"; shift 2 ;;
@@ -70,7 +72,8 @@ launch() {  # name command...
 }
 
 if [[ ",$lanes," == *,shadow,* ]]; then
-    launch shadow bash "$repo_root/scripts/live-validation/run-shadow-lane.sh" --out "$out/shadow" "${common[@]}" --magic "$magic"
+    launch shadow bash "$repo_root/scripts/live-validation/run-shadow-lane.sh" --out "$out/shadow" "${common[@]}" --magic "$magic" \
+        ${crypto_symbols:+--crypto-symbols}
     magic=$((magic + 1))
 fi
 for lane in orders risk book engine daemon stress; do

@@ -246,7 +246,13 @@ run_replay() {
 
 run_replay full-ticks-paper paper
 run_replay bars-paper paper --bars --bar-tf 1m
-run_replay full-ticks-mt5 mt5-sim
+# The live account's specs, when the armed run saved them for a symbol with no built-in ones.
+mt5_specs=()
+if [ -f "$scenario/evidence/instruments.yaml" ]; then
+    cp -- "$scenario/evidence/instruments.yaml" "$output/source/instruments.yaml"
+    mt5_specs=(--instruments "$output/source/instruments.yaml")
+fi
+run_replay full-ticks-mt5 mt5-sim "${mt5_specs[@]}"
 
 trades_json() {
     local csv="$1"

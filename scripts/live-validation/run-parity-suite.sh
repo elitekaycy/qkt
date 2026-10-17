@@ -12,12 +12,13 @@ usage() {
     cat <<'EOF'
 Usage: run-parity-suite.sh --output DIR --id ID --gateway-url http://127.0.0.1:PORT \
   --expected-login N --expected-server NAME --expected-balance DECIMAL \
-  --expected-leverage N --magic-base N [--cli PATH] [--verify-only] [--parallel]
+  --expected-leverage N --magic-base N [--cli PATH] [--verify-only] [--parallel] [--symbol BTCUSD]
 
 Prepare and validate the generated four-case live/replay parity suite. By default
 this performs static verification only. Add --run-live together with
 QKT_LIVE_DEMO_ORDER_APPROVAL=LOCALHOST_DEMO_ONLY and --arm
-I_UNDERSTAND_DEMO_ORDER_0.01 to run real bounded demo orders.
+I_UNDERSTAND_DEMO_ORDER_0.01 to run real bounded demo orders. --symbol BTCUSD runs every case, and the
+shadow lane, on 24/7 crypto, for a wave while FX is closed.
 EOF
 }
 
@@ -66,6 +67,7 @@ while [ "$#" -gt 0 ]; do
         --magic-base) magic_base="${2:-}"; shift 2 ;;
         --ema-fast) ema_fast="${2:-}"; shift 2 ;;
         --ema-slow) ema_slow="${2:-}"; shift 2 ;;
+        --symbol) wave_symbol="${2:-}"; shift 2 ;;
         --cli) cli="${2:-}"; shift 2 ;;
         --verify-only) verify_only=true; shift ;;
         --run-live) verify_only=false; shift ;;
@@ -127,7 +129,7 @@ bash "$prepare" --output "$output" --id "$suite_id" --gateway-url "$gateway_url"
     --expected-login "$expected_login" --expected-server "$expected_server" \
     --expected-balance "$expected_balance" --expected-leverage "$expected_leverage" \
     --magic-base "$magic_base" --ema-fast "$ema_fast" --ema-slow "$ema_slow" \
-    --cli "$cli" >/dev/null
+    ${wave_symbol:+--symbol "$wave_symbol"} --cli "$cli" >/dev/null
 
 mapfile -t cases < <(find "$output/cases" -mindepth 1 -maxdepth 1 -type d | sort)
 [ "${#cases[@]}" -eq 4 ] || fail "generated suite did not contain four cases"
@@ -175,7 +177,8 @@ if $parallel && ! $verify_only; then
     if [ -d "$repo_root/attestation/cases/shadow" ]; then
         bash "$repo_root/scripts/live-validation/run-shadow-lane.sh" --out "$output/shadow-lane" \
             --gateway-url "$gateway_url" --expected-login "$expected_login" --expected-server "$expected_server" \
-            --magic "$((magic_base + 90))" --cli "$cli" --duration-seconds "$shadow_seconds" > "$output/shadow-lane.log" 2>&1 &
+            --magic "$((magic_base + 90))" --cli "$cli" --duration-seconds "$shadow_seconds" \
+            ${wave_symbol:+--crypto-symbols} > "$output/shadow-lane.log" 2>&1 &
         shadow_pid="$!"
     fi
     run_phase readonly phase_readonly
