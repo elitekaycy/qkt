@@ -148,6 +148,8 @@ brokers:
     extends: exness
     calendars:
       "BTC*": crypto
+      "ETH*": crypto
+      "XRP*": crypto
     gateway_url: {daemon_gateway_url}
     magic: {a.magic}
     server_time_zone: Etc/UTC

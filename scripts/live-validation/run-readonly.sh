@@ -144,7 +144,10 @@ same_bar=false
 for attempt in 1 2 3; do
     "$cli" bot bars "$readonly_symbol" --tf 1m --count 10 --config "$config" --json > "$evidence/bars-1m.json"
     "$cli" bot eval 'ema(3)' "$readonly_symbol" --tf 1m --count 10 --config "$config" --json > "$evidence/ema3-1m.json"
-    if [ "$(jq -r '.[-1].t' "$evidence/bars-1m.json")" = "$(jq -r '.lastBarStart' "$evidence/ema3-1m.json")" ]; then
+    # Both must name a real bar: an empty answer (seen in the first seconds after a fresh build) reads as
+    # null on both sides, which is not the same closed-bar set.
+    last_bar="$(jq -r '.[-1].t // empty' "$evidence/bars-1m.json" 2>/dev/null || true)"
+    if [ -n "$last_bar" ] && [ "$last_bar" = "$(jq -r '.lastBarStart // empty' "$evidence/ema3-1m.json" 2>/dev/null || true)" ]; then
         same_bar=true
         break
     fi

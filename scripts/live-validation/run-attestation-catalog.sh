@@ -83,6 +83,14 @@ for lane in orders risk book engine daemon stress; do
         case_dir="$(dirname "$case_yaml")"; id="$(basename "$case_dir")"
         ready="$(python3 -c 'import sys,yaml; d=yaml.safe_load(open(sys.argv[1])); print(d["status"], "steps" if d.get("steps") else "strategy")' "$case_yaml")"
         [[ "$ready" == ready* ]] || continue
+        if [ -n "${crypto_symbols:-}" ] && [ "$lane" = stress ]; then
+            # The stress lane observes live bars on FX and metals too; on a weekend they print none, so a run
+            # with --crypto-symbols moves a copy of the case to 24/7 symbols, as the shadow lane does.
+            moved="$out/crypto-cases/$lane-$id"; mkdir -p "$(dirname "$moved")"; cp -r "$case_dir" "$moved"
+            find "$moved" -name '*.qkt' -exec python3 "$repo_root/scripts/live-validation/lib/crypto-symbols.py" {} + ||
+                fail "could not move $lane/$id to 24/7 symbols"
+            case_dir="$moved"
+        fi
         if [[ "$ready" == *steps ]]; then
             launch "$lane-$id" python3 "$repo_root/scripts/live-validation/run-daemon-lane-case.py" --case "$case_dir" \
                 --out "$out/$lane-$id" "${common[@]}" --magic "$magic" --arm "$arm"
