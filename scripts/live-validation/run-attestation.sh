@@ -11,6 +11,9 @@ Usage: run-attestation.sh --profile FILE [--dispatch] [--attempts N]
 FILE is a shell fragment that sets:
   gateway_url  expected_login  expected_server  expected_leverage
   wave_root    bundle_root     image_repository insights_image   magic_base
+and may set attestation_symbol=BTCUSD: the wave, the shadow lane and the insights scenario then
+run on 24/7 crypto (BTCUSD, with ETHUSD for a second symbol), so an attestation can run while FX
+and metals are closed. Unset, they trade EURUSD, GBPUSD and XAUUSD as before.
 
 Secrets come from the environment only: QKT_BROKER_API_KEY (a long random value on a
 no-auth local gateway) and QKT_LIVE_DEMO_ORDER_APPROVAL=LOCALHOST_DEMO_ONLY.
@@ -80,6 +83,7 @@ for attempt in $(seq 1 "$attempts"); do
     bash scripts/live-validation/run-parity-suite.sh --output "$wave" --id "wave_$short" --gateway-url "$gateway_url" \
         --expected-login "$expected_login" --expected-server "$expected_server" --expected-balance "$(balance)" \
         --expected-leverage "$expected_leverage" --magic-base "$((magic_base + attempt * 10))" --cli "$cli" \
+        ${attestation_symbol:+--symbol "$attestation_symbol"} \
         --run-live --parallel --arm I_UNDERSTAND_DEMO_ORDER_0.01 > "$wave.wave.log" 2>&1 < /dev/null || true
     results="$(find "$wave/cases" -maxdepth 4 -name result.json 2>/dev/null | wc -l)"
     log "wave attempt $attempt results=$results"
@@ -107,7 +111,7 @@ if [ -n "${bybit_gateway_url:-}" ]; then
 fi
 bash scripts/live-validation/run-attestation-catalog.sh --out "$catalog" --gateway-url "$gateway_url" \
     --expected-login "$expected_login" --expected-server "$expected_server" --magic-base "$((magic_base + 100))" \
-    --lanes "$lanes" "${deriv[@]}" --arm I_UNDERSTAND_DEMO_ORDER_0.01 --cli "$cli" \
+    --lanes "$lanes" "${deriv[@]}" --arm I_UNDERSTAND_DEMO_ORDER_0.01 --cli "$cli" ${attestation_symbol:+--crypto-symbols} \
     > "$catalog.log" 2>&1 || fail "attestation catalog failed: $(grep -m3 FAILED "$catalog.log" | tr '\n' ' ' | cut -c1-300)"
 log "catalog $(tail -n 1 "$catalog.log" | cut -c1-160)"
 
@@ -116,7 +120,8 @@ ins="$wave_root/attest-$short-insights"; rm -rf "$ins"
 export QKT_BROKER_EXNESS_EXPECTED_ACCOUNT_LOGIN="$expected_login" QKT_BROKER_EXNESS_EXPECTED_ACCOUNT_SERVER="$expected_server"
 bash scripts/live-validation/prepare-scenario.sh --output "$ins" --id "ins_$short" --gateway-url "$gateway_url" \
     --runtime-account-identity --expected-balance "$(balance)" --expected-leverage "$expected_leverage" \
-    --magic "$((magic_base + 60))" > "$ins.prepare.log" 2>&1 || fail "insights scenario did not prepare"
+    --magic "$((magic_base + 60))" ${attestation_symbol:+--symbol "$attestation_symbol"} > "$ins.prepare.log" 2>&1 ||
+    fail "insights scenario did not prepare"
 bash scripts/live-validation/run-insights-attribution.sh --scenario "$ins" --insights-image "$insights_image" \
     --cli "$cli" --arm I_UNDERSTAND_DEMO_ORDER_0.01 > "$ins.log" 2>&1 || fail "insights attribution failed: $(tail -n 1 "$ins.log")"
 

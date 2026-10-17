@@ -710,6 +710,12 @@ This preparer does not contact the gateway. It generates four bounded
 - `atr-eurusd` using `atr_channel`; and
 - `case-gbpusd` using `case_math`.
 
+`--symbol BTCUSD` puts all four on BTCUSD instead (`ema-btcusd`, `rsi-btcusd`, `atr-btcusd`,
+`case-btcusd`), for a wave while FX is closed. `run-parity-suite.sh --symbol BTCUSD` passes it on and
+runs the shadow lane with `--crypto-symbols` (each case's FX and metals symbols become BTCUSD, then
+ETHUSD); a profile setting `attestation_symbol=BTCUSD` does all of this for `run-attestation.sh`,
+including the insights scenario.
+
 Each generated case retains:
 
 - one read-only companion strategy for the shared closed-bar checks;

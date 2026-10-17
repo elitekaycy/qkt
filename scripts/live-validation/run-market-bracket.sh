@@ -922,9 +922,28 @@ deal_net="$(
 if $shared_account; then
     # Other lanes move the account balance, so this case reconciles its own deals against what
     # the engine booked for its own strategy.
-    engine_realized="$(jq -r '.realized' "$evidence/strategy-status-before-stop.json" | awk '{printf "%.2f", $1}')"
-    [ "$engine_realized" = "$deal_net" ] ||
-        fail "engine realized $engine_realized does not reconcile to this magic's deal net $deal_net"
+    # The engine books exact PnL; the venue credits each deal in whole account cents, not always to the
+    # nearest (Exness BTCUSD: -0.0287 settled as -0.02, -0.087 as -0.09). 0.01 lot of FX always lands on
+    # whole cents, but 0.01 BTCUSD on a 2-decimal price does not. So the two agree to within one cent per
+    # closing deal, and exactly whenever every deal is whole cents.
+    engine_realized="$(jq -r '.realized' "$evidence/strategy-status-before-stop.json")"
+    closing_deals="$(
+        jq -r --slurpfile tickets "$owned_tickets_file" '
+            ($tickets | map(.ticket)) as $owned |
+            [.[] | select((.positionTicket as $ticket | $owned | index($ticket)) and .entry == "OUT")] | length
+        ' "$evidence/history-during-run.json"
+    )"
+    python3 - "$engine_realized" "$deal_net" "$closing_deals" "$evidence/realized-reconciliation.json" <<'RECONCILE' ||
+import json, sys
+from decimal import Decimal
+engine, deals, closing, out = Decimal(sys.argv[1]), Decimal(sys.argv[2]), int(sys.argv[3]), sys.argv[4]
+residual = abs(engine - deals)
+allowed = Decimal("0.01") * closing
+json.dump({"engineRealized": str(engine), "dealNet": str(deals), "closingDeals": closing,
+           "residual": str(residual), "allowed": str(allowed)}, open(out, "w"))
+sys.exit(0 if residual < allowed or residual == 0 else 1)
+RECONCILE
+        fail "engine realized $engine_realized does not reconcile to this magic's deal net $deal_net ($closing_deals closing deal(s))"
     balance_delta="$deal_net"
     jq -e '.trade_mode == 0 and .trade_allowed == true and .trade_expert == true and .leverage > 0' \
         "$evidence/gateway-account-final.json" >/dev/null || fail "final demo account snapshot is not tradeable"
@@ -959,6 +978,17 @@ if [ "$expected_blocked_entries" -gt 0 ]; then
     [ "$order_posts" -eq "$expected_entries" ] ||
         fail "blocked re-entry reached MT5 transport; order posts=$order_posts expected=$expected_entries"
 fi
+
+# A replay has no venue to ask for contract specs. FX and metals have built-in ones; a 24/7 crypto
+# symbol does not, and the MT5 simulation rejects every order without them, so copy the live
+# account's specs now, beside the capture (the sealed scenario files stay as they were).
+case "$dsl_symbol" in
+    *:BTC* | *:ETH*)
+        "$cli" instruments pull --config "$scenario/qkt.config.yaml" --symbols "$dsl_symbol" \
+            --out "$evidence/instruments.yaml" > "$evidence/instruments-pull.log" 2>&1 ||
+            fail "could not pull instrument specs for $dsl_symbol: $(tail -n 1 "$evidence/instruments-pull.log")"
+        ;;
+esac
 
 golden_zip="$evidence/golden.zip"
 golden_manifest="$evidence/golden-manifest.json"
