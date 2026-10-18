@@ -53,8 +53,8 @@ hide:
 </code></pre>
       <footer class="qkt-codeframe__foot">
         <span class="qkt-codeframe__cmd"><span class="sigil">$</span> qkt backtest strategies/momentum.qkt <span class="qkt-cmd__note">test it</span></span>
-        <span class="qkt-codeframe__cmd"><span class="sigil">$</span> qkt run strategies/momentum.qkt <span class="qkt-cmd__note">paper-trade it</span></span>
-        <span class="qkt-codeframe__cmd"><span class="sigil">$</span> qkt deploy strategies/momentum.qkt <span class="qkt-cmd__note">go live</span></span>
+        <span class="qkt-codeframe__cmd"><span class="sigil">$</span> qkt run strategies/momentum-paper.qkt <span class="qkt-cmd__note">paper-trade it on BINANCE:BTCUSDT</span></span>
+        <span class="qkt-codeframe__cmd"><span class="sigil">$</span> qkt deploy strategies/momentum-live.qkt <span class="qkt-cmd__note">go live on your broker</span></span>
       </footer>
     </div>
   </aside>

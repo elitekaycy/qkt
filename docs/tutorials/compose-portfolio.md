@@ -13,10 +13,10 @@ You need everything from Tutorials 1 and 2.
 
 ## The two ways to run multiple strategies
 
-**Option A: independent deployments.** Each strategy is its own `.qkt` file deployed separately. The daemon hosts them; they don't know about each other.
+**Option A: independent deployments.** Each strategy is its own `.qkt` file deployed separately. The daemon hosts them; they don't know about each other. (Part 1 below writes `trend.qkt` and `meanrev.qkt`.)
 
 ```bash
-qkt deploy strategies/momentum.qkt --as momo
+qkt deploy strategies/trend.qkt    --as trend
 qkt deploy strategies/meanrev.qkt  --as meanrev
 ```
 
@@ -24,10 +24,10 @@ qkt deploy strategies/meanrev.qkt  --as meanrev
 
 ```qkt
 PORTFOLIO mybook VERSION 1
-IMPORT 'momentum.qkt' AS momo
+IMPORT 'trend.qkt'    AS trend
 IMPORT 'meanrev.qkt'  AS meanrev
 RULES
-    WHEN TRUE  RUN momo
+    WHEN TRUE  RUN trend
     WHEN TRUE  RUN meanrev
 ```
 
@@ -53,7 +53,7 @@ Start by writing two simple strategies that we'll later compose.
 STRATEGY trend VERSION 1
 
 SYMBOLS
-    btc = BACKTEST:BTCUSDT EVERY 1h
+    btc = BINANCE:BTCUSDT EVERY 1h
 
 RULES
     WHEN ema(btc.close, 12) CROSSES ABOVE ema(btc.close, 48)
@@ -76,7 +76,7 @@ This is a slower version of Tutorial 1's strategy — same idea, 1-hour candles,
 STRATEGY meanrev VERSION 1
 
 SYMBOLS
-    btc = BACKTEST:BTCUSDT EVERY 1h
+    btc = BINANCE:BTCUSDT EVERY 1h
 
 RULES
     WHEN rsi(btc.close, 2) < 10
@@ -103,7 +103,7 @@ Create `strategies/mybook.qkt`:
 PORTFOLIO mybook VERSION 1
 
 SYMBOLS
-    btc = BACKTEST:BTCUSDT EVERY 1h
+    btc = BINANCE:BTCUSDT EVERY 1h
 
 IMPORT 'trend.qkt'    AS trend
 IMPORT 'meanrev.qkt'  AS meanrev
@@ -137,7 +137,7 @@ The default is **flatten on deactivate**. When a child's gate goes from true to 
 
 1. Stops feeding ticks to that child
 2. Sends `CLOSE_ALL` for every position the child holds
-3. Marks the child inactive in `qkt list`
+3. Marks the child idle (`gateState` in `qkt list --json`)
 
 When the gate goes from false to true:
 
@@ -166,24 +166,26 @@ qkt list
 Expected output:
 
 ```text
-NAME              KIND        PORT     TRADES   STATE
-mybook            portfolio   47291    -        running
-  trend           child       47292    0        inactive
-  meanrev         child       47293    0        inactive
+NAME                KIND       UPTIME   PORT     TRADES   STATE
+mybook              portfolio  00:00:42 -        -        running
+  mybook/meanrev    child      00:00:42 47293    0        running
+  mybook/trend      child      00:00:42 47292    0        running
 ```
 
-Children appear indented under the parent. Each has its own port, log file, and state. At startup both are inactive — the regime detector needs warmup before it can decide.
+Children appear indented under the parent, named `<portfolio>/<alias>`. Each has its own port, log
+file, and state; `STATE` says whether its session is running, not whether its gate is open.
 
-After ~50 1h candles (the longest indicator window), the parent's `maSpread` becomes computable. The active child flips based on the regime:
+Which child the regime gate has switched on is the `gateState` field of `qkt list --json`: `active`
+for a child whose `RUN` condition holds, `idle` for one whose condition does not, and
+`operator_stopped` after `qkt stop <portfolio>/<child>`. Right after the deploy both are `idle`
+until the regime indicator has enough candles (about 50 1h candles, its longest window).
 
-```text
-NAME              KIND        PORT     TRADES   STATE
-mybook            portfolio   47291    -        running
-  trend           child       47292    3        active
-  meanrev         child       47293    8        inactive
+```bash
+qkt list --json
 ```
 
-In this snapshot, `trend` is the active child (some sustained move detected) and `meanrev` is paused. Its 8 trades happened during an earlier regime when it was active.
+In a strong trend you would see `"name":"mybook/trend",...,"gateState":"active"` and
+`"name":"mybook/meanrev",...,"gateState":"idle"`.
 
 ## Part 5 — Operator control over children
 
