@@ -100,10 +100,11 @@ class TradingViewWebSocket(
             else -> error("Unsupported parameter type: ${value::class.java.simpleName}")
         }
 
-    private fun handleHeartbeat(seq: Int) {
+    // TradingView's liveness check is its own `~h~N` text frame, and a client proves it is alive by
+    // sending that frame back unchanged. Echo the payload exactly as it arrived.
+    private fun handleHeartbeat(payload: String) {
         val ws = socket.get() ?: return
-        val response = TradingViewFraming.encode("~h~$seq~h~")
-        ws.send(response)
+        ws.send(TradingViewFraming.encode(payload))
     }
 
     private inner class InternalListener : WebSocketListener() {
@@ -158,7 +159,7 @@ class TradingViewWebSocket(
             try {
                 val frame = TradingViewFrame.parse(payload)
                 if (frame is TradingViewFrame.Heartbeat) {
-                    handleHeartbeat(frame.seq)
+                    handleHeartbeat(payload)
                 }
                 listeners.forEach { runCatching { it.onFrame(frame) } }
             } catch (e: TradingViewProtocolException) {
@@ -179,11 +180,13 @@ class TradingViewWebSocket(
             client: OkHttpClient = defaultClient(),
         ): TradingViewWebSocket = TradingViewWebSocket(url, origin, authToken, client).apply { connect() }
 
-        private fun defaultClient(): OkHttpClient =
+        // No WebSocket pingInterval: TradingView never answers a WebSocket ping, so OkHttp failed every
+        // connection 40s in ("sent ping but didn't receive pong ... after 0 successful ping/pongs").
+        // The venue's liveness check is its `~h~` heartbeat frame, answered in [handleHeartbeat].
+        internal fun defaultClient(): OkHttpClient =
             OkHttpClient
                 .Builder()
                 .readTimeout(0, TimeUnit.SECONDS)
-                .pingInterval(20, TimeUnit.SECONDS)
                 .build()
     }
 }
