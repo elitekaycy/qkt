@@ -137,7 +137,10 @@ def check_vendor_bars(spec: dict, case) -> str:
         want = _read(vendor_spec, case)
         for path in spec.get("paths", ["read"]):
             got = qkt_bars(case, spec["symbol"], tf, spec["from"], spec["to"], built=(path == "built"))
-            if spec.get("convention") == "bybit":
+            if spec.get("convention") == "binance":
+                got = o.binance_convention(got, want)
+                want_cmp = want
+            elif spec.get("convention") == "bybit":
                 got = o.bybit_convention(got, want[0].start, len(want), o.tf_ms(tf))[1:]
                 want_cmp = want[1:]
             else:

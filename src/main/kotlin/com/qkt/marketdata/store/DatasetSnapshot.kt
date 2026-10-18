@@ -29,13 +29,21 @@ data class DatasetSnapshot(
 @Serializable
 data class DataQualityPolicy(
     val mode: String = "strict",
-    val maxGapMinutes: Long = 30,
+    val maxGapMinutes: Long = DEFAULT_MAX_GAP_MINUTES,
     val allowEmptyDays: Boolean = false,
     val requireBidAsk: Boolean = false,
     val requireVolume: Boolean = false,
     val failOnCorruptDay: Boolean = true,
     val failOnMissingDay: Boolean = true,
-)
+) {
+    companion object {
+        /**
+         * The largest gap between two ticks of one day a dataset accepts by default: an hour-long daily break
+         * (gold, futures: 21:00-22:00 UTC, 62-66 minutes in Exness captures) passes, a hole of hours does not.
+         */
+        const val DEFAULT_MAX_GAP_MINUTES = 90L
+    }
+}
 
 @Serializable
 data class DatasetSnapshotFile(

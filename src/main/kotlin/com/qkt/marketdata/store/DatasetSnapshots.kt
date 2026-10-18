@@ -39,7 +39,7 @@ object DatasetSnapshots {
         val files = present.map { (day, path) -> inspectDatasetDayFile(root, day, path) }
         val absent = range - present.map { it.first }.toSet()
         // A weekend with no file is a closed market; a weekday, or any day of a symbol that trades on Saturdays,
-        // is a hole the snapshot would hide.
+        // is a hole the snapshot would hide, unless the policy allows it (holidays): then it is pinned as absent.
         val tradesWeekends = files.any { LocalDate.parse(it.date).dayOfWeek == DayOfWeek.SATURDAY && it.tickCount > 0 }
         val holes = absent.filter { tradesWeekends || it.dayOfWeek !in WEEKEND }
         if (holes.isNotEmpty() && qualityPolicy.failOnMissingDay) {

@@ -1,0 +1,16 @@
+STRATEGY multi_xau_btc VERSION 1
+
+SYMBOLS
+  gold = BACKTEST:XAUUSD EVERY 15m WARMUP 100 BARS
+  btc = BACKTEST:BTCUSD EVERY 15m WARMUP 100 BARS
+
+RULES
+  WHEN ema(gold.close, 9) CROSSES ABOVE ema(gold.close, 21) AND POSITION.gold = 0
+  THEN BUY gold SIZING 0.10
+  WHEN ema(gold.close, 9) CROSSES BELOW ema(gold.close, 21) AND POSITION.gold > 0
+  THEN CLOSE gold
+
+  WHEN ema(btc.close, 9) CROSSES ABOVE ema(btc.close, 21) AND POSITION.btc = 0
+  THEN BUY btc SIZING 0.50
+  WHEN ema(btc.close, 9) CROSSES BELOW ema(btc.close, 21) AND POSITION.btc > 0
+  THEN CLOSE btc

@@ -1,0 +1,17 @@
+STRATEGY gold_rsi_fixed VERSION 1
+
+SYMBOLS
+  gold = BACKTEST:XAUUSD EVERY 15m WARMUP 100 BARS
+
+RULES
+  WHEN rsi(gold.close, 14) < 30 AND POSITION.gold = 0
+  THEN BUY gold SIZING 0.10
+
+  WHEN rsi(gold.close, 14) > 55 AND POSITION.gold > 0
+  THEN CLOSE gold
+
+  WHEN rsi(gold.close, 14) > 70 AND POSITION.gold = 0
+  THEN SELL gold SIZING 0.10
+
+  WHEN rsi(gold.close, 14) < 45 AND POSITION.gold < 0
+  THEN CLOSE gold

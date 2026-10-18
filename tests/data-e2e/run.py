@@ -135,7 +135,7 @@ class Case:
                 results.append(checks.run(c, self))
             got = fingerprint(self.root) if self.root.exists() else {}
             golden = GOLDEN / f"{self.id}.json"
-            if self.spec.get("golden", True):
+            if self.spec.get("golden", True) and not self.ctx["unpinned"]:
                 if self.ctx["update"]:
                     golden.write_text(json.dumps(got, indent=1, sort_keys=True) + "\n")
                 elif not golden.is_file():
@@ -163,14 +163,19 @@ def main() -> int:
     ap.add_argument("--keep", action="store_true", help="keep each case's work folder")
     ap.add_argument("--work", default=None)
     ap.add_argument("--report", default=None, help="write the results as JSON here")
+    ap.add_argument("--cases", default=str(HERE / "cases.toml"), help="the case file (drift/ renders its own)")
+    ap.add_argument("--unpinned", action="store_true", help="a corpus that is not the pinned one: no golden files")
     args = ap.parse_args()
 
     corpus = Path(args.corpus).resolve()
     lock = (HERE / "corpus.lock").read_text().split()[0]
-    head = subprocess.run(["git", "-C", str(corpus), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
-    if head != lock:
-        print(f"data-e2e: corpus {corpus} is at {head or 'no commit'}, corpus.lock pins {lock}", file=sys.stderr)
-        return 2
+    if args.unpinned:
+        lock = "unpinned"
+    else:
+        head = subprocess.run(["git", "-C", str(corpus), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+        if head != lock:
+            print(f"data-e2e: corpus {corpus} is at {head or 'no commit'}, corpus.lock pins {lock}", file=sys.stderr)
+            return 2
     if not Path(args.qkt).is_file():
         print(f"data-e2e: no qkt at {args.qkt} (./gradlew installDist)", file=sys.stderr)
         return 2
@@ -183,8 +188,9 @@ def main() -> int:
         "work": work,
         "update": args.update,
         "keep": args.keep,
+        "unpinned": args.unpinned,
     }
-    specs = tomllib.loads((HERE / "cases.toml").read_text())["case"]
+    specs = tomllib.loads(Path(args.cases).read_text())["case"]
     ids = [s["id"] for s in specs]
     if len(set(ids)) != len(ids):
         print("data-e2e: duplicate case ids", file=sys.stderr)

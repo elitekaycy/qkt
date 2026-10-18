@@ -1,0 +1,7 @@
+starting_balance: 10000
+risk:
+  max_daily_loss: "0"
+  per_strategy:
+    gold_ema_cross:
+      loss_streak_halt: 2
+      loss_streak_halt_scope: daily

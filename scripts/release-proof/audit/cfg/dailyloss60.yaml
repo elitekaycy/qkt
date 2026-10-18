@@ -1,0 +1,3 @@
+starting_balance: 10000
+risk:
+  max_daily_loss: "60"

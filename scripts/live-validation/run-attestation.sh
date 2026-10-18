@@ -11,6 +11,8 @@ Usage: run-attestation.sh --profile FILE [--dispatch] [--attempts N]
 FILE is a shell fragment that sets:
   gateway_url  expected_login  expected_server  expected_leverage
   wave_root    bundle_root     image_repository insights_image   magic_base
+  data_corpus  (a clone of elitekaycy/qkt-data-corpus, for the release proofs)
+and may set docs_data_root, the local store the docs examples read (adds them to the proofs).
 and may set attestation_symbol=BTCUSD: the wave, the shadow lane and the insights scenario then
 run on 24/7 crypto (BTCUSD, with ETHUSD for a second symbol), so an attestation can run while FX
 and metals are closed. Unset, they trade EURUSD, GBPUSD and XAUUSD as before.
@@ -39,7 +41,7 @@ done
 [ -f "$profile" ] || { usage >&2; exit 2; }
 # shellcheck disable=SC1090
 . "$profile"
-for v in gateway_url expected_login expected_server expected_leverage wave_root bundle_root image_repository insights_image magic_base; do
+for v in gateway_url expected_login expected_server expected_leverage wave_root bundle_root image_repository insights_image magic_base data_corpus; do
     [ -n "${!v:-}" ] || { printf 'run-attestation: profile does not set %s\n' "$v" >&2; exit 2; }
 done
 : "${QKT_BROKER_API_KEY:?QKT_BROKER_API_KEY must be set}"
@@ -65,6 +67,24 @@ stage_write build
 cli_root="$wave_root/cli-$short"; rm -rf "$cli_root"; cp -r build/install/qkt "$cli_root"
 ./gradlew --stop >/dev/null 2>&1 || true
 cli="$cli_root/bin/qkt"; log "cli $("$cli" --version | head -n 1)"
+
+# Offline and before the account is touched: every real-data case, qkt against backtesting.py and backtrader,
+# and the 48-scenario audit, on the pinned corpus. A build that fails any of them is never promoted.
+stage_write proofs
+proofs="$wave_root/attest-$short-proofs"; rm -rf "$proofs"
+# The release the fleet runs now: its store must still read under this build.
+previous_tag="$(gh release view --json tagName --jq .tagName)" || fail "cannot find the latest release for the compatibility proof"
+previous_root="$wave_root/release-${previous_tag#v}"
+if [ ! -x "$previous_root/qkt-${previous_tag#v}/bin/qkt" ]; then
+    mkdir -p "$previous_root"
+    gh release download "$previous_tag" --pattern "qkt-${previous_tag#v}.tar" --dir "$previous_root" --clobber > /dev/null &&
+        tar -xf "$previous_root/qkt-${previous_tag#v}.tar" -C "$previous_root" || fail "cannot download release $previous_tag"
+fi
+bash scripts/release-proof/run.sh --cli "$cli" --corpus "$data_corpus" --out "$proofs" \
+    --previous "$previous_root/qkt-${previous_tag#v}/bin/qkt" \
+    ${docs_data_root:+--docs-data "$docs_data_root"} > "$proofs.log" 2>&1 ||
+    fail "release proofs failed: $(grep -m3 '^fail' "$proofs.log" | tr '\n' ' ' | cut -c1-300)"
+log "proofs $(tr '\n' ' ' < "$proofs.log" | cut -c1-200)"
 
 # An earlier attestation that died badly may have left an order or a position under one of its magics;
 # the wave would refuse to start on it. Clear this attestation's own magic range, and only that:

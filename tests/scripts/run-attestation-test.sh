@@ -19,6 +19,10 @@ expect_refusal "unknown flag" "unknown argument: --nope" bash "$script" --nope
 printf 'gateway_url=http://127.0.0.1:1\n' > "$tmp/partial"
 expect_refusal "incomplete profile" "profile does not set expected_login" bash "$script" --profile "$tmp/partial"
 
+grep -v '^data_corpus=' "$repo_root/scripts/live-validation/attestation-profile.example" > "$tmp/no-corpus"
+expect_refusal "no data corpus for the release proofs" "profile does not set data_corpus" \
+    bash "$script" --profile "$tmp/no-corpus"
+
 cp "$repo_root/scripts/live-validation/attestation-profile.example" "$tmp/full"
 expect_refusal "no broker key" "QKT_BROKER_API_KEY must be set" \
     env -u QKT_BROKER_API_KEY bash "$script" --profile "$tmp/full"

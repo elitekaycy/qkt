@@ -430,7 +430,11 @@ def explain_same_ms(problems: list[str], got: list[Bar], want: list[Bar], trades
             continue
         k = int(m.group(1))
         w = want_by.get(k)
-        candidates = closing_prices(k) | closing_prices(k - tf)
+        # The open repeats the last close before it, through any minutes without trades.
+        back = k - tf
+        while back >= k - 1440 * tf and back not in by_bar:
+            back -= tf
+        candidates = closing_prices(k) | closing_prices(back)
         vendor_values = {w.open, w.high, w.low, w.close} if w else set()
         if len(candidates) > 1 and candidates & vendor_values:
             explained.add(k)
@@ -511,3 +515,18 @@ def agg_crossing_minutes(agg_path: Path, trades_path: Path, tf: int) -> set[int]
         if times and times[0] // tf != times[-1] // tf:
             touched.update(t - t % tf for t in times)
     return touched
+
+
+def binance_convention(got: list[Bar], want: list[Bar]) -> list[Bar]:
+    """qkt's bars restated the way Binance writes klines: a minute without trades is a bar of its own, flat at the
+    previous close with zero volume. Only minutes the vendor has are added; every other bar is qkt's own."""
+    g = {b.start: b for b in got}
+    out, prev = [], None
+    for w in sorted(want, key=lambda b: b.start):
+        b = g.get(w.start)
+        if b is None and prev is not None:
+            b = Bar(w.start, prev, prev, prev, prev, Decimal(0))
+        if b is not None:
+            out.append(b)
+            prev = b.close
+    return out + [b for b in got if b.start not in {w.start for w in want}]
