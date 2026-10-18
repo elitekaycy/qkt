@@ -67,6 +67,7 @@ class PresetSamplesTest {
 
     companion object {
         @JvmStatic
-        fun samples(): List<Arguments> = PresetSampleCases.all + NativeSampleCases.all
+        fun samples(): List<Arguments> =
+            PresetSampleCases.all + NativeSampleCases.all + RealDownloadSampleCases.all + MetaTraderSampleCases.all
     }
 }

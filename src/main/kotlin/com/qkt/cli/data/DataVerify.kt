@@ -71,7 +71,12 @@ internal fun dataVerify(args: Args): Int {
         totalTicks += q.tickCount
         var status = DayStatus.of(q, date, previousLastMs, previousDay)
         if (q.isEmpty && date.dayOfWeek == DayOfWeek.SATURDAY && !everyDay) status = "closed (0 ticks)"
-        val other = all.drop(1).firstOrNull { it.tickCount != q.tickCount || it.firstMs != q.firstMs || it.lastMs != q.lastMs }
+        val other =
+            all.drop(1).firstOrNull {
+                it.tickCount != q.tickCount ||
+                    it.firstMs != q.firstMs ||
+                    it.lastMs != q.lastMs
+            }
         if (other != null) {
             status = "the ${files.first().fileName} and ${files[all.indexOf(other)].fileName} hold different ticks " +
                 "(${q.tickCount} vs ${other.tickCount}): re-run qkt data convert"

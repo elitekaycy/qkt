@@ -106,7 +106,11 @@ fun agreeOver(
     clocks: List<ImportClock>,
     span: ClosedRange<java.time.LocalDateTime>,
 ): Boolean {
-    var t = span.start.withMinute(0).withSecond(0).withNano(0)
+    var t =
+        span.start
+            .withMinute(0)
+            .withSecond(0)
+            .withNano(0)
     while (!t.isAfter(span.endInclusive.plusHours(1))) {
         if (clocks.map { it.utcOf(t) }.distinct().size > 1) return false
         t = t.plusHours(1)

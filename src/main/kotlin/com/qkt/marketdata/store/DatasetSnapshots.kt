@@ -44,7 +44,9 @@ object DatasetSnapshots {
         val holes = absent.filter { tradesWeekends || it.dayOfWeek !in WEEKEND }
         if (holes.isNotEmpty() && qualityPolicy.failOnMissingDay) {
             error(
-                "no day file for $symbol on ${holes.joinToString(limit = 8)} under ${root.resolve("symbols").resolve(symbol)}",
+                "no day file for $symbol on ${holes.joinToString(
+                    limit = 8,
+                )} under ${root.resolve("symbols").resolve(symbol)}",
             )
         }
         val base =

@@ -25,7 +25,7 @@ class HstBarsTest {
     private val root get() = dir.resolve("root")
 
     /** The broker clock the fixtures are written on: a .hst file does not say it. */
-    private val NY_CLOSE = ImportDescriptor(clock = "ny-close")
+    private val nyClose = ImportDescriptor(clock = "ny-close")
 
     private data class Bar(
         val server: String,
@@ -87,7 +87,7 @@ class HstBarsTest {
 
     @Test
     fun `a version 401 file imports on the broker clock with prices shifted to mid by its spread`() {
-        val report = IngestFixtures.import(root, listOf(hst(401)), "BROKER:EURUSD", NY_CLOSE)
+        val report = IngestFixtures.import(root, listOf(hst(401)), "BROKER:EURUSD", nyClose)
 
         assertThat(report.preset).isEqualTo("mt4-hst")
         assertThat(IngestFixtures.firstStoredRow(root))
@@ -96,7 +96,7 @@ class HstBarsTest {
 
     @Test
     fun `a version 400 file reads its low before its high and stores the same bars without a spread`() {
-        IngestFixtures.import(root, listOf(hst(400)), "BROKER:EURUSD", NY_CLOSE)
+        IngestFixtures.import(root, listOf(hst(400)), "BROKER:EURUSD", nyClose)
 
         assertThat(IngestFixtures.firstStoredRow(root))
             .isEqualTo("1709625600000,1.08501000,1.08563000,1.08455000,1.08530000,1824.00000000")
@@ -104,20 +104,25 @@ class HstBarsTest {
 
     @Test
     fun `the header's digits size the spread when the symbol is unknown and --digits wins over them`() {
-        IngestFixtures.import(root, listOf(hst(401)), "BROKER:ZZZQQQ", NY_CLOSE)
+        IngestFixtures.import(root, listOf(hst(401)), "BROKER:ZZZQQQ", nyClose)
         assertThat(IngestFixtures.firstStoredRow(root)).startsWith("1709625600000,1.08504000,")
 
-        IngestFixtures.import(dir.resolve("r4"), listOf(hst(401)), "BROKER:ZZZQQQ", ImportDescriptor(digits = 4, clock = "ny-close"))
+        IngestFixtures.import(
+            dir.resolve("r4"),
+            listOf(hst(401)),
+            "BROKER:ZZZQQQ",
+            ImportDescriptor(digits = 4, clock = "ny-close"),
+        )
         assertThat(IngestFixtures.firstStoredRow(dir.resolve("r4"))).startsWith("1709625600000,1.08531000,")
     }
 
     @Test
     fun `a truncated file or an unknown version is refused, not half read`() {
-        assertThatThrownBy { IngestFixtures.import(root, listOf(hst(401, cut = 7)), "BROKER:EURUSD", NY_CLOSE) }
+        assertThatThrownBy { IngestFixtures.import(root, listOf(hst(401, cut = 7)), "BROKER:EURUSD", nyClose) }
             .isInstanceOf(ImportRefusal::class.java)
             .hasMessageContaining("53 trailing bytes")
         val odd = dir.resolve("odd.hst").also { Files.write(it, header(509).array()) }
-        assertThatThrownBy { IngestFixtures.import(root, listOf(odd), "BROKER:EURUSD", NY_CLOSE) }
+        assertThatThrownBy { IngestFixtures.import(root, listOf(odd), "BROKER:EURUSD", nyClose) }
             .isInstanceOf(ImportRefusal::class.java)
             .hasMessageContaining("unknown .hst version 509")
     }

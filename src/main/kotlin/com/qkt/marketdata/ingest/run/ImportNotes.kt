@@ -18,7 +18,8 @@ internal object ImportNotes {
     private const val FLOAT32 =
         "price(s) were float32 values widened to a double (340.79998779296875); each is stored as the shortest " +
             "decimal naming that float32 (340.8)"
-    private const val NOT_FLOAT32 = "price(s) were not float32 values, though the source stores float32: kept as written"
+    private const val NOT_FLOAT32 =
+        "price(s) were not float32 values, though the source stores float32: kept as written"
     private const val SUB_MS = "timestamp(s) were finer than a millisecond; qkt stores milliseconds"
     private const val QUIET = "Dukascopy hour file(s) hold no ticks (market closed or quiet)"
     private const val TICK_BASIS = "bid/ask quotes or traded prices, as the columns say"

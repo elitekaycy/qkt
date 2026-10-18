@@ -9,8 +9,8 @@ import com.qkt.marketdata.store.BarDayCsv
 import java.nio.BufferUnderflowException
 import java.nio.file.Files
 import java.nio.file.Path
-import java.time.Instant
 import java.time.DayOfWeek
+import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
 
@@ -91,7 +91,8 @@ private fun verifyDays(
     val tradesSaturdays =
         files.any { p ->
             val d = LocalDate.parse(p.fileName.toString().removeSuffix(kind.extension))
-            d.dayOfWeek == DayOfWeek.SATURDAY && runCatching { kind.read(p, qktSymbol, windowMs).isNotEmpty() }.getOrDefault(false)
+            d.dayOfWeek == DayOfWeek.SATURDAY &&
+                runCatching { kind.read(p, qktSymbol, windowMs).isNotEmpty() }.getOrDefault(false)
         }
     var flagged = 0
     var total = 0L
@@ -117,7 +118,14 @@ private fun verifyDays(
         val closed = bars.isEmpty() && day.dayOfWeek == DayOfWeek.SATURDAY && !tradesSaturdays
         val problems = if (closed) emptyList() else problems(bars, day, windowMs, tf)
         if (problems.isNotEmpty()) flagged++
-        val status = if (closed) "closed (0 bars)" else if (problems.isEmpty()) "ok" else problems.joinToString(", ")
+        val status =
+            if (closed) {
+                "closed (0 bars)"
+            } else if (problems.isEmpty()) {
+                "ok"
+            } else {
+                problems.joinToString(", ")
+            }
         val source = provenance.entryFor(name)?.let { "  imported ${it.preset}" }.orEmpty()
         println("  $name  bars=${bars.size}  maxGap=${maxGapLabel(bars, windowMs)}  $status$source")
     }

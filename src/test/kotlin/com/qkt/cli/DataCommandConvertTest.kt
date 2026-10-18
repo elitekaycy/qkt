@@ -92,10 +92,20 @@ class DataCommandConvertTest {
         com.qkt.marketdata.BinaryTickWriter().write(
             symDir.resolve("2024-04-02.bin"),
             "XAUUSD",
-            listOf(Tick("XAUUSD", com.qkt.common.Money.of("1711.7"), 1_712_016_000_000L)),
+            listOf(
+                Tick(
+                    "XAUUSD",
+                    com.qkt.common.Money
+                        .of("1711.7"),
+                    1_712_016_000_000L,
+                ),
+            ),
         )
 
-        val rc = DataCommand(Args(arrayOf("data", "convert", "XAUUSD", "--prune", "--data-root", root.toString()))).run()
+        val rc =
+            DataCommand(
+                Args(arrayOf("data", "convert", "XAUUSD", "--prune", "--data-root", root.toString())),
+            ).run()
 
         assertEquals(ExitCodes.USER_ERROR, rc)
         assertTrue(Files.exists(symDir.resolve("2024-04-02.csv.gz")))

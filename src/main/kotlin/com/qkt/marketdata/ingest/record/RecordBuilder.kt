@@ -148,7 +148,9 @@ class RecordBuilder(
         // rounded to the text's own decimals, gives the text back; a genuine `1234567.89` does not (`.88`).
         val single = value.toFloat()
         val exact = if (single.isFinite()) BigDecimal(single.toDouble()) else null
-        if (exact == null || exact.setScale(value.scale().coerceAtLeast(0), RoundingMode.HALF_EVEN).compareTo(value) != 0) {
+        if (exact == null ||
+            exact.setScale(value.scale().coerceAtLeast(0), RoundingMode.HALF_EVEN).compareTo(value) != 0
+        ) {
             notFloat32++
             return value
         }

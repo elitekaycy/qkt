@@ -64,13 +64,13 @@ data class ClockEvidence(
         if (hour !in OPEN_HOURS) return false
         if (counted * 10 > weeks.size) return false
         return listOf(
-                weeks.filter { it.usSummer },
-                weeks.filter { !it.usSummer },
-                weeks.filter {
-                    it.usSummer !=
-                        it.euSummer
-                },
-            ).none { group -> group.size >= 2 && group.count { it.newYorkHour != hour } * 2 > group.size }
+            weeks.filter { it.usSummer },
+            weeks.filter { !it.usSummer },
+            weeks.filter {
+                it.usSummer !=
+                    it.euSummer
+            },
+        ).none { group -> group.size >= 2 && group.count { it.newYorkHour != hour } * 2 > group.size }
     }
 
     /** One line for the report, e.g. `ny-close: 52 weekly opens, 51 at 17:00 New York`. */
@@ -89,6 +89,7 @@ data class ClockEvidence(
     companion object {
         private val NEW_YORK: ZoneId = ZoneId.of("America/New_York")
         private val LONDON: ZoneId = ZoneId.of("Europe/London")
+
         /** The New York hours a week can open in: FX at 17:00, metals at 18:00, a vendor's first tick a little late. */
         val OPEN_HOURS = 16..19
         private const val LATE_OPEN_SECONDS = 60L

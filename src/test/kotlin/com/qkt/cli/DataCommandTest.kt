@@ -87,7 +87,9 @@ class DataCommandTest {
         seedDay(root, "EURUSD", "2024-01-05", listOf("1704412800000,EURUSD,1.1,,,,,"))
         seedDay(root, "EURUSD", "2024-01-06", emptyList())
         seedDay(root, "EURUSD", "2024-01-07", listOf("1704661200000,EURUSD,1.1,,,,,"))
-        val verify = { s: String -> DataCommand(Args(arrayOf("data", "verify", s, "--data-root", root.toString()))).run() }
+        val verify = { s: String ->
+            DataCommand(Args(arrayOf("data", "verify", s, "--data-root", root.toString()))).run()
+        }
         assertThat(verify("EURUSD")).isEqualTo(ExitCodes.SUCCESS)
 
         seedDay(root, "BTCUSD", "2024-01-06", emptyList())
@@ -99,7 +101,12 @@ class DataCommandTest {
     fun `a converted day is checked once, and a bin that disagrees with its csv is flagged`(
         @TempDir root: Path,
     ) {
-        seedDay(root, "XAUUSD", "2024-01-01", listOf("1704067200000,XAUUSD,2000,,,,,", "1704067260000,XAUUSD,2001,,,,,"))
+        seedDay(
+            root,
+            "XAUUSD",
+            "2024-01-01",
+            listOf("1704067200000,XAUUSD,2000,,,,,", "1704067260000,XAUUSD,2001,,,,,"),
+        )
         val dir = root.resolve("symbols").resolve("XAUUSD")
         val out = java.io.ByteArrayOutputStream()
         val verify = {
@@ -123,7 +130,11 @@ class DataCommandTest {
         assertThat(verify()).isEqualTo(ExitCodes.SUCCESS)
         assertThat(out.toString()).contains("done — 1 days, 2 ticks, 0 flagged")
 
-        BinaryTickWriter().write(dir.resolve("2024-01-01.bin"), "XAUUSD", listOf(Tick("XAUUSD", Money.of("2000"), 1_704_067_200_000L)))
+        BinaryTickWriter().write(
+            dir.resolve("2024-01-01.bin"),
+            "XAUUSD",
+            listOf(Tick("XAUUSD", Money.of("2000"), 1_704_067_200_000L)),
+        )
         assertThat(verify()).isEqualTo(ExitCodes.USER_ERROR)
         assertThat(out.toString()).contains("hold different ticks (1 vs 2)")
     }

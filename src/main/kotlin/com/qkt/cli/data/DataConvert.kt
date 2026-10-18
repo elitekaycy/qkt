@@ -72,7 +72,10 @@ internal fun dataConvert(args: Args): Int {
         Files.delete(csv)
         pruned++
     }
-    println("qkt data convert: $symbol — converted=$converted skipped=$skipped prune=$prune" + if (prune) " pruned=$pruned" else "")
+    println(
+        "qkt data convert: $symbol — converted=$converted skipped=$skipped prune=$prune" +
+            if (prune) " pruned=$pruned" else "",
+    )
     return ExitCodes.SUCCESS
 }
 
@@ -90,7 +93,13 @@ private fun sameTicks(
     ) = if (x == null || y == null) x == y else x.compareTo(y) == 0
     return a.size == b.size &&
         a.zip(b).all { (x, y) ->
-            x.timestamp == y.timestamp && x.symbol == y.symbol && eq(x.price, y.price) && eq(x.volume, y.volume) &&
-                eq(x.bid, y.bid) && eq(x.ask, y.ask) && eq(x.bidVolume, y.bidVolume) && eq(x.askVolume, y.askVolume)
+            x.timestamp == y.timestamp &&
+                x.symbol == y.symbol &&
+                eq(x.price, y.price) &&
+                eq(x.volume, y.volume) &&
+                eq(x.bid, y.bid) &&
+                eq(x.ask, y.ask) &&
+                eq(x.bidVolume, y.bidVolume) &&
+                eq(x.askVolume, y.askVolume)
         }
 }

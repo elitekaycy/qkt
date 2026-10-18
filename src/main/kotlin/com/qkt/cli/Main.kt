@@ -49,7 +49,9 @@ internal fun runMain(argv: Array<String>): Int =
                 when {
                     runHelp != null -> runHelp
                     // `qkt data import --help`: the action's own usage and flags, not the data family's union.
-                    args.subcommand == "data" && "--all" !in argv -> com.qkt.cli.data.DataHelp.of(tail.firstOrNull())
+                    args.subcommand == "data" && "--all" !in argv ->
+                        com.qkt.cli.data.DataHelp
+                            .of(tail.firstOrNull())
                     else -> CliHelp.forCommand(args.subcommand, full = "--all" in argv, filter = filter)
                 }
             println(help)

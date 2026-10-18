@@ -125,9 +125,13 @@ class ImportEdgeCasesTest {
             "<DATE>\t<TIME>\t<OPEN>\t<HIGH>\t<LOW>\t<CLOSE>\t<TICKVOL>\t<VOL>\t<SPREAD>\n" + h4.replace(" ", "\t")
 
         assertThatThrownBy {
-            IngestFixtures.import(root, listOf(file("h4.csv", text)), "BROKER:EURUSD", ImportDescriptor(clock = "ny-close"))
-        }
-            .isInstanceOf(ImportRefusal::class.java)
+            IngestFixtures.import(
+                root,
+                listOf(file("h4.csv", text)),
+                "BROKER:EURUSD",
+                ImportDescriptor(clock = "ny-close"),
+            )
+        }.isInstanceOf(ImportRefusal::class.java)
             .satisfies({ assertThat((it as ImportRefusal).lines.first()).contains("past the UTC 240-minute grid") })
     }
 

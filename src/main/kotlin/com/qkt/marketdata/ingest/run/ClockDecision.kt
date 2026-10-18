@@ -71,12 +71,21 @@ internal class ClockDecision(
             val same = seasonal.drop(1).joinToString { it.clock.spec }
             return ClockChoice(
                 first.clock,
-                "inferred: ${first.summary()}" + if (same.isEmpty()) "" else "; $same give the same times over these dates",
+                "inferred: ${first.summary()}" +
+                    if (same.isEmpty()) "" else "; $same give the same times over these dates",
             )
         }
         throw ImportRefusal(
             "the timestamps have no zone and the weekly opens do not single out one clock; pass --tz. " +
-                (if (seasonal.isEmpty()) "No candidate fits." else "Fitting: ${seasonal.joinToString { it.clock.spec }}.") +
+                (
+                    if (seasonal.isEmpty()) {
+                        "No candidate fits."
+                    } else {
+                        "Fitting: ${seasonal.joinToString {
+                            it.clock.spec
+                        }}."
+                    }
+                ) +
                 hint,
             evidence.map { it.summary() + if (it.passes) " ✓" else "" },
         )
@@ -90,7 +99,10 @@ internal class ClockDecision(
      */
     private fun dates(): ClockChoice {
         val broker = plan.descriptor.clock.equals(BROKER, ignoreCase = true)
-        val stated = plan.descriptor.clock?.takeUnless { broker }?.let(::parseClock)
+        val stated =
+            plan.descriptor.clock
+                ?.takeUnless { broker }
+                ?.let(::parseClock)
         val utc = stated == ImportClock.Utc
         if (broker || (stated != null && !utc) || (stated == null && plan.target.fxOrMetal)) {
             val whose = stated?.let { "the ${it.spec} clock" } ?: "a clock the file does not name"

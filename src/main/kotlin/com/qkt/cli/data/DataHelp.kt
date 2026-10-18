@@ -18,7 +18,8 @@ internal object DataHelp {
             "import" to
                 Action(
                     "qkt data import <file|dir>... --as <SYMBOL> [--dry-run] [--plan] [--json]",
-                    "Import ticks, bars, funding, open interest or a published series from a file you have. A built-in " +
+                    "Import ticks, bars, funding, open interest or a published series from a file you have. " +
+                        "A built-in " +
                         "preset is matched without flags (qkt data presets); --dry-run reads and checks without writing.",
                     listOf(
                         "--as SYMBOL" to "where it lands: SYMBOL for ticks, SOURCE:SYMBOL for bars (EXNESS:XAUUSD)",
@@ -35,7 +36,8 @@ internal object DataHelp {
                         "--digits N" to "the instrument's price digits (spreads in points, float32 sources)",
                         "--on-overlap MODE" to "fill (default: write days the store lacks), skip, replace or refuse",
                         "--sort" to "sort rows that are out of order (ties keep file order)",
-                        "--on-conflict refuse|last" to "funding/open interest: two values at one time refuse, or keep the later file's",
+                        "--on-conflict refuse|last" to
+                            "funding/open interest: two values at one time refuse, or keep the later file's",
                         "--where COL=VALUE" to "keep only matching rows",
                         "--available EXPR, --available-lag DUR" to "series: when each value became known",
                         "--decimal C, --delimiter C, --encoding E, --format json --rows PATH" to "read unusual files",
@@ -57,7 +59,8 @@ internal object DataHelp {
             "bars" to
                 Action(
                     "qkt data bars <SYMBOL|SOURCE:SYMBOL> --tf TF --from DATE --to DATE [--bars]",
-                    "Print a series' bars as CSV exactly as a backtest reads them: stored bars, bars rolled up from a " +
+                    "Print a series' bars as CSV exactly as a backtest reads them: stored bars, " +
+                        "bars rolled up from a " +
                         "finer stored timeframe, or bars built from ticks. --to is inclusive.",
                     listOf("--bars" to "read the built .bin tier, as qkt backtest --bars does"),
                 ),
