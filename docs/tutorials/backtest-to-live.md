@@ -48,6 +48,11 @@ Backtests are for **research**: tuning parameters, picking promising strategies,
 
 Paper-trading runs the strategy against a live data feed, but the broker is in-process (no real venue, no real money).
 
+The paper broker fills at the middle price with no spread or slippage, exactly as a `--broker paper`
+backtest does, so a paper run on the same ticks reproduces that backtest fill for fill
+([Determinism](../concepts/determinism.md)). It is optimistic by about half a spread a side: to see what the
+venue's spread costs, backtest with `--broker mt5-sim`, and measure the rest on a demo account (Mode 3).
+
 The feed is TradingView's free tier, so the stream needs a symbol TradingView knows.
 `BACKTEST:BTCUSDT` names the local backtest data, which has no live prices (qkt refuses to start
 on it and tells you what to write instead). Copy the strategy and change only the stream's prefix
@@ -82,6 +87,7 @@ A few things will happen:
 
     ```text
     [INFO] qkt 0.58.0 — strategy momentum v1 — paper-trading
+    [INFO] paper fills: the middle price, no spread or slippage (a backtest with --broker mt5-sim prices the spread)
     [INFO] subscribed: BINANCE:BTCUSDT
     [INFO] observability: http://127.0.0.1:47291
     QKT_PORT=47291
