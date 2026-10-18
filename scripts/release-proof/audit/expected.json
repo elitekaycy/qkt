@@ -414,7 +414,7 @@
   "trades.csv": "a0ed03d1255248f2f0a122d7d5aa392ff4d573abc0a6b26bc7e2de06fbc4867c"
  },
  "g04_multi_xau_btc_mt5sim": {
-  "equity_daily.csv": "8a197c468b19d4cc9e44642fcc268419f04a887b3c621d6a7e2a23d81dfeadf9",
+  "equity_daily.csv": "20f557f81a56e64148c6fc97856c88017287c3b2aff19dc8849c4a5cd90a1083",
   "equity_global.csv": "2045dbfa48f0d8d7d3fbb7b28f1eba3bc51768a640628c42d0750f147cc9e05d",
   "monthly_returns.csv": "c13500d8894383c5d191253d933dd572d5fdefae51c3cd6bcd21c13b4c88f93e",
   "orders.jsonl": "997e130357817865f2c2c6e25ec30969fe8d6b69bb182dbe2ee7a0d48287e285",
