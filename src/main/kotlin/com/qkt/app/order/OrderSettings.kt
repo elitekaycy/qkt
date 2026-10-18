@@ -38,6 +38,6 @@ internal class OrderSettings(
         closeTicketFor?.invoke(request.strategyId, request.id)
             ?: closePrimaryTicketFor?.invoke(request.strategyId, request.symbol)
 
-    /** The price grid [symbol]'s bracket exits are put on: its point size, or null when unknown. */
-    fun tickOf(symbol: String): BigDecimal? = instruments.lookup(symbol)?.pointSize
+    /** The price grid [symbol]'s bracket exits are put on: its price step (tick size, else point size), or null when unknown. */
+    fun tickOf(symbol: String): BigDecimal? = instruments.lookup(symbol)?.priceStep
 }

@@ -102,6 +102,7 @@ class YamlInstrumentRegistry private constructor(
                 spreadPoints = intOpt("spreadPoints"),
                 minSpreadPoints = intOpt("minSpreadPoints"),
                 currency = entry["currency"]?.toString()?.trim(),
+                tickSize = bdOpt("tickSize"),
             )
         }
     }

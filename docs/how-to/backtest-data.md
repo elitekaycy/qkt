@@ -566,9 +566,13 @@ instruments:
     swapShortPoints: 14.1   # optional — signed points per short lot per rollover
     swapRolloverHourUtc: 21 # optional — 0..23, default 21
     swapTripleDay: WEDNESDAY # optional — Monday..Friday, default Wednesday
+    tickSize: 0.25          # optional — smallest price step the venue accepts, when coarser than pointSize
 ```
 
 A symbol present in the file wins; anything omitted falls back to the built-in specs.
+`tickSize` (MT5 `trade_tick_size`) only matters where a venue trades in steps coarser than its point,
+as some index CFDs do: bracket levels and MT5 order prices go on that grid, while spread, slippage,
+swap and stops-level figures stay in points.
 Positive swap points credit PnL and negative points debit it. The configured triple-day
 rollover is multiplied by three and weekend rollovers are skipped. Refresh these values
 from the broker before a cost-sensitive run because broker schedules can change.

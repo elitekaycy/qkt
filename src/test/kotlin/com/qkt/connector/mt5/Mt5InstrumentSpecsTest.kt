@@ -97,4 +97,25 @@ class Mt5InstrumentSpecsTest {
 
         assertThat(spec.unreported[UnreportedCost.SWAP]).isEqualTo("the gateway reports no swap")
     }
+
+    @Test
+    fun `a venue tick coarser than a point is the price step, points stay a point wide`() {
+        // An index CFD quoted in 0.01 points that trades in 0.25 steps (#1455).
+        symbolInfo(""","trade_tick_size":0.25""")
+
+        val meta = client.instrumentSpec(exness, "EXNESS:XAUUSD")!!.meta
+
+        assertThat(meta.pointSize).isEqualByComparingTo("0.001")
+        assertThat(meta.tickSize).isEqualByComparingTo("0.25")
+        assertThat(meta.priceStep).isEqualByComparingTo("0.25")
+    }
+
+    @Test
+    fun `a tick equal to the point leaves the price step at the point`() {
+        symbolInfo(""","trade_tick_size":0.001""")
+
+        val meta = client.instrumentSpec(exness, "EXNESS:XAUUSD")!!.meta
+
+        assertThat(meta.priceStep).isEqualByComparingTo("0.001")
+    }
 }

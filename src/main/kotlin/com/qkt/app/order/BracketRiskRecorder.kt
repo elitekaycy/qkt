@@ -98,7 +98,7 @@ internal class BracketRiskRecorder(
         protectionByClientOrderId.remove(bracket.entry.id)
     }
 
-    private fun tickOf(symbol: String): BigDecimal? = instruments.lookup(symbol)?.pointSize
+    private fun tickOf(symbol: String): BigDecimal? = instruments.lookup(symbol)?.priceStep
 
     private fun calculateRisk(
         quantity: BigDecimal,

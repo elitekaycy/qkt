@@ -28,6 +28,7 @@ internal fun MT5Client.instrumentSpec(
             pointSize = info.point,
             digits = info.digits,
             tradeStopsLevelPoints = info.tradeStopsLevel,
+            tickSize = info.tickSize,
         )
     val unreported = mutableMapOf(UnreportedCost.COMMISSION to "the symbol endpoint does not report commission")
     return when (val swap = swapTerms(info.swap)) {
