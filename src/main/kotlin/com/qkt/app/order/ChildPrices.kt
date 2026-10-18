@@ -56,13 +56,23 @@ internal fun referencesStackEntryRef(expr: ExprAst): Boolean =
 /**
  * Absolute price of a bracket child for an entry on [side] filled at [fillPrice]. A stop sits
  * against the entry's direction and a target with it; an RR target needs the stop's distance.
+ * The price is put on the instrument's [tick] grid (see [snapToTick]); null leaves it unrounded.
  */
 internal fun computeChildPrice(
     childPrice: ChildPriceAst,
     side: Side,
     fillPrice: BigDecimal,
     isStopLoss: Boolean,
+    tick: BigDecimal?,
     slDistance: BigDecimal? = null,
+): BigDecimal = snapToTick(rawChildPrice(childPrice, side, fillPrice, isStopLoss, slDistance), tick, fillPrice)
+
+private fun rawChildPrice(
+    childPrice: ChildPriceAst,
+    side: Side,
+    fillPrice: BigDecimal,
+    isStopLoss: Boolean,
+    slDistance: BigDecimal?,
 ): BigDecimal {
     val sign =
         if (side == Side.BUY) {
@@ -102,10 +112,14 @@ internal fun computeChildPrice(
     }
 }
 
-/** Re-anchors [req]'s expression-written stop and target on the actual [fillPrice]. */
+/**
+ * Re-anchors [req]'s expression-written stop and target on the actual [fillPrice], each on the
+ * instrument's [tick] grid.
+ */
 internal fun resolveBracketAtFill(
     req: OrderRequest.Bracket,
     fillPrice: BigDecimal,
+    tick: BigDecimal?,
 ): OrderRequest.Bracket {
     val stop =
         req.stopLossAst?.let { ast ->
@@ -120,12 +134,12 @@ internal fun resolveBracketAtFill(
                         req.stopLoss
                     } else {
                         StopLossSpec.Fixed(
-                            computeChildPrice(ast, req.side, fillPrice, isStopLoss = true),
+                            computeChildPrice(ast, req.side, fillPrice, isStopLoss = true, tick = tick),
                         )
                     }
                 else ->
                     StopLossSpec.Fixed(
-                        computeChildPrice(ast, req.side, fillPrice, isStopLoss = true),
+                        computeChildPrice(ast, req.side, fillPrice, isStopLoss = true, tick = tick),
                     )
             }
         } ?: req.stopLoss
@@ -138,13 +152,22 @@ internal fun resolveBracketAtFill(
         }
     val takeProfit =
         req.takeProfitAst?.let {
-            computeChildPrice(it, req.side, fillPrice, isStopLoss = false, slDistance = stopDistance)
+            computeChildPrice(it, req.side, fillPrice, isStopLoss = false, tick = tick, slDistance = stopDistance)
         } ?: req.takeProfit
     return req.copy(takeProfit = takeProfit, stopLoss = stop)
 }
 
-/** The stop price [bracket] starts at when its entry fills at [entryPrice], before any trailing. */
+/**
+ * The stop price [bracket] starts at when its entry fills at [entryPrice], before any trailing, on
+ * the instrument's [tick] grid (a fixed stop is already there when [resolveBracketAtFill] made it).
+ */
 internal fun stopPriceAtEntry(
+    bracket: OrderRequest.Bracket,
+    entryPrice: BigDecimal,
+    tick: BigDecimal?,
+): BigDecimal = snapToTick(rawStopAtEntry(bracket, entryPrice), tick, entryPrice)
+
+private fun rawStopAtEntry(
     bracket: OrderRequest.Bracket,
     entryPrice: BigDecimal,
 ): BigDecimal =

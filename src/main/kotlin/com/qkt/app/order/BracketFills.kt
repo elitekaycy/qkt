@@ -73,8 +73,8 @@ internal class BracketFills(
         attachedBracket: OrderRequest.Bracket,
         pending: List<OrderRequest>?,
     ) {
-        val resolved = resolveBracketAtFill(attachedBracket, e.price)
-        val sl = stopPriceAtEntry(resolved, e.price)
+        val resolved = exits.resolveAtFill(attachedBracket, e.price)
+        val sl = exits.stopAtEntry(resolved, e.price)
         e.brokerOrderId
             ?.takeIf { it.isNotBlank() }
             ?.let { ticket ->

@@ -37,6 +37,13 @@ whose limit sits far away.
 
 Both `STOP_LOSS` and `TAKE_PROFIT` accept these forms:
 
+Whatever the form, each level is put on the symbol's price grid (its point size, from the broker's
+symbol info or `instruments.yaml`) once the entry fills, so backtest, paper and live send the same
+venue-valid prices. The rule is the nearest tick, and an exact half tick goes toward the entry: a
+stop never risks more than written and a target never promises more. A fill at a half-point mid
+(EURUSD bought at 1.161055) with `STOP_LOSS BY 0.001, TAKE_PROFIT BY 0.002` gets a stop at 1.16006
+and a target at 1.16305. A symbol with no known point size keeps the unrounded level.
+
 ### `BY <points>` — fixed distance in quote currency
 
 ```qkt
