@@ -16,7 +16,7 @@ class TradingViewHeartbeatTest {
     fun `the default client sends no WebSocket pings, which TradingView never answers`() {
         // A live check (2026-10-18) lost every pinging connection at 40s: "sent ping but didn't
         // receive pong within 20000ms (after 0 successful ping/pongs)".
-        assertThat(TradingViewWebSocket.defaultClient().pingIntervalMillis).isZero()
+        assertThat(TradingViewConnection.defaultClient().pingIntervalMillis).isZero()
     }
 
     @Test

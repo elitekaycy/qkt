@@ -89,7 +89,7 @@ class TradingViewMarketSource(
         ) {
             val qs = TradingViewQuoteSession(ws, clock)
             session = qs
-            qs.subscribe(symbols, onTick, onError, onDisconnect)
+            qs.subscribe(symbols, onTick, onError, onDisconnect, onReconnect)
         }
 
         override fun stop() {

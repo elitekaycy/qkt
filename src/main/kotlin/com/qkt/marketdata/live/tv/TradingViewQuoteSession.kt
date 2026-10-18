@@ -27,6 +27,7 @@ class TradingViewQuoteSession(
     private var onTick: ((Tick) -> Unit)? = null
     private var onError: ((Throwable) -> Unit)? = null
     private var onDisconnect: (() -> Unit)? = null
+    private var onReconnect: (() -> Unit)? = null
     private var hasDisconnected: Boolean = false
 
     fun subscribe(
@@ -34,10 +35,12 @@ class TradingViewQuoteSession(
         onTick: (Tick) -> Unit,
         onError: (Throwable) -> Unit,
         onDisconnect: () -> Unit,
+        onReconnect: () -> Unit = {},
     ) {
         this.onTick = onTick
         this.onError = onError
         this.onDisconnect = onDisconnect
+        this.onReconnect = onReconnect
         this.symbols.addAll(symbols)
         webSocket.addListener(this)
         sendSubscribeCommands()
@@ -77,10 +80,13 @@ class TradingViewQuoteSession(
         }
     }
 
+    // A reconnected socket has no quote session: create it again, re-add the symbols, then tell the
+    // feed it may stop counting down its reconnect budget.
     override fun onConnected() {
-        if (hasDisconnected && symbols.isNotEmpty()) {
-            sendSubscribeCommands()
-        }
+        if (!hasDisconnected) return
+        hasDisconnected = false
+        if (symbols.isNotEmpty()) sendSubscribeCommands()
+        onReconnect?.invoke()
     }
 
     override fun onDisconnected(reason: String) {
