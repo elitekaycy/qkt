@@ -28,6 +28,8 @@ internal object JsonReportPrinter {
         sb.append("\"schema\":\"").append(RESULT_SCHEMA).append("\",")
         sb.append("\"schemaVersion\":").append(RESULT_SCHEMA_VERSION).append(',')
         sb.append("\"trades\":").append(g.tradeCount).append(',')
+        sb.append("\"roundTrips\":").append(g.roundTrips).append(',')
+        sb.append("\"roundTripsWon\":").append(g.roundTripsWon).append(',')
         sb.append("\"finalRealized\":").append(g.realizedTotal.toPlainString()).append(',')
         sb.append("\"finalUnrealized\":").append(g.unrealizedTotal.toPlainString()).append(',')
         sb.append("\"totalPnL\":").append(g.totalPnL.toPlainString()).append(',')

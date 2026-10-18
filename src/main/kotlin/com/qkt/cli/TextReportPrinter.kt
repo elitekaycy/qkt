@@ -25,7 +25,8 @@ internal object TextReportPrinter {
             return
         }
         val g = r.global
-        out.println("Trades:           ${g.tradeCount}")
+        out.println("Trades:           ${g.tradeCount}   (fills)")
+        out.println("Round trips:      ${g.roundTrips}   (${g.roundTripsWon} won, ${g.roundTripsBreakEven} break-even)")
         out.println("Final realized:   ${g.realizedTotal.toPlainString()}   (net of commission and swap)")
         out.println("Final unrealized: ${g.unrealizedTotal.toPlainString()}")
         out.println("Total PnL:        ${g.totalPnL.toPlainString()}")
@@ -95,7 +96,7 @@ internal object TextReportPrinter {
                 "  Options:    option venue — next chain snapshot's bid/ask, capped venue fees, cash settlement at delivery",
             )
         }
-        out.println("  Win rate:   wins / decided trades; break-even trades excluded")
+        out.println("  Win rate:   won / decided round trips (one per position, net of costs); break-even trades excluded")
         out.println("  Calmar:     total return / max drawdown (NOT annualized)")
         out.println("  Sharpe:     annualized from average sample spacing; risk-free rate 0")
         TextEvidencePrinter.print(r, out)

@@ -96,12 +96,13 @@ internal object ConciseReportPrinter {
         return "   (${HumanFormat.percent(total.divide(start, MathContext.DECIMAL64), signed = true)})"
     }
 
+    /** Positions closed, from the same round trips and win rate as `result.json` and report.html (#1437, #1452). */
     private fun roundTrips(r: BacktestResult): String {
-        val closed = r.trades.count { it.reducedExposure }
-        if (closed == 0) return "0 closed"
-        val won = r.trades.count { it.reducedExposure && it.realized.signum() > 0 }
-        val pct = HumanFormat.percent(BigDecimal(won).divide(BigDecimal(closed), MathContext.DECIMAL64))
-        return "$closed closed, $won won ($pct)"
+        val g = r.global
+        if (g.roundTrips == 0) return "0 closed"
+        val pct = HumanFormat.percent(g.winRate)
+        if (g.roundTripsBreakEven == 0) return "${g.roundTrips} closed, ${g.roundTripsWon} won ($pct)"
+        return "${g.roundTrips} closed, ${g.roundTripsWon} won, ${g.roundTripsBreakEven} break-even ($pct of the rest)"
     }
 
     private fun openPositions(

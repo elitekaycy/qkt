@@ -37,6 +37,22 @@ Two of the headline ratios beyond Sharpe and Calmar:
 - **Sortino** — like Sharpe, but only *downside* moves count as risk (a return below zero). A strategy with smooth gains and rare, shallow losses scores higher on Sortino than on Sharpe.
 - **Turnover** — gross traded notional as a multiple of starting capital, e.g. `3.20` means the run traded 3.2x its capital. Not annualized; compare runs of equal length.
 
+## Round trips and win rate
+
+A **round trip** is one position, from its first entry fill until it is flat again. A position
+entered or exited in several fills (partial fills, `--partial-fill`, the `stress` preset, an exit
+split over two take-profits) is one round trip, and its outcome is the net P&L of all its fills,
+entry and exit commissions included. A leg-routed position (each bracket, `TIMES` or `STACK` entry
+is its own leg) is tracked per leg; a netted position per strategy and symbol, and a netted exit
+larger than the position reverses it, which closes this round trip and opens the next. A position
+still partly open at the end counts once if it had exits.
+
+Win rate, profit factor, average and largest win/loss, max consecutive losses and the Monte Carlo
+are all computed over round trips. Win rate is `won / (round trips - break-even)`: one that closed
+at exactly zero after costs counts in neither. The console summary, `--verbose`, `--json`,
+`result.json` (`roundTrips`, `roundTripsWon`, `roundTripsBreakEven`, `winRate`) and `report.html`
+show the same numbers. `tradeCount` (`Trades:` in `--verbose`) counts fills.
+
 ## Per-strategy attribution
 
 A portfolio backtest (two or more strategies) prints a per-strategy block under the global summary, and the same breakdown lands in `--json` (a `perStrategy` object) and the `--report-dir` bundle (`result.json`, plus an `equity_<id>.csv` per strategy). Each strategy carries its own full report — P&L, trades, Sharpe, Sortino, max drawdown, win rate, turnover, commission, and swap — computed from that strategy's fills and financing cash flows. A single-strategy run omits the block: the global summary already *is* that strategy.
