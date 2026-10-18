@@ -21,6 +21,20 @@ class MainExitTest {
     }
 
     @Test
+    fun `a stream the live feed cannot serve is refused with its fix and no stack trace`() {
+        val err = ByteArrayOutputStream()
+
+        val code =
+            exitCodeOf(arrayOf("run", "s.qkt"), PrintStream(err)) {
+                throw com.qkt.marketdata.live.tv
+                    .UnservableStreamException("BACKTEST:EURUSD -> OANDA:EURUSD")
+            }
+
+        assertThat(code).isEqualTo(ExitCodes.USER_ERROR)
+        assertThat(err.toString().trim()).isEqualTo("qkt: error: BACKTEST:EURUSD -> OANDA:EURUSD")
+    }
+
+    @Test
     fun `a command that returns keeps its own exit code`() {
         assertThat(exitCodeOf(arrayOf("x"), PrintStream(ByteArrayOutputStream())) { 3 }).isEqualTo(3)
     }

@@ -7,6 +7,7 @@ import com.qkt.instrument.InstrumentRegistry
 import com.qkt.marketdata.hub.HubMarketSource
 import com.qkt.marketdata.hub.HubStoreConfig
 import com.qkt.marketdata.hub.liveHubRoot
+import com.qkt.marketdata.live.tv.TradingViewBacktestSymbols
 import com.qkt.marketdata.live.tv.TradingViewMarketSource
 import com.qkt.marketdata.source.ChainAnalyticsMarketSource
 import com.qkt.marketdata.source.CompositeMarketSource
@@ -43,9 +44,10 @@ import java.nio.file.Path
  * reconnect warnings to logs. Operators now set `source: local` in `qkt.config.yaml`
  * to suppress the TV fallback.
  *
- * Returns a closure that yields the single composite for every call site —
- * intentionally ignores its `symbols` parameter because all strategies in one daemon
- * share the same routing.
+ * Returns a closure that yields the single composite for every call site — all strategies in one
+ * daemon share the same routing. The closure reads its `symbols` only to refuse, with
+ * [com.qkt.marketdata.live.tv.UnservableStreamException], a `BACKTEST:` stream that would fall through to TradingView: that
+ * feed has no `BACKTEST` exchange, and the refusal names the symbol to write instead.
  */
 object MarketSourceFactory {
     /** The composite market source for [accountRoutes] and the built-in routes; [clock] paces the live chain-analytics feed. */
@@ -80,7 +82,13 @@ object MarketSourceFactory {
         }
         routes.addAll(accountRoutes)
         val composite = CompositeMarketSource(routes = routes, fallback = fallbackProvider())
-        return { _ -> composite }
+        return { symbols ->
+            if (source == "tv") {
+                val unrouted = symbols.filter { s -> routes.none { (pattern, _) -> pattern.matches(s) } }
+                TradingViewBacktestSymbols.requireLive(unrouted)
+            }
+            composite
+        }
     }
 
     private fun defaultFallback(source: String): MarketSource =
