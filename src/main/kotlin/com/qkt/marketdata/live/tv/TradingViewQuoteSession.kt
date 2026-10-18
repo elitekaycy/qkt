@@ -3,6 +3,7 @@ package com.qkt.marketdata.live.tv
 import com.qkt.common.Clock
 import com.qkt.common.Money
 import com.qkt.marketdata.Tick
+import java.io.IOException
 import java.math.BigDecimal
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.random.Random
@@ -60,6 +61,14 @@ class TradingViewQuoteSession(
         runCatching {
             val data = frame.paramAsObject(1)
             val name = data["n"]?.jsonPrimitive?.content ?: return
+            if (data["s"]?.jsonPrimitive?.content == "error") {
+                // TradingView answers an unknown or unentitled symbol with an error status instead of
+                // prices; say so rather than leave the stream silently without ticks.
+                val reason = data["errmsg"]?.jsonPrimitive?.content ?: "no reason given"
+                log.warn("TradingView refused quotes for {}: {}", name, reason)
+                onError?.invoke(IOException("TradingView refused quotes for $name: $reason"))
+                return
+            }
             val values = data["v"]?.jsonObject ?: return
             emitTick(name, values)
         }.onFailure { t ->
