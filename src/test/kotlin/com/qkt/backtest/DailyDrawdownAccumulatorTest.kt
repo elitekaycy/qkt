@@ -37,4 +37,15 @@ class DailyDrawdownAccumulatorTest {
         acc.accept(1_000L, BigDecimal("110"))
         assertThat(acc.maxDailyDrawdown()).isEqualByComparingTo(BigDecimal.ZERO)
     }
+
+    @Test
+    fun `daily bars measure each day's fall from the previous close`() {
+        // One midnight sample per day (#1450): 2024-01-13 00:00 closes 2024-01-12 at -3%.
+        val acc = DailyDrawdownAccumulator()
+        acc.accept(19_733 * day, BigDecimal("100"))
+        acc.accept(19_734 * day, BigDecimal("100"))
+        acc.accept(19_735 * day, BigDecimal("97"))
+        acc.accept(19_736 * day, BigDecimal("99"))
+        assertThat(acc.maxDailyDrawdown()).isEqualByComparingTo(BigDecimal("0.03"))
+    }
 }
