@@ -17,7 +17,7 @@ You need everything from Tutorials 1 and 2.
 
 ```bash
 qkt deploy strategies/momentum.qkt --as momo
-qkt deploy strategies/meanrev.qkt  --as mean
+qkt deploy strategies/meanrev.qkt  --as meanrev
 ```
 
 **Option B: a portfolio.** One `.qkt` file declares both strategies as children. The daemon still runs each child as its own session, but they share a parent identity and the portfolio file can route between them.
@@ -25,10 +25,10 @@ qkt deploy strategies/meanrev.qkt  --as mean
 ```qkt
 PORTFOLIO mybook VERSION 1
 IMPORT 'momentum.qkt' AS momo
-IMPORT 'meanrev.qkt'  AS mean
+IMPORT 'meanrev.qkt'  AS meanrev
 RULES
     WHEN TRUE  RUN momo
-    WHEN TRUE  RUN mean
+    WHEN TRUE  RUN meanrev
 ```
 
 ```bash
@@ -60,12 +60,12 @@ RULES
      AND POSITION.btc = 0
     THEN BUY btc SIZING 0.05
          BRACKET { STOP_LOSS BY 200, TAKE_PROFIT BY 600 }
-         LOG "trend long"
+       ; LOG "trend long"
 
     WHEN ema(btc.close, 12) CROSSES BELOW ema(btc.close, 48)
      AND POSITION.btc > 0
     THEN CLOSE btc
-         LOG "trend exit"
+       ; LOG "trend exit"
 ```
 
 This is a slower version of Tutorial 1's strategy — same idea, 1-hour candles, attached bracket.
@@ -86,7 +86,7 @@ RULES
            STOP_LOSS AT btc.close - atr(btc, 14) * 2,
            TAKE_PROFIT AT btc.close + atr(btc, 14) * 2
          }
-         LOG "meanrev long" rsi=rsi(btc.close, 2)
+       ; LOG "meanrev long" rsi=rsi(btc.close, 2)
 ```
 
 This is the textbook Connors RSI(2) fade — buy when RSI drops below 10, exit via bracket.
@@ -106,18 +106,18 @@ SYMBOLS
     btc = BACKTEST:BTCUSDT EVERY 1h
 
 IMPORT 'trend.qkt'    AS trend
-IMPORT 'meanrev.qkt'  AS mean
-
-# Regime detector: MA-spread scaled by ATR.
-# Big positive or negative = strong trend; near zero = ranging.
-LET maSpread = (ema(btc.close, 20) - ema(btc.close, 50)) / atr(btc, 14)
+IMPORT 'meanrev.qkt'  AS meanrev
 
 RULES
+    # Regime detector: the MA spread scaled by ATR, written into each rule (a portfolio has no LET).
+    # Big positive or negative = strong trend; near zero = ranging.
+
     # Strong trend in either direction: run the trend-follower
-    WHEN maSpread > 1.5 OR maSpread < -1.5  RUN trend
+    WHEN (ema(btc.close, 20) - ema(btc.close, 50)) / atr(btc, 14) > 1.5
+      OR (ema(btc.close, 20) - ema(btc.close, 50)) / atr(btc, 14) < -1.5  RUN trend
 
     # Ranging market: run mean-reversion
-    WHEN maSpread BETWEEN -0.5 AND 0.5  RUN mean
+    WHEN (ema(btc.close, 20) - ema(btc.close, 50)) / atr(btc, 14) BETWEEN -0.5 AND 0.5  RUN meanrev
 
     # Transitional zone (0.5 to 1.5, or -1.5 to -0.5): no child active
 ```
@@ -127,10 +127,9 @@ Read it as:
 - `PORTFOLIO mybook VERSION 1` — the parent's name
 - `SYMBOLS` — the portfolio's own data feed (used by its regime detector, not by children)
 - `IMPORT '...' AS alias` — pull in a child strategy and name it locally
-- `LET maSpread = ...` — name a regime indicator
-- `RULES` — `WHEN <condition> RUN <child>` activates a child when the condition holds
+- `RULES` — `WHEN <condition> RUN <child>` activates a child when the condition holds. A portfolio has no `LET` block, so the regime indicator, the MA spread scaled by ATR (call it `maSpread`), is written into each rule
 
-When `maSpread > 1.5` (strong uptrend) or `maSpread < -1.5` (strong downtrend), `trend` is active and `mean` is inactive. When `maSpread` sits near zero, `mean` is active and `trend` is inactive. In the transitional zone, **neither** runs — the regime is unclear and the portfolio chooses to sit out.
+When `maSpread > 1.5` (strong uptrend) or `maSpread < -1.5` (strong downtrend), `trend` is active and `meanrev` is inactive. When `maSpread` sits near zero, `meanrev` is active and `trend` is inactive. In the transitional zone, **neither** runs — the regime is unclear and the portfolio chooses to sit out.
 
 ## Part 3 — How children behave when activated/deactivated
 
@@ -170,7 +169,7 @@ Expected output:
 NAME              KIND        PORT     TRADES   STATE
 mybook            portfolio   47291    -        running
   trend           child       47292    0        inactive
-  mean            child       47293    0        inactive
+  meanrev         child       47293    0        inactive
 ```
 
 Children appear indented under the parent. Each has its own port, log file, and state. At startup both are inactive — the regime detector needs warmup before it can decide.
@@ -181,10 +180,10 @@ After ~50 1h candles (the longest indicator window), the parent's `maSpread` bec
 NAME              KIND        PORT     TRADES   STATE
 mybook            portfolio   47291    -        running
   trend           child       47292    3        active
-  mean            child       47293    8        inactive
+  meanrev         child       47293    8        inactive
 ```
 
-In this snapshot, `trend` is the active child (some sustained move detected) and `mean` is paused. Its 8 trades happened during an earlier regime when it was active.
+In this snapshot, `trend` is the active child (some sustained move detected) and `meanrev` is paused. Its 8 trades happened during an earlier regime when it was active.
 
 ## Part 5 — Operator control over children
 
@@ -203,13 +202,13 @@ qkt status mybook/trend
 Force a child active (override the regime gate):
 
 ```bash
-qkt start mybook/mean
+qkt start mybook/meanrev
 ```
 
-This keeps `mean` active even when `maSpread` exits its band. Useful for testing one child in isolation. To clear the override:
+This keeps `meanrev` active even when `maSpread` exits its band. Useful for testing one child in isolation. To clear the override:
 
 ```bash
-qkt stop mybook/mean
+qkt stop mybook/meanrev
 ```
 
 Stop the whole portfolio (cascades to all children):

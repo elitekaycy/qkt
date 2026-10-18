@@ -20,14 +20,14 @@ RULES
     WHEN ema(btc.close, 9) CROSSES ABOVE ema(btc.close, 21)
     THEN BUY btc SIZING 0.1
          BRACKET {
-           STOP_LOSS BY 50 PCT,
-           TAKE_PROFIT BY 200 PCT
+           STOP_LOSS BY 1.0 PCT,
+           TAKE_PROFIT BY 2.0 PCT
          }
-         LOG "long entry on cross above"
+       ; LOG "long entry on cross above"
 
     WHEN ema(btc.close, 9) CROSSES BELOW ema(btc.close, 21)
     THEN CLOSE btc
-         LOG "exit on cross below"
+       ; LOG "exit on cross below"
 ```
 
 What's going on:
@@ -94,8 +94,10 @@ This strategy uses three things every qkt strategy uses:
 2. **A `WHEN ... THEN ...` rule** — the condition is evaluated on every candle close; the action fires on the first tick after the rule transitions from `false` to `true` (edge-triggered).
 3. **A bracket** — the entry, stop-loss, and take-profit go in as one atomic group. The broker handles all three; the engine never sees orphaned legs.
 
-The same file you just ran in backtest will paper-trade with
-`qkt run strategies/ema-cross.qkt` and start in the daemon with
+The same rules paper-trade once the stream names a live symbol: `BACKTEST:` is local data
+with no live prices, so change the stream to `btc = BINANCE:BTCUSDT EVERY 1m` (TradingView's name,
+for the default paper feed) or to your broker account's prefix, then run it with
+`qkt run strategies/ema-cross.qkt` or start it in the daemon with
 `qkt deploy strategies/ema-cross.qkt`. After editing a deployed copy, use
 `qkt resync strategies/ema-cross.qkt --as <name> --dry-run` and then
 `qkt resync strategies/ema-cross.qkt --as <name>`. The
