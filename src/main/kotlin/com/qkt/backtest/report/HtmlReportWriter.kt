@@ -45,7 +45,7 @@ class HtmlReportWriter(
         }
         result.accounting?.let {
             sb.append("<section class=\"accounting\"><h2>Costs and adjustments</h2>")
-            sb.append(HtmlAccountingTable.render(it, result.global))
+            sb.append(HtmlAccountingTable.render(it, result.global, result.executionFacts))
             sb.append("</section>")
         }
         result.runawayBreaker?.let {

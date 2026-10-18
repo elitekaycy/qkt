@@ -119,6 +119,7 @@ internal class ReplayResultBuilder(
             structures = books.structures.entries,
             marginDaily = books.marginDaily.rows,
             liquidations = books.liquidator.log.entries,
+            executionFacts = books.execution.snapshot(),
         )
     }
 

@@ -70,7 +70,7 @@ class MT5BrokerSimulator(
 
     private val sendLane = SendLane(latencyMs, orderSpacingMs)
 
-    private val fillPrice = SimulatedFillPrice(syntheticSpreadPoints)
+    internal val fillPrice = SimulatedFillPrice(syntheticSpreadPoints)
 
     private val log = LoggerFactory.getLogger(MT5BrokerSimulator::class.java)
 

@@ -23,7 +23,7 @@ import com.qkt.positions.StrategyPositionTracker
  * The marks, positions and money books one replay writes into: the price tracker, account and
  * per-strategy positions, the accounting engine, account and per-strategy PnL, commissions, the
  * futures roll ledger, the option settlement and structure logs, and the margin liquidator with its
- * log. Each is the single writer of its quantity for the run; PnL marks at [markTimestamp]. Futures
+ * log, and what the run's fills rested on ([execution]). Each is the single writer of its quantity for the run; PnL marks at [markTimestamp]. Futures
  * fees are not commissions here: the exchange simulator reports them on each fill, as a live venue
  * does.
  */
@@ -40,6 +40,7 @@ internal class ReplayBooks(
     val contractFills = ContractFillLog()
     val settlements = SettlementLog()
     val structures = StructureLog()
+    val execution = ReplayExecution()
     val accounting = accountingEngine(accountingConfig, priceTracker, instruments)
     private val margin = MarginModel(instruments, accounting)
     private val optionMargin = instruments.options()?.let { OptionMargin(instruments) }

@@ -118,6 +118,27 @@ quote at or after trigger + latency), `--tp-fill print|level` (pricing of a gap-
 `--slippage`, `--reject-every`, `--partial-fill`, `--order-spacing`. The run's `result.json` records the
 model used in `evidence.execution`.
 
+### What the summary says about fills
+
+The `Assumptions` block of the console summary (and of `--verbose`, and the "Costs and adjustments"
+table of `report.html`) states what this run's fills rested on, recorded by the replay rather than
+assumed from `--broker`:
+
+- `Fills:` where the prices came from: `recorded bid/ask from ticks`, `spread from instruments.yaml
+  (...)`, `a synthetic 2-point spread around the middle price, where the data had no bid/ask`, or on
+  `paper` `middle price, no spread` and `bar prices, at order levels, no spread` for symbols replayed
+  from bars.
+- `Slippage:` the model the fills paid, e.g. `5 points against each market and stop fill`, or `none`.
+  `paper` does not slip its own fills, so `--slippage` there applies to futures and perpetuals only.
+- `Partial fills:`, `Rejections:`, `Latency:` and `Stop delay:` when those stresses were on, and
+  `Futures:` / `Options:` when symbols routed to those venues.
+- `Bars without ticks:` per symbol, the bars of a `--bars` run that had no recorded ticks and filled at
+  the bar's own prices.
+
+The `Costs` line names the spread the fills carried (`spread from ticks`) and each cost actually
+incurred (`commission 262.99 USD, swap 319.33 USD`); `none modeled` appears only when the fills carried
+no spread and nothing was charged.
+
 ## Slippage
 
 `paper` fills have none. `mt5-sim` slips market and stop fills against you by the instrument's
