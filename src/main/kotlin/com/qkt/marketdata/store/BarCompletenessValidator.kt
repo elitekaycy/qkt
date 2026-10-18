@@ -13,7 +13,8 @@ data class BarCoverage(
 
 /**
  * File-level coverage validation for the prebuilt-bars research tier. A day is covered by a built `<day>.bin` or,
- * when [fetched] is given, by a fetched or imported `<day>.csv` at the same timeframe: `--bars` reads either.
+ * when [fetched] is given, by a fetched or imported `<day>.csv` at the same timeframe: `--bars` reads either. A file
+ * with no bars is no coverage: a header-only `.bin` built before its ticks arrived reads as a missing day.
  */
 object BarCompletenessValidator {
     fun validate(
@@ -42,7 +43,7 @@ object BarCompletenessValidator {
         val missing =
             expected.filterNot {
                 store.hasDay(broker, symbol, timeframe, it) ||
-                    fetched?.hasDay(broker, symbol, timeframe.canonicalSpec(), it) == true
+                    fetched?.readDay(broker, symbol, timeframe.canonicalSpec(), it)?.isNotEmpty() == true
             }
         return BarCoverage(expected.size, expected.size - missing.size, missing)
     }
