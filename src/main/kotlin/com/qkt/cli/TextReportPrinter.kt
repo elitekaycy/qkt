@@ -66,6 +66,7 @@ internal object TextReportPrinter {
                 )
             }
         }
+        WindowsSummaryPrinter.print(r.windows, r.accounting?.accountCurrency, out)
         r.inputSummary?.let { inputs ->
             out.println()
             out.println("Replay inputs")

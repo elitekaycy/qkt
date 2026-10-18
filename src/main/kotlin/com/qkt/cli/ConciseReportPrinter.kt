@@ -50,6 +50,7 @@ internal object ConciseReportPrinter {
                 out.println("  LIVE BEHAVIOR WARNING: the runaway breaker would have halted this strategy")
             }
         }
+        WindowsSummaryPrinter.print(r.windows, currency, out)
         out.println()
         out.println("Assumptions")
         ExecutionFactsText.padded(ExecutionFactsText.lines(facts)).forEach(out::println)

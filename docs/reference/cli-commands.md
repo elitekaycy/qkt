@@ -86,11 +86,17 @@ when given, otherwise a timestamped directory under `~/.qkt/runs` (created autom
   produces (a fraction such as `0.2` keeps the last 20% out of sample, or an
   instant). Each entry carries `fromMs`/`toMs`, `samples`, `closingFills`,
   `equityStart`, `equityEnd`, and `metrics` with the same fields as `global`,
-  computed over the full-resolution samples and closing fills inside `[from, to)`
-  — a window ending at `--to` also takes the bar that closes there, so a window
-  covering the run reproduces `global`'s drawdown, Sharpe, Sortino, profit factor
-  and win rate exactly. A window's `totalPnL` is the equity change between its
-  first and last samples.
+  computed over the full-resolution samples inside `[from, to)` and the round
+  trips that closed there (a position opened in-sample and closed out of sample
+  counts in the out-of-sample window, with its entry costs) — a window ending at
+  `--to` also takes the bar that closes there, so a window covering the run
+  reproduces `global`'s drawdown, Sharpe, Sortino, profit factor and win rate
+  exactly. A window's `totalPnL` is the equity change between its first and last
+  samples. Its `commissionPaid`, `swapPaid`, `rollCostsPaid` and `fundingPaid`
+  are the costs stamped inside it (fills, rollovers, funding times, rolls), so
+  the `--oos-split` pair adds up to `global`'s costs. The console summary,
+  `--verbose` and `report.html` show the same windows: dates, start and end
+  equity, profit, round trips, win rate, Sharpe, worst drop and costs.
 - A window's `realizedTotal` is that same equity delta, not the sum of realized trade
   PnL inside the window — read it beside `equityStart`/`equityEnd`. Sweep and backtest
   Sharpe ratios agree for identical parameters (both replay the same finalized equity

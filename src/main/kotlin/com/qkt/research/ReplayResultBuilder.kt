@@ -6,10 +6,8 @@ import com.qkt.backtest.EquityMetrics
 import com.qkt.backtest.ReportBuilder
 import com.qkt.backtest.RunawayBreakerReport
 import com.qkt.backtest.SampleCadence
-import com.qkt.backtest.TradeRecord
-import com.qkt.backtest.WindowReport
-import com.qkt.backtest.WindowSamples
 import com.qkt.backtest.monthlyReturns
+import com.qkt.backtest.tradeOutcomes
 import com.qkt.candles.TimeWindow
 import com.qkt.common.Money
 import com.qkt.common.TradingCalendar
@@ -39,6 +37,8 @@ internal class ReplayResultBuilder(
     private val runawayMaxRejections: Int,
     private val runawayRejectionWindowMs: Long,
 ) {
+    private val windowReports = ReplayWindowReports(recorder, financing, instruments)
+
     /** Build the result, with [ticksIngested] as the attempted feed tick count. */
     fun build(ticksIngested: Long): BacktestResult {
         val collector = analytics.collector
@@ -47,6 +47,7 @@ internal class ReplayResultBuilder(
         val strategyPnL = books.strategyPnL
         val commissionBook = books.commissionBook
         val annualizationFactor = annualizationFactorFor(collector.globalMetrics())
+        val roundTrips = tradeOutcomes(tradeRecords)
         val globalReport =
             ReportBuilder.buildGlobal(
                 trades = tradeRecords,
@@ -58,7 +59,8 @@ internal class ReplayResultBuilder(
                 commissionPaid = commissionBook.total().add(recorder.venueCostsPaid()),
                 swapPaid = financing.swapPaid(),
                 dailyAdjustments = financing.dailyNet(),
-                tradedNotional = tradedNotional(tradeRecords),
+                tradedNotional = tradedNotional(tradeRecords, instruments),
+                roundTrips = roundTrips,
             )
         val perStrategy =
             strategies.associate { (id, _) ->
@@ -74,7 +76,7 @@ internal class ReplayResultBuilder(
                         commissionPaid = commissionBook.totalFor(id).add(recorder.venueCostsPaid(id)),
                         swapPaid = financing.swapPaid(id),
                         dailyAdjustments = financing.dailyNet(id),
-                        tradedNotional = tradedNotional(tradeRecords.filter { it.strategyId == id }),
+                        tradedNotional = tradedNotional(tradeRecords.filter { it.strategyId == id }, instruments),
                     )
             }
         return BacktestResult(
@@ -112,7 +114,15 @@ internal class ReplayResultBuilder(
             causality = recorder.causality(),
             dailyEquity = collector.dailyEquity(),
             monthlyReturns = monthlyReturns(collector.dailyEquity()),
-            windows = collector.windows().map { windowReport(it, tradeRecords, annualizationFactor) },
+            windows =
+                collector.windows().map {
+                    windowReports.build(
+                        it,
+                        tradeRecords,
+                        roundTrips,
+                        annualizationFactor,
+                    )
+                },
             rolls = books.rolls.entries,
             contractFills = books.contractFills.entries,
             settlements = books.settlements.entries,
@@ -122,51 +132,6 @@ internal class ReplayResultBuilder(
             executionFacts = books.execution.snapshot(),
         )
     }
-
-    /**
-     * One sub-window's report from its own full-resolution metrics and the closing fills stamped
-     * inside it. Its PnL is the equity change from the window's first to its last sample, so the
-     * whole-run window reproduces `global`'s curve-derived figures exactly.
-     */
-    private fun windowReport(
-        samples: WindowSamples,
-        trades: List<TradeRecord>,
-        annualizationFactor: BigDecimal,
-    ): WindowReport {
-        val window = samples.window
-        val windowTrades = trades.filter { window.contains(it.trade.timestamp) }
-        val equityStart = samples.metrics.startingEquity()
-        val equityEnd = samples.lastEquity ?: equityStart
-        val report =
-            ReportBuilder.buildGlobal(
-                trades = windowTrades,
-                equityCurve = emptyList(),
-                finalRealized = equityEnd.subtract(equityStart),
-                finalUnrealized = Money.ZERO,
-                annualizationFactor = annualizationFactor,
-                metrics = samples.metrics,
-                tradedNotional = tradedNotional(windowTrades),
-            )
-        return WindowReport(
-            window = window,
-            samples = samples.metrics.count,
-            closingFills = windowTrades.count { it.reducedExposure },
-            equityStart = equityStart.setScale(Money.SCALE, Money.ROUNDING),
-            equityEnd = equityEnd.setScale(Money.SCALE, Money.ROUNDING),
-            report = report,
-        )
-    }
-
-    /** Gross traded notional (price x |qty| x contractSize) across [trades], for turnover. */
-    private fun tradedNotional(trades: List<TradeRecord>): BigDecimal =
-        trades.fold(Money.ZERO) { acc, r ->
-            val cs = instruments.lookup(r.trade.symbol)?.contractSize ?: BigDecimal.ONE
-            acc.add(
-                r.trade.price
-                    .multiply(r.trade.quantity.abs(), Money.CONTEXT)
-                    .multiply(cs, Money.CONTEXT),
-            )
-        }
 
     private fun annualizationFactorFor(metrics: EquityMetrics): BigDecimal {
         if (cadence == SampleCadence.CANDLE_CLOSE && candleWindow != null) {

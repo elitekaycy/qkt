@@ -37,6 +37,11 @@ class HtmlReportWriter(
         sb.append(HtmlPerformanceTables.headlineCards(result))
         sb.append("</section>")
 
+        if (result.windows.isNotEmpty()) {
+            sb.append("<section class=\"windows\"><h2>${HtmlWindowsTable.title(result.windows)}</h2>")
+            sb.append(HtmlWindowsTable.render(result.windows, result.accounting?.accountCurrency))
+            sb.append("</section>")
+        }
         result.evidence?.let {
             sb.append("<section class=\"evidence\"><h2>How this test was run</h2>")
             sb.append("<details><summary>Run details (tooling view)</summary>")
