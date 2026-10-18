@@ -70,13 +70,21 @@ Two simulated brokers, chosen with `--broker`:
 - `qkt backtest --bars` resolves fills on the recorded ticks inside each bar by default (tick-resolved
   fills), wherever the store has them: signals come from bars, fills from real prints. On a golden XAUUSD
   run this reproduced a full tick replay fill for fill (170 of 170), where the synthetic bar path matched
-  23 and overstated P&L by about 500. A bar with no ticks keeps the synthetic path. The default turns
+  23 and overstated P&L by about 500. A bar the store has no ticks for replays its synthetic open,
+  extremes (the open position's adverse one first) and close, and fills exactly as `--no-tick-fills`
+  fills it: an exit it trades through fills at its level, one it opens beyond fills at that open. This
+  is per bar, so a window partly covered by ticks fills from ticks wherever they exist. The run says so
+  once per symbol, e.g. `qkt: note: BACKTEST:EURUSD: 12 of 340 fill-possible bars had no ticks; orders
+  on them filled at their levels (bar fills), not from ticks`, and `result.json` records the counts
+  under `evidence.execution.barsWithoutTicks`. The default turns
   off, with a note, where tick-resolved fills are not valid (execution latency, order spacing, stop
   latency, mixed timeframes, continuous futures); `--no-tick-fills` keeps the synthetic path everywhere,
   and an explicit `--tick-fills` refuses instead of turning off. `sweep`, `walkforward`, `research` and
   `experiment` keep the synthetic path unless asked.
 - `mt5-sim` needs ticks: it refuses a symbol it would replay from bars on the synthetic path
-  (`--no-tick-fills`, or where tick-resolved fills are off).
+  (`--no-tick-fills`, or where tick-resolved fills are off). Under tick-resolved fills it runs, and a
+  bar without ticks fills at its levels as above (stops then slip by `slippagePoints`), never at the
+  bar's synthetic extreme.
 - **`mt5-sim`**: mirrors an MT5 venue. Volume is rounded down to `volumeStep` and orders below
   `volumeMin` are rejected; fill prices round to `digits`. A BUY fills at the ask and a SELL at the
   bid (see [Spread](#spread)), plus slippage. The execution preset (`--execution`, or `execution.preset`

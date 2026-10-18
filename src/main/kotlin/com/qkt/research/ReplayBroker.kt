@@ -57,6 +57,7 @@ internal fun replayBroker(
                     partialFillModel = executionConfig.partialFillModel(),
                     positionMode = executionConfig.positionMode,
                     orderSpacingMs = executionConfig.orderSpacingMs,
+                    fillAtTriggerPrice = barFills::at,
                 )
         }
     }

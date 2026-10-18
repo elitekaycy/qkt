@@ -13,8 +13,6 @@ import com.qkt.instrument.InstrumentMeta
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.marketdata.MarketPriceProvider
 import com.qkt.marketdata.Tick
-import com.qkt.marketdata.buyExecPrice
-import com.qkt.marketdata.sellExecPrice
 import java.math.BigDecimal
 import java.math.RoundingMode
 import org.slf4j.LoggerFactory
@@ -58,6 +56,8 @@ class MT5BrokerSimulator(
     private val positionMode: PositionAccountingMode = PositionAccountingMode.HEDGING,
     /** Minimum gap between consecutive order releases on the venue's send lane; see [SendLane]. */
     orderSpacingMs: Long = 0L,
+    /** Symbols whose current tick is a bar's synthetic extreme: a level it trades through fills there (#1439). */
+    private val fillAtTriggerPrice: (String) -> Boolean = { false },
 ) : Broker {
     override fun positionAccountingMode(symbol: String): PositionAccountingMode = positionMode
 
@@ -177,16 +177,18 @@ class MT5BrokerSimulator(
     fun onTick(tick: Tick) {
         // Releases before this tick fill at the quote prevailing then, still the previous one.
         drainDelayedSubmissions(clock.now() - 1)
-        lastTickBySymbol[tick.symbol] = tick
+        val previous = lastTickBySymbol.put(tick.symbol, tick)
         drainDelayedSubmissions(clock.now())
         drainPendingStopFills(tick)
         if (working.isEmpty()) return
         expireGtd(tick)
         if (working.isEmpty()) return
+        // As PaperBroker: a synthetic bar Close (the only synthetic tick with volume) to the next Open is a gap.
+        val from = previous?.takeIf { fillAtTriggerPrice(tick.symbol) && it.volume == null }?.price
         toFillScratch.clear()
         for (i in working.indices) {
             val req = working[i]
-            if (req.symbol == tick.symbol && checkTrigger(req, tick)) toFillScratch.add(req)
+            if (req.symbol == tick.symbol && mt5Triggered(req, tick)) toFillScratch.add(req)
         }
         for (i in toFillScratch.indices) {
             val wo = toFillScratch[i]
@@ -196,7 +198,7 @@ class MT5BrokerSimulator(
             if (stopLatencyMs > 0L && isProtectiveStop(wo)) {
                 pendingStopFills.add(PendingStopFill(wo, fillAt = clock.now() + stopLatencyMs))
             } else {
-                fillFromTrigger(wo, tick)
+                fillFromTrigger(wo, tick, from)
             }
         }
     }
@@ -256,6 +258,7 @@ class MT5BrokerSimulator(
     private fun fillFromTrigger(
         req: OrderRequest,
         triggeringTick: Tick,
+        from: BigDecimal? = null,
     ) {
         val meta =
             instruments.lookup(req.symbol)
@@ -301,8 +304,10 @@ class MT5BrokerSimulator(
             )
             return
         }
+        // MT5 triggers on the side's own quote, so a level the move [from] -> tick traded through is that price.
+        val level = entryPrice(req)?.takeIf { from != null && tradedThrough(from, triggeringTick.price, it) }
         val rawFair =
-            when (req) {
+            level ?: when (req) {
                 is OrderRequest.Limit ->
                     fillPrice.of(req.side, triggeringTick, fallback = triggeringTick.price, meta)
                 is OrderRequest.Stop ->
@@ -348,7 +353,7 @@ class MT5BrokerSimulator(
         triggeringTick: Tick,
         meta: InstrumentMeta,
     ) {
-        if (checkTrigger(limit, triggeringTick)) {
+        if (mt5Triggered(limit, triggeringTick)) {
             val execution =
                 requireNotNull(
                     fillPrice.of(limit.side, triggeringTick, fallback = triggeringTick.price, meta),
@@ -527,28 +532,6 @@ class MT5BrokerSimulator(
             is OrderRequest.IfTouched -> request.triggerPrice
             else -> null
         }
-
-    // Side-aware like MT5 itself: BUY_STOP fires on the ask, SELL_STOP on the bid.
-    // See com.qkt.marketdata.buyExecPrice.
-    private fun checkTrigger(
-        req: OrderRequest,
-        tick: Tick,
-    ): Boolean {
-        val exec =
-            if (req.side == Side.BUY) tick.buyExecPrice() else tick.sellExecPrice()
-        return when (req) {
-            is OrderRequest.Limit ->
-                if (req.side == Side.BUY) exec <= req.limitPrice else exec >= req.limitPrice
-            is OrderRequest.Stop ->
-                if (req.side == Side.BUY) exec >= req.stopPrice else exec <= req.stopPrice
-            is OrderRequest.StopLimit ->
-                if (req.side == Side.BUY) exec >= req.stopPrice else exec <= req.stopPrice
-            is OrderRequest.IfTouched ->
-                if (req.side == Side.BUY) exec <= req.triggerPrice else exec >= req.triggerPrice
-            is OrderRequest.Market -> false
-            else -> error("MT5BrokerSimulator.checkTrigger: unhandled order type ${req::class.simpleName}")
-        }
-    }
 
     /**
      * Returns a copy of [request] with [newQuantity] in place of the original. Used
