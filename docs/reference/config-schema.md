@@ -266,7 +266,7 @@ book_risk:
 
 | Key | Type | Default | Used by | Notes |
 |---|---|---|---|---|
-| `source` | string | `tv` when file exists; on a missing file `qkt run` uses `tv` and the daemon `local` | `daemon`, `run` market-source fallback | `tv` opens TradingView fallback. `replay` reads `QKT_REPLAY_TICKS`. Any other value uses a null fallback. MT5 and gateway-routed symbols (Bybit, Deribit) still use their own routes. |
+| `source` | string | `tv` (also when the file is missing) | `daemon`, `run` market-source fallback | `tv` opens TradingView fallback. `replay` reads `QKT_REPLAY_TICKS`. Any other value uses a null fallback. MT5 and gateway-routed symbols (Bybit, Deribit) still use their own routes. |
 | `data_root` | path string | none (`~/.qkt/data`) | every data command (`backtest`, `sweep`, `fetch`, `data …`); the daemon's instrument specs | The data root when neither `--data-root` nor `QKT_DATA_HOME` is set. Relative to the config file's folder; `${VAR:-default}` is expanded. An absolute path that does not exist is refused. Project templates use `${QKT_DATA_HOME:-./data}`. |
 | `starting_balance` | decimal | `0` (unset) | daemon risk, live PnL, reports, backtest basis | Must be greater than zero when a live drawdown limit is configured. A single-strategy backtest uses it too when `--starting-balance` is not given, so its drawdown halts and percent sizing sit on the daemon's balance; with neither set a backtest starts at `10000`. The chosen source is printed to stderr. Set explicitly for production and portfolio work. |
 | `log_level` | string | `info` | process logging setup where honored | Expected values are conventional log levels such as `debug`, `info`, `warn`, `error`. |

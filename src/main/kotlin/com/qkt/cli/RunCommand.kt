@@ -116,7 +116,7 @@ class RunCommand(
                 runawayMaxRoundTrips = cfg.runawayMaxRoundTrips
                 runawayMaxRejections = cfg.runawayMaxRejections
                 candleCloseGraceMs = cfg.candleCloseGraceMs
-                MarketSourceFactory.composite(cfg.accountMarketDataRoutes(), runFeed(configPath, cfg.source), cfg.hub)
+                MarketSourceFactory.composite(cfg.accountMarketDataRoutes(), cfg.source, hub = cfg.hub)
             }
         val feedSymbols = (symbols + accountingConfig.normalizedSymbols.values).distinct()
         val marketSource = effectiveSourceFactory(feedSymbols)

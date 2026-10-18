@@ -414,7 +414,7 @@ data class Config(
 
         private fun defaults(): Config =
             Config(
-                source = "local",
+                source = "tv",
                 dataRoot = "./data",
                 startingBalance = BigDecimal.ZERO,
             )
