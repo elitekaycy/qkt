@@ -3,7 +3,7 @@ description: "MetaTrader 4 history file (.hst, version 400 or 401): broker serve
 kind: "bars"
 time: ["time"]
 timeFormat: "yyyy-MM-dd HH:mm:ss"
-clock: "ny-close"
+clock: "broker"
 basis: "bid"
 fields:
   open: "open"

@@ -15,6 +15,9 @@ sealed interface InputLayout {
     val columns: Int
     val firstCell: String?
 
+    /** Each column's ticker, when the file names one per column under its header (yfinance, several tickers). */
+    val tickers: List<String>? get() = null
+
     /** Streams every row of [input]; returns what was skipped (CSV only). */
     fun read(
         input: ImportInput,
@@ -28,6 +31,7 @@ sealed interface InputLayout {
     ) : InputLayout {
         override val names: List<String>? get() = dialect.header
         override val columns: Int get() = dialect.columns
+        override val tickers: List<String>? get() = dialect.tickers
 
         override fun read(
             input: ImportInput,

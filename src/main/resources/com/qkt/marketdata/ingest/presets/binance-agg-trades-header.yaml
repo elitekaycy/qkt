@@ -1,0 +1,12 @@
+id: "binance-agg-trades-header"
+description: "Binance public-data aggTrades with a header (data.binance.vision USD-M / COIN-M futures): epoch ms, one aggregated trade a row at its first fill's time, so bars built from them can differ from the venue's klines where an order fills across a bar boundary (trades files build them exactly)"
+kind: "ticks"
+time: ["transact_time"]
+timeFormat: "epoch:ms"
+fields:
+  price: "price"
+  volume: "quantity"
+volume: "aggregated trade size (contracts on COIN-M)"
+match:
+  header: ["agg_trade_id", "price", "quantity", "first_trade_id", "last_trade_id", "transact_time", "is_buyer_maker"]
+  filename: "-aggTrades-"

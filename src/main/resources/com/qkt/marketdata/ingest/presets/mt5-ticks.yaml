@@ -3,7 +3,7 @@ description: "MetaTrader 5 tick export (Symbols window, Ticks, Export): broker s
 kind: "ticks"
 time: ["<DATE>", "<TIME>"]
 timeFormat: "yyyy.MM.dd HH:mm:ss.SSS"
-clock: "ny-close"
+clock: "broker"
 carryForward: true
 fields:
   bid: "<BID>"

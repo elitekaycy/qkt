@@ -82,6 +82,11 @@ data class ImportDescriptor(
     val volume: String? = null,
     /** Ticks only: a blank bid or ask repeats the previous one (MetaTrader tick exports). */
     val carryForward: Boolean? = null,
+    /**
+     * Prices are float32 values widened to a double (yfinance: `340.79998779296875` is the float32 nearest 340.8):
+     * each is stored as the shortest decimal naming that float32. A price that is not exactly a float32 is kept.
+     */
+    val float32: Boolean? = null,
     val match: PresetMatch? = null,
 ) {
     /** This descriptor with every field [other] sets replacing this one's; [fields] merge by role. */
@@ -108,6 +113,7 @@ data class ImportDescriptor(
             digits = other.digits ?: digits,
             volume = other.volume ?: volume,
             carryForward = other.carryForward ?: carryForward,
+            float32 = other.float32 ?: float32,
             match = match,
         )
 }

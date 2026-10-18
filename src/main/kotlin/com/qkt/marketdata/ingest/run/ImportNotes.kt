@@ -15,6 +15,11 @@ internal object ImportNotes {
     private const val PAIRED = "bid and ask files were paired: each stored bar is the mean of its bid and ask bar"
     private const val NO_BASIS = "the source does not say whether its bars are bid, ask, mid or traded prices"
     private const val ROUNDED = "value(s) had more than 8 decimals and were rounded to qkt's precision (HALF_EVEN)"
+    private const val FLOAT32 =
+        "price(s) were float32 values widened to a double (340.79998779296875); each is stored as the shortest " +
+            "decimal naming that float32 (340.8)"
+    private const val NOT_FLOAT32 =
+        "price(s) were not float32 values, though the source stores float32: kept as written"
     private const val SUB_MS = "timestamp(s) were finer than a millisecond; qkt stores milliseconds"
     private const val QUIET = "Dukascopy hour file(s) hold no ticks (market closed or quiet)"
     private const val TICK_BASIS = "bid/ask quotes or traded prices, as the columns say"
@@ -59,6 +64,8 @@ internal object ImportNotes {
             if (paired) add(PAIRED)
             if (bars && !paired && oneSided && !d.fields.containsKey("spread")) add(oneSidedBars(d.basis))
             if (bars && d.basis == null) add(NO_BASIS)
+            count(read.stats.sumOf { it.float32Recovered }, FLOAT32)
+            count(read.stats.sumOf { it.notFloat32 }, NOT_FLOAT32)
             count(read.stats.sumOf { it.rounded }, ROUNDED)
             count(read.stats.sumOf { it.subMillis }, SUB_MS)
             count(plan.emptyBi5Hours.toLong(), QUIET)

@@ -89,12 +89,14 @@ object ImportSources {
                     }.sorted()
                     .toList()
             }
+        // Dukascopy's candle files sit beside the tick hours in its datafeed layout: skipped, like checksums.
         val (data, other) =
             files.partition {
-                it.fileName
-                    .toString()
-                    .substringAfterLast('.')
-                    .lowercase() in
+                !Bi5Hours.isCandles(it) &&
+                    it.fileName
+                        .toString()
+                        .substringAfterLast('.')
+                        .lowercase() in
                     DATA_EXTENSIONS
             }
         skipped += other

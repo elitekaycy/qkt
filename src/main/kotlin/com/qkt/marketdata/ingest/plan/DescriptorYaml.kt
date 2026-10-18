@@ -32,6 +32,7 @@ object DescriptorYaml {
             "digits",
             "volume",
             "carryForward",
+            "float32",
             "match",
         )
     private val MATCH_KEYS = setOf("header", "columns", "firstCell", "filename", "delimiter", "json")
@@ -75,6 +76,7 @@ object DescriptorYaml {
             digits = str("digits")?.toInt(),
             volume = str("volume"),
             carryForward = str("carryForward")?.toBooleanStrict(),
+            float32 = str("float32")?.toBooleanStrict(),
             match = (root["match"] as? Map<*, *>)?.let { match(it, source) },
         )
     }
@@ -124,6 +126,7 @@ object DescriptorYaml {
             line("digits", descriptor.digits)
             line("volume", descriptor.volume)
             line("carryForward", descriptor.carryForward)
+            line("float32", descriptor.float32)
         }
 
     private fun match(

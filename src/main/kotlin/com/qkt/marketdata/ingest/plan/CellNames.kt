@@ -13,11 +13,13 @@ import com.qkt.marketdata.ingest.rows.JsonRow
  */
 class CellNames(
     private val layout: InputLayout,
+    /** The symbol imported, which picks a ticker's column when several tickers share a column name. */
+    private val ticker: String? = null,
 ) {
-    private val byName =
+    private val byName: Map<String, List<Int>> =
         layout.names
             ?.withIndex()
-            ?.associate { (i, n) -> n.trim().lowercase() to i }
+            ?.groupBy({ (_, n) -> n.trim().lowercase() }, { (i, _) -> i })
             .orEmpty()
 
     /** The cell [name] refers to, or null when the input has no such column. */
@@ -30,7 +32,32 @@ class CellNames(
             val head = n.substringBefore('.')
             return if (layout.names.any { it == head }) CellRef.Path(n.split('.')) else null
         }
-        return byName[n.lowercase()]?.let { CellRef.Index(it) }
+        val at = byName[n.lowercase()] ?: return null
+        return CellRef.Index(at.singleOrNull() ?: oneOf(n, at))
+    }
+
+    /**
+     * The one of several same-named columns that belongs to [ticker], or a refusal: taking any of them would
+     * read another instrument's prices without a word.
+     */
+    private fun oneOf(
+        name: String,
+        at: List<Int>,
+    ): Int {
+        val tickers = layout.tickers
+        if (tickers != null) {
+            val named = at.map { tickers.getOrNull(it).orEmpty() }
+            val mine = at.filter { tickers.getOrNull(it).equals(ticker, ignoreCase = true) }
+            mine.singleOrNull()?.let { return it }
+            throw IllegalArgumentException(
+                "the file holds several tickers (${named.distinct().joinToString()}) and none is " +
+                    "'${ticker.orEmpty()}': import with --as <SOURCE>:<ticker>, one ticker at a time",
+            )
+        }
+        throw IllegalArgumentException(
+            "column '$name' appears ${at.size} times in the header (positions ${at.joinToString { "\$$it" }}): " +
+                "say which with --map, e.g. --map ${name.lowercase()}=\$${at.first()}",
+        )
     }
 
     /**

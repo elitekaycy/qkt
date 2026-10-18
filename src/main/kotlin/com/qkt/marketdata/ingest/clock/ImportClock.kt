@@ -90,3 +90,30 @@ sealed interface ImportClock {
         }
     }
 }
+
+/** The UTC instant of [wall] on this clock, or null when the wall time falls in a DST gap. */
+fun ImportClock.utcOf(wall: java.time.LocalDateTime): Long? {
+    val shifted = wall.minusHours(shiftHours)
+    val offset = rules.getValidOffsets(shifted).firstOrNull() ?: return null
+    return shifted.toInstant(offset).toEpochMilli()
+}
+
+/**
+ * True when [clocks] put every wall-clock time in [span] at the same instant (checked hour by hour), so for this
+ * file the choice between them changes nothing: `ny-close` and `+03:00` agree through a US summer.
+ */
+fun agreeOver(
+    clocks: List<ImportClock>,
+    span: ClosedRange<java.time.LocalDateTime>,
+): Boolean {
+    var t =
+        span.start
+            .withMinute(0)
+            .withSecond(0)
+            .withNano(0)
+    while (!t.isAfter(span.endInclusive.plusHours(1))) {
+        if (clocks.map { it.utcOf(t) }.distinct().size > 1) return false
+        t = t.plusHours(1)
+    }
+    return true
+}
