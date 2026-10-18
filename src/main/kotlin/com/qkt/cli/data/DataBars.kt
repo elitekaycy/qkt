@@ -2,10 +2,12 @@ package com.qkt.cli.data
 
 import com.qkt.candles.TimeWindow
 import com.qkt.cli.Args
+import com.qkt.cli.BacktestBarReplay
 import com.qkt.cli.CliDataRoot
 import com.qkt.cli.ExitCodes
 import com.qkt.common.SystemClock
 import com.qkt.common.TimeRange
+import com.qkt.marketdata.rollUpToGrid
 import com.qkt.marketdata.source.LocalMarketSource
 import com.qkt.marketdata.store.BinaryBarStore
 import com.qkt.marketdata.store.DefaultDataStore
@@ -53,9 +55,27 @@ internal fun dataBars(args: Args): Int {
             from.atStartOfDay(ZoneOffset.UTC).toInstant(),
             to.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant(),
         )
+    // `--bars` replays the coarsest built timeframe that divides the one asked for, as qkt backtest --bars does.
+    val bars =
+        if (args.flag("bars")) {
+            val (broker, bare) = BacktestBarReplay.brokerAndBare(symbol)
+            val built =
+                BinaryBarStore(root)
+                    .builtTimeframes(broker, bare)
+                    .filter { window.durationMs % it.durationMs == 0L }
+                    .maxByOrNull { it.durationMs }
+            if (built == null || built == window) {
+                source.bars(symbol, window, range)
+            } else {
+                System.err.println("qkt data bars: rolled up from built ${built.canonicalSpec()} bars")
+                rollUpToGrid(source.bars(symbol, built, range), window, range.to.toEpochMilli())
+            }
+        } else {
+            source.bars(symbol, window, range)
+        }
     var count = 0
     println("time,timestamp,open,high,low,close,volume")
-    for (bar in source.bars(symbol, window, range)) {
+    for (bar in bars) {
         println(
             listOf(
                 Instant.ofEpochMilli(bar.startTime).toString(),

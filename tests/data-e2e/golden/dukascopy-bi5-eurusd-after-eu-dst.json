@@ -1,0 +1,7 @@
+{
+ "bars/BACKTEST/EURUSD/1h/2026-03-30.bin": "f70b98f08e0a233b3b4901021e2fe679e4afafaa52bc042bca2bcd917a323e80",
+ "bars/BACKTEST/EURUSD/1m/2026-03-30.bin": "a8867d11615ed318a8167c78bdd2e49aacf7f089147ce171268f8014ef572521",
+ "symbols/EURUSD/.import.json": "dce1d0b9285e1d9ae2b20e1dcb9cab18f5464265c60e50f3611afa372a26a3b3",
+ "symbols/EURUSD/2026-03-30.csv.gz": "2072d1f05dfe2c7cf044d42e67aee80741af734d3ce3660caedb3622a3577246",
+ "symbols/EURUSD/manifest.json": "7a2251b506b2f179ceb694f29073f62b4eebca98ba6ee9ed33fbda22a2c37f27"
+}

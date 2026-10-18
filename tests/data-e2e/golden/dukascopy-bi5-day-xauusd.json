@@ -1,0 +1,9 @@
+{
+ "bars/BACKTEST/XAUUSD/15m/2026-09-15.bin": "fc87d8e426ad64735b407af884adb51feea218d24dd24dc20de512fe5b0f9a7d",
+ "bars/BACKTEST/XAUUSD/1d/2026-09-15.bin": "53c63958e20c8a7bf9f34ce7db88ae281196d4ef3d5deb628adeee732f625a75",
+ "bars/BACKTEST/XAUUSD/1h/2026-09-15.bin": "b9240b41972eeee8e24ca30695c41e76de2751439c29afc50d165a0359f7b079",
+ "bars/BACKTEST/XAUUSD/1m/2026-09-15.bin": "a2fc9164add35c65f09fd06559ebf02d6fd7ded6b7d5fc75eed9b381dab93059",
+ "symbols/XAUUSD/.import.json": "078e4facfb4df27f5175839e6ded4bbe8d827b528334ea48ec5de29ec31aa179",
+ "symbols/XAUUSD/2026-09-15.csv.gz": "65cea73edb3bf9ce0221e66e36226eec31dd22547f80f98ae53f535cf5242eee",
+ "symbols/XAUUSD/manifest.json": "6e2d75d56d1e9ed457c5d7f886145a420cea4b2447cc8fd6801ae740a6137a5e"
+}

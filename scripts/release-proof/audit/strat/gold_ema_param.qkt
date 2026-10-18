@@ -1,0 +1,17 @@
+STRATEGY gold_ema_param VERSION 1
+
+SYMBOLS
+  gold = BACKTEST:XAUUSD EVERY 15m WARMUP 220 BARS
+
+PARAM fast = 9
+
+RULES
+  WHEN ema(gold.close, fast) CROSSES ABOVE ema(gold.close, 21)
+   AND POSITION.gold = 0
+  THEN BUY gold SIZING 0.5 PCT RISK
+       BRACKET { STOP_LOSS AT gold.close - atr(gold, 14) * 1.5, TAKE_PROFIT AT gold.close + atr(gold, 14) * 2.25 }
+
+  WHEN ema(gold.close, fast) CROSSES BELOW ema(gold.close, 21)
+   AND POSITION.gold = 0
+  THEN SELL gold SIZING 0.5 PCT RISK
+       BRACKET { STOP_LOSS AT gold.close + atr(gold, 14) * 1.5, TAKE_PROFIT AT gold.close - atr(gold, 14) * 2.25 }

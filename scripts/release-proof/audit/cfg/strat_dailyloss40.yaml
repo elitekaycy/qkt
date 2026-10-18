@@ -1,0 +1,6 @@
+starting_balance: 10000
+risk:
+  max_daily_loss: "0"
+  per_strategy:
+    gold_ema_cross:
+      max_daily_loss: "40"

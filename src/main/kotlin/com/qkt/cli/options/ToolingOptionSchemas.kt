@@ -92,6 +92,7 @@ internal val toolingOptionSchemas: Map<String, CliOptionSchema> =
                         "require-bid-ask",
                         "require-volume",
                         "allow-corrupt-days",
+                        "allow-missing-days",
                         "prune",
                         "dry-run",
                         "plan",

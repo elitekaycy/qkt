@@ -96,7 +96,9 @@ internal object DataHelp {
                     listOf(
                         "--vendor V" to "a label for where the data came from",
                         "--quality research|strict" to "the policy qkt data verify --snapshot applies",
-                        "--max-gap-minutes N" to "the largest gap within a day the policy accepts (default 30)",
+                        "--max-gap-minutes N" to
+                            "the largest gap within a day the policy accepts (default 90, past a daily break)",
+                        "--allow-missing-days" to "pin weekdays with no file (holidays) as absent instead of refusing",
                         "--allow-empty-days, --require-bid-ask, --require-volume, --allow-corrupt-days" to "policy",
                     ),
                 ),

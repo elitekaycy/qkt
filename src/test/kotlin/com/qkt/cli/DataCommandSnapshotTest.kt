@@ -145,6 +145,30 @@ class DataCommandSnapshotTest {
         assertThat(verifySnapshot(root, out)).isEqualTo(ExitCodes.USER_ERROR)
     }
 
+    @Test
+    fun `a weekday with no file refuses, unless --allow-missing-days pins it as absent`(
+        @TempDir root: Path,
+    ) {
+        // 2024-01-15 (a US holiday, Monday) has no file between Friday 2024-01-12 and Tuesday 2024-01-16.
+        seedDay(root, "XAUUSD", "2024-01-12", listOf("1705017600000,XAUUSD,2000,,,,,"))
+        seedDay(root, "XAUUSD", "2024-01-16", listOf("1705363200000,XAUUSD,2001,,,,,"))
+        val out = root.resolve("snap.json")
+        val run = { extra: List<String> ->
+            DataCommand(
+                Args(
+                    arrayOf("data", "snapshot", "XAUUSD", "--from", "2024-01-12", "--to", "2024-01-17") +
+                        arrayOf("--out", out.toString(), "--data-root", root.toString()) + extra,
+                ),
+            ).run()
+        }
+        assertThat(run(emptyList())).isEqualTo(ExitCodes.USER_ERROR)
+
+        assertThat(run(listOf("--allow-missing-days"))).isEqualTo(ExitCodes.SUCCESS)
+        assertThat(Files.readString(out)).contains("\"2024-01-15\"")
+        seedDay(root, "XAUUSD", "2024-01-15", listOf("1705276800000,XAUUSD,2000.5,,,,,"))
+        assertThat(verifySnapshot(root, out)).isEqualTo(ExitCodes.USER_ERROR)
+    }
+
     private fun snapshot(
         root: Path,
         out: Path,

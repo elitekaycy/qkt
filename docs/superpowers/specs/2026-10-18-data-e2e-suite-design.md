@@ -1,6 +1,6 @@
 # Real-data end-to-end suite — design
 
-Date: 2026-10-18. Status: building.
+Date: 2026-10-18. Status: built (PR tier and full tier in CI, release proofs in the attestation, daily drift).
 
 ## Why
 
@@ -112,6 +112,23 @@ The branch flow is feature → dev → testing → main (see `promote-dev-to-tes
 | Testing | `integration.yml`: push to testing (gates promotion to main) | `run.py --tier full`: every case, plus the external references (backtesting.py and backtrader reproduced to the cent, data and expected results in the corpus) | ≈ 15 min |
 | Main | `run-attestation.sh`, new stage `release-proofs`, on the attested commit, before the promotion PR | the full data suite again, the 48-scenario audit (991 checks + 39 relations), the 12 docs examples, store compatibility (stores and state written by the previous release read by this one), and a live data check on the demo gateway (broker M1 bars equal bars built from the broker's ticks) | ≈ 40 min |
 | Drift | `data-drift.yml`, daily schedule | fetch today's file from each free source and run the same oracles; a vendor format change opens an issue. Never blocks a merge | ≈ 5 min |
+
+## Built, and what the later passes found
+
+- **Release proofs** (`scripts/release-proof/run.sh`, stage `proofs` of `run-attestation.sh`, before the account is
+  touched): corpus provenance; every data case; `tests/references` (29 cases: qkt equals backtesting.py and
+  backtrader to the cent, conventions written into each case); the 48-scenario audit (991 independent bundle
+  checks, 39 relations, fingerprints) on `stores/exness-2026-06` in the corpus, which reproduces the full-store
+  run's trades 48/48; store compatibility (a store the previous release wrote, read by this one); and, with
+  `docs_data_root`, the 12 docs examples written out from the pages and run on the local store pinned by snapshots
+  (totals equal what the pages show). About 25 minutes.
+- **Drift** (`.github/workflows/data-drift.yml`, `tests/data-e2e/drift/`): the newest complete day from Binance,
+  Bybit, OKX, Dukascopy, Alpha Vantage and Yahoo through the same checks; a failure opens one `data-drift` issue.
+- Later findings, fixed: the dataset gap policy defaulted to 30 minutes, so `backtest --dataset` refused every gold
+  day for its hour-long daily break (now 90); `qkt data snapshot` had no way to pin holiday holes
+  (`--allow-missing-days`); `qkt data bars --bars` did not roll up from a finer built timeframe as `backtest --bars`
+  does. Vendor conventions modelled: Binance writes a flat zero-volume kline for a minute without trades; Binance
+  aggTrades carry their first fill's time; Dukascopy draws flat candles for minutes without ticks.
 
 ## What else stays proven on every change
 
