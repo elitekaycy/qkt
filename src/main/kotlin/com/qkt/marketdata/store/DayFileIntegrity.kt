@@ -14,6 +14,8 @@ data class DayQuality(
     val readable: Boolean,
     val firstMs: Long? = null,
     val lastMs: Long? = null,
+    /** The file's ticks as coverage runs ([SessionCoverage]); what was read before a parse failure. */
+    val runs: List<ActivityRun> = emptyList(),
 ) {
     /** No ticks at all — a non-trading day, or a fetch that wrote an empty/header-only file. */
     val isEmpty: Boolean get() = readable && tickCount == 0
@@ -34,6 +36,7 @@ object DayFileIntegrity {
         var maxGap = 0L
         var last = Long.MIN_VALUE
         var first: Long? = null
+        val runs = ActivityRunBuilder()
         return try {
             val feed = openDayFeed(path)
             try {
@@ -44,6 +47,7 @@ object DayFileIntegrity {
                         if (gap > maxGap) maxGap = gap
                     }
                     last = tick.timestamp
+                    runs.add(last)
                     if (first == null) first = last
                     count++
                 }
@@ -60,9 +64,10 @@ object DayFileIntegrity {
                         count >
                             0
                     },
+                runs = runs.build(),
             )
         } catch (e: Exception) {
-            DayQuality(tickCount = count, maxGapMs = maxGap, readable = false)
+            DayQuality(tickCount = count, maxGapMs = maxGap, readable = false, runs = runs.build())
         }
     }
 }

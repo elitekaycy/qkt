@@ -23,6 +23,24 @@ class DataCommandTest {
         Files.write(dir.resolve("$day.csv"), listOf(header) + lines)
     }
 
+    /** One tick a minute through each UTC `"HH:mm-HH:mm"` stretch of [day], as CSV rows. */
+    private fun minutes(
+        symbol: String,
+        day: String,
+        vararg stretches: String,
+    ): List<String> {
+        val start =
+            java.time.LocalDate
+                .parse(day)
+                .atStartOfDay(java.time.ZoneOffset.UTC)
+                .toInstant()
+                .toEpochMilli()
+        return stretches.flatMap { s ->
+            val (a, b) = s.split("-").map { it.substringBefore(":").toInt() * 60 + it.substringAfter(":").toInt() }
+            (a until b).map { "${start + it * 60_000L},$symbol,2000,,,,," }
+        }
+    }
+
     @Test
     fun `verify exits non-zero when a cached day is empty`(
         @TempDir root: Path,
@@ -38,12 +56,8 @@ class DataCommandTest {
     fun `verify exits zero when every cached day has ticks`(
         @TempDir root: Path,
     ) {
-        seedDay(
-            root,
-            "XAUUSD",
-            "2024-01-01",
-            listOf("1704067200000,XAUUSD,2000,,,,,", "1704067260000,XAUUSD,2001,,,,,"),
-        )
+        // A winter gold day: ticks around the 22:00-23:00 UTC daily break.
+        seedDay(root, "XAUUSD", "2024-01-03", minutes("XAUUSD", "2024-01-03", "00:00-22:00", "23:00-24:00"))
         val code =
             DataCommand(Args(arrayOf("data", "verify", "XAUUSD", "--data-root", root.toString()))).run()
         assertThat(code).isEqualTo(ExitCodes.SUCCESS)
@@ -64,17 +78,18 @@ class DataCommandTest {
     ) {
         val dir = root.resolve("symbols").resolve("XAUUSD")
         Files.createDirectories(dir)
+        // Good Friday 2024: a closed day, so two ticks are all it needs to hold.
         val ticks =
             listOf(
-                Tick("XAUUSD", Money.of("2000"), 1_704_067_200_000L),
-                Tick("XAUUSD", Money.of("2001"), 1_704_067_260_000L),
+                Tick("XAUUSD", Money.of("2000"), 1_711_670_400_000L),
+                Tick("XAUUSD", Money.of("2001"), 1_711_670_460_000L),
             )
-        BinaryTickWriter().write(dir.resolve("2024-01-01.bin"), "XAUUSD", ticks)
+        BinaryTickWriter().write(dir.resolve("2024-03-29.bin"), "XAUUSD", ticks)
         val verify = { DataCommand(Args(arrayOf("data", "verify", "XAUUSD", "--data-root", root.toString()))).run() }
         assertThat(verify()).isEqualTo(ExitCodes.SUCCESS)
 
-        val whole = Files.readAllBytes(dir.resolve("2024-01-01.bin"))
-        Files.write(dir.resolve("2024-01-02.bin"), whole.copyOf(whole.size - 9))
+        val whole = Files.readAllBytes(dir.resolve("2024-03-29.bin"))
+        Files.write(dir.resolve("2024-03-30.bin"), whole.copyOf(whole.size - 9))
 
         assertThat(verify()).isEqualTo(ExitCodes.USER_ERROR)
     }
@@ -84,9 +99,9 @@ class DataCommandTest {
         @TempDir root: Path,
     ) {
         // 2024-01-05 Friday, 2024-01-06 Saturday (empty, as qkt fetch writes it), 2024-01-07 Sunday.
-        seedDay(root, "EURUSD", "2024-01-05", listOf("1704412800000,EURUSD,1.1,,,,,"))
+        seedDay(root, "EURUSD", "2024-01-05", minutes("EURUSD", "2024-01-05", "00:00-22:00"))
         seedDay(root, "EURUSD", "2024-01-06", emptyList())
-        seedDay(root, "EURUSD", "2024-01-07", listOf("1704661200000,EURUSD,1.1,,,,,"))
+        seedDay(root, "EURUSD", "2024-01-07", minutes("EURUSD", "2024-01-07", "22:00-24:00"))
         val verify = { s: String ->
             DataCommand(Args(arrayOf("data", "verify", s, "--data-root", root.toString()))).run()
         }
@@ -101,11 +116,12 @@ class DataCommandTest {
     fun `a converted day is checked once, and a bin that disagrees with its csv is flagged`(
         @TempDir root: Path,
     ) {
+        // Good Friday 2024: a closed day, so its two ticks are a sound file.
         seedDay(
             root,
             "XAUUSD",
-            "2024-01-01",
-            listOf("1704067200000,XAUUSD,2000,,,,,", "1704067260000,XAUUSD,2001,,,,,"),
+            "2024-03-29",
+            listOf("1711670400000,XAUUSD,2000,,,,,", "1711670460000,XAUUSD,2001,,,,,"),
         )
         val dir = root.resolve("symbols").resolve("XAUUSD")
         val out = java.io.ByteArrayOutputStream()
@@ -120,20 +136,20 @@ class DataCommandTest {
             }
         }
         BinaryTickWriter().write(
-            dir.resolve("2024-01-01.bin"),
+            dir.resolve("2024-03-29.bin"),
             "XAUUSD",
             listOf(
-                Tick("XAUUSD", Money.of("2000"), 1_704_067_200_000L),
-                Tick("XAUUSD", Money.of("2001"), 1_704_067_260_000L),
+                Tick("XAUUSD", Money.of("2000"), 1_711_670_400_000L),
+                Tick("XAUUSD", Money.of("2001"), 1_711_670_460_000L),
             ),
         )
         assertThat(verify()).isEqualTo(ExitCodes.SUCCESS)
         assertThat(out.toString()).contains("done — 1 days, 2 ticks, 0 flagged")
 
         BinaryTickWriter().write(
-            dir.resolve("2024-01-01.bin"),
+            dir.resolve("2024-03-29.bin"),
             "XAUUSD",
-            listOf(Tick("XAUUSD", Money.of("2000"), 1_704_067_200_000L)),
+            listOf(Tick("XAUUSD", Money.of("2000"), 1_711_670_400_000L)),
         )
         assertThat(verify()).isEqualTo(ExitCodes.USER_ERROR)
         assertThat(out.toString()).contains("hold different ticks (1 vs 2)")

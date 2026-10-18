@@ -176,18 +176,27 @@ qkt data verify: done — 2 days, 2880 bars, 0 flagged
 ```
 
 Each day shows how many ticks or bars it holds and the longest gap. A day is flagged when its file can't be read, its
-bars are out of order or off the timeframe's grid, or a price is impossible (a high below the close, say). An empty
-Saturday of a market that never trades then is shown as `closed`, not flagged. Weekdays with no file between stored
-days are listed as `MISSING`, a hole or a holiday:
+bars are out of order or off the timeframe's grid, or a price is impossible (a high below the close, say). Coverage is
+judged the way a backtest judges it ([How coverage is judged](../how-to/backtest-data.md#how-coverage-is-judged)), so a
+day verify passes is a day a backtest accepts:
 
 ```text
-  2026-04-16 … 2026-09-07  MISSING (103 weekday(s) with no file between stored days: a hole or a holiday)
+  2024-02-19  ticks=61601  maxGap=270m  short session (last tick 18:29Z)
+  2024-02-21  ticks=0  maxGap=0m  EMPTY (0 ticks)
+  2024-02-22  ticks=118003  maxGap=180m  GAP (no ticks 08:59Z-12:00Z)
+  2024-03-29  holiday (no file)
+  2024-04-10  MISSING (no file: a trading day)
 ```
+
+`holiday`, `short session` and `closed` (an empty Saturday of a market that never trades then) are shown, not
+flagged. `EMPTY`, `GAP` and `MISSING` are flagged: a trading day with no data, more than 90 minutes of session time
+without any, or no file at all. The first or last stored day cut short (where an import's file ends, or a fetch
+stopped) is shown as `partial`, not flagged; a backtest that asks for that day still refuses it.
 
 The exit code is non-zero when anything is flagged. To see the exact bars a backtest will read, at any timeframe,
 `qkt data bars BINANCE:BTCUSDT --tf 1h --from 2026-10-13 --to 2026-10-14` prints them as CSV. To measure your data
-against your broker's, `qkt data compare` it with bars you `qkt fetch`. A backtest also checks coverage before it runs, and refuses to run on missing days unless
-you pass `--allow-incomplete`.
+against your broker's, `qkt data compare` it with bars you `qkt fetch`. A backtest also checks coverage before it runs, and refuses to run on missing or gappy days
+unless you pass `--allow-incomplete`.
 
 ## How the cache works
 

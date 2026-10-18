@@ -9,6 +9,8 @@ import java.time.ZoneOffset
 object CryptoCalendar : TradingCalendar {
     override val name: String = "crypto"
 
+    override val hasShortSessions: Boolean get() = false
+
     override fun tradingPeriodsPerYear(window: TimeWindow): BigDecimal {
         val minutesPerYear = BigDecimal("525960")
         val windowMinutes =

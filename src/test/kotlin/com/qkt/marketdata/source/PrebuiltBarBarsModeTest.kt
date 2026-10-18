@@ -27,9 +27,10 @@ class PrebuiltBarBarsModeTest {
     private fun bars(
         day: LocalDate,
         close: String,
+        count: Int = 3,
     ): List<Candle> {
         val start = day.toEpochDay() * 86_400_000L
-        return (0..2).map { i ->
+        return (0 until count).map { i ->
             Candle(
                 "BINANCE:BTCUSDT",
                 Money.of("100"),
@@ -54,12 +55,13 @@ class PrebuiltBarBarsModeTest {
         @TempDir root: Path,
     ) {
         val csv = LocalBarStore(root)
-        csv.writeDay("BINANCE", "BTCUSDT", "1m", monday, bars(monday, "101"))
-        csv.writeDay("BINANCE", "BTCUSDT", "1m", tuesday, bars(tuesday, "102"))
+        // Whole days: coverage needs every minute of a 24/7 market's day, not just a file.
+        csv.writeDay("BINANCE", "BTCUSDT", "1m", monday, bars(monday, "101", 1440))
+        csv.writeDay("BINANCE", "BTCUSDT", "1m", tuesday, bars(tuesday, "102", 1440))
         val bin = BinaryBarStore(root)
 
         val read = PrebuiltBarReader(csv, bin).bars("BINANCE:BTCUSDT", TimeWindow.ONE_MINUTE, range())?.toList()
-        assertThat(read).hasSize(6)
+        assertThat(read).hasSize(2880)
         assertThat(
             read?.map { it.close.stripTrailingZeros().toPlainString() }?.distinct(),
         ).containsExactly("101", "102")

@@ -150,4 +150,28 @@ class BarCompletenessValidatorTest {
         fetched.writeDay("BACKTEST", "XAUUSD", "15m", monday.plusDays(1), bars)
         assertThat(validate(store, "2026-01-05", "2026-01-07", fetched).missingDays).isEmpty()
     }
+
+    @Test
+    fun `holidays need no bars, a holiday short session passes and a plain weekday with none is missing`(
+        @TempDir root: Path,
+    ) {
+        // #1438: 2023-11-24 (no file) must stay missing; 2023-12-24 (Sunday before Christmas) and 12-25 need nothing.
+        val store = BinaryBarStore(root)
+        listOf("2023-11-22", "2023-11-27", "2023-12-21", "2023-12-22", "2023-12-27").forEach {
+            goldDay(store, LocalDate.parse(it), winterHours)
+        }
+        goldDay(store, LocalDate.parse("2023-11-23"), (0..17).toList() + 23) // Thanksgiving: gold halts early
+        goldDay(store, LocalDate.parse("2023-11-26"), listOf(23))
+        goldDay(store, LocalDate.parse("2023-12-26"), (1..21).toList() + 23) // reopens 01:00 after Christmas
+
+        val november = validate(store, "2023-11-22", "2023-11-27")
+        assertThat(november.missingDays).containsExactly(LocalDate.parse("2023-11-24"))
+        assertThat(november.days.single { it.day == LocalDate.parse("2023-11-23") }.status)
+            .isEqualTo(DayCompleteness.Status.SHORT)
+
+        val christmas = validate(store, "2023-12-21", "2023-12-27")
+        assertThat(christmas.missingDays).isEmpty()
+        assertThat(christmas.days.filter { it.holiday }.map { it.day.toString() }).containsExactly("2023-12-24")
+        assertThat(christmas.requestedTradingDays).isEqualTo(5) // 21, 22, 25 (from 22:00 UTC), 26, 27
+    }
 }

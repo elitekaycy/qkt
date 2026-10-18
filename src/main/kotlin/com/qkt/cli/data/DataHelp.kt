@@ -48,8 +48,10 @@ internal object DataHelp {
             "verify" to
                 Action(
                     "qkt data verify <SYMBOL|SOURCE:SYMBOL> [--tf TF] | --snapshot <file> [--strict]",
-                    "Check a stored series day by day: ticks for SYMBOL, bars for SOURCE:SYMBOL. Flags empty, " +
-                        "unreadable, gappy, misplaced or out-of-order days and weekdays with no file. Exit 1 when flagged.",
+                    "Check a stored series day by day: ticks for SYMBOL, bars for SOURCE:SYMBOL. Flags unreadable, " +
+                        "misplaced or out-of-order days and, by the rule backtests apply, trading days that are " +
+                        "empty, have over 90 minutes of session time without data, or have no file; shows " +
+                        "holidays and holiday short sessions. Exit 1 when flagged.",
                     listOf(
                         "--tf TF" to "SOURCE:SYMBOL only: check one timeframe folder",
                         "--snapshot FILE" to "check that a snapshot's days are unchanged (qkt data snapshot)",
