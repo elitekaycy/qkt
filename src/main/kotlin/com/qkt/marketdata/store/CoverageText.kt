@@ -8,12 +8,16 @@ import java.time.format.DateTimeFormatter
 private val HH_MM: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
 private val MM_DD_HH_MM: DateTimeFormatter = DateTimeFormatter.ofPattern("MM-dd HH:mm")
 
-/** [ms] as `HH:mmZ`, `24:00Z` at the end of [day], with the date when it falls on another day, e.g. `02-20 00:00Z`. */
+/**
+ * [ms] as `HH:mmZ`, with the date when it falls on another day, e.g. `02-20 00:00Z`; the end of [day] as `24:00Z`
+ * when [endOfStretch] (a stretch running to midnight), else as the next day's `00:00Z` (a first tick then).
+ */
 internal fun clock(
     ms: Long,
     day: LocalDate,
+    endOfStretch: Boolean = true,
 ): String {
-    if (ms == SessionCoverage.startMs(day.plusDays(1))) return "24:00Z"
+    if (endOfStretch && ms == SessionCoverage.startMs(day.plusDays(1))) return "24:00Z"
     val at = Instant.ofEpochMilli(ms).atZone(ZoneOffset.UTC)
     val pattern = if (at.toLocalDate() == day) HH_MM else MM_DD_HH_MM
     return at.format(pattern) + "Z"

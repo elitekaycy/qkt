@@ -104,7 +104,7 @@ class SessionCoverage(
                     if (f.kind == FindingKind.EARLY_CLOSE) {
                         "last $unit ${clock(f.span.fromMs, day)}"
                     } else {
-                        "first $unit ${clock(f.span.toMs, day)}"
+                        "first $unit ${clock(f.span.toMs, day, endOfStretch = false)}"
                     }
                 }
             return DayCompleteness(day, DayCompleteness.Status.SHORT, detail = "short session ($edges)")

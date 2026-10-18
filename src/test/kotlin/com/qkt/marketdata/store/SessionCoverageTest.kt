@@ -82,6 +82,9 @@ class SessionCoverageTest {
         val days = classify(store, "2023-12-22", "2023-12-27")
         assertThat(days.getValue("2023-12-25").status).isEqualTo(Status.SHORT) // the 22:00 reopen came at 02:00
         assertThat(days.getValue("2023-12-25").detail).isEqualTo("short session (first tick 12-26 02:00Z)")
+        val midnight = CoverageStore().winterGold("2023-12-22").day("2023-12-26", "00:00-22:00", "23:00-24:00")
+        assertThat(classify(midnight, "2023-12-25", "2023-12-25", storedLater = true).getValue("2023-12-25").detail)
+            .isEqualTo("short session (first tick 12-26 00:00Z)")
         assertThat(days.getValue("2023-12-26").status).isEqualTo(Status.SHORT)
 
         store.day("2023-12-26", "05:00-22:00", "23:00-24:00")
