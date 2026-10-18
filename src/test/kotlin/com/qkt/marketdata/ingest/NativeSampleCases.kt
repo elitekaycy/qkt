@@ -15,7 +15,7 @@ object NativeSampleCases {
         row: String,
         symbol: String = "DATABENTO:ESH1",
         digits: Int? = null,
-    ) = Arguments.of(file, symbol, preset, row, emptyMap<String, String>(), digits)
+    ) = Arguments.of(file, symbol, preset, row, emptyMap<String, String>(), digits, null)
 
     val all: List<Arguments> =
         listOf(

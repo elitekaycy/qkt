@@ -3,7 +3,7 @@ description: "MetaTrader 5 bar export (Symbols window, Bars, Export): broker ser
 kind: "bars"
 time: ["<DATE>", "<TIME>"]
 timeFormat: "yyyy.MM.dd HH:mm:ss"
-clock: "ny-close"
+clock: "broker"
 basis: "bid"
 fields:
   open: "<OPEN>"

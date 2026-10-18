@@ -8,6 +8,7 @@ import com.qkt.marketdata.store.DatasetSnapshots
 import com.qkt.marketdata.store.DayFileIntegrity
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.DayOfWeek
 import java.time.LocalDate
 
 /**
@@ -46,37 +47,54 @@ internal fun dataVerify(args: Args): Int {
         return ExitCodes.USER_ERROR
     }
 
-    println("qkt data verify: $symbol (${dayFiles.size} day files) under $symDir")
+    // One verdict per day, on the file backtests read (.bin before .csv.gz before .csv); another form of the same
+    // day must hold the same ticks, or the store is not what it seems.
+    val byDay =
+        dayFiles.groupBy { LocalDate.parse(dayOf(it)) }.toSortedMap().mapValues { (_, files) ->
+            files.sortedBy { f -> READ_ORDER.indexOfFirst { f.fileName.toString().endsWith(it) } }
+        }
+    println("qkt data verify: $symbol (${byDay.size} days) under $symDir")
     val provenance = ImportProvenance.read(symDir)
+    val qualities = byDay.mapValues { (_, files) -> files.map(DayFileIntegrity::inspect) }
+    val ticksByDay = qualities.mapValues { (_, q) -> q.first().tickCount }
+    // A market that never trades on Saturday keeps an empty Saturday file (qkt fetch writes one, an import records
+    // one): that is a closed day, not a fault. On a 24/7 symbol an empty Saturday is a hole.
+    val everyDay = ticksByDay.any { (day, ticks) -> day.dayOfWeek == DayOfWeek.SATURDAY && ticks > 0 }
     var flagged = 0
     var totalTicks = 0L
-    val ticksByDay = mutableMapOf<LocalDate, Int>()
-    var previousDay: String? = null
+    var previousDay: LocalDate? = null
     var previousLastMs: Long? = null
-    for (path in dayFiles) {
-        val day =
-            path.fileName
-                .toString()
-                .removeSuffix(".gz")
-                .removeSuffix(".csv")
-                .removeSuffix(".bin")
-        val q = DayFileIntegrity.inspect(path)
+    for ((date, files) in byDay) {
+        val day = date.toString()
+        val all = qualities.getValue(date)
+        val q = all.first()
         totalTicks += q.tickCount
-        ticksByDay.merge(LocalDate.parse(day), q.tickCount, Int::plus)
-        val boundary = if (day != previousDay) previousLastMs else null
-        val status = DayStatus.of(q, LocalDate.parse(day), boundary, previousDay?.let { LocalDate.parse(it) })
-        if (day != previousDay) {
-            previousDay = day
-            previousLastMs = q.lastMs ?: previousLastMs
+        var status = DayStatus.of(q, date, previousLastMs, previousDay)
+        if (q.isEmpty && date.dayOfWeek == DayOfWeek.SATURDAY && !everyDay) status = "closed (0 ticks)"
+        val other =
+            all.drop(1).firstOrNull {
+                it.tickCount != q.tickCount ||
+                    it.firstMs != q.firstMs ||
+                    it.lastMs != q.lastMs
+            }
+        if (other != null) {
+            status = "the ${files.first().fileName} and ${files[all.indexOf(other)].fileName} hold different ticks " +
+                "(${q.tickCount} vs ${other.tickCount}): re-run qkt data convert"
         }
-        if (status != "ok") flagged++
+        // The gap from the previous day is measured from the last day with ticks: an empty Saturday in between
+        // leaves Friday as the previous day, so the weekend is not read as a hole on Sunday.
+        if (q.lastMs != null) {
+            previousDay = date
+            previousLastMs = q.lastMs
+        }
+        if (status != "ok" && !status.startsWith("closed")) flagged++
         val source = provenance.entryFor(day)?.let { "  imported ${it.preset}" }.orEmpty()
         println("  $day  ticks=${q.tickCount}  maxGap=${q.maxGapMs / 60_000}m  $status$source")
     }
     val missing = MissingDays.of(ticksByDay)
     missing.lines().forEach { println("  $it") }
     flagged += missing.days.size
-    println("qkt data verify: done — ${dayFiles.size} days, $totalTicks ticks, $flagged flagged")
+    println("qkt data verify: done — ${byDay.size} days, $totalTicks ticks, $flagged flagged")
     return if (flagged > 0) ExitCodes.USER_ERROR else ExitCodes.SUCCESS
 }
 
@@ -101,3 +119,13 @@ private fun verifySnapshot(
     for (failure in result.failures) System.err.println("  $failure")
     return ExitCodes.USER_ERROR
 }
+
+/** The order qkt's readers prefer a day's files in. */
+private val READ_ORDER = listOf(".bin", ".csv.gz", ".csv")
+
+private fun dayOf(path: java.nio.file.Path): String =
+    path.fileName
+        .toString()
+        .removeSuffix(".gz")
+        .removeSuffix(".csv")
+        .removeSuffix(".bin")

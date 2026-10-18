@@ -78,4 +78,64 @@ class DataCommandTest {
 
         assertThat(verify()).isEqualTo(ExitCodes.USER_ERROR)
     }
+
+    @Test
+    fun `an empty Saturday is a closed day for a market that never trades on one, a hole for one that does`(
+        @TempDir root: Path,
+    ) {
+        // 2024-01-05 Friday, 2024-01-06 Saturday (empty, as qkt fetch writes it), 2024-01-07 Sunday.
+        seedDay(root, "EURUSD", "2024-01-05", listOf("1704412800000,EURUSD,1.1,,,,,"))
+        seedDay(root, "EURUSD", "2024-01-06", emptyList())
+        seedDay(root, "EURUSD", "2024-01-07", listOf("1704661200000,EURUSD,1.1,,,,,"))
+        val verify = { s: String ->
+            DataCommand(Args(arrayOf("data", "verify", s, "--data-root", root.toString()))).run()
+        }
+        assertThat(verify("EURUSD")).isEqualTo(ExitCodes.SUCCESS)
+
+        seedDay(root, "BTCUSD", "2024-01-06", emptyList())
+        seedDay(root, "BTCUSD", "2024-01-13", listOf("1705104000000,BTCUSD,40000,,,,,"))
+        assertThat(verify("BTCUSD")).isEqualTo(ExitCodes.USER_ERROR)
+    }
+
+    @Test
+    fun `a converted day is checked once, and a bin that disagrees with its csv is flagged`(
+        @TempDir root: Path,
+    ) {
+        seedDay(
+            root,
+            "XAUUSD",
+            "2024-01-01",
+            listOf("1704067200000,XAUUSD,2000,,,,,", "1704067260000,XAUUSD,2001,,,,,"),
+        )
+        val dir = root.resolve("symbols").resolve("XAUUSD")
+        val out = java.io.ByteArrayOutputStream()
+        val verify = {
+            out.reset()
+            val original = System.out
+            try {
+                System.setOut(java.io.PrintStream(out))
+                DataCommand(Args(arrayOf("data", "verify", "XAUUSD", "--data-root", root.toString()))).run()
+            } finally {
+                System.setOut(original)
+            }
+        }
+        BinaryTickWriter().write(
+            dir.resolve("2024-01-01.bin"),
+            "XAUUSD",
+            listOf(
+                Tick("XAUUSD", Money.of("2000"), 1_704_067_200_000L),
+                Tick("XAUUSD", Money.of("2001"), 1_704_067_260_000L),
+            ),
+        )
+        assertThat(verify()).isEqualTo(ExitCodes.SUCCESS)
+        assertThat(out.toString()).contains("done — 1 days, 2 ticks, 0 flagged")
+
+        BinaryTickWriter().write(
+            dir.resolve("2024-01-01.bin"),
+            "XAUUSD",
+            listOf(Tick("XAUUSD", Money.of("2000"), 1_704_067_200_000L)),
+        )
+        assertThat(verify()).isEqualTo(ExitCodes.USER_ERROR)
+        assertThat(out.toString()).contains("hold different ticks (1 vs 2)")
+    }
 }

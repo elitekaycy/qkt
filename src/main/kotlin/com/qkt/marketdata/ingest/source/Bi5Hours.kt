@@ -23,6 +23,11 @@ internal object Bi5Hours {
     /** True when [path] is a `.bi5` file. */
     fun isBi5(path: Path): Boolean = path.fileName.toString().endsWith(".bi5", ignoreCase = true)
 
+    private val CANDLES = Regex("""(BID|ASK)_candles_(min|hour|day)_1\.bi5""", RegexOption.IGNORE_CASE)
+
+    /** True for Dukascopy's own candle files (`BID_candles_min_1.bi5`), which sit beside the tick hours. */
+    fun isCandles(path: Path): Boolean = CANDLES.matches(path.fileName.toString())
+
     /** The input for one hour file, or null when it holds no ticks; [divisor] scales Dukascopy's integer prices. */
     fun input(
         path: Path,
@@ -30,6 +35,12 @@ internal object Bi5Hours {
         divisor: Long?,
     ): ImportInput? {
         val text = path.toString()
+        if (isCandles(path)) {
+            throw ImportRefusal(
+                "$text is a Dukascopy candle file, which qkt does not read: import the tick hours " +
+                    "(<HH>h_ticks.bi5) and qkt builds the bars",
+            )
+        }
         val m =
             HOUR.find(text)
                 ?: throw ImportRefusal(

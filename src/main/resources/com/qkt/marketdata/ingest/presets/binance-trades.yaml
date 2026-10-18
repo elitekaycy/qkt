@@ -1,0 +1,15 @@
+id: "binance-trades"
+description: "Binance public-data trades without a header (data.binance.vision spot): epoch ms, µs from 2025, one trade a row"
+kind: "ticks"
+delimiter: ","
+time: ["$4"]
+timeFormat: "epoch"
+fields:
+  price: "$1"
+  volume: "$2"
+volume: "trade size in the base asset"
+match:
+  columns: 7
+  firstCell: "\\d+"
+  delimiter: ","
+  filename: "-trades-"

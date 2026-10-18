@@ -19,6 +19,11 @@ data class DatasetSnapshot(
     val to: String,
     val qualityPolicy: DataQualityPolicy = DataQualityPolicy(),
     val files: List<DatasetSnapshotFile>,
+    /**
+     * Days of the range with no file: a closed market's weekend, which an import does not write (a fetch writes
+     * an empty file). Pinned too, so a file appearing there later is a change.
+     */
+    val absentDays: List<String> = emptyList(),
 )
 
 @Serializable

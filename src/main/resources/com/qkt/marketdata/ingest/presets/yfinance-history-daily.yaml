@@ -1,0 +1,18 @@
+id: "yfinance-history-daily"
+description: "yfinance Ticker.history() daily CSV (Date at the exchange's midnight with its UTC offset, Dividends, Stock Splits): each date is the session date; prices are adjusted unless auto_adjust=False"
+kind: "bars"
+time: ["Date"]
+timeFormat: "yyyy-MM-dd' 00:00:00'XXX"
+timeframe: "1d"
+basis: "last"
+fields:
+  open: "Open"
+  high: "High"
+  low: "Low"
+  close: "Close"
+  volume: "Volume"
+float32: true
+volume: "shares (contracts for futures)"
+match:
+  header: ["Date", "Open", "High", "Low", "Close", "Volume", "Dividends", "Stock Splits"]
+  firstCell: "\\d{4}-\\d\\d-\\d\\d 00:00:00[+-]\\d\\d:\\d\\d"

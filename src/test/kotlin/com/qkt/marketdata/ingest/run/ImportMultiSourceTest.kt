@@ -77,12 +77,14 @@ class ImportMultiSourceTest {
     fun `an overlapping second source fills only what the first lacks and reports the seam`() {
         IngestFixtures.import(root, listOf(source("duka.csv", days("2024-03-04", "2024-03-08"))), "EURUSD", ticks)
 
+        // The fixture's Monday opens at 00:00 UTC are unrealistic after the US DST switch; this test is about overlap.
         val mt5 =
             IngestFixtures.import(
                 root,
                 listOf(source("mt5.csv", days("2024-03-06", "2024-03-15"), bump = 2)),
                 "EURUSD",
                 ticks,
+                trustClock = true,
             )
 
         assertThat(mt5.outcomes.kept.map { it.toString() }).containsExactly("2024-03-06", "2024-03-07", "2024-03-08")
@@ -133,13 +135,15 @@ class ImportMultiSourceTest {
     @Test
     fun `a second source on the wrong clock shows against the stored days and refuses`() {
         IngestFixtures.import(root, listOf(source("duka.csv", days("2024-03-04", "2024-03-08"))), "EURUSD", ticks)
-        val shifted = source("mt5.csv", days("2024-03-06", "2024-03-12"), shiftMs = 7_200_000)
+        // Inside one week: no weekly open to judge, so the comparison with the stored days is what catches the clock.
+        val shifted = source("mt5.csv", days("2024-03-06", "2024-03-08"), shiftMs = 7_200_000)
+        val before = Files.readAllBytes(root.resolve("symbols/EURUSD/2024-03-08.csv.gz"))
 
         assertThatThrownBy { IngestFixtures.import(root, listOf(shifted), "EURUSD", ticks) }
             .isInstanceOf(ImportRefusal::class.java)
             .hasMessageContaining("shifted by")
             .hasMessageContaining("wrong clock")
-        assertThat(Files.exists(root.resolve("symbols/EURUSD/2024-03-12.csv.gz"))).isFalse()
+        assertThat(Files.readAllBytes(root.resolve("symbols/EURUSD/2024-03-08.csv.gz"))).isEqualTo(before)
     }
 
     @Test

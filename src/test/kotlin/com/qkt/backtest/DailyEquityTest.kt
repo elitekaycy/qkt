@@ -30,9 +30,23 @@ class DailyEquityTest {
         assertThat(rows[0].open).isEqualByComparingTo("100")
         assertThat(rows[0].high).isEqualByComparingTo("120")
         assertThat(rows[0].low).isEqualByComparingTo("90")
-        assertThat(rows[0].close).isEqualByComparingTo("110")
+        // The 2024-01-03 00:00 sample is taken before the tick that crosses midnight: 2024-01-02's close.
+        assertThat(rows[0].close).isEqualByComparingTo("111")
         assertThat(rows[1].open).isEqualByComparingTo("111")
         assertThat(rows[1].close).isEqualByComparingTo("111")
+    }
+
+    @Test
+    fun `a midnight sample after a gap of days opens its own day`() {
+        val acc = DailyEquityAccumulator()
+        acc.accept(ms("2024-01-05", 21), Money.of("100"))
+        acc.accept(ms("2024-01-08", 0), Money.of("101"))
+        acc.accept(ms("2024-01-08", 1), Money.of("102"))
+
+        val rows = acc.result()
+        assertThat(rows.map { it.date.toString() }).containsExactly("2024-01-05", "2024-01-08")
+        assertThat(rows[0].close).isEqualByComparingTo("100")
+        assertThat(rows[1].open).isEqualByComparingTo("101")
     }
 
     @Test

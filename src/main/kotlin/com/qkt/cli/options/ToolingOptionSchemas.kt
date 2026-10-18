@@ -83,6 +83,7 @@ internal val toolingOptionSchemas: Map<String, CliOptionSchema> =
                         "encoding",
                         "instruments",
                         "against",
+                        "config",
                     ),
                 flags =
                     setOf(
@@ -97,6 +98,7 @@ internal val toolingOptionSchemas: Map<String, CliOptionSchema> =
                         "json",
                         "sort",
                         "trust-clock",
+                        "bars",
                     ),
             ),
         "bot" to

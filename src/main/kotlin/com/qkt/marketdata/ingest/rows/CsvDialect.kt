@@ -16,6 +16,11 @@ data class CsvDialect(
     val columns: Int,
     val wholeLineQuoted: Boolean = false,
     val dropTrailingEmpty: Boolean = false,
+    /**
+     * The row under the header naming each column's ticker, in a yfinance file of several tickers
+     * (`Price,Close,Close,…` over `Ticker,AAPL,MSFT,…`), so a column name shared by tickers resolves by ticker.
+     */
+    val tickers: List<String>? = null,
 )
 
 /**
@@ -99,7 +104,14 @@ internal object CsvDialectSniffer {
         val trailing = modal > 1 && rows.all { it.last().isBlank() }
         val columns = if (trailing) modal - 1 else modal
         val header = headerCells?.let { if (trailing) it.dropLast(1) else it }?.map { it.trim() }
-        val dialect = CsvDialect(delimiter, decimal, preamble, header, columns, dropTrailingEmpty = trailing)
+        val tickers =
+            rows
+                .getOrNull(1)
+                ?.takeIf { headerCells != null && it.first().trim().equals("Ticker", ignoreCase = true) }
+                ?.map { it.trim() }
+                ?.let { if (trailing) it.dropLast(1) else it }
+        val dialect =
+            CsvDialect(delimiter, decimal, preamble, header, columns, dropTrailingEmpty = trailing, tickers = tickers)
         val usable = if (modal < 2) modal else columns.coerceAtLeast(2)
         return Candidate(delimiter, usable, consistency, consistency * (0.5 + typed / 2), dialect)
     }

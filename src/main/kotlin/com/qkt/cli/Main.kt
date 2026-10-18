@@ -45,7 +45,16 @@ internal fun runMain(argv: Array<String>): Int =
                 } else {
                     null
                 }
-            println(runHelp ?: CliHelp.forCommand(args.subcommand, full = "--all" in argv, filter = filter))
+            val help =
+                when {
+                    runHelp != null -> runHelp
+                    // `qkt data import --help`: the action's own usage and flags, not the data family's union.
+                    args.subcommand == "data" && "--all" !in argv ->
+                        com.qkt.cli.data.DataHelp
+                            .of(tail.firstOrNull())
+                    else -> CliHelp.forCommand(args.subcommand, full = "--all" in argv, filter = filter)
+                }
+            println(help)
             ExitCodes.SUCCESS
         } else {
             CliOptionSchemas.forSubcommand(args.subcommand)?.let { schema ->
