@@ -1,5 +1,5 @@
 id: "binance-agg-trades"
-description: "Binance public-data aggTrades without a header (data.binance.vision spot): epoch ms, µs from 2025, one aggregated trade a row"
+description: "Binance public-data aggTrades without a header (data.binance.vision spot): epoch ms, µs from 2025, one aggregated trade a row at its first fill's time, so bars built from them can differ from the venue's klines where an order fills across a bar boundary (trades files build them exactly)"
 kind: "ticks"
 delimiter: ","
 time: ["$5"]
