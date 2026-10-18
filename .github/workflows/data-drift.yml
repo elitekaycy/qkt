@@ -1,0 +1,77 @@
+name: data-drift
+
+# Every day, the newest complete day from each free data source (Binance, Bybit, OKX, Dukascopy, Alpha Vantage,
+# Yahoo) runs through the built qkt with the same independent checks as the pinned suite: a vendor that changes
+# its files is seen here before a user meets it. It never gates a merge. A failed check opens (or comments on)
+# one issue labelled data-drift; a source that does not answer is listed in the run summary only.
+#
+# Template expressions reference internal context only; no untrusted event input reaches a shell command.
+
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: data-drift
+  cancel-in-progress: false
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build qkt
+        run: ./gradlew installDist --no-daemon
+      - name: Fetch today's vendor files
+        run: |
+          python3 -m pip install --quiet 'yfinance==0.2.65'
+          python3 tests/data-e2e/drift/fetch.py --out "$RUNNER_TEMP/drift" | tee "$RUNNER_TEMP/drift-fetch.json"
+          {
+            echo "### Data drift: $(jq -r .day "$RUNNER_TEMP/drift-fetch.json")"
+            echo "Checked: $(jq -r '.checked | join(", ")' "$RUNNER_TEMP/drift-fetch.json")"
+            echo "Unavailable today: $(jq -r '.unavailable | join(", ") | if . == "" then "none" else . end' "$RUNNER_TEMP/drift-fetch.json")"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Check them
+        id: check
+        run: |
+          python3 -I tests/data-e2e/run.py --unpinned --corpus "$RUNNER_TEMP/drift/corpus" \
+            --cases "$RUNNER_TEMP/drift/cases.toml" --report "$RUNNER_TEMP/drift-report.json" | tee "$RUNNER_TEMP/drift.txt"
+      - name: Open or update the drift issue
+        if: failure() && steps.check.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          body="$RUNNER_TEMP/issue.md"
+          {
+            echo "The daily data drift check failed on $(jq -r .day "$RUNNER_TEMP/drift-fetch.json"): a vendor's files no longer import or check as before."
+            echo
+            echo '```'
+            grep -E '^(FAIL|data-e2e)' "$RUNNER_TEMP/drift.txt" | cut -c1-400
+            echo '```'
+            echo
+            echo "Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          } > "$body"
+          gh label create data-drift --color B60205 --description "A vendor's data changed shape" 2>/dev/null || true
+          open="$(gh issue list --label data-drift --state open --json number --jq '.[0].number')"
+          if [ -n "$open" ]; then gh issue comment "$open" --body-file "$body"; else gh issue create --title "Data drift: a vendor's files changed" --label data-drift --body-file "$body"; fi
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: data-drift
+          path: ${{ runner.temp }}/drift-report.json
+          retention-days: 14
+          if-no-files-found: ignore

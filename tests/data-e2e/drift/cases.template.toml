@@ -1,0 +1,154 @@
+# Drift cases: the same checks as cases.toml, on the newest complete day fetch.py downloads ({day}). A group
+# whose source did not answer is left out by fetch.py. No golden files: the data is new every day.
+
+# @group binance
+[[case]]
+id = "drift-binance-spot-trades"
+[[case.step]]
+run = ["data", "import", "{corpus}/binance/spot/ADAUSDT-trades-{day}.zip", "--as", "ADAUSDT", "--data-root", "{root}"]
+contains = ["Format   binance-trades (matched)", "Days     1  {day}"]
+again_noop = true
+[[case.check]]
+kind = "ticks_equal"
+symbol = "ADAUSDT"
+reader = "binance_trades"
+file = "binance/spot/ADAUSDT-trades-{day}.zip"
+[[case.check]]
+kind = "vendor_bars"
+symbol = "ADAUSDT"
+from = "{day}"
+to = "{day}"
+tfs = ["1m", "1h", "1d"]
+vendor = "binance/spot/ADAUSDT-{tf}-{day}.zip"
+reader = "binance_klines"
+paths = ["read", "built"]
+# Binance writes a flat, zero-volume kline for a minute without trades; qkt builds no bar there.
+convention = "binance"
+
+[[case]]
+id = "drift-binance-klines-rollup"
+[[case.step]]
+run = ["data", "import", "{corpus}/binance/spot/ADAUSDT-1m-{day}.zip", "--as", "BINANCE:ADAUSDT", "--data-root", "{root}"]
+contains = ["Format   binance-klines (matched)", "1440 rows → 1440 bars records"]
+[[case.check]]
+kind = "vendor_bars"
+symbol = "BINANCE:ADAUSDT"
+from = "{day}"
+to = "{day}"
+tfs = ["1h", "1d"]
+vendor = "binance/spot/ADAUSDT-{tf}-{day}.zip"
+reader = "binance_klines"
+
+# @group bybit
+[[case]]
+id = "drift-bybit-spot-trades"
+[[case.step]]
+run = ["data", "import", "{corpus}/bybit/ADAUSDT_{day}.csv.gz", "--as", "ADAUSDT", "--data-root", "{root}"]
+contains = ["Format   bybit-spot-trades (matched)"]
+[[case.check]]
+kind = "ticks_equal"
+symbol = "ADAUSDT"
+reader = "bybit_trades"
+file = "bybit/ADAUSDT_{day}.csv.gz"
+[[case.check]]
+kind = "vendor_bars"
+symbol = "ADAUSDT"
+from = "{day}"
+to = "{day}"
+tfs = ["1m"]
+vendor = ["bybit/ADAUSDT-spot-kline-1m-{day}-p1.json", "bybit/ADAUSDT-spot-kline-1m-{day}-p2.json"]
+reader = "bybit_kline"
+convention = "bybit"
+ambiguous_ms = 60
+trades = "bybit/ADAUSDT_{day}.csv.gz"
+trades_reader = "bybit_trades"
+
+# @group okx
+[[case]]
+id = "drift-okx-spot-trades"
+[[case.step]]
+run = ["data", "import", "{corpus}/okx/BTC-USDT-trades-{day}.zip", "--as", "BTCUSDT", "--data-root", "{root}"]
+contains = ["Format   okx-trades (matched)"]
+[[case.check]]
+kind = "ticks_equal"
+symbol = "BTCUSDT"
+reader = "okx_trades"
+file = "okx/BTC-USDT-trades-{day}.zip"
+
+# @group dukascopy
+[[case]]
+id = "drift-dukascopy-eurusd-day"
+[[case.step]]
+run = ["data", "import", "{corpus}/dukascopy/EURUSD", "--as", "EURUSD", "--data-root", "{root}"]
+contains = ["Format   dukascopy-bi5 (matched)"]
+[[case.check]]
+kind = "ticks_equal"
+symbol = "EURUSD"
+reader = "dukascopy_bi5_day"
+divisor = 100000
+file = "dukascopy/EURUSD/{dukascopy_day}"
+[[case.check]]
+kind = "built_bars"
+symbol = "EURUSD"
+reader = "dukascopy_bi5_day"
+divisor = 100000
+file = "dukascopy/EURUSD/{dukascopy_day}"
+vendor_reader = "dukascopy_candles"
+vendors = [{ vendor = "dukascopy/EURUSD/{dukascopy_day}/BID_candles_min_1.bi5", use = "bid" }, { vendor = "dukascopy/EURUSD/{dukascopy_day}/ASK_candles_min_1.bi5", use = "ask" }]
+vendor_flat_ok = true
+use = "mid"
+from = "{day}"
+to = "{day}"
+tfs = ["1m", "1h"]
+fields = ["open", "high", "low", "close"]
+
+# @group alphavantage
+[[case]]
+id = "drift-alphavantage-daily"
+[[case.step]]
+run = ["data", "import", "{corpus}/alphavantage/IBM-daily.csv", "--as", "AV:IBM", "--data-root", "{root}"]
+contains = ["Format   alphavantage-daily (matched)"]
+[[case.check]]
+kind = "bars_equal"
+symbol = "AV:IBM"
+tf = "1d"
+reader = "alphavantage_bars"
+file = "alphavantage/IBM-daily.csv"
+
+# @group yfinance
+[[case]]
+id = "drift-yfinance-daily"
+[[case.step]]
+run = ["data", "import", "{corpus}/yfinance/SPY-1d.csv", "--as", "YAHOO:SPY", "--data-root", "{root}"]
+contains = ["Format   yfinance-daily (matched)"]
+lacks = ["more than 8 decimals"]
+[[case.check]]
+kind = "bars_equal"
+symbol = "YAHOO:SPY"
+tf = "1d"
+reader = "yfinance_bars"
+file = "yfinance/SPY-1d.csv"
+
+[[case]]
+id = "drift-yfinance-intraday"
+[[case.step]]
+run = ["data", "import", "{corpus}/yfinance/AAPL-1m.csv", "--as", "YAHOO:AAPL", "--data-root", "{root}"]
+contains = ["Format   yfinance-intraday (matched)"]
+[[case.check]]
+kind = "bars_equal"
+symbol = "YAHOO:AAPL"
+reader = "yfinance_bars"
+file = "yfinance/AAPL-1m.csv"
+
+[[case]]
+id = "drift-yfinance-two-tickers"
+[[case.step]]
+run = ["data", "import", "{corpus}/yfinance/AAPL-MSFT-1d-multi.csv", "--as", "YAHOO:MSFT", "--data-root", "{root}"]
+contains = ["Format   yfinance-multi (matched)"]
+[[case.check]]
+kind = "bars_equal"
+symbol = "YAHOO:MSFT"
+tf = "1d"
+reader = "yfinance_bars"
+ticker = "MSFT"
+file = "yfinance/AAPL-MSFT-1d-multi.csv"

@@ -1,0 +1,5 @@
+starting_balance: 10000
+risk:
+  max_daily_loss: "0"
+  max_daily_drawdown_pct: "0.8"
+  daily_dd_basis: balance

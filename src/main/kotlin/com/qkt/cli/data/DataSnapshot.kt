@@ -61,10 +61,10 @@ internal fun dataSnapshot(args: Args): Int {
 private fun qualityPolicy(args: Args): DataQualityPolicy =
     DataQualityPolicy(
         mode = args.option("quality") ?: if (args.flag("strict")) "strict" else "research",
-        maxGapMinutes = args.option("max-gap-minutes")?.toLongOrNull() ?: 30,
+        maxGapMinutes = args.option("max-gap-minutes")?.toLongOrNull() ?: DataQualityPolicy.DEFAULT_MAX_GAP_MINUTES,
         allowEmptyDays = args.flag("allow-empty-days"),
         requireBidAsk = args.flag("require-bid-ask"),
         requireVolume = args.flag("require-volume"),
         failOnCorruptDay = !args.flag("allow-corrupt-days"),
-        failOnMissingDay = true,
+        failOnMissingDay = !args.flag("allow-missing-days"),
     )

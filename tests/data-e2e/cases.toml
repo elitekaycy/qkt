@@ -25,6 +25,7 @@ tfs = ["1m", "5m", "1h", "4h", "1d"]
 vendor = "binance/spot/ADAUSDT-{tf}-2026-10-14.zip"
 reader = "binance_klines"
 paths = ["read", "built"]
+convention = "binance"
 
 [[case]]
 id = "binance-spot-aggtrades-ada"
@@ -606,7 +607,7 @@ pairs = [["{work}/run1/trades.csv", "{work}/run2/trades.csv"], ["{work}/run1/ord
 id = "dukascopy-bi5-day-eurusd"
 tier = "pr"
 [[case.step]]
-run = ["data", "import", "{corpus}/dukascopy/EURUSD", "--as", "EURUSD", "--data-root", "{root}"]
+run = ["data", "import", "{corpus}/dukascopy/EURUSD/2026/08", "--as", "EURUSD", "--data-root", "{root}"]
 contains = ["Format   dukascopy-bi5 (matched)", "49858 ticks records", "skipped"]
 again_noop = true
 [[case.check]]
@@ -664,3 +665,56 @@ run = ["data", "import", "{corpus}/dukascopy/EURUSD/2026/08/15/BID_candles_min_1
 exit = 1
 contains = ["is a Dukascopy candle file, which qkt does not read"]
 writes_nothing = true
+
+[[case]]
+id = "dukascopy-bi5-day-xauusd"
+[[case.step]]
+# Metals divide Dukascopy's integer prices by 1000; the 60 minutes of the daily break have no ticks.
+run = ["data", "import", "{corpus}/dukascopy/XAUUSD", "--as", "XAUUSD", "--data-root", "{root}"]
+contains = ["Format   dukascopy-bi5 (matched)", "361160 ticks records"]
+[[case.check]]
+kind = "ticks_equal"
+symbol = "XAUUSD"
+reader = "dukascopy_bi5_day"
+divisor = 1000
+file = "dukascopy/XAUUSD/2026/08/15"
+[[case.check]]
+kind = "built_bars"
+symbol = "XAUUSD"
+reader = "dukascopy_bi5_day"
+divisor = 1000
+file = "dukascopy/XAUUSD/2026/08/15"
+vendor_reader = "dukascopy_candles"
+vendors = [{ vendor = "dukascopy/XAUUSD/2026/08/15/BID_candles_min_1.bi5", use = "bid" }, { vendor = "dukascopy/XAUUSD/2026/08/15/ASK_candles_min_1.bi5", use = "ask" }]
+vendor_flat_ok = true
+use = "mid"
+from = "2026-09-15"
+to = "2026-09-15"
+tfs = ["1m", "15m", "1h", "1d"]
+fields = ["open", "high", "low", "close"]
+
+[[case]]
+id = "dukascopy-bi5-eurusd-after-eu-dst"
+[[case.step]]
+# 2026-03-30, the Monday after Europe moved its clocks (the US had moved three weeks before): UTC files, no shift.
+run = ["data", "import", "{corpus}/dukascopy/EURUSD/2026/02", "--as", "EURUSD", "--data-root", "{root}"]
+contains = ["Format   dukascopy-bi5 (matched)", "78948 ticks records"]
+[[case.check]]
+kind = "ticks_equal"
+symbol = "EURUSD"
+reader = "dukascopy_bi5_day"
+divisor = 100000
+file = "dukascopy/EURUSD/2026/02/30"
+[[case.check]]
+kind = "built_bars"
+symbol = "EURUSD"
+reader = "dukascopy_bi5_day"
+divisor = 100000
+file = "dukascopy/EURUSD/2026/02/30"
+vendor_reader = "dukascopy_candles"
+vendors = [{ vendor = "dukascopy/EURUSD/2026/02/30/BID_candles_min_1.bi5", use = "bid" }, { vendor = "dukascopy/EURUSD/2026/02/30/ASK_candles_min_1.bi5", use = "ask" }]
+use = "mid"
+from = "2026-03-30"
+to = "2026-03-30"
+tfs = ["1m", "1h"]
+fields = ["open", "high", "low", "close"]

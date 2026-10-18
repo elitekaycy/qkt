@@ -45,12 +45,17 @@ jobs:
           ./gradlew installDist --no-daemon
           python3 -I qkt-data-corpus/tools/provenance.py --check
           python3 -I tests/data-e2e/run.py --tier full --corpus qkt-data-corpus --report build/data-e2e.json
+      # qkt against backtesting.py and backtrader, to the cent: the references live in the corpus.
+      - name: External references
+        run: python3 -I tests/references/run.py --refs qkt-data-corpus/references --report build/references.json
       - name: Upload the data suite report on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: data-e2e
-          path: build/data-e2e.json
+          path: |
+            build/data-e2e.json
+            build/references.json
           retention-days: 7
           if-no-files-found: ignore
       - name: Upload smoke log on failure
