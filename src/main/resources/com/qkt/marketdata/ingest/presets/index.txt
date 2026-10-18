@@ -1,12 +1,16 @@
 # Built-in import presets, one YAML file each.
 alphavantage-daily
 alphavantage-intraday
+binance-agg-trades
+binance-agg-trades-header
 binance-funding
 binance-funding-api
 binance-klines
 binance-klines-header
 binance-klines-json
 binance-metrics
+binance-trades
+binance-trades-header
 bybit-spot-trades
 bybit-trades
 ccxt-ohlcv
@@ -40,5 +44,7 @@ tradingview-iso
 tradingview-unix
 truefx-ticks
 yfinance-daily
+yfinance-daily-adjusted
+yfinance-history-daily
 yfinance-intraday
 yfinance-multi

@@ -11,6 +11,7 @@ fields:
   low: "Low"
   close: "Close"
   volume: "Volume"
+float32: true
 volume: "shares (contracts for futures)"
 match:
   header: ["Date", "Open", "High", "Low", "Close", "Adj Close", "Volume"]

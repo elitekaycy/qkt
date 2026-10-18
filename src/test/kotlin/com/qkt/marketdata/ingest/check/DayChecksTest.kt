@@ -58,7 +58,7 @@ class DayChecksTest {
         val tally = CheckTally()
         DayChecks(tally, 14_400_000).clean(day, listOf(bar(t0 + 79_200_000, "1", "2", "1", "2")))
 
-        assertThat(tally.problems.single()).contains("not on the UTC 240-minute grid")
+        assertThat(tally.problems.single()).contains("starts 120m past the UTC 240-minute grid")
     }
 
     @Test

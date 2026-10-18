@@ -20,13 +20,16 @@ class ImportSafetyTest {
     lateinit var dir: Path
 
     private val root get() = dir.resolve("root")
-    private val bars get() = root.resolve("bars/EXNESS/XAUUSD/1m")
+    /** The samples' broker clock: MetaTrader files do not say it, so every import here states it. */
+    private val NY_CLOSE = ImportDescriptor(clock = "ny-close")
+
+    private val bars get() = root.resolve("bars/BROKER/XAUUSD/1m")
 
     private fun mt5() = IngestFixtures.sample("mt5-bars.csv", dir.resolve("in"))
 
     @Test
     fun `a dry run writes nothing`() {
-        val report = IngestFixtures.import(root, listOf(mt5()), "EXNESS:XAUUSD", dryRun = true)
+        val report = IngestFixtures.import(root, listOf(mt5()), "BROKER:XAUUSD", NY_CLOSE, dryRun = true)
 
         assertThat(report.records).isEqualTo(5)
         assertThat(Files.exists(root)).isFalse()
@@ -53,9 +56,9 @@ class ImportSafetyTest {
 
     @Test
     fun `the same input always writes the same bytes`() {
-        IngestFixtures.import(root, listOf(mt5()), "EXNESS:XAUUSD")
+        IngestFixtures.import(root, listOf(mt5()), "BROKER:XAUUSD", NY_CLOSE)
         val other = dir.resolve("root2")
-        IngestFixtures.import(other, listOf(mt5()), "EXNESS:XAUUSD")
+        IngestFixtures.import(other, listOf(mt5()), "BROKER:XAUUSD", NY_CLOSE)
 
         val a = IngestFixtures.dataFiles(root).map { Files.readAllBytes(it).toList() }
         val b = IngestFixtures.dataFiles(other).map { Files.readAllBytes(it).toList() }
@@ -64,10 +67,10 @@ class ImportSafetyTest {
 
     @Test
     fun `re-importing the same file changes nothing`() {
-        IngestFixtures.import(root, listOf(mt5()), "EXNESS:XAUUSD")
+        IngestFixtures.import(root, listOf(mt5()), "BROKER:XAUUSD", NY_CLOSE)
         val before = IngestFixtures.dataFiles(root).associateWith { Files.getLastModifiedTime(it) }
 
-        val again = IngestFixtures.import(root, listOf(mt5()), "EXNESS:XAUUSD")
+        val again = IngestFixtures.import(root, listOf(mt5()), "BROKER:XAUUSD", NY_CLOSE)
 
         assertThat(again.outcomes.unchanged).containsExactly(LocalDate.of(2024, 3, 8), LocalDate.of(2024, 3, 10))
         assertThat(again.outcomes.written).isEmpty()
@@ -84,17 +87,17 @@ class ImportSafetyTest {
             IngestFixtures.import(
                 root,
                 listOf(mt5()),
-                "EXNESS:XAUUSD",
+                "BROKER:XAUUSD", NY_CLOSE,
                 onOverlap = OverlapPolicy.REFUSE,
             )
         }.hasMessageContaining("already stored")
             .satisfies({ assertThat((it as ImportRefusal).lines.single()).contains("2024-03-10 (not imported") })
 
-        val skipped = IngestFixtures.import(root, listOf(mt5()), "EXNESS:XAUUSD", onOverlap = OverlapPolicy.SKIP)
+        val skipped = IngestFixtures.import(root, listOf(mt5()), "BROKER:XAUUSD", NY_CLOSE, onOverlap = OverlapPolicy.SKIP)
         assertThat(skipped.outcomes.skipped).containsExactly(LocalDate.of(2024, 3, 10))
         assertThat(Files.readString(fetched)).isEqualTo("timestamp,open,high,low,close,volume\n")
 
-        val replaced = IngestFixtures.import(root, listOf(mt5()), "EXNESS:XAUUSD", onOverlap = OverlapPolicy.REPLACE)
+        val replaced = IngestFixtures.import(root, listOf(mt5()), "BROKER:XAUUSD", NY_CLOSE, onOverlap = OverlapPolicy.REPLACE)
         assertThat(replaced.outcomes.replaced).containsExactly(LocalDate.of(2024, 3, 10))
         assertThat(Files.readAllLines(fetched)).hasSize(4)
         val backups = Files.walk(bars.resolve(".import-backup")).use { s -> s.filter(Files::isRegularFile).toList() }
@@ -103,21 +106,21 @@ class ImportSafetyTest {
 
     @Test
     fun `bars fill the closed day inside their span and the manifest covers every day`() {
-        val report = IngestFixtures.import(root, listOf(mt5()), "EXNESS:XAUUSD")
+        val report = IngestFixtures.import(root, listOf(mt5()), "BROKER:XAUUSD", NY_CLOSE)
 
         assertThat(report.outcomes.emptyFilled).containsExactly(LocalDate.of(2024, 3, 9))
         assertThat(
             Files.readAllLines(bars.resolve("2024-03-09.csv")),
         ).containsExactly("timestamp,open,high,low,close,volume")
-        val manifest = LocalBarStore(root).readManifest("EXNESS", "XAUUSD", "1m")
+        val manifest = LocalBarStore(root).readManifest("BROKER", "XAUUSD", "1m")
         assertThat(manifest.ranges.map { it.from to it.to }).containsExactly("2024-03-08" to "2024-03-10")
-        assertThat(LocalBarStore(root).readDay("EXNESS", "XAUUSD", "1m", LocalDate.of(2024, 3, 10))).hasSize(3)
+        assertThat(LocalBarStore(root).readDay("BROKER", "XAUUSD", "1m", LocalDate.of(2024, 3, 10))).hasSize(3)
     }
 
     @Test
     fun `ticks land in the bare symbol's directory with a half-open manifest and provenance`() {
         val ticks = IngestFixtures.sample("mt5-ticks.csv", dir.resolve("in"))
-        IngestFixtures.import(root, listOf(ticks), "EXNESS:XAUUSD")
+        IngestFixtures.import(root, listOf(ticks), "BROKER:XAUUSD", NY_CLOSE)
 
         val manifest = ManifestStore(root).read("XAUUSD")
         assertThat(manifest.ranges.map { it.from to it.to }).containsExactly("2024-03-10" to "2024-03-11")

@@ -1,0 +1,12 @@
+id: "binance-trades-header"
+description: "Binance public-data trades with a header (data.binance.vision USD-M / COIN-M futures): epoch ms, one trade a row"
+kind: "ticks"
+time: ["time"]
+timeFormat: "epoch:ms"
+fields:
+  price: "price"
+  volume: "qty"
+volume: "trade size (contracts on COIN-M)"
+match:
+  header: ["id", "price", "qty", "quote_qty", "time", "is_buyer_maker"]
+  filename: "-trades-"

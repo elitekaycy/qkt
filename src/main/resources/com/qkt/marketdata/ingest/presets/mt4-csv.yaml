@@ -4,7 +4,7 @@ kind: "bars"
 delimiter: ","
 time: ["$0", "$1"]
 timeFormat: "yyyy.MM.dd HH:mm"
-clock: "ny-close"
+clock: "broker"
 basis: "bid"
 fields:
   open: "$2"

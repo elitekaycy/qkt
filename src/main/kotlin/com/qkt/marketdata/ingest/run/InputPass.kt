@@ -24,6 +24,8 @@ data class InputStats(
     var firstBackward: InputLine? = null,
     var subMillis: Long = 0,
     var rounded: Long = 0,
+    var float32Recovered: Long = 0,
+    var notFloat32: Long = 0,
     var sawOverlap: Boolean = false,
     var skips: RowSkips = RowSkips(),
     /** The first rows read, raw text beside the record they became. */
@@ -93,6 +95,8 @@ internal class InputPass(
             }
         stats.subMillis = mapping.time.subMillis
         stats.rounded = builder.rounded
+        stats.float32Recovered = builder.float32Recovered
+        stats.notFloat32 = builder.notFloat32
         stats.sawOverlap = mapping.time.sawOverlap
         return stats
     }

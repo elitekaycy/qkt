@@ -4,6 +4,7 @@ import com.qkt.marketdata.ingest.ImportRefusal
 import com.qkt.marketdata.ingest.clock.ClockEvidence
 import com.qkt.marketdata.ingest.clock.ImportClock
 import com.qkt.marketdata.ingest.clock.WeeklyOpens
+import com.qkt.marketdata.ingest.clock.agreeOver
 import com.qkt.marketdata.ingest.parse.ParsedTime
 import com.qkt.marketdata.ingest.plan.CellNames
 import com.qkt.marketdata.ingest.record.RowTime
@@ -38,7 +39,8 @@ internal class ClockDecision(
             }
             return ClockChoice(null, "timestamps carry their own zone")
         }
-        plan.descriptor.clock?.let { text ->
+        val broker = plan.descriptor.clock.equals(BROKER, ignoreCase = true)
+        plan.descriptor.clock?.takeUnless { broker }?.let { text ->
             val clock =
                 try {
                     ImportClock.parse(text)
@@ -48,9 +50,11 @@ internal class ClockDecision(
             val by = if (request.overrides.clock != null) "--tz" else "preset ${plan.descriptor.id}"
             return ClockChoice(clock, "stated by $by")
         }
+        val hint = if (broker) " $BROKER_HINT" else ""
         if (!plan.target.fxOrMetal) {
             throw ImportRefusal(
-                "the timestamps have no zone and nothing says which clock they are on; pass --tz (UTC, +02:00, ny-close or an IANA zone)",
+                "the timestamps have no zone and nothing says which clock they are on; pass --tz (UTC, +02:00, " +
+                    "ny-close or an IANA zone).$hint",
             )
         }
         val opens = WeeklyOpens()
@@ -58,9 +62,22 @@ internal class ClockDecision(
         val evidence = ClockEvidence.CANDIDATES.map { ClockEvidence.of(it, opens.all) }
         val fitting = evidence.filter { it.passes && it.spansSeasons }
         if (fitting.size == 1) return ClockChoice(fitting.single().clock, "inferred: ${fitting.single().summary()}")
+        // One DST season only: the clocks that fit may still put every row of this file at the same instant
+        // (ny-close and +03:00 through a US summer), and then which of them is the broker's changes nothing here.
+        val seasonal = evidence.filter { it.passes }
+        val span = opens.span
+        if (fitting.isEmpty() && seasonal.isNotEmpty() && span != null && agreeOver(seasonal.map { it.clock }, span)) {
+            val first = seasonal.first()
+            val same = seasonal.drop(1).joinToString { it.clock.spec }
+            return ClockChoice(
+                first.clock,
+                "inferred: ${first.summary()}" + if (same.isEmpty()) "" else "; $same give the same times over these dates",
+            )
+        }
         throw ImportRefusal(
             "the timestamps have no zone and the weekly opens do not single out one clock; pass --tz. " +
-                if (fitting.isEmpty()) "No candidate fits." else "Fitting: ${fitting.joinToString { it.clock.spec }}.",
+                (if (seasonal.isEmpty()) "No candidate fits." else "Fitting: ${seasonal.joinToString { it.clock.spec }}.") +
+                hint,
             evidence.map { it.summary() + if (it.passes) " ✓" else "" },
         )
     }
@@ -72,9 +89,10 @@ internal class ClockDecision(
      * metals, which trade through UTC midnight and whose dates are almost always a broker's or a vendor's.
      */
     private fun dates(): ClockChoice {
-        val stated = plan.descriptor.clock?.let(::parseClock)
+        val broker = plan.descriptor.clock.equals(BROKER, ignoreCase = true)
+        val stated = plan.descriptor.clock?.takeUnless { broker }?.let(::parseClock)
         val utc = stated == ImportClock.Utc
-        if ((stated != null && !utc) || (stated == null && plan.target.fxOrMetal)) {
+        if (broker || (stated != null && !utc) || (stated == null && plan.target.fxOrMetal)) {
             val whose = stated?.let { "the ${it.spec} clock" } ?: "a clock the file does not name"
             throw ImportRefusal(
                 "the bars are dated by day only, on $whose; qkt's daily bars are UTC days, so each bar would hold " +
@@ -128,5 +146,11 @@ internal class ClockDecision(
 
     private companion object {
         const val SAMPLE = 200
+
+        /** A preset's clock for MetaTrader files: the broker's server time, which only the file or the user knows. */
+        const val BROKER = "broker"
+        const val BROKER_HINT =
+            "MetaTrader files are on the broker's server time (Exness: UTC; IC Markets, Pepperstone, FTMO and most " +
+                "others: ny-close, i.e. GMT+2/+3 with US DST); MetaTrader shows it as the Market Watch clock."
     }
 }

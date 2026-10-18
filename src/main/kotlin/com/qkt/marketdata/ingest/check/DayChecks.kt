@@ -93,10 +93,14 @@ class DayChecks(
         if (b.volume.signum() < 0) tally.problem(day, b.timeMs, "volume ${b.volume} is negative")
         val tf = timeframeMs
         if (tf != null && Math.floorMod(b.timeMs, tf) != 0L) {
+            val past = Math.floorMod(b.timeMs, tf)
+            val by = if (past % MINUTE_MS == 0L) "${past / MINUTE_MS}m" else "${past}ms"
             tally.problem(
                 day,
                 b.timeMs,
-                "the bar is not on the UTC ${tf / MINUTE_MS}-minute grid (wrong clock, or a close-time label?)",
+                "the bar starts $by past the UTC ${tf / MINUTE_MS}-minute grid: bars anchored to a session open " +
+                    "(Yahoo's hourly bars start at :30), a close-time label or the wrong clock; import a finer " +
+                    "timeframe (1m) and qkt builds this one on the UTC grid",
             )
         }
     }

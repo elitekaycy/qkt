@@ -4,7 +4,7 @@ import org.junit.jupiter.params.provider.Arguments
 
 /**
  * One sample per built-in preset: file, `--as` symbol, the preset it must match, its first stored row, extra
- * mappings, digits. Presets whose real files qkt must refuse are in [RefusedSampleCases].
+ * mappings, digits, and the `--tz` a MetaTrader sample needs (its broker's server time is not in the file). Presets whose real files qkt must refuse are in [RefusedSampleCases].
  */
 object PresetSampleCases {
     private fun s(
@@ -14,7 +14,8 @@ object PresetSampleCases {
         row: String,
         fields: Map<String, String> = emptyMap(),
         digits: Int? = null,
-    ) = Arguments.of(file, symbol, preset, row, fields, digits)
+        clock: String? = null,
+    ) = Arguments.of(file, symbol, preset, row, fields, digits, clock)
 
     private const val Z = "0.00000000"
 
@@ -22,16 +23,24 @@ object PresetSampleCases {
         listOf(
             s(
                 "mt5-bars.csv",
-                "EXNESS:XAUUSD",
+                "BROKER:XAUUSD",
                 "mt5-bars",
                 "1709935080000,2178.78000000,2179.03000000,2178.69000000,2179.00000000,198.00000000",
+                clock = "ny-close",
             ),
-            s("mt5-ticks.csv", "XAUUSD", "mt5-ticks", "1710104401112,XAUUSD,,,2180.51200000,2180.67200000,,"),
+            s(
+                "mt5-ticks.csv",
+                "XAUUSD",
+                "mt5-ticks",
+                "1710104401112,XAUUSD,,,2180.51200000,2180.67200000,,",
+                clock = "ny-close",
+            ),
             s(
                 "mt4-csv.csv",
                 "BROKER:EURUSD",
                 "mt4-csv",
                 "1709935080000,1.09380000,1.09391000,1.09377000,1.09388000,41.00000000",
+                clock = "ny-close",
             ),
             s(
                 "DAT_MT_EURUSD_M1_2017.csv",
@@ -146,20 +155,27 @@ object PresetSampleCases {
                 "dukascopy-bi5",
                 "1787529600090,EURUSD,,5.39999998,1.16823000,1.16824000,4.50000000,0.89999998",
             ),
-            s("mt5-ticks-real.csv", "US100", "mt5-ticks", "1681488000846,US100,,,15790.60000000,15791.10000000,,"),
+            s(
+                "mt5-ticks-real.csv",
+                "US100",
+                "mt5-ticks",
+                "1681488000846,US100,,,15790.60000000,15791.10000000,,",
+                clock = "ny-close",
+            ),
             s(
                 "mt5-bars-real.csv",
                 "BROKER:TSLA",
                 "mt5-bars",
                 "1672754400000,243.52500000,245.74500000,241.20500000,241.21500000,10908.00000000",
                 digits = 2,
+                clock = "ny-close",
             ),
             s("truefx-ticks.csv", "EURUSD", "truefx-ticks", "1462147200959,EURUSD,,,1.14601000,1.14605000,,"),
             s(
                 "yfinance-daily.csv",
                 "YAHOO:SPX",
                 "yfinance-daily",
-                "1199232000000,1467.96997100,1471.77002000,1442.06994600,1447.16003400,3452650000.00000000",
+                "1199232000000,1467.97000000,1471.77000000,1442.07000000,1447.16000000,3452650000.00000000",
             ),
             s(
                 "yfinance-intraday.csv",
@@ -172,6 +188,49 @@ object PresetSampleCases {
                 "YAHOO:AAPL",
                 "yfinance-multi",
                 "1704153600000,185.78000000,186.40000000,182.72000000,184.29000000,82488700.00000000",
+            ),
+            s(
+                "yfinance-daily-adjusted.csv",
+                "YAHOO:AAPL",
+                "yfinance-daily-adjusted",
+                "1788220800000,316.98000000,327.30000000,314.73000000,325.13000000,53167400.00000000",
+            ),
+            s(
+                "yfinance-history-daily.csv",
+                "YAHOO:AAPL",
+                "yfinance-history-daily",
+                "1788220800000,316.98000000,327.30000000,314.73000000,325.13000000,53167400.00000000",
+            ),
+            // Two tickers in one file: the columns under MSFT's name are read, not the last ones of each name.
+            s(
+                "yfinance-multi-tickers.csv",
+                "YAHOO:MSFT",
+                "yfinance-multi",
+                "1788220800000,497.52000000,505.97000000,496.78000000,501.02000000,21046900.00000000",
+            ),
+            s(
+                "ADAUSDT-trades-2026-10-14.csv",
+                "ADAUSDT",
+                "binance-trades",
+                "1791936000053,ADAUSDT,0.23600000,21.20000000,,,,",
+            ),
+            s(
+                "ADAUSDT-aggTrades-2026-10-14.csv",
+                "ADAUSDT",
+                "binance-agg-trades",
+                "1791936000053,ADAUSDT,0.23600000,21.20000000,,,,",
+            ),
+            s(
+                "XRPUSDT-trades-2026-10-14.csv",
+                "XRPUSDT",
+                "binance-trades-header",
+                "1791936000021,XRPUSDT,1.36530000,203.60000000,,,,",
+            ),
+            s(
+                "XRPUSDT-aggTrades-2026-10-14.csv",
+                "XRPUSDT",
+                "binance-agg-trades-header",
+                "1791936000021,XRPUSDT,1.36530000,445.60000000,,,,",
             ),
             s(
                 "alphavantage-intraday.csv",

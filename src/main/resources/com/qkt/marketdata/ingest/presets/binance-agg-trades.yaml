@@ -1,0 +1,15 @@
+id: "binance-agg-trades"
+description: "Binance public-data aggTrades without a header (data.binance.vision spot): epoch ms, µs from 2025, one aggregated trade a row"
+kind: "ticks"
+delimiter: ","
+time: ["$5"]
+timeFormat: "epoch"
+fields:
+  price: "$1"
+  volume: "$2"
+volume: "aggregated trade size in the base asset"
+match:
+  columns: 8
+  firstCell: "\\d+"
+  delimiter: ","
+  filename: "-aggTrades-"

@@ -124,9 +124,11 @@ class ImportEdgeCasesTest {
         val text =
             "<DATE>\t<TIME>\t<OPEN>\t<HIGH>\t<LOW>\t<CLOSE>\t<TICKVOL>\t<VOL>\t<SPREAD>\n" + h4.replace(" ", "\t")
 
-        assertThatThrownBy { IngestFixtures.import(root, listOf(file("h4.csv", text)), "BROKER:EURUSD") }
+        assertThatThrownBy {
+            IngestFixtures.import(root, listOf(file("h4.csv", text)), "BROKER:EURUSD", ImportDescriptor(clock = "ny-close"))
+        }
             .isInstanceOf(ImportRefusal::class.java)
-            .satisfies({ assertThat((it as ImportRefusal).lines.first()).contains("not on the UTC 240-minute grid") })
+            .satisfies({ assertThat((it as ImportRefusal).lines.first()).contains("past the UTC 240-minute grid") })
     }
 
     @Test
@@ -193,7 +195,7 @@ class ImportEdgeCasesTest {
                 "2024.03.11\t00:00:01.317\t2180.530\t2180.70\n"
 
         assertThatThrownBy {
-            IngestFixtures.import(root, listOf(file("t.csv", text)), "XAUUSD")
+            IngestFixtures.import(root, listOf(file("t.csv", text)), "XAUUSD", ImportDescriptor(clock = "ny-close"))
         }.hasMessageContaining("only one side")
     }
 }
