@@ -27,6 +27,7 @@ class GatewayDirectVenue(
     private val apiKey: String,
     private val pollTimeoutMs: Long = 10_000,
     private val pollMs: Long = 200,
+    private val clock: com.qkt.common.Clock = com.qkt.common.SystemClock(),
 ) : DirectVenue {
     private val symbols = GatewaySymbols(prefix)
     private val reads = GatewayDirectReads(name, client)
@@ -142,9 +143,9 @@ class GatewayDirectVenue(
      * order that rests. A market order still unsettled at the deadline is reported as it stands.
      */
     private fun settle(id: String): DirectResult {
-        val deadline = System.currentTimeMillis() + pollTimeoutMs
+        val deadline = clock.now() + pollTimeoutMs
         var order = client.order(id) ?: error("gateway $name lost order $id")
-        while (!settled(order) && System.currentTimeMillis() < deadline) {
+        while (!settled(order) && clock.now() < deadline) {
             Thread.sleep(pollMs)
             order = client.order(id) ?: order
         }

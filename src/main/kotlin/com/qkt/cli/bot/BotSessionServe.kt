@@ -37,7 +37,9 @@ internal fun serveSession(
             mode,
             session.identities().toList(),
             sub.tokens.toList(),
-            System.currentTimeMillis(),
+            com.qkt.common
+                .SystemClock()
+                .now(),
         ),
     )
     val trail =

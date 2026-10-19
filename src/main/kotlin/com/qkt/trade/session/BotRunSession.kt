@@ -27,6 +27,7 @@ class BotRunSession(
     private val recorder: BotSessionRecorder,
     /** Where every intent and its fate are written, or null to keep them in memory only. */
     private val journal: IntentJournal? = null,
+    private val clock: com.qkt.common.Clock = com.qkt.common.SystemClock(),
 ) {
     // Per series, the index of the next bar to hand out; bars seeded before the start count as history.
     private val delivered =
@@ -108,7 +109,7 @@ class BotRunSession(
         val id = "int-${intentSeq.incrementAndGet()}"
         val ticks = recorder.ticksSeen
         identity(identity).submit(id, intent.action)
-        journal?.intent(id, identity, source, simNowMs(), System.currentTimeMillis(), ticks)
+        journal?.intent(id, identity, source, simNowMs(), clock.now(), ticks)
         return SubmittedIntent(id, intent.symbol, intent.sha256)
     }
 
@@ -183,18 +184,3 @@ data class SubmittedIntent(
     val symbol: String?,
     val sha256: String,
 )
-
-/**
- * Recompiles every journaled intent, in order, on its identity without firing it, so what an earlier run
- * registered (exit hooks, ON FILL children) exists before a live session restores its persisted state.
- */
-fun rebuildIdentities(
-    journaled: List<JournaledIntent>,
-    streams: BotSessionStreams,
-    identities: Map<String, BotIntentStrategy>,
-) {
-    journaled.forEach { j ->
-        val identity = requireNotNull(identities[j.identity]) { "journaled identity '${j.identity}' is not declared" }
-        identity.rebuild(sessionIntent(j.source, streams).action)
-    }
-}
