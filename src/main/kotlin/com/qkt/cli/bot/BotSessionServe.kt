@@ -6,6 +6,8 @@ import com.qkt.trade.session.BotRunSession
 import com.qkt.trade.session.BotSessionDescriptor
 import com.qkt.trade.session.BotSessionFiles
 import com.qkt.trade.session.BotSessionServer
+import com.qkt.trade.session.SessionMeta
+import com.qkt.trade.session.writeSessionMeta
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -28,6 +30,16 @@ internal fun serveSession(
     val token = randomSessionToken()
     val sessionDir = BotSessionFiles.sessionDir(stateRoot, session.runId)
     Files.createDirectories(sessionDir)
+    writeSessionMeta(
+        sessionDir,
+        SessionMeta(
+            session.runId,
+            mode,
+            session.identities().toList(),
+            sub.tokens.toList(),
+            System.currentTimeMillis(),
+        ),
+    )
     val trail =
         com.qkt.trade.BotTrail(
             stateRoot,

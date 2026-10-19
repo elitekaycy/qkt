@@ -34,6 +34,13 @@ class IntentJournal(
             """"tickSeq":$tickSeq,"source":${str(source)}}""",
     )
 
+    /** The point the session was finished at: a replay runs to here and no further. */
+    @Synchronized
+    fun finish(
+        simMs: Long,
+        tickSeq: Long,
+    ) = append("""{"type":"finish","simMs":$simMs,"tickSeq":$tickSeq}""")
+
     @Synchronized
     fun fate(fate: IntentFate) = append("""{"type":"fate",${fateJson(fate).removePrefix("{")}""")
 
@@ -67,6 +74,17 @@ class IntentJournal(
                     lastFate = fates[id],
                 )
             }
+        }
+
+        /** The `(simMs, tickSeq)` the session in [path] was finished at, or null when it never finished. */
+        fun finishPoint(path: Path): Pair<Long, Long>? {
+            if (!Files.exists(path)) return null
+            return Files
+                .readAllLines(path)
+                .filter { it.contains("\"type\":\"finish\"") }
+                .lastOrNull()
+                ?.let { Json.parseToJsonElement(it).jsonObject }
+                ?.let { it.text("simMs")!!.toLong() to it.text("tickSeq")!!.toLong() }
         }
 
         private fun JsonObject.text(key: String): String? = (this[key] as? JsonPrimitive)?.contentOrNull

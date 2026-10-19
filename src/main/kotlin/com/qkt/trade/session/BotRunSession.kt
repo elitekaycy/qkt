@@ -171,6 +171,7 @@ class BotRunSession(
      * live stops the session and returns null.
      */
     fun finish(): BacktestResult? {
+        journal?.finish(simNowMs(), recorder.ticksSeen)
         val result = backend.finish() ?: return null
         return result.copy(perStrategy = result.perStrategy.filterKeys { it != BotSessionRecorder.ID })
     }

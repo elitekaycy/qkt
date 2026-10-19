@@ -24,7 +24,8 @@ class BotSessionCommand(
                 "start" -> start(Args(args.tokens.drop(1).toTypedArray()), json)
                 "status" -> status()
                 "finish" -> finish()
-                else -> error("usage: qkt bot session start|status|finish (got '${sub ?: ""}')")
+                "replay" -> return BotReplayCommand(Args(args.tokens.drop(1).toTypedArray())).run()
+                else -> error("usage: qkt bot session start|status|finish|replay (got '${sub ?: ""}')")
             }
         }
     }

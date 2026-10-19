@@ -18,6 +18,7 @@ import com.qkt.trade.session.BotSessionStreams
 import com.qkt.trade.session.IntentJournal
 import com.qkt.trade.session.ReplayBotRunBackend
 import com.qkt.trade.session.copySessionJournals
+import com.qkt.trade.session.writeFills
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -30,8 +31,48 @@ internal fun startBacktestSession(
     json: Boolean,
     spec: SessionStart,
 ): Int {
-    val streams = spec.streams
     val outDir = Path.of(sub.option("out") ?: "runs/${spec.runId}")
+    val stateRoot = StateDir.resolve(sub.option("state-dir")).stateRoot
+    val sessionDir = BotSessionFiles.sessionDir(stateRoot, spec.runId)
+    // A backtest run is a fresh record each time it starts; only a live run resumes its own.
+    listOf("intents.jsonl", "reads.jsonl", "fills.jsonl").forEach { Files.deleteIfExists(sessionDir.resolve(it)) }
+    val parts = buildBacktestSession(sub, spec, IntentJournal(sessionDir.resolve("intents.jsonl")))
+    return serveSession(
+        sub = sub,
+        json = json,
+        session = parts.session,
+        mode = "backtest",
+        cfg = botConfig(sub),
+        stateRoot = stateRoot,
+        quoteContextFor = null,
+        serverThreads = 1,
+        onFinish = { result ->
+            result?.let {
+                Files.createDirectories(outDir)
+                BacktestReportWriter(outDir).write(it)
+                writeFills(sessionDir, it.trades)
+                copySessionJournals(sessionDir, outDir)
+                BotSessionFiles.delete(stateRoot, spec.runId)
+                outDir.toAbsolutePath().toString()
+            }
+        },
+    )
+}
+
+/** A backtest session and the engine and recorder under it, before anything serves or drives it. */
+internal class BacktestSessionParts(
+    val session: BotRunSession,
+    val engine: com.qkt.research.ReplayEngine,
+    val recorder: BotSessionRecorder,
+)
+
+/** Builds the backtest session `session start --backtest` [sub] describes, writing intents to [journal]. */
+internal fun buildBacktestSession(
+    sub: Args,
+    spec: SessionStart,
+    journal: IntentJournal?,
+): BacktestSessionParts {
+    val streams = spec.streams
     val ast =
         when (val parsed = Dsl.parse(streams.source("botsession"))) {
             is ParseResult.Success -> parsed.value
@@ -42,7 +83,6 @@ internal fun startBacktestSession(
         }
     val ctx = BacktestContext.build(sub, ast)
     ctx.provision()
-
     val history = BarHistory(capacity = maxOf(spec.historyBars, 1000))
     val recorder = BotSessionRecorder(history)
     val identities = BotSessionIdentities.compile(streams, spec.identities, history = history)
@@ -55,33 +95,9 @@ internal fun startBacktestSession(
                         (BotSessionRecorder.ID to recorder),
             ).toEngine()
     seedBacktestWarmup(ctx, streams, spec.historyBars, history)
-
-    val stateRoot = StateDir.resolve(sub.option("state-dir")).stateRoot
-    val sessionDir = BotSessionFiles.sessionDir(stateRoot, spec.runId)
-    // A backtest run is a fresh record each time it starts; only a live run resumes its own.
-    listOf("intents.jsonl", "reads.jsonl").forEach { Files.deleteIfExists(sessionDir.resolve(it)) }
-    val journal = IntentJournal(sessionDir.resolve("intents.jsonl"))
     val session =
         BotRunSession(spec.runId, ReplayBotRunBackend(engine), identities, streams, history, recorder, journal)
-    return serveSession(
-        sub = sub,
-        json = json,
-        session = session,
-        mode = "backtest",
-        cfg = botConfig(sub),
-        stateRoot = stateRoot,
-        quoteContextFor = null,
-        serverThreads = 1,
-        onFinish = { result ->
-            result?.let {
-                Files.createDirectories(outDir)
-                BacktestReportWriter(outDir).write(it)
-                copySessionJournals(sessionDir, outDir)
-                BotSessionFiles.delete(stateRoot, spec.runId)
-                outDir.toAbsolutePath().toString()
-            }
-        },
-    )
+    return BacktestSessionParts(session, engine, recorder)
 }
 
 /** Best-effort pre-window seed so `bot bars` has history at the first `next`. */
