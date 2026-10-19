@@ -59,6 +59,6 @@ if [ -n "$docs_data" ]; then
 fi
 
 printf '%s\n' "${results[@]}" | jq -s --arg corpus "$lock" --arg cli "$("$cli" --version | head -n 1)" \
-    '{schema:"qkt-release-proofs-v1",corpus:$corpus,cli:$cli,proofs:.,passed:(map(select(.status=="pass"))|length==length)}' \
+    '{schema:"qkt-release-proofs-v1",corpus:$corpus,cli:$cli,proofs:.,passed:(length > 0 and all(.status == "pass"))}' \
     > "$out/proofs.json"
 jq -e '.passed' "$out/proofs.json" > /dev/null

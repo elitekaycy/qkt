@@ -12,8 +12,10 @@ import java.time.DayOfWeek
 import java.time.LocalDate
 
 /**
- * `qkt data verify <symbol>` reports each cached tick day's count and largest gap, flagging empty,
- * corrupt or gappy days and the days with no file inside the stored span ([MissingDays]); a
+ * `qkt data verify <symbol>` reports each cached tick day's count and largest gap, flagging corrupt files
+ * ([DayStatus]) and coverage holes by the rule backtests apply ([VerifyCoverage]): empty or gappy trading days
+ * and trading days with no file inside the stored span; holidays and holiday short sessions are shown, not
+ * flagged; a
  * `SOURCE:SYMBOL` name checks that series' stored bars instead ([dataVerifyBars], `--tf` for one
  * timeframe); `--snapshot <file>` verifies a dataset snapshot. Non-zero when flagged.
  */
@@ -56,21 +58,20 @@ internal fun dataVerify(args: Args): Int {
     println("qkt data verify: $symbol (${byDay.size} days) under $symDir")
     val provenance = ImportProvenance.read(symDir)
     val qualities = byDay.mapValues { (_, files) -> files.map(DayFileIntegrity::inspect) }
-    val ticksByDay = qualities.mapValues { (_, q) -> q.first().tickCount }
     // A market that never trades on Saturday keeps an empty Saturday file (qkt fetch writes one, an import records
     // one): that is a closed day, not a fault. On a 24/7 symbol an empty Saturday is a hole.
-    val everyDay = ticksByDay.any { (day, ticks) -> day.dayOfWeek == DayOfWeek.SATURDAY && ticks > 0 }
+    val everyDay = qualities.any { (day, q) -> day.dayOfWeek == DayOfWeek.SATURDAY && q.first().tickCount > 0 }
+    val coverage = VerifyCoverage(symbol, everyDay, "tick", qualities.mapValues { (_, q) -> q.first().runs })
     var flagged = 0
     var totalTicks = 0L
-    var previousDay: LocalDate? = null
     var previousLastMs: Long? = null
     for ((date, files) in byDay) {
         val day = date.toString()
         val all = qualities.getValue(date)
         val q = all.first()
         totalTicks += q.tickCount
-        var status = DayStatus.of(q, date, previousLastMs, previousDay)
-        if (q.isEmpty && date.dayOfWeek == DayOfWeek.SATURDAY && !everyDay) status = "closed (0 ticks)"
+        var verdict =
+            DayStatus.of(q, date, previousLastMs)?.let { VerifyVerdict(it, true) } ?: coverage.of(date, q.isEmpty)
         val other =
             all.drop(1).firstOrNull {
                 it.tickCount != q.tickCount ||
@@ -78,22 +79,20 @@ internal fun dataVerify(args: Args): Int {
                     it.lastMs != q.lastMs
             }
         if (other != null) {
-            status = "the ${files.first().fileName} and ${files[all.indexOf(other)].fileName} hold different ticks " +
-                "(${q.tickCount} vs ${other.tickCount}): re-run qkt data convert"
+            val text =
+                "the ${files.first().fileName} and ${files[all.indexOf(other)].fileName} hold different ticks " +
+                    "(${q.tickCount} vs ${other.tickCount}): re-run qkt data convert"
+            verdict = VerifyVerdict(text, true)
         }
-        // The gap from the previous day is measured from the last day with ticks: an empty Saturday in between
-        // leaves Friday as the previous day, so the weekend is not read as a hole on Sunday.
-        if (q.lastMs != null) {
-            previousDay = date
-            previousLastMs = q.lastMs
-        }
-        if (status != "ok" && !status.startsWith("closed")) flagged++
+        if (q.lastMs != null) previousLastMs = q.lastMs
+        if (verdict.flagged) flagged++
         val source = provenance.entryFor(day)?.let { "  imported ${it.preset}" }.orEmpty()
-        println("  $day  ticks=${q.tickCount}  maxGap=${q.maxGapMs / 60_000}m  $status$source")
+        println("  $day  ticks=${q.tickCount}  maxGap=${q.maxGapMs / 60_000}m  ${verdict.text}$source")
     }
-    val missing = MissingDays.of(ticksByDay)
-    missing.lines().forEach { println("  $it") }
-    flagged += missing.days.size
+    for (line in coverage.absentLines()) {
+        println("  ${line.text}")
+        if (line.flagged) flagged++
+    }
     println("qkt data verify: done — ${byDay.size} days, $totalTicks ticks, $flagged flagged")
     return if (flagged > 0) ExitCodes.USER_ERROR else ExitCodes.SUCCESS
 }

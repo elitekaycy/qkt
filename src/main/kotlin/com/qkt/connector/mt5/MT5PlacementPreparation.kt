@@ -120,7 +120,14 @@ internal class MT5PlacementPreparation(
         }
         val digits = rules.digits.coerceAtLeast(0)
 
-        fun roundPrice(p: BigDecimal?): BigDecimal? = p?.setScale(digits, RoundingMode.HALF_EVEN)
+        // On the venue's tick grid when it is coarser than a point (an index CFD trading in 0.25 steps), then
+        // to its digits; a point-grid symbol (every Exness symbol) only rounds to digits, as before.
+        val tick = rules.tickSize
+
+        fun roundPrice(p: BigDecimal?): BigDecimal? =
+            p
+                ?.let { if (tick == null) it else it.divide(tick, 0, RoundingMode.HALF_EVEN).multiply(tick) }
+                ?.setScale(digits, RoundingMode.HALF_EVEN)
 
         val quantized =
             wire.copy(

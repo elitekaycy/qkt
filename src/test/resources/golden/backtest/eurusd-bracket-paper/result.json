@@ -2,27 +2,29 @@
     "schema": "qkt-backtest-result-v1",
     "schemaVersion": 1,
     "trades": 66,
-    "finalRealized": -51.9,
+    "roundTrips": 29,
+    "roundTripsWon": 8,
+    "finalRealized": -51.85,
     "finalUnrealized": 15.55,
-    "totalPnL": -36.35,
+    "totalPnL": -36.3,
     "commissionPaid": 0.0,
     "swapPaid": 0.0,
-    "winRate": 0.46153846,
-    "maxDrawdown": 0.01333633,
-    "profitFactor": 1.74490467,
-    "avgWin": 22.11666667,
-    "avgLoss": -10.86428571,
+    "winRate": 0.27586207,
+    "maxDrawdown": 0.01333573,
+    "profitFactor": 0.77238806,
+    "avgWin": 21.99375,
+    "avgLoss": -10.84761905,
     "largestWin": 22.25,
-    "largestLoss": -10.95,
-    "maxConsecutiveLosses": 6,
-    "sharpeRatio": -4.10942424,
-    "calmarRatio": -0.27256374,
-    "sortinoRatio": -4.96787354,
-    "turnover": 72.256095,
+    "largestLoss": -11.1,
+    "maxConsecutiveLosses": 9,
+    "sharpeRatio": -4.11201662,
+    "calmarRatio": -0.27220107,
+    "sortinoRatio": -4.97185255,
+    "turnover": 72.25596,
     "executionModel": "paper",
-    "maxDailyDrawdown": 0.010845,
+    "maxDailyDrawdown": 0.0108,
     "dailyPnL": {
-        "2024-01-10": -51.9
+        "2024-01-10": -51.85
     },
     "halts": 0,
     "runawayBreaker": {
@@ -124,42 +126,45 @@
         "shortExitFills": 15,
         "unknownPositionFills": 0,
         "positionAttribution": "strategy_position_transition",
-        "buyRealized": -163.0,
-        "sellRealized": 111.1,
-        "grossProfit": 176.7,
-        "grossLoss": -228.6,
+        "buyRealized": -162.3,
+        "sellRealized": 110.45,
+        "grossProfit": 175.95,
+        "grossLoss": -227.8,
         "rejections": 0,
         "rejectionRate": 0.0,
         "riskAuditedFills": 37,
-        "minRiskUsd": 10.9263,
-        "avgRiskUsd": 10.94633243,
-        "maxRiskUsd": 10.9719,
-        "tradedNotional": 722560.95,
+        "minRiskUsd": 10.9,
+        "avgRiskUsd": 10.94594595,
+        "maxRiskUsd": 11.0,
+        "tradedNotional": 722559.6,
         "maxFillNotional": 10974.9
     },
     "global": {
-        "realizedTotal": -51.9,
+        "realizedTotal": -51.85,
         "unrealizedTotal": 15.55,
-        "totalPnL": -36.35,
+        "totalPnL": -36.3,
         "commissionPaid": 0.0,
         "swapPaid": 0.0,
         "tradeCount": 66,
-        "winRate": 0.46153846,
-        "maxDrawdown": 0.01333633,
-        "profitFactor": 1.74490467,
-        "avgWin": 22.11666667,
-        "avgLoss": -10.86428571,
+        "roundTrips": 29,
+        "roundTripsWon": 8,
+        "roundTripsBreakEven": 0,
+        "winRate": 0.27586207,
+        "maxDrawdown": 0.01333573,
+        "profitFactor": 0.77238806,
+        "avgWin": 21.99375,
+        "avgLoss": -10.84761905,
         "largestWin": 22.25,
-        "largestLoss": -10.95,
-        "maxConsecutiveLosses": 6,
-        "sharpeRatio": -4.10942424,
-        "calmarRatio": -0.27256374,
-        "sortinoRatio": -4.96787354,
-        "turnover": 72.256095,
-        "maxDailyDrawdown": 0.010845,
+        "largestLoss": -11.1,
+        "maxConsecutiveLosses": 9,
+        "sharpeRatio": -4.11201662,
+        "calmarRatio": -0.27220107,
+        "sortinoRatio": -4.97185255,
+        "turnover": 72.25596,
+        "maxDailyDrawdown": 0.0108,
         "annualizationFactor": 75137.14285714286,
         "dailyPnL": {
-            "2024-01-10": -51.9
+            "2024-01-10": -51.85
         },
         "drawdownPeriods": [
             {
@@ -169,7 +174,7 @@
                 "troughIso": "2024-01-10T08:00:00Z",
                 "recoveryTimestamp": 1704878700000,
                 "recoveryIso": "2024-01-10T09:25:00Z",
-                "depthPct": -0.01333632577741203,
+                "depthPct": -0.01333572718114446,
                 "durationMs": 5700000,
                 "ongoing": false
             },
@@ -180,20 +185,12 @@
                 "troughIso": "2024-01-10T22:05:00Z",
                 "recoveryTimestamp": null,
                 "recoveryIso": null,
-                "depthPct": -0.01154254949290262,
+                "depthPct": -0.01153267342468747,
                 "durationMs": 33000000,
                 "ongoing": true
             }
         ],
-        "monteCarlo": {
-            "simulations": 1000,
-            "finalEquityP5": 9957.05,
-            "finalEquityP50": 10056.3,
-            "finalEquityP95": 10155.75,
-            "maxDrawdownP5": -0.00763,
-            "maxDrawdownP95": -0.001088956292576202,
-            "probabilityNegativeFinal": 0
-        },
+        "monteCarlo": null,
         "equityCurve": [
             {
                 "timestamp": 1704845100000,
@@ -653,1014 +650,1017 @@
             {
                 "timestamp": 1704872400000,
                 "iso": "2024-01-10T07:40:00Z",
-                "equity": 10000.05
+                "equity": 10000.25
             },
             {
                 "timestamp": 1704872700000,
                 "iso": "2024-01-10T07:45:00Z",
-                "equity": 10000.7
+                "equity": 10000.95
             },
             {
                 "timestamp": 1704873000000,
                 "iso": "2024-01-10T07:50:00Z",
-                "equity": 10025.25
+                "equity": 10025.7
             },
             {
                 "timestamp": 1704873300000,
                 "iso": "2024-01-10T07:55:00Z",
-                "equity": 9972.05
+                "equity": 9972.5
             },
             {
                 "timestamp": 1704873600000,
                 "iso": "2024-01-10T08:00:00Z",
-                "equity": 9891.55
+                "equity": 9892.0
             },
             {
                 "timestamp": 1704873900000,
                 "iso": "2024-01-10T08:05:00Z",
-                "equity": 9904.8
+                "equity": 9905.35
             },
             {
                 "timestamp": 1704874200000,
                 "iso": "2024-01-10T08:10:00Z",
-                "equity": 9924.5
+                "equity": 9925.05
             },
             {
                 "timestamp": 1704874500000,
                 "iso": "2024-01-10T08:15:00Z",
-                "equity": 9913.0
+                "equity": 9913.55
             },
             {
                 "timestamp": 1704874800000,
                 "iso": "2024-01-10T08:20:00Z",
-                "equity": 9928.5
+                "equity": 9929.05
             },
             {
                 "timestamp": 1704875100000,
                 "iso": "2024-01-10T08:25:00Z",
-                "equity": 9954.3
+                "equity": 9954.85
             },
             {
                 "timestamp": 1704875400000,
                 "iso": "2024-01-10T08:30:00Z",
-                "equity": 9968.95
+                "equity": 9969.5
             },
             {
                 "timestamp": 1704875700000,
                 "iso": "2024-01-10T08:35:00Z",
-                "equity": 9944.45
+                "equity": 9945.0
             },
             {
                 "timestamp": 1704876000000,
                 "iso": "2024-01-10T08:40:00Z",
-                "equity": 9957.05
+                "equity": 9957.6
             },
             {
                 "timestamp": 1704876300000,
                 "iso": "2024-01-10T08:45:00Z",
-                "equity": 9955.65
+                "equity": 9956.2
             },
             {
                 "timestamp": 1704876600000,
                 "iso": "2024-01-10T08:50:00Z",
-                "equity": 9969.65
+                "equity": 9970.2
             },
             {
                 "timestamp": 1704876900000,
                 "iso": "2024-01-10T08:55:00Z",
-                "equity": 9963.35
+                "equity": 9963.9
             },
             {
                 "timestamp": 1704877200000,
                 "iso": "2024-01-10T09:00:00Z",
-                "equity": 9986.45
+                "equity": 9987.0
             },
             {
                 "timestamp": 1704877500000,
                 "iso": "2024-01-10T09:05:00Z",
-                "equity": 9977.35
+                "equity": 9977.9
             },
             {
                 "timestamp": 1704877800000,
                 "iso": "2024-01-10T09:10:00Z",
-                "equity": 10000.45
+                "equity": 10001.0
             },
             {
                 "timestamp": 1704878100000,
                 "iso": "2024-01-10T09:15:00Z",
-                "equity": 10017.95
+                "equity": 10018.5
             },
             {
                 "timestamp": 1704878400000,
                 "iso": "2024-01-10T09:20:00Z",
-                "equity": 10019.35
+                "equity": 10019.9
             },
             {
                 "timestamp": 1704878700000,
                 "iso": "2024-01-10T09:25:00Z",
-                "equity": 10028.45
+                "equity": 10029.0
             },
             {
                 "timestamp": 1704879000000,
                 "iso": "2024-01-10T09:30:00Z",
-                "equity": 10017.95
+                "equity": 10018.5
             },
             {
                 "timestamp": 1704879300000,
                 "iso": "2024-01-10T09:35:00Z",
-                "equity": 10028.45
+                "equity": 10029.0
             },
             {
                 "timestamp": 1704879600000,
                 "iso": "2024-01-10T09:40:00Z",
-                "equity": 10025.65
+                "equity": 10026.2
             },
             {
                 "timestamp": 1704879900000,
                 "iso": "2024-01-10T09:45:00Z",
-                "equity": 10018.65
+                "equity": 10019.2
             },
             {
                 "timestamp": 1704880200000,
                 "iso": "2024-01-10T09:50:00Z",
-                "equity": 10006.05
+                "equity": 10006.6
             },
             {
                 "timestamp": 1704880500000,
                 "iso": "2024-01-10T09:55:00Z",
-                "equity": 10012.35
+                "equity": 10012.9
             },
             {
                 "timestamp": 1704880800000,
                 "iso": "2024-01-10T10:00:00Z",
-                "equity": 10013.05
+                "equity": 10013.6
             },
             {
                 "timestamp": 1704881100000,
                 "iso": "2024-01-10T10:05:00Z",
-                "equity": 10041.75
+                "equity": 10042.3
             },
             {
                 "timestamp": 1704881400000,
                 "iso": "2024-01-10T10:10:00Z",
-                "equity": 10043.1
+                "equity": 10049.25
             },
             {
                 "timestamp": 1704881700000,
                 "iso": "2024-01-10T10:15:00Z",
-                "equity": 10050.9
+                "equity": 10054.45
             },
             {
                 "timestamp": 1704882000000,
                 "iso": "2024-01-10T10:20:00Z",
-                "equity": 10052.1
+                "equity": 10055.25
             },
             {
                 "timestamp": 1704882300000,
                 "iso": "2024-01-10T10:25:00Z",
-                "equity": 10054.5
+                "equity": 10056.85
             },
             {
                 "timestamp": 1704882600000,
                 "iso": "2024-01-10T10:30:00Z",
-                "equity": 10058.4
+                "equity": 10060.25
             },
             {
                 "timestamp": 1704882900000,
                 "iso": "2024-01-10T10:35:00Z",
-                "equity": 10054.8
+                "equity": 10058.45
             },
             {
                 "timestamp": 1704883200000,
                 "iso": "2024-01-10T10:40:00Z",
-                "equity": 10053.6
+                "equity": 10057.85
             },
             {
                 "timestamp": 1704883500000,
                 "iso": "2024-01-10T10:45:00Z",
-                "equity": 10048.4
+                "equity": 10055.25
             },
             {
                 "timestamp": 1704883800000,
                 "iso": "2024-01-10T10:50:00Z",
-                "equity": 10052.25
+                "equity": 10055.2
             },
             {
                 "timestamp": 1704884100000,
                 "iso": "2024-01-10T10:55:00Z",
-                "equity": 10051.25
+                "equity": 10054.8
             },
             {
                 "timestamp": 1704884400000,
                 "iso": "2024-01-10T11:00:00Z",
-                "equity": 10046.85
+                "equity": 10052.6
             },
             {
                 "timestamp": 1704884700000,
                 "iso": "2024-01-10T11:05:00Z",
-                "equity": 10048.0
+                "equity": 10052.85
             },
             {
                 "timestamp": 1704885000000,
                 "iso": "2024-01-10T11:10:00Z",
-                "equity": 10048.3
+                "equity": 10052.65
             },
             {
                 "timestamp": 1704885300000,
                 "iso": "2024-01-10T11:15:00Z",
-                "equity": 10052.9
+                "equity": 10052.85
             },
             {
                 "timestamp": 1704885600000,
                 "iso": "2024-01-10T11:20:00Z",
-                "equity": 10050.3
+                "equity": 10050.25
             },
             {
                 "timestamp": 1704885900000,
                 "iso": "2024-01-10T11:25:00Z",
-                "equity": 10049.1
+                "equity": 10049.05
             },
             {
                 "timestamp": 1704886200000,
                 "iso": "2024-01-10T11:30:00Z",
-                "equity": 10049.6
+                "equity": 10049.55
             },
             {
                 "timestamp": 1704886500000,
                 "iso": "2024-01-10T11:35:00Z",
-                "equity": 10049.0
+                "equity": 10048.95
             },
             {
                 "timestamp": 1704886800000,
                 "iso": "2024-01-10T11:40:00Z",
-                "equity": 10049.7
+                "equity": 10049.65
             },
             {
                 "timestamp": 1704887100000,
                 "iso": "2024-01-10T11:45:00Z",
-                "equity": 10047.1
+                "equity": 10047.05
             },
             {
                 "timestamp": 1704887400000,
                 "iso": "2024-01-10T11:50:00Z",
-                "equity": 10046.2
+                "equity": 10046.15
             },
             {
                 "timestamp": 1704887700000,
                 "iso": "2024-01-10T11:55:00Z",
-                "equity": 10046.6
+                "equity": 10046.55
             },
             {
                 "timestamp": 1704888000000,
                 "iso": "2024-01-10T12:00:00Z",
-                "equity": 10045.9
+                "equity": 10045.85
             },
             {
                 "timestamp": 1704888300000,
                 "iso": "2024-01-10T12:05:00Z",
-                "equity": 10043.6
+                "equity": 10043.55
             },
             {
                 "timestamp": 1704888600000,
                 "iso": "2024-01-10T12:10:00Z",
-                "equity": 10043.85
+                "equity": 10043.8
             },
             {
                 "timestamp": 1704888900000,
                 "iso": "2024-01-10T12:15:00Z",
-                "equity": 10043.85
+                "equity": 10043.8
             },
             {
                 "timestamp": 1704889200000,
                 "iso": "2024-01-10T12:20:00Z",
-                "equity": 10043.85
+                "equity": 10043.8
             },
             {
                 "timestamp": 1704889500000,
                 "iso": "2024-01-10T12:25:00Z",
-                "equity": 10043.55
+                "equity": 10043.5
             },
             {
                 "timestamp": 1704889800000,
                 "iso": "2024-01-10T12:30:00Z",
-                "equity": 10043.85
+                "equity": 10043.8
             },
             {
                 "timestamp": 1704890100000,
                 "iso": "2024-01-10T12:35:00Z",
-                "equity": 10043.85
+                "equity": 10043.8
             },
             {
                 "timestamp": 1704890400000,
                 "iso": "2024-01-10T12:40:00Z",
-                "equity": 10043.55
+                "equity": 10043.5
             },
             {
                 "timestamp": 1704890700000,
                 "iso": "2024-01-10T12:45:00Z",
-                "equity": 10043.25
+                "equity": 10043.2
             },
             {
                 "timestamp": 1704891000000,
                 "iso": "2024-01-10T12:50:00Z",
-                "equity": 10044.0
+                "equity": 10043.95
             },
             {
                 "timestamp": 1704891300000,
                 "iso": "2024-01-10T12:55:00Z",
-                "equity": 10043.9
+                "equity": 10043.85
             },
             {
                 "timestamp": 1704891600000,
                 "iso": "2024-01-10T13:00:00Z",
-                "equity": 10044.3
+                "equity": 10044.25
             },
             {
                 "timestamp": 1704891900000,
                 "iso": "2024-01-10T13:05:00Z",
-                "equity": 10043.6
+                "equity": 10043.55
             },
             {
                 "timestamp": 1704892200000,
                 "iso": "2024-01-10T13:10:00Z",
-                "equity": 10043.3
+                "equity": 10043.25
             },
             {
                 "timestamp": 1704892500000,
                 "iso": "2024-01-10T13:15:00Z",
-                "equity": 10037.6
+                "equity": 10037.55
             },
             {
                 "timestamp": 1704892800000,
                 "iso": "2024-01-10T13:20:00Z",
-                "equity": 10037.4
+                "equity": 10037.35
             },
             {
                 "timestamp": 1704893100000,
                 "iso": "2024-01-10T13:25:00Z",
-                "equity": 10037.0
+                "equity": 10036.95
             },
             {
                 "timestamp": 1704893400000,
                 "iso": "2024-01-10T13:30:00Z",
-                "equity": 10035.3
+                "equity": 10035.25
             },
             {
                 "timestamp": 1704893700000,
                 "iso": "2024-01-10T13:35:00Z",
-                "equity": 10036.1
+                "equity": 10036.05
             },
             {
                 "timestamp": 1704894000000,
                 "iso": "2024-01-10T13:40:00Z",
-                "equity": 10033.3
+                "equity": 10033.25
             },
             {
                 "timestamp": 1704894300000,
                 "iso": "2024-01-10T13:45:00Z",
-                "equity": 10033.25
+                "equity": 10033.2
             },
             {
                 "timestamp": 1704894600000,
                 "iso": "2024-01-10T13:50:00Z",
-                "equity": 10032.45
+                "equity": 10032.4
             },
             {
                 "timestamp": 1704894900000,
                 "iso": "2024-01-10T13:55:00Z",
-                "equity": 10033.15
+                "equity": 10033.1
             },
             {
                 "timestamp": 1704895200000,
                 "iso": "2024-01-10T14:00:00Z",
-                "equity": 10035.75
+                "equity": 10035.7
             },
             {
                 "timestamp": 1704895500000,
                 "iso": "2024-01-10T14:05:00Z",
-                "equity": 10040.2
+                "equity": 10040.15
             },
             {
                 "timestamp": 1704895800000,
                 "iso": "2024-01-10T14:10:00Z",
-                "equity": 10037.8
+                "equity": 10037.75
             },
             {
                 "timestamp": 1704896100000,
                 "iso": "2024-01-10T14:15:00Z",
-                "equity": 10035.05
+                "equity": 10035.0
             },
             {
                 "timestamp": 1704896400000,
                 "iso": "2024-01-10T14:20:00Z",
-                "equity": 10044.0
+                "equity": 10043.95
             },
             {
                 "timestamp": 1704896700000,
                 "iso": "2024-01-10T14:25:00Z",
-                "equity": 10046.6
+                "equity": 10046.55
             },
             {
                 "timestamp": 1704897000000,
                 "iso": "2024-01-10T14:30:00Z",
-                "equity": 10040.5
+                "equity": 10040.45
             },
             {
                 "timestamp": 1704897300000,
                 "iso": "2024-01-10T14:35:00Z",
-                "equity": 10038.6
+                "equity": 10038.55
             },
             {
                 "timestamp": 1704897600000,
                 "iso": "2024-01-10T14:40:00Z",
-                "equity": 10041.6
+                "equity": 10041.55
             },
             {
                 "timestamp": 1704897900000,
                 "iso": "2024-01-10T14:45:00Z",
-                "equity": 10047.1
+                "equity": 10047.05
             },
             {
                 "timestamp": 1704898200000,
                 "iso": "2024-01-10T14:50:00Z",
-                "equity": 10067.1
+                "equity": 10067.05
             },
             {
                 "timestamp": 1704898500000,
                 "iso": "2024-01-10T14:55:00Z",
-                "equity": 10056.1
+                "equity": 10056.05
             },
             {
                 "timestamp": 1704898800000,
                 "iso": "2024-01-10T15:00:00Z",
-                "equity": 10031.0
+                "equity": 10030.95
             },
             {
                 "timestamp": 1704899100000,
                 "iso": "2024-01-10T15:05:00Z",
-                "equity": 10041.5
+                "equity": 10041.45
             },
             {
                 "timestamp": 1704899400000,
                 "iso": "2024-01-10T15:10:00Z",
-                "equity": 10019.8
+                "equity": 10019.75
             },
             {
                 "timestamp": 1704899700000,
                 "iso": "2024-01-10T15:15:00Z",
-                "equity": 10013.8
+                "equity": 10013.75
             },
             {
                 "timestamp": 1704900000000,
                 "iso": "2024-01-10T15:20:00Z",
-                "equity": 10009.8
+                "equity": 10009.75
             },
             {
                 "timestamp": 1704900300000,
                 "iso": "2024-01-10T15:25:00Z",
-                "equity": 10010.2
+                "equity": 10010.15
             },
             {
                 "timestamp": 1704900600000,
                 "iso": "2024-01-10T15:30:00Z",
-                "equity": 10004.2
+                "equity": 10004.15
             },
             {
                 "timestamp": 1704900900000,
                 "iso": "2024-01-10T15:35:00Z",
-                "equity": 9971.7
+                "equity": 9971.8
             },
             {
                 "timestamp": 1704901200000,
                 "iso": "2024-01-10T15:40:00Z",
-                "equity": 9971.95
+                "equity": 9972.0
             },
             {
                 "timestamp": 1704901500000,
                 "iso": "2024-01-10T15:45:00Z",
-                "equity": 9969.8
+                "equity": 9969.75
             },
             {
                 "timestamp": 1704901800000,
                 "iso": "2024-01-10T15:50:00Z",
-                "equity": 9969.8
+                "equity": 9969.75
             },
             {
                 "timestamp": 1704902100000,
                 "iso": "2024-01-10T15:55:00Z",
-                "equity": 9969.8
+                "equity": 9969.75
             },
             {
                 "timestamp": 1704902400000,
                 "iso": "2024-01-10T16:00:00Z",
-                "equity": 9969.8
+                "equity": 9969.75
             },
             {
                 "timestamp": 1704902700000,
                 "iso": "2024-01-10T16:05:00Z",
-                "equity": 9969.8
+                "equity": 9969.75
             },
             {
                 "timestamp": 1704903000000,
                 "iso": "2024-01-10T16:10:00Z",
-                "equity": 9969.8
+                "equity": 9969.75
             },
             {
                 "timestamp": 1704903300000,
                 "iso": "2024-01-10T16:15:00Z",
-                "equity": 9969.8
+                "equity": 9969.75
             },
             {
                 "timestamp": 1704903600000,
                 "iso": "2024-01-10T16:20:00Z",
-                "equity": 9969.8
+                "equity": 9969.75
             },
             {
                 "timestamp": 1704903900000,
                 "iso": "2024-01-10T16:25:00Z",
-                "equity": 9969.8
+                "equity": 9969.75
             },
             {
                 "timestamp": 1704904200000,
                 "iso": "2024-01-10T16:30:00Z",
-                "equity": 9969.8
+                "equity": 9969.75
             },
             {
                 "timestamp": 1704904500000,
                 "iso": "2024-01-10T16:35:00Z",
-                "equity": 9973.55
+                "equity": 9973.5
             },
             {
                 "timestamp": 1704904800000,
                 "iso": "2024-01-10T16:40:00Z",
-                "equity": 9976.15
+                "equity": 9976.1
             },
             {
                 "timestamp": 1704905100000,
                 "iso": "2024-01-10T16:45:00Z",
-                "equity": 9973.65
+                "equity": 9973.6
             },
             {
                 "timestamp": 1704905400000,
                 "iso": "2024-01-10T16:50:00Z",
-                "equity": 9971.95
+                "equity": 9971.9
             },
             {
                 "timestamp": 1704905700000,
                 "iso": "2024-01-10T16:55:00Z",
-                "equity": 9973.15
+                "equity": 9973.1
             },
             {
                 "timestamp": 1704906000000,
                 "iso": "2024-01-10T17:00:00Z",
-                "equity": 9970.35
+                "equity": 9970.3
             },
             {
                 "timestamp": 1704906300000,
                 "iso": "2024-01-10T17:05:00Z",
-                "equity": 9968.25
+                "equity": 9968.2
             },
             {
                 "timestamp": 1704906600000,
                 "iso": "2024-01-10T17:10:00Z",
-                "equity": 9968.1
+                "equity": 9968.05
             },
             {
                 "timestamp": 1704906900000,
                 "iso": "2024-01-10T17:15:00Z",
-                "equity": 9968.2
+                "equity": 9968.15
             },
             {
                 "timestamp": 1704907200000,
                 "iso": "2024-01-10T17:20:00Z",
-                "equity": 9968.2
+                "equity": 9968.15
             },
             {
                 "timestamp": 1704907500000,
                 "iso": "2024-01-10T17:25:00Z",
-                "equity": 9968.2
+                "equity": 9968.15
             },
             {
                 "timestamp": 1704907800000,
                 "iso": "2024-01-10T17:30:00Z",
-                "equity": 9968.2
+                "equity": 9968.15
             },
             {
                 "timestamp": 1704908100000,
                 "iso": "2024-01-10T17:35:00Z",
-                "equity": 9968.1
+                "equity": 9968.05
             },
             {
                 "timestamp": 1704908400000,
                 "iso": "2024-01-10T17:40:00Z",
-                "equity": 9968.3
+                "equity": 9968.25
             },
             {
                 "timestamp": 1704908700000,
                 "iso": "2024-01-10T17:45:00Z",
-                "equity": 9968.1
+                "equity": 9968.05
             },
             {
                 "timestamp": 1704909000000,
                 "iso": "2024-01-10T17:50:00Z",
-                "equity": 9968.3
+                "equity": 9968.25
             },
             {
                 "timestamp": 1704909300000,
                 "iso": "2024-01-10T17:55:00Z",
-                "equity": 9968.1
+                "equity": 9968.05
             },
             {
                 "timestamp": 1704909600000,
                 "iso": "2024-01-10T18:00:00Z",
-                "equity": 9968.2
+                "equity": 9968.15
             },
             {
                 "timestamp": 1704909900000,
                 "iso": "2024-01-10T18:05:00Z",
-                "equity": 9968.2
+                "equity": 9968.15
             },
             {
                 "timestamp": 1704910200000,
                 "iso": "2024-01-10T18:10:00Z",
-                "equity": 9970.35
+                "equity": 9970.3
             },
             {
                 "timestamp": 1704910500000,
                 "iso": "2024-01-10T18:15:00Z",
-                "equity": 9967.75
+                "equity": 9967.7
             },
             {
                 "timestamp": 1704910800000,
                 "iso": "2024-01-10T18:20:00Z",
-                "equity": 9964.65
+                "equity": 9964.6
             },
             {
                 "timestamp": 1704911100000,
                 "iso": "2024-01-10T18:25:00Z",
-                "equity": 9964.7
+                "equity": 9964.65
             },
             {
                 "timestamp": 1704911400000,
                 "iso": "2024-01-10T18:30:00Z",
-                "equity": 9964.5
+                "equity": 9964.45
             },
             {
                 "timestamp": 1704911700000,
                 "iso": "2024-01-10T18:35:00Z",
-                "equity": 9964.5
+                "equity": 9964.45
             },
             {
                 "timestamp": 1704912000000,
                 "iso": "2024-01-10T18:40:00Z",
-                "equity": 9964.7
+                "equity": 9964.65
             },
             {
                 "timestamp": 1704912300000,
                 "iso": "2024-01-10T18:45:00Z",
-                "equity": 9964.5
+                "equity": 9964.45
             },
             {
                 "timestamp": 1704912600000,
                 "iso": "2024-01-10T18:50:00Z",
-                "equity": 9964.7
+                "equity": 9964.65
             },
             {
                 "timestamp": 1704912900000,
                 "iso": "2024-01-10T18:55:00Z",
-                "equity": 9964.3
+                "equity": 9964.25
             },
             {
                 "timestamp": 1704913200000,
                 "iso": "2024-01-10T19:00:00Z",
-                "equity": 9964.9
+                "equity": 9964.85
             },
             {
                 "timestamp": 1704913500000,
                 "iso": "2024-01-10T19:05:00Z",
-                "equity": 9964.8
+                "equity": 9964.85
             },
             {
                 "timestamp": 1704913800000,
                 "iso": "2024-01-10T19:10:00Z",
-                "equity": 9962.0
+                "equity": 9962.05
             },
             {
                 "timestamp": 1704914100000,
                 "iso": "2024-01-10T19:15:00Z",
-                "equity": 9963.3
+                "equity": 9963.35
             },
             {
                 "timestamp": 1704914400000,
                 "iso": "2024-01-10T19:20:00Z",
-                "equity": 9963.8
+                "equity": 9963.85
             },
             {
                 "timestamp": 1704914700000,
                 "iso": "2024-01-10T19:25:00Z",
-                "equity": 9963.3
+                "equity": 9963.35
             },
             {
                 "timestamp": 1704915000000,
                 "iso": "2024-01-10T19:30:00Z",
-                "equity": 9963.4
+                "equity": 9963.45
             },
             {
                 "timestamp": 1704915300000,
                 "iso": "2024-01-10T19:35:00Z",
-                "equity": 9963.0
+                "equity": 9963.05
             },
             {
                 "timestamp": 1704915600000,
                 "iso": "2024-01-10T19:40:00Z",
-                "equity": 9962.2
+                "equity": 9962.25
             },
             {
                 "timestamp": 1704915900000,
                 "iso": "2024-01-10T19:45:00Z",
-                "equity": 9962.3
+                "equity": 9962.35
             },
             {
                 "timestamp": 1704916200000,
                 "iso": "2024-01-10T19:50:00Z",
-                "equity": 9961.35
+                "equity": 9961.4
             },
             {
                 "timestamp": 1704916500000,
                 "iso": "2024-01-10T19:55:00Z",
-                "equity": 9961.95
+                "equity": 9962.0
             },
             {
                 "timestamp": 1704916800000,
                 "iso": "2024-01-10T20:00:00Z",
-                "equity": 9962.85
+                "equity": 9962.9
             },
             {
                 "timestamp": 1704917100000,
                 "iso": "2024-01-10T20:05:00Z",
-                "equity": 9962.55
+                "equity": 9962.6
             },
             {
                 "timestamp": 1704917400000,
                 "iso": "2024-01-10T20:10:00Z",
-                "equity": 9963.95
+                "equity": 9964.0
             },
             {
                 "timestamp": 1704917700000,
                 "iso": "2024-01-10T20:15:00Z",
-                "equity": 9958.35
+                "equity": 9958.4
             },
             {
                 "timestamp": 1704918000000,
                 "iso": "2024-01-10T20:20:00Z",
-                "equity": 9958.2
+                "equity": 9958.25
             },
             {
                 "timestamp": 1704918300000,
                 "iso": "2024-01-10T20:25:00Z",
-                "equity": 9957.9
+                "equity": 9957.95
             },
             {
                 "timestamp": 1704918600000,
                 "iso": "2024-01-10T20:30:00Z",
-                "equity": 9958.2
+                "equity": 9958.25
             },
             {
                 "timestamp": 1704918900000,
                 "iso": "2024-01-10T20:35:00Z",
-                "equity": 9958.2
+                "equity": 9958.25
             },
             {
                 "timestamp": 1704919200000,
                 "iso": "2024-01-10T20:40:00Z",
-                "equity": 9957.9
+                "equity": 9957.95
             },
             {
                 "timestamp": 1704919500000,
                 "iso": "2024-01-10T20:45:00Z",
-                "equity": 9958.2
+                "equity": 9958.25
             },
             {
                 "timestamp": 1704919800000,
                 "iso": "2024-01-10T20:50:00Z",
-                "equity": 9957.9
+                "equity": 9957.95
             },
             {
                 "timestamp": 1704920100000,
                 "iso": "2024-01-10T20:55:00Z",
-                "equity": 9958.2
+                "equity": 9958.25
             },
             {
                 "timestamp": 1704920400000,
                 "iso": "2024-01-10T21:00:00Z",
-                "equity": 9957.9
+                "equity": 9957.95
             },
             {
                 "timestamp": 1704920700000,
                 "iso": "2024-01-10T21:05:00Z",
-                "equity": 9957.9
+                "equity": 9957.95
             },
             {
                 "timestamp": 1704921000000,
                 "iso": "2024-01-10T21:10:00Z",
-                "equity": 9958.5
+                "equity": 9958.55
             },
             {
                 "timestamp": 1704921300000,
                 "iso": "2024-01-10T21:15:00Z",
-                "equity": 9959.2
+                "equity": 9959.25
             },
             {
                 "timestamp": 1704921600000,
                 "iso": "2024-01-10T21:20:00Z",
-                "equity": 9959.9
+                "equity": 9959.95
             },
             {
                 "timestamp": 1704921900000,
                 "iso": "2024-01-10T21:25:00Z",
-                "equity": 9960.8
+                "equity": 9960.85
             },
             {
                 "timestamp": 1704922200000,
                 "iso": "2024-01-10T21:30:00Z",
-                "equity": 9960.4
+                "equity": 9960.45
             },
             {
                 "timestamp": 1704922500000,
                 "iso": "2024-01-10T21:35:00Z",
-                "equity": 9962.0
+                "equity": 9962.05
             },
             {
                 "timestamp": 1704922800000,
                 "iso": "2024-01-10T21:40:00Z",
-                "equity": 9962.7
+                "equity": 9962.75
             },
             {
                 "timestamp": 1704923100000,
                 "iso": "2024-01-10T21:45:00Z",
-                "equity": 9963.5
+                "equity": 9963.55
             },
             {
                 "timestamp": 1704923400000,
                 "iso": "2024-01-10T21:50:00Z",
-                "equity": 9962.0
+                "equity": 9962.05
             },
             {
                 "timestamp": 1704923700000,
                 "iso": "2024-01-10T21:55:00Z",
-                "equity": 9963.1
+                "equity": 9963.15
             },
             {
                 "timestamp": 1704924000000,
                 "iso": "2024-01-10T22:00:00Z",
-                "equity": 9961.0
+                "equity": 9961.05
             },
             {
                 "timestamp": 1704924300000,
                 "iso": "2024-01-10T22:05:00Z",
-                "equity": 9950.9
+                "equity": 9950.95
             },
             {
                 "timestamp": 1704924600000,
                 "iso": "2024-01-10T22:10:00Z",
-                "equity": 9954.3
+                "equity": 9954.35
             },
             {
                 "timestamp": 1704924900000,
                 "iso": "2024-01-10T22:15:00Z",
-                "equity": 9959.0
+                "equity": 9959.05
             },
             {
                 "timestamp": 1704925200000,
                 "iso": "2024-01-10T22:20:00Z",
-                "equity": 9953.5
+                "equity": 9953.55
             },
             {
                 "timestamp": 1704925500000,
                 "iso": "2024-01-10T22:25:00Z",
-                "equity": 9956.5
+                "equity": 9956.55
             },
             {
                 "timestamp": 1704925800000,
                 "iso": "2024-01-10T22:30:00Z",
-                "equity": 9958.6
+                "equity": 9958.65
             },
             {
                 "timestamp": 1704926100000,
                 "iso": "2024-01-10T22:35:00Z",
-                "equity": 9958.0
+                "equity": 9958.05
             },
             {
                 "timestamp": 1704926400000,
                 "iso": "2024-01-10T22:40:00Z",
-                "equity": 9957.1
+                "equity": 9957.15
             },
             {
                 "timestamp": 1704926700000,
                 "iso": "2024-01-10T22:45:00Z",
-                "equity": 9957.4
+                "equity": 9957.45
             },
             {
                 "timestamp": 1704927000000,
                 "iso": "2024-01-10T22:50:00Z",
-                "equity": 9957.7
+                "equity": 9957.75
             },
             {
                 "timestamp": 1704927300000,
                 "iso": "2024-01-10T22:55:00Z",
-                "equity": 9955.35
+                "equity": 9955.4
             },
             {
                 "timestamp": 1704927600000,
                 "iso": "2024-01-10T23:00:00Z",
-                "equity": 9953.85
+                "equity": 9953.9
             },
             {
                 "timestamp": 1704927900000,
                 "iso": "2024-01-10T23:05:00Z",
-                "equity": 9960.65
+                "equity": 9960.7
             },
             {
                 "timestamp": 1704928200000,
                 "iso": "2024-01-10T23:10:00Z",
-                "equity": 9961.55
+                "equity": 9961.6
             },
             {
                 "timestamp": 1704928500000,
                 "iso": "2024-01-10T23:15:00Z",
-                "equity": 9962.15
+                "equity": 9962.2
             },
             {
                 "timestamp": 1704928800000,
                 "iso": "2024-01-10T23:20:00Z",
-                "equity": 9962.95
+                "equity": 9963.0
             },
             {
                 "timestamp": 1704929100000,
                 "iso": "2024-01-10T23:25:00Z",
-                "equity": 9962.55
+                "equity": 9962.6
             },
             {
                 "timestamp": 1704929400000,
                 "iso": "2024-01-10T23:30:00Z",
-                "equity": 9962.95
+                "equity": 9963.0
             },
             {
                 "timestamp": 1704929700000,
                 "iso": "2024-01-10T23:35:00Z",
-                "equity": 9962.95
+                "equity": 9963.0
             },
             {
                 "timestamp": 1704930000000,
                 "iso": "2024-01-10T23:40:00Z",
-                "equity": 9962.85
+                "equity": 9962.9
             },
             {
                 "timestamp": 1704930300000,
                 "iso": "2024-01-10T23:45:00Z",
-                "equity": 9963.85
+                "equity": 9963.9
             },
             {
                 "timestamp": 1704930600000,
                 "iso": "2024-01-10T23:50:00Z",
-                "equity": 9963.55
+                "equity": 9963.6
             },
             {
                 "timestamp": 1704930900000,
                 "iso": "2024-01-10T23:55:00Z",
-                "equity": 9963.95
+                "equity": 9964.0
             },
             {
                 "timestamp": 1704931200000,
                 "iso": "2024-01-11T00:00:00Z",
-                "equity": 9963.65
+                "equity": 9963.7
             }
         ]
     },
     "perStrategy": {
         "golden_eurusd": {
-            "realizedTotal": -51.9,
+            "realizedTotal": -51.85,
             "unrealizedTotal": 15.55,
-            "totalPnL": -36.35,
+            "totalPnL": -36.3,
             "commissionPaid": 0.0,
             "swapPaid": 0.0,
             "tradeCount": 66,
-            "winRate": 0.46153846,
-            "maxDrawdown": 0.01333633,
-            "profitFactor": 1.74490467,
-            "avgWin": 22.11666667,
-            "avgLoss": -10.86428571,
+            "roundTrips": 29,
+            "roundTripsWon": 8,
+            "roundTripsBreakEven": 0,
+            "winRate": 0.27586207,
+            "maxDrawdown": 0.01333573,
+            "profitFactor": 0.77238806,
+            "avgWin": 21.99375,
+            "avgLoss": -10.84761905,
             "largestWin": 22.25,
-            "largestLoss": -10.95,
-            "maxConsecutiveLosses": 6,
-            "sharpeRatio": -4.10942424,
-            "calmarRatio": -0.27256374,
-            "sortinoRatio": -4.96787354,
-            "turnover": 72.256095,
-            "maxDailyDrawdown": 0.010845,
+            "largestLoss": -11.1,
+            "maxConsecutiveLosses": 9,
+            "sharpeRatio": -4.11201662,
+            "calmarRatio": -0.27220107,
+            "sortinoRatio": -4.97185255,
+            "turnover": 72.25596,
+            "maxDailyDrawdown": 0.0108,
             "annualizationFactor": 75137.14285714286,
             "dailyPnL": {
-                "2024-01-10": -51.9
+                "2024-01-10": -51.85
             },
             "drawdownPeriods": [
                 {
@@ -1670,7 +1670,7 @@
                     "troughIso": "2024-01-10T08:00:00Z",
                     "recoveryTimestamp": 1704878700000,
                     "recoveryIso": "2024-01-10T09:25:00Z",
-                    "depthPct": -0.01333632577741203,
+                    "depthPct": -0.01333572718114446,
                     "durationMs": 5700000,
                     "ongoing": false
                 },
@@ -1681,20 +1681,12 @@
                     "troughIso": "2024-01-10T22:05:00Z",
                     "recoveryTimestamp": null,
                     "recoveryIso": null,
-                    "depthPct": -0.01154254949290262,
+                    "depthPct": -0.01153267342468747,
                     "durationMs": 33000000,
                     "ongoing": true
                 }
             ],
-            "monteCarlo": {
-                "simulations": 1000,
-                "finalEquityP5": 9957.05,
-                "finalEquityP50": 10056.3,
-                "finalEquityP95": 10155.75,
-                "maxDrawdownP5": -0.00763,
-                "maxDrawdownP95": -0.001088956292576202,
-                "probabilityNegativeFinal": 0
-            },
+            "monteCarlo": null,
             "equityCurve": [
                 {
                     "timestamp": 1704845100000,
@@ -2154,990 +2146,990 @@
                 {
                     "timestamp": 1704872400000,
                     "iso": "2024-01-10T07:40:00Z",
-                    "equity": 10000.05
+                    "equity": 10000.25
                 },
                 {
                     "timestamp": 1704872700000,
                     "iso": "2024-01-10T07:45:00Z",
-                    "equity": 10000.7
+                    "equity": 10000.95
                 },
                 {
                     "timestamp": 1704873000000,
                     "iso": "2024-01-10T07:50:00Z",
-                    "equity": 10025.25
+                    "equity": 10025.7
                 },
                 {
                     "timestamp": 1704873300000,
                     "iso": "2024-01-10T07:55:00Z",
-                    "equity": 9972.05
+                    "equity": 9972.5
                 },
                 {
                     "timestamp": 1704873600000,
                     "iso": "2024-01-10T08:00:00Z",
-                    "equity": 9891.55
+                    "equity": 9892.0
                 },
                 {
                     "timestamp": 1704873900000,
                     "iso": "2024-01-10T08:05:00Z",
-                    "equity": 9904.8
+                    "equity": 9905.35
                 },
                 {
                     "timestamp": 1704874200000,
                     "iso": "2024-01-10T08:10:00Z",
-                    "equity": 9924.5
+                    "equity": 9925.05
                 },
                 {
                     "timestamp": 1704874500000,
                     "iso": "2024-01-10T08:15:00Z",
-                    "equity": 9913.0
+                    "equity": 9913.55
                 },
                 {
                     "timestamp": 1704874800000,
                     "iso": "2024-01-10T08:20:00Z",
-                    "equity": 9928.5
+                    "equity": 9929.05
                 },
                 {
                     "timestamp": 1704875100000,
                     "iso": "2024-01-10T08:25:00Z",
-                    "equity": 9954.3
+                    "equity": 9954.85
                 },
                 {
                     "timestamp": 1704875400000,
                     "iso": "2024-01-10T08:30:00Z",
-                    "equity": 9968.95
+                    "equity": 9969.5
                 },
                 {
                     "timestamp": 1704875700000,
                     "iso": "2024-01-10T08:35:00Z",
-                    "equity": 9944.45
+                    "equity": 9945.0
                 },
                 {
                     "timestamp": 1704876000000,
                     "iso": "2024-01-10T08:40:00Z",
-                    "equity": 9957.05
+                    "equity": 9957.6
                 },
                 {
                     "timestamp": 1704876300000,
                     "iso": "2024-01-10T08:45:00Z",
-                    "equity": 9955.65
+                    "equity": 9956.2
                 },
                 {
                     "timestamp": 1704876600000,
                     "iso": "2024-01-10T08:50:00Z",
-                    "equity": 9969.65
+                    "equity": 9970.2
                 },
                 {
                     "timestamp": 1704876900000,
                     "iso": "2024-01-10T08:55:00Z",
-                    "equity": 9963.35
+                    "equity": 9963.9
                 },
                 {
                     "timestamp": 1704877200000,
                     "iso": "2024-01-10T09:00:00Z",
-                    "equity": 9986.45
+                    "equity": 9987.0
                 },
                 {
                     "timestamp": 1704877500000,
                     "iso": "2024-01-10T09:05:00Z",
-                    "equity": 9977.35
+                    "equity": 9977.9
                 },
                 {
                     "timestamp": 1704877800000,
                     "iso": "2024-01-10T09:10:00Z",
-                    "equity": 10000.45
+                    "equity": 10001.0
                 },
                 {
                     "timestamp": 1704878100000,
                     "iso": "2024-01-10T09:15:00Z",
-                    "equity": 10017.95
+                    "equity": 10018.5
                 },
                 {
                     "timestamp": 1704878400000,
                     "iso": "2024-01-10T09:20:00Z",
-                    "equity": 10019.35
+                    "equity": 10019.9
                 },
                 {
                     "timestamp": 1704878700000,
                     "iso": "2024-01-10T09:25:00Z",
-                    "equity": 10028.45
+                    "equity": 10029.0
                 },
                 {
                     "timestamp": 1704879000000,
                     "iso": "2024-01-10T09:30:00Z",
-                    "equity": 10017.95
+                    "equity": 10018.5
                 },
                 {
                     "timestamp": 1704879300000,
                     "iso": "2024-01-10T09:35:00Z",
-                    "equity": 10028.45
+                    "equity": 10029.0
                 },
                 {
                     "timestamp": 1704879600000,
                     "iso": "2024-01-10T09:40:00Z",
-                    "equity": 10025.65
+                    "equity": 10026.2
                 },
                 {
                     "timestamp": 1704879900000,
                     "iso": "2024-01-10T09:45:00Z",
-                    "equity": 10018.65
+                    "equity": 10019.2
                 },
                 {
                     "timestamp": 1704880200000,
                     "iso": "2024-01-10T09:50:00Z",
-                    "equity": 10006.05
+                    "equity": 10006.6
                 },
                 {
                     "timestamp": 1704880500000,
                     "iso": "2024-01-10T09:55:00Z",
-                    "equity": 10012.35
+                    "equity": 10012.9
                 },
                 {
                     "timestamp": 1704880800000,
                     "iso": "2024-01-10T10:00:00Z",
-                    "equity": 10013.05
+                    "equity": 10013.6
                 },
                 {
                     "timestamp": 1704881100000,
                     "iso": "2024-01-10T10:05:00Z",
-                    "equity": 10041.75
+                    "equity": 10042.3
                 },
                 {
                     "timestamp": 1704881400000,
                     "iso": "2024-01-10T10:10:00Z",
-                    "equity": 10043.1
+                    "equity": 10049.25
                 },
                 {
                     "timestamp": 1704881700000,
                     "iso": "2024-01-10T10:15:00Z",
-                    "equity": 10050.9
+                    "equity": 10054.45
                 },
                 {
                     "timestamp": 1704882000000,
                     "iso": "2024-01-10T10:20:00Z",
-                    "equity": 10052.1
+                    "equity": 10055.25
                 },
                 {
                     "timestamp": 1704882300000,
                     "iso": "2024-01-10T10:25:00Z",
-                    "equity": 10054.5
+                    "equity": 10056.85
                 },
                 {
                     "timestamp": 1704882600000,
                     "iso": "2024-01-10T10:30:00Z",
-                    "equity": 10058.4
+                    "equity": 10060.25
                 },
                 {
                     "timestamp": 1704882900000,
                     "iso": "2024-01-10T10:35:00Z",
-                    "equity": 10054.8
+                    "equity": 10058.45
                 },
                 {
                     "timestamp": 1704883200000,
                     "iso": "2024-01-10T10:40:00Z",
-                    "equity": 10053.6
+                    "equity": 10057.85
                 },
                 {
                     "timestamp": 1704883500000,
                     "iso": "2024-01-10T10:45:00Z",
-                    "equity": 10048.4
+                    "equity": 10055.25
                 },
                 {
                     "timestamp": 1704883800000,
                     "iso": "2024-01-10T10:50:00Z",
-                    "equity": 10052.25
+                    "equity": 10055.2
                 },
                 {
                     "timestamp": 1704884100000,
                     "iso": "2024-01-10T10:55:00Z",
-                    "equity": 10051.25
+                    "equity": 10054.8
                 },
                 {
                     "timestamp": 1704884400000,
                     "iso": "2024-01-10T11:00:00Z",
-                    "equity": 10046.85
+                    "equity": 10052.6
                 },
                 {
                     "timestamp": 1704884700000,
                     "iso": "2024-01-10T11:05:00Z",
-                    "equity": 10048.0
+                    "equity": 10052.85
                 },
                 {
                     "timestamp": 1704885000000,
                     "iso": "2024-01-10T11:10:00Z",
-                    "equity": 10048.3
+                    "equity": 10052.65
                 },
                 {
                     "timestamp": 1704885300000,
                     "iso": "2024-01-10T11:15:00Z",
-                    "equity": 10052.9
+                    "equity": 10052.85
                 },
                 {
                     "timestamp": 1704885600000,
                     "iso": "2024-01-10T11:20:00Z",
-                    "equity": 10050.3
+                    "equity": 10050.25
                 },
                 {
                     "timestamp": 1704885900000,
                     "iso": "2024-01-10T11:25:00Z",
-                    "equity": 10049.1
+                    "equity": 10049.05
                 },
                 {
                     "timestamp": 1704886200000,
                     "iso": "2024-01-10T11:30:00Z",
-                    "equity": 10049.6
+                    "equity": 10049.55
                 },
                 {
                     "timestamp": 1704886500000,
                     "iso": "2024-01-10T11:35:00Z",
-                    "equity": 10049.0
+                    "equity": 10048.95
                 },
                 {
                     "timestamp": 1704886800000,
                     "iso": "2024-01-10T11:40:00Z",
-                    "equity": 10049.7
+                    "equity": 10049.65
                 },
                 {
                     "timestamp": 1704887100000,
                     "iso": "2024-01-10T11:45:00Z",
-                    "equity": 10047.1
+                    "equity": 10047.05
                 },
                 {
                     "timestamp": 1704887400000,
                     "iso": "2024-01-10T11:50:00Z",
-                    "equity": 10046.2
+                    "equity": 10046.15
                 },
                 {
                     "timestamp": 1704887700000,
                     "iso": "2024-01-10T11:55:00Z",
-                    "equity": 10046.6
+                    "equity": 10046.55
                 },
                 {
                     "timestamp": 1704888000000,
                     "iso": "2024-01-10T12:00:00Z",
-                    "equity": 10045.9
+                    "equity": 10045.85
                 },
                 {
                     "timestamp": 1704888300000,
                     "iso": "2024-01-10T12:05:00Z",
-                    "equity": 10043.6
+                    "equity": 10043.55
                 },
                 {
                     "timestamp": 1704888600000,
                     "iso": "2024-01-10T12:10:00Z",
-                    "equity": 10043.85
+                    "equity": 10043.8
                 },
                 {
                     "timestamp": 1704888900000,
                     "iso": "2024-01-10T12:15:00Z",
-                    "equity": 10043.85
+                    "equity": 10043.8
                 },
                 {
                     "timestamp": 1704889200000,
                     "iso": "2024-01-10T12:20:00Z",
-                    "equity": 10043.85
+                    "equity": 10043.8
                 },
                 {
                     "timestamp": 1704889500000,
                     "iso": "2024-01-10T12:25:00Z",
-                    "equity": 10043.55
+                    "equity": 10043.5
                 },
                 {
                     "timestamp": 1704889800000,
                     "iso": "2024-01-10T12:30:00Z",
-                    "equity": 10043.85
+                    "equity": 10043.8
                 },
                 {
                     "timestamp": 1704890100000,
                     "iso": "2024-01-10T12:35:00Z",
-                    "equity": 10043.85
+                    "equity": 10043.8
                 },
                 {
                     "timestamp": 1704890400000,
                     "iso": "2024-01-10T12:40:00Z",
-                    "equity": 10043.55
+                    "equity": 10043.5
                 },
                 {
                     "timestamp": 1704890700000,
                     "iso": "2024-01-10T12:45:00Z",
-                    "equity": 10043.25
+                    "equity": 10043.2
                 },
                 {
                     "timestamp": 1704891000000,
                     "iso": "2024-01-10T12:50:00Z",
-                    "equity": 10044.0
+                    "equity": 10043.95
                 },
                 {
                     "timestamp": 1704891300000,
                     "iso": "2024-01-10T12:55:00Z",
-                    "equity": 10043.9
+                    "equity": 10043.85
                 },
                 {
                     "timestamp": 1704891600000,
                     "iso": "2024-01-10T13:00:00Z",
-                    "equity": 10044.3
+                    "equity": 10044.25
                 },
                 {
                     "timestamp": 1704891900000,
                     "iso": "2024-01-10T13:05:00Z",
-                    "equity": 10043.6
+                    "equity": 10043.55
                 },
                 {
                     "timestamp": 1704892200000,
                     "iso": "2024-01-10T13:10:00Z",
-                    "equity": 10043.3
+                    "equity": 10043.25
                 },
                 {
                     "timestamp": 1704892500000,
                     "iso": "2024-01-10T13:15:00Z",
-                    "equity": 10037.6
+                    "equity": 10037.55
                 },
                 {
                     "timestamp": 1704892800000,
                     "iso": "2024-01-10T13:20:00Z",
-                    "equity": 10037.4
+                    "equity": 10037.35
                 },
                 {
                     "timestamp": 1704893100000,
                     "iso": "2024-01-10T13:25:00Z",
-                    "equity": 10037.0
+                    "equity": 10036.95
                 },
                 {
                     "timestamp": 1704893400000,
                     "iso": "2024-01-10T13:30:00Z",
-                    "equity": 10035.3
+                    "equity": 10035.25
                 },
                 {
                     "timestamp": 1704893700000,
                     "iso": "2024-01-10T13:35:00Z",
-                    "equity": 10036.1
+                    "equity": 10036.05
                 },
                 {
                     "timestamp": 1704894000000,
                     "iso": "2024-01-10T13:40:00Z",
-                    "equity": 10033.3
+                    "equity": 10033.25
                 },
                 {
                     "timestamp": 1704894300000,
                     "iso": "2024-01-10T13:45:00Z",
-                    "equity": 10033.25
+                    "equity": 10033.2
                 },
                 {
                     "timestamp": 1704894600000,
                     "iso": "2024-01-10T13:50:00Z",
-                    "equity": 10032.45
+                    "equity": 10032.4
                 },
                 {
                     "timestamp": 1704894900000,
                     "iso": "2024-01-10T13:55:00Z",
-                    "equity": 10033.15
+                    "equity": 10033.1
                 },
                 {
                     "timestamp": 1704895200000,
                     "iso": "2024-01-10T14:00:00Z",
-                    "equity": 10035.75
+                    "equity": 10035.7
                 },
                 {
                     "timestamp": 1704895500000,
                     "iso": "2024-01-10T14:05:00Z",
-                    "equity": 10040.2
+                    "equity": 10040.15
                 },
                 {
                     "timestamp": 1704895800000,
                     "iso": "2024-01-10T14:10:00Z",
-                    "equity": 10037.8
+                    "equity": 10037.75
                 },
                 {
                     "timestamp": 1704896100000,
                     "iso": "2024-01-10T14:15:00Z",
-                    "equity": 10035.05
+                    "equity": 10035.0
                 },
                 {
                     "timestamp": 1704896400000,
                     "iso": "2024-01-10T14:20:00Z",
-                    "equity": 10044.0
+                    "equity": 10043.95
                 },
                 {
                     "timestamp": 1704896700000,
                     "iso": "2024-01-10T14:25:00Z",
-                    "equity": 10046.6
+                    "equity": 10046.55
                 },
                 {
                     "timestamp": 1704897000000,
                     "iso": "2024-01-10T14:30:00Z",
-                    "equity": 10040.5
+                    "equity": 10040.45
                 },
                 {
                     "timestamp": 1704897300000,
                     "iso": "2024-01-10T14:35:00Z",
-                    "equity": 10038.6
+                    "equity": 10038.55
                 },
                 {
                     "timestamp": 1704897600000,
                     "iso": "2024-01-10T14:40:00Z",
-                    "equity": 10041.6
+                    "equity": 10041.55
                 },
                 {
                     "timestamp": 1704897900000,
                     "iso": "2024-01-10T14:45:00Z",
-                    "equity": 10047.1
+                    "equity": 10047.05
                 },
                 {
                     "timestamp": 1704898200000,
                     "iso": "2024-01-10T14:50:00Z",
-                    "equity": 10067.1
+                    "equity": 10067.05
                 },
                 {
                     "timestamp": 1704898500000,
                     "iso": "2024-01-10T14:55:00Z",
-                    "equity": 10056.1
+                    "equity": 10056.05
                 },
                 {
                     "timestamp": 1704898800000,
                     "iso": "2024-01-10T15:00:00Z",
-                    "equity": 10031.0
+                    "equity": 10030.95
                 },
                 {
                     "timestamp": 1704899100000,
                     "iso": "2024-01-10T15:05:00Z",
-                    "equity": 10041.5
+                    "equity": 10041.45
                 },
                 {
                     "timestamp": 1704899400000,
                     "iso": "2024-01-10T15:10:00Z",
-                    "equity": 10019.8
+                    "equity": 10019.75
                 },
                 {
                     "timestamp": 1704899700000,
                     "iso": "2024-01-10T15:15:00Z",
-                    "equity": 10013.8
+                    "equity": 10013.75
                 },
                 {
                     "timestamp": 1704900000000,
                     "iso": "2024-01-10T15:20:00Z",
-                    "equity": 10009.8
+                    "equity": 10009.75
                 },
                 {
                     "timestamp": 1704900300000,
                     "iso": "2024-01-10T15:25:00Z",
-                    "equity": 10010.2
+                    "equity": 10010.15
                 },
                 {
                     "timestamp": 1704900600000,
                     "iso": "2024-01-10T15:30:00Z",
-                    "equity": 10004.2
+                    "equity": 10004.15
                 },
                 {
                     "timestamp": 1704900900000,
                     "iso": "2024-01-10T15:35:00Z",
-                    "equity": 9971.7
+                    "equity": 9971.8
                 },
                 {
                     "timestamp": 1704901200000,
                     "iso": "2024-01-10T15:40:00Z",
-                    "equity": 9971.95
+                    "equity": 9972.0
                 },
                 {
                     "timestamp": 1704901500000,
                     "iso": "2024-01-10T15:45:00Z",
-                    "equity": 9969.8
+                    "equity": 9969.75
                 },
                 {
                     "timestamp": 1704901800000,
                     "iso": "2024-01-10T15:50:00Z",
-                    "equity": 9969.8
+                    "equity": 9969.75
                 },
                 {
                     "timestamp": 1704902100000,
                     "iso": "2024-01-10T15:55:00Z",
-                    "equity": 9969.8
+                    "equity": 9969.75
                 },
                 {
                     "timestamp": 1704902400000,
                     "iso": "2024-01-10T16:00:00Z",
-                    "equity": 9969.8
+                    "equity": 9969.75
                 },
                 {
                     "timestamp": 1704902700000,
                     "iso": "2024-01-10T16:05:00Z",
-                    "equity": 9969.8
+                    "equity": 9969.75
                 },
                 {
                     "timestamp": 1704903000000,
                     "iso": "2024-01-10T16:10:00Z",
-                    "equity": 9969.8
+                    "equity": 9969.75
                 },
                 {
                     "timestamp": 1704903300000,
                     "iso": "2024-01-10T16:15:00Z",
-                    "equity": 9969.8
+                    "equity": 9969.75
                 },
                 {
                     "timestamp": 1704903600000,
                     "iso": "2024-01-10T16:20:00Z",
-                    "equity": 9969.8
+                    "equity": 9969.75
                 },
                 {
                     "timestamp": 1704903900000,
                     "iso": "2024-01-10T16:25:00Z",
-                    "equity": 9969.8
+                    "equity": 9969.75
                 },
                 {
                     "timestamp": 1704904200000,
                     "iso": "2024-01-10T16:30:00Z",
-                    "equity": 9969.8
+                    "equity": 9969.75
                 },
                 {
                     "timestamp": 1704904500000,
                     "iso": "2024-01-10T16:35:00Z",
-                    "equity": 9973.55
+                    "equity": 9973.5
                 },
                 {
                     "timestamp": 1704904800000,
                     "iso": "2024-01-10T16:40:00Z",
-                    "equity": 9976.15
+                    "equity": 9976.1
                 },
                 {
                     "timestamp": 1704905100000,
                     "iso": "2024-01-10T16:45:00Z",
-                    "equity": 9973.65
+                    "equity": 9973.6
                 },
                 {
                     "timestamp": 1704905400000,
                     "iso": "2024-01-10T16:50:00Z",
-                    "equity": 9971.95
+                    "equity": 9971.9
                 },
                 {
                     "timestamp": 1704905700000,
                     "iso": "2024-01-10T16:55:00Z",
-                    "equity": 9973.15
+                    "equity": 9973.1
                 },
                 {
                     "timestamp": 1704906000000,
                     "iso": "2024-01-10T17:00:00Z",
-                    "equity": 9970.35
+                    "equity": 9970.3
                 },
                 {
                     "timestamp": 1704906300000,
                     "iso": "2024-01-10T17:05:00Z",
-                    "equity": 9968.25
+                    "equity": 9968.2
                 },
                 {
                     "timestamp": 1704906600000,
                     "iso": "2024-01-10T17:10:00Z",
-                    "equity": 9968.1
+                    "equity": 9968.05
                 },
                 {
                     "timestamp": 1704906900000,
                     "iso": "2024-01-10T17:15:00Z",
-                    "equity": 9968.2
+                    "equity": 9968.15
                 },
                 {
                     "timestamp": 1704907200000,
                     "iso": "2024-01-10T17:20:00Z",
-                    "equity": 9968.2
+                    "equity": 9968.15
                 },
                 {
                     "timestamp": 1704907500000,
                     "iso": "2024-01-10T17:25:00Z",
-                    "equity": 9968.2
+                    "equity": 9968.15
                 },
                 {
                     "timestamp": 1704907800000,
                     "iso": "2024-01-10T17:30:00Z",
-                    "equity": 9968.2
+                    "equity": 9968.15
                 },
                 {
                     "timestamp": 1704908100000,
                     "iso": "2024-01-10T17:35:00Z",
-                    "equity": 9968.1
+                    "equity": 9968.05
                 },
                 {
                     "timestamp": 1704908400000,
                     "iso": "2024-01-10T17:40:00Z",
-                    "equity": 9968.3
+                    "equity": 9968.25
                 },
                 {
                     "timestamp": 1704908700000,
                     "iso": "2024-01-10T17:45:00Z",
-                    "equity": 9968.1
+                    "equity": 9968.05
                 },
                 {
                     "timestamp": 1704909000000,
                     "iso": "2024-01-10T17:50:00Z",
-                    "equity": 9968.3
+                    "equity": 9968.25
                 },
                 {
                     "timestamp": 1704909300000,
                     "iso": "2024-01-10T17:55:00Z",
-                    "equity": 9968.1
+                    "equity": 9968.05
                 },
                 {
                     "timestamp": 1704909600000,
                     "iso": "2024-01-10T18:00:00Z",
-                    "equity": 9968.2
+                    "equity": 9968.15
                 },
                 {
                     "timestamp": 1704909900000,
                     "iso": "2024-01-10T18:05:00Z",
-                    "equity": 9968.2
+                    "equity": 9968.15
                 },
                 {
                     "timestamp": 1704910200000,
                     "iso": "2024-01-10T18:10:00Z",
-                    "equity": 9970.35
+                    "equity": 9970.3
                 },
                 {
                     "timestamp": 1704910500000,
                     "iso": "2024-01-10T18:15:00Z",
-                    "equity": 9967.75
+                    "equity": 9967.7
                 },
                 {
                     "timestamp": 1704910800000,
                     "iso": "2024-01-10T18:20:00Z",
-                    "equity": 9964.65
+                    "equity": 9964.6
                 },
                 {
                     "timestamp": 1704911100000,
                     "iso": "2024-01-10T18:25:00Z",
-                    "equity": 9964.7
+                    "equity": 9964.65
                 },
                 {
                     "timestamp": 1704911400000,
                     "iso": "2024-01-10T18:30:00Z",
-                    "equity": 9964.5
+                    "equity": 9964.45
                 },
                 {
                     "timestamp": 1704911700000,
                     "iso": "2024-01-10T18:35:00Z",
-                    "equity": 9964.5
+                    "equity": 9964.45
                 },
                 {
                     "timestamp": 1704912000000,
                     "iso": "2024-01-10T18:40:00Z",
-                    "equity": 9964.7
+                    "equity": 9964.65
                 },
                 {
                     "timestamp": 1704912300000,
                     "iso": "2024-01-10T18:45:00Z",
-                    "equity": 9964.5
+                    "equity": 9964.45
                 },
                 {
                     "timestamp": 1704912600000,
                     "iso": "2024-01-10T18:50:00Z",
-                    "equity": 9964.7
+                    "equity": 9964.65
                 },
                 {
                     "timestamp": 1704912900000,
                     "iso": "2024-01-10T18:55:00Z",
-                    "equity": 9964.3
+                    "equity": 9964.25
                 },
                 {
                     "timestamp": 1704913200000,
                     "iso": "2024-01-10T19:00:00Z",
-                    "equity": 9964.9
+                    "equity": 9964.85
                 },
                 {
                     "timestamp": 1704913500000,
                     "iso": "2024-01-10T19:05:00Z",
-                    "equity": 9964.8
+                    "equity": 9964.85
                 },
                 {
                     "timestamp": 1704913800000,
                     "iso": "2024-01-10T19:10:00Z",
-                    "equity": 9962.0
+                    "equity": 9962.05
                 },
                 {
                     "timestamp": 1704914100000,
                     "iso": "2024-01-10T19:15:00Z",
-                    "equity": 9963.3
+                    "equity": 9963.35
                 },
                 {
                     "timestamp": 1704914400000,
                     "iso": "2024-01-10T19:20:00Z",
-                    "equity": 9963.8
+                    "equity": 9963.85
                 },
                 {
                     "timestamp": 1704914700000,
                     "iso": "2024-01-10T19:25:00Z",
-                    "equity": 9963.3
+                    "equity": 9963.35
                 },
                 {
                     "timestamp": 1704915000000,
                     "iso": "2024-01-10T19:30:00Z",
-                    "equity": 9963.4
+                    "equity": 9963.45
                 },
                 {
                     "timestamp": 1704915300000,
                     "iso": "2024-01-10T19:35:00Z",
-                    "equity": 9963.0
+                    "equity": 9963.05
                 },
                 {
                     "timestamp": 1704915600000,
                     "iso": "2024-01-10T19:40:00Z",
-                    "equity": 9962.2
+                    "equity": 9962.25
                 },
                 {
                     "timestamp": 1704915900000,
                     "iso": "2024-01-10T19:45:00Z",
-                    "equity": 9962.3
+                    "equity": 9962.35
                 },
                 {
                     "timestamp": 1704916200000,
                     "iso": "2024-01-10T19:50:00Z",
-                    "equity": 9961.35
+                    "equity": 9961.4
                 },
                 {
                     "timestamp": 1704916500000,
                     "iso": "2024-01-10T19:55:00Z",
-                    "equity": 9961.95
+                    "equity": 9962.0
                 },
                 {
                     "timestamp": 1704916800000,
                     "iso": "2024-01-10T20:00:00Z",
-                    "equity": 9962.85
+                    "equity": 9962.9
                 },
                 {
                     "timestamp": 1704917100000,
                     "iso": "2024-01-10T20:05:00Z",
-                    "equity": 9962.55
+                    "equity": 9962.6
                 },
                 {
                     "timestamp": 1704917400000,
                     "iso": "2024-01-10T20:10:00Z",
-                    "equity": 9963.95
+                    "equity": 9964.0
                 },
                 {
                     "timestamp": 1704917700000,
                     "iso": "2024-01-10T20:15:00Z",
-                    "equity": 9958.35
+                    "equity": 9958.4
                 },
                 {
                     "timestamp": 1704918000000,
                     "iso": "2024-01-10T20:20:00Z",
-                    "equity": 9958.2
+                    "equity": 9958.25
                 },
                 {
                     "timestamp": 1704918300000,
                     "iso": "2024-01-10T20:25:00Z",
-                    "equity": 9957.9
+                    "equity": 9957.95
                 },
                 {
                     "timestamp": 1704918600000,
                     "iso": "2024-01-10T20:30:00Z",
-                    "equity": 9958.2
+                    "equity": 9958.25
                 },
                 {
                     "timestamp": 1704918900000,
                     "iso": "2024-01-10T20:35:00Z",
-                    "equity": 9958.2
+                    "equity": 9958.25
                 },
                 {
                     "timestamp": 1704919200000,
                     "iso": "2024-01-10T20:40:00Z",
-                    "equity": 9957.9
+                    "equity": 9957.95
                 },
                 {
                     "timestamp": 1704919500000,
                     "iso": "2024-01-10T20:45:00Z",
-                    "equity": 9958.2
+                    "equity": 9958.25
                 },
                 {
                     "timestamp": 1704919800000,
                     "iso": "2024-01-10T20:50:00Z",
-                    "equity": 9957.9
+                    "equity": 9957.95
                 },
                 {
                     "timestamp": 1704920100000,
                     "iso": "2024-01-10T20:55:00Z",
-                    "equity": 9958.2
+                    "equity": 9958.25
                 },
                 {
                     "timestamp": 1704920400000,
                     "iso": "2024-01-10T21:00:00Z",
-                    "equity": 9957.9
+                    "equity": 9957.95
                 },
                 {
                     "timestamp": 1704920700000,
                     "iso": "2024-01-10T21:05:00Z",
-                    "equity": 9957.9
+                    "equity": 9957.95
                 },
                 {
                     "timestamp": 1704921000000,
                     "iso": "2024-01-10T21:10:00Z",
-                    "equity": 9958.5
+                    "equity": 9958.55
                 },
                 {
                     "timestamp": 1704921300000,
                     "iso": "2024-01-10T21:15:00Z",
-                    "equity": 9959.2
+                    "equity": 9959.25
                 },
                 {
                     "timestamp": 1704921600000,
                     "iso": "2024-01-10T21:20:00Z",
-                    "equity": 9959.9
+                    "equity": 9959.95
                 },
                 {
                     "timestamp": 1704921900000,
                     "iso": "2024-01-10T21:25:00Z",
-                    "equity": 9960.8
+                    "equity": 9960.85
                 },
                 {
                     "timestamp": 1704922200000,
                     "iso": "2024-01-10T21:30:00Z",
-                    "equity": 9960.4
+                    "equity": 9960.45
                 },
                 {
                     "timestamp": 1704922500000,
                     "iso": "2024-01-10T21:35:00Z",
-                    "equity": 9962.0
+                    "equity": 9962.05
                 },
                 {
                     "timestamp": 1704922800000,
                     "iso": "2024-01-10T21:40:00Z",
-                    "equity": 9962.7
+                    "equity": 9962.75
                 },
                 {
                     "timestamp": 1704923100000,
                     "iso": "2024-01-10T21:45:00Z",
-                    "equity": 9963.5
+                    "equity": 9963.55
                 },
                 {
                     "timestamp": 1704923400000,
                     "iso": "2024-01-10T21:50:00Z",
-                    "equity": 9962.0
+                    "equity": 9962.05
                 },
                 {
                     "timestamp": 1704923700000,
                     "iso": "2024-01-10T21:55:00Z",
-                    "equity": 9963.1
+                    "equity": 9963.15
                 },
                 {
                     "timestamp": 1704924000000,
                     "iso": "2024-01-10T22:00:00Z",
-                    "equity": 9961.0
+                    "equity": 9961.05
                 },
                 {
                     "timestamp": 1704924300000,
                     "iso": "2024-01-10T22:05:00Z",
-                    "equity": 9950.9
+                    "equity": 9950.95
                 },
                 {
                     "timestamp": 1704924600000,
                     "iso": "2024-01-10T22:10:00Z",
-                    "equity": 9954.3
+                    "equity": 9954.35
                 },
                 {
                     "timestamp": 1704924900000,
                     "iso": "2024-01-10T22:15:00Z",
-                    "equity": 9959.0
+                    "equity": 9959.05
                 },
                 {
                     "timestamp": 1704925200000,
                     "iso": "2024-01-10T22:20:00Z",
-                    "equity": 9953.5
+                    "equity": 9953.55
                 },
                 {
                     "timestamp": 1704925500000,
                     "iso": "2024-01-10T22:25:00Z",
-                    "equity": 9956.5
+                    "equity": 9956.55
                 },
                 {
                     "timestamp": 1704925800000,
                     "iso": "2024-01-10T22:30:00Z",
-                    "equity": 9958.6
+                    "equity": 9958.65
                 },
                 {
                     "timestamp": 1704926100000,
                     "iso": "2024-01-10T22:35:00Z",
-                    "equity": 9958.0
+                    "equity": 9958.05
                 },
                 {
                     "timestamp": 1704926400000,
                     "iso": "2024-01-10T22:40:00Z",
-                    "equity": 9957.1
+                    "equity": 9957.15
                 },
                 {
                     "timestamp": 1704926700000,
                     "iso": "2024-01-10T22:45:00Z",
-                    "equity": 9957.4
+                    "equity": 9957.45
                 },
                 {
                     "timestamp": 1704927000000,
                     "iso": "2024-01-10T22:50:00Z",
-                    "equity": 9957.7
+                    "equity": 9957.75
                 },
                 {
                     "timestamp": 1704927300000,
                     "iso": "2024-01-10T22:55:00Z",
-                    "equity": 9955.35
+                    "equity": 9955.4
                 },
                 {
                     "timestamp": 1704927600000,
                     "iso": "2024-01-10T23:00:00Z",
-                    "equity": 9953.85
+                    "equity": 9953.9
                 },
                 {
                     "timestamp": 1704927900000,
                     "iso": "2024-01-10T23:05:00Z",
-                    "equity": 9960.65
+                    "equity": 9960.7
                 },
                 {
                     "timestamp": 1704928200000,
                     "iso": "2024-01-10T23:10:00Z",
-                    "equity": 9961.55
+                    "equity": 9961.6
                 },
                 {
                     "timestamp": 1704928500000,
                     "iso": "2024-01-10T23:15:00Z",
-                    "equity": 9962.15
+                    "equity": 9962.2
                 },
                 {
                     "timestamp": 1704928800000,
                     "iso": "2024-01-10T23:20:00Z",
-                    "equity": 9962.95
+                    "equity": 9963.0
                 },
                 {
                     "timestamp": 1704929100000,
                     "iso": "2024-01-10T23:25:00Z",
-                    "equity": 9962.55
+                    "equity": 9962.6
                 },
                 {
                     "timestamp": 1704929400000,
                     "iso": "2024-01-10T23:30:00Z",
-                    "equity": 9962.95
+                    "equity": 9963.0
                 },
                 {
                     "timestamp": 1704929700000,
                     "iso": "2024-01-10T23:35:00Z",
-                    "equity": 9962.95
+                    "equity": 9963.0
                 },
                 {
                     "timestamp": 1704930000000,
                     "iso": "2024-01-10T23:40:00Z",
-                    "equity": 9962.85
+                    "equity": 9962.9
                 },
                 {
                     "timestamp": 1704930300000,
                     "iso": "2024-01-10T23:45:00Z",
-                    "equity": 9963.85
+                    "equity": 9963.9
                 },
                 {
                     "timestamp": 1704930600000,
                     "iso": "2024-01-10T23:50:00Z",
-                    "equity": 9963.55
+                    "equity": 9963.6
                 },
                 {
                     "timestamp": 1704930900000,
                     "iso": "2024-01-10T23:55:00Z",
-                    "equity": 9963.95
+                    "equity": 9964.0
                 },
                 {
                     "timestamp": 1704931200000,
                     "iso": "2024-01-11T00:00:00Z",
-                    "equity": 9963.65
+                    "equity": 9963.7
                 }
             ],
-            "realized": -51.9,
+            "realized": -51.85,
             "trades": 66,
             "unrealized": 15.55
         }
@@ -3197,13 +3189,5 @@
         "promotion": null,
         "warnings": []
     },
-    "monteCarlo": {
-        "simulations": 1000,
-        "finalEquityP5": 9957.05,
-        "finalEquityP50": 10056.3,
-        "finalEquityP95": 10155.75,
-        "maxDrawdownP5": -0.00763,
-        "maxDrawdownP95": -0.001088956292576202,
-        "probabilityNegativeFinal": 0
-    }
+    "monteCarlo": null
 }

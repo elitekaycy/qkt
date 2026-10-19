@@ -1,15 +1,16 @@
 package com.qkt.research
 
 import com.qkt.app.IntrabarFill
+import com.qkt.backtest.NoTickBars
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
-import com.qkt.marketdata.source.candleToTicks
 import java.math.BigDecimal
 
 /**
  * One symbol's bar-driven, fill-on-ticks stream inside a [BarResolvedFeed]. [peek] is the next tick
  * it will emit (its frontier); [pop] emits it; [settle] resolves the pending bar once the opening
- * tick has been ingested.
+ * tick has been ingested. A bar without real ticks opens on its synthetic open and settles to its
+ * synthetic extremes, adverse-first, which fill at their levels ([NoTickBars]).
  */
 internal class SymbolFeed(
     private val symbol: String,
@@ -17,10 +18,13 @@ internal class SymbolFeed(
     private val slice: (String, Long, Long) -> Sequence<Tick>,
     private val intrabarFill: (String, BigDecimal, BigDecimal, BigDecimal) -> IntrabarFill,
     private val replayEndMs: Long?,
+    private val noTickBars: NoTickBars,
 ) {
     private val barIter = bars.iterator()
+    private val tally = noTickBars.track(symbol)
     private var head: Tick? = null
     private var headIsOpening = false
+    private var headAtLevel = false
     private var nextBar: Candle? = null
     private var nextSlice: Iterator<Tick>? = null
     private var awaitBar: Candle? = null
@@ -35,33 +39,18 @@ internal class SymbolFeed(
     }
 
     private fun openNextBar() {
-        while (barIter.hasNext()) {
+        headAtLevel = false
+        if (barIter.hasNext()) {
             val bar = barIter.next()
             lastBarEndMs = bar.endTime
             val it = slice(symbol, bar.startTime, bar.endTime).iterator()
-            if (it.hasNext()) {
-                head = it.next()
-                headIsOpening = true
-                nextBar = bar
-                nextSlice = it
-                return
-            }
-            // No real ticks in this bar (a data gap): emit full synthetic O->L->H->C, no decision.
-            val need = intrabarFill(symbol, bar.low, bar.high, BigDecimal.ZERO)
-            if (need != IntrabarFill.SYNTHETIC) {
-                log.warn(
-                    "tick-fills falling back to synthetic path for fill-possible bar symbol={} start={} mode={}",
-                    symbol,
-                    bar.startTime,
-                    need,
-                )
-            }
-            rest = candleToTicks(bar).iterator()
-            if (rest.hasNext()) {
-                head = rest.next()
-                headIsOpening = false
-                return
-            }
+            val hasTicks = it.hasNext()
+            // No real ticks in this bar (a data gap): open on its synthetic open; a null slice marks it.
+            head = if (hasTicks) it.next() else Tick(bar.symbol, bar.open, bar.startTime)
+            headIsOpening = true
+            nextBar = bar
+            nextSlice = if (hasTicks) it else null
+            return
         }
         val tailFrom = lastBarEndMs
         val tailTo = replayEndMs
@@ -79,21 +68,30 @@ internal class SymbolFeed(
 
     fun settle() {
         val bar = awaitBar ?: return
-        val slice = awaitSlice!!
-        val ticks = slice.asSequence().toList()
-        val maxHalfSpread = maxHalfSpread(awaitOpening, ticks)
-        rest =
-            when (intrabarFill(symbol, bar.low, bar.high, maxHalfSpread)) {
-                IntrabarFill.SYNTHETIC -> syntheticRest(bar)
-                IntrabarFill.ALL_TICKS -> ticks.iterator()
-                IntrabarFill.EXTREMES -> extremeRest(awaitOpening!!, ticks.iterator(), bar)
-            }
+        val slice = awaitSlice
+        if (slice == null) {
+            // No ticks: the synthetic extremes, adverse-first, then the close, all filling at their levels.
+            val need = intrabarFill(symbol, bar.low, bar.high, BigDecimal.ZERO)
+            tally.bar(hasTicks = false, fillPossible = need != IntrabarFill.SYNTHETIC, startMs = bar.startTime)
+            rest = syntheticRest(bar, highFirst = noTickBars.positionSign(symbol) < 0)
+        } else {
+            val ticks = slice.asSequence().toList()
+            val need = intrabarFill(symbol, bar.low, bar.high, maxHalfSpread(awaitOpening, ticks))
+            tally.bar(hasTicks = true, fillPossible = need != IntrabarFill.SYNTHETIC, startMs = bar.startTime)
+            rest =
+                when (need) {
+                    IntrabarFill.SYNTHETIC -> syntheticRest(bar)
+                    IntrabarFill.ALL_TICKS -> ticks.iterator()
+                    IntrabarFill.EXTREMES -> extremeRest(awaitOpening!!, ticks.iterator(), bar)
+                }
+        }
         awaitBar = null
         awaitSlice = null
         awaitOpening = null
         if (rest.hasNext()) {
             head = rest.next()
             headIsOpening = false
+            headAtLevel = slice == null
         } else {
             openNextBar()
         }
@@ -103,6 +101,7 @@ internal class SymbolFeed(
 
     fun pop(): Tick {
         val t = head!!
+        tally.atLevel = headAtLevel
         if (headIsOpening) {
             // Opening emitted; defer the decision to the next cycle (after this tick is ingested).
             awaitBar = nextBar
@@ -118,9 +117,5 @@ internal class SymbolFeed(
             openNextBar()
         }
         return t
-    }
-
-    private companion object {
-        val log = org.slf4j.LoggerFactory.getLogger(SymbolFeed::class.java)
     }
 }

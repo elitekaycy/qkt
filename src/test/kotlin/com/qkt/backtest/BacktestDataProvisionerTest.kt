@@ -145,7 +145,7 @@ class BacktestDataProvisionerTest {
         ).hasMessageContaining("incomplete EURUSD tick data for 2024-03-04 to 2024-03-08 (2 of 5 trading days)")
         assertThat(thrown).hasMessageContaining("Missing: 2024-03-06 to 2024-03-08 (1 range, 3 days)")
         assertThat(thrown).hasMessageContaining("Looked in:")
-        assertThat(thrown).hasMessageContaining("has 2024-03-04 to 2024-03-08")
+        assertThat(thrown).hasMessageContaining("day files for 2024-03-04 to 2024-03-08")
         assertThat(thrown.message).doesNotContain("drop --no-fetch")
     }
 

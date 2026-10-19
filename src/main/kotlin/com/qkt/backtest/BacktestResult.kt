@@ -126,4 +126,9 @@ data class BacktestResult(
      * never serialized into `result.json`.
      */
     val reproduction: com.qkt.backtest.report.ReproductionInfo? = null,
+    /**
+     * What the run's fills rested on (#1437): fill prices, slippage, execution stresses, venue routing.
+     * The summary, `--verbose` and report.html describe the run from it; null on hand-built results.
+     */
+    val executionFacts: ExecutionFacts? = null,
 )

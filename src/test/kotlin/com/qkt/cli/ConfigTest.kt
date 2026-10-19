@@ -20,7 +20,8 @@ class ConfigTest {
     @Test
     fun `missing config returns defaults`() {
         val c = Config.load(Path.of("nonexistent.yaml"))
-        assertThat(c.source).isEqualTo("local")
+        // The same feed as a file that leaves `source:` out: TradingView.
+        assertThat(c.source).isEqualTo("tv")
         assertThat(c.dataRoot).isEqualTo("./data")
         assertThat(c.startingBalance).isEqualByComparingTo("0")
         assertThat(c.accountingConfig.missingPolicy).isEqualTo(com.qkt.accounting.FxMissingPolicy.FAIL)

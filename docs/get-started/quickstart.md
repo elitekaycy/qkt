@@ -35,7 +35,7 @@ RULES
          }
 ```
 
-The `BACKTEST:` prefix means "no live broker" — orders fill against an in-process paper broker.
+The `BACKTEST:` prefix means the local historical data store: backtests read it, and it has no live prices.
 
 ## 3. Backtest it
 
@@ -57,14 +57,24 @@ Open `out/report.html` in a browser.
 
 ## 4. Run it as a daemon
 
+Paper trading runs the same rules on live prices, which the `BACKTEST:` stream does not have
+(qkt refuses to deploy it and names the symbol to use). Make a copy on TradingView's name for the
+pair, the daemon's default live feed:
+
+```bash
+sed 's/BACKTEST:BTCUSDT/BINANCE:BTCUSDT/' momentum.qkt > momentum-paper.qkt
+```
+
+Then start the daemon and deploy the copy:
+
 ```bash
 qkt daemon &                                  # starts the control plane
-qkt deploy momentum.qkt --as momentum
+qkt deploy momentum-paper.qkt --as momentum
 qkt list                                      # shows momentum running
 qkt status momentum                           # current PnL, positions, last trade
 qkt logs momentum --follow                    # live log stream
-qkt resync momentum.qkt --as momentum --dry-run # validate an edited file
-qkt resync momentum.qkt --as momentum         # replace only this running name
+qkt resync momentum-paper.qkt --as momentum --dry-run # validate an edited file
+qkt resync momentum-paper.qkt --as momentum   # replace only this running name
 qkt stop momentum
 qkt daemon stop
 ```

@@ -37,6 +37,22 @@ Two of the headline ratios beyond Sharpe and Calmar:
 - **Sortino** — like Sharpe, but only *downside* moves count as risk (a return below zero). A strategy with smooth gains and rare, shallow losses scores higher on Sortino than on Sharpe.
 - **Turnover** — gross traded notional as a multiple of starting capital, e.g. `3.20` means the run traded 3.2x its capital. Not annualized; compare runs of equal length.
 
+## Round trips and win rate
+
+A **round trip** is one position, from its first entry fill until it is flat again. A position
+entered or exited in several fills (partial fills, `--partial-fill`, the `stress` preset, an exit
+split over two take-profits) is one round trip, and its outcome is the net P&L of all its fills,
+entry and exit commissions included. A leg-routed position (each bracket, `TIMES` or `STACK` entry
+is its own leg) is tracked per leg; a netted position per strategy and symbol, and a netted exit
+larger than the position reverses it, which closes this round trip and opens the next. A position
+still partly open at the end counts once if it had exits.
+
+Win rate, profit factor, average and largest win/loss, max consecutive losses and the Monte Carlo
+are all computed over round trips. Win rate is `won / (round trips - break-even)`: one that closed
+at exactly zero after costs counts in neither. The console summary, `--verbose`, `--json`,
+`result.json` (`roundTrips`, `roundTripsWon`, `roundTripsBreakEven`, `winRate`) and `report.html`
+show the same numbers. `tradeCount` (`Trades:` in `--verbose`) counts fills.
+
 ## Per-strategy attribution
 
 A portfolio backtest (two or more strategies) prints a per-strategy block under the global summary, and the same breakdown lands in `--json` (a `perStrategy` object) and the `--report-dir` bundle (`result.json`, plus an `equity_<id>.csv` per strategy). Each strategy carries its own full report — P&L, trades, Sharpe, Sortino, max drawdown, win rate, turnover, commission, and swap — computed from that strategy's fills and financing cash flows. A single-strategy run omits the block: the global summary already *is* that strategy.
@@ -70,13 +86,21 @@ Two simulated brokers, chosen with `--broker`:
 - `qkt backtest --bars` resolves fills on the recorded ticks inside each bar by default (tick-resolved
   fills), wherever the store has them: signals come from bars, fills from real prints. On a golden XAUUSD
   run this reproduced a full tick replay fill for fill (170 of 170), where the synthetic bar path matched
-  23 and overstated P&L by about 500. A bar with no ticks keeps the synthetic path. The default turns
+  23 and overstated P&L by about 500. A bar the store has no ticks for replays its synthetic open,
+  extremes (the open position's adverse one first) and close, and fills exactly as `--no-tick-fills`
+  fills it: an exit it trades through fills at its level, one it opens beyond fills at that open. This
+  is per bar, so a window partly covered by ticks fills from ticks wherever they exist. The run says so
+  once per symbol, e.g. `qkt: note: BACKTEST:EURUSD: 12 of 340 fill-possible bars had no ticks; orders
+  on them filled at their levels (bar fills), not from ticks`, and `result.json` records the counts
+  under `evidence.execution.barsWithoutTicks`. The default turns
   off, with a note, where tick-resolved fills are not valid (execution latency, order spacing, stop
   latency, mixed timeframes, continuous futures); `--no-tick-fills` keeps the synthetic path everywhere,
   and an explicit `--tick-fills` refuses instead of turning off. `sweep`, `walkforward`, `research` and
   `experiment` keep the synthetic path unless asked.
 - `mt5-sim` needs ticks: it refuses a symbol it would replay from bars on the synthetic path
-  (`--no-tick-fills`, or where tick-resolved fills are off).
+  (`--no-tick-fills`, or where tick-resolved fills are off). Under tick-resolved fills it runs, and a
+  bar without ticks fills at its levels as above (stops then slip by `slippagePoints`), never at the
+  bar's synthetic extreme.
 - **`mt5-sim`**: mirrors an MT5 venue. Volume is rounded down to `volumeStep` and orders below
   `volumeMin` are rejected; fill prices round to `digits`. A BUY fills at the ask and a SELL at the
   bid (see [Spread](#spread)), plus slippage. The execution preset (`--execution`, or `execution.preset`
@@ -93,6 +117,27 @@ Each knob can be set on its own, on the command line or under `execution:` in th
 quote at or after trigger + latency), `--tp-fill print|level` (pricing of a gap-crossed take-profit),
 `--slippage`, `--reject-every`, `--partial-fill`, `--order-spacing`. The run's `result.json` records the
 model used in `evidence.execution`.
+
+### What the summary says about fills
+
+The `Assumptions` block of the console summary (and of `--verbose`, and the "Costs and adjustments"
+table of `report.html`) states what this run's fills rested on, recorded by the replay rather than
+assumed from `--broker`:
+
+- `Fills:` where the prices came from: `recorded bid/ask from ticks`, `spread from instruments.yaml
+  (...)`, `a synthetic 2-point spread around the middle price, where the data had no bid/ask`, or on
+  `paper` `middle price, no spread` and `bar prices, at order levels, no spread` for symbols replayed
+  from bars.
+- `Slippage:` the model the fills paid, e.g. `5 points against each market and stop fill`, or `none`.
+  `paper` does not slip its own fills, so `--slippage` there applies to futures and perpetuals only.
+- `Partial fills:`, `Rejections:`, `Latency:` and `Stop delay:` when those stresses were on, and
+  `Futures:` / `Options:` when symbols routed to those venues.
+- `Bars without ticks:` per symbol, the bars of a `--bars` run that had no recorded ticks and filled at
+  the bar's own prices.
+
+The `Costs` line names the spread the fills carried (`spread from ticks`) and each cost actually
+incurred (`commission 262.99 USD, swap 319.33 USD`); `none modeled` appears only when the fills carried
+no spread and nothing was charged.
 
 ## Slippage
 

@@ -1,13 +1,15 @@
 package com.qkt.marketdata.live.tv
 
+import com.qkt.common.Clock
+import com.qkt.common.SystemClock
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonArray
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -16,31 +18,33 @@ import okhttp3.WebSocketListener
 import okio.ByteString
 import org.slf4j.LoggerFactory
 
-interface TradingViewWebSocketLike {
-    fun addListener(listener: TradingViewListener)
-
-    fun removeListener(listener: TradingViewListener)
-
-    fun send(
-        method: String,
-        params: List<Any>,
-    )
-
-    fun close()
-}
-
+/**
+ * The one WebSocket to TradingView that chart and quote sessions share. A dropped connection is
+ * re-opened with backoff ([reconnectDelayMs] per attempt) until [close]; listeners see
+ * `onDisconnected` and then `onConnected` again, which is where sessions re-create themselves. A
+ * connection that has gone silent for [staleAfterMs] (TradingView heartbeats every ~10s) is dropped
+ * the same way, since without WebSocket pings nothing else would notice a half-open socket; [clock]
+ * times that silence.
+ */
 class TradingViewWebSocket(
     private val url: String = DEFAULT_URL,
     private val origin: String = DEFAULT_ORIGIN,
     private val authToken: String = ANONYMOUS_TOKEN,
-    private val client: OkHttpClient = defaultClient(),
+    private val client: OkHttpClient = TradingViewConnection.defaultClient(),
+    private val reconnectDelayMs: (attempt: Int) -> Long = TradingViewConnection::backoffMs,
+    private val staleAfterMs: Long = 30_000L,
+    private val clock: Clock = SystemClock(),
 ) : TradingViewWebSocketLike {
     private val log = LoggerFactory.getLogger(TradingViewWebSocket::class.java)
 
     private val listeners: MutableList<TradingViewListener> = CopyOnWriteArrayList()
     private val socket: AtomicReference<WebSocket?> = AtomicReference(null)
     private val closed: AtomicBoolean = AtomicBoolean(false)
+    private val attempts = AtomicInteger(0)
+    private val lastFrameAtMs = AtomicLong(clock.now())
     private val buffer = StringBuilder()
+    private val scheduler: ScheduledExecutorService =
+        Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "tradingview-reconnect").apply { isDaemon = true } }
 
     override fun addListener(listener: TradingViewListener) {
         listeners.add(listener)
@@ -52,14 +56,9 @@ class TradingViewWebSocket(
 
     fun connect() {
         if (closed.get()) error("TradingViewWebSocket is closed")
-        val request =
-            Request
-                .Builder()
-                .url(url)
-                .addHeader("Origin", origin)
-                .build()
-        val webSocket = client.newWebSocket(request, InternalListener())
-        socket.set(webSocket)
+        open()
+        val checkMs = (staleAfterMs / 3).coerceAtLeast(1L)
+        scheduler.scheduleWithFixedDelay(::dropIfStale, checkMs, checkMs, TimeUnit.MILLISECONDS)
     }
 
     override fun send(
@@ -67,43 +66,58 @@ class TradingViewWebSocket(
         params: List<Any>,
     ) {
         val ws = socket.get() ?: error("TradingViewWebSocket is not connected")
-        val message =
-            TradingViewFrame.Message(
-                method = method,
-                params = paramsToJsonArray(params),
-            )
-        val framed = TradingViewFraming.encode(message.toWireJson())
-        ws.send(framed)
+        val message = TradingViewFrame.Message(method = method, params = tradingViewParams(params))
+        ws.send(TradingViewFraming.encode(message.toWireJson()))
     }
 
     override fun close() {
         if (closed.compareAndSet(false, true)) {
+            scheduler.shutdownNow()
             socket.get()?.close(1000, "client close")
         }
     }
 
-    private fun paramsToJsonArray(params: List<Any>): JsonArray =
-        buildJsonArray {
-            params.forEach { add(toJsonElement(it)) }
-        }
+    private fun open() {
+        synchronized(buffer) { buffer.setLength(0) }
+        lastFrameAtMs.set(clock.now())
+        val request =
+            Request
+                .Builder()
+                .url(url)
+                .addHeader("Origin", origin)
+                .build()
+        socket.set(client.newWebSocket(request, InternalListener()))
+    }
 
-    private fun toJsonElement(value: Any): JsonElement =
-        when (value) {
-            is String -> JsonPrimitive(value)
-            is Number -> JsonPrimitive(value)
-            is Boolean -> JsonPrimitive(value)
-            is JsonElement -> value
-            is List<*> ->
-                buildJsonArray {
-                    value.forEach { add(toJsonElement(it ?: error("null param element"))) }
-                }
-            else -> error("Unsupported parameter type: ${value::class.java.simpleName}")
-        }
-
-    private fun handleHeartbeat(seq: Int) {
+    private fun dropIfStale() {
         val ws = socket.get() ?: return
-        val response = TradingViewFraming.encode("~h~$seq~h~")
-        ws.send(response)
+        val silentMs = clock.now() - lastFrameAtMs.get()
+        if (!closed.get() && silentMs > staleAfterMs) {
+            log.warn("TradingViewWebSocket silent for {}ms; dropping it to reconnect", silentMs)
+            ws.cancel()
+        }
+    }
+
+    // One reconnect per lost connection: OkHttp reports a socket's end once, through either callback.
+    private fun lost(
+        webSocket: WebSocket,
+        reason: String,
+    ) {
+        if (socket.get() !== webSocket) return
+        listeners.forEach { runCatching { it.onDisconnected(reason) } }
+        if (closed.get()) return
+        val attempt = attempts.incrementAndGet()
+        val delay = reconnectDelayMs(attempt)
+        log.warn("TradingViewWebSocket lost ({}); reconnect attempt {} in {}ms", reason, attempt, delay)
+        runCatching {
+            scheduler.schedule({ if (!closed.get()) open() }, delay, TimeUnit.MILLISECONDS)
+        }
+    }
+
+    // TradingView checks liveness with its `~h~N` frame; a live client sends it back unchanged.
+    private fun handleHeartbeat(payload: String) {
+        val ws = socket.get() ?: return
+        ws.send(TradingViewFraming.encode(payload))
     }
 
     private inner class InternalListener : WebSocketListener() {
@@ -111,6 +125,8 @@ class TradingViewWebSocket(
             webSocket: WebSocket,
             response: Response,
         ) {
+            if (socket.get() !== webSocket) return
+            attempts.set(0)
             send("set_auth_token", listOf(authToken))
             listeners.forEach { runCatching { it.onConnected() } }
         }
@@ -119,6 +135,8 @@ class TradingViewWebSocket(
             webSocket: WebSocket,
             text: String,
         ) {
+            if (socket.get() !== webSocket) return
+            lastFrameAtMs.set(clock.now())
             synchronized(buffer) {
                 buffer.append(text)
                 val decoded = TradingViewFraming.decodeAll(buffer.toString())
@@ -140,9 +158,8 @@ class TradingViewWebSocket(
             t: Throwable,
             response: Response?,
         ) {
-            val reason = "failure: ${t.message}"
-            log.warn("TradingViewWebSocket onFailure: $reason", t)
-            listeners.forEach { runCatching { it.onDisconnected(reason) } }
+            if (!closed.get()) log.warn("TradingViewWebSocket onFailure: ${t.message}", t)
+            lost(webSocket, "failure: ${t.message}")
         }
 
         override fun onClosed(
@@ -151,15 +168,13 @@ class TradingViewWebSocket(
             reason: String,
         ) {
             log.info("TradingViewWebSocket onClosed: code=$code reason=$reason")
-            listeners.forEach { runCatching { it.onDisconnected("closed:$code:$reason") } }
+            lost(webSocket, "closed:$code:$reason")
         }
 
         private fun dispatch(payload: String) {
             try {
                 val frame = TradingViewFrame.parse(payload)
-                if (frame is TradingViewFrame.Heartbeat) {
-                    handleHeartbeat(frame.seq)
-                }
+                if (frame is TradingViewFrame.Heartbeat) handleHeartbeat(payload)
                 listeners.forEach { runCatching { it.onFrame(frame) } }
             } catch (e: TradingViewProtocolException) {
                 log.warn("Cannot parse frame: $payload", e)
@@ -176,14 +191,7 @@ class TradingViewWebSocket(
             url: String = DEFAULT_URL,
             origin: String = DEFAULT_ORIGIN,
             authToken: String = ANONYMOUS_TOKEN,
-            client: OkHttpClient = defaultClient(),
+            client: OkHttpClient = TradingViewConnection.defaultClient(),
         ): TradingViewWebSocket = TradingViewWebSocket(url, origin, authToken, client).apply { connect() }
-
-        private fun defaultClient(): OkHttpClient =
-            OkHttpClient
-                .Builder()
-                .readTimeout(0, TimeUnit.SECONDS)
-                .pingInterval(20, TimeUnit.SECONDS)
-                .build()
     }
 }

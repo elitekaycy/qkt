@@ -198,9 +198,11 @@ Monday to Friday and an MT5 export from Wednesday to the next Friday. qkt keeps 
 - `qkt data bars <SYMBOL> --tf 1h --from D --to D` prints the bars a backtest reads, as CSV: imported bars,
   bars qkt rolls up from them, or bars built from ticks. Compare them with your source's own coarser bars.
 - Every target directory has `.import.json`, recording the input files' SHA-256, the preset, the clock
-  and its evidence, and the counts. `qkt data verify <SYMBOL>` shows which days were imported, flags a
-  day that starts hours after the previous one ended, and lists weekdays neither source covered
-  (`MISSING`); a seam line also says how many weekdays lie between two sources.
+  and its evidence, and the counts. `qkt data verify <SYMBOL>` shows which days were imported and judges coverage as a
+  backtest does: a trading day with no file (`MISSING`), no data (`EMPTY`) or over 90 minutes of session time
+  without any (`GAP`) is flagged, holidays and holiday short sessions are shown
+  ([How coverage is judged](backtest-data.md#how-coverage-is-judged)); a seam line also says how many weekdays lie
+  between two sources.
 - A backtest never deletes an imported tick day to refetch it from Dukascopy, and says when its window
   mixes imported and fetched days.
 - `qkt data compare EXNESS:XAUUSD --against MT5:XAUUSD --from 2024-09-01 --to 2024-09-30` measures an

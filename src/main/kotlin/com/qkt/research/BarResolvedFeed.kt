@@ -1,6 +1,7 @@
 package com.qkt.research
 
 import com.qkt.app.IntrabarFill
+import com.qkt.backtest.NoTickBars
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.TickFeed
@@ -22,6 +23,9 @@ import java.math.BigDecimal
  *  - `ALL_TICKS` -> the full real slice (a trailing/composite order or a time-based exit could fire on
  *    a tick the extreme filter would skip).
  *
+ * A bar without real ticks opens on its synthetic open and replays its synthetic extremes, adverse-first,
+ * and the close; [noTickBars] counts such bars and marks their ticks so fills there land at their levels.
+ *
  * After the last completed bar, exact ticks through [replayEndMs] are emitted unchanged so final
  * marks and fills match full-tick replay even when the requested range ends inside a partial bar.
  */
@@ -30,10 +34,12 @@ class BarResolvedFeed(
     sliceProvider: (symbol: String, fromMs: Long, toMs: Long) -> Sequence<Tick>,
     intrabarFill: (symbol: String, low: BigDecimal, high: BigDecimal, maxHalfSpread: BigDecimal) -> IntrabarFill,
     replayEndMs: Long? = null,
+    noTickBars: NoTickBars? = null,
 ) : TickFeed {
+    private val noTickBars = noTickBars ?: NoTickBars()
     private val subs =
         perSymbolBars.entries.map { (sym, bars) ->
-            SymbolFeed(sym, bars, sliceProvider, intrabarFill, replayEndMs)
+            SymbolFeed(sym, bars, sliceProvider, intrabarFill, replayEndMs, this.noTickBars)
         }
 
     override fun next(): Tick? {

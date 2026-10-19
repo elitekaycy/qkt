@@ -34,6 +34,9 @@ FROM debian:12-slim AS runtime
 RUN useradd -r -m -s /usr/sbin/nologin qkt
 ENV JAVA_HOME=/opt/java/runtime
 ENV PATH="/opt/java/runtime/bin:/opt/qkt/bin:$PATH"
+# Without a locale Java writes stdout as ASCII and every non-ASCII character qkt prints (the arrows
+# in `qkt status --deep`, for one) comes out as '?'. C.UTF-8 ships with Debian's libc, no locales package.
+ENV LANG=C.UTF-8 LC_ALL=C.UTF-8
 # The jlink runtime carries its own cacerts, so HTTPS trust needs no OS ca-certificates.
 COPY --from=build /javaruntime $JAVA_HOME
 COPY --from=build /src/build/install/qkt /opt/qkt

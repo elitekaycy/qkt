@@ -11,6 +11,8 @@ import com.qkt.common.FixedClock
 import com.qkt.common.TradingCalendar
 import com.qkt.derivatives.options.chain.ChainAnalyticsSymbol
 import com.qkt.derivatives.options.chain.OptionRootSymbol
+import com.qkt.instrument.futuresSymbols
+import com.qkt.instrument.optionSymbols
 import com.qkt.marketdata.source.SymbolPattern
 
 /**
@@ -57,12 +59,23 @@ internal fun replayBroker(
                     partialFillModel = executionConfig.partialFillModel(),
                     positionMode = executionConfig.positionMode,
                     orderSpacingMs = executionConfig.orderSpacingMs,
-                )
+                    fillAtTriggerPrice = barFills::at,
+                ).also { books.execution.track(it.fillPrice) }
         }
     }
     val futures =
         replayFuturesRoutes(executionConfig, bus, clock, books, barFills, calendar, symbols) +
             replayOptionRoutes(bus, clock, books, calendar, symbols)
+    val readOnly = { s: String -> s.startsWith(OptionRootSymbol.PREFIX) || s.startsWith(ChainAnalyticsSymbol.PREFIX) }
+    val options = books.instruments.optionSymbols(symbols)
+    books.execution.describe(
+        executionConfig,
+        books.instruments,
+        brokerSymbols = symbols.filterNot { it in futures.symbols || it in options || readOnly(it) }.toSet(),
+        barFills = barFills,
+        futures = books.instruments.futuresSymbols(symbols),
+        options = options,
+    )
     if (futures.routes.isEmpty()) {
         return if (brokerSymbols.isEmpty()) {
             brokerFactory()
@@ -74,7 +87,6 @@ internal fun replayBroker(
         }
     }
     // Option root feeds and chain analytics are read-only streams: they never need a broker.
-    val readOnly = { s: String -> s.startsWith(OptionRootSymbol.PREFIX) || s.startsWith(ChainAnalyticsSymbol.PREFIX) }
     val others = symbols.filterNot { it in futures.symbols || readOnly(it) }
     return if (brokerSymbols.isEmpty()) {
         CompositeBroker(futures.routes, fallback = if (others.isEmpty()) null else brokerFactory(), bus = bus)

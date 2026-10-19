@@ -15,7 +15,20 @@ import java.math.BigDecimal
 internal class BracketExits(
     private val prices: ObservedPrices,
     private val clock: Clock,
+    private val tickOf: (symbol: String) -> BigDecimal?,
 ) {
+    /** [req]'s stop and target re-anchored on [fillPrice], on the symbol's price grid. */
+    fun resolveAtFill(
+        req: OrderRequest.Bracket,
+        fillPrice: BigDecimal,
+    ): OrderRequest.Bracket = resolveBracketAtFill(req, fillPrice, tickOf(req.symbol))
+
+    /** The venue stop [resolved] starts at for an entry at [entryPrice], on the symbol's price grid. */
+    fun stopAtEntry(
+        resolved: OrderRequest.Bracket,
+        entryPrice: BigDecimal,
+    ): BigDecimal = stopPriceAtEntry(resolved, entryPrice, tickOf(resolved.symbol))
+
     /**
      * Best-effort entry-price estimate for a bracket's exits. Stop/Limit/IfTouched entries carry
      * their intended trigger; a market entry falls back to the last observed price.
@@ -40,7 +53,7 @@ internal class BracketExits(
         fillPrice: BigDecimal,
         fillQuantity: BigDecimal,
     ): OrderRequest.StandaloneOCO {
-        val resolved = resolveBracketAtFill(req, fillPrice)
+        val resolved = resolveAtFill(req, fillPrice)
         // Exits must never exceed what actually filled — a venue partial booked at its
         // real volume (#615) would otherwise get exits sized to the full request.
         val exitQuantity = resolved.quantity.min(fillQuantity)

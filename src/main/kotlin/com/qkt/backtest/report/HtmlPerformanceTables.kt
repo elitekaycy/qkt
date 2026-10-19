@@ -34,12 +34,14 @@ internal object HtmlPerformanceTables {
                     if (r.totalPnL.signum() >= 0) "pos" else "neg",
                 ),
             )
-            append(card("Fills", r.tradeCount.toString(), "fills, not round trips"))
+            append(
+                card("Round trips", r.roundTrips.toString(), "closed positions, from ${r.tradeCount} fills"),
+            )
             append(
                 card(
                     "Win rate",
                     HumanFormat.percent(r.winRate),
-                    "${r.winRate.toPlainString()} of decided closing fills",
+                    "${r.roundTripsWon} won; ${r.winRate.toPlainString()} of round trips not closed at break-even",
                 ),
             )
             append(
@@ -98,14 +100,14 @@ internal object HtmlPerformanceTables {
                 "Start ${HumanFormat.money(start, currency, signed = false)} → " +
                 "end ${HumanFormat.money(end, currency, signed = false)}$ret"
         }
-        val trades = StringBuilder("${r.tradeCount} ${if (r.tradeCount == 1) "trade" else "trades"}")
+        val trades = StringBuilder("${r.roundTrips} ${if (r.roundTrips == 1) "round trip" else "round trips"}")
         if (open > 0) {
             trades.append(", $open still open (${HumanFormat.money(r.unrealizedTotal, currency)} unrealized)")
         }
         parts += trades.toString()
         parts += "worst drop ${HumanFormat.percent(r.maxDrawdown)}"
         var line = parts.joinToString(" · ")
-        if (r.tradeCount < 30) line += ". Few trades — treat win rate and ratios with suspicion."
+        if (r.roundTrips < 30) line += ". Few trades — treat win rate and ratios with suspicion."
         return line
     }
 

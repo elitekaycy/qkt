@@ -39,6 +39,11 @@ import java.time.DayOfWeek
  * [currency] is the quote/settlement currency when stated explicitly; absent, it is inferred from
  * the symbol. [derivative] carries exchange-listed terms (expiry, margin, fees) and is absent for
  * CFDs and spot.
+ *
+ * [tickSize] is the smallest price move the venue accepts (MT5 `trade_tick_size`), when it is coarser
+ * than [pointSize]: some index CFDs quote in 0.01 points but trade in 0.25 or 1.0 steps (#1455).
+ * Points stay [pointSize] wide for every points-based figure (spread, slippage, swap, stops level);
+ * only prices put on the venue's grid use [priceStep].
  */
 data class InstrumentMeta(
     val qktSymbol: String,
@@ -59,7 +64,12 @@ data class InstrumentMeta(
     val minSpreadPoints: Int? = null,
     val currency: String? = null,
     val derivative: DerivativeTerms? = null,
+    val tickSize: BigDecimal? = null,
 ) {
+    /** The grid an order or exit price must sit on: [tickSize] when it is coarser than a point, else [pointSize]. */
+    val priceStep: BigDecimal
+        get() = tickSize?.takeIf { it > pointSize } ?: pointSize
+
     init {
         require(qktSymbol.isNotBlank()) { "InstrumentMeta.qktSymbol must not be blank" }
         require(contractSize.signum() > 0) { "InstrumentMeta.contractSize must be > 0: $contractSize" }
@@ -92,6 +102,7 @@ data class InstrumentMeta(
         require(swapTripleDay.value <= DayOfWeek.FRIDAY.value) {
             "InstrumentMeta.swapTripleDay must be Monday through Friday: $swapTripleDay"
         }
+        require(tickSize == null || tickSize.signum() > 0) { "InstrumentMeta.tickSize must be > 0: $tickSize" }
         require(currency == null || CURRENCY_FORMAT.matches(currency)) {
             "InstrumentMeta.currency must be an upper-case code of 3-5 letters: '$currency'"
         }

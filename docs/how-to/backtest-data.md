@@ -50,22 +50,54 @@ What happens:
 1. The symbols are read from the strategy's `SYMBOLS` block.
 2. Any days not already cached are downloaded from Dukascopy into
    `~/.qkt/data/symbols/<SYMBOL>/<day>.csv.gz`. Days already on disk are reused.
-3. Coverage is checked **hour by hour** against the symbol's trading calendar. A missing trading
-   day — or a gap during an active session hour — is a hole.
+3. Coverage is checked against the symbol's **trading sessions** (see [How coverage is judged](#how-coverage-is-judged)).
+   A trading day with no ticks, or more than 90 minutes of session time without a tick, is a hole.
 4. On a hole, the backtest **refuses to run** and lists the gaps, rather than handing you a
    clean-looking result built on incomplete data.
 
 ```text
-qkt: error: incomplete data for XAUUSD:
-  2024-01-18  empty (empty hours 13,14,15)
-  re-run with --allow-incomplete to proceed anyway
+qkt: error: incomplete XAUUSD tick data for 2024-03-04 to 2024-03-08 (3 of 5 trading days).
+  Looked in: ~/.qkt/data/symbols/XAUUSD (day files for 2024-03-01 to 2024-03-08)
+  Missing: 2024-03-07 (1 range, 1 day): no ticks stored for these trading days.
+  Incomplete: 2024-03-05 (no ticks 08:59Z-12:00Z).
+  Or let qkt download ticks: drop --no-fetch.
+  Or import your own: qkt data import <file> --as XAUUSD
+  Or run on what exists anyway: --allow-incomplete (no prices, so no trades, across the gaps).
 ```
 
 Two flags control this:
 
 - `--no-fetch` — use only what's already cached. Still validated; still fails on holes. Use this
   for offline runs or when you've placed data manually (see Scenario 4).
-- `--allow-incomplete` — run despite holes; prints exactly which days/hours are being ignored.
+- `--allow-incomplete` — run despite holes; prints exactly which days are being ignored.
+
+### How coverage is judged
+
+The backtest's tick check, its `--bars` check and `qkt data verify` apply one rule, so they never disagree:
+
+- **Sessions, not UTC days.** Days are still named by UTC date, as the files are, but what a day must hold comes
+  from the symbol's calendar. FX and metals trade 17:00 to 17:00 New York (21:00 UTC in US summer, 22:00 in
+  winter); crypto every UTC day; US index CFDs (SPX, NDX, DJI, RUT) NYSE hours.
+- **Holidays need nothing.** The FX days ending on Dec 25, Jan 1 and Good Friday are closed (NYSE: its holidays).
+  `qkt data verify` prints `holiday`; a backtest does not ask for those days.
+- **A hole is more than 90 minutes of session time without data**, measured between stored ticks (or bars), the
+  same limit as `qkt data snapshot`'s default quality policy. Gold's hour-long daily break passes.
+- **Holiday hours are a short session, not a hole.** When a session opens late or closes early (2024-02-19,
+  Presidents' Day: gold stops before 19:00 UTC) by at most 6 hours, and the store holds data after it, the day
+  counts as covered. A backtest prints one line, `qkt: tick coverage XAUUSD 21/21 trading days (short sessions,
+  holiday hours: 2024-02-19)`; `qkt data verify` shows `short session (last tick 18:29Z)`.
+- **The last stored day ending early is a truncated fetch**, not a short session: with nothing stored after it,
+  qkt cannot tell holiday hours from a fetch that stopped, so it is a hole (`qkt data verify` shows such a first or
+  last stored day as `partial`).
+- **A whole trading session with no data is missing**, holiday or not, unless the calendar closes it
+  (2023-11-24, Black Friday, is not a closure).
+- **An empty file is no coverage.** A tick or bar day file holding nothing (a header-only `.bin` built before its
+  ticks arrived) is a missing day; `qkt data build-bars` rebuilds such days once their ticks exist.
+- A symbol whose hours qkt does not know (a stock such as `IBM`, a futures root such as `ES`: anything that is not
+  a currency or metal pair falls back to the FX week) is judged by UTC weekdays: each needs data, and only gaps
+  between stored data count, since its opening hours are unknown.
+
+Live session gating is not affected: holidays only change what the data checks require.
 
 ### What Dukascopy covers
 
@@ -442,7 +474,7 @@ CSV can coexist and you can convert incrementally.
 Check integrity at any time:
 
 ```bash
-qkt data verify XAUUSD     # reports tick counts, max gap, and flags EMPTY/CORRUPT/GAP/MISSING days
+qkt data verify XAUUSD     # tick counts, max gap; flags EMPTY/CORRUPT/GAP/MISSING days, shows holidays and short sessions
 ```
 
 ## Scenario 4 — Place your own tick data manually
@@ -534,9 +566,13 @@ instruments:
     swapShortPoints: 14.1   # optional — signed points per short lot per rollover
     swapRolloverHourUtc: 21 # optional — 0..23, default 21
     swapTripleDay: WEDNESDAY # optional — Monday..Friday, default Wednesday
+    tickSize: 0.25          # optional — smallest price step the venue accepts, when coarser than pointSize
 ```
 
 A symbol present in the file wins; anything omitted falls back to the built-in specs.
+`tickSize` (MT5 `trade_tick_size`) only matters where a venue trades in steps coarser than its point,
+as some index CFDs do: bracket levels and MT5 order prices go on that grid, while spread, slippage,
+swap and stops-level figures stay in points.
 Positive swap points credit PnL and negative points debit it. The configured triple-day
 rollover is multiplied by three and weekend rollovers are skipped. Refresh these values
 from the broker before a cost-sensitive run because broker schedules can change.
@@ -591,7 +627,7 @@ Read precedence for a tick day: `.bin` → `.csv.gz` → `.csv`.
 
 | Symptom | Cause / fix |
 |---|---|
-| `incomplete data for <SYM>: … re-run with --allow-incomplete` | Real or session-hour gap. Let it fetch, or accept gaps with `--allow-incomplete`. |
+| `incomplete <SYM> tick data for …` | A trading day with no ticks (`Missing`) or over 90 minutes of session time without one (`Incomplete`). Let it fetch, import the days, or accept the gaps with `--allow-incomplete`. Holidays and holiday short sessions never cause it. |
 | `dukascopy fetch failed: HTTP 503` | Dukascopy throttling a month-block. Retry later, or fetch in smaller ranges. |
 | `no dukascopy mapping for <SYM>` | Symbol isn't in `DukascopyInstrument`. Use a mapped symbol, place data manually, or add the mapping. |
 | `unexpected header at …` | A manual tick CSV's header doesn't match exactly. Use the header in File formats above. |

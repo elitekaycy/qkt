@@ -10,6 +10,10 @@ import java.time.ZoneId
  * 17:00, and each FX day runs from one 17:00 New York to the next. In UTC that is 21:00 during US daylight
  * saving and 22:00 otherwise, matching brokers that run on New York-close server time (a summer EURUSD
  * week's last tick is Friday 20:59:59 UTC). A day spanning a daylight-saving change is 23 or 25 hours.
+ *
+ * The FX days closing on Dec 25, Jan 1 and Good Friday are full closures for metals and most FX venues
+ * ([isClosedSession]); e.g. the Good Friday 2024 day runs 2024-03-28 21:00 UTC to 2024-03-29 21:00 UTC. They
+ * stay in session for live gating ([isInSession] is the plain 24x5 week), and data coverage does not require them.
  */
 object FxCalendar : TradingCalendar {
     override val name: String = "fx"
@@ -44,6 +48,16 @@ object FxCalendar : TradingCalendar {
             DayOfWeek.FRIDAY -> beforeClose
             else -> true
         }
+    }
+
+    override fun isClosedSession(
+        symbol: String,
+        session: TimeRange,
+    ): Boolean {
+        val day = session.to.atZone(NEW_YORK).toLocalDate()
+        return (day.monthValue == 12 && day.dayOfMonth == 25) ||
+            (day.monthValue == 1 && day.dayOfMonth == 1) ||
+            day == WesternEaster.goodFriday(day.year)
     }
 
     override fun sessionRange(

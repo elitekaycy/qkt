@@ -22,6 +22,7 @@ internal class StackLayerExits(
     private val clock: Clock,
     private val ops: OrderOps,
     private val closeTicketFor: ((String, String) -> String?)?,
+    private val tickOf: (symbol: String) -> BigDecimal?,
 ) {
     /**
      * Attach a filled stack layer's fixed SL/TP to its venue position, so the broker closes that
@@ -51,12 +52,19 @@ internal class StackLayerExits(
         }
         val slPrice =
             state.outerBracket?.stopLoss?.let {
-                computeChildPrice(it, parent.side, fillPrice, isStopLoss = true)
+                computeChildPrice(it, parent.side, fillPrice, isStopLoss = true, tick = tickOf(parent.symbol))
             }
         val slDistance = slPrice?.let { (fillPrice - it).abs() }
         val tpPrice =
             state.outerBracket?.takeProfit?.let {
-                computeChildPrice(it, parent.side, fillPrice, isStopLoss = false, slDistance = slDistance)
+                computeChildPrice(
+                    it,
+                    parent.side,
+                    fillPrice,
+                    isStopLoss = false,
+                    tick = tickOf(parent.symbol),
+                    slDistance = slDistance,
+                )
             }
         if (slPrice == null && tpPrice == null) return
         venueProtection.attachStackLayer(
@@ -81,7 +89,7 @@ internal class StackLayerExits(
         val slAst = state.outerBracket?.stopLoss ?: return null
         val parent = (book[stackId]?.request as? OrderRequest.Stack) ?: return null
         val exitSide = if (parent.side == Side.BUY) Side.SELL else Side.BUY
-        val slPrice = computeChildPrice(slAst, parent.side, fillPrice, isStopLoss = true)
+        val slPrice = computeChildPrice(slAst, parent.side, fillPrice, isStopLoss = true, tick = tickOf(parent.symbol))
         val layerEntry = book[layerOrderId] ?: return null
         val slId = "$layerOrderId-sl"
         val slReq =
@@ -130,7 +138,15 @@ internal class StackLayerExits(
         val state = stacks.get(stackId) ?: return false
         val tpAst = state.outerBracket?.takeProfit ?: return false
         val parent = (book[stackId]?.request as? OrderRequest.Stack) ?: return false
-        val tpPrice = computeChildPrice(tpAst, parent.side, fillPrice, isStopLoss = false, slDistance = slDistance)
+        val tpPrice =
+            computeChildPrice(
+                tpAst,
+                parent.side,
+                fillPrice,
+                isStopLoss = false,
+                tick = tickOf(parent.symbol),
+                slDistance = slDistance,
+            )
         val tpId = "$layerOrderId-tp"
         val exitSide = if (parent.side == Side.BUY) Side.SELL else Side.BUY
         val layerEntry = book[layerOrderId] ?: return false

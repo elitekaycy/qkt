@@ -24,6 +24,7 @@ object ReportBuilder {
         swapPaid: BigDecimal = BigDecimal.ZERO,
         dailyAdjustments: Map<java.time.LocalDate, BigDecimal> = emptyMap(),
         tradedNotional: BigDecimal = BigDecimal.ZERO,
+        roundTrips: List<TradeOutcome> = tradeOutcomes(trades),
     ): PerformanceReport =
         build(
             trades,
@@ -36,6 +37,7 @@ object ReportBuilder {
             swapPaid,
             dailyAdjustments,
             tradedNotional,
+            roundTrips,
         )
 
     fun buildPerStrategy(
@@ -63,6 +65,7 @@ object ReportBuilder {
             swapPaid,
             dailyAdjustments,
             tradedNotional,
+            tradeOutcomes(trades),
         )
     }
 
@@ -70,7 +73,8 @@ object ReportBuilder {
      * Build a report. Curve-derived metrics (drawdown, Sharpe, drawdown periods, starting equity)
      * come from [metrics] when supplied — the live path, where [equityCurve] is a thinned chart view
      * and recomputing from it would be wrong. When [metrics] is null they fall back to a one-pass
-     * computation over [equityCurve] itself.
+     * computation over [equityCurve] itself. Trade statistics come from [roundTrips], one per position
+     * (#1452); a sub-window passes the whole run's round trips that closed inside it.
      */
     private fun build(
         trades: List<TradeRecord>,
@@ -82,9 +86,10 @@ object ReportBuilder {
         commissionPaid: BigDecimal,
         swapPaid: BigDecimal,
         dailyAdjustments: Map<java.time.LocalDate, BigDecimal>,
-        tradedNotional: BigDecimal = BigDecimal.ZERO,
+        tradedNotional: BigDecimal,
+        roundTrips: List<TradeOutcome>,
     ): PerformanceReport {
-        val closingRealizeds = tradeOutcomes(trades)
+        val closingRealizeds = roundTrips.map { it.pnl }
         val outcomes = closingRealizeds.filter { it.signum() != 0 }
         val wins = outcomes.count { it.signum() > 0 }
         val winRate =
@@ -157,6 +162,9 @@ object ReportBuilder {
             unrealizedTotal = finalUnrealized.setScale(Money.SCALE, Money.ROUNDING),
             totalPnL = finalRealized.add(finalUnrealized).setScale(Money.SCALE, Money.ROUNDING),
             tradeCount = trades.size,
+            roundTrips = closingRealizeds.size,
+            roundTripsWon = wins,
+            roundTripsBreakEven = closingRealizeds.size - outcomes.size,
             winRate = winRate,
             maxDrawdown = drawdown,
             profitFactor = pf,

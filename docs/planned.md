@@ -28,8 +28,8 @@ Tracked in `docs/backlog.md`. Heavier scope; multiple sub-tasks.
 | Feature | What you'll get | Workaround today |
 | --- | --- | --- |
 | ~~`qkt fetch <SYMBOL> --from --to` CLI~~ | shipped — `qkt fetch BROKER:SYMBOL --tf <tf> --from … --to …` ([#124](https://github.com/elitekaycy/qkt/issues/124)) | — |
-| `qkt sweep` CLI | Parameter grid-search wrapper around the existing `BacktestSweep` Kotlin harness | The harness exists today — use it programmatically (see `src/main/kotlin/com/qkt/backtest/sweep/`) |
-| `qkt walkforward` CLI | Walk-forward validation wrapper | `BacktestSweep` + rolling time-windows manually |
+| ~~`qkt sweep` CLI~~ | shipped — `qkt sweep <file> --param NAME=v1,v2 --rank sharpe` ([CLI commands](reference/cli-commands.md)) | — |
+| ~~`qkt walkforward` CLI~~ | shipped — `qkt walkforward <file> --param … --train 60d --test 14d --step 14d` ([CLI commands](reference/cli-commands.md)) | — |
 | ~~`TRAILING_STOP BY <amount>` wiring~~ | shipped — `BUY <stream> ORDER_TYPE = TRAILING BY <distance>` ([#126](https://github.com/elitekaycy/qkt/issues/126)) | — |
 | ~~VWAP DSL registration~~ | shipped — `vwap(<stream>.tick, <period>)` ([#128](https://github.com/elitekaycy/qkt/issues/128)) | — |
 | ~~`per_strategy:` risk-config block~~ | shipped — `risk.per_strategy.<name>.{max_daily_loss, max_position_size, max_open_positions}` ([#127](https://github.com/elitekaycy/qkt/issues/127)) | — |

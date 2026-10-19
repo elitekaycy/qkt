@@ -62,7 +62,25 @@ data class ExecutionEvidence(
     val financingModel: String? = null,
     val ocoMode: String? = null,
     val warning: String? = null,
+    /** Tick-resolved `--bars` symbols with fill-possible bars the store had no ticks for (#1439). */
+    val barsWithoutTicks: List<BarsWithoutTicks> = emptyList(),
 )
+
+/**
+ * One symbol's tick-resolved bars without ticks: [withoutTicks] of its [fillPossible] fill-possible bars
+ * had none, so orders on them filled at their levels (bar fills); [allWithoutTicks] counts every such bar.
+ */
+data class BarsWithoutTicks(
+    val symbol: String,
+    val withoutTicks: Int,
+    val fillPossible: Int,
+    val allWithoutTicks: Int,
+) {
+    /** The run's one-line note, e.g. `EURUSD: 12 of 340 fill-possible bars had no ticks; ...`. */
+    fun summary(): String =
+        "$symbol: $withoutTicks of $fillPossible fill-possible bars had no ticks; " +
+            "orders on them filled at their levels (bar fills), not from ticks"
+}
 
 data class ExperimentEvidence(
     val id: String? = null,
