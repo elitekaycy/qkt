@@ -187,11 +187,15 @@ the order itself and every request is a new close, so a retry may close twice.
 
 ### `GET /v1/deals?from=<ms>&to=<ms>` and `GET /v1/deals?client_order_id=<id>`
 `{"deals": [<Fill>]}`, oldest first (§4 `fill`): the executions in the window, or every execution of
-one order (complete for as long as the gateway keeps the order).
+one order (complete for as long as the gateway keeps the order). `from` is required; `to` defaults
+to the gateway's time when it is left out, so `?from=<ms>` reads everything since then. A missing
+`from`, or either bound not a number, is `400 invalid_request` naming it (`from must be epoch
+milliseconds`).
 
 ### `GET /v1/settlements?from=<ms>&to=<ms>` and `GET /v1/settlements?symbol=<code>`
 `{"settlements": [<Settlement>]}`, oldest first (§4 `settlement`): the settlements in the window, or
-the settlement of one contract (empty until it expires). A client reconciling after an outage reads
+the settlement of one contract (empty until it expires). The window's bounds follow `/v1/deals`:
+`from` required, `to` defaulting to the gateway's time. A client reconciling after an outage reads
 the ones it missed here; for contracts its strategies still hold, it asks by symbol.
 
 ### `GET /v1/funding?from=<ms>&to=<ms>`
