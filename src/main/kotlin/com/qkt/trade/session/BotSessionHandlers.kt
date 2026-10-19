@@ -30,12 +30,18 @@ internal class BotSessionHandlers(
         """{"ok":true,"api":2,"run":"${session.runId}","simNowMs":${session.simNowMs()},""" +
             """"equity":${session.equity()?.toPlainString() ?: "null"},""" +
             """"identities":[${session.identities().sorted().joinToString(",") { "\"$it\"" }}],""" +
+            """"symbols":[${session.streams.symbols.joinToString(",") { "\"$it\"" }}],""" +
             """"finished":$finished}"""
 
     fun next(symbol: String): String {
         val bar = session.next(symbol)
         journalRead("next", symbol, listOfNotNull(bar))
-        return if (bar == null) """{"ok":true,"type":"end"}""" else barJson(bar)
+        val events = session.events().joinToString(",", "[", "]") { eventJson(it) }
+        return if (bar == null) {
+            """{"ok":true,"type":"end","events":$events}"""
+        } else {
+            barJson(bar).dropLast(1) + ""","events":$events}"""
+        }
     }
 
     fun bars(
@@ -54,9 +60,20 @@ internal class BotSessionHandlers(
             """"ask":${(t.ask ?: t.price).toPlainString()},"timeMs":${t.timestamp}}"""
     }
 
-    fun positions(): String =
-        session.positions().entries.joinToString(",", "[", "]") { (symbol, p) ->
-            """{"symbol":"$symbol","qty":${p.quantity.toPlainString()}}"""
+    /** Net per symbol (`symbol`, `qty`, as before), with each identity's open legs under `legs`. */
+    fun positions(): String {
+        val legs = session.legs().groupBy { it.symbol }
+        return session.positions().entries.joinToString(",", "[", "]") { (symbol, p) ->
+            val rows = legs[symbol].orEmpty().joinToString(",", "[", "]") { legJson(it) }
+            """{"symbol":"$symbol","qty":${p.quantity.toPlainString()},"legs":$rows}"""
+        }
+    }
+
+    fun intents(): String = session.fates().joinToString(",", "[", "]") { fateJson(it) }
+
+    fun orders(): String =
+        session.workingOrders().joinToString(",", "[", "]") {
+            """{"intentId":"${it.intentId}","identity":"${it.identity}","orderId":"${it.orderId}"}"""
         }
 
     /**

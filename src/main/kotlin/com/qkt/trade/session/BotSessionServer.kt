@@ -80,6 +80,8 @@ class BotSessionServer(
                         query(ex).let { q -> handlers.bars(q.require("symbol"), q["count"]?.toIntOrNull() ?: 100) }
                     method == "GET" && path == "/quote" -> handlers.quote(query(ex).require("symbol"))
                     method == "GET" && path == "/positions" -> handlers.positions()
+                    method == "GET" && path == "/intents" -> handlers.intents()
+                    method == "GET" && path == "/orders" -> handlers.orders()
                     method == "POST" && path == "/intent" ->
                         body(ex).let { b -> handlers.intent(field(b, "identity"), field(b, "source")) }
                     method == "POST" && path == "/finish" -> handlers.finish()

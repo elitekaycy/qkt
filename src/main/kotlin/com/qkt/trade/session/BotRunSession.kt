@@ -30,6 +30,9 @@ class BotRunSession(
         java.util.concurrent.atomic
             .AtomicLong()
 
+    // Every identity of a session shares one ledger (BotSessionIdentities.compile passes it to each).
+    private val ledger: IntentLedger = bridges.values.firstOrNull()?.ledger ?: IntentLedger()
+
     /**
      * Returns the next closed bar for [symbol], or null when no further bar can
      * arrive (backtest window exhausted / live session stopped). In backtest the
@@ -85,11 +88,16 @@ class BotRunSession(
     ) = identity(identity).submitSignal(signal)
 
     /** Every intent's latest fate, in arrival order across identities. */
-    fun fates(): List<IntentFate> =
-        bridges.values
-            .flatMap {
-                it.fates()
-            }.sortedBy { it.intentId.removePrefix("int-").toLong() }
+    fun fates(): List<IntentFate> = ledger.fates()
+
+    /** What happened to the session's orders since the previous call. */
+    fun events(): List<SessionEvent> = ledger.drain()
+
+    /** Entry orders intents placed that are still working. */
+    fun workingOrders(): List<WorkingIntentOrder> = ledger.working()
+
+    /** Every identity's open legs. */
+    fun legs(): List<SessionLeg> = bridges.values.flatMap { it.legs() }
 
     private fun identity(identity: String): BotIntentStrategy =
         requireNotNull(bridges[identity]) {

@@ -25,7 +25,7 @@ class BotCommand(
         // Live sessions route decisions and bar pulls through the pipeline, but
         // account/positions stay venue truth (they include manual/off-session state).
         val session =
-            resolved?.takeUnless { it.mode == "live" && verb in setOf("positions", "account") }
+            resolved?.takeUnless { it.mode == "live" && verb in setOf("positions", "account", "orders") }
         if (session != null) {
             return botRun(sub.flag("json")) {
                 when (verb) {
@@ -36,13 +36,20 @@ class BotCommand(
                     "bars" -> BotSessionVerbs.bars(session, sub)
                     "positions" -> BotSessionVerbs.positions(session)
                     "account" -> BotSessionVerbs.account(session)
+                    "close" -> BotSessionVerbs.close(session, sub)
+                    "cancel" -> BotSessionVerbs.cancel(session, sub)
+                    "submit" -> BotSessionVerbs.submit(session, sub)
+                    "modify" -> BotSessionVerbs.refuseModify()
+                    "orders" -> BotSessionVerbs.get(session, "/orders")
+                    "intents" -> BotSessionVerbs.get(session, "/intents")
                     else -> error("verb '$verb' is not session-routable")
                 }
             }
         }
         return when (verb) {
             "session" -> BotSessionCommand(sub).run()
-            "next" -> botFail(sub.flag("json"), "bot next needs a running session (qkt bot session start)")
+            "next", "intents", "submit" ->
+                botFail(sub.flag("json"), "bot $verb needs a running session (qkt bot session start)")
             "buy" -> BotTradeCommand(sub, Side.BUY).run()
             "sell" -> BotTradeCommand(sub, Side.SELL).run()
             "close" -> BotCloseCommand(sub).run()
@@ -103,7 +110,21 @@ class BotCommand(
 
     private companion object {
         private val SESSION_VERBS =
-            setOf("buy", "sell", "next", "quote", "bars", "positions", "account")
+            setOf(
+                "buy",
+                "sell",
+                "next",
+                "quote",
+                "bars",
+                "positions",
+                "account",
+                "close",
+                "cancel",
+                "submit",
+                "modify",
+                "orders",
+                "intents",
+            )
     }
 }
 

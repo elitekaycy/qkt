@@ -158,6 +158,7 @@ internal fun parseBotIntent(
         tp = args.option("tp")?.let { ExitSpec.parse(it, allowRr = true) },
         tif = tif,
         expiresAtMs = expires,
+        exitAfter = args.option("exit-after"),
     )
 }
 

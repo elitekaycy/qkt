@@ -7,11 +7,11 @@ import com.qkt.dsl.compile.AstCompiler
 import com.qkt.dsl.compile.DslCompiledStrategy
 import com.qkt.dsl.parse.Dsl
 import com.qkt.dsl.parse.ParseResult
+import com.qkt.execution.OrderRequest
 import com.qkt.marketdata.Tick
 import com.qkt.strategy.Signal
 import com.qkt.strategy.StrategyContext
 import java.util.concurrent.ConcurrentLinkedQueue
-import java.util.concurrent.CopyOnWriteArrayList
 
 /** What became of one intent so far. */
 data class IntentFate(
@@ -33,12 +33,15 @@ data class IntentFate(
 class BotIntentStrategy(
     val identity: String,
     private val inner: DslCompiledStrategy,
+    internal val ledger: IntentLedger = IntentLedger(),
 ) : DslCompiledStrategy by inner,
     com.qkt.strategy.PerStreamWarmable {
     private val actions: AdHocActions = requireNotNull(inner.adHoc) { "strategy has no ad-hoc actions" }
     private val queue = ConcurrentLinkedQueue<Pair<String, ActionAst>>()
     private val signals = ConcurrentLinkedQueue<Signal>()
-    private val fateLog = CopyOnWriteArrayList<IntentFate>()
+    private val sentBy = java.util.IdentityHashMap<Signal, String>()
+
+    @Volatile private var lastContext: StrategyContext? = null
 
     override val perStreamWarmup: Map<com.qkt.strategy.WarmupStream, com.qkt.strategy.WarmupSpec>
         get() = (inner as? com.qkt.strategy.PerStreamWarmable)?.perStreamWarmup ?: emptyMap()
@@ -49,7 +52,7 @@ class BotIntentStrategy(
         action: ActionAst,
     ) {
         actions.validate(action)
-        fateLog += IntentFate(intentId, identity, "queued")
+        ledger.fate(IntentFate(intentId, identity, "queued"))
         queue.add(intentId to action)
     }
 
@@ -58,19 +61,49 @@ class BotIntentStrategy(
         signals.add(signal)
     }
 
-    /** Every intent's latest fate, in arrival order. */
-    fun fates(): List<IntentFate> = fateLog.groupBy { it.intentId }.map { (_, history) -> history.last() }
+    /** This identity's open legs as of the last tick it saw. */
+    fun legs(): List<SessionLeg> {
+        val positions = lastContext?.positions ?: return emptyList()
+        return positions.allPositions().keys.flatMap { symbol ->
+            positions.legsFor(symbol).map {
+                SessionLeg(identity, symbol, it.side.name, it.quantity, it.entryPrice, it.brokerTicket, it.legId)
+            }
+        }
+    }
+
+    override fun onOrderSubmitted(
+        signal: Signal,
+        clientOrderId: String,
+    ): com.qkt.dsl.compile.DecisionOrderLink? {
+        synchronized(sentBy) { sentBy.remove(signal) }?.let { intentId ->
+            // A bracket's entry and exit pair are named after the request; link every id it places.
+            val request = (signal as? Signal.Submit)?.request
+            val ids = listOfNotNull(clientOrderId, request?.id, (request as? OrderRequest.Bracket)?.entry?.id)
+            ids.distinct().forEach { ledger.link(intentId, it) }
+        }
+        return inner.onOrderSubmitted(signal, clientOrderId)
+    }
+
+    override fun onOrderOutcome(outcome: com.qkt.strategy.OrderOutcome) {
+        ledger.outcome(identity, outcome)
+        inner.onOrderOutcome(outcome)
+    }
 
     override fun onTick(
         tick: Tick,
         ctx: StrategyContext,
         emit: (Signal) -> Unit,
     ) {
+        lastContext = ctx
         inner.onTick(tick, ctx, emit)
         while (true) emit(signals.poll() ?: break)
         while (true) {
             val (intentId, action) = queue.poll() ?: return
-            fateLog += fire(intentId, action, ctx, emit)
+            val tagged: (Signal) -> Unit = { sig ->
+                synchronized(sentBy) { sentBy[sig] = intentId }
+                emit(sig)
+            }
+            ledger.fate(fire(intentId, action, ctx, tagged))
         }
     }
 
@@ -118,6 +151,7 @@ object BotSessionIdentities {
     fun compile(
         streams: BotSessionStreams,
         identities: List<String>,
+        ledger: IntentLedger = IntentLedger(),
     ): Map<String, BotIntentStrategy> =
         identities.withIndex().associate { (i, identity) ->
             val ast =
@@ -128,6 +162,17 @@ object BotSessionIdentities {
                             "session streams failed to parse: ${parsed.errors.joinToString { it.message }}",
                         )
                 }
-            identity to BotIntentStrategy(identity, AstCompiler().compile(ast) as DslCompiledStrategy)
+            identity to BotIntentStrategy(identity, AstCompiler().compile(ast) as DslCompiledStrategy, ledger)
         }
 }
+
+/** One open leg of a session identity. */
+data class SessionLeg(
+    val identity: String,
+    val symbol: String,
+    val side: String,
+    val quantity: java.math.BigDecimal,
+    val entry: java.math.BigDecimal,
+    val ticket: String?,
+    val legId: String,
+)

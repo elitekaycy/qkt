@@ -1,67 +1,12 @@
 package com.qkt.trade.session
 
-import com.qkt.backtest.Backtest
-import com.qkt.backtest.BacktestResult
 import com.qkt.common.Side
-import com.qkt.marketdata.Tick
-import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 
 /** Session intents run as DSL actions inside the engine: brackets, closes, timed exits, sizing. */
-class BotIntentSessionTest {
-    private val gold = "EXNESS:XAUUSD"
-
-    private val goldSpec =
-        object : com.qkt.instrument.InstrumentRegistry {
-            override fun lookup(qktSymbol: String) =
-                com.qkt.instrument.InstrumentMeta(
-                    qktSymbol = qktSymbol,
-                    contractSize = BigDecimal("100"),
-                    volumeStep = BigDecimal("0.01"),
-                    volumeMin = BigDecimal("0.01"),
-                    volumeMax = null,
-                    pointSize = BigDecimal("0.01"),
-                    digits = 2,
-                    tradeStopsLevelPoints = 0,
-                )
-        }
-
-    /** One tick at +1 s and one at +30 s of each 1m bar, at [prices] (one per bar). */
-    private fun ticks(prices: List<Int>): List<Tick> =
-        prices.flatMapIndexed { bar, p ->
-            val base = bar * 60_000L
-            listOf(Tick(gold, BigDecimal(p), base + 1_000L), Tick(gold, BigDecimal(p), base + 30_000L))
-        }
-
-    private fun session(
-        prices: List<Int>,
-        identities: List<String> = listOf("brain"),
-    ): BotRunSession {
-        val streams = BotSessionStreams(listOf(gold), listOf("1m"))
-        val history = BarHistory(capacity = 100)
-        val recorder = BotSessionRecorder(history)
-        val strategies = BotSessionIdentities.compile(streams, identities)
-        val engine =
-            Backtest(
-                strategies = strategies.map { (id, s) -> id to s } + (BotSessionRecorder.ID to recorder),
-                ticks = ticks(prices),
-                candleWindow = streams.baseWindow,
-                startingBalance = BigDecimal("10000"),
-                instruments = goldSpec,
-            ).toEngine()
-        return BotRunSession("t", ReplayBotRunBackend(engine), strategies, streams, history, recorder)
-    }
-
-    private fun intent(action: String) =
-        "STRATEGY bot VERSION 1\n\nSYMBOLS\n    x = $gold EVERY 1m\n\nRULES\n    WHEN true\n    THEN $action\n"
-
-    private fun BotRunSession.drain(): BacktestResult {
-        while (next(gold) != null) Unit
-        return finish()!!
-    }
-
+class BotIntentSessionTest : IntentSessionFixture() {
     @Test
     fun `buy with bracket opens and the stop closes it`() {
         val s = session(listOf(2400, 2401, 2402, 2390, 2390, 2390))
@@ -112,7 +57,7 @@ class BotIntentSessionTest {
         s.submit("brain", intent("BUY x SIZING 50 PCT OF EQUITY"))
 
         val result = s.drain()
-        assertThat(s.fates().single().state).withFailMessage("%s", s.fates()).isEqualTo("fired")
+        assertThat(s.fates().single().state).withFailMessage("%s", s.fates()).isEqualTo("filled")
         assertThat(result.rejections).withFailMessage("%s", result.rejections).isEmpty()
         val buy = result.trades.first()
 
@@ -146,7 +91,7 @@ class BotIntentSessionTest {
             },
         ).containsExactly("0.1", "0.2")
         assertThat(trades[0].trade.timestamp).isEqualTo(trades[1].trade.timestamp)
-        assertThat(s.fates().map { it.state }).containsOnly("fired")
+        assertThat(s.fates().map { it.state }).containsOnly("filled")
     }
 
     @Test

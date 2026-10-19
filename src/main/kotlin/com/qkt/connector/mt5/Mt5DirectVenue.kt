@@ -105,23 +105,7 @@ class Mt5DirectVenue(
             )
         }
 
-    override fun positions(): List<DirectPosition>? =
-        client.getPositions()?.map {
-            DirectPosition(
-                ticket = it.ticket.toString(),
-                symbol = it.symbol,
-                side = if (it.type == 0) "BUY" else "SELL",
-                lots = it.volume,
-                entry = it.priceOpen,
-                current = it.priceCurrent,
-                sl = it.sl,
-                tp = it.tp,
-                profit = it.profit,
-                swap = it.swap,
-                openedAtMs = it.openTime,
-                comment = it.comment,
-            )
-        }
+    override fun positions(): List<DirectPosition>? = client.getPositions()?.map { it.toDirect() }
 
     override fun pendingOrders(): List<DirectPendingOrder>? =
         client.getPendingOrders()?.map {
@@ -140,24 +124,7 @@ class Mt5DirectVenue(
     override fun deals(
         fromMs: Long,
         toMs: Long,
-    ): List<DirectDeal>? =
-        client.getDeals(fromMs, toMs)?.map {
-            DirectDeal(
-                dealTicket = it.ticket.toString(),
-                positionTicket = it.positionTicket.toString(),
-                symbol = it.symbol,
-                side = if (it.type == 0) "BUY" else "SELL",
-                entry = if (it.entry == 0) "IN" else "OUT",
-                lots = it.volume,
-                price = it.price,
-                profit = it.profit,
-                commission = it.commission,
-                swap = it.swap,
-                fee = it.fee,
-                timeMs = it.timeMs,
-                comment = it.comment,
-            )
-        }
+    ): List<DirectDeal>? = client.getDeals(fromMs, toMs)?.map { it.toDirect() }
 
     override fun tick(qktSymbol: String): DirectTick? =
         client.getTick(venueSymbol(qktSymbol))?.let { DirectTick(it.bid, it.ask, it.timeMs) }
