@@ -118,7 +118,7 @@ class GatewayClient(
     /** `DELETE /v1/orders/{id}`: the order as it ended, `filled` when the fill won the race. */
     fun cancel(clientOrderId: String): WireOrder = write("/v1/orders/$clientOrderId") { it.delete() }
 
-    private fun write(
+    internal fun write(
         path: String,
         method: (Request.Builder) -> Request.Builder,
     ): WireOrder {
@@ -172,7 +172,7 @@ class GatewayClient(
         text: String,
     ): GatewayException = errorOf(status, text).let { GatewayException(status, it.code, it.message) }
 
-    private companion object {
+    internal companion object {
         val JSON = "application/json".toMediaType()
     }
 }

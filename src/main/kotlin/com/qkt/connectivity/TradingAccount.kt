@@ -62,6 +62,16 @@ interface TradingAccount : AutoCloseable {
     /** The venue's order-book snapshots of its contracts, or null when the connector cannot read them. */
     val bookDepth: com.qkt.marketdata.depth.BookDepthSource? get() = null
 
+    /**
+     * The venue spoken to directly, one request at a time, for `qkt bot` one-shot commands. Throws for a
+     * connector that cannot place an order outside an engine.
+     */
+    fun directVenue(): DirectVenue =
+        throw UnsupportedOperationException(
+            "brokers.${config.name} (type ${config.type}) cannot be driven one-shot; run a session " +
+                "(qkt bot session start) or deploy a strategy",
+        )
+
     /** Releases the connections and files this account holds. Idempotent. */
     override fun close()
 }

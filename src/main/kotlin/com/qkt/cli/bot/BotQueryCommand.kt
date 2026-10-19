@@ -4,7 +4,9 @@ import com.qkt.candles.TimeWindow
 import com.qkt.cli.Args
 import com.qkt.cli.ExitCodes
 import com.qkt.common.SystemClock
-import com.qkt.trade.BotGateway
+import com.qkt.connectivity.DirectVenue
+import com.qkt.trade.venue.BotVenues
+import com.qkt.trade.venue.idJson
 import java.time.Instant
 
 /**
@@ -32,19 +34,24 @@ class BotQueryCommand(
         }
     }
 
-    private fun gateway(symbol: String?): BotGateway {
+    private fun <T> venue(
+        symbol: String?,
+        read: (DirectVenue) -> T,
+    ): T {
         val cfg = botConfig(args)
-        return if (symbol !=
-            null
-        ) {
-            BotGateway.forSymbol(cfg, symbol)
-        } else {
-            BotGateway.forBroker(cfg, args.option("broker"))
-        }
+        val opened =
+            if (symbol !=
+                null
+            ) {
+                BotVenues.forSymbol(cfg, symbol)
+            } else {
+                BotVenues.forBroker(cfg, args.option("broker"))
+            }
+        return opened.use { read(it.venue) }
     }
 
     private fun account(json: Boolean): Int {
-        val a = gateway(null).account() ?: error("venue account read failed")
+        val a = venue(null) { it.account() } ?: error("venue account read failed")
         val doc =
             jsonObj(
                 "ok" to true,
@@ -52,19 +59,19 @@ class BotQueryCommand(
                 "balance" to a.balance,
                 "currency" to a.currency,
                 "margin" to a.margin,
-                "freeMargin" to a.marginFree,
+                "freeMargin" to a.freeMargin,
                 "marginLevel" to a.marginLevel,
-                "openProfit" to a.profit,
+                "openProfit" to a.openProfit,
                 "leverage" to a.leverage,
-                "login" to a.login,
+                "login" to idJson(a.login),
                 "server" to a.server,
-                "hedging" to a.isHedging,
+                "hedging" to a.hedging,
             )
         if (json) {
             println(doc)
         } else {
             println(
-                "equity=${a.equity} balance=${a.balance} ${a.currency} margin=${a.margin ?: "-"} free=${a.marginFree ?: "-"} level=${a.marginLevel ?: "-"} leverage=1:${a.leverage} (${a.server} #${a.login})",
+                "equity=${a.equity} balance=${a.balance} ${a.currency} margin=${a.margin ?: "-"} free=${a.freeMargin ?: "-"} level=${a.marginLevel ?: "-"} leverage=1:${a.leverage} (${a.server} #${a.login})",
             )
         }
         return ExitCodes.SUCCESS
@@ -72,23 +79,25 @@ class BotQueryCommand(
 
     private fun positions(json: Boolean): Int {
         val symbol = args.positional(0)
-        val gw = gateway(symbol)
-        val all = gw.positions() ?: error("venue positions read failed")
-        val rows = if (symbol != null) all.filter { it.symbol == gw.brokerSymbol(symbol) } else all
+        val rows =
+            venue(symbol) { v ->
+                val all = v.positions() ?: error("venue positions read failed")
+                if (symbol != null) all.filter { it.symbol == v.venueSymbol(symbol) } else all
+            }
         val docs =
             rows.map {
                 jsonObj(
-                    "ticket" to it.ticket,
+                    "ticket" to idJson(it.ticket),
                     "symbol" to it.symbol,
-                    "side" to if (it.type == 0) "BUY" else "SELL",
-                    "lots" to it.volume,
-                    "entry" to it.priceOpen,
-                    "current" to it.priceCurrent,
+                    "side" to it.side,
+                    "lots" to it.lots,
+                    "entry" to it.entry,
+                    "current" to it.current,
                     "sl" to it.sl,
                     "tp" to it.tp,
                     "profit" to it.profit,
                     "swap" to it.swap,
-                    "openedAtMs" to it.openTime,
+                    "openedAtMs" to it.openedAtMs,
                     "comment" to it.comment,
                 )
             }
@@ -98,9 +107,8 @@ class BotQueryCommand(
             println("no open positions")
         } else {
             rows.forEach {
-                val side = if (it.type == 0) "BUY" else "SELL"
                 println(
-                    "${it.ticket} ${it.symbol} $side ${it.volume} @ ${it.priceOpen} sl=${it.sl} tp=${it.tp} pnl=${it.profit}",
+                    "${it.ticket} ${it.symbol} ${it.side} ${it.lots} @ ${it.entry} sl=${it.sl} tp=${it.tp} pnl=${it.profit}",
                 )
             }
         }
@@ -109,20 +117,22 @@ class BotQueryCommand(
 
     private fun orders(json: Boolean): Int {
         val symbol = args.positional(0)
-        val gw = gateway(symbol)
-        val all = gw.pendingOrders() ?: error("venue pending-orders read failed")
-        val rows = if (symbol != null) all.filter { it.symbol == gw.brokerSymbol(symbol) } else all
+        val rows =
+            venue(symbol) { v ->
+                val all = v.pendingOrders() ?: error("venue pending-orders read failed")
+                if (symbol != null) all.filter { it.symbol == v.venueSymbol(symbol) } else all
+            }
         val docs =
             rows.map {
                 jsonObj(
-                    "ticket" to it.ticket,
+                    "ticket" to idJson(it.ticket),
                     "symbol" to it.symbol,
                     "type" to it.type,
-                    "lots" to it.volume,
-                    "price" to it.priceOpen,
+                    "lots" to it.lots,
+                    "price" to it.price,
                     "sl" to it.sl,
                     "tp" to it.tp,
-                    "expiresAt" to it.timeExpiration,
+                    "expiresAt" to it.expiresAt,
                 )
             }
         if (json) {
@@ -132,7 +142,7 @@ class BotQueryCommand(
         } else {
             rows.forEach {
                 println(
-                    "${it.ticket} ${it.symbol} ${it.type} ${it.volume} @ ${it.priceOpen} sl=${it.sl} tp=${it.tp}",
+                    "${it.ticket} ${it.symbol} ${it.type} ${it.lots} @ ${it.price} sl=${it.sl} tp=${it.tp}",
                 )
             }
         }
@@ -141,7 +151,7 @@ class BotQueryCommand(
 
     private fun quote(json: Boolean): Int {
         val symbol = args.requirePositional(0, "BROKER:SYMBOL")
-        val t = gateway(symbol).tick(symbol) ?: error("venue did not return a quote for $symbol")
+        val t = venue(symbol) { it.tick(symbol) } ?: error("venue did not return a quote for $symbol")
         val spread = t.ask.subtract(t.bid)
         if (json) {
             println(
@@ -157,7 +167,7 @@ class BotQueryCommand(
         val symbol = args.requirePositional(0, "BROKER:SYMBOL")
         val window = TimeWindow.parse(args.requireOption("tf"))
         val count = args.option("count")?.toIntOrNull() ?: 100
-        val rows = gateway(symbol).bars(symbol, window, count, SystemClock().now())
+        val rows = venue(symbol) { it.bars(symbol, window, count, SystemClock().now()) }
         val docs =
             rows.map {
                 jsonObj(
@@ -184,16 +194,16 @@ class BotQueryCommand(
     private fun history(json: Boolean): Int {
         val now = SystemClock().now()
         val since = parseSince(args.option("since"), now)
-        val deals = gateway(null).deals(since, now) ?: error("venue deal-history read failed")
+        val deals = venue(null) { it.deals(since, now) } ?: error("venue deal-history read failed")
         val docs =
             deals.map {
                 jsonObj(
-                    "dealTicket" to it.ticket,
-                    "positionTicket" to it.positionTicket,
+                    "dealTicket" to idJson(it.dealTicket),
+                    "positionTicket" to it.positionTicket?.let(::idJson),
                     "symbol" to it.symbol,
-                    "side" to if (it.type == 0) "BUY" else "SELL",
-                    "entry" to if (it.entry == 0) "IN" else "OUT",
-                    "lots" to it.volume,
+                    "side" to it.side,
+                    "entry" to it.entry,
+                    "lots" to it.lots,
                     "price" to it.price,
                     "profit" to it.profit,
                     "commission" to it.commission,
@@ -212,25 +222,10 @@ class BotQueryCommand(
                 println(
                     "${Instant.ofEpochMilli(
                         it.timeMs,
-                    )} ${it.symbol} ${if (it.type == 0) "BUY" else "SELL"} ${it.volume} @ ${it.price} pnl=${it.profit}",
+                    )} ${it.symbol} ${it.side} ${it.lots} @ ${it.price} pnl=${it.profit}",
                 )
             }
         }
         return ExitCodes.SUCCESS
     }
 }
-
-/** `--since` accepts `Nd` (days back), an ISO instant, or epoch millis; default 7 days. */
-internal fun parseSince(
-    raw: String?,
-    nowMs: Long,
-): Long =
-    when {
-        raw == null -> nowMs - 7L * 86_400_000L
-        raw.matches(Regex("\\d+d")) -> nowMs - raw.dropLast(1).toLong() * 86_400_000L
-        raw.toLongOrNull() != null -> raw.toLong()
-        else ->
-            runCatching { Instant.parse(raw).toEpochMilli() }.getOrElse {
-                error("--since must be Nd, ISO-8601, or epoch millis; got '$raw'")
-            }
-    }

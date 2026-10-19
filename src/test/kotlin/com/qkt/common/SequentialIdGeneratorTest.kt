@@ -52,4 +52,11 @@ class SequentialIdGeneratorTest {
         assertThat(ids.sequenceOf("dsl-x--3-tier0-sl")).isEqualTo(3L)
         assertThat(ids.sequenceOf("dsl-x--12tp")).isNull()
     }
+
+    @Test
+    fun `session order ids name the trading strategies, not reserved session slots`() {
+        assertThat(
+            SequentialIdGenerator.forSession(listOf("agent", "__session_recorder")).next(),
+        ).isEqualTo("ORD-agent-0")
+    }
 }

@@ -7,7 +7,7 @@ import java.math.BigDecimal
 
 /** The tick tape, the client's decision script and the comparable trade key both bot session arms share. */
 internal object BotSessionParityScript {
-    val symbol = "XAUUSD"
+    val symbol = "EXNESS:XAUUSD"
 
     /** 9 one-minute bars, two ticks each, plus a final tick that closes bar 9. */
     fun ticks(): List<Tick> =

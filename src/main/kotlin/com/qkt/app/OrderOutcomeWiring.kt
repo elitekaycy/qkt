@@ -163,6 +163,7 @@ internal class OrderOutcomeWiring(
             dslStrategiesById[e.request.strategyId]?.onOrderRejected(e.request.id)
             onRejected(e)
         }
+        wireOrderOutcomeNotices(bus, dslStrategiesById, ::ownerOf, orderManager::getOrder)
     }
 
     // A venue event may leave the owner blank; the order book knows it.

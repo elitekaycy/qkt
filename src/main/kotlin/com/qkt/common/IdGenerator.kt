@@ -16,7 +16,8 @@ class SequentialIdGenerator(
          * share this scheme so parity compares like ids.
          */
         fun forSession(strategyIds: Collection<String>): SequentialIdGenerator =
-            SequentialIdGenerator(prefix = "ORD-" + strategyIds.joinToString("+"))
+            // Reserved `__` slots (a bot session's bar recorder) place no orders and are not named.
+            SequentialIdGenerator(prefix = "ORD-" + strategyIds.filterNot { it.startsWith("__") }.joinToString("+"))
     }
 
     private var counter = 0L

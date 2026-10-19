@@ -26,6 +26,8 @@ data class BotIntent(
     val tif: BotTif = BotTif.GTC,
     /** UTC epoch millis deadline; required iff [tif] is [BotTif.GTD]. */
     val expiresAtMs: Long? = null,
+    /** A timed exit (`EXIT AFTER 4h`): the engine closes the position this long after the fill. */
+    val exitAfter: String? = null,
 ) {
     init {
         require((lots != null) xor (sizingDsl != null)) {
@@ -41,6 +43,8 @@ data class BotIntent(
         require((tif == BotTif.GTD) == (expiresAtMs != null)) {
             "GTD requires --expires and --expires requires TIF GTD"
         }
+        exitAfter?.let { require(it.matches(Regex("\\d+[smhd]"))) { "--exit-after must be <n>s|m|h|d, got '$it'" } }
+        require(sl !is ExitSpec.Trail || tp != null) { "a trailing stop is a bracket leg; pass --tp too" }
     }
 }
 
@@ -70,6 +74,12 @@ sealed interface ExitSpec {
         val multiplier: BigDecimal,
     ) : ExitSpec
 
+    /** A stop that trails [distance] behind the best price once the trade is [afterMfe] in profit. */
+    data class Trail(
+        val distance: BigDecimal,
+        val afterMfe: BigDecimal,
+    ) : ExitSpec
+
     companion object {
         /** Parses the CLI form. [allowRr] is false for stop-loss specs (`rr:` is TP-only). */
         fun parse(
@@ -82,6 +92,19 @@ sealed interface ExitSpec {
                 } else {
                     "at" to raw
                 }
+            if (kind.lowercase() == "trail") {
+                require(!allowRr) { "a trailing take profit does not exist; trail the stop: --sl trail:<d>[@<mfe>]" }
+                val distance = value.substringBefore('@').toBigDecimalOrNull() ?: error("invalid trail '$raw'")
+                val after =
+                    if ('@' in
+                        value
+                    ) {
+                        value.substringAfter('@').toBigDecimalOrNull() ?: error("invalid trail '$raw'")
+                    } else {
+                        null
+                    }
+                return Trail(distance, after ?: BigDecimal.ZERO)
+            }
             val num =
                 value.toBigDecimalOrNull()
                     ?: error("invalid exit spec '$raw': '$value' is not a number")
@@ -93,7 +116,7 @@ sealed interface ExitSpec {
                     require(allowRr) { "RR is take-profit only; use at:/by:/pct: for --sl" }
                     Rr(num)
                 }
-                else -> error("invalid exit spec '$raw': expected at:/by:/pct:/rr:")
+                else -> error("invalid exit spec '$raw': expected at:/by:/pct:/rr:/trail:")
             }
         }
     }
