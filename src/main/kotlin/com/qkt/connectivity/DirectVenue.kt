@@ -84,6 +84,8 @@ data class VenueFacts(
     val digits: Int?,
     /** The price grid; null when it is the last digit. */
     val tickSize: BigDecimal? = null,
+    /** The venue's reference price (its mark), what price collars measure against; null: the mid. */
+    val reference: BigDecimal? = null,
 )
 
 /**

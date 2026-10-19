@@ -26,7 +26,9 @@ fun checkBotPreTrade(
     priceCollarFrac: BigDecimal,
 ) {
     val request = order.request
-    val mid = ctx.bid.add(ctx.ask).divide(BigDecimal(2))
+    // The engine's collar measures against the venue's price (a mark where the venue has one), not a
+    // thin book's mid.
+    val mid = ctx.reference ?: ctx.bid.add(ctx.ask).divide(BigDecimal(2))
     val prices =
         object : MarketPriceProvider {
             override fun lastPrice(symbol: String): BigDecimal = mid

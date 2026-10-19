@@ -26,6 +26,7 @@ fun VenueFacts.toQuoteContext(
         volumeStep = volumeStep,
         volumeMax = volumeMax,
         digits = digits,
+        reference = reference,
     )
 }
 

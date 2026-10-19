@@ -81,6 +81,15 @@ class BotPreTradeTest {
     }
 
     @Test
+    fun `the collar measures against the venue's reference price, not a broken book's mid`() {
+        // A thin book (bid 61, ask 104.6) has a mid of 82.9; the venue's mark is 104.5.
+        val thin = ctx.copy(bid = BigDecimal("61.164"), ask = BigDecimal("104.647"), reference = BigDecimal("104.5"))
+
+        assertThatCode { check(limit("104"), context = thin) }.doesNotThrowAnyException()
+        assertThatThrownBy { check(limit("60"), context = thin) }.hasMessageContaining("risk.price_collar_pct")
+    }
+
+    @Test
     fun `inside every limit passes`() {
         assertThatCode { check(market("0.5")) }.doesNotThrowAnyException()
         assertThatCode { check(limit("2600")) }.doesNotThrowAnyException()

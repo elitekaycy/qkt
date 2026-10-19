@@ -58,6 +58,7 @@ class GatewayDirectVenue(
             volumeMax = null,
             digits = tick.stripTrailingZeros().scale().coerceAtLeast(0),
             tickSize = tick,
+            reference = quote.mark?.let(::BigDecimal)?.takeIf { it.signum() > 0 },
         )
     }
 
