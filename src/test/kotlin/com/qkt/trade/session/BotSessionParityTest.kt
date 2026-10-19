@@ -22,10 +22,10 @@ class BotSessionParityTest {
         (0 until 8).flatMap { bar ->
             val base = bar * 60_000L
             listOf(
-                Tick("XAUUSD", BigDecimal(2400 + bar), base + 1_000L),
-                Tick("XAUUSD", BigDecimal(2402 + bar), base + 30_000L),
+                Tick("EXNESS:XAUUSD", BigDecimal(2400 + bar), base + 1_000L),
+                Tick("EXNESS:XAUUSD", BigDecimal(2402 + bar), base + 30_000L),
             )
-        } + Tick("XAUUSD", BigDecimal("2412"), 8 * 60_000L + 1_000L)
+        } + Tick("EXNESS:XAUUSD", BigDecimal("2412"), 8 * 60_000L + 1_000L)
 
     /**
      * Buys 1 lot on the first tick strictly after the [afterBars]-th bar close —
@@ -50,7 +50,7 @@ class BotSessionParityTest {
             }
             if (!fired && closed >= afterBars) {
                 fired = true
-                emit(Signal.Buy("XAUUSD", BigDecimal.ONE))
+                emit(Signal.Buy("EXNESS:XAUUSD", BigDecimal.ONE))
             }
         }
 
@@ -78,7 +78,7 @@ class BotSessionParityTest {
 
         val history = BarHistory(capacity = 100)
         val recorder = BotSessionRecorder(history)
-        val bridge = BotBridgeStrategy()
+        val bridge = testBridge()
         val engine =
             Backtest(
                 strategies = listOf("brain" to bridge, BotSessionRecorder.ID to recorder),
@@ -91,12 +91,13 @@ class BotSessionParityTest {
                 runId = "parity",
                 backend = ReplayBotRunBackend(engine),
                 bridges = mapOf("brain" to bridge),
+                streams = testStreams(),
                 history = history,
                 recorder = recorder,
             )
-        repeat(afterBars) { session.next("XAUUSD") }
-        session.submit("brain", Signal.Buy("XAUUSD", BigDecimal.ONE))
-        while (session.next("XAUUSD") != null) {
+        repeat(afterBars) { session.next("EXNESS:XAUUSD") }
+        session.submit("brain", Signal.Buy("EXNESS:XAUUSD", BigDecimal.ONE))
+        while (session.next("EXNESS:XAUUSD") != null) {
             // drain the window so both runs cover the same data
         }
         val viaSession = session.finish() ?: error("expected a result")

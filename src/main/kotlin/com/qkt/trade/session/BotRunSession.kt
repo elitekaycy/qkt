@@ -21,10 +21,15 @@ import java.math.BigDecimal
 class BotRunSession(
     val runId: String,
     private val backend: BotRunBackend,
-    private val bridges: Map<String, BotBridgeStrategy>,
+    private val bridges: Map<String, BotIntentStrategy>,
+    val streams: BotSessionStreams,
     private val history: BarHistory,
     private val recorder: BotSessionRecorder,
 ) {
+    private val intentSeq =
+        java.util.concurrent.atomic
+            .AtomicLong()
+
     /**
      * Returns the next closed bar for [symbol], or null when no further bar can
      * arrive (backtest window exhausted / live session stopped). In backtest the
@@ -60,20 +65,36 @@ class BotRunSession(
     fun identities(): Set<String> = bridges.keys
 
     /**
-     * Enqueues [signal] on [identity]'s bridge; it enters the pipeline on the next
-     * tick replayed (the first tick after the client's current cursor position).
-     * Fail-closed on an undeclared identity.
+     * Validates intent [source] for [identity] and queues it; it fires on the next tick the engine
+     * replays (the first after the client's cursor). Throws the reason when it cannot run.
      */
     fun submit(
         identity: String,
-        signal: Signal,
-    ) {
-        val bridge =
-            requireNotNull(bridges[identity]) {
-                "unknown identity '$identity' — declared identities: ${bridges.keys.sorted().joinToString(", ")}"
-            }
-        bridge.submit(signal)
+        source: String,
+    ): SubmittedIntent {
+        val intent = sessionIntent(source, streams)
+        val id = "int-${intentSeq.incrementAndGet()}"
+        identity(identity).submit(id, intent.action)
+        return SubmittedIntent(id, intent.symbol, intent.sha256)
     }
+
+    /** Queues a ready-made [signal] on [identity] for the next tick (no DSL; the hand-written reference). */
+    fun submit(
+        identity: String,
+        signal: Signal,
+    ) = identity(identity).submitSignal(signal)
+
+    /** Every intent's latest fate, in arrival order across identities. */
+    fun fates(): List<IntentFate> =
+        bridges.values
+            .flatMap {
+                it.fates()
+            }.sortedBy { it.intentId.removePrefix("int-").toLong() }
+
+    private fun identity(identity: String): BotIntentStrategy =
+        requireNotNull(bridges[identity]) {
+            "unknown identity '$identity' — declared identities: ${bridges.keys.sorted().joinToString(", ")}"
+        }
 
     /**
      * Ends the run. Backtest returns the standard result (caller writes report
@@ -85,3 +106,10 @@ class BotRunSession(
         return result.copy(perStrategy = result.perStrategy.filterKeys { it != BotSessionRecorder.ID })
     }
 }
+
+/** An accepted intent: its [intentId], the [symbol] it acts on (null for every symbol) and its source hash. */
+data class SubmittedIntent(
+    val intentId: String,
+    val symbol: String?,
+    val sha256: String,
+)

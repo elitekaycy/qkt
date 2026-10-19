@@ -16,10 +16,11 @@ import com.qkt.strategy.Signal
 import com.qkt.strategy.Strategy
 import com.qkt.strategy.StrategyContext
 import com.qkt.trade.session.BarHistory
-import com.qkt.trade.session.BotBridgeStrategy
 import com.qkt.trade.session.BotRunSession
 import com.qkt.trade.session.BotSessionRecorder
 import com.qkt.trade.session.LiveBotRunBackend
+import com.qkt.trade.session.testBridge
+import com.qkt.trade.session.testStreams
 import java.time.Duration
 import java.util.concurrent.Semaphore
 import java.util.concurrent.atomic.AtomicInteger
@@ -98,7 +99,7 @@ internal object BotSessionLiveArm {
             val tickSeq = ticks()
             val history = BarHistory(capacity = 100)
             val recorder = BotSessionRecorder(history)
-            val bridge = BotBridgeStrategy()
+            val bridge = testBridge()
             val feed = GatedTickFeed(tickSeq)
             val liveTrades = mutableListOf<Trade>()
             // Strategies see a tick in list order, so once this probe has seen a tick the bridge has
@@ -142,6 +143,7 @@ internal object BotSessionLiveArm {
                             onAwaitingBar = { _, _ -> readyForBar.incrementAndGet() },
                         ),
                     bridges = mapOf("brain" to bridge),
+                    streams = testStreams(),
                     history = history,
                     recorder = recorder,
                 )

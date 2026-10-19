@@ -24,7 +24,7 @@ class BotSessionServerTest {
     private fun start(): BotSessionServer {
         val history = BarHistory(capacity = 100)
         val recorder = BotSessionRecorder(history)
-        val bridge = BotBridgeStrategy()
+        val bridge = testBridge()
         val ticks =
             (0 until 4).flatMap { bar ->
                 val base = bar * 60_000L
@@ -45,6 +45,7 @@ class BotSessionServerTest {
                 runId = "srv-test",
                 backend = ReplayBotRunBackend(engine),
                 bridges = mapOf("brain" to bridge),
+                streams = testStreams(),
                 history = history,
                 recorder = recorder,
             )
