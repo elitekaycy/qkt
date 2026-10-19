@@ -12,17 +12,6 @@ import com.qkt.strategy.Signal
 import com.qkt.strategy.StrategyContext
 import java.util.concurrent.ConcurrentLinkedQueue
 
-/** What became of one intent so far. */
-data class IntentFate(
-    val intentId: String,
-    val identity: String,
-    /** `queued`, `fired` (an order went to the pipeline) or `skipped` (none could be built). */
-    val state: String,
-    val orderIds: List<String> = emptyList(),
-    val reason: String? = null,
-    val atMs: Long? = null,
-)
-
 /**
  * One session identity: a compiled DSL strategy (by delegation, so the engine binds, warms and
  * attributes it as any strategy) whose orders come from intents instead of rules. [submit] validates
@@ -45,12 +34,23 @@ class BotIntentStrategy(
     override val perStreamWarmup: Map<com.qkt.strategy.WarmupStream, com.qkt.strategy.WarmupSpec>
         get() = (inner as? com.qkt.strategy.PerStreamWarmable)?.perStreamWarmup ?: emptyMap()
 
-    /** Validates [action] (throwing the reason) and queues it as [intentId]. */
+    /** Throws the reason when [action] cannot run as an intent. */
+    fun validate(action: ActionAst) = actions.validate(action)
+
+    /** Validates [action] and queues it as [intentId]. */
     fun submit(
         intentId: String,
         action: ActionAst,
     ) {
-        actions.validate(action)
+        validate(action)
+        enqueue(intentId, action)
+    }
+
+    /** Queues an already validated [action] as [intentId]. */
+    fun enqueue(
+        intentId: String,
+        action: ActionAst,
+    ) {
         ledger.fate(IntentFate(intentId, identity, "queued"))
         queue.add(intentId to action)
     }
@@ -117,7 +117,7 @@ class BotIntentStrategy(
         val now = ctx.clock.now()
         val fired =
             try {
-                actions.fire(action, ctx, now, emit)
+                actions.fire(action, ctx, now, emit) { ledger.markCompiled(intentId) }
             } catch (e: RuntimeException) {
                 return IntentFate(intentId, identity, "skipped", reason = e.message, atMs = now)
             }
@@ -182,14 +182,3 @@ object BotSessionIdentities {
             identity to BotIntentStrategy(identity, AstCompiler().compile(ast) as DslCompiledStrategy, ledger)
         }
 }
-
-/** One open leg of a session identity. */
-data class SessionLeg(
-    val identity: String,
-    val symbol: String,
-    val side: String,
-    val quantity: java.math.BigDecimal,
-    val entry: java.math.BigDecimal,
-    val ticket: String?,
-    val legId: String,
-)

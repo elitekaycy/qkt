@@ -130,4 +130,18 @@ class BotGatewayCliTest {
                 .status,
         ).isEqualTo("cancelled")
     }
+
+    @Test
+    fun `a failure after the order may have been sent is reported as unknown, not refused`(
+        @TempDir dir: Path,
+    ) {
+        fake.failing["/v1/orders"] = 1
+
+        val (code, out) = run(dir, "buy", "1", "DERIBIT:SOL_USDC_PERPETUAL", "--as", "agent")
+
+        assertThat(code).isEqualTo(ExitCodes.USER_ERROR)
+        assertThat(out).contains("\"ok\":false").contains("may have reached the venue").contains("qkt bot orders")
+        val journal = Files.readString(Files.list(dir.resolve("state/bot/agent")).findFirst().get())
+        assertThat(journal).contains("bot.rejected").contains("may have reached the venue")
+    }
 }

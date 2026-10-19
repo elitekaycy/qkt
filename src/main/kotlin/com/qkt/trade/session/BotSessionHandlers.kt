@@ -75,10 +75,7 @@ internal class BotSessionHandlers(
 
     fun intents(): String = session.fates().joinToString(",", "[", "]") { fateJson(it) }
 
-    fun orders(): String =
-        session.workingOrders().joinToString(",", "[", "]") {
-            """{"intentId":"${it.intentId}","identity":"${it.identity}","orderId":"${it.orderId}"}"""
-        }
+    fun orders(): String = session.workingOrders().joinToString(",", "[", "]") { workingJson(it) }
 
     /**
      * Queues intent [source] for [identity]. The reply's `lots`/`sl`/`tp` preview what the one-shot
@@ -118,18 +115,21 @@ internal class BotSessionHandlers(
         if (finished) return """{"ok":true,"finished":true}"""
         if (flatten) session.flattenAll()
         val open = session.legs()
+        val working = session.workingOrders()
         val result = session.finish()
         val reportDir = onFinish(result)
         finished = true
         val note =
-            if (open.isEmpty()) {
+            if (open.isEmpty() && working.isEmpty()) {
                 "null"
             } else {
-                "\"engine-held exits of these legs run again only when a session resumes over this state\""
+                "\"engine-held exits of these legs, and of these orders if they fill, run again only when a " +
+                    "session resumes over this state\""
             }
         return """{"ok":true,"finished":true,"trades":${result?.trades?.size ?: "null"},""" +
             """"reportDir":${reportDir?.let { "\"$it\"" } ?: "null"},""" +
-            """"openLegs":${open.joinToString(",", "[", "]") { legJson(it) }},"note":$note}"""
+            """"openLegs":${open.joinToString(",", "[", "]") { legJson(it) }},""" +
+            """"workingOrders":${working.joinToString(",", "[", "]") { workingJson(it) }},"note":$note}"""
     }
 
     private fun preview(source: String) =

@@ -10,9 +10,8 @@ private fun num(v: BigDecimal?): String = v?.toPlainString() ?: "null"
 
 internal fun fateJson(f: IntentFate): String =
     """{"intentId":"${f.intentId}","identity":${str(f.identity)},"state":"${f.state}",""" +
-        """"orderIds":[${f.orderIds.joinToString(
-            ",",
-        ) { str(it) }}],"reason":${str(f.reason)},"atMs":${f.atMs ?: "null"}}"""
+        """"orderIds":[${f.orderIds.joinToString(",") { str(it) }}],"reason":${str(f.reason)},""" +
+        """"atMs":${f.atMs ?: "null"},"compiled":${f.compiled}}"""
 
 internal fun eventJson(e: SessionEvent): String =
     """{"seq":${e.seq},"kind":"${e.kind}","identity":${str(e.identity)},"intentId":${str(e.intentId)},""" +
@@ -24,3 +23,6 @@ internal fun eventJson(e: SessionEvent): String =
 internal fun legJson(l: SessionLeg): String =
     """{"identity":${str(l.identity)},"side":"${l.side}","qty":${num(l.quantity)},"entry":${num(l.entry)},""" +
         """"ticket":${str(l.ticket)},"legId":${str(l.legId)}}"""
+
+internal fun workingJson(w: WorkingIntentOrder): String =
+    """{"intentId":"${w.intentId}","identity":${str(w.identity)},"orderId":${str(w.orderId)}}"""

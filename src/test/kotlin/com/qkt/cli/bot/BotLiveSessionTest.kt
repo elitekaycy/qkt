@@ -116,4 +116,82 @@ class BotLiveSessionTest {
             .hasMessageContaining("trend")
             .hasMessageContaining("daemon")
     }
+
+    private fun bot(vararg tokens: String): Pair<Int, String> {
+        val buffer = java.io.ByteArrayOutputStream()
+        val original = System.out
+        System.setOut(java.io.PrintStream(buffer))
+        val code =
+            try {
+                BotCommand(com.qkt.cli.Args(arrayOf("bot", *tokens))).run()
+            } finally {
+                System.setOut(original)
+            }
+        return code to buffer.toString()
+    }
+
+    @Test
+    fun `a backtest never takes a live run's id`(
+        @TempDir tmp: Path,
+    ) {
+        val dir =
+            com.qkt.trade.session.BotSessionFiles
+                .sessionDir(StateDir.resolve(tmp.toString()).stateRoot, "live1")
+        com.qkt.trade.session.writeSessionMeta(
+            dir,
+            com.qkt.trade.session
+                .SessionMeta("live1", "live", listOf("a"), emptyList(), 1L),
+        )
+        java.nio.file.Files
+            .writeString(dir.resolve("intents.jsonl"), "{}\n")
+
+        val (code, out) =
+            bot(
+                "session",
+                "start",
+                "--backtest",
+                "--symbols",
+                gold,
+                "--tf",
+                "1m",
+                "--from",
+                "2024-01-02",
+                "--to",
+                "2024-01-03",
+                "--run",
+                "live1",
+                "--state-dir",
+                tmp.toString(),
+                "--no-fetch",
+                "--json",
+            )
+
+        assertThat(code).isEqualTo(com.qkt.cli.ExitCodes.USER_ERROR)
+        assertThat(out).contains("live session's record")
+        assertThat(dir.resolve("intents.jsonl")).exists()
+    }
+
+    @Test
+    fun `reserved identity names are refused`(
+        @TempDir tmp: Path,
+    ) {
+        val (code, out) =
+            bot(
+                "session",
+                "start",
+                "--backtest",
+                "--symbols",
+                gold,
+                "--tf",
+                "1m",
+                "--identities",
+                "__x",
+                "--state-dir",
+                tmp.toString(),
+                "--json",
+            )
+
+        assertThat(code).isEqualTo(com.qkt.cli.ExitCodes.USER_ERROR)
+        assertThat(out).contains("reserved")
+    }
 }

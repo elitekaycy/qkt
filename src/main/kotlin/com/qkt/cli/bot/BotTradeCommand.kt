@@ -7,6 +7,7 @@ import com.qkt.cli.daemon.StateDir
 import com.qkt.common.Side
 import com.qkt.common.SystemClock
 import com.qkt.connectivity.DirectResult
+import com.qkt.connectivity.VenueRefusal
 import com.qkt.trade.BotIntent
 import com.qkt.trade.BotTif
 import com.qkt.trade.BotTrail
@@ -76,8 +77,20 @@ class BotTradeCommand(
                     val placed =
                         try {
                             opened.venue.place(order.request, order.stopLoss, order.takeProfit, order.request.id)
-                        } catch (e: IllegalArgumentException) {
+                        } catch (e: VenueRefusal) {
                             DirectResult(false, 0, order.request.id, "", BigDecimal.ZERO, e.message, "refused")
+                        } catch (e: Exception) {
+                            // Thrown after the request may have left: the order's fate is unknown, and a retry
+                            // would be a second order. Record that, and tell the caller to look first.
+                            val why =
+                                "${e.message ?: e.javaClass.simpleName}; the order may have reached the venue: " +
+                                    "check qkt bot orders and qkt bot positions before retrying (id ${order.request.id})"
+                            trail.recordResult(
+                                asName,
+                                order,
+                                DirectResult(false, 0, order.request.id, "", BigDecimal.ZERO, why, "unknown"),
+                            )
+                            throw IllegalStateException(why)
                         }
                     trail.recordResult(asName, order, placed)
                     order to placed

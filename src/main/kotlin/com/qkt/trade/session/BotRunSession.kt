@@ -106,10 +106,12 @@ class BotRunSession(
         source: String,
     ): SubmittedIntent {
         val intent = sessionIntent(source, streams)
+        val strategy = identity(identity)
+        strategy.validate(intent.action)
         val id = "int-${intentSeq.incrementAndGet()}"
-        val ticks = recorder.ticksSeen
-        identity(identity).submit(id, intent.action)
-        journal?.intent(id, identity, source, simNowMs(), clock.now(), ticks)
+        // Journaled before it is queued: the engine may fire it at once, and a restart rebuilds from here.
+        journal?.intent(id, identity, source, simNowMs(), clock.now(), recorder.ticksSeen)
+        strategy.enqueue(id, intent.action)
         return SubmittedIntent(id, intent.symbol, intent.sha256)
     }
 
@@ -132,7 +134,17 @@ class BotRunSession(
 
     /** Restores each journaled intent's last fate and numbers new intents after the last one. */
     fun restoreFates(journaled: List<JournaledIntent>) {
-        journaled.forEach { j -> ledger.fate(j.lastFate ?: IntentFate(j.intentId, j.identity, "fired")) }
+        journaled.forEach { j ->
+            val last = j.lastFate
+            // An intent still queued when the run stopped never reached the engine; it is not sent now.
+            ledger.fate(
+                if (last == null || last.state == "queued") {
+                    IntentFate(j.intentId, j.identity, "skipped", reason = "the session restarted before it fired")
+                } else {
+                    last
+                },
+            )
+        }
         journaled.maxOfOrNull { it.intentId.removePrefix("int-").toLong() }?.let { intentSeq.set(it) }
     }
 
@@ -146,7 +158,7 @@ class BotRunSession(
     fun flattenAll(timeoutMs: Long = 30_000L) {
         val source = com.qkt.trade.renderBotAction(mapOf("x" to streams.symbols.first()), "CLOSE_ALL")
         bridges.keys.forEach { submit(it, source) }
-        backend.awaitFlat(timeoutMs)
+        backend.awaitFlat(timeoutMs) { ledger.working().isNotEmpty() }
     }
 
     /** Every intent's latest fate, in arrival order across identities. */

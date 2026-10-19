@@ -33,8 +33,11 @@ interface BotRunBackend {
     /** Ends the run. Backtest returns the result for the report writer; live null. */
     fun finish(): BacktestResult?
 
-    /** Runs until no position is open or [timeoutMs] passes. */
-    fun awaitFlat(timeoutMs: Long)
+    /** Runs until no position is open and [pending] is false, or [timeoutMs] passes. */
+    fun awaitFlat(
+        timeoutMs: Long,
+        pending: () -> Boolean,
+    )
 }
 
 /** Backtest backend: a paced [ReplayEngine] advanced on demand. */
@@ -58,8 +61,12 @@ class ReplayBotRunBackend(
 
     override fun finish(): BacktestResult = engine.snapshot()
 
-    override fun awaitFlat(timeoutMs: Long) {
+    override fun awaitFlat(
+        timeoutMs: Long,
+        pending: () -> Boolean,
+    ) {
         // The close fires on the next replayed tick and fills on a later one; replay until both happened.
-        engine.advanceUntil { engine.openPositions().isEmpty() || engine.exhausted }
+        if (engine.openPositions().isEmpty() && !pending()) return
+        engine.advanceUntil { (engine.openPositions().isEmpty() && !pending()) || engine.exhausted }
     }
 }

@@ -17,7 +17,9 @@ import com.qkt.trade.session.BotSessionRecorder
 import com.qkt.trade.session.BotSessionStreams
 import com.qkt.trade.session.IntentJournal
 import com.qkt.trade.session.ReplayBotRunBackend
+import com.qkt.trade.session.RunLock
 import com.qkt.trade.session.copySessionJournals
+import com.qkt.trade.session.readSessionMeta
 import com.qkt.trade.session.writeFills
 import java.nio.file.Files
 import java.nio.file.Path
@@ -34,6 +36,23 @@ internal fun startBacktestSession(
     val outDir = Path.of(sub.option("out") ?: "runs/${spec.runId}")
     val stateRoot = StateDir.resolve(sub.option("state-dir")).stateRoot
     val sessionDir = BotSessionFiles.sessionDir(stateRoot, spec.runId)
+    RunLock.acquire(sessionDir, spec.runId).use { _ ->
+        return backtestOnLock(sub, json, spec, outDir, stateRoot, sessionDir)
+    }
+}
+
+private fun backtestOnLock(
+    sub: Args,
+    json: Boolean,
+    spec: SessionStart,
+    outDir: Path,
+    stateRoot: Path,
+    sessionDir: Path,
+): Int {
+    // A live run's record is what its next start resumes from; a backtest never takes its id.
+    require(readSessionMeta(sessionDir)?.mode != "live") {
+        "run ${spec.runId} is a live session's record; pick another --run for a backtest"
+    }
     // A backtest run is a fresh record each time it starts; only a live run resumes its own.
     listOf("intents.jsonl", "reads.jsonl", "fills.jsonl").forEach { Files.deleteIfExists(sessionDir.resolve(it)) }
     val parts = buildBacktestSession(sub, spec, IntentJournal(sessionDir.resolve("intents.jsonl")))

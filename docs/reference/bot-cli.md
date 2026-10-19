@@ -9,7 +9,9 @@ program in any language, a person at a terminal. It has two modes, and the same 
 | **Session** (`qkt bot session start`) | the qkt engine itself, as a backtest or live; the verbs become its inputs | anything managed over time, every guardrail, backtests, parity |
 
 With a session running, the verbs route to it (`--run <id>`, else `QKT_BOT_RUN`, else the only one);
-with none, they act one-shot. A program that is not a shell uses the session's
+with none, they act one-shot. Naming a session that is not running fails and sends nothing. `close`,
+`cancel` and `modify` reach a session only when it is named (`--run` or `QKT_BOT_RUN`); otherwise they act
+on the venue, so a backtest session never swallows a real close. One process holds a run at a time. A program that is not a shell uses the session's
 [HTTP API](bot-session-api.md) directly.
 
 ```

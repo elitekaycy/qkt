@@ -82,10 +82,14 @@ internal fun parseSessionStart(
             .filter { it.isNotEmpty() }
     val symbols = list("symbols").ifEmpty { error("missing --symbols BROKER:SYMBOL[,..]") }
     val tfs = list("tf").ifEmpty { error("missing --tf (e.g. --tf 5m, or --tf 5m,1h)") }
+    val identities = list("identities").ifEmpty { listOf("manual") }
+    require(
+        identities.none { it.startsWith("__") },
+    ) { "identities starting with __ are reserved for the session itself" }
     return SessionStart(
         streams = BotSessionStreams(symbols, tfs),
         runId = sub.option("run") ?: defaultRun(),
-        identities = list("identities").ifEmpty { listOf("manual") },
+        identities = identities,
         historyBars = sub.option("history-bars")?.toIntOrNull() ?: 200,
     )
 }

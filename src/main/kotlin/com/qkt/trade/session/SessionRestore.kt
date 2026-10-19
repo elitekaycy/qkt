@@ -11,7 +11,8 @@ fun rebuildIdentities(
     streams: BotSessionStreams,
     identities: Map<String, BotIntentStrategy>,
 ) {
-    journaled.forEach { j ->
+    // Only what the engine compiled registered anything; position-numbered hook ids depend on it.
+    journaled.filter { it.lastFate?.compiled == true }.forEach { j ->
         val identity = requireNotNull(identities[j.identity]) { "journaled identity '${j.identity}' is not declared" }
         identity.rebuild(sessionIntent(j.source, streams).action)
     }

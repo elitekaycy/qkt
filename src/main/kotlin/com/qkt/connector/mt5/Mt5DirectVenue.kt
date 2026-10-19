@@ -66,7 +66,9 @@ class Mt5DirectVenue(
         val wire =
             when (val t = translator.translate(order)) {
                 is MT5Translation.Single -> t.request
-                is MT5Translation.Composite -> error("composite orders are not supported one-shot")
+                is MT5Translation.Composite -> throw com.qkt.connectivity.VenueRefusal(
+                    "composite orders are not supported one-shot",
+                )
             }
         return client.placeOrder(wire.copy(sl = wire.sl ?: stopLoss, tp = wire.tp ?: takeProfit)).toDirect()
     }

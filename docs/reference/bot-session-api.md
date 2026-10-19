@@ -96,7 +96,7 @@ to close) → `filled`, `rejected` or `cancelled`.
 and waits for a flat book. The reply lists what is still open:
 
 ```json
-{"ok":true,"finished":true,"trades":12,"reportDir":"/…/runs/demo","openLegs":[..],"note":"…"}
+{"ok":true,"finished":true,"trades":12,"reportDir":"/…/runs/demo","openLegs":[..],"workingOrders":[..],"note":"…"}
 ```
 
 A venue keeps the stops it holds; an exit the engine holds (a trail, a timed exit, every bracket on a

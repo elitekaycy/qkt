@@ -32,12 +32,16 @@ interface AdHocActions {
      */
     fun rebuild(action: ActionAst)
 
-    /** Compiles and fires [action] now; [AdHocFire.Skipped] when no stream has closed a bar. */
+    /**
+     * Compiles and fires [action] now; [AdHocFire.Skipped] when no stream has closed a bar. [onCompiled]
+     * runs once the action compiled and before anything is emitted.
+     */
     fun fire(
         action: ActionAst,
         ctx: StrategyContext,
         nowMs: Long,
         emit: (Signal) -> Unit,
+        onCompiled: () -> Unit = {},
     ): AdHocFire
 }
 
@@ -123,10 +127,20 @@ internal class CompiledAdHocActions(
         ctx: StrategyContext,
         nowMs: Long,
         emit: (Signal) -> Unit,
+        onCompiled: () -> Unit,
     ): AdHocFire {
         val hub = binding.boundHub ?: return AdHocFire.Skipped("no closed bar yet: the strategy has no candles")
-        val candle = binding.latestKnownCandle(hub) ?: return AdHocFire.Skipped("no closed bar yet on any stream")
+        // An action on a stream prices from that stream's last bar (a trailing entry's reference, a bracket's
+        // distances), never from whichever stream closed last.
+        val own = targetAlias(action)
+        val candle =
+            if (own != null) {
+                context.streams[own]?.let(hub::latest) ?: return AdHocFire.Skipped("no closed bar yet on $own")
+            } else {
+                binding.latestKnownCandle(hub) ?: return AdHocFire.Skipped("no closed bar yet on any stream")
+            }
         val compiled = context.actionCompiler.compile(resolved(action), ruleAlias(action))
+        onCompiled()
         val ec =
             EvalContext(
                 candle = candle,
@@ -135,7 +149,7 @@ internal class CompiledAdHocActions(
                 strategyContext = ctx,
                 snapshotStore = snapshotStore,
                 hub = hub,
-                currentAlias = null,
+                currentAlias = own,
                 evaluationTimeMs = nowMs,
                 sequences = sequenceRuntime,
             )
@@ -162,6 +176,15 @@ internal class CompiledAdHocActions(
         validateCompleteBracket(action, context.defaults)
         rejectReadOnlyOrders(action, context.readOnlyAliases)
     }
+
+    private fun targetAlias(action: ActionAst): String? =
+        when (action) {
+            is Buy -> action.stream
+            is Sell -> action.stream
+            is Close -> action.stream
+            is Cancel -> action.stream
+            else -> null
+        }
 
     private fun ruleAlias(action: ActionAst): String? =
         when (action) {

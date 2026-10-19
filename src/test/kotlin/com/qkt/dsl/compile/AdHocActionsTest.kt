@@ -44,7 +44,7 @@ class AdHocActionsTest {
 
     private fun fire(text: String): AdHocFire {
         val emitted = mutableListOf<Signal>()
-        val fired = adHoc.fire(action(text), testStrategyContext(), 60_001L) { emitted += it }
+        val fired = adHoc.fire(action(text), testStrategyContext(), 60_001L, emit = { emitted += it })
         if (fired is AdHocFire.Fired) assertThat(fired.signals).isEqualTo(emitted)
         return fired
     }
@@ -121,5 +121,37 @@ class AdHocActionsTest {
         val skipped = fire("BUY s0 SIZING 0.5") as AdHocFire.Skipped
 
         assertThat(skipped.reason).contains("no closed bar")
+    }
+
+    @Test
+    fun `an action prices from its own stream, not the stream that closed last`() {
+        val two =
+            AstCompiler().compile(
+                parse(
+                    "STRATEGY bot VERSION 1\nSYMBOLS\n  s0 = EXNESS:XAUUSD EVERY 1m\n  s1 = EXNESS:XAGUSD EVERY 1m\n" +
+                        "RULES\n  WHEN 1 > 2 THEN BUY s0 SIZING 0.01",
+                ),
+            ) as DslCompiledStrategy
+        val hub = CandleHub()
+        two.declaredStreams.values.forEach { hub.register(it, retention = 10, strategyId = "t") }
+        two.bindToHub(hub, testStrategyContext()) {}
+        hub.feed(Tick("EXNESS:XAGUSD", BigDecimal("25"), 0L))
+        hub.feed(Tick("EXNESS:XAUUSD", BigDecimal("2650"), 0L))
+        hub.feed(Tick("EXNESS:XAGUSD", BigDecimal("25"), 60_000L))
+        hub.feed(Tick("EXNESS:XAUUSD", BigDecimal("2650"), 60_000L))
+        val src =
+            "STRATEGY bot VERSION 1\nSYMBOLS\n  s0 = EXNESS:XAUUSD EVERY 1m\n  s1 = EXNESS:XAGUSD EVERY 1m\n" +
+                "RULES\n  WHEN true\n  THEN "
+        val action =
+            (
+                parse(
+                    src + "BUY s1 SIZING 1 ORDER_TYPE = TRAILING BY 1 BRACKET { STOP LOSS BY 2, TAKE PROFIT BY 4 }",
+                ).rules.single() as WhenThen
+            ).action
+
+        val fired = requireNotNull(two.adHoc).fire(action, testStrategyContext(), 60_001L, {}) as AdHocFire.Fired
+
+        val bracket = (fired.signals.single() as Signal.Submit).request as OrderRequest.Bracket
+        assertThat(bracket.takeProfit).isEqualByComparingTo("29")
     }
 }

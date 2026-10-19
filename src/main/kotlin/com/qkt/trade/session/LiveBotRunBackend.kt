@@ -42,13 +42,17 @@ class LiveBotRunBackend(
     override fun equity(): BigDecimal? = null
 
     override fun positions(): Map<String, com.qkt.positions.Position> =
-        identities
-            .flatMap { id -> handle.positionsFor(id) }
-            .associateBy { it.symbol }
+        netBySymbol(identities.flatMap { id -> handle.positionsFor(id) })
 
-    override fun awaitFlat(timeoutMs: Long) {
+    override fun awaitFlat(
+        timeoutMs: Long,
+        pending: () -> Boolean,
+    ) {
         val deadline = clock.now() + timeoutMs
-        while (handle.running && positions().values.any { it.quantity.signum() != 0 } && clock.now() < deadline) {
+        while (handle.running &&
+            (positions().values.any { it.quantity.signum() != 0 } || pending()) &&
+            clock.now() < deadline
+        ) {
             Thread.sleep(pollMs)
         }
     }
@@ -58,3 +62,14 @@ class LiveBotRunBackend(
         return null
     }
 }
+
+/** One net position per symbol across [positions] (several identities can hold the same symbol). */
+internal fun netBySymbol(positions: List<com.qkt.positions.Position>): Map<String, com.qkt.positions.Position> =
+    positions.groupBy { it.symbol }.mapValues { (symbol, held) ->
+        com.qkt.positions.Position(
+            symbol,
+            held.fold(BigDecimal.ZERO) { q, p -> q + p.quantity },
+            held.first().avgEntryPrice,
+            held.first().openedAt,
+        )
+    }

@@ -61,7 +61,15 @@ class IntentJournal(
             val fates =
                 lines.filter { it.text("type") == "fate" }.associate { f ->
                     val id = f.text("intentId")!!
-                    id to IntentFate(id, f.text("identity")!!, f.text("state")!!, reason = f.text("reason"))
+                    val compiled = f.text("compiled") == "true"
+                    id to
+                        IntentFate(
+                            id,
+                            f.text("identity")!!,
+                            f.text("state")!!,
+                            reason = f.text("reason"),
+                            compiled = compiled,
+                        )
                 }
             return lines.filter { it.text("type") == "intent" }.map { i ->
                 val id = i.text("intentId")!!

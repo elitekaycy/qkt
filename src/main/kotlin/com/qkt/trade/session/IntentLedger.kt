@@ -51,11 +51,12 @@ class IntentLedger {
     @Synchronized
     fun fate(fate: IntentFate) {
         val known = fates[fate.intentId]
+        val compiled = fate.compiled || known?.compiled == true
         fates[fate.intentId] =
             if (known == null || rank(fate.state) >= rank(known.state)) {
-                fate.copy(orderIds = ((known?.orderIds ?: emptyList()) + fate.orderIds).distinct())
+                fate.copy(orderIds = ((known?.orderIds ?: emptyList()) + fate.orderIds).distinct(), compiled = compiled)
             } else {
-                known.copy(orderIds = (known.orderIds + fate.orderIds).distinct())
+                known.copy(orderIds = (known.orderIds + fate.orderIds).distinct(), compiled = compiled)
             }
         fates[fate.intentId]?.takeIf { it != known }?.let(onChange)
     }
@@ -66,6 +67,15 @@ class IntentLedger {
             "fired", "skipped" -> 1
             else -> 2
         }
+
+    /** The engine compiled [intentId]'s action; recorded before it emits anything. */
+    @Synchronized
+    fun markCompiled(intentId: String) {
+        val known = fates[intentId] ?: return
+        if (known.compiled) return
+        fates[intentId] = known.copy(compiled = true)
+        onChange(fates.getValue(intentId))
+    }
 
     /** [orderId] was submitted for [intentId]. */
     @Synchronized

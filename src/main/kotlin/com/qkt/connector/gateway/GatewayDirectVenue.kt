@@ -5,6 +5,7 @@ import com.qkt.connectivity.DirectPosition
 import com.qkt.connectivity.DirectResult
 import com.qkt.connectivity.DirectVenue
 import com.qkt.connectivity.VenueFacts
+import com.qkt.connectivity.VenueRefusal
 import com.qkt.execution.OrderRequest
 import com.qkt.instrument.TickSteps
 import com.qkt.marketdata.Candle
@@ -71,15 +72,17 @@ class GatewayDirectVenue(
         takeProfit: BigDecimal?,
         clientId: String,
     ): DirectResult {
-        require(stopLoss == null && takeProfit == null) {
-            "a gateway venue holds no stop for a position; run a session (`qkt bot session start`) and the " +
-                "engine holds the bracket"
+        if (stopLoss != null || takeProfit != null) {
+            throw VenueRefusal(
+                "a gateway venue holds no stop for a position; run a session (`qkt bot session start`) and the " +
+                    "engine holds the bracket",
+            )
         }
         val code = venueSymbol(order.symbol)
         val grid = listing[code]?.tickSize?.let { TickSteps(BigDecimal(it)) }
         val body =
             when (val mapping = GatewayOrders.map(order, code, NoPositions, BigDecimal.ZERO, grid)) {
-                is GatewayOrderMapping.Unsupported -> throw IllegalArgumentException(mapping.reason)
+                is GatewayOrderMapping.Unsupported -> throw VenueRefusal(mapping.reason)
                 is GatewayOrderMapping.Send -> mapping.body
             }
         return when (val sent = client.submit(body)) {

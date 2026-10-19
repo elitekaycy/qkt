@@ -21,7 +21,17 @@ class BotCommand(
         // Session-first routing: when a run session is up, decision/data verbs go
         // through its pipeline (risk, sim clock, report). With no session, every
         // verb keeps today's direct venue behavior byte-identical.
-        val resolved = if (verb in SESSION_VERBS) resolveSession(sub) else null
+        val named = sub.option("run") ?: System.getenv("QKT_BOT_RUN")
+        // close/cancel/modify act on a venue unless a session is named: an implicit route would queue a
+        // close in a backtest while the real position stays open.
+        val routable = verb in SESSION_VERBS && (named != null || verb !in VENUE_MUTATIONS)
+        val resolved = if (routable) resolveSession(sub) else null
+        if (named != null && verb in SESSION_VERBS && resolved == null) {
+            return botFail(
+                sub.flag("json"),
+                "session $named is not running; nothing was sent (start it, or drop --run)",
+            )
+        }
         // Live sessions route decisions and bar pulls through the pipeline, but
         // account/positions stay venue truth (they include manual/off-session state).
         val session =
@@ -110,6 +120,7 @@ class BotCommand(
     private fun resolveSession(sub: Args): BotSessionClient? = BotSessionClient.resolve(sub)
 
     private companion object {
+        private val VENUE_MUTATIONS = setOf("close", "cancel", "modify")
         private val SESSION_VERBS =
             setOf(
                 "buy",

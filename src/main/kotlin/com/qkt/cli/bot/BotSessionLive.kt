@@ -13,6 +13,7 @@ import com.qkt.trade.session.BotSessionStreams
 import com.qkt.trade.session.IntentJournal
 import com.qkt.trade.session.LiveBotRunBackend
 import com.qkt.trade.session.LiveSessionRecord
+import com.qkt.trade.session.RunLock
 import com.qkt.trade.session.copySessionJournals
 import com.qkt.trade.session.rebuildIdentities
 import com.qkt.trade.venue.toQuoteContext
@@ -29,13 +30,26 @@ internal fun startLiveSession(
     json: Boolean,
     spec: SessionStart,
 ): Int {
-    val streams = spec.streams
     val configPath = Config.resolvePath(sub.option("config"))
     val stateDir = StateDir.resolve(sub.option("state-dir"))
     refuseDeployedIdentities(spec.identities, daemonStrategyNames(stateDir))
+    val sessionDir = BotSessionFiles.sessionDir(stateDir.stateRoot, spec.runId)
+    RunLock.acquire(sessionDir, spec.runId).use { _ ->
+        return liveOnLock(sub, json, spec, configPath, stateDir, sessionDir)
+    }
+}
+
+private fun liveOnLock(
+    sub: Args,
+    json: Boolean,
+    spec: SessionStart,
+    configPath: Path,
+    stateDir: StateDir,
+    sessionDir: Path,
+): Int {
+    val streams = spec.streams
     LiveSessionStack(Config.load(configPath), configPath, stateDir).use { stack ->
         val cfg = stack.cfg
-        val sessionDir = BotSessionFiles.sessionDir(stateDir.stateRoot, spec.runId)
         val outDir = Path.of(sub.option("out") ?: "runs/${spec.runId}")
         val history = BarHistory(capacity = maxOf(spec.historyBars, 1000))
         seedLiveWarmup(cfg, streams, spec.historyBars, history)

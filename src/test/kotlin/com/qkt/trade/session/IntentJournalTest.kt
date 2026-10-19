@@ -49,6 +49,22 @@ class IntentJournalTest : IntentSessionFixture() {
     }
 
     @Test
+    fun `finish lists working orders that could fill after it with nothing managing them`() {
+        val s = session(listOf(2400, 2401, 2402))
+        s.next(gold)
+        s.submit(
+            "brain",
+            intent("BUY x SIZING 0.1 ORDER_TYPE = LIMIT AT 2300 BRACKET { STOP LOSS BY 5, TAKE PROFIT BY 10 }"),
+        )
+        s.next(gold)
+        val handlers = BotSessionHandlers(s, "USD", { null }, null, null, null, com.qkt.common.SystemClock())
+
+        val reply = handlers.finish()
+
+        assertThat(reply).contains("\"workingOrders\":[{\"intentId\":\"int-1\"").contains("\"note\":\"")
+    }
+
+    @Test
     fun `the session descriptor is readable by its owner only`(
         @TempDir dir: Path,
     ) {
