@@ -16,6 +16,12 @@ class BotSessionRecorder(
     private val history: BarHistory,
 ) : Strategy {
     private val ticks = java.util.concurrent.ConcurrentHashMap<String, Tick>()
+    private val seen =
+        java.util.concurrent.atomic
+            .AtomicLong()
+
+    /** Ticks the engine has handed the session so far: where an intent arriving now enters the replay. */
+    val ticksSeen: Long get() = seen.get()
 
     override fun onTick(
         tick: Tick,
@@ -23,6 +29,7 @@ class BotSessionRecorder(
         emit: (Signal) -> Unit,
     ) {
         ticks[tick.symbol] = tick
+        seen.incrementAndGet()
     }
 
     override fun onCandle(

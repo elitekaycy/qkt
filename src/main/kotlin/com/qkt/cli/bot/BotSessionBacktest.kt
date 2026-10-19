@@ -15,7 +15,9 @@ import com.qkt.trade.session.BotSessionFiles
 import com.qkt.trade.session.BotSessionIdentities
 import com.qkt.trade.session.BotSessionRecorder
 import com.qkt.trade.session.BotSessionStreams
+import com.qkt.trade.session.IntentJournal
 import com.qkt.trade.session.ReplayBotRunBackend
+import com.qkt.trade.session.copySessionJournals
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -54,8 +56,13 @@ internal fun startBacktestSession(
             ).toEngine()
     seedBacktestWarmup(ctx, streams, spec.historyBars, history)
 
-    val session = BotRunSession(spec.runId, ReplayBotRunBackend(engine), identities, streams, history, recorder)
     val stateRoot = StateDir.resolve(sub.option("state-dir")).stateRoot
+    val sessionDir = BotSessionFiles.sessionDir(stateRoot, spec.runId)
+    // A backtest run is a fresh record each time it starts; only a live run resumes its own.
+    listOf("intents.jsonl", "reads.jsonl").forEach { Files.deleteIfExists(sessionDir.resolve(it)) }
+    val journal = IntentJournal(sessionDir.resolve("intents.jsonl"))
+    val session =
+        BotRunSession(spec.runId, ReplayBotRunBackend(engine), identities, streams, history, recorder, journal)
     return serveSession(
         sub = sub,
         json = json,
@@ -69,6 +76,7 @@ internal fun startBacktestSession(
             result?.let {
                 Files.createDirectories(outDir)
                 BacktestReportWriter(outDir).write(it)
+                copySessionJournals(sessionDir, outDir)
                 BotSessionFiles.delete(stateRoot, spec.runId)
                 outDir.toAbsolutePath().toString()
             }

@@ -41,6 +41,9 @@ class IntentLedger {
     private val unread = ArrayList<SessionEvent>()
     private var seq = 0L
 
+    /** Told every fate as it changes (the session's journal). */
+    @Volatile var onChange: (IntentFate) -> Unit = {}
+
     /**
      * Records [fate]. A fate never moves back: the pipeline may link, fill or reject an order while the
      * intent is still firing, so a later `fired` keeps the outcome already known and adds its order ids.
@@ -54,6 +57,7 @@ class IntentLedger {
             } else {
                 known.copy(orderIds = (known.orderIds + fate.orderIds).distinct())
             }
+        fates[fate.intentId]?.takeIf { it != known }?.let(onChange)
     }
 
     private fun rank(state: String): Int =
@@ -133,8 +137,8 @@ class IntentLedger {
             }
         unread += event
         if (outcome !is OrderOutcome.Filled || !outcome.partial) ended += outcome.orderId
-        // An exit's fill is an event of the intent, not its fate: the fate is what became of the entry.
-        if (intentId != null && (outcome as? OrderOutcome.Filled)?.exitReason == null) settle(intentId, event)
+        // The intent's own orders settle its fate; the exits the engine placed for it are events only.
+        if (intentId != null && intentOfOrder[outcome.orderId] == intentId) settle(intentId, event)
     }
 
     private fun settle(
@@ -148,6 +152,7 @@ class IntentLedger {
                 else -> event.kind
             }
         fates[intentId] = fate.copy(state = state, reason = event.reason ?: fate.reason, atMs = event.atMs)
+        onChange(fates.getValue(intentId))
     }
 
     @Synchronized

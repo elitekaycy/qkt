@@ -62,6 +62,14 @@ object BotSessionFiles {
         val target = dir.resolve("session.json")
         val tmp = dir.resolve("session.json.tmp")
         Files.writeString(tmp, descriptor.toJson())
+        // The descriptor holds the session's bearer token: its owner alone may read it.
+        runCatching {
+            Files.setPosixFilePermissions(
+                tmp,
+                java.nio.file.attribute.PosixFilePermissions
+                    .fromString("rw-------"),
+            )
+        }
         Files.move(tmp, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
         return target
     }

@@ -25,6 +25,8 @@ class BotRunSession(
     val streams: BotSessionStreams,
     private val history: BarHistory,
     private val recorder: BotSessionRecorder,
+    /** Where every intent and its fate are written, or null to keep them in memory only. */
+    private val journal: IntentJournal? = null,
 ) {
     // Per series, the index of the next bar to hand out; bars seeded before the start count as history.
     private val delivered =
@@ -35,7 +37,10 @@ class BotRunSession(
             .AtomicLong()
 
     // Every identity of a session shares one ledger (BotSessionIdentities.compile passes it to each).
-    private val ledger: IntentLedger = bridges.values.firstOrNull()?.ledger ?: IntentLedger()
+    private val ledger: IntentLedger =
+        (bridges.values.firstOrNull()?.ledger ?: IntentLedger()).also { l ->
+            journal?.let { j -> l.onChange = j::fate }
+        }
 
     /**
      * Returns the next closed bar for [symbol], or null when no further bar can
@@ -101,7 +106,9 @@ class BotRunSession(
     ): SubmittedIntent {
         val intent = sessionIntent(source, streams)
         val id = "int-${intentSeq.incrementAndGet()}"
+        val ticks = recorder.ticksSeen
         identity(identity).submit(id, intent.action)
+        journal?.intent(id, identity, source, simNowMs(), System.currentTimeMillis(), ticks)
         return SubmittedIntent(id, intent.symbol, intent.sha256)
     }
 

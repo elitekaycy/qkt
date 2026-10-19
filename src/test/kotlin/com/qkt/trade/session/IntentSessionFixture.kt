@@ -47,6 +47,7 @@ abstract class IntentSessionFixture {
         identities: List<String> = listOf("brain"),
         symbols: List<String> = listOf(gold),
         timeframes: List<String> = listOf("1m"),
+        journal: IntentJournal? = null,
     ): BotRunSession {
         val streams = BotSessionStreams(symbols, timeframes)
         val history = BarHistory(capacity = 100)
@@ -60,7 +61,7 @@ abstract class IntentSessionFixture {
                 startingBalance = BigDecimal("10000"),
                 instruments = goldSpec,
             ).toEngine()
-        return BotRunSession("t", ReplayBotRunBackend(engine), strategies, streams, history, recorder)
+        return BotRunSession("t", ReplayBotRunBackend(engine), strategies, streams, history, recorder, journal)
     }
 
     protected fun intent(action: String) =

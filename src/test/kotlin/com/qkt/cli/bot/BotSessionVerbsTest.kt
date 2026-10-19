@@ -32,6 +32,8 @@ class BotSessionVerbsTest {
         ).contains("\"intentId\":\"int-1\"").contains("\"intentId\":\"int-2\"").doesNotContain("\"skipped\"")
         val trades = Files.readAllLines(h.out.resolve("trades.csv")).drop(1).filter { it.contains("brain") }
         assertThat(trades).hasSize(2)
+        assertThat(Files.readString(h.out.resolve("intents.jsonl"))).contains("CLOSE x").contains("BUY x SIZING 0.1")
+        assertThat(Files.readString(h.out.resolve("reads.jsonl"))).contains("\"bars\":[{")
     }
 
     @Test
