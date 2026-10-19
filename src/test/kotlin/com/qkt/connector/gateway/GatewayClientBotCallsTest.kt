@@ -99,6 +99,50 @@ class GatewayClientBotCallsTest {
     }
 
     @Test
+    fun `quote once merges one-sided updates into a two-sided quote`() {
+        server.enqueue(
+            MockResponse().withWebSocketUpgrade(
+                object : WebSocketListener() {
+                    override fun onOpen(
+                        webSocket: WebSocket,
+                        response: Response,
+                    ) {
+                        webSocket.send("""{"symbol":"SOL_USDC-PERPETUAL","bid":"61.1","time":5}""")
+                        webSocket.send("""{"symbol":"SOL_USDC-PERPETUAL","ask":"104.6","mark":"104.5","time":6}""")
+                    }
+                },
+            ),
+        )
+
+        val quote = gatewayQuoteOnce(base, "secret", "SOL_USDC-PERPETUAL", timeoutMs = 5_000)
+
+        assertThat(quote.bid).isEqualTo("61.1")
+        assertThat(quote.ask).isEqualTo("104.6")
+        assertThat(quote.mark).isEqualTo("104.5")
+    }
+
+    @Test
+    fun `a book with one side only is completed from the mark`() {
+        server.enqueue(
+            MockResponse().withWebSocketUpgrade(
+                object : WebSocketListener() {
+                    override fun onOpen(
+                        webSocket: WebSocket,
+                        response: Response,
+                    ) {
+                        webSocket.send("""{"symbol":"SOL_USDC-PERPETUAL","bid":"61.1","mark":"104.5","time":5}""")
+                    }
+                },
+            ),
+        )
+
+        val quote = gatewayQuoteOnce(base, "secret", "SOL_USDC-PERPETUAL", timeoutMs = 600)
+
+        assertThat(quote.bid).isEqualTo("61.1")
+        assertThat(quote.ask).isEqualTo("104.5")
+    }
+
+    @Test
     fun `quote once times out with a named error`() {
         server.enqueue(MockResponse().withWebSocketUpgrade(object : WebSocketListener() {}))
 
