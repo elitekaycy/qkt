@@ -42,6 +42,7 @@ internal class CompiledStrategy(
     baskets: List<com.qkt.dsl.ast.BasketDecl>,
     private val sequenceRuntime: SequenceRuntime,
     private val exitHookCatalog: ExitHookCatalog,
+    adHocContext: AdHocCompileContext,
 ) : DslCompiledStrategy,
     TradeFlowReader,
     com.qkt.strategy.PerStreamWarmable {
@@ -56,6 +57,8 @@ internal class CompiledStrategy(
     private val scheduleFirer = ScheduleFirer(schedules, streams, snapshotStore, sequenceRuntime, binding)
     private val exitHooks = ExitHookExecutor(exitHookCatalog, streams, snapshotStore, sequenceRuntime, binding)
     private val tickFed = TickFedIndicators(streams, bindings)
+
+    override val adHoc: AdHocActions = CompiledAdHocActions(adHocContext, snapshotStore, sequenceRuntime, binding)
 
     override val declaredStreams: Map<String, HubKey> get() = streams
 

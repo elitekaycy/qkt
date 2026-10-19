@@ -29,6 +29,9 @@ interface DslCompiledStrategy : Strategy {
      */
     val pendingStacks: PendingStacks
 
+    /** Actions run on demand outside the rules (`qkt bot` session intents); null when unsupported. */
+    val adHoc: AdHocActions? get() = null
+
     /** Compiled exit-hook identities available for durable binding validation. */
     fun exitHookReferences(): Map<String, ExitHookRef> = emptyMap()
 
