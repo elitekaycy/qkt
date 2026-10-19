@@ -28,7 +28,7 @@ class BotSessionServerBacktestLiveParityTest : BotSessionParityFixture() {
     private fun runBacktestServer(): List<TradeKey> {
         val history = BarHistory(capacity = 100)
         val recorder = BotSessionRecorder(history)
-        val bridge = BotBridgeStrategy()
+        val bridge = testBridge(history = history)
         val engine =
             Backtest(
                 strategies = listOf("brain" to bridge, BotSessionRecorder.ID to recorder),
@@ -42,6 +42,7 @@ class BotSessionServerBacktestLiveParityTest : BotSessionParityFixture() {
                 runId = "parity-http-backtest",
                 backend = ReplayBotRunBackend(engine),
                 bridges = mapOf("brain" to bridge),
+                streams = testStreams(),
                 history = history,
                 recorder = recorder,
             )
@@ -74,7 +75,7 @@ class BotSessionServerBacktestLiveParityTest : BotSessionParityFixture() {
             val tickSeq = ticks()
             val history = BarHistory(capacity = 100)
             val recorder = BotSessionRecorder(history)
-            val bridge = BotBridgeStrategy()
+            val bridge = testBridge(history = history)
             val feed = GatedTickFeed(tickSeq)
             val liveTrades = mutableListOf<Trade>()
             val handle =
@@ -102,6 +103,7 @@ class BotSessionServerBacktestLiveParityTest : BotSessionParityFixture() {
                             onAwaitingBar = { _, _ -> readyForBar.incrementAndGet() },
                         ),
                     bridges = mapOf("brain" to bridge),
+                    streams = testStreams(),
                     history = history,
                     recorder = recorder,
                 )

@@ -21,13 +21,37 @@ class BarHistory(
     private val bars = mutableMapOf<String, ArrayDeque<Candle>>()
     private val counts = mutableMapOf<String, Long>()
 
-    /** Appends one closed candle, evicting the oldest past [capacity]. O(1). */
+    /** Appends one closed candle under its symbol, evicting the oldest past [capacity]. O(1). */
+    fun record(candle: Candle) = record(candle.symbol, candle)
+
+    /** Appends one closed candle under [key] (a symbol, or a series `symbol@tf`). O(1). */
     @Synchronized
-    fun record(candle: Candle) {
-        val deque = bars.getOrPut(candle.symbol) { ArrayDeque(capacity) }
+    fun record(
+        key: String,
+        candle: Candle,
+    ) {
+        val deque = bars.getOrPut(key) { ArrayDeque(capacity) }
+        // A series only moves forward: a bar starting before the last one ended (a candle a stale
+        // first quote closed, or a warmup bar seeded twice) is never served as new.
+        if (deque.isNotEmpty() && candle.startTime < deque.last().endTime) return
         if (deque.size == capacity) deque.removeFirst()
         deque.addLast(candle)
-        counts[candle.symbol] = (counts[candle.symbol] ?: 0L) + 1L
+        counts[key] = (counts[key] ?: 0L) + 1L
+    }
+
+    /** The index of the oldest bar still held under [key] (bars before it were evicted). */
+    @Synchronized
+    fun oldestIndex(key: String): Long = (counts[key] ?: 0L) - (bars[key]?.size ?: 0)
+
+    /** The [index]-th bar ever recorded under [key] (0-based), or null once it was evicted or before it closed. */
+    @Synchronized
+    fun at(
+        key: String,
+        index: Long,
+    ): Candle? {
+        val deque = bars[key] ?: return null
+        val offset = index - ((counts[key] ?: 0L) - deque.size)
+        return if (offset in 0 until deque.size) deque[offset.toInt()] else null
     }
 
     /** Pre-loads warmup bars (oldest-first); they count toward [countFor]. */
@@ -35,7 +59,7 @@ class BarHistory(
         symbol: String,
         warmupBars: List<Candle>,
     ) {
-        warmupBars.forEach { record(it) }
+        warmupBars.forEach { record(symbol, it) }
     }
 
     /** Newest [count] bars for [symbol], oldest-first; fewer if fewer have been seen. */

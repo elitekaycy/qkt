@@ -21,10 +21,28 @@ import java.math.BigDecimal
 class BotRunSession(
     val runId: String,
     private val backend: BotRunBackend,
-    private val bridges: Map<String, BotBridgeStrategy>,
+    private val bridges: Map<String, BotIntentStrategy>,
+    val streams: BotSessionStreams,
     private val history: BarHistory,
     private val recorder: BotSessionRecorder,
+    /** Where every intent and its fate are written, or null to keep them in memory only. */
+    private val journal: IntentJournal? = null,
+    private val clock: com.qkt.common.Clock = com.qkt.common.SystemClock(),
 ) {
+    // Per series, the index of the next bar to hand out; bars seeded before the start count as history.
+    private val delivered =
+        java.util.concurrent.ConcurrentHashMap(streams.series().associateWith { history.countFor(it) })
+
+    private val intentSeq =
+        java.util.concurrent.atomic
+            .AtomicLong()
+
+    // Every identity of a session shares one ledger (BotSessionIdentities.compile passes it to each).
+    private val ledger: IntentLedger =
+        (bridges.values.firstOrNull()?.ledger ?: IntentLedger()).also { l ->
+            journal?.let { j -> l.onChange = j::fate }
+        }
+
     /**
      * Returns the next closed bar for [symbol], or null when no further bar can
      * arrive (backtest window exhausted / live session stopped). In backtest the
@@ -32,17 +50,37 @@ class BotRunSession(
      * fills, exits, and risk evaluate at normal fidelity. Live, it blocks until
      * the feed closes the next bar.
      */
-    fun next(symbol: String): Candle? {
-        val before = history.countFor(symbol)
-        if (!backend.awaitNextBar(symbol, before, history)) return null
-        return history.last(symbol, 1).firstOrNull()
+    fun next(
+        symbol: String,
+        tf: String? = null,
+    ): Candle? {
+        val series = series(symbol, tf)
+        val cursor = delivered.getValue(series)
+        if (history.countFor(series) <= cursor && !backend.awaitNextBar(series, cursor, history)) return null
+        // A client further behind than the buffer holds resumes at the oldest bar still held.
+        val index = maxOf(cursor, history.oldestIndex(series))
+        val bar = history.at(series, index) ?: return null
+        delivered[series] = index + 1
+        return bar
     }
 
-    /** Newest [count] closed bars up to sim-now, oldest-first. Never looks ahead. */
+    /** Newest [count] closed bars of the series up to sim-now, oldest-first. Never looks ahead. */
     fun bars(
         symbol: String,
         count: Int,
-    ): List<Candle> = history.last(symbol, count)
+        tf: String? = null,
+    ): List<Candle> = history.last(series(symbol, tf), count)
+
+    private fun series(
+        symbol: String,
+        tf: String?,
+    ): String {
+        val t = tf ?: streams.baseTf
+        require(streams.alias(symbol, t) != null) {
+            "$symbol@$t is not a session series; the session declares ${streams.describe()}"
+        }
+        return "$symbol@$t"
+    }
 
     /** Last tick at the replay cursor, or null before the first tick of [symbol]. */
     fun quote(symbol: String): Tick? = recorder.lastTick(symbol)
@@ -60,20 +98,85 @@ class BotRunSession(
     fun identities(): Set<String> = bridges.keys
 
     /**
-     * Enqueues [signal] on [identity]'s bridge; it enters the pipeline on the next
-     * tick replayed (the first tick after the client's current cursor position).
-     * Fail-closed on an undeclared identity.
+     * Validates intent [source] for [identity] and queues it; it fires on the next tick the engine
+     * replays (the first after the client's cursor). Throws the reason when it cannot run.
      */
     fun submit(
         identity: String,
-        signal: Signal,
-    ) {
-        val bridge =
-            requireNotNull(bridges[identity]) {
-                "unknown identity '$identity' — declared identities: ${bridges.keys.sorted().joinToString(", ")}"
-            }
-        bridge.submit(signal)
+        source: String,
+    ): SubmittedIntent {
+        val intent = sessionIntent(source, streams)
+        val strategy = identity(identity)
+        strategy.validate(intent.action)
+        val id = "int-${intentSeq.incrementAndGet()}"
+        // Journaled before it is queued: the engine may fire it at once, and a restart rebuilds from here.
+        journal?.intent(id, identity, source, simNowMs(), clock.now(), recorder.ticksSeen)
+        strategy.enqueue(id, intent.action)
+        return SubmittedIntent(id, intent.symbol, intent.sha256)
     }
+
+    /** Queues a ready-made [signal] on [identity] for the next tick (no DSL; the hand-written reference). */
+    fun submit(
+        identity: String,
+        signal: Signal,
+    ) = identity(identity).submitSignal(signal)
+
+    /**
+     * Picks up an earlier run over the same state: recompiles every journaled intent, in order, on its
+     * identity without firing it, restores its last fate, and numbers new intents after the last one.
+     * Returns how many intents were rebuilt.
+     */
+    fun rebuildFrom(journaled: List<JournaledIntent>): Int {
+        rebuildIdentities(journaled, streams, bridges)
+        restoreFates(journaled)
+        return journaled.size
+    }
+
+    /** Restores each journaled intent's last fate and numbers new intents after the last one. */
+    fun restoreFates(journaled: List<JournaledIntent>) {
+        journaled.forEach { j ->
+            val last = j.lastFate
+            // An intent still queued when the run stopped never reached the engine; it is not sent now.
+            ledger.fate(
+                if (last == null || last.state == "queued") {
+                    IntentFate(j.intentId, j.identity, "skipped", reason = "the session restarted before it fired")
+                } else {
+                    last
+                },
+            )
+        }
+        journaled.maxOfOrNull { it.intentId.removePrefix("int-").toLong() }?.let { intentSeq.set(it) }
+    }
+
+    /** The exit hooks [identity]'s strategy holds (what a restart's restore needs). */
+    fun exitHookReferences(identity: String) = identity(identity).exitHookReferences()
+
+    /**
+     * Closes every identity's positions and working orders through the engine (`CLOSE_ALL`), then lets the
+     * session run until the book is flat or [timeoutMs] passes (a backtest replays forward to get there).
+     */
+    fun flattenAll(timeoutMs: Long = 30_000L) {
+        val source = com.qkt.trade.renderBotAction(mapOf("x" to streams.symbols.first()), "CLOSE_ALL")
+        bridges.keys.forEach { submit(it, source) }
+        backend.awaitFlat(timeoutMs) { ledger.working().isNotEmpty() }
+    }
+
+    /** Every intent's latest fate, in arrival order across identities. */
+    fun fates(): List<IntentFate> = ledger.fates()
+
+    /** What happened to the session's orders since the previous call. */
+    fun events(): List<SessionEvent> = ledger.drain()
+
+    /** Entry orders intents placed that are still working. */
+    fun workingOrders(): List<WorkingIntentOrder> = ledger.working()
+
+    /** Every identity's open legs. */
+    fun legs(): List<SessionLeg> = bridges.values.flatMap { it.legs() }
+
+    private fun identity(identity: String): BotIntentStrategy =
+        requireNotNull(bridges[identity]) {
+            "unknown identity '$identity' — declared identities: ${bridges.keys.sorted().joinToString(", ")}"
+        }
 
     /**
      * Ends the run. Backtest returns the standard result (caller writes report
@@ -81,7 +184,15 @@ class BotRunSession(
      * live stops the session and returns null.
      */
     fun finish(): BacktestResult? {
+        journal?.finish(simNowMs(), recorder.ticksSeen)
         val result = backend.finish() ?: return null
         return result.copy(perStrategy = result.perStrategy.filterKeys { it != BotSessionRecorder.ID })
     }
 }
+
+/** An accepted intent: its [intentId], the [symbol] it acts on (null for every symbol) and its source hash. */
+data class SubmittedIntent(
+    val intentId: String,
+    val symbol: String?,
+    val sha256: String,
+)

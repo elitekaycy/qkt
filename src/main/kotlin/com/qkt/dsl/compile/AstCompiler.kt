@@ -182,6 +182,7 @@ class AstCompiler {
             baskets = ast.baskets,
             sequenceRuntime = sequenceRuntime,
             exitHookCatalog = exitHookCatalog,
+            adHocContext = adHocContext(ast, streams, readOnlyAliases, basketConstituents, resolver, actionCompiler),
         )
     }
 }

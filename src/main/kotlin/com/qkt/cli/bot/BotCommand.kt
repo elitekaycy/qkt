@@ -21,11 +21,21 @@ class BotCommand(
         // Session-first routing: when a run session is up, decision/data verbs go
         // through its pipeline (risk, sim clock, report). With no session, every
         // verb keeps today's direct venue behavior byte-identical.
-        val resolved = if (verb in SESSION_VERBS) resolveSession(sub) else null
+        val named = sub.option("run") ?: System.getenv("QKT_BOT_RUN")
+        // close/cancel/modify act on a venue unless a session is named: an implicit route would queue a
+        // close in a backtest while the real position stays open.
+        val routable = verb in SESSION_VERBS && (named != null || verb !in VENUE_MUTATIONS)
+        val resolved = if (routable) resolveSession(sub) else null
+        if (named != null && verb in SESSION_VERBS && resolved == null) {
+            return botFail(
+                sub.flag("json"),
+                "session $named is not running; nothing was sent (start it, or drop --run)",
+            )
+        }
         // Live sessions route decisions and bar pulls through the pipeline, but
         // account/positions stay venue truth (they include manual/off-session state).
         val session =
-            resolved?.takeUnless { it.mode == "live" && verb in setOf("positions", "account") }
+            resolved?.takeUnless { it.mode == "live" && verb in setOf("positions", "account", "orders") }
         if (session != null) {
             return botRun(sub.flag("json")) {
                 when (verb) {
@@ -36,13 +46,20 @@ class BotCommand(
                     "bars" -> BotSessionVerbs.bars(session, sub)
                     "positions" -> BotSessionVerbs.positions(session)
                     "account" -> BotSessionVerbs.account(session)
+                    "close" -> BotSessionVerbs.close(session, sub)
+                    "cancel" -> BotSessionVerbs.cancel(session, sub)
+                    "submit" -> BotSessionVerbs.submit(session, sub)
+                    "modify" -> BotSessionVerbs.refuseModify()
+                    "orders" -> BotSessionVerbs.get(session, "/orders")
+                    "intents" -> BotSessionVerbs.get(session, "/intents")
                     else -> error("verb '$verb' is not session-routable")
                 }
             }
         }
         return when (verb) {
             "session" -> BotSessionCommand(sub).run()
-            "next" -> botFail(sub.flag("json"), "bot next needs a running session (qkt bot session start)")
+            "next", "intents", "submit" ->
+                botFail(sub.flag("json"), "bot $verb needs a running session (qkt bot session start)")
             "buy" -> BotTradeCommand(sub, Side.BUY).run()
             "sell" -> BotTradeCommand(sub, Side.SELL).run()
             "close" -> BotCloseCommand(sub).run()
@@ -62,7 +79,7 @@ class BotCommand(
     private fun help(): Int {
         println(
             """
-            qkt bot — one-shot manual/AI trading against a configured MT5 broker
+            qkt bot — trade through qkt from an agent, a program or a shell (MT5 and gateway brokers)
 
             TRADE (all: --as <name> --json --dry-run --config <path>)
                 bot buy  <lots> BROKER:SYMBOL [--sl <spec>] [--tp <spec>]
@@ -70,7 +87,8 @@ class BotCommand(
                 bot sell ... (same shape)
                     entry: --limit <px> | --stop <px> | --stop-limit <trigger>:<limit>
                     tif:   --tif gtc|day|gtd [--expires <iso8601|epoch-ms>]
-                    exits: <spec> = 2610 | at:2610 | by:30 | pct:1.5 | rr:2 (tp only)
+                    exits: <spec> = 2610 | at:2610 | by:30 | pct:1.5 | rr:2 (tp only) | trail:4[@2] (sl, session)
+                    --exit-after 4h (session)
                 bot close  BROKER:SYMBOL [--ticket N] [--partial <lots>] [--all]
                 bot modify BROKER:SYMBOL --ticket N [--sl <px>] [--tp <px>]
                 bot cancel BROKER:SYMBOL --order N | --all
@@ -84,16 +102,16 @@ class BotCommand(
                 bot history   [--since <iso|Nd>] closed deals
                 bot eval "ema(21)" BROKER:SYMBOL --tf 1h [--count 500]
 
-            SESSION (stateful runs: risk from qkt.config.yaml, backtest reports)
-                bot session start --backtest --symbols BROKER:SYMBOL --tf 5m
-                    --from <date> --to <date> [--identities a,b] [--out runs/x]
-                bot session start --symbols BROKER:SYMBOL --tf 5m [--identities a,b]
-                    [--reconcile=ignore-mismatches]   live; leg state persists under --state-dir
-                bot session status | finish [--run <id>]
-                bot next BROKER:SYMBOL            pull next closed bar (advances sim clock)
-                buy/sell/quote/bars/positions/account route through a running session.
-
-            Engine-managed shapes (trailing, stack, latch) are rejected — deploy a .qkt.
+            SESSION (the engine: backtest over your data, or live as qkt deploy builds it)
+                bot session start --backtest --symbols A[,B] --tf 5m[,1h] --from <date> --to <date>
+                    [--identities a,b] [--run <id>] [--out runs/x]
+                bot session start --symbols A --tf 5m [--identities a,b] [--reconcile=ignore-mismatches]
+                bot session status | finish [--flatten] | replay <dir> [--out <dir>]
+                bot next SYMBOL [--tf 1h]      next closed bar + events since the last next
+                bot submit '<DSL action>' --symbol SYMBOL      any action on alias x
+                bot close SYMBOL | --all ; bot cancel SYMBOL | --all     through the engine
+                bot intents                    every intent's fate (filled, rejected + reason, ...)
+                verbs route to a running session (--run <id> or QKT_BOT_RUN); see docs/reference/bot-cli.md
             """.trimIndent(),
         )
         return ExitCodes.SUCCESS
@@ -102,8 +120,23 @@ class BotCommand(
     private fun resolveSession(sub: Args): BotSessionClient? = BotSessionClient.resolve(sub)
 
     private companion object {
+        private val VENUE_MUTATIONS = setOf("close", "cancel", "modify")
         private val SESSION_VERBS =
-            setOf("buy", "sell", "next", "quote", "bars", "positions", "account")
+            setOf(
+                "buy",
+                "sell",
+                "next",
+                "quote",
+                "bars",
+                "positions",
+                "account",
+                "close",
+                "cancel",
+                "submit",
+                "modify",
+                "orders",
+                "intents",
+            )
     }
 }
 

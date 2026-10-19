@@ -1,262 +1,208 @@
-# Bot CLI — one-shot manual/AI trading
+# Bot CLI — trading through qkt from an agent, a program, or a shell
 
-`qkt bot` is a one-shot trading surface: each command loads the config, talks to the
-configured MT5 gateway synchronously, prints its result, and exits. It exists so an
-external agent (an AI overlay, a script, or a human at a shell) can analyze and act
-through qkt with the same tracking the DSL engine gets — every trade is rendered to
-canonical DSL, journaled, and egressed to qkt-insights.
+`qkt bot` is how something that is not a `.qkt` file trades through qkt: an AI agent with a shell, a
+program in any language, a person at a terminal. It has two modes, and the same verbs drive both.
+
+| Mode | What runs | Use it for |
+|---|---|---|
+| **One-shot** (no session running) | each command talks to the venue directly and exits | a single action: look, buy, close |
+| **Session** (`qkt bot session start`) | the qkt engine itself, as a backtest or live; the verbs become its inputs | anything managed over time, every guardrail, backtests, parity |
+
+With a session running, the verbs route to it (`--run <id>`, else `QKT_BOT_RUN`, else the only one);
+with none, they act one-shot. Naming a session that is not running fails and sends nothing. `close`,
+`cancel` and `modify` reach a session only when it is named (`--run` or `QKT_BOT_RUN`); otherwise they act
+on the venue, so a backtest session never swallows a real close. One process holds a run at a time. A program that is not a shell uses the session's
+[HTTP API](bot-session-api.md) directly.
 
 ```
-external AI  ──shell──▶  qkt bot ...  ──HTTP──▶  mt5-gateway  ──▶  broker
-                             │
-                             ├── journal   <state>/bot/<as>/journal-YYYY-MM-DD.jsonl
-                             └── insights  bot.command / order.submit / order.accepted|rejected
+agent / program ──▶ qkt bot ... ──▶ one-shot: the venue (MT5 gateway, VGP gateway)
+                                └──▶ session: the engine ─▶ backtest over your data
+                                                         └▶ live, built as `qkt deploy` builds it
 ```
 
 ## Prerequisites
 
-- A `qkt.config.yaml` with an MT5 broker whose gateway is reachable. Resolution order:
-  `--config <path>`, `./qkt.config.yaml`, `/etc/qkt/qkt.config.yaml`,
-  `~/.config/qkt/qkt.config.yaml`, `~/.qkt/qkt.config.yaml`.
-- Optionally an `insights:` block for egress. Without it, trades are journaled locally
-  only.
-- Symbols are always `BROKER:SYMBOL` (e.g. `MT5:XAUUSD`); the prefix must match a
-  configured broker or the command fails closed.
-- MT5 brokers only. A `type: gateway` broker (the paper or Deribit venue gateway) is refused
-  with that reason; to trade one from the command line, deploy a one-rule strategy with
-  `qkt deploy`.
+- A `qkt.config.yaml` (`--config <path>`, `./qkt.config.yaml`, `/etc/qkt/qkt.config.yaml`,
+  `~/.config/qkt/qkt.config.yaml`, `~/.qkt/qkt.config.yaml`) with the brokers you trade: `type: mt5`
+  (CFDs and metals through an mt5-gateway) or `type: gateway` (perpetuals, dated futures and options
+  through a VGP venue gateway: paper, Deribit, Bybit; wire format in the qkt-venue-gateway repository).
+- Symbols are always `BROKER:SYMBOL`, the prefix being the broker's config name in any case:
+  `EXNESS:XAUUSD`, `DERIBIT:SOL_USDC_PERPETUAL`, `DERIBIT:BTC_USDC_25DEC26_92000_C`. An unknown prefix
+  fails closed and names the brokers configured.
+- `instruments.yaml` (contract size, steps, tick) for backtest sessions, as for `qkt backtest`.
+- Optionally an `insights:` block; every command, order and fill is egressed to qkt-insights.
 
-A ready-to-copy starter lives in `examples/bot/`, or scaffold a full project with
-`qkt create template <path> --kind bot` (MT5 compose stack plus an AI
-system-prompt describing this whole surface).
+A starter is in `examples/bot/` (config, an agent system prompt, and a Python client); `qkt create
+template <path> --kind bot` scaffolds a project.
 
 ## Common flags
 
 | Flag | Applies to | Meaning |
 |---|---|---|
-| `--json` | all | print one JSON document on stdout (the AI contract) |
+| `--json` | all | one JSON document on stdout (the agent contract) |
 | `--config <path>` | all | explicit config file |
-| `--as <name>` | trade verbs | attribution id, default `manual`; becomes the strategyId in journal + insights |
-| `--dry-run` | buy/sell | render + validate, print canonical DSL, submit nothing (offline) |
-| `--broker <name>` | account/history | pick the broker when no symbol names one and several are configured |
-| `--state-dir <dir>` | trade verbs | override the journal state root |
+| `--as <name>` | trade verbs | identity: the strategyId in journals, reports and insights (default `manual`) |
+| `--dry-run` | buy/sell/close/cancel/submit | render and print the canonical DSL, send nothing |
+| `--broker <name>` | account/history | the broker when no symbol names one and several are configured |
+| `--state-dir <dir>` | all | the state root (journals, sessions) |
+| `--run <id>` | all | the session to route to |
 
-Positional arguments must come before flags (the CLI arg parser is positional-first).
+Positional arguments come before flags.
 
-## Trading
-
-```bash
-qkt bot buy  0.5 MT5:XAUUSD                              # market
-qkt bot buy  0.5 MT5:XAUUSD --sl by:30 --tp rr:2         # bracket, venue-attached SL/TP
-qkt bot sell 0.2 MT5:XAUUSD --limit 2680 --tif day       # pending limit, expires end of UTC day
-qkt bot buy  0.1 MT5:XAUUSD --stop 2700 --expires 2026-07-14T00:00:00Z
-qkt bot buy  0.1 MT5:XAUUSD --stop-limit 2700:2701       # stop-limit trigger:limit
-qkt bot buy  MT5:XAUUSD --sizing "2 % OF EQUITY" --sl by:30
-qkt bot buy  MT5:XAUUSD --sizing "RISK 0.01" --sl by:30 --tp rr:2
-```
-
-- Exit specs (`--sl` / `--tp`): `2610` or `at:2610` (absolute), `by:30` (price-unit
-  distance from entry), `pct:1.5` (percent of entry), `rr:2` (take-profit only,
-  multiple of the stop distance).
-- Sizing: positional lots, or `--sizing` with a literal DSL sizing form — `N`,
-  `N % OF EQUITY`, `N % OF BALANCE`, `RISK <frac>`, `N PCT RISK`, `RISK $ <amount>`,
-  `<usd> USD`. Live equity/balance is read from the venue at compile time. Percent,
-  risk, and notional forms require the instrument's quote currency to equal the
-  account currency (there is no FX conversion one-shot) — otherwise pass explicit
-  lots.
-- Volume is quantized down to the instrument's step and validated against its
-  minimum; a resolved size below the minimum rejects rather than rounding up.
-- Prices for BUY resolve against the ask, SELL against the bid; pending entries
-  price their exits from the entry price itself.
-- Exit code 0 only after the venue accepts (`retcode` 10008/10009/10010); any
-  rejection exits 1 with the venue's reason.
-
-Managing what's open:
+## One-shot trading
 
 ```bash
-qkt bot close  MT5:XAUUSD                      # single open position: closes it
-qkt bot close  MT5:XAUUSD --ticket 123456      # specific ticket
-qkt bot close  MT5:XAUUSD --ticket 123456 --partial 0.2
-qkt bot close  MT5:XAUUSD --all
-qkt bot modify MT5:XAUUSD --ticket 123456 --sl 2605          # keeps the current TP
-qkt bot cancel MT5:XAUUSD --order 654321
-qkt bot cancel MT5:XAUUSD --all                 # every pending order on the symbol
+qkt bot buy  0.5 EXNESS:XAUUSD                            # market
+qkt bot buy  0.5 EXNESS:XAUUSD --sl by:30 --tp rr:2       # bracket the venue holds (MT5)
+qkt bot sell 0.2 EXNESS:XAUUSD --limit 2680 --tif day     # pending limit, ends with the UTC day
+qkt bot buy  0.1 EXNESS:XAUUSD --stop-limit 2700:2701
+qkt bot buy  EXNESS:XAUUSD --sizing "2 % OF EQUITY" --sl by:30
+qkt bot buy  2 DERIBIT:SOL_USDC_PERPETUAL                 # a perpetual on a gateway broker
+qkt bot sell 0.1 DERIBIT:BTC_USDC_25DEC26_92000_C --limit 650
+qkt bot close  EXNESS:XAUUSD [--ticket N] [--partial 0.2] [--all]
+qkt bot modify EXNESS:XAUUSD --ticket N --sl 2605         # keeps the current TP
+qkt bot cancel EXNESS:XAUUSD --order N | --all
 ```
 
-`modify` reads the position first and preserves the level you did not pass (the MT5
-gateway clears an omitted SL/TP, so sending only one would silently drop the other).
+`close --all` and `cancel --all` act on the caller's own positions and orders only (those `qkt bot` placed
+under the same `--as`); a deployed strategy's legs and exits on the symbol stay. `--any` widens them to
+every position or order on the symbol. A single position, or one named by `--ticket`/`--order`, is acted on
+whoever placed it.
+
+- Exits (`--sl` / `--tp`): `2610` or `at:2610`, `by:30` (distance), `pct:1.5`, `rr:2` (target only,
+  multiple of the stop distance); `--sl trail:4[@2]` is a stop trailing 4 behind the best price once the
+  trade is 2 in profit (session only: it needs the engine).
+- Sizing: positional lots, or `--sizing` with a DSL sizing form (`N`, `N % OF EQUITY`, `N % OF BALANCE`,
+  `RISK <frac>`, `N PCT RISK`, `RISK $ <amount>`, `<usd> USD`). Percent, risk and notional forms need the
+  instrument quoted in the account currency (one-shot has no FX rates); the contract size is the venue's.
+- Quantity floors to the venue's step and must meet its minimum; prices land on the venue's tick grid.
+- **Pre-trade controls** from the config apply before anything is sent: `risk.max_order_qty`,
+  `risk.max_order_notional` (quantity x price x contract size) and `risk.price_collar_pct` (a limit or stop
+  too far from the quote). A refusal names the key.
+- BUY prices against the ask, SELL against the bid.
+- Exit 0 only after the venue accepted. For a gateway order the command reads the order back until the
+  venue has decided it (`state`: `filled`, `working`, `cancelled` or `rejected`, up to 10 s).
+
+### Gateway brokers (futures, perpetuals, options)
+
+A VGP gateway holds no stop or target on a position, so one-shot `--sl/--tp` on a gateway broker is
+refused before anything is sent: a protected entry there is a session, where the engine holds the bracket.
+Also refused one-shot on a gateway: GTD and `--expires` (VGP v1 has no expiry), and `modify` of a
+position. `close` sends the gateway's flatten (`POST /v1/positions/close`, idempotent), all of it or
+`--partial`; a netting position's ticket is its venue code. Quotes come from the gateway's quote stream.
 
 ## Queries
 
 ```bash
 qkt bot account --json
-qkt bot positions MT5:XAUUSD --json     # omit the symbol for all positions
-qkt bot orders MT5:XAUUSD --json
-qkt bot quote MT5:XAUUSD --json
-qkt bot bars MT5:XAUUSD --tf 1h --count 100 --json
-qkt bot history --since 30d --json         # closed deals; also ISO-8601 or epoch ms
-qkt bot eval "ema(21)" MT5:XAUUSD --tf 1h --json
-qkt bot eval "rsi(14)" MT5:XAUUSD --tf 15m --count 300 --json
+qkt bot positions [SYMBOL] --json
+qkt bot orders [SYMBOL] --json
+qkt bot quote SYMBOL --json
+qkt bot bars SYMBOL --tf 1h --count 100 --json
+qkt bot history --since 30d --json
+qkt bot eval "rsi(14)" SYMBOL --tf 15m --json
 ```
 
-Queries read venue truth directly — positions opened by deployed strategies are
-visible too. A failed venue read is an error (exit 1), never an empty result.
+Queries read venue truth (positions opened by deployed strategies included). A failed venue read is an
+error, never an empty result. `bot eval` takes one single-series indicator with numeric arguments.
 
-`bot eval` accepts any single-series indicator from the DSL registry with numeric
-literal arguments (`ema`, `sma`, `rsi`, `atr`, `stddev`, ...). Two-series indicators
-(`correlation`, `beta`) are not available one-shot.
+## JSON output (one-shot)
 
-## JSON output schemas
-
-`bot buy` / `bot sell`:
+`buy`/`sell`:
 
 ```json
-{"ok":true,"ticket":123456,"deal":789,"fillPrice":2650.5,"retcode":10009,
- "error":null,"symbol":"MT5:XAUUSD","side":"BUY","lots":0.5,
- "sl":2620.50,"tp":2710.50,"as":"manual",
+{"ok":true,"ticket":123456,"deal":789,"state":"filled","fillPrice":2650.5,"retcode":10009,"error":null,
+ "symbol":"EXNESS:XAUUSD","side":"BUY","lots":0.5,"sl":2620.5,"tp":2710.5,"as":"manual",
  "canonicalDsl":"STRATEGY bot VERSION 1\n...","sha256":"<hex>","qktVersion":"..."}
 ```
 
-`bot close` / `bot cancel` print a JSON array (one element per ticket acted on);
-`bot modify` prints `{ok,retcode,error}`. `bot account` prints
-`{ok,equity,balance,currency,margin,freeMargin,marginLevel,openProfit,leverage,login,server,hedging}`.
-`bot positions` prints an array of
-`{ticket,symbol,side,lots,entry,current,sl,tp,profit,swap,openedAtMs,comment}`;
-`bot orders` an array of `{ticket,symbol,type,lots,price,sl,tp,expiresAt}`;
-`bot quote` `{symbol,bid,ask,spread,timeMs}`; `bot bars` an array of
-`{t,o,h,l,c,v}`; `bot history` an array of
-`{dealTicket,positionTicket,symbol,side,entry,lots,price,profit,commission,swap,fee,timeMs,comment}`;
-`bot eval`
-`{ok,expression,symbol,tf,value,isReady,warmupBars,barsUsed,lastBarStart,lastClose,error}`.
+An MT5 ticket is a number, a gateway ticket its `client_order_id` string. `close`/`cancel` print an array
+(one element per ticket); `modify` prints `{ok,retcode,error}`. `account` prints
+`{ok,equity,balance,currency,margin,freeMargin,marginLevel,openProfit,leverage,login,server,hedging}`;
+`positions` `[{ticket,symbol,side,lots,entry,current,sl,tp,profit,swap,openedAtMs,comment}]`; `orders`
+`[{ticket,symbol,type,lots,price,sl,tp,expiresAt}]`; `quote` `{symbol,bid,ask,spread,timeMs}`; `bars`
+`[{t,o,h,l,c,v}]`; `history` `[{dealTicket,positionTicket,symbol,side,entry,lots,price,profit,commission,swap,fee,timeMs,comment}]`.
+Every failure prints `{"ok":false,"error":"..."}` and exits 1; a usage error exits 2.
 
-Every failure path prints `{"ok":false,"error":"..."}` and exits 1; unknown verbs or
-missing arguments exit 2.
+Each trade renders to a complete canonical `.qkt` strategy; the text, its sha256, the qkt version and the
+argv ride every journal line (`<state>/state/bot/<as>/journal-YYYY-MM-DD.jsonl`) and insights envelope.
 
-## Versioning and tracking
-
-Each trade renders to a complete canonical `.qkt` strategy (stream declaration plus a
-single `WHEN true THEN BUY/SELL ...` rule) that the standard parser validates:
-
-```
-STRATEGY bot VERSION 1
-
-SYMBOLS
-    x = MT5:XAUUSD EVERY 1m
-
-RULES
-    WHEN true
-    THEN BUY x SIZING 0.5 BRACKET { STOP LOSS BY 30, TAKE PROFIT BY 60 }
-```
-
-The canonical text, its sha256, the qkt version, and the raw argv ride every journal
-line and insights envelope — the same identity model (name + source hash + version)
-deployed strategies use. In qkt-insights the `--as` name appears as the strategyId,
-so `--as claude-scalper` and `--as manual` are separately analyzable.
-
-## What one-shot mode refuses (fail-closed)
-
-Anything that needs a persistent engine to manage rejects with an error pointing at
-`qkt deploy`:
-
-- trailing entries and armed-trail stops (nothing stays alive to move the stop)
-- `STACK` / `STACK_AT`, `OCO`, `ON FILL`
-- non-literal expressions in sizing or exit prices (no bar/indicator context exists)
-- IOC / FOK time-in-force
-
-## Documented divergences from deployed strategies
-
-- **Post-ack fills are not egressed by this process.** The command exits after the
-  venue ack, so a pending order that fills later is observed only by venue-truth
-  pollers (the qkt-insights broker state poller), not by a qkt session.
-- **Session-stateful risk does not apply.** Daily drawdown, halt state, and book
-  de-risking live in a running session. One-shot pre-trade checks are instrument
-  validation, volume quantization, and sizing-currency guards.
-- **DAY time-in-force** becomes an explicit end-of-UTC-day expiration on the wire
-  (MT5's gateway carries expiry only as an absolute deadline).
-
-## Run sessions — stateful trading and backtests through the bot surface
-
-A **run session** upgrades the one-shot verbs into a stateful lane: a foreground
-`qkt bot session start` process holds the real trading pipeline (risk rules from
-`qkt.config.yaml`, sizing, fills, insights identity) and the same `bot` verbs route
-to it automatically. Your external program pulls data and pushes orders; the session
-makes them real — against a historical replay (`--backtest`, producing the full
-`qkt backtest` report artifact set) or the live feed.
-
-```
-your program ──shell──▶ qkt bot next/buy/... ──HTTP──▶ session daemon
-                                                          │ TradingPipeline
-                                                          │ (risk, sizing, fills)
-                                                          ├─ backtest: replay + report
-                                                          └─ live: gateway + MT5 broker
-```
-
-### Lifecycle
+## Sessions: the engine, driven by your program
 
 ```bash
-# backtest over cached data (same store `qkt backtest` reads; fails closed on holes)
-qkt bot session start --backtest \
-  --symbols MT5:XAUUSD --tf 5m --from 2025-01-01 --to 2025-06-30 \
-  --identities mybrain --run demo --out runs/demo --json &
+# backtest over the store (every qkt backtest flag applies)
+qkt bot session start --backtest --symbols EXNESS:XAUUSD,EXNESS:XAGUSD --tf 5m,1h \
+  --from 2025-01-01 --to 2025-06-30 --identities trend,meanrev --run demo --json &
 
-qkt bot session status --run demo --json
-qkt bot session finish --run demo --json     # writes runs/demo/{result.json,trades.csv,...}
+# live over the configured accounts: the same command without --backtest/--from/--to
+qkt bot session start --symbols DERIBIT:SOL_USDC_PERPETUAL --tf 1m --identities agent --run live1 --json &
 
-# live: same command without --backtest/--from/--to
-qkt bot session start --symbols MT5:XAUUSD --tf 5m --identities mybrain --json &
+qkt bot next EXNESS:XAUUSD [--tf 1h]       # the next closed bar of the series + events since the last next
+qkt bot bars EXNESS:XAUUSD --count 200 [--tf 1h]
+qkt bot buy 0.5 EXNESS:XAUUSD --sl by:5 --tp rr:2 --as trend
+qkt bot sell 0.2 EXNESS:XAUUSD --sl trail:4@2 --tp by:15 --as meanrev
+qkt bot buy 0.1 EXNESS:XAUUSD --exit-after 4h --as trend
+qkt bot submit 'BUY x SIZING 1 PCT RISK BRACKET { STOP LOSS BY 5 STEP TO BREAKEVEN AFTER MFE >= 8, TAKE PROFIT RR 2 }' \
+  --symbol EXNESS:XAUUSD --as trend         # any DSL action
+qkt bot close EXNESS:XAUUSD --as trend      # CLOSE: this identity's legs, by ticket
+qkt bot close --all --as trend              # CLOSE_ALL
+qkt bot cancel EXNESS:XAUUSD --as trend     # CANCEL (cancel --all: CANCEL_ALL)
+qkt bot intents --json                      # every intent's fate
+qkt bot orders --json                       # working entries intents placed (backtest; live reads the venue)
+qkt bot positions --json                    # net per symbol + each identity's legs
+qkt bot session status --json
+qkt bot session finish [--flatten] --json   # writes the report; --flatten closes everything first
+qkt bot session replay runs/demo --out runs/demo-replay --json
 ```
 
-A live session persists its leg book under the state root (`--state-dir`, the same
-`state/<identity>/` layout a daemon deploy writes), so a session that ends with a
-position open — exits are venue-side brackets, so this is normal — is reconciled by the
-next session over the same identity and state root: it attaches the persisted legs and
-carries on. Reconcile is fail-closed: venue positions with no persisted state stop the
-start with `ReconcileException`; pass `--reconcile=ignore-mismatches` to adopt them as
-independent legs (the same operator escape hatch as `qkt deploy`). Never work around a
-refusal by wiping the state directory — that is exactly the position the refusal is
-protecting.
+**A session intent is a DSL action run by the engine.** Each identity is a compiled DSL strategy; an
+intent is compiled by it and fired on the next tick, exactly as the same action in a strategy's
+`SCHEDULE` would fire (`BotIntentParityTest`). So everything a strategy can do with literal values, an
+intent can: any sizing (sized by the engine against the session's equity and instruments), any bracket
+including trailing and stepped stops, `EXIT AFTER`, OCO, STACK, ON FILL, exit hooks, CLOSE and CANCEL.
+Refused with the reason: a bracket missing its stop or target (as in a strategy), indicator calls in an
+intent (compute the value and pass a number; `bars` and `eval` give you the data), `OF BOOK` sizing,
+`STACK_AT`, `RESIZE`, option structures (trade the legs).
 
-Session resolution for every verb: `--run <id>` → `QKT_BOT_RUN` env → the single
-session under the state root (two or more running sessions require an explicit
-`--run`; that ambiguity fails closed). With **no** session running, every verb keeps
-its one-shot venue-direct behavior unchanged.
+**What the agent sees.** Every intent gets an id; its fate goes `queued` → `fired`/`skipped` →
+`filled`/`rejected`/`cancelled`, with the risk rule or venue reason when refused. `next` carries the
+events since the previous `next`: fills (price, quantity, and for exits `STOP`/`TAKE_PROFIT`/`CLOSE`),
+rejections and cancels. Reads never see past the cursor.
 
-### The client loop
+**Several symbols and timeframes.** `--symbols A,B --tf 5m,1h` declares every symbol at every timeframe
+(each a multiple of the smallest); `next SYMBOL --tf` reads a series with its own cursor, so no bar is
+skipped. An undeclared symbol or timeframe is refused at once.
 
-```bash
-qkt bot bars MT5:XAUUSD --count 200 --run demo --json   # warmup history for your model
-qkt bot next MT5:XAUUSD --run demo --json               # next closed bar; advances the sim clock
-qkt bot buy 0.5 MT5:XAUUSD --sl by:5 --tp rr:2 --as mybrain --run demo --json
-qkt bot positions --run demo --json
-```
+**Live sessions are built like a deploy.** The same pipeline factory `qkt deploy` uses: account identity
+checks, the production preflight in production mode, every risk rule, halt, collar, margin floor and
+measured-usage cap in the config, the order and audit journals, the state persistor, the notifier and
+insights. `per_strategy_risk` applies to a session's only identity. An identity the daemon on the same
+state directory runs is refused (they would share state). `positions`, `account` and `orders` read the
+venue in a live session; everything else goes through the engine.
 
-`next` is the clock: in a backtest it advances the replay to the next bar close
-(instantly) and returns `{"type":"end"}` when the window is exhausted; live it
-blocks until the real bar closes. Orders become pipeline signals — risk rules can
-reject them (the JSON reply is `queued`; a risk rejection appears in
-`rejections.csv` / the session journal). Reads never see past the replay cursor
-(no lookahead), and every read is journaled to the session's `reads.jsonl` so the
-report also records what the agent saw.
+**Restart and finish.** Legs and exits persist as for a deploy. Starting a live session with the `--run`
+of an earlier one over the same state recompiles every intent it journaled before trading, so its
+engine-held exits restore; reconcile is fail-closed as for `qkt deploy` (`--reconcile=ignore-mismatches`
+is the operator escape hatch). `finish` leaves positions open and lists them: a venue keeps the stops it
+holds (MT5), but an exit the engine holds (a trail, a timed exit, any gateway bracket) runs only while a
+session runs. `finish --flatten` closes everything first.
 
-In live mode `positions`/`account` intentionally stay venue-direct (broker truth
-includes state created outside the session); `next`/`bars`/`quote`/`buy`/`sell`
-route through the session.
+**Records and replay.** Each session writes `session.meta.json`, `intents.jsonl` (every intent in full,
+with where it entered the replay, every fate change and the finish point), `reads.jsonl` (what the agent
+was served), `fills.jsonl`, and live `summary.json`, all copied into `--out`. `qkt bot session replay`
+rebuilds the session from them over the store and writes the report plus `replay-diff.json`: a backtest
+session replays identically, trade for trade; a live session replays over stored ticks and the diff shows
+each fill that moved.
 
-### Parity, identities, insights
+In a session, `modify`, `close --partial`, `close --ticket` and `cancel --order` are refused with the
+session way to do it (set stops with the entry, reduce with the opposite order on a netting book, close
+or cancel by symbol).
 
-- The parity contract is structural: backtest and live share the pipeline; only
-  feed, clock, and broker differ. `BotSessionParityTest` pins that a session-driven
-  decision is byte-identical to the same scripted in-engine decision.
-- Declare identities at start (`--identities a,b`); each order's `--as` must be one
-  of them. The report splits per identity (`equity_<id>.csv`, per-strategy rows).
-- Insights envelopes from session activity carry `run=<run-id>` in the payload plus
-  the `--as` name as `strategyId`, so qkt-insights groups the campaign.
+## Limits
 
-### Known limitations (v1)
-
-- One timeframe per session (`--tf`); multi-tf sessions are future work.
-- `close`/`modify`/`cancel` are venue-direct only; in a backtest close a position by
-  submitting the opposite side.
-- Live sessions do not yet write a report on finish — insights is the live record.
-- Intent timing: an order submitted after `next` returns bar N executes on the first
-  tick after the tick that closed bar N (see the divergence catalog).
+- One-shot runs no session state: daily drawdown, halts and book de-risking need a session or a deploy.
+  One-shot does apply the pre-trade controls.
+- One-shot never reports a pending order's later fill; read `positions`/`orders`, or use a session.
+- A one-shot order on a symbol an engine also holds changes that engine's net position on a netting
+  account; that is the operator's call.
+- One program drives a session (it may use many identities); bar cursors and events are per session.

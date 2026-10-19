@@ -53,11 +53,11 @@ class BotTrailTest {
             trail.recordResult(
                 "claude",
                 order,
-                BotPlaceResult(
+                com.qkt.connectivity.DirectResult(
                     ok = true,
                     retcode = 10009,
-                    ticket = 123,
-                    deal = 456,
+                    ticket = "123",
+                    deal = "456",
                     price = BigDecimal("2650.5"),
                     error = null,
                 ),
@@ -126,11 +126,11 @@ class BotTrailTest {
             botOrderResultEnvelope(
                 "claude",
                 order,
-                BotPlaceResult(
+                com.qkt.connectivity.DirectResult(
                     ok = false,
                     retcode = 10019,
-                    ticket = 0,
-                    deal = 0,
+                    ticket = "0",
+                    deal = "0",
                     price = BigDecimal.ZERO,
                     error = "No money",
                 ),

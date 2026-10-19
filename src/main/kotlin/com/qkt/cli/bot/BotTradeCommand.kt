@@ -6,14 +6,21 @@ import com.qkt.cli.ExitCodes
 import com.qkt.cli.daemon.StateDir
 import com.qkt.common.Side
 import com.qkt.common.SystemClock
-import com.qkt.trade.BotGateway
+import com.qkt.connectivity.DirectResult
+import com.qkt.connectivity.VenueRefusal
 import com.qkt.trade.BotIntent
 import com.qkt.trade.BotTif
 import com.qkt.trade.BotTrail
 import com.qkt.trade.ExitSpec
+import com.qkt.trade.checkBotPreTrade
 import com.qkt.trade.compileBotAction
 import com.qkt.trade.parseBotStrategy
 import com.qkt.trade.renderBotStrategy
+import com.qkt.trade.venue.BotVenues
+import com.qkt.trade.venue.botOrderId
+import com.qkt.trade.venue.idJson
+import com.qkt.trade.venue.toQuoteContext
+import java.math.BigDecimal
 import java.time.Instant
 
 /**
@@ -55,23 +62,47 @@ class BotTradeCommand(
             return ExitCodes.SUCCESS
         }
         val cfg = botConfig(args)
-        val gateway = BotGateway.forSymbol(cfg, intent.qktSymbol)
-        val ctx = gateway.quoteContext(intent.qktSymbol, cfg.accountCurrency)
         val clock = SystemClock()
         val ts = clock.now()
-        val order = compileBotAction(action, ctx, id = "bot-$asName-$ts", timestamp = ts, strategyId = asName)
-        val result =
-            BotTrail(StateDir.resolve(args.option("state-dir")).stateRoot, cfg.insights, clock).use { trail ->
-                trail.recordCommand(asName, action, args.tokens)
-                trail.recordSubmit(asName, order)
-                gateway.place(order).also { trail.recordResult(asName, order, it) }
+        val (order, result) =
+            BotVenues.forSymbol(cfg, intent.qktSymbol).use { opened ->
+                val ctx = opened.venue.facts(intent.qktSymbol).toQuoteContext(intent.qktSymbol, cfg.accountCurrency)
+                val order =
+                    compileBotAction(action, ctx, id = botOrderId(asName, ts), timestamp = ts, strategyId = asName)
+                checkBotPreTrade(order, ctx, cfg.maxOrderQty, cfg.maxOrderNotional, cfg.priceCollarFrac)
+                BotTrail(StateDir.resolve(args.option("state-dir")).stateRoot, cfg.insights, clock).use { trail ->
+                    trail.recordCommand(asName, action, args.tokens)
+                    trail.recordSubmit(asName, order)
+                    // A venue that refuses before sending still leaves a result line beside the submit.
+                    val placed =
+                        try {
+                            opened.venue.place(order.request, order.stopLoss, order.takeProfit, order.request.id)
+                        } catch (e: VenueRefusal) {
+                            DirectResult(false, 0, order.request.id, "", BigDecimal.ZERO, e.message, "refused")
+                        } catch (e: Exception) {
+                            // Thrown after the request may have left: the order's fate is unknown, and a retry
+                            // would be a second order. Record that, and tell the caller to look first.
+                            val why =
+                                "${e.message ?: e.javaClass.simpleName}; the order may have reached the venue: " +
+                                    "check qkt bot orders and qkt bot positions before retrying (id ${order.request.id})"
+                            trail.recordResult(
+                                asName,
+                                order,
+                                DirectResult(false, 0, order.request.id, "", BigDecimal.ZERO, why, "unknown"),
+                            )
+                            throw IllegalStateException(why)
+                        }
+                    trail.recordResult(asName, order, placed)
+                    order to placed
+                }
             }
         if (json) {
             println(
                 jsonObj(
                     "ok" to result.ok,
-                    "ticket" to result.ticket,
-                    "deal" to result.deal,
+                    "ticket" to idJson(result.ticket),
+                    "deal" to idJson(result.deal),
+                    "state" to result.state,
                     "fillPrice" to result.price,
                     "retcode" to result.retcode,
                     "error" to result.error,
@@ -140,6 +171,7 @@ internal fun parseBotIntent(
         tp = args.option("tp")?.let { ExitSpec.parse(it, allowRr = true) },
         tif = tif,
         expiresAtMs = expires,
+        exitAfter = args.option("exit-after"),
     )
 }
 

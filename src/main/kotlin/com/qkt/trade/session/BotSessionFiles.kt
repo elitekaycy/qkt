@@ -61,6 +61,18 @@ object BotSessionFiles {
         Files.createDirectories(dir)
         val target = dir.resolve("session.json")
         val tmp = dir.resolve("session.json.tmp")
+        // The descriptor holds the session's bearer token: created readable by its owner alone, before it holds it.
+        Files.deleteIfExists(tmp)
+        val ownerOnly =
+            java.nio.file.attribute.PosixFilePermissions
+                .fromString("rw-------")
+        runCatching {
+            Files.createFile(
+                tmp,
+                java.nio.file.attribute.PosixFilePermissions
+                    .asFileAttribute(ownerOnly),
+            )
+        }.getOrElse { Files.createFile(tmp) }
         Files.writeString(tmp, descriptor.toJson())
         Files.move(tmp, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
         return target
@@ -86,7 +98,7 @@ object BotSessionFiles {
         env: (String) -> String? = System::getenv,
     ): BotSessionDescriptor? {
         val explicit = runId ?: env("QKT_BOT_RUN")
-        if (explicit != null) return read(stateRoot, explicit)
+        if (explicit != null) return read(stateRoot, explicit)?.takeIf(::alive)
         val root = sessionsRoot(stateRoot)
         if (!Files.isDirectory(root)) return null
         val candidates =
@@ -95,6 +107,8 @@ object BotSessionFiles {
                     .filter { Files.isRegularFile(it.resolve("session.json")) }
                     .map { it.fileName.toString() }
                     .toList()
+                    // A descriptor a killed process left behind is not a session.
+                    .filter { read(stateRoot, it)?.let(::alive) == true }
             }
         return when (candidates.size) {
             0 -> null
@@ -114,4 +128,8 @@ object BotSessionFiles {
     ) {
         Files.deleteIfExists(descriptorPath(stateRoot, runId))
     }
+
+    /** Whether the process that wrote [descriptor] still runs. */
+    private fun alive(descriptor: BotSessionDescriptor): Boolean =
+        ProcessHandle.of(descriptor.pid).map { it.isAlive }.orElse(false)
 }

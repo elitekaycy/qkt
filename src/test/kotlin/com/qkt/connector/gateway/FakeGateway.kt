@@ -140,6 +140,8 @@ internal class FakeGateway(
                 FakeWire.ok(json.encodeToString(WireOrders.serializer(), WireOrders(working)))
             }
             path == "/v1/orders" -> submit(json.decodeFromString(WireSubmit.serializer(), request.body.readUtf8()))
+            path == "/v1/positions/close" -> botClose(request.body.readUtf8())
+            request.method == "PATCH" -> botAmend(path.substringAfterLast('/'), request.body.readUtf8())
             path.startsWith("/v1/orders/") -> byId(path.removePrefix("/v1/orders/"), request.method ?: "GET")
             path == "/v1/stream" -> stream(url.queryParameter("since")?.toLong())
             path == "/v1/quotes" -> quotes.upgrade(url)

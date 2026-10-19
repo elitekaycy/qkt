@@ -79,26 +79,6 @@ fun compileBotAction(
     return CompiledBotOrder(request = request, stopLoss = sl, takeProfit = tp)
 }
 
-private fun rejectEngineManaged(bot: BotAction) {
-    val opts = bot.opts
-    val managed =
-        when {
-            opts.orderType is com.qkt.dsl.ast.TrailingBy || opts.orderType is com.qkt.dsl.ast.TrailingPct ->
-                "TRAILING entries"
-            opts.bracket?.stopLoss is com.qkt.dsl.ast.ChildArmedTrail -> "armed-trail stops"
-            opts.stack != null -> "STACK"
-            opts.stackAts.isNotEmpty() -> "STACK_AT"
-            opts.oco != null -> "OCO"
-            opts.onFill.isNotEmpty() -> "ON FILL"
-            !opts.exitHooks.isEmpty() -> "exit hooks"
-            else -> null
-        }
-    require(managed == null) {
-        "$managed need a persistent engine to manage and are not supported one-shot; " +
-            "deploy a .qkt strategy instead (qkt deploy)"
-    }
-}
-
 private fun entryPrice(
     bot: BotAction,
     ctx: BotQuoteContext,

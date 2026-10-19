@@ -96,13 +96,13 @@ class StrategyHandle(
     }
 
     class RealFactory(
-        private val stateDir: StateDir,
-        private val marketSourceProvider: (List<String>) -> MarketSource,
-        private val ringSize: Int = 1000,
-        private val bind: String = "127.0.0.1",
-        private val brokerFactories: Map<String, com.qkt.broker.BrokerFactory> = emptyMap(),
-        private val instrumentRegistry: com.qkt.instrument.InstrumentRegistry? = null,
-        private val calendarFor: (String) -> com.qkt.common.TradingCalendar = {
+        internal val stateDir: StateDir,
+        internal val marketSourceProvider: (List<String>) -> MarketSource,
+        internal val ringSize: Int = 1000,
+        internal val bind: String = "127.0.0.1",
+        internal val brokerFactories: Map<String, com.qkt.broker.BrokerFactory> = emptyMap(),
+        internal val instrumentRegistry: com.qkt.instrument.InstrumentRegistry? = null,
+        internal val calendarFor: (String) -> com.qkt.common.TradingCalendar = {
             com.qkt.common.TradingCalendar
                 .fxDefault()
         },
@@ -113,67 +113,67 @@ class StrategyHandle(
          * default comes from [com.qkt.cli.Config.maxDailyLoss] (or [com.qkt.cli.Config.DEFAULT_MAX_DAILY_LOSS]
          * when no config is loaded).
          */
-        private val maxDailyLoss: java.math.BigDecimal = com.qkt.cli.Config.DEFAULT_MAX_DAILY_LOSS,
+        internal val maxDailyLoss: java.math.BigDecimal = com.qkt.cli.Config.DEFAULT_MAX_DAILY_LOSS,
         /**
          * Phase 25D: per-strategy risk caps keyed by strategy name. When the deployed
          * strategy's name matches an entry, those caps layer on top of the daemon-global
          * rules. Default empty map means every strategy uses only the global rules.
          */
-        private val perStrategyRisk: Map<String, com.qkt.cli.PerStrategyRisk> = emptyMap(),
+        internal val perStrategyRisk: Map<String, com.qkt.cli.PerStrategyRisk> = emptyMap(),
         /**
          * Prop-firm drawdown halts (#348). [maxDrawdownPct]/[maxDailyDrawdownPct] are fractions
          * (null disables); [totalDdBasis]/[dailyDdBasis] pick how each is measured; [startingBalance]
          * is the account basis for static total DD and the daily reference.
          */
-        private val maxDrawdownPct: java.math.BigDecimal? = null,
-        private val maxDailyDrawdownPct: java.math.BigDecimal? = null,
-        private val totalDdBasis: com.qkt.risk.DrawdownBasis = com.qkt.risk.DrawdownBasis.STATIC,
-        private val dailyDdBasis: com.qkt.risk.DailyDrawdownBasis = com.qkt.risk.DailyDrawdownBasis.BALANCE,
-        private val startingBalance: java.math.BigDecimal = java.math.BigDecimal.ZERO,
-        private val maxOrderQty: java.math.BigDecimal =
+        internal val maxDrawdownPct: java.math.BigDecimal? = null,
+        internal val maxDailyDrawdownPct: java.math.BigDecimal? = null,
+        internal val totalDdBasis: com.qkt.risk.DrawdownBasis = com.qkt.risk.DrawdownBasis.STATIC,
+        internal val dailyDdBasis: com.qkt.risk.DailyDrawdownBasis = com.qkt.risk.DailyDrawdownBasis.BALANCE,
+        internal val startingBalance: java.math.BigDecimal = java.math.BigDecimal.ZERO,
+        internal val maxOrderQty: java.math.BigDecimal =
             com.qkt.risk.rules.PreTradeControls.DEFAULT_MAX_ORDER_QTY,
-        private val maxOrderNotional: java.math.BigDecimal =
+        internal val maxOrderNotional: java.math.BigDecimal =
             com.qkt.risk.rules.PreTradeControls.DEFAULT_MAX_ORDER_NOTIONAL,
-        private val priceCollarFrac: java.math.BigDecimal =
+        internal val priceCollarFrac: java.math.BigDecimal =
             com.qkt.risk.rules.PreTradeControls.DEFAULT_PRICE_COLLAR_FRAC,
-        private val runawayMaxRoundTrips: Int = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_ROUND_TRIPS,
-        private val runawayMaxRejections: Int = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_REJECTIONS,
-        private val candleCloseGraceMs: Long = com.qkt.app.LiveSession.DEFAULT_CANDLE_CLOSE_GRACE_MS,
-        private val accountingConfig: com.qkt.accounting.AccountingConfig = com.qkt.accounting.AccountingConfig(),
-        private val liveEquityBasis: com.qkt.app.LiveEquityBasis = com.qkt.app.LiveEquityBasis.VENUE,
-        private val marginFloorPct: java.math.BigDecimal = java.math.BigDecimal("200"),
+        internal val runawayMaxRoundTrips: Int = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_ROUND_TRIPS,
+        internal val runawayMaxRejections: Int = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_REJECTIONS,
+        internal val candleCloseGraceMs: Long = com.qkt.app.LiveSession.DEFAULT_CANDLE_CLOSE_GRACE_MS,
+        internal val accountingConfig: com.qkt.accounting.AccountingConfig = com.qkt.accounting.AccountingConfig(),
+        internal val liveEquityBasis: com.qkt.app.LiveEquityBasis = com.qkt.app.LiveEquityBasis.VENUE,
+        internal val marginFloorPct: java.math.BigDecimal = java.math.BigDecimal("200"),
         /**
          * Measured-usage window hours. Factory default 0 (off) so embedded/test
          * factories opt in; the production daemon always passes
          * [com.qkt.cli.Config.measuredUsageHours], whose default is 24 — the real
          * deploy path is ON unless the operator opts out explicitly.
          */
-        private val measuredUsageHours: Long = 0L,
-        private val measuredUsageMaxQty: java.math.BigDecimal =
+        internal val measuredUsageHours: Long = 0L,
+        internal val measuredUsageMaxQty: java.math.BigDecimal =
             com.qkt.risk.rules.MeasuredUsage.DEFAULT_MEASURED_MAX_QTY,
         /** Order-event journal root; null disables journaling (tests). */
-        private val journalRoot: java.nio.file.Path? = null,
+        internal val journalRoot: java.nio.file.Path? = null,
         /** Full engine audit journal root; null disables journaling (tests). */
-        private val auditJournalRoot: java.nio.file.Path? = null,
-        private val persistor: com.qkt.persistence.StatePersistor = com.qkt.persistence.NoopStatePersistor(),
+        internal val auditJournalRoot: java.nio.file.Path? = null,
+        internal val persistor: com.qkt.persistence.StatePersistor = com.qkt.persistence.NoopStatePersistor(),
         /**
          * Telegram alert sink shared across every strategy this daemon hosts. Default
          * [NoopNotifier] discards events — production daemons pass the single
          * [com.qkt.notify.TelegramNotifier] built from [com.qkt.cli.Config.notify].
          */
-        private val notifier: Notifier = NoopNotifier,
-        private val notifyEvents: Set<NotifyEventKind> = emptySet(),
+        internal val notifier: Notifier = NoopNotifier,
+        internal val notifyEvents: Set<NotifyEventKind> = emptySet(),
         /** Insights egress sink shared across every strategy this daemon hosts; null disables. */
-        private val insightsSink: com.qkt.observe.insights.InsightsSink? = null,
-        private val insightsEvents: Set<com.qkt.observe.insights.InsightsEventFamily> = emptySet(),
-        private val insightsDeployedIds: () -> Collection<String> = { emptyList() },
-        private val insightsStatePollMs: Long = 10_000L,
-        private val insightsSharedDeals: com.qkt.observe.insights.SharedDealFetch =
+        internal val insightsSink: com.qkt.observe.insights.InsightsSink? = null,
+        internal val insightsEvents: Set<com.qkt.observe.insights.InsightsEventFamily> = emptySet(),
+        internal val insightsDeployedIds: () -> Collection<String> = { emptyList() },
+        internal val insightsStatePollMs: Long = 10_000L,
+        internal val insightsSharedDeals: com.qkt.observe.insights.SharedDealFetch =
             com.qkt.observe.insights
                 .SharedDealFetch(),
-        private val insightsDealBackfillDays: Long = 30L,
+        internal val insightsDealBackfillDays: Long = 30L,
         /** Market-data gate thresholds (the `market_data:` config block) passed to every session. */
-        private val marketDataGateConfig: com.qkt.marketdata.MarketDataGateConfig =
+        internal val marketDataGateConfig: com.qkt.marketdata.MarketDataGateConfig =
             com.qkt.marketdata.MarketDataGateConfig.DEFAULT,
     ) : Factory {
         private fun literalPayload(expr: ExprAst): Any =
@@ -288,38 +288,23 @@ class StrategyHandle(
                     ?.let { TimeWindow.parse(it) }
             val calendar = com.qkt.cli.strategyCalendar(symbols, instrumentRegistry, calendarFor)
 
-            val feedSymbols = (symbols + accountingConfig.normalizedSymbols.values).distinct()
-            val source = marketSourceProvider(feedSymbols)
             val ring = EventRing(capacity = ringSize)
             val fillCount = AtomicLong(0)
             val startMs = System.currentTimeMillis()
             val startedAt = Instant.ofEpochMilli(startMs)
 
-            val haltRules: List<com.qkt.risk.HaltRule> =
-                com.qkt.risk.HaltRules.standard(
-                    maxDailyLoss = maxDailyLoss,
-                    maxDrawdownPct = maxDrawdownPct,
-                    maxDailyDrawdownPct = maxDailyDrawdownPct,
-                    totalDdBasis = totalDdBasis,
-                    startingBalance = startingBalance,
-                )
             val perStrategyOverride = perStrategyRisk[ast.name]
             val metadata = strategyMetadata(name, file, ast, symbols, perStrategyOverride)
             val session =
-                LiveSession(
+                startPipeline(
                     strategies = listOf(ast.name to strategy),
-                    haltRules = haltRules,
-                    source = source,
+                    mdcStrategy = ast.name,
                     symbols = symbols,
-                    feedSymbols = feedSymbols,
                     candleWindow = candleWindow,
                     calendar = calendar,
-                    accountingConfig = accountingConfig,
-                    equityBasis = liveEquityBasis,
-                    // The MDC carries the DSL strategy id, not the deploy name: downstream attribution
-                    // (per-strategy files, insights) must match the id every trading event uses, or
-                    // consumers see two strategies (deploy "hedge-straddle" vs STRATEGY hedge_straddle).
-                    mdcStrategy = ast.name,
+                    perStrategyOverride = perStrategyOverride,
+                    metadata = mapOf(ast.name to metadata),
+                    ignoreMismatches = ignoreMismatches,
                     onTrade = { trade, realized, _ ->
                         com.qkt.cli.daemon.logging.withMdc("strategy", ast.name) {
                             fillCount.incrementAndGet()
@@ -332,53 +317,7 @@ class StrategyHandle(
                             ring.append("signal", signalToJson(sig))
                         }
                     },
-                    brokerFactories = brokerFactories,
-                    instrumentRegistry = instrumentRegistry,
-                    persistor = persistor,
-                    ignoreMismatches = ignoreMismatches,
-                    notifier = notifier,
-                    notifyEvents = notifyEvents,
-                    perStrategyMaxDailyLoss = perStrategyOverride?.maxDailyLoss,
-                    perStrategyMaxPositionSize = perStrategyOverride?.maxPositionSize,
-                    perStrategyMaxOpenPositions = perStrategyOverride?.maxOpenPositions,
-                    perStrategyMaxDrawdownPct = perStrategyOverride?.maxDrawdownPct,
-                    perStrategyMaxDailyDrawdownPct = perStrategyOverride?.maxDailyDrawdownPct,
-                    perStrategyMaxTradesPerDay = perStrategyOverride?.maxTradesPerDay,
-                    perStrategyCooldownAfterLossMs = perStrategyOverride?.cooldownAfterLossMs,
-                    perStrategyCooldownAfterLossAfterConsecutive =
-                        perStrategyOverride?.cooldownAfterLossAfterConsecutive ?: 1,
-                    perStrategyLossStreakHalt = perStrategyOverride?.lossStreakHalt,
-                    perStrategyLossStreakHaltScope =
-                        perStrategyOverride?.lossStreakHaltScope ?: com.qkt.risk.HaltScope.PERSISTENT,
-                    initialBalance = startingBalance,
-                    totalDdBasis = totalDdBasis,
-                    dailyDdBasis = dailyDdBasis,
-                    maxOrderQty = maxOrderQty,
-                    maxOrderNotional = maxOrderNotional,
-                    priceCollarFrac = priceCollarFrac,
-                    runawayMaxRoundTrips = runawayMaxRoundTrips,
-                    runawayMaxRejections = runawayMaxRejections,
-                    candleCloseGraceMs = candleCloseGraceMs,
-                    marginFloorPct = marginFloorPct,
-                    measuredUsageHours = measuredUsageHours,
-                    measuredUsageMaxQty = measuredUsageMaxQty,
-                    journal =
-                        journalRoot?.let {
-                            com.qkt.observe.OrderJournal(it, com.qkt.common.SystemClock())
-                        },
-                    auditJournal =
-                        auditJournalRoot?.let {
-                            com.qkt.observe.EngineAuditJournal(it, ast.name, com.qkt.common.SystemClock())
-                        },
-                    insightsSink = insightsSink,
-                    insightsEvents = insightsEvents,
-                    insightsDeployedIds = insightsDeployedIds,
-                    insightsStrategyMetadata = mapOf(ast.name to metadata),
-                    insightsStatePollMs = insightsStatePollMs,
-                    insightsSharedDeals = insightsSharedDeals,
-                    insightsDealBackfillDays = insightsDealBackfillDays,
-                    marketDataGateConfig = marketDataGateConfig,
-                ).start()
+                )
 
             val server =
                 ObservabilityServer(
