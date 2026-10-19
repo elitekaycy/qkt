@@ -51,8 +51,10 @@ class BotRunSession(
         val series = series(symbol, tf)
         val cursor = delivered.getValue(series)
         if (history.countFor(series) <= cursor && !backend.awaitNextBar(series, cursor, history)) return null
-        val bar = history.at(series, cursor) ?: return null
-        delivered[series] = cursor + 1
+        // A client further behind than the buffer holds resumes at the oldest bar still held.
+        val index = maxOf(cursor, history.oldestIndex(series))
+        val bar = history.at(series, index) ?: return null
+        delivered[series] = index + 1
         return bar
     }
 

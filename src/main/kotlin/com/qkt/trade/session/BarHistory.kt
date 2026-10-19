@@ -36,6 +36,10 @@ class BarHistory(
         counts[key] = (counts[key] ?: 0L) + 1L
     }
 
+    /** The index of the oldest bar still held under [key] (bars before it were evicted). */
+    @Synchronized
+    fun oldestIndex(key: String): Long = (counts[key] ?: 0L) - (bars[key]?.size ?: 0)
+
     /** The [index]-th bar ever recorded under [key] (0-based), or null once it was evicted or before it closed. */
     @Synchronized
     fun at(
