@@ -318,11 +318,23 @@ def check_forming_bars(log):
             found.append(f"{check['timeframe']}: open {opened} is not the venue's {mid(venue, 'open')} (mid) - the bar was built from the start, not seeded")
         if high < max(mid(b, "high") for b in minutes) - point / 2 or low > min(mid(b, "low") for b in minutes) + point / 2:
             found.append(f"{check['timeframe']}: high/low {high}/{low} do not contain the minutes traded before the start")
+    # The seed is the venue's 1m bars since the bar opened, so it is counted against those, not the clock: a venue
+    # pause (Exness BTCUSD had no bars 07:16-07:30 UTC on Sunday 2026-10-18) leaves minutes the venue never drew.
+    venue_symbol = (case.get("first_minute_check") or {}).get("symbol") or next(
+        (c["symbol"] for c in case.get("forming_bar_checks") or []), None)
     for alias, period in (case.get("expect_forming_minutes") or {}).items():
         match = re.search(rf"seeded forming bar strategy=\S+ alias={alias} minutes=(\d+)", log)
-        expected = int(started_at % int(period) // 60)
+        clock = int(started_at % int(period) // 60)
+        expected, why = clock, "the clock says"
+        if venue_symbol:
+            bar_start = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(started_at // int(period) * int(period)))
+            minute_now = time.strftime("%Y-%m-%dT%H:%M:00Z", time.gmtime(started_at))
+            bars = gateway(f"/fetch_data_pos?symbol={venue_symbol}&timeframe=M1&num_bars={clock + 5}").get("data") or []
+            drawn = sum(1 for b in bars if bar_start <= b["time"] < minute_now)
+            if drawn != clock:
+                expected, why = drawn, f"the venue drew (the clock says {clock})"
         if not match or abs(int(match.group(1)) - expected) > 1:
-            found.append(f"{alias}: seeded minutes {match.group(1) if match else 'missing'}, the clock says {expected}")
+            found.append(f"{alias}: seeded minutes {match.group(1) if match else 'missing'}, {why} {expected}")
     return found
 
 

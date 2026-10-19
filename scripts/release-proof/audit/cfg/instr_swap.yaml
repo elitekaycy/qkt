@@ -1,0 +1,12 @@
+instruments:
+  - qktSymbol: BACKTEST:XAUUSD
+    contractSize: 100
+    volumeStep: 0.01
+    volumeMin: 0.01
+    pointSize: 0.001
+    digits: 3
+    tradeStopsLevelPoints: 0
+    swapLongPoints: -30
+    swapShortPoints: 10
+    swapRolloverHourUtc: 21
+    swapTripleDay: WEDNESDAY

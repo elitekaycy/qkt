@@ -5,6 +5,7 @@ import com.qkt.marketdata.ingest.plan.IngestKind
 import com.qkt.marketdata.ingest.plan.PriceBasis
 import com.qkt.marketdata.ingest.rows.ImportRow
 import java.math.BigDecimal
+import java.math.RoundingMode
 
 /**
  * Turns rows into [IngestRecord]s through a [RowMapping]. Every price and volume is held at qkt's money
@@ -20,6 +21,14 @@ class RecordBuilder(
 
     /** Values whose digits beyond the eighth decimal were rounded away. */
     var rounded: Long = 0
+        private set
+
+    /** Float32 prices stored as their shortest decimal ([RowMapping.float32]). */
+    var float32Recovered: Long = 0
+        private set
+
+    /** Prices a float32 mapping found that are not exactly a float32, kept as written. */
+    var notFloat32: Long = 0
         private set
 
     /** The record for [row], read as the [order]-th row of the import. */
@@ -43,8 +52,8 @@ class RecordBuilder(
         timeMs: Long,
         order: Long,
     ): TickRecord {
-        var bid = scaled(mapping.value("bid", row))
-        var ask = scaled(mapping.value("ask", row))
+        var bid = scaled(priceValue("bid", row))
+        var ask = scaled(priceValue("ask", row))
         if (mapping.carryForward) {
             bid = bid ?: lastBid
             ask = ask ?: lastAsk
@@ -52,7 +61,7 @@ class RecordBuilder(
             lastAsk = ask
         }
         val quote = bid != null && ask != null
-        val price = scaled(mapping.value("price", row))?.takeUnless { quote && it.signum() == 0 }
+        val price = scaled(priceValue("price", row))?.takeUnless { quote && it.signum() == 0 }
         val volume = scaled(mapping.value("volume", row))?.takeUnless { quote && it.signum() == 0 }
         require(price != null || quote) {
             if (bid != null ||
@@ -89,7 +98,10 @@ class RecordBuilder(
                 else -> BigDecimal.ZERO
             }
 
-        fun price(role: String) = need(role, row).add(shift).setScale(Money.SCALE, Money.ROUNDING)
+        fun price(role: String) =
+            (scaled(priceValue(role, row)) ?: throw IllegalArgumentException("no $role"))
+                .add(shift)
+                .setScale(Money.SCALE, Money.ROUNDING)
         return BarRecord(
             timeMs,
             order,
@@ -123,6 +135,30 @@ class RecordBuilder(
         role: String,
         row: ImportRow,
     ): BigDecimal = scaled(mapping.value(role, row)) ?: throw IllegalArgumentException("no $role")
+
+    /** A price cell, its float32 widening undone when the mapping says the source stores float32. */
+    private fun priceValue(
+        role: String,
+        row: ImportRow,
+    ): BigDecimal? {
+        val value = mapping.value(role, row) ?: return null
+        if (!mapping.float32) return value
+        // The text is a float32 written at some precision: pandas writes the widened double's shortest text
+        // (`316.9800109863281`), older yfinance six decimals (`1467.969971`). It is one when the nearest float32,
+        // rounded to the text's own decimals, gives the text back; a genuine `1234567.89` does not (`.88`).
+        val single = value.toFloat()
+        val exact = if (single.isFinite()) BigDecimal(single.toDouble()) else null
+        if (exact == null ||
+            exact.setScale(value.scale().coerceAtLeast(0), RoundingMode.HALF_EVEN).compareTo(value) != 0
+        ) {
+            notFloat32++
+            return value
+        }
+        // Float.toString is the shortest decimal that reads back as this float (JDK 19+).
+        val shortest = BigDecimal(single.toString())
+        if (shortest.compareTo(value) != 0) float32Recovered++
+        return shortest
+    }
 
     private fun scaled(value: BigDecimal?): BigDecimal? {
         if (value == null) return null

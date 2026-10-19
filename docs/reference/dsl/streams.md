@@ -56,12 +56,14 @@ Strategies that combine signals across instruments are common — momentum on on
 
 ## Broker prefixes
 
-The broker prefix tells the engine which venue this stream lives on: `BACKTEST`, or the name of a
-`brokers:` entry in `qkt.config.yaml`, upper-cased. Common ones:
+The broker prefix tells the engine which venue this stream lives on: `BACKTEST`, the name of a
+`brokers:` entry in `qkt.config.yaml`, upper-cased, or, for paper trading on the TradingView feed,
+the exchange TradingView lists the symbol on. Common ones:
 
 | Prefix | What it means | When to use |
 | --- | --- | --- |
-| `BACKTEST` | The historical data store (`~/.qkt/data/`) | Backtesting; `qkt backtest`, `qkt run` in paper mode |
+| `BACKTEST` | The historical data store (`~/.qkt/data/`) | Backtesting (`qkt backtest`). Not live: `qkt run` and `qkt deploy` refuse it on the TradingView feed and name the symbol to write instead |
+| `OANDA`, `BINANCE`, `COINBASE`, ... | A TradingView exchange, for paper trading on TradingView's free ticks (`source: tv`, the default) when no broker account has that name | `qkt run` and paper deploys: `OANDA:EURUSD`, `OANDA:XAUUSD`, `BINANCE:BTCUSDT` |
 | `BYBIT_SPOT` | Bybit Spot, a `type: gateway` entry named `bybit_spot` on a gateway running the [Bybit adapter](https://github.com/elitekaycy/qkt-venue-gateway/blob/main/adapter-bybit/README.md) | Live trading spot crypto |
 | `BYBIT_LINEAR` | Bybit USDT perpetuals, a `type: gateway` entry named `bybit_linear` | Live trading perpetuals |
 | `DERIBIT` | Deribit, a `type: gateway` entry named `deribit` | Futures, perpetuals and options |

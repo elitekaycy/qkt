@@ -49,7 +49,7 @@ internal class BracketRiskRecorder(
         val ids = listOf(request.id, request.entry.id)
         if (entryEstimate.signum() != 0) {
             // Pre-arm stop level for a trailing stop: the worst-case loss the bracket can take.
-            val riskStop = stopPriceAtEntry(request, entryEstimate)
+            val riskStop = stopPriceAtEntry(request, entryEstimate, tickOf(request.symbol))
             val risk = calculateRisk(request.quantity, entryEstimate, riskStop, request.symbol)
             for (id in ids) riskByClientOrderId[id] = risk
             val protection = ProtectionLevels(riskStop, request.takeProfit)
@@ -78,8 +78,9 @@ internal class BracketRiskRecorder(
             riskByClientOrderId.remove(id)
             protectionByClientOrderId.remove(id)
         }
-        val resolved = resolveBracketAtFill(bracket, fillPrice)
-        val stopPrice = stopPriceAtEntry(resolved, fillPrice)
+        val tick = tickOf(symbol)
+        val resolved = resolveBracketAtFill(bracket, fillPrice, tick)
+        val stopPrice = stopPriceAtEntry(resolved, fillPrice, tick)
         return EntryRiskReport(
             riskUsd = calculateRisk(quantity, fillPrice, stopPrice, symbol),
             protection = ProtectionLevels(stopPrice, resolved.takeProfit),
@@ -96,6 +97,8 @@ internal class BracketRiskRecorder(
         protectionByClientOrderId.remove(bracket.id)
         protectionByClientOrderId.remove(bracket.entry.id)
     }
+
+    private fun tickOf(symbol: String): BigDecimal? = instruments.lookup(symbol)?.priceStep
 
     private fun calculateRisk(
         quantity: BigDecimal,

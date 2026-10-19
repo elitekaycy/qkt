@@ -1,9 +1,8 @@
 package com.qkt.cli
 
-import com.qkt.backtest.BrokerKind
+import com.qkt.backtest.spreadModels
 import com.qkt.backtest.toEvidence
 import com.qkt.evidence.ExecutionEvidence
-import com.qkt.instrument.InstrumentRegistry
 
 /**
  * This run's execution evidence: its simulation config's, with the venue spread each traded symbol
@@ -12,20 +11,6 @@ import com.qkt.instrument.InstrumentRegistry
  */
 internal fun BacktestContext.executionEvidence(): ExecutionEvidence =
     executionConfig.toEvidence().withSpreadModels(spreadModels(instruments, symbols, brokerKind))
-
-/** The spread model each of [symbols] states, as `SYMBOL fixed N points` or `SYMBOL min N points`. */
-internal fun spreadModels(
-    instruments: InstrumentRegistry,
-    symbols: List<String>,
-    brokerKind: BrokerKind,
-): List<String> {
-    if (brokerKind != BrokerKind.MT5_SIM) return emptyList()
-    return symbols.distinct().sorted().mapNotNull { symbol ->
-        val meta = instruments.lookup(symbol) ?: return@mapNotNull null
-        meta.spreadPoints?.let { "$symbol fixed $it points" }
-            ?: meta.minSpreadPoints?.let { "$symbol min $it points" }
-    }
-}
 
 internal fun ExecutionEvidence.withSpreadModels(models: List<String>): ExecutionEvidence =
     if (models.isEmpty()) {

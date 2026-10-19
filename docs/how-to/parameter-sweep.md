@@ -111,43 +111,30 @@ val sweep = BacktestSweep(
 
 The engine is single-threaded per strategy; parallelism here means multiple strategies running in parallel on independent tick replays.
 
-### Walk-forward — manual today
+### Walk-forward
 
-Phase 10c shipped walk-forward as a Kotlin API. Until the CLI lands:
+Walk-forward validation is the `qkt walkforward` command; there is no Kotlin loop to write. It
+takes the same `--param` axes as `qkt sweep`, picks the best combo on each rolling training window
+and scores that combo on the window right after it, which the pick never saw:
 
-```kotlin
-val fullTicks: List<Tick> = ...
-val trainDays = 60
-val testDays  = 14
-val msPerDay  = 86_400_000L
-
-var cursor = fullTicks.first().timestamp
-val testResults = mutableListOf<SweepResult<Config>>()
-
-while (cursor + (trainDays + testDays) * msPerDay <= fullTicks.last().timestamp) {
-    val trainEnd = cursor + trainDays * msPerDay
-    val testEnd  = trainEnd + testDays * msPerDay
-
-    val trainTicks = fullTicks.filter { it.timestamp in cursor until trainEnd }
-    val testTicks  = fullTicks.filter { it.timestamp in trainEnd until testEnd }
-
-    val trainSweep = BacktestSweep(configs, ::buildStrategy, emptyList(), trainTicks).run()
-    val bestOnTrain = trainSweep.maxByOrNull { it.result.totalPnL }!!.config
-
-    val testRun = Backtest(
-        strategies = listOf(buildStrategy(bestOnTrain)),
-        rules = emptyList(),
-        ticks = testTicks,
-    ).run()
-    testResults.add(SweepResult(bestOnTrain, testRun))
-
-    cursor = trainEnd     // roll forward
-}
-
-// Aggregate testResults — that's your honest out-of-sample performance
+```bash
+qkt walkforward strategy.qkt --from 2024-01-01 --to 2024-12-31 \
+    --param fast=8,12,16 --param slow=20,40 \
+    --train 60d --test 14d --step 14d --rank sharpe --report-dir wf/
 ```
 
-Verbose, but it's the protocol — and once the CLI ships in Phase 25 it'll wrap this exact loop.
+- `--train`, `--test`, `--step` (required): the training window, the test window after it, and how
+  far each fold moves on, as durations such as `60d`, `12h` or `30m`.
+- `--rank`: the metric the training pick maximises, as for `qkt sweep` (`sharpe` by default).
+- `--topN`: how many training winners each fold reports (3 by default).
+- `--parallelism N`: run combos concurrently; `--json`: machine-readable fold rows.
+- `--report-dir DIR`: per-fold results in `DIR/walkforward_summary.csv`, the stitched
+  out-of-sample equity in `DIR/concatenated_equity.csv`, and a full backtest report per test
+  window under `DIR/folds/fold_NNN/`.
+
+It also takes the backtest data, execution and costing flags; `qkt walkforward --help` lists every
+flag. The mean out-of-sample score beside the mean in-sample one is the number to judge: that is
+your honest performance, and a large gap between the two is overfitting.
 
 ## How to pick a winner from the results
 
@@ -182,4 +169,4 @@ Re-run a full backtest with the locked params to confirm. Then paper-trade for a
 - [Phase 10b — Parameter sweep](../phases/phase-10b-parameter-sweep.md) — internals
 - [Phase 10c — Walk-forward](../phases/phase-10c-walk-forward.md) — protocol
 - [Backtest model](../concepts/backtest-model.md) — what the report numbers mean
-- [Planned features](../planned.md) — when the CLI wrapper lands
+- [CLI commands](../reference/cli-commands.md) — every `qkt sweep` and `qkt walkforward` flag

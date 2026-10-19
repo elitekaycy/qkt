@@ -1,6 +1,6 @@
 # Deploy paper
 
-Paper trading runs strategies through the daemon against the in-process `PaperBroker` — no network calls, no real money, deterministic fills. It's the right environment for:
+Paper trading runs strategies through the daemon on live TradingView prices against the in-process `PaperBroker` — no orders leave your machine, no real money. It's the right environment for:
 
 - End-to-end smoke testing before going live
 - Long soak tests on a strategy you've backtested
@@ -9,6 +9,10 @@ Paper trading runs strategies through the daemon against the in-process `PaperBr
 ## Prerequisites
 
 - `qkt` installed and on `PATH` (see [Quickstart](quickstart.md) step 1)
+- A strategy whose streams name live symbols: TradingView's (`BINANCE:BTCUSDT`, `OANDA:EURUSD`)
+  for the default feed, or a broker account's prefix. A `BACKTEST:` stream is local data with no
+  live prices, and the deploy is refused with the symbol to write instead. The quickstart's
+  `momentum-paper.qkt` is such a copy.
 
 ## Run a single strategy
 
@@ -16,7 +20,7 @@ Paper trading runs strategies through the daemon against the in-process `PaperBr
 # Start the daemon. The control plane binds an ephemeral port on 127.0.0.1.
 qkt daemon &
 
-qkt deploy momentum.qkt --as momentum
+qkt deploy momentum-paper.qkt --as momentum
 qkt list
 qkt status momentum
 qkt logs momentum --follow
@@ -25,8 +29,8 @@ qkt logs momentum --follow
 After editing a deployed strategy, validate and replace only that running entry:
 
 ```bash
-qkt resync momentum.qkt --as momentum --dry-run
-qkt resync momentum.qkt --as momentum
+qkt resync momentum-paper.qkt --as momentum --dry-run
+qkt resync momentum-paper.qkt --as momentum
 ```
 
 If parsing, promotion checks, or reconciliation fail, the previous `momentum`

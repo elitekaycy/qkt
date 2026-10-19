@@ -1,5 +1,5 @@
 id: "yfinance-multi"
-description: "yfinance >= 0.2.51 CSV with a three-line header (Price/Ticker/Date); its Close is already adjusted"
+description: "yfinance >= 0.2.51 CSV with a three-line header (Price/Ticker/Date), one ticker or several: Close is adjusted unless the file also has Adj Close (auto_adjust=False)"
 kind: "bars"
 time: ["Price"]
 timeFormat: "iso"
@@ -10,6 +10,7 @@ fields:
   low: "Low"
   close: "Close"
   volume: "Volume"
+float32: true
 volume: "shares (contracts for futures)"
 match:
   header: ["Price", "Close", "High", "Low", "Open", "Volume"]

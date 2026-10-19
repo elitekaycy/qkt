@@ -36,23 +36,42 @@ data class ClockEvidence(
     /** Weeks that opened outside [modalHour]. */
     val outliers: List<WeekOpen> = weeks.filter { it.newYorkHour != modalHour }
 
+    /**
+     * Outlier weeks that opened after [modalHour]: a source whose first hour of the week is missing (HistData's
+     * EURUSD 2026-03-29 opens at 18:00 New York, its Friday closes all at 17:00). A wrong clock moves opens
+     * by DST season, which the per-season checks still catch.
+     */
+    val lateOpens: List<WeekOpen> = modalHour?.let { h -> outliers.filter { it.newYorkHour > h } }.orEmpty()
+
     /** True when the weeks span both DST seasons, so a wrong DST rule would have shown. */
     val spansSeasons: Boolean = weeks.any { it.usSummer } && weeks.any { !it.usSummer }
 
-    val passes: Boolean
-        get() {
-            val hour = modalHour ?: return false
-            if (hour !in OPEN_HOURS) return false
-            if (outliers.size * 10 > weeks.size) return false
-            return listOf(
-                weeks.filter { it.usSummer },
-                weeks.filter { !it.usSummer },
-                weeks.filter {
-                    it.usSummer !=
-                        it.euSummer
-                },
-            ).none { group -> group.size >= 2 && group.count { it.newYorkHour != hour } * 2 > group.size }
-        }
+    val passes: Boolean get() = fits(outliers.size)
+
+    /**
+     * [passes] for a clock the user or a preset stated, where late weeks are missing data rather than evidence
+     * against the clock: up to a third of the weeks may open late. Inference never uses this.
+     */
+    val passesStated: Boolean
+        get() = lateOpens.size * 3 <= weeks.size && fits(outliers.size - lateOpens.size)
+
+    /**
+     * Late weeks still count in the per-season checks: a wrong DST rule makes a whole season open an hour late,
+     * which must refuse, while one late week in a season does not lean it.
+     */
+    private fun fits(counted: Int): Boolean {
+        val hour = modalHour ?: return false
+        if (hour !in OPEN_HOURS) return false
+        if (counted * 10 > weeks.size) return false
+        return listOf(
+            weeks.filter { it.usSummer },
+            weeks.filter { !it.usSummer },
+            weeks.filter {
+                it.usSummer !=
+                    it.euSummer
+            },
+        ).none { group -> group.size >= 2 && group.count { it.newYorkHour != hour } * 2 > group.size }
+    }
 
     /** One line for the report, e.g. `ny-close: 52 weekly opens, 51 at 17:00 New York`. */
     fun summary(): String =
@@ -63,13 +82,16 @@ data class ClockEvidence(
                 modalHour,
             )}:00 New York" +
                 (if (outliers.isEmpty()) "" else ", ${outliers.size} elsewhere") +
+                (if (lateOpens.isEmpty()) "" else " (${lateOpens.size} late: the source's first hour missing)") +
                 (if (spansSeasons) "" else " (one DST season only)")
         }
 
     companion object {
         private val NEW_YORK: ZoneId = ZoneId.of("America/New_York")
         private val LONDON: ZoneId = ZoneId.of("Europe/London")
-        private val OPEN_HOURS = 16..19
+
+        /** The New York hours a week can open in: FX at 17:00, metals at 18:00, a vendor's first tick a little late. */
+        val OPEN_HOURS = 16..19
         private const val LATE_OPEN_SECONDS = 60L
 
         /** The evidence [opens] give for [clock]; wall-clock opens in a DST gap are left out. */

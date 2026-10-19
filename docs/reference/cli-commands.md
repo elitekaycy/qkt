@@ -86,11 +86,17 @@ when given, otherwise a timestamped directory under `~/.qkt/runs` (created autom
   produces (a fraction such as `0.2` keeps the last 20% out of sample, or an
   instant). Each entry carries `fromMs`/`toMs`, `samples`, `closingFills`,
   `equityStart`, `equityEnd`, and `metrics` with the same fields as `global`,
-  computed over the full-resolution samples and closing fills inside `[from, to)`
-  — a window ending at `--to` also takes the bar that closes there, so a window
-  covering the run reproduces `global`'s drawdown, Sharpe, Sortino, profit factor
-  and win rate exactly. A window's `totalPnL` is the equity change between its
-  first and last samples.
+  computed over the full-resolution samples inside `[from, to)` and the round
+  trips that closed there (a position opened in-sample and closed out of sample
+  counts in the out-of-sample window, with its entry costs) — a window ending at
+  `--to` also takes the bar that closes there, so a window covering the run
+  reproduces `global`'s drawdown, Sharpe, Sortino, profit factor and win rate
+  exactly. A window's `totalPnL` is the equity change between its first and last
+  samples. Its `commissionPaid`, `swapPaid`, `rollCostsPaid` and `fundingPaid`
+  are the costs stamped inside it (fills, rollovers, funding times, rolls), so
+  the `--oos-split` pair adds up to `global`'s costs. The console summary,
+  `--verbose` and `report.html` show the same windows: dates, start and end
+  equity, profit, round trips, win rate, Sharpe, worst drop and costs.
 - A window's `realizedTotal` is that same equity delta, not the sum of realized trade
   PnL inside the window — read it beside `equityStart`/`equityEnd`. Sweep and backtest
   Sharpe ratios agree for identical parameters (both replay the same finalized equity
@@ -177,13 +183,14 @@ and manifest hashes; use `--json` for piping compact, schema-tagged summaries.
 | `qkt audit-ticks --symbol X --duration N --mt5-profile P [--reference tradingview\|mt5-history]` | Compare TV with MT5, or reconcile live MT5 quotes against raw venue history. |
 | `qkt golden capture --session <strategy> [--state-dir DIR] [--out ZIP] [--read-only]` | Export retained live ticks, warmup ticks, completed candles, fills, orders, and raw MT5 exchanges as a checksummed ZIP. Market records must contain structured replay data. Trading mode requires a filled order linked to a successful MT5 `/order` exchange by explicit engine ID or venue ticket. `--read-only` instead requires zero fills and zero order/position mutations while retaining gateway reads. Both modes fail when required evidence is missing or a journal reports dropped records. The manifest records the enforced capture mode and mutation count. Manifest `capture*` build fields identify the CLI that created the ZIP; a supervising run manifest must separately identify the daemon build that produced the session. |
 | `qkt golden materialize --bundle ZIP --out DATA_ROOT` | Verify every manifest entry hash and record count, reject unsafe or incomplete structured market evidence, then write the captured market input into normal QKT tick CSV plus inspectable and binary bar stores. `golden-replay-manifest.json` records the source bundle hash, build identities, counts, symbols, timeframes, and the recommended replay window. The output directory must not already exist. |
-| `qkt data verify <symbol\|SOURCE:SYMBOL> [--tf <tf>] [...]` | A `SOURCE:SYMBOL` name checks that series' stored bars instead: every timeframe folder (or `--tf`), `.csv` (read by backtests) and `.bin` (the `--bars` tier) apart, with each day's bar count and largest gap, flagging unreadable files, bars out of order, off the grid or under another day, impossible prices and missing weekdays. A bare symbol: Check cached tick day files for empty, corrupt, gappy (including a day that starts hours after the previous day ended), misplaced (ticks outside their file's UTC day) or backwards days, list days with no file inside the stored span (`MISSING`: weekdays, or every day once a Saturday holds ticks), and show which days were imported (`qkt data --help` lists subcommands). |
+| `qkt data verify <symbol\|SOURCE:SYMBOL> [--tf <tf>] [...]` | A `SOURCE:SYMBOL` name checks that series' stored bars instead: every timeframe folder (or `--tf`), `.csv` (read by backtests) and `.bin` (the `--bars` tier) apart, with each day's bar count and largest gap, flagging unreadable files, bars out of order, off the grid or under another day and impossible prices. A bare symbol: check cached tick day files for corrupt, misplaced (ticks outside their file's UTC day) or backwards days, and show which days were imported. Both judge coverage by the backtest's rule ([how coverage is judged](../how-to/backtest-data.md#how-coverage-is-judged)): `EMPTY` (a trading day with no data), `GAP` (over 90 minutes of session time without data), `MISSING` (a trading day with no file inside the stored span; every day once a Saturday holds data) are flagged; `holiday`, `short session (last tick 18:29Z)`, `closed` and `partial` (the first or last stored day cut short) are shown, not flagged (`qkt data --help` lists subcommands). |
 | `qkt data import <file\|dir>... --as <SYMBOL> [--dry-run] [--plan] [--json] [...]` | Import ticks, bars, funding, open interest or published series from any source (MT5, Dukascopy, HistData, TradingView, Binance, exchanges, any CSV/JSON) into the store, exactly; refuses what it cannot prove. See [Import data from any source](../how-to/import-data.md). |
 | `qkt data compare <SYMBOL> --against <SYMBOL> --from D --to D [--tf 1m] [--json]` | Compare two stored series bar by bar: clock offset, price difference in points, missing bars. |
+| `qkt data bars <SYMBOL\|SOURCE:SYMBOL> --tf <tf> --from D --to D [--bars]` | Print a series' bars as CSV exactly as a backtest reads them: stored bars, bars rolled up from a finer stored timeframe, or bars built from ticks (`--bars`: the built `.bin` tier). `--to` is inclusive. `qkt data <action> --help` shows each action's flags. |
 | `qkt data presets [--json]` | List the built-in import presets. |
 | `qkt data build-bars <symbol> --tf <tf> [--from D] [--to D]` | Build bars from a symbol's stored ticks into `bars/BACKTEST/<symbol>/<tf>/<day>.bin`, which `qkt backtest --bars` reads for fast research runs. Prints `built=… skipped=… bars=…`. `--to` is exclusive. |
-| `qkt data convert <symbol> [--from D] [--to D] [--prune]` | Write a compact `<day>.bin` beside each stored tick day; qkt reads `.bin` before `.csv.gz`, so repeated backtests decode faster. Days already converted are skipped; `--prune` deletes the CSV after a successful convert. |
-| `qkt data snapshot <symbol> --from D --to D --out <file> [--vendor V] [--quality Q]` | Pin a dataset: record every day file's hash, the range and the vendor in a JSON snapshot. `qkt backtest --dataset <file>` then refuses to run if the data changed; `qkt data verify --snapshot <file>` checks it. |
+| `qkt data convert <symbol> [--from D] [--to D] [--prune]` | Write a compact `<day>.bin` beside each stored tick day; qkt reads `.bin` before `.csv.gz`, so repeated backtests decode faster. Days already converted are skipped; `--prune` deletes each day's CSV (converted now or earlier) only after its `.bin` reads back as the same ticks. |
+| `qkt data snapshot <symbol> --from D --to D --out <file> [--vendor V] [--quality Q]` | Pin a dataset: record every day file's hash, the weekend days a closed market has no file for, the range and the vendor in a JSON snapshot. `qkt backtest --dataset <file>` then refuses to run if the data changed; `qkt data verify --snapshot <file>` checks it. |
 | `qkt preflight <file> [--production] [--offline]` | Validate production readiness against the config, failing closed with `--production`. |
 | `qkt promotion ...` | Record and query promotion states, approvals, waivers, and gates. |
 | `qkt incident collect [...]` | Build an incident zip with journal, log, and state evidence. |

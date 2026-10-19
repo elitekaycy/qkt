@@ -35,7 +35,7 @@ adding a file, not code.
 
 | Preset | Source |
 |---|---|
-| `mt5-bars`, `mt5-ticks` | MetaTrader 5 Symbols window export (tab-separated, UTF-8 or UTF-16, broker server time) |
+| `mt5-bars`, `mt5-ticks` | MetaTrader 5 Symbols window export (tab-separated, UTF-8 or UTF-16, on your broker's server time: see [MetaTrader files](#metatrader-files-are-on-your-brokers-clock)) |
 | `mt5-bars-daily` | MetaTrader 5 D1 export: recognised and refused (its days start at broker midnight, not UTC) |
 | `mt4-csv` | MetaTrader 4 History Center CSV |
 | `histdata-m1`, `histdata-ticks`, `histdata-mt` | HistData.com (EST all year, no DST) |
@@ -47,10 +47,11 @@ adding a file, not code.
 | `mt4-hst` | MetaTrader 4 history files (`<SYMBOL><PERIOD>.hst`, version 400 or 401), read natively: bid bars on the broker clock, shifted to mid by the stored spread, prices rounded to the header's digits (which become the instrument's unless `--digits` says otherwise) |
 | `tradingview-unix`, `tradingview-iso` | TradingView chart export |
 | `binance-klines`, `binance-klines-header`, `binance-klines-json` | Binance public data and REST klines (ms, and µs for spot since 2025) |
+| `binance-trades`, `binance-trades-header`, `binance-agg-trades`, `binance-agg-trades-header` | Binance public-data trades and aggTrades, spot and futures (files named `<SYMBOL>-trades-<date>` / `-aggTrades-`); trades build the venue's own klines exactly, aggTrades can differ where one order fills across a bar boundary |
 | `binance-funding`, `binance-funding-api`, `binance-metrics` | Binance funding rates and 5-minute open interest |
 | `bybit-trades`, `bybit-spot-trades`, `okx-candles`, `okx-trades`, `kraken-ohlcvt` | exchange archives |
 | `truefx-ticks` | TrueFX |
-| `yfinance-daily`, `yfinance-intraday`, `yfinance-multi` | Yahoo Finance via yfinance |
+| `yfinance-daily`, `yfinance-daily-adjusted`, `yfinance-history-daily`, `yfinance-intraday`, `yfinance-multi` | Yahoo Finance via yfinance: `download()` saved flat or with its three-line header (one ticker or several), and `Ticker.history()`; float32 prices restored to their decimals |
 | `alphavantage-intraday`, `alphavantage-daily` | Alpha Vantage CSV |
 | `polygon-aggs-flat`, `polygon-aggs-json` | Polygon (Massive) flat files and REST aggregates |
 | `oanda-candles`, `ccxt-ohlcv` | OANDA v20 candles, ccxt `fetch_ohlcv` dumps |
@@ -117,6 +118,25 @@ clock, and getting it wrong moves every bar without any error, so qkt checks it.
 - A wall-clock time inside a DST gap (the clock skipped it) is refused. Inside the repeated autumn hour
   the file's own order decides which pass it is.
 - Crypto and other round-the-clock symbols carry no such evidence: naive times need `--tz`.
+- A week whose first timestamp comes after the others' (HistData EURUSD on 2026-03-29 opens at 18:00 New
+  York, its first hour missing) is accepted on a stated clock and named in the report; a whole season of
+  late opens is a wrong DST rule and still refuses. A silence longer than five days is a hole in the data,
+  not a weekend, and says nothing about the clock.
+
+### MetaTrader files are on your broker's clock
+
+MT5 and MT4 exports (`mt5-bars`, `mt5-ticks`, `mt4-csv`, `mt4-hst`) are written in the broker's server
+time, which differs by broker: **Exness runs on UTC**; IC Markets, Pepperstone, FTMO and most others on
+`ny-close`. MetaTrader shows it as the Market Watch clock. qkt reads the clock from the file's weekly
+opens when they single one out (several clocks that put every row at the same instant, such as `ny-close`
+and `+03:00` through a US summer, count as one), and otherwise refuses and asks:
+
+```bash
+qkt data import EURUSD_M1.csv --as EXNESS:EURUSD --tz UTC        # Exness
+qkt data import EURUSD_M1.csv --as ICM:EURUSD --tz ny-close      # IC Markets
+```
+
+A short export with no weekend in it carries no evidence at all, so it always needs `--tz`.
 
 ## What it refuses, and why
 
@@ -131,6 +151,7 @@ clock, and getting it wrong moves every bar without any error, so qkt checks it.
 | a `series` without `--available` or `--available-lag` | stamping a published value on the date it describes leaks the future |
 | Parquet | convert it: `duckdb -c "COPY (FROM 'x.parquet') TO 'x.csv'"` (the refusal prints the command for your file) |
 | MT5 `.hcc`/`.tkc` caches | undocumented and changed between terminal builds: export from MT5's Symbols window instead |
+| a file of several tickers (yfinance `download(["AAPL","MSFT"])`) whose tickers do not include `--as`, or any file with two columns of one name | reading either column would be a guess; qkt reads the columns under the `--as` ticker when the file names them |
 
 Every refusal happens before the first write, so a refused import leaves the store as it was.
 
@@ -139,6 +160,10 @@ Some things are fixed or flagged rather than refused, and the report counts each
 - exact duplicate bars and crossed quotes are dropped (qkt's reader drops crossed quotes anyway);
 - price spikes that jump and immediately revert are flagged and kept;
 - digits past the eighth decimal are rounded to qkt's precision;
+- Yahoo (yfinance) prices are float32 values printed as doubles (`340.79998779296875` is the float32
+  nearest 340.80); qkt stores the shortest decimal naming that float32 (340.8), and keeps any value
+  that is not a float32 as written;
+- two funding or open-interest values at one time refuse, unless `--on-conflict last` keeps the later file's;
 - bid bars without a spread column are stored as they are, with a note that qkt reads bar prices as mid.
 
 ## Several sources for one symbol
@@ -170,10 +195,14 @@ Monday to Friday and an MT5 export from Wednesday to the next Friday. qkt keeps 
 ## After importing
 
 - Re-importing the same files the same way changes nothing (`unchanged` days).
+- `qkt data bars <SYMBOL> --tf 1h --from D --to D` prints the bars a backtest reads, as CSV: imported bars,
+  bars qkt rolls up from them, or bars built from ticks. Compare them with your source's own coarser bars.
 - Every target directory has `.import.json`, recording the input files' SHA-256, the preset, the clock
-  and its evidence, and the counts. `qkt data verify <SYMBOL>` shows which days were imported, flags a
-  day that starts hours after the previous one ended, and lists weekdays neither source covered
-  (`MISSING`); a seam line also says how many weekdays lie between two sources.
+  and its evidence, and the counts. `qkt data verify <SYMBOL>` shows which days were imported and judges coverage as a
+  backtest does: a trading day with no file (`MISSING`), no data (`EMPTY`) or over 90 minutes of session time
+  without any (`GAP`) is flagged, holidays and holiday short sessions are shown
+  ([How coverage is judged](backtest-data.md#how-coverage-is-judged)); a seam line also says how many weekdays lie
+  between two sources.
 - A backtest never deletes an imported tick day to refetch it from Dukascopy, and says when its window
   mixes imported and fetched days.
 - `qkt data compare EXNESS:XAUUSD --against MT5:XAUUSD --from 2024-09-01 --to 2024-09-30` measures an

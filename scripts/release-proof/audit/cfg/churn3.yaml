@@ -1,0 +1,4 @@
+starting_balance: 10000
+risk:
+  max_daily_loss: "0"
+  max_round_trips_10m: 3

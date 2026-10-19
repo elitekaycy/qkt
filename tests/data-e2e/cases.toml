@@ -1,0 +1,720 @@
+# Real-data end-to-end cases. Paths are relative to the corpus unless they start with {root} (this case's
+# data root), {work} (its scratch folder) or {samples} (qkt's in-repo import samples). `tier = "pr"` cases run
+# on every pull request; every case runs on the testing branch. See docs/superpowers/specs/2026-10-18-data-e2e-suite-design.md.
+
+# ---------------------------------------------------------------------------------------------- Binance
+
+[[case]]
+id = "binance-spot-trades-ada"
+tier = "pr"
+[[case.step]]
+run = ["data", "import", "{corpus}/binance/spot/ADAUSDT-trades-2026-10-14.zip", "--as", "ADAUSDT", "--data-root", "{root}"]
+contains = ["Format   binance-trades (matched)", "120132 rows → 120132 ticks records", "Days     1  2026-10-14"]
+again_noop = true
+[[case.check]]
+kind = "ticks_equal"
+symbol = "ADAUSDT"
+reader = "binance_trades"
+file = "binance/spot/ADAUSDT-trades-2026-10-14.zip"
+[[case.check]]
+kind = "vendor_bars"
+symbol = "ADAUSDT"
+from = "2026-10-14"
+to = "2026-10-14"
+tfs = ["1m", "5m", "1h", "4h", "1d"]
+vendor = "binance/spot/ADAUSDT-{tf}-2026-10-14.zip"
+reader = "binance_klines"
+paths = ["read", "built"]
+convention = "binance"
+
+[[case]]
+id = "binance-spot-aggtrades-ada"
+tier = "pr"
+[[case.step]]
+run = ["data", "import", "{corpus}/binance/spot/ADAUSDT-aggTrades-2026-10-14.zip", "--as", "ADAUSDT", "--data-root", "{root}"]
+contains = ["Format   binance-agg-trades (matched)", "37759 rows → 37759 ticks records"]
+again_noop = true
+[[case.check]]
+kind = "ticks_equal"
+symbol = "ADAUSDT"
+reader = "binance_trades"
+agg = true
+file = "binance/spot/ADAUSDT-aggTrades-2026-10-14.zip"
+[[case.check]]
+kind = "vendor_bars"
+symbol = "ADAUSDT"
+from = "2026-10-14"
+to = "2026-10-14"
+tfs = ["1m", "1h", "1d"]
+vendor = "binance/spot/ADAUSDT-{tf}-2026-10-14.zip"
+reader = "binance_klines"
+
+[[case]]
+id = "binance-um-trades-xrp"
+[[case.step]]
+run = ["data", "import", "{corpus}/binance/futures-um/XRPUSDT-trades-2026-10-14.zip", "--as", "XRPUSDT", "--data-root", "{root}"]
+contains = ["Format   binance-trades-header (matched)", "1730220 rows → 1730220 ticks records"]
+[[case.check]]
+kind = "ticks_equal"
+symbol = "XRPUSDT"
+reader = "binance_trades"
+file = "binance/futures-um/XRPUSDT-trades-2026-10-14.zip"
+[[case.check]]
+kind = "vendor_bars"
+symbol = "XRPUSDT"
+from = "2026-10-14"
+to = "2026-10-14"
+tfs = ["1m"]
+vendor = "binance/futures-um/XRPUSDT-{tf}-2026-10-14.zip"
+reader = "binance_klines"
+paths = ["read", "built"]
+
+[[case]]
+id = "binance-um-aggtrades-xrp"
+[[case.step]]
+run = ["data", "import", "{corpus}/binance/futures-um/XRPUSDT-aggTrades-2026-10-14.zip", "--as", "XRPUSDT", "--data-root", "{root}"]
+contains = ["Format   binance-agg-trades-header (matched)", "247427 rows → 247427 ticks records"]
+[[case.check]]
+kind = "ticks_equal"
+symbol = "XRPUSDT"
+reader = "binance_trades"
+agg = true
+file = "binance/futures-um/XRPUSDT-aggTrades-2026-10-14.zip"
+[[case.check]]
+kind = "vendor_bars"
+symbol = "XRPUSDT"
+from = "2026-10-14"
+to = "2026-10-14"
+tfs = ["1m"]
+vendor = "binance/futures-um/XRPUSDT-{tf}-2026-10-14.zip"
+reader = "binance_klines"
+# An aggTrade carries its first fill's time: the 36 whose fills span a minute put their size in the first one.
+file_agg = "binance/futures-um/XRPUSDT-aggTrades-2026-10-14.zip"
+agg_trades_file = "binance/futures-um/XRPUSDT-trades-2026-10-14.zip"
+
+[[case]]
+id = "binance-spot-klines-rollup-btc"
+tier = "pr"
+[[case.step]]
+run = ["data", "import", "{corpus}/binance/spot/BTCUSDT-1m-2026-10-14.zip", "--as", "BINANCE:BTCUSDT", "--data-root", "{root}"]
+contains = ["Format   binance-klines (matched)", "Time     epoch:us", "1440 rows → 1440 bars records"]
+again_noop = true
+[[case.check]]
+kind = "bars_equal"
+symbol = "BINANCE:BTCUSDT"
+reader = "binance_klines"
+file = "binance/spot/BTCUSDT-1m-2026-10-14.zip"
+[[case.check]]
+kind = "vendor_bars"
+symbol = "BINANCE:BTCUSDT"
+from = "2026-10-14"
+to = "2026-10-14"
+tfs = ["5m", "15m", "1h", "4h", "1d"]
+vendor = "binance/spot/BTCUSDT-{tf}-2026-10-14.zip"
+reader = "binance_klines"
+
+[[case]]
+id = "binance-um-klines-rollup-btc"
+tier = "pr"
+[[case.step]]
+run = ["data", "import", "{corpus}/binance/futures-um/BTCUSDT-1m-2026-10-14.zip", "--as", "BINANCE_UM:BTCUSDT", "--data-root", "{root}"]
+contains = ["Format   binance-klines-header (matched)", "1440 rows → 1440 bars records"]
+[[case.check]]
+kind = "bars_equal"
+symbol = "BINANCE_UM:BTCUSDT"
+reader = "binance_klines"
+file = "binance/futures-um/BTCUSDT-1m-2026-10-14.zip"
+[[case.check]]
+kind = "vendor_bars"
+symbol = "BINANCE_UM:BTCUSDT"
+from = "2026-10-14"
+to = "2026-10-14"
+tfs = ["5m", "15m", "1h", "4h", "1d"]
+vendor = "binance/futures-um/BTCUSDT-{tf}-2026-10-14.zip"
+reader = "binance_klines"
+
+# ------------------------------------------------------------------------------------------------ Bybit
+
+[[case]]
+id = "bybit-linear-trades-xrp"
+[[case.step]]
+run = ["data", "import", "{corpus}/bybit/XRPUSDT2026-10-14.csv.gz", "--as", "XRPUSDT", "--data-root", "{root}"]
+contains = ["Format   bybit-trades (matched)", "535774 rows → 535774 ticks records", "timestamp(s) were finer than a millisecond"]
+[[case.check]]
+kind = "ticks_equal"
+symbol = "XRPUSDT"
+reader = "bybit_trades"
+file = "bybit/XRPUSDT2026-10-14.csv.gz"
+[[case.check]]
+kind = "vendor_bars"
+symbol = "XRPUSDT"
+from = "2026-10-14"
+to = "2026-10-14"
+tfs = ["1m"]
+vendor = ["bybit/XRPUSDT-kline-1m-2026-10-14-p1.json", "bybit/XRPUSDT-kline-1m-2026-10-14-p2.json"]
+reader = "bybit_kline"
+convention = "bybit"
+
+[[case]]
+id = "bybit-spot-trades-ada"
+tier = "pr"
+[[case.step]]
+run = ["data", "import", "{corpus}/bybit/ADAUSDT_2026-10-14.csv.gz", "--as", "ADAUSDT", "--data-root", "{root}"]
+contains = ["Format   bybit-spot-trades (matched)", "35192 rows → 35192 ticks records"]
+again_noop = true
+[[case.check]]
+kind = "ticks_equal"
+symbol = "ADAUSDT"
+reader = "bybit_trades"
+file = "bybit/ADAUSDT_2026-10-14.csv.gz"
+[[case.check]]
+kind = "vendor_bars"
+symbol = "ADAUSDT"
+from = "2026-10-14"
+to = "2026-10-14"
+tfs = ["1m"]
+vendor = ["bybit/ADAUSDT-spot-kline-1m-2026-10-14-p1.json", "bybit/ADAUSDT-spot-kline-1m-2026-10-14-p2.json"]
+reader = "bybit_kline"
+convention = "bybit"
+ambiguous_ms = 20
+trades = "bybit/ADAUSDT_2026-10-14.csv.gz"
+trades_reader = "bybit_trades"
+
+# -------------------------------------------------------------------------------------------------- OKX
+
+[[case]]
+id = "okx-spot-trades-btc"
+[[case.step]]
+run = ["data", "import", "{corpus}/okx/BTC-USDT-trades-2026-10-14.zip", "--as", "BTCUSDT", "--data-root", "{root}"]
+contains = ["Format   okx-trades (matched)", "446633 rows → 446633 ticks records", "Days     2  2026-10-13 … 2026-10-14", "74 value(s) had more than 8 decimals"]
+[[case.check]]
+kind = "ticks_equal"
+symbol = "BTCUSDT"
+reader = "okx_trades"
+file = "okx/BTC-USDT-trades-2026-10-14.zip"
+
+# --------------------------------------------------------------------------------------------- HistData
+
+[[case]]
+id = "histdata-m1-eurusd"
+tier = "pr"
+[[case.step]]
+run = ["data", "import", "{corpus}/histdata/EURUSD-ASCII-M1-2026-03.zip", "--as", "HISTDATA:EURUSD", "--data-root", "{root}"]
+contains = ["Format   histdata-m1 (matched)", "Clock    -05:00 (stated by preset histdata-m1)", "1 late: the source's first hour missing", "31979 rows → 31979 bars records"]
+again_noop = true
+[[case.check]]
+kind = "bars_equal"
+symbol = "HISTDATA:EURUSD"
+reader = "histdata_m1"
+file = "histdata/EURUSD-ASCII-M1-2026-03.zip"
+fields = ["open", "high", "low", "close"]
+
+[[case]]
+id = "histdata-ascii-equals-metatrader"
+tier = "pr"
+[[case.step]]
+run = ["data", "import", "{corpus}/histdata/EURUSD-ASCII-M1-2026-03.zip", "--as", "HISTDATA:EURUSD", "--data-root", "{root}"]
+[[case.step]]
+run = ["data", "import", "{corpus}/histdata/EURUSD-MT-M1-2026-03.zip", "--as", "HISTDATA_MT:EURUSD", "--data-root", "{root}"]
+contains = ["Format   histdata-mt (matched)"]
+[[case.step]]
+run = ["data", "compare", "HISTDATA:EURUSD", "--against", "HISTDATA_MT:EURUSD", "--from", "2026-03-01", "--to", "2026-03-31", "--data-root", "{root}"]
+contains = ["identical: 31680 bars matched, 0 only in the first, 0 only in the second, offset 0m"]
+[[case.check]]
+kind = "same_store"
+a = "bars/HISTDATA/EURUSD/1m"
+b = "bars/HISTDATA_MT/EURUSD/1m"
+
+[[case]]
+id = "histdata-ticks-eurusd"
+[[case.step]]
+run = ["data", "import", "{corpus}/histdata/EURUSD-ASCII-T-2026-03.zip", "--as", "EURUSD", "--data-root", "{root}"]
+contains = ["Format   histdata-ticks (matched)", "2639808 rows → 2639808 ticks records"]
+[[case.check]]
+kind = "ticks_equal"
+symbol = "EURUSD"
+reader = "histdata_ticks"
+file = "histdata/EURUSD-ASCII-T-2026-03.zip"
+volume = false
+[[case.check]]
+kind = "built_bars"
+symbol = "EURUSD"
+reader = "histdata_ticks"
+file = "histdata/EURUSD-ASCII-T-2026-03.zip"
+vendor = "histdata/EURUSD-ASCII-M1-2026-03.zip"
+vendor_reader = "histdata_m1"
+vendor_use = "bid"
+vendor_missing_ok = 1
+use = "mid"
+from = "2026-03-01"
+to = "2026-04-01"
+tfs = ["1m", "1h"]
+fields = ["open", "high", "low", "close"]
+
+# --------------------------------------------------------------------------------------------- yfinance
+
+[[case]]
+id = "yfinance-two-tickers-picks-its-own"
+tier = "pr"
+[[case.step]]
+run = ["data", "import", "{corpus}/yfinance/AAPL-MSFT-1d-multi.csv", "--as", "YAHOO:MSFT", "--data-root", "{root}"]
+contains = ["Format   yfinance-multi (matched)", "price(s) were float32 values widened to a double"]
+[[case.check]]
+kind = "bars_equal"
+symbol = "YAHOO:MSFT"
+tf = "1d"
+reader = "yfinance_bars"
+ticker = "MSFT"
+file = "yfinance/AAPL-MSFT-1d-multi.csv"
+
+[[case]]
+id = "yfinance-ticker-not-in-file-refused"
+tier = "pr"
+[[case.step]]
+run = ["data", "import", "{corpus}/yfinance/AAPL-MSFT-1d-multi.csv", "--as", "YAHOO:GOOG", "--data-root", "{root}"]
+exit = 1
+contains = ["the file holds several tickers (AAPL, MSFT) and none is 'GOOG'"]
+writes_nothing = true
+
+[[case]]
+id = "yfinance-daily-float32"
+tier = "pr"
+[[case.step]]
+run = ["data", "import", "{corpus}/yfinance/SPY-1d.csv", "--as", "YAHOO:SPY", "--data-root", "{root}"]
+contains = ["Format   yfinance-daily (matched)", "price(s) were float32 values widened to a double"]
+lacks = ["more than 8 decimals"]
+again_noop = true
+[[case.check]]
+kind = "bars_equal"
+symbol = "YAHOO:SPY"
+tf = "1d"
+reader = "yfinance_bars"
+file = "yfinance/SPY-1d.csv"
+
+[[case]]
+id = "yfinance-intraday-float32"
+tier = "pr"
+[[case.step]]
+run = ["data", "import", "{corpus}/yfinance/AAPL-1m.csv", "--as", "YAHOO:AAPL", "--data-root", "{root}"]
+contains = ["Format   yfinance-intraday (matched)", "1950 rows → 1950 bars records"]
+[[case.check]]
+kind = "bars_equal"
+symbol = "YAHOO:AAPL"
+reader = "yfinance_bars"
+file = "yfinance/AAPL-1m.csv"
+
+[[case]]
+id = "yfinance-history-intraday-same-bars"
+tier = "pr"
+[[case.step]]
+run = ["data", "import", "{corpus}/yfinance/AAPL-1m.csv", "--as", "YAHOO:AAPL", "--data-root", "{root}"]
+[[case.step]]
+run = ["data", "import", "{corpus}/yfinance/AAPL-1m-history.csv", "--as", "YAHOO_HIST:AAPL", "--data-root", "{root}"]
+contains = ["Format   yfinance-intraday (matched)"]
+[[case.check]]
+kind = "same_store"
+a = "bars/YAHOO/AAPL/1m"
+b = "bars/YAHOO_HIST/AAPL/1m"
+
+[[case]]
+id = "yfinance-defaults-flat-daily"
+tier = "pr"
+[[case.step]]
+run = ["data", "import", "{corpus}/yfinance/AAPL-1d-defaults-flat.csv", "--as", "YAHOO:AAPL", "--data-root", "{root}"]
+contains = ["Format   yfinance-daily-adjusted (matched)"]
+[[case.check]]
+kind = "bars_equal"
+symbol = "YAHOO:AAPL"
+tf = "1d"
+reader = "yfinance_bars"
+file = "yfinance/AAPL-1d-defaults-flat.csv"
+
+[[case]]
+id = "yfinance-history-daily-session-dates"
+tier = "pr"
+[[case.step]]
+run = ["data", "import", "{corpus}/yfinance/AAPL-1d-history.csv", "--as", "YAHOO:AAPL", "--data-root", "{root}"]
+contains = ["Format   yfinance-history-daily (matched)", "Clock    calendar days (session dates)"]
+[[case.step]]
+run = ["data", "import", "{corpus}/yfinance/AAPL-1d-defaults-flat.csv", "--as", "YAHOO_FLAT:AAPL", "--data-root", "{root}"]
+[[case.check]]
+kind = "same_store"
+a = "bars/YAHOO/AAPL/1d"
+b = "bars/YAHOO_FLAT/AAPL/1d"
+
+[[case]]
+id = "yfinance-hourly-at-half-past-refused"
+tier = "pr"
+[[case.step]]
+run = ["data", "import", "{corpus}/yfinance/AAPL-1h.csv", "--as", "YAHOO:AAPL", "--data-root", "{root}"]
+exit = 1
+contains = ["the bar starts 30m past the UTC 60-minute grid", "import a finer timeframe (1m)"]
+writes_nothing = true
+
+[[case]]
+id = "yfinance-fx-1m"
+tier = "pr"
+[[case.step]]
+run = ["data", "import", "{corpus}/yfinance/EURUSD-1m.csv", "--as", "YAHOO:EURUSD", "--data-root", "{root}"]
+contains = ["Format   yfinance-intraday (matched)", "7086 rows → 7086 bars records"]
+[[case.check]]
+kind = "bars_equal"
+symbol = "YAHOO:EURUSD"
+reader = "yfinance_bars"
+file = "yfinance/EURUSD-1m.csv"
+
+# ---------------------------------------------------------------------------------- Alpha Vantage, ccxt
+
+[[case]]
+id = "alphavantage-daily-ibm"
+tier = "pr"
+[[case.step]]
+run = ["data", "import", "{corpus}/alphavantage/IBM-daily.csv", "--as", "AV:IBM", "--data-root", "{root}"]
+contains = ["Format   alphavantage-daily (matched)"]
+[[case.check]]
+kind = "bars_equal"
+symbol = "AV:IBM"
+tf = "1d"
+reader = "alphavantage_bars"
+file = "alphavantage/IBM-daily.csv"
+
+[[case]]
+id = "alphavantage-intraday-ibm"
+tier = "pr"
+[[case.step]]
+run = ["data", "import", "{corpus}/alphavantage/IBM-intraday-5min.csv", "--as", "AV:IBM", "--data-root", "{root}"]
+contains = ["Format   alphavantage-intraday (matched)"]
+[[case.check]]
+kind = "bars_equal"
+symbol = "AV:IBM"
+tf = "5m"
+reader = "alphavantage_bars"
+file = "alphavantage/IBM-intraday-5min.csv"
+
+[[case]]
+id = "ccxt-kraken-1m"
+tier = "pr"
+[[case.step]]
+run = ["data", "import", "{corpus}/ccxt/kraken-BTCUSD-1m.json", "--as", "KRAKEN:XBTUSD", "--data-root", "{root}"]
+contains = ["Format   ccxt-ohlcv (matched)", "720 rows → 720 bars records"]
+[[case.check]]
+kind = "bars_equal"
+symbol = "KRAKEN:XBTUSD"
+reader = "ccxt_ohlcv"
+file = "ccxt/kraken-BTCUSD-1m.json"
+
+# ------------------------------------------------------------------------------------------- MetaTrader
+
+[[case]]
+id = "mt5-short-export-needs-the-broker-clock"
+tier = "pr"
+[[case.step]]
+run = ["data", "import", "{corpus}/mt5/sandman9988_VelocityTrader__EURUSD+_M1_202512240000_202512241849.csv", "--as", "BROKER:EURUSD", "--data-root", "{root}"]
+exit = 1
+contains = ["MetaTrader files are on the broker's server time (Exness: UTC"]
+writes_nothing = true
+
+[[case]]
+id = "mt5-week-ambiguous-clock-then-stated"
+tier = "pr"
+[[case.step]]
+run = ["data", "import", "{corpus}/mt5/pholas_forex-forecast__EURUSD_M15_202102090000_202102160630.csv", "--as", "BROKER:EURUSD", "--data-root", "{root}"]
+exit = 1
+contains = ["the weekly opens do not single out one clock", "Fitting: UTC, ny-close"]
+writes_nothing = true
+[[case.step]]
+run = ["data", "import", "{corpus}/mt5/pholas_forex-forecast__EURUSD_M15_202102090000_202102160630.csv", "--as", "BROKER:EURUSD", "--tz", "ny-close", "--data-root", "{root}"]
+contains = ["Clock    ny-close (stated by --tz)", "507 rows → 507 bars records"]
+[[case.check]]
+kind = "bars_equal"
+symbol = "BROKER:EURUSD"
+tf = "15m"
+reader = "mt5_bars_mid"
+clock = "ny-close"
+point = "0.00001"
+file = "mt5/pholas_forex-forecast__EURUSD_M15_202102090000_202102160630.csv"
+
+[[case]]
+id = "mt5-rows-without-prices-refused"
+tier = "pr"
+[[case.step]]
+run = ["data", "import", "{corpus}/mt5/lapijoseph_Quant_models__EURUSDm_H4_20220101000000_20260523062135.csv", "--as", "EXNESS:EURUSD", "--tz", "UTC", "--data-root", "{root}"]
+exit = 1
+contains = ["324 row(s) could not be read: no open"]
+writes_nothing = true
+
+[[case]]
+id = "mt5-header-only-refused"
+tier = "pr"
+[[case.step]]
+run = ["data", "import", "{corpus}/mt5/MickaelMorgado_EmittersWebsite__EURUSD_M5_2months.csv", "--as", "BROKER:EURUSD", "--data-root", "{root}"]
+exit = 1
+writes_nothing = true
+
+# ------------------------------------------------------------------------------------- the store and CLI
+
+[[case]]
+id = "data-root-precedence"
+tier = "pr"
+golden = false
+[[case.step]]
+# data_root in the project's config, relative to the config file, found from the project folder.
+files = { "{work}/proj/qkt.config.yaml" = "data_root: ./data\n" }
+cwd = "{work}/proj"
+run = ["data", "import", "{corpus}/binance/futures-um/BTCUSDT-1h-2026-10-14.zip", "--as", "BINANCE_UM:BTCUSDT"]
+contains = ["qkt: data root {work}/proj/data (from data_root in {work}/proj/qkt.config.yaml)"]
+[[case.step]]
+# QKT_DATA_HOME beats the config.
+cwd = "{work}/proj"
+env = { QKT_DATA_HOME = "{work}/env-root" }
+run = ["data", "import", "{corpus}/binance/futures-um/BTCUSDT-1h-2026-10-14.zip", "--as", "BINANCE_UM:BTCUSDT"]
+contains = ["qkt: data root {work}/env-root (from QKT_DATA_HOME)"]
+[[case.step]]
+# --data-root beats both, and is not announced (the user typed it).
+cwd = "{work}/proj"
+env = { QKT_DATA_HOME = "{work}/env-root" }
+run = ["data", "import", "{corpus}/binance/futures-um/BTCUSDT-1h-2026-10-14.zip", "--as", "BINANCE_UM:BTCUSDT", "--data-root", "{work}/flag-root"]
+lacks = ["qkt: data root"]
+[[case.step]]
+# --config names the project from anywhere.
+run = ["data", "verify", "BINANCE_UM:BTCUSDT", "--config", "{work}/proj/qkt.config.yaml"]
+contains = ["qkt: data root {work}/proj/data (from data_root in {work}/proj/qkt.config.yaml)", "1h", "ok"]
+[[case.step]]
+# An absolute data_root that does not exist (a container path read on the host) is refused, never swapped.
+files = { "{work}/host/qkt.config.yaml" = "data_root: /qkt-e2e-no-such-dir/data\n" }
+cwd = "{work}/host"
+run = ["data", "verify", "BINANCE_UM:BTCUSDT"]
+exit = 2
+contains = ["is /qkt-e2e-no-such-dir/data, which does not exist here"]
+[[case.step]]
+# No flag, variable or config: the default under the user's home.
+run = ["data", "import", "{corpus}/binance/futures-um/BTCUSDT-1h-2026-10-14.zip", "--as", "BINANCE_UM:BTCUSDT"]
+contains = ["qkt: data root {work}/home/.qkt/data (default; move it with --data-root or QKT_DATA_HOME)"]
+[[case.check]]
+kind = "exists"
+paths = ["{work}/proj/data/bars/BINANCE_UM/BTCUSDT/1h/2026-10-14.csv", "{work}/env-root/bars/BINANCE_UM/BTCUSDT/1h/2026-10-14.csv", "{work}/flag-root/bars/BINANCE_UM/BTCUSDT/1h/2026-10-14.csv", "{work}/home/.qkt/data/bars/BINANCE_UM/BTCUSDT/1h/2026-10-14.csv"]
+
+[[case]]
+id = "verify-bars-finds-damage"
+tier = "pr"
+golden = false
+[[case.step]]
+run = ["data", "import", "{corpus}/histdata/EURUSD-ASCII-M1-2026-03.zip", "--as", "HISTDATA:EURUSD", "--data-root", "{root}"]
+[[case.step]]
+run = ["data", "verify", "HISTDATA:EURUSD", "--data-root", "{root}"]
+contains = ["0 flagged"]
+[[case.step]]
+remove = ["{root}/bars/HISTDATA/EURUSD/1m/2026-03-11.csv"]
+append = { "{root}/bars/HISTDATA/EURUSD/1m/2026-03-12.csv" = "1772000000000,1.1,1.2,1.0,1.1,0\n" }
+[[case.step]]
+run = ["data", "verify", "HISTDATA:EURUSD", "--data-root", "{root}"]
+exit = 1
+contains = ["2026-03-11  MISSING", "2026-03-12  unreadable:"]
+
+[[case]]
+id = "build-bars-rebuilds-a-changed-day"
+tier = "pr"
+[[case.step]]
+run = ["data", "import", "{corpus}/binance/spot/ADAUSDT-trades-2026-10-14.zip", "--as", "ADAUSDT", "--data-root", "{root}"]
+[[case.step]]
+run = ["data", "build-bars", "ADAUSDT", "--tf", "1m", "--data-root", "{root}"]
+contains = ["built=1 skipped=0 bars=1440"]
+[[case.step]]
+run = ["data", "build-bars", "ADAUSDT", "--tf", "1m", "--data-root", "{root}"]
+contains = ["built=0 skipped=1 bars=0"]
+[[case.step]]
+# The day replaced by another venue's trades: its built bars must follow, not stay Binance's.
+run = ["data", "import", "{corpus}/bybit/ADAUSDT_2026-10-14.csv.gz", "--as", "ADAUSDT", "--on-overlap", "replace", "--data-root", "{root}"]
+contains = ["1 replaced"]
+[[case.step]]
+run = ["data", "build-bars", "ADAUSDT", "--tf", "1m", "--data-root", "{root}"]
+contains = ["built=1 skipped=0"]
+[[case.check]]
+kind = "built_bars"
+symbol = "ADAUSDT"
+reader = "bybit_trades"
+file = "bybit/ADAUSDT_2026-10-14.csv.gz"
+use = "price"
+from = "2026-10-14"
+to = "2026-10-14"
+tfs = ["1m", "1h"]
+
+[[case]]
+id = "convert-and-prune-read-back-identically"
+tier = "pr"
+[[case.step]]
+run = ["data", "import", "{corpus}/binance/spot/ADAUSDT-trades-2026-10-14.zip", "--as", "ADAUSDT", "--data-root", "{root}"]
+[[case.step]]
+run = ["data", "bars", "ADAUSDT", "--tf", "1m", "--from", "2026-10-14", "--to", "2026-10-14", "--data-root", "{root}"]
+stdout_to = "{work}/from-csv.csv"
+[[case.step]]
+run = ["data", "convert", "ADAUSDT", "--data-root", "{root}"]
+contains = ["converted=1 skipped=0 prune=false"]
+[[case.step]]
+run = ["data", "bars", "ADAUSDT", "--tf", "1m", "--from", "2026-10-14", "--to", "2026-10-14", "--data-root", "{root}"]
+stdout_to = "{work}/from-bin.csv"
+[[case.step]]
+run = ["data", "convert", "ADAUSDT", "--prune", "--data-root", "{root}"]
+contains = ["converted=0 skipped=1 prune=true pruned=1"]
+[[case.step]]
+run = ["data", "bars", "ADAUSDT", "--tf", "1m", "--from", "2026-10-14", "--to", "2026-10-14", "--data-root", "{root}"]
+stdout_to = "{work}/pruned.csv"
+[[case.check]]
+kind = "files_equal"
+pairs = [["{work}/from-csv.csv", "{work}/from-bin.csv"], ["{work}/from-csv.csv", "{work}/pruned.csv"]]
+[[case.check]]
+kind = "exists"
+paths = ["{root}/symbols/ADAUSDT/2026-10-14.bin"]
+absent = ["{root}/symbols/ADAUSDT/2026-10-14.csv.gz"]
+
+[[case]]
+id = "snapshot-pins-an-imported-fx-store"
+golden = false
+[[case.step]]
+run = ["data", "import", "{corpus}/histdata/EURUSD-ASCII-T-2026-03.zip", "--as", "EURUSD", "--data-root", "{root}"]
+[[case.step]]
+run = ["data", "snapshot", "EURUSD", "--from", "2026-03-01", "--to", "2026-04-01", "--out", "{work}/snap.json", "--data-root", "{root}"]
+contains = ["files=27"]
+[[case.step]]
+run = ["data", "verify", "EURUSD", "--snapshot", "{work}/snap.json", "--data-root", "{root}"]
+contains = ["ok (27 files)"]
+[[case.step]]
+files = { "{work}/hourly.qkt" = "STRATEGY hourly_cross VERSION 1\n\nSYMBOLS\n    fx = BACKTEST:EURUSD EVERY 1h\n\nRULES\n    WHEN ema(fx.close, 5) CROSSES ABOVE ema(fx.close, 20) AND POSITION.fx = 0\n    THEN BUY fx SIZING 0.1\n    WHEN ema(fx.close, 5) CROSSES BELOW ema(fx.close, 20) AND POSITION.fx > 0\n    THEN CLOSE fx\n" }
+run = ["backtest", "{work}/hourly.qkt", "--from", "2026-03-02", "--to", "2026-03-31", "--data-root", "{root}", "--no-fetch", "--dataset", "{work}/snap.json", "--report-dir", "{work}/run1"]
+[[case.step]]
+run = ["backtest", "{work}/hourly.qkt", "--from", "2026-03-02", "--to", "2026-03-31", "--data-root", "{root}", "--no-fetch", "--dataset", "{work}/snap.json", "--report-dir", "{work}/run2"]
+[[case.step]]
+# A file appearing on a pinned-absent Saturday is a change.
+files = { "{root}/symbols/EURUSD/2026-03-07.csv" = "timestamp,symbol,price,volume,bid,ask,bidVolume,askVolume\n" }
+run = ["data", "verify", "EURUSD", "--snapshot", "{work}/snap.json", "--data-root", "{root}"]
+exit = 1
+contains = ["2026-03-07: a day file appeared"]
+[[case.step]]
+remove = ["{root}/symbols/EURUSD/2026-03-07.csv"]
+append = { "{root}/symbols/EURUSD/2026-03-10.csv.gz" = "x" }
+run = ["backtest", "{work}/hourly.qkt", "--from", "2026-03-02", "--to", "2026-03-31", "--data-root", "{root}", "--no-fetch", "--dataset", "{work}/snap.json", "--report-dir", "{work}/run3"]
+exit = 1
+contains = ["dataset snapshot verification failed", "2026-03-10: size changed"]
+[[case.check]]
+kind = "files_equal"
+pairs = [["{work}/run1/trades.csv", "{work}/run2/trades.csv"], ["{work}/run1/orders.jsonl", "{work}/run2/orders.jsonl"], ["{work}/run1/equity_daily.csv", "{work}/run2/equity_daily.csv"], ["{work}/run1/equity_global.csv", "{work}/run2/equity_global.csv"], ["{work}/run1/monthly_returns.csv", "{work}/run2/monthly_returns.csv"]]
+
+# -------------------------------------------------------------------------------------------- Dukascopy
+# A datafeed day as Dukascopy serves it: 24 hour files of ticks and its own BID/ASK minute candles beside them
+# (folder months count from 00, so 2026/08/15 is 2026-09-15).
+
+[[case]]
+id = "dukascopy-bi5-day-eurusd"
+tier = "pr"
+[[case.step]]
+run = ["data", "import", "{corpus}/dukascopy/EURUSD/2026/08", "--as", "EURUSD", "--data-root", "{root}"]
+contains = ["Format   dukascopy-bi5 (matched)", "49858 ticks records", "skipped"]
+again_noop = true
+[[case.check]]
+kind = "ticks_equal"
+symbol = "EURUSD"
+reader = "dukascopy_bi5_day"
+divisor = 100000
+file = "dukascopy/EURUSD/2026/08/15"
+[[case.check]]
+kind = "built_bars"
+symbol = "EURUSD"
+reader = "dukascopy_bi5_day"
+divisor = 100000
+file = "dukascopy/EURUSD/2026/08/15"
+vendor_reader = "dukascopy_candles"
+vendors = [{ vendor = "dukascopy/EURUSD/2026/08/15/BID_candles_min_1.bi5", use = "bid" }, { vendor = "dukascopy/EURUSD/2026/08/15/ASK_candles_min_1.bi5", use = "ask" }]
+vendor_flat_ok = true
+use = "mid"
+from = "2026-09-15"
+to = "2026-09-15"
+tfs = ["1m", "5m", "1h", "1d"]
+fields = ["open", "high", "low", "close"]
+
+[[case]]
+id = "dukascopy-bi5-day-usdjpy"
+[[case.step]]
+run = ["data", "import", "{corpus}/dukascopy/USDJPY", "--as", "USDJPY", "--data-root", "{root}"]
+contains = ["Format   dukascopy-bi5 (matched)"]
+[[case.check]]
+kind = "ticks_equal"
+symbol = "USDJPY"
+reader = "dukascopy_bi5_day"
+divisor = 1000
+file = "dukascopy/USDJPY/2026/08/15"
+[[case.check]]
+kind = "built_bars"
+symbol = "USDJPY"
+reader = "dukascopy_bi5_day"
+divisor = 1000
+file = "dukascopy/USDJPY/2026/08/15"
+vendor_reader = "dukascopy_candles"
+vendors = [{ vendor = "dukascopy/USDJPY/2026/08/15/BID_candles_min_1.bi5", use = "bid" }, { vendor = "dukascopy/USDJPY/2026/08/15/ASK_candles_min_1.bi5", use = "ask" }]
+vendor_flat_ok = true
+use = "mid"
+from = "2026-09-15"
+to = "2026-09-15"
+tfs = ["1m", "1h"]
+fields = ["open", "high", "low", "close"]
+
+[[case]]
+id = "dukascopy-candle-file-named-refused"
+tier = "pr"
+[[case.step]]
+run = ["data", "import", "{corpus}/dukascopy/EURUSD/2026/08/15/BID_candles_min_1.bi5", "--as", "EURUSD", "--data-root", "{root}"]
+exit = 1
+contains = ["is a Dukascopy candle file, which qkt does not read"]
+writes_nothing = true
+
+[[case]]
+id = "dukascopy-bi5-day-xauusd"
+[[case.step]]
+# Metals divide Dukascopy's integer prices by 1000; the 60 minutes of the daily break have no ticks.
+run = ["data", "import", "{corpus}/dukascopy/XAUUSD", "--as", "XAUUSD", "--data-root", "{root}"]
+contains = ["Format   dukascopy-bi5 (matched)", "361160 ticks records"]
+[[case.check]]
+kind = "ticks_equal"
+symbol = "XAUUSD"
+reader = "dukascopy_bi5_day"
+divisor = 1000
+file = "dukascopy/XAUUSD/2026/08/15"
+[[case.check]]
+kind = "built_bars"
+symbol = "XAUUSD"
+reader = "dukascopy_bi5_day"
+divisor = 1000
+file = "dukascopy/XAUUSD/2026/08/15"
+vendor_reader = "dukascopy_candles"
+vendors = [{ vendor = "dukascopy/XAUUSD/2026/08/15/BID_candles_min_1.bi5", use = "bid" }, { vendor = "dukascopy/XAUUSD/2026/08/15/ASK_candles_min_1.bi5", use = "ask" }]
+vendor_flat_ok = true
+use = "mid"
+from = "2026-09-15"
+to = "2026-09-15"
+tfs = ["1m", "15m", "1h", "1d"]
+fields = ["open", "high", "low", "close"]
+
+[[case]]
+id = "dukascopy-bi5-eurusd-after-eu-dst"
+[[case.step]]
+# 2026-03-30, the Monday after Europe moved its clocks (the US had moved three weeks before): UTC files, no shift.
+run = ["data", "import", "{corpus}/dukascopy/EURUSD/2026/02", "--as", "EURUSD", "--data-root", "{root}"]
+contains = ["Format   dukascopy-bi5 (matched)", "78948 ticks records"]
+[[case.check]]
+kind = "ticks_equal"
+symbol = "EURUSD"
+reader = "dukascopy_bi5_day"
+divisor = 100000
+file = "dukascopy/EURUSD/2026/02/30"
+[[case.check]]
+kind = "built_bars"
+symbol = "EURUSD"
+reader = "dukascopy_bi5_day"
+divisor = 100000
+file = "dukascopy/EURUSD/2026/02/30"
+vendor_reader = "dukascopy_candles"
+vendors = [{ vendor = "dukascopy/EURUSD/2026/02/30/BID_candles_min_1.bi5", use = "bid" }, { vendor = "dukascopy/EURUSD/2026/02/30/ASK_candles_min_1.bi5", use = "ask" }]
+use = "mid"
+from = "2026-03-30"
+to = "2026-03-30"
+tfs = ["1m", "1h"]
+fields = ["open", "high", "low", "close"]

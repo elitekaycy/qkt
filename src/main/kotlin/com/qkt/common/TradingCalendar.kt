@@ -42,6 +42,23 @@ interface TradingCalendar {
         t: Instant,
     ): Boolean = false
 
+    /**
+     * True when [session] (one [sessionRange]) is a scheduled full closure for [symbol], such as an exchange
+     * holiday. Only data-coverage checks read it: a closed session is not required to hold data. Live session
+     * gating keeps using [isInSession], so a venue that does quote on the day still streams. Defaults to never.
+     */
+    fun isClosedSession(
+        symbol: String,
+        session: TimeRange,
+    ): Boolean = false
+
+    /**
+     * Whether a session can legitimately open late or close early (holiday hours): data coverage then accepts an
+     * empty stretch at a session's edge as a short session instead of a hole. False for a 24/7 market, whose
+     * session edges are only day boundaries.
+     */
+    val hasShortSessions: Boolean get() = true
+
     companion object {
         fun crypto(): TradingCalendar = CryptoCalendar
 

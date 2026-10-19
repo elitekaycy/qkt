@@ -46,22 +46,59 @@ Backtests are for **research**: tuning parameters, picking promising strategies,
 
 ## Mode 2 — paper-trade (foreground)
 
-Paper-trading runs the **same strategy file** against a live data feed, but the broker is in-process (no real venue, no real money).
+Paper-trading runs the strategy against a live data feed, but the broker is in-process (no real venue, no real money).
+
+The paper broker fills at the middle price with no spread or slippage, exactly as a `--broker paper`
+backtest does, so a paper run on the same ticks reproduces that backtest fill for fill
+([Determinism](../concepts/determinism.md)). It is optimistic by about half a spread a side: to see what the
+venue's spread costs, backtest with `--broker mt5-sim`, and measure the rest on a demo account (Mode 3).
+
+The feed is TradingView's free tier, so the stream needs a symbol TradingView knows.
+`BACKTEST:BTCUSDT` names the local backtest data, which has no live prices (qkt refuses to start
+on it and tells you what to write instead). Copy the strategy and change only the stream's prefix
+to the exchange TradingView lists the pair on:
+
+```qkt title="strategies/momentum-paper.qkt"
+STRATEGY momentum VERSION 1
+
+SYMBOLS
+    btc = BINANCE:BTCUSDT EVERY 1m
+
+RULES
+    # Buy when the 9-period moving average crosses above the 21-period one
+    WHEN ema(btc.close, 9) CROSSES ABOVE ema(btc.close, 21)
+     AND POSITION.btc = 0
+    THEN BUY btc SIZING 0.1 ; LOG "long entry"
+
+    # Sell to close when the trend reverses
+    WHEN ema(btc.close, 9) CROSSES BELOW ema(btc.close, 21)
+     AND POSITION.btc > 0
+    THEN CLOSE btc ; LOG "exit"
+```
 
 ```bash
-qkt run strategies/momentum.qkt
+qkt run strategies/momentum-paper.qkt
 ```
 
 A few things will happen:
 
-1. **A live tick feed starts.** By default, qkt connects to TradingView's free-tier ticks. You'll see ticks flowing.
-2. **An observability HTTP server starts** on a random high port. The terminal prints `QKT_PORT=47291` (or similar).
+1. **A live tick feed starts.** qkt connects to TradingView and subscribes to `BINANCE:BTCUSDT`.
+2. **An observability HTTP server starts** on a random high port. Among the log lines, the terminal prints:
+
+    ```text
+    [INFO] qkt 0.58.0 — strategy momentum v1 — paper-trading
+    [INFO] paper fills: the middle price, no spread or slippage (a backtest with --broker mt5-sim prices the spread)
+    [INFO] subscribed: BINANCE:BTCUSDT
+    [INFO] observability: http://127.0.0.1:47291
+    QKT_PORT=47291
+    ```
+
 3. **The strategy listens to live ticks** and emits trades into an in-memory paper broker.
 4. **Trades print to stdout** as they happen.
 
 To exit, press `Ctrl-C`. The strategy stops cleanly.
 
-While it's running, in another terminal:
+While it's running, in another terminal (use the port your run printed):
 
 ```bash
 curl http://localhost:47291/status | python3 -m json.tool
@@ -91,7 +128,7 @@ cp .env.example .env
 cp qkt.config.yaml.example qkt.config.yaml
 ```
 
-Edit `.env` with your Exness demo credentials (you got them when you signed up at exness.com):
+Fill in these lines of `.env` with your Exness demo credentials (you got them when you signed up at exness.com) and leave the rest as they are:
 
 ```dotenv title=".env"
 MT5_LOGIN=12345678
@@ -100,10 +137,27 @@ MT5_SERVER=Exness-MT5Trial
 MT5_ENABLE_ALGO_TRADING=1
 MT5_API_KEY=replace-with-a-long-random-gateway-token
 VNC_PASSWORD=changeme
-QKT_BROKER_EXNESS_GATEWAY_URL=http://mt5-gateway:5001
 ```
 
-The `qkt.config.yaml.example` ships with an `exness` profile pre-configured.
+Copy `MT5_SERVER` exactly from the Exness email: demo servers are `Exness-MT5Trial` followed by a
+number (for example `Exness-MT5Trial9`). `MT5_API_KEY` is a password you make up; the gateway
+requires it, and `docker-compose.yml` hands it to qkt.
+
+Replace the contents of `qkt.config.yaml` with an `exness` account on the built-in Exness profile:
+
+```yaml title="qkt.config.yaml"
+source: local                # prices come from the broker; no TradingView fallback
+
+brokers:
+  exness:
+    type: mt5
+    extends: exness          # inherits the m suffix, the UTC server clock and Exness defaults
+    gateway_url: ${QKT_BROKER_GATEWAY_URL}
+    api_key: ${QKT_BROKER_API_KEY}
+    magic: 4242              # unique per qkt deployment; identifies your orders on restart
+```
+
+The account's name, `exness`, is the prefix the strategy writes: `EXNESS:EURUSD`.
 
 ### Bring up the stack
 
@@ -118,10 +172,10 @@ Two containers start:
 
 The gateway logs in headlessly from `MT5_LOGIN`, `MT5_PASSWORD`, and `MT5_SERVER`. VNC at `localhost:3000` is retained for diagnosis.
 
-Verify from your host:
+Ask the gateway whether it is ready (the check runs inside its container, which holds the API key):
 
 ```bash
-curl -H "Authorization: Bearer $MT5_API_KEY" http://localhost:5001/health/ready
+docker compose exec mt5-gateway sh -c 'curl -fsS -H "Authorization: Bearer $API_KEY" http://localhost:5001/health/ready'
 ```
 
 If you see `{"ok":true,"status":"ready",...}`, the API, terminal, and account are ready.
@@ -141,15 +195,15 @@ RULES
      AND POSITION.eur = 0
     THEN BUY eur SIZING 0.01
          BRACKET {
-           STOP_LOSS BY 30 PCT,
-           TAKE_PROFIT BY 60 PCT
+           STOP_LOSS BY 0.0020,
+           TAKE_PROFIT BY 0.0040
          }
-         LOG "long entry" price=eur.close
+       ; LOG "long entry" price=eur.close
 
     WHEN ema(eur.close, 9) CROSSES BELOW ema(eur.close, 21)
      AND POSITION.eur > 0
     THEN CLOSE eur
-         LOG "exit"
+       ; LOG "exit"
 ```
 
 Changes from Tutorial 1:
@@ -157,10 +211,20 @@ Changes from Tutorial 1:
 - `BACKTEST:BTCUSDT` → `EXNESS:EURUSD` (real broker, real symbol — but a demo account)
 - `1m` → `5m` (live trading at 1-minute resolution is noisy; 5m is more comfortable)
 - `SIZING 0.1` → `SIZING 0.01` (0.01 lots is the minimum on most MT5 demo accounts, about $1,000 of notional)
-- Added a `BRACKET` to cap loss per trade
+- Added a `BRACKET` to cap loss per trade: `BY 0.0020` is a price distance, 20 pips on EURUSD, so
+  the stop sits 0.0020 below the fill and the target 0.0040 above it
+- A `;` before each `LOG`: it separates two actions of one rule, and without it the parser stops at `LOG`
 - Used `POSITION.eur` (not `POSITION.btc`) to match the new stream alias
 
-Drop the file into `./strategies/` (mounted into the qkt container at `/strategies`).
+Drop the file into `./strategies/` (mounted into the qkt container at `/strategies`) and check that it parses:
+
+```bash
+docker compose exec qkt qkt parse /strategies/momentum-live.qkt
+```
+
+```text
+ok
+```
 
 ### Audit the feed first
 
@@ -179,11 +243,11 @@ If you see gaps, out-of-order ticks, or duplicates — investigate before deploy
 docker compose exec qkt qkt deploy /strategies/momentum-live.qkt --as momentum-live
 ```
 
-You should see:
+You should see (the port is picked at random, the time is when it started, in UTC):
 
 ```text
-[INFO] deployed momentum-live
-QKT_PORT=47291
+NAME          PORT     STATE     STARTED
+momentum-live 47291    running   2026-10-19T09:30:12.418Z
 ```
 
 Verify with `qkt list`:
@@ -193,8 +257,8 @@ docker compose exec qkt qkt list
 ```
 
 ```text
-NAME              KIND       UPTIME    PORT     TRADES   STATE
-momentum-live     strategy   00:00:18  47291    0        running
+NAME                KIND       UPTIME   PORT     TRADES   STATE
+momentum-live       strategy   00:00:18 47291    0        running
 ```
 
 When you change `momentum-live.qkt`, validate and replace the running entry
@@ -249,7 +313,7 @@ docker compose down -v         # full wipe
 
 You've gone backtest → paper → live demo. To go to **live real money**:
 
-- qkt needs to reach 1.0 (it isn't yet — we're at 0.25)
+- qkt needs to reach 1.0 (it isn't yet: `qkt --version` prints the version you run)
 - The strategy needs to paper-trade and demo-trade for weeks without surprises
 - Your risk rules in `qkt.config.yaml` need to be tight
 - You need a monitoring story (alerts when the daemon crashes, when a stop hits, when equity drops)

@@ -36,7 +36,7 @@ class MappingCompiler(
         opens: WeeklyOpens?,
         timeframeMs: Long?,
     ): RowMapping {
-        val names = CellNames(layout)
+        val names = CellNames(layout, target.bare)
         val fields = descriptor.fields.mapValues { (role, text) -> field(names, role, text) }
         requireRoles(fields, layout)
         if (descriptor.time.isEmpty()) {
@@ -65,6 +65,7 @@ class MappingCompiler(
                     RowTime(listOf(cell(names, it)), TimeFormat.parse(descriptor.availableFormat ?: format.spec), clock)
                 },
             carryForward = descriptor.carryForward == true,
+            float32 = descriptor.float32 == true,
             where =
                 descriptor.where.map { (name, value) ->
                     cell(names, name) to

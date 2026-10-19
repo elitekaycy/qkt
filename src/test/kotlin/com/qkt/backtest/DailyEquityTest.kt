@@ -30,9 +30,23 @@ class DailyEquityTest {
         assertThat(rows[0].open).isEqualByComparingTo("100")
         assertThat(rows[0].high).isEqualByComparingTo("120")
         assertThat(rows[0].low).isEqualByComparingTo("90")
-        assertThat(rows[0].close).isEqualByComparingTo("110")
+        // The 2024-01-03 00:00 sample is taken before the tick that crosses midnight: 2024-01-02's close.
+        assertThat(rows[0].close).isEqualByComparingTo("111")
         assertThat(rows[1].open).isEqualByComparingTo("111")
         assertThat(rows[1].close).isEqualByComparingTo("111")
+    }
+
+    @Test
+    fun `a midnight sample after a gap of days opens its own day`() {
+        val acc = DailyEquityAccumulator()
+        acc.accept(ms("2024-01-05", 21), Money.of("100"))
+        acc.accept(ms("2024-01-08", 0), Money.of("101"))
+        acc.accept(ms("2024-01-08", 1), Money.of("102"))
+
+        val rows = acc.result()
+        assertThat(rows.map { it.date.toString() }).containsExactly("2024-01-05", "2024-01-08")
+        assertThat(rows[0].close).isEqualByComparingTo("100")
+        assertThat(rows[1].open).isEqualByComparingTo("101")
     }
 
     @Test
@@ -121,5 +135,36 @@ class DailyEquityTest {
         acc.accept(ms("2024-01-08", 0), Money.of("101"))
 
         assertThat(acc.result().map { it.date.toString() }).containsExactly("2024-01-05", "2024-01-08")
+    }
+
+    @Test
+    fun `daily bars sample only at midnight and still report every day`() {
+        // Each sample closes the day before it: 01-02 00:00 closes 01-01, 01-03 00:00 closes 01-02, and so on.
+        val acc = DailyEquityAccumulator()
+        acc.accept(ms("2024-01-01"), Money.of("100"))
+        acc.accept(ms("2024-01-02"), Money.of("103"))
+        acc.accept(ms("2024-01-03"), Money.of("97"))
+        acc.accept(ms("2024-01-04"), Money.of("99"))
+
+        val rows = acc.result()
+        assertThat(rows.map { it.date.toString() }).containsExactly("2024-01-01", "2024-01-02", "2024-01-03")
+        assertThat(rows.map { it.open.toPlainString() }).containsExactly("100.00000000", "103.00000000", "97.00000000")
+        assertThat(rows.map { it.close.toPlainString() }).containsExactly("103.00000000", "97.00000000", "99.00000000")
+        assertThat(rows[1].low).isEqualByComparingTo("97")
+        assertThat(rows[1].high).isEqualByComparingTo("103")
+    }
+
+    @Test
+    fun `a day that a midnight sample began opens at that sample`() {
+        val acc = DailyEquityAccumulator()
+        acc.accept(ms("2024-01-02", 1), Money.of("100"))
+        acc.accept(ms("2024-01-03", 0), Money.of("110"))
+        acc.accept(ms("2024-01-03", 1), Money.of("99"))
+
+        val rows = acc.result()
+        assertThat(rows[1].open).isEqualByComparingTo("110")
+        assertThat(rows[1].high).isEqualByComparingTo("110")
+        assertThat(rows[1].low).isEqualByComparingTo("99")
+        assertThat(acc.maxDailyDrawdown()).isEqualByComparingTo("0.1")
     }
 }

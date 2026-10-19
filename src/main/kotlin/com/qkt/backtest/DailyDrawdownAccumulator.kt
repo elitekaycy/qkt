@@ -1,49 +1,24 @@
 package com.qkt.backtest
 
-import com.qkt.common.Money
 import java.math.BigDecimal
-import java.time.Instant
-import java.time.ZoneOffset
 
 /**
- * Online worst-intraday-drawdown accumulator. For each UTC day it tracks the day-open equity and
- * the running intraday minimum; that day's drawdown is `(open − min) / open`. [maxDailyDrawdown] is
- * the largest such value across all days. Constant memory — no per-day or full-curve retention.
+ * Online worst-daily-drawdown accumulator: for each UTC day, `(open - min) / open`, the largest across all days.
+ * Days are the rows of `equity_daily.csv` ([DailyEquityAccumulator]), so a day that a midnight sample began opens
+ * at that sample and a day with a single sample (daily bars) still measures its fall (#1450). Constant memory.
  *
- * e.g. a day opens at 100 and dips to 90 → 0.10 for that day; the worst day wins overall.
+ * e.g. a day opens at 100 and dips to 90 -> 0.10 for that day; the worst day wins overall.
  */
 class DailyDrawdownAccumulator {
-    private var currentDay: Long = Long.MIN_VALUE
-    private var dayOpen: BigDecimal = Money.ZERO
-    private var dayMin: BigDecimal = Money.ZERO
-    private var worst: BigDecimal = Money.ZERO
+    private val days = DailyEquityAccumulator(keepRows = false)
 
     fun accept(
         timestamp: Long,
         equity: BigDecimal,
-    ) {
-        val day =
-            Instant
-                .ofEpochMilli(timestamp)
-                .atZone(ZoneOffset.UTC)
-                .toLocalDate()
-                .toEpochDay()
-        if (day != currentDay) {
-            currentDay = day
-            dayOpen = equity
-            dayMin = equity
-        }
-        if (equity < dayMin) {
-            dayMin = equity
-            if (dayOpen.signum() > 0 && dayMin < dayOpen) {
-                val dd = dayOpen.subtract(dayMin).divide(dayOpen, Money.CONTEXT)
-                if (dd > worst) worst = dd
-            }
-        }
-    }
+    ) = days.accept(timestamp, equity)
 
-    /** Worst intraday drawdown across all days seen so far, scaled to money precision. */
-    fun maxDailyDrawdown(): BigDecimal = worst.setScale(Money.SCALE, Money.ROUNDING)
+    /** Worst daily drawdown across all days seen so far, scaled to money precision. */
+    fun maxDailyDrawdown(): BigDecimal = days.maxDailyDrawdown()
 
     companion object {
         /** One-pass worst daily drawdown over a full equity curve. */

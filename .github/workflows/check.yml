@@ -80,6 +80,24 @@ jobs:
         run: python3 -m unittest discover -s scripts/live-validation/tests
       - name: Build + test + ktlint
         run: ./gradlew build --no-daemon
+      # Real vendor files through the built qkt, checked against independent readers and the vendors' own data
+      # (docs/superpowers/specs/2026-10-18-data-e2e-suite-design.md). The corpus is private third-party data,
+      # pinned by commit in tests/data-e2e/corpus.lock and read with a read-only deploy key.
+      - name: Read the pinned data corpus commit
+        id: corpus
+        run: echo "sha=$(cut -d' ' -f1 tests/data-e2e/corpus.lock)" >> "$GITHUB_OUTPUT"
+      - name: Check out the data corpus
+        uses: actions/checkout@v4
+        with:
+          repository: elitekaycy/qkt-data-corpus
+          ref: ${{ steps.corpus.outputs.sha }}
+          ssh-key: ${{ secrets.QKT_DATA_CORPUS_KEY }}
+          path: qkt-data-corpus
+      - name: Real-data end-to-end suite (pull-request tier)
+        run: |
+          ./gradlew installDist --no-daemon
+          python3 -I qkt-data-corpus/tools/provenance.py --check
+          python3 -I tests/data-e2e/run.py --tier pr --corpus qkt-data-corpus --report build/data-e2e.json
       - name: Upload test reports
         if: failure()
         uses: actions/upload-artifact@v4
@@ -88,6 +106,7 @@ jobs:
           path: |
             build/reports/tests/
             build/test-results/
+            build/data-e2e.json
           retention-days: 7
 
   promote-to-testing:

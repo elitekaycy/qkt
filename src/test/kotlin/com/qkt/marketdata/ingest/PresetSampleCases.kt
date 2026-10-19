@@ -4,7 +4,7 @@ import org.junit.jupiter.params.provider.Arguments
 
 /**
  * One sample per built-in preset: file, `--as` symbol, the preset it must match, its first stored row, extra
- * mappings, digits. Presets whose real files qkt must refuse are in [RefusedSampleCases].
+ * mappings, digits. MetaTrader samples, which need their broker's clock, are in [MetaTraderSampleCases]. Presets whose real files qkt must refuse are in [RefusedSampleCases].
  */
 object PresetSampleCases {
     private fun s(
@@ -14,25 +14,12 @@ object PresetSampleCases {
         row: String,
         fields: Map<String, String> = emptyMap(),
         digits: Int? = null,
-    ) = Arguments.of(file, symbol, preset, row, fields, digits)
+    ) = Arguments.of(file, symbol, preset, row, fields, digits, null)
 
     private const val Z = "0.00000000"
 
     val all: List<Arguments> =
         listOf(
-            s(
-                "mt5-bars.csv",
-                "EXNESS:XAUUSD",
-                "mt5-bars",
-                "1709935080000,2178.78000000,2179.03000000,2178.69000000,2179.00000000,198.00000000",
-            ),
-            s("mt5-ticks.csv", "XAUUSD", "mt5-ticks", "1710104401112,XAUUSD,,,2180.51200000,2180.67200000,,"),
-            s(
-                "mt4-csv.csv",
-                "BROKER:EURUSD",
-                "mt4-csv",
-                "1709935080000,1.09380000,1.09391000,1.09377000,1.09388000,41.00000000",
-            ),
             s(
                 "DAT_MT_EURUSD_M1_2017.csv",
                 "HISTDATA:EURUSD",
@@ -146,20 +133,12 @@ object PresetSampleCases {
                 "dukascopy-bi5",
                 "1787529600090,EURUSD,,5.39999998,1.16823000,1.16824000,4.50000000,0.89999998",
             ),
-            s("mt5-ticks-real.csv", "US100", "mt5-ticks", "1681488000846,US100,,,15790.60000000,15791.10000000,,"),
-            s(
-                "mt5-bars-real.csv",
-                "BROKER:TSLA",
-                "mt5-bars",
-                "1672754400000,243.52500000,245.74500000,241.20500000,241.21500000,10908.00000000",
-                digits = 2,
-            ),
             s("truefx-ticks.csv", "EURUSD", "truefx-ticks", "1462147200959,EURUSD,,,1.14601000,1.14605000,,"),
             s(
                 "yfinance-daily.csv",
                 "YAHOO:SPX",
                 "yfinance-daily",
-                "1199232000000,1467.96997100,1471.77002000,1442.06994600,1447.16003400,3452650000.00000000",
+                "1199232000000,1467.97000000,1471.77000000,1442.07000000,1447.16000000,3452650000.00000000",
             ),
             s(
                 "yfinance-intraday.csv",

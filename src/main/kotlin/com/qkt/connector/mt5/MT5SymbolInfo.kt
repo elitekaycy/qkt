@@ -22,6 +22,8 @@ data class MT5SymbolInfo(
     val tradeFreezeLevel: Int = 0,
     /** The symbol's swap terms, or null when the gateway does not report them. */
     val swap: MT5SymbolSwap? = null,
+    /** `trade_tick_size`, the smallest price move the venue accepts; null when not reported (#1455). */
+    val tickSize: BigDecimal? = null,
 )
 
 /**

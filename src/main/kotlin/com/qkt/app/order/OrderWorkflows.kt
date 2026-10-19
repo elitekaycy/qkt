@@ -61,9 +61,18 @@ internal class OrderWorkflows(
     val scaleOutExits =
         ScaleOutExits(store.scaleOuts, book, store.exposure, s.broker, s.bus, clock, ops, s.requireArmedTrailTicket)
     val scaleOutTracker = ScaleOutTracker(store.scaleOuts, scaleOutExits, book, store.exposure, clock, ops)
-    val bracketExits = BracketExits(store.prices, clock)
+    val bracketExits = BracketExits(store.prices, clock, s::tickOf)
     val stackExits: StackLayerExits =
-        StackLayerExits(store.stacks, book, store.closeTickets, venueProtection, clock, ops, s.closeTicketFor)
+        StackLayerExits(
+            store.stacks,
+            book,
+            store.closeTickets,
+            venueProtection,
+            clock,
+            ops,
+            s.closeTicketFor,
+            s::tickOf,
+        )
     val stackExecution =
         StackExecution(
             store.stacks,

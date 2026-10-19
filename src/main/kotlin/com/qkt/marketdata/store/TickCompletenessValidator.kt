@@ -1,51 +1,18 @@
 package com.qkt.marketdata.store
 
 import com.qkt.common.TradingCalendar
-import com.qkt.marketdata.openDayFeed
 import java.time.LocalDate
-import java.time.ZoneOffset
-
-/** Completeness of one day's tick data. */
-data class DayCompleteness(
-    val day: LocalDate,
-    val status: Status,
-    val emptyHours: List<Int> = emptyList(),
-) {
-    enum class Status { NON_TRADING, COMPLETE, INCOMPLETE, MISSING }
-}
-
-/** Completeness report for a symbol over a date range. */
-data class CompletenessReport(
-    val symbol: String,
-    val days: List<DayCompleteness>,
-) {
-    /** Days that should have data but don't (missing, or an interior session hour is empty). */
-    val holes: List<DayCompleteness>
-        get() =
-            days.filter {
-                it.status == DayCompleteness.Status.MISSING || it.status == DayCompleteness.Status.INCOMPLETE
-            }
-
-    val hasHoles: Boolean get() = holes.isNotEmpty()
-}
 
 /**
- * Validates that the locally stored ticks cover the trading sessions in a date range.
- *
- * For each day, the session hours are the UTC hours whose start the [TradingCalendar] reports in
- * session. A trading day must have a tick in every *interior* session hour (the first and last
- * session hour of the day are exempt, since the open/close boundary can be legitimately thin). A
- * trading day with no ticks is MISSING; a non-trading day (no session hours) expects nothing.
- *
- * One isolated empty interior hour is tolerated: FX and especially metals halt for roughly an hour
- * every session (e.g. dukascopy XAUUSD has no ticks 21:00-22:00 UTC), and that maintenance break
- * is indistinguishable, at the data layer, from a market closure. A genuinely failed or partial
- * fetch leaves the day MISSING or drops several hours, so it is still caught. The tolerance keeps
- * the check from false-failing an otherwise-complete day on the routine daily break.
+ * Validates that the locally stored ticks cover the trading sessions in a date range, by the rule in
+ * [SessionCoverage]: sessions from the [TradingCalendar] (holidays need nothing), holes as stretches of
+ * session time without a tick longer than 90 minutes, late opens and early closes accepted as short sessions
+ * when the store holds ticks after them. A file that cannot be read counts as holding the ticks read before
+ * the failure, so a corrupt day is a hole rather than a crash.
  */
 object TickCompletenessValidator {
-    /** Empty interior hours up to this count are treated as the routine daily break, not a hole. */
-    private const val TOLERATED_EMPTY_INTERIOR_HOURS = 1
+    /** How far past the range a later stored tick is looked for (a long weekend plus a holiday). */
+    private const val LATER_LOOKAHEAD_DAYS = 7
 
     fun validate(
         store: DataStore,
@@ -54,57 +21,13 @@ object TickCompletenessValidator {
         to: LocalDate,
         calendar: TradingCalendar,
     ): CompletenessReport {
-        val days = mutableListOf<DayCompleteness>()
-        var day = from
-        while (!day.isAfter(to)) {
-            days += classify(store, symbol, day, calendar)
-            day = day.plusDays(1)
-        }
+        val activity = { day: LocalDate -> store.dayFile(symbol, day)?.let { DayFileIntegrity.inspect(it).runs } }
+        val days =
+            SessionCoverage(calendar, symbol, "tick").classify(from, to, activity) { after ->
+                generateSequence(after.plusDays(1)) { it.plusDays(1) }
+                    .take(LATER_LOOKAHEAD_DAYS)
+                    .any { activity(it).orEmpty().isNotEmpty() }
+            }
         return CompletenessReport(symbol, days)
-    }
-
-    private fun classify(
-        store: DataStore,
-        symbol: String,
-        day: LocalDate,
-        calendar: TradingCalendar,
-    ): DayCompleteness {
-        val sessionHours =
-            (0..23).filter { h ->
-                val start = day.atStartOfDay(ZoneOffset.UTC).plusHours(h.toLong()).toInstant()
-                calendar.isInSession(symbol, start)
-            }
-        if (sessionHours.isEmpty()) return DayCompleteness(day, DayCompleteness.Status.NON_TRADING)
-
-        val hoursWithTicks = hoursWithTicks(store, symbol, day)
-        if (hoursWithTicks.isEmpty()) return DayCompleteness(day, DayCompleteness.Status.MISSING)
-
-        // Exempt the boundary session hours; require coverage of the interior ones, allowing the
-        // routine daily maintenance break (a single empty interior hour).
-        val interior = sessionHours.drop(1).dropLast(1)
-        val emptyInterior = interior.filter { it !in hoursWithTicks }
-        return if (emptyInterior.size <= TOLERATED_EMPTY_INTERIOR_HOURS) {
-            DayCompleteness(day, DayCompleteness.Status.COMPLETE)
-        } else {
-            DayCompleteness(day, DayCompleteness.Status.INCOMPLETE, emptyInterior)
-        }
-    }
-
-    /** The set of UTC hours (0..23) that contain at least one tick in the stored day file. */
-    private fun hoursWithTicks(
-        store: DataStore,
-        symbol: String,
-        day: LocalDate,
-    ): Set<Int> {
-        val path = store.dayFile(symbol, day) ?: return emptySet()
-        val dayStart = day.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
-        val hours = mutableSetOf<Int>()
-        openDayFeed(path).use { feed ->
-            while (true) {
-                val t = feed.next() ?: break
-                hours += ((t.timestamp - dayStart) / 3_600_000L).toInt()
-            }
-        }
-        return hours
     }
 }

@@ -1,0 +1,6 @@
+{
+ "bars/BACKTEST/XRPUSDT/1m/2026-10-14.bin": "ec12ee810c2ef7aeff3ca7e4839271bfd792b186f4642e6cf14846385666e745",
+ "symbols/XRPUSDT/.import.json": "c5d9774731ad7cefd9f919b02bf1fd450b0af2e8157b983635bf4fd85680c4f1",
+ "symbols/XRPUSDT/2026-10-14.csv.gz": "d2287c6999e751e1fa8a66a57c18f2012639cfb8c7e38c43df19009ee00c0511",
+ "symbols/XRPUSDT/manifest.json": "d5197a9c35c1210a57ede33f0a85bbc39f68203039adeae5b7a3876d83f6c3b9"
+}

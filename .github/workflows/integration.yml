@@ -29,6 +29,35 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Integration smoke
         run: bash tests/smoke-install.sh
+      # Every real-data case, the large vendor files included (the pull-request tier runs the small ones).
+      - name: Read the pinned data corpus commit
+        id: corpus
+        run: echo "sha=$(cut -d' ' -f1 tests/data-e2e/corpus.lock)" >> "$GITHUB_OUTPUT"
+      - name: Check out the data corpus
+        uses: actions/checkout@v4
+        with:
+          repository: elitekaycy/qkt-data-corpus
+          ref: ${{ steps.corpus.outputs.sha }}
+          ssh-key: ${{ secrets.QKT_DATA_CORPUS_KEY }}
+          path: qkt-data-corpus
+      - name: Real-data end-to-end suite (full)
+        run: |
+          ./gradlew installDist --no-daemon
+          python3 -I qkt-data-corpus/tools/provenance.py --check
+          python3 -I tests/data-e2e/run.py --tier full --corpus qkt-data-corpus --report build/data-e2e.json
+      # qkt against backtesting.py and backtrader, to the cent: the references live in the corpus.
+      - name: External references
+        run: python3 -I tests/references/run.py --refs qkt-data-corpus/references --report build/references.json
+      - name: Upload the data suite report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: data-e2e
+          path: |
+            build/data-e2e.json
+            build/references.json
+          retention-days: 7
+          if-no-files-found: ignore
       - name: Upload smoke log on failure
         if: failure()
         uses: actions/upload-artifact@v4

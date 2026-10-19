@@ -83,6 +83,7 @@ internal val toolingOptionSchemas: Map<String, CliOptionSchema> =
                         "encoding",
                         "instruments",
                         "against",
+                        "config",
                     ),
                 flags =
                     setOf(
@@ -91,12 +92,14 @@ internal val toolingOptionSchemas: Map<String, CliOptionSchema> =
                         "require-bid-ask",
                         "require-volume",
                         "allow-corrupt-days",
+                        "allow-missing-days",
                         "prune",
                         "dry-run",
                         "plan",
                         "json",
                         "sort",
                         "trust-clock",
+                        "bars",
                     ),
             ),
         "bot" to

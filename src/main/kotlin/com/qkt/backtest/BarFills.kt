@@ -9,9 +9,15 @@ package com.qkt.backtest
  *
  * e.g. a run on recorded XAUUSD ticks and fetched BTCUSD bars: `at("EXNESS:BTCUSD")` is true,
  * `at("EXNESS:XAUUSD")` false.
+ *
+ * Under tick-resolved fills no symbol is synthesized, but a bar the store has no ticks for is: while
+ * its synthetic ticks replay, [noTickBars] makes `at` true for that symbol, so the bar fills as bar
+ * fills would (#1439).
  */
 class BarFills(
     synthesized: Set<String>,
+    /** The tick-resolved replay's bars without ticks; null on every other path. */
+    val noTickBars: NoTickBars? = null,
 ) {
     private val symbols = synthesized.filterNot { '@' in it }.toSet()
     private val continuousRoots = synthesized.filter { '@' in it }.map { it.substringBefore('@') }.toSet()
@@ -23,6 +29,7 @@ class BarFills(
     /** True when [symbol] (a replayed symbol, or a contract a synthesized stream trades) fills at the level. */
     fun at(symbol: String): Boolean {
         if (symbol in symbols) return true
+        if (noTickBars != null && noTickBars.fillsAtLevel(symbol)) return true
         if (continuousRoots.isEmpty()) return false
         return contracts.getOrPut(symbol) { symbol.substringBeforeLast('_') in continuousRoots }
     }

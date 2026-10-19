@@ -4,6 +4,7 @@ import com.qkt.evidence.EvidenceHasher
 import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
+import java.time.DayOfWeek
 import java.time.LocalDate
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -33,13 +34,21 @@ object DatasetSnapshots {
         require(from.isBefore(to)) { "--from must be before --to (exclusive)" }
         val root = dataRoot.toAbsolutePath().normalize()
         val store = DefaultDataStore(root = root, fetcher = null)
-        val files =
-            days(from, to).map { day ->
-                val path =
-                    store.dayFile(symbol, day)
-                        ?: error("missing day file for $symbol $day under ${root.resolve("symbols").resolve(symbol)}")
-                inspectDatasetDayFile(root, day, path)
-            }
+        val range = days(from, to)
+        val present = range.mapNotNull { day -> store.dayFile(symbol, day)?.let { day to it } }
+        val files = present.map { (day, path) -> inspectDatasetDayFile(root, day, path) }
+        val absent = range - present.map { it.first }.toSet()
+        // A weekend with no file is a closed market; a weekday, or any day of a symbol that trades on Saturdays,
+        // is a hole the snapshot would hide, unless the policy allows it (holidays): then it is pinned as absent.
+        val tradesWeekends = files.any { LocalDate.parse(it.date).dayOfWeek == DayOfWeek.SATURDAY && it.tickCount > 0 }
+        val holes = absent.filter { tradesWeekends || it.dayOfWeek !in WEEKEND }
+        if (holes.isNotEmpty() && qualityPolicy.failOnMissingDay) {
+            error(
+                "no day file for $symbol on ${holes.joinToString(
+                    limit = 8,
+                )} under ${root.resolve("symbols").resolve(symbol)}",
+            )
+        }
         val base =
             DatasetSnapshot(
                 id = "pending",
@@ -52,6 +61,7 @@ object DatasetSnapshots {
                 to = to.toString(),
                 qualityPolicy = qualityPolicy,
                 files = files,
+                absentDays = absent.map(LocalDate::toString),
             )
         val contentHash = sha256Text(toJson(base.copy(id = ""))).removePrefix("sha256:")
         return base.copy(id = "qkt-ds-${symbol.lowercase()}-${from}_$to-${contentHash.take(12)}")
@@ -94,6 +104,10 @@ object DatasetSnapshots {
                 failures.add("${file.date}: volume required but present on ${now.volumeTicks}/${now.tickCount} ticks")
             }
         }
+        val store = DefaultDataStore(root = root, fetcher = null)
+        for (day in snapshot.absentDays) {
+            if (store.dayFile(snapshot.symbol, LocalDate.parse(day)) != null) failures.add("$day: a day file appeared")
+        }
         return DatasetVerification(ok = failures.isEmpty(), failures = failures)
     }
 
@@ -104,6 +118,8 @@ object DatasetSnapshots {
         generateSequence(from) { it.plusDays(1) }
             .takeWhile { it.isBefore(to) }
             .toList()
+
+    private val WEEKEND = setOf(DayOfWeek.SATURDAY, DayOfWeek.SUNDAY)
 
     private fun sha256Text(text: String): String =
         "sha256:" +

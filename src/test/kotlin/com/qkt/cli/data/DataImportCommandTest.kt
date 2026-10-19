@@ -40,7 +40,9 @@ class DataImportCommandTest {
                 "import",
                 file.toString(),
                 "--as",
-                "EXNESS:XAUUSD",
+                "BROKER:XAUUSD",
+                "--tz",
+                "ny-close",
                 "--data-root",
                 dir.resolve("root").toString(),
                 "--json",
@@ -50,7 +52,7 @@ class DataImportCommandTest {
         val json = Json.parseToJsonElement(out).jsonObject
         assertThat(json["preset"]?.jsonPrimitive?.content).isEqualTo("mt5-bars")
         assertThat(json["records"]?.jsonPrimitive?.content).isEqualTo("5")
-        assertThat(Files.exists(dir.resolve("root/bars/EXNESS/XAUUSD/1m/2024-03-10.csv"))).isTrue()
+        assertThat(Files.exists(dir.resolve("root/bars/BROKER/XAUUSD/1m/2024-03-10.csv"))).isTrue()
     }
 
     @Test
@@ -61,7 +63,7 @@ class DataImportCommandTest {
                 "import",
                 file.toString(),
                 "--as",
-                "EXNESS:XAUUSD",
+                "BROKER:XAUUSD",
                 "--tz",
                 "Mars/Olympus",
                 "--data-root",
@@ -96,7 +98,9 @@ class DataImportCommandTest {
                 "import",
                 file.toString(),
                 "--as",
-                "EXNESS:XAUUSD",
+                "BROKER:XAUUSD",
+                "--tz",
+                "ny-close",
                 "--data-root",
                 dir.resolve("a").toString(),
                 "--plan",
@@ -107,7 +111,9 @@ class DataImportCommandTest {
             "import",
             file.toString(),
             "--as",
-            "EXNESS:XAUUSD",
+            "BROKER:XAUUSD",
+            "--tz",
+            "ny-close",
             "--data-root",
             dir.resolve("b").toString(),
             "--preset",
@@ -116,7 +122,7 @@ class DataImportCommandTest {
 
         assertThat(plan).contains("clock: \"ny-close\"").contains("timeframe: \"1m\"")
         assertThat(Files.exists(dir.resolve("a"))).isFalse()
-        assertThat(Files.readString(dir.resolve("b/bars/EXNESS/XAUUSD/1m/2024-03-10.csv")))
+        assertThat(Files.readString(dir.resolve("b/bars/BROKER/XAUUSD/1m/2024-03-10.csv")))
             .contains("1710104400000,2180.59200000")
     }
 

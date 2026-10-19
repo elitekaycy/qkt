@@ -28,6 +28,8 @@ class RowMapping(
     /** Series: when each value became available, if the source says. */
     val available: RowTime? = null,
     val carryForward: Boolean = false,
+    /** Prices are float32 values widened to a double; see [com.qkt.marketdata.ingest.plan.ImportDescriptor.float32]. */
+    val float32: Boolean = false,
     val where: List<Pair<CellRef, String>> = emptyList(),
 ) {
     /** True when [row] passes the mapping's row filter. */

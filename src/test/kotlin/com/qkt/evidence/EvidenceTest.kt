@@ -40,4 +40,18 @@ class EvidenceTest {
         assertThat(json).contains("\"warning\":\"not\\npinned\"")
         assertThat(json).contains("\"execution\":{\"preset\":\"paper-fast\",\"broker\":\"paper\"")
     }
+
+    @Test
+    fun `execution evidence lists bars without ticks only when a run had some`() {
+        fun render(execution: ExecutionEvidence) =
+            EvidenceJson.render(EvidenceEnvelope("1.0", "abc", "t", strategyHash = "s", execution = execution))
+        val plain = ExecutionEvidence(preset = "paper-fast", broker = "paper")
+        val bars = BarsWithoutTicks("BACKTEST:EURUSD", withoutTicks = 12, fillPossible = 340, allWithoutTicks = 96)
+
+        assertThat(render(plain)).doesNotContain("barsWithoutTicks")
+        assertThat(render(plain.copy(barsWithoutTicks = listOf(bars)))).contains(
+            "\"barsWithoutTicks\":[{\"symbol\":\"BACKTEST:EURUSD\",\"withoutTicks\":12," +
+                "\"fillPossible\":340,\"allWithoutTicks\":96,\"fill\":\"level\"}]",
+        )
+    }
 }

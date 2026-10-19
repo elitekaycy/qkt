@@ -3,6 +3,7 @@ package com.qkt.marketdata.live.tv
 import com.qkt.common.Clock
 import com.qkt.common.Money
 import com.qkt.marketdata.Tick
+import java.io.IOException
 import java.math.BigDecimal
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.random.Random
@@ -26,6 +27,7 @@ class TradingViewQuoteSession(
     private var onTick: ((Tick) -> Unit)? = null
     private var onError: ((Throwable) -> Unit)? = null
     private var onDisconnect: (() -> Unit)? = null
+    private var onReconnect: (() -> Unit)? = null
     private var hasDisconnected: Boolean = false
 
     fun subscribe(
@@ -33,10 +35,12 @@ class TradingViewQuoteSession(
         onTick: (Tick) -> Unit,
         onError: (Throwable) -> Unit,
         onDisconnect: () -> Unit,
+        onReconnect: () -> Unit = {},
     ) {
         this.onTick = onTick
         this.onError = onError
         this.onDisconnect = onDisconnect
+        this.onReconnect = onReconnect
         this.symbols.addAll(symbols)
         webSocket.addListener(this)
         sendSubscribeCommands()
@@ -60,6 +64,14 @@ class TradingViewQuoteSession(
         runCatching {
             val data = frame.paramAsObject(1)
             val name = data["n"]?.jsonPrimitive?.content ?: return
+            if (data["s"]?.jsonPrimitive?.content == "error") {
+                // TradingView answers an unknown or unentitled symbol with an error status instead of
+                // prices; say so rather than leave the stream silently without ticks.
+                val reason = data["errmsg"]?.jsonPrimitive?.content ?: "no reason given"
+                log.warn("TradingView refused quotes for {}: {}", name, reason)
+                onError?.invoke(IOException("TradingView refused quotes for $name: $reason"))
+                return
+            }
             val values = data["v"]?.jsonObject ?: return
             emitTick(name, values)
         }.onFailure { t ->
@@ -68,10 +80,13 @@ class TradingViewQuoteSession(
         }
     }
 
+    // A reconnected socket has no quote session: create it again, re-add the symbols, then tell the
+    // feed it may stop counting down its reconnect budget.
     override fun onConnected() {
-        if (hasDisconnected && symbols.isNotEmpty()) {
-            sendSubscribeCommands()
-        }
+        if (!hasDisconnected) return
+        hasDisconnected = false
+        if (symbols.isNotEmpty()) sendSubscribeCommands()
+        onReconnect?.invoke()
     }
 
     override fun onDisconnected(reason: String) {

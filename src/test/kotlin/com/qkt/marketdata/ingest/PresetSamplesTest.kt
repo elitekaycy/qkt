@@ -29,6 +29,7 @@ class PresetSamplesTest {
         firstRow: String,
         fields: Map<String, String>,
         digits: Int?,
+        clock: String?,
     ) {
         val root = dir.resolve("root")
         val sample = IngestFixtures.sample(file, dir.resolve("in"))
@@ -37,7 +38,7 @@ class PresetSamplesTest {
                 root,
                 listOf(sample),
                 symbol,
-                ImportDescriptor(fields = fields, digits = digits),
+                ImportDescriptor(fields = fields, digits = digits, clock = clock),
             )
 
         assertThat(report.preset).isEqualTo(preset)
@@ -66,6 +67,7 @@ class PresetSamplesTest {
 
     companion object {
         @JvmStatic
-        fun samples(): List<Arguments> = PresetSampleCases.all + NativeSampleCases.all
+        fun samples(): List<Arguments> =
+            PresetSampleCases.all + NativeSampleCases.all + RealDownloadSampleCases.all + MetaTraderSampleCases.all
     }
 }

@@ -1,0 +1,17 @@
+id: "yfinance-daily-adjusted"
+description: "yfinance daily CSV saved flat with the default auto_adjust=True (Date, Close, High, Low, Open, Volume): prices are adjusted for splits and dividends"
+kind: "bars"
+time: ["Date"]
+timeFormat: "iso"
+timeframe: "1d"
+basis: "last"
+fields:
+  open: "Open"
+  high: "High"
+  low: "Low"
+  close: "Close"
+  volume: "Volume"
+float32: true
+volume: "shares (contracts for futures)"
+match:
+  header: ["Date", "Close", "High", "Low", "Open", "Volume"]

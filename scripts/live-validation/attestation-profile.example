@@ -9,6 +9,10 @@ bundle_root=/var/lib/qkt/soak
 image_repository=ghcr.io/elitekaycy/qkt
 insights_image=ghcr.io/elitekaycy/qkt-insights:latest
 magic_base=994000
+# A clone of elitekaycy/qkt-data-corpus (private) for the release proofs; moved to tests/data-e2e/corpus.lock.
+data_corpus=/var/tmp/qkt-validation/data-corpus
+# Optional: the local store the docs examples read (eight months of gold and bitcoin ticks); adds them to the proofs.
+#docs_data_root=/home/<you>/.qkt/data
 # Optional: a VGP gateway on a demo/testnet account (e.g. Deribit testnet) adds the derivatives lane.
 # Its trader token comes from QKT_DERIV_GATEWAY_KEY in the environment.
 #deriv_gateway_url=http://127.0.0.1:8444

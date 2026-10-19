@@ -12,6 +12,7 @@ data class PerformanceReport(
     val realizedTotal: BigDecimal,
     val unrealizedTotal: BigDecimal,
     val totalPnL: BigDecimal,
+    /** Fills over the run, entries and exits alike. */
     val tradeCount: Int,
     /**
      * Fraction of *decided* trades that were profitable. Break-even (zero-PnL) trades are
@@ -95,4 +96,14 @@ data class PerformanceReport(
      * built before this field existed.
      */
     val annualizationFactor: BigDecimal? = null,
+    /**
+     * Closed positions (#1452): a position split over several entry or exit fills is one round trip, and
+     * one still partly open at the end counts once if it had exits. Win rate, profit factor, average and
+     * largest win/loss, max consecutive losses and Monte Carlo are all computed over these.
+     */
+    val roundTrips: Int = 0,
+    /** Round trips that made money after costs. */
+    val roundTripsWon: Int = 0,
+    /** Round trips that closed at exactly zero after costs; [winRate] leaves them out. */
+    val roundTripsBreakEven: Int = 0,
 )
