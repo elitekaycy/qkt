@@ -6,6 +6,7 @@ import com.qkt.cli.ExitCodes
 import com.qkt.cli.daemon.StateDir
 import com.qkt.common.Side
 import com.qkt.common.SystemClock
+import com.qkt.connectivity.DirectResult
 import com.qkt.trade.BotIntent
 import com.qkt.trade.BotTif
 import com.qkt.trade.BotTrail
@@ -17,6 +18,7 @@ import com.qkt.trade.venue.BotVenues
 import com.qkt.trade.venue.botOrderId
 import com.qkt.trade.venue.idJson
 import com.qkt.trade.venue.toQuoteContext
+import java.math.BigDecimal
 import java.time.Instant
 
 /**
@@ -68,7 +70,13 @@ class BotTradeCommand(
                 BotTrail(StateDir.resolve(args.option("state-dir")).stateRoot, cfg.insights, clock).use { trail ->
                     trail.recordCommand(asName, action, args.tokens)
                     trail.recordSubmit(asName, order)
-                    val placed = opened.venue.place(order.request, order.stopLoss, order.takeProfit, order.request.id)
+                    // A venue that refuses before sending still leaves a result line beside the submit.
+                    val placed =
+                        try {
+                            opened.venue.place(order.request, order.stopLoss, order.takeProfit, order.request.id)
+                        } catch (e: IllegalArgumentException) {
+                            DirectResult(false, 0, order.request.id, "", BigDecimal.ZERO, e.message, "refused")
+                        }
                     trail.recordResult(asName, order, placed)
                     order to placed
                 }

@@ -152,6 +152,12 @@ class GatewayTradingAccount internal constructor(
         )
     }
 
+    /** The gateway spoken to directly, once it reports the identity the config expects. */
+    override fun directVenue(): com.qkt.connectivity.DirectVenue {
+        identity.mismatch(client.health())?.let { error("${config.name}: $it") }
+        return GatewayDirectVenue(config.name, config.symbolPrefix, client, settings.url, settings.apiKey)
+    }
+
     /** Closes the account's gateway connection, if it was ever opened. */
     override fun close() {
         if (opened.isInitialized()) opened.value.close()
