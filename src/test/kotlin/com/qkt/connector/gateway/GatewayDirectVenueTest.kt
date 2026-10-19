@@ -163,6 +163,19 @@ class GatewayDirectVenueTest {
     }
 
     @Test
+    fun `a listing whose minimum is below its step trades in steps of the minimum`() {
+        // Deribit's USDC options as a gateway lists them: volume_step 1 (the contract size), volume_min 0.01.
+        fake.instruments[option] =
+            WireInstrument(option, "option", "USDC", "1", "5", "1.0", "0.01", underlying = "BTC_USDC")
+        fake.quotes.greeting = WireQuote(option, bid = "1260", ask = "1340", time = 7)
+
+        val facts = venue.facts("DERIBIT:BTC_USDC_25DEC26_92000_C")
+
+        assertThat(facts.volumeStep).isEqualByComparingTo("0.01")
+        assertThat(facts.volumeMin).isEqualByComparingTo("0.01")
+    }
+
+    @Test
     fun `option and perpetual symbols map to venue codes`() {
         assertThat(venue.venueSymbol("DERIBIT:BTC_USDC_25DEC26_92000_C")).isEqualTo(option)
         assertThat(venue.venueSymbol("DERIBIT:SOL_USDC_PERPETUAL")).isEqualTo(perp)

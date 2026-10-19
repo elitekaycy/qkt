@@ -45,6 +45,9 @@ class GatewayDirectVenue(
         val ask = quote.ask?.let(::BigDecimal) ?: error("gateway quote for $qktSymbol has no ask")
         val account = client.account()
         val tick = BigDecimal(instrument.tickSize)
+        // A minimum is a tradable size, so a step coarser than it cannot be the venue's real step.
+        val min = BigDecimal(instrument.volumeMin)
+        val step = BigDecimal(instrument.volumeStep).let { if (min.signum() > 0 && min < it) min else it }
         return VenueFacts(
             bid = bid,
             ask = ask,
@@ -53,8 +56,8 @@ class GatewayDirectVenue(
             accountCurrency = account.currency,
             contractSize = BigDecimal(instrument.contractSize),
             quoteCurrency = instrument.currency,
-            volumeMin = BigDecimal(instrument.volumeMin),
-            volumeStep = BigDecimal(instrument.volumeStep),
+            volumeMin = min,
+            volumeStep = step,
             volumeMax = null,
             digits = tick.stripTrailingZeros().scale().coerceAtLeast(0),
             tickSize = tick,
