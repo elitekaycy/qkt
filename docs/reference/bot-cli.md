@@ -62,6 +62,11 @@ qkt bot modify EXNESS:XAUUSD --ticket N --sl 2605         # keeps the current TP
 qkt bot cancel EXNESS:XAUUSD --order N | --all
 ```
 
+`close --all` and `cancel --all` act on the caller's own positions and orders only (those `qkt bot` placed
+under the same `--as`); a deployed strategy's legs and exits on the symbol stay. `--any` widens them to
+every position or order on the symbol. A single position, or one named by `--ticket`/`--order`, is acted on
+whoever placed it.
+
 - Exits (`--sl` / `--tp`): `2610` or `at:2610`, `by:30` (distance), `pct:1.5`, `rr:2` (target only,
   multiple of the stop distance); `--sl trail:4[@2]` is a stop trailing 4 behind the best price once the
   trade is 2 in profit (session only: it needs the engine).

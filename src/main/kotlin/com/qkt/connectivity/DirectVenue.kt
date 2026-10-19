@@ -143,6 +143,8 @@ data class DirectPendingOrder(
     val sl: BigDecimal?,
     val tp: BigDecimal?,
     val expiresAt: Long?,
+    /** What the placer named the order (an MT5 comment, a gateway client order id). */
+    val comment: String? = null,
 )
 
 data class DirectDeal(

@@ -8,6 +8,7 @@ import com.qkt.trade.BotTrail
 import com.qkt.trade.venue.BotVenues
 import com.qkt.trade.venue.botOrderId
 import com.qkt.trade.venue.idJson
+import com.qkt.trade.venue.ownedBy
 
 /**
  * `qkt bot close BROKER:SYMBOL [--ticket N] [--partial <lots>] [--all]` — closes open
@@ -43,7 +44,18 @@ class BotCloseCommand(
                                 matching.firstOrNull { it.ticket == ticket }
                                     ?: error("no open position with ticket $ticket"),
                             )
-                        args.flag("all") -> matching.ifEmpty { error("no open positions for $symbol") }
+                        args.flag("all") -> {
+                            // --all is the caller's own positions; a deployed strategy's stay unless --any.
+                            val mine =
+                                if (args.flag("any")) {
+                                    matching
+                                } else {
+                                    matching.filter { ownedBy(asName, it.comment) }
+                                }
+                            val others =
+                                if (matching.isEmpty()) "" else " (${matching.size} held by others; pass --any)"
+                            mine.ifEmpty { error("no open positions of '$asName' on $symbol$others") }
+                        }
                         matching.size == 1 -> matching
                         matching.isEmpty() -> error("no open positions for $symbol")
                         else ->

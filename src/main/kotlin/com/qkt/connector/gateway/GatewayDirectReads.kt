@@ -74,6 +74,7 @@ internal class GatewayDirectReads(
                 sl = null,
                 tp = null,
                 expiresAt = null,
+                comment = it.clientOrderId,
             )
         }
 

@@ -104,4 +104,30 @@ class BotGatewayCliTest {
         assertThat(run(dir, "account").second).contains("\"currency\":\"USDC\"").contains("\"login\":7")
         assertThat(run(dir, "positions").second.trim()).isEqualTo("[]")
     }
+
+    @Test
+    fun `cancel all touches only the caller's own orders unless any is given`(
+        @TempDir dir: Path,
+    ) {
+        // A deployed strategy's take profit rests on the same symbol.
+        fake.act { place(WireSubmit("dsl-trend--1-tp.x", perp, "sell", "limit", "1", "110", null, "gtc")) }
+        run(dir, "buy", "1", "DERIBIT:SOL_USDC_PERPETUAL", "--limit", "100", "--as", "agent")
+
+        val (code, out) = run(dir, "cancel", "DERIBIT:SOL_USDC_PERPETUAL", "--all", "--as", "agent")
+
+        assertThat(code).isEqualTo(ExitCodes.SUCCESS)
+        assertThat(out).contains("bot-agent-").doesNotContain("dsl-trend")
+        assertThat(
+            fake.venue.orders
+                .getValue("dsl-trend--1-tp.x")
+                .status,
+        ).isEqualTo("working")
+
+        run(dir, "cancel", "DERIBIT:SOL_USDC_PERPETUAL", "--all", "--any", "--as", "agent")
+        assertThat(
+            fake.venue.orders
+                .getValue("dsl-trend--1-tp.x")
+                .status,
+        ).isEqualTo("cancelled")
+    }
 }

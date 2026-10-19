@@ -140,7 +140,7 @@ internal val toolingOptionSchemas: Map<String, CliOptionSchema> =
                         "symbol",
                         "reconcile",
                     ),
-                flags = setOf("json", "dry-run", "all", "backtest", "no-fetch", "tick-fills", "bars", "flatten"),
+                flags = setOf("json", "dry-run", "all", "backtest", "no-fetch", "tick-fills", "bars", "flatten", "any"),
             ),
         "--version" to CliOptionSchema(),
         "-v" to CliOptionSchema(),

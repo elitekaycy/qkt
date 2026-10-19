@@ -118,6 +118,7 @@ class Mt5DirectVenue(
                 it.sl,
                 it.tp,
                 it.timeExpiration,
+                it.comment,
             )
         }
 

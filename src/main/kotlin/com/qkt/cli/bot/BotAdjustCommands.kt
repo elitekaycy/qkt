@@ -7,6 +7,7 @@ import com.qkt.common.SystemClock
 import com.qkt.trade.BotTrail
 import com.qkt.trade.venue.BotVenues
 import com.qkt.trade.venue.idJson
+import com.qkt.trade.venue.ownedBy
 
 /**
  * `qkt bot modify BROKER:SYMBOL --ticket N [--sl <px>] [--tp <px>]` — moves an open
@@ -75,9 +76,18 @@ class BotCancelCommand(
                         ?: if (args.flag("all")) {
                             val venueSym = opened.venue.venueSymbol(symbol)
                             val pending = opened.venue.pendingOrders() ?: error("venue pending-orders read failed")
-                            pending.filter { it.symbol == venueSym }.map { it.ticket }.ifEmpty {
-                                error("no pending orders for $symbol")
-                            }
+                            val onSymbol = pending.filter { it.symbol == venueSym }
+                            val asName = args.option("as") ?: "manual"
+                            // --all is the caller's own orders; another strategy's exits stay unless --any.
+                            val mine =
+                                if (args.flag("any")) {
+                                    onSymbol
+                                } else {
+                                    onSymbol.filter { ownedBy(asName, it.comment) }
+                                }
+                            val others =
+                                if (onSymbol.isEmpty()) "" else " (${onSymbol.size} placed by others; pass --any)"
+                            mine.map { it.ticket }.ifEmpty { error("no pending orders of '$asName' on $symbol$others") }
                         } else {
                             error("pass --order <ticket> or --all")
                         }

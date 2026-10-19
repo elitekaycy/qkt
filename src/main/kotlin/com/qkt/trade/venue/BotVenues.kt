@@ -81,3 +81,12 @@ fun botOrderId(
             .current()
             .nextInt(0x10000),
     )
+
+/**
+ * Whether an order or position labelled [label] (an MT5 comment, a gateway client order id) was placed by
+ * `qkt bot` as [asName]. MT5 keeps 29 characters of a comment, so the id prefix is compared to that length.
+ */
+fun ownedBy(
+    asName: String,
+    label: String?,
+): Boolean = label != null && label.startsWith("bot-${asName.take(40)}-".take(29))
