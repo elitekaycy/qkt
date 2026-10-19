@@ -79,7 +79,7 @@ internal class BotReplayCommand(
             val token = original[i]
             val takesValue = i + 1 < original.size && !original[i + 1].startsWith("--")
             if (token in overridden || token == "--json") {
-                i += if (takesValue && token != "--no-fetch") 2 else 1
+                i += if (takesValue && token.removePrefix("--") !in FLAGS) 2 else 1
                 continue
             }
             kept += token
@@ -88,7 +88,7 @@ internal class BotReplayCommand(
         val added =
             OVERRIDES.flatMap { name ->
                 when {
-                    name == "no-fetch" && args.flag(name) -> listOf("--no-fetch")
+                    name in FLAGS -> if (args.flag(name)) listOf("--$name") else emptyList()
                     args.option(name) != null -> listOf("--$name", args.option(name)!!)
                     else -> emptyList()
                 }
@@ -110,6 +110,7 @@ internal class BotReplayCommand(
     }
 
     private companion object {
-        val OVERRIDES = listOf("from", "to", "data-root", "no-fetch", "config", "broker")
+        val FLAGS = setOf("no-fetch", "bars", "tick-fills")
+        val OVERRIDES = listOf("from", "to", "data-root", "config", "broker") + FLAGS
     }
 }
