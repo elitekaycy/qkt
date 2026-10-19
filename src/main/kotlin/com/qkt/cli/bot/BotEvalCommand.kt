@@ -38,7 +38,7 @@ class BotEvalCommand(
                     "ok" to (result.value != null),
                     "expression" to expr,
                     "symbol" to symbol,
-                    "tf" to window.toString(),
+                    "tf" to args.requireOption("tf"),
                     "value" to result.value,
                     "isReady" to result.isReady,
                     "warmupBars" to result.warmupBars,
