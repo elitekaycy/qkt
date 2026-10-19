@@ -30,7 +30,7 @@ class BotSessionRecorder(
         ctx: StrategyContext,
         emit: (Signal) -> Unit,
     ) {
-        history.record(candle)
+        // Closed bars reach the history per series from the session's own hub (see BotSessionIdentities).
     }
 
     /** Most recent tick seen for [symbol], or null before the first. */

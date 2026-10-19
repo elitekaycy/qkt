@@ -33,7 +33,7 @@ internal fun startLiveSession(
     val history = BarHistory(capacity = maxOf(spec.historyBars, 1000))
     seedLiveWarmup(cfg, streams, spec.historyBars, history)
     val recorder = BotSessionRecorder(history)
-    val identities = BotSessionIdentities.compile(streams, spec.identities)
+    val identities = BotSessionIdentities.compile(streams, spec.identities, history = history)
     val haltRules =
         com.qkt.risk.HaltRules.standard(
             maxDailyLoss = cfg.maxDailyLoss,
@@ -138,6 +138,6 @@ private fun seedLiveWarmup(
                 System.err.println("qkt bot: warmup fetch failed for $sym: ${e.message}")
                 emptyList()
             }
-        history.seed(sym, bars.filter { it.endTime <= nowMs }.map { it.copy(symbol = sym) })
+        history.seed("$sym@${streams.baseTf}", bars.filter { it.endTime <= nowMs }.map { it.copy(symbol = sym) })
     }
 }

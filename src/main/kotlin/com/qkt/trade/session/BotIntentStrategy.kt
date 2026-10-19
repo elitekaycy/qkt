@@ -152,6 +152,22 @@ object BotSessionIdentities {
         streams: BotSessionStreams,
         identities: List<String>,
         ledger: IntentLedger = IntentLedger(),
+        history: BarHistory? = null,
+    ): Map<String, BotIntentStrategy> =
+        compileAll(streams, identities, ledger).also { compiled ->
+            // The first identity's hub builds every series; its closes are the session's bars.
+            val recorder = compiled.values.firstOrNull() ?: return@also
+            if (history != null) {
+                recorder.observeCandleEvaluations { alias, _, candle, _ ->
+                    streams.seriesOf(alias)?.let { history.record(it, candle) }
+                }
+            }
+        }
+
+    private fun compileAll(
+        streams: BotSessionStreams,
+        identities: List<String>,
+        ledger: IntentLedger,
     ): Map<String, BotIntentStrategy> =
         identities.withIndex().associate { (i, identity) ->
             val ast =

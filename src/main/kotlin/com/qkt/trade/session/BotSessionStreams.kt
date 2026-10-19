@@ -64,6 +64,9 @@ class BotSessionStreams(
         ).joinToString("\n")
     }
 
+    /** Every declared series as `symbol@tf`. */
+    fun series(): List<String> = symbols.flatMap { s -> timeframes.map { "$s@$it" } }
+
     /** Declared series as "`symbol@tf`", for error messages. */
     fun describe(): String = symbols.flatMap { s -> timeframes.map { "$s@$it" } }.joinToString(", ")
 }

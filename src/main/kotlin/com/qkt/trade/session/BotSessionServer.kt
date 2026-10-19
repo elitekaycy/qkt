@@ -75,9 +75,12 @@ class BotSessionServer(
             val reply =
                 when {
                     method == "GET" && path == "/status" -> handlers.status()
-                    method == "POST" && path == "/next" -> handlers.next(field(body(ex), "symbol"))
+                    method == "POST" && path == "/next" ->
+                        body(ex).let { b -> handlers.next(field(b, "symbol"), b["tf"]?.jsonPrimitive?.contentOrNull) }
                     method == "GET" && path == "/bars" ->
-                        query(ex).let { q -> handlers.bars(q.require("symbol"), q["count"]?.toIntOrNull() ?: 100) }
+                        query(ex).let { q ->
+                            handlers.bars(q.require("symbol"), q["count"]?.toIntOrNull() ?: 100, q["tf"])
+                        }
                     method == "GET" && path == "/quote" -> handlers.quote(query(ex).require("symbol"))
                     method == "GET" && path == "/positions" -> handlers.positions()
                     method == "GET" && path == "/intents" -> handlers.intents()

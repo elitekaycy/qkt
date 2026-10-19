@@ -43,7 +43,7 @@ internal fun startBacktestSession(
 
     val history = BarHistory(capacity = maxOf(spec.historyBars, 1000))
     val recorder = BotSessionRecorder(history)
-    val identities = BotSessionIdentities.compile(streams, spec.identities)
+    val identities = BotSessionIdentities.compile(streams, spec.identities, history = history)
     val engine =
         ctx
             .backtest(
@@ -89,6 +89,6 @@ private fun seedBacktestWarmup(
     val warmRange = TimeRange(ctx.from.minusMillis(spanMs), ctx.from)
     streams.symbols.forEach { sym ->
         val bars = runCatching { source.bars(sym, streams.baseWindow, warmRange).toList() }.getOrElse { emptyList() }
-        history.seed(sym, bars.takeLast(historyBars))
+        history.seed("$sym@${streams.baseTf}", bars.takeLast(historyBars))
     }
 }

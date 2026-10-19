@@ -22,7 +22,11 @@ class BotRunSessionTest {
     private fun session(identities: List<String> = listOf("brain")): BotRunSession {
         val history = BarHistory(capacity = 100)
         val recorder = BotSessionRecorder(history)
-        val bridges = identities.associateWith { testBridge(it) }
+        val bridges =
+            identities.withIndex().associate { (i, id) ->
+                id to
+                    testBridge(id, history = history.takeIf { i == 0 })
+            }
         val engine =
             Backtest(
                 strategies = bridges.map { (id, b) -> id to b } + (BotSessionRecorder.ID to recorder),

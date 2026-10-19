@@ -78,7 +78,7 @@ class BotSessionParityTest {
 
         val history = BarHistory(capacity = 100)
         val recorder = BotSessionRecorder(history)
-        val bridge = testBridge()
+        val bridge = testBridge(history = history)
         val engine =
             Backtest(
                 strategies = listOf("brain" to bridge, BotSessionRecorder.ID to recorder),

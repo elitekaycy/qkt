@@ -18,7 +18,8 @@ internal object BotSessionVerbs {
         args: Args,
     ): Int {
         val symbol = args.requirePositional(0, "BROKER:SYMBOL")
-        println(client.post("/next", """{"symbol":${jsonString(symbol)}}"""))
+        val tf = args.option("tf")?.let { ""","tf":${jsonString(it)}""" }.orEmpty()
+        println(client.post("/next", """{"symbol":${jsonString(symbol)}$tf}"""))
         return ExitCodes.SUCCESS
     }
 
@@ -57,7 +58,10 @@ internal object BotSessionVerbs {
         val symbol = args.requirePositional(0, "BROKER:SYMBOL")
         val count = args.option("count")?.toIntOrNull() ?: 100
         println(
-            client.get("/bars?symbol=${java.net.URLEncoder.encode(symbol, Charsets.UTF_8)}&count=$count"),
+            client.get(
+                "/bars?symbol=${java.net.URLEncoder.encode(symbol, Charsets.UTF_8)}&count=$count" +
+                    (args.option("tf")?.let { "&tf=$it" } ?: ""),
+            ),
         )
         return ExitCodes.SUCCESS
     }

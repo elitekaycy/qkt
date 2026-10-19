@@ -99,7 +99,7 @@ internal object BotSessionLiveArm {
             val tickSeq = ticks()
             val history = BarHistory(capacity = 100)
             val recorder = BotSessionRecorder(history)
-            val bridge = testBridge()
+            val bridge = testBridge(history = history)
             val feed = GatedTickFeed(tickSeq)
             val liveTrades = mutableListOf<Trade>()
             // Strategies see a tick in list order, so once this probe has seen a tick the bridge has

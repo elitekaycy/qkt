@@ -114,4 +114,20 @@ class BotSessionVerbsTest {
         assertThat(partialCode).isEqualTo(ExitCodes.USER_ERROR)
         assertThat(partial).contains("qkt bot sell")
     }
+
+    @Test
+    fun `a session over two timeframes serves each series`(
+        @TempDir tmp: Path,
+    ) {
+        val h = BotSessionHarness(tmp, tf = "15m,1h").start()
+        val (_, hour) = h.bot("next", gold, "--tf", "1h")
+        val (_, quarter) = h.bot("next", gold)
+        val (code, unknown) = h.bot("next", gold, "--tf", "4h")
+        h.finish()
+
+        assertThat(hour).contains("\"timeMs\":1704153600000").contains("\"endMs\":1704157200000")
+        assertThat(quarter).contains("\"timeMs\":1704153600000").contains("\"endMs\":1704154500000")
+        assertThat(code).isEqualTo(ExitCodes.USER_ERROR)
+        assertThat(unknown).contains("not a session series")
+    }
 }

@@ -26,6 +26,10 @@ class BotRunSession(
     private val history: BarHistory,
     private val recorder: BotSessionRecorder,
 ) {
+    // Per series, the index of the next bar to hand out; bars seeded before the start count as history.
+    private val delivered =
+        java.util.concurrent.ConcurrentHashMap(streams.series().associateWith { history.countFor(it) })
+
     private val intentSeq =
         java.util.concurrent.atomic
             .AtomicLong()
@@ -40,17 +44,35 @@ class BotRunSession(
      * fills, exits, and risk evaluate at normal fidelity. Live, it blocks until
      * the feed closes the next bar.
      */
-    fun next(symbol: String): Candle? {
-        val before = history.countFor(symbol)
-        if (!backend.awaitNextBar(symbol, before, history)) return null
-        return history.last(symbol, 1).firstOrNull()
+    fun next(
+        symbol: String,
+        tf: String? = null,
+    ): Candle? {
+        val series = series(symbol, tf)
+        val cursor = delivered.getValue(series)
+        if (history.countFor(series) <= cursor && !backend.awaitNextBar(series, cursor, history)) return null
+        val bar = history.at(series, cursor) ?: return null
+        delivered[series] = cursor + 1
+        return bar
     }
 
-    /** Newest [count] closed bars up to sim-now, oldest-first. Never looks ahead. */
+    /** Newest [count] closed bars of the series up to sim-now, oldest-first. Never looks ahead. */
     fun bars(
         symbol: String,
         count: Int,
-    ): List<Candle> = history.last(symbol, count)
+        tf: String? = null,
+    ): List<Candle> = history.last(series(symbol, tf), count)
+
+    private fun series(
+        symbol: String,
+        tf: String?,
+    ): String {
+        val t = tf ?: streams.baseTf
+        require(streams.alias(symbol, t) != null) {
+            "$symbol@$t is not a session series; the session declares ${streams.describe()}"
+        }
+        return "$symbol@$t"
+    }
 
     /** Last tick at the replay cursor, or null before the first tick of [symbol]. */
     fun quote(symbol: String): Tick? = recorder.lastTick(symbol)

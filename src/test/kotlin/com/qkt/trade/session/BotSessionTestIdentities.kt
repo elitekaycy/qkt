@@ -8,4 +8,6 @@ internal fun testStreams(symbol: String = "EXNESS:XAUUSD"): BotSessionStreams =
 internal fun testBridge(
     identity: String = "brain",
     symbol: String = "EXNESS:XAUUSD",
-): BotIntentStrategy = BotSessionIdentities.compile(testStreams(symbol), listOf(identity)).getValue(identity)
+    history: BarHistory? = null,
+): BotIntentStrategy =
+    BotSessionIdentities.compile(testStreams(symbol), listOf(identity), history = history).getValue(identity)

@@ -24,7 +24,7 @@ class BotSessionServerTest {
     private fun start(): BotSessionServer {
         val history = BarHistory(capacity = 100)
         val recorder = BotSessionRecorder(history)
-        val bridge = testBridge()
+        val bridge = testBridge(history = history)
         val ticks =
             (0 until 4).flatMap { bar ->
                 val base = bar * 60_000L

@@ -24,25 +24,38 @@ abstract class IntentSessionFixture {
                 )
         }
 
-    /** One tick at +1 s and one at +30 s of each 1m bar, at [prices] (one per bar). */
-    private fun ticks(prices: List<Int>): List<Tick> =
+    protected val silver = "EXNESS:XAGUSD"
+
+    /**
+     * One tick at +1 s and one at +30 s of each 1m bar, at [prices] (one per bar); silver trades at a
+     * hundredth of gold, a second later, so the two symbols close their bars on different ticks.
+     */
+    private fun ticks(
+        prices: List<Int>,
+        symbols: List<String>,
+    ): List<Tick> =
         prices.flatMapIndexed { bar, p ->
             val base = bar * 60_000L
-            listOf(Tick(gold, BigDecimal(p), base + 1_000L), Tick(gold, BigDecimal(p), base + 30_000L))
+            symbols.flatMap { sym ->
+                val (price, lag) = if (sym == gold) BigDecimal(p) to 0L else BigDecimal(p).movePointLeft(2) to 1_000L
+                listOf(Tick(sym, price, base + 1_000L + lag), Tick(sym, price + BigDecimal.ONE, base + 30_000L + lag))
+            }
         }
 
     protected fun session(
         prices: List<Int>,
         identities: List<String> = listOf("brain"),
+        symbols: List<String> = listOf(gold),
+        timeframes: List<String> = listOf("1m"),
     ): BotRunSession {
-        val streams = BotSessionStreams(listOf(gold), listOf("1m"))
+        val streams = BotSessionStreams(symbols, timeframes)
         val history = BarHistory(capacity = 100)
         val recorder = BotSessionRecorder(history)
-        val strategies = BotSessionIdentities.compile(streams, identities)
+        val strategies = BotSessionIdentities.compile(streams, identities, history = history)
         val engine =
             Backtest(
                 strategies = strategies.map { (id, s) -> id to s } + (BotSessionRecorder.ID to recorder),
-                ticks = ticks(prices),
+                ticks = ticks(prices, symbols),
                 candleWindow = streams.baseWindow,
                 startingBalance = BigDecimal("10000"),
                 instruments = goldSpec,

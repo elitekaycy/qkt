@@ -28,7 +28,7 @@ class BotSessionServerBacktestLiveParityTest : BotSessionParityFixture() {
     private fun runBacktestServer(): List<TradeKey> {
         val history = BarHistory(capacity = 100)
         val recorder = BotSessionRecorder(history)
-        val bridge = testBridge()
+        val bridge = testBridge(history = history)
         val engine =
             Backtest(
                 strategies = listOf("brain" to bridge, BotSessionRecorder.ID to recorder),
@@ -75,7 +75,7 @@ class BotSessionServerBacktestLiveParityTest : BotSessionParityFixture() {
             val tickSeq = ticks()
             val history = BarHistory(capacity = 100)
             val recorder = BotSessionRecorder(history)
-            val bridge = testBridge()
+            val bridge = testBridge(history = history)
             val feed = GatedTickFeed(tickSeq)
             val liveTrades = mutableListOf<Trade>()
             val handle =

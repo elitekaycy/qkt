@@ -33,8 +33,11 @@ internal class BotSessionHandlers(
             """"symbols":[${session.streams.symbols.joinToString(",") { "\"$it\"" }}],""" +
             """"finished":$finished}"""
 
-    fun next(symbol: String): String {
-        val bar = session.next(symbol)
+    fun next(
+        symbol: String,
+        tf: String? = null,
+    ): String {
+        val bar = session.next(symbol, tf)
         journalRead("next", symbol, listOfNotNull(bar))
         val events = session.events().joinToString(",", "[", "]") { eventJson(it) }
         return if (bar == null) {
@@ -47,8 +50,9 @@ internal class BotSessionHandlers(
     fun bars(
         symbol: String,
         count: Int,
+        tf: String? = null,
     ): String {
-        val served = session.bars(symbol, count)
+        val served = session.bars(symbol, count, tf)
         journalRead("bars", symbol, served)
         return served.joinToString(",", "[", "]") { barJson(it) }
     }
