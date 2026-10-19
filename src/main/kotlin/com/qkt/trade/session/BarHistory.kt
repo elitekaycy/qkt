@@ -31,6 +31,9 @@ class BarHistory(
         candle: Candle,
     ) {
         val deque = bars.getOrPut(key) { ArrayDeque(capacity) }
+        // A series only moves forward: a bar starting before the last one ended (a candle a stale
+        // first quote closed, or a warmup bar seeded twice) is never served as new.
+        if (deque.isNotEmpty() && candle.startTime < deque.last().endTime) return
         if (deque.size == capacity) deque.removeFirst()
         deque.addLast(candle)
         counts[key] = (counts[key] ?: 0L) + 1L

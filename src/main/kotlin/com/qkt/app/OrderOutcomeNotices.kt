@@ -30,7 +30,13 @@ internal fun wireOrderOutcomeNotices(
         val strategy = strategies[ownerOf(e)] ?: return
         val order = orders(e.clientOrderId)
         val parent = order?.parentClientOrderId?.let(orders)
-        val reason = fill.venueReason ?: order?.let { engineExit(it.request, parent?.request) }
+        // A timed exit (`<id>-exit`, held outside the order book) closes with `<id>-exit-close` (`-r<n>` on a retry).
+        val timedClose =
+            TIMED_CLOSE.find(e.clientOrderId)?.let { e.clientOrderId.substring(0, it.range.first).endsWith("-exit") } ==
+                true
+        val reason =
+            fill.venueReason
+                ?: if (timedClose) ExitReason.CLOSE else order?.let { engineExit(it.request, parent?.request) }
         strategy.onOrderOutcome(
             OrderOutcome.Filled(
                 orderId = e.clientOrderId,
@@ -91,3 +97,5 @@ private fun engineExit(
         else -> ExitReason.CLOSE
     }
 }
+
+private val TIMED_CLOSE = Regex("-close(-r\\d+)?$")

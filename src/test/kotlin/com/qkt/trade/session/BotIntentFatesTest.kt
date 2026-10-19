@@ -97,6 +97,20 @@ class BotIntentFatesTest : IntentSessionFixture() {
     }
 
     @Test
+    fun `a timed exit's close is reported as a close`() {
+        val s = session(listOf(2400, 2401, 2402, 2403, 2404, 2405))
+        s.next(gold)
+        s.submit("brain", intent("BUY x SIZING 0.1 EXIT AFTER 2m"))
+
+        s.drain()
+
+        val ev = s.events()
+        assertThat(
+            ev.last { it.kind == "fill" }.exitReason,
+        ).withFailMessage("%s", ev.joinToString("\n")).isEqualTo("CLOSE")
+    }
+
+    @Test
     fun `a working limit is listed until it fills`() {
         val s = session(listOf(2400, 2401, 2402, 2380, 2380))
         s.next(gold)
