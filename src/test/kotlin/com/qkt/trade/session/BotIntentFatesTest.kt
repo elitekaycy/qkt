@@ -21,6 +21,49 @@ class BotIntentFatesTest : IntentSessionFixture() {
     }
 
     @Test
+    fun `a rejected entry nested in a timed bracket is the intent's fate`() {
+        val s = session(listOf(2400, 2401, 2402))
+        s.next(gold)
+        s.submit("brain", intent("BUY x SIZING 5 BRACKET { STOP LOSS BY 5, TAKE PROFIT BY 10 } EXIT AFTER 2m"))
+
+        s.drain()
+
+        assertThat(s.fates().single().state).isEqualTo("rejected")
+        assertThat(s.events().single { it.kind == "rejected" }.intentId).isEqualTo("int-1")
+    }
+
+    @Test
+    fun `every id of a nested request is linked to its intent`() {
+        val entry =
+            com.qkt.execution.OrderRequest.Market(
+                "e",
+                gold,
+                com.qkt.common.Side.BUY,
+                java.math.BigDecimal.ONE,
+                com.qkt.execution.TimeInForce.GTC,
+                1L,
+            )
+        val bracket =
+            com.qkt.execution.OrderRequest.Bracket(
+                "b",
+                gold,
+                com.qkt.common.Side.BUY,
+                java.math.BigDecimal.ONE,
+                entry,
+                java.math.BigDecimal("2410"),
+                com.qkt.execution.StopLossSpec
+                    .Fixed(java.math.BigDecimal("2390")),
+                com.qkt.execution.TimeInForce.GTC,
+                1L,
+            )
+        val timed =
+            com.qkt.dsl.compile
+                .timedExit("b-exit", bracket, 120_000L, 1L)
+
+        assertThat(requestIds(timed)).containsExactlyInAnyOrder("b-exit", "b", "e")
+    }
+
+    @Test
     fun `a filled entry is the fate and next carries the fill`() {
         val s = session(listOf(2400, 2401, 2402, 2403))
         s.next(gold)

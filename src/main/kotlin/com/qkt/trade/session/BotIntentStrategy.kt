@@ -7,7 +7,6 @@ import com.qkt.dsl.compile.AstCompiler
 import com.qkt.dsl.compile.DslCompiledStrategy
 import com.qkt.dsl.parse.Dsl
 import com.qkt.dsl.parse.ParseResult
-import com.qkt.execution.OrderRequest
 import com.qkt.marketdata.Tick
 import com.qkt.strategy.Signal
 import com.qkt.strategy.StrategyContext
@@ -79,10 +78,9 @@ class BotIntentStrategy(
         clientOrderId: String,
     ): com.qkt.dsl.compile.DecisionOrderLink? {
         synchronized(sentBy) { sentBy.remove(signal) }?.let { intentId ->
-            // A bracket's entry and exit pair are named after the request; link every id it places.
-            val request = (signal as? Signal.Submit)?.request
-            val ids = listOfNotNull(clientOrderId, request?.id, (request as? OrderRequest.Bracket)?.entry?.id)
-            ids.distinct().forEach { ledger.link(intentId, it) }
+            // A nested request's orders (a timed bracket's entry, say) are linked as well as the request.
+            val nested = (signal as? Signal.Submit)?.request?.let(::requestIds) ?: emptyList()
+            (listOf(clientOrderId) + nested).distinct().forEach { ledger.link(intentId, it) }
         }
         return inner.onOrderSubmitted(signal, clientOrderId)
     }
