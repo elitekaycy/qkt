@@ -1,22 +1,28 @@
 package com.qkt.cli.bot
 
 import com.qkt.cli.Args
+import com.qkt.cli.Config
 import com.qkt.cli.daemon.StateDir
-import com.qkt.cli.openAccounts
+import com.qkt.cli.daemon.createLiveSession
 import com.qkt.trade.session.BarHistory
 import com.qkt.trade.session.BotRunSession
 import com.qkt.trade.session.BotSessionFiles
 import com.qkt.trade.session.BotSessionIdentities
 import com.qkt.trade.session.BotSessionRecorder
 import com.qkt.trade.session.BotSessionStreams
+import com.qkt.trade.session.IntentJournal
 import com.qkt.trade.session.LiveBotRunBackend
+import com.qkt.trade.session.LiveSessionRecord
+import com.qkt.trade.session.copySessionJournals
+import com.qkt.trade.session.rebuildIdentities
 import com.qkt.trade.venue.toQuoteContext
 import java.nio.file.Path
 
 /**
- * `session start` without `--backtest`: the configured accounts' brokers and feeds under a
- * [com.qkt.app.LiveSession], with one compiled DSL strategy per identity in the slots. When insights
- * egress is configured the session and its [com.qkt.trade.BotTrail] share one sink.
+ * `session start` without `--backtest`: the deploy pipeline over the configured accounts
+ * ([LiveSessionStack]), one compiled DSL strategy per identity. A run that resumes (`--run` of an earlier
+ * live session over the same state) first recompiles every intent it journaled, so the exits the engine
+ * holds for its open legs restore. `finish` writes `summary.json` and copies the journals to `--out`.
  */
 internal fun startLiveSession(
     sub: Args,
@@ -24,102 +30,74 @@ internal fun startLiveSession(
     spec: SessionStart,
 ): Int {
     val streams = spec.streams
-    val cfg = botConfig(sub)
-    val accounts = cfg.openAccounts()
-    require(accounts.accounts.isNotEmpty()) { "no broker accounts in config — a live session needs one" }
-    val sourceFactory =
-        com.qkt.cli.MarketSourceFactory
-            .composite(accounts.marketDataRoutes(), source = cfg.source)
-    val history = BarHistory(capacity = maxOf(spec.historyBars, 1000))
-    seedLiveWarmup(cfg, streams, spec.historyBars, history)
-    val recorder = BotSessionRecorder(history)
-    val identities = BotSessionIdentities.compile(streams, spec.identities, history = history)
-    val haltRules =
-        com.qkt.risk.HaltRules.standard(
-            maxDailyLoss = cfg.maxDailyLoss,
-            maxDrawdownPct = cfg.maxDrawdownPct,
-            maxDailyDrawdownPct = cfg.maxDailyDrawdownPct,
-            totalDdBasis = cfg.totalDdBasis,
-            startingBalance = cfg.startingBalance,
-        )
-    val stateRoot = StateDir.resolve(sub.option("state-dir")).stateRoot
-    val insightsSink = sessionInsightsSink(cfg, stateRoot)
-    val handle =
-        com.qkt.app
-            .LiveSession(
+    val configPath = Config.resolvePath(sub.option("config"))
+    val stateDir = StateDir.resolve(sub.option("state-dir"))
+    refuseDeployedIdentities(spec.identities, daemonStrategyNames(stateDir))
+    LiveSessionStack(Config.load(configPath), configPath, stateDir).use { stack ->
+        val cfg = stack.cfg
+        val sessionDir = BotSessionFiles.sessionDir(stateDir.stateRoot, spec.runId)
+        val outDir = Path.of(sub.option("out") ?: "runs/${spec.runId}")
+        val history = BarHistory(capacity = maxOf(spec.historyBars, 1000))
+        seedLiveWarmup(cfg, streams, spec.historyBars, history)
+        val recorder = BotSessionRecorder(history)
+        val identities = BotSessionIdentities.compile(streams, spec.identities, history = history)
+        val record = LiveSessionRecord(sessionDir)
+        val journal = IntentJournal(sessionDir.resolve("intents.jsonl"))
+        val earlier = IntentJournal.read(journal.path)
+        // Before the pipeline starts: its restore checks every persisted exit hook against the strategy.
+        rebuildIdentities(earlier, streams, identities)
+        val handle =
+            stack.factory.createLiveSession(
+                name = spec.runId,
                 strategies = identities.map { (id, s) -> id to s } + (BotSessionRecorder.ID to recorder),
-                haltRules = haltRules,
-                source = sourceFactory(streams.symbols),
                 symbols = streams.symbols,
                 candleWindow = streams.baseWindow,
-                accountingConfig = cfg.accountingConfig,
-                equityBasis = cfg.liveEquityBasis,
-                brokerFactories = accounts.orderEntry(),
-                initialBalance = cfg.startingBalance,
-                totalDdBasis = cfg.totalDdBasis,
-                dailyDdBasis = cfg.dailyDdBasis,
-                runawayMaxRoundTrips = cfg.runawayMaxRoundTrips,
-                runawayMaxRejections = cfg.runawayMaxRejections,
-                persistor = cfg.statePersistor(stateRoot),
                 ignoreMismatches = sub.option("reconcile") == "ignore-mismatches",
-                insightsSink = insightsSink,
-                insightsEvents = cfg.insights.events,
-                insightsStatePollMs = cfg.insights.statePollMs,
-                insightsDealBackfillDays = cfg.insights.dealBackfillDays,
-            ).start()
-    val session =
-        BotRunSession(spec.runId, LiveBotRunBackend(handle, identities.keys), identities, streams, history, recorder)
-    return try {
-        serveSession(
+                onTrade = { trade, realized, identity -> record.fill(trade, realized, identity) },
+            )
+        val session =
+            BotRunSession(
+                spec.runId,
+                LiveBotRunBackend(handle, identities.keys),
+                identities,
+                streams,
+                history,
+                recorder,
+                journal,
+            )
+        session.restoreFates(earlier)
+        if (earlier.isNotEmpty()) {
+            System.err.println(
+                "qkt bot: resumed ${earlier.size} journaled intents of ${spec.runId}",
+            )
+        }
+        return serveSession(
             sub = sub,
             json = json,
             session = session,
             mode = "live",
             cfg = cfg,
-            stateRoot = stateRoot,
+            stateRoot = stateDir.stateRoot,
             quoteContextFor = { symbol ->
                 com.qkt.trade.venue.BotVenues.forSymbol(cfg, symbol).use {
                     it.venue.facts(symbol).toQuoteContext(symbol, cfg.accountCurrency)
                 }
             },
             serverThreads = 4,
-            insightsSink = insightsSink,
+            insightsSink = stack.insightsSink,
             onFinish = {
-                BotSessionFiles.delete(stateRoot, spec.runId)
-                null
+                record.summary(identities.keys, session.legs())
+                copySessionJournals(sessionDir, outDir)
+                BotSessionFiles.delete(stateDir.stateRoot, spec.runId)
+                outDir.toAbsolutePath().toString()
             },
         )
-    } finally {
-        accounts.close()
     }
-}
-
-/** One insights sink for the session and its trail, so a journal directory has one writer; null when off. */
-internal fun sessionInsightsSink(
-    cfg: com.qkt.cli.Config,
-    stateRoot: Path,
-): com.qkt.observe.insights.InsightsSink? {
-    if (!cfg.insights.enabled || cfg.insights.url.isBlank()) return null
-    val journal =
-        if (cfg.insights.journalEnabled) {
-            Path.of(cfg.insights.journalDir.ifBlank { stateRoot.resolve("bot-insights-journal").toString() })
-        } else {
-            null
-        }
-    return com.qkt.observe.insights.InsightsSink(
-        url = cfg.insights.url,
-        token = cfg.insights.token,
-        instanceId = cfg.insights.instanceId.ifBlank { "qkt" },
-        batchSize = cfg.insights.batchSize,
-        flushIntervalMs = cfg.insights.flushIntervalMs,
-        queueCapacity = cfg.insights.queueCapacity,
-        journalDir = journal,
-    )
 }
 
 /** The newest closed bars from each symbol's venue, so `bot bars` serves history at the start. Best-effort. */
 private fun seedLiveWarmup(
-    cfg: com.qkt.cli.Config,
+    cfg: Config,
     streams: BotSessionStreams,
     historyBars: Int,
     history: BarHistory,

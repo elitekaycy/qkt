@@ -10,7 +10,6 @@ import com.qkt.cli.daemon.FeedLossRedeployer
 import com.qkt.cli.daemon.OperatorJournal
 import com.qkt.cli.daemon.RegistryDaemonControl
 import com.qkt.cli.daemon.StateDir
-import com.qkt.cli.daemon.StrategyHandle
 import com.qkt.cli.daemon.StrategyRegistry
 import com.qkt.cli.daemon.TelegramCommandChannel
 import com.qkt.cli.daemon.portfolio.PortfolioDeployer
@@ -20,13 +19,8 @@ import com.qkt.dsl.parse.ParsedFile
 import com.qkt.dsl.portfolio.PortfolioLoader
 import com.qkt.marketdata.live.tv.TradingViewMarketSource
 import com.qkt.marketdata.source.MarketSource
-import com.qkt.notify.ChannelConfig
-import com.qkt.notify.ChannelRegistry
-import com.qkt.notify.CompositeNotifier
 import com.qkt.notify.DailySummaryScheduler
-import com.qkt.notify.FilteringNotifier
 import com.qkt.notify.NotificationEvent
-import com.qkt.notify.Notifier
 import com.qkt.notify.NotifyEventKind
 import com.qkt.notify.aggregateDailySummary
 import com.qkt.persistence.StatePersistor
@@ -114,20 +108,7 @@ class DaemonCommand(
                 System.err.println("qkt: control token initialization failed: ${e.message}")
                 return ExitCodes.USER_ERROR
             }
-        val channelRegistry = ChannelRegistry.DEFAULT
-        val channelNotifiers: List<Pair<ChannelConfig, Notifier>> =
-            cfg.notify.enabledChannels().mapNotNull { ch ->
-                val provider = channelRegistry.get(ch.type)
-                if (provider == null) {
-                    println("[WARN] unknown notify channel type: ${ch.type}")
-                    null
-                } else {
-                    ch to provider.notifier(ch)
-                }
-            }
-        val notifyEventKinds = cfg.notify.enabledEventKinds()
-        val notifier: Notifier =
-            CompositeNotifier(channelNotifiers.map { (ch, n) -> FilteringNotifier(ch.events, n) })
+        val (channelNotifiers, notifier, notifyEventKinds) = configNotifier(cfg)
         // One insights sink per daemon, shared by every session (mirrors the notifier).
         // Disabled config (the default) constructs nothing: no queue, no thread.
         val insightsSink: com.qkt.observe.insights.InsightsSink? =
@@ -258,37 +239,17 @@ class DaemonCommand(
                 ?: cfg.statePersistor(stateDir.stateRoot)
         val registry =
             StrategyRegistry(
-                StrategyHandle.RealFactory(
+                liveFactory(
+                    cfg = cfg,
                     stateDir = stateDir,
                     marketSourceProvider = effectiveSourceFactory,
                     brokerFactories = brokerFactories,
                     instrumentRegistry = daemonInstrumentRegistry,
                     calendarFor = daemonCalendarFor,
-                    maxDailyLoss = cfg.maxDailyLoss,
-                    perStrategyRisk = cfg.perStrategyRisk,
-                    maxDrawdownPct = cfg.maxDrawdownPct,
-                    maxDailyDrawdownPct = cfg.maxDailyDrawdownPct,
-                    totalDdBasis = cfg.totalDdBasis,
-                    dailyDdBasis = cfg.dailyDdBasis,
-                    startingBalance = cfg.startingBalance,
-                    maxOrderQty = cfg.maxOrderQty,
-                    maxOrderNotional = cfg.maxOrderNotional,
-                    priceCollarFrac = cfg.priceCollarFrac,
-                    runawayMaxRoundTrips = cfg.runawayMaxRoundTrips,
-                    runawayMaxRejections = cfg.runawayMaxRejections,
-                    candleCloseGraceMs = cfg.candleCloseGraceMs,
-                    accountingConfig = cfg.accountingConfig,
-                    liveEquityBasis = cfg.liveEquityBasis,
-                    marginFloorPct = cfg.marginFloorPct,
-                    measuredUsageHours = cfg.measuredUsageHours,
-                    measuredUsageMaxQty = cfg.measuredUsageMaxQty,
-                    journalRoot = stateDir.stateRoot.resolve("journal"),
-                    auditJournalRoot = stateDir.stateRoot.resolve("audit-journal"),
                     persistor = statePersistor,
                     notifier = notifier,
                     notifyEvents = notifyEventKinds,
                     insightsSink = insightsSink,
-                    insightsEvents = cfg.insights.events,
                     insightsDeployedIds = {
                         registryRef
                             .get()
@@ -296,10 +257,7 @@ class DaemonCommand(
                             ?.map { it.ast.name }
                             .orEmpty()
                     },
-                    insightsStatePollMs = cfg.insights.statePollMs,
                     insightsSharedDeals = insightsSharedDeals,
-                    insightsDealBackfillDays = cfg.insights.dealBackfillDays,
-                    marketDataGateConfig = cfg.marketData,
                 ),
             )
         registryRef.set(registry)

@@ -101,3 +101,39 @@ internal fun StrategyHandle.RealFactory.startPipeline(
         marketDataGateConfig = marketDataGateConfig,
     ).start()
 }
+
+/**
+ * A live `qkt bot session`'s pipeline over [strategies] (its identities and its bar recorder), built from
+ * the same factory config as a deploy. `per_strategy_risk` binds one strategy per session, so it applies
+ * to a session's only identity and is refused when several are declared and any of them has an entry.
+ */
+internal fun StrategyHandle.RealFactory.createLiveSession(
+    name: String,
+    strategies: List<Pair<String, Strategy>>,
+    symbols: List<String>,
+    candleWindow: TimeWindow?,
+    ignoreMismatches: Boolean,
+    onTrade: (Trade, BigDecimal, String) -> Unit,
+): LiveSessionHandle {
+    val identities = strategies.map { it.first }.filterNot { it.startsWith("__") }
+    val risked = identities.filter { it in perStrategyRisk }
+    require(identities.size == 1 || risked.isEmpty()) {
+        "per_strategy_risk binds one identity per session; run ${risked.joinToString()} in a session of its own"
+    }
+    val metadata =
+        identities.associateWith {
+            mapOf("deployName" to name, "kind" to "bot-session", "symbols" to symbols, "runtimeMode" to "live")
+        }
+    return startPipeline(
+        strategies = strategies,
+        mdcStrategy = name,
+        symbols = symbols,
+        candleWindow = candleWindow,
+        calendar = com.qkt.cli.strategyCalendar(symbols, instrumentRegistry, calendarFor),
+        perStrategyOverride = identities.singleOrNull()?.let { perStrategyRisk[it] },
+        metadata = metadata,
+        ignoreMismatches = ignoreMismatches,
+        onTrade = onTrade,
+        onSignal = {},
+    )
+}

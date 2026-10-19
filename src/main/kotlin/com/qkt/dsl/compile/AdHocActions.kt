@@ -26,6 +26,12 @@ interface AdHocActions {
     /** Throws, naming the reason, when [action] cannot run as an intent. */
     fun validate(action: ActionAst)
 
+    /**
+     * Compiles [action] on the strategy's compiler without firing it, as it was compiled when it first
+     * fired: what an earlier run registered (exit hooks, ON FILL children) exists again before restore.
+     */
+    fun rebuild(action: ActionAst)
+
     /** Compiles and fires [action] now; [AdHocFire.Skipped] when no stream has closed a bar. */
     fun fire(
         action: ActionAst,
@@ -106,6 +112,10 @@ internal class CompiledAdHocActions(
         require(
             !scratch.actions.usesBookSizing,
         ) { "OF BOOK sizing is only for portfolio children; size by lots or equity" }
+    }
+
+    override fun rebuild(action: ActionAst) {
+        context.actionCompiler.compile(resolved(action), ruleAlias(action))
     }
 
     override fun fire(

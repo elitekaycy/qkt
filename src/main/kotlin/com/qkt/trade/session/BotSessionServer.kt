@@ -87,7 +87,8 @@ class BotSessionServer(
                     method == "GET" && path == "/orders" -> handlers.orders()
                     method == "POST" && path == "/intent" ->
                         body(ex).let { b -> handlers.intent(field(b, "identity"), field(b, "source")) }
-                    method == "POST" && path == "/finish" -> handlers.finish()
+                    method == "POST" && path == "/finish" ->
+                        handlers.finish(body(ex)["flatten"]?.jsonPrimitive?.contentOrNull == "true")
                     else -> return respond(ex, 404, """{"ok":false,"error":"not found"}""")
                 }
             respond(ex, 200, reply)

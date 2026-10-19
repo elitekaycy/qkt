@@ -118,6 +118,36 @@ class BotRunSession(
         signal: Signal,
     ) = identity(identity).submitSignal(signal)
 
+    /**
+     * Picks up an earlier run over the same state: recompiles every journaled intent, in order, on its
+     * identity without firing it, restores its last fate, and numbers new intents after the last one.
+     * Returns how many intents were rebuilt.
+     */
+    fun rebuildFrom(journaled: List<JournaledIntent>): Int {
+        rebuildIdentities(journaled, streams, bridges)
+        restoreFates(journaled)
+        return journaled.size
+    }
+
+    /** Restores each journaled intent's last fate and numbers new intents after the last one. */
+    fun restoreFates(journaled: List<JournaledIntent>) {
+        journaled.forEach { j -> ledger.fate(j.lastFate ?: IntentFate(j.intentId, j.identity, "fired")) }
+        journaled.maxOfOrNull { it.intentId.removePrefix("int-").toLong() }?.let { intentSeq.set(it) }
+    }
+
+    /** The exit hooks [identity]'s strategy holds (what a restart's restore needs). */
+    fun exitHookReferences(identity: String) = identity(identity).exitHookReferences()
+
+    /**
+     * Closes every identity's positions and working orders through the engine (`CLOSE_ALL`), then lets the
+     * session run until the book is flat or [timeoutMs] passes (a backtest replays forward to get there).
+     */
+    fun flattenAll(timeoutMs: Long = 30_000L) {
+        val source = com.qkt.trade.renderBotAction(mapOf("x" to streams.symbols.first()), "CLOSE_ALL")
+        bridges.keys.forEach { submit(it, source) }
+        backend.awaitFlat(timeoutMs)
+    }
+
     /** Every intent's latest fate, in arrival order across identities. */
     fun fates(): List<IntentFate> = ledger.fates()
 
@@ -152,3 +182,18 @@ data class SubmittedIntent(
     val symbol: String?,
     val sha256: String,
 )
+
+/**
+ * Recompiles every journaled intent, in order, on its identity without firing it, so what an earlier run
+ * registered (exit hooks, ON FILL children) exists before a live session restores its persisted state.
+ */
+fun rebuildIdentities(
+    journaled: List<JournaledIntent>,
+    streams: BotSessionStreams,
+    identities: Map<String, BotIntentStrategy>,
+) {
+    journaled.forEach { j ->
+        val identity = requireNotNull(identities[j.identity]) { "journaled identity '${j.identity}' is not declared" }
+        identity.rebuild(sessionIntent(j.source, streams).action)
+    }
+}

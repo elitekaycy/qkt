@@ -56,6 +56,9 @@ class BotIntentStrategy(
         queue.add(intentId to action)
     }
 
+    /** Recompiles a journaled intent's [action] without firing it (a restart over this identity's state). */
+    fun rebuild(action: ActionAst) = actions.rebuild(action)
+
     /** Queues a ready-made [signal] for the next tick, outside the DSL (the hand-written parity reference). */
     fun submitSignal(signal: Signal) {
         signals.add(signal)

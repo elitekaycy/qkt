@@ -46,6 +46,13 @@ class LiveBotRunBackend(
             .flatMap { id -> handle.positionsFor(id) }
             .associateBy { it.symbol }
 
+    override fun awaitFlat(timeoutMs: Long) {
+        val deadline = clock.now() + timeoutMs
+        while (handle.running && positions().values.any { it.quantity.signum() != 0 } && clock.now() < deadline) {
+            Thread.sleep(pollMs)
+        }
+    }
+
     override fun finish(): BacktestResult? {
         handle.stop()
         return null

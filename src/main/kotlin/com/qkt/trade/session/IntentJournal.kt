@@ -3,6 +3,11 @@ package com.qkt.trade.session
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
 
 /**
  * `intents.jsonl`: one `intent` line per accepted intent (its full DSL source, identity, the session time
@@ -36,6 +41,37 @@ class IntentJournal(
         Files.writeString(path, line + "\n", StandardOpenOption.CREATE, StandardOpenOption.APPEND)
     }
 
+    companion object {
+        /** Every intent in [path], in the order they arrived, with its last journaled fate; empty when absent. */
+        fun read(path: Path): List<JournaledIntent> {
+            if (!Files.exists(path)) return emptyList()
+            val lines =
+                Files
+                    .readAllLines(
+                        path,
+                    ).filter { it.isNotBlank() }
+                    .map { Json.parseToJsonElement(it).jsonObject }
+            val fates =
+                lines.filter { it.text("type") == "fate" }.associate { f ->
+                    val id = f.text("intentId")!!
+                    id to IntentFate(id, f.text("identity")!!, f.text("state")!!, reason = f.text("reason"))
+                }
+            return lines.filter { it.text("type") == "intent" }.map { i ->
+                val id = i.text("intentId")!!
+                JournaledIntent(
+                    intentId = id,
+                    identity = i.text("identity")!!,
+                    source = i.text("source")!!,
+                    simMs = i.text("simMs")!!.toLong(),
+                    tickSeq = i.text("tickSeq")!!.toLong(),
+                    lastFate = fates[id],
+                )
+            }
+        }
+
+        private fun JsonObject.text(key: String): String? = (this[key] as? JsonPrimitive)?.contentOrNull
+    }
+
     private fun str(v: String): String =
         "\"" +
             v
@@ -44,3 +80,13 @@ class IntentJournal(
                 .replace("\n", "\\n")
                 .replace("\t", "\\t") + "\""
 }
+
+/** One intent as an earlier run journaled it, with the last fate it reached. */
+data class JournaledIntent(
+    val intentId: String,
+    val identity: String,
+    val source: String,
+    val simMs: Long,
+    val tickSeq: Long,
+    val lastFate: IntentFate?,
+)

@@ -32,6 +32,9 @@ interface BotRunBackend {
 
     /** Ends the run. Backtest returns the result for the report writer; live null. */
     fun finish(): BacktestResult?
+
+    /** Runs until no position is open or [timeoutMs] passes. */
+    fun awaitFlat(timeoutMs: Long)
 }
 
 /** Backtest backend: a paced [ReplayEngine] advanced on demand. */
@@ -54,4 +57,9 @@ class ReplayBotRunBackend(
     override fun positions(): Map<String, com.qkt.positions.Position> = engine.openPositions()
 
     override fun finish(): BacktestResult = engine.snapshot()
+
+    override fun awaitFlat(timeoutMs: Long) {
+        // The close fires on the next replayed tick and fills on a later one; replay until both happened.
+        engine.advanceUntil { engine.openPositions().isEmpty() || engine.exhausted }
+    }
 }

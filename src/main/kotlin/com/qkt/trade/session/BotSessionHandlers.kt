@@ -109,13 +109,27 @@ internal class BotSessionHandlers(
             """"tp":${preview?.takeProfit?.toPlainString() ?: "null"},"sha256":"${submitted.sha256}"}"""
     }
 
-    fun finish(): String {
+    /**
+     * Ends the session. [flatten] first closes every identity's book through the engine. The reply lists
+     * the legs still open: a venue keeps the stops it holds, but an exit the engine holds (a trail, a timed
+     * exit, any gateway bracket) only runs again when a session resumes over the same state.
+     */
+    fun finish(flatten: Boolean = false): String {
         if (finished) return """{"ok":true,"finished":true}"""
+        if (flatten) session.flattenAll()
+        val open = session.legs()
         val result = session.finish()
         val reportDir = onFinish(result)
         finished = true
+        val note =
+            if (open.isEmpty()) {
+                "null"
+            } else {
+                "\"engine-held exits of these legs run again only when a session resumes over this state\""
+            }
         return """{"ok":true,"finished":true,"trades":${result?.trades?.size ?: "null"},""" +
-            """"reportDir":${reportDir?.let { "\"$it\"" } ?: "null"}}"""
+            """"reportDir":${reportDir?.let { "\"$it\"" } ?: "null"},""" +
+            """"openLegs":${open.joinToString(",", "[", "]") { legJson(it) }},"note":$note}"""
     }
 
     private fun preview(source: String) =
