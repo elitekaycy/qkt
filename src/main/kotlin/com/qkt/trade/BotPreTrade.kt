@@ -31,20 +31,20 @@ fun checkBotPreTrade(
         object : MarketPriceProvider {
             override fun lastPrice(symbol: String): BigDecimal = mid
         }
-    reject("max_order_qty", MaxOrderQty(maxOrderQty), request)
-    reject("price_collar_frac", PriceCollar(priceCollarFrac, prices), request)
+    reject("risk.max_order_qty", MaxOrderQty(maxOrderQty), request)
+    reject("risk.price_collar_pct", PriceCollar(priceCollarFrac, prices), request)
     val reference = explicitPrice(request) ?: if (request.side == Side.BUY) ctx.ask else ctx.bid
     val size = ctx.contractSize
     if (size == null) {
         require(maxOrderNotional >= PreTradeControls.DEFAULT_MAX_ORDER_NOTIONAL) {
-            "max_order_notional: notional cannot be checked: the venue reported no contract size for ${request.symbol}"
+            "risk.max_order_notional: notional cannot be checked: the venue reported no contract size for ${request.symbol}"
         }
         return
     }
     val notional = request.quantity.multiply(reference).multiply(size)
     require(notional <= maxOrderNotional) {
         val amount = "${notional.stripTrailingZeros().toPlainString()} ${ctx.quoteCurrency.orEmpty()}".trimEnd()
-        "max_order_notional: order notional $amount exceeds ${maxOrderNotional.toPlainString()}"
+        "risk.max_order_notional: order notional $amount exceeds ${maxOrderNotional.toPlainString()}"
     }
 }
 

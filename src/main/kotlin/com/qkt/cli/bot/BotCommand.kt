@@ -69,7 +69,7 @@ class BotCommand(
     private fun help(): Int {
         println(
             """
-            qkt bot — one-shot manual/AI trading against a configured MT5 broker
+            qkt bot — trade through qkt from an agent, a program or a shell (MT5 and gateway brokers)
 
             TRADE (all: --as <name> --json --dry-run --config <path>)
                 bot buy  <lots> BROKER:SYMBOL [--sl <spec>] [--tp <spec>]
@@ -77,7 +77,8 @@ class BotCommand(
                 bot sell ... (same shape)
                     entry: --limit <px> | --stop <px> | --stop-limit <trigger>:<limit>
                     tif:   --tif gtc|day|gtd [--expires <iso8601|epoch-ms>]
-                    exits: <spec> = 2610 | at:2610 | by:30 | pct:1.5 | rr:2 (tp only)
+                    exits: <spec> = 2610 | at:2610 | by:30 | pct:1.5 | rr:2 (tp only) | trail:4[@2] (sl, session)
+                    --exit-after 4h (session)
                 bot close  BROKER:SYMBOL [--ticket N] [--partial <lots>] [--all]
                 bot modify BROKER:SYMBOL --ticket N [--sl <px>] [--tp <px>]
                 bot cancel BROKER:SYMBOL --order N | --all
@@ -91,16 +92,16 @@ class BotCommand(
                 bot history   [--since <iso|Nd>] closed deals
                 bot eval "ema(21)" BROKER:SYMBOL --tf 1h [--count 500]
 
-            SESSION (stateful runs: risk from qkt.config.yaml, backtest reports)
-                bot session start --backtest --symbols BROKER:SYMBOL --tf 5m
-                    --from <date> --to <date> [--identities a,b] [--out runs/x]
-                bot session start --symbols BROKER:SYMBOL --tf 5m [--identities a,b]
-                    [--reconcile=ignore-mismatches]   live; leg state persists under --state-dir
-                bot session status | finish [--run <id>]
-                bot next BROKER:SYMBOL            pull next closed bar (advances sim clock)
-                buy/sell/quote/bars/positions/account route through a running session.
-
-            Engine-managed shapes (trailing, stack, latch) are rejected — deploy a .qkt.
+            SESSION (the engine: backtest over your data, or live as qkt deploy builds it)
+                bot session start --backtest --symbols A[,B] --tf 5m[,1h] --from <date> --to <date>
+                    [--identities a,b] [--run <id>] [--out runs/x]
+                bot session start --symbols A --tf 5m [--identities a,b] [--reconcile=ignore-mismatches]
+                bot session status | finish [--flatten] | replay <dir> [--out <dir>]
+                bot next SYMBOL [--tf 1h]      next closed bar + events since the last next
+                bot submit '<DSL action>' --symbol SYMBOL      any action on alias x
+                bot close SYMBOL | --all ; bot cancel SYMBOL | --all     through the engine
+                bot intents                    every intent's fate (filled, rejected + reason, ...)
+                verbs route to a running session (--run <id> or QKT_BOT_RUN); see docs/reference/bot-cli.md
             """.trimIndent(),
         )
         return ExitCodes.SUCCESS

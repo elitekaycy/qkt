@@ -58,20 +58,20 @@ class BotPreTradeTest {
     @Test
     fun `qty above max_order_qty is refused`() {
         assertThatThrownBy { check(market("2"), qty = "1") }
-            .hasMessageContaining("max_order_qty")
+            .hasMessageContaining("risk.max_order_qty")
     }
 
     @Test
     fun `notional above max_order_notional is refused`() {
         // 1 lot x 2650.5 x 100 = 265,050 > 250,000
         assertThatThrownBy { check(market("1")) }
-            .hasMessageContaining("max_order_notional")
+            .hasMessageContaining("risk.max_order_notional")
             .hasMessageContaining("265050")
     }
 
     @Test
     fun `limit outside the collar is refused`() {
-        assertThatThrownBy { check(limit("1800")) }.hasMessageContaining("price_collar_frac")
+        assertThatThrownBy { check(limit("1800")) }.hasMessageContaining("risk.price_collar_pct")
     }
 
     @Test
