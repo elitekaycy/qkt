@@ -11,6 +11,7 @@ import com.qkt.trade.BotIntent
 import com.qkt.trade.BotTif
 import com.qkt.trade.BotTrail
 import com.qkt.trade.ExitSpec
+import com.qkt.trade.checkBotPreTrade
 import com.qkt.trade.compileBotAction
 import com.qkt.trade.parseBotStrategy
 import com.qkt.trade.renderBotStrategy
@@ -67,6 +68,7 @@ class BotTradeCommand(
                 val ctx = opened.venue.facts(intent.qktSymbol).toQuoteContext(intent.qktSymbol, cfg.accountCurrency)
                 val order =
                     compileBotAction(action, ctx, id = botOrderId(asName, ts), timestamp = ts, strategyId = asName)
+                checkBotPreTrade(order, ctx, cfg.maxOrderQty, cfg.maxOrderNotional, cfg.priceCollarFrac)
                 BotTrail(StateDir.resolve(args.option("state-dir")).stateRoot, cfg.insights, clock).use { trail ->
                     trail.recordCommand(asName, action, args.tokens)
                     trail.recordSubmit(asName, order)
