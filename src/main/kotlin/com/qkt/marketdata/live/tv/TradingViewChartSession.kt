@@ -9,6 +9,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.random.Random
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -40,6 +41,11 @@ class TradingViewChartSession(
             object : TradingViewListener {
                 override fun onFrame(frame: TradingViewFrame) {
                     if (frame !is TradingViewFrame.Message) return
+                    sessionError(frame, sessionId)?.let { reason ->
+                        errorRef.set(IOException("TradingView refused $symbol@$resolution: $reason"))
+                        latch.countDown()
+                        return
+                    }
                     if (frame.method != "timescale_update") return
                     runCatching {
                         val update = frame.paramAsObject(1)
@@ -70,7 +76,7 @@ class TradingViewChartSession(
             if (!latch.await(timeoutMs, TimeUnit.MILLISECONDS)) {
                 throw IOException("TradingView chart_session timed out after ${timeoutMs}ms for $symbol@$resolution")
             }
-            errorRef.get()?.let { throw IOException("TradingView chart_session failed", it) }
+            errorRef.get()?.let { throw IOException("TradingView chart_session failed: ${it.message}", it) }
             return collected.get()
         } finally {
             runCatching {
@@ -135,6 +141,27 @@ class TradingViewChartSession(
         }
 
     companion object {
+        /** Error frames TradingView answers a chart session with instead of bars. */
+        private val SESSION_ERRORS = setOf("symbol_error", "series_error", "critical_error")
+
+        /**
+         * TradingView's reason when [frame] is an error for [sessionId] (an unknown symbol is a
+         * `symbol_error`, a series it cannot build a `series_error`) or a connection-wide
+         * `protocol_error`; null for any other frame.
+         */
+        internal fun sessionError(
+            frame: TradingViewFrame.Message,
+            sessionId: String,
+        ): String? {
+            val texts = frame.params.mapNotNull { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content }
+            return when {
+                frame.method == "protocol_error" -> "protocol_error ${texts.joinToString(" ")}".trim()
+                frame.method !in SESSION_ERRORS -> null
+                texts.firstOrNull() != sessionId -> null
+                else -> "${frame.method} ${texts.drop(1).lastOrNull().orEmpty()}".trim()
+            }
+        }
+
         private fun randomSessionId(): String {
             val chars = ('a'..'z') + ('0'..'9')
             return "cs_" + (1..8).map { chars.random(Random) }.joinToString("")

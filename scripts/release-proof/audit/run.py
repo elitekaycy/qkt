@@ -154,6 +154,7 @@ def main() -> int:
     failures += [f"relation {line}" for line in rel_fail]
 
     got = {name: {f: sha(out / name / f) for f in FINGERPRINTED} for name in S}
+    moved = 0
     expected_path = HERE / "expected.json"
     if a.update:
         expected_path.write_text(json.dumps(got, indent=1, sort_keys=True) + "\n")
@@ -162,12 +163,15 @@ def main() -> int:
         for name in S:
             changed = [f for f in FINGERPRINTED if got[name].get(f) != want.get(name, {}).get(f)]
             if changed:
+                moved += 1
                 failures.append(f"{name}: {', '.join(changed)} differ from expected.json")
 
     passed = sum(1 for line in rel_lines if line.startswith("PASS"))
-    print(f"audit: {len(S)} scenarios, bundle checks {checks_total - checks_bad}/{checks_total}, relations {passed} PASS / {len(rel_fail)} FAIL")
     for f in failures[:60]:
         print("  FAIL", f)
+    # Last, so the release proofs (which keep a proof's last line) report the counts, not one failure.
+    print(f"audit: {len(S)} scenarios, bundle checks {checks_total - checks_bad}/{checks_total}, relations {passed} PASS / "
+          f"{len(rel_fail)} FAIL, {moved} scenario(s) differ from expected.json")
     if a.report:
         Path(a.report).write_text(json.dumps({"scenarios": len(S), "checks": checks_total, "checksFailed": checks_bad, "relationsPassed": passed, "relationsFailed": len(rel_fail), "failures": failures}, indent=1) + "\n")
     return 1 if failures else 0

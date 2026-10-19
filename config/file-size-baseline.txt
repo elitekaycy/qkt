@@ -15,8 +15,8 @@
 658 src/test/kotlin/com/qkt/connector/mt5/marketdata/Mt5BarFetcherTest.kt
 631 src/main/kotlin/com/qkt/cli/DaemonCommand.kt
 630 src/main/kotlin/com/qkt/cli/BacktestContext.kt
-577 src/main/kotlin/com/qkt/broker/MT5BrokerSimulator.kt
 567 src/main/kotlin/com/qkt/cli/PreflightCommand.kt
+560 src/main/kotlin/com/qkt/broker/MT5BrokerSimulator.kt
 552 src/main/kotlin/com/qkt/execution/OrderRequestEvidence.kt
 532 src/test/kotlin/com/qkt/dsl/portfolio/fixture/PortfolioFixtureGenerator.kt
 519 src/test/kotlin/com/qkt/connector/mt5/MT5OrderTranslatorTest.kt
@@ -40,7 +40,7 @@
 306 src/main/kotlin/com/qkt/connector/mt5/MT5WireTypes.kt
 298 src/main/kotlin/com/qkt/broker/CompositeBroker.kt
 295 src/test/kotlin/com/qkt/dsl/compile/SizingCompilerTest.kt
-288 src/main/kotlin/com/qkt/cli/RunCommand.kt
+287 src/main/kotlin/com/qkt/cli/RunCommand.kt
 282 src/main/kotlin/com/qkt/trade/session/BotSessionServer.kt
 277 src/test/kotlin/com/qkt/connector/mt5/marketdata/Mt5TickRangePollingTest.kt
 275 src/test/kotlin/com/qkt/dsl/compile/GeneratedDslStructureParityTest.kt

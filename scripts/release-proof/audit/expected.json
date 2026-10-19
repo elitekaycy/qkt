@@ -1,303 +1,303 @@
 {
  "a01_raw_paper": {
-  "equity_daily.csv": "e44df2e43e38217be6faaa61c068c903c1424a8eec0a19a5d258c542334c1a11",
-  "equity_global.csv": "d6924619b2b446d75ff1a1fa17dafa0a39e52b9e8aa9af655aeb8a0be6f8c723",
-  "monthly_returns.csv": "d72198e3643d8451e13fd0fe1c9accbffde0f2b27d0dfdfd833d6c928a542aca",
-  "orders.jsonl": "9ad33571f9a24fdc3cbc58b4b7db7c1c5cd71eaa8878f49a0ffa3e9545c5f412",
-  "pnl_components.csv": "6ef1e0f9ea704f41c71c8507cfbf6aa92f1f5551c9c1ae0306833a7cc62cc6f5",
+  "equity_daily.csv": "7f8d791f75d69e3400fcd9ac0a8d2a35daaa10b1069f321734dd535daa66f668",
+  "equity_global.csv": "ab5d3ced58606882a27695f651bcc2bee054a56899aef49a751a600ac5520daa",
+  "monthly_returns.csv": "740002a2bd80461ee3d03e50dbb1c4e0781ae8c63beefb26bf5bebfea7dd0936",
+  "orders.jsonl": "4b71fc40fc02983c3a214a462ddb266829267dbd61427a63f1b91a93ea754a61",
+  "pnl_components.csv": "ed80a045f88070a2b12bd598c1039fd45f4c5ed67aa12733274e4f237b7589e7",
   "rejections.csv": "c2af13ab23a385ce234286ab2ca09e7eb85ad078edd508f31862c28734f86fba",
-  "trades.csv": "bc711406433b17322c285dd6cf9da1f411fedc0bec411bfd6a9ad7f36a502b15"
+  "trades.csv": "aaf34af6618711ce84cdcc9eb78c595be837057bf709f837226e6d81f4f08af0"
  },
  "a02_raw_paper_rerun": {
-  "equity_daily.csv": "e44df2e43e38217be6faaa61c068c903c1424a8eec0a19a5d258c542334c1a11",
-  "equity_global.csv": "d6924619b2b446d75ff1a1fa17dafa0a39e52b9e8aa9af655aeb8a0be6f8c723",
-  "monthly_returns.csv": "d72198e3643d8451e13fd0fe1c9accbffde0f2b27d0dfdfd833d6c928a542aca",
-  "orders.jsonl": "9ad33571f9a24fdc3cbc58b4b7db7c1c5cd71eaa8878f49a0ffa3e9545c5f412",
-  "pnl_components.csv": "6ef1e0f9ea704f41c71c8507cfbf6aa92f1f5551c9c1ae0306833a7cc62cc6f5",
+  "equity_daily.csv": "7f8d791f75d69e3400fcd9ac0a8d2a35daaa10b1069f321734dd535daa66f668",
+  "equity_global.csv": "ab5d3ced58606882a27695f651bcc2bee054a56899aef49a751a600ac5520daa",
+  "monthly_returns.csv": "740002a2bd80461ee3d03e50dbb1c4e0781ae8c63beefb26bf5bebfea7dd0936",
+  "orders.jsonl": "4b71fc40fc02983c3a214a462ddb266829267dbd61427a63f1b91a93ea754a61",
+  "pnl_components.csv": "ed80a045f88070a2b12bd598c1039fd45f4c5ed67aa12733274e4f237b7589e7",
   "rejections.csv": "c2af13ab23a385ce234286ab2ca09e7eb85ad078edd508f31862c28734f86fba",
-  "trades.csv": "bc711406433b17322c285dd6cf9da1f411fedc0bec411bfd6a9ad7f36a502b15"
+  "trades.csv": "aaf34af6618711ce84cdcc9eb78c595be837057bf709f837226e6d81f4f08af0"
  },
  "a03_mt5sim": {
-  "equity_daily.csv": "ec5946b5a3d0fd9f96ef462ff1ab0e567cff1f86dd74bc36b947e96addf0804f",
-  "equity_global.csv": "b266189f682533de2f347307feec437021c4a13e2b6ccb9c019ebd246ea51c3d",
-  "monthly_returns.csv": "c9dad5fd4f45d9a668ea2cd6b36fa6a7e837ad4e15ff4d03ee5dc20668189348",
-  "orders.jsonl": "98b95c4d51bc73ef3aaf9187364cea0bc777aabeec55434413f358d8e405aa32",
-  "pnl_components.csv": "a316666feb4d61886a848dda3bf2c48bb20206c30213e0167c227e8d521cb66a",
+  "equity_daily.csv": "a60db15c8725e2e71711cb401058db5556a99e0b7770b9bf57a7f779b44a8fde",
+  "equity_global.csv": "73c2f5cbc382c2d2848c7ae875b0c3eebfac14704c0657c1c9d82cd5a47c6eb0",
+  "monthly_returns.csv": "756a2c72b99ffea06fd9f8606aedaea9bfec14b27e7d44622f3b9b53b7d2f071",
+  "orders.jsonl": "1c8d21f225e582f3c3285e040b95db6954e98263d6a6b4ef5703a0b80dbda178",
+  "pnl_components.csv": "dad2d9da8f993ad8f97a6eaf543fefb889e2892f0688613ef4863e347a1ba9e7",
   "rejections.csv": "c2af13ab23a385ce234286ab2ca09e7eb85ad078edd508f31862c28734f86fba",
-  "trades.csv": "fc8aef9b403b101c07669262716666bb9657a9c1a694dd013ae8f158d48babcc"
+  "trades.csv": "d791969e916aaab1ea540cf23aefe8aabdc08b0a1d8406c1a2b15c1a79a3fb9b"
  },
  "a04_mt5sim_rerun": {
-  "equity_daily.csv": "ec5946b5a3d0fd9f96ef462ff1ab0e567cff1f86dd74bc36b947e96addf0804f",
-  "equity_global.csv": "b266189f682533de2f347307feec437021c4a13e2b6ccb9c019ebd246ea51c3d",
-  "monthly_returns.csv": "c9dad5fd4f45d9a668ea2cd6b36fa6a7e837ad4e15ff4d03ee5dc20668189348",
-  "orders.jsonl": "98b95c4d51bc73ef3aaf9187364cea0bc777aabeec55434413f358d8e405aa32",
-  "pnl_components.csv": "a316666feb4d61886a848dda3bf2c48bb20206c30213e0167c227e8d521cb66a",
+  "equity_daily.csv": "a60db15c8725e2e71711cb401058db5556a99e0b7770b9bf57a7f779b44a8fde",
+  "equity_global.csv": "73c2f5cbc382c2d2848c7ae875b0c3eebfac14704c0657c1c9d82cd5a47c6eb0",
+  "monthly_returns.csv": "756a2c72b99ffea06fd9f8606aedaea9bfec14b27e7d44622f3b9b53b7d2f071",
+  "orders.jsonl": "1c8d21f225e582f3c3285e040b95db6954e98263d6a6b4ef5703a0b80dbda178",
+  "pnl_components.csv": "dad2d9da8f993ad8f97a6eaf543fefb889e2892f0688613ef4863e347a1ba9e7",
   "rejections.csv": "c2af13ab23a385ce234286ab2ca09e7eb85ad078edd508f31862c28734f86fba",
-  "trades.csv": "fc8aef9b403b101c07669262716666bb9657a9c1a694dd013ae8f158d48babcc"
+  "trades.csv": "d791969e916aaab1ea540cf23aefe8aabdc08b0a1d8406c1a2b15c1a79a3fb9b"
  },
  "a05_exec_mt5basic": {
-  "equity_daily.csv": "ec5946b5a3d0fd9f96ef462ff1ab0e567cff1f86dd74bc36b947e96addf0804f",
-  "equity_global.csv": "b266189f682533de2f347307feec437021c4a13e2b6ccb9c019ebd246ea51c3d",
-  "monthly_returns.csv": "c9dad5fd4f45d9a668ea2cd6b36fa6a7e837ad4e15ff4d03ee5dc20668189348",
-  "orders.jsonl": "98b95c4d51bc73ef3aaf9187364cea0bc777aabeec55434413f358d8e405aa32",
-  "pnl_components.csv": "a316666feb4d61886a848dda3bf2c48bb20206c30213e0167c227e8d521cb66a",
+  "equity_daily.csv": "a60db15c8725e2e71711cb401058db5556a99e0b7770b9bf57a7f779b44a8fde",
+  "equity_global.csv": "73c2f5cbc382c2d2848c7ae875b0c3eebfac14704c0657c1c9d82cd5a47c6eb0",
+  "monthly_returns.csv": "756a2c72b99ffea06fd9f8606aedaea9bfec14b27e7d44622f3b9b53b7d2f071",
+  "orders.jsonl": "1c8d21f225e582f3c3285e040b95db6954e98263d6a6b4ef5703a0b80dbda178",
+  "pnl_components.csv": "dad2d9da8f993ad8f97a6eaf543fefb889e2892f0688613ef4863e347a1ba9e7",
   "rejections.csv": "c2af13ab23a385ce234286ab2ca09e7eb85ad078edd508f31862c28734f86fba",
-  "trades.csv": "fc8aef9b403b101c07669262716666bb9657a9c1a694dd013ae8f158d48babcc"
+  "trades.csv": "d791969e916aaab1ea540cf23aefe8aabdc08b0a1d8406c1a2b15c1a79a3fb9b"
  },
  "a06_exec_mt5realistic": {
-  "equity_daily.csv": "74a485bc00338c692f3f478854b25761580d337179e8f6be9fe33119b6c5e263",
-  "equity_global.csv": "b79f2e6e092fff5cbcb59d311c9cd701b5d224ed42612aa4f684e932cd6aa4fb",
-  "monthly_returns.csv": "4491a790ada640b417a35585675dd52cbc0b72dcd40dce1ae78e9b6a5e3f355c",
-  "orders.jsonl": "daff138f1f93d2319777b065c53424cdf947eebd76e388f89afec713e504b0e4",
-  "pnl_components.csv": "ece8ea1aa6be4ff4ec6eb379590121a7b9801126bee02a88bcdb668bd1b06644",
+  "equity_daily.csv": "60869eb2bf07cc7b0ce54a74644c233b3d9e72634717720304df990f53357de6",
+  "equity_global.csv": "0a4f2fc7e4f104fad39542d5c18d3df19886b88c5a6b7070316198bebc18e674",
+  "monthly_returns.csv": "8df93dd310f1afa892144d1abf0c71fccab4d70bfcec57a5e1c382a6de78cdce",
+  "orders.jsonl": "c4d056d7d166cb69693d1dff80e6adb02b548c3df87b584d1a550f30b9204b17",
+  "pnl_components.csv": "3418915811ec9f8a52db8ff3df8e96549058c234152cc083f63c47bd7102a148",
   "rejections.csv": "c2af13ab23a385ce234286ab2ca09e7eb85ad078edd508f31862c28734f86fba",
-  "trades.csv": "0f48356bcb8e4008b71a0304ed878ad57991714b2df84a24c05867a5ef59d989"
+  "trades.csv": "d634e2fcbb707283145b67d51755bc71166b00b3db08e3dd14d4bcafc3aa87e9"
  },
  "a07_chaos": {
-  "equity_daily.csv": "53c62ece166f131392abf7a0348075a375482f7fcd2196d50295d0c173a5d42d",
-  "equity_global.csv": "159391d647f00c8ac97b736e47f984035793a6bbdbf69fe874bf90409ebd69c0",
-  "monthly_returns.csv": "ea1b8aa03e4c91c1d3744ba351305baf67263b7876f30f0e17d0e204c05e2e56",
-  "orders.jsonl": "8d65c96e47d8863d1050b4f20683427b533e4c2830f7346d5c6bd59f3379b4ea",
-  "pnl_components.csv": "2cf8b5dbbee3447b3ed0537419c0af3c69f2cda5eb6d19a0b74b0b13a49a79f3",
+  "equity_daily.csv": "f647d6f8d61335ddf906754213d9a607c8c718164edee103b102b84d5e44f42e",
+  "equity_global.csv": "34548be7f865818d1ca077c02996643abb19f273ee68b10205c7e7b833e4c6ff",
+  "monthly_returns.csv": "f5355abe2f1547d9af3dac1f8ba3e9bfecc0c6f3d80762f3556c028458700250",
+  "orders.jsonl": "28f48a1255c271008280332b580f6075c23794c694c3ad11b754e71e4e973aa0",
+  "pnl_components.csv": "edbdc3463ee12662ed7c3d578a857f4bcc83dfbddaa9338cf901082e817df05d",
   "rejections.csv": "776fc9c50e50653daaf354867015c686100ae4de8d687ce128a6bb60cf28c7ba",
-  "trades.csv": "e96fa68b22628b585f5e1703338fb8e8c589930724d54ea9c44dcdd6dd288154"
+  "trades.csv": "92784e15de69058dc4b1881f42af49379bd828356fb4f3dd0bc866b643cc0126"
  },
  "a08_chaos_rerun": {
-  "equity_daily.csv": "53c62ece166f131392abf7a0348075a375482f7fcd2196d50295d0c173a5d42d",
-  "equity_global.csv": "159391d647f00c8ac97b736e47f984035793a6bbdbf69fe874bf90409ebd69c0",
-  "monthly_returns.csv": "ea1b8aa03e4c91c1d3744ba351305baf67263b7876f30f0e17d0e204c05e2e56",
-  "orders.jsonl": "8d65c96e47d8863d1050b4f20683427b533e4c2830f7346d5c6bd59f3379b4ea",
-  "pnl_components.csv": "2cf8b5dbbee3447b3ed0537419c0af3c69f2cda5eb6d19a0b74b0b13a49a79f3",
+  "equity_daily.csv": "f647d6f8d61335ddf906754213d9a607c8c718164edee103b102b84d5e44f42e",
+  "equity_global.csv": "34548be7f865818d1ca077c02996643abb19f273ee68b10205c7e7b833e4c6ff",
+  "monthly_returns.csv": "f5355abe2f1547d9af3dac1f8ba3e9bfecc0c6f3d80762f3556c028458700250",
+  "orders.jsonl": "28f48a1255c271008280332b580f6075c23794c694c3ad11b754e71e4e973aa0",
+  "pnl_components.csv": "edbdc3463ee12662ed7c3d578a857f4bcc83dfbddaa9338cf901082e817df05d",
   "rejections.csv": "776fc9c50e50653daaf354867015c686100ae4de8d687ce128a6bb60cf28c7ba",
-  "trades.csv": "e96fa68b22628b585f5e1703338fb8e8c589930724d54ea9c44dcdd6dd288154"
+  "trades.csv": "92784e15de69058dc4b1881f42af49379bd828356fb4f3dd0bc866b643cc0126"
  },
  "a09_slip_zero": {
-  "equity_daily.csv": "ec5946b5a3d0fd9f96ef462ff1ab0e567cff1f86dd74bc36b947e96addf0804f",
-  "equity_global.csv": "b266189f682533de2f347307feec437021c4a13e2b6ccb9c019ebd246ea51c3d",
-  "monthly_returns.csv": "c9dad5fd4f45d9a668ea2cd6b36fa6a7e837ad4e15ff4d03ee5dc20668189348",
-  "orders.jsonl": "98b95c4d51bc73ef3aaf9187364cea0bc777aabeec55434413f358d8e405aa32",
-  "pnl_components.csv": "a316666feb4d61886a848dda3bf2c48bb20206c30213e0167c227e8d521cb66a",
+  "equity_daily.csv": "a60db15c8725e2e71711cb401058db5556a99e0b7770b9bf57a7f779b44a8fde",
+  "equity_global.csv": "73c2f5cbc382c2d2848c7ae875b0c3eebfac14704c0657c1c9d82cd5a47c6eb0",
+  "monthly_returns.csv": "756a2c72b99ffea06fd9f8606aedaea9bfec14b27e7d44622f3b9b53b7d2f071",
+  "orders.jsonl": "1c8d21f225e582f3c3285e040b95db6954e98263d6a6b4ef5703a0b80dbda178",
+  "pnl_components.csv": "dad2d9da8f993ad8f97a6eaf543fefb889e2892f0688613ef4863e347a1ba9e7",
   "rejections.csv": "c2af13ab23a385ce234286ab2ca09e7eb85ad078edd508f31862c28734f86fba",
-  "trades.csv": "fc8aef9b403b101c07669262716666bb9657a9c1a694dd013ae8f158d48babcc"
+  "trades.csv": "d791969e916aaab1ea540cf23aefe8aabdc08b0a1d8406c1a2b15c1a79a3fb9b"
  },
  "a10_slip_fixed30": {
-  "equity_daily.csv": "3673c71b44bc1d248db8618209cb886e8c29737be853ee756caeb5f924373ce9",
-  "equity_global.csv": "f69ae9fb2808c8231bd6eefa36f635f865bc334503531a4b3649f8046b0633d7",
-  "monthly_returns.csv": "75b6f428799c30962383e6d63f9d87e1dfbf85c2192de08e492a918815e6ab1c",
-  "orders.jsonl": "0e7ac0d35c24685be7653bb554f00297bba879ea5fc0f876bdbf24b0864b4df0",
-  "pnl_components.csv": "2678d823e953967f88dd392547819839a281a1bc8242b80253d882dde533cbaa",
+  "equity_daily.csv": "970370164d2d8870ea6bcec15de8dae2e1dda82f4d49230701c2bdb376836c1d",
+  "equity_global.csv": "c77583580484f60800e3bda76665e034efe6bb70ee6cce018fec59bee43d2c9c",
+  "monthly_returns.csv": "58b600982b9f096b4e53e4b7902db12c398f7bd4e6ee0f88c3a902382c84d018",
+  "orders.jsonl": "a7851c5b4f0056ff7a98681d549dc52fd7253c240da3f93ee2417defadd84007",
+  "pnl_components.csv": "120b20f904f7dadde5877b68f8b6de40899a684eb573fe11c3af3663782e8622",
   "rejections.csv": "c2af13ab23a385ce234286ab2ca09e7eb85ad078edd508f31862c28734f86fba",
-  "trades.csv": "077e477d612f004d4d11deb5791c041313665eef54585c49817e690c9580b8b4"
+  "trades.csv": "a176f85b2c028d43581368c9cac714cbb7ebcc23ef438d98ae4f85f0317d40fc"
  },
  "a11_slip_uniform30_seed7": {
-  "equity_daily.csv": "8aabe80a16e8be5fc3a7cbabc2fbb989c69930eb48f144d23a67e8d302b5c38d",
-  "equity_global.csv": "3a8296de829f76e21b4440bbdb8644124cb148430dc6052ba5523fcaa77527f6",
-  "monthly_returns.csv": "c80bf1a1c6bdcb5fb26a6b80597784c99193dad75a381b050e72b89870352e11",
-  "orders.jsonl": "3a8b0dec11773fc1bf79e18a7297fe0348121ee145a3d87085d2d89dae324fda",
-  "pnl_components.csv": "c9a91e0016c524f8c6d5dbd8efc00e1833cfbf64f2d8931815b75bb8a34b91a8",
+  "equity_daily.csv": "c07007be069282cade57f83cb1cf919df2bac3b08dfdeea1f774f75da5bf0352",
+  "equity_global.csv": "444b9f31d6c9716a03e1c5590cfef54e280ad859a1fdc288861e23734ce25a2c",
+  "monthly_returns.csv": "f304b8466bf0ccadf305bf2a0bc8bbeaac6c7701f884943a0d89f1bb8e7c04da",
+  "orders.jsonl": "e9450ccf2cdbcc8603d0b805bd4a64c86d3fb5133771d6e97ba5417f2a80cd29",
+  "pnl_components.csv": "62bd0a9caf18130e8a65d04f4109049358d1854da255bc946fc2f8b6fbbc3fc5",
   "rejections.csv": "c2af13ab23a385ce234286ab2ca09e7eb85ad078edd508f31862c28734f86fba",
-  "trades.csv": "37ca4e138a767671e9ab19f1d93eda8b71e33891a144d585a6997990a73b5fed"
+  "trades.csv": "d73a62ab18dbb27649e85e4d60fa975fad476568c8d7e33a795ad9786f1de4b3"
  },
  "a12_slip_uniform30_seed7_rerun": {
-  "equity_daily.csv": "8aabe80a16e8be5fc3a7cbabc2fbb989c69930eb48f144d23a67e8d302b5c38d",
-  "equity_global.csv": "3a8296de829f76e21b4440bbdb8644124cb148430dc6052ba5523fcaa77527f6",
-  "monthly_returns.csv": "c80bf1a1c6bdcb5fb26a6b80597784c99193dad75a381b050e72b89870352e11",
-  "orders.jsonl": "3a8b0dec11773fc1bf79e18a7297fe0348121ee145a3d87085d2d89dae324fda",
-  "pnl_components.csv": "c9a91e0016c524f8c6d5dbd8efc00e1833cfbf64f2d8931815b75bb8a34b91a8",
+  "equity_daily.csv": "c07007be069282cade57f83cb1cf919df2bac3b08dfdeea1f774f75da5bf0352",
+  "equity_global.csv": "444b9f31d6c9716a03e1c5590cfef54e280ad859a1fdc288861e23734ce25a2c",
+  "monthly_returns.csv": "f304b8466bf0ccadf305bf2a0bc8bbeaac6c7701f884943a0d89f1bb8e7c04da",
+  "orders.jsonl": "e9450ccf2cdbcc8603d0b805bd4a64c86d3fb5133771d6e97ba5417f2a80cd29",
+  "pnl_components.csv": "62bd0a9caf18130e8a65d04f4109049358d1854da255bc946fc2f8b6fbbc3fc5",
   "rejections.csv": "c2af13ab23a385ce234286ab2ca09e7eb85ad078edd508f31862c28734f86fba",
-  "trades.csv": "37ca4e138a767671e9ab19f1d93eda8b71e33891a144d585a6997990a73b5fed"
+  "trades.csv": "d73a62ab18dbb27649e85e4d60fa975fad476568c8d7e33a795ad9786f1de4b3"
  },
  "a13_slip_uniform30_seed8": {
-  "equity_daily.csv": "5ac98fb9743abff2a88f48f923b74a0c5f3edfd01d180619668e51ca697b99b7",
-  "equity_global.csv": "bb88c0df77a2dd337fb60a28afe9e763c0bfdfb43a14e7f094cd3b0aafc6d37d",
-  "monthly_returns.csv": "f05806b74b7367ec3d9b9fb06a426a1f30b9110b97998d5bed190b49407cc3e8",
-  "orders.jsonl": "9ebe0f3ed4ff8a5571ab609ad98027c87c80a40fbeba2561d0fbfb868262a7c7",
-  "pnl_components.csv": "249b449483a1502232580401110eec6af0e16307ba8fc8c6efcdbd9016b2b38e",
+  "equity_daily.csv": "86a0e6af7b51633e31417c45c3143247d4e578d867df06bc997e86e15e0293b2",
+  "equity_global.csv": "de254cd4b19ab64fa3c40efb413f11d4f62b08a1b6957623fc0565bebca90e05",
+  "monthly_returns.csv": "44daa89114faf6769fc560654001dcedfe23caf94e70c86d324dd80a84f7401f",
+  "orders.jsonl": "05f21d88b78c22d0070ae7816e6b045cadd3baa8d2fadd0a5c86842c4e3c8edf",
+  "pnl_components.csv": "6cba1f90af6dde7408c2e6e38171e36af3ccc469e957051596c0257b99b1f1e5",
   "rejections.csv": "c2af13ab23a385ce234286ab2ca09e7eb85ad078edd508f31862c28734f86fba",
-  "trades.csv": "74bcd664cc75e74ebed4c13b9fac06ff17330d3934f710b14329927b97fa58c4"
+  "trades.csv": "09af2dacf2369b7e012a6ef3f9049c8c1633106f94af8cbbd3d54e5cf0cdce17"
  },
  "a14_latency_1s": {
-  "equity_daily.csv": "3c02d2519a9b2c5dc62b432af1ea08b31cc82271eb3022c3583238465ebb7f01",
-  "equity_global.csv": "0636b138968d9b653647f31f5f1e02c0aa2c74e00d3aa5e8d2687cbf34a29c92",
-  "monthly_returns.csv": "f2a74dc8222390f007555b400c417d63d545046b1b3aea337bc07bb649b92bc2",
-  "orders.jsonl": "91713d81d7db91ffaa1e805d5c16dc3b51f97192e00a5e04344ef891655e4f8f",
-  "pnl_components.csv": "89ca58b9347c1dbc9465a2e7812c1eeb42a4faff629f07cfbf5c916883dfc2aa",
+  "equity_daily.csv": "1f74fbbc25f988993b2921b96e46ae62ac4740b2d32f76d00384cfcde858b5e2",
+  "equity_global.csv": "abda4e2e2661cedaa58e8476c328aea2e8974b3fcfb609f4b4c30d240abb6982",
+  "monthly_returns.csv": "441c97c48e0e1b5d7f547332bfc90bd3a69bf9af3e05e9c5583271f44b5bf309",
+  "orders.jsonl": "ea493312938d966c7145a383026e6ca78df1832e6051e823128b915de0efafa8",
+  "pnl_components.csv": "da9e8f7e2e43be73892919820fa737f2c8cc0e3d47e1819f2c65d415470d221a",
   "rejections.csv": "c2af13ab23a385ce234286ab2ca09e7eb85ad078edd508f31862c28734f86fba",
-  "trades.csv": "92be4cd8b88fcfa00361c4860131a1a526f095efce5a8bef8abe128e13423353"
+  "trades.csv": "c4306937d923773e9c0f3ee23dd3333bcef194b8642ddcbd5954da97775e910d"
  },
  "b01_commission7": {
-  "equity_daily.csv": "e675cf5650fac286881e63acf7f990f5ccda4f015e84535dec309a3660067e48",
-  "equity_global.csv": "83fec2f03f376725fcb10d45064ac187aed1efe171d3dc72446cd4bb6306630c",
-  "monthly_returns.csv": "32d3478a72b3fccdc67a5f16d384b389b21a9766fc9b5dcd6a27f07ae8442b46",
-  "orders.jsonl": "696441af37d0c3b50203090d0878df07db73dbe487b5a5aa0521b252d020791a",
-  "pnl_components.csv": "5fcdec6906367fe2440d360fc4264186a40179595b77448bb89cee7a0aa46983",
+  "equity_daily.csv": "3367d910bd329e45a9d8f0a17ef616a41a1e6681523f088e54c9c7e5228b1890",
+  "equity_global.csv": "60df7fda0deabb78f2aa2166e5899e1b1fe06a3d210243fb697b5f85be53b26c",
+  "monthly_returns.csv": "73cf2616c713316ad4739a9c1de89ed31286a73c2754b59ba6d370e192b87f39",
+  "orders.jsonl": "2f7315e2391d14b53c8a80467bc9fd1e90a0b041a17554b4b2b19fa04e2751f8",
+  "pnl_components.csv": "1be1d63ccf78a5069ecd244ff2c9f42c898124aa08367de950a003b51c414c41",
   "rejections.csv": "c2af13ab23a385ce234286ab2ca09e7eb85ad078edd508f31862c28734f86fba",
-  "trades.csv": "113be18533d86e3d44ab5aac4ffe70ae57215f6a1c64011619aecc4e12567998"
+  "trades.csv": "f5d9418d66a8437fde9db9663d6ad169aefe11138c079834d93f07f45f83b03b"
  },
  "b02_swap": {
-  "equity_daily.csv": "c87e06ec042bbdd497033200b2fab2ae9cd562476a55453a0fa28aaebab1145b",
-  "equity_global.csv": "f607b48ea438bd50ef468881607719761e7c44fead5accabf44073c881600739",
-  "monthly_returns.csv": "8f2e099ac58b6fd99903a291535e584ebbe4d005d73a2ca59a9636271f2d040c",
-  "orders.jsonl": "12791ef8320577c5809a14cf4ea0e8b1ea7cec035edfedcdc99a605dfde7e3c9",
-  "pnl_components.csv": "cd90f0de8843cc150df0b88abf3c1c92d2a1f8a076a7dcc94c87bd045e4e4477",
+  "equity_daily.csv": "b97f8af412ea8039a3966b55fba7055496c96e2b199b856f1e64aa5e477d0328",
+  "equity_global.csv": "0b60cafa757a489f741d3c564fca61cc160d267ae52759cecb81d926f68358a2",
+  "monthly_returns.csv": "5a3fbc10662957e3aeb88c1dfb77e588ea380ea630d782d1e808c2a1021341f2",
+  "orders.jsonl": "919a36bbbbb2ce5d7d55d05b7d911b9c9966e7f58da5fadffbc6c720ce0b891c",
+  "pnl_components.csv": "c8d3d368b347e9e9ddb6665974608bed8f14e04ba3d6145e2cbc88af3654c804",
   "rejections.csv": "c2af13ab23a385ce234286ab2ca09e7eb85ad078edd508f31862c28734f86fba",
-  "trades.csv": "bc711406433b17322c285dd6cf9da1f411fedc0bec411bfd6a9ad7f36a502b15"
+  "trades.csv": "aaf34af6618711ce84cdcc9eb78c595be837057bf709f837226e6d81f4f08af0"
  },
  "c01_default_risk_no_config": {
-  "equity_daily.csv": "e44df2e43e38217be6faaa61c068c903c1424a8eec0a19a5d258c542334c1a11",
-  "equity_global.csv": "d6924619b2b446d75ff1a1fa17dafa0a39e52b9e8aa9af655aeb8a0be6f8c723",
-  "monthly_returns.csv": "d72198e3643d8451e13fd0fe1c9accbffde0f2b27d0dfdfd833d6c928a542aca",
-  "orders.jsonl": "9ad33571f9a24fdc3cbc58b4b7db7c1c5cd71eaa8878f49a0ffa3e9545c5f412",
-  "pnl_components.csv": "6ef1e0f9ea704f41c71c8507cfbf6aa92f1f5551c9c1ae0306833a7cc62cc6f5",
+  "equity_daily.csv": "7f8d791f75d69e3400fcd9ac0a8d2a35daaa10b1069f321734dd535daa66f668",
+  "equity_global.csv": "ab5d3ced58606882a27695f651bcc2bee054a56899aef49a751a600ac5520daa",
+  "monthly_returns.csv": "740002a2bd80461ee3d03e50dbb1c4e0781ae8c63beefb26bf5bebfea7dd0936",
+  "orders.jsonl": "4b71fc40fc02983c3a214a462ddb266829267dbd61427a63f1b91a93ea754a61",
+  "pnl_components.csv": "ed80a045f88070a2b12bd598c1039fd45f4c5ed67aa12733274e4f237b7589e7",
   "rejections.csv": "c2af13ab23a385ce234286ab2ca09e7eb85ad078edd508f31862c28734f86fba",
-  "trades.csv": "bc711406433b17322c285dd6cf9da1f411fedc0bec411bfd6a9ad7f36a502b15"
+  "trades.csv": "aaf34af6618711ce84cdcc9eb78c595be837057bf709f837226e6d81f4f08af0"
  },
  "c02_nohalt_explicit": {
-  "equity_daily.csv": "e44df2e43e38217be6faaa61c068c903c1424a8eec0a19a5d258c542334c1a11",
-  "equity_global.csv": "d6924619b2b446d75ff1a1fa17dafa0a39e52b9e8aa9af655aeb8a0be6f8c723",
-  "monthly_returns.csv": "d72198e3643d8451e13fd0fe1c9accbffde0f2b27d0dfdfd833d6c928a542aca",
-  "orders.jsonl": "9ad33571f9a24fdc3cbc58b4b7db7c1c5cd71eaa8878f49a0ffa3e9545c5f412",
-  "pnl_components.csv": "6ef1e0f9ea704f41c71c8507cfbf6aa92f1f5551c9c1ae0306833a7cc62cc6f5",
+  "equity_daily.csv": "7f8d791f75d69e3400fcd9ac0a8d2a35daaa10b1069f321734dd535daa66f668",
+  "equity_global.csv": "ab5d3ced58606882a27695f651bcc2bee054a56899aef49a751a600ac5520daa",
+  "monthly_returns.csv": "740002a2bd80461ee3d03e50dbb1c4e0781ae8c63beefb26bf5bebfea7dd0936",
+  "orders.jsonl": "4b71fc40fc02983c3a214a462ddb266829267dbd61427a63f1b91a93ea754a61",
+  "pnl_components.csv": "ed80a045f88070a2b12bd598c1039fd45f4c5ed67aa12733274e4f237b7589e7",
   "rejections.csv": "c2af13ab23a385ce234286ab2ca09e7eb85ad078edd508f31862c28734f86fba",
-  "trades.csv": "bc711406433b17322c285dd6cf9da1f411fedc0bec411bfd6a9ad7f36a502b15"
+  "trades.csv": "aaf34af6618711ce84cdcc9eb78c595be837057bf709f837226e6d81f4f08af0"
  },
  "c03_dailyloss60": {
-  "equity_daily.csv": "42c28135666a42f7c48036b0d9812498f75bc82fac5986d4bc7212916a804b22",
+  "equity_daily.csv": "374531c956a9d87306ef0323700b6555d31186e65a513cb7b21e8058cf8188af",
   "equity_global.csv": "06e8bd51067bc2d9402d947f61469d1ba4a27742ea66cb61114ca5e3082b2bd4",
   "monthly_returns.csv": "67e0e70380d424db225bf6315213d7de672ed8a5f40bdf93260d7cfe988625ff",
   "orders.jsonl": "48326d65cb61bad5dccb027a8ce33f3f8f9506c3c140761f71c088649a1ff13b",
   "pnl_components.csv": "cc2a3568a77d46347eb4ee66caf139059602bad3d6342f3b0b65d2ca304d689e",
   "rejections.csv": "d602d3f4c941341e99dc66669059d0e0575687a7ac936debfc7dd65c6744d084",
-  "trades.csv": "dbcdb7c4101b54f5c2c72f463957d83a21252f55bf1b7dc9aeecd4c0d4ba4445"
+  "trades.csv": "d5be0642c8c2f89c103625a3cd1c514c18a3c5b4b59fb6a863f22d52cf8d2323"
  },
  "c04_dd_static_05": {
-  "equity_daily.csv": "2eba8d534e6970437c336081bef4f56ac8aa46deab5b43c4c4ae03d9157b5986",
+  "equity_daily.csv": "e582e777de83648c2bbba7c876e6a6cb58113cac7b889b118856e10ecfccebf0",
   "equity_global.csv": "f859eaf6c1247af35a12383541193e1d916c2edbdbad47648dd80c81c517e286",
   "monthly_returns.csv": "6f4f5034efcd721c6ada3c3e5c202342d0e28575cc5388b77570bdf9fe6cd3d5",
   "orders.jsonl": "a5a793954593132935f85225c1b182172dbd3fc5d6937915ab7f988e6e21db89",
   "pnl_components.csv": "b8a179caa11fa274ea2d760773ad92929f1334d3f4fd2acae0292a48ee595310",
   "rejections.csv": "c33c8ade919cfca12464ec20d449062b17b7c34bdb28f65cdd89b968896d5557",
-  "trades.csv": "233bfea71c68751ea9967cb6a5e9a0aa6f7d27154ee6afb40d54f5f27bf5a231"
+  "trades.csv": "27f10f0b212c0c691bf8671c69ff9d5eddca649817ebea678b27ce981f00549c"
  },
  "c05_dd_trailing_10": {
-  "equity_daily.csv": "2eba8d534e6970437c336081bef4f56ac8aa46deab5b43c4c4ae03d9157b5986",
+  "equity_daily.csv": "e582e777de83648c2bbba7c876e6a6cb58113cac7b889b118856e10ecfccebf0",
   "equity_global.csv": "f859eaf6c1247af35a12383541193e1d916c2edbdbad47648dd80c81c517e286",
   "monthly_returns.csv": "6f4f5034efcd721c6ada3c3e5c202342d0e28575cc5388b77570bdf9fe6cd3d5",
   "orders.jsonl": "200383e2824224eb2081a7cf2e60090986057038d242cc4e0f0e8714844cb5f1",
   "pnl_components.csv": "b8a179caa11fa274ea2d760773ad92929f1334d3f4fd2acae0292a48ee595310",
   "rejections.csv": "3c00453086269302a29059b3e1c47e565b241c2546dc682eb8da33d1e860d1d8",
-  "trades.csv": "233bfea71c68751ea9967cb6a5e9a0aa6f7d27154ee6afb40d54f5f27bf5a231"
+  "trades.csv": "27f10f0b212c0c691bf8671c69ff9d5eddca649817ebea678b27ce981f00549c"
  },
  "c06_ddaily_balance_08": {
-  "equity_daily.csv": "f8798fd173e63cc263e32e36688b324d975ae3646ee41929aaeb9d9345e6fa88",
+  "equity_daily.csv": "e49d1ea0ab73854d184ecc7709de461cc86b997ccebccb7308782d1e8579c5ca",
   "equity_global.csv": "7b78871ecc8bf4f3c07ed24c6e7cb3807248e4b75aff4b64e0a0f5d7d9f16937",
   "monthly_returns.csv": "a8e705f3cc4ab45dcdc70893dcc52ea2d6ac9b60abb50affc4d55ce4c87232ad",
   "orders.jsonl": "907e524c8fbfb27d9222c4303aa509c39516962cde8a4ee7e505b00e38fa5c16",
   "pnl_components.csv": "d52f3e1f2bdf8e4b5ce41346e35061fd3a31d48ba0724d601b2712ec09edf7c9",
   "rejections.csv": "57c3c4193b1cd2f4b0c042a05851b12866c36c40af5c01d79bdb387414f88981",
-  "trades.csv": "ca8faa0fc66f341ecc77df98eba01af9cc08bf56b3d29bc4e926971f56d13eb6"
+  "trades.csv": "81b2087cc19608f962f9c648d93b4acca9d3b0eeaafa15f6b9b12af0305678ea"
  },
  "c07_ddaily_equity_08": {
-  "equity_daily.csv": "d823364f62e9a72eb33a3d5508be8371f06a7f5904832ff6c5e3a7ce3f22d6ea",
+  "equity_daily.csv": "60e16fc13de1afca0a6b9bbcf5e1c1a2b1a466e45f78e4837943ed9157357609",
   "equity_global.csv": "67c41e55db62f4b40d50fa369f3a2d914157ea2d632f960e410d564ec39f09d4",
   "monthly_returns.csv": "7c6de0059c2e0245b0db2ca8ea39579081fd1208b390cbb158c0777cceb3f4e1",
   "orders.jsonl": "c6041c910189aa0f6a984585b8af3119866832e46b721b9b2a4f3b0efd029305",
   "pnl_components.csv": "26775304be85f77a39b76d8021e0e3de0762ead848543a02c4fbf74535341d89",
   "rejections.csv": "9a40f6ec4d10308b9f23b9757a25894c4106715c9e3a13c4a4c1309bf9ec2ce0",
-  "trades.csv": "8eb1c8fabd6bd0b301a1f2b2153d5ea8f07f7317806ee74cfead650687e469e1"
+  "trades.csv": "3098e946991dba701986d96fdf3b0873200a8b70f54e0b9aa03b00264a37a85b"
  },
  "c08_streak2_daily": {
-  "equity_daily.csv": "2f44eafa2e470271532a026cc78b9d2e0c64489fccc19ea687cb931b71e24270",
+  "equity_daily.csv": "d8837865b23707bf4279c3a59a7803efac8a856a590b1677d7dd29d98cbb53c0",
   "equity_global.csv": "36e2227351263c8ac296cc4676fcd6d0ee0a9848ee032880a9f3e72914bbc40c",
   "monthly_returns.csv": "1cdad304bd1a30c986650f4e261934479882bde3a1667a837e959f8dcbbaaed8",
   "orders.jsonl": "0e7b573d7f6a43bafd19c05bf1b8ab05236214a4b96649b29f1acb85112a7fc6",
   "pnl_components.csv": "1c586ec261fbaa9c0591008d4ab086e4e692cd96129498baf404d480903dfdee",
   "rejections.csv": "e73021134f45ef8bd64abef51dc25c3a1a2c80406ecf791189f7baeadd62feb6",
-  "trades.csv": "3747fa9489d4c5080fb6d8340c286e6a82bac3e0a3e17210209512dc54845c60"
+  "trades.csv": "cd2409f99a3f7509f11bb8c03b52c23a2f92887dfa801fae2f98ad065b191e34"
  },
  "c09_streak2_persistent": {
-  "equity_daily.csv": "2eba8d534e6970437c336081bef4f56ac8aa46deab5b43c4c4ae03d9157b5986",
+  "equity_daily.csv": "e582e777de83648c2bbba7c876e6a6cb58113cac7b889b118856e10ecfccebf0",
   "equity_global.csv": "f859eaf6c1247af35a12383541193e1d916c2edbdbad47648dd80c81c517e286",
   "monthly_returns.csv": "6f4f5034efcd721c6ada3c3e5c202342d0e28575cc5388b77570bdf9fe6cd3d5",
   "orders.jsonl": "172d4cfeba67bb577253e862cc482ef132572aa497d761976cf9d83549e7e8cc",
   "pnl_components.csv": "b8a179caa11fa274ea2d760773ad92929f1334d3f4fd2acae0292a48ee595310",
   "rejections.csv": "e34ad548e3e936265c1a0cbb318aea923ac8dfac6ae5da712a00b5e643709d09",
-  "trades.csv": "233bfea71c68751ea9967cb6a5e9a0aa6f7d27154ee6afb40d54f5f27bf5a231"
+  "trades.csv": "27f10f0b212c0c691bf8671c69ff9d5eddca649817ebea678b27ce981f00549c"
  },
  "c10_maxtrades2": {
-  "equity_daily.csv": "ee5d2bc87692d835e31e2c593b41addac1949df10431d973489c812aa2997d1a",
+  "equity_daily.csv": "ef83e5f84e6249c6eff9e96fdeb7c4a86aaa6ce35a9bdfa334aeecb5c4b035de",
   "equity_global.csv": "7a4da61934f7fa0dca2527fafb6e3e6e3308f004063c20d83f26545597a1b515",
   "monthly_returns.csv": "e1a76df86d5b2b7e06c9eb0a96d9313a7c9f55278d6810cdd517f86012266361",
   "orders.jsonl": "4566bdfa9e054910b60620c1642dab467bc00a577b7cfffc028d1e4aa6a385a8",
   "pnl_components.csv": "bb60b09958a2d5fbe203b84b8c15ab079c2ecaf352b440bec96c17789c4a07f7",
   "rejections.csv": "2ac8ce7a9a0dd991cb400ba3b920b16f47b314b314dce3b57ce812fd3159e186",
-  "trades.csv": "734db6d1ba350fd3e36590e2c51d10446d712187b6392d23b8493d574d48fc5c"
+  "trades.csv": "0561c9f87b70a4acb6bc08eb0a9a844fda4e2a84543fb7d3653d4ded0c2ecc32"
  },
  "c11_cooldown1h": {
-  "equity_daily.csv": "094aea753f4b98d1fb9843f1bc11ae7a0ef4de57055fb5fa45a046bd5559a532",
-  "equity_global.csv": "2113045ae7500369b22626acbbd1e4f65a514d1b56869462a6f2d2603d4b23f5",
-  "monthly_returns.csv": "561f25660589b2df97396b5b86d06bde2486ecb7d8910b6494040225d64160a0",
-  "orders.jsonl": "9d430a52eee39cf861ad0470d1a4ea17c893a80077efd813d9db910e618de128",
-  "pnl_components.csv": "05031b51e1cf0aaa3c1878a8e62f2328732150e8014e45068cc21335f7bf96a0",
+  "equity_daily.csv": "97c73c42297c668f36ae679d74857fe33768f95a066c723729b5d8912cfd3042",
+  "equity_global.csv": "f5a2efb57767c64dcafc4f518381ea781105373a3ccf37d211b96eaf7f3b015c",
+  "monthly_returns.csv": "f32efeae64878aa701648d8e34eef60a76f504ccc611d29f5a87c06fa7c5c458",
+  "orders.jsonl": "c1216b8c0857955bd8d26b1f28d718cf12cd25ec3b5b06046c2f4217e5e8461a",
+  "pnl_components.csv": "b5db2360a395ec9462b1547aabcc8e40b17f2e7f73f9b86d79a48f210e07e774",
   "rejections.csv": "f4d6080131e3229a3d5e81092a365859ce640ec3fd10b80644a7135a8609186a",
-  "trades.csv": "8df63d87edc2031f112684eb5493555ce8d093f851392a7276a22b5fe3cecd16"
+  "trades.csv": "1c0b619deb6ec65940a8b793880af6756dbaa7dbe2ccdb46d69dd5a4649cc662"
  },
  "c12_strategy_dailyloss40": {
-  "equity_daily.csv": "60ed9d075261d7f03ba9c9d07ce1e00f15604308e0ba5a84457ae22e0acc93bb",
+  "equity_daily.csv": "6509e7b2c2e925df49cdda29c1b69d0936a9a6a004fb0e8bc61e28fd10ffb8c3",
   "equity_global.csv": "e180c66dcb7663b7127974c9803fbfcf2cb274805ffeac9822830b10c47972be",
   "monthly_returns.csv": "9907d32643bfaff5c2aad289b899270ee5bb18fe3145522e3ec4eb7aa574d7f1",
   "orders.jsonl": "92daf1152a5838a6b7a3e4e1afde3c61c5d9aa4f793883d1c1fecd5eb27aa5c1",
   "pnl_components.csv": "b7ac134eaa440f0d6809ef3696ac17f3e14bd9c1d89bd32ff2b58f0136f2eacc",
   "rejections.csv": "834768562c2c2280bc1bed122b8e8d3ffe3a0f4ea157d02aafaf1f2f7a79082b",
-  "trades.csv": "f6bfa5766e1111e3e69d347bdecc8c1d8a5a6fc10a45424345f53ea9f99816a8"
+  "trades.csv": "6dd2ed5901d7d18c852a8ab310e5908b686d612b981085bb6d1273f80478c9f8"
  },
  "c13_roundtrips1_observe": {
-  "equity_daily.csv": "e44df2e43e38217be6faaa61c068c903c1424a8eec0a19a5d258c542334c1a11",
-  "equity_global.csv": "d6924619b2b446d75ff1a1fa17dafa0a39e52b9e8aa9af655aeb8a0be6f8c723",
-  "monthly_returns.csv": "d72198e3643d8451e13fd0fe1c9accbffde0f2b27d0dfdfd833d6c928a542aca",
-  "orders.jsonl": "9ad33571f9a24fdc3cbc58b4b7db7c1c5cd71eaa8878f49a0ffa3e9545c5f412",
-  "pnl_components.csv": "6ef1e0f9ea704f41c71c8507cfbf6aa92f1f5551c9c1ae0306833a7cc62cc6f5",
+  "equity_daily.csv": "7f8d791f75d69e3400fcd9ac0a8d2a35daaa10b1069f321734dd535daa66f668",
+  "equity_global.csv": "ab5d3ced58606882a27695f651bcc2bee054a56899aef49a751a600ac5520daa",
+  "monthly_returns.csv": "740002a2bd80461ee3d03e50dbb1c4e0781ae8c63beefb26bf5bebfea7dd0936",
+  "orders.jsonl": "4b71fc40fc02983c3a214a462ddb266829267dbd61427a63f1b91a93ea754a61",
+  "pnl_components.csv": "ed80a045f88070a2b12bd598c1039fd45f4c5ed67aa12733274e4f237b7589e7",
   "rejections.csv": "c2af13ab23a385ce234286ab2ca09e7eb85ad078edd508f31862c28734f86fba",
-  "trades.csv": "bc711406433b17322c285dd6cf9da1f411fedc0bec411bfd6a9ad7f36a502b15"
+  "trades.csv": "aaf34af6618711ce84cdcc9eb78c595be837057bf709f837226e6d81f4f08af0"
  },
  "c14_roundtrips1_enforce": {
-  "equity_daily.csv": "e44df2e43e38217be6faaa61c068c903c1424a8eec0a19a5d258c542334c1a11",
-  "equity_global.csv": "d6924619b2b446d75ff1a1fa17dafa0a39e52b9e8aa9af655aeb8a0be6f8c723",
-  "monthly_returns.csv": "d72198e3643d8451e13fd0fe1c9accbffde0f2b27d0dfdfd833d6c928a542aca",
-  "orders.jsonl": "9ad33571f9a24fdc3cbc58b4b7db7c1c5cd71eaa8878f49a0ffa3e9545c5f412",
-  "pnl_components.csv": "6ef1e0f9ea704f41c71c8507cfbf6aa92f1f5551c9c1ae0306833a7cc62cc6f5",
+  "equity_daily.csv": "7f8d791f75d69e3400fcd9ac0a8d2a35daaa10b1069f321734dd535daa66f668",
+  "equity_global.csv": "ab5d3ced58606882a27695f651bcc2bee054a56899aef49a751a600ac5520daa",
+  "monthly_returns.csv": "740002a2bd80461ee3d03e50dbb1c4e0781ae8c63beefb26bf5bebfea7dd0936",
+  "orders.jsonl": "4b71fc40fc02983c3a214a462ddb266829267dbd61427a63f1b91a93ea754a61",
+  "pnl_components.csv": "ed80a045f88070a2b12bd598c1039fd45f4c5ed67aa12733274e4f237b7589e7",
   "rejections.csv": "c2af13ab23a385ce234286ab2ca09e7eb85ad078edd508f31862c28734f86fba",
-  "trades.csv": "bc711406433b17322c285dd6cf9da1f411fedc0bec411bfd6a9ad7f36a502b15"
+  "trades.csv": "aaf34af6618711ce84cdcc9eb78c595be837057bf709f837226e6d81f4f08af0"
  },
  "d01_windows": {
-  "equity_daily.csv": "e44df2e43e38217be6faaa61c068c903c1424a8eec0a19a5d258c542334c1a11",
-  "equity_global.csv": "d6924619b2b446d75ff1a1fa17dafa0a39e52b9e8aa9af655aeb8a0be6f8c723",
-  "monthly_returns.csv": "d72198e3643d8451e13fd0fe1c9accbffde0f2b27d0dfdfd833d6c928a542aca",
-  "orders.jsonl": "9ad33571f9a24fdc3cbc58b4b7db7c1c5cd71eaa8878f49a0ffa3e9545c5f412",
-  "pnl_components.csv": "6ef1e0f9ea704f41c71c8507cfbf6aa92f1f5551c9c1ae0306833a7cc62cc6f5",
+  "equity_daily.csv": "7f8d791f75d69e3400fcd9ac0a8d2a35daaa10b1069f321734dd535daa66f668",
+  "equity_global.csv": "ab5d3ced58606882a27695f651bcc2bee054a56899aef49a751a600ac5520daa",
+  "monthly_returns.csv": "740002a2bd80461ee3d03e50dbb1c4e0781ae8c63beefb26bf5bebfea7dd0936",
+  "orders.jsonl": "4b71fc40fc02983c3a214a462ddb266829267dbd61427a63f1b91a93ea754a61",
+  "pnl_components.csv": "ed80a045f88070a2b12bd598c1039fd45f4c5ed67aa12733274e4f237b7589e7",
   "rejections.csv": "c2af13ab23a385ce234286ab2ca09e7eb85ad078edd508f31862c28734f86fba",
-  "trades.csv": "bc711406433b17322c285dd6cf9da1f411fedc0bec411bfd6a9ad7f36a502b15"
+  "trades.csv": "aaf34af6618711ce84cdcc9eb78c595be837057bf709f837226e6d81f4f08af0"
  },
  "d02_oos_split": {
-  "equity_daily.csv": "e44df2e43e38217be6faaa61c068c903c1424a8eec0a19a5d258c542334c1a11",
-  "equity_global.csv": "d6924619b2b446d75ff1a1fa17dafa0a39e52b9e8aa9af655aeb8a0be6f8c723",
-  "monthly_returns.csv": "d72198e3643d8451e13fd0fe1c9accbffde0f2b27d0dfdfd833d6c928a542aca",
-  "orders.jsonl": "9ad33571f9a24fdc3cbc58b4b7db7c1c5cd71eaa8878f49a0ffa3e9545c5f412",
-  "pnl_components.csv": "6ef1e0f9ea704f41c71c8507cfbf6aa92f1f5551c9c1ae0306833a7cc62cc6f5",
+  "equity_daily.csv": "7f8d791f75d69e3400fcd9ac0a8d2a35daaa10b1069f321734dd535daa66f668",
+  "equity_global.csv": "ab5d3ced58606882a27695f651bcc2bee054a56899aef49a751a600ac5520daa",
+  "monthly_returns.csv": "740002a2bd80461ee3d03e50dbb1c4e0781ae8c63beefb26bf5bebfea7dd0936",
+  "orders.jsonl": "4b71fc40fc02983c3a214a462ddb266829267dbd61427a63f1b91a93ea754a61",
+  "pnl_components.csv": "ed80a045f88070a2b12bd598c1039fd45f4c5ed67aa12733274e4f237b7589e7",
   "rejections.csv": "c2af13ab23a385ce234286ab2ca09e7eb85ad078edd508f31862c28734f86fba",
-  "trades.csv": "bc711406433b17322c285dd6cf9da1f411fedc0bec411bfd6a9ad7f36a502b15"
+  "trades.csv": "aaf34af6618711ce84cdcc9eb78c595be837057bf709f837226e6d81f4f08af0"
  },
  "d03_balance_100k": {
-  "equity_daily.csv": "bec0a6bda6101d8cba300e9a03111ee650b4e13d3f4a8dc0fecb64a62a94a471",
-  "equity_global.csv": "14182050d9094b1352236a368607be1aa6265a876d7f973c5158cbf6c5a7362c",
-  "monthly_returns.csv": "732ed122e0e94a77760d4fde160125211f46c35444d437078ee437aa6349d147",
-  "orders.jsonl": "4ef3767374c599ccbbdd4fc0cee41651a703a27c8578a282cdb4a44c740d0b81",
-  "pnl_components.csv": "bf8ac2767b9bdef6aa5e78a8db15aaeb3753db54bae59b9587b89c626cf37781",
-  "rejections.csv": "3895adf7149b60efdbd70bd2c4885058be1225707f160de091d266fdda241a6b",
-  "trades.csv": "5dcfed4377c0dce852ce2628ea80826e81cf89ce2fd1ea1c90047b36895342d1"
+  "equity_daily.csv": "24d290d2efce12e4689496cc1dc429d4bf60892ec6ecd484814f1af6c0fa0c1c",
+  "equity_global.csv": "3eaeb9230c696bea8ecbe1ac118ed932da77179fc7b425725515af7f17b06c26",
+  "monthly_returns.csv": "88f9465c0d7627ac160a1a5fd27f131bd64f400a0743cbc40ad924acfc37e21c",
+  "orders.jsonl": "fcf03156821124c834806a356e91b1beb3762f923aa9ce06ebe1976003dde44e",
+  "pnl_components.csv": "8e4033248eb5496f99761fe4412637e1e920ec2df33f95251fd31a14c628937e",
+  "rejections.csv": "48fb235256f8c1b9d06b8e34c0e66f1fdce9d34df87a62f458ec6f43a7914fe8",
+  "trades.csv": "6b3c293731cce6e5766b52c16b25042a374472f347824a79c5233a57b3eea440"
  },
  "e01_fixed_lot_rsi": {
-  "equity_daily.csv": "171bd0a25d2d853bf633d9f0522b7541226f6fe69d9cdbe76493fcc3980a5dc0",
+  "equity_daily.csv": "56fadc922d4474618fa3b724fa2c56e55971628f1749fcd1eaf8e1289a5f65e5",
   "equity_global.csv": "f815bf05cbe4b919ffbb753737f4df1df73362803ee66a48bbd2686552502b20",
   "monthly_returns.csv": "ea0052e37829e16ac1d036f10b632ea25b5ea81a90c79ae4d342b0aca8dfadd2",
   "orders.jsonl": "7c438e8530abc6a4b4a745018d84ab61012a7dc520440fac42084d337686b609",
@@ -306,7 +306,7 @@
   "trades.csv": "0c656598c9d70d5f24fdcb2d4e00c99e841f940c6fc988d925abfba4d920fa73"
  },
  "e02_fixed_lot_rsi_mt5sim": {
-  "equity_daily.csv": "5e0a1b4a541457d7a66ebd225ca6add0ff46018373d61640afc0e92e5ae451c2",
+  "equity_daily.csv": "f9d49ad1212e4706ca33704e5756900d8c1a3600ea80a8e79b38dc178cd5ba52",
   "equity_global.csv": "89644c54dfed0a42db7f64a37e030eb214cc6dc2e2de48e62b1b99b5af5a92be",
   "monthly_returns.csv": "c6e69093be1ca996fb1077889c32f74ebf8a2d31d2c9be6a888dbc8df17adf62",
   "orders.jsonl": "7c438e8530abc6a4b4a745018d84ab61012a7dc520440fac42084d337686b609",
@@ -315,76 +315,76 @@
   "trades.csv": "8c689eba82b2a967e8dfcf18b5913a076d54b3006938d74a6701a01e7acfe679"
  },
  "e03_btc_paper": {
-  "equity_daily.csv": "fb83c746ee8e78174b01be38c244a3a1cab831acffd57906c31ef88588b29356",
+  "equity_daily.csv": "77d3582647de09c2710819c0707bc8cca71aae1cf5cb9b20b7c522ef97cb7c82",
   "equity_global.csv": "f362c28146474a8ff19a1abe7bd8ecf7d932a0b0ba40387e668c609f3044b7a8",
   "monthly_returns.csv": "93057fd22686f1c650cd3ebcdc88b967b8354b2987715519964b819480c6dcb6",
   "orders.jsonl": "a1344ff0c2b196c4ee7b2e750a531a19f3ad5064f00d2bcef2377cafb5d0b1eb",
   "pnl_components.csv": "2afe22a06a33dd1016acfb9b4d372c1267cf900bba89c2ce3c8800eae9b0a9cb",
   "rejections.csv": "c2af13ab23a385ce234286ab2ca09e7eb85ad078edd508f31862c28734f86fba",
-  "trades.csv": "e795bd16b5a1e74e6f135c663584f5171dbfe725a541b0530a95299a880787a9"
+  "trades.csv": "c61a306347cc78f12654012ab4e3ba0b192544cad50436cc35a2a1e2aad720cc"
  },
  "e04_btc_mt5sim": {
-  "equity_daily.csv": "1cb31577dd8235369b185625dab335624998842c1589b2df4bb3ab661e272280",
+  "equity_daily.csv": "c095fdc7a3968ad0f4b97da50920a4f97e5b58dbbc8993ab42dcca25ab48fd2b",
   "equity_global.csv": "545a414923b8bf6eddcd1ec37412007c21659dccac8998a40d1e40446524a7cd",
   "monthly_returns.csv": "07407d7fb18cd825595339389bb2e3743a220db2bea0fcf1c9103702f28e3694",
   "orders.jsonl": "1e37f0236bfa678f6332191af76026d1db9be48b0a3576fbc9f78d72f02867b4",
   "pnl_components.csv": "927b631a783f2dedd51bdcd3f8fb56cbfc0c0d5a4b4b82939810e8dd476f1ccc",
   "rejections.csv": "c2af13ab23a385ce234286ab2ca09e7eb85ad078edd508f31862c28734f86fba",
-  "trades.csv": "8bd2c99096aeca4c18ff900711a3808c4c8a7e9c319750435c1ff6f087fa8d7c"
+  "trades.csv": "86397bbf9f939291aaa9733731110428e4b417967f31e2592cf3ca8fbd2ca714"
  },
  "e05_long_paper": {
-  "equity_daily.csv": "e8d0a897d473f880c6f424e154c4489129e3da94247861b11446ccb1cdd7b19d",
+  "equity_daily.csv": "5a93df463a94458e6d504ec5ff428547ca72497e66488a6291f0db6e148f6874",
   "equity_global.csv": "1c1b1ee44ee684914c918a9bd9b0b761acf1f0ff82514d68b81d204cb06cc77a",
   "monthly_returns.csv": "bc172b0b0f4ffab87805d341a7fcc4d6d2fcb761c70d91d6d61c148b7d9ae247",
   "orders.jsonl": "d18169c55fdd2b0ac8a05d118630914cf903324157737edb8a0ed5545447237b",
   "pnl_components.csv": "66169077c7d747ba31463498e9ac531c050b6412121c8330e240436c2d84e8a3",
   "rejections.csv": "c2af13ab23a385ce234286ab2ca09e7eb85ad078edd508f31862c28734f86fba",
-  "trades.csv": "a25e6bcfdb8fae928da8a7922455fcdaa09fb3b52a995334d1f44b7e33d2eeb1"
+  "trades.csv": "10f7adf8e29e6e442e8568ac2fae1603679f5315431793d68bd37df378a95945"
  },
  "e06_long_mt5sim": {
-  "equity_daily.csv": "d628bcf256cdcb0c3b219e57248813a66d1bbccde2c3d1a516239b4f0bbfb207",
+  "equity_daily.csv": "80fb23e42c37e179d71985247bffb2d00a63796a80dc22aac31a70d9e9f410e7",
   "equity_global.csv": "8294ba409a44d0742bc8ec150045e6ae58eb851f704947fd3cf348a347f5aa48",
   "monthly_returns.csv": "94ed2aa91cbdc45488fa5770740e90dff1de70cea398afcc40fd858de2c5f9fb",
   "orders.jsonl": "dd457fc0e3b48b68cc20a8acdeb94b6e68dc423200e08d7ad26aeed908a8c14e",
   "pnl_components.csv": "38756cb1af23e126db223bfbcbdb70ba9ae6294064c41151b5b44fa775395fa8",
   "rejections.csv": "c2af13ab23a385ce234286ab2ca09e7eb85ad078edd508f31862c28734f86fba",
-  "trades.csv": "8c2e72a8885cb8061299c0aeb7faa537ba1c64adc79f0b1f56e868a0c7000a98"
+  "trades.csv": "1ad8e713b47da7078f51d35ae5636e77c34ecb66433dcd5f13b072e8abd2bb8d"
  },
  "e07_long_default_risk": {
-  "equity_daily.csv": "e8d0a897d473f880c6f424e154c4489129e3da94247861b11446ccb1cdd7b19d",
+  "equity_daily.csv": "5a93df463a94458e6d504ec5ff428547ca72497e66488a6291f0db6e148f6874",
   "equity_global.csv": "1c1b1ee44ee684914c918a9bd9b0b761acf1f0ff82514d68b81d204cb06cc77a",
   "monthly_returns.csv": "bc172b0b0f4ffab87805d341a7fcc4d6d2fcb761c70d91d6d61c148b7d9ae247",
   "orders.jsonl": "d18169c55fdd2b0ac8a05d118630914cf903324157737edb8a0ed5545447237b",
   "pnl_components.csv": "66169077c7d747ba31463498e9ac531c050b6412121c8330e240436c2d84e8a3",
   "rejections.csv": "c2af13ab23a385ce234286ab2ca09e7eb85ad078edd508f31862c28734f86fba",
-  "trades.csv": "a25e6bcfdb8fae928da8a7922455fcdaa09fb3b52a995334d1f44b7e33d2eeb1"
+  "trades.csv": "10f7adf8e29e6e442e8568ac2fae1603679f5315431793d68bd37df378a95945"
  },
  "f0_param_fast13": {
-  "equity_daily.csv": "fdf0ef92b9990d0a152afb9df09acb8c5d062e1d7306b9dd1b077fff695522b5",
-  "equity_global.csv": "df71d622a07fac1dc791f22d3ecb1b8eff14c344f073083f81ddd3605ea89a7f",
-  "monthly_returns.csv": "6af9e06633010fe51959134e68e54aa2ab39e8c790529239672eff5e1fa760a8",
-  "orders.jsonl": "c65b34f1af87cd0a19630746a5d517b03d0c3f28147cb836a22246e085070a10",
-  "pnl_components.csv": "c94c1032c76b7b19fc7474d2cd74bae2575e637ab5a97f853493fe8d877ebb84",
+  "equity_daily.csv": "8c262cf205eb0e6604c71ce7c30108ca97821d25b9561c3613d9e0412463eea4",
+  "equity_global.csv": "f5859074bcdbb9eff2faf990ce1795576cccda900aca91d13d517631d7ebe469",
+  "monthly_returns.csv": "d33e36bc80f31bc431747eec5a9db09aa14391529c947fa86498fb6ed5ec120d",
+  "orders.jsonl": "e9c0fa7da2e18f7282090704cf1af13cd0144fb5256b3096bda5d8906d7ba1e7",
+  "pnl_components.csv": "5f3542bca1c773e8736408fd67f9d4055795fa74032619edfa9f8b8900c20dfa",
   "rejections.csv": "c2af13ab23a385ce234286ab2ca09e7eb85ad078edd508f31862c28734f86fba",
-  "trades.csv": "457ebfb0d34779a59a94f38904b3929529bebbdbe8eaaf89fe36f0f5d3038c9c"
+  "trades.csv": "78d0128b9605e8f3a68368071a2036cadef0bc8720ca8932e1b700e8571c1d58"
  },
  "f0_param_fast5": {
-  "equity_daily.csv": "2147067d81753eef6c664797cf63a7f12709c8c12d44704a8c7ff7e1b7717697",
+  "equity_daily.csv": "856404852107fb4d63a188e84c3a382af4a52843bc99ae133ce90ca3e4de7c76",
   "equity_global.csv": "3332fb5094948eeb401e91f9693d2d1e298a1cff16f88028c37a5a0643435aad",
   "monthly_returns.csv": "cafacfc4b469a9c1bff529d5c7667240d399485987dca9a1b1062f1c43e51e0f",
   "orders.jsonl": "2246d01a327442d0a32f8085f6a4cb1e544c744d6da0af4db9bdc93f0c9043c0",
   "pnl_components.csv": "f6766d667e09f0eaf8c3d8c9e99cf4e1da529b0ae1a9a85b99291e7690b8b9de",
   "rejections.csv": "c2af13ab23a385ce234286ab2ca09e7eb85ad078edd508f31862c28734f86fba",
-  "trades.csv": "a08ebb0456d732f283f9071afd27cfa4b9de411ff7e1d22e98aba0b8c583fe47"
+  "trades.csv": "3b8e0ee30f83b57725cfcb9df7a0e153498dcf681798f82337893a624e89d9f8"
  },
  "f0_param_fast9": {
-  "equity_daily.csv": "e44df2e43e38217be6faaa61c068c903c1424a8eec0a19a5d258c542334c1a11",
-  "equity_global.csv": "d6924619b2b446d75ff1a1fa17dafa0a39e52b9e8aa9af655aeb8a0be6f8c723",
-  "monthly_returns.csv": "d72198e3643d8451e13fd0fe1c9accbffde0f2b27d0dfdfd833d6c928a542aca",
-  "orders.jsonl": "c5dd6c2fe0c3b2845bf4e26ec52a58ccd4e057c2e282213038cddaf47fbb2f8c",
-  "pnl_components.csv": "de175112ace7a52aa071e08b1b7b3941f98e060c10763cb75791081b26de11be",
+  "equity_daily.csv": "7f8d791f75d69e3400fcd9ac0a8d2a35daaa10b1069f321734dd535daa66f668",
+  "equity_global.csv": "ab5d3ced58606882a27695f651bcc2bee054a56899aef49a751a600ac5520daa",
+  "monthly_returns.csv": "740002a2bd80461ee3d03e50dbb1c4e0781ae8c63beefb26bf5bebfea7dd0936",
+  "orders.jsonl": "efbb5d5b8a0a2ed40ae6b0f3232b336c04f8f5b77a656a75262c251cb8120f8c",
+  "pnl_components.csv": "74a63364e11c762c87058cb892e759d592914d96225637ef6d6319654358cd59",
   "rejections.csv": "c2af13ab23a385ce234286ab2ca09e7eb85ad078edd508f31862c28734f86fba",
-  "trades.csv": "d8e0080213ca62a4a38df74fdb0b5c99945f55273b5f59de4740bb8ca97cd7db"
+  "trades.csv": "f191ae06b05e14b2c5adc94e24fecb9ade1429d1d4d278bf66597a620fa4d072"
  },
  "g01_churn_observe": {
   "equity_daily.csv": "873e625dbb482ba9dea9b3cc8bba0abfb541ad60b534355ba43c65b33a5123f4",
@@ -405,7 +405,7 @@
   "trades.csv": "26dd6cbfcb86bc1136b6046bfabd39aeb5098f8f77e62dd77393cbeb39d6f365"
  },
  "g03_multi_xau_btc": {
-  "equity_daily.csv": "02cc0d11170dea9b4f8e1011d9f04bbfcbafb1788de4a4f5b9308f58842a2ed4",
+  "equity_daily.csv": "f8d45ab915f9b1a900ff762bc5dcdec177bcc5680a1056675e9dfc7030eac970",
   "equity_global.csv": "49c1e1db549c3d06bb503f0f0bdb585ef8a0decee3aeab039d1745d759974fe7",
   "monthly_returns.csv": "c9ab67872786c2932f0d85d5cf99da538509102e39b9d56a7837eb84b6517f32",
   "orders.jsonl": "997e130357817865f2c2c6e25ec30969fe8d6b69bb182dbe2ee7a0d48287e285",
@@ -414,7 +414,7 @@
   "trades.csv": "a0ed03d1255248f2f0a122d7d5aa392ff4d573abc0a6b26bc7e2de06fbc4867c"
  },
  "g04_multi_xau_btc_mt5sim": {
-  "equity_daily.csv": "8a197c468b19d4cc9e44642fcc268419f04a887b3c621d6a7e2a23d81dfeadf9",
+  "equity_daily.csv": "20f557f81a56e64148c6fc97856c88017287c3b2aff19dc8849c4a5cd90a1083",
   "equity_global.csv": "2045dbfa48f0d8d7d3fbb7b28f1eba3bc51768a640628c42d0750f147cc9e05d",
   "monthly_returns.csv": "c13500d8894383c5d191253d933dd572d5fdefae51c3cd6bcd21c13b4c88f93e",
   "orders.jsonl": "997e130357817865f2c2c6e25ec30969fe8d6b69bb182dbe2ee7a0d48287e285",
@@ -423,7 +423,7 @@
   "trades.csv": "94fe0f8f038b89a3dd7229aaecb63537548518b2d88f5277ce909c3e0e0fdb0a"
  },
  "g05_churn_mt5sim": {
-  "equity_daily.csv": "f9e07a9cc8e9de5e58ff2c5ecaf43ee3a5fddb150c499b74d507a283aa50ceb1",
+  "equity_daily.csv": "4c48716dba014fefb6d35204c2ea79fd79d5a717da1d13463069d63acbc4dd28",
   "equity_global.csv": "a66ee5271345260e150ce3dde752d2f8e80d3b57d1ee0176e6c904933bc258e8",
   "monthly_returns.csv": "e06d9769833825fd5a8df7d9951462c21168dd5244f742d75b87833e5b176e56",
   "orders.jsonl": "87e65af6b6012ad02d808bb517348b0baec79bcdf5141c681be9a3e8fbb98726",

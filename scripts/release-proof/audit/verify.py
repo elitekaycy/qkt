@@ -87,18 +87,25 @@ def main(run, log=None):
         f"gross-net {comm} vs commissionPaid {g.get('commissionPaid')}")
 
     # 2. headline statistics ------------------------------------------------------------------------------
-    # qkt scores a trade by its CLOSING fill's net realized (entry-fill commission is on the opening fill and is
-    # not folded into the trade): model exactly that, and report the effect separately below.
-    # Round-trip scoring: each leg's opening-fill cost is folded into that leg's first reducing fill.
-    carried, pnl = {}, []
+    # A round trip is a position, opened to flat (#1452): every fill of a leg (or of a strategy's symbol when fills
+    # carry no leg) adds its net realized, entry commission included, and the trade is scored when the position's
+    # quantity is back to zero. A partial exit is part of its position; one still partly open at the end counts once.
+    pos, pnl = {}, []
     for t in sorted(trades, key=lambda t: int(t["timestamp"])):
-        key = (t["strategy"], t["legId"])
-        if t["reducedExposure"] != "true":
-            if t["legId"]:
-                carried[key] = carried.get(key, D(0)) + D(t["realized"] or "0")
-            continue
-        pnl.append(D(t["realized"] or "0") + (carried.pop(key, D(0)) if t["legId"] else D(0)))
-    open_comm = sum((D(t["realized"] or "0") for t in trades if t["legAction"] == "OPENED"), D(0))
+        key = (t["strategy"], t["legId"] or t["symbol"])
+        signed = D(t["quantity"]) * (1 if t["side"] == "BUY" else -1)
+        p = pos.setdefault(key, {"qty": D(0), "pnl": D(0), "reduced": False})
+        before = p["qty"]
+        p["qty"] += signed
+        p["pnl"] += D(t["realized"] or "0")
+        p["reduced"] |= t["reducedExposure"] == "true"
+        if before != 0 and (p["qty"] == 0 or (p["qty"] > 0) != (before > 0)):
+            pnl.append(p["pnl"])
+            rest = p["qty"]
+            pos[key] = {"qty": rest, "pnl": D(0), "reduced": False}
+            if rest == 0:
+                del pos[key]
+    pnl.extend(p["pnl"] for p in pos.values() if p["reduced"])
     wins = [p for p in pnl if p > 0]
     losses = [p for p in pnl if p < 0]
     n = len(pnl)
@@ -119,9 +126,7 @@ def main(run, log=None):
             streak = streak + 1 if p < 0 else 0
             best = max(best, streak)
         chk("max-consecutive-losses", best == g["maxConsecutiveLosses"], f"{best} vs {g['maxConsecutiveLosses']}")
-        if open_comm != 0:
-            chk("OBSERVATION-entry-commission-not-in-trade-stats", True,
-                f"entry commissions {open_comm} are in totals but not in profit-factor/avg-win/avg-loss/largest-*")
+        chk("round-trips", g.get("roundTrips") == n, f"{n} positions vs roundTrips {g.get('roundTrips')}")
         chk("trade-count-is-fills", g["tradeCount"] == len(trades), f"fills {len(trades)} vs tradeCount {g['tradeCount']}")
 
     # 3. daily PnL: trade-realized per UTC day -----------------------------------------------------------

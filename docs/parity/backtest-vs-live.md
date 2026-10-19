@@ -237,7 +237,7 @@ execution, risk, accounting, or warmup pipeline.
 | Issue | Verified result | Evidence |
 | --- | --- | --- |
 | #934 | Book-risk annualization uses the routed calendar. Conditional and always-run portfolios with book streams sample on portfolio candle close; streamless books use the documented heartbeat fallback | `PortfolioDeployerE2ETest`, `PortfolioRiskAggregatorTest` |
-| #935 | Net costs stay in cash P&L, while win rate, profit factor, streaks, and Monte Carlo use exposure-reducing fills only. `financing.csv` exports swap cost and its signed P&L impact for CSV reconciliation | `ReportBuilderTest`, `BacktestReportWriterTest` |
+| #935 | Net costs stay in cash P&L, while win rate, profit factor, streaks, and Monte Carlo use one outcome per position (#1452: partial fills aggregate into the round trip they belong to, entry costs included). `financing.csv` exports swap cost and its signed P&L impact for CSV reconciliation | `ReportBuilderTest`, `ReportBuilderRoundTripsTest`, `TradeOutcomesTest`, `BacktestReportWriterTest` |
 | #936 | All five configured `MaxStrategy*` limits are built once by `StrategyRiskRuleFactory` and consumed by live and replay | `StrategyRiskRuleFactoryTest`, `BacktestRiskParityTest` |
 | #937 | `daily_dd_basis` is threaded through global and per-strategy replay risk state | `BacktestRiskParityTest` |
 | #938 | A portfolio-wide replay halt cancels entries and emits deterministic close orders for every child-owned leg on the breach tick, matching live flatten-before-halt | `BacktestRiskParityTest` |

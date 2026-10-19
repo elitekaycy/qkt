@@ -21,31 +21,39 @@ cp .env.example .env
 cp qkt.config.yaml.example qkt.config.yaml
 ```
 
-Edit `.env` with your MT5 credentials:
+Fill in these lines of `.env` with your MT5 credentials and leave the rest as they are:
 
 ```dotenv title=".env"
 MT5_LOGIN=12345678
 MT5_PASSWORD=your-mt5-password
 MT5_SERVER=Exness-MT5Trial
 MT5_ENABLE_ALGO_TRADING=1
+MT5_API_KEY=replace-with-a-long-random-value
 VNC_PASSWORD=pickanything
-QKT_BROKER_EXNESS_GATEWAY_URL=http://mt5-gateway:5001
 ```
 
-The `MT5_SERVER` value comes from Exness — it's usually `Exness-MT5Trial` for demo or `Exness-MT5Real` for live. Check the email Exness sent at signup.
+The `MT5_SERVER` value comes from Exness: demo servers are named `Exness-MT5Trial` followed by a
+number (for example `Exness-MT5Trial9`), live ones `Exness-MT5Real` and a number. Copy the exact name
+from the email Exness sent at signup. `MT5_API_KEY` is a password you make up: the gateway requires it
+on every request, and `docker-compose.yml` hands the same value to qkt as `QKT_BROKER_API_KEY`.
 
-Edit `qkt.config.yaml` to use the built-in Exness profile:
+Replace the contents of `qkt.config.yaml` with an account that uses the built-in Exness profile:
 
 ```yaml title="qkt.config.yaml"
-source: live
+source: local                # prices come from the broker; no TradingView fallback
 
 brokers:
   exness:
     type: mt5
-    extends: exness          # inherits suffix, tz, defaults
-    gateway_url: ${QKT_BROKER_EXNESS_GATEWAY_URL}
+    extends: exness          # inherits the m suffix, the UTC server clock and Exness defaults
+    gateway_url: ${QKT_BROKER_GATEWAY_URL}
+    api_key: ${QKT_BROKER_API_KEY}
     magic: 4242              # unique per qkt deployment; identifies your orders on restart
 ```
+
+The account's name, `exness`, is the prefix your strategies write: `EXNESS:EURUSD`.
+`QKT_BROKER_GATEWAY_URL` and `QKT_BROKER_API_KEY` are set for the qkt container by
+`docker-compose.yml`.
 
 ## 2. Bring up the stack
 
@@ -66,10 +74,10 @@ docker compose ps
 
 ## 3. Verify the headless MT5 login
 
-The gateway uses `MT5_LOGIN`, `MT5_PASSWORD`, and `MT5_SERVER` from `.env`. Verify from the host:
+The gateway uses `MT5_LOGIN`, `MT5_PASSWORD`, and `MT5_SERVER` from `.env`. Ask it whether it is ready (the check runs inside the gateway container, which holds the API key):
 
 ```bash
-curl -H "Authorization: Bearer $MT5_API_KEY" http://localhost:5001/health/ready
+docker compose exec mt5-gateway sh -c 'curl -fsS -H "Authorization: Bearer $API_KEY" http://localhost:5001/health/ready'
 # {"ok":true,"status":"ready",...}
 ```
 
@@ -77,28 +85,33 @@ If readiness is 503, inspect `docker compose logs mt5-gateway`; VNC remains avai
 
 ## 4. Audit the tick feed first
 
-Before deploying a real strategy, verify the gateway's ticks match what you expect. The `audit-ticks` CLI captures live ticks for a few minutes and reports any anomalies:
+Before deploying a real strategy, verify the gateway's ticks match what you expect. The `audit-ticks` CLI polls the gateway's live quotes for `--duration` seconds, then checks every quote it saw against MT5's own recorded tick history for the same window:
 
 ```bash
 docker compose exec qkt qkt audit-ticks --symbol EURUSD --duration 60 \
   --mt5-profile exness --reference mt5-history
 ```
 
-Output:
+Output (your counts differ; the last line is what matters):
 
 ```text
-audit-ticks EURUSD via exness
-  ticks received:    312
-  bid range:         1.0828–1.0834
-  ask range:         1.0829–1.0835
-  spread (avg):      1.2 points
-  spread (max):      3.4 points
-  duplicates:        0
-  out-of-order:      0
-  gaps > 5s:         0
+qkt audit-ticks: symbol=EURUSD duration=60s profile=exness reference=mt5-history poll=250ms
+poll samples:             240
+unique in-window ticks:   187
+history ticks:            193
+exact timestamp matches:  187
+exact bid/ask matches:    187
+timestamp price mismatch: 0
+missing from history:     0
+invalid live quotes:      0
+quote age p95 ms:         212
+result:                   PASS
 ```
 
-If you see large gaps or out-of-order ticks, that's a feed quality problem — investigate before deploying.
+`PASS` means every live quote qkt saw is a tick MT5 recorded, at the same bid and ask. Run it while
+the market is open: on a weekend there are no ticks and the audit reports `FAIL`.
+
+If it reports `FAIL` with the market open (quotes missing from history, mismatched prices, invalid quotes), that is a feed quality problem — investigate before deploying.
 
 ## 5. Write a paper strategy
 
@@ -112,12 +125,28 @@ SYMBOLS
 
 RULES
     WHEN ema(eur.close, 9) CROSSES ABOVE ema(eur.close, 21)
+     AND POSITION.eur = 0
     THEN BUY eur SIZING 0.01
-         BRACKET { STOP_LOSS BY 30 PCT, TAKE_PROFIT BY 60 PCT }
-         LOG "long entry" price=eur.close
+         BRACKET { STOP_LOSS BY 0.0020, TAKE_PROFIT BY 0.0040 }
+       ; LOG "long entry" price=eur.close
 ```
 
-Note: `SIZING 0.01` is 0.01 lots — the minimum on most MT5 accounts, ~$1000 notional on EURUSD.
+Notes:
+
+- `SIZING 0.01` is 0.01 lots — the minimum on most MT5 accounts, ~$1000 notional on EURUSD.
+- `BY 0.0020` is a price distance: 20 pips on EURUSD, so the stop sits 0.0020 below the fill and
+  the target 0.0040 above it. (`BY 30 PCT` would be a 30% move, far beyond any EURUSD day.)
+- The `;` before `LOG` separates the two actions of the rule; without it the parser stops at `LOG`.
+
+Check that it parses before deploying:
+
+```bash
+docker compose exec qkt qkt parse /strategies/eur-paper.qkt
+```
+
+```text
+ok
+```
 
 ## 6. Deploy it
 
@@ -125,11 +154,11 @@ Note: `SIZING 0.01` is 0.01 lots — the minimum on most MT5 accounts, ~$1000 no
 docker compose exec qkt qkt deploy /strategies/eur-paper.qkt --as eur-paper
 ```
 
-Output:
+Output (the port is picked at random, the time is when it started, in UTC):
 
 ```text
-[INFO] deployed eur-paper
-QKT_PORT=47291
+NAME          PORT     STATE     STARTED
+eur-paper     47291    running   2026-10-19T09:30:12.418Z
 ```
 
 Verify it's running:
@@ -139,8 +168,8 @@ docker compose exec qkt qkt list
 ```
 
 ```text
-NAME              KIND       UPTIME   PORT     TRADES   STATE
-eur-paper         strategy   00:00:42 47291    0        running
+NAME                KIND       UPTIME   PORT     TRADES   STATE
+eur-paper           strategy   00:00:42 47291    0        running
 ```
 
 For later edits, validate the replacement before applying it:
@@ -160,10 +189,10 @@ docker compose exec qkt qkt logs eur-paper -f
 
 You'll see ticks arrive + condition evaluations. When the EMA crosses, you'll see a `BUY` action and a broker submission. The fill comes back as a `TradeEvent` a few hundred ms later.
 
-Check the position from the host:
+Check the account's open positions:
 
 ```bash
-curl http://localhost:5001/positions | jq
+docker compose exec qkt qkt bot positions EXNESS:EURUSD --json
 ```
 
 Also visible inside MT5 (via VNC) — the position appears in the "Trade" tab with the `magic` number 4242.

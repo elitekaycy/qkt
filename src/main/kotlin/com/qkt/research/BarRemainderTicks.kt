@@ -25,12 +25,18 @@ internal fun maxHalfSpread(
             }
         } ?: BigDecimal.ZERO
 
-/** The bar's low -> high -> close, minus the open (the real opening tick already stood in for it). */
-internal fun syntheticRest(bar: Candle): Iterator<Tick> {
+/**
+ * The bar's low -> high -> close (high -> low -> close when [highFirst]), minus the open (the opening
+ * tick already stood in for it); the timestamps are [com.qkt.marketdata.source.candleToTicks]' slots.
+ */
+internal fun syntheticRest(
+    bar: Candle,
+    highFirst: Boolean = false,
+): Iterator<Tick> {
     val step = ((bar.endTime - bar.startTime) / 4).coerceAtLeast(1)
     return listOf(
-        Tick(bar.symbol, bar.low, bar.startTime + step),
-        Tick(bar.symbol, bar.high, bar.startTime + 2 * step),
+        Tick(bar.symbol, if (highFirst) bar.high else bar.low, bar.startTime + step),
+        Tick(bar.symbol, if (highFirst) bar.low else bar.high, bar.startTime + 2 * step),
         Tick(bar.symbol, bar.close, bar.endTime - 1, volume = bar.volume),
     ).iterator()
 }

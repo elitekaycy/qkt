@@ -87,7 +87,13 @@ You will see a `Result` block with `Profit`, `Round trips`, `Worst drop` and `Sh
 `report.html`. That is a complete run. The figures are hypothetical: this backtest fills at the middle price and
 models no costs. Add `--broker mt5-sim` for a fill model with spread and slippage.
 
-When you are ready to go further, `qkt run momentum.qkt` paper-trades the same file in the foreground.
+When you are ready to go further, paper-trade it on live TradingView prices in the foreground. `BACKTEST:` is local
+data with no live prices, so run a copy on TradingView's name for the pair:
+
+```bash
+sed 's/BACKTEST:BTCUSD/COINBASE:BTCUSD/' momentum.qkt > momentum-paper.qkt
+qkt run momentum-paper.qkt
+```
 
 <br/>
 

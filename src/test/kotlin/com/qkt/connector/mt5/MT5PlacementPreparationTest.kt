@@ -80,4 +80,40 @@ class MT5PlacementPreparationTest {
         val reason = (result as MT5PlacementPreparation.PrepareResult.Reject).reason
         assertThat(reason).contains("entry too close to current price")
     }
+
+    @Test
+    fun `prices go on the venue's tick grid when it is coarser than a point`() {
+        // US500 quoted to 0.01 but traded in 0.25 steps: a point-grid price would be refused (#1455).
+        val cache = ConcurrentHashMap<String, MT5SymbolInfo>()
+        val index = MT5Symbol(profile.symbolPolicy).toBroker("US500")
+        cache[index] =
+            MT5SymbolInfo(
+                ask = BigDecimal("5001.25"),
+                bid = BigDecimal("5001.00"),
+                digits = 2,
+                point = BigDecimal("0.01"),
+                tradeStopsLevel = 0,
+                volumeMin = BigDecimal("0.01"),
+                volumeStep = BigDecimal("0.01"),
+                contractSize = BigDecimal.ONE,
+                tickSize = BigDecimal("0.25"),
+            )
+        val indexPrep =
+            MT5PlacementPreparation(
+                profile,
+                MT5Client(profile.gatewayUrl, profile.serverTimeZone, retryAttempts = 0),
+                prices,
+                MT5Symbol(profile.symbolPolicy),
+                cache,
+            )
+
+        val result =
+            indexPrep.prepareForPlacement(
+                wire("1", price = "5001.13", sl = "4990.10").copy(symbol = index),
+            )
+
+        val ok = result as MT5PlacementPreparation.PrepareResult.Ok
+        assertThat(ok.wire.price).isEqualTo(BigDecimal("5001.25"))
+        assertThat(ok.wire.sl).isEqualTo(BigDecimal("4990.00"))
+    }
 }

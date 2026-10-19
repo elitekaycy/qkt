@@ -71,6 +71,7 @@ class RunCommandTest {
             )
         assertThat(code).isEqualTo(ExitCodes.SUCCESS)
         assertThat(stdout).contains("paper-trading")
+        assertThat(stdout).contains("paper fills: the middle price, no spread or slippage")
         assertThat(stdout).contains("subscribed:")
         assertThat(stdout).contains("feed closed")
     }

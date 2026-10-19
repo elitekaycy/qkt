@@ -22,7 +22,8 @@ class IncompleteDataException(
 
 /**
  * Makes the local tick store complete for a backtest before it runs: fetch missing days (via the
- * store's configured fetcher), validate session-hour coverage against the trading calendar, repair
+ * store's configured fetcher), validate session coverage against the trading calendar (the rule in
+ * [com.qkt.marketdata.store.SessionCoverage]: holidays need no ticks, holiday short sessions pass), repair
  * any incomplete day once (delete + refetch), then fail loud on a remaining hole unless allowed.
  *
  * Operates on **bare** symbols, matching how `LocalMarketSource` keys the tick store.
@@ -92,99 +93,32 @@ class BacktestDataProvisioner(
             }
 
             val requested = report.days.count { it.status != DayCompleteness.Status.NON_TRADING }
-            val covered = report.days.count { it.status == DayCompleteness.Status.COMPLETE }
-            progress("qkt: tick coverage ${report.symbol} $covered/$requested trading days")
+            val covered = report.days.count { it.covered }
+            val short = report.days.filter { it.status == DayCompleteness.Status.SHORT }.map { it.day }
+            val shortNote =
+                when {
+                    short.isEmpty() -> ""
+                    short.size <= SHORT_LISTED -> " (short sessions, holiday hours: ${short.joinToString(", ")})"
+                    else -> " (${short.size} short sessions, holiday hours, from ${short.first()})"
+                }
+            progress("qkt: tick coverage ${report.symbol} $covered/$requested trading days$shortNote")
             val stored = report.days.filter { store.dayFile(s.bareSymbol, it.day) != null }.map { it.day }
             imported.mixLine(s.bareSymbol, stored)?.let { progress("qkt: $it") }
 
             if (report.hasHoles && !allowIncomplete) {
                 throw IncompleteDataException(
-                    describe(
-                        stream = s,
-                        from = from,
-                        to = to,
-                        covered = covered,
-                        requested = requested,
-                        holeDays = report.holes.map { it.day },
-                        barsLine = barsLineFor(s),
-                        fetchEnabled = fetchEnabled,
-                    ),
+                    IncompleteTickMessage(store).describe(s, from, to, report, barsLineFor(s), fetchEnabled),
                 )
             }
             if (report.hasHoles) {
-                progress("qkt: WARNING — running with incomplete data: ${collapseRanges(report.holes.map { it.day })}")
+                val holes = IncompleteTickMessage.collapseRanges(report.holes.map { it.day })
+                progress("qkt: WARNING — running with incomplete data: $holes")
             }
         }
-    }
-
-    /**
-     * The missing-data error: what window was asked for, where ticks were looked for and what
-     * that folder holds, the holes as compact ranges, whether built bars cover the window, and
-     * which flag unblocks the run. Exit code and `--allow-incomplete` behavior are unchanged.
-     */
-    private fun describe(
-        stream: ProvisionStream,
-        from: LocalDate,
-        to: LocalDate,
-        covered: Int,
-        requested: Int,
-        holeDays: List<LocalDate>,
-        barsLine: String?,
-        fetchEnabled: Boolean,
-    ): String =
-        buildString {
-            if (covered == 0) {
-                append("no ${stream.bareSymbol} tick data for $from to $to ($covered of $requested trading days).")
-            } else {
-                append(
-                    "incomplete ${stream.bareSymbol} tick data for $from to $to ($covered of $requested trading days).",
-                )
-            }
-            append("\n  Looked in: ${store.root.resolve("symbols").resolve(stream.bareSymbol)}")
-            val span = heldSpanOf(stream.bareSymbol)
-            if (span == null) append(" (empty — no tick days stored)") else append(" (has $span)")
-            if (covered > 0) {
-                append("\n  Missing: ${collapseRanges(holeDays)}.")
-            }
-            if (barsLine != null) append("\n  $barsLine")
-            if (!fetchEnabled) append("\n  Or let qkt download ticks: drop --no-fetch.")
-            append("\n  Or run on what exists anyway: --allow-incomplete.")
-        }
-
-    /** Stored tick span from the manifest, e.g. "2026-08-24 to 2026-08-28"; null when empty. */
-    private fun heldSpanOf(symbol: String): String? {
-        val ranges = store.manifest(symbol).ranges
-        if (ranges.isEmpty()) return null
-        return ranges.joinToString(", ") { r ->
-            val end = LocalDate.parse(r.to).minusDays(1)
-            if (r.from == end.toString()) r.from else "${r.from} to $end"
-        }
-    }
-
-    /** Collapse consecutive days into ranges: "2025-09-01 to 2025-09-05, 2025-09-07 (2 ranges, 6 days)". */
-    private fun collapseRanges(days: List<LocalDate>): String {
-        if (days.isEmpty()) return "none"
-        val sorted = days.sorted()
-        val ranges = mutableListOf<Pair<LocalDate, LocalDate>>()
-        var start = sorted[0]
-        var prev = sorted[0]
-        for (d in sorted.drop(1)) {
-            if (d == prev.plusDays(1)) {
-                prev = d
-            } else {
-                ranges += start to prev
-                start = d
-                prev = d
-            }
-        }
-        ranges += start to prev
-        val text = ranges.joinToString(", ") { (a, b) -> if (a == b) a.toString() else "$a to $b" }
-        val rangeWord = if (ranges.size == 1) "1 range" else "${ranges.size} ranges"
-        val dayWord = if (sorted.size == 1) "1 day" else "${sorted.size} days"
-        return "$text ($rangeWord, $dayWord)"
     }
 
     private companion object {
         const val DAY_SECONDS = 86_400L
+        const val SHORT_LISTED = 3
     }
 }

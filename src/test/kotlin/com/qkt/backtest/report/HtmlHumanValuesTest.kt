@@ -24,7 +24,7 @@ class HtmlHumanValuesTest : HtmlHumanValuesFixture() {
         val html = render(result())
         assertThat(html).contains("Start 10,000.00 USD")
         assertThat(html).contains("end 14,423.25 USD")
-        assertThat(html).contains("1 trade")
+        assertThat(html).contains("0 round trips")
         assertThat(html).contains("still open")
         assertThat(html).contains("+4,423.25 USD")
         assertThat(html).contains("unrealized")

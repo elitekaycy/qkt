@@ -63,8 +63,17 @@ object EvidenceJson {
             append(",\"financingModel\":").append(nullableString(e.financingModel))
             append(",\"ocoMode\":").append(nullableString(e.ocoMode))
             append(",\"warning\":").append(nullableString(e.warning))
+            // Only when some bar had no ticks, so every other run's execution evidence stays as it was.
+            if (e.barsWithoutTicks.isNotEmpty()) {
+                append(",\"barsWithoutTicks\":")
+                append(e.barsWithoutTicks.joinToString(",", "[", "]", transform = ::bars))
+            }
             append("}")
         }
+
+    private fun bars(b: BarsWithoutTicks): String =
+        "{\"symbol\":${jsonString(b.symbol)},\"withoutTicks\":${b.withoutTicks}," +
+            "\"fillPossible\":${b.fillPossible},\"allWithoutTicks\":${b.allWithoutTicks},\"fill\":\"level\"}"
 
     private fun experiment(e: ExperimentEvidence): String =
         buildString {

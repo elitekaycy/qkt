@@ -85,8 +85,8 @@ internal object BacktestBarReplay {
         }
         val blocker = tickFillsBlocker(symbols, streams, executionConfig)
         require(!explicit || blocker == null) { "--tick-fills is not valid here: $blocker" }
-        // `qkt backtest --bars` resolves fills on real ticks by default wherever that is valid; bars without
-        // ticks still fill on their synthetic path. `--no-tick-fills` keeps the synthetic path everywhere.
+        // `qkt backtest --bars` resolves fills on real ticks by default wherever that is valid; a bar without
+        // ticks fills at its levels, as bar fills do (#1439). `--no-tick-fills` keeps bar fills everywhere.
         val byDefault = forceBars && !explicit && !args.flag("no-tick-fills") && args.subcommand == "backtest"
         if (byDefault && blocker != null) {
             System.err.println("qkt: note: tick-resolved fills are off for this run: $blocker")

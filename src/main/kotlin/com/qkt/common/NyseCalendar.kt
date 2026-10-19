@@ -70,6 +70,12 @@ object NyseCalendar : TradingCalendar {
             }
         }
 
+    /** An NYSE holiday closes the whole session, so data coverage reports the day as a holiday, not a weekday hole. */
+    override fun isClosedSession(
+        symbol: String,
+        session: TimeRange,
+    ): Boolean = isHoliday(session.from.atZone(zone).toLocalDate())
+
     private fun previousTradingDay(date: LocalDate): LocalDate {
         var d = date.minusDays(1)
         while (d.dayOfWeek.value >= 6 || isHoliday(d)) d = d.minusDays(1)
@@ -87,7 +93,7 @@ object NyseCalendar : TradingCalendar {
         days.add(observed(LocalDate.of(year, 1, 1)))
         days.add(LocalDate.of(year, 1, 1).with(TemporalAdjusters.dayOfWeekInMonth(3, java.time.DayOfWeek.MONDAY)))
         days.add(LocalDate.of(year, 2, 1).with(TemporalAdjusters.dayOfWeekInMonth(3, java.time.DayOfWeek.MONDAY)))
-        days.add(goodFriday(year))
+        days.add(WesternEaster.goodFriday(year))
         days.add(LocalDate.of(year, 5, 1).with(TemporalAdjusters.lastInMonth(java.time.DayOfWeek.MONDAY)))
         if (year >= 2022) days.add(observed(LocalDate.of(year, 6, 19)))
         days.add(observed(LocalDate.of(year, 7, 4)))
@@ -103,23 +109,4 @@ object NyseCalendar : TradingCalendar {
             java.time.DayOfWeek.SUNDAY -> d.plusDays(1)
             else -> d
         }
-
-    private fun goodFriday(year: Int): LocalDate {
-        val a = year % 19
-        val b = year / 100
-        val c = year % 100
-        val d = b / 4
-        val e = b % 4
-        val f = (b + 8) / 25
-        val g = (b - f + 1) / 3
-        val h = (19 * a + b - d - g + 15) % 30
-        val i = c / 4
-        val k = c % 4
-        val l = (32 + 2 * e + 2 * i - h - k) % 7
-        val m = (a + 11 * h + 22 * l) / 451
-        val month = (h + l - 7 * m + 114) / 31
-        val day = ((h + l - 7 * m + 114) % 31) + 1
-        val easter = LocalDate.of(year, month, day)
-        return easter.minusDays(2)
-    }
 }

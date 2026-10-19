@@ -3,7 +3,7 @@ instruments:
     contractSize: 100
     volumeStep: 0.01
     volumeMin: 0.01
-    pointSize: 0.01
-    digits: 2
+    pointSize: 0.001
+    digits: 3
     tradeStopsLevelPoints: 0
     commissionPerLot: 7.0

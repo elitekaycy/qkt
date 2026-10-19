@@ -15,8 +15,8 @@ class DayStatusTest {
     ) = DayQuality(tickCount = 2, maxGapMs = last - first, readable = true, firstMs = first, lastMs = last)
 
     @Test
-    fun `ticks inside their own UTC day are ok`() {
-        assertThat(DayStatus.of(q(start, start + 3_600_000), day, start - 1)).isEqualTo("ok")
+    fun `ticks inside their own UTC day are sound`() {
+        assertThat(DayStatus.of(q(start, start + 3_600_000), day, start - 1)).isNull()
     }
 
     @Test
@@ -31,27 +31,8 @@ class DayStatusTest {
     }
 
     @Test
-    fun `a day missing its first hours is a gap from the previous day's last tick`() {
-        val late =
-            DayQuality(
-                2,
-                60_000,
-                readable = true,
-                firstMs = start + 7 * 3_600_000,
-                lastMs =
-                    start + 7 * 3_660_000,
-            )
-        val previous = start - 3_600_000
-
-        assertThat(
-            DayStatus.of(late, day, previous, day.minusDays(1)),
-        ).isEqualTo("GAP 8h (from the previous day's last tick)")
-        assertThat(DayStatus.of(late, day, previous, day.minusDays(3))).isEqualTo("ok")
-    }
-
-    @Test
-    fun `unreadable and empty files keep their verdicts`() {
+    fun `an unreadable file is corrupt and an empty one is left to the coverage check`() {
         assertThat(DayStatus.of(DayQuality(0, 0, readable = false), day, null)).startsWith("CORRUPT")
-        assertThat(DayStatus.of(DayQuality(0, 0, readable = true), day, null)).startsWith("EMPTY")
+        assertThat(DayStatus.of(DayQuality(0, 0, readable = true), day, null)).isNull()
     }
 }

@@ -95,6 +95,11 @@ out("PASS" if D(g["totalPnL"]) == D(res("a01_raw_paper")["global"]["totalPnL"]) 
 # ---- R6 swap: independent recomputation from trades ---------------------------------------------------
 legs, expect_swap = {}, D(0)
 roll_h = 21
+# The instrument as the run was given it (cfg/instr_swap.yaml), not as qkt resolved it.
+swap_cfg = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "cfg", "instr_swap.yaml")).read()
+cfg_num = lambda key: D(re.search(rf"^\s*{key}:\s*(-?[0-9.]+)\s*$", swap_cfg, re.M).group(1))  # noqa: E731
+point, contract = cfg_num("pointSize"), cfg_num("contractSize")
+long_pts, short_pts = cfg_num("swapLongPoints"), cfg_num("swapShortPoints")
 for x in sorted(trades("b02_swap"), key=lambda r: int(r["timestamp"])):
     k = x["legId"]
     if x["legAction"] == "OPENED":
@@ -109,8 +114,8 @@ for x in sorted(trades("b02_swap"), key=lambda r: int(r["timestamp"])):
         while cur <= t1:
             if cur.weekday() < 5:  # weekend rollovers skipped
                 mult = 3 if cur.weekday() == 2 else 1  # Wednesday triple
-                pts = D(-30) if side == "BUY" else D(10)
-                expect_swap += pts * D("0.01") * 100 * qty * mult
+                pts = long_pts if side == "BUY" else short_pts
+                expect_swap += pts * point * contract * qty * mult
             cur += datetime.timedelta(days=1)
 got = D(csv.DictReader(open(f"{O}/b02_swap/financing.csv")).__next__()["netPnlImpact"])
 out("PASS" if got == expect_swap else "FAIL", "swap == points x pointSize x contract x lots x rollovers (Wed x3, weekends skipped)", f"qkt {got} vs independent {expect_swap}")

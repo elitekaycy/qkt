@@ -37,11 +37,11 @@ docker compose up -d
 3. **Verify:**
 
     ```bash
-    curl -H "Authorization: Bearer $MT5_API_KEY" http://localhost:5001/health/ready
+    docker compose exec mt5-gateway sh -c 'curl -fsS -H "Authorization: Bearer $API_KEY" http://localhost:5001/health/ready'
     docker compose exec qkt qkt brokers list
     ```
 
-4. **Deploy a strategy:** drop a `.qkt` file into `./strategies/` — the daemon's `--load-dir /strategies` auto-deploys it on next restart. For hot-deploy:
+4. **Deploy a strategy:** drop a `.qkt` file whose streams use your broker account's prefix (the `brokers:` name in `qkt.config.yaml`, upper-cased, e.g. `MT5:EURUSD`; a `BACKTEST:` stream is refused) into `./strategies/` — the daemon's `--load-dir /strategies` auto-deploys it on next restart. For hot-deploy:
 
     ```bash
     docker compose exec qkt qkt deploy /strategies/momentum.qkt --as momentum

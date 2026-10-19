@@ -90,13 +90,19 @@ class BacktestCommand(
             }
 
             return try {
+                val backtest = ctx.backtest(overrides)
+                val run = BacktestMetricsWindows.run(backtest, effective, ctx.from, ctx.to)
+                val noTicks =
+                    backtest.barFills.noTickBars
+                        ?.counts()
+                        .orEmpty()
                 val result =
                     BacktestEvidence.attach(
                         effective,
-                        BacktestMetricsWindows.run(ctx.backtest(overrides), effective, ctx.from, ctx.to),
+                        run,
                         path,
                         parsedFile,
-                        ctx.executionEvidence(),
+                        ctx.executionEvidence().copy(barsWithoutTicks = noTicks),
                         ctx.datasetEvidence,
                         resolvedRun.resolved,
                     )
@@ -120,6 +126,7 @@ class BacktestCommand(
                     effective.flag("verbose"),
                 )
                 printExecutionNotes(ctx.symbols, futures, options, ctx.brokerKind)
+                for (bars in noTicks) System.err.println("qkt: note: ${bars.summary()}")
                 ExitCodes.SUCCESS
             } catch (e: com.qkt.dsl.compile.CompileError) {
                 System.err.println("qkt: error: ${e.message}")

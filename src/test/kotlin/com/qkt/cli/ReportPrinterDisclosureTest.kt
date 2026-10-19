@@ -14,7 +14,7 @@ class ReportPrinterDisclosureTest : ReportPrinterFixture() {
         val out = render(ReportFormat.Text, BrokerKind.PAPER, verbose = true)
         // #336 — execution disclosure.
         assertThat(out).contains("Assumptions & conventions")
-        assertThat(out).contains("paper — fills at mid price; no spread, no slippage modeled")
+        assertThat(out).contains("Fills:      middle price, no spread")
         // #338 — metric conventions + corrected Sharpe label.
         assertThat(out).contains("Sharpe (annual):")
         assertThat(out).doesNotContain("Sharpe (daily)")
@@ -33,11 +33,11 @@ class ReportPrinterDisclosureTest : ReportPrinterFixture() {
     }
 
     @Test
-    fun `mt5-sim discloses its richer fill model`() {
+    fun `mt5-sim without recorded facts states its fill model`() {
         assertThat(render(ReportFormat.Text, BrokerKind.MT5_SIM, verbose = true))
-            .contains("mt5-sim — synthetic spread")
+            .contains("Fills:      bid/ask from the data, or a synthetic 2-point spread where it has none")
         assertThat(render(ReportFormat.Text, BrokerKind.MT5_SIM))
-            .contains("Fills use a synthetic spread plus configured slippage.")
+            .contains("Fills:      bid/ask from the data, or a synthetic 2-point spread where it has none")
     }
 
     @Test

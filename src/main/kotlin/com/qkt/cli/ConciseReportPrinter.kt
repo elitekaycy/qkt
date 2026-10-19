@@ -2,6 +2,8 @@ package com.qkt.cli
 
 import com.qkt.backtest.BacktestResult
 import com.qkt.backtest.BrokerKind
+import com.qkt.backtest.ExecutionFacts
+import com.qkt.backtest.report.ExecutionFactsText
 import com.qkt.backtest.report.HumanFormat
 import java.io.PrintStream
 import java.math.BigDecimal
@@ -12,7 +14,8 @@ import java.time.ZoneOffset
 
 /**
  * The default ~20-line `qkt backtest` view (#1370): headline numbers with units, open positions
- * stated plainly, costs and halts only when they happened. Today's full output lives behind
+ * stated plainly, costs and halts only when they happened, and the fill assumptions the run actually
+ * made ([ExecutionFactsText]). Today's full output lives behind
  * `--verbose`; `--json` and the report bundle are unchanged.
  */
 internal object ConciseReportPrinter {
@@ -26,6 +29,7 @@ internal object ConciseReportPrinter {
         val g = r.global
         val currency = r.accounting?.accountCurrency
         val start = g.equityCurve.firstOrNull()?.equity
+        val facts = r.executionFacts ?: ExecutionFacts.assumed(brokerKind, futures, options)
 
         out.println("Backtest   ${windowLine(r)}")
         if (start != null) out.println("Account    ${HumanFormat.money(start, currency, signed = false)}")
@@ -37,7 +41,7 @@ internal object ConciseReportPrinter {
         out.println("  ${row("Worst drop")}${HumanFormat.percent(g.maxDrawdown)}    biggest fall from a peak")
         out.println("  ${row("Worst day")}${HumanFormat.percent(g.maxDailyDrawdown)}")
         out.println("  ${row("Sharpe ratio")}${HumanFormat.ratio(g.sharpeRatio)}     return per unit of risk")
-        out.println("  ${row("Costs")}${costs(r, currency)}")
+        out.println("  ${row("Costs")}${ExecutionFactsText.costs(facts, g, currency)}")
         if (r.halts.isNotEmpty()) {
             out.println("  ${row("Halts")}${r.halts.size} halt(s); trading stopped partway")
         }
@@ -46,24 +50,12 @@ internal object ConciseReportPrinter {
                 out.println("  LIVE BEHAVIOR WARNING: the runaway breaker would have halted this strategy")
             }
         }
+        WindowsSummaryPrinter.print(r.windows, currency, out)
         out.println()
         out.println("Assumptions")
-        when (brokerKind) {
-            BrokerKind.PAPER -> {
-                out.println("  Fills at the middle price, no spread or slippage: results are optimistic.")
-                out.println("  Try --broker mt5-sim for a realistic fill model.")
-            }
-            BrokerKind.MT5_SIM -> out.println("  Fills use a synthetic spread plus configured slippage.")
-        }
-        if (futures.isNotEmpty()) {
-            out.println(
-                "  Futures:    exchange simulator — executable price + slippage, root fees per fill, rolls as roll costs",
-            )
-        }
-        if (options.isNotEmpty()) {
-            out.println(
-                "  Options:    option venue — next chain snapshot's bid/ask, capped venue fees, cash settlement at delivery",
-            )
+        ExecutionFactsText.padded(ExecutionFactsText.lines(facts)).forEach(out::println)
+        if (facts.broker == BrokerKind.PAPER && (facts.brokerSymbols.isNotEmpty() || !facts.recorded)) {
+            out.println("  Paper fills are optimistic. Try --broker mt5-sim for a realistic fill model.")
         }
         out.println()
         out.println("More detail: --verbose (full output), --report-dir DIR (files), --json (for tools).")
@@ -96,12 +88,13 @@ internal object ConciseReportPrinter {
         return "   (${HumanFormat.percent(total.divide(start, MathContext.DECIMAL64), signed = true)})"
     }
 
+    /** Positions closed, from the same round trips and win rate as `result.json` and report.html (#1437, #1452). */
     private fun roundTrips(r: BacktestResult): String {
-        val closed = r.trades.count { it.reducedExposure }
-        if (closed == 0) return "0 closed"
-        val won = r.trades.count { it.reducedExposure && it.realized.signum() > 0 }
-        val pct = HumanFormat.percent(BigDecimal(won).divide(BigDecimal(closed), MathContext.DECIMAL64))
-        return "$closed closed, $won won ($pct)"
+        val g = r.global
+        if (g.roundTrips == 0) return "0 closed"
+        val pct = HumanFormat.percent(g.winRate)
+        if (g.roundTripsBreakEven == 0) return "${g.roundTrips} closed, ${g.roundTripsWon} won ($pct)"
+        return "${g.roundTrips} closed, ${g.roundTripsWon} won, ${g.roundTripsBreakEven} break-even ($pct of the rest)"
     }
 
     private fun openPositions(
@@ -118,31 +111,5 @@ internal object ConciseReportPrinter {
     private fun signedQty(qty: BigDecimal): String {
         val body = qty.abs().stripTrailingZeros().toPlainString()
         return if (qty.signum() < 0) "-$body" else "+$body"
-    }
-
-    private fun costs(
-        r: BacktestResult,
-        currency: String?,
-    ): String {
-        val g = r.global
-        val parts = mutableListOf<String>()
-        if (g.commissionPaid.signum() !=
-            0
-        ) {
-            parts += "commission ${HumanFormat.money(g.commissionPaid, currency, signed = false)}"
-        }
-        if (g.swapPaid.signum() != 0) parts += "swap ${HumanFormat.money(g.swapPaid, currency, signed = false)}"
-        if (g.rollCostsPaid.signum() !=
-            0
-        ) {
-            parts += "rolls ${HumanFormat.money(g.rollCostsPaid, currency, signed = false)}"
-        }
-        if (g.fundingPaid.signum() !=
-            0
-        ) {
-            parts += "funding ${HumanFormat.money(g.fundingPaid, currency, signed = false)}"
-        }
-        if (parts.isEmpty()) return "none modeled (no spread, commission or swap)"
-        return parts.joinToString(", ")
     }
 }

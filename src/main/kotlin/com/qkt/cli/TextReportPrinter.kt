@@ -2,7 +2,9 @@ package com.qkt.cli
 
 import com.qkt.backtest.BacktestResult
 import com.qkt.backtest.BrokerKind
+import com.qkt.backtest.ExecutionFacts
 import com.qkt.backtest.Regime
+import com.qkt.backtest.report.ExecutionFactsText
 import java.io.PrintStream
 
 /**
@@ -25,7 +27,8 @@ internal object TextReportPrinter {
             return
         }
         val g = r.global
-        out.println("Trades:           ${g.tradeCount}")
+        out.println("Trades:           ${g.tradeCount}   (fills)")
+        out.println("Round trips:      ${g.roundTrips}   (${g.roundTripsWon} won, ${g.roundTripsBreakEven} break-even)")
         out.println("Final realized:   ${g.realizedTotal.toPlainString()}   (net of commission and swap)")
         out.println("Final unrealized: ${g.unrealizedTotal.toPlainString()}")
         out.println("Total PnL:        ${g.totalPnL.toPlainString()}")
@@ -63,6 +66,7 @@ internal object TextReportPrinter {
                 )
             }
         }
+        WindowsSummaryPrinter.print(r.windows, r.accounting?.accountCurrency, out)
         r.inputSummary?.let { inputs ->
             out.println()
             out.println("Replay inputs")
@@ -82,20 +86,16 @@ internal object TextReportPrinter {
         }
         out.println()
         out.println("Assumptions & conventions")
-        out.println("  Execution:  ${executionModel(brokerKind)}")
-        out.println("  Commission: ${commissionNote(g.commissionPaid)}")
-        out.println("  Swap:       ${swapNote(g.swapPaid)}")
-        if (futures.isNotEmpty()) {
-            out.println(
-                "  Futures:    exchange simulator — executable price + slippage, root fees per fill, rolls as roll costs",
+        val facts = r.executionFacts ?: ExecutionFacts.assumed(brokerKind, futures, options)
+        val costs =
+            listOfNotNull(
+                ExecutionFactsText.spread(facts)?.let { "Spread" to it.removePrefix("spread ") },
+                "Commission" to commissionNote(g.commissionPaid),
+                "Swap" to swapNote(g.swapPaid),
             )
-        }
-        if (options.isNotEmpty()) {
-            out.println(
-                "  Options:    option venue — next chain snapshot's bid/ask, capped venue fees, cash settlement at delivery",
-            )
-        }
-        out.println("  Win rate:   wins / decided trades; break-even trades excluded")
+        ExecutionFactsText.padded(ExecutionFactsText.lines(facts) + costs).forEach(out::println)
+        out.println("  Win rate:   won / decided round trips (one per position, net of costs)")
+        out.println("              break-even trades excluded")
         out.println("  Calmar:     total return / max drawdown (NOT annualized)")
         out.println("  Sharpe:     annualized from average sample spacing; risk-free rate 0")
         TextEvidencePrinter.print(r, out)
@@ -104,13 +104,6 @@ internal object TextReportPrinter {
         TextBookPrinter.printBookRisk(r, out)
         printAutocorr(r, out)
     }
-
-    /** One-line description of what the broker's fills modeled. */
-    private fun executionModel(brokerKind: BrokerKind): String =
-        when (brokerKind) {
-            BrokerKind.PAPER -> "paper — fills at mid price; no spread, no slippage modeled"
-            BrokerKind.MT5_SIM -> "mt5-sim — synthetic spread + configurable slippage"
-        }
 
     /**
      * Lag-1 return autocorrelation block (#460), one section per symbol. Skipped entirely when no

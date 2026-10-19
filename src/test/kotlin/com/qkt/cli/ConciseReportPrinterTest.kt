@@ -87,4 +87,37 @@ class ConciseReportPrinterTest : ReportPrinterFixture() {
         assertThat(text).contains("Final realized:")
         assertThat(text).contains("Assumptions & conventions")
     }
+
+    @Test
+    fun `round trips and the win rate come from the report, not from exit fills`() {
+        val buf = ByteArrayOutputStream()
+        val res =
+            result().copy(
+                global =
+                    report("0").copy(
+                        roundTrips = 274,
+                        roundTripsWon = 157,
+                        winRate = BigDecimal("0.57299270"),
+                    ),
+            )
+        ReportPrinter.print(res, ReportFormat.Text, PrintStream(buf), BrokerKind.PAPER)
+        assertThat(buf.toString()).contains("274 closed, 157 won (57.3%)")
+    }
+
+    @Test
+    fun `break-even round trips are named because the win rate leaves them out`() {
+        val buf = ByteArrayOutputStream()
+        val res =
+            result().copy(
+                global =
+                    report("0").copy(
+                        roundTrips = 10,
+                        roundTripsWon = 3,
+                        roundTripsBreakEven = 2,
+                        winRate = BigDecimal("0.375"),
+                    ),
+            )
+        ReportPrinter.print(res, ReportFormat.Text, PrintStream(buf), BrokerKind.PAPER)
+        assertThat(buf.toString()).contains("10 closed, 3 won, 2 break-even (37.5% of the rest)")
+    }
 }

@@ -121,8 +121,7 @@ class RunCommand(
         val feedSymbols = (symbols + accountingConfig.normalizedSymbols.values).distinct()
         val marketSource = effectiveSourceFactory(feedSymbols)
 
-        println("[INFO] qkt ${BuildInfo.VERSION} — strategy ${ast.name} v${ast.version} — paper-trading")
-        println("[INFO] subscribed: ${feedSymbols.joinToString(", ")}")
+        printRunBanner(ast.name, ast.version, feedSymbols)
 
         val ring = EventRing(capacity = ringSize)
         val startMs = System.currentTimeMillis()

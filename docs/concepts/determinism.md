@@ -12,7 +12,9 @@ Given the same ticks:
 
 - Order ids (`SequentialIdGenerator` is seeded the same way)
 - Order request timestamps (driven by tick timestamps via `FixedClock` in both runtimes)
-- Fill prices (`PaperBroker` uses the same `MarketPriceTracker` last-price logic)
+- Fill prices (`PaperBroker` uses the same `MarketPriceTracker` last-price logic: the middle price, no spread, in
+  both. A paper run is therefore optimistic against the venue by about half a spread a side; `--broker mt5-sim`
+  is the backtest that prices the spread.)
 - Realized PnL per trade
 - Final position quantities
 

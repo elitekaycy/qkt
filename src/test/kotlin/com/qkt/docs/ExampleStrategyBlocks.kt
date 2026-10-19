@@ -14,7 +14,7 @@ import java.nio.file.Path
 
 /**
  * Reads the complete `STRATEGY`/`PORTFOLIO` files out of the example pages under `docs/examples/`
- * and compiles them the way `qkt parse` would. A portfolio's `IMPORT`s resolve to the strategy
+ * (or the pages under any other docs directory) and compiles them the way `qkt parse` would. A portfolio's `IMPORT`s resolve to the strategy
  * blocks on the same page whose fence title names that file; an import the page does not show
  * gets a stub child.
  */
@@ -28,8 +28,8 @@ internal object ExampleStrategyBlocks {
         val isPortfolio: Boolean get() = firstWord(block.lines) == "PORTFOLIO"
     }
 
-    fun examplePages(): List<Path> =
-        Files.walk(EXAMPLES_DIR).use { paths ->
+    fun examplePages(dir: Path = EXAMPLES_DIR): List<Path> =
+        Files.walk(dir).use { paths ->
             paths.filter { it.toString().endsWith(".md") }.sorted().toList()
         }
 
@@ -64,5 +64,8 @@ internal object ExampleStrategyBlocks {
     }
 
     val EXAMPLES_DIR: Path = Path.of("docs", "examples")
+
+    /** The step-by-step pages a new user copies from: tutorials and how-to guides. */
+    val GUIDE_DIRS: List<Path> = listOf(Path.of("docs", "tutorials"), Path.of("docs", "how-to"))
     val TITLE = Regex("title=\"([^\"]+)\"")
 }

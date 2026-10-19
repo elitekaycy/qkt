@@ -10,7 +10,8 @@ import java.time.LocalDate
 
 /**
  * On-disk binary bar store: `bars/<broker>/<symbol>/<tf>/<YYYY-MM-DD>.bin`, one UTC day per file.
- * File presence IS coverage (no separate manifest — bars are cheap to rebuild). Written once by
+ * A day is stored when its file holds at least one bar (no separate manifest — bars are cheap to rebuild): a
+ * header-only file, written for a day whose ticks had not arrived yet, is not coverage. Written by
  * `qkt data build-bars` (decode ticks -> aggregate -> store); read by the `--bars` replay path.
  */
 class BinaryBarStore(
@@ -29,14 +30,34 @@ class BinaryBarStore(
             .resolve(tf.canonicalSpec())
             .resolve("$date.bin")
 
+    /** Whether the day's file holds at least one bar. */
     fun hasDay(
         broker: String,
         symbol: String,
         tf: TimeWindow,
         date: LocalDate,
-    ): Boolean = Files.exists(dayFile(broker, symbol, tf, date))
+    ): Boolean = (barCount(broker, symbol, tf, date) ?: 0) > 0
 
-    /** Whether the day's bars exist and were built no earlier than [source] last changed. */
+    /** The number of bars the day's file holds, read from its header alone; null when there is no file. */
+    fun barCount(
+        broker: String,
+        symbol: String,
+        tf: TimeWindow,
+        date: LocalDate,
+    ): Int? = BinaryBarDayFile.barCount(dayFile(broker, symbol, tf, date))
+
+    /** The start times of the day's bars, decoding nothing else; null when there is no file. */
+    fun startTimes(
+        broker: String,
+        symbol: String,
+        tf: TimeWindow,
+        date: LocalDate,
+    ): LongArray? = BinaryBarDayFile.startTimes(dayFile(broker, symbol, tf, date))
+
+    /**
+     * Whether the day's bars exist and were built no earlier than [source] last changed. A day built with no bars
+     * from a tick file that now holds ticks is not: e.g. a day built while its fetch was still empty.
+     */
     fun isBuiltFrom(
         broker: String,
         symbol: String,
@@ -45,7 +66,9 @@ class BinaryBarStore(
         source: Path,
     ): Boolean {
         val built = dayFile(broker, symbol, tf, date)
-        return Files.exists(built) && Files.getLastModifiedTime(built) >= Files.getLastModifiedTime(source)
+        val count = barCount(broker, symbol, tf, date) ?: return false
+        if (Files.getLastModifiedTime(built) < Files.getLastModifiedTime(source)) return false
+        return count > 0 || !BinaryBarDayFile.holdsTicks(source)
     }
 
     fun writeDay(

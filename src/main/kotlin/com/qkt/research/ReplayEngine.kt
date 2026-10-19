@@ -278,10 +278,10 @@ class ReplayEngine(
 
         // Tick-resolved fills: replace the bar feed with one that loads real ticks for fill-possible
         // bars, deciding via this engine's own OrderManager. Built here, after the pipeline exists.
+        // Bars without ticks fill at their levels through barFills' NoTickBars (#1439).
         if (tickResolvedBars != null && tickSlicer != null) {
-            // Tick-resolved fills ask this engine's own OrderManager how few real ticks a bar needs.
-            feed =
-                BarResolvedFeed(tickResolvedBars, tickSlicer, pipeline.orderManager::intrabarFill, replayEndTimestamp)
+            val fill = pipeline.orderManager::intrabarFill
+            feed = BarResolvedFeed(tickResolvedBars, tickSlicer, fill, replayEndTimestamp, barFills.noTickBars)
         }
 
         warmup.warm(pipeline)

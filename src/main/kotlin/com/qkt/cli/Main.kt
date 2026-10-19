@@ -16,6 +16,10 @@ internal fun exitCodeOf(
 ): Int =
     try {
         command(argv)
+    } catch (e: com.qkt.marketdata.live.tv.UnservableStreamException) {
+        // The message names the fix; a stack trace would only bury it.
+        err.println("qkt: error: ${e.message}")
+        ExitCodes.USER_ERROR
     } catch (e: Throwable) {
         err.println("qkt: error: ${e.message ?: e::class.java.name}")
         e.printStackTrace(err)

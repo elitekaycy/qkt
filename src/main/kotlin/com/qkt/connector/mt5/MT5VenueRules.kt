@@ -15,6 +15,8 @@ internal data class MT5VenueRules(
     val pointSize: BigDecimal,
     val tradeStopsLevelPoints: Int,
     val tradeFreezeLevelPoints: Int,
+    /** `trade_tick_size` when the venue reports one coarser than a point; prices go on this grid (#1455). */
+    val tickSize: BigDecimal? = null,
 ) {
     companion object {
         fun of(spec: InstrumentSpec): MT5VenueRules =
@@ -37,6 +39,7 @@ internal data class MT5VenueRules(
                 pointSize = info.point,
                 tradeStopsLevelPoints = info.tradeStopsLevel,
                 tradeFreezeLevelPoints = info.tradeFreezeLevel,
+                tickSize = info.tickSize?.takeIf { it > info.point },
             )
     }
 }

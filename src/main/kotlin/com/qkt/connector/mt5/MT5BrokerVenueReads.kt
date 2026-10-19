@@ -148,6 +148,7 @@ internal class MT5BrokerVenueReads(
             pointSize = info.point,
             digits = info.digits,
             tradeStopsLevelPoints = info.tradeStopsLevel,
+            tickSize = info.tickSize,
         )
     }
 }

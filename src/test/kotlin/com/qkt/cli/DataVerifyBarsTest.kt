@@ -67,13 +67,13 @@ class DataVerifyBarsTest {
     fun `sound bars pass with their count and largest gap`(
         @TempDir root: Path,
     ) {
-        seed(root, "2026-10-13", (0..9).map { bar("2026-10-13", it) } + bar("2026-10-13", 15))
+        seed(root, "2026-10-13", (0 until 1440).filter { it !in 10..14 }.map { bar("2026-10-13", it) })
 
         val (code, lines) = verify(root)
 
         assertThat(code).isEqualTo(ExitCodes.SUCCESS)
-        assertThat(lines).contains("  2026-10-13  bars=11  maxGap=6m  ok")
-        assertThat(lines).anyMatch { it.startsWith("qkt data verify: done — 1 days, 11 bars, 0 flagged") }
+        assertThat(lines).contains("  2026-10-13  bars=1435  maxGap=6m  ok")
+        assertThat(lines).anyMatch { it.startsWith("qkt data verify: done — 1 days, 1435 bars, 0 flagged") }
     }
 
     @Test
@@ -96,6 +96,26 @@ class DataVerifyBarsTest {
                 it.contains("1 with impossible prices")
         }
         assertThat(lines).anyMatch { it.startsWith("  2026-10-13  MISSING") }
+    }
+
+    @Test
+    fun `a day ending early is a short session when later bars are stored, and partial as the last stored day`(
+        @TempDir root: Path,
+    ) {
+        // 2026-10-13 stops at 17:00 UTC, four hours before the 21:00 New York close; 10-14 trades all day.
+        seed(root, "2026-10-13", (0 until 17 * 60).map { bar("2026-10-13", it) })
+        val (_, last) = verify(root)
+        assertThat(last).anyMatch {
+            it.startsWith("  2026-10-13") &&
+                it.endsWith("partial, the end of the stored data (no bars after 17:00Z (nothing stored later))")
+        }
+
+        seed(root, "2026-10-14", (0 until 1440).map { bar("2026-10-14", it) })
+        val (code, lines) = verify(root)
+        assertThat(code).isEqualTo(ExitCodes.SUCCESS)
+        assertThat(
+            lines,
+        ).anyMatch { it.startsWith("  2026-10-13  bars=1020  maxGap=1m  short session (last bar 17:00Z") }
     }
 
     @Test
@@ -125,7 +145,7 @@ class DataVerifyBarsTest {
     ) {
         val day = java.time.LocalDate.parse("2026-10-13")
         val bars =
-            (0..2).map { m ->
+            (0 until 1440).map { m ->
                 com.qkt.marketdata.Candle(
                     "MYBROKER:EURUSD",
                     java.math.BigDecimal("1.1"),
@@ -149,7 +169,7 @@ class DataVerifyBarsTest {
 
         assertThat(code).isEqualTo(ExitCodes.SUCCESS)
         assertThat(lines).anyMatch { it.contains("1m .bin bars, the --bars tier (1 day files)") }
-        assertThat(lines).contains("  2026-10-13  bars=3  maxGap=1m  ok")
+        assertThat(lines).contains("  2026-10-13  bars=1440  maxGap=1m  ok")
         assertThat(verify(root.resolve("elsewhere")).first).isEqualTo(ExitCodes.USER_ERROR)
     }
 }
