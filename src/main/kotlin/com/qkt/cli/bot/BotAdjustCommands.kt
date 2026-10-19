@@ -4,9 +4,9 @@ import com.qkt.cli.Args
 import com.qkt.cli.ExitCodes
 import com.qkt.cli.daemon.StateDir
 import com.qkt.common.SystemClock
-import com.qkt.trade.BotGateway
-import com.qkt.trade.BotPlaceResult
 import com.qkt.trade.BotTrail
+import com.qkt.trade.venue.BotVenues
+import com.qkt.trade.venue.idJson
 
 /**
  * `qkt bot modify BROKER:SYMBOL --ticket N [--sl <px>] [--tp <px>]` — moves an open
@@ -23,26 +23,26 @@ class BotModifyCommand(
 
     private fun execute(json: Boolean): Int {
         val symbol = args.requirePositional(0, "BROKER:SYMBOL")
-        val ticket = args.requireOption("ticket").toLongOrNull() ?: error("invalid --ticket")
+        val ticket = args.requireOption("ticket")
         val slArg = args.option("sl")?.let { it.toBigDecimalOrNull() ?: error("invalid --sl '$it'") }
         val tpArg = args.option("tp")?.let { it.toBigDecimalOrNull() ?: error("invalid --tp '$it'") }
         require(slArg != null || tpArg != null) { "pass --sl and/or --tp" }
         val cfg = botConfig(args)
-        val gateway = BotGateway.forSymbol(cfg, symbol)
-        val positions = gateway.positions() ?: error("venue positions read failed")
-        val pos =
-            positions.firstOrNull { it.ticket == ticket }
-                ?: error("no open position with ticket $ticket")
-        val sl = slArg ?: pos.sl.takeIf { it.signum() > 0 }
-        val tp = tpArg ?: pos.tp.takeIf { it.signum() > 0 }
-        val result = gateway.modify(ticket, sl, tp)
+        val (sl, tp, result) =
+            BotVenues.forSymbol(cfg, symbol).use { opened ->
+                val positions = opened.venue.positions() ?: error("venue positions read failed")
+                val pos = positions.firstOrNull { it.ticket == ticket } ?: error("no open position with ticket $ticket")
+                val sl = slArg ?: pos.sl?.takeIf { it.signum() > 0 }
+                val tp = tpArg ?: pos.tp?.takeIf { it.signum() > 0 }
+                Triple(sl, tp, opened.venue.modify(pos, sl, tp))
+            }
         recordBotEvent(
             args,
             cfg,
             "bot.modify",
             mapOf(
                 "symbol" to symbol,
-                "ticket" to ticket.toString(),
+                "ticket" to ticket,
                 "sl" to sl?.toPlainString(),
                 "tp" to tp?.toPlainString(),
                 "ok" to result.ok.toString(),
@@ -68,30 +68,32 @@ class BotCancelCommand(
     private fun execute(json: Boolean): Int {
         val symbol = args.requirePositional(0, "BROKER:SYMBOL")
         val cfg = botConfig(args)
-        val gateway = BotGateway.forSymbol(cfg, symbol)
-        val targets =
-            args.option("order")?.let { listOf(it.toLongOrNull() ?: error("invalid --order '$it'")) }
-                ?: if (args.flag("all")) {
-                    val brokerSym = gateway.brokerSymbol(symbol)
-                    val pending = gateway.pendingOrders() ?: error("venue pending-orders read failed")
-                    pending.filter { it.symbol == brokerSym }.map { it.ticket }.ifEmpty {
-                        error("no pending orders for $symbol")
-                    }
-                } else {
-                    error("pass --order <ticket> or --all")
-                }
-        val results = targets.map { it to gateway.cancel(it) }
+        val results =
+            BotVenues.forSymbol(cfg, symbol).use { opened ->
+                val targets =
+                    args.option("order")?.let { listOf(it) }
+                        ?: if (args.flag("all")) {
+                            val venueSym = opened.venue.venueSymbol(symbol)
+                            val pending = opened.venue.pendingOrders() ?: error("venue pending-orders read failed")
+                            pending.filter { it.symbol == venueSym }.map { it.ticket }.ifEmpty {
+                                error("no pending orders for $symbol")
+                            }
+                        } else {
+                            error("pass --order <ticket> or --all")
+                        }
+                targets.map { it to opened.venue.cancel(it).ok }
+            }
         results.forEach { (t, ok) ->
             recordBotEvent(
                 args,
                 cfg,
                 "bot.cancel",
-                mapOf("symbol" to symbol, "ticket" to t.toString(), "ok" to ok.toString()),
+                mapOf("symbol" to symbol, "ticket" to t, "ok" to ok.toString()),
             )
         }
         val allOk = results.all { it.second }
         if (json) {
-            println(jsonArr(results.map { (t, ok) -> jsonObj("ok" to ok, "ticket" to t) }))
+            println(jsonArr(results.map { (t, ok) -> jsonObj("ok" to ok, "ticket" to idJson(t)) }))
         } else {
             results.forEach { (t, ok) ->
                 if (ok) println("CANCELLED ticket=$t") else System.err.println("CANCEL FAILED ticket=$t")
@@ -114,7 +116,7 @@ private fun recordBotEvent(
 
 private fun emitBotResult(
     json: Boolean,
-    result: BotPlaceResult,
+    result: com.qkt.connectivity.DirectResult,
     humanOk: String,
 ): Int {
     if (json) {

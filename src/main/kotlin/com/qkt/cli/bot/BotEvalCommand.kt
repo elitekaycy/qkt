@@ -8,7 +8,7 @@ import com.qkt.dsl.stdlib.IndicatorInput
 import com.qkt.dsl.stdlib.IndicatorRegistry
 import com.qkt.indicators.Indicator
 import com.qkt.marketdata.Candle
-import com.qkt.trade.BotGateway
+import com.qkt.trade.venue.BotVenues
 import java.math.BigDecimal
 
 /**
@@ -69,7 +69,10 @@ class BotEvalCommand(
         symbol: String,
         window: TimeWindow,
         count: Int,
-    ): List<Candle> = BotGateway.forSymbol(botConfig(args), symbol).bars(symbol, window, count, SystemClock().now())
+    ): List<Candle> =
+        BotVenues.forSymbol(botConfig(args), symbol).use {
+            it.venue.bars(symbol, window, count, SystemClock().now())
+        }
 }
 
 /** Result of evaluating one indicator over a bar series. [value] is null until warm. */

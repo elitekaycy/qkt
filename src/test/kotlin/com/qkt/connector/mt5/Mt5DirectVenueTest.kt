@@ -1,10 +1,7 @@
-package com.qkt.trade
+package com.qkt.connector.mt5
 
 import com.qkt.common.Side
-import com.qkt.connector.mt5.MT5BrokerProfile
-import com.qkt.connector.mt5.MT5Client
-import com.qkt.connector.mt5.MT5ServerTimeZone
-import com.qkt.connector.mt5.SymbolPolicy
+import com.qkt.connectivity.DirectPosition
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.StopLossSpec
 import com.qkt.execution.TimeInForce
@@ -17,9 +14,9 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 
-class BotGatewayTest {
+class Mt5DirectVenueTest {
     private lateinit var server: HttpServer
-    private lateinit var gateway: BotGateway
+    private lateinit var gateway: Mt5DirectVenue
     private lateinit var profile: MT5BrokerProfile
     private lateinit var client: MT5Client
     private val responses = mutableMapOf<String, Pair<Int, String>>()
@@ -55,7 +52,7 @@ class BotGatewayTest {
                 httpTimeoutMs = 2000,
                 retryAttempts = 0,
             )
-        gateway = BotGateway(profile, client)
+        gateway = Mt5DirectVenue(profile, client)
     }
 
     @AfterEach
@@ -73,21 +70,31 @@ class BotGatewayTest {
             timestamp = 1_000L,
         )
 
+    private fun position(ticket: String) =
+        DirectPosition(
+            ticket,
+            "XAUUSDm",
+            "BUY",
+            BigDecimal("0.5"),
+            BigDecimal("2650"),
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+        )
+
     @Test
     fun `place maps symbol attaches exits and parses success`() {
         responses["/order"] =
             200 to """{"result":{"retcode":10009,"order":123,"deal":456,"price":2650.5,"comment":"done"}}"""
         val result =
-            gateway.place(
-                CompiledBotOrder(
-                    request = market(),
-                    stopLoss = BigDecimal("2620.50"),
-                    takeProfit = BigDecimal("2710.50"),
-                ),
-            )
+            gateway.place(market(), BigDecimal("2620.50"), BigDecimal("2710.50"), "bot-1")
         assertThat(result.ok).isTrue
-        assertThat(result.ticket).isEqualTo(123L)
-        assertThat(result.deal).isEqualTo(456L)
+        assertThat(result.ticket).isEqualTo("123")
+        assertThat(result.deal).isEqualTo("456")
         assertThat(result.price).isEqualByComparingTo("2650.5")
         val body = requests.single { it.first == "POST /order" }.second
         assertThat(body).contains("\"symbol\":\"XAUUSDm\"")
@@ -103,7 +110,7 @@ class BotGatewayTest {
     fun `place surfaces venue rejection reason`() {
         responses["/order"] =
             200 to """{"result":{"retcode":10019,"order":0,"deal":0,"price":0,"comment":"No money"}}"""
-        val result = gateway.place(CompiledBotOrder(market(), null, null))
+        val result = gateway.place(market(), null, null, "bot-1")
         assertThat(result.ok).isFalse
         assertThat(result.error).contains("No money")
     }
@@ -117,7 +124,7 @@ class BotGatewayTest {
             200 to """{"result":{"retcode":10009,"order":123,"deal":456,"price":2650.5,"comment":"done"}}"""
 
         assertThatThrownBy {
-            BotGateway(profile.copy(expectedAccountLogin = 99L), client)
+            Mt5DirectVenue(profile.copy(expectedAccountLogin = 99L), client)
         }.hasMessageContaining("account login mismatch")
         assertThat(requests.map { it.first }).containsExactly("GET /account")
     }
@@ -138,7 +145,7 @@ class BotGatewayTest {
                 timeInForce = TimeInForce.GTC,
                 timestamp = 1_000L,
             )
-        gateway.place(CompiledBotOrder(bracket, BigDecimal("2620.50"), BigDecimal("2710.50")))
+        gateway.place(bracket, BigDecimal("2620.50"), BigDecimal("2710.50"), "bot-2")
         val body = requests.single { it.first == "POST /order" }.second
         assertThat(body).contains("\"sl\":2620.50")
         assertThat(body).contains("\"tp\":2710.50")
@@ -151,9 +158,9 @@ class BotGatewayTest {
         responses["/modify_sl_tp"] =
             200 to """{"result":{"retcode":10009,"order":0,"deal":0,"price":0,"comment":""}}"""
         responses["/orders/55"] = 200 to """{"ok":true}"""
-        assertThat(gateway.close(42L, BigDecimal("0.2")).ok).isTrue
-        assertThat(gateway.modify(42L, BigDecimal("2600"), BigDecimal("2700")).ok).isTrue
-        assertThat(gateway.cancel(55L)).isTrue
+        assertThat(gateway.close(position("42"), BigDecimal("0.2"), "c").ok).isTrue
+        assertThat(gateway.modify(position("42"), BigDecimal("2600"), BigDecimal("2700")).ok).isTrue
+        assertThat(gateway.cancel("55").ok).isTrue
         assertThat(requests.single { it.first == "POST /close_position" }.second).contains("\"ticket\":42")
         assertThat(requests.single { it.first == "POST /modify_sl_tp" }.second).contains("\"sl\":2600")
         assertThat(requests.map { it.first }).contains("DELETE /orders/55")
@@ -169,19 +176,19 @@ class BotGatewayTest {
             """.trimMargin()
         responses["/account"] =
             200 to """{"balance":9800,"equity":10000,"currency":"USD","leverage":200,"margin_mode":2}"""
-        val ctx = gateway.quoteContext("EXNESS:XAUUSD", "EUR")
+        val ctx = gateway.facts("EXNESS:XAUUSD")
         assertThat(ctx.bid).isEqualByComparingTo("2650.0")
         assertThat(ctx.ask).isEqualByComparingTo("2650.5")
         assertThat(ctx.equity).isEqualByComparingTo("10000")
         assertThat(ctx.contractSize).isEqualByComparingTo("100")
         assertThat(ctx.accountCurrency).isEqualTo("USD")
-        assertThat(ctx.quoteCurrency).isEqualTo("USD")
+        assertThat(ctx.quoteCurrency).isNull()
         assertThat(ctx.digits).isEqualTo(2)
     }
 
     @Test
     fun `quote context fails closed when the venue has no quote`() {
-        assertThatThrownBy { gateway.quoteContext("EXNESS:XAUUSD", "USD") }
+        assertThatThrownBy { gateway.facts("EXNESS:XAUUSD") }
             .hasMessageContaining("quote")
     }
 }

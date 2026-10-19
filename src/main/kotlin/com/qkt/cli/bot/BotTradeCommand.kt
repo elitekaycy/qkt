@@ -6,7 +6,6 @@ import com.qkt.cli.ExitCodes
 import com.qkt.cli.daemon.StateDir
 import com.qkt.common.Side
 import com.qkt.common.SystemClock
-import com.qkt.trade.BotGateway
 import com.qkt.trade.BotIntent
 import com.qkt.trade.BotTif
 import com.qkt.trade.BotTrail
@@ -14,6 +13,10 @@ import com.qkt.trade.ExitSpec
 import com.qkt.trade.compileBotAction
 import com.qkt.trade.parseBotStrategy
 import com.qkt.trade.renderBotStrategy
+import com.qkt.trade.venue.BotVenues
+import com.qkt.trade.venue.botOrderId
+import com.qkt.trade.venue.idJson
+import com.qkt.trade.venue.toQuoteContext
 import java.time.Instant
 
 /**
@@ -55,23 +58,28 @@ class BotTradeCommand(
             return ExitCodes.SUCCESS
         }
         val cfg = botConfig(args)
-        val gateway = BotGateway.forSymbol(cfg, intent.qktSymbol)
-        val ctx = gateway.quoteContext(intent.qktSymbol, cfg.accountCurrency)
         val clock = SystemClock()
         val ts = clock.now()
-        val order = compileBotAction(action, ctx, id = "bot-$asName-$ts", timestamp = ts, strategyId = asName)
-        val result =
-            BotTrail(StateDir.resolve(args.option("state-dir")).stateRoot, cfg.insights, clock).use { trail ->
-                trail.recordCommand(asName, action, args.tokens)
-                trail.recordSubmit(asName, order)
-                gateway.place(order).also { trail.recordResult(asName, order, it) }
+        val (order, result) =
+            BotVenues.forSymbol(cfg, intent.qktSymbol).use { opened ->
+                val ctx = opened.venue.facts(intent.qktSymbol).toQuoteContext(intent.qktSymbol, cfg.accountCurrency)
+                val order =
+                    compileBotAction(action, ctx, id = botOrderId(asName, ts), timestamp = ts, strategyId = asName)
+                BotTrail(StateDir.resolve(args.option("state-dir")).stateRoot, cfg.insights, clock).use { trail ->
+                    trail.recordCommand(asName, action, args.tokens)
+                    trail.recordSubmit(asName, order)
+                    val placed = opened.venue.place(order.request, order.stopLoss, order.takeProfit, order.request.id)
+                    trail.recordResult(asName, order, placed)
+                    order to placed
+                }
             }
         if (json) {
             println(
                 jsonObj(
                     "ok" to result.ok,
-                    "ticket" to result.ticket,
-                    "deal" to result.deal,
+                    "ticket" to idJson(result.ticket),
+                    "deal" to idJson(result.deal),
+                    "state" to result.state,
                     "fillPrice" to result.price,
                     "retcode" to result.retcode,
                     "error" to result.error,

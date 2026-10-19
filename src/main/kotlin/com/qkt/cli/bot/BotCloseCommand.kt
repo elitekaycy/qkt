@@ -4,8 +4,10 @@ import com.qkt.cli.Args
 import com.qkt.cli.ExitCodes
 import com.qkt.cli.daemon.StateDir
 import com.qkt.common.SystemClock
-import com.qkt.trade.BotGateway
 import com.qkt.trade.BotTrail
+import com.qkt.trade.venue.BotVenues
+import com.qkt.trade.venue.botOrderId
+import com.qkt.trade.venue.idJson
 
 /**
  * `qkt bot close BROKER:SYMBOL [--ticket N] [--partial <lots>] [--all]` — closes open
@@ -23,50 +25,56 @@ class BotCloseCommand(
     private fun execute(json: Boolean): Int {
         val symbol = args.requirePositional(0, "BROKER:SYMBOL")
         val cfg = botConfig(args)
-        val gateway = BotGateway.forSymbol(cfg, symbol)
-        val brokerSym = gateway.brokerSymbol(symbol)
-        val positions =
-            gateway.positions()
-                ?: error("venue positions read failed; refusing to close on unknown state")
-        val matching = positions.filter { it.symbol == brokerSym }
-        val ticket = args.option("ticket")?.let { it.toLongOrNull() ?: error("invalid --ticket '$it'") }
-        val targets =
-            when {
-                ticket != null -> listOf(ticket)
-                args.flag("all") -> matching.map { it.ticket }
-                matching.size == 1 -> listOf(matching.single().ticket)
-                matching.isEmpty() -> error("no open positions for $symbol")
-                else ->
-                    error(
-                        "multiple positions open for $symbol " +
-                            "(tickets ${matching.joinToString { it.ticket.toString() }}); pass --ticket or --all",
-                    )
-            }
-        val partial =
-            args.option("partial")?.let {
-                require(targets.size == 1) { "--partial needs a single target ticket" }
-                it.toBigDecimalOrNull() ?: error("invalid --partial '$it'")
-            }
         val asName = args.option("as") ?: "manual"
         val clock = SystemClock()
         val results =
-            BotTrail(StateDir.resolve(args.option("state-dir")).stateRoot, cfg.insights, clock).use { trail ->
-                targets.map { t ->
-                    val result = gateway.close(t, partial)
-                    trail.recordEvent(
-                        asName,
-                        "bot.close",
-                        mapOf(
-                            "symbol" to symbol,
-                            "ticket" to t.toString(),
-                            "partial" to partial?.toPlainString(),
-                            "ok" to result.ok.toString(),
-                            "deal" to result.deal.toString(),
-                            "price" to result.price.toPlainString(),
-                            "reason" to result.error,
-                        ),
-                    )
-                    t to result
+            BotVenues.forSymbol(cfg, symbol).use { opened ->
+                val venue = opened.venue
+                val venueSym = venue.venueSymbol(symbol)
+                val positions =
+                    venue.positions()
+                        ?: error("venue positions read failed; refusing to close on unknown state")
+                val matching = positions.filter { it.symbol == venueSym }
+                val ticket = args.option("ticket")
+                val targets =
+                    when {
+                        ticket != null ->
+                            listOf(
+                                matching.firstOrNull { it.ticket == ticket }
+                                    ?: error("no open position with ticket $ticket"),
+                            )
+                        args.flag("all") -> matching.ifEmpty { error("no open positions for $symbol") }
+                        matching.size == 1 -> matching
+                        matching.isEmpty() -> error("no open positions for $symbol")
+                        else ->
+                            error(
+                                "multiple positions open for $symbol " +
+                                    "(tickets ${matching.joinToString { it.ticket }}); pass --ticket or --all",
+                            )
+                    }
+                val partial =
+                    args.option("partial")?.let {
+                        require(targets.size == 1) { "--partial needs a single target ticket" }
+                        it.toBigDecimalOrNull() ?: error("invalid --partial '$it'")
+                    }
+                BotTrail(StateDir.resolve(args.option("state-dir")).stateRoot, cfg.insights, clock).use { trail ->
+                    targets.map { t ->
+                        val result = venue.close(t, partial, botOrderId(asName, clock.now()))
+                        trail.recordEvent(
+                            asName,
+                            "bot.close",
+                            mapOf(
+                                "symbol" to symbol,
+                                "ticket" to t.ticket,
+                                "partial" to partial?.toPlainString(),
+                                "ok" to result.ok.toString(),
+                                "deal" to result.deal,
+                                "price" to result.price.toPlainString(),
+                                "reason" to result.error,
+                            ),
+                        )
+                        t.ticket to result
+                    }
                 }
             }
         val ok = results.all { it.second.ok }
@@ -76,8 +84,8 @@ class BotCloseCommand(
                     results.map { (t, r) ->
                         jsonObj(
                             "ok" to r.ok,
-                            "ticket" to t,
-                            "deal" to r.deal,
+                            "ticket" to idJson(t),
+                            "deal" to idJson(r.deal),
                             "price" to r.price,
                             "retcode" to r.retcode,
                             "error" to r.error,

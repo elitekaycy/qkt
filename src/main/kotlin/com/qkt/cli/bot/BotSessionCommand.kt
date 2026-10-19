@@ -21,6 +21,7 @@ import com.qkt.trade.session.BotSessionRecorder
 import com.qkt.trade.session.BotSessionServer
 import com.qkt.trade.session.LiveBotRunBackend
 import com.qkt.trade.session.ReplayBotRunBackend
+import com.qkt.trade.venue.toQuoteContext
 import java.nio.file.Files
 import java.nio.file.Path
 import java.security.SecureRandom
@@ -152,7 +153,7 @@ class BotSessionCommand(
     /**
      * Live session: the same pipeline `qkt deploy` runs (LiveSession, the account's broker,
      * config halt rules), with bridge strategies in the slots. Intents compile
-     * against venue point-in-time facts via [com.qkt.trade.BotGateway], so sizing
+     * against venue point-in-time facts via [com.qkt.trade.venue.BotVenues], so sizing
      * and quantization match the one-shot live path exactly. When insights egress is
      * configured, the session and its [com.qkt.trade.BotTrail] share one sink: the
      * session streams the configured event families (state.account/positions/orders,
@@ -234,9 +235,9 @@ class BotSessionCommand(
                 stateRoot = stateRoot,
                 identities = identities,
                 quoteContextFor = { symbol ->
-                    com.qkt.trade.BotGateway
-                        .forSymbol(cfg, symbol)
-                        .quoteContext(symbol, cfg.accountCurrency)
+                    com.qkt.trade.venue.BotVenues.forSymbol(cfg, symbol).use {
+                        it.venue.facts(symbol).toQuoteContext(symbol, cfg.accountCurrency)
+                    }
                 },
                 serverThreads = 4,
                 insightsSink = insightsSink,
@@ -370,9 +371,9 @@ class BotSessionCommand(
         symbols.forEach { sym ->
             val bars =
                 runCatching {
-                    com.qkt.trade.BotGateway
+                    com.qkt.trade.venue.BotVenues
                         .forSymbol(cfg, sym)
-                        .bars(sym, window, historyBars, nowMs)
+                        .use { it.venue.bars(sym, window, historyBars, nowMs) }
                 }.getOrElse { e ->
                     System.err.println("qkt bot: warmup fetch failed for $sym: ${e.message}")
                     emptyList()
