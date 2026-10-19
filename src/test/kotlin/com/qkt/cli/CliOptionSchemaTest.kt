@@ -5,6 +5,41 @@ import org.junit.jupiter.api.Test
 
 class CliOptionSchemaTest {
     @Test
+    fun `bot accepts the session and agent flags`() {
+        val calls =
+            listOf(
+                arrayOf(
+                    "bot",
+                    "buy",
+                    "0.1",
+                    "EXNESS:XAUUSD",
+                    "--sl",
+                    "trail:4@2",
+                    "--tp",
+                    "by:8",
+                    "--exit-after",
+                    "4h",
+                ),
+                arrayOf("bot", "submit", "CLOSE x", "--symbol", "EXNESS:XAUUSD", "--as", "a"),
+                arrayOf("bot", "session", "finish", "--flatten", "--run", "r"),
+                arrayOf(
+                    "bot",
+                    "session",
+                    "start",
+                    "--symbols",
+                    "EXNESS:XAUUSD",
+                    "--tf",
+                    "1m",
+                    "--reconcile",
+                    "ignore-mismatches",
+                ),
+                arrayOf("bot", "session", "replay", "runs/r", "--out", "runs/r2", "--no-fetch"),
+            )
+
+        calls.forEach { argv -> assertThatCode { validate(Args(argv)) }.doesNotThrowAnyException() }
+    }
+
+    @Test
     fun `experiment schema preserves backtest pass-through options`() {
         val args =
             Args(

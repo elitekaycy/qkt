@@ -9,10 +9,11 @@ import com.qkt.parity.BotSessionParityScript.key
 import com.qkt.parity.BotSessionParityScript.symbol
 import com.qkt.parity.BotSessionParityScript.ticks
 import com.qkt.trade.session.BarHistory
-import com.qkt.trade.session.BotBridgeStrategy
 import com.qkt.trade.session.BotRunSession
 import com.qkt.trade.session.BotSessionRecorder
 import com.qkt.trade.session.ReplayBotRunBackend
+import com.qkt.trade.session.testBridge
+import com.qkt.trade.session.testStreams
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
@@ -37,7 +38,7 @@ class BotSessionBacktestLiveParityTest {
     private fun runBacktestSession(): List<SessionTrade> {
         val history = BarHistory(capacity = 100)
         val recorder = BotSessionRecorder(history)
-        val bridge = BotBridgeStrategy()
+        val bridge = testBridge(history = history)
         val engine =
             Backtest(
                 strategies = listOf("brain" to bridge, BotSessionRecorder.ID to recorder),
@@ -51,6 +52,7 @@ class BotSessionBacktestLiveParityTest {
                 runId = "parity-backtest",
                 backend = ReplayBotRunBackend(engine),
                 bridges = mapOf("brain" to bridge),
+                streams = testStreams(),
                 history = history,
                 recorder = recorder,
             )

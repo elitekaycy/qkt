@@ -17,6 +17,9 @@ internal class FakeQuotes {
     private val json = Json { encodeDefaults = true }
     private val sockets = CopyOnWriteArrayList<Pair<WebSocket, (String) -> Boolean>>()
 
+    /** A quote sent to every connection as it opens, as a gateway with a quote in hand does. */
+    @Volatile var greeting: WireQuote? = null
+
     /** The query of every subscription, in order. */
     val subscriptions = CopyOnWriteArrayList<String>()
 
@@ -36,6 +39,7 @@ internal class FakeQuotes {
                     response: Response,
                 ) {
                     sockets += webSocket to wants
+                    greeting?.let { webSocket.send(json.encodeToString(WireQuote.serializer(), it)) }
                 }
             },
         )

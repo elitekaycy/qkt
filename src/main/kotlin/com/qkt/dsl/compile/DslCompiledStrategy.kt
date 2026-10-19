@@ -29,6 +29,12 @@ interface DslCompiledStrategy : Strategy {
      */
     val pendingStacks: PendingStacks
 
+    /** Every outcome of this strategy's orders, with its facts; a bot session reports them onward. */
+    fun onOrderOutcome(outcome: com.qkt.strategy.OrderOutcome) = Unit
+
+    /** Actions run on demand outside the rules (`qkt bot` session intents); null when unsupported. */
+    val adHoc: AdHocActions? get() = null
+
     /** Compiled exit-hook identities available for durable binding validation. */
     fun exitHookReferences(): Map<String, ExitHookRef> = emptyMap()
 

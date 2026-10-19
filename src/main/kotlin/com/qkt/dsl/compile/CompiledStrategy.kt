@@ -42,6 +42,7 @@ internal class CompiledStrategy(
     baskets: List<com.qkt.dsl.ast.BasketDecl>,
     private val sequenceRuntime: SequenceRuntime,
     private val exitHookCatalog: ExitHookCatalog,
+    adHocContext: AdHocCompileContext,
 ) : DslCompiledStrategy,
     TradeFlowReader,
     com.qkt.strategy.PerStreamWarmable {
@@ -57,6 +58,8 @@ internal class CompiledStrategy(
     private val exitHooks = ExitHookExecutor(exitHookCatalog, streams, snapshotStore, sequenceRuntime, binding)
     private val tickFed = TickFedIndicators(streams, bindings)
 
+    override val adHoc: AdHocActions = CompiledAdHocActions(adHocContext, snapshotStore, sequenceRuntime, binding)
+
     override val declaredStreams: Map<String, HubKey> get() = streams
 
     override fun resumeOrderIds(usedIds: Collection<String>) = ids.resumePast(usedIds)
@@ -67,7 +70,12 @@ internal class CompiledStrategy(
         observer: (alias: String, key: HubKey, candle: Candle, rulesEvaluated: Int) -> Unit,
     ) {
         check(!binding.hubBound) { "Candle evaluation observer must be bound before the strategy hub" }
-        evaluator.evaluationObserver = observer
+        // Observers add up: the engine's evaluation audit and a bot session's bar recorder both watch.
+        val earlier = evaluator.evaluationObserver
+        evaluator.evaluationObserver = { alias, key, candle, rules ->
+            earlier(alias, key, candle, rules)
+            observer(alias, key, candle, rules)
+        }
     }
 
     override fun observeRuleDecisions(observer: (RuleDecisionAudit) -> Unit) {

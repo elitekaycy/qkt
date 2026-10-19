@@ -24,6 +24,8 @@ data class BotQuoteContext(
     val volumeMax: BigDecimal?,
     /** Price decimal places for the instrument; exit prices are rounded to this. */
     val digits: Int?,
+    /** The venue's own reference price (a derivatives venue's mark); null measures against the mid. */
+    val reference: BigDecimal? = null,
 )
 
 /**

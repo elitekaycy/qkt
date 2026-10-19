@@ -36,8 +36,6 @@ class ConnectivityArchitectureTest {
             "tools/parity/ParityBarsXauusd.kt" to setOf("mt5"),
             "tools/parity/ParityDukascopyMt5Xauusd.kt" to setOf("mt5"),
             "tools/parity/ParityTicksXauusd.kt" to setOf("mt5"),
-            "trade/BotGateway.kt" to setOf("mt5"),
-            "trade/BotGatewayResult.kt" to setOf("mt5"),
         )
 
     private val forbiddenForConnectors =

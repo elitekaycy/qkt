@@ -59,4 +59,26 @@ class BarHistoryTest {
         assertThat(history.last("GBPUSD", 5)).isEmpty()
         assertThat(history.countFor("GBPUSD")).isEqualTo(0L)
     }
+
+    @Test
+    fun `at reads by absolute index and oldestIndex marks what was evicted`() {
+        val history = BarHistory(capacity = 3)
+        (1L..5L).forEach { history.record("XAUUSD@1m", candle("XAUUSD", it * 60_000L)) }
+
+        assertThat(history.oldestIndex("XAUUSD@1m")).isEqualTo(2L)
+        assertThat(history.at("XAUUSD@1m", 2L)?.startTime).isEqualTo(3 * 60_000L)
+        assertThat(history.at("XAUUSD@1m", 1L)).isNull()
+        assertThat(history.at("XAUUSD@1m", 5L)).isNull()
+    }
+
+    @Test
+    fun `a candle older than the series' last bar is not recorded`() {
+        val history = BarHistory(capacity = 10)
+        history.record("XAUUSD@1m", candle("XAUUSD", 120_000L))
+        history.record("XAUUSD@1m", candle("XAUUSD", 60_000L))
+        history.record("XAUUSD@1m", candle("XAUUSD", 120_000L))
+
+        assertThat(history.last("XAUUSD@1m", 10).map { it.startTime }).containsExactly(120_000L)
+        assertThat(history.countFor("XAUUSD@1m")).isEqualTo(1L)
+    }
 }

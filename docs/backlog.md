@@ -48,6 +48,7 @@ Status legend:
 - `done` — Phase 25: operator tooling — `qkt fetch` CLI, `TRAILING_STOP` wiring, `per_strategy:` risk config block, VWAP DSL registration ([#53](https://github.com/elitekaycy/qkt/issues/53))
 
 ---
+- `done` — `qkt bot` agent-first: one-shot verbs on every venue incl. gateway brokers ([#1390](https://github.com/elitekaycy/qkt/issues/1390)), session intents run as DSL actions (close, cancel, trailing, EXIT AFTER), live sessions on the deploy pipeline, several symbols and timeframes, intent fates and events, journals and replay, an HTTP API with a Python client (`docs/superpowers/specs/2026-10-19-bot-agent-first-design.md`)
 
 ## Immediate (blocks going live with real money)
 

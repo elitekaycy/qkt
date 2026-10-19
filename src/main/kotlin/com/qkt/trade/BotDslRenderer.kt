@@ -16,6 +16,7 @@ fun renderBotStrategy(intent: BotIntent): String {
     orderTypeClause(intent)?.let { clauses.add(it) }
     tifClause(intent)?.let { clauses.add(it) }
     bracketClause(intent)?.let { clauses.add(it) }
+    intent.exitAfter?.let { clauses.add("EXIT AFTER $it") }
     return """
         |STRATEGY bot VERSION 1
         |
@@ -61,6 +62,17 @@ private fun exit(spec: ExitSpec): String =
         is ExitSpec.By -> "BY ${num(spec.distance)}"
         is ExitSpec.Pct -> "PCT ${num(spec.percent)}"
         is ExitSpec.Rr -> "RR ${num(spec.multiplier)}"
+        is ExitSpec.Trail -> "TRAILING ${num(spec.distance)} AFTER MFE >= ${num(spec.afterMfe)}"
     }
 
 private fun num(v: BigDecimal): String = v.stripTrailingZeros().toPlainString()
+
+/** A complete intent strategy for one DSL [action] over [streams] (alias to `BROKER:SYMBOL`). */
+fun renderBotAction(
+    streams: Map<String, String>,
+    action: String,
+): String {
+    require(streams.isNotEmpty()) { "an action needs at least one symbol: pass --symbol BROKER:SYMBOL" }
+    val declared = streams.entries.joinToString("\n") { (alias, symbol) -> "    $alias = $symbol EVERY 1m" }
+    return "STRATEGY bot VERSION 1\n\nSYMBOLS\n$declared\n\nRULES\n    WHEN true\n    THEN ${action.trim()}\n"
+}

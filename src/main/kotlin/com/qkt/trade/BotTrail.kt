@@ -120,15 +120,15 @@ class BotTrail(
     fun recordResult(
         asName: String,
         order: CompiledBotOrder,
-        result: BotPlaceResult,
+        result: com.qkt.connectivity.DirectResult,
     ) {
         journal.append(
             asName,
             if (result.ok) "bot.accepted" else "bot.rejected",
             mapOf(
                 "orderId" to order.request.id,
-                "ticket" to result.ticket.toString(),
-                "deal" to result.deal.toString(),
+                "ticket" to result.ticket,
+                "deal" to result.deal,
                 "price" to result.price.toPlainString(),
                 "retcode" to result.retcode.toString(),
                 "reason" to result.error,

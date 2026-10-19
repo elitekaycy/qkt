@@ -69,7 +69,7 @@ fun botOrderSubmitEnvelope(
 fun botOrderResultEnvelope(
     asName: String,
     order: CompiledBotOrder,
-    result: BotPlaceResult,
+    result: com.qkt.connectivity.DirectResult,
     ts: Long,
     seq: Long,
 ): InsightsEnvelope =
@@ -82,8 +82,10 @@ fun botOrderResultEnvelope(
         payload =
             mapOf(
                 "orderId" to order.request.id,
-                "brokerOrderId" to result.ticket.toString(),
-                "deal" to result.deal,
+                "brokerOrderId" to result.ticket,
+                "deal" to
+                    com.qkt.trade.venue
+                        .idJson(result.deal),
                 "price" to result.price,
                 "retcode" to result.retcode,
                 "reason" to result.error,

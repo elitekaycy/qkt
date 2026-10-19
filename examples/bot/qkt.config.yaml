@@ -10,8 +10,23 @@ brokers:
     symbol_suffix: ${QKT_BROKER_SYMBOL_SUFFIX:-}
     magic: ${QKT_BROKER_MAGIC:-777001}
 
+  # A VGP venue gateway (paper, Deribit, Bybit): perpetuals, dated futures and options.
+  # deribit:
+  #   type: gateway
+  #   gateway_url: ${QKT_VENUE_GATEWAY_URL:-http://127.0.0.1:18444}
+  #   api_key: ${QKT_VENUE_GATEWAY_KEY}
+  #   expected_adapter: deribit
+  #   expected_account_login: ${QKT_VENUE_ACCOUNT}
+  #   expected_trade_mode: demo
+
 account:
   currency: USD
+
+# Pre-trade controls: every one-shot order and every session order is checked against these.
+# risk:
+#   max_order_qty: "5"
+#   max_order_notional: "250000"
+#   price_collar_pct: "5"
 
 # Optional: egress every bot command/order to qkt-insights.
 # insights:

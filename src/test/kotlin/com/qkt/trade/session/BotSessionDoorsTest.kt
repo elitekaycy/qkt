@@ -9,7 +9,7 @@ import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
-class BotBridgeStrategyTest {
+class BotSessionDoorsTest {
     private val tick =
         Tick(symbol = "XAUUSD", price = BigDecimal("2400"), timestamp = 1_000L)
 
@@ -17,11 +17,11 @@ class BotBridgeStrategyTest {
 
     @Test
     fun `drains queued signals in order on the next tick`() {
-        val bridge = BotBridgeStrategy()
+        val bridge = testBridge()
         val buy = Signal.Buy("XAUUSD", BigDecimal("0.01"))
         val sell = Signal.Sell("XAUUSD", BigDecimal("0.02"))
-        bridge.submit(buy)
-        bridge.submit(sell)
+        bridge.submitSignal(buy)
+        bridge.submitSignal(sell)
         val emitted = mutableListOf<Signal>()
         bridge.onTick(tick, context()) { emitted.add(it) }
         assertThat(emitted).containsExactly(buy, sell)
@@ -31,7 +31,7 @@ class BotBridgeStrategyTest {
     }
 
     @Test
-    fun `recorder captures closed candles into history and tracks the last tick`() {
+    fun `recorder tracks the last tick and leaves bars to the session's hub`() {
         val history = BarHistory(capacity = 4)
         val recorder = BotSessionRecorder(history)
         recorder.onTick(tick, context()) {}
@@ -47,7 +47,7 @@ class BotBridgeStrategyTest {
                 endTime = 60_000L,
             )
         recorder.onCandle(candle, context()) {}
-        assertThat(history.last("XAUUSD", 1)).containsExactly(candle)
+        assertThat(history.last("XAUUSD", 1)).isEmpty()
         assertThat(recorder.lastTick("XAUUSD")).isEqualTo(tick)
         assertThat(recorder.lastTick("EURUSD")).isNull()
     }
