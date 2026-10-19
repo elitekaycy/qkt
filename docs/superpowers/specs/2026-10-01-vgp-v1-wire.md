@@ -92,7 +92,7 @@ A list (or one) of:
 `contract_size` is how many units of the underlying one unit of `quantity` is, the multiplier of
 P&L (`quantity × contract_size × price change`); `volume_step` is the increment a quantity moves in and
 `volume_min` the smallest. A venue that takes amounts in the base coin (Deribit's linear contracts) lists
-`contract_size` 1 and its own contract size as `volume_step`.
+`contract_size` 1 and its minimum trade amount as both `volume_step` and `volume_min`.
 A dated contract stays listed for at least **30 days after its expiry**, so a client restarting after
 a weekend still maps the contracts it held to their settlements. (The qkt client also maps an unlisted
 option by its name, which is exact; a dated future has no such rule.)
