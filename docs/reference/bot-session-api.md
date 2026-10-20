@@ -117,5 +117,5 @@ Under `<state>/state/bot/sessions/<run>/`, copied into the report directory on f
 
 `qkt bot session replay <dir>` rebuilds the session from these and writes `replay-diff.json`. A backtest
 session replays identically over the store. A live session replays over its own `ticks.csv`, the market it
-traded on, and the diff reports `sameTrades` (the same trades in the same order) beside `identical` (also
+traded on, filling at those ticks' bid and ask (`mt5-sim`), and the diff reports `sameTrades` (the same trades in the same order) beside `identical` (also
 the same prices and times, which a venue's fills never are to the millisecond).

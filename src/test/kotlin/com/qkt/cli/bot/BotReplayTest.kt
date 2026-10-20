@@ -75,8 +75,8 @@ class BotReplayTest {
                         gold,
                         mid,
                         t0 + i * 5_000L,
-                        bid = mid - BigDecimal("0.10"),
-                        ask = mid + BigDecimal("0.10"),
+                        bid = mid - BigDecimal("0.05"),
+                        ask = mid + BigDecimal("0.05"),
                     ),
                 )
             }
@@ -100,6 +100,12 @@ class BotReplayTest {
 
         assertThat(code).withFailMessage(text).isEqualTo(ExitCodes.SUCCESS)
         assertThat(text).contains("\"replayedFills\":2").contains("\"sameTrades\":true")
+        // As the venue did: the buy pays the tick's ask (mid + 0.05), the close takes its bid.
+        val diff = Files.readString(tmp.resolve("out").resolve("replay-diff.json"))
+        val replayed = Regex(""""replayed":\{[^}]*"side":"(BUY|SELL)"[^}]*"price":([0-9.]+)""").findAll(diff).toList()
+        assertThat(replayed.map { it.groupValues[1] }).containsExactly("BUY", "SELL")
+        assertThat(replayed.map { BigDecimal(it.groupValues[2]).remainder(BigDecimal("0.10")) })
+            .allSatisfy { assertThat(it).isEqualByComparingTo("0.05") }
     }
 
     @Test

@@ -40,21 +40,11 @@ internal class BotReplayCommand(
         val live = meta.mode == "live"
         val recordedTicks = if (live) recordedTickStore(dir, out) else null
         val tokens = replayTokens(meta.argv, live, intents.maxOfOrNull { it.simMs }, meta.startedMs)
-        val sub =
-            Args(
-                (
-                    tokens +
-                        recordedTicks
-                            ?.let {
-                                listOf(
-                                    "--data-root",
-                                    it.toString(),
-                                    "--no-fetch",
-                                    "--allow-incomplete",
-                                )
-                            }.orEmpty()
-                ).toTypedArray(),
-            )
+        // A venue fills at its quote (ask to buy, bid to sell): over the recorded quotes, so does mt5-sim.
+        val venueFills = if (args.option("broker") == null) listOf("--broker", "mt5-sim") else emptyList()
+        val overStore =
+            recordedTicks?.let { listOf("--data-root", it.toString(), "--no-fetch", "--allow-incomplete") + venueFills }
+        val sub = Args((tokens + overStore.orEmpty()).toTypedArray())
         val spec = parseSessionStart(sub) { meta.runId }
         val parts = buildBacktestSession(sub, spec, journal = null)
         val result =
