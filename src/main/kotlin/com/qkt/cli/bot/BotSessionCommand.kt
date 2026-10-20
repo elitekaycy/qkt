@@ -52,8 +52,9 @@ class BotSessionCommand(
     private fun wait(): Int {
         val run = args.option("run") ?: error("wait needs --run <id>: the session it waits for")
         val seconds = args.option("timeout")?.removeSuffix("s")?.toLongOrNull() ?: DEFAULT_WAIT_SECONDS
-        val deadline = System.nanoTime() + seconds * 1_000_000_000L
-        while (System.nanoTime() < deadline) {
+        val clock = com.qkt.common.SystemClock()
+        val deadline = clock.now() + seconds * 1_000L
+        while (clock.now() < deadline) {
             val status = runCatching { BotSessionClient.resolve(args)?.get("/status") }.getOrNull()
             if (status != null) {
                 println(status)
