@@ -6,13 +6,14 @@ import com.qkt.trade.session.BotSessionStreams
 import java.security.SecureRandom
 
 /**
- * `qkt bot session start|status|finish` — lifecycle of a bot run session.
+ * `qkt bot session start|wait|status|finish` — lifecycle of a bot run session.
  *
  * `start --backtest` assembles the same store-backed replay `qkt backtest` uses (data provisioning,
  * config-driven halt rules, instruments) with one compiled DSL strategy per identity in the strategy
  * slots, then serves the session over local HTTP until `finish` writes the standard report artifacts
  * to `--out`. Without `--backtest` it trades live through the configured accounts. The command runs in
- * the foreground; run it under `&`, tmux, or a container for a long session.
+ * the foreground; run it under `&`, tmux, or a container for a long session, and `wait --run <id>` before the next
+ * verb: a verb that finds no session acts one-shot on the configured venue.
  */
 class BotSessionCommand(
     private val args: Args,
@@ -22,10 +23,11 @@ class BotSessionCommand(
         return botRun(json) {
             when (val sub = args.firstNonOption()) {
                 "start" -> start(Args(args.tokens.drop(1).toTypedArray()), json)
+                "wait" -> wait()
                 "status" -> status()
                 "finish" -> finish()
                 "replay" -> return BotReplayCommand(Args(args.tokens.drop(1).toTypedArray())).run()
-                else -> error("usage: qkt bot session start|status|finish|replay (got '${sub ?: ""}')")
+                else -> error("usage: qkt bot session start|wait|status|finish|replay (got '${sub ?: ""}')")
             }
         }
     }
@@ -45,6 +47,22 @@ class BotSessionCommand(
         } else {
             startLiveSession(sub, json, parseSessionStart(sub) { "live-${com.qkt.common.SystemClock().now()}" })
         }
+
+    /** Blocks until the session `--run` names answers (`--timeout` seconds, default 60), then prints its status. */
+    private fun wait(): Int {
+        val run = args.option("run") ?: error("wait needs --run <id>: the session it waits for")
+        val seconds = args.option("timeout")?.removeSuffix("s")?.toLongOrNull() ?: DEFAULT_WAIT_SECONDS
+        val deadline = System.nanoTime() + seconds * 1_000_000_000L
+        while (System.nanoTime() < deadline) {
+            val status = runCatching { BotSessionClient.resolve(args)?.get("/status") }.getOrNull()
+            if (status != null) {
+                println(status)
+                return ExitCodes.SUCCESS
+            }
+            Thread.sleep(WAIT_POLL_MS)
+        }
+        error("bot session $run did not answer within ${seconds}s: is `qkt bot session start ... --run $run` running?")
+    }
 
     private fun status(): Int {
         val client = BotSessionClient.resolve(args) ?: error("no bot session running")
@@ -93,6 +111,9 @@ internal fun parseSessionStart(
         historyBars = sub.option("history-bars")?.toIntOrNull() ?: 200,
     )
 }
+
+private const val DEFAULT_WAIT_SECONDS = 60L
+private const val WAIT_POLL_MS = 250L
 
 internal fun randomSessionToken(): String {
     val bytes = ByteArray(24)
