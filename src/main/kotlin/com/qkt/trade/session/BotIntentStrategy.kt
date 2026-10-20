@@ -104,7 +104,7 @@ class BotIntentStrategy(
                 synchronized(sentBy) { sentBy[sig] = intentId }
                 emit(sig)
             }
-            ledger.fate(fire(intentId, action, ctx, tagged))
+            ledger.fate(fire(intentId, action, ctx, tagged).copy(tickMs = tick.timestamp))
         }
     }
 
