@@ -20,6 +20,19 @@ distributions {
     }
 }
 
+// The self-contained builds ship their own Java in runtime/. The stock launcher only reads JAVA_HOME and PATH,
+// so unpacking the archive by hand failed with no Java installed (#1471) and ran on whatever older Java JAVA_HOME
+// named. Prefer the bundled runtime whenever it is there.
+tasks.named<CreateStartScripts>("startScripts") {
+    doLast {
+        val anchor = "# Determine the Java command to use to start the JVM.\n"
+        val text = unixScript.readText()
+        check(anchor in text) { "the start script changed shape: the bundled-runtime hook was not applied" }
+        val hook = "if [ -x \"\$APP_HOME/runtime/bin/java\" ] ; then\n    JAVA_HOME=\$APP_HOME/runtime\nfi\n\n"
+        unixScript.writeText(text.replaceFirst(anchor, hook + anchor))
+    }
+}
+
 // A jlink-minimized JRE carrying only the modules qkt loads (mirrors the Dockerfile).
 // jdk.crypto.ec (TLS) and jdk.unsupported (sun.misc.Unsafe, used by okio/kotlin) are
 // loaded reflectively, so jdeps misses them and they are named explicitly.

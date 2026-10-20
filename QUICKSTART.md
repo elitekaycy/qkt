@@ -1,6 +1,6 @@
 # qkt — quickstart
 
-Five minutes from clone to a running paper-traded strategy.
+Ten minutes from clone to a backtest report on real sample data, then the same strategy paper-traded.
 
 For a deeper introduction see the full docs at [`docs/`](docs/) and the [phase changelogs](docs/phases/).
 
@@ -8,7 +8,7 @@ For a deeper introduction see the full docs at [`docs/`](docs/) and the [phase c
 
 ## 1. Build qkt
 
-Requires JDK 21+.
+Requires JDK 21+. (The release download bundles Java instead: see the [README](README.md#quick-start).)
 
 ```sh
 git clone https://github.com/elitekaycy/qkt
@@ -20,74 +20,71 @@ qkt --version
 
 You should see `qkt <version> (<commit>) built <time>`, with the version in the repo's `VERSION` file.
 
-## 2. Write a strategy
+## 2. Get the sample data
 
-Create `momentum.qkt` in your working dir:
-
+```sh
+qkt data sample
 ```
+
+This downloads one month of BTCUSDT one-minute bars (September 2026) from Binance's public archive, checks its
+SHA-256 and imports it into qkt's data store, `~/.qkt/data`.
+
+## 3. Write a strategy
+
+```sh
+cat > momentum.qkt <<'QKT'
 STRATEGY momentum VERSION 1
-
 SYMBOLS
-    btc = BACKTEST:BTCUSDT EVERY 1m
-
+    btc = BINANCE:BTCUSDT EVERY 15m
 RULES
-    WHEN btc.close > 100
+    WHEN ema(btc.close, 9) CROSSES ABOVE ema(btc.close, 21)
+     AND POSITION.btc = 0
     THEN BUY btc SIZING 0.1
-         BRACKET {
-           STOP_LOSS BY 2 PCT,
-           TAKE_PROFIT BY 4 PCT
-         }
+     BRACKET { STOP_LOSS BY 1.0 PCT, TAKE_PROFIT BY 2.0 PCT }
+QKT
+qkt parse momentum.qkt
 ```
 
-The `BACKTEST:` prefix means the local historical data store: backtests read it, and it has no live prices.
+In a backtest `BINANCE:BTCUSDT` reads the bars you imported; live, it is TradingView's name for the pair, so the
+same file runs in both.
 
-## 3. Backtest it
+## 4. Backtest it
 
 ```sh
-qkt backtest momentum.qkt \
-    --data-root data/sample \
-    --from 2024-01-15 --to 2024-01-17 \
-    --report-dir ./out
+qkt backtest momentum.qkt --from 2026-09-01 --to 2026-10-01 --bars --report-dir ./out
 ```
 
+The run is deterministic; you should see `Profit -622.01 USD (-6.2%)` and `Round trips 25 closed, 6 won`.
 Outputs:
-- `out/result.json` — machine-readable metrics
-- `out/equity_global.csv`, `out/trades.csv` — raw data
-- `out/report.html` — single self-contained HTML with equity curve, drawdown table, Monte Carlo fan, per-trade risk
+- `out/result.json`: machine-readable metrics
+- `out/equity_global.csv`, `out/trades.csv`, `out/orders.jsonl`: raw data
+- `out/report.html`: single self-contained HTML with equity curve, drawdown table, Monte Carlo fan, per-trade risk
 
-Open `out/report.html` in a browser.
+Open `out/report.html` in a browser. Your own data: [Get data](docs/get-started/get-data.md).
 
-## 4. Run it as a daemon (paper trading)
+## 5. Run it as a daemon (paper trading)
 
-Paper trading runs the same rules on live prices, which the `BACKTEST:` stream does not have
-(qkt refuses to deploy it and names the symbol to use). Make a copy on TradingView's name for the
-pair, the daemon's default live feed:
-
-```sh
-sed 's/BACKTEST:BTCUSDT/BINANCE:BTCUSDT/' momentum.qkt > momentum-paper.qkt
-```
-
-Then start the daemon and deploy the copy:
+The same file trades on live prices with paper fills:
 
 ```sh
 qkt daemon &                                  # starts the control plane
-qkt deploy momentum-paper.qkt --as momentum
+qkt deploy momentum.qkt --as momentum
 qkt list                                      # shows momentum running
 qkt status momentum                           # current PnL, positions, last trade
 qkt logs momentum --follow                    # live log stream
-qkt resync momentum-paper.qkt --as momentum --dry-run # validate an edited file
-qkt resync momentum-paper.qkt --as momentum   # replace only this running name
+qkt resync momentum.qkt --as momentum --dry-run # validate an edited file
+qkt resync momentum.qkt --as momentum         # replace only this running name
 qkt stop momentum                             # stop one strategy
 qkt daemon stop                               # stop the daemon
 ```
 
 State (logs, control port) lives at `~/.local/state/qkt/` by default; override with `QKT_STATE_DIR`.
 
-## 5. Live trade via MT5 (Exness, ICMarkets, etc.)
+## 6. Live trade via MT5 (Exness, ICMarkets, etc.)
 
 Live trading requires `mt5-gateway` running alongside qkt. The gateway runs MT5 in Wine inside Docker and exposes an HTTP API.
 
-### 5a. Spin up the stack
+### 6a. Spin up the stack
 
 ```sh
 cp .env.example .env
@@ -98,7 +95,7 @@ docker compose up -d
 
 (See [`docker-compose.yml`](docker-compose.yml) at repo root for the stack: qkt daemon + mt5-gateway.)
 
-### 5b. Verify the headless login
+### 6b. Verify the headless login
 
 Set `MT5_LOGIN`, `MT5_PASSWORD`, and `MT5_SERVER` in `.env`; the gateway resolves the broker and logs in on boot. Verify readiness with:
 
@@ -108,7 +105,7 @@ curl -H "Authorization: Bearer $MT5_API_KEY" http://localhost:5001/health/ready
 
 VNC at `localhost:3000` remains available for diagnosis when automatic resolution fails.
 
-### 5c. Configure the broker profile
+### 6c. Configure the broker profile
 
 Edit `qkt.config.yaml`; inside Compose the gateway hostname is
 `mt5-gateway`, not `localhost`:
@@ -128,7 +125,7 @@ Set the server clock from your broker's MT5 contract. Use `UTC`,
 `new_york_close`, an IANA zone, or a fixed offset such as `+02:00`. Set the
 symbol suffix only when the broker appends one.
 
-### 5d. Write a live strategy
+### 6d. Write a live strategy
 
 ```
 STRATEGY live_eur VERSION 1
@@ -147,7 +144,7 @@ RULES
 
 The `MT5:` prefix routes orders to the neutral broker profile.
 
-### 5e. Deploy
+### 6e. Deploy
 
 ```sh
 qkt deploy live_eur.qkt --as live_eur
@@ -157,7 +154,7 @@ qkt status live_eur
 qkt logs live_eur --follow
 ```
 
-### 5f. Pre-launch audit
+### 6f. Pre-launch audit
 
 Before committing real money, run the tick-feed drift check:
 

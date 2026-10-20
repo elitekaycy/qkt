@@ -31,10 +31,11 @@ qkt's design guarantee — bit-identical fills between backtest and paper given 
 You already did this in Tutorial 1. The command:
 
 ```bash
-qkt backtest strategies/momentum.qkt --data-root data/sample --from 2024-01-15 --to 2024-01-17
+qkt backtest strategies/momentum.qkt --from 2026-09-01 --to 2026-10-01 --bars
 ```
 
-This is the **fastest** mode. It runs the strategy as fast as the data can stream through it (tens of thousands of ticks per second). It always uses **historical data**.
+This is the **fastest** mode. It runs the strategy as fast as the data can stream through it: the month of
+sample bars takes seconds. It always uses **historical data**.
 
 Limitations:
 
@@ -53,31 +54,12 @@ backtest does, so a paper run on the same ticks reproduces that backtest fill fo
 ([Determinism](../concepts/determinism.md)). It is optimistic by about half a spread a side: to see what the
 venue's spread costs, backtest with `--broker mt5-sim`, and measure the rest on a demo account (Mode 3).
 
-The feed is TradingView's free tier, so the stream needs a symbol TradingView knows.
-`BACKTEST:BTCUSDT` names the local backtest data, which has no live prices (qkt refuses to start
-on it and tells you what to write instead). Copy the strategy and change only the stream's prefix
-to the exchange TradingView lists the pair on:
-
-```qkt title="strategies/momentum-paper.qkt"
-STRATEGY momentum VERSION 1
-
-SYMBOLS
-    btc = BINANCE:BTCUSDT EVERY 1m
-
-RULES
-    # Buy when the 9-period moving average crosses above the 21-period one
-    WHEN ema(btc.close, 9) CROSSES ABOVE ema(btc.close, 21)
-     AND POSITION.btc = 0
-    THEN BUY btc SIZING 0.1 ; LOG "long entry"
-
-    # Sell to close when the trend reverses
-    WHEN ema(btc.close, 9) CROSSES BELOW ema(btc.close, 21)
-     AND POSITION.btc > 0
-    THEN CLOSE btc ; LOG "exit"
-```
+The feed is TradingView's free tier, so the stream needs a symbol TradingView knows. Tutorial 1's stream,
+`BINANCE:BTCUSDT`, is one: in a backtest it reads the bars you imported, and live it is TradingView's name for
+the pair, so the same file runs here unchanged:
 
 ```bash
-qkt run strategies/momentum-paper.qkt
+qkt run strategies/momentum.qkt
 ```
 
 A few things will happen:
@@ -182,7 +164,7 @@ If you see `{"ok":true,"status":"ready",...}`, the API, terminal, and account ar
 
 ### Adapt the strategy for live
 
-Tutorial 1's strategy uses `BACKTEST:BTCUSDT`. For live trading, swap the broker prefix and pick a symbol your demo account has:
+Tutorial 1's strategy uses `BINANCE:BTCUSDT`. For live trading on a broker, swap the prefix for your broker profile and pick a symbol your demo account has:
 
 ```qkt title="strategies/momentum-live.qkt"
 STRATEGY momentum_live VERSION 1
@@ -208,7 +190,7 @@ RULES
 
 Changes from Tutorial 1:
 
-- `BACKTEST:BTCUSDT` → `EXNESS:EURUSD` (real broker, real symbol — but a demo account)
+- `BINANCE:BTCUSDT` → `EXNESS:EURUSD` (real broker, real symbol — but a demo account)
 - `1m` → `5m` (live trading at 1-minute resolution is noisy; 5m is more comfortable)
 - `SIZING 0.1` → `SIZING 0.01` (0.01 lots is the minimum on most MT5 demo accounts, about $1,000 of notional)
 - Added a `BRACKET` to cap loss per trade: `BY 0.0020` is a price distance, 20 pips on EURUSD, so
@@ -304,7 +286,7 @@ docker compose down -v         # full wipe
 
 ## What you learned
 
-- **Three modes, one strategy file.** Backtest, paper, live — the strategy file doesn't change; only the broker prefix does (e.g. `BACKTEST` → `EXNESS`).
+- **Three modes, one strategy file.** Backtest, paper, live — the strategy file doesn't change; only the broker prefix does (e.g. `BINANCE` → `EXNESS`).
 - **Each mode has a purpose.** Backtest = research, paper = real-time validation, live demo = operational practice.
 - **The Docker stack runs MT5 in a Wine container** with an HTTP gateway, abstracting the platform from qkt.
 - **Observability is uniform.** Every mode exposes the same `/status`, `/logs`, `/events` endpoints. You debug the same way regardless of mode.
