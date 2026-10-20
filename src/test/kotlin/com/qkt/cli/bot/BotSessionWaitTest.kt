@@ -1,6 +1,5 @@
 package com.qkt.cli.bot
 
-import com.qkt.cli.Args
 import com.qkt.cli.ExitCodes
 import com.qkt.trade.session.BotSessionDescriptor
 import com.qkt.trade.session.BotSessionFiles
@@ -20,13 +19,16 @@ import org.junit.jupiter.api.io.TempDir
  */
 class BotSessionWaitTest {
     private fun run(vararg argv: String): Pair<Int, String> {
+        // Through the CLI entry point, as a script runs it: its option checking runs too.
         val out = ByteArrayOutputStream()
-        val original = System.out
+        val (original, originalErr) = System.out to System.err
         System.setOut(PrintStream(out))
+        System.setErr(PrintStream(out))
         return try {
-            BotCommand(Args(arrayOf("bot", "session", "wait", *argv))).run() to out.toString()
+            com.qkt.cli.runMain(arrayOf("bot", "session", "wait", *argv)) to out.toString()
         } finally {
             System.setOut(original)
+            System.setErr(originalErr)
         }
     }
 
