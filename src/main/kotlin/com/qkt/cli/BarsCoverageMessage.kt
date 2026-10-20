@@ -33,5 +33,7 @@ internal fun missingBarsFix(
     val range = "--from $fromDay --to ${toDay.plusDays(1)}"
     if (broker == "BACKTEST") return "Run: qkt data build-bars $bare --tf ${tf.canonicalSpec()} $range"
     val fetch = "qkt fetch $sym --tf ${tf.canonicalSpec()} $range"
-    return "Import or fetch them: qkt data import <file> --as $sym, or $fetch"
+    return "Import or fetch them: qkt data import <file> --as $sym, or $fetch. If the market was closed on those " +
+        "days (a holiday), import the file with --calendar " +
+        "(${com.qkt.common.TradingCalendar.names.joinToString()}) so they count as closed"
 }

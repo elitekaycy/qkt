@@ -16,5 +16,7 @@ data class BarsManifest(
     val symbol: String,
     val timeframe: String,
     val ranges: List<DayRange> = emptyList(),
+    /** The market calendar its import stated (`nyse`), or null: qkt's default calendar for the symbol. */
+    val calendar: String? = null,
     val lastUpdated: String = "",
 )
