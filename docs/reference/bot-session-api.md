@@ -122,6 +122,7 @@ traded on: each intent enters before the first tick stamped after it arrived (wh
 at the quote standing when the venue's round trip ends (`mt5-sim`, with the round trip the record measured as
 `--execution-latency`, reported as `latencyMs`). The diff reports `sameTrades` (the same trades in the same
 order), `samePrices` (at the same prices too) and `identical` (also the same times; a replay books a fill on
-the tick after the round trip, not at the venue's clock). `--trace` enters each filled intent on the last
+the tick after the round trip, not at the venue's clock). A record with the venue's deals replays as a trace by default (`--predict` uses the median round
+trip): it enters each filled intent on the last
 recorded tick before the venue executed it (from `venue-deals.jsonl`, the venue's deals read at finish), so each
 fill is at its executed quote; the reply's `replay` says which mode ran.
