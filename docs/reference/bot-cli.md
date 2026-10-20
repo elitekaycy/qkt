@@ -192,10 +192,13 @@ with where it entered the replay, every fate change and the finish point), `read
 was served), `fills.jsonl`, and live `summary.json` and `ticks.csv` (every tick the session traded on), all
 copied into `--out`. `qkt bot session replay` rebuilds the session from them and writes the report plus
 `replay-diff.json`: a backtest session replays identically, trade for trade, over the store; a live session
-replays over its own `ticks.csv`, filling at their bid and ask as the venue did (`--broker mt5-sim`, unless
-`--broker` says otherwise; `--data-root` or `--bars` replay it over the store instead), and the diff
-says whether it made the same trades (`sameTrades`) and lists each fill whose price or time moved: a venue's
-fill price and clock are not a tick's, so a live replay is `sameTrades`, not `identical`.
+replays over its own `ticks.csv`, each intent entering before the first tick stamped after it arrived, and
+fills as the venue did: at the quote standing when the venue's round trip ends (`--broker mt5-sim` with
+`--execution-latency` the median the record measured, from the tick each intent fired on to the venue's fill;
+`--broker`/`--execution-latency` override, `--data-root` or `--bars` replay it over the store instead), and the diff
+says whether it made the same trades (`sameTrades`), at the same prices (`samePrices`), and lists each fill that
+moved. The replay books a fill on the tick after the round trip, not at the venue's own clock, so a live replay
+reaches `samePrices`, not `identical`.
 
 In a session, `modify`, `close --partial`, `close --ticket` and `cancel --order` are refused with the
 session way to do it (set stops with the entry, reduce with the opposite order on a netting book, close

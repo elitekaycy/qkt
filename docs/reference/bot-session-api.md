@@ -117,5 +117,8 @@ Under `<state>/state/bot/sessions/<run>/`, copied into the report directory on f
 
 `qkt bot session replay <dir>` rebuilds the session from these and writes `replay-diff.json`. A backtest
 session replays identically over the store. A live session replays over its own `ticks.csv`, the market it
-traded on, filling at those ticks' bid and ask (`mt5-sim`), and the diff reports `sameTrades` (the same trades in the same order) beside `identical` (also
-the same prices and times, which a venue's fills never are to the millisecond).
+traded on: each intent enters before the first tick stamped after it arrived (where live fired it), and fills
+at the quote standing when the venue's round trip ends (`mt5-sim`, with the round trip the record measured as
+`--execution-latency`, reported as `latencyMs`). The diff reports `sameTrades` (the same trades in the same
+order), `samePrices` (at the same prices too) and `identical` (also the same times; a replay books a fill on
+the tick after the round trip, not at the venue's clock).

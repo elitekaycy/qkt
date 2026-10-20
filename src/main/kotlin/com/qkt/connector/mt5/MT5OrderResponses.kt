@@ -33,7 +33,7 @@ internal class MT5OrderResponses(
                     retcode = r["retcode"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: -1,
                     order = r["order"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L,
                     deal = r["deal"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L,
-                    price = r["price"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
+                    price = venuePrice(r["price"]?.jsonPrimitive?.contentOrNull) ?: BigDecimal.ZERO,
                     comment = r["comment"]?.jsonPrimitive?.contentOrNull ?: "",
                     volume = r["volume"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull(),
                 ),

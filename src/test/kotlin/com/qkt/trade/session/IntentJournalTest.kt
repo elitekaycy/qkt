@@ -30,7 +30,10 @@ class IntentJournalTest : IntentSessionFixture() {
             .contains("BUY x SIZING 0.1")
             .contains("\"tickSeq\":3")
         assertThat(submits[1]).contains("CLOSE x").contains("\"tickSeq\":5")
-        assertThat(lines.filter { it.contains("\"type\":\"fate\"") && it.contains("\"state\":\"filled\"") }).hasSize(2)
+        // Both intents filled (a fill can come back before its intent's `fired`; that adds the tick it fired on).
+        val filled = lines.filter { it.contains("\"type\":\"fate\"") && it.contains("\"state\":\"filled\"") }
+        assertThat(filled.map { it.substringAfter("\"intentId\":\"").substringBefore('"') }.distinct())
+            .containsExactly("int-1", "int-2")
     }
 
     @Test

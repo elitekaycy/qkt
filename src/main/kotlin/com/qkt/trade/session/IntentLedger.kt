@@ -52,11 +52,16 @@ class IntentLedger {
     fun fate(fate: IntentFate) {
         val known = fates[fate.intentId]
         val compiled = fate.compiled || known?.compiled == true
+        val tickMs = known?.tickMs ?: fate.tickMs
         fates[fate.intentId] =
             if (known == null || rank(fate.state) >= rank(known.state)) {
-                fate.copy(orderIds = ((known?.orderIds ?: emptyList()) + fate.orderIds).distinct(), compiled = compiled)
+                fate.copy(
+                    orderIds = ((known?.orderIds ?: emptyList()) + fate.orderIds).distinct(),
+                    compiled = compiled,
+                    tickMs = tickMs,
+                )
             } else {
-                known.copy(orderIds = (known.orderIds + fate.orderIds).distinct(), compiled = compiled)
+                known.copy(orderIds = (known.orderIds + fate.orderIds).distinct(), compiled = compiled, tickMs = tickMs)
             }
         fates[fate.intentId]?.takeIf { it != known }?.let(onChange)
     }
