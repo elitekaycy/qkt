@@ -40,6 +40,12 @@ object PresetSampleCases {
                 "1789380000000,1.15415000,1.15416000,1.15405000,1.15412000,$Z",
             ),
             s(
+                "EURUSD_M1.csv",
+                "FOREXSB:EURUSD",
+                "forexsb-mt-csv",
+                "1784063100000,1.14157000,1.14190000,1.14156000,1.14180000,18.00000000",
+            ),
+            s(
                 "DAT_ASCII_EURUSD_T_201912.csv",
                 "EURUSD",
                 "histdata-ticks",
