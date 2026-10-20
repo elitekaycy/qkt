@@ -20,6 +20,16 @@ class SweepCommand(
 ) {
     /** Run every scenario, rank the results and print them; returns a process exit code. */
     fun run(): Int {
+        // Each trial is a full replay: its per-order INFO log would bury the ranking (as in qkt backtest, #1370).
+        val restoreLogs = QuietBacktestLogs.silenceUnless(args.flag("verbose"), args.flag("debug"))
+        return try {
+            runTrials()
+        } finally {
+            restoreLogs()
+        }
+    }
+
+    private fun runTrials(): Int {
         if (args.flag("tick-fills")) {
             System.err.println(
                 "qkt: error: --tick-fills is not supported by sweep fan-out; " +

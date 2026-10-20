@@ -104,6 +104,13 @@ internal object DataHelp {
                         "--allow-empty-days, --require-bid-ask, --require-volume, --allow-corrupt-days" to "policy",
                     ),
                 ),
+            "sample" to
+                Action(
+                    "qkt data sample",
+                    "Download the quick start's practice data (one month of Binance BTCUSDT one-minute bars, " +
+                        "September 2026) from Binance, check its pinned SHA-256 and import it as BINANCE:BTCUSDT.",
+                    emptyList(),
+                ),
             "presets" to
                 Action(
                     "qkt data presets [--json]",
@@ -138,6 +145,7 @@ internal object DataHelp {
             "convert" to "write compact .bin tick days that backtests decode faster",
             "snapshot" to "pin a dataset so a backtest refuses changed data",
             "presets" to "list the sources qkt data import recognises",
+            "sample" to "download and import the quick start's practice data",
         )
 
     private val common =

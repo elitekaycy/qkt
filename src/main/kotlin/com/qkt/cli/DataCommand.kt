@@ -6,6 +6,7 @@ import com.qkt.cli.data.dataCompare
 import com.qkt.cli.data.dataConvert
 import com.qkt.cli.data.dataImport
 import com.qkt.cli.data.dataPresets
+import com.qkt.cli.data.dataSample
 import com.qkt.cli.data.dataSnapshot
 import com.qkt.cli.data.dataVerify
 
@@ -30,13 +31,14 @@ class DataCommand(
             "import" -> dataImport(args)
             "compare" -> dataCompare(args)
             "presets" -> dataPresets(args)
+            "sample" -> dataSample(args)
             "bars" -> dataBars(args)
             else -> {
                 System.err.println(
-                    "qkt: unknown data action '${action ?: ""}' (expected: verify, snapshot, convert, build-bars, import, compare, presets, bars)",
+                    "qkt: unknown data action '${action ?: ""}' (expected: verify, snapshot, convert, build-bars, import, sample, compare, presets, bars)",
                 )
                 System.err.println(
-                    "usage: qkt data <verify|snapshot|convert|build-bars|import|compare|presets|bars> <symbol|file> [--data-root <dir>]",
+                    "usage: qkt data <verify|snapshot|convert|build-bars|import|sample|compare|presets|bars> <symbol|file> [--data-root <dir>]",
                 )
                 ExitCodes.ARG_ERROR
             }

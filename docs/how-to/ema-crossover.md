@@ -1,10 +1,11 @@
 # EMA crossover strategy
 
-Build a complete EMA-crossover momentum strategy, backtest it on Bitcoin, and look at the report. Five minutes end-to-end.
+Build a complete EMA-crossover momentum strategy, backtest it on a month of real Bitcoin prices, tune it and sweep it. Ten minutes end to end.
 
 ## What you'll build
 
-A strategy that goes long when the 9-period EMA crosses above the 21-period EMA, with a fixed bracket (50-point stop, 200-point target).
+A strategy that goes long when a fast EMA crosses above a slow one, with a percent bracket (1% stop, 2% target),
+and closes on the cross back down. The two EMA lengths are parameters, so you can tune and sweep them.
 
 ## 1. Write the strategy
 
@@ -14,10 +15,14 @@ Create `strategies/ema-cross.qkt`:
 STRATEGY ema_cross VERSION 1
 
 SYMBOLS
-    btc = BACKTEST:BTCUSDT EVERY 1m
+    btc = BINANCE:BTCUSDT EVERY 1m
+
+LET fast = 9
+LET slow = 21
 
 RULES
-    WHEN ema(btc.close, 9) CROSSES ABOVE ema(btc.close, 21)
+    WHEN ema(btc.close, fast) CROSSES ABOVE ema(btc.close, slow)
+     AND POSITION.btc = 0
     THEN BUY btc SIZING 0.1
          BRACKET {
            STOP_LOSS BY 1.0 PCT,
@@ -25,78 +30,88 @@ RULES
          }
        ; LOG "long entry on cross above"
 
-    WHEN ema(btc.close, 9) CROSSES BELOW ema(btc.close, 21)
+    WHEN ema(btc.close, fast) CROSSES BELOW ema(btc.close, slow)
+     AND POSITION.btc > 0
     THEN CLOSE btc
        ; LOG "exit on cross below"
 ```
 
 What's going on:
 
-- `SYMBOLS` declares one stream — the alias `btc` reads `BTCUSDT` from the `BACKTEST` broker on 1-minute candles
-- The first `RULES` block fires on the up-cross; `BRACKET` attaches a percent-based SL/TP atomically
-- The second fires on the down-cross to flatten before the bracket completes
-- `LOG` lines tag entries/exits so you can audit later
+- `SYMBOLS` declares one stream: the alias `btc` reads `BINANCE:BTCUSDT` on 1-minute candles
+- `LET fast` and `LET slow` name the EMA lengths; `LET` comes after `SYMBOLS`
+- The first rule fires on the up-cross when flat; `BRACKET` attaches a percent-based stop and target atomically
+- The second fires on the down-cross to close before the bracket completes
+- `LOG` lines tag entries and exits so you can audit later
 
 ## 2. Get some data
 
-If you don't have historical BTCUSDT yet, populate the local data store via the bundled Dukascopy script:
+This page uses the month of BTCUSDT one-minute bars the quick start uses. Fetch it once:
 
 ```bash
-./scripts/fetch-dukascopy.sh BTCUSDT 2024-01-01 2024-02-01
+qkt data sample
 ```
 
-This writes daily-partitioned gzipped CSVs at `~/.qkt/data/symbols/BTCUSDT/`. Subsequent runs read from cache. A `qkt fetch` CLI wrapper is on the [roadmap](../planned.md).
-
-Don't have or want Dukascopy? The repo ships a tiny sample under `data/sample/symbols/BTCUSD/` — pass `--data-root data/sample` to use it for a smoke run.
+For other markets, export or download data and import it with `qkt data import`:
+[Get data](../get-started/get-data.md).
 
 ## 3. Backtest it
 
 ```bash
-qkt backtest strategies/ema-cross.qkt --from 2024-01-01 --to 2024-02-01
+qkt backtest strategies/ema-cross.qkt --from 2026-09-01 --to 2026-10-01 --bars
 ```
 
-Output (truncated):
+Output (the `Result` block):
 
 ```text
-Trades:           14
-Final realized:   234.50
-Win rate:         0.571
-Sharpe (daily):   1.34
-Max drawdown:     -180.25
-
-Report: ./reports/ema_cross-20240301-103245.html
+Result
+  Profit             -318.67 USD   (-3.2%)
+  Round trips        1025 closed, 289 won (28.2%)
+  Open at the end    none
+  Worst drop         8.5%    biggest fall from a peak
+  Worst day          2.2%
+  Sharpe ratio       -1.89     return per unit of risk
+  Costs              none modeled (no spread, commission or swap)
 ```
 
-Open the HTML report — equity curve, drawdown periods, Monte Carlo fan, per-trade risk.
+The line `Report saved: ~/.qkt/runs/<time>-ema_cross` names the run folder; open its `report.html` for the equity
+curve, drawdown periods, Monte Carlo fan and every trade.
 
 ## 4. Tune it
 
-To try a different fast/slow pair, edit the `LET` lines at the top of the strategy file:
+Edit the `LET` lines and run the same command again:
 
 ```qkt
 LET fast = 12
 LET slow = 26
 ```
 
-`LET` clauses are how qkt strategies expose tunable parameters — they're substituted at compile time wherever they're referenced.
-
-(A `--param key=value` CLI override is on the roadmap — see [Planned features](../planned.md). For now, edit the file and re-run.)
+`LET` values are substituted wherever they are referenced, and the run is deterministic, so a change in the
+`Result` block comes from your edit and nothing else.
 
 ## 5. Run a sweep
 
-To find the best `(fast, slow)` pair, see [Run a parameter sweep](parameter-sweep.md).
+`qkt sweep` runs every combination and ranks them:
+
+```bash
+qkt sweep strategies/ema-cross.qkt --from 2026-09-01 --to 2026-10-01 --bars \
+    --param fast=5,9,12 --param slow=21,26
+```
+
+On this month every pair loses before costs; `fast=5,slow=21` loses least (`totalPnL -177.80`). The sweep's
+`trades` column counts fills, two per round trip. A month is far too little to choose parameters on: see
+[Run a parameter sweep](parameter-sweep.md) and walk-forward testing before trusting a winner.
 
 ## What just happened
 
 This strategy uses three things every qkt strategy uses:
 
-1. **One stream declaration** — `btc = BACKTEST:BTCUSDT EVERY 1m`. Multi-stream strategies just add more aliases.
+1. **One stream declaration** — `btc = BINANCE:BTCUSDT EVERY 1m`. Multi-stream strategies just add more aliases.
 2. **A `WHEN ... THEN ...` rule** — the condition is evaluated on every candle close; the action fires on the first tick after the rule transitions from `false` to `true` (edge-triggered).
 3. **A bracket** — the entry, stop-loss, and take-profit go in as one atomic group. The broker handles all three; the engine never sees orphaned legs.
 
-The same rules paper-trade once the stream names a live symbol: `BACKTEST:` is local data
-with no live prices, so change the stream to `btc = BINANCE:BTCUSDT EVERY 1m` (TradingView's name,
-for the default paper feed) or to your broker account's prefix, then run it with
+The same file paper-trades on live prices: `BINANCE:BTCUSDT` is also TradingView's name for the
+pair, the default paper feed (or change the stream to your broker account's prefix). Run it with
 `qkt run strategies/ema-cross.qkt` or start it in the daemon with
 `qkt deploy strategies/ema-cross.qkt`. After editing a deployed copy, use
 `qkt resync strategies/ema-cross.qkt --as <name> --dry-run` and then

@@ -5,7 +5,9 @@ qkt reads it. Read it top to bottom once; after that the table is all you need.
 
 | You have | Do this | Takes |
 |---|---|---|
+| Nothing yet and want to try qkt | `qkt data sample`: a month of Binance BTCUSDT bars (the [quick start](quickstart.md)) | one command |
 | Nothing yet, and you trade FX, metals or indices | [Run a backtest](#1-no-data-yet-let-the-backtest-fetch-it): free Dukascopy ticks download themselves | one command |
+| A free download site | [Free sources](#free-sources-you-can-download-from): Binance, MT5 exports, TrueFX and more | a download, then the import |
 | A broker account (MT5, Bybit, Deribit) | [`qkt fetch`](#2-from-your-broker-qkt-fetch) your broker's own bars | one command per timeframe |
 | Your own files: CSVs, MT5 or TradingView exports, Dukascopy, Binance, Databento… | [`qkt data import`](#3-your-own-files-qkt-data-import) them | a dry run, then the import |
 
@@ -124,6 +126,32 @@ Check that the first and last rows became the times and prices you expect, then 
 
 Every refusal happens before the first write, so a failed import leaves your store exactly as it was. The full guide,
 with every format, flag and refusal, is [Import data from any source](../how-to/import-data.md).
+
+## Free sources you can download from
+
+Checked on 2026-10-20 by downloading from each, importing with `qkt data import` and backtesting the result.
+
+| Source | Account | What you get | How to download | qkt reads it as |
+|---|---|---|---|---|
+| Binance public data ([data.binance.vision](https://data.binance.vision)) | none | crypto spot and futures klines and trades, daily and monthly files | open the folder for the pair and interval, download the `.zip` (and its `.CHECKSUM`) | `binance-klines`, `binance-trades`, matched by themselves |
+| MetaTrader 5, from any broker or demo account | the broker's (a demo is free) | the broker's own bars and ticks | in Market Watch, right-click → **Symbols**, pick the symbol, open the **Bars** or **Ticks** tab, request the range, **Export** | `mt5-bars`, `mt5-ticks`; pass the broker's clock with `--tz` (Exness `UTC`, most others `ny-close`) |
+| Dukascopy datafeed | none | FX, metals and index ticks | let the backtest fetch them (section 1); qkt reads the hour files itself | `dukascopy-bi5` |
+| TrueFX | free registration | FX ticks | after signing in, the monthly files on the downloads page | `truefx-ticks` |
+| TradingView chart export | a paid plan | the bars on your chart | chart menu → **Download chart data…** | `tradingview-unix`, `tradingview-iso` |
+
+Each source's own terms say what you may do with its data; read them before you share or sell anything built on it. Dukascopy's website export now asks the browser to pass a check before it downloads, so use the datafeed through
+the backtest instead.
+
+Once a file is on your disk, the steps are the same whatever the source:
+
+```bash
+qkt data import <file> --as SOURCE:SYMBOL --dry-run   # check the first and last rows
+qkt data import <file> --as SOURCE:SYMBOL             # write it
+qkt backtest <strategy.qkt> --from <day> --to <day> --bars   # bars; drop --bars for ticks
+```
+
+The run prints `Report saved: ~/.qkt/runs/<time>-<strategy>`: open `report.html` there. The same data and strategy give
+the same numbers on every run, so change one thing and run it again to see what that one thing did.
 
 ## How a strategy finds its data
 

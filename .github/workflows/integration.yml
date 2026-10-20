@@ -29,6 +29,11 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Integration smoke
         run: bash tests/smoke-install.sh
+      # The README quick start as a newcomer runs it: the self-contained bundle on a clean ubuntu with no Java (#1471).
+      - name: README quick start on a clean machine
+        run: |
+          ./gradlew --no-daemon selfContainedDist
+          bash tests/quickstart-readme.sh build/distributions/qkt-*-linux-x64.tar.gz
       # Every real-data case, the large vendor files included (the pull-request tier runs the small ones).
       - name: Read the pinned data corpus commit
         id: corpus
