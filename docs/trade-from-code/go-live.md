@@ -40,7 +40,7 @@ filled at the venue with its stop and target held there, a 1-lot order was refus
 close the account was flat:
 
 ```text
-"ticket":3387482304,"symbol":"BTCUSDm","side":"BUY","lots":0.01,"entry":82638.32,"sl":81811.94,"tp":84291.08
+"ticket":3387492620,"symbol":"BTCUSDm","side":"BUY","lots":0.01,"entry":82690.69,"current":82715.64,"sl":81863.78,"tp":84344.51
 "reason":"order qty 1 exceeds per-order cap 0.05"
 "openLegs":[],"workingOrders":[]
 ```
