@@ -105,8 +105,10 @@ data class ClockEvidence(
                         when (open) {
                             is ParsedTime.Instant -> open.epochMs
                             is ParsedTime.Local -> {
-                                val wall = open.value.minusHours(clock.shiftHours)
-                                val offset = clock.rules.getValidOffsets(wall).firstOrNull() ?: return@mapNotNull null
+                                val wall = open.value.minusHours(clock.shiftHoursAt(open.value))
+                                val offset =
+                                    clock.rulesAt(open.value).getValidOffsets(wall).firstOrNull()
+                                        ?: return@mapNotNull null
                                 wall.toInstant(offset).toEpochMilli()
                             }
                             is ParsedTime.Date -> return@mapNotNull null
