@@ -7,6 +7,7 @@ import com.qkt.connector.mt5.MT5Symbol
 import com.qkt.connector.mt5.marketdata.Mt5BarFetcher
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.source.MarketSource
+import java.time.Instant
 
 /** Thin adapter so MT5, Binance and account-feed fetchers share a common shape for `qkt fetch`. */
 internal fun interface BarFetcher {
@@ -21,6 +22,17 @@ internal fun interface BarFetcher {
     fun isExpectedEmpty(
         symbol: String,
         range: TimeRange,
+    ): Boolean = false
+
+    /**
+     * Whether a day's bars, the last ending at [lastEndMs], stop while the market was still open before
+     * [dayEndMs]: a source that serves only what it has cached, so the day must not be recorded covered.
+     */
+    fun endsEarly(
+        symbol: String,
+        window: TimeWindow,
+        lastEndMs: Long,
+        dayEndMs: Long,
     ): Boolean = false
 }
 
@@ -47,6 +59,17 @@ internal class Mt5Fetcher(
         }
         return true
     }
+
+    // The terminal serves the history it has synced; a recent day can come back cut short (2026-10-19:
+    // XAUUSD 00:00-12:48 at 00:08 UTC, the whole day once the terminal caught up).
+    override fun endsEarly(
+        symbol: String,
+        window: TimeWindow,
+        lastEndMs: Long,
+        dayEndMs: Long,
+    ): Boolean =
+        dayEndMs - lastEndMs > window.durationMs &&
+            !isExpectedEmpty(symbol, TimeRange(Instant.ofEpochMilli(lastEndMs), Instant.ofEpochMilli(dayEndMs)))
 }
 
 /** Fetches through an account's own feed, which names the store's bare [symbol] with the account's [prefix]. */

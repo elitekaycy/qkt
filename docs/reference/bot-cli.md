@@ -189,10 +189,13 @@ session runs. `finish --flatten` closes everything first.
 
 **Records and replay.** Each session writes `session.meta.json`, `intents.jsonl` (every intent in full,
 with where it entered the replay, every fate change and the finish point), `reads.jsonl` (what the agent
-was served), `fills.jsonl`, and live `summary.json`, all copied into `--out`. `qkt bot session replay`
-rebuilds the session from them over the store and writes the report plus `replay-diff.json`: a backtest
-session replays identically, trade for trade; a live session replays over stored ticks and the diff shows
-each fill that moved.
+was served), `fills.jsonl`, and live `summary.json` and `ticks.csv` (every tick the session traded on), all
+copied into `--out`. `qkt bot session replay` rebuilds the session from them and writes the report plus
+`replay-diff.json`: a backtest session replays identically, trade for trade, over the store; a live session
+replays over its own `ticks.csv`, filling at their bid and ask as the venue did (`--broker mt5-sim`, unless
+`--broker` says otherwise; `--data-root` or `--bars` replay it over the store instead), and the diff
+says whether it made the same trades (`sameTrades`) and lists each fill whose price or time moved: a venue's
+fill price and clock are not a tick's, so a live replay is `sameTrades`, not `identical`.
 
 In a session, `modify`, `close --partial`, `close --ticket` and `cancel --order` are refused with the
 session way to do it (set stops with the entry, reduce with the opposite order on a netting book, close

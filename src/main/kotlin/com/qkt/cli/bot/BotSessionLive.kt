@@ -13,6 +13,7 @@ import com.qkt.trade.session.BotSessionStreams
 import com.qkt.trade.session.IntentJournal
 import com.qkt.trade.session.LiveBotRunBackend
 import com.qkt.trade.session.LiveSessionRecord
+import com.qkt.trade.session.LiveTickLog
 import com.qkt.trade.session.RunLock
 import com.qkt.trade.session.copySessionJournals
 import com.qkt.trade.session.rebuildIdentities
@@ -53,7 +54,8 @@ private fun liveOnLock(
         val outDir = Path.of(sub.option("out") ?: "runs/${spec.runId}")
         val history = BarHistory(capacity = maxOf(spec.historyBars, 1000))
         seedLiveWarmup(cfg, streams, spec.historyBars, history)
-        val recorder = BotSessionRecorder(history)
+        val tickLog = LiveTickLog(sessionDir.resolve(LiveTickLog.FILE))
+        val recorder = BotSessionRecorder(history, tickLog::append)
         val identities = BotSessionIdentities.compile(streams, spec.identities, history = history)
         val record = LiveSessionRecord(sessionDir)
         val journal = IntentJournal(sessionDir.resolve("intents.jsonl"))
@@ -101,6 +103,7 @@ private fun liveOnLock(
             insightsSink = stack.insightsSink,
             onFinish = {
                 record.summary(identities.keys, session.legs())
+                tickLog.close()
                 copySessionJournals(sessionDir, outDir)
                 BotSessionFiles.delete(stateDir.stateRoot, spec.runId)
                 outDir.toAbsolutePath().toString()

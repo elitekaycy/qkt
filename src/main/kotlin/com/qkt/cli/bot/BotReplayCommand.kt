@@ -3,8 +3,12 @@ package com.qkt.cli.bot
 import com.qkt.backtest.report.BacktestReportWriter
 import com.qkt.cli.Args
 import com.qkt.cli.ExitCodes
+import com.qkt.cli.golden.GoldenReplayStoreWriter
+import com.qkt.cli.golden.RecordedTick
+import com.qkt.common.SystemClock
 import com.qkt.trade.session.IntentJournal
 import com.qkt.trade.session.IntentReplay
+import com.qkt.trade.session.LiveTickLog
 import com.qkt.trade.session.ReplayDiff
 import com.qkt.trade.session.fillsOf
 import com.qkt.trade.session.readFills
@@ -18,7 +22,8 @@ import java.time.Instant
  * backtest session the record in [dir] declared (a run's report directory, or its state session directory)
  * over the store, re-injects every journaled intent where it arrived, writes the standard report to
  * `--out`, and `replay-diff.json`: each recorded fill beside the replayed one. A backtest record replays
- * identically; a live record replays over stored ticks, and the diff shows where live differed.
+ * identically; a live record replays over the ticks it recorded (`ticks.csv`), else over stored ticks, and the
+ * diff shows where live differed (`sameTrades`: the same trades, at the venue's own prices and times).
  */
 internal class BotReplayCommand(
     private val args: Args,
@@ -33,16 +38,41 @@ internal class BotReplayCommand(
         val intents = IntentJournal.read(dir.resolve("intents.jsonl"))
         val out = Path.of(args.option("out") ?: "$dir-replay")
         val live = meta.mode == "live"
-        val sub = Args(replayTokens(meta.argv, live, intents.maxOfOrNull { it.simMs }, meta.startedMs).toTypedArray())
+        val ticks =
+            if (live &&
+                args.option("data-root") == null &&
+                !args.flag("bars")
+            ) {
+                recordedTicks(dir)
+            } else {
+                emptyList()
+            }
+        val recordedTicks = ticks.takeIf { it.isNotEmpty() }?.let { writeTickStore(it, out) }
+        // The pipeline hands the session ticks before it records its start: the replay starts with the first.
+        val startMs = minOf(meta.startedMs, ticks.firstOrNull()?.timestamp ?: meta.startedMs)
+        val tokens = replayTokens(meta.argv, live, intents.maxOfOrNull { it.simMs }, startMs)
+        // A venue fills at its quote (ask to buy, bid to sell): over the recorded quotes, so does mt5-sim.
+        val venueFills = if (args.option("broker") == null) listOf("--broker", "mt5-sim") else emptyList()
+        val overStore =
+            recordedTicks?.let { listOf("--data-root", it.toString(), "--no-fetch", "--allow-incomplete") + venueFills }
+        val sub = Args((tokens + overStore.orEmpty()).toTypedArray())
         val spec = parseSessionStart(sub) { meta.runId }
         val parts = buildBacktestSession(sub, spec, journal = null)
+        val finish = IntentJournal.finishPoint(dir.resolve("intents.jsonl"))
         val result =
-            IntentReplay(parts.engine, parts.recorder, parts.session)
-                .run(
-                    intents,
-                    byArrivalTime = live,
-                    finishedAt = IntentJournal.finishPoint(dir.resolve("intents.jsonl")),
+            if (recordedTicks != null) {
+                // Live, an intent fires on the first tick stamped after it arrived (its tickSeq lags: ticks the
+                // engine had not run yet). Over those same ticks, it re-enters just before that tick.
+                fun before(ms: Long) = ticks.count { it.timestamp <= ms }.toLong()
+                IntentReplay(parts.engine, parts.recorder, parts.session).run(
+                    intents.map { it.copy(tickSeq = before(it.simMs)) },
+                    byArrivalTime = false,
+                    finishedAt = finish?.let { (ms, _) -> ms to before(ms) },
                 )
+            } else {
+                IntentReplay(parts.engine, parts.recorder, parts.session)
+                    .run(intents, byArrivalTime = live, finishedAt = finish)
+            }
         Files.createDirectories(out)
         BacktestReportWriter(out).write(result)
         val diff = ReplayDiff.of(readFills(dir.resolve("fills.jsonl")), fillsOf(result.trades))
@@ -54,12 +84,31 @@ internal class BotReplayCommand(
                 "mode" to meta.mode,
                 "intents" to intents.size,
                 "identical" to diff.identical,
+                "sameTrades" to diff.sameTrades,
+                "market" to if (recordedTicks != null) "recorded ticks" else "store",
                 "recordedFills" to diff.recorded.size,
                 "replayedFills" to diff.replayed.size,
                 "out" to out.toAbsolutePath().toString(),
             ),
         )
         return ExitCodes.SUCCESS
+    }
+
+    /**
+     * A live record's own ticks (`ticks.csv`): the replay runs over the market the session traded on. They span
+     * the session alone, so the rest of its day is no gap.
+     */
+    private fun recordedTicks(dir: Path) = LiveTickLog.read(dir.resolve(LiveTickLog.FILE))
+
+    /** [ticks] as a private tick store under [out]. */
+    private fun writeTickStore(
+        ticks: List<com.qkt.marketdata.Tick>,
+        out: Path,
+    ): Path {
+        val root = out.resolve("recorded-ticks")
+        GoldenReplayStoreWriter(SystemClock())
+            .writeTickStore(root, ticks.mapIndexed { i, t -> RecordedTick(i.toLong(), false, null, t) })
+        return root
     }
 
     /**
