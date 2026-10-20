@@ -80,19 +80,21 @@ jobs:
         id: deployment
         uses: actions/deploy-pages@v4
 
-  # Fails the run when the live site is not answering, so a Pages setting that drifts (source branch,
-  # custom domain) is noticed on the next deploy instead of by a visitor.
+  # Fails the run when GitHub Pages is not serving the site, so a Pages setting that drifts (source branch,
+  # custom domain) is noticed on the next deploy instead of by a visitor. It asks the Pages origin directly:
+  # docs.tryqkt.com is behind Cloudflare, which answers GitHub's runners with 403, while Pages itself answers
+  # 200 for its custom domain and 404 for a host it is not set up for.
   verify:
     needs: deploy
     runs-on: ubuntu-latest
     steps:
-      - name: Check the live site answers
+      - name: Check GitHub Pages serves the site
         run: |
-          url=https://docs.tryqkt.com/
+          host=docs.tryqkt.com
           for _ in $(seq 1 8); do
-            code=$(curl -s -o /dev/null -w "%{http_code}" "$url" || true)
+            code=$(curl -s -o /dev/null -w "%{http_code}" --resolve "$host:80:185.199.108.153" "http://$host/" || true)
             [ "$code" = 200 ] && exit 0
             sleep 15
           done
-          echo "::error::$url answered ${code:-nothing} after the deploy: check Settings > Pages (source GitHub Actions, custom domain)"
+          echo "::error::GitHub Pages answered ${code:-nothing} for $host after the deploy: check Settings > Pages (source GitHub Actions, custom domain)"
           exit 1
