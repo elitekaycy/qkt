@@ -3,6 +3,7 @@ package com.qkt.backtest
 import com.qkt.marketdata.store.CompletenessReport
 import com.qkt.marketdata.store.DayCompleteness
 import com.qkt.marketdata.store.DefaultDataStore
+import com.qkt.marketdata.store.dukascopy.DukascopyInstrument
 import java.time.LocalDate
 
 /**
@@ -43,7 +44,11 @@ internal class IncompleteTickMessage(
                 append(".")
             }
             if (barsLine != null) append("\n  $barsLine")
-            if (!fetchEnabled) append("\n  Or let qkt download ticks: drop --no-fetch.")
+            when {
+                DukascopyInstrument.ofOrNull(symbol) == null ->
+                    append("\n  qkt has no download source for $symbol: bring the data in a file (qkt data presets).")
+                !fetchEnabled -> append("\n  Or let qkt download ticks: drop --no-fetch.")
+            }
             append("\n  Or import your own: qkt data import <file> --as $symbol")
             append("\n  Or run on what exists anyway: --allow-incomplete (no prices, so no trades, across the gaps).")
         }
