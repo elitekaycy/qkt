@@ -110,7 +110,10 @@ internal object BacktestBarReplay {
                 }.toMap()
         val barWindows: Map<String, TimeWindow> =
             if (!forceBars) {
-                finestDeclared
+                finestReplayWindows(
+                    finestDeclared,
+                    binaryBarStore,
+                ) { b, s, tf -> coverageOf(b, s, tf).missingDays.isEmpty() }
             } else {
                 finestDeclared.mapValues { (sym, declared) ->
                     val (broker, bare) = brokerAndBare(sym)
