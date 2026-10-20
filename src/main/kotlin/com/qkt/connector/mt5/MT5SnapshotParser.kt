@@ -38,16 +38,16 @@ internal class MT5SnapshotParser(
             symbol = obj["symbol"]!!.jsonPrimitive.content,
             type = obj["type"]!!.jsonPrimitive.content.toInt(),
             volume = obj["volume"]!!.jsonPrimitive.content.toBigDecimal(),
-            priceOpen = obj["price_open"]!!.jsonPrimitive.content.toBigDecimal(),
-            sl = obj["sl"]!!.jsonPrimitive.content.toBigDecimal(),
-            tp = obj["tp"]!!.jsonPrimitive.content.toBigDecimal(),
+            priceOpen = venuePrice(obj["price_open"]!!.jsonPrimitive.content)!!,
+            sl = venuePrice(obj["sl"]!!.jsonPrimitive.content)!!,
+            tp = venuePrice(obj["tp"]!!.jsonPrimitive.content)!!,
             profit = obj["profit"]!!.jsonPrimitive.content.toBigDecimal(),
             magic = obj["magic"]!!.jsonPrimitive.content.toInt(),
             openTime = rawTime,
             comment = obj["comment"]?.jsonPrimitive?.contentOrNull,
             clientOrderId = obj["client_order_id"]?.jsonPrimitive?.contentOrNull,
             swap = obj["swap"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull(),
-            priceCurrent = obj["price_current"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull(),
+            priceCurrent = venuePrice(obj["price_current"]?.jsonPrimitive?.contentOrNull),
         )
     }
 
