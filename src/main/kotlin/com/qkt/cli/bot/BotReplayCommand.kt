@@ -10,6 +10,7 @@ import com.qkt.trade.session.IntentJournal
 import com.qkt.trade.session.IntentReplay
 import com.qkt.trade.session.LiveTickLog
 import com.qkt.trade.session.ReplayDiff
+import com.qkt.trade.session.VenueDealLog
 import com.qkt.trade.session.fillsOf
 import com.qkt.trade.session.firedTickIndex
 import com.qkt.trade.session.measuredVenueLatencyMs
@@ -60,7 +61,10 @@ internal class BotReplayCommand(
         val filledAt = IntentJournal.filledAt(dir.resolve("intents.jsonl"))
         // `--trace`: what happened. Each fill at the quote standing when the venue filled it (its own round trip).
         val trace = args.flag("trace") && ticks.isNotEmpty()
-        val enterAt = if (trace) firedIndex + venueFillIndex(filledAt, ticks) else firedIndex
+        // A fill is booked when the venue's confirmation arrives; the venue's deals say when it executed.
+        val deals = VenueDealLog.read(dir.resolve(VenueDealLog.FILE))
+        val executedAt = VenueDealLog.executedAt(filledAt, readFills(dir.resolve("fills.jsonl")), deals)
+        val enterAt = if (trace) firedIndex + venueFillIndex(executedAt, ticks) else firedIndex
         // A venue fills at its quote (ask to buy, bid to sell): over the recorded quotes, so does mt5-sim.
         val venueFills = if (args.option("broker") == null) listOf("--broker", "mt5-sim") else emptyList()
         // And it fills when the order reaches it: the round trip the record measured, unless one is given.
@@ -108,6 +112,7 @@ internal class BotReplayCommand(
                 "samePrices" to diff.samePrices,
                 "market" to if (recordedTicks != null) "recorded ticks" else "store",
                 "latencyMs" to if (recordedTicks != null) latencyMs else null,
+                "venueDeals" to if (trace) deals.size else null,
                 "replay" to
                     when {
                         trace -> "trace"
