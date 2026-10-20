@@ -46,10 +46,14 @@ It trades CFDs, futures, perpetuals and options. Backtest and live differences a
 
 ## Quick start
 
+Ten minutes from download to your first report, with no account. qkt fetches a month of real Bitcoin prices to
+practise on.
+
+<!-- quickstart:begin -->
 **1. Install**
 
-Download the Linux build from the [latest release](https://github.com/elitekaycy/qkt/releases/latest) (it
-bundles Java). Windows, Docker and source are in the [install guide](docs/get-started/install.md).
+Download the Linux build from the [latest release](https://github.com/elitekaycy/qkt/releases/latest). It bundles
+Java, so you need nothing else. Windows, Docker and source are in the [install guide](docs/get-started/install.md).
 
 ```bash
 tar xzf qkt-*-linux-x64.tar.gz
@@ -57,13 +61,23 @@ export PATH="$PWD/qkt/bin:$PATH"
 qkt --version
 ```
 
-**2. Write a strategy**
+**2. Get the sample data**
+
+```bash
+qkt data sample
+```
+
+This downloads one month of BTCUSDT one-minute bars (September 2026) from Binance's public archive, checks the
+file against its published SHA-256, so every machine gets the same bytes, and imports it into qkt's data store,
+`~/.qkt/data`. It reports `Wrote 30 day(s)`.
+
+**3. Write a strategy**
 
 ```bash
 cat > momentum.qkt <<'QKT'
 STRATEGY momentum VERSION 1
 SYMBOLS
-    btc = BACKTEST:BTCUSD EVERY 15m
+    btc = BINANCE:BTCUSDT EVERY 15m
 RULES
     WHEN ema(btc.close, 9) CROSSES ABOVE ema(btc.close, 21)
      AND POSITION.btc = 0
@@ -73,27 +87,41 @@ QKT
 qkt parse momentum.qkt
 ```
 
-**3. Backtest it**
+**4. Backtest it**
 
 ```bash
-qkt backtest momentum.qkt --from 2026-08-01 --to 2026-09-01
+qkt backtest momentum.qkt --from 2026-09-01 --to 2026-10-01 --bars
 ```
 
-Missing days are downloaded once from Dukascopy and cached in `~/.qkt/data`. Have your own CSVs, MT5 exports or a
-broker account? [Get data](docs/get-started/get-data.md) shows how to bring them in.
+`--bars` runs on the one-minute bars you imported. Backtests are deterministic: the same data and strategy give
+the same numbers on every machine, so you should see exactly this:
 
-**4. Read the result**
+```text
+Result
+  Profit             -622.01 USD   (-6.2%)
+  Round trips        25 closed, 6 won (24.0%)
+```
+<!-- quickstart:end -->
 
-You will see a `Result` block with `Profit`, `Round trips`, `Worst drop` and `Sharpe ratio`, and a saved
-`report.html`. That is a complete run. The figures are hypothetical: this backtest fills at the middle price and
-models no costs. Add `--broker mt5-sim` for a fill model with spread and slippage.
+**5. Read the report, change something, run again**
 
-When you are ready to go further, paper-trade it on live TradingView prices in the foreground. `BACKTEST:` is local
-data with no live prices, so run a copy on TradingView's name for the pair:
+The line `Report saved: ~/.qkt/runs/<time>-momentum` says where the run went. Open `report.html` there in a
+browser for the equity curve and every trade; `trades.csv` and `result.json` hold the same numbers for tools.
+Change the strategy (try `ema(btc.close, 20)` and `ema(btc.close, 50)`), run the same command, and compare. The
+figures are hypothetical: this backtest fills at the bar's price and models no costs. Add `--broker mt5-sim` for
+spread and slippage.
+
+**6. Use your own data**
+
+Export bars or ticks from MetaTrader 5, or download them from HistData, Dukascopy, Binance and others, then run
+them through `qkt data import` the same way. [Get data](docs/get-started/get-data.md) walks through each source;
+`qkt data presets` lists the 49 formats qkt reads.
+
+When you are ready to go further, paper-trade the same file on live prices in the foreground. `BINANCE:BTCUSDT`
+is also TradingView's name for the pair, so nothing changes; Ctrl-C stops it:
 
 ```bash
-sed 's/BACKTEST:BTCUSD/COINBASE:BTCUSD/' momentum.qkt > momentum-paper.qkt
-qkt run momentum-paper.qkt
+qkt run momentum.qkt
 ```
 
 <br/>
