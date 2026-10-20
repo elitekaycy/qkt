@@ -14,6 +14,8 @@ import com.qkt.strategy.StrategyContext
  */
 class BotSessionRecorder(
     private val history: BarHistory,
+    /** Every tick as it arrives: a live session writes them to its [LiveTickLog]. */
+    private val onLiveTick: (Tick) -> Unit = {},
 ) : Strategy {
     private val ticks = java.util.concurrent.ConcurrentHashMap<String, Tick>()
     private val seen =
@@ -30,6 +32,7 @@ class BotSessionRecorder(
     ) {
         ticks[tick.symbol] = tick
         seen.incrementAndGet()
+        onLiveTick(tick)
     }
 
     override fun onCandle(

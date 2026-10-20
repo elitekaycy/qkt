@@ -161,6 +161,13 @@ class FetchCommand(
                 } else {
                     println("  [$idx/$totalDays] $day  empty (open session; left uncovered for retry)")
                 }
+            } else if (fetcher.endsEarly(symbol, window, bars.maxOf { it.endTime }, rangeEnd.toEpochMilli())) {
+                // Like a day still in progress: a stored day is skipped as on disk, so a cut-short one would stay so.
+                val last = java.time.Instant.ofEpochMilli(bars.maxOf { it.endTime })
+                println(
+                    "  [$idx/$totalDays] $day  not stored: ${bars.size} bars, the last ending $last while the " +
+                        "market was open (the venue's history has not caught up); fetch it again later",
+                )
             } else {
                 store.writeDay(broker, symbol, tf, day, bars)
                 store.recordDay(broker, symbol, tf, day)

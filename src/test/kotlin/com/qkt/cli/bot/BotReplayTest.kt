@@ -53,6 +53,71 @@ class BotReplayTest {
     }
 
     @Test
+    fun `a live record replays over the ticks it traded on`(
+        @TempDir tmp: Path,
+    ) {
+        val t0 =
+            java.time.Instant
+                .parse("2026-07-09T12:18:30Z")
+                .toEpochMilli()
+        val dir = tmp.resolve("live")
+        val argv = listOf("start", "--symbols", gold, "--tf", "1m", "--identities", "brain", "--run", "r1", "--json")
+        com.qkt.trade.session.writeSessionMeta(
+            dir,
+            com.qkt.trade.session
+                .SessionMeta("r1", "live", listOf("brain"), argv, t0),
+        )
+        com.qkt.trade.session.LiveTickLog(dir.resolve("ticks.csv")).use { log ->
+            (0 until 36).forEach { i ->
+                val mid = BigDecimal("2400.00").add(BigDecimal("0.10").multiply(BigDecimal(i)))
+                log.append(
+                    com.qkt.marketdata.Tick(
+                        gold,
+                        mid,
+                        t0 + i * 5_000L,
+                        bid = mid - BigDecimal("0.10"),
+                        ask = mid + BigDecimal("0.10"),
+                    ),
+                )
+            }
+        }
+        val journal =
+            com.qkt.trade.session
+                .IntentJournal(dir.resolve("intents.jsonl"))
+        val header = "STRATEGY bot VERSION 1\nSYMBOLS\n    x = $gold EVERY 1m\nRULES\n    WHEN true\n    THEN "
+        journal.intent("int-1", "brain", header + "BUY x SIZING 0.01\n", t0 + 45_000L, t0 + 45_000L, 0L)
+        journal.intent("int-2", "brain", header + "CLOSE x\n", t0 + 100_000L, t0 + 100_000L, 0L)
+        journal.finish(t0 + 150_000L, 0L)
+        Files.write(
+            dir.resolve("fills.jsonl"),
+            listOf("BUY" to 46_000L, "SELL" to 101_000L).map { (side, at) ->
+                """{"identity":"brain","orderId":"o","symbol":"$gold","side":"$side","qty":0.01,"price":2401.5,""" +
+                    """"timeMs":${t0 + at}}"""
+            },
+        )
+
+        val (code, text) = replay(dir.toString(), "--out", tmp.resolve("out").toString())
+
+        assertThat(code).withFailMessage(text).isEqualTo(ExitCodes.SUCCESS)
+        assertThat(text).contains("\"replayedFills\":2").contains("\"sameTrades\":true")
+    }
+
+    @Test
+    fun `the diff says when the trades are the same but prices moved`() {
+        fun fill(
+            side: String,
+            price: String,
+        ) = ReplayFill("brain", gold, side, BigDecimal("0.1"), BigDecimal(price), 60_000L)
+
+        val moved = ReplayDiff.of(listOf(fill("BUY", "1850.10")), listOf(fill("BUY", "1850.30")))
+        val other = ReplayDiff.of(listOf(fill("BUY", "1850.10")), listOf(fill("SELL", "1850.10")))
+
+        assertThat(moved.sameTrades).isTrue
+        assertThat(moved.json()).contains("\"sameTrades\":true")
+        assertThat(other.sameTrades).isFalse
+    }
+
+    @Test
     fun `replay refuses a directory with no session record`(
         @TempDir tmp: Path,
     ) {

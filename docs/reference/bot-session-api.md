@@ -113,6 +113,9 @@ Under `<state>/state/bot/sessions/<run>/`, copied into the report directory on f
 | `reads.jsonl` | every read and the bars it served |
 | `fills.jsonl` | every execution, by identity |
 | `summary.json` | live: per identity fills, realized P&L, open legs |
+| `ticks.csv` | live: every tick the session was handed (`timestamp,symbol,price,volume,bid,ask,bidVolume,askVolume`) |
 
-`qkt bot session replay <dir>` rebuilds the session from these and writes `replay-diff.json`; a backtest
-session replays identically.
+`qkt bot session replay <dir>` rebuilds the session from these and writes `replay-diff.json`. A backtest
+session replays identically over the store. A live session replays over its own `ticks.csv`, the market it
+traded on, and the diff reports `sameTrades` (the same trades in the same order) beside `identical` (also
+the same prices and times, which a venue's fills never are to the millisecond).
