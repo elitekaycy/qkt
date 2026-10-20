@@ -6,6 +6,7 @@ import com.qkt.backtest.ProvisionStream
 import com.qkt.candles.TimeWindow
 import com.qkt.marketdata.store.BinaryBarStore
 import com.qkt.marketdata.store.LocalBarStore
+import com.qkt.marketdata.store.calendarOf
 import java.nio.file.Paths
 import java.time.Instant
 import java.time.LocalDate
@@ -95,7 +96,8 @@ internal object BacktestBarReplay {
             tf,
             fromDay,
             toDay,
-            BacktestContext.defaultCalendars().calendarFor(bare),
+            LocalBarStore(Paths.get(dataRoot)).calendarOf(broker, bare)
+                ?: BacktestContext.defaultCalendars().calendarFor(bare),
             LocalBarStore(Paths.get(dataRoot)),
         )
         val finestDeclared: Map<String, TimeWindow> =
