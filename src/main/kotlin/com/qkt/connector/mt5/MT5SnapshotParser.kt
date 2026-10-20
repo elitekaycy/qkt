@@ -98,7 +98,7 @@ internal class MT5SnapshotParser(
             type = obj["type"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0,
             entry = obj["entry"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0,
             volume = obj["volume"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
-            price = obj["price"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
+            price = venuePrice(obj["price"]?.jsonPrimitive?.contentOrNull) ?: BigDecimal.ZERO,
             profit = obj["profit"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
             commission = obj["commission"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
             swap = obj["swap"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull() ?: BigDecimal.ZERO,
