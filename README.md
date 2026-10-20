@@ -132,6 +132,17 @@ An AI agent, a script in any language or a person at a shell can trade through q
 every order goes through the same engine as a `.qkt` strategy, with your `qkt.config.yaml`, `instruments.yaml`,
 risk limits and guardrails, is journaled with who sent it, and can be backtested first and replayed after.
 
+<p align="center">
+  <a href="docs/assets/trade-from-code-full-dark.mp4">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="docs/assets/trade-from-code-loop-dark.webp">
+      <img alt="An AI agent, a Python script and a curl call trade in one qkt session; the config's limit refuses an order; the session replays with the same 93 fills" src="docs/assets/trade-from-code-loop-light.webp" width="840">
+    </picture>
+  </a>
+</p>
+
+<p align="center"><sub>A real session: Claude, a Python script and curl, one backtest. <a href="docs/assets/trade-from-code-full-dark.mp4">Watch the full minute</a></sub></p>
+
 ```bash
 qkt bot session start --backtest --symbols BINANCE:BTCUSDT --tf 15m --from 2026-09-01 --to 2026-09-08 \
   --identities agent --run demo --out runs/demo --json > session.log 2>&1 &

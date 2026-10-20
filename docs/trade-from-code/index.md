@@ -13,6 +13,10 @@ engine as a `.qkt` strategy, so everything you have set up for strategies applie
 | The journal | every intent, its exact DSL, its hash, who sent it and what became of it |
 | Replay | the session runs again and gives the same fills |
 
+![An AI agent, a Python script and a curl call trade in one qkt session; the config's limit refuses an order; the session replays with the same 93 fills](../assets/trade-from-code-loop-dark.webp)
+
+A real session: a Claude model, a Python script and a curl call trading in one backtest. [Watch the full minute](../assets/trade-from-code-full-dark.mp4).
+
 ```text
 your agent · script · app        any language: JSON over the CLI or local HTTP
         │
