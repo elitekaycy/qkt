@@ -139,6 +139,7 @@ internal val toolingOptionSchemas: Map<String, CliOptionSchema> =
                         "exit-after",
                         "symbol",
                         "reconcile",
+                        "execution-latency",
                     ),
                 flags = setOf("json", "dry-run", "all", "backtest", "no-fetch", "tick-fills", "bars", "flatten", "any"),
             ),

@@ -34,6 +34,13 @@ class ReplayDiff private constructor(
                         a.quantity.compareTo(b.quantity) == 0
                 }
 
+    /**
+     * [sameTrades] at the same prices too: every fill but its time. A live replay at the venue's measured round
+     * trip reaches this; its fills are booked on the tick after the round trip, not at the venue's own clock.
+     */
+    val samePrices: Boolean
+        get() = sameTrades && recorded.zip(replayed).all { (a, b) -> a.price.compareTo(b.price) == 0 }
+
     fun json(): String {
         fun fill(f: ReplayFill?): String =
             f?.let {
@@ -46,7 +53,8 @@ class ReplayDiff private constructor(
                 "[",
                 "]",
             ) { (a, b) -> """{"recorded":${fill(a)},"replayed":${fill(b)}}""" }
-        return """{"identical":$identical,"sameTrades":$sameTrades,"recordedFills":${recorded.size},""" +
+        return """{"identical":$identical,"sameTrades":$sameTrades,"samePrices":$samePrices,""" +
+            """"recordedFills":${recorded.size},""" +
             """"replayedFills":${replayed.size},"mismatches":$rows}"""
     }
 

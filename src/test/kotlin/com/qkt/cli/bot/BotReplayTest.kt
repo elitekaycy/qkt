@@ -56,6 +56,81 @@ class BotReplayTest {
     fun `a live record replays over the ticks it traded on`(
         @TempDir tmp: Path,
     ) {
+        val dir = liveRecord(tmp, listOf(Triple("BUY", "2400.95", 45_000L), Triple("SELL", "2401.95", 100_000L)))
+
+        val (code, text) = replay(dir.toString(), "--out", tmp.resolve("out").toString())
+
+        assertThat(code).withFailMessage(text).isEqualTo(ExitCodes.SUCCESS)
+        assertThat(text).contains("\"replayedFills\":2").contains("\"sameTrades\":true")
+        // Over the ticks it recorded, each intent enters where it entered live: the same fills, to the tick.
+        assertThat(text).contains("\"identical\":true")
+    }
+
+    @Test
+    fun `a live replay takes the venue's measured round trip, filling at the quote standing when it ends`(
+        @TempDir tmp: Path,
+    ) {
+        // The venue took 6 s each time: the buy fired on tick 9 filled at tick 10's ask, the close at tick 21's bid.
+        val dir = liveRecord(tmp, listOf(Triple("BUY", "2401.05", 51_000L), Triple("SELL", "2402.05", 106_000L)))
+
+        val (code, text) = replay(dir.toString(), "--out", tmp.resolve("out").toString())
+
+        assertThat(code).withFailMessage(text).isEqualTo(ExitCodes.SUCCESS)
+        assertThat(text).contains("\"latencyMs\":6000").contains("\"samePrices\":true")
+        val diff = Files.readString(tmp.resolve("out").resolve("replay-diff.json"))
+        val prices = Regex(""""price":([0-9.]+)""").findAll(diff).map { BigDecimal(it.groupValues[1]) }.toList()
+        // Each mismatch row is recorded then replayed: a row may differ only in its time, never its price.
+        prices.chunked(2).forEach { (recorded, replayed) -> assertThat(replayed).isEqualByComparingTo(recorded) }
+    }
+
+    @Test
+    fun `the diff says when the trades are the same but prices moved`() {
+        fun fill(
+            side: String,
+            price: String,
+        ) = ReplayFill("brain", gold, side, BigDecimal("0.1"), BigDecimal(price), 60_000L)
+
+        val moved = ReplayDiff.of(listOf(fill("BUY", "1850.10")), listOf(fill("BUY", "1850.30")))
+        val other = ReplayDiff.of(listOf(fill("BUY", "1850.10")), listOf(fill("SELL", "1850.10")))
+
+        assertThat(moved.sameTrades).isTrue
+        assertThat(moved.samePrices).isFalse
+        assertThat(moved.json()).contains("\"sameTrades\":true").contains("\"samePrices\":false")
+        val later = ReplayDiff.of(listOf(fill("BUY", "1850.10")), listOf(fill("BUY", "1850.10").copy(timeMs = 61_000L)))
+        assertThat(later.samePrices).isTrue
+        assertThat(later.identical).isFalse
+        assertThat(other.sameTrades).isFalse
+    }
+
+    @Test
+    fun `replay refuses a directory with no session record`(
+        @TempDir tmp: Path,
+    ) {
+        val (code, text) = replay(tmp.toString())
+
+        assertThat(code).isEqualTo(ExitCodes.USER_ERROR)
+        assertThat(text).contains("no session record")
+    }
+
+    @Test
+    fun `the diff lists a fill that moved`() {
+        fun fill(price: String) = ReplayFill("brain", gold, "BUY", BigDecimal("0.1"), BigDecimal(price), 60_000L)
+
+        val diff = ReplayDiff.of(recorded = listOf(fill("1850.10")), replayed = listOf(fill("1850.30")))
+
+        assertThat(diff.identical).isFalse
+        assertThat(diff.mismatches).hasSize(1)
+        assertThat(diff.json()).contains("\"recorded\":").contains("1850.10").contains("1850.30")
+    }
+
+    /**
+     * A live record over 36 ticks 5 s apart (bid and ask 0.05 either side of mid): a buy arriving at 42 s and a
+     * close at 97 s, with [fills] (side, price, ms after the first tick) as the venue booked them.
+     */
+    private fun liveRecord(
+        tmp: Path,
+        fills: List<Triple<String, String, Long>>,
+    ): Path {
         val t0 =
             java.time.Instant
                 .parse("2026-07-09T12:18:30Z")
@@ -93,53 +168,20 @@ class BotReplayTest {
         journal.finish(t0 + 150_000L, 30L)
         Files.write(
             dir.resolve("fills.jsonl"),
-            listOf(Triple("BUY", "2400.95", 45_000L), Triple("SELL", "2401.95", 100_000L)).map { (side, price, at) ->
+            fills.map { (side, price, at) ->
                 """{"identity":"brain","orderId":"o","symbol":"$gold","side":"$side","qty":0.01,"price":$price,""" +
                     """"timeMs":${t0 + at}}"""
             },
         )
-
-        val (code, text) = replay(dir.toString(), "--out", tmp.resolve("out").toString())
-
-        assertThat(code).withFailMessage(text).isEqualTo(ExitCodes.SUCCESS)
-        assertThat(text).contains("\"replayedFills\":2").contains("\"sameTrades\":true")
-        // Over the ticks it recorded, each intent enters where it entered live: the same fills, to the tick.
-        assertThat(text).contains("\"identical\":true")
-    }
-
-    @Test
-    fun `the diff says when the trades are the same but prices moved`() {
-        fun fill(
-            side: String,
-            price: String,
-        ) = ReplayFill("brain", gold, side, BigDecimal("0.1"), BigDecimal(price), 60_000L)
-
-        val moved = ReplayDiff.of(listOf(fill("BUY", "1850.10")), listOf(fill("BUY", "1850.30")))
-        val other = ReplayDiff.of(listOf(fill("BUY", "1850.10")), listOf(fill("SELL", "1850.10")))
-
-        assertThat(moved.sameTrades).isTrue
-        assertThat(moved.json()).contains("\"sameTrades\":true")
-        assertThat(other.sameTrades).isFalse
-    }
-
-    @Test
-    fun `replay refuses a directory with no session record`(
-        @TempDir tmp: Path,
-    ) {
-        val (code, text) = replay(tmp.toString())
-
-        assertThat(code).isEqualTo(ExitCodes.USER_ERROR)
-        assertThat(text).contains("no session record")
-    }
-
-    @Test
-    fun `the diff lists a fill that moved`() {
-        fun fill(price: String) = ReplayFill("brain", gold, "BUY", BigDecimal("0.1"), BigDecimal(price), 60_000L)
-
-        val diff = ReplayDiff.of(recorded = listOf(fill("1850.10")), replayed = listOf(fill("1850.30")))
-
-        assertThat(diff.identical).isFalse
-        assertThat(diff.mismatches).hasSize(1)
-        assertThat(diff.json()).contains("\"recorded\":").contains("1850.10").contains("1850.30")
+        // When the venue booked each fill, as the live fates record it.
+        fills.forEachIndexed { i, (_, _, at) ->
+            Files.writeString(
+                dir.resolve("intents.jsonl"),
+                """{"type":"fate","intentId":"int-${i + 1}","identity":"brain","state":"filled","orderIds":[],""" +
+                    """"reason":null,"atMs":${t0 + at},"compiled":true}""" + "\n",
+                java.nio.file.StandardOpenOption.APPEND,
+            )
+        }
+        return dir
     }
 }
