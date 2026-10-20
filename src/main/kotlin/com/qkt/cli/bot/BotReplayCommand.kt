@@ -11,6 +11,7 @@ import com.qkt.trade.session.IntentReplay
 import com.qkt.trade.session.LiveTickLog
 import com.qkt.trade.session.ReplayDiff
 import com.qkt.trade.session.fillsOf
+import com.qkt.trade.session.firedTickIndex
 import com.qkt.trade.session.measuredVenueLatencyMs
 import com.qkt.trade.session.readFills
 import com.qkt.trade.session.readSessionMeta
@@ -52,12 +53,15 @@ internal class BotReplayCommand(
         // The pipeline hands the session ticks before it records its start: the replay starts with the first.
         val startMs = minOf(meta.startedMs, ticks.firstOrNull()?.timestamp ?: meta.startedMs)
         val tokens = replayTokens(meta.argv, live, intents.maxOfOrNull { it.simMs }, startMs)
+        // The recorded tick each intent fired on: its fate says, else the first tick stamped after it arrived.
+        val firedIndex = firedTickIndex(intents, IntentJournal.firedTickMs(dir.resolve("intents.jsonl")), ticks)
+        val firedOn = firedIndex.mapValues { (_, i) -> ticks[i].timestamp }
         // A venue fills at its quote (ask to buy, bid to sell): over the recorded quotes, so does mt5-sim.
         val venueFills = if (args.option("broker") == null) listOf("--broker", "mt5-sim") else emptyList()
         // And it fills when the order reaches it: the round trip the record measured, unless one is given.
         val latencyMs =
             if (args.option("execution-latency") == null) {
-                measuredVenueLatencyMs(intents, IntentJournal.filledAt(dir.resolve("intents.jsonl")), ticks)
+                measuredVenueLatencyMs(firedOn, IntentJournal.filledAt(dir.resolve("intents.jsonl")))
             } else {
                 null
             }
@@ -72,11 +76,11 @@ internal class BotReplayCommand(
         val finish = IntentJournal.finishPoint(dir.resolve("intents.jsonl"))
         val result =
             if (recordedTicks != null) {
-                // Live, an intent fires on the first tick stamped after it arrived (its tickSeq lags: ticks the
-                // engine had not run yet). Over those same ticks, it re-enters just before that tick.
+                // Live, an intent fires on a tick later than its tickSeq says (ticks the engine had not run yet).
+                // Over those same ticks, it re-enters just before the tick it fired on.
                 fun before(ms: Long) = ticks.count { it.timestamp <= ms }.toLong()
                 IntentReplay(parts.engine, parts.recorder, parts.session).run(
-                    intents.map { it.copy(tickSeq = before(it.simMs)) },
+                    intents.map { it.copy(tickSeq = firedIndex[it.intentId]?.toLong() ?: before(it.simMs)) },
                     byArrivalTime = false,
                     finishedAt = finish?.let { (ms, _) -> ms to before(ms) },
                 )

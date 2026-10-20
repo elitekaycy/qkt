@@ -11,6 +11,8 @@ data class IntentFate(
     val atMs: Long? = null,
     /** True once the engine compiled the action (registering any exit hooks): a restart rebuilds these only. */
     val compiled: Boolean = false,
+    /** The timestamp of the tick the intent fired (or was skipped) on: where a replay over recorded ticks enters it. */
+    val tickMs: Long? = null,
 )
 
 /** One open leg of a session identity. */

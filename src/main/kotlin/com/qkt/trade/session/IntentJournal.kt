@@ -96,6 +96,17 @@ class IntentJournal(
             return out
         }
 
+        /** The tick each intent in [path] fired on ([IntentFate.tickMs]), by intent id; absent in older records. */
+        fun firedTickMs(path: Path): Map<String, Long> {
+            if (!Files.exists(path)) return emptyMap()
+            val out = LinkedHashMap<String, Long>()
+            Files.readAllLines(path).filter { it.contains("\"tickMs\":") && it.contains("\"type\":\"fate\"") }.forEach {
+                val o = Json.parseToJsonElement(it).jsonObject
+                o.text("tickMs")?.toLongOrNull()?.let { ms -> out.putIfAbsent(o.text("intentId")!!, ms) }
+            }
+            return out
+        }
+
         /** The `(simMs, tickSeq)` the session in [path] was finished at, or null when it never finished. */
         fun finishPoint(path: Path): Pair<Long, Long>? {
             if (!Files.exists(path)) return null

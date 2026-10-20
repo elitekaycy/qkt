@@ -11,7 +11,7 @@ private fun num(v: BigDecimal?): String = v?.toPlainString() ?: "null"
 internal fun fateJson(f: IntentFate): String =
     """{"intentId":"${f.intentId}","identity":${str(f.identity)},"state":"${f.state}",""" +
         """"orderIds":[${f.orderIds.joinToString(",") { str(it) }}],"reason":${str(f.reason)},""" +
-        """"atMs":${f.atMs ?: "null"},"compiled":${f.compiled}}"""
+        """"atMs":${f.atMs ?: "null"},"compiled":${f.compiled},"tickMs":${f.tickMs ?: "null"}}"""
 
 internal fun eventJson(e: SessionEvent): String =
     """{"seq":${e.seq},"kind":"${e.kind}","identity":${str(e.identity)},"intentId":${str(e.intentId)},""" +

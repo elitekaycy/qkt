@@ -84,6 +84,26 @@ class BotReplayTest {
     }
 
     @Test
+    fun `a live intent re-enters on the tick its fate says it fired on`(
+        @TempDir tmp: Path,
+    ) {
+        // The buy arrived at 42 s but the engine, behind a burst, fired it on tick 11 (55 s): filled at its ask.
+        val dir = liveRecord(tmp, listOf(Triple("BUY", "2401.15", 55_000L), Triple("SELL", "2401.95", 100_000L)))
+        val t0 = Files.readAllLines(dir.resolve("ticks.csv"))[1].substringBefore(',').toLong()
+        Files.writeString(
+            dir.resolve("intents.jsonl"),
+            """{"type":"fate","intentId":"int-1","identity":"brain","state":"fired","orderIds":[],"reason":null,""" +
+                """"atMs":${t0 + 55_000L},"compiled":true,"tickMs":${t0 + 55_000L}}""" + "\n",
+            java.nio.file.StandardOpenOption.APPEND,
+        )
+
+        val (code, text) = replay(dir.toString(), "--out", tmp.resolve("out").toString())
+
+        assertThat(code).withFailMessage(text).isEqualTo(ExitCodes.SUCCESS)
+        assertThat(text).contains("\"identical\":true")
+    }
+
+    @Test
     fun `the diff says when the trades are the same but prices moved`() {
         fun fill(
             side: String,
