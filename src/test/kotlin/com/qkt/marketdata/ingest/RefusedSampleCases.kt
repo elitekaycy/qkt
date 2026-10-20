@@ -5,7 +5,8 @@ object RefusedSampleCases {
     val all: Map<String, Pair<String, String>> =
         mapOf(
             "mt5-bars-daily" to ("EURUSD_D1.csv" to "qkt's daily bars are UTC days"),
-            // A real broker's .hst file, whose clock it does not say: refused until --tz names it.
-            "mt4-hst" to ("EURUSD240.hst" to "MetaTrader files are on the broker's server time"),
+            // A real broker's 4h .hst file: its weekly opens (17:00 New York, as FX opens) leave only clocks that agree
+            // over its dates, and its bars start at the broker's 22:00Z open, off the UTC 4h grid qkt stores.
+            "mt4-hst" to ("EURUSD240.hst" to "past the UTC 240-minute grid"),
         )
 }

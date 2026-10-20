@@ -17,13 +17,15 @@ data class WeekOpen(
  * time and spot metals at 18:00, every week, summer or winter, so read on the right clock the opens fall
  * in one New York hour. A wrong DST rule moves that hour in some weeks: a fixed offset for a DST-switching
  * broker shifts every summer week, `Europe/Athens` for a `ny-close` broker shifts the 3-4 weeks a year when
- * the US and EU switch dates differ. [passes] when nine weeks in ten share one hour inside 16:00-19:00, and
- * neither the summer weeks, the winter weeks nor the US/EU mismatch weeks lean to another hour (one-off
+ * the US and EU switch dates differ. [passes] when nine weeks in ten share one hour, and
+ * neither the summer weeks, the winter weeks nor the US/EU mismatch weeks lean to another hour, and that
+ * hour is one the [market] can open in (one-off
  * holiday weeks such as New Year are allowed).
  */
 data class ClockEvidence(
     val clock: ImportClock,
     val weeks: List<WeekOpen>,
+    val market: MarketOpen = MarketOpen.ANY,
 ) {
     /** The New York hour most weeks open in, or null without weeks. */
     val modalHour: Int? =
@@ -61,7 +63,7 @@ data class ClockEvidence(
      */
     private fun fits(counted: Int): Boolean {
         val hour = modalHour ?: return false
-        if (hour !in OPEN_HOURS) return false
+        if (hour !in market.hours) return false
         if (counted * 10 > weeks.size) return false
         return listOf(
             weeks.filter { it.usSummer },
@@ -90,14 +92,13 @@ data class ClockEvidence(
         private val NEW_YORK: ZoneId = ZoneId.of("America/New_York")
         private val LONDON: ZoneId = ZoneId.of("Europe/London")
 
-        /** The New York hours a week can open in: FX at 17:00, metals at 18:00, a vendor's first tick a little late. */
-        val OPEN_HOURS = 16..19
         private const val LATE_OPEN_SECONDS = 60L
 
         /** The evidence [opens] give for [clock]; wall-clock opens in a DST gap are left out. */
         fun of(
             clock: ImportClock,
             opens: List<ParsedTime>,
+            market: MarketOpen = MarketOpen.ANY,
         ): ClockEvidence {
             val weeks =
                 opens.mapNotNull { open ->
@@ -121,7 +122,7 @@ data class ClockEvidence(
                         LONDON.rules.isDaylightSavings(instant),
                     )
                 }
-            return ClockEvidence(clock, weeks)
+            return ClockEvidence(clock, weeks, market)
         }
 
         /** The clocks a naive FX file could be on, tried when no clock is given. */

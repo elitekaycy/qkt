@@ -103,11 +103,11 @@ internal class ReadStage(
     }
 
     private fun checkClock(opens: WeeklyOpens): String? {
-        val evidence = ClockEvidence.of(clock.clock ?: ImportClock.Utc, opens.all)
+        val evidence = ClockEvidence.of(clock.clock ?: ImportClock.Utc, opens.all, plan.target.market)
         // A single weekly open is too little to judge DST, but one outside 16:00-19:00 New York already shows the
         // clock is wrong (an Exness UTC file read as ny-close opens at 14:00).
         if (evidence.weeks.isEmpty()) return evidence.summary()
-        if (evidence.weeks.size < 2 && evidence.modalHour in ClockEvidence.OPEN_HOURS) return evidence.summary()
+        if (evidence.weeks.size < 2 && evidence.modalHour in evidence.market.hours) return evidence.summary()
         if (evidence.passes || evidence.passesStated || request.trustClock) return evidence.summary()
         val alternatives =
             if (clock.clock == null) {
@@ -118,6 +118,7 @@ internal class ReadStage(
                         ClockEvidence.of(
                             it,
                             opens.all,
+                            plan.target.market,
                         )
                     }.filter { it.passes }
                     .map { it.clock.spec }

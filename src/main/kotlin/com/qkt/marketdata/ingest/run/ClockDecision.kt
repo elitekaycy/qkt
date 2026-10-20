@@ -59,7 +59,7 @@ internal class ClockDecision(
         }
         val opens = WeeklyOpens()
         plan.inputs.indices.forEach { i -> scanOpens(i, opens) }
-        val evidence = ClockEvidence.CANDIDATES.map { ClockEvidence.of(it, opens.all) }
+        val evidence = ClockEvidence.CANDIDATES.map { ClockEvidence.of(it, opens.all, plan.target.market) }
         val fitting = evidence.filter { it.passes && it.spansSeasons }
         if (fitting.size == 1) return ClockChoice(fitting.single().clock, "inferred: ${fitting.single().summary()}")
         // One DST season only: the clocks that fit may still put every row of this file at the same instant
