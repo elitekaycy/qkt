@@ -88,6 +88,11 @@ def main() -> int:
         args = ["data", "bars", series, "--tf", tf, "--from", "2026-03-01", "--to", "2026-10-14"] + (["--bars"] if built else [])
         if series == "ADAUSDT":
             args[5:9] = ["--from", DAY, "--to", DAY]
+        if series == "HISTDATA:EURUSD":
+            # 0.61.0 reads HistData's clock as London minus 5h (measured; the presets assumed a fixed -05:00), so a
+            # file imported by each release differs from the EU summer-time switch on (2026-03-29): the correction,
+            # not a reading change. Before it both clocks are UTC-5; data-e2e checks the rest against an oracle.
+            args[5:9] = ["--from", "2026-03-01", "--to", "2026-03-28"]
         a_old, a_new = must(new, *args, "--data-root", old_root), must(new, *args, "--data-root", new_root)
         if a_old != a_new:
             failures.append(f"{series} {tf}{' --bars' if built else ''}: the candidate reads different bars from the old store")
