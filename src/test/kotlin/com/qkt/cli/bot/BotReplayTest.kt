@@ -84,6 +84,19 @@ class BotReplayTest {
     }
 
     @Test
+    fun `a trace replays each fill at the quote standing when the venue filled it, whatever its round trip`(
+        @TempDir tmp: Path,
+    ) {
+        // Round trips of 3 s and 12 s: no single latency lands both, the trace lands each (ticks 9 and 22).
+        val dir = liveRecord(tmp, listOf(Triple("BUY", "2400.95", 48_000L), Triple("SELL", "2402.15", 112_000L)))
+
+        val (code, text) = replay(dir.toString(), "--out", tmp.resolve("out").toString(), "--trace")
+
+        assertThat(code).withFailMessage(text).isEqualTo(ExitCodes.SUCCESS)
+        assertThat(text).contains("\"samePrices\":true").contains("\"replay\":\"trace\"")
+    }
+
+    @Test
     fun `a live intent re-enters on the tick its fate says it fired on`(
         @TempDir tmp: Path,
     ) {

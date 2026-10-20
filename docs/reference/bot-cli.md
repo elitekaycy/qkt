@@ -198,7 +198,10 @@ fills as the venue did: at the quote standing when the venue's round trip ends (
 `--broker`/`--execution-latency` override, `--data-root` or `--bars` replay it over the store instead), and the diff
 says whether it made the same trades (`sameTrades`), at the same prices (`samePrices`), and lists each fill that
 moved. The replay books a fill on the tick after the round trip, not at the venue's own clock, so a live replay
-reaches `samePrices`, not `identical`.
+reaches `samePrices`, not `identical`. `--trace` replays what happened instead of what a median round trip
+predicts: each filled intent enters on the last recorded tick before qkt booked its fill, so every order keeps
+its own round trip (a fill is booked when the venue's confirmation arrives, which can trail the venue's
+execution by a tick).
 
 In a session, `modify`, `close --partial`, `close --ticket` and `cancel --order` are refused with the
 session way to do it (set stops with the entry, reduce with the opposite order on a netting book, close
