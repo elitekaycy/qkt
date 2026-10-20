@@ -23,8 +23,7 @@ internal object ImportNotes {
     private const val SUB_MS = "timestamp(s) were finer than a millisecond; qkt stores milliseconds"
     private const val QUIET = "Dukascopy hour file(s) hold no ticks (market closed or quiet)"
     private const val TICK_BASIS = "bid/ask quotes or traded prices, as the columns say"
-    private const val NO_SPEC =
-        "a backtest runs without one; add it to instruments.yaml (contract size, digits, fees) to model its costs"
+    private const val NO_SPEC = "add it to instruments.yaml (contract size, digits, fees) before backtesting"
 
     /** What the stored prices are, given the source's basis. */
     fun basis(
