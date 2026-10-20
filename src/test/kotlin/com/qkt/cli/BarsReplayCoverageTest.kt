@@ -102,4 +102,18 @@ class BarsReplayCoverageTest : BarsReplayFixture() {
         assertThat(code).isEqualTo(ExitCodes.USER_ERROR)
         assertThat(err).contains("incomplete bars for BACKTEST:XAUUSD: 1/3 trading days")
     }
+
+    @Test
+    fun `with no bars at all the error names the missing range and how to bring data, not --allow-incomplete`(
+        @TempDir dir: Path,
+    ) {
+        // #1471: a newcomer who skipped the import got 30 dates on one line and "re-run with --allow-incomplete".
+        val (code, err) = runStrict(dir, dir.resolve("data"))
+
+        assertThat(code).isEqualTo(ExitCodes.USER_ERROR)
+        assertThat(err)
+            .contains("no bars for BACKTEST:XAUUSD")
+            .contains("missing 2024-01-02 to 2024-01-04 (1 range, 3 days)")
+            .doesNotContain("--allow-incomplete")
+    }
 }

@@ -173,13 +173,18 @@ internal object BacktestBarReplay {
                         "trading days (${tf.canonicalSpec()})",
                 )
                 if (coverage.missingDays.isNotEmpty()) {
+                    val none = coverage.coveredTradingDays == 0
+                    val missing =
+                        com.qkt.backtest.IncompleteTickMessage
+                            .collapseRanges(coverage.missingDays)
                     val message =
-                        "--bars: incomplete bars for $sym: ${coverage.coveredTradingDays}/" +
-                            "${coverage.requestedTradingDays} trading days; missing " +
-                            coverage.missingDays.joinToString(",") + ". " + missingBarsFix(sym, tf, fromDay, toDay)
+                        (if (none) "--bars: no bars for $sym" else "--bars: incomplete bars for $sym") +
+                            ": ${coverage.coveredTradingDays}/${coverage.requestedTradingDays} trading days; " +
+                            "missing $missing. " + missingBarsFix(sym, tf, fromDay, toDay)
                     if (!args.flag("allow-incomplete")) {
+                        // With nothing stored, --allow-incomplete would run a backtest with no prices at all.
                         throw com.qkt.backtest.IncompleteDataException(
-                            "$message\n  re-run with --allow-incomplete to proceed anyway",
+                            if (none) message else "$message\n  re-run with --allow-incomplete to proceed anyway",
                         )
                     }
                     System.err.println("qkt: WARNING — $message")
