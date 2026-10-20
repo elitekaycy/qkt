@@ -138,8 +138,9 @@ qkt bot session start --backtest --symbols BINANCE:BTCUSDT --tf 15m --from 2026-
 qkt bot session wait --run demo --json
 qkt bot next BINANCE:BTCUSDT --run demo --json
 qkt bot buy 0.1 BINANCE:BTCUSDT --sl pct:1 --tp rr:2 --as agent --run demo --json
-qkt bot session finish --run demo --json
-qkt bot session replay runs/demo --json     # the same fills, every time
+qkt bot next BINANCE:BTCUSDT --run demo --json        # the buy fills; its events say so
+qkt bot session finish --run demo --flatten --json
+qkt bot session replay runs/demo --json               # the same fills, every time
 ```
 
 Live, the same commands trade your account. [Trade from your code](docs/trade-from-code/index.md) has a
