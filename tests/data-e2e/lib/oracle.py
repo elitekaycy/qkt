@@ -281,27 +281,36 @@ def bybit_convention(bars: list[Bar], start: int, count: int, tf_ms: int = MINUT
     return out
 
 
+def _histdata_utc(naive):
+    """HistData's clock, measured 2026-10-20 against Dukascopy UTC data (2016-2026): New York wall time until its
+    feed changed at the weekly open of 2018-12-16 17:00, London wall time minus five hours since."""
+    import datetime as dt
+    from zoneinfo import ZoneInfo
+
+    if naive < dt.datetime(2018, 12, 16, 17, 0):
+        return naive.replace(tzinfo=ZoneInfo("America/New_York"))
+    return (naive + dt.timedelta(hours=5)).replace(tzinfo=ZoneInfo("Europe/London"))
+
+
 def histdata_ticks(path: Path) -> list[Tick]:
-    """HistData ASCII ticks `yyyyMMdd HHmmssfff,bid,ask,0` on EST all year (UTC-5, no DST)."""
+    """HistData ASCII ticks `yyyyMMdd HHmmssfff,bid,ask,0` on HistData's clock (see `_histdata_utc`)."""
     import datetime as dt
 
-    est = dt.timezone(dt.timedelta(hours=-5))
     out = []
     for row in csv.reader(io.StringIO(_zip_text(path))):
-        stamp = dt.datetime.strptime(row[0][:15], "%Y%m%d %H%M%S").replace(tzinfo=est)
+        stamp = _histdata_utc(dt.datetime.strptime(row[0][:15], "%Y%m%d %H%M%S"))
         ms = int(stamp.timestamp()) * 1000 + int(row[0][15:18])
         out.append(Tick(ms, None, None, Decimal(row[1]), Decimal(row[2])))
     return out
 
 
 def histdata_m1(path: Path) -> list[Bar]:
-    """HistData ASCII M1 bars `yyyyMMdd HHmmss;open;high;low;close;0` (bid) on EST all year."""
+    """HistData ASCII M1 bars `yyyyMMdd HHmmss;open;high;low;close;0` (bid) on HistData's clock."""
     import datetime as dt
 
-    est = dt.timezone(dt.timedelta(hours=-5))
     out = []
     for row in csv.reader(io.StringIO(_zip_text(path)), delimiter=";"):
-        stamp = dt.datetime.strptime(row[0], "%Y%m%d %H%M%S").replace(tzinfo=est)
+        stamp = _histdata_utc(dt.datetime.strptime(row[0], "%Y%m%d %H%M%S"))
         out.append(Bar(int(stamp.timestamp()) * 1000, *(Decimal(row[i]) for i in range(1, 6))))
     return out
 
