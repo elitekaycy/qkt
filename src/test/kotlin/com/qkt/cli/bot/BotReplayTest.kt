@@ -64,8 +64,9 @@ class BotReplayTest {
         val argv = listOf("start", "--symbols", gold, "--tf", "1m", "--identities", "brain", "--run", "r1", "--json")
         com.qkt.trade.session.writeSessionMeta(
             dir,
+            // The pipeline hands the session ticks before it records its start (live: 142 ticks, 26 s).
             com.qkt.trade.session
-                .SessionMeta("r1", "live", listOf("brain"), argv, t0),
+                .SessionMeta("r1", "live", listOf("brain"), argv, t0 + 12_000L),
         )
         com.qkt.trade.session.LiveTickLog(dir.resolve("ticks.csv")).use { log ->
             (0 until 36).forEach { i ->
@@ -85,13 +86,15 @@ class BotReplayTest {
             com.qkt.trade.session
                 .IntentJournal(dir.resolve("intents.jsonl"))
         val header = "STRATEGY bot VERSION 1\nSYMBOLS\n    x = $gold EVERY 1m\nRULES\n    WHEN true\n    THEN "
-        journal.intent("int-1", "brain", header + "BUY x SIZING 0.01\n", t0 + 45_000L, t0 + 45_000L, 0L)
-        journal.intent("int-2", "brain", header + "CLOSE x\n", t0 + 100_000L, t0 + 100_000L, 0L)
-        journal.finish(t0 + 150_000L, 0L)
+        // Live, an intent fires on the first tick stamped after it arrived: the buy on tick 9 (mid 2400.90) at its
+        // ask, the close on tick 20 (mid 2402.00) at its bid. Its tickSeq lags (ticks the engine had not yet run).
+        journal.intent("int-1", "brain", header + "BUY x SIZING 0.01\n", t0 + 42_000L, t0 + 42_000L, 7L)
+        journal.intent("int-2", "brain", header + "CLOSE x\n", t0 + 97_000L, t0 + 97_000L, 17L)
+        journal.finish(t0 + 150_000L, 30L)
         Files.write(
             dir.resolve("fills.jsonl"),
-            listOf("BUY" to 46_000L, "SELL" to 101_000L).map { (side, at) ->
-                """{"identity":"brain","orderId":"o","symbol":"$gold","side":"$side","qty":0.01,"price":2401.5,""" +
+            listOf(Triple("BUY", "2400.95", 45_000L), Triple("SELL", "2401.95", 100_000L)).map { (side, price, at) ->
+                """{"identity":"brain","orderId":"o","symbol":"$gold","side":"$side","qty":0.01,"price":$price,""" +
                     """"timeMs":${t0 + at}}"""
             },
         )
@@ -100,12 +103,8 @@ class BotReplayTest {
 
         assertThat(code).withFailMessage(text).isEqualTo(ExitCodes.SUCCESS)
         assertThat(text).contains("\"replayedFills\":2").contains("\"sameTrades\":true")
-        // As the venue did: the buy pays the tick's ask (mid + 0.05), the close takes its bid.
-        val diff = Files.readString(tmp.resolve("out").resolve("replay-diff.json"))
-        val replayed = Regex(""""replayed":\{[^}]*"side":"(BUY|SELL)"[^}]*"price":([0-9.]+)""").findAll(diff).toList()
-        assertThat(replayed.map { it.groupValues[1] }).containsExactly("BUY", "SELL")
-        assertThat(replayed.map { BigDecimal(it.groupValues[2]).remainder(BigDecimal("0.10")) })
-            .allSatisfy { assertThat(it).isEqualByComparingTo("0.05") }
+        // Over the ticks it recorded, each intent enters where it entered live: the same fills, to the tick.
+        assertThat(text).contains("\"identical\":true")
     }
 
     @Test

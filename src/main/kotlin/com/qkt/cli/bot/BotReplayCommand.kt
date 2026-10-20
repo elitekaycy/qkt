@@ -38,8 +38,19 @@ internal class BotReplayCommand(
         val intents = IntentJournal.read(dir.resolve("intents.jsonl"))
         val out = Path.of(args.option("out") ?: "$dir-replay")
         val live = meta.mode == "live"
-        val recordedTicks = if (live) recordedTickStore(dir, out) else null
-        val tokens = replayTokens(meta.argv, live, intents.maxOfOrNull { it.simMs }, meta.startedMs)
+        val ticks =
+            if (live &&
+                args.option("data-root") == null &&
+                !args.flag("bars")
+            ) {
+                recordedTicks(dir)
+            } else {
+                emptyList()
+            }
+        val recordedTicks = ticks.takeIf { it.isNotEmpty() }?.let { writeTickStore(it, out) }
+        // The pipeline hands the session ticks before it records its start: the replay starts with the first.
+        val startMs = minOf(meta.startedMs, ticks.firstOrNull()?.timestamp ?: meta.startedMs)
+        val tokens = replayTokens(meta.argv, live, intents.maxOfOrNull { it.simMs }, startMs)
         // A venue fills at its quote (ask to buy, bid to sell): over the recorded quotes, so does mt5-sim.
         val venueFills = if (args.option("broker") == null) listOf("--broker", "mt5-sim") else emptyList()
         val overStore =
@@ -47,13 +58,21 @@ internal class BotReplayCommand(
         val sub = Args((tokens + overStore.orEmpty()).toTypedArray())
         val spec = parseSessionStart(sub) { meta.runId }
         val parts = buildBacktestSession(sub, spec, journal = null)
+        val finish = IntentJournal.finishPoint(dir.resolve("intents.jsonl"))
         val result =
-            IntentReplay(parts.engine, parts.recorder, parts.session)
-                .run(
-                    intents,
-                    byArrivalTime = live,
-                    finishedAt = IntentJournal.finishPoint(dir.resolve("intents.jsonl")),
+            if (recordedTicks != null) {
+                // Live, an intent fires on the first tick stamped after it arrived (its tickSeq lags: ticks the
+                // engine had not run yet). Over those same ticks, it re-enters just before that tick.
+                fun before(ms: Long) = ticks.count { it.timestamp <= ms }.toLong()
+                IntentReplay(parts.engine, parts.recorder, parts.session).run(
+                    intents.map { it.copy(tickSeq = before(it.simMs)) },
+                    byArrivalTime = false,
+                    finishedAt = finish?.let { (ms, _) -> ms to before(ms) },
                 )
+            } else {
+                IntentReplay(parts.engine, parts.recorder, parts.session)
+                    .run(intents, byArrivalTime = live, finishedAt = finish)
+            }
         Files.createDirectories(out)
         BacktestReportWriter(out).write(result)
         val diff = ReplayDiff.of(readFills(dir.resolve("fills.jsonl")), fillsOf(result.trades))
@@ -76,17 +95,16 @@ internal class BotReplayCommand(
     }
 
     /**
-     * A live record's own ticks (`ticks.csv`) as a private tick store under [out], so the replay runs over the
-     * market the session traded on; they span the session alone, so the rest of its day is no gap. Null when the
-     * record has none, or `--data-root`/`--bars` ask for the store.
+     * A live record's own ticks (`ticks.csv`): the replay runs over the market the session traded on. They span
+     * the session alone, so the rest of its day is no gap.
      */
-    private fun recordedTickStore(
-        dir: Path,
+    private fun recordedTicks(dir: Path) = LiveTickLog.read(dir.resolve(LiveTickLog.FILE))
+
+    /** [ticks] as a private tick store under [out]. */
+    private fun writeTickStore(
+        ticks: List<com.qkt.marketdata.Tick>,
         out: Path,
-    ): Path? {
-        if (args.option("data-root") != null || args.flag("bars")) return null
-        val ticks = LiveTickLog.read(dir.resolve(LiveTickLog.FILE))
-        if (ticks.isEmpty()) return null
+    ): Path {
         val root = out.resolve("recorded-ticks")
         GoldenReplayStoreWriter(SystemClock())
             .writeTickStore(root, ticks.mapIndexed { i, t -> RecordedTick(i.toLong(), false, null, t) })
