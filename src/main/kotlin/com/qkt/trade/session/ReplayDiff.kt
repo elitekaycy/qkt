@@ -1,6 +1,7 @@
 package com.qkt.trade.session
 
 import java.math.BigDecimal
+import java.math.MathContext
 
 /** One execution as a session record and its replay both state it. */
 data class ReplayFill(
@@ -39,7 +40,7 @@ class ReplayDiff private constructor(
      * trip reaches this; its fills are booked on the tick after the round trip, not at the venue's own clock.
      */
     val samePrices: Boolean
-        get() = sameTrades && recorded.zip(replayed).all { (a, b) -> a.price.compareTo(b.price) == 0 }
+        get() = sameTrades && recorded.zip(replayed).all { (a, b) -> samePrice(a.price, b.price) }
 
     fun json(): String {
         fun fill(f: ReplayFill?): String =
@@ -78,7 +79,16 @@ class ReplayDiff private constructor(
             a.symbol == b.symbol &&
             a.side == b.side &&
             a.quantity.compareTo(b.quantity) == 0 &&
-            a.price.compareTo(b.price) == 0 &&
+            samePrice(a.price, b.price) &&
             a.timeMs == b.timeMs
+
+        /** Equal at 15 significant digits: a record from before the MT5 gateway's float noise was rounded away
+         * (`4127.5830000000005`) still matches its replay's 4127.583. */
+        private fun samePrice(
+            a: BigDecimal,
+            b: BigDecimal,
+        ) = a.round(NOISE).compareTo(b.round(NOISE)) == 0
+
+        private val NOISE = MathContext(15)
     }
 }
