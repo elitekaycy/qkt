@@ -63,7 +63,15 @@ fun copySessionJournals(
     outDir: Path,
 ) {
     Files.createDirectories(outDir)
-    listOf("intents.jsonl", "reads.jsonl", "fills.jsonl", "summary.json", "session.meta.json").forEach { name ->
+    listOf(
+        "intents.jsonl",
+        "reads.jsonl",
+        "fills.jsonl",
+        "summary.json",
+        "session.meta.json",
+        LiveTickLog.FILE,
+        VenueDealLog.FILE,
+    ).forEach { name ->
         val from = sessionDir.resolve(name)
         if (Files.exists(from)) Files.copy(from, outDir.resolve(name), StandardCopyOption.REPLACE_EXISTING)
     }

@@ -1,6 +1,7 @@
 package com.qkt.trade.session
 
 import java.math.BigDecimal
+import java.math.MathContext
 
 /** One execution as a session record and its replay both state it. */
 data class ReplayFill(
@@ -20,6 +21,27 @@ class ReplayDiff private constructor(
 ) {
     val identical: Boolean get() = mismatches.isEmpty()
 
+    /**
+     * The same trades in the same order (identity, symbol, side, quantity), whatever their prices and times. A
+     * live record replays with [sameTrades] at best: a venue's fill price and clock are not a tick's.
+     */
+    val sameTrades: Boolean
+        get() =
+            recorded.size == replayed.size &&
+                recorded.zip(replayed).all { (a, b) ->
+                    a.identity == b.identity &&
+                        a.symbol == b.symbol &&
+                        a.side == b.side &&
+                        a.quantity.compareTo(b.quantity) == 0
+                }
+
+    /**
+     * [sameTrades] at the same prices too: every fill but its time. A live replay at the venue's measured round
+     * trip reaches this; its fills are booked on the tick after the round trip, not at the venue's own clock.
+     */
+    val samePrices: Boolean
+        get() = sameTrades && recorded.zip(replayed).all { (a, b) -> samePrice(a.price, b.price) }
+
     fun json(): String {
         fun fill(f: ReplayFill?): String =
             f?.let {
@@ -32,7 +54,8 @@ class ReplayDiff private constructor(
                 "[",
                 "]",
             ) { (a, b) -> """{"recorded":${fill(a)},"replayed":${fill(b)}}""" }
-        return """{"identical":$identical,"recordedFills":${recorded.size},""" +
+        return """{"identical":$identical,"sameTrades":$sameTrades,"samePrices":$samePrices,""" +
+            """"recordedFills":${recorded.size},""" +
             """"replayedFills":${replayed.size},"mismatches":$rows}"""
     }
 
@@ -56,7 +79,16 @@ class ReplayDiff private constructor(
             a.symbol == b.symbol &&
             a.side == b.side &&
             a.quantity.compareTo(b.quantity) == 0 &&
-            a.price.compareTo(b.price) == 0 &&
+            samePrice(a.price, b.price) &&
             a.timeMs == b.timeMs
+
+        /** Equal at 15 significant digits: a record from before the MT5 gateway's float noise was rounded away
+         * (`4127.5830000000005`) still matches its replay's 4127.583. */
+        private fun samePrice(
+            a: BigDecimal,
+            b: BigDecimal,
+        ) = a.round(NOISE).compareTo(b.round(NOISE)) == 0
+
+        private val NOISE = MathContext(15)
     }
 }

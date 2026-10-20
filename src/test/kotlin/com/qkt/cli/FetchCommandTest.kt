@@ -99,6 +99,54 @@ class FetchCommandTest {
     }
 
     @Test
+    fun `a day whose bars stop while the market is open is not stored, so a later fetch takes it whole`(
+        @TempDir tmp: Path,
+    ) {
+        val server = MockWebServer().apply { start() }
+        try {
+            val start = java.time.Instant.parse("2026-07-09T00:00:00Z")
+            // MT5 serves what its terminal has cached: here the Thursday stops at 12:48.
+            val bars =
+                (0 until 769).joinToString(",", "[", "]") { m ->
+                    """{"time":"${start.plusSeconds(m * 60L)}","open":1.1,"high":1.1,"low":1.1,"close":1.1,""" +
+                        """"tick_volume":5,"spread":10,"real_volume":0}"""
+                }
+            server.enqueue(MockResponse().setBody("""{"point":"0.00001"}"""))
+            server.enqueue(MockResponse().setBody(bars))
+            val config = tmp.resolve("qkt.config.yaml")
+            Files.writeString(
+                config,
+                "brokers:\n  exness:\n    type: mt5\n    gateway_url: ${server.url("/").toString().trimEnd('/')}\n",
+            )
+            val args =
+                Args(
+                    arrayOf(
+                        "fetch",
+                        "EXNESS:EURUSD",
+                        "--tf",
+                        "1m",
+                        "--from",
+                        "2026-07-09",
+                        "--to",
+                        "2026-07-09",
+                        "--config",
+                        config.toString(),
+                        "--data-root",
+                        tmp.toString(),
+                    ),
+                )
+
+            assertThat(FetchCommand(args).run()).isEqualTo(ExitCodes.SUCCESS)
+
+            val store = LocalBarStore(tmp)
+            val day = LocalDate.parse("2026-07-09")
+            assertThat(store.hasDay("EXNESS", "EURUSD", "1m", day)).isFalse()
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test
     fun `an inverted range is an argument error`(
         @TempDir tmp: Path,
     ) {

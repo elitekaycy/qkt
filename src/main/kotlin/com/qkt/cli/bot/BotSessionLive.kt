@@ -13,8 +13,11 @@ import com.qkt.trade.session.BotSessionStreams
 import com.qkt.trade.session.IntentJournal
 import com.qkt.trade.session.LiveBotRunBackend
 import com.qkt.trade.session.LiveSessionRecord
+import com.qkt.trade.session.LiveTickLog
 import com.qkt.trade.session.RunLock
+import com.qkt.trade.session.VenueDealLog
 import com.qkt.trade.session.copySessionJournals
+import com.qkt.trade.session.readSessionMeta
 import com.qkt.trade.session.rebuildIdentities
 import com.qkt.trade.venue.toQuoteContext
 import java.nio.file.Path
@@ -53,7 +56,8 @@ private fun liveOnLock(
         val outDir = Path.of(sub.option("out") ?: "runs/${spec.runId}")
         val history = BarHistory(capacity = maxOf(spec.historyBars, 1000))
         seedLiveWarmup(cfg, streams, spec.historyBars, history)
-        val recorder = BotSessionRecorder(history)
+        val tickLog = LiveTickLog(sessionDir.resolve(LiveTickLog.FILE))
+        val recorder = BotSessionRecorder(history, tickLog::append)
         val identities = BotSessionIdentities.compile(streams, spec.identities, history = history)
         val record = LiveSessionRecord(sessionDir)
         val journal = IntentJournal(sessionDir.resolve("intents.jsonl"))
@@ -101,6 +105,10 @@ private fun liveOnLock(
             insightsSink = stack.insightsSink,
             onFinish = {
                 record.summary(identities.keys, session.legs())
+                tickLog.close()
+                // From before the session's recorded start: the pipeline runs (and can fill) ahead of it.
+                val from = (readSessionMeta(sessionDir)?.startedMs ?: 0L) - 120_000L
+                captureVenueDeals(cfg, streams, sessionDir, from)
                 copySessionJournals(sessionDir, outDir)
                 BotSessionFiles.delete(stateDir.stateRoot, spec.runId)
                 outDir.toAbsolutePath().toString()
@@ -132,4 +140,36 @@ private fun seedLiveWarmup(
             }
         history.seed("$sym@${streams.baseTf}", bars.filter { it.endTime <= nowMs }.map { it.copy(symbol = sym) })
     }
+}
+
+/**
+ * The venue's own record of its executions over the session (`venue-deals.jsonl`), read once at finish for a
+ * trace replay. Read-only and best-effort: a venue without deal history leaves the record without it.
+ */
+private fun captureVenueDeals(
+    cfg: Config,
+    streams: BotSessionStreams,
+    sessionDir: Path,
+    fromMs: Long,
+) {
+    val now =
+        com.qkt.common
+            .SystemClock()
+            .now()
+    val deals =
+        streams.symbols.flatMap { sym ->
+            runCatching {
+                com.qkt.trade.venue.BotVenues.forSymbol(cfg, sym).use { v ->
+                    val name = v.venue.venueSymbol(sym)
+                    v.venue
+                        .deals(fromMs, now)
+                        .orEmpty()
+                        .filter { it.symbol == name }
+                }
+            }.getOrElse { e ->
+                System.err.println("qkt bot: venue deals not read for $sym: ${e.message}")
+                emptyList()
+            }
+        }
+    VenueDealLog.write(sessionDir.resolve(VenueDealLog.FILE), deals.distinctBy { it.dealTicket })
 }

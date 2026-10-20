@@ -33,6 +33,8 @@ Usage: release-unattended.sh --profile FILE --key-file FILE [--repo OWNER/NAME] 
   --repo           GitHub repository (default: the origin remote)
   --wait-for SHA   a dev commit that testing must contain before the release starts (optional)
 
+  QKT_RELEASE_TESTING_POLLS  minutes to wait for testing to contain it and go green (default 90)
+
 The version released is the VERSION file of origin/testing. Needs `gh` authenticated with rights to
 approve workflow runs and to review and merge the promotion PR, the paper-soak self-hosted runner
 online, and a clean checkout of its own (a dedicated worktree: it checks out testing, detached). Writes progress lines to stdout; exits non-zero at the first failed stage.
@@ -62,7 +64,7 @@ cd "$repo_root"
 [ -n "$repo" ] || repo="$(git remote get-url origin | sed -E 's#(git@github.com:|https://github.com/)##; s#\.git$##')"
 
 # 1. testing: contains the wanted commit, and its own CI is green.
-for _ in $(seq 1 90); do
+for _ in $(seq 1 "${QKT_RELEASE_TESTING_POLLS:-90}"); do
     git fetch -q origin
     testing="$(git rev-parse origin/testing)"
     if [ -n "$wait_for" ] && ! git merge-base --is-ancestor "$wait_for" "$testing" 2> /dev/null; then
@@ -86,7 +88,10 @@ for _ in $(seq 1 90); do
         grep -q 'docker:completed:success' <<<"$runs"; then break; fi
     sleep 60
 done
-grep -q 'docker:completed:success' <<<"${runs:-}" || stop "testing CI did not finish"
+# The loop also ends when its wait runs out: every testing run must be green, not only the last checked.
+for run in check integration docker; do
+    grep -q "$run:completed:success" <<<"${runs:-}" || stop "testing CI did not finish ($run not green on ${testing:0:8})"
+done
 version="v$(git show "$testing:VERSION" | tr -d '\r\n')"
 git rev-parse -q --verify "refs/tags/$version" > /dev/null && stop "$version is already tagged; bump VERSION first"
 git ls-remote --exit-code --tags origin "$version" > /dev/null 2>&1 && stop "$version is already tagged on origin"

@@ -113,6 +113,16 @@ Under `<state>/state/bot/sessions/<run>/`, copied into the report directory on f
 | `reads.jsonl` | every read and the bars it served |
 | `fills.jsonl` | every execution, by identity |
 | `summary.json` | live: per identity fills, realized P&L, open legs |
+| `ticks.csv` | live: every tick the session was handed (`timestamp,symbol,price,volume,bid,ask,bidVolume,askVolume`) |
+| `venue-deals.jsonl` | live: the venue's executions over the session, read once at finish (side, price, its own time) |
 
-`qkt bot session replay <dir>` rebuilds the session from these and writes `replay-diff.json`; a backtest
-session replays identically.
+`qkt bot session replay <dir>` rebuilds the session from these and writes `replay-diff.json`. A backtest
+session replays identically over the store. A live session replays over its own `ticks.csv`, the market it
+traded on: each intent enters before the first tick stamped after it arrived (where live fired it), and fills
+at the quote standing when the venue's round trip ends (`mt5-sim`, with the round trip the record measured as
+`--execution-latency`, reported as `latencyMs`). The diff reports `sameTrades` (the same trades in the same
+order), `samePrices` (at the same prices too) and `identical` (also the same times; a replay books a fill on
+the tick after the round trip, not at the venue's clock). A record with the venue's deals replays as a trace by default (`--predict` uses the median round
+trip): it enters each filled intent on the last
+recorded tick before the venue executed it (from `venue-deals.jsonl`, the venue's deals read at finish), so each
+fill is at its executed quote; the reply's `replay` says which mode ran.

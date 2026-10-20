@@ -3,12 +3,20 @@ package com.qkt.cli.bot
 import com.qkt.backtest.report.BacktestReportWriter
 import com.qkt.cli.Args
 import com.qkt.cli.ExitCodes
+import com.qkt.cli.golden.GoldenReplayStoreWriter
+import com.qkt.cli.golden.RecordedTick
+import com.qkt.common.SystemClock
 import com.qkt.trade.session.IntentJournal
 import com.qkt.trade.session.IntentReplay
+import com.qkt.trade.session.LiveTickLog
 import com.qkt.trade.session.ReplayDiff
+import com.qkt.trade.session.VenueDealLog
 import com.qkt.trade.session.fillsOf
+import com.qkt.trade.session.firedTickIndex
+import com.qkt.trade.session.measuredVenueLatencyMs
 import com.qkt.trade.session.readFills
 import com.qkt.trade.session.readSessionMeta
+import com.qkt.trade.session.venueFillIndex
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
@@ -18,7 +26,8 @@ import java.time.Instant
  * backtest session the record in [dir] declared (a run's report directory, or its state session directory)
  * over the store, re-injects every journaled intent where it arrived, writes the standard report to
  * `--out`, and `replay-diff.json`: each recorded fill beside the replayed one. A backtest record replays
- * identically; a live record replays over stored ticks, and the diff shows where live differed.
+ * identically; a live record replays over the ticks it recorded (`ticks.csv`), else over stored ticks, and the
+ * diff shows where live differed (`sameTrades`: the same trades, at the venue's own prices and times).
  */
 internal class BotReplayCommand(
     private val args: Args,
@@ -33,16 +42,62 @@ internal class BotReplayCommand(
         val intents = IntentJournal.read(dir.resolve("intents.jsonl"))
         val out = Path.of(args.option("out") ?: "$dir-replay")
         val live = meta.mode == "live"
-        val sub = Args(replayTokens(meta.argv, live, intents.maxOfOrNull { it.simMs }, meta.startedMs).toTypedArray())
+        val ticks =
+            if (live &&
+                args.option("data-root") == null &&
+                !args.flag("bars")
+            ) {
+                recordedTicks(dir)
+            } else {
+                emptyList()
+            }
+        val recordedTicks = ticks.takeIf { it.isNotEmpty() }?.let { writeTickStore(it, out) }
+        // The pipeline hands the session ticks before it records its start: the replay starts with the first.
+        val startMs = minOf(meta.startedMs, ticks.firstOrNull()?.timestamp ?: meta.startedMs)
+        val tokens = replayTokens(meta.argv, live, intents.maxOfOrNull { it.simMs }, startMs)
+        // The recorded tick each intent fired on: its fate says, else the first tick stamped after it arrived.
+        val firedIndex = firedTickIndex(intents, IntentJournal.firedTickMs(dir.resolve("intents.jsonl")), ticks)
+        val firedOn = firedIndex.mapValues { (_, i) -> ticks[i].timestamp }
+        val filledAt = IntentJournal.filledAt(dir.resolve("intents.jsonl"))
+        // A fill is booked when the venue's confirmation arrives; the venue's deals say when it executed.
+        val deals = VenueDealLog.read(dir.resolve(VenueDealLog.FILE))
+        // What happened (a trace: each fill at the quote the venue executed it at) when the record can say,
+        // or `--trace`; `--predict` replays at the median round trip instead: what would happen.
+        val trace = ticks.isNotEmpty() && !args.flag("predict") && (args.flag("trace") || deals.isNotEmpty())
+        val executedAt = VenueDealLog.executedAt(filledAt, readFills(dir.resolve("fills.jsonl")), deals)
+        val enterAt = if (trace) firedIndex + venueFillIndex(executedAt, ticks) else firedIndex
+        // A venue fills at its quote (ask to buy, bid to sell): over the recorded quotes, so does mt5-sim.
+        val venueFills = if (args.option("broker") == null) listOf("--broker", "mt5-sim") else emptyList()
+        // And it fills when the order reaches it: the round trip the record measured, unless one is given.
+        val latencyMs =
+            if (args.option("execution-latency") == null && !trace) {
+                measuredVenueLatencyMs(firedOn, filledAt)
+            } else {
+                null
+            }
+        val venueLatency = latencyMs?.let { listOf("--execution-latency", "${it}ms") }.orEmpty()
+        val overStore =
+            recordedTicks?.let {
+                listOf("--data-root", it.toString(), "--no-fetch", "--allow-incomplete") + venueFills + venueLatency
+            }
+        val sub = Args((tokens + overStore.orEmpty()).toTypedArray())
         val spec = parseSessionStart(sub) { meta.runId }
         val parts = buildBacktestSession(sub, spec, journal = null)
+        val finish = IntentJournal.finishPoint(dir.resolve("intents.jsonl"))
         val result =
-            IntentReplay(parts.engine, parts.recorder, parts.session)
-                .run(
-                    intents,
-                    byArrivalTime = live,
-                    finishedAt = IntentJournal.finishPoint(dir.resolve("intents.jsonl")),
+            if (recordedTicks != null) {
+                // Live, an intent fires on a tick later than its tickSeq says (ticks the engine had not run yet).
+                // Over those same ticks, it re-enters just before the tick it fired on.
+                fun before(ms: Long) = ticks.count { it.timestamp <= ms }.toLong()
+                IntentReplay(parts.engine, parts.recorder, parts.session).run(
+                    intents.map { it.copy(tickSeq = enterAt[it.intentId]?.toLong() ?: before(it.simMs)) },
+                    byArrivalTime = false,
+                    finishedAt = finish?.let { (ms, _) -> ms to before(ms) },
                 )
+            } else {
+                IntentReplay(parts.engine, parts.recorder, parts.session)
+                    .run(intents, byArrivalTime = live, finishedAt = finish)
+            }
         Files.createDirectories(out)
         BacktestReportWriter(out).write(result)
         val diff = ReplayDiff.of(readFills(dir.resolve("fills.jsonl")), fillsOf(result.trades))
@@ -54,12 +109,40 @@ internal class BotReplayCommand(
                 "mode" to meta.mode,
                 "intents" to intents.size,
                 "identical" to diff.identical,
+                "sameTrades" to diff.sameTrades,
+                "samePrices" to diff.samePrices,
+                "market" to if (recordedTicks != null) "recorded ticks" else "store",
+                "latencyMs" to if (recordedTicks != null) latencyMs else null,
+                "venueDeals" to if (trace) deals.size else null,
+                "replay" to
+                    when {
+                        trace -> "trace"
+                        recordedTicks != null -> "venue-latency"
+                        else -> "store"
+                    },
                 "recordedFills" to diff.recorded.size,
                 "replayedFills" to diff.replayed.size,
                 "out" to out.toAbsolutePath().toString(),
             ),
         )
         return ExitCodes.SUCCESS
+    }
+
+    /**
+     * A live record's own ticks (`ticks.csv`): the replay runs over the market the session traded on. They span
+     * the session alone, so the rest of its day is no gap.
+     */
+    private fun recordedTicks(dir: Path) = LiveTickLog.read(dir.resolve(LiveTickLog.FILE))
+
+    /** [ticks] as a private tick store under [out]. */
+    private fun writeTickStore(
+        ticks: List<com.qkt.marketdata.Tick>,
+        out: Path,
+    ): Path {
+        val root = out.resolve("recorded-ticks")
+        GoldenReplayStoreWriter(SystemClock())
+            .writeTickStore(root, ticks.mapIndexed { i, t -> RecordedTick(i.toLong(), false, null, t) })
+        return root
     }
 
     /**
@@ -111,6 +194,6 @@ internal class BotReplayCommand(
 
     private companion object {
         val FLAGS = setOf("no-fetch", "bars", "tick-fills")
-        val OVERRIDES = listOf("from", "to", "data-root", "config", "broker") + FLAGS
+        val OVERRIDES = listOf("from", "to", "data-root", "config", "broker", "execution-latency") + FLAGS
     }
 }

@@ -21,6 +21,20 @@ class BotIntentFatesTest : IntentSessionFixture() {
     }
 
     @Test
+    fun `a fate names the tick its intent fired on, even when the fill came back first`() {
+        val s = session(listOf(2400, 2401, 2402))
+        s.next(gold)
+        s.submit("brain", intent("BUY x SIZING 0.01"))
+
+        s.drain()
+
+        val fate = s.fates().single()
+        assertThat(fate.state).isEqualTo("filled")
+        assertThat(fate.tickMs).isNotNull()
+        assertThat(fateJson(fate)).contains("\"tickMs\":${fate.tickMs}")
+    }
+
+    @Test
     fun `a rejected entry nested in a timed bracket is the intent's fate`() {
         val s = session(listOf(2400, 2401, 2402))
         s.next(gold)
