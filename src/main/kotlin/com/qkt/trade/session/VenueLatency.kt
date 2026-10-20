@@ -35,3 +35,15 @@ fun measuredVenueLatencyMs(
     if (trips.isEmpty()) return null
     return trips[(trips.size - 1) / 2]
 }
+
+/**
+ * For a trace: the index among [ticks] of the last tick at or before each intent's venue fill ([filledAt]), so the
+ * intent re-enters there and fills at the quote the venue filled at, whatever that order's round trip was.
+ */
+fun venueFillIndex(
+    filledAt: Map<String, Long>,
+    ticks: List<Tick>,
+): Map<String, Int> =
+    filledAt
+        .mapNotNull { (id, ms) -> ticks.indexOfLast { it.timestamp <= ms }.takeIf { it >= 0 }?.let { id to it } }
+        .toMap()
