@@ -126,6 +126,28 @@ qkt run momentum.qkt
 
 <br/>
 
+## Trade from your code
+
+An AI agent, a script in any language or a person at a shell can trade through qkt. It decides; qkt executes:
+every order goes through the same engine as a `.qkt` strategy, with your `qkt.config.yaml`, `instruments.yaml`,
+risk limits and guardrails, is journaled with who sent it, and can be backtested first and replayed after.
+
+```bash
+qkt bot session start --backtest --symbols BINANCE:BTCUSDT --tf 15m --from 2026-09-01 --to 2026-09-08 \
+  --identities agent --run demo --out runs/demo --json > session.log 2>&1 &
+qkt bot session wait --run demo --json
+qkt bot next BINANCE:BTCUSDT --run demo --json
+qkt bot buy 0.1 BINANCE:BTCUSDT --sl pct:1 --tp rr:2 --as agent --run demo --json
+qkt bot session finish --run demo --json
+qkt bot session replay runs/demo --json     # the same fills, every time
+```
+
+Live, the same commands trade your account. [Trade from your code](docs/trade-from-code/index.md) has a
+ten-minute quickstart (a shell and a Python script in one session), an AI agent run, the HTTP API for any
+language, and going live.
+
+<br/>
+
 ## Next
 
 | I want to | Read |
