@@ -172,6 +172,9 @@ class IntentLedger {
                 else -> event.kind
             }
         fates[intentId] = fate.copy(state = state, reason = event.reason ?: fate.reason, atMs = event.atMs)
+        // A rejection refuses the whole intent, so nothing of it is working: a bracket's names its group, not its entry.
+        // (A cancelled order may leave an OCO or STACK sibling working, so cancellation ends only that order.)
+        if (state == "rejected") ended += intentOfOrder.filterValues { it == intentId }.keys
         onChange(fates.getValue(intentId))
     }
 

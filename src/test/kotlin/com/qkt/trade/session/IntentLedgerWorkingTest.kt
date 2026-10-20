@@ -48,4 +48,18 @@ class IntentLedgerWorkingTest {
 
         assertThat(ledger.working().map { it.orderId }).contains("dsl-bot0--1")
     }
+
+    @Test
+    fun `a bracket that was rejected is not working either`() {
+        // Live on the Exness demo: a 1-lot bracket over the size cap was rejected on its group id, and its entry
+        // id stayed listed as working in the finish report.
+        val ledger = IntentLedger()
+        ledger.fate(IntentFate("int-2", "agent", "fired", emptyList(), null, 1L))
+        ledger.link("int-2", "dsl-bot0--3")
+        ledger.link("int-2", "dsl-bot0--2")
+
+        ledger.outcome("agent", OrderOutcome.Rejected("dsl-bot0--3", "order qty 1 exceeds per-order cap 0.05", 2L))
+
+        assertThat(ledger.working()).isEmpty()
+    }
 }

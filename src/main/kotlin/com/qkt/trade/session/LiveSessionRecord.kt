@@ -71,6 +71,7 @@ fun copySessionJournals(
         "session.meta.json",
         LiveTickLog.FILE,
         VenueDealLog.FILE,
+        SessionInstruments.FILE,
     ).forEach { name ->
         val from = sessionDir.resolve(name)
         if (Files.exists(from)) Files.copy(from, outDir.resolve(name), StandardCopyOption.REPLACE_EXISTING)
