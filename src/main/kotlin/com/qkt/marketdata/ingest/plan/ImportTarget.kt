@@ -32,6 +32,15 @@ data class ImportTarget(
             return (base in CURRENCIES || base in METALS) && quote in CURRENCIES
         }
 
+    /** When this market's week opens in New York time, the hour its weekly opens must show. */
+    val market: com.qkt.marketdata.ingest.clock.MarketOpen
+        get() =
+            when {
+                !fxOrMetal -> com.qkt.marketdata.ingest.clock.MarketOpen.ANY
+                bare.uppercase().take(3) in METALS -> com.qkt.marketdata.ingest.clock.MarketOpen.METAL
+                else -> com.qkt.marketdata.ingest.clock.MarketOpen.FX
+            }
+
     companion object {
         private const val PAIR_LENGTH = 6
         private val CURRENCIES =

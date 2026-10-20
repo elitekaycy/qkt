@@ -1,0 +1,18 @@
+id: "forexsb-mt-csv"
+description: "Forex Strategy Builder data app, MetaTrader (CSV) export: no header, UTC minutes, bid prices (timeframe from the rows)"
+kind: "bars"
+time: ["$0"]
+timeFormat: "yyyy-MM-dd HH:mm"
+clock: "UTC"
+basis: "bid"
+fields:
+  open: "$1"
+  high: "$2"
+  low: "$3"
+  close: "$4"
+  volume: "$5"
+volume: "tick volume as the export writes it"
+match:
+  columns: 6
+  firstCell: "\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}"
+  delimiter: ","

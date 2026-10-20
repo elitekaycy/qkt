@@ -23,6 +23,7 @@ dukascopy-gmt-ticks
 dukascopy-local-bars
 dukascopy-node-bars
 dukascopy-node-ticks
+forexsb-mt-csv
 histdata-m1
 histdata-mt
 histdata-ticks

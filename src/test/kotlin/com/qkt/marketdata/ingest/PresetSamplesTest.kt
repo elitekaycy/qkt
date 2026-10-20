@@ -5,7 +5,6 @@ import com.qkt.marketdata.ingest.plan.ImportDescriptor
 import com.qkt.marketdata.ingest.plan.PresetLibrary
 import java.nio.file.Path
 import org.assertj.core.api.Assertions.assertThat
-import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import org.junit.jupiter.params.ParameterizedTest
@@ -59,9 +58,12 @@ class PresetSamplesTest {
             val (file, why) = case
             val sample = IngestFixtures.sample(file, dir.resolve("in"))
 
-            assertThatThrownBy { IngestFixtures.import(dir.resolve("root-$preset"), listOf(sample), "BROKER:EURUSD") }
-                .isInstanceOf(ImportRefusal::class.java)
-                .hasMessageContaining(why)
+            // What the user reads: the refusal and its offending lines, as `qkt data import` prints them.
+            val refusal =
+                runCatching { IngestFixtures.import(dir.resolve("root-$preset"), listOf(sample), "BROKER:EURUSD") }
+                    .exceptionOrNull()
+            assertThat(refusal).isInstanceOf(ImportRefusal::class.java)
+            assertThat((refusal as ImportRefusal).describe()).contains(why)
         }
     }
 

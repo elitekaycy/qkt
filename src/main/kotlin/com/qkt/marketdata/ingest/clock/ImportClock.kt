@@ -24,6 +24,12 @@ sealed interface ImportClock {
     /** Hours to subtract from a wall-clock time before resolving it in [rules] (7 for [NyClose], else 0). */
     val shiftHours: Long get() = 0
 
+    /** [shiftHours] for a wall-clock time; only [Eras] changes it over time. */
+    fun shiftHoursAt(wall: java.time.LocalDateTime): Long = shiftHours
+
+    /** [rules] for a wall-clock time; only [Eras] changes them over time. */
+    fun rulesAt(wall: java.time.LocalDateTime): ZoneRules = rules
+
     data object Utc : ImportClock {
         override val spec: String = "UTC"
         override val rules: ZoneRules = ZoneOffset.UTC.rules
@@ -49,6 +55,47 @@ sealed interface ImportClock {
         override val shiftHours: Long = 7
     }
 
+    /**
+     * An IANA zone's wall time shifted by whole hours, written `Europe/London-5h`: the file's clock reads five hours
+     * behind London, so it follows London's DST dates at UTC-5 and UTC-4. `ny-close` is `America/New_York+7h`.
+     */
+    data class Shifted(
+        val zone: ZoneId,
+        val hours: Long,
+    ) : ImportClock {
+        override val spec: String = "${zone.id}${if (hours < 0) "-" else "+"}${kotlin.math.abs(hours)}h"
+        override val rules: ZoneRules = zone.rules
+        override val shiftHours: Long = hours
+    }
+
+    /**
+     * A source whose clock changed on a date, written `America/New_York until 2018-12-16T17:00, then
+     * Europe/London-5h`: each era's clock reads the wall times before its `until` (in the file's own wall time),
+     * the last one everything after.
+     */
+    data class Eras(
+        val eras: List<Pair<java.time.LocalDateTime?, ImportClock>>,
+    ) : ImportClock {
+        override val spec: String =
+            eras.joinToString(", then ") { (until, clock) ->
+                if (until ==
+                    null
+                ) {
+                    clock.spec
+                } else {
+                    "${clock.spec} until $until"
+                }
+            }
+        override val rules: ZoneRules = eras.last().second.rules
+
+        private fun at(wall: java.time.LocalDateTime): ImportClock =
+            eras.first { (until, _) -> until == null || wall < until }.second
+
+        override fun shiftHoursAt(wall: java.time.LocalDateTime): Long = at(wall).shiftHoursAt(wall)
+
+        override fun rulesAt(wall: java.time.LocalDateTime): ZoneRules = at(wall).rulesAt(wall)
+    }
+
     companion object {
         private val FIXED = Regex("""[+-]\d{1,2}(:\d{2})?""")
         private val AMBIGUOUS = Regex("""(?i)(GMT|UTC)\s*[+-]\s*\d{1,2}(:?\d{2})?""")
@@ -60,6 +107,8 @@ sealed interface ImportClock {
          */
         fun parse(text: String): ImportClock {
             val t = text.trim()
+            if (t.contains(", then ")) return ClockGrammar.eras(t, ::parse)
+            ClockGrammar.shifted(t)?.let { return it }
             return when {
                 t.equals("UTC", ignoreCase = true) || t == "Z" || t.equals("GMT", ignoreCase = true) -> Utc
                 t.equals("ny-close", ignoreCase = true) -> NyClose
@@ -74,7 +123,9 @@ sealed interface ImportClock {
                         Region(ZoneId.of(t))
                     } catch (e: DateTimeException) {
                         throw IllegalArgumentException(
-                            "unknown clock '$t' (expected UTC, +HH:MM, ny-close or an IANA zone)",
+                            "unknown clock '$t' (expected UTC, +HH:MM, ny-close, an IANA zone, " +
+                                "a zone shifted by hours " +
+                                "such as Europe/London-5h, or eras: <clock> until <date-time>, then <clock>)",
                             e,
                         )
                     }
@@ -93,8 +144,8 @@ sealed interface ImportClock {
 
 /** The UTC instant of [wall] on this clock, or null when the wall time falls in a DST gap. */
 fun ImportClock.utcOf(wall: java.time.LocalDateTime): Long? {
-    val shifted = wall.minusHours(shiftHours)
-    val offset = rules.getValidOffsets(shifted).firstOrNull() ?: return null
+    val shifted = wall.minusHours(shiftHoursAt(wall))
+    val offset = rulesAt(wall).getValidOffsets(shifted).firstOrNull() ?: return null
     return shifted.toInstant(offset).toEpochMilli()
 }
 

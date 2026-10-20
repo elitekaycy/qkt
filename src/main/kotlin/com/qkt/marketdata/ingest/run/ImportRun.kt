@@ -122,7 +122,15 @@ class ImportRun(
                 val window = validated.timeframe ?: error("bars without a timeframe")
                 val source = plan.target.source ?: error("bars without a source prefix")
                 val target =
-                    BarDayTarget(root, source, plan.target.bare, window.canonicalSpec(), window.durationMs, clock)
+                    BarDayTarget(
+                        root,
+                        source,
+                        plan.target.bare,
+                        window.canonicalSpec(),
+                        window.durationMs,
+                        clock,
+                        plan.descriptor.calendar,
+                    )
                 DayWriteStage(
                     target,
                     validated,

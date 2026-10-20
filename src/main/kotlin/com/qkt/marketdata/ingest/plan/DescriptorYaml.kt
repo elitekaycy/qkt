@@ -22,6 +22,7 @@ object DescriptorYaml {
             "time",
             "timeFormat",
             "clock",
+            "calendar",
             "timeframe",
             "label",
             "basis",
@@ -66,6 +67,7 @@ object DescriptorYaml {
             time = list(root["time"]),
             timeFormat = str("timeFormat"),
             clock = str("clock"),
+            calendar = str("calendar"),
             timeframe = str("timeframe"),
             label = str("label")?.let { BarLabel.valueOf(it.uppercase()) },
             basis = str("basis")?.let { PriceBasis.valueOf(it.uppercase()) },
@@ -116,6 +118,7 @@ object DescriptorYaml {
             line("time", descriptor.time)
             line("timeFormat", descriptor.timeFormat)
             line("clock", descriptor.clock)
+            line("calendar", descriptor.calendar)
             line("timeframe", descriptor.timeframe)
             line("label", descriptor.label?.name?.lowercase())
             line("basis", descriptor.basis?.name?.lowercase())
