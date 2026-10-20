@@ -105,6 +105,7 @@ State (logs, control port) lives at `~/.local/state/qkt/` by default; override w
 ## Next
 
 - [Get data](get-data.md): your own data from MetaTrader 5, HistData, Dukascopy, Binance and others
+- [Trade from your code](../trade-from-code/index.md): drive a session from an AI agent, a script or any language
 - [Deploy paper](deploy-paper.md): go deeper on paper trading
 - [Deploy MT5](deploy-mt5.md): connect to a real broker
 - [Concepts: architecture](../concepts/architecture.md): what happens when you `qkt deploy`

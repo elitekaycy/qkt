@@ -58,7 +58,8 @@ jobs:
             || { echo "::error::tarball missing share/editor/*.vsix"; exit 1; }
           tar -tzf "$sc" | grep -q '/bin/qkt$'           || { echo "::error::bundle missing bin/qkt"; exit 1; }
           tar -tzf "$sc" | grep -q '/runtime/bin/java$'  || { echo "::error::bundle missing runtime/bin/java"; exit 1; }
-          bash tests/quickstart-readme.sh "$sc"
+          bash tests/quickstart-page.sh "$sc"
+          bash tests/quickstart-page.sh "$sc" docs/trade-from-code/quickstart.md "runs/demo/trades.csv" "runs/demo/fills.jsonl" "runs/demo-replay/replay-diff.json"
 
       - uses: actions/upload-artifact@v4
         with:

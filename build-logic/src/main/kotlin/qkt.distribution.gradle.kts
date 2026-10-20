@@ -16,6 +16,11 @@ distributions {
                 into("share/editor")
                 exclude("**/node_modules/**")
             }
+            // The bot examples the "Trade from your code" docs run: the Python client, the agent loop, the prompt.
+            from(rootProject.file("examples/bot")) {
+                into("share/examples/bot")
+                exclude("**/__pycache__/**")
+            }
         }
     }
 }
