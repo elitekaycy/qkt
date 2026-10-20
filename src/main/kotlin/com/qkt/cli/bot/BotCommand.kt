@@ -106,12 +106,14 @@ class BotCommand(
                 bot session start --backtest --symbols A[,B] --tf 5m[,1h] --from <date> --to <date>
                     [--identities a,b] [--run <id>] [--out runs/x]
                 bot session start --symbols A --tf 5m [--identities a,b] [--reconcile=ignore-mismatches]
+                bot session wait --run <id> [--timeout 60]   after `session start ... &`, before any verb
                 bot session status | finish [--flatten] | replay <dir> [--out <dir>]
                 bot next SYMBOL [--tf 1h]      next closed bar + events since the last next
                 bot submit '<DSL action>' --symbol SYMBOL      any action on alias x
                 bot close SYMBOL | --all ; bot cancel SYMBOL | --all     through the engine
                 bot intents                    every intent's fate (filled, rejected + reason, ...)
-                verbs route to a running session (--run <id> or QKT_BOT_RUN); see docs/reference/bot-cli.md
+                pass --run <id> (or set QKT_BOT_RUN) on every verb: without it a verb that finds no session
+                acts one-shot on the configured venue. Guide: https://docs.tryqkt.com/trade-from-code/
             """.trimIndent(),
         )
         return ExitCodes.SUCCESS

@@ -13,13 +13,14 @@ private const val GOLD = "EXNESS:XAUUSD"
 internal fun liveRecord(
     tmp: Path,
     fills: List<Triple<String, String, Long>>,
+    symbol: String = GOLD,
 ): Path {
     val t0 =
         java.time.Instant
             .parse("2026-07-09T12:18:30Z")
             .toEpochMilli()
     val dir = tmp.resolve("live")
-    val argv = listOf("start", "--symbols", GOLD, "--tf", "1m", "--identities", "brain", "--run", "r1", "--json")
+    val argv = listOf("start", "--symbols", symbol, "--tf", "1m", "--identities", "brain", "--run", "r1", "--json")
     com.qkt.trade.session.writeSessionMeta(
         dir,
         // The pipeline hands the session ticks before it records its start (live: 142 ticks, 26 s).
@@ -31,7 +32,7 @@ internal fun liveRecord(
             val mid = BigDecimal("2400.00").add(BigDecimal("0.10").multiply(BigDecimal(i)))
             log.append(
                 com.qkt.marketdata.Tick(
-                    GOLD,
+                    symbol,
                     mid,
                     t0 + i * 5_000L,
                     bid = mid - BigDecimal("0.05"),
@@ -43,7 +44,7 @@ internal fun liveRecord(
     val journal =
         com.qkt.trade.session
             .IntentJournal(dir.resolve("intents.jsonl"))
-    val header = "STRATEGY bot VERSION 1\nSYMBOLS\n    x = $GOLD EVERY 1m\nRULES\n    WHEN true\n    THEN "
+    val header = "STRATEGY bot VERSION 1\nSYMBOLS\n    x = $symbol EVERY 1m\nRULES\n    WHEN true\n    THEN "
     // Live, an intent fires on the first tick stamped after it arrived: the buy on tick 9 (mid 2400.90) at its
     // ask, the close on tick 20 (mid 2402.00) at its bid. Its tickSeq lags (ticks the engine had not yet run).
     journal.intent("int-1", "brain", header + "BUY x SIZING 0.01\n", t0 + 42_000L, t0 + 42_000L, 7L)
@@ -52,7 +53,7 @@ internal fun liveRecord(
     Files.write(
         dir.resolve("fills.jsonl"),
         fills.map { (side, price, at) ->
-            """{"identity":"brain","orderId":"o","symbol":"$GOLD","side":"$side","qty":0.01,"price":$price,""" +
+            """{"identity":"brain","orderId":"o","symbol":"$symbol","side":"$side","qty":0.01,"price":$price,""" +
                 """"timeMs":${t0 + at}}"""
         },
     )

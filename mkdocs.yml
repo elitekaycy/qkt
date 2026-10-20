@@ -125,6 +125,14 @@ nav:
       - Tutorial 1 — Your first strategy: tutorials/first-strategy.md
       - Tutorial 2 — Backtest to live: tutorials/backtest-to-live.md
       - Tutorial 3 — Composing strategies: tutorials/compose-portfolio.md
+  - Trade from your code:
+      - trade-from-code/index.md
+      - Quickstart: trade-from-code/quickstart.md
+      - Connect an AI agent: trade-from-code/ai-agent.md
+      - From any language: trade-from-code/any-language.md
+      - Go live: trade-from-code/go-live.md
+      - Bot CLI reference: reference/bot-cli.md
+      - Session HTTP API: reference/bot-session-api.md
   - Examples:
       - examples/index.md
       - Trend-follow (EMA crossover): examples/trend-follow.md
@@ -197,8 +205,6 @@ nav:
           - BASKET (synthetic instruments): reference/dsl/basket.md
       - DSL grammar (cheat sheet): reference/dsl-grammar.md
       - CLI commands: reference/cli-commands.md
-      - Bot CLI (agents and programs): reference/bot-cli.md
-      - Bot session HTTP API: reference/bot-session-api.md
       - Config reference: reference/config-schema.md
   - Operations:
       - operations/index.md
