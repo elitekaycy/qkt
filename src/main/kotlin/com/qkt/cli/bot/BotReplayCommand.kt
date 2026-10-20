@@ -10,6 +10,7 @@ import com.qkt.trade.session.IntentJournal
 import com.qkt.trade.session.IntentReplay
 import com.qkt.trade.session.LiveTickLog
 import com.qkt.trade.session.ReplayDiff
+import com.qkt.trade.session.SessionInstruments
 import com.qkt.trade.session.VenueDealLog
 import com.qkt.trade.session.fillsOf
 import com.qkt.trade.session.firedTickIndex
@@ -80,9 +81,8 @@ internal class BotReplayCommand(
             recordedTicks?.let {
                 listOf("--data-root", it.toString(), "--no-fetch", "--allow-incomplete") + venueFills + venueLatency
             }
-        val sub = Args((tokens + overStore.orEmpty()).toTypedArray())
-        val spec = parseSessionStart(sub) { meta.runId }
-        val parts = buildBacktestSession(sub, spec, journal = null)
+        val sub = Args((tokens + overStore.orEmpty() + SessionInstruments.replayArgs(dir, args)).toTypedArray())
+        val parts = buildBacktestSession(sub, parseSessionStart(sub) { meta.runId }, journal = null)
         val finish = IntentJournal.finishPoint(dir.resolve("intents.jsonl"))
         val result =
             if (recordedTicks != null) {
@@ -194,6 +194,7 @@ internal class BotReplayCommand(
 
     private companion object {
         val FLAGS = setOf("no-fetch", "bars", "tick-fills")
-        val OVERRIDES = listOf("from", "to", "data-root", "config", "broker", "execution-latency") + FLAGS
+        val OVERRIDES =
+            listOf("from", "to", "data-root", "config", "broker", "execution-latency", "instruments") + FLAGS
     }
 }

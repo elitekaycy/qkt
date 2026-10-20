@@ -21,10 +21,11 @@ hide:
 
     <div class="qkt-hero__ctas">
       <a class="qkt-btn qkt-btn--primary" href="get-started/quickstart/">
-        <span>Run your first strategy in 5 min</span>
+        <span>Run your first strategy in 10 min</span>
         <span class="qkt-btn__arrow">→</span>
       </a>
       <a class="qkt-btn" href="get-started/get-data/">Get data</a>
+      <a class="qkt-btn" href="trade-from-code/">Trade from your code</a>
       <a class="qkt-btn" href="how-to/ema-crossover/">See a worked example</a>
       <a class="qkt-btn" href="concepts/broker-integration/">Which brokers work?</a>
     </div>

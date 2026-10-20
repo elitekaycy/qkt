@@ -152,6 +152,11 @@ class IntentLedger {
             }
         unread += event
         if (outcome !is OrderOutcome.Filled || !outcome.partial) ended += outcome.orderId
+        // A bracket is placed as a group that never gets an outcome of its own: its entry filling ends it as a working
+        // entry (its stop and target are exits the engine holds, reported as the position's legs).
+        if (outcome is OrderOutcome.Filled && !outcome.partial && outcome.exitReason == null) {
+            outcome.parentOrderId?.let { ended += it }
+        }
         // The intent's own orders settle its fate; the exits the engine placed for it are events only.
         if (intentId != null && intentOfOrder[outcome.orderId] == intentId) settle(intentId, event)
     }
@@ -167,6 +172,9 @@ class IntentLedger {
                 else -> event.kind
             }
         fates[intentId] = fate.copy(state = state, reason = event.reason ?: fate.reason, atMs = event.atMs)
+        // A rejection refuses the whole intent, so nothing of it is working: a bracket's names its group, not its entry.
+        // (A cancelled order may leave an OCO or STACK sibling working, so cancellation ends only that order.)
+        if (state == "rejected") ended += intentOfOrder.filterValues { it == intentId }.keys
         onChange(fates.getValue(intentId))
     }
 
