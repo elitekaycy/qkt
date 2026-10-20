@@ -153,6 +153,7 @@ internal val toolingOptionSchemas: Map<String, CliOptionSchema> =
                         "flatten",
                         "any",
                         "trace",
+                        "predict",
                     ),
             ),
         "--version" to CliOptionSchema(),

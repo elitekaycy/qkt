@@ -67,6 +67,24 @@ class BotReplayTraceTest {
     }
 
     @Test
+    fun `a record with the venue's deals replays what happened by default, and predicts only when asked`(
+        @TempDir tmp: Path,
+    ) {
+        val dir = liveRecord(tmp, listOf(Triple("BUY", "2400.95", 51_000L), Triple("SELL", "2402.05", 112_000L)))
+        val t0 = Files.readAllLines(dir.resolve("ticks.csv"))[1].substringBefore(',').toLong()
+        VenueDealLog.write(
+            dir.resolve(VenueDealLog.FILE),
+            listOf(deal("BUY", "2400.95", t0 + 47_000L), deal("SELL", "2402.05", t0 + 107_000L)),
+        )
+
+        val (_, replayed) = replay(dir.toString(), "--out", tmp.resolve("out").toString())
+        val (_, predicted) = replay(dir.toString(), "--out", tmp.resolve("out2").toString(), "--predict")
+
+        assertThat(replayed).contains("\"replay\":\"trace\"").contains("\"samePrices\":true")
+        assertThat(predicted).contains("\"replay\":\"venue-latency\"")
+    }
+
+    @Test
     fun `the deal log reads back what the venue reported`(
         @TempDir tmp: Path,
     ) {
