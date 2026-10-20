@@ -15,6 +15,7 @@ import com.qkt.trade.session.firedTickIndex
 import com.qkt.trade.session.measuredVenueLatencyMs
 import com.qkt.trade.session.readFills
 import com.qkt.trade.session.readSessionMeta
+import com.qkt.trade.session.venueFillIndex
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
@@ -56,12 +57,16 @@ internal class BotReplayCommand(
         // The recorded tick each intent fired on: its fate says, else the first tick stamped after it arrived.
         val firedIndex = firedTickIndex(intents, IntentJournal.firedTickMs(dir.resolve("intents.jsonl")), ticks)
         val firedOn = firedIndex.mapValues { (_, i) -> ticks[i].timestamp }
+        val filledAt = IntentJournal.filledAt(dir.resolve("intents.jsonl"))
+        // `--trace`: what happened. Each fill at the quote standing when the venue filled it (its own round trip).
+        val trace = args.flag("trace") && ticks.isNotEmpty()
+        val enterAt = if (trace) firedIndex + venueFillIndex(filledAt, ticks) else firedIndex
         // A venue fills at its quote (ask to buy, bid to sell): over the recorded quotes, so does mt5-sim.
         val venueFills = if (args.option("broker") == null) listOf("--broker", "mt5-sim") else emptyList()
         // And it fills when the order reaches it: the round trip the record measured, unless one is given.
         val latencyMs =
-            if (args.option("execution-latency") == null) {
-                measuredVenueLatencyMs(firedOn, IntentJournal.filledAt(dir.resolve("intents.jsonl")))
+            if (args.option("execution-latency") == null && !trace) {
+                measuredVenueLatencyMs(firedOn, filledAt)
             } else {
                 null
             }
@@ -80,7 +85,7 @@ internal class BotReplayCommand(
                 // Over those same ticks, it re-enters just before the tick it fired on.
                 fun before(ms: Long) = ticks.count { it.timestamp <= ms }.toLong()
                 IntentReplay(parts.engine, parts.recorder, parts.session).run(
-                    intents.map { it.copy(tickSeq = firedIndex[it.intentId]?.toLong() ?: before(it.simMs)) },
+                    intents.map { it.copy(tickSeq = enterAt[it.intentId]?.toLong() ?: before(it.simMs)) },
                     byArrivalTime = false,
                     finishedAt = finish?.let { (ms, _) -> ms to before(ms) },
                 )
@@ -103,6 +108,12 @@ internal class BotReplayCommand(
                 "samePrices" to diff.samePrices,
                 "market" to if (recordedTicks != null) "recorded ticks" else "store",
                 "latencyMs" to if (recordedTicks != null) latencyMs else null,
+                "replay" to
+                    when {
+                        trace -> "trace"
+                        recordedTicks != null -> "venue-latency"
+                        else -> "store"
+                    },
                 "recordedFills" to diff.recorded.size,
                 "replayedFills" to diff.replayed.size,
                 "out" to out.toAbsolutePath().toString(),
