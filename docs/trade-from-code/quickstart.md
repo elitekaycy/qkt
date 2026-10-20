@@ -40,8 +40,13 @@ qkt bot next BINANCE:BTCUSDT --run demo --json
 ```
 
 `next` is the clock: it hands out the next closed bar and everything that happened to your orders since the last
-one. The first buy fills; the second asks for 2 BTC, over the limit, and comes back `rejected` with the rule that
-refused it.
+one. The first buy fills at the next bar's open; the second asks for 2 BTC, over the limit, and the next `next`
+reports it `rejected` with the rule that refused it:
+
+```text
+"kind":"fill","identity":"shell","intentId":"int-1","orderId":"dsl-bot0--0","symbol":"BINANCE:BTCUSDT","side":"BUY","price":78754.73000000
+"reason":"order qty 2 exceeds per-order cap 0.5"
+```
 
 **4. Trade from a Python script**
 
@@ -60,10 +65,19 @@ and finishes the session, which writes the report to `runs/demo`.
 ```bash
 qkt bot session replay runs/demo --out runs/demo-replay --json
 ```
+
+The script reports `{"bars": 669, "intents": 91, "filled": 89, …}`. The replay runs the whole session again from
+its journal (every intent, from every caller, at the tick it arrived) and compares the fills:
+
+```text
+"identical":true,"sameTrades":true,"samePrices":true
+"recordedFills":93,"replayedFills":93
+```
+
+Sessions are deterministic like backtests: run the five steps again and every number above comes out the same.
 <!-- quickstart:end -->
 
-The replay runs the session again from its journal (every intent, from every caller, at the tick it arrived) and
-compares the fills: `identical` is `true`. The report in `runs/demo/report.html` has one equity curve per identity.
+The report in `runs/demo/report.html` has one equity curve per identity.
 
 ## What you just used
 

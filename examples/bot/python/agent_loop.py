@@ -32,6 +32,7 @@ def main() -> int:
     p.add_argument("--sl", default="pct:1", help="stop: by:<distance>, pct:<percent> or a price")
     p.add_argument("--tp", default="rr:2", help="target: rr:<reward/risk>, by:<distance>, pct:<percent> or a price")
     p.add_argument("--keep-open", action="store_true", help="leave the session running for other callers")
+    p.add_argument("--verbose", action="store_true", help="print every fill, exit and rejection as it happens")
     a = p.parse_args()
 
     s = Session.find(run=a.run, state_dir=a.state_dir)
@@ -40,7 +41,7 @@ def main() -> int:
     seen = 0
     while True:
         bar = s.next(a.symbol)
-        for e in bar.get("events", []):
+        for e in bar.get("events", []) if a.verbose else []:
             print(json.dumps({"event": e["kind"], "side": e["side"], "price": e["price"], "exit": e["exitReason"]}))
         if bar["type"] == "end" or (a.max_bars and seen >= a.max_bars):
             break
