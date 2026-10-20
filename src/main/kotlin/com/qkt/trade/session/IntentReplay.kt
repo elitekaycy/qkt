@@ -6,8 +6,9 @@ import com.qkt.research.ReplayEngine
 /**
  * Runs a session's journaled intents again over a backtest [session]. A backtest record re-injects each
  * intent once the engine has handed the session as many ticks as when it arrived ([JournaledIntent.tickSeq]),
- * so the replay is the same run; a live record re-injects it at the first stored tick at or after its
- * arrival time (live ticks are not the stored ticks, so fills can differ, and the diff says where).
+ * so the replay is the same run. A live record replayed over the ticks it recorded is injected the same way
+ * (they are the ticks it was handed, in order); over the store it re-injects each at the first stored tick
+ * at or after its arrival time (live ticks are not the stored ticks, so fills can differ, and the diff says where).
  */
 class IntentReplay(
     private val engine: ReplayEngine,

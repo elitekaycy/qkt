@@ -20,6 +20,20 @@ class ReplayDiff private constructor(
 ) {
     val identical: Boolean get() = mismatches.isEmpty()
 
+    /**
+     * The same trades in the same order (identity, symbol, side, quantity), whatever their prices and times. A
+     * live record replays with [sameTrades] at best: a venue's fill price and clock are not a tick's.
+     */
+    val sameTrades: Boolean
+        get() =
+            recorded.size == replayed.size &&
+                recorded.zip(replayed).all { (a, b) ->
+                    a.identity == b.identity &&
+                        a.symbol == b.symbol &&
+                        a.side == b.side &&
+                        a.quantity.compareTo(b.quantity) == 0
+                }
+
     fun json(): String {
         fun fill(f: ReplayFill?): String =
             f?.let {
@@ -32,7 +46,7 @@ class ReplayDiff private constructor(
                 "[",
                 "]",
             ) { (a, b) -> """{"recorded":${fill(a)},"replayed":${fill(b)}}""" }
-        return """{"identical":$identical,"recordedFills":${recorded.size},""" +
+        return """{"identical":$identical,"sameTrades":$sameTrades,"recordedFills":${recorded.size},""" +
             """"replayedFills":${replayed.size},"mismatches":$rows}"""
     }
 
