@@ -1,6 +1,7 @@
 package com.qkt.cli
 
 import com.qkt.candles.TimeWindow
+import com.qkt.marketdata.store.BarCoverage
 import com.qkt.marketdata.store.BinaryBarStore
 
 /**
@@ -18,13 +19,16 @@ internal fun finestReplayTimeframe(
         .sortedBy { it.durationMs }
         .firstOrNull(covers) ?: declared
 
-/** [finestReplayTimeframe] for each symbol of [declared], from what [store] holds; [covers] is (broker, symbol, tf). */
+/** [finestReplayTimeframe] for each symbol of [declared], from what [store] holds; [coverage] is (broker, symbol, tf). */
 internal fun finestReplayWindows(
     declared: Map<String, TimeWindow>,
     store: BinaryBarStore,
-    covers: (String, String, TimeWindow) -> Boolean,
+    coverage: (String, String, TimeWindow) -> BarCoverage,
 ): Map<String, TimeWindow> =
     declared.mapValues { (sym, tf) ->
         val (broker, bare) = BacktestBarReplay.brokerAndBare(sym)
-        finestReplayTimeframe(store.builtTimeframes(broker, bare), tf) { covers(broker, bare, it) }
+        finestReplayTimeframe(
+            store.builtTimeframes(broker, bare),
+            tf,
+        ) { coverage(broker, bare, it).missingDays.isEmpty() }
     }
