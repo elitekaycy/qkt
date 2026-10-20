@@ -59,10 +59,11 @@ internal class BotReplayCommand(
         val firedIndex = firedTickIndex(intents, IntentJournal.firedTickMs(dir.resolve("intents.jsonl")), ticks)
         val firedOn = firedIndex.mapValues { (_, i) -> ticks[i].timestamp }
         val filledAt = IntentJournal.filledAt(dir.resolve("intents.jsonl"))
-        // `--trace`: what happened. Each fill at the quote standing when the venue filled it (its own round trip).
-        val trace = args.flag("trace") && ticks.isNotEmpty()
         // A fill is booked when the venue's confirmation arrives; the venue's deals say when it executed.
         val deals = VenueDealLog.read(dir.resolve(VenueDealLog.FILE))
+        // What happened (a trace: each fill at the quote the venue executed it at) when the record can say,
+        // or `--trace`; `--predict` replays at the median round trip instead: what would happen.
+        val trace = ticks.isNotEmpty() && !args.flag("predict") && (args.flag("trace") || deals.isNotEmpty())
         val executedAt = VenueDealLog.executedAt(filledAt, readFills(dir.resolve("fills.jsonl")), deals)
         val enterAt = if (trace) firedIndex + venueFillIndex(executedAt, ticks) else firedIndex
         // A venue fills at its quote (ask to buy, bid to sell): over the recorded quotes, so does mt5-sim.
