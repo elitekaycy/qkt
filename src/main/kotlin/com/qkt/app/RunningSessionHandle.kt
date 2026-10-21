@@ -3,6 +3,8 @@ package com.qkt.app
 import com.qkt.broker.Broker
 import com.qkt.common.Clock
 import com.qkt.dsl.compile.DslCompiledStrategy
+import com.qkt.execution.LegIntent
+import com.qkt.execution.OrderRequest
 import com.qkt.execution.Trade
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.marketdata.MarketDataGate
@@ -155,8 +157,32 @@ internal class RunningSessionHandle(
     // Legacy fire-and-forget flatten stays engine-thread confined for internal callers.
     override fun flatten() = mailbox.requestFlatten()
 
-    override fun flattenForStop() {
+    override fun flattenForStop(): FlattenResult {
         clearRuleEdgesAtStop.set(true)
-        mailbox.requestFlatten()
+        val ids = strategies.map { it.first }
+        return StopFlatten(
+            requestFlatten = mailbox::requestFlatten,
+            flattenRunning = { mailbox.pendingFlattens.get() > 0 },
+            book = { engineSnapshot { stopBook(ids) } },
+            venueHeld = { VerifiedFlatten(broker, ticketAttribution, clock, ids, {}).venueTickets() },
+            venueNamesPositions = broker.supportsPositionTickets,
+            // An operator's wait in real time, whatever clock the session trades on.
+            nowMs = { System.nanoTime() / 1_000_000L },
+            sleep = Thread::sleep,
+            timeoutMs = STOP_FLATTEN_VERIFY_MS,
+        ).run()
+    }
+
+    /** The legs [ids] still hold, and whether a close of one is still working (engine thread). */
+    private fun stopBook(ids: List<String>): StopFlatten.Book {
+        val closing =
+            pipeline.orderManager.activeOrders().any { o ->
+                val r = o.request
+                r.strategyId in ids &&
+                    r is OrderRequest.Market &&
+                    (r.closesTicket != null || r.legIntent is LegIntent.Close)
+            }
+        val legs = ids.flatMap { id -> strategyPositions.allLegsFor(id).map { "${it.legId} (${it.symbol})" } }
+        return StopFlatten.Book(legs, closing)
     }
 }

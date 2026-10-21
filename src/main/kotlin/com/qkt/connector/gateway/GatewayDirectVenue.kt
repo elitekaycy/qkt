@@ -17,7 +17,7 @@ import java.math.BigDecimal
  * One VGP v1 account spoken to directly for a `qkt bot` one-shot command. Orders map through
  * [GatewayOrders] (the engine's own mapping, so a one-shot price lands on the same tick grid), are sent
  * with an idempotent `client_order_id`, and are then read back until the venue says what became of
- * them. A position here carries no stop or target (VGP v1 has none), so a protected entry is refused
+ * them ([GatewayDirectOutcome]). A position here carries no stop or target (VGP v1 has none), so a protected entry is refused
  * and pointed at a session, where the engine holds the bracket.
  */
 class GatewayDirectVenue(
@@ -32,6 +32,7 @@ class GatewayDirectVenue(
 ) : DirectVenue {
     private val symbols = GatewaySymbols(prefix)
     private val reads = GatewayDirectReads(name, client)
+    private val outcome = GatewayDirectOutcome(name, client, clock, pollTimeoutMs, pollMs)
     private val listing: Map<String, WireInstrument> by lazy {
         client.instruments().also(symbols::updateListing).associateBy { it.code }
     }
@@ -96,7 +97,7 @@ class GatewayDirectVenue(
                     "${sent.code}: ${sent.message}",
                     "rejected",
                 )
-            is GatewaySubmit.Placed -> settle(body.clientOrderId)
+            is GatewaySubmit.Placed -> outcome.settle(body.clientOrderId, sent.order)
         }
     }
 
@@ -104,10 +105,7 @@ class GatewayDirectVenue(
         position: DirectPosition,
         volume: BigDecimal?,
         clientId: String,
-    ): DirectResult {
-        client.closePosition(position.symbol, volume, clientId)
-        return settle(clientId)
-    }
+    ): DirectResult = outcome.close(position, volume, clientId)
 
     override fun modify(
         position: DirectPosition,
@@ -144,46 +142,6 @@ class GatewayDirectVenue(
         count: Int,
         nowMs: Long,
     ): List<Candle> = reads.bars(qktSymbol, venueSymbol(qktSymbol), window, count, nowMs)
-
-    /**
-     * Reads order [id] until the venue has decided it: filled, cancelled or rejected, or working for an
-     * order that rests. A market order still unsettled at the deadline is reported as it stands.
-     */
-    private fun settle(id: String): DirectResult {
-        val deadline = clock.now() + pollTimeoutMs
-        var order = client.order(id) ?: error("gateway $name lost order $id")
-        while (!settled(order) && clock.now() < deadline) {
-            Thread.sleep(pollMs)
-            order = client.order(id) ?: order
-        }
-        val fills = if (BigDecimal(order.filledQuantity).signum() > 0) client.dealsOf(id) else emptyList()
-        val filled = fills.fold(BigDecimal.ZERO) { q, f -> q + BigDecimal(f.quantity) }
-        val price =
-            if (filled.signum() > 0) {
-                fills
-                    .fold(
-                        BigDecimal.ZERO,
-                    ) { v, f ->
-                        v + BigDecimal(
-                            f.quantity,
-                        ) * BigDecimal(f.price)
-                    }.divide(filled, java.math.MathContext.DECIMAL64)
-            } else {
-                order.limitPrice?.let(::BigDecimal) ?: BigDecimal.ZERO
-            }
-        val ok = order.status == "working" || order.status == "filled" || filled.signum() > 0
-        val error =
-            when {
-                ok -> null
-                order.status == "rejected" -> order.rejectReason ?: "rejected by the venue"
-                else -> "order ${order.status} at the venue with nothing filled"
-            }
-        return DirectResult(ok, 0, id, fills.firstOrNull()?.fillId.orEmpty(), price, error, order.status, filled)
-    }
-
-    private fun settled(order: WireOrder): Boolean =
-        order.status in setOf("filled", "cancelled", "rejected") ||
-            (order.status == "working" && order.type != "market")
 
     private object NoPositions : PositionProvider {
         override fun positionFor(symbol: String): Position? = null
