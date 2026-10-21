@@ -13,11 +13,14 @@ import java.util.concurrent.TimeUnit
 /** How long a stop waits for a flatten in progress before interrupting the engine thread. */
 internal const val STOP_FLATTEN_GRACE_MS: Long = 30_000L
 
+/** How long `stop --flatten` confirms and retries its flatten before reporting what is still open. */
+internal const val STOP_FLATTEN_VERIFY_MS: Long = 120_000L
+
 /**
- * Stops a live session in order: stop the inputs (feed, pollers, heartbeat), let the engine loop
- * drain what is already queued, then release brokers and announce the stop. A session with venue
- * brokers gets a drain grace so an in-flight fill is still booked, e.g. `stop()` on an MT5
- * session waits up to 2.5s for the loop; a paper session does not wait for a drain at all.
+ * Stops a live session in order: stop the inputs (feed, heartbeat, equity poller), let the engine loop
+ * drain what is already queued, read the venue state once more, then release brokers and announce the
+ * stop. A session with venue brokers gets a drain grace so an in-flight fill is still booked, e.g.
+ * `stop()` on an MT5 session waits up to 2.5s for the loop; a paper session does not wait at all.
  */
 internal class SessionShutdown(
     private val strategies: List<Pair<String, Strategy>>,
@@ -52,7 +55,6 @@ internal class SessionShutdown(
         stopRequestedNanos = System.nanoTime()
         feedThread.interrupt()
         runCatching { feed.close() }
-        runCatching { brokerStatePoller?.close() }
         // Stop the schedule heartbeat thread so it doesn't outlive the session.
         runCatching {
             scheduleHeartbeat.shutdownNow()
@@ -89,6 +91,9 @@ internal class SessionShutdown(
             running.set(false)
             thread.interrupt()
         }
+        // The venue state poller runs on through the flatten, then reads once more until the venue answers:
+        // the deals of this session's last fills reach insights before its venues are released.
+        runCatching { brokerStatePoller?.drainAndClose() }
         // Release venue-side lifecycle resources (MT5 pollers, gateway sessions)
         // so a long-running daemon cycling strategies doesn't accumulate threads.
         for (b in builtBrokers) runCatching { b.shutdown() }

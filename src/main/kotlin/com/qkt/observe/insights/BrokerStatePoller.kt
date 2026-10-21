@@ -149,11 +149,49 @@ class BrokerStatePoller(
         }
     }
 
+    /**
+     * Stops the polling thread, then polls every broker until one pass reads each completely (account and
+     * deals), retrying every [retryMs] for up to [timeoutMs]: a stopping session's last fills (its
+     * flatten's closes) reach the collector before the session lets go of its venues, even through a
+     * gateway that is timing out. Each attempt is logged when it fails.
+     */
+    fun drainAndClose(
+        timeoutMs: Long = DRAIN_TIMEOUT_MS,
+        retryMs: Long = DRAIN_RETRY_MS,
+    ) {
+        val polling = thread
+        close()
+        polling?.join(timeoutMs)
+        val deadline = System.nanoTime() + timeoutMs * 1_000_000L
+        while (true) {
+            val fetched = mutableSetOf<String>()
+            // A broker with no venue account (paper) is complete as soon as its pass ran.
+            val complete =
+                brokers.map { broker ->
+                    runCatching { cycle.poll(broker, fetched) || !broker.supportsAccountEquity }
+                        .onFailure { e -> log.warn("[insights] final poll of {} failed: {}", broker.name, e.message) }
+                        .getOrDefault(false)
+                }
+            if (complete.all { it } || System.nanoTime() >= deadline) return
+            try {
+                Thread.sleep(retryMs)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return
+            }
+        }
+    }
+
     /** Stops the polling thread, waiting up to two seconds for the current cycle. */
     override fun close() {
         if (!running.compareAndSet(true, false)) return
         thread?.interrupt()
         thread?.join(2_000)
         thread = null
+    }
+
+    private companion object {
+        const val DRAIN_TIMEOUT_MS: Long = 20_000L
+        const val DRAIN_RETRY_MS: Long = 1_000L
     }
 }

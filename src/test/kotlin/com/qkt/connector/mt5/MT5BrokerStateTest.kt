@@ -154,10 +154,10 @@ class MT5BrokerStateTest {
     }
 
     @Test
-    fun `deals returns empty when the gateway read fails`() {
+    fun `deals throws when the gateway read fails, so the deal watermark never passes what it missed`() {
         dealsResponse = { MockResponse().setResponseCode(500).setBody("boom") }
         broker = newBroker()
-        assertThat(broker.deals(from = 0L, to = 1L)).isEmpty()
+        assertThat(runCatching { broker.deals(0L, 1L) }.exceptionOrNull()).hasMessageContaining("gateway read failed")
     }
 
     @Test
