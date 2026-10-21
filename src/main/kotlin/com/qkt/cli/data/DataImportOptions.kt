@@ -45,6 +45,15 @@ internal object DataImportOptions {
                 time = time,
                 timeFormat = args.option("time-format"),
                 clock = args.option("tz"),
+                calendar =
+                    args.option("calendar")?.also {
+                        require(
+                            com.qkt.common.TradingCalendar
+                                .named(it) != null,
+                        ) {
+                            "--calendar must be one of ${com.qkt.common.TradingCalendar.names.joinToString()}: $it"
+                        }
+                    },
                 timeframe = args.option("tf"),
                 label = args.option("label")?.let { enumOf<BarLabel>(it, "--label", "open, close") },
                 basis = args.option("price")?.let { enumOf<PriceBasis>(it, "--price", "bid, ask, mid, last") },

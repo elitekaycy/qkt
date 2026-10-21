@@ -28,4 +28,24 @@ class MT5VenuePriceTest {
         assertThat(deal("1.08431").price.toPlainString()).isEqualTo("1.08431")
         assertThat(deal("67000").price.toPlainString()).isEqualTo("67000")
     }
+
+    @Test
+    fun `a position's prices carry no float noise`() {
+        // Live on the Exness demo, 2026-10-20: qkt bot positions showed "entry":82638.31999999999.
+        val parser = MT5SnapshotParser(Json { ignoreUnknownKeys = true }, MT5VenueTime(MT5ServerTimeZone.UTC))
+        val p =
+            parser.parsePosition(
+                Json
+                    .parseToJsonElement(
+                        """{"ticket":3387482304,"symbol":"BTCUSDm","type":0,"volume":0.01,""" +
+                            """"price_open":82638.31999999999,"sl":81811.94000000001,"tp":84291.08,"profit":0.26,""" +
+                            """"magic":994777,"price_current":82663.87000000001}""",
+                    ).jsonObject,
+            )
+
+        assertThat(p.priceOpen.toPlainString()).isEqualTo("82638.32")
+        assertThat(p.sl.toPlainString()).isEqualTo("81811.94")
+        assertThat(p.tp.toPlainString()).isEqualTo("84291.08")
+        assertThat(p.priceCurrent?.toPlainString()).isEqualTo("82663.87")
+    }
 }

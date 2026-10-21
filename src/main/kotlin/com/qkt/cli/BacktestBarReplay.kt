@@ -6,6 +6,7 @@ import com.qkt.backtest.ProvisionStream
 import com.qkt.candles.TimeWindow
 import com.qkt.marketdata.store.BinaryBarStore
 import com.qkt.marketdata.store.LocalBarStore
+import com.qkt.marketdata.store.calendarOf
 import java.nio.file.Paths
 import java.time.Instant
 import java.time.LocalDate
@@ -36,23 +37,6 @@ internal object BacktestBarReplay {
             }
             true
         }
-    }
-
-    /**
-     * The step that supplies [sym]'s missing [tf] bars: built from its ticks for a local symbol (`EURUSD`,
-     * `BACKTEST:EURUSD`), imported or fetched for a source's (`BINANCE:BTCUSDT`), whose bars have no ticks to build from.
-     */
-    fun missingBarsFix(
-        sym: String,
-        tf: TimeWindow,
-        fromDay: LocalDate,
-        toDay: LocalDate,
-    ): String {
-        val (broker, bare) = brokerAndBare(sym)
-        val range = "--from $fromDay --to ${toDay.plusDays(1)}"
-        if (broker == "BACKTEST") return "Run: qkt data build-bars $bare --tf ${tf.canonicalSpec()} $range"
-        val fetch = "qkt fetch $sym --tf ${tf.canonicalSpec()} $range"
-        return "Import or fetch them: qkt data import <file> --as $sym, or $fetch"
     }
 
     data class BarReplayConfig(
@@ -112,7 +96,8 @@ internal object BacktestBarReplay {
             tf,
             fromDay,
             toDay,
-            BacktestContext.defaultCalendars().calendarFor(bare),
+            LocalBarStore(Paths.get(dataRoot)).calendarOf(broker, bare)
+                ?: BacktestContext.defaultCalendars().calendarFor(bare),
             LocalBarStore(Paths.get(dataRoot)),
         )
         val finestDeclared: Map<String, TimeWindow> =
@@ -127,7 +112,7 @@ internal object BacktestBarReplay {
                 }.toMap()
         val barWindows: Map<String, TimeWindow> =
             if (!forceBars) {
-                finestDeclared
+                finestReplayWindows(finestDeclared, binaryBarStore, ::coverageOf)
             } else {
                 finestDeclared.mapValues { (sym, declared) ->
                     val (broker, bare) = brokerAndBare(sym)
@@ -173,13 +158,12 @@ internal object BacktestBarReplay {
                         "trading days (${tf.canonicalSpec()})",
                 )
                 if (coverage.missingDays.isNotEmpty()) {
-                    val message =
-                        "--bars: incomplete bars for $sym: ${coverage.coveredTradingDays}/" +
-                            "${coverage.requestedTradingDays} trading days; missing " +
-                            coverage.missingDays.joinToString(",") + ". " + missingBarsFix(sym, tf, fromDay, toDay)
+                    val none = coverage.coveredTradingDays == 0
+                    val message = missingBarsMessage(sym, tf, coverage, fromDay, toDay)
                     if (!args.flag("allow-incomplete")) {
+                        // With nothing stored, --allow-incomplete would run a backtest with no prices at all.
                         throw com.qkt.backtest.IncompleteDataException(
-                            "$message\n  re-run with --allow-incomplete to proceed anyway",
+                            if (none) message else "$message\n  re-run with --allow-incomplete to proceed anyway",
                         )
                     }
                     System.err.println("qkt: WARNING — $message")

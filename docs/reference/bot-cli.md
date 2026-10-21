@@ -9,7 +9,9 @@ program in any language, a person at a terminal. It has two modes, and the same 
 | **Session** (`qkt bot session start`) | the qkt engine itself, as a backtest or live; the verbs become its inputs | anything managed over time, every guardrail, backtests, parity |
 
 With a session running, the verbs route to it (`--run <id>`, else `QKT_BOT_RUN`, else the only one);
-with none, they act one-shot. Naming a session that is not running fails and sends nothing. `close`,
+with none, they act one-shot. **Pass `--run` on every session verb:** `session start` runs in the foreground, so a
+script backgrounds it, and a verb sent before the session is up would find none and go to the venue. Wait for it with
+`qkt bot session wait --run <id>`; a named session that is not running fails and sends nothing. Naming a session that is not running fails and sends nothing. `close`,
 `cancel` and `modify` reach a session only when it is named (`--run` or `QKT_BOT_RUN`); otherwise they act
 on the venue, so a backtest session never swallows a real close. One process holds a run at a time. A program that is not a shell uses the session's
 [HTTP API](bot-session-api.md) directly.
@@ -137,21 +139,23 @@ qkt bot session start --backtest --symbols EXNESS:XAUUSD,EXNESS:XAGUSD --tf 5m,1
 # live over the configured accounts: the same command without --backtest/--from/--to
 qkt bot session start --symbols DERIBIT:SOL_USDC_PERPETUAL --tf 1m --identities agent --run live1 --json &
 
-qkt bot next EXNESS:XAUUSD [--tf 1h]       # the next closed bar of the series + events since the last next
-qkt bot bars EXNESS:XAUUSD --count 200 [--tf 1h]
-qkt bot buy 0.5 EXNESS:XAUUSD --sl by:5 --tp rr:2 --as trend
-qkt bot sell 0.2 EXNESS:XAUUSD --sl trail:4@2 --tp by:15 --as meanrev
-qkt bot buy 0.1 EXNESS:XAUUSD --exit-after 4h --as trend
+qkt bot session wait --run demo           # returns once the session answers; start runs in the foreground
+
+qkt bot next EXNESS:XAUUSD --run demo [--tf 1h]   # the next closed bar of the series + events since the last next
+qkt bot bars EXNESS:XAUUSD --count 200 --run demo [--tf 1h]
+qkt bot buy 0.5 EXNESS:XAUUSD --sl by:5 --tp rr:2 --as trend --run demo
+qkt bot sell 0.2 EXNESS:XAUUSD --sl trail:4@2 --tp by:15 --as meanrev --run demo
+qkt bot buy 0.1 EXNESS:XAUUSD --exit-after 4h --as trend --run demo
 qkt bot submit 'BUY x SIZING 1 PCT RISK BRACKET { STOP LOSS BY 5 STEP TO BREAKEVEN AFTER MFE >= 8, TAKE PROFIT RR 2 }' \
-  --symbol EXNESS:XAUUSD --as trend         # any DSL action
-qkt bot close EXNESS:XAUUSD --as trend      # CLOSE: this identity's legs, by ticket
-qkt bot close --all --as trend              # CLOSE_ALL
-qkt bot cancel EXNESS:XAUUSD --as trend     # CANCEL (cancel --all: CANCEL_ALL)
-qkt bot intents --json                      # every intent's fate
-qkt bot orders --json                       # working entries intents placed (backtest; live reads the venue)
-qkt bot positions --json                    # net per symbol + each identity's legs
-qkt bot session status --json
-qkt bot session finish [--flatten] --json   # writes the report; --flatten closes everything first
+  --symbol EXNESS:XAUUSD --as trend --run demo   # any DSL action
+qkt bot close EXNESS:XAUUSD --as trend --run demo   # CLOSE: this identity's legs, by ticket
+qkt bot close --all --as trend --run demo           # CLOSE_ALL
+qkt bot cancel EXNESS:XAUUSD --as trend --run demo  # CANCEL (cancel --all: CANCEL_ALL)
+qkt bot intents --run demo --json           # every intent's fate
+qkt bot orders --run demo --json            # working entries intents placed (backtest; live reads the venue)
+qkt bot positions --run demo --json         # net per symbol + each identity's legs
+qkt bot session status --run demo --json
+qkt bot session finish --run demo [--flatten] --json   # writes the report; --flatten closes everything first
 qkt bot session replay runs/demo --out runs/demo-replay --json
 ```
 

@@ -200,7 +200,9 @@ id = "histdata-m1-eurusd"
 tier = "pr"
 [[case.step]]
 run = ["data", "import", "{corpus}/histdata/EURUSD-ASCII-M1-2026-03.zip", "--as", "HISTDATA:EURUSD", "--data-root", "{root}"]
-contains = ["Format   histdata-m1 (matched)", "Clock    -05:00 (stated by preset histdata-m1)", "1 late: the source's first hour missing", "31979 rows → 31979 bars records"]
+# HistData's clock is London minus 5h since 2018-12-16 (measured 2026-10-20), so March's last two days are UTC-4 and
+# every weekly open falls at 17:00 New York; the fixed -05:00 the preset used made March 29 open late.
+contains = ["Format   histdata-m1 (matched)", "Clock    America/New_York until 2018-12-16T17:00, then Europe/London-5h (stated by preset histdata-m1)", "4 weekly opens, 4 at 17:00 New York", "31979 rows → 31979 bars records"]
 again_noop = true
 [[case.check]]
 kind = "bars_equal"
@@ -219,7 +221,8 @@ run = ["data", "import", "{corpus}/histdata/EURUSD-MT-M1-2026-03.zip", "--as", "
 contains = ["Format   histdata-mt (matched)"]
 [[case.step]]
 run = ["data", "compare", "HISTDATA:EURUSD", "--against", "HISTDATA_MT:EURUSD", "--from", "2026-03-01", "--to", "2026-03-31", "--data-root", "{root}"]
-contains = ["identical: 31680 bars matched, 0 only in the first, 0 only in the second, offset 0m"]
+# 60 more than under the old fixed -05:00: the hour of March 30 that now falls before March 31 00:00 UTC.
+contains = ["identical: 31740 bars matched, 0 only in the first, 0 only in the second, offset 0m"]
 [[case.check]]
 kind = "same_store"
 a = "bars/HISTDATA/EURUSD/1m"
@@ -419,11 +422,11 @@ id = "mt5-week-ambiguous-clock-then-stated"
 tier = "pr"
 [[case.step]]
 run = ["data", "import", "{corpus}/mt5/pholas_forex-forecast__EURUSD_M15_202102090000_202102160630.csv", "--as", "BROKER:EURUSD", "--data-root", "{root}"]
-exit = 1
-contains = ["the weekly opens do not single out one clock", "Fitting: UTC, ny-close"]
-writes_nothing = true
+# EURUSD opens at 17:00 New York, so of the candidate clocks only ny-close and those giving the same times over this
+# week fit (UTC used to "fit" by opening at 19:00); the file imports on ny-close without --tz.
+contains = ["Clock    ny-close (inferred: ny-close: 1 weekly opens, 1 at 17:00 New York", "Europe/Athens, +02:00 give the same times over these dates"]
 [[case.step]]
-run = ["data", "import", "{corpus}/mt5/pholas_forex-forecast__EURUSD_M15_202102090000_202102160630.csv", "--as", "BROKER:EURUSD", "--tz", "ny-close", "--data-root", "{root}"]
+run = ["data", "import", "{corpus}/mt5/pholas_forex-forecast__EURUSD_M15_202102090000_202102160630.csv", "--as", "BROKER:EURUSD", "--tz", "ny-close", "--on-overlap", "replace", "--data-root", "{root}"]
 contains = ["Clock    ny-close (stated by --tz)", "507 rows → 507 bars records"]
 [[case.check]]
 kind = "bars_equal"

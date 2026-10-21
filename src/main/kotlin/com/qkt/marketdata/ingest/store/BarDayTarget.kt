@@ -25,6 +25,7 @@ class BarDayTarget(
     private val timeframe: String,
     private val timeframeMs: Long,
     clock: Clock,
+    private val calendar: String? = null,
 ) : DayTarget {
     private val store = LocalBarStore(root, clock)
 
@@ -62,7 +63,7 @@ class BarDayTarget(
     override fun commit(days: Collection<LocalDate>) {
         if (days.isEmpty()) return
         ManifestLock(root).withLock {
-            for (day in days.sorted()) store.recordDay(source, symbol, timeframe, day)
+            for (day in days.sorted()) store.recordDay(source, symbol, timeframe, day, calendar)
         }
     }
 

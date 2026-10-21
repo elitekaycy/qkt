@@ -63,7 +63,7 @@ Here's the smallest meaningful strategy:
 STRATEGY hello VERSION 1
 
 SYMBOLS
-    btc = BACKTEST:BTCUSDT EVERY 1m
+    btc = BINANCE:BTCUSDT EVERY 1m
 
 RULES
     WHEN btc.close > 50000
@@ -74,7 +74,7 @@ Read it line by line:
 
 - `STRATEGY hello VERSION 1` — names this strategy `hello`, version 1
 - `SYMBOLS` — declares what we're listening to
-- `btc = BACKTEST:BTCUSDT EVERY 1m` — name the **BTCUSDT** market from the **BACKTEST** data source on **1-minute candles**, and refer to it as `btc` everywhere else
+- `btc = BINANCE:BTCUSDT EVERY 1m` — name the **BTCUSDT** market from **Binance** on **1-minute candles**, and refer to it as `btc` everywhere else
 - `RULES` — what to do
 - `WHEN btc.close > 50000` — every time a 1-minute candle closes with Bitcoin above $50,000…
 - `THEN LOG "Bitcoin is above 50k"` — …write a log line
@@ -97,7 +97,7 @@ Then create `strategies/momentum.qkt` with this content:
 STRATEGY momentum VERSION 1
 
 SYMBOLS
-    btc = BACKTEST:BTCUSDT EVERY 1m
+    btc = BINANCE:BTCUSDT EVERY 1m
 
 RULES
     # Buy when the 9-period moving average crosses above the 21-period one
@@ -116,7 +116,7 @@ Let's unpack what's new:
 - `ema(btc.close, 9)` — the **exponential moving average** of Bitcoin's close price over the last 9 candles. A moving average smooths short-term noise to reveal the trend.
 - `CROSSES ABOVE` — fires **once**, on the candle where the fast MA crosses above the slow one. This is called an "edge-triggered" condition — it doesn't keep firing while the fast MA stays above the slow one.
 - `POSITION.btc = 0` — only enter if we're flat. Without this guard, the rule wouldn't re-enter after closing (because of edge-trigger), but it also protects against accidental double-entries during testing.
-- `BUY btc SIZING 0.1` — buy 0.1 of Bitcoin (a synthetic quantity for the BACKTEST data source)
+- `BUY btc SIZING 0.1` — buy 0.1 of Bitcoin
 - `CLOSE btc` — exit any open position on Bitcoin
 - The `#` lines are **comments**, ignored by qkt (alongside `--` and `/* ... */`)
 
@@ -124,44 +124,44 @@ This is the classic momentum strategy. It catches sustained moves but loses smal
 
 ## Part 4 — Get data to test against
 
-Backtests need historical data. qkt has a tiny sample bundled in the repo:
+Backtests need historical data. `qkt data sample` fetches one month of real BTCUSDT one-minute bars from Binance's
+public archive (September 2026), checks the file's SHA-256 and imports it into qkt's data store, `~/.qkt/data`:
 
 ```bash
-ls data/sample/symbols/
+qkt data sample
 ```
 
-You should see a couple of symbol directories with CSV files. Two days of synthetic-but-realistic ticks.
-
-We'll use this sample for the tutorial. In real use you'd fetch a longer period via `./scripts/fetch-dukascopy.sh` — see the [data store recipe](../how-to/index.md) when you're ready.
+It reports `Wrote 30 day(s)`. Later you will bring your own data with `qkt data import`, the command `sample` runs
+for you: [Get data](../get-started/get-data.md) covers MetaTrader 5, Binance, Dukascopy and more.
 
 ## Part 5 — Run your first backtest
 
 ```bash
 qkt backtest strategies/momentum.qkt \
-    --data-root data/sample \
-    --from 2024-01-15 --to 2024-01-17 \
+    --from 2026-09-01 --to 2026-10-01 --bars \
     --report-dir out/tutorial-momentum
 ```
 
-The bundled sample covers this exact range; `ls data/sample/symbols/BTCUSDT/`
-shows the two daily partitions and their manifest.
-
-The command produces:
+`--bars` runs on the one-minute bars you imported. The command prints, among other lines:
 
 ```text
-qkt: tick coverage BTCUSDT 2/2 trading days
-Trades:           2
-Final realized:   12.00000000   (net of commission and swap)
-Final unrealized: 0.00000000
-Total PnL:        12.00000000
-Win rate:         1.00000000
+Result
+  Profit             -70.34 USD   (-0.7%)
+  Round trips        1025 closed, 289 won (28.2%)
+  Open at the end    none
+  Worst drop         9.0%    biggest fall from a peak
+  Worst day          2.3%
+  Sharpe ratio       -0.32     return per unit of risk
+  Costs              none modeled (no spread, commission or swap)
 ```
 
 A few things to notice:
 
-- **`Trades: 2`** — one entry fill and one exit fill. This is an execution smoke test, not a statistically useful sample.
-- **`Final realized: 12.00000000`** — the fixture's one closed position made 12 account-currency units under the optimistic paper fill model.
-- **`Win rate: 1.00000000`** — the one decided round trip closed in profit. Do not infer strategy quality from one trade.
+- **`Round trips 1025 closed`**: on 1-minute candles the averages cross often, so the strategy trades about 34
+  times a day. Every one of those trades would pay a spread in real life.
+- **`Profit -70.34 USD`**: close to flat before costs. With costs modeled (`--broker mt5-sim`) it would be worse.
+- **The numbers are deterministic**: run the command again and you get the same figures, on any machine. That is
+  what makes the next part, changing one thing and comparing, meaningful.
 
 Open the HTML report to see charts:
 
@@ -200,7 +200,8 @@ Try changing the strategy and re-running:
 WHEN ema(btc.close, 5) CROSSES ABOVE ema(btc.close, 13)
 ```
 
-Faster MAs = more trades = more friction. Usually worse, sometimes better.
+Change one thing, run the same command, compare the `Result` block. On this month the faster pair made fewer
+round trips (982) and finished slightly positive; on another month it may not.
 
 ### Add a stop-loss
 
@@ -229,7 +230,8 @@ RULES
     THEN BUY btc SIZING 0.1
 ```
 
-`LET` names an expression for reuse. `AND` combines conditions. This filter — only trade with the trend — improves most momentum strategies.
+`LET` names an expression for reuse. `AND` combines conditions. A trend filter is a common idea, not a guaranteed
+improvement: on this month it halved the trades and lost more (-8.9%). Testing that is what backtests are for.
 
 (`sma` is the simple moving average — same period semantics as `ema` but equally weighted. Both are in qkt's catalog.)
 
@@ -253,7 +255,7 @@ RULES
 
 - **`./gradlew installDist` failed** — usually JDK version mismatch. Run `java -version` and confirm 21. If older, install Temurin 21.
 - **`qkt: command not found`** — the `PATH` export only lasts for one shell. Re-run `export PATH="$PWD/build/install/qkt/bin:$PATH"`.
-- **`Symbol BTCUSDT not found`** — the data path is wrong. Check `data/sample/symbols/` and adjust `--data-root` to point at it.
+- **`--bars: no bars for BINANCE:BTCUSDT`** — the sample was not imported. Re-run `qkt data sample` from Part 4 and check it reports `Wrote 30 day(s)`.
 - **HTML report doesn't open** — find it at `out/tutorial-momentum/report.html` and open manually.
 
 Anything else? Check the [debug recipe](../how-to/debug-not-firing.md) or [open an issue](https://github.com/elitekaycy/qkt/issues/new).

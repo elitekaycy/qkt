@@ -26,7 +26,7 @@ interface HourDownloader {
  *
  * The dukascopy CDN is routinely slow — a single hour file can take 15-20s to start responding.
  * A backtest fetches 24 of them per day, so the client uses a generous read timeout and retries
- * a transient failure (timeout, IO, HTTP 429 or 5xx) with exponential backoff (1s, 2s, 4s, 8s, ...),
+ * a transient failure (timeout, IO, HTTP 202, 429 or 5xx) with exponential backoff (1s, 2s, 4s, 8s, ...),
  * honoring `Retry-After`, before failing over to the next host and only then giving up. Without
  * this, the default auto-fetch path fails on any slow response (okhttp's stock read timeout is
  * only 10s) or brief rate-limit window.
@@ -69,7 +69,8 @@ class OkHttpHourDownloader(
                     http.newCall(Request.Builder().url(url).build()).execute().use { resp ->
                         // No file for this hour: a fact, not a failure — never fail over on it.
                         if (resp.code == 404) return null
-                        if (resp.code == 429 || resp.code >= 500) {
+                        // 202: jetta holding the request (empty body, even for unknown symbols), not an empty hour.
+                        if (resp.code == 202 || resp.code == 429 || resp.code >= 500) {
                             throw RetryableFetch("HTTP ${resp.code}", retryAfterMs(resp))
                         }
                         check(resp.isSuccessful) { "dukascopy fetch failed: HTTP ${resp.code} for $url" }

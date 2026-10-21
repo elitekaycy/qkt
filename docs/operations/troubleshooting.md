@@ -138,7 +138,7 @@ This is the most common complaint. Six things, in order of how often they happen
 
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
-| `Symbol BTCUSDT not found` in backtest | Data store empty for that symbol | Populate via `./scripts/fetch-dukascopy.sh BTCUSDT <from> <to>` (or use `data/sample/` with `--data-root data/sample`) |
+| `no BTCUSDT tick data` or `incomplete bars` in a backtest | Data store empty for that symbol and window | Import a file: `qkt data import <file> --as <SYMBOL>` ([Get data](../get-started/get-data.md)); or fetch the quick start's sample with `qkt data sample`, then backtest `BINANCE:BTCUSDT` with `--bars` |
 | Backtest finishes instantly with 0 trades | Date range outside what's in the store | Check data coverage with `ls ~/.qkt/data/symbols/<SYMBOL>/` |
 | Manifest corrupted error | Partial write killed mid-fetch | `./gradlew rebuildManifest` or delete `~/.qkt/data/symbols/<SYMBOL>/manifest.json` and refetch |
 | Different P&L between two runs of the same backtest | This shouldn't happen (parity contract). | If it does, file an issue — that's a regression of the parity test |

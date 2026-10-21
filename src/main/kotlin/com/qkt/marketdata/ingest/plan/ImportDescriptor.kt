@@ -68,6 +68,8 @@ data class ImportDescriptor(
     val time: List<String> = emptyList(),
     val timeFormat: String? = null,
     val clock: String? = null,
+    /** The market calendar the series trades on (`nyse`): its holidays are closed days, not missing data. */
+    val calendar: String? = null,
     val timeframe: String? = null,
     val label: BarLabel? = null,
     val basis: PriceBasis? = null,
@@ -103,6 +105,7 @@ data class ImportDescriptor(
             time = other.time.ifEmpty { time },
             timeFormat = other.timeFormat ?: timeFormat,
             clock = other.clock ?: clock,
+            calendar = other.calendar ?: calendar,
             timeframe = other.timeframe ?: timeframe,
             label = other.label ?: label,
             basis = other.basis ?: basis,

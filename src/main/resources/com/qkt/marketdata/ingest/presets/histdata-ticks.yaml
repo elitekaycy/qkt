@@ -1,10 +1,12 @@
 id: "histdata-ticks"
-description: "HistData.com generic ASCII ticks (DAT_ASCII_*_T_*): EST all year (no DST), bid and ask"
+description: "HistData.com generic ASCII ticks (DAT_ASCII_*_T_*): New York time until 2018-12-16, London minus 5h since, bid and ask"
 kind: "ticks"
 delimiter: ","
 time: ["$0"]
 timeFormat: "yyyyMMdd HHmmssSSS"
-clock: "-05:00"
+# Measured 2026-10-20 against Dukascopy UTC data, 2016 to 2026 (HistData's FAQ says EST without DST, which fits no
+# summer): New York wall time until HistData's feed changed at the weekly open of 2018-12-16, London minus 5h since.
+clock: "America/New_York until 2018-12-16T17:00, then Europe/London-5h"
 fields:
   bid: "$1"
   ask: "$2"

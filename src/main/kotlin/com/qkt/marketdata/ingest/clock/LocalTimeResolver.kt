@@ -27,8 +27,9 @@ class LocalTimeResolver(
         local: LocalDateTime,
         where: InputLine,
     ): Long {
-        val wall = local.minusHours(clock.shiftHours)
-        val offsets = clock.rules.getValidOffsets(wall)
+        val wall = local.minusHours(clock.shiftHoursAt(local))
+        val rules = clock.rulesAt(local)
+        val offsets = rules.getValidOffsets(wall)
         val previous = last
         last = wall
         if (offsets.size == 1) {
@@ -36,7 +37,7 @@ class LocalTimeResolver(
             return wall.toInstant(offsets[0]).toEpochMilli()
         }
         val transition =
-            clock.rules.getTransition(wall)
+            rules.getTransition(wall)
                 ?: error("no DST transition for $wall on ${clock.spec} although it has ${offsets.size} offsets")
         if (offsets.isEmpty()) {
             throw ImportRefusal(

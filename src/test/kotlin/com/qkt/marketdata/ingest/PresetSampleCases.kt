@@ -32,6 +32,19 @@ object PresetSampleCases {
                 "histdata-m1",
                 "1483340400000,1.05155000,1.05197000,1.05155000,1.05190000,$Z",
             ),
+            // A summer file: HistData 2026-09-14 06:00 is Dukascopy's 10:00Z (its clock is London-5h since 2018-12-16).
+            s(
+                "DAT_ASCII_EURUSD_M1_202609.csv",
+                "HISTDATA:EURUSD",
+                "histdata-m1",
+                "1789380000000,1.15415000,1.15416000,1.15405000,1.15412000,$Z",
+            ),
+            s(
+                "EURUSD_M1.csv",
+                "FOREXSB:EURUSD",
+                "forexsb-mt-csv",
+                "1784063100000,1.14157000,1.14190000,1.14156000,1.14180000,18.00000000",
+            ),
             s(
                 "DAT_ASCII_EURUSD_T_201912.csv",
                 "EURUSD",

@@ -29,6 +29,10 @@ def main() -> int:
     p.add_argument("--slow", type=int, default=20)
     p.add_argument("--lots", type=float, default=0.1)
     p.add_argument("--max-bars", type=int, default=0, help="stop after this many bars (0: to the end)")
+    p.add_argument("--sl", default="pct:1", help="stop: by:<distance>, pct:<percent> or a price")
+    p.add_argument("--tp", default="rr:2", help="target: rr:<reward/risk>, by:<distance>, pct:<percent> or a price")
+    p.add_argument("--keep-open", action="store_true", help="leave the session running for other callers")
+    p.add_argument("--verbose", action="store_true", help="print every fill, exit and rejection as it happens")
     a = p.parse_args()
 
     s = Session.find(run=a.run, state_dir=a.state_dir)
@@ -37,7 +41,7 @@ def main() -> int:
     seen = 0
     while True:
         bar = s.next(a.symbol)
-        for e in bar.get("events", []):
+        for e in bar.get("events", []) if a.verbose else []:
             print(json.dumps({"event": e["kind"], "side": e["side"], "price": e["price"], "exit": e["exitReason"]}))
         if bar["type"] == "end" or (a.max_bars and seen >= a.max_bars):
             break
@@ -52,12 +56,12 @@ def main() -> int:
             if side is not None:
                 s.close(a.identity, a.symbol)
             order = s.buy if want == "long" else s.sell
-            order(a.identity, a.symbol, a.lots, sl="by:5", tp="rr:2")
+            order(a.identity, a.symbol, a.lots, sl=a.sl, tp=a.tp)
             side = want
-    intents = s.intents()
-    done = s.finish(flatten=True)
+    intents = [i for i in s.intents() if i["identity"] == a.identity]
+    report = None if a.keep_open else s.finish(flatten=True).get("reportDir")
     filled = sum(1 for i in intents if i["state"] == "filled")
-    print(json.dumps({"bars": seen, "intents": len(intents), "filled": filled, "report": done.get("reportDir")}))
+    print(json.dumps({"bars": seen, "intents": len(intents), "filled": filled, "report": report}))
     return 0
 
 

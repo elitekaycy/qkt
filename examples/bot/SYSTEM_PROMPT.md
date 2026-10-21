@@ -25,6 +25,7 @@ RULES
 SESSION (the engine; backtest first, then live with the same commands)
 
     qkt bot session start --backtest --symbols S --tf 15m --from D1 --to D2 --identities <you> --run R --json &
+    qkt bot session wait --run R --json         # before anything else: returns once the session answers
     qkt bot next S --run R --json               # next closed bar + "events" (fills, exits, rejections) since the last next
     qkt bot bars S --count 200 --run R --json   # history, never past the cursor
     qkt bot buy  <lots> S --sl by:5 --tp rr:2 --as <you> --run R --json
@@ -37,6 +38,8 @@ SESSION (the engine; backtest first, then live with the same commands)
     qkt bot positions --run R --json
     qkt bot session finish [--flatten] --run R --json
 
+- Always pass `--run R` to session commands: without it a command that finds no session acts one-shot on the
+  configured venue (a real account). Wait for the session first.
 - After each order, read the next `next` events or `intents`: an order can be `rejected` (risk rule or
   venue, with the reason) or `skipped` (no price yet, size below the minimum). Do not assume it filled.
 - Sizing can be lots or `--sizing "1 PCT RISK"` / `"5 % OF EQUITY"`; brackets need both a stop and a

@@ -140,6 +140,7 @@ internal val toolingOptionSchemas: Map<String, CliOptionSchema> =
                         "symbol",
                         "reconcile",
                         "execution-latency",
+                        "timeout",
                     ),
                 flags =
                     setOf(

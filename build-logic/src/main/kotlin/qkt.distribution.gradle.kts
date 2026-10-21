@@ -16,7 +16,25 @@ distributions {
                 into("share/editor")
                 exclude("**/node_modules/**")
             }
+            // The bot examples the "Trade from your code" docs run: the Python client, the agent loop, the prompt.
+            from(rootProject.file("examples/bot")) {
+                into("share/examples/bot")
+                exclude("**/__pycache__/**")
+            }
         }
+    }
+}
+
+// The self-contained builds ship their own Java in runtime/. The stock launcher only reads JAVA_HOME and PATH,
+// so unpacking the archive by hand failed with no Java installed (#1471) and ran on whatever older Java JAVA_HOME
+// named. Prefer the bundled runtime whenever it is there.
+tasks.named<CreateStartScripts>("startScripts") {
+    doLast {
+        val anchor = "# Determine the Java command to use to start the JVM.\n"
+        val text = unixScript.readText()
+        check(anchor in text) { "the start script changed shape: the bundled-runtime hook was not applied" }
+        val hook = "if [ -x \"\$APP_HOME/runtime/bin/java\" ] ; then\n    JAVA_HOME=\$APP_HOME/runtime\nfi\n\n"
+        unixScript.writeText(text.replaceFirst(anchor, hook + anchor))
     }
 }
 

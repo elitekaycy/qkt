@@ -28,7 +28,7 @@ import java.time.ZoneOffset
  * store is preferred when a backtest only needs bars at a known timeframe.
  */
 class LocalBarStore(
-    private val root: Path = DataRoot.resolve(),
+    val root: Path = DataRoot.resolve(),
     private val clock: Clock = SystemClock(),
 ) {
     fun dayFile(
@@ -136,11 +136,12 @@ class LocalBarStore(
         symbol: String,
         timeframe: String,
         day: LocalDate,
+        calendar: String? = null,
     ) = ManifestLock(root).withLock {
         val existing = readManifest(broker, symbol, timeframe)
         val newRange = DayRange(day.toString(), day.toString())
         val merged = coalesce(existing.ranges, newRange)
-        writeManifest(existing.copy(ranges = merged))
+        writeManifest(existing.copy(ranges = merged, calendar = calendar ?: existing.calendar))
     }
 
     /**

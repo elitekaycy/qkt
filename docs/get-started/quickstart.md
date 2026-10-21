@@ -1,80 +1,101 @@
 # Quickstart
 
-Five minutes from clone to a running paper-traded strategy. The full canonical version lives at [`QUICKSTART.md`](https://github.com/elitekaycy/qkt/blob/main/QUICKSTART.md) at the repo root — that file is the source of truth and gets updated with every release.
+Ten minutes from download to a backtest report, then the same strategy paper-traded on live prices. qkt fetches a
+month of real Bitcoin prices to practise on, so nothing here needs an account.
 
-## 1. Build qkt
+## 1. Install qkt
 
-Requires JDK 21+.
+Download `qkt-<version>-linux-x64.tar.gz` from the [latest release](https://github.com/elitekaycy/qkt/releases/latest).
+It bundles Java, so you need nothing else:
 
 ```bash
-git clone https://github.com/elitekaycy/qkt
-cd qkt
-./gradlew installDist
-export PATH="$PWD/build/install/qkt/bin:$PATH"
+tar xzf qkt-*-linux-x64.tar.gz
+export PATH="$PWD/qkt/bin:$PATH"
 qkt --version
 ```
 
-You should see `qkt <version> (<commit>) built <time>`, with the version in the repo's `VERSION` file.
+You should see `qkt <version> (<commit>) built <time>`. Windows, Docker and building from source are in
+[Install](install.md).
 
-## 2. Write your first strategy
+## 2. Get the sample data
 
-Create `momentum.qkt` in your working dir:
+```bash
+qkt data sample
+```
 
-```qkt title="momentum.qkt"
+This downloads one month of BTCUSDT one-minute bars (September 2026) from Binance's public archive, checks the file
+against its published SHA-256 so every machine gets the same bytes, and imports it with `qkt data import` into qkt's
+data store, `~/.qkt/data`. It reports `Wrote 30 day(s)` and the data's terms. It also notes that `BINANCE:BTCUSDT`
+has no instrument spec: that only matters once you model costs, in [Instruments](../instruments/index.md).
+
+## 3. Write your first strategy
+
+```bash
+cat > momentum.qkt <<'QKT'
 STRATEGY momentum VERSION 1
-
 SYMBOLS
-    btc = BACKTEST:BTCUSDT EVERY 1m
-
+    btc = BINANCE:BTCUSDT EVERY 15m
 RULES
-    WHEN btc.close > 100
+    WHEN ema(btc.close, 9) CROSSES ABOVE ema(btc.close, 21)
+     AND POSITION.btc = 0
     THEN BUY btc SIZING 0.1
-         BRACKET {
-           STOP_LOSS BY 2 PCT,
-           TAKE_PROFIT BY 4 PCT
-         }
+     BRACKET { STOP_LOSS BY 1.0 PCT, TAKE_PROFIT BY 2.0 PCT }
+QKT
+qkt parse momentum.qkt
 ```
 
-The `BACKTEST:` prefix means the local historical data store: backtests read it, and it has no live prices.
+`btc` is a 15-minute stream of `BINANCE:BTCUSDT`. In a backtest that name reads the bars you imported; live, it
+is TradingView's name for the pair, so the same file runs in both.
 
-## 3. Backtest it
+## 4. Backtest it
 
 ```bash
-qkt backtest momentum.qkt \
-    --data-root data/sample \
-    --from 2024-01-15 --to 2024-01-17 \
-    --report-dir ./out
+qkt backtest momentum.qkt --from 2026-09-01 --to 2026-10-01 --bars --report-dir ./out
 ```
 
-Outputs:
+`--bars` runs on the one-minute bars, filling stops and targets at their levels inside each bar. The run is
+deterministic: the same data and strategy give the same numbers on every machine, so you should see
 
-- `out/result.json` — machine-readable metrics
-- `out/equity_global.csv`, `out/trades.csv` — raw market/trade data
-- `out/financing.csv` — swap paid and its signed P&L impact; add `netPnlImpact` to trade realized values when reconciling CSV totals
-- `out/report.html` — single self-contained HTML with equity curve, drawdown table, Monte Carlo fan, per-trade risk
+```text
+Result
+  Profit             -622.01 USD   (-6.2%)
+  Round trips        25 closed, 6 won (24.0%)
+```
 
-Open `out/report.html` in a browser.
+and these files in `./out` (without `--report-dir` they go to `~/.qkt/runs/<time>-momentum`):
 
-## 4. Run it as a daemon
+- `report.html`: one self-contained page with the equity curve, drawdowns, a Monte Carlo fan and every trade
+- `result.json`: the metrics, for tools
+- `trades.csv`, `orders.jsonl`, `equity_global.csv`: every trade, order and equity point
+- `financing.csv`: swap paid and its P&L impact
 
-Paper trading runs the same rules on live prices, which the `BACKTEST:` stream does not have
-(qkt refuses to deploy it and names the symbol to use). Make a copy on TradingView's name for the
-pair, the daemon's default live feed:
+Open `out/report.html` in a browser. The figures are hypothetical: fills at the bar's price, no costs. Add
+`--broker mt5-sim` for spread and slippage.
+
+## 5. Change something and run again
+
+Edit the strategy, for example `ema(btc.close, 20)` and `ema(btc.close, 50)`, and run the same command with
+`--report-dir ./out2`. Compare the two `Result` blocks, or the two `report.html` pages. Because runs are
+deterministic, any difference comes from your change.
+
+## 6. Paper-trade it on live prices
 
 ```bash
-sed 's/BACKTEST:BTCUSDT/BINANCE:BTCUSDT/' momentum.qkt > momentum-paper.qkt
+qkt run momentum.qkt
 ```
 
-Then start the daemon and deploy the copy:
+This runs the strategy in the foreground on live TradingView prices with paper fills. It first loads recent
+history to warm up the EMAs, then trades as bars close; Ctrl-C stops it. To keep it running in the background,
+use the daemon:
 
 ```bash
 qkt daemon &                                  # starts the control plane
-qkt deploy momentum-paper.qkt --as momentum
+qkt deploy momentum.qkt --as momentum
 qkt list                                      # shows momentum running
 qkt status momentum                           # current PnL, positions, last trade
 qkt logs momentum --follow                    # live log stream
-qkt resync momentum-paper.qkt --as momentum --dry-run # validate an edited file
-qkt resync momentum-paper.qkt --as momentum   # replace only this running name
+qkt resync momentum.qkt --as momentum --dry-run # validate an edited file
+qkt resync momentum.qkt --as momentum         # replace only this running name
 qkt stop momentum
 qkt daemon stop
 ```
@@ -83,6 +104,8 @@ State (logs, control port) lives at `~/.local/state/qkt/` by default; override w
 
 ## Next
 
-- [Deploy paper](deploy-paper.md) — go deeper on paper trading
-- [Deploy MT5](deploy-mt5.md) — connect to a real broker
-- [Concepts: architecture](../concepts/architecture.md) — what's actually happening when you `qkt deploy`
+- [Get data](get-data.md): your own data from MetaTrader 5, HistData, Dukascopy, Binance and others
+- [Trade from your code](../trade-from-code/index.md): drive a session from an AI agent, a script or any language
+- [Deploy paper](deploy-paper.md): go deeper on paper trading
+- [Deploy MT5](deploy-mt5.md): connect to a real broker
+- [Concepts: architecture](../concepts/architecture.md): what happens when you `qkt deploy`

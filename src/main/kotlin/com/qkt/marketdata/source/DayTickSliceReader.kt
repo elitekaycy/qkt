@@ -19,6 +19,13 @@ internal class DayTickSliceReader(
     // --tick-fills replay does. A null value marks a day with no usable binary file.
     private val sliceFeeds = mutableMapOf<Pair<String, LocalDate>, com.qkt.marketdata.BinaryTickFeed?>()
 
+    // The text (csv) days' cursors; only the newest is kept, since a replay moves forward day by day.
+    private val textDays =
+        object : LinkedHashMap<Pair<String, LocalDate>, CsvDaySlices>(4, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Pair<String, LocalDate>, CsvDaySlices>?) =
+                (size > 1).also { if (it) eldest?.value?.close() }
+        }
+
     fun tickSlice(
         symbol: String,
         fromMs: Long,
@@ -46,16 +53,10 @@ internal class DayTickSliceReader(
                         yield(if (t.symbol == symbol) t else t.copy(symbol = symbol))
                     }
                 } else {
-                    // Non-binary day (csv): fall back to a filtered scan; forge data is binary.
+                    // A text day cannot seek: one open cursor per day serves the replay's in-order slices.
                     val path = store.dayFile(storeKey, day) ?: continue
-                    openDayFeed(path).use { f ->
-                        while (true) {
-                            val t = f.next() ?: break
-                            if (t.timestamp < fromMs) continue
-                            if (t.timestamp >= toMs) break
-                            yield(if (t.symbol == symbol) t else t.copy(symbol = symbol))
-                        }
-                    }
+                    val text = textDays.getOrPut(storeKey to day) { CsvDaySlices { openDayFeed(path) } }
+                    for (t in text.slice(fromMs, toMs)) yield(if (t.symbol == symbol) t else t.copy(symbol = symbol))
                 }
             }
         }
