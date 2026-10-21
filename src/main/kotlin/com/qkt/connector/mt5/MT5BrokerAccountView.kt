@@ -48,9 +48,10 @@ internal class MT5BrokerAccountView(
             marginFree = acct.marginFree,
             openProfit = acct.profit,
             marginLevel = acct.marginLevel,
-            login = acct.login,
+            login = acct.login.toString(),
             server = acct.server,
             name = acct.name,
+            venue = MT5VenueDescription.identity(profile.name, acct.login.toString(), acct.server),
         )
     }
 

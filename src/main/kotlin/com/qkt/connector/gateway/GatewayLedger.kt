@@ -35,6 +35,9 @@ internal class GatewayLedger(
     /** Whether a strategy here owns order [clientOrderId]. */
     fun owns(clientOrderId: String): Boolean = owners.containsKey(clientOrderId)
 
+    /** The strategy that owns order [clientOrderId], or null when none here does (any more). */
+    fun ownerOf(clientOrderId: String): String? = owners[clientOrderId]
+
     /**
      * [strategy] sent (or a restart restored) [clientOrderId] for [quantity], [alreadyFilled] of it booked,
      * through [sender], the broker its events go back to.

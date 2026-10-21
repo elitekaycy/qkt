@@ -81,8 +81,11 @@ internal class GatewayDirectReads(
     fun deals(
         fromMs: Long,
         toMs: Long,
-    ): List<DirectDeal> =
-        client.deals(fromMs, toMs).map {
+    ): List<DirectDeal> = client.deals(fromMs, toMs).map(::deal)
+
+    /** One venue execution as `qkt bot` prints it: VGP v1 states no position, leg or realized P&L for it. */
+    fun deal(fill: WireFill): DirectDeal =
+        fill.let {
             DirectDeal(
                 dealTicket = it.fillId,
                 positionTicket = null,

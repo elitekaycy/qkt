@@ -81,7 +81,7 @@ class MT5BrokerStateTest {
         assertThat(state.marginFree).isEqualByComparingTo("7135.57")
         assertThat(state.openProfit).isEqualByComparingTo("-147.51")
         assertThat(state.marginLevel).isEqualByComparingTo("1419.03")
-        assertThat(state.login).isEqualTo(435898347L)
+        assertThat(state.login).isEqualTo("435898347")
         assertThat(state.server).isEqualTo("Exness-MT5Trial9")
         assertThat(state.name).isEqualTo("qkt-hedge-straddle")
     }

@@ -65,19 +65,30 @@ class BrokerStatePoller(
      * this type (#1073); the session supplies a reader that snapshots on the engine thread.
      */
     private val strategyEquity: () -> List<InsightsEnvelope> = { emptyList() },
+    /** The venue and instrument facts each envelope states ([InsightsVenues]). */
+    private val venues: InsightsVenues = InsightsVenues(),
+    /** Entry brackets and risk by position id, from the session's fills; null when there are none. */
+    private val fills: InsightsFillFacts? = null,
 ) : AutoCloseable {
     private val log = LoggerFactory.getLogger(BrokerStatePoller::class.java)
     private val running = AtomicBoolean(false)
     private var thread: Thread? = null
     private var lastClosedPollMs: Long? = null
 
-    /**
-     * Newest deal timestamp seen per venue account (`login@server`); the next fetch starts
-     * just after it. Keyed by account, not broker: many profile-brokers can share one MT5
-     * login, and deal history is account-wide — per-broker fetches would return the same
-     * deals N times and emit N duplicate envelopes under different profile prefixes.
-     */
-    private val lastDealTs = mutableMapOf<String, Long>()
+    private val cycle =
+        VenueStateCycle(
+            this,
+            sink::offer,
+            attribution,
+            deployedIds,
+            venues,
+            fills,
+            emitDeals,
+            backfillDays,
+            dealGraceMs,
+            sharedDeals,
+            clock,
+        )
     private val consecutiveFailures = mutableMapOf<Broker, Int>()
 
     /** Starts the polling thread. Idempotent — a second call is a no-op. */
@@ -126,7 +137,7 @@ class BrokerStatePoller(
         // account owns the fetch, the rest skip it (deal history is account-wide).
         val dealsFetched = mutableSetOf<String>()
         for (broker in brokers) {
-            runCatching { pollBroker(broker, dealsFetched) }
+            runCatching { cycle.poll(broker, dealsFetched) }
                 .onSuccess { consecutiveFailures[broker] = 0 }
                 .onFailure { e ->
                     val failures = (consecutiveFailures[broker] ?: 0) + 1
@@ -138,117 +149,11 @@ class BrokerStatePoller(
         }
     }
 
-    private fun pollBroker(
-        broker: Broker,
-        dealsFetched: MutableSet<String>,
-    ) {
-        val now = clock()
-        // No account snapshot means no venue to report on (paper) or an unreadable
-        // gateway — skip the whole broker rather than emit positions without context.
-        val account = broker.accountState() ?: return
-        sink.offer(InsightsTranslate.stateAccount(now, account))
-
-        val tickets = broker.positionTickets()
-        val deployed = deployedIds()
-        sink.offer(
-            InsightsTranslate.statePositions(
-                ts = now,
-                broker = account.broker,
-                positions =
-                    tickets.map { t ->
-                        StatePosition(
-                            ticket = t.ticket,
-                            symbol = t.symbol,
-                            side = t.side.name,
-                            qty = t.qty,
-                            entryPrice = t.entryPrice,
-                            currentPrice = t.currentPrice,
-                            profit = t.profit,
-                            swap = t.swap,
-                            openedAt = t.openedAt,
-                            strategyId = attribution.ownerOf(t.ticket) ?: attribution.fromComment(t.comment, deployed),
-                            stopLoss = t.stopLoss,
-                            takeProfit = t.takeProfit,
-                            requestedStopLoss = t.requestedStopLoss,
-                            requestedTakeProfit = t.requestedTakeProfit,
-                            magic = t.magic,
-                            clientOrderId = t.clientOrderId,
-                        )
-                    },
-            ),
-        )
-
-        sink.offer(
-            InsightsTranslate.stateOrders(
-                ts = now,
-                broker = account.broker,
-                orders =
-                    broker.pendingOrders().map { o ->
-                        StatePendingOrder(
-                            ticket = o.ticket,
-                            symbol = o.symbol,
-                            side = o.side.name,
-                            orderType = o.orderType,
-                            qty = o.qty,
-                            price = o.price,
-                            stopLoss = o.stopLoss,
-                            takeProfit = o.takeProfit,
-                            expiresAt = o.expiresAt,
-                            createdAt = o.createdAt,
-                            magic = o.magic,
-                            clientOrderId = o.clientOrderId,
-                            strategyId = attribution.ownerOf(o.ticket) ?: attribution.fromComment(o.comment, deployed),
-                        )
-                    },
-            ),
-        )
-
-        val accountKey = "${account.login}@${account.server}"
-        if (emitDeals && dealsFetched.add(accountKey)) {
-            var newest = lastDealTs.getOrPut(accountKey) { now - backfillDays * DAY_MS }
-            val from = newest + 1
-            val fetched = sharedDeals.deals(this, accountKey, from, now) { f, t -> broker.deals(f, t) }
-            for (d in fetched.filter { it.ts in from..now }) {
-                val strategyId =
-                    attribution.ownerOf(d.positionTicket ?: d.dealTicket)
-                        ?: attribution.fromComment(d.comment, deployed)
-                // The venue overwrites a closing deal's comment ("[tp 4332.689]"), so a close
-                // fetched after a restart or during backfill has no comment to attribute by.
-                // Its opening deal on the same position does; remember that owner so the
-                // close that follows in this very fetch resolves through the ticket map.
-                if (strategyId != null && d.entry == "IN") attribution.record(d.positionTicket, strategyId)
-                // Attribution is metadata, never a gate (#1143). A close whose opening deal this
-                // process never saw (restart, retired strategy, SL/TP comment rewrite, manual
-                // close) is still a real deal on the account: send it with no strategy and let
-                // the collector inherit the owner from the stored opening deal on the same
-                // position. Dropping it here lost those closes permanently, because the deal
-                // watermark moves past it and it is never fetched again.
-                sink.offer(InsightsTranslate.brokerDeal(d, strategyId))
-                if (d.ts > newest) newest = d.ts
-            }
-            // A quiet account must still advance its watermark, or the whole backfill
-            // window is re-fetched every cycle forever. Found deals past the grace keep
-            // the larger value so nothing already seen is re-fetched.
-            lastDealTs[accountKey] = maxOf(newest, now - dealGraceMs)
-        }
-
-        // Prune only after the deal fetch: a position that closed since the last cycle
-        // is already gone from [tickets], and its closing deal arrives in this same
-        // cycle — pruning first would drop the owner the deal needs. The venue
-        // overwrites SL/TP close comments ("[tp 4332.689]"), so the map is the only
-        // attribution source for those.
-        attribution.retainAll(tickets.map { it.ticket }.toSet())
-    }
-
     /** Stops the polling thread, waiting up to two seconds for the current cycle. */
     override fun close() {
         if (!running.compareAndSet(true, false)) return
         thread?.interrupt()
         thread?.join(2_000)
         thread = null
-    }
-
-    private companion object {
-        const val DAY_MS: Long = 86_400_000L
     }
 }

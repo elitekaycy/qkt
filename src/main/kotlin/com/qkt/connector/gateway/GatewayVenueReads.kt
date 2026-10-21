@@ -1,0 +1,151 @@
+package com.qkt.connector.gateway
+
+import com.qkt.accounting.CostKind
+import com.qkt.broker.BrokerAccountState
+import com.qkt.broker.BrokerDeal
+import com.qkt.broker.BrokerPendingOrder
+import com.qkt.broker.BrokerPositionTicket
+import com.qkt.broker.CloseReason
+import com.qkt.broker.VenueIdentity
+import com.qkt.broker.VenueLeg
+import com.qkt.common.Side
+import com.qkt.positions.PositionProvider
+import java.math.BigDecimal
+
+/**
+ * A gateway account's venue truth in the engine's terms ([com.qkt.broker.Broker.accountState] and the
+ * reads beside it), mapped once by [GatewayDirectReads] and given qkt symbols and the facts VGP v1 does not
+ * carry. A netting position's ticket is qkt's id for it ([VenueLeg]: a new one each time the account's
+ * position crosses zero); a deal's leg, position and realized P&L are what qkt's accounting booked for that
+ * fill ([GatewayFillLegs]). A deal qkt did not book in this process (placed elsewhere, or before a restart)
+ * has no realized P&L to state and is left out; one younger than [accountingGraceMs] may still be on its
+ * way to the books, so it and every deal after it wait for the next read.
+ */
+internal class GatewayVenueReads(
+    private val venue: VenueIdentity,
+    private val reads: GatewayDirectReads,
+    private val client: GatewayClient,
+    private val symbols: GatewaySymbols,
+    private val legs: GatewayFillLegs,
+    private val held: PositionProvider,
+    private val strategy: String?,
+    private val ownerOf: (String) -> String?,
+    private val accountingGraceMs: Long = 60_000L,
+) {
+    fun account(): BrokerAccountState {
+        val a = reads.account()
+        return BrokerAccountState(
+            venue.label,
+            a.currency,
+            a.balance,
+            a.equity,
+            a.margin,
+            a.freeMargin,
+            a.openProfit,
+            a.marginLevel,
+            login = a.login,
+            server = "",
+            name = venue.label,
+            venue = venue,
+        )
+    }
+
+    fun positions(): List<BrokerPositionTicket> =
+        reads.positions().map { p ->
+            val symbol = symbols.qkt(p.symbol)
+            val netting = p.ticket == p.symbol
+            val booked = legs.open(symbol)
+            val mine = held.positionFor(symbol)?.takeIf { it.quantity.abs().compareTo(p.lots) == 0 }
+            val ticket =
+                when {
+                    !netting -> p.ticket
+                    else -> booked?.positionId ?: mine?.let(VenueLeg::idOf) ?: "$symbol#${p.openedAtMs}"
+                }
+            BrokerPositionTicket(
+                ticket,
+                symbol,
+                Side.valueOf(p.side),
+                p.lots,
+                p.entry,
+                null,
+                null,
+                null,
+                p.openedAtMs,
+                null,
+                strategyId = booked?.owners?.singleOrNull() ?: strategy?.takeIf { mine != null },
+            )
+        }
+
+    fun pendingOrders(): List<BrokerPendingOrder> =
+        reads.pendingOrders().map { o ->
+            BrokerPendingOrder(
+                o.ticket,
+                symbols.qkt(o.symbol),
+                if (o.type.startsWith("buy")) Side.BUY else Side.SELL,
+                o.type,
+                o.lots,
+                o.price,
+                comment = o.comment,
+                clientOrderId = o.ticket,
+                strategyId = ownerOf(o.ticket),
+            )
+        }
+
+    fun deals(
+        fromMs: Long,
+        toMs: Long,
+        nowMs: Long,
+    ): List<BrokerDeal> {
+        val taken = HashMap<String, Int>()
+        val out = mutableListOf<BrokerDeal>()
+        for (fill in client.deals(fromMs, toMs)) {
+            val engineId = GatewayClientIds.engineId(fill.clientOrderId)
+            val index = taken.merge("$engineId@${fill.time}", 1, Int::plus)?.minus(1) ?: 0
+            val fact = legs.of(engineId, fill.time).getOrNull(index)
+            if (fact == null) {
+                if (fill.time > nowMs - accountingGraceMs) break
+                continue
+            }
+            out += deal(fill, engineId, fact)
+        }
+        return out
+    }
+
+    private fun deal(
+        fill: WireFill,
+        engineId: String,
+        fact: GatewayLegFact,
+    ): BrokerDeal {
+        val base = reads.deal(fill)
+        val costs = WireValues.costsOf(fill.costs, fill.time)
+
+        fun paid(vararg kinds: CostKind): BigDecimal? =
+            costs.filter { it.kind in kinds }.takeIf { it.isNotEmpty() }?.fold(BigDecimal.ZERO) { s, c ->
+                s - c.amount.amount
+            }
+        return BrokerDeal(
+            broker = venue.label,
+            dealTicket = base.dealTicket,
+            positionTicket = fact.leg.positionId,
+            orderTicket = fill.venueOrderId,
+            symbol = symbols.qkt(fill.symbol),
+            side = Side.valueOf(base.side),
+            entry = fact.leg.entry,
+            qty = base.lots,
+            price = base.price,
+            profit = fact.grossRealized,
+            commission = paid(CostKind.COMMISSION) ?: BigDecimal.ZERO,
+            swap = paid(CostKind.SWAP, CostKind.FUNDING) ?: BigDecimal.ZERO,
+            magic = null,
+            comment = fill.clientOrderId,
+            ts = fill.time,
+            fee = paid(CostKind.EXCHANGE_FEE, CostKind.TAX),
+            clientOrderId = fill.clientOrderId,
+            closeReason = CloseReason.of(null, engineId).takeIf { fact.leg.entry != "IN" },
+            costs = costs,
+            strategyId = fact.strategyId,
+            realizedSource = "engine",
+            nextPositionTicket = fact.leg.nextPositionId,
+        )
+    }
+}

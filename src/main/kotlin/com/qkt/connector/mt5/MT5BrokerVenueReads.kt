@@ -42,6 +42,10 @@ internal class MT5BrokerVenueReads(
                 ts = d.timeMs,
                 fee = d.fee,
                 clientOrderId = d.clientOrderId,
+                // Only a closing deal (entry OUT, INOUT or OUT_BY) has a reason to close.
+                closeReason =
+                    MT5VenueDescription.closeReason(d.reason, d.clientOrderId ?: d.comment).takeIf { d.entry != 0 },
+                realizedSource = "venue",
             )
         }
     }

@@ -84,7 +84,7 @@ class BrokerStatePollerSharedAccountTest : BrokerStatePollerFixture() {
         val now = 1_700_000_000_000L
         val first = FakeBroker()
         val second = FakeBroker()
-        second.account = second.account!!.copy(login = 999_111_222L)
+        second.account = second.account!!.copy(login = "999111222")
         val poller =
             BrokerStatePoller(
                 brokers = listOf(first, second),

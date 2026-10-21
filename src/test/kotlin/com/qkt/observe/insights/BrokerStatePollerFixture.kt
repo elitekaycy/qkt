@@ -43,7 +43,7 @@ abstract class BrokerStatePollerFixture {
                 marginFree = null,
                 openProfit = BigDecimal("-147.51"),
                 marginLevel = null,
-                login = 435898347L,
+                login = "435898347",
                 server = "Exness-MT5Trial9",
                 name = "qkt-hedge-straddle",
             )
