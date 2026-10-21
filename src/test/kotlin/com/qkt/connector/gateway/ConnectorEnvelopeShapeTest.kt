@@ -113,7 +113,10 @@ internal class ConnectorEnvelopeShapeTest : GatewayHarness() {
 
     private fun vgpBroker(): GatewayBroker {
         val strategy = Strategy()
-        val broker = broker(session(setOf("a")), strategy, "a")
+        val session = session(setOf("a"))
+        val broker = broker(session, strategy, "a")
+        session.legs.booked("dsl-a-1", "f-1")
+        session.legs.booked("dsl-a-2-tp", "f-2")
         val open = Position(symbol, BigDecimal("0.2"), BigDecimal("640"), NOW - 2_000)
         val after = Position(symbol, BigDecimal("0.1"), BigDecimal("640"), NOW - 2_000)
         fake.venue.deals += WireFill("dsl-a-1.k", "v-1", "f-1", code, "buy", "0.2", "640", NOW - 2_000)

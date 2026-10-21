@@ -18,6 +18,7 @@ internal class GatewayLedger(
     private val routing: GatewayRouting,
     private val lock: Any,
     private val fetchDeals: (String) -> Unit = {},
+    private val legs: GatewayFillLegs = GatewayFillLegs(),
 ) {
     private val owners = ConcurrentHashMap<String, String>()
     private val byEngineId = ConcurrentHashMap<String, String>()
@@ -88,7 +89,14 @@ internal class GatewayLedger(
     /** A `fill`, and the order's end when it was waiting for this fill. */
     fun onFill(fill: WireFill) {
         if (!owns(fill.clientOrderId)) return
-        synchronized(lock) { translator.fill(fill).forEach(::route) }
+        synchronized(lock) {
+            val events = translator.fill(fill)
+            // Noted before routing, so qkt's accounting of the fill always finds it ([GatewayFillLegs]).
+            if (events.any { it is BrokerEvent.OrderFilled || it is BrokerEvent.OrderPartiallyFilled }) {
+                legs.booked(GatewayClientIds.engineId(fill.clientOrderId), fill.fillId)
+            }
+            events.forEach(::route)
+        }
     }
 
     /** Order [clientOrderId] was refused before the gateway placed it: nothing more of it will come. */

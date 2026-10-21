@@ -17,7 +17,7 @@ import java.math.BigDecimal
  * reads beside it), mapped once by [GatewayDirectReads] and given qkt symbols and the facts VGP v1 does not
  * carry. A netting position's ticket is qkt's id for it ([VenueLeg]: a new one each time the account's
  * position crosses zero); a deal's leg, position and realized P&L are what qkt's accounting booked for that
- * fill ([GatewayFillLegs]). A deal qkt did not book in this process (placed elsewhere, or before a restart)
+ * fill, found by its `fill_id` ([GatewayFillLegs]). A deal qkt did not book in this process (placed elsewhere, or before a restart)
  * has no realized P&L to state and is left out; one younger than [accountingGraceMs] may still be on its
  * way to the books, so it and every deal after it wait for the next read.
  */
@@ -96,12 +96,10 @@ internal class GatewayVenueReads(
         toMs: Long,
         nowMs: Long,
     ): List<BrokerDeal> {
-        val taken = HashMap<String, Int>()
         val out = mutableListOf<BrokerDeal>()
         for (fill in client.deals(fromMs, toMs)) {
             val engineId = GatewayClientIds.engineId(fill.clientOrderId)
-            val index = taken.merge("$engineId@${fill.time}", 1, Int::plus)?.minus(1) ?: 0
-            val fact = legs.of(engineId, fill.time).getOrNull(index)
+            val fact = legs.of(fill.fillId, engineId)
             if (fact == null) {
                 if (fill.time > nowMs - accountingGraceMs) break
                 continue

@@ -149,6 +149,7 @@ internal class GatewayVenueReadsTest {
         costs: List<WireCost> = emptyList(),
     ) {
         fake.venue.deals += WireFill("$orderId.k", "v-$orderId", "f-$orderId", code, side, qty, price, time, costs)
+        legs.booked(orderId, "f-$orderId")
         legs.record(accounted(orderId, time, before, after, BigDecimal(realized)))
     }
 
