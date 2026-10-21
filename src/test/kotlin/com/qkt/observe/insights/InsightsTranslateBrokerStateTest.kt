@@ -17,7 +17,7 @@ class InsightsTranslateBrokerStateTest {
                 marginFree = BigDecimal("7135.57"),
                 openProfit = BigDecimal("-147.51"),
                 marginLevel = BigDecimal("1419.03"),
-                login = 435898347L,
+                login = "435898347",
                 server = "Exness-MT5Trial9",
                 name = "qkt-hedge-straddle",
             )
@@ -44,7 +44,7 @@ class InsightsTranslateBrokerStateTest {
                 marginFree = null,
                 openProfit = null,
                 marginLevel = null,
-                login = 0,
+                login = "0",
                 server = "",
                 name = "",
             )

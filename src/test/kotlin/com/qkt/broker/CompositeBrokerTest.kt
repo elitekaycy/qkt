@@ -60,7 +60,7 @@ class CompositeBrokerTest {
                     marginFree = Money.of("991"),
                     openProfit = Money.of("1"),
                     marginLevel = Money.of("10010"),
-                    login = 42L,
+                    login = "42",
                     server = "demo",
                     name = "account-$nameSuffix",
                 )
@@ -140,7 +140,7 @@ class CompositeBrokerTest {
                 routes = listOf(SymbolPattern.prefix("A:") to leaf),
             )
 
-        assertThat(composite.accountState()?.login).isEqualTo(42L)
+        assertThat(composite.accountState()?.login).isEqualTo("42")
         assertThat(composite.deals(100L, 200L).map { it.dealTicket }).containsExactly("D-a")
         assertThat(composite.pendingOrders().map { it.ticket }).containsExactly("O-a")
     }

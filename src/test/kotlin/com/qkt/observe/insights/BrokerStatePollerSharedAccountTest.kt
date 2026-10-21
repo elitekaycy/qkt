@@ -48,19 +48,20 @@ class BrokerStatePollerSharedAccountTest : BrokerStatePollerFixture() {
             )
         poller.pollOnce()
         assertThat(broker.dealCalls).hasSize(1)
-        assertThat(broker.dealCalls[0].first).isEqualTo(firstNow - 30L * 86_400_000L + 1)
+        assertThat(broker.dealCalls[0].first).isEqualTo(firstNow - 30L * 86_400_000L)
 
         now += 10_000L
         poller.pollOnce()
-        // The second window starts at the previous cycle's grace edge, not back at the
+        // The second window re-reads the grace behind the previous read, not back to the
         // 30-day seed — a quiet account no longer re-fetches a month per cycle.
         assertThat(broker.dealCalls).hasSize(2)
-        assertThat(broker.dealCalls[1].first).isEqualTo(firstNow - 5 * 60_000L + 1)
+        assertThat(broker.dealCalls[1].first).isEqualTo(firstNow - 5 * 60_000L)
     }
 
     @Test
-    fun `a found deal newer than the grace edge keeps owning the watermark`() {
+    fun `a found deal never moves the next read past the grace behind the last one`() {
         var now = 1_700_000_000_000L
+        val firstNow = now
         val broker = FakeBroker()
         broker.allDeals = listOf(deal("9", ts = now - 1_000L))
         val poller =
@@ -73,10 +74,12 @@ class BrokerStatePollerSharedAccountTest : BrokerStatePollerFixture() {
                 clock = { now },
             )
         poller.pollOnce()
-        val dealTs = now - 1_000L
+        assertThat(collectBodies("deal-FAKE-9")).contains("deal-FAKE-9")
         now += 10_000L
         poller.pollOnce()
-        assertThat(broker.dealCalls[1].first).isEqualTo(dealTs + 1)
+        // A deal the venue lists late, older than deal 9, is still inside the next read.
+        assertThat(broker.dealCalls[1].first).isEqualTo(firstNow - 5 * 60_000L)
+        assertThat(collectBodies("posn-FAKE-$now")).doesNotContain("deal-FAKE-9")
     }
 
     @Test
@@ -84,7 +87,7 @@ class BrokerStatePollerSharedAccountTest : BrokerStatePollerFixture() {
         val now = 1_700_000_000_000L
         val first = FakeBroker()
         val second = FakeBroker()
-        second.account = second.account!!.copy(login = 999_111_222L)
+        second.account = second.account!!.copy(login = "999111222")
         val poller =
             BrokerStatePoller(
                 brokers = listOf(first, second),

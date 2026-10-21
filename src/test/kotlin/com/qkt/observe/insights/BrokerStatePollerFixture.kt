@@ -43,7 +43,7 @@ abstract class BrokerStatePollerFixture {
                 marginFree = null,
                 openProfit = BigDecimal("-147.51"),
                 marginLevel = null,
-                login = 435898347L,
+                login = "435898347",
                 server = "Exness-MT5Trial9",
                 name = "qkt-hedge-straddle",
             )
@@ -67,12 +67,16 @@ abstract class BrokerStatePollerFixture {
         val dealCalls = mutableListOf<Pair<Long, Long>>()
         var failDeals: Boolean = false
 
+        /** How many of the next deal reads fail, as a timing-out gateway's do. */
+        var failNextDeals: Int = 0
+
         override fun deals(
             from: Long,
             to: Long,
         ): List<BrokerDeal> {
             dealCalls.add(from to to)
             check(!failDeals) { "deal fetch failed" }
+            check(failNextDeals-- <= 0) { "deal fetch timed out" }
             return if (ignoreDealRange) allDeals else allDeals.filter { it.ts in from..to }
         }
     }

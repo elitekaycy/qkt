@@ -18,7 +18,7 @@ Every `qkt` subcommand. Run `qkt <command> --help` for the authoritative flag li
 | `qkt status [<name>]` | Snapshot of one strategy, or all if no name given. |
 | `qkt status --deep` | Aggregated health check: daemon + control plane + every deployed strategy. Single-screen human output. Exit 0 if all green, exit 1 with reasons if anything is unhealthy. First-thing-to-run when something feels off. |
 | `qkt logs <name> [--lines N] [--follow] [--since <iso8601>]` | Per-strategy log stream. |
-| `qkt stop <name> [--flatten]` | Stop a strategy. Cascades for portfolios. `--flatten` cancels its working orders and closes its positions at market; a bracket entry that filled in part has its remainder cancelled and the filled part closed, with no stop or target sent for it. |
+| `qkt stop <name> [--flatten]` | Stop a strategy. Cascades for portfolios. `--flatten` cancels its working orders and closes its positions at market; a bracket entry that filled in part has its remainder cancelled and the filled part closed, with no stop or target sent for it. A standalone strategy's flatten is then confirmed against its book and, where the venue names its positions, the venue, for up to 2 minutes: a close the venue never took (a gateway outage) is sent again, and the answer adds `"flat": true` or `false` (the daemon log names what is still open). |
 | `qkt start <portfolio>/<child>` | Resume an operator-stopped child of a portfolio. |
 
 **Gateway outages.** At boot the daemon verifies every `brokers:` account before anything trades. An

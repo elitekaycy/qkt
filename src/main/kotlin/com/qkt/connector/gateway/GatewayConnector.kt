@@ -78,6 +78,7 @@ class GatewayTradingAccount internal constructor(
                 streamFactory = { onEvent, onReset, onConnection ->
                     GatewayStream(settings.url, settings.apiKey, onEvent, onReset, onConnection)
                 },
+                label = config.name.uppercase(),
             )
         }
 

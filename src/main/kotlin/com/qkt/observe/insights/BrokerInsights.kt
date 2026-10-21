@@ -50,7 +50,10 @@ interface BrokerInsights {
             mapOf("detail" to "${e.broker} unreachable after ${e.consecutiveFailures} consecutive failures"),
         )
 
-    fun fromBrokerGatewayUnreachable(e: BrokerEvent.GatewayUnreachable): InsightsEnvelope =
+    fun fromBrokerGatewayUnreachable(
+        e: BrokerEvent.GatewayUnreachable,
+        venue: Map<String, Any?> = emptyMap(),
+    ): InsightsEnvelope =
         busEnvelope(
             e.sequenceId,
             e.timestamp,
@@ -61,10 +64,14 @@ interface BrokerInsights {
                 "consecutiveFailures" to e.consecutiveFailures,
                 "reason" to "gateway-unreachable",
                 "ts" to e.timestamp,
-            ),
+            ) + venue,
         )
 
-    fun fromBrokerConnectionChanged(e: BrokerEvent.ConnectionChanged): InsightsEnvelope {
+    /** A broker connection change; [venue] is its `venue` and `accountId` ([venuePayload]). */
+    fun fromBrokerConnectionChanged(
+        e: BrokerEvent.ConnectionChanged,
+        venue: Map<String, Any?> = emptyMap(),
+    ): InsightsEnvelope {
         val type =
             when (e.state) {
                 BrokerEvent.ConnectionState.CONNECTED -> "broker.connected"
@@ -82,7 +89,7 @@ interface BrokerInsights {
                 "reason" to e.reason,
                 "consecutiveFailures" to e.consecutiveFailures,
                 "ts" to e.timestamp,
-            ),
+            ) + venue,
         )
     }
 
@@ -90,6 +97,7 @@ interface BrokerInsights {
         broker: String,
         ts: Long,
         reason: String = "session-start",
+        venue: Map<String, Any?> = emptyMap(),
     ): InsightsEnvelope =
         InsightsEnvelope(
             id = "broker-connected-$broker-$ts",
@@ -97,17 +105,25 @@ interface BrokerInsights {
             ts = ts,
             strategyId = null,
             type = "broker.connected",
-            payload = mapOf("broker" to broker, "state" to "connected", "reason" to reason, "ts" to ts),
+            payload = mapOf("broker" to broker, "state" to "connected", "reason" to reason, "ts" to ts) + venue,
         )
 
     /**
      * One executed venue deal ("broker.deal"). Deterministic id from the broker plus
      * deal ticket, so re-sending the same deal (restart re-backfill, retried batch)
      * dedupes at the collector instead of double-counting realized P&L.
+     *
+     * Beside the venue's own fields it states what the collector must not infer: `positionId`
+     * and `legEntry` (the position ticket and leg, qkt-minted where the venue names none),
+     * `closeReason`, typed `costs` (`amount` positive when paid, in [accountCurrency] where the
+     * venue gave only the scalar `commission`/`swap`/`fee`), `realizedSource`, and the [facts]
+     * the poller resolved (`venue`, `accountId`, `attribution`, `instrument`).
      */
     fun brokerDeal(
         d: BrokerDeal,
         strategyId: String?,
+        facts: Map<String, Any?> = emptyMap(),
+        accountCurrency: String? = null,
     ): InsightsEnvelope =
         InsightsEnvelope(
             id = "deal-${d.broker}-${d.dealTicket}",
@@ -135,6 +151,30 @@ interface BrokerInsights {
                     "comment" to d.comment,
                     "ts" to d.ts,
                     "strategyId" to strategyId,
-                ),
+                    "positionId" to d.positionTicket,
+                    "nextPositionId" to d.nextPositionTicket,
+                    "legEntry" to d.entry,
+                    "closeReason" to d.closeReason,
+                    "costs" to dealCosts(d, accountCurrency),
+                    "realizedSource" to d.realizedSource,
+                ) + facts,
         )
+}
+
+/** [d]'s typed costs, or its scalar ones (negative when paid, MT5's sign) as typed costs in [currency]. */
+private fun dealCosts(
+    d: BrokerDeal,
+    currency: String?,
+): List<Map<String, Any?>> {
+    if (d.costs.isNotEmpty()) {
+        return d.costs.map {
+            mapOf("kind" to it.kind.name, "amount" to it.amount.amount, "currency" to it.amount.normalizedCurrency)
+        }
+    }
+    val scalars = listOf("COMMISSION" to d.commission, "SWAP" to d.swap, "EXCHANGE_FEE" to d.fee)
+    return scalars.mapNotNull { (kind, amount) ->
+        amount?.takeIf { it.signum() != 0 }?.let {
+            mapOf("kind" to kind, "amount" to it.negate(), "currency" to currency)
+        }
+    }
 }

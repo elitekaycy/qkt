@@ -60,9 +60,10 @@ abstract class StopRouteFixture {
                         counter.incrementAndGet()
                     }
 
-                    override fun flattenForStop() {
+                    override fun flattenForStop(): com.qkt.app.FlattenResult {
                         stopCounter.incrementAndGet()
                         flatten()
+                        return com.qkt.app.FlattenResult(verifiedFlat = true)
                     }
                 }
             val server =

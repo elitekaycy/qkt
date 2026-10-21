@@ -78,6 +78,9 @@ interface TradeInsights {
      * payload also carries gross account PnL before those costs plus native-currency and FX
      * conversion evidence, so consumers can reconcile net-vs-gross instead of guessing.
      *
+     * [facts] are what qkt resolved for the close ([InsightsFillFacts.closedFields]): `positionId`,
+     * `legEntry`, `closeReason`, `strategyId` + `attribution`.
+     *
      * Deterministic id, so a re-sent batch dedupes at the collector.
      */
     fun tradeClosed(
@@ -85,6 +88,7 @@ interface TradeInsights {
         netAccountRealized: BigDecimal,
         strategyId: String,
         convertedRealized: ConvertedMoney? = null,
+        facts: Map<String, Any?> = emptyMap(),
     ): InsightsEnvelope =
         InsightsEnvelope(
             id = "tc-${trade.orderId}-${trade.timestamp}",
@@ -115,7 +119,7 @@ interface TradeInsights {
                     "realizedAliasOf" to "netAccountRealized",
                     "sideAttribution" to "fill_side",
                     "ts" to trade.timestamp,
-                ),
+                ) + facts,
         )
 }
 

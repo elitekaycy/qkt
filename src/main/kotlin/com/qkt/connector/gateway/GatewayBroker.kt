@@ -2,12 +2,20 @@ package com.qkt.connector.gateway
 
 import com.qkt.broker.BookedLeg
 import com.qkt.broker.Broker
+import com.qkt.broker.BrokerAccountState
+import com.qkt.broker.BrokerDeal
+import com.qkt.broker.BrokerPendingOrder
+import com.qkt.broker.BrokerPositionTicket
 import com.qkt.broker.OrderTypeCapability
 import com.qkt.broker.PositionAccountingMode
 import com.qkt.broker.SubmitAck
+import com.qkt.broker.VenueDescribed
+import com.qkt.broker.VenueIdentity
+import com.qkt.broker.VenueInstrument
 import com.qkt.bus.EventBus
 import com.qkt.common.Clock
 import com.qkt.events.BrokerEvent
+import com.qkt.events.FillAccountedEvent
 import com.qkt.execution.ManagedOrder
 import com.qkt.execution.OrderRequest
 import com.qkt.instrument.TickSteps
@@ -23,6 +31,8 @@ import java.math.BigDecimal
  * account's venue positions are account-wide, whether one strategy trades it or several: startup reconcile
  * trusts each strategy's persisted book, and the account checks their total against the venue whenever a
  * strategy is ready ([GatewaySession.ready]). [optionGrid] is an option contract's declared price grid.
+ * Its venue truth (account, positions, working orders, deals) is read through [GatewayVenueReads], the
+ * same reads an MT5 broker answers, under the account's label ([GatewaySession.label]).
  */
 class GatewayBroker internal constructor(
     private val session: GatewaySession,
@@ -31,10 +41,28 @@ class GatewayBroker internal constructor(
     private val positions: PositionProvider,
     strategy: String?,
     private val optionGrid: (String) -> TickSteps? = { null },
-) : Broker {
+) : Broker,
+    VenueDescribed {
     private val attachment = session.attach(strategy, positions, bus::publish)
+    private val venueReads =
+        GatewayVenueReads(
+            session.venue,
+            GatewayDirectReads(session.label, session.client),
+            session.client,
+            session.symbols,
+            session.legs,
+            positions,
+            strategy,
+            session.ledger::ownerOf,
+        )
 
-    override val name: String = "Gateway"
+    init {
+        // The account's deals carry none of qkt's accounting; it is kept as this session books each fill.
+        bus.subscribe<FillAccountedEvent> { e -> if (session.symbols.owns(e.symbol)) session.legs.record(e) }
+    }
+
+    /** The account's config entry name uppercased, e.g. `PAPER_DERIBIT`. */
+    override val name: String = session.label
 
     override val capabilities: Set<OrderTypeCapability> =
         setOf(
@@ -111,6 +139,21 @@ class GatewayBroker internal constructor(
             .let(::BigDecimal)
 
     override fun positionAccountingMode(symbol: String): PositionAccountingMode = session.account.accounting
+
+    override fun accountState(): BrokerAccountState = venueReads.account()
+
+    override fun positionTickets(): List<BrokerPositionTicket> = venueReads.positions()
+
+    override fun pendingOrders(): List<BrokerPendingOrder> = venueReads.pendingOrders()
+
+    override fun deals(
+        from: Long,
+        to: Long,
+    ): List<BrokerDeal> = venueReads.deals(from, to, clock.now())
+
+    override fun venueIdentity(): VenueIdentity = session.venue
+
+    override fun instrument(qktSymbol: String): VenueInstrument? = session.symbols.instrument(qktSymbol)
 
     override fun shutdown() {
         session.detach(attachment)

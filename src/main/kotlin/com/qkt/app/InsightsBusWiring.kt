@@ -6,8 +6,10 @@ import com.qkt.events.RiskEvent
 import com.qkt.events.SignalEvent
 import com.qkt.marketdata.MarketPriceProvider
 import com.qkt.observe.insights.InsightsEventFamily
+import com.qkt.observe.insights.InsightsFillFacts
 import com.qkt.observe.insights.InsightsSink
 import com.qkt.observe.insights.InsightsTranslate
+import com.qkt.observe.insights.InsightsVenues
 
 /**
  * Streams allow-listed event families to the insights sink, e.g. with only `ORDER` enabled an
@@ -22,13 +24,46 @@ internal class InsightsBusWiring(
 ) {
     private val sessionStrategies = strategies.map { it.first }
 
-    /** Subscribe the enabled families on [bus]; call exactly where the session wires insights. */
+    /**
+     * Subscribe the enabled families on [bus]; call exactly where the session wires insights. [facts]
+     * resolves what each fill and each venue envelope states beyond the connector's own fields; it sees
+     * every fill before qkt's accounting does (a pre-dispatch tap), and every order and accounted fill.
+     */
     fun wire(
         bus: EventBus,
         sink: InsightsSink,
         prices: MarketPriceProvider,
+        facts: InsightsFillFacts = InsightsFillFacts(),
+        venues: InsightsVenues = InsightsVenues(),
     ) {
         val t = InsightsTranslate
+        bus.subscribeAllFirst { e ->
+            when (e) {
+                is BrokerEvent.OrderFilled ->
+                    facts.seen(
+                        e.clientOrderId,
+                        e.brokerOrderId,
+                        e.symbol,
+                        e.side,
+                        e.quantity,
+                        e.timestamp,
+                        e.exitReason,
+                    )
+                is BrokerEvent.OrderPartiallyFilled ->
+                    facts.seen(
+                        e.clientOrderId,
+                        e.brokerOrderId,
+                        e.symbol,
+                        e.side,
+                        e.quantity,
+                        e.timestamp,
+                        e.exitReason,
+                    )
+                else -> Unit
+            }
+        }
+        bus.subscribe<com.qkt.events.OrderEvent> { e -> facts.submitted(e.request) }
+        bus.subscribe<com.qkt.events.FillAccountedEvent> { e -> facts.accounted(e) }
         if (InsightsEventFamily.SIGNAL in insightsEvents) {
             val structures = InsightsEventFamily.STRUCTURE in insightsEvents
             bus.subscribe<SignalEvent> { e ->
@@ -47,8 +82,18 @@ internal class InsightsBusWiring(
                 sink.offer(t.fromDecisionOrderLinked(e))
             }
             bus.subscribe<BrokerEvent.OrderAccepted> { e -> sink.offer(t.fromOrderAccepted(e)) }
-            bus.subscribe<BrokerEvent.OrderFilled> { e -> sink.offer(t.fromOrderFilled(e)) }
-            bus.subscribe<BrokerEvent.OrderPartiallyFilled> { e -> sink.offer(t.fromOrderPartiallyFilled(e)) }
+            bus.subscribe<BrokerEvent.OrderFilled> { e ->
+                val fields = facts.fillFields(e.clientOrderId, e.strategyId, e.symbol, e.price, e.quantity, e.timestamp)
+                sink.offer(t.fromOrderFilled(e, fields))
+            }
+            bus.subscribe<BrokerEvent.OrderPartiallyFilled> { e ->
+                sink.offer(
+                    t.fromOrderPartiallyFilled(
+                        e,
+                        facts.fillFields(e.clientOrderId, e.strategyId, e.symbol, e.price, e.quantity, e.timestamp),
+                    ),
+                )
+            }
             bus.subscribe<BrokerEvent.OrderCancelled> { e -> sink.offer(t.fromOrderCancelled(e)) }
             bus.subscribe<BrokerEvent.OrderRejected> { e -> sink.offer(t.fromOrderRejected(e)) }
             bus.subscribe<BrokerEvent.OrderModified> { e -> sink.offer(t.fromOrderModified(e)) }
@@ -69,8 +114,12 @@ internal class InsightsBusWiring(
             bus.subscribe<BrokerEvent.GatewayUnreachable> { e -> sink.offer(t.fromGatewayUnreachable(e)) }
         }
         if (InsightsEventFamily.LIFECYCLE in insightsEvents) {
-            bus.subscribe<BrokerEvent.GatewayUnreachable> { e -> sink.offer(t.fromBrokerGatewayUnreachable(e)) }
-            bus.subscribe<BrokerEvent.ConnectionChanged> { e -> sink.offer(t.fromBrokerConnectionChanged(e)) }
+            bus.subscribe<BrokerEvent.GatewayUnreachable> { e ->
+                sink.offer(t.fromBrokerGatewayUnreachable(e, venues.fields(e.broker)))
+            }
+            bus.subscribe<BrokerEvent.ConnectionChanged> { e ->
+                sink.offer(t.fromBrokerConnectionChanged(e, venues.fields(e.broker)))
+            }
         }
     }
 }

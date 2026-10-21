@@ -73,7 +73,11 @@ class MT5Client(
     fun getSymbolInfo(brokerSymbol: String): MT5SymbolInfo? = accountReads.getSymbolInfo(brokerSymbol)
 
     /** See [MT5AccountReads.getAccount]. */
-    fun getAccount(): MT5AccountInfo? = accountReads.getAccount()
+    fun getAccount(): MT5AccountInfo? = accountReads.getAccount()?.also { lastAccount = it }
+
+    /** The account the last successful [getAccount] read, or null before one: answers from memory. */
+    @Volatile var lastAccount: MT5AccountInfo? = null
+        private set
 
     /** See [MT5PositionCalls.closePosition]. */
     fun closePosition(
