@@ -29,9 +29,8 @@ import org.slf4j.LoggerFactory
  * orders fill at the tracker's latest price; limits, stops, and if-touched orders are
  * parked in a working list and resolved as ticks print through.
  *
- * No slippage model, no rejection model, no latency — by design. Strategies that want
- * those should test against [com.qkt.broker.composite.CompositeBroker] with a simulated
- * latency layer or run against an actual venue.
+ * No slippage model, no rejection model, no latency — by design. Strategies that want those
+ * should test against an actual venue. It describes itself as the `paper` venue ([PaperVenue]).
  */
 class PaperBroker(
     private val bus: EventBus,
@@ -57,7 +56,8 @@ class PaperBroker(
      * constructions; backtests wire [ExecutionSimulationConfig.positionMode].
      */
     private val positionMode: PositionAccountingMode = PositionAccountingMode.NETTING,
-) : Broker {
+) : Broker,
+    VenueDescribed by PaperVenue {
     override fun positionAccountingMode(symbol: String): PositionAccountingMode = positionMode
 
     private val log = LoggerFactory.getLogger(PaperBroker::class.java)

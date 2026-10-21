@@ -33,12 +33,14 @@ data class BrokerAccountState(
     val openProfit: BigDecimal?,
     /** Equity / used margin x 100 (a percent); null when no margin is in use. */
     val marginLevel: BigDecimal?,
-    /** MT5 account login number — which broker account the equity belongs to. */
-    val login: Long,
-    /** Broker trade server, e.g. "Exness-MT5Trial9". */
+    /** The venue's account login — an MT5 login number "436804390", a VGP `account_login` "paper". */
+    val login: String,
+    /** Broker trade server, e.g. "Exness-MT5Trial9"; empty when the venue has none. */
     val server: String,
     /** Account holder name as the venue records it, e.g. "qkt-hedge-straddle". */
     val name: String,
+    /** The connector, venue and account id this state came from; null for brokers that state none. */
+    val venue: VenueIdentity? = null,
 )
 
 /** One executed venue deal (an in/out leg in MT5 terms), used for insights history. */
@@ -71,6 +73,16 @@ data class BrokerDeal(
     val fee: BigDecimal? = null,
     /** Full untruncated client order id the deal was placed under; null when unknown. */
     val clientOrderId: String? = null,
+    /** Why a closing deal closed; null for an opening deal or when unknown. */
+    val closeReason: CloseReason? = null,
+    /** Typed costs the venue charged on this deal (empty when it states them as the scalars above). */
+    val costs: List<com.qkt.accounting.VenueCost> = emptyList(),
+    /** The strategy the connector knows placed this deal, exactly (not by comment); null when unknown. */
+    val strategyId: String? = null,
+    /** Who computed [profit]: "venue" (the venue reported it) or "engine" (qkt's fill accounting). */
+    val realizedSource: String? = null,
+    /** The position a reversing (INOUT) deal opened, when it is not [positionTicket]. */
+    val nextPositionTicket: String? = null,
 )
 
 /** One venue position ticket, broker-valued. */
@@ -103,6 +115,8 @@ data class BrokerPositionTicket(
     val magic: Int? = null,
     /** Full untruncated client order id that opened the position; null when unknown. */
     val clientOrderId: String? = null,
+    /** The strategy the connector knows holds this position, exactly; null when unknown or shared. */
+    val strategyId: String? = null,
 )
 
 /** One resting (pending) order at the venue — a limit/stop waiting to trigger. */
@@ -130,4 +144,6 @@ data class BrokerPendingOrder(
     val comment: String? = null,
     /** Full untruncated client order id; null when unknown. */
     val clientOrderId: String? = null,
+    /** The strategy the connector knows placed this order, exactly; null when unknown. */
+    val strategyId: String? = null,
 )

@@ -107,10 +107,12 @@ interface LiveSessionHandle :
     /**
      * [flatten] as part of an operator stop. Sessions with DSL rule state also clear their
      * rule edges when the engine loop ends, so a restart re-enters like a fresh deployment
-     * instead of treating the entry it just flattened as still taken.
+     * instead of treating the entry it just flattened as still taken. Answers whether the book and
+     * venue were then confirmed flat; a handle that cannot confirm it says so.
      */
-    fun flattenForStop() {
+    fun flattenForStop(): FlattenResult {
         flatten()
+        return FlattenResult(verifiedFlat = false, detail = "this session handle cannot verify venue positions")
     }
 
     /**

@@ -3,6 +3,7 @@ package com.qkt.app
 import com.qkt.accounting.ConvertedMoney
 import com.qkt.backtest.FillState
 import com.qkt.broker.Broker
+import com.qkt.broker.VenueDescribed
 import com.qkt.common.Clock
 import com.qkt.execution.Trade
 import com.qkt.marketdata.TickFeed
@@ -12,6 +13,7 @@ import com.qkt.observe.insights.InsightsEnvelope
 import com.qkt.observe.insights.InsightsEventFamily
 import com.qkt.observe.insights.InsightsSink
 import com.qkt.observe.insights.InsightsTranslate
+import com.qkt.observe.insights.venuePayload
 import com.qkt.persistence.PersistenceHealth
 import com.qkt.strategy.Strategy
 
@@ -36,6 +38,9 @@ internal class InsightsLifecycle(
      * so announcing them would grow a permanent ghost strategy on the dashboard.
      */
     fun strategyIds(): List<String> = strategies.map { it.first }.filterNot { it.startsWith("__") }
+
+    /** The venue and fill facts envelopes state, bound to the session by [InsightsFacts.wireBus]. */
+    val facts = InsightsFacts(insightsSink, insightsEvents, strategies)
 
     /** The market-data gate judged [symbol] unhealthy for [reason]; [kind] is the fault's wire name. */
     fun marketDataStale(
@@ -84,6 +89,7 @@ internal class InsightsLifecycle(
                         netAccountRealized = netRealized,
                         strategyId = strategyId,
                         convertedRealized = convertedRealized,
+                        facts = facts.fills.closedFields(trade, strategyId, fillState),
                     ),
             )
         }
@@ -96,14 +102,9 @@ internal class InsightsLifecycle(
     ) {
         if (insightsSink != null && InsightsEventFamily.LIFECYCLE in insightsEvents) {
             val nowTs = clock.now()
-            val brokerNames = brokers().map { it.name }.distinct()
-            for (brokerName in brokerNames) {
-                insightsSink.offer(
-                    InsightsTranslate.brokerConnected(
-                        broker = brokerName,
-                        ts = nowTs,
-                    ),
-                )
+            for (broker in brokers().distinctBy { it.name }) {
+                val venue = venuePayload((broker as? VenueDescribed)?.venueIdentity())
+                insightsSink.offer(InsightsTranslate.brokerConnected(broker = broker.name, ts = nowTs, venue = venue))
             }
             insightsSink.offer(
                 InsightsTranslate.marketDataConnected(

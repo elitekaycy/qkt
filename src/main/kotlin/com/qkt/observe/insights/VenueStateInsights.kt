@@ -1,6 +1,7 @@
 package com.qkt.observe.insights
 
 import com.qkt.broker.BrokerAccountState
+import com.qkt.broker.VenueIdentity
 
 /**
  * Insights translation for polled venue state snapshots: the account, open positions and
@@ -12,7 +13,8 @@ interface VenueStateInsights {
      * Live venue account snapshot ("state.account"). Last-value semantics: the collector
      * keeps only the newest per (instance, broker), so the id just needs to be unique
      * per poll. Null fields (a venue that reports no margin) are omitted from the JSON
-     * by [InsightsEnvelope.toJson]'s map writer — the contract wants absent, not null.
+     * by [InsightsEnvelope.toJson]'s map writer — the contract wants absent, not null. Every
+     * venue snapshot also states its `venue` and `accountId` ([venuePayload]).
      */
     fun stateAccount(
         ts: Long,
@@ -34,10 +36,10 @@ interface VenueStateInsights {
                     "marginFree" to s.marginFree,
                     "openProfit" to s.openProfit,
                     "marginLevel" to s.marginLevel,
-                    "login" to s.login.takeIf { it != 0L }?.toString(),
+                    "login" to s.login.takeIf { it.isNotEmpty() && it != "0" },
                     "server" to s.server.takeIf { it.isNotEmpty() },
                     "name" to s.name.takeIf { it.isNotEmpty() },
-                ),
+                ) + venuePayload(s.venue),
         )
 
     /**
@@ -50,6 +52,7 @@ interface VenueStateInsights {
         ts: Long,
         broker: String,
         positions: List<StatePosition>,
+        venue: VenueIdentity? = null,
     ): InsightsEnvelope =
         InsightsEnvelope(
             id = "posn-$broker-$ts",
@@ -79,9 +82,9 @@ interface VenueStateInsights {
                                 "requestedTakeProfit" to p.requestedTakeProfit,
                                 "magic" to p.magic,
                                 "clientOrderId" to p.clientOrderId,
-                            )
+                            ) + p.facts
                         },
-                ),
+                ) + venuePayload(venue),
         )
 
     /**
@@ -93,6 +96,7 @@ interface VenueStateInsights {
         ts: Long,
         broker: String,
         orders: List<StatePendingOrder>,
+        venue: VenueIdentity? = null,
     ): InsightsEnvelope =
         InsightsEnvelope(
             id = "pord-$broker-$ts",
@@ -119,8 +123,8 @@ interface VenueStateInsights {
                                 "magic" to o.magic,
                                 "clientOrderId" to o.clientOrderId,
                                 "strategyId" to o.strategyId,
-                            )
+                            ) + o.facts
                         },
-                ),
+                ) + venuePayload(venue),
         )
 }

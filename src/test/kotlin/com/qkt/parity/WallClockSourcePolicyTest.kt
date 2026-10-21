@@ -91,6 +91,8 @@ class WallClockSourcePolicyTest {
                 "src/main/kotlin/com/qkt/cli/daemon/portfolio/PortfolioSupervisor.kt" to "daemon stop deadline",
                 "src/main/kotlin/com/qkt/cli/daemon/portfolio/PortfolioDeployer.kt" to "deploy lifecycle timing",
                 "src/main/kotlin/com/qkt/observe/insights/InsightsSink.kt" to "async egress deadlines",
+                "src/main/kotlin/com/qkt/observe/insights/BrokerStatePoller.kt" to "stop drain deadline",
+                "src/main/kotlin/com/qkt/app/RunningSessionHandle.kt" to "operator stop-flatten deadline",
                 "src/main/kotlin/com/qkt/observe/EngineAuditJournal.kt" to "journal flush deadline",
             )
     }

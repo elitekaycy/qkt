@@ -47,7 +47,7 @@ fun reconcileDeltas(
     engineLegs: List<PositionLeg>,
     accountingModes: Map<String, PositionAccountingMode> = emptyMap(),
 ): List<PositionDelta> {
-    val ownerBroker = brokerByDirection(brokerTickets.filter { attribution.ownerOf(it.ticket) == ownerId })
+    val ownerBroker = brokerByDirection(brokerTickets.filter { attribution.holderOf(it) == ownerId })
     val engine = engineByDirection(engineLegs)
     val symbols = (ownerBroker.keys.map { it.symbol } + engine.keys.map { it.symbol }).toSortedSet()
     val deltas = mutableListOf<PositionDelta>()
@@ -70,7 +70,7 @@ fun reconcileDeltas(
         }
     }
     val orphans =
-        brokerByDirection(brokerTickets.filter { attribution.ownerOf(it.ticket) == null }).map { (key, qty) ->
+        brokerByDirection(brokerTickets.filter { attribution.holderOf(it) == null }).map { (key, qty) ->
             PositionDelta("unattributed:${key.symbol}", BigDecimal.ZERO, qty, key.side)
         }
     return deltas + orphans.sortedWith(compareBy<PositionDelta> { it.symbol }.thenBy { it.side })
@@ -83,7 +83,7 @@ fun reconcileProtectionDeltas(
     attribution: TicketAttribution,
 ): List<PositionProtectionDelta> =
     brokerTickets
-        .filter { attribution.ownerOf(it.ticket) == ownerId }
+        .filter { attribution.holderOf(it) == ownerId }
         .mapNotNull { ticket ->
             val stopDiffers =
                 ticket.requestedStopLoss != null &&
@@ -104,3 +104,7 @@ fun reconcileProtectionDeltas(
                 )
             }
         }.sortedBy { it.ticket }
+
+/** Who holds [ticket]: the owner its connector states exactly, else the ticket map's. */
+private fun TicketAttribution.holderOf(ticket: BrokerPositionTicket): String? =
+    ticket.strategyId ?: ownerOf(ticket.ticket)

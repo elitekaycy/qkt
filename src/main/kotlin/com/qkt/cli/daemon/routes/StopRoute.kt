@@ -82,7 +82,7 @@ internal fun handleStop(
         )
     }
     val trades = handle.tradeCount
-    if (flattenOverride == true) runCatching { handle.live.flattenForStop() }
+    val flat = if (flattenOverride == true) runCatching { handle.live.flattenForStop() }.getOrNull() else null
     registry.stop(name)
     OperatorJournal
         .from(stateDir, "http")
@@ -92,5 +92,6 @@ internal fun handleStop(
             affected = listOf(name),
             details = mapOf("flatten" to (flattenOverride?.toString() ?: "false")),
         )
-    respond(ex, 200, """{"name":"$name","state":"stopped","trades":$trades}""")
+    val verified = flat?.let { ""","flat":${it.verifiedFlat}""" }.orEmpty()
+    respond(ex, 200, """{"name":"$name","state":"stopped","trades":$trades$verified}""")
 }

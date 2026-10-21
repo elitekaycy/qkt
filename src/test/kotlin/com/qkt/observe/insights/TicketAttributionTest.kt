@@ -78,6 +78,17 @@ class TicketAttributionTest {
     }
 
     @Test
+    fun `a longer-named strategy's comment never matches a shorter id it merely starts with`() {
+        val map = TicketAttribution()
+        // e2e_mt5's stop --flatten closed e2e_mt5_bracket's position by this comment (live, 2026-10-21).
+        assertThat(map.fromComment("dsl-e2e_mt5_bracket--4", listOf("e2e_mt5"))).isNull()
+        assertThat(map.fromComment("dsl-e2e_mt5_bracket--4", listOf("e2e_mt5", "e2e_mt5_bracket")))
+            .isEqualTo("e2e_mt5_bracket")
+        assertThat(map.fromComment("dsl-e2e_mt5--4-exit-close", listOf("e2e_mt5", "e2e_mt5_bracket")))
+            .isEqualTo("e2e_mt5")
+    }
+
+    @Test
     fun `fromComment returns null on ambiguity`() {
         val map = TicketAttribution()
         val deployed = listOf("hedge_straddle", "hedge_straddle_v2")

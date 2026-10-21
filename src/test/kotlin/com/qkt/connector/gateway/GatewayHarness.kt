@@ -42,6 +42,7 @@ internal abstract class GatewayHarness {
             submitDeadlineMs = 300,
             retryMs = 50,
             resyncRetryMs = 50,
+            label = "DERIBIT",
         ).also { sessions += it }
 
     /** One strategy's session: its bus, what reached it, and what it holds. */
