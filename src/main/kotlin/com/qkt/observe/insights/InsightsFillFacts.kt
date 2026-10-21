@@ -27,6 +27,7 @@ class InsightsFillFacts(
     private val positions: PositionProvider? = null,
     private val accountingMode: (String) -> PositionAccountingMode = { PositionAccountingMode.UNKNOWN },
     capacity: Int = 10_000,
+    private val shared: PositionFacts = PositionFacts(capacity),
 ) {
     private data class Seen(
         val leg: VenueLeg,
@@ -36,7 +37,7 @@ class InsightsFillFacts(
 
     private val seen = bounded<String, Seen>(capacity)
     private val closing = bounded<String, Boolean>(capacity)
-    private val risks = InsightsEntryRisks(venues, capacity)
+    private val risks = InsightsEntryRisks(venues, capacity, shared)
 
     /** An order was submitted: remember a bracket's levels, and the orders sent to close a position. */
     fun submitted(request: OrderRequest) {
@@ -84,9 +85,12 @@ class InsightsFillFacts(
         val s = seen[key(orderId, timestamp)] ?: return attribution(strategyId)
         val leg = legOf(orderId, symbol, s)
         val opened = if (leg.entry == "INOUT") leg.nextPositionId else leg.positionId.takeIf { leg.entry == "IN" }
+        opened?.let { shared.opened(symbol, it, strategyId) }
         val risk = opened?.let { risks.entered(it, orderId, symbol, price, quantity) }.orEmpty()
-        return attribution(strategyId) + legFields(leg, orderId, s.exitReason) + risk +
-            ("instrument" to venues.instrumentFields(symbol))
+        val fields = legFields(leg, orderId, s.exitReason)
+        val reason = fields["closeReason"] as? CloseReason
+        if (reason != null && leg.positionId != null) shared.closed(symbol, leg.positionId, timestamp, reason)
+        return attribution(strategyId) + fields + risk + ("instrument" to venues.instrumentFields(symbol))
     }
 
     /** The facts a `trade.closed` of [trade] carries; [fill] is what accounting made of it. */
@@ -105,8 +109,24 @@ class InsightsFillFacts(
         return attribution(strategyId) + legFields(leg, trade.orderId, s?.exitReason)
     }
 
-    /** `initialStop`, `initialTarget` and `riskAmount` of the position [positionId], when its entry had a bracket. */
-    fun entryFields(positionId: String): Map<String, Any?> = risks.fields(positionId)
+    /** `initialStop`, `initialTarget` and `riskAmount` of [symbol]'s position [positionId], when its entry had a bracket. */
+    fun entryFields(
+        symbol: String,
+        positionId: String,
+    ): Map<String, Any?> = risks.fields(symbol, positionId)
+
+    /** The strategy whose fill opened [symbol]'s position [positionId], in any session of this process. */
+    fun ownerOf(
+        symbol: String,
+        positionId: String,
+    ): String? = shared.ownerOf(symbol, positionId)
+
+    /** Why qkt closed [symbol]'s position [positionId] around [tsMs] (its fill's close reason), or null. */
+    fun closeReason(
+        symbol: String,
+        positionId: String,
+        tsMs: Long,
+    ): CloseReason? = shared.closeReason(symbol, positionId, tsMs)
 
     private fun legOf(
         orderId: String,

@@ -714,8 +714,19 @@ An MT5 account names its positions (`positionId` is the position ticket). A VGP 
 none, so qkt mints `<symbol>#<openedAt>`, from the open time of the account position qkt holds: a new
 id each time the position crosses zero, and the same id after a restart. A gateway deal's `legEntry`,
 `positionId` and `profit` (gross of the deal's `costs`, as MT5's) are what qkt's accounting booked for
-that fill, so a gateway deal is sent only once qkt has booked it: a fill placed by another tool, or
-booked before the current process started, is not sent.
+that fill, matched by the venue's `fill_id` (never by time: a gateway may stamp a fill in its deal list
+apart from its `fill` event), so a gateway deal is sent only once qkt has booked it: a fill placed by
+another tool, or booked before the current process started, is not sent.
+
+Every session's poller reports the whole venue account, so what qkt resolved about a position (its
+owner, its `initialStop`/`initialTarget`, the stop and target attached at the venue for it, re-anchored
+on the fill as the engine anchors them, and its `riskAmount`) is kept once per process and stated by
+every session. A closing deal states the `closeReason` of the fill that closed it whenever the venue
+only says an expert closed it (MT5 reason 3, which reads as `SIGNAL`), so a timed exit is `TIMED` on its
+deal, its `order.filled` and its `trade.closed` alike; a reason the venue decided (its SL, TP, a
+stop-out, a terminal) stands. Each deal poll re-reads the last five minutes and sends a deal once by its
+ticket, and its window moves only after a read that succeeded; a stopping session polls once more,
+retrying for up to 20 s, so the deals of its last fills (its `stop --flatten` closes) are sent.
 
 | Key | Type | Default | Notes |
 |---|---|---|---|

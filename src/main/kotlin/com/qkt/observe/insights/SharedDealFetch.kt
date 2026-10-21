@@ -32,6 +32,12 @@ class SharedDealFetch(
 
     private val entries = mutableMapOf<String, Entry>()
 
+    /**
+     * What qkt resolved about each venue position, shared by every session of the process for the same
+     * reason the fetch is: each session's poller reports the whole account ([PositionFacts]).
+     */
+    val positions = PositionFacts()
+
     /** Deals in `[fromMs, toMs]` for [accountKey], from another owner's fresh fetch when it covers the window. */
     fun deals(
         owner: Any,

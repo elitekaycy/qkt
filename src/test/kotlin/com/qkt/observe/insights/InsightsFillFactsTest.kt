@@ -77,7 +77,7 @@ class InsightsFillFactsTest {
         assertThat(fields["initialTarget"] as BigDecimal).isEqualByComparingTo("110000")
         assertThat(fields["riskAmount"] as BigDecimal).isEqualByComparingTo("2500")
         assertThat((fields["instrument"] as Map<*, *>)["venueCode"]).isEqualTo("BTC_USDC-PERPETUAL")
-        assertThat(f.entryFields("$symbol#1000")["riskAmount"] as BigDecimal).isEqualByComparingTo("2500")
+        assertThat(f.entryFields(symbol, "$symbol#1000")["riskAmount"] as BigDecimal).isEqualByComparingTo("2500")
     }
 
     @Test

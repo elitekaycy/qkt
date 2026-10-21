@@ -74,7 +74,7 @@ class TicketAttribution {
     /**
      * Fallback attribution from an MT5 comment: the venue stores only a truncated prefix
      * of the `dsl-<strategy>` comment, so match in both directions ("hedge_stradd" is a
-     * prefix of "hedge_straddle", and vice versa for short ids). Returns null when zero
+     * prefix of "hedge_straddle"; "hedge_straddle-12" is that id followed by its order number). Returns null when zero
      * or more than one deployed id matches — guessing between two candidates would
      * silently misattribute realized P&L. Names registered through [alias] count as
      * spellings of their deployed id, so a comment matching a child's DSL name resolves
@@ -88,7 +88,8 @@ class TicketAttribution {
         if (c.isBlank()) return null
         val deployed = deployedIds.toSet()
         val spellings = deployed.associateWith { it } + aliases.filterValues { it in deployed }
-        val hits = spellings.filter { (name, _) -> name.startsWith(c) || c.startsWith(name) }
+        // A full comment names its strategy up to its `-` separator: `dsl-e2e_mt5_bracket--4` is never e2e_mt5's.
+        val hits = spellings.filter { (name, _) -> name.startsWith(c) || c == name || c.startsWith("$name-") }
         return hits.values.distinct().singleOrNull()
     }
 

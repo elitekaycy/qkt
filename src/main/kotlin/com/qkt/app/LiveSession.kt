@@ -26,6 +26,7 @@ import com.qkt.notify.DailyRollingTracker
 import com.qkt.notify.NoopNotifier
 import com.qkt.notify.Notifier
 import com.qkt.notify.NotifyEventKind
+import com.qkt.observe.insights.SharedDealFetch
 import com.qkt.observe.insights.TicketAttribution
 import com.qkt.pnl.PnLCalculator
 import com.qkt.pnl.StrategyPnL
@@ -170,9 +171,7 @@ class LiveSession(
     private val insightsDeployedIds: () -> Collection<String> = { emptyList() },
     /** Broker state poller cadence (insights `state_poll_ms`); active when the STATE family is enabled. */
     private val insightsStatePollMs: Long = 10_000L,
-    private val insightsSharedDeals: com.qkt.observe.insights.SharedDealFetch =
-        com.qkt.observe.insights
-            .SharedDealFetch(),
+    private val insightsSharedDeals: SharedDealFetch = SharedDealFetch(),
     /** Days of broker deal history the state poller backfills at start (insights `deal_backfill_days`). */
     private val insightsDealBackfillDays: Long = 30L,
     /**
@@ -685,7 +684,8 @@ class LiveSession(
             com.qkt.risk.book
                 .wireBookReservations(bus, controller)
         }
-        insights.facts.wireBus(bus, priceTracker, positions, instruments) { brokers.built.ifEmpty { listOf(broker) } }
+        val venueBrokers = { brokers.built.ifEmpty { listOf(broker) } }
+        insights.facts.wireBus(bus, priceTracker, positions, instruments, insightsSharedDeals.positions, venueBrokers)
         // Restore OCO legs from the persistor and reconcile them against venue truth so
         // any sibling whose pair filled during downtime is cancelled before ticks flow.
         pipeline.orderManager.restore(strategies.map { it.first })

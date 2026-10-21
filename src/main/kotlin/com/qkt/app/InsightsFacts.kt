@@ -9,6 +9,7 @@ import com.qkt.observe.insights.InsightsEventFamily
 import com.qkt.observe.insights.InsightsFillFacts
 import com.qkt.observe.insights.InsightsSink
 import com.qkt.observe.insights.InsightsVenues
+import com.qkt.observe.insights.PositionFacts
 import com.qkt.positions.PositionProvider
 import com.qkt.strategy.Strategy
 
@@ -32,13 +33,15 @@ internal class InsightsFacts(
 
     /**
      * Streams the session's [bus] to the sink ([InsightsBusWiring]) with facts drawn from its venue
-     * [brokers], its account [positions] and its [instruments]. A no-op without a sink.
+     * [brokers], its account [positions] and its [instruments]; what it resolves per venue position goes
+     * to [shared], the process-wide store every session's poller reads. A no-op without a sink.
      */
     fun wireBus(
         bus: EventBus,
         prices: MarketPriceProvider,
         positions: PositionProvider,
         instruments: InstrumentRegistry?,
+        shared: PositionFacts,
         brokers: () -> List<Broker>,
     ) {
         val sink = insightsSink ?: return
@@ -47,7 +50,7 @@ internal class InsightsFacts(
             (described.describedFor(s) as? Broker)?.positionAccountingMode(s) ?: PositionAccountingMode.UNKNOWN
         }
         venues = described
-        fills = InsightsFillFacts(described, positions, mode)
+        fills = InsightsFillFacts(described, positions, mode, shared = shared)
         InsightsBusWiring(insightsEvents, strategies).wire(bus, sink, prices, fills, described)
     }
 }

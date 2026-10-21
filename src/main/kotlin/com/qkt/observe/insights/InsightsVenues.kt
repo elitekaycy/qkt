@@ -68,6 +68,9 @@ class InsightsVenues(
         return size.multiply(rate)
     }
 
+    /** [symbol]'s price grid as qkt's own orders use it (its registry's price step), or null when it has none. */
+    fun priceStep(symbol: String): BigDecimal? = instruments?.lookup(symbol)?.priceStep
+
     /**
      * The `instrument` object for [symbol]: `{symbol, venueCode, kind, contractSize, tickSize, quoteCurrency}`
      * from what qkt's registry and the venue state, or null when neither knows it. qkt's registry wins where
