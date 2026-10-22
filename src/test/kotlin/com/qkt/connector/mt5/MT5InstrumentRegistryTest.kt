@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Test
 class MT5InstrumentRegistryTest {
     private lateinit var server: MockWebServer
     private lateinit var broker: MT5Broker
+    private val symbolInfoPaths = java.util.concurrent.CopyOnWriteArrayList<String>()
 
     @BeforeEach
     fun setup() {
@@ -26,6 +27,7 @@ class MT5InstrumentRegistryTest {
             object : Dispatcher() {
                 override fun dispatch(request: RecordedRequest): MockResponse {
                     val path = request.path.orEmpty()
+                    if (path.startsWith("/symbol_info/")) symbolInfoPaths += path
                     return when {
                         path.startsWith("/get_positions") -> MockResponse().setBody("[]")
                         path.startsWith("/orders") -> MockResponse().setBody("[]")
@@ -66,6 +68,15 @@ class MT5InstrumentRegistryTest {
         assertThat(meta.volumeStep).isEqualByComparingTo("0.01")
         assertThat(meta.digits).isEqualTo(3)
         assertThat(meta.pointSize).isEqualByComparingTo("0.001")
+    }
+
+    @Test
+    fun `lookup declines another profile's symbol without asking the gateway`() {
+        // forward runs 15 Exness profiles on one gateway; the registry walks every profile's delegate
+        val registry = MT5InstrumentRegistry(broker)
+
+        assertThat(registry.lookup("EXNESS_P502:XAUUSD")).isNull()
+        assertThat(symbolInfoPaths).isEmpty()
     }
 
     @Test
