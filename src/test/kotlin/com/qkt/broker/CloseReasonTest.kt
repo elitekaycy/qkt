@@ -45,9 +45,10 @@ class CloseReasonTest {
     }
 
     @Test
-    fun `an MT5 account's identity names the venue by its server and the account by login and server`() {
+    fun `an MT5 account identity names the venue by its server and the account by an opaque id`() {
         val identity = MT5VenueDescription.identity("exness", "436804390", "Exness-MT5Trial9")
-        assertThat(identity).isEqualTo(VenueIdentity("mt5", "exness", "EXNESS", "mt5:436804390@Exness-MT5Trial9"))
+        val id = VenueAccountId.mt5("436804390", "Exness-MT5Trial9")
+        assertThat(identity).isEqualTo(VenueIdentity("mt5", "exness", "EXNESS", id))
         assertThat(MT5VenueDescription.identity("exness", null, null).accountId).isNull()
     }
 }

@@ -6,6 +6,7 @@ import com.qkt.broker.CloseReason
 import com.qkt.broker.OrderTypeCapability
 import com.qkt.broker.PositionAccountingMode
 import com.qkt.broker.SubmitAck
+import com.qkt.broker.VenueAccountId
 import com.qkt.broker.VenueDescribed
 import com.qkt.broker.VenueIdentity
 import com.qkt.broker.VenueInstrument
@@ -43,7 +44,7 @@ class InsightsFillFactsTest {
 
         override fun cancel(orderId: String) {}
 
-        override fun venueIdentity() = VenueIdentity("vgp", "deribit", "DERIBIT", "vgp:deribit:x")
+        override fun venueIdentity() = VenueIdentity("vgp", "deribit", "DERIBIT", VenueAccountId.vgp("deribit", "x"))
 
         override fun fillPositionId(brokerOrderId: String?) = brokerOrderId.takeIf { namesTickets }
 
