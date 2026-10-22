@@ -19,4 +19,6 @@ data class StatePendingOrder(
     val magic: Int? = null,
     val clientOrderId: String? = null,
     val strategyId: String? = null,
+    /** Facts qkt resolved for this order: `attribution`, `instrument`. */
+    val facts: Map<String, Any?> = emptyMap(),
 )

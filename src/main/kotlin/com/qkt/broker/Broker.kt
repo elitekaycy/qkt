@@ -189,7 +189,7 @@ interface Broker {
     /**
      * Deals (executed in/out legs) the venue booked in `[from, to]` (UTC epoch ms),
      * e.g. one position closed by TP yields an IN deal and an OUT deal carrying the
-     * realized profit. Empty when the venue keeps no deal history or the read failed.
+     * realized profit. Empty when the venue keeps none; a failed read throws (never "no deals").
      */
     fun deals(
         from: Long,

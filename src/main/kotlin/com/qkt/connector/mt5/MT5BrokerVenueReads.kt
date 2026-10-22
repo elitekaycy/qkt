@@ -20,7 +20,10 @@ internal class MT5BrokerVenueReads(
         from: Long,
         to: Long,
     ): List<BrokerDeal> {
-        val deals = runCatching { client.getDeals(from, to) }.getOrNull() ?: return emptyList()
+        // A failed read throws, never reads as "no deals": the deal poller would move its watermark past them.
+        val deals =
+            client.getDeals(from, to)
+                ?: error("MT5Broker ${profile.name} deals: gateway read failed (${client.lastReadFailure()})")
         // Range queries also return balance operations (deposits/withdrawals, type 2+) with
         // no symbol and zero volume — only trade deals (0=BUY, 1=SELL) belong in history.
         return deals.filter { it.type == 0 || it.type == 1 }.map { d ->
@@ -42,6 +45,10 @@ internal class MT5BrokerVenueReads(
                 ts = d.timeMs,
                 fee = d.fee,
                 clientOrderId = d.clientOrderId,
+                // Only a closing deal (entry OUT, INOUT or OUT_BY) has a reason to close.
+                closeReason =
+                    MT5VenueDescription.closeReason(d.reason, d.clientOrderId ?: d.comment).takeIf { d.entry != 0 },
+                realizedSource = "venue",
             )
         }
     }

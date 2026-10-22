@@ -1,5 +1,6 @@
 package com.qkt.connector.gateway
 
+import com.qkt.broker.VenueInstrument
 import com.qkt.instrument.OptionSymbols
 import java.math.BigDecimal
 
@@ -22,6 +23,8 @@ class GatewaySymbols(
 
     @Volatile private var ticks: Map<String, BigDecimal> = emptyMap()
 
+    @Volatile private var listed: Map<String, WireInstrument> = emptyMap()
+
     /** Takes [codes] as the gateway's listing now. */
     fun update(codes: Collection<String>) {
         val listed = codes.groupBy(::qkt)
@@ -33,11 +36,18 @@ class GatewaySymbols(
     /** Takes [listing] as the gateway's listing now: its codes, and the price tick of each. */
     fun updateListing(listing: List<WireInstrument>) {
         update(listing.map { it.code })
+        listed = listing.associateBy { qkt(it.code) }
         ticks =
             listing
                 .mapNotNull { i -> positive(i.tickSize)?.let { qkt(i.code) to it } }
                 .toMap()
     }
+
+    /** What the latest listing states about [qktSymbol]: its code, kind, contract size, tick and currency. */
+    fun instrument(qktSymbol: String): VenueInstrument? =
+        listed[qktSymbol]?.let {
+            VenueInstrument(it.code, it.kind, positive(it.contractSize), positive(it.tickSize), it.currency)
+        }
 
     /** The price tick of [qktSymbol] in the latest listing, or null when the listing gave none. */
     fun tick(qktSymbol: String): BigDecimal? = ticks[qktSymbol]

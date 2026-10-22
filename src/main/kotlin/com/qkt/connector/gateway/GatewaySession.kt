@@ -1,5 +1,6 @@
 package com.qkt.connector.gateway
 
+import com.qkt.broker.VenueIdentity
 import com.qkt.common.Clock
 import com.qkt.events.BrokerEvent
 import com.qkt.positions.PositionProvider
@@ -31,6 +32,8 @@ internal class GatewaySession(
     submitDeadlineMs: Long = 30_000L,
     retryMs: Long = 1_000L,
     resyncRetryMs: Long = 5_000L,
+    /** The account's config entry name uppercased: the label of its events, venue state and deals. */
+    val label: String = "GATEWAY",
 ) {
     private val log = LoggerFactory.getLogger(GatewaySession::class.java)
     private val lock = Any()
@@ -38,7 +41,14 @@ internal class GatewaySession(
     /** What the account last reported. */
     val account = GatewayAccountState()
     private val routing = GatewayRouting()
-    private val ledger: GatewayLedger = GatewayLedger(symbols, routing, lock, ::fetchDeals)
+    private val alerts = GatewayAlerts(label, routing, lock, clock)
+
+    /** What qkt's accounting booked for this account's fills, for the venue deals that carry none of it. */
+    val legs = GatewayFillLegs()
+
+    /** The connector, venue and account this session trades. */
+    val venue = VenueIdentity("vgp", identity.adapter, label, identity.accountId)
+    val ledger: GatewayLedger = GatewayLedger(symbols, routing, lock, ::fetchDeals, legs)
     private val holders = GatewayHolders(symbols)
     private val funding = GatewayFunding(client, symbols, clock, routing, lock)
     private val placement = GatewayPlacement(client, clock, ledger::onOrder, ledger::onFill, submitDeadlineMs, retryMs)
@@ -58,7 +68,7 @@ internal class GatewaySession(
             clock,
             ::reconcile,
             { identity.mismatch(client.health().also(funding::heard))?.let(::refuse) },
-            ::alertUnreachable,
+            { failures -> alerts.unreachable(failures) },
             resyncRetryMs,
         )
     private val decoder = GatewayEventDecoder(ledger, account, funding::record)
@@ -166,9 +176,6 @@ internal class GatewaySession(
             holders.riskRefused
         }
 
-    private fun alertUnreachable(failures: Int) =
-        synchronized(lock) { routing.broadcast(BrokerEvent.GatewayUnreachable("Gateway", failures, clock.now())) }
-
     private fun refuse(reason: String) {
         log.error("gateway refused: {}", reason)
         refused = reason
@@ -187,10 +194,7 @@ internal class GatewaySession(
         connected: Boolean,
         reason: String,
     ) {
-        val state = if (connected) BrokerEvent.ConnectionState.CONNECTED else BrokerEvent.ConnectionState.DISCONNECTED
-        synchronized(lock) {
-            routing.broadcast(BrokerEvent.ConnectionChanged("Gateway", state, reason, timestamp = clock.now()))
-        }
+        alerts.connection(connected, reason)
         if (connected) resyncer.retryOwed()
     }
 }

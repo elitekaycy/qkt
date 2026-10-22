@@ -77,6 +77,12 @@ internal class VerifiedFlatten(
         }
     }
 
+    /** Tickets the venue attributes to the strategy now (none where it names none); throws when unreadable. */
+    fun venueTickets(): List<String> {
+        val strategyId = deployedIds.firstOrNull() ?: return emptyList()
+        return if (broker.supportsPositionTickets) positionsOf(strategyId).first.map { it.ticket } else emptyList()
+    }
+
     /** The venue-side half of any flatten: cancel, by ticket, every resting order the venue attributes to the strategy. */
     fun sweepRestingOrders(): List<String> = deployedIds.firstOrNull()?.let(::cancelRestingOrders).orEmpty()
 

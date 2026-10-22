@@ -1,5 +1,7 @@
 package com.qkt.connector.gateway
 
+import com.qkt.broker.VenueAccountId
+
 /**
  * The gateway an account must be talking to: protocol `vgp1`, [adapter], [accountLogin] and [tradeMode].
  * Checked before anything trades and again whenever the gateway's event log restarts, since a restarted
@@ -10,6 +12,9 @@ internal data class GatewayIdentity(
     val accountLogin: String,
     val tradeMode: String,
 ) {
+    /** The opaque id of this account ([VenueAccountId.vgp]): what qkt reports instead of the login. */
+    val accountId: String get() = VenueAccountId.vgp(adapter, accountLogin)
+
     /** Why [health] is not this gateway, or null when it is. */
     fun mismatch(health: WireHealth): String? =
         when {

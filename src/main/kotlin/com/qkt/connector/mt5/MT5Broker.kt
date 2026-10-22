@@ -68,8 +68,7 @@ class MT5Broker(
      */
     private val unknownResolveBackoffMs: Long = 500L,
     /** Delay before retrying an unresolved outcome; production follows the poll cadence. */
-    private val unknownPeriodicResolveMs: Long =
-        maxOf(profile.pollIntervalMs, UNKNOWN_PERIODIC_RESOLVE_MIN_MS),
+    private val unknownPeriodicResolveMs: Long = maxOf(profile.pollIntervalMs, UNKNOWN_PERIODIC_RESOLVE_MIN_MS),
     /** Clean restart-recovery venue reads required before startup may continue. */
     private val recoveryReadAttempts: Int = 5,
     /** Base linear backoff between restart-recovery venue reads. */
@@ -89,6 +88,7 @@ class MT5Broker(
     com.qkt.broker.InstrumentProvider,
     com.qkt.broker.ServerTimeZoneProvider,
     com.qkt.broker.SymbolSessionProvider by com.qkt.broker.SymbolSessionProvider(profile.symbolCalendars::inSession),
+    com.qkt.broker.VenueDescribed by MT5VenueDescription(profile, client),
     com.qkt.broker.TicketAttributionProvider {
     override val name: String = profile.name
     override val supportsPositionTickets: Boolean = true

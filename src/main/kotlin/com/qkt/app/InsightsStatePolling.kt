@@ -54,6 +54,8 @@ internal class InsightsStatePolling(
                     sharedDeals = insightsSharedDeals,
                     backfillDays = insightsDealBackfillDays,
                     emitDeals = com.qkt.observe.insights.InsightsEventFamily.DEAL in insightsEvents,
+                    venues = insights.facts.venues,
+                    fills = insights.facts.fills,
                     strategyEquity = {
                         val handle = handleRef.get()
                         if (handle == null) {

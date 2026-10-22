@@ -46,7 +46,15 @@ interface OrderInsights {
             mapOf("orderId" to e.clientOrderId, "brokerOrderId" to e.brokerOrderId.orEmpty()),
         )
 
-    fun fromOrderFilled(e: BrokerEvent.OrderFilled): InsightsEnvelope =
+    /**
+     * A complete fill. [facts] are what qkt resolved for it ([InsightsFillFacts.fillFields]): `positionId`,
+     * `legEntry`, `closeReason`, `strategyId` + `attribution`, an entry's `initialStop`/`initialTarget`/
+     * `riskAmount`, and `instrument`.
+     */
+    fun fromOrderFilled(
+        e: BrokerEvent.OrderFilled,
+        facts: Map<String, Any?> = emptyMap(),
+    ): InsightsEnvelope =
         busEnvelope(
             e.sequenceId,
             e.timestamp,
@@ -60,10 +68,14 @@ interface OrderInsights {
                 "qty" to e.quantity,
                 "venueCosts" to e.venueCosts,
                 "typedVenueCosts" to venueCostsPayload(e.typedVenueCosts),
-            ) + (e.exitReason?.let { mapOf("exitReason" to it.name) } ?: emptyMap()),
+            ) + (e.exitReason?.let { mapOf("exitReason" to it.name) } ?: emptyMap()) + facts,
         )
 
-    fun fromOrderPartiallyFilled(e: BrokerEvent.OrderPartiallyFilled): InsightsEnvelope =
+    /** A partial fill, with the same [facts] a complete one carries. */
+    fun fromOrderPartiallyFilled(
+        e: BrokerEvent.OrderPartiallyFilled,
+        facts: Map<String, Any?> = emptyMap(),
+    ): InsightsEnvelope =
         busEnvelope(
             e.sequenceId,
             e.timestamp,
@@ -79,7 +91,7 @@ interface OrderInsights {
                 "cumulativeQty" to e.cumulativeFilled,
                 "venueCosts" to e.venueCosts,
                 "typedVenueCosts" to venueCostsPayload(e.typedVenueCosts),
-            ) + (e.exitReason?.let { mapOf("exitReason" to it.name) } ?: emptyMap()),
+            ) + (e.exitReason?.let { mapOf("exitReason" to it.name) } ?: emptyMap()) + facts,
         )
 
     fun fromOrderCancelled(e: BrokerEvent.OrderCancelled): InsightsEnvelope =

@@ -27,4 +27,6 @@ data class StatePosition(
     val requestedTakeProfit: BigDecimal? = null,
     val magic: Int? = null,
     val clientOrderId: String? = null,
+    /** Facts qkt resolved for this position: `positionId`, `attribution`, initial bracket and risk, `instrument`. */
+    val facts: Map<String, Any?> = emptyMap(),
 )

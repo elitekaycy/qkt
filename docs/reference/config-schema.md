@@ -548,6 +548,9 @@ brokers:
 | `chain_snapshot_seconds` | int | no | `300` | How often the live chain of each fed option root declared `chains: book` is appended to its book series (structures and `CHAIN:` streams read it). |
 | `calendars` | as above | no | `crypto` | Set it for venues that close, such as CME futures. |
 
+The account reports to insights under its entry name uppercased (`DERIBIT`): its account, positions,
+working orders and deals are polled like an MT5 account's (see [Venue envelopes](#venue-envelopes)).
+
 A perpetual's funding is booked as the venue charges it: the gateway reports each charge with the
 position it was charged on, and each strategy holding the perpetual books `amount × its holding /
 position` as financing, so a strategy long and one short each get their own sign and a position another
@@ -672,6 +675,62 @@ carries it. List `marketdata` only once the collector runs that release:
 
 Both use envelope ids `marketdata-<state>-<source>-<ts>`, like `marketdata.connected`,
 `marketdata.disconnected` and `marketdata.reconnected`.
+
+### Venue envelopes
+
+Every connector (`type: mt5`, `type: gateway`, paper) reports venue truth through the same reads and the
+same envelopes, so a collector needs no per-connector rules. The `state` family polls each venue broker
+every `state_poll_ms` and sends `state.account`, `state.positions` and `state.orders`; the `deal` family
+adds `broker.deal` for the deals booked since the last poll. All fields below are additive: a collector
+that does not know them ignores them.
+
+- **Every venue envelope** (`state.*`, `broker.deal`, `broker.connected`, `broker.disconnected`,
+  `broker.reconnected`) carries `venue: {connector, adapter, label}` and `accountId`. `connector` is
+  `mt5`, `vgp` or `paper`; `adapter` is the venue (`exness` from the MT5 trade server
+  `Exness-MT5Trial9`, the gateway's `adapter`); `label` is the broker entry name uppercased, the same as
+  `broker` (`EXNESS`, `PAPER_DERIBIT`); `accountId` is opaque, so no envelope (nor the insights journal
+  on disk) names the account by its credentials: `mt5:` + the first 16 hex characters of
+  `sha256("<login>@<server>")`, or `vgp:` + the first 16 hex characters of
+  `sha256("<adapter>:<account_login>")` (`com.qkt.broker.VenueAccountId`; qkt-insights computes the same
+  id). `state.account.login` is a string masked to its last four characters (`•••9381`), and
+  `state.account` carries no `server`.
+- **`broker.deal`** adds `positionId` (the position the deal belongs to), `legEntry` (`IN`, `OUT`,
+  `INOUT`, `OUT_BY`), `closeReason` on a closing deal, `nextPositionId` (the position a reversing
+  `INOUT` deal opened, when it differs), typed `costs: [{kind, amount, currency}]` (`amount` positive
+  when paid), `realizedSource` (`venue`: MT5 reports `profit`; `engine`: qkt's accounting booked it),
+  `strategyId` with `attribution` (`order`: the connector knows the order exactly; `position`: by the
+  position ticket; `comment`: by the venue comment; `none`), and `instrument`.
+- **`state.positions`** entries add `positionId`, `attribution`, `instrument`, and `initialStop`,
+  `initialTarget` and `riskAmount` (account currency) when qkt opened the position with a bracket.
+  `state.orders` entries add `attribution` and `instrument`.
+- **`order.filled`, `order.partially_filled` and `trade.closed`** add `positionId`, `legEntry`,
+  `closeReason` (on a reducing fill), `strategyId` and `attribution`; an entry fill also carries
+  `initialStop`, `initialTarget`, `riskAmount` and `instrument`.
+- **`closeReason`** is one of `STOP`, `TAKE_PROFIT`, `SIGNAL`, `MANUAL`, `TIMED`, `STOP_OUT`,
+  `LIQUIDATION`, `EXPIRY`. MT5 deal reasons map 4 to `STOP`, 5 to `TAKE_PROFIT`, 6 to `STOP_OUT` and a
+  terminal (0-2) to `MANUAL`; qkt's own exits map by order id: a bracket's `-sl`/`-tp` order to
+  `STOP`/`TAKE_PROFIT`, an `EXIT AFTER` close to `TIMED`, a `qkt bot` order to `MANUAL`.
+- **`instrument`** is `{symbol, venueCode, kind, contractSize, tickSize, quoteCurrency,
+  valuePerPoint}`, where qkt or the venue knows them; `valuePerPoint` is the account-currency value of
+  one unit of quantity moving one price unit.
+
+An MT5 account names its positions (`positionId` is the position ticket). A VGP netting account names
+none, so qkt mints `<symbol>#<openedAt>`, from the open time of the account position qkt holds: a new
+id each time the position crosses zero, and the same id after a restart. A gateway deal's `legEntry`,
+`positionId` and `profit` (gross of the deal's `costs`, as MT5's) are what qkt's accounting booked for
+that fill, matched by the venue's `fill_id` (never by time: a gateway may stamp a fill in its deal list
+apart from its `fill` event), so a gateway deal is sent only once qkt has booked it: a fill placed by
+another tool, or booked before the current process started, is not sent.
+
+Every session's poller reports the whole venue account, so what qkt resolved about a position (its
+owner, its `initialStop`/`initialTarget`, the stop and target attached at the venue for it, re-anchored
+on the fill as the engine anchors them, and its `riskAmount`) is kept once per process and stated by
+every session. A closing deal states the `closeReason` of the fill that closed it whenever the venue
+only says an expert closed it (MT5 reason 3, which reads as `SIGNAL`), so a timed exit is `TIMED` on its
+deal, its `order.filled` and its `trade.closed` alike; a reason the venue decided (its SL, TP, a
+stop-out, a terminal) stands. Each deal poll re-reads the last five minutes and sends a deal once by its
+ticket, and its window moves only after a read that succeeded; a stopping session polls once more,
+retrying for up to 20 s, so the deals of its last fills (its `stop --flatten` closes) are sent.
 
 | Key | Type | Default | Notes |
 |---|---|---|---|
