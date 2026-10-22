@@ -1,6 +1,7 @@
 package com.qkt.observe.insights
 
 import com.qkt.broker.BrokerAccountState
+import com.qkt.broker.VenueAccountId
 import com.qkt.broker.VenueIdentity
 
 /**
@@ -36,8 +37,8 @@ interface VenueStateInsights {
                     "marginFree" to s.marginFree,
                     "openProfit" to s.openProfit,
                     "marginLevel" to s.marginLevel,
-                    "login" to s.login.takeIf { it.isNotEmpty() && it != "0" },
-                    "server" to s.server.takeIf { it.isNotEmpty() },
+                    // Masked, and no server: an envelope is journaled to disk, and the account id names the account.
+                    "login" to s.login.takeIf { it.isNotEmpty() && it != "0" }?.let(VenueAccountId::maskLogin),
                     "name" to s.name.takeIf { it.isNotEmpty() },
                 ) + venuePayload(s.venue),
         )

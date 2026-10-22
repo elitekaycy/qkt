@@ -6,8 +6,8 @@ import java.math.BigDecimal
  * Which connector and account a venue fact came from, stated by the connector so a consumer never
  * infers it from MT5 conventions. [connector] is `mt5`, `vgp` or `paper`; [adapter] the venue behind it
  * (`exness`, `deribit`, `paper`); [label] the config entry name uppercased (`EXNESS`, `PAPER_DERIBIT`);
- * [accountId] an opaque id unique per venue account (`mt5:436804390@Exness-MT5Trial9`,
- * `vgp:deribit:g-aVrEeP`), null until the connector has read it.
+ * [accountId] an opaque id unique per venue account ([VenueAccountId]: `mt5:` or `vgp:` and 16 hex
+ * characters, never the login or server), null until the connector has read it.
  */
 data class VenueIdentity(
     val connector: String,

@@ -1,6 +1,7 @@
 package com.qkt.connector.mt5
 
 import com.qkt.broker.CloseReason
+import com.qkt.broker.VenueAccountId
 import com.qkt.broker.VenueDescribed
 import com.qkt.broker.VenueIdentity
 import com.qkt.broker.VenueInstrument
@@ -43,7 +44,7 @@ internal class MT5VenueDescription(
                 connector = "mt5",
                 adapter = server?.substringBefore('-')?.lowercase()?.takeIf { it.isNotBlank() } ?: "mt5",
                 label = name.uppercase(),
-                accountId = if (login != null && !server.isNullOrBlank()) "mt5:$login@$server" else null,
+                accountId = if (login != null && !server.isNullOrBlank()) VenueAccountId.mt5(login, server) else null,
             )
 
         /**

@@ -1,6 +1,7 @@
 package com.qkt.connector.gateway
 
 import com.qkt.broker.CloseReason
+import com.qkt.broker.VenueAccountId
 import com.qkt.broker.VenueIdentity
 import com.qkt.events.FillAccountedEvent
 import com.qkt.positions.Position
@@ -21,7 +22,7 @@ internal class GatewayVenueReadsTest {
     private val fake = FakeGateway(listOf(code))
     private val client = GatewayClient(fake.url, "k", httpTimeoutMs = 500, retryAttempts = 1)
     private val legs = GatewayFillLegs()
-    private val venue = VenueIdentity("vgp", "fake", "DERIBIT", "vgp:fake:7")
+    private val venue = VenueIdentity("vgp", "fake", "DERIBIT", VenueAccountId.vgp("fake", "7"))
     private var held: Position? = null
     private val reads =
         GatewayVenueReads(
@@ -128,7 +129,7 @@ internal class GatewayVenueReadsTest {
 
         assertThat(account.broker).isEqualTo("DERIBIT")
         assertThat(account.login).isEqualTo("7")
-        assertThat(account.venue?.accountId).isEqualTo("vgp:fake:7")
+        assertThat(account.venue?.accountId).isEqualTo(VenueAccountId.vgp("fake", "7"))
     }
 
     private fun pos(

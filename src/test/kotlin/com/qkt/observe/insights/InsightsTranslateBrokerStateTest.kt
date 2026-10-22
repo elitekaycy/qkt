@@ -34,8 +34,11 @@ class InsightsTranslateBrokerStateTest {
         assertThat(json).contains(""""marginFree":7135.57""")
         assertThat(json).contains(""""openProfit":-147.51""")
         assertThat(json).contains(""""marginLevel":1419.03""")
-        assertThat(json).contains(""""login":"435898347"""")
-        assertThat(json).contains(""""server":"Exness-MT5Trial9"""")
+        // The login masked and no server: the envelope is journaled to disk before it is sent.
+        assertThat(env.payload["login"]).isEqualTo("•••8347")
+        assertThat(json).doesNotContain("435898347")
+        assertThat(json).doesNotContain("Exness-MT5Trial9")
+        assertThat(json).doesNotContain(""""server"""")
         assertThat(json).contains(""""name":"qkt-hedge-straddle"""")
 
         val bare =
