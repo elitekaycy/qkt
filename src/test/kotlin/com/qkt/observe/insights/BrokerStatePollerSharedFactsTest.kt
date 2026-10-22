@@ -5,6 +5,7 @@ import com.qkt.broker.CloseReason
 import com.qkt.broker.OrderTypeCapability
 import com.qkt.broker.PositionAccountingMode
 import com.qkt.broker.SubmitAck
+import com.qkt.broker.VenueAccountId
 import com.qkt.broker.VenueDescribed
 import com.qkt.broker.VenueIdentity
 import com.qkt.broker.VenueInstrument
@@ -40,7 +41,7 @@ class BrokerStatePollerSharedFactsTest : BrokerStatePollerFixture() {
 
         override fun cancel(orderId: String) {}
 
-        override fun venueIdentity() = VenueIdentity("mt5", "fake", "FAKE", "mt5:1@Fake")
+        override fun venueIdentity() = VenueIdentity("mt5", "fake", "FAKE", VenueAccountId.mt5("1", "Fake"))
 
         override fun fillPositionId(brokerOrderId: String?) = brokerOrderId
 

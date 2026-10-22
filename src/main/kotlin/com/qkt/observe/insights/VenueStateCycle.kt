@@ -3,6 +3,7 @@ package com.qkt.observe.insights
 import com.qkt.broker.Broker
 import com.qkt.broker.BrokerDeal
 import com.qkt.broker.CloseReason
+import com.qkt.broker.VenueAccountId
 import com.qkt.broker.VenueDescribed
 
 /**
@@ -96,7 +97,7 @@ internal class VenueStateCycle(
                 )
             }
         offer(InsightsTranslate.stateOrders(now, account.broker, orders, account.venue))
-        val accountKey = account.venue?.accountId ?: "${account.login}@${account.server}"
+        val accountKey = account.venue?.accountId ?: VenueAccountId.mt5(account.login, account.server)
         if (emitDeals && dealsFetched.add(accountKey)) {
             val from = dealCursor.from(accountKey, now)
             // A failed read throws here: nothing below runs, so the cursor stays where it was.

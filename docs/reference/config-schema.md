@@ -688,8 +688,12 @@ that does not know them ignores them.
   `broker.reconnected`) carries `venue: {connector, adapter, label}` and `accountId`. `connector` is
   `mt5`, `vgp` or `paper`; `adapter` is the venue (`exness` from the MT5 trade server
   `Exness-MT5Trial9`, the gateway's `adapter`); `label` is the broker entry name uppercased, the same as
-  `broker` (`EXNESS`, `PAPER_DERIBIT`); `accountId` is `mt5:<login>@<server>` or
-  `vgp:<adapter>:<account_login>`. `state.account.login` is a string.
+  `broker` (`EXNESS`, `PAPER_DERIBIT`); `accountId` is opaque, so no envelope (nor the insights journal
+  on disk) names the account by its credentials: `mt5:` + the first 16 hex characters of
+  `sha256("<login>@<server>")`, or `vgp:` + the first 16 hex characters of
+  `sha256("<adapter>:<account_login>")` (`com.qkt.broker.VenueAccountId`; qkt-insights computes the same
+  id). `state.account.login` is a string masked to its last four characters (`•••9381`), and
+  `state.account` carries no `server`.
 - **`broker.deal`** adds `positionId` (the position the deal belongs to), `legEntry` (`IN`, `OUT`,
   `INOUT`, `OUT_BY`), `closeReason` on a closing deal, `nextPositionId` (the position a reversing
   `INOUT` deal opened, when it differs), typed `costs: [{kind, amount, currency}]` (`amount` positive
