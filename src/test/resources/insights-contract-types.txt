@@ -1,5 +1,5 @@
 # Envelope types the qkt-insights contract accepts: the keys of payloadByType in
-# qkt-insights packages/contract/src/payloads.ts (dev 0346310). Regenerate when the contract changes.
+# qkt-insights packages/contract/src/payloads.ts (contract 1.0.0). Regenerate when the contract changes.
 balances.updated
 bot.cancel
 bot.close
