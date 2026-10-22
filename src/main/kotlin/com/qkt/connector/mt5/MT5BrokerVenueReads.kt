@@ -140,6 +140,9 @@ internal class MT5BrokerVenueReads(
      */
     fun instrumentMeta(qktSymbol: String): com.qkt.instrument.InstrumentMeta? {
         val prefix = "${profile.name.uppercase()}:"
+        // Another profile's symbol is not this venue's to describe: asking the gateway for
+        // `EXNESS_P502:XAUUSDm` 404s after every retry, once per lookup of every other profile.
+        if (':' in qktSymbol && !qktSymbol.startsWith(prefix, ignoreCase = true)) return null
         val bare = qktSymbol.removePrefix(prefix)
         val brokerSymbol = mt5Symbol.toBroker(bare)
         val info =
