@@ -55,6 +55,7 @@ internal object CliTopHelp {
 
         VENUE / FEED
             brokers list            list configured broker profiles
+            calendars <file>        each symbol's trading calendar and why (--venue <broker>)
             instruments verify      compare instruments.yaml with MT5 /symbol_info
             audit-ticks ...         capture and audit live MT5 ticks
             fetch BROKER:SYMBOL --tf <tf> --from <date> --to <date>

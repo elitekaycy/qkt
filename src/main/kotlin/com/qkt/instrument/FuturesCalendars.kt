@@ -9,11 +9,13 @@ import com.qkt.common.TradingCalendar
  */
 fun InstrumentRegistry.futuresCalendar(symbols: Collection<String>): TradingCalendar? {
     if (symbols.isEmpty()) return null
+    val calendars = symbols.map { futuresRootCalendar(it) ?: return null }
+    return calendars.distinct().singleOrNull()
+}
+
+/** The `calendar:` of [symbol]'s futures root when [symbol] is a futures stream or contract whose root names one. */
+fun InstrumentRegistry.futuresRootCalendar(symbol: String): TradingCalendar? {
     val directory = futures() ?: return null
-    val names =
-        symbols.map { symbol ->
-            val terms = lookup(symbol)?.derivative as? FutureTerms ?: return null
-            directory.root(terms.root)?.calendar ?: return null
-        }
-    return names.distinct().singleOrNull()?.let(TradingCalendar::named)
+    val terms = lookup(symbol)?.derivative as? FutureTerms ?: return null
+    return directory.root(terms.root)?.calendar?.let(TradingCalendar::named)
 }

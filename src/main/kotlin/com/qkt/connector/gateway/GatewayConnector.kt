@@ -37,6 +37,10 @@ class GatewayConnector : Connector {
             settings = GatewaySettings.KEYS,
         )
 
+    /** Each entry's `calendars` rules over the around-the-clock default, as each opened account trades on. */
+    override fun tradingHours(accounts: List<AccountConfig>): Map<String, SymbolCalendars> =
+        accounts.associate { it.name to GatewaySettings.calendars(it) }
+
     override fun open(
         accounts: List<AccountConfig>,
         context: ConnectorContext,

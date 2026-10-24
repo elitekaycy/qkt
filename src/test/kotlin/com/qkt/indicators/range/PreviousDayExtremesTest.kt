@@ -72,4 +72,20 @@ class PreviousDayExtremesTest {
         indicator.update(Tick("X", Money.of("80"), clock.time))
         assertThat(indicator.value() as BigDecimal).isEqualByComparingTo(Money.of("95"))
     }
+
+    @Test
+    fun `a symbol in a mixed strategy takes the previous day of its own calendar`() {
+        // FX listed first: BTC's previous day must still be the UTC day 2024-01-14, which the source serves.
+        val calendars = mapOf("EURUSD" to TradingCalendar.fxDefault(), "X" to TradingCalendar.crypto())
+        val mixed =
+            com.qkt.common.PerSymbolCalendar(
+                TradingCalendar.fxDefault(),
+                listOf("EURUSD", "X"),
+                calendars::getValue,
+            )
+        val clock = FixedClock(time = day15.toEpochMilli())
+        val indicator = PreviousDayHigh("X", mixed, source, clock)
+        indicator.update(Tick("X", Money.of("120"), clock.time))
+        assertThat(indicator.value() as BigDecimal).isEqualByComparingTo(Money.of("115"))
+    }
 }

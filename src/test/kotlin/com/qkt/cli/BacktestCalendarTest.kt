@@ -15,13 +15,19 @@ class BacktestCalendarTest {
     ) {
         val f = OptionChainFixture(dir)
         val crypto = TradingCalendar.crypto()
+        val noVenue = CalendarResolver(f.registry) { null }
 
-        assertThat(
-            backtestCalendar(listOf("CHAIN:DERIBIT.BTC_USDC.atm_iv.30d", f.symbol), f.registry),
-        ).isEqualTo(crypto)
-        assertThat(
-            backtestCalendar(listOf("CHAIN:DERIBIT.BTC_USDC.atm_iv.30d", "EXNESS:EURUSD"), NoopInstrumentRegistry),
-        ).isEqualTo(backtestCalendar(listOf("EXNESS:EURUSD"), NoopInstrumentRegistry))
+        val options = backtestCalendar(listOf("CHAIN:DERIBIT.BTC_USDC.atm_iv.30d", f.symbol), f.registry, noVenue)
+        assertThat(options.forSymbol(f.symbol)).isEqualTo(crypto)
+        assertThat(options.runSymbols).containsExactly(f.symbol)
+        val fx =
+            backtestCalendar(
+                listOf("CHAIN:DERIBIT.BTC_USDC.atm_iv.30d", "EXNESS:EURUSD"),
+                NoopInstrumentRegistry,
+                noVenue,
+            )
+        assertThat(fx.forSymbol("EXNESS:EURUSD")).isEqualTo(TradingCalendar.fxDefault())
+        assertThat(fx.runSymbols).containsExactly("EXNESS:EURUSD")
     }
 
     @Test
@@ -40,9 +46,10 @@ class BacktestCalendarTest {
                 venue
             }
 
-        assertThat(calendar).isEqualTo(venue)
+        assertThat(calendar.forSymbol(f.symbol)).isEqualTo(venue)
         assertThat(asked).containsExactly(f.symbol)
-        assertThat(strategyCalendar(listOf("OPTIONS:DERIBIT.BTC_USDC"), f.registry) { venue })
-            .isEqualTo(TradingCalendar.crypto())
+        val feedsOnly = strategyCalendar(listOf("OPTIONS:DERIBIT.BTC_USDC"), f.registry) { venue }
+        assertThat(feedsOnly.name).isEqualTo("crypto")
+        assertThat(feedsOnly.runSymbols).isEmpty()
     }
 }
