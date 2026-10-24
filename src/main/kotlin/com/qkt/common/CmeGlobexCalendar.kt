@@ -21,12 +21,12 @@ object CmeGlobexCalendar : TradingCalendar {
     private val open: LocalTime = LocalTime.of(17, 0)
     private val close: LocalTime = LocalTime.of(16, 0)
 
-    /** 23 trading hours on 5 days of every 7: the share of a year's minutes the market is open. */
-    override fun tradingPeriodsPerYear(window: TimeWindow): BigDecimal {
-        val minutesPerYear = BigDecimal("525960").multiply(BigDecimal(23 * 5)).divide(BigDecimal(24 * 7), Money.CONTEXT)
-        val windowMinutes = BigDecimal(window.durationMs).divide(BigDecimal("60000"), Money.CONTEXT)
-        return minutesPerYear.divide(windowMinutes, Money.CONTEXT)
-    }
+    /**
+     * 23 trading hours on 5 days of every 7, the share of a year's minutes the market is open, for a window that
+     * divides an hour; a longer window also counts the bars the open, close and daily halt cut short.
+     */
+    override fun tradingPeriodsPerYear(window: TimeWindow): BigDecimal =
+        TradingPeriods.forWeeklySession(this, window, openShare = 23 * 5, weekShare = 24 * 7)
 
     override fun isInSession(
         symbol: String,

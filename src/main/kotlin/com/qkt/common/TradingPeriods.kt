@@ -72,6 +72,39 @@ object TradingPeriods {
         return BigDecimal(barsTouched(combined, window)).divide(BigDecimal(REFERENCE_YEARS), Money.CONTEXT)
     }
 
+    /**
+     * The candle-grid bars a year [calendar]'s session touches at [window], measured over the reference span: what a
+     * sampler on one symbol of that calendar takes, partial bars at the open and close included.
+     */
+    fun measured(
+        calendar: TradingCalendar,
+        window: TimeWindow,
+    ): BigDecimal =
+        BigDecimal(barsTouched(maskOf(calendar, ""), window)).divide(BigDecimal(REFERENCE_YEARS), Money.CONTEXT)
+
+    /**
+     * [calendar]'s samples a year at [window] for a weekly session that opens and closes on whole UTC hours: its share
+     * of open time ([openShare] / [weekShare] of the year's minutes) for a window that divides an hour, where every
+     * bar lies wholly inside or outside the session, else [measured], which counts the bars the open and close cut
+     * short.
+     */
+    internal fun forWeeklySession(
+        calendar: TradingCalendar,
+        window: TimeWindow,
+        openShare: Int,
+        weekShare: Int,
+    ): BigDecimal {
+        if (HOUR_MS % window.durationMs != 0L) return measured(calendar, window)
+        val minutesPerYear =
+            BigDecimal(
+                "525960",
+            ).multiply(BigDecimal(openShare)).divide(BigDecimal(weekShare), Money.CONTEXT)
+        val windowMinutes = BigDecimal(window.durationMs).divide(BigDecimal("60000"), Money.CONTEXT)
+        return minutesPerYear.divide(windowMinutes, Money.CONTEXT)
+    }
+
+    private const val HOUR_MS: Long = 3_600_000L
+
     private fun maskOf(
         calendar: TradingCalendar,
         symbol: String,

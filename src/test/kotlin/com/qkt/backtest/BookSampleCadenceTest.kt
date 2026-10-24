@@ -91,4 +91,14 @@ class BookSampleCadenceTest {
 
         assertThat(collector.returnCount).isEqualTo(2)
     }
+
+    @Test
+    fun `an older boundary closing late is not sampled again`() {
+        val once = OncePerBoundary()
+        assertThat(listOf(hour, 3 * hour, 2 * hour, 3 * hour, 4 * hour).filter(once::first)).containsExactly(
+            hour,
+            3 * hour,
+            4 * hour,
+        )
+    }
 }
