@@ -106,11 +106,13 @@ Per-bar returns are annualized by the number of samples a year the sampler reall
   EURUSD + BTCUSD samples on FX hours, 6,261 times a year at 1h.
 - **Book volatility, ERC, inverse-vol and vol-target weights, rebalance cadence.** The book samples once per
   boundary on any of its symbols' bars. The count is the **union** of their sessions: 8,766 a year at 1h for the
-  same pair. Each mode counts the samples its own book sampler takes; the samplers themselves differ between
-  backtest and live (parity row A65).
+  same pair. Live samples a book with a controller on the same feed as its backtest: every child's traded symbols
+  at the first child's timeframe.
 
-When the combined session equals one member's (FX inside crypto, NYSE inside FX and inside CME Globex), that
-member's own count is used, so a single-market run's numbers are unchanged. Other combinations are measured: the
+A calendar's own count is the bars its session forms on the UTC grid. For FX and CME Globex at windows that divide an
+hour that is the share of open time (1h FX: 6,261.43); longer windows also count the bars the open and close cut
+short, so a daily FX series counts six bars a week (313 a year) and 4h FX 1,616.75. When the combined session
+equals one member's (FX inside crypto, NYSE inside FX and inside CME Globex), that member's own count is used. Other combinations are measured: the
 UTC-grid bars the combined session touches over 2021-2024, per year.
 
 ## Data coverage

@@ -68,8 +68,8 @@ measured: candle-grid bars touched by the combined session over 2021-01-01..2025
   symbol that is exactly what the resolver returns; rewiring the live gate would add risk for no change.
 - **Data coverage keeps the data's own calendar** (an import's recorded `calendar`, else the built-in rules): which
   days a store must hold is a property of the data source, and `qkt data verify` must keep agreeing with a backtest.
-- **Book risk for children-only portfolios** samples on the live risk heartbeat but per candle boundary in a backtest
-  (parity row A65). Fixing it adds a live price feed to the portfolio supervisor, so it is a separate issue.
+- **Book risk sampling** (parity row A65, #1490): fixed in a follow-up. A book with a controller samples live on the
+  children's symbols at the first child's timeframe, as its backtest does.
 
 ## What does not change
 
@@ -110,6 +110,6 @@ Each task is test-first: a failing test reproducing the defect, then the fix, th
 ## Out of scope
 
 - Extended-hours stock sessions (`nyse_extended`), the planned 23x5 schedule and session-aligned bars.
-- The FX calendar's daily count (260.9 a year) understates the 6 UTC-grid daily bars an FX week forms; it is kept
-  so existing FX numbers do not move ([#1491](https://github.com/elitekaycy/qkt/issues/1491)).
+- The FX and CME counts for windows longer than an hour ([#1491](https://github.com/elitekaycy/qkt/issues/1491)):
+  fixed in a follow-up by counting the UTC-grid bars the session touches.
 - Venue preset changes for symbols they do not name today.
