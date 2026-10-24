@@ -192,7 +192,8 @@ class CandleAggregator private constructor(
         fun standalone(
             window: TimeWindow,
             barVolume: BarVolumeSource? = null,
+            aggregates: ((String) -> Boolean)? = null,
             onClose: (Candle) -> Unit,
-        ): CandleAggregator = CandleAggregator(window = window, emit = onClose, bus = null, barVolume = barVolume)
+        ): CandleAggregator = CandleAggregator(window, onClose, null, barVolume, aggregates)
     }
 }
