@@ -24,8 +24,8 @@ internal object MT5ProfileCalendars {
     /**
      * Each `type: mt5` entry of [accounts]'s calendars, by name, resolving `extends:` through earlier entries and
      * [defaults] exactly as [MT5BrokerProfileLoader.load] does: an entry extending nothing inherits the built-in
-     * profile of its own name when there is one. An entry whose `extends:` names nothing known is left out; loading
-     * the profile refuses it.
+     * profile of its own name when there is one. An `extends:` chain that resolves to nothing known is
+     * refused with the loader's message, as the live daemon refuses it.
      */
     fun resolve(
         accounts: List<AccountConfig>,
@@ -52,6 +52,7 @@ internal object MT5ProfileCalendars {
                 madeProgress = true
             }
         }
+        check(pending.isEmpty()) { "MT5 profiles have unresolvable extends chain: ${pending.map { it.name }}" }
         return resolved
     }
 }

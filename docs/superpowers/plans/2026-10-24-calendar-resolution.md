@@ -63,7 +63,7 @@ measured: candle-grid bars touched by the combined session over 2021-01-01..2025
   declared on its broker entry, which both modes read.
 - **Backtests read broker calendars through the connector** (`Connector.tradingHours`, config only, no secrets, no
   network), the code that builds the live account's calendars, plus each connector's built-in profiles
-  (`Connector.builtInTradingHours`). A broken `calendars:` rule fails only a run that names that broker.
+  (`Connector.builtInTradingHours`). A broken `calendars:` rule or `extends:` chain fails only a run whose streams or `--venue` name a configured broker, as the daemon would refuse the config.
 - **The live market-data gate and MT5 pollers keep reading the venue's calendars directly.** For every non-futures
   symbol that is exactly what the resolver returns; rewiring the live gate would add risk for no change.
 - **Data coverage keeps the data's own calendar** (an import's recorded `calendar`, else the built-in rules): which

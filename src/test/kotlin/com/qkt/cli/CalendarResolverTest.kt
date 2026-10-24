@@ -170,4 +170,19 @@ class CalendarResolverTest {
             .isInstanceOf(BacktestContext.Companion.SetupError::class.java)
             .hasMessageContaining("nasdaq")
     }
+
+    @Test
+    fun `a broken extends chain or pause zone is refused as the daemon refuses it`(
+        @TempDir dir: Path,
+    ) {
+        val file = dir.resolve("qkt.config.yaml")
+        Files.writeString(file, yaml.replace("extends: the5ers", "extends: the6ers"))
+        assertThatThrownBy { Config.load(file).backtestCalendars(null, null).calendarFor("PROP:EURUSD") }
+            .isInstanceOf(BacktestContext.Companion.SetupError::class.java)
+            .hasMessageContaining("unresolvable extends chain")
+        Files.writeString(file, yaml.replace("America/New_York", "Mars/Olympus"))
+        assertThatThrownBy { Config.load(file).backtestCalendars(null, null).calendarFor("PROP:EURUSD") }
+            .isInstanceOf(BacktestContext.Companion.SetupError::class.java)
+            .hasMessageContaining("cannot be read")
+    }
 }

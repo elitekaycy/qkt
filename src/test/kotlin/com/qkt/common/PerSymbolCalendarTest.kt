@@ -57,4 +57,29 @@ class PerSymbolCalendarTest {
             cal.periodsPerYear(cal.runSymbols, TimeWindow.ONE_HOUR, SessionOverlap.ANY),
         ).isEqualByComparingTo("8766")
     }
+
+    @Test
+    fun `a venue's daily pause survives the per-symbol answer`() {
+        val gold =
+            DailyBreakCalendar(
+                TradingCalendar.fxDefault(),
+                java.time.LocalTime.of(16, 55),
+                java.time.LocalTime.of(18, 10),
+                java.time.ZoneId.of("America/New_York"),
+            )
+        val cal =
+            PerSymbolCalendar(TradingCalendar.crypto(), listOf("BTCUSD", "XAUUSD")) {
+                if (it ==
+                    "XAUUSD"
+                ) {
+                    gold
+                } else {
+                    TradingCalendar.crypto()
+                }
+            }
+        val inPause = Instant.parse("2024-06-12T21:30:00Z")
+        assertThat(cal.forSymbol("XAUUSD")).isEqualTo(gold)
+        assertThat(cal.isScheduledBreak("XAUUSD", inPause)).isTrue()
+        assertThat(cal.isScheduledBreak("BTCUSD", inPause)).isFalse()
+    }
 }

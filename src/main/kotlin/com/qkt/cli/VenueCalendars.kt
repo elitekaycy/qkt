@@ -27,8 +27,8 @@ internal fun Config.venueCalendars(
 
 /**
  * The backtest [CalendarResolver] for this config and `--venue` [venue]: venue names come from `brokers:` and the
- * connectors' built-in profiles; their calendars are read only when a stream's prefix or [venue] names one, and a config
- * those calendars cannot be read from is refused naming the reason, as the live daemon would refuse it.
+ * connectors' built-in profiles; their calendars are read only when a stream's prefix or [venue] names one, and then all together: a
+ * config whose broker calendars cannot be read is refused naming the reason, as the live daemon would refuse it.
  */
 internal fun Config.backtestCalendars(
     venue: String?,
@@ -39,11 +39,10 @@ internal fun Config.backtestCalendars(
         lazy {
             try {
                 venueCalendars()
-            } catch (e: IllegalArgumentException) {
-                throw BacktestContext.Companion.SetupError(
-                    "broker calendars in the config cannot be read: ${e.message}",
-                )
-            } catch (e: IllegalStateException) {
+            } catch (e: RuntimeException) {
+                val unreadable =
+                    e is IllegalArgumentException || e is IllegalStateException || e is java.time.DateTimeException
+                if (!unreadable) throw e
                 throw BacktestContext.Companion.SetupError(
                     "broker calendars in the config cannot be read: ${e.message}",
                 )
