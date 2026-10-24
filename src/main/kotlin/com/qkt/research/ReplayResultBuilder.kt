@@ -10,6 +10,7 @@ import com.qkt.backtest.monthlyReturns
 import com.qkt.backtest.tradeOutcomes
 import com.qkt.candles.TimeWindow
 import com.qkt.common.Money
+import com.qkt.common.SessionOverlap
 import com.qkt.common.TradingCalendar
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.strategy.Strategy
@@ -46,7 +47,8 @@ internal class ReplayResultBuilder(
         val pnl = books.pnl
         val strategyPnL = books.strategyPnL
         val commissionBook = books.commissionBook
-        val annualizationFactor = annualizationFactorFor(collector.globalMetrics())
+        val annualizationFactor =
+            annualizationFactorFor(collector.globalMetrics(), SessionOverlap.ALL, analytics.candleSymbols)
         val roundTrips = tradeOutcomes(tradeRecords)
         val globalReport =
             ReportBuilder.buildGlobal(
@@ -93,7 +95,10 @@ internal class ReplayResultBuilder(
             latencyReport = if (latencyEnabled) pipeline.latency.snapshot() else null,
             conditionalAutocorr = analytics.autocorr.snapshot(),
             bookAnalytics = analytics.bookReturns.result(),
-            bookRisk = analytics.bookRiskMonitor.result(annualizationFactor),
+            bookRisk =
+                analytics.bookRiskMonitor.result(
+                    annualizationFactorFor(collector.globalMetrics(), SessionOverlap.ANY, calendar.runSymbols),
+                ),
             accounting = books.accounting.snapshot(),
             finalPositionsByStrategy = books.strategyPositions.allByStrategy(),
             inputSummary =
@@ -133,9 +138,18 @@ internal class ReplayResultBuilder(
         )
     }
 
-    private fun annualizationFactorFor(metrics: EquityMetrics): BigDecimal {
+    /**
+     * Samples a year for a candle-close sampler over [symbols]: the run's equity curve waits for every candle symbol
+     * ([SessionOverlap.ALL]), the book samplers take any symbol's close ([SessionOverlap.ANY]). Other cadences
+     * estimate it from the sample spacing.
+     */
+    private fun annualizationFactorFor(
+        metrics: EquityMetrics,
+        overlap: SessionOverlap,
+        symbols: Collection<String>,
+    ): BigDecimal {
         if (cadence == SampleCadence.CANDLE_CLOSE && candleWindow != null) {
-            return calendar.tradingPeriodsPerYear(candleWindow)
+            return calendar.periodsPerYear(symbols, candleWindow, overlap)
         }
         if (metrics.count < 2) return BigDecimal("252")
         val first = metrics.firstTimestamp() ?: return BigDecimal("252")

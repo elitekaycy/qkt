@@ -1,12 +1,12 @@
 package com.qkt.cli.bot
 
+import com.qkt.cli.CalendarResolver
 import com.qkt.cli.Config
 import com.qkt.cli.InstrumentFiles
 import com.qkt.cli.configNotifier
 import com.qkt.cli.daemon.ControlClient
 import com.qkt.cli.daemon.StateDir
 import com.qkt.cli.daemon.StrategyHandle
-import com.qkt.cli.liveCalendarFor
 import com.qkt.cli.liveFactory
 import com.qkt.cli.openAccounts
 import com.qkt.connectivity.AccountDirectory
@@ -66,7 +66,7 @@ internal class LiveSessionStack(
                         ),
                     brokerFactories = accounts.orderEntry(),
                     instrumentRegistry = instruments,
-                    calendarFor = { liveCalendarFor(it, accounts) },
+                    calendarFor = CalendarResolver.live(accounts, instruments)::calendarFor,
                     persistor = cfg.statePersistor(stateDir.stateRoot),
                     notifier = notifier,
                     notifyEvents = notifyEvents,

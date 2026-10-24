@@ -5,7 +5,8 @@ import com.qkt.cli.CliOptionSchema
 /** Option schemas for parsing, editor and scaffolding tools, market data and broker metadata, the bot CLI, and help. */
 internal val toolingOptionSchemas: Map<String, CliOptionSchema> =
     mapOf(
-        "parse" to CliOptionSchema(flags = setOf("json")),
+        "parse" to CliOptionSchema(values = setOf("config", "venue"), flags = setOf("json")),
+        "calendars" to CliOptionSchema(values = setOf("config", "venue", "instruments"), flags = setOf("json")),
         "dsl" to CliOptionSchema(flags = setOf("json")),
         "lsp" to CliOptionSchema(),
         "brokers" to CliOptionSchema(values = setOf("config"), flags = setOf("json")),

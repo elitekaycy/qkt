@@ -33,10 +33,12 @@ class BookRiskMonitor(
     private var sumR2 = Money.ZERO
     private var maxGross = Money.ZERO
     private var maxNet = Money.ZERO
+    private val boundary = OncePerBoundary()
 
     init {
         when (cadence) {
-            SampleCadence.CANDLE_CLOSE -> bus.subscribe<CandleEvent> { sample(it.candle.endTime) }
+            SampleCadence.CANDLE_CLOSE ->
+                bus.subscribe<CandleEvent> { if (boundary.first(it.candle.endTime)) sample(it.candle.endTime) }
             SampleCadence.TICK -> bus.subscribe<TickEvent> { sample(it.tick.timestamp) }
             SampleCadence.FILL -> bus.subscribe<BrokerEvent.OrderFilled> { sample(it.timestamp) }
         }

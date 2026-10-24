@@ -17,7 +17,8 @@ import java.nio.file.Path
 /**
  * `qkt parse <file.qkt> [--json]` — parse and compile DSL check, prints errors with line:col
  * coordinates. With `--json` a valid file prints its machine-readable description instead of
- * `ok`: name, version, kind, and one entry per stream with the calendar qkt applies (#1278).
+ * `ok`: name, version, kind, and one entry per stream with the calendar qkt applies (#1278), chosen by the rule a
+ * backtest follows ([CalendarResolver]; `--venue` and `--config` as for a backtest).
  */
 class ParseCommand(
     private val args: Args,
@@ -83,6 +84,14 @@ class ParseCommand(
         version: Int,
         streams: List<StreamDecl>,
     ): String {
+        // The rule a backtest of this file follows; a config that cannot be read leaves the built-in rules.
+        val calendars =
+            runCatching {
+                Config
+                    .load(
+                        Config.resolvePath(args.option("config")),
+                    ).backtestCalendars(args.option("venue"), null)
+            }.getOrElse { CalendarResolver(null) { null } }
         val entries =
             streams.map { s ->
                 jsonObj(
@@ -92,7 +101,10 @@ class ParseCommand(
                     "qktSymbol" to s.qktSymbol,
                     "timeframe" to s.timeframe,
                     "warmupBars" to s.warmupBars,
-                    "calendar" to BacktestContext.defaultCalendars().calendarFor(s.symbol).name,
+                    "calendar" to
+                        runCatching { calendars.calendarFor(s.qktSymbol) }
+                            .getOrElse { BuiltInCalendars.rules.calendarFor(s.symbol) }
+                            .name,
                 )
             }
         return "{" +

@@ -31,6 +31,14 @@ internal class ReplayAnalytics(
     bookRiskController: BookRiskController?,
     candleWindowMs: Long? = null,
 ) {
+    /** The symbols that form candles: the equity curve samples a boundary once every one of them has closed a bar. */
+    val candleSymbols: Set<String> =
+        symbols
+            .filterNot {
+                it.startsWith(OptionRootSymbol.PREFIX) ||
+                    it.startsWith(ChainAnalyticsSymbol.PREFIX)
+            }.toSet()
+
     val collector =
         EquityCurveCollector(
             cadence = cadence,
@@ -40,12 +48,7 @@ internal class ReplayAnalytics(
             strategyIds = strategyIds,
             startingBalance = startingBalance,
             // Root feeds never form candles of their own and chain analytics only where defined.
-            candleSymbols =
-                symbols
-                    .filterNot {
-                        it.startsWith(OptionRootSymbol.PREFIX) ||
-                            it.startsWith(ChainAnalyticsSymbol.PREFIX)
-                    }.toSet(),
+            candleSymbols = candleSymbols,
             windowStartMs = initialTimestamp,
             candleWindowMs = candleWindowMs,
         )

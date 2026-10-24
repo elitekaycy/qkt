@@ -12,9 +12,10 @@ class DaemonCommandCalendarTest {
                 TestAccounts.bybit("linear"),
             )
 
-        assertThat(liveCalendarFor("VENUE_A:BTCUSD", accounts).name).isEqualTo("crypto")
-        assertThat(liveCalendarFor("VENUE_A:EURUSD", accounts).name).startsWith("fx")
-        assertThat(liveCalendarFor("BYBIT_LINEAR:BTCUSDT", accounts).name).isEqualTo("crypto")
-        assertThat(liveCalendarFor("PAPER:SPX", accounts).name).isEqualTo("nyse")
+        val calendars = CalendarResolver.live(accounts, null)
+        assertThat(calendars.calendarFor("VENUE_A:BTCUSD").name).isEqualTo("crypto")
+        assertThat(calendars.calendarFor("VENUE_A:EURUSD").name).startsWith("fx")
+        assertThat(calendars.calendarFor("BYBIT_LINEAR:BTCUSDT").name).isEqualTo("crypto")
+        assertThat(calendars.calendarFor("PAPER:SPX").name).isEqualTo("nyse")
     }
 }

@@ -38,6 +38,10 @@ class BookReturnCollector(
 ) {
     private val n = strategyIds.size
     private var count = 0
+
+    /** Returns folded so far: one per sampled boundary after the first. */
+    internal val returnCount: Int get() = count
+    private val boundary = OncePerBoundary()
     private val prevPnl = HashMap<String, BigDecimal>()
     private val sumR = HashMap<String, BigDecimal>().apply { strategyIds.forEach { put(it, Money.ZERO) } }
     private val sumR2 = HashMap<String, BigDecimal>().apply { strategyIds.forEach { put(it, Money.ZERO) } }
@@ -61,7 +65,7 @@ class BookReturnCollector(
             }
         }
         when (cadence) {
-            SampleCadence.CANDLE_CLOSE -> bus.subscribe<CandleEvent> { sample() }
+            SampleCadence.CANDLE_CLOSE -> bus.subscribe<CandleEvent> { if (boundary.first(it.candle.endTime)) sample() }
             SampleCadence.TICK -> bus.subscribe<TickEvent> { sample() }
             SampleCadence.FILL -> bus.subscribe<BrokerEvent.OrderFilled> { sample() }
         }
