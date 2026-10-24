@@ -99,10 +99,15 @@ class PortfolioRiskAggregator(
         haltChildren(breach.reason, breach.scope)
     }
 
-    /** Feed one candle-aligned book snapshot into the controller. */
+    private val boundary = com.qkt.backtest.OncePerBoundary()
+
+    /**
+     * Feed one candle-aligned book snapshot into the controller: once per boundary, however many of the book's
+     * symbols close a bar at [timestampMs], as the backtest book samplers do.
+     */
     @Synchronized
     fun sample(timestampMs: Long) {
-        onSample(timestampMs)
+        if (boundary.first(timestampMs)) onSample(timestampMs)
     }
 
     /** Fail closed when the supervisor cannot evaluate book risk repeatedly. */
