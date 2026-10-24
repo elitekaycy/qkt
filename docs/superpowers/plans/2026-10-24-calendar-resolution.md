@@ -111,5 +111,5 @@ Each task is test-first: a failing test reproducing the defect, then the fix, th
 
 - Extended-hours stock sessions (`nyse_extended`), the planned 23x5 schedule and session-aligned bars.
 - The FX calendar's daily count (260.9 a year) understates the 6 UTC-grid daily bars an FX week forms; it is kept
-  so existing FX numbers do not move, and recorded as a follow-up issue.
+  so existing FX numbers do not move ([#1491](https://github.com/elitekaycy/qkt/issues/1491)).
 - Venue preset changes for symbols they do not name today.
