@@ -11,7 +11,6 @@ import com.qkt.cli.observe.EventRing
 import com.qkt.cli.observe.ObservabilityServer
 import com.qkt.cli.strategyCalendar
 import com.qkt.common.TradingCalendar
-import com.qkt.derivatives.options.chain.isOptionFeed
 import com.qkt.dsl.ast.AlwaysRun
 import com.qkt.dsl.ast.WhenRun
 import com.qkt.dsl.portfolio.CompiledChild
@@ -673,11 +672,8 @@ class PortfolioDeployer(
 
     private fun calendarForSymbol(qktSymbol: String): TradingCalendar = calendarFor?.invoke(qktSymbol) ?: calendar
 
-    internal fun bookAnnualization(compiled: PortfolioCompiled): java.math.BigDecimal {
-        val stream = compiled.ast.streams.find { !isOptionFeed(it.qktSymbol) } ?: return java.math.BigDecimal("252")
-        val window = TimeWindow.parse(stream.timeframe)
-        return calendarForSymbol(stream.qktSymbol).tradingPeriodsPerYear(window)
-    }
+    internal fun bookAnnualization(compiled: PortfolioCompiled) =
+        bookAnnualization(compiled, instrumentRegistry, ::calendarForSymbol)
 
     private companion object {
         const val PORTFOLIO_RISK_PREFIX = "__portfolio__"

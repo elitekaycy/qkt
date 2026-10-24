@@ -1,18 +1,23 @@
 package com.qkt.common
 
+import com.qkt.candles.TimeWindow
+import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
-import java.time.temporal.TemporalAdjusters
-import java.util.concurrent.ConcurrentHashMap
 
+/**
+ * New York Stock Exchange regular hours: 09:30-16:00 America/New_York on trading days, 09:30-13:00 on the early-close
+ * days, closed at weekends, on exchange holidays and on the one-off closures [NyseSessions] lists. Daylight saving is
+ * followed through the zone, so the open is 13:30 UTC in summer and 14:30 UTC in winter. Pre-market and after-hours
+ * trading are not part of the session.
+ */
 object NyseCalendar : TradingCalendar {
     override val name: String = "nyse"
 
     private val zone = ZoneId.of("America/New_York")
     private val openTime = LocalTime.of(9, 30)
-    private val closeTime = LocalTime.of(16, 0)
 
     override fun isInSession(
         symbol: String,
@@ -20,21 +25,15 @@ object NyseCalendar : TradingCalendar {
     ): Boolean {
         val zdt = t.atZone(zone)
         val date = zdt.toLocalDate()
-        if (zdt.dayOfWeek.value >= 6) return false
-        if (isHoliday(date)) return false
+        if (!NyseSessions.isTradingDay(date)) return false
         val tod = zdt.toLocalTime()
-        return tod >= openTime && tod < closeTime
+        return tod >= openTime && tod < NyseSessions.closeOn(date)
     }
 
     override fun sessionRange(
         symbol: String,
         t: Instant,
-    ): TimeRange {
-        val date = t.atZone(zone).toLocalDate()
-        val start = date.atTime(openTime).atZone(zone).toInstant()
-        val end = date.atTime(closeTime).atZone(zone).toInstant()
-        return TimeRange(start, end)
-    }
+    ): TimeRange = sessionOn(t.atZone(zone).toLocalDate())
 
     override fun anchorEpochFor(
         anchor: SessionAnchor,
@@ -45,7 +44,7 @@ object NyseCalendar : TradingCalendar {
             SessionAnchor.CurrentSession -> date.toEpochDay()
             SessionAnchor.PreviousDay,
             SessionAnchor.PreviousSession,
-            -> previousTradingDay(date).toEpochDay()
+            -> NyseSessions.previousTradingDay(date).toEpochDay()
             is SessionAnchor.Rolling -> t.toEpochMilli()
         }
     }
@@ -58,55 +57,48 @@ object NyseCalendar : TradingCalendar {
             SessionAnchor.CurrentSession,
             SessionAnchor.PreviousDay,
             SessionAnchor.PreviousSession,
-            -> {
-                val date = LocalDate.ofEpochDay(anchorEpoch)
-                val start = date.atTime(openTime).atZone(zone).toInstant()
-                val end = date.atTime(closeTime).atZone(zone).toInstant()
-                TimeRange(start, end)
-            }
+            -> sessionOn(LocalDate.ofEpochDay(anchorEpoch))
             is SessionAnchor.Rolling -> {
                 val end = Instant.ofEpochMilli(anchorEpoch)
                 TimeRange(end.minus(anchor.duration), end)
             }
         }
 
-    /** An NYSE holiday closes the whole session, so data coverage reports the day as a holiday, not a weekday hole. */
+    /** A holiday or special closure closes the whole session, so data coverage reports it as such, not a weekday hole. */
     override fun isClosedSession(
         symbol: String,
         session: TimeRange,
-    ): Boolean = isHoliday(session.from.atZone(zone).toLocalDate())
+    ): Boolean = NyseSessions.isClosed(session.from.atZone(zone).toLocalDate())
 
-    private fun previousTradingDay(date: LocalDate): LocalDate {
-        var d = date.minusDays(1)
-        while (d.dayOfWeek.value >= 6 || isHoliday(d)) d = d.minusDays(1)
-        return d
-    }
-
-    private fun isHoliday(d: LocalDate): Boolean = d in holidaysFor(d.year)
-
-    private val holidayCache = ConcurrentHashMap<Int, Set<LocalDate>>()
-
-    private fun holidaysFor(year: Int): Set<LocalDate> = holidayCache.computeIfAbsent(year) { computeHolidays(year) }
-
-    private fun computeHolidays(year: Int): Set<LocalDate> {
-        val days = mutableSetOf<LocalDate>()
-        days.add(observed(LocalDate.of(year, 1, 1)))
-        days.add(LocalDate.of(year, 1, 1).with(TemporalAdjusters.dayOfWeekInMonth(3, java.time.DayOfWeek.MONDAY)))
-        days.add(LocalDate.of(year, 2, 1).with(TemporalAdjusters.dayOfWeekInMonth(3, java.time.DayOfWeek.MONDAY)))
-        days.add(WesternEaster.goodFriday(year))
-        days.add(LocalDate.of(year, 5, 1).with(TemporalAdjusters.lastInMonth(java.time.DayOfWeek.MONDAY)))
-        if (year >= 2022) days.add(observed(LocalDate.of(year, 6, 19)))
-        days.add(observed(LocalDate.of(year, 7, 4)))
-        days.add(LocalDate.of(year, 9, 1).with(TemporalAdjusters.firstInMonth(java.time.DayOfWeek.MONDAY)))
-        days.add(LocalDate.of(year, 11, 1).with(TemporalAdjusters.dayOfWeekInMonth(4, java.time.DayOfWeek.THURSDAY)))
-        days.add(observed(LocalDate.of(year, 12, 25)))
-        return days
-    }
-
-    private fun observed(d: LocalDate): LocalDate =
-        when (d.dayOfWeek) {
-            java.time.DayOfWeek.SATURDAY -> d.minusDays(1)
-            java.time.DayOfWeek.SUNDAY -> d.plusDays(1)
-            else -> d
+    /**
+     * The candle-grid bars a year of NYSE sessions touches: a bar is formed when any of its time falls inside a session,
+     * the way equity is sampled on candle closes. Counted over [TradingPeriods.REFERENCE_FROM] to
+     * [TradingPeriods.REFERENCE_TO] (four 365.25-day years) and divided by four, so a 1d window gives the average
+     * trading days a year (251.25) and a 1h window seven bars per regular session (the 13:30 UTC summer open shares
+     * the 13:00 bar).
+     */
+    override fun tradingPeriodsPerYear(window: TimeWindow): BigDecimal {
+        var bars = 0L
+        var lastBar = Long.MIN_VALUE
+        var day = TradingPeriods.REFERENCE_FROM
+        while (day.isBefore(TradingPeriods.REFERENCE_TO)) {
+            if (NyseSessions.isTradingDay(day)) {
+                val session = sessionOn(day)
+                val first = maxOf(Math.floorDiv(session.from.toEpochMilli(), window.durationMs), lastBar + 1)
+                val last = Math.floorDiv(session.to.toEpochMilli() - 1, window.durationMs)
+                if (last >= first) {
+                    bars += last - first + 1
+                    lastBar = last
+                }
+            }
+            day = day.plusDays(1)
         }
+        return BigDecimal(bars).divide(BigDecimal(TradingPeriods.REFERENCE_YEARS), Money.CONTEXT)
+    }
+
+    private fun sessionOn(date: LocalDate): TimeRange =
+        TimeRange(
+            date.atTime(openTime).atZone(zone).toInstant(),
+            date.atTime(NyseSessions.closeOn(date)).atZone(zone).toInstant(),
+        )
 }

@@ -97,6 +97,25 @@ class PortfolioRiskAggregatorSamplingTest : PortfolioRiskAggregatorFixture() {
     }
 
     @Test
+    fun `a boundary several book symbols close at is one controller sample`() {
+        val timestamps = mutableListOf<Long>()
+        val clock = TestClock(0L)
+        val aggregator =
+            PortfolioRiskAggregator(
+                children = emptyList(),
+                bookRiskState = bookRiskState(FakePnL(BigDecimal.ZERO, BigDecimal.ZERO), clock),
+                haltRules = emptyList(),
+                clock = clock,
+                onSample = timestamps::add,
+                sampleOnEvaluate = false,
+            )
+
+        listOf(60_000L, 60_000L, 120_000L, 180_000L, 180_000L).forEach(aggregator::sample)
+
+        assertThat(timestamps).containsExactly(60_000L, 120_000L, 180_000L)
+    }
+
+    @Test
     fun `child fill callbacks defer cross-engine pnl reads to the risk heartbeat`() {
         val clock = TestClock(0L)
         var pnlReads = 0

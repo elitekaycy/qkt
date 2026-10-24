@@ -22,6 +22,21 @@ interface Connector {
         accounts: List<AccountConfig>,
         context: ConnectorContext,
     ): List<TradingAccount>
+
+    /**
+     * The trading hours each of [accounts] trades on, by entry name, read from config alone: no secrets, no network,
+     * the same calendars [TradingAccount.tradingHours] returns once the account is opened. A backtest takes a venue's
+     * calendars from here, so it judges sessions as the live account will. Empty when this connector cannot say
+     * without opening the account.
+     */
+    fun tradingHours(accounts: List<AccountConfig>): Map<String, com.qkt.common.SymbolCalendars> = emptyMap()
+
+    /**
+     * The trading hours of the venue profiles this connector ships built in (MT5's `exness`, `the5ers`, ...), by
+     * name: what an entry of that name, or one extending it without `calendars:`, trades on. A backtest whose stream
+     * prefix names one takes these calendars with no config entry.
+     */
+    fun builtInTradingHours(): Map<String, com.qkt.common.SymbolCalendars> = emptyMap()
 }
 
 /**

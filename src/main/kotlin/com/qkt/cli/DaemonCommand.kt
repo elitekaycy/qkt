@@ -184,9 +184,9 @@ class DaemonCommand(
                 runCatching { insightsSink?.close() }
                 return ExitCodes.USER_ERROR
             }
-        val daemonCalendarFor: (String) -> com.qkt.common.TradingCalendar = { qktSymbol ->
-            liveCalendarFor(qktSymbol, accounts)
-        }
+        // One calendar rule for every strategy this daemon runs: the rule a backtest follows too.
+        val daemonCalendarFor: (String) -> com.qkt.common.TradingCalendar =
+            CalendarResolver.live(accounts, daemonInstrumentRegistry)::calendarFor
         val liveAccounts = verifiedAccounts.filter { it.second.type == com.qkt.connectivity.AccountType.LIVE }
         if (!cfg.runtimeMode.production && liveAccounts.isNotEmpty()) {
             System.err.println(
