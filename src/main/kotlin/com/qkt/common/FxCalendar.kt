@@ -22,19 +22,12 @@ object FxCalendar : TradingCalendar {
     private val CLOSE: LocalTime = LocalTime.of(17, 0)
 
     /**
-     * FX trades ~24h x 5 days: 5/7 of the year's minutes. Powers Sharpe
-     * annualization for FX backtests; e.g. 1m windows -> ~375,686 periods/year.
+     * The bars a year an FX symbol forms at [window], which annualizes FX Sharpe. FX trades 24h x 5 days, 5/7 of the
+     * year's minutes: 1m windows give ~375,686 periods, 1h 6,261.43. A window longer than an hour also counts the bars
+     * the Sunday open and Friday close cut short: a daily FX series forms six UTC bars a week, 313 a year, not 260.9.
      */
-    override fun tradingPeriodsPerYear(window: com.qkt.candles.TimeWindow): java.math.BigDecimal {
-        val minutesPerYear =
-            java.math
-                .BigDecimal("525960")
-                .multiply(java.math.BigDecimal(5))
-                .divide(java.math.BigDecimal(7), Money.CONTEXT)
-        val windowMinutes =
-            java.math.BigDecimal(window.durationMs).divide(java.math.BigDecimal("60000"), Money.CONTEXT)
-        return minutesPerYear.divide(windowMinutes, Money.CONTEXT)
-    }
+    override fun tradingPeriodsPerYear(window: com.qkt.candles.TimeWindow): java.math.BigDecimal =
+        TradingPeriods.forWeeklySession(this, window, openShare = 5, weekShare = 7)
 
     override fun isInSession(
         symbol: String,
