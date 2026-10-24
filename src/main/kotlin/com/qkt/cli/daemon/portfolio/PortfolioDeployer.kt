@@ -127,11 +127,8 @@ class PortfolioDeployer(
             require((maxDrawdownPct == null && maxDailyDrawdownPct == null) || bookCapital != null) {
                 "portfolio drawdown limits require portfolio CAPITAL or book_risk.capital"
             }
-            val bookWindow =
-                compiled.ast.streams
-                    .firstOrNull()
-                    ?.timeframe
-                    ?.let(TimeWindow::parse)
+            // The book samples, rebalances and annualizes on the feed the backtest uses (#1490).
+            val bookFeed = compiled.bookFeed()
             val bookAnnualization = bookAnnualization(compiled)
             val effectiveBookRiskConfig =
                 if (compiled.ast.allocate != null && bookCapital != null) {
@@ -140,7 +137,7 @@ class PortfolioDeployer(
                             .BookRiskConfig()
                     val rebalanceBars =
                         compiled.ast.allocate.rebalanceEveryDurationMs?.let { durationMs ->
-                            bookWindow?.let { window ->
+                            bookFeed?.window?.let { window ->
                                 java.math
                                     .BigDecimal(durationMs)
                                     .divide(java.math.BigDecimal(window.durationMs), 0, java.math.RoundingMode.CEILING)
@@ -213,7 +210,7 @@ class PortfolioDeployer(
                     childWrappers,
                     bookController,
                     portfolioGate,
-                    sampleOnEvaluate = bookWindow == null,
+                    sampleOnEvaluate = if (bookController != null && bookFeed != null) false else symbols.isEmpty(),
                     portfolioInsights = insightsSink,
                 )
             if (riskAggregator != null) bookFillBuffer?.bind(riskAggregator)
@@ -222,16 +219,16 @@ class PortfolioDeployer(
                     ast = compiled.ast,
                     children = childWrappers,
                     marketSource =
-                        if (symbols.isEmpty() ||
-                            (!hasConditionalRules && bookController == null)
-                        ) {
-                            null
-                        } else {
-                            marketSourceProvider(symbols)
+                        when {
+                            bookController != null && bookFeed != null ->
+                                marketSourceProvider((symbols + bookFeed.symbols).distinct())
+                            symbols.isEmpty() || !hasConditionalRules && bookController == null -> null
+                            else -> marketSourceProvider(symbols)
                         },
                     riskAggregator = riskAggregator,
                     riskIntervalMs = riskIntervalMs,
                     gate = portfolioGate,
+                    bookFeed = bookFeed.takeIf { bookController != null },
                 )
             supervisor.start()
 

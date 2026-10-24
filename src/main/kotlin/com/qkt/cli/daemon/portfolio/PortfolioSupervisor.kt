@@ -1,15 +1,10 @@
 package com.qkt.cli.daemon.portfolio
 
-import com.qkt.bus.EventBus
-import com.qkt.candles.CandleAggregator
 import com.qkt.candles.TimeWindow
-import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.SystemClock
 import com.qkt.common.TradingCalendar
 import com.qkt.dsl.ast.PortfolioAst
 import com.qkt.dsl.portfolio.PortfolioGate
-import com.qkt.events.CandleEvent
-import com.qkt.events.TickEvent
 import com.qkt.marketdata.Candle
 import com.qkt.marketdata.source.MarketSource
 import java.time.Duration
@@ -29,8 +24,8 @@ import org.slf4j.LoggerFactory
  * daemonized so the JVM can exit when the main daemon stops. Idempotent
  * [start] / [stop] — extra calls are no-ops.
  *
- * When [marketSource] is null (portfolios that declare no streams), only the
- * always-run rules fire; no tick loop spins up.
+ * When [marketSource] is null (no conditional rules and no book controller), only the
+ * always-run rules fire; no tick loop spins up. The loop itself is [PortfolioTickLoop].
  */
 class PortfolioSupervisor(
     val ast: PortfolioAst,
@@ -39,6 +34,8 @@ class PortfolioSupervisor(
     private val riskAggregator: PortfolioRiskAggregator? = null,
     private val riskIntervalMs: Long = 1000L,
     gate: PortfolioGate? = null,
+    /** The feed the book controller samples on (see [BookFeed]); null samples the book on the gate candles. */
+    private val bookFeed: BookFeed? = null,
 ) {
     private val log = LoggerFactory.getLogger(PortfolioSupervisor::class.java)
     private val runFlag = AtomicBoolean(false)
@@ -178,30 +175,18 @@ class PortfolioSupervisor(
 
     private fun tickLoop() {
         val source = marketSource ?: return
-        val symbols = ast.streams.map { it.qktSymbol }.distinct()
-        if (symbols.isEmpty()) return
-
-        val window = TimeWindow.parse(ast.streams.first().timeframe)
-        val bus = EventBus(SystemClock(), MonotonicSequenceGenerator())
-        CandleAggregator(bus, window)
-        bus.subscribe<CandleEvent> { e ->
-            // Update the gate and child activation first so the risk aggregator sees the
-            // current bar's regime when it feeds the book controller.
-            onCandle(e.candle)
-            riskAggregator?.sample(e.candle.endTime)
-        }
-
-        val feed = source.liveTicks(symbols)
-        try {
-            while (runFlag.get()) {
-                val tick = feed.next() ?: break
-                bus.publish(TickEvent(tick))
-            }
-        } catch (e: InterruptedException) {
-            Thread.currentThread().interrupt()
-        } finally {
-            runCatching { feed.close() }
-        }
+        PortfolioTickLoop(
+            source = source,
+            gateSymbols = ast.streams.map { it.qktSymbol }.distinct(),
+            gateWindow =
+                ast.streams
+                    .firstOrNull()
+                    ?.timeframe
+                    ?.let(TimeWindow::parse),
+            bookFeed = bookFeed,
+            onGateCandle = ::onCandle,
+            sample = { endMs -> riskAggregator?.sample(endMs) },
+        ).run(runFlag::get)
     }
 
     private companion object {
