@@ -71,6 +71,7 @@ internal fun runMain(argv: Array<String>): Int =
             }
             when (args.subcommand) {
                 "parse" -> ParseCommand(args).run()
+                "calendars" -> CalendarsCommand(args).run()
                 "dsl" -> DslCommand(args).run()
                 "lsp" -> LspCommand().run()
                 "backtest" -> BacktestCommand(args).run()

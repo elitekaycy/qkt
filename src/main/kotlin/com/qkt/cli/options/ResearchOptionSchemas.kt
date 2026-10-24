@@ -34,6 +34,7 @@ private val backtestValues =
         "funding",
         "commission-per-lot",
         "swap-scale",
+        "venue",
     )
 private val backtestFlags =
     setOf("no-fetch", "bars", "allow-incomplete", "tick-fills", "no-tick-fills", "enforce-live-breakers", "chaos")

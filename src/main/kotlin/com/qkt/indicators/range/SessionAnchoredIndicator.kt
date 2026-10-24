@@ -11,8 +11,9 @@ import java.time.Instant
 
 /**
  * [RangeAggregateIndicator] specialised for session-anchored ranges — refresh on each
- * session boundary defined by the [SessionAnchor] + [TradingCalendar]. Subclasses
- * supply [reduce] and the concrete anchor (London open, New York close, daily UTC, …).
+ * session boundary defined by the [SessionAnchor] + [TradingCalendar]. The session is [symbol]'s own
+ * ([TradingCalendar.forSymbol]): in a strategy holding EURUSD and BTCUSD, BTC's previous day is the UTC day and
+ * EURUSD's the FX day. Subclasses supply [reduce] and the concrete anchor (London open, New York close, daily UTC, …).
  */
 abstract class SessionAnchoredIndicator<T : Any>(
     anchor: SessionAnchor,
@@ -26,10 +27,11 @@ abstract class SessionAnchoredIndicator<T : Any>(
         symbol = symbol,
         window = window,
         rangeSpec = {
-            calendar.rangeFor(anchor, calendar.anchorEpochFor(anchor, Instant.ofEpochMilli(clock.now())))
+            val own = calendar.forSymbol(symbol)
+            own.rangeFor(anchor, own.anchorEpochFor(anchor, Instant.ofEpochMilli(clock.now())))
         },
         reduce = reduce,
         source = source,
         clock = clock,
-        refreshOn = RefreshTrigger.OnAnchorRollover(anchor, calendar),
+        refreshOn = RefreshTrigger.OnAnchorRollover(anchor, calendar.forSymbol(symbol)),
     )

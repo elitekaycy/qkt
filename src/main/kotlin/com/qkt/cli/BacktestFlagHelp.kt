@@ -61,6 +61,7 @@ internal object BacktestFlagHelp {
             "commission-per-lot" to
                 "override every symbol's commission, e.g. --commission-per-lot 7 (account currency per 1.0 lot per side)",
             "swap-scale" to "scale overnight financing, e.g. --swap-scale 0 (swap-free) or 2 (double stress)",
+            "venue" to "take a broker's trading calendars, e.g. --venue the5ers (none: built-in rules only)",
             "param" to "override one PARAM/LET, e.g. --param fast=5 (repeatable; comma lists need sweep)",
             "report-dir" to "where to write the report bundle (default ~/.qkt/runs/<time>-<strategy>/)",
             "metrics-window" to "extra sub-window NAME=FROM..TO to report beside global (repeatable)",

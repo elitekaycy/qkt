@@ -9,7 +9,6 @@ import com.qkt.candles.TimeWindow
 import com.qkt.common.FixedClock
 import com.qkt.common.SymbolCalendars
 import com.qkt.common.TimeRange
-import com.qkt.common.TradingCalendar
 import com.qkt.dsl.ast.StrategyAst
 import com.qkt.dsl.compile.AstCompiler
 import com.qkt.dsl.portfolio.PortfolioGate
@@ -90,6 +89,7 @@ class BacktestContext private constructor(
     private val enforceLiveBreakers: Boolean = false,
     private val runawayMaxRoundTrips: Int = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_ROUND_TRIPS,
     private val runawayMaxRejections: Int = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_REJECTIONS,
+    private val calendars: CalendarResolver = CalendarResolver(null) { null },
 ) {
     /** Fetch + completeness-validate the data the run(s) will touch. Throws IncompleteDataException on holes. */
     fun provision() = provisioner()
@@ -144,7 +144,7 @@ class BacktestContext private constructor(
             } else {
                 executionConfig
             }
-        val calendar = backtestCalendar(symbols, instruments)
+        val calendar = backtestCalendar(symbols, instruments, calendars)
         val haltRules =
             com.qkt.risk.HaltRules.standard(
                 maxDailyLoss = haltConfig.maxDailyLoss,
@@ -390,6 +390,7 @@ class BacktestContext private constructor(
                 barWindows = barWindows,
                 binaryBarStore = binaryBarStore,
                 tickFills = tickFills,
+                calendars = cfg.backtestCalendars(args.option("venue"), instruments),
             )
         }
 
@@ -459,7 +460,9 @@ class BacktestContext private constructor(
             // Build the shared portfolio gate so WHEN..RUN rules suppress child signals in backtest
             // exactly as PortfolioSupervisor does in live. The gate is fed closed candles before
             // strategies evaluate them, so the gate state is current for each bar.
-            val portfolioCalendar = backtestCalendar(symbols, instruments)
+            val cfg = Config.load(Config.resolvePath(args.option("config")))
+            val calendars = cfg.backtestCalendars(args.option("venue"), instruments)
+            val portfolioCalendar = backtestCalendar(symbols, instruments, calendars)
             val portfolioGate =
                 PortfolioGate(
                     ast = compiled.ast,
@@ -488,7 +491,6 @@ class BacktestContext private constructor(
                     "mt5-sim" -> BrokerKind.MT5_SIM
                     else -> throw SetupError("unknown --broker '$raw' (valid: paper, mt5-sim)")
                 }
-            val cfg = Config.load(Config.resolvePath(args.option("config")))
             val executionConfig = BacktestSimulationOptions.executionConfig(args, cfg, brokerKind)
             val barReplay =
                 BacktestBarReplay.resolveBarReplay(
@@ -600,25 +602,12 @@ class BacktestContext private constructor(
                 barWindows = barWindows,
                 binaryBarStore = binaryBarStore,
                 tickFills = tickFills,
+                calendars = calendars,
             )
         }
 
-        internal fun defaultCalendars(): SymbolCalendars =
-            SymbolCalendars(
-                rules =
-                    listOf(
-                        SymbolCalendars.Rule("BTC*", TradingCalendar.crypto()),
-                        SymbolCalendars.Rule("ETH*", TradingCalendar.crypto()),
-                        SymbolCalendars.Rule("*USDT", TradingCalendar.crypto()),
-                        // US equity index CFDs trade NYSE hours. DXY trades the fx week, so it
-                        // falls through to the fxDefault default below.
-                        SymbolCalendars.Rule("SPX", TradingCalendar.nyse()),
-                        SymbolCalendars.Rule("NDX", TradingCalendar.nyse()),
-                        SymbolCalendars.Rule("DJI", TradingCalendar.nyse()),
-                        SymbolCalendars.Rule("RUT", TradingCalendar.nyse()),
-                    ),
-                default = TradingCalendar.fxDefault(),
-            )
+        /** qkt's [BuiltInCalendars] rules: the calendar a symbol takes when no venue says. */
+        internal fun defaultCalendars(): SymbolCalendars = BuiltInCalendars.rules
 
         fun parseInstant(s: String): Instant =
             if (s.contains('T')) {

@@ -38,12 +38,13 @@ class SymbolCalendars(
         val calendar: TradingCalendar,
     )
 
-    private val compiled: List<Pair<Regex, TradingCalendar>> =
-        rules.map { globToRegex(it.pattern) to it.calendar }
+    private val compiled: List<Pair<Regex, Rule>> = rules.map { globToRegex(it.pattern) to it }
 
     /** The calendar governing [bareSymbol] (a qkt symbol with no `NAME:` prefix). */
-    fun calendarFor(bareSymbol: String): TradingCalendar =
-        compiled.firstOrNull { it.first.matches(bareSymbol) }?.second ?: default
+    fun calendarFor(bareSymbol: String): TradingCalendar = ruleFor(bareSymbol)?.calendar ?: default
+
+    /** The first rule whose pattern matches [bareSymbol], or null when it takes the fallback calendar. */
+    fun ruleFor(bareSymbol: String): Rule? = compiled.firstOrNull { it.first.matches(bareSymbol) }?.second
 
     /**
      * True when at least one of [symbols] is currently in session under its own calendar.
@@ -77,7 +78,7 @@ class SymbolCalendars(
 
     /** The distinct calendars referenced by the rules plus the default (for diagnostics/logging). */
     val calendars: Set<TradingCalendar>
-        get() = (compiled.map { it.second } + default).toSet()
+        get() = (rules.map { it.calendar } + default).toSet()
 
     /**
      * True when any configured calendar reports [t] in-session. Used by the account-wide MT5

@@ -161,6 +161,7 @@ nav:
       - Architecture: concepts/architecture.md
       - Determinism: concepts/determinism.md
       - Broker integration: concepts/broker-integration.md
+      - Trading calendars: concepts/trading-calendars.md
       - Order management: concepts/order-management.md
       - Why qkt vs alternatives: concepts/why-qkt.md
   - Instruments:

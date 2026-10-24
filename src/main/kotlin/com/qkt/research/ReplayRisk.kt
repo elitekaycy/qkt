@@ -3,6 +3,7 @@ package com.qkt.research
 import com.qkt.bus.EventBus
 import com.qkt.candles.TimeWindow
 import com.qkt.common.FixedClock
+import com.qkt.common.SessionOverlap
 import com.qkt.common.TradingCalendar
 import com.qkt.events.TickEvent
 import com.qkt.instrument.InstrumentRegistry
@@ -88,7 +89,12 @@ internal class ReplayRisk(
                 equity = riskState.equityTracker::liveEquity,
             )
         val bookAnnualization =
-            if (candleWindow != null) calendar.tradingPeriodsPerYear(candleWindow) else BigDecimal("252")
+            if (candleWindow != null) {
+                // The book samples on any traded symbol's bar: the union of their sessions, as live.
+                calendar.periodsPerYear(calendar.runSymbols, candleWindow, SessionOverlap.ANY)
+            } else {
+                BigDecimal("252")
+            }
         bookRiskController =
             bookRiskConfig?.let {
                 BookRiskController(it, it.capital ?: startingBalance, bookAnnualization)

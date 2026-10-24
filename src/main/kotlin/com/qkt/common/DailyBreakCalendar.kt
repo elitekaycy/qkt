@@ -28,6 +28,9 @@ class DailyBreakCalendar(
 
     override val name: String = "${base.name} pause $breakStart-$breakEnd ${zone.id}"
 
+    /** This calendar, pause included; delegating to [base] would drop the pause from a run's per-symbol answers. */
+    override fun forSymbol(symbol: String): TradingCalendar = this
+
     override fun isScheduledBreak(
         symbol: String,
         t: Instant,
