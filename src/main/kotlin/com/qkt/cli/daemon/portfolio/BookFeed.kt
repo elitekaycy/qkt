@@ -15,10 +15,16 @@ data class BookFeed(
     val window: TimeWindow,
 )
 
-/** This portfolio's [BookFeed]: every child's traded symbols at the first child's first timeframe; null with none. */
+/**
+ * This portfolio's [BookFeed]: every child's traded symbols (option feeds excluded) at the first child's first
+ * timeframe, the window the backtest's book runs at; null when no child declares a stream. [symbols] is empty when
+ * the children read only option feeds: the window still sets `REBALANCE EVERY` and annualization, but nothing samples.
+ */
 fun PortfolioCompiled.bookFeed(): BookFeed? {
     val streams = children.flatMap { it.ast.streams }
     val window = streams.firstOrNull()?.timeframe?.let(TimeWindow::parse) ?: return null
-    val symbols = streams.map { it.qktSymbol }.filterNot(::isOptionFeed).distinct()
-    return if (symbols.isEmpty()) null else BookFeed(symbols, window)
+    return BookFeed(streams.map { it.qktSymbol }.filterNot(::isOptionFeed).distinct(), window)
 }
+
+/** True when the book controller [controller] samples live on this feed: there is one, and a symbol to sample on. */
+fun BookFeed?.samples(controller: Any?): Boolean = this != null && controller != null && symbols.isNotEmpty()

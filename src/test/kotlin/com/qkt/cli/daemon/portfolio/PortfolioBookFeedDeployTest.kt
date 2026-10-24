@@ -103,4 +103,25 @@ class PortfolioBookFeedDeployTest {
             for (child in record.children) runCatching { child.close() }
         }
     }
+
+    @Test
+    fun `children reading only option feeds keep the book window but sample nothing on it`(
+        @TempDir tmp: Path,
+    ) {
+        Files.writeString(
+            tmp.resolve("opt.qkt"),
+            "STRATEGY opt_child VERSION 1\nSYMBOLS\n    c = OPTIONS:DERIBIT.BTC_USDC EVERY 1h\nRULES\n    WHEN c.close > 0 THEN LOG \"x\"\n",
+        )
+        val book = tmp.resolve("optbook.qkt")
+        Files.writeString(
+            book,
+            "PORTFOLIO optbook VERSION 1 CAPITAL 10000\nIMPORT 'opt.qkt' AS opt\nRULES\n    RUN opt WEIGHT 1\n",
+        )
+        val feed = PortfolioLoader.load(book).bookFeed()
+        assertThat(feed?.window?.canonicalSpec()).isEqualTo("1h")
+        assertThat(feed?.symbols).isEmpty()
+        assertThat(feed.samples(Any())).isFalse()
+        assertThat(BookFeed(listOf("A:X"), feed!!.window).samples(null)).isFalse()
+        assertThat(BookFeed(listOf("A:X"), feed.window).samples(Any())).isTrue()
+    }
 }

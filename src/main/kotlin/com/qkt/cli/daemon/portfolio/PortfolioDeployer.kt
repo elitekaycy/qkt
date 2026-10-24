@@ -210,7 +210,7 @@ class PortfolioDeployer(
                     childWrappers,
                     bookController,
                     portfolioGate,
-                    sampleOnEvaluate = if (bookController != null && bookFeed != null) false else symbols.isEmpty(),
+                    sampleOnEvaluate = if (bookFeed.samples(bookController)) false else symbols.isEmpty(),
                     portfolioInsights = insightsSink,
                 )
             if (riskAggregator != null) bookFillBuffer?.bind(riskAggregator)
@@ -220,7 +220,7 @@ class PortfolioDeployer(
                     children = childWrappers,
                     marketSource =
                         when {
-                            bookController != null && bookFeed != null ->
+                            bookFeed != null && bookFeed.samples(bookController) ->
                                 marketSourceProvider((symbols + bookFeed.symbols).distinct())
                             symbols.isEmpty() || !hasConditionalRules && bookController == null -> null
                             else -> marketSourceProvider(symbols)
@@ -228,7 +228,7 @@ class PortfolioDeployer(
                     riskAggregator = riskAggregator,
                     riskIntervalMs = riskIntervalMs,
                     gate = portfolioGate,
-                    bookFeed = bookFeed.takeIf { bookController != null },
+                    bookFeed = bookFeed.takeIf { it.samples(bookController) },
                 )
             supervisor.start()
 
