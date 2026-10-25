@@ -28,11 +28,14 @@ import java.time.ZoneOffset
 class MacroMarketSource(
     private val store: MacroSeriesStore,
     private val lagBusinessDays: Int = 1,
-    private val releaseUtcHour: Int = 13,
     private val clock: Clock = SystemClock(),
     private val policyRateFetcher: PolicyRateSeriesFetcher = PolicyRateSeriesFetcher(store),
     private val livePollIntervalMs: Long = 15 * 60 * 1_000L,
 ) : MarketSource {
+    companion object {
+        const val PREFIX = "MACRO:"
+    }
+
     override val name: String = "Macro"
     override val capabilities: Set<MarketSourceCapability> =
         setOf(MarketSourceCapability.TICKS, MarketSourceCapability.LIVE_TICKS, MarketSourceCapability.BARS)
@@ -71,7 +74,7 @@ class MacroMarketSource(
                 .minusDays(10)
         val toDate = range.to.atZone(ZoneOffset.UTC).toLocalDate()
         val points = store.read(series, fromDate, toDate)
-        val feed = MacroSeriesFeed(symbol, points, fromMs, toMs, lagBusinessDays, releaseUtcHour)
+        val feed = MacroSeriesFeed(symbol, points, fromMs, toMs, lagBusinessDays)
         return generateSequence { feed.next() }
     }
 
