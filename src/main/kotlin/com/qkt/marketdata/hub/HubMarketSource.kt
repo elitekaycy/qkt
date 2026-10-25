@@ -48,8 +48,8 @@ class HubMarketSource(
      * reading as undefined for the life of the session.
      *
      * The reconnect budget is effectively unbounded: a hub going stale is reported to the feed
-     * as a disconnect and to strategies through `hub.health`, but it must never END the feed --
-     * that would take the price ticks down with it.
+     * as a disconnect, but it must never END the feed -- that would take the price ticks down
+     * with it.
      */
     override fun liveTicks(symbols: List<String>): TickFeed {
         val problems = validateHubStreams(root, symbols)
