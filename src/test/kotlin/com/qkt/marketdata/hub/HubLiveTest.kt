@@ -7,6 +7,7 @@ import java.nio.file.Path
 import java.nio.file.attribute.FileTime
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.io.path.createDirectories
 import kotlin.io.path.writeBytes
 import org.assertj.core.api.Assertions.assertThat
@@ -206,5 +207,130 @@ class HubLiveTest {
         } finally {
             feed.close()
         }
+    }
+
+    @Test
+    fun `a record already in the store but not yet visible is delivered at its known_at, not dropped`(
+        @TempDir tmp: Path,
+    ) {
+        val root = store(tmp)
+        val file = root.resolve("journal").resolve("cal.high_impact").resolve("2026-09-10.ndjson")
+        // The fixture's own release is known 1 s after effectiveAt; start the clock past it.
+        val now = AtomicLong(effectiveAt + 10_000L)
+        val knownAt = effectiveAt + 50_000L
+        Files.writeString(file, Files.readString(file) + record(99, "USD", knownAt, "0.7") + "\n")
+        val symbol = HubStreamSymbol("cal.high_impact", "USD", "actual").symbol
+        val (source, ticks) = tail(root, symbol, clock = { now.get() })
+        try {
+            Thread.sleep(120)
+            assertThat(ticks).isEmpty()
+            now.set(knownAt)
+            await { ticks.isNotEmpty() }
+            assertThat(ticks).hasSize(1)
+            assertThat(ticks.single().timestamp).isEqualTo(knownAt)
+        } finally {
+            source.stop()
+        }
+    }
+
+    @Test
+    fun `an appended record ahead of the clock is held until its known_at`(
+        @TempDir tmp: Path,
+    ) {
+        val root = store(tmp)
+        val file = root.resolve("journal").resolve("cal.high_impact").resolve("2026-09-10.ndjson")
+        val now = AtomicLong(effectiveAt + 10_000L)
+        val symbol = HubStreamSymbol("cal.high_impact", "USD", "actual").symbol
+        val (source, ticks) = tail(root, symbol, clock = { now.get() })
+        try {
+            val knownAt = effectiveAt + 20_000L
+            Files.writeString(file, Files.readString(file) + record(99, "USD", knownAt, "0.7") + "\n")
+            Thread.sleep(120)
+            assertThat(ticks).isEmpty()
+            now.set(knownAt - 1)
+            Thread.sleep(80)
+            assertThat(ticks).isEmpty()
+            now.set(knownAt)
+            await { ticks.isNotEmpty() }
+            assertThat(ticks.single().timestamp).isEqualTo(knownAt)
+        } finally {
+            source.stop()
+        }
+    }
+
+    @Test
+    fun `the minimum lag delays a live record exactly as it delays a backtest`(
+        @TempDir tmp: Path,
+    ) {
+        val root = store(tmp)
+        val file = root.resolve("journal").resolve("cal.high_impact").resolve("2026-09-10.ndjson")
+        // Past the fixture's own release (known 1 s after effectiveAt, visible 31 s after with this lag).
+        val knownAt = effectiveAt + 50_000L
+        val now = AtomicLong(knownAt + 10_000L)
+        val symbol = HubStreamSymbol("cal.high_impact", "USD", "actual").symbol
+        val ticks = CopyOnWriteArrayList<Tick>()
+        val source =
+            HubTailSource(
+                root,
+                listOf(symbol),
+                HubPolicy(minLagMs = 30_000L),
+                pollIntervalMs = 20L,
+                clock = { now.get() },
+            )
+        source.start(onTick = { ticks.add(it) }, onError = { throw it }, onDisconnect = {}, onReconnect = {})
+        try {
+            Files.writeString(file, Files.readString(file) + record(99, "USD", knownAt, "0.7") + "\n")
+            Thread.sleep(120)
+            assertThat(ticks).isEmpty()
+            now.set(knownAt + 30_000L)
+            await { ticks.isNotEmpty() }
+            assertThat(ticks.single().timestamp).isEqualTo(knownAt + 30_000L)
+        } finally {
+            source.stop()
+        }
+    }
+
+    @Test
+    fun `a record backfilled into an older day file is still delivered, once`(
+        @TempDir tmp: Path,
+    ) {
+        val root = store(tmp)
+        val symbol = HubStreamSymbol("cal.high_impact", "USD", "actual").symbol
+        val (source, ticks) = tail(root, symbol)
+        try {
+            val older = root.resolve("journal").resolve("cal.high_impact").resolve("2026-09-01.ndjson")
+            Files.writeString(older, record(100, "USD", effectiveAt - 86_400_000L, "0.4") + "\n")
+            await { ticks.isNotEmpty() }
+            Thread.sleep(100)
+            assertThat(ticks).hasSize(1)
+            assertThat(ticks.single().price).isEqualByComparingTo(BigDecimal("0.4"))
+        } finally {
+            source.stop()
+        }
+    }
+
+    @Test
+    fun `the cursor reads only what was appended, waits for a torn line and survives a repair`(
+        @TempDir tmp: Path,
+    ) {
+        val root = store(tmp)
+        val file = root.resolve("journal").resolve("cal.high_impact").resolve("2026-09-10.ndjson")
+        val cursor = HubJournalCursor(root, "cal.high_impact")
+        val initial = cursor.poll()
+        assertThat(initial).isNotEmpty
+        assertThat(cursor.poll()).isEmpty()
+
+        val line = record(99, "USD", effectiveAt + 5_000L, "0.7")
+        Files.writeString(file, Files.readString(file) + line.substring(0, 30))
+        assertThat(cursor.poll()).isEmpty()
+        Files.writeString(file, Files.readString(file) + line.substring(30) + "\n")
+        assertThat(cursor.poll().map { it.seq }).containsExactly(99L)
+        assertThat(cursor.poll()).isEmpty()
+
+        // A repaired (shorter) file is read again from its start; the caller's sequence guard
+        // decides what is new, so nothing is lost and nothing is invented.
+        Files.writeString(file, record(1, "USD", effectiveAt, "0.1") + "\n")
+        assertThat(cursor.poll().map { it.seq }).containsExactly(1L)
+        assertThat(cursor.skipped).isZero()
     }
 }
