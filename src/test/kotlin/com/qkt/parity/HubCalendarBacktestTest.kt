@@ -8,6 +8,7 @@ import com.qkt.common.TimeRange
 import com.qkt.dsl.compile.AstCompiler
 import com.qkt.dsl.parse.Dsl
 import com.qkt.dsl.parse.ParseResult
+import com.qkt.marketdata.Candle
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.hub.HubMarketSource
 import com.qkt.marketdata.source.CompositeMarketSource
@@ -53,13 +54,16 @@ class HubCalendarBacktestTest {
         ).map { ZonedDateTime.of(LocalDate.parse(it), LocalTime.of(14, 0), ny).toInstant().toEpochMilli() }
 
     /** The journal the hub's schedule backfill writes: each statement known one minute after the previous one. */
-    private fun store(root: Path): Path {
+    private fun store(
+        root: Path,
+        events: List<Long> = statements,
+    ): Path {
         val dir = root.resolve("journal").resolve("cal.us_fomc")
         dir.createDirectories()
         val first = Instant.parse("2024-01-01T00:00:00Z").toEpochMilli()
         val lines =
-            statements.mapIndexed { i, at ->
-                val knownAt = if (i == 0) first else statements[i - 1] + 60_000L
+            events.mapIndexed { i, at ->
+                val knownAt = if (i == 0) first else events[i - 1] + 60_000L
                 """{"v":1,"dataset":"cal.us_fomc","scope":"USD","key":"$at|USD","revision":1,"known_at":$knownAt,""" +
                     """"effective_at":$at,"availability":"derived","source":"us-schedule","seq":${i + 1},""" +
                     """"fields":{"at":$at,"kind":0}}"""
@@ -79,9 +83,22 @@ class HubCalendarBacktestTest {
             }
 
         override val name = "tape"
-        override val capabilities = setOf(MarketSourceCapability.TICKS)
+        override val capabilities = setOf(MarketSourceCapability.TICKS, MarketSourceCapability.BARS)
 
         override fun supports(symbol: String) = symbol == "BACKTEST:EURUSD"
+
+        /** Flat bars over the same ticks, so the `--bars` tier can replay the price stream too. */
+        override fun bars(
+            symbol: String,
+            window: TimeWindow,
+            range: TimeRange,
+        ): Sequence<Candle> =
+            ticks(symbol, range)
+                .groupBy { it.timestamp / window.durationMs * window.durationMs }
+                .map { (start, group) ->
+                    val p = group.first().price
+                    Candle(symbol, p, p, p, p, Money.ZERO, start, start + window.durationMs)
+                }.asSequence()
 
         override fun ticks(
             symbol: String,
@@ -110,13 +127,16 @@ class HubCalendarBacktestTest {
     private fun entries(
         root: Path,
         from: String,
+        events: List<Long> = statements,
+        strategyText: String = strategySource,
+        forceBars: Boolean = false,
     ): List<Long> {
         val source =
             CompositeMarketSource(
                 routes = listOf(SymbolPattern.prefix("HUB:") to HubMarketSource(root)),
-                fallback = Tape(statements),
+                fallback = Tape(events),
             )
-        val strategy = AstCompiler().compile((Dsl.parse(strategySource) as ParseResult.Success).value)
+        val strategy = AstCompiler().compile((Dsl.parse(strategyText) as ParseResult.Success).value)
         val result =
             Backtest
                 .fromSource(
@@ -130,6 +150,16 @@ class HubCalendarBacktestTest {
                         ),
                     candleWindow = TimeWindow.parse("5m"),
                     startingBalance = BigDecimal("100000"),
+                    forceBars = forceBars,
+                    barWindows =
+                        if (forceBars) {
+                            mapOf(
+                                "BACKTEST:EURUSD" to TimeWindow.parse("5m"),
+                                "HUB:cal.us_fomc.USD/at" to TimeWindow.parse("1d"),
+                            )
+                        } else {
+                            emptyMap()
+                        },
                 ).run()
         return result.trades.filter { it.trade.side == Side.BUY }.map { it.trade.timestamp }
     }
@@ -153,5 +183,24 @@ class HubCalendarBacktestTest {
         // The March statement was announced at 2024-01-31 14:01 New York, before this window opens.
         val got = entries(store(tmp), "2024-02-15T00:00:00Z")
         assertThat(got).containsExactlyElementsOf(statements.drop(1).map { it - 3_600_000L })
+    }
+
+    @Test
+    fun `facts closer together than the stream's window are all seen, in the bar tier as in ticks`(
+        @TempDir tmp: Path,
+    ) {
+        // Six events 20 minutes apart on a stream declared EVERY 1d: the bar tier used to smear each
+        // fact across a synthetic day bar and drop the next one as late, which live never does.
+        val day = ZonedDateTime.of(LocalDate.parse("2024-03-20"), LocalTime.of(12, 0), ny).toInstant().toEpochMilli()
+        val events = (1..6).map { day + it * 20 * 60_000L }
+        val fast =
+            strategySource
+                .replace("<= 3600000", "<= 600000")
+                .replace("EXIT AFTER 2h", "EXIT AFTER 5m")
+        val root = store(tmp, events)
+        val viaTicks = entries(root, "2024-03-20T00:00:00Z", events, fast)
+        val viaBars = entries(root, "2024-03-20T00:00:00Z", events, fast, forceBars = true)
+        assertThat(viaTicks).containsExactlyElementsOf(events.map { it - 600_000L })
+        assertThat(viaBars).isEqualTo(viaTicks)
     }
 }
