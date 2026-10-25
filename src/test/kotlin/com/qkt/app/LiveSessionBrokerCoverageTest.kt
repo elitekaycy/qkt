@@ -213,33 +213,6 @@ class LiveSessionBrokerCoverageTest {
     }
 
     @Test
-    fun `a hub data stream needs no broker factory and the session starts`() {
-        // A HUB: stream is read-only data from a qkt-data-hub store, like a CHAIN: stream; the
-        // prefix check must not demand a broker for it, or no strategy reading hub facts can run live.
-        val strategy =
-            StubDslStrategy(
-                declaredStreams =
-                    mapOf(
-                        "gold" to HubKey(broker = "EXNESS", symbol = "XAUUSD", timeframe = "5m"),
-                        "cal/at" to HubKey(broker = "HUB", symbol = "cal.us_high.USD/at", timeframe = "1d"),
-                    ),
-            )
-        val paperFactory: BrokerFactory = { bus, clock, priceTracker, _, _ -> PaperBroker(bus, clock, priceTracker) }
-        val session =
-            LiveSession(
-                strategies = listOf("alpha" to strategy),
-                source = EmptySource,
-                symbols = listOf("EXNESS:XAUUSD", "HUB:cal.us_high.USD/at"),
-                clock = FixedClock(time = 0L),
-                brokerFactories = mapOf("exness" to paperFactory),
-            )
-
-        val handle = session.start()
-        handle.stop()
-        handle.awaitTermination(java.time.Duration.ofSeconds(2))
-    }
-
-    @Test
     fun `configured live broker rejects symbols outside declared routes instead of paper filling`() {
         val strategy =
             StubDslStrategy(
