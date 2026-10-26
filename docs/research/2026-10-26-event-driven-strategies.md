@@ -567,3 +567,49 @@ Discovery is 2020-23; 2024 was held out and read once. 2025 is untouched.
   periods; but the discovery interval only touches zero, the holdout is 26 events, and 2024 contained the
   Iran-Israel exchanges that may carry it alone. A lead to test, not an edge. Gold's 24 h move here is
   ten times Exness's spread, so cost is not the obstacle; sample size is.
+
+## Measured: the Middle East conflict lead through qkt on ticks, 2020-2024 (2026-10-26)
+
+**Strategy** (`/var/tmp/eventbt/gdelt/mideast_gold.qkt` on bot2), qkt 458080052, `--broker mt5-sim`,
+recorded bid/ask from the Dukascopy ticks, 1 lot, $100k:
+
+```text
+STRATEGY mideast_gold VERSION 1
+SYMBOLS
+    g  = BACKTEST:XAUUSD EVERY 30m,
+    me = HUB:text.gdelt.events.MIDEAST EVERY 1h
+RULES
+    WHEN NOW.epoch_ms - me.known_at <= 1800000 AND me.batches = 4
+         AND zscore(me.material_conflict / me.events, 168) >= 3 AND POSITION.g = 0
+    THEN BUY g SIZING 1 EXIT AFTER 24h
+```
+
+The DSL has no robust z-score, so this is Stage 0's signal with mean/sample sd over the last 168 records
+in place of median/MAD over 168 hours, and the open position in place of the 24-hour dedupe.
+
+**The engine traded exactly what the rule says.** An independent replica
+(`/var/tmp/eventbt/gdelt/replica.py`) recomputed the z-score from the raw backfill rows (known at hour end
++ 90 min) and the mids from the raw ticks:
+- all 127 entries sit on a fresh (≤ 30 min), four-batch, z ≥ 3 record;
+- every one of the other 240 such records in 2020-24 is accounted for: 41 arrived with a position open,
+  199 in a half-hour with no gold ticks, at least nine in ten of them on a Saturday or Sunday (UTC). The weekend
+  is where the spikes are: 200 of the 367 fall on it, when GDELT's lower volume makes the conflict share
+  jumpy. None unexplained.
+
+**Result.** Returns in bps of entry; excess is net of the period's mean 24 h return; 95% bootstrap CI.
+
+| | n | win (mid) | fill-to-fill | mid-to-mid | excess | net USD |
+|---|---|---|---|---|---|---|
+| 2020-23 | 102 | 54% | -8.2 | -2.8 [-18.0, +11.8] | -5.8 [-21.0, +8.8] | -16,654 |
+| 2024 | 25 | 68% | +34.4 | +38.3 [+15.6, +62.1] | +27.5 [+4.8, +51.3] | +20,037 |
+| 2020-24 | 127 | 57% | +0.2 | +5.3 [-8.6, +18.6] | +0.8 [-13.2, +14.0] | +3,383 |
+
+Whole run: +3.4%, Sharpe 0.12, worst drawdown 21.7%, average hold 24.3 h, costs about 5 bps a round trip
+(spread from ticks plus slippage plus $8 a lot commission).
+
+**Verdict: no edge.** With the engine's z-score the 2020-23 discovery effect is gone (-5.8 bps against
+Stage 0's +16.1), and all of the profit is 25 trades in 2024. A signal whose sign over four years turns on
+mean/sd versus median/MAD is not one to size. Cost is not the problem; the effect is not robust to its own
+definition, and the only positive period is the one with the Iran-Israel exchanges. Not taken forward; it
+would need a robust-z indicator in the DSL and a fresh out-of-sample period (2026 prospective, not 2025)
+before it is worth another look.
