@@ -17,8 +17,11 @@ import java.nio.file.Path
  *
  * The same two rules as [HubJournal] hold: an unterminated trailing line is left for the next
  * poll, and a malformed line is skipped and counted. A file that shrank (the writer repaired a
- * torn line) is re-read from its start; records already delivered are filtered by the caller's
- * sequence guard, so a repair can neither drop nor duplicate a fact.
+ * torn line, or it was replaced) is re-read from its start, and of its lines only those above the
+ * highest `seq` already read from that same file are returned, so a repair neither drops nor
+ * duplicates a fact. The guard is per file, never across the dataset: on hub stores written before
+ * the hub fixed its writer's resume (2026-10), a backfill numbered old days above the live tail,
+ * and a dataset-wide guard dropped every new live record.
  */
 class HubJournalCursor(
     private val root: Path,
@@ -29,6 +32,12 @@ class HubJournalCursor(
     /** Lines this cursor could not parse. */
     var skipped: Long = 0L
         private set
+
+    /** Files found shorter than what this cursor had read, and so re-read from their start. */
+    var reread: Long = 0L
+        private set
+
+    private val maxSeq = HashMap<Path, Long>()
 
     /** Lines appended since the previous call, in file order then line order. */
     fun poll(): List<HubRecord> {
@@ -42,7 +51,11 @@ class HubJournalCursor(
         for (file in files) {
             val size = Files.size(file)
             var from = offsets[file] ?: 0L
-            if (size < from) from = 0L
+            val shrank = size < from
+            if (shrank) {
+                reread++
+                from = 0L
+            }
             if (size == from) continue
             val fresh = readFrom(file, from, size)
             val lastNewline = fresh.lastIndexOf('\n'.code.toByte())
@@ -51,7 +64,11 @@ class HubJournalCursor(
             for (line in String(fresh, 0, lastNewline + 1, StandardCharsets.UTF_8).split('\n')) {
                 if (line.isBlank()) continue
                 try {
-                    out.add(HubJournalCodec.parse(line))
+                    val record = HubJournalCodec.parse(line)
+                    val seen = maxSeq[file]
+                    if (shrank && seen != null && record.seq <= seen) continue
+                    if (seen == null || record.seq > seen) maxSeq[file] = record.seq
+                    out.add(record)
                 } catch (e: IllegalArgumentException) {
                     skipped++
                 } catch (e: IndexOutOfBoundsException) {

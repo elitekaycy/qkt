@@ -64,18 +64,16 @@ class HubTailSource(
         // the session was live, silently lost.
         val now = clock()
         val cursors = streamsByDataset.keys.associateWith { HubJournalCursor(root, it) }
-        val lastSeq = HashMap<String, Long>()
         val pending = java.util.PriorityQueue<HubRecord>(compareBy({ visibleAt(it) }, { it.seq }))
         for ((dataset, cursor) in cursors) {
             val existing = cursor.poll()
-            lastSeq[dataset] = existing.maxOfOrNull { it.seq } ?: 0L
             // A record already in the journal but not yet visible is not history: a backtest
             // shows it at its known_at, so the live session must too.
             existing.filterTo(pending) { visibleAt(it) > now }
         }
         val worker =
             Thread(
-                { loop(cursors, lastSeq, pending, onTick, onError, onDisconnect, onReconnect) },
+                { loop(cursors, pending, onTick, onError, onDisconnect, onReconnect) },
                 "qkt-hub-tail",
             ).apply {
                 isDaemon = true
@@ -95,7 +93,6 @@ class HubTailSource(
 
     private fun loop(
         cursors: Map<String, HubJournalCursor>,
-        lastSeq: HashMap<String, Long>,
         pending: java.util.PriorityQueue<HubRecord>,
         onTick: (Tick) -> Unit,
         onError: (Throwable) -> Unit,
@@ -118,11 +115,11 @@ class HubTailSource(
                 }
                 stale = nowStale
                 for ((dataset, cursor) in cursors) {
-                    val since = lastSeq[dataset] ?: 0L
-                    val fresh = cursor.poll().filter { it.seq > since }.sortedBy { it.seq }
+                    // The cursor returns each appended line once, in append order; that, not a
+                    // dataset-wide `seq` guard, keeps delivery exactly-once (see [HubJournalCursor]).
+                    val fresh = cursor.poll()
                     val now = clock()
                     for (record in fresh) {
-                        lastSeq[dataset] = record.seq
                         if (visibleAt(record) > now) pending.add(record) else deliver(record, onTick)
                     }
                     if (cursor.skipped > 0) {
