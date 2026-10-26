@@ -55,10 +55,13 @@ class HubJournalCursorTest {
         assertThat(cursor.poll().map { it.seq }).containsExactly(99L)
         assertThat(cursor.poll()).isEmpty()
 
-        // A repaired (shorter) file is read again from its start; the caller's sequence guard
-        // decides what is new, so nothing is lost and nothing is invented.
+        // A repaired (shorter) file is read again from its start, and only what lies above the
+        // highest seq already read from it is new, so nothing is lost and nothing is invented.
         Files.writeString(file, record(1, "USD", effectiveAt, "0.1") + "\n")
-        assertThat(cursor.poll().map { it.seq }).containsExactly(1L)
+        assertThat(cursor.poll()).isEmpty()
+        assertThat(cursor.reread).isEqualTo(1L)
+        Files.writeString(file, Files.readString(file) + record(100, "USD", effectiveAt + 6_000L, "0.8") + "\n")
+        assertThat(cursor.poll().map { it.seq }).containsExactly(100L)
         assertThat(cursor.skipped).isZero()
     }
 }

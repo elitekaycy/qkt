@@ -613,3 +613,28 @@ mean/sd versus median/MAD is not one to size. Cost is not the problem; the effec
 definition, and the only positive period is the one with the Iran-Israel exchanges. Not taken forward; it
 would need a robust-z indicator in the DSL and a fresh out-of-sample period (2026 prospective, not 2025)
 before it is worth another look.
+
+## Next steps, after the measurements (2026-10-26)
+
+What the plan above looks like now that its first items have been run (the four "Measured" sections):
+
+| Plan item | Status | Next |
+|---|---|---|
+| 1. Release blackout / flatten overlay | Measured: nearly inert on the forward book (7 entries in 7 years inside a window) | Keep as a free safety overlay; no further research. Re-measure only if the book gains intraday strategies. |
+| R5 straddle / first-move breakout | Measured as the negative control: no edge on gold, EURUSD or BTC | Closed. |
+| 3. Post-release drift, +5 min to +1 day | Fading the first 15 minutes leans positive on EURUSD (+2.7 bps) and gold (+4.4), not significant | Next to test properly: needs point-in-time consensus (surprise sign and size) and Exness tick spreads at +5/+15 min. |
+| 2. FOMC conditional trades (R1/R2/R4) | Not run | Run as exploratory (about 70 events), with every variant counted for the Deflated Sharpe. |
+| 4. COT and funding as regime filters | Not run; the data now exists (COT 2009+, funding 2019+, Fear & Greed 2018+, all point-in-time) | Weekly-horizon quintile study with publication-lag discipline. |
+| 5. GDELT news triggers | Measured: spikes at chance (8 of 141 cells); the one lead (Middle East conflict, then gold) gone under the engine's own z-score | Deferred. Revisit only with a robust-z indicator and the 2026 prospective period, never 2025. |
+
+**Infrastructure the next tests need, in order:**
+1. A point-in-time consensus dataset in the hub (captured ForexFactory snapshots or a vendor history),
+   so "surprise" means actual minus the forecast known before the release.
+2. Exness tick captures around releases, to replace Dukascopy spreads for event windows.
+3. A robust z-score (median/MAD) indicator in the DSL, so a research signal and its engine version
+   are the same signal.
+
+**Safety rails for running any of these live** (each found the hard way during this work): stop the hub
+container before a backfill (the daemon now holds the writer lock, so a backfill beside it fails);
+a qkt live session reads hub records in append order, not by `seq`; facts that land while the market is
+shut are stale by the open, and every rule here tests freshness (`NOW - x.known_at`).
