@@ -48,8 +48,8 @@ class HubMarketSource(
      * reading as undefined for the life of the session.
      *
      * The reconnect budget is effectively unbounded: a hub going stale is reported to the feed
-     * as a disconnect and to strategies through `hub.health`, but it must never END the feed --
-     * that would take the price ticks down with it.
+     * as a disconnect, but it must never END the feed -- that would take the price ticks down
+     * with it.
      */
     override fun liveTicks(symbols: List<String>): TickFeed {
         val problems = validateHubStreams(root, symbols)
@@ -70,7 +70,7 @@ class HubMarketSource(
         val toMs = range.to.toEpochMilli()
         return records(binding, fromMs, toMs)
             .mapNotNull { record ->
-                val value = record.fields[binding.field] ?: return@mapNotNull null
+                val value = binding.valueOf(record, visibleAt(record)) ?: return@mapNotNull null
                 Tick(symbol = symbol, price = value.scaledForEngine(), timestamp = visibleAt(record))
             }.asSequence()
     }
@@ -89,7 +89,7 @@ class HubMarketSource(
         val toMs = range.to.toEpochMilli()
         return records(binding, fromMs, toMs)
             .mapNotNull { record ->
-                val value = record.fields[binding.field]?.scaledForEngine() ?: return@mapNotNull null
+                val value = binding.valueOf(record, visibleAt(record))?.scaledForEngine() ?: return@mapNotNull null
                 val at = visibleAt(record)
                 Candle(
                     symbol = symbol,

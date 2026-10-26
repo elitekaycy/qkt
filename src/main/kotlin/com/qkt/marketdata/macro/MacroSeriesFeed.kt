@@ -20,7 +20,6 @@ class MacroSeriesFeed(
     fromMs: Long,
     toMs: Long,
     lagBusinessDays: Int = 1,
-    releaseUtcHour: Int = 13,
 ) : TickFeed {
     private val iterator: Iterator<Tick> =
         points
@@ -30,7 +29,7 @@ class MacroSeriesFeed(
                     price = p.value,
                     timestamp =
                         p.availableAtMs
-                            ?: ReleaseSchedule.releaseTimeMs(p.date, lagBusinessDays, releaseUtcHour),
+                            ?: ReleaseSchedule.releaseTimeMs(p.date, lagBusinessDays),
                 )
             }.filter { it.timestamp in fromMs until toMs }
             .sortedBy { it.timestamp }

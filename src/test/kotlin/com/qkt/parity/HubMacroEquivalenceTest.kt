@@ -35,8 +35,10 @@ import org.junit.jupiter.api.io.TempDir
  *
  * This is the migration proof. `MACRO:` has been the point-in-time contract for months; if the
  * hub path reproduced it only approximately, every backtest that moved over would silently change
- * its answer. Both sides use real 2024 DFII10 data and the same availability rule (next business
- * day, 13:00 UTC), so any difference would be a fault in one reader, not in the data.
+ * its answer. Both sides use real 2024 DFII10 data and the same availability rule (16:30 New York
+ * on the next federal business day, after the Fed's 4:15 p.m. H.15 posting), so any difference
+ * would be a fault in one reader, not in the data. The hub journal is cut from the production store
+ * as rebuilt on 2026-10-25 with that rule.
  */
 class HubMacroEquivalenceTest {
     private val from = Instant.parse("2024-01-01T00:00:00Z")
@@ -189,10 +191,10 @@ class HubMacroEquivalenceTest {
         val source = HubMarketSource(hubRoot)
         val monday = Instant.parse("2024-06-03T12:00:00Z").toEpochMilli()
         val ticks = source.ticks("HUB:rates.us.dfii10/value", TimeRange(from, Instant.ofEpochMilli(monday))).toList()
-        // Friday 2024-05-31's value publishes Monday 13:00 UTC, so at 12:00 the newest visible
-        // observation is Thursday's.
+        // Friday 2024-05-31's value publishes Monday 16:30 New York, so at Monday 12:00 UTC the newest
+        // visible observation is Thursday's, published Friday 16:30 New York (20:30 UTC).
         val newest = ticks.last()
-        assertThat(newest.timestamp).isEqualTo(Instant.parse("2024-05-31T13:00:00Z").toEpochMilli())
+        assertThat(newest.timestamp).isEqualTo(Instant.parse("2024-05-31T20:30:00Z").toEpochMilli())
         assertThat(newest.price).isEqualByComparingTo(BigDecimal("2.19"))
         assertThat(Files.exists(hubRoot)).isTrue()
     }

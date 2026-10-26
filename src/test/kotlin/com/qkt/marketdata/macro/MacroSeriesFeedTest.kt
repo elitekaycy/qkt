@@ -13,11 +13,14 @@ class MacroSeriesFeedTest {
         hour: Int,
     ): Long = date.atTime(hour, 0).toInstant(ZoneOffset.UTC).toEpochMilli()
 
+    /** 16:30 New York on [date]: 21:30 UTC in early March 2024, before daylight saving starts. */
+    private fun released(date: LocalDate): Long = date.atTime(21, 30).toInstant(ZoneOffset.UTC).toEpochMilli()
+
     private val points =
         listOf(
-            MacroPoint(LocalDate.of(2024, 3, 1), BigDecimal("4.00")), // Fri -> released Mon 13:00
-            MacroPoint(LocalDate.of(2024, 3, 4), BigDecimal("4.10")), // Mon -> released Tue 13:00
-            MacroPoint(LocalDate.of(2024, 3, 5), BigDecimal("4.20")), // Tue -> released Wed 13:00
+            MacroPoint(LocalDate.of(2024, 3, 1), BigDecimal("4.00")), // Fri -> released Mon 16:30 NY
+            MacroPoint(LocalDate.of(2024, 3, 4), BigDecimal("4.10")), // Mon -> released Tue 16:30 NY
+            MacroPoint(LocalDate.of(2024, 3, 5), BigDecimal("4.20")), // Tue -> released Wed 16:30 NY
         )
 
     private fun drain(feed: MacroSeriesFeed): List<Pair<Long, BigDecimal>> =
@@ -30,7 +33,7 @@ class MacroSeriesFeedTest {
 
     @Test
     fun `mondays value is not visible until its tuesday release (no look-ahead)`() {
-        // Window: Monday 00:00 .. Tuesday 12:00 — one hour BEFORE Monday's value releases (Tue 13:00).
+        // Window: Monday 00:00 .. Tuesday 12:00 — before Monday's value releases (Tue 16:30 New York).
         val feed =
             MacroSeriesFeed(
                 qktSymbol = "MACRO:DGS10",
@@ -39,9 +42,9 @@ class MacroSeriesFeedTest {
                 toMs = utcMs(LocalDate.of(2024, 3, 5), 12),
             )
         val seen = drain(feed)
-        // Only Friday's value (released Mon 13:00) is knowable by Tue 12:00.
+        // Only Friday's value (released Mon 16:30 NY) is knowable by Tue 12:00.
         assertThat(seen.map { it.second }).containsExactly(BigDecimal("4.00"))
-        assertThat(seen.single().first).isEqualTo(utcMs(LocalDate.of(2024, 3, 4), 13))
+        assertThat(seen.single().first).isEqualTo(released(LocalDate.of(2024, 3, 4)))
     }
 
     @Test
@@ -55,9 +58,9 @@ class MacroSeriesFeedTest {
             )
         val seen = drain(feed)
         assertThat(seen).containsExactly(
-            utcMs(LocalDate.of(2024, 3, 4), 13) to BigDecimal("4.00"),
-            utcMs(LocalDate.of(2024, 3, 5), 13) to BigDecimal("4.10"),
-            utcMs(LocalDate.of(2024, 3, 6), 13) to BigDecimal("4.20"),
+            released(LocalDate.of(2024, 3, 4)) to BigDecimal("4.00"),
+            released(LocalDate.of(2024, 3, 5)) to BigDecimal("4.10"),
+            released(LocalDate.of(2024, 3, 6)) to BigDecimal("4.20"),
         )
     }
 

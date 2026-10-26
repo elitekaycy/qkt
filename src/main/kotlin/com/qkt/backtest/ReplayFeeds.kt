@@ -8,7 +8,9 @@ import com.qkt.marketdata.Candle
 import com.qkt.marketdata.MergingTickFeed
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.TickFeed
+import com.qkt.marketdata.hub.HubMarketSource
 import com.qkt.marketdata.source.BarTickFeed
+import com.qkt.marketdata.source.MacroMarketSource
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.marketdata.source.MarketSourceCapability
 import com.qkt.marketdata.source.SequenceTickFeed
@@ -128,7 +130,16 @@ internal object ReplayFeeds {
     ): TickFeed {
         // A chain analytics stream has values only where the chain allows one; an empty stream is a
         // stream whose rules never fire, not missing data (coverage of its chain days is checked at setup).
-        if (symbol.startsWith(ChainAnalyticsSymbol.PREFIX) || symbol.startsWith(OptionRootSymbol.PREFIX)) {
+        // A hub dataset or a macro series is the same kind of thing: point-in-time facts, each visible
+        // at its publication instant.
+        // Synthesizing open/low/high/close ticks across a declared window would smear a fact over the
+        // window and drop the next fact as late when facts arrive faster than the window, which live
+        // never does; so these streams replay their own facts in every tier, exactly as live delivers them.
+        if (symbol.startsWith(ChainAnalyticsSymbol.PREFIX) ||
+            symbol.startsWith(OptionRootSymbol.PREFIX) ||
+            symbol.startsWith(HubMarketSource.PREFIX) ||
+            symbol.startsWith(MacroMarketSource.PREFIX)
+        ) {
             return SequenceTickFeed(source.ticks(symbol, range))
         }
         val caps = source.capabilities

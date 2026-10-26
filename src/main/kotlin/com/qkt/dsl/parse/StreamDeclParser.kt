@@ -33,7 +33,9 @@ internal class StreamDeclParser(
         }
         cursor.expect(TokenKind.COLON, "expected ':' between broker and symbol")
         val symbol =
-            if (broker.equals(HUB_BROKER, ignoreCase = true) || broker == CHAIN_BROKER || broker == OPTIONS_BROKER) {
+            if (broker.equals(HUB_BROKER, ignoreCase = true)) {
+                HubSymbolParser(cursor).parse()
+            } else if (broker == CHAIN_BROKER || broker == OPTIONS_BROKER) {
                 parseDottedSymbol()
             } else {
                 val name = cursor.expect(TokenKind.IDENT, "expected symbol after ':'").lexeme

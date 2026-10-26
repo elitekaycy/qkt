@@ -8,6 +8,7 @@ import com.qkt.backtest.SampleCadence
 import com.qkt.bus.EventBus
 import com.qkt.derivatives.options.chain.ChainAnalyticsSymbol
 import com.qkt.derivatives.options.chain.OptionRootSymbol
+import com.qkt.dsl.compile.isObservationSymbol
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.risk.book.BookRiskController
 import com.qkt.risk.book.EngineBookStateSource
@@ -31,12 +32,18 @@ internal class ReplayAnalytics(
     bookRiskController: BookRiskController?,
     candleWindowMs: Long? = null,
 ) {
-    /** The symbols that form candles: the equity curve samples a boundary once every one of them has closed a bar. */
+    /**
+     * The symbols that form candles: the equity curve samples a boundary once every one of them has closed a bar.
+     * An observation stream (a hub dataset, a macro series) closes a bar only when a fact arrives, so waiting for
+     * it sampled equity on fact days alone and its always-open calendar entered the annualization: a strategy
+     * reading a release calendar reported a Sharpe three times the same trades' Sharpe without it.
+     */
     val candleSymbols: Set<String> =
         symbols
             .filterNot {
                 it.startsWith(OptionRootSymbol.PREFIX) ||
-                    it.startsWith(ChainAnalyticsSymbol.PREFIX)
+                    it.startsWith(ChainAnalyticsSymbol.PREFIX) ||
+                    isObservationSymbol(it)
             }.toSet()
 
     val collector =
