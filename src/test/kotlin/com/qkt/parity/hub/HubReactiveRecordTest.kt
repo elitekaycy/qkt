@@ -192,18 +192,15 @@ class HubReactiveRecordTest {
                 gold = BACKTEST:XAUUSD EVERY 1m
                 r    = HUB:test.release.USD EVERY 1d
             RULES
-                WHEN r.actual > r.forecast AND POSITION.gold = 0
+                WHEN NOW.epoch_ms - r.known_at <= 60000 AND r.actual > r.forecast AND POSITION.gold = 0
                 THEN BUY gold SIZING 1 EXIT AFTER 2m
             """.trimIndent()
-        // The rule holds while release 1 beats (entries every three minutes: fill, exit two minutes
-        // later, re-enter on the next bar). While release 2's actual is unknown, 0:30:30 to 1:00:30,
-        // nothing beats anything: release 1's 0.5 must not be compared with release 2's 0.4 forecast.
-        val entries = (11L..29L step 3) + (61L..179L step 3)
-        val expected =
-            entries.flatMap { listOf(fill(it, "BUY"), fill(it + 2, "SELL")) }.filter {
-                it.at <
-                    t0.plusSeconds(180 * 60)
-            }
-        assertAllPaths(run(root, strategy), expected)
+        // Release 1 beats on arrival. Release 2 arrives at 0:30:30 with no actual: nothing beats, and
+        // release 1's 0.5 must not be compared with release 2's 0.4 forecast (the old behaviour bought
+        // at 0:31). Its revision at 1:00:30 carries the actual, and beats.
+        assertAllPaths(
+            run(root, strategy),
+            listOf(fill(11, "BUY"), fill(13, "SELL"), fill(61, "BUY"), fill(63, "SELL")),
+        )
     }
 }
