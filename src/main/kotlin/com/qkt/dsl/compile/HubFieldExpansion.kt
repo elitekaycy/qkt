@@ -28,6 +28,12 @@ import com.qkt.dsl.ast.StreamFieldRef
  * of its own, and leaving it would make the engine ask the store for a stream that cannot exist.
  * Orders against it are still refused by name, with the same read-only message a macro series gets.
  *
+ * Each expanded alias also gets a record stream, `cal/known_at`, carrying every record's `known_at`
+ * whether or not the fields the strategy reads are set in it. A field whose newest value is older
+ * than the alias's newest record belongs to an earlier record (the newest one left it unknown), and
+ * reads as undefined rather than as that earlier record's value: `cal.actual > cal.forecast` must
+ * never compare last month's actual with this month's forecast. `cal.known_at` reads the stream.
+ *
  * A strategy with no hub alias is returned unchanged.
  */
 object HubFieldExpansion {
@@ -84,7 +90,13 @@ object HubFieldExpansion {
             )
 
         val rewritten = rewriteExprs(ast, transform)
-        val streams = rewritten.streams.filter { it.alias !in byAlias } + hidden.values
+        val records =
+            hidden.keys
+                .map { it.substringBefore(SEPARATOR) }
+                .distinct()
+                .map { alias -> recordStream(byAlias.getValue(alias)) }
+                .filter { it.alias !in hidden }
+        val streams = rewritten.streams.filter { it.alias !in byAlias } + hidden.values + records
         return Expanded(rewritten.copy(streams = streams), byAlias.keys)
     }
 
@@ -97,6 +109,26 @@ object HubFieldExpansion {
             .filter { it.broker.equals(HUB_BROKER, ignoreCase = true) && SEPARATOR in it.alias }
             .map { it.alias.substringBefore(SEPARATOR) }
             .toSet()
+
+    private fun recordStream(decl: StreamDecl): StreamDecl =
+        StreamDecl(
+            alias = hiddenAlias(decl.alias, RECORD_FIELD),
+            broker = decl.broker,
+            symbol = "${decl.symbol}$SEPARATOR$RECORD_FIELD",
+            timeframe = decl.timeframe,
+            warmupBars = decl.warmupBars,
+        )
+
+    /** The record stream of a hidden field alias `cal/actual` is `cal/known_at`; null for a non-hub alias. */
+    fun recordAliasOf(fieldAlias: String): String? =
+        if (SEPARATOR in fieldAlias && !fieldAlias.endsWith("$SEPARATOR$RECORD_FIELD")) {
+            hiddenAlias(fieldAlias.substringBefore(SEPARATOR), RECORD_FIELD)
+        } else {
+            null
+        }
+
+    /** The pseudo-field carrying each record's `known_at`; see [com.qkt.marketdata.hub.HubStreamSymbol.RECORD_FIELD]. */
+    const val RECORD_FIELD: String = com.qkt.marketdata.hub.HubStreamSymbol.RECORD_FIELD
 
     fun hiddenAlias(
         alias: String,

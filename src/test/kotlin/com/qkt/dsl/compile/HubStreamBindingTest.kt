@@ -43,7 +43,8 @@ class HubStreamBindingTest {
         val streams = ast(strategy).streams.filter { it.broker == "HUB" }
         assertThat(streams).isNotEmpty
         assertThat(streams.map { it.symbol }).allMatch { it.startsWith("cal.high_impact.USD/") }
-        assertThat(streams.map { it.alias }).containsExactlyInAnyOrder("cal/surprise", "cal/forecast")
+        // The record stream rides along: it tells a field of the newest record from a leftover one.
+        assertThat(streams.map { it.alias }).containsExactlyInAnyOrder("cal/surprise", "cal/forecast", "cal/known_at")
     }
 
     @Test
@@ -61,10 +62,10 @@ class HubStreamBindingTest {
     @Test
     fun `a field the strategy never reads is not expanded`() {
         // A dataset may be wide. Expanding every declared field would register slots, warmup and
-        // feed reads for data no rule looks at.
+        // feed reads for data no rule looks at. Only the record stream is added beside the read fields.
         val streams = compile(strategy).declaredStreams
         assertThat(streams.keys.filter { it.startsWith("cal/") })
-            .containsExactlyInAnyOrder("cal/surprise", "cal/forecast")
+            .containsExactlyInAnyOrder("cal/surprise", "cal/forecast", "cal/known_at")
     }
 
     @Test

@@ -51,6 +51,8 @@ class UsFederalCalendarTest {
         assertThat(UsFederalCalendar.isClosed(d("2025-01-09"))).isTrue()
         assertThat(UsFederalCalendar.isClosed(d("2024-12-24"))).isTrue()
         assertThat(UsFederalCalendar.isClosed(d("2023-12-26"))).isFalse()
+        assertThat(UsFederalCalendar.isClosed(d("2008-12-26"))).isTrue()
+        assertThat(UsFederalCalendar.isClosed(d("2012-10-29"))).isTrue()
     }
 
     @Test
@@ -58,5 +60,7 @@ class UsFederalCalendarTest {
         assertThat(UsFederalCalendar.nextBusinessDay(d("2024-05-24"))).isEqualTo(d("2024-05-28"))
         assertThat(UsFederalCalendar.nextBusinessDay(d("2024-12-23"))).isEqualTo(d("2024-12-26"))
         assertThat(UsFederalCalendar.nextBusinessDay(d("2024-01-31"), 2)).isEqualTo(d("2024-02-02"))
+        // Christmas 2008 and the executive-order closure the day after.
+        assertThat(UsFederalCalendar.nextBusinessDay(d("2008-12-24"))).isEqualTo(d("2008-12-29"))
     }
 }

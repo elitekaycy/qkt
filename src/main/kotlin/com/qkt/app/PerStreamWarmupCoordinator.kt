@@ -96,7 +96,7 @@ internal class PerStreamWarmupCoordinator(
                 val warmupStream = stream(key)
                 val spec = specs[warmupStream] ?: continue
                 val bars = spec as? WarmupSpec.Bars ?: continue
-                val upperMs = bars.window.windowStartFor(now.toEpochMilli())
+                val upperMs = warmupUpperMs(key.qktSymbol, bars.window, now.toEpochMilli())
                 val candles =
                     try {
                         if (!requireFullHistory) {

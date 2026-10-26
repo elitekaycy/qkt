@@ -39,19 +39,17 @@ class HubTailSource(
     private val running = AtomicBoolean(false)
     private var thread: Thread? = null
 
-    /** Per dataset: the fields the strategy reads, keyed by the symbol that delivers each one. */
-    private val fieldsByDataset: Map<String, Map<String, String>> =
+    /**
+     * Per dataset: every requested stream. A list, not a map by field: two scopes of one dataset read
+     * the same field through two symbols, and both must be delivered. The record stream sorts last, so
+     * a record's fields are delivered before the stream saying the record arrived.
+     */
+    private val streamsByDataset: Map<String, List<HubStreamSymbol>> =
         symbols
-            .mapNotNull { symbol -> runCatching { HubStreamSymbol.parse(symbol) }.getOrNull()?.let { symbol to it } }
-            .groupBy({ it.second.dataset }, { it })
-            .mapValues { (_, pairs) -> pairs.associate { (symbol, binding) -> binding.field to symbol } }
-
-    /** Per dataset: the scope each requested symbol wants, so one journal serves several scopes. */
-    private val scopesByDataset: Map<String, Map<String, String?>> =
-        symbols
-            .mapNotNull { symbol -> runCatching { HubStreamSymbol.parse(symbol) }.getOrNull()?.let { symbol to it } }
-            .groupBy({ it.second.dataset }, { it })
-            .mapValues { (_, pairs) -> pairs.associate { (symbol, binding) -> symbol to binding.scope } }
+            .mapNotNull { symbol -> runCatching { HubStreamSymbol.parse(symbol) }.getOrNull() }
+            .distinct()
+            .groupBy { it.dataset }
+            .mapValues { (_, bindings) -> bindings.sortedBy { it.field == HubStreamSymbol.RECORD_FIELD } }
 
     override fun start(
         onTick: (Tick) -> Unit,
@@ -65,7 +63,7 @@ class HubTailSource(
         // start would be read as history and never delivered -- a fact the store published while
         // the session was live, silently lost.
         val now = clock()
-        val cursors = fieldsByDataset.keys.associateWith { HubJournalCursor(root, it) }
+        val cursors = streamsByDataset.keys.associateWith { HubJournalCursor(root, it) }
         val lastSeq = HashMap<String, Long>()
         val pending = java.util.PriorityQueue<HubRecord>(compareBy({ visibleAt(it) }, { it.seq }))
         for ((dataset, cursor) in cursors) {
@@ -154,24 +152,14 @@ class HubTailSource(
         record: HubRecord,
         onTick: (Tick) -> Unit,
     ) {
-        val fields = fieldsByDataset[record.dataset] ?: return
-        emit(record, fields, scopesByDataset[record.dataset].orEmpty(), onTick)
-    }
-
-    private fun emit(
-        record: HubRecord,
-        fields: Map<String, String>,
-        scopes: Map<String, String?>,
-        onTick: (Tick) -> Unit,
-    ) {
+        val streams = streamsByDataset[record.dataset] ?: return
         if (policy.refuseDerived && record.isDerived) return
-        for ((field, symbol) in fields) {
-            val wanted = scopes[symbol]
-            if (wanted != null && wanted != record.scope) continue
-            val value = record.fields[field] ?: continue
+        for (stream in streams) {
+            if (stream.scope != null && stream.scope != record.scope) continue
+            val value = stream.valueOf(record, visibleAt(record)) ?: continue
             onTick(
                 Tick(
-                    symbol = symbol,
+                    symbol = stream.symbol,
                     price = value.setScale(com.qkt.common.Money.SCALE, com.qkt.common.Money.ROUNDING),
                     timestamp = visibleAt(record),
                 ),

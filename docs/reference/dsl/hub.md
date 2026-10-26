@@ -35,10 +35,35 @@ always the next release time (epoch milliseconds, a `timestamp` field) and `cal.
   `corp.earnings.ISSUER:BRK-B`. A scope is upper case `A-Z 0-9 _ : -` written with no spaces and no dot; a name
   that breaks the store's naming rules is a parse error at the line that wrote it.
 - `alias.<field>` reads a typed field of the latest record. A single-field dataset names its field `value`, so `alias.value` works.
+- A field the latest record leaves unknown (a release's `actual` before it is out) reads as undefined, never as the
+  previous record's value, so `cal.actual > cal.forecast` can only compare two fields of the same record.
+- `alias.known_at` is the instant the latest record became visible (its `known_at` plus any `min_lag_ms`), in epoch
+  milliseconds. It changes on every record, including one that repeats the previous value.
 - Enum fields arrive as ordinals. String fields are not bound.
 - A hub alias is read-only: `BUY`, `SELL`, `CLOSE` and the other order actions on it are compile errors.
 
 Each field the strategy reads becomes its own hidden stream (`cal/surprise = HUB:cal.high_impact.USD/surprise`), so indicators, lookback and warmup work on a field exactly as on a price: `ema(cpi.surprise_z, 3)` and `cpi.surprise_z[1]` are valid. Fields the strategy never reads cost nothing.
+
+## Reacting to a record
+
+A field keeps its value until the next record, so `WHEN m.value > 0` stays true for the whole time between records.
+To act once, when a record arrives, test how recent it is:
+
+```qkt
+STRATEGY on_print VERSION 1
+SYMBOLS
+    gold = EXNESS:XAUUSD EVERY 1m,
+    cpi  = HUB:cal.high_impact.USD EVERY 1d
+RULES
+    -- Sell gold on the first bar after a hot US print, once per print.
+    WHEN NOW.epoch_ms - cpi.known_at <= 60000 AND cpi.surprise > 0.2 AND POSITION.gold = 0
+    THEN SELL gold SIZING 0.01 EXIT AFTER 30m
+```
+
+Rules are evaluated when a bar of a traded stream closes, so a fact is acted on at the first bar close after it is
+visible: choose the window (`<= 60000` above) at least as long as the traded stream's bar. A fact published while that
+market is shut is first evaluated when it reopens, by which time a freshness test like this one has expired, which is
+usually what a reaction strategy wants. `alias.field[1]` and indicators read that field's own earlier values.
 
 ## When a value becomes visible
 
@@ -60,6 +85,8 @@ Without a `hub:` block, set `--hub-root` or the `QKT_HUB_ROOT` environment varia
 
 - **Backtest** reads the dataset's snapshot files, verifies each file's SHA-256 against the store manifest, and refuses to run on a mismatch. Every declared field is checked against the manifest before the first tick.
 - **Live** tails the dataset's journal on its own thread, reading only the bytes appended since the last poll, and emits one value per field when a record becomes visible: at once for a record whose `known_at` (plus `min_lag_ms`) has passed, and at that instant for one that is still ahead, whether it was appended during the session or was already in the store at start. A stale hub (no heartbeat for `stale_after_ms`) is logged and reported as a feed disconnect; it does not stop the market feed.
+- **Warmup** for a field read with a lookback or an indicator takes every record published before the start, up to the
+  start itself: a record published at 08:30 is history for a session starting at 15:00 the same day.
 - **At start**, in both modes, each hub stream is seeded with the newest record visible at that instant, so a fact published before the session (the next release time, last month's value) is readable from the first bar rather than after the next record. Hub streams follow an always-open calendar: a dataset has no trading session.
 - A strategy with no `HUB:` stream is unaffected: no hub source is constructed.
 

@@ -70,7 +70,7 @@ class HubMarketSource(
         val toMs = range.to.toEpochMilli()
         return records(binding, fromMs, toMs)
             .mapNotNull { record ->
-                val value = record.fields[binding.field] ?: return@mapNotNull null
+                val value = binding.valueOf(record, visibleAt(record)) ?: return@mapNotNull null
                 Tick(symbol = symbol, price = value.scaledForEngine(), timestamp = visibleAt(record))
             }.asSequence()
     }
@@ -89,7 +89,7 @@ class HubMarketSource(
         val toMs = range.to.toEpochMilli()
         return records(binding, fromMs, toMs)
             .mapNotNull { record ->
-                val value = record.fields[binding.field]?.scaledForEngine() ?: return@mapNotNull null
+                val value = binding.valueOf(record, visibleAt(record))?.scaledForEngine() ?: return@mapNotNull null
                 val at = visibleAt(record)
                 Candle(
                     symbol = symbol,

@@ -14,9 +14,27 @@ import java.time.temporal.TemporalAdjusters
  * `MACRO:` series and its hub dataset release on the same instant.
  */
 object UsFederalCalendar {
-    /** One-off closures by executive order or for a day of mourning. */
+    /**
+     * One-off closures: executive orders, days of mourning and Washington-area emergency closures.
+     * Counting a day as closed can only make a release later, never earlier, so a doubtful day is included.
+     */
     val SPECIAL_CLOSURES: Set<LocalDate> =
         listOf(
+            "2004-06-11", // President Reagan, day of mourning
+            "2007-01-02", // President Ford, day of mourning
+            "2007-12-24",
+            "2008-12-26",
+            "2010-02-08", // Washington snowstorm closures
+            "2010-02-09",
+            "2010-02-10",
+            "2010-02-11",
+            "2012-10-29", // Hurricane Sandy
+            "2012-10-30",
+            "2012-12-24",
+            "2014-12-26",
+            "2015-12-24",
+            "2016-01-25", // Washington snowstorm closures
+            "2016-01-26",
             "2018-12-05", // President George H. W. Bush, day of mourning
             "2018-12-24",
             "2019-12-24",
