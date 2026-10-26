@@ -90,14 +90,30 @@ object HubFieldExpansion {
             )
 
         val rewritten = rewriteExprs(ast, transform)
+        // Record streams go after every field stream, also when a rule reads `known_at` before a
+        // field: streams of one instant are delivered in declaration order, and a record stream
+        // delivered first would make that record's fields read as older than their own record.
+        val fields = hidden.values.filter { !it.alias.endsWith("$SEPARATOR$RECORD_FIELD") }
         val records =
             hidden.keys
                 .map { it.substringBefore(SEPARATOR) }
                 .distinct()
                 .map { alias -> recordStream(byAlias.getValue(alias)) }
-                .filter { it.alias !in hidden }
-        val streams = rewritten.streams.filter { it.alias !in byAlias } + hidden.values + records
+        val streams = rewritten.streams.filter { it.alias !in byAlias } + fields + records
         return Expanded(rewritten.copy(streams = streams), byAlias.keys)
+    }
+
+    /**
+     * Each hub field alias of an expanded [ast] mapped to its record stream. A value computed from
+     * several fields of one record is complete only once the record stream has ticked, the last of
+     * that record's streams to be delivered, so an indicator fed such a value updates on it.
+     */
+    fun recordGates(ast: StrategyAst): Map<String, String> {
+        val aliases = ast.streams.map { it.alias }.toSet()
+        return ast.streams
+            .filter { it.broker.equals(HUB_BROKER, ignoreCase = true) }
+            .mapNotNull { decl -> recordAliasOf(decl.alias)?.takeIf { it in aliases }?.let { decl.alias to it } }
+            .toMap()
     }
 
     /**

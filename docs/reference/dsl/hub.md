@@ -81,6 +81,9 @@ RULES
 
 Until the stream has a previous record `cal.at[1]` is Undefined and the gate stays shut.
 
+An indicator over several fields of one alias, such as `zscore(news.material_conflict / news.events, 168)`, advances
+once per record, after every field of that record has arrived, so its inputs always come from the same record.
+
 ## When a value becomes visible
 
 A record's field becomes visible at its `known_at`, the instant the hub recorded it, never at the period it describes (`effective_at`). In a backtest the value is merged into the tick stream at `known_at`; when a hub record and a market tick share a millisecond, the market tick is processed first, so a fact is seen on the next evaluation. Live, the value is visible when the hub's journal line is read, typically well under a second after `known_at`.
