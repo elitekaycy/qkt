@@ -1,6 +1,7 @@
 package com.qkt.app
 
 import com.qkt.candles.TimeWindow
+import com.qkt.marketdata.Tick
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.marketdata.source.MarketSourceCapability
 import com.qkt.marketdata.source.candleToTicks
@@ -65,15 +66,24 @@ class IndicatorWarmer internal constructor(
         now: Instant,
         requireFullHistory: Boolean = true,
     ) {
-        val upperMs = bars.window.windowStartFor(now.toEpochMilli())
+        val upperMs = warmupUpperMs(symbol, bars.window, now.toEpochMilli())
         val candles =
             if (requireFullHistory) {
                 history.load(symbol, bars.window, bars.count, upperMs)
             } else {
                 history.loadAvailable(symbol, bars.window, bars.count, upperMs)
             }
+        // An observation is one published fact: replayed as the single value it carried at the
+        // instant it was published, not spread across its declared window (which may end after now).
+        val observation = isStoredObservation(symbol)
         for (candle in candles) {
-            for (tick in candleToTicks(candle.copy(symbol = symbol))) {
+            val ticks =
+                if (observation) {
+                    listOf(Tick(symbol, candle.close, candle.startTime))
+                } else {
+                    candleToTicks(candle.copy(symbol = symbol))
+                }
+            for (tick in ticks) {
                 require(tick.timestamp < now.toEpochMilli()) {
                     "look-ahead bias: warmup tick beyond now=$now, requested to=${Instant.ofEpochMilli(
                         tick.timestamp,
@@ -84,6 +94,7 @@ class IndicatorWarmer internal constructor(
         }
         // The elapsed part of the window in progress, replayed as the one-minute bars it was read
         // from, so a golden capture records what seeded the forming bar and a replay rebuilds it.
+        if (observation) return
         val forming = runCatching { history.forming(symbol, bars.window, now.toEpochMilli()) }.getOrNull()
         for (minute in forming?.minutes.orEmpty()) {
             for (tick in candleToTicks(minute.copy(symbol = symbol))) {

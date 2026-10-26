@@ -185,4 +185,22 @@ class CalendarResolverTest {
             .isInstanceOf(BacktestContext.Companion.SetupError::class.java)
             .hasMessageContaining("cannot be read")
     }
+
+    @Test
+    fun `hub and macro streams are always open whatever venue the config names`() {
+        val everywhere =
+            CalendarResolver(null) {
+                CalendarResolver.Venue(
+                    "fx-desk",
+                    com.qkt.common.SymbolCalendars
+                        .fxDefault(),
+                )
+            }
+        for (symbol in listOf("HUB:cal.us_high.USD/at", "HUB:pos.funding.DERIBIT:BTC-PERPETUAL/rate", "MACRO:DFII10")) {
+            val choice = everywhere.choose(symbol)
+            assertThat(choice.calendar).isEqualTo(TradingCalendar.crypto())
+            assertThat(choice.source).contains("observation")
+        }
+        assertThat(everywhere.choose("EXNESS:EURUSD").calendar).isNotEqualTo(TradingCalendar.crypto())
+    }
 }

@@ -15,7 +15,30 @@ data class HubStreamSymbol(
     /** The routing symbol the engine matches on, e.g. `HUB:cal.high_impact.USD/surprise`. */
     val symbol: String = HubMarketSource.PREFIX + dataset + (if (scope != null) ".$scope" else "") + "/" + field
 
+    /**
+     * The value this stream carries from [record]: the field, or for [RECORD_FIELD] the instant the
+     * record became visible to the engine ([visibleAt]: its `known_at` plus any configured minimum lag).
+     */
+    fun valueOf(
+        record: HubRecord,
+        visibleAt: Long,
+    ): java.math.BigDecimal? =
+        if (field ==
+            RECORD_FIELD
+        ) {
+            java.math.BigDecimal.valueOf(visibleAt)
+        } else {
+            record.fields[field]
+        }
+
     companion object {
+        /**
+         * The pseudo-field every record carries: when it became visible, in epoch milliseconds. A strategy reads it as
+         * `alias.known_at`, and the compiler uses it to tell a field of the newest record from one left over
+         * from an older record when the newest leaves that field unknown.
+         */
+        const val RECORD_FIELD: String = "known_at"
+
         fun parse(symbol: String): HubStreamSymbol {
             require(symbol.startsWith(HubMarketSource.PREFIX)) { "not a hub symbol: $symbol" }
             val body = symbol.removePrefix(HubMarketSource.PREFIX)

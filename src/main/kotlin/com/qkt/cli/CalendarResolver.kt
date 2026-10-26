@@ -52,6 +52,12 @@ internal class CalendarResolver(
         }
 
     private fun resolve(qktSymbol: String): CalendarChoice {
+        // A hub dataset or macro series is a fact, not a market: it has no session to be closed
+        // in, and a release published on a weekend is still a release. Resolving it to a market
+        // calendar would make coverage and staleness checks treat it as an exchange.
+        if (OBSERVATION_PREFIXES.any { qktSymbol.startsWith(it) }) {
+            return CalendarChoice(qktSymbol, TradingCalendar.crypto(), "observation stream, always open")
+        }
         instruments?.futuresRootCalendar(qktSymbol)?.let { return CalendarChoice(qktSymbol, it, "futures root") }
         val bare = qktSymbol.substringAfter(':')
         venueOf(qktSymbol)?.let { venue ->
@@ -69,6 +75,8 @@ internal class CalendarResolver(
 
     companion object {
         private val log = LoggerFactory.getLogger(CalendarResolver::class.java)
+
+        private val OBSERVATION_PREFIXES = listOf("HUB:", "MACRO:")
 
         /** Value of `--venue` that ignores every venue, so each symbol takes the built-in rules. */
         const val NO_VENUE = "none"
