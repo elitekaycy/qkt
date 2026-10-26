@@ -63,7 +63,23 @@ RULES
 Rules are evaluated when a bar of a traded stream closes, so a fact is acted on at the first bar close after it is
 visible: choose the window (`<= 60000` above) at least as long as the traded stream's bar. A fact published while that
 market is shut is first evaluated when it reopens, by which time a freshness test like this one has expired, which is
-usually what a reaction strategy wants. `alias.field[1]` and indicators read that field's own earlier values.
+usually what a reaction strategy wants. `alias.field[1]` and indicators read that field's own earlier values: `[1]`
+is the previous record, however many records fall in one bar of the stream's window. A schedule whose records name the
+next release can therefore gate on both neighbours, here no entry from 15 minutes before a release to an hour after:
+
+```qkt
+STRATEGY quiet_breakout VERSION 1
+SYMBOLS
+    eur = EXNESS:EURUSD EVERY 1h,
+    cal = HUB:cal.us_high.USD EVERY 1d
+RULES
+    WHEN (cal.at - NOW.epoch_ms > 900000 OR NOW.epoch_ms - cal.at > 3600000)
+         AND NOW.epoch_ms - cal.at[1] > 3600000
+         AND eur.close > eur.high[1] AND POSITION.eur = 0
+    THEN BUY eur SIZING 0.01 EXIT AFTER 4h
+```
+
+Until the stream has a previous record `cal.at[1]` is Undefined and the gate stays shut.
 
 ## When a value becomes visible
 
