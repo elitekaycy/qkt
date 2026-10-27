@@ -103,6 +103,13 @@ class YamlInstrumentRegistry private constructor(
                 minSpreadPoints = intOpt("minSpreadPoints"),
                 currency = entry["currency"]?.toString()?.trim(),
                 tickSize = bdOpt("tickSize"),
+                category = entry["category"]?.toString()?.trim()?.takeIf { it.isNotEmpty() },
+                tradeMode =
+                    entry["tradeMode"]?.toString()?.let {
+                        runCatching { TradeMode.parse(it) }.getOrElse { e ->
+                            error("instruments.yaml: entry $index ${e.message}")
+                        }
+                    } ?: TradeMode.FULL,
             )
         }
     }

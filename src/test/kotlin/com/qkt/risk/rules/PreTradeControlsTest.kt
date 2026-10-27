@@ -117,8 +117,9 @@ class PreTradeControlsTest {
     }
 
     @Test
-    fun `standard set ships all three controls`() {
+    fun `standard set ships the quantity, notional, collar and venue trade-mode controls`() {
         val rules = PreTradeControls.standard(MarketPriceTracker())
-        assertThat(rules).hasSize(3)
+        assertThat(rules).hasSize(4)
+        assertThat(rules.last()).isInstanceOf(VenueTradeMode::class.java)
     }
 }

@@ -60,7 +60,15 @@ class NyseWindowCalendarTest {
     @Test
     fun `every kind of NYSE closure is closed all day, and the days around them trade`() {
         // Rule holidays, an observed Independence Day, Juneteenth, Good Friday and the 2025 day of mourning.
-        for (day in listOf("2025-11-27", "2025-12-25", "2026-01-01", "2026-07-03", "2026-06-19", "2026-04-03", "2025-01-09")) {
+        for (day in listOf(
+            "2025-11-27",
+            "2025-12-25",
+            "2026-01-01",
+            "2026-07-03",
+            "2026-06-19",
+            "2026-04-03",
+            "2025-01-09",
+        )) {
             assertThat(open("${day}T15:00:00Z")).describedAs(day).isFalse()
             assertThat(cal.isClosedSession("AAPL", cal.sessionRange("AAPL", Instant.parse("${day}T15:00:00Z"))))
                 .describedAs(day)
@@ -83,11 +91,18 @@ class NyseWindowCalendarTest {
     @Test
     fun `the session previous to a Monday is the Friday, skipping a holiday`() {
         val monday = Instant.parse("2025-12-01T15:00:00Z")
-        val friday = cal.rangeFor(SessionAnchor.PreviousSession, cal.anchorEpochFor(SessionAnchor.PreviousSession, monday))
+        val friday =
+            cal.rangeFor(
+                SessionAnchor.PreviousSession,
+                cal.anchorEpochFor(SessionAnchor.PreviousSession, monday),
+            )
         assertThat(friday.to).isEqualTo(Instant.parse("2025-11-28T18:00:00Z"))
         val afterThanksgiving = Instant.parse("2025-11-28T15:00:00Z")
         val wednesday =
-            cal.rangeFor(SessionAnchor.PreviousSession, cal.anchorEpochFor(SessionAnchor.PreviousSession, afterThanksgiving))
+            cal.rangeFor(
+                SessionAnchor.PreviousSession,
+                cal.anchorEpochFor(SessionAnchor.PreviousSession, afterThanksgiving),
+            )
         assertThat(wednesday.from).isEqualTo(Instant.parse("2025-11-26T11:00:00Z"))
     }
 
@@ -103,7 +118,11 @@ class NyseWindowCalendarTest {
     fun `malformed or empty windows are refused with the spec in the message`() {
         assertThat(NyseWindowCalendar.parse("nyse")).isNull()
         assertThat(NyseWindowCalendar.parse("nyse[6:00-15:45]")).isNull()
-        assertThatThrownBy { NyseWindowCalendar.parse("nyse[15:45-06:00]") }.hasMessageContaining("open before it closes")
+        assertThatThrownBy {
+            NyseWindowCalendar.parse(
+                "nyse[15:45-06:00]",
+            )
+        }.hasMessageContaining("open before it closes")
         assertThatThrownBy { NyseWindowCalendar.parse("nyse[06:00-25:00]") }.hasMessageContaining("nyse[06:00-25:00]")
     }
 }

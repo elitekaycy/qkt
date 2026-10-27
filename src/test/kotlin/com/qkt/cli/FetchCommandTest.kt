@@ -11,15 +11,34 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 
 class FetchCommandTest {
+    /**
+     * A gateway answering `/symbol_info/<symbol>` from its path (the fetcher reads it for the point and for the
+     * symbol's category) and every other request from [bodies] in order.
+     */
+    private fun gateway(vararg bodies: String): MockWebServer {
+        val queue = java.util.concurrent.ConcurrentLinkedQueue(bodies.toList())
+        return MockWebServer().apply {
+            dispatcher =
+                object : okhttp3.mockwebserver.Dispatcher() {
+                    override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse =
+                        if (request.path.orEmpty().startsWith("/symbol_info/")) {
+                            MockResponse().setBody("""{"point":"0.00001","path":"Forex\\\\EURUSDm"}""")
+                        } else {
+                            MockResponse().setBody(queue.poll() ?: "[]")
+                        }
+                }
+            start()
+        }
+    }
+
+    private fun MockWebServer.paths(): List<String> = (0 until requestCount).map { takeRequest().path.orEmpty() }
+
     @Test
     fun `uppercase target resolves lowercase profile and records closed empty day`(
         @TempDir tmp: Path,
     ) {
-        val server = MockWebServer().apply { start() }
+        val server = gateway("[]", "[]")
         try {
-            server.enqueue(MockResponse().setBody("""{"point":"0.00001"}"""))
-            server.enqueue(MockResponse().setBody("[]"))
-            server.enqueue(MockResponse().setBody("[]"))
             val config = tmp.resolve("qkt.config.yaml")
             Files.writeString(
                 config,
@@ -57,9 +76,15 @@ class FetchCommandTest {
             assertThat(store.hasDay("EXNESS", "EURUSD", "1m", day)).isTrue()
             assertThat(store.readDay("EXNESS", "EURUSD", "1m", day)).isEmpty()
             assertThat(store.readManifest("EXNESS", "EURUSD", "1m").ranges).hasSize(1)
-            assertThat(server.takeRequest().path).isEqualTo("/symbol_info/EURUSDm")
-            assertThat(server.takeRequest().path).contains("/fetch_data_range")
-            assertThat(server.takeRequest().path).contains("/fetch_data_range")
+            val paths = server.paths()
+            assertThat(paths.filter { it.startsWith("/symbol_info/") }).isNotEmpty.allMatch {
+                it ==
+                    "/symbol_info/EURUSDm"
+            }
+            assertThat(paths.filterNot { it.startsWith("/symbol_info/") }).hasSize(2).allMatch {
+                "/fetch_data_range" in
+                    it
+            }
         } finally {
             server.shutdown()
         }
@@ -102,17 +127,16 @@ class FetchCommandTest {
     fun `a day whose bars stop while the market is open is not stored, so a later fetch takes it whole`(
         @TempDir tmp: Path,
     ) {
-        val server = MockWebServer().apply { start() }
+        val bars0 = java.time.Instant.parse("2026-07-09T00:00:00Z")
+        // MT5 serves what its terminal has cached: here the Thursday stops at 12:48.
+        val bars =
+            (0 until 769).joinToString(",", "[", "]") { m ->
+                """{"time":"${bars0.plusSeconds(m * 60L)}","open":1.1,"high":1.1,"low":1.1,"close":1.1,""" +
+                    """"tick_volume":5,"spread":10,"real_volume":0}"""
+            }
+        val server = gateway(bars)
         try {
-            val start = java.time.Instant.parse("2026-07-09T00:00:00Z")
-            // MT5 serves what its terminal has cached: here the Thursday stops at 12:48.
-            val bars =
-                (0 until 769).joinToString(",", "[", "]") { m ->
-                    """{"time":"${start.plusSeconds(m * 60L)}","open":1.1,"high":1.1,"low":1.1,"close":1.1,""" +
-                        """"tick_volume":5,"spread":10,"real_volume":0}"""
-                }
-            server.enqueue(MockResponse().setBody("""{"point":"0.00001"}"""))
-            server.enqueue(MockResponse().setBody(bars))
+            val start = bars0
             val config = tmp.resolve("qkt.config.yaml")
             Files.writeString(
                 config,

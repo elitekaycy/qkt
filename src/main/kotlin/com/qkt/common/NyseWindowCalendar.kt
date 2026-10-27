@@ -21,7 +21,9 @@ open class NyseWindowCalendar(
     init {
         require(open < close) { "calendar $name: the session must open before it closes" }
         // Every NYSE trading day then has a session, early-close days included.
-        require(open < NyseSessions.EARLY_CLOSE) { "calendar $name: the session must open before the 13:00 early close" }
+        require(
+            open < NyseSessions.EARLY_CLOSE,
+        ) { "calendar $name: the session must open before the 13:00 early close" }
     }
 
     private val zone = ZoneId.of("America/New_York")

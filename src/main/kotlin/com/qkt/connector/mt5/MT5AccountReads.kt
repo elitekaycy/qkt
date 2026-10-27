@@ -111,6 +111,8 @@ internal class MT5AccountReads(
                 obj["trade_contract_size"]?.jsonPrimitive?.contentOrNull?.toBigDecimalOrNull()
                     ?: BigDecimal.ONE,
             swap = symbolSwap(obj),
+            path = obj["path"]?.jsonPrimitive?.contentOrNull,
+            tradeMode = obj["trade_mode"]?.jsonPrimitive?.contentOrNull?.toIntOrNull(),
         )
     }
 

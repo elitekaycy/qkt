@@ -44,6 +44,10 @@ import java.time.DayOfWeek
  * than [pointSize]: some index CFDs quote in 0.01 points but trade in 0.25 or 1.0 steps (#1455).
  * Points stay [pointSize] wide for every points-based figure (spread, slippage, swap, stops level);
  * only prices put on the venue's grid use [priceStep].
+ *
+ * [category] is the folder the venue files the symbol under (MT5 `path`: `Stocks` for `Standard\Stocks\AAPLm`), which
+ * calendar rules can match (`category:Stocks`). [tradeMode] is what the venue allows ([TradeMode]): opening orders on a
+ * close-only or disabled symbol are refused before they reach it.
  */
 data class InstrumentMeta(
     val qktSymbol: String,
@@ -65,6 +69,8 @@ data class InstrumentMeta(
     val currency: String? = null,
     val derivative: DerivativeTerms? = null,
     val tickSize: BigDecimal? = null,
+    val category: String? = null,
+    val tradeMode: TradeMode = TradeMode.FULL,
 ) {
     /** The grid an order or exit price must sit on: [tickSize] when it is coarser than a point, else [pointSize]. */
     val priceStep: BigDecimal

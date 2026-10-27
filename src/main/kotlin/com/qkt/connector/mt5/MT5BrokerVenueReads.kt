@@ -2,6 +2,7 @@ package com.qkt.connector.mt5
 
 import com.qkt.broker.BrokerDeal
 import com.qkt.broker.BrokerPositionTicket
+import com.qkt.instrument.TradeMode
 
 /**
  * Answers the engine's read-only questions about the venue in engine terms: deal history, resting
@@ -159,6 +160,8 @@ internal class MT5BrokerVenueReads(
             digits = info.digits,
             tradeStopsLevelPoints = info.tradeStopsLevel,
             tickSize = info.tickSize,
+            category = info.category,
+            tradeMode = info.tradeMode?.let(TradeMode::ofMt5) ?: TradeMode.FULL,
         )
     }
 }
