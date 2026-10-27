@@ -65,10 +65,7 @@ class HubReactiveTimingTest {
     ) {
         // The 0:40:00 price tick is processed before the fact sharing its millisecond, so the fact
         // is first evaluated at the bar closing 0:41:00, and filled there.
-        assertAllPaths(
-            run(store(tmp, Rec("USD", ms(40), mapOf("value" to "1")))),
-            listOf(fill(41, "BUY"), fill(46, "SELL")),
-        )
+        assertOnBoundary(run(store(tmp, Rec("USD", ms(40), mapOf("value" to "1")))))
     }
 
     @Test
@@ -82,10 +79,19 @@ class HubReactiveTimingTest {
                 "    m    = HUB:test.macro.USD EVERY 1d\n    gold = BACKTEST:XAUUSD EVERY 1m",
             )
         assertThat(hubFirst).isNotEqualTo(onRecord)
-        assertAllPaths(
-            run(store(tmp, Rec("USD", ms(40), mapOf("value" to "1"))), strategy = hubFirst),
-            listOf(fill(41, "BUY"), fill(46, "SELL")),
-        )
+        assertOnBoundary(run(store(tmp, Rec("USD", ms(40), mapOf("value" to "1"))), strategy = hubFirst))
+    }
+
+    /**
+     * A fact on 0:40:00, where this tape has a price tick. Ticks and live fill at 41 as above. The bar
+     * tier cannot know a tick sat on the boundary, which recorded ticks do in under 0.3% of minutes, so
+     * it takes the record as known at the 0:40 close and fills at 40.
+     */
+    private fun assertOnBoundary(runs: HubScenarioHarness.Runs) {
+        val next = listOf(fill(41, "BUY"), fill(46, "SELL"))
+        assertThat(runs.ticks).describedAs("tick backtest").containsExactlyElementsOf(next)
+        assertThat(runs.live).describedAs("live").containsExactlyElementsOf(next)
+        assertThat(runs.bars).describedAs("bar tier").containsExactly(fill(40, "BUY"), fill(45, "SELL"))
     }
 
     @Test

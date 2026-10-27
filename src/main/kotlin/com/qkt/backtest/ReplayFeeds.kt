@@ -72,7 +72,11 @@ internal object ReplayFeeds {
                 replayFeed(source, sym, range, barWindows[sym] ?: candleWindow, forceBars, positionSign)
                     .also { if (it is BarTickFeed) synthesized += sym }
             }
-        return if (perSymbolFeeds.size == 1) perSymbolFeeds[0] else MergingTickFeed(perSymbolFeeds)
+        // Ticks synthesized from bars lose ties: a bar is closed by the next bar's open, stamped exactly on
+        // the boundary, where a recorded tick almost never lands (under 0.3% of minutes), so a hub record
+        // stamped on the boundary is visible at that close, as on recorded ticks. Stable: real feeds keep order.
+        val ordered = perSymbolFeeds.sortedBy { it is BarTickFeed }
+        return if (ordered.size == 1) ordered[0] else MergingTickFeed(ordered)
     }
 
     /**

@@ -121,10 +121,10 @@ class HubReactiveMeasuredEdgesTest {
     fun `the freshness window includes its bound and nothing past it`(
         @TempDir tmp: Path,
     ) {
-        // Known exactly on the 10-minute close: invisible at that close (published on its millisecond),
-        // 60 000 ms old at the next one. `<= 60000` trades it there; `<= 59999` never does.
-        val root = rates(tmp, listOf(Rec("USD", t0.toEpochMilli() + 10 * 60_000L, mapOf("chg" to "0.10"))))
-        assertAllPaths(runGold(root, 60_000L), listOf(gold(11, "SELL"), gold(16, "BUY")))
-        assertAllPaths(runGold(root, 59_999L), emptyList())
+        // Known at 10:30, exactly 30 000 ms before the 11-minute close and on no boundary, so every path
+        // sees it there. `<= 30000` trades it; `<= 29999` never does (the next close is 90 s after).
+        val root = rates(tmp, listOf(Rec("USD", t0.toEpochMilli() + 10 * 60_000L + 30_000L, mapOf("chg" to "0.10"))))
+        assertAllPaths(runGold(root, 30_000L), listOf(gold(11, "SELL"), gold(16, "BUY")))
+        assertAllPaths(runGold(root, 29_999L), emptyList())
     }
 }
