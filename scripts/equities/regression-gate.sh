@@ -10,7 +10,7 @@
 #      QKT_GATE_FROM / QKT_GATE_TO (window, default 2024-01-01 .. 2024-04-01), QKT_GATE_JOBS (default 4).
 set -euo pipefail
 
-corpus=$1 old=$2 new=$3 out=$4
+corpus=$1 old=$(realpath "$2") new=$(realpath "$3") out=$(realpath -m "$4")
 data=${QKT_GATE_DATA:-/root/projects/qkt-forge/run}
 hub=${QKT_GATE_HUB:-/root/hub-data}
 from=${QKT_GATE_FROM:-2024-01-01}
