@@ -111,4 +111,54 @@ class HubReactiveStrategiesTest {
             ),
         )
     }
+
+    @Test
+    fun `a regime trade's time cap closes it first, and the recovery record then finds it flat`(
+        @TempDir tmp: Path,
+    ) {
+        // Fear at slot 1 buys at 11 and the 25-minute cap sells at 36; slot 4's recovery (40:30) finds no
+        // position. Fear at slot 6 buys at 61 and slot 8's recovery closes it at 81, before its cap at 86.
+        val runs =
+            runs(
+                tmp,
+                "value",
+                mapOf(1 to "15", 4 to "55", 6 to "10", 8 to "50"),
+                rest = "35",
+                rules =
+                    """
+                    WHEN NOW.epoch_ms - s.known_at <= 60000 AND s.value <= 20 AND POSITION.gold = 0
+                    THEN BUY gold SIZING 1 EXIT AFTER 25m
+                    WHEN NOW.epoch_ms - s.known_at <= 60000 AND s.value >= 50 AND POSITION.gold > 0
+                    THEN CLOSE gold
+                    """,
+            )
+        assertAllPaths(runs, listOf(fill(11, "BUY"), fill(36, "SELL"), fill(61, "BUY"), fill(81, "SELL")))
+    }
+
+    @Test
+    fun `one fresh record trades again after a time exit, and a window shorter than the hold stops it`(
+        @TempDir tmp: Path,
+    ) {
+        // The rule is a level, not an edge: flat again at 14 with the slot-1 record (10:30) still inside
+        // a ten-minute window, it buys again, until the record is older than ten minutes.
+        fun rules(freshMs: Long) =
+            """
+            WHEN NOW.epoch_ms - s.known_at <= $freshMs AND s.value <= 20 AND POSITION.gold = 0
+            THEN BUY gold SIZING 1 EXIT AFTER 3m
+            """
+        val wide = runs(tmp.resolve("wide"), "value", mapOf(1 to "15"), rest = "35", rules = rules(600_000L))
+        assertAllPaths(
+            wide,
+            listOf(
+                fill(11, "BUY"),
+                fill(14, "SELL"),
+                fill(15, "BUY"),
+                fill(18, "SELL"),
+                fill(19, "BUY"),
+                fill(22, "SELL"),
+            ),
+        )
+        val narrow = runs(tmp.resolve("narrow"), "value", mapOf(1 to "15"), rest = "35", rules = rules(60_000L))
+        assertAllPaths(narrow, listOf(fill(11, "BUY"), fill(14, "SELL")))
+    }
 }
