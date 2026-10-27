@@ -10,7 +10,7 @@ import com.qkt.events.TickEvent
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.TimeInForce
 import com.qkt.execution.TriggerType
-import com.qkt.execution.withExpiresAt
+import com.qkt.execution.withDayExpiry
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.NoopInstrumentRegistry
 import com.qkt.marketdata.MarketPriceProvider
@@ -19,7 +19,6 @@ import com.qkt.marketdata.buyExecPrice
 import com.qkt.marketdata.sellExecPrice
 import java.math.BigDecimal
 import java.math.RoundingMode
-import java.time.Instant
 import org.slf4j.LoggerFactory
 
 /**
@@ -90,12 +89,7 @@ class PaperBroker(
     override fun submit(request: OrderRequest): SubmitAck {
         val expiring =
             if (request.timeInForce == TimeInForce.DAY && request.expiresAt == null) {
-                request.withExpiresAt(
-                    calendar
-                        .sessionRange(request.symbol, Instant.ofEpochMilli(clock.now()))
-                        .to
-                        .toEpochMilli(),
-                )
+                request.withDayExpiry(calendar, clock.now())
             } else {
                 request
             }
