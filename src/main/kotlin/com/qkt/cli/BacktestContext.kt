@@ -6,7 +6,6 @@ import com.qkt.backtest.BrokerKind
 import com.qkt.backtest.ExecutionSimulationConfig
 import com.qkt.backtest.GatedChild
 import com.qkt.candles.TimeWindow
-import com.qkt.common.FixedClock
 import com.qkt.common.SymbolCalendars
 import com.qkt.common.TimeRange
 import com.qkt.dsl.ast.StrategyAst
@@ -23,12 +22,6 @@ import com.qkt.marketdata.store.BinaryBarStore
 import com.qkt.marketdata.store.DataFetcher
 import com.qkt.marketdata.store.DefaultDataStore
 import com.qkt.marketdata.store.LocalBarStore
-import com.qkt.marketdata.store.ScriptDataFetcher
-import com.qkt.marketdata.store.dukascopy.DukascopyTickFetcher
-import com.qkt.marketdata.store.macro.FredSeriesFetcher
-import com.qkt.marketdata.store.macro.MacroSeriesStore
-import com.qkt.marketdata.store.macro.PolicyRateSeries
-import com.qkt.marketdata.store.macro.PolicyRateSeriesFetcher
 import com.qkt.research.ReplayEngine
 import java.math.BigDecimal
 import java.nio.file.Path
@@ -260,23 +253,9 @@ class BacktestContext private constructor(
             // the caller explicitly overrides it with --data-root for relocated snapshots.
             val dataRoot = args.option("data-root") ?: datasetContext.dataRoot ?: CliDataRoot.of(args).toString()
 
-            // Legacy `--fetcher dukascopy --fetcher-script <path>` still wins when set.
-            val legacyFetcher: DataFetcher? =
-                when (val name = args.option("fetcher")) {
-                    null -> null
-                    "dukascopy" -> ScriptDataFetcher.dukascopy(Paths.get(args.requireOption("fetcher-script")))
-                    else -> throw SetupError("unsupported --fetcher '$name' (supported: dukascopy)")
-                }
-            val noFetch = args.flag("no-fetch")
-            val fetcher: DataFetcher? =
-                when {
-                    noFetch -> null
-                    fetcherOverride != null -> fetcherOverride
-                    legacyFetcher != null -> legacyFetcher
-                    else -> DukascopyTickFetcher()
-                }
-            val store = DefaultDataStore(root = Paths.get(dataRoot), fetcher = fetcher)
-            val barStore = LocalBarStore(root = Paths.get(dataRoot))
+            val stores = BacktestSetup.stores(args, dataRoot, fetcherOverride)
+            val store = stores.ticks
+            val barStore = stores.bars
 
             val candleWindow =
                 ast.streams
@@ -287,12 +266,7 @@ class BacktestContext private constructor(
             val instruments: InstrumentRegistry =
                 InstrumentFiles.forBacktest(Paths.get(dataRoot), args, symbols, from, to)
 
-            val brokerKind =
-                when (val raw = args.option("broker")) {
-                    null, "paper" -> BrokerKind.PAPER
-                    "mt5-sim" -> BrokerKind.MT5_SIM
-                    else -> throw SetupError("unknown --broker '$raw' (valid: paper, mt5-sim)")
-                }
+            val brokerKind = BacktestSetup.brokerKind(args)
             // Same config-driven halt/accounting construction the live daemon uses, so a strategy
             // that would halt live halts at the same point in its backtest. The basis balance is
             // the backtest's own starting balance, which defaults to the config's like the daemon's.
@@ -318,48 +292,20 @@ class BacktestContext private constructor(
             val binaryBarStore = barReplay.binaryBarStore
             val barWindows = barReplay.barWindows
 
-            val provisioner: () -> Unit = {
-                val provisionFrom = LocalDate.ofInstant(from, ZoneOffset.UTC)
-                val provisionTo = LocalDate.ofInstant(to.minusMillis(1), ZoneOffset.UTC)
-                BacktestTickProvisioning.provision(
-                    replaySymbols,
-                    instruments,
-                    barReplay,
-                    store to barStore,
+            val calendars = cfg.backtestCalendars(args.option("venue"), instruments)
+            val provisioner =
+                BacktestSetup.provisioner(
+                    args,
+                    dataRoot,
+                    stores,
                     from to to,
-                    noFetch,
-                    args.flag("allow-incomplete"),
+                    replaySymbols to barReplay,
+                    ast.streams,
+                    instruments,
+                    calendars::calendarFor,
                 )
-                // Macro series (MACRO:) provisioning from FRED. Fetch enough history before the
-                // window for the strategy's warmup (90 calendar days ~ 60 business days). Skipped on
-                // --no-fetch; hasRange avoids re-fetching a window the store already brackets.
-                val macroStreams = ast.streams.filter { it.qktSymbol in symbols && it.broker == "MACRO" }
-                if (macroStreams.isNotEmpty() && !noFetch && !provisionTo.isBefore(provisionFrom)) {
-                    val macroStore = MacroSeriesStore(Paths.get(dataRoot))
-                    val fredFetcher = FredSeriesFetcher(macroStore)
-                    val policyRateFetcher = PolicyRateSeriesFetcher(macroStore)
-                    val macroFrom = provisionFrom.minusDays(90)
-                    for (s in macroStreams) {
-                        if (!macroStore.hasRange(s.symbol, macroFrom, provisionTo)) {
-                            val policySeries = PolicyRateSeries.fromId(s.symbol)
-                            if (policySeries == null) {
-                                fredFetcher.fetch(s.symbol, macroFrom, provisionTo)
-                            } else {
-                                policyRateFetcher.fetch(policySeries, macroFrom, provisionTo)
-                            }
-                        }
-                    }
-                }
-            }
 
-            val haltConfig =
-                HaltConfig(
-                    maxDailyLoss = cfg.maxDailyLoss,
-                    maxDrawdownPct = cfg.maxDrawdownPct,
-                    maxDailyDrawdownPct = cfg.maxDailyDrawdownPct,
-                    totalDdBasis = cfg.totalDdBasis,
-                    dailyDdBasis = cfg.dailyDdBasis,
-                )
+            val haltConfig = BacktestSetup.haltConfig(cfg)
 
             return BacktestContext(
                 ast = ast,
@@ -390,7 +336,7 @@ class BacktestContext private constructor(
                 barWindows = barWindows,
                 binaryBarStore = binaryBarStore,
                 tickFills = tickFills,
-                calendars = cfg.backtestCalendars(args.option("venue"), instruments),
+                calendars = calendars,
             )
         }
 
@@ -436,61 +382,19 @@ class BacktestContext private constructor(
                 )
             val dataRoot = args.option("data-root") ?: datasetContext.dataRoot ?: CliDataRoot.of(args).toString()
 
-            val legacyFetcher: DataFetcher? =
-                when (val name = args.option("fetcher")) {
-                    null -> null
-                    "dukascopy" -> ScriptDataFetcher.dukascopy(Paths.get(args.requireOption("fetcher-script")))
-                    else -> throw SetupError("unsupported --fetcher '$name' (supported: dukascopy)")
-                }
-            val noFetch = args.flag("no-fetch")
-            val fetcher: DataFetcher? =
-                when {
-                    noFetch -> null
-                    fetcherOverride != null -> fetcherOverride
-                    legacyFetcher != null -> legacyFetcher
-                    else -> DukascopyTickFetcher()
-                }
-            val store = DefaultDataStore(root = Paths.get(dataRoot), fetcher = fetcher)
-            val barStore = LocalBarStore(root = Paths.get(dataRoot))
+            val stores = BacktestSetup.stores(args, dataRoot, fetcherOverride)
+            val store = stores.ticks
+            val barStore = stores.bars
             val candleWindow = streams.firstOrNull()?.timeframe?.let { TimeWindow.parse(it) }
 
             val instruments: InstrumentRegistry =
                 InstrumentFiles.forBacktest(Paths.get(dataRoot), args, symbols, from, to)
 
-            // Build the shared portfolio gate so WHEN..RUN rules suppress child signals in backtest
-            // exactly as PortfolioSupervisor does in live. The gate is fed closed candles before
-            // strategies evaluate them, so the gate state is current for each bar.
             val cfg = Config.load(Config.resolvePath(args.option("config")))
             val calendars = cfg.backtestCalendars(args.option("venue"), instruments)
-            val portfolioCalendar = backtestCalendar(symbols, instruments, calendars)
-            val portfolioGate =
-                PortfolioGate(
-                    ast = compiled.ast,
-                    clock = FixedClock(time = from.toEpochMilli()),
-                    calendar = portfolioCalendar,
-                ).also {
-                    it.prepare()
-                    it.initialState()
-                }
-            val gateFor: (String) -> Boolean = { strategyId ->
-                portfolioGate.currentState().activeByAlias[strategyId.substringAfter(":")] == true
-            }
-            val preCandle: (com.qkt.marketdata.Candle) -> Unit = { candle ->
-                portfolioGate.onCandle(candle)
-            }
-            val aliasToStrategyId = compiled.children.associate { it.alias to it.strategyId }
-            val regimeWeights: () -> Map<String, BigDecimal> = {
-                portfolioGate.currentState().weightByAlias.mapKeys { (alias, _) ->
-                    aliasToStrategyId[alias] ?: alias
-                }
-            }
+            val wiring = PortfolioBacktestWiring(compiled, from, backtestCalendar(symbols, instruments, calendars))
 
-            val brokerKind =
-                when (val raw = args.option("broker")) {
-                    null, "paper" -> BrokerKind.PAPER
-                    "mt5-sim" -> BrokerKind.MT5_SIM
-                    else -> throw SetupError("unknown --broker '$raw' (valid: paper, mt5-sim)")
-                }
+            val brokerKind = BacktestSetup.brokerKind(args)
             val executionConfig = BacktestSimulationOptions.executionConfig(args, cfg, brokerKind)
             val barReplay =
                 BacktestBarReplay.resolveBarReplay(
@@ -510,50 +414,26 @@ class BacktestContext private constructor(
             val accountingConfig = BacktestSimulationOptions.accountingConfig(args, cfg)
             val replaySymbols = (symbols + accountingConfig.normalizedSymbols.values).distinct()
 
-            val provisioner: () -> Unit = {
-                BacktestTickProvisioning.provision(
-                    replaySymbols,
-                    instruments,
-                    barReplay,
-                    store to barStore,
+            val provisioner =
+                BacktestSetup.provisioner(
+                    args,
+                    dataRoot,
+                    stores,
                     from to to,
-                    noFetch,
-                    args.flag("allow-incomplete"),
+                    replaySymbols to barReplay,
+                    streams,
+                    instruments,
+                    calendars::calendarFor,
                 )
-            }
 
-            val haltConfig =
-                HaltConfig(
-                    maxDailyLoss = cfg.maxDailyLoss,
-                    maxDrawdownPct = cfg.maxDrawdownPct,
-                    maxDailyDrawdownPct = cfg.maxDailyDrawdownPct,
-                    totalDdBasis = cfg.totalDdBasis,
-                    dailyDdBasis = cfg.dailyDdBasis,
-                )
+            val haltConfig = BacktestSetup.haltConfig(cfg)
             val effectiveBookRiskConfig =
-                if (compiled.ast.allocate != null && declaredCapital != null) {
-                    val base =
-                        cfg.bookRisk ?: com.qkt.risk.book
-                            .BookRiskConfig()
-                    val rebalanceBars =
-                        compiled.ast.allocate.rebalanceEveryDurationMs?.let { durationMs ->
-                            candleWindow?.let { window ->
-                                BigDecimal(durationMs)
-                                    .divide(BigDecimal(window.durationMs), 0, java.math.RoundingMode.CEILING)
-                                    .toInt()
-                            } ?: 0
-                        } ?: 0
-                    base.copy(
-                        capital = base.capital ?: declaredCapital,
-                        allocation =
-                            com.qkt.risk.book.Allocation(
-                                method = com.qkt.risk.book.AllocationMethod.REGIME_WEIGHTED,
-                                rebalanceEveryBars = rebalanceBars,
-                            ),
-                    )
-                } else {
-                    cfg.bookRisk
-                }
+                PortfolioBacktestWiring.bookRisk(
+                    compiled,
+                    declaredCapital,
+                    cfg.bookRisk,
+                    candleWindow,
+                )
 
             return BacktestContext(
                 ast = compiled.children.first().ast,
@@ -582,14 +462,14 @@ class BacktestContext private constructor(
                                 strategyId = child.strategyId,
                                 inner = child.compiled,
                                 hold = child.hold,
-                                gateFor = gateFor,
+                                gateFor = wiring.gateFor,
                                 flattenSymbols = child.symbols,
                             )
                     }
                 },
-                gateFor = gateFor,
-                preCandle = preCandle,
-                regimeWeights = regimeWeights,
+                gateFor = wiring.gateFor,
+                preCandle = wiring.preCandle,
+                regimeWeights = wiring.regimeWeights,
                 bookRiskConfig = effectiveBookRiskConfig,
                 perStrategyRisk = cfg.perStrategyRisk,
                 maxOrderQty = cfg.maxOrderQty,
