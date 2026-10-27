@@ -725,8 +725,8 @@ What the plan above looks like now that its first items have been run (the five 
 container before a backfill (the daemon now holds the writer lock, so a backfill beside it fails);
 a qkt live session reads hub records in append order, not by `seq`; facts that land while the market is
 shut are stale by the open, and every rule here tests freshness (`NOW - x.known_at`).
-Research release-minute rules on ticks, not `--bars`. A calendar record is stamped exactly on a minute boundary
-(release + 60 s), and the bar tier closes the release-minute bar on that same millisecond with the price first, so
-`brk_*` never trades in `--bars` while it trades at release + 60 s on ticks and live (`HubReleaseBreakoutTest`). Whether
-the bar tier should order a boundary record before the bar's close is an open design choice: it would match recorded
-ticks, which land after the boundary, but break parity with a tape that has a tick exactly on it.
+`--bars` used to miss release-minute rules: a calendar record is stamped exactly on a minute boundary (release + 60 s),
+and the bar tier closed the release-minute bar on that millisecond with the price first, so `brk_*` never traded there.
+Recorded ticks land on a minute boundary in 0.14-0.25% of minutes (Dukascopy XAUUSD, EURUSD, BTCUSD, Mar-Apr 2023), so
+the bar tier now lets a hub record win that tie and trades `brk_*` at release + 60 s like ticks and live
+(`HubReleaseBreakoutTest`, all three markets).
