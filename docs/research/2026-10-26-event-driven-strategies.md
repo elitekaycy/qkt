@@ -614,9 +614,96 @@ definition, and the only positive period is the one with the Iran-Israel exchang
 would need a robust-z indicator in the DSL and a fresh out-of-sample period (2026 prospective, not 2025)
 before it is worth another look.
 
+## Measured: purely reactive hub strategies, 2018-2024 (2026-10-27)
+
+Eight rules written down before any run, each acting only on a hub record within its freshness window:
+no price indicator, no optimisation, one parameter set each. qkt 458080052 (cot_crowd_gold: 239a6096b, merged to
+dev as 666bf8373; see below), `--broker mt5-sim`, recorded bid/ask from the Dukascopy ticks, 1 lot, $100k, 2018-01-01 to
+2025-01-01. Every trigger stream is `EVERY 1h`. Sources: `/var/tmp/eventbt/reactive/*.qkt` on bot2.
+
+| Strategy | Market | Rule (fresh = `NOW - x.known_at` within) | Exit |
+|---|---|---|---|
+| fng_fear_btc | BTCUSD | Fear & Greed ≤ 20, fresh 1 h: buy | a fresh reading ≥ 50, or 30 d |
+| fng_greed_btc | BTCUSD | Fear & Greed ≥ 80, fresh 1 h: sell | 7 d |
+| funding_hot_btc | BTCUSD | BTC perp funding ≥ 0.05%, fresh 1 h: sell | 3 d |
+| funding_neg_btc | BTCUSD | BTC perp funding < 0, fresh 1 h: buy | 3 d |
+| ry_up_gold | XAUUSD | 10y real yield (DFII10) up ≥ 8 bp on the day, fresh 4 h: sell | 5 d |
+| ry_down_gold | XAUUSD | DFII10 down ≥ 8 bp: buy | 5 d |
+| us2y_eur | EURUSD | 2y yield (DGS2) up ≥ 10 bp: sell; down ≥ 10 bp: buy; fresh 4 h | 3 d |
+| cot_crowd_gold | XAUUSD | `zscore(net_noncomm / open_interest, 52)` ≥ 2: sell; ≤ -2: buy; fresh 4 h | 20 d |
+
+All entries also require a flat position, so trades never overlap.
+
+**The engine traded exactly what each rule says.** An independent checker
+(`/var/tmp/eventbt/reactive/verify.py`) rebuilt every signal from the raw hub journal and every mid from
+the raw ticks. For all eight strategies:
+- every entry (590 in total) sits on a fresh qualifying record;
+- every qualifying record that was not traded is accounted for: a position was already open, or the
+  market had no ticks in the freshness window (BTC weekends missing from the 2018-20 tick store);
+- every fng_fear_btc exit is either the 30-day cap (20) or a fresh reading ≥ 50 (9).
+
+None is unexplained. Getting there took three corrections:
+- **Fills after a market gap.** 50 gold and EURUSD entries fill at the reopen after a weekend or holiday
+  close, on a record from the evening before it. This is correct. In a backtest `NOW` is the bar close, and the last Friday bar's close is
+  only seen when the next tick arrives. The rule judges freshness at Friday's close, and the order fills at
+  the first price after it. A record published in the last hours before a weekend therefore trades at the
+  reopen, gap included.
+- **Holiday records.** On the day after a US bond-market holiday, FRED's late value and the holiday's
+  all-null record arrive with the same `known_at`. qkt keeps each field at its last value, so it trades the
+  real change. The checker first let the null record overwrite it.
+- **A qkt defect, fixed (#1509).** An indicator over an expression of hub fields got no warmup from
+  before `--from`. The record stream it updates on (`cot/known_at`) was never planned any bars. So
+  cot_crowd_gold, run from 2018, took its first signal in mid-2019, while the same rule started in 2017
+  traded 2018-05-18. With the fix it takes all of 2018's signals: 19 trades instead of 13. us2y_eur
+  re-run on the fixed build gives identical trades, as it should with no indicator.
+
+**Results.** Returns in bps of entry, mid to mid. Excess is net of the period's mean hourly drift times
+the hold, in the trade's direction. 95% bootstrap CI. Payoff is mean win / mean loss.
+
+| Strategy | Period | n | win | payoff | mid bps | excess bps | net USD |
+|---|---|---|---|---|---|---|---|
+| fng_fear_btc | 2018-23 | 28 | 50% | 1.54 | +263 [-347, +879] | -11 [-625, +615] | -11,991 |
+| | 2024 | 1 | 100% | | +1,448 | +996 | +8,017 |
+| fng_greed_btc | 2018-23 | 23 | 39% | 0.68 | -483 [-1,033, +92] | -412 [-961, +164] | -22,656 |
+| | 2024 | 9 | 56% | 0.97 | +51 [-311, +444] | +226 [-135, +619] | +2,191 |
+| funding_hot_btc | 2018-23 | 64 | 52% | 1.03 | +25 [-157, +211] | +56 [-126, +242] | +2,254 |
+| | 2024 | 8 | 38% | 0.74 | -157 [-487, +170] | -81 [-412, +246] | -6,788 |
+| funding_neg_btc | 2018-23 | 170 | 59% | 1.28 | +116 [+35, +197] | +85 [+4, +166] | +30,365 |
+| | 2024 | 26 | 65% | 0.86 | +91 [-93, +263] | +16 [-168, +187] | +11,117 |
+| ry_up_gold | 2018-23 | 59 | 34% | 1.13 | -36 [-84, +12] | -26 [-75, +21] | -45,697 |
+| | 2024 | 11 | 36% | 0.62 | -41 [-100, +22] | +8 [-51, +72] | -11,386 |
+| ry_down_gold | 2018-23 | 56 | 48% | 1.18 | +7 [-45, +61] | -2 [-54, +52] | -5,063 |
+| | 2024 | 4 | 25% | 0.93 | -45 [-119, +45] | -91 [-162, -1] | -4,954 |
+| us2y_eur | 2018-23 | 94 | 41% | 0.73 | -24 [-45, -4] | -24 [-45, -4] | -30,003 |
+| | 2024 | 18 | 50% | 1.30 | +6 [-22, +33] | +5 [-24, +33] | +285 |
+| cot_crowd_gold | 2018-23 | 17 | 47% | 0.69 | -52 [-177, +74] | -73 [-191, +49] | -14,165 |
+| | 2024 | 2 | 0% | | -241 | -67 | -11,455 |
+
+Whole runs (engine report). Profit: funding_neg_btc +43.4% (Sharpe 0.69, worst drawdown 15.0%);
+fng_fear_btc -4.0%; funding_hot_btc -4.5%; ry_down_gold -10.0%; fng_greed_btc -20.5%; cot_crowd_gold
+-25.6%; us2y_eur -29.7%; ry_up_gold -57.1% (drawdown 65.6%).
+
+**Verdicts.**
+- **Seven of eight: no edge.** Their excess intervals include zero, or exclude it on the losing side
+  (us2y_eur 2018-23, ry_down_gold 2024). Where the two periods have the same sign, both are losses.
+- **ry_up_gold is the 2022-24 decoupling (§1.8) in one line.** Selling gold on a real-yield jump lost
+  57%, because gold rose through the 2022-24 rate rise.
+- **cot_crowd_gold fades speculator extremes, and loses.** That matches the literature (§1.9), where
+  speculator extremes signal continuation. n = 19, so this is weak evidence either way.
+- **funding_neg_btc is a lead, not an edge.**
+  - The 2018-23 excess (+85 bps, n 170) clears zero by 4 bps. That is one of eight pre-registered tests, so
+    not at a multiple-testing level.
+  - 2024 has the same sign but a wide interval.
+  - By year (fill to fill, mean bps): 2019 +8 (13), 2020 +26 (31), 2021 +307 (20), 2022 -47 (69),
+    2023 +134 (37), 2024 +76 (26). 20 trades in 2021 make most of the profit, and the 2022 bear market,
+    when funding was negative most often, gives back about a quarter of it.
+  - The sign matches K33's "negative funding precedes gains" (§1.10). A 3-day buy after negative funding
+    is worth watching on the 2026 prospective period (never 2025) with a regime split, and not worth sizing
+    now.
+
 ## Next steps, after the measurements (2026-10-26)
 
-What the plan above looks like now that its first items have been run (the four "Measured" sections):
+What the plan above looks like now that its first items have been run (the five "Measured" sections):
 
 | Plan item | Status | Next |
 |---|---|---|
@@ -624,7 +711,7 @@ What the plan above looks like now that its first items have been run (the four 
 | R5 straddle / first-move breakout | Measured as the negative control: no edge on gold, EURUSD or BTC | Closed. |
 | 3. Post-release drift, +5 min to +1 day | Fading the first 15 minutes leans positive on EURUSD (+2.7 bps) and gold (+4.4), not significant | Next to test properly: needs point-in-time consensus (surprise sign and size) and Exness tick spreads at +5/+15 min. |
 | 2. FOMC conditional trades (R1/R2/R4) | Not run | Run as exploratory (about 70 events), with every variant counted for the Deflated Sharpe. |
-| 4. COT and funding as regime filters | Not run; the data now exists (COT 2009+, funding 2019+, Fear & Greed 2018+, all point-in-time) | Weekly-horizon quintile study with publication-lag discipline. |
+| 4. COT and funding as regime filters | Measured as eight reactive rules (above): no edge in seven; negative BTC funding a lead (+85 bps excess 2018-23, carried by 2021) | Watch negative funding on the 2026 prospective period with a bull/bear split; a weekly-horizon quintile study remains the proper test of COT as a filter. |
 | 5. GDELT news triggers | Measured: spikes at chance (8 of 141 cells); the one lead (Middle East conflict, then gold) gone under the engine's own z-score | Deferred. Revisit only with a robust-z indicator and the 2026 prospective period, never 2025. |
 
 **Infrastructure the next tests need, in order:**
