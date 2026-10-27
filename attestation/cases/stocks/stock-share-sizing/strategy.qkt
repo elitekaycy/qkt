@@ -1,0 +1,20 @@
+STRATEGY atto_stk_sizing VERSION 1
+
+SYMBOLS
+    nvda = EXNESS:NVDA EVERY 1m WARMUP 3 BARS,
+    msft = EXNESS:MSFT EVERY 1m WARMUP 3 BARS
+
+RULES
+    -- $500 of NVDA at about $200-$250 a share is 2 shares: 500 / (price x 100) = 0.02 lot.
+    WHEN nvda.close > 0 AND POSITION.nvda = 0 AND TRADES.today = 0
+    THEN BUY nvda SIZING 500 USD
+
+    -- $5 at risk with a $2.50 stop is 2 shares: 5 / (2.50 x 100) = 0.02 lot, whatever MSFT trades at.
+    WHEN msft.close > 0 AND POSITION.msft = 0 AND TRADES.today = 0
+    THEN BUY msft SIZING RISK $ 5 BRACKET { STOP LOSS BY 2.5, TAKE PROFIT BY 5 }
+
+    WHEN POSITION.nvda != 0 AND POSITION.nvda.holding_duration >= 50
+    THEN CLOSE nvda
+
+    WHEN POSITION.msft != 0 AND POSITION.msft.holding_duration >= 50
+    THEN CLOSE msft

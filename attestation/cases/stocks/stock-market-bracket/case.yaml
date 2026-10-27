@@ -1,0 +1,28 @@
+id: stock-market-bracket
+title: One AAPL share bought with venue protection and closed by the strategy
+why: 'The baseline for stock CFDs: a 100-share contract sized as 0.01 lot must reach the venue as one share,
+  carry its bracket, book the same P&L as the venue, and replay to the same fills on the stock session. A
+  contract size read as 1 would send 100 lots; a stock on the FX calendar would replay with no session.'
+status: ready
+symbols:
+- AAPL
+timeframes:
+- 1m
+warmup_bars:
+  1m: 3
+proves:
+- behaviour:stock-cfd
+- behaviour:market-entry
+- behaviour:bracket
+- behaviour:timed-exit
+budget_seconds: 200
+expect_fills:
+- BUY 0.01
+- SELL 0.01
+assertions:
+- flat-by-magic
+- no-pending-by-magic
+- deals-net-by-magic
+- no-engine-fault
+- replay-fill-sequence
+- expected-fills

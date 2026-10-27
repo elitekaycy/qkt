@@ -180,6 +180,11 @@ for _ in $(seq 1 120); do
     sleep 1
 done
 grep -q 'daemon ready' "$out/daemon.log" || fail "daemon was not ready within 120 seconds"
+# A case that judges what rests at the venue (`expect_pending_expiration`) snapshots its pending orders partway.
+probe_after="$(python3 -c 'import sys,yaml; print((yaml.safe_load(open(sys.argv[1])).get("expect_pending_expiration") or {}).get("after_seconds", ""))' "$case_dir/case.yaml")"
+if [ -n "$probe_after" ]; then
+    ( sleep "$probe_after"; gateway_get "/orders?magic=$magic" > "$out/evidence/pending-probe.json" 2>/dev/null || true ) &
+fi
 sleep "$budget"
 
 # A case exits by its own rules inside its budget. Booked P&L is read while the strategy is still
@@ -298,6 +303,45 @@ if [ -n "$expected_rejections" ]; then
     [ "$live_rejections" = "$expected_rejections" ] || problems+=("live risk rejections $live_rejections, expected $expected_rejections")
     [ "$replay_rejections" = "$expected_rejections" ] || problems+=("replay risk rejections $replay_rejections, expected $expected_rejections")
 fi
+
+# Optional per-case expectations: the exact fills (`expect_fills`, as a multiset of "SIDE QTY"), the expiry each
+# resting order carries at the venue (`expect_pending_expiration`), and when the first fill may come
+# (`expect_first_fill_within`, from the venue's own deal times).
+while IFS= read -r problem; do [ -n "$problem" ] && problems+=("$problem"); done < <(python3 - "$case_dir/case.yaml" "$out/evidence" "$magic" "dsl-$strategy" <<'PY'
+import datetime as dt, json, os, sys, yaml, zoneinfo
+case, ev, magic, prefix = yaml.safe_load(open(sys.argv[1])), sys.argv[2], int(sys.argv[3]), sys.argv[4]
+def local_today(spec):
+    hhmm, zone = spec.split()
+    tz = zoneinfo.ZoneInfo(zone); h, m = map(int, hhmm.split(":"))
+    return dt.datetime.now(tz).replace(hour=h, minute=m, second=0, microsecond=0)
+if "expect_fills" in case:
+    live = sorted(f"{s} {float(q):.2f}" for s, q in (l.split() for l in open(f"{ev}/live-fills.txt") if l.strip()))
+    want = sorted(f"{s} {float(q):.2f}" for s, q in (e.split() for e in case["expect_fills"]))
+    if live != want:
+        print(f"live fills {live} are not the expected {want}")
+spec = case.get("expect_pending_expiration")
+if spec:
+    path = f"{ev}/pending-probe.json"
+    orders = [o for o in (json.load(open(path)).get("orders", []) if os.path.exists(path) else []) if o.get("magic") == magic]
+    want = int(local_today(spec["at"]).timestamp())
+    if not orders:
+        print(f"no pending order rested at the venue {spec['after_seconds']}s in")
+    for o in orders:
+        if o.get("type_time") != 2 or o.get("time_expiration") != want:
+            print(f"pending order {o.get('ticket')} expires type_time={o.get('type_time')} at {o.get('time_expiration')}, expected dated at {want} ({spec['at']})")
+spec = case.get("expect_first_fill_within")
+if spec:
+    history = json.load(open(f"{ev}/history.json"))
+    # The venue truncates comments, hence the two-way prefix match the deal net above uses.
+    ours = lambda c: len(c) > 4 and (c.startswith(prefix) or prefix.startswith(c))
+    entries = sorted(d["timeMs"] for d in history if d.get("entry") == "IN" and ours(d.get("comment") or ""))
+    opened = int(local_today(spec["after"]).timestamp() * 1000)
+    if not entries:
+        print("no entry deal to time against the session open")
+    elif not opened <= entries[0] <= opened + int(spec["seconds"]) * 1000:
+        print(f"first entry at {entries[0]} is not within {spec['seconds']}s after {spec['after']} ({opened})")
+PY
+)
 
 status="passed"; [ "${#problems[@]}" -eq 0 ] || status="failed"
 printf '%s\n' "${problems[@]:-}" | jq -R . | jq -s --arg id "$id" --arg lane "$lane" --arg status "$status" \

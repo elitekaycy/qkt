@@ -12,6 +12,12 @@ lanes:
     concurrency: per-magic
     places_orders: true
     budget_seconds: 360
+  stocks:
+    purpose: Stock CFDs on the MT5 demo (Exness US shares, 100-share lots) - orders and fills inside the 06:00-15:45 New York session, share-sized entries, refusals of close-only symbols, DAY orders expiring at the session close, each replayed to the same fills. Runs only while the US session is open.
+    concurrency: per-magic
+    places_orders: true
+    session: nyse[06:00-15:45]
+    budget_seconds: 300
   risk:
     purpose: Caps, rejections and halts bind live exactly as in replay, from restored state, never from hoping the market produces a loss.
     concurrency: per-magic
