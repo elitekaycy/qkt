@@ -1,7 +1,5 @@
 package com.qkt.connector.mt5
 
-import com.qkt.instrument.InstrumentMeta
-import com.qkt.instrument.TradeMode
 import com.qkt.instrument.UnreportedCost
 import com.qkt.instrument.VenueInstrumentSpec
 import java.math.BigDecimal
@@ -19,20 +17,7 @@ internal fun MT5Client.instrumentSpec(
 ): VenueInstrumentSpec? {
     val brokerSymbol = MT5Symbol(profile.symbolPolicy).toBroker(qktSymbol.substringAfter(':'))
     val info = getSymbolInfo(brokerSymbol) ?: return null
-    val meta =
-        InstrumentMeta(
-            qktSymbol = qktSymbol,
-            contractSize = info.contractSize,
-            volumeStep = info.volumeStep,
-            volumeMin = info.volumeMin,
-            volumeMax = info.volumeMax,
-            pointSize = info.point,
-            digits = info.digits,
-            tradeStopsLevelPoints = info.tradeStopsLevel,
-            tickSize = info.tickSize,
-            category = info.category,
-            tradeMode = info.tradeMode?.let(TradeMode::ofMt5) ?: TradeMode.FULL,
-        )
+    val meta = info.instrumentMeta(qktSymbol)
     val unreported = mutableMapOf(UnreportedCost.COMMISSION to "the symbol endpoint does not report commission")
     return when (val swap = swapTerms(info.swap)) {
         is SwapTerms.Points ->

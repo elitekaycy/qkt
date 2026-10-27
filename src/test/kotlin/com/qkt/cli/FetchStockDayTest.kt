@@ -36,7 +36,11 @@ class FetchStockDayTest {
                 override fun dispatch(request: RecordedRequest): MockResponse =
                     when {
                         request.path.orEmpty().startsWith("/symbol_info/") ->
-                            MockResponse().setBody("""{"point":"0.01","path":"Standard\\\\$folder\\\\AAPLm"}""")
+                            MockResponse().setBody(
+                                """{"point":"0.01","digits":2,"trade_contract_size":100.0,"volume_min":0.01,""" +
+                                    """"volume_step":0.01,"volume_max":10,"trade_stops_level":0,""" +
+                                    """"path":"Standard\\\\$folder\\\\AAPLm","trade_mode":4}""",
+                            )
                         request.path.orEmpty().contains("2026-10-26T00") -> MockResponse().setBody(bars)
                         else -> MockResponse().setBody("[]")
                     }

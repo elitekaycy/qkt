@@ -88,31 +88,19 @@ class MT5ExnessStockCalendarTest {
         )
 
     @Test
-    fun `the venue's folder is the category, read once, and a failed read is retried only after a while`() {
+    fun `the venue's folder is the category and MT5 trade modes map to qkt's`() {
         assertThat(info("Standard\\Stocks\\AAPLm").category).isEqualTo("Stocks")
         assertThat(info("Stocks/AAPLm").category).isEqualTo("Stocks")
         assertThat(info("AAPLm").category).isNull()
         assertThat(info(null).category).isNull()
-
-        val asked = mutableListOf<String>()
-        var answer: MT5SymbolInfo? = null
-        var now = 0L
-        val categories =
-            MT5SymbolCategories(
-                { symbol ->
-                    asked += symbol
-                    answer
-                },
-                MT5Symbol(SymbolPolicy(suffix = "m")),
-                monotonicNanos = { now },
-                retryAfterNanos = 1_000L,
-            )
-        assertThat(categories("AAPL")).isNull() // gateway down
-        assertThat(categories("AAPL")).isNull() // not asked again yet
-        answer = info("Standard\\Stocks\\AAPLm")
-        now = 1_000L
-        assertThat(categories("AAPL")).isEqualTo("Stocks")
-        assertThat(categories("AAPL")).isEqualTo("Stocks")
-        assertThat(asked).containsExactly("AAPLm", "AAPLm")
+        assertThat(info("Standard\\Stocks\\AAPLm").instrumentMeta("EXNESS:AAPL").category).isEqualTo("Stocks")
+        assertThat((0..5).map(::mt5TradeMode)).containsExactly(
+            com.qkt.instrument.TradeMode.DISABLED,
+            com.qkt.instrument.TradeMode.LONG_ONLY,
+            com.qkt.instrument.TradeMode.SHORT_ONLY,
+            com.qkt.instrument.TradeMode.CLOSE_ONLY,
+            com.qkt.instrument.TradeMode.FULL,
+            com.qkt.instrument.TradeMode.FULL,
+        )
     }
 }

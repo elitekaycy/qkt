@@ -39,10 +39,11 @@ object PreTradeControls {
         equity: (() -> BigDecimal)? = null,
     ): List<RiskRule> =
         listOfNotNull(
+            // First: an order the venue would refuse outright is refused for that reason, priced or not.
+            VenueTradeMode(instruments),
             MaxOrderQty(maxOrderQty),
             MaxOrderNotional(maxOrderNotional, prices, instruments, accounting),
             PriceCollar(priceCollarFrac, prices),
-            VenueTradeMode(instruments),
             equity?.let {
                 val options = instruments.options()?.let { OptionMargin(instruments) }
                 MarginRequirement(MarginModel(instruments, accounting), prices, options, it)

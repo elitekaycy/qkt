@@ -69,7 +69,7 @@ class Mt5Connector(
             transportJournal = journal,
         )
         // `category:` calendar rules read the venue's folder for each symbol; every user of the profile sees them.
-        val profiles = loaded.map { it.withVenueCategories(client(it, null)) }
+        val profiles = loaded.map { it.withInstrumentCategories(client(it, null)) }
         val feeds = marketDataFeeds(profiles)
         val byName = profiles.associateBy { it.name }
         return accounts.map { cfg ->

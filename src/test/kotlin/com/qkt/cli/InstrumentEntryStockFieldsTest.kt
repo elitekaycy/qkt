@@ -79,11 +79,7 @@ class InstrumentEntryStockFieldsTest {
     }
 
     @Test
-    fun `trade modes open and close as MT5 defines them`() {
-        assertThat(TradeMode.ofMt5(0)).isEqualTo(TradeMode.DISABLED)
-        assertThat(TradeMode.ofMt5(3)).isEqualTo(TradeMode.CLOSE_ONLY)
-        assertThat(TradeMode.ofMt5(4)).isEqualTo(TradeMode.FULL)
-        assertThat(TradeMode.ofMt5(9)).isNull()
+    fun `trade modes open and close as venues define them`() {
         assertThat(TradeMode.FULL.allowsOpening(buy = true)).isTrue()
         assertThat(TradeMode.LONG_ONLY.allowsOpening(buy = false)).isFalse()
         assertThat(TradeMode.SHORT_ONLY.allowsOpening(buy = false)).isTrue()
