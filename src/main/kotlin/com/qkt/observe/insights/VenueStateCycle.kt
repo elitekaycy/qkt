@@ -1,5 +1,6 @@
 package com.qkt.observe.insights
 
+import com.qkt.broker.AdjustmentSource
 import com.qkt.broker.Broker
 import com.qkt.broker.BrokerDeal
 import com.qkt.broker.CloseReason
@@ -33,6 +34,7 @@ internal class VenueStateCycle(
     private val clock: () -> Long,
 ) {
     private val dealCursor = DealCursor(backfillDays * DAY_MS, dealGraceMs)
+    private val adjustments = AdjustmentCycle(offer, backfillDays * DAY_MS, dealGraceMs)
 
     /** One cycle of [broker]; false when its account could not be read, and throws when its deals could not. */
     fun poll(
@@ -121,6 +123,13 @@ internal class VenueStateCycle(
                 dealCursor.sent(accountKey, d.dealTicket, d.ts)
             }
             dealCursor.read(accountKey, now)
+            // A stock CFD's dividend or a charge booked on a position: the position's strategy's, like its deals.
+            if (broker is AdjustmentSource) {
+                adjustments.poll(broker, accountKey, now, account.currency) { a ->
+                    val position = a.positionTicket ?: a.dealTicket
+                    ownerOf(a.symbol?.let { fills?.ownerOf(it, position) }, position, a.comment, deployed)
+                }
+            }
         }
         // Prune only after the deal fetch: a position that closed since the last cycle
         // is already gone from [tickets], and its closing deal arrives in this same
