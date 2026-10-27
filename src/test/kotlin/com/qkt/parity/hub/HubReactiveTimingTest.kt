@@ -72,6 +72,23 @@ class HubReactiveTimingTest {
     }
 
     @Test
+    fun `the price tick still goes first when the hub stream is declared before the market`(
+        @TempDir tmp: Path,
+    ) {
+        // The tie on 0:40:00 must not depend on the order of SYMBOLS.
+        val hubFirst =
+            onRecord.replace(
+                "    gold = BACKTEST:XAUUSD EVERY 1m\n    m    = HUB:test.macro.USD EVERY 1d",
+                "    m    = HUB:test.macro.USD EVERY 1d\n    gold = BACKTEST:XAUUSD EVERY 1m",
+            )
+        assertThat(hubFirst).isNotEqualTo(onRecord)
+        assertAllPaths(
+            run(store(tmp, Rec("USD", ms(40), mapOf("value" to "1"))), strategy = hubFirst),
+            listOf(fill(41, "BUY"), fill(46, "SELL")),
+        )
+    }
+
+    @Test
     fun `a configured minimum lag delays every decision by exactly the lag`(
         @TempDir tmp: Path,
     ) {

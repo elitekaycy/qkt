@@ -86,7 +86,7 @@ once per record, after every field of that record has arrived, so its inputs alw
 
 ## When a value becomes visible
 
-A record's field becomes visible at its `known_at`, the instant the hub recorded it, never at the period it describes (`effective_at`). In a backtest the value is merged into the tick stream at `known_at`; when a hub record and a market tick share a millisecond, the market tick is processed first, so a fact is seen on the next evaluation. Live, the value is visible when the hub's journal line is read, typically well under a second after `known_at`.
+A record's field becomes visible at its `known_at`, the instant the hub recorded it, never at the period it describes (`effective_at`). In a backtest the value is merged into the tick stream at `known_at`; when a hub record and a market tick share a millisecond, the market tick is processed first, so a fact is seen on the next evaluation. Live, the value is visible when the hub's journal line is read, typically well under a second after `known_at`. The `--bars` tier has no sub-bar timing: a bar is closed by the next bar's open, stamped exactly on the boundary, so a record known exactly on a bar boundary (calendar records are published at a release + 60 s) is seen one bar later than on recorded ticks, which land after the boundary. A rule with a one-bar window after such a record, like a breakout on the first minute after a release, never trades in `--bars`; test it on ticks.
 
 `min_lag_ms` adds a further delay to every record, the same in both modes, when you want to model processing time.
 
