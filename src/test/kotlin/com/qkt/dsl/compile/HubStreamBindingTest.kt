@@ -164,6 +164,29 @@ class HubStreamBindingTest {
     }
 
     @Test
+    fun `an indicator over an expression of two hub fields warms the record stream it updates on`() {
+        // Fed `cal.actual / cal.forecast`, the indicator updates on `cal/known_at`, delivered after
+        // both fields; with no warmup there it held one seeded record and filled only from replay.
+        val source =
+            """
+            STRATEGY ratio VERSION 1
+
+            SYMBOLS
+                gold = BACKTEST:XAUUSD EVERY 5m
+                cal  = HUB:cal.high_impact.USD EVERY 1d
+
+            RULES
+                WHEN zscore(cal.actual / cal.forecast, 52) >= 2 AND POSITION.gold = 0
+                THEN BUY gold SIZING 0.01
+            """.trimIndent()
+        val warmup = WarmupRequirements.compute(HubFieldExpansion.apply(ast(source)).ast)
+        assertThat(warmup)
+            .containsEntry("cal/known_at", 52)
+            .containsEntry("cal/actual", 52)
+            .containsEntry("cal/forecast", 52)
+    }
+
+    @Test
     fun `a declared warmup on the dataset alias carries to every field stream`() {
         val source =
             """
