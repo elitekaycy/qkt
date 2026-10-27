@@ -49,6 +49,30 @@ class HubReactiveIndicatorTest {
         @TempDir tmp: Path,
     ) = assertSpikes(tmp, "$spike AND $fresh")
 
+    // The window is filled from the records before `from`: the first record of the run spikes it.
+    // Only the seeded latest record used to be there, so the z-score was undefined until slot 3.
+    @Test
+    fun `a z-score of a field ratio is warm from history at the first record of the run`(
+        @TempDir tmp: Path,
+    ) {
+        val records =
+            (-6..5).map { k ->
+                val known = t0.toEpochMilli() + k * 600_000L + 30_000L
+                Rec("MIDEAST", known, mapOf("conflict" to if (k == 0) "5" else "1", "events" to "10"))
+            }
+        val root =
+            HubFixtureStore(
+                tmp,
+            ).dataset("test.news", listOf(Field("conflict"), Field("events")), records).write()
+        val end = t0.plusSeconds(3600)
+        val prices = HubScenarioHarness.tape(mapOf("BACKTEST:XAUUSD" to "2000"), t0, end)
+        val runs = HubScenarioHarness.run(root, strategy("$fresh AND $spike"), prices, t0, end)
+        val expected = listOf(fill(1, "BUY"), fill(6, "SELL"))
+        assertThat(runs.ticks).describedAs("tick backtest").containsExactlyElementsOf(expected)
+        assertThat(runs.bars).describedAs("bar tier").containsExactlyElementsOf(expected)
+        assertThat(runs.live).describedAs("live").containsExactlyElementsOf(expected)
+    }
+
     private fun assertSpikes(
         tmp: Path,
         condition: String,

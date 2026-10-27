@@ -105,7 +105,9 @@ Without a `hub:` block, set `--hub-root` or the `QKT_HUB_ROOT` environment varia
 - **Backtest** reads the dataset's snapshot files, verifies each file's SHA-256 against the store manifest, and refuses to run on a mismatch. Every declared field is checked against the manifest before the first tick.
 - **Live** tails the dataset's journal on its own thread, reading only the bytes appended since the last poll, and emits one value per field when a record becomes visible: at once for a record whose `known_at` (plus `min_lag_ms`) has passed, and at that instant for one that is still ahead, whether it was appended during the session or was already in the store at start. A stale hub (no heartbeat for `stale_after_ms`) is logged and reported as a feed disconnect; it does not stop the market feed.
 - **Warmup** for a field read with a lookback or an indicator takes every record published before the start, up to the
-  start itself: a record published at 08:30 is history for a session starting at 15:00 the same day.
+  start itself: a record published at 08:30 is history for a session starting at 15:00 the same day. An indicator
+  over several fields, such as `zscore(cot.net_noncomm / cot.open_interest, 52)`, is warmed the same way: it holds
+  its 52 records from before the start, so a run's first record is judged against the year behind it.
 - **At start**, in both modes, each hub stream is seeded with the newest record visible at that instant, so a fact published before the session (the next release time, last month's value) is readable from the first bar rather than after the next record. Hub streams follow an always-open calendar: a dataset has no trading session.
 - A strategy with no `HUB:` stream is unaffected: no hub source is constructed.
 
