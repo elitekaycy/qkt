@@ -47,7 +47,13 @@ class StrategyPositionTracker private constructor(
     private val netting = PrimaryNetting(legBooks, primaryIds, accountIndex, excursions)
     private val legFills = LegIntentFills(legBooks, excursions)
     private val reconciler = VenuePositionReconciler(legBooks, primaryIds, excursions, accountIndex)
-    private val directEdits = DirectLegEdits(legBooks, accountIndex)
+    private val directEdits = DirectLegEdits(legBooks, accountIndex, excursions)
+
+    /** A split of [ratio] new shares per old on [symbol]: every strategy's legs restated, nothing realized. */
+    fun restateForSplit(
+        symbol: String,
+        ratio: BigDecimal,
+    ) = directEdits.restateForSplit(symbol, ratio)
 
     /** The account's positions as a read-only projection of this ledger. */
     val account: LegExposureProvider = AccountPositionView(accountIndex)
@@ -142,11 +148,6 @@ class StrategyPositionTracker private constructor(
         }
         return application
     }
-
-    internal fun primaryAdverseExtremePriceFor(
-        strategyId: String,
-        symbol: String,
-    ): BigDecimal? = excursions.primaryAdverseExtremePriceFor(strategyId, symbol)
 
     /**
      * Net [trade] into the strategy's PRIMARY leg on its symbol — the netting-venue booking
