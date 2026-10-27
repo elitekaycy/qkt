@@ -138,15 +138,17 @@ internal object HubScenarioHarness {
                 val hubTicks = symbols.filter { it.startsWith("HUB:") }.flatMap { hub.ticks(it, range).toList() }
                 // A market tick and a hub fact on the same millisecond: the market tick first, as the backtest merge does.
                 val merged =
-                    (prices + hubTicks).sortedWith(
+                    (prices.filter { it.timestamp >= from.toEpochMilli() } + hubTicks).sortedWith(
                         compareBy({ it.timestamp }, { it.symbol.startsWith("HUB:") }),
                     )
-                // What the live session's warmup reads from the store before it starts tailing.
+                // What the live session's warmup reads before it starts: the store's records, and the
+                // market's bars before `from` (ticks before it are history, not live).
                 val history = TimeRange(from.minusSeconds(400L * 86_400L), from)
                 val warmup =
-                    streams.filter { it.qktSymbol.startsWith("HUB:") }.associate { key ->
+                    streams.associate { key ->
                         val tf = TimeWindow.parse(key.timeframe)
-                        WarmupStream(key.qktSymbol, tf) to hub.bars(key.qktSymbol, tf, history).toList()
+                        val bars = if (key.qktSymbol.startsWith("HUB:")) hub else Tape(prices)
+                        WarmupStream(key.qktSymbol, tf) to bars.bars(key.qktSymbol, tf, history).toList()
                     }
                 DslParityHarness
                     .run(
