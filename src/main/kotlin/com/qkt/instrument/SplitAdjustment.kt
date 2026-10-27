@@ -30,12 +30,6 @@ class SplitAdjustment private constructor(
         timeMs: Long,
     ): BigDecimal = steps[symbol]?.firstOrNull { timeMs < it.untilMs }?.factor ?: BigDecimal.ONE
 
-    /** Whether [symbol]'s split taking effect at [atMs] is applied to the series, so is no event of the run. */
-    fun applies(
-        symbol: String,
-        atMs: Long,
-    ): Boolean = steps[symbol]?.any { it.untilMs == atMs } == true
-
     companion object {
         val NONE = SplitAdjustment(emptyMap())
 

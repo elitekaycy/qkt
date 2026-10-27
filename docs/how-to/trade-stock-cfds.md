@@ -75,8 +75,38 @@ $ qkt data import ticks/AAPL --as EXNESS:AAPL --kind ticks --map time=time_ms --
 Coverage is judged by the stock session, so NYSE holidays count as closed days, not missing data. Exness keeps
 about eight months of ticks and minute bars for its stocks, and hourly bars back to 2025.
 
+## Dividends and splits
+
+Backtests read a share's corporate actions from `<data root>/corporate-actions/<VENUE>/<NAME>.csv`; daemon and
+`qkt bot` live sessions read the same file under their config's `data_root` (`qkt run` reads no data-root
+instrument files, so it has none):
+
+```text
+ex_date,kind,value,currency,pay_date
+2026-06-08,dividend,0.25,USD,2026-06-26
+2026-06-09,split,10,,
+```
+
+- **Dividend:** at the start of the ex-date's session, every strategy holding the share from before then is credited
+  `quantity x contract size x amount` when long and debited it when short, the way a CFD broker books it. The run
+  reports it as its own line, `dividends`, beside swap and funding. Live, the venue books it, and its deal reaches
+  Insights as an `ADJUSTMENT`.
+- **Split:** a backtest whose window holds a split reads the share's history split-adjusted: every price before the
+  ex-date session is divided by the ratio (10 for a 10-for-1, 0.125 for a 1-for-8 reverse split) and volume multiplied
+  by it, so indicators, stops and fills all read one series in the units the share trades at the run's end. A
+  dividend paid before the split is per adjusted share. A run that ends before the split reads raw prices. A position
+  sized as a fixed lot count before a split holds fewer real shares than the same lots would buy afterwards: size
+  stocks by money or risk (`SIZING 500 USD`, `SIZING RISK`) when a backtest spans a split, which then differs from
+  raw only by lot rounding.
+- **No new position into a split:** from four calendar days before a split's ex-date through that date, opening orders
+  on the share are refused, in backtests and live alike; closing orders pass. qkt does not restate a live position
+  for a split the venue applies, so flatten a position you hold before the window, or expect the reconciler to flag
+  the venue's new quantity.
+
+Two actions of one kind on one ex-date are refused, as are a non-positive split ratio and a dividend in a currency
+other than the share's.
+
 ## Not modelled yet
 
-Dividend adjustments in backtests (live, a venue's dividend booking reaches Insights as an `ADJUSTMENT` deal of
-the position's strategy) and corporate actions such as splits. See the equities plan,
-`docs/superpowers/plans/2026-10-27-equities.md`.
+Restating a live position or resting order for a split, and reading the actions from a venue (Alpaca reports them)
+rather than the data root. See the equities plan, `docs/superpowers/plans/2026-10-27-equities.md`.

@@ -97,7 +97,8 @@ internal object InstrumentFiles {
                 }
             }
         if (unresolved != null) throw BacktestContext.Companion.SetupError(unresolved)
-        return registry
+        // The data root's dividends and splits, whatever the instruments file holds, backtest and live alike.
+        return WithCorporateActions(registry, CorporateActionStore(dataRoot))
     }
 
     /**
@@ -135,8 +136,7 @@ internal object InstrumentFiles {
         // metadata bill nothing either way, so name them — otherwise the flags silently do nothing.
         val commissionOverride = nonnegativeDecimal(args, "commission-per-lot", "a non-negative amount per 1.0 lot")
         val swapScale = nonnegativeDecimal(args, "swap-scale", "a non-negative financing multiplier")
-        // The data root's dividends and splits, whatever the instruments file holds ([CorporateActionStore]).
-        var withCosts: InstrumentRegistry = WithCorporateActions(registry, CorporateActionStore(dataRoot))
+        var withCosts: InstrumentRegistry = registry
         if (commissionOverride != null) withCosts = CommissionOverrideRegistry(withCosts, commissionOverride)
         if (swapScale != null) withCosts = SwapScaleRegistry(withCosts, swapScale)
         if ((commissionOverride != null && commissionOverride.signum() != 0) ||

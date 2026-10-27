@@ -4,9 +4,9 @@ import com.qkt.common.Money
 import com.qkt.common.TradingCalendar
 
 /**
- * [inner]'s instruments as a run read through [adjustment] sees them: a split it has already applied to the prices
- * is gone, and a dividend before a split is per adjusted share (divided by the same factor as the prices around
- * it), so holding the adjusted quantity earns what the raw holding did. Symbols without a split are [inner]'s.
+ * [inner]'s instruments as a run read through [adjustment] sees them: a dividend before a split is per adjusted share
+ * (divided by the same factor as the prices around it), so holding the adjusted quantity earns what the raw holding
+ * did. Splits stay listed: the prices have them applied, and nothing books them. Symbols without a split are [inner]'s.
  */
 class SplitAdjustedActions(
     private val inner: InstrumentRegistry,
@@ -18,13 +18,14 @@ class SplitAdjustedActions(
             CorporateActionSource { symbol ->
                 val raw = source.actions(symbol)
                 if (symbol !in adjustment.symbols) return@CorporateActionSource raw
-                raw.mapNotNull { action ->
-                    val atMs = calendar.exDateStartMs(symbol, action.exDate)
+                raw.map { action ->
                     when (action) {
-                        // A split after the run's end is no part of its series, so stays an action.
-                        is CorporateAction.Split -> action.takeUnless { adjustment.applies(symbol, atMs) }
-                        is CorporateAction.Dividend ->
-                            action.copy(amount = action.amount.divide(adjustment.factor(symbol, atMs), Money.CONTEXT))
+                        // Kept so the run refuses what live would around it ([com.qkt.risk.rules.SplitWindow]).
+                        is CorporateAction.Split -> action
+                        is CorporateAction.Dividend -> {
+                            val factor = adjustment.factor(symbol, calendar.exDateStartMs(symbol, action.exDate))
+                            action.copy(amount = action.amount.divide(factor, Money.CONTEXT))
+                        }
                     }
                 }
             }

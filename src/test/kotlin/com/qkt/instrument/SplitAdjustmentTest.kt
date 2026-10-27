@@ -31,14 +31,12 @@ class SplitAdjustmentTest {
         val adj = SplitAdjustment.of(actions, listOf("EXNESS:NVDA"), calendar, ms("2026-06-12T00:00:00Z"))
         assertThat(adj.factor("EXNESS:NVDA", ms("2026-06-09T09:59:59Z"))).isEqualByComparingTo("2")
         assertThat(adj.factor("EXNESS:NVDA", ms("2026-06-09T10:00:00Z"))).isEqualByComparingTo("1")
-        assertThat(adj.applies("EXNESS:NVDA", ms("2026-06-09T10:00:00Z"))).isTrue
     }
 
     @Test
     fun `a split after the run's end changes nothing in it`() {
         val adj = SplitAdjustment.of(actions, listOf("EXNESS:NVDA"), calendar, ms("2026-06-12T00:00:00Z"))
         assertThat(adj.factor("EXNESS:NVDA", ms("2026-06-08T15:00:00Z"))).isEqualByComparingTo("2")
-        assertThat(adj.applies("EXNESS:NVDA", ms("2026-06-16T10:00:00Z"))).isFalse
         val before = SplitAdjustment.of(actions, listOf("EXNESS:NVDA"), calendar, ms("2026-06-09T10:00:00Z"))
         assertThat(before.isEmpty()).isTrue
     }
@@ -60,20 +58,21 @@ class SplitAdjustmentTest {
     }
 
     @Test
-    fun `the adjusted instruments drop applied splits and divide earlier dividends by the same factor`() {
+    fun `the adjusted instruments divide earlier dividends by the same factor and keep splits listed`() {
         val registry =
             object : InstrumentRegistry {
                 override fun lookup(qktSymbol: String): InstrumentMeta? = null
 
                 override fun corporateActions() = actions
             }
-        val adj = SplitAdjustment.of(actions, listOf("EXNESS:NVDA"), calendar, ms("2026-06-12T00:00:00Z"))
-        val seen = SplitAdjustedActions(registry, adj, calendar).corporateActions()!!.actions("EXNESS:NVDA")
-        // The 2-for-1 is in the prices; the 3-for-1 lies after the run. The dividend is after the 2-for-1: unchanged.
-        assertThat(seen).containsExactly(dividend, three)
+        // Before the 3-for-1 lies inside the run: the 2026-06-10 dividend is per adjusted share, a third of it.
         val late = SplitAdjustment.of(actions, listOf("EXNESS:NVDA"), calendar, ms("2026-06-30T00:00:00Z"))
         val all = SplitAdjustedActions(registry, late, calendar).corporateActions()!!.actions("EXNESS:NVDA")
-        assertThat(all).containsExactly(dividend.copy(amount = BigDecimal("0.10")))
+        assertThat(all).containsExactly(two, dividend.copy(amount = BigDecimal("0.10")), three)
+        // A run ending before the 3-for-1 pays the dividend as stored.
+        val early = SplitAdjustment.of(actions, listOf("EXNESS:NVDA"), calendar, ms("2026-06-12T00:00:00Z"))
+        assertThat(SplitAdjustedActions(registry, early, calendar).corporateActions()!!.actions("EXNESS:NVDA"))
+            .containsExactly(two, dividend, three)
         assertThat(SplitAdjustedActions(registry, late, calendar).corporateActions()!!.actions("EXNESS:AAPL")).isEmpty()
     }
 }

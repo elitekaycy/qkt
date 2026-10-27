@@ -23,7 +23,8 @@ import org.junit.jupiter.api.Test
 /**
  * A stock CFD held across a 10-for-1 split (ex 2026-06-09, raw 1000 then 100) on Exness's 06:00-15:45 New York
  * session: the run reads one adjusted series, so the split is neither a 90% loss nor a 90% fall in its bars, and a
- * dividend paid before the split is per adjusted share. A run ending before the split reads raw prices.
+ * dividend paid before the split is per adjusted share. A run ending before the split reads raw prices, and no
+ * position is opened in the days before the split ([com.qkt.risk.rules.SplitWindow]).
  */
 class SplitBacktestTest {
     private val nvda =
@@ -63,7 +64,7 @@ class SplitBacktestTest {
     }
 
     private val ticks =
-        session("2026-06-05", "1000", "0.50") + session("2026-06-08", "1000", "0.50") +
+        session("2026-06-01", "1000", "0.50") + session("2026-06-08", "1000", "0.50") +
             session("2026-06-09", "100", "0.05")
 
     private val source =
@@ -90,19 +91,20 @@ class SplitBacktestTest {
     private fun run(
         to: String,
         closes: MutableList<BigDecimal> = ArrayList(),
+        rules: String = buyThenClose,
     ) = Backtest
         .fromSource(
             strategies =
                 listOf(
                     "split" to
-                        compile("STRATEGY split VERSION 1\nSYMBOLS\n  x = EXNESS:NVDA EVERY 1m\nRULES\n$buyThenClose"),
+                        compile("STRATEGY split VERSION 1\nSYMBOLS\n  x = EXNESS:NVDA EVERY 1m\nRULES\n$rules"),
                 ),
             calendar = calendar,
             source = source,
             request =
                 MarketRequest(
                     symbols = listOf("EXNESS:NVDA"),
-                    from = Instant.parse("2026-06-05T00:00:00Z"),
+                    from = Instant.parse("2026-06-01T00:00:00Z"),
                     to = Instant.parse(to),
                 ),
             candleWindow = TimeWindow.ONE_MINUTE,
@@ -125,7 +127,7 @@ class SplitBacktestTest {
 
     @Test
     fun `a dividend before the split is paid per adjusted share`() {
-        // Held from 2026-06-05 into the 2026-06-08 ex-date: one adjusted share is a tenth of a raw one.
+        // Held from 2026-06-01 into the 2026-06-08 ex-date: one adjusted share is a tenth of a raw one.
         assertThat(run("2026-06-10T00:00:00Z").global.dividendsPaid).isEqualByComparingTo("-0.10")
     }
 
@@ -135,5 +137,15 @@ class SplitBacktestTest {
         val result = run("2026-06-09T00:00:00Z", closes)
         assertThat(closes).isNotEmpty.allSatisfy { assertThat(it).isEqualByComparingTo("1000") }
         assertThat(result.global.dividendsPaid).isEqualByComparingTo("-1.00")
+    }
+
+    @Test
+    fun `no new position is opened in the days before a split, in a backtest as live`() {
+        val result =
+            run(
+                "2026-06-10T00:00:00Z",
+                rules = "  WHEN NOW.date_utc = 20612 AND POSITION.x = 0\n  THEN BUY x SIZING 0.01",
+            )
+        assertThat(result.trades).isEmpty()
     }
 }

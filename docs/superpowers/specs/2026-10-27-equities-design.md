@@ -105,13 +105,20 @@ after the ex-date's session open in the exchange's zone:
   `quantity x contract size x amount`, converted to account currency, booked as its own P&L component
   (`dividend`). A CFD broker books it on the ex-date; a cash share is entitled on the ex-date and paid on the pay
   date, booked on the ex-date with the pay date recorded (the money is the same; settlement timing is step 2.6).
-- **Split:** every open leg's quantity is multiplied by the ratio and its entry price divided by it, cost unchanged,
-  no P&L; resting orders' prices and quantities restated likewise, as a venue does. Indicator history before the
-  ex-date is divided by the ratio for every price-valued series of the symbol, so an SMA does not read a 90% crash
-  at a 10-for-1 split. Ticks stay raw: fills are at prices that traded.
-- **Live:** the venue applies the action; qkt applies the same restatement to its own ledger at the same instant
-  and then reconciles against the venue, so a split never reads as a quantity mismatch. A CFD dividend the venue
-  books arrives as a `BrokerAdjustment` (1.5) and is matched against the expected amount.
+- **Split (backtest):** a run whose window holds a split reads the share's history split-adjusted, the standard in
+  equity backtesting: prices before the ex-date session divided by the ratio (and by every later split's up to the
+  run's end), volumes multiplied, dividends before the split per adjusted share (`SplitAdjustment`, applied by
+  `SplitAdjustedMarketSource` and `SplitAdjustedActions` from one `ReplayInputs` boundary so the two cannot
+  disagree). Indicators, stops and fills read one series; no position or resting order is restated, because the
+  series has no split left inside it. A run ending before a split reads raw prices. Restating positions, orders and
+  indicator history mid-run was rejected: it would touch the baselined broker simulators and the pipeline, and an
+  indicator has no re-warm hook. Divergence: lots bought before the split are fewer real shares than the same lots
+  after, so fixed-lot sizing across a split differs from raw; money and risk sizing differ only by lot rounding.
+- **Split (live):** qkt does not restate its ledger for a venue split yet (`DirectLegEdits.restateForSplit` exists for
+  when venue evidence does). Fail closed instead: `SplitWindow`, a pre-trade rule in backtest and live alike, refuses
+  opening orders from four calendar days before the ex-date through it (the last session before always inside it);
+  closing orders pass, and a position held across is the reconciler's to flag.
+- **Live dividends:** the venue books them; a CFD dividend arrives as a `BrokerAdjustment` (1.5).
 
 **Refused, never guessed:** a split with a non-positive ratio, a dividend in a currency qkt cannot convert, two
 actions of one kind on one symbol and ex-date.
