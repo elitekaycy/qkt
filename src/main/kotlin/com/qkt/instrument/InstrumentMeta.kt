@@ -71,6 +71,8 @@ data class InstrumentMeta(
     val tickSize: BigDecimal? = null,
     val category: String? = null,
     val tradeMode: TradeMode = TradeMode.FULL,
+    /** A share's per-order commission and sale fees, which replace [commissionPerLot] for it ([EquityCosts]). */
+    val equityCosts: EquityCosts? = null,
 ) {
     /** The grid an order or exit price must sit on: [tickSize] when it is coarser than a point, else [pointSize]. */
     val priceStep: BigDecimal

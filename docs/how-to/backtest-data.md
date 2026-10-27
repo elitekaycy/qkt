@@ -584,6 +584,23 @@ Positive swap points credit PnL and negative points debit it. The configured tri
 rollover is multiplied by three and weekend rollovers are skipped. Refresh these values
 from the broker before a cost-sensitive run because broker schedules can change.
 
+A share bought through a stock broker is charged per order, not per lot. `equityCosts` replaces `commissionPerLot`
+for that instrument:
+
+```yaml
+    equityCosts:
+      commissionPerShare: 0.005  # $ per share, per order
+      minCommission: 1.00        # $ per order, however many partial fills it takes
+      maxCommissionRate: 0.01    # optional cap, a fraction of the order's value
+      secFeeRate: 0.0000278      # sales only: SEC fee per $ of value, rounded up to the cent
+      tafPerShare: 0.000166      # sales only: FINRA TAF per share sold, rounded up to the cent
+      tafMax: 8.30               # optional cap on the TAF per order
+```
+
+Every rate is yours to set: the SEC and FINRA change theirs each year, and brokers differ (a commission-free broker
+passes on only the two sale fees). Shares are lots times `contractSize`. The costs land in the report's commission
+line.
+
 ## Reference
 
 ### Store layout
