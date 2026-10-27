@@ -87,8 +87,12 @@ A list (or one) of:
  "contract_size": "1", "tick_size": "5", "volume_step": "0.01", "volume_min": "0.01",
  "expiry": 1798185600000, "strike": "92000", "right": "call", "underlying": "BTC_USDC"}
 ```
-`kind` is `spot`, `perpetual`, `future` or `option`; `expiry` is absent for spot and perpetuals;
-`strike`, `right` and `underlying` only for options.
+`kind` is `spot`, `perpetual`, `future`, `option` or `equity` (a share held outright); `expiry` is absent for
+spot, perpetuals and equities; `strike`, `right` and `underlying` only for options.
+`category` is the venue's own grouping of the instrument (`us_equity`), absent when it has none; qkt matches
+session calendars against it. `trading` is `long_only`, `short_only`, `close_only` or `disabled` for an
+instrument the account may not freely trade (a delisted share is `close_only`, one the venue will not lend
+`long_only`); absent means fully tradable. qkt refuses opening orders the mode forbids before sending them.
 `contract_size` is how many units of the underlying one unit of `quantity` is, the multiplier of
 P&L (`quantity × contract_size × price change`); `volume_step` is the increment a quantity moves in and
 `volume_min` the smallest. A venue that takes amounts in the base coin (Deribit's linear contracts) lists

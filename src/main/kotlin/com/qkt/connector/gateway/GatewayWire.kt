@@ -56,6 +56,10 @@ data class WireInstrument(
     val strike: String? = null,
     val right: String? = null,
     val underlying: String? = null,
+    /** The venue's grouping of the instrument (`us_equity`), absent when it has none. */
+    val category: String? = null,
+    /** `long_only`, `short_only`, `close_only` or `disabled`; absent means fully tradable. */
+    val trading: String? = null,
 )
 
 /** One position: per symbol on a netting account, per [ticket] on a hedging one. */
