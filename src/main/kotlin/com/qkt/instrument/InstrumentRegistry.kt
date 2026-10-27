@@ -28,6 +28,9 @@ interface InstrumentRegistry {
     /** The option contracts this registry catalogues, or null when it holds none. */
     fun options(): OptionDirectory? = null
 
+    /** The corporate actions (dividends, splits) of the symbols this registry describes, or null when it knows none. */
+    fun corporateActions(): CorporateActionSource? = null
+
     /**
      * Returns the meta for [qktSymbol] or throws with a helpful message.
      *

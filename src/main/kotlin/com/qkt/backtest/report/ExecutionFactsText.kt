@@ -98,6 +98,7 @@ object ExecutionFactsText {
             "swap" to g.swapPaid,
             "rolls" to g.rollCostsPaid,
             "funding" to g.fundingPaid,
+            "dividends" to g.dividendsPaid,
         ).filter { it.second.signum() != 0 }
             .map { (name, amount) -> "$name ${HumanFormat.money(amount, currency, signed = false)}" }
 

@@ -53,6 +53,7 @@ internal object HtmlAccountingTable {
                     "swap" to global.swapPaid,
                     "roll costs" to global.rollCostsPaid,
                     "funding" to global.fundingPaid,
+                    "dividends" to global.dividendsPaid,
                 ).filter { it.second.signum() != 0 }
             if (incurred.isEmpty()) {
                 val spread = facts?.let(ExecutionFactsText::spread)

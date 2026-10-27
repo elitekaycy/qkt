@@ -273,7 +273,7 @@ class ReplayEngine(
         // positions when it is marked. Without it the backtest would never release a reservation.
         bookRiskController?.let { controller -> wireBookReservations(bus, controller) }
         holder[0] = pipeline
-        financing = ReplayFinancing(instruments, books, strategies.map { it.first }, allSymbols)
+        financing = ReplayFinancing(instruments, books, strategies.map { it.first }, allSymbols, calendar)
         subscribeHaltKillSwitch(bus, pipeline, strategies, books.strategyPositions, ids, clock, bookCapital)
 
         // Tick-resolved fills: replace the bar feed with one that loads real ticks for fill-possible

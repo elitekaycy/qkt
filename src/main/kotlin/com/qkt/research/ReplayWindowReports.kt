@@ -56,7 +56,11 @@ internal class ReplayWindowReports(
                     dailyAdjustments = financing.dailyNet(window),
                     tradedNotional = tradedNotional(windowTrades, instruments),
                     roundTrips = roundTrips.filter { window.contains(it.closedAtMs) },
-                ).copy(rollCostsPaid = rollCosts, fundingPaid = financing.fundingPaid(window))
+                ).copy(
+                    rollCostsPaid = rollCosts,
+                    fundingPaid = financing.fundingPaid(window),
+                    dividendsPaid = financing.dividendsPaid(window),
+                )
         return WindowReport(
             window = window,
             samples = samples.metrics.count,

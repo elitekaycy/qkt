@@ -84,6 +84,38 @@ quantity and price, dividend books cash; adjusted and unadjusted price views); e
 `OPG`/`CLS` auction orders and halts; buying power, short availability and borrow, PDT and T+1;
 SEC/FINRA fees and minimum commissions; survivorship-aware universes.
 
+## Design, step 2.4: corporate actions
+
+**Data.** A corporate action is a fact with a date, stored per symbol in the data root and read the same way in
+backtest and live:
+
+| Kind | Fields | Example |
+|---|---|---|
+| `dividend` | `ex_date`, `amount` per share, `currency`, optional `pay_date` | AAPL 2026-11-09 0.26 USD |
+| `split` | `ex_date`, `ratio` (new shares per old) | NVDA 2024-06-10 10 (10-for-1); a reverse 1-for-8 is 0.125 |
+
+`qkt data import --kind corporate-actions` brings them in from any file a preset or `--map` describes (the
+sources-are-descriptions rule: no per-vendor code); a venue that reports them (Alpaca's corporate-actions
+endpoint) feeds the same store through its gateway.
+
+**One boundary applies them**, beside swap and funding in the replay's financing step, at the first event at or
+after the ex-date's session open in the exchange's zone:
+
+- **Dividend:** every strategy holding the symbol from before the ex-date is credited (long) or debited (short)
+  `quantity x contract size x amount`, converted to account currency, booked as its own P&L component
+  (`dividend`). A CFD broker books it on the ex-date; a cash share is entitled on the ex-date and paid on the pay
+  date, booked on the ex-date with the pay date recorded (the money is the same; settlement timing is step 2.6).
+- **Split:** every open leg's quantity is multiplied by the ratio and its entry price divided by it, cost unchanged,
+  no P&L; resting orders' prices and quantities restated likewise, as a venue does. Indicator history before the
+  ex-date is divided by the ratio for every price-valued series of the symbol, so an SMA does not read a 90% crash
+  at a 10-for-1 split. Ticks stay raw: fills are at prices that traded.
+- **Live:** the venue applies the action; qkt applies the same restatement to its own ledger at the same instant
+  and then reconciles against the venue, so a split never reads as a quantity mismatch. A CFD dividend the venue
+  books arrives as a `BrokerAdjustment` (1.5) and is matched against the expected amount.
+
+**Refused, never guessed:** a split with a non-positive ratio, a dividend in a currency qkt cannot convert, two
+actions of one kind on one symbol and ex-date.
+
 ## Safety: what must not change
 
 Every stage merges only when, on the new build against the previous one:

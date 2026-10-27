@@ -7,6 +7,7 @@ import com.qkt.dsl.ast.OPTIONS_BROKER
 import com.qkt.instrument.CommissionOverrideRegistry
 import com.qkt.instrument.ContractCatalogRegistry
 import com.qkt.instrument.ContractCatalogStore
+import com.qkt.instrument.CorporateActionStore
 import com.qkt.instrument.FundingCoverage
 import com.qkt.instrument.FundingRateStore
 import com.qkt.instrument.FuturesRootsFile
@@ -18,6 +19,7 @@ import com.qkt.instrument.RefreshingOptionCatalogs
 import com.qkt.instrument.RollHistoryStore
 import com.qkt.instrument.StandardInstrumentRegistry
 import com.qkt.instrument.SwapScaleRegistry
+import com.qkt.instrument.WithCorporateActions
 import com.qkt.instrument.YamlInstrumentRegistry
 import com.qkt.marketdata.depth.BookDepthCoverage
 import com.qkt.marketdata.depth.BookDepthStore
@@ -133,7 +135,8 @@ internal object InstrumentFiles {
         // metadata bill nothing either way, so name them — otherwise the flags silently do nothing.
         val commissionOverride = nonnegativeDecimal(args, "commission-per-lot", "a non-negative amount per 1.0 lot")
         val swapScale = nonnegativeDecimal(args, "swap-scale", "a non-negative financing multiplier")
-        var withCosts: InstrumentRegistry = registry
+        // The data root's dividends and splits, whatever the instruments file holds ([CorporateActionStore]).
+        var withCosts: InstrumentRegistry = WithCorporateActions(registry, CorporateActionStore(dataRoot))
         if (commissionOverride != null) withCosts = CommissionOverrideRegistry(withCosts, commissionOverride)
         if (swapScale != null) withCosts = SwapScaleRegistry(withCosts, swapScale)
         if ((commissionOverride != null && commissionOverride.signum() != 0) ||
