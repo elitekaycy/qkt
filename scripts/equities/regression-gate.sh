@@ -43,6 +43,20 @@ for s in "${strategies[@]}"; do
   done
 done | xargs -P "$jobs" -I{} bash -c 'IFS="|" read -r d s m o <<< "{}"; run "$d" "$s" "$m" "$o"'
 
+# A run the machine killed (out of memory: exit 137) is run again on its own, so a busy host cannot decide the gate.
+for s in "${strategies[@]}"; do
+  n=$(basename "$s" .qkt)
+  for mode in ticks bars; do
+    for side in old new; do
+      dir=$out/$n/$mode/$side
+      if grep -qE '^exit=(1[3-9][0-9]|2[0-9][0-9])$' "$dir/stdout.log" 2>/dev/null; then
+        dist=$old; [[ $side == new ]] && dist=$new
+        echo "rerun alone (killed): $n $mode $side"; rm -rf "$dir"; run "$dist" "$s" "$mode" "$dir"
+      fi
+    done
+  done
+done
+
 # A report line that names the build or the run's own paths is not a trade difference.
 headline() { grep -E 'Profit|Round trips|Worst drop|Sharpe|exit=|rror' "$1" 2>/dev/null || true; }
 
@@ -51,10 +65,11 @@ for s in "${strategies[@]}"; do
   n=$(basename "$s" .qkt)
   for mode in ticks bars; do
     a=$out/$n/$mode/old b=$out/$n/$mode/new
-    # A run that died (out of memory, killed) proves nothing either way: the gate is inconclusive, not a diff.
+    # A run killed even when run alone proves nothing: inconclusive, not a pass. A run that fails the same way on both
+    # builds (a mode the data does not support) is the same result, judged with the report lines below.
     for side in "$a" "$b"; do
-        if grep -q '^exit=' "$side/stdout.log" 2>/dev/null && ! grep -q 'Round trips' "$side/stdout.log"; then
-            echo "RUN FAILED $n $mode $(basename "$side"): $(grep -m1 '^exit=' "$side/stdout.log")"; fail=1
+        if grep -qE '^exit=(1[3-9][0-9]|2[0-9][0-9])$' "$side/stdout.log" 2>/dev/null; then
+            echo "RUN KILLED $n $mode $(basename "$side"): $(grep -m1 '^exit=' "$side/stdout.log")"; fail=1
         fi
     done
     for f in trades.csv equity_daily.csv; do

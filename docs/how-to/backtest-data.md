@@ -570,9 +570,13 @@ instruments:
     swapRolloverHourUtc: 21 # optional — 0..23, default 21
     swapTripleDay: WEDNESDAY # optional — Monday..Friday, default Wednesday
     tickSize: 0.25          # optional — smallest price step the venue accepts, when coarser than pointSize
+    category: Stocks        # optional — the venue's folder for the symbol, for `category:` calendar rules
+    tradeMode: close_only   # optional — full (default), long_only, short_only, close_only or disabled
 ```
 
-A symbol present in the file wins; anything omitted falls back to the built-in specs.
+A symbol present in the file wins; anything omitted falls back to the built-in specs. `category` picks a stock's
+session calendar in a backtest as the venue's own category does live; `tradeMode` makes a backtest refuse the
+opening orders the venue would (a delisted share is `close_only`). `qkt instruments pull` writes both.
 `tickSize` (MT5 `trade_tick_size`) only matters where a venue trades in steps coarser than its point,
 as some index CFDs do: bracket levels and MT5 order prices go on that grid, while spread, slippage,
 swap and stops-level figures stay in points.

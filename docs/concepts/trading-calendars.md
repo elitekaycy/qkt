@@ -25,13 +25,16 @@ Bars do **not** use a calendar: they sit on a fixed UTC grid, so a 1h bar always
 | `fx` | Sunday 17:00 to Friday 17:00 New York | 17:00 to 17:00 New York | weekends; Dec 25, Jan 1 and Good Friday need no data |
 | `crypto` | always | midnight to midnight UTC | never |
 | `nyse` | 09:30-16:00 New York, 09:30-13:00 on early-close days | the regular session | weekends, exchange holidays and one-off closures |
+| `nyse[HH:MM-HH:MM]` | NYSE trading days in that New York window; on an early-close day it ends at 13:00 when the window ends later | the window | as `nyse` |
 | `cme_globex` | Sunday 17:00 to Friday 16:00 Chicago, halted 16:00-17:00 daily | 17:00 to 16:00 Chicago | weekends |
 | `<base> pause HH:MM-HH:MM [Zone]` | as its base, with a daily pause | as its base | as its base |
 
 Every calendar follows daylight saving through its time zone. NYSE closes early at 13:00 on July 3 and December 24
 when they fall Monday to Thursday and on the Friday after Thanksgiving; its one-off closures are the September 2001
 attacks, the national days of mourning (2004-06-11, 2007-01-02, 2018-12-05, 2025-01-09) and Hurricane Sandy
-(2012-10-29 and 30). Extended stock hours are not modelled.
+(2012-10-29 and 30). A venue that quotes stocks outside the regular session takes a window: Exness quotes its US
+stock CFDs 06:00-15:45 New York (`nyse[06:00-15:45]`, measured from its own bars and ticks), a broker with pre- and
+after-market hours `nyse[04:00-20:00]`. A window must open before 13:00, so every trading day has a session.
 
 ## How a symbol gets its calendar
 
@@ -77,7 +80,14 @@ The live daemon logs the same choice for every symbol when a strategy starts
 
 ### Stocks and other venue hours
 
-A venue that trades stocks declares its hours on its broker entry, which both modes read:
+A rule's pattern is a glob on the symbol, or `category:<glob>` on the folder the venue files the instrument under:
+MT5's `path` (`Standard\Stocks\AAPLm` is `Stocks`), a gateway listing's `category` (`us_equity`). One category rule
+covers a broker's whole stock list; a symbol rule is tried first, so one stock can still have its own calendar.
+The category is part of the instrument's spec, read live from the venue and in a backtest from `category:` in
+`instruments.yaml`, which `qkt instruments pull` writes.
+
+The `exness` profile ships `category:Stocks -> nyse[06:00-15:45]`, so `EXNESS:AAPL` trades Exness's stock session
+with no configuration. Another venue declares its hours on its broker entry, which both modes read:
 
 ```yaml
 brokers:
@@ -85,7 +95,7 @@ brokers:
     type: gateway
     # ...
     calendars:
-      "*": nyse
+      "category:us_equity": nyse[04:00-20:00]
 ```
 
 ## Strategies that trade several markets
