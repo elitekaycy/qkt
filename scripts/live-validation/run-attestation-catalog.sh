@@ -9,7 +9,7 @@ usage() {
     cat <<'USAGE'
 Usage: run-attestation-catalog.sh --out DIR --gateway-url URL --expected-login N
          --expected-server NAME --magic-base N --arm I_UNDERSTAND_DEMO_ORDER_0.01
-         [--lanes shadow,orders,risk,book,engine,daemon,stress[,derivatives][,bybit]] [--max-parallel N]
+         [--lanes shadow,orders,risk,book,engine,daemon,stress[,stocks][,derivatives][,bybit]] [--max-parallel N]
          [--crypto-symbols]   (the shadow lane on 24/7 symbols, for a weekend run)
          [--cli PATH] [--deriv-gateway-url URL --deriv-expected-login LOGIN]
          [--bybit-gateway-url URL --bybit-expected-login LOGIN]
@@ -76,7 +76,18 @@ if [[ ",$lanes," == *,shadow,* ]]; then
         ${crypto_symbols:+--crypto-symbols}
     magic=$((magic + 1))
 fi
-for lane in orders risk book engine daemon stress; do
+# The stocks lane trades US shares, so it runs only while the venue quotes them: the venue's own last AAPL tick is
+# the evidence, not a clock, because a holiday or an early close is the venue's to say.
+stocks_session_open() {
+    local tick now
+    tick="$(curl --silent --fail --max-time 10 "$gateway_url/symbol_info_tick/AAPLm" | python3 -c 'import json,sys; print(int(json.load(sys.stdin).get("time", 0)))' 2>/dev/null)" || return 1
+    now="$(date +%s)"
+    [ $((now - tick)) -lt 120 ]
+}
+if [[ ",$lanes," == *,stocks,* ]] && ! stocks_session_open; then
+    fail "the stocks lane needs the US session open (06:00-15:45 New York): the venue's last AAPL quote is stale"
+fi
+for lane in orders stocks risk book engine daemon stress; do
     [[ ",$lanes," == *,"$lane",* ]] || continue
     for case_yaml in "$repo_root/attestation/cases/$lane"/*/case.yaml; do
         [ -f "$case_yaml" ] || continue

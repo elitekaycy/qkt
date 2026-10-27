@@ -1,0 +1,27 @@
+id: stock-trailing-stop
+title: An AAPL position under a trailing stop, held and closed by the strategy
+why: 'A trailing stop on a share moves in cents on a 100-share contract: a level computed in lots instead of price,
+  or a modify sent off the 0.01 grid, leaves the position unprotected or the modify rejected while the engine
+  believes it moved.'
+status: ready
+symbols:
+- AAPL
+timeframes:
+- 1m
+warmup_bars:
+  1m: 3
+proves:
+- behaviour:stock-cfd
+- behaviour:trailing-stop
+- behaviour:timed-exit
+budget_seconds: 200
+expect_fills:
+- BUY 0.01
+- SELL 0.01
+assertions:
+- flat-by-magic
+- no-pending-by-magic
+- deals-net-by-magic
+- no-engine-fault
+- replay-fill-sequence
+- expected-fills
