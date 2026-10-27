@@ -64,9 +64,13 @@ class CorporateActionStore(
         where: String,
         actions: List<CorporateAction>,
     ) {
-        actions.groupBy { it.exDate to it::class }.filterValues { it.size > 1 }.keys.firstOrNull()?.let { (date, kind) ->
-            throw IllegalArgumentException("$where: two ${kind.simpleName?.lowercase()} actions on $date")
-        }
+        val (date, kind) =
+            actions
+                .groupBy { it.exDate to it::class }
+                .filterValues { it.size > 1 }
+                .keys
+                .firstOrNull() ?: return
+        throw IllegalArgumentException("$where: two ${kind.simpleName?.lowercase()} actions on $date")
     }
 
     private companion object {

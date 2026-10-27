@@ -7,11 +7,11 @@ import com.qkt.common.TradingCalendar
 import com.qkt.instrument.CorporateAction
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.QuoteCurrencyGuard
+import com.qkt.instrument.exDateStartMs
 import com.qkt.marketdata.MarketPriceProvider
 import com.qkt.positions.StrategyPositionTracker
 import java.math.BigDecimal
 import java.time.LocalDate
-import java.time.ZoneOffset
 
 /**
  * Deterministic backtest ledger of cash dividends ([CorporateAction.Dividend]): at the start of each dividend's
@@ -54,7 +54,7 @@ internal class DividendBook(
                         }
                     }
                 }
-                dividends.map { Due(symbol, exDateStartMs(symbol, it.exDate), it) }
+                dividends.map { Due(symbol, calendar.exDateStartMs(symbol, it.exDate), it) }
             }.sortedBy { it.atMs }
     private val contractSize: Map<String, BigDecimal> =
         schedule.map { it.symbol }.distinct().associateWith { instruments.require(it).contractSize }
@@ -128,19 +128,6 @@ internal class DividendBook(
             .fold(BigDecimal.ZERO) { q, leg ->
                 if (leg.side == Side.BUY) q.add(leg.quantity.abs()) else q.subtract(leg.quantity.abs())
             }
-
-    /** The start of [symbol]'s session on [exDate]: midday UTC lies inside that local date on every calendar qkt has. */
-    private fun exDateStartMs(
-        symbol: String,
-        exDate: LocalDate,
-    ): Long {
-        val midday = exDate.atTime(12, 0).toInstant(ZoneOffset.UTC)
-        return calendar
-            .forSymbol(symbol)
-            .sessionRange(symbol, midday)
-            .from
-            .toEpochMilli()
-    }
 
     private companion object {
         const val DAY_MS = 86_400_000L
