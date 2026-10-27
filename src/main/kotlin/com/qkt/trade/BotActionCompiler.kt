@@ -50,7 +50,7 @@ fun compileBotAction(
             ?.takeProfit
             ?.let { resolveExit(it, side, entryPrice, stopDistance, ctx, isStop = false) }
     val lots = resolveBotLots(bot.opts.sizing, ctx, entryPrice, stopDistance)
-    val (tif, expiresAt) = resolveTif(bot.opts.tif, timestamp)
+    val (tif, expiresAt) = resolveTif(bot.opts.tif, bot.qktSymbol, timestamp, ctx.calendar)
     val entry = entryRequest(bot, id, side, lots, tif, timestamp, strategyId, expiresAt)
     val request =
         if (sl != null && tp != null) {
