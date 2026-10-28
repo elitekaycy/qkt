@@ -13,7 +13,10 @@ $ export GATEWAY_TRADER_TOKEN=<random> GATEWAY_GUARDIAN_TOKEN=<random> GATEWAY_L
 $ qkt-venue-gateway
 ```
 
-`GATEWAY_SETTING_EXTENDED_HOURS=true` lets limit DAY and GTC orders on shares fill outside regular hours
+Coin pairs are listed only with `GATEWAY_SETTING_ASSET_CLASSES=us_equity,crypto`: Alpaca takes a coin buy's fee in the
+coin bought, and qkt does not yet end an order whose venue fills are net of such a fee
+([#1515](https://github.com/elitekaycy/qkt/issues/1515)), so a coin buy's order stays working in qkt for the fee's
+sliver. `GATEWAY_SETTING_EXTENDED_HOURS=true` lets limit DAY and GTC orders on shares fill outside regular hours
 (04:00-09:30, 16:00-20:00 and overnight 20:00-04:00 New York); market orders trade regular hours only.
 
 ## Connect qkt
@@ -72,7 +75,9 @@ $ qkt bot buy 1 ALPACA:AAPL --limit 300 --tif day --config qkt.config.yaml --jso
 
 ## Not supported yet
 
-Fractional shares, trailing stops, opening and closing auction orders (`OPG`/`CLS`), options, borrow fees, the
+Coin pairs as a default (see above), trailing stops, opening and closing auction orders (`OPG`/`CLS`), options,
+borrow fees, the
 pattern-day-trader count (Alpaca paper reports no flag), strategies evaluated in the overnight session, and Alpaca's
-dividend and fee activities reaching qkt's ledger (the venue's equity has them). See the equities plan,
+dividend and fee activities reaching qkt's ledger (the venue's equity has them). Fractional shares are the gateway's
+choice: `GATEWAY_SETTING_FRACTIONAL=true` lists fractionable shares in steps of 0.000000001, on DAY orders only. See the equities plan,
 `docs/superpowers/plans/2026-10-27-equities.md`.
