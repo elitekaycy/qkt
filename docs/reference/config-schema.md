@@ -548,6 +548,7 @@ brokers:
 | `retry_attempts` | int | no | `3` | Reads, and submits, are sent again on a timeout or `503`; a submit is idempotent on its client order id, so this never places a second order. |
 | `chain_snapshot_seconds` | int | no | `300` | How often the live chain of each fed option root declared `chains: book` is appended to its book series (structures and `CHAIN:` streams read it). |
 | `calendars` | as above | no | `crypto` | Set it for venues that close, such as CME futures. |
+| `shared_account` | `true` or `false` | no | `false` | `true` when something besides this daemon also trades the account (another qkt daemon, a person). See [A shared gateway account](#a-shared-gateway-account). |
 
 The account reports to insights under its entry name uppercased (`DERIBIT`): its account, positions,
 working orders and deals are polled like an MT5 account's (see [Venue envelopes](#venue-envelopes)).
@@ -572,7 +573,8 @@ position no book holds is never adopted), and each time a strategy comes up, onc
 deployed on the account is running, their holdings must add up to the account's. While they do not,
 only orders that reduce a position are sent; the check clears itself when a later one agrees (as
 strategies deploy one after another, and it is judged again before any order adding risk is refused, so
-a fill the venue had not yet reported when last checked blocks nothing), or after an operator resolves the difference. After a restart every restored order is resolved by id, with its complete fill
+a fill the venue had not yet reported when last checked blocks nothing), or after an operator resolves the difference. An account
+other traders use too needs `shared_account: true` (below). After a restart every restored order is resolved by id, with its complete fill
 history, so a fill is never lost or booked twice. A submit the gateway never answers is sent again
 until a deadline, then resolved by id. The gateway's identity is checked at startup and whenever its
 event log restarts; a gateway on another account refuses every order. The kill switch at the gateway
@@ -592,6 +594,46 @@ and `QKT_RBNZ_POLICY_RATE_SOURCE` accept an absolute path, `file:` URI, or HTTPS
 authorities' official XLSX tables. The RBA and RBNZ URLs are the defaults. Use a read-only mounted
 local artifact when an authority rejects server-side HTTP traffic; qkt records its SHA-256 and
 fails live ingestion when the artifact is malformed or more than seven calendar days stale.
+
+#### A shared gateway account
+
+By default qkt assumes it is the only thing trading a gateway account, so any position its strategies
+do not hold is a problem: a phantom fill, or a manual trade nobody told qkt about. It then refuses every
+order that adds risk, on every symbol, with `strategies hold, account holds: <code> <ours> vs <account's>`.
+
+Set `shared_account: true` when the account really is shared: two qkt daemons on one testnet account, or
+a person trading it by hand beside qkt.
+
+```yaml
+brokers:
+  deribit:
+    type: gateway
+    # ... the settings above
+    shared_account: true
+```
+
+On a shared account the check changes in three ways:
+
+- **Only the symbols this daemon trades are checked.** A position on a symbol none of its strategies
+  hold or send orders for is ignored.
+- **Other traders' size is allowed, but it must not move.** The first time a strategy here trades a
+  symbol (or a restart finds it holding one), qkt notes what the account holds beyond the strategies'
+  own holding. After that, only this daemon's own fills may change the account's position on that
+  symbol. Anything else refuses new risk, with `the account's <code> moved without a fill here:
+  strategies hold <ours>, account holds <account's>, other holders held <noted>`. Orders that reduce a
+  position still go through, as in the default mode. The refusal clears once the account is back at
+  what qkt expects. A restart notes the other traders' size again from scratch, which is how an
+  operator accepts a change they checked. This means two daemons sharing an account should trade
+  different symbols: when they trade the same one, each one's fills look unexplained to the other.
+- **A restart never takes over another trader's position.** Each strategy restores its own book from
+  its saved state, and its orders from their client order ids (`dsl-<strategy>-` and
+  `ORD-<strategy>-`). The account's netted position is never adopted. Give strategies on different
+  daemons different names, so their order ids never look alike.
+
+Two things only the account total knows cannot be split exactly on a shared account. Funding on a
+perpetual is booked per strategy as `amount × the strategy's holding / the account's position`, so
+other traders keep their part of it. The account's balance and equity include every trader's profit
+and loss, so they cannot check one daemon's realized P&L. Use the daemon's own trade history for that.
 
 ## `market_data`
 
