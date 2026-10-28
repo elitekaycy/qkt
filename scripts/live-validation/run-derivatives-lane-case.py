@@ -457,8 +457,7 @@ class Run:
         root = f"{self.out}/replay"
         if self.case["replay"] == "bars":
             os.makedirs(root)
-            shutil.copytree(f"{self.out}/data/contracts", f"{root}/contracts")
-            shutil.copy(f"{self.out}/data/instruments.yaml", root)
+            copy_catalog(f"{self.out}/data", root)
             for symbol in sorted({f["symbol"] for f in fills}):
                 self.store_bars(root, symbol, start, end)
             data = root
@@ -550,6 +549,14 @@ class Run:
         print(f"{result['status']} {case_id} " + ("; ".join(problems) if problems else
               f"fills={len(result.get('fills', []))} realized={result.get('qktRealized')} venue={result.get('venueNet')}"))
         return 1 if problems else 0
+
+
+def copy_catalog(data, root):
+    """A replay's instrument files: the contract catalog when the case has one (futures, options; a share or a coin
+    pair has none) and instruments.yaml."""
+    if os.path.isdir(f"{data}/contracts"):
+        shutil.copytree(f"{data}/contracts", f"{root}/contracts")
+    shutil.copy(f"{data}/instruments.yaml", root)
 
 
 def cost_value(cost, deal):
