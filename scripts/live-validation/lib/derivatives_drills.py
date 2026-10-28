@@ -145,8 +145,10 @@ class TcpProxy:
 class Drills:
     """Fires [run]'s drills on time while it holds, and judges what each one left behind."""
 
-    def __init__(self, run, drills, guardian):
-        self.run, self.pending, self.guardian = run, list(drills), guardian
+    def __init__(self, run, drills, guardian, broker=None):
+        """[broker], when set, is the broker prefix whose link reports judge an outage: a daemon that also trades other
+        venues (the cross lane) reports their links too."""
+        self.run, self.pending, self.guardian, self.broker = run, list(drills), guardian, broker
         self.records, self.fill_seen_at, self.engaged = [], {}, False
 
     def tick(self, fills):
@@ -221,6 +223,8 @@ class Drills:
             for text in open(path):
                 if "ConnectionChanged" in text:
                     entry = json.loads(text)
+                    if self.broker and f"broker={self.broker}," not in entry["payload"]:
+                        continue
                     state = re.search(r"state=(\w+)", entry["payload"])
                     found.append((entry["ts"], state.group(1) if state else "?"))
         return sorted(set(found))
