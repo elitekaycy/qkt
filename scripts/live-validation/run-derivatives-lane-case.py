@@ -117,7 +117,8 @@ class Run:
                 with urllib.request.urlopen(request, data, timeout=30) as response:
                     return json.load(response)
             except urllib.error.HTTPError as error:
-                if error.code < 500 or time.time() > deadline:
+                # 501 is the gateway saying the venue has no such thing, not a blip.
+                if error.code < 500 or error.code == 501 or time.time() > deadline:
                     raise
             except OSError:
                 if time.time() > deadline:
@@ -195,8 +196,7 @@ class Run:
         # traded that day, closed or not; when it charged other contracts during the case the balance is not the
         # case's alone, so the check is reported as not comparable rather than judged.
         traded = {f["symbol"].split(":")[-1].replace("-", "_") for f in fills}
-        # The account's funding over the run, as venue_funding reads it: none from a venue without the capability.
-        others = sorted({f["symbol"] for f in funding if f["symbol"].replace("-", "_") not in traded})
+        others = sorted({f["symbol"] for f in self.account_funding() if f["symbol"].replace("-", "_") not in traded})
         if "account-balance-equals-realized" in self.case["assertions"] and flat and moved != realized:
             if others:
                 self.balance_note = f"not comparable: the venue also settled {others} during the case"
@@ -434,6 +434,16 @@ class Run:
             net += value if deal["side"] == "sell" else -value
             net -= sum(cost_value(cost, deal) for cost in deal["costs"])
         return net
+
+    def account_funding(self):
+        """Every funding record the gateway holds for the run, its capabilities aside; none from a venue that serves no
+        funding at all (Alpaca answers `/v1/funding` 501)."""
+        try:
+            return self.get(f"/v1/funding?from={self.started_ms}&to={self.ended_ms + MINUTE}")["funding"]
+        except urllib.error.HTTPError as error:
+            if error.code in (404, 501):
+                return []
+            raise
 
     def venue_funding(self):
         """The funding the venue charged the account over the run; the account was flat at its start, so all of it is the case's."""
