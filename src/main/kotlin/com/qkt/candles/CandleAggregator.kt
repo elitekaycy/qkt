@@ -34,19 +34,14 @@ class CandleAggregator private constructor(
         aggregates = aggregates,
     )
 
-    private val log = org.slf4j.LoggerFactory.getLogger(CandleAggregator::class.java)
-
     private val open = mutableMapOf<String, MutableCandle>()
-    private val lastClosedEnd = mutableMapOf<String, Long>()
-    private val historyClosedEnd = mutableMapOf<String, Long>()
+    private val closed = ClosedWindows()
 
     /** Live ticks rejected after their candle was finalized; synthetic warmup reordering is excluded. */
-    var droppedLateTicks: Long = 0
-        private set
+    val droppedLateTicks: Long get() = closed.droppedLateTicks
 
     /** Live ticks inside a window seeded from venue history: that bar already holds them, so nothing is lost. */
-    var historyCoveredTicks: Long = 0
-        private set
+    val historyCoveredTicks: Long get() = closed.historyCoveredTicks
 
     init {
         bus?.subscribe<TickEvent> { event -> onTick(event.tick) }
@@ -62,34 +57,14 @@ class CandleAggregator private constructor(
         if (aggregates?.invoke(tick.symbol) == false) return
         // A heartbeat can close a window while older ticks remain queued. Never reopen
         // or mutate an already-emitted window: doing so double-feeds every indicator.
-        if (tick.timestamp < (lastClosedEnd[tick.symbol] ?: Long.MIN_VALUE)) {
-            if (countLateDrop && tick.timestamp < (historyClosedEnd[tick.symbol] ?: Long.MIN_VALUE)) {
-                historyCoveredTicks++
-            } else if (countLateDrop) {
-                droppedLateTicks++
-                // A dropped late tick is a bar that silently disagrees with the venue's own, so
-                // it must never be a counter nobody reads. Throttled: a feed stall drops a burst.
-                if (droppedLateTicks == 1L || droppedLateTicks % LATE_DROP_LOG_EVERY == 0L) {
-                    log.warn(
-                        "late tick for {} stamped {} arrived after its candle closed at {} — " +
-                            "that bar under-reports the venue ({} dropped so far); raise " +
-                            "candle_close_grace_ms if this persists",
-                        tick.symbol,
-                        tick.timestamp,
-                        lastClosedEnd[tick.symbol],
-                        droppedLateTicks,
-                    )
-                }
-            }
-            return
-        }
+        if (closed.refuses(tick, live = countLateDrop)) return
         val state = open[tick.symbol]
         if (state == null) {
             open[tick.symbol] = newState(tick)
             return
         }
         if (tick.timestamp < state.startTime) {
-            if (countLateDrop) droppedLateTicks++
+            if (countLateDrop) closed.droppedBeforeOpen()
             return
         }
         if (tick.timestamp >= state.endTime) {
@@ -107,7 +82,7 @@ class CandleAggregator private constructor(
      */
     fun seedForming(partial: Candle) {
         val s = partial.symbol
-        if (s in open || partial.startTime < (lastClosedEnd[s] ?: Long.MIN_VALUE)) return
+        if (s in open || partial.startTime < closed.lastEnd(s)) return
         val ticks = partial.volume.toInt().coerceAtLeast(1)
         open[s] =
             MutableCandle(
@@ -134,10 +109,7 @@ class CandleAggregator private constructor(
     fun closedThrough(
         symbol: String,
         endTime: Long,
-    ) {
-        if (endTime > (lastClosedEnd[symbol] ?: Long.MIN_VALUE)) lastClosedEnd[symbol] = endTime
-        if (endTime > (historyClosedEnd[symbol] ?: Long.MIN_VALUE)) historyClosedEnd[symbol] = endTime
-    }
+    ) = closed.closedThrough(symbol, endTime)
 
     /**
      * Close every in-progress candle whose window already ended at [nowMs], the time-driven close for quiet
@@ -157,7 +129,7 @@ class CandleAggregator private constructor(
 
     private fun emitClosed(state: MutableCandle) {
         emit(finalize(state.toCandle()))
-        lastClosedEnd[state.symbol] = state.endTime
+        closed.emitted(state.symbol, state.endTime)
     }
 
     /** The venue's figure when it has one for exactly this bar, else what we counted. */
@@ -186,9 +158,6 @@ class CandleAggregator private constructor(
     }
 
     companion object {
-        /** Throttle for the late-drop warning: a stalled feed drops a burst, not one tick. */
-        private const val LATE_DROP_LOG_EVERY: Long = 100L
-
         fun standalone(
             window: TimeWindow,
             barVolume: BarVolumeSource? = null,
