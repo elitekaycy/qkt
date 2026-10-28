@@ -151,6 +151,7 @@ nav:
       - EMA crossover strategy: how-to/ema-crossover.md
       - Add a stop-loss: how-to/add-stop-loss.md
       - Trade stock CFDs: how-to/trade-stock-cfds.md
+      - Trade US shares through Alpaca: how-to/trade-us-shares-alpaca.md
       - Run a parameter sweep: how-to/parameter-sweep.md
       - Debug a strategy that isn't firing: how-to/debug-not-firing.md
       - Iterate in the research REPL: how-to/research-repl.md
