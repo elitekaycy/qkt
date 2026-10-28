@@ -1,0 +1,47 @@
+id: one-leg-gateway-outage
+title: The gateway is unreachable while the MT5 leg closes, re-enters and closes again
+why: 'A daemon trading two venues loses one: if the gateway''s outage stalls the engine, fails every venue closed or
+  halts the strategy, the MT5 leg stops trading; if the gateway leg comes back with a lost or doubled fill, its
+  realized drifts from the venue. The MT5 leg must trade through the outage and the gateway leg close after it.'
+status: planned
+venues:
+- label: EXNESS
+  type: mt5
+- label: PAPER
+  type: gateway
+  adapter: paper
+symbols:
+- EXNESS:BTCUSD
+- PAPER:BTC_USDC_PERPETUAL
+timeframes:
+- 1m
+warmup_bars:
+  1m: 3
+proves:
+- behaviour:cross-venue-routing
+- behaviour:gateway-outage
+- behaviour:market-entry
+- behaviour:timed-exit
+fills:
+  EXNESS: 4
+  PAPER: 2
+replay: by-venue
+drills:
+- venue: PAPER
+  kind: gateway_outage
+  after_fills: 2
+  at_s: 5
+  seconds: 150
+assertions:
+- fills-by-venue
+- flat-by-magic
+- flat-by-strategy
+- deals-net-by-venue
+- realized-total-equals-venues
+- no-engine-fault
+- link-down-and-up
+- other-venue-trades-during-gateway-outage
+- venue-fills-equal-qkt-fills
+- no-duplicate-order
+- replay-same-fills-by-venue
+budget_seconds: 600
