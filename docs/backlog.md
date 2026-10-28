@@ -268,6 +268,10 @@ Ranked by leverage for FX/commodities quant research, highest first.
   instead of leaving a one-legged straddle. ([#46](https://github.com/elitekaycy/qkt/issues/46))
 - `done` — **`MT5Broker.submitComposite` non-atomicity**. Half-placed-OCO bug closed in
   `submitComposite` to match the fix in `submitOco`. ([#47](https://github.com/elitekaycy/qkt/issues/47))
+- `tbd` — **Restart recovery for `ORD-` order ids**. The orphan fallback in `MT5StateRecovery` and
+  `compare-golden-replay.sh` only recognise `dsl-<strategy>-` comments, so a position a session's plain
+  `ORD-<strategy>-` order opened is not adopted after a restart without its journal record. Found by the
+  equities stocks lane. ([#1516](https://github.com/elitekaycy/qkt/issues/1516))
 
 ### Tier 5 — Hedge-straddle parity gaps (Phase 36+, ~1 day each)
 

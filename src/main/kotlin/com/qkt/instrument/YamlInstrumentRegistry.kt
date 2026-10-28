@@ -103,7 +103,37 @@ class YamlInstrumentRegistry private constructor(
                 minSpreadPoints = intOpt("minSpreadPoints"),
                 currency = entry["currency"]?.toString()?.trim(),
                 tickSize = bdOpt("tickSize"),
+                category = entry["category"]?.toString()?.trim()?.takeIf { it.isNotEmpty() },
+                tradeMode =
+                    entry["tradeMode"]?.toString()?.let {
+                        runCatching { TradeMode.parse(it) }.getOrElse { e ->
+                            error("instruments.yaml: entry $index ${e.message}")
+                        }
+                    } ?: TradeMode.FULL,
+                equityCosts = (entry["equityCosts"] as? Map<*, *>)?.let { equityCosts(it, index) },
             )
+        }
+
+        private fun equityCosts(
+            map: Map<*, *>,
+            index: Int,
+        ): EquityCosts {
+            val known =
+                setOf("commissionPerShare", "minCommission", "maxCommissionRate", "secFeeRate", "tafPerShare", "tafMax")
+            val unknown = map.keys.map { it.toString() } - known
+            check(unknown.isEmpty()) { "instruments.yaml: entry $index equityCosts has unknown fields $unknown" }
+
+            fun bd(key: String): BigDecimal? = map[key]?.let { BigDecimal(it.toString()) }
+            return runCatching {
+                EquityCosts(
+                    commissionPerShare = bd("commissionPerShare") ?: BigDecimal.ZERO,
+                    minCommission = bd("minCommission") ?: BigDecimal.ZERO,
+                    maxCommissionRate = bd("maxCommissionRate"),
+                    secFeeRate = bd("secFeeRate") ?: BigDecimal.ZERO,
+                    tafPerShare = bd("tafPerShare") ?: BigDecimal.ZERO,
+                    tafMax = bd("tafMax"),
+                )
+            }.getOrElse { error("instruments.yaml: entry $index ${it.message}") }
         }
     }
 }

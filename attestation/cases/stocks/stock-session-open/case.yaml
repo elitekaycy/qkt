@@ -1,0 +1,32 @@
+id: stock-session-open
+title: A stock strategy started before the open trades first on the session's first bar
+why: 'On the FX calendar a stock was "in session" all night: a restart at 05:00 New York evaluated stale
+  overnight bars and the staleness alarm fired for a market that was simply shut. Exness then quotes from
+  06:00 but refuses opening orders until 09:40 (MT5 retcode 10044). Started a few minutes before 09:40
+  New York, the case evaluates the pre-open quotes, has its buy refused before the venue each minute in
+  live and replay alike, raises no staleness alarm, then buys within the session''s first minutes.'
+status: scheduled
+symbols:
+- AAPL
+timeframes:
+- 1m
+warmup_bars:
+  1m: 0
+proves:
+- behaviour:stock-cfd
+- behaviour:session-open
+budget_seconds: 600
+expect_first_fill_within:
+  after: "09:40 America/New_York"
+  seconds: 240
+expect_fills:
+- BUY 0.01
+- SELL 0.01
+assertions:
+- flat-by-magic
+- no-pending-by-magic
+- deals-net-by-magic
+- no-engine-fault
+- replay-fill-sequence
+- expected-fills
+- first-fill-after-open

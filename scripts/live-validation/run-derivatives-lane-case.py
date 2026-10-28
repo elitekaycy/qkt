@@ -46,6 +46,7 @@ import derivatives_settlement as settlement  # noqa: E402
 
 TRADE = re.compile(r"qkt\.trade - trade (BUY|SELL) (\S+) qty=(\S+) px=(\S+)")
 MINUTE = 60_000
+QKT_MONEY_UNIT = Decimal("0.00000001")  # qkt Money.SCALE = 8
 FUNDING_RECONCILE_S = 90  # a gateway reconciles venue history every minute; one cycle past the last fill, with margin
 
 
@@ -116,7 +117,8 @@ class Run:
                 with urllib.request.urlopen(request, data, timeout=30) as response:
                     return json.load(response)
             except urllib.error.HTTPError as error:
-                if error.code < 500 or time.time() > deadline:
+                # 501 is the gateway saying the venue has no such thing, not a blip.
+                if error.code < 500 or error.code == 501 or time.time() > deadline:
                     raise
             except OSError:
                 if time.time() > deadline:
@@ -180,8 +182,12 @@ class Run:
         held = settlement.held_settlements(self.venue_settlements(), self.strategy_deals())
         venue = self.venue_net() + settlement.settlement_cash(held, self.contract_sizes()) \
             - sum((Decimal(f["amount"]) for f in funding), Decimal(0))
-        if venue != realized:
+        # qkt keeps money at 8 decimals and books each fill's trade and costs at that scale, so two roundings of at
+        # most half a unit each may part it from the venue's exact net by up to 1e-8 a fill; anything more is a
+        # difference in what was booked.
+        if abs(venue - realized) > QKT_MONEY_UNIT * max(len(fills), 1):
             problems.append(f"deals-net-equals-realized: venue net {venue} != qkt realized {realized}")
+        self.net_gap = str(venue - realized)
         booked = settlement.booked_settlements(f"{self.out}/state/state", self.strategy)
         if held or booked or self.case.get("settles"):
             problems += settlement.judge(held, booked, self.venue, int(self.case.get("settles", 0)))
@@ -190,8 +196,7 @@ class Run:
         # traded that day, closed or not; when it charged other contracts during the case the balance is not the
         # case's alone, so the check is reported as not comparable rather than judged.
         traded = {f["symbol"].split(":")[-1].replace("-", "_") for f in fills}
-        others = sorted({f["symbol"] for f in self.get(f"/v1/funding?from={self.started_ms}&to={self.ended_ms + MINUTE}")
-                         ["funding"] if f["symbol"].replace("-", "_") not in traded})
+        others = sorted({f["symbol"] for f in self.account_funding() if f["symbol"].replace("-", "_") not in traded})
         if "account-balance-equals-realized" in self.case["assertions"] and flat and moved != realized:
             if others:
                 self.balance_note = f"not comparable: the venue also settled {others} during the case"
@@ -206,7 +211,8 @@ class Run:
             problems += self.drills.problems() + self.judge_drilled(fills)
         if fills and self.case.get("replay", "none") != "none":
             problems += self.replay(fills)
-        self.evidence = {"fills": fills, "qktRealized": str(realized), "venueNet": str(venue), "funding": funding,
+        self.evidence = {"fills": fills, "qktRealized": str(realized), "venueNet": str(venue), "netGap": self.net_gap,
+                         "funding": funding,
                          "replayPriceDrift": getattr(self, "drift", [])}
         if held or booked or self.case.get("settles"):
             self.evidence.update(settlements=[dict(s, holding=str(s["holding"])) for s in held], booked=booked,
@@ -426,8 +432,18 @@ class Run:
         for deal in self.strategy_deals():
             value = Decimal(deal["price"]) * Decimal(deal["quantity"]) * sizes.get(deal["symbol"], Decimal(1))
             net += value if deal["side"] == "sell" else -value
-            net -= sum(Decimal(cost["amount"]) for cost in deal["costs"])
+            net -= sum(cost_value(cost, deal) for cost in deal["costs"])
         return net
+
+    def account_funding(self):
+        """Every funding record the gateway holds for the run, its capabilities aside; none from a venue that serves no
+        funding at all (Alpaca answers `/v1/funding` 501)."""
+        try:
+            return self.get(f"/v1/funding?from={self.started_ms}&to={self.ended_ms + MINUTE}")["funding"]
+        except urllib.error.HTTPError as error:
+            if error.code in (404, 501):
+                return []
+            raise
 
     def venue_funding(self):
         """The funding the venue charged the account over the run; the account was flat at its start, so all of it is the case's."""
@@ -534,6 +550,17 @@ class Run:
         print(f"{result['status']} {case_id} " + ("; ".join(problems) if problems else
               f"fills={len(result.get('fills', []))} realized={result.get('qktRealized')} venue={result.get('venueNet')}"))
         return 1 if problems else 0
+
+
+def cost_value(cost, deal):
+    """What a deal's cost took from the account's cash. A spot pair's fee paid in its coin (`BTC` on `BTCUSD`, the VGP
+    rule for a base-asset cost) took none: the deal's quantity was paid for and less of it was received, so the deal's
+    own value already holds it. Any other cost is cash."""
+    code = deal["symbol"].replace("_", "").replace("-", "")
+    coin = cost["currency"]
+    if code.startswith(coin) and len(code) > len(coin):
+        return Decimal(0)
+    return Decimal(cost["amount"])
 
 
 def when(ms):

@@ -41,6 +41,11 @@ internal object JsonReportPrinter {
             sb.append("\"rollCostsPaid\":").append(g.rollCostsPaid.toPlainString()).append(',')
         }
         if (g.fundingPaid.signum() != 0) sb.append("\"fundingPaid\":").append(g.fundingPaid.toPlainString()).append(',')
+        if (g.dividendsPaid.signum() !=
+            0
+        ) {
+            sb.append("\"dividendsPaid\":").append(g.dividendsPaid.toPlainString()).append(',')
+        }
         sb.append("\"winRate\":").append(g.winRate.toPlainString()).append(',')
         sb.append("\"maxDrawdown\":").append(g.maxDrawdown.toPlainString()).append(',')
         sb.append("\"profitFactor\":").append(g.profitFactor?.toPlainString() ?: "null").append(',')

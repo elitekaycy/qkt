@@ -3,6 +3,7 @@ package com.qkt.cli
 import com.qkt.backtest.BacktestDataProvisioner
 import com.qkt.backtest.OptionChainCoverage
 import com.qkt.backtest.ProvisionStream
+import com.qkt.common.TradingCalendar
 import com.qkt.dsl.ast.CHAIN_BROKER
 import com.qkt.dsl.ast.HUB_BROKER
 import com.qkt.dsl.ast.OPTIONS_BROKER
@@ -26,7 +27,10 @@ import java.time.ZoneOffset
  * ticks at all), then check the stored chain days of option contracts ([OptionChainCoverage]).
  */
 internal object BacktestTickProvisioning {
-    /** Provisions [replaySymbols] for the window [from]..[to]. */
+    /**
+     * Provisions [replaySymbols] for the window [from]..[to], judging each symbol's days by the calendar the run
+     * trades it on ([calendarFor], given a qkt symbol): a stock's NYSE holidays are closed days, not missing data.
+     */
     fun provision(
         replaySymbols: List<String>,
         instruments: InstrumentRegistry,
@@ -35,6 +39,7 @@ internal object BacktestTickProvisioning {
         window: Pair<Instant, Instant>,
         noFetch: Boolean,
         allowIncomplete: Boolean,
+        calendarFor: (String) -> TradingCalendar = BacktestContext.defaultCalendars()::calendarFor,
     ) {
         val (store, barStore) = stores
         val provisionFrom = LocalDate.ofInstant(window.first, ZoneOffset.UTC)
@@ -67,7 +72,7 @@ internal object BacktestTickProvisioning {
                     to = provisionTo,
                     fetchEnabled = fetch,
                     allowIncomplete = allowIncomplete,
-                    calendarFor = { BacktestContext.defaultCalendars().calendarFor(it) },
+                    calendarFor = { bare -> calendarFor("${streams.first { it.bareSymbol == bare }.broker}:$bare") },
                     barsLineFor = { barsLine(binaryBars, barReplay, it, provisionFrom, provisionTo) },
                 )
             }

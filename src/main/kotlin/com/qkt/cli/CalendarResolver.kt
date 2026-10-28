@@ -61,9 +61,12 @@ internal class CalendarResolver(
         instruments?.futuresRootCalendar(qktSymbol)?.let { return CalendarChoice(qktSymbol, it, "futures root") }
         val bare = qktSymbol.substringAfter(':')
         venueOf(qktSymbol)?.let { venue ->
-            val rule = venue.calendars.ruleFor(bare)
+            // The instrument's category (instruments.yaml in a backtest, /symbol_info live) feeds `category:` rules.
+            val category = instruments?.lookup(qktSymbol)?.category
+            val calendars = category?.let { c -> venue.calendars.withCategories { c } } ?: venue.calendars
+            val rule = calendars.ruleFor(bare)
             val source = rule?.let { "${venue.name} calendars '${it.pattern}'" } ?: "${venue.name} default"
-            return CalendarChoice(qktSymbol, venue.calendars.calendarFor(bare), source)
+            return CalendarChoice(qktSymbol, calendars.calendarFor(bare), source)
         }
         if (instruments?.options()?.optionRoot(qktSymbol) != null) {
             return CalendarChoice(qktSymbol, TradingCalendar.crypto(), "option contract, no venue")

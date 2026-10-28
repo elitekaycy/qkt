@@ -15,6 +15,7 @@ import com.qkt.instrument.ContractCatalogSource
 import com.qkt.instrument.FundingRateSource
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.instrument.OptionTerms
+import com.qkt.instrument.withInstrumentCategories
 import com.qkt.marketdata.depth.BookDepthSource
 import com.qkt.marketdata.flow.PrintHistorySource
 import com.qkt.marketdata.marks.MarkHistorySource
@@ -33,7 +34,14 @@ class GatewayConnector : Connector {
         ConnectorSpec(
             type = "gateway",
             displayName = "VGP gateway",
-            productTypes = setOf(ProductType.FUTURE, ProductType.PERPETUAL, ProductType.SPOT, ProductType.OPTION),
+            productTypes =
+                setOf(
+                    ProductType.FUTURE,
+                    ProductType.PERPETUAL,
+                    ProductType.SPOT,
+                    ProductType.OPTION,
+                    ProductType.EQUITY,
+                ),
             settings = GatewaySettings.KEYS,
         )
 
@@ -86,7 +94,13 @@ class GatewayTradingAccount internal constructor(
             )
         }
 
-    override val tradingHours: SymbolCalendars = GatewaySettings.calendars(config)
+    // `category:` rules read each instrument's venue category through this account's own instrument spec.
+    override val tradingHours: SymbolCalendars =
+        GatewaySettings.calendars(config).withInstrumentCategories(config.name) { instrumentSpec(it)?.meta }
+
+    /** A spot or equity instrument's spec from the venue's listing; derivatives keep their catalog terms (null here). */
+    override fun instrumentSpec(qktSymbol: String) =
+        client.instruments().firstOrNull { "${config.symbolPrefix}${it.code}" == qktSymbol }?.instrumentSpec(qktSymbol)
 
     private val quotes =
         GatewayMarketSource(

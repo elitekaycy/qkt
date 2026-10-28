@@ -57,8 +57,9 @@ def main():
             seen[cid] = where
             if doc.get("status") not in STATUSES:
                 errors.append(f"{where}: status must be one of {sorted(STATUSES)}")
-            if doc.get("status") == "scheduled" and not lanes[lane].get("venue_gateway"):
-                errors.append(f"{where}: only a venue-gateway lane's case is scheduled")
+            # A case run at a set time: across an expiry (venue-gateway lanes), or at a session edge (a lane bound to a session).
+            if doc.get("status") == "scheduled" and not (lanes[lane].get("venue_gateway") or lanes[lane].get("session")):
+                errors.append(f"{where}: only a venue-gateway or session-bound lane's case is scheduled")
             if len(str(doc.get("why", "")).split()) < 12:
                 errors.append(f"{where}: 'why' must name the failure this case catches, in a sentence")
             for tf in doc.get("timeframes", []):
@@ -95,7 +96,7 @@ def main():
                 except re.error as error:
                     errors.append(f"{where}: expect_startup_refusal is not a valid regex: {error}")
             strategy = f"{args.root}/{where}/strategy.qkt"
-            if doc.get("status") == "ready" and lane in ("shadow", "orders", "risk", "book") and not os.path.isfile(strategy):
+            if doc.get("status") == "ready" and lane in ("shadow", "orders", "stocks", "risk", "book") and not os.path.isfile(strategy):
                 errors.append(f"{where}: a ready {lane} case needs strategy.qkt")
             if args.cli and os.path.isfile(strategy):
                 run = subprocess.run([args.cli, "parse", strategy], capture_output=True, text=True)

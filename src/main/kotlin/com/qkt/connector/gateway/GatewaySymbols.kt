@@ -49,6 +49,16 @@ class GatewaySymbols(
             VenueInstrument(it.code, it.kind, positive(it.contractSize), positive(it.tickSize), it.currency)
         }
 
+    /**
+     * The coin a spot pair [qktSymbol] buys (`BTC` of `BTCUSD`, `BTCUSDT` or `BTC_USDC`), or null for anything else:
+     * a fee charged in it is paid with the coin itself ([GatewayInKindFees]).
+     */
+    fun baseAsset(qktSymbol: String): String? =
+        listed[qktSymbol]
+            ?.takeIf { it.kind == "spot" && it.code.length > it.currency.length && it.code.endsWith(it.currency) }
+            ?.let { it.code.removeSuffix(it.currency).trimEnd('_', '-', '/') }
+            ?.takeIf { it.isNotEmpty() }
+
     /** The price tick of [qktSymbol] in the latest listing, or null when the listing gave none. */
     fun tick(qktSymbol: String): BigDecimal? = ticks[qktSymbol]
 

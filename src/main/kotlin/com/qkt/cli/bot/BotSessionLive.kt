@@ -97,7 +97,7 @@ private fun liveOnLock(
             stateRoot = stateDir.stateRoot,
             quoteContextFor = { symbol ->
                 com.qkt.trade.venue.BotVenues.forSymbol(cfg, symbol).use {
-                    it.venue.facts(symbol).toQuoteContext(symbol, cfg.accountCurrency)
+                    it.venue.facts(symbol).toQuoteContext(symbol, cfg.accountCurrency, it.calendarFor(symbol))
                 }
             },
             serverThreads = 4,

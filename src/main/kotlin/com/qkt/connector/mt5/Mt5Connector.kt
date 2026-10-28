@@ -40,7 +40,7 @@ class Mt5Connector(
         accounts: List<AccountConfig>,
         context: ConnectorContext,
     ): List<TradingAccount> {
-        val profiles =
+        val loaded =
             MT5BrokerProfileLoader().load(
                 raw = accounts.associate { it.name to withResolvedApiKey(it, context) },
                 defaults = MT5DefaultProfiles.all,
@@ -51,10 +51,25 @@ class Mt5Connector(
                 instrumentOverrides = accounts.associate { it.name to it.instrumentOverrides },
             )
         val readCaches =
-            profiles
+            loaded
                 .map { it.gatewayUrl to it.apiKey }
                 .distinct()
                 .associateWith { MT5ReadCache(SHARED_READ_TTL_MS) }
+
+        fun client(
+            profile: MT5BrokerProfile,
+            journal: MT5TransportJournal?,
+        ) = MT5Client(
+            gatewayUrl = profile.gatewayUrl,
+            serverTimeZone = profile.serverTimeZone,
+            httpTimeoutMs = profile.httpTimeoutMs,
+            retryAttempts = profile.retryAttempts,
+            apiKey = profile.apiKey,
+            readCache = readCaches.getValue(profile.gatewayUrl to profile.apiKey),
+            transportJournal = journal,
+        )
+        // `category:` calendar rules read the venue's folder for each symbol; every user of the profile sees them.
+        val profiles = loaded.map { it.withInstrumentCategories(client(it, null)) }
         val feeds = marketDataFeeds(profiles)
         val byName = profiles.associateBy { it.name }
         return accounts.map { cfg ->
@@ -63,20 +78,10 @@ class Mt5Connector(
                 context.stateRoot?.let {
                     MT5TransportJournal(it.resolve(TRANSPORT_JOURNAL_DIR), profile.name, context.clock)
                 }
-            val client =
-                MT5Client(
-                    gatewayUrl = profile.gatewayUrl,
-                    serverTimeZone = profile.serverTimeZone,
-                    httpTimeoutMs = profile.httpTimeoutMs,
-                    retryAttempts = profile.retryAttempts,
-                    apiKey = profile.apiKey,
-                    readCache = readCaches.getValue(profile.gatewayUrl to profile.apiKey),
-                    transportJournal = journal,
-                )
             Mt5TradingAccount(
                 config = cfg,
                 profile = profile,
-                client = client,
+                client = client(profile, journal),
                 feed = feeds.getValue(profile.name),
                 journal = journal,
                 accountFetcher = accountFetcher,

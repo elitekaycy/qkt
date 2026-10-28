@@ -1,0 +1,14 @@
+STRATEGY atto_stk_mode VERSION 1
+
+SYMBOLS
+    aapl = EXNESS:AAPL EVERY 1m WARMUP 3 BARS,
+    fb   = EXNESS:FB EVERY 1m
+
+RULES
+    -- Facebook's old ticker is close-only at Exness (Meta trades as META): the entry is refused by qkt, the
+    -- AAPL entry beside it goes through. Both decided on AAPL's bar, so FB's sparse quotes do not matter.
+    WHEN aapl.close > 0 AND POSITION.aapl = 0 AND TRADES.today = 0
+    THEN BUY aapl SIZING 0.01 ; BUY fb SIZING 0.01
+
+    WHEN POSITION.aapl != 0 AND POSITION.aapl.holding_duration >= 50
+    THEN CLOSE aapl

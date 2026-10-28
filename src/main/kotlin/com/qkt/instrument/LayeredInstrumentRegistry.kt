@@ -25,4 +25,6 @@ class LayeredInstrumentRegistry(
     override fun futures(): FuturesDirectory? = layers.firstNotNullOfOrNull { it.futures() }
 
     override fun options(): OptionDirectory? = layers.firstNotNullOfOrNull { it.options() }
+
+    override fun corporateActions(): CorporateActionSource? = layers.firstNotNullOfOrNull { it.corporateActions() }
 }

@@ -1,0 +1,12 @@
+STRATEGY atto_stk_trailing VERSION 1
+
+SYMBOLS
+    aapl = EXNESS:AAPL EVERY 1m WARMUP 3 BARS
+
+RULES
+    -- Fixed $3 under the entry until the trade is 5 cents in profit, then it follows the price.
+    WHEN aapl.close > 0 AND POSITION.aapl = 0 AND OPEN_ORDERS.aapl = 0 AND TRADES.today = 0
+    THEN BUY aapl SIZING 0.01 BRACKET { STOP LOSS TRAILING 3 AFTER MFE >= 0.05, TAKE PROFIT BY 8 }
+
+    WHEN POSITION.aapl != 0 AND POSITION.aapl.holding_duration >= 50
+    THEN CLOSE aapl

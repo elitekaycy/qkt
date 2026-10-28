@@ -1,0 +1,29 @@
+id: alpaca-share-bracket-timed-exit
+title: One AAPL share bought with an engine-held bracket and closed by the strategy through the Alpaca gateway
+why: 'The baseline for cash equities through a VGP gateway: a whole share must reach Alpaca as one share, the bracket
+  is the engine''s (a gateway venue holds no stop), qkt''s realized must equal Alpaca''s deals net and the account''s
+  cash, and a replay of the gateway''s own bars must make the same fills.'
+status: ready
+symbols:
+- ALPACA:AAPL
+timeframes:
+- 1m
+warmup_bars:
+  1m: 3
+proves:
+- behaviour:market-entry
+- behaviour:bracket
+- behaviour:timed-exit
+- behaviour:gateway-tick-grid
+- behaviour:cash-equity
+fills: 2
+replay: bars
+# A new deployment's first day caps entries at 0.01 (risk.measured_usage_*); a share is quantity 1, so the window
+# stays on with a one-share cap rather than refusing every entry.
+config:
+  risk:
+    measured_usage_max_qty: "1"
+assertions:
+- flat-account
+- deals-net-equals-realized
+- replay-same-fills

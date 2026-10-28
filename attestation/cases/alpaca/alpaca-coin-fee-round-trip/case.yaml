@@ -1,0 +1,25 @@
+id: alpaca-coin-fee-round-trip
+title: A BTCUSD buy whose fee Alpaca takes in the coin, closed by the strategy
+why: 'Alpaca takes a coin buy''s fee in the coin bought (0.0002 BTC bought leaves 0.0001995), so a fill that is
+  booked at the order''s quantity leaves qkt holding more than the venue, and one booked net leaves the order working
+  for the fee''s sliver (#1515). qkt must complete the order on the venue''s quantity, hold what was received, close
+  exactly that, and book the fee''s value once, so realized equals the deals net and the account''s cash. Needs
+  the gateway''s asset_classes to include crypto; coin pairs trade around the clock. The account''s balance is not
+  judged: Alpaca also takes a dollar fee on a coin sale that no fill, order or activity reports per execution (measured
+  2026-10-28), and rounds cash to the cent.'
+status: ready
+symbols:
+- ALPACA:BTCUSD
+timeframes:
+- 1m
+warmup_bars:
+  1m: 3
+proves:
+- behaviour:market-entry
+- behaviour:timed-exit
+- behaviour:in-kind-fee
+fills: 2
+replay: none
+assertions:
+- flat-account
+- deals-net-equals-realized

@@ -1,6 +1,7 @@
 package com.qkt.cli
 
 import com.qkt.instrument.InstrumentMeta
+import com.qkt.instrument.TradeMode
 import com.qkt.instrument.UnreportedCost
 import com.qkt.instrument.VenueInstrumentSpec
 
@@ -46,6 +47,8 @@ internal fun VenueInstrumentSpec.entryText(): String =
         e.spreadPoints?.let { appendLine("    spreadPoints: $it") }
         e.minSpreadPoints?.let { appendLine("    minSpreadPoints: $it") }
         e.currency?.let { appendLine("    currency: $it") }
+        e.category?.let { appendLine("    category: $it") }
+        if (e.tradeMode != TradeMode.FULL) appendLine("    tradeMode: ${e.tradeMode.name.lowercase()}")
     }
 
 /**

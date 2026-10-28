@@ -94,14 +94,17 @@ interface TradingCalendar {
         /** The names [named] knows, for messages. */
         val names: List<String> = listOf("crypto", "fx", "nyse", "cme_globex")
 
-        /** The calendar called [name] — `crypto`, `fx`, `nyse` or `cme_globex` — or null. */
+        /**
+         * The calendar called [name] — `crypto`, `fx`, `nyse`, `cme_globex`, or NYSE days with a New York session
+         * window, `nyse[09:40-15:45]` ([NyseWindowCalendar]) — or null.
+         */
         fun named(name: String): TradingCalendar? =
             when (name) {
                 "crypto" -> CryptoCalendar
                 "fx" -> FxCalendar
                 "nyse" -> NyseCalendar
                 "cme_globex" -> CmeGlobexCalendar
-                else -> null
+                else -> NyseWindowCalendar.parse(name)
             }
     }
 }

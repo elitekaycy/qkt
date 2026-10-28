@@ -24,8 +24,8 @@ internal class MT5BrokerVenueReads(
         val deals =
             client.getDeals(from, to)
                 ?: error("MT5Broker ${profile.name} deals: gateway read failed (${client.lastReadFailure()})")
-        // Range queries also return balance operations (deposits/withdrawals, type 2+) with
-        // no symbol and zero volume — only trade deals (0=BUY, 1=SELL) belong in history.
+        // Range queries also return non-trade bookings (deposits, dividends, charges: type 2+);
+        // only trade deals (0=BUY, 1=SELL) are history, the rest are MT5Adjustments'.
         return deals.filter { it.type == 0 || it.type == 1 }.map { d ->
             BrokerDeal(
                 broker = profile.name.uppercase(),
@@ -149,16 +149,6 @@ internal class MT5BrokerVenueReads(
             symbolMeta[brokerSymbol]
                 ?: client.getSymbolInfo(brokerSymbol)?.also { symbolMeta[brokerSymbol] = it }
                 ?: return null
-        return com.qkt.instrument.InstrumentMeta(
-            qktSymbol = qktSymbol,
-            contractSize = info.contractSize,
-            volumeStep = info.volumeStep,
-            volumeMin = info.volumeMin,
-            volumeMax = info.volumeMax,
-            pointSize = info.point,
-            digits = info.digits,
-            tradeStopsLevelPoints = info.tradeStopsLevel,
-            tickSize = info.tickSize,
-        )
+        return info.instrumentMeta(qktSymbol)
     }
 }

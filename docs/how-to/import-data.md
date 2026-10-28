@@ -23,6 +23,7 @@ dropped or flagged.
 | `funding` | `funding/<VENUE>/<NAME>.csv` | perpetual funding charges |
 | `open-interest` | `open_interest/<VENUE>/<NAME>.csv` | `<alias>.open_interest` |
 | `series` | `bars/<SOURCE>/<NAME>/1d/<day>.csv` (value as open, high, low and close) | a daily stream, e.g. COT positions |
+| `corporate-actions` | `corporate-actions/<VENUE>/<NAME>.csv` | dividends and splits of a share, backtest and live ([Dividends and splits](trade-stock-cfds.md#dividends-and-splits)) |
 
 Bars need a source prefix (`--as EXNESS:XAUUSD`): the bar store keeps each source apart, and a strategy
 reads them as `EXNESS:XAUUSD EVERY 15m`. Import the finest timeframe you have; qkt builds 5m, 1h, 4h and
@@ -88,6 +89,26 @@ qkt data import next-month.csv --as MYBROKER:EURUSD --preset mybroker.yaml
 - `--where column=value`: keep only matching rows, e.g. one ticker from a file of many.
 - `--price bid|ask|mid|last`, `--label open|close`, `--tf`, `--digits`, `--decimal`, `--delimiter`,
   `--format json --rows results`, `--encoding latin-1`.
+
+## Dividends and splits
+
+Corporate actions are dated events, not a time series, so they take their own few flags. Columns are named with
+`--map` (`ex_date`, `kind`, `value`, `currency`, `pay_date`; qkt's own file needs none); `--action dividend|split`
+stands in for a missing `kind` column, `--currency` for a missing currency, `--time-format` (a Java date pattern)
+for dates that are not `yyyy-MM-dd`. A split's value is its ratio, `10` or `10:1` (new for old); `1:8` is a reverse
+split.
+
+```console
+$ qkt data import nvda-dividends.csv --as EXNESS:NVDA --kind corporate-actions \
+    --map ex_date=Date,value=Dividends --action dividend --currency USD --time-format MM/dd/yyyy
+$ qkt data import nvda-splits.csv --as EXNESS:NVDA --kind corporate-actions \
+    --map ex_date=Date,value="Stock Splits" --action split --time-format MM/dd/yyyy
+```
+
+Every row is checked before anything is written. The import merges into the symbol's file: an action of the same
+kind on a date already stored replaces it, so re-importing never pays a dividend twice. Two actions of one kind on one
+date in the input, a non-positive amount or ratio, and a dividend in a currency other than the instrument's are
+refused. `--dry-run` reports without writing; `--json` prints the counts for tools.
 
 ## Clocks
 

@@ -13,7 +13,7 @@ import org.slf4j.Logger
 /**
  * The per-tick pass over engine-held orders, run once per tick on the engine thread: advance
  * trailing stops, expire GTD orders the venue cannot expire itself, fire time exits and stack
- * deadlines, fire triggered orders, then reclaim dead orders.
+ * deadlines, fire triggered orders the venue takes now ([Broker.acceptsOrders]), then reclaim dead orders.
  *
  * Hot path. Work is keyed by the tick's symbol — O(this symbol's live orders), not O(all live
  * orders) — and every list is a reused scratch buffer, so steady-state allocation is zero. The
@@ -115,6 +115,8 @@ internal class TickEvaluation(
                 triggeredScratch.add(managed)
             }
         }
+        // The venue refuses every order out of session: a crossed trigger waits for the first in-session price.
+        if (triggeredScratch.isNotEmpty() && !broker.acceptsOrders(tick.symbol, now)) triggeredScratch.clear()
         for (i in triggeredScratch.indices) {
             firing.fire(triggeredScratch[i], tick.price)
         }
