@@ -1,3 +1,4 @@
+7d234038d6113d395bfd5a31d595cb5348f174440f1019bcafd25a3b57faca60  attestation/cases/alpaca/alpaca-coin-fee-round-trip/strategy.qkt
 1bccf633f6e18f2ea8edc02cc679688a52c6c61658f235291864ffec4007039b  attestation/cases/alpaca/alpaca-share-bracket-timed-exit/strategy.qkt
 bf573df6eab391f6297982e648cea5acf7397f6a0c530423bd3c2495d87808e7  attestation/cases/alpaca/alpaca-share-drill-flat-restart/strategy.qkt
 5599b3678c22aa0a7a73dab036aee062078679d2f4e58c0a11e0518b5449bf41  attestation/cases/alpaca/alpaca-share-drill-gateway-outage/strategy.qkt
