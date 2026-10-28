@@ -337,6 +337,10 @@ Event `type` and `data`:
 - `costs[].kind` is `commission`, `exchange_fee`, `delivery_fee`, `funding` or `swap`; an adapter
   that cannot report a cost omits it rather than reporting zero. `costs[].amount` is positive when the
   venue charged the account and negative when it credited it (a maker rebate).
+- A cost on a `spot` instrument in its base asset (`BTC` on `BTCUSD`, `BTCUSDT` or `BTC_USDC`) was paid with the coin
+  itself: `quantity` stays the order's executed quantity, as the venue counts it, and the client books the holding
+  as moved by the quantity less the coin fee on a buy, plus it on a sale (Bybit spot and Alpaca coin pairs take a
+  buy's fee in the coin bought).
 - A `fill` is always an execution of an order the client sent. Expiry is not a fill: when a contract
   the account holds or has traded expires, the gateway sends one `settlement` with the price every
   holder settles at (an option's intrinsic value, a future's delivery price) and the costs the venue
