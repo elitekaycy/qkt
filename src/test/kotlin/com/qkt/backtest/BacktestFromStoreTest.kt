@@ -165,6 +165,27 @@ class BacktestFromStoreTest {
     }
 
     @Test
+    fun `a symbol quiet for the whole range trades nothing while the others run`() {
+        // A close-only stock CFD can print no tick for minutes; live it simply sees no quote (2026-10-28, EXNESS:FB).
+        val request =
+            MarketRequest(
+                symbols = listOf("EURUSD", "BTCUSD"),
+                from = Instant.parse("2024-01-16T00:00:00Z"),
+                to = Instant.parse("2024-01-17T00:00:00Z"),
+            )
+        val result =
+            Backtest
+                .fromStore(
+                    strategies =
+                        listOf("test" to EveryNthTickBuyStrategy(symbol = "EURUSD", n = 3, size = Money.of("1"))),
+                    rules = emptyList(),
+                    store = DefaultDataStore(root = sample),
+                    request = request,
+                ).run()
+        assertThat(result.global.tradeCount).isGreaterThan(0)
+    }
+
+    @Test
     fun `BTCUSD empty requested range fails closed`() {
         val store = DefaultDataStore(root = sample)
         val request =
