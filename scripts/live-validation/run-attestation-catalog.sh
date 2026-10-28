@@ -80,8 +80,8 @@ if [[ ",$lanes," == *,shadow,* ]]; then
     magic=$((magic + 1))
 fi
 # The stocks lane trades US shares, so it runs only inside the lane's session window (attestation/lanes.yaml) while
-# the venue still quotes them. Neither alone is enough: Exness quotes AAPL from 06:00 New York but refuses orders
-# until its trade session opens, and only the venue's own last tick can say a holiday or an early close.
+# the venue still quotes them. Neither alone is enough: Exness quotes AAPL from 06:00 New York but refuses opening
+# orders until 09:40, and only the venue's own last tick can say a holiday or an early close.
 stocks_session_open() {
     local tick now
     python3 "$repo_root/scripts/live-validation/lib/in_session_window.py" "$repo_root/attestation/lanes.yaml" stocks || return 1

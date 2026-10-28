@@ -21,7 +21,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
 /**
- * A stock CFD held across a 10-for-1 split (ex 2026-06-09, raw 1000 then 100) on Exness's 06:00-15:45 New York
+ * A stock CFD held across a 10-for-1 split (ex 2026-06-09, raw 1000 then 100) on a 06:00-15:45 New York
  * session: the run reads one adjusted series, so the split is neither a 90% loss nor a 90% fall in its bars, and a
  * dividend paid before the split is per adjusted share. A run ending before the split reads raw prices, and no
  * position is opened in the days before the split ([com.qkt.risk.rules.SplitWindow]).

@@ -7,9 +7,9 @@ import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 
 /**
- * `nyse[06:00-15:45]`, the session Exness quotes US stock CFDs in, as measured from its own bars and ticks
- * (docs/superpowers/specs/2026-10-27-equities-design.md): NYSE trading days, 06:00-15:45 New York, 06:00-13:00 on
- * the exchange's early-close days.
+ * A NYSE session window, `nyse[06:00-15:45]` here (the hours Exness quotes US stock CFDs in): NYSE trading days,
+ * 06:00-15:45 New York, 06:00-13:00 on the exchange's early-close days. The window Exness takes positions in is
+ * pinned in [com.qkt.connector.mt5.MT5ExnessStockCalendarTest].
  */
 class NyseWindowCalendarTest {
     private val cal = TradingCalendar.named("nyse[06:00-15:45]") ?: error("windowed nyse calendar not known")

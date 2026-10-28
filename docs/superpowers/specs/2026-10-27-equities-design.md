@@ -32,9 +32,14 @@ Exness lists 355 symbols; about 140 are US stock CFDs under the path `Standard\S
 
 - NYSE trading days only: closed on every NYSE holiday checked (New Year, 2025-01-09 national day of
   mourning, Good Friday, Memorial Day, Juneteenth, Independence Day observed, Thanksgiving, Christmas).
-- Regular days: **06:00-15:45 America/New_York** (10:00-19:45 UTC in summer, 11:00-20:45 UTC in
-  winter). Pre-market from 06:00; the last quarter hour of the NYSE session is not traded.
-- NYSE early-close days (day after Thanksgiving, Christmas Eve): **06:00-13:00 New York**, the NYSE
+- Regular days: **quoted 06:00-15:45 America/New_York** (10:00-19:45 UTC in summer, 11:00-20:45 UTC in
+  winter); the last quarter hour of the NYSE session is not quoted.
+- **Correction 2026-10-28 (order probes on the demo):** bars and ticks show the quote session, not the trade
+  session. Exness refuses opening orders, market and pending, with MT5 retcode 10044 (`CLOSE_ONLY`, comment
+  "session closed") until **09:40 New York**: refused at 13:39:52 UTC, taken at 13:40:13 UTC (a 2022 Exness notice
+  gives the winter equivalent, 14:40 GMT). The trade session, and the profile's window, is `nyse[09:40-15:45]`.
+  The close is checked by a probe at 19:35-20:05 UTC.
+- NYSE early-close days (day after Thanksgiving, Christmas Eve): **06:00-13:00 New York** quoted, the NYSE
   early close itself (last M5 bar 17:55 UTC on 2025-11-28 and 2025-12-24).
 - DST follows New York (2025-10-31 10-19 UTC, 2025-11-03 11-20 UTC).
 - History depth on the gateway: ticks and M1 from about 2026-03, H1 from 2025.

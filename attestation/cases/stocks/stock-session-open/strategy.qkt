@@ -4,8 +4,8 @@ SYMBOLS
     aapl = EXNESS:AAPL EVERY 1m
 
 RULES
-    -- Started before the 06:00 New York open: nothing to evaluate until the stock session opens, then the
-    -- first closed bar of the session buys one share.
+    -- Started before the 09:40 New York open: the buy decided on each pre-open quote bar is refused before the
+    -- venue, and the first closed bar of the session buys one share.
     WHEN aapl.close > 0 AND POSITION.aapl = 0 AND TRADES.today = 0
     THEN BUY aapl SIZING 0.01
 

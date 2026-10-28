@@ -32,7 +32,7 @@ class CalendarResolverCategoryTest {
         val cfg = Config.load(dir.resolve("absent.yaml"))
         val registry = instruments(dir, "EXNESS:AAPL" to "Stocks", "EXNESS:MSFT" to null, "EXNESS:EURUSD" to "Forex")
         val calendars = cfg.backtestCalendars(null, registry)
-        assertThat(calendars.calendarFor("EXNESS:AAPL").name).isEqualTo("nyse[06:00-15:45]")
+        assertThat(calendars.calendarFor("EXNESS:AAPL").name).isEqualTo("nyse[09:40-15:45]")
         assertThat(calendars.choose("EXNESS:AAPL").source).isEqualTo("exness calendars 'category:Stocks'")
         assertThat(calendars.calendarFor("EXNESS:MSFT")).isSameAs(calendars.calendarFor("EXNESS:EURUSD"))
         assertThat(calendars.calendarFor("EXNESS:BTCUSD")).isEqualTo(TradingCalendar.crypto())
@@ -51,6 +51,6 @@ class CalendarResolverCategoryTest {
         val registry = instruments(dir, "EXNESS:AAPL" to "Stocks", "EXNESS:NVDA" to "Stocks")
         val calendars = Config.load(file).backtestCalendars(null, registry)
         assertThat(calendars.calendarFor("EXNESS:AAPL")).isEqualTo(TradingCalendar.nyse())
-        assertThat(calendars.calendarFor("EXNESS:NVDA").name).isEqualTo("nyse[06:00-15:45]")
+        assertThat(calendars.calendarFor("EXNESS:NVDA").name).isEqualTo("nyse[09:40-15:45]")
     }
 }

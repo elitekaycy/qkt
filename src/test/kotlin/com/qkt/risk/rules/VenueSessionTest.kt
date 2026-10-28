@@ -14,8 +14,8 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
 /**
- * A venue refuses every order outside a symbol's trading session (Exness quotes US stock CFDs from 06:00 New York but
- * answers MT5 retcode 10044 "session closed" until the regular open); qkt refuses them first, closes included.
+ * A venue refuses orders outside a symbol's trading session (Exness quotes US stock CFDs from 06:00 New York but
+ * answers MT5 retcode 10044 "session closed" to an opening order until 09:40); qkt refuses them first, closes included.
  */
 class VenueSessionTest {
     private val ledger = StrategyPositionTracker()

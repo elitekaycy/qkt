@@ -153,7 +153,7 @@ interface Broker : VenueReads {
     /**
      * Whether this venue takes an order on [symbol] at [nowMs]. Outside a symbol's trading session a venue refuses
      * every order, closing ones included (Exness quotes US stock CFDs from 06:00 New York and answers MT5 retcode
-     * 10044 "session closed" until the regular open), so qkt refuses them first ([com.qkt.risk.rules.VenueSession])
+     * 10044 "session closed" to an opening order until 09:40), so qkt refuses them first ([com.qkt.risk.rules.VenueSession])
      * and holds engine-held triggers until it opens. A venue that knows each symbol's sessions
      * ([SymbolSessionProvider]) answers from them; any other takes orders at all times, as do the in-process venues
      * unless a replay gives them sessions.

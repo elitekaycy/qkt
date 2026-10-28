@@ -32,14 +32,17 @@ with quotes frozen in 2023. qkt refuses an opening order on them before the venu
 
 ## Hours
 
-Exness quotes US stock CFDs **06:00-15:45 New York** on NYSE trading days, **06:00-13:00** on the exchange's
-early-close days, and not at all on NYSE holidays. The `exness` profile gives every symbol in its `Stocks` folder
-that session (`nyse[06:00-15:45]`), so nothing needs configuring:
+Exness takes new positions in US stock CFDs **09:40-15:45 New York** on NYSE trading days, **09:40-13:00** on the
+exchange's early-close days, and not at all on NYSE holidays. It quotes them from 06:00, but until 09:40 it is
+close-only: an opening order there is refused with MT5 retcode 10044 ("session closed"). The `exness` profile gives
+every symbol in its `Stocks` folder that session (`nyse[09:40-15:45]`), so nothing needs configuring. A strategy still
+sees the pre-open bars; an order it sends before 09:40 is refused, in a backtest as live
+([trading only in session](../concepts/trading-calendars.md#trading-only-in-session)):
 
 ```console
 $ qkt calendars my_stocks.qkt --config qkt.config.yaml
 symbol       calendar            source
-EXNESS:AAPL  nyse[06:00-15:45]   exness calendars 'category:Stocks'
+EXNESS:AAPL  nyse[09:40-15:45]   exness calendars 'category:Stocks'
 ```
 
 A `DAY` order expires at that session's end (15:45 New York), and one placed after the close lives through the

@@ -10,8 +10,8 @@ import java.time.ZoneId
 /**
  * NYSE trading days with a session window in America/New_York: the days [NyseSessions] says the exchange trades,
  * each open from [open] to [close], except that on an early-close day the session ends at the exchange's early close
- * when [close] is later. `nyse` itself is the 09:30-16:00 window; a broker quoting stock CFDs from 06:00 to 15:45
- * New York is `nyse[06:00-15:45]`. Daylight saving follows the zone.
+ * when [close] is later. `nyse` itself is the 09:30-16:00 window; a broker taking stock CFD positions from 09:40 to 15:45
+ * New York is `nyse[09:40-15:45]`. Daylight saving follows the zone.
  */
 open class NyseWindowCalendar(
     val open: LocalTime,

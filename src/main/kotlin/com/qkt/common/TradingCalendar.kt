@@ -96,7 +96,7 @@ interface TradingCalendar {
 
         /**
          * The calendar called [name] — `crypto`, `fx`, `nyse`, `cme_globex`, or NYSE days with a New York session
-         * window, `nyse[06:00-15:45]` ([NyseWindowCalendar]) — or null.
+         * window, `nyse[09:40-15:45]` ([NyseWindowCalendar]) — or null.
          */
         fun named(name: String): TradingCalendar? =
             when (name) {

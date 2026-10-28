@@ -15,8 +15,9 @@ import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.EnumSource
 
 /**
- * Exness prints AAPL from 06:00 New York but refuses every order until the 09:30 open (MT5 retcode 10044). A backtest
- * over those prints evaluates the pre-market bars, as live does, but trades only in session: a market entry decided
+ * Exness prints AAPL from 06:00 New York but refuses opening orders until 09:40 (MT5 retcode 10044); this test's
+ * session is the 09:30 regular open. A backtest over those prints evaluates the pre-market bars, as live does, but
+ * trades only in session: a market entry decided
  * at 06:01 is refused, and a trailing stop the pre-market drop crosses fires on the first in-session tick.
  */
 class SessionGateBacktestTest {

@@ -22,7 +22,7 @@ import org.junit.jupiter.api.Test
 
 /**
  * A resting order the venue holds does not fill on a quote outside its symbol's session (Exness prints US stock CFDs
- * from 06:00 New York but trades them from the regular open): it fills on the first in-session price, as at the open.
+ * from 06:00 New York but takes positions from 09:40): it fills on the first in-session price, as at the open.
  */
 class SessionClosedFillTest {
     private val stock = requireNotNull(TradingCalendar.named("nyse[09:30-15:45]"))

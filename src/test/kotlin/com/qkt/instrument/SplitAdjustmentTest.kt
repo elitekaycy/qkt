@@ -7,7 +7,7 @@ import java.time.LocalDate
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
-/** Split factors on Exness's stock session (06:00-15:45 New York, 10:00 UTC in June): cumulative, horizon-bound. */
+/** Split factors on a stock session window (06:00-15:45 New York, 10:00 UTC in June): cumulative, horizon-bound. */
 class SplitAdjustmentTest {
     private val calendar = TradingCalendar.named("nyse[06:00-15:45]") ?: error("windowed nyse")
     private val two = CorporateAction.Split(LocalDate.parse("2026-06-09"), BigDecimal(2))

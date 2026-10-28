@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test
 
 /**
  * Exness files its US stock CFDs under `Standard\Stocks\`, and the built-in profile gives every symbol there the
- * session Exness quotes them in. Checked against the venue's whole symbol list as captured on 2026-10-27
+ * session Exness takes new positions in. Checked against the venue's whole symbol list as captured on 2026-10-27
  * (`mt5/exness-symbols-2026-10-27.tsv`): every stock moves to the stock session, and every other symbol keeps
  * exactly the calendar it had before.
  */
@@ -33,11 +33,11 @@ class MT5ExnessStockCalendarTest {
     private val withCategories = exness.withCategories { bare -> listed.firstOrNull { it.bare == bare }?.category }
 
     @Test
-    fun `every Exness stock trades the 06_00-15_45 New York session and nothing else moves`() {
+    fun `every Exness stock trades the 09_40-15_45 New York session and nothing else moves`() {
         val stocks = listed.filter { it.category == "Stocks" }
         assertThat(stocks).hasSize(102)
         for (s in stocks) {
-            assertThat(withCategories.calendarFor(s.bare).name).describedAs(s.bare).isEqualTo("nyse[06:00-15:45]")
+            assertThat(withCategories.calendarFor(s.bare).name).describedAs(s.bare).isEqualTo("nyse[09:40-15:45]")
         }
         for (s in listed - stocks.toSet()) {
             assertThat(withCategories.calendarFor(s.bare)).describedAs(s.bare).isSameAs(exness.calendarFor(s.bare))
@@ -47,7 +47,20 @@ class MT5ExnessStockCalendarTest {
     }
 
     @Test
-    fun `the stock session is closed outside 06_00-15_45 New York and on NYSE holidays`() {
+    fun `the session opens at 09_40 New York, where the venue first took an opening order`() {
+        val aapl = withCategories.calendarFor("AAPL")
+        // 2026-10-28 order probes: quoted but refused (retcode 10044) at 11:31 and 13:39:52 UTC, taken at 13:40:13.
+        assertThat(aapl.isInSession("AAPL", Instant.parse("2026-10-28T11:31:00Z"))).isFalse()
+        assertThat(aapl.isInSession("AAPL", Instant.parse("2026-10-28T13:39:52Z"))).isFalse()
+        assertThat(aapl.isInSession("AAPL", Instant.parse("2026-10-28T13:40:00Z"))).isTrue()
+        assertThat(aapl.isInSession("AAPL", Instant.parse("2026-10-28T13:40:13Z"))).isTrue()
+        // New York winter time: 09:40 is 14:40 UTC.
+        assertThat(aapl.isInSession("AAPL", Instant.parse("2026-11-02T14:39:00Z"))).isFalse()
+        assertThat(aapl.isInSession("AAPL", Instant.parse("2026-11-02T14:40:00Z"))).isTrue()
+    }
+
+    @Test
+    fun `the stock session is closed outside 09_40-15_45 New York and on NYSE holidays`() {
         val aapl = withCategories.calendarFor("AAPL")
         assertThat(aapl.isInSession("AAPL", Instant.parse("2026-10-26T14:00:00Z"))).isTrue()
         assertThat(aapl.isInSession("AAPL", Instant.parse("2026-10-26T20:00:00Z"))).isFalse()
@@ -64,7 +77,7 @@ class MT5ExnessStockCalendarTest {
         val overridden =
             withCategories.overriddenBy(listOf(SymbolCalendars.Rule("AAPL", TradingCalendar.nyse())))
         assertThat(overridden.calendarFor("AAPL")).isSameAs(TradingCalendar.nyse())
-        assertThat(overridden.calendarFor("MSFT").name).isEqualTo("nyse[06:00-15:45]")
+        assertThat(overridden.calendarFor("MSFT").name).isEqualTo("nyse[09:40-15:45]")
         assertThat(overridden.ruleFor("MSFT")?.pattern).isEqualTo("category:Stocks")
     }
 

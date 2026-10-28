@@ -52,10 +52,12 @@ object MT5DefaultProfiles {
     private val NY_CLOSE_FX = pause(TradingCalendar.fxDefault(), LocalTime.of(16, 55), LocalTime.of(17, 15), NEW_YORK)
 
     /**
-     * Exness US stock CFDs (path `Standard\Stocks\`) trade NYSE days 06:00-15:45 New York, to 13:00 on the exchange's
-     * early-close days, measured from its bars and ticks 2025-01 to 2026-10 (docs/superpowers/specs/2026-10-27-equities-design.md).
+     * Exness US stock CFDs (path `Standard\Stocks\`) take new positions NYSE days 09:40-15:45 New York, to 13:00 on the
+     * exchange's early-close days. The venue quotes them from 06:00 but is close-only until 09:40: an opening order
+     * there is refused with MT5 retcode 10044 (`CLOSE_ONLY`, comment "session closed"), measured 2026-10-28 with order
+     * probes (refused 09:39:52, taken 09:40:13; docs/superpowers/specs/2026-10-27-equities-design.md).
      */
-    private val EXNESS_US_STOCKS = NyseWindowCalendar(LocalTime.of(6, 0), LocalTime.of(15, 45))
+    private val EXNESS_US_STOCKS = NyseWindowCalendar(LocalTime.of(9, 40), LocalTime.of(15, 45))
 
     /** Exness copper follows London: last print 18:55 BST, first print 01:02 BST. */
     private val EXNESS_COPPER = pause(TradingCalendar.fxDefault(), LocalTime.of(18, 50), LocalTime.of(1, 10), LONDON)

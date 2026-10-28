@@ -17,7 +17,7 @@ import org.junit.jupiter.api.Test
 
 /**
  * A stock CFD held into its ex-date session is paid the dividend, a short pays it, and one opened after the ex-date
- * session began gets nothing: AAPL 0.26 USD a share, ex 2026-10-27, on Exness's 06:00-15:45 New York session.
+ * session began gets nothing: AAPL 0.26 USD a share, ex 2026-10-27, on a 06:00-15:45 New York session window.
  */
 class DividendBacktestTest {
     private val aapl =

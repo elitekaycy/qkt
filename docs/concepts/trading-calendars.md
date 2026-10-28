@@ -33,9 +33,9 @@ Bars do **not** use a calendar: they sit on a fixed UTC grid, so a 1h bar always
 Every calendar follows daylight saving through its time zone. NYSE closes early at 13:00 on July 3 and December 24
 when they fall Monday to Thursday and on the Friday after Thanksgiving; its one-off closures are the September 2001
 attacks, the national days of mourning (2004-06-11, 2007-01-02, 2018-12-05, 2025-01-09) and Hurricane Sandy
-(2012-10-29 and 30). A venue that quotes stocks outside the regular session takes a window: Exness quotes its US
-stock CFDs 06:00-15:45 New York (`nyse[06:00-15:45]`, measured from its own bars and ticks), a broker with pre- and
-after-market hours `nyse[04:00-20:00]`. A window must open before 13:00, so every trading day has a session.
+(2012-10-29 and 30). A venue whose stock session is not the regular one takes a window: Exness takes positions in its
+US stock CFDs 09:40-15:45 New York (`nyse[09:40-15:45]`, measured with order probes; it quotes them from 06:00 but is
+close-only until 09:40), a broker with pre- and after-market trading `nyse[04:00-20:00]`. A window must open before 13:00, so every trading day has a session.
 
 ## How a symbol gets its calendar
 
@@ -87,7 +87,7 @@ covers a broker's whole stock list; a symbol rule is tried first, so one stock c
 The category is part of the instrument's spec, read live from the venue and in a backtest from `category:` in
 `instruments.yaml`, which `qkt instruments pull` writes.
 
-The `exness` profile ships `category:Stocks -> nyse[06:00-15:45]`, so `EXNESS:AAPL` trades Exness's stock session
+The `exness` profile ships `category:Stocks -> nyse[09:40-15:45]`, so `EXNESS:AAPL` trades Exness's stock session
 with no configuration. Another venue declares its hours on its broker entry, which both modes read:
 
 ```yaml
@@ -101,9 +101,9 @@ brokers:
 
 ## Trading only in session
 
-A venue refuses every order outside a symbol's session, closing ones included: Exness quotes US stock CFDs from
-06:00 New York but answers MT5 retcode 10044 "session closed" to every order until the regular open. qkt follows
-the venue in both modes:
+A venue refuses orders outside a symbol's session: Exness quotes US stock CFDs from 06:00 New York but answers MT5
+retcode 10044 (`CLOSE_ONLY`, "session closed") to an opening order until 09:40. qkt follows the venue in both modes,
+and refuses closing orders out of session too, so a backtest never books a close the venue might not fill:
 
 - **Orders a strategy sends** outside the symbol's session are refused before the venue, in backtest and live
   (`VenueSession`, one of the always-on pre-trade controls). A refused close is decided again on the strategy's next

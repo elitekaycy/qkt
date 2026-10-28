@@ -14,7 +14,7 @@ import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.EnumSource
 
 /**
- * A DAY limit placed during one stock-CFD session is gone by the next: Exness's 06:00-15:45 New York session, a limit
+ * A DAY limit placed during one stock-CFD session is gone by the next: a 06:00-15:45 New York session window, a limit
  * at 300 placed Monday with AAPL at 346, and Tuesday opening at 299. A GTC limit fills on Tuesday's open; a DAY limit
  * was cancelled at Monday's 19:45 UTC close. mt5-sim used to keep a DAY order resting like GTC.
  */

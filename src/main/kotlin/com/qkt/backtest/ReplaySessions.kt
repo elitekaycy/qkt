@@ -7,7 +7,7 @@ import java.time.Instant
  * Whether a replayed symbol's venue takes orders at an instant: when the symbol is inside its session under the run's
  * [calendar], the calendar a live deploy resolves for it. The replay venues ask it before filling a resting order and
  * the [com.qkt.risk.rules.VenueSession] rule before an order is sent, so a backtest over quotes a venue prints outside
- * its trade session (Exness AAPL from 06:00 New York, tradable from 09:30) trades only where live could.
+ * its trade session (Exness quotes AAPL from 06:00 New York, takes positions from 09:40) trades only where live could.
  *
  * A symbol a bar drives ([BarFills.windows]) is judged by its bar: the bar trades when any minute of it is in session.
  * Its synthetic open, extremes and close carry made-up stamps inside the bar (a daily FX bar's close is stamped 23:59
