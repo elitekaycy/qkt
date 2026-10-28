@@ -10,6 +10,7 @@ A calendar answers questions about one symbol at one moment, and one question ab
 | Question | Used by |
 |---|---|
 | Is the market open now? | the live market-data gate (a quote gap while closed is not a fault), feed polling, data coverage |
+| Does the venue take an order now? | the session rule and the backtest fills ([Trading only in session](#trading-only-in-session)) |
 | Is this a planned daily pause? | the live market-data gate (a gap in the metals pause is `PAUSED`, not `STALE`) |
 | Is this day a holiday, or can it close early? | data coverage: which days must hold data |
 | When does this trading day end? | `DAY` orders expire at their symbol's session end |
@@ -97,6 +98,32 @@ brokers:
     calendars:
       "category:us_equity": nyse[04:00-20:00]
 ```
+
+## Trading only in session
+
+A venue refuses every order outside a symbol's session, closing ones included: Exness quotes US stock CFDs from
+06:00 New York but answers MT5 retcode 10044 "session closed" to every order until the regular open. qkt follows
+the venue in both modes:
+
+- **Orders a strategy sends** outside the symbol's session are refused before the venue, in backtest and live
+  (`VenueSession`, one of the always-on pre-trade controls). A refused close is decided again on the strategy's next
+  bar, as after the venue's refusal.
+- **Resting orders** (limits, stops, bracket legs) do not fill on a quote outside the session in a backtest; they
+  fill on the first in-session price, as the venue fills them at the open. **Engine-held triggers** (trailing stops,
+  engine-held stops and stack layers) wait for the session in both modes instead of firing an order the venue would
+  refuse.
+- **Strategies still evaluate** every bar the data holds, out-of-session bars included: live receives those quotes
+  too, so indicators see the same bars in both modes. Only trading waits.
+
+A backtest judges a quote replayed from a recording at its own time. A bar replayed as synthetic ticks (`--bars`, or a
+symbol with no ticks) is judged by its bar, whose ticks carry made-up times inside it: the bar trades when any minute
+of it is in session. A one-minute pre-market stock bar is outside; a daily FX bar is inside although its close is
+stamped after the 17:00 New York close.
+
+Live, an MT5 account answers from its profile's calendars (`calendars:` on the broker entry, else the profile's own).
+A venue gateway decides for itself: qkt sends its orders whatever the hour, and futures and options on the exchange
+stack are not gated in a backtest either. Time exits, halt flattening and margin liquidation send closes at the time
+they fall due; outside a session a backtest fills them where the venue would refuse them.
 
 ## Strategies that trade several markets
 
