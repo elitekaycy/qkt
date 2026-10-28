@@ -21,6 +21,11 @@ drills:
 - at_s: 60
   kind: gateway_outage
   seconds: 90
+# A new deployment's first day caps entries at 0.01 (risk.measured_usage_*); a share is quantity 1, so the window
+# stays on with a one-share cap rather than refusing every entry.
+config:
+  risk:
+    measured_usage_max_qty: "1"
 assertions:
 - flat-account
 - deals-net-equals-realized
