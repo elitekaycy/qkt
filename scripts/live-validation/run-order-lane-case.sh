@@ -239,23 +239,15 @@ if ! "$cli" bot history --broker exness --since "$started_ms" --config "$out/qkt
 fi
 jq -e 'has("realized")' "$out/evidence/status-final.json" > /dev/null 2>&1 ||
     problems+=("the final strategy status carries no realized P&L")
-# Venue history is account-wide and a closing deal carries no comment, so ownership goes by
-# position ticket: every ticket whose opening deal carries this strategy's order comment (the
-# venue truncates comments, hence the two-way prefix match), then every deal on those tickets.
-deal_net="$(jq -r --arg prefix "dsl-$strategy" '
-    ([.[] | select(.entry == "IN") | select((.comment // "") as $c | ($c | length) > 4 and
-        (($c | startswith($prefix)) or ($prefix | startswith($c)))) | .positionTicket] | unique) as $owned |
-    [.[] | select(.positionTicket as $t | $owned | index($t)) |
-        ((.profit // 0) + (.commission // 0) + (.swap // 0) + (.fee // 0))] | add // 0
-' "$out/evidence/history.json" | awk '{printf "%.2f", $1}')"
+# The strategy's venue deals by position ticket, under both order-id forms the engine uses (lib/owned-deals.jq).
+prefixes="$(jq -cn --arg s "$strategy" '["dsl-" + $s, "ORD-" + $s + "-"]')"
+deal_net="$(jq -r -L "$repo_root/scripts/live-validation/lib" --argjson prefixes "$prefixes" \
+    'include "owned-deals"; deal_net($prefixes)' "$out/evidence/history.json" | awk '{printf "%.2f", $1}')"
 engine_realized="$({ jq -r '.realized // 0' "$out/evidence/status-final.json" 2>/dev/null || echo 0; } | awk '{printf "%.2f", $1}')"
 # The venue truncates every closing deal's profit to whole cents while the engine keeps exact
 # values, so the two may differ by up to one cent per closing deal - and by no more than that.
-closing_deals="$(jq -r --arg prefix "dsl-$strategy" '
-    ([.[] | select(.entry == "IN") | select((.comment // "") as $c | ($c | length) > 4 and
-        (($c | startswith($prefix)) or ($prefix | startswith($c)))) | .positionTicket] | unique) as $owned |
-    [.[] | select(.entry != "IN") | select(.positionTicket as $t | $owned | index($t))] | length
-' "$out/evidence/history.json")"
+closing_deals="$(jq -r -L "$repo_root/scripts/live-validation/lib" --argjson prefixes "$prefixes" \
+    'include "owned-deals"; closing_deals($prefixes)' "$out/evidence/history.json")"
 awk -v e="${engine_realized:-0}" -v d="$deal_net" -v n="$closing_deals" 'BEGIN { diff = e - d; if (diff < 0) diff = -diff; exit !(diff <= n * 0.01 + 0.000001) }' ||
     problems+=("engine realized $engine_realized differs from venue deal net $deal_net by more than one cent per closing deal ($closing_deals)")
 
@@ -307,9 +299,9 @@ fi
 # Optional per-case expectations: the exact fills (`expect_fills`, as a multiset of "SIDE QTY"), the expiry each
 # resting order carries at the venue (`expect_pending_expiration`), and when the first fill may come
 # (`expect_first_fill_within`, from the venue's own deal times).
-while IFS= read -r problem; do [ -n "$problem" ] && problems+=("$problem"); done < <(python3 - "$case_dir/case.yaml" "$out/evidence" "$magic" "dsl-$strategy" <<'PY'
+while IFS= read -r problem; do [ -n "$problem" ] && problems+=("$problem"); done < <(python3 - "$case_dir/case.yaml" "$out/evidence" "$magic" "dsl-$strategy" "ORD-$strategy-" <<'PY'
 import datetime as dt, json, os, sys, yaml, zoneinfo
-case, ev, magic, prefix = yaml.safe_load(open(sys.argv[1])), sys.argv[2], int(sys.argv[3]), sys.argv[4]
+case, ev, magic, prefixes = yaml.safe_load(open(sys.argv[1])), sys.argv[2], int(sys.argv[3]), sys.argv[4:6]
 def local_today(spec):
     hhmm, zone = spec.split()
     tz = zoneinfo.ZoneInfo(zone); h, m = map(int, hhmm.split(":"))
@@ -333,7 +325,7 @@ spec = case.get("expect_first_fill_within")
 if spec:
     history = json.load(open(f"{ev}/history.json"))
     # The venue truncates comments, hence the two-way prefix match the deal net above uses.
-    ours = lambda c: len(c) > 4 and (c.startswith(prefix) or prefix.startswith(c))
+    ours = lambda c: len(c) > 4 and any(c.startswith(p) or p.startswith(c) for p in prefixes)
     entries = sorted(d["timeMs"] for d in history if d.get("entry") == "IN" and ours(d.get("comment") or ""))
     opened = int(local_today(spec["after"]).timestamp() * 1000)
     if not entries:
