@@ -79,16 +79,18 @@ if [[ ",$lanes," == *,shadow,* ]]; then
         ${crypto_symbols:+--crypto-symbols}
     magic=$((magic + 1))
 fi
-# The stocks lane trades US shares, so it runs only while the venue quotes them: the venue's own last AAPL tick is
-# the evidence, not a clock, because a holiday or an early close is the venue's to say.
+# The stocks lane trades US shares, so it runs only inside the lane's session window (attestation/lanes.yaml) while
+# the venue still quotes them. Neither alone is enough: Exness quotes AAPL from 06:00 New York but refuses orders
+# until its trade session opens, and only the venue's own last tick can say a holiday or an early close.
 stocks_session_open() {
     local tick now
+    python3 "$repo_root/scripts/live-validation/lib/in_session_window.py" "$repo_root/attestation/lanes.yaml" stocks || return 1
     tick="$(curl --silent --fail --max-time 10 "$gateway_url/symbol_info_tick/AAPLm" | python3 -c 'import json,sys; print(int(json.load(sys.stdin).get("time", 0)))' 2>/dev/null)" || return 1
     now="$(date +%s)"
     [ $((now - tick)) -lt 120 ]
 }
 if [[ ",$lanes," == *,stocks,* ]] && ! stocks_session_open; then
-    fail "the stocks lane needs the US session open (06:00-15:45 New York): the venue's last AAPL quote is stale"
+    fail "the stocks lane needs the venue's US share session open ($(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["lanes"]["stocks"]["session"])' "$repo_root/attestation/lanes.yaml") New York) and a fresh AAPL quote"
 fi
 for lane in orders stocks risk book engine daemon stress; do
     [[ ",$lanes," == *,"$lane",* ]] || continue

@@ -127,7 +127,8 @@ if [ -n "${deriv_gateway_url:-}" ]; then
     deriv=(--deriv-gateway-url "$deriv_gateway_url" --deriv-expected-login "${deriv_expected_login:?profile sets deriv_gateway_url without deriv_expected_login}")
 fi
 # A profile with attest_stocks=true adds the stocks lane (US share CFDs on the same MT5 account); it must run inside
-# the 06:00-15:45 New York session, so the catalog refuses it while the venue's AAPL quote is stale.
+# the lane's session window (attestation/lanes.yaml), so the catalog refuses it outside that window or while the
+# venue's AAPL quote is stale.
 if [ "${attest_stocks:-false}" = true ]; then lanes="$lanes,stocks"; fi
 if [ -n "${bybit_gateway_url:-}" ]; then
     lanes="$lanes,bybit"
