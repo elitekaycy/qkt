@@ -50,7 +50,14 @@ internal object ReplayFeeds {
                 "preserve MT5 trigger prices or market spread. Provide ticks for them, or use --bars --tick-fills"
         }
         // Tick-resolved fills fill on real ticks; a bar without ticks fills at its levels instead (#1439).
-        return feed to if (tickFills) BarFills(emptySet(), NoTickBars(positionSign)) else BarFills(synthesized)
+        val driven = if (tickFills) symbols else synthesized
+        val windows = driven.mapNotNull { s -> (barWindows[s] ?: candleWindow)?.let { s to it } }.toMap()
+        return feed to
+            if (tickFills) {
+                BarFills(emptySet(), NoTickBars(positionSign), windows)
+            } else {
+                BarFills(synthesized, windows = windows)
+            }
     }
 
     /** One feed per symbol in [symbols], merged when there is more than one. */

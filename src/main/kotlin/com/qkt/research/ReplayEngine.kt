@@ -170,7 +170,7 @@ class ReplayEngine(
                 books = books,
                 clock = clock,
                 bus = bus,
-                instruments = instruments,
+                acceptsOrders = broker::acceptsOrders,
                 startingBalance = startingBalance,
                 startingBalances = startingBalances,
                 dailyDdBasis = dailyDdBasis,

@@ -151,6 +151,19 @@ interface Broker : VenueReads {
     ): Boolean = false
 
     /**
+     * Whether this venue takes an order on [symbol] at [nowMs]. Outside a symbol's trading session a venue refuses
+     * every order, closing ones included (Exness quotes US stock CFDs from 06:00 New York and answers MT5 retcode
+     * 10044 "session closed" until the regular open), so qkt refuses them first ([com.qkt.risk.rules.VenueSession])
+     * and holds engine-held triggers until it opens. A venue that knows each symbol's sessions
+     * ([SymbolSessionProvider]) answers from them; any other takes orders at all times, as do the in-process venues
+     * unless a replay gives them sessions.
+     */
+    fun acceptsOrders(
+        symbol: String,
+        nowMs: Long,
+    ): Boolean = (this as? SymbolSessionProvider)?.symbolInSession(symbol, nowMs) ?: true
+
+    /**
      * Phase 38: when true, this broker submits GTD orders with a venue-side expiration and
      * the venue self-cancels at the deadline; the engine's deadline-sweep in
      * [com.qkt.app.OrderManager] skips orders routed through this broker. When false
@@ -169,30 +182,3 @@ interface MarginLevelProvider {
     /** Whether margin-level reads are supported for this broker composition. */
     val supportsMarginLevel: Boolean
 }
-
-/**
- * Fields a strategy or operator can change on a working order.
- *
- * Only non-null fields are applied; brokers ignore unset ones.
- */
-data class OrderModification(
-    val newQuantity: BigDecimal? = null,
-    val newLimitPrice: BigDecimal? = null,
-    val newStopPrice: BigDecimal? = null,
-)
-
-/**
- * A position-ledger leg pinned to a venue ticket, as the broker needs to see it: enough to
- * synthesize the venue close the engine missed when the ticket is gone.
- */
-data class BookedLeg(
-    val strategyId: String,
-    val legId: String,
-    val ticket: String,
-    /** qkt symbol with broker prefix, e.g. "EXNESS:XAUUSD". */
-    val symbol: String,
-    val side: com.qkt.common.Side,
-    val quantity: java.math.BigDecimal,
-    val entryPrice: java.math.BigDecimal,
-    val openedAt: Long,
-)

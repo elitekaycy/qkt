@@ -55,9 +55,16 @@ class PaperBroker(
      * constructions; backtests wire [ExecutionSimulationConfig.positionMode].
      */
     private val positionMode: PositionAccountingMode = PositionAccountingMode.NETTING,
+    /** Whether a symbol trades at an instant ([com.qkt.backtest.ReplaySessions]); resting orders fill only then. */
+    private val session: (symbol: String, atMs: Long) -> Boolean = { _, _ -> true },
 ) : Broker,
     VenueDescribed by PaperVenue {
     override fun positionAccountingMode(symbol: String): PositionAccountingMode = positionMode
+
+    override fun acceptsOrders(
+        symbol: String,
+        nowMs: Long,
+    ): Boolean = session(symbol, nowMs)
 
     private val log = LoggerFactory.getLogger(PaperBroker::class.java)
 
@@ -165,7 +172,7 @@ class PaperBroker(
             request.quantity
                 .divide(meta.volumeStep, 0, RoundingMode.DOWN)
                 .multiply(meta.volumeStep)
-        return if (quantity.signum() == 0 || quantity < meta.volumeMin) null else request.withQuantity(quantity)
+        return if (quantity.signum() == 0 || quantity < meta.volumeMin) null else request.withVolume(quantity)
     }
 
     private fun rejectBelowMinimum(request: OrderRequest): SubmitAck {
@@ -222,6 +229,8 @@ class PaperBroker(
             val req = working[i]
             if (req.symbol == tick.symbol && checkTrigger(req, tick)) toFillScratch.add(req)
         }
+        // A venue fills nothing out of session: a touched order keeps resting for the first in-session price.
+        if (toFillScratch.isNotEmpty() && !session(tick.symbol, tick.timestamp)) return
         for (i in toFillScratch.indices) {
             val wo = toFillScratch[i]
             // A synchronous fill callback may cancel an OCO sibling that is also present in
@@ -382,14 +391,4 @@ class PaperBroker(
             ),
         )
     }
-
-    private fun OrderRequest.withQuantity(quantity: BigDecimal): OrderRequest =
-        when (this) {
-            is OrderRequest.Market -> copy(quantity = quantity)
-            is OrderRequest.Limit -> copy(quantity = quantity)
-            is OrderRequest.Stop -> copy(quantity = quantity)
-            is OrderRequest.StopLimit -> copy(quantity = quantity)
-            is OrderRequest.IfTouched -> copy(quantity = quantity)
-            else -> error("PaperBroker received unexpected order type: ${this::class.simpleName}")
-        }
 }
