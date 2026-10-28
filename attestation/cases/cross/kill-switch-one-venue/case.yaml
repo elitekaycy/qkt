@@ -3,7 +3,7 @@ title: The gateway's kill switch is on while the MT5 leg closes, re-enters and c
 why: 'A kill switch is one venue''s, outside qkt: while it refuses new risk on the gateway, the daemon must keep
   trading the MT5 account (a refusal or a halt that spreads to every venue is the bug), still close the gateway leg
   with a reducing order, and book every venue exactly as it filled.'
-status: planned
+status: ready
 venues:
 - label: EXNESS
   type: mt5

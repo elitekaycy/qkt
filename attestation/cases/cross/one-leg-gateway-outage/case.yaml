@@ -3,7 +3,7 @@ title: The gateway is unreachable while the MT5 leg closes, re-enters and closes
 why: 'A daemon trading two venues loses one: if the gateway''s outage stalls the engine, fails every venue closed or
   halts the strategy, the MT5 leg stops trading; if the gateway leg comes back with a lost or doubled fill, its
   realized drifts from the venue. The MT5 leg must trade through the outage and the gateway leg close after it.'
-status: planned
+status: ready
 venues:
 - label: EXNESS
   type: mt5
