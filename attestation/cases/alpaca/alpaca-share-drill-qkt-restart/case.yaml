@@ -1,0 +1,32 @@
+id: alpaca-share-drill-qkt-restart
+title: A qkt daemon restart while one AAPL share is held
+why: 'After a restart over a held share the engine must adopt the Alpaca position, re-arm its bracket and let its
+  own exit close it: one closing fill, not an opposite order, and fills, ids and realized equal to the venue''s.'
+status: ready
+symbols:
+- ALPACA:AAPL
+timeframes:
+- 1m
+warmup_bars:
+  1m: 3
+proves:
+- behaviour:market-entry
+- behaviour:bracket
+- behaviour:timed-exit
+- behaviour:graceful-restart
+- behaviour:state-recovery
+- behaviour:cash-equity
+fills: 2
+replay: bars
+drills:
+- at_s: 60
+  kind: qkt_restart
+  down_s: 20
+assertions:
+- flat-account
+- deals-net-equals-realized
+- replay-same-fills
+- venue-fills-equal-qkt-fills
+- no-duplicate-order
+- order-id-continuity
+budget_seconds: 600

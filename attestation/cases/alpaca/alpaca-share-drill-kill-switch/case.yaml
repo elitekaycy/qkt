@@ -1,0 +1,32 @@
+id: alpaca-share-drill-kill-switch
+title: The gateway kill switch fires while one AAPL share is held
+why: 'The kill switch lives outside qkt: once tripped the gateway must refuse new risk from qkt while a flatten
+  still goes through, so the share is closed and no new entry reaches Alpaca.'
+status: ready
+symbols:
+- ALPACA:AAPL
+timeframes:
+- 1m
+warmup_bars:
+  1m: 3
+proves:
+- behaviour:market-entry
+- behaviour:bracket
+- behaviour:timed-exit
+- behaviour:kill-switch
+- behaviour:cash-equity
+fills: 2
+replay: bars
+drills:
+- at_s: 60
+  kind: kill_switch
+  hold_s: 30
+assertions:
+- flat-account
+- deals-net-equals-realized
+- replay-same-fills
+- venue-fills-equal-qkt-fills
+- no-duplicate-order
+- order-id-continuity
+- kill-switch-refuses-risk
+budget_seconds: 600

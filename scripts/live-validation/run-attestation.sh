@@ -133,6 +133,12 @@ if [ -n "${bybit_gateway_url:-}" ]; then
     lanes="$lanes,bybit"
     deriv+=(--bybit-gateway-url "$bybit_gateway_url" --bybit-expected-login "${bybit_expected_login:?profile sets bybit_gateway_url without bybit_expected_login}")
 fi
+# One that names an Alpaca gateway (alpaca_gateway_url, alpaca_expected_login; key in QKT_ALPACA_GATEWAY_KEY) adds the
+# alpaca lane: US shares through the gateway's Alpaca adapter, inside the regular US session only.
+if [ -n "${alpaca_gateway_url:-}" ]; then
+    lanes="$lanes,alpaca"
+    deriv+=(--alpaca-gateway-url "$alpaca_gateway_url" --alpaca-expected-login "${alpaca_expected_login:?profile sets alpaca_gateway_url without alpaca_expected_login}")
+fi
 bash scripts/live-validation/run-attestation-catalog.sh --out "$catalog" --gateway-url "$gateway_url" \
     --expected-login "$expected_login" --expected-server "$expected_server" --magic-base "$((magic_base + 100))" \
     --lanes "$lanes" "${deriv[@]}" --arm I_UNDERSTAND_DEMO_ORDER_0.01 --cli "$cli" ${attestation_symbol:+--crypto-symbols} \

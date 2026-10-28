@@ -1,3 +1,8 @@
+1bccf633f6e18f2ea8edc02cc679688a52c6c61658f235291864ffec4007039b  attestation/cases/alpaca/alpaca-share-bracket-timed-exit/strategy.qkt
+bf573df6eab391f6297982e648cea5acf7397f6a0c530423bd3c2495d87808e7  attestation/cases/alpaca/alpaca-share-drill-flat-restart/strategy.qkt
+5599b3678c22aa0a7a73dab036aee062078679d2f4e58c0a11e0518b5449bf41  attestation/cases/alpaca/alpaca-share-drill-gateway-outage/strategy.qkt
+495135c7824a273efc1eee36d338369fc89999409d3f82d6725d759ec92e615c  attestation/cases/alpaca/alpaca-share-drill-kill-switch/strategy.qkt
+77778c29e112a7692718547b7727f455968c2928ff1808ea41e288eca43256fa  attestation/cases/alpaca/alpaca-share-drill-qkt-restart/strategy.qkt
 460c89eb5645a3736201b9c0c50dd303ba72145f8d774008fad8bca4a3c89a30  attestation/cases/book/book-cap-across-children/atto_cap_a.qkt
 ea6a1aa4e84320cd92a02d21d75ad79370c8ed71eec03fa7ba0a30672a14c658  attestation/cases/book/book-cap-across-children/atto_cap_b.qkt
 6e79072ced7cacd00f7f84ca8911e4f8cdfa3c71c61d1d58ea16a6b66d382d39  attestation/cases/book/book-cap-across-children/strategy.qkt

@@ -1,0 +1,35 @@
+id: alpaca-share-drill-flat-restart
+title: Two AAPL round trips with a qkt daemon restart while flat between them
+why: A daemon restarted with nothing to restore must keep its order ids moving and its day's entry count, so the
+  second round trip goes out under new ids and there is no third; one engine id naming two Alpaca orders, extra
+  fills, or realized off the deals net shows here.
+status: ready
+symbols:
+- ALPACA:AAPL
+timeframes:
+- 1m
+warmup_bars:
+  1m: 3
+proves:
+- behaviour:market-entry
+- behaviour:bracket
+- behaviour:timed-exit
+- behaviour:graceful-restart
+- behaviour:order-id-continuity
+- behaviour:cash-equity
+fills: 4
+replay: bars
+drills:
+- at_s: 5
+  after_fills: 2
+  flat: true
+  kind: qkt_restart
+  down_s: 15
+assertions:
+- flat-account
+- deals-net-equals-realized
+- replay-same-fills
+- venue-fills-equal-qkt-fills
+- no-duplicate-order
+- order-id-continuity
+budget_seconds: 600

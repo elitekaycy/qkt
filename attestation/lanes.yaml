@@ -55,3 +55,10 @@ lanes:
     places_orders: true
     venue_gateway: true
     budget_seconds: 420
+  alpaca:
+    purpose: US shares on a VGP gateway account running the qkt-venue-gateway's Alpaca adapter (Alpaca paper), with no Alpaca code in qkt - the gateway lanes' proofs (realized equals the venue's deals net and the account's cash, bars replay makes the same fills, restart, flat restart, outage and kill-switch drills) on cash equities. Market orders trade the regular session, so it runs only inside 09:30-16:00 New York. Its own account, so cases run one after another.
+    concurrency: exclusive
+    places_orders: true
+    venue_gateway: true
+    session: nyse
+    budget_seconds: 420

@@ -1,0 +1,32 @@
+id: alpaca-share-drill-gateway-outage
+title: The gateway link drops while one AAPL share is held, and comes back
+why: 'qkt must ride out its gateway going away: the stream gap is resolved from the gateway''s journal on reconnect,
+  no fill is lost or booked twice, and the strategy''s own exit still closes the share.'
+status: ready
+symbols:
+- ALPACA:AAPL
+timeframes:
+- 1m
+warmup_bars:
+  1m: 3
+proves:
+- behaviour:market-entry
+- behaviour:bracket
+- behaviour:timed-exit
+- behaviour:gateway-reconnect
+- behaviour:cash-equity
+fills: 2
+replay: bars
+drills:
+- at_s: 60
+  kind: gateway_outage
+  seconds: 90
+assertions:
+- flat-account
+- deals-net-equals-realized
+- replay-same-fills
+- venue-fills-equal-qkt-fills
+- no-duplicate-order
+- order-id-continuity
+- link-down-and-up
+budget_seconds: 600
