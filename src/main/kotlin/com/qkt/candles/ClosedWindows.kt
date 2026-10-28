@@ -8,6 +8,8 @@ import org.slf4j.LoggerFactory
  * itself and those seeded from the venue's history, and the live ticks that arrived too late for them.
  * A window is never reopened: a tick stamped inside a closed one is refused, counted as covered when
  * history already holds it, or as dropped when the engine closed that bar before the tick arrived.
+ * History also covers the bars warmup replayed ([warmed]): the newest one may still be open, waiting
+ * for the first live tick past it to close it, but a live tick stamped inside it never joins it.
  */
 internal class ClosedWindows {
     private val log = LoggerFactory.getLogger(CandleAggregator::class.java)
@@ -18,7 +20,7 @@ internal class ClosedWindows {
     var droppedLateTicks: Long = 0
         private set
 
-    /** Live ticks inside a window seeded from venue history: that bar already holds them, so nothing is lost. */
+    /** Live ticks inside a window seeded from venue history or replayed by warmup: that bar already holds them. */
     var historyCoveredTicks: Long = 0
         private set
 
@@ -42,13 +44,26 @@ internal class ClosedWindows {
         if (endTime > (historyClosedEnd[symbol] ?: Long.MIN_VALUE)) historyClosedEnd[symbol] = endTime
     }
 
-    /** A tick that came after its window closed: counted (when [live]) and refused. */
+    /**
+     * Warmup replayed [tick], synthesized from a bar of [sourceTimeframeMs]: that bar's window is history,
+     * whose ticks a venue may send again on subscribe (a cached quote snapshot, #1525).
+     */
+    fun warmed(
+        tick: Tick,
+        sourceTimeframeMs: Long,
+    ) {
+        val end = Math.floorDiv(tick.timestamp, sourceTimeframeMs) * sourceTimeframeMs + sourceTimeframeMs
+        if (end > (historyClosedEnd[tick.symbol] ?: Long.MIN_VALUE)) historyClosedEnd[tick.symbol] = end
+    }
+
+    /** A tick that came after its window closed, or a live one inside history: counted (when [live]) and refused. */
     fun refuses(
         tick: Tick,
         live: Boolean,
     ): Boolean {
-        if (tick.timestamp >= lastEnd(tick.symbol)) return false
-        if (live && tick.timestamp < (historyClosedEnd[tick.symbol] ?: Long.MIN_VALUE)) {
+        val covered = live && tick.timestamp < (historyClosedEnd[tick.symbol] ?: Long.MIN_VALUE)
+        if (!covered && tick.timestamp >= lastEnd(tick.symbol)) return false
+        if (covered) {
             historyCoveredTicks++
         } else if (live) {
             droppedLateTicks++

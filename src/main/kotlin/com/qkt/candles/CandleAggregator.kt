@@ -40,12 +40,15 @@ class CandleAggregator private constructor(
     /** Live ticks rejected after their candle was finalized; synthetic warmup reordering is excluded. */
     val droppedLateTicks: Long get() = closed.droppedLateTicks
 
-    /** Live ticks inside a window seeded from venue history: that bar already holds them, so nothing is lost. */
+    /** Live ticks inside a window seeded from venue history or replayed by warmup: that bar already holds them. */
     val historyCoveredTicks: Long get() = closed.historyCoveredTicks
 
     init {
         bus?.subscribe<TickEvent> { event -> onTick(event.tick) }
-        bus?.subscribe<WarmupTickEvent> { event -> onTick(event.tick, countLateDrop = false) }
+        bus?.subscribe<WarmupTickEvent> { event ->
+            onTick(event.tick, countLateDrop = false)
+            event.sourceTimeframeMs?.let { closed.warmed(event.tick, it) }
+        }
     }
 
     fun onTick(tick: Tick) = onTick(tick, countLateDrop = true)
