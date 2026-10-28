@@ -6,6 +6,7 @@ import com.qkt.connector.mt5.MT5BrokerProfileLoader
 import com.qkt.connector.mt5.MT5DefaultProfiles
 import com.qkt.connector.mt5.MT5Symbol
 import com.qkt.connector.mt5.marketdata.Mt5BarFetcher
+import com.qkt.connector.mt5.withInstrumentCategories
 import com.qkt.marketdata.source.MarketSourceCapability
 import com.qkt.marketdata.store.binance.BinanceVisionClient
 import java.nio.file.Path
@@ -68,7 +69,7 @@ internal fun buildFetcher(
                     apiKey = profile.apiKey,
                 ),
                 MT5Symbol(profile.symbolPolicy),
-                profile.symbolCalendars,
+                profile.withInstrumentCategories().symbolCalendars,
             )
         }
     }

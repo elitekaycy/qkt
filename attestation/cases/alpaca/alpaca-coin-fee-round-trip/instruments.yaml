@@ -1,0 +1,12 @@
+# ALPACA:BTCUSD as the gateway lists it (qkt instruments pull, 2026-10-28): long-only spot, 0.000000001 steps.
+instruments:
+  - qktSymbol: ALPACA:BTCUSD
+    contractSize: 1
+    volumeStep: 0.000000001
+    volumeMin: 0.000012504
+    pointSize: 0.000000001
+    digits: 9
+    tradeStopsLevelPoints: 0
+    currency: USD
+    category: crypto
+    tradeMode: long_only

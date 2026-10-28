@@ -117,7 +117,8 @@ done
 # attestation: promotion to main means the whole catalog passed on this exact build. A profile that
 # names a derivatives gateway (deriv_gateway_url, deriv_expected_login; key in QKT_DERIV_GATEWAY_KEY)
 # adds the derivatives lane: futures, perpetuals and options on that account. One that names a Bybit gateway
-# (bybit_gateway_url, bybit_expected_login; key in QKT_BYBIT_GATEWAY_KEY) adds the bybit lane.
+# (bybit_gateway_url, bybit_expected_login; key in QKT_BYBIT_GATEWAY_KEY) adds the bybit lane; attest_stocks=true
+# adds the stocks lane.
 stage_write catalog
 catalog="$wave_root/attest-$short-catalog"; rm -rf "$catalog"
 lanes=orders,risk,book,engine,daemon,stress; deriv=()
@@ -125,9 +126,19 @@ if [ -n "${deriv_gateway_url:-}" ]; then
     lanes="$lanes,derivatives"
     deriv=(--deriv-gateway-url "$deriv_gateway_url" --deriv-expected-login "${deriv_expected_login:?profile sets deriv_gateway_url without deriv_expected_login}")
 fi
+# A profile with attest_stocks=true adds the stocks lane (US share CFDs on the same MT5 account); it must run inside
+# the lane's session window (attestation/lanes.yaml), so the catalog refuses it outside that window or while the
+# venue's AAPL quote is stale.
+if [ "${attest_stocks:-false}" = true ]; then lanes="$lanes,stocks"; fi
 if [ -n "${bybit_gateway_url:-}" ]; then
     lanes="$lanes,bybit"
     deriv+=(--bybit-gateway-url "$bybit_gateway_url" --bybit-expected-login "${bybit_expected_login:?profile sets bybit_gateway_url without bybit_expected_login}")
+fi
+# One that names an Alpaca gateway (alpaca_gateway_url, alpaca_expected_login; key in QKT_ALPACA_GATEWAY_KEY) adds the
+# alpaca lane: US shares through the gateway's Alpaca adapter, inside the regular US session only.
+if [ -n "${alpaca_gateway_url:-}" ]; then
+    lanes="$lanes,alpaca"
+    deriv+=(--alpaca-gateway-url "$alpaca_gateway_url" --alpaca-expected-login "${alpaca_expected_login:?profile sets alpaca_gateway_url without alpaca_expected_login}")
 fi
 bash scripts/live-validation/run-attestation-catalog.sh --out "$catalog" --gateway-url "$gateway_url" \
     --expected-login "$expected_login" --expected-server "$expected_server" --magic-base "$((magic_base + 100))" \

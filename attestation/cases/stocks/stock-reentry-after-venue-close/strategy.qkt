@@ -1,0 +1,9 @@
+STRATEGY atto_stk_reentry VERSION 1
+
+SYMBOLS
+    aapl = EXNESS:AAPL EVERY 1m WARMUP 3 BARS
+
+RULES
+    -- The signal never goes false; the exit is the venue's, made by the runner seconds after the fill.
+    WHEN aapl.close > 0 AND POSITION.aapl = 0 AND OPEN_ORDERS.aapl = 0
+    THEN BUY aapl SIZING 0.01 BRACKET { STOP LOSS BY 5, TAKE PROFIT BY 10 }

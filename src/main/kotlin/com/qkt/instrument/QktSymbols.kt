@@ -7,9 +7,13 @@ package com.qkt.instrument
 object QktSymbols {
     private val SAFE = Regex("[A-Za-z0-9_]+:[A-Za-z0-9_.@-]+")
 
+    /** True when [qktSymbol] is venue-qualified and safe to use in a file name. */
+    fun isFileSafe(qktSymbol: String): Boolean =
+        SAFE.matches(qktSymbol) && qktSymbol.substringAfter(':').any { it != '.' }
+
     /** Fails unless [qktSymbol] is venue-qualified and safe to use in a file name. */
     fun requireFileSafe(qktSymbol: String) {
-        require(SAFE.matches(qktSymbol) && qktSymbol.substringAfter(':').any { it != '.' }) {
+        require(isFileSafe(qktSymbol)) {
             "symbol '$qktSymbol' must be VENUE:SYMBOL using only letters, digits, '_', '.', '@' and '-'"
         }
     }

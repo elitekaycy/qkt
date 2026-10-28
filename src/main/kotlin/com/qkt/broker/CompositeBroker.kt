@@ -43,10 +43,7 @@ class CompositeBroker(
     private val orderIdToBroker: MutableMap<String, Broker> = mutableMapOf()
     private val accountEquityBroker: Broker? = allLeaves().distinct().filter { it.supportsAccountEquity }.singleOrNull()
     private val marginLevelBroker: Broker? =
-        allLeaves()
-            .distinct()
-            .filter { (it as? MarginLevelProvider)?.supportsMarginLevel == true }
-            .singleOrNull()
+        allLeaves().distinct().singleOrNull { (it as? MarginLevelProvider)?.supportsMarginLevel == true }
 
     override val supportsAccountEquity: Boolean get() = accountEquityBroker != null
 
@@ -216,6 +213,11 @@ class CompositeBroker(
 
     override fun isAccountWide(symbol: String): Boolean = brokerFor(symbol)?.isAccountWide(symbol) == true
 
+    override fun acceptsOrders(
+        symbol: String,
+        nowMs: Long,
+    ): Boolean = brokerFor(symbol)?.acceptsOrders(symbol, nowMs) ?: true
+
     override fun getOpenPositions(): Map<String, List<com.qkt.positions.Position>> {
         val merged = LinkedHashMap<String, MutableList<com.qkt.positions.Position>>()
         for (leaf in allLeaves()) {
@@ -281,9 +283,7 @@ class CompositeBroker(
     }
 
     override fun watchBookedLegs(supplier: () -> List<BookedLeg>) {
-        for (broker in (routes.map { it.second } + listOfNotNull(fallback)).distinct()) {
-            broker.watchBookedLegs(supplier)
-        }
+        for (broker in allLeaves().distinct()) broker.watchBookedLegs(supplier)
     }
 
     private fun allLeaves(): List<Broker> = routes.map { it.second } + listOfNotNull(fallback)

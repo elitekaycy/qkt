@@ -9,10 +9,10 @@ usage() {
     cat <<'USAGE'
 Usage: run-attestation-catalog.sh --out DIR --gateway-url URL --expected-login N
          --expected-server NAME --magic-base N --arm I_UNDERSTAND_DEMO_ORDER_0.01
-         [--lanes shadow,orders,risk,book,engine,daemon,stress[,derivatives][,bybit]] [--max-parallel N]
+         [--lanes shadow,orders,risk,book,engine,daemon,stress[,stocks][,derivatives][,bybit][,alpaca]] [--max-parallel N]
          [--crypto-symbols]   (the shadow lane on 24/7 symbols, for a weekend run)
          [--cli PATH] [--deriv-gateway-url URL --deriv-expected-login LOGIN]
-         [--bybit-gateway-url URL --bybit-expected-login LOGIN]
+         [--bybit-gateway-url URL --bybit-expected-login LOGIN] [--alpaca-gateway-url URL --alpaca-expected-login LOGIN]
 
 Needs QKT_BROKER_API_KEY and QKT_LIVE_DEMO_ORDER_APPROVAL=LOCALHOST_DEMO_ONLY. Demo, loopback only.
 The derivatives lane (futures, perpetuals, options) runs on a VGP gateway account instead: it needs the
@@ -31,6 +31,7 @@ fail() { printf 'run-attestation-catalog: %s\n' "$1" >&2; exit 1; }
 out=""; gateway_url=""; expected_login=""; expected_server=""; magic_base=""; arm=""
 lanes="shadow,orders,risk,book,engine,daemon,stress"; cli="$repo_root/build/install/qkt/bin/qkt"
 max_parallel=8; deriv_gateway_url=""; deriv_expected_login=""; bybit_gateway_url=""; bybit_expected_login=""
+alpaca_gateway_url=""; alpaca_expected_login=""
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --out) out="${2:-}"; shift 2 ;;
@@ -47,6 +48,8 @@ while [ "$#" -gt 0 ]; do
         --deriv-expected-login) deriv_expected_login="${2:-}"; shift 2 ;;
         --bybit-gateway-url) bybit_gateway_url="${2:-}"; shift 2 ;;
         --bybit-expected-login) bybit_expected_login="${2:-}"; shift 2 ;;
+        --alpaca-gateway-url) alpaca_gateway_url="${2:-}"; shift 2 ;;
+        --alpaca-expected-login) alpaca_expected_login="${2:-}"; shift 2 ;;
         --help|-h) usage; exit 0 ;;
         *) fail "unknown argument: $1" ;;
     esac
@@ -76,7 +79,20 @@ if [[ ",$lanes," == *,shadow,* ]]; then
         ${crypto_symbols:+--crypto-symbols}
     magic=$((magic + 1))
 fi
-for lane in orders risk book engine daemon stress; do
+# The stocks lane trades US shares, so it runs only inside the lane's session window (attestation/lanes.yaml) while
+# the venue still quotes them. Neither alone is enough: Exness quotes AAPL from 06:00 New York but refuses opening
+# orders until 09:40, and only the venue's own last tick can say a holiday or an early close.
+stocks_session_open() {
+    local tick now
+    python3 "$repo_root/scripts/live-validation/lib/in_session_window.py" "$repo_root/attestation/lanes.yaml" stocks || return 1
+    tick="$(curl --silent --fail --max-time 10 "$gateway_url/symbol_info_tick/AAPLm" | python3 -c 'import json,sys; print(int(json.load(sys.stdin).get("time", 0)))' 2>/dev/null)" || return 1
+    now="$(date +%s)"
+    [ $((now - tick)) -lt 120 ]
+}
+if [[ ",$lanes," == *,stocks,* ]] && ! stocks_session_open; then
+    fail "the stocks lane needs the venue's US share session open ($(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["lanes"]["stocks"]["session"])' "$repo_root/attestation/lanes.yaml") New York) and a fresh AAPL quote"
+fi
+for lane in orders stocks risk book engine daemon stress; do
     [[ ",$lanes," == *,"$lane",* ]] || continue
     for case_yaml in "$repo_root/attestation/cases/$lane"/*/case.yaml; do
         [ -f "$case_yaml" ] || continue
@@ -139,6 +155,20 @@ if [[ ",$lanes," == *,bybit,* ]]; then
     [ -n "${QKT_BYBIT_GATEWAY_KEY:-}" ] || fail "--lanes bybit needs QKT_BYBIT_GATEWAY_KEY"
     gateway_lane bybit "$bybit_gateway_url" "$bybit_expected_login" "$QKT_BYBIT_GATEWAY_KEY" \
         "${QKT_BYBIT_GUARDIAN_KEY:-}"
+fi
+# The alpaca lane trades shares with market orders, which Alpaca fills only in the regular session.
+nyse_regular_open() {
+    python3 -c 'import datetime as d, zoneinfo as z, sys
+n = d.datetime.now(z.ZoneInfo("America/New_York")); t = n.hour * 60 + n.minute
+sys.exit(0 if n.weekday() < 5 and 9 * 60 + 30 <= t < 16 * 60 - 15 else 1)'
+}
+if [[ ",$lanes," == *,alpaca,* ]]; then
+    [ -n "$alpaca_gateway_url" ] && [ -n "$alpaca_expected_login" ] ||
+        fail "--lanes alpaca needs --alpaca-gateway-url and --alpaca-expected-login"
+    [ -n "${QKT_ALPACA_GATEWAY_KEY:-}" ] || fail "--lanes alpaca needs QKT_ALPACA_GATEWAY_KEY"
+    nyse_regular_open || fail "the alpaca lane needs the regular US session (09:30-15:45 New York, weekdays)"
+    gateway_lane alpaca "$alpaca_gateway_url" "$alpaca_expected_login" "$QKT_ALPACA_GATEWAY_KEY" \
+        "${QKT_ALPACA_GUARDIAN_KEY:-}"
 fi
 [ "${#pids[@]}" -gt 0 ] || fail "no ready case in lanes: $lanes"
 

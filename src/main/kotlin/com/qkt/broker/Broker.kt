@@ -15,7 +15,7 @@ import java.math.BigDecimal
  * (MetaTrader 5 via gateway), [com.qkt.connector.gateway.GatewayBroker]
  * (any VGP venue gateway: Bybit, Deribit, …), [CompositeBroker] (multi-venue router).
  */
-interface Broker {
+interface Broker : VenueReads {
     /** Human-readable broker identifier — appears in logs and status output. */
     val name: String
 
@@ -85,14 +85,6 @@ interface Broker {
     }
 
     /**
-     * Snapshot of currently-open positions on the venue, keyed by qkt-side symbol: a list per symbol,
-     * since hedge-mode brokers (MT5) hold a long and a short as two tickets the reconciler
-     * matches separately; one-way brokers and PaperBroker return at most one entry. Used at deploy time
-     * by [com.qkt.persistence.LegBookReconciler]; empty by default (no venue-side state).
-     */
-    fun getOpenPositions(): Map<String, List<com.qkt.positions.Position>> = emptyMap()
-
-    /**
      * True when [symbol]'s venue position is the net of several strategies sharing one netting account:
      * startup reconcile then trusts each strategy's persisted book, and the broker checks the total.
      */
@@ -141,9 +133,6 @@ interface Broker {
      */
     fun shutdown() {}
 
-    /** Whether [accountEquity] is a supported venue operation rather than the default null view. */
-    val supportsAccountEquity: Boolean get() = false
-
     /**
      * Whether any session this venue trades is open at [nowMs] per its calendar. Pollers whose
      * only job is to refresh venue state (equity, insights snapshots) back off while closed —
@@ -162,58 +151,25 @@ interface Broker {
     ): Boolean = false
 
     /**
+     * Whether this venue takes an order on [symbol] at [nowMs]. Outside a symbol's trading session a venue refuses
+     * every order, closing ones included (Exness quotes US stock CFDs from 06:00 New York and answers MT5 retcode
+     * 10044 "session closed" to an opening order until 09:40), so qkt refuses them first ([com.qkt.risk.rules.VenueSession])
+     * and holds engine-held triggers until it opens. A venue that knows each symbol's sessions
+     * ([SymbolSessionProvider]) answers from them; any other takes orders at all times, as do the in-process venues
+     * unless a replay gives them sessions.
+     */
+    fun acceptsOrders(
+        symbol: String,
+        nowMs: Long,
+    ): Boolean = (this as? SymbolSessionProvider)?.symbolInSession(symbol, nowMs) ?: true
+
+    /**
      * Phase 38: when true, this broker submits GTD orders with a venue-side expiration and
      * the venue self-cancels at the deadline; the engine's deadline-sweep in
      * [com.qkt.app.OrderManager] skips orders routed through this broker. When false
      * (default), the engine cancels the order at the deadline on the next tick.
      */
     val supportsNativeGtd: Boolean get() = false
-
-    /**
-     * Venue margin level as a percent (equity / used margin x 100), or null when the
-     * venue doesn't report one (paper brokers, spot venues, no margin in use). Powers
-     * the pre-entry margin floor — MT5 force-closes positions around 50%, so entries
-     * should stop long before that.
-     */
-    fun marginLevel(): java.math.BigDecimal? = null
-
-    /** Venue-reported account equity, or null when the venue doesn't expose one. */
-    fun accountEquity(): java.math.BigDecimal? = null
-
-    /**
-     * Full venue account snapshot (balance, equity, margin) for observability. Null when
-     * the venue has none to report (paper brokers) or the read failed.
-     */
-    fun accountState(): BrokerAccountState? = null
-
-    /**
-     * Deals (executed in/out legs) the venue booked in `[from, to]` (UTC epoch ms),
-     * e.g. one position closed by TP yields an IN deal and an OUT deal carrying the
-     * realized profit. Empty when the venue keeps none; a failed read throws (never "no deals").
-     */
-    fun deals(
-        from: Long,
-        to: Long,
-    ): List<BrokerDeal> = emptyList()
-
-    /**
-     * Per-ticket open positions as the venue values them — unlike [getOpenPositions],
-     * which aggregates per symbol for reconciliation, this keeps each ticket with its
-     * broker-reported profit and swap. Empty when unsupported or the read failed.
-     */
-    fun positionTickets(): List<BrokerPositionTicket> = emptyList()
-
-    /** Whether [positionTickets] is authoritative venue truth rather than the empty default. */
-    val supportsPositionTickets: Boolean get() = false
-
-    /**
-     * Resting (pending) orders at the venue - limits/stops waiting to trigger, with
-     * their protective levels and expiry. Empty when unsupported or the read failed.
-     */
-    fun pendingOrders(): List<BrokerPendingOrder> = emptyList()
-
-    /** Position accounting mode for [symbol]; unknown modes must be reconciled as hedging. */
-    fun positionAccountingMode(symbol: String): PositionAccountingMode = PositionAccountingMode.UNKNOWN
 }
 
 /**
@@ -226,30 +182,3 @@ interface MarginLevelProvider {
     /** Whether margin-level reads are supported for this broker composition. */
     val supportsMarginLevel: Boolean
 }
-
-/**
- * Fields a strategy or operator can change on a working order.
- *
- * Only non-null fields are applied; brokers ignore unset ones.
- */
-data class OrderModification(
-    val newQuantity: BigDecimal? = null,
-    val newLimitPrice: BigDecimal? = null,
-    val newStopPrice: BigDecimal? = null,
-)
-
-/**
- * A position-ledger leg pinned to a venue ticket, as the broker needs to see it: enough to
- * synthesize the venue close the engine missed when the ticket is gone.
- */
-data class BookedLeg(
-    val strategyId: String,
-    val legId: String,
-    val ticket: String,
-    /** qkt symbol with broker prefix, e.g. "EXNESS:XAUUSD". */
-    val symbol: String,
-    val side: com.qkt.common.Side,
-    val quantity: java.math.BigDecimal,
-    val entryPrice: java.math.BigDecimal,
-    val openedAt: Long,
-)

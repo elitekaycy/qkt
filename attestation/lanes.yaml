@@ -12,6 +12,12 @@ lanes:
     concurrency: per-magic
     places_orders: true
     budget_seconds: 360
+  stocks:
+    purpose: Stock CFDs on the MT5 demo (Exness US shares, 100-share lots) - orders and fills inside the 09:40-15:45 New York session Exness takes positions in (it quotes from 06:00, close-only until 09:40), share-sized entries, refusals of close-only symbols, DAY orders expiring at the session close, each replayed to the same fills. Runs only while the US session is open.
+    concurrency: per-magic
+    places_orders: true
+    session: nyse[09:40-15:45]
+    budget_seconds: 300
   risk:
     purpose: Caps, rejections and halts bind live exactly as in replay, from restored state, never from hoping the market produces a loss.
     concurrency: per-magic
@@ -48,4 +54,11 @@ lanes:
     concurrency: exclusive
     places_orders: true
     venue_gateway: true
+    budget_seconds: 420
+  alpaca:
+    purpose: US shares on a VGP gateway account running the qkt-venue-gateway's Alpaca adapter (Alpaca paper), with no Alpaca code in qkt - the gateway lanes' proofs (realized equals the venue's deals net and the account's cash, bars replay makes the same fills, restart, flat restart, outage and kill-switch drills) on cash equities. Market orders trade the regular session, so it runs only inside 09:30-16:00 New York. Its own account, so cases run one after another.
+    concurrency: exclusive
+    places_orders: true
+    venue_gateway: true
+    session: nyse
     budget_seconds: 420

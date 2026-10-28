@@ -56,7 +56,7 @@ Positional arguments come before flags.
 ```bash
 qkt bot buy  0.5 EXNESS:XAUUSD                            # market
 qkt bot buy  0.5 EXNESS:XAUUSD --sl by:30 --tp rr:2       # bracket the venue holds (MT5)
-qkt bot sell 0.2 EXNESS:XAUUSD --limit 2680 --tif day     # pending limit, ends with the UTC day
+qkt bot sell 0.2 EXNESS:XAUUSD --limit 2680 --tif day     # pending limit, ends with the symbol's session
 qkt bot buy  0.1 EXNESS:XAUUSD --stop-limit 2700:2701
 qkt bot buy  EXNESS:XAUUSD --sizing "2 % OF EQUITY" --sl by:30
 qkt bot buy  2 DERIBIT:SOL_USDC_PERPETUAL                 # a perpetual on a gateway broker

@@ -74,7 +74,7 @@ internal class ExecutionBooker(
         // Commission is a per-fill cash charge (#335); venue-reported costs (MT5 deal
         // commission/swap, a gateway fill's fee) net out the same way — equity and halt inputs must be
         // cost-true, or a strategy bleeding costs looks healthier than it is.
-        val commission = commissionBook.charge(e.strategyId, e.symbol, e.quantity, e.price)
+        val commission = commissionBook.charge(e.strategyId, e.symbol, e.quantity, e.price, e.side, e.clientOrderId)
         val venueCosts =
             if (e.typedVenueCosts.isNotEmpty()) {
                 typedVenueCostAmount(e.typedVenueCosts, e.symbol, e.timestamp, e.price)

@@ -1,0 +1,15 @@
+STRATEGY atto_stk_limit VERSION 1
+
+SYMBOLS
+    aapl = EXNESS:AAPL EVERY 1m WARMUP 3 BARS
+
+RULES
+    -- Rests $5 under the market (well inside the price collar) for two minutes: it must reach the venue, stay
+    -- unfilled and expire there. Beside it, one share sold short with venue protection.
+    WHEN aapl.close > 0 AND TRADES.today = 0 AND OPEN_ORDERS.aapl = 0 AND POSITION.aapl = 0
+    THEN BUY aapl SIZING 0.01 ORDER_TYPE = LIMIT AT aapl.close - 5 TIF GTD UNTIL NOW + 2m
+       ; SELL aapl SIZING 0.01 BRACKET { STOP LOSS BY 5, TAKE PROFIT BY 10 }
+
+    -- Held past the limit's two minutes, so the venue expires it before CLOSE would clear it.
+    WHEN POSITION.aapl != 0 AND POSITION.aapl.holding_duration >= 170
+    THEN CLOSE aapl

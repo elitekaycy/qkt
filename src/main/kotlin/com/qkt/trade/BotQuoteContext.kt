@@ -26,6 +26,10 @@ data class BotQuoteContext(
     val digits: Int?,
     /** The venue's own reference price (a derivatives venue's mark); null measures against the mid. */
     val reference: BigDecimal? = null,
+    /** When the symbol trades, for a DAY order's expiry; without a venue, the UTC day ([TradingCalendar.crypto]). */
+    val calendar: com.qkt.common.TradingCalendar =
+        com.qkt.common.TradingCalendar
+            .crypto(),
 )
 
 /**

@@ -118,4 +118,34 @@ class Mt5InstrumentSpecsTest {
 
         assertThat(meta.priceStep).isEqualByComparingTo("0.001")
     }
+
+    @Test
+    fun `a stock CFD carries its folder, its trade mode, 100-share lots and a Friday triple swap`() {
+        server.enqueue(
+            MockResponse().setBody(
+                """{"ask":622.9,"bid":622.54,"digits":2,"point":0.01,"trade_stops_level":0,"volume_min":0.01,""" +
+                    """"volume_step":0.01,"volume_max":10,"trade_contract_size":100.0,"trade_tick_size":0.01,""" +
+                    """"swap_mode":1,"swap_long":-6.1,"swap_short":-5.3,"swap_rollover3days":5,""" +
+                    """"path":"Standard\\Stocks\\FBm","trade_mode":3}""",
+            ),
+        )
+
+        val meta = client.instrumentSpec(exness, "EXNESS:FB")!!.meta
+
+        assertThat(meta.contractSize).isEqualByComparingTo("100")
+        assertThat(meta.volumeMin).isEqualByComparingTo("0.01")
+        assertThat(meta.category).isEqualTo("Stocks")
+        assertThat(meta.tradeMode).isEqualTo(com.qkt.instrument.TradeMode.CLOSE_ONLY)
+        assertThat(meta.swapTripleDay).isEqualTo(DayOfWeek.FRIDAY)
+    }
+
+    @Test
+    fun `a gateway that reports no folder or trade mode leaves the symbol uncategorised and fully tradable`() {
+        symbolInfo(""","swap_mode":1,"swap_long":-560.0,"swap_short":0.0,"swap_rollover3days":3""")
+
+        val meta = client.instrumentSpec(exness, "EXNESS:XAUUSD")!!.meta
+
+        assertThat(meta.category).isNull()
+        assertThat(meta.tradeMode).isEqualTo(com.qkt.instrument.TradeMode.FULL)
+    }
 }

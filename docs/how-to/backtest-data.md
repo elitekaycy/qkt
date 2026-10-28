@@ -570,15 +570,36 @@ instruments:
     swapRolloverHourUtc: 21 # optional — 0..23, default 21
     swapTripleDay: WEDNESDAY # optional — Monday..Friday, default Wednesday
     tickSize: 0.25          # optional — smallest price step the venue accepts, when coarser than pointSize
+    category: Stocks        # optional — the venue's folder for the symbol, for `category:` calendar rules
+    tradeMode: close_only   # optional — full (default), long_only, short_only, close_only or disabled
 ```
 
-A symbol present in the file wins; anything omitted falls back to the built-in specs.
+A symbol present in the file wins; anything omitted falls back to the built-in specs. `category` picks a stock's
+session calendar in a backtest as the venue's own category does live; `tradeMode` makes a backtest refuse the
+opening orders the venue would (a delisted share is `close_only`). `qkt instruments pull` writes both.
 `tickSize` (MT5 `trade_tick_size`) only matters where a venue trades in steps coarser than its point,
 as some index CFDs do: bracket levels and MT5 order prices go on that grid, while spread, slippage,
 swap and stops-level figures stay in points.
 Positive swap points credit PnL and negative points debit it. The configured triple-day
 rollover is multiplied by three and weekend rollovers are skipped. Refresh these values
 from the broker before a cost-sensitive run because broker schedules can change.
+
+A share bought through a stock broker is charged per order, not per lot. `equityCosts` replaces `commissionPerLot`
+for that instrument:
+
+```yaml
+    equityCosts:
+      commissionPerShare: 0.005  # $ per share, per order
+      minCommission: 1.00        # $ per order, however many partial fills it takes
+      maxCommissionRate: 0.01    # optional cap, a fraction of the order's value
+      secFeeRate: 0.0000278      # sales only: SEC fee per $ of value, rounded up to the cent
+      tafPerShare: 0.000166      # sales only: FINRA TAF per share sold, rounded up to the cent
+      tafMax: 8.30               # optional cap on the TAF per order
+```
+
+Every rate is yours to set: the SEC and FINRA change theirs each year, and brokers differ (a commission-free broker
+passes on only the two sale fees). Shares are lots times `contractSize`. The costs land in the report's commission
+line.
 
 ## Reference
 

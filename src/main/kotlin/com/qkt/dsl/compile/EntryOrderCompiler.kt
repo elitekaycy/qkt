@@ -6,6 +6,7 @@ import com.qkt.dsl.ast.ActionOpts
 import com.qkt.dsl.ast.Market
 import com.qkt.dsl.ast.SizeQty
 import com.qkt.execution.OrderRequest
+import com.qkt.execution.withDayExpiry
 import com.qkt.strategy.Signal
 import java.math.BigDecimal
 import org.slf4j.Logger
@@ -172,7 +173,8 @@ internal class EntryOrderCompiler(
                 }
 
             val finalRequest: OrderRequest =
-                if (gtdDeadlineExpr != null) stampGtdDeadline(request, gtdDeadlineExpr, ctx) else request
+                (if (gtdDeadlineExpr != null) stampGtdDeadline(request, gtdDeadlineExpr, ctx) else request)
+                    .withDayExpiry(ctx.strategyContext.calendar, ts)
 
             // Derived from the leg id, so a restart that resumes ids past its legs cannot re-mint it.
             val exitId = holdMs?.let { "${finalRequest.id}-exit" }

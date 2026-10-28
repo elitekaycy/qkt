@@ -23,6 +23,7 @@ class GatewayEventTranslator(
 ) {
     private val quantities = HashMap<String, BigDecimal>()
     private val filled = HashMap<String, BigDecimal>()
+    private val received = HashMap<String, BigDecimal>()
     private val accepted = HashSet<String>()
     private val booked = RecentIds(RECENT)
     private val done = RecentIds(RECENT)
@@ -38,7 +39,10 @@ class GatewayEventTranslator(
         alreadyFilled: BigDecimal = BigDecimal.ZERO,
     ) {
         quantities[clientOrderId] = quantity
-        if (alreadyFilled.signum() > 0) filled[clientOrderId] = alreadyFilled
+        if (alreadyFilled.signum() > 0) {
+            filled[clientOrderId] = alreadyFilled
+            received[clientOrderId] = alreadyFilled
+        }
     }
 
     /** Fill [fillId] was booked before a restart: it is never booked again. */
@@ -103,19 +107,23 @@ class GatewayEventTranslator(
         val costs = WireValues.costsOf(fill.costs, fill.time)
         if (!booked.add(fill.fillId)) return null
         val id = fill.clientOrderId
+        // The order completes on the venue's quantity; the engine books what the holding received ([GatewayInKindFees]).
         val cumulative = (filled[id] ?: BigDecimal.ZERO).add(quantity)
+        val got = GatewayInKindFees.received(side, quantity, costs, symbols.baseAsset(symbol))
+        val gotSoFar = (received[id] ?: BigDecimal.ZERO).add(got)
         val total = quantities[id]
         val strategy = strategyOf(id)
         if (total != null && cumulative < total) {
             filled[id] = cumulative
+            received[id] = gotSoFar
             return BrokerEvent.OrderPartiallyFilled(
                 id,
                 fill.venueOrderId,
                 symbol,
                 side,
                 price,
-                quantity,
-                cumulative,
+                got,
+                gotSoFar,
                 strategy,
                 timestamp = fill.time,
                 typedVenueCosts = costs,
@@ -128,7 +136,7 @@ class GatewayEventTranslator(
             symbol,
             side,
             price,
-            quantity,
+            got,
             strategy,
             timestamp = fill.time,
             typedVenueCosts = costs,
@@ -173,6 +181,7 @@ class GatewayEventTranslator(
         ending.remove(id)
         quantities.remove(id)
         filled.remove(id)
+        received.remove(id)
         accepted.remove(id)
     }
 

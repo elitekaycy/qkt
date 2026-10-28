@@ -9,7 +9,30 @@ package com.qkt.positions
 internal class DirectLegEdits(
     private val legBooks: StrategyLegBooks,
     private val accountIndex: AccountNetIndex,
+    private val excursions: PrimaryExcursions,
 ) {
+    /**
+     * A split of [ratio] new shares per old on [symbol]: every strategy's legs on it hold [ratio] times the quantity
+     * at the entry price divided by [ratio], so cost and P&L are unchanged; excursions are rescaled with them.
+     */
+    fun restateForSplit(
+        symbol: String,
+        ratio: java.math.BigDecimal,
+    ) {
+        require(ratio.signum() > 0) { "split ratio on $symbol must be positive: $ratio" }
+        for ((strategyId, books) in legBooks.holdersOf(symbol)) {
+            books[symbol]?.restate { leg ->
+                leg.copy(
+                    quantity = leg.quantity.multiply(ratio, com.qkt.common.Money.CONTEXT),
+                    entryPrice = leg.entryPrice.divide(ratio, com.qkt.common.Money.CONTEXT),
+                )
+            }
+            legBooks.persist(strategyId, symbol)
+        }
+        excursions.rescale(symbol, ratio)
+        accountIndex.reindex(symbol)
+    }
+
     fun add(
         strategyId: String,
         leg: PositionLeg,

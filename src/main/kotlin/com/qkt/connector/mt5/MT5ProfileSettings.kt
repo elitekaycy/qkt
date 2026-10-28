@@ -52,10 +52,11 @@ internal object MT5ProfileSettings {
             "crypto" -> TradingCalendar.crypto()
             "nyse" -> TradingCalendar.nyse()
             else ->
-                error(
-                    "MT5 profile '$profile' has unknown calendar '$cal' " +
-                        "(expected fx|crypto|nyse, optionally '<base> pause HH:MM-HH:MM [Zone]')",
-                )
+                TradingCalendar.named(cal.trim().lowercase())
+                    ?: error(
+                        "MT5 profile '$profile' has unknown calendar '$cal' " +
+                            "(expected fx|crypto|nyse|nyse[HH:MM-HH:MM], optionally '<base> pause HH:MM-HH:MM [Zone]')",
+                    )
         }
 
     fun parseCapability(

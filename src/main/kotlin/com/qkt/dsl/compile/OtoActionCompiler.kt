@@ -8,6 +8,7 @@ import com.qkt.dsl.ast.Buy
 import com.qkt.dsl.ast.Market
 import com.qkt.dsl.ast.Sell
 import com.qkt.execution.OrderRequest
+import com.qkt.execution.withDayExpiry
 import com.qkt.strategy.Signal
 import org.slf4j.Logger
 
@@ -76,6 +77,8 @@ internal class OtoActionCompiler(
                         skipLog.skipped("OTO parent pending price", ctx, stream)
                         return@oto emptyList()
                     }
+            // A DAY parent expires at its session's end; its protective children do not.
+            val dayParent = parentReq.withDayExpiry(ctx.strategyContext.calendar, ts)
             val childCtx = ctx.withEntryPrice(entry)
             val childReqs = children.map { it.build(childCtx, ts) }
             if (childReqs.any { it == null }) {
@@ -88,7 +91,7 @@ internal class OtoActionCompiler(
                     symbol = symbol,
                     side = side,
                     quantity = qty,
-                    parent = parentReq,
+                    parent = dayParent,
                     children = childReqs.filterNotNull(),
                     timeInForce = tif,
                     timestamp = ts,

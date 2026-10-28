@@ -6,7 +6,6 @@ import com.qkt.common.FixedClock
 import com.qkt.common.SessionOverlap
 import com.qkt.common.TradingCalendar
 import com.qkt.events.TickEvent
-import com.qkt.instrument.InstrumentRegistry
 import com.qkt.risk.DailyDrawdownBasis
 import com.qkt.risk.DrawdownBasis
 import com.qkt.risk.HaltRule
@@ -25,8 +24,8 @@ import java.math.BigDecimal
 
 /**
  * A replay's risk stack, built the way a live deploy builds it: the [RiskState] (balance basis and
- * halt rules), per-strategy limits, the always-on pre-trade controls, the optional book-level
- * [BookRiskController] and the [RiskEngine] that walks them all. Constructed once, in that order. A
+ * halt rules), per-strategy limits, the always-on pre-trade controls with the venue's session, the optional
+ * book-level [BookRiskController] and the [RiskEngine] that walks them all. Constructed once, in that order. A
  * run with futures or options also checks maintenance margin on every tick, liquidating below it
  * ([com.qkt.broker.liquidation.MarginLiquidator]), and refuses risk while still below.
  */
@@ -37,7 +36,8 @@ internal class ReplayRisk(
     books: ReplayBooks,
     clock: FixedClock,
     bus: EventBus,
-    instruments: InstrumentRegistry,
+    /** Whether the run's venue takes an order on a symbol at an instant: [com.qkt.broker.Broker.acceptsOrders]. */
+    acceptsOrders: (symbol: String, atMs: Long) -> Boolean,
     startingBalance: BigDecimal,
     startingBalances: Map<String, BigDecimal>,
     dailyDdBasis: DailyDrawdownBasis,
@@ -58,6 +58,7 @@ internal class ReplayRisk(
     val riskEngine: RiskEngine
 
     init {
+        val instruments = books.instruments
         riskState.warmupComplete = true
         val derivatives = instruments.futures() != null || instruments.options() != null
         if (derivatives) {
@@ -87,6 +88,7 @@ internal class ReplayRisk(
                 priceCollarFrac = priceCollarFrac,
                 accounting = books.accounting,
                 equity = riskState.equityTracker::liveEquity,
+                session = acceptsOrders,
             )
         val bookAnnualization =
             if (candleWindow != null) {

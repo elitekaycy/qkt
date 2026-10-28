@@ -147,4 +147,22 @@ class AccountingEngineTest {
 
             override fun lastPrice(symbol: String): BigDecimal? = prices[symbol]
         }
+
+    @Test
+    fun `a coin fee converts at its full precision, not rounded to eight places first`() {
+        // Alpaca charged 0.000000364 BTC on a BTCUSD buy at 80491.29 (2026-10-28): rounded to 0.00000036 first, the
+        // fee would book 0.02897686 USD, 0.00032 short of what the coin given up was worth.
+        val converted = AccountingEngine().convertCost(coin("0.000000364"), "ALPACA:BTCUSD", BigDecimal("80491.29"))
+
+        assertThat(converted.account.amount).isEqualByComparingTo("0.02929883")
+    }
+
+    @Test
+    fun `a coin fee below eight places is still a cost`() {
+        val converted = AccountingEngine().convertCost(coin("0.000000004"), "ALPACA:BTCUSD", BigDecimal("80000"))
+
+        assertThat(converted.account.amount).isEqualByComparingTo("0.00032000")
+    }
+
+    private fun coin(amount: String) = VenueCost(CostKind.COMMISSION, MoneyAmount(BigDecimal(amount), "BTC"), 4_000L)
 }

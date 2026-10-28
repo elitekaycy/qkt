@@ -36,6 +36,7 @@ import com.qkt.risk.HaltRule
 import com.qkt.risk.RiskEngine
 import com.qkt.risk.RiskRule
 import com.qkt.risk.RiskState
+import com.qkt.risk.rules.BookExposureLimit
 import com.qkt.strategy.Mode
 import com.qkt.strategy.Signal
 import com.qkt.strategy.Strategy
@@ -516,6 +517,8 @@ class LiveSession(
                 priceCollarFrac = priceCollarFrac,
                 accounting = accounting,
                 equity = riskState.equityTracker::liveEquity,
+                // The venue's own sessions: an MT5 account refuses every order outside a symbol's (retcode 10044).
+                session = broker::acceptsOrders,
             )
         val marketDataAlerts = MarketDataHealthAlerts(strategies, sessionNotifier, insights, marketDataGateConfig)
         val marketDataGate =
@@ -531,10 +534,7 @@ class LiveSession(
             RiskEngine(
                 rules + perStrategyRules.riskRules + preTradeRules + guardRules +
                     listOfNotNull(
-                        bookRiskController?.let {
-                            com.qkt.risk.rules
-                                .BookExposureLimit(it, priceTracker, instruments, accounting)
-                        },
+                        bookRiskController?.let { BookExposureLimit(it, priceTracker, instruments, accounting) },
                     ) +
                     com.qkt.marketdata.MarketDataHealthRule(marketDataGate),
                 haltRules + perStrategyRules.haltRules,

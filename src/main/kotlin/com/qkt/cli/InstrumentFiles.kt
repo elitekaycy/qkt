@@ -7,6 +7,7 @@ import com.qkt.dsl.ast.OPTIONS_BROKER
 import com.qkt.instrument.CommissionOverrideRegistry
 import com.qkt.instrument.ContractCatalogRegistry
 import com.qkt.instrument.ContractCatalogStore
+import com.qkt.instrument.CorporateActionStore
 import com.qkt.instrument.FundingCoverage
 import com.qkt.instrument.FundingRateStore
 import com.qkt.instrument.FuturesRootsFile
@@ -18,6 +19,7 @@ import com.qkt.instrument.RefreshingOptionCatalogs
 import com.qkt.instrument.RollHistoryStore
 import com.qkt.instrument.StandardInstrumentRegistry
 import com.qkt.instrument.SwapScaleRegistry
+import com.qkt.instrument.WithCorporateActions
 import com.qkt.instrument.YamlInstrumentRegistry
 import com.qkt.marketdata.depth.BookDepthCoverage
 import com.qkt.marketdata.depth.BookDepthStore
@@ -95,7 +97,8 @@ internal object InstrumentFiles {
                 }
             }
         if (unresolved != null) throw BacktestContext.Companion.SetupError(unresolved)
-        return registry
+        // The data root's dividends and splits, whatever the instruments file holds, backtest and live alike.
+        return WithCorporateActions(registry, CorporateActionStore(dataRoot))
     }
 
     /**

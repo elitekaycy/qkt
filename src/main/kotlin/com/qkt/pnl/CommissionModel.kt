@@ -1,5 +1,6 @@
 package com.qkt.pnl
 
+import com.qkt.common.Side
 import com.qkt.instrument.InstrumentRegistry
 import java.math.BigDecimal
 
@@ -27,6 +28,19 @@ interface CommissionModel {
         quantity: BigDecimal,
         price: BigDecimal,
     ): BigDecimal = cost(symbol, quantity)
+
+    /**
+     * Commission for one fill of order [orderId] on [side]. Models that charge per fill keep the default, which ignores
+     * both; an order-level model ([EquityCostCommission]) needs them to charge a per-order minimum once across partial
+     * fills and a fee only on sales.
+     */
+    fun cost(
+        symbol: String,
+        side: Side,
+        quantity: BigDecimal,
+        price: BigDecimal,
+        orderId: String,
+    ): BigDecimal = cost(symbol, quantity, price)
 }
 
 /** No trading cost — every fill is free. The live default, since the venue bills for real. */

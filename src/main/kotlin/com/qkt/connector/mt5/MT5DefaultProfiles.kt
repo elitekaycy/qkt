@@ -1,6 +1,7 @@
 package com.qkt.connector.mt5
 
 import com.qkt.common.DailyBreakCalendar
+import com.qkt.common.NyseWindowCalendar
 import com.qkt.common.SymbolCalendars
 import com.qkt.common.TradingCalendar
 import java.time.LocalTime
@@ -50,6 +51,14 @@ object MT5DefaultProfiles {
         pause(TradingCalendar.fxDefault(), LocalTime.of(16, 55), LocalTime.of(18, 10), NEW_YORK)
     private val NY_CLOSE_FX = pause(TradingCalendar.fxDefault(), LocalTime.of(16, 55), LocalTime.of(17, 15), NEW_YORK)
 
+    /**
+     * Exness US stock CFDs (path `Standard\Stocks\`) take new positions NYSE days 09:40-15:45 New York, to 13:00 on the
+     * exchange's early-close days. The venue quotes them from 06:00 but is close-only until 09:40: an opening order
+     * there is refused with MT5 retcode 10044 (`CLOSE_ONLY`, comment "session closed"), measured 2026-10-28 with order
+     * probes (refused 09:39:52, taken 09:40:13; docs/superpowers/specs/2026-10-27-equities-design.md).
+     */
+    private val EXNESS_US_STOCKS = NyseWindowCalendar(LocalTime.of(9, 40), LocalTime.of(15, 45))
+
     /** Exness copper follows London: last print 18:55 BST, first print 01:02 BST. */
     private val EXNESS_COPPER = pause(TradingCalendar.fxDefault(), LocalTime.of(18, 50), LocalTime.of(1, 10), LONDON)
 
@@ -63,7 +72,8 @@ object MT5DefaultProfiles {
             default = NY_CLOSE_FX,
             extra =
                 CRYPTO.map { SymbolCalendars.Rule(it, TradingCalendar.crypto()) } +
-                    SymbolCalendars.Rule("XCU*", EXNESS_COPPER),
+                    SymbolCalendars.Rule("XCU*", EXNESS_COPPER) +
+                    SymbolCalendars.Rule("${SymbolCalendars.CATEGORY}Stocks", EXNESS_US_STOCKS),
         )
 
     private val ICMARKETS_CALENDARS = metalsEnergy(NY_CLOSE_METALS, default = NY_CLOSE_FX)
