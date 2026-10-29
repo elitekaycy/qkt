@@ -30,6 +30,9 @@ tests. It runs against the exact immutable image built from `testing`, never a m
    `scripts/live-validation/run-attestation.sh --profile <file>` does this end to end from a
    clean checkout of the testing commit: build, wave, insights attribution, bundle, verify.
    It writes `attestation-run.json` after every stage and exits non-zero on any failure.
+   Its preflight resolves the commit's `:edge` digest from the docker workflow log before
+   the build, so it needs a `gh` that can read run logs (2.55 returns them empty; 2.88 works):
+   a run that cannot pin its image stops in seconds with the `gh` version in the reason.
 6. Dispatch `paper-soak.yml` with the attestation path. The trusted runner verifies
    the exact SHA, image revision, demo mode, metrics, and every artifact hash, then
    uploads the immutable bundle.
