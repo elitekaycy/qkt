@@ -91,6 +91,7 @@ class GatewayTradingAccount internal constructor(
                     GatewayStream(settings.url, settings.apiKey, onEvent, onReset, onConnection)
                 },
                 label = config.name.uppercase(),
+                sharedAccount = settings.sharedAccount,
             )
         }
 
