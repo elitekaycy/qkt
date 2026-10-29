@@ -42,6 +42,9 @@ class ContinuousMarketSource(
     override fun capabilitiesFor(symbol: String): Set<MarketSourceCapability> =
         if (chains.isContinuous(symbol)) inner.capabilities else inner.capabilitiesFor(symbol)
 
+    /** A continuous stream's ticks are its current contract's, delivered by the inner source. */
+    override fun tickDeliveryLagMsFor(symbol: String): Long = inner.tickDeliveryLagMsFor(symbol)
+
     /** A continuous futures stream is no option; any other symbol's option marks are the inner source's. */
     override fun optionMarksFor(symbol: String): OptionMarks? =
         if (chains.isContinuous(symbol)) null else inner.optionMarksFor(symbol)
