@@ -9,7 +9,6 @@ import com.qkt.broker.CloseReason
 import com.qkt.broker.VenueIdentity
 import com.qkt.broker.VenueLeg
 import com.qkt.common.Side
-import com.qkt.positions.Position
 import com.qkt.positions.PositionProvider
 import java.math.BigDecimal
 
@@ -18,7 +17,8 @@ import java.math.BigDecimal
  * reads beside it), mapped once by [GatewayDirectReads] and given qkt symbols and the facts VGP v1 does not
  * carry. A netting position's ticket is qkt's id for it ([VenueLeg]: a new one each time the account's
  * position crosses zero), owned by the strategy that booked it, else by the one broker of the account whose
- * session holds it exactly ([holderOf]: a continuous stream's lane holds the dated contract). A deal's leg,
+ * session holds it exactly ([holderOf]: a continuous stream's lane holds the dated contract, which is then the
+ * stream's position as qkt booked it, under the id its deals carry). A deal's leg,
  * position and realized P&L are what qkt's accounting booked for that fill, found by its `fill_id`
  * ([GatewayFillLegs]). A deal qkt did not book in this process (placed elsewhere, or before a restart)
  * has no realized P&L to state and is left out; one younger than [accountingGraceMs] may still be on its
@@ -33,7 +33,7 @@ internal class GatewayVenueReads(
     private val held: PositionProvider,
     private val strategy: String?,
     private val ownerOf: (String) -> String?,
-    private val holderOf: (String, BigDecimal) -> Pair<String?, Position>? = { _, _ -> null },
+    private val holderOf: (String, BigDecimal) -> GatewayRouting.Holding? = { _, _ -> null },
     private val accountingGraceMs: Long = 60_000L,
 ) {
     fun account(): BrokerAccountState {
@@ -60,13 +60,15 @@ internal class GatewayVenueReads(
             val netting = p.ticket == p.symbol
             val booked = legs.open(symbol)
             val mine = held.positionFor(symbol)?.takeIf { it.quantity.abs().compareTo(p.lots) == 0 }
-            // A continuous stream's contract is held by another broker of the account, its lane.
+            // A continuous stream's contract is held by another broker of the account, its lane: the position is
+            // the stream's, as qkt booked it (its deals name that position), across every roll.
             val lane = if (booked == null && mine == null) holderOf(symbol, p.lots) else null
+            val stream = lane?.stream?.let(legs::open)
             val ticket =
                 when {
                     !netting -> p.ticket
                     else ->
-                        booked?.positionId ?: (mine ?: lane?.second)?.let(VenueLeg::idOf)
+                        booked?.positionId ?: stream?.positionId ?: (mine ?: lane?.position)?.let(VenueLeg::idOf)
                             ?: "$symbol#${p.openedAtMs}"
                 }
             BrokerPositionTicket(
@@ -80,7 +82,9 @@ internal class GatewayVenueReads(
                 null,
                 p.openedAtMs,
                 null,
-                strategyId = booked?.owners?.singleOrNull() ?: strategy?.takeIf { mine != null } ?: lane?.first,
+                strategyId =
+                    booked?.owners?.singleOrNull() ?: strategy?.takeIf { mine != null }
+                        ?: stream?.owners?.singleOrNull() ?: lane?.strategy,
             )
         }
 

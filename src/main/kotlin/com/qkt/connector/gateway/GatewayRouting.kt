@@ -1,6 +1,7 @@
 package com.qkt.connector.gateway
 
 import com.qkt.accounting.MoneyAmount
+import com.qkt.broker.continuous.StreamContractPositions
 import com.qkt.common.Money
 import com.qkt.events.BrokerEvent
 import com.qkt.events.ContractSettled
@@ -38,19 +39,27 @@ internal class GatewayRouting {
     /** The brokers attached now. */
     val brokers: List<Attached> get() = attached.toList()
 
+    /** One broker's holding of a contract: its [strategy], the [position], and the continuous [stream] it is held for. */
+    data class Holding(
+        val strategy: String?,
+        val position: Position,
+        val stream: String?,
+    )
+
     /**
-     * The strategy of the one attached broker whose session holds exactly [lots] of [symbol], with that
-     * holding, or null when none or several do. A continuous stream's dated contract is held by the stream's
-     * lane, not by the session's book, which names only the stream.
+     * The one attached broker whose session holds exactly [lots] of [symbol], or null when none or several do.
+     * A continuous stream's dated contract is held by the stream's lane ([StreamContractPositions]), not by the
+     * session's book, which names only the stream.
      */
     fun soleHolder(
         symbol: String,
         lots: BigDecimal,
-    ): Pair<String?, Position>? {
+    ): Holding? {
         val holders =
             attached.mapNotNull { broker ->
                 val held = broker.positions.positionFor(symbol) ?: return@mapNotNull null
-                if (held.quantity.abs().compareTo(lots) == 0) broker.strategy to held else null
+                val stream = (broker.positions as? StreamContractPositions)?.stream
+                if (held.quantity.abs().compareTo(lots) == 0) Holding(broker.strategy, held, stream) else null
             }
         return holders.singleOrNull()
     }
