@@ -14,6 +14,7 @@ import com.qkt.connectivity.TradingAccount
 import com.qkt.instrument.ContractCatalogSource
 import com.qkt.instrument.FundingRateSource
 import com.qkt.instrument.InstrumentRegistry
+import com.qkt.instrument.OptionCatalogSource
 import com.qkt.instrument.OptionTerms
 import com.qkt.instrument.withInstrumentCategories
 import com.qkt.marketdata.depth.BookDepthSource
@@ -91,6 +92,7 @@ class GatewayTradingAccount internal constructor(
                     GatewayStream(settings.url, settings.apiKey, onEvent, onReset, onConnection)
                 },
                 label = config.name.uppercase(),
+                sharedAccount = settings.sharedAccount,
             )
         }
 
@@ -118,6 +120,9 @@ class GatewayTradingAccount internal constructor(
 
     override val contractCatalogs: ContractCatalogSource
         get() = GatewayContractCatalog(client, GatewaySymbols(config.symbolPrefix), clock)
+
+    override val optionCatalogs: OptionCatalogSource
+        get() = GatewayOptionCatalog(client, GatewaySymbols(config.symbolPrefix), clock)
 
     override val fundingRates: FundingRateSource = GatewayFundingRates(client, GatewaySymbols(config.symbolPrefix))
 

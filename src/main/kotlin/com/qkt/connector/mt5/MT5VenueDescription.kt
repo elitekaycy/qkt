@@ -22,7 +22,7 @@ internal class MT5VenueDescription(
         val account = client.lastAccount
         val login = account?.login?.takeIf { it != 0L } ?: profile.expectedAccountLogin
         val server = account?.server?.takeIf { it.isNotEmpty() } ?: profile.expectedAccountServer
-        return identity(profile.name, login?.toString(), server)
+        return identity(profile.name, login?.toString(), server, account?.tradeMode)
     }
 
     override fun fillPositionId(brokerOrderId: String?): String? = brokerOrderId?.takeIf { it.isNotBlank() }
@@ -34,17 +34,22 @@ internal class MT5VenueDescription(
     }
 
     companion object {
-        /** The identity of MT5 account [login] on [server] configured as [name]; no account id until both are known. */
+        /**
+         * The identity of MT5 account [login] on [server] configured as [name]; no account id until both are
+         * known. [tradeMode] is the account's `ACCOUNT_TRADE_MODE` (0 demo, 1 contest, 2 real), when read.
+         */
         fun identity(
             name: String,
             login: String?,
             server: String?,
+            tradeMode: Int? = null,
         ): VenueIdentity =
             VenueIdentity(
                 connector = "mt5",
                 adapter = server?.substringBefore('-')?.lowercase()?.takeIf { it.isNotBlank() } ?: "mt5",
                 label = name.uppercase(),
                 accountId = if (login != null && !server.isNullOrBlank()) VenueAccountId.mt5(login, server) else null,
+                tradeMode = tradeMode?.let { MT5TradeMode.fromWire(it) }?.name?.lowercase(),
             )
 
         /**

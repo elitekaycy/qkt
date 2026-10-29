@@ -1,6 +1,7 @@
 package com.qkt.cli.daemon
 
 import com.qkt.app.SessionPnl
+import com.qkt.cli.observe.AuditJournalDto
 import com.qkt.cli.observe.PendingStackLayer
 import com.qkt.cli.observe.PersistenceHealthDto
 import com.qkt.cli.observe.PositionDto
@@ -86,6 +87,7 @@ internal fun buildSnapshot(
     clockSkewedSymbols: Map<String, Long> = emptyMap(),
     openPositions: List<com.qkt.positions.Position> = emptyList(),
     persistenceHealth: com.qkt.persistence.PersistenceHealth = com.qkt.persistence.PersistenceHealth.DISABLED,
+    auditJournal: com.qkt.observe.AuditJournalHealth = com.qkt.observe.AuditJournalHealth.DISABLED,
     halt: HaltStatus = HaltStatus.NONE,
 ): StatusSnapshot {
     val now = System.currentTimeMillis()
@@ -131,6 +133,7 @@ internal fun buildSnapshot(
                 queueSize = persistenceHealth.queueSize,
                 callerRunsTotal = persistenceHealth.callerRunsTotal,
             ),
+        auditJournal = AuditJournalDto.of(auditJournal),
         halted = halt.halted,
         haltReason = halt.reason,
         haltScope = halt.scope,

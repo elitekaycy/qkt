@@ -21,6 +21,8 @@ import com.qkt.marketdata.source.MarketSource
 import com.qkt.notify.NoopNotifier
 import com.qkt.notify.Notifier
 import com.qkt.notify.NotifyEventKind
+import com.qkt.observe.insights.sourceFacts
+import com.qkt.observe.insights.streamFacts
 import java.nio.file.Files
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicBoolean
@@ -449,17 +451,7 @@ class PortfolioDeployer(
             "runtimeMode" to if (brokerFactories.isEmpty()) "paper" else "live",
             "brokers" to brokerFactories.keys.sorted(),
             "symbols" to compiledChild.symbols,
-            "streams" to
-                compiledChild.ast.streams.map {
-                    linkedMapOf(
-                        "alias" to it.alias,
-                        "broker" to it.broker,
-                        "symbol" to it.symbol,
-                        "qktSymbol" to it.qktSymbol,
-                        "timeframe" to it.timeframe,
-                        "warmupBars" to it.warmupBars,
-                    )
-                },
+            "streams" to streamFacts(compiledChild.ast.streams),
             "risk" to
                 linkedMapOf(
                     "maxDailyLoss" to maxDailyLoss,
@@ -481,7 +473,7 @@ class PortfolioDeployer(
                     "perStrategyLossStreakHalt" to perStrategyOverride?.lossStreakHalt,
                     "perStrategyLossStreakHaltScope" to perStrategyOverride?.lossStreakHaltScope?.name,
                 ),
-        )
+        ) + sourceFacts(compiledChild.source)
     }
 
     private fun createChild(
@@ -617,7 +609,7 @@ class PortfolioDeployer(
             ObservabilityServer(
                 ring = ring,
                 statusProvider = {
-                    childStatusSnapshot(
+                    com.qkt.cli.daemon.sessionStatusSnapshot(
                         childName,
                         compiledChild.ast.version,
                         compiledChild.strategyId,

@@ -12,6 +12,7 @@ import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.marketdata.TickFeed
 import com.qkt.marketdata.live.LiveTickFeed
 import com.qkt.notify.StrategySummary
+import com.qkt.observe.AuditJournalHealth
 import com.qkt.observe.insights.TicketAttribution
 import com.qkt.persistence.PersistenceHealth
 import com.qkt.persistence.StatePersistor
@@ -48,6 +49,7 @@ internal class RunningSessionHandle(
     private val reconcileReport: SessionReconcileReport,
     private val shutdown: SessionShutdown,
     private val summaryRows: DailySummaryRows,
+    private val auditJournal: com.qkt.observe.EngineAuditJournal? = null,
 ) : LiveSessionHandle,
     HaltReads by RiskHaltReads(riskState, strategies.map { it.first }) {
     private val control = mailbox.control
@@ -75,6 +77,8 @@ internal class RunningSessionHandle(
     override fun clockSkewedSymbols(): Map<String, Long> = marketDataGate.clockSkewedSymbols()
 
     override fun persistenceHealth(): PersistenceHealth = persistor.healthSnapshot()
+
+    override fun auditJournalHealth(): AuditJournalHealth = auditJournal?.health() ?: AuditJournalHealth.DISABLED
 
     override fun reconcile(): ReconcileReport = reconcileReport.reconcile()
 

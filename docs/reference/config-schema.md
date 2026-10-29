@@ -278,7 +278,7 @@ Controls safety mode and explicit runtime waivers.
 | Key | Type | Default | Used by | Notes |
 |---|---|---|---|---|
 | `runtime.mode` | `dev`, `paper`, or `production` | `dev` | config, daemon, preflight, promotion | Production mode enables fail-closed preflight and promotion enforcement defaults. |
-| `runtime.candle_close_grace_ms` | non-negative integer | `2000` | daemon, run, backtest, replay | How long after a bar's window ends the 1 Hz heartbeat closes a quiet symbol's bar. Live and replay read the same value, so a `SYNCHRONIZE` group with a sparse member decides on the same heartbeat step in both; replay records it in `result.json` as `execution.candleCloseModel`. A tick of the same stream from the next window closes the bar immediately in both modes. |
+| `runtime.candle_close_grace_ms` | non-negative integer | `2000` | daemon, run, backtest, replay | How long after a bar's window ends the 1 Hz heartbeat closes a quiet symbol's bar. Live and replay read the same value, so a `SYNCHRONIZE` group with a sparse member decides on the same heartbeat step in both; replay records it in `result.json` as `execution.candleCloseModel`. A tick of the same stream from the next window closes the bar immediately in both modes. It must outlast how late the feed delivers: a polled MT5 broker hands a tick over up to one `tick_poll_interval_ms` after its stamp, and a grace at or below that drops every bar's last poll; the daemon warns at start naming those symbols and a grace that fits (1.5 x the poll interval). |
 | `runtime.waivers.<control>.reason` | string | none | preflight | Currently `alerts` is used by `notify.alerts` production preflight. Keep reasons operator-readable. |
 
 ## `state`
@@ -548,6 +548,7 @@ brokers:
 | `retry_attempts` | int | no | `3` | Reads, and submits, are sent again on a timeout or `503`; a submit is idempotent on its client order id, so this never places a second order. |
 | `chain_snapshot_seconds` | int | no | `300` | How often the live chain of each fed option root declared `chains: book` is appended to its book series (structures and `CHAIN:` streams read it). |
 | `calendars` | as above | no | `crypto` | Set it for venues that close, such as CME futures. |
+| `shared_account` | `true` or `false` | no | `false` | `true` when something besides this daemon also trades the account (another qkt daemon, a person). See [A shared gateway account](#a-shared-gateway-account). |
 
 The account reports to insights under its entry name uppercased (`DERIBIT`): its account, positions,
 working orders and deals are polled like an MT5 account's (see [Venue envelopes](#venue-envelopes)).
@@ -572,7 +573,8 @@ position no book holds is never adopted), and each time a strategy comes up, onc
 deployed on the account is running, their holdings must add up to the account's. While they do not,
 only orders that reduce a position are sent; the check clears itself when a later one agrees (as
 strategies deploy one after another, and it is judged again before any order adding risk is refused, so
-a fill the venue had not yet reported when last checked blocks nothing), or after an operator resolves the difference. After a restart every restored order is resolved by id, with its complete fill
+a fill the venue had not yet reported when last checked blocks nothing), or after an operator resolves the difference. An account
+other traders use too needs `shared_account: true` (below). After a restart every restored order is resolved by id, with its complete fill
 history, so a fill is never lost or booked twice. A submit the gateway never answers is sent again
 until a deadline, then resolved by id. The gateway's identity is checked at startup and whenever its
 event log restarts; a gateway on another account refuses every order. The kill switch at the gateway
@@ -584,14 +586,59 @@ to one tick wider than asked (a backtest does the same for a contract of a decla
 without one it keeps the level as computed). The account's prices come from the gateway's quotes socket: its
 contracts, and its option roots as whole feeds (`OPTIONS:<ACCOUNT>.<ROOT>`, so name the account after
 the venue, e.g. `deribit`, to match `instruments.yaml`). Venues list new option expiries every day: schedule
-`qkt fetch DERIBIT:<ROOT> --catalog` (daily is enough) and a running daemon picks the new catalog up
-within a minute; a contract missing from the catalog is never routed or recorded.
+`qkt fetch <ACCOUNT>:<ROOT> --catalog` (daily is enough) and a running daemon picks the new catalog up
+within a minute; a contract missing from the catalog is never routed or recorded. The catalog of a root
+declared under `options:` is built from this account's own listing (`/v1/instruments`), whatever the entry
+is named, so a testnet account gets its testnet contracts; a fetch whose venue lists options of the root but
+catalogues none fails, and one for a root declared only under `futures:` warns that the venue's options are
+not catalogued. VGP v1 lists no index delivery prices: a day is priced only when the account held one of the
+root's options that settled in the money that day, and a stored catalog keeps the prices it already has.
 
 Policy-rate artifacts are also configured through the environment. `QKT_RBA_POLICY_RATE_SOURCE`
 and `QKT_RBNZ_POLICY_RATE_SOURCE` accept an absolute path, `file:` URI, or HTTPS URL for the
 authorities' official XLSX tables. The RBA and RBNZ URLs are the defaults. Use a read-only mounted
 local artifact when an authority rejects server-side HTTP traffic; qkt records its SHA-256 and
 fails live ingestion when the artifact is malformed or more than seven calendar days stale.
+
+#### A shared gateway account
+
+By default qkt assumes it is the only thing trading a gateway account, so any position its strategies
+do not hold is a problem: a phantom fill, or a manual trade nobody told qkt about. It then refuses every
+order that adds risk, on every symbol, with `strategies hold, account holds: <code> <ours> vs <account's>`.
+
+Set `shared_account: true` when the account really is shared: two qkt daemons on one testnet account, or
+a person trading it by hand beside qkt.
+
+```yaml
+brokers:
+  deribit:
+    type: gateway
+    # ... the settings above
+    shared_account: true
+```
+
+On a shared account the check changes in three ways:
+
+- **Only the symbols this daemon trades are checked.** A position on a symbol none of its strategies
+  hold or send orders for is ignored.
+- **Other traders' size is allowed, but it must not move.** The first time a strategy here trades a
+  symbol (or a restart finds it holding one), qkt notes what the account holds beyond the strategies'
+  own holding. After that, only this daemon's own fills may change the account's position on that
+  symbol. Anything else refuses new risk, with `the account's <code> moved without a fill here:
+  strategies hold <ours>, account holds <account's>, other holders held <noted>`. Orders that reduce a
+  position still go through, as in the default mode. The refusal clears once the account is back at
+  what qkt expects. A restart notes the other traders' size again from scratch, which is how an
+  operator accepts a change they checked. This means two daemons sharing an account should trade
+  different symbols: when they trade the same one, each one's fills look unexplained to the other.
+- **A restart never takes over another trader's position.** Each strategy restores its own book from
+  its saved state, and its orders from their client order ids (`dsl-<strategy>-` and
+  `ORD-<strategy>-`). The account's netted position is never adopted. Give strategies on different
+  daemons different names, so their order ids never look alike.
+
+Two things only the account total knows cannot be split exactly on a shared account. Funding on a
+perpetual is booked per strategy as `amount × the strategy's holding / the account's position`, so
+other traders keep their part of it. The account's balance and equity include every trader's profit
+and loss, so they cannot check one daemon's realized P&L. Use the daemon's own trade history for that.
 
 ## `market_data`
 
@@ -653,7 +700,7 @@ Unknown notify channel keys are passed through as provider settings.
 
 ## `insights`
 
-Optional egress to a qkt-insights collector. Disabled config wires no queue and no worker thread. Enable `journal_enabled` for production so collector outages leave unacked batches on disk for replay instead of dropping them after retry exhaustion. Daemon live sessions also write a full engine audit JSONL under `state/audit-journal/<strategy>/audit-YYYY-MM-DD.jsonl`; the audit writer uses a bounded queue and its own daemon thread so durable file I/O does not run on the event bus thread.
+Optional egress to a qkt-insights collector. Disabled config wires no queue and no worker thread. Enable `journal_enabled` for production so collector outages leave unacked batches on disk for replay instead of dropping them after retry exhaustion. Daemon live sessions also write a full engine audit JSONL under `state/audit-journal/<strategy>/audit-YYYY-MM-DD.jsonl`; the audit writer uses its own daemon thread so durable file I/O does not run on the event bus thread, never sheds decision events (orders, fills, risk, bookings), sheds market data only past 50,000 queued records, and journals an option chain's quotes only for contracts the session trades or holds (see [Monitoring](../operations/monitoring.md)).
 
 For `trade.closed` envelopes, `realized` is retained only as a legacy alias of
 `netAccountRealized`. Dashboards should treat `netAccountRealized` as the
@@ -686,14 +733,16 @@ adds `broker.deal` for the deals booked since the last poll. All fields below ar
 that does not know them ignores them.
 
 - **Every venue envelope** (`state.*`, `broker.deal`, `broker.connected`, `broker.disconnected`,
-  `broker.reconnected`) carries `venue: {connector, adapter, label}` and `accountId`. `connector` is
+  `broker.reconnected`) carries `venue: {connector, adapter, label, tradeMode}` and `accountId`. `connector` is
   `mt5`, `vgp` or `paper`; `adapter` is the venue (`exness` from the MT5 trade server
   `Exness-MT5Trial9`, the gateway's `adapter`); `label` is the broker entry name uppercased, the same as
   `broker` (`EXNESS`, `PAPER_DERIBIT`); `accountId` is opaque, so no envelope (nor the insights journal
   on disk) names the account by its credentials: `mt5:` + the first 16 hex characters of
   `sha256("<login>@<server>")`, or `vgp:` + the first 16 hex characters of
   `sha256("<adapter>:<account_login>")` (`com.qkt.broker.VenueAccountId`; qkt-insights computes the same
-  id). `state.account.login` is a string masked to its last four characters (`•••9381`), and
+  id). `tradeMode` is the account's environment as the venue states it: `demo`, `real`, or MT5's
+  `contest` (MT5 `ACCOUNT_TRADE_MODE`; a gateway's checked `trade_mode`), absent until it is read.
+  `state.account.login` is a string masked to its last four characters (`•••9381`), and
   `state.account` carries no `server`.
 - **`broker.deal`** adds `positionId` (the position the deal belongs to), `legEntry` (`IN`, `OUT`,
   `INOUT`, `OUT_BY`), `closeReason` on a closing deal, `nextPositionId` (the position a reversing
@@ -703,6 +752,12 @@ that does not know them ignores them.
   position ticket; `comment`: by the venue comment; `none`), and `instrument`.
 - **`state.positions`** entries add `positionId`, `attribution`, `instrument`, and `initialStop`,
   `initialTarget` and `riskAmount` (account currency) when qkt opened the position with a bracket.
+  A position whose venue states no `currentPrice` or `profit` (a `type: gateway` account: VGP v1 carries
+  neither) takes the session's own closing mark for its symbol (bid for a long, ask for a short) and the
+  floating P&L qkt's accounting gives it (contract size, quote currency converted to the account's); both
+  stay `null` until the session has a quote for the symbol, and `profit` stays `null` when the quote
+  currency has no rate to the account's. Its `openedAt` is qkt's own open time when the venue sends none.
+  `swap` is only ever the venue's: perpetual funding arrives as its own record.
   `state.orders` entries add `attribution` and `instrument`.
 - **`order.filled`, `order.partially_filled` and `trade.closed`** add `positionId`, `legEntry`,
   `closeReason` (on a reducing fill), `strategyId` and `attribution`; an entry fill also carries
@@ -711,9 +766,33 @@ that does not know them ignores them.
   `LIQUIDATION`, `EXPIRY`. MT5 deal reasons map 4 to `STOP`, 5 to `TAKE_PROFIT`, 6 to `STOP_OUT` and a
   terminal (0-2) to `MANUAL`; qkt's own exits map by order id: a bracket's `-sl`/`-tp` order to
   `STOP`/`TAKE_PROFIT`, an `EXIT AFTER` close to `TIMED`, a `qkt bot` order to `MANUAL`.
-- **`instrument`** is `{symbol, venueCode, kind, contractSize, tickSize, quoteCurrency,
+- **`instrument`** is `{symbol, venueCode, kind, category, contractSize, tickSize, quoteCurrency,
   valuePerPoint}`, where qkt or the venue knows them; `valuePerPoint` is the account-currency value of
-  one unit of quantity moving one price unit.
+  one unit of quantity moving one price unit. `kind` is `cfd` (every MT5 symbol), `equity`, `spot`,
+  `perpetual`, `future` or `option`; `category` is the venue's folder for the symbol, so a stock CFD
+  reads `kind: cfd, category: Stocks` (MT5 path `Standard\Stocks\AAPLm`), apart from FX and metal
+  CFDs in their own folders. A derivative adds its `root` (`DERIBIT:BTC`), a dated contract its
+  `expiry` (UTC ms), and an option its `strike`, `optionRight` (`call`, `put`) and `underlying` index.
+
+### `strategy.started`
+
+`strategy.started` (the `lifecycle` family) is sent once each time a strategy starts: a daemon deploy, a
+portfolio child, a restart. Beside its deploy metadata (`deployName`, `dslVersion`, `params`, `risk`,
+...) it states:
+
+- **`streams`**: one entry per declared stream, `{alias, broker, symbol, qktSymbol, timeframe,
+  warmupBars}`, plus that symbol's `instrument` (above) and `venue` when the session knows them, so a
+  strategy says what it trades before it trades.
+- **The source it runs**: `sourcePath`, `sourceSha256` (of the whole file) and `sourceText`, the file's
+  text cut to 64 KiB of UTF-8 on a character boundary (`sourceTruncated: true` when cut). A portfolio
+  child states its own imported file. The text rides `strategy.started` only, never another envelope,
+  and one process sends it once per strategy and sha: a later start of the same strategy at the same
+  sha (a portfolio restarting an unchanged child, a redeploy of the same file) sends the sha with
+  `sourceTextOmitted: true` instead of the text. A new process sends the text again. A `qkt bot`
+  session has no strategy file and states none of these.
+
+With `journal_enabled`, a replayed batch also stops before the envelope that would take it past 512 KiB
+of JSON, so a batch of large envelopes still fits the collector's default 1 MiB body.
 
 An MT5 account names its positions (`positionId` is the position ticket). A VGP netting account names
 none, so qkt mints `<symbol>#<openedAt>`, from the open time of the account position qkt holds: a new

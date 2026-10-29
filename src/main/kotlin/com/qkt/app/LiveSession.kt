@@ -42,7 +42,6 @@ import com.qkt.strategy.Signal
 import com.qkt.strategy.Strategy
 import com.qkt.strategy.Warmable
 import com.qkt.strategy.WarmupSpec
-import com.qkt.strategy.targetSymbol
 import com.qkt.strategy.windowMs
 import java.time.Instant
 import org.slf4j.LoggerFactory
@@ -641,32 +640,9 @@ class LiveSession(
 
         bus.subscribe<WarmupTickEvent> { e -> onWarmupTick(e.tick) }
         bus.subscribe<SignalEvent> { e -> onSignal(e.signal) }
-        // The pipeline logs a `submit …` context line before the risk decision; without a
-        // paired rejection line the log reads as if the order reached the venue (#876).
-        bus.subscribe<com.qkt.events.RiskRejectedEvent> { e ->
-            log.warn(
-                "risk rejected {} {} {} {} qty={}: {}",
-                e.request.strategyId,
-                e.request.id,
-                e.request.symbol,
-                e.request.side,
-                e.request.quantity.toPlainString(),
-                e.reason,
-            )
-        }
-        // A gated drop never becomes an OrderRequest, so the rejection WARN above can't
-        // cover it; without this line such signals vanish without trace (#889).
-        bus.subscribe<com.qkt.events.SignalSuppressedEvent> { e ->
-            log.warn(
-                "signal suppressed {} {} {}: {}",
-                e.strategyId,
-                e.signal.targetSymbol() ?: "-",
-                e.signal::class.simpleName,
-                e.reason,
-            )
-        }
+        wireRejectionLogs(bus, log)
         journal?.let { OrderJournalWiring(strategies).wire(bus, it) }
-        auditJournal?.let { audit -> bus.subscribeAllFirst { e -> audit.append(e) } }
+        auditJournal?.let { wireAuditJournal(bus, it, symbols, positions) }
 
         // Register notifier handlers before the warmup phase so a warmup-time risk halt
         // (rare but possible) reaches Telegram. Bus dispatch is single-threaded and synchronous,
@@ -736,7 +712,7 @@ class LiveSession(
         }
         riskState.warmupComplete = true
 
-        val feed = source.liveTicks(feedSymbols)
+        val feed = CandleCloseGraceCheck.openLiveTicks(source, feedSymbols, candleCloseGraceMs)
         insights.connected({ brokers.built.ifEmpty { listOf(broker) } }, feed)
 
         val sessionFlatten =
@@ -802,7 +778,7 @@ class LiveSession(
                 insightsSharedDeals,
                 insightsDealBackfillDays,
                 clock,
-            ).start(brokerStatePollerBrokers, handleRef, strategyPnL)
+            ).start(brokerStatePollerBrokers, handleRef, strategyPnL, pnl)
 
         // Fire StrategyStarted per strategy this session hosts. Lifecycle events bypass the
         // bus because no other engine component consumes them.
@@ -854,6 +830,7 @@ class LiveSession(
                     insights,
                 ),
             summaryRows = summaryRows,
+            auditJournal = auditJournal,
         ).also { handleRef.set(it) }
     }
 }

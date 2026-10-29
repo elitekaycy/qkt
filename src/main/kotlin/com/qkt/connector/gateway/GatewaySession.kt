@@ -15,7 +15,8 @@ import org.slf4j.LoggerFactory
  * restarts. Each time a strategy is ready, once every strategy of [expectedStrategies] (asked then, as
  * strategies deploy one by one) is, their holdings must add up to the account's ([GatewayHolders]).
  * Either failure stops new risk: an identity mismatch refuses every order, a holdings mismatch every
- * order that is not reduce-only, until a later check finds the holdings agree.
+ * order that is not reduce-only, until a later check finds the holdings agree. A [sharedAccount] has
+ * other holders too, so only moves on the codes its strategies trade are judged ([GatewayOtherHolders]).
  */
 internal class GatewaySession(
     val client: GatewayClient,
@@ -34,22 +35,23 @@ internal class GatewaySession(
     resyncRetryMs: Long = 5_000L,
     /** The account's config entry name uppercased: the label of its events, venue state and deals. */
     val label: String = "GATEWAY",
+    sharedAccount: Boolean = false,
 ) {
     private val log = LoggerFactory.getLogger(GatewaySession::class.java)
     private val lock = Any()
 
     /** What the account last reported. */
     val account = GatewayAccountState()
-    private val routing = GatewayRouting()
+    val routing = GatewayRouting()
     private val alerts = GatewayAlerts(label, routing, lock, clock)
 
     /** What qkt's accounting booked for this account's fills, for the venue deals that carry none of it. */
     val legs = GatewayFillLegs()
 
     /** The connector, venue and account this session trades. */
-    val venue = VenueIdentity("vgp", identity.adapter, label, identity.accountId)
+    val venue = VenueIdentity("vgp", identity.adapter, label, identity.accountId, identity.tradeMode)
     val ledger: GatewayLedger = GatewayLedger(symbols, routing, lock, ::fetchDeals, legs)
-    private val holders = GatewayHolders(symbols)
+    private val holders = GatewayHolders(symbols, routing, account, lock, expectedStrategies, sharedAccount)
     private val funding = GatewayFunding(client, symbols, clock, routing, lock)
     private val placement = GatewayPlacement(client, clock, ledger::onOrder, ledger::onFill, submitDeadlineMs, retryMs)
     private val sync =
@@ -113,10 +115,7 @@ internal class GatewaySession(
         val held = broker.positions.symbols().mapNotNull(symbols::code)
         GatewayRecovery.settleHeld(client, held) { settlement -> ledger.settleFor(broker, settlement) }
         funding.replay(broker)
-        synchronized(lock) {
-            holders.ready(broker)
-            judgeHoldings()
-        }
+        holders.ready(broker)
     }
 
     /** Detaches [broker]; the connection stays open with the account. */
@@ -131,8 +130,9 @@ internal class GatewaySession(
     ) {
         // A disagreement may have been a fill the venue had not yet reported: judge again before refusing.
         val blocked =
-            refused ?: funding.refusal(body) ?: riskRefused?.takeUnless { body.reduceOnly }?.let { judgeHoldings() }
+            refused ?: funding.refusal(body) ?: riskRefused?.takeUnless { body.reduceOnly }?.let { holders.judge() }
         if (blocked != null) return reject(blocked)
+        holders.trading(body.symbol)
         ledger.own(body.clientOrderId, strategy, BigDecimal(body.quantity), sender)
         placement.submit(body) { reason -> reject(reason).also { ledger.disown(body.clientOrderId) } }
     }
@@ -168,13 +168,6 @@ internal class GatewaySession(
     }
 
     private fun readListing() = client.instruments().also(symbols::updateListing).let(funding::listed)
-
-    private fun judgeHoldings(): String? =
-        synchronized(lock) {
-            val expected = expectedStrategies() + routing.brokers.mapNotNull { it.strategy }
-            holders.judge(routing.brokers, expected, account.positions)
-            holders.riskRefused
-        }
 
     private fun refuse(reason: String) {
         log.error("gateway refused: {}", reason)

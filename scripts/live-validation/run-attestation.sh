@@ -61,6 +61,17 @@ balance() { curl -fsS -m 10 "$gateway_url/account" | jq -er '(.data // .).balanc
 stage_write preflight
 [ -z "$(git status --porcelain)" ] || fail "working tree is not clean; the binary would not correspond to $short"
 [ "$(curl -fsS -m 10 "$gateway_url/get_positions" | jq -er '(.data // .) | length')" = 0 ] || fail "account is not flat"
+# The bundle pins the :edge image this commit published. Resolved here, not after the live catalog: a gh that
+# cannot read the docker workflow log (gh 2.55 returns an empty one) must stop the run in seconds, with a reason.
+# The token may lack read:packages, so the digest comes from the docker workflow log of this commit. Looked up by
+# commit: a branch listing is newest-first by creation and can push this commit's run out of its window. `|| true`
+# keeps an empty lookup from ending the script under pipefail before `fail` can say why.
+docker_run="$(gh run list --workflow docker.yml --branch testing --commit "$sha" --status success --json databaseId \
+    --jq ".[0].databaseId" || true)"
+[ -n "$docker_run" ] || fail "no docker workflow run for $short on testing"
+digest="$(gh run view "$docker_run" --log 2>/dev/null | sed 's/\x1b\[[0-9;]*m//g' |
+    grep "pushing manifest for $image_repository:edge@" | grep -o 'sha256:[0-9a-f]\{64\}' | head -n 1 || true)"
+[ -n "$digest" ] || fail "could not resolve the :edge digest for $short from docker run $docker_run ($(gh --version | head -n 1))"
 
 stage_write build
 ./gradlew -q clean installDist -PqktGitSha="$sha" > "$wave_root/build-$short.log" 2>&1 || fail "build failed"
@@ -98,7 +109,12 @@ log "sweep $swept"
 wave="$wave_root/attest-$short"
 for attempt in $(seq 1 "$attempts"); do
     stage_write wave "attempt $attempt"
-    if [ -e "$wave" ]; then mv "$wave" "$wave.failed-$attempt"; mv "$wave.wave.log" "$wave.failed-$attempt.log" 2>/dev/null || true; fi
+    # A rerun of the same commit finds earlier runs' attempts already rotated: take the next free name, since `mv`
+    # onto an existing directory moves into it and the run after that cannot.
+    if [ -e "$wave" ]; then
+        n=1; while [ -e "$wave.failed-$n" ] || [ -e "$wave.failed-$n.log" ]; do n=$((n + 1)); done
+        mv "$wave" "$wave.failed-$n"; mv "$wave.wave.log" "$wave.failed-$n.log" 2>/dev/null || true
+    fi
     # run-market-bracket.sh takes the account lock itself; wrapping this in flock deadlocks it.
     bash scripts/live-validation/run-parity-suite.sh --output "$wave" --id "wave_$short" --gateway-url "$gateway_url" \
         --expected-login "$expected_login" --expected-server "$expected_server" --expected-balance "$(balance)" \
@@ -157,14 +173,6 @@ bash scripts/live-validation/run-insights-attribution.sh --scenario "$ins" --ins
     --cli "$cli" --arm I_UNDERSTAND_DEMO_ORDER_0.01 > "$ins.log" 2>&1 || fail "insights attribution failed: $(tail -n 1 "$ins.log")"
 
 stage_write bundle
-# The token may lack read:packages, so the digest comes from the docker workflow log of this commit.
-# Looked up by commit: a branch listing is newest-first by creation and can push this commit's run out of its window.
-docker_run="$(gh run list --workflow docker.yml --branch testing --commit "$sha" --status success --json databaseId \
-    --jq ".[0].databaseId")"
-[ -n "$docker_run" ] || fail "no docker workflow run for $short on testing"
-digest="$(gh run view "$docker_run" --log 2>/dev/null | sed 's/\x1b\[[0-9;]*m//g' |
-    grep "pushing manifest for $image_repository:edge@" | grep -o 'sha256:[0-9a-f]\{64\}' | head -n 1)"
-[ -n "$digest" ] || fail "could not resolve the :edge digest for $short"
 bundle="$bundle_root/build-$short"; rm -rf "$bundle"
 python3 scripts/live-validation/assemble-attestation.py "$wave" "$ins" "$bundle" "$image_repository@$digest" "$sha" \
     > "$wave_root/assemble-$short.log" 2>&1 || fail "bundle assembly failed; see assemble-$short.log"

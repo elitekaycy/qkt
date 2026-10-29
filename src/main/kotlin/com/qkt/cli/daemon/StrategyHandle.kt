@@ -5,7 +5,7 @@ import com.qkt.app.LiveSessionHandle
 import com.qkt.candles.TimeWindow
 import com.qkt.cli.observe.EventRing
 import com.qkt.cli.observe.ObservabilityServer
-import com.qkt.cli.observe.PendingStackLayer
+import com.qkt.dsl.StrategySource
 import com.qkt.dsl.ast.BoolLit
 import com.qkt.dsl.ast.DefaultsBlock
 import com.qkt.dsl.ast.ExprAst
@@ -19,9 +19,9 @@ import com.qkt.marketdata.source.MarketSource
 import com.qkt.notify.NoopNotifier
 import com.qkt.notify.Notifier
 import com.qkt.notify.NotifyEventKind
-import java.nio.file.Files
+import com.qkt.observe.insights.sourceFacts
+import com.qkt.observe.insights.streamFacts
 import java.nio.file.Path
-import java.security.MessageDigest
 import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicBoolean
@@ -196,12 +196,6 @@ class StrategyHandle(
             return out.takeIf { it.isNotEmpty() }
         }
 
-        private fun sha256(path: Path): String? =
-            runCatching {
-                val digest = MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(path))
-                digest.joinToString("") { "%02x".format(it.toInt() and 0xff) }
-            }.getOrNull()
-
         private fun strategyMetadata(
             deployName: String,
             file: Path,
@@ -211,23 +205,11 @@ class StrategyHandle(
         ): Map<String, Any?> =
             linkedMapOf(
                 "deployName" to deployName,
-                "sourcePath" to file.toAbsolutePath().normalize().toString(),
-                "sourceSha256" to sha256(file),
                 "dslVersion" to ast.version,
                 "runtimeMode" to if (brokerFactories.isEmpty()) "paper" else "live",
                 "brokers" to brokerFactories.keys.sorted(),
                 "symbols" to symbols,
-                "streams" to
-                    ast.streams.map {
-                        linkedMapOf(
-                            "alias" to it.alias,
-                            "broker" to it.broker,
-                            "symbol" to it.symbol,
-                            "qktSymbol" to it.qktSymbol,
-                            "timeframe" to it.timeframe,
-                            "warmupBars" to it.warmupBars,
-                        )
-                    },
+                "streams" to streamFacts(ast.streams),
                 "params" to ast.params.associate { it.name to literalPayload(it.value) },
                 "defaults" to defaultsPayload(ast.defaults),
                 "risk" to
@@ -259,7 +241,7 @@ class StrategyHandle(
                         "perStrategyLossStreakHalt" to perStrategyOverride?.lossStreakHalt,
                         "perStrategyLossStreakHaltScope" to perStrategyOverride?.lossStreakHaltScope?.name,
                     ),
-            )
+            ) + sourceFacts(StrategySource.read(file))
 
         override fun create(
             name: String,
@@ -323,33 +305,7 @@ class StrategyHandle(
                 ObservabilityServer(
                     ring = ring,
                     statusProvider = {
-                        val layers =
-                            session.pendingStackLayerInfos().map {
-                                PendingStackLayer(
-                                    stackId = it.stackId,
-                                    layer = it.layer,
-                                    triggerPrice = it.triggerPrice,
-                                    side = it.side,
-                                    quantity = it.quantity,
-                                )
-                            }
-                        buildSnapshot(
-                            ast.name,
-                            ast.version,
-                            startMs,
-                            startedAt.toString(),
-                            session.recentTrades(),
-                            layers,
-                            streamBrokers = session.streamBrokers(),
-                            pnl = session.pnlSnapshot(ast.name),
-                            inboundQueueDepth = session.inboundQueueDepth(),
-                            droppedTicks = session.droppedTicks,
-                            staleSymbols = session.staleSymbols().keys.sorted(),
-                            clockSkewedSymbols = session.clockSkewedSymbols(),
-                            openPositions = session.positionsFor(ast.name),
-                            persistenceHealth = session.persistenceHealth(),
-                            halt = HaltStatus.of(session, ast.name),
-                        )
+                        sessionStatusSnapshot(ast.name, ast.version, ast.name, startMs, startedAt, session)
                     },
                     running = { session.running },
                     onStop = { _ -> session.stop() },

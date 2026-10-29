@@ -88,11 +88,30 @@ internal fun renderStrategies(
         if (gateState == "operator_stopped") {
             unhealthy.add("strategy '$name' is operator-stopped")
         }
+        obj["auditJournal"]?.jsonObject?.let { renderAuditJournal(name, it, sb, unhealthy) }
         if (promotionEnforced && promotionEligible == false) {
             unhealthy.add("strategy '$name' promotion gates missing: ${promotionMissing.joinToString(",")}")
         }
     }
     return sb.toString()
+}
+
+/**
+ * The audit-journal line of strategy [name] when its journal is missing records: dropped market data is
+ * shown, a lost decision event (a fill or order the trail no longer holds) also makes the strategy unhealthy.
+ */
+private fun renderAuditJournal(
+    name: String,
+    audit: kotlinx.serialization.json.JsonObject,
+    sb: StringBuilder,
+    unhealthy: MutableList<String>,
+) {
+    val dropped = audit["droppedMarketData"]?.jsonPrimitive?.longOrNull ?: 0L
+    val lost = audit["lostDecisionEvents"]?.jsonPrimitive?.longOrNull ?: 0L
+    if (dropped == 0L && lost == 0L) return
+    sb.append("\n    audit journal: dropped ").append(dropped).append(" market-data record(s), lost ")
+    sb.append(lost).append(" decision event(s)")
+    if (lost > 0L) unhealthy.add("strategy '$name' audit journal lost $lost decision event(s)")
 }
 
 /** Compact uptime such as `2d3h`, `4h10m`, `5m2s` or `9s`. */
