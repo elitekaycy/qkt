@@ -830,6 +830,7 @@ class LiveSession(
                     insights,
                 ),
             summaryRows = summaryRows,
+            auditJournal = auditJournal,
         ).also { handleRef.set(it) }
     }
 }

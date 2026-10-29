@@ -3,6 +3,7 @@ package com.qkt.cli.daemon
 import com.qkt.app.LiveSessionHandle
 import com.qkt.app.OrderManager
 import com.qkt.execution.Trade
+import com.qkt.observe.AuditJournalHealth
 import com.qkt.persistence.PersistedStrategyHalt
 import com.qkt.positions.Position
 import java.math.BigDecimal
@@ -37,6 +38,9 @@ class SessionStatusSnapshotTest {
             override fun staleSymbols() = mapOf("PROP:XAUUSD" to 9_000L)
 
             override fun strategyHalts() = halts
+
+            override fun auditJournalHealth() =
+                AuditJournalHealth(enabled = true, written = 12L, droppedMarketData = 4L, omittedChainQuotes = 900L)
         }
 
     private fun snapshotOf(session: LiveSessionHandle) =
@@ -52,6 +56,17 @@ class SessionStatusSnapshotTest {
         assertThat(snapshot.staleSymbols).containsExactly("PROP:XAUUSD")
         assertThat(snapshot.droppedTicks).isEqualTo(3L)
         assertThat(snapshot.halted).isFalse()
+    }
+
+    @Test
+    fun `the snapshot carries the session's audit journal health`() {
+        val audit = snapshotOf(session()).auditJournal
+
+        assertThat(audit.enabled).isTrue()
+        assertThat(audit.written).isEqualTo(12L)
+        assertThat(audit.droppedMarketData).isEqualTo(4L)
+        assertThat(audit.lostDecisionEvents).isZero()
+        assertThat(audit.omittedChainQuotes).isEqualTo(900L)
     }
 
     @Test

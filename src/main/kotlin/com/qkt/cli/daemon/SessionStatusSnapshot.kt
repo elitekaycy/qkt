@@ -43,6 +43,7 @@ internal fun sessionStatusSnapshot(
         clockSkewedSymbols = session.clockSkewedSymbols(),
         openPositions = session.positionsFor(strategyId),
         persistenceHealth = session.persistenceHealth(),
+        auditJournal = session.auditJournalHealth(),
         halt = HaltStatus.of(session, strategyId),
     )
 }
