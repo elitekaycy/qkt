@@ -9,10 +9,10 @@ import java.math.BigDecimal
 import org.slf4j.LoggerFactory
 
 /**
- * The market legs of a roll's carries on [venue]: each named `roll:<stream>:<atMs>:<strategy>:<kind>`,
- * so a leg is the same order before and after a restart, and tracked by [legs] so the engine never sees
- * it. A leg's outcome is handed on once the venue answered, after its submit returned, never inside it.
- * A leg is expected at once and sent through [gate], which holds it while a restarted session is not ready.
+ * The market legs of a roll's carries on [venue]: each named [RollLegIds.base] plus `:<kind>`, so a leg is
+ * the same order before and after a restart, and tracked by [legs] so the engine never sees it. A leg's
+ * outcome is handed on once the venue answered, after its submit returned, never inside it. A leg is expected
+ * at once and sent through [gate], which holds it while a restarted session is not ready.
  */
 internal class CarryLegs(
     private val clock: Clock,
@@ -47,7 +47,7 @@ internal class CarryLegs(
     fun base(
         run: RollRun,
         strategyId: String,
-    ) = "roll:${chainOf().symbol}:${run.measured.atMs}:$strategyId"
+    ) = RollLegIds.base(chainOf().symbol, run.measured.atMs, strategyId)
 
     /** Sends [leg] and hands its outcome to [then] once the venue answered. */
     fun send(
