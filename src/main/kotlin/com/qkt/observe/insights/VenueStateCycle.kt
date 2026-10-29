@@ -3,9 +3,12 @@ package com.qkt.observe.insights
 import com.qkt.broker.AdjustmentSource
 import com.qkt.broker.Broker
 import com.qkt.broker.BrokerDeal
+import com.qkt.broker.BrokerPositionTicket
 import com.qkt.broker.CloseReason
 import com.qkt.broker.VenueAccountId
 import com.qkt.broker.VenueDescribed
+import com.qkt.common.Side
+import com.qkt.pnl.PositionMarks
 
 /**
  * One broker's venue truth read and offered as envelopes, once per [BrokerStatePoller] cycle on its
@@ -18,7 +21,9 @@ import com.qkt.broker.VenueDescribed
  * keyed by the account id, so profile brokers sharing one login emit each deal once. Each read re-reads
  * the last [dealGraceMs] and sends a deal once by its ticket ([DealCursor]); a failed read throws and moves
  * nothing. What qkt resolved for a position (its owner, entry risk, why it closed) comes from [fills],
- * shared by every session of the process, so every session's poller states the same facts.
+ * shared by every session of the process, so every session's poller states the same facts. A position whose
+ * venue states neither its current price nor its profit (a VGP account) is valued by [marks], the session's
+ * own quotes and accounting; with no quote for its symbol yet both stay null.
  */
 internal class VenueStateCycle(
     private val owner: Any,
@@ -32,6 +37,7 @@ internal class VenueStateCycle(
     private val dealGraceMs: Long,
     private val sharedDeals: SharedDealFetch,
     private val clock: () -> Long,
+    private val marks: PositionMarks? = null,
 ) {
     private val dealCursor = DealCursor(backfillDays * DAY_MS, dealGraceMs)
     private val adjustments = AdjustmentCycle(offer, backfillDays * DAY_MS, dealGraceMs)
@@ -52,6 +58,7 @@ internal class VenueStateCycle(
         val deployed = deployedIds()
         val positions =
             tickets.map { t ->
+                val valued = t.takeIf { it.currentPrice == null && it.profit == null }?.let(::markOf)
                 val known = t.strategyId ?: fills?.ownerOf(t.symbol, t.ticket)
                 val (strategyId, how) = ownerOf(known, t.ticket, t.comment, deployed)
                 StatePosition(
@@ -60,8 +67,8 @@ internal class VenueStateCycle(
                     t.side.name,
                     t.qty,
                     t.entryPrice,
-                    t.currentPrice,
-                    t.profit,
+                    t.currentPrice ?: valued?.mark,
+                    t.profit ?: valued?.unrealized,
                     t.swap,
                     t.openedAt,
                     strategyId,
@@ -137,6 +144,9 @@ internal class VenueStateCycle(
         attribution.retainAll(tickets.map { it.ticket }.toSet())
         return true
     }
+
+    private fun markOf(t: BrokerPositionTicket) =
+        marks?.markOf(t.symbol, if (t.side == Side.BUY) t.qty else t.qty.negate(), t.entryPrice)
 
     /**
      * [d] with qkt's own reason for the close it booked: a venue states SIGNAL for any close an expert

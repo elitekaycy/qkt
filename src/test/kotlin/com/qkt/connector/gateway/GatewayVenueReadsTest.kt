@@ -105,7 +105,7 @@ internal class GatewayVenueReadsTest {
     }
 
     @Test
-    fun `a netting position's ticket is qkt's id for it, owned by the strategy that booked it`() {
+    fun `a netting position's ticket and open time are qkt's, owned by the strategy that booked it`() {
         book("dsl-a-1", "buy", "1", "100", 1_000, null, pos("1", 1_000), "0")
 
         val position = reads.positions().single()
@@ -113,14 +113,19 @@ internal class GatewayVenueReadsTest {
         assertThat(position.ticket).isEqualTo("$symbol#1000")
         assertThat(position.symbol).isEqualTo(symbol)
         assertThat(position.strategyId).isEqualTo("a")
+        // The fake venue, like the paper adapter, states no open time: qkt's booking of the position does.
+        assertThat(position.openedAt).isEqualTo(1_000L)
     }
 
     @Test
-    fun `after a restart the position's id comes from the session's own position`() {
+    fun `after a restart the position's id and open time come from the session's own position`() {
         fake.venue.deals += WireFill("dsl-a-1.x", null, "f1", code, "buy", "1", "100", 1_000)
         held = pos("1", 777)
 
-        assertThat(reads.positions().single().ticket).isEqualTo("$symbol#777")
+        val position = reads.positions().single()
+
+        assertThat(position.ticket).isEqualTo("$symbol#777")
+        assertThat(position.openedAt).isEqualTo(777L)
     }
 
     @Test

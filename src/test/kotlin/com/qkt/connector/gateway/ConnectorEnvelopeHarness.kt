@@ -15,6 +15,7 @@ import com.qkt.observe.insights.SharedDealFetch
 import com.qkt.observe.insights.TicketAttribution
 import com.qkt.observe.insights.VenueStateCycle
 import com.qkt.observe.insights.venuePayload
+import com.qkt.pnl.PositionMarks
 import com.qkt.positions.Position
 import java.math.BigDecimal
 import okhttp3.mockwebserver.Dispatcher
@@ -33,20 +34,22 @@ internal abstract class ConnectorEnvelopeHarness : GatewayHarness() {
 
     @AfterEach
     fun stopMt5() {
-        mt5.shutdown()
+        if (::mt5.isInitialized) mt5.shutdown()
         mt5Server.shutdown()
     }
 
     protected fun envelopes(
         broker: Broker,
         deployed: Set<String>,
+        marks: PositionMarks? = null,
     ): Map<String, InsightsEnvelope> =
         // The closing deal carries the most facts: its leg, its close reason and the P&L it realized.
-        emitted(broker, deployed).groupBy { it.type }.mapValues { (_, all) -> all.last() }
+        emitted(broker, deployed, marks).groupBy { it.type }.mapValues { (_, all) -> all.last() }
 
     protected fun emitted(
         broker: Broker,
         deployed: Set<String>,
+        marks: PositionMarks? = null,
     ): List<InsightsEnvelope> {
         val out = mutableListOf<InsightsEnvelope>()
         val venues = InsightsVenues({ listOf(broker) })
@@ -62,6 +65,7 @@ internal abstract class ConnectorEnvelopeHarness : GatewayHarness() {
             60_000,
             SharedDealFetch(),
             { NOW },
+            marks,
         ).poll(broker, mutableSetOf())
         out +=
             InsightsTranslate.brokerConnected(

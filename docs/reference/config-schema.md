@@ -752,6 +752,12 @@ that does not know them ignores them.
   position ticket; `comment`: by the venue comment; `none`), and `instrument`.
 - **`state.positions`** entries add `positionId`, `attribution`, `instrument`, and `initialStop`,
   `initialTarget` and `riskAmount` (account currency) when qkt opened the position with a bracket.
+  A position whose venue states no `currentPrice` or `profit` (a `type: gateway` account: VGP v1 carries
+  neither) takes the session's own closing mark for its symbol (bid for a long, ask for a short) and the
+  floating P&L qkt's accounting gives it (contract size, quote currency converted to the account's); both
+  stay `null` until the session has a quote for the symbol, and `profit` stays `null` when the quote
+  currency has no rate to the account's. Its `openedAt` is qkt's own open time when the venue sends none.
+  `swap` is only ever the venue's: perpetual funding arrives as its own record.
   `state.orders` entries add `attribution` and `instrument`.
 - **`order.filled`, `order.partially_filled` and `trade.closed`** add `positionId`, `legEntry`,
   `closeReason` (on a reducing fill), `strategyId` and `attribution`; an entry fill also carries
