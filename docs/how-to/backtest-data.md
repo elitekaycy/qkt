@@ -283,7 +283,7 @@ against the roll's reference prices (slippage and fees) is booked as a cost, so 
 equals the P&L of the contracts actually traded. Trading a continuous stream needs `adjust: panama`;
 `ratio` and `none` streams can be read but not traded. If the new contract refuses a roll, the
 position is closed at the old contract's fill (exit reason `ROLL_FAILED`) and the strategy cannot add
-exposure on that stream for the rest of the run. Live, a continuous stream trades on a `type: gateway`
+exposure on that stream for the rest of the run. If the old contract refuses the closing leg, nothing moves: the position stays on that contract and the strategy stops on the stream, before and after a restart. Live, a continuous stream trades on a `type: gateway`
 account, its rolls measured from the venue's own bars (parity rows A53-A57). A run window that reaches past a stream's last listed contract (for `@next`, past the roll that
 makes its last contract the front one) is refused with the instant the stream ends; refresh the catalog
 or end the run earlier.
