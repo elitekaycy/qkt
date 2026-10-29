@@ -53,11 +53,19 @@ attestation/
 Futures, perpetuals and options run on a VGP gateway account (the Deribit testnet), not the MT5 demo, so
 the lane is opt-in: `run-attestation-catalog.sh --lanes ...,derivatives --deriv-gateway-url URL
 --deriv-expected-login LOGIN` with the trader token in `QKT_DERIV_GATEWAY_KEY`, or `deriv_gateway_url` and
-`deriv_expected_login` in the attestation profile. One netting account cannot tell two cases' positions
-apart, so its cases run one after another on a flat account (`run-derivatives-lane-case.py`). Each proves
-that the account ends flat, that qkt's realized PnL equals the venue's deals net with fees to the last
-digit, and that replaying the venue's bars (or the recorded chain) makes the same fills (or opens the same
-legs).
+`deriv_expected_login` in the attestation profile. Its cases run one after another
+(`run-derivatives-lane-case.py`). The account is shared with release attestation and the live soak, so a
+case judges and touches only its own strategy's (`scripts/live-validation/lib/strategy_scope.py`): its
+orders and deals by their client order ids (`dsl-<strategy>-`, `ORD-<strategy>-`), and its holding from
+its own deals, since a netting account's positions say nothing of who holds them. A case starts only when
+the strategy owns no working order and its deals of the last day net flat, and its sweep cancels and
+closes only the strategy's own orders and holding. Each proves that the strategy ends flat
+(`flat-by-strategy`), that qkt's realized PnL equals the venue's deals net with fees to the last digit (less
+the strategy's share of the account's funding: the record's amount x its holding / the account's
+position), and that replaying the venue's bars (or the recorded chain) makes the same fills (or opens the
+same legs). `account-balance-equals-realized` reads the account's whole cash, so a deal of another user
+inside the case window makes it `not comparable` (`balanceNote` in `result.json`), neither passed nor
+failed.
 
 ### The bybit lane
 
