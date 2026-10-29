@@ -47,7 +47,8 @@ internal fun handleList(
         val state = if (h.isRunning()) "running" else "stopped"
         val streamBrokersJson = renderStreamBrokers(h.live.streamBrokers())
         val meta = h.childMeta
-        val haltJson = renderHaltFields(HaltStatus.of(h.live, h.name))
+        val haltJson =
+            renderHaltFields(HaltStatus.of(h.live, h.name)) + renderAuditJournalFields(h.live.auditJournalHealth())
         val promotionJson =
             renderPromotionFields(
                 // A portfolio is deployed and promoted as one unit. Its children inherit the

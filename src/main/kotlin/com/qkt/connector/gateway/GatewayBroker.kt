@@ -54,6 +54,7 @@ class GatewayBroker internal constructor(
             positions,
             strategy,
             session.ledger::ownerOf,
+            session.routing::soleHolder,
         )
 
     init {

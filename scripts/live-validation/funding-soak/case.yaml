@@ -12,7 +12,7 @@ proves:
 fills: 2
 replay: bars
 assertions:
-- flat-account
+- flat-by-strategy
 - deals-net-equals-realized
 - funding-charged
 - replay-same-fills

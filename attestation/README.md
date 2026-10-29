@@ -41,23 +41,32 @@ attestation/
 | `budget_seconds` | Hard deadline; omitted means the lane default. Never above 600 (14400 for a `scheduled` case) |
 | `steps` | Daemon/engine lanes: ordered operator commands with the exit code and state expected after each |
 | `assertions` | Named checks the runner applies, e.g. `trace-parity`, `journal-byte-exact`, `flat-by-magic` |
-| `fills` | Derivatives lane: the fills the strategy makes before it is judged |
-| `replay` | Derivatives lane: `bars` (replay the gateway's own bars), `chain` (replay the chain the account recorded) or `none` |
+| `fills` | Derivatives lane: the fills the strategy makes before it is judged; cross lane: a count per venue label |
+| `replay` | Derivatives lane: `bars` (replay the gateway's own bars), `chain` (replay the chain the account recorded) or `none`; cross lane: `by-venue` or `none` |
 | `dated_from_root` | Derivatives lane: trade the root's dated contract listed 7 to 45 days from expiry in place of the case's symbol |
 | `expiring_option` | Derivatives lane: trade the option about to expire in place of the case's symbol (below) |
 | `settles` | Derivatives lane: the expiry settlements qkt must book before the case is judged |
 | `drills` | Derivatives lane: failures fired while the case holds, each `{kind, at_s}` timed from the first fill (below) |
+| `venues` | Cross lane: each broker prefix the strategy trades through, `{label, type: mt5}` or `{label, type: gateway, adapter}` (below) |
 
 ## The derivatives lane
 
 Futures, perpetuals and options run on a VGP gateway account (the Deribit testnet), not the MT5 demo, so
 the lane is opt-in: `run-attestation-catalog.sh --lanes ...,derivatives --deriv-gateway-url URL
 --deriv-expected-login LOGIN` with the trader token in `QKT_DERIV_GATEWAY_KEY`, or `deriv_gateway_url` and
-`deriv_expected_login` in the attestation profile. One netting account cannot tell two cases' positions
-apart, so its cases run one after another on a flat account (`run-derivatives-lane-case.py`). Each proves
-that the account ends flat, that qkt's realized PnL equals the venue's deals net with fees to the last
-digit, and that replaying the venue's bars (or the recorded chain) makes the same fills (or opens the same
-legs).
+`deriv_expected_login` in the attestation profile. Its cases run one after another
+(`run-derivatives-lane-case.py`). The account is shared with release attestation and the live soak, so a
+case judges and touches only its own strategy's (`scripts/live-validation/lib/strategy_scope.py`): its
+orders and deals by their client order ids (`dsl-<strategy>-`, `ORD-<strategy>-`), and its holding from
+its own deals, since a netting account's positions say nothing of who holds them. A case starts only when
+the strategy owns no working order and its deals of the last day net flat, and its sweep cancels and
+closes only the strategy's own orders and holding. Each proves that the strategy ends flat
+(`flat-by-strategy`), that qkt's realized PnL equals the venue's deals net with fees to the last digit (less
+the strategy's share of the account's funding: the record's amount x its holding / the account's
+position), and that replaying the venue's bars (or the recorded chain) makes the same fills (or opens the
+same legs). `account-balance-equals-realized` reads the account's whole cash, so a deal of another user
+inside the case window makes it `not comparable` (`balanceNote` in `result.json`), neither passed nor
+failed.
 
 ### The bybit lane
 
@@ -122,6 +131,50 @@ An outage must show in the daemon's audit journal as the link going down and com
 drill must see the probe refused and the daemon log the switch engaging and releasing from its event
 stream (qkt-venue-gateway sends it from the release that fixed its #55). The switch is released whatever fails after it engaged (and on SIGTERM), and a case refuses to start while the
 gateway's switch is on. Each drill's timeline is written to `result.json` under `drills`.
+
+## The cross lane
+
+`cases/cross/` holds strategies that trade an MT5 demo account and one or more VGP gateway accounts **from one
+daemon at once** (`run-cross-lane-case.py`). A case names its venues by the broker prefixes its strategy uses:
+
+```yaml
+venues:
+- {label: EXNESS, type: mt5}                      # the catalog's MT5 demo, under the case's own magic
+- {label: PAPER, type: gateway, adapter: paper}   # given by --cross-venue PAPER=URL@LOGIN
+fills: {EXNESS: 2, PAPER: 2}
+drills:
+- {venue: PAPER, kind: kill_switch, after_fills: 2, at_s: 5, hold_s: 210}   # a drill aims at one gateway venue
+```
+
+The runner writes one daemon config with a broker entry per venue (the MT5 entry from the catalog's
+`--gateway-url`/`--expected-login`/`--expected-server`/`--magic`, each gateway entry from a
+`--cross-venue LABEL=URL@LOGIN` flag with its trader token in `QKT_CROSS_<LABEL>_KEY`, its guardian token in
+`QKT_CROSS_<LABEL>_GUARDIAN_KEY`), checks each venue before the case (demo account, kill switch off, the magic owning
+nothing on MT5, the strategy owning nothing on each gateway), sweeps only its own magic and strategy, and judges per
+venue (`scripts/live-validation/lib/cross_venue.py`):
+
+- `fills-by-venue`: each venue made its fills, none landed on a venue the case never named;
+- `flat-by-magic` (MT5) and `flat-by-strategy` (each gateway): the strategy's own exits left every venue flat;
+- `deals-net-by-venue`: qkt's realized on each venue's symbols (its trade history) equals that venue's deals net:
+  the MT5 deals its order ids own (`lib/owned-deals.jq`, a cent a closing deal), the gateway deals with their costs
+  (one qkt money unit a fill). A total that agrees while two venues are off in opposite directions still fails;
+- `realized-total-equals-venues`: the strategy's whole realized equals the venues' nets less the strategy's share of
+  gateway funding, and what qkt booked outside executions is exactly that funding;
+- with a drill on one gateway: the drill's own checks (as in the derivatives lane), `venue-fills-equal-qkt-fills` and
+  `no-duplicate-order` on that venue, and `other-venue-trades-during-kill-switch` / `-gateway-outage`: while that venue
+  was down every other venue still made a risk-adding fill; a kill switch also needs `reducing-passes-during-kill`, a
+  reducing fill on the killed venue inside the window;
+- `replay-same-fills-by-venue` (`replay: by-venue`): the session's golden capture, every venue's ticks as qkt received
+  them, replayed through one backtest (the MT5 leg on `--broker mt5-sim`, a perpetual leg on the exchange simulator)
+  makes the same fills on each venue, in order, side and size. Prices are recorded per venue as drift, not judged.
+
+What the replay cannot do yet: ticks are stored by bare symbol, so two venues quoting one name (`EXNESS:AAPL` beside
+`ALPACA:AAPL`) cannot be captured or replayed; the gateway leg's transport (requests, acks) is not captured; and no
+step of the causal chain from signal to fill is compared. The follow-up issue tracks exact-price causal-chain replay.
+
+Run it with `run-attestation-catalog.sh --lanes ...,cross --cross-venue PAPER=http://127.0.0.1:8460@paper`. The gateway
+venue of the shipped cases is the gateway's built-in `paper` adapter (a simulated account on Deribit's public prices,
+isolated by construction), so the lane needs no testnet account.
 
 ## Rules
 

@@ -108,6 +108,8 @@ data class StatusSnapshot(
     val clockSkewedSymbols: Map<String, Long> = emptyMap(),
     /** Durable state-writer health; failed writes make restart state stale. */
     val persistence: PersistenceHealthDto = PersistenceHealthDto(),
+    /** Engine audit-journal health; any [AuditJournalDto.lostDecisionEvents] means the audit trail has holes. */
+    val auditJournal: AuditJournalDto = AuditJournalDto(),
     /**
      * Whether new entries are blocked for this strategy right now, by an operator halt or an
      * automatic one (loss streak, drawdown, engine fault). A halted strategy is otherwise

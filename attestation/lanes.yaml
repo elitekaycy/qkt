@@ -62,3 +62,10 @@ lanes:
     venue_gateway: true
     session: nyse
     budget_seconds: 420
+  cross:
+    purpose: One daemon trading an MT5 demo account and one or more VGP gateway accounts at once, from one strategy - one config holding every venue, each venue checked, swept and judged on its own (its fills, flat, qkt's realized on its symbols against its own deals net), drills aimed at one venue while the others keep trading, and a replay of the session's captured ticks making the same fills on each venue. Its MT5 leg runs under its own magic beside the other lanes; its gateway legs are judged by the strategy's own order ids, so cases run one after another.
+    concurrency: exclusive
+    places_orders: true
+    venue_gateway: true
+    mt5: true
+    budget_seconds: 540

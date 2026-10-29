@@ -1,8 +1,6 @@
 package com.qkt.cli.fetch
 
-import com.qkt.cli.Config
 import com.qkt.cli.ExitCodes
-import com.qkt.cli.openAccounts
 import com.qkt.instrument.ContractCatalog
 import com.qkt.instrument.ContractCatalogSource
 import com.qkt.instrument.ContractCatalogStore
@@ -15,10 +13,12 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 /**
- * `qkt fetch VENUE:ROOT --catalog`: writes the root's contract catalogs into the data root. A Deribit root
- * declared under `options:` gets its option catalog; a root declared under `futures:` (or any Binance
- * USDⓈ-M root) gets its futures catalog, from Binance's archive or from the venue's own listing through the
- * `brokers:` account named after the venue (a `type: gateway` account). A root may be both.
+ * `qkt fetch VENUE:ROOT --catalog`: writes the root's contract catalogs into the data root. A root declared
+ * under `options:` gets its option catalog, from the venue's own listing through the `brokers:` account named
+ * after the venue (a `type: gateway` account, whatever it is named), else, for `DERIBIT`, from Deribit's public
+ * listing. A root declared under `futures:` (or any Binance USDⓈ-M root) gets its futures catalog, from
+ * Binance's archive or from the same account's listing. A root may be both; a gateway listing options of a root
+ * declared only as futures is said on stderr, since none of them can be routed until the root is declared.
  */
 internal object CatalogFetch {
     /** Builds every catalog [target] is declared for; returns a process exit code. */
@@ -32,27 +32,26 @@ internal object CatalogFetch {
         val futures =
             venue == BinanceUmFetcher.VENUE ||
                 (Files.exists(instruments) && FuturesRootsFile.load(instruments).any { it.root == target })
-        val options = OptionCatalogFetch.handles(venue) && (!futures || declaredOptions(target, instruments))
-        val optionCode = if (options) OptionCatalogFetch.run(target, dataRoot) else ExitCodes.SUCCESS
+        val account = CatalogAccount(venue, configOption)
+        val options = declaredOptions(target, instruments) || (OptionCatalogFetch.handles(venue) && !futures)
+        val optionCode =
+            when {
+                options -> OptionCatalogFetch.forRoot(target, dataRoot, account)
+                venue == BinanceUmFetcher.VENUE -> ExitCodes.SUCCESS
+                else -> ExitCodes.SUCCESS.also { OptionCatalogFetch.warnUndeclared(target, account) }
+            }
         val futuresCode =
-            if (futures || !options) run(target, dataRoot) { sourceFor(it, configOption) } else ExitCodes.SUCCESS
+            if (futures || !options) run(target, dataRoot) { sourceFor(it, account) } else ExitCodes.SUCCESS
         return if (optionCode != ExitCodes.SUCCESS) optionCode else futuresCode
     }
 
     /** Binance's archive for its venue, else the venue listing of the `brokers:` account named [venue]. */
-    fun sourceFor(
+    private fun sourceFor(
         venue: String,
-        configOption: String?,
+        account: CatalogAccount,
     ): ContractCatalogSource? {
         if (venue == BinanceUmFetcher.VENUE) return BinanceContractCatalog(BinanceVisionClient())
-        val config = (configOption?.let { Path.of(it) } ?: Config.locate())?.let(Config::load) ?: return null
-        return try {
-            config.openAccounts().byName(venue)?.contractCatalogs
-        } catch (e: IllegalArgumentException) {
-            null.also { System.err.println("qkt: failed to open broker '$venue': ${e.message}") }
-        } catch (e: IllegalStateException) {
-            null.also { System.err.println("qkt: failed to open broker '$venue': ${e.message}") }
-        }
+        return account.account?.contractCatalogs
     }
 
     /** Builds [target]'s futures catalog from [catalogs]' source and stores it; returns a process exit code. */

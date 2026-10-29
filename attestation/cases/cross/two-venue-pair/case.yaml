@@ -1,0 +1,37 @@
+id: two-venue-pair
+title: One strategy opens and closes a BTC leg on the MT5 demo and a BTC perpetual leg on a gateway account
+why: 'One daemon builds a venue broker per prefix behind one fail-closed router; if a leg routes to the wrong venue,
+  one venue''s fill is booked against the other''s symbol, or qkt''s realized on one venue drifts from that venue''s
+  own deals while the total still looks right, only a case judged venue by venue shows it.'
+status: ready
+venues:
+- label: EXNESS
+  type: mt5
+- label: PAPER
+  type: gateway
+  adapter: paper
+symbols:
+- EXNESS:BTCUSD
+- PAPER:BTC_USDC_PERPETUAL
+timeframes:
+- 1m
+warmup_bars:
+  1m: 3
+proves:
+- behaviour:cross-venue-routing
+- behaviour:market-entry
+- behaviour:timed-exit
+- behaviour:perpetual-fees
+fills:
+  EXNESS: 2
+  PAPER: 2
+replay: by-venue
+assertions:
+- fills-by-venue
+- flat-by-magic
+- flat-by-strategy
+- deals-net-by-venue
+- realized-total-equals-venues
+- no-engine-fault
+- replay-same-fills-by-venue
+budget_seconds: 420

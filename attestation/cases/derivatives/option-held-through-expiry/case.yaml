@@ -25,7 +25,7 @@ expiring_option:
 replay: none
 budget_seconds: 7200
 assertions:
-- flat-account
+- flat-by-strategy
 - deals-net-equals-realized
 - settlement-booked-once
 - settlement-at-venue-price

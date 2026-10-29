@@ -38,6 +38,9 @@ interface LiveSessionHandle :
     /** Durable-state write counters used by `/status` and operator automation. */
     fun persistenceHealth(): PersistenceHealth = PersistenceHealth.DISABLED
 
+    /** Audit-journal written, dropped and lost counts; disabled when the session keeps no journal. */
+    fun auditJournalHealth(): com.qkt.observe.AuditJournalHealth = com.qkt.observe.AuditJournalHealth.DISABLED
+
     /**
      * Engine-vs-broker truth comparison (#400, FIA §2.1): per-symbol gross directional
      * deltas (or confirmed netting deltas) plus equity on both sides. Run daily via `qkt reconcile` — slow silent
