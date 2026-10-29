@@ -44,7 +44,8 @@ internal class StreamLane(
     /** The stream's contract positions as its venue account holds them: every venue fill, roll legs too, netted. */
     private val book = StrategyPositionTracker(clock = clock::now)
     private val venue =
-        venueFactory(venueBus, contractPrices, book.account).let { if (store == null) it else it.savingFirst(::save) }
+        venueFactory(venueBus, contractPrices, StreamContractPositions(chainOf().symbol, book.account))
+            .let { if (store == null) it else it.savingFirst(::save) }
     private val orders = ContinuousOrderMap()
     private val legs = RollLegs()
     private val positions = LinkedHashMap<String, BigDecimal>()
