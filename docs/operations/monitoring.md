@@ -132,8 +132,29 @@ The transport journal omits authentication headers but contains raw order and
 venue data, so retain and transfer golden bundles as sensitive operational
 artifacts. Engine audit records contain structured live ticks, warmup ticks,
 completed candles, and fills for replay. Disk writes do not run on the engine
-thread. Queue or write loss is recorded in day-scoped `.dropped` markers and
-makes `qkt golden capture` fail.
+thread; the writer appends in batches, one synced write per batch.
+
+What the audit journal keeps under load:
+
+- **Decision events are never shed.** Signals, rule decisions, risk rejections,
+  orders, acks, fills, cost, funding and settlement bookings, structures and halts
+  always join the writer's queue. Only a failed disk write can lose one, and that
+  is counted as `lostDecisionEvents`.
+- **Market data waits up to 50,000 records.** Past that a tick or candle is
+  dropped and counted as `droppedMarketData`.
+- **Option chains are not journaled per quote.** A strategy fed a whole option
+  root (`OPTIONS:<VENUE>.<ROOT>`) receives every listed contract's quotes. The
+  journal keeps the quotes and candles of a chain contract only from the moment
+  the session orders, fills, settles or holds it. The chain itself is recorded by
+  the account's chain book every `chain_snapshot_seconds` (default 300), which is
+  the series structures choose legs from and replay reads. Quotes left out this
+  way are counted as `omittedChainQuotes`; they are not a loss.
+
+Any loss is loud: an ERROR log line (shipped to Insights as a `log` event when
+insights is enabled), the `auditJournal` block of `qkt status <name>`, the
+`auditJournal` fields of `/health` and `/list`, a line under the strategy in
+`qkt status --deep` (a lost decision event also makes it UNHEALTHY), and the
+day-scoped `.dropped` marker, which makes `qkt golden capture` fail.
 
 Beyond per-strategy ports, the daemon itself exposes:
 

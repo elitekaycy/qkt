@@ -42,4 +42,30 @@ class StrategyStatusLinesHaltTest {
         assertThat(screen).doesNotContain("HALTED")
         assertThat(unhealthy).isEmpty()
     }
+
+    @Test
+    fun `an audit journal that lost a decision event makes the strategy unhealthy`() {
+        val (screen, unhealthy) =
+            render(
+                """[{"name":"opt","kind":"strategy","state":"running","trades":0,"uptimeMs":9000,"halted":false,
+                    "auditJournal":{"written":9,"queued":0,"droppedMarketData":120,"lostDecisionEvents":1,
+                    "omittedChainQuotes":50000}}]""",
+            )
+
+        assertThat(screen).contains("audit journal: dropped 120 market-data record(s), lost 1 decision event(s)")
+        assertThat(unhealthy).singleElement().asString().contains("audit journal lost 1 decision event(s)")
+    }
+
+    @Test
+    fun `an audit journal that omitted chain quotes by design is healthy and quiet`() {
+        val (screen, unhealthy) =
+            render(
+                """[{"name":"opt","kind":"strategy","state":"running","trades":0,"uptimeMs":9000,"halted":false,
+                    "auditJournal":{"written":9,"queued":0,"droppedMarketData":0,"lostDecisionEvents":0,
+                    "omittedChainQuotes":50000}}]""",
+            )
+
+        assertThat(screen).doesNotContain("audit journal")
+        assertThat(unhealthy).isEmpty()
+    }
 }
