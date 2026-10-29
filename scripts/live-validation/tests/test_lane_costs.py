@@ -48,5 +48,23 @@ class AccountFundingTest(unittest.TestCase):
         self.assertEqual(r.account_funding(), [{"symbol": "ETH-PERPETUAL", "amount": "1"}])
 
 
+
+class CopyCatalogTest(unittest.TestCase):
+    def test_a_case_without_contracts_copies_its_instruments_only(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as data, tempfile.TemporaryDirectory() as root:
+            open(os.path.join(data, "instruments.yaml"), "w").write("ALPACA:AAPL: {}\n")
+            lane.copy_catalog(data, root)
+            self.assertEqual(sorted(os.listdir(root)), ["instruments.yaml"])
+
+    def test_a_case_with_contracts_copies_them_too(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as data, tempfile.TemporaryDirectory() as root:
+            open(os.path.join(data, "instruments.yaml"), "w").write("")
+            os.makedirs(os.path.join(data, "contracts", "DERIBIT"))
+            open(os.path.join(data, "contracts", "DERIBIT", "c.yaml"), "w").write("")
+            lane.copy_catalog(data, root)
+            self.assertTrue(os.path.isfile(os.path.join(root, "contracts", "DERIBIT", "c.yaml")))
+
 if __name__ == "__main__":
     unittest.main()
