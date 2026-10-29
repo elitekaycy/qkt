@@ -1,6 +1,7 @@
 package com.qkt.connector.gateway
 
 import com.qkt.broker.VenueLeg
+import com.qkt.common.Side
 import com.qkt.events.FillAccountedEvent
 import com.qkt.events.FillAccountingKind
 import java.math.BigDecimal
@@ -11,6 +12,20 @@ internal data class GatewayLegFact(
     val grossRealized: BigDecimal,
     val strategyId: String,
 )
+
+/**
+ * One strategy's holding of a contract closed by the venue's settlement, as qkt booked it
+ * ([com.qkt.broker.closesFor]): no venue fill carries it, so it is matched by the contract, not a `fill_id`.
+ */
+internal data class GatewaySettledClose(
+    val fact: GatewayLegFact,
+    val side: Side,
+    val quantity: BigDecimal,
+    val venueCosts: BigDecimal,
+)
+
+/** The order id prefix of a settlement's closes ([com.qkt.broker.closesFor]). */
+internal const val SETTLE_PREFIX = "settle:"
 
 /**
  * qkt's accounting of one gateway account's fills, kept to state on each venue deal what VGP v1 does not
@@ -33,6 +48,7 @@ internal class GatewayFillLegs(
             override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, OrderFills>) = size > capacity
         }
     private val open = HashMap<String, OpenPosition>()
+    private val settled = HashMap<String, MutableList<GatewaySettledClose>>()
 
     /** The open position of one symbol as qkt last booked it: its id, the strategies that hold it, its open time. */
     data class OpenPosition(
@@ -64,7 +80,19 @@ internal class GatewayFillLegs(
         if (e.kind != FillAccountingKind.EXECUTION) return
         val fact = GatewayLegFact(VenueLeg.of(e.accountPositionBefore, after), e.grossAccountRealized, e.strategyId)
         orders.getOrPut(e.orderId) { OrderFills() }.facts += fact
+        if (e.orderId.startsWith(SETTLE_PREFIX)) {
+            val moved =
+                (e.strategyPositionAfter?.quantity ?: BigDecimal.ZERO) -
+                    (e.strategyPositionBefore?.quantity ?: BigDecimal.ZERO)
+            val side = if (moved.signum() > 0) Side.BUY else Side.SELL
+            settled.getOrPut(e.symbol) { mutableListOf() } +=
+                GatewaySettledClose(fact, side, moved.abs(), e.venueCostsAccount)
+        }
     }
+
+    /** The closes qkt booked when contract [symbol] settled (one per strategy that held it), empty before. */
+    @Synchronized
+    fun settledCloses(symbol: String): List<GatewaySettledClose> = settled[symbol].orEmpty().toList()
 
     /** What qkt booked for venue fill [fillId] of engine order [engineOrderId], or null when it booked none. */
     @Synchronized
