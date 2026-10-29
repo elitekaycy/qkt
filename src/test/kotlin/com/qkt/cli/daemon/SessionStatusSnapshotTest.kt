@@ -1,4 +1,4 @@
-package com.qkt.cli.daemon.portfolio
+package com.qkt.cli.daemon
 
 import com.qkt.app.LiveSessionHandle
 import com.qkt.app.OrderManager
@@ -11,7 +11,7 @@ import java.time.Instant
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
-class ChildStatusSnapshotTest {
+class SessionStatusSnapshotTest {
     private fun session(halts: List<PersistedStrategyHalt> = emptyList()) =
         object : LiveSessionHandle {
             override val running = true
@@ -40,7 +40,7 @@ class ChildStatusSnapshotTest {
         }
 
     private fun snapshotOf(session: LiveSessionHandle) =
-        childStatusSnapshot("book_366/s1", 1, "book:s1", 0L, Instant.EPOCH, session)
+        sessionStatusSnapshot("book_366/s1", 1, "book:s1", 0L, Instant.EPOCH, session)
 
     @Test
     fun `a child reports the positions its strategy id holds under its display name`() {

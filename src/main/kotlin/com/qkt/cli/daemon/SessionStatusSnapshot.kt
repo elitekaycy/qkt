@@ -1,19 +1,17 @@
-package com.qkt.cli.daemon.portfolio
+package com.qkt.cli.daemon
 
 import com.qkt.app.LiveSessionHandle
-import com.qkt.cli.daemon.HaltStatus
-import com.qkt.cli.daemon.buildSnapshot
 import com.qkt.cli.observe.PendingStackLayer
 import com.qkt.cli.observe.StatusSnapshot
 import java.time.Instant
 
 /**
- * A portfolio child's `/status`, built from the same session reads as a standalone strategy's:
- * open positions, halt, stale and clock-skewed symbols and queue depth are keyed by the child's
- * [strategyId], while the snapshot is labelled with its display [childName].
+ * A live session's `/status`, for a standalone strategy and a portfolio child alike: open positions,
+ * halt, stale and clock-skewed symbols and queue depth are keyed by [strategyId], while the snapshot
+ * is labelled with its display [name] (a child's `book_366/s1`).
  */
-internal fun childStatusSnapshot(
-    childName: String,
+internal fun sessionStatusSnapshot(
+    name: String,
     version: Int,
     strategyId: String,
     startMs: Long,
@@ -31,7 +29,7 @@ internal fun childStatusSnapshot(
             )
         }
     return buildSnapshot(
-        childName,
+        name,
         version,
         startMs,
         startedAt.toString(),

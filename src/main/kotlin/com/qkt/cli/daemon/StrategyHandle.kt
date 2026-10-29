@@ -5,7 +5,6 @@ import com.qkt.app.LiveSessionHandle
 import com.qkt.candles.TimeWindow
 import com.qkt.cli.observe.EventRing
 import com.qkt.cli.observe.ObservabilityServer
-import com.qkt.cli.observe.PendingStackLayer
 import com.qkt.dsl.ast.BoolLit
 import com.qkt.dsl.ast.DefaultsBlock
 import com.qkt.dsl.ast.ExprAst
@@ -323,33 +322,7 @@ class StrategyHandle(
                 ObservabilityServer(
                     ring = ring,
                     statusProvider = {
-                        val layers =
-                            session.pendingStackLayerInfos().map {
-                                PendingStackLayer(
-                                    stackId = it.stackId,
-                                    layer = it.layer,
-                                    triggerPrice = it.triggerPrice,
-                                    side = it.side,
-                                    quantity = it.quantity,
-                                )
-                            }
-                        buildSnapshot(
-                            ast.name,
-                            ast.version,
-                            startMs,
-                            startedAt.toString(),
-                            session.recentTrades(),
-                            layers,
-                            streamBrokers = session.streamBrokers(),
-                            pnl = session.pnlSnapshot(ast.name),
-                            inboundQueueDepth = session.inboundQueueDepth(),
-                            droppedTicks = session.droppedTicks,
-                            staleSymbols = session.staleSymbols().keys.sorted(),
-                            clockSkewedSymbols = session.clockSkewedSymbols(),
-                            openPositions = session.positionsFor(ast.name),
-                            persistenceHealth = session.persistenceHealth(),
-                            halt = HaltStatus.of(session, ast.name),
-                        )
+                        sessionStatusSnapshot(ast.name, ast.version, ast.name, startMs, startedAt, session)
                     },
                     running = { session.running },
                     onStop = { _ -> session.stop() },
