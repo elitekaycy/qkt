@@ -42,7 +42,7 @@ internal class GatewaySession(
 
     /** What the account last reported. */
     val account = GatewayAccountState()
-    private val routing = GatewayRouting()
+    val routing = GatewayRouting()
     private val alerts = GatewayAlerts(label, routing, lock, clock)
 
     /** What qkt's accounting booked for this account's fills, for the venue deals that carry none of it. */
