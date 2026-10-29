@@ -112,16 +112,31 @@ internal class GatewayVenueReads(
         nowMs: Long,
     ): List<BrokerDeal> {
         val out = mutableListOf<BrokerDeal>()
+        // A deal not yet on the books stops the read at its time, so nothing after it is handed on before it.
+        var cutoff = Long.MAX_VALUE
         for (fill in client.deals(fromMs, toMs)) {
             val engineId = GatewayClientIds.engineId(fill.clientOrderId)
             val fact = legs.of(fill.fillId, engineId)
             if (fact == null) {
-                if (fill.time > nowMs - accountingGraceMs) break
+                if (fill.time > nowMs - accountingGraceMs) {
+                    cutoff = fill.time
+                    break
+                }
                 continue
             }
             out += deal(fill, engineId, fact)
         }
-        return out
+        // A contract held to expiry closes by the venue's settlement, which no fill carries.
+        for (s in client.settlements(fromMs, toMs)) {
+            if (s.time >= cutoff) break
+            val closes = legs.settledCloses(symbols.qkt(s.symbol))
+            if (closes.isEmpty() && s.time > nowMs - accountingGraceMs) {
+                cutoff = s.time
+                break
+            }
+            closes.mapTo(out) { settlementDeal(venue.label, symbols.qkt(s.symbol), s, it) }
+        }
+        return out.filter { it.ts < cutoff }.sortedBy { it.ts }
     }
 
     private fun deal(
