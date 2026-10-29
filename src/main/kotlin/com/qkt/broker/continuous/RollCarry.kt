@@ -14,8 +14,8 @@ import org.slf4j.LoggerFactory
  * the explicit [CarryStep]s of the run (each leg held by [gate] while a restarted session is not ready).
  * An opening leg refused or ended leaves the position closed on the venue (any part of it that filled is
  * unwound): its close at the old leg's fill is recorded as the stream's [ExitReason.ROLL_FAILED] exit. A
- * closing leg ended part-filled closes only that part. A refused closing leg is a configuration fault and
- * fails loudly.
+ * closing leg ended part-filled closes only that part. A refused closing leg moves nothing: the position stays
+ * on the old contract and the strategy stops on the stream, logged as an error ([CarryLegs.awaitClosing]).
  */
 internal class RollCarry(
     clock: Clock,
@@ -35,7 +35,7 @@ internal class RollCarry(
      * Starts carrying [strategyId]'s signed [quantity] to the new contract, and calls [then] once its
      * carry has ended (carried, or stopped: the new contract refused or ended the opening leg, any part
      * of it that filled is unwound and the position closes on the stream at the old leg's fill; or the
-     * closing leg ended part-filled, which closes only that part).
+     * closing leg ended part-filled or refused, which closes only the part that filled).
      */
     fun start(
         strategyId: String,
@@ -59,7 +59,7 @@ internal class RollCarry(
         run: RollRun,
         then: () -> Unit,
     ) = when (step) {
-        is CarryStep.Closing -> legOrders.await(step.leg) { closed(run, step, it, then) }
+        is CarryStep.Closing -> legOrders.awaitClosing(step.leg) { closed(run, step, it, then) }
         is CarryStep.Opening -> legOrders.await(step.leg) { opened(run, step, it, then) }
     }
 
@@ -73,10 +73,10 @@ internal class RollCarry(
         then: () -> Unit,
     ) {
         when (outcome) {
-            is LegOutcome.Rejected ->
-                error(
-                    "${step.leg.symbol} refused the closing leg ${step.leg.id}: ${outcome.reason}",
-                )
+            is LegOutcome.Rejected -> {
+                log.error("closing leg {} refused: {}; the position stays on its contract", step.leg.id, outcome.reason)
+                stop(run, step, outcome.reason, null, then)
+            }
             is LegOutcome.Partial -> {
                 log.error(
                     "{} closed {} of {} for {}: {}",
@@ -141,16 +141,15 @@ internal class RollCarry(
         }
     }
 
-    /** Ends [step]'s carry for [reason], closing the position on the stream at the venue's [close]. */
+    /** Ends [step]'s carry for [reason], closing the position on the stream at the venue's [close], if it closed. */
     private fun stop(
         run: RollRun,
         step: CarryStep,
         reason: String,
-        close: BrokerEvent.OrderFilled,
+        close: BrokerEvent.OrderFilled?,
         then: () -> Unit,
     ) {
-        val onStream = closeOnStream(close, "${legOrders.base(run, step.strategyId)}:failed", run.fromIndex)
-        fills.record(contractFill(close, onStream))
+        val onStream = close?.let { closeOnStream(it, "${legOrders.base(run, step.strategyId)}:failed", run.fromIndex) }
         step(run, CarryStep.Stopped(step.strategyId, step.quantity, reason, onStream))
         then()
     }
@@ -181,18 +180,19 @@ internal class RollCarry(
         fees = carried.close.venueFeesIn(chain.root.currency).add(carried.open.venueFeesIn(chain.root.currency)),
     )
 
-    /** The old leg's [close] as the venue closing the position on the stream. */
+    /** The old leg's [close] as the venue closing the position on the stream, recorded against the contract's fill. */
     private fun closeOnStream(
         close: BrokerEvent.OrderFilled,
         id: String,
         fromIndex: Int,
     ): BrokerEvent.OrderFilled =
-        close.copy(
-            clientOrderId = id,
-            brokerOrderId = id,
-            symbol = chain.symbol,
-            price = chain.spaceFor(fromIndex).toContinuous(close.price),
-            updatesOrderExecution = false,
-            exitReason = ExitReason.ROLL_FAILED,
-        )
+        close
+            .copy(
+                clientOrderId = id,
+                brokerOrderId = id,
+                symbol = chain.symbol,
+                price = chain.spaceFor(fromIndex).toContinuous(close.price),
+                updatesOrderExecution = false,
+                exitReason = ExitReason.ROLL_FAILED,
+            ).also { fills.record(contractFill(close, it)) }
 }

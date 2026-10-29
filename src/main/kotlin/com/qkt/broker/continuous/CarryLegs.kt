@@ -61,6 +61,23 @@ internal class CarryLegs(
         }
     }
 
+    /**
+     * Waits for the closing [leg] after a restart, as [await]. A closing leg that filled moves its carry on in the
+     * same call, so one saved as out but not restored ended refused, under a qkt that failed the session on that
+     * instead of stopping the strategy on the stream: [then] hears the refusal now.
+     */
+    fun awaitClosing(
+        leg: OrderRequest.Market,
+        then: (LegOutcome) -> Unit,
+    ) = if (legs.isExpected(
+            leg.id,
+        )
+    ) {
+        await(leg, then)
+    } else {
+        then(LegOutcome.Rejected("refused before the restart (${leg.id})"))
+    }
+
     /** Waits for [leg], restored after a restart with what had filled of it, as [send] does once it is sent. */
     fun await(
         leg: OrderRequest.Market,
