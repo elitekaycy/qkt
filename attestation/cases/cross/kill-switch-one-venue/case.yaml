@@ -1,0 +1,48 @@
+id: kill-switch-one-venue
+title: The gateway's kill switch is on while the MT5 leg closes, re-enters and closes again
+why: 'A kill switch is one venue''s, outside qkt: while it refuses new risk on the gateway, the daemon must keep
+  trading the MT5 account (a refusal or a halt that spreads to every venue is the bug), still close the gateway leg
+  with a reducing order, and book every venue exactly as it filled.'
+status: ready
+venues:
+- label: EXNESS
+  type: mt5
+- label: PAPER
+  type: gateway
+  adapter: paper
+symbols:
+- EXNESS:BTCUSD
+- PAPER:BTC_USDC_PERPETUAL
+timeframes:
+- 1m
+warmup_bars:
+  1m: 3
+proves:
+- behaviour:cross-venue-routing
+- behaviour:kill-switch
+- behaviour:market-entry
+- behaviour:timed-exit
+fills:
+  EXNESS: 4
+  PAPER: 2
+replay: by-venue
+drills:
+- venue: PAPER
+  kind: kill_switch
+  after_fills: 2
+  at_s: 5
+  hold_s: 210
+assertions:
+- fills-by-venue
+- flat-by-magic
+- flat-by-strategy
+- deals-net-by-venue
+- realized-total-equals-venues
+- no-engine-fault
+- kill-switch-refuses-risk
+- other-venue-trades-during-kill-switch
+- reducing-passes-during-kill
+- venue-fills-equal-qkt-fills
+- no-duplicate-order
+- replay-same-fills-by-venue
+budget_seconds: 540
