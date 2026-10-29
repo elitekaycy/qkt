@@ -728,14 +728,16 @@ adds `broker.deal` for the deals booked since the last poll. All fields below ar
 that does not know them ignores them.
 
 - **Every venue envelope** (`state.*`, `broker.deal`, `broker.connected`, `broker.disconnected`,
-  `broker.reconnected`) carries `venue: {connector, adapter, label}` and `accountId`. `connector` is
+  `broker.reconnected`) carries `venue: {connector, adapter, label, tradeMode}` and `accountId`. `connector` is
   `mt5`, `vgp` or `paper`; `adapter` is the venue (`exness` from the MT5 trade server
   `Exness-MT5Trial9`, the gateway's `adapter`); `label` is the broker entry name uppercased, the same as
   `broker` (`EXNESS`, `PAPER_DERIBIT`); `accountId` is opaque, so no envelope (nor the insights journal
   on disk) names the account by its credentials: `mt5:` + the first 16 hex characters of
   `sha256("<login>@<server>")`, or `vgp:` + the first 16 hex characters of
   `sha256("<adapter>:<account_login>")` (`com.qkt.broker.VenueAccountId`; qkt-insights computes the same
-  id). `state.account.login` is a string masked to its last four characters (`•••9381`), and
+  id). `tradeMode` is the account's environment as the venue states it: `demo`, `real`, or MT5's
+  `contest` (MT5 `ACCOUNT_TRADE_MODE`; a gateway's checked `trade_mode`), absent until it is read.
+  `state.account.login` is a string masked to its last four characters (`•••9381`), and
   `state.account` carries no `server`.
 - **`broker.deal`** adds `positionId` (the position the deal belongs to), `legEntry` (`IN`, `OUT`,
   `INOUT`, `OUT_BY`), `closeReason` on a closing deal, `nextPositionId` (the position a reversing
@@ -753,9 +755,33 @@ that does not know them ignores them.
   `LIQUIDATION`, `EXPIRY`. MT5 deal reasons map 4 to `STOP`, 5 to `TAKE_PROFIT`, 6 to `STOP_OUT` and a
   terminal (0-2) to `MANUAL`; qkt's own exits map by order id: a bracket's `-sl`/`-tp` order to
   `STOP`/`TAKE_PROFIT`, an `EXIT AFTER` close to `TIMED`, a `qkt bot` order to `MANUAL`.
-- **`instrument`** is `{symbol, venueCode, kind, contractSize, tickSize, quoteCurrency,
+- **`instrument`** is `{symbol, venueCode, kind, category, contractSize, tickSize, quoteCurrency,
   valuePerPoint}`, where qkt or the venue knows them; `valuePerPoint` is the account-currency value of
-  one unit of quantity moving one price unit.
+  one unit of quantity moving one price unit. `kind` is `cfd` (every MT5 symbol), `equity`, `spot`,
+  `perpetual`, `future` or `option`; `category` is the venue's folder for the symbol, so a stock CFD
+  reads `kind: cfd, category: Stocks` (MT5 path `Standard\Stocks\AAPLm`), apart from FX and metal
+  CFDs in their own folders. A derivative adds its `root` (`DERIBIT:BTC`), a dated contract its
+  `expiry` (UTC ms), and an option its `strike`, `optionRight` (`call`, `put`) and `underlying` index.
+
+### `strategy.started`
+
+`strategy.started` (the `lifecycle` family) is sent once each time a strategy starts: a daemon deploy, a
+portfolio child, a restart. Beside its deploy metadata (`deployName`, `dslVersion`, `params`, `risk`,
+...) it states:
+
+- **`streams`**: one entry per declared stream, `{alias, broker, symbol, qktSymbol, timeframe,
+  warmupBars}`, plus that symbol's `instrument` (above) and `venue` when the session knows them, so a
+  strategy says what it trades before it trades.
+- **The source it runs**: `sourcePath`, `sourceSha256` (of the whole file) and `sourceText`, the file's
+  text cut to 64 KiB of UTF-8 on a character boundary (`sourceTruncated: true` when cut). A portfolio
+  child states its own imported file. The text rides `strategy.started` only, never another envelope,
+  and one process sends it once per strategy and sha: a later start of the same strategy at the same
+  sha (a portfolio restarting an unchanged child, a redeploy of the same file) sends the sha with
+  `sourceTextOmitted: true` instead of the text. A new process sends the text again. A `qkt bot`
+  session has no strategy file and states none of these.
+
+With `journal_enabled`, a replayed batch also stops before the envelope that would take it past 512 KiB
+of JSON, so a batch of large envelopes still fits the collector's default 1 MiB body.
 
 An MT5 account names its positions (`positionId` is the position ticket). A VGP netting account names
 none, so qkt mints `<symbol>#<openedAt>`, from the open time of the account position qkt holds: a new

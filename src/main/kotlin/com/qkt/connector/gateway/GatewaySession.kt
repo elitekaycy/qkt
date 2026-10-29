@@ -49,7 +49,7 @@ internal class GatewaySession(
     val legs = GatewayFillLegs()
 
     /** The connector, venue and account this session trades. */
-    val venue = VenueIdentity("vgp", identity.adapter, label, identity.accountId)
+    val venue = VenueIdentity("vgp", identity.adapter, label, identity.accountId, identity.tradeMode)
     val ledger: GatewayLedger = GatewayLedger(symbols, routing, lock, ::fetchDeals, legs)
     private val holders = GatewayHolders(symbols, routing, account, lock, expectedStrategies, sharedAccount)
     private val funding = GatewayFunding(client, symbols, clock, routing, lock)

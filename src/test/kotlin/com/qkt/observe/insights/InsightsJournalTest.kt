@@ -38,4 +38,17 @@ class InsightsJournalTest {
 
         assertThat(tmp.resolve("prod_eu_west.jsonl")).exists()
     }
+
+    @Test
+    fun `a pending batch stops at the byte budget but always holds one entry`(
+        @TempDir tmp: Path,
+    ) {
+        val journal = InsightsJournal(tmp, "qkt-prod")
+        val big = """{"id":"${"x".repeat(600)}"}"""
+        journal.append(listOf(big, big, big))
+
+        assertThat(journal.pending(10, maxBytes = 1_300).map { it.journalSeq }).containsExactly(1L, 2L)
+        assertThat(journal.pending(10, maxBytes = 10).map { it.journalSeq }).containsExactly(1L)
+        assertThat(journal.pending(10).map { it.journalSeq }).containsExactly(1L, 2L, 3L)
+    }
 }

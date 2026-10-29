@@ -7,13 +7,15 @@ import java.math.BigDecimal
  * infers it from MT5 conventions. [connector] is `mt5`, `vgp` or `paper`; [adapter] the venue behind it
  * (`exness`, `deribit`, `paper`); [label] the config entry name uppercased (`EXNESS`, `PAPER_DERIBIT`);
  * [accountId] an opaque id unique per venue account ([VenueAccountId]: `mt5:` or `vgp:` and 16 hex
- * characters, never the login or server), null until the connector has read it.
+ * characters, never the login or server), null until the connector has read it. [tradeMode] is the
+ * account's environment as the venue states it (`demo`, `real`, MT5's `contest`), null until it has.
  */
 data class VenueIdentity(
     val connector: String,
     val adapter: String,
     val label: String,
     val accountId: String?,
+    val tradeMode: String? = null,
 )
 
 /**
