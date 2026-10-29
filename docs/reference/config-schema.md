@@ -695,7 +695,7 @@ Unknown notify channel keys are passed through as provider settings.
 
 ## `insights`
 
-Optional egress to a qkt-insights collector. Disabled config wires no queue and no worker thread. Enable `journal_enabled` for production so collector outages leave unacked batches on disk for replay instead of dropping them after retry exhaustion. Daemon live sessions also write a full engine audit JSONL under `state/audit-journal/<strategy>/audit-YYYY-MM-DD.jsonl`; the audit writer uses a bounded queue and its own daemon thread so durable file I/O does not run on the event bus thread.
+Optional egress to a qkt-insights collector. Disabled config wires no queue and no worker thread. Enable `journal_enabled` for production so collector outages leave unacked batches on disk for replay instead of dropping them after retry exhaustion. Daemon live sessions also write a full engine audit JSONL under `state/audit-journal/<strategy>/audit-YYYY-MM-DD.jsonl`; the audit writer uses its own daemon thread so durable file I/O does not run on the event bus thread, never sheds decision events (orders, fills, risk, bookings), sheds market data only past 50,000 queued records, and journals an option chain's quotes only for contracts the session trades or holds (see [Monitoring](../operations/monitoring.md)).
 
 For `trade.closed` envelopes, `realized` is retained only as a legacy alias of
 `netAccountRealized`. Dashboards should treat `netAccountRealized` as the

@@ -609,7 +609,7 @@ class PortfolioDeployer(
             ObservabilityServer(
                 ring = ring,
                 statusProvider = {
-                    childStatusSnapshot(
+                    com.qkt.cli.daemon.sessionStatusSnapshot(
                         childName,
                         compiledChild.ast.version,
                         compiledChild.strategyId,

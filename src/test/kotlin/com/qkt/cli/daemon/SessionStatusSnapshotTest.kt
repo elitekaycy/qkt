@@ -1,8 +1,9 @@
-package com.qkt.cli.daemon.portfolio
+package com.qkt.cli.daemon
 
 import com.qkt.app.LiveSessionHandle
 import com.qkt.app.OrderManager
 import com.qkt.execution.Trade
+import com.qkt.observe.AuditJournalHealth
 import com.qkt.persistence.PersistedStrategyHalt
 import com.qkt.positions.Position
 import java.math.BigDecimal
@@ -11,7 +12,7 @@ import java.time.Instant
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
-class ChildStatusSnapshotTest {
+class SessionStatusSnapshotTest {
     private fun session(halts: List<PersistedStrategyHalt> = emptyList()) =
         object : LiveSessionHandle {
             override val running = true
@@ -37,10 +38,13 @@ class ChildStatusSnapshotTest {
             override fun staleSymbols() = mapOf("PROP:XAUUSD" to 9_000L)
 
             override fun strategyHalts() = halts
+
+            override fun auditJournalHealth() =
+                AuditJournalHealth(enabled = true, written = 12L, droppedMarketData = 4L, omittedChainQuotes = 900L)
         }
 
     private fun snapshotOf(session: LiveSessionHandle) =
-        childStatusSnapshot("book_366/s1", 1, "book:s1", 0L, Instant.EPOCH, session)
+        sessionStatusSnapshot("book_366/s1", 1, "book:s1", 0L, Instant.EPOCH, session)
 
     @Test
     fun `a child reports the positions its strategy id holds under its display name`() {
@@ -52,6 +56,17 @@ class ChildStatusSnapshotTest {
         assertThat(snapshot.staleSymbols).containsExactly("PROP:XAUUSD")
         assertThat(snapshot.droppedTicks).isEqualTo(3L)
         assertThat(snapshot.halted).isFalse()
+    }
+
+    @Test
+    fun `the snapshot carries the session's audit journal health`() {
+        val audit = snapshotOf(session()).auditJournal
+
+        assertThat(audit.enabled).isTrue()
+        assertThat(audit.written).isEqualTo(12L)
+        assertThat(audit.droppedMarketData).isEqualTo(4L)
+        assertThat(audit.lostDecisionEvents).isZero()
+        assertThat(audit.omittedChainQuotes).isEqualTo(900L)
     }
 
     @Test
