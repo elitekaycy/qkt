@@ -74,10 +74,17 @@ internal object ReplayFeeds {
         // A fed option root (OPTIONS:<VENUE>.<ROOT>) carries every contract of the root; a contract of a
         // fed root is never fed a second time, so each of its quotes arrives once.
         val fedRoots = symbols.mapNotNull { OptionRootSymbol.parse(it).getOrNull() }
-        val perSymbolFeeds: List<TickFeed> =
+        val built =
             symbols.filterNot { sym -> fedRoots.any { it.covers(sym) } }.map { sym ->
-                replayFeed(source, sym, range, barWindows[sym] ?: candleWindow, forceBars, positionSign)
-                    .also { if (it is BarTickFeed) synthesized += sym }
+                sym to replayFeed(source, sym, range, barWindows[sym] ?: candleWindow, forceBars, positionSign)
+            }
+        // A symbol quiet for the whole range trades nothing, as live; a range with no data at all is refused.
+        check(built.isEmpty() || built.any { it.second != null }) {
+            "no market data for ${built.first().first} in requested range ${range.from}..${range.to}"
+        }
+        val perSymbolFeeds: List<TickFeed> =
+            built.map { (sym, feed) ->
+                (feed ?: SequenceTickFeed(emptySequence())).also { if (it is BarTickFeed) synthesized += sym }
             }
         // Ticks synthesized from bars lose ties: a bar is closed by the next bar's open, stamped exactly on
         // the boundary, where a recorded tick almost never lands (under 0.3% of minutes), so a hub record
@@ -129,7 +136,8 @@ internal object ReplayFeeds {
      * Picks the replay feed for one symbol: real recorded ticks when the source has them,
      * otherwise synthesized O->L->H->C ticks from its OHLC bars (the only path for bars-only
      * venues like crypto). Preferring ticks keeps tick-sourced backtests (e.g. MT5) byte-for-byte
-     * unchanged; the bar fallback is what makes a `qkt fetch`ed crypto symbol backtest at all.
+     * unchanged; the bar fallback is what makes a `qkt fetch`ed crypto symbol backtest at all. Null when
+     * the source has nothing for it in [range].
      */
     private fun replayFeed(
         source: MarketSource,
@@ -138,7 +146,7 @@ internal object ReplayFeeds {
         window: TimeWindow?,
         forceBars: Boolean,
         positionSign: (String) -> Int = { 0 },
-    ): TickFeed {
+    ): TickFeed? {
         // A chain analytics stream has values only where the chain allows one; an empty stream is a
         // stream whose rules never fire, not missing data (coverage of its chain days is checked at setup).
         // A hub dataset or a macro series is the same kind of thing: point-in-time facts, each visible
@@ -168,9 +176,7 @@ internal object ReplayFeeds {
         // fallback for venues like crypto).
         if (MarketSourceCapability.BARS in caps && window != null) {
             val iter = source.bars(symbol, window, range).iterator()
-            require(iter.hasNext()) {
-                "no market data for $symbol in requested range ${range.from}..${range.to}"
-            }
+            if (!iter.hasNext()) return null
             val tail = { afterMs: Long ->
                 if (ticksAvailable && afterMs < range.to.toEpochMilli()) {
                     source.tickSlice(symbol, afterMs, range.to.toEpochMilli())
@@ -186,6 +192,6 @@ internal object ReplayFeeds {
         require(ticksAvailable) {
             "bar-based backtest for $symbol needs a candle window (timeframe) — pass candleWindow"
         }
-        error("no market data for $symbol in requested range ${range.from}..${range.to}")
+        return null
     }
 }
