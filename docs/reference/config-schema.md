@@ -586,8 +586,13 @@ to one tick wider than asked (a backtest does the same for a contract of a decla
 without one it keeps the level as computed). The account's prices come from the gateway's quotes socket: its
 contracts, and its option roots as whole feeds (`OPTIONS:<ACCOUNT>.<ROOT>`, so name the account after
 the venue, e.g. `deribit`, to match `instruments.yaml`). Venues list new option expiries every day: schedule
-`qkt fetch DERIBIT:<ROOT> --catalog` (daily is enough) and a running daemon picks the new catalog up
-within a minute; a contract missing from the catalog is never routed or recorded.
+`qkt fetch <ACCOUNT>:<ROOT> --catalog` (daily is enough) and a running daemon picks the new catalog up
+within a minute; a contract missing from the catalog is never routed or recorded. The catalog of a root
+declared under `options:` is built from this account's own listing (`/v1/instruments`), whatever the entry
+is named, so a testnet account gets its testnet contracts; a fetch whose venue lists options of the root but
+catalogues none fails, and one for a root declared only under `futures:` warns that the venue's options are
+not catalogued. VGP v1 lists no index delivery prices: a day is priced only when the account held one of the
+root's options that settled in the money that day, and a stored catalog keeps the prices it already has.
 
 Policy-rate artifacts are also configured through the environment. `QKT_RBA_POLICY_RATE_SOURCE`
 and `QKT_RBNZ_POLICY_RATE_SOURCE` accept an absolute path, `file:` URI, or HTTPS URL for the
