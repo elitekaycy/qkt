@@ -39,11 +39,15 @@ internal class GatewayRouting {
     /** The brokers attached now. */
     val brokers: List<Attached> get() = attached.toList()
 
-    /** One broker's holding of a contract: its [strategy], the [position], and the continuous [stream] it is held for. */
+    /**
+     * One broker's holding of a contract: its [strategy], the [position], and the continuous [stream] it is held
+     * for with the stream's position as the strategy's session holds it ([streamPosition], restored at a restart).
+     */
     data class Holding(
         val strategy: String?,
         val position: Position,
-        val stream: String?,
+        val stream: String? = null,
+        val streamPosition: Position? = null,
     )
 
     /**
@@ -61,7 +65,9 @@ internal class GatewayRouting {
                 val stream = (broker.positions as? StreamContractPositions)?.stream
                 if (held.quantity.abs().compareTo(lots) == 0) Holding(broker.strategy, held, stream) else null
             }
-        return holders.singleOrNull()
+        val holder = holders.singleOrNull() ?: return null
+        val stream = holder.stream ?: return holder
+        return holder.copy(streamPosition = attached.firstNotNullOfOrNull { it.positions.positionFor(stream) })
     }
 
     /** Attaches [broker], handing it the events that waited for its strategy; true when it is the first. */

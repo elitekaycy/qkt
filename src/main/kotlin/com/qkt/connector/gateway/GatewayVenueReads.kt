@@ -68,8 +68,8 @@ internal class GatewayVenueReads(
                 when {
                     !netting -> p.ticket
                     else ->
-                        booked?.positionId ?: stream?.positionId ?: (mine ?: lane?.position)?.let(VenueLeg::idOf)
-                            ?: "$symbol#${p.openedAtMs}"
+                        booked?.positionId ?: stream?.positionId ?: (mine ?: lane?.streamPosition ?: lane?.position)
+                            ?.let(VenueLeg::idOf) ?: "$symbol#${p.openedAtMs}"
                 }
             BrokerPositionTicket(
                 ticket,

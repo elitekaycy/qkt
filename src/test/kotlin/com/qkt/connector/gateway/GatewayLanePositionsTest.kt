@@ -147,7 +147,20 @@ internal class GatewayLanePositionsTest {
     }
 
     @Test
-    fun `a lane holding a contract its stream never booked here still names the lane's strategy and position`() {
+    fun `after a restart, before any fill, the contract is the stream position the session restored`() {
+        sell(front, "roll:1")
+        laneHeld.held["DERIBIT:BTC_USDC_30OCT26"] =
+            Position("DERIBIT:BTC_USDC_30OCT26", BigDecimal("-0.1"), BigDecimal("70000"), 1_000L)
+
+        val position = account.positionTickets().single()
+
+        assertThat(position.strategyId).isEqualTo("roll")
+        assertThat(position.ticket).isEqualTo("$stream#5")
+    }
+
+    @Test
+    fun `a lane holding a contract no session books a stream position for names the lane's strategy and position`() {
+        strategyBook.held.clear()
         sell(front, "roll:1")
         laneHeld.held["DERIBIT:BTC_USDC_30OCT26"] =
             Position("DERIBIT:BTC_USDC_30OCT26", BigDecimal("-0.1"), BigDecimal("70000"), 1_000L)
