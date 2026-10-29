@@ -9,16 +9,20 @@ usage() {
     cat <<'USAGE'
 Usage: run-attestation-catalog.sh --out DIR --gateway-url URL --expected-login N
          --expected-server NAME --magic-base N --arm I_UNDERSTAND_DEMO_ORDER_0.01
-         [--lanes shadow,orders,risk,book,engine,daemon,stress[,stocks][,derivatives][,bybit][,alpaca]] [--max-parallel N]
+         [--lanes shadow,orders,risk,book,engine,daemon,stress[,stocks][,derivatives][,bybit][,alpaca][,cross]] [--max-parallel N]
          [--crypto-symbols]   (the shadow lane on 24/7 symbols, for a weekend run)
          [--cli PATH] [--deriv-gateway-url URL --deriv-expected-login LOGIN]
          [--bybit-gateway-url URL --bybit-expected-login LOGIN] [--alpaca-gateway-url URL --alpaca-expected-login LOGIN]
+         [--cross-venue LABEL=URL@LOGIN ...]
 
 Needs QKT_BROKER_API_KEY and QKT_LIVE_DEMO_ORDER_APPROVAL=LOCALHOST_DEMO_ONLY. Demo, loopback only.
 The derivatives lane (futures, perpetuals, options) runs on a VGP gateway account instead: it needs the
 --deriv-* flags and QKT_DERIV_GATEWAY_KEY, and its cases run one after another (one netting account).
 The bybit lane is the same on a gateway running the Bybit adapter: the --bybit-* flags and
 QKT_BYBIT_GATEWAY_KEY (QKT_BYBIT_GUARDIAN_KEY for its kill-switch drill); it runs beside the derivatives lane.
+The cross lane runs one daemon on this MT5 demo and the gateway venues its cases name: one --cross-venue flag per
+gateway venue (its broker prefix, URL and login), its trader token in QKT_CROSS_<LABEL>_KEY (its guardian token in
+QKT_CROSS_<LABEL>_GUARDIAN_KEY for a kill-switch drill). Its cases run one after another, each under its own magic.
 Writes DIR/result.json: per-case verdicts, the capabilities proven, the wall-clock, and
 `status: passed` only when every ready case passed. Exits non-zero otherwise.
 At most --max-parallel daemons (default 8) run at once: one gateway serves them all, and past that
@@ -31,7 +35,7 @@ fail() { printf 'run-attestation-catalog: %s\n' "$1" >&2; exit 1; }
 out=""; gateway_url=""; expected_login=""; expected_server=""; magic_base=""; arm=""
 lanes="shadow,orders,risk,book,engine,daemon,stress"; cli="$repo_root/build/install/qkt/bin/qkt"
 max_parallel=8; deriv_gateway_url=""; deriv_expected_login=""; bybit_gateway_url=""; bybit_expected_login=""
-alpaca_gateway_url=""; alpaca_expected_login=""
+alpaca_gateway_url=""; alpaca_expected_login=""; cross_venues=()
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --out) out="${2:-}"; shift 2 ;;
@@ -50,6 +54,7 @@ while [ "$#" -gt 0 ]; do
         --bybit-expected-login) bybit_expected_login="${2:-}"; shift 2 ;;
         --alpaca-gateway-url) alpaca_gateway_url="${2:-}"; shift 2 ;;
         --alpaca-expected-login) alpaca_expected_login="${2:-}"; shift 2 ;;
+        --cross-venue) cross_venues+=(--venue "${2:-}"); shift 2 ;;
         --help|-h) usage; exit 0 ;;
         *) fail "unknown argument: $1" ;;
     esac
@@ -170,6 +175,28 @@ if [[ ",$lanes," == *,alpaca,* ]]; then
     gateway_lane alpaca "$alpaca_gateway_url" "$alpaca_expected_login" "$QKT_ALPACA_GATEWAY_KEY" \
         "${QKT_ALPACA_GUARDIAN_KEY:-}"
 fi
+# The cross lane: one daemon per case on the MT5 demo (its own magic) and the gateway venues the case names, one case
+# after another, since a case's gateway legs and drills (a kill switch, an outage) are its venue's for the whole case.
+run_cross_lane() {  # id:magic ...
+    local entry id code=0
+    for entry in "$@"; do
+        id="${entry%%:*}"
+        python3 "$repo_root/scripts/live-validation/run-cross-lane-case.py" --case "$repo_root/attestation/cases/cross/$id" \
+            --out "$out/cross-$id" "${common[@]}" --magic "${entry##*:}" --arm "$arm" "${cross_venues[@]}" || code=1
+    done
+    return "$code"
+}
+if [[ ",$lanes," == *,cross,* ]]; then
+    [ "${#cross_venues[@]}" -gt 0 ] || fail "--lanes cross needs a --cross-venue LABEL=URL@LOGIN per gateway venue"
+    cross_cases=()
+    for case_yaml in "$repo_root/attestation/cases/cross"/*/case.yaml; do
+        [ "$(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["status"])' "$case_yaml")" = ready ] ||
+            continue
+        id="$(basename "$(dirname "$case_yaml")")"
+        cross_cases+=("$id:$magic"); gateway_ids+=("cross/$id"); magic=$((magic + 1))
+    done
+    [ "${#cross_cases[@]}" -eq 0 ] || launch cross run_cross_lane "${cross_cases[@]}"
+fi
 [ "${#pids[@]}" -gt 0 ] || fail "no ready case in lanes: $lanes"
 
 codes=()
@@ -204,7 +231,7 @@ for lane_id in "${gateway_ids[@]}"; do  # one verdict per venue-gateway case, fr
 done
 for i in "${!pids[@]}"; do
     name="${names[$i]}"; code="${codes[$i]}"; last="$out/logs/$name.log"
-    [ "$name" = derivatives ] || [ "$name" = bybit ] && continue
+    case "$name" in derivatives|bybit|alpaca|cross) continue ;; esac  # judged per case above, from its result.json
     if [ -n "${retry_pid[$name]:-}" ]; then
         code=0; wait "${retry_pid[$name]}" || code=$?
         last="$out/logs/$name-retry.log"

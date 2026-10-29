@@ -21,5 +21,5 @@ proves:
 fills: 2
 replay: none
 assertions:
-- flat-account
+- flat-by-strategy
 - deals-net-equals-realized

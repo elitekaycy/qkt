@@ -5,21 +5,25 @@
         --arm I_UNDERSTAND_DEMO_ORDER_0.01 [--cli PATH] [--budget-seconds N]
 
 Needs QKT_DERIV_GATEWAY_KEY (the gateway's trader token) and QKT_LIVE_DEMO_ORDER_APPROVAL=LOCALHOST_DEMO_ONLY.
-The gateway must be on loopback, in demo trade mode, logged into --expected-login, and the account flat:
-a netting account cannot tell the case's positions from anyone else's. The case's strategy runs in a
-daemon until it has made `fills` fills and, when it asserts flat-account, is flat (or its budget ends), then is judged:
-  - flat-account: the account ends with no position and no working order;
-  - funding-booked (whenever the venue charged funding): the strategy booked every funding record the venue made
-    during the run, the one realized at the close included;
+The gateway must be on loopback, in demo trade mode and logged into --expected-login. The account is shared (release
+attestation and the live soak trade it too), so the case judges and touches only its strategy's own (lib/strategy_scope.py):
+its orders and deals by their client order ids (`dsl-<strategy>-`, `ORD-<strategy>-`), its holding from its own deals,
+never from the account's netted positions, which say nothing of who holds them. Before the case the strategy must own no
+working order and its deals of the last day must net flat. The case's strategy runs in a daemon until it has made `fills`
+fills and, when it asserts flat-by-strategy, is flat (or its budget ends), then is judged:
+  - flat-by-strategy: the strategy ends with no working order and its own deals (less its settlements) net to nothing;
+  - funding-booked (whenever the venue charged funding): the strategy booked every funding record it owes part of
+    (its holding at the record's time over the account's position), the one realized at the close included;
   - deals-net-equals-realized: qkt's realized PnL equals the venue's deals net, fees included, plus the cash
     of every expiry the venue settled while the strategy held the contract (`/v1/settlements`: the holding
-    times the settlement price and contract size, less the settlement's costs), less the funding the venue
-    charged the account over the run (`/v1/funding`, when the gateway reports it), exactly;
+    times the settlement price and contract size, less the settlement's costs), less the strategy's share of the
+    funding the venue charged the account over the run (`/v1/funding`, when the gateway reports it), exactly;
   - settlement-booked-once (a case that holds through an expiry, `settles: N`): each contract the strategy held
     that the venue settled was booked by qkt exactly once (its journal's `settle:<symbol>:<strategy>` fill),
     closing the whole holding at the venue's settlement price; qkt booked no settlement the venue never made;
   - account-balance-equals-realized: the account's balance moved over the case by exactly qkt's realized PnL
-    (the venue's own cash, independent of how the gateway reports deals, settlements and fees);
+    (the venue's own cash, independent of how the gateway reports deals, settlements and fees); reported as not
+    comparable, neither passed nor failed, when another user's deal on the account falls inside the case window;
   - funding-charged: the venue charged the account funding at least once during the run (a soak case that
     holds a perpetual long enough, such as `scripts/live-validation/funding-soak`, run with --budget-seconds);
   - replay-same-fills (`replay: bars`): a backtest of the same minutes on the gateway's own bars makes the
@@ -43,11 +47,13 @@ import yaml
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "lib"))
 import derivatives_drills  # noqa: E402
 import derivatives_settlement as settlement  # noqa: E402
+import strategy_scope as scope  # noqa: E402
 
 TRADE = re.compile(r"qkt\.trade - trade (BUY|SELL) (\S+) qty=(\S+) px=(\S+)")
 MINUTE = 60_000
 QKT_MONEY_UNIT = Decimal("0.00000001")  # qkt Money.SCALE = 8
 FUNDING_RECONCILE_S = 90  # a gateway reconciles venue history every minute; one cycle past the last fill, with margin
+PREFLIGHT_LOOKBACK_MS = 86_400_000  # a strategy's deals over the last day must net flat before a case starts
 
 
 def main():
@@ -126,25 +132,52 @@ class Run:
             time.sleep(min(attempt, 5))
 
     def sweep(self):
-        """Leaves the account flat once the case has taken it, however the case ended (a venue outage mid-trade)."""
-        if not getattr(self, "owns_account", False):
+        """Leaves the strategy flat once the case has started it, however the case ended (a venue outage mid-trade):
+        cancels its own working orders and closes its own holding, never another user's (lib/strategy_scope.py)."""
+        if not getattr(self, "owns_strategy", False):
             return
-        for order in self.get("/v1/orders")["orders"]:
+        for order in scope.own(self.get("/v1/orders")["orders"], self.strategy):
             try:
                 self.get(f"/v1/orders/{urllib.parse.quote(order['client_order_id'])}", method="DELETE")
             except urllib.error.HTTPError as error:
                 if error.code != 404:  # not_found: the order already ended (the venue cancelled it)
                     raise
-        for position in self.get("/v1/positions")["positions"]:
-            self.get("/v1/positions/close", {"symbol": position["symbol"]}, "POST")
+        held = self.holdings()
+        if held:
+            for order in scope.sweep_orders(held, self.get("/v1/positions")["positions"], self.strategy,
+                                            int(time.time() * 1000)):
+                self.get("/v1/orders", order, "POST")
         deadline = time.time() + 30
         while not self.flat():
             if time.time() > deadline:
-                raise RuntimeError("still holds a position or a working order")
+                raise RuntimeError("the strategy still holds a position or a working order")
             time.sleep(2)
 
-    def flat(self):
-        return not self.get("/v1/positions")["positions"] and not self.get("/v1/orders")["orders"]
+    def window_to(self):
+        """The end of the venue history a read covers: a minute past the case's end, or past now while it runs."""
+        return max(self.ended_ms, int(time.time() * 1000)) + MINUTE
+
+    def own_deals(self, since_ms=None):
+        """The venue's fills of the strategy's orders from [since_ms] (the case's start by default)."""
+        since = self.started_ms if since_ms is None else since_ms
+        return scope.own(self.get(f"/v1/deals?from={since}&to={self.window_to()}")["deals"], self.strategy)
+
+    def holdings(self, since_ms=None):
+        """The strategy's own signed holding per venue symbol, from its deals less what the venue settled of it."""
+        deals = self.own_deals(since_ms)
+        since = self.started_ms if since_ms is None else since_ms
+        settled = settlement.held_settlements(
+            self.get(f"/v1/settlements?from={since}&to={self.window_to()}")["settlements"], deals) if deals else []
+        return scope.holdings(deals, settled)
+
+    def flat(self, since_ms=None):
+        """flat-by-strategy: no working order of the strategy's, and its own deals (less its settlements) net flat."""
+        return not scope.own(self.get("/v1/orders")["orders"], self.strategy) and not self.holdings(since_ms)
+
+    def own_positions(self):
+        """The account's positions on the symbols the strategy holds now (a drill's evidence and probe price)."""
+        held = self.holdings()
+        return [p for p in self.get("/v1/positions")["positions"] if p["symbol"] in held]
 
     def execute(self, budget):
         health = self.get("/v1/health")
@@ -156,16 +189,18 @@ class Run:
             raise RuntimeError(f"the gateway's kill switch is on: {health['kill_switch']}")
         if any(d["kind"] == "kill_switch" for d in self.drills.pending) and not self.drills.guardian:
             raise RuntimeError("a kill_switch drill needs the guardian token in QKT_DERIV_GUARDIAN_KEY")
-        if not self.flat():
-            raise RuntimeError("the account is not flat: a netting account cannot attribute the case's positions")
-        self.owns_account = True  # it was flat, so whatever is on it from here on is this case's
+        self.strategy = re.search(r"^STRATEGY\s+(\w+)", open(os.path.join(self.args.case, "strategy.qkt")).read(),
+                                  re.M).group(1)
+        if not self.flat(int(time.time() * 1000) - PREFLIGHT_LOOKBACK_MS):
+            raise RuntimeError(f"the strategy {self.strategy} already holds a position or a working order on the account")
+        self.owns_strategy = True  # it was flat, so whatever the strategy holds from here on is this case's
         balance = Decimal(self.get("/v1/account")["balance"])
         self.prepare(health["adapter"])
         self.run_daemon(budget)
         problems = []
         flat = self.flat()
         if not flat:
-            problems.append("flat-account: the account holds a position or a working order after the case")
+            problems.append("flat-by-strategy: the strategy holds a position or a working order after the case")
         fills = self.order_fills()
         if len(fills) < int(self.case["fills"]):
             problems.append(f"expected {self.case['fills']} fills within the budget, saw {len(fills)}")
@@ -178,30 +213,22 @@ class Run:
             realized = Decimal(0)
             if fills:
                 problems.append(f"qkt wrote no pnl.json for {self.strategy} although the venue reports {len(fills)} fill(s)")
-        funding = self.venue_funding()
+        funding = scope.strategy_funding(self.venue_funding(), self.strategy_deals())
         held = settlement.held_settlements(self.venue_settlements(), self.strategy_deals())
         venue = self.venue_net() + settlement.settlement_cash(held, self.contract_sizes()) \
-            - sum((Decimal(f["amount"]) for f in funding), Decimal(0))
+            - sum((Decimal(f["share"]) for f in funding), Decimal(0))
         # qkt keeps money at 8 decimals and books each fill's trade and costs at that scale, so two roundings of at
         # most half a unit each may part it from the venue's exact net by up to 1e-8 a fill; anything more is a
         # difference in what was booked.
-        if abs(venue - realized) > QKT_MONEY_UNIT * max(len(fills), 1):
+        if abs(venue - realized) > QKT_MONEY_UNIT * (max(len(fills), 1) + len(funding)):
             problems.append(f"deals-net-equals-realized: venue net {venue} != qkt realized {realized}")
         self.net_gap = str(venue - realized)
         booked = settlement.booked_settlements(f"{self.out}/state/state", self.strategy)
         if held or booked or self.case.get("settles"):
             problems += settlement.judge(held, booked, self.venue, int(self.case.get("settles", 0)))
         moved = Decimal(self.get("/v1/account")["balance"]) - balance
-        # Deribit's daily 08:00 settlement also books the session's funding and fees on every contract the account
-        # traded that day, closed or not; when it charged other contracts during the case the balance is not the
-        # case's alone, so the check is reported as not comparable rather than judged.
-        traded = {f["symbol"].split(":")[-1].replace("-", "_") for f in fills}
-        others = sorted({f["symbol"] for f in self.account_funding() if f["symbol"].replace("-", "_") not in traded})
-        if "account-balance-equals-realized" in self.case["assertions"] and flat and moved != realized:
-            if others:
-                self.balance_note = f"not comparable: the venue also settled {others} during the case"
-            else:
-                problems.append(f"account-balance-equals-realized: the balance moved {moved}, qkt realized {realized}")
+        if "account-balance-equals-realized" in self.case["assertions"] and flat:
+            problems += self.judge_balance(moved, realized, fills)
         if "funding-charged" in self.case["assertions"] and not funding:
             problems.append("funding-charged: the venue charged no funding during the run")
         unbooked = self.unbooked_funding(self.ended_ms + MINUTE) if funding else []
@@ -212,13 +239,31 @@ class Run:
         if fills and self.case.get("replay", "none") != "none":
             problems += self.replay(fills)
         self.evidence = {"fills": fills, "qktRealized": str(realized), "venueNet": str(venue), "netGap": self.net_gap,
-                         "funding": funding,
+                         "funding": funding, "balanceMoved": str(moved),
+                         "balanceNote": getattr(self, "balance_note", None),
                          "replayPriceDrift": getattr(self, "drift", [])}
         if held or booked or self.case.get("settles"):
             self.evidence.update(settlements=[dict(s, holding=str(s["holding"])) for s in held], booked=booked,
                                  balanceMoved=str(moved), balanceNote=getattr(self, "balance_note", None),
                                  selected=getattr(self, "selected", None))
         return problems
+
+    def judge_balance(self, moved, realized, fills):
+        """account-balance-equals-realized, or a note saying why the balance is not comparable: another user's deal
+        inside the case window moved the same cash, or Deribit's daily 08:00 settlement booked the session's funding
+        and fees on contracts the case never traded (it books them on every contract the account traded that day)."""
+        window = self.get(f"/v1/deals?from={self.started_ms}&to={self.ended_ms + MINUTE}")["deals"]
+        traded = {f["symbol"].split(":")[-1].replace("-", "_") for f in fills}
+        others = sorted({f["symbol"] for f in self.account_funding() if f["symbol"].replace("-", "_") not in traded})
+        note = scope.balance_note(window, self.strategy)
+        if note is None and moved != realized and others:
+            note = f"not comparable: the venue also settled {others} during the case"
+        if note:
+            self.balance_note = note
+            return []
+        if moved != realized:
+            return [f"account-balance-equals-realized: the balance moved {moved}, qkt realized {realized}"]
+        return []
 
     def judge_drilled(self, fills):
         """After a drill: the venue filled exactly what qkt booked, each engine order placed at the venue once."""
@@ -366,7 +411,7 @@ class Run:
         settles = int(self.case.get("settles", 0))
         if settles and len(settlement.booked_settlements(f"{self.out}/state/state", self.strategy)) < settles:
             return False
-        return "flat-account" not in self.case["assertions"] or self.flat()
+        return "flat-by-strategy" not in self.case["assertions"] or self.flat()
 
     def await_funding(self, deadline):
         """Deribit realizes funding at every fill that changes a position, the close included, and a gateway reads it
@@ -380,8 +425,9 @@ class Run:
             time.sleep(5)
 
     def unbooked_funding(self, to_ms):
-        """The ids of the venue's funding records from the run's start to [to_ms] the strategy has not booked."""
-        charged = {f["funding_id"] for f in self.get(f"/v1/funding?from={self.started_ms}&to={to_ms}")["funding"]}
+        """The ids of the funding records from the run's start to [to_ms] the strategy owes part of and has not booked."""
+        records = self.get(f"/v1/funding?from={self.started_ms}&to={to_ms}")["funding"]
+        charged = {f["funding_id"] for f in scope.strategy_funding(records, self.strategy_deals())}
         path = f"{self.out}/state/state/{self.strategy}/funding.json"
         booked = set(json.load(open(path))["booked"]) if os.path.exists(path) else set()
         return sorted(charged - booked)
@@ -422,9 +468,9 @@ class Run:
     def strategy_deals(self):
         """The venue's fills of the strategy's orders over the run."""
         # From the session's start: an earlier run of the same case placed orders under the same ids' prefix.
-        deals = self.get(f"/v1/deals?from={self.started_ms}&to={self.ended_ms + MINUTE}")["deals"]
+        deals = self.get(f"/v1/deals?from={self.started_ms}&to={self.window_to()}")["deals"]
         # A rule's own orders are `dsl-<strategy>-…`; one a signal sized (a plain BUY) is `ORD-<strategy>-…`.
-        return [d for d in deals if d["client_order_id"].startswith((f"dsl-{self.strategy}-", f"ORD-{self.strategy}-"))]
+        return scope.own(deals, self.strategy)
 
     def venue_net(self):
         sizes = self.contract_sizes()

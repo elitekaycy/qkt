@@ -28,7 +28,7 @@ config:
   risk:
     measured_usage_max_qty: "1"
 assertions:
-- flat-account
+- flat-by-strategy
 - deals-net-equals-realized
 - replay-same-fills
 - venue-fills-equal-qkt-fills
