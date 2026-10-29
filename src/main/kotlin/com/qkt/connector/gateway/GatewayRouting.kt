@@ -4,8 +4,10 @@ import com.qkt.accounting.MoneyAmount
 import com.qkt.common.Money
 import com.qkt.events.BrokerEvent
 import com.qkt.events.ContractSettled
+import com.qkt.positions.Position
 import com.qkt.positions.PositionProvider
 import java.math.BigDecimal
+import java.util.concurrent.CopyOnWriteArrayList
 import org.slf4j.LoggerFactory
 
 /**
@@ -15,7 +17,8 @@ import org.slf4j.LoggerFactory
  * strategy (attached with a null strategy); with none attached they wait, and reach the strategy's
  * broker when it attaches again.
  * A contract settlement goes to every broker with the venue's costs shared once, account-wide, by the
- * size of each broker's holding. Not thread-safe: its owner calls it under one lock.
+ * size of each broker's holding. Its owner calls it under one lock; [brokers] and [soleHolder] may be read from
+ * any thread (the venue-state poller's).
  */
 internal class GatewayRouting {
     /** A broker serving [strategy] (null: every strategy), whose session holds [positions], publishing on [publish]. */
@@ -29,11 +32,28 @@ internal class GatewayRouting {
     }
 
     private val log = LoggerFactory.getLogger(GatewayRouting::class.java)
-    private val attached = ArrayList<Attached>()
+    private val attached = CopyOnWriteArrayList<Attached>()
     private val waiting = LinkedHashMap<String, MutableList<BrokerEvent.OrderEvent>>()
 
     /** The brokers attached now. */
     val brokers: List<Attached> get() = attached.toList()
+
+    /**
+     * The strategy of the one attached broker whose session holds exactly [lots] of [symbol], with that
+     * holding, or null when none or several do. A continuous stream's dated contract is held by the stream's
+     * lane, not by the session's book, which names only the stream.
+     */
+    fun soleHolder(
+        symbol: String,
+        lots: BigDecimal,
+    ): Pair<String?, Position>? {
+        val holders =
+            attached.mapNotNull { broker ->
+                val held = broker.positions.positionFor(symbol) ?: return@mapNotNull null
+                if (held.quantity.abs().compareTo(lots) == 0) broker.strategy to held else null
+            }
+        return holders.singleOrNull()
+    }
 
     /** Attaches [broker], handing it the events that waited for its strategy; true when it is the first. */
     fun attach(broker: Attached): Boolean {
