@@ -49,6 +49,9 @@ class PrefixRemapMarketSource(
     override fun capabilitiesFor(symbol: String): Set<MarketSourceCapability> =
         if (symbol.startsWith(localPrefix)) delegate.capabilitiesFor(toDelegate(symbol)) else emptySet()
 
+    override fun tickDeliveryLagMsFor(symbol: String): Long =
+        if (symbol.startsWith(localPrefix)) delegate.tickDeliveryLagMsFor(toDelegate(symbol)) else 0L
+
     override fun liveTicks(symbols: List<String>): TickFeed {
         require(symbols.all { it.startsWith(localPrefix) }) { "$name cannot serve $symbols" }
         val feed = delegate.liveTicks(symbols.map(::toDelegate))
