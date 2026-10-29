@@ -31,6 +31,8 @@ class SharedLiveMarketSource(
 
     override fun capabilitiesFor(symbol: String): Set<MarketSourceCapability> = delegate.capabilitiesFor(symbol)
 
+    override fun tickDeliveryLagMsFor(symbol: String): Long = delegate.tickDeliveryLagMsFor(symbol)
+
     override fun liveTicks(symbols: List<String>): TickFeed {
         check(!closed.get()) { "$name is closed" }
         val distinct = symbols.distinct()

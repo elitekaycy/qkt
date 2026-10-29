@@ -278,7 +278,7 @@ Controls safety mode and explicit runtime waivers.
 | Key | Type | Default | Used by | Notes |
 |---|---|---|---|---|
 | `runtime.mode` | `dev`, `paper`, or `production` | `dev` | config, daemon, preflight, promotion | Production mode enables fail-closed preflight and promotion enforcement defaults. |
-| `runtime.candle_close_grace_ms` | non-negative integer | `2000` | daemon, run, backtest, replay | How long after a bar's window ends the 1 Hz heartbeat closes a quiet symbol's bar. Live and replay read the same value, so a `SYNCHRONIZE` group with a sparse member decides on the same heartbeat step in both; replay records it in `result.json` as `execution.candleCloseModel`. A tick of the same stream from the next window closes the bar immediately in both modes. |
+| `runtime.candle_close_grace_ms` | non-negative integer | `2000` | daemon, run, backtest, replay | How long after a bar's window ends the 1 Hz heartbeat closes a quiet symbol's bar. Live and replay read the same value, so a `SYNCHRONIZE` group with a sparse member decides on the same heartbeat step in both; replay records it in `result.json` as `execution.candleCloseModel`. A tick of the same stream from the next window closes the bar immediately in both modes. It must outlast how late the feed delivers: a polled MT5 broker hands a tick over up to one `tick_poll_interval_ms` after its stamp, and a grace at or below that drops every bar's last poll; the daemon warns at start naming those symbols and a grace that fits (1.5 x the poll interval). |
 | `runtime.waivers.<control>.reason` | string | none | preflight | Currently `alerts` is used by `notify.alerts` production preflight. Keep reasons operator-readable. |
 
 ## `state`

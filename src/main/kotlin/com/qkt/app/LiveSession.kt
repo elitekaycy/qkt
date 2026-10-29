@@ -712,7 +712,7 @@ class LiveSession(
         }
         riskState.warmupComplete = true
 
-        val feed = source.liveTicks(feedSymbols)
+        val feed = CandleCloseGraceCheck.openLiveTicks(source, feedSymbols, candleCloseGraceMs)
         insights.connected({ brokers.built.ifEmpty { listOf(broker) } }, feed)
 
         val sessionFlatten =
