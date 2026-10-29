@@ -34,10 +34,11 @@ internal class GatewayFillLegs(
         }
     private val open = HashMap<String, OpenPosition>()
 
-    /** The open position of one symbol as qkt last booked it: its id and the strategies that hold it. */
+    /** The open position of one symbol as qkt last booked it: its id, the strategies that hold it, its open time. */
     data class OpenPosition(
         val positionId: String,
         val owners: Set<String>,
+        val openedAt: Long? = null,
     )
 
     /** The ledger booked venue fill [fillId] of engine order [engineOrderId]: its next accounted execution. */
@@ -58,7 +59,7 @@ internal class GatewayFillLegs(
             open.remove(e.symbol)
         } else {
             val held = open[e.symbol]?.takeIf { it.positionId == current }?.owners.orEmpty()
-            open[e.symbol] = OpenPosition(current, held + e.strategyId)
+            open[e.symbol] = OpenPosition(current, held + e.strategyId, after?.openedAt)
         }
         if (e.kind != FillAccountingKind.EXECUTION) return
         val fact = GatewayLegFact(VenueLeg.of(e.accountPositionBefore, after), e.grossAccountRealized, e.strategyId)

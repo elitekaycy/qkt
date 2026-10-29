@@ -778,7 +778,7 @@ class LiveSession(
                 insightsSharedDeals,
                 insightsDealBackfillDays,
                 clock,
-            ).start(brokerStatePollerBrokers, handleRef, strategyPnL)
+            ).start(brokerStatePollerBrokers, handleRef, strategyPnL, pnl)
 
         // Fire StrategyStarted per strategy this session hosts. Lifecycle events bypass the
         // bus because no other engine component consumes them.
