@@ -16,8 +16,10 @@ import java.math.BigDecimal
  * A gateway account's venue truth in the engine's terms ([com.qkt.broker.Broker.accountState] and the
  * reads beside it), mapped once by [GatewayDirectReads] and given qkt symbols and the facts VGP v1 does not
  * carry. A netting position's ticket is qkt's id for it ([VenueLeg]: a new one each time the account's
- * position crosses zero); a deal's leg, position and realized P&L are what qkt's accounting booked for that
- * fill, found by its `fill_id` ([GatewayFillLegs]). A deal qkt did not book in this process (placed elsewhere, or before a restart)
+ * position crosses zero), and its open time qkt's when the venue states none; its mark and floating P&L stay
+ * null here (VGP v1 carries neither) for the state poller to value from the session's quotes. A deal's leg,
+ * position and realized P&L are what qkt's accounting booked for that fill, found by its `fill_id`
+ * ([GatewayFillLegs]). A deal qkt did not book in this process (placed elsewhere, or before a restart)
  * has no realized P&L to state and is left out; one younger than [accountingGraceMs] may still be on its
  * way to the books, so it and every deal after it wait for the next read.
  */
@@ -70,7 +72,8 @@ internal class GatewayVenueReads(
                 null,
                 null,
                 null,
-                p.openedAtMs,
+                // The paper adapter states no open time; qkt's own booking of the position has it.
+                p.openedAtMs ?: (booked?.openedAt ?: mine?.openedAt)?.takeIf { netting },
                 null,
                 strategyId = booked?.owners?.singleOrNull() ?: strategy?.takeIf { mine != null },
             )

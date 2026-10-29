@@ -7,6 +7,7 @@ import com.qkt.observe.insights.InsightsEventFamily
 import com.qkt.observe.insights.InsightsSink
 import com.qkt.observe.insights.SharedDealFetch
 import com.qkt.observe.insights.TicketAttribution
+import com.qkt.pnl.PositionMarks
 import com.qkt.pnl.StrategyPnL
 import com.qkt.strategy.Strategy
 import java.util.concurrent.atomic.AtomicReference
@@ -32,12 +33,14 @@ internal class InsightsStatePolling(
     /**
      * Start the poller over [brokerStatePollerBrokers], or return null when it is not enabled.
      * The handle is built at the end of start(); the poller samples equity through [handleRef] so
-     * the read runs as an engine-thread snapshot rather than a racy cross-thread read.
+     * the read runs as an engine-thread snapshot rather than a racy cross-thread read. [marks] values a
+     * venue position that states no mark or profit (a VGP account's) from the session's quotes.
      */
     fun start(
         brokerStatePollerBrokers: List<Broker>,
         handleRef: AtomicReference<LiveSessionHandle?>,
         strategyPnL: StrategyPnL,
+        marks: PositionMarks,
     ): BrokerStatePoller? =
         if (insightsSink != null &&
             com.qkt.observe.insights.InsightsEventFamily.STATE in insightsEvents &&
@@ -56,6 +59,7 @@ internal class InsightsStatePolling(
                     emitDeals = com.qkt.observe.insights.InsightsEventFamily.DEAL in insightsEvents,
                     venues = insights.facts.venues,
                     fills = insights.facts.fills,
+                    marks = marks,
                     strategyEquity = {
                         val handle = handleRef.get()
                         if (handle == null) {
