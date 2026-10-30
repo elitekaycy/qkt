@@ -800,6 +800,32 @@ portfolio child, a restart. Beside its deploy metadata (`deployName`, `dslVersio
   `sourceTextOmitted: true` instead of the text. A new process sends the text again. A `qkt bot`
   session has no strategy file and states none of these.
 
+- **What it runs on**: `effectiveConfig`, hashed by `effectiveConfigSha256`, and sent like the source text: one
+  process sends it once per strategy and sha, and a later start at that sha sends the sha with
+  `effectiveConfigOmitted: true`. It is an allow-list of named, resolved values, built from the same `Config`
+  getters the session is wired from, so it says what the strategy really runs with after defaults and `${VAR}`
+  expansion. qkt never sends its config file, and no `brokers`, `notify`, `insights`, `tv` or `fetchers` value
+  beyond those below can reach it: a credential, a gateway URL or a field added to the config later has no way in.
+  A setting is `{value, source}`, `source` being `configured` or `default`; a limit that is off or unset has no
+  `value` (`risk.max_daily_loss: 0` states no value, not 0). A failure building it starts the strategy without it.
+
+  | Field | What it states |
+  |---|---|
+  | `schema`, `kind` | `1`; `standalone`, `portfolio_child` or `bot_session` |
+  | `tradingMode` | `paper`, `demo`, `contest`, `live`, as the venue states its account; left out until it has |
+  | `runtimeMode`, `currency` | `runtime.mode`; `account.currency`, left without a value unless it reads as a currency |
+  | `accounts[]` | Only those a stream of this strategy names: `name`, `type` (an installed connector), `connector`, `adapter`, `environment`, `tickPollIntervalMs` (the feed's polling interval; none when it does not poll) |
+  | `startingBalance` | `starting_balance` (not on a portfolio child, which has `book`) |
+  | `book` | A portfolio child's `name`, `capital` (`book_risk.capital`, else `CAPITAL`), `weight`, `allocatedCapital`, `maxGrossExposure`, `maxNetExposure`, `maxSymbolConcentration` (multiples of capital), `allocationMethod`, `targetVol`, `deRiskSteps[]` (`drawdown`, `factor`, `cooldownBars`). A strategy deployed alone has none: `book_risk` does not bound it |
+  | `risk` | `appliesTo` (`strategy`, or `book` for a portfolio child, whose halts watch the book), `maxDailyLoss`, `maxDrawdownFraction`, `totalDdBasis`, `maxDailyDrawdownFraction`, `dailyDdBasis`, `liveEquityBasis` |
+  | `strategyRisk` | This strategy's `risk.per_strategy` entry, only what it sets: `maxDailyLoss`, `maxPositionSize`, `maxOpenPositions`, `maxDrawdownFraction`, `maxDailyDrawdownFraction`, `maxTradesPerDay`, `cooldownAfterLossMs`, `cooldownAfterLosses`, `lossStreakHalt`, `lossStreakHaltScope` |
+  | `orders` | `maxOrderQty`, `maxOrderNotional`, `priceCollarFraction`, `marginFloorPct`, `measuredUsageHours`, `measuredUsageMaxQty`, `runawayMaxRoundTrips10m`, `runawayMaxBrokerRejections1m` |
+  | `marketData` | `candleCloseGraceMs`, `staleAgeMultiple`, `minStaleAgeMs`, `outlierSigma`, `maxClockSkewMs`, `quietAlertAfterMs` (`configured` when it differs from the default) |
+
+  A collector must accept the field before a qkt sends it: it needs qkt-insights contract 1.5.0, or it keeps the
+  unknown field in its events and shows nothing. A collector on 1.5.0 reads a qkt that sends none as "Not sent by
+  this qkt version". It has no effect on trading (`EffectiveConfigInsightsTest`, `EffectiveConfigWiringTest`).
+
 With `journal_enabled`, a replayed batch also stops before the envelope that would take it past 512 KiB
 of JSON, so a batch of large envelopes still fits the collector's default 1 MiB body.
 

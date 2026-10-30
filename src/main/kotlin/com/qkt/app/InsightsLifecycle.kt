@@ -14,6 +14,7 @@ import com.qkt.observe.insights.InsightsEventFamily
 import com.qkt.observe.insights.InsightsSink
 import com.qkt.observe.insights.InsightsTranslate
 import com.qkt.observe.insights.venuePayload
+import com.qkt.observe.insights.withResolvedEffectiveConfig
 import com.qkt.observe.insights.withStreamInstruments
 import com.qkt.persistence.PersistenceHealth
 import com.qkt.strategy.Strategy
@@ -155,7 +156,11 @@ internal class InsightsLifecycle(
                     InsightsTranslate.strategyStarted(
                         strategyId = strategyId,
                         ts = clock.now(),
-                        metadata = facts.venues.withStreamInstruments(insightsStrategyMetadata[strategyId].orEmpty()),
+                        metadata =
+                            facts.venues.withResolvedEffectiveConfig(
+                                facts.venues.withStreamInstruments(insightsStrategyMetadata[strategyId].orEmpty()),
+                                source::tickDeliveryLagMsFor,
+                            ),
                     ),
                 )
             }
