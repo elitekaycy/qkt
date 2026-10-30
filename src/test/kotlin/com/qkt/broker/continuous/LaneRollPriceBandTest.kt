@@ -48,7 +48,8 @@ class LaneRollPriceBandTest {
         assertThat(saved.roll).isNull()
 
         f.venueBus.publish(ContractSettled(f.sep, BigDecimal("63500"), timestamp = f.clock.time))
-        assertThat(f.engine.filterIsInstance<BrokerEvent.OrderFilled>().map { it.side }).contains(Side.BUY)
+        val closes = f.engine.filterIsInstance<BrokerEvent.OrderFilled>()
+        assertThat(closes.map { it.side }).contains(Side.BUY)
         assertThat(f.saved().holdings).isEmpty()
     }
 
@@ -60,7 +61,7 @@ class LaneRollPriceBandTest {
         rolled("62990", "63010")
 
         assertThat(legs()).isEmpty()
-        assertThat(f.saved().strategies.single().stopped).contains("no ask")
+        assertThat(f.strategy().stopped).contains("no ask")
     }
 
     @Test
@@ -71,8 +72,8 @@ class LaneRollPriceBandTest {
         rolled("62990", "150000")
 
         assertThat(legs()).isEmpty()
-        assertThat(f.saved().strategies.single().stopped).contains("ask").contains(f.dec)
-        assertThat(f.saved().holdings.single().contract).isEqualTo(f.sep)
+        assertThat(f.strategy().stopped).contains("ask").contains(f.dec)
+        assertThat(f.heldOn()).isEqualTo(f.sep)
     }
 
     @Test
@@ -93,7 +94,7 @@ class LaneRollPriceBandTest {
         rolled("62990", "63010")
 
         assertThat(f.leg(":close").side).isEqualTo(Side.BUY)
-        assertThat(f.saved().strategies.single().stopped).isNull()
+        assertThat(f.strategy().stopped).isNull()
     }
 
     @Test
@@ -120,4 +121,8 @@ class LaneRollPriceBandTest {
 
         assertThat(g.leg(":close").side).isEqualTo(Side.BUY)
     }
+
+    private fun ScriptedLaneFixture.strategy() = saved().strategies.single()
+
+    private fun ScriptedLaneFixture.heldOn() = saved().holdings.single().contract
 }

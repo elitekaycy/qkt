@@ -59,13 +59,15 @@ class LaneRefusedCloseTest {
     }
 
     private fun ScriptedLaneFixture.expiries() =
-        engine.filterIsInstance<BrokerEvent.OrderFilled>().filter { it.exitReason == ExitReason.EXPIRY }
+        engine
+            .filterIsInstance<BrokerEvent.OrderFilled>()
+            .filter { it.exitReason == ExitReason.EXPIRY }
 
     @Test
     fun `the next roll sends no leg for a strategy stopped by a refused close, and settlement closes its position`() {
         f.holdIntoRoll()
         f.refused(f.leg(":close").id)
-        val stopped = f.saved().strategies.single().stopped
+        val stopped = f.strategy().stopped
         val sent = f.venue.sent.size
 
         f.clock.time = f.nextRoll
@@ -73,15 +75,15 @@ class LaneRefusedCloseTest {
 
         assertThat(f.venue.sent).hasSize(sent)
         assertThat(f.saved().roll).isNull()
-        assertThat(f.saved().strategies.single().stopped).isEqualTo(stopped)
-        assertThat(f.saved().holdings.single().contract).isEqualTo(f.sep)
+        assertThat(f.strategy().stopped).isEqualTo(stopped)
+        assertThat(f.heldOn()).isEqualTo(f.sep)
 
         f.venueBus.publish(ContractSettled(f.sep, BigDecimal("63500"), timestamp = f.clock.time))
 
         val settled = f.expiries().single()
         assertThat(settled.side to settled.symbol).isEqualTo(Side.SELL to f.front)
         assertThat(settled.quantity).isEqualByComparingTo("0.010")
-        assertThat(f.saved().strategies.single().position).isEqualByComparingTo("0")
+        assertThat(f.strategy().position).isEqualByComparingTo("0")
         assertThat(f.saved().holdings).isEmpty()
     }
 
@@ -93,14 +95,14 @@ class LaneRefusedCloseTest {
         f.last("entry", f.sep, Side.BUY, "0.010", "63000")
         f.clock.time = Instant.parse("2024-10-01T00:00:00Z").toEpochMilli()
         f.tick("63000")
-        val stopped = f.saved().strategies.single().stopped
+        val stopped = f.strategy().stopped
         assertThat(stopped).contains("expired")
 
         f.clock.time = f.nextRoll
         f.tick("64000")
 
         assertThat(f.venue.sent.filter { it.id.startsWith("roll:") }).isEmpty()
-        assertThat(f.saved().strategies.single().stopped).isEqualTo(stopped)
+        assertThat(f.strategy().stopped).isEqualTo(stopped)
     }
 
     @Test
@@ -117,6 +119,10 @@ class LaneRefusedCloseTest {
         g.rollAt("63000")
 
         assertThat(g.venue.sent.filter { it.id.startsWith("roll:") }).isEmpty()
-        assertThat(g.saved().strategies.single().stopped).contains("holds 0")
+        assertThat(g.strategy().stopped).contains("holds 0")
     }
+
+    private fun ScriptedLaneFixture.strategy() = saved().strategies.single()
+
+    private fun ScriptedLaneFixture.heldOn() = saved().holdings.single().contract
 }
