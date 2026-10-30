@@ -53,17 +53,17 @@ internal class StreamLane(
     private val stops = LinkedHashMap<String, String>()
     private val rolls =
         RollExecutor(
-                bus,
-                clock,
-                chainOf,
-                venue,
-                contractPrices,
-                orders,
-                legs,
-                ledger,
-                fills,
-                stops,
-                RollRefusals(book, rollPriceBand),
+            bus,
+            clock,
+            chainOf,
+            venue,
+            contractPrices,
+            orders,
+            legs,
+            ledger,
+            fills,
+            stops,
+            RollRefusals(book, rollPriceBand),
         )
     private val state = LaneState(chainOf, positions, stops, orders, book, legs, rolls)
     private val recovery = LaneRecovery(clock, chainOf, venue, orders, legs, rolls, book, ::space)
