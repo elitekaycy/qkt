@@ -161,4 +161,47 @@ class MT5StateRecoveryMatchTest {
         assertThat(matchOrphan("dsl-hedge-stradd", "hedge-straddle"))
             .isEqualTo(OrphanMatch.AmbiguousTruncation)
     }
+
+    @Test
+    fun `a session's plain order id belongs to its strategy`() {
+        assertThat(matchOrphan("ORD-atto_stk_day-1", "atto_stk_day")).isEqualTo(OrphanMatch.Match)
+        assertThat(matchOrphan("oco:ORD-x-1/ORD-ema-cross-7", "ema-cross")).isEqualTo(OrphanMatch.Match)
+    }
+
+    @Test
+    fun `a plain order id cut by the venue reads as a truncated prefix, and a sibling can dispute it`() {
+        assertThat(matchOrphan("ORD-hedge-stradd", "hedge-straddle")).isEqualTo(OrphanMatch.AmbiguousTruncation)
+        assertThat(matchOrphan("ORD-hedge-stradd", "hedge-straddle", listOf("hedge-straddle-v2")))
+            .isEqualTo(OrphanMatch.ConflictWithSibling(listOf("hedge-straddle-v2")))
+    }
+
+    @Test
+    fun `a plain order id of a longer strategy name is not claimed by the shorter one`() {
+        assertThat(
+            matchOrphan("ORD-ema-cross-v2-1", "ema-cross"),
+        ).isInstanceOf(OrphanMatch.AmbiguousOverlap::class.java)
+        assertThat(
+            matchOrphan("ORD-ema-cross-v2-1", "ema-cross", listOf("ema-cross-v2")),
+        ).isEqualTo(OrphanMatch.NotOurs)
+        assertThat(matchOrphan("ORD-other-1", "ema-cross")).isEqualTo(OrphanMatch.NotOurs)
+        assertThat(matchOrphan("ORD--0", "ema-cross")).isEqualTo(OrphanMatch.NotOurs)
+    }
+
+    @Test
+    fun `a plain order id of a session of several strategies is claimed only when no sibling is named`() {
+        assertThat(matchOrphan("ORD-alpha+beta-3", "alpha")).isEqualTo(OrphanMatch.Match)
+        assertThat(matchOrphan("ORD-alpha+beta-3", "beta")).isEqualTo(OrphanMatch.Match)
+        assertThat(matchOrphan("ORD-alpha+beta-3", "gamma")).isEqualTo(OrphanMatch.NotOurs)
+        assertThat(matchOrphan("ORD-alpha+beta-3", "alpha", listOf("beta")))
+            .isEqualTo(OrphanMatch.ConflictWithSibling(listOf("beta")))
+    }
+
+    @Test
+    fun `a session's plain order id cut by the venue reads the last name as truncated`() {
+        assertThat(matchOrphan("ORD-alpha+bet", "beta")).isEqualTo(OrphanMatch.AmbiguousTruncation)
+        assertThat(matchOrphan("ORD-alpha+bet", "gamma")).isEqualTo(OrphanMatch.NotOurs)
+        assertThat(matchOrphan("ORD-alpha+bet", "alpha", listOf("beta")))
+            .isEqualTo(OrphanMatch.ConflictWithSibling(listOf("beta")))
+        assertThat(matchOrphan("ORD-alpha+", "beta")).isEqualTo(OrphanMatch.NotOurs)
+    }
 }
