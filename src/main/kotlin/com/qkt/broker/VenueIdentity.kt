@@ -20,8 +20,8 @@ data class VenueIdentity(
 
 /**
  * What a venue states about one instrument: its own code for it, its kind (`cfd`, `spot`, `perpetual`,
- * `future`, `option`), and the contract size, price tick and quote currency it lists. Null fields are
- * facts the venue does not state.
+ * `future`, `option`), the contract size, price tick and quote currency it lists, and a coin pair's [baseAsset]
+ * (`BTC` of `BTCUSD`). Null fields are facts the venue does not state.
  */
 data class VenueInstrument(
     val venueCode: String,
@@ -29,6 +29,7 @@ data class VenueInstrument(
     val contractSize: BigDecimal? = null,
     val tickSize: BigDecimal? = null,
     val quoteCurrency: String? = null,
+    val baseAsset: String? = null,
 )
 
 /**

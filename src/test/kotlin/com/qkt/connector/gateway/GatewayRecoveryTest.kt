@@ -127,4 +127,45 @@ internal class GatewayRecoveryTest : GatewayHarness() {
         assertThat(after.of<BrokerEvent.OrderAccepted>().single().clientOrderId).isEqualTo("a-1")
         assertThat(after.of<BrokerEvent.OrderFilled>()).isEmpty()
     }
+
+    @Test
+    fun `a coin-fee fill booked before the restart is not booked again`() {
+        val coin = "BTCUSD"
+        fake.codes = listOf(coin)
+        fake.instruments[coin] = WireInstrument(coin, "spot", "USD", "1", "0.01", "0.000000001", "0.000012504")
+        fake.act {
+            place(WireSubmit(wire("a-9"), coin, "buy", "market", "0.0004", null, null, "gtc", false))
+            fill(
+                wire("a-9"),
+                "f9",
+                "0.0002",
+                "80000",
+                FakeGateway.TIME,
+                listOf(WireCost("commission", "0.0000005", "BTC")),
+            )
+        }
+        val after = Strategy()
+        val order =
+            restored("a-9", "0.0004", "0.0001995").let {
+                it.copy(request = market("a-9", "a", quantity = "0.0004").copy(symbol = "DERIBIT:$coin"))
+            }
+        val broker = broker(session(), after, "a")
+
+        val known = broker.recoverPendingOrders(listOf(order), emptySet())
+
+        assertThat(known).containsExactly("a-9")
+        fake.act {
+            fill(
+                wire("a-9"),
+                "f10",
+                "0.0002",
+                "80000",
+                FakeGateway.TIME,
+                listOf(WireCost("commission", "0.0000005", "BTC")),
+            )
+        }
+        await { after.of<BrokerEvent.OrderFilled>().isNotEmpty() }
+        assertThat(after.of<BrokerEvent.OrderPartiallyFilled>()).isEmpty()
+        assertThat(after.of<BrokerEvent.OrderFilled>().single().quantity).isEqualByComparingTo("0.0001995")
+    }
 }

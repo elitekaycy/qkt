@@ -46,7 +46,14 @@ class GatewaySymbols(
     /** What the latest listing states about [qktSymbol]: its code, kind, contract size, tick and currency. */
     fun instrument(qktSymbol: String): VenueInstrument? =
         listed[qktSymbol]?.let {
-            VenueInstrument(it.code, it.kind, positive(it.contractSize), positive(it.tickSize), it.currency)
+            VenueInstrument(
+                it.code,
+                it.kind,
+                positive(it.contractSize),
+                positive(it.tickSize),
+                it.currency,
+                baseAsset(qktSymbol),
+            )
         }
 
     /**

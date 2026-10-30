@@ -68,12 +68,13 @@ internal class GatewayLedger(
     ): Set<String> {
         orders.forEach { own(it.clientOrderId, it.strategyId, it.quantity, sender, it.alreadyFilled) }
         return GatewayRecovery
-            .recover(client, orders, ::markBooked, ::onFill, ::onOrder)
+            .recover(client, orders, ::received, ::replayed, ::onFill, ::onOrder)
             .mapTo(HashSet(), GatewayClientIds::engineId)
     }
 
-    /** Fill [fillId] was booked before a restart. */
-    fun markBooked(fillId: String) = synchronized(lock) { translator.markBooked(fillId) }
+    private fun received(fill: WireFill) = synchronized(lock) { translator.received(fill) }
+
+    private fun replayed(fill: WireFill) = synchronized(lock) { translator.replayed(fill) }
 
     /** An `order` update; one that ended with fills not yet heard has its deals fetched ([fetchDeals]). */
     fun onOrder(order: WireOrder) {

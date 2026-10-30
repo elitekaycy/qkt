@@ -14,6 +14,7 @@ import com.qkt.execution.ManagedOrder
 import com.qkt.execution.OrderRequest
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.positions.PositionProvider
+import java.math.BigDecimal
 
 /**
  * The single translation boundary between continuous futures streams (`VENUE:ROOT@front`) and the
@@ -29,6 +30,9 @@ import com.qkt.positions.PositionProvider
  *
  * A stream is liquidated ([liquidate]) on the contract it follows, by its venue when that venue is a
  * [LiquidatingVenue]; the venue's closes reach the engine as the stream's.
+ *
+ * With a [rollPriceBand] (a live session's) a roll stops a strategy whose legs would hit a quote further than that
+ * fraction from the contract's measured roll price, sending nothing; a backtest passes none.
  *
  * Orders are accepted only on streams adjusted by panama: there continuous-space P&L plus the
  * booked roll costs equals the P&L of the contract legs exactly.
@@ -47,13 +51,23 @@ class ContinuousContractBroker(
     ledger: RollLedger,
     fills: ContractFillLog,
     store: LaneStateStore? = null,
+    rollPriceBand: BigDecimal? = null,
     venueFactory: (EventBus, MarketPriceTracker, PositionProvider) -> ContractVenue,
 ) : Broker,
     LiquidatingVenue {
     private val lanes: Map<String, StreamLane> =
         symbols.associateWith { symbol ->
             requireNotNull(chains.chainFor(symbol)) { "$symbol is not a continuous futures stream" }
-            StreamLane(bus, clock, { requireNotNull(chains.chainFor(symbol)) }, ledger, fills, venueFactory, store)
+            StreamLane(
+                bus,
+                clock,
+                { requireNotNull(chains.chainFor(symbol)) },
+                ledger,
+                fills,
+                venueFactory,
+                store,
+                rollPriceBand,
+            )
         }
 
     override val name: String = "ContinuousFutures"

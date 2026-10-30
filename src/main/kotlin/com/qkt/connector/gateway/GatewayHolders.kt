@@ -5,7 +5,8 @@ import org.slf4j.LoggerFactory
 
 /**
  * The account-level check of a gateway account: once every strategy expected on the account
- * ([expectedStrategies] plus those attached to [routing]) has a restored, ready session, what their
+ * ([expectedStrategies] plus those attached to [routing]) has a restored, ready session, and every broker attached
+ * now is ready (a strategy's stream lanes attach beside its session's broker and hold its contracts), what their
  * sessions hold must add up, symbol by symbol, to what [account] holds at the venue. Per-strategy
  * holdings cannot be checked against a netting venue, which only knows the total. An account [shared]
  * with other holders is judged by [GatewayOtherHolders] instead: only on the codes its strategies trade,
@@ -65,8 +66,8 @@ internal class GatewayHolders(
     )
 
     /**
-     * Whether the ready sessions among [attached] agree with [account] (net by venue code), or null when
-     * some strategy of [expected] is not ready yet, so nothing can be judged. A broker serving every
+     * Whether the sessions of [attached] agree with [account] (net by venue code), or null when one of them,
+     * or some strategy of [expected], is not ready yet, so nothing can be judged. A broker serving every
      * strategy (null) covers them all.
      */
     private fun check(
@@ -75,8 +76,9 @@ internal class GatewayHolders(
         account: Map<String, BigDecimal>,
     ): Verdict? {
         val present = attached.filter { it in ready }
+        if (present.isEmpty() || present.size < attached.size) return null
         val covered = present.any { it.strategy == null } || present.mapNotNull { it.strategy }.containsAll(expected)
-        if (!covered || present.isEmpty()) return null
+        if (!covered) return null
         val held = HashMap<String, BigDecimal>()
         for (broker in present) {
             for (symbol in broker.positions.symbols()) {

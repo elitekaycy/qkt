@@ -83,4 +83,48 @@ class BotVenuesTest {
         assertThatThrownBy { BotVenues.forSymbol(config(dir, exness), "XAUUSD") }
             .hasMessageContaining("symbol must be BROKER:SYMBOL")
     }
+
+    @Test
+    fun `an mt5 broker extending another broker of the config opens with its parent's settings`(
+        @TempDir dir: Path,
+    ) {
+        val brokers =
+            """
+            |  base:
+            |    type: mt5
+            |    extends: exness
+            |    gateway_url: http://127.0.0.1:1
+            |    symbol_suffix: m
+            |    magic: 777001
+            |  child:
+            |    type: mt5
+            |    extends: base
+            |    magic: 777002
+            |  grandchild:
+            |    type: mt5
+            |    extends: child
+            |    magic: 777003
+            |
+            """.trimMargin()
+
+        BotVenues.forBroker(config(dir, brokers), "grandchild").use { opened ->
+            assertThat(opened.broker).isEqualTo("grandchild")
+            assertThat(opened.venue.venueSymbol("GRANDCHILD:XAUUSD")).isEqualTo("XAUUSDm")
+        }
+    }
+
+    @Test
+    fun `a broken broker the opened one does not extend does not stop it opening`(
+        @TempDir dir: Path,
+    ) {
+        val unrelated =
+            """
+            |  broken:
+            |    type: mt5
+            |    extends: nowhere
+            |
+            """.trimMargin()
+
+        BotVenues.forBroker(config(dir, exness + unrelated), "exness").use { assertThat(it.broker).isEqualTo("exness") }
+    }
 }

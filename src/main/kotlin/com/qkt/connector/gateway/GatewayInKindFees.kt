@@ -13,6 +13,18 @@ import java.math.BigDecimal
  * The order still completes on the venue's own quantity.
  */
 internal object GatewayInKindFees {
+    /** What [fill] moved the holding by, given the pair's [baseAsset]. */
+    fun received(
+        fill: WireFill,
+        baseAsset: String?,
+    ): BigDecimal =
+        received(
+            WireValues.sideOf(fill.side),
+            WireValues.decimal(fill.quantity, "quantity"),
+            WireValues.costsOf(fill.costs, fill.time),
+            baseAsset,
+        )
+
     /** What a fill of [quantity] on [side] moved the holding by, given its [costs] and the pair's [baseAsset]. */
     fun received(
         side: Side,

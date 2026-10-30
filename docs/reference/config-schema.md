@@ -471,7 +471,7 @@ Built-in MT5 profile names: `exness`, `icmarkets`, `ftmo`, `pepperstone`.
 | Key | Type | Required | Default/inheritance | Notes |
 |---|---|---|---|---|
 | `brokers.<name>.type` | string | yes | none | `mt5` (this table) or `gateway` (below). |
-| `extends` | profile name | no | same-name built-in if present | Inherit from a built-in or earlier user profile. |
+| `extends` | profile name | no | same-name built-in if present | Inherit from a built-in or another entry of this `brokers:` section, also for commands that open one broker (`qkt bot --broker <name>`). |
 | `gateway_url` | URL | yes for fresh profile | inherited or built-in | MT5 gateway HTTP base URL. |
 | `api_key` | string | no | inherited or empty | Bearer token matching the gateway `API_KEY`; use a neutral variable such as `${QKT_BROKER_API_KEY}` in reusable scaffolds. |
 | `symbol_suffix` | string | no | inherited or empty | Appended to broker symbol names. |
@@ -648,7 +648,7 @@ Thresholds for the live market-data quality gate (`MarketDataGate`) every daemon
 |---|---|---|---|---|
 | `market_data.stale_age_multiple` | double | `5.0` | live sessions | Staleness threshold as a multiple of the symbol's smoothed inter-tick gap. |
 | `market_data.min_stale_age_ms` | long | `10000` | live sessions | Floor for the staleness threshold. |
-| `market_data.outlier_sigma` | double | `6.0` | live sessions | Standard deviations from the short-window mean beyond which a tick is rejected. |
+| `market_data.outlier_sigma` | double | `6.0` | live sessions | Standard deviations from the short-window mean beyond which a tick is rejected. Whatever this is, a tick that passes loses a bid or ask more than 10% from its price (a stray far quote on a thin book), so a position marks at the tick's price until that side is sane; a wide but plausible book still marks at its own bid and ask, and an option's book is not judged. |
 | `market_data.max_clock_skew_ms` | long | `60000` | live sessions | Tolerance between broker tick timestamps and the local clock before new orders are suppressed. |
 | `market_data.quiet_alert_after_ms` | long | `600000` | live sessions | How long a `STALE` episode on a symbol the session holds nothing in may last, in session, before it sends the `MarketDataUnhealthy` alert. `0` alerts every `STALE` at once. Must be zero or more. |
 
@@ -749,7 +749,11 @@ that does not know them ignores them.
   `INOUT` deal opened, when it differs), typed `costs: [{kind, amount, currency}]` (`amount` positive
   when paid), `realizedSource` (`venue`: MT5 reports `profit`; `engine`: qkt's accounting booked it),
   `strategyId` with `attribution` (`order`: the connector knows the order exactly; `position`: by the
-  position ticket; `comment`: by the venue comment; `none`), and `instrument`.
+  position ticket; `comment`: by the venue comment; `none`), and `instrument`. Entry `ADJUSTMENT` is venue money
+  that moves no quantity, its kind in `adjustment`: `DIVIDEND`, `CHARGE` and the rest from an MT5 account, and
+  `FUNDING`, one deal per strategy's share of a gateway perpetual's funding record (`dealTicket`
+  `funding-<fundingId>-<strategy>`, `costs: [{kind: FUNDING, amount, currency}]`). A contract settled at expiry
+  is not an adjustment: it is a closing deal with `closeReason: EXPIRY`.
 - **`state.positions`** entries add `positionId`, `attribution`, `instrument`, and `initialStop`,
   `initialTarget` and `riskAmount` (account currency) when qkt opened the position with a bracket.
   A position whose venue states no `currentPrice` or `profit` (a `type: gateway` account: VGP v1 carries
@@ -766,9 +770,10 @@ that does not know them ignores them.
   `LIQUIDATION`, `EXPIRY`. MT5 deal reasons map 4 to `STOP`, 5 to `TAKE_PROFIT`, 6 to `STOP_OUT` and a
   terminal (0-2) to `MANUAL`; qkt's own exits map by order id: a bracket's `-sl`/`-tp` order to
   `STOP`/`TAKE_PROFIT`, an `EXIT AFTER` close to `TIMED`, a `qkt bot` order to `MANUAL`.
-- **`instrument`** is `{symbol, venueCode, kind, category, contractSize, tickSize, quoteCurrency,
+- **`instrument`** is `{symbol, venueCode, kind, quantityUnit, category, contractSize, tickSize, quoteCurrency,
   valuePerPoint}`, where qkt or the venue knows them; `valuePerPoint` is the account-currency value of
-  one unit of quantity moving one price unit. `kind` is `cfd` (every MT5 symbol), `equity`, `spot`,
+  one unit of quantity moving one price unit. `quantityUnit` is what one unit of `qty` is: `lots`, `shares`,
+  `contracts`, or a coin pair's coin (`BTC`). `kind` is `cfd` (every MT5 symbol), `equity`, `spot`,
   `perpetual`, `future` or `option`; `category` is the venue's folder for the symbol, so a stock CFD
   reads `kind: cfd, category: Stocks` (MT5 path `Standard\Stocks\AAPLm`), apart from FX and metal
   CFDs in their own folders. A derivative adds its `root` (`DERIBIT:BTC`), a dated contract its
