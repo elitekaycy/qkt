@@ -85,7 +85,10 @@ internal class GatewayFillLegs(
                 (e.strategyPositionAfter?.quantity ?: BigDecimal.ZERO) -
                     (e.strategyPositionBefore?.quantity ?: BigDecimal.ZERO)
             val side = if (moved.signum() > 0) Side.BUY else Side.SELL
-            settled.getOrPut(e.symbol) { mutableListOf() } +=
+            // Keyed by the contract the order id names (`settle:<contract>:<strategy>`): a continuous stream's
+            // lane books the close on the stream, so the event's own symbol is the stream's.
+            val contract = e.orderId.removePrefix(SETTLE_PREFIX).substringBeforeLast(':')
+            settled.getOrPut(contract) { mutableListOf() } +=
                 GatewaySettledClose(fact, side, moved.abs(), e.venueCostsAccount)
         }
     }
