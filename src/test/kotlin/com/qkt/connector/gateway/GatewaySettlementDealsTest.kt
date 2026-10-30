@@ -75,6 +75,18 @@ internal class GatewaySettlementDealsTest {
     }
 
     @Test
+    fun `a contract a continuous stream held closes too, though qkt books it on the stream`() {
+        fill("dsl-a-1", "a", "sell", "1", "40", 1_000, null, pos("-1", 1_000))
+        settleBookedOn("DERIBIT:BTC_USDC@front", "38", 9_000, "a" to (pos("-1", 1_000) to "2"))
+
+        val close = reads.deals(0, 10_000, nowMs = 1_000_000).single { it.closeReason == CloseReason.EXPIRY }
+
+        assertThat(close.side to close.qty.toPlainString()).isEqualTo(Side.BUY to "1")
+        assertThat(close.profit).isEqualByComparingTo("2")
+        assertThat(close.dealTicket).isEqualTo("settle:$code:a")
+    }
+
+    @Test
     fun `a settlement not on the books yet holds back itself and every deal after it`() {
         fill("dsl-a-1", "a", "buy", "1", "40", 1_000, null, pos("1", 1_000))
         fake.venue.settlements += WireSettlement(code, "0", 9_000)
@@ -106,11 +118,19 @@ internal class GatewaySettlementDealsTest {
         fake.venue.deals +=
             WireFill("$orderId.k", "v-$orderId", "f-$orderId", code, side, qty, price, time, emptyList())
         legs.booked(orderId, "f-$orderId")
-        legs.record(accounted(orderId, strategyId, before, after, before, after, BigDecimal.ZERO, time))
+        legs.record(accounted(orderId, symbol, strategyId, before, after, before, after, BigDecimal.ZERO, time))
     }
 
     /** The venue settles the contract at [price]; qkt closes each holder (strategy to its holding and realized). */
     private fun settle(
+        price: String,
+        time: Long,
+        vararg holders: Pair<String, Pair<Position, String>>,
+    ) = settleBookedOn(symbol, price, time, *holders)
+
+    /** As [settle], with qkt's close booked on [bookedOn]: a continuous stream's lane books it on the stream. */
+    private fun settleBookedOn(
+        bookedOn: String,
         price: String,
         time: Long,
         vararg holders: Pair<String, Pair<Position, String>>,
@@ -127,6 +147,7 @@ internal class GatewaySettlementDealsTest {
             legs.record(
                 accounted(
                     "settle:$symbol:$strategyId",
+                    bookedOn,
                     strategyId,
                     account,
                     accountAfter,
@@ -142,6 +163,7 @@ internal class GatewaySettlementDealsTest {
 
     private fun accounted(
         orderId: String,
+        bookedOn: String = symbol,
         strategyId: String,
         accountBefore: Position?,
         accountAfter: Position?,
@@ -152,7 +174,7 @@ internal class GatewaySettlementDealsTest {
     ) = FillAccountedEvent(
         orderId = orderId,
         strategyId = strategyId,
-        symbol = symbol,
+        symbol = bookedOn,
         fillSliceId = "$orderId:1",
         sourceFillSequenceId = 1,
         cumulativeFilled = null,
