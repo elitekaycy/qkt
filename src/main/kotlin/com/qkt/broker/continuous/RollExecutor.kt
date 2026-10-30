@@ -26,8 +26,9 @@ import org.slf4j.LoggerFactory
  * cancelled rather than carried, and the strategy is stopped on the stream. A roll that cannot be
  * traded — the stream skipped a whole contract, or the old contract expired before the stream traded
  * again — stops every holder the same way; the exchange then settles the expired contract. A refused
- * closing leg is a configuration fault and fails loudly. The closes and costs are handed to the roll's
- * completion, not published, so the lane records the stops before any engine handler can react to them.
+ * closing leg is a configuration fault and fails loudly. A strategy already stopped is never a holder: what it
+ * has stays on its contract until settled. One [refusals] refuses stops with no leg sent. The closes and costs are
+ * handed to the roll's completion, not published, so the lane records the stops before any engine handler can react to them.
  */
 internal class RollExecutor(
     bus: EventBus,
@@ -40,6 +41,7 @@ internal class RollExecutor(
     private val ledger: RollLedger,
     fills: ContractFillLog,
     private val stops: Map<String, String>,
+    private val refusals: RollRefusals,
 ) {
     private val log = LoggerFactory.getLogger(RollExecutor::class.java)
     private val restingOrders = RestingOrdersAtRoll(bus, clock, chainOf, venue, orders, legs)
@@ -67,6 +69,7 @@ internal class RollExecutor(
         fromIndex: Int,
         toIndex: Int,
         positions: Map<String, BigDecimal>,
+        quotes: RollQuotes,
         done: (RollOutcome) -> Unit,
     ) {
         check(!inFlight) { "${chain.symbol} cannot start a roll while one is in flight" }
@@ -74,7 +77,7 @@ internal class RollExecutor(
         val from = chain.contractSymbol(fromIndex)
         val to = chain.contractSymbol(toIndex)
         val stopped = "${chain.symbol} stopped: roll $from->$to at ${Instant.ofEpochMilli(measured.atMs)} failed"
-        val holders = positions.filterValues { it.signum() != 0 }
+        val holders = positions.filter { (id, quantity) -> quantity.signum() != 0 && id !in stops }
         val resting = orders.on(fromIndex)
         val untradeable = chain.untradeableRoll(fromIndex, toIndex, clock.now())
         if (untradeable != null) {
@@ -87,7 +90,16 @@ internal class RollExecutor(
         }
         contractPrices.update(from, measured.prices.fromPrice)
         contractPrices.update(to, measured.prices.toPrice)
-        val run = RollRun(fromIndex, toIndex, measured, stopped, resting, holders.entries.toList())
+        val refused =
+            holders
+                .mapValues { (id, q) -> refusals.of(id, q, from, measured, quotes) }
+                .filterValues { it != null }
+        val carried = holders.filterKeys { it !in refused }
+        val run = RollRun(fromIndex, toIndex, measured, stopped, resting, carried.entries.toList())
+        refused.forEach { (id, why) ->
+            log.error("{} not carried for {}: {}", chain.symbol, id, why)
+            run.steps[id] = CarryStep.Stopped(id, holders.getValue(id), why.orEmpty(), null)
+        }
         this.run = run
         restingOrders.pull(resting)
         carryFrom(run, 0, done)

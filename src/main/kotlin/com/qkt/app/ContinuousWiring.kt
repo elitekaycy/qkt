@@ -9,6 +9,8 @@ import com.qkt.marketdata.source.ContinuousMarketSource
 import com.qkt.marketdata.source.LiveContinuousStreams
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.persistence.StreamLanePersistence
+import com.qkt.risk.rules.PreTradeControls
+import java.math.BigDecimal
 
 /**
  * What a session's brokers need to trade continuous futures streams: their [chains], where their lanes
@@ -20,6 +22,9 @@ internal interface ContinuousRouting {
 
     /** Where the session's lanes keep their state across restarts; null keeps none. */
     val laneStore: LaneStateStore?
+
+    /** How far from its measured roll price a quote a roll's leg would hit may lie, a fraction; null judges none. */
+    val rollPriceBand: BigDecimal? get() = null
 
     /** Binds a lane's private [bus] to the session's engine loop, before the lane's venue is built. */
     fun bindLane(bus: EventBus)
@@ -44,6 +49,9 @@ internal class ContinuousWiring(
 ) : ContinuousRouting {
     override val chains: ContinuousChains?
     override val laneStore = LaneStateStore(persistence, stateOwner)
+
+    /** The default price collar's width: far beyond any real book, so a normal one rolls as before. */
+    override val rollPriceBand: BigDecimal = PreTradeControls.DEFAULT_PRICE_COLLAR_FRAC
     val source: MarketSource
     private var lanes: LaneBuses? = null
 

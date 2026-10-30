@@ -327,7 +327,7 @@ jq -n \
         select(
             .method == "POST" and
             .path == "/order" and
-            (.engineOrderId | startswith("dsl-" + $strategy)) and
+            ((.engineOrderId | startswith("dsl-" + $strategy)) or (.engineOrderId | startswith("ORD-" + $strategy))) and
             .responseCode == 200 and
             (decoded_response.ok == true)
         )

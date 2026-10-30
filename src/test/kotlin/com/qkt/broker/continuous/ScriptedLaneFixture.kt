@@ -32,6 +32,7 @@ import java.time.LocalTime
 internal class ScriptedLaneFixture(
     val persistor: NoopStatePersistor = NoopStatePersistor(),
     startMs: Long = Instant.parse("2024-09-19T07:45:00Z").toEpochMilli(),
+    rollPriceBand: BigDecimal? = null,
 ) {
     private fun ms(iso: String) = Instant.parse(iso).toEpochMilli()
 
@@ -107,6 +108,7 @@ internal class ScriptedLaneFixture(
             ledger,
             ContractFillLog(),
             LaneStateStore(persistor, "owner"),
+            rollPriceBand,
         ) { b, _, p ->
             venueBus = b
             lanePositions = p
@@ -123,6 +125,17 @@ internal class ScriptedLaneFixture(
 
     /** Ticks the stream at [price] now. */
     fun tick(price: String) = bus.publish(TickEvent(Tick(front, BigDecimal(price), clock.time)))
+
+    /** Ticks the stream at [price] now, with the book's [bid] and [ask]. */
+    fun quote(
+        price: String,
+        bid: String?,
+        ask: String?,
+    ) = bus.publish(
+        TickEvent(
+            Tick(front, BigDecimal(price), clock.time, bid = bid?.let(::BigDecimal), ask = ask?.let(::BigDecimal)),
+        ),
+    )
 
     /** This lane after a restart at [atMs]: a new session on what this one saved. */
     fun restart(atMs: Long = clock.time): ScriptedLaneFixture = ScriptedLaneFixture(persistor, atMs)

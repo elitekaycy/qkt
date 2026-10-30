@@ -34,6 +34,7 @@ internal class StreamLane(
     private val fills: ContractFillLog,
     venueFactory: (EventBus, MarketPriceTracker, PositionProvider) -> ContractVenue,
     private val store: LaneStateStore? = null,
+    private val rollPriceBand: BigDecimal? = null,
 ) {
     /** The chain as it stands now: a live session extends it with each roll it measures. */
     private val chain: ContinuousChain get() = chainOf()
@@ -50,10 +51,24 @@ internal class StreamLane(
     private val legs = RollLegs()
     private val positions = LinkedHashMap<String, BigDecimal>()
     private val stops = LinkedHashMap<String, String>()
-    private val rolls = RollExecutor(bus, clock, chainOf, venue, contractPrices, orders, legs, ledger, fills, stops)
+    private val rolls =
+        RollExecutor(
+            bus,
+            clock,
+            chainOf,
+            venue,
+            contractPrices,
+            orders,
+            legs,
+            ledger,
+            fills,
+            stops,
+            RollRefusals(book, rollPriceBand),
+        )
     private val state = LaneState(chainOf, positions, stops, orders, book, legs, rolls)
     private val recovery = LaneRecovery(clock, chainOf, venue, orders, legs, rolls, book, ::space)
     private var current: Int? = null
+    private val quotes = LaneQuotes(chainOf, ::space, rollPriceBand != null)
     private val spaces = HashMap<Int, PriceSpace>()
 
     init {
@@ -132,21 +147,17 @@ internal class StreamLane(
 
     /** Roll if the schedule has moved on, then hand the contract tick behind [tick] to the venue. */
     fun onTick(tick: Tick) {
-        val index = catchUp(tick.timestamp) ?: return
-        val space = space(index)
-        val contractTick =
-            tick.copy(
-                symbol = chain.contractSymbol(index),
-                price = space.priceToContract(tick.price),
-                bid = tick.bid?.let(space::priceToContract),
-                ask = tick.ask?.let(space::priceToContract),
-            )
+        val index = catchUp(tick.timestamp, tick) ?: return
+        val contractTick = quotes.heard(tick, index)
         contractPrices.update(contractTick)
         venue.onTick(contractTick)
     }
 
     /** The contract followed at [nowMs], after rolling onto it if the lane was still on an earlier one. */
-    private fun catchUp(nowMs: Long): Int? {
+    private fun catchUp(
+        nowMs: Long,
+        tick: Tick? = null,
+    ): Int? {
         val index = chain.indexAt(nowMs) ?: return null
         val previous = current
         if (previous == index) return index
@@ -157,7 +168,7 @@ internal class StreamLane(
             save()
             return index
         }
-        rolls.roll(previous, index, positions, ::applyRoll)
+        rolls.roll(previous, index, positions, quotes.forRoll(previous, index, tick), ::applyRoll)
         return index
     }
 

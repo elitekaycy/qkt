@@ -47,9 +47,11 @@ internal class FakeVenue(
         quantity: String,
         price: String,
         time: Long,
+        costs: List<WireCost> = emptyList(),
     ) {
         val order = orders.getValue(clientOrderId)
-        val fill = WireFill(clientOrderId, order.venueOrderId, fillId, order.symbol, order.side, quantity, price, time)
+        val fill =
+            WireFill(clientOrderId, order.venueOrderId, fillId, order.symbol, order.side, quantity, price, time, costs)
         deals += fill
         val filled = BigDecimal(order.filledQuantity).add(BigDecimal(quantity))
         val status = if (filled >= BigDecimal(order.quantity)) "filled" else "working"

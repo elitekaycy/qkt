@@ -131,4 +131,72 @@ class GatewayInKindFeeTest {
                 ).single() as BrokerEvent.OrderFilled
         assertThat(filled.quantity).isEqualByComparingTo("0.0002001")
     }
+
+    @Test
+    fun `a venue's terminal filled below the order's quantity completes on the fill that reaches it`() {
+        val t = translator().apply { expect("c1", BigDecimal("0.0002")) }
+
+        t.order(venueOrder("filled", filled = "0.0001995"))
+        val events = t.fill(fill("f1", "BTCUSD", "buy", "0.0001995", "0.04" to "USD"))
+
+        val filled = events.single() as BrokerEvent.OrderFilled
+        assertThat(filled.quantity).isEqualByComparingTo("0.0001995")
+    }
+
+    @Test
+    fun `a venue's terminal filled heard after its last fill ends the order with what filled`() {
+        val t = translator().apply { expect("c1", BigDecimal("0.0002")) }
+        val first = t.fill(fill("f1", "BTCUSD", "buy", "0.0001995", "0.04" to "USD"))
+        assertThat(first.single()).isInstanceOf(BrokerEvent.OrderPartiallyFilled::class.java)
+
+        val end = t.order(venueOrder("filled", filled = "0.0001995"))
+
+        assertThat(end).isInstanceOf(BrokerEvent.OrderCancelled::class.java)
+        assertThat((end as BrokerEvent.OrderCancelled).reason).contains("filled at the venue")
+        assertThat(t.order(venueOrder("filled", filled = "0.0001995"))).isNull()
+    }
+
+    @Test
+    fun `a whole fill reported filled ends once, on the fill`() {
+        val t = translator().apply { expect("c1", BigDecimal("0.0002")) }
+
+        assertThat(t.order(venueOrder("filled", filled = "0.0002"))).isInstanceOf(BrokerEvent.OrderAccepted::class.java)
+        assertThat(
+            t.fill(fill("f1", "BTCUSD", "buy", "0.0002")).single(),
+        ).isInstanceOf(BrokerEvent.OrderFilled::class.java)
+        assertThat(t.order(venueOrder("filled", filled = "0.0002"))).isNull()
+    }
+
+    @Test
+    fun `a restored order counts its coin-fee fills as the venue's quantity, so its last fill completes it`() {
+        val t = translator().apply { expect("c1", BigDecimal("0.0004"), alreadyFilled = BigDecimal("0.0001995")) }
+        t.replayed(fill("f1", "BTCUSD", "buy", "0.0002", "0.0000005" to "BTC"))
+
+        val events = t.fill(fill("f2", "BTCUSD", "buy", "0.0002", "0.0000005" to "BTC"))
+
+        assertThat(events.single()).isInstanceOf(BrokerEvent.OrderFilled::class.java)
+        assertThat((events.single() as BrokerEvent.OrderFilled).quantity).isEqualByComparingTo("0.0001995")
+    }
+
+    private fun venueOrder(
+        status: String,
+        filled: String,
+    ) = WireOrder(
+        "c1",
+        "9",
+        "BTCUSD",
+        "buy",
+        "market",
+        "0.0002",
+        null,
+        null,
+        "gtc",
+        false,
+        status,
+        filled,
+        null,
+        null,
+        1,
+        2,
+    )
 }

@@ -10,6 +10,7 @@ import com.qkt.observe.insights.InsightsFillFacts
 import com.qkt.observe.insights.InsightsSink
 import com.qkt.observe.insights.InsightsTranslate
 import com.qkt.observe.insights.InsightsVenues
+import com.qkt.observe.insights.fundingDeal
 
 /**
  * Streams allow-listed event families to the insights sink, e.g. with only `ORDER` enabled an
@@ -101,6 +102,11 @@ internal class InsightsBusWiring(
         if (InsightsEventFamily.TRADE in insightsEvents) {
             bus.subscribe<com.qkt.events.TradeEvent> { e -> sink.offer(t.fromTrade(e)) }
             bus.subscribe<com.qkt.events.FillAccountedEvent> { e -> sink.offer(t.fromFillAccounted(e)) }
+        }
+        if (InsightsEventFamily.DEAL in insightsEvents) {
+            bus.subscribe<com.qkt.events.CostIncurred> { e ->
+                e.funding?.let { sink.offer(fundingDeal(e, it, venues)) }
+            }
         }
         if (InsightsEventFamily.RISK in insightsEvents) {
             bus.subscribe<com.qkt.events.RiskRejectedEvent> { e -> sink.offer(t.fromRiskRejected(e)) }

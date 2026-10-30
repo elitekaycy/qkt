@@ -72,7 +72,7 @@ class InsightsVenues(
     fun priceStep(symbol: String): BigDecimal? = instruments?.lookup(symbol)?.priceStep
 
     /**
-     * The `instrument` object for [symbol]: `{symbol, venueCode, kind, category, contractSize, tickSize,
+     * The `instrument` object for [symbol]: `{symbol, venueCode, kind, quantityUnit, category, contractSize, tickSize,
      * quoteCurrency}` from what qkt's registry and the venue state, or null when neither knows it, plus a
      * derivative's terms: `root`, `expiry` (UTC ms; none for a perpetual), and an option's `strike`,
      * `optionRight` (`call`, `put`) and `underlying`. `category` is the venue's folder for the symbol
@@ -95,6 +95,7 @@ class InsightsVenues(
             "symbol" to symbol,
             "venueCode" to venue?.venueCode,
             "kind" to kind,
+            "quantityUnit" to quantityUnit(kind, venue),
             "category" to meta?.category,
             "contractSize" to (meta?.contractSize ?: venue?.contractSize),
             "tickSize" to (meta?.tickSize ?: venue?.tickSize ?: meta?.pointSize),
@@ -111,6 +112,19 @@ class InsightsVenues(
     fun instrumentFields(symbol: String): Map<String, Any?>? =
         instrument(symbol)?.let { it + ("valuePerPoint" to valuePerPoint(symbol)) }
 }
+
+/** What one unit of a position's quantity is, on an instrument of [kind]: a coin pair's is the coin. */
+private fun quantityUnit(
+    kind: String?,
+    venue: com.qkt.broker.VenueInstrument?,
+): String? =
+    when (kind) {
+        "cfd" -> "lots"
+        "equity" -> "shares"
+        "perpetual", "future", "option" -> "contracts"
+        "spot" -> venue?.baseAsset
+        else -> null
+    }
 
 /**
  * `venue: {connector, adapter, label, tradeMode}` and `accountId` for an envelope about [identity]'s account,

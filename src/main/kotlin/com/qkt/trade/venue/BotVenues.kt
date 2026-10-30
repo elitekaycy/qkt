@@ -62,7 +62,7 @@ object BotVenues {
             AccountDirectory.open(
                 listOf(account),
                 ConnectorRegistry.discover(),
-                ConnectorContext(stateRoot = null, env = System.getenv(), clock = SystemClock()),
+                ConnectorContext(stateRoot = null, env = System.getenv(), clock = SystemClock(), configured = configs),
             )
         return try {
             OpenedVenue(account.name, accounts.accounts.single().directVenue(), accounts)

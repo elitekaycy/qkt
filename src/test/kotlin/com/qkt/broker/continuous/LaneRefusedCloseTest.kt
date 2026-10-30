@@ -1,6 +1,13 @@
 package com.qkt.broker.continuous
 
+import com.qkt.common.Side
 import com.qkt.events.BrokerEvent
+import com.qkt.events.ContractSettled
+import com.qkt.execution.ExitReason
+import com.qkt.execution.OrderRequest
+import com.qkt.execution.TimeInForce
+import java.math.BigDecimal
+import java.time.Instant
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
@@ -50,4 +57,72 @@ class LaneRefusedCloseTest {
         assertThat(saved.roll).isNull()
         assertThat(g.venue.sent).isEmpty()
     }
+
+    private fun ScriptedLaneFixture.expiries() =
+        engine
+            .filterIsInstance<BrokerEvent.OrderFilled>()
+            .filter { it.exitReason == ExitReason.EXPIRY }
+
+    @Test
+    fun `the next roll sends no leg for a strategy stopped by a refused close, and settlement closes its position`() {
+        f.holdIntoRoll()
+        f.refused(f.leg(":close").id)
+        val stopped = f.strategy().stopped
+        val sent = f.venue.sent.size
+
+        f.clock.time = f.nextRoll
+        f.tick("64000")
+
+        assertThat(f.venue.sent).hasSize(sent)
+        assertThat(f.saved().roll).isNull()
+        assertThat(f.strategy().stopped).isEqualTo(stopped)
+        assertThat(f.heldOn()).isEqualTo(f.sep)
+
+        f.venueBus.publish(ContractSettled(f.sep, BigDecimal("63500"), timestamp = f.clock.time))
+
+        val settled = f.expiries().single()
+        assertThat(settled.side to settled.symbol).isEqualTo(Side.SELL to f.front)
+        assertThat(settled.quantity).isEqualByComparingTo("0.010")
+        assertThat(f.strategy().position).isEqualByComparingTo("0")
+        assertThat(f.saved().holdings).isEmpty()
+    }
+
+    @Test
+    fun `the next roll sends no leg for a strategy stopped by an untradeable roll`() {
+        f.broker.submit(
+            OrderRequest.Market("entry", f.front, Side.BUY, BigDecimal("0.010"), TimeInForce.GTC, f.clock.time, "s"),
+        )
+        f.last("entry", f.sep, Side.BUY, "0.010", "63000")
+        f.clock.time = Instant.parse("2024-10-01T00:00:00Z").toEpochMilli()
+        f.tick("63000")
+        val stopped = f.strategy().stopped
+        assertThat(stopped).contains("expired")
+
+        f.clock.time = f.nextRoll
+        f.tick("64000")
+
+        assertThat(f.venue.sent.filter { it.id.startsWith("roll:") }).isEmpty()
+        assertThat(f.strategy().stopped).isEqualTo(stopped)
+    }
+
+    @Test
+    fun `a position the lane's book does not hold on the contract is not carried, and stops the strategy`() {
+        f.broker.submit(
+            OrderRequest.Market("entry", f.front, Side.BUY, BigDecimal("0.010"), TimeInForce.GTC, f.clock.time, "s"),
+        )
+        f.last("entry", f.sep, Side.BUY, "0.010", "63000")
+        f.persistor.saveStreamLane("owner", f.saved().copy(holdings = emptyList()))
+
+        val g = f.restart()
+        g.broker.recoverPendingOrders(emptyList(), emptySet())
+        g.broker.watchBookedLegs { emptyList() }
+        g.rollAt("63000")
+
+        assertThat(g.venue.sent.filter { it.id.startsWith("roll:") }).isEmpty()
+        assertThat(g.strategy().stopped).contains("holds 0")
+    }
+
+    private fun ScriptedLaneFixture.strategy() = saved().strategies.single()
+
+    private fun ScriptedLaneFixture.heldOn() = saved().holdings.single().contract
 }
