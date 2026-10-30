@@ -43,6 +43,8 @@ class OptionCatalogRegistry(
 
     override fun optionRoot(qktSymbol: String): OptionRoot? = if (qktSymbol in table) rootOf(qktSymbol) else null
 
+    override fun isOptionCode(qktSymbol: String): Boolean = rootOf(qktSymbol) != null
+
     override fun venueName(qktSymbol: String): String? =
         optionRoot(
             qktSymbol,

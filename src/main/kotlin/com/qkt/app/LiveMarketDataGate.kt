@@ -34,8 +34,22 @@ internal fun liveMarketDataGate(
         onUnhealthy = alerts::onUnhealthy,
         onRecovered = alerts::onRecovered,
         onStillStale = alerts::onStillStale,
-        judgesOutliers = { symbol -> instruments.lookup(symbol)?.derivative !is OptionTerms },
+        judgesOutliers = { symbol -> judgesPriceOutliers(instruments, symbol) },
     )
+
+/**
+ * Whether [symbol]'s prices are judged for outliers: not an option's. An option code of a declared root that its
+ * catalog does not list yet (a venue lists the next expiries during the day, the catalog refreshes on a schedule)
+ * is still an option, so it is not judged either.
+ */
+internal fun judgesPriceOutliers(
+    instruments: InstrumentRegistry,
+    symbol: String,
+): Boolean {
+    val meta = instruments.lookup(symbol)
+    if (meta != null) return meta.derivative !is OptionTerms
+    return instruments.options()?.isOptionCode(symbol) != true
+}
 
 /**
  * Whether [symbol] trades at [nowMs]: under its own calendar when a venue can say
