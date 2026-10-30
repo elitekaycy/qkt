@@ -63,6 +63,7 @@ class GatewayConnector : Connector {
                 { context.strategiesTrading(account.name).toSet() },
                 GatewayChainRecording(context.instruments, settings.chainSnapshotMs),
                 context.instruments,
+                context.deploysUnderway,
             )
         }
 }
@@ -75,6 +76,7 @@ class GatewayTradingAccount internal constructor(
     private val strategies: () -> Set<String>,
     private val recording: GatewayChainRecording,
     private val instruments: InstrumentRegistry?,
+    private val deploysUnderway: () -> Boolean,
 ) : TradingAccount {
     private val identity = GatewayIdentity(settings.adapter, settings.accountLogin, settings.tradeMode)
     private val client by lazy {
@@ -93,6 +95,7 @@ class GatewayTradingAccount internal constructor(
                 },
                 label = config.name.uppercase(),
                 sharedAccount = settings.sharedAccount,
+                deploysUnderway = deploysUnderway,
             )
         }
 
@@ -180,6 +183,11 @@ class GatewayTradingAccount internal constructor(
     override fun directVenue(): com.qkt.connectivity.DirectVenue {
         identity.mismatch(client.health())?.let { error("${config.name}: $it") }
         return GatewayDirectVenue(config.name, config.symbolPrefix, client, settings.url, settings.apiKey)
+    }
+
+    /** The holdings check that waited for the startup deploys judges now, if a strategy ever traded here. */
+    override fun deploysFinished() {
+        if (opened.isInitialized()) opened.value.deploysFinished()
     }
 
     /** Closes the account's gateway connection, if it was ever opened. */

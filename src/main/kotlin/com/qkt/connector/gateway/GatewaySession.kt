@@ -17,6 +17,7 @@ import org.slf4j.LoggerFactory
  * Either failure stops new risk: an identity mismatch refuses every order, a holdings mismatch every
  * order that is not reduce-only, until a later check finds the holdings agree. A [sharedAccount] has
  * other holders too, so only moves on the codes its strategies trade are judged ([GatewayOtherHolders]).
+ * While [deploysUnderway] the daemon has more strategies to deploy, so holdings wait ([GatewayHolders]).
  */
 internal class GatewaySession(
     val client: GatewayClient,
@@ -36,6 +37,7 @@ internal class GatewaySession(
     /** The account's config entry name uppercased: the label of its events, venue state and deals. */
     val label: String = "GATEWAY",
     sharedAccount: Boolean = false,
+    deploysUnderway: () -> Boolean = { false },
 ) {
     private val log = LoggerFactory.getLogger(GatewaySession::class.java)
     private val lock = Any()
@@ -51,7 +53,8 @@ internal class GatewaySession(
     /** The connector, venue and account this session trades. */
     val venue = VenueIdentity("vgp", identity.adapter, label, identity.accountId, identity.tradeMode)
     val ledger: GatewayLedger = GatewayLedger(symbols, routing, lock, ::fetchDeals, legs)
-    private val holders = GatewayHolders(symbols, routing, account, lock, expectedStrategies, sharedAccount)
+    private val holders =
+        GatewayHolders(symbols, routing, account, lock, expectedStrategies, sharedAccount, clock, deploysUnderway)
     private val funding = GatewayFunding(client, symbols, clock, routing, lock)
     private val placement = GatewayPlacement(client, clock, ledger::onOrder, ledger::onFill, submitDeadlineMs, retryMs)
     private val sync =
@@ -92,6 +95,7 @@ internal class GatewaySession(
     ): GatewayRouting.Attached =
         synchronized(lock) {
             val broker = GatewayRouting.Attached(strategy, positions, publish)
+            holders.attaching()
             routing.attach(broker)
             if (!started) {
                 try {
@@ -118,6 +122,9 @@ internal class GatewaySession(
         holders.ready(broker)
     }
 
+    /** The daemon has worked through its startup deploys: judge the account with whoever came up. */
+    fun deploysFinished() = holders.judge()
+
     /** Detaches [broker]; the connection stays open with the account. */
     fun detach(broker: GatewayRouting.Attached) = synchronized(lock) { routing.detach(broker) }
 
@@ -129,8 +136,7 @@ internal class GatewaySession(
         reject: (String) -> Unit,
     ) {
         // A disagreement may have been a fill the venue had not yet reported: judge again before refusing.
-        val blocked =
-            refused ?: funding.refusal(body) ?: riskRefused?.takeUnless { body.reduceOnly }?.let { holders.judge() }
+        val blocked = refused ?: funding.refusal(body) ?: if (body.reduceOnly) null else holders.refusal()
         if (blocked != null) return reject(blocked)
         holders.trading(body.symbol)
         ledger.own(body.clientOrderId, strategy, BigDecimal(body.quantity), sender)
