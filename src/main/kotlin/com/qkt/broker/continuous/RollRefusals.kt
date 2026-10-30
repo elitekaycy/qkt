@@ -24,11 +24,11 @@ internal class RollRefusals(
         measured: MeasuredRoll,
         quotes: RollQuotes,
     ): String? {
-        if (id.isNotEmpty()) return null
         val onContract = book.positionFor(id, from)?.quantity ?: BigDecimal.ZERO
         if (onContract.compareTo(quantity) != 0) {
             return "holds ${onContract.toPlainString()} of $from, not its ${quantity.toPlainString()} on the stream"
         }
+        if (id.isNotEmpty()) return null
         val band = priceBand ?: return null
         val closing = if (quantity.signum() > 0) Side.SELL else Side.BUY
         val opening = if (quantity.signum() > 0) Side.BUY else Side.SELL

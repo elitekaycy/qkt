@@ -77,7 +77,7 @@ internal class RollExecutor(
         val from = chain.contractSymbol(fromIndex)
         val to = chain.contractSymbol(toIndex)
         val stopped = "${chain.symbol} stopped: roll $from->$to at ${Instant.ofEpochMilli(measured.atMs)} failed"
-        val holders = positions.filter { (id, quantity) -> quantity.signum() != 0 }
+        val holders = positions.filter { (id, quantity) -> quantity.signum() != 0 && id !in stops }
         val resting = orders.on(fromIndex)
         val untradeable = chain.untradeableRoll(fromIndex, toIndex, clock.now())
         if (untradeable != null) {
