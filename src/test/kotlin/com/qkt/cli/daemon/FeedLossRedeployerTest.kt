@@ -1,7 +1,5 @@
 package com.qkt.cli.daemon
 
-import com.qkt.cli.Args
-import com.qkt.cli.DaemonCommand
 import com.qkt.common.FixedClock
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.TickFeed
@@ -117,7 +115,7 @@ class FeedLossRedeployerTest {
                     name,
                     file,
                     ->
-                    DaemonCommand(Args(arrayOf("daemon"))).deployLoadDirFile(name, file, registry, null)
+                    deployLoadDirFile(name, file, registry, null)
                 },
                 alreadyDeployed = { registry.get(it) != null },
                 clock = clock,

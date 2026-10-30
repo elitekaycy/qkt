@@ -1,6 +1,7 @@
 package com.qkt.connector.gateway
 
 import com.qkt.bus.EventBus
+import com.qkt.common.Clock
 import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.Side
 import com.qkt.common.SystemClock
@@ -30,14 +31,19 @@ internal abstract class GatewayHarness {
         fake.shutdown()
     }
 
-    /** A gateway session for an account expected to serve [expected], [shared] with other holders or not. */
+    /**
+     * A gateway session for an account expected to serve [expected], [shared] with other holders or not, on [time],
+     * in a daemon whose startup deploys are underway while [deploysUnderway] says so.
+     */
     protected fun session(
         expected: Set<String> = setOf("a"),
         shared: Boolean = false,
+        time: Clock = clock,
+        deploysUnderway: () -> Boolean = { false },
     ) = GatewaySession(
         GatewayClient(fake.url, "k", httpTimeoutMs = 500, retryAttempts = 2),
         GatewaySymbols("DERIBIT:"),
-        clock,
+        time,
         GatewayIdentity("fake", "7", "demo"),
         { expected },
         streamFactory = { e, r, c -> GatewayStream(fake.url, "k", e, r, c, initialBackoffMs = 20) },
@@ -46,6 +52,7 @@ internal abstract class GatewayHarness {
         resyncRetryMs = 50,
         label = "DERIBIT",
         sharedAccount = shared,
+        deploysUnderway = deploysUnderway,
     ).also { sessions += it }
 
     /** One strategy's session: its bus, what reached it, and what it holds. */

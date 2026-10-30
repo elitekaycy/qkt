@@ -9,14 +9,11 @@ import com.qkt.cli.daemon.DaemonInstanceLock
 import com.qkt.cli.daemon.FeedLossRedeployer
 import com.qkt.cli.daemon.OperatorJournal
 import com.qkt.cli.daemon.RegistryDaemonControl
+import com.qkt.cli.daemon.StartupDeploys
 import com.qkt.cli.daemon.StateDir
 import com.qkt.cli.daemon.StrategyRegistry
 import com.qkt.cli.daemon.TelegramCommandChannel
-import com.qkt.cli.daemon.portfolio.PortfolioDeployer
-import com.qkt.dsl.parse.Dsl
-import com.qkt.dsl.parse.ParseResult
-import com.qkt.dsl.parse.ParsedFile
-import com.qkt.dsl.portfolio.PortfolioLoader
+import com.qkt.cli.daemon.deployLoadDirFile
 import com.qkt.marketdata.live.tv.TradingViewMarketSource
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.notify.DailySummaryScheduler
@@ -154,9 +151,14 @@ class DaemonCommand(
                 return ExitCodes.USER_ERROR
             }
         val registryRef = AtomicReference<StrategyRegistry?>(null)
+        val startupDeploys = StartupDeploys(args.option("load-dir"))
         val accounts =
             try {
-                cfg.openAccounts(stateDir.stateRoot, daemonInstrumentRegistry) { accountName ->
+                cfg.openAccounts(
+                    stateDir.stateRoot,
+                    daemonInstrumentRegistry,
+                    startupDeploys::underway,
+                ) { accountName ->
                     registryRef
                         .get()
                         ?.list()
@@ -369,7 +371,9 @@ class DaemonCommand(
         }
 
         val failedAutoDeploys =
-            loadDirIfRequested(args.option("load-dir"), registry, portfolioDeployer) { name, message ->
+            startupDeploys.run(registry, portfolioDeployer, {
+                accounts.accounts.forEach { it.deploysFinished() }
+            }) { name, message ->
                 if (NotifyEventKind.STRATEGY_ERROR in notifyEventKinds) {
                     notifier.notify(
                         NotificationEvent.StrategyError(
@@ -504,80 +508,6 @@ class DaemonCommand(
             System.err.println("qkt: error: status failed (${e.code}): ${e.body}")
             ExitCodes.USER_ERROR
         }
-    }
-
-    /** One `--load-dir` file that failed to deploy at startup and is owed a retry (#1055). */
-    internal data class FailedAutoDeploy(
-        val name: String,
-        val file: java.nio.file.Path,
-        val message: String,
-    )
-
-    /** Deploy one `--load-dir` file as a strategy or portfolio; throws with the deploy error. */
-    internal fun deployLoadDirFile(
-        name: String,
-        file: java.nio.file.Path,
-        registry: StrategyRegistry,
-        portfolioDeployer: PortfolioDeployer?,
-    ): String =
-        when (val parsed = Dsl.parseFileAny(file)) {
-            is ParseResult.Success ->
-                when (parsed.value) {
-                    is ParsedFile.StrategyFile -> {
-                        registry.deploy(name, file)
-                        "strategy"
-                    }
-                    is ParsedFile.PortfolioFile -> {
-                        check(portfolioDeployer != null) {
-                            "portfolio deploy not configured on this daemon"
-                        }
-                        val compiled = PortfolioLoader.load(file)
-                        val record = portfolioDeployer.deploy(name, compiled)
-                        registry.registerPortfolio(record)
-                        "portfolio"
-                    }
-                }
-            is ParseResult.Failure -> {
-                val msg = parsed.errors.joinToString("\n") { "${it.line}:${it.col} ? ${it.message}" }
-                error("parse failure for $file:\n$msg")
-            }
-        }
-
-    /**
-     * Auto-deploy every `.qkt` in [dir]. Returns the files that failed so the caller can
-     * hand them to an [AutoDeployRetrier] — a transient failure at boot (venue gap, gateway
-     * reconnecting) must not leave the daemon idle (#1055).
-     */
-    internal fun loadDirIfRequested(
-        dir: String?,
-        registry: StrategyRegistry,
-        portfolioDeployer: PortfolioDeployer? = null,
-        onDeployError: (name: String, message: String) -> Unit = { _, _ -> },
-    ): List<FailedAutoDeploy> {
-        if (dir == null) return emptyList()
-        val path = Path.of(dir)
-        if (!java.nio.file.Files
-                .isDirectory(path)
-        ) {
-            System.err.println("[WARN] --load-dir $dir is not a directory; skipping")
-            return emptyList()
-        }
-        val failed = ArrayList<FailedAutoDeploy>()
-        java.nio.file.Files.list(path).use { stream ->
-            for (file in stream.toList()) {
-                if (!file.toString().endsWith(".qkt")) continue
-                val name = file.fileName.toString().removeSuffix(".qkt")
-                runCatching { deployLoadDirFile(name, file, registry, portfolioDeployer) }
-                    .onSuccess { println("[INFO] auto-deployed $name from $file") }
-                    .onFailure { e ->
-                        val message = e.message ?: e::class.java.simpleName
-                        System.err.println("[WARN] failed to auto-deploy $name: $message")
-                        failed += FailedAutoDeploy(name, file, message)
-                        onDeployError(name, message)
-                    }
-            }
-        }
-        return failed
     }
 
     private fun controlClient(stateDir: StateDir): ControlClient = ControlClient(stateDir)

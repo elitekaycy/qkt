@@ -75,6 +75,9 @@ interface TradingAccount : AutoCloseable {
                 "(qkt bot session start) or deploy a strategy",
         )
 
+    /** The daemon is through its startup deploys ([ConnectorContext.deploysUnderway]). */
+    fun deploysFinished() {}
+
     /** Releases the connections and files this account holds. Idempotent. */
     override fun close()
 }

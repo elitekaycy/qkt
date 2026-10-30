@@ -570,7 +570,11 @@ contract settlement at expiry closes each strategy's own holding at the settleme
 venue's costs once by holding. The venue only knows the account's total, so a gateway account is
 account-wide even when one strategy trades it: startup trusts each strategy's persisted book (a venue
 position no book holds is never adopted), and each time a strategy comes up, once every strategy
-deployed on the account is running, their holdings must add up to the account's. While they do not,
+deployed on the account is running, their holdings must add up to the account's. Nothing is judged while the daemon is still deploying its
+`--load-dir` files, since a later file may hold on the account. A file that fails to deploy no longer counts once
+the daemon is through them, so what it holds shows as a difference until its retry lands. A strategy that never gets
+ready counts for 10 minutes from the last broker attaching or getting ready; after that the next order adding risk is
+judged first. While they do not add up,
 only orders that reduce a position are sent; the check clears itself when a later one agrees (as
 strategies deploy one after another, and it is judged again before any order adding risk is refused, so
 a fill the venue had not yet reported when last checked blocks nothing), or after an operator resolves the difference. An account

@@ -10,7 +10,8 @@ import java.nio.file.Path
  *
  * [stateRoot] is null for one-shot commands that keep no state. [strategiesTrading] answers
  * "which deployed strategies trade the account named X" — MT5 uses it to attribute positions it
- * finds at startup — and is empty outside the daemon.
+ * finds at startup — and is empty outside the daemon. [deploysUnderway] says the daemon is still deploying
+ * its `--load-dir` strategies, so a deployed strategy need not be the last one on its account.
  */
 class ConnectorContext(
     val stateRoot: Path?,
@@ -21,4 +22,5 @@ class ConnectorContext(
     val instruments: InstrumentRegistry? = null,
     /** Every entry of the config's `brokers:` section, also those not being opened: where an entry's parents are. */
     val configured: List<AccountConfig> = emptyList(),
+    val deploysUnderway: () -> Boolean = { false },
 )
