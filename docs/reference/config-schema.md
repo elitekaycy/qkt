@@ -648,7 +648,7 @@ Thresholds for the live market-data quality gate (`MarketDataGate`) every daemon
 |---|---|---|---|---|
 | `market_data.stale_age_multiple` | double | `5.0` | live sessions | Staleness threshold as a multiple of the symbol's smoothed inter-tick gap. |
 | `market_data.min_stale_age_ms` | long | `10000` | live sessions | Floor for the staleness threshold. |
-| `market_data.outlier_sigma` | double | `6.0` | live sessions | Standard deviations from the short-window mean beyond which a tick is rejected. |
+| `market_data.outlier_sigma` | double | `6.0` | live sessions | Standard deviations from the short-window mean beyond which a tick is rejected. Whatever this is, a tick that passes loses a bid or ask more than 10% from its price (a stray far quote on a thin book), so a position marks at the tick's price until that side is sane; a wide but plausible book still marks at its own bid and ask, and an option's book is not judged. |
 | `market_data.max_clock_skew_ms` | long | `60000` | live sessions | Tolerance between broker tick timestamps and the local clock before new orders are suppressed. |
 | `market_data.quiet_alert_after_ms` | long | `600000` | live sessions | How long a `STALE` episode on a symbol the session holds nothing in may last, in session, before it sends the `MarketDataUnhealthy` alert. `0` alerts every `STALE` at once. Must be zero or more. |
 
