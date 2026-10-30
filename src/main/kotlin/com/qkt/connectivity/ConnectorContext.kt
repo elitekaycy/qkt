@@ -19,4 +19,6 @@ class ConnectorContext(
     val secrets: SecretResolver = SecretResolver(env),
     val strategiesTrading: (accountName: String) -> List<String> = { emptyList() },
     val instruments: InstrumentRegistry? = null,
+    /** Every entry of the config's `brokers:` section, also those not being opened: where an entry's parents are. */
+    val configured: List<AccountConfig> = emptyList(),
 )

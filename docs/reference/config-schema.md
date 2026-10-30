@@ -471,7 +471,7 @@ Built-in MT5 profile names: `exness`, `icmarkets`, `ftmo`, `pepperstone`.
 | Key | Type | Required | Default/inheritance | Notes |
 |---|---|---|---|---|
 | `brokers.<name>.type` | string | yes | none | `mt5` (this table) or `gateway` (below). |
-| `extends` | profile name | no | same-name built-in if present | Inherit from a built-in or earlier user profile. |
+| `extends` | profile name | no | same-name built-in if present | Inherit from a built-in or another entry of this `brokers:` section, also for commands that open one broker (`qkt bot --broker <name>`). |
 | `gateway_url` | URL | yes for fresh profile | inherited or built-in | MT5 gateway HTTP base URL. |
 | `api_key` | string | no | inherited or empty | Bearer token matching the gateway `API_KEY`; use a neutral variable such as `${QKT_BROKER_API_KEY}` in reusable scaffolds. |
 | `symbol_suffix` | string | no | inherited or empty | Appended to broker symbol names. |
