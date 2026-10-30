@@ -1,6 +1,7 @@
 package com.qkt.connector.gateway
 
 import com.qkt.common.Side
+import com.qkt.common.SystemClock
 import com.qkt.events.BrokerEvent
 import java.math.BigDecimal
 import org.assertj.core.api.Assertions.assertThat
@@ -59,5 +60,56 @@ internal class GatewayHoldersTest : GatewayHarness() {
 
         assertThat(brokerA.isAccountWide(symbol)).isTrue()
         assertThat(brokerA.isAccountWide("EXNESS:XAUUSD")).isFalse()
+    }
+
+    @Test
+    fun `a stream lane not yet ready holds the check back, so a restart over its contract never refuses risk`() {
+        fake.act { held("x-1", "sell", "0.1") }
+        val shared = session(setOf("a"))
+        val own = broker(shared, Strategy(), "a")
+        val lane = broker(shared, Strategy().apply { held[symbol] = BigDecimal("-0.1") }, "a")
+
+        own.watchBookedLegs { emptyList() }
+        assertThat(shared.riskRefused).isNull()
+
+        lane.watchBookedLegs { emptyList() }
+        assertThat(shared.riskRefused).isNull()
+    }
+
+    @Test
+    fun `once a strategy's lane is ready too, a real difference is still refused`() {
+        fake.act { held("x-1", "sell", "0.1") }
+        val shared = session(setOf("a"))
+        val own = broker(shared, Strategy(), "a")
+        val lane = broker(shared, Strategy().apply { held[symbol] = BigDecimal("-0.2") }, "a")
+
+        own.watchBookedLegs { emptyList() }
+        lane.watchBookedLegs { emptyList() }
+
+        assertThat(shared.riskRefused).startsWith("strategies hold, account holds:")
+    }
+
+    @Test
+    fun `a lane of a broker serving every strategy holds the check back as well`() {
+        fake.act { held("x-1", "sell", "0.1") }
+        val shared = session(emptySet())
+        val every = { s: Strategy -> GatewayBroker(shared, s.bus, SystemClock(), s.positions, null) }
+        val own = every(Strategy())
+        val lane = every(Strategy().apply { held[symbol] = BigDecimal("-0.1") })
+
+        own.watchBookedLegs { emptyList() }
+        assertThat(shared.riskRefused).isNull()
+
+        lane.watchBookedLegs { emptyList() }
+        assertThat(shared.riskRefused).isNull()
+    }
+
+    private fun FakeVenue.held(
+        id: String,
+        side: String,
+        quantity: String,
+    ) {
+        place(WireSubmit(id, code, side, "market", quantity, null, null, "gtc", false))
+        fill(id, "f-$id", quantity, "650", FakeGateway.TIME)
     }
 }
