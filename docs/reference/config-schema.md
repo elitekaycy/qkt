@@ -749,7 +749,11 @@ that does not know them ignores them.
   `INOUT` deal opened, when it differs), typed `costs: [{kind, amount, currency}]` (`amount` positive
   when paid), `realizedSource` (`venue`: MT5 reports `profit`; `engine`: qkt's accounting booked it),
   `strategyId` with `attribution` (`order`: the connector knows the order exactly; `position`: by the
-  position ticket; `comment`: by the venue comment; `none`), and `instrument`.
+  position ticket; `comment`: by the venue comment; `none`), and `instrument`. Entry `ADJUSTMENT` is venue money
+  that moves no quantity, its kind in `adjustment`: `DIVIDEND`, `CHARGE` and the rest from an MT5 account, and
+  `FUNDING`, one deal per strategy's share of a gateway perpetual's funding record (`dealTicket`
+  `funding-<fundingId>-<strategy>`, `costs: [{kind: FUNDING, amount, currency}]`). A contract settled at expiry
+  is not an adjustment: it is a closing deal with `closeReason: EXPIRY`.
 - **`state.positions`** entries add `positionId`, `attribution`, `instrument`, and `initialStop`,
   `initialTarget` and `riskAmount` (account currency) when qkt opened the position with a bracket.
   A position whose venue states no `currentPrice` or `profit` (a `type: gateway` account: VGP v1 carries
@@ -766,9 +770,10 @@ that does not know them ignores them.
   `LIQUIDATION`, `EXPIRY`. MT5 deal reasons map 4 to `STOP`, 5 to `TAKE_PROFIT`, 6 to `STOP_OUT` and a
   terminal (0-2) to `MANUAL`; qkt's own exits map by order id: a bracket's `-sl`/`-tp` order to
   `STOP`/`TAKE_PROFIT`, an `EXIT AFTER` close to `TIMED`, a `qkt bot` order to `MANUAL`.
-- **`instrument`** is `{symbol, venueCode, kind, category, contractSize, tickSize, quoteCurrency,
+- **`instrument`** is `{symbol, venueCode, kind, quantityUnit, category, contractSize, tickSize, quoteCurrency,
   valuePerPoint}`, where qkt or the venue knows them; `valuePerPoint` is the account-currency value of
-  one unit of quantity moving one price unit. `kind` is `cfd` (every MT5 symbol), `equity`, `spot`,
+  one unit of quantity moving one price unit. `quantityUnit` is what one unit of `qty` is: `lots`, `shares`,
+  `contracts`, or a coin pair's coin (`BTC`). `kind` is `cfd` (every MT5 symbol), `equity`, `spot`,
   `perpetual`, `future` or `option`; `category` is the venue's folder for the symbol, so a stock CFD
   reads `kind: cfd, category: Stocks` (MT5 path `Standard\Stocks\AAPLm`), apart from FX and metal
   CFDs in their own folders. A derivative adds its `root` (`DERIBIT:BTC`), a dated contract its

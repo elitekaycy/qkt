@@ -1,5 +1,6 @@
 package com.qkt.app
 
+import com.qkt.broker.VenueLeg
 import com.qkt.bus.EventBus
 import com.qkt.common.Clock
 import com.qkt.common.Money
@@ -8,6 +9,7 @@ import com.qkt.events.FUNDING_REPLAY_MS
 import com.qkt.events.FillAccountedEvent
 import com.qkt.events.FillAccountingKind
 import com.qkt.events.FundingCharged
+import com.qkt.events.FundingShare
 import com.qkt.marketdata.MarketPriceProvider
 import com.qkt.persistence.FundingPersistence
 import com.qkt.persistence.PersistedFunding
@@ -100,9 +102,13 @@ internal class FundingBooking(
             return
         }
         val price = prices.lastPrice(e.symbol)
+        val position = positions.account.positionFor(e.symbol)?.let(VenueLeg::idOf)
+        val share = FundingShare(e.fundingId, e.currency, e.fundedAtMs, position)
         for ((id, quantity) in held) {
             val part = e.amount.multiply(quantity, Money.CONTEXT).divide(basis, Money.CONTEXT)
-            bus.publish(CostIncurred(id, e.symbol, part, "funding ${e.fundingId}", price, FillAccountingKind.FINANCING))
+            bus.publish(
+                CostIncurred(id, e.symbol, part, "funding ${e.fundingId}", price, FillAccountingKind.FINANCING, share),
+            )
         }
     }
 
