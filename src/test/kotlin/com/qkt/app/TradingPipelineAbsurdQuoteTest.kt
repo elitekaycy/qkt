@@ -27,7 +27,7 @@ import org.junit.jupiter.api.Test
 
 /**
  * A stray far quote on a thin book (bot2 soak, a 0.001 short of a dated future: one ask near 240,505 against a market
- * near 79,000 drew a -159 unrealized for one sample): the venue's mark passes the gate, so nothing judged the ask a
+ * near 78,000 drew a -159 unrealized for one sample, and a roll's market leg filled at that level the next day): the venue's mark passes the gate, so nothing judged the ask a
  * short is marked at. The gate now drops such a side, and the position marks at the tick's price until it is sane.
  */
 class TradingPipelineAbsurdQuoteTest {
@@ -85,15 +85,15 @@ class TradingPipelineAbsurdQuoteTest {
         holding(Side.SELL, "0.001", "81165")
         val pipeline = pipeline(MarketDataGate(clock))
 
-        pipeline.ingest(tick("79000", "78990", "79010"))
-        assertThat(pnl.unrealizedFor(symbol)).isEqualByComparingTo("2.155")
+        pipeline.ingest(tick("78000", "77990", "78010"))
+        assertThat(pnl.unrealizedFor(symbol)).isEqualByComparingTo("3.155")
 
-        pipeline.ingest(tick("79000", "78990", "240505"))
-        assertThat(prices.closingMark(symbol, -1)).isEqualByComparingTo("79000")
-        assertThat(pnl.unrealizedFor(symbol)).isEqualByComparingTo("2.165")
+        pipeline.ingest(tick("78000", "77990", "240505"))
+        assertThat(prices.closingMark(symbol, -1)).isEqualByComparingTo("78000")
+        assertThat(pnl.unrealizedFor(symbol)).isEqualByComparingTo("3.165")
 
-        pipeline.ingest(tick("79000", "78990", "79020"))
-        assertThat(pnl.unrealizedFor(symbol)).isEqualByComparingTo("2.145")
+        pipeline.ingest(tick("78000", "77990", "78020"))
+        assertThat(pnl.unrealizedFor(symbol)).isEqualByComparingTo("3.145")
     }
 
     @Test
