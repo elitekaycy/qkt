@@ -27,8 +27,8 @@ import org.slf4j.LoggerFactory
  * traded — the stream skipped a whole contract, or the old contract expired before the stream traded
  * again — stops every holder the same way; the exchange then settles the expired contract. A refused
  * closing leg is a configuration fault and fails loudly. A strategy already stopped is never a holder: what it
- * has stays on its contract until settled. One [refusals] refuses stops with no leg sent. The closes and costs are handed to the roll's
- * completion, not published, so the lane records the stops before any engine handler can react to them.
+ * has stays on its contract until settled. One [refusals] refuses stops with no leg sent. The closes and costs are
+ * handed to the roll's completion, not published, so the lane records the stops before any engine handler can react to them.
  */
 internal class RollExecutor(
     bus: EventBus,

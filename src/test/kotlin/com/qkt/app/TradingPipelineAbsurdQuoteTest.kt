@@ -27,8 +27,8 @@ import org.junit.jupiter.api.Test
 
 /**
  * A stray far quote on a thin book (bot2 soak, a 0.001 short of a dated future: one ask near 240,505 against a market
- * near 78,000 drew a -159 unrealized for one sample, and a roll's market leg filled at that level the next day): the venue's mark passes the gate, so nothing judged the ask a
- * short is marked at. The gate now drops such a side, and the position marks at the tick's price until it is sane.
+ * near 78,000 drew a -159 unrealized for one sample, and a roll's market leg filled at that level the next day): the
+ * venue's mark passes the gate, so nothing judged the ask a short is marked at. The gate now drops such a side, and the position marks at the tick's price until it is sane.
  */
 class TradingPipelineAbsurdQuoteTest {
     private val symbol = "PAPER_DERIBIT:BTC_USDC_30OCT26"

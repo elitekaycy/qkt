@@ -4,7 +4,7 @@ import com.qkt.derivatives.futures.ContinuousChain
 import com.qkt.derivatives.futures.PriceSpace
 import com.qkt.marketdata.Tick
 
-/** The latest quotes a roll's legs would trade against: of the old contract and the new one, null when none was heard. */
+/** The latest quotes a roll's legs would trade against, on the old contract and the new; null when none was heard. */
 internal data class RollQuotes(
     val from: Tick?,
     val to: Tick?,
