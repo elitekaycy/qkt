@@ -68,6 +68,8 @@ class EngineAuditJournal(
                 }
                 drops.persist(files, log, owner)
             }
+            // The last pass may have read the count before the final drops: what stands on disk is the whole count.
+            drops.persist(files, log, owner)
             files.close()
         }, "qkt-engine-audit-journal-${owner.ifBlank { "session" }}").apply {
             isDaemon = true
