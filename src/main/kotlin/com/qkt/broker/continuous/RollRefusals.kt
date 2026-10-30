@@ -28,7 +28,6 @@ internal class RollRefusals(
         if (onContract.compareTo(quantity) != 0) {
             return "holds ${onContract.toPlainString()} of $from, not its ${quantity.toPlainString()} on the stream"
         }
-        if (id.isNotEmpty()) return null
         val band = priceBand ?: return null
         val closing = if (quantity.signum() > 0) Side.SELL else Side.BUY
         val opening = if (quantity.signum() > 0) Side.BUY else Side.SELL
