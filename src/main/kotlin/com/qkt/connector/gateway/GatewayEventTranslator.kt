@@ -12,7 +12,9 @@ class GatewayProtocolException(
 /**
  * The one place engine events are built from VGP v1 order, fill and settlement objects. An order is
  * accepted once, and cancelled or rejected once; its fills are partial until their quantities reach the
- * order's quantity, and the fill that reaches it completes the order. A `fill_id` already booked (a
+ * order's quantity, and the fill that reaches it completes the order. A venue's terminal `filled` below the order's
+ * quantity moves that bar to its `filled_quantity`, and ends the order at once when its fills were all heard
+ * (as a cancel of the rest: nothing more will come). A `fill_id` already booked (a
  * replay after a reconnect) is dropped, and so is any update of an order that has ended. [strategyOf]
  * attributes a client order id to its strategy. Not thread-safe: its owner calls it under one lock from
  * the stream, placement and engine threads.
@@ -50,6 +52,21 @@ class GatewayEventTranslator(
         booked.add(fillId)
     }
 
+    /** What [fill] moved the holding by ([GatewayInKindFees]): what the engine booked for it. */
+    fun received(fill: WireFill): BigDecimal =
+        GatewayInKindFees.received(fill, symbols.baseAsset(symbols.qkt(fill.symbol)))
+
+    /**
+     * [fill] was booked before a restart: it is never booked again, and a restored order counts it at the venue's
+     * quantity, not the [received] one it was restored with, so its last fill still completes it.
+     */
+    fun replayed(fill: WireFill) {
+        markBooked(fill.fillId)
+        val id = fill.clientOrderId
+        val taken = WireValues.decimal(fill.quantity, "quantity").subtract(received(fill))
+        if (taken.signum() != 0) filled[id] = (filled[id] ?: BigDecimal.ZERO).add(taken)
+    }
+
     /** The engine event an `order` update means, or null when it repeats what was already reported. */
     fun order(order: WireOrder): BrokerEvent.OrderEvent? {
         val id = order.clientOrderId
@@ -57,15 +74,17 @@ class GatewayEventTranslator(
         quantities[id] = WireValues.decimal(order.quantity, "quantity")
         val strategy = strategyOf(id)
         return when (order.status) {
-            "working", "filled" ->
-                if (accepted.add(
-                        id,
-                    )
-                ) {
-                    BrokerEvent.OrderAccepted(id, order.venueOrderId, strategy)
+            "working" -> acceptance(order, strategy)
+            "filled" -> {
+                val reported = WireValues.decimal(order.filledQuantity, "filled_quantity")
+                if (reported.signum() > 0) quantities[id] = reported
+                val heard = filled[id]
+                if (heard != null && reported.signum() > 0 && heard >= reported) {
+                    end(id) { filledShort(order, strategy) }
                 } else {
-                    null
+                    acceptance(order, strategy)
                 }
+            }
             "cancelled", "rejected" ->
                 if (WireValues.decimal(order.filledQuantity, "filled_quantity") > (filled[id] ?: BigDecimal.ZERO)) {
                     // It ended with fills not yet heard: its end waits for them, so they are never dropped.
@@ -144,27 +163,16 @@ class GatewayEventTranslator(
     }
 
     /** The engine event a `settlement` means: the contract settled at its price, for every holder. */
-    fun settlement(settlement: WireSettlement): ContractSettled =
-        ContractSettled(
-            symbols.qkt(settlement.symbol),
-            WireValues.decimal(settlement.price, "price"),
-            WireValues.costsOf(settlement.costs, settlement.time),
-            settlement.time,
-        )
+    fun settlement(settlement: WireSettlement): ContractSettled = settledEvent(settlement, symbols)
 
-    private fun ended(
+    private fun acceptance(
         order: WireOrder,
         strategy: String,
-    ): BrokerEvent.OrderEvent =
-        if (order.status == "rejected") {
-            BrokerEvent.OrderRejected(
-                order.clientOrderId,
-                order.venueOrderId,
-                order.rejectReason ?: "rejected by the venue",
-                strategy,
-            )
+    ): BrokerEvent.OrderEvent? =
+        if (accepted.add(order.clientOrderId)) {
+            BrokerEvent.OrderAccepted(order.clientOrderId, order.venueOrderId, strategy)
         } else {
-            BrokerEvent.OrderCancelled(order.clientOrderId, order.venueOrderId, "cancelled at the venue", strategy)
+            null
         }
 
     private fun end(
