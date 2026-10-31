@@ -29,14 +29,7 @@ internal fun StrategyHandle.RealFactory.startPipeline(
     onTrade: (Trade, BigDecimal, String) -> Unit,
     onSignal: (Signal) -> Unit,
 ): LiveSessionHandle {
-    val haltRules: List<com.qkt.risk.HaltRule> =
-        com.qkt.risk.HaltRules.standard(
-            maxDailyLoss = maxDailyLoss,
-            maxDrawdownPct = maxDrawdownPct,
-            maxDailyDrawdownPct = maxDailyDrawdownPct,
-            totalDdBasis = totalDdBasis,
-            startingBalance = startingBalance,
-        )
+    val haltRules = sessionHaltRules(mdcStrategy)
     val feedSymbols = (symbols + accountingConfig.normalizedSymbols.values).distinct()
     return LiveSession(
         strategies = strategies,
@@ -102,6 +95,21 @@ internal fun StrategyHandle.RealFactory.startPipeline(
         marketDataGateConfig = marketDataGateConfig,
     ).start()
 }
+
+/**
+ * The global halt rules of the session [sessionId]: bound by this factory's [StrategyHandle.RealFactory.daemonRisk], so a
+ * breach halts every session the daemon runs, as `risk.max_daily_loss` and the drawdown limits promise.
+ */
+internal fun StrategyHandle.RealFactory.sessionHaltRules(sessionId: String): List<com.qkt.risk.HaltRule> =
+    com.qkt.risk.HaltRules.daemonWide(
+        session = sessionId,
+        scope = daemonRisk,
+        maxDailyLoss = maxDailyLoss,
+        maxDrawdownPct = maxDrawdownPct,
+        maxDailyDrawdownPct = maxDailyDrawdownPct,
+        totalDdBasis = totalDdBasis,
+        startingBalance = startingBalance,
+    )
 
 /**
  * A live `qkt bot session`'s pipeline over [strategies] (its identities and its bar recorder), built from
