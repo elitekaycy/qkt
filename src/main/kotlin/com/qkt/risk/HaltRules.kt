@@ -1,5 +1,7 @@
 package com.qkt.risk
 
+import com.qkt.risk.rules.DaemonDailyLoss
+import com.qkt.risk.rules.DaemonWideHalt
 import com.qkt.risk.rules.MaxDailyDrawdown
 import com.qkt.risk.rules.MaxDailyLoss
 import com.qkt.risk.rules.MaxDrawdown
@@ -27,5 +29,24 @@ object HaltRules {
             if (maxDailyLoss.signum() > 0) add(MaxDailyLoss(maxDailyLoss))
             maxDrawdownPct?.let { add(MaxDrawdown(it, totalDdBasis, startingBalance)) }
             maxDailyDrawdownPct?.let { add(MaxDailyDrawdown(it)) }
+        }
+
+    /**
+     * [standard] for one session of a daemon: the limits bind the sum of the daemon's sessions through
+     * [scope], so a breach halts all of them. A backtest is one session and needs none of this.
+     */
+    fun daemonWide(
+        session: String,
+        scope: DaemonRiskScope,
+        maxDailyLoss: BigDecimal,
+        maxDrawdownPct: BigDecimal? = null,
+        maxDailyDrawdownPct: BigDecimal? = null,
+        totalDdBasis: DrawdownBasis = DrawdownBasis.STATIC,
+        startingBalance: BigDecimal = BigDecimal.ZERO,
+    ): List<HaltRule> =
+        buildList {
+            if (maxDailyLoss.signum() > 0) add(DaemonDailyLoss(session, maxDailyLoss, scope))
+            standard(BigDecimal.ZERO, maxDrawdownPct, maxDailyDrawdownPct, totalDdBasis, startingBalance)
+                .mapTo(this) { DaemonWideHalt(session, it, scope) }
         }
 }
