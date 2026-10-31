@@ -331,7 +331,9 @@ set `daily_dd_basis: equity` explicitly.
 | `per_strategy.<name>.loss_streak_halt` | unset | halt rules | Halts the strategy once consecutive losing closes reach N. |
 | `per_strategy.<name>.loss_streak_halt_scope` | `persistent` | halt rules | `daily` auto-resumes at next UTC day; `persistent` requires operator resume. |
 
-Per-strategy rules layer on top of global rules. A global breach halts the whole daemon. A per-strategy breach halts only that strategy.
+Per-strategy rules layer on top of global rules. A global breach halts every strategy the daemon runs standalone, and `max_daily_loss` counts their realized losses together: with a limit of 8, losses of 5 and 3.05 halt both. A per-strategy breach halts only that strategy. A `PORTFOLIO` applies the same limits to its own children instead (its book), not to the daemon's other deployments.
+
+A halt blocks new exposure only: exits still go out. The other strategies see the breach on their next tick or fill. An engine fault or an operator halt stays on its strategy.
 
 ## `account` and `fx_conversion`
 

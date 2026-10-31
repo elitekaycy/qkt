@@ -98,14 +98,10 @@ class StrategyHandle(
             com.qkt.common.TradingCalendar
                 .fxDefault()
         },
-        /**
-         * Daemon-level daily-loss cap. When realized P&L for the day breaches the
-         * negation of this value, [com.qkt.risk.rules.MaxDailyLoss] halts and the risk
-         * engine rejects further submissions. Set to `BigDecimal.ZERO` to disable;
-         * default comes from [com.qkt.cli.Config.maxDailyLoss] (or [com.qkt.cli.Config.DEFAULT_MAX_DAILY_LOSS]
-         * when no config is loaded).
-         */
+        /** Daemon-level daily-loss cap, across [daemonRisk]'s sessions; `BigDecimal.ZERO` disables. */
         internal val maxDailyLoss: java.math.BigDecimal = com.qkt.cli.Config.DEFAULT_MAX_DAILY_LOSS,
+        /** What this factory's sessions share so a global limit binds the whole daemon. */
+        internal val daemonRisk: com.qkt.risk.DaemonRiskScope = com.qkt.risk.DaemonRiskScope(),
         /**
          * Phase 25D: per-strategy risk caps keyed by strategy name. When the deployed
          * strategy's name matches an entry, those caps layer on top of the daemon-global
