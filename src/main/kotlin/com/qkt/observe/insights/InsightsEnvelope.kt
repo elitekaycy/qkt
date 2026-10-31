@@ -39,8 +39,11 @@ data class InsightsEnvelope(
         return sb.toString()
     }
 
-    private companion object {
-        fun appendJson(
+    internal companion object {
+        /** [value] as this envelope's JSON renders it: nulls in a map left out, map order kept. */
+        fun json(value: Any?): String = StringBuilder().also { appendJson(it, value) }.toString()
+
+        private fun appendJson(
             sb: StringBuilder,
             value: Any?,
         ) {

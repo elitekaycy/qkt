@@ -7,6 +7,7 @@ import com.qkt.cli.daemon.StateDir
 import com.qkt.cli.daemon.StrategyHandle
 import com.qkt.cli.daemon.signalToJson
 import com.qkt.cli.daemon.tradeToJson
+import com.qkt.cli.metadata
 import com.qkt.cli.observe.EventRing
 import com.qkt.cli.observe.ObservabilityServer
 import com.qkt.cli.strategyCalendar
@@ -107,6 +108,8 @@ class PortfolioDeployer(
     /** Market-data gate thresholds (the `market_data:` config block) passed to every child session. */
     private val marketDataGateConfig: com.qkt.marketdata.MarketDataGateConfig =
         com.qkt.marketdata.MarketDataGateConfig.DEFAULT,
+    /** States what each child runs on, on `strategy.started`; null states nothing. */
+    private val effectiveConfig: com.qkt.cli.EffectiveConfigFacts? = null,
 ) {
     /**
      * Deploy a compiled portfolio and start its supervisor. Throws if any child
@@ -334,26 +337,8 @@ class PortfolioDeployer(
             )
         persistor.loadRiskState("$PORTFOLIO_RISK_PREFIX$portfolioName")?.let(bookRiskState::restore)
         val haltRules =
-            buildList {
-                if (maxDailyLoss.signum() > 0) {
-                    add(
-                        com.qkt.risk.rules
-                            .MaxDailyLoss(maxDailyLoss),
-                    )
-                }
-                maxDrawdownPct?.let {
-                    add(
-                        com.qkt.risk.rules
-                            .MaxDrawdown(it, totalDdBasis, riskCapital),
-                    )
-                }
-                maxDailyDrawdownPct?.let {
-                    add(
-                        com.qkt.risk.rules
-                            .MaxDailyDrawdown(it),
-                    )
-                }
-            }
+            com.qkt.risk.HaltRules
+                .standard(maxDailyLoss, maxDrawdownPct, maxDailyDrawdownPct, totalDdBasis, riskCapital)
         val childPairs = compiled.children.zip(wrappers)
         val aliasToStrategyId = compiled.children.associate { it.alias to it.strategyId }
         return PortfolioRiskAggregator(
@@ -473,7 +458,18 @@ class PortfolioDeployer(
                     "perStrategyLossStreakHalt" to perStrategyOverride?.lossStreakHalt,
                     "perStrategyLossStreakHaltScope" to perStrategyOverride?.lossStreakHaltScope?.name,
                 ),
-        ) + sourceFacts(compiledChild.source)
+        ) + sourceFacts(compiledChild.source) +
+            effectiveConfig.metadata {
+                portfolioChild(
+                    compiledChild.symbols,
+                    perStrategyOverride,
+                    compiled.ast.name,
+                    compiled.ast.capital,
+                    weights[compiledChild.alias],
+                    allocatedCapital,
+                    compiled.ast.allocate != null,
+                )
+            }
     }
 
     private fun createChild(

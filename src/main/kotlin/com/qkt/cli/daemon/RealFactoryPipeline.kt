@@ -3,6 +3,7 @@ package com.qkt.cli.daemon
 import com.qkt.app.LiveSession
 import com.qkt.app.LiveSessionHandle
 import com.qkt.candles.TimeWindow
+import com.qkt.cli.metadata
 import com.qkt.common.TradingCalendar
 import com.qkt.execution.Trade
 import com.qkt.strategy.Signal
@@ -122,7 +123,8 @@ internal fun StrategyHandle.RealFactory.createLiveSession(
     }
     val metadata =
         identities.associateWith {
-            mapOf("deployName" to name, "kind" to "bot-session", "symbols" to symbols, "runtimeMode" to "live")
+            mapOf("deployName" to name, "kind" to "bot-session", "symbols" to symbols, "runtimeMode" to "live") +
+                effectiveConfig.metadata { standalone(symbols, perStrategyRisk[it], kind = "bot_session") }
         }
     return startPipeline(
         strategies = strategies,
