@@ -59,4 +59,45 @@ class StrategySourceLedgerTest {
         assertThat(ledger.admit(stopped)).isSameAs(stopped)
         assertThat(ledger.admit(started("gold", "aa")).payload["sourceText"]).isNotNull
     }
+
+    @Test
+    fun `the effective config rides the first start at its sha and its own omission marker after`() {
+        val ledger = StrategySourceLedger()
+
+        fun start(sha: String) =
+            InsightsTranslate.strategyStarted(
+                "gold",
+                1L,
+                mapOf("effectiveConfigSha256" to sha, "effectiveConfig" to mapOf("schema" to 1)),
+            )
+
+        assertThat(ledger.admit(start("aa")).payload).containsKey("effectiveConfig")
+        val repeat = ledger.admit(start("aa")).payload
+        assertThat(repeat).doesNotContainKey("effectiveConfig")
+        assertThat(repeat).containsEntry("effectiveConfigOmitted", true)
+        assertThat(repeat).containsEntry("effectiveConfigSha256", "aa")
+        assertThat(ledger.admit(start("bb")).payload).containsKey("effectiveConfig")
+    }
+
+    @Test
+    fun `source and config are kept once each, independently`() {
+        val ledger = StrategySourceLedger()
+
+        fun start(config: String) =
+            InsightsTranslate.strategyStarted(
+                "gold",
+                1L,
+                mapOf(
+                    "sourceSha256" to "src",
+                    "sourceText" to "STRATEGY s VERSION 1",
+                    "effectiveConfigSha256" to config,
+                    "effectiveConfig" to mapOf("schema" to 1),
+                ),
+            )
+
+        ledger.admit(start("aa"))
+        val configChanged = ledger.admit(start("bb")).payload
+        assertThat(configChanged).doesNotContainKey("sourceText")
+        assertThat(configChanged).containsKey("effectiveConfig")
+    }
 }

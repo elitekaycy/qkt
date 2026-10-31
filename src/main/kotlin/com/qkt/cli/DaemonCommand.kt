@@ -239,6 +239,13 @@ class DaemonCommand(
         val statePersistor =
             statePersistorFactory?.invoke(cfg, stateDir.stateRoot)
                 ?: cfg.statePersistor(stateDir.stateRoot)
+        val deployedIds = {
+            registryRef
+                .get()
+                ?.list()
+                ?.map { it.ast.name }
+                .orEmpty()
+        }
         val registry =
             StrategyRegistry(
                 liveFactory(
@@ -252,13 +259,7 @@ class DaemonCommand(
                     notifier = notifier,
                     notifyEvents = notifyEventKinds,
                     insightsSink = insightsSink,
-                    insightsDeployedIds = {
-                        registryRef
-                            .get()
-                            ?.list()
-                            ?.map { it.ast.name }
-                            .orEmpty()
-                    },
+                    insightsDeployedIds = deployedIds,
                     insightsSharedDeals = insightsSharedDeals,
                 ),
             )
@@ -321,17 +322,12 @@ class DaemonCommand(
                     notifyEvents = notifyEventKinds,
                     insightsSink = insightsSink,
                     insightsEvents = cfg.insights.events,
-                    insightsDeployedIds = {
-                        registryRef
-                            .get()
-                            ?.list()
-                            ?.map { it.ast.name }
-                            .orEmpty()
-                    },
+                    insightsDeployedIds = deployedIds,
                     insightsStatePollMs = cfg.insights.statePollMs,
                     insightsSharedDeals = insightsSharedDeals,
                     insightsDealBackfillDays = cfg.insights.dealBackfillDays,
                     marketDataGateConfig = cfg.marketData,
+                    effectiveConfig = EffectiveConfigFacts(cfg),
                 )
         val autoDeployRetrier =
             AutoDeployRetrier(
