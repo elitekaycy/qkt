@@ -12,7 +12,7 @@ import java.math.BigDecimal
  * YAML shape (under `risk.per_strategy.<strategy_name>`):
  * ```yaml
  * risk:
- *   max_daily_loss: "1000"     # global, applies to all
+ *   max_daily_loss: "1000"     # global, the daemon's strategies together
  *   per_strategy:
  *     ema_cross:
  *       max_daily_loss: "500"        # caps ema_cross at $500 even though global is $1000
