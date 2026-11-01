@@ -7,8 +7,9 @@ import java.nio.file.Path
 private const val VSCODE_EXTENSION_ID = "elitekaycy.qkt"
 
 /**
- * Installs and removes the VSCode extension through the `code` CLI, using the bundled `.vsix` or
- * one built from source with `npx @vscode/vsce`. VSCode owns the installed files, so the manifest
+ * Installs and removes the qkt extension in VS Code and its forks (Cursor, Windsurf, VSCodium)
+ * through each editor's own CLI, using the bundled `.vsix` or one built from source with
+ * `npm ci` and `npx @vscode/vsce`. The editor owns the installed files, so the manifest
  * records the install without any placed paths.
  */
 internal class VscodeExtensionInstaller(
@@ -19,34 +20,42 @@ internal class VscodeExtensionInstaller(
     private val processRunner: (List<String>, Path?) -> Int,
     private val pathLookup: (String) -> Path?,
 ) {
-    /** Uninstalls the extension and drops its manifest record. Returns true on success. */
-    fun uninstall(): Boolean {
+    /** Uninstalls the extension from [target] and drops its manifest record. Returns true on success. */
+    fun uninstall(target: EditorTarget): Boolean {
         val cli =
-            detector.vscodeCli() ?: run {
-                err.appendLine("qkt: vscode 'code' command not on PATH — cannot uninstall the extension.")
+            detector.extensionCli(target) ?: run {
+                err.appendLine(
+                    "qkt: ${clisOf(target)} not on PATH — cannot uninstall the ${target.displayName} extension.",
+                )
                 return false
             }
         val rc = processRunner(listOf(cli.toString(), "--uninstall-extension", VSCODE_EXTENSION_ID), null)
         if (rc != 0) {
-            err.appendLine("qkt: vscode uninstall failed (exit $rc)")
+            err.appendLine("qkt: ${target.displayName} uninstall failed (exit $rc)")
             return false
         }
-        val manifest = EditorManifest.load(manifestPath).withoutInstall(EditorTarget.VSCODE)
+        val manifest = EditorManifest.load(manifestPath).withoutInstall(target)
         EditorManifest.save(manifestPath, manifest)
-        out.appendLine("qkt editor: removed VSCode extension $VSCODE_EXTENSION_ID")
+        out.appendLine("qkt editor: removed ${target.displayName} extension $VSCODE_EXTENSION_ID")
         return true
     }
 
-    /** Installs the extension from the editor root. Null after printing why it could not. */
-    fun install(root: Path): EditorInstaller.InstallResult? {
+    /** Installs the extension into [target] from the editor root. Null after printing why it could not. */
+    fun install(
+        root: Path,
+        target: EditorTarget,
+    ): EditorInstaller.InstallResult? {
         val cli =
-            detector.vscodeCli() ?: run {
-                err.appendLine("qkt: vscode 'code' command not on PATH — install VSCode first, then re-run.")
+            detector.extensionCli(target) ?: run {
+                err.appendLine(
+                    "qkt: ${clisOf(target)} not on PATH — install ${target.displayName} " +
+                        "(and its shell command) first, then re-run.",
+                )
                 return null
             }
         val vscodeRoot = root.resolve("vscode")
         if (!Files.isDirectory(vscodeRoot)) {
-            err.appendLine("qkt: editor source for VSCode not found at $vscodeRoot")
+            err.appendLine("qkt: editor source for ${target.displayName} not found at $vscodeRoot")
             return null
         }
         val vsix =
@@ -54,23 +63,25 @@ internal class VscodeExtensionInstaller(
                 ?: buildVsixFromSource(vscodeRoot)
                 ?: run {
                     err.appendLine(
-                        "qkt: no .vsix bundled and could not build one (vsce/npx not on PATH).",
+                        "qkt: no .vsix bundled and could not build one (npm/npx not on PATH).",
                     )
                     err.appendLine(
                         "     Download the latest .vsix from: https://github.com/elitekaycy/qkt/releases/latest",
                     )
                     return null
                 }
-        val rc = processRunner(listOf(cli.toString(), "--install-extension", vsix.toString()), null)
+        val rc = processRunner(listOf(cli.toString(), "--install-extension", vsix.toString(), "--force"), null)
         if (rc != 0) {
-            err.appendLine("qkt: vscode install failed (exit $rc)")
+            err.appendLine("qkt: ${target.displayName} install failed (exit $rc)")
             return null
         }
-        out.appendLine("qkt editor: installed VSCode extension from $vsix")
-        // VSCode owns the installed extension under its own extensions dir;
+        out.appendLine("qkt editor: installed ${target.displayName} extension from $vsix")
+        // The editor owns the installed extension under its own extensions dir;
         // nothing for the uninstall manifest to track at filesystem level.
-        return EditorInstaller.InstallResult(EditorTarget.VSCODE, emptyList())
+        return EditorInstaller.InstallResult(target, emptyList())
     }
+
+    private fun clisOf(target: EditorTarget): String = target.extensionClis.joinToString("/") { "'$it'" }
 
     private fun findExistingVsix(vscodeRoot: Path): Path? =
         Files.list(vscodeRoot).use { stream ->
@@ -80,8 +91,11 @@ internal class VscodeExtensionInstaller(
                 .orElse(null)
         }
 
+    /** Builds the `.vsix` from the bundled source: `npm ci` for the language client, then `vsce package`. */
     private fun buildVsixFromSource(vscodeRoot: Path): Path? {
+        val npm = pathLookup("npm") ?: return null
         val npx = pathLookup("npx") ?: return null
+        if (processRunner(listOf(npm.toString(), "ci", "--no-audit", "--no-fund"), vscodeRoot) != 0) return null
         val rc =
             processRunner(
                 listOf(

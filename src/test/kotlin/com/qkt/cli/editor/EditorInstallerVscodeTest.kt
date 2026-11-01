@@ -31,6 +31,50 @@ class EditorInstallerVscodeTest : EditorInstallerFixture() {
     }
 
     @Test
+    fun `cursor installs the same vsix through the cursor command`(
+        @TempDir tmp: Path,
+    ) {
+        val root = fakeEditorRoot(tmp.resolve("share/editor"))
+        Files.writeString(root.resolve("vscode/qkt-0.2.0.vsix"), "binary placeholder")
+        val home = tmp.resolve("home")
+        Files.createDirectories(home)
+        val cursorBin = tmp.resolve("bin/cursor")
+        val recordedCommands = mutableListOf<List<String>>()
+        val installer =
+            EditorInstaller(
+                detector =
+                    EditorDetector(env = emptyMap(), home = home, pathLookup = {
+                        if (it ==
+                            "cursor"
+                        ) {
+                            cursorBin
+                        } else {
+                            null
+                        }
+                    }),
+                editorRoot = root,
+                manifestPath = tmp.resolve("manifest.json"),
+                out = StringBuilder(),
+                processRunner = { cmd, _ ->
+                    recordedCommands.add(cmd)
+                    0
+                },
+            )
+
+        val result = installer.install(EditorTarget.CURSOR)
+
+        assertThat(result?.target).isEqualTo(EditorTarget.CURSOR)
+        assertThat(recordedCommands.single())
+            .containsExactly(
+                cursorBin.toString(),
+                "--install-extension",
+                root.resolve("vscode/qkt-0.2.0.vsix").toString(),
+                "--force",
+            )
+        assertThat(EditorManifest.load(tmp.resolve("manifest.json")).recordFor(EditorTarget.CURSOR)).isNotNull
+    }
+
+    @Test
     fun `vscode install invokes code --install-extension when a bundled vsix exists`(
         @TempDir tmp: Path,
     ) {
@@ -64,6 +108,7 @@ class EditorInstallerVscodeTest : EditorInstallerFixture() {
                 codeBin.toString(),
                 "--install-extension",
                 root.resolve("vscode/qkt-0.1.0.vsix").toString(),
+                "--force",
             )
     }
 
@@ -96,16 +141,17 @@ class EditorInstallerVscodeTest : EditorInstallerFixture() {
                     }
                     0
                 },
-                pathLookup = { name -> if (name == "npx") npxBin else null },
+                pathLookup = { name -> if (name == "npx" || name == "npm") npxBin else null },
             )
 
         val result = installer.install(EditorTarget.VSCODE)
 
         assertThat(result).isNotNull
-        assertThat(recordedCommands).hasSize(2)
-        assertThat(recordedCommands[0]).contains("@vscode/vsce@latest", "package")
-        assertThat(recordedCommands[1]).contains("--install-extension")
-        assertThat(recordedCommands[1].last()).endsWith("qkt-built.vsix")
+        assertThat(recordedCommands).hasSize(3)
+        assertThat(recordedCommands[0]).contains("ci")
+        assertThat(recordedCommands[1]).contains("@vscode/vsce@latest", "package")
+        assertThat(recordedCommands[2]).contains("--install-extension")
+        assertThat(recordedCommands[2]).anyMatch { it.endsWith("qkt-built.vsix") }
     }
 
     @Test

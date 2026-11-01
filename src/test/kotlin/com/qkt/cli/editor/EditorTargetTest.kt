@@ -16,6 +16,16 @@ class EditorTargetTest {
         assertThat(EditorTarget.parse("code")).isEqualTo(EditorTarget.VSCODE)
         assertThat(EditorTarget.parse("vs-code")).isEqualTo(EditorTarget.VSCODE)
         assertThat(EditorTarget.parse("neovim")).isEqualTo(EditorTarget.NVIM)
+        assertThat(EditorTarget.parse("vscodium")).isEqualTo(EditorTarget.VSCODIUM)
+    }
+
+    @Test
+    fun `vs code forks are their own targets that install the extension`() {
+        assertThat(EditorTarget.parse("cursor")).isEqualTo(EditorTarget.CURSOR)
+        assertThat(EditorTarget.parse("windsurf")).isEqualTo(EditorTarget.WINDSURF)
+        assertThat(EditorTarget.parse("codium")).isEqualTo(EditorTarget.VSCODIUM)
+        assertThat(EditorTarget.entries.filter { it.isVscodeFamily })
+            .containsExactly(EditorTarget.VSCODE, EditorTarget.CURSOR, EditorTarget.WINDSURF, EditorTarget.VSCODIUM)
     }
 
     @Test
