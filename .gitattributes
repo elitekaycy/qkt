@@ -1,3 +1,9 @@
+# Check out text files with LF everywhere, including Windows, so generated files and golden
+# outputs compare byte for byte on every OS. Windows batch files keep CRLF.
+* text=auto eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
 # Syntax highlighting for .qkt on github.com.
 # GitHub only highlights languages that Linguist ships, and qkt is not one yet (Linguist wants the
 # extension in wide use across many repositories first), so .qkt borrows the Haskell grammar:

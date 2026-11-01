@@ -127,7 +127,12 @@ jobs:
         with:
           node-version: '22'
       - name: Build qkt
-        run: ./gradlew --no-daemon installDist -x test
+        run: |
+          ./gradlew --no-daemon installDist -x test
+          grep -q '\[ "\$1" = lsp \] && DEFAULT_JVM_OPTS=.*TieredStopAtLevel=1' build/install/qkt/bin/qkt \
+            || { echo "::error::bin/qkt does not start qkt lsp in the small JVM"; exit 1; }
+          grep -q 'if "%~1"=="lsp" set DEFAULT_JVM_OPTS=.*TieredStopAtLevel=1' build/install/qkt/bin/qkt.bat \
+            || { echo "::error::bin/qkt.bat does not start qkt lsp in the small JVM"; exit 1; }
       - name: Install the extension's dependencies
         working-directory: editor/vscode
         run: npm ci --no-audit --no-fund

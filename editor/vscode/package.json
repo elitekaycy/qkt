@@ -78,12 +78,6 @@
           ],
           "default": "off",
           "description": "Trace the messages between VS Code and the qkt language server."
-        },
-        "qkt.languageServer.jvmOptions": {
-          "type": "string",
-          "default": "-Xms16m -Xmx256m -Xss512k -XX:TieredStopAtLevel=1 -XX:CICompilerCount=1 -XX:ParallelGCThreads=1",
-          "markdownDescription": "JVM options for the language server, passed through `JAVA_TOOL_OPTIONS`. The default keeps it near 70 MB and on one core.",
-          "scope": "machine-overridable"
         }
       }
     },

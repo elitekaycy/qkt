@@ -67,8 +67,8 @@ class ChainSnapshotStoreTest {
         ).containsExactly("BTC_USDC-25DEC26-76000-P", "BTC_USDC-2OCT26-92000-C")
         assertThat(day.quotes.first { it.contract.endsWith("-P") }).isEqualTo(second.quotes[1])
         assertThat(
-            store.path(root, LocalDate.parse("2026-10-01")).toString(),
-        ).endsWith("chains/DERIBIT/BTC_USDC/book/2026-10-01.csv.gz")
+            store.path(root, LocalDate.parse("2026-10-01")),
+        ).endsWith(Path.of("chains", "DERIBIT", "BTC_USDC", "book", "2026-10-01.csv.gz"))
     }
 
     @Test

@@ -13,10 +13,6 @@
   "Start `qkt lsp' through eglot when a .qkt file opens and qkt is on `exec-path'."
   :type 'boolean)
 
-(defcustom qkt-lsp-jvm-options "-Xms16m -Xmx256m -Xss512k -XX:TieredStopAtLevel=1 -XX:CICompilerCount=1 -XX:ParallelGCThreads=1"
-  "JVM options for the language server, passed as JAVA_TOOL_OPTIONS."
-  :type 'string)
-
 (defvar qkt-mode-syntax-table
   (let ((st (make-syntax-table)))
     (modify-syntax-entry ?_ "w" st)
@@ -54,18 +50,11 @@
    '("\\_<[0-9]+\\(?:\\.[0-9]+\\)?\\(?:[eE][+-]?[0-9]+\\)?[smhd]?\\_>" . font-lock-constant-face))
   "Highlighting for `qkt-mode', from the lexer's keyword table and the registries.")
 
-(defun qkt--lsp-contact (&optional _interactive)
-  "The eglot command for `qkt lsp', in a small JVM."
-  (if (memq system-type '(windows-nt ms-dos))
-      '("qkt" "lsp")
-    (list "env" (concat "JAVA_TOOL_OPTIONS=" (or (getenv "JAVA_TOOL_OPTIONS") "") " " qkt-lsp-jvm-options)
-          "qkt" "lsp")))
-
 (defvar eglot-server-programs)
 (declare-function eglot-ensure "eglot")
 
 (with-eval-after-load 'eglot
-  (add-to-list 'eglot-server-programs '(qkt-mode . qkt--lsp-contact)))
+  (add-to-list 'eglot-server-programs '(qkt-mode . ("qkt" "lsp"))))
 
 ;;;###autoload
 (define-derived-mode qkt-mode prog-mode "qkt"

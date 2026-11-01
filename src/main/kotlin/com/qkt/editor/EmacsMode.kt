@@ -27,10 +27,6 @@ internal object EmacsMode {
             appendLine("  \"Start `qkt lsp' through eglot when a .qkt file opens and qkt is on `exec-path'.\"")
             appendLine("  :type 'boolean)")
             appendLine()
-            appendLine("(defcustom qkt-lsp-jvm-options \"$LEAN_JVM\"")
-            appendLine("  \"JVM options for the language server, passed as JAVA_TOOL_OPTIONS.\"")
-            appendLine("  :type 'string)")
-            appendLine()
             appendLine("(defvar qkt-mode-syntax-table")
             appendLine("  (let ((st (make-syntax-table)))")
             appendLine("    (modify-syntax-entry ?_ \"w\" st)")
@@ -66,20 +62,11 @@ internal object EmacsMode {
             )
             appendLine("  \"Highlighting for `qkt-mode', from the lexer's keyword table and the registries.\")")
             appendLine()
-            appendLine("(defun qkt--lsp-contact (&optional _interactive)")
-            appendLine("  \"The eglot command for `qkt lsp', in a small JVM.\"")
-            appendLine("  (if (memq system-type '(windows-nt ms-dos))")
-            appendLine("      '(\"qkt\" \"lsp\")")
-            appendLine(
-                "    (list \"env\" (concat \"JAVA_TOOL_OPTIONS=\" (or (getenv \"JAVA_TOOL_OPTIONS\") \"\") \" \" qkt-lsp-jvm-options)",
-            )
-            appendLine("          \"qkt\" \"lsp\")))")
-            appendLine()
             appendLine("(defvar eglot-server-programs)")
             appendLine("(declare-function eglot-ensure \"eglot\")")
             appendLine()
             appendLine("(with-eval-after-load 'eglot")
-            appendLine("  (add-to-list 'eglot-server-programs '(qkt-mode . qkt--lsp-contact)))")
+            appendLine("  (add-to-list 'eglot-server-programs '(qkt-mode . (\"qkt\" \"lsp\"))))")
             appendLine()
             appendLine(";;;###autoload")
             appendLine("(define-derived-mode qkt-mode prog-mode \"qkt\"")
@@ -105,9 +92,6 @@ internal object EmacsMode {
             appendLine("(provide 'qkt-mode)")
             appendLine(";;; qkt-mode.el ends here")
         }
-
-    private const val LEAN_JVM =
-        "-Xms16m -Xmx256m -Xss512k -XX:TieredStopAtLevel=1 -XX:CICompilerCount=1 -XX:ParallelGCThreads=1"
 
     private fun face(category: KeywordCategory): String =
         when (category) {

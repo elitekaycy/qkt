@@ -18,9 +18,6 @@ internal object JetBrainsGuide {
         out.appendLine("     1. Highlighting: Settings > Editor > TextMate Bundles > + and choose $bundle")
         out.appendLine("     2. Completion and diagnostics: install the LSP4IJ plugin, then Languages & Frameworks >")
         out.appendLine("        Language Servers > + with command: qkt lsp, and a file name pattern mapping *.qkt")
-        out.appendLine(
-            "     Set JAVA_TOOL_OPTIONS=\"$LEAN_JVM_OPTIONS\" in that server's environment to keep it small.",
-        )
         return EditorInstaller.InstallResult(EditorTarget.INTELLIJ, emptyList())
     }
 }

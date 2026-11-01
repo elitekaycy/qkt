@@ -60,3 +60,113 @@ jobs:
           if (-not (Test-Path $installed)) { throw "install.ps1 did not place qkt.exe" }
           & $installed --version
           if ($LASTEXITCODE -ne 0) { throw "installed qkt --version failed" }
+
+  # Manual, deeper Windows verification: the full unit suite plus the README
+  # quickstart and a daemon round trip on the real qkt.exe. Runs only on
+  # workflow_dispatch so pull requests keep the fast smoke above.
+  test-windows:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Full test suite on Windows
+        run: ./gradlew.bat --no-daemon --continue test
+      - name: Print test failures
+        if: failure()
+        shell: pwsh
+        run: |
+          Get-ChildItem build/test-results/test/*.xml | ForEach-Object {
+            [xml]$x = Get-Content $_.FullName -Raw
+            foreach ($tc in $x.testsuite.testcase) {
+              if ($tc.failure) {
+                Write-Output "=== $($tc.classname) > $($tc.name)"
+                ($tc.failure.InnerText -split "`n" | Select-Object -First 12) -join "`n" | Write-Output
+              }
+            }
+          }
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-test-reports
+          path: |
+            build/reports/tests/test
+            build/test-results/test
+          if-no-files-found: ignore
+
+  quickstart-windows:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build Windows self-contained zip
+        run: ./gradlew.bat --no-daemon windowsSelfContainedDist
+      - name: Install with install.ps1
+        shell: pwsh
+        run: |
+          $zip = (Get-ChildItem build/distributions/qkt-*-windows-x64.zip | Select-Object -First 1).FullName
+          $env:QKT_ARCHIVE = $zip
+          $env:QKT_PREFIX  = "$env:RUNNER_TEMP\qkt-install\qkt"
+          ./scripts/install.ps1
+          "$env:RUNNER_TEMP\qkt-install\qkt" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+      - name: README quickstart (data sample, parse, backtest)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          qkt --version
+          qkt data sample
+          if ($LASTEXITCODE -ne 0) { throw "qkt data sample failed" }
+          $qkt = @'
+          STRATEGY momentum VERSION 1
+          SYMBOLS
+              btc = BINANCE:BTCUSDT EVERY 15m
+          RULES
+              WHEN ema(btc.close, 9) CROSSES ABOVE ema(btc.close, 21)
+               AND POSITION.btc = 0
+              THEN BUY btc SIZING 0.1
+               BRACKET { STOP_LOSS BY 1.0 PCT, TAKE_PROFIT BY 2.0 PCT }
+          '@
+          $qkt | Set-Content -Encoding utf8 momentum.qkt
+          qkt parse momentum.qkt
+          if ($LASTEXITCODE -ne 0) { throw "qkt parse failed" }
+          $out = qkt backtest momentum.qkt --from 2026-09-01 --to 2026-10-01 --bars 2>&1 | Out-String
+          Write-Output $out
+          if ($LASTEXITCODE -ne 0) { throw "qkt backtest failed" }
+          if ($out -notmatch '-622\.01 USD') { throw "backtest profit differs from the README (-622.01 USD)" }
+          if ($out -notmatch '25 closed, 6 won') { throw "round trips differ from the README (25 closed, 6 won)" }
+          Get-ChildItem -Recurse "$HOME\.qkt\runs" | Select-Object -First 20 FullName
+      - name: Daemon round trip (start, deploy, list, stop)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $exe = (Get-Command qkt).Source
+          $log = "$env:RUNNER_TEMP\daemon.log"
+          $p = Start-Process -FilePath $exe -ArgumentList 'daemon' -RedirectStandardOutput $log -RedirectStandardError "$log.err" -PassThru -NoNewWindow
+          Start-Sleep -Seconds 15
+          qkt list; $listRc = $LASTEXITCODE
+          qkt deploy momentum.qkt --as momentum; $deployRc = $LASTEXITCODE
+          Start-Sleep -Seconds 10
+          qkt list
+          qkt status momentum
+          qkt stop momentum
+          qkt daemon stop; $stopRc = $LASTEXITCODE
+          if (-not $p.WaitForExit(30000)) { Write-Output "daemon did not exit after stop"; $p.Kill(); $exited = $false } else { $exited = $true }
+          Write-Output "--- daemon stdout"; Get-Content $log -ErrorAction SilentlyContinue | Select-Object -Last 80
+          Write-Output "--- daemon stderr"; Get-Content "$log.err" -ErrorAction SilentlyContinue | Select-Object -Last 80
+          Write-Output "--- state dir"; Get-ChildItem -Recurse "$env:LOCALAPPDATA\qkt" -ErrorAction SilentlyContinue | Select-Object -First 40 FullName
+          if ($listRc -ne 0) { throw "qkt list against the daemon failed" }
+          if ($deployRc -ne 0) { throw "qkt deploy failed" }
+          if ($stopRc -ne 0) { throw "qkt daemon stop failed" }
+          if (-not $exited) { throw "daemon did not exit" }

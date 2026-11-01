@@ -9,6 +9,7 @@ import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.util.concurrent.Executors
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -122,7 +123,7 @@ class BotSessionServer(
             }
 
     private fun errorJson(e: Exception): String =
-        """{"ok":false,"error":"${(e.message ?: e.javaClass.simpleName).replace("\"", "'")}"}"""
+        """{"ok":false,"error":${JsonPrimitive(e.message ?: e.javaClass.simpleName)}}"""
 
     private fun authorized(ex: HttpExchange): Boolean {
         val header = ex.requestHeaders.getFirst("Authorization") ?: return false

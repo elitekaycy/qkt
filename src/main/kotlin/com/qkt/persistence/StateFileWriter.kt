@@ -1,5 +1,6 @@
 package com.qkt.persistence
 
+import com.qkt.common.FileNameSegment
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
@@ -48,7 +49,7 @@ internal class StateFileWriter(
     ) {
         val start = System.nanoTime()
         try {
-            val dir = rootDir.resolve(strategyName)
+            val dir = ownerDir(strategyName)
             Files.createDirectories(dir)
             val target = dir.resolve(fileName)
             // Unique temp per write. A shared temp lets concurrent writers to the same
@@ -110,7 +111,7 @@ internal class StateFileWriter(
         strategyName: String,
         fileName: String,
     ): String? {
-        val target = rootDir.resolve(strategyName).resolve(fileName)
+        val target = ownerDir(strategyName).resolve(fileName)
         if (!Files.exists(target)) return null
         return try {
             Files.readString(target)
@@ -121,7 +122,7 @@ internal class StateFileWriter(
 
     /** The names of [strategyName]'s state files; empty when it has none. */
     fun list(strategyName: String): List<String> {
-        val dir = rootDir.resolve(strategyName)
+        val dir = ownerDir(strategyName)
         if (!Files.isDirectory(dir)) return emptyList()
         return Files.list(dir).use { files -> files.map { it.fileName.toString() }.toList() }
     }
@@ -136,7 +137,7 @@ internal class StateFileWriter(
     }
 
     fun deleteStrategy(strategyName: String) {
-        val dir = rootDir.resolve(strategyName)
+        val dir = ownerDir(strategyName)
         if (!Files.exists(dir)) return
         try {
             Files
@@ -147,4 +148,7 @@ internal class StateFileWriter(
             log.warn("StateFileWriter.deleteStrategy failed for $strategyName: ${e.message}")
         }
     }
+
+    /** The directory of [strategyName]'s state; a portfolio child id such as `book:a` is encoded on Windows. */
+    private fun ownerDir(strategyName: String): Path = rootDir.resolve(FileNameSegment.encode(strategyName))
 }

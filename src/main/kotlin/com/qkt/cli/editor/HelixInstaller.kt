@@ -6,7 +6,7 @@ import java.nio.file.StandardCopyOption
 
 /**
  * Installs qkt into Helix: a managed block in `languages.toml` that binds `*.qkt`, starts
- * `qkt lsp` in a small JVM and points the grammar at the bundled tree-sitter source; the
+ * `qkt lsp` and points the grammar at the bundled tree-sitter source; the
  * highlight queries under `runtime/queries/qkt/`; and, when a C compiler is on `PATH`, the
  * compiled grammar under `runtime/grammars/`. Without a compiler, `hx --grammar build` builds
  * it from the same bundled source.
@@ -89,7 +89,6 @@ internal class HelixInstaller(
             |[language-server.qkt]
             |command = "qkt"
             |args = ["lsp"]
-            |environment = { JAVA_TOOL_OPTIONS = "$LEAN_JVM_OPTIONS" }
             |
             |[[grammar]]
             |name = "qkt"
@@ -97,7 +96,3 @@ internal class HelixInstaller(
             """.trimMargin()
     }
 }
-
-/** JVM options every editor integration starts `qkt lsp` with: capped heap, one GC and one JIT thread. */
-internal const val LEAN_JVM_OPTIONS =
-    "-Xms16m -Xmx256m -Xss512k -XX:TieredStopAtLevel=1 -XX:CICompilerCount=1 -XX:ParallelGCThreads=1"

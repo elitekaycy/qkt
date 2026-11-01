@@ -125,13 +125,5 @@ internal fun runProcess(
         -1
     }
 
-/** Finds an executable named [name] on `$PATH`. */
-internal fun defaultPathLookup(name: String): Path? {
-    val path = System.getenv("PATH") ?: return null
-    val sep = System.getProperty("path.separator") ?: ":"
-    for (dir in path.split(sep).filter { it.isNotBlank() }) {
-        val c = Path.of(dir).resolve(name)
-        if (Files.isExecutable(c)) return c
-    }
-    return null
-}
+/** Finds an executable named [name] on `PATH`, honouring `PATHEXT` on Windows. */
+internal fun defaultPathLookup(name: String): Path? = findExecutable(name)

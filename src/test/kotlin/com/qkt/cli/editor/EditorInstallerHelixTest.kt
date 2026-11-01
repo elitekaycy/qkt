@@ -40,7 +40,8 @@ class EditorInstallerHelixTest {
         assertThat(result).isNotNull
         val languages = Files.readString(helix.resolve("languages.toml"))
         assertThat(languages).startsWith("[[language]]\nname = \"rust\"\n")
-        assertThat(languages).contains("file-types = [\"qkt\"]", "args = [\"lsp\"]", "TieredStopAtLevel=1")
+        assertThat(languages).contains("file-types = [\"qkt\"]", "args = [\"lsp\"]")
+        assertThat(languages).doesNotContain("JAVA_TOOL_OPTIONS")
         assertThat(
             languages,
         ).contains("source = { path = \"${repoEditorRoot.resolve("tree-sitter-qkt").toString().replace("\\", "/")}\" }")
