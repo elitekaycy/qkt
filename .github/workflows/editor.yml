@@ -124,3 +124,39 @@ jobs:
         run: |
           export PATH="$GITHUB_WORKSPACE/build/install/qkt/bin:$PATH"
           xvfb-run -a npm run test:e2e
+
+  tree-sitter:
+    # The generated parser must match grammar.js, every .qkt file in the repository must parse
+    # without an error node, the queries must compile, the Zed extension must build, and the
+    # Zed extension's pinned grammar rev is flagged when it lags this commit's grammar.js.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Regenerate the parser and check it is committed
+        working-directory: editor/tree-sitter-qkt
+        run: |
+          npx --yes tree-sitter-cli@0.24.7 generate
+          git diff --exit-code -- src/ || { echo "::error::editor/tree-sitter-qkt/src is stale; run tree-sitter generate"; exit 1; }
+      - name: Parse every .qkt file and run the highlight queries
+        working-directory: editor/tree-sitter-qkt
+        run: |
+          mkdir -p ~/.config/tree-sitter
+          echo '{"parser-directories":["'"$GITHUB_WORKSPACE"'/editor"]}' > ~/.config/tree-sitter/config.json
+          files=$(cd "$GITHUB_WORKSPACE" && git ls-files '*.qkt' | sed "s#^#$GITHUB_WORKSPACE/#")
+          npx --yes tree-sitter-cli@0.24.7 parse --quiet $files
+          npx --yes tree-sitter-cli@0.24.7 query queries/highlights.scm $files > /dev/null
+          npx --yes tree-sitter-cli@0.24.7 query ../zed/languages/qkt/highlights.scm $files > /dev/null
+      - name: Zed extension compiles
+        working-directory: editor/zed
+        run: cargo check
+      - name: Zed grammar rev carries this grammar
+        run: |
+          rev=$(sed -n 's/^rev = "\(.*\)"/\1/p' editor/zed/extension.toml)
+          if ! git diff --quiet "$rev" HEAD -- editor/tree-sitter-qkt/grammar.js; then
+            echo "::warning::editor/zed/extension.toml rev $rev has a different grammar.js; bump it once this grammar merges"
+          fi

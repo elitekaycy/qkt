@@ -25,6 +25,7 @@ class EditorInstaller(
 ) {
     private val vscode =
         VscodeExtensionInstaller(detector, manifestPath, out, err, processRunner, pathLookup)
+    private val helix = HelixInstaller(detector.helixConfigDir(), out, processRunner, pathLookup)
 
     /** Outcome of a single-target install. `placedFiles` feeds the uninstall manifest. */
     data class InstallResult(
@@ -39,10 +40,12 @@ class EditorInstaller(
                 err.appendLine("qkt: cannot locate bundled editor files (set QKT_HOME or run from a packaged install)")
                 return null
             }
+        if (target == EditorTarget.ZED) return ZedGuide.print(root, out)
         val result =
             when (target) {
                 EditorTarget.NVIM -> installVimFamily(root, detector.nvimConfigDir(), EditorTarget.NVIM)
                 EditorTarget.VIM -> installVimFamily(root, detector.vimConfigDir(), EditorTarget.VIM)
+                EditorTarget.HELIX -> helix.install(root, err)
                 else -> vscode.install(root, target)
             } ?: return null
         val updated = EditorManifest.load(manifestPath).withInstall(target, result.placedFiles)
@@ -53,6 +56,11 @@ class EditorInstaller(
     /** Removes whatever the manifest says we placed for [target]. Returns true on success. */
     fun uninstall(target: EditorTarget): Boolean {
         if (target.isVscodeFamily) return vscode.uninstall(target)
+        if (target == EditorTarget.ZED) {
+            out.appendLine("qkt editor: remove the qkt extension from Zed's Extensions page (zed: extensions)")
+            return true
+        }
+        if (target == EditorTarget.HELIX) helix.removeConfig()
         val manifest = EditorManifest.load(manifestPath)
         val entry =
             manifest.recordFor(target) ?: run {

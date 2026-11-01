@@ -1,0 +1,18 @@
+id = "qkt"
+name = "qkt"
+description = "qkt strategy files: highlighting, completion, hover and live diagnostics."
+version = "0.1.0"
+schema_version = 1
+authors = ["Dickson Anyaele <48302537+elitekaycy@users.noreply.github.com>"]
+repository = "https://github.com/elitekaycy/qkt"
+
+# The grammar lives in this repository. Bump rev to a commit that contains the grammar change
+# whenever editor/tree-sitter-qkt changes (the editor workflow checks the rev has the same grammar).
+[grammars.qkt]
+repository = "https://github.com/elitekaycy/qkt"
+rev = "8679980650157209d147c0550d6dd28c71c996fd"
+path = "editor/tree-sitter-qkt"
+
+[language_servers.qkt]
+name = "qkt"
+languages = ["qkt"]

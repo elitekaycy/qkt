@@ -19,6 +19,8 @@ enum class EditorTarget(
     VSCODIUM("VSCodium", "codium", listOf("codium", "codium-insiders")),
     NVIM("Neovim", "nvim"),
     VIM("Vim", "vim"),
+    HELIX("Helix", "helix"),
+    ZED("Zed", "zed"),
     ;
 
     /** True for VS Code and its forks, which install the bundled `.vsix`. */
@@ -36,6 +38,8 @@ enum class EditorTarget(
                 "codium", "vscodium" -> VSCODIUM
                 "nvim", "neovim" -> NVIM
                 "vim" -> VIM
+                "helix", "hx" -> HELIX
+                "zed" -> ZED
                 else -> null
             }
     }

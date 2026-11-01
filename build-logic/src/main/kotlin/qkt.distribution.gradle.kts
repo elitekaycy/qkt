@@ -14,7 +14,7 @@ distributions {
             // .vsix is included when present (built by release.yml before distTar).
             from(rootProject.file("editor")) {
                 into("share/editor")
-                exclude("**/node_modules/**")
+                exclude("**/node_modules/**", "**/target/**")
             }
             // The bot examples the "Trade from your code" docs run: the Python client, the agent loop, the prompt.
             from(rootProject.file("examples/bot")) {
@@ -173,7 +173,7 @@ tasks.register<Zip>("windowsSelfContainedDist") {
         from(jpackageImageDir.map { it.dir("qkt") })
         from(rootProject.file("editor")) {
             into("share/editor")
-            exclude("**/node_modules/**")
+            exclude("**/node_modules/**", "**/target/**")
         }
     }
 }

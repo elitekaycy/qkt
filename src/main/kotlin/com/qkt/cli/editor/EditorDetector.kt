@@ -19,6 +19,14 @@ class EditorDetector(
         when (target) {
             EditorTarget.NVIM -> Files.isDirectory(nvimConfigDir())
             EditorTarget.VIM -> Files.isDirectory(vimConfigDir())
+            EditorTarget.HELIX ->
+                pathLookup("hx") != null ||
+                    pathLookup("helix") != null ||
+                    Files.isDirectory(helixConfigDir())
+            EditorTarget.ZED ->
+                pathLookup("zed") != null ||
+                    pathLookup("zeditor") != null ||
+                    Files.isDirectory(zedConfigDir())
             else -> extensionCli(target) != null
         }
 
@@ -36,6 +44,18 @@ class EditorDetector(
     }
 
     fun vimConfigDir(): Path = home.resolve(".vim")
+
+    /** Helix's config directory: `%AppData%\helix` on Windows, else `$XDG_CONFIG_HOME/helix` or `~/.config/helix`. */
+    fun helixConfigDir(): Path = configHome().resolve("helix")
+
+    /** Zed's config directory, found the same way as Helix's. */
+    fun zedConfigDir(): Path = configHome().resolve("zed")
+
+    private fun configHome(): Path {
+        env["APPDATA"]?.takeIf { it.isNotBlank() && env["XDG_CONFIG_HOME"].isNullOrBlank() }?.let { return Path.of(it) }
+        val xdg = env["XDG_CONFIG_HOME"]?.takeIf { it.isNotBlank() }?.let { Path.of(it) }
+        return xdg ?: home.resolve(".config")
+    }
 }
 
 private fun lookupInPath(cmd: String): Path? = findExecutable(cmd)

@@ -1,0 +1,347 @@
+[
+  {
+    "type": "call",
+    "named": true,
+    "fields": {
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "keyword_action",
+    "named": true,
+    "fields": {}
+  },
+  {
+    "type": "keyword_aggregate",
+    "named": true,
+    "fields": {}
+  },
+  {
+    "type": "keyword_bracket",
+    "named": true,
+    "fields": {}
+  },
+  {
+    "type": "keyword_flow",
+    "named": true,
+    "fields": {}
+  },
+  {
+    "type": "keyword_hook",
+    "named": true,
+    "fields": {}
+  },
+  {
+    "type": "keyword_literal",
+    "named": true,
+    "fields": {}
+  },
+  {
+    "type": "keyword_operator_word",
+    "named": true,
+    "fields": {}
+  },
+  {
+    "type": "keyword_order",
+    "named": true,
+    "fields": {}
+  },
+  {
+    "type": "keyword_portfolio",
+    "named": true,
+    "fields": {}
+  },
+  {
+    "type": "keyword_section",
+    "named": true,
+    "fields": {}
+  },
+  {
+    "type": "keyword_session",
+    "named": true,
+    "fields": {}
+  },
+  {
+    "type": "keyword_sizing",
+    "named": true,
+    "fields": {}
+  },
+  {
+    "type": "keyword_stacking",
+    "named": true,
+    "fields": {}
+  },
+  {
+    "type": "keyword_state",
+    "named": true,
+    "fields": {}
+  },
+  {
+    "type": "member",
+    "named": true,
+    "fields": {
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "operator",
+    "named": true,
+    "fields": {}
+  },
+  {
+    "type": "punctuation",
+    "named": true,
+    "fields": {}
+  },
+  {
+    "type": "source_file",
+    "named": true,
+    "root": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "broker_symbol",
+          "named": true
+        },
+        {
+          "type": "call",
+          "named": true
+        },
+        {
+          "type": "duration",
+          "named": true
+        },
+        {
+          "type": "identifier",
+          "named": true
+        },
+        {
+          "type": "keyword_action",
+          "named": true
+        },
+        {
+          "type": "keyword_aggregate",
+          "named": true
+        },
+        {
+          "type": "keyword_bracket",
+          "named": true
+        },
+        {
+          "type": "keyword_flow",
+          "named": true
+        },
+        {
+          "type": "keyword_hook",
+          "named": true
+        },
+        {
+          "type": "keyword_literal",
+          "named": true
+        },
+        {
+          "type": "keyword_operator_word",
+          "named": true
+        },
+        {
+          "type": "keyword_order",
+          "named": true
+        },
+        {
+          "type": "keyword_portfolio",
+          "named": true
+        },
+        {
+          "type": "keyword_section",
+          "named": true
+        },
+        {
+          "type": "keyword_session",
+          "named": true
+        },
+        {
+          "type": "keyword_sizing",
+          "named": true
+        },
+        {
+          "type": "keyword_stacking",
+          "named": true
+        },
+        {
+          "type": "keyword_state",
+          "named": true
+        },
+        {
+          "type": "member",
+          "named": true
+        },
+        {
+          "type": "number",
+          "named": true
+        },
+        {
+          "type": "operator",
+          "named": true
+        },
+        {
+          "type": "punctuation",
+          "named": true
+        },
+        {
+          "type": "string",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "string",
+    "named": true,
+    "fields": {}
+  },
+  {
+    "type": "!=",
+    "named": false
+  },
+  {
+    "type": "$",
+    "named": false
+  },
+  {
+    "type": "%",
+    "named": false
+  },
+  {
+    "type": "(",
+    "named": false
+  },
+  {
+    "type": ")",
+    "named": false
+  },
+  {
+    "type": "*",
+    "named": false
+  },
+  {
+    "type": "+",
+    "named": false
+  },
+  {
+    "type": ",",
+    "named": false
+  },
+  {
+    "type": "-",
+    "named": false
+  },
+  {
+    "type": "->",
+    "named": false
+  },
+  {
+    "type": ".",
+    "named": false
+  },
+  {
+    "type": "/",
+    "named": false
+  },
+  {
+    "type": ":",
+    "named": false
+  },
+  {
+    "type": ";",
+    "named": false
+  },
+  {
+    "type": "<",
+    "named": false
+  },
+  {
+    "type": "<=",
+    "named": false
+  },
+  {
+    "type": "<>",
+    "named": false
+  },
+  {
+    "type": "=",
+    "named": false
+  },
+  {
+    "type": "==",
+    "named": false
+  },
+  {
+    "type": ">",
+    "named": false
+  },
+  {
+    "type": ">=",
+    "named": false
+  },
+  {
+    "type": "@",
+    "named": false
+  },
+  {
+    "type": "[",
+    "named": false
+  },
+  {
+    "type": "]",
+    "named": false
+  },
+  {
+    "type": "broker_symbol",
+    "named": true
+  },
+  {
+    "type": "comment",
+    "named": true
+  },
+  {
+    "type": "duration",
+    "named": true
+  },
+  {
+    "type": "identifier",
+    "named": true
+  },
+  {
+    "type": "number",
+    "named": true
+  },
+  {
+    "type": "{",
+    "named": false
+  },
+  {
+    "type": "}",
+    "named": false
+  }
+]
