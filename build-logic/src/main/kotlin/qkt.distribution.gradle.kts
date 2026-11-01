@@ -6,6 +6,9 @@ plugins {
 
 val toolExt = if (System.getProperty("os.name").lowercase().contains("win")) ".exe" else ""
 
+val editorBuildOutputs =
+    listOf("**/node_modules/**", "**/target/**", "jetbrains/build/**", "jetbrains/.gradle/**", "jetbrains/.intellijPlatform/**")
+
 distributions {
     named("main") {
         contents {
@@ -14,7 +17,7 @@ distributions {
             // .vsix is included when present (built by release.yml before distTar).
             from(rootProject.file("editor")) {
                 into("share/editor")
-                exclude("**/node_modules/**", "**/target/**")
+                exclude(editorBuildOutputs)
             }
             // The bot examples the "Trade from your code" docs run: the Python client, the agent loop, the prompt.
             from(rootProject.file("examples/bot")) {
@@ -25,16 +28,28 @@ distributions {
     }
 }
 
-// The self-contained builds ship their own Java in runtime/. The stock launcher only reads JAVA_HOME and PATH,
-// so unpacking the archive by hand failed with no Java installed (#1471) and ran on whatever older Java JAVA_HOME
-// named. Prefer the bundled runtime whenever it is there.
+// The stock launcher only reads JAVA_HOME and PATH, so unpacking a self-contained archive by hand failed with no
+// Java installed (#1471), and any older Java they named stopped qkt with a raw UnsupportedClassVersionError.
+// Both launchers instead look for a Java new enough, starting with the bundled runtime: see scripts/launcher/.
 tasks.named<CreateStartScripts>("startScripts") {
+    val findJavaUnix = rootProject.file("scripts/launcher/find-java.sh")
+    val findJavaWinMain = rootProject.file("scripts/launcher/find-java-main.bat")
+    val findJavaWinSubs = rootProject.file("scripts/launcher/find-java-subs.bat")
+    inputs.files(findJavaUnix, findJavaWinMain, findJavaWinSubs)
     doLast {
         val anchor = "# Determine the Java command to use to start the JVM.\n"
         val text = unixScript.readText()
-        check(anchor in text) { "the start script changed shape: the bundled-runtime hook was not applied" }
-        val hook = "if [ -x \"\$APP_HOME/runtime/bin/java\" ] ; then\n    JAVA_HOME=\$APP_HOME/runtime\nfi\n\n"
-        unixScript.writeText(text.replaceFirst(anchor, hook + anchor))
+        check(anchor in text) { "the start script changed shape: the Java lookup was not applied" }
+        unixScript.writeText(text.replaceFirst(anchor, findJavaUnix.readText() + anchor))
+        val winAnchor = "@rem Find java.exe"
+        val win = windowsScript.readText()
+        check(winAnchor in win) { "the Windows start script changed shape: the Java lookup was not applied" }
+        // Subroutines go past the script's last line, so they need a `goto :eof` in front of them.
+        val crlf = { s: String -> s.replace("\r\n", "\n").replace("\n", "\r\n") }
+        windowsScript.writeText(
+            win.replaceFirst(winAnchor, crlf(findJavaWinMain.readText()) + winAnchor).trimEnd() + "\r\n" +
+                crlf(findJavaWinSubs.readText()),
+        )
         applyLanguageServerJvmOptions(unixScript, windowsScript)
     }
 }
@@ -173,7 +188,7 @@ tasks.register<Zip>("windowsSelfContainedDist") {
         from(jpackageImageDir.map { it.dir("qkt") })
         from(rootProject.file("editor")) {
             into("share/editor")
-            exclude("**/node_modules/**", "**/target/**")
+            exclude(editorBuildOutputs)
         }
     }
 }

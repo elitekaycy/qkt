@@ -133,6 +133,11 @@ case ":$PATH:" in
         ;;
 esac
 
+# Editors: best-effort, an editor problem must not fail the install. QKT_NO_EDITOR=1 skips it.
+if [ -z "${QKT_NO_EDITOR:-}" ]; then
+    "$BIN_DIR/qkt" editor install all </dev/null || warn "Editor setup did not finish; re-run: qkt editor install all"
+fi
+
 printf '\n'
 ok "qkt installed. Try:"
 printf '    qkt --version\n'

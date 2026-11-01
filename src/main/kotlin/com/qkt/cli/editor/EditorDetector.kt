@@ -31,9 +31,34 @@ class EditorDetector(
             EditorTarget.EMACS -> onPath("emacs") || Files.isDirectory(emacsDir())
             EditorTarget.INTELLIJ ->
                 JETBRAINS_CLIS.any { onPath(it) } ||
-                    Files.isDirectory(configHome().resolve("JetBrains"))
+                    Files.isDirectory(jetBrainsConfigRoot())
             else -> extensionCli(target) != null
         }
+
+    /**
+     * Each JetBrains IDE version with a user directory. Plugins live inside that directory on Windows
+     * and macOS, and under the XDG data directory with the same name on Linux.
+     */
+    fun jetBrainsIdes(): List<JetBrainsIde> {
+        val root = jetBrainsConfigRoot()
+        if (!Files.isDirectory(root)) return emptyList()
+        val separatePlugins = env["APPDATA"].isNullOrBlank() && !Files.isDirectory(home.resolve("Library"))
+        val dataHome = env["XDG_DATA_HOME"]?.takeIf { it.isNotBlank() }?.let { Path.of(it) }
+        return Files.list(root).use { dirs ->
+            dirs.toList().sorted().mapNotNull { dir ->
+                val name = dir.fileName.toString()
+                val match = JETBRAINS_DIR.matchEntire(name) ?: return@mapNotNull null
+                val code = JETBRAINS_PRODUCTS[match.groupValues[1]] ?: return@mapNotNull null
+                val plugins =
+                    if (separatePlugins) {
+                        (dataHome ?: home.resolve(".local/share")).resolve("JetBrains").resolve(name)
+                    } else {
+                        dir.resolve("plugins")
+                    }
+                JetBrainsIde(name, code, match.groupValues[2].toInt(), match.groupValues[3].toInt(), plugins)
+            }
+        }
+    }
 
     fun all(): Map<EditorTarget, Boolean> = EditorTarget.entries.associateWith { detect(it) }
 
@@ -84,6 +109,13 @@ class EditorDetector(
 
     private fun onPath(cmd: String): Boolean = pathLookup(cmd) != null
 
+    private fun jetBrainsConfigRoot(): Path =
+        if (env["APPDATA"].isNullOrBlank() && Files.isDirectory(home.resolve("Library"))) {
+            home.resolve("Library/Application Support/JetBrains")
+        } else {
+            configHome().resolve("JetBrains")
+        }
+
     private fun configHome(): Path {
         env["APPDATA"]?.takeIf { it.isNotBlank() && env["XDG_CONFIG_HOME"].isNullOrBlank() }?.let { return Path.of(it) }
         val xdg = env["XDG_CONFIG_HOME"]?.takeIf { it.isNotBlank() }?.let { Path.of(it) }
@@ -94,3 +126,22 @@ class EditorDetector(
 private fun lookupInPath(cmd: String): Path? = findExecutable(cmd)
 
 private val JETBRAINS_CLIS = listOf("idea", "idea.sh", "pycharm", "webstorm", "goland", "clion", "rider", "phpstorm")
+
+private val JETBRAINS_DIR = Regex("([A-Za-z]+)(\\d{4})\\.(\\d)")
+
+/** User-directory prefix to Marketplace product code. */
+private val JETBRAINS_PRODUCTS =
+    mapOf(
+        "IntelliJIdea" to "IU",
+        "IdeaIC" to "IC",
+        "PyCharm" to "PY",
+        "PyCharmCE" to "PC",
+        "WebStorm" to "WS",
+        "GoLand" to "GO",
+        "CLion" to "CL",
+        "Rider" to "RD",
+        "PhpStorm" to "PS",
+        "RubyMine" to "RM",
+        "DataGrip" to "DB",
+        "RustRover" to "RR",
+    )

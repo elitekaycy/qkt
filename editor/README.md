@@ -4,10 +4,11 @@ Editor support files for `.qkt` strategy files.
 
 ## What's here
 
-- **`textmate/`** — the TextMate grammar (`source.qkt`) for VSCode, IntelliJ (via TextMate Bundles) and other
+- **`textmate/`** — the TextMate grammar (`source.qkt`) for VSCode, JetBrains IDEs and other
   TextMate-compatible editors. See [textmate/README.md](textmate/README.md).
 - **`vscode/`** — the extension for VS Code, Cursor, Windsurf and VSCodium: the same grammar, language
   configuration and snippets, plus a bundled language client that starts `qkt lsp`.
+- **`jetbrains/`** — the plugin for JetBrains IDEs: the same grammar, plus `qkt lsp` through LSP4IJ.
 - **`tree-sitter-qkt/`** — the generated tree-sitter grammar and Helix highlight queries.
 - **`zed/`** — the Zed extension: tree-sitter highlighting and `qkt lsp`.
 - **`emacs/`** — `qkt-mode.el`, the generated Emacs major mode (font-lock, comments, eglot).
