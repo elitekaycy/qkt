@@ -20,7 +20,7 @@ class DeployCommandTest : DeployCommandFixture() {
         val client = OkHttpClient()
         val file = tmp.resolve("foo.qkt").also { Files.writeString(it, "STRATEGY x VERSION 1") }
         val body =
-            """{"file":"${file.toAbsolutePath()}","name":"foo"}"""
+            """{"file":${kotlinx.serialization.json.JsonPrimitive(file.toAbsolutePath().toString())},"name":"foo"}"""
                 .toRequestBody("application/json".toMediaType())
         val resp =
             client
@@ -87,7 +87,7 @@ class DeployCommandTest : DeployCommandFixture() {
         val client = OkHttpClient()
         val file = tmp.resolve("foo.qkt").also { Files.writeString(it, "STRATEGY x VERSION 1") }
         val body =
-            """{"file":"${file.toAbsolutePath()}","name":"foo"}"""
+            """{"file":${kotlinx.serialization.json.JsonPrimitive(file.toAbsolutePath().toString())},"name":"foo"}"""
                 .toRequestBody("application/json".toMediaType())
         val first =
             client
@@ -106,7 +106,9 @@ class DeployCommandTest : DeployCommandFixture() {
                         .Builder()
                         .url("http://127.0.0.1:${plane.boundPort}/deploy")
                         .post(
-                            """{"file":"${file.toAbsolutePath()}","name":"foo"}"""
+                            """{"file":${kotlinx.serialization.json.JsonPrimitive(
+                                file.toAbsolutePath().toString(),
+                            )},"name":"foo"}"""
                                 .toRequestBody("application/json".toMediaType()),
                         ).build(),
                 ).execute()

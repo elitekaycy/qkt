@@ -113,7 +113,7 @@ class FileStatePersistorStreamLaneTest {
         @TempDir tmp: Path,
     ) {
         FileStatePersistor(tmp).saveStreamLane("trend", laneInFlight())
-        val file = tmp.resolve("trend").resolve("$STREAM-lane.json")
+        val file = tmp.resolve("trend").resolve(symbolStateFileName(STREAM, "lane.json"))
         Files.writeString(file, Files.readString(file).replace("\"version\":1", "\"version\":99"))
 
         assertThatThrownBy { FileStatePersistor(tmp).loadStreamLane("trend", STREAM) }
@@ -126,7 +126,7 @@ class FileStatePersistorStreamLaneTest {
         @TempDir tmp: Path,
     ) {
         Files.createDirectories(tmp.resolve("trend"))
-        Files.writeString(tmp.resolve("trend").resolve("$STREAM-lane.json"), "{not json")
+        Files.writeString(tmp.resolve("trend").resolve(symbolStateFileName(STREAM, "lane.json")), "{not json")
 
         assertThatThrownBy { FileStatePersistor(tmp).loadStreamLane("trend", STREAM) }
             .isInstanceOf(IllegalStateException::class.java)

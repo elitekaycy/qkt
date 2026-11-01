@@ -25,10 +25,10 @@ internal fun handlePortfolioResync(
     promotionResult: PromotionGateResult,
 ) {
     if (registry.get(name) != null) {
-        return respond(ex, 409, """{"error":"strategy '$name' is not a portfolio"}""")
+        return respond(ex, 409, """{"error":${jsonString("strategy '$name' is not a portfolio")}}""")
     }
     registry.getPortfolio(name)
-        ?: return respond(ex, 404, """{"error":"unknown portfolio: $name"}""")
+        ?: return respond(ex, 404, """{"error":${jsonString("unknown portfolio: $name")}}""")
     if (portfolioDeployer == null) {
         return respond(ex, 501, """{"error":"portfolio resync not configured on this daemon"}""")
     }
@@ -49,13 +49,13 @@ internal fun handlePortfolioResync(
             replacement
         } catch (e: IllegalStateException) {
             val msg = (e.message ?: "conflict").replace("\"", "'")
-            return respond(ex, 409, """{"error":"$msg"}""")
+            return respond(ex, 409, """{"error":${jsonString(msg)}}""")
         } catch (e: IllegalArgumentException) {
             val msg = (e.message ?: "invalid").replace("\"", "'")
-            return respond(ex, 400, """{"error":"$msg"}""")
+            return respond(ex, 400, """{"error":${jsonString(msg)}}""")
         } catch (e: Exception) {
             val msg = (e.message ?: e.javaClass.simpleName).replace("\"", "'")
-            return respond(ex, 500, """{"error":"$msg"}""")
+            return respond(ex, 500, """{"error":${jsonString(msg)}}""")
         }
     val affected = listOf(record.name) + record.children.map { it.name }
     OperatorJournal

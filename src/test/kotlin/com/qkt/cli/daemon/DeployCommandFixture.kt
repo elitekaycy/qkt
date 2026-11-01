@@ -136,7 +136,7 @@ abstract class DeployCommandFixture {
         query: String = "",
     ): okhttp3.Response {
         val body =
-            """{"file":"${file.toAbsolutePath()}","name":"$name"}"""
+            """{"file":${kotlinx.serialization.json.JsonPrimitive(file.toAbsolutePath().toString())},"name":"$name"}"""
                 .toRequestBody("application/json".toMediaType())
         val suffix = query.takeIf { it.isNotBlank() }?.let { "?$it" } ?: ""
         return client
@@ -158,7 +158,9 @@ abstract class DeployCommandFixture {
         query: String = "",
     ): okhttp3.Response {
         val body =
-            """{"file":"${file.toAbsolutePath()}","name":"$name","dryRun":$dryRun}"""
+            """{"file":${kotlinx.serialization.json.JsonPrimitive(
+                file.toAbsolutePath().toString(),
+            )},"name":"$name","dryRun":$dryRun}"""
                 .toRequestBody("application/json".toMediaType())
         val suffix = query.takeIf { it.isNotBlank() }?.let { "?$it" } ?: ""
         return client
