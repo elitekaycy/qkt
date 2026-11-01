@@ -1,9 +1,13 @@
 # qkt — VSCode extension
 
-Syntax highlighting and snippets for [qkt](https://github.com/elitekaycy/qkt) strategy files (`.qkt`).
+Syntax highlighting, completion, suggestions, hover, live errors and snippets for
+[qkt](https://github.com/elitekaycy/qkt) strategy files (`.qkt`). Works in VS Code, Cursor, Windsurf and VSCodium.
 
 ## What you get
 
+- Completion, suggestions, hover and live diagnostics from `qkt lsp`, started automatically through the
+  bundled language client when you open a `.qkt` file. Needs `qkt` on `PATH`, in `$QKT_HOME/bin`, or set
+  through the `qkt.path` setting.
 - Syntax highlighting via the bundled TextMate grammar, a copy of [`editor/textmate/`](../textmate/) generated
   from the language implementation.
 - Bracket matching and auto-pair for `{}`, `[]`, `()`, `""`, `''`.
@@ -28,7 +32,7 @@ Picks up the bundled `.vsix` from your qkt distribution and runs `code --install
 ```bash
 # from repo root
 cd editor/vscode
-npm run package        # produces qkt-<version>.vsix
+npm ci && npm run package   # produces qkt-<version>.vsix
 code --install-extension qkt-*.vsix
 ```
 
@@ -36,7 +40,7 @@ Reload VSCode. Open any `.qkt` file. Run **Developer: Inspect Editor Tokens and 
 
 ### Dev workflow (live edits)
 
-Symlink the source directory into your user-extensions folder:
+Run `npm ci && npm run build`, then symlink the source directory into your user-extensions folder:
 
 ```bash
 ln -s "$(pwd)/editor/vscode" "$HOME/.vscode/extensions/qkt-dev"
@@ -71,10 +75,18 @@ Type the prefix and press Tab; placeholders cycle with Tab.
 
 ## Language server
 
-qkt ships a language server, `qkt lsp` (LSP over stdio), with diagnostics, completion and hover. This
-extension does not include a client for it. To use it in VSCode, install a generic LSP client extension and
-point it at `qkt lsp` for the `qkt` language id. See
+The extension starts `qkt lsp` itself; no other extension is needed. Settings: `qkt.path`,
+`qkt.languageServer.enabled`, `qkt.languageServer.jvmOptions`. See
 [docs/how-to/editor-integrations.md](../../docs/how-to/editor-integrations.md).
+
+## Developing
+
+```bash
+npm ci
+npm test            # unit tests for finding the qkt executable
+npm run test:e2e    # starts VS Code with the extension against `qkt lsp` (needs qkt on PATH)
+npm run package     # builds dist/extension.js and qkt-<version>.vsix
+```
 
 ## Limitations
 

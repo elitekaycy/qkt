@@ -1,6 +1,12 @@
 # Changelog
 
-## Unreleased
+## 0.2.0
+
+- Bundled language client: completion, suggestions, hover and live diagnostics from `qkt lsp`, started the
+  first time a `.qkt` file opens. Settings `qkt.path`, `qkt.languageServer.enabled` and
+  `qkt.languageServer.jvmOptions`; command **qkt: Restart language server**.
+- The server runs in a small JVM by default (capped heap, one GC and one JIT thread).
+- Installs into Cursor, Windsurf and VSCodium as well as VS Code; published to Open VSX alongside the Marketplace.
 
 - Grammar is now generated from the language implementation (`qkt editor grammar --format textmate`): every
   lexer keyword is highlighted by category, plus indicators, functions, constants, pseudo-symbols, member
