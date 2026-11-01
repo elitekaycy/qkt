@@ -7,7 +7,13 @@ plugins {
 val toolExt = if (System.getProperty("os.name").lowercase().contains("win")) ".exe" else ""
 
 val editorBuildOutputs =
-    listOf("**/node_modules/**", "**/target/**", "jetbrains/build/**", "jetbrains/.gradle/**", "jetbrains/.intellijPlatform/**")
+    listOf(
+        "**/node_modules/**",
+        "**/target/**",
+        "jetbrains/build/**",
+        "jetbrains/.gradle/**",
+        "jetbrains/.intellijPlatform/**",
+    )
 
 distributions {
     named("main") {
