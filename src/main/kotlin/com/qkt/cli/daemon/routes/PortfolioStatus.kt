@@ -48,6 +48,7 @@ internal fun composePortfolioStatus(
                 put("trades", kotlinx.serialization.json.JsonPrimitive(c.tradeCount))
                 put("realized", obj["realized"] ?: kotlinx.serialization.json.JsonPrimitive("0"))
                 put("unrealized", obj["unrealized"] ?: kotlinx.serialization.json.JsonPrimitive("0"))
+                obj["streamStops"]?.let { put("streamStops", it) }
             },
         )
     }

@@ -53,21 +53,27 @@ internal fun renderDeepStatus(
         unhealthy.add("daemon status=$daemonStatus")
     }
     lines.add("CONTROL      reachable")
-    lines.add(renderStrategies(strategies, unhealthy, halted))
+    val streamStopped = mutableListOf<String>()
+    lines.add(renderStrategies(strategies, unhealthy, halted, streamStopped))
+    val notices = halted + streamStopped
 
     if (unhealthy.isEmpty()) {
-        val note = if (halted.isEmpty()) "" else " (${halted.size} halted by risk control)"
+        val note =
+            listOfNotNull(
+                "${halted.size} halted by risk control".takeIf { halted.isNotEmpty() },
+                "${streamStopped.size} stream stop(s)".takeIf { streamStopped.isNotEmpty() },
+            ).joinToString(", ").let { if (it.isEmpty()) "" else " ($it)" }
         println("qkt: HEALTHY$note")
         println("")
         for (l in lines) println(l)
-        if (halted.isNotEmpty()) println("")
-        for (h in halted) println("  - $h")
+        if (notices.isNotEmpty()) println("")
+        for (h in notices) println("  - $h")
         return ExitCodes.SUCCESS
     }
     println("qkt: UNHEALTHY (${unhealthy.size} issue${if (unhealthy.size == 1) "" else "s"})")
     println("")
     for (l in lines) println(l)
     System.err.println("")
-    for (u in unhealthy + halted) System.err.println("  - $u")
+    for (u in unhealthy + notices) System.err.println("  - $u")
     return ExitCodes.USER_ERROR
 }

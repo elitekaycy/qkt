@@ -108,12 +108,17 @@ class LiveContinuousLaneStopGatewayTest {
             )
             val session = f.start(FileStatePersistor(state))
             try {
+                val stop = session.handle.streamStops().single()
+                assertThat(stop.stream).isEqualTo(stream)
+                assertThat(stop.reason).contains("roll failed")
+
                 session.handle.resume()
                 assertThat(stopped(state)).contains("roll failed")
 
                 val result = control(session.handle, dir).resume(Target.Strategy("hold"))
                 assertThat(result.streamStops.single().cleared).isTrue()
                 assertThat(stopped(state)).isNull()
+                assertThat(session.handle.streamStops()).isEmpty()
 
                 f.quote()
                 f.await(150) { f.fake.submits.any { it.symbol == f.codes[1] } }

@@ -38,7 +38,7 @@
 306 src/main/kotlin/com/qkt/connector/mt5/MT5WireTypes.kt
 295 src/test/kotlin/com/qkt/dsl/compile/SizingCompilerTest.kt
 287 src/main/kotlin/com/qkt/cli/RunCommand.kt
-282 src/main/kotlin/com/qkt/broker/CompositeBroker.kt
+281 src/main/kotlin/com/qkt/broker/CompositeBroker.kt
 277 src/test/kotlin/com/qkt/connector/mt5/marketdata/Mt5TickRangePollingTest.kt
 275 src/test/kotlin/com/qkt/dsl/compile/GeneratedDslStructureParityTest.kt
 273 src/main/kotlin/com/qkt/connector/mt5/marketdata/Mt5TickFeedSource.kt

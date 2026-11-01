@@ -1,6 +1,7 @@
 package com.qkt.app
 
 import com.qkt.broker.Broker
+import com.qkt.broker.StreamStop
 import com.qkt.broker.StreamStopRelease
 
 /** The operator's way to lift the stops failed rolls left on a session's continuous streams. */
@@ -10,6 +11,9 @@ interface StreamStopControl {
      * operator's resume calls this; [LiveSessionHandle.resume] alone, which the risk layers also use, leaves stops be.
      */
     fun releaseStreamStops(): List<StreamStopRelease> = emptyList()
+
+    /** The stops standing on this session's strategies. Takes no engine time: status polling may call it at will. */
+    fun streamStops(): List<StreamStop> = emptyList()
 }
 
 /** [StreamStopControl.releaseStreamStops] on the engine thread; an engine that does not answer leaves stops unjudged. */
