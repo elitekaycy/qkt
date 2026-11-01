@@ -528,7 +528,13 @@ class LiveSession(
                 venues = { brokers.built.ifEmpty { listOf(broker) } },
                 alerts = marketDataAlerts,
             )
-        val guardRules = EntryGuardRules(clock, marginFloorPct, measuredUsageHours, measuredUsageMaxQty).rules(broker)
+        val guardRules =
+            EntryGuardRules(
+                clock,
+                marginFloorPct,
+                measuredUsageHours,
+                measuredUsageMaxQty,
+            ).rules(broker, symbols)
         val riskEngine =
             RiskEngine(
                 rules + perStrategyRules.riskRules + preTradeRules + guardRules +
