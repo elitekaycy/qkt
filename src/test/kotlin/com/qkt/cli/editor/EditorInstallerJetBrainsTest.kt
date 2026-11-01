@@ -1,13 +1,13 @@
 package com.qkt.cli.editor
 
-import org.assertj.core.api.Assertions.assertThat
-import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.io.TempDir
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
+import org.assertj.core.api.Assertions.assertThat
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 
 class EditorInstallerJetBrainsTest : EditorInstallerFixture() {
     private fun zip(
