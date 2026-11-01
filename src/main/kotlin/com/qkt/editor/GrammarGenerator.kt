@@ -16,6 +16,8 @@ object GrammarGenerator {
         TREE_SITTER("tree-sitter"),
         HELIX_HIGHLIGHTS("helix-highlights"),
         ZED_HIGHLIGHTS("zed-highlights"),
+        EMACS("emacs"),
+        TMLANGUAGE("tmlanguage"),
         ;
 
         companion object {
@@ -38,5 +40,7 @@ object GrammarGenerator {
             Format.TREE_SITTER -> TreeSitterGrammar.render()
             Format.HELIX_HIGHLIGHTS -> TreeSitterQueries.render(TreeSitterQueries.Flavor.HELIX)
             Format.ZED_HIGHLIGHTS -> TreeSitterQueries.render(TreeSitterQueries.Flavor.ZED)
+            Format.EMACS -> EmacsMode.render()
+            Format.TMLANGUAGE -> PlistGrammar.render(textMate())
         }
 }
