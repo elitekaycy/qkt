@@ -128,6 +128,12 @@ interface Broker : VenueReads {
      */
     fun releaseStreamStops(strategyId: String): List<StreamStopRelease> = emptyList()
 
+    /** The stops failed rolls left on [strategyId], read without touching them; safe off the engine thread. */
+    fun streamStops(strategyId: String): List<StreamStop> = emptyList()
+
+    /** The broker whose margin level judges an entry on [symbol]: this one, unless it routes to another account. */
+    fun marginVenueFor(symbol: String): Broker = this
+
     /**
      * Release venue-side resources held by this broker (poller threads, reconcilers,
      * HTTP connections, WebSocket transports). Called by the engine when the owning

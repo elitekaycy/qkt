@@ -46,8 +46,8 @@ class PortfolioDeployer(
     private val ringSize: Int = 1000,
     private val bind: String = "127.0.0.1",
     /**
-     * Daemon-level daily-loss cap shared across every child of every portfolio. Set to
-     * `BigDecimal.ZERO` to disable. Default is [com.qkt.cli.Config.DEFAULT_MAX_DAILY_LOSS].
+     * Daily-loss cap each portfolio's book applies to its own children, apart from the daemon's other deployments.
+     * Set to `BigDecimal.ZERO` to disable. Default is [com.qkt.cli.Config.DEFAULT_MAX_DAILY_LOSS].
      */
     private val maxDailyLoss: java.math.BigDecimal = com.qkt.cli.Config.DEFAULT_MAX_DAILY_LOSS,
     /**

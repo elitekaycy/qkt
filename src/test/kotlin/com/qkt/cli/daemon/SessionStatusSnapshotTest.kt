@@ -2,6 +2,7 @@ package com.qkt.cli.daemon
 
 import com.qkt.app.LiveSessionHandle
 import com.qkt.app.OrderManager
+import com.qkt.broker.StreamStop
 import com.qkt.execution.Trade
 import com.qkt.observe.AuditJournalHealth
 import com.qkt.persistence.PersistedStrategyHalt
@@ -45,6 +46,18 @@ class SessionStatusSnapshotTest {
 
     private fun snapshotOf(session: LiveSessionHandle) =
         sessionStatusSnapshot("book_366/s1", 1, "book:s1", 0L, Instant.EPOCH, session)
+
+    @Test
+    fun `the snapshot names each stopped stream and why, and has none by default`() {
+        val stopped =
+            object : LiveSessionHandle by session() {
+                override fun streamStops() = listOf(StreamStop("book:s1", "D:BTC@front", "roll failed"))
+            }
+
+        assertThat(snapshotOf(stopped).streamStops.single().stream).isEqualTo("D:BTC@front")
+        assertThat(snapshotOf(stopped).streamStops.single().reason).isEqualTo("roll failed")
+        assertThat(snapshotOf(session()).streamStops).isEmpty()
+    }
 
     @Test
     fun `a child reports the positions its strategy id holds under its display name`() {

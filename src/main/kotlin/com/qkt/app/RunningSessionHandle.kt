@@ -157,6 +157,8 @@ internal class RunningSessionHandle(
 
     override fun releaseStreamStops() = releaseStreamStops(strategies.map { it.first }, broker, snapshot)
 
+    override fun streamStops() = strategies.flatMap { (id, _) -> broker.streamStops(id) }
+
     override fun flattenAndVerify(timeout: Duration): FlattenResult =
         VerifiedFlatten(broker, ticketAttribution, clock, strategies.map { it.first }, ::flatten).run(timeout)
 

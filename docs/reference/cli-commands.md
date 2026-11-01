@@ -14,8 +14,8 @@ Every `qkt` subcommand. Run `qkt <command> --help` for the authoritative flag li
 | `qkt daemon status` | Health + uptime of a running daemon. |
 | `qkt deploy <file> [--as <name>]` | Deploy a strategy or portfolio. |
 | `qkt resync <file> [--as <name>] [--dry-run]` | Validate and replace a deployed strategy or portfolio under the same daemon name. |
-| `qkt list` | List deployed strategies + portfolios. |
-| `qkt status [<name>]` | Snapshot of one strategy, or all if no name given. |
+| `qkt list` | List deployed strategies + portfolios. STATE reads `stream_stopped` (`halted,stream_stopped` beside a halt) when a failed roll stopped a continuous stream, whose orders are then refused. `--json` keeps `state` as `running` and adds a `streamStops` list (`strategyId`, `stream`, `reason`), present only when there is a stop. |
+| `qkt status [<name>]` | Snapshot of one strategy, or all if no name given. `streamStops` names each stream refusing the strategy's orders and why; `--deep` shows the same and does not fail health for it. |
 | `qkt status --deep` | Aggregated health check: daemon + control plane + every deployed strategy. Single-screen human output. Exit 0 if all green, exit 1 with reasons if anything is unhealthy. First-thing-to-run when something feels off. |
 | `qkt logs <name> [--lines N] [--follow] [--since <iso8601>]` | Per-strategy log stream. |
 | `qkt stop <name> [--flatten]` | Stop a strategy. Cascades for portfolios. `--flatten` cancels its working orders and closes its positions at market; a bracket entry that filled in part has its remainder cancelled and the filled part closed, with no stop or target sent for it. A standalone strategy's flatten is then confirmed against its book and, where the venue names its positions, the venue, for up to 2 minutes: a close the venue never took (a gateway outage) is sent again, and the answer adds `"flat": true` or `false` (the daemon log names what is still open). |

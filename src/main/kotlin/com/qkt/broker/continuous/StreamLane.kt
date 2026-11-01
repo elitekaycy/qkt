@@ -50,7 +50,7 @@ internal class StreamLane(
     private val orders = ContinuousOrderMap()
     private val legs = RollLegs()
     private val positions = LinkedHashMap<String, BigDecimal>()
-    private val stops = LinkedHashMap<String, String>()
+    private val stops = java.util.Collections.synchronizedMap(LinkedHashMap<String, String>())
     private val rolls =
         RollExecutor(
             bus,
@@ -66,7 +66,7 @@ internal class StreamLane(
             RollRefusals(book, rollPriceBand),
         )
     private val state = LaneState(chainOf, positions, stops, orders, book, legs, rolls)
-    private val stopRelease = LaneStopRelease(chainOf, positions, stops, orders, book, legs, rolls)
+    val stopRelease = LaneStopRelease(chainOf, positions, stops, orders, book, legs, rolls)
     private val recovery = LaneRecovery(clock, chainOf, venue, orders, legs, rolls, book, ::space)
     private var current: Int? = null
     private val quotes = LaneQuotes(chainOf, ::space, rollPriceBand != null)
