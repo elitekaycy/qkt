@@ -20,6 +20,8 @@ import java.math.BigDecimal
 class EffectiveConfigFacts(
     private val cfg: Config,
     private val connectorTypes: Set<String> = ConnectorRegistry.discover().types.toSet(),
+    /** Whether the daemon mixes standalones and portfolios today, when `max_daily_loss` is one total. */
+    private val daemonMixed: () -> Boolean = { false },
 ) {
     /** A strategy deployed alone (or a `qkt bot` session's identity), its drawdown measured on `starting_balance`. */
     fun standalone(
@@ -115,6 +117,8 @@ class EffectiveConfigFacts(
         linkedMapOf(
             "appliesTo" to appliesTo,
             "maxDailyLoss" to riskField(cfg.maxDailyLoss.takeIf { it.signum() > 0 }, "max_daily_loss"),
+            "maxDailyLossAppliesTo" to if (appliesTo == "book" && !daemonMixed()) "book" else "daemon",
+            "hardDailyLoss" to riskField(cfg.hardDailyLoss, "hard_daily_loss"),
             "maxDrawdownFraction" to riskField(cfg.maxDrawdownPct, "max_drawdown_pct"),
             "totalDdBasis" to riskField(cfg.totalDdBasis.name, "total_dd_basis"),
             "maxDailyDrawdownFraction" to riskField(cfg.maxDailyDrawdownPct, "max_daily_drawdown_pct"),

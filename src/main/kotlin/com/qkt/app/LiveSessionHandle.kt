@@ -17,6 +17,7 @@ import java.time.Duration
 interface LiveSessionHandle :
     HaltReads,
     FeedLossReads,
+    DailyLimitReads,
     StreamStopControl {
     /** `true` while the session's tick loop is running. */
     val running: Boolean

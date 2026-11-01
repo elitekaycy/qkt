@@ -47,6 +47,19 @@ internal class StartupDeploys(
         }
     }
 
+    /** Tells [scope] what the directory holds before anything deploys: a book coming up first must know it is mixed. */
+    fun declareComposition(scope: com.qkt.risk.DaemonRiskScope) {
+        val path = dir?.let(Path::of)?.takeIf(Files::isDirectory) ?: return
+        val files = Files.list(path).use { it.toList() }.filter { it.toString().endsWith(".qkt") }
+        for (file in files) {
+            when ((runCatching { Dsl.parseFileAny(file) }.getOrNull() as? ParseResult.Success)?.value) {
+                is ParsedFile.StrategyFile -> scope.noteStandalone()
+                is ParsedFile.PortfolioFile -> scope.noteBook()
+                null -> Unit
+            }
+        }
+    }
+
     private fun deployAll(
         path: Path,
         registry: StrategyRegistry,

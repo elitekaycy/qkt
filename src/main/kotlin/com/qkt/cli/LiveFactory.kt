@@ -29,6 +29,7 @@ internal fun liveFactory(
     insightsSink: com.qkt.observe.insights.InsightsSink?,
     insightsDeployedIds: () -> Collection<String>,
     insightsSharedDeals: com.qkt.observe.insights.SharedDealFetch,
+    daemonRisk: com.qkt.risk.DaemonRiskScope = com.qkt.risk.DaemonRiskScope(),
 ): StrategyHandle.RealFactory =
     StrategyHandle.RealFactory(
         stateDir = stateDir,
@@ -37,6 +38,7 @@ internal fun liveFactory(
         instrumentRegistry = instrumentRegistry,
         calendarFor = calendarFor,
         maxDailyLoss = cfg.maxDailyLoss,
+        daemonRisk = daemonRisk,
         perStrategyRisk = cfg.perStrategyRisk,
         maxDrawdownPct = cfg.maxDrawdownPct,
         maxDailyDrawdownPct = cfg.maxDailyDrawdownPct,
@@ -66,7 +68,7 @@ internal fun liveFactory(
         insightsSharedDeals = insightsSharedDeals,
         insightsDealBackfillDays = cfg.insights.dealBackfillDays,
         marketDataGateConfig = cfg.marketData,
-        effectiveConfig = EffectiveConfigFacts(cfg),
+        effectiveConfig = EffectiveConfigFacts(cfg, daemonMixed = daemonRisk.composition::mixed),
     )
 
 /**

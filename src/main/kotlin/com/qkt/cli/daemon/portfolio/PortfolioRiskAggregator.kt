@@ -127,7 +127,8 @@ class PortfolioRiskAggregator(
         log.warn("portfolio book drawdown breached: {} — flattening and halting all children", reason)
         for (c in children) {
             runCatching { c.flatten() }.onFailure { log.warn("child flatten failed: {}", it.message) }
-            if (!c.isHalted()) {
+            // A child held only until midnight by the daemon's total must carry a persistent book breach past it.
+            if (!c.isHalted() || (scope == HaltScope.PERSISTENT && c.haltScope() == HaltScope.DAILY)) {
                 runCatching { c.halt(reason, scope) }.onFailure { log.warn("child halt failed: {}", it.message) }
             }
             if (c.isHalted() && c.haltReason() == reason && c.haltScope() == scope) {
