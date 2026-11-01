@@ -12,7 +12,7 @@
 691 src/test/kotlin/com/qkt/connector/mt5/MT5PositionPollerCloseTest.kt
 677 src/main/kotlin/com/qkt/execution/OrderRequest.kt
 658 src/test/kotlin/com/qkt/connector/mt5/marketdata/Mt5BarFetcherTest.kt
-652 src/main/kotlin/com/qkt/cli/daemon/portfolio/PortfolioDeployer.kt
+658 src/main/kotlin/com/qkt/cli/daemon/portfolio/PortfolioDeployer.kt
 567 src/main/kotlin/com/qkt/cli/PreflightCommand.kt
 559 src/main/kotlin/com/qkt/broker/MT5BrokerSimulator.kt
 552 src/main/kotlin/com/qkt/execution/OrderRequestEvidence.kt
