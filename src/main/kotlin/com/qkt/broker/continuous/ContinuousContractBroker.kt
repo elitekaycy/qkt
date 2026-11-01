@@ -4,6 +4,7 @@ import com.qkt.broker.BookedLeg
 import com.qkt.broker.Broker
 import com.qkt.broker.OrderTypeCapability
 import com.qkt.broker.PositionAccountingMode
+import com.qkt.broker.StreamStopRelease
 import com.qkt.broker.SubmitAck
 import com.qkt.broker.liquidation.LiquidatingVenue
 import com.qkt.bus.EventBus
@@ -116,6 +117,10 @@ class ContinuousContractBroker(
     override fun liquidate(symbol: String) {
         lanes[symbol]?.liquidate()
     }
+
+    /** Each stream's lane clears the strategy's stop if it is safe, and says what became of it. */
+    override fun releaseStreamStops(strategyId: String): List<StreamStopRelease> =
+        lanes.values.mapNotNull { it.releaseStop(strategyId) }
 
     override fun shutdown() = lanes.values.forEach { runCatching { it.shutdown() } }
 }

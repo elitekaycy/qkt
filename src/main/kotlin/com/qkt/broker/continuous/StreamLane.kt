@@ -22,7 +22,8 @@ import java.math.BigDecimal
  * republished on [bus] in continuous space: the engine's order id, the continuous symbol, and
  * prices mapped by the contract the order worked on. The lane keeps each strategy's position on the
  * stream from those fills and rolls it ([RollExecutor]) when the schedule moves to the next contract;
- * a strategy whose position could not be carried places no further orders on the stream. A live lane
+ * a strategy whose position could not be carried places no further orders on the stream until an operator's resume
+ * clears the stop ([releaseStop]). A live lane
  * with a [store] saves its state ([LaneState]) before every venue action and after every venue answer,
  * and a restart restores it from there.
  */
@@ -36,7 +37,6 @@ internal class StreamLane(
     private val store: LaneStateStore? = null,
     private val rollPriceBand: BigDecimal? = null,
 ) {
-    /** The chain as it stands now: a live session extends it with each roll it measures. */
     private val chain: ContinuousChain get() = chainOf()
 
     private val venueBus = EventBus(clock, MonotonicSequenceGenerator())
@@ -66,6 +66,7 @@ internal class StreamLane(
             RollRefusals(book, rollPriceBand),
         )
     private val state = LaneState(chainOf, positions, stops, orders, book, legs, rolls)
+    private val stopRelease = LaneStopRelease(chainOf, positions, stops, orders, book, legs, rolls)
     private val recovery = LaneRecovery(clock, chainOf, venue, orders, legs, rolls, book, ::space)
     private var current: Int? = null
     private val quotes = LaneQuotes(chainOf, ::space, rollPriceBand != null)
@@ -109,21 +110,28 @@ internal class StreamLane(
 
     fun submit(request: OrderRequest): SubmitAck {
         val now = clock.now()
-        chain.orderRefusal(now, rolls.inFlight)?.let { return reject(request, it) }
+        chain.orderRefusal(now, rolls.inFlight)?.let { return bus.refuse(request, it, now) }
         val index = requireNotNull(catchUp(now))
-        stops[request.strategyId]?.let { return reject(request, it) }
+        stops[request.strategyId]?.let { return bus.refuse(request, it, now) }
         val space =
             try {
                 space(index)
             } catch (e: IllegalArgumentException) {
-                return reject(request, e.message ?: "${chain.symbol} cannot price contract $index")
+                return bus.refuse(request, e.message ?: "${chain.symbol} cannot price contract $index", now)
             }
         val translated =
             toContract(request, request.id, chain.contractSymbol(index), space)
-                ?: return reject(request, "${chain.symbol} does not accept ${request::class.simpleName} orders")
+                ?: return bus.refuse(
+                    request,
+                    "${chain.symbol} does not accept ${request::class.simpleName} orders",
+                    now,
+                )
         orders.add(ContinuousOrder(request, request.id, index))
         return venue.broker.submit(translated)
     }
+
+    /** An operator's resume: clears [strategyId]'s stop here if it is safe ([LaneStopRelease]); null when it has none. */
+    fun releaseStop(strategyId: String) = stopRelease.release(strategyId)?.also { if (it.cleared) save() }
 
     fun cancel(engineId: String) {
         val order = orders.byEngineId(engineId) ?: return
@@ -189,12 +197,4 @@ internal class StreamLane(
 
     /** Contract [index]'s price mapping, built once per contract. */
     private fun space(index: Int): PriceSpace = spaces.getOrPut(index) { chain.spaceFor(index) }
-
-    private fun reject(
-        request: OrderRequest,
-        reason: String,
-    ): SubmitAck {
-        bus.publish(BrokerEvent.OrderRejected(request.id, null, reason, request.strategyId, clock.now()))
-        return SubmitAck(request.id, null, accepted = false, rejectReason = reason)
-    }
 }
