@@ -182,7 +182,7 @@ internal class LiveContinuousGatewayFixture(
 
     /** A started session and the accounts it trades on. */
     class Running(
-        private val handle: LiveSessionHandle,
+        val handle: LiveSessionHandle,
         private val accounts: AccountDirectory,
     ) {
         /** Stops the session and closes its accounts, as a process ending does. */

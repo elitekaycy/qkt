@@ -196,7 +196,7 @@ and manifest hashes; use `--json` for piping compact, schema-tagged summaries.
 | `qkt promotion ...` | Record and query promotion states, approvals, waivers, and gates. |
 | `qkt incident collect [...]` | Build an incident zip with journal, log, and state evidence. |
 | `qkt halt [name]` | Pause new-order submission for one strategy, or all if no name. |
-| `qkt resume [name]` | Re-enable new-order submission. |
+| `qkt resume [name]` | Re-enable new-order submission, and clear the stop a failed roll left on a continuous stream when that is safe: the strategy's position and venue holding on the stream are zero, nothing is working or in flight for it, and no roll is in progress. The clear is saved. A stop that stands is reported with the reason and exits 1: JSON `state` is `stream_stopped` instead of `resumed`, with a `streamStops` list, because the strategy's orders on that stream are still refused. |
 | `qkt kill <name> [--flatten]` | Operator kill switch: halt, cancel venue-resting pendings, optionally flatten positions. |
 | `qkt reconcile <name> [--json]` | Cron-able expected-vs-actual reconciliation check over the control plane. |
 | `qkt observe ...` | Read-only go/no-go report over the running daemon. |

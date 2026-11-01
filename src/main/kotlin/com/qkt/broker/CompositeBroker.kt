@@ -54,13 +54,7 @@ class CompositeBroker(
             allLeaves()
                 .distinct()
                 .mapNotNull { leaf ->
-                    runCatching { leaf.accountState() }.getOrElse {
-                        log.warn("CompositeBroker.accountState: leaf {} failed: {}", leaf.name, it.message)
-                        throw IllegalStateException(
-                            "CompositeBroker.accountState: leaf ${leaf.name} failed: ${it.message}",
-                            it,
-                        )
-                    }
+                    ofLeaf(leaf, "accountState") { it.accountState() }
                 }
         return states.singleOrNull()
     }
@@ -72,13 +66,7 @@ class CompositeBroker(
         val merged = mutableListOf<BrokerDeal>()
         for (leaf in allLeaves().distinct()) {
             val leafDeals =
-                runCatching { leaf.deals(from, to) }.getOrElse {
-                    log.warn("CompositeBroker.deals: leaf {} failed: {}", leaf.name, it.message)
-                    throw IllegalStateException(
-                        "CompositeBroker.deals: leaf ${leaf.name} failed: ${it.message}",
-                        it,
-                    )
-                }
+                ofLeaf(leaf, "deals") { it.deals(from, to) }
             merged.addAll(leafDeals)
         }
         return merged
@@ -88,13 +76,7 @@ class CompositeBroker(
         val merged = mutableListOf<BrokerPendingOrder>()
         for (leaf in allLeaves().distinct()) {
             val leafOrders =
-                runCatching { leaf.pendingOrders() }.getOrElse {
-                    log.warn("CompositeBroker.pendingOrders: leaf {} failed: {}", leaf.name, it.message)
-                    throw IllegalStateException(
-                        "CompositeBroker.pendingOrders: leaf ${leaf.name} failed: ${it.message}",
-                        it,
-                    )
-                }
+                ofLeaf(leaf, "pendingOrders") { it.pendingOrders() }
             merged.addAll(leafOrders)
         }
         return merged
@@ -223,13 +205,7 @@ class CompositeBroker(
         for (leaf in allLeaves()) {
             // A failing leaf must surface: a silently-partial snapshot reads as flat on that venue (#376).
             val leafPositions =
-                runCatching { leaf.getOpenPositions() }.getOrElse {
-                    log.warn("CompositeBroker.getOpenPositions: leaf {} failed: {}", leaf.name, it.message)
-                    throw IllegalStateException(
-                        "CompositeBroker.getOpenPositions: leaf ${leaf.name} failed: ${it.message}",
-                        it,
-                    )
-                }
+                ofLeaf(leaf, "getOpenPositions") { it.getOpenPositions() }
             for ((symbol, positions) in leafPositions) {
                 merged.getOrPut(symbol) { mutableListOf() }.addAll(positions)
             }
@@ -245,13 +221,7 @@ class CompositeBroker(
             // composite returns the empty default, so ticket-scoped reconcile and orphan adoption
             // (#437) see no venue tickets through a multi-broker session.
             val leafTickets =
-                runCatching { leaf.positionTickets() }.getOrElse {
-                    log.warn("CompositeBroker.positionTickets: leaf {} failed: {}", leaf.name, it.message)
-                    throw IllegalStateException(
-                        "CompositeBroker.positionTickets: leaf ${leaf.name} failed: ${it.message}",
-                        it,
-                    )
-                }
+                ofLeaf(leaf, "positionTickets") { it.positionTickets() }
             merged.addAll(leafTickets)
         }
         return merged
@@ -285,6 +255,20 @@ class CompositeBroker(
     override fun watchBookedLegs(supplier: () -> List<BookedLeg>) {
         for (broker in allLeaves().distinct()) broker.watchBookedLegs(supplier)
     }
+
+    /** [read] of [leaf]; a failing leaf surfaces, since a silently-partial answer reads as nothing on that venue. */
+    private fun <T> ofLeaf(
+        leaf: Broker,
+        what: String,
+        read: (Broker) -> T,
+    ): T =
+        runCatching { read(leaf) }.getOrElse {
+            log.warn("CompositeBroker.{}: leaf {} failed: {}", what, leaf.name, it.message)
+            throw IllegalStateException("CompositeBroker.$what: leaf ${leaf.name} failed: ${it.message}", it)
+        }
+
+    override fun releaseStreamStops(strategyId: String): List<StreamStopRelease> =
+        allLeaves().distinct().flatMap { it.releaseStreamStops(strategyId) }
 
     private fun allLeaves(): List<Broker> = routes.map { it.second } + listOfNotNull(fallback)
 

@@ -99,4 +99,13 @@ class CommandDispatcherTest {
         val reply = CommandDispatcher(FakeDaemonControl()).dispatch(ControlCommand.Unknown("/bogus"))
         assertThat(reply.text).isEqualTo("unknown command: /bogus\n$usageText")
     }
+
+    @Test
+    fun `Resume says when a stream stop stands`() {
+        val stop = com.qkt.broker.StreamStopRelease("gold", "X@front", "roll failed", "its position is 1")
+        val control =
+            FakeDaemonControl().withResumeResult(ControlResult(affected = listOf("gold"), streamStops = listOf(stop)))
+        val reply = CommandDispatcher(control).dispatch(ControlCommand.Resume(Target.Strategy("gold")))
+        assertThat(reply.text).contains("resumed: gold", "gold stays stopped on X@front", "its position is 1")
+    }
 }

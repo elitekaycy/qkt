@@ -123,6 +123,12 @@ interface Broker : VenueReads {
     fun watchBookedLegs(supplier: () -> List<BookedLeg>) {}
 
     /**
+     * An operator's resume: clears the stop a failed roll left on [strategyId] on each continuous stream where that is
+     * safe, and says what became of every such stop. Brokers without continuous streams have none: the default.
+     */
+    fun releaseStreamStops(strategyId: String): List<StreamStopRelease> = emptyList()
+
+    /**
      * Release venue-side resources held by this broker (poller threads, reconcilers,
      * HTTP connections, WebSocket transports). Called by the engine when the owning
      * [com.qkt.app.LiveSession] stops, so a long-running daemon that cycles strategies

@@ -155,6 +155,8 @@ internal class RunningSessionHandle(
         for ((id, _) in strategies) riskState.resumeStrategy(id)
     }
 
+    override fun releaseStreamStops() = releaseStreamStops(strategies.map { it.first }, broker, snapshot)
+
     override fun flattenAndVerify(timeout: Duration): FlattenResult =
         VerifiedFlatten(broker, ticketAttribution, clock, strategies.map { it.first }, ::flatten).run(timeout)
 

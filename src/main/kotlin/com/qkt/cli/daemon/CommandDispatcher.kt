@@ -31,7 +31,9 @@ class CommandDispatcher(
         when {
             result.unknown.isNotEmpty() -> "unknown strategy: ${result.unknown.first()}"
             result.affected.isEmpty() -> "$verb: none"
-            else -> "$verb: ${result.affected.joinToString(", ")}"
+            else ->
+                (listOf("$verb: ${result.affected.joinToString(", ")}") + result.streamStops.map { it.summary() })
+                    .joinToString("\n")
         }
 
     private companion object {
