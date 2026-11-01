@@ -75,9 +75,8 @@ data class ControlToken(
         }
 
         private fun enforceOwnerOnly(path: java.nio.file.Path) {
-            runCatching {
-                Files.setPosixFilePermissions(path, PosixFilePermissions.fromString("rw-------"))
-            }
+            com.qkt.common.OwnerOnly
+                .file(path)
         }
     }
 }

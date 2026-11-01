@@ -77,7 +77,15 @@ class IntentJournalTest : IntentSessionFixture() {
                 BotSessionDescriptor(runId = "r", port = 1, token = "t", mode = "backtest", pid = 1),
             )
 
-        assertThat(Files.getPosixFilePermissions(path))
-            .containsExactlyInAnyOrder(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE)
+        val posix = Files.getFileAttributeView(path, java.nio.file.attribute.PosixFileAttributeView::class.java)
+        if (posix != null) {
+            assertThat(posix.readAttributes().permissions())
+                .containsExactlyInAnyOrder(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE)
+        } else {
+            // Windows: only the owner and the running user may appear in the ACL.
+            val acl = Files.getFileAttributeView(path, java.nio.file.attribute.AclFileAttributeView::class.java)!!
+            val user = path.fileSystem.userPrincipalLookupService.lookupPrincipalByName(System.getProperty("user.name"))
+            assertThat(acl.acl.map { it.principal() }).allMatch { it == acl.owner || it == user }
+        }
     }
 }
