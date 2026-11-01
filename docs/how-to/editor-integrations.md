@@ -27,6 +27,9 @@ Supported targets:
   vim        Vim            [not found]
   helix      Helix          [detected]
   zed        Zed            [not found]
+  sublime    Sublime Text   [not found]
+  emacs      Emacs          [detected]
+  intellij   JetBrains IDEs [not found]
 ```
 
 ## Install for one editor
@@ -38,6 +41,9 @@ qkt editor install nvim
 qkt editor install vim
 qkt editor install helix
 qkt editor install zed        # prints the steps; Zed installs extensions itself
+qkt editor install sublime
+qkt editor install emacs
+qkt editor install intellij   # prints the steps; also idea, pycharm, webstorm, ...
 ```
 
 What each does:
@@ -46,10 +52,13 @@ What each does:
 - **nvim** — copies `qkt.vim` into `$XDG_CONFIG_HOME/nvim/{ftdetect,ftplugin,syntax}/`.
 - **vim** — same, into `~/.vim/{ftdetect,ftplugin,syntax}/`.
 - **helix** — adds a managed block to `~/.config/helix/languages.toml` (`%AppData%\helix` on Windows) that binds `*.qkt`, starts `qkt lsp` and points the grammar at the bundled tree-sitter source; copies the highlight queries to `runtime/queries/qkt/`; and compiles the grammar into `runtime/grammars/` when `cc`, `gcc` or `clang` is on `PATH` (otherwise run `hx --grammar build`). The rest of `languages.toml` is left alone, and re-running replaces the block.
+- **sublime** — copies the grammar (`qkt.tmLanguage`) and comment settings into `Packages/User/qkt/`, and prints the [LSP package](https://packagecontrol.io/packages/LSP) client entry for completion and diagnostics.
+- **emacs** — copies `qkt-mode.el` into `~/.emacs.d/qkt/` (or `~/.config/emacs/qkt/`) and adds a managed block to your init file (`~/.emacs` if you use one, else `init.el`) that loads it. `qkt-mode` starts eglot against `qkt lsp` itself.
+- **intellij** — prints the two settings steps for JetBrains IDEs: the TextMate bundle (the bundled VS Code extension folder) and an [LSP4IJ](https://plugins.jetbrains.com/plugin/23257-lsp4ij) language server running `qkt lsp`. JetBrains IDEs only take these through their settings UI.
 - **zed** — prints how to install the qkt Zed extension from Zed's Extensions page, or as a dev extension from the bundled `share/editor/zed`.
 
-There is no Sublime target: Sublime Text cannot load a TextMate JSON grammar, so the installer
-does not write one. Use `qkt editor grammar --format textmate` with a converter of your choice.
+Every target is idempotent: re-running it upgrades the files, and managed blocks in your own
+config files are replaced, never duplicated.
 
 ## Generated grammars
 
@@ -160,13 +169,22 @@ vim.lsp.start({ name = "qkt", cmd = { "qkt", "lsp" }, root_dir = vim.fn.getcwd()
 `qkt editor install helix` writes everything: highlighting from the tree-sitter grammar,
 completion, hover and live errors from `qkt lsp`. Check with `hx --health qkt`.
 
-### Emacs (eglot)
+### Emacs (automatic)
 
-```elisp
-(add-to-list 'eglot-server-programs '(qkt-mode . ("qkt" "lsp")))
-```
+`qkt editor install emacs` installs `qkt-mode`: highlighting, comments (`M-;` uses `--`), and
+eglot started against `qkt lsp` when `qkt` is on `exec-path`, for completion, hover and
+flymake diagnostics. Turn the server off with `(setq qkt-enable-lsp nil)`.
 
-Define a `qkt-mode` (deriving from `prog-mode`, with `.qkt` added to `auto-mode-alist`) or reuse whichever major mode you open `.qkt` files in, then `M-x eglot`.
+### Sublime Text
+
+`qkt editor install sublime` installs the grammar. For completion and diagnostics, install
+the LSP package and add the client the installer prints to `LSP.sublime-settings`.
+
+### JetBrains IDEs
+
+`qkt editor install intellij` prints the steps with your paths filled in: add the bundled
+`share/editor/vscode` folder under **Settings > Editor > TextMate Bundles**, then add a
+language server in LSP4IJ with the command `qkt lsp` mapped to `*.qkt`.
 
 ### Zed (automatic)
 
@@ -200,6 +218,21 @@ Projects created with `qkt create template` include `.vscode/extensions.json`, s
 and its forks offer to install the extension when the project opens. Release builds
 publish it to the VS Code Marketplace and to Open VSX (which Cursor, Windsurf and
 VSCodium search).
+
+## Haskell fallback
+
+Where no qkt integration is installed, `.qkt` files can still be coloured by borrowing
+Haskell, whose grammar colours qkt's UPPERCASE keywords, `--` comments, numbers, operators and
+strings. GitHub does this through `.gitattributes` ([details](github-syntax-highlighting.md)).
+For gists and for editors that read modelines, start the file with:
+
+```text
+-- -*- mode: haskell -*- vim: set ft=haskell:
+```
+
+The qkt parser reads the line as a comment. Vim, Neovim and Emacs without qkt installed use
+Haskell; with qkt installed, the qkt plugin and `qkt-mode` take the buffer back, so the real
+grammar and the language server still win.
 
 ## Resource use
 
