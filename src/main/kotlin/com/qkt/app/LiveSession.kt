@@ -529,12 +529,7 @@ class LiveSession(
                 alerts = marketDataAlerts,
             )
         val guardRules =
-            EntryGuardRules(
-                clock,
-                marginFloorPct,
-                measuredUsageHours,
-                measuredUsageMaxQty,
-            ).rules(broker, symbols)
+            EntryGuardRules(clock, marginFloorPct, measuredUsageHours, measuredUsageMaxQty).rules(broker, symbols)
         val riskEngine =
             RiskEngine(
                 rules + perStrategyRules.riskRules + preTradeRules + guardRules +
@@ -546,7 +541,6 @@ class LiveSession(
                 positions,
                 riskState,
             )
-
         val trades = RecentTrades()
 
         val pipelineCandleHub =
