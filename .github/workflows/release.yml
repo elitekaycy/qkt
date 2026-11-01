@@ -40,7 +40,9 @@ jobs:
 
       - name: Build VSCode extension (.vsix) into editor/vscode/
         working-directory: editor/vscode
-        run: npx --yes @vscode/vsce@latest package --no-dependencies
+        run: |
+          npm ci --no-audit --no-fund
+          npx --yes @vscode/vsce@latest package --no-dependencies
 
       - name: Build distribution tarball
         run: ./gradlew --no-daemon distTar
@@ -60,6 +62,12 @@ jobs:
           tar -tzf "$sc" | grep -q '/runtime/bin/java$'  || { echo "::error::bundle missing runtime/bin/java"; exit 1; }
           bash tests/quickstart-page.sh "$sc"
           bash tests/quickstart-page.sh "$sc" docs/trade-from-code/quickstart.md "runs/demo/trades.csv" "runs/demo/fills.jsonl" "runs/demo-replay/replay-diff.json"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vsix
+          path: editor/vscode/qkt-*.vsix
+          if-no-files-found: error
 
       - uses: actions/upload-artifact@v4
         with:
@@ -84,7 +92,9 @@ jobs:
 
       - name: Build VSCode extension (.vsix)
         working-directory: editor/vscode
-        run: npx --yes @vscode/vsce@latest package --no-dependencies
+        run: |
+          npm ci --no-audit --no-fund
+          npx --yes @vscode/vsce@latest package --no-dependencies
 
       - name: Build Windows self-contained zip
         run: ./gradlew.bat --no-daemon windowsSelfContainedDist
@@ -123,7 +133,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           set -e
-          assets=$(ls dist/qkt-*.tar dist/qkt-*-linux-x64.tar.gz dist/qkt-*-windows-x64.zip)
+          assets=$(ls dist/qkt-*.tar dist/qkt-*-linux-x64.tar.gz dist/qkt-*-windows-x64.zip dist/qkt-*.vsix)
           echo "attaching:"; echo "$assets"
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "release $TAG exists; uploading assets"
@@ -132,3 +142,30 @@ jobs:
             echo "creating release $TAG"
             gh release create "$TAG" $assets --title "$TAG" --generate-notes
           fi
+
+  publish-extension:
+    # Lists the extension where VS Code (Marketplace) and Cursor, Windsurf and VSCodium
+    # (Open VSX) search for it, so users can install it from the editor. Each registry is
+    # skipped when its token secret is not configured.
+    needs: [publish]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@v4
+        with:
+          name: vsix
+          path: vsix
+      - name: Publish to Open VSX
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: |
+          if [ -z "$OVSX_PAT" ]; then echo "OVSX_PAT not set; skipping Open VSX"; exit 0; fi
+          npx --yes ovsx@0.10.1 publish vsix/qkt-*.vsix -p "$OVSX_PAT"
+      - name: Publish to the VS Code Marketplace
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          if [ -z "$VSCE_PAT" ]; then echo "VSCE_PAT not set; skipping the Marketplace"; exit 0; fi
+          npx --yes @vscode/vsce@3.2.1 publish --packagePath vsix/qkt-*.vsix -p "$VSCE_PAT"
