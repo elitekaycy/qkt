@@ -1,12 +1,12 @@
 package com.qkt.cli.soak
 
+import com.qkt.common.OwnerOnly
 import java.io.InputStream
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
-import java.nio.file.attribute.PosixFilePermissions
 import java.security.MessageDigest
 import java.util.UUID
 
@@ -61,5 +61,5 @@ internal fun sha256(input: InputStream): String {
 }
 
 private fun makeOwnerOnly(path: Path) {
-    runCatching { Files.setPosixFilePermissions(path, PosixFilePermissions.fromString("rw-------")) }
+    OwnerOnly.file(path)
 }

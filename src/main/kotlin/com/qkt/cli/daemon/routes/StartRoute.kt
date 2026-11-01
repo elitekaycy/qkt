@@ -27,10 +27,10 @@ internal fun handleStart(
         return respond(ex, 200, """{"name":"$name","state":"resumed"}""")
     }
     if (handle != null) {
-        return respond(ex, 400, """{"error":"strategy '$name' has no paused state"}""")
+        return respond(ex, 400, """{"error":${jsonString("strategy '$name' has no paused state")}}""")
     }
     if (registry.getPortfolio(name) != null) {
-        return respond(ex, 400, """{"error":"portfolio '$name' cannot be started; use deploy"}""")
+        return respond(ex, 400, """{"error":${jsonString("portfolio '$name' cannot be started; use deploy")}}""")
     }
-    respond(ex, 404, """{"error":"unknown name: $name"}""")
+    respond(ex, 404, """{"error":${jsonString("unknown name: $name")}}""")
 }
