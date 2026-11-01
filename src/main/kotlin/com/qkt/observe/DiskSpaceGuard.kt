@@ -49,7 +49,7 @@ class DiskSpaceGuard(
         if (floorBytes <= 0L) return null
         val free =
             try {
-                Files.getFileStore(root).usableSpace
+                Files.getFileStore(nearestExisting(root)).usableSpace
             } catch (error: Exception) {
                 log.warn("could not read free space for {}: {}", root, error.message)
                 return null
@@ -68,6 +68,13 @@ class DiskSpaceGuard(
             alerted.set(false)
         }
         return free
+    }
+
+    /** [root] may not exist yet on a fresh daemon; its volume is the one of its nearest existing ancestor. */
+    private fun nearestExisting(path: Path): Path {
+        var current: Path? = path.toAbsolutePath()
+        while (current != null && !Files.exists(current)) current = current.parent
+        return current ?: path
     }
 
     override fun close() {
