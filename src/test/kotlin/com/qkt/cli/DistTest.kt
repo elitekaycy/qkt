@@ -9,7 +9,8 @@ class DistTest {
     @Test
     fun `installDist produces a runnable bin qkt that prints version`() {
         val projectRoot = File(".").canonicalFile
-        val gradlew = File(projectRoot, "gradlew")
+        val windows = File.separatorChar == '\\'
+        val gradlew = File(projectRoot, if (windows) "gradlew.bat" else "gradlew")
         require(gradlew.exists()) { "gradlew not found at ${gradlew.absolutePath}" }
 
         val install =
@@ -20,7 +21,7 @@ class DistTest {
         check(install.waitFor(5, TimeUnit.MINUTES)) { "gradlew installDist timed out" }
         check(install.exitValue() == 0) { "gradlew installDist failed" }
 
-        val launcher = File(projectRoot, "build/install/qkt/bin/qkt")
+        val launcher = File(projectRoot, if (windows) "build/install/qkt/bin/qkt.bat" else "build/install/qkt/bin/qkt")
         assertThat(launcher).exists()
         assertThat(launcher.canExecute()).isTrue
 

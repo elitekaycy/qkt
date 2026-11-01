@@ -60,7 +60,7 @@ class StrategyStartedFactsTest {
 
         assertThat(sourceFacts(source)).containsExactlyInAnyOrderEntriesOf(
             mapOf(
-                "sourcePath" to "/srv/qkt/gold.qkt",
+                "sourcePath" to Path.of("/srv/qkt/gold.qkt").toAbsolutePath().toString(),
                 "sourceSha256" to source.sha256,
                 "sourceText" to "STRATEGY gold VERSION 1",
                 "sourceTruncated" to false,
