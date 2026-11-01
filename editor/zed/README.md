@@ -12,7 +12,7 @@ Before the extension is listed, install it from this folder: **zed: install dev 
 then choose `editor/zed` (or `share/editor/zed` in a qkt release; `qkt editor install zed`
 prints the path). Dev installs need Rust installed through rustup.
 
-The server runs in a small JVM (capped heap, one GC and one JIT thread).
+The qkt launcher runs the server in a small JVM, so the extension passes no JVM flags.
 
 ## Releasing
 
