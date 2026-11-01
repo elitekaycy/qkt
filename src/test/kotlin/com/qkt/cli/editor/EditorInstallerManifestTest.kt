@@ -24,7 +24,7 @@ class EditorInstallerManifestTest : EditorInstallerFixture() {
         assertThat(entry).isNotNull
         assertThat(entry!!.files).hasSize(3)
         assertThat(entry.files).allSatisfy { p ->
-            assertThat(p).contains(".config/nvim")
+            assertThat(p.replace('\\', '/')).contains(".config/nvim")
         }
     }
 
