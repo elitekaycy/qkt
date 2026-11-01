@@ -301,7 +301,8 @@ Daemon-wide and per-strategy risk controls. Values are parsed as decimals unless
 
 | Key | Default | Used by | Notes |
 |---|---|---|---|
-| `max_daily_loss` | `1000` | backtest halt rules and daemon | Set `0` to disable the global daily-loss rule. Production preflight requires an explicit risk block. |
+| `max_daily_loss` | `1000` | backtest halt rules and daemon | Set `0` to disable the global daily-loss rule. Production preflight requires an explicit risk block. A live run that leaves it unset logs a startup warning naming the default. |
+| `hard_daily_loss` | off | `qkt daemon` only | Decimal > 0, and >= `max_daily_loss` when both are set, or the config fails to load. Realized plus open loss across the daemon; crossing it flattens everything the daemon runs and halts until the next UTC day. See [the daemon's daily limits](#the-daemons-daily-limits). |
 | `max_order_qty` | `PreTradeControls.DEFAULT_MAX_ORDER_QTY` | daemon pre-trade controls | Hard per-order quantity cap. |
 | `max_order_notional` | `PreTradeControls.DEFAULT_MAX_ORDER_NOTIONAL` | daemon pre-trade controls | Account-currency notional cap. |
 | `price_collar_pct` | `PreTradeControls.DEFAULT_PRICE_COLLAR_FRAC` as percent | daemon pre-trade controls | Percent distance from last market price for explicit-price orders. |
@@ -331,9 +332,31 @@ set `daily_dd_basis: equity` explicitly.
 | `per_strategy.<name>.loss_streak_halt` | unset | halt rules | Halts the strategy once consecutive losing closes reach N. |
 | `per_strategy.<name>.loss_streak_halt_scope` | `persistent` | halt rules | `daily` auto-resumes at next UTC day; `persistent` requires operator resume. |
 
-Per-strategy rules layer on top of global rules. A global breach halts every strategy the daemon runs standalone, and `max_daily_loss` counts their realized losses together: with a limit of 8, losses of 5 and 3.05 halt both. A per-strategy breach halts only that strategy. A `PORTFOLIO` applies the same limits to its own children instead (its book), not to the daemon's other deployments.
+Per-strategy rules layer on top of global rules. A global breach halts every strategy the daemon runs standalone, and `max_daily_loss` counts their realized losses together: with a limit of 8, losses of 5 and 3.05 halt both. A per-strategy breach halts only that strategy.
 
-**Limit: a portfolio does not share the daemon's budget.** Book and standalone losses are not added together, and neither side's breach halts the other. With `max_daily_loss: 8`, a portfolio beside standalone strategies can lose 8 on its book and the standalone strategies another 8 between them, 16 for the day; two portfolios get 8 each. A book breach also flattens its children, while a standalone breach only blocks new exposure. Size the limit for this when mixing them, or run the portfolio in its own daemon.
+### The daemon's daily limits
+
+What `max_daily_loss` means depends on what the daemon runs:
+
+| The daemon runs | `max_daily_loss` is | Crossing it |
+|---|---|---|
+| Standalone strategies only | One realized total across them | Blocks new entries in all of them. Exits pass; positions and their stops stay. |
+| One `PORTFOLIO` only | That book's own realized limit | Flattens and halts that book. |
+| Two or more `PORTFOLIO`s, no standalone | Each book's own limit: two books get 8 each, 16 for the day | Flattens and halts that book only. |
+| Standalones and `PORTFOLIO`(s), any number | One realized total across all of them | Blocks new entries everywhere. Exits pass; positions and their stops stay; no book is flattened by it. |
+
+A mixed daemon stays mixed for the rest of the UTC day: undeploying the last standalone neither turns the limit back into a book's flatten rule nor forgets what that standalone lost. `--load-dir` is read before anything deploys, so a book that comes up first knows it is mixed, and the daemon keeps its total under the state owner `__daemon__`, so a restart reads the whole total before all its sessions are back. Every daily halt resumes at the next UTC day, and a `qkt resume` while the limit is crossed halts again and sends no entry.
+
+**A book's own limits in a mixed daemon** are `max_drawdown_pct`, `max_daily_drawdown_pct` (on the book's capital), the `book_risk` block, and `risk.per_strategy` entries for its children. A breach of the drawdown limits flattens and halts that book and touches nothing else. `max_daily_loss` is not one of them there: a mixed daemon has no book-only daily dollar limit.
+
+**`hard_daily_loss`** adds open P&L, marked at the closing side, to the realized total across everything the daemon runs, however it is mixed. Crossing it (strictly) halts every session, flattens each of them, books included, and blocks entries until the next UTC day. It is off when absent and leaves the table above as it is: in a daemon with one portfolio, `max_daily_loss` still flattens that book.
+
+- It is checked once a second, off the trading path, so a breach is seen within about a second. A breach resting on open P&L must hold for two checks in a row; realized loss alone past the limit trips on the first.
+- A symbol counts only with a fresh, valid mark. One with no price, a non-positive price, no live tick since its session started, or a stale or out-of-session feed counts as nothing, and a warning names it. This fails towards not flattening: a real loss on such a symbol cannot trigger the flatten until a fresh price arrives. The other symbols still count.
+- It flattens each session once. A session whose ledger still holds legs with no close working is flattened again 30 seconds later, three times at most, then an error asks the operator to close them at the venue.
+- It survives a restart within the day: the halt is recorded before the flatten, and after a restart each session gets its one flatten, which sends nothing when flat. A resume halts again. To trade before midnight, take `hard_daily_loss` out of the config, restart, and `qkt resume`.
+- Open P&L is what a position shows now, not its change today, so a position carried over midnight brings its open loss into the new day.
+- Backtests ignore it, and a backtest has one session, so nothing here changes what a backtest does. `qkt bot session` runs alone and warns that it does not apply it.
 
 A halt blocks new exposure only: exits still go out. The other strategies see the breach on their next tick or fill. An engine fault or an operator halt stays on its strategy.
 
@@ -821,7 +844,7 @@ portfolio child, a restart. Beside its deploy metadata (`deployName`, `dslVersio
   | `accounts[]` | Only those a stream of this strategy names: `name`, `type` (an installed connector), `connector`, `adapter`, `environment`, `tickPollIntervalMs` (the feed's polling interval; none when it does not poll) |
   | `startingBalance` | `starting_balance` (not on a portfolio child, which has `book`) |
   | `book` | A portfolio child's `name`, `capital` (`book_risk.capital`, else `CAPITAL`), `weight`, `allocatedCapital`, `maxGrossExposure`, `maxNetExposure`, `maxSymbolConcentration` (multiples of capital), `allocationMethod`, `targetVol`, `deRiskSteps[]` (`drawdown`, `factor`, `cooldownBars`). A strategy deployed alone has none: `book_risk` does not bound it |
-  | `risk` | `appliesTo` (`strategy`, or `book` for a portfolio child, whose halts watch the book), `maxDailyLoss`, `maxDrawdownFraction`, `totalDdBasis`, `maxDailyDrawdownFraction`, `dailyDdBasis`, `liveEquityBasis` |
+  | `risk` | `appliesTo` (`strategy`, or `book` for a portfolio child, whose halts watch the book), `maxDailyLoss`, `maxDailyLossAppliesTo` (`daemon` when it is one total across the daemon's sessions; `book` for a child whose book owns it, at the strategy's start), `hardDailyLoss`, `maxDrawdownFraction`, `totalDdBasis`, `maxDailyDrawdownFraction`, `dailyDdBasis`, `liveEquityBasis` |
   | `strategyRisk` | This strategy's `risk.per_strategy` entry, only what it sets: `maxDailyLoss`, `maxPositionSize`, `maxOpenPositions`, `maxDrawdownFraction`, `maxDailyDrawdownFraction`, `maxTradesPerDay`, `cooldownAfterLossMs`, `cooldownAfterLosses`, `lossStreakHalt`, `lossStreakHaltScope` |
   | `orders` | `maxOrderQty`, `maxOrderNotional`, `priceCollarFraction`, `marginFloorPct`, `measuredUsageHours`, `measuredUsageMaxQty`, `runawayMaxRoundTrips10m`, `runawayMaxBrokerRejections1m` |
   | `marketData` | `candleCloseGraceMs`, `staleAgeMultiple`, `minStaleAgeMs`, `outlierSigma`, `maxClockSkewMs`, `quietAlertAfterMs` (`configured` when it differs from the default) |

@@ -45,6 +45,7 @@ internal class RiskStateFile(
                 monthKey = state.monthKey,
                 realizedMonth = state.realizedMonth?.toPlainString(),
                 perStrategyRealizedMonth = state.perStrategyRealizedMonth.mapValues { it.value.toPlainString() },
+                daemonMixedEpochDay = state.daemonMixedEpochDay,
             )
         runCatching { json.encodeToString(RiskStateDto.serializer(), dto) }
             .onSuccess { writer.write(strategyId, RISK_STATE_FILE, it) }
@@ -82,6 +83,7 @@ internal class RiskStateFile(
             monthKey = dto.monthKey,
             realizedMonth = dto.realizedMonth?.toBigDecimal(),
             perStrategyRealizedMonth = dto.perStrategyRealizedMonth.mapValues { it.value.toBigDecimal() },
+            daemonMixedEpochDay = dto.daemonMixedEpochDay,
             pacerLastLossAtByStrategy = dto.pacerLastLossAtByStrategy,
         )
     }
@@ -114,6 +116,7 @@ private data class RiskStateDto(
     val monthKey: Long? = null,
     val realizedMonth: String? = null,
     val perStrategyRealizedMonth: Map<String, String> = emptyMap(),
+    val daemonMixedEpochDay: Long? = null,
 )
 
 @Serializable

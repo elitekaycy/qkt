@@ -1,6 +1,9 @@
 package com.qkt.risk
 
+import com.qkt.risk.rules.BookChildDailyLoss
+import com.qkt.risk.rules.BookOwnDailyLoss
 import com.qkt.risk.rules.DaemonDailyLoss
+import com.qkt.risk.rules.DaemonHardHalt
 import com.qkt.risk.rules.DaemonWideHalt
 import com.qkt.risk.rules.MaxDailyDrawdown
 import com.qkt.risk.rules.MaxDailyLoss
@@ -48,5 +51,33 @@ object HaltRules {
             if (maxDailyLoss.signum() > 0) add(DaemonDailyLoss(session, maxDailyLoss, scope))
             standard(BigDecimal.ZERO, maxDrawdownPct, maxDailyDrawdownPct, totalDdBasis, startingBalance)
                 .mapTo(this) { DaemonWideHalt(session, it, scope) }
+            if (scope.hardDailyLoss != null) add(DaemonHardHalt(scope))
+        }
+
+    /** What a portfolio child adds to its session; its book's limits run on the book, not on these. */
+    fun portfolioChild(
+        session: String,
+        scope: DaemonRiskScope,
+        maxDailyLoss: BigDecimal,
+    ): List<HaltRule> =
+        buildList {
+            if (maxDailyLoss.signum() > 0) add(BookChildDailyLoss(session, maxDailyLoss, scope))
+            if (scope.hardDailyLoss != null) add(DaemonHardHalt(scope))
+        }
+
+    /**
+     * [standard] for a portfolio's book, on the book's own figures: its breach flattens and halts that book. Its
+     * daily loss rule stands aside on a day the daemon is mixed, when `max_daily_loss` is the daemon's total.
+     */
+    fun book(
+        scope: DaemonRiskScope,
+        maxDailyLoss: BigDecimal,
+        maxDrawdownPct: BigDecimal? = null,
+        maxDailyDrawdownPct: BigDecimal? = null,
+        totalDdBasis: DrawdownBasis = DrawdownBasis.STATIC,
+        startingBalance: BigDecimal = BigDecimal.ZERO,
+    ): List<HaltRule> =
+        standard(maxDailyLoss, maxDrawdownPct, maxDailyDrawdownPct, totalDdBasis, startingBalance).map { rule ->
+            if (rule is MaxDailyLoss) BookOwnDailyLoss(rule, scope) else rule
         }
 }

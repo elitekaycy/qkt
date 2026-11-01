@@ -246,6 +246,8 @@ class DaemonCommand(
                 ?.map { it.ast.name }
                 .orEmpty()
         }
+        val daemonRisk = com.qkt.risk.DaemonRiskScope(persistor = statePersistor, hardDailyLoss = cfg.hardDailyLoss)
+        daemonRisk.restore()
         val registry =
             StrategyRegistry(
                 liveFactory(
@@ -261,9 +263,11 @@ class DaemonCommand(
                     insightsSink = insightsSink,
                     insightsDeployedIds = deployedIds,
                     insightsSharedDeals = insightsSharedDeals,
+                    daemonRisk = daemonRisk,
                 ),
             )
         registryRef.set(registry)
+        val hardLimitGuard = watchDaemonRisk(daemonRisk, registry, startupDeploys)
         val daemonControl =
             RegistryDaemonControl(
                 registry,
@@ -277,17 +281,7 @@ class DaemonCommand(
         val startedAt = Instant.now()
         val stopLatch = CountDownLatch(1)
 
-        // `book_risk` is enforced by the portfolio deployer alone: a standalone strategy is
-        // deployed through StrategyHandle, which never builds a BookRiskController. A config that
-        // declares gross- or net-exposure limits and then deploys single strategies therefore
-        // reads as protected while nothing bounds total notional — measured on a demo account, a
-        // 100-leg burst reached roughly 1.16x capital against a declared 0.60. Say so once, at
-        // start, rather than let the silence imply a limit that is not there (catalog row A23).
-        if (cfg.bookRisk?.limits != null) {
-            org.slf4j.LoggerFactory
-                .getLogger("com.qkt.cli.DaemonCommand")
-                .warn(STANDALONE_BOOK_RISK_WARNING)
-        }
+        warnDaemonRiskConfig(cfg, brokerFactories.isNotEmpty())
 
         val portfolioDeployer =
             com.qkt.cli.daemon.portfolio
@@ -327,7 +321,8 @@ class DaemonCommand(
                     insightsSharedDeals = insightsSharedDeals,
                     insightsDealBackfillDays = cfg.insights.dealBackfillDays,
                     marketDataGateConfig = cfg.marketData,
-                    effectiveConfig = EffectiveConfigFacts(cfg),
+                    effectiveConfig = EffectiveConfigFacts(cfg, daemonMixed = daemonRisk.composition::mixed),
+                    daemonRisk = daemonRisk,
                 )
         val autoDeployRetrier =
             AutoDeployRetrier(
@@ -426,6 +421,7 @@ class DaemonCommand(
         fun cleanup() {
             if (!cleanupStarted.compareAndSet(false, true)) return
             runCatching { stateDir.deleteControlPort() }
+            runCatching { hardLimitGuard?.close() }
             runCatching { feedLossRedeployer.close() }
             runCatching { autoDeployRetrier.close() }
             runCatching { plane.close() }
