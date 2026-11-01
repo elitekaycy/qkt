@@ -1,8 +1,10 @@
 package com.qkt.cli.editor
 
+import java.io.File
 import java.nio.file.Files
 import java.nio.file.Path
 import org.assertj.core.api.Assertions.assertThat
+import org.junit.jupiter.api.Assumptions.assumeFalse
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 
@@ -46,6 +48,8 @@ class ExecutableLookupTest {
     fun `unix requires the executable bit and uses the bare name`(
         @TempDir tmp: Path,
     ) {
+        // ':' separates PATH entries off Windows, and a Windows temp dir starts with a drive letter.
+        assumeFalse(File.pathSeparatorChar == ';')
         val code = tmp.resolve("code")
         Files.writeString(code, "#!/bin/sh\n")
         val env = mapOf("PATH" to tmp.toString())
