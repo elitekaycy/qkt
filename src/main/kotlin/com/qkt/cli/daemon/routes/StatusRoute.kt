@@ -21,7 +21,7 @@ internal fun handleStatusOne(
     }
     val handle =
         registry.get(name)
-            ?: return respond(ex, 404, """{"error":"unknown name: $name"}""")
+            ?: return respond(ex, 404, """{"error":${jsonString("unknown name: $name")}}""")
     val body =
         fetchStrategyStatus(handle.port)
             ?: return respond(ex, 502, """{"error":"strategy /status unreachable"}""")

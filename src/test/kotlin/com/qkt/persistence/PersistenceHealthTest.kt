@@ -59,15 +59,17 @@ class PersistenceHealthTest {
         @TempDir tmp: Path,
     ) {
         val persistor = FileStatePersistor(tmp)
+        // A plain file where the strategy's directory belongs makes every write to it fail.
+        Files.writeString(tmp.resolve("blocked"), "not a directory")
 
-        persistor.savePnl("bad\u0000strategy", PersistedPnl(java.math.BigDecimal.ONE))
+        persistor.savePnl("blocked", PersistedPnl(java.math.BigDecimal.ONE))
         assertThat(persistor.healthSnapshot().consecutiveFailures).isEqualTo(1L)
         assertThat(persistor.healthSnapshot().failureEpisodes).isEqualTo(1L)
 
         persistor.savePnl("alpha", PersistedPnl(java.math.BigDecimal.ONE))
         assertThat(persistor.healthSnapshot().consecutiveFailures).isZero()
 
-        persistor.savePnl("bad\u0000strategy", PersistedPnl(java.math.BigDecimal.ONE))
+        persistor.savePnl("blocked", PersistedPnl(java.math.BigDecimal.ONE))
         assertThat(persistor.healthSnapshot().failedWrites).isEqualTo(2L)
         assertThat(persistor.healthSnapshot().consecutiveFailures).isEqualTo(1L)
         assertThat(persistor.healthSnapshot().failureEpisodes).isEqualTo(2L)

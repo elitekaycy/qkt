@@ -110,6 +110,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      actions: write
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -132,3 +133,13 @@ jobs:
             echo "creating release $TAG"
             gh release create "$TAG" $assets --title "$TAG" --generate-notes
           fi
+
+      # A release created with GITHUB_TOKEN does not trigger winget.yml on its own,
+      # so hand it the tag. Pre-release tags (v1.2.3-rc.1) are not published to winget.
+      - name: Publish to winget
+        if: ${{ !contains(github.ref_name, '-') }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          GH_REPO: ${{ github.repository }}
+        run: gh workflow run winget.yml --ref "$TAG" -f tag="$TAG"

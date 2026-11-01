@@ -37,11 +37,11 @@ internal fun handleDeploy(
         return respond(ex, 400, """{"error":"missing 'file' or 'name'"}""")
     }
     if (name.contains('/')) {
-        return respond(ex, 400, """{"error":"top-level name must not contain '/': $name"}""")
+        return respond(ex, 400, """{"error":${jsonString("top-level name must not contain '/': $name")}}""")
     }
     val path = Path.of(file)
     if (!Files.exists(path)) {
-        return respond(ex, 400, """{"error":"file not found: $file"}""")
+        return respond(ex, 400, """{"error":${jsonString("file not found: $file")}}""")
     }
     val params = parseQuery(ex.requestURI.rawQuery)
     val ignoreMismatches = params["reconcile"] == "ignore-mismatches"
@@ -72,7 +72,7 @@ internal fun handleDeploy(
             is com.qkt.dsl.parse.ParseResult.Success -> r.value
             is com.qkt.dsl.parse.ParseResult.Failure -> {
                 val msg = r.errors.joinToString(";") { it.message }.replace("\"", "'")
-                return respond(ex, 400, """{"error":"parse failed: $msg"}""")
+                return respond(ex, 400, """{"error":${jsonString("parse failed: $msg")}}""")
             }
         }
 
@@ -83,16 +83,16 @@ internal fun handleDeploy(
                     registry.deploy(name, path, ignoreMismatches)
                 } catch (e: com.qkt.app.ReconcileException) {
                     val msg = (e.message ?: "reconcile mismatch").replace("\"", "'")
-                    return respond(ex, 409, """{"error":"$msg","kind":"reconcile-mismatch"}""")
+                    return respond(ex, 409, """{"error":${jsonString(msg)},"kind":"reconcile-mismatch"}""")
                 } catch (e: IllegalStateException) {
                     val msg = (e.message ?: "conflict").replace("\"", "'")
-                    return respond(ex, 409, """{"error":"$msg"}""")
+                    return respond(ex, 409, """{"error":${jsonString(msg)}}""")
                 } catch (e: IllegalArgumentException) {
                     val msg = (e.message ?: "invalid").replace("\"", "'")
-                    return respond(ex, 400, """{"error":"$msg"}""")
+                    return respond(ex, 400, """{"error":${jsonString(msg)}}""")
                 } catch (e: Exception) {
                     val msg = (e.message ?: e.javaClass.simpleName).replace("\"", "'")
-                    return respond(ex, 500, """{"error":"$msg"}""")
+                    return respond(ex, 500, """{"error":${jsonString(msg)}}""")
                 }
             respond(
                 ex,
@@ -130,13 +130,13 @@ internal fun handleDeploy(
                     record
                 } catch (e: IllegalStateException) {
                     val msg = (e.message ?: "conflict").replace("\"", "'")
-                    return respond(ex, 409, """{"error":"$msg"}""")
+                    return respond(ex, 409, """{"error":${jsonString(msg)}}""")
                 } catch (e: IllegalArgumentException) {
                     val msg = (e.message ?: "invalid").replace("\"", "'")
-                    return respond(ex, 400, """{"error":"$msg"}""")
+                    return respond(ex, 400, """{"error":${jsonString(msg)}}""")
                 } catch (e: Exception) {
                     val msg = (e.message ?: e.javaClass.simpleName).replace("\"", "'")
-                    return respond(ex, 500, """{"error":"$msg"}""")
+                    return respond(ex, 500, """{"error":${jsonString(msg)}}""")
                 }
             val childrenJson =
                 record.children.joinToString(",", "[", "]") { c ->
