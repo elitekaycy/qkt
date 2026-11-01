@@ -21,6 +21,9 @@ enum class EditorTarget(
     VIM("Vim", "vim"),
     HELIX("Helix", "helix"),
     ZED("Zed", "zed"),
+    SUBLIME("Sublime Text", "sublime"),
+    EMACS("Emacs", "emacs"),
+    INTELLIJ("JetBrains IDEs", "intellij"),
     ;
 
     /** True for VS Code and its forks, which install the bundled `.vsix`. */
@@ -40,6 +43,9 @@ enum class EditorTarget(
                 "vim" -> VIM
                 "helix", "hx" -> HELIX
                 "zed" -> ZED
+                "sublime", "subl", "sublime-text" -> SUBLIME
+                "emacs" -> EMACS
+                "intellij", "idea", "jetbrains", "pycharm", "webstorm", "goland", "clion", "rider" -> INTELLIJ
                 else -> null
             }
     }

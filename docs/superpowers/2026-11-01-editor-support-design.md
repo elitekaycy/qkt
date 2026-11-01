@@ -1,6 +1,6 @@
 # Editor support for `.qkt` everywhere
 
-Status: proposed, 2026-11-01. Epic: [#71](https://github.com/elitekaycy/qkt/issues/71).
+Status: implemented in three parts (#1583, #1584 and the JetBrains/Sublime/Emacs follow-up), 2026-11-01. Epic: [#71](https://github.com/elitekaycy/qkt/issues/71).
 
 ## Goal
 
@@ -45,16 +45,18 @@ can generate, so a language change reaches every editor by regenerating, never b
 | Sublime Text | `.sublime-syntax` | Sublime LSP package config | `qkt editor install sublime` |
 | Emacs | `qkt-mode.el` | eglot registration in the mode | `qkt editor install emacs` |
 
-4. **Automatic setup.** `qkt editor install all` (already present) covers every detected editor. The
-   `install.sh` / `install.ps1` installers offer it once at the end, and `qkt create template` writes
-   `.vscode/extensions.json` so VS Code and Cursor prompt to install the extension when the project opens.
-5. **Haskell fallback, layered so it never overrides the real grammar:**
-   - GitHub and gists: `.gitattributes` and the `-- -*- mode: haskell -*-` modeline (done).
-   - Vim/Neovim: the ftplugin loads Haskell syntax when the qkt syntax file is missing.
-   - VS Code family: the extension is the language owner; without it, `qkt editor install` for an
-     editor it cannot fully support writes a `files.associations` `*.qkt -> haskell` entry instead.
-   - Editors with no qkt package: `qkt editor install <editor> --fallback` maps `*.qkt` to Haskell in
-     that editor's config, so any editor with a Haskell grammar colours qkt with no qkt package at all.
+4. **Automatic setup.** `qkt editor install all` covers every detected editor, and `qkt create template`
+   writes `.vscode/extensions.json` so VS Code and its forks offer the extension when the project opens.
+   Having `install.sh` / `install.ps1` offer `qkt editor install all` at the end is a follow-up.
+5. **Haskell fallback, layered so it never overrides the real grammar.** Haskell's grammar colours qkt's
+   UPPERCASE keywords, `--` comments, numbers, operators and strings, and most hosts ship one.
+   - GitHub: `.gitattributes` maps `*.qkt` to Haskell (already in every template).
+   - Gists, Vim, Neovim and Emacs without qkt: the first-line modeline
+     `-- -*- mode: haskell -*- vim: set ft=haskell:` (a qkt comment) selects Haskell.
+   - With qkt installed, the Vim plugin (`FileType`/`Syntax haskell` autocommands) and `qkt-mode`
+     (`haskell-mode-hook`) take a `.qkt` buffer back, so the modeline is safe to keep.
+   - VS Code and JetBrains ship no Haskell grammar, so a fallback mapping would colour nothing there;
+     their path is the recommended-extension prompt and the guided setup instead.
 
 ## Delivery
 
@@ -64,7 +66,7 @@ can generate, so a language change reaches every editor by regenerating, never b
 2. **Tree-sitter, Zed and Helix**: generated tree-sitter grammar and highlight queries, a Zed extension,
    a Helix installer target.
 3. **JetBrains, Sublime, Emacs and the Haskell fallback**: generated Sublime and Emacs grammars, the
-   installer targets, and the `--fallback` mapping.
+   installer targets, and the modeline takeback in the Vim plugin and `qkt-mode`.
 
 Windows `PATH` lookup for `code.cmd` / `npx.cmd` is fixed separately and not repeated here.
 

@@ -35,6 +35,14 @@ class EditorTargetTest {
     }
 
     @Test
+    fun `sublime, emacs and the jetbrains ides are targets`() {
+        assertThat(EditorTarget.parse("subl")).isEqualTo(EditorTarget.SUBLIME)
+        assertThat(EditorTarget.parse("emacs")).isEqualTo(EditorTarget.EMACS)
+        assertThat(EditorTarget.parse("pycharm")).isEqualTo(EditorTarget.INTELLIJ)
+        assertThat(EditorTarget.parse("intellij")).isEqualTo(EditorTarget.INTELLIJ)
+    }
+
+    @Test
     fun `helix and zed are targets`() {
         assertThat(EditorTarget.parse("helix")).isEqualTo(EditorTarget.HELIX)
         assertThat(EditorTarget.parse("hx")).isEqualTo(EditorTarget.HELIX)
@@ -43,10 +51,8 @@ class EditorTargetTest {
 
     @Test
     fun `parse returns null for unknown names`() {
-        assertThat(EditorTarget.parse("emacs")).isNull()
         assertThat(EditorTarget.parse("")).isNull()
-        assertThat(EditorTarget.parse("intellij")).isNull()
         assertThat(EditorTarget.parse("notepad")).isNull()
-        assertThat(EditorTarget.parse("sublime")).isNull()
+        assertThat(EditorTarget.parse("eclipse")).isNull()
     }
 }

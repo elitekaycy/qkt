@@ -35,12 +35,7 @@ internal class HelixInstaller(
         Files.copy(queries, queriesDst, StandardCopyOption.REPLACE_EXISTING)
         placed.add(queriesDst)
 
-        val languages = configDir.resolve("languages.toml")
-        val existing = if (Files.isRegularFile(languages)) Files.readString(languages) else ""
-        Files.writeString(
-            languages,
-            withoutBlock(existing).trimEnd().let { if (it.isEmpty()) "" else "$it\n\n" } + block(grammarDir),
-        )
+        block.write(configDir.resolve("languages.toml"), body(grammarDir))
 
         val compiled = compileGrammar(grammarDir)
         if (compiled != null) {
@@ -54,12 +49,9 @@ internal class HelixInstaller(
     }
 
     /** Removes the managed block from `languages.toml`, leaving the rest of the file as it was. */
-    fun removeConfig() {
-        val languages = configDir.resolve("languages.toml")
-        if (!Files.isRegularFile(languages)) return
-        val stripped = withoutBlock(Files.readString(languages)).trimEnd()
-        Files.writeString(languages, if (stripped.isEmpty()) "" else "$stripped\n")
-    }
+    fun removeConfig() = block.remove(configDir.resolve("languages.toml"))
+
+    private val block = ManagedBlock("#", EditorTarget.HELIX)
 
     private fun compileGrammar(grammarDir: Path): Path? {
         val cc = sequenceOf("cc", "gcc", "clang").firstNotNullOfOrNull { pathLookup(it) } ?: return null
@@ -81,10 +73,9 @@ internal class HelixInstaller(
         return if (processRunner(cmd, null) == 0 && Files.isRegularFile(dst)) dst else null
     }
 
-    private fun block(grammarDir: Path): String {
+    private fun body(grammarDir: Path): String {
         val path = grammarDir.toString().replace("\\", "/")
         return """
-            |$BEGIN
             |[[language]]
             |name = "qkt"
             |scope = "source.qkt"
@@ -102,22 +93,6 @@ internal class HelixInstaller(
             |[[grammar]]
             |name = "qkt"
             |source = { path = "$path" }
-            |$END
-            |
             """.trimMargin()
-    }
-
-    companion object {
-        private const val BEGIN = "# >>> qkt (managed by `qkt editor install helix`; edits inside are overwritten)"
-        private const val END = "# <<< qkt"
-
-        /** [text] with the qkt-managed block, if any, removed. */
-        fun withoutBlock(text: String): String {
-            val start = text.indexOf(BEGIN)
-            if (start < 0) return text
-            val end = text.indexOf(END, start)
-            if (end < 0) return text
-            return text.substring(0, start) + text.substring(end + END.length).trimStart('\n')
-        }
     }
 }

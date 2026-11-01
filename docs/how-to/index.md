@@ -48,7 +48,7 @@ Task-oriented walkthroughs. Each page is one problem and one copy-paste-able sol
 
     ---
 
-    `qkt editor install vscode|cursor|windsurf|codium|nvim|vim|helix|zed` — one command, no manual copies.
+    `qkt editor install <editor>` for VS Code, Cursor, Windsurf, VSCodium, Neovim, Vim, Helix, Zed, Sublime, Emacs and JetBrains — one command, no manual copies.
 
     [:octicons-arrow-right-24: Install for your editor](editor-integrations.md)
 

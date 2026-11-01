@@ -78,6 +78,23 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y --no-install-recommends vim-nox
 
+      - name: A Haskell modeline is taken back by the qkt plugin
+        run: |
+          printf -- '-- vim: set ft=haskell:\nSTRATEGY s VERSION 1\n' > /tmp/modeline.qkt
+          vim -u NONE -N -e -s -c 'set rtp+=editor/nvim' -c 'set modeline' -c 'filetype plugin on' -c 'syntax enable' \
+            -c 'edit /tmp/modeline.qkt' \
+            -c 'if &filetype !=# "qkt" || &syntax !=# "qkt" | echoerr "got" &filetype &syntax | cquit | endif' -c 'qall!'
+
+      - name: Emacs qkt-mode byte-compiles cleanly and opens .qkt files
+        run: |
+          sudo apt-get install -y --no-install-recommends emacs-nox
+          cp editor/emacs/qkt-mode.el /tmp/
+          emacs --batch -Q --eval '(setq byte-compile-error-on-warn t)' -f batch-byte-compile /tmp/qkt-mode.el
+          emacs --batch -Q -L editor/emacs -l qkt-mode --eval '(progn (setq qkt-enable-lsp nil) (find-file "editor/nvim/test/example.qkt") (unless (eq major-mode (quote qkt-mode)) (kill-emacs 1)))'
+
+      - name: Sublime grammar is a well-formed plist
+        run: python3 -c "import plistlib; plistlib.load(open('editor/sublime/qkt.tmLanguage','rb')); plistlib.load(open('editor/sublime/Comments.tmPreferences','rb'))"
+
       - name: vim syntax smoke against example fixture
         run: |
           # Load the three plugin files against the fixture in a clean vim
