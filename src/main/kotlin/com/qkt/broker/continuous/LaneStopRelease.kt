@@ -27,6 +27,9 @@ internal class LaneStopRelease(
         return StreamStopRelease(strategyId, chainOf().symbol, stop, stands)
     }
 
+    /** Why [strategyId] is stopped here, or null. The status surfaces read this off the engine thread. */
+    fun standing(strategyId: String): String? = stops[strategyId]
+
     private fun holdups(strategyId: String): List<String> =
         buildList {
             if (rolls.inFlight) add("a roll is in progress")

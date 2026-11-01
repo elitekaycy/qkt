@@ -1,5 +1,6 @@
 package com.qkt.cli.daemon.routes
 
+import com.qkt.broker.StreamStop
 import com.qkt.cli.PromotionGateConfig
 import com.qkt.cli.PromotionGateEvaluator
 import com.qkt.cli.PromotionStore
@@ -48,7 +49,8 @@ internal fun handleList(
         val streamBrokersJson = renderStreamBrokers(h.live.streamBrokers())
         val meta = h.childMeta
         val haltJson =
-            renderHaltFields(HaltStatus.of(h.live, h.name)) + renderAuditJournalFields(h.live.auditJournalHealth())
+            renderHaltFields(HaltStatus.of(h.live, h.name)) + renderAuditJournalFields(h.live.auditJournalHealth()) +
+                renderStreamStops(h.live.streamStops())
         val promotionJson =
             renderPromotionFields(
                 // A portfolio is deployed and promoted as one unit. Its children inherit the
@@ -88,6 +90,18 @@ private fun renderHaltFields(halt: HaltStatus): String {
     val reason = JsonPrimitive(halt.reason ?: "").toString()
     val scope = JsonPrimitive(halt.scope ?: "").toString()
     return ""","halted":true,"haltReason":$reason,"haltScope":$scope"""
+}
+
+/**
+ * `,"streamStops":[…]` for a strategy a failed roll stopped on a stream, nothing otherwise. `state` stays `running`
+ * beside it, as it does beside `halted`: the session runs and manages exits, and `state` consumers read session life.
+ */
+private fun renderStreamStops(stops: List<StreamStop>): String {
+    if (stops.isEmpty()) return ""
+    return stops.joinToString(",", ""","streamStops":[""", "]") {
+        val id = JsonPrimitive(it.strategyId)
+        """{"strategyId":$id,"stream":${JsonPrimitive(it.stream)},"reason":${JsonPrimitive(it.reason)}}"""
+    }
 }
 
 private fun renderPromotionFields(

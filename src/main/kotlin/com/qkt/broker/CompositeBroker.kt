@@ -23,7 +23,6 @@ class CompositeBroker(
     private val fallback: Broker? = null,
     bus: EventBus? = null,
 ) : Broker,
-    MarginLevelProvider,
     VenueOrderCancel by RoutedVenueOrderCancel(routes.map { it.second } + listOfNotNull(fallback)) {
     private val log = LoggerFactory.getLogger(CompositeBroker::class.java)
 
@@ -42,8 +41,6 @@ class CompositeBroker(
 
     private val orderIdToBroker: MutableMap<String, Broker> = mutableMapOf()
     private val accountEquityBroker: Broker? = allLeaves().distinct().filter { it.supportsAccountEquity }.singleOrNull()
-    private val marginLevelBroker: Broker? =
-        allLeaves().distinct().singleOrNull { (it as? MarginLevelProvider)?.supportsMarginLevel == true }
 
     override val supportsAccountEquity: Boolean get() = accountEquityBroker != null
 
@@ -81,10 +78,6 @@ class CompositeBroker(
         }
         return merged
     }
-
-    override val supportsMarginLevel: Boolean get() = marginLevelBroker != null
-
-    override fun marginLevel(): java.math.BigDecimal? = marginLevelBroker?.marginLevel()
 
     /**
      * Venue ticket → owning leaf, captured from each fill's `brokerOrderId` (the same value the
@@ -269,6 +262,12 @@ class CompositeBroker(
 
     override fun releaseStreamStops(strategyId: String): List<StreamStopRelease> =
         allLeaves().distinct().flatMap { it.releaseStreamStops(strategyId) }
+
+    override fun streamStops(strategyId: String): List<StreamStop> =
+        allLeaves().distinct().flatMap { it.streamStops(strategyId) }
+
+    /** Margin belongs to an account, not to the router: an entry answers to the account it is routed to. */
+    override fun marginVenueFor(symbol: String): Broker = brokerFor(symbol)?.marginVenueFor(symbol) ?: this
 
     private fun allLeaves(): List<Broker> = routes.map { it.second } + listOfNotNull(fallback)
 

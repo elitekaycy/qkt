@@ -305,7 +305,7 @@ Daemon-wide and per-strategy risk controls. Values are parsed as decimals unless
 | `max_order_qty` | `PreTradeControls.DEFAULT_MAX_ORDER_QTY` | daemon pre-trade controls | Hard per-order quantity cap. |
 | `max_order_notional` | `PreTradeControls.DEFAULT_MAX_ORDER_NOTIONAL` | daemon pre-trade controls | Account-currency notional cap. |
 | `price_collar_pct` | `PreTradeControls.DEFAULT_PRICE_COLLAR_FRAC` as percent | daemon pre-trade controls | Percent distance from last market price for explicit-price orders. |
-| `margin_floor_pct` | `200` | daemon pre-trade controls | Entry orders reject when reported margin level is below this floor. `0` disables. |
+| `margin_floor_pct` | `200` | daemon pre-trade controls | Entry orders reject when the margin level of the account the order is routed to is below this floor. A venue that reports no margin level (paper, and gateway venues today) has no floor; a strategy across venues judges each entry on its own account. `0` disables. |
 | `measured_usage_hours` | `24` | daemon pre-trade controls | New deployments can only trade up to `measured_usage_max_qty` during this window. `0` disables. |
 | `measured_usage_max_qty` | `0.01` | daemon pre-trade controls | Max entry quantity during measured usage. |
 | `max_round_trips_10m` | `10` | daemon, foreground run, and backtest disclosure | Per-strategy closing-fill threshold in 10 minutes. `0` disables. Live halts persistently on a breach; replay records the breach unless strict mode is enabled. |
@@ -332,6 +332,8 @@ set `daily_dd_basis: equity` explicitly.
 | `per_strategy.<name>.loss_streak_halt_scope` | `persistent` | halt rules | `daily` auto-resumes at next UTC day; `persistent` requires operator resume. |
 
 Per-strategy rules layer on top of global rules. A global breach halts every strategy the daemon runs standalone, and `max_daily_loss` counts their realized losses together: with a limit of 8, losses of 5 and 3.05 halt both. A per-strategy breach halts only that strategy. A `PORTFOLIO` applies the same limits to its own children instead (its book), not to the daemon's other deployments.
+
+**Limit: a portfolio does not share the daemon's budget.** Book and standalone losses are not added together, and neither side's breach halts the other. With `max_daily_loss: 8`, a portfolio beside standalone strategies can lose 8 on its book and the standalone strategies another 8 between them, 16 for the day; two portfolios get 8 each. A book breach also flattens its children, while a standalone breach only blocks new exposure. Size the limit for this when mixing them, or run the portfolio in its own daemon.
 
 A halt blocks new exposure only: exits still go out. The other strategies see the breach on their next tick or fill. An engine fault or an operator halt stays on its strategy.
 

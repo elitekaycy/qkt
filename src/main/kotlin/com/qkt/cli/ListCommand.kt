@@ -53,7 +53,15 @@ class ListCommand(
             val trades = o["trades"]?.jsonPrimitive?.contentOrNull ?: "-"
             // A halted strategy is still running - it evaluates and manages exits - but it takes no entries.
             val halted = o["halted"]?.jsonPrimitive?.contentOrNull == "true"
-            val state = if (halted) "halted" else o["state"]?.jsonPrimitive?.contentOrNull ?: "?"
+            // A stopped stream likewise: the session runs, but refuses every order on that stream until resumed.
+            val streamStopped = (o["streamStops"] as? JsonArray)?.isNotEmpty() == true
+            val state =
+                when {
+                    halted && streamStopped -> "halted,stream_stopped"
+                    halted -> "halted"
+                    streamStopped -> "stream_stopped"
+                    else -> o["state"]?.jsonPrimitive?.contentOrNull ?: "?"
+                }
             val display = if (kind == "child") "  $name" else name
             println("%-19s %-10s %-8s %-8s %-8s %s".format(display, kind, formatUptime(uptimeMs), port, trades, state))
         }

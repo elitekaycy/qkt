@@ -45,5 +45,6 @@ internal fun sessionStatusSnapshot(
         persistenceHealth = session.persistenceHealth(),
         auditJournal = session.auditJournalHealth(),
         halt = HaltStatus.of(session, strategyId),
+        streamStops = session.streamStops(),
     )
 }

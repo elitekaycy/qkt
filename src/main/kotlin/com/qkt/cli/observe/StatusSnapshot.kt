@@ -124,4 +124,14 @@ data class StatusSnapshot(
     val haltPersistent: Boolean = false,
     /** When the halt tripped, ISO-8601 UTC; null when not halted or tripped before this was recorded. */
     val haltedAt: String? = null,
+    /** Continuous streams refusing this session's orders after a failed roll; `qkt resume` clears a safe one. */
+    val streamStops: List<StreamStopDto> = emptyList(),
+)
+
+/** A stream's stop as `/status` reports it: [strategyId]'s orders on [stream] are refused because of [reason]. */
+@Serializable
+data class StreamStopDto(
+    val strategyId: String,
+    val stream: String,
+    val reason: String,
 )

@@ -126,6 +126,7 @@ internal class SessionBrokers(
                         ContractFillLog(),
                         continuous.laneStore,
                         continuous.rollPriceBand,
+                        instance,
                     ) {
                         laneBus,
                         lanePrices,
