@@ -19,7 +19,7 @@ internal fun handleHalt(
     val target = if (name == null) Target.All else Target.Strategy(name)
     val result = RegistryDaemonControl(registry, OperatorJournal.from(stateDir, "http")).halt(target)
     if (result.unknown.isNotEmpty()) {
-        return respond(ex, 404, """{"error":"unknown name: ${result.unknown.first()}"}""")
+        return respond(ex, 404, """{"error":${jsonString("unknown name: ${result.unknown.first()}")}}""")
     }
     respond(ex, 200, """{"state":"halted","affected":${jsonArray(result.affected)}}""")
 }
@@ -45,7 +45,7 @@ internal fun handleKill(
     val target = if (name == null) Target.All else Target.Strategy(name)
     val result = RegistryDaemonControl(registry, OperatorJournal.from(stateDir, "http")).kill(target, flatten)
     if (result.unknown.isNotEmpty()) {
-        return respond(ex, 404, """{"error":"unknown name: ${result.unknown.first()}"}""")
+        return respond(ex, 404, """{"error":${jsonString("unknown name: ${result.unknown.first()}")}}""")
     }
     val flattenVerified =
         flatten && result.affected.isNotEmpty() && result.flattenResults.values.all { it.verifiedFlat }
@@ -84,7 +84,7 @@ internal fun handleResume(
     val target = if (name == null) Target.All else Target.Strategy(name)
     val result = RegistryDaemonControl(registry, OperatorJournal.from(stateDir, "http")).resume(target)
     if (result.unknown.isNotEmpty()) {
-        return respond(ex, 404, """{"error":"unknown name: ${result.unknown.first()}"}""")
+        return respond(ex, 404, """{"error":${jsonString("unknown name: ${result.unknown.first()}")}}""")
     }
     val stops = result.streamStops
     val state = if (stops.all { it.cleared }) "resumed" else "stream_stopped"
