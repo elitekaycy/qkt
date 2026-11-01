@@ -58,12 +58,4 @@ class EditorDetector(
     }
 }
 
-private fun lookupInPath(cmd: String): Path? {
-    val path = System.getenv("PATH") ?: return null
-    val sep = System.getProperty("path.separator") ?: ":"
-    for (dir in path.split(sep).filter { it.isNotBlank() }) {
-        val candidate = Path.of(dir).resolve(cmd)
-        if (Files.isExecutable(candidate)) return candidate
-    }
-    return null
-}
+private fun lookupInPath(cmd: String): Path? = findExecutable(cmd)

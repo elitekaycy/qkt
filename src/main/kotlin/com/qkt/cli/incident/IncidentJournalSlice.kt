@@ -1,6 +1,7 @@
 package com.qkt.cli.incident
 
 import com.qkt.cli.daemon.StateDir
+import com.qkt.common.FileNameSegment
 import java.nio.file.Files
 import java.nio.file.LinkOption
 
@@ -22,7 +23,7 @@ internal fun collectJournal(
     }
     val strategyDirs =
         if (strategy != null) {
-            listOf(journalRoot.resolve(strategy))
+            listOf(journalRoot.resolve(FileNameSegment.encode(strategy)))
         } else {
             Files.list(journalRoot).use { stream ->
                 stream
@@ -33,7 +34,7 @@ internal fun collectJournal(
         }
     for (strategyDir in strategyDirs) {
         if (!Files.isDirectory(strategyDir)) continue
-        val strategyName = journalRoot.relativize(strategyDir).toString().replace('\\', '/')
+        val strategyName = FileNameSegment.decode(journalRoot.relativize(strategyDir).toString().replace('\\', '/'))
         val files =
             Files.list(strategyDir).use { stream ->
                 stream

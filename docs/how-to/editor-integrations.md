@@ -192,7 +192,6 @@ working and a notification offers the download link or the setting.
 |---|---|---|
 | `qkt.path` | empty | Path to the `qkt` executable |
 | `qkt.languageServer.enabled` | `true` | Turn the language server off, keeping highlighting |
-| `qkt.languageServer.jvmOptions` | small-JVM flags | JVM flags for the server, passed as `JAVA_TOOL_OPTIONS` |
 
 **qkt: Restart language server** in the command palette restarts it after you upgrade qkt.
 
@@ -205,10 +204,13 @@ VSCodium search).
 
 One server runs per editor window, and only once a `.qkt` file is open. It analyses a
 document once per pause in typing (200 ms), on a single background thread, rather than
-on every keystroke, so typing fast never costs more than one core. The VS Code extension
-and the Neovim plugin start it in a small JVM (capped 256 MB heap, one GC thread, one JIT
-thread); a typical session sits near 70 MB. Change the flags with
-`qkt.languageServer.jvmOptions` in VS Code or `let g:qkt_lsp_jvm_options = '...'` in Neovim.
+on every keystroke, so typing fast never costs more than one core.
+
+The `qkt` launcher itself starts `qkt lsp` in a small JVM (serial GC, capped 256 MB heap,
+one JIT thread); a typical session sits near 60 MB. Because the launcher does this, no
+editor integration carries JVM flags: any editor that runs `qkt lsp` gets the same small
+server. Add flags with `QKT_OPTS` if you need to. The Windows `qkt.exe` from the release zip
+runs the server with qkt's default JVM options.
 
 ## What's not here
 

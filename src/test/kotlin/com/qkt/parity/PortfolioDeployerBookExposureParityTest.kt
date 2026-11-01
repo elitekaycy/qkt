@@ -81,7 +81,13 @@ class PortfolioDeployerBookExposureParityTest {
 
             secondFeed.offer(Tick("BACKTEST:B", BigDecimal("100"), firstTs + 180_003L))
             secondFeed.offer(Tick("BACKTEST:B", BigDecimal("100"), firstTs + 240_004L))
-            val journal = awaitJournal(journalRoot.resolve("aggregate_book:b"))
+            val journal =
+                awaitJournal(
+                    journalRoot.resolve(
+                        com.qkt.common.FileNameSegment
+                            .encode("aggregate_book:b"),
+                    ),
+                )
             val replayCompiled = PortfolioLoader.load(portfolioFile)
 
             val backtest =

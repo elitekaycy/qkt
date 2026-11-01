@@ -7,11 +7,6 @@ const { resolveQkt } = require("./resolve-qkt");
 
 let client;
 
-// The language server only parses small files, so it runs in a small, quiet JVM: capped heap,
-// one GC thread and one JIT thread. JAVA_TOOL_OPTIONS reaches both the shell launcher and the
-// Windows qkt.exe. Users can override with the `qkt.languageServer.jvmOptions` setting.
-const LEAN_JVM = "-Xms16m -Xmx256m -Xss512k -XX:TieredStopAtLevel=1 -XX:CICompilerCount=1 -XX:ParallelGCThreads=1";
-
 async function activate(context) {
   context.subscriptions.push(
     vscode.commands.registerCommand("qkt.restartLanguageServer", async () => {
@@ -48,12 +43,10 @@ async function start(context) {
   }
   // Node refuses to spawn .cmd/.bat files without a shell (CVE-2024-27980).
   const shell = /\.(cmd|bat)$/i.test(command);
-  const jvm = config.get("languageServer.jvmOptions", LEAN_JVM);
-  const env = { ...process.env, JAVA_TOOL_OPTIONS: [process.env.JAVA_TOOL_OPTIONS, jvm].filter(Boolean).join(" ") };
   const serverOptions = {
     command: shell ? `"${command}"` : command,
     args: ["lsp"],
-    options: { shell, env },
+    options: { shell },
   };
   const clientOptions = {
     documentSelector: [

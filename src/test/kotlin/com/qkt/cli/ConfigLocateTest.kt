@@ -67,7 +67,7 @@ class ConfigLocateTest {
         val home = Path.of("/home/me")
         val ud = UserDirs(osName = "linux", env = emptyMap(), home = home)
         val paths = Config.defaultSearchPaths(userDirs = ud, home = home, cwd = Path.of("/home/me/work"))
-        assertThat(paths.map { it.toString() }).containsExactly(
+        assertThat(paths.map { posix(it) }).containsExactly(
             "./qkt.config.yaml",
             "/home/me/work/qkt.config.yaml",
             "/home/me/qkt.config.yaml",
@@ -99,7 +99,7 @@ class ConfigLocateTest {
         val ud = UserDirs(osName = "windows 11", env = mapOf("APPDATA" to "/fake/Roaming"), home = home)
         val paths =
             Config.defaultSearchPaths(userDirs = ud, home = home, cwd = Path.of("/fake/home/proj")).map {
-                it.toString()
+                posix(it)
             }
         assertThat(paths).containsExactly(
             "./qkt.config.yaml",
@@ -110,4 +110,7 @@ class ConfigLocateTest {
         )
         assertThat(paths).noneMatch { it.contains("/etc/qkt") }
     }
+
+    /** [p] in POSIX spelling, so the expected lists read the same on Windows (`D:\home` is `/home`). */
+    private fun posix(p: Path): String = p.toString().replace('\\', '/').replace(Regex("^[A-Za-z]:"), "")
 }

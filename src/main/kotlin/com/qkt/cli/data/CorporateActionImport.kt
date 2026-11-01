@@ -83,7 +83,9 @@ internal object CorporateActionImport {
         if (args.flag("json")) {
             println(
                 """{"symbol":"$symbol","read":${actions.size},"dividends":$dividends,"splits":$splits,""" +
-                    """"stored":${stored ?: "null"},"path":"${store.path(symbol)}","dryRun":${stored == null}}""",
+                    """"stored":${stored ?: "null"},"path":${kotlinx.serialization.json.JsonPrimitive(
+                        store.path(symbol).toString(),
+                    )},"dryRun":${stored == null}}""",
             )
         } else {
             val verb = if (stored == null) "would merge into" else "merged into"

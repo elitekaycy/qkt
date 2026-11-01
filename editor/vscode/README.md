@@ -76,7 +76,7 @@ Type the prefix and press Tab; placeholders cycle with Tab.
 ## Language server
 
 The extension starts `qkt lsp` itself; no other extension is needed. Settings: `qkt.path`,
-`qkt.languageServer.enabled`, `qkt.languageServer.jvmOptions`. See
+`qkt.languageServer.enabled`. See
 [docs/how-to/editor-integrations.md](../../docs/how-to/editor-integrations.md).
 
 ## Developing
