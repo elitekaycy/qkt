@@ -305,7 +305,7 @@ Daemon-wide and per-strategy risk controls. Values are parsed as decimals unless
 | `max_order_qty` | `PreTradeControls.DEFAULT_MAX_ORDER_QTY` | daemon pre-trade controls | Hard per-order quantity cap. |
 | `max_order_notional` | `PreTradeControls.DEFAULT_MAX_ORDER_NOTIONAL` | daemon pre-trade controls | Account-currency notional cap. |
 | `price_collar_pct` | `PreTradeControls.DEFAULT_PRICE_COLLAR_FRAC` as percent | daemon pre-trade controls | Percent distance from last market price for explicit-price orders. |
-| `margin_floor_pct` | `200` | daemon pre-trade controls | Entry orders reject when the margin level of the account the order is routed to is below this floor. A venue that reports no margin level (paper, and gateway venues today) has no floor; a strategy across venues judges each entry on its own account. `0` disables. |
+| `margin_floor_pct` | `200` | daemon pre-trade controls | Entry orders reject when the margin level of the account the order is routed to is below this floor. A venue that reports no margin level (paper, and gateway venues today) has no floor, and startup warns once per venue where that is so; a strategy across venues judges each entry on its own account. `0` disables. |
 | `measured_usage_hours` | `24` | daemon pre-trade controls | New deployments can only trade up to `measured_usage_max_qty` during this window. `0` disables. |
 | `measured_usage_max_qty` | `0.01` | daemon pre-trade controls | Max entry quantity during measured usage. |
 | `max_round_trips_10m` | `10` | daemon, foreground run, and backtest disclosure | Per-strategy closing-fill threshold in 10 minutes. `0` disables. Live halts persistently on a breach; replay records the breach unless strict mode is enabled. |

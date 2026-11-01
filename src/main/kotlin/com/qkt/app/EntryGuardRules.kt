@@ -1,6 +1,7 @@
 package com.qkt.app
 
 import com.qkt.broker.Broker
+import com.qkt.broker.MarginLevelProvider
 import com.qkt.common.Clock
 import com.qkt.risk.RiskRule
 import java.math.BigDecimal
@@ -21,7 +22,36 @@ internal class EntryGuardRules(
     private val log = LoggerFactory.getLogger(LiveSession::class.java)
 
     /** Every enabled entry guard: the margin floor over [broker], then the measured-usage window. */
-    fun rules(broker: Broker): List<RiskRule> = marginRules(broker) + measuredRules()
+    fun rules(
+        broker: Broker,
+        symbols: List<String>,
+    ): List<RiskRule> {
+        warnWhereFloorCannotApply(broker, symbols)
+        return marginRules(broker) + measuredRules()
+    }
+
+    /**
+     * Says once per venue, at startup, that the floor protects nothing there: a venue that reports no margin level
+     * approves every entry (see [com.qkt.risk.rules.MarginFloor]), and an operator who set a floor could assume otherwise.
+     */
+    private fun warnWhereFloorCannotApply(
+        broker: Broker,
+        symbols: List<String>,
+    ) {
+        if (marginFloorPct.signum() <= 0) return
+        symbols
+            .groupBy(broker::marginVenueFor)
+            .filterKeys { (it as? MarginLevelProvider)?.supportsMarginLevel != true }
+            .forEach { (venue, onVenue) ->
+                log.warn(
+                    "risk.margin_floor_pct {} cannot apply on venue {}: it reports no margin level, so entries on " +
+                        "{} are not checked against the floor (risk.margin_floor_pct: 0 turns the floor off)",
+                    marginFloorPct.toPlainString(),
+                    venue.name,
+                    onVenue.joinToString(", "),
+                )
+            }
+    }
 
     /** The margin-floor rule over [broker], or none when the floor is zero. */
     fun marginRules(broker: Broker): List<RiskRule> =
