@@ -4,6 +4,7 @@
 .env.example.tmpl
 gitignore.tmpl
 gitattributes.tmpl
+vscode-extensions.json.tmpl
 README.md.tmpl
 CONFIG.md.tmpl
 Makefile.tmpl

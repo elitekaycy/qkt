@@ -26,7 +26,7 @@ class CreateCommandTest : CreateCommandFixture() {
     }
 
     @Test
-    fun `every kind maps qkt files to github syntax highlighting`(
+    fun `every kind maps qkt files to github highlighting and recommends the editor extension`(
         @TempDir tmp: Path,
     ) {
         for (kind in listOf("mt5", "mt5-ci", "backtest", "portfolio", "minimal", "bybit", "bot")) {
@@ -37,6 +37,9 @@ class CreateCommandTest : CreateCommandFixture() {
             assertThat(attributes).withFailMessage("kind $kind has no .gitattributes").exists()
             assertThat(Files.readAllLines(attributes))
                 .contains("*.qkt linguist-language=Haskell linguist-detectable=false")
+            assertThat(Files.readString(target.resolve(".vscode/extensions.json")))
+                .withFailMessage("kind $kind does not recommend the qkt extension")
+                .contains("\"elitekaycy.qkt\"")
         }
     }
 
