@@ -1,0 +1,18 @@
+{
+  "grammars": [
+    {
+      "name": "qkt",
+      "camelcase": "Qkt",
+      "scope": "source.qkt",
+      "path": ".",
+      "file-types": ["qkt"],
+      "highlights": "queries/highlights.scm"
+    }
+  ],
+  "metadata": {
+    "version": "0.1.0",
+    "license": "Apache-2.0",
+    "description": "qkt strategy files: highlighting grammar generated from the qkt lexer",
+    "links": { "repository": "https://github.com/elitekaycy/qkt" }
+  }
+}

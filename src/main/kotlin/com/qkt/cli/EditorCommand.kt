@@ -37,7 +37,11 @@ class EditorCommand(
         val name = args.option("format") ?: "textmate"
         val format =
             GrammarGenerator.Format.parse(name) ?: run {
-                System.err.println("qkt: unknown grammar format '$name' (expected: textmate, vim)")
+                System.err.println(
+                    "qkt: unknown grammar format '$name' (expected: ${GrammarGenerator.Format.entries.joinToString(
+                        ", ",
+                    ) { it.cliName }})",
+                )
                 return ExitCodes.ARG_ERROR
             }
         print(GrammarGenerator.render(format))
