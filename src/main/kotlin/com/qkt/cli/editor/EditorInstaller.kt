@@ -41,9 +41,9 @@ class EditorInstaller(
             }
         val result =
             when (target) {
-                EditorTarget.VSCODE -> vscode.install(root)
                 EditorTarget.NVIM -> installVimFamily(root, detector.nvimConfigDir(), EditorTarget.NVIM)
                 EditorTarget.VIM -> installVimFamily(root, detector.vimConfigDir(), EditorTarget.VIM)
+                else -> vscode.install(root, target)
             } ?: return null
         val updated = EditorManifest.load(manifestPath).withInstall(target, result.placedFiles)
         EditorManifest.save(manifestPath, updated)
@@ -52,7 +52,7 @@ class EditorInstaller(
 
     /** Removes whatever the manifest says we placed for [target]. Returns true on success. */
     fun uninstall(target: EditorTarget): Boolean {
-        if (target == EditorTarget.VSCODE) return vscode.uninstall()
+        if (target.isVscodeFamily) return vscode.uninstall(target)
         val manifest = EditorManifest.load(manifestPath)
         val entry =
             manifest.recordFor(target) ?: run {

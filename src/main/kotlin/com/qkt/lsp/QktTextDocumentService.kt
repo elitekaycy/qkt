@@ -20,10 +20,13 @@ import org.eclipse.lsp4j.services.TextDocumentService
  * the language features (diagnostics, completion, hover).
  *
  * Document sync is full-text (the whole file arrives on every change), which is simple
- * and correct for the small files qkt strategies are.
+ * and correct for the small files qkt strategies are. Text is stored as it arrives, so
+ * completion and hover always see the latest edit; the parse and compile behind the
+ * diagnostics run on [scheduler], once per pause in typing rather than per keystroke.
  */
 class QktTextDocumentService(
     private val documents: DocumentStore,
+    private val scheduler: DiagnosticsScheduler = DiagnosticsScheduler(),
 ) : TextDocumentService {
     private var client: LanguageClient? = null
 
@@ -34,17 +37,21 @@ class QktTextDocumentService(
 
     override fun didOpen(params: DidOpenTextDocumentParams) {
         val doc = params.textDocument
-        refresh(doc.uri, doc.text)
+        documents.put(doc.uri, doc.text, null)
+        analyzeLater(doc.uri, doc.text, delayMs = 0)
     }
 
     override fun didChange(params: DidChangeTextDocumentParams) {
         // Full-sync: the (single) change event carries the entire document text.
         val text = params.contentChanges.lastOrNull()?.text ?: return
-        refresh(params.textDocument.uri, text)
+        val uri = params.textDocument.uri
+        documents.put(uri, text, null)
+        analyzeLater(uri, text)
     }
 
     override fun didClose(params: DidCloseTextDocumentParams) {
         val uri = params.textDocument.uri
+        scheduler.cancel(uri)
         documents.remove(uri)
         client?.publishDiagnostics(PublishDiagnosticsParams(uri, emptyList()))
     }
@@ -80,13 +87,25 @@ class QktTextDocumentService(
         return CompletableFuture.completedFuture(hover)
     }
 
-    /** Parse the latest [text] for [uri], remember the AST, and push diagnostics to the editor. */
-    private fun refresh(
+    /** Stops the diagnostics thread. */
+    fun shutdown() {
+        scheduler.shutdown()
+    }
+
+    /**
+     * Parse [text] for [uri] off the protocol thread, remember the AST, and push diagnostics,
+     * unless a newer edit arrived while it ran.
+     */
+    private fun analyzeLater(
         uri: String,
         text: String,
+        delayMs: Long = DiagnosticsScheduler.DEFAULT_QUIET_MS,
     ) {
-        val analysis = DiagnosticsRunner.analyze(text)
-        documents.put(uri, text, analysis.parsed)
-        client?.publishDiagnostics(PublishDiagnosticsParams(uri, analysis.diagnostics))
+        scheduler.schedule(uri, delayMs) {
+            val analysis = DiagnosticsRunner.analyze(text)
+            if (documents.putAnalysis(uri, text, analysis.parsed)) {
+                client?.publishDiagnostics(PublishDiagnosticsParams(uri, analysis.diagnostics))
+            }
+        }
     }
 }

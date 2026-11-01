@@ -36,7 +36,10 @@ class QktLanguageServer :
         return CompletableFuture.completedFuture(InitializeResult(capabilities))
     }
 
-    override fun shutdown(): CompletableFuture<Any?> = CompletableFuture.completedFuture(null)
+    override fun shutdown(): CompletableFuture<Any?> {
+        textDocuments.shutdown()
+        return CompletableFuture.completedFuture(null)
+    }
 
     override fun exit() {}
 

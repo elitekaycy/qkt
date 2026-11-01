@@ -29,7 +29,9 @@ jobs:
 
       - name: Build VSCode extension (.vsix)
         working-directory: editor/vscode
-        run: npx --yes @vscode/vsce@latest package --no-dependencies
+        run: |
+          npm ci --no-audit --no-fund
+          npx --yes @vscode/vsce@latest package --no-dependencies
 
       - name: Build Windows self-contained zip
         run: ./gradlew.bat --no-daemon windowsSelfContainedDist

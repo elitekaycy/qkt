@@ -13,11 +13,13 @@ on:
     branches: [dev]
     paths:
       - 'editor/**'
+      - 'src/main/kotlin/com/qkt/lsp/**'
       - '.github/workflows/editor.yml'
   pull_request:
     branches: [dev]
     paths:
       - 'editor/**'
+      - 'src/main/kotlin/com/qkt/lsp/**'
       - '.github/workflows/editor.yml'
 
 concurrency:
@@ -31,7 +33,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Validate JSON
         run: |
@@ -56,9 +58,20 @@ jobs:
             exit 1
           fi
 
+      - name: Install the extension's dependencies
+        working-directory: editor/vscode
+        run: npm ci --no-audit --no-fund
+
+      - name: Extension unit tests
+        working-directory: editor/vscode
+        run: npm test
+
       - name: vsce package smoke
         working-directory: editor/vscode
-        run: npx --yes @vscode/vsce@latest package --no-dependencies
+        run: |
+          npx --yes @vscode/vsce@latest package --no-dependencies
+          unzip -l qkt-*.vsix | grep -q 'extension/dist/extension.js' \
+            || { echo "::error::vsix is missing the bundled language client"; exit 1; }
 
       - name: Install vim for nvim plugin smoke
         run: |
@@ -81,3 +94,33 @@ jobs:
             -c 'redir => g:ft | silent set filetype? | redir END' \
             -c 'if g:ft !~# "filetype=qkt" | echoerr "expected filetype=qkt, got" g:ft | cquit | endif' \
             -c 'qall!'
+
+  vscode-e2e:
+    # Starts a real VS Code with the extension against a real `qkt lsp` and checks
+    # diagnostics, completion and hover arrive through the bundled language client.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build qkt
+        run: |
+          ./gradlew --no-daemon installDist -x test
+          grep -q '\[ "\$1" = lsp \] && DEFAULT_JVM_OPTS=.*TieredStopAtLevel=1' build/install/qkt/bin/qkt \
+            || { echo "::error::bin/qkt does not start qkt lsp in the small JVM"; exit 1; }
+          grep -q 'if "%~1"=="lsp" set DEFAULT_JVM_OPTS=.*TieredStopAtLevel=1' build/install/qkt/bin/qkt.bat \
+            || { echo "::error::bin/qkt.bat does not start qkt lsp in the small JVM"; exit 1; }
+      - name: Install the extension's dependencies
+        working-directory: editor/vscode
+        run: npm ci --no-audit --no-fund
+      - name: Run the extension inside VS Code
+        working-directory: editor/vscode
+        run: |
+          export PATH="$GITHUB_WORKSPACE/build/install/qkt/bin:$PATH"
+          xvfb-run -a npm run test:e2e

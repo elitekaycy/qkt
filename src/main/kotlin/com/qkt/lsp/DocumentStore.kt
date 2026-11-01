@@ -1,6 +1,7 @@
 package com.qkt.lsp
 
 import com.qkt.dsl.parse.ParsedFile
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * In-memory store of open documents: the current text plus the most recently
@@ -10,6 +11,8 @@ import com.qkt.dsl.parse.ParsedFile
  * while the user is mid-edit and the document does not currently parse. e.g. a doc
  * opens valid (AST stored); the user types a half-finished line (parse now fails);
  * symbol-alias completion still works off the retained AST.
+ *
+ * Safe to use from the protocol thread and the diagnostics thread at once.
  */
 class DocumentStore {
     private data class Entry(
@@ -17,7 +20,7 @@ class DocumentStore {
         val lastGoodAst: ParsedFile?,
     )
 
-    private val entries = mutableMapOf<String, Entry>()
+    private val entries = ConcurrentHashMap<String, Entry>()
 
     /**
      * Record [text] for [uri]. When [ast] is non-null (the text parsed) it becomes the
@@ -29,8 +32,25 @@ class DocumentStore {
         text: String,
         ast: ParsedFile?,
     ) {
-        val prior = entries[uri]?.lastGoodAst
-        entries[uri] = Entry(text, ast ?: prior)
+        entries.compute(uri) { _, prior -> Entry(text, ast ?: prior?.lastGoodAst) }
+    }
+
+    /**
+     * Record [ast] as the result of analysing [text], but only while [text] is still the current
+     * text of [uri]. Returns false when the document changed or closed in the meantime, so a stale
+     * analysis never overwrites a newer edit.
+     */
+    fun putAnalysis(
+        uri: String,
+        text: String,
+        ast: ParsedFile?,
+    ): Boolean {
+        var current = false
+        entries.computeIfPresent(uri) { _, e ->
+            current = e.text == text
+            if (current) Entry(text, ast ?: e.lastGoodAst) else e
+        }
+        return current
     }
 
     /** Current text of [uri], or null if not open. */

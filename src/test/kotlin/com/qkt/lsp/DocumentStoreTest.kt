@@ -44,4 +44,24 @@ class DocumentStoreTest {
         store.remove("file:///a.qkt")
         assertThat(store.text("file:///a.qkt")).isNull()
     }
+
+    @Test
+    fun `an analysis of text the user has since edited is discarded`() {
+        val store = DocumentStore()
+        val ast = (Dsl.parseAny(validSource) as ParseResult.Success).value
+        store.put("file:///a.qkt", validSource, null)
+        store.put("file:///a.qkt", "$validSource\n-- newer", null)
+        assertThat(store.putAnalysis("file:///a.qkt", validSource, ast)).isFalse()
+        assertThat(store.text("file:///a.qkt")).endsWith("-- newer")
+        assertThat(store.lastGoodAst("file:///a.qkt")).isNull()
+    }
+
+    @Test
+    fun `an analysis of the current text records its ast`() {
+        val store = DocumentStore()
+        val ast = (Dsl.parseAny(validSource) as ParseResult.Success).value
+        store.put("file:///a.qkt", validSource, null)
+        assertThat(store.putAnalysis("file:///a.qkt", validSource, ast)).isTrue()
+        assertThat(store.lastGoodAst("file:///a.qkt")).isSameAs(ast)
+    }
 }
