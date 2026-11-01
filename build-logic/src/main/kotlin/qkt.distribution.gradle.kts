@@ -35,7 +35,34 @@ tasks.named<CreateStartScripts>("startScripts") {
         check(anchor in text) { "the start script changed shape: the bundled-runtime hook was not applied" }
         val hook = "if [ -x \"\$APP_HOME/runtime/bin/java\" ] ; then\n    JAVA_HOME=\$APP_HOME/runtime\nfi\n\n"
         unixScript.writeText(text.replaceFirst(anchor, hook + anchor))
+        applyLanguageServerJvmOptions(unixScript, windowsScript)
     }
+}
+
+// `qkt lsp` parses one small file at a time while an editor stays open for hours, so it runs in a small,
+// quiet JVM: serial GC (one GC thread), a capped heap, and one C1 JIT thread. Every editor just runs
+// `qkt lsp` and gets this, with nothing to configure per editor. QKT_OPTS/JAVA_OPTS still apply on top.
+val languageServerJvmOptions =
+    listOf("-XX:+UseSerialGC", "-Xms16m", "-Xmx256m", "-Xss512k", "-XX:TieredStopAtLevel=1", "-XX:CICompilerCount=1")
+
+fun applyLanguageServerJvmOptions(
+    unixScript: File,
+    windowsScript: File,
+) {
+    val unixDefault = "DEFAULT_JVM_OPTS='\"-XX:+UseParallelGC\"'\n"
+    val unix = unixScript.readText()
+    check(unixDefault in unix) { "the start script changed shape: the qkt lsp JVM options were not applied" }
+    val unixLean = languageServerJvmOptions.joinToString(" ") { "\"$it\"" }
+    unixScript.writeText(
+        unix.replaceFirst(unixDefault, unixDefault + "[ \"\$1\" = lsp ] && DEFAULT_JVM_OPTS='$unixLean'\n"),
+    )
+    val winDefault = "set DEFAULT_JVM_OPTS=\"-XX:+UseParallelGC\""
+    val win = windowsScript.readText()
+    check(winDefault in win) { "the Windows start script changed shape: the qkt lsp JVM options were not applied" }
+    val winLean = languageServerJvmOptions.joinToString(" ") { "\"$it\"" }
+    windowsScript.writeText(
+        win.replaceFirst(winDefault, winDefault + "\r\nif \"%~1\"==\"lsp\" set DEFAULT_JVM_OPTS=$winLean"),
+    )
 }
 
 // A jlink-minimized JRE carrying only the modules qkt loads (mirrors the Dockerfile).
