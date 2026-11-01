@@ -132,7 +132,7 @@ class YamlInstrumentRegistryTest {
             assertThrows<IllegalStateException> {
                 YamlInstrumentRegistry.load(Paths.get("/tmp/does-not-exist.yaml"))
             }
-        assertThat(e.message).contains("/tmp/does-not-exist.yaml")
+        assertThat(e.message).contains(Paths.get("/tmp/does-not-exist.yaml").toString())
     }
 
     @Test
