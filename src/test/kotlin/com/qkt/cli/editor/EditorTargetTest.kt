@@ -35,10 +35,18 @@ class EditorTargetTest {
     }
 
     @Test
+    fun `helix and zed are targets`() {
+        assertThat(EditorTarget.parse("helix")).isEqualTo(EditorTarget.HELIX)
+        assertThat(EditorTarget.parse("hx")).isEqualTo(EditorTarget.HELIX)
+        assertThat(EditorTarget.parse("zed")).isEqualTo(EditorTarget.ZED)
+    }
+
+    @Test
     fun `parse returns null for unknown names`() {
         assertThat(EditorTarget.parse("emacs")).isNull()
         assertThat(EditorTarget.parse("")).isNull()
         assertThat(EditorTarget.parse("intellij")).isNull()
+        assertThat(EditorTarget.parse("notepad")).isNull()
         assertThat(EditorTarget.parse("sublime")).isNull()
     }
 }
