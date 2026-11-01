@@ -1,6 +1,7 @@
 package com.qkt.cli.daemon
 
 import com.qkt.app.FlattenResult
+import com.qkt.broker.StreamStopRelease
 import java.time.Duration
 
 /** What a control action targets: every strategy, or one by name. */
@@ -14,12 +15,14 @@ sealed interface Target {
 
 /**
  * Outcome of a halt/resume. [affected] are the strategy names actually acted on;
- * [unknown] are requested names that weren't deployed.
+ * [unknown] are requested names that weren't deployed; [streamStops] says what a resume did
+ * about the stops failed rolls left on continuous streams.
  */
 data class ControlResult(
     val affected: List<String>,
     val unknown: List<String> = emptyList(),
     val flattenResults: Map<String, FlattenResult> = emptyMap(),
+    val streamStops: List<StreamStopRelease> = emptyList(),
 )
 
 /** A point-in-time view of every deployed strategy's run/halt state. */
@@ -47,6 +50,14 @@ interface DaemonControl {
     fun status(): StatusReport
 }
 
+/** One line an operator can read: what became of this stream stop. */
+fun StreamStopRelease.summary(): String =
+    if (cleared) {
+        "cleared the stop on $stream for $strategyId"
+    } else {
+        "$strategyId stays stopped on $stream, its orders are refused: $stands"
+    }
+
 /** [DaemonControl] backed by the live [StrategyRegistry]. */
 class RegistryDaemonControl(
     private val registry: StrategyRegistry,
@@ -59,8 +70,15 @@ class RegistryDaemonControl(
     }
 
     override fun resume(target: Target): ControlResult {
-        val result = apply(target) { it.live.resume() }
-        operatorJournal?.record("resume", target, result)
+        val streamStops = mutableListOf<StreamStopRelease>()
+        val result =
+            apply(target) {
+                it.live.resume()
+                streamStops += it.live.releaseStreamStops()
+            }.copy(streamStops = streamStops)
+        val details =
+            if (streamStops.isEmpty()) emptyMap() else mapOf("streamStops" to streamStops.joinToString { it.summary() })
+        operatorJournal?.record("resume", target, result, details)
         return result
     }
 

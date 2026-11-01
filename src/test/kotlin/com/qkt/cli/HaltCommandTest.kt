@@ -141,4 +141,37 @@ class HaltCommandTest {
         assertThat(code).isEqualTo(ExitCodes.USER_ERROR)
         assertThat(stderr).contains("unknown strategy")
     }
+
+    @Test
+    fun `resume whose stream stop stands fails and says why`(
+        @TempDir tmp: java.nio.file.Path,
+    ) {
+        val client =
+            object : ControlClient(StateDir.resolve(tmp.toString())) {
+                override fun resume(name: String?): String =
+                    """{"state":"stream_stopped","affected":["alpha"],"streamStops":[{"strategy":"alpha",""" +
+                        """"stream":"X@front","stop":"roll failed","cleared":false,"stands":"position",""" +
+                        """"summary":"alpha stays stopped on X@front"}]}"""
+            }
+        val (code, stdout, stderr) = invokeResume(arrayOf("resume", "alpha"), client)
+        assertThat(code).isEqualTo(ExitCodes.USER_ERROR)
+        assertThat(stdout).doesNotContain("resumed")
+        assertThat(stderr).contains("alpha stays stopped on X@front")
+    }
+
+    @Test
+    fun `resume that clears a stream stop says so and succeeds`(
+        @TempDir tmp: java.nio.file.Path,
+    ) {
+        val client =
+            object : ControlClient(StateDir.resolve(tmp.toString())) {
+                override fun resume(name: String?): String =
+                    """{"state":"resumed","affected":["alpha"],"streamStops":[{"strategy":"alpha",""" +
+                        """"stream":"X@front","stop":"roll failed","cleared":true,"stands":null,""" +
+                        """"summary":"cleared the stop on X@front for alpha"}]}"""
+            }
+        val (code, stdout, _) = invokeResume(arrayOf("resume", "alpha"), client)
+        assertThat(code).isEqualTo(ExitCodes.SUCCESS)
+        assertThat(stdout).contains("cleared the stop on X@front for alpha", "resumed alpha")
+    }
 }
