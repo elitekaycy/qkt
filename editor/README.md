@@ -6,11 +6,11 @@ Editor support files for `.qkt` strategy files.
 
 - **`textmate/`** — the TextMate grammar (`source.qkt`) for VSCode, IntelliJ (via TextMate Bundles) and other
   TextMate-compatible editors. See [textmate/README.md](textmate/README.md).
-- **`vscode/`** — the VSCode extension: the same grammar, language configuration and snippets.
+- **`vscode/`** — the extension for VS Code, Cursor, Windsurf and VSCodium: the same grammar, language
+  configuration and snippets, plus a bundled language client that starts `qkt lsp`.
 - **`nvim/`** — Neovim/Vim filetype detection, syntax file, comment settings and language-server autostart.
 - **Language server** — `qkt lsp` speaks LSP over stdio and provides diagnostics, completion and hover for any
-  LSP-capable editor. The Neovim plugin starts it automatically; the VSCode extension ships no client, so wire
-  it through a generic LSP client extension if you want it there. See
+  LSP-capable editor. The Neovim plugin and the VS Code extension start it automatically. See
   [docs/how-to/editor-integrations.md](../docs/how-to/editor-integrations.md).
 
 ## Generated grammars
@@ -37,5 +37,6 @@ GitHub cannot use these grammars. Repositories and gists borrow Linguist's Haske
 
 ## Not here
 
-There is no tree-sitter grammar, no VSCode marketplace listing and no VSCode language client. The editor-tooling
-epic is [#71](https://github.com/elitekaycy/qkt/issues/71).
+There is no tree-sitter grammar yet. The plan for the remaining editors is in
+[the editor support design](../docs/superpowers/2026-11-01-editor-support-design.md); the editor-tooling epic
+is [#71](https://github.com/elitekaycy/qkt/issues/71).

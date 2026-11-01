@@ -20,6 +20,9 @@ qkt editor — bundled at: /home/you/.local/share/qkt/share/editor
 
 Supported targets:
   vscode     VSCode         [detected]
+  cursor     Cursor         [detected]
+  windsurf   Windsurf       [not found]
+  codium     VSCodium       [not found]
   nvim       Neovim         [detected]
   vim        Vim            [not found]
 ```
@@ -28,13 +31,14 @@ Supported targets:
 
 ```bash
 qkt editor install vscode
+qkt editor install cursor     # also: windsurf, codium
 qkt editor install nvim
 qkt editor install vim
 ```
 
 What each does:
 
-- **vscode** — runs `code --install-extension <bundled.vsix>`. If no `.vsix` is bundled (uncommon — release tarballs include one), falls back to `npx @vscode/vsce package` against the bundled source. If neither route works, prints the GitHub release URL.
+- **vscode**, **cursor**, **windsurf**, **codium** — run that editor's own command (`code`, `cursor`, `windsurf`, `codium`) with `--install-extension <bundled.vsix>`. Every VS Code fork takes the same `.vsix`. If no `.vsix` is bundled (uncommon — release assets include one), falls back to `npm ci` and `npx @vscode/vsce package` against the bundled source. If neither route works, prints the GitHub release URL.
 - **nvim** — copies `qkt.vim` into `$XDG_CONFIG_HOME/nvim/{ftdetect,ftplugin,syntax}/`.
 - **vim** — same, into `~/.vim/{ftdetect,ftplugin,syntax}/`.
 
@@ -170,50 +174,43 @@ Define a `qkt-mode` (deriving from `prog-mode`, with `.qkt` added to `auto-mode-
 
 Zed needs a small language extension to bind the `.qkt` file type; once bound, register a language server whose command is `qkt` with args `["lsp"]`.
 
-### VS Code
-
-Step 1 — install the bundled extension (syntax highlighting and snippets only):
+### VS Code, Cursor, Windsurf, VSCodium (automatic)
 
 ```bash
-qkt editor install vscode
+qkt editor install vscode     # or cursor, windsurf, codium
 ```
 
-This runs `code --install-extension` against the `.vsix` bundled in the release
-tarball (all release assets — plain, self-contained, and Windows — ship one; if you
-built from source without running `vsce package` first, the installer builds it with
-`npx @vscode/vsce` or points at the GitHub release). The extension carries **no
-language client**: colours and snippets work immediately, but live errors, completion
-and hover need step 2.
+The extension carries its own language client, so colours, snippets, completion,
+suggestions, hover and live errors all work as soon as it is installed. It starts
+`qkt lsp` the first time you open a `.qkt` file, finding `qkt` through the `qkt.path`
+setting, then `$QKT_HOME/bin`, then `PATH` (on Windows it resolves `qkt.exe` or
+`qkt.cmd` through `PATHEXT`). If `qkt` cannot be found, highlighting and snippets keep
+working and a notification offers the download link or the setting.
 
-Step 2 — wire the language server through a generic LSP client:
+| Setting | Default | What it does |
+|---|---|---|
+| `qkt.path` | empty | Path to the `qkt` executable |
+| `qkt.languageServer.enabled` | `true` | Turn the language server off, keeping highlighting |
+| `qkt.languageServer.jvmOptions` | small-JVM flags | JVM flags for the server, passed as `JAVA_TOOL_OPTIONS` |
 
-1. Install [Simple LSP Client](https://marketplace.visualstudio.com/items?itemName=wdomitrz.simple-lsp-client)
-   (`wdomitrz.simple-lsp-client`) from the Marketplace.
-2. Make sure `qkt` is on your `PATH` (the client spawns it per session), then add to
-   your `settings.json` (workspace settings keep it project-local):
+**qkt: Restart language server** in the command palette restarts it after you upgrade qkt.
 
-```json
-{
-  "simpleLspClient.servers": {
-    "qkt": {
-      "cmd": ["qkt", "lsp"],
-      "filetypes": ["qkt"]
-    }
-  }
-}
-```
+Projects created with `qkt create template` include `.vscode/extensions.json`, so VS Code
+and its forks offer to install the extension when the project opens. Release builds
+publish it to the VS Code Marketplace and to Open VSX (which Cursor, Windsurf and
+VSCodium search).
 
-3. Open a `.qkt` file. Break an indicator name on purpose — a diagnostic with the
-   exact line and column should appear, proving the client reached `qkt lsp`. Then
-   type a stream alias followed by `.` (e.g. `eur.`) for field completion.
+## Resource use
 
-If nothing happens, check the client's output channel, confirm `qkt lsp` answers on
-stdin/stdout (it must print only protocol frames there), and confirm the `code`
-command resolves in the terminal you launched VS Code from (`qkt` must be on that
-`PATH`).
+One server runs per editor window, and only once a `.qkt` file is open. It analyses a
+document once per pause in typing (200 ms), on a single background thread, rather than
+on every keystroke, so typing fast never costs more than one core. The VS Code extension
+and the Neovim plugin start it in a small JVM (capped 256 MB heap, one GC thread, one JIT
+thread); a typical session sits near 70 MB. Change the flags with
+`qkt.languageServer.jvmOptions` in VS Code or `let g:qkt_lsp_jvm_options = '...'` in Neovim.
 
 ## What's not here
 
-Go-to-definition, rename, formatting, semantic tokens, a bundled VS Code language client and a
-tree-sitter grammar are out of scope; the Vim syntax file generated by `qkt editor grammar` is
+Go-to-definition, rename, formatting, semantic tokens and a tree-sitter grammar are out of scope
+for now ([design](../superpowers/2026-11-01-editor-support-design.md)); the Vim syntax file generated by `qkt editor grammar` is
 what Neovim highlights with.
