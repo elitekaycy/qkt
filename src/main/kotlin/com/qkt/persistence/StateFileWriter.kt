@@ -1,6 +1,7 @@
 package com.qkt.persistence
 
 import com.qkt.common.FileNameSegment
+import java.nio.file.AccessDeniedException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
@@ -22,6 +23,13 @@ internal class StateFileWriter(
     private val slowWriteThresholdMs: Long = 100L,
 ) {
     private val log = LoggerFactory.getLogger(StateFileWriter::class.java)
+
+    /**
+     * One lock per target file. Windows refuses to replace a file another rename is replacing at
+     * the same moment (`AccessDeniedException`), so writers to the same target take turns; writes
+     * to different targets still run in parallel.
+     */
+    private val targetLocks = java.util.concurrent.ConcurrentHashMap<Path, Any>()
 
     val totalWrites: java.util.concurrent.atomic.AtomicLong =
         java.util.concurrent.atomic
@@ -67,17 +75,7 @@ internal class StateFileWriter(
                     StandardOpenOption.WRITE,
                     StandardOpenOption.DSYNC,
                 )
-                try {
-                    Files.move(
-                        temp,
-                        target,
-                        StandardCopyOption.ATOMIC_MOVE,
-                        StandardCopyOption.REPLACE_EXISTING,
-                    )
-                } catch (_: UnsupportedOperationException) {
-                    // ATOMIC_MOVE not supported on this filesystem; fall back to non-atomic.
-                    Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING)
-                }
+                synchronized(targetLocks.computeIfAbsent(target) { Any() }) { replace(temp, target) }
             } finally {
                 // On success the temp is already renamed away; on failure this reaps the
                 // orphan so unique temps don't accumulate.
@@ -151,4 +149,33 @@ internal class StateFileWriter(
 
     /** The directory of [strategyName]'s state; a portfolio child id such as `book:a` is encoded on Windows. */
     private fun ownerDir(strategyName: String): Path = rootDir.resolve(FileNameSegment.encode(strategyName))
+
+    /**
+     * Renames [temp] over [target]. On Windows a reader or a virus scanner holding [target] open
+     * makes the rename fail with `AccessDeniedException` for a moment, so it is retried briefly.
+     */
+    private fun replace(
+        temp: Path,
+        target: Path,
+    ) {
+        var attempt = 0
+        while (true) {
+            try {
+                try {
+                    Files.move(temp, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+                } catch (_: UnsupportedOperationException) {
+                    // ATOMIC_MOVE not supported on this filesystem; fall back to non-atomic.
+                    Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING)
+                }
+                return
+            } catch (e: AccessDeniedException) {
+                if (++attempt >= REPLACE_ATTEMPTS) throw e
+                Thread.sleep(attempt * 10L)
+            }
+        }
+    }
+
+    private companion object {
+        const val REPLACE_ATTEMPTS = 5
+    }
 }
