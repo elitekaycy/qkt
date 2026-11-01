@@ -34,6 +34,24 @@ class CommandDispatcherTest {
     private val usageText = "commands:\n/status\n/halt [name]\n/resume [name]\n/help"
 
     @Test
+    fun `Status names a stopped stream and why, on the strategy it stops`() {
+        val stop = com.qkt.broker.StreamStop("roll", "PAPER:BTC@front", "roll failed")
+        val control =
+            FakeDaemonControl().withStatus(
+                StatusReport(
+                    listOf(
+                        StrategyStatus("roll", running = true, halted = false, streamStops = listOf(stop)),
+                        StrategyStatus("gold", running = true, halted = false),
+                    ),
+                ),
+            )
+        val reply = CommandDispatcher(control).dispatch(ControlCommand.Status)
+        assertThat(reply.text).isEqualTo(
+            "strategies (2):\n- roll: running, stream stopped\n  PAPER:BTC@front: roll failed\n- gold: running",
+        )
+    }
+
+    @Test
     fun `Status with two strategies formats exact text`() {
         val control =
             FakeDaemonControl().withStatus(

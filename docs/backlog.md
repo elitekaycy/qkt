@@ -165,6 +165,12 @@ either supportive of that focus or queued for after.
 
 ### Tier 0 — current focus
 
+- `tbd` — A roll closed a contract the strategy did not hold ([#1563](https://github.com/elitekaycy/qkt/issues/1563))
+- `tbd` — A settled option on 29 Oct has no settlement deal ([#1564](https://github.com/elitekaycy/qkt/issues/1564))
+- `tbd` — A portfolio beside standalone strategies does not share the daily loss budget ([#1565](https://github.com/elitekaycy/qkt/issues/1565))
+- `tbd` — Gateway venues have no margin floor ([#1566](https://github.com/elitekaycy/qkt/issues/1566))
+- `tbd` — Move release attestation from the laptop to bot2 ([#1567](https://github.com/elitekaycy/qkt/issues/1567))
+
 - `progress` — Observe hedge-straddle on prod for 1 week before flipping the broker
   login from demo to real. Items needed to call this complete:
   - 19:55 UTC verification fires correctly (Phase 30 contractSize math + v0.26.6 OCO fix
