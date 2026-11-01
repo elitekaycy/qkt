@@ -30,11 +30,12 @@ data class StatusReport(
     val strategies: List<StrategyStatus>,
 )
 
-/** One strategy's state: whether its session is running and whether it is currently halted. */
+/** One strategy's state: whether its session is running, is halted, and which streams refuse its orders. */
 data class StrategyStatus(
     val name: String,
     val running: Boolean,
     val halted: Boolean,
+    val streamStops: List<com.qkt.broker.StreamStop> = emptyList(),
 )
 
 /**
@@ -120,7 +121,7 @@ class RegistryDaemonControl(
 
     override fun status(): StatusReport =
         StatusReport(
-            registry.list().map { StrategyStatus(it.name, it.live.running, it.live.isHalted()) },
+            registry.list().map { StrategyStatus(it.name, it.live.running, it.live.isHalted(), it.live.streamStops()) },
         )
 
     private fun apply(
