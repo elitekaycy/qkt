@@ -121,6 +121,8 @@ internal class LaneState(
                 saved.stopped,
                 saved.resting.map(::order),
                 saved.holders
+                    // A stopped strategy is never carried, though an older qkt's run may list it: only legs already out go on.
+                    .filter { h -> h.strategyId !in stops || saved.steps.any { it.strategyId == h.strategyId } }
                     .associate { it.strategyId to it.quantity }
                     .entries
                     .toList(),
