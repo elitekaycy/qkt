@@ -26,4 +26,27 @@ class GrammarFilesTest {
             .describedAs("editor/nvim/syntax/qkt.vim; regenerate with qkt editor grammar --format vim")
             .isEqualTo(GrammarGenerator.vim())
     }
+
+    @Test
+    fun `the tree-sitter grammar and the Helix and Zed highlight queries equal the generated files`() {
+        assertThat(read("editor/tree-sitter-qkt/grammar.js"))
+            .describedAs("editor/tree-sitter-qkt/grammar.js; regenerate with qkt editor grammar --format tree-sitter")
+            .isEqualTo(GrammarGenerator.render(GrammarGenerator.Format.TREE_SITTER))
+        assertThat(read("editor/tree-sitter-qkt/queries/highlights.scm"))
+            .describedAs("editor/tree-sitter-qkt/queries/highlights.scm; regenerate with --format helix-highlights")
+            .isEqualTo(GrammarGenerator.render(GrammarGenerator.Format.HELIX_HIGHLIGHTS))
+        assertThat(read("editor/zed/languages/qkt/highlights.scm"))
+            .describedAs("editor/zed/languages/qkt/highlights.scm; regenerate with --format zed-highlights")
+            .isEqualTo(GrammarGenerator.render(GrammarGenerator.Format.ZED_HIGHLIGHTS))
+    }
+
+    @Test
+    fun `the Emacs mode and the Sublime grammar equal the generated files`() {
+        assertThat(read("editor/emacs/qkt-mode.el"))
+            .describedAs("editor/emacs/qkt-mode.el; regenerate with qkt editor grammar --format emacs")
+            .isEqualTo(GrammarGenerator.render(GrammarGenerator.Format.EMACS))
+        assertThat(read("editor/sublime/qkt.tmLanguage"))
+            .describedAs("editor/sublime/qkt.tmLanguage; regenerate with qkt editor grammar --format tmlanguage")
+            .isEqualTo(GrammarGenerator.render(GrammarGenerator.Format.TMLANGUAGE))
+    }
 }

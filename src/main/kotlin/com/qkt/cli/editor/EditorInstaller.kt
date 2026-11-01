@@ -25,6 +25,8 @@ class EditorInstaller(
 ) {
     private val vscode =
         VscodeExtensionInstaller(detector, manifestPath, out, err, processRunner, pathLookup)
+    private val helix = HelixInstaller(detector.helixConfigDir(), out, processRunner, pathLookup)
+    private val files = FileCopyInstaller(detector, out, err)
 
     /** Outcome of a single-target install. `placedFiles` feeds the uninstall manifest. */
     data class InstallResult(
@@ -39,11 +41,16 @@ class EditorInstaller(
                 err.appendLine("qkt: cannot locate bundled editor files (set QKT_HOME or run from a packaged install)")
                 return null
             }
+        if (target == EditorTarget.ZED) return ZedGuide.print(root, out)
+        if (target == EditorTarget.INTELLIJ) return JetBrainsGuide.print(root, out)
         val result =
             when (target) {
-                EditorTarget.VSCODE -> vscode.install(root)
                 EditorTarget.NVIM -> installVimFamily(root, detector.nvimConfigDir(), EditorTarget.NVIM)
                 EditorTarget.VIM -> installVimFamily(root, detector.vimConfigDir(), EditorTarget.VIM)
+                EditorTarget.HELIX -> helix.install(root, err)
+                EditorTarget.SUBLIME -> files.installSublime(root)
+                EditorTarget.EMACS -> files.installEmacs(root)
+                else -> vscode.install(root, target)
             } ?: return null
         val updated = EditorManifest.load(manifestPath).withInstall(target, result.placedFiles)
         EditorManifest.save(manifestPath, updated)
@@ -52,7 +59,15 @@ class EditorInstaller(
 
     /** Removes whatever the manifest says we placed for [target]. Returns true on success. */
     fun uninstall(target: EditorTarget): Boolean {
-        if (target == EditorTarget.VSCODE) return vscode.uninstall()
+        if (target.isVscodeFamily) return vscode.uninstall(target)
+        if (target == EditorTarget.ZED || target == EditorTarget.INTELLIJ) {
+            out.appendLine(
+                "qkt editor: remove qkt from ${target.displayName} in its own settings; qkt placed no files there",
+            )
+            return true
+        }
+        if (target == EditorTarget.HELIX) helix.removeConfig()
+        if (target == EditorTarget.EMACS) files.removeEmacsConfig()
         val manifest = EditorManifest.load(manifestPath)
         val entry =
             manifest.recordFor(target) ?: run {
