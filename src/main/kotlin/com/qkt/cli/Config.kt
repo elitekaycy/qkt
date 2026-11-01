@@ -372,6 +372,7 @@ data class Config(
                     .loadFromString(expanded) as? Map<String, Any?>
                     ?: return defaults()
             validateRiskKeys(map["risk"])
+            validateHardDailyLoss(map["risk"] as? Map<*, *>)
             return Config(
                 source = (map["source"] as? String) ?: "tv",
                 dataRoot = (map["data_root"] as? String) ?: "./data",
@@ -456,6 +457,7 @@ data class Config(
         private val RISK_KEYS =
             setOf(
                 "max_daily_loss",
+                "hard_daily_loss",
                 "max_order_qty",
                 "max_order_notional",
                 "price_collar_pct",
@@ -703,25 +705,6 @@ data class Config(
                 val name = m.groupValues[1]
                 val default = m.groups[2]?.value
                 System.getenv(name) ?: System.getProperty(name) ?: default ?: m.value
-            }
-    }
-}
-
-enum class RuntimeMode {
-    DEV,
-    PAPER,
-    PRODUCTION,
-    ;
-
-    val production: Boolean get() = this == PRODUCTION
-
-    companion object {
-        fun fromConfig(raw: String?): RuntimeMode =
-            when (raw?.trim()?.lowercase()) {
-                null, "", "dev" -> DEV
-                "paper" -> PAPER
-                "production" -> PRODUCTION
-                else -> error("runtime.mode must be one of: dev, paper, production (got '$raw')")
             }
     }
 }
