@@ -1,6 +1,7 @@
 package com.qkt.observe
 
 import com.qkt.common.Clock
+import com.qkt.common.FileNameSegment
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
 import java.nio.charset.StandardCharsets
@@ -51,7 +52,7 @@ class OrderJournal(
                 .ofEpochMilli(now)
                 .atZone(ZoneOffset.UTC)
                 .toLocalDate()
-        val strategyDir = strategyId.ifBlank { "_unattributed" }
+        val strategyDir = FileNameSegment.encode(strategyId.ifBlank { "_unattributed" })
         val line = StringBuilder()
         line.append("{\"ts\":").append(now)
         line.append(",\"kind\":\"").append(kind).append('"')
