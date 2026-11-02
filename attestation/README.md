@@ -182,7 +182,8 @@ What the replay cannot do yet: ticks are stored by bare symbol, so two venues qu
 `ALPACA:AAPL`) cannot be captured or replayed; the gateway leg's transport (requests, acks) is not captured; and no
 step of the causal chain from signal to fill is compared. The follow-up issue tracks exact-price causal-chain replay.
 
-Run it with `run-attestation-catalog.sh --lanes ...,cross --cross-venue PAPER=http://127.0.0.1:8460@paper`. The gateway
+Run it with `run-attestation-catalog.sh --lanes ...,cross --cross-venue PAPER=http://127.0.0.1:8460@paper`, or name
+`cross_venues="PAPER=http://127.0.0.1:8460@paper"` in the attestation profile. The gateway
 venue of the shipped cases is the gateway's built-in `paper` adapter (a simulated account on Deribit's public prices,
 isolated by construction), so the lane needs no testnet account.
 

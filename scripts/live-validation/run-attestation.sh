@@ -79,7 +79,8 @@ plan="$wave_root/attest-$short.plan.json"; binding="$wave_root/attest-$short.bin
 # (bybit_gateway_url, bybit_expected_login; key in QKT_BYBIT_GATEWAY_KEY) adds the bybit lane; attest_stocks=true adds
 # the stocks lane (US share CFDs on the same MT5 account, inside attestation/lanes.yaml's window, with a fresh AAPL quote);
 # one that names an Alpaca gateway (alpaca_gateway_url, alpaca_expected_login; key in QKT_ALPACA_GATEWAY_KEY) adds the
-# alpaca lane: US shares through the gateway's Alpaca adapter.
+# alpaca lane: US shares through the gateway's Alpaca adapter; one that names cross_venues (LABEL=URL@LOGIN, space
+# separated; keys in QKT_CROSS_<LABEL>_KEY and QKT_CROSS_<LABEL>_GUARDIAN_KEY) adds the cross lane on the MT5 demo and them.
 lanes=orders,risk,book,engine,daemon,stress; deriv=()
 if [ -n "${deriv_gateway_url:-}" ]; then
     lanes="$lanes,derivatives"
@@ -93,6 +94,10 @@ fi
 if [ -n "${alpaca_gateway_url:-}" ]; then
     lanes="$lanes,alpaca"
     deriv+=(--alpaca-gateway-url "$alpaca_gateway_url" --alpaca-expected-login "${alpaca_expected_login:?profile sets alpaca_gateway_url without alpaca_expected_login}")
+fi
+if [ -n "${cross_venues:-}" ]; then
+    lanes="$lanes,cross"
+    for venue in $cross_venues; do deriv+=(--cross-venue "$venue"); done
 fi
 
 stage_write preflight

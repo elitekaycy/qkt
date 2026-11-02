@@ -21,6 +21,9 @@ data_corpus=/var/tmp/qkt-validation/data-corpus
 # Its trader token comes from QKT_BYBIT_GATEWAY_KEY (guardian: QKT_BYBIT_GUARDIAN_KEY).
 #bybit_gateway_url=http://127.0.0.1:18445
 #bybit_expected_login=<the account_login its /v1/health reports>
+# Optional: gateway venues for the cross lane (one daemon on this MT5 demo and them), LABEL=URL@LOGIN, space separated.
+# The shipped cases name PAPER, the built-in paper adapter. Tokens: QKT_CROSS_<LABEL>_KEY, QKT_CROSS_<LABEL>_GUARDIAN_KEY.
+#cross_venues="PAPER=http://127.0.0.1:18443@paper"
 # Optional preflight limits (defaults are proposals: 5 GB, 4 GB, 1500 ms median over five gateway reads).
 #preflight_min_disk_gb=5
 #preflight_min_mem_gb=4
