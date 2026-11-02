@@ -36,13 +36,26 @@ def foreign(entries, strategy):
     return [e for e in entries if not is_own(e.get("client_order_id"), strategy)]
 
 
+def coin_fee(deal):
+    """What of a spot pair's own coin [deal]'s costs took (`BTC` on `BTCUSD`, the VGP rule for a base-asset cost): the
+    deal's quantity was traded and this much less is held. A derivative's symbol has a `-`: its fee in the coin is
+    margin, not its position."""
+    if "-" in deal["symbol"]:
+        return Decimal(0)
+    code = deal["symbol"].replace("_", "")
+    return sum((Decimal(c["amount"]) for c in deal.get("costs") or []
+                if code.startswith(c["currency"]) and len(code) > len(c["currency"])), Decimal(0))
+
+
 def holdings(deals, settled=()):
-    """The strategy's signed holding per venue symbol: its [deals] (already its own) less the holdings the venue
-    settled at an expiry ([settled]: `held_settlements` entries); symbols it holds nothing of are left out."""
+    """The strategy's signed holding per venue symbol: its [deals] (already its own), less any fee paid in the coin,
+    less the holdings the venue settled at an expiry ([settled]: `held_settlements` entries); symbols it holds
+    nothing of are left out."""
     held = {}
     for deal in deals:
         quantity = Decimal(deal["quantity"])
-        held[deal["symbol"]] = held.get(deal["symbol"], Decimal(0)) + (quantity if deal["side"] == "buy" else -quantity)
+        moved = quantity if deal["side"] == "buy" else -quantity
+        held[deal["symbol"]] = held.get(deal["symbol"], Decimal(0)) + moved - coin_fee(deal)
     for settlement in settled:
         held[settlement["symbol"]] = held.get(settlement["symbol"], Decimal(0)) - settlement["holding"]
     return {symbol: quantity for symbol, quantity in held.items() if quantity != 0}
