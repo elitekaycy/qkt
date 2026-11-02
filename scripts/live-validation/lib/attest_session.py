@@ -14,8 +14,9 @@ import yaml
 
 NEW_YORK = ZoneInfo("America/New_York")
 SESSION = re.compile(r"nyse\[(\d\d):(\d\d)-(\d\d):(\d\d)\]")
-# Stage minutes before the catalog, measured on the 2026-10-30 run; a resumed run counts only those it must repeat.
-STAGE_SECONDS = {"build": 90, "proofs": 800, "wave": 880}
+# Stage seconds before the catalog (build and wave measured on 2026-10-30; proofs estimated now they run side by side);
+# a resumed run counts only those it must repeat.
+STAGE_SECONDS = {"build": 90, "proofs": 900, "wave": 880}
 # A serial gateway lane leaves as soon as a case is flat: it took 2360 s of 3240 s of budgets on 2026-10-30.
 SERIAL_TYPICAL_FRACTION = 0.75
 CASE_OVERHEAD_SECONDS = 30
