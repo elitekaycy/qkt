@@ -41,10 +41,15 @@ internal class LaneQuotes(
         tick: Tick?,
     ): RollQuotes =
         if (judging) {
-            RollQuotes(heardOn(from), tick?.let { contractTick(it, to) }) { RollQuotes(heardOn(from), heardOn(to)) }
+            RollQuotes(heardOn(from), tick?.let { contractTick(it, to) }) { latest(from, to) }
         } else {
             RollQuotes.NONE
         }
+
+    private fun latest(
+        from: Int,
+        to: Int,
+    ): RollQuotes = RollQuotes(heardOn(from), heardOn(to)) { latest(from, to) }
 
     private fun heardOn(index: Int): Tick? = last?.takeIf { it.symbol == chainOf().contractSymbol(index) }
 
