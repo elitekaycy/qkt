@@ -366,7 +366,7 @@ A halt blocks new exposure only: exits still go out. The other strategies see th
 |---|---|---|---|---|
 | `account.currency` | ISO currency string | `USD` | accounting engine, reports, risk notional | Normalized to uppercase. |
 | `fx_conversion.source` | string | `market` | accounting evidence | Descriptive source label for FX conversion. |
-| `fx_conversion.missing_policy` | `warn` or `fail` | `fail` | accounting engine | `fail` rejects unconvertible non-account-currency PnL/costs. `warn` is an explicit unsafe compatibility override. |
+| `fx_conversion.missing_policy` | `warn` or `fail` | `fail` | accounting engine | `fail` rejects unconvertible non-account-currency PnL/costs. `warn` is an explicit unsafe compatibility override. A venue fee is never rejected, because the fill already happened: it is priced from the fill's pair when it can be (an ETH fee on `ETHUSDT`), else kept in its own currency, counted as 0 in account currency, and warned about once. |
 | `fx_conversion.symbols.<PAIR>` | qkt symbol | empty | backtest/accounting | Maps an FX pair such as `USDJPY` to a qkt symbol used to source conversion marks. |
 
 CLI overrides are available for backtests: `--account-currency`, `--fx-source`, `--fx-missing-policy`, and repeated `--fx-symbol PAIR=QKT_SYMBOL`.

@@ -131,6 +131,9 @@ def soak(a):
             extra += [f"--{flag}-gateway-url", p[url], f"--{flag}-expected-login", p[login]]
     if p.get("attest_stocks") == "true":
         lanes += ",stocks"
+    for venue in (p.get("cross_venues") or "").split():
+        lanes += ",cross" if ",cross" not in lanes else ""
+        extra += ["--cross-venue", venue]
     stamp = time.strftime("%Y%m%d%H%M%S", time.gmtime())
     for round_no in range(1, a.soak + 1):
         command = ["bash", os.path.join(HERE, "run-attestation-catalog.sh"), "--out", f"{p['wave_root']}/attest-soak-{stamp}-{round_no}-catalog",

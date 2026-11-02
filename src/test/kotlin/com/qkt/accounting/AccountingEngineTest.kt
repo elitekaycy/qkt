@@ -164,5 +164,36 @@ class AccountingEngineTest {
         assertThat(converted.account.amount).isEqualByComparingTo("0.00032000")
     }
 
+    @Test
+    fun `a coin fee on a stablecoin pair is priced from the fill`() {
+        // soak_o07_tday, 2026-11-02: an ETH fee on BYBIT_SPOT:ETHUSDT faulted the engine on ETH->USD.
+        val fee = VenueCost(CostKind.COMMISSION, MoneyAmount(BigDecimal("0.000005"), "ETH"), 4_000L)
+        val converted = AccountingEngine().convertCost(fee, "BYBIT_SPOT:ETHUSDT", BigDecimal("2000"))
+
+        assertThat(converted.account.amount).isEqualByComparingTo("0.01000000")
+        assertThat(converted.conversion!!.source).isEqualTo("context:BYBIT_SPOT:ETHUSDT")
+    }
+
+    @Test
+    fun `a coin fee with no rate is booked in the coin with a warning, not thrown`() {
+        val engine = AccountingEngine()
+        val fee = VenueCost(CostKind.COMMISSION, MoneyAmount(BigDecimal("0.01"), "BNB"), 4_000L)
+
+        val converted = engine.convertCost(fee, "BYBIT_SPOT:ETHUSDT", BigDecimal("2000"))
+
+        assertThat(converted.native.amount).isEqualByComparingTo("0.01")
+        assertThat(converted.native.normalizedCurrency).isEqualTo("BNB")
+        assertThat(converted.account.amount).isEqualByComparingTo("0")
+        assertThat(converted.conversion).isNull()
+        assertThat(engine.snapshot().warnings.single()).contains("missing FX conversion BNB->USD")
+    }
+
+    @Test
+    fun `P&L with no rate still fails closed`() {
+        assertThatThrownBy {
+            AccountingEngine().convertPnl("BACKTEST:EURJPY", BigDecimal("100"), 1L, BigDecimal("160"))
+        }.isInstanceOf(MissingFxRateException::class.java)
+    }
+
     private fun coin(amount: String) = VenueCost(CostKind.COMMISSION, MoneyAmount(BigDecimal(amount), "BTC"), 4_000L)
 }

@@ -34,7 +34,8 @@ import java.math.BigDecimal
  * [LiquidatingVenue]; the venue's closes reach the engine as the stream's.
  *
  * With a [rollPriceBand] (a live session's) a roll stops a strategy whose legs would hit a quote further than that
- * fraction from the contract's measured roll price, sending nothing; a backtest passes none.
+ * fraction from the contract's measured roll price, sending nothing, and sends its legs as immediate-or-cancel limits
+ * at that fraction ([collarPrice]), so none can fill beyond it; a backtest passes none and sends market legs.
  *
  * A [marginAccount] is the account these streams trade on: an entry on a stream answers to its margin level.
  *

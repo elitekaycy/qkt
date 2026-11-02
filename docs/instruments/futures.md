@@ -75,6 +75,15 @@ contract settles: a running session hears it, and a contract that expired while 
 of that close: it keeps the holding until settlement and books it closed at the settlement price, so its P&L differs from
 the venue's by the gap between the two prices.
 
+A live roll's legs are immediate-or-cancel limits 25% from the contract's measured roll price, so no leg
+can fill beyond that however the book moved. A leg an immediate-or-cancel end left unfilled goes again under a new id, only what is left of it, up to five
+attempts 15 s apart, as does a far or missing quote seen before sending; a venue refusal such as a kill switch does not.
+A leg with no attempt left stops the strategy: a closing leg leaves the
+position on its contract, an opening leg closes it on the stream at the old leg's fill. If the opening leg part
+filled and its unwind does not fill too, that part stays on the new contract, logged as an error and shown by
+`qkt resume`, until the contract settles. A venue whose own price limit is tighter than 25% may refuse the limit,
+which also stops the strategy.
+
 A root's perpetual (`perpetual: BTCUSDT`) pays funding. Store its rates once
 with `qkt fetch BINANCE_UM:BTCUSDT --funding --from 2024-06-01 --to 2024-09-27`;
 a backtest charges them on every leg held through each one (`fundingPaid`), and

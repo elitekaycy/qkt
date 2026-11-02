@@ -83,9 +83,24 @@ def funding_share(record, deals):
     return amount * held / basis
 
 
+def closed_since(record, previous_ms, deals):
+    """Whether the strategy's [deals] closed a holding of the record's symbol after [previous_ms], the symbol's last
+    funding: Deribit realizes funding at the fill that closes a position and stamps it just after, so the strategy
+    holds nothing at the record's time and still owes it, which is how qkt books it (FundingBooking.kt)."""
+    return any(d["symbol"] == record["symbol"] and previous_ms < d["time"] <= record["time"] for d in deals)
+
+
 def strategy_funding(records, deals):
     """The funding records the strategy owes part of, each with its `share`; the rest are other users'."""
-    return [dict(r, share=str(funding_share(r, deals))) for r in records if funding_share(r, deals) != 0]
+    owed, last = [], {}
+    for record in sorted(records, key=lambda r: r["time"]):
+        share = funding_share(record, deals)
+        if share == 0 and record.get("position") is None and closed_since(record, last.get(record["symbol"], 0), deals):
+            share = Decimal(record["amount"])
+        last[record["symbol"]] = record["time"]
+        if share != 0:
+            owed.append(dict(record, share=str(share)))
+    return owed
 
 
 def sweep_orders(held, account_positions, strategy, now_ms):

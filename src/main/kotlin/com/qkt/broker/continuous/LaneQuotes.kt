@@ -8,6 +8,8 @@ import com.qkt.marketdata.Tick
 internal data class RollQuotes(
     val from: Tick?,
     val to: Tick?,
+    /** The quotes as they stand when asked later, for a roll looking again. */
+    val later: () -> RollQuotes = { NONE },
 ) {
     companion object {
         val NONE = RollQuotes(null, null)
@@ -39,10 +41,17 @@ internal class LaneQuotes(
         tick: Tick?,
     ): RollQuotes =
         if (judging) {
-            RollQuotes(last?.takeIf { it.symbol == chainOf().contractSymbol(from) }, tick?.let { contractTick(it, to) })
+            RollQuotes(heardOn(from), tick?.let { contractTick(it, to) }) { latest(from, to) }
         } else {
             RollQuotes.NONE
         }
+
+    private fun latest(
+        from: Int,
+        to: Int,
+    ): RollQuotes = RollQuotes(heardOn(from), heardOn(to)) { latest(from, to) }
+
+    private fun heardOn(index: Int): Tick? = last?.takeIf { it.symbol == chainOf().contractSymbol(index) }
 
     private fun contractTick(
         tick: Tick,

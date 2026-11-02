@@ -90,6 +90,12 @@ def main():
     return run.verdict(problems)
 
 
+def shared_account(case):
+    """The soak and release attestation trade these accounts by design, so others' size must not refuse a case's entries.
+    A case whose point is that refusal says `shared_account: false`."""
+    return bool(case.get("shared_account", True))
+
+
 class Run:
     def __init__(self, args, case):
         if args.arm != "I_UNDERSTAND_DEMO_ORDER_0.01":
@@ -310,7 +316,8 @@ class Run:
             url = self.proxy.url
         account = {"type": "gateway", "gateway_url": url, "api_key": "env:QKT_DERIV_GATEWAY_KEY",
                    "expected_adapter": adapter, "expected_account_login": self.args.expected_login,
-                   "expected_trade_mode": "demo", "chain_snapshot_seconds": 60}
+                   "expected_trade_mode": "demo", "chain_snapshot_seconds": 60,
+                   "shared_account": shared_account(self.case)}
         config = {"source": "local", "data_root": f"{self.out}/data", "starting_balance": 100000,
                   "brokers": {venue.lower(): account}}
         config.update(self.case.get("config", {}))  # a soak case's demo-only settings, such as risk limits

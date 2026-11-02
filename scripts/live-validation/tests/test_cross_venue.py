@@ -79,6 +79,7 @@ class DaemonConfig(unittest.TestCase):
                          ("mt5", 929010, 436804390, "demo"))
         self.assertEqual((gateway["type"], gateway["api_key"], gateway["expected_adapter"],
                           gateway["expected_account_login"]), ("gateway", "env:QKT_CROSS_PAPER_KEY", "paper", "paper"))
+        self.assertIs(gateway["shared_account"], True)
 
     def test_a_case_config_merges_over_it(self):
         config = cv.daemon_config(self.VENUES, "/out", {"max_order_qty": "0.05"},

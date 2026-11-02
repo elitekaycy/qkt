@@ -30,6 +30,13 @@ internal class RollRun(
     val resting: List<ContinuousOrder>,
     val holders: List<Map.Entry<String, BigDecimal>>,
 ) {
+    /** The contract prices the roll measured. */
+    val fromPrice: BigDecimal get() = measured.prices.fromPrice
+    val toPrice: BigDecimal get() = measured.prices.toPrice
+
+    /** What the roll last heard of both contracts' quotes; a restored roll has heard nothing yet. */
+    var quotes: RollQuotes = RollQuotes.NONE
+
     /** Each holder's step, in carry order; a holder not reached yet has none. */
     val steps = LinkedHashMap<String, CarryStep>()
 
