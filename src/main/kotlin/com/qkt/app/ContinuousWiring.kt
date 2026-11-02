@@ -23,7 +23,7 @@ internal interface ContinuousRouting {
     /** Where the session's lanes keep their state across restarts; null keeps none. */
     val laneStore: LaneStateStore?
 
-    /** How far from its measured roll price a quote a roll's leg would hit may lie, a fraction; null judges none. */
+    /** How far from its measured roll price a roll's leg may fill, a fraction; null: market legs, nothing judged. */
     val rollPriceBand: BigDecimal? get() = null
 
     /** Binds a lane's private [bus] to the session's engine loop, before the lane's venue is built. */

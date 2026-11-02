@@ -23,8 +23,7 @@ import java.math.BigDecimal
  * prices mapped by the contract the order worked on. The lane keeps each strategy's position on the
  * stream from those fills and rolls it ([RollExecutor]) when the schedule moves to the next contract;
  * a strategy whose position could not be carried places no further orders on the stream until an operator's resume
- * clears the stop ([releaseStop]). A live lane with a [store] saves its state ([LaneState]) before every venue action and after every venue answer,
- * and a restart restores it from there.
+ * clears the stop ([releaseStop]). A live lane with a [store] saves around every venue call; a restart restores it.
  */
 internal class StreamLane(
     private val bus: EventBus,
@@ -41,7 +40,7 @@ internal class StreamLane(
     private val venueBus = EventBus(clock, MonotonicSequenceGenerator())
     private val contractPrices = MarketPriceTracker()
 
-    /** The stream's contract positions as its venue account holds them: every venue fill, roll legs too, netted. */
+    /** The stream's contract positions as its venue account holds them, roll legs too. */
     private val book = StrategyPositionTracker(clock = clock::now)
     private val venue =
         venueFactory(venueBus, contractPrices, StreamContractPositions(chainOf().symbol, book.account))
@@ -67,9 +66,11 @@ internal class StreamLane(
     private val settled = LaneSettledCloses(bus, clock, chain.symbol, venue.broker, ::save, store != null)
     private val state = LaneState(chainOf, positions, stops, orders, book, legs, rolls, settled)
     val stopRelease = LaneStopRelease(chainOf, positions, stops, orders, book, legs, rolls)
-    private val recovery = LaneRecovery(clock, chainOf, venue, orders, legs, rolls, book, ::space)
+    private val collared = rollPriceBand != null
+    private val recovery = LaneRecovery(clock, chainOf, venue, orders, legs, rolls, book, ::space, collared)
     private var current: Int? = null
-    private val quotes = LaneQuotes(chainOf, ::space, rollPriceBand != null)
+    private val quotes = LaneQuotes(chainOf, ::space, collared)
+    private val legDeadline = RollLegDeadline(legs, rolls::waitingForVenue) { venue.broker.cancel(it) }
     private val spaces = HashMap<Int, PriceSpace>()
 
     init {
@@ -150,15 +151,15 @@ internal class StreamLane(
         (venue.broker as? LiquidatingVenue)?.liquidate(chain.contractSymbol(index))
     }
 
-    /** Stops the stream's venue. */
     fun shutdown() = venue.broker.shutdown()
 
     /** Roll if the schedule has moved on, then hand the contract tick behind [tick] to the venue. */
     fun onTick(tick: Tick) {
-        val index = catchUp(tick.timestamp, tick) ?: return
+        val index = catchUp(tick.timestamp, tick) ?: return legDeadline.onTick(tick.timestamp)
         val contractTick = quotes.heard(tick, index)
         contractPrices.update(contractTick)
         venue.onTick(contractTick)
+        legDeadline.onTick(tick.timestamp)
     }
 
     /** The contract followed at [nowMs], after rolling onto it if the lane was still on an earlier one. */
@@ -195,6 +196,5 @@ internal class StreamLane(
         store?.save(state.snapshot(current))
     }
 
-    /** Contract [index]'s price mapping, built once per contract. */
     private fun space(index: Int): PriceSpace = spaces.getOrPut(index) { chain.spaceFor(index) }
 }

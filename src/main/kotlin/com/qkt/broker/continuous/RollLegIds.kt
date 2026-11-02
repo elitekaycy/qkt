@@ -12,6 +12,22 @@ import java.security.MessageDigest
 internal object RollLegIds {
     private const val DIGEST_HEX = 12
 
+    /** How often a leg, or a roll's look at the quotes, is tried: five times about 60 s all told. */
+    const val MAX_ATTEMPTS = 5
+    const val RETRY_SPACING_MS = 15_000L
+
+    /** No retry inside this long of the old contract's expiry: the exchange settles what is left. */
+    const val RETRY_EXPIRY_MARGIN_MS = 600_000L
+
+    /** Which leg [id] is: `close`, `open` or `unwind`. */
+    fun kind(id: String): String = id.substringAfterLast(':').substringBefore('-')
+
+    /** Which attempt [id] is: the first has no suffix, the next `-2`. */
+    fun attempt(id: String): Int = id.substringAfterLast(':').substringAfter('-', "1").toInt()
+
+    /** The id of the attempt after [id], new at the venue. */
+    fun next(id: String): String = "${id.substringBeforeLast(':')}:${kind(id)}-${attempt(id) + 1}"
+
     fun base(
         stream: String,
         atMs: Long,

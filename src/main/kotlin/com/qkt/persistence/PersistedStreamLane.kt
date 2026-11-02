@@ -25,10 +25,12 @@ data class PersistedStreamLane(
     val settledCloses: List<SettledClose> = emptyList(),
 )
 
-/** A roll's market [leg] still out at the venue, with the [slices] of it filled so far, oldest first. */
+/** A roll's [leg] (a market order, or a live lane's collared limit) still out at the venue, with the [slices] of it filled so far, oldest first. */
 data class PersistedRollLeg(
-    val leg: OrderRequest.Market,
+    val leg: OrderRequest,
     val slices: List<BrokerEvent.OrderFilled>,
+    /** What earlier attempts of the leg filled. */
+    val earlier: List<BrokerEvent.OrderFilled> = emptyList(),
 )
 
 /** A strategy's signed [position] on the stream, and why it may place no further orders there ([stopped], null if it may). */
@@ -95,7 +97,7 @@ sealed interface PersistedCarryStep {
     data class Closing(
         override val strategyId: String,
         override val quantity: BigDecimal,
-        val leg: OrderRequest.Market,
+        val leg: OrderRequest,
     ) : PersistedCarryStep
 
     /** The old contract [close]d; waiting for the opening [leg] on the new one. */
@@ -103,7 +105,7 @@ sealed interface PersistedCarryStep {
         override val strategyId: String,
         override val quantity: BigDecimal,
         val close: BrokerEvent.OrderFilled,
-        val leg: OrderRequest.Market,
+        val leg: OrderRequest,
     ) : PersistedCarryStep
 
     /** Carried: the old contract's [close] and the new contract's [open]. */
