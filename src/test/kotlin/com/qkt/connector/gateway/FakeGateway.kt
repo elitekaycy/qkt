@@ -16,7 +16,6 @@ import okhttp3.mockwebserver.RecordedRequest
  * A VGP v1 gateway in a test, built from the wire spec over a [FakeVenue]: idempotent submits, lookups
  * by id (an id answered `404` is refused for ever), deal and settlement windows, a kill switch gating
  * every order that is not `reduce_only`, a stream that replays its log after `since`, and [quotes].
- * Tests drive it with [venue], [reset], [killed], [unreachable], [failing], [login] and [codes].
  */
 internal class FakeGateway(
     @Volatile var codes: List<String>,
@@ -57,7 +56,9 @@ internal class FakeGateway(
     /** The capabilities `/v1/health` reports; none, as a gateway from before capabilities. */
     @Volatile var capabilities: List<String> = emptyList()
 
-    /** The account login `/v1/health` reports. */
+    /** The adapter, and below it the account login, `/v1/health` reports. */
+    @Volatile var adapter = "fake"
+
     @Volatile var login = "7"
 
     /** What `/v1/account` answers; a venue moves it without sending any event. */
@@ -211,7 +212,7 @@ internal class FakeGateway(
         sockets.forEach { it.send(event) }
     }
 
-    private fun health() = FakeWire.health(login, killed, log.size, capabilities)
+    private fun health() = FakeWire.health(login, killed, log.size, capabilities, adapter)
 
     companion object {
         const val TIME = 1_790_835_377_133L

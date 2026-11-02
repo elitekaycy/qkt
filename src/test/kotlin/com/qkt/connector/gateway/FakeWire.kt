@@ -67,7 +67,9 @@ internal object FakeWire {
         killed: Boolean,
         seq: Int,
         capabilities: List<String>,
-    ) = """{"protocol":"vgp1","adapter":"fake","adapter_version":"1","account_login":"$login","trade_mode":"demo",""" +
+        adapter: String = "fake",
+    ) = """{"protocol":"vgp1","adapter":"$adapter","adapter_version":"1",""" +
+        """"account_login":"$login","trade_mode":"demo",""" +
         """"venue_connected":true,"kill_switch":{"all":$killed},"server_time":${FakeGateway.TIME},""" +
         """"stream":"s1","seq":$seq,"capabilities":${capabilities.joinToString(",", "[", "]") { "\"$it\"" }}}"""
 

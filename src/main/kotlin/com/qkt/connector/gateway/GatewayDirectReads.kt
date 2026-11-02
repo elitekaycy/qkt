@@ -28,14 +28,7 @@ internal class GatewayDirectReads(
             currency = account.currency,
             margin = used,
             freeMargin = BigDecimal(account.marginAvailable),
-            marginLevel =
-                if (used.signum() >
-                    0
-                ) {
-                    equity.divide(used, java.math.MathContext.DECIMAL64) * HUNDRED
-                } else {
-                    null
-                },
+            marginLevel = account.marginLevel(),
             openProfit = equity - BigDecimal(account.balance),
             leverage = null,
             login = health.accountLogin,
@@ -137,9 +130,5 @@ internal class GatewayDirectReads(
                 )
             }.filter { it.endTime <= nowMs }
             .takeLast(count)
-    }
-
-    private companion object {
-        val HUNDRED = BigDecimal(100)
     }
 }
