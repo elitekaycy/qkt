@@ -56,7 +56,7 @@ internal class GatewaySession(
     private val holders =
         GatewayHolders(symbols, routing, account, lock, expectedStrategies, sharedAccount, clock, deploysUnderway)
     private val funding = GatewayFunding(client, symbols, clock, routing, lock)
-    private val placement = GatewayPlacement(client, clock, ledger::onOrder, ledger::onFill, submitDeadlineMs, retryMs)
+    internal val placement = GatewayPlacement(client, clock, ledger::onOrder, ledger::onFill, submitDeadlineMs, retryMs)
     private val sync =
         GatewaySync(
             client,

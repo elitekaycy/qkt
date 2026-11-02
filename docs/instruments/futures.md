@@ -84,6 +84,17 @@ filled and its unwind does not fill too, that part stays on the new contract, lo
 `qkt resume`, until the contract settles. A venue whose own price limit is tighter than 25% may refuse the limit,
 which also stops the strategy.
 
+
+Live on a gateway, a market entry on a dated future goes as an immediate-or-cancel limit 25% from the contract's last price
+(the venue's mark), so a stray far quote cannot fill it. The engine still sees one market order. An attempt the venue cancels
+is sent again, for what is left, after 1 s and 2 s, around the price as it then stands. An entry that finds nothing in 3 attempts
+is rejected with a reason saying so; with no price heard it is refused. A venue that refuses the limit itself gets a plain market
+order, except for the gateway's kill switch. An exit (it closes a ticket or leg, or strictly reduces the strategy's position and
+the account's) is not collared: it goes as a plain market order with a warning, so it cannot get stuck, and it can still fill at
+a far quote. Resting stops stay venue stop orders. Perpetuals, spot and options keep plain market orders: in a 5-minute probe of
+Deribit's public tickers on 2026-11-02, dated futures had a side beyond 25% of mark on about 6% of ticks and perpetuals on none of
+57,733; spot, in 150 s, on none of 11,223. Backtests and MT5 are unchanged.
+
 A root's perpetual (`perpetual: BTCUSDT`) pays funding. Store its rates once
 with `qkt fetch BINANCE_UM:BTCUSDT --funding --from 2024-06-01 --to 2024-09-27`;
 a backtest charges them on every leg held through each one (`fundingPaid`), and

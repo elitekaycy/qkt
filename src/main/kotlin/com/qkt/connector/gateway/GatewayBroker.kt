@@ -23,6 +23,7 @@ import com.qkt.events.FillAccountedEvent
 import com.qkt.execution.ManagedOrder
 import com.qkt.execution.OrderRequest
 import com.qkt.instrument.TickSteps
+import com.qkt.marketdata.MarketPriceProvider
 import com.qkt.positions.Position
 import com.qkt.positions.PositionProvider
 import java.math.BigDecimal
@@ -36,7 +37,8 @@ import java.math.BigDecimal
  * trusts each strategy's persisted book, and the account checks their total against the venue whenever a
  * strategy is ready ([GatewaySession.ready]). [optionGrid] is an option contract's declared price grid.
  * Its venue truth (account, positions, working orders, deals) is read through [GatewayVenueReads], the
- * same reads an MT5 broker answers, under the account's label ([GatewaySession.label]).
+ * same reads an MT5 broker answers, under the account's label ([GatewaySession.label]). A market order on a thin
+ * contract goes as a collared limit around its last price in [prices] ([GatewayMarketCollar]); no [prices], no collar.
  */
 class GatewayBroker internal constructor(
     private val session: GatewaySession,
@@ -44,12 +46,14 @@ class GatewayBroker internal constructor(
     private val clock: Clock,
     private val positions: PositionProvider,
     strategy: String?,
+    prices: MarketPriceProvider? = null,
     private val optionGrid: (String) -> TickSteps? = { null },
 ) : Broker,
     BookedDealsVenue,
     MarginLevelProvider,
     VenueDescribed {
-    private val attachment = session.attach(strategy, positions, bus::publish)
+    private val collar = session.marketCollar(prices, clock, positions, { place(it) }, bus::publish)
+    private val attachment = session.attach(strategy, positions, collar::heard)
     private val venueReads =
         GatewayVenueReads(
             session.venue,
@@ -99,6 +103,12 @@ class GatewayBroker internal constructor(
             session.refreshListing()
             return refuse(request, "${request.symbol} is not in the gateway's listing (refreshing it)")
         }
+        collar.refusal(request)?.let { return refuse(request, it) }
+        return place(collar.first(request))
+    }
+
+    private fun place(request: OrderRequest): SubmitAck {
+        val code = requireNotNull(session.symbols.venue(request.symbol))
         // An option's grid steps up with its price, which the listing's one tick cannot say.
         val grid = optionGrid(request.symbol) ?: session.symbols.tick(request.symbol)?.let(::TickSteps)
         val body =
@@ -110,7 +120,9 @@ class GatewayBroker internal constructor(
         return SubmitAck(request.id, brokerOrderId = null, accepted = true)
     }
 
-    override fun cancel(orderId: String) = session.cancel(orderId)
+    override fun cancel(orderId: String) {
+        if (!collar.cancelled(orderId)) session.cancel(orderId)
+    }
 
     override fun recoverPendingOrders(
         orders: List<ManagedOrder>,
@@ -185,7 +197,10 @@ class GatewayBroker internal constructor(
     private fun reject(
         request: OrderRequest,
         reason: String,
-    ) = bus.publish(BrokerEvent.OrderRejected(request.id, null, reason, request.strategyId, clock.now()))
+    ) {
+        if (collar.refused(request.id, reason)) return
+        bus.publish(BrokerEvent.OrderRejected(request.id, null, reason, request.strategyId, clock.now()))
+    }
 
     private fun refuse(
         request: OrderRequest,

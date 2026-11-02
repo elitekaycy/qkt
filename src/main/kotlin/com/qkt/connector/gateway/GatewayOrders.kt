@@ -75,8 +75,7 @@ internal object GatewayOrders {
         }
         val side = if (request.side == Side.BUY) "buy" else "sell"
         val quantity = request.quantity.toPlainString()
-        val reduceOnly =
-            reduces(request, positions.positionFor(request.symbol)?.quantity) && reduces(request, accountHeld)
+        val reduceOnly = reducesBoth(request, positions, accountHeld)
         val body =
             when (request) {
                 is OrderRequest.Market ->
@@ -131,6 +130,13 @@ internal object GatewayOrders {
             }
         return GatewayOrderMapping.Send(body)
     }
+
+    /** Whether [request] strictly reduces both the strategy's position in [positions] and the account's [accountHeld]. */
+    fun reducesBoth(
+        request: OrderRequest,
+        positions: PositionProvider,
+        accountHeld: BigDecimal,
+    ): Boolean = reduces(request, positions.positionFor(request.symbol)?.quantity) && reduces(request, accountHeld)
 
     private fun reduces(
         request: OrderRequest,
