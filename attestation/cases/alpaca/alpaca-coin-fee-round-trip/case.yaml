@@ -8,6 +8,7 @@ why: 'Alpaca takes a coin buy''s fee in the coin bought (0.0002 BTC bought leave
   judged: Alpaca also takes a dollar fee on a coin sale that no fill, order or activity reports per execution (measured
   2026-10-28), and rounds cash to the cent.'
 status: ready
+session: none
 symbols:
 - ALPACA:BTCUSD
 timeframes:
