@@ -85,7 +85,7 @@ class MarketDataGate(
             onStillStale,
         )
 
-    private val bySymbol: MutableMap<String, SymbolFeedState> = ConcurrentHashMap()
+    internal val bySymbol: MutableMap<String, SymbolFeedState> = ConcurrentHashMap()
     private val sides = AbsurdQuoteSides(judgesOutliers, log)
 
     /** Count of ticks rejected as outliers (crossed books included). */
