@@ -1,5 +1,6 @@
 package com.qkt.cli.daemon.routes
 
+import com.qkt.app.FlattenResult
 import com.qkt.cli.daemon.OperatorJournal
 import com.qkt.cli.daemon.StateDir
 import com.qkt.cli.daemon.StrategyRegistry
@@ -7,7 +8,8 @@ import com.sun.net.httpserver.HttpExchange
 
 /**
  * `POST /stop/{name}` — stops a portfolio (flattening non-hold children by default),
- * operator-stops a portfolio child, or stops a standalone strategy.
+ * operator-stops a portfolio child, or stops a standalone strategy. A verified flatten that did not end flat
+ * answers `not_flat` ([stopAnswer]), not the state a flat stop would.
  */
 internal fun handleStop(
     ex: HttpExchange,
@@ -37,11 +39,12 @@ internal fun handleStop(
     registry.getPortfolio(name)?.let { record ->
         record.supervisor.stop()
         var totalTrades = 0
+        val flats = mutableListOf<Pair<String, FlattenResult>>()
         for (child in record.children) {
             val meta = child.childMeta
             val shouldFlatten = flattenOverride ?: (meta != null && !meta.hold)
             if (shouldFlatten) {
-                runCatching { child.live.flattenForStop() }
+                flats += child.name to child.live.verifiedStopFlatten()
             }
             totalTrades += child.tradeCount
         }
@@ -55,7 +58,7 @@ internal fun handleStop(
                 affected = listOf(name) + record.children.map { it.name },
                 details = mapOf("flatten" to (flattenOverride?.toString() ?: "default")),
             )
-        return respond(ex, 200, """{"name":"$name","state":"stopped","trades":$totalTrades}""")
+        return respond(ex, 200, stopAnswer(name, "stopped", totalTrades, flats))
     }
 
     val handle =
@@ -66,7 +69,9 @@ internal fun handleStop(
         meta.operatorStop.set(true)
         meta.gateActive.set(false)
         val shouldFlatten = flattenOverride ?: !meta.hold
-        if (shouldFlatten) runCatching { handle.live.flatten() }
+        // Only an operator's explicit --flatten waits to be confirmed; a child's default flatten stays as it was.
+        val flat = if (flattenOverride == true) handle.live.verifiedStopFlatten() else null
+        if (shouldFlatten && flat == null) runCatching { handle.live.flatten() }
         OperatorJournal
             .from(stateDir, "http")
             ?.record(
@@ -75,14 +80,11 @@ internal fun handleStop(
                 affected = listOf(name),
                 details = mapOf("flatten" to shouldFlatten.toString(), "state" to "operator_stopped"),
             )
-        return respond(
-            ex,
-            200,
-            """{"name":"$name","state":"operator_stopped","trades":${handle.tradeCount}}""",
-        )
+        val flats = listOfNotNull(flat?.let { name to it })
+        return respond(ex, 200, stopAnswer(name, "operator_stopped", handle.tradeCount, flats))
     }
     val trades = handle.tradeCount
-    val flat = if (flattenOverride == true) runCatching { handle.live.flattenForStop() }.getOrNull() else null
+    val flat = if (flattenOverride == true) handle.live.verifiedStopFlatten() else null
     registry.stop(name)
     OperatorJournal
         .from(stateDir, "http")
@@ -92,6 +94,5 @@ internal fun handleStop(
             affected = listOf(name),
             details = mapOf("flatten" to (flattenOverride?.toString() ?: "false")),
         )
-    val verified = flat?.let { ""","flat":${it.verifiedFlat}""" }.orEmpty()
-    respond(ex, 200, """{"name":"$name","state":"stopped","trades":$trades$verified}""")
+    respond(ex, 200, stopAnswer(name, "stopped", trades, listOfNotNull(flat?.let { name to it })))
 }

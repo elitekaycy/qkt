@@ -68,6 +68,13 @@ continuous stream trades on a `type: gateway` account (parity rows A53-A57). A s
 roll failed is stopped on the stream: every order is refused, even after a restart, until a
 [`qkt resume`](../reference/cli-commands.md) finds nothing of it left on the stream and clears the stop.
 
+A position a failed roll stranded on its contract cannot be closed through qkt: the stopped stream refuses every order,
+`qkt stop --flatten` reports it held rather than `stopped`, and `qkt resume` is refused while it is held. It closes when the
+contract settles: a running session hears it, and a contract that expired while qkt was away is settled at the next start.
+`qkt resume` then clears the stop. To be out sooner, close it on the venue itself, in its own app or API. qkt does not hear
+of that close: it keeps the holding until settlement and books it closed at the settlement price, so its P&L differs from
+the venue's by the gap between the two prices.
+
 A root's perpetual (`perpetual: BTCUSDT`) pays funding. Store its rates once
 with `qkt fetch BINANCE_UM:BTCUSDT --funding --from 2024-06-01 --to 2024-09-27`;
 a backtest charges them on every leg held through each one (`fundingPaid`), and

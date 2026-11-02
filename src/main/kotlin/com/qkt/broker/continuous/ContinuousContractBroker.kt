@@ -128,7 +128,9 @@ class ContinuousContractBroker(
 
     override fun streamStops(strategyId: String): List<StreamStop> =
         lanes.mapNotNull { (symbol, lane) ->
-            lane.stopRelease.standing(strategyId)?.let { StreamStop(strategyId, symbol, it) }
+            lane.stopRelease.standing(strategyId)?.let {
+                StreamStop(strategyId, symbol, it, lane.stopRelease.holdings(strategyId))
+            }
         }
 
     override fun marginVenueFor(symbol: String): Broker = marginAccount ?: this
