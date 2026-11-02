@@ -39,3 +39,18 @@ test("on Windows finds qkt.exe or qkt.cmd through PATHEXT, not the extensionless
 test("returns undefined when qkt is nowhere", () => {
   assert.strictEqual(resolveQkt("", { PATH: "/nonexistent" }, "linux"), undefined);
 });
+
+test("falls back to the launcher qkt editor install recorded", () => {
+  const config = fs.mkdtempSync(path.join(os.tmpdir(), "qkt-config-"));
+  const qkt = path.join(tempDirWith("qkt"), "qkt");
+  fs.mkdirSync(path.join(config, "qkt"));
+  fs.writeFileSync(path.join(config, "qkt", "qkt-path"), qkt);
+  assert.strictEqual(resolveQkt("", { PATH: "/nonexistent", XDG_CONFIG_HOME: config }, "linux"), qkt);
+});
+
+test("ignores a recorded launcher that no longer exists", () => {
+  const config = fs.mkdtempSync(path.join(os.tmpdir(), "qkt-config-"));
+  fs.mkdirSync(path.join(config, "qkt"));
+  fs.writeFileSync(path.join(config, "qkt", "qkt-path"), path.join(config, "gone"));
+  assert.strictEqual(resolveQkt("", { PATH: "/nonexistent", XDG_CONFIG_HOME: config }, "linux"), undefined);
+});

@@ -38,6 +38,9 @@ attestation/
 | `timeframes` | Every timeframe a stream uses, e.g. `[1m, 15m, 1h]` |
 | `warmup_bars` | Per-timeframe warmup depth, e.g. `{1m: 6, 15m: 20}` |
 | `proves` | Capability names from `oracle-evidence.json`, plus free-form `behaviour:` tags |
+| `session` | `none` marks a case that trades a 24/7 market in a session-bound lane, so the market's hours do not bind it |
+| `release_proof` | Required on a `scheduled` case: why a release does not wait for it, and which proof stands in |
+| `roll_from_now` | Derivatives lane: `{root, lead_minutes}`, generate the root's roll to happen that many minutes after the case starts (`lib/roll_from_now.py`) |
 | `budget_seconds` | Hard deadline; omitted means the lane default. Never above 600 (14400 for a `scheduled` case) |
 | `steps` | Daemon/engine lanes: ordered operator commands with the exit code and state expected after each |
 | `assertions` | Named checks the runner applies, e.g. `trace-parity`, `journal-byte-exact`, `flat-by-magic` |
@@ -48,6 +51,13 @@ attestation/
 | `settles` | Derivatives lane: the expiry settlements qkt must book before the case is judged |
 | `drills` | Derivatives lane: failures fired while the case holds, each `{kind, at_s}` timed from the first fill (below) |
 | `venues` | Cross lane: each broker prefix the strategy trades through, `{label, type: mt5}` or `{label, type: gateway, adapter}` (below) |
+
+## No case waits for the clock
+
+The only thing a release may wait for is a market being closed. A case makes its event happen when it runs (a GTD
+`NOW + 2m`, a contract picked from now, a roll generated from now). An event only the venue can trigger at its own
+fixed time is `scheduled`: outside the catalog, never required, and it must name its `release_proof`. `attestation/lib/validate.py`
+refuses one that does not.
 
 ## The derivatives lane
 

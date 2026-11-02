@@ -6,6 +6,7 @@ why: 'On the FX calendar a stock was "in session" all night: a restart at 05:00 
   New York, the case evaluates the pre-open quotes, has its buy refused before the venue each minute in
   live and replay alike, raises no staleness alarm, then buys within the session''s first minutes.'
 status: scheduled
+release_proof: The open happens once a day, so no release waits for it. Replaced by MarketDataGateOutOfSessionTest and the stocks lane's stock-trade-mode-refusal in the session; run it live by hand before a calendar change.
 symbols:
 - AAPL
 timeframes:

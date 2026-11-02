@@ -7,8 +7,8 @@
 #
 # Every stage either passes or stops the release with a one-line reason; nothing is retried by
 # hand and nothing is skipped. It is safe to run again after a stop: each stage looks at the state
-# it finds (an attestation already assembled for this commit is still re-run, because the live
-# evidence must belong to this attempt; an open promotion PR is reused; an existing tag stops it).
+# it finds (on the same commit the attestation keeps what passed on this exact build and reruns the rest, see
+# scripts/live-validation/lib/attest_resume.py; an open promotion PR is reused; an existing tag stops it).
 set -euo pipefail
 # This script checks out `testing` in its own clone, and bash reads a script as it runs it: a
 # checkout that rewrites this file would change the program mid-flight. Run from a private copy.
@@ -63,12 +63,23 @@ cd "$repo_root"
 [ -z "$(git status --porcelain)" ] || stop "checkout is not clean"
 [ -n "$repo" ] || repo="$(git remote get-url origin | sed -E 's#(git@github.com:|https://github.com/)##; s#\.git$##')"
 
+# Everything that can already be known wrong, before waiting on CI; the session windows are judged by the attestation's
+# own preflight, once it knows when it starts.
+if [ -f scripts/live-validation/lib/attest_preflight.py ]; then
+    preflight_log="$(mktemp "${TMPDIR:-/tmp}/qkt-release-preflight.XXXXXX")"
+    QKT_BROKER_API_KEY="$(cat "$key_file")" QKT_LIVE_DEMO_ORDER_APPROVAL=LOCALHOST_DEMO_ONLY \
+        python3 scripts/live-validation/lib/attest_preflight.py --profile "$profile" --repo-root "$repo_root" \
+        --key-file "$key_file" --dispatch --no-session > "$preflight_log" 2>&1 ||
+        { cat "$preflight_log"; stop "preflight: $(tail -n 1 "$preflight_log" | cut -c1-900)"; }
+    log "$(tail -n 1 "$preflight_log")"; rm -f "$preflight_log"
+fi
+
 # 1. testing: contains the wanted commit, and its own CI is green.
-for _ in $(seq 1 "${QKT_RELEASE_TESTING_POLLS:-90}"); do
+for _ in $(seq 1 "$((${QKT_RELEASE_TESTING_POLLS:-90} * 2))"); do
     git fetch -q origin
     testing="$(git rev-parse origin/testing)"
     if [ -n "$wait_for" ] && ! git merge-base --is-ancestor "$wait_for" "$testing" 2> /dev/null; then
-        log "testing ${testing:0:8} does not contain ${wait_for:0:8} yet"; sleep 60; continue
+        log "testing ${testing:0:8} does not contain ${wait_for:0:8} yet"; sleep 30; continue
     fi
     runs="$(gh run list -R "$repo" --branch testing --commit "$testing" --json name,status,conclusion,headSha \
         -q ".[] | select(.headSha == \"$testing\") | .name + \":\" + .status + \":\" + (.conclusion // \"\")" | tr '\n' ' ')"
@@ -81,12 +92,12 @@ for _ in $(seq 1 "${QKT_RELEASE_TESTING_POLLS:-90}"); do
         gh run list -R "$repo" --branch testing --commit "$testing" --json databaseId,conclusion,headSha \
             -q ".[] | select(.headSha == \"$testing\" and (.conclusion == \"failure\" or .conclusion == \"cancelled\")) | .databaseId" |
             while read -r failed; do gh run rerun "$failed" -R "$repo" --failed > /dev/null && log "re-ran failed testing run $failed once"; done
-        sleep 60
+        sleep 30
         continue
     fi
     if grep -q 'check:completed:success' <<<"$runs" && grep -q 'integration:completed:success' <<<"$runs" &&
         grep -q 'docker:completed:success' <<<"$runs"; then break; fi
-    sleep 60
+    sleep 30
 done
 # The loop also ends when its wait runs out: every testing run must be green, not only the last checked.
 for run in check integration docker; do
@@ -103,26 +114,37 @@ git checkout -q --detach "$testing"
 # 2. live attestation, which also dispatches paper-soak with the evidence it assembled.
 started="$(date +%s)"
 QKT_BROKER_API_KEY="$(cat "$key_file")" QKT_LIVE_DEMO_ORDER_APPROVAL=LOCALHOST_DEMO_ONLY \
-    bash scripts/live-validation/run-attestation.sh --profile "$profile" --dispatch || stop "attestation failed: see its output above"
+    bash scripts/live-validation/run-attestation.sh --profile "$profile" --dispatch ||
+    stop "attestation failed: $(jq -r .detail "$(. "$profile"; echo "$wave_root")/attestation-run.json" 2>/dev/null | cut -c1-1000)"
 log "attested in $(( $(date +%s) - started ))s"
 
 # 3. paper-soak on the self-hosted runner.
-sleep 30
-soak="$(gh run list -R "$repo" --workflow paper-soak.yml --commit "$testing" --limit 1 --json databaseId -q '.[0].databaseId')"
-for _ in $(seq 1 60); do
+# A dispatched run takes seconds to appear: asked for until it does, not after a fixed wait.
+newest_run() {  # workflow, earliest creation time: an older run of this commit is not the one just dispatched
+    local id=""
+    for _ in $(seq 1 36); do
+        id="$(gh run list -R "$repo" --workflow "$1" --commit "$testing" --limit 5 --json databaseId,createdAt \
+            -q "[.[] | select(.createdAt >= \"$2\")][0].databaseId // empty")"
+        [ -z "$id" ] || break
+        sleep 5
+    done
+    printf '%s' "$id"
+}
+soak="$(newest_run paper-soak.yml "$(date -u -d "@$((started - 60))" +%FT%TZ)")"; [ -n "$soak" ] || stop "paper-soak was dispatched but no run appeared"
+for _ in $(seq 1 180); do
     state="$(gh run view "$soak" -R "$repo" --json status,conclusion -q '.status + " " + (.conclusion // "")')"
-    case "$state" in completed*) break ;; esac; sleep 30
+    case "$state" in completed*) break ;; esac; sleep 10
 done
 [ "$state" = "completed success" ] || stop "paper-soak run $soak: $state"
 log "paper-soak $soak green"
 
 # 4. the promotion PR, on exactly the attested commit.
+dispatched="$(date -u -d '-60 seconds' +%FT%TZ)"
 gh workflow run promote-to-main.yml -R "$repo" --ref testing > /dev/null
-sleep 40
-promote="$(gh run list -R "$repo" --workflow promote-to-main.yml --commit "$testing" --limit 1 --json databaseId -q '.[0].databaseId')"
-for _ in $(seq 1 30); do
+promote="$(newest_run promote-to-main.yml "$dispatched")"; [ -n "$promote" ] || stop "promote-to-main was dispatched but no run appeared"
+for _ in $(seq 1 60); do
     state="$(gh run view "$promote" -R "$repo" --json status,conclusion -q '.status + " " + (.conclusion // "")')"
-    case "$state" in completed*) break ;; esac; sleep 20
+    case "$state" in completed*) break ;; esac; sleep 10
 done
 [ "$state" = "completed success" ] || stop "promote-to-main run $promote: $state"
 pr="$(gh pr list -R "$repo" --base main --head testing --state open --json number -q '.[0].number')"
@@ -131,10 +153,10 @@ log "promotion PR #$pr"
 held="$(gh api "repos/$repo/actions/runs?head_sha=$testing&status=action_required" \
     --jq '.workflow_runs[] | select(.name == "windows-ci") | .id' | head -n 1)"
 [ -z "$held" ] || { gh api -X POST "repos/$repo/actions/runs/$held/approve" > /dev/null && log "approved windows-ci run $held"; }
-for _ in $(seq 1 60); do
+for _ in $(seq 1 135); do
     merge_state="$(gh pr view "$pr" -R "$repo" --json mergeStateStatus -q .mergeStateStatus)"
     [ "$merge_state" = CLEAN ] && break
-    sleep 45
+    sleep 20
 done
 [ "$merge_state" = CLEAN ] || stop "promotion PR #$pr is $merge_state, not CLEAN"
 [ "$(gh pr view "$pr" -R "$repo" --json headRefOid -q .headRefOid)" = "$testing" ] ||
@@ -142,7 +164,10 @@ done
 gh pr review "$pr" -R "$repo" --approve \
     --body "Promotion of testing $testing for $version: unattended live attestation passed, paper-soak green, all required checks green." > /dev/null
 gh pr merge "$pr" -R "$repo" --merge --match-head-commit "$testing" > /dev/null
-sleep 10
+for _ in $(seq 1 12); do
+    merged="$(gh pr view "$pr" -R "$repo" --json state,mergeCommit -q '.state + " " + (.mergeCommit.oid // "")')"
+    case "$merged" in MERGED\ ?*) break ;; esac; sleep 5
+done
 merged="$(gh pr view "$pr" -R "$repo" --json state,mergeCommit -q '.state + " " + (.mergeCommit.oid // "")')"
 case "$merged" in MERGED*) ;; *) stop "promotion PR #$pr did not merge: $merged" ;; esac
 

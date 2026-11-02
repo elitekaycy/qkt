@@ -1,0 +1,24 @@
+<idea-plugin>
+    <id>com.qkt.jetbrains</id>
+    <name>qkt</name>
+    <vendor url="https://github.com/elitekaycy/qkt">qkt</vendor>
+    <description><![CDATA[
+        Highlighting, completion, hover and live errors for qkt strategy files (<code>.qkt</code>).
+        Completion and errors come from <code>qkt lsp</code>, so qkt must be installed.
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends>org.jetbrains.plugins.textmate</depends>
+    <depends>com.redhat.devtools.lsp4ij</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <textmate.bundleProvider implementation="com.qkt.jetbrains.QktBundleProvider"/>
+    </extensions>
+
+    <extensions defaultExtensionNs="com.redhat.devtools.lsp4ij">
+        <server id="qkt" name="qkt" factoryClass="com.qkt.jetbrains.QktLanguageServerFactory">
+            <description>The qkt language server (qkt lsp).</description>
+        </server>
+        <fileNamePatternMapping patterns="*.qkt" serverId="qkt" languageId="qkt"/>
+    </extensions>
+</idea-plugin>

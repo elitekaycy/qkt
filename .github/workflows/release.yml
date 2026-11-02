@@ -44,6 +44,11 @@ jobs:
           npm ci --no-audit --no-fund
           npx --yes @vscode/vsce@latest package --no-dependencies
 
+      - name: Build JetBrains plugin into editor/jetbrains/
+        run: |
+          ./gradlew --no-daemon -p editor/jetbrains buildPlugin
+          cp editor/jetbrains/build/distributions/qkt-jetbrains-*.zip editor/jetbrains/
+
       - name: Build distribution tarball
         run: ./gradlew --no-daemon distTar
 
@@ -58,6 +63,8 @@ jobs:
           tar -tf "$tar" | grep -q '/bin/qkt$'          || { echo "::error::tarball missing bin/qkt"; exit 1; }
           tar -tf "$tar" | grep -qE 'share/editor/vscode/qkt-[0-9].*\.vsix$' \
             || { echo "::error::tarball missing share/editor/*.vsix"; exit 1; }
+          tar -tf "$tar" | grep -qE 'share/editor/jetbrains/qkt-jetbrains-.*\.zip$' \
+            || { echo "::error::tarball missing the JetBrains plugin"; exit 1; }
           tar -tzf "$sc" | grep -q '/bin/qkt$'           || { echo "::error::bundle missing bin/qkt"; exit 1; }
           tar -tzf "$sc" | grep -q '/runtime/bin/java$'  || { echo "::error::bundle missing runtime/bin/java"; exit 1; }
           bash tests/quickstart-page.sh "$sc"
@@ -95,6 +102,12 @@ jobs:
         run: |
           npm ci --no-audit --no-fund
           npx --yes @vscode/vsce@latest package --no-dependencies
+
+      - name: Build JetBrains plugin into editor/jetbrains/
+        shell: pwsh
+        run: |
+          ./gradlew.bat --no-daemon -p editor/jetbrains buildPlugin
+          Copy-Item editor/jetbrains/build/distributions/qkt-jetbrains-*.zip editor/jetbrains/
 
       - name: Build Windows self-contained zip
         run: ./gradlew.bat --no-daemon windowsSelfContainedDist

@@ -78,13 +78,13 @@ class EditorInstallerFilesTest {
     }
 
     @Test
-    fun `intellij prints the textmate bundle and language server steps and records nothing`(
+    fun `intellij without a bundled plugin prints the manual steps and places nothing`(
         @TempDir home: Path,
     ) {
         val out = StringBuilder()
-        installer(home, out).install(EditorTarget.INTELLIJ)
+        val result = installer(home, out).install(EditorTarget.INTELLIJ)
 
         assertThat(out.toString()).contains("TextMate Bundles", repoEditorRoot.resolve("vscode").toString(), "qkt lsp")
-        assertThat(EditorManifest.load(home.resolve("manifest.json")).recordFor(EditorTarget.INTELLIJ)).isNull()
+        assertThat(result?.placedFiles).isEmpty()
     }
 }

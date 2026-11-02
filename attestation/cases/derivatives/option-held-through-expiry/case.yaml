@@ -5,6 +5,7 @@ why: 'An expiry is no order: the venue closes the held option at its intrinsic v
   if a stream event and a resync both deliver it, it is booked twice; if it is booked at the mark or the last
   trade, realized PnL and the account disagree.'
 status: scheduled
+release_proof: Deribit expires options only at 08:00 UTC, so no release waits for it. Replaced by scripts/live-validation/tests/test_derivatives_settlement.py (the whole case against a fake gateway and qkt) and this case run across an expiry by the bot2 soak.
 symbols:
 - DERIBIT:BTC_USDC_6OCT26_83000_C
 timeframes:

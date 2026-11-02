@@ -61,6 +61,22 @@ case "$*" in
         printf '%s\n' '{"coverage":true}' > "$out_dir/coverage.json"
         printf '%s\n' '{"parity":true}' > "$out_dir/parity.json"
         printf '%s\n' '{"insights":true}' > "$out_dir/insights.json"
+        # A minimal valid catalog evidence; its rules are tested in scripts/live-validation/tests/test_attest_resume.py.
+        python3 - "$out_dir/catalog.json" <<'PY'
+import hashlib, json, sys
+sha = "0123456789abcdef0123456789abcdef01234567"
+binding = {"testingSha": sha, "cliVersion": f"qkt 1.0 ({sha})"}
+hashed = hashlib.sha256(json.dumps(binding, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+at = "2026-08-03T00:20:00Z"
+stage = {"status": "passed", "completedAtUtc": at}
+json.dump({"schema": "qkt-attestation-catalog-evidence-v1", "testingSha": sha, "binding": binding, "bindingSha256": hashed,
+           "waveRunId": "parity-test-20260803-0001", "assembledAtUtc": at, "maxEvidenceAgeHours": 24,
+           "stages": {"proofs": stage, "wave": stage, "insights": stage},
+           "lanes": ["orders", "risk", "book", "engine", "daemon", "stress"],
+           "cases": [{"name": "orders-a", "status": "passed", "bindingSha256": hashed, "passedAtUtc": at, "flaky": False,
+                      "resultSha256": "0" * 64, "attempts": [{"status": "passed"}]}]}, open(sys.argv[1], "w"))
+PY
+        catalog_sha="$(sha256sum "$out_dir/catalog.json" | cut -d' ' -f1)"
         health_sha="$(sha256sum "$out_dir/health.jsonl" | cut -d' ' -f1)"
         journal_sha="$(sha256sum "$out_dir/golden.zip" | cut -d' ' -f1)"
         reconcile_sha="$(sha256sum "$out_dir/reconcile.json" | cut -d' ' -f1)"
@@ -94,7 +110,8 @@ case "$*" in
     "reconciliation": "reconcile.json",
     "coverage": "coverage.json",
     "parity": "parity.json",
-    "insights": "insights.json"
+    "insights": "insights.json",
+    "catalog": "catalog.json"
   },
   "artifactSha256": {
     "health": "$health_sha",
@@ -102,7 +119,8 @@ case "$*" in
     "reconciliation": "$reconcile_sha",
     "coverage": "$coverage_sha",
     "parity": "$parity_sha",
-    "insights": "$insights_sha"
+    "insights": "$insights_sha",
+    "catalog": "$catalog_sha"
   }
 }
 JSON

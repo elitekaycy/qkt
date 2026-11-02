@@ -1,5 +1,7 @@
 package com.qkt.connector.gateway
 
+import com.qkt.broker.BookedDeals
+import com.qkt.broker.BookedDealsVenue
 import com.qkt.broker.BookedLeg
 import com.qkt.broker.Broker
 import com.qkt.broker.BrokerAccountState
@@ -43,6 +45,7 @@ class GatewayBroker internal constructor(
     strategy: String?,
     private val optionGrid: (String) -> TickSteps? = { null },
 ) : Broker,
+    BookedDealsVenue,
     VenueDescribed {
     private val attachment = session.attach(strategy, positions, bus::publish)
     private val venueReads =
@@ -154,6 +157,10 @@ class GatewayBroker internal constructor(
     ): List<BrokerDeal> = venueReads.deals(from, to, clock.now())
 
     override fun restoreSettledCloses(closes: List<SettledClose>) = session.legs.restore(closes)
+
+    override fun bookedDeals(): BookedDeals = session.legs.booked()
+
+    override fun restoreBookedDeals(saved: BookedDeals) = session.legs.restore(saved)
 
     override fun venueIdentity(): VenueIdentity = session.venue
 
