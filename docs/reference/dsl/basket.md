@@ -185,3 +185,9 @@ behavior as `SYNCHRONIZE`).
 Beta-weighted / risk-parity weighting, equal-lot (rather than equal-notional) fan-out, and
 per-leg brackets on a fanned-out order are deferred. See the design spec,
 `docs/superpowers/specs/2026-06-14-basket-zscore-design.md`, for the rationale.
+
+## Live deployment
+
+A basket deploys live like any strategy: its orders go to each constituent's venue, so each constituent's venue needs an account, and the basket itself does not.
+
+An indicator over a basket (`sma(antipodean.close, 20)`) is refused at live deploy with a warmup error naming `BASKET:<ALIAS>`: the composite exists only inside qkt, so no venue has history for it. Backtests accept it. Read the composite directly in live rules, or put the indicator on a constituent.
