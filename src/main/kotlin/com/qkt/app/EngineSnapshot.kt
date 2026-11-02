@@ -4,6 +4,10 @@ import com.qkt.app.LiveSession.Companion.ENGINE_QUERY_TIMEOUT_MS
 import com.qkt.app.LiveSession.Companion.QUEUE_POLL_MS
 import java.util.concurrent.TimeUnit
 
+/** The engine loop did not answer a read in time: it is busy or stalled. Says nothing about what the read would return. */
+class EngineSnapshotTimeoutException :
+    IllegalStateException("live engine did not produce a consistent snapshot within the timeout")
+
 /**
  * Reads engine-thread state from any other thread without racing the engine: the read is queued
  * as an [Inbound.Query] and answered by the engine loop between two messages, e.g. an HTTP
@@ -32,7 +36,7 @@ internal class EngineSnapshot(
         while (thread.isAlive) {
             val remainingNs = deadlineNs - System.nanoTime()
             if (remainingNs <= 0L) {
-                throw IllegalStateException("live engine did not produce a consistent snapshot within the timeout")
+                throw EngineSnapshotTimeoutException()
             }
             try {
                 return result.get(
