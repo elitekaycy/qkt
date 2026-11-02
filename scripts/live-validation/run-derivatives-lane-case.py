@@ -47,6 +47,7 @@ import yaml
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "lib"))
 import derivatives_drills  # noqa: E402
 import derivatives_settlement as settlement  # noqa: E402
+import roll_from_now  # noqa: E402
 import strategy_scope as scope  # noqa: E402
 
 TRADE = re.compile(r"qkt\.trade - trade (BUY|SELL) (\S+) qty=(\S+) px=(\S+)")
@@ -245,7 +246,7 @@ class Run:
         if held or booked or self.case.get("settles"):
             self.evidence.update(settlements=[dict(s, holding=str(s["holding"])) for s in held], booked=booked,
                                  balanceMoved=str(moved), balanceNote=getattr(self, "balance_note", None),
-                                 selected=getattr(self, "selected", None))
+                                 selected=getattr(self, "selected", None), selectedRoll=getattr(self, "selected_roll", None))
         return problems
 
     def judge_balance(self, moved, realized, fills):
@@ -297,6 +298,9 @@ class Run:
         self.strategy = re.search(r"^STRATEGY\s+(\w+)", text, re.M).group(1)
         open(f"{self.out}/strategies/{self.strategy}.qkt", "w").write(text)
         shutil.copy(os.path.join(self.args.case, "instruments.yaml"), f"{self.out}/data/instruments.yaml")
+        if self.case.get("roll_from_now"):  # a roll minutes from now, not at a fixed hour (lib/roll_from_now.py)
+            self.selected_roll = roll_from_now.apply(f"{self.out}/data/instruments.yaml", self.case["roll_from_now"],
+                                                     self.get("/v1/instruments"), int(time.time() * 1000))
         venue = self.venue = self.case["symbols"][0].split(":")[1].split(".")[0] if self.case["symbols"][0].startswith(
             ("OPTIONS:", "CHAIN:")) else self.case["symbols"][0].split(":")[0]
         self.contract_sizes()  # a contract leaves the listing once it expires: remember its size now
