@@ -5,7 +5,7 @@ why: 'A collared opening leg the venue does not fill leaves the position gone fr
   left of the strategy, so `qkt resume` must clear the stop and its next order reach the venue, where it once stayed
   refused for ever (#1561). The gateway''s kill switch on the new contract alone gives the real refusal; a far book cannot
   be scheduled. It proves a refused leg, 423 from the gateway, not an IOC the book left unfilled.'
-status: planned
+status: ready
 symbols:
 - DERIBIT:BTC_USDC@front
 timeframes:
