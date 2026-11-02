@@ -1,0 +1,60 @@
+id: daily-loss-total-across-standalones
+title: Two standalones each under max_daily_loss, together over it, are both halted and keep their exits
+why: 'On the soak the limit bound each standalone alone: the daemon realized -19.27 against a limit of 8 and strategies
+  kept entering (#1560). Restored losses of 5 and 4 are each under a limit of 8 and together over it, so both must halt,
+  hold their positions, let their timed exits close them, and enter nothing more. The loss is restored and the limit
+  lowered across a restart, so nothing depends on the market.'
+status: ready
+symbols:
+- BTCUSD
+timeframes:
+- 1m
+warmup_bars:
+  1m: 3
+proves:
+- behaviour:daemon-daily-loss-total
+- behaviour:exits-pass-a-halt
+seed_risk_states:
+  atto_dl_a:
+    realizedToday: '-5'
+  atto_dl_b:
+    realizedToday: '-4'
+also_kill:
+- atto_dl_b
+autoload: true
+steps:
+- run: qkt list --state-dir {state}
+  wait_for: position
+  wait_count: 2
+  wait_seconds: 150
+  note: under the starting limit of 50 both strategies enter
+- daemon: restart
+  config_on_restart:
+    risk:
+      max_daily_loss: '8'
+  note: the restored losses of 5 and 4 now exceed the limit together, neither alone
+- run: qkt list --state-dir {state}
+  settle_seconds: 30
+  expect_positions: 2
+  note: a daily-loss halt blocks entries; it flattens nothing
+- run: qkt status atto_dl_a --state-dir {state}
+  expect_status:
+    halted: true
+  expect_stdout: daily loss .* exceeds max
+  note: the first strategy names the daemon's total
+- run: qkt status atto_dl_b --state-dir {state}
+  expect_stdout: daily loss .* exceeds max
+  note: and so does the second
+- run: qkt list --state-dir {state}
+  wait_for: flat
+  wait_seconds: 200
+  note: both timed exits pass the halt
+- run: qkt list --state-dir {state}
+  settle_seconds: 75
+  expect_positions: 0
+  expect_pending: 0
+  note: a bar later neither strategy has entered again
+assertions:
+- halted-by-daemon-total
+- flat-by-magic
+budget_seconds: 480

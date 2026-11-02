@@ -24,11 +24,15 @@ The case's `steps` are executed in order. Each step is a mapping:
                     ticket while the daemon keeps running (an exit between two bar closes)
     while_down:     with `daemon: restart`, "close_at_venue" closes the magic's positions by ticket
                     while no engine is running
+    config_on_restart: with `daemon: restart`, settings deep-merged into the config while the daemon is down, so a
+                    limit binds on what the restored state already holds, with no waiting for the market to make a loss
 
 Case-level keys: `gateway_proxy: lost_limit_response` places the first LIMIT order but tells the daemon 502;
 `gateway_proxy: lagging_history` makes the daemon's bar history lag for a few seconds
 (lagging-history-proxy.py); `seed_risk_state` pre-writes the strategy's risk-state file (pacer fields are keyed by
-the strategy for you; "now" is the current epoch ms); `copies: N` loads the strategy N times under numbered names and `copies_agree`
+the strategy for you; "now" is the current epoch ms); `seed_risk_states` does so for other strategies of the case, by name;
+`also_kill` names strategies the case's end stops beside its own; a `children/` directory travels beside the strategy, so a
+portfolio's children stay out of an autoloaded `--load-dir`, whose every file deploys; `copies: N` loads the strategy N times under numbered names and `copies_agree`
 (`log` regex, `min_lines`) requires every copy to have logged the same lines and dropped no tick;
 `start_offset: {period_seconds, min, max}` delays the daemon start until the wall clock is
 that far into a bar, so a mid-bar start is a fact and not luck; `forming_bar_checks` compares bars the
@@ -40,7 +44,7 @@ Operator commands rot silently because nobody runs the emergency ones until the 
 Every step's command, exit code, output and verdict is recorded. The case always ends with
 `kill --flatten` and a venue check that the magic owns nothing. Demo accounts on loopback only.
 """
-import argparse, glob, json, os, re, subprocess, sys, time, urllib.request
+import argparse, glob, json, os, re, shutil, subprocess, sys, time, urllib.request
 import yaml
 
 ap = argparse.ArgumentParser()
@@ -112,17 +116,22 @@ for name in copy_names:
 for extra in sorted(os.listdir(a.case)):
     if extra.endswith(".qkt") and extra != "strategy.qkt":
         open(os.path.join(os.path.dirname(strategy_file), extra), "w").write(open(f"{a.case}/{extra}").read())
+if os.path.isdir(f"{a.case}/children"):
+    shutil.copytree(f"{a.case}/children", os.path.join(os.path.dirname(strategy_file), "children"))
 # `seed_risk_state` writes the strategy's risk-state file before the first start, as if an earlier
 # run had left it: the case then tests what the engine does with restored state instead of waiting
 # for the market to produce it (a loss streak is two losing trades nobody can order up).
+seeds = dict(case.get("seed_risk_states") or {})
 if case.get("seed_risk_state"):
+    seeds[strategy] = case["seed_risk_state"]
+for name, fields in seeds.items():
     today = int(time.time() // 86400)
-    seeded = {"version": 1, "strategyId": strategy, "epochDay": today, "realizedToday": "0", "perStrategyRealizedToday": {},
+    seeded = {"version": 1, "strategyId": name, "epochDay": today, "realizedToday": "0", "perStrategyRealizedToday": {},
               "halted": False, "haltReason": None, "haltScope": "PERSISTENT", "haltEpochDay": 0, "strategyHalts": []}
-    for field, value in case["seed_risk_state"].items():
-        seeded[field] = {strategy: (int(time.time() * 1000) if value == "now" else value)} if field.startswith("pacer") else value
-    os.makedirs(f"{a.out}/state/state/{strategy}")
-    json.dump(seeded, open(f"{a.out}/state/state/{strategy}/risk-state.json", "w"))
+    for field, value in fields.items():
+        seeded[field] = {name: (int(time.time() * 1000) if value == "now" else value)} if field.startswith("pacer") else value
+    os.makedirs(f"{a.out}/state/state/{name}")
+    json.dump(seeded, open(f"{a.out}/state/state/{name}/risk-state.json", "w"))
 # `gateway_proxy: lagging_history` puts a loopback proxy between the DAEMON and the gateway (the runner
 # itself keeps talking to the real one): bar history lags for a few seconds, as a busy terminal's does.
 daemon_gateway_url, proxy = a.gateway_url, None
@@ -411,6 +420,8 @@ try:
             else:
                 daemon.kill()  # SIGKILL: no shutdown hook, no flush, no flatten
                 daemon.wait(timeout=30)
+            if step.get("config_on_restart"):
+                yaml.safe_dump(merge(yaml.safe_load(open(config)), step["config_on_restart"]), open(config, "w"), sort_keys=False)
             held_while_down = owned()
             if step.get("while_down") == "close_at_venue":
                 # The venue acts while nobody is watching: the engine must learn of it from deal history.
@@ -466,7 +477,7 @@ try:
     if case.get("copies_agree"):
         problems += dropped_ticks()
 finally:
-    for name in copy_names:
+    for name in [*copy_names, *(case.get("also_kill") or [])]:
         qkt(["kill", name, "--flatten", "--state-dir", f"{a.out}/state", "--json"])
     qkt(["kill", strategy, "--flatten", "--state-dir", f"{a.out}/state", "--json"])
     for _ in range(30):
