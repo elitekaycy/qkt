@@ -72,7 +72,7 @@ open class ControlClient(
     fun shutdown(): String = transport.post("${baseUrl()}/shutdown")
 
     /** Stops a strategy, optionally flattening its positions, waiting up to [timeoutMs]. */
-    fun stop(
+    open fun stop(
         name: String,
         flatten: Boolean = false,
         timeoutMs: Long? = null,

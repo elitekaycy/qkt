@@ -178,6 +178,7 @@ internal class RunningSessionHandle(
             nowMs = { System.nanoTime() / 1_000_000L },
             sleep = Thread::sleep,
             timeoutMs = STOP_FLATTEN_VERIFY_MS,
+            streamStops = { streamStops() },
         ).run()
     }
 

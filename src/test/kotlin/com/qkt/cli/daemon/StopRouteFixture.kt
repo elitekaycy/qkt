@@ -22,6 +22,9 @@ abstract class StopRouteFixture {
     protected val flattenCalls = ConcurrentHashMap<String, AtomicInteger>()
     protected val stopFlattenCalls = ConcurrentHashMap<String, AtomicInteger>()
 
+    /** What every session's stop flatten answers. */
+    protected var stopFlattenResult = com.qkt.app.FlattenResult(verifiedFlat = true)
+
     @AfterEach
     fun cleanup() {
         for (c in opened.reversed()) runCatching { c.close() }
@@ -63,7 +66,7 @@ abstract class StopRouteFixture {
                     override fun flattenForStop(): com.qkt.app.FlattenResult {
                         stopCounter.incrementAndGet()
                         flatten()
-                        return com.qkt.app.FlattenResult(verifiedFlat = true)
+                        return stopFlattenResult
                     }
                 }
             val server =
