@@ -21,7 +21,7 @@ fun ContractSettled.closesFor(holders: List<Pair<String, BigDecimal>>): List<Bro
     val total = shares.fold(BigDecimal.ZERO, BigDecimal::add)
     return held.mapIndexed { index, (strategyId, quantity) ->
         BrokerEvent.OrderFilled(
-            clientOrderId = "settle:$symbol:$strategyId",
+            clientOrderId = "$SETTLE_PREFIX$symbol:$strategyId",
             brokerOrderId = null,
             symbol = symbol,
             side = if (quantity.signum() > 0) Side.SELL else Side.BUY,

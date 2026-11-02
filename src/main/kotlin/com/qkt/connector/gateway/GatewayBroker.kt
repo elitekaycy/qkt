@@ -8,6 +8,7 @@ import com.qkt.broker.BrokerPendingOrder
 import com.qkt.broker.BrokerPositionTicket
 import com.qkt.broker.OrderTypeCapability
 import com.qkt.broker.PositionAccountingMode
+import com.qkt.broker.SettledClose
 import com.qkt.broker.SubmitAck
 import com.qkt.broker.VenueDescribed
 import com.qkt.broker.VenueIdentity
@@ -151,6 +152,8 @@ class GatewayBroker internal constructor(
         from: Long,
         to: Long,
     ): List<BrokerDeal> = venueReads.deals(from, to, clock.now())
+
+    override fun restoreSettledCloses(closes: List<SettledClose>) = session.legs.restore(closes)
 
     override fun venueIdentity(): VenueIdentity = session.venue
 

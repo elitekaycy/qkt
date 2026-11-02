@@ -23,8 +23,7 @@ import java.math.BigDecimal
  * prices mapped by the contract the order worked on. The lane keeps each strategy's position on the
  * stream from those fills and rolls it ([RollExecutor]) when the schedule moves to the next contract;
  * a strategy whose position could not be carried places no further orders on the stream until an operator's resume
- * clears the stop ([releaseStop]). A live lane
- * with a [store] saves its state ([LaneState]) before every venue action and after every venue answer,
+ * clears the stop ([releaseStop]). A live lane with a [store] saves its state ([LaneState]) before every venue action and after every venue answer,
  * and a restart restores it from there.
  */
 internal class StreamLane(
@@ -65,7 +64,8 @@ internal class StreamLane(
             stops,
             RollRefusals(book, rollPriceBand),
         )
-    private val state = LaneState(chainOf, positions, stops, orders, book, legs, rolls)
+    private val settled = LaneSettledCloses(bus, clock, chain.symbol, venue.broker, ::save, store != null)
+    private val state = LaneState(chainOf, positions, stops, orders, book, legs, rolls, settled)
     val stopRelease = LaneStopRelease(chainOf, positions, stops, orders, book, legs, rolls)
     private val recovery = LaneRecovery(clock, chainOf, venue, orders, legs, rolls, book, ::space)
     private var current: Int? = null
