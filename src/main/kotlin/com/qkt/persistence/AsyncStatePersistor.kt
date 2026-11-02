@@ -190,16 +190,17 @@ class AsyncStatePersistor(
     override fun saveRiskState(
         strategyId: String,
         state: PersistedRiskState,
-    ) {
-        submit("saveRiskState($strategyId)") { delegate.saveRiskState(strategyId, state) }
-    }
+    ) = submit("saveRiskState($strategyId)") { delegate.saveRiskState(strategyId, state) }
 
     override fun savePnl(
         strategyId: String,
         state: PersistedPnl,
-    ) {
-        submit("savePnl($strategyId)") { delegate.savePnl(strategyId, state) }
-    }
+    ) = submit("savePnl($strategyId)") { delegate.savePnl(strategyId, state) }
+
+    override fun saveBookedDeals(
+        ownerId: String,
+        deals: com.qkt.broker.BookedDeals,
+    ) = submit("saveBookedDeals($ownerId)") { delegate.saveBookedDeals(ownerId, deals) }
 
     override fun saveStructures(
         strategyId: String,
@@ -233,9 +234,8 @@ class AsyncStatePersistor(
         submit("saveExitHooks($strategyId)") { delegate.saveExitHooks(strategyId, snapshot) }
     }
 
-    override fun clearStrategy(strategyId: String) {
+    override fun clearStrategy(strategyId: String) =
         submit("clearStrategy $strategyId") { delegate.clearStrategy(strategyId) }
-    }
 
     /**
      * Drain pending writes and shut down the executor. Blocks up to [shutdownTimeoutMs];

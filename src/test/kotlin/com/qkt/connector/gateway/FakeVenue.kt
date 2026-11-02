@@ -113,9 +113,10 @@ internal class FakeVenue(
         emit("settlement", settlement)
     }
 
-    /** The account's net positions, from the executions. */
+    /** The account's net positions, from the executions; a contract that settled is held no more. */
     fun positions(): List<WirePosition> =
         deals
+            .filter { fill -> settlements.none { it.symbol == fill.symbol } }
             .groupBy { it.symbol }
             .mapValues { (_, fills) -> fills.fold(BigDecimal.ZERO) { q, f -> q.add(signed(f)) } }
             .filterValues { it.signum() != 0 }
