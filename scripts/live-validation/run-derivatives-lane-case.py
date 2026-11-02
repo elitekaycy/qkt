@@ -310,7 +310,8 @@ class Run:
             url = self.proxy.url
         account = {"type": "gateway", "gateway_url": url, "api_key": "env:QKT_DERIV_GATEWAY_KEY",
                    "expected_adapter": adapter, "expected_account_login": self.args.expected_login,
-                   "expected_trade_mode": "demo", "chain_snapshot_seconds": 60}
+                   "expected_trade_mode": "demo", "chain_snapshot_seconds": 60,
+                   "shared_account": True}  # others trade this account: their size must not refuse the case's entries
         config = {"source": "local", "data_root": f"{self.out}/data", "starting_balance": 100000,
                   "brokers": {venue.lower(): account}}
         config.update(self.case.get("config", {}))  # a soak case's demo-only settings, such as risk limits
