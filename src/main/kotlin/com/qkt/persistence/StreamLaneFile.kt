@@ -52,6 +52,7 @@ private data class StreamLaneDto(
     val legs: List<RollLegDto>,
     val cancelling: List<StreamOrderDto>,
     val roll: StreamRollDto?,
+    val settledCloses: List<SettledCloseDto> = emptyList(),
 ) {
     fun toDomain() =
         PersistedStreamLane(
@@ -71,6 +72,7 @@ private data class StreamLaneDto(
             legs.map { it.toDomain() },
             cancelling.map { it.toDomain() },
             roll?.toDomain(),
+            settledCloses.map { it.toDomain() },
         )
 
     companion object {
@@ -93,6 +95,7 @@ private data class StreamLaneDto(
                 l.legs.map(RollLegDto::of),
                 l.cancelling.map(StreamOrderDto::of),
                 l.roll?.let(StreamRollDto::of),
+                l.settledCloses.map(SettledCloseDto::of),
             )
     }
 }

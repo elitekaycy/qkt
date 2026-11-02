@@ -1,5 +1,7 @@
 package com.qkt.persistence
 
+import com.qkt.broker.SettledClose
+import com.qkt.broker.VenueLeg
 import com.qkt.common.Side
 import com.qkt.execution.ExpiryAction
 import com.qkt.execution.OrderRequest
@@ -71,6 +73,33 @@ class FileStatePersistorStreamLaneTest {
 
         assertThat(persistor.loadStreamLane("trend", STREAM)).isEqualTo(rolled)
         assertThat(persistor.loadStreamLane("trend", "CME:NQ")).isEqualTo(other)
+    }
+
+    @Test
+    fun `a lane's settlement closes round-trip, and a file from before them loads with none`(
+        @TempDir tmp: Path,
+    ) {
+        val close =
+            SettledClose(
+                "CME:ESZ26",
+                "trend",
+                Side.SELL,
+                BigDecimal("0.006"),
+                VenueLeg("OUT", "CME:ES@front#1000", null),
+                BigDecimal("-3.5"),
+                BigDecimal("0.3"),
+                9_000L,
+            )
+        val lane = laneInFlight().copy(settledCloses = listOf(close))
+        FileStatePersistor(tmp).saveStreamLane("trend", lane)
+        assertThat(FileStatePersistor(tmp).loadStreamLane("trend", STREAM)).isEqualTo(lane)
+
+        val file = tmp.resolve("trend").resolve(symbolStateFileName(STREAM, "lane.json"))
+        val old = Files.readString(file).replace(Regex(""",?"settledCloses":\[.*?]"""), "")
+        assertThat(old).doesNotContain("settledCloses")
+        Files.writeString(file, old)
+
+        assertThat(FileStatePersistor(tmp).loadStreamLane("trend", STREAM)).isEqualTo(laneInFlight())
     }
 
     @Test

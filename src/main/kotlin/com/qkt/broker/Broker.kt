@@ -122,6 +122,9 @@ interface Broker : VenueReads {
      */
     fun watchBookedLegs(supplier: () -> List<BookedLeg>) {}
 
+    /** Takes back settlement [closes] qkt booked before a restart, for the deals it states; others ignore it. */
+    fun restoreSettledCloses(closes: List<SettledClose>) {}
+
     /**
      * An operator's resume: clears the stop a failed roll left on [strategyId] on each continuous stream where that is
      * safe, and says what became of every such stop. Brokers without continuous streams have none: the default.

@@ -2,6 +2,8 @@ package com.qkt.connector.gateway
 
 import com.qkt.broker.BrokerDeal
 import com.qkt.broker.CloseReason
+import com.qkt.broker.SETTLE_PREFIX
+import com.qkt.broker.SettledClose
 import java.math.BigDecimal
 
 /**
@@ -13,20 +15,20 @@ internal fun settlementDeal(
     broker: String,
     symbol: String,
     s: WireSettlement,
-    close: GatewaySettledClose,
+    close: SettledClose,
 ): BrokerDeal {
-    val id = "$SETTLE_PREFIX${s.symbol}:${close.fact.strategyId}"
+    val id = "$SETTLE_PREFIX${s.symbol}:${close.strategyId}"
     return BrokerDeal(
         broker = broker,
         dealTicket = id,
-        positionTicket = close.fact.leg.positionId,
+        positionTicket = close.leg.positionId,
         orderTicket = null,
         symbol = symbol,
         side = close.side,
-        entry = close.fact.leg.entry,
+        entry = close.leg.entry,
         qty = close.quantity,
         price = BigDecimal(s.price),
-        profit = close.fact.grossRealized,
+        profit = close.grossRealized,
         commission = BigDecimal.ZERO,
         swap = BigDecimal.ZERO,
         magic = null,
@@ -35,8 +37,8 @@ internal fun settlementDeal(
         fee = close.venueCosts.takeIf { it.signum() != 0 }?.negate(),
         clientOrderId = id,
         closeReason = CloseReason.EXPIRY,
-        strategyId = close.fact.strategyId,
+        strategyId = close.strategyId,
         realizedSource = "engine",
-        nextPositionTicket = close.fact.leg.nextPositionId,
+        nextPositionTicket = close.leg.nextPositionId,
     )
 }
