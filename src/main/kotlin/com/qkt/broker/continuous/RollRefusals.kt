@@ -14,7 +14,7 @@ import java.math.BigDecimal
  */
 internal class RollRefusals(
     private val book: StrategyPositionTracker,
-    private val priceBand: BigDecimal?,
+    val priceBand: BigDecimal?,
 ) {
     /** Why strategy [id]'s signed [quantity] may not be carried out of [from], or null when it may. */
     fun of(
@@ -29,6 +29,10 @@ internal class RollRefusals(
             return "holds ${onContract.toPlainString()} of $from, not its ${quantity.toPlainString()} on the stream"
         }
         val band = priceBand ?: return null
+        val prices = measured.prices
+        if (prices.fromPrice.signum() <= 0 || prices.toPrice.signum() <= 0) {
+            return "no collar around the measured ${prices.fromPrice}->${prices.toPrice}: not positive"
+        }
         val closing = if (quantity.signum() > 0) Side.SELL else Side.BUY
         val opening = if (quantity.signum() > 0) Side.BUY else Side.SELL
         return quoteRefusal(quotes.from, closing, measured.prices.fromPrice, band)
@@ -37,10 +41,12 @@ internal class RollRefusals(
 }
 
 /**
- * Why a market leg must not go: the side of [quote] it would hit (ask for a BUY, bid for a SELL) is missing, or lies
+ * Why a leg must not go: the side of [quote] it would hit (ask for a BUY, bid for a SELL) is missing, or lies
  * further than [band] (a fraction) from [reference], the contract's measured roll price. E.g. at a band of 0.25 and a
  * reference of 78,000, an ask of 240,505 refuses a BUY; a bid of 77,000 passes a SELL. A feed with no book sides is
- * judged by its price, and with no quote heard there is nothing to judge.
+ * judged by its price, and with no quote heard there is nothing to judge. A tick whose two sides `AbsurdQuoteSides`
+ * dropped looks the same and passes on its price: this is an early look, and what bounds the fill is the leg's own
+ * collar ([collarPrice]), which holds however far the book is when the leg arrives.
  */
 internal fun quoteRefusal(
     quote: Tick?,

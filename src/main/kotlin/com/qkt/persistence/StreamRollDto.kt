@@ -53,6 +53,15 @@ internal data class RollHolderDto(
     val quantity: String,
 )
 
+/** A roll leg as saved: a market order (every leg of a lane saved before legs were collared), or a collared limit. */
+private fun rollLeg(
+    dto: OrderRequestDto,
+    what: String,
+): OrderRequest =
+    dto.toDomain().also {
+        check(it is OrderRequest.Market || it is OrderRequest.Limit) { "$what is neither a market nor a limit order" }
+    }
+
 /** On-disk shape of a [PersistedRollLeg]. */
 @Serializable
 internal data class RollLegDto(
@@ -61,7 +70,7 @@ internal data class RollLegDto(
 ) {
     fun toDomain() =
         PersistedRollLeg(
-            leg.toDomain() as? OrderRequest.Market ?: error("roll leg ${leg.id} is not a market order"),
+            rollLeg(leg, "roll leg ${leg.id}"),
             slices.map { it.toDomain() },
         )
 
@@ -84,17 +93,15 @@ internal data class CarryStepDto(
     fun toDomain(): PersistedCarryStep {
         val q = BigDecimal(quantity)
         return when (kind) {
-            CLOSING -> PersistedCarryStep.Closing(strategyId, q, market())
-            OPENING -> PersistedCarryStep.Opening(strategyId, q, required(close).toDomain(), market())
+            CLOSING -> PersistedCarryStep.Closing(strategyId, q, leg())
+            OPENING -> PersistedCarryStep.Opening(strategyId, q, required(close).toDomain(), leg())
             CARRIED -> PersistedCarryStep.Carried(strategyId, q, required(close).toDomain(), required(open).toDomain())
             STOPPED -> PersistedCarryStep.Stopped(strategyId, q, required(reason), close?.toDomain())
             else -> error("unknown carry step in persisted state: $kind")
         }
     }
 
-    private fun market(): OrderRequest.Market =
-        required(leg).toDomain() as? OrderRequest.Market
-            ?: error("$kind step of $strategyId has a leg that is not a market order")
+    private fun leg(): OrderRequest = rollLeg(required(leg), "$kind step of $strategyId")
 
     private fun <T : Any> required(value: T?): T =
         requireNotNull(value) { "$kind step of $strategyId is missing a field" }

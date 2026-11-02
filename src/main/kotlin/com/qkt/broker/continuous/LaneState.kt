@@ -193,5 +193,5 @@ internal class LaneState(
 internal data class RestoredLane(
     val contractIndex: Int?,
     val run: RollRun?,
-    val unwinds: List<OrderRequest.Market>,
+    val unwinds: List<OrderRequest>,
 )

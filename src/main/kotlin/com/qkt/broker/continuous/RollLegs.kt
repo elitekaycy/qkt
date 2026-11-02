@@ -5,7 +5,7 @@ import com.qkt.events.BrokerEvent
 import com.qkt.execution.OrderRequest
 import java.math.BigDecimal
 
-/** How one market leg of a roll ended. */
+/** How one leg of a roll ended. */
 internal sealed interface LegOutcome {
     /** The leg filled whole: [fill] is every slice of it, at their quantity-weighted price. */
     data class Filled(
@@ -25,7 +25,7 @@ internal sealed interface LegOutcome {
 }
 
 /**
- * The venue orders a roll places or cancels, which the engine must never see: the market legs,
+ * The venue orders a roll places or cancels, which the engine must never see: the legs,
  * captured as they end, and the resting orders being cancelled before their re-placement. A live venue
  * may fill a leg in slices (each an [BrokerEvent.OrderPartiallyFilled], the last an
  * [BrokerEvent.OrderFilled] of that slice only), so a leg's slices are summed into one fill at their
@@ -41,7 +41,7 @@ internal class RollLegs {
 
     /** Expect [leg], of which [slices] already filled (a leg recovered after a restart). */
     fun expect(
-        leg: OrderRequest.Market,
+        leg: OrderRequest,
         slices: List<BrokerEvent.OrderFilled> = emptyList(),
     ) {
         pending[leg.id] = LegInFlight(leg, slices)
@@ -73,6 +73,9 @@ internal class RollLegs {
 
     /** The awaited cancel of [venueId] is confirmed; returns whether one was awaited. */
     fun cancelConfirmed(venueId: String): Boolean = cancelling.remove(venueId) != null
+
+    /** Whether any leg is still out at the venue. */
+    val anyOut: Boolean get() = pending.isNotEmpty()
 
     /** The legs still out at the venue, in the order they were sent. */
     val inFlight: List<LegInFlight> get() = pending.values.toList()
@@ -162,9 +165,9 @@ internal class RollLegs {
     }
 }
 
-/** A roll's market [leg] out at the venue, with the [slices] of it filled so far, oldest first. */
+/** A roll's [leg] out at the venue, with the [slices] of it filled so far, oldest first. */
 internal data class LegInFlight(
-    val leg: OrderRequest.Market,
+    val leg: OrderRequest,
     val slices: List<BrokerEvent.OrderFilled>,
 )
 

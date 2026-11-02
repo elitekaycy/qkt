@@ -35,7 +35,7 @@ import java.time.LocalTime
 internal class ScriptedLaneFixture(
     val persistor: StatePersistor = NoopStatePersistor(),
     startMs: Long = Instant.parse("2024-09-19T07:45:00Z").toEpochMilli(),
-    rollPriceBand: BigDecimal? = null,
+    private val rollPriceBand: BigDecimal? = null,
     laneVenue: ((EventBus, FixedClock, PositionProvider) -> Broker)? = null,
 ) {
     private fun ms(iso: String) = Instant.parse(iso).toEpochMilli()
@@ -142,7 +142,7 @@ internal class ScriptedLaneFixture(
     )
 
     /** This lane after a restart at [atMs]: a new session on what this one saved. */
-    fun restart(atMs: Long = clock.time): ScriptedLaneFixture = ScriptedLaneFixture(persistor, atMs)
+    fun restart(atMs: Long = clock.time): ScriptedLaneFixture = ScriptedLaneFixture(persistor, atMs, rollPriceBand)
 
     fun slice(
         id: String,

@@ -23,8 +23,7 @@ import java.math.BigDecimal
  * prices mapped by the contract the order worked on. The lane keeps each strategy's position on the
  * stream from those fills and rolls it ([RollExecutor]) when the schedule moves to the next contract;
  * a strategy whose position could not be carried places no further orders on the stream until an operator's resume
- * clears the stop ([releaseStop]). A live lane with a [store] saves its state ([LaneState]) before every venue action and after every venue answer,
- * and a restart restores it from there.
+ * clears the stop ([releaseStop]). A live lane with a [store] saves around every venue call; a restart restores it.
  */
 internal class StreamLane(
     private val bus: EventBus,
@@ -41,7 +40,7 @@ internal class StreamLane(
     private val venueBus = EventBus(clock, MonotonicSequenceGenerator())
     private val contractPrices = MarketPriceTracker()
 
-    /** The stream's contract positions as its venue account holds them: every venue fill, roll legs too, netted. */
+    /** The stream's contract positions as its venue account holds them, roll legs too. */
     private val book = StrategyPositionTracker(clock = clock::now)
     private val venue =
         venueFactory(venueBus, contractPrices, StreamContractPositions(chainOf().symbol, book.account))
@@ -70,6 +69,7 @@ internal class StreamLane(
     private val recovery = LaneRecovery(clock, chainOf, venue, orders, legs, rolls, book, ::space)
     private var current: Int? = null
     private val quotes = LaneQuotes(chainOf, ::space, rollPriceBand != null)
+    private val legDeadline = RollLegDeadline(legs, rolls::waitingForVenue) { venue.broker.cancel(it) }
     private val spaces = HashMap<Int, PriceSpace>()
 
     init {
@@ -150,11 +150,11 @@ internal class StreamLane(
         (venue.broker as? LiquidatingVenue)?.liquidate(chain.contractSymbol(index))
     }
 
-    /** Stops the stream's venue. */
     fun shutdown() = venue.broker.shutdown()
 
     /** Roll if the schedule has moved on, then hand the contract tick behind [tick] to the venue. */
     fun onTick(tick: Tick) {
+        legDeadline.onTick(tick.timestamp)
         val index = catchUp(tick.timestamp, tick) ?: return
         val contractTick = quotes.heard(tick, index)
         contractPrices.update(contractTick)
