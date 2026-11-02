@@ -55,13 +55,14 @@ private val quoteJson = Json { ignoreUnknownKeys = true }
  * A quote of venue [code] from the quotes socket (VGP v1 has no REST quote). Updates may carry one side
  * each, so the latest bid, ask and mark are merged: the answer comes once both sides are known, or, at
  * most [sideWaitMs] after the first price, with the missing side taken from the venue's mark (a one-sided
- * book). Throws when no price arrives within [timeoutMs]: a one-shot order never prices a made-up quote.
+ * book). Throws when no price arrives within [timeoutMs]: a one-shot order never prices a made-up quote. A venue's
+ * first quote can take longer than a liquid market's: a US share on Alpaca's overnight feed took over 10 s.
  */
 fun gatewayQuoteOnce(
     baseUrl: String,
     apiKey: String,
     code: String,
-    timeoutMs: Long = 10_000,
+    timeoutMs: Long = 30_000,
     sideWaitMs: Long = 2_000,
 ): WireQuote {
     val url =

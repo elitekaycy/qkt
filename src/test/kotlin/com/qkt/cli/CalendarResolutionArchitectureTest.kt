@@ -32,7 +32,7 @@ class CalendarResolutionArchitectureTest {
                 files
                     .filter { it.extension == "kt" }
                     .filter { f -> f.readText().let { "defaultCalendars()" in it || "BuiltInCalendars.rules" in it } }
-                    .map { root.relativize(it).toString() }
+                    .map { root.relativize(it).toString().replace('\\', '/') }
                     .toList()
             }
         assertThat(readers).isNotEmpty.allMatch { it in allowed }

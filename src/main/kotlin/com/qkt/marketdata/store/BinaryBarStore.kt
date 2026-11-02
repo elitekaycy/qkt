@@ -100,7 +100,14 @@ class BinaryBarStore(
         broker: String,
         symbol: String,
     ): List<TimeWindow> {
-        val dir = root.resolve("bars").resolve(broker).resolve(symbol)
+        // A derived series such as `IMBALANCE:BINANCE_UM:BTCUSDT` splits into a bare part that still
+        // holds ':', which is no file name on Windows; such a series never has bars of its own.
+        val dir =
+            try {
+                root.resolve("bars").resolve(broker).resolve(symbol)
+            } catch (_: java.nio.file.InvalidPathException) {
+                return emptyList()
+            }
         if (!Files.isDirectory(dir)) return emptyList()
         return Files.newDirectoryStream(dir).use { entries ->
             entries

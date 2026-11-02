@@ -4,6 +4,8 @@ import com.qkt.broker.BookedLeg
 import com.qkt.broker.Broker
 import com.qkt.broker.OrderTypeCapability
 import com.qkt.broker.PositionAccountingMode
+import com.qkt.broker.StreamStop
+import com.qkt.broker.StreamStopRelease
 import com.qkt.broker.SubmitAck
 import com.qkt.broker.liquidation.LiquidatingVenue
 import com.qkt.bus.EventBus
@@ -14,6 +16,7 @@ import com.qkt.execution.ManagedOrder
 import com.qkt.execution.OrderRequest
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.positions.PositionProvider
+import java.math.BigDecimal
 
 /**
  * The single translation boundary between continuous futures streams (`VENUE:ROOT@front`) and the
@@ -29,6 +32,11 @@ import com.qkt.positions.PositionProvider
  *
  * A stream is liquidated ([liquidate]) on the contract it follows, by its venue when that venue is a
  * [LiquidatingVenue]; the venue's closes reach the engine as the stream's.
+ *
+ * With a [rollPriceBand] (a live session's) a roll stops a strategy whose legs would hit a quote further than that
+ * fraction from the contract's measured roll price, sending nothing; a backtest passes none.
+ *
+ * A [marginAccount] is the account these streams trade on: an entry on a stream answers to its margin level.
  *
  * Orders are accepted only on streams adjusted by panama: there continuous-space P&L plus the
  * booked roll costs equals the P&L of the contract legs exactly.
@@ -47,13 +55,24 @@ class ContinuousContractBroker(
     ledger: RollLedger,
     fills: ContractFillLog,
     store: LaneStateStore? = null,
+    rollPriceBand: BigDecimal? = null,
+    private val marginAccount: Broker? = null,
     venueFactory: (EventBus, MarketPriceTracker, PositionProvider) -> ContractVenue,
 ) : Broker,
     LiquidatingVenue {
     private val lanes: Map<String, StreamLane> =
         symbols.associateWith { symbol ->
             requireNotNull(chains.chainFor(symbol)) { "$symbol is not a continuous futures stream" }
-            StreamLane(bus, clock, { requireNotNull(chains.chainFor(symbol)) }, ledger, fills, venueFactory, store)
+            StreamLane(
+                bus,
+                clock,
+                { requireNotNull(chains.chainFor(symbol)) },
+                ledger,
+                fills,
+                venueFactory,
+                store,
+                rollPriceBand,
+            )
         }
 
     override val name: String = "ContinuousFutures"
@@ -102,6 +121,17 @@ class ContinuousContractBroker(
     override fun liquidate(symbol: String) {
         lanes[symbol]?.liquidate()
     }
+
+    /** Each stream's lane clears the strategy's stop if it is safe, and says what became of it. */
+    override fun releaseStreamStops(strategyId: String): List<StreamStopRelease> =
+        lanes.values.mapNotNull { it.releaseStop(strategyId) }
+
+    override fun streamStops(strategyId: String): List<StreamStop> =
+        lanes.mapNotNull { (symbol, lane) ->
+            lane.stopRelease.standing(strategyId)?.let { StreamStop(strategyId, symbol, it) }
+        }
+
+    override fun marginVenueFor(symbol: String): Broker = marginAccount ?: this
 
     override fun shutdown() = lanes.values.forEach { runCatching { it.shutdown() } }
 }

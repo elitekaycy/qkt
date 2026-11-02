@@ -45,15 +45,17 @@ class ExprCompiler(
     private val allowExitAccess: Boolean = false,
     /** The strategy's option structures, read by `POSITION.<structure>` fields. */
     val structures: StructureSupport = StructureSupport(),
+    /** Hub field alias -> its record stream; see [HubFieldExpansion.recordGates]. */
+    private val hubRecordGates: Map<String, String> = emptyMap(),
 ) {
     private val structureFields = StructureFieldCompiler(structures)
-    private val indicatorCalls = IndicatorCallCompiler(bindings, this)
+    private val indicatorCalls = IndicatorCallCompiler(bindings, this, hubRecordGates)
 
     internal fun forExitHooks(): ExprCompiler =
         if (allowExitAccess) {
             this
         } else {
-            ExprCompiler(bindings, aggregates, baskets, allowExitAccess = true, structures = structures)
+            ExprCompiler(bindings, aggregates, baskets, allowExitAccess = true, structures = structures, hubRecordGates)
         }
 
     fun compile(

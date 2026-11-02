@@ -1,5 +1,6 @@
 package com.qkt.dsl.portfolio
 
+import com.qkt.dsl.StrategySource
 import com.qkt.dsl.ast.AlwaysRun
 import com.qkt.dsl.ast.ExprAst
 import com.qkt.dsl.ast.PortfolioAst
@@ -140,6 +141,7 @@ object PortfolioLoader {
                         streams = effectiveAst.streams.map { it.alias },
                         symbols = effectiveAst.streams.map { it.qktSymbol }.distinct(),
                         ast = effectiveAst,
+                        source = StrategySource.of(childPath, childText),
                     )
                 }
             return PortfolioCompiled(ast, children)

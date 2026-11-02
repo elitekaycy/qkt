@@ -46,9 +46,10 @@ STRATEGY ema_cross VERSION 1
 ...
 ```
 
-The qkt parser treats the line as an ordinary comment, so the file still runs unchanged. Use the Emacs form
-shown here rather than a Vim modeline (`vim: ft=haskell`): a Vim modeline would also switch Vim and Neovim
-from the real qkt grammar to Haskell.
+The qkt parser treats the line as an ordinary comment, so the file still runs unchanged. You can add a Vim
+modeline on the same line (`-- -*- mode: haskell -*- vim: set ft=haskell:`) so Vim and Neovim without qkt
+installed also use Haskell; the qkt Vim plugin and Emacs `qkt-mode` switch such a file back to the real qkt
+grammar ([editor integrations](editor-integrations.md#haskell-fallback)).
 
 If you would rather not add a line, name the gist file with a `.hs` extension instead
 (`ema_cross.qkt.hs`), at the cost of a file name that no longer ends in `.qkt`.

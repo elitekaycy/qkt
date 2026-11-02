@@ -35,7 +35,7 @@ object Routes {
                 respond(ex, 200, body)
             } catch (e: Exception) {
                 val msg = (e.message ?: e.javaClass.simpleName).replace("\"", "'")
-                respond(ex, 500, """{"error":"$msg"}""")
+                respond(ex, 500, """{"error":${JsonPrimitive(msg)}}""")
             }
         }
 
@@ -56,7 +56,7 @@ object Routes {
                 respond(ex, 200, renderLatency(provider()))
             } catch (e: Exception) {
                 val msg = (e.message ?: e.javaClass.simpleName).replace("\"", "'")
-                respond(ex, 500, """{"error":"$msg"}""")
+                respond(ex, 500, """{"error":${JsonPrimitive(msg)}}""")
             }
         }
 

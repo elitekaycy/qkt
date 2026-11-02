@@ -209,7 +209,7 @@ class AccountingEngine(
         val from = native.normalizedCurrency
         val to = accountCurrency
         val scaledNative = native.amount.setScale(Money.SCALE, Money.ROUNDING)
-        if (scaledNative.signum() == 0 || compatible(from, to)) {
+        if (native.amount.signum() == 0 || compatible(from, to)) {
             return ConvertedMoney(
                 native = MoneyAmount(scaledNative, from),
                 account = MoneyAmount(scaledNative, to),
@@ -262,7 +262,7 @@ class AccountingEngine(
             native = MoneyAmount(scaledNative, from),
             account =
                 MoneyAmount(
-                    scaledNative
+                    native.amount
                         .multiply(conversion.rate, Money.CONTEXT)
                         .setScale(Money.SCALE, Money.ROUNDING),
                     to,

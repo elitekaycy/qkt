@@ -46,6 +46,7 @@ class InsightsSink(
     private val queue = ArrayBlockingQueue<InsightsEnvelope>(queueCapacity)
     private val running = AtomicBoolean(true)
     private val journal: InsightsJournal? = journalDir?.let { InsightsJournal(it, instanceId) }
+    private val sources = StrategySourceLedger()
 
     /** Envelopes lost from queue shedding or, in best-effort mode, exhausted POST attempts. */
     val dropped = AtomicLong(0)
@@ -66,11 +67,13 @@ class InsightsSink(
 
     /**
      * Enqueue an envelope. Never blocks: on a full queue the oldest entry is dropped
-     * to make room. Safe to call from the engine thread.
+     * to make room. Safe to call from the engine thread. A strategy's source text rides
+     * only its first `strategy.started` per sha ([StrategySourceLedger]).
      */
     fun offer(envelope: InsightsEnvelope) {
         if (!running.get()) return
-        while (!queue.offer(envelope)) {
+        val admitted = sources.admit(envelope)
+        while (!queue.offer(admitted)) {
             if (queue.poll() != null) dropped.incrementAndGet()
         }
     }
@@ -306,21 +309,6 @@ class InsightsSink(
     private companion object {
         val JSON = "application/json; charset=utf-8".toMediaType()
 
-        fun jsonString(s: String): String {
-            val sb = StringBuilder(s.length + 2)
-            sb.append('"')
-            for (c in s) {
-                when (c) {
-                    '"' -> sb.append("\\\"")
-                    '\\' -> sb.append("\\\\")
-                    '\n' -> sb.append("\\n")
-                    '\r' -> sb.append("\\r")
-                    '\t' -> sb.append("\\t")
-                    else -> if (c < ' ') sb.append("\\u%04x".format(c.code)) else sb.append(c)
-                }
-            }
-            sb.append('"')
-            return sb.toString()
-        }
+        fun jsonString(s: String): String = buildString { appendJsonString(this, s) }
     }
 }

@@ -1,10 +1,12 @@
 package com.qkt.cli.daemon.routes
 
+import com.qkt.broker.StreamStopRelease
 import com.qkt.cli.daemon.OperatorJournal
 import com.qkt.cli.daemon.RegistryDaemonControl
 import com.qkt.cli.daemon.StateDir
 import com.qkt.cli.daemon.StrategyRegistry
 import com.qkt.cli.daemon.Target
+import com.qkt.cli.daemon.summary
 import com.sun.net.httpserver.HttpExchange
 
 /** `POST /halt[/{name}]` — halts one strategy, or every strategy, through [RegistryDaemonControl]. */
@@ -17,7 +19,7 @@ internal fun handleHalt(
     val target = if (name == null) Target.All else Target.Strategy(name)
     val result = RegistryDaemonControl(registry, OperatorJournal.from(stateDir, "http")).halt(target)
     if (result.unknown.isNotEmpty()) {
-        return respond(ex, 404, """{"error":"unknown name: ${result.unknown.first()}"}""")
+        return respond(ex, 404, """{"error":${jsonString("unknown name: ${result.unknown.first()}")}}""")
     }
     respond(ex, 200, """{"state":"halted","affected":${jsonArray(result.affected)}}""")
 }
@@ -43,7 +45,7 @@ internal fun handleKill(
     val target = if (name == null) Target.All else Target.Strategy(name)
     val result = RegistryDaemonControl(registry, OperatorJournal.from(stateDir, "http")).kill(target, flatten)
     if (result.unknown.isNotEmpty()) {
-        return respond(ex, 404, """{"error":"unknown name: ${result.unknown.first()}"}""")
+        return respond(ex, 404, """{"error":${jsonString("unknown name: ${result.unknown.first()}")}}""")
     }
     val flattenVerified =
         flatten && result.affected.isNotEmpty() && result.flattenResults.values.all { it.verifiedFlat }
@@ -65,7 +67,14 @@ internal fun handleKill(
     )
 }
 
-/** `POST /resume[/{name}]` — resumes one halted strategy, or every one. */
+private fun stopJson(s: StreamStopRelease): String =
+    """{"strategy":${jsonString(s.strategyId)},"stream":${jsonString(s.stream)},"stop":${jsonString(s.stop)},""" +
+        """"cleared":${s.cleared},"stands":${jsonStringOrNull(s.stands)},"summary":${jsonString(s.summary())}}"""
+
+/**
+ * `POST /resume[/{name}]` — resumes one halted strategy, or every one, and clears the stream stops that are safe to
+ * clear. `state` is `resumed` only when no stop stands; otherwise `stream_stopped`, and `streamStops` says why.
+ */
 internal fun handleResume(
     ex: HttpExchange,
     registry: StrategyRegistry,
@@ -75,7 +84,11 @@ internal fun handleResume(
     val target = if (name == null) Target.All else Target.Strategy(name)
     val result = RegistryDaemonControl(registry, OperatorJournal.from(stateDir, "http")).resume(target)
     if (result.unknown.isNotEmpty()) {
-        return respond(ex, 404, """{"error":"unknown name: ${result.unknown.first()}"}""")
+        return respond(ex, 404, """{"error":${jsonString("unknown name: ${result.unknown.first()}")}}""")
     }
-    respond(ex, 200, """{"state":"resumed","affected":${jsonArray(result.affected)}}""")
+    val stops = result.streamStops
+    val state = if (stops.all { it.cleared }) "resumed" else "stream_stopped"
+    val stopList = stops.joinToString(",", transform = ::stopJson)
+    val stopsJson = if (stops.isEmpty()) "" else ",\"streamStops\":[$stopList]"
+    respond(ex, 200, """{"state":"$state","affected":${jsonArray(result.affected)}$stopsJson}""")
 }

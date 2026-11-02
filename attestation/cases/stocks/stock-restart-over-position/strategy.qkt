@@ -1,0 +1,12 @@
+STRATEGY atto_stk_restart VERSION 1
+
+SYMBOLS
+    aapl = EXNESS:AAPL EVERY 1m WARMUP 3 BARS
+
+RULES
+    -- One share, held long enough to be restarted over, then closed by the strategy's own rule.
+    WHEN aapl.close > 0 AND POSITION.aapl = 0 AND OPEN_ORDERS.aapl = 0 AND TRADES.today = 0
+    THEN BUY aapl SIZING 0.01 BRACKET { STOP LOSS BY 5, TAKE PROFIT BY 10 }
+
+    WHEN POSITION.aapl != 0 AND POSITION.aapl.holding_duration >= 150
+    THEN CLOSE aapl

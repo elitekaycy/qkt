@@ -1,11 +1,11 @@
 package com.qkt.observe
 
+import com.qkt.common.OwnerOnly
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
-import java.nio.file.attribute.PosixFilePermissions
 import java.time.LocalDate
 
 /**
@@ -113,10 +113,10 @@ internal class AuditJournalFiles(
 
     private fun createPrivateDirectory(path: Path) {
         Files.createDirectories(path)
-        runCatching { Files.setPosixFilePermissions(path, PosixFilePermissions.fromString("rwx------")) }
+        OwnerOnly.directory(path)
     }
 
     private fun makeOwnerOnly(path: Path) {
-        runCatching { Files.setPosixFilePermissions(path, PosixFilePermissions.fromString("rw-------")) }
+        OwnerOnly.file(path)
     }
 }

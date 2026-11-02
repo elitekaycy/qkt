@@ -1,5 +1,6 @@
 package com.qkt.positions
 
+import com.qkt.common.Money
 import com.qkt.marketdata.Candle
 import com.qkt.persistence.PersistedExcursion
 import com.qkt.persistence.StatePersistor
@@ -139,10 +140,24 @@ internal class PrimaryExcursions(
         symbol: String,
     ): BigDecimal? = primaryMfeTrackers[Pair(strategyId, symbol)]?.tracker?.mae()
 
-    fun primaryAdverseExtremePriceFor(
-        strategyId: String,
+    /** Every tracker on [symbol] re-anchored at its entry divided by [ratio], its extremes scaled the same way. */
+    fun rescale(
         symbol: String,
-    ): BigDecimal? = primaryMfeTrackers[Pair(strategyId, symbol)]?.tracker?.adverseExtremePrice()
+        ratio: BigDecimal,
+    ) {
+        for ((key, lm) in primaryMfeTrackers) {
+            if (key.second != symbol) continue
+            val leg = legBooks.book(key.first, symbol)?.leg(lm.legId) ?: continue
+            val old = lm.tracker
+            val tracker = MfeTracker(leg.side, leg.entryPrice)
+            tracker.seed(
+                old.value().divide(ratio, Money.CONTEXT),
+                old.mae().divide(ratio, Money.CONTEXT),
+                old.adverseExtremePrice()?.divide(ratio, Money.CONTEXT),
+            )
+            primaryMfeTrackers[key] = LegMfe(lm.legId, tracker)
+        }
+    }
 
     /** Re-anchor (or drop) the (strategyId, symbol) tracker to the book's current entry leg. */
     fun sync(

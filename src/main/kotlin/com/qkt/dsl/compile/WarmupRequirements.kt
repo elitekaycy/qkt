@@ -36,8 +36,7 @@ import com.qkt.dsl.ast.WhenThen
  * `percentile_rank(s.close / lag(o.close, 2), 5)` on a 1m `s` and 5m `o` needs 5
  * bars of `s` and 4 of `o`.
  *
- * Lookback indices (`stream.close[N]`) are not yet derived — set explicit
- * `WARMUP N BARS` to cover them.
+ * Lookback indices (`stream.close[N]`) are not yet derived — set explicit `WARMUP N BARS` to cover them.
  */
 object WarmupRequirements {
     fun compute(ast: StrategyAst): Map<String, Int> {
@@ -111,10 +110,12 @@ object WarmupRequirements {
                 } else {
                     val tf = timeframeMinutes.get()
                     val primaryMinutes = alias?.let { tf[it] } ?: 1L
-                    for (innerAlias in nested.keys + listOfNotNull(alias)) {
+                    // Every stream the series reads, bare too, and each hub field's record stream (recordGates).
+                    for (innerAlias in nested.keys + streamAliasesIn(expr) + listOfNotNull(alias)) {
                         val innerMinutes = tf[innerAlias] ?: primaryMinutes
                         val span = ((period * primaryMinutes + innerMinutes - 1) / innerMinutes).toInt()
-                        merge(out, innerAlias, (nested[innerAlias] ?: 0) + span)
+                        val gate = HubFieldExpansion.recordAliasOf(innerAlias)?.takeIf { it in streamAliases.get() }
+                        listOfNotNull(innerAlias, gate).forEach { merge(out, it, (nested[innerAlias] ?: 0) + span) }
                     }
                 }
             }

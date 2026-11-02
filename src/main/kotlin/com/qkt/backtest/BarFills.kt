@@ -1,5 +1,7 @@
 package com.qkt.backtest
 
+import com.qkt.candles.TimeWindow
+
 /**
  * Which replayed symbols fill triggered stops and limits at their own level rather than at the
  * triggering tick: exactly the symbols whose ticks are synthesized from bars, where the only intrabar
@@ -13,11 +15,16 @@ package com.qkt.backtest
  * Under tick-resolved fills no symbol is synthesized, but a bar the store has no ticks for is: while
  * its synthetic ticks replay, [noTickBars] makes `at` true for that symbol, so the bar fills as bar
  * fills would (#1439).
+ *
+ * [windows] holds the bar of every symbol a bar drives, synthesized or tick-resolved: its ticks carry made-up stamps
+ * inside the bar, so [ReplaySessions] judges such a symbol's session by its bar instead.
  */
 class BarFills(
     synthesized: Set<String>,
     /** The tick-resolved replay's bars without ticks; null on every other path. */
     val noTickBars: NoTickBars? = null,
+    /** Each bar-driven symbol's bar, e.g. `EXNESS:EURUSD` to 4h; empty when every symbol replays recorded ticks. */
+    val windows: Map<String, TimeWindow> = emptyMap(),
 ) {
     private val symbols = synthesized.filterNot { '@' in it }.toSet()
     private val continuousRoots = synthesized.filter { '@' in it }.map { it.substringBefore('@') }.toSet()

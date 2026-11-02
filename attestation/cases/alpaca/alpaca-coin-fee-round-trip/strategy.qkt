@@ -1,0 +1,12 @@
+STRATEGY ap_coin_fee VERSION 1
+
+SYMBOLS
+    btc = ALPACA:BTCUSD EVERY 1m WARMUP 3 BARS
+
+RULES
+    -- $16 of BTC (Alpaca's coin minimum is $10): 0.0002 at about $80,000. GTC is a coin pair's only lasting TIF.
+    WHEN btc.close > 0 AND POSITION.btc = 0 AND OPEN_ORDERS.btc = 0 AND TRADES.today = 0
+    THEN BUY btc SIZING 0.0002
+
+    WHEN POSITION.btc != 0 AND POSITION.btc.holding_duration >= 60
+    THEN CLOSE btc

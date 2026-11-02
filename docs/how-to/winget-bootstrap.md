@@ -27,8 +27,13 @@ qkt ships a winget package (`elitekaycy.qkt`) so Windows users can run
 
 ## Thereafter
 
-Every published GitHub release triggers `winget.yml`, which opens the version-bump
-PR automatically. No manual action needed once the package exists.
+Every tagged release dispatches `winget.yml` from `release.yml` (a release created
+with `GITHUB_TOKEN` cannot trigger it through the `release` event), and it opens the
+version-bump PR automatically. To publish a tag by hand:
+`gh workflow run winget.yml --ref vX.Y.Z -f tag=vX.Y.Z`.
+
+Once the first manifest is merged, put `winget install elitekaycy.qkt` back at the
+top of [Install on Windows](install-windows.md) and [Install](../get-started/install.md).
 
 ## Install (end users)
 

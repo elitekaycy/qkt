@@ -35,12 +35,12 @@ class MacroMarketSourceTest {
         store.write(
             "DGS10",
             listOf(
-                MacroPoint(LocalDate.of(2024, 3, 1), BigDecimal("4.00")), // Fri -> released Mon 13:00
-                MacroPoint(LocalDate.of(2024, 3, 4), BigDecimal("4.10")), // Mon -> released Tue 13:00
+                MacroPoint(LocalDate.of(2024, 3, 1), BigDecimal("4.00")), // Fri -> released Mon 16:30 NY
+                MacroPoint(LocalDate.of(2024, 3, 4), BigDecimal("4.10")), // Mon -> released Tue 16:30 NY
             ),
         )
         val source = MacroMarketSource(store)
-        // Window Mon 00:00 .. Tue 12:00 — before Monday's value releases (Tue 13:00).
+        // Window Mon 00:00 .. Tue 12:00 — before Monday's value releases (Tue 16:30 New York).
         val ticks =
             source
                 .ticks(
@@ -48,7 +48,8 @@ class MacroMarketSourceTest {
                     TimeRange(instant(LocalDate.of(2024, 3, 4), 0), instant(LocalDate.of(2024, 3, 5), 12)),
                 ).toList()
         assertThat(ticks.map { it.price }).containsExactly(BigDecimal("4.00"))
-        assertThat(ticks.single().timestamp).isEqualTo(instant(LocalDate.of(2024, 3, 4), 13).toEpochMilli())
+        // 16:30 New York, 21:30 UTC before daylight saving starts.
+        assertThat(ticks.single().timestamp).isEqualTo(Instant.parse("2024-03-04T21:30:00Z").toEpochMilli())
         assertThat(ticks.single().symbol).isEqualTo("MACRO:DGS10")
     }
 

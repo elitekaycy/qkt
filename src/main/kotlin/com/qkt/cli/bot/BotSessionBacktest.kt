@@ -4,11 +4,10 @@ import com.qkt.backtest.report.BacktestReportWriter
 import com.qkt.cli.Args
 import com.qkt.cli.BacktestContext
 import com.qkt.cli.daemon.StateDir
-import com.qkt.common.FixedClock
 import com.qkt.common.TimeRange
 import com.qkt.dsl.parse.Dsl
 import com.qkt.dsl.parse.ParseResult
-import com.qkt.marketdata.source.LocalMarketSource
+import com.qkt.marketdata.source.MarketSource
 import com.qkt.trade.session.BarHistory
 import com.qkt.trade.session.BotRunSession
 import com.qkt.trade.session.BotSessionFiles
@@ -105,28 +104,28 @@ internal fun buildBacktestSession(
     val history = BarHistory(capacity = maxOf(spec.historyBars, 1000))
     val recorder = BotSessionRecorder(history)
     val identities = BotSessionIdentities.compile(streams, spec.identities, history = history)
-    val engine =
-        ctx
-            .backtest(
-                emptyMap(),
-                strategies =
-                    identities.map { (id, s) -> id to s as com.qkt.strategy.Strategy } +
-                        (BotSessionRecorder.ID to recorder),
-            ).toEngine()
-    seedBacktestWarmup(ctx, streams, spec.historyBars, history)
+    val backtest =
+        ctx.backtest(
+            emptyMap(),
+            strategies =
+                identities.map { (id, s) -> id to s as com.qkt.strategy.Strategy } +
+                    (BotSessionRecorder.ID to recorder),
+        )
+    val engine = backtest.toEngine()
+    seedBacktestWarmup(ctx, backtest.source, streams, spec.historyBars, history)
     val session =
         BotRunSession(spec.runId, ReplayBotRunBackend(engine), identities, streams, history, recorder, journal)
     return BacktestSessionParts(session, engine, recorder)
 }
 
-/** Best-effort pre-window seed so `bot bars` has history at the first `next`. */
+/** Best-effort pre-window seed so `bot bars` has history at the first `next`, read from the run's own [source]. */
 private fun seedBacktestWarmup(
     ctx: BacktestContext,
+    source: MarketSource,
     streams: BotSessionStreams,
     historyBars: Int,
     history: BarHistory,
 ) {
-    val source = LocalMarketSource(ctx.store, FixedClock(time = ctx.from.toEpochMilli()), barStore = ctx.barStore)
     // 3x span covers weekend/holiday gaps for intraday windows without a calendar walk.
     val spanMs = streams.baseWindow.durationMs * historyBars * 3
     val warmRange = TimeRange(ctx.from.minusMillis(spanMs), ctx.from)

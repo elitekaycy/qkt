@@ -1,6 +1,7 @@
 package com.qkt.pnl
 
 import com.qkt.accounting.AccountingEngine
+import com.qkt.accounting.MissingFxRateException
 import com.qkt.common.Money
 import com.qkt.common.Side
 import com.qkt.instrument.InstrumentRegistry
@@ -41,7 +42,8 @@ class PnLCalculator(
     private val instruments: InstrumentRegistry = NoopInstrumentRegistry,
     private val accounting: AccountingEngine = AccountingEngine(),
     private val markTimestamp: () -> Long = { 0L },
-) : RestorablePnLProvider {
+) : RestorablePnLProvider,
+    PositionMarks {
     private var realizedTotal: BigDecimal = Money.ZERO
 
     fun recordRealized(realized: BigDecimal) {
@@ -65,17 +67,13 @@ class PnLCalculator(
                 positions.forEachLeg(symbol) { leg ->
                     val signedQty = if (leg.side == Side.BUY) leg.quantity else leg.quantity.negate()
                     val mark = prices.closingMark(symbol, signedQty.signum()) ?: price
-                    sum = sum.add(mark.subtract(leg.entryPrice).multiply(signedQty).multiply(cs))
+                    sum = sum.add(nativeOpenPnL(mark, leg.entryPrice, signedQty, cs))
                 }
                 sum.setScale(Money.SCALE, Money.ROUNDING)
             } else {
                 val pos = positions.positionFor(symbol) ?: return Money.ZERO
                 val mark = prices.closingMark(symbol, pos.quantity.signum()) ?: return Money.ZERO
-                mark
-                    .subtract(pos.avgEntryPrice)
-                    .multiply(pos.quantity)
-                    .multiply(cs)
-                    .setScale(Money.SCALE, Money.ROUNDING)
+                nativeOpenPnL(mark, pos.avgEntryPrice, pos.quantity, cs).setScale(Money.SCALE, Money.ROUNDING)
             }
         return accounting.convertPnlAmount(
             symbol = symbol,
@@ -83,6 +81,25 @@ class PnLCalculator(
             timestamp = markTimestamp(),
             referencePrice = price,
         )
+    }
+
+    /** Values a position this calculator does not hold the way [unrealizedFor] values one it does. */
+    override fun markOf(
+        symbol: String,
+        signedQuantity: BigDecimal,
+        entryPrice: BigDecimal,
+    ): PositionMark? {
+        val price = prices.lastPrice(symbol) ?: return null
+        val mark = prices.closingMark(symbol, signedQuantity.signum()) ?: return null
+        val cs = instruments.lookup(symbol)?.contractSize ?: BigDecimal.ONE
+        val native = nativeOpenPnL(mark, entryPrice, signedQuantity, cs).setScale(Money.SCALE, Money.ROUNDING)
+        val unrealized =
+            try {
+                accounting.convertPnlAmount(symbol, native, markTimestamp(), price)
+            } catch (_: MissingFxRateException) {
+                null
+            }
+        return PositionMark(mark, unrealized)
     }
 
     override fun unrealizedTotal(): BigDecimal {
@@ -95,3 +112,11 @@ class PnLCalculator(
 
     override fun totalPnL(): BigDecimal = realizedTotal().add(unrealizedTotal()).setScale(Money.SCALE, Money.ROUNDING)
 }
+
+/** Open P&L in [mark]'s quote currency of [signedQuantity] entered at [entry], before any rounding. */
+private fun nativeOpenPnL(
+    mark: BigDecimal,
+    entry: BigDecimal,
+    signedQuantity: BigDecimal,
+    contractSize: BigDecimal,
+): BigDecimal = mark.subtract(entry).multiply(signedQuantity).multiply(contractSize)

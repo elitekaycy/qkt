@@ -31,11 +31,12 @@ fun Config.accountConfigs(): List<AccountConfig> =
  * Opens every configured account through the installed connectors. [stateRoot] is where
  * connectors keep files (null for commands that keep none); [strategiesTrading] answers which
  * deployed strategies trade an account (empty outside the daemon); [instruments] is the registry
- * the sessions trade with. Throws on a missing or unknown `type`, or on an entry its connector rejects.
+ * the sessions trade with; [deploysUnderway] says the daemon is still deploying at startup. Throws on a missing or unknown `type`, or on an entry its connector rejects.
  */
 internal fun Config.openAccounts(
     stateRoot: Path? = null,
     instruments: InstrumentRegistry? = null,
+    deploysUnderway: () -> Boolean = { false },
     strategiesTrading: (accountName: String) -> List<String> = { emptyList() },
 ): AccountDirectory =
     AccountDirectory.open(
@@ -47,6 +48,7 @@ internal fun Config.openAccounts(
             clock = SystemClock(),
             strategiesTrading = strategiesTrading,
             instruments = instruments,
+            deploysUnderway = deploysUnderway,
         ),
     )
 

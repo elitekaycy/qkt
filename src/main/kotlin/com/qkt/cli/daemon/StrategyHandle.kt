@@ -5,13 +5,7 @@ import com.qkt.app.LiveSessionHandle
 import com.qkt.candles.TimeWindow
 import com.qkt.cli.observe.EventRing
 import com.qkt.cli.observe.ObservabilityServer
-import com.qkt.cli.observe.PendingStackLayer
-import com.qkt.dsl.ast.BoolLit
-import com.qkt.dsl.ast.DefaultsBlock
-import com.qkt.dsl.ast.ExprAst
-import com.qkt.dsl.ast.NumLit
 import com.qkt.dsl.ast.StrategyAst
-import com.qkt.dsl.ast.StringLit
 import com.qkt.dsl.compile.AstCompiler
 import com.qkt.dsl.parse.Dsl
 import com.qkt.dsl.parse.ParseResult
@@ -19,9 +13,7 @@ import com.qkt.marketdata.source.MarketSource
 import com.qkt.notify.NoopNotifier
 import com.qkt.notify.Notifier
 import com.qkt.notify.NotifyEventKind
-import java.nio.file.Files
 import java.nio.file.Path
-import java.security.MessageDigest
 import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicBoolean
@@ -106,14 +98,10 @@ class StrategyHandle(
             com.qkt.common.TradingCalendar
                 .fxDefault()
         },
-        /**
-         * Daemon-level daily-loss cap. When realized P&L for the day breaches the
-         * negation of this value, [com.qkt.risk.rules.MaxDailyLoss] halts and the risk
-         * engine rejects further submissions. Set to `BigDecimal.ZERO` to disable;
-         * default comes from [com.qkt.cli.Config.maxDailyLoss] (or [com.qkt.cli.Config.DEFAULT_MAX_DAILY_LOSS]
-         * when no config is loaded).
-         */
+        /** Daemon-level daily-loss cap, across [daemonRisk]'s sessions; `BigDecimal.ZERO` disables. */
         internal val maxDailyLoss: java.math.BigDecimal = com.qkt.cli.Config.DEFAULT_MAX_DAILY_LOSS,
+        /** What this factory's sessions share so a global limit binds the whole daemon. */
+        internal val daemonRisk: com.qkt.risk.DaemonRiskScope = com.qkt.risk.DaemonRiskScope(),
         /**
          * Phase 25D: per-strategy risk caps keyed by strategy name. When the deployed
          * strategy's name matches an entry, those caps layer on top of the daemon-global
@@ -175,92 +163,9 @@ class StrategyHandle(
         /** Market-data gate thresholds (the `market_data:` config block) passed to every session. */
         internal val marketDataGateConfig: com.qkt.marketdata.MarketDataGateConfig =
             com.qkt.marketdata.MarketDataGateConfig.DEFAULT,
+        /** States what each strategy runs on, on `strategy.started`; null states nothing. */
+        internal val effectiveConfig: com.qkt.cli.EffectiveConfigFacts? = null,
     ) : Factory {
-        private fun literalPayload(expr: ExprAst): Any =
-            when (expr) {
-                is NumLit -> expr.value
-                is BoolLit -> expr.value
-                is StringLit -> expr.value
-                else -> expr.toString()
-            }
-
-        private fun defaultsPayload(defaults: DefaultsBlock?): Map<String, String>? {
-            if (defaults == null) return null
-            val out = linkedMapOf<String, String>()
-            defaults.sizing?.let { out["sizing"] = it::class.simpleName ?: it.toString() }
-            defaults.orderType?.let { out["orderType"] = it::class.simpleName ?: it.toString() }
-            defaults.tif?.let { out["tif"] = it::class.simpleName ?: it.toString() }
-            defaults.stopLoss?.let { out["stopLoss"] = it::class.simpleName ?: it.toString() }
-            defaults.takeProfit?.let { out["takeProfit"] = it::class.simpleName ?: it.toString() }
-            defaults.trailing?.let { out["trailing"] = it::class.simpleName ?: it.toString() }
-            return out.takeIf { it.isNotEmpty() }
-        }
-
-        private fun sha256(path: Path): String? =
-            runCatching {
-                val digest = MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(path))
-                digest.joinToString("") { "%02x".format(it.toInt() and 0xff) }
-            }.getOrNull()
-
-        private fun strategyMetadata(
-            deployName: String,
-            file: Path,
-            ast: StrategyAst,
-            symbols: List<String>,
-            perStrategyOverride: com.qkt.cli.PerStrategyRisk?,
-        ): Map<String, Any?> =
-            linkedMapOf(
-                "deployName" to deployName,
-                "sourcePath" to file.toAbsolutePath().normalize().toString(),
-                "sourceSha256" to sha256(file),
-                "dslVersion" to ast.version,
-                "runtimeMode" to if (brokerFactories.isEmpty()) "paper" else "live",
-                "brokers" to brokerFactories.keys.sorted(),
-                "symbols" to symbols,
-                "streams" to
-                    ast.streams.map {
-                        linkedMapOf(
-                            "alias" to it.alias,
-                            "broker" to it.broker,
-                            "symbol" to it.symbol,
-                            "qktSymbol" to it.qktSymbol,
-                            "timeframe" to it.timeframe,
-                            "warmupBars" to it.warmupBars,
-                        )
-                    },
-                "params" to ast.params.associate { it.name to literalPayload(it.value) },
-                "defaults" to defaultsPayload(ast.defaults),
-                "risk" to
-                    linkedMapOf(
-                        "startingBalance" to startingBalance,
-                        "maxDailyLoss" to maxDailyLoss,
-                        "maxDrawdownPct" to maxDrawdownPct,
-                        "maxDailyDrawdownPct" to maxDailyDrawdownPct,
-                        "totalDdBasis" to totalDdBasis.name,
-                        "dailyDdBasis" to dailyDdBasis.name,
-                        "liveEquityBasis" to liveEquityBasis.name,
-                        "maxOrderQty" to maxOrderQty,
-                        "maxOrderNotional" to maxOrderNotional,
-                        "priceCollarFrac" to priceCollarFrac,
-                        "runawayMaxRoundTrips10m" to runawayMaxRoundTrips,
-                        "runawayMaxBrokerRejections1m" to runawayMaxRejections,
-                        "marginFloorPct" to marginFloorPct,
-                        "measuredUsageHours" to measuredUsageHours,
-                        "measuredUsageMaxQty" to measuredUsageMaxQty,
-                        "perStrategyMaxDailyLoss" to perStrategyOverride?.maxDailyLoss,
-                        "perStrategyMaxPositionSize" to perStrategyOverride?.maxPositionSize,
-                        "perStrategyMaxOpenPositions" to perStrategyOverride?.maxOpenPositions,
-                        "perStrategyMaxDrawdownPct" to perStrategyOverride?.maxDrawdownPct,
-                        "perStrategyMaxDailyDrawdownPct" to perStrategyOverride?.maxDailyDrawdownPct,
-                        "perStrategyMaxTradesPerDay" to perStrategyOverride?.maxTradesPerDay,
-                        "perStrategyCooldownAfterLossMs" to perStrategyOverride?.cooldownAfterLossMs,
-                        "perStrategyCooldownAfterLossAfterConsecutive" to
-                            perStrategyOverride?.cooldownAfterLossAfterConsecutive,
-                        "perStrategyLossStreakHalt" to perStrategyOverride?.lossStreakHalt,
-                        "perStrategyLossStreakHaltScope" to perStrategyOverride?.lossStreakHaltScope?.name,
-                    ),
-            )
-
         override fun create(
             name: String,
             file: Path,
@@ -323,33 +228,7 @@ class StrategyHandle(
                 ObservabilityServer(
                     ring = ring,
                     statusProvider = {
-                        val layers =
-                            session.pendingStackLayerInfos().map {
-                                PendingStackLayer(
-                                    stackId = it.stackId,
-                                    layer = it.layer,
-                                    triggerPrice = it.triggerPrice,
-                                    side = it.side,
-                                    quantity = it.quantity,
-                                )
-                            }
-                        buildSnapshot(
-                            ast.name,
-                            ast.version,
-                            startMs,
-                            startedAt.toString(),
-                            session.recentTrades(),
-                            layers,
-                            streamBrokers = session.streamBrokers(),
-                            pnl = session.pnlSnapshot(ast.name),
-                            inboundQueueDepth = session.inboundQueueDepth(),
-                            droppedTicks = session.droppedTicks,
-                            staleSymbols = session.staleSymbols().keys.sorted(),
-                            clockSkewedSymbols = session.clockSkewedSymbols(),
-                            openPositions = session.positionsFor(ast.name),
-                            persistenceHealth = session.persistenceHealth(),
-                            halt = HaltStatus.of(session, ast.name),
-                        )
+                        sessionStatusSnapshot(ast.name, ast.version, ast.name, startMs, startedAt, session)
                     },
                     running = { session.running },
                     onStop = { _ -> session.stop() },

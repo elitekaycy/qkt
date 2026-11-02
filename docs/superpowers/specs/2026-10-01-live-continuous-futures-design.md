@@ -75,7 +75,7 @@ Proposal, keeping every backtest identical:
   not in one batch at the roll.
 - While a roll is in flight the lane refuses new orders on the stream and holds resting-order
   re-placement until the carries end, so no order interleaves with the legs.
-- Legs keep their deterministic ids (`roll:<stream>:<atMs>:<strategy>:close|open`), so after a restart
+- Legs keep their deterministic ids (`roll:<atMs>:<digest of stream, atMs, strategy>:close|open`, short enough for VGP's 64 characters), so after a restart
   the gateway's idempotent submit and order recovery resolve a leg in flight instead of sending it
   twice (§2.4 persists the in-flight state).
 - A leg not filled within a bound (a market order on a live venue should fill in seconds) stops that

@@ -28,6 +28,7 @@ internal fun dataImport(args: Args): Int {
     }
     val json = args.flag("json")
     val dataRoot = CliDataRoot.of(args)
+    if (args.option("kind") == CorporateActionImport.KIND) return CorporateActionImport.run(args, paths, dataRoot)
     val request =
         try {
             DataImportOptions.request(args, paths, dataRoot)

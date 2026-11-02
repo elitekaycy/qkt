@@ -7,6 +7,7 @@ import com.qkt.cli.daemon.StateDir
 import com.qkt.cli.daemon.StrategyHandle
 import com.qkt.cli.daemon.signalToJson
 import com.qkt.cli.daemon.tradeToJson
+import com.qkt.cli.metadata
 import com.qkt.cli.observe.EventRing
 import com.qkt.cli.observe.ObservabilityServer
 import com.qkt.cli.strategyCalendar
@@ -21,6 +22,8 @@ import com.qkt.marketdata.source.MarketSource
 import com.qkt.notify.NoopNotifier
 import com.qkt.notify.Notifier
 import com.qkt.notify.NotifyEventKind
+import com.qkt.observe.insights.sourceFacts
+import com.qkt.observe.insights.streamFacts
 import java.nio.file.Files
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicBoolean
@@ -43,8 +46,8 @@ class PortfolioDeployer(
     private val ringSize: Int = 1000,
     private val bind: String = "127.0.0.1",
     /**
-     * Daemon-level daily-loss cap shared across every child of every portfolio. Set to
-     * `BigDecimal.ZERO` to disable. Default is [com.qkt.cli.Config.DEFAULT_MAX_DAILY_LOSS].
+     * Daily-loss cap each portfolio's book applies to its own children, apart from the daemon's other deployments.
+     * Set to `BigDecimal.ZERO` to disable. Default is [com.qkt.cli.Config.DEFAULT_MAX_DAILY_LOSS].
      */
     private val maxDailyLoss: java.math.BigDecimal = com.qkt.cli.Config.DEFAULT_MAX_DAILY_LOSS,
     /**
@@ -105,6 +108,8 @@ class PortfolioDeployer(
     /** Market-data gate thresholds (the `market_data:` config block) passed to every child session. */
     private val marketDataGateConfig: com.qkt.marketdata.MarketDataGateConfig =
         com.qkt.marketdata.MarketDataGateConfig.DEFAULT,
+    /** States what each child runs on, on `strategy.started`; null states nothing. */
+    private val effectiveConfig: com.qkt.cli.EffectiveConfigFacts? = null,
 ) {
     /**
      * Deploy a compiled portfolio and start its supervisor. Throws if any child
@@ -332,26 +337,8 @@ class PortfolioDeployer(
             )
         persistor.loadRiskState("$PORTFOLIO_RISK_PREFIX$portfolioName")?.let(bookRiskState::restore)
         val haltRules =
-            buildList {
-                if (maxDailyLoss.signum() > 0) {
-                    add(
-                        com.qkt.risk.rules
-                            .MaxDailyLoss(maxDailyLoss),
-                    )
-                }
-                maxDrawdownPct?.let {
-                    add(
-                        com.qkt.risk.rules
-                            .MaxDrawdown(it, totalDdBasis, riskCapital),
-                    )
-                }
-                maxDailyDrawdownPct?.let {
-                    add(
-                        com.qkt.risk.rules
-                            .MaxDailyDrawdown(it),
-                    )
-                }
-            }
+            com.qkt.risk.HaltRules
+                .standard(maxDailyLoss, maxDrawdownPct, maxDailyDrawdownPct, totalDdBasis, riskCapital)
         val childPairs = compiled.children.zip(wrappers)
         val aliasToStrategyId = compiled.children.associate { it.alias to it.strategyId }
         return PortfolioRiskAggregator(
@@ -449,17 +436,7 @@ class PortfolioDeployer(
             "runtimeMode" to if (brokerFactories.isEmpty()) "paper" else "live",
             "brokers" to brokerFactories.keys.sorted(),
             "symbols" to compiledChild.symbols,
-            "streams" to
-                compiledChild.ast.streams.map {
-                    linkedMapOf(
-                        "alias" to it.alias,
-                        "broker" to it.broker,
-                        "symbol" to it.symbol,
-                        "qktSymbol" to it.qktSymbol,
-                        "timeframe" to it.timeframe,
-                        "warmupBars" to it.warmupBars,
-                    )
-                },
+            "streams" to streamFacts(compiledChild.ast.streams),
             "risk" to
                 linkedMapOf(
                     "maxDailyLoss" to maxDailyLoss,
@@ -481,7 +458,18 @@ class PortfolioDeployer(
                     "perStrategyLossStreakHalt" to perStrategyOverride?.lossStreakHalt,
                     "perStrategyLossStreakHaltScope" to perStrategyOverride?.lossStreakHaltScope?.name,
                 ),
-        )
+        ) + sourceFacts(compiledChild.source) +
+            effectiveConfig.metadata {
+                portfolioChild(
+                    compiledChild.symbols,
+                    perStrategyOverride,
+                    compiled.ast.name,
+                    compiled.ast.capital,
+                    weights[compiledChild.alias],
+                    allocatedCapital,
+                    compiled.ast.allocate != null,
+                )
+            }
     }
 
     private fun createChild(
@@ -617,7 +605,7 @@ class PortfolioDeployer(
             ObservabilityServer(
                 ring = ring,
                 statusProvider = {
-                    childStatusSnapshot(
+                    com.qkt.cli.daemon.sessionStatusSnapshot(
                         childName,
                         compiledChild.ast.version,
                         compiledChild.strategyId,

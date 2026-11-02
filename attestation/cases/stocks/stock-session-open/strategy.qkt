@@ -1,0 +1,13 @@
+STRATEGY atto_stk_open VERSION 1
+
+SYMBOLS
+    aapl = EXNESS:AAPL EVERY 1m
+
+RULES
+    -- Started before the 09:40 New York open: the buy decided on each pre-open quote bar is refused before the
+    -- venue, and the first closed bar of the session buys one share.
+    WHEN aapl.close > 0 AND POSITION.aapl = 0 AND TRADES.today = 0
+    THEN BUY aapl SIZING 0.01
+
+    WHEN POSITION.aapl != 0 AND POSITION.aapl.holding_duration >= 50
+    THEN CLOSE aapl

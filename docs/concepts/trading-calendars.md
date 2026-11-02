@@ -10,6 +10,7 @@ A calendar answers questions about one symbol at one moment, and one question ab
 | Question | Used by |
 |---|---|
 | Is the market open now? | the live market-data gate (a quote gap while closed is not a fault), feed polling, data coverage |
+| Does the venue take an order now? | the session rule and the backtest fills ([Trading only in session](#trading-only-in-session)) |
 | Is this a planned daily pause? | the live market-data gate (a gap in the metals pause is `PAUSED`, not `STALE`) |
 | Is this day a holiday, or can it close early? | data coverage: which days must hold data |
 | When does this trading day end? | `DAY` orders expire at their symbol's session end |
@@ -25,13 +26,16 @@ Bars do **not** use a calendar: they sit on a fixed UTC grid, so a 1h bar always
 | `fx` | Sunday 17:00 to Friday 17:00 New York | 17:00 to 17:00 New York | weekends; Dec 25, Jan 1 and Good Friday need no data |
 | `crypto` | always | midnight to midnight UTC | never |
 | `nyse` | 09:30-16:00 New York, 09:30-13:00 on early-close days | the regular session | weekends, exchange holidays and one-off closures |
+| `nyse[HH:MM-HH:MM]` | NYSE trading days in that New York window; on an early-close day it ends at 13:00 when the window ends later | the window | as `nyse` |
 | `cme_globex` | Sunday 17:00 to Friday 16:00 Chicago, halted 16:00-17:00 daily | 17:00 to 16:00 Chicago | weekends |
 | `<base> pause HH:MM-HH:MM [Zone]` | as its base, with a daily pause | as its base | as its base |
 
 Every calendar follows daylight saving through its time zone. NYSE closes early at 13:00 on July 3 and December 24
 when they fall Monday to Thursday and on the Friday after Thanksgiving; its one-off closures are the September 2001
 attacks, the national days of mourning (2004-06-11, 2007-01-02, 2018-12-05, 2025-01-09) and Hurricane Sandy
-(2012-10-29 and 30). Extended stock hours are not modelled.
+(2012-10-29 and 30). A venue whose stock session is not the regular one takes a window: Exness takes positions in its
+US stock CFDs 09:40-15:45 New York (`nyse[09:40-15:45]`, measured with order probes; it quotes them from 06:00 but is
+close-only until 09:40), a broker with pre- and after-market trading `nyse[04:00-20:00]`. A window must open before 13:00, so every trading day has a session.
 
 ## How a symbol gets its calendar
 
@@ -77,7 +81,14 @@ The live daemon logs the same choice for every symbol when a strategy starts
 
 ### Stocks and other venue hours
 
-A venue that trades stocks declares its hours on its broker entry, which both modes read:
+A rule's pattern is a glob on the symbol, or `category:<glob>` on the folder the venue files the instrument under:
+MT5's `path` (`Standard\Stocks\AAPLm` is `Stocks`), a gateway listing's `category` (`us_equity`). One category rule
+covers a broker's whole stock list; a symbol rule is tried first, so one stock can still have its own calendar.
+The category is part of the instrument's spec, read live from the venue and in a backtest from `category:` in
+`instruments.yaml`, which `qkt instruments pull` writes.
+
+The `exness` profile ships `category:Stocks -> nyse[09:40-15:45]`, so `EXNESS:AAPL` trades Exness's stock session
+with no configuration. Another venue declares its hours on its broker entry, which both modes read:
 
 ```yaml
 brokers:
@@ -85,8 +96,34 @@ brokers:
     type: gateway
     # ...
     calendars:
-      "*": nyse
+      "category:us_equity": nyse[04:00-20:00]
 ```
+
+## Trading only in session
+
+A venue refuses orders outside a symbol's session: Exness quotes US stock CFDs from 06:00 New York but answers MT5
+retcode 10044 (`CLOSE_ONLY`, "session closed") to an opening order until 09:40. qkt follows the venue in both modes,
+and refuses closing orders out of session too, so a backtest never books a close the venue might not fill:
+
+- **Orders a strategy sends** outside the symbol's session are refused before the venue, in backtest and live
+  (`VenueSession`, one of the always-on pre-trade controls). A refused close is decided again on the strategy's next
+  bar, as after the venue's refusal.
+- **Resting orders** (limits, stops, bracket legs) do not fill on a quote outside the session in a backtest; they
+  fill on the first in-session price, as the venue fills them at the open. **Engine-held triggers** (trailing stops,
+  engine-held stops and stack layers) wait for the session in both modes instead of firing an order the venue would
+  refuse.
+- **Strategies still evaluate** every bar the data holds, out-of-session bars included: live receives those quotes
+  too, so indicators see the same bars in both modes. Only trading waits.
+
+A backtest judges a quote replayed from a recording at its own time. A bar replayed as synthetic ticks (`--bars`, or a
+symbol with no ticks) is judged by its bar, whose ticks carry made-up times inside it: the bar trades when any minute
+of it is in session. A one-minute pre-market stock bar is outside; a daily FX bar is inside although its close is
+stamped after the 17:00 New York close.
+
+Live, an MT5 account answers from its profile's calendars (`calendars:` on the broker entry, else the profile's own).
+A venue gateway decides for itself: qkt sends its orders whatever the hour, and futures and options on the exchange
+stack are not gated in a backtest either. Time exits, halt flattening and margin liquidation send closes at the time
+they fall due; outside a session a backtest fills them where the venue would refuse them.
 
 ## Strategies that trade several markets
 

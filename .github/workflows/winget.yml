@@ -8,9 +8,18 @@ name: winget
 #   - secret WINGET_TOKEN: a fine-grained PAT scoped to the winget-pkgs fork only
 #     (Contents + Pull requests: read/write) — see docs/how-to/winget-bootstrap.md
 
+# Releases are created by release.yml with GITHUB_TOKEN, and GitHub does not start
+# other workflows from events that token causes, so `release: released` never fires
+# for them. release.yml therefore dispatches this workflow with the tag; the release
+# trigger stays for releases published by hand.
 on:
   release:
     types: [released]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to publish to winget, e.g. v0.64.0
+        required: true
 
 jobs:
   publish:
@@ -26,5 +35,6 @@ jobs:
       - uses: vedantmgoyal9/winget-releaser@4ffc7888bffd451b357355dc214d43bb9f23917e # v2
         with:
           identifier: elitekaycy.qkt
+          release-tag: ${{ inputs.tag || github.event.release.tag_name }}
           installers-regex: 'windows-x64\.zip$'
           token: ${{ secrets.WINGET_TOKEN }}

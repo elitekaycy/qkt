@@ -22,7 +22,7 @@ internal fun handleLogs(
     val logFile =
         handle?.logFile
             ?: stateDir?.logFile(name)?.takeIf { Files.exists(it) }
-            ?: return respond(ex, 404, """{"error":"unknown strategy: $name"}""")
+            ?: return respond(ex, 404, """{"error":${jsonString("unknown strategy: $name")}}""")
     if (!Files.exists(logFile)) {
         // Stream nothing rather than 404; the strategy may simply have produced no logs yet.
         ex.responseHeaders.add("Content-Type", "text/plain; charset=utf-8")

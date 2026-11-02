@@ -1,13 +1,13 @@
 package com.qkt.connector.mt5
 
 import com.qkt.common.Clock
+import com.qkt.common.OwnerOnly
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
-import java.nio.file.attribute.PosixFilePermissions
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -181,11 +181,11 @@ class MT5TransportJournal(
 
     private fun createPrivateDirectory(path: Path) {
         Files.createDirectories(path)
-        runCatching { Files.setPosixFilePermissions(path, PosixFilePermissions.fromString("rwx------")) }
+        OwnerOnly.directory(path)
     }
 
     private fun makeOwnerOnly(path: Path) {
-        runCatching { Files.setPosixFilePermissions(path, PosixFilePermissions.fromString("rw-------")) }
+        OwnerOnly.file(path)
     }
 
     private fun json(value: String): String =

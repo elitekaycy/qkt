@@ -14,6 +14,7 @@ import com.qkt.broker.liquidation.MarginLiquidator
 import com.qkt.instrument.InstrumentRegistry
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.pnl.CommissionBook
+import com.qkt.pnl.EquityCostCommission
 import com.qkt.pnl.PerLotCommission
 import com.qkt.pnl.PnLCalculator
 import com.qkt.pnl.StrategyPnL
@@ -35,7 +36,7 @@ internal class ReplayBooks(
     val priceTracker = MarketPriceTracker()
     val strategyPositions = StrategyPositionTracker()
     val positions = strategyPositions.account
-    val commissionBook = CommissionBook(PerLotCommission(instruments))
+    val commissionBook = CommissionBook(EquityCostCommission(instruments, PerLotCommission(instruments)))
     val rolls = RollLedger()
     val contractFills = ContractFillLog()
     val settlements = SettlementLog()

@@ -117,7 +117,7 @@ fun validateHubStreams(
             continue
         }
         val known = dataset.strategyFieldNames()
-        if (binding.field !in known) {
+        if (binding.field != HubStreamSymbol.RECORD_FIELD && binding.field !in known) {
             problems.add(
                 "hub dataset '${binding.dataset}' has no readable field '${binding.field}'; " +
                     "declared: ${known.sorted().joinToString(", ")}",

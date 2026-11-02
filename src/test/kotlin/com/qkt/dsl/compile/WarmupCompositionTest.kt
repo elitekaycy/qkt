@@ -164,4 +164,23 @@ class WarmupCompositionTest {
         assertThat(WarmupRequirements.compute(s))
             .containsExactlyInAnyOrderEntriesOf(mapOf("s" to 5, "o" to 4))
     }
+
+    @Test
+    fun `a stream read bare inside an expression-fed series is warmed for the whole window`() {
+        // The spread replays both streams' closes; with no warmup on `silver` every seeded `gold`
+        // bar was paired with no silver close and the z-score filled only live.
+        val s =
+            ast(
+                """
+                STRATEGY t VERSION 1
+                SYMBOLS
+                  gold = X:A EVERY 1m,
+                  silver = X:B EVERY 1m
+                RULES
+                  WHEN zscore(gold.close - silver.close, 60) >= 2 THEN FLATTEN
+                """.trimIndent(),
+            )
+        assertThat(WarmupRequirements.compute(s))
+            .containsExactlyInAnyOrderEntriesOf(mapOf("gold" to 60, "silver" to 60))
+    }
 }

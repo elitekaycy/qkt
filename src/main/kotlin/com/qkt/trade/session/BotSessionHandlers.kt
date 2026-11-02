@@ -8,6 +8,7 @@ import com.qkt.trade.parseBotStrategy
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
+import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * What each session route answers, as JSON text. The engine is single-threaded in a backtest, so the
@@ -127,7 +128,7 @@ internal class BotSessionHandlers(
                     "session resumes over this state\""
             }
         return """{"ok":true,"finished":true,"trades":${result?.trades?.size ?: "null"},""" +
-            """"reportDir":${reportDir?.let { "\"$it\"" } ?: "null"},""" +
+            """"reportDir":${reportDir?.let { JsonPrimitive(it.toString()).toString() } ?: "null"},""" +
             """"openLegs":${open.joinToString(",", "[", "]") { legJson(it) }},""" +
             """"workingOrders":${working.joinToString(",", "[", "]") { workingJson(it) }},"note":$note}"""
     }

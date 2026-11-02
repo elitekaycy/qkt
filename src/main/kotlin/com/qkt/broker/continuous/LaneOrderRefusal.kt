@@ -1,6 +1,10 @@
 package com.qkt.broker.continuous
 
+import com.qkt.broker.SubmitAck
+import com.qkt.bus.EventBus
 import com.qkt.derivatives.futures.ContinuousChain
+import com.qkt.events.BrokerEvent
+import com.qkt.execution.OrderRequest
 import com.qkt.instrument.PriceAdjustment
 import java.time.Instant
 
@@ -20,4 +24,14 @@ internal fun ContinuousChain.orderRefusal(
     if (indexAt(now) == null) return "$stream has no contract at ${Instant.ofEpochMilli(now)}"
     if (rolling) return "$stream is rolling to its next contract; resend once the roll is done"
     return null
+}
+
+/** Tells the engine the stream refused [request] for [reason] at [nowMs]. */
+internal fun EventBus.refuse(
+    request: OrderRequest,
+    reason: String,
+    nowMs: Long,
+): SubmitAck {
+    publish(BrokerEvent.OrderRejected(request.id, null, reason, request.strategyId, nowMs))
+    return SubmitAck(request.id, null, accepted = false, rejectReason = reason)
 }

@@ -8,14 +8,10 @@ import com.qkt.dsl.ast.ChildBy
 import com.qkt.dsl.ast.ChildPct
 import com.qkt.dsl.ast.ChildPriceAst
 import com.qkt.dsl.ast.ChildRr
-import com.qkt.dsl.ast.Day
-import com.qkt.dsl.ast.Gtc
-import com.qkt.dsl.ast.Gtd
 import com.qkt.dsl.ast.Limit
 import com.qkt.dsl.ast.Market
 import com.qkt.dsl.ast.Stop
 import com.qkt.dsl.ast.StopLimit
-import com.qkt.dsl.ast.TifAst
 import com.qkt.dsl.compile.BracketPercent
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.StopLossSpec
@@ -54,7 +50,7 @@ fun compileBotAction(
             ?.takeProfit
             ?.let { resolveExit(it, side, entryPrice, stopDistance, ctx, isStop = false) }
     val lots = resolveBotLots(bot.opts.sizing, ctx, entryPrice, stopDistance)
-    val (tif, expiresAt) = resolveTif(bot.opts.tif, timestamp)
+    val (tif, expiresAt) = resolveTif(bot.opts.tif, bot.qktSymbol, timestamp, ctx.calendar)
     val entry = entryRequest(bot, id, side, lots, tif, timestamp, strategyId, expiresAt)
     val request =
         if (sl != null && tp != null) {
@@ -133,21 +129,6 @@ private fun applyDistance(
     val sign = BigDecimal(if (isStop) stopSide else -stopSide)
     return entry.add(sign.multiply(dist, Money.CONTEXT), Money.CONTEXT)
 }
-
-private fun resolveTif(
-    tif: TifAst?,
-    timestamp: Long,
-): Pair<TimeInForce, Long?> =
-    when (tif) {
-        null, is Gtc -> TimeInForce.GTC to null
-        // The MT5 wire carries expiry only as an absolute deadline, so DAY becomes
-        // an explicit end-of-UTC-day expiration on pending entries.
-        is Day -> TimeInForce.DAY to (Math.floorDiv(timestamp, MS_PER_DAY) + 1) * MS_PER_DAY
-        is Gtd -> TimeInForce.GTD to literal(tif.until, "TIF GTD").toLong()
-        else -> error("TIF ${tif::class.simpleName} is not supported one-shot; use GTC, DAY, or GTD")
-    }
-
-private const val MS_PER_DAY: Long = 86_400_000L
 
 private fun entryRequest(
     bot: BotAction,

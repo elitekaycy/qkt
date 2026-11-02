@@ -1,14 +1,12 @@
 package com.qkt.backtest
 
 import com.qkt.candles.TimeWindow
-import com.qkt.common.TimeRange
 import com.qkt.common.TradingCalendar
 import com.qkt.marketdata.HistoricalTickFeed
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.TickFeed
 import com.qkt.marketdata.source.MarketRequest
 import com.qkt.marketdata.source.MarketSource
-import com.qkt.marketdata.source.MarketSourceCapability
 import com.qkt.marketdata.source.NullMarketSource
 import com.qkt.marketdata.store.DataStore
 import com.qkt.risk.RiskRule
@@ -25,7 +23,7 @@ class Backtest(
     private val candleWindow: TimeWindow? = null,
     private val initialTimestamp: Long = 0L,
     private val replayEndTimestamp: Long? = null,
-    private val source: MarketSource = NullMarketSource,
+    internal val source: MarketSource = NullMarketSource,
     private val calendar: TradingCalendar = TradingCalendar.crypto(),
     private val warmupSpec: WarmupSpec = WarmupSpec.None,
     private val symbols: List<String> = emptyList(),
@@ -394,21 +392,14 @@ class Backtest(
             runawayMaxRejections: Int = com.qkt.risk.RunawayBreaker.DEFAULT_MAX_REJECTIONS,
             runawayRejectionWindowMs: Long = com.qkt.risk.RunawayBreaker.DEFAULT_REJECTION_WINDOW_MS,
         ): Backtest {
-            require(
-                MarketSourceCapability.TICKS in source.capabilities ||
-                    MarketSourceCapability.BARS in source.capabilities,
-            ) {
-                "Backtest requires a MarketSource with TICKS or BARS; ${source.name} has ${source.capabilities}"
-            }
-            val from = request.from ?: error("Backtest.fromSource requires explicit MarketRequest.from")
-            val to = request.to ?: error("Backtest.fromSource requires explicit MarketRequest.to")
-            val range = TimeRange(from, to)
+            val inputs = ReplayInputs.of(source, instruments, request, calendar)
+            val range = inputs.range
             // Late-bound engine slot for position-aware bar synthesis; see ReplayFeeds.replay.
             val engineHolder = arrayOfNulls<com.qkt.research.ReplayEngine>(1)
             val positionSign: (String) -> Int = { sym -> engineHolder[0]?.positionSign(sym) ?: 0 }
             val (feed, barFills) =
                 ReplayFeeds.replay(
-                    source,
+                    inputs.source,
                     request.symbols,
                     range,
                     barWindows,
@@ -425,9 +416,9 @@ class Backtest(
                 calendar = calendar,
                 feed = feed,
                 candleWindow = candleWindow,
-                initialTimestamp = from.toEpochMilli(),
-                replayEndTimestamp = to.toEpochMilli(),
-                source = source,
+                initialTimestamp = inputs.from.toEpochMilli(),
+                replayEndTimestamp = inputs.to.toEpochMilli(),
+                source = inputs.source,
                 warmupSpec = warmupSpec,
                 symbols = request.symbols,
                 cadence = cadence,
@@ -437,7 +428,7 @@ class Backtest(
                 totalDdBasis = totalDdBasis,
                 strategyRiskLimits = strategyRiskLimits,
                 bookCapital = bookCapital,
-                instruments = instruments,
+                instruments = inputs.instruments,
                 accountingConfig = accountingConfig,
                 tradedSymbols = tradedSymbols,
                 brokerKind = brokerKind,
@@ -461,8 +452,15 @@ class Backtest(
                 runawayRejectionWindowMs = runawayRejectionWindowMs,
                 barFills = barFills,
                 tickResolvedBars =
-                    ReplayFeeds.tickResolvedBars(source, request.symbols, range, barWindows, candleWindow, tickFills),
-                tickSlicer = ReplayFeeds.tickSlicer(source, tickFills),
+                    ReplayFeeds.tickResolvedBars(
+                        inputs.source,
+                        request.symbols,
+                        range,
+                        barWindows,
+                        candleWindow,
+                        tickFills,
+                    ),
+                tickSlicer = ReplayFeeds.tickSlicer(inputs.source, tickFills),
                 engineHolder = engineHolder,
             )
         }

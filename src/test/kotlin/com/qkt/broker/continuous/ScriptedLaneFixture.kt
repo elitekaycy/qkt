@@ -1,5 +1,6 @@
 package com.qkt.broker.continuous
 
+import com.qkt.broker.Broker
 import com.qkt.bus.EventBus
 import com.qkt.common.FixedClock
 import com.qkt.common.MonotonicSequenceGenerator
@@ -20,6 +21,7 @@ import com.qkt.instrument.RollRecord
 import com.qkt.marketdata.Tick
 import com.qkt.persistence.NoopStatePersistor
 import com.qkt.persistence.PersistedStreamLane
+import com.qkt.persistence.StatePersistor
 import com.qkt.positions.PositionProvider
 import java.math.BigDecimal
 import java.time.Instant
@@ -28,10 +30,13 @@ import java.time.LocalTime
 /**
  * A continuous stream whose venue only records what it is sent; the test publishes the venue's answers.
  * Its lane saves to [persistor]: a fixture built on another's persistor is that lane after a restart.
+ * [laneVenue] puts a real broker under the lane instead.
  */
 internal class ScriptedLaneFixture(
-    val persistor: NoopStatePersistor = NoopStatePersistor(),
+    val persistor: StatePersistor = NoopStatePersistor(),
     startMs: Long = Instant.parse("2024-09-19T07:45:00Z").toEpochMilli(),
+    rollPriceBand: BigDecimal? = null,
+    laneVenue: ((EventBus, FixedClock, PositionProvider) -> Broker)? = null,
 ) {
     private fun ms(iso: String) = Instant.parse(iso).toEpochMilli()
 
@@ -92,7 +97,7 @@ internal class ScriptedLaneFixture(
         )
 
     val clock = FixedClock(time = startMs)
-    private val bus = EventBus(clock, MonotonicSequenceGenerator())
+    val bus = EventBus(clock, MonotonicSequenceGenerator())
     val venue = ScriptedVenue()
     lateinit var venueBus: EventBus
     lateinit var lanePositions: PositionProvider
@@ -107,10 +112,11 @@ internal class ScriptedLaneFixture(
             ledger,
             ContractFillLog(),
             LaneStateStore(persistor, "owner"),
+            rollPriceBand,
         ) { b, _, p ->
             venueBus = b
             lanePositions = p
-            ContractVenue(venue)
+            ContractVenue(laneVenue?.invoke(b, clock, p) ?: venue)
         }
 
     init {
@@ -123,6 +129,17 @@ internal class ScriptedLaneFixture(
 
     /** Ticks the stream at [price] now. */
     fun tick(price: String) = bus.publish(TickEvent(Tick(front, BigDecimal(price), clock.time)))
+
+    /** Ticks the stream at [price] now, with the book's [bid] and [ask]. */
+    fun quote(
+        price: String,
+        bid: String?,
+        ask: String?,
+    ) = bus.publish(
+        TickEvent(
+            Tick(front, BigDecimal(price), clock.time, bid = bid?.let(::BigDecimal), ask = ask?.let(::BigDecimal)),
+        ),
+    )
 
     /** This lane after a restart at [atMs]: a new session on what this one saved. */
     fun restart(atMs: Long = clock.time): ScriptedLaneFixture = ScriptedLaneFixture(persistor, atMs)

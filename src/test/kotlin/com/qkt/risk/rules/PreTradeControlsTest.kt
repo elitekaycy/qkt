@@ -117,8 +117,10 @@ class PreTradeControlsTest {
     }
 
     @Test
-    fun `standard set ships all three controls`() {
+    fun `standard set ships the venue trade-mode, split window, quantity, notional and collar controls`() {
         val rules = PreTradeControls.standard(MarketPriceTracker())
-        assertThat(rules).hasSize(3)
+        assertThat(rules).hasSize(5)
+        assertThat(rules.first()).isInstanceOf(VenueTradeMode::class.java)
+        assertThat(rules[1]).isInstanceOf(SplitWindow::class.java)
     }
 }

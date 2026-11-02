@@ -28,6 +28,8 @@ class CompositeMarketSource(
 
     override fun marksFor(symbol: String): MarkPrices? = sourceFor(symbol).marksFor(symbol)
 
+    override fun tickDeliveryLagMsFor(symbol: String): Long = sourceFor(symbol).tickDeliveryLagMsFor(symbol)
+
     override fun optionMarksFor(symbol: String): OptionMarks? = sourceFor(symbol).optionMarksFor(symbol)
 
     override fun tradeFlowFor(symbol: String): TradeFlow? = sourceFor(symbol).tradeFlowFor(symbol)

@@ -1,5 +1,6 @@
 package com.qkt.persistence
 
+import com.qkt.broker.SettledClose
 import com.qkt.events.BrokerEvent
 import com.qkt.execution.OrderRequest
 import java.math.BigDecimal
@@ -10,6 +11,7 @@ import java.math.BigDecimal
  * it, the contract positions its venue account holds, the roll's own venue orders still out ([legs], and
  * the resting orders whose cancel is awaited, as they worked, in [cancelling]), and the [roll] still in
  * flight (null when none). A roll's leg can outlive its roll: an unwind is still out after the roll ended.
+ * [settledCloses] are the closes the venue's settlements left, which only qkt can state as deals.
  */
 data class PersistedStreamLane(
     val stream: String,
@@ -20,6 +22,7 @@ data class PersistedStreamLane(
     val legs: List<PersistedRollLeg>,
     val cancelling: List<PersistedStreamOrder>,
     val roll: PersistedStreamRoll?,
+    val settledCloses: List<SettledClose> = emptyList(),
 )
 
 /** A roll's market [leg] still out at the venue, with the [slices] of it filled so far, oldest first. */

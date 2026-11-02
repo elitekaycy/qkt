@@ -43,6 +43,8 @@ class CachedHistoricalMarketSource(
 
     override fun capabilitiesFor(symbol: String): Set<MarketSourceCapability> = delegate.capabilitiesFor(symbol)
 
+    override fun tickDeliveryLagMsFor(symbol: String): Long = delegate.tickDeliveryLagMsFor(symbol)
+
     override fun liveTicks(symbols: List<String>): TickFeed = delegate.liveTicks(symbols)
 
     override fun bars(

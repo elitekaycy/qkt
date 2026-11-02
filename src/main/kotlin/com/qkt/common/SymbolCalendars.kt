@@ -13,10 +13,16 @@ import java.time.Instant
  *
  * Patterns are globs on the bare qkt symbol (no `NAME:` prefix), where `*` matches any run of
  * characters. e.g. rules `[BTC* -> crypto, * -> fx]` resolve "BTCUSD" to crypto and "EURUSD" to fx.
+ *
+ * A pattern `category:<glob>` matches the folder the venue files the symbol under instead ([categoryOf], e.g.
+ * `Stocks` for MT5's `Standard\Stocks\AAPLm`), so one rule covers a broker's whole stock list. Symbol rules are
+ * tried first, so a config can still give one stock its own calendar.
  */
 class SymbolCalendars(
     private val rules: List<Rule>,
     private val default: TradingCalendar,
+    /** The venue's category for a bare symbol, or null when it reports none; never part of equality. */
+    private val categoryOf: (String) -> String? = { null },
 ) {
     /**
      * These calendars with [overrides] layered on top: an override for a pattern replaces that
@@ -29,8 +35,11 @@ class SymbolCalendars(
         val catchAll = overrides.lastOrNull { it.pattern == "*" }
         val specific = overrides.filter { it.pattern != "*" }
         val kept = rules.filter { base -> specific.none { it.pattern == base.pattern } }
-        return SymbolCalendars(specific + kept, catchAll?.calendar ?: default)
+        return SymbolCalendars(specific + kept, catchAll?.calendar ?: default, categoryOf)
     }
+
+    /** These calendars reading each symbol's venue category from [lookup], for `category:` rules. */
+    fun withCategories(lookup: (String) -> String?): SymbolCalendars = SymbolCalendars(rules, default, lookup)
 
     /** One `pattern -> calendar` mapping. [pattern] is a glob on the bare qkt symbol. */
     data class Rule(
@@ -38,13 +47,23 @@ class SymbolCalendars(
         val calendar: TradingCalendar,
     )
 
-    private val compiled: List<Pair<Regex, Rule>> = rules.map { globToRegex(it.pattern) to it }
+    private val bySymbol: List<Pair<Regex, Rule>> =
+        rules.filterNot { it.pattern.startsWith(CATEGORY) }.map { globToRegex(it.pattern) to it }
+
+    private val byCategory: List<Pair<Regex, Rule>> =
+        rules.filter { it.pattern.startsWith(CATEGORY) }.map { globToRegex(it.pattern.removePrefix(CATEGORY)) to it }
 
     /** The calendar governing [bareSymbol] (a qkt symbol with no `NAME:` prefix). */
     fun calendarFor(bareSymbol: String): TradingCalendar = ruleFor(bareSymbol)?.calendar ?: default
 
     /** The first rule whose pattern matches [bareSymbol], or null when it takes the fallback calendar. */
-    fun ruleFor(bareSymbol: String): Rule? = compiled.firstOrNull { it.first.matches(bareSymbol) }?.second
+    fun ruleFor(bareSymbol: String): Rule? =
+        bySymbol.firstOrNull { it.first.matches(bareSymbol) }?.second
+            ?: byCategory
+                .takeIf { it.isNotEmpty() }
+                ?.let { rules ->
+                    categoryOf(bareSymbol)?.let { c -> rules.firstOrNull { it.first.matches(c) }?.second }
+                }
 
     /**
      * True when at least one of [symbols] is currently in session under its own calendar.
@@ -97,6 +116,9 @@ class SymbolCalendars(
     override fun hashCode(): Int = 31 * rules.hashCode() + default.hashCode()
 
     companion object {
+        /** The prefix of a rule pattern matched against the venue's category of a symbol. */
+        const val CATEGORY: String = "category:"
+
         /** All-FX resolver — the behaviour for a profile that declares no calendar rules. */
         fun fxDefault(): SymbolCalendars = SymbolCalendars(emptyList(), TradingCalendar.fxDefault())
 

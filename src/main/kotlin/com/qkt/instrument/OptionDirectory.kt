@@ -22,6 +22,9 @@ interface OptionDirectory {
 
     /** The settlement index's delivery price on [qktSymbol]'s expiry date, when its catalog records one. */
     fun deliveryPrice(qktSymbol: String): BigDecimal?
+
+    /** Whether [qktSymbol] is an option code of a declared root, catalogued or not (yet). */
+    fun isOptionCode(qktSymbol: String): Boolean = optionRoot(qktSymbol) != null
 }
 
 /** The catalogued options among [symbols]. */

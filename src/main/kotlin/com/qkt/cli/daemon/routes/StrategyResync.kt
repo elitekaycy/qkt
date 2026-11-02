@@ -24,9 +24,13 @@ internal fun handleStrategyResync(
 ) {
     val existing =
         registry.get(name)
-            ?: return respond(ex, 404, """{"error":"unknown strategy: $name"}""")
+            ?: return respond(ex, 404, """{"error":${jsonString("unknown strategy: $name")}}""")
     if (existing.childMeta != null) {
-        return respond(ex, 409, """{"error":"strategy '$name' is a portfolio child; resync the parent"}""")
+        return respond(
+            ex,
+            409,
+            """{"error":${jsonString("strategy '$name' is a portfolio child; resync the parent")}}""",
+        )
     }
     if (dryRun) {
         return respond(
@@ -41,16 +45,16 @@ internal fun handleStrategyResync(
             registry.resyncStrategy(name, path, ignoreMismatches)
         } catch (e: com.qkt.app.ReconcileException) {
             val msg = (e.message ?: "reconcile mismatch").replace("\"", "'")
-            return respond(ex, 409, """{"error":"$msg","kind":"reconcile-mismatch"}""")
+            return respond(ex, 409, """{"error":${jsonString(msg)},"kind":"reconcile-mismatch"}""")
         } catch (e: IllegalStateException) {
             val msg = (e.message ?: "conflict").replace("\"", "'")
-            return respond(ex, 409, """{"error":"$msg"}""")
+            return respond(ex, 409, """{"error":${jsonString(msg)}}""")
         } catch (e: IllegalArgumentException) {
             val msg = (e.message ?: "invalid").replace("\"", "'")
-            return respond(ex, 400, """{"error":"$msg"}""")
+            return respond(ex, 400, """{"error":${jsonString(msg)}}""")
         } catch (e: Exception) {
             val msg = (e.message ?: e.javaClass.simpleName).replace("\"", "'")
-            return respond(ex, 500, """{"error":"$msg"}""")
+            return respond(ex, 500, """{"error":${jsonString(msg)}}""")
         }
     OperatorJournal
         .from(stateDir, "http")

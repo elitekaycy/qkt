@@ -145,8 +145,10 @@ class TcpProxy:
 class Drills:
     """Fires [run]'s drills on time while it holds, and judges what each one left behind."""
 
-    def __init__(self, run, drills, guardian):
-        self.run, self.pending, self.guardian = run, list(drills), guardian
+    def __init__(self, run, drills, guardian, broker=None):
+        """[broker], when set, is the broker prefix whose link reports judge an outage: a daemon that also trades other
+        venues (the cross lane) reports their links too."""
+        self.run, self.pending, self.guardian, self.broker = run, list(drills), guardian, broker
         self.records, self.fill_seen_at, self.engaged = [], {}, False
 
     def tick(self, fills):
@@ -162,7 +164,7 @@ class Drills:
     def fire(self, drill):
         line = Timeline(drill)
         self.records.append(line.record)
-        held = self.run.get("/v1/positions")["positions"]
+        held = self.run.own_positions()  # the account is shared: only the symbols the case's strategy holds
         line.mark("fired", positions=held)
         if drill.get("flat") and held:
             line.problem(f"the case held {held} when a drill meant for a flat account fired")
@@ -179,8 +181,9 @@ class Drills:
     def qkt_restart(self, drill, line, held):
         line.mark("daemon stop")
         stopped = self.run.stop_daemon()
-        line.mark("daemon stopped", graceful=stopped, positions=self.run.get("/v1/positions")["positions"],
-                  orders=[o["client_order_id"] for o in self.run.get("/v1/orders")["orders"]])
+        line.mark("daemon stopped", graceful=stopped, positions=self.run.own_positions(),
+                  orders=[o["client_order_id"] for o in self.run.get("/v1/orders")["orders"]
+                          if o["client_order_id"].startswith((f"dsl-{self.run.strategy}-", f"ORD-{self.run.strategy}-"))])
         if not stopped:
             line.problem("the daemon did not stop within 60 s of `qkt daemon stop`")
         time.sleep(int(drill.get("down_s", 15)))
@@ -220,6 +223,8 @@ class Drills:
             for text in open(path):
                 if "ConnectionChanged" in text:
                     entry = json.loads(text)
+                    if self.broker and f"broker={self.broker}," not in entry["payload"]:
+                        continue
                     state = re.search(r"state=(\w+)", entry["payload"])
                     found.append((entry["ts"], state.group(1) if state else "?"))
         return sorted(set(found))

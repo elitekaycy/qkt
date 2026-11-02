@@ -3,6 +3,7 @@ package com.qkt.cli.daemon
 import com.qkt.app.LiveSession
 import com.qkt.app.LiveSessionHandle
 import com.qkt.candles.TimeWindow
+import com.qkt.cli.metadata
 import com.qkt.common.TradingCalendar
 import com.qkt.execution.Trade
 import com.qkt.strategy.Signal
@@ -28,14 +29,7 @@ internal fun StrategyHandle.RealFactory.startPipeline(
     onTrade: (Trade, BigDecimal, String) -> Unit,
     onSignal: (Signal) -> Unit,
 ): LiveSessionHandle {
-    val haltRules: List<com.qkt.risk.HaltRule> =
-        com.qkt.risk.HaltRules.standard(
-            maxDailyLoss = maxDailyLoss,
-            maxDrawdownPct = maxDrawdownPct,
-            maxDailyDrawdownPct = maxDailyDrawdownPct,
-            totalDdBasis = totalDdBasis,
-            startingBalance = startingBalance,
-        )
+    val haltRules = sessionHaltRules(mdcStrategy)
     val feedSymbols = (symbols + accountingConfig.normalizedSymbols.values).distinct()
     return LiveSession(
         strategies = strategies,
@@ -103,6 +97,21 @@ internal fun StrategyHandle.RealFactory.startPipeline(
 }
 
 /**
+ * The global halt rules of the session [sessionId]: bound by this factory's [StrategyHandle.RealFactory.daemonRisk], so a
+ * breach halts every session the daemon runs, as `risk.max_daily_loss` and the drawdown limits promise.
+ */
+internal fun StrategyHandle.RealFactory.sessionHaltRules(sessionId: String): List<com.qkt.risk.HaltRule> =
+    com.qkt.risk.HaltRules.daemonWide(
+        session = sessionId,
+        scope = daemonRisk,
+        maxDailyLoss = maxDailyLoss,
+        maxDrawdownPct = maxDrawdownPct,
+        maxDailyDrawdownPct = maxDailyDrawdownPct,
+        totalDdBasis = totalDdBasis,
+        startingBalance = startingBalance,
+    )
+
+/**
  * A live `qkt bot session`'s pipeline over [strategies] (its identities and its bar recorder), built from
  * the same factory config as a deploy. `per_strategy_risk` binds one strategy per session, so it applies
  * to a session's only identity and is refused when several are declared and any of them has an entry.
@@ -122,7 +131,8 @@ internal fun StrategyHandle.RealFactory.createLiveSession(
     }
     val metadata =
         identities.associateWith {
-            mapOf("deployName" to name, "kind" to "bot-session", "symbols" to symbols, "runtimeMode" to "live")
+            mapOf("deployName" to name, "kind" to "bot-session", "symbols" to symbols, "runtimeMode" to "live") +
+                effectiveConfig.metadata { standalone(symbols, perStrategyRisk[it], kind = "bot_session") }
         }
     return startPipeline(
         strategies = strategies,

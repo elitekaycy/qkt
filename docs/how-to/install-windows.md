@@ -3,13 +3,7 @@
 qkt ships a self-contained Windows build — `qkt.exe` plus a bundled Java runtime,
 so there are no prerequisites to install.
 
-## winget (recommended)
-
-```powershell
-winget install elitekaycy.qkt
-```
-
-## One-line installer
+## One-line installer (recommended)
 
 ```powershell
 irm https://raw.githubusercontent.com/elitekaycy/qkt/main/scripts/install.ps1 | iex
@@ -27,6 +21,12 @@ Open a **new** terminal afterward (so the updated PATH takes effect), then:
 qkt --version
 qkt --help
 ```
+
+## winget
+
+The `elitekaycy.qkt` package is not in the winget community repository yet, so
+`winget install elitekaycy.qkt` does not work today. Use the installer above until
+it is; [Publishing qkt to winget](winget-bootstrap.md) tracks the setup.
 
 ## Where qkt stores things on Windows
 

@@ -58,6 +58,6 @@ class BacktestRunResolutionTest {
             )
         val r = BacktestRunResolution.resolve(Args(arrayOf("backtest")), cfg)
         assertThat(r.strategy).isEqualTo(tmp.resolve("strat/named.qkt"))
-        assertThat(r.resolved["strategy"]).isEqualTo(ResolvedValue("strat/named.qkt", "global"))
+        assertThat(r.resolved["strategy"]).isEqualTo(ResolvedValue(Path.of("strat/named.qkt").toString(), "global"))
     }
 }

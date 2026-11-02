@@ -1,6 +1,7 @@
 package com.qkt.app
 
 import com.qkt.candles.TimeWindow
+import com.qkt.common.TimeRange
 import com.qkt.dsl.compile.CandleHub
 import com.qkt.dsl.compile.DslCompiledStrategy
 import com.qkt.dsl.compile.HubKey
@@ -35,7 +36,56 @@ internal class PerStreamWarmupCoordinator(
 
     /** Register retention and seed closed history before strategies bind to the hub. */
     fun prepareHub() {
-        if (specs.isEmpty()) return
+        val seeded = seedWarmupHistory()
+        seedLatestObservations(seeded)
+    }
+
+    /**
+     * An observation stream (a hub dataset, a macro series) holds a fact, not a price that
+     * refreshes every second: the value a strategy must read at the start of a session is the
+     * newest record already published, which may be weeks old (the next FOMC date, last month's
+     * CPI). Without it the stream reads as undefined until the next record arrives, so a restart
+     * or a backtest starting mid-history would act blind for that long. Seed that one record for
+     * every declared observation stream the bar warmup did not already fill.
+     */
+    private fun seedLatestObservations(alreadySeeded: Set<HubKey>) {
+        val nowMs = now.toEpochMilli()
+        for ((strategyId, strategy) in strategies) {
+            if (strategy !is DslCompiledStrategy) continue
+            for ((alias, key) in strategy.declaredStreams) {
+                if (key in alreadySeeded || SEEDED_PREFIXES.none { key.qktSymbol.startsWith(it) }) continue
+                val latest =
+                    runCatching {
+                        source
+                            .bars(
+                                key.qktSymbol,
+                                TimeWindow.parse(key.timeframe),
+                                TimeRange(Instant.ofEpochMilli(nowMs - OBSERVATION_LOOKBACK_MS), now),
+                            ).lastOrNull { it.startTime < nowMs }
+                    }.onFailure {
+                        log.warn(
+                            "warmup: no latest observation for alias={} symbol={}: {}",
+                            alias,
+                            key.qktSymbol,
+                            it.message,
+                        )
+                    }.getOrNull() ?: continue
+                hub.register(key, maxOf(strategy.retentionByKey[key] ?: 1, 1), strategyId)
+                hub.seed(key, listOf(latest))
+                log.info(
+                    "warmup: seeded latest observation strategy={} alias={} symbol={} known_at={}",
+                    strategyId,
+                    alias,
+                    key.qktSymbol,
+                    Instant.ofEpochMilli(latest.startTime),
+                )
+            }
+        }
+    }
+
+    private fun seedWarmupHistory(): Set<HubKey> {
+        val seededKeys = mutableSetOf<HubKey>()
+        if (specs.isEmpty()) return seededKeys
         for ((strategyId, strategy) in strategies) {
             if (strategy !is DslCompiledStrategy) continue
             for ((key, retention) in strategy.retentionByKey) {
@@ -46,7 +96,7 @@ internal class PerStreamWarmupCoordinator(
                 val warmupStream = stream(key)
                 val spec = specs[warmupStream] ?: continue
                 val bars = spec as? WarmupSpec.Bars ?: continue
-                val upperMs = bars.window.windowStartFor(now.toEpochMilli())
+                val upperMs = warmupUpperMs(key.qktSymbol, bars.window, now.toEpochMilli())
                 val candles =
                     try {
                         if (!requireFullHistory) {
@@ -73,6 +123,7 @@ internal class PerStreamWarmupCoordinator(
                     }
                 if (candles.isEmpty()) continue
                 hub.seed(key, candles)
+                seededKeys += key
                 formingBar(key.qktSymbol, bars.window)?.let { forming ->
                     hub.seedForming(key, forming.partial)
                     log.info(
@@ -91,6 +142,7 @@ internal class PerStreamWarmupCoordinator(
                 )
             }
         }
+        return seededKeys
     }
 
     /** Replay the prepared history through indicators without enabling strategy signals. */
@@ -125,4 +177,15 @@ internal class PerStreamWarmupCoordinator(
             .getOrNull()
 
     private fun stream(key: HubKey): WarmupStream = WarmupStream(key.qktSymbol, TimeWindow.parse(key.timeframe))
+
+    private companion object {
+        /** How far back to look for the newest observation: covers quarterly and monthly releases. */
+        const val OBSERVATION_LOOKBACK_MS: Long = 400L * 24 * 60 * 60 * 1000
+
+        /**
+         * Stored observations with a history a source can serve. Chain, open-interest and depth
+         * snapshots are observations too, but they are polled live and refresh within seconds.
+         */
+        val SEEDED_PREFIXES = listOf("HUB:", "MACRO:")
+    }
 }

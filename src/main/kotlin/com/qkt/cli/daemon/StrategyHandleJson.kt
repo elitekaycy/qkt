@@ -1,10 +1,12 @@
 package com.qkt.cli.daemon
 
 import com.qkt.app.SessionPnl
+import com.qkt.cli.observe.AuditJournalDto
 import com.qkt.cli.observe.PendingStackLayer
 import com.qkt.cli.observe.PersistenceHealthDto
 import com.qkt.cli.observe.PositionDto
 import com.qkt.cli.observe.StatusSnapshot
+import com.qkt.cli.observe.StreamStopDto
 import com.qkt.cli.observe.TradeDto
 import com.qkt.execution.Trade
 import java.math.BigDecimal
@@ -86,7 +88,9 @@ internal fun buildSnapshot(
     clockSkewedSymbols: Map<String, Long> = emptyMap(),
     openPositions: List<com.qkt.positions.Position> = emptyList(),
     persistenceHealth: com.qkt.persistence.PersistenceHealth = com.qkt.persistence.PersistenceHealth.DISABLED,
+    auditJournal: com.qkt.observe.AuditJournalHealth = com.qkt.observe.AuditJournalHealth.DISABLED,
     halt: HaltStatus = HaltStatus.NONE,
+    streamStops: List<com.qkt.broker.StreamStop> = emptyList(),
 ): StatusSnapshot {
     val now = System.currentTimeMillis()
     val last = trades.lastOrNull()
@@ -131,11 +135,13 @@ internal fun buildSnapshot(
                 queueSize = persistenceHealth.queueSize,
                 callerRunsTotal = persistenceHealth.callerRunsTotal,
             ),
+        auditJournal = AuditJournalDto.of(auditJournal),
         halted = halt.halted,
         haltReason = halt.reason,
         haltScope = halt.scope,
         haltPersistent = halt.scope == "PERSISTENT",
         haltedAt = halt.atMs?.let { Instant.ofEpochMilli(it).toString() },
+        streamStops = streamStops.map { StreamStopDto(it.strategyId, it.stream, it.reason) },
     )
 }
 

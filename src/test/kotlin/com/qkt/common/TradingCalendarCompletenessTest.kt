@@ -8,7 +8,9 @@ import org.junit.jupiter.api.Test
 
 /** Every built-in calendar answers every question, so a half-built calendar cannot ship (#calendar-resolution). */
 class TradingCalendarCompletenessTest {
-    private val calendars = TradingCalendar.names.map { requireNotNull(TradingCalendar.named(it)) { it } }
+    // Every named calendar, plus a windowed NYSE calendar as Exness quotes stock CFDs.
+    private val calendars =
+        (TradingCalendar.names + "nyse[06:00-15:45]").map { requireNotNull(TradingCalendar.named(it)) { it } }
     private val windows = listOf("1m", "5m", "15m", "30m", "1h", "4h", "1d", "7d").map(TimeWindow::parse)
 
     @Test

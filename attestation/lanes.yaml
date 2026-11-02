@@ -12,6 +12,12 @@ lanes:
     concurrency: per-magic
     places_orders: true
     budget_seconds: 360
+  stocks:
+    purpose: Stock CFDs on the MT5 demo (Exness US shares, 100-share lots) - orders and fills inside the 09:40-15:45 New York session Exness takes positions in (it quotes from 06:00, close-only until 09:40), share-sized entries, refusals of close-only symbols, DAY orders expiring at the session close, each replayed to the same fills. Runs only while the US session is open.
+    concurrency: per-magic
+    places_orders: true
+    session: nyse[09:40-15:45]
+    budget_seconds: 300
   risk:
     purpose: Caps, rejections and halts bind live exactly as in replay, from restored state, never from hoping the market produces a loss.
     concurrency: per-magic
@@ -49,3 +55,17 @@ lanes:
     places_orders: true
     venue_gateway: true
     budget_seconds: 420
+  alpaca:
+    purpose: US shares on a VGP gateway account running the qkt-venue-gateway's Alpaca adapter (Alpaca paper), with no Alpaca code in qkt - the gateway lanes' proofs (realized equals the venue's deals net and the account's cash, bars replay makes the same fills, restart, flat restart, outage and kill-switch drills) on cash equities. Market orders trade the regular session, so it runs only inside 09:30-16:00 New York. Its own account, so cases run one after another.
+    concurrency: exclusive
+    places_orders: true
+    venue_gateway: true
+    session: nyse
+    budget_seconds: 420
+  cross:
+    purpose: One daemon trading an MT5 demo account and one or more VGP gateway accounts at once, from one strategy - one config holding every venue, each venue checked, swept and judged on its own (its fills, flat, qkt's realized on its symbols against its own deals net), drills aimed at one venue while the others keep trading, and a replay of the session's captured ticks making the same fills on each venue. Its MT5 leg runs under its own magic beside the other lanes; its gateway legs are judged by the strategy's own order ids, so cases run one after another.
+    concurrency: exclusive
+    places_orders: true
+    venue_gateway: true
+    mt5: true
+    budget_seconds: 540

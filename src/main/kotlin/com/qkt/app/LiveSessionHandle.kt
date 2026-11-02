@@ -16,7 +16,8 @@ import java.time.Duration
  */
 interface LiveSessionHandle :
     HaltReads,
-    FeedLossReads {
+    FeedLossReads,
+    StreamStopControl {
     /** `true` while the session's tick loop is running. */
     val running: Boolean
 
@@ -38,6 +39,9 @@ interface LiveSessionHandle :
     /** Durable-state write counters used by `/status` and operator automation. */
     fun persistenceHealth(): PersistenceHealth = PersistenceHealth.DISABLED
 
+    /** Audit-journal written, dropped and lost counts; disabled when the session keeps no journal. */
+    fun auditJournalHealth(): com.qkt.observe.AuditJournalHealth = com.qkt.observe.AuditJournalHealth.DISABLED
+
     /**
      * Engine-vs-broker truth comparison (#400, FIA §2.1): per-symbol gross directional
      * deltas (or confirmed netting deltas) plus equity on both sides. Run daily via `qkt reconcile` — slow silent
@@ -55,9 +59,7 @@ interface LiveSessionHandle :
      * stopping many sessions signals all of them first, so no session keeps trading while an
      * earlier one drains (#1157). Defaults to [stop] for handles that never block.
      */
-    fun requestStop() {
-        stop()
-    }
+    fun requestStop() = stop()
 
     /** Blocks up to [timeout] for shutdown. Returns `true` iff the session terminated in time. */
     fun awaitTermination(timeout: Duration): Boolean

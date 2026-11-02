@@ -1,0 +1,29 @@
+id: stock-trade-mode-refusal
+title: An entry on a close-only stock is refused before the venue, beside one that fills
+why: 'Brokers keep delisted and renamed stocks in their symbol list as close-only or disabled. An entry sent
+  there comes back as a venue rejection at best; qkt must refuse it itself, name the reason, refuse it the
+  same way in replay, and still take the entry beside it.'
+status: ready
+symbols:
+- AAPL
+- FB
+timeframes:
+- 1m
+warmup_bars:
+  1m: 3
+proves:
+- behaviour:stock-cfd
+- behaviour:venue-trade-mode
+- behaviour:risk-rejection
+budget_seconds: 200
+expect_rejections: 1
+expect_fills:
+- BUY 0.01
+- SELL 0.01
+assertions:
+- flat-by-magic
+- no-pending-by-magic
+- deals-net-by-magic
+- no-engine-fault
+- replay-fill-sequence
+- expected-fills

@@ -1,0 +1,11 @@
+STRATEGY ap_drill_kill VERSION 1
+
+SYMBOLS
+    aapl = ALPACA:AAPL EVERY 1m WARMUP 3 BARS
+
+RULES
+    WHEN aapl.close > 0 AND POSITION.aapl = 0 AND OPEN_ORDERS.aapl = 0 AND TRADES.today = 0
+    THEN BUY aapl SIZING 1 BRACKET { STOP LOSS BY 3, TAKE PROFIT BY 6 }
+
+    WHEN POSITION.aapl != 0 AND POSITION.aapl.holding_duration >= 300
+    THEN CLOSE aapl

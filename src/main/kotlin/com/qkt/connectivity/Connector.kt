@@ -72,4 +72,7 @@ enum class ProductType {
 
     /** A dated option that expires and settles at its intrinsic value, e.g. a Deribit BTC_USDC call. */
     OPTION,
+
+    /** A share of a company held outright, e.g. AAPL at a stock broker (not a CFD on it). */
+    EQUITY,
 }

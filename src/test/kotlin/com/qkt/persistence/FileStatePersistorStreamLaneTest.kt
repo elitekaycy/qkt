@@ -1,5 +1,7 @@
 package com.qkt.persistence
 
+import com.qkt.broker.SettledClose
+import com.qkt.broker.VenueLeg
 import com.qkt.common.Side
 import com.qkt.execution.ExpiryAction
 import com.qkt.execution.OrderRequest
@@ -74,6 +76,33 @@ class FileStatePersistorStreamLaneTest {
     }
 
     @Test
+    fun `a lane's settlement closes round-trip, and a file from before them loads with none`(
+        @TempDir tmp: Path,
+    ) {
+        val close =
+            SettledClose(
+                "CME:ESZ26",
+                "trend",
+                Side.SELL,
+                BigDecimal("0.006"),
+                VenueLeg("OUT", "CME:ES@front#1000", null),
+                BigDecimal("-3.5"),
+                BigDecimal("0.3"),
+                9_000L,
+            )
+        val lane = laneInFlight().copy(settledCloses = listOf(close))
+        FileStatePersistor(tmp).saveStreamLane("trend", lane)
+        assertThat(FileStatePersistor(tmp).loadStreamLane("trend", STREAM)).isEqualTo(lane)
+
+        val file = tmp.resolve("trend").resolve(symbolStateFileName(STREAM, "lane.json"))
+        val old = Files.readString(file).replace(Regex(""",?"settledCloses":\[.*?]"""), "")
+        assertThat(old).doesNotContain("settledCloses")
+        Files.writeString(file, old)
+
+        assertThat(FileStatePersistor(tmp).loadStreamLane("trend", STREAM)).isEqualTo(laneInFlight())
+    }
+
+    @Test
     fun `a stream never saved loads as null`(
         @TempDir tmp: Path,
     ) {
@@ -113,7 +142,7 @@ class FileStatePersistorStreamLaneTest {
         @TempDir tmp: Path,
     ) {
         FileStatePersistor(tmp).saveStreamLane("trend", laneInFlight())
-        val file = tmp.resolve("trend").resolve("$STREAM-lane.json")
+        val file = tmp.resolve("trend").resolve(symbolStateFileName(STREAM, "lane.json"))
         Files.writeString(file, Files.readString(file).replace("\"version\":1", "\"version\":99"))
 
         assertThatThrownBy { FileStatePersistor(tmp).loadStreamLane("trend", STREAM) }
@@ -126,7 +155,7 @@ class FileStatePersistorStreamLaneTest {
         @TempDir tmp: Path,
     ) {
         Files.createDirectories(tmp.resolve("trend"))
-        Files.writeString(tmp.resolve("trend").resolve("$STREAM-lane.json"), "{not json")
+        Files.writeString(tmp.resolve("trend").resolve(symbolStateFileName(STREAM, "lane.json")), "{not json")
 
         assertThatThrownBy { FileStatePersistor(tmp).loadStreamLane("trend", STREAM) }
             .isInstanceOf(IllegalStateException::class.java)

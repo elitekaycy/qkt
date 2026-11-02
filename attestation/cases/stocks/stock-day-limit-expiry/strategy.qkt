@@ -1,0 +1,14 @@
+STRATEGY atto_stk_day VERSION 1
+
+SYMBOLS
+    aapl = EXNESS:AAPL EVERY 1m WARMUP 3 BARS
+
+RULES
+    -- A DAY limit $8 under the market (inside the 5% collar) rests at the venue with today's 15:45 New York
+    -- close as its expiry; a market entry beside it gives the case a fill. CLOSE clears the limit.
+    WHEN aapl.close > 0 AND TRADES.today = 0 AND OPEN_ORDERS.aapl = 0 AND POSITION.aapl = 0
+    THEN BUY aapl SIZING 0.01 ORDER_TYPE = LIMIT AT aapl.close - 8 TIF DAY
+       ; BUY aapl SIZING 0.01
+
+    WHEN POSITION.aapl != 0 AND POSITION.aapl.holding_duration >= 110
+    THEN CLOSE aapl

@@ -14,7 +14,9 @@ import com.qkt.connectivity.TradingAccount
 import com.qkt.instrument.ContractCatalogSource
 import com.qkt.instrument.FundingRateSource
 import com.qkt.instrument.InstrumentRegistry
+import com.qkt.instrument.OptionCatalogSource
 import com.qkt.instrument.OptionTerms
+import com.qkt.instrument.withInstrumentCategories
 import com.qkt.marketdata.depth.BookDepthSource
 import com.qkt.marketdata.flow.PrintHistorySource
 import com.qkt.marketdata.marks.MarkHistorySource
@@ -33,7 +35,14 @@ class GatewayConnector : Connector {
         ConnectorSpec(
             type = "gateway",
             displayName = "VGP gateway",
-            productTypes = setOf(ProductType.FUTURE, ProductType.PERPETUAL, ProductType.SPOT, ProductType.OPTION),
+            productTypes =
+                setOf(
+                    ProductType.FUTURE,
+                    ProductType.PERPETUAL,
+                    ProductType.SPOT,
+                    ProductType.OPTION,
+                    ProductType.EQUITY,
+                ),
             settings = GatewaySettings.KEYS,
         )
 
@@ -54,6 +63,7 @@ class GatewayConnector : Connector {
                 { context.strategiesTrading(account.name).toSet() },
                 GatewayChainRecording(context.instruments, settings.chainSnapshotMs),
                 context.instruments,
+                context.deploysUnderway,
             )
         }
 }
@@ -66,6 +76,7 @@ class GatewayTradingAccount internal constructor(
     private val strategies: () -> Set<String>,
     private val recording: GatewayChainRecording,
     private val instruments: InstrumentRegistry?,
+    private val deploysUnderway: () -> Boolean,
 ) : TradingAccount {
     private val identity = GatewayIdentity(settings.adapter, settings.accountLogin, settings.tradeMode)
     private val client by lazy {
@@ -83,10 +94,18 @@ class GatewayTradingAccount internal constructor(
                     GatewayStream(settings.url, settings.apiKey, onEvent, onReset, onConnection)
                 },
                 label = config.name.uppercase(),
+                sharedAccount = settings.sharedAccount,
+                deploysUnderway = deploysUnderway,
             )
         }
 
-    override val tradingHours: SymbolCalendars = GatewaySettings.calendars(config)
+    // `category:` rules read each instrument's venue category through this account's own instrument spec.
+    override val tradingHours: SymbolCalendars =
+        GatewaySettings.calendars(config).withInstrumentCategories(config.name) { instrumentSpec(it)?.meta }
+
+    /** A spot or equity instrument's spec from the venue's listing; derivatives keep their catalog terms (null here). */
+    override fun instrumentSpec(qktSymbol: String) =
+        client.instruments().firstOrNull { "${config.symbolPrefix}${it.code}" == qktSymbol }?.instrumentSpec(qktSymbol)
 
     private val quotes =
         GatewayMarketSource(
@@ -104,6 +123,9 @@ class GatewayTradingAccount internal constructor(
 
     override val contractCatalogs: ContractCatalogSource
         get() = GatewayContractCatalog(client, GatewaySymbols(config.symbolPrefix), clock)
+
+    override val optionCatalogs: OptionCatalogSource
+        get() = GatewayOptionCatalog(client, GatewaySymbols(config.symbolPrefix), clock)
 
     override val fundingRates: FundingRateSource = GatewayFundingRates(client, GatewaySymbols(config.symbolPrefix))
 
@@ -161,6 +183,11 @@ class GatewayTradingAccount internal constructor(
     override fun directVenue(): com.qkt.connectivity.DirectVenue {
         identity.mismatch(client.health())?.let { error("${config.name}: $it") }
         return GatewayDirectVenue(config.name, config.symbolPrefix, client, settings.url, settings.apiKey)
+    }
+
+    /** The holdings check that waited for the startup deploys judges now, if a strategy ever traded here. */
+    override fun deploysFinished() {
+        if (opened.isInitialized()) opened.value.deploysFinished()
     }
 
     /** Closes the account's gateway connection, if it was ever opened. */

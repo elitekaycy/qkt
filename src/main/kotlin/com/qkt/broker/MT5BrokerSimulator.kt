@@ -58,8 +58,15 @@ class MT5BrokerSimulator(
     orderSpacingMs: Long = 0L,
     /** Symbols whose current tick is a bar's synthetic extreme: a level it trades through fills there (#1439). */
     private val fillAtTriggerPrice: (String) -> Boolean = { false },
+    /** Whether a symbol trades at an instant ([com.qkt.backtest.ReplaySessions]); resting orders fill only then. */
+    private val session: (symbol: String, atMs: Long) -> Boolean = { _, _ -> true },
 ) : Broker {
     override fun positionAccountingMode(symbol: String): PositionAccountingMode = positionMode
+
+    override fun acceptsOrders(
+        symbol: String,
+        nowMs: Long,
+    ): Boolean = session(symbol, nowMs)
 
     init {
         require(syntheticSpreadPoints >= 0) {
@@ -127,7 +134,7 @@ class MT5BrokerSimulator(
             reject(request, reason)
             return SubmitAck(request.id, request.id, accepted = false, rejectReason = reason)
         }
-        val sized = request.withQuantity(quantized)
+        val sized = request.withVolume(quantized)
         (validateStopsLevel(sized, meta) ?: limitSideRefusal(sized, meta))?.let {
             reject(sized, it)
             return SubmitAck(sized.id, sized.id, accepted = false, rejectReason = it)
@@ -190,6 +197,8 @@ class MT5BrokerSimulator(
             val req = working[i]
             if (req.symbol == tick.symbol && mt5Triggered(req, tick)) toFillScratch.add(req)
         }
+        // A venue fills nothing out of session: a touched order keeps resting for the first in-session price.
+        if (toFillScratch.isNotEmpty() && !session(tick.symbol, tick.timestamp)) return
         for (i in toFillScratch.indices) {
             val wo = toFillScratch[i]
             // A synchronous fill callback may cancel an OCO sibling that is also present in
@@ -537,16 +546,6 @@ class MT5BrokerSimulator(
      * Returns a copy of [request] with [newQuantity] in place of the original. Used
      * after volume quantization so downstream fill events carry the correct size.
      */
-    private fun OrderRequest.withQuantity(newQuantity: BigDecimal): OrderRequest =
-        when (this) {
-            is OrderRequest.Market -> copy(quantity = newQuantity)
-            is OrderRequest.Limit -> copy(quantity = newQuantity)
-            is OrderRequest.Stop -> copy(quantity = newQuantity)
-            is OrderRequest.StopLimit -> copy(quantity = newQuantity)
-            is OrderRequest.IfTouched -> copy(quantity = newQuantity)
-            else -> error("MT5BrokerSimulator.withQuantity: unhandled order type ${this::class.simpleName}")
-        }
-
     private data class DelayedSubmission(
         val request: OrderRequest,
         val ordinal: Int,

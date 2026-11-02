@@ -1,6 +1,7 @@
 package com.qkt.observe.insights
 
 import com.qkt.broker.Broker
+import com.qkt.pnl.PositionMarks
 import java.util.concurrent.atomic.AtomicBoolean
 import org.slf4j.LoggerFactory
 
@@ -69,6 +70,8 @@ class BrokerStatePoller(
     private val venues: InsightsVenues = InsightsVenues(),
     /** Entry brackets and risk by position id, from the session's fills; null when there are none. */
     private val fills: InsightsFillFacts? = null,
+    /** Values a position the venue states no mark or profit for, from the session's quotes ([VenueStateCycle]). */
+    private val marks: PositionMarks? = null,
 ) : AutoCloseable {
     private val log = LoggerFactory.getLogger(BrokerStatePoller::class.java)
     private val running = AtomicBoolean(false)
@@ -88,6 +91,7 @@ class BrokerStatePoller(
             dealGraceMs,
             sharedDeals,
             clock,
+            marks,
         )
     private val consecutiveFailures = mutableMapOf<Broker, Int>()
 
@@ -124,9 +128,8 @@ class BrokerStatePoller(
         } else {
             lastClosedPollMs = null
         }
-        // Announce the live roster first so the collector can retire strategy ids that a
-        // prior bench topology left behind, independent of any per-broker fetch outcome.
-        // Each session announces its own ids; the collector unions them across sessions.
+        // Roster first, so the collector retires ids a prior topology left behind whatever any broker's
+        // fetch does; each session announces its own ids and the collector unions them across sessions.
         rosterIds().takeIf { it.isNotEmpty() }?.let { sink.offer(InsightsTranslate.instanceRoster(clock(), it)) }
         // Model-side equity per strategy rides the same cadence as venue truth; a failed
         // read (engine busy, session stopping) skips this cycle rather than the poll.

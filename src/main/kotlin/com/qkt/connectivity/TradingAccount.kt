@@ -47,6 +47,9 @@ interface TradingAccount : AutoCloseable {
     /** Builds the catalogs of this account's futures roots from the venue's listing, or null when it lists none. */
     val contractCatalogs: com.qkt.instrument.ContractCatalogSource? get() = null
 
+    /** Builds the catalogs of this account's option roots from the venue's listing, or null when it lists none. */
+    val optionCatalogs: com.qkt.instrument.OptionCatalogSource? get() = null
+
     /** The venue's published funding rates of its perpetuals, or null when the connector cannot read them. */
     val fundingRates: com.qkt.instrument.FundingRateSource? get() = null
 
@@ -71,6 +74,9 @@ interface TradingAccount : AutoCloseable {
             "brokers.${config.name} (type ${config.type}) cannot be driven one-shot; run a session " +
                 "(qkt bot session start) or deploy a strategy",
         )
+
+    /** The daemon is through its startup deploys ([ConnectorContext.deploysUnderway]). */
+    fun deploysFinished() {}
 
     /** Releases the connections and files this account holds. Idempotent. */
     override fun close()

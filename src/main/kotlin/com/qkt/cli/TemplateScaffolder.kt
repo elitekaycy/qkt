@@ -81,6 +81,7 @@ class TemplateScaffolder(
                             when (entry) {
                                 "gitignore.tmpl" -> ".gitignore"
                                 "gitattributes.tmpl" -> ".gitattributes"
+                                "vscode-extensions.json.tmpl" -> ".vscode/extensions.json"
                                 else -> entry.removeSuffix(".tmpl")
                             }
                         rendered.toByteArray(Charsets.UTF_8) to target.resolve(outputName)

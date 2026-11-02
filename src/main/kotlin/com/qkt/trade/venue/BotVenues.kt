@@ -17,6 +17,12 @@ class OpenedVenue(
     val venue: DirectVenue,
     private val accounts: AccountDirectory,
 ) : AutoCloseable {
+    /** The calendar [qktSymbol] trades on at this account, resolved as a deployed strategy's is. */
+    fun calendarFor(qktSymbol: String): com.qkt.common.TradingCalendar =
+        com.qkt.cli.CalendarResolver
+            .live(accounts, null)
+            .calendarFor(qktSymbol)
+
     override fun close() = accounts.close()
 }
 
@@ -56,7 +62,7 @@ object BotVenues {
             AccountDirectory.open(
                 listOf(account),
                 ConnectorRegistry.discover(),
-                ConnectorContext(stateRoot = null, env = System.getenv(), clock = SystemClock()),
+                ConnectorContext(stateRoot = null, env = System.getenv(), clock = SystemClock(), configured = configs),
             )
         return try {
             OpenedVenue(account.name, accounts.accounts.single().directVenue(), accounts)

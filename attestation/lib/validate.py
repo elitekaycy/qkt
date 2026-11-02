@@ -8,10 +8,14 @@
 Fails when a case breaks the schema, an id is reused, a budget exceeds ten minutes (four hours for a
 `scheduled` case of a venue-gateway lane, run at a set time outside the catalog, e.g. across an expiry), a `proves`
 capability is not in the catalog, a catalog capability is neither proven by a ready case nor
-listed in gaps.yaml, a listed gap is already proven, or a drill names an unknown kind.
+listed in gaps.yaml, a listed gap is already proven, a drill names an unknown kind, or a cross case's
+venues, fills or drill targets are unsound (scripts/live-validation/lib/cross_venue.py).
 """
 import argparse, json, os, re, subprocess, sys
 import yaml
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../scripts/live-validation/lib"))
+import cross_venue  # noqa: E402
 
 REQUIRED = ("id", "title", "why", "status", "symbols", "timeframes", "proves", "assertions")
 STATUSES = {"ready", "planned", "scheduled"}
@@ -57,8 +61,9 @@ def main():
             seen[cid] = where
             if doc.get("status") not in STATUSES:
                 errors.append(f"{where}: status must be one of {sorted(STATUSES)}")
-            if doc.get("status") == "scheduled" and not lanes[lane].get("venue_gateway"):
-                errors.append(f"{where}: only a venue-gateway lane's case is scheduled")
+            # A case run at a set time: across an expiry (venue-gateway lanes), or at a session edge (a lane bound to a session).
+            if doc.get("status") == "scheduled" and not (lanes[lane].get("venue_gateway") or lanes[lane].get("session")):
+                errors.append(f"{where}: only a venue-gateway or session-bound lane's case is scheduled")
             if len(str(doc.get("why", "")).split()) < 12:
                 errors.append(f"{where}: 'why' must name the failure this case catches, in a sentence")
             for tf in doc.get("timeframes", []):
@@ -89,13 +94,17 @@ def main():
                 if not isinstance(drill.get("after_fills", 1), int) or drill.get("after_fills", 1) < 1 \
                         or not isinstance(drill.get("flat", False), bool):
                     errors.append(f"{where}: drill {drill}: after_fills is a fill count from 1, flat true or false")
+            if lane == "cross":
+                errors += [f"{where}: {problem}" for problem in cross_venue.check_venues(doc)]
+                if doc.get("replay", "by-venue") not in ("by-venue", "none"):
+                    errors.append(f"{where}: a cross case replays by-venue or none")
             if doc.get("expect_startup_refusal"):
                 try:
                     re.compile(str(doc["expect_startup_refusal"]))
                 except re.error as error:
                     errors.append(f"{where}: expect_startup_refusal is not a valid regex: {error}")
             strategy = f"{args.root}/{where}/strategy.qkt"
-            if doc.get("status") == "ready" and lane in ("shadow", "orders", "risk", "book") and not os.path.isfile(strategy):
+            if doc.get("status") == "ready" and lane in ("shadow", "orders", "stocks", "risk", "book", "cross") and not os.path.isfile(strategy):
                 errors.append(f"{where}: a ready {lane} case needs strategy.qkt")
             if args.cli and os.path.isfile(strategy):
                 run = subprocess.run([args.cli, "parse", strategy], capture_output=True, text=True)

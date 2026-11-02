@@ -57,7 +57,7 @@ internal class LegBookFile(
     /** The symbols of [strategyId]'s leg book files. */
     fun symbols(strategyId: String): Set<String> =
         writer.list(strategyId).mapNotNullTo(sortedSetOf()) { name ->
-            name.takeIf { it.endsWith("-$LEGBOOK_FILE") }?.removeSuffix("-$LEGBOOK_FILE")
+            symbolOfStateFileName(name, LEGBOOK_FILE)
         }
 }
 

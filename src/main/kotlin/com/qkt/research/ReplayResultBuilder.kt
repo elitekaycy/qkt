@@ -86,10 +86,19 @@ internal class ReplayResultBuilder(
             rejections = recorder.rejections.toList(),
             halts = recorder.halts.toList(),
             finalPositions = books.positions.allPositions(),
-            global = globalReport.copy(rollCostsPaid = recorder.rollCostsPaid(), fundingPaid = financing.fundingPaid()),
+            global =
+                globalReport.copy(
+                    rollCostsPaid = recorder.rollCostsPaid(),
+                    fundingPaid = financing.fundingPaid(),
+                    dividendsPaid = financing.dividendsPaid(),
+                ),
             perStrategy =
                 perStrategy.mapValues { (id, report) ->
-                    report.copy(rollCostsPaid = recorder.rollCostsPaid(id), fundingPaid = financing.fundingPaid(id))
+                    report.copy(
+                        rollCostsPaid = recorder.rollCostsPaid(id),
+                        fundingPaid = financing.fundingPaid(id),
+                        dividendsPaid = financing.dividendsPaid(id),
+                    )
                 },
             cadence = cadence,
             latencyReport = if (latencyEnabled) pipeline.latency.snapshot() else null,

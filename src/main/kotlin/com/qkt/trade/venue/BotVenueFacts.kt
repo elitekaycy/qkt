@@ -12,6 +12,9 @@ import com.qkt.trade.BotQuoteContext
 fun VenueFacts.toQuoteContext(
     qktSymbol: String,
     configAccountCurrency: String,
+    calendar: com.qkt.common.TradingCalendar =
+        com.qkt.common.TradingCalendar
+            .crypto(),
 ): BotQuoteContext {
     require(bid.signum() > 0 && ask.signum() > 0) { "venue quote for $qktSymbol is not positive: bid=$bid ask=$ask" }
     return BotQuoteContext(
@@ -27,6 +30,7 @@ fun VenueFacts.toQuoteContext(
         volumeMax = volumeMax,
         digits = digits,
         reference = reference,
+        calendar = calendar,
     )
 }
 

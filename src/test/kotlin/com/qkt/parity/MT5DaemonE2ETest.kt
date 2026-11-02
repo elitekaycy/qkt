@@ -3,6 +3,8 @@ package com.qkt.parity
 import com.qkt.broker.BrokerFactory
 import com.qkt.cli.daemon.StateDir
 import com.qkt.cli.daemon.StrategyHandle
+import com.qkt.common.SymbolCalendars
+import com.qkt.common.TradingCalendar
 import com.qkt.connector.mt5.InstrumentSpec
 import com.qkt.connector.mt5.MT5Broker
 import com.qkt.connector.mt5.MT5DefaultProfiles
@@ -103,6 +105,27 @@ class MT5DaemonE2ETest {
             }
     }
 
+    /** Always in session: these tests run on the wall clock, weekends too, and would otherwise be refused then. */
+    private fun profile() =
+        MT5DefaultProfiles.exness.copy(
+            gatewayUrl = server.url("/").toString().trimEnd('/'),
+            httpTimeoutMs = 2000,
+            retryAttempts = 0,
+            pollIntervalMs = 100_000,
+            symbolCalendars = SymbolCalendars(emptyList(), TradingCalendar.crypto()),
+            instrumentOverrides =
+                mapOf(
+                    "EXNESS:EURUSD" to
+                        InstrumentSpec(
+                            minVolume = BigDecimal("0.01"),
+                            volumeStep = BigDecimal("0.01"),
+                            pointSize = BigDecimal("0.00001"),
+                            digits = 5,
+                            tradeStopsLevelPoints = 0,
+                        ),
+                ),
+        )
+
     @AfterEach
     fun teardown() {
         server.shutdown()
@@ -126,24 +149,7 @@ class MT5DaemonE2ETest {
                 )
             }
 
-        val profile =
-            MT5DefaultProfiles.exness.copy(
-                gatewayUrl = server.url("/").toString().trimEnd('/'),
-                httpTimeoutMs = 2000,
-                retryAttempts = 0,
-                pollIntervalMs = 100_000,
-                instrumentOverrides =
-                    mapOf(
-                        "EXNESS:EURUSD" to
-                            InstrumentSpec(
-                                minVolume = BigDecimal("0.01"),
-                                volumeStep = BigDecimal("0.01"),
-                                pointSize = BigDecimal("0.00001"),
-                                digits = 5,
-                                tradeStopsLevelPoints = 0,
-                            ),
-                    ),
-            )
+        val profile = profile()
         val brokerFactories: Map<String, BrokerFactory> =
             mapOf(
                 "exness" to { bus, clock, _, _, _ -> MT5Broker(profile, bus, clock) },
@@ -199,24 +205,7 @@ class MT5DaemonE2ETest {
                 Tick("EXNESS:EURUSD", BigDecimal("1.1011"), boundary + 58_000L),
                 Tick("EXNESS:EURUSD", BigDecimal("1.1011"), boundary + 62_000L),
             )
-        val profile =
-            MT5DefaultProfiles.exness.copy(
-                gatewayUrl = server.url("/").toString().trimEnd('/'),
-                httpTimeoutMs = 2000,
-                retryAttempts = 0,
-                pollIntervalMs = 100_000,
-                instrumentOverrides =
-                    mapOf(
-                        "EXNESS:EURUSD" to
-                            InstrumentSpec(
-                                minVolume = BigDecimal("0.01"),
-                                volumeStep = BigDecimal("0.01"),
-                                pointSize = BigDecimal("0.00001"),
-                                digits = 5,
-                                tradeStopsLevelPoints = 0,
-                            ),
-                    ),
-            )
+        val profile = profile()
         val factory =
             StrategyHandle.RealFactory(
                 stateDir = stateDir,

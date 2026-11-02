@@ -1,17 +1,17 @@
 package com.qkt.cli.golden
 
+import com.qkt.common.OwnerOnly
 import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.attribute.PosixFilePermissions
 
-/** Restricts a directory to its owner where the filesystem supports POSIX permissions. */
+/** Restricts a directory to its owner (POSIX mode or Windows ACL). */
 internal fun makePrivateDirectory(path: Path) {
-    runCatching { Files.setPosixFilePermissions(path, PosixFilePermissions.fromString("rwx------")) }
+    OwnerOnly.directory(path)
 }
 
-/** Restricts a file to owner read/write where the filesystem supports POSIX permissions. */
+/** Restricts a file to its owner (POSIX mode or Windows ACL). */
 internal fun makePrivateFile(path: Path) {
-    runCatching { Files.setPosixFilePermissions(path, PosixFilePermissions.fromString("rw-------")) }
+    OwnerOnly.file(path)
 }
 
 /** Deletes a directory tree, children before parents. */

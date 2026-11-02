@@ -8,6 +8,24 @@ import java.time.Instant
 
 private const val MAX_WARMUP_RANGE_ATTEMPTS = 8
 
+/**
+ * A stored observation stream (`HUB:`, `MACRO:`): each candle is one published fact, complete the
+ * instant it is published, not a bar that closes at the end of its declared window.
+ */
+internal fun isStoredObservation(symbol: String): Boolean = symbol.startsWith("HUB:") || symbol.startsWith("MACRO:")
+
+/**
+ * Where warmup history ends for [symbol]. A price bar is history once its window has closed, so its
+ * history ends at the start of the window holding [nowMs]. An observation published at 08:30 is
+ * history at 15:00 on the same day: ending it at midnight, or keeping only facts whose declared
+ * window has ended, would drop the newest records and leave a restart reading an older one.
+ */
+internal fun warmupUpperMs(
+    symbol: String,
+    window: TimeWindow,
+    nowMs: Long,
+): Long = if (isStoredObservation(symbol)) nowMs else window.windowStartFor(nowMs)
+
 internal data class LoadedBars(
     val candles: List<Candle>,
     val searchedDurationMs: Long,
@@ -96,6 +114,7 @@ private fun loadWarmupBars(
 ): LoadedBars {
     require(count > 0) { "warmup bar count must be > 0: $count" }
 
+    val observation = isStoredObservation(symbol)
     val initialDurationMs = Math.multiplyExact(window.durationMs, count.toLong())
     var durationMs = initialDurationMs
     var available = emptyList<Candle>()
@@ -109,7 +128,7 @@ private fun loadWarmupBars(
                 .filter { candle ->
                     candle.startTime >= lowerMs &&
                         candle.startTime < upperMs &&
-                        candle.endTime <= upperMs
+                        (observation || candle.endTime <= upperMs)
                 }.distinctBy { it.startTime }
                 .sortedBy { it.startTime }
                 .toList()

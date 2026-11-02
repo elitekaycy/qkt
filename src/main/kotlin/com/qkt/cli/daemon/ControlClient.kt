@@ -4,6 +4,8 @@ import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.nio.file.Path
 import java.time.Duration
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import okhttp3.OkHttpClient
 import okhttp3.Response
 
@@ -119,7 +121,11 @@ open class ControlClient(
         waiver: String? = null,
         waiverReason: String? = null,
     ): String {
-        val body = """{"file":"${file.toAbsolutePath()}","name":"$name"}"""
+        val body =
+            buildJsonObject {
+                put("file", file.toAbsolutePath().toString())
+                put("name", name)
+            }.toString()
         val q = deployQuery(ignoreMismatches, waiver, waiverReason)
         return transport.postJson("${baseUrl()}/deploy$q", body)
     }
@@ -135,7 +141,12 @@ open class ControlClient(
         waiver: String? = null,
         waiverReason: String? = null,
     ): String {
-        val body = """{"file":"${file.toAbsolutePath()}","name":"$name","dryRun":$dryRun}"""
+        val body =
+            buildJsonObject {
+                put("file", file.toAbsolutePath().toString())
+                put("name", name)
+                put("dryRun", dryRun)
+            }.toString()
         val q = deployQuery(ignoreMismatches, waiver, waiverReason)
         return transport.postJson("${baseUrl()}/resync$q", body)
     }

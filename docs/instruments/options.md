@@ -44,6 +44,11 @@ qkt fetch DERIBIT:BTC_USDC --chains --from 2026-09-24 --to 2026-09-30
 qkt fetch DERIBIT:BTC_USDC --chains --live
 ```
 
+A gateway account (`type: gateway`) builds its catalog from its own listing instead, whatever the
+broker entry is named (`qkt fetch PAPER_DERIBIT_B:BTC_USDC --catalog` for a root declared under
+`options:` as `PAPER_DERIBIT_B:BTC_USDC`); Deribit's public listing is read only for `DERIBIT` with no
+gateway account of that name. See [config schema, `type: gateway`](../reference/config-schema.md).
+
 Deep dives: [Getting & storing data, Scenario 2c (option chains)](../how-to/backtest-data.md) ·
 [Option structures](../reference/dsl/structures.md) ·
 [qkt-venue-gateway](https://github.com/elitekaycy/qkt-venue-gateway)

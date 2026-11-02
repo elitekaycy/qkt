@@ -19,8 +19,8 @@ import org.junit.jupiter.api.io.TempDir
 
 /**
  * End-to-end: a backtest holding gold ticks plus a daily macro series (`MACRO:DFII10`) in one run,
- * over a self-contained fixture store. The gold ticks sit AFTER the macro's publication instant, so
- * a gold candle closes once the value is knowable; the strategy only buys when the macro value is
+ * over a self-contained fixture store. Gold ticks sit on both sides of the macro's publication instant,
+ * across a federal holiday; the strategy only buys when the macro value is
  * published, so a non-zero, deterministic trade count proves the daily series flowed through the
  * source composition, the point-in-time feed, and the candle path into the strategy.
  */
@@ -37,31 +37,25 @@ class MacroSeriesBacktestTest {
         """.trimIndent()
 
     private fun seed(tmp: Path) {
-        // Gold ticks on Tue 2024-01-16 at 13:05..13:29 UTC, spanning several 5m buckets so candles
-        // close during the run. They sit after the second macro release (13:00), which closes the
-        // first daily macro candle — a daily candle only closes when the next day's value publishes,
-        // so its value becomes readable then (conservative: never before it was knowable).
+        // Gold ticks on Mon 2024-01-15 and Tue 2024-01-16 at 21:35..21:59 UTC, spanning several 5m
+        // buckets so candles close on both days.
         val goldDir = tmp.resolve("symbols").resolve("XAUUSD")
         Files.createDirectories(goldDir)
-        val rows =
-            listOf("13:05", "13:11", "13:17", "13:23", "13:29").mapIndexed { i, hm ->
-                val ts = Instant.parse("2024-01-16T$hm:00Z").toEpochMilli()
-                "$ts,XAUUSD,${2050 + i}.0,1.0,,,,"
-            }
-        Files.writeString(
-            goldDir.resolve("2024-01-16.csv"),
-            "timestamp,symbol,price,volume,bid,ask,bidVolume,askVolume\n" + rows.joinToString("\n") + "\n",
-        )
-        // Two FRED observations: Fri 2024-01-12 publishes Mon 2024-01-15 13:00; Mon 2024-01-15
-        // publishes Tue 2024-01-16 13:00. The second release closes the first daily candle, making
-        // its value (1.85) readable for the 2024-01-16 gold candle closes.
-        MacroSeriesStore(tmp).write(
-            "DFII10",
-            listOf(
-                MacroPoint(LocalDate.of(2024, 1, 12), BigDecimal("1.85")),
-                MacroPoint(LocalDate.of(2024, 1, 15), BigDecimal("1.90")),
-            ),
-        )
+        for (day in listOf("2024-01-15", "2024-01-16")) {
+            val rows =
+                listOf("21:35", "21:41", "21:47", "21:53", "21:59").mapIndexed { i, hm ->
+                    val ts = Instant.parse("${day}T$hm:00Z").toEpochMilli()
+                    "$ts,XAUUSD,${2050 + i}.0,1.0,,,,"
+                }
+            Files.writeString(
+                goldDir.resolve("$day.csv"),
+                "timestamp,symbol,price,volume,bid,ask,bidVolume,askVolume\n" + rows.joinToString("\n") + "\n",
+            )
+        }
+        // One FRED observation, Fri 2024-01-12. Monday is Martin Luther King Jr. Day, so the H.15
+        // carrying it posts Tuesday 2024-01-16 at 4:15 p.m. New York and the value is visible from
+        // 16:30 New York (21:30 UTC). The Monday gold candles must not see it.
+        MacroSeriesStore(tmp).write("DFII10", listOf(MacroPoint(LocalDate.of(2024, 1, 12), BigDecimal("1.85"))))
     }
 
     private fun runOnce(tmp: Path): BacktestResult {
@@ -73,7 +67,7 @@ class MacroSeriesBacktestTest {
                 request =
                     MarketRequest(
                         symbols = listOf("BACKTEST:XAUUSD", "MACRO:DFII10"),
-                        from = Instant.parse("2024-01-15T00:00:00Z"),
+                        from = Instant.parse("2024-01-12T00:00:00Z"),
                         to = Instant.parse("2024-01-17T00:00:00Z"),
                     ),
                 candleWindow = TimeWindow.parse("5m"),
@@ -89,6 +83,8 @@ class MacroSeriesBacktestTest {
         // The buy gate is `real10y.value > 0`; a fill means the published macro value reached the
         // strategy through the composed source + point-in-time feed + candle path.
         assertThat(a.global.tradeCount).isGreaterThan(0)
+        val firstFill = a.trades.minOf { it.trade.timestamp }
+        assertThat(firstFill).isGreaterThanOrEqualTo(Instant.parse("2024-01-16T21:30:00Z").toEpochMilli())
         val b = runOnce(tmp)
         assertThat(b.global.tradeCount).isEqualTo(a.global.tradeCount)
     }

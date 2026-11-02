@@ -13,11 +13,18 @@ class StateDirLoggingTest {
                 .toAbsolutePath()
                 .normalize()
                 .toString()
+        // An absolute POSIX path gains the current drive on Windows.
+        val srv =
+            Path
+                .of("/srv/qkt")
+                .toAbsolutePath()
+                .normalize()
+                .toString()
 
         assertThat(
             StateDirLogging.stateDirOf(arrayOf("daemon", "start", "--state-dir", "/srv/qkt")),
-        ).isEqualTo("/srv/qkt")
-        assertThat(StateDirLogging.stateDirOf(arrayOf("logs", "alpha", "--state-dir=/srv/qkt/"))).isEqualTo("/srv/qkt")
+        ).isEqualTo(srv)
+        assertThat(StateDirLogging.stateDirOf(arrayOf("logs", "alpha", "--state-dir=/srv/qkt/"))).isEqualTo(srv)
         assertThat(StateDirLogging.stateDirOf(arrayOf("daemon", "start", "--state-dir", "state"))).isEqualTo(absolute)
     }
 

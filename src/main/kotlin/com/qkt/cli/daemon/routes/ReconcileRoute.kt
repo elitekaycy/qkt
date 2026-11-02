@@ -12,7 +12,7 @@ internal fun handleReconcile(
     registry: StrategyRegistry,
     name: String,
 ) {
-    val handle = registry.get(name) ?: return respond(ex, 404, """{"error":"unknown name: $name"}""")
+    val handle = registry.get(name) ?: return respond(ex, 404, """{"error":${jsonString("unknown name: $name")}}""")
     val report =
         handle.live.reconcile()
             ?: return respond(ex, 200, """{"strategy":"$name","supported":false}""")

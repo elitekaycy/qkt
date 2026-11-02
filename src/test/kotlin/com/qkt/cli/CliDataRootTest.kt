@@ -65,10 +65,12 @@ class CliDataRootTest {
     fun `an absolute data_root that does not exist is refused, naming the docker path`(
         @TempDir tmp: Path,
     ) {
-        val cfg = config(tmp, "data_root: /qkt-test-no-such-dir/data\n")
+        // Absolute on this OS: `/qkt-...` off Windows, `C:\\qkt-...` on it.
+        val missing = Path.of("/qkt-test-no-such-dir/data").toAbsolutePath().toString()
+        val cfg = config(tmp, "data_root: '$missing'\n")
         assertThatThrownBy { CliDataRoot.resolve(args(), emptyMap(), cfg) }
             .isInstanceOf(ArgError::class.java)
-            .hasMessageContaining("is /qkt-test-no-such-dir/data, which does not exist here")
+            .hasMessageContaining("is $missing, which does not exist here")
             .hasMessageContaining("pass --data-root")
     }
 

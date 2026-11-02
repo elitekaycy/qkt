@@ -66,6 +66,7 @@ internal fun liveFactory(
         insightsSharedDeals = insightsSharedDeals,
         insightsDealBackfillDays = cfg.insights.dealBackfillDays,
         marketDataGateConfig = cfg.marketData,
+        effectiveConfig = EffectiveConfigFacts(cfg),
     )
 
 /**

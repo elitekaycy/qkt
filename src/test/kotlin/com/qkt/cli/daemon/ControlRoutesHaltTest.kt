@@ -37,6 +37,7 @@ class ControlRoutesHaltTest {
     private class RecordingHandle : LiveSessionHandle {
         var halts = 0
         var resumes = 0
+        var streamStops: List<com.qkt.broker.StreamStopRelease> = emptyList()
         private val alive = AtomicBoolean(true)
 
         override val running: Boolean get() = alive.get()
@@ -68,6 +69,8 @@ class ControlRoutesHaltTest {
         override fun resume() {
             resumes++
         }
+
+        override fun releaseStreamStops() = streamStops
     }
 
     private fun post(
@@ -159,11 +162,18 @@ class ControlRoutesHaltTest {
         assertThat(handles.getValue("alpha").halts).isEqualTo(1)
         assertThat(handles.getValue("beta").halts).isEqualTo(1)
 
-        assertThat(post(port, "/resume/alpha").statusCode()).isEqualTo(200)
+        val resumed = post(port, "/resume/alpha")
+        assertThat(resumed.statusCode()).isEqualTo(200)
+        assertThat(resumed.body()).isEqualTo("""{"state":"resumed","affected":["alpha"]}""")
         assertThat(handles.getValue("alpha").resumes).isEqualTo(1)
         assertThat(handles.getValue("beta").resumes).isEqualTo(0)
 
         assertThat(post(port, "/halt/ghost").statusCode()).isEqualTo(404)
+
+        handles.getValue("beta").streamStops =
+            listOf(com.qkt.broker.StreamStopRelease("beta", "X@front", "roll failed", "its position is 1"))
+        val stands = post(port, "/resume/beta").body()
+        assertThat(stands).contains("\"state\":\"stream_stopped\"", "\"cleared\":false", "its position is 1")
 
         val kill = post(port, "/kill/alpha?flatten=true")
         assertThat(kill.statusCode()).isEqualTo(200)

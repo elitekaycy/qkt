@@ -64,7 +64,9 @@ measure its rolls once with `qkt fetch BINANCE_UM:BTCUSDT --rolls` (`--tf 1d` fo
 a root with only daily bars). The series is adjusted forward from the first
 measured roll; `roll.anchor` keeps a later contract at raw prices instead, for a
 panama series that would otherwise fall below zero (crude across 2020). Live, a
-continuous stream trades on a `type: gateway` account (parity rows A53-A57).
+continuous stream trades on a `type: gateway` account (parity rows A53-A57). A strategy whose
+roll failed is stopped on the stream: every order is refused, even after a restart, until a
+[`qkt resume`](../reference/cli-commands.md) finds nothing of it left on the stream and clears the stop.
 
 A root's perpetual (`perpetual: BTCUSDT`) pays funding. Store its rates once
 with `qkt fetch BINANCE_UM:BTCUSDT --funding --from 2024-06-01 --to 2024-09-27`;

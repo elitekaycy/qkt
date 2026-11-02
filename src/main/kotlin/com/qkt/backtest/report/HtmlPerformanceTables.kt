@@ -140,6 +140,7 @@ internal object HtmlPerformanceTables {
             ) {
                 append(moneyRow("Funding paid", r.fundingPaid))
             }
+            if (r.dividendsPaid.signum() != 0) append(moneyRow("Dividends paid", r.dividendsPaid))
             append("</tbody></table>")
         }
 

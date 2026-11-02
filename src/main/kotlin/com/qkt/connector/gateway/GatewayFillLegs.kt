@@ -1,6 +1,8 @@
 package com.qkt.connector.gateway
 
+import com.qkt.broker.SettledClose
 import com.qkt.broker.VenueLeg
+import com.qkt.broker.settledClose
 import com.qkt.events.FillAccountedEvent
 import com.qkt.events.FillAccountingKind
 import java.math.BigDecimal
@@ -33,11 +35,13 @@ internal class GatewayFillLegs(
             override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, OrderFills>) = size > capacity
         }
     private val open = HashMap<String, OpenPosition>()
+    private val settled = HashMap<String, MutableList<SettledClose>>()
 
-    /** The open position of one symbol as qkt last booked it: its id and the strategies that hold it. */
+    /** The open position of one symbol as qkt last booked it: its id, the strategies that hold it, its open time. */
     data class OpenPosition(
         val positionId: String,
         val owners: Set<String>,
+        val openedAt: Long? = null,
     )
 
     /** The ledger booked venue fill [fillId] of engine order [engineOrderId]: its next accounted execution. */
@@ -58,12 +62,26 @@ internal class GatewayFillLegs(
             open.remove(e.symbol)
         } else {
             val held = open[e.symbol]?.takeIf { it.positionId == current }?.owners.orEmpty()
-            open[e.symbol] = OpenPosition(current, held + e.strategyId)
+            open[e.symbol] = OpenPosition(current, held + e.strategyId, after?.openedAt)
         }
         if (e.kind != FillAccountingKind.EXECUTION) return
         val fact = GatewayLegFact(VenueLeg.of(e.accountPositionBefore, after), e.grossAccountRealized, e.strategyId)
         orders.getOrPut(e.orderId) { OrderFills() }.facts += fact
+        e.settledClose()?.let { settled.getOrPut(it.contract) { mutableListOf() } += it }
     }
+
+    /** Takes back [closes] booked before a restart; one already known for its strategy and contract stays as it is. */
+    @Synchronized
+    fun restore(closes: List<SettledClose>) {
+        for (close in closes) {
+            val known = settled.getOrPut(close.contract) { mutableListOf() }
+            if (known.none { it.strategyId == close.strategyId }) known += close
+        }
+    }
+
+    /** The closes qkt booked when contract [symbol] settled (one per strategy that held it), empty before. */
+    @Synchronized
+    fun settledCloses(symbol: String): List<SettledClose> = settled[symbol].orEmpty().toList()
 
     /** What qkt booked for venue fill [fillId] of engine order [engineOrderId], or null when it booked none. */
     @Synchronized

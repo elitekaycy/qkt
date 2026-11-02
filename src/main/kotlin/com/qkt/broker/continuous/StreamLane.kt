@@ -22,8 +22,8 @@ import java.math.BigDecimal
  * republished on [bus] in continuous space: the engine's order id, the continuous symbol, and
  * prices mapped by the contract the order worked on. The lane keeps each strategy's position on the
  * stream from those fills and rolls it ([RollExecutor]) when the schedule moves to the next contract;
- * a strategy whose position could not be carried places no further orders on the stream. A live lane
- * with a [store] saves its state ([LaneState]) before every venue action and after every venue answer,
+ * a strategy whose position could not be carried places no further orders on the stream until an operator's resume
+ * clears the stop ([releaseStop]). A live lane with a [store] saves its state ([LaneState]) before every venue action and after every venue answer,
  * and a restart restores it from there.
  */
 internal class StreamLane(
@@ -34,8 +34,8 @@ internal class StreamLane(
     private val fills: ContractFillLog,
     venueFactory: (EventBus, MarketPriceTracker, PositionProvider) -> ContractVenue,
     private val store: LaneStateStore? = null,
+    private val rollPriceBand: BigDecimal? = null,
 ) {
-    /** The chain as it stands now: a live session extends it with each roll it measures. */
     private val chain: ContinuousChain get() = chainOf()
 
     private val venueBus = EventBus(clock, MonotonicSequenceGenerator())
@@ -44,15 +44,32 @@ internal class StreamLane(
     /** The stream's contract positions as its venue account holds them: every venue fill, roll legs too, netted. */
     private val book = StrategyPositionTracker(clock = clock::now)
     private val venue =
-        venueFactory(venueBus, contractPrices, book.account).let { if (store == null) it else it.savingFirst(::save) }
+        venueFactory(venueBus, contractPrices, StreamContractPositions(chainOf().symbol, book.account))
+            .let { if (store == null) it else it.savingFirst(::save) }
     private val orders = ContinuousOrderMap()
     private val legs = RollLegs()
     private val positions = LinkedHashMap<String, BigDecimal>()
-    private val stops = LinkedHashMap<String, String>()
-    private val rolls = RollExecutor(bus, clock, chainOf, venue, contractPrices, orders, legs, ledger, fills, stops)
-    private val state = LaneState(chainOf, positions, stops, orders, book, legs, rolls)
+    private val stops = java.util.Collections.synchronizedMap(LinkedHashMap<String, String>())
+    private val rolls =
+        RollExecutor(
+            bus,
+            clock,
+            chainOf,
+            venue,
+            contractPrices,
+            orders,
+            legs,
+            ledger,
+            fills,
+            stops,
+            RollRefusals(book, rollPriceBand),
+        )
+    private val settled = LaneSettledCloses(bus, clock, chain.symbol, venue.broker, ::save, store != null)
+    private val state = LaneState(chainOf, positions, stops, orders, book, legs, rolls, settled)
+    val stopRelease = LaneStopRelease(chainOf, positions, stops, orders, book, legs, rolls)
     private val recovery = LaneRecovery(clock, chainOf, venue, orders, legs, rolls, book, ::space)
     private var current: Int? = null
+    private val quotes = LaneQuotes(chainOf, ::space, rollPriceBand != null)
     private val spaces = HashMap<Int, PriceSpace>()
 
     init {
@@ -93,21 +110,28 @@ internal class StreamLane(
 
     fun submit(request: OrderRequest): SubmitAck {
         val now = clock.now()
-        chain.orderRefusal(now, rolls.inFlight)?.let { return reject(request, it) }
+        chain.orderRefusal(now, rolls.inFlight)?.let { return bus.refuse(request, it, now) }
         val index = requireNotNull(catchUp(now))
-        stops[request.strategyId]?.let { return reject(request, it) }
+        stops[request.strategyId]?.let { return bus.refuse(request, it, now) }
         val space =
             try {
                 space(index)
             } catch (e: IllegalArgumentException) {
-                return reject(request, e.message ?: "${chain.symbol} cannot price contract $index")
+                return bus.refuse(request, e.message ?: "${chain.symbol} cannot price contract $index", now)
             }
         val translated =
             toContract(request, request.id, chain.contractSymbol(index), space)
-                ?: return reject(request, "${chain.symbol} does not accept ${request::class.simpleName} orders")
+                ?: return bus.refuse(
+                    request,
+                    "${chain.symbol} does not accept ${request::class.simpleName} orders",
+                    now,
+                )
         orders.add(ContinuousOrder(request, request.id, index))
         return venue.broker.submit(translated)
     }
+
+    /** An operator's resume: clears [strategyId]'s stop here if it is safe ([LaneStopRelease]); null when it has none. */
+    fun releaseStop(strategyId: String) = stopRelease.release(strategyId)?.also { if (it.cleared) save() }
 
     fun cancel(engineId: String) {
         val order = orders.byEngineId(engineId) ?: return
@@ -131,21 +155,17 @@ internal class StreamLane(
 
     /** Roll if the schedule has moved on, then hand the contract tick behind [tick] to the venue. */
     fun onTick(tick: Tick) {
-        val index = catchUp(tick.timestamp) ?: return
-        val space = space(index)
-        val contractTick =
-            tick.copy(
-                symbol = chain.contractSymbol(index),
-                price = space.priceToContract(tick.price),
-                bid = tick.bid?.let(space::priceToContract),
-                ask = tick.ask?.let(space::priceToContract),
-            )
+        val index = catchUp(tick.timestamp, tick) ?: return
+        val contractTick = quotes.heard(tick, index)
         contractPrices.update(contractTick)
         venue.onTick(contractTick)
     }
 
     /** The contract followed at [nowMs], after rolling onto it if the lane was still on an earlier one. */
-    private fun catchUp(nowMs: Long): Int? {
+    private fun catchUp(
+        nowMs: Long,
+        tick: Tick? = null,
+    ): Int? {
         val index = chain.indexAt(nowMs) ?: return null
         val previous = current
         if (previous == index) return index
@@ -156,7 +176,7 @@ internal class StreamLane(
             save()
             return index
         }
-        rolls.roll(previous, index, positions, ::applyRoll)
+        rolls.roll(previous, index, positions, quotes.forRoll(previous, index, tick), ::applyRoll)
         return index
     }
 
@@ -177,12 +197,4 @@ internal class StreamLane(
 
     /** Contract [index]'s price mapping, built once per contract. */
     private fun space(index: Int): PriceSpace = spaces.getOrPut(index) { chain.spaceFor(index) }
-
-    private fun reject(
-        request: OrderRequest,
-        reason: String,
-    ): SubmitAck {
-        bus.publish(BrokerEvent.OrderRejected(request.id, null, reason, request.strategyId, clock.now()))
-        return SubmitAck(request.id, null, accepted = false, rejectReason = reason)
-    }
 }

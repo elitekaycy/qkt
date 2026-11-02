@@ -74,16 +74,27 @@ class InsightsJournal(
         return entries
     }
 
-    /** Return up to [limit] unacknowledged entries in journal order. */
+    /**
+     * Return up to [limit] unacknowledged entries in journal order, stopping before the one that would
+     * take their JSON past [maxBytes] (the first is always returned), so one replayed batch stays under
+     * the collector's body limit (1 MiB by default) however large its envelopes are.
+     */
     @Synchronized
-    fun pending(limit: Int): List<InsightsJournalEntry> {
+    fun pending(
+        limit: Int,
+        maxBytes: Int = MAX_BATCH_BYTES,
+    ): List<InsightsJournalEntry> {
         if (!Files.exists(journalPath)) return emptyList()
         val out = ArrayList<InsightsJournalEntry>(limit)
+        var bytes = 0L
         Files.newBufferedReader(journalPath, StandardCharsets.UTF_8).useLines { lines ->
             for (line in lines) {
                 if (out.size >= limit) break
                 val entry = parseLine(line) ?: continue
-                if (entry.journalSeq > ackedSeq) out.add(entry)
+                if (entry.journalSeq <= ackedSeq) continue
+                bytes += entry.eventJson.toByteArray(StandardCharsets.UTF_8).size
+                if (out.isNotEmpty() && bytes > maxBytes) break
+                out.add(entry)
             }
         }
         return out
@@ -162,5 +173,10 @@ class InsightsJournal(
         } catch (_: AtomicMoveNotSupportedException) {
             Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING)
         }
+    }
+
+    companion object {
+        /** The default JSON budget of one [pending] batch: half the collector's default 1 MiB body limit. */
+        const val MAX_BATCH_BYTES = 512 * 1024
     }
 }

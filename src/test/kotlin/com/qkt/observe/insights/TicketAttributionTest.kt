@@ -110,4 +110,13 @@ class TicketAttributionTest {
         assertThat(aliased.fromComment("dsl-gold-trend", listOf("s1"))).isEqualTo("s1")
         assertThat(TicketAttribution().fromComment("dsl-gold-trend", listOf("s1"))).isNull()
     }
+
+    @Test
+    fun `a session's plain order comment names its strategy, unless the session has several`() {
+        val map = TicketAttribution()
+
+        assertThat(map.fromComment("ORD-atto_stk_day-1", listOf("atto_stk_day", "other"))).isEqualTo("atto_stk_day")
+        assertThat(map.fromComment("ORD-atto_stk_d", listOf("atto_stk_day"))).isEqualTo("atto_stk_day")
+        assertThat(map.fromComment("ORD-alpha+beta-3", listOf("alpha", "beta"))).isNull()
+    }
 }

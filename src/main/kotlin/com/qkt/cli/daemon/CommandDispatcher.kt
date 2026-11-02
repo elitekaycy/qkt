@@ -19,7 +19,9 @@ class CommandDispatcher(
             report.strategies.joinToString("\n") { s ->
                 val state = if (s.running) "running" else "stopped"
                 val haltSuffix = if (s.halted) ", halted" else ""
-                "- ${s.name}: $state$haltSuffix"
+                val stopSuffix = if (s.streamStops.isNotEmpty()) ", stream stopped" else ""
+                val stops = s.streamStops.joinToString("") { "\n  ${it.stream}: ${it.reason}" }
+                "- ${s.name}: $state$haltSuffix$stopSuffix$stops"
             }
         return "strategies (${report.strategies.size}):\n$lines"
     }
@@ -31,7 +33,9 @@ class CommandDispatcher(
         when {
             result.unknown.isNotEmpty() -> "unknown strategy: ${result.unknown.first()}"
             result.affected.isEmpty() -> "$verb: none"
-            else -> "$verb: ${result.affected.joinToString(", ")}"
+            else ->
+                (listOf("$verb: ${result.affected.joinToString(", ")}") + result.streamStops.map { it.summary() })
+                    .joinToString("\n")
         }
 
     private companion object {

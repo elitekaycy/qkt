@@ -36,7 +36,9 @@ internal fun handleHealth(
                 """"haltReason":${haltReason?.let { routeJson.encodeToString(String.serializer(), it) } ?: "null"},""" +
                 """"lastEventAgeMs":${ageMs ?: "null"},""" +
                 """"inboundQueueDepth":${h.live.inboundQueueDepth()},""" +
-                """"droppedTicks":${h.live.droppedTicks}}"""
+                """"droppedTicks":${h.live.droppedTicks}""" +
+                renderAuditJournalFields(h.live.auditJournalHealth()) +
+                "}"
         }
     // A `--load-dir` file still waiting to deploy (#1055) means the daemon is idle where an
     // operator expects a strategy: degraded, not ok, so watchdogs and Insights see it.

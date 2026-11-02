@@ -31,7 +31,7 @@ class EditorManifestTest {
         assertThat(reloaded.installs).hasSize(1)
         val entry = reloaded.installs.single()
         assertThat(entry.target).isEqualTo(EditorTarget.NVIM)
-        assertThat(entry.files).containsExactly("/x/y", "/x/z")
+        assertThat(entry.files).containsExactly(Path.of("/x/y").toString(), Path.of("/x/z").toString())
         assertThat(entry.installedAt).isEqualTo(12345L)
     }
 
@@ -41,7 +41,7 @@ class EditorManifestTest {
             EditorManifest().withInstall(EditorTarget.NVIM, listOf(Path.of("/old")), now = 1L)
         val second = first.withInstall(EditorTarget.NVIM, listOf(Path.of("/new")), now = 2L)
         assertThat(second.installs).hasSize(1)
-        assertThat(second.installs.single().files).containsExactly("/new")
+        assertThat(second.installs.single().files).containsExactly(Path.of("/new").toString())
         assertThat(second.installs.single().installedAt).isEqualTo(2L)
     }
 
@@ -52,8 +52,8 @@ class EditorManifestTest {
                 .withInstall(EditorTarget.NVIM, listOf(Path.of("/n")), now = 1L)
                 .withInstall(EditorTarget.VIM, listOf(Path.of("/v")), now = 2L)
         assertThat(m.installs).hasSize(2)
-        assertThat(m.recordFor(EditorTarget.NVIM)?.files).containsExactly("/n")
-        assertThat(m.recordFor(EditorTarget.VIM)?.files).containsExactly("/v")
+        assertThat(m.recordFor(EditorTarget.NVIM)?.files).containsExactly(Path.of("/n").toString())
+        assertThat(m.recordFor(EditorTarget.VIM)?.files).containsExactly(Path.of("/v").toString())
     }
 
     @Test
@@ -73,7 +73,12 @@ class EditorManifestTest {
         @TempDir tmp: Path,
     ) {
         val xdg = tmp.resolve("xdg-config")
-        val p = EditorManifest.defaultPath(env = mapOf("XDG_CONFIG_HOME" to xdg.toString()), home = tmp)
+        val p =
+            EditorManifest.defaultPath(
+                env = mapOf("XDG_CONFIG_HOME" to xdg.toString()),
+                home = tmp,
+                osName = "linux",
+            )
         assertThat(p).isEqualTo(xdg.resolve("qkt/editor-install.json"))
     }
 
@@ -81,7 +86,7 @@ class EditorManifestTest {
     fun `defaultPath falls back to home-dot-config when XDG is unset`(
         @TempDir tmp: Path,
     ) {
-        val p = EditorManifest.defaultPath(env = emptyMap(), home = tmp)
+        val p = EditorManifest.defaultPath(env = emptyMap(), home = tmp, osName = "linux")
         assertThat(p).isEqualTo(tmp.resolve(".config/qkt/editor-install.json"))
     }
 

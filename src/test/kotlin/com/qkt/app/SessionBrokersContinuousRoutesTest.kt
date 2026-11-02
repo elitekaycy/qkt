@@ -168,6 +168,7 @@ class SessionBrokersContinuousRoutesTest {
         assertThat(broker.supports("BINANCE_UM:BTCUSDT@front")).isTrue()
         assertThat(broker.supports("BINANCE_UM:BTCUSDT_241227")).isTrue()
         assertThat(sessionBrokers.built.filterIsInstance<ContinuousContractBroker>()).hasSize(1)
+        assertThat(broker.marginVenueFor("BINANCE_UM:BTCUSDT@front")).isSameAs(main.broker)
     }
 
     @Test

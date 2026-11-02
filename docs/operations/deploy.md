@@ -171,8 +171,8 @@ exactly happened, in order".
 
 ## Margin floor and stop-out levels
 
-`risk.margin_floor_pct` (default 200) blocks NEW entries while the venue margin
-level sits below it; risk-reducing orders always pass. Set it against the broker's
+`risk.margin_floor_pct` (default 200) blocks NEW entries while the margin level of
+the account the order is routed to sits below it; risk-reducing orders always pass. Set it against the broker's
 REAL stop-out level, not a guess — MT5 brokers force-close the largest losers when
 margin level hits their stop-out, the broker's choice of position, during the exact
 volatility spike that caused it:

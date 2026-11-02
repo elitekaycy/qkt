@@ -72,7 +72,12 @@ object BotSessionFiles {
                 java.nio.file.attribute.PosixFilePermissions
                     .asFileAttribute(ownerOnly),
             )
-        }.getOrElse { Files.createFile(tmp) }
+        }.getOrElse {
+            Files.createFile(tmp).also {
+                com.qkt.common.OwnerOnly
+                    .file(it)
+            }
+        }
         Files.writeString(tmp, descriptor.toJson())
         Files.move(tmp, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
         return target

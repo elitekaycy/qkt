@@ -15,13 +15,15 @@ import java.math.BigDecimal
  * losers around 50% — the broker's choice of position, during the exact volatility
  * spike that caused it — so entries must stop long before stop-out can. Risk-reducing
  * orders always pass: shrinking exposure is how margin level recovers. Venues that
- * report no margin level (paper, spot) pass everything.
+ * report no margin level (paper, spot) pass everything. An entry answers to the account it is
+ * routed to ([Broker.marginVenueFor]), so on a multi-venue strategy each account has its own
+ * reading, and its own count of missing ones: one venue's healthy read never excuses another's.
  */
 class MarginFloor(
     private val broker: Broker,
     private val floorPct: BigDecimal,
 ) : RiskRule {
-    private var missingReads = 0
+    private val missingReads = HashMap<Broker, Int>()
 
     init {
         require(floorPct.signum() > 0) { "floorPct must be > 0: $floorPct" }
@@ -32,17 +34,19 @@ class MarginFloor(
         positions: PositionProvider,
     ): Decision {
         if (isRiskReducing(request, positions)) return Decision.Approve
-        if ((broker as? MarginLevelProvider)?.supportsMarginLevel != true) return Decision.Approve
-        val level = broker.marginLevel()
+        val venue = broker.marginVenueFor(request.symbol)
+        if ((venue as? MarginLevelProvider)?.supportsMarginLevel != true) return Decision.Approve
+        val level = venue.marginLevel()
         if (level == null) {
-            missingReads += 1
-            return if (missingReads >= MISSING_READ_REJECT_THRESHOLD) {
-                Decision.Reject("margin level unavailable after $missingReads reads — new exposure blocked")
+            val missing = missingReads.getOrDefault(venue, 0) + 1
+            missingReads[venue] = missing
+            return if (missing >= MISSING_READ_REJECT_THRESHOLD) {
+                Decision.Reject("margin level unavailable after $missing reads — new exposure blocked")
             } else {
                 Decision.Approve
             }
         }
-        missingReads = 0
+        missingReads.remove(venue)
         if (level.signum() == 0) return Decision.Approve
         return if (level < floorPct) {
             Decision.Reject(

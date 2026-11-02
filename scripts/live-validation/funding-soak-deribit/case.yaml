@@ -15,7 +15,7 @@ config:
   risk:
     measured_usage_hours: 0
 assertions:
-- flat-account
+- flat-by-strategy
 - deals-net-equals-realized
 - funding-charged
 - replay-same-fills

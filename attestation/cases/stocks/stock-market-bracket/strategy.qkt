@@ -1,0 +1,12 @@
+STRATEGY atto_stk_bracket VERSION 1
+
+SYMBOLS
+    aapl = EXNESS:AAPL EVERY 1m WARMUP 3 BARS
+
+RULES
+    -- One share (0.01 lot of 100), protected at the venue, closed by the strategy inside the session.
+    WHEN aapl.close > 0 AND POSITION.aapl = 0 AND OPEN_ORDERS.aapl = 0 AND TRADES.today = 0
+    THEN BUY aapl SIZING 0.01 BRACKET { STOP LOSS BY 10, TAKE PROFIT BY 20 }
+
+    WHEN POSITION.aapl != 0 AND POSITION.aapl.holding_duration >= 50
+    THEN CLOSE aapl

@@ -7,8 +7,9 @@ import com.qkt.connectivity.ConnectorContext
 
 /**
  * One `type: gateway` broker entry: the gateway at [url] with token [apiKey], and the identity it must
- * report before anything trades ([adapter], [accountLogin], [tradeMode] `demo` or `real`), and how
- * often the live chain of a `chains: book` option root is snapshotted ([chainSnapshotMs]).
+ * report before anything trades ([adapter], [accountLogin], [tradeMode] `demo` or `real`), how
+ * often the live chain of a `chains: book` option root is snapshotted ([chainSnapshotMs]), and whether
+ * other holders trade the account too ([sharedAccount], `shared_account: true`; see [GatewayOtherHolders]).
  *
  * ```yaml
  * deribit_main:
@@ -29,6 +30,7 @@ internal data class GatewaySettings(
     val httpTimeoutMs: Long,
     val retryAttempts: Int,
     val chainSnapshotMs: Long,
+    val sharedAccount: Boolean = false,
 ) {
     companion object {
         /** Every setting a gateway entry may carry. */
@@ -42,6 +44,7 @@ internal data class GatewaySettings(
                 "http_timeout_ms",
                 "retry_attempts",
                 "chain_snapshot_seconds",
+                "shared_account",
             )
 
         /** The settings of [account]; every identity check is required, so a gateway is never trusted unchecked. */
@@ -69,6 +72,12 @@ internal data class GatewaySettings(
                 httpTimeoutMs = account.setting("http_timeout_ms")?.toLong() ?: DEFAULT_TIMEOUT_MS,
                 retryAttempts = account.setting("retry_attempts")?.toInt() ?: DEFAULT_ATTEMPTS,
                 chainSnapshotMs = chainSnapshotSeconds(account) * MS_PER_S,
+                sharedAccount =
+                    when (val shared = account.setting("shared_account")) {
+                        null, "false" -> false
+                        "true" -> true
+                        else -> error("brokers.${account.name}.shared_account must be true or false: $shared")
+                    },
             )
         }
 

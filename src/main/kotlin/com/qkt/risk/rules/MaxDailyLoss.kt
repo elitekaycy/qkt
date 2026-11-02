@@ -7,7 +7,7 @@ import com.qkt.risk.RiskState
 import java.math.BigDecimal
 
 /**
- * Global halt rule: trips when account-wide realized loss for the current UTC day
+ * Global halt rule for one session: trips when its realized loss for the current UTC day
  * exceeds [maxLoss]. [maxLoss] is the magnitude (positive number); the rule compares
  * `-realized` against it. STRICTLY greater: a loss of exactly [maxLoss] continues; the
  * halt fires on the first loss past it. Daily scope — auto-resumes at the next UTC midnight.

@@ -1,0 +1,20 @@
+STRATEGY atto_xout VERSION 1
+
+SYMBOLS
+    cfd = EXNESS:BTCUSD EVERY 1m WARMUP 3 BARS
+    perp = PAPER:BTC_USDC_PERPETUAL EVERY 1m WARMUP 3 BARS
+
+RULES
+    WHEN cfd.close > 0 AND perp.close > 0 AND POSITION.cfd = 0 AND POSITION.perp = 0
+     AND OPEN_ORDERS.cfd = 0 AND OPEN_ORDERS.perp = 0 AND TRADES.today = 0
+    THEN BUY cfd SIZING 0.01; SELL perp SIZING 0.001
+
+    WHEN POSITION.cfd != 0 AND POSITION.cfd.holding_duration >= 30
+    THEN CLOSE cfd
+
+    WHEN POSITION.cfd = 0 AND OPEN_ORDERS.cfd = 0 AND POSITION.perp != 0
+     AND POSITION.perp.holding_duration >= 90 AND TRADES.today = 2
+    THEN BUY cfd SIZING 0.01
+
+    WHEN POSITION.perp != 0 AND POSITION.perp.holding_duration >= 210
+    THEN CLOSE perp

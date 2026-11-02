@@ -1,0 +1,32 @@
+id: stock-day-limit-expiry
+title: A DAY limit reaches the venue expiring at the stock session's close
+why: 'DAY used to reach MT5 with no expiry and rest as good-till-cancelled: a limit meant for today could fill
+  next week. It must arrive as a dated order expiring at the end of the symbol''s session - 15:45 New York for
+  an Exness stock CFD - and replay the same way.'
+status: ready
+symbols:
+- AAPL
+timeframes:
+- 1m
+warmup_bars:
+  1m: 3
+proves:
+- behaviour:stock-cfd
+- behaviour:limit-entry
+- behaviour:day-expiry
+- behaviour:pending-at-venue
+budget_seconds: 200
+expect_pending_expiration:
+  at: "15:45 America/New_York"
+  after_seconds: 75
+expect_fills:
+- BUY 0.01
+- SELL 0.01
+assertions:
+- flat-by-magic
+- no-pending-by-magic
+- deals-net-by-magic
+- no-engine-fault
+- replay-fill-sequence
+- expected-fills
+- pending-expiration

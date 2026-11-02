@@ -16,7 +16,9 @@ import java.math.BigDecimal
  * limit". They are the backstop for the entire sizing-bug class: a 100x contractSize
  * omission or percent-convention mix-up stops at this gate, not at the venue. Given the account
  * [equity][standard], the set also refuses orders the account could not margin ([MarginRequirement];
- * it judges only instruments with margin terms, so it changes nothing for instruments without).
+ * it judges only instruments with margin terms, so it changes nothing for instruments without), orders a symbol's
+ * venue [trade mode][VenueTradeMode] does not allow, and new positions on a share about to split ([SplitWindow]).
+ * Given the venue's session answer, it refuses every order sent outside its symbol's session ([VenueSession]).
  */
 object PreTradeControls {
     /** Default per-order quantity cap (lots/units). Generous; operators tighten per account. */
@@ -36,8 +38,13 @@ object PreTradeControls {
         priceCollarFrac: BigDecimal = DEFAULT_PRICE_COLLAR_FRAC,
         accounting: AccountingEngine = AccountingEngine(),
         equity: (() -> BigDecimal)? = null,
+        session: ((symbol: String, atMs: Long) -> Boolean)? = null,
     ): List<RiskRule> =
         listOfNotNull(
+            // First: an order the venue would refuse outright is refused for that reason, priced or not.
+            VenueTradeMode(instruments),
+            session?.let(::VenueSession),
+            SplitWindow(instruments),
             MaxOrderQty(maxOrderQty),
             MaxOrderNotional(maxOrderNotional, prices, instruments, accounting),
             PriceCollar(priceCollarFrac, prices),

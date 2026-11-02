@@ -62,7 +62,11 @@ internal object GatewayOrders {
                 TimeInForce.DAY -> "day"
                 TimeInForce.GTD -> return GatewayOrderMapping.Unsupported("VGP v1 has no good-till-date orders")
             }
-        if (request.expiresAt != null) return GatewayOrderMapping.Unsupported("VGP v1 orders cannot carry an expiry")
+        // A DAY order's expiry is the session end qkt computes for venues without a day of their own (MT5 sends it as
+        // GTD); a VGP venue ends its own trading day, so the expiry stays with qkt. Any other expiry has no VGP form.
+        if (request.expiresAt != null && request.timeInForce != TimeInForce.DAY) {
+            return GatewayOrderMapping.Unsupported("VGP v1 orders cannot carry an expiry")
+        }
         val clientOrderId = GatewayClientIds.of(request)
         if (clientOrderId.length > GatewayClientIds.MAX_LENGTH) {
             return GatewayOrderMapping.Unsupported(

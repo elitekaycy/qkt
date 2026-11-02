@@ -1,0 +1,30 @@
+id: stock-share-sizing
+title: Notional and risk sizing turn dollars into whole shares on a 100-share contract
+why: 'Sizing divides by the contract size: $500 of a $220 stock is 2 shares (0.02 lot), and $5 of risk on a
+  $2.50 stop is 2 shares. A sizing path that ignored the 100-share contract would send 2.27 lots (227 shares)
+  or 0.0002 lot (refused below the minimum).'
+status: ready
+symbols:
+- NVDA
+- MSFT
+timeframes:
+- 1m
+warmup_bars:
+  1m: 3
+proves:
+- behaviour:stock-cfd
+- behaviour:usd-notional-sizing
+- behaviour:risk-sizing
+budget_seconds: 200
+expect_fills:
+- BUY 0.02
+- BUY 0.02
+- SELL 0.02
+- SELL 0.02
+assertions:
+- flat-by-magic
+- no-pending-by-magic
+- deals-net-by-magic
+- no-engine-fault
+- replay-fill-sequence
+- expected-fills

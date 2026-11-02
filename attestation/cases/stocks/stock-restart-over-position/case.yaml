@@ -1,0 +1,41 @@
+id: stock-restart-over-position
+title: Restart the daemon over an open AAPL position and let the strategy close it
+why: After a restart the engine must adopt a stock position on its 100-share contract, re-attach its protection on the
+  stock session's calendar and let its own exit close it, not open an opposite one on the hedging account or read the
+  restart as a session gap.
+status: ready
+symbols:
+- AAPL
+timeframes:
+- 1m
+proves:
+- behaviour:stock-cfd
+- behaviour:graceful-restart
+- behaviour:order-id-continuity
+- behaviour:state-recovery
+steps:
+- run: qkt status atto_stk_restart --state-dir {state}
+  wait_for: position
+  expect_status:
+    positions: 1
+  note: a position is open before the restart
+- daemon: restart
+  expect_stdout: 'while the daemon was down: 1'
+  note: graceful stop without flatten leaves the position at the venue
+- run: qkt status atto_stk_restart --state-dir {state}
+  expect_status:
+    positions: 1
+  expect_log: 'state recovery: 1 open positions'
+  note: the restarted engine adopts the venue position instead of starting flat
+- run: qkt status atto_stk_restart --state-dir {state}
+  wait_for: flat
+  wait_seconds: 260
+  expect_status:
+    positions: 0
+  note: the strategy's own timed exit closes the recovered position with one closing deal
+assertions:
+- flat-by-magic
+- deals-net-by-magic
+- no-duplicate-order-id
+autoload: true
+budget_seconds: 420

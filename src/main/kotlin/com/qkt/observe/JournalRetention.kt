@@ -1,11 +1,11 @@
 package com.qkt.observe
 
 import com.qkt.common.Clock
+import com.qkt.common.OwnerOnly
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
-import java.nio.file.attribute.PosixFilePermissions
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -122,7 +122,7 @@ class JournalRetention(
                     StandardOpenOption.WRITE,
                 ),
             ).use { out -> Files.copy(file, out) }
-            runCatching { Files.setPosixFilePermissions(temp, PosixFilePermissions.fromString("rw-------")) }
+            OwnerOnly.file(temp)
             Files.move(temp, target, StandardCopyOption.ATOMIC_MOVE)
             Files.deleteIfExists(file)
             true

@@ -1,16 +1,17 @@
 {
   "name": "qkt",
   "displayName": "qkt",
-  "description": "Syntax highlighting and snippets for qkt strategy files (.qkt)",
-  "version": "0.1.0",
+  "description": "Syntax highlighting, completion, hover, live diagnostics and snippets for qkt strategy files (.qkt)",
+  "version": "0.2.0",
   "publisher": "elitekaycy",
   "license": "Apache-2.0",
   "engines": {
-    "vscode": "^1.74.0"
+    "vscode": "^1.82.0"
   },
   "categories": [
     "Programming Languages",
-    "Snippets"
+    "Snippets",
+    "Linters"
   ],
   "keywords": [
     "qkt",
@@ -31,8 +32,13 @@
     "languages": [
       {
         "id": "qkt",
-        "aliases": ["qkt", "QKT"],
-        "extensions": [".qkt"],
+        "aliases": [
+          "qkt",
+          "QKT"
+        ],
+        "extensions": [
+          ".qkt"
+        ],
         "configuration": "./language-configuration.json"
       }
     ],
@@ -48,14 +54,69 @@
         "language": "qkt",
         "path": "./snippets/qkt.json"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "qkt",
+      "properties": {
+        "qkt.path": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Path to the `qkt` executable. Empty means `$QKT_HOME/bin/qkt`, then `qkt` on `PATH`.",
+          "scope": "machine-overridable"
+        },
+        "qkt.languageServer.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Run `qkt lsp` for completion, hover and diagnostics."
+        },
+        "qkt.trace.server": {
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "description": "Trace the messages between VS Code and the qkt language server."
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "qkt.restartLanguageServer",
+        "title": "qkt: Restart language server"
+      }
+    ],
+    "configurationDefaults": {
+      "[qkt]": {
+        "editor.quickSuggestions": {
+          "other": true,
+          "comments": false,
+          "strings": false
+        },
+        "editor.suggest.snippetsPreventQuickSuggestions": false,
+        "editor.wordBasedSuggestions": "off"
+      }
+    }
   },
   "scripts": {
     "sync-grammar": "node -e \"require('fs').copyFileSync('../textmate/qkt.tmLanguage.json', './syntaxes/qkt.tmLanguage.json')\"",
-    "vscode:prepublish": "npm run sync-grammar",
-    "package": "npm run sync-grammar && npx --yes @vscode/vsce package"
+    "build": "esbuild src/extension.js --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --target=node18 --minify",
+    "test": "node --test test/resolve-qkt.test.js",
+    "vscode:prepublish": "npm run sync-grammar && npm run build",
+    "package": "vsce package --no-dependencies",
+    "test:e2e": "npm run build && node test/e2e/run.js"
   },
   "devDependencies": {
-    "@vscode/vsce": "^3.2.0"
+    "@vscode/vsce": "^3.2.0",
+    "esbuild": "^0.24.0",
+    "@vscode/test-electron": "^2.4.1"
+  },
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onLanguage:qkt"
+  ],
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
   }
 }

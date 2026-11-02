@@ -47,7 +47,8 @@ data class PerformanceReport(
      * Total commission charged over the run (#335), including the execution fees a venue reported
      * on fills (the futures exchange simulator's). The realized/total PnL above are already net of
      * this; it is reported separately as one part of the bridge from gross PnL to net. With swap, rolls and
-     * funding, `preCostPnL = totalPnL + commissionPaid + swapPaid + rollCostsPaid + fundingPaid`. Zero when no
+     * funding and dividends, `preCostPnL = totalPnL + commissionPaid + swapPaid + rollCostsPaid + fundingPaid + dividendsPaid`.
+     * Zero when no
      * commission was configured.
      */
     val commissionPaid: BigDecimal = BigDecimal.ZERO,
@@ -67,6 +68,12 @@ data class PerformanceReport(
      * credit. Realized and total PnL are already net of it. Zero without perpetuals.
      */
     val fundingPaid: BigDecimal = BigDecimal.ZERO,
+    /**
+     * Net cash dividends paid over the run, from the stored corporate actions: negative when held shares were
+     * credited them, positive when shorts paid them. Realized and total PnL are already net of it. Zero without
+     * dividends.
+     */
+    val dividendsPaid: BigDecimal = BigDecimal.ZERO,
     /**
      * Realized PnL bucketed by UTC day (#348) — `{ 2026-06-04: +120.50, ... }`. Includes trade
      * closes and financing cash on its rollover date; empty when neither occurred.

@@ -37,6 +37,11 @@ class LegBook(
 
     fun close(legId: String): PositionLeg? = legs.remove(legId)
 
+    /** Every leg replaced by [change] of it, in place: same ids, so roles, parents and tickets stay attached. */
+    fun restate(change: (PositionLeg) -> PositionLeg) {
+        for ((id, leg) in legs) legs[id] = change(leg).also { require(it.legId == id && it.symbol == symbol) }
+    }
+
     /** Return the leg with [legId], or `null` when this book does not own it. */
     fun leg(legId: String): PositionLeg? = legs[legId]
 

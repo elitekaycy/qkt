@@ -45,7 +45,9 @@ print("ok the outage proxy cuts and refuses connections, then forwards again on 
 
 # --- a fake gateway for the kill switch and the judgment ------------------------------------------------
 calls, kill = [], {"all": False, "symbols": []}
-deals = []
+# The case's strategy bought into the account's position: its holding comes from its own deals (#1519).
+deals = [{"client_order_id": "dsl-s--0.a1", "symbol": "BTC_USDC-PERPETUAL", "side": "buy", "quantity": "0.0001",
+          "price": "86000.3", "time": 1, "costs": []}]
 
 class Gateway(http.server.BaseHTTPRequestHandler):
     def log_message(self, *args):
@@ -61,6 +63,8 @@ class Gateway(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path.startswith("/v1/deals"):
             return self.reply({"deals": deals})
+        if self.path.startswith("/v1/settlements"):
+            return self.reply({"settlements": []})
         self.reply({"/v1/positions": {"positions": [{"symbol": "BTC_USDC-PERPETUAL", "avg_price": "86000.3"}]},
                     "/v1/instruments/BTC_USDC-PERPETUAL": {"tick_size": "0.1", "volume_min": "0.0001"}}[self.path])
 

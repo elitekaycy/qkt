@@ -14,7 +14,8 @@ internal data class RecoveredOrder(
 /**
  * Resolves restored orders against the gateway by id, never by a time window: each order's current
  * state and its complete fill history (`GET /v1/orders/{id}`, `GET /v1/deals?client_order_id=`). The
- * fills booked before the restart, oldest first up to the order's booked quantity, go to [markBooked];
+ * fills booked before the restart, oldest first up to the order's booked quantity (each as what the holding
+ * [received], which is what was booked: a fee in the coin leaves less than the fill's quantity), go to [replayed];
  * the rest to [onFill]; then the order's state to [onOrder], so an order that ended while qkt was down
  * ends in the engine too.
  */
@@ -23,7 +24,8 @@ internal object GatewayRecovery {
     fun recover(
         client: GatewayClient,
         orders: List<RecoveredOrder>,
-        markBooked: (String) -> Unit,
+        received: (WireFill) -> BigDecimal,
+        replayed: (WireFill) -> Unit,
         onFill: (WireFill) -> Unit,
         onOrder: (WireOrder) -> Unit,
     ): Set<String> {
@@ -34,11 +36,11 @@ internal object GatewayRecovery {
             var booked = BigDecimal.ZERO
             var replaying = true
             for (fill in client.dealsOf(restored.clientOrderId).sortedBy { it.time }) {
-                val quantity = BigDecimal(fill.quantity)
+                val quantity = received(fill)
                 replaying = replaying && booked.add(quantity) <= restored.alreadyFilled
                 if (replaying) {
                     booked = booked.add(quantity)
-                    markBooked(fill.fillId)
+                    replayed(fill)
                 } else {
                     onFill(fill)
                 }

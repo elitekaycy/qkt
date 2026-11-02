@@ -48,7 +48,7 @@ internal object StreamFieldCompiler {
                     ctx.historyAsOfMs?.let { ctx.hub.latestAtOrBefore(key, it) }
                         ?: ctx.hub.latest(key)
                 }
-            if (candle == null) {
+            if (candle == null || HubRecordCheck.isOlderThanRecord(ref.stream, key, candle, ctx)) {
                 Value.Undefined
             } else {
                 val fieldValue: BigDecimal? =

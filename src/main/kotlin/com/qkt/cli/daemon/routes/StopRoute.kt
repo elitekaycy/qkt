@@ -60,7 +60,7 @@ internal fun handleStop(
 
     val handle =
         registry.get(name)
-            ?: return respond(ex, 404, """{"error":"unknown name: $name"}""")
+            ?: return respond(ex, 404, """{"error":${jsonString("unknown name: $name")}}""")
     val meta = handle.childMeta
     if (meta != null) {
         meta.operatorStop.set(true)

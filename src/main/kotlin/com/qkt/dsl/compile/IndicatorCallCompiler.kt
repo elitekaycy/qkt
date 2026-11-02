@@ -15,7 +15,16 @@ import com.qkt.indicators.catalog.OlsResidual
 internal class IndicatorCallCompiler(
     private val bindings: IndicatorBinding.Bag,
     private val exprs: ExprCompiler,
+    private val hubRecordGates: Map<String, String> = emptyMap(),
 ) {
+    /**
+     * The stream whose closes update an indicator fed from [series]: its first stream, or for a
+     * hub field that field's record stream, delivered after every field of the record. Gated on the
+     * field itself, `news.conflict / news.events` read `events` before that record's value arrived.
+     */
+    private fun primaryAliasOf(series: com.qkt.dsl.ast.ExprAst): String? =
+        streamAliasesIn(series).firstOrNull()?.let { hubRecordGates[it] ?: it }
+
     fun compile(call: IndicatorCall): CompiledExpr {
         if (call.name.equals(DslVocabulary.RESID, ignoreCase = true)) return compileResidual(call)
         if (call.name.equals(DslVocabulary.CONFIRM_RATIO, ignoreCase = true)) return compileConfirmRatio(call)
@@ -28,7 +37,7 @@ internal class IndicatorCallCompiler(
                 // #319 two-series (e.g. correlation): compile both series args and bind as a pair,
                 // gated on the first series' stream. Each series may itself be a cross-stream expr.
                 val primaryAlias =
-                    streamAliasesIn(call.args[0]).firstOrNull()
+                    primaryAliasOf(call.args[0])
                         ?: error("Indicator ${call.name} first series must reference a stream")
                 bindings.bindPair(
                     call,
@@ -46,7 +55,7 @@ internal class IndicatorCallCompiler(
                         bindings.bindExpression(
                             call,
                             exprs.compile(seriesArg, null),
-                            streamAliasesIn(seriesArg).firstOrNull()
+                            primaryAliasOf(seriesArg)
                                 ?: error("Indicator ${call.name} series must reference a stream"),
                         )
                     else -> {
@@ -54,7 +63,7 @@ internal class IndicatorCallCompiler(
                         // primary alias. Gate on the first StreamFieldRef the expression
                         // references; reject if it references no stream (caller mistake).
                         val primaryAlias =
-                            streamAliasesIn(seriesArg).firstOrNull()
+                            primaryAliasOf(seriesArg)
                                 ?: error(
                                     "Indicator ${call.name} expression-fed series must reference at least one " +
                                         "stream (e.g. stddev(gold.close - silver.close, 60))",
@@ -116,7 +125,7 @@ internal class IndicatorCallCompiler(
             "resid period ($period) must exceed the number of regressors plus one ($regressorCount + 1)"
         }
         val primaryAlias =
-            streamAliasesIn(seriesArgs.first()).firstOrNull()
+            primaryAliasOf(seriesArgs.first())
                 ?: error("resid dependent series must reference a stream (e.g. resid(gbp.close, eur.close, 96))")
         val indicator = OlsResidual(period = period, regressorCount = regressorCount)
         val seriesExprs = seriesArgs.map { exprs.compile(it, null) }
@@ -147,7 +156,7 @@ internal class IndicatorCallCompiler(
         val seriesArgs = call.args.dropLast(1)
         val peerCount = seriesArgs.size - 1
         val primaryAlias =
-            streamAliasesIn(seriesArgs.first()).firstOrNull()
+            primaryAliasOf(seriesArgs.first())
                 ?: error(
                     "confirm_ratio signal series must reference a stream (e.g. confirm_ratio(eur.close, gbp.close, 4))",
                 )

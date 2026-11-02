@@ -49,7 +49,7 @@ class DocsShownOutputTest {
             System.setOut(saved)
         }
 
-        assertThat(out.toString().trimEnd()).isEqualTo(shown)
+        assertThat(out.toString().replace("\r\n", "\n").trimEnd()).isEqualTo(shown)
     }
 
     @Test

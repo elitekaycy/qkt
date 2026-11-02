@@ -1,0 +1,37 @@
+id: stock-reentry-after-venue-close
+title: An AAPL position closed at the venue inside its bar is entered again at the next close
+why: 'A share closed by the venue (or an operator) seconds after its fill must re-arm a flat-gated entry exactly as
+  on FX (#1194): the stock calendar must not make the next bar close look like a session boundary that swallows it.'
+status: ready
+symbols:
+- AAPL
+timeframes:
+- 1m
+proves:
+- behaviour:stock-cfd
+- behaviour:reentry-after-in-bar-exit
+steps:
+- run: qkt status atto_stk_reentry --state-dir {state}
+  wait_for: position
+  expect_status:
+    positions: 1
+  note: the first entry fills
+- venue: close_positions
+  settle_seconds: 3
+  note: closed at the venue straight away, well before the next bar close
+- run: qkt status atto_stk_reentry --state-dir {state}
+  wait_for: position
+  wait_seconds: 150
+  expect_status:
+    positions: 1
+  note: a following bar close enters again
+assertions:
+- second-entry-after-in-bar-exit
+- flat-by-magic
+autoload: true
+budget_seconds: 420
+config:
+  risk:
+    per_strategy:
+      atto_stk_reentry:
+        max_trades_per_day: 3

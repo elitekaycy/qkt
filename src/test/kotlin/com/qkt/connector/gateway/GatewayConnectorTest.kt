@@ -73,6 +73,14 @@ class GatewayConnectorTest {
     }
 
     @Test
+    fun `an account is qkt's alone unless the entry says it is shared`() {
+        assertThat(GatewaySettings.of(account(), context).sharedAccount).isFalse()
+        assertThat(GatewaySettings.of(account("shared_account" to "true"), context).sharedAccount).isTrue()
+        assertThatThrownBy { GatewaySettings.of(account("shared_account" to "yes"), context) }
+            .hasMessage("brokers.deribit_main.shared_account must be true or false: yes")
+    }
+
+    @Test
     fun `the account's prices are routed for its contracts and its option roots only`() {
         val routes = AccountDirectory.open(listOf(account()), ConnectorRegistry.discover(), context).marketDataRoutes()
 

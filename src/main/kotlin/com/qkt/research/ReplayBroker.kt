@@ -2,6 +2,7 @@ package com.qkt.research
 
 import com.qkt.backtest.BrokerKind
 import com.qkt.backtest.ExecutionSimulationConfig
+import com.qkt.backtest.ReplaySessions
 import com.qkt.broker.Broker
 import com.qkt.broker.CompositeBroker
 import com.qkt.broker.MT5BrokerSimulator
@@ -20,7 +21,8 @@ import com.qkt.marketdata.source.SymbolPattern
  * broker, or, when strategies declare broker-qualified streams, a [CompositeBroker] with one such
  * broker per route in [brokerSymbols] iteration order. Futures symbols always fill on the exchange
  * stack instead ([replayFuturesRoutes]), whatever the broker kind; a run without them gets exactly
- * the broker it got before futures existed. Built once per replay.
+ * the broker it got before futures existed. Built once per replay. The paper and MT5 brokers trade each symbol only
+ * inside its session under [calendar] ([ReplaySessions]); the exchange stack takes orders at all times, as live.
  */
 internal fun replayBroker(
     executionConfig: ExecutionSimulationConfig,
@@ -32,6 +34,7 @@ internal fun replayBroker(
     brokerSymbols: Map<String, Set<String>>,
     symbols: Collection<String>,
 ): Broker {
+    val sessions = ReplaySessions(calendar, barFills)
     val brokerFactory: () -> Broker = {
         when (executionConfig.brokerKind) {
             BrokerKind.PAPER ->
@@ -43,6 +46,7 @@ internal fun replayBroker(
                     fillAtTriggerPrice = barFills::at,
                     calendar = calendar,
                     positionMode = executionConfig.positionMode,
+                    session = sessions::acceptsOrders,
                 )
             BrokerKind.MT5_SIM ->
                 MT5BrokerSimulator(
@@ -60,6 +64,7 @@ internal fun replayBroker(
                     positionMode = executionConfig.positionMode,
                     orderSpacingMs = executionConfig.orderSpacingMs,
                     fillAtTriggerPrice = barFills::at,
+                    session = sessions::acceptsOrders,
                 ).also { books.execution.track(it.fillPrice) }
         }
     }

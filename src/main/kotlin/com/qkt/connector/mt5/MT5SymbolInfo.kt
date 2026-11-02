@@ -24,7 +24,20 @@ data class MT5SymbolInfo(
     val swap: MT5SymbolSwap? = null,
     /** `trade_tick_size`, the smallest price move the venue accepts; null when not reported (#1455). */
     val tickSize: BigDecimal? = null,
-)
+    /** `path`, where the venue files the symbol (`Standard\Stocks\AAPLm`); null when not reported. */
+    val path: String? = null,
+    /** `trade_mode`, MT5's `SYMBOL_TRADE_MODE` (0 disabled ... 4 full); null when not reported. */
+    val tradeMode: Int? = null,
+) {
+    /** The folder the venue files the symbol under, `Stocks` for `Standard\Stocks\AAPLm`; null without a folder. */
+    val category: String?
+        get() =
+            path
+                ?.split('\\', '/')
+                ?.filter { it.isNotBlank() }
+                ?.dropLast(1)
+                ?.lastOrNull()
+}
 
 /**
  * A symbol's swap terms as MT5 reports them: [mode] is `SYMBOL_SWAP_MODE` (0 disabled, 1 points,

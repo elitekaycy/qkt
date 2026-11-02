@@ -46,4 +46,22 @@ class DiskSpaceGuardTest {
         assertThat(guard.check()).isNull()
         assertThat(alerts.get()).isZero()
     }
+
+    @Test
+    fun `a root that does not exist yet is measured on its nearest existing parent`(
+        @TempDir tmp: Path,
+    ) {
+        val alerts = AtomicInteger(0)
+        val notYetCreated = tmp.resolve("qkt").resolve("state")
+        val guard =
+            DiskSpaceGuard(notYetCreated, floorBytes = Long.MAX_VALUE / 2, onLow = {
+                _,
+                _,
+                ->
+                alerts.incrementAndGet()
+            })
+
+        assertThat(guard.check()).isNotNull()
+        assertThat(alerts.get()).isEqualTo(1)
+    }
 }

@@ -1,6 +1,7 @@
 package com.qkt.pnl
 
 import com.qkt.common.Money
+import com.qkt.common.Side
 import java.math.BigDecimal
 import java.util.concurrent.ConcurrentHashMap
 
@@ -24,16 +25,23 @@ class CommissionBook(
 
     /**
      * Commission for filling [quantity] lots of [symbol] under [strategyId], at [price] when the
-     * caller knows it (price-based fees need it): tallies it and returns the amount so the caller
-     * can deduct it from that fill's realized PnL.
+     * caller knows it (price-based fees need it), on [side] for order [orderId] when it knows those (order-level
+     * costs need them): tallies it and returns the amount so the caller can deduct it from that fill's realized PnL.
      */
     fun charge(
         strategyId: String,
         symbol: String,
         quantity: BigDecimal,
         price: BigDecimal? = null,
+        side: Side? = null,
+        orderId: String? = null,
     ): BigDecimal {
-        val raw = if (price == null) model.cost(symbol, quantity) else model.cost(symbol, quantity, price)
+        val raw =
+            when {
+                price == null -> model.cost(symbol, quantity)
+                side == null || orderId == null -> model.cost(symbol, quantity, price)
+                else -> model.cost(symbol, side, quantity, price, orderId)
+            }
         val cost = raw.setScale(Money.SCALE, Money.ROUNDING)
         if (cost.signum() == 0) return Money.ZERO
         total = total.add(cost)

@@ -1,11 +1,14 @@
 package com.qkt.connector.gateway
 
 import com.qkt.accounting.MoneyAmount
+import com.qkt.broker.continuous.StreamContractPositions
 import com.qkt.common.Money
 import com.qkt.events.BrokerEvent
 import com.qkt.events.ContractSettled
+import com.qkt.positions.Position
 import com.qkt.positions.PositionProvider
 import java.math.BigDecimal
+import java.util.concurrent.CopyOnWriteArrayList
 import org.slf4j.LoggerFactory
 
 /**
@@ -15,7 +18,8 @@ import org.slf4j.LoggerFactory
  * strategy (attached with a null strategy); with none attached they wait, and reach the strategy's
  * broker when it attaches again.
  * A contract settlement goes to every broker with the venue's costs shared once, account-wide, by the
- * size of each broker's holding. Not thread-safe: its owner calls it under one lock.
+ * size of each broker's holding. Its owner calls it under one lock; [brokers] and [soleHolder] may be read from
+ * any thread (the venue-state poller's).
  */
 internal class GatewayRouting {
     /** A broker serving [strategy] (null: every strategy), whose session holds [positions], publishing on [publish]. */
@@ -29,11 +33,42 @@ internal class GatewayRouting {
     }
 
     private val log = LoggerFactory.getLogger(GatewayRouting::class.java)
-    private val attached = ArrayList<Attached>()
+    private val attached = CopyOnWriteArrayList<Attached>()
     private val waiting = LinkedHashMap<String, MutableList<BrokerEvent.OrderEvent>>()
 
     /** The brokers attached now. */
     val brokers: List<Attached> get() = attached.toList()
+
+    /**
+     * One broker's holding of a contract: its [strategy], the [position], and the continuous [stream] it is held
+     * for with the stream's position as the strategy's session holds it ([streamPosition], restored at a restart).
+     */
+    data class Holding(
+        val strategy: String?,
+        val position: Position,
+        val stream: String? = null,
+        val streamPosition: Position? = null,
+    )
+
+    /**
+     * The one attached broker whose session holds exactly [lots] of [symbol], or null when none or several do.
+     * A continuous stream's dated contract is held by the stream's lane ([StreamContractPositions]), not by the
+     * session's book, which names only the stream.
+     */
+    fun soleHolder(
+        symbol: String,
+        lots: BigDecimal,
+    ): Holding? {
+        val holders =
+            attached.mapNotNull { broker ->
+                val held = broker.positions.positionFor(symbol) ?: return@mapNotNull null
+                val stream = (broker.positions as? StreamContractPositions)?.stream
+                if (held.quantity.abs().compareTo(lots) == 0) Holding(broker.strategy, held, stream) else null
+            }
+        val holder = holders.singleOrNull() ?: return null
+        val stream = holder.stream ?: return holder
+        return holder.copy(streamPosition = attached.firstNotNullOfOrNull { it.positions.positionFor(stream) })
+    }
 
     /** Attaches [broker], handing it the events that waited for its strategy; true when it is the first. */
     fun attach(broker: Attached): Boolean {

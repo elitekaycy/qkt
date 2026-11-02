@@ -73,7 +73,7 @@ class TicketAttribution {
 
     /**
      * Fallback attribution from an MT5 comment: the venue stores only a truncated prefix
-     * of the `dsl-<strategy>` comment, so match in both directions ("hedge_stradd" is a
+     * of the `dsl-<strategy>` or `ORD-<strategy>` comment, so match in both directions ("hedge_stradd" is a
      * prefix of "hedge_straddle"; "hedge_straddle-12" is that id followed by its order number). Returns null when zero
      * or more than one deployed id matches — guessing between two candidates would
      * silently misattribute realized P&L. Names registered through [alias] count as
@@ -84,7 +84,7 @@ class TicketAttribution {
         comment: String?,
         deployedIds: Collection<String>,
     ): String? {
-        val c = comment?.removePrefix("dsl-") ?: return null
+        val c = comment?.removePrefix("dsl-")?.removePrefix("ORD-") ?: return null
         if (c.isBlank()) return null
         val deployed = deployedIds.toSet()
         val spellings = deployed.associateWith { it } + aliases.filterValues { it in deployed }

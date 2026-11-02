@@ -41,11 +41,11 @@ internal fun handleResync(
         return respond(ex, 400, """{"error":"missing 'file' or 'name'}""")
     }
     if (name.contains('/')) {
-        return respond(ex, 400, """{"error":"top-level name must not contain '/': $name"}""")
+        return respond(ex, 400, """{"error":${jsonString("top-level name must not contain '/': $name")}}""")
     }
     val path = Path.of(file)
     if (!Files.exists(path)) {
-        return respond(ex, 400, """{"error":"file not found: $file"}""")
+        return respond(ex, 400, """{"error":${jsonString("file not found: $file")}}""")
     }
     val params = parseQuery(ex.requestURI.rawQuery)
     val ignoreMismatches = params["reconcile"] == "ignore-mismatches"
@@ -72,7 +72,7 @@ internal fun handleResync(
             is ParseResult.Success -> r.value
             is ParseResult.Failure -> {
                 val msg = r.errors.joinToString(";") { it.message }.replace("\"", "'")
-                return respond(ex, 400, """{"error":"parse failed: $msg"}""")
+                return respond(ex, 400, """{"error":${jsonString("parse failed: $msg")}}""")
             }
         }
 

@@ -51,7 +51,7 @@ internal class MT5BrokerAccountView(
             login = acct.login.toString(),
             server = acct.server,
             name = acct.name,
-            venue = MT5VenueDescription.identity(profile.name, acct.login.toString(), acct.server),
+            venue = MT5VenueDescription.identity(profile.name, acct.login.toString(), acct.server, acct.tradeMode),
         )
     }
 

@@ -12,12 +12,14 @@ import kotlinx.serialization.json.longOrNull
 /**
  * The STRATEGIES section of the deep status screen: one line per deployment with its stream routing
  * and promotion state. Appends a reason to [unhealthy] for each strategy that is not healthy, and
- * to [halted] for each one that risk control has stopped from entering.
+ * to [halted] for each one that risk control has stopped from entering, and to [streamStopped] for each
+ * stream a failed roll stopped. Like a halt, a stopped stream is named but does not fail the health check.
  */
 internal fun renderStrategies(
     strategies: JsonArray,
     unhealthy: MutableList<String>,
     halted: MutableList<String> = mutableListOf(),
+    streamStopped: MutableList<String> = mutableListOf(),
 ): String {
     if (strategies.isEmpty()) return "STRATEGIES   none deployed"
     val sb = StringBuilder()
@@ -40,11 +42,17 @@ internal fun renderStrategies(
                 .orEmpty()
         val isHalted = obj["halted"]?.jsonPrimitive?.booleanOrNull ?: false
         val haltReason = obj["haltReason"]?.jsonPrimitive?.contentOrNull.orEmpty()
+        val stops =
+            obj["streamStops"]
+                ?.jsonArray
+                .orEmpty()
+                .map { it.jsonObject }
         val tag =
             buildString {
                 if (kind == "child") append("[child]")
                 if (isHalted) append("[HALTED]")
                 if (gateState == "operator_stopped") append("[OP_STOPPED]")
+                if (stops.isNotEmpty()) append("[STREAM_STOPPED]")
             }
         sb.append('\n')
         sb.append(
@@ -85,14 +93,43 @@ internal fun renderStrategies(
             // run this command - a drawdown halt must not mark a working daemon unhealthy.
             halted.add("strategy '$name' is halted ($haltReason) - clear with: qkt resume $name")
         }
+        for (stop in stops) {
+            val stream = stop["stream"]?.jsonPrimitive?.contentOrNull ?: "?"
+            val reason = stop["reason"]?.jsonPrimitive?.contentOrNull ?: "no reason recorded"
+            sb
+                .append("\n    stream stopped: ")
+                .append(stream)
+                .append(": ")
+                .append(reason)
+            streamStopped.add("strategy '$name' refuses orders on $stream ($reason) - try: qkt resume $name")
+        }
         if (gateState == "operator_stopped") {
             unhealthy.add("strategy '$name' is operator-stopped")
         }
+        obj["auditJournal"]?.jsonObject?.let { renderAuditJournal(name, it, sb, unhealthy) }
         if (promotionEnforced && promotionEligible == false) {
             unhealthy.add("strategy '$name' promotion gates missing: ${promotionMissing.joinToString(",")}")
         }
     }
     return sb.toString()
+}
+
+/**
+ * The audit-journal line of strategy [name] when its journal is missing records: dropped market data is
+ * shown, a lost decision event (a fill or order the trail no longer holds) also makes the strategy unhealthy.
+ */
+private fun renderAuditJournal(
+    name: String,
+    audit: kotlinx.serialization.json.JsonObject,
+    sb: StringBuilder,
+    unhealthy: MutableList<String>,
+) {
+    val dropped = audit["droppedMarketData"]?.jsonPrimitive?.longOrNull ?: 0L
+    val lost = audit["lostDecisionEvents"]?.jsonPrimitive?.longOrNull ?: 0L
+    if (dropped == 0L && lost == 0L) return
+    sb.append("\n    audit journal: dropped ").append(dropped).append(" market-data record(s), lost ")
+    sb.append(lost).append(" decision event(s)")
+    if (lost > 0L) unhealthy.add("strategy '$name' audit journal lost $lost decision event(s)")
 }
 
 /** Compact uptime such as `2d3h`, `4h10m`, `5m2s` or `9s`. */

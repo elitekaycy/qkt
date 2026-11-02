@@ -57,9 +57,8 @@ class MT5Broker(
      */
     private val strategyName: String? = null,
     /**
-     * Names of other strategies sharing this MT5 magic — evaluated lazily at recovery time
-     * so it picks up siblings deployed after this broker was built. Default empty (single-
-     * strategy mode preserves the pre-#154 behaviour). See [MT5StateRecovery]'s docstring.
+     * Names of other strategies sharing this MT5 magic, read lazily at recovery so siblings deployed later count.
+     * Empty by default (single-strategy mode, as before #154). See [MT5StateRecovery].
      */
     private val siblingsLookup: () -> List<String> = { emptyList() },
     /**
@@ -89,6 +88,7 @@ class MT5Broker(
     com.qkt.broker.ServerTimeZoneProvider,
     com.qkt.broker.SymbolSessionProvider by com.qkt.broker.SymbolSessionProvider(profile.symbolCalendars::inSession),
     com.qkt.broker.VenueDescribed by MT5VenueDescription(profile, client),
+    com.qkt.broker.AdjustmentSource by MT5Adjustments(profile, client),
     com.qkt.broker.TicketAttributionProvider {
     override val name: String = profile.name
     override val supportsPositionTickets: Boolean = true

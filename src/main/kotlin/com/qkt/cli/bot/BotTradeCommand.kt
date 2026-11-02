@@ -66,7 +66,10 @@ class BotTradeCommand(
         val ts = clock.now()
         val (order, result) =
             BotVenues.forSymbol(cfg, intent.qktSymbol).use { opened ->
-                val ctx = opened.venue.facts(intent.qktSymbol).toQuoteContext(intent.qktSymbol, cfg.accountCurrency)
+                val ctx =
+                    opened.venue
+                        .facts(intent.qktSymbol)
+                        .toQuoteContext(intent.qktSymbol, cfg.accountCurrency, opened.calendarFor(intent.qktSymbol))
                 val order =
                     compileBotAction(action, ctx, id = botOrderId(asName, ts), timestamp = ts, strategyId = asName)
                 checkBotPreTrade(order, ctx, cfg.maxOrderQty, cfg.maxOrderNotional, cfg.priceCollarFrac)

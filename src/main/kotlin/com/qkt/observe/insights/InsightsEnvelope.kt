@@ -39,18 +39,21 @@ data class InsightsEnvelope(
         return sb.toString()
     }
 
-    private companion object {
-        fun appendJson(
+    internal companion object {
+        /** [value] as this envelope's JSON renders it: nulls in a map left out, map order kept. */
+        fun json(value: Any?): String = StringBuilder().also { appendJson(it, value) }.toString()
+
+        private fun appendJson(
             sb: StringBuilder,
             value: Any?,
         ) {
             when (value) {
                 null -> sb.append("null")
-                is String -> appendString(sb, value)
+                is String -> appendJsonString(sb, value)
                 is Boolean -> sb.append(value)
                 is BigDecimal -> sb.append(value.toPlainString())
                 is Number -> sb.append(value)
-                is Enum<*> -> appendString(sb, value.name)
+                is Enum<*> -> appendJsonString(sb, value.name)
                 is Map<*, *> -> {
                     sb.append('{')
                     var first = true
@@ -58,7 +61,7 @@ data class InsightsEnvelope(
                         if (v == null) continue
                         if (!first) sb.append(',')
                         first = false
-                        appendString(sb, k.toString())
+                        appendJsonString(sb, k.toString())
                         sb.append(':')
                         appendJson(sb, v)
                     }
@@ -72,26 +75,27 @@ data class InsightsEnvelope(
                     }
                     sb.append(']')
                 }
-                else -> appendString(sb, value.toString())
+                else -> appendJsonString(sb, value.toString())
             }
-        }
-
-        fun appendString(
-            sb: StringBuilder,
-            s: String,
-        ) {
-            sb.append('"')
-            for (c in s) {
-                when (c) {
-                    '"' -> sb.append("\\\"")
-                    '\\' -> sb.append("\\\\")
-                    '\n' -> sb.append("\\n")
-                    '\r' -> sb.append("\\r")
-                    '\t' -> sb.append("\\t")
-                    else -> if (c < ' ') sb.append("\\u%04x".format(c.code)) else sb.append(c)
-                }
-            }
-            sb.append('"')
         }
     }
+}
+
+/** Appends [s] to [sb] as a JSON string literal, quotes included. */
+internal fun appendJsonString(
+    sb: StringBuilder,
+    s: String,
+) {
+    sb.append('"')
+    for (c in s) {
+        when (c) {
+            '"' -> sb.append("\\\"")
+            '\\' -> sb.append("\\\\")
+            '\n' -> sb.append("\\n")
+            '\r' -> sb.append("\\r")
+            '\t' -> sb.append("\\t")
+            else -> if (c < ' ') sb.append("\\u%04x".format(c.code)) else sb.append(c)
+        }
+    }
+    sb.append('"')
 }

@@ -9,10 +9,10 @@ import java.math.BigDecimal
 import org.slf4j.LoggerFactory
 
 /**
- * The market legs of a roll's carries on [venue]: each named `roll:<stream>:<atMs>:<strategy>:<kind>`,
- * so a leg is the same order before and after a restart, and tracked by [legs] so the engine never sees
- * it. A leg's outcome is handed on once the venue answered, after its submit returned, never inside it.
- * A leg is expected at once and sent through [gate], which holds it while a restarted session is not ready.
+ * The market legs of a roll's carries on [venue]: each named [RollLegIds.base] plus `:<kind>`, so a leg is
+ * the same order before and after a restart, and tracked by [legs] so the engine never sees it. A leg's
+ * outcome is handed on once the venue answered, after its submit returned, never inside it. A leg is expected
+ * at once and sent through [gate], which holds it while a restarted session is not ready.
  */
 internal class CarryLegs(
     private val clock: Clock,
@@ -47,7 +47,7 @@ internal class CarryLegs(
     fun base(
         run: RollRun,
         strategyId: String,
-    ) = "roll:${chainOf().symbol}:${run.measured.atMs}:$strategyId"
+    ) = RollLegIds.base(chainOf().symbol, run.measured.atMs, strategyId)
 
     /** Sends [leg] and hands its outcome to [then] once the venue answered. */
     fun send(
@@ -59,6 +59,23 @@ internal class CarryLegs(
             venue.broker.submit(leg)
             legs.whenEnded(leg.id, then)
         }
+    }
+
+    /**
+     * Waits for the closing [leg] after a restart, as [await]. A closing leg that filled moves its carry on in the
+     * same call, so one saved as out but not restored ended refused, under a qkt that failed the session on that
+     * instead of stopping the strategy on the stream: [then] hears the refusal now.
+     */
+    fun awaitClosing(
+        leg: OrderRequest.Market,
+        then: (LegOutcome) -> Unit,
+    ) = if (legs.isExpected(
+            leg.id,
+        )
+    ) {
+        await(leg, then)
+    } else {
+        then(LegOutcome.Rejected("refused before the restart (${leg.id})"))
     }
 
     /** Waits for [leg], restored after a restart with what had filled of it, as [send] does once it is sent. */

@@ -72,27 +72,39 @@ class InsightsVenues(
     fun priceStep(symbol: String): BigDecimal? = instruments?.lookup(symbol)?.priceStep
 
     /**
-     * The `instrument` object for [symbol]: `{symbol, venueCode, kind, contractSize, tickSize, quoteCurrency}`
-     * from what qkt's registry and the venue state, or null when neither knows it. qkt's registry wins where
-     * both state a value: it is what qkt's own accounting used.
+     * The `instrument` object for [symbol]: `{symbol, venueCode, kind, quantityUnit, category, contractSize, tickSize,
+     * quoteCurrency}` from what qkt's registry and the venue state, or null when neither knows it, plus a
+     * derivative's terms: `root`, `expiry` (UTC ms; none for a perpetual), and an option's `strike`,
+     * `optionRight` (`call`, `put`) and `underlying`. `category` is the venue's folder for the symbol
+     * (`Stocks` for an MT5 stock CFD). qkt's registry wins where both state a value: it is what qkt's own
+     * accounting used.
      */
     fun instrument(symbol: String): Map<String, Any?>? {
         val meta = instruments?.lookup(symbol)
         val venue = describedFor(symbol)?.instrument(symbol)
         if (meta == null && venue == null) return null
+        val terms = meta?.derivative
         val kind =
-            when (val terms = meta?.derivative) {
+            when (terms) {
                 is FutureTerms -> if (terms.perpetual) "perpetual" else "future"
                 is OptionTerms -> "option"
                 else -> venue?.kind
             }
+        val option = terms as? OptionTerms
         return mapOf(
             "symbol" to symbol,
             "venueCode" to venue?.venueCode,
             "kind" to kind,
+            "quantityUnit" to quantityUnit(kind, venue),
+            "category" to meta?.category,
             "contractSize" to (meta?.contractSize ?: venue?.contractSize),
             "tickSize" to (meta?.tickSize ?: venue?.tickSize ?: meta?.pointSize),
             "quoteCurrency" to (meta?.currency ?: venue?.quoteCurrency ?: natives[symbol]),
+            "root" to terms?.root,
+            "expiry" to (option?.expiryMs ?: (terms as? FutureTerms)?.expiryMs),
+            "strike" to option?.strike,
+            "optionRight" to option?.right?.name?.lowercase(),
+            "underlying" to option?.underlyingIndex,
         )
     }
 
@@ -101,9 +113,22 @@ class InsightsVenues(
         instrument(symbol)?.let { it + ("valuePerPoint" to valuePerPoint(symbol)) }
 }
 
+/** What one unit of a position's quantity is, on an instrument of [kind]: a coin pair's is the coin. */
+private fun quantityUnit(
+    kind: String?,
+    venue: com.qkt.broker.VenueInstrument?,
+): String? =
+    when (kind) {
+        "cfd" -> "lots"
+        "equity" -> "shares"
+        "perpetual", "future", "option" -> "contracts"
+        "spot" -> venue?.baseAsset
+        else -> null
+    }
+
 /**
- * `venue: {connector, adapter, label}` and `accountId` for an envelope about [identity]'s account, the
- * same two fields on every venue envelope of every connector; empty when the broker states no identity.
+ * `venue: {connector, adapter, label, tradeMode}` and `accountId` for an envelope about [identity]'s account,
+ * the same two fields on every venue envelope of every connector; empty when the broker states no identity.
  */
 fun venuePayload(identity: VenueIdentity?): Map<String, Any?> =
     if (identity == null) {
@@ -111,7 +136,12 @@ fun venuePayload(identity: VenueIdentity?): Map<String, Any?> =
     } else {
         mapOf(
             "venue" to
-                mapOf("connector" to identity.connector, "adapter" to identity.adapter, "label" to identity.label),
+                mapOf(
+                    "connector" to identity.connector,
+                    "adapter" to identity.adapter,
+                    "label" to identity.label,
+                    "tradeMode" to identity.tradeMode,
+                ),
             "accountId" to identity.accountId,
         )
     }

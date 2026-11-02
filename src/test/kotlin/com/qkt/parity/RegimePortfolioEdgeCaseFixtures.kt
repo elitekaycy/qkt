@@ -1,8 +1,6 @@
 package com.qkt.parity
 
-import com.qkt.common.FixedClock
 import com.qkt.common.TradingCalendar
-import com.qkt.dsl.portfolio.PortfolioGate
 import com.qkt.instrument.InstrumentMeta
 import com.qkt.instrument.InstrumentRegistry
 import java.math.BigDecimal
@@ -33,29 +31,15 @@ internal object RegimePortfolioEdgeCaseFixtures {
                 )
         }
 
-    /** Builds the gate helpers exactly as [BacktestContext.buildPortfolio] does. */
+    /** The gate helpers a portfolio backtest runs with: the production [com.qkt.cli.PortfolioBacktestWiring] itself. */
     fun gateHelpers(compiled: com.qkt.dsl.portfolio.PortfolioCompiled): GateHelpers {
-        val aliasToStrategyId = compiled.children.associate { it.alias to it.strategyId }
-        val portfolioGate =
-            PortfolioGate(
-                ast = compiled.ast,
-                clock = FixedClock(time = firstTs),
-                calendar = TradingCalendar.crypto(),
-            ).also {
-                it.prepare()
-                it.initialState()
-            }
-        return GateHelpers(
-            gateFor = { strategyId ->
-                portfolioGate.currentState().activeByAlias[strategyId.substringAfter(":")] == true
-            },
-            preCandle = { candle -> portfolioGate.onCandle(candle) },
-            regimeWeights = {
-                portfolioGate.currentState().weightByAlias.mapKeys { (alias, _) ->
-                    aliasToStrategyId[alias] ?: alias
-                }
-            },
-        )
+        val wiring =
+            com.qkt.cli.PortfolioBacktestWiring(
+                compiled,
+                java.time.Instant.ofEpochMilli(firstTs),
+                TradingCalendar.crypto(),
+            )
+        return GateHelpers(wiring.gateFor, wiring.preCandle, wiring.regimeWeights)
     }
 
     data class GateHelpers(

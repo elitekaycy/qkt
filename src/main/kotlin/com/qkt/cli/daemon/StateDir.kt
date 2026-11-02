@@ -1,6 +1,7 @@
 package com.qkt.cli.daemon
 
 import com.qkt.cli.UserDirs
+import com.qkt.common.FileNameSegment
 import java.nio.channels.FileChannel
 import java.nio.channels.FileLock
 import java.nio.channels.OverlappingFileLockException
@@ -40,7 +41,7 @@ class StateDir private constructor(
         return Files.readString(controlTokenFile).trim().takeIf { it.isNotEmpty() }
     }
 
-    fun logFile(name: String): Path = logsDir.resolve("${name.replace("/", "__")}.log")
+    fun logFile(name: String): Path = logsDir.resolve("${FileNameSegment.encode(name.replace("/", "__"))}.log")
 
     val stateRoot: Path = root.resolve("state")
 

@@ -41,6 +41,14 @@ interface MarketSource {
      */
     fun tradeFlowFor(symbol: String): TradeFlow? = null
 
+    /**
+     * How long after its own timestamp a live tick of [symbol] can still arrive because of how this source delivers
+     * it: one poll interval for a polled venue, 0 for a pushed stream. A bar the heartbeat closes sooner than this
+     * after its window ends drops the ticks still in flight, so the live session compares it with
+     * `runtime.candle_close_grace_ms` ([com.qkt.app.CandleCloseGraceCheck]). A routing source answers for its leaf.
+     */
+    fun tickDeliveryLagMsFor(symbol: String): Long = 0L
+
     fun liveTicks(symbols: List<String>): TickFeed =
         throw UnsupportedDataException(MarketSourceCapability.LIVE_TICKS, this::class.java.simpleName ?: "MarketSource")
 

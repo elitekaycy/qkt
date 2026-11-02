@@ -24,6 +24,20 @@ data class CostIncurred(
     val reason: String,
     val referencePrice: BigDecimal?,
     val kind: FillAccountingKind = FillAccountingKind.COST,
+    /** The venue funding record this cost is a strategy's share of; null for any other cost. */
+    val funding: FundingShare? = null,
     override val timestamp: Long = 0L,
     override val sequenceId: Long = 0L,
 ) : BrokerEvent
+
+/**
+ * What a [CostIncurred] that is a share of perpetual funding says of its record: the venue's [fundingId], the
+ * [currency] it was charged in, when it was funded ([fundedAtMs]), and the position it was charged on ([positionId],
+ * null when the holding has closed since).
+ */
+data class FundingShare(
+    val fundingId: String,
+    val currency: String,
+    val fundedAtMs: Long,
+    val positionId: String?,
+)

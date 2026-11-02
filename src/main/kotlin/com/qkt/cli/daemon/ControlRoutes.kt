@@ -17,6 +17,7 @@ import com.qkt.cli.daemon.routes.handleStart
 import com.qkt.cli.daemon.routes.handleStatusAll
 import com.qkt.cli.daemon.routes.handleStatusOne
 import com.qkt.cli.daemon.routes.handleStop
+import com.qkt.cli.daemon.routes.jsonString
 import com.qkt.cli.daemon.routes.respond
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpHandler
@@ -88,7 +89,7 @@ object ControlRoutes {
                 }
             } catch (e: Exception) {
                 val msg = (e.message ?: e.javaClass.simpleName).replace("\"", "'")
-                respond(ex, 500, """{"error":"$msg"}""")
+                respond(ex, 500, """{"error":${jsonString(msg)}}""")
             }
         }
 

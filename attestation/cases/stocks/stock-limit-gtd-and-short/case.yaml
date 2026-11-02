@@ -1,0 +1,30 @@
+id: stock-limit-gtd-and-short
+title: A resting AAPL limit that expires by GTD beside a short market entry with a bracket
+why: 'Two things only a stock exposes at once: a pending order on a share must rest at the venue and expire
+  there on the broker''s clock, inside a session that ends at 15:45 New York, and a short stock CFD must book
+  like a long one with the sides reversed. A limit the engine believes gone can fill the next morning; a short
+  booked with the wrong sign doubles the loss instead of cancelling it.'
+status: ready
+symbols:
+- AAPL
+timeframes:
+- 1m
+warmup_bars:
+  1m: 3
+proves:
+- behaviour:stock-cfd
+- behaviour:limit-entry
+- behaviour:gtd-expiry
+- behaviour:pending-at-venue
+- behaviour:short-entry
+budget_seconds: 300
+expect_fills:
+- SELL 0.01
+- BUY 0.01
+assertions:
+- flat-by-magic
+- no-pending-by-magic
+- deals-net-by-magic
+- no-engine-fault
+- replay-fill-sequence
+- expected-fills

@@ -56,6 +56,9 @@ class Mt5MarketSource(
 
     override fun supports(symbol: String): Boolean = symbol.startsWith(prefix)
 
+    /** Ticks are polled: one stamped just after a poll arrives with the next one. */
+    override fun tickDeliveryLagMsFor(symbol: String): Long = if (supports(symbol)) profile.tickPollIntervalMs else 0L
+
     override fun liveTicks(symbols: List<String>): TickFeed {
         require(symbols.all { supports(it) }) { "$name cannot serve $symbols" }
         val wireToQkt: Map<String, String> =
@@ -208,36 +211,19 @@ class Mt5MarketSource(
         // marks in session count against the allowance. A real server-clock offset still
         // fails: three hours of a trading day is 180 in-session 1m slots (#1055).
         val maxSlots = maxOf(3L, MIN_RECENT_BAR_AGE_MS / window.durationMs)
-        val inSessionSlots = inSessionSlotsBetween(bareSymbol, window, newestClosedBarEndMs, tick.brokerTimeMs)
+        val inSessionSlots =
+            symbolCalendars.inSessionSlotsBetween(
+                bareSymbol,
+                window,
+                newestClosedBarEndMs,
+                tick.brokerTimeMs,
+            )
         if (barAgeMs >= minAgeMs && inSessionSlots <= maxSlots) return null
         return "MT5 time-base mismatch for $bareSymbol: " +
             "newest closed bar end=${Instant.ofEpochMilli(newestClosedBarEndMs)}, " +
             "tick=${Instant.ofEpochMilli(tick.brokerTimeMs)}, deltaMs=$barAgeMs, " +
             "inSessionSlots=$inSessionSlots (max $maxSlots); " +
             "set gateway MT5_SERVER_UTC_OFFSET_SECONDS=0 and verify server_time_zone=${profile.serverTimeZone.id}"
-    }
-
-    /**
-     * Number of [window]-sized slots starting in `[fromMs, toMs)` whose start the symbol's
-     * calendar marks as in session — the bars that could actually have closed in that span.
-     * Bounded by the span itself; a weekend of 1m slots is a few thousand cheap checks, once
-     * per warmup fetch.
-     */
-    private fun inSessionSlotsBetween(
-        bareSymbol: String,
-        window: TimeWindow,
-        fromMs: Long,
-        toMs: Long,
-    ): Long {
-        if (toMs <= fromMs) return 0L
-        val calendar = symbolCalendars.calendarFor(bareSymbol)
-        var slots = 0L
-        var slotStart = fromMs
-        while (slotStart < toMs) {
-            if (calendar.isInSession(bareSymbol, Instant.ofEpochMilli(slotStart))) slots += 1L
-            slotStart += window.durationMs
-        }
-        return slots
     }
 
     override fun close() {}

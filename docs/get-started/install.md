@@ -20,11 +20,10 @@ qkt --version
 ## Windows
 
 ```powershell
-winget install elitekaycy.qkt
+irm https://raw.githubusercontent.com/elitekaycy/qkt/main/scripts/install.ps1 | iex
 ```
 
-or the one-line installer, see [Install on Windows](../how-to/install-windows.md). Open a new terminal, then
-`qkt --version`.
+See [Install on Windows](../how-to/install-windows.md). Open a new terminal, then `qkt --version`.
 
 ## Docker (no local Java)
 

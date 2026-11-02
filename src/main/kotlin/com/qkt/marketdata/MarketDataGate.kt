@@ -86,6 +86,7 @@ class MarketDataGate(
         )
 
     private val bySymbol: MutableMap<String, SymbolFeedState> = ConcurrentHashMap()
+    private val sides = AbsurdQuoteSides(judgesOutliers, log)
 
     /** Count of ticks rejected as outliers (crossed books included). */
     val outlierCount =
@@ -94,6 +95,9 @@ class MarketDataGate(
 
     /** Verdict for one tick: feed it through, or reject it as an outlier. */
     enum class Verdict { OK, OUTLIER }
+
+    /** [tick], which passed [observe], without a side too far from its price to be a market ([AbsurdQuoteSides]). */
+    fun withoutAbsurdSides(tick: Tick): Tick = sides.without(tick)
 
     fun observe(tick: Tick): Verdict {
         val state = bySymbol.getOrPut(tick.symbol) { SymbolFeedState() }

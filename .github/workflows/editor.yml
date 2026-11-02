@@ -13,11 +13,13 @@ on:
     branches: [dev]
     paths:
       - 'editor/**'
+      - 'src/main/kotlin/com/qkt/lsp/**'
       - '.github/workflows/editor.yml'
   pull_request:
     branches: [dev]
     paths:
       - 'editor/**'
+      - 'src/main/kotlin/com/qkt/lsp/**'
       - '.github/workflows/editor.yml'
 
 concurrency:
@@ -31,7 +33,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Validate JSON
         run: |
@@ -56,14 +58,42 @@ jobs:
             exit 1
           fi
 
+      - name: Install the extension's dependencies
+        working-directory: editor/vscode
+        run: npm ci --no-audit --no-fund
+
+      - name: Extension unit tests
+        working-directory: editor/vscode
+        run: npm test
+
       - name: vsce package smoke
         working-directory: editor/vscode
-        run: npx --yes @vscode/vsce@latest package --no-dependencies
+        run: |
+          npx --yes @vscode/vsce@latest package --no-dependencies
+          unzip -l qkt-*.vsix | grep -q 'extension/dist/extension.js' \
+            || { echo "::error::vsix is missing the bundled language client"; exit 1; }
 
       - name: Install vim for nvim plugin smoke
         run: |
           sudo apt-get update -q
           sudo apt-get install -y --no-install-recommends vim-nox
+
+      - name: A Haskell modeline is taken back by the qkt plugin
+        run: |
+          printf -- '-- vim: set ft=haskell:\nSTRATEGY s VERSION 1\n' > /tmp/modeline.qkt
+          vim -u NONE -N -e -s -c 'set rtp+=editor/nvim' -c 'set modeline' -c 'filetype plugin on' -c 'syntax enable' \
+            -c 'edit /tmp/modeline.qkt' \
+            -c 'if &filetype !=# "qkt" || &syntax !=# "qkt" | echoerr "got" &filetype &syntax | cquit | endif' -c 'qall!'
+
+      - name: Emacs qkt-mode byte-compiles cleanly and opens .qkt files
+        run: |
+          sudo apt-get install -y --no-install-recommends emacs-nox
+          cp editor/emacs/qkt-mode.el /tmp/
+          emacs --batch -Q --eval '(setq byte-compile-error-on-warn t)' -f batch-byte-compile /tmp/qkt-mode.el
+          emacs --batch -Q -L editor/emacs -l qkt-mode --eval '(progn (setq qkt-enable-lsp nil) (find-file "editor/nvim/test/example.qkt") (unless (eq major-mode (quote qkt-mode)) (kill-emacs 1)))'
+
+      - name: Sublime grammar is a well-formed plist
+        run: python3 -c "import plistlib; plistlib.load(open('editor/sublime/qkt.tmLanguage','rb')); plistlib.load(open('editor/sublime/Comments.tmPreferences','rb'))"
 
       - name: vim syntax smoke against example fixture
         run: |
@@ -81,3 +111,69 @@ jobs:
             -c 'redir => g:ft | silent set filetype? | redir END' \
             -c 'if g:ft !~# "filetype=qkt" | echoerr "expected filetype=qkt, got" g:ft | cquit | endif' \
             -c 'qall!'
+
+  vscode-e2e:
+    # Starts a real VS Code with the extension against a real `qkt lsp` and checks
+    # diagnostics, completion and hover arrive through the bundled language client.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build qkt
+        run: |
+          ./gradlew --no-daemon installDist -x test
+          grep -q '\[ "\$1" = lsp \] && DEFAULT_JVM_OPTS=.*TieredStopAtLevel=1' build/install/qkt/bin/qkt \
+            || { echo "::error::bin/qkt does not start qkt lsp in the small JVM"; exit 1; }
+          grep -q 'if "%~1"=="lsp" set DEFAULT_JVM_OPTS=.*TieredStopAtLevel=1' build/install/qkt/bin/qkt.bat \
+            || { echo "::error::bin/qkt.bat does not start qkt lsp in the small JVM"; exit 1; }
+      - name: Install the extension's dependencies
+        working-directory: editor/vscode
+        run: npm ci --no-audit --no-fund
+      - name: Run the extension inside VS Code
+        working-directory: editor/vscode
+        run: |
+          export PATH="$GITHUB_WORKSPACE/build/install/qkt/bin:$PATH"
+          xvfb-run -a npm run test:e2e
+
+  tree-sitter:
+    # The generated parser must match grammar.js, every .qkt file in the repository must parse
+    # without an error node, the queries must compile, the Zed extension must build, and the
+    # Zed extension's pinned grammar rev is flagged when it lags this commit's grammar.js.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Regenerate the parser and check it is committed
+        working-directory: editor/tree-sitter-qkt
+        run: |
+          npx --yes tree-sitter-cli@0.24.7 generate
+          git diff --exit-code -- src/ || { echo "::error::editor/tree-sitter-qkt/src is stale; run tree-sitter generate"; exit 1; }
+      - name: Parse every .qkt file and run the highlight queries
+        working-directory: editor/tree-sitter-qkt
+        run: |
+          mkdir -p ~/.config/tree-sitter
+          echo '{"parser-directories":["'"$GITHUB_WORKSPACE"'/editor"]}' > ~/.config/tree-sitter/config.json
+          files=$(cd "$GITHUB_WORKSPACE" && git ls-files '*.qkt' | sed "s#^#$GITHUB_WORKSPACE/#")
+          npx --yes tree-sitter-cli@0.24.7 parse --quiet $files
+          npx --yes tree-sitter-cli@0.24.7 query queries/highlights.scm $files > /dev/null
+          npx --yes tree-sitter-cli@0.24.7 query ../zed/languages/qkt/highlights.scm $files > /dev/null
+      - name: Zed extension compiles
+        working-directory: editor/zed
+        run: cargo check
+      - name: Zed grammar rev carries this grammar
+        run: |
+          rev=$(sed -n 's/^rev = "\(.*\)"/\1/p' editor/zed/extension.toml)
+          if ! git diff --quiet "$rev" HEAD -- editor/tree-sitter-qkt/grammar.js; then
+            echo "::warning::editor/zed/extension.toml rev $rev has a different grammar.js; bump it once this grammar merges"
+          fi

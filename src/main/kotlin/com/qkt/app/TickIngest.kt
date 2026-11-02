@@ -73,7 +73,8 @@ internal class TickIngest(
         ) {
             return
         }
-        engine.onTick(tick)
+        val sane = if (isMacroObservation) tick else marketDataGate?.withoutAbsurdSides(tick) ?: tick
+        engine.onTick(sane)
         equitySampler.sample(tick.timestamp)
         // Replay has no wall clock, so event time is the clock. A quiet symbol's ended bar
         // closes on the first tick of any symbol at or past the heartbeat step that live would
@@ -83,7 +84,7 @@ internal class TickIngest(
         // own boundary tick therefore still closes its bar through the feed below, after this
         // TickEvent, so it fills against that tick exactly as before.
         if (mode == Mode.BACKTEST) candleCloser.flushReplayAt(tick.timestamp)
-        candleHub.feed(tick)
+        candleHub.feed(sane)
         scheduleRunner.tick(tick.timestamp)
     }
 
