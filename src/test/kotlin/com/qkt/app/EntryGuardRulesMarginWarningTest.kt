@@ -41,7 +41,13 @@ class EntryGuardRulesMarginWarningTest {
         MarginLevelProvider {
         override val supportsMarginLevel = true
 
+        var warmed = 0
+
         override fun marginLevel(): BigDecimal = error("startup must not read the margin level")
+
+        override fun warmMarginLevel() {
+            warmed++
+        }
     }
 
     private val logger = LoggerFactory.getLogger(LiveSession::class.java) as Logger
@@ -135,6 +141,27 @@ class EntryGuardRulesMarginWarningTest {
         guard("200").rules(broker, listOf("DERIBIT:X", "CHAIN:DERIBIT.BTC_USDC", "DEPTH:BID:DERIBIT:X"))
 
         assertThat(warnings()).isEmpty()
+    }
+
+    @Test
+    fun `a floor warms each venue it judges once, an option root's included`() {
+        val perp = MarginVenue("DERIBIT")
+        val other = MarginVenue("BYBIT")
+        val broker = routed("DERIBIT:X" to perp, "DERIBIT:Y" to perp, "BYBIT:Z" to other)
+
+        guard("200").rules(broker, listOf("DERIBIT:X", "DERIBIT:Y", "OPTIONS:DERIBIT.BTC_USDC", "BYBIT:Z"))
+
+        assertThat(perp.warmed).isEqualTo(1)
+        assertThat(other.warmed).isEqualTo(1)
+    }
+
+    @Test
+    fun `a floor of 0 never starts a venue polling`() {
+        val venue = MarginVenue("DERIBIT")
+
+        guard("0").rules(routed("DERIBIT:X" to venue), listOf("DERIBIT:X"))
+
+        assertThat(venue.warmed).isEqualTo(0)
     }
 
     @Test

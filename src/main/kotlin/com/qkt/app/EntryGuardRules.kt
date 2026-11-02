@@ -49,6 +49,7 @@ internal class EntryGuardRules(
         symbols: List<String>,
     ): List<RiskRule> {
         warnWhereFloorCannotApply(broker, symbols)
+        warmMarginLevels(broker, symbols)
         return marginRules(broker) + measuredRules()
     }
 
@@ -77,6 +78,15 @@ internal class EntryGuardRules(
                     onVenue.joinToString(", "),
                 )
             }
+    }
+
+    /** Has each venue the floor will judge keep its level current, so its first entry finds a reading. */
+    private fun warmMarginLevels(
+        broker: Broker,
+        symbols: List<String>,
+    ) {
+        if (marginFloorPct.signum() <= 0) return
+        symbols.map { venueOf(broker, it) }.distinct().forEach { (it as? MarginLevelProvider)?.warmMarginLevel() }
     }
 
     /** The venue [symbol] answers to: a fed option root routes nowhere itself, its contracts trade on its venue. */

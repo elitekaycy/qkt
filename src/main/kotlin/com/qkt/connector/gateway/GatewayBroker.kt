@@ -50,7 +50,6 @@ class GatewayBroker internal constructor(
     MarginLevelProvider,
     VenueDescribed {
     private val attachment = session.attach(strategy, positions, bus::publish)
-    private val margin = GatewayMarginLevel(session.client, clock)
     private val venueReads =
         GatewayVenueReads(
             session.venue,
@@ -84,7 +83,9 @@ class GatewayBroker internal constructor(
 
     override val supportsMarginLevel: Boolean get() = true
 
-    override fun marginLevel(): BigDecimal? = margin.read()
+    override fun marginLevel(): BigDecimal? = session.margin.read()
+
+    override fun warmMarginLevel() = session.margin.start()
 
     override fun supports(symbol: String): Boolean = session.symbols.venue(symbol) != null
 
