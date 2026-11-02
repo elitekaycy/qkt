@@ -111,6 +111,14 @@ class PreflightTest(unittest.TestCase):
         self.assertIn("memory", failed); self.assertIn("another live run", failed["account-lock"])
         self.assertIn("logged into 9", failed["account"]); self.assertIn("img", failed["docker-image"])
 
+    def test_java_through_java_home_is_enough(self):
+        home = os.path.join(self.tmp.name, "jdk"); os.makedirs(f"{home}/bin")
+        open(f"{home}/bin/java", "w").close(); os.chmod(f"{home}/bin/java", 0o755)
+        world = Fake(env={"QKT_BROKER_API_KEY": SECRET, "QKT_LIVE_DEMO_ORDER_APPROVAL": "x", "JAVA_HOME": home}); world.missing = ["java"]
+        self.assertNotIn("tools", self.failed(world))
+        world = Fake(); world.missing = ["java"]
+        self.assertIn("java", self.failed(world)["tools"])
+
     def test_missing_tokens_are_named_and_never_valued(self):
         self.p.update(alpaca_gateway_url="http://127.0.0.1:2", alpaca_expected_login="a")
         world = Fake({"/v1/health": {"account_login": "a", "trade_mode": "demo", "venue_connected": True, "kill_switch": {}}})

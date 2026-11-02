@@ -194,7 +194,10 @@ def check_disk_memory(p, world):
 
 
 def check_tools(p, world):
-    missing = [t for t in TOOLS if not world.which(t)]
+    # Gradle finds a JDK through JAVA_HOME as well as PATH; a unit's PATH often has only the former.
+    java_home = world.env.get("JAVA_HOME")
+    has_java_home = bool(java_home) and os.access(os.path.join(java_home, "bin", "java"), os.X_OK)
+    missing = [t for t in TOOLS if not world.which(t) and not (t == "java" and has_java_home)]
     found = bad("tools", f"not on PATH: {', '.join(missing)}") if missing else ok("tools")
     code, _ = world.run("python3", "-c", "import yaml")
     return found + (ok("python-yaml") if code == 0 else bad("python-yaml", "python3 cannot import yaml"))

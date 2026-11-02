@@ -325,6 +325,27 @@ class VerifierRefusesTest(unittest.TestCase):
         self.assertEqual(done.returncode, 1, done.stdout)
         self.assertIn(text, done.stderr)
 
+    def test_the_workflow_path_accepts_a_real_bundle(self):
+        """paper-soak.yml's own copy loop, then both verifier calls, then what prepare-main-promotion.sh runs."""
+        import re
+        h = self.h
+        sys.path.insert(0, f"{ROOT}/scripts")
+        workflow = open(f"{ROOT}/.github/workflows/paper-soak.yml").read()
+        fields = re.search(r"for field in ([a-z ]+); do", workflow).group(1).split()
+        source = open(f"{ROOT}/scripts/verify-paper-soak-attestation.py").read()
+        required = re.findall(r'"(\w+)"', re.search(r"REQUIRED_ARTIFACTS = \((.*?)\)", source, re.S).group(1))
+        self.assertEqual(sorted(fields), sorted(required), "paper-soak.yml must upload every artifact the verifier requires")
+        self.assertIn("--cases-root attestation/cases", workflow)
+        attestation = json.load(open(h.bundle()))
+        evidence = tempfile.mkdtemp(dir=self.tmp.name)
+        for field in fields:
+            shutil.copy(os.path.join(os.path.dirname(h.bundle()), attestation["artifacts"][field]), evidence)
+        shutil.copy(h.bundle(), f"{evidence}/paper-soak-attestation.json")
+        verifier = [sys.executable, f"{ROOT}/scripts/verify-paper-soak-attestation.py", "--expected-git-sha", h.sha, "--expected-image-repository", "ghcr.io/test/qkt"]
+        for extra in (["--cases-root", f"{h.repo}/attestation/cases"], []):
+            done = subprocess.run([*verifier, f"{evidence}/paper-soak-attestation.json", *extra], capture_output=True, text=True)
+            self.assertEqual(done.returncode, 0, done.stderr)
+
     def test_the_unmutated_bundle_passes(self):
         self.assertEqual(self.mutated(lambda d: None).returncode, 0)
 
