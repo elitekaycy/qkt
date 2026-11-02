@@ -53,7 +53,6 @@ class GatewayMarketCollarTest {
     private fun filled(price: String) =
         BrokerEvent.OrderFilled("o", "v", symbol, Side.SELL, BigDecimal(price), BigDecimal("1.0"), "s", 1L)
 
-    /** A slice as the gateway reports it: its total is of this attempt alone. */
     private fun sliceOf(quantity: String) =
         BigDecimal(quantity).let {
             BrokerEvent.OrderPartiallyFilled("o", "v", symbol, Side.SELL, BigDecimal("77300"), it, it, "s", 1L)
@@ -125,7 +124,7 @@ class GatewayMarketCollarTest {
 
     @Test
     fun `no reference refuses an entry and lets an exit go plain`() {
-        val blind = "D:BTC_USDC_5NOV26"
+        val blind = "D:OTHER"
         val always =
             GatewayMarketCollar(
                 BigDecimal("0.25"),
@@ -158,7 +157,6 @@ class GatewayMarketCollarTest {
         venueCancels()
         retry()
         venueCancels()
-        // Part of an entry filled: it ends cancelled, keeping what it has, with the reason.
         assertThat((events.last() as BrokerEvent.OrderCancelled).reason).contains("not filled")
     }
 
@@ -169,7 +167,6 @@ class GatewayMarketCollarTest {
         venueCancels()
         retry()
         collar.heard(BrokerEvent.OrderAccepted("o", "v2", "s", 1L))
-
         assertThat(events.filterIsInstance<BrokerEvent.OrderAccepted>()).hasSize(1)
     }
 
@@ -196,14 +193,26 @@ class GatewayMarketCollarTest {
     }
 
     @Test
-    fun `a venue refusing the limit gets a plain market order, and the kill switch is final`() {
+    fun `a venue's price limit counts as unfilled, never as a plain market order`() {
         start(market())
-        assertThat(collar.refused("o", "venue_rejected: price beyond the limit")).isTrue
-        assertThat(sent.last()).isInstanceOf(OrderRequest.Market::class.java)
-        assertThat(collar.refused("o", "venue_rejected: no margin")).isFalse
+        assertThat(collar.refused("o", "venue_rejected: deribit error 10007: price_too_low 76000")).isTrue
+        retry()
+        assertThat(collar.refused("o", "venue_rejected: Bybit 110003 price out of range")).isTrue
+        retry()
+        assertThat(collar.refused("o", "venue_rejected: price_too_low 76000")).isTrue
 
+        assertThat(sent).hasSize(GatewayMarketCollar.MAX_ATTEMPTS)
+        assertThat(sent).allMatch { it is OrderRequest.Limit }
+        assertThat((events.single() as BrokerEvent.OrderRejected).reason).contains("not filled", "price_too_low")
+    }
+
+    @Test
+    fun `any other refusal is final`() {
         start(market())
         assertThat(collar.refused("o", "kill_switch: halted")).isFalse
-        assertThat(sent.last()).isInstanceOf(OrderRequest.Limit::class.java)
+        start(market())
+        assertThat(collar.refused("o", "venue_rejected: not enough funds")).isFalse
+        assertThat(sent).hasSize(2)
+        assertThat(scheduled).isEmpty()
     }
 }

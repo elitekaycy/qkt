@@ -10,7 +10,7 @@ import org.slf4j.LoggerFactory
 /**
  * A roll leg's attempts on [venue]. With a [priceBand] (live), a leg an immediate-or-cancel end left unfilled, or the
  * venue never received, goes again under a new id, only what is left of it, up to [RollLegIds.MAX_ATTEMPTS] attempts
- * [RollLegIds.RETRY_SPACING_MS] apart and clear of the old contract's expiry; a refusal never does. While the spacing
+ * [RollLegIds.RETRY_SPACING_MS] apart and clear of the old contract's expiry. So does one a venue's price limit refused; any other refusal never does. While the spacing
  * runs the leg stays saved as out and its step names it, so a restart asks the venue again and goes on. A new id goes only
  * once the venue ended the last or never had it, so no two attempts can work at once.
  */

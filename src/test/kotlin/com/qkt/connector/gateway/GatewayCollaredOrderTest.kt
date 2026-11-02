@@ -41,7 +41,7 @@ internal class GatewayCollaredOrderTest : GatewayHarness() {
         val order = placed.single()
         assertThat(order.type).isEqualTo("limit")
         assertThat(order.timeInForce).isEqualTo("ioc")
-        assertThat(order.limitPrice?.let(::BigDecimal)).isEqualByComparingTo("58050")
+        assertThat(order.limitPrice?.let(::BigDecimal)).isEqualByComparingTo("76627.5")
     }
 
     @Test

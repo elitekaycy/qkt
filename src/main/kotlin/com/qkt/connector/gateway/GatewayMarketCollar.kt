@@ -1,5 +1,6 @@
 package com.qkt.connector.gateway
 
+import com.qkt.broker.isVenuePriceLimit
 import com.qkt.common.Clock
 import com.qkt.common.Side
 import com.qkt.events.BrokerEvent
@@ -13,7 +14,7 @@ import org.slf4j.LoggerFactory
 /**
  * Sends a market order on a thin contract ([collars]) as an immediate-or-cancel limit, [band] (a fraction) from the
  * contract's reference: its last price, which on a gateway is the venue's mark, not a book side. A stray far touch cannot
- * fill it. E.g. at 0.25 around 77,400, a SELL's limit is 58,050 and a bid of 38,937.5 does not fill it. The engine still
+ * fill it. E.g. at 0.01 around 77,400, a SELL's limit is 76,626 and a bid of 38,937.5 does not fill it. The engine still
  * sees one market order: an attempt the venue cancels is sent again, for what is left, 1 s and then 2 s later around
  * the reference as it then stands, under a fresh gateway id ([GatewayClientIds]).
  *
@@ -24,8 +25,8 @@ import org.slf4j.LoggerFactory
  * far fill it may take is what it always risked. A collared exit would add a way to strand a position: a restart
  * between attempts knows only the first attempt's gateway id, and would tell the engine the exit was cancelled.
  *
- * A venue refusing an entry's limit itself (one whose own price limit is tighter than [band] may) gets a plain market
- * order, since such a limit also bounds that order's fill. The gateway's kill switch is final.
+ * A venue's own price limit refusing the limit ([isVenuePriceLimit]) counts as an attempt left unfilled; an entry never
+ * falls back to a plain market order. Any other refusal, the gateway's kill switch among them, is final.
  */
 internal class GatewayMarketCollar(
     private val band: BigDecimal,
@@ -73,12 +74,13 @@ internal class GatewayMarketCollar(
         reason: String,
     ): Boolean {
         val w = working[engineId] ?: return false
-        if (w.plain || reason.startsWith(KILL_SWITCH) || w.cancelling) {
+        if (w.cancelling || !isVenuePriceLimit(reason)) {
             working.remove(engineId, w)
             return false
         }
-        log.warn("{} refused market order {} as a limit: {}; sending it plain", w.request.symbol, engineId, reason)
-        sendPlain(w)
+        log.warn("{} refused market order {} as a limit: {}", w.request.symbol, engineId, reason)
+        w.last = "${w.last}; $reason"
+        attemptEnded(w)
         return true
     }
 
@@ -86,7 +88,7 @@ internal class GatewayMarketCollar(
     fun heard(event: BrokerEvent) {
         val w = (event as? BrokerEvent.OrderEvent)?.let { working[it.clientOrderId] } ?: return publish(event)
         when (event) {
-            is BrokerEvent.OrderAccepted -> if (w.attempts == 1 && !w.plain) publish(event)
+            is BrokerEvent.OrderAccepted -> if (w.attempts == 1) publish(event)
             is BrokerEvent.OrderPartiallyFilled -> {
                 val before = w.filled
                 w.filled = before + event.quantity
@@ -94,7 +96,7 @@ internal class GatewayMarketCollar(
             }
             is BrokerEvent.OrderFilled -> publish(event).also { working.remove(event.clientOrderId, w) }
             is BrokerEvent.OrderCancelled ->
-                if (w.plain || w.cancelling) {
+                if (w.cancelling) {
                     publish(event).also { working.remove(event.clientOrderId, w) }
                 } else {
                     attemptEnded(w)
@@ -136,11 +138,6 @@ internal class GatewayMarketCollar(
         }
         w.sentAt = limit.timestamp
         send(limit)
-    }
-
-    private fun sendPlain(w: CollaredMarketOrder) {
-        w.plain = true
-        send(w.request.copy(quantity = w.request.quantity - w.filled, timestamp = nextStamp(w)))
     }
 
     private fun limitFor(

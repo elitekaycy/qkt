@@ -6,9 +6,13 @@ import com.qkt.derivatives.futures.ContinuousChain
 import com.qkt.execution.OrderRequest
 import com.qkt.execution.TimeInForce
 import com.qkt.instrument.TickSteps
+import com.qkt.risk.rules.PreTradeControls
 import java.math.BigDecimal
 
-/** Builds a roll's orders: market GTC with no [priceBand] (a backtest), a limit IOC at the collar with one. */
+/**
+ * Builds a roll's orders: market GTC with no [priceBand] (a backtest), with one (it judges far quotes before a roll) a
+ * limit IOC at [PreTradeControls.ORDER_COLLAR_FRAC] from the reference, which a venue's own price limit will accept.
+ */
 internal class RollLegOrders(
     private val clock: Clock,
     private val chainOf: () -> ContinuousChain,
@@ -24,8 +28,8 @@ internal class RollLegOrders(
         reference: BigDecimal,
     ): OrderRequest {
         val now = clock.now()
-        val band = priceBand ?: return OrderRequest.Market(id, symbol, side, quantity, TimeInForce.GTC, now, strategyId)
-        val limit = collarPrice(side, reference, band, chainOf().root.tickSize)
+        priceBand ?: return OrderRequest.Market(id, symbol, side, quantity, TimeInForce.GTC, now, strategyId)
+        val limit = collarPrice(side, reference, PreTradeControls.ORDER_COLLAR_FRAC, chainOf().root.tickSize)
         return OrderRequest.Limit(id, symbol, side, quantity, limit, TimeInForce.IOC, now, strategyId)
     }
 }

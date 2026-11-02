@@ -20,8 +20,6 @@ internal class CollaredMarketOrder(
 
     @Volatile var sentAt = 0L
 
-    @Volatile var plain = false
-
     @Volatile var waiting = false
 
     @Volatile var cancelling = false
@@ -33,7 +31,7 @@ internal class CollaredMarketOrder(
 internal fun collarsMarketOrders(kind: String?): Boolean = kind == "future"
 
 /**
- * This session's collar for a broker holding [positions], at the pre-trade price collar's default band. Null [prices]
+ * This session's collar for a broker holding [positions], at [PreTradeControls.ORDER_COLLAR_FRAC]. Null [prices]
  * collar nothing. An exit closes a ticket or a leg, or strictly reduces the strategy's position and the account's.
  */
 internal fun GatewaySession.marketCollar(
@@ -43,7 +41,7 @@ internal fun GatewaySession.marketCollar(
     send: (OrderRequest) -> Unit,
     publish: (BrokerEvent) -> Unit,
 ) = GatewayMarketCollar(
-    PreTradeControls.DEFAULT_PRICE_COLLAR_FRAC,
+    PreTradeControls.ORDER_COLLAR_FRAC,
     prices ?: MarketPriceTracker(),
     clock,
     collars = { prices != null && collarsMarketOrders(symbols.instrument(it)?.kind) },

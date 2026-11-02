@@ -25,7 +25,7 @@ class LaneRollCollarRestartTest {
         assertThat(g.venue.sent).isEmpty()
         g.last(close.id, g.sep, Side.BUY, "0.010", "63010")
 
-        assertThat(g.limit(":open").limitPrice).isEqualByComparingTo("47850")
+        assertThat(g.limit(":open").limitPrice).isEqualByComparingTo("63162")
     }
 
     @Test
@@ -64,7 +64,7 @@ class LaneRollCollarRestartTest {
 
         val again = g.venue.sent.single() as OrderRequest.Limit
         assertThat(again.id).isEqualTo("${close.id}-2")
-        assertThat(again.limitPrice).isEqualByComparingTo("78750")
+        assertThat(again.limitPrice).isEqualByComparingTo("63630")
     }
 
     @Test
@@ -144,6 +144,6 @@ class LaneRollCollarRestartTest {
         assertThat(g.recovered(close.id)).isEqualTo(close)
         g.last(close.id, g.sep, Side.BUY, "0.010", "63010")
 
-        assertThat(g.limit(":open").limitPrice).isEqualByComparingTo("47850")
+        assertThat(g.limit(":open").limitPrice).isEqualByComparingTo("63162")
     }
 }

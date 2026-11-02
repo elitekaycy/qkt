@@ -28,13 +28,13 @@ class LaneRollCollarTest {
 
         val close = f.limit(":close")
         assertThat(close.side).isEqualTo(Side.BUY)
-        assertThat(close.limitPrice).isEqualByComparingTo("78750")
+        assertThat(close.limitPrice).isEqualByComparingTo("63630")
         assertThat(close.timeInForce).isEqualTo(TimeInForce.IOC)
         f.last(close.id, f.sep, Side.BUY, "0.010", "63010")
 
         val open = f.limit(":open")
         assertThat(open.side).isEqualTo(Side.SELL)
-        assertThat(open.limitPrice).isEqualByComparingTo("47850")
+        assertThat(open.limitPrice).isEqualByComparingTo("63162")
         assertThat(open.timeInForce).isEqualTo(TimeInForce.IOC)
         f.last(open.id, f.dec, Side.SELL, "0.010", "63790")
 
@@ -50,9 +50,9 @@ class LaneRollCollarTest {
         f.hold(Side.BUY)
         f.rolled()
 
-        assertThat(f.limit(":close").limitPrice).isEqualByComparingTo("47250")
+        assertThat(f.limit(":close").limitPrice).isEqualByComparingTo("62370")
         f.last(f.leg(":close").id, f.sep, Side.SELL, "0.010", "62990")
-        assertThat(f.limit(":open").limitPrice).isEqualByComparingTo("79750")
+        assertThat(f.limit(":open").limitPrice).isEqualByComparingTo("64438")
     }
 
     @Test
@@ -110,7 +110,7 @@ class LaneRollCollarTest {
         val unwind = f.limit(":unwind")
         assertThat(unwind.side).isEqualTo(Side.BUY)
         assertThat(unwind.quantity).isEqualByComparingTo("0.004")
-        assertThat(unwind.limitPrice).isEqualByComparingTo("79750")
+        assertThat(unwind.limitPrice).isEqualByComparingTo("64438")
         assertThat(unwind.timeInForce).isEqualTo(TimeInForce.IOC)
         f.last(unwind.id, f.dec, Side.BUY, "0.004", "63800")
 
@@ -159,7 +159,7 @@ class LaneRollCollarTest {
 
         f.quote("63000", null, null)
 
-        assertThat(f.limit(":close").limitPrice).isEqualByComparingTo("78750")
+        assertThat(f.limit(":close").limitPrice).isEqualByComparingTo("63630")
         f.exhaust("close")
         assertThat(f.stop()).isNotNull()
         assertThat(f.heldOn()).isEqualTo(f.sep)

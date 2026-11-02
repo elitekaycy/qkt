@@ -11,7 +11,7 @@ import org.slf4j.LoggerFactory
 /**
  * The legs of a roll's carries on [venue]: each named [RollLegIds.base] plus `:<kind>`, so a leg is the same order
  * before and after a restart, and tracked by [legs] so the engine never sees it. With no [priceBand] (a backtest) a
- * leg is a market order; with one (a live lane) it is an immediate-or-cancel limit at the band from the contract's
+ * leg is a market order; with one (a live lane) it is an immediate-or-cancel limit a narrow collar from the contract's
  * measured roll price ([collarPrice]), so the venue cannot fill it beyond that however the book moved since the roll's
  * check. A leg's outcome is handed on once the venue answered, after its submit returned, never inside it. A leg is
  * expected at once and sent through [gate], which holds it while a restarted session is not ready.
