@@ -50,7 +50,7 @@ internal class RollCarry(
                 legOrders.closing(run, strategyId, quantity),
             )
         step(run, closing)
-        legOrders.send(closing.leg) { closed(run, closing, it, then) }
+        legOrders.send(run, closing.leg) { closed(run, closing, it, then) }
     }
 
     /** Waits again for the leg [step] waits for (after a restart, the leg restored); calls [then] once its carry ends. */
@@ -59,8 +59,8 @@ internal class RollCarry(
         run: RollRun,
         then: () -> Unit,
     ) = when (step) {
-        is CarryStep.Closing -> legOrders.awaitClosing(step.leg) { closed(run, step, it, then) }
-        is CarryStep.Opening -> legOrders.await(step.leg) { opened(run, step, it, then) }
+        is CarryStep.Closing -> legOrders.awaitClosing(run, step.leg) { closed(run, step, it, then) }
+        is CarryStep.Opening -> legOrders.await(run, step.leg) { opened(run, step, it, then) }
     }
 
     /** Waits again for the unwind [leg] (after a restart, the leg restored), as when it was sent. */
@@ -97,7 +97,7 @@ internal class RollCarry(
                         legOrders.opening(run, step.strategyId, step.quantity),
                     )
                 step(run, opening)
-                legOrders.send(opening.leg) { opened(run, opening, it, then) }
+                legOrders.send(run, opening.leg) { opened(run, opening, it, then) }
             }
         }
     }
@@ -110,9 +110,10 @@ internal class RollCarry(
     ) {
         when (outcome) {
             is LegOutcome.Filled -> {
-                check(outcome.fill.quantity.compareTo(step.leg.quantity) == 0) {
-                    "roll leg ${step.leg.id} filled ${outcome.fill.quantity} of ${step.leg.quantity}"
+                check(outcome.fill.quantity.compareTo(step.quantity.abs()) == 0) {
+                    "roll leg ${step.leg.id} filled ${outcome.fill.quantity} of ${step.quantity.abs()}"
                 }
+                legOrders.carried(step.strategyId, step.close, outcome.fill)
                 step(run, CarryStep.Carried(step.strategyId, step.quantity, step.close, outcome.fill))
                 then()
             }

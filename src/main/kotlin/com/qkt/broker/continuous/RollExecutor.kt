@@ -44,6 +44,7 @@ internal class RollExecutor(
 ) {
     private val log = LoggerFactory.getLogger(RollExecutor::class.java)
     private val restingOrders = RestingOrdersAtRoll(bus, clock, chainOf, venue, orders, legs)
+    private val quoteWait = RollQuoteWait(clock, chainOf, refusals, legs.retries)
     private val carrying = RollCarry(clock, chainOf, venue, legs, fills, refusals.priceBand, ::whenReady)
 
     private val chain: ContinuousChain get() = chainOf()
@@ -92,7 +93,7 @@ internal class RollExecutor(
         contractPrices.update(to, measured.prices.toPrice)
         val refused =
             holders
-                .mapValues { (id, q) -> refusals.of(id, q, from, measured, quotes) }
+                .mapValues { (id, q) -> refusals.of(id, q, from, measured) }
                 .filterValues { it != null }
         val carried = holders.filterKeys { it !in refused }
         val run = RollRun(fromIndex, toIndex, measured, stopped, resting, carried.entries.toList())
@@ -100,16 +101,15 @@ internal class RollExecutor(
             log.error("{} not carried for {}: {}", chain.symbol, id, why)
             run.steps[id] = CarryStep.Stopped(id, holders.getValue(id), why.orEmpty(), null)
         }
+        run.quotes = quotes
         this.run = run
         restingOrders.pull(resting)
         carryFrom(run, 0, done)
     }
 
     /**
-     * Restores the roll [run] saved mid-flight (null when none was) and the unwinds [unwinds] still out,
-     * after a restart: each restored leg is awaited again at once, so its venue answer cannot be missed,
-     * while every leg the roll sends next, and its finish, wait for [ready]. [done] is the roll's
-     * completion, as for [roll].
+     * Restores the roll [run] saved mid-flight (null when none was) and the [unwinds] still out: each leg is awaited
+     * again at once, so its answer cannot be missed, while what the roll sends next, and its finish, wait for [ready].
      */
     fun restore(
         run: RollRun?,
@@ -126,10 +126,7 @@ internal class RollExecutor(
         resumeFrom(run, 0, done)
     }
 
-    /**
-     * The venue confirmed the cancel of the resting order under [venueId], pulled at a roll: while that roll
-     * is in flight its finish settles the order, after it the order is settled now, on contract [index].
-     */
+    /** The cancel of the order under [venueId], pulled at a roll, is confirmed: settled now unless that roll's finish will. */
     fun pulled(
         venueId: String,
         index: Int,
@@ -174,7 +171,9 @@ internal class RollExecutor(
     ) {
         if (i == run.holders.size) return finish(run, done)
         val (strategyId, quantity) = run.holders[i]
-        carrying.start(strategyId, quantity, run) { carryFrom(run, i + 1, done) }
+        quoteWait.look(run, strategyId, quantity, { carrying.start(strategyId, quantity, run, it) }) {
+            carryFrom(run, i + 1, done)
+        }
     }
 
     private fun finish(

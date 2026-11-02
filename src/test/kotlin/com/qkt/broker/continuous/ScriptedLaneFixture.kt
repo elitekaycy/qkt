@@ -46,6 +46,7 @@ internal class ScriptedLaneFixture(
     val mar = "BINANCE_UM:BTCUSDT_250328"
     val roll = ms("2024-09-19T08:00:00Z")
     val nextRoll = ms("2024-12-19T08:00:00Z")
+    val expirySep = ms("2024-09-27T08:00:00Z")
     private val root =
         FuturesRoot(
             "BINANCE_UM:BTCUSDT",
@@ -127,10 +128,8 @@ internal class ScriptedLaneFixture(
         tick("63010")
     }
 
-    /** Ticks the stream at [price] now. */
     fun tick(price: String) = bus.publish(TickEvent(Tick(front, BigDecimal(price), clock.time)))
 
-    /** Ticks the stream at [price] now, with the book's [bid] and [ask]. */
     fun quote(
         price: String,
         bid: String?,

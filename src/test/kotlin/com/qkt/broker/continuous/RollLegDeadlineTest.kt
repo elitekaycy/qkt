@@ -10,7 +10,7 @@ class RollLegDeadlineTest {
     private val f = ScriptedLaneFixture(rollPriceBand = BigDecimal("0.25"))
 
     @Test
-    fun `a venue that lets a collared leg rest has it cancelled at the deadline, so the roll ends`() {
+    fun `a venue that lets a collared leg rest has it cancelled at the deadline, so the roll goes on`() {
         f.hold(Side.SELL)
         f.rolled()
         val close = f.leg(":close").id
@@ -25,7 +25,7 @@ class RollLegDeadlineTest {
         f.clock.time += 1_000
         f.tick("63000")
         assertThat(f.venue.cancels).containsExactly(close)
-        f.cancelled(close)
+        f.exhaust("close")
 
         assertThat(f.saved().roll).isNull()
         assertThat(f.stop()).contains("cancelled by the venue")

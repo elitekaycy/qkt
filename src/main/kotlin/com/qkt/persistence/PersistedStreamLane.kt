@@ -29,6 +29,8 @@ data class PersistedStreamLane(
 data class PersistedRollLeg(
     val leg: OrderRequest,
     val slices: List<BrokerEvent.OrderFilled>,
+    /** What earlier attempts of the leg filled. */
+    val earlier: List<BrokerEvent.OrderFilled> = emptyList(),
 )
 
 /** A strategy's signed [position] on the stream, and why it may place no further orders there ([stopped], null if it may). */

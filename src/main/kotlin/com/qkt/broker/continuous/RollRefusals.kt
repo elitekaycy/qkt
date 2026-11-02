@@ -16,23 +16,32 @@ internal class RollRefusals(
     private val book: StrategyPositionTracker,
     val priceBand: BigDecimal?,
 ) {
-    /** Why strategy [id]'s signed [quantity] may not be carried out of [from], or null when it may. */
+    /** Why strategy [id]'s signed [quantity] may never be carried out of [from], or null: this does not pass with time. */
     fun of(
         id: String,
         quantity: BigDecimal,
         from: String,
         measured: MeasuredRoll,
-        quotes: RollQuotes,
     ): String? {
         val onContract = book.positionFor(id, from)?.quantity ?: BigDecimal.ZERO
         if (onContract.compareTo(quantity) != 0) {
             return "holds ${onContract.toPlainString()} of $from, not its ${quantity.toPlainString()} on the stream"
         }
-        val band = priceBand ?: return null
+        priceBand ?: return null
         val prices = measured.prices
         if (prices.fromPrice.signum() <= 0 || prices.toPrice.signum() <= 0) {
             return "no collar around the measured ${prices.fromPrice}->${prices.toPrice}: not positive"
         }
+        return null
+    }
+
+    /** Why the quotes bar signed [quantity]'s legs now, or null; a far or missing quote may pass ([RollQuoteWait]). */
+    fun ofQuotes(
+        quantity: BigDecimal,
+        measured: MeasuredRoll,
+        quotes: RollQuotes,
+    ): String? {
+        val band = priceBand ?: return null
         val closing = if (quantity.signum() > 0) Side.SELL else Side.BUY
         val opening = if (quantity.signum() > 0) Side.BUY else Side.SELL
         return quoteRefusal(quotes.from, closing, measured.prices.fromPrice, band)

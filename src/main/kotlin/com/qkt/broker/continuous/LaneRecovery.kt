@@ -15,8 +15,8 @@ import java.math.BigDecimal
  * ([ready]). The venue takes back every order the lane had out (engine orders under the venue ids they
  * work under, resting orders whose cancel is awaited, and roll legs), each with what of it the lane
  * already booked, so the venue replays only what the lane missed. An order the venue does not know never
- * reached it: an engine order is forgotten (the engine retires it), while a roll leg, or a roll's
- * re-placement of an order the engine still holds, is sent again under its own id. Once ready, every
+ * reached it: an engine order is forgotten (the engine retires it), a live roll leg goes again as its retry ([CarryLegs]),
+ * and a backtest's leg, or a roll's re-placement of an order the engine still holds, is sent again under its own id. Once ready, every
  * awaited cancel is sent again and an engine order the engine no longer holds is cancelled.
  */
 internal class LaneRecovery(
@@ -28,6 +28,7 @@ internal class LaneRecovery(
     private val rolls: RollExecutor,
     private val book: StrategyPositionTracker,
     private val space: (Int) -> PriceSpace,
+    private val collared: Boolean = false,
 ) {
     private var recovered = false
 
@@ -48,7 +49,9 @@ internal class LaneRecovery(
             (orders.all + legs.awaitedCancels).distinctBy { it.venueId }.map(::managed) + legs.inFlight.map(::managed)
         val restoredLegs = legs.inFlight.map { it.leg }
         val known = venue.broker.recoverPendingOrders(out)
-        restoredLegs.filterTo(resend) { it.id !in known }
+        // Asking wrote the unknown id off at a gateway, so a live leg goes again under a new id, as its retry.
+        val neverReached = restoredLegs.filter { it.id !in known }
+        if (collared) neverReached.forEach { legs.neverPlaced(it.id) } else resend += neverReached
         for (awaited in legs.awaitedCancels) {
             if (awaited.venueId in known) cancels += awaited.venueId else legs.forgetCancel(awaited.venueId)
         }

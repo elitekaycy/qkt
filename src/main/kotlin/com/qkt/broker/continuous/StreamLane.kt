@@ -66,9 +66,10 @@ internal class StreamLane(
     private val settled = LaneSettledCloses(bus, clock, chain.symbol, venue.broker, ::save, store != null)
     private val state = LaneState(chainOf, positions, stops, orders, book, legs, rolls, settled)
     val stopRelease = LaneStopRelease(chainOf, positions, stops, orders, book, legs, rolls)
-    private val recovery = LaneRecovery(clock, chainOf, venue, orders, legs, rolls, book, ::space)
+    private val collared = rollPriceBand != null
+    private val recovery = LaneRecovery(clock, chainOf, venue, orders, legs, rolls, book, ::space, collared)
     private var current: Int? = null
-    private val quotes = LaneQuotes(chainOf, ::space, rollPriceBand != null)
+    private val quotes = LaneQuotes(chainOf, ::space, collared)
     private val legDeadline = RollLegDeadline(legs, rolls::waitingForVenue) { venue.broker.cancel(it) }
     private val spaces = HashMap<Int, PriceSpace>()
 
@@ -154,11 +155,11 @@ internal class StreamLane(
 
     /** Roll if the schedule has moved on, then hand the contract tick behind [tick] to the venue. */
     fun onTick(tick: Tick) {
-        legDeadline.onTick(tick.timestamp)
-        val index = catchUp(tick.timestamp, tick) ?: return
+        val index = catchUp(tick.timestamp, tick) ?: return legDeadline.onTick(tick.timestamp)
         val contractTick = quotes.heard(tick, index)
         contractPrices.update(contractTick)
         venue.onTick(contractTick)
+        legDeadline.onTick(tick.timestamp)
     }
 
     /** The contract followed at [nowMs], after rolling onto it if the lane was still on an earlier one. */
@@ -195,6 +196,5 @@ internal class StreamLane(
         store?.save(state.snapshot(current))
     }
 
-    /** Contract [index]'s price mapping, built once per contract. */
     private fun space(index: Int): PriceSpace = spaces.getOrPut(index) { chain.spaceFor(index) }
 }

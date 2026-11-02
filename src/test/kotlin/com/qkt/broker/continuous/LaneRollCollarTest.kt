@@ -60,7 +60,7 @@ class LaneRollCollarTest {
         f.hold(Side.SELL)
         f.rolled()
 
-        f.cancelled(f.leg(":close").id)
+        f.exhaust("close")
 
         assertThat(f.venue.sent.filter { it.id.endsWith(":open") }).isEmpty()
         assertThat(f.stop()).contains("cancelled by the venue")
@@ -75,7 +75,7 @@ class LaneRollCollarTest {
         f.rolled()
         f.last(f.leg(":close").id, f.sep, Side.BUY, "0.010", "63010")
 
-        f.cancelled(f.leg(":open").id)
+        f.exhaust("open")
 
         assertThat(f.stop()).contains("cancelled by the venue")
         assertThat(f.saved().holdings).isEmpty()
@@ -89,7 +89,7 @@ class LaneRollCollarTest {
         val close = f.leg(":close").id
 
         f.slice(close, f.sep, Side.BUY, "0.004", "0.004", "63010")
-        f.cancelled(close)
+        f.exhaust("close")
 
         assertThat(f.stop()).isNotNull()
         assertThat(f.closes().single().quantity).isEqualByComparingTo("0.004")
@@ -105,7 +105,7 @@ class LaneRollCollarTest {
         val open = f.leg(":open").id
 
         f.slice(open, f.dec, Side.SELL, "0.004", "0.004", "63790")
-        f.cancelled(open)
+        f.exhaust("open")
 
         val unwind = f.limit(":unwind")
         assertThat(unwind.side).isEqualTo(Side.BUY)
@@ -122,7 +122,7 @@ class LaneRollCollarTest {
     fun `a collared unwind that does not fill leaves what it held booked, and the stop cannot be released`() {
         f.partOpened()
 
-        f.cancelled(f.leg(":unwind").id)
+        f.exhaust("unwind")
 
         assertThat(f.saved().legs).isEmpty()
         assertThat(f.heldOn()).isEqualTo(f.dec)
@@ -160,7 +160,7 @@ class LaneRollCollarTest {
         f.quote("63000", null, null)
 
         assertThat(f.limit(":close").limitPrice).isEqualByComparingTo("78750")
-        f.cancelled(f.leg(":close").id)
+        f.exhaust("close")
         assertThat(f.stop()).isNotNull()
         assertThat(f.heldOn()).isEqualTo(f.sep)
     }

@@ -3,9 +3,8 @@ package com.qkt.broker.continuous
 import com.qkt.common.Clock
 import com.qkt.common.Side
 import com.qkt.derivatives.futures.ContinuousChain
+import com.qkt.events.BrokerEvent
 import com.qkt.execution.OrderRequest
-import com.qkt.execution.TimeInForce
-import com.qkt.instrument.TickSteps
 import java.math.BigDecimal
 import org.slf4j.LoggerFactory
 
@@ -17,33 +16,43 @@ import org.slf4j.LoggerFactory
  * check. A leg's outcome is handed on once the venue answered, after its submit returned, never inside it. A leg is
  * expected at once and sent through [gate], which holds it while a restarted session is not ready.
  *
- * An unwind that does not fill whole is not sent again, its book having just refused it: what it was to close stays
- * on the contract, booked and saved in the lane's holdings and logged as an error. The strategy is already stopped,
- * an operator's resume is refused while it is held ([LaneStopRelease]), and the contract's settlement closes it.
+ * A leg ended unfilled goes again ([LegAttempts]).
+ *
+ * An unwind still not filled when its attempts run out is not sent again: what it was to close stays on the contract,
+ * booked and saved in the lane's holdings and logged as an error. The strategy is already stopped, an operator's resume is refused while it is held ([LaneStopRelease]), and the contract's settlement closes it.
  */
 internal class CarryLegs(
-    private val clock: Clock,
+    clock: Clock,
     private val chainOf: () -> ContinuousChain,
-    private val venue: ContractVenue,
+    venue: ContractVenue,
     private val legs: RollLegs,
-    private val priceBand: BigDecimal?,
-    private val gate: (() -> Unit) -> Unit,
+    priceBand: BigDecimal?,
+    gate: (() -> Unit) -> Unit,
 ) {
     private val log = LoggerFactory.getLogger(CarryLegs::class.java)
+    private val orders = RollLegOrders(clock, chainOf, priceBand)
+    private val attempts = LegAttempts(clock, chainOf, venue, legs, priceBand, gate, orders)
+
+    /** Sends [leg] of [run] and hands its outcome to [then] once the venue answered and no attempt is left. */
+    fun send(
+        run: RollRun?,
+        leg: OrderRequest,
+        then: (LegOutcome) -> Unit,
+    ) = attempts.send(run, leg, then)
 
     /** The leg closing [strategyId]'s signed [quantity] on the old contract in [run]. */
     fun closing(
         run: RollRun,
         strategyId: String,
         quantity: BigDecimal,
-    ) = leg(run, strategyId, "close", run.fromIndex, quantity.negate(), run.measured.prices.fromPrice)
+    ) = leg(run, strategyId, "close", run.fromIndex, quantity.negate(), run.fromPrice)
 
     /** The leg opening [strategyId]'s signed [quantity] on the new contract in [run]. */
     fun opening(
         run: RollRun,
         strategyId: String,
         quantity: BigDecimal,
-    ) = leg(run, strategyId, "open", run.toIndex, quantity, run.measured.prices.toPrice)
+    ) = leg(run, strategyId, "open", run.toIndex, quantity, run.toPrice)
 
     private fun leg(
         run: RollRun,
@@ -53,7 +62,7 @@ internal class CarryLegs(
         signed: BigDecimal,
         reference: BigDecimal,
     ): OrderRequest =
-        order(
+        orders.order(
             "${base(run, strategyId)}:$kind",
             chainOf().contractSymbol(index),
             if (signed.signum() > 0) Side.BUY else Side.SELL,
@@ -62,37 +71,11 @@ internal class CarryLegs(
             reference,
         )
 
-    private fun order(
-        id: String,
-        symbol: String,
-        side: Side,
-        quantity: BigDecimal,
-        strategyId: String,
-        reference: BigDecimal,
-    ): OrderRequest {
-        val now = clock.now()
-        val band = priceBand ?: return OrderRequest.Market(id, symbol, side, quantity, TimeInForce.GTC, now, strategyId)
-        val limit = collarPrice(side, reference, band, chainOf().root.tickSize)
-        return OrderRequest.Limit(id, symbol, side, quantity, limit, TimeInForce.IOC, now, strategyId)
-    }
-
     /** The prefix of [strategyId]'s legs in [run]. */
     fun base(
         run: RollRun,
         strategyId: String,
     ) = RollLegIds.base(chainOf().symbol, run.measured.atMs, strategyId)
-
-    /** Sends [leg] and hands its outcome to [then] once the venue answered. */
-    fun send(
-        leg: OrderRequest,
-        then: (LegOutcome) -> Unit,
-    ) {
-        legs.expect(leg)
-        gate {
-            venue.broker.submit(leg)
-            legs.whenEnded(leg.id, then)
-        }
-    }
 
     /**
      * Waits for the closing [leg] after a restart, as [await]. A closing leg that filled moves its carry on in the
@@ -100,28 +83,48 @@ internal class CarryLegs(
      * instead of stopping the strategy on the stream: [then] hears the refusal now.
      */
     fun awaitClosing(
+        run: RollRun,
         leg: OrderRequest,
         then: (LegOutcome) -> Unit,
-    ) = if (legs.isExpected(
-            leg.id,
-        )
-    ) {
-        await(leg, then)
+    ) = if (legs.isExpected(leg.id)) {
+        await(run, leg, then)
     } else {
         then(LegOutcome.Rejected("refused before the restart (${leg.id})"))
     }
 
     /** Waits for [leg], restored after a restart with what had filled of it, as [send] does once it is sent. */
     fun await(
+        run: RollRun?,
         leg: OrderRequest,
         then: (LegOutcome) -> Unit,
     ) {
         check(legs.isExpected(leg.id)) { "roll leg ${leg.id} was not restored" }
-        legs.whenEnded(leg.id, then)
+        attempts.watch(run, leg, then)
     }
 
     /** Waits for the unwind [leg], restored after a restart, as [unwind] does once it is sent. */
-    fun awaitUnwind(leg: OrderRequest) = await(leg, unwound(leg))
+    fun awaitUnwind(leg: OrderRequest) = await(null, leg, unwound(leg))
+
+    /** The one line a carried roll logs: its contracts, legs, prices and attempts. */
+    fun carried(
+        strategyId: String,
+        close: BrokerEvent.OrderFilled,
+        open: BrokerEvent.OrderFilled,
+    ) = log.info(
+        "{} rolled for {}: {} {} {} at {} (attempt {}), {} {} {} at {} (attempt {})",
+        chainOf().symbol,
+        strategyId,
+        close.side,
+        close.quantity.toPlainString(),
+        close.symbol,
+        close.price.toPlainString(),
+        RollLegIds.attempt(close.clientOrderId),
+        open.side,
+        open.quantity.toPlainString(),
+        open.symbol,
+        open.price.toPlainString(),
+        RollLegIds.attempt(open.clientOrderId),
+    )
 
     /** Closes the [quantity] a part-filled opening [leg] of [run] left on its contract; a failure leaves it there. */
     fun unwind(
@@ -131,8 +134,8 @@ internal class CarryLegs(
     ) {
         val side = if (leg.side == Side.BUY) Side.SELL else Side.BUY
         val id = leg.id.replaceAfterLast(':', "unwind")
-        val unwinding = order(id, leg.symbol, side, quantity, leg.strategyId, run.measured.prices.toPrice)
-        send(unwinding, unwound(unwinding))
+        val unwinding = orders.order(id, leg.symbol, side, quantity, leg.strategyId, run.toPrice)
+        send(run, unwinding, unwound(unwinding))
     }
 
     /** Logs an [unwinding] leg the venue did not fill whole: what it did not close is still held. */
@@ -148,25 +151,4 @@ internal class CarryLegs(
                 )
             }
         }
-}
-
-/**
- * The furthest a roll leg on [side] may fill: [band] (a fraction) from [reference], above it to buy and below it to
- * sell, on the [tick] grid and never outside the band. E.g. at 0.25 around 78,000, a BUY's limit is 97,500 and a
- * SELL's 58,500. A reference so small that its limit would round to nothing is held at one tick.
- */
-internal fun collarPrice(
-    side: Side,
-    reference: BigDecimal,
-    band: BigDecimal,
-    tick: BigDecimal,
-): BigDecimal {
-    val grid = TickSteps(tick)
-    val limit =
-        if (side == Side.BUY) {
-            grid.floor(reference.multiply(BigDecimal.ONE.add(band)))
-        } else {
-            grid.ceil(reference.multiply(BigDecimal.ONE.subtract(band)))
-        }
-    return limit.takeIf { it.signum() > 0 } ?: tick
 }

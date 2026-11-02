@@ -19,13 +19,14 @@ internal class RollLegDeadline(
     private val log = LoggerFactory.getLogger(RollLegDeadline::class.java)
     private val asked = HashMap<String, Long>()
 
-    /** Asks at [nowMs] for the cancel of every limit leg past its deadline. */
+    /** Sends what waited for [nowMs] ([RollLegs.retries]), then asks for the cancel of every limit leg past its deadline. */
     fun onTick(nowMs: Long) {
+        if (waiting()) return
+        legs.retries.fire(nowMs)
         if (!legs.anyOut) {
             if (asked.isNotEmpty()) asked.clear()
             return
         }
-        if (waiting()) return
         for ((leg, _) in legs.inFlight) {
             if (leg !is OrderRequest.Limit || nowMs - (asked[leg.id] ?: leg.timestamp) < DEADLINE_MS) continue
             log.error("roll leg {} on {} is still working {} ms on; cancelling it", leg.id, leg.symbol, DEADLINE_MS)

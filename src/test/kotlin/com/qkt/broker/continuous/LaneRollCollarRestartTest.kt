@@ -29,7 +29,7 @@ class LaneRollCollarRestartTest {
     }
 
     @Test
-    fun `a collared leg the venue never received is sent again as saved`() {
+    fun `a collared leg the venue never received goes again under a new id, carrying the position`() {
         f.hold(Side.SELL)
         f.rolled()
         val close = f.limit(":close")
@@ -38,8 +38,81 @@ class LaneRollCollarRestartTest {
         g.venue.knows = emptySet()
         g.broker.recoverPendingOrders(emptyList(), emptySet())
         g.ready()
+        g.nextRetry()
 
-        assertThat(g.venue.sent.single()).isEqualTo(close)
+        val again = g.venue.sent.single() as OrderRequest.Limit
+        assertThat(again.id).isEqualTo("${close.id}-2")
+        assertThat(again.limitPrice).isEqualByComparingTo(close.limitPrice)
+        g.last(again.id, g.sep, Side.BUY, "0.010", "63010")
+        g.last(g.limit(":open").id, g.dec, Side.SELL, "0.010", "63790")
+        assertThat(g.stop()).isNull()
+        assertThat(g.heldOn()).isEqualTo(g.dec)
+    }
+
+    @Test
+    fun `a market leg of an older lane the venue never received goes again collared, under a new id`() {
+        val before = ScriptedLaneFixture()
+        before.hold(Side.SELL)
+        before.rolled()
+        val close = before.leg(":close")
+
+        val g = ScriptedLaneFixture(before.persistor, before.clock.time, band)
+        g.venue.knows = emptySet()
+        g.broker.recoverPendingOrders(emptyList(), emptySet())
+        g.ready()
+        g.nextRetry()
+
+        val again = g.venue.sent.single() as OrderRequest.Limit
+        assertThat(again.id).isEqualTo("${close.id}-2")
+        assertThat(again.limitPrice).isEqualByComparingTo("78750")
+    }
+
+    @Test
+    fun `a restart while a retry waits asks the venue again and goes on from the next attempt`() {
+        f.hold(Side.SELL)
+        f.rolled()
+        val close = f.leg(":close").id
+        f.slice(close, f.sep, Side.BUY, "0.004", "0.004", "63010")
+        f.cancelled(close)
+        val out = f.saved().legs.single()
+        assertThat(out.leg.id).isEqualTo(close)
+
+        val g = f.restart()
+        g.venue.onRecover = { g.cancelled(close) }
+        g.broker.recoverPendingOrders(emptyList(), emptySet())
+        val asked = g.venue.recovered.single { it.id == close }
+        assertThat(asked.cumulativeFilledQuantity).isEqualByComparingTo("0.004")
+        g.ready()
+        g.nextRetry()
+
+        val again = g.venue.sent.single()
+        assertThat(again.id).isEqualTo("$close-2")
+        assertThat(again.quantity).isEqualByComparingTo("0.006")
+        g.last(again.id, g.sep, Side.BUY, "0.006", "63020")
+        assertThat(g.leg(":open").quantity).isEqualByComparingTo("0.010")
+    }
+
+    @Test
+    fun `a restart restores a retry with what earlier attempts filled, and counts it in the carry`() {
+        f.hold(Side.SELL)
+        f.rolled()
+        val close = f.leg(":close").id
+        f.slice(close, f.sep, Side.BUY, "0.004", "0.004", "63010")
+        f.cancelled(close)
+        f.nextRetry()
+        val second = f.attempt("close")
+
+        val g = f.restart()
+        g.broker.recoverPendingOrders(emptyList(), emptySet())
+        val asked = g.venue.recovered.single()
+        assertThat(asked.id to asked.cumulativeFilledQuantity.signum()).isEqualTo(second.id to 0)
+        g.ready()
+        g.last(second.id, g.sep, Side.BUY, "0.006", "63020")
+        g.last(g.leg(":open").id, g.dec, Side.SELL, "0.010", "63790")
+
+        assertThat(g.stop()).isNull()
+        val entry = g.ledger.entries.single()
+        assertThat(entry.fromFill).isEqualByComparingTo("63016")
     }
 
     @Test

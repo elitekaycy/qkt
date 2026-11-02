@@ -37,7 +37,7 @@ internal class LaneState(
             strategies = (positions.keys + stops.keys).map(::strategy),
             orders = orders.all.map(::persisted),
             holdings = holdings(),
-            legs = legs.inFlight.map { PersistedRollLeg(it.leg, it.slices) },
+            legs = legs.inFlight.map { PersistedRollLeg(it.leg, it.slices, it.earlier) },
             cancelling = legs.awaitedCancels.map(::persisted),
             roll = rolls.run?.let(::persisted),
             settledCloses = settled.all,
@@ -69,7 +69,7 @@ internal class LaneState(
                 strategyId = h.strategyId,
             )
         }
-        saved.legs.forEach { legs.expect(it.leg, it.slices) }
+        saved.legs.forEach { legs.expect(it.leg, it.slices, it.earlier) }
         saved.cancelling.forEach { legs.cancelling(order(it)) }
         settled.restore(saved.settledCloses)
         val run = saved.roll?.let(::run)

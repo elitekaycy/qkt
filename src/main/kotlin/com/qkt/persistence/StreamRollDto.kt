@@ -67,15 +67,22 @@ private fun rollLeg(
 internal data class RollLegDto(
     val leg: OrderRequestDto,
     val slices: List<OrderFilledDto>,
+    val earlier: List<OrderFilledDto> = emptyList(),
 ) {
     fun toDomain() =
         PersistedRollLeg(
             rollLeg(leg, "roll leg ${leg.id}"),
             slices.map { it.toDomain() },
+            earlier.map { it.toDomain() },
         )
 
     companion object {
-        fun of(l: PersistedRollLeg) = RollLegDto(StreamOrderDto.encodeRequest(l.leg), l.slices.map(OrderFilledDto::of))
+        fun of(l: PersistedRollLeg) =
+            RollLegDto(
+                StreamOrderDto.encodeRequest(l.leg),
+                l.slices.map(OrderFilledDto::of),
+                l.earlier.map(OrderFilledDto::of),
+            )
     }
 }
 
