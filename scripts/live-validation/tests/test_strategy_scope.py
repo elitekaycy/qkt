@@ -45,6 +45,38 @@ class Attribution(unittest.TestCase):
         self.assertTrue(scope.is_flat([], [deal("buy", "0.01", 1, symbol="C-83000")], settled, "atto_perp"))
 
 
+class CoinFees(unittest.TestCase):
+    """Alpaca's real round trip of 2026-10-30: 0.0002 BTC bought, a 0.0000005 BTC fee, so 0.0001995 received and sold."""
+
+    @staticmethod
+    def deal(side, quantity, costs=(), symbol="BTCUSD"):
+        return {"symbol": symbol, "side": side, "quantity": quantity, "costs": list(costs)}
+
+    FEE = {"kind": "commission", "amount": "0.0000005", "currency": "BTC"}
+
+    def test_a_round_trip_that_closed_what_it_received_is_flat(self):
+        deals = [self.deal("buy", "0.0002", [self.FEE]), self.deal("sell", "0.0001995")]
+        self.assertEqual(scope.holdings(deals), {})
+
+    def test_a_held_coin_is_what_was_received(self):
+        self.assertEqual(scope.holdings([self.deal("buy", "0.0002", [self.FEE])]), {"BTCUSD": Decimal("0.0001995")})
+
+    def test_a_fee_in_the_coin_on_a_sale_leaves_less_too(self):
+        deals = [self.deal("buy", "1"), self.deal("sell", "0.5", [{"amount": "0.001", "currency": "BTC"}])]
+        self.assertEqual(scope.holdings(deals), {"BTCUSD": Decimal("0.499")})
+
+    def test_a_fee_in_money_moves_no_holding(self):
+        deals = [self.deal("buy", "1", [{"amount": "0.04", "currency": "USD"}], "BTCUSD")]
+        self.assertEqual(scope.holdings(deals), {"BTCUSD": Decimal("1")})
+
+    def test_a_derivative_s_fee_in_its_coin_moves_no_holding(self):
+        deals = [self.deal("buy", "1", [self.FEE], "BTC-PERPETUAL"), self.deal("sell", "1", [self.FEE], "BTC-PERPETUAL")]
+        self.assertEqual(scope.holdings(deals), {})
+
+    def test_a_deal_with_no_costs_field_still_counts(self):
+        self.assertEqual(scope.holdings([{"symbol": "BTCUSD", "side": "buy", "quantity": "1"}]), {"BTCUSD": Decimal("1")})
+
+
 class Funding(unittest.TestCase):
     def test_the_strategy_owes_its_holding_over_the_account_position(self):
         record = {"funding_id": "f1", "symbol": PERP, "amount": "1.2", "position": "0.6", "time": 10}
