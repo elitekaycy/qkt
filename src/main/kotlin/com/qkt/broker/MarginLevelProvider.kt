@@ -10,6 +10,9 @@ interface MarginLevelProvider {
     /** Whether margin-level reads are supported for this broker composition. */
     val supportsMarginLevel: Boolean
 
+    /** Why a margin floor cannot apply here, for the operator's startup warning; null when nothing specific is known. */
+    val marginFloorGap: String? get() = null
+
     /**
      * A margin floor will judge entries here: start keeping the level current, without blocking and without reading
      * it on this thread. A venue with a floor of 0 is never asked, so it never polls for a level no one needs.

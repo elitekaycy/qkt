@@ -81,11 +81,15 @@ class GatewayBroker internal constructor(
 
     override val supportsAccountEquity: Boolean get() = true
 
-    override val supportsMarginLevel: Boolean get() = true
+    override val marginFloorGap: String? = marginFloorGap(session.venue.adapter)
 
-    override fun marginLevel(): BigDecimal? = session.margin.read()
+    override val supportsMarginLevel: Boolean get() = marginFloorGap == null
 
-    override fun warmMarginLevel() = session.margin.start()
+    override fun marginLevel(): BigDecimal? = if (supportsMarginLevel) session.margin.read() else null
+
+    override fun warmMarginLevel() {
+        if (supportsMarginLevel) session.margin.start()
+    }
 
     override fun supports(symbol: String): Boolean = session.symbols.venue(symbol) != null
 

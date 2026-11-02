@@ -70,11 +70,11 @@ internal class EntryGuardRules(
             .filterKeys { notices.first(it.name, marginFloorPct) }
             .forEach { (venue, onVenue) ->
                 log.warn(
-                    "risk.margin_floor_pct {} cannot apply on venue {}: it reports no margin level, so no entry on " +
-                        "this venue is checked against the floor, starting with {} (risk.margin_floor_pct: 0 turns " +
-                        "the floor off)",
+                    "risk.margin_floor_pct {} cannot apply on venue {}: {}, so no entry on this venue is checked " +
+                        "against the floor, starting with {} (risk.margin_floor_pct: 0 turns the floor off)",
                     marginFloorPct.toPlainString(),
                     venue.name,
+                    (venue as? MarginLevelProvider)?.marginFloorGap ?: "it reports no margin level",
                     onVenue.joinToString(", "),
                 )
             }

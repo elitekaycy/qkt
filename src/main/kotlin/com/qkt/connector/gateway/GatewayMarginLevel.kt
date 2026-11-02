@@ -15,6 +15,20 @@ internal fun WireAccount.marginLevel(): BigDecimal? {
 }
 
 /**
+ * Why adapter [adapter]'s account figures cannot drive a margin floor, or null when they can. The adapter's id is
+ * checked against the gateway's health before anything trades, so it tells a venue that never states margin from a
+ * real one that is simply flat. An adapter of any other id is trusted, so one always stating no margin goes unnoticed.
+ */
+internal fun marginFloorGap(adapter: String): String? =
+    when (adapter) {
+        "paper" -> "its gateway adapter (paper) always states no margin in use, so the floor can never bind"
+        "bybit" ->
+            "its gateway adapter (bybit) divides one coin's equity by the account's pooled margin, so qkt does not " +
+                "use that level (elitekaycy/qkt-venue-gateway#109)"
+        else -> null
+    }
+
+/**
  * The margin level of one gateway account for the margin floor, from what `GET /v1/account` states. A background
  * thread does the reading, every [pollMs], so [read] never touches the network: the floor asks on every entry, and a
  * hung gateway would otherwise hold the entry for up to `http_timeout_ms` x `retry_attempts`.
