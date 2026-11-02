@@ -7,8 +7,7 @@ import java.math.BigDecimal
 
 /**
  * Durable storage for the in-memory engine state that doesn't survive restart: leg metadata,
- * bracket linkages, in-flight orders, STACK_AT tier-fired state, active DSL exit hooks, and
- * continuous futures stream lanes.
+ * bracket linkages, in-flight orders, STACK_AT tier-fired state, DSL exit hooks and stream lanes.
  *
  * Production implementations ([FileStatePersistor]) write atomic JSON files under
  * `<stateRoot>/<strategyId>/`, where the root is the daemon state directory (honors
@@ -23,6 +22,7 @@ interface StatePersistor :
     TimedExitPersistence,
     StreamLanePersistence,
     FundingPersistence,
+    BookedDealPersistence,
     OrderFillPersistence,
     OrderIdPersistence {
     /** Releases persistence resources after all sessions have stopped. */

@@ -269,7 +269,7 @@ class CompositeBroker(
     /** Margin belongs to an account, not to the router: an entry answers to the account it is routed to. */
     override fun marginVenueFor(symbol: String): Broker = brokerFor(symbol)?.marginVenueFor(symbol) ?: this
 
-    private fun allLeaves(): List<Broker> = routes.map { it.second } + listOfNotNull(fallback)
+    internal fun allLeaves(): List<Broker> = routes.map { it.second } + listOfNotNull(fallback)
 
     private fun brokerFor(symbol: String): Broker? =
         routes.firstOrNull { (pattern, _) -> pattern.matches(symbol) }?.second ?: fallback

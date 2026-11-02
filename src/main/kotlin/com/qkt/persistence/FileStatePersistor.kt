@@ -11,13 +11,13 @@ import kotlinx.serialization.json.Json
  * Writes log and count failures; [com.qkt.app.LiveSession] turns a non-zero failure count into
  * an entry-only risk halt. Existing state that cannot be read, parsed, or validated fails startup
  * so a live session cannot silently reset durable risk or execution state.
- *
  * Each state file is owned by one `*File` collaborator (for example [PendingOrdersFile]): its shape and rules.
  */
 class FileStatePersistor private constructor(
     private val writer: StateFileWriter,
 ) : StatePersistor,
     FundingPersistence by FundingFile(writer),
+    BookedDealPersistence by BookedDealsFile(writer),
     OrderFillPersistence by OrderFillsFile(writer),
     OrderIdPersistence by OrderIdsFile(writer) {
     constructor(rootDir: Path) : this(StateFileWriter(rootDir))
