@@ -16,6 +16,7 @@ import yaml
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../scripts/live-validation/lib"))
 import cross_venue  # noqa: E402
+import derivatives_roll  # noqa: E402
 
 REQUIRED = ("id", "title", "why", "status", "symbols", "timeframes", "proves", "assertions")
 STATUSES = {"ready", "planned", "scheduled"}
@@ -97,6 +98,10 @@ def main():
                 if not isinstance(drill.get("after_fills", 1), int) or drill.get("after_fills", 1) < 1 \
                         or not isinstance(drill.get("flat", False), bool):
                     errors.append(f"{where}: drill {drill}: after_fills is a fill count from 1, flat true or false")
+            if doc.get("continuous_roll"):
+                if not lanes[lane].get("venue_gateway"):
+                    errors.append(f"{where}: continuous_roll runs in a venue-gateway lane only")
+                errors += [f"{where}: {problem}" for problem in derivatives_roll.check(doc["continuous_roll"])]
             if lane == "cross":
                 errors += [f"{where}: {problem}" for problem in cross_venue.check_venues(doc)]
                 if doc.get("replay", "by-venue") not in ("by-venue", "none"):

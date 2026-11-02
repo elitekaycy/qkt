@@ -35,7 +35,11 @@ fills and, when it asserts flat-by-strategy, is flat (or its budget ends), then 
     case holds): each drill did what it claims, the venue's fills of the strategy are exactly the fills qkt booked
     (venue-fills-equal-qkt-fills: none lost, none booked twice), each engine order reached the venue once
     (no-duplicate-order) and no engine id named two orders (order-id-continuity). A kill-switch drill needs the
-    gateway's guardian token in QKT_DERIV_GUARDIAN_KEY.
+    gateway's guardian token in QKT_DERIV_GUARDIAN_KEY;
+  - with `continuous_roll` (lib/derivatives_roll.py): the root's roll is scheduled minutes ahead, the case holds through
+    it, and what the venue reports of its legs must be what the case's `outcome` says; flat-by-strategy and
+    deals-net-equals-realized apply only to a case that asserts them, since a stopped strategy may still hold;
+  - `expect_log` / `reject_log`: regexes the daemon log must or must not match when the case ends.
 Writes OUT/result.json and prints one `passed|failed <id> ...` line; exits non-zero on failure.
 """
 import argparse, csv, datetime, json, os, re, shutil, signal, subprocess, sys, time, urllib.error, urllib.parse, urllib.request
@@ -46,6 +50,7 @@ import yaml
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "lib"))
 import derivatives_drills  # noqa: E402
+import derivatives_roll as rolling  # noqa: E402
 import derivatives_settlement as settlement  # noqa: E402
 import roll_from_now  # noqa: E402
 import strategy_scope as scope  # noqa: E402
@@ -97,6 +102,8 @@ def shared_account(case):
 
 
 class Run:
+    roll = capture = resumed = stopped_at = None  # class defaults: the cross lane's runner has its own __init__
+
     def __init__(self, args, case):
         if args.arm != "I_UNDERSTAND_DEMO_ORDER_0.01":
             sys.exit("--arm I_UNDERSTAND_DEMO_ORDER_0.01 is required")
@@ -143,7 +150,7 @@ class Run:
         cancels its own working orders and closes its own holding, never another user's (lib/strategy_scope.py)."""
         if not getattr(self, "owns_strategy", False):
             return
-        for order in scope.own(self.get("/v1/orders")["orders"], self.strategy):
+        for order in self.own(self.get("/v1/orders")["orders"]):
             try:
                 self.get(f"/v1/orders/{urllib.parse.quote(order['client_order_id'])}", method="DELETE")
             except urllib.error.HTTPError as error:
@@ -160,6 +167,12 @@ class Run:
                 raise RuntimeError("the strategy still holds a position or a working order")
             time.sleep(2)
 
+    def own(self, entries):
+        """The orders or deals of [entries] that are the strategy's, its legs of the case's roll included."""
+        prefix = self.roll["prefix"] if self.roll else None
+        return [e for e in entries if scope.is_own(e.get("client_order_id"), self.strategy)
+                or (prefix and str(e.get("client_order_id", "")).startswith(prefix))]
+
     def window_to(self):
         """The end of the venue history a read covers: a minute past the case's end, or past now while it runs."""
         return max(self.ended_ms, int(time.time() * 1000)) + MINUTE
@@ -167,7 +180,7 @@ class Run:
     def own_deals(self, since_ms=None):
         """The venue's fills of the strategy's orders from [since_ms] (the case's start by default)."""
         since = self.started_ms if since_ms is None else since_ms
-        return scope.own(self.get(f"/v1/deals?from={since}&to={self.window_to()}")["deals"], self.strategy)
+        return self.own(self.get(f"/v1/deals?from={since}&to={self.window_to()}")["deals"])
 
     def holdings(self, since_ms=None):
         """The strategy's own signed holding per venue symbol, from its deals less what the venue settled of it."""
@@ -179,7 +192,7 @@ class Run:
 
     def flat(self, since_ms=None):
         """flat-by-strategy: no working order of the strategy's, and its own deals (less its settlements) net flat."""
-        return not scope.own(self.get("/v1/orders")["orders"], self.strategy) and not self.holdings(since_ms)
+        return not self.own(self.get("/v1/orders")["orders"]) and not self.holdings(since_ms)
 
     def own_positions(self):
         """The account's positions on the symbols the strategy holds now (a drill's evidence and probe price)."""
@@ -206,7 +219,7 @@ class Run:
         self.run_daemon(budget)
         problems = []
         flat = self.flat()
-        if not flat:
+        if not flat and "flat-by-strategy" in self.case["assertions"]:
             problems.append("flat-by-strategy: the strategy holds a position or a working order after the case")
         fills = self.order_fills()
         if len(fills) < int(self.case["fills"]):
@@ -227,7 +240,8 @@ class Run:
         # qkt keeps money at 8 decimals and books each fill's trade and costs at that scale, so two roundings of at
         # most half a unit each may part it from the venue's exact net by up to 1e-8 a fill; anything more is a
         # difference in what was booked.
-        if abs(venue - realized) > QKT_MONEY_UNIT * (max(len(fills), 1) + len(funding)):
+        units = max(len(fills), len(self.strategy_deals()), 1) + len(funding)
+        if "deals-net-equals-realized" in self.case["assertions"] and abs(venue - realized) > QKT_MONEY_UNIT * units:
             problems.append(f"deals-net-equals-realized: venue net {venue} != qkt realized {realized}")
         self.net_gap = str(venue - realized)
         booked = settlement.booked_settlements(f"{self.out}/state/state", self.strategy)
@@ -245,10 +259,14 @@ class Run:
             problems += self.drills.problems() + self.judge_drilled(fills)
         if fills and self.case.get("replay", "none") != "none":
             problems += self.replay(fills)
+        problems += self.judge_log() + self.judge_roll()
         self.evidence = {"fills": fills, "qktRealized": str(realized), "venueNet": str(venue), "netGap": self.net_gap,
                          "funding": funding, "balanceMoved": str(moved),
                          "balanceNote": getattr(self, "balance_note", None),
                          "replayPriceDrift": getattr(self, "drift", [])}
+        if self.roll:
+            self.evidence.update(roll=self.roll, rollLegs=rolling.legs_of(self.strategy_deals(), self.roll["prefix"]),
+                                 resume=self.resumed)
         if held or booked or self.case.get("settles"):
             self.evidence.update(settlements=[dict(s, holding=str(s["holding"])) for s in held], booked=booked,
                                  balanceMoved=str(moved), balanceNote=getattr(self, "balance_note", None),
@@ -275,6 +293,9 @@ class Run:
     def judge_drilled(self, fills):
         """After a drill: the venue filled exactly what qkt booked, each engine order placed at the venue once."""
         deals = self.strategy_deals()
+        if self.roll:  # the engine never sees a leg; it books a refused roll's close at the closing leg's fill
+            deals = [d for d in deals if not d["client_order_id"].startswith(self.roll["prefix"])
+                     or rolling.kind_of(d["client_order_id"]) == "close"]
         venue = Counter((d["side"].upper(), Decimal(d["quantity"]), Decimal(d["price"])) for d in deals)
         booked = Counter((f["side"], Decimal(f["qty"]), Decimal(f["price"])) for f in fills)
         problems = []
@@ -322,11 +343,107 @@ class Run:
                   "brokers": {venue.lower(): account}}
         config.update(self.case.get("config", {}))  # a soak case's demo-only settings, such as risk limits
         yaml.safe_dump(config, open(f"{self.out}/qkt.config.yaml", "w"), sort_keys=False)
+        roll = self.case.get("continuous_roll")
+        if roll:  # chosen before the catalog is fetched: a roll history is built for one policy
+            time.sleep(max(0, rolling.clear_of_expiry(int(time.time() * 1000), roll["lead_seconds"]) / 1000 - time.time()))
+            at_ms = rolling.roll_at(int(time.time() * 1000), roll["lead_seconds"])
+            path = f"{self.out}/data/instruments.yaml"
+            yaml.safe_dump(rolling.with_policy(yaml.safe_load(open(path)), roll["root"], at_ms), open(path, "w"), sort_keys=False)
         roots = {r["root"] for kind in ("futures", "options") for r in
                  (yaml.safe_load(open(f"{self.out}/data/instruments.yaml")).get(kind) or [])}
         for root in sorted(roots):
             self.cli_run(["fetch", root, "--catalog", "--config", f"{self.out}/qkt.config.yaml",
                           "--data-root", f"{self.out}/data"], "catalog")
+        if roll:
+            self.prepare_roll(roll, at_ms)
+
+    def prepare_roll(self, spec, at_ms):
+        """Measures the root's rolls under the case's policy, picks the contracts of the case's roll, seeds a far
+        reference if the case asks for one, and waits until the daemon should start, `start_before_seconds` ahead."""
+        venue, family = spec["root"].split(":")
+        catalog_path = f"{self.out}/data/contracts/{venue}/{family}.json"
+        catalog = rolling.prune_catalog(rolling.read(catalog_path), at_ms)
+        rolling.write(catalog_path, catalog)
+        contracts = rolling.contracts_of_roll(catalog, at_ms)
+        if not contracts:
+            raise RuntimeError(f"venue-untradeable: {spec['root']} lists no contract expiring the day after {rolling.hhmm(at_ms)}")
+        self.cli_run(["fetch", spec["root"], "--rolls", "--config", f"{self.out}/qkt.config.yaml",
+                      "--data-root", f"{self.out}/data"], "rolls")
+        history_path = f"{self.out}/data/contracts/{venue}/{family}.rolls.json"
+        history = rolling.read(history_path)
+        if not rolling.has_roll(history, at_ms, contracts):
+            raise RuntimeError(f"venue-untradeable: no measurable roll into {contracts[0]['symbol']}: a session cannot start a history")
+        from_code, to_code = rolling.code_of(contracts[0]["symbol"]), rolling.code_of(contracts[1]["symbol"])
+        now = int(time.time() * 1000)
+        closes = self.get("/v1/bars?" + urllib.parse.urlencode(
+            {"symbol": from_code, "window_ms": MINUTE, "from": now - 6 * 3_600_000, "to": now}))["bars"]
+        if not closes:
+            raise RuntimeError(f"venue-untradeable: {from_code} has no bar in six hours")
+        last = Decimal(closes[-1]["close"])
+        if spec["outcome"] == "far_book":
+            rolling.write(history_path, rolling.seed_far_reference(history, at_ms, contracts, last, spec["far_reference"]))
+        self.roll = {"at_ms": at_ms, "at_utc": rolling.hhmm(at_ms), "outcome": spec["outcome"], "quantity": str(spec["quantity"]),
+                     "prefix": rolling.leg_prefix(spec["stream"], at_ms, self.strategy), "from_code": from_code,
+                     "to_code": to_code, "reference": str(last)}
+        for drill in self.drills.pending:
+            if "before_roll_s" in drill:
+                drill["fire_at"] = at_ms / 1000 - drill["before_roll_s"]
+                drill["symbols"] = [to_code]
+        start = at_ms / 1000 - spec["start_before_seconds"]
+        if time.time() > start + int(spec.get("start_late_seconds", 30)):
+            raise RuntimeError(f"preparing took too long: the daemon should have started {int(time.time() - start)} s ago")
+        time.sleep(max(0, start - time.time()))
+
+    def merge_config(self, over):
+        """Deep-merges [over] into the daemon's config: the settings its next start runs with."""
+        path = f"{self.out}/qkt.config.yaml"
+        yaml.safe_dump(merged(yaml.safe_load(open(path)), over), open(path, "w"), sort_keys=False)
+
+    def roll_tick(self):
+        """Once the roll has stopped the strategy (and any kill switch is released), the operator resumes it, once."""
+        if not self.roll or self.roll["outcome"] == "carried" or self.resumed is not None:
+            return
+        if self.drills.pending or self.drills.engaged or not self.roll_stopped():
+            return
+        self.stopped_at = time.time()
+        run = subprocess.run([self.cli, "resume", self.strategy, "--state-dir", f"{self.out}/state"],
+                             capture_output=True, text=True, env=self.env())
+        self.resumed = {"exit": run.returncode, "output": (run.stdout + run.stderr).strip()[-600:]}
+
+    def roll_stopped(self):
+        log = open(f"{self.out}/daemon.log").read()
+        return f"not carried for {self.strategy}" in log or "refused the roll of" in log
+
+    def roll_done(self):
+        """Whether what the case's roll is to show has happened, beyond its fills."""
+        if not self.roll or self.roll["outcome"] == "carried":
+            return True
+        wait = int(self.case["continuous_roll"].get("post_stop_wait_seconds", 0))
+        return self.resumed is not None and time.time() >= self.stopped_at + wait
+
+    def judge_roll(self):
+        if not self.roll:
+            return []
+        spec, log = self.case["continuous_roll"], open(f"{self.out}/daemon.log").read()
+        deals = self.strategy_deals()
+        legs = rolling.legs_of(deals, self.roll["prefix"])
+        found = rolling.judge(self.roll["outcome"], legs, scope.holdings(deals), self.roll, log, self.strategy)
+        venue, family = spec["root"].split(":")
+        history = rolling.read(f"{self.out}/data/contracts/{venue}/{family}.rolls.json")
+        for leg in legs:  # the collar is measured from the roll's own record: the session may have measured it live
+            order = self.get("/v1/orders/" + urllib.parse.quote(leg["client_order_id"], safe=""))
+            found += [f"roll-legs-collared: {p}" for p in rolling.collared_leg(order, leg, history, self.roll)]
+        if "resume_exit" in spec:
+            if self.resumed is None:
+                found.append("resume: the strategy never stopped, so no resume was tried")
+            elif self.resumed["exit"] != int(spec["resume_exit"]):
+                found.append(f"resume: exit {self.resumed['exit']}, expected {spec['resume_exit']}: {self.resumed['output']}")
+        return found
+
+    def judge_log(self):
+        log = open(f"{self.out}/daemon.log").read()
+        return [f"expect_log: the daemon log never matched /{p}/" for p in self.case.get("expect_log", []) if not re.search(p, log)] \
+            + [f"reject_log: the daemon log matched /{p}/" for p in self.case.get("reject_log", []) if re.search(p, log)]
 
     def dated_contract(self, root):
         family = root.split(":")[1]
@@ -405,6 +522,7 @@ class Run:
         self.started_ms = int(time.time() * 1000)
         while not self.done() and time.time() < deadline:
             self.drills.tick(self.live_fills())
+            self.roll_tick()
             time.sleep(3)
         time.sleep(5)  # the last fill's venue events and costs settle
         self.await_funding(deadline)
@@ -417,7 +535,7 @@ class Run:
         """The case has made its fills, booked its `settles` expiry settlements and, when it must end flat, is flat: a
         partial fill is a fill event, so the count alone would end a case whose entry is still working (its remainder
         filling minutes later), and a case holding through an expiry is not done until qkt has booked the settlement."""
-        if len(self.order_fills()) < int(self.case["fills"]):
+        if len(self.order_fills()) < int(self.case["fills"]) or self.drills.pending or not self.roll_done():
             return False
         settles = int(self.case.get("settles", 0))
         if settles and len(settlement.booked_settlements(f"{self.out}/state/state", self.strategy)) < settles:
@@ -481,7 +599,7 @@ class Run:
         # From the session's start: an earlier run of the same case placed orders under the same ids' prefix.
         deals = self.get(f"/v1/deals?from={self.started_ms}&to={self.window_to()}")["deals"]
         # A rule's own orders are `dsl-<strategy>-…`; one a signal sized (a plain BUY) is `ORD-<strategy>-…`.
-        return scope.own(deals, self.strategy)
+        return self.own(deals)
 
     def venue_net(self):
         sizes = self.contract_sizes()
@@ -606,6 +724,12 @@ class Run:
         print(f"{result['status']} {case_id} " + ("; ".join(problems) if problems else
               f"fills={len(result.get('fills', []))} realized={result.get('qktRealized')} venue={result.get('venueNet')}"))
         return 1 if problems else 0
+
+
+def merged(base, over):
+    for key, value in over.items():
+        base[key] = merged(base[key], value) if isinstance(value, dict) and isinstance(base.get(key), dict) else value
+    return base
 
 
 def copy_catalog(data, root):
