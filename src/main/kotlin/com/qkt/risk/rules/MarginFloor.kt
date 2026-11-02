@@ -17,7 +17,9 @@ import java.math.BigDecimal
  * orders always pass: shrinking exposure is how margin level recovers. Venues that
  * report no margin level (paper, spot) pass everything. An entry answers to the account it is
  * routed to ([Broker.marginVenueFor]), so on a multi-venue strategy each account has its own
- * reading, and its own count of missing ones: one venue's healthy read never excuses another's.
+ * reading, and its own count of missing ones: one venue's healthy read never excuses another's. A level of exactly 0
+ * is how a venue says no margin is in use (MT5, a gateway account), so it passes; the rule cannot tell that from an
+ * account with margin in use and equity of exactly 0.
  */
 class MarginFloor(
     private val broker: Broker,

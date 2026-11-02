@@ -8,6 +8,7 @@ import com.qkt.broker.BrokerAccountState
 import com.qkt.broker.BrokerDeal
 import com.qkt.broker.BrokerPendingOrder
 import com.qkt.broker.BrokerPositionTicket
+import com.qkt.broker.MarginLevelProvider
 import com.qkt.broker.OrderTypeCapability
 import com.qkt.broker.PositionAccountingMode
 import com.qkt.broker.SettledClose
@@ -46,6 +47,7 @@ class GatewayBroker internal constructor(
     private val optionGrid: (String) -> TickSteps? = { null },
 ) : Broker,
     BookedDealsVenue,
+    MarginLevelProvider,
     VenueDescribed {
     private val attachment = session.attach(strategy, positions, bus::publish)
     private val venueReads =
@@ -78,6 +80,16 @@ class GatewayBroker internal constructor(
         )
 
     override val supportsAccountEquity: Boolean get() = true
+
+    override val marginFloorGap: String? = marginFloorGap(session.venue.adapter)
+
+    override val supportsMarginLevel: Boolean get() = marginFloorGap == null
+
+    override fun marginLevel(): BigDecimal? = if (supportsMarginLevel) session.margin.read() else null
+
+    override fun warmMarginLevel() {
+        if (supportsMarginLevel) session.margin.start()
+    }
 
     override fun supports(symbol: String): Boolean = session.symbols.venue(symbol) != null
 
