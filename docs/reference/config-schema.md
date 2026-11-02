@@ -347,12 +347,12 @@ What `max_daily_loss` means depends on what the daemon runs:
 
 A mixed daemon stays mixed for the rest of the UTC day: undeploying the last standalone neither turns the limit back into a book's flatten rule nor forgets what that standalone lost. `--load-dir` is read before anything deploys, so a book that comes up first knows it is mixed, and the daemon keeps its total under the state owner `__daemon__`, so a restart reads the whole total before all its sessions are back. Every daily halt resumes at the next UTC day, and a `qkt resume` while the limit is crossed halts again and sends no entry.
 
-**A book's own limits in a mixed daemon** are `max_drawdown_pct`, `max_daily_drawdown_pct` (on the book's capital), the `book_risk` block, and `risk.per_strategy` entries for its children. A breach of the drawdown limits flattens and halts that book and touches nothing else. `max_daily_loss` is not one of them there: a mixed daemon has no book-only daily dollar limit.
+**A book's own limits in a mixed daemon** are `max_drawdown_pct`, `max_daily_drawdown_pct` (on the book's capital), the `book_risk` block, and `risk.per_strategy` entries for its children. A breach of the drawdown limits flattens and halts that book and touches nothing else. `max_daily_loss` is not one of them there: a mixed daemon has no book-only daily dollar limit. `book_risk` holds exposure caps, a de-risk ladder and allocation, and no daily loss: `book_risk.max_daily_loss` is not a key qkt reads. Writing one warns at load, enforces nothing and stays out of the shared total, which counts a book through its children's realized P&L.
 
 **`hard_daily_loss`** adds open P&L, marked at the closing side, to the realized total across everything the daemon runs, however it is mixed. Crossing it (strictly) halts every session, flattens each of them, books included, and blocks entries until the next UTC day. It is off when absent and leaves the table above as it is: in a daemon with one portfolio, `max_daily_loss` still flattens that book.
 
 - It is checked once a second, off the trading path, so a breach is seen within about a second. A breach resting on open P&L must hold for two checks in a row; realized loss alone past the limit trips on the first.
-- A symbol counts only with a fresh, valid mark. One with no price, a non-positive price, no live tick since its session started, or a stale or out-of-session feed counts as nothing, and a warning names it. This fails towards not flattening: a real loss on such a symbol cannot trigger the flatten until a fresh price arrives. The other symbols still count.
+- A symbol counts only with a fresh, valid mark. One with no price, a non-positive price (except an option's zero, the mark of a worthless contract, which counts as the loss it is), no live tick since its session started, or a stale or out-of-session feed counts as nothing, and a warning names it. This fails towards not flattening: a real loss on such a symbol cannot trigger the flatten until a fresh price arrives. The other symbols still count.
 - It flattens each session once. A session whose ledger still holds legs with no close working is flattened again 30 seconds later, three times at most, then an error asks the operator to close them at the venue.
 - It survives a restart within the day: the halt is recorded before the flatten, and after a restart each session gets its one flatten, which sends nothing when flat. A resume halts again. To trade before midnight, take `hard_daily_loss` out of the config, restart, and `qkt resume`.
 - Open P&L is what a position shows now, not its change today, so a position carried over midnight brings its open loss into the new day.
@@ -901,6 +901,8 @@ Book-risk controls apply to portfolio/book evaluation and portfolio daemon flows
 > not bounded by these limits — `BookRiskController` is built by the portfolio deployer alone. The
 > daemon warns at start when the block is present, and total notional is otherwise unbounded for a
 > standalone strategy. See parity catalog row A23.
+
+`book_risk` has no daily loss limit. `book_risk.max_daily_loss` is not read: it warns at load and stays out of the daemon's shared `risk.max_daily_loss` total ([the daemon's daily limits](#the-daemons-daily-limits)).
 | `book_risk.limits.max_gross_exposure` | decimal | unset | Gross exposure cap as a **multiple of `capital`** (`3.0` = 3x). Not an amount of money: values above 100 are refused at load. |
 | `book_risk.limits.max_net_exposure` | decimal | unset | Net exposure cap as a multiple of `capital`. |
 | `book_risk.limits.max_symbol_concentration` | decimal | unset | Single-symbol net exposure cap as a multiple of `capital` (`0.35` = 35%). |

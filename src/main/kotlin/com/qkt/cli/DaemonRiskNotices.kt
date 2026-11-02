@@ -21,6 +21,17 @@ internal fun validateHardDailyLoss(risk: Map<*, *>?) {
     require(hard >= max) { "risk.hard_daily_loss $raw must be >= risk.max_daily_loss $max" }
 }
 
+/** Why a `book_risk.max_daily_loss` in [bookRisk] does nothing, or null without one. */
+internal fun bookRiskDailyLossNotice(bookRisk: Any?): String? {
+    if ((bookRisk as? Map<*, *>)?.containsKey("max_daily_loss") != true) return null
+    return "book_risk.max_daily_loss is not a limit qkt has: it is ignored, and it adds nothing to the daemon's " +
+        "risk.max_daily_loss total. A book's losses count in that total through its children's realized P&L."
+}
+
+internal fun warnBookRiskDailyLoss(bookRisk: Any?) {
+    bookRiskDailyLossNotice(bookRisk)?.let { System.err.println("[WARN] $it") }
+}
+
 /** Why a run sending orders through a venue relies on the built-in daily loss limit, or null when it does not. */
 internal fun defaultDailyLossWarning(
     cfg: Config,

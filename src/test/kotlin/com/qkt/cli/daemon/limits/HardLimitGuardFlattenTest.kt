@@ -1,55 +1,18 @@
 package com.qkt.cli.daemon.limits
 
-import com.qkt.app.DailyLimitReading
-import com.qkt.app.LiveSessionHandle
-import com.qkt.app.OrderManager
 import com.qkt.cli.daemon.DaemonHardLimitGuard
 import com.qkt.cli.daemon.GuardedSession
 import com.qkt.common.FixedClock
-import com.qkt.execution.Trade
 import com.qkt.risk.DaemonRiskScope
-import com.qkt.risk.HaltScope
 import java.math.BigDecimal
-import java.time.Duration
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
 /** How often the hard limit's guard flattens a session that will not go flat, and what it counts. */
 class HardLimitGuardFlattenTest {
-    private class Stuck : LiveSessionHandle {
-        var reading = DailyLimitReading("stuck", BigDecimal("-50"), BigDecimal.ZERO, emptyMap(), 1, false)
-        var flattens = 0
-        var answers = true
-
-        override val running = true
-        override val droppedTicks = 0L
-
-        override fun stop() {}
-
-        override fun awaitTermination(timeout: Duration) = true
-
-        override fun recentTrades() = emptyList<Trade>()
-
-        override fun pendingStackLayerInfos() = emptyList<OrderManager.PendingStackLayerInfo>()
-
-        override fun halt(
-            reason: String,
-            scope: HaltScope,
-        ) {}
-
-        override fun flatten() {
-            flattens++
-        }
-
-        override fun limitReading(): DailyLimitReading {
-            check(answers) { "engine did not answer" }
-            return reading
-        }
-    }
-
     private val clock = FixedClock(DAY_MS * 20_758)
     private val scope = DaemonRiskScope(clock, hardDailyLoss = BigDecimal("30"))
-    private val stuck = Stuck()
+    private val stuck = ScriptedSession()
     private val guard = DaemonHardLimitGuard(scope, { listOf(GuardedSession("stuck", stuck)) })
 
     @Test

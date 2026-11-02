@@ -403,7 +403,7 @@ data class Config(
                 insights =
                     com.qkt.observe.insights.InsightsConfig
                         .parse(map["insights"]),
-                bookRisk = parseBookRisk(map["book_risk"]),
+                bookRisk = parseBookRisk(map["book_risk"].also(::warnBookRiskDailyLoss)),
                 marketData =
                     com.qkt.marketdata.MarketDataGateConfig
                         .parse(map["market_data"]),

@@ -15,6 +15,8 @@ import java.util.concurrent.ConcurrentHashMap
  * -8.05 from either side, and a global rule's breach is visible to every other session. Called from
  * each session's engine thread, on every tick: unchanged figures take no lock and scan nothing.
  *
+ * The total is the only daily dollar limit here: `book_risk` has none, so nothing of it is added to or read with the total.
+ *
  * With a hard limit, or on a day it mixes standalones and portfolios, the daemon keeps a record of this under
  * [RECORD_OWNER]: a restart then reads the whole total before all its sessions are back, and any hard halt.
  * Without either it writes and reads nothing, as a daemon always has.

@@ -160,7 +160,7 @@ internal class RunningSessionHandle(
     override fun limitReading(): DailyLimitReading =
         engineSnapshot {
             val ids = strategies.map { it.first }
-            SessionLimitMarks(strategyPositions, strategyPnL, priceTracker, marketDataGate)
+            SessionLimitMarks(strategyPositions, strategyPnL, priceTracker, marketDataGate, instruments)
                 .read(ids, riskState.dailyPnLTracker.globalRealizedToday(), stopBook(ids, pipeline, strategyPositions))
         }
 

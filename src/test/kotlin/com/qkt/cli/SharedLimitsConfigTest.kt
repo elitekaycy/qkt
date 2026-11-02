@@ -71,6 +71,21 @@ class SharedLimitsConfigTest {
         assertThat(defaultDailyLossWarning(load(tmp, "source: tv"), false)).isNull()
     }
 
+    @Test
+    fun `book_risk max_daily_loss is named as doing nothing and leaves the book's limits alone`(
+        @TempDir tmp: Path,
+    ) {
+        assertThat(bookRiskDailyLossNotice(mapOf("max_daily_loss" to 5)))
+            .contains("book_risk.max_daily_loss")
+            .contains("ignored")
+            .contains("total")
+        assertThat(bookRiskDailyLossNotice(mapOf("capital" to 100))).isNull()
+        assertThat(bookRiskDailyLossNotice(null)).isNull()
+        val with = load(tmp, "risk:\n  max_daily_loss: 8\nbook_risk:\n  capital: 1000\n  max_daily_loss: 5")
+        assertThat(with.maxDailyLoss).isEqualByComparingTo("8")
+        assertThat(with.bookRisk).isEqualTo(load(tmp, "book_risk:\n  capital: 1000").bookRisk)
+    }
+
     @Suppress("UNCHECKED_CAST")
     private fun risk(facts: Map<String, Any?>) = facts["risk"] as Map<String, Any?>
 
