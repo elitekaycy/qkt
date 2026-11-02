@@ -89,7 +89,8 @@ Live on a gateway, a market entry on a dated future goes as an immediate-or-canc
 (the venue's mark), so a stray far quote cannot fill it. The engine still sees one market order. An attempt the venue cancels
 is sent again, for what is left, after 1 s and 2 s, around the price as it then stands. An entry that finds nothing in 3 attempts
 is rejected with a reason saying so; with no price heard it is refused. A venue that refuses the limit itself gets a plain market
-order, except for the gateway's kill switch. An exit (it closes a ticket or leg, or strictly reduces the strategy's position and
+order, except for the gateway's kill switch. Deribit does this on testnet: it refused a limit 25% from mark with `price_too_high`
+(its maximum then was about 1.5% from mark), so there a near entry goes plain and only the venue's own limit, if it applies to market orders, bounds it. An exit (it closes a ticket or leg, or strictly reduces the strategy's position and
 the account's) is not collared: it goes as a plain market order with a warning, so it cannot get stuck, and it can still fill at
 a far quote. Resting stops stay venue stop orders. Perpetuals, spot and options keep plain market orders: in a 5-minute probe of
 Deribit's public tickers on 2026-11-02, dated futures had a side beyond 25% of mark on about 6% of ticks and perpetuals on none of

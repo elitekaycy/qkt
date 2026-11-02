@@ -37,8 +37,7 @@ import java.math.BigDecimal
  * trusts each strategy's persisted book, and the account checks their total against the venue whenever a
  * strategy is ready ([GatewaySession.ready]). [optionGrid] is an option contract's declared price grid.
  * Its venue truth (account, positions, working orders, deals) is read through [GatewayVenueReads], the
- * same reads an MT5 broker answers, under the account's label ([GatewaySession.label]). A market order on a thin
- * contract goes as a collared limit around its last price in [prices] ([GatewayMarketCollar]); no [prices], no collar.
+ * same reads an MT5 broker answers. A market entry on a thin contract is collared by [prices] ([GatewayMarketCollar]).
  */
 class GatewayBroker internal constructor(
     private val session: GatewaySession,
@@ -54,18 +53,7 @@ class GatewayBroker internal constructor(
     VenueDescribed {
     private val collar = session.marketCollar(prices, clock, positions, { place(it) }, bus::publish)
     private val attachment = session.attach(strategy, positions, collar::heard)
-    private val venueReads =
-        GatewayVenueReads(
-            session.venue,
-            GatewayDirectReads(session.label, session.client),
-            session.client,
-            session.symbols,
-            session.legs,
-            positions,
-            strategy,
-            session.ledger::ownerOf,
-            session.routing::soleHolder,
-        )
+    private val venueReads = session.venueReads(positions, strategy)
 
     init {
         // The account's deals carry none of qkt's accounting; it is kept as this session books each fill.
