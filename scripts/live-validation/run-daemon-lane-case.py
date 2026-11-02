@@ -47,6 +47,9 @@ Every step's command, exit code, output and verdict is recorded. The case always
 import argparse, glob, json, os, re, shutil, subprocess, sys, time, urllib.request
 import yaml
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "lib"))
+from sibling_fills import strays  # noqa: E402
+
 ap = argparse.ArgumentParser()
 for flag in ("case", "out", "gateway-url", "expected-login", "expected-server", "magic", "arm"):
     ap.add_argument(f"--{flag}", required=True)
@@ -512,12 +515,7 @@ if pending():
     problems.append(f"magic still owned a pending order after the case; cancelled tickets {removed}")
 log = open(f"{a.out}/daemon.log").read()
 problems += check_forming_bars(log) + check_copies(log) + check_first_minute()
-# Strategies sharing one magic each see the others' closes on that magic's poller. Such a close is another session's
-# booked order, named by its broker id; `sibling_closes` lets exactly those pass, a fill nobody accepted still fails.
-accepted = set(re.findall(r"order accepted .*broker_order_id=(\S+)", log))
-strays = [m for m in re.findall(r"unattributed fill dropped: order_id=\S+ broker_order_id=(\S+)", log)
-          if not (case.get("sibling_closes") and m in accepted)]
-if strays or "engine loop fault" in log:
+if strays(log, case.get("sibling_closes")) or "engine loop fault" in log:
     problems.append("engine fault or unattributed fill in the daemon log")
 # A lost acknowledgement is resolved by asking the venue; only one left unresolved is a failure.
 unknown, resolved = len(re.findall(r"outcome UNKNOWN", log)), len(re.findall(r"resolved as [A-Z_]+", log))

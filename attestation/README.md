@@ -51,8 +51,8 @@ attestation/
 | `drills` | Derivatives lane: failures fired while the case holds, each `{kind, at_s}` timed from the first fill (below) |
 | `shared_account` | Gateway lanes: `false` for a case whose point is qkt refusing others' size on the account; every other case's broker sets `shared_account: true`, since these accounts are shared by design |
 | `continuous_roll` | Derivatives lane: a roll scheduled minutes ahead that the case holds through, and what must come of it (below) |
-| `shared_account` | Derivatives lane: the daemon's broker sets `shared_account`, for an account other users hold size on |
 | `expect_log`, `reject_log` | Derivatives lane: regexes the daemon log must, or must not, match when the case ends |
+| `sibling_closes` | Daemon lanes: strategies share one magic, so an unattributed fill passes if a different session accepted that exact broker order; any other still fails |
 | `venues` | Cross lane: each broker prefix the strategy trades through, `{label, type: mt5}` or `{label, type: gateway, adapter}` (below) |
 
 ## No case waits for the clock
