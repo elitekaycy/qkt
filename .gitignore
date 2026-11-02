@@ -23,3 +23,9 @@ site/
 __pycache__/
 qkt-insight/
 /qkt-data-corpus/
+
+# Build outputs of the JetBrains plugin.
+editor/jetbrains/build/
+editor/jetbrains/.gradle/
+editor/jetbrains/.intellijPlatform/
+editor/jetbrains/*.zip

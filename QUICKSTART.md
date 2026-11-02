@@ -18,6 +18,17 @@ export PATH="$PWD/build/install/qkt/bin:$PATH"
 qkt --version
 ```
 
+On Windows, in PowerShell:
+
+```powershell
+.\gradlew.bat installDist
+$env:Path = "$PWD\build\install\qkt\bin;$env:Path"
+qkt --version
+```
+
+qkt finds a Java 21 or newer on its own, even if `JAVA_HOME` names an older one. For editor support, run
+`qkt editor install all`.
+
 You should see `qkt <version> (<commit>) built <time>`, with the version in the repo's `VERSION` file.
 
 ## 2. Get the sample data

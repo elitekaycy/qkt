@@ -22,11 +22,14 @@ class EditorInstaller(
     private val err: Appendable = System.err,
     private val processRunner: (List<String>, Path?) -> Int = ::runProcess,
     private val pathLookup: (String) -> Path? = ::defaultPathLookup,
+    private val launcher: Path? = EditorPaths.launcher(),
+    private val download: (String, Path) -> Unit = ::downloadTo,
 ) {
     private val vscode =
         VscodeExtensionInstaller(detector, manifestPath, out, err, processRunner, pathLookup)
     private val helix = HelixInstaller(detector.helixConfigDir(), out, processRunner, pathLookup)
     private val files = FileCopyInstaller(detector, out, err)
+    private val jetBrains = JetBrainsInstaller(detector, out, err, download)
 
     /** Outcome of a single-target install. `placedFiles` feeds the uninstall manifest. */
     data class InstallResult(
@@ -41,10 +44,11 @@ class EditorInstaller(
                 err.appendLine("qkt: cannot locate bundled editor files (set QKT_HOME or run from a packaged install)")
                 return null
             }
+        recordLauncher()
         if (target == EditorTarget.ZED) return ZedGuide.print(root, out)
-        if (target == EditorTarget.INTELLIJ) return JetBrainsGuide.print(root, out)
         val result =
             when (target) {
+                EditorTarget.INTELLIJ -> jetBrains.install(root)
                 EditorTarget.NVIM -> installVimFamily(root, detector.nvimConfigDir(), EditorTarget.NVIM)
                 EditorTarget.VIM -> installVimFamily(root, detector.vimConfigDir(), EditorTarget.VIM)
                 EditorTarget.HELIX -> helix.install(root, err)
@@ -60,7 +64,11 @@ class EditorInstaller(
     /** Removes whatever the manifest says we placed for [target]. Returns true on success. */
     fun uninstall(target: EditorTarget): Boolean {
         if (target.isVscodeFamily) return vscode.uninstall(target)
-        if (target == EditorTarget.ZED || target == EditorTarget.INTELLIJ) {
+        if (target == EditorTarget.INTELLIJ) {
+            EditorManifest.save(manifestPath, EditorManifest.load(manifestPath).withoutInstall(target))
+            return jetBrains.uninstall()
+        }
+        if (target == EditorTarget.ZED) {
             out.appendLine(
                 "qkt editor: remove qkt from ${target.displayName} in its own settings; qkt placed no files there",
             )
@@ -85,6 +93,14 @@ class EditorInstaller(
         EditorManifest.save(manifestPath, manifest.withoutInstall(target))
         out.appendLine("qkt editor: removed ${target.displayName} plugin ($removed files)")
         return true
+    }
+
+    /** Tells editor plugins where this qkt is, so they find it even when it is on no `PATH`. */
+    private fun recordLauncher() {
+        val qkt = launcher ?: return
+        val file = manifestPath.resolveSibling(EditorPaths.RECORDED_LAUNCHER)
+        Files.createDirectories(file.parent)
+        Files.writeString(file, qkt.toString())
     }
 
     private fun installVimFamily(

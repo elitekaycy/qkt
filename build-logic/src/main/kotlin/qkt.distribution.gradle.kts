@@ -2,9 +2,19 @@
 // linux and Windows distributions the installers download.
 plugins {
     application
+    id("qkt.launcher")
 }
 
 val toolExt = if (System.getProperty("os.name").lowercase().contains("win")) ".exe" else ""
+
+val editorBuildOutputs =
+    listOf(
+        "**/node_modules/**",
+        "**/target/**",
+        "jetbrains/build/**",
+        "jetbrains/.gradle/**",
+        "jetbrains/.intellijPlatform/**",
+    )
 
 distributions {
     named("main") {
@@ -14,7 +24,7 @@ distributions {
             // .vsix is included when present (built by release.yml before distTar).
             from(rootProject.file("editor")) {
                 into("share/editor")
-                exclude("**/node_modules/**", "**/target/**")
+                exclude(editorBuildOutputs)
             }
             // The bot examples the "Trade from your code" docs run: the Python client, the agent loop, the prompt.
             from(rootProject.file("examples/bot")) {
@@ -23,46 +33,6 @@ distributions {
             }
         }
     }
-}
-
-// The self-contained builds ship their own Java in runtime/. The stock launcher only reads JAVA_HOME and PATH,
-// so unpacking the archive by hand failed with no Java installed (#1471) and ran on whatever older Java JAVA_HOME
-// named. Prefer the bundled runtime whenever it is there.
-tasks.named<CreateStartScripts>("startScripts") {
-    doLast {
-        val anchor = "# Determine the Java command to use to start the JVM.\n"
-        val text = unixScript.readText()
-        check(anchor in text) { "the start script changed shape: the bundled-runtime hook was not applied" }
-        val hook = "if [ -x \"\$APP_HOME/runtime/bin/java\" ] ; then\n    JAVA_HOME=\$APP_HOME/runtime\nfi\n\n"
-        unixScript.writeText(text.replaceFirst(anchor, hook + anchor))
-        applyLanguageServerJvmOptions(unixScript, windowsScript)
-    }
-}
-
-// `qkt lsp` parses one small file at a time while an editor stays open for hours, so it runs in a small,
-// quiet JVM: serial GC (one GC thread), a capped heap, and one C1 JIT thread. Every editor just runs
-// `qkt lsp` and gets this, with nothing to configure per editor. QKT_OPTS/JAVA_OPTS still apply on top.
-val languageServerJvmOptions =
-    listOf("-XX:+UseSerialGC", "-Xms16m", "-Xmx256m", "-Xss512k", "-XX:TieredStopAtLevel=1", "-XX:CICompilerCount=1")
-
-fun applyLanguageServerJvmOptions(
-    unixScript: File,
-    windowsScript: File,
-) {
-    val unixDefault = "DEFAULT_JVM_OPTS='\"-XX:+UseParallelGC\"'\n"
-    val unix = unixScript.readText()
-    check(unixDefault in unix) { "the start script changed shape: the qkt lsp JVM options were not applied" }
-    val unixLean = languageServerJvmOptions.joinToString(" ") { "\"$it\"" }
-    unixScript.writeText(
-        unix.replaceFirst(unixDefault, unixDefault + "[ \"\$1\" = lsp ] && DEFAULT_JVM_OPTS='$unixLean'\n"),
-    )
-    val winDefault = "set DEFAULT_JVM_OPTS=\"-XX:+UseParallelGC\""
-    val win = windowsScript.readText()
-    check(winDefault in win) { "the Windows start script changed shape: the qkt lsp JVM options were not applied" }
-    val winLean = languageServerJvmOptions.joinToString(" ") { "\"$it\"" }
-    windowsScript.writeText(
-        win.replaceFirst(winDefault, winDefault + "\r\nif \"%~1\"==\"lsp\" set DEFAULT_JVM_OPTS=$winLean"),
-    )
 }
 
 // A jlink-minimized JRE carrying only the modules qkt loads (mirrors the Dockerfile).
@@ -173,7 +143,7 @@ tasks.register<Zip>("windowsSelfContainedDist") {
         from(jpackageImageDir.map { it.dir("qkt") })
         from(rootProject.file("editor")) {
             into("share/editor")
-            exclude("**/node_modules/**", "**/target/**")
+            exclude(editorBuildOutputs)
         }
     }
 }
