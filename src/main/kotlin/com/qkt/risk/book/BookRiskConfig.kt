@@ -5,7 +5,8 @@ import java.math.BigDecimal
 /**
  * Book-risk configuration (from `qkt.config.yaml` `book_risk:`). All sections optional; an absent
  * section disables that control. [capital] is the book basis caps are measured against; null falls
- * back to the run's starting balance / portfolio CAPITAL.
+ * back to the run's starting balance / portfolio CAPITAL. It holds no daily dollar limit: a book's realized P&L counts
+ * in `risk.max_daily_loss` through its children, and no `book_risk.max_daily_loss` joins or replaces that total.
  */
 data class BookRiskConfig(
     val capital: BigDecimal? = null,

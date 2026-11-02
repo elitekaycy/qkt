@@ -30,14 +30,21 @@ internal fun StrategyHandle.RealFactory.startPipeline(
     onSignal: (Signal) -> Unit,
 ): LiveSessionHandle {
     val haltRules = sessionHaltRules(mdcStrategy)
+    daemonRisk.noteStandalone()
     val feedSymbols = (symbols + accountingConfig.normalizedSymbols.values).distinct()
     return LiveSession(
         strategies = strategies,
+        rules =
+            listOf(
+                com.qkt.risk.rules
+                    .DaemonEntryBlock(maxDailyLoss, daemonRisk),
+            ),
         haltRules = haltRules,
         source = marketSourceProvider(feedSymbols),
         symbols = symbols,
         feedSymbols = feedSymbols,
         candleWindow = candleWindow,
+        clock = daemonRisk.clock,
         calendar = calendar,
         accountingConfig = accountingConfig,
         equityBasis = liveEquityBasis,

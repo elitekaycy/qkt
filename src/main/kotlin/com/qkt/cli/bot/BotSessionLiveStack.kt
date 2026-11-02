@@ -41,6 +41,7 @@ internal class LiveSessionStack(
         accounts = cfg.openAccounts(stateDir.stateRoot, instruments)
         try {
             require(accounts.accounts.isNotEmpty()) { "no broker accounts in config — a live session needs one" }
+            com.qkt.cli.warnBotSessionRiskConfig(cfg, tradesThroughVenue = true)
             val verified =
                 com.qkt.connectivity.AccountPreflight
                     .fromEnv()
