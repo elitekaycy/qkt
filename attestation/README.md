@@ -151,7 +151,7 @@ A derivatives case may declare `drills`, fired by the runner `at_s` seconds afte
 
 | `kind` | What happens | Extra keys |
 |---|---|---|
-| `qkt_restart` | `qkt daemon stop`, wait, then `qkt daemon start` on the same state directory | `down_s` (15); `config`: settings merged in for the restart |
+| `qkt_restart` | `qkt daemon stop`, wait, then `qkt daemon start` on the same state directory | `down_s` (15); `config`: settings merged in for the restart; `capture_deals`: report deals only from the restart on, to a capture the runner owns |
 | `gateway_outage` | The daemon reaches the gateway through a loopback TCP proxy the runner owns; the proxy cuts every connection and refuses new ones, then forwards again on the same port. The shared gateway keeps running | `seconds` (90) |
 | `kill_switch` | With the gateway's guardian token (`QKT_DERIV_GUARDIAN_KEY`), the switch is engaged for the whole account, a risk-adding probe order (a buy at half the price, smallest size) must be refused `423 kill_switch`, then it is released | `hold_s` (30); `before_roll_s` times it from the case's roll and covers only the new contract |
 

@@ -1,0 +1,11 @@
+# ALPACA:AAPL as the gateway lists it (qkt instruments pull, 2026-10-28): whole shares, cent ticks.
+instruments:
+  - qktSymbol: ALPACA:AAPL
+    contractSize: 1
+    volumeStep: 1
+    volumeMin: 1
+    pointSize: 0.01
+    digits: 2
+    tradeStopsLevelPoints: 0
+    currency: USD
+    category: NASDAQ

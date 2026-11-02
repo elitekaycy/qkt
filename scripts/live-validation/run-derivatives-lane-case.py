@@ -39,6 +39,8 @@ fills and, when it asserts flat-by-strategy, is flat (or its budget ends), then 
   - with `continuous_roll` (lib/derivatives_roll.py): the root's roll is scheduled minutes ahead, the case holds through
     it, and what the venue reports of its legs must be what the case's `outcome` says; flat-by-strategy and
     deals-net-equals-realized apply only to a case that asserts them, since a stopped strategy may still hold;
+  - deals-reported-after-restart (a `qkt_restart` drill with `capture_deals`, lib/deal_capture.py): each venue deal and
+    settlement of the strategy is reported from the restarted process, past the 60 s grace, with its leg and strategy;
   - `expect_log` / `reject_log`: regexes the daemon log must or must not match when the case ends.
 Writes OUT/result.json and prints one `passed|failed <id> ...` line; exits non-zero on failure.
 """
@@ -49,6 +51,7 @@ from decimal import Decimal
 import yaml
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "lib"))
+import deal_capture  # noqa: E402
 import derivatives_drills  # noqa: E402
 import derivatives_roll as rolling  # noqa: E402
 import derivatives_settlement as settlement  # noqa: E402
@@ -88,6 +91,8 @@ def main():
         run.stop_daemon()
         if run.proxy:
             run.proxy.close()
+        if run.capture:
+            run.capture.close()
         try:
             run.sweep()
         except Exception as error:
@@ -260,6 +265,8 @@ class Run:
         if fills and self.case.get("replay", "none") != "none":
             problems += self.replay(fills)
         problems += self.judge_log() + self.judge_roll()
+        if "deals-reported-after-restart" in self.case["assertions"]:
+            problems += deal_capture.judge(self.capture.deals if self.capture else [], self.strategy_deals(), held, self.strategy)
         self.evidence = {"fills": fills, "qktRealized": str(realized), "venueNet": str(venue), "netGap": self.net_gap,
                          "funding": funding, "balanceMoved": str(moved),
                          "balanceNote": getattr(self, "balance_note", None),
@@ -332,6 +339,10 @@ class Run:
             ("OPTIONS:", "CHAIN:")) else self.case["symbols"][0].split(":")[0]
         self.contract_sizes()  # a contract leaves the listing once it expires: remember its size now
         url = self.args.gateway_url
+        for drill in self.drills.pending:
+            if drill.get("capture_deals"):
+                self.capture = deal_capture.DealCapture()
+                drill["config"] = merged(drill.get("config", {}), self.capture.config())
         if any(d["kind"] == "gateway_outage" for d in self.drills.pending):  # the daemon reaches it through a proxy
             self.proxy = derivatives_drills.TcpProxy(*urllib.parse.urlsplit(url).netloc.split(":"))
             url = self.proxy.url
