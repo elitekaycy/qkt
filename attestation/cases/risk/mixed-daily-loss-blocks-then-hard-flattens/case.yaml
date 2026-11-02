@@ -21,6 +21,7 @@ seed_risk_states:
 also_kill:
 - atto_mix_solo
 autoload: true
+sibling_closes: true
 steps:
 - run: qkt list --state-dir {state}
   wait_for: position
@@ -38,9 +39,7 @@ steps:
   reject_log: hard_daily_loss
   note: entries blocked; the book is not flattened by max_daily_loss on a mixed day
 - run: qkt status atto_mix_solo --state-dir {state}
-  expect_status:
-    halted: true
-  expect_stdout: daily loss .* exceeds max
+  expect_stdout: '"halted":true,"haltReason":"daily loss .* exceeds max'
   note: the standalone names the daemon's total
 - daemon: restart
   config_on_restart:

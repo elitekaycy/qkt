@@ -22,6 +22,7 @@ seed_risk_states:
 also_kill:
 - atto_dl_b
 autoload: true
+sibling_closes: true
 steps:
 - run: qkt list --state-dir {state}
   wait_for: position
