@@ -6,6 +6,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 fake="$tmp/repo"; mkdir -p "$fake/scripts/live-validation" "$fake/attestation/lib" "$fake/bin"
 cp "$repo_root/scripts/live-validation/run-attestation-catalog.sh" "$fake/scripts/live-validation/"
+cp -r "$repo_root/scripts/live-validation/lib" "$fake/scripts/live-validation/"
 printf 'print("ok")\n' > "$fake/attestation/lib/validate.py"
 printf '#!/usr/bin/env bash\necho "qkt 0.0.0 (test)"\n' > "$fake/bin/qkt"; chmod +x "$fake/bin/qkt"
 for id in perpetual option; do
