@@ -132,4 +132,19 @@ class LaneRollRetryTest {
         assertThat(g.attempts("close")).hasSize(1)
         assertThat(g.stop()).contains("cancelled by the venue")
     }
+
+    @Test
+    fun `a closing leg a venue's price limit refused goes again instead of stopping the strategy`() {
+        f.holdIntoRoll()
+        val first = f.leg(":close")
+        val reason = "venue_rejected: price_too_high 78180"
+        f.venueBus.publish(BrokerEvent.OrderRejected(first.id, null, reason, "s", f.clock.time))
+        f.clock.time += RollLegIds.RETRY_SPACING_MS
+        f.tick("63000")
+
+        val sent = f.venue.sent
+        assertThat(sent.count { it.id.startsWith("roll:") }).isEqualTo(2)
+        val lane = f.saved()
+        assertThat(lane.strategies.single { it.strategyId == "s" }.stopped).isNull()
+    }
 }

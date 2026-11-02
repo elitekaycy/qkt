@@ -11,8 +11,8 @@ import org.slf4j.LoggerFactory
 /**
  * The legs of a roll's carries on [venue]: each named [RollLegIds.base] plus `:<kind>`, so a leg is the same order
  * before and after a restart, and tracked by [legs] so the engine never sees it. With no [priceBand] (a backtest) a
- * leg is a market order; with one (a live lane) it is an immediate-or-cancel limit at the band from the contract's
- * measured roll price ([collarPrice]), so the venue cannot fill it beyond that however the book moved since the roll's
+ * leg is a market order; with one (a live lane) it is an immediate-or-cancel limit a narrow collar from the contract's
+ * latest price ([collarPrice]), so the venue cannot fill it beyond that however the book moved since the roll's
  * check. A leg's outcome is handed on once the venue answered, after its submit returned, never inside it. A leg is
  * expected at once and sent through [gate], which holds it while a restarted session is not ready.
  *
@@ -45,14 +45,14 @@ internal class CarryLegs(
         run: RollRun,
         strategyId: String,
         quantity: BigDecimal,
-    ) = leg(run, strategyId, "close", run.fromIndex, quantity.negate(), run.fromPrice)
+    ) = leg(run, strategyId, "close", run.fromIndex, quantity.negate(), run.fromReference)
 
     /** The leg opening [strategyId]'s signed [quantity] on the new contract in [run]. */
     fun opening(
         run: RollRun,
         strategyId: String,
         quantity: BigDecimal,
-    ) = leg(run, strategyId, "open", run.toIndex, quantity, run.toPrice)
+    ) = leg(run, strategyId, "open", run.toIndex, quantity, run.toReference)
 
     private fun leg(
         run: RollRun,
@@ -134,7 +134,7 @@ internal class CarryLegs(
     ) {
         val side = if (leg.side == Side.BUY) Side.SELL else Side.BUY
         val id = leg.id.replaceAfterLast(':', "unwind")
-        val unwinding = orders.order(id, leg.symbol, side, quantity, leg.strategyId, run.toPrice)
+        val unwinding = orders.order(id, leg.symbol, side, quantity, leg.strategyId, run.toReference)
         send(run, unwinding, unwound(unwinding))
     }
 

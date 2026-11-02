@@ -10,7 +10,7 @@ import org.slf4j.LoggerFactory
 /**
  * A roll leg's attempts on [venue]. With a [priceBand] (live), a leg an immediate-or-cancel end left unfilled, or the
  * venue never received, goes again under a new id, only what is left of it, up to [RollLegIds.MAX_ATTEMPTS] attempts
- * [RollLegIds.RETRY_SPACING_MS] apart and clear of the old contract's expiry; a refusal never does. While the spacing
+ * [RollLegIds.RETRY_SPACING_MS] apart and clear of the old contract's expiry. So does one a venue's price limit refused; any other refusal never does. While the spacing
  * runs the leg stays saved as out and its step names it, so a restart asks the venue again and goes on. A new id goes only
  * once the venue ended the last or never had it, so no two attempts can work at once.
  */
@@ -99,7 +99,8 @@ internal class LegAttempts(
         val now = clock.now()
         val id = RollLegIds.next(leg.id)
         val limit = (leg as? OrderRequest.Limit)?.limitPrice
-        val reference = run?.let { if (RollLegIds.kind(leg.id) == "close") it.fromPrice else it.toPrice }
+        run?.refreshQuotes()
+        val reference = run?.let { if (RollLegIds.kind(leg.id) == "close") it.fromReference else it.toReference }
         if (reference != null) return orders.order(id, leg.symbol, leg.side, quantity, leg.strategyId, reference)
         return if (limit != null) {
             OrderRequest.Limit(id, leg.symbol, leg.side, quantity, limit, TimeInForce.IOC, now, leg.strategyId)

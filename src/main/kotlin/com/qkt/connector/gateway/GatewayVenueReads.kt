@@ -176,3 +176,19 @@ internal class GatewayVenueReads(
         )
     }
 }
+
+/** The venue reads of a broker on this session, holding [positions] for [strategy]. */
+internal fun GatewaySession.venueReads(
+    positions: PositionProvider,
+    strategy: String?,
+) = GatewayVenueReads(
+    venue,
+    GatewayDirectReads(label, client),
+    client,
+    symbols,
+    legs,
+    positions,
+    strategy,
+    ledger::ownerOf,
+    routing::soleHolder,
+)

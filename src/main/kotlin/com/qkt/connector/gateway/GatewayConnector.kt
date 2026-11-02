@@ -155,8 +155,8 @@ class GatewayTradingAccount internal constructor(
 
     override val marketDataPattern: SymbolPattern = SymbolPattern(quotes::supports)
 
-    override val orderEntry: BrokerFactory = { bus, clock, _, positions, strategyName ->
-        GatewayBroker(opened.value, bus, clock, positions, strategyName) { symbol ->
+    override val orderEntry: BrokerFactory = { bus, clock, prices, positions, strategyName ->
+        GatewayBroker(opened.value, bus, clock, positions, strategyName, prices) { symbol ->
             (instruments?.lookup(symbol)?.derivative as? OptionTerms)?.tickSteps
         }
     }
