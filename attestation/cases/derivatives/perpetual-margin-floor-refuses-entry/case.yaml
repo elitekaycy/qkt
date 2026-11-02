@@ -1,0 +1,37 @@
+id: perpetual-margin-floor-refuses-entry
+title: An entry under the margin floor is refused on a gateway account while the close passes
+why: 'risk.margin_floor_pct did nothing on a VGP gateway: it read no level, so entries passed however thin the margin
+  (#1566). Here the first entry goes in with the floor off, since the account is shared and may already use margin; the
+  restart then sets a floor no real level reaches, so an entry adding to the holding must be refused before the venue
+  while the risk-reducing close still fills. Needs #1591: without it the add fills and the fill count and log fail.
+  An adapter reporting margin_used 0 reads as level 0, which the floor approves: this case would fail on that.'
+status: ready
+symbols:
+- DERIBIT:BTC_USDC_PERPETUAL
+timeframes:
+- 1m
+warmup_bars:
+  1m: 3
+proves:
+- behaviour:margin-floor-on-gateway
+- behaviour:risk-reducing-passes-floor
+fills: 2
+replay: none
+config:
+  risk:
+    margin_floor_pct: '0'
+drills:
+- at_s: 5
+  kind: qkt_restart
+  down_s: 5
+  config:
+    risk:
+      margin_floor_pct: '1000000000000000'
+expect_log:
+- risk rejected atto_margin_floor .*margin level .*below floor
+assertions:
+- flat-by-strategy
+- deals-net-equals-realized
+- venue-fills-equal-qkt-fills
+- no-duplicate-order
+budget_seconds: 600
