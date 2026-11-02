@@ -63,7 +63,9 @@ class EntryGuardRulesMarginWarningTest {
             it.formattedMessage
         }
 
-    private fun guard(floor: String) = EntryGuardRules(FixedClock(0L), BigDecimal(floor), 0L, BigDecimal.ONE)
+    private val notices = MarginFloorNotices()
+
+    private fun guard(floor: String) = EntryGuardRules(FixedClock(0L), BigDecimal(floor), 0L, BigDecimal.ONE, notices)
 
     private fun routed(vararg routes: Pair<String, Broker>) =
         CompositeBroker(routes.map { (symbol, venue) -> SymbolPattern.exactSet(setOf(symbol)) to venue })
@@ -94,6 +96,45 @@ class EntryGuardRulesMarginWarningTest {
 
         assertThat(warnings()).hasSize(2)
         assertThat(warnings().joinToString()).contains("venue X", "venue Y").doesNotContain("MT5")
+    }
+
+    @Test
+    fun `a venue several strategies trade is reported once, for the first of them`() {
+        val venue = Venue("PAPER_DERIBIT")
+
+        guard("200").rules(routed("PAPER_DERIBIT:A" to venue), listOf("PAPER_DERIBIT:A"))
+        guard("200").rules(routed("PAPER_DERIBIT:B" to venue), listOf("PAPER_DERIBIT:B"))
+
+        assertThat(warnings().single()).contains("venue PAPER_DERIBIT", "PAPER_DERIBIT:A").doesNotContain(":B")
+    }
+
+    @Test
+    fun `an option root names the venue its contracts trade on, never the router`() {
+        val broker = routed("PAPER_DERIBIT:BTC_USDC_PERPETUAL" to Venue("PAPER_DERIBIT"))
+
+        guard("200").rules(broker, listOf("OPTIONS:PAPER_DERIBIT.BTC_USDC"))
+
+        assertThat(warnings().single())
+            .contains("venue PAPER_DERIBIT", "OPTIONS:PAPER_DERIBIT.BTC_USDC")
+            .doesNotContain("Composite")
+    }
+
+    @Test
+    fun `an option root on a venue that reports margin says nothing`() {
+        val broker = routed("DERIBIT:BTC_USDC_PERPETUAL" to MarginVenue("DERIBIT"))
+
+        guard("200").rules(broker, listOf("OPTIONS:DERIBIT.BTC_USDC"))
+
+        assertThat(warnings()).isEmpty()
+    }
+
+    @Test
+    fun `a read-only feed no venue trades is not reported against the router`() {
+        val broker = routed("DERIBIT:X" to MarginVenue("DERIBIT"))
+
+        guard("200").rules(broker, listOf("DERIBIT:X", "CHAIN:DERIBIT.BTC_USDC", "DEPTH:BID:DERIBIT:X"))
+
+        assertThat(warnings()).isEmpty()
     }
 
     @Test
