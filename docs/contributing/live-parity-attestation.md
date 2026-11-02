@@ -110,14 +110,57 @@ events. It must contain zero `parityMismatches`, `unexplainedRejections`, and
 `unexplainedOrderOutcomes`. Runtime metrics must report zero unreconciled positions,
 zero unknown outcomes, and zero dropped ticks.
 
-Six sibling artifacts are required and SHA-256 checked:
+Seven sibling artifacts are required and SHA-256 checked:
 
-`health`, `journal`, `reconciliation`, `coverage`, `parity`, and `insights`.
+`health`, `journal`, `reconciliation`, `coverage`, `parity`, `insights`, and `catalog`.
+
+`catalog` lists every required case and stage with each attempt that led there. The verifier refuses a bundle in which
+a ready case at this commit has no pass, a case or stage is bound to another commit, profile, account or CLI build,
+a failed attempt is hidden, any evidence is over 24 hours old at assembly, or a core lane is missing.
 
 Artifacts are disposable evidence, not source files. Store them on the trusted runner
 and in the retained Actions artifact. Keep only the attestation metadata, hashes,
 workflow URL, and image digest in the promotion record. Compress or cap large raw
 captures before upload; never put credentials in any artifact.
+
+## Failing Fast And Recovering
+
+No attestation against live venues is fully deterministic: a venue can drop its link, a demo server can stall, a
+quote can go quiet. These rules do not hide that. They make a failure quick, correctly named and cheap to recover from.
+
+**Preflight.** `scripts/live-validation/lib/attest_preflight.py` runs in the first minute of `run-attestation.sh`, and
+before the CI wait in `release-unattended.sh`. It reports every failure at once: gateways (with retries), account flat
+(naming tickets, and distinct from "unreachable"), latency, disk, memory, tools, tokens, key file, Docker image,
+data corpus, runner, venue links, the account lock and each session-bound lane's window. Thresholds are proposals, not
+measured limits; set `preflight_min_disk_gb`, `preflight_min_mem_gb` or `preflight_max_latency_ms` in the profile.
+
+**Failure classes** (`lib/attest_classify.py`). `infrastructure` (timeouts, 5xx, refused connections, a venue link
+down) earns up to three reruns after 30, 60 and 120 s. `behaviour`, the default and anything with a failed assertion among
+its problems, earns one. `environment` (full disk, a missing tool or file) and `session` (the market closed) earn none. A
+retry reruns the whole case with all its assertions. Every attempt stays in the result and the bundle, and a case that needed
+one is marked `flaky`. There is no quarantine and no skip.
+
+**Resume.** Rerunning `run-attestation.sh` on the same commit keeps evidence bound to the same full SHA, profile file,
+account and CLI fingerprint, and at most 24 hours old (`lib/attest_resume.py`). The age allows the next day's US session
+to recover a lane while keeping one release's evidence from one working day. Anything else starts clean.
+
+| Part of a run | On a rerun |
+|---|---|
+| Preflight, sweep, bundle, verify | Always repeat |
+| CLI build | Kept while its fingerprint matches; a rebuild invalidates everything |
+| Proofs | Kept unless the corpus lock or the latest release changed |
+| Parity wave | Kept whole, with its `SHA256SUMS` intact, unless paper-soak was dispatched (that spends its `runId`); a partial wave never, because its phases and shadow lane share one session |
+| Catalog cases | Each passed case kept while its record, binding and `result.json` hash hold; the rest rerun under fresh magics |
+| Shadow lane in a catalog | Never kept: one daemon's session is the evidence of all its cases |
+| Insights | Kept unless the image changed |
+
+**Sessions.** The market being closed is the only limit: no case waits for an hour while its market is open. The Alpaca
+lane starts first, because it is the catalog's longest path, then stocks, and the preflight says up front whether the run
+reaches each window. An event only the venue can trigger at a fixed time is a `scheduled` case, never required by a
+release, and it must name its `release_proof` (see `attestation/README.md`).
+
+**Flakes.** `scripts/live-validation/attest-flake-report.py` reports per-case pass, fail and retry rates and reasons
+from every catalog directory. `--soak N` repeats the catalog for off-peak measurement: it places real demo orders.
 
 ## Failure Rules
 
