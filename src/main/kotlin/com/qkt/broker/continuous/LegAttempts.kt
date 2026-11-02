@@ -99,7 +99,8 @@ internal class LegAttempts(
         val now = clock.now()
         val id = RollLegIds.next(leg.id)
         val limit = (leg as? OrderRequest.Limit)?.limitPrice
-        val reference = run?.let { if (RollLegIds.kind(leg.id) == "close") it.fromPrice else it.toPrice }
+        run?.refreshQuotes()
+        val reference = run?.let { if (RollLegIds.kind(leg.id) == "close") it.fromReference else it.toReference }
         if (reference != null) return orders.order(id, leg.symbol, leg.side, quantity, leg.strategyId, reference)
         return if (limit != null) {
             OrderRequest.Limit(id, leg.symbol, leg.side, quantity, limit, TimeInForce.IOC, now, leg.strategyId)

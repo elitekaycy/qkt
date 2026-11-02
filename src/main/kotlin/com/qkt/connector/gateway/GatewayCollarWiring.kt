@@ -1,5 +1,6 @@
 package com.qkt.connector.gateway
 
+import com.qkt.broker.ORDER_COLLAR_FRAC
 import com.qkt.common.Clock
 import com.qkt.events.BrokerEvent
 import com.qkt.execution.LegIntent
@@ -7,7 +8,6 @@ import com.qkt.execution.OrderRequest
 import com.qkt.marketdata.MarketPriceProvider
 import com.qkt.marketdata.MarketPriceTracker
 import com.qkt.positions.PositionProvider
-import com.qkt.risk.rules.PreTradeControls
 import java.math.BigDecimal
 
 /** One market order being worked by [GatewayMarketCollar]. Touched by one venue answer at a time, and the engine's cancel. */
@@ -31,7 +31,7 @@ internal class CollaredMarketOrder(
 internal fun collarsMarketOrders(kind: String?): Boolean = kind == "future"
 
 /**
- * This session's collar for a broker holding [positions], at [PreTradeControls.ORDER_COLLAR_FRAC]. Null [prices]
+ * This session's collar for a broker holding [positions], at [ORDER_COLLAR_FRAC]. Null [prices]
  * collar nothing. An exit closes a ticket or a leg, or strictly reduces the strategy's position and the account's.
  */
 internal fun GatewaySession.marketCollar(
@@ -41,7 +41,7 @@ internal fun GatewaySession.marketCollar(
     send: (OrderRequest) -> Unit,
     publish: (BrokerEvent) -> Unit,
 ) = GatewayMarketCollar(
-    PreTradeControls.ORDER_COLLAR_FRAC,
+    ORDER_COLLAR_FRAC,
     prices ?: MarketPriceTracker(),
     clock,
     collars = { prices != null && collarsMarketOrders(symbols.instrument(it)?.kind) },

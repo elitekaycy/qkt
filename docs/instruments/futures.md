@@ -75,7 +75,7 @@ contract settles: a running session hears it, and a contract that expired while 
 of that close: it keeps the holding until settlement and books it closed at the settlement price, so its P&L differs from
 the venue's by the gap between the two prices.
 
-A live roll's legs are immediate-or-cancel limits 1% from the contract's measured roll price, so no leg
+A live roll's legs are immediate-or-cancel limits 1% from the contract's latest quote (its measured roll price when a restart has heard none), so no leg
 can fill beyond that however the book moved. A leg an immediate-or-cancel end left unfilled goes again under a new id, only what is left of it, up to five
 attempts 15 s apart, as does a far or missing quote seen before sending; a venue refusal such as a kill switch does not.
 A leg with no attempt left stops the strategy: a closing leg leaves the

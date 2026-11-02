@@ -42,7 +42,8 @@ class LaneRollCollarRestartTest {
 
         val again = g.venue.sent.single() as OrderRequest.Limit
         assertThat(again.id).isEqualTo("${close.id}-2")
-        assertThat(again.limitPrice).isEqualByComparingTo(close.limitPrice)
+        // A restored roll has heard no quote yet, so this attempt is collared around the measured price.
+        assertThat(again.limitPrice).isEqualByComparingTo("63630")
         g.last(again.id, g.sep, Side.BUY, "0.010", "63010")
         g.last(g.limit(":open").id, g.dec, Side.SELL, "0.010", "63790")
         assertThat(g.stop()).isNull()

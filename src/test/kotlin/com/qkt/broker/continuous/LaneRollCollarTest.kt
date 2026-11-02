@@ -28,7 +28,7 @@ class LaneRollCollarTest {
 
         val close = f.limit(":close")
         assertThat(close.side).isEqualTo(Side.BUY)
-        assertThat(close.limitPrice).isEqualByComparingTo("63630")
+        assertThat(close.limitPrice).isEqualByComparingTo("63640.1")
         assertThat(close.timeInForce).isEqualTo(TimeInForce.IOC)
         f.last(close.id, f.sep, Side.BUY, "0.010", "63010")
 
@@ -50,7 +50,7 @@ class LaneRollCollarTest {
         f.hold(Side.BUY)
         f.rolled()
 
-        assertThat(f.limit(":close").limitPrice).isEqualByComparingTo("62370")
+        assertThat(f.limit(":close").limitPrice).isEqualByComparingTo("62379.9")
         f.last(f.leg(":close").id, f.sep, Side.SELL, "0.010", "62990")
         assertThat(f.limit(":open").limitPrice).isEqualByComparingTo("64438")
     }
@@ -159,7 +159,7 @@ class LaneRollCollarTest {
 
         f.quote("63000", null, null)
 
-        assertThat(f.limit(":close").limitPrice).isEqualByComparingTo("63630")
+        assertThat(f.limit(":close").limitPrice).isEqualByComparingTo("63640.1")
         f.exhaust("close")
         assertThat(f.stop()).isNotNull()
         assertThat(f.heldOn()).isEqualTo(f.sep)

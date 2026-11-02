@@ -30,12 +30,6 @@ object PreTradeControls {
     /** Default price collar as a fraction (25%). Wide on purpose — a backstop, not a tuner. */
     val DEFAULT_PRICE_COLLAR_FRAC: BigDecimal = BigDecimal("0.25")
 
-    /**
-     * How far from its reference a collared order (a gateway's market entry, a live roll's leg) may fill, a fraction.
-     * Narrow enough for a venue to accept: Deribit refused a limit 25% from mark, its maximum being about 1.5% away.
-     */
-    val ORDER_COLLAR_FRAC: BigDecimal = BigDecimal("0.01")
-
     fun standard(
         prices: MarketPriceProvider,
         instruments: InstrumentRegistry = NoopInstrumentRegistry,

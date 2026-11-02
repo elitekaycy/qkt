@@ -37,6 +37,22 @@ internal class RollRun(
     /** What the roll last heard of both contracts' quotes; a restored roll has heard nothing yet. */
     var quotes: RollQuotes = RollQuotes.NONE
 
+    /**
+     * What a leg on the old contract is collared around: its last quote's price, the venue's mark, or the measured
+     * price with none heard (a restored roll). A measured price comes from a thin contract's last bar and can be
+     * percents from the market, too far for a narrow collar to fill.
+     */
+    val fromReference: BigDecimal get() = quotes.from?.price?.takeIf { it.signum() > 0 } ?: fromPrice
+
+    /** As [fromReference], for a leg on the new contract. */
+    val toReference: BigDecimal get() = quotes.to?.price?.takeIf { it.signum() > 0 } ?: toPrice
+
+    /** Hears the quotes again, keeping what the old contract last said once the stream serves the new one. */
+    fun refreshQuotes() {
+        val later = quotes.later()
+        quotes = RollQuotes(later.from ?: quotes.from, later.to ?: quotes.to, later.later)
+    }
+
     /** Each holder's step, in carry order; a holder not reached yet has none. */
     val steps = LinkedHashMap<String, CarryStep>()
 
