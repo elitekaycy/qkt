@@ -5,6 +5,7 @@ import com.qkt.instrument.QuoteCurrencyGuard
 import com.qkt.marketdata.MarketPriceProvider
 import java.math.BigDecimal
 import java.util.concurrent.ConcurrentHashMap
+import org.slf4j.LoggerFactory
 
 data class AccountingSnapshot(
     val accountCurrency: String,
@@ -53,6 +54,7 @@ class AccountingEngine(
             ?: FxRateProvider { _, _ -> null },
     private val currencyOf: (String) -> String? = { null },
 ) {
+    private val log = LoggerFactory.getLogger(AccountingEngine::class.java)
     private val conversions: MutableMap<String, FxConversion> = ConcurrentHashMap()
     private val warnings: MutableMap<String, String> = ConcurrentHashMap()
 
@@ -149,17 +151,26 @@ class AccountingEngine(
         )
     }
 
+    /**
+     * Prices a venue cost. The fill has already happened, so a cost nothing can price never
+     * throws, whatever the missing policy: it keeps its native amount, adds nothing in account
+     * currency, and is logged once per currency pair and listed in [snapshot] warnings.
+     */
     fun convertCost(
         cost: VenueCost,
         contextSymbol: String? = null,
         referencePrice: BigDecimal? = null,
     ): ConvertedMoney =
-        convert(
-            native = cost.amount,
-            timestamp = cost.timestamp,
-            contextSymbol = contextSymbol,
-            referencePrice = referencePrice,
-        )
+        try {
+            convert(cost.amount, cost.timestamp, contextSymbol, referencePrice)
+        } catch (e: MissingFxRateException) {
+            val message = e.message.orEmpty()
+            val pair = "${cost.amount.normalizedCurrency}->$accountCurrency"
+            if (warnings.putIfAbsent(pair, message) == null) {
+                log.warn("venue cost kept in its own currency, 0 in account currency: {}", message)
+            }
+            ConvertedMoney(cost.amount, MoneyAmount(Money.ZERO, accountCurrency), conversion = null)
+        }
 
     fun snapshot(): AccountingSnapshot =
         AccountingSnapshot(
@@ -249,8 +260,8 @@ class AccountingEngine(
     ): Direction? {
         val pair = currencyPair(symbol) ?: return null
         return when {
-            pair.base == from && pair.quote == to -> Direction.DIRECT
-            pair.base == to && pair.quote == from -> Direction.INVERSE
+            pair.base == from && compatible(pair.quote, to) -> Direction.DIRECT
+            compatible(pair.base, to) && pair.quote == from -> Direction.INVERSE
             else -> null
         }
     }
