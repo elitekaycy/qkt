@@ -9,6 +9,14 @@ tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 # A clean repository holding the script, so its preflight tree check passes without depending on this checkout.
 mkdir -p "$tmp/repo/scripts/live-validation" "$tmp/bin" "$tmp/wave" "$tmp/bundle"
 cp "$repo_root/scripts/live-validation/run-attestation.sh" "$tmp/repo/scripts/live-validation/"
+cp -r "$repo_root/scripts/live-validation/lib" "$tmp/repo/scripts/live-validation/"
+# The real preflight has its own tests; here it only has to report what run-attestation hands it.
+cat > "$tmp/repo/scripts/live-validation/lib/attest_preflight.py" <<'STUB'
+import sys
+failed = [sys.argv[i + 1] for i, a in enumerate(sys.argv) if a == "--also-failed"]
+print("; ".join(failed) or "preflight: 0 failed")
+sys.exit(1 if failed else 0)
+STUB
 git -C "$tmp/repo" init -q
 git -C "$tmp/repo" -c user.name=t -c user.email=t@t add -A
 git -C "$tmp/repo" -c user.name=t -c user.email=t@t commit -qm t
@@ -22,6 +30,7 @@ case "$1 ${2:-}" in
     "run list") [ "${GH_NO_RUN:-}" = 1 ] || echo 4242 ;;
     "run view") [ "${GH_LOG:-}" = "" ] || printf '%s\n' "$GH_LOG" ;;
     "--version ") echo "gh version 2.55.0 (stub)" ;;
+    "release view") echo v0.0.0 ;;
     *) echo "unexpected gh $*" >&2; exit 9 ;;
 esac
 GH

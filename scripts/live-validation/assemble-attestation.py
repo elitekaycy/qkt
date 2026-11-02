@@ -2,14 +2,16 @@
 """Assemble the live-parity attestation bundle from a passed parity wave and a passed
 insights-attribution scenario.
 
-    assemble-attestation.py WAVE_DIR INSIGHTS_DIR OUT_DIR IMAGE@DIGEST TESTING_SHA
+    assemble-attestation.py WAVE_DIR INSIGHTS_DIR OUT_DIR IMAGE@DIGEST TESTING_SHA CATALOG_EVIDENCE
 
-Writes the six artifacts `verify-paper-soak-attestation.py` requires plus `attestation.json`.
+CATALOG_EVIDENCE is lib/attest_resume.py's manifest: every required case and stage, the attempts that led there and the
+build they are bound to; a resumed run's bundle is judged on it exactly as a straight run's.
+Writes the seven artifacts `verify-paper-soak-attestation.py` requires plus `attestation.json`.
 Every count is derived from the wave's own evidence; nothing is supplied by the caller. It
 refuses a wave whose commit is not TESTING_SHA, a case that did not pass, or a log that
 records an unknown order outcome."""
 import hashlib, json, sys, zipfile, glob, os, re, datetime, math
-wave, ins, out, image, sha = sys.argv[1:6]
+wave, ins, out, image, sha, catalog_evidence = sys.argv[1:7]
 suite = json.load(open(f"{wave}/suite.json"))
 assert suite["qktCommit"] == sha, (suite["qktCommit"], sha)
 ex = suite["execution"]; assert ex["mode"] == "live" and ex["cases"] == 4
@@ -66,12 +68,17 @@ acct = suite["account"]; final_acct = J(sorted(glob.glob(f"{wave}/cases/*/armed-
 recon = {"schema":"qkt-live-reconciliation-v1","status":"passed","account":{"login":acct["login"],"server":acct["server"],"tradeMode":acct["tradeMode"],"currency":acct["currency"],"balance":str(final_acct.get("balance",acct["balance"])),"leverage":acct["leverage"]},
   "qktCommit":sha,"image":image,"source":ex["runId"],"finalPositions":0,"finalOrders":0,"unreconciledPositions":0}
 insights = {"schema":"qkt-live-insights-v1","status":"passed","qktCommit":sha,"source":f"insights-attribution-{sha[:8]}","events":ins_events,"result":ir}
+evidence = json.load(open(catalog_evidence))
+assert evidence["testingSha"] == sha, (evidence["testingSha"], sha)
+assert evidence["waveRunId"] == ex["runId"], (evidence["waveRunId"], ex["runId"])
+assert all(c["status"] == "passed" for c in evidence["cases"]), "a case in the catalog evidence did not pass"
+open(f"{out}/paper-soak-catalog.json","w").write(json.dumps(evidence,indent=1)+"\n")
 open(f"{out}/paper-soak-health.jsonl","w").write("\n".join(health_lines)+"\n")
 with zipfile.ZipFile(f"{out}/paper-soak-golden.zip","w",zipfile.ZIP_STORED) as z:
     for cid in cases: z.write(f"{wave}/cases/{cid}/armed-live/evidence/golden.zip", f"{cid}/golden.zip")
 for name,obj in (("paper-soak-parity.json",parity),("paper-soak-coverage.json",coverage),("paper-soak-reconciliation.json",recon),("paper-soak-insights.json",insights)):
     open(f"{out}/{name}","w").write(json.dumps(obj,indent=1)+"\n")
-arts = {"health":"paper-soak-health.jsonl","journal":"paper-soak-golden.zip","reconciliation":"paper-soak-reconciliation.json","coverage":"paper-soak-coverage.json","parity":"paper-soak-parity.json","insights":"paper-soak-insights.json"}
+arts = {"health":"paper-soak-health.jsonl","journal":"paper-soak-golden.zip","reconciliation":"paper-soak-reconciliation.json","coverage":"paper-soak-coverage.json","parity":"paper-soak-parity.json","insights":"paper-soak-insights.json","catalog":"paper-soak-catalog.json"}
 att = {"schemaVersion":1,"attestationType":"live-parity","runId":ex["runId"],"inputFingerprint":ex["inputFingerprint"],"testingSha":sha,"image":image,
   "accountMode":"demo","canaryStrategy":"generated-parity-wave-four-case","status":"pass","startedAtUtc":started,"completedAtUtc":completed,
   "durationHours":max(1,math.ceil(dur_min/60)),"tradingDays":1,
