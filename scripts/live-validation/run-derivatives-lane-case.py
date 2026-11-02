@@ -55,7 +55,6 @@ import deal_capture  # noqa: E402
 import derivatives_drills  # noqa: E402
 import derivatives_roll as rolling  # noqa: E402
 import derivatives_settlement as settlement  # noqa: E402
-import roll_from_now  # noqa: E402
 import strategy_scope as scope  # noqa: E402
 
 TRADE = re.compile(r"qkt\.trade - trade (BUY|SELL) (\S+) qty=(\S+) px=(\S+)")
@@ -216,7 +215,10 @@ class Run:
             raise RuntimeError("a kill_switch drill needs the guardian token in QKT_DERIV_GUARDIAN_KEY")
         self.strategy = re.search(r"^STRATEGY\s+(\w+)", open(os.path.join(self.args.case, "strategy.qkt")).read(),
                                   re.M).group(1)
-        if not self.flat(int(time.time() * 1000) - PREFLIGHT_LOOKBACK_MS):
+        # An earlier run's roll legs carry that roll's own digest, so its deals alone do not net flat: a roll case checks
+        # working orders only, and its own sweep has closed whatever that run left.
+        lookback = 0 if self.case.get("continuous_roll") else PREFLIGHT_LOOKBACK_MS
+        if not self.flat(int(time.time() * 1000) - lookback):
             raise RuntimeError(f"the strategy {self.strategy} already holds a position or a working order on the account")
         self.owns_strategy = True  # it was flat, so whatever the strategy holds from here on is this case's
         balance = Decimal(self.get("/v1/account")["balance"])
@@ -277,7 +279,7 @@ class Run:
         if held or booked or self.case.get("settles"):
             self.evidence.update(settlements=[dict(s, holding=str(s["holding"])) for s in held], booked=booked,
                                  balanceMoved=str(moved), balanceNote=getattr(self, "balance_note", None),
-                                 selected=getattr(self, "selected", None), selectedRoll=getattr(self, "selected_roll", None))
+                                 selected=getattr(self, "selected", None))
         return problems
 
     def judge_balance(self, moved, realized, fills):
@@ -303,8 +305,11 @@ class Run:
         if self.roll:  # the engine never sees a leg; it books a refused roll's close at the closing leg's fill
             deals = [d for d in deals if not d["client_order_id"].startswith(self.roll["prefix"])
                      or rolling.kind_of(d["client_order_id"]) == "close"]
-        venue = Counter((d["side"].upper(), Decimal(d["quantity"]), Decimal(d["price"])) for d in deals)
-        booked = Counter((f["side"], Decimal(f["qty"]), Decimal(f["price"])) for f in fills)
+        # A continuous stream books its adjusted prices, so a roll's fills are compared by side and size; its money is
+        # judged to the digit by deals-net-equals-realized.
+        price = (lambda _: None) if self.roll else Decimal
+        venue = Counter((d["side"].upper(), Decimal(d["quantity"]), price(d["price"])) for d in deals)
+        booked = Counter((f["side"], Decimal(f["qty"]), price(f["price"])) for f in fills)
         problems = []
         if venue != booked:
             problems.append(f"venue-fills-equal-qkt-fills: venue only {dict(venue - booked)}, qkt only {dict(booked - venue)}")
@@ -332,9 +337,6 @@ class Run:
         self.strategy = re.search(r"^STRATEGY\s+(\w+)", text, re.M).group(1)
         open(f"{self.out}/strategies/{self.strategy}.qkt", "w").write(text)
         shutil.copy(os.path.join(self.args.case, "instruments.yaml"), f"{self.out}/data/instruments.yaml")
-        if self.case.get("roll_from_now"):  # a roll minutes from now, not at a fixed hour (lib/roll_from_now.py)
-            self.selected_roll = roll_from_now.apply(f"{self.out}/data/instruments.yaml", self.case["roll_from_now"],
-                                                     self.get("/v1/instruments"), int(time.time() * 1000))
         venue = self.venue = self.case["symbols"][0].split(":")[1].split(".")[0] if self.case["symbols"][0].startswith(
             ("OPTIONS:", "CHAIN:")) else self.case["symbols"][0].split(":")[0]
         self.contract_sizes()  # a contract leaves the listing once it expires: remember its size now
@@ -391,8 +393,11 @@ class Run:
         if not closes:
             raise RuntimeError(f"venue-untradeable: {from_code} has no bar in six hours")
         last = Decimal(closes[-1]["close"])
+        catalog, history = rolling.with_previous_roll(catalog, history, at_ms, contracts, last)
         if spec["outcome"] == "far_book":
-            rolling.write(history_path, rolling.seed_far_reference(history, at_ms, contracts, last, spec["far_reference"]))
+            history = rolling.seed_far_reference(history, at_ms, contracts, last, spec["far_reference"])
+        rolling.write(catalog_path, catalog)
+        rolling.write(history_path, history)
         self.roll = {"at_ms": at_ms, "at_utc": rolling.hhmm(at_ms), "outcome": spec["outcome"], "quantity": str(spec["quantity"]),
                      "prefix": rolling.leg_prefix(spec["stream"], at_ms, self.strategy), "from_code": from_code,
                      "to_code": to_code, "reference": str(last)}

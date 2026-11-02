@@ -108,6 +108,27 @@ def seed_far_reference(history, at_ms, contracts, price, factor):
     return dict(history, rolls=sorted(kept + [record], key=lambda r: (r["atMs"], r["from"])))
 
 
+def previous_symbol(contract):
+    """The name of the contract expiring the day before [contract]: BTC_USDC_3NOV26 gives BTC_USDC_2NOV26."""
+    family = contract["symbol"].rpartition("_")[0]
+    day = datetime.datetime.fromtimestamp((contract["expiryMs"] - DAY_MS) / 1000, datetime.timezone.utc)
+    return f"{family}_{day.day}{day.strftime('%b%y').upper()}"
+
+
+def with_previous_roll(catalog, history, at_ms, contracts, price):
+    """[catalog] and [history] with the roll before the case's. A stream is served only from its first measured roll, and
+    a fresh listing has dropped the contract that expired today, so without this the stream would start at the case's own
+    roll and could hold nothing across it. That contract is real and left the chain long ago; the record's two prices are
+    equal, so it moves no adjustment: it only says the stream is served from yesterday."""
+    earlier = {"symbol": previous_symbol(contracts[0]), "expiryMs": contracts[0]["expiryMs"] - DAY_MS}
+    record = {"atMs": at_ms - DAY_MS, "from": earlier["symbol"], "to": contracts[0]["symbol"],
+              "fromPrice": str(price), "toPrice": str(price)}
+    listed = [c for c in catalog["contracts"] if c["symbol"] != earlier["symbol"]] + [earlier]
+    rolls = [r for r in history["rolls"] if r["atMs"] != record["atMs"] or r["from"] != record["from"]] + [record]
+    return (dict(catalog, contracts=sorted(listed, key=lambda c: c["expiryMs"])),
+            dict(history, rolls=sorted(rolls, key=lambda r: (r["atMs"], r["from"]))))
+
+
 def has_roll(history, at_ms, contracts):
     """Whether [history] holds the roll at [at_ms], or the one before it, which a live session extends. A session never
     starts a history (LiveRollMeasurer), so without either the stream cannot be served."""
@@ -126,8 +147,8 @@ def write(path, document):
 
 
 def kind_of(client_order_id):
-    """`close`, `open` or `unwind` of a leg's id: `roll:<atMs>:<digest>:<kind>.<submit time>`."""
-    return client_order_id.rsplit(".", 1)[0].rsplit(":", 1)[1]
+    """`close`, `open` or `unwind` of a leg's id: `roll:<atMs>:<digest>:<kind>[-<attempt>].<submit time>`."""
+    return client_order_id.rsplit(".", 1)[0].rsplit(":", 1)[1].split("-")[0]  # a retry is `:close-2`
 
 
 def legs_of(deals, prefix):

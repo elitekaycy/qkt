@@ -58,6 +58,14 @@ class Planning(unittest.TestCase):
         again = rolling.seed_far_reference(history, AT, contracts, Decimal("78000"), 0.4)
         self.assertEqual(len(again["rolls"]), 1)
 
+    def test_the_roll_before_is_added_so_the_stream_is_served_ahead_of_the_case(self):
+        catalog = {"contracts": [c for c in CATALOG["contracts"] if c["symbol"] != "BTC_USDC_2NOV26"]}
+        contracts = rolling.contracts_of_roll(catalog, AT)
+        listed, history = rolling.with_previous_roll(catalog, {"rolls": []}, AT, contracts, Decimal("78000"))
+        self.assertIn("BTC_USDC_2NOV26", [c["symbol"] for c in listed["contracts"]])
+        self.assertEqual(history["rolls"][0]["atMs"], AT - DAY)
+        self.assertEqual(history["rolls"][0]["fromPrice"], history["rolls"][0]["toPrice"])
+
     def test_the_policy_is_written_with_a_guard_inside_the_contracts_life(self):
         written = rolling.with_policy({"futures": [{"root": "DERIBIT:BTC_USDC"}]}, "DERIBIT:BTC_USDC", AT)
         self.assertEqual(written["futures"][0]["roll"], {"daysBeforeExpiry": 1, "atUtc": "16:05", "adjust": "panama"})

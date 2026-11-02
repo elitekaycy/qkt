@@ -21,7 +21,7 @@ continuous_roll:
   stream: DERIBIT:BTC_USDC@front
   outcome: carried
   quantity: 0.001
-  lead_seconds: 600
+  lead_seconds: 420
   start_before_seconds: 300
 assertions:
 - flat-by-strategy

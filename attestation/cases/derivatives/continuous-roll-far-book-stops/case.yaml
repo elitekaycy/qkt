@@ -25,7 +25,7 @@ continuous_roll:
   outcome: far_book
   quantity: 0.001
   far_reference: 0.5
-  lead_seconds: 600
+  lead_seconds: 420
   start_before_seconds: 300
   post_stop_wait_seconds: 150
   resume_exit: 1

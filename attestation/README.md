@@ -40,7 +40,6 @@ attestation/
 | `proves` | Capability names from `oracle-evidence.json`, plus free-form `behaviour:` tags |
 | `session` | `none` marks a case that trades a 24/7 market in a session-bound lane, so the market's hours do not bind it |
 | `release_proof` | Required on a `scheduled` case: why a release does not wait for it, and which proof stands in |
-| `roll_from_now` | Derivatives lane: `{root, lead_minutes}`, generate the root's roll to happen that many minutes after the case starts (`lib/roll_from_now.py`) |
 | `budget_seconds` | Hard deadline; omitted means the lane default. Never above 600 (14400 for a `scheduled` case) |
 | `steps` | Daemon/engine lanes: ordered operator commands with the exit code and state expected after each |
 | `assertions` | Named checks the runner applies, e.g. `trace-parity`, `journal-byte-exact`, `flat-by-magic` |
@@ -52,6 +51,7 @@ attestation/
 | `drills` | Derivatives lane: failures fired while the case holds, each `{kind, at_s}` timed from the first fill (below) |
 | `shared_account` | Gateway lanes: `false` for a case whose point is qkt refusing others' size on the account; every other case's broker sets `shared_account: true`, since these accounts are shared by design |
 | `continuous_roll` | Derivatives lane: a roll scheduled minutes ahead that the case holds through, and what must come of it (below) |
+| `shared_account` | Derivatives lane: the daemon's broker sets `shared_account`, for an account other users hold size on |
 | `expect_log`, `reject_log` | Derivatives lane: regexes the daemon log must, or must not, match when the case ends |
 | `venues` | Cross lane: each broker prefix the strategy trades through, `{label, type: mt5}` or `{label, type: gateway, adapter}` (below) |
 

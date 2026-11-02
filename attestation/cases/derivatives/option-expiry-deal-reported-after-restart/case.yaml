@@ -5,6 +5,7 @@ why: 'A settlement has no fill at all, so what it closed is only in what qkt boo
   only from then on. Scheduled, since Deribit expires options at 08:00 UTC. Unproven: a restart redeploys a strategy
   whose option has left the listing, which may refuse it before any deal is read. Needs #1590.'
 status: scheduled
+release_proof: Deribit expires options only at 08:00 UTC, so no release waits for it. Replaced by LiveGatewayDealsRestartTest, alpaca-share-deal-reported-after-restart for an ordinary fill, and this case run across an expiry by the bot2 soak.
 symbols:
 - DERIBIT:BTC_USDC_6OCT26_83000_C
 timeframes:
