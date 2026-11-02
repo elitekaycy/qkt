@@ -125,6 +125,13 @@ class PreflightTest(unittest.TestCase):
         failed = self.failed(world)  # the repo's alpaca lane has a kill-switch drill
         self.assertIn("QKT_ALPACA_GUARDIAN_KEY", failed["tokens"])
 
+    def test_a_cross_venue_is_checked_like_a_gateway_lane(self):
+        self.p.update(cross_venues="PAPER=http://127.0.0.1:2@paper")
+        world = Fake({"/v1/health": {"account_login": "other", "trade_mode": "demo", "venue_connected": True, "kill_switch": {}}})
+        failed = self.failed(world)
+        self.assertIn("QKT_CROSS_PAPER_KEY", failed["tokens"])
+        self.assertIn("logged into other, expected paper", failed["cross-gateway"])
+
     def test_a_venue_gateway_with_its_link_down_is_named(self):
         self.p.update(alpaca_gateway_url="http://127.0.0.1:2", alpaca_expected_login="a")
         world = Fake({"/v1/health": {"account_login": "a", "trade_mode": "demo", "venue_connected": False, "kill_switch": {}}})

@@ -26,6 +26,17 @@ VENUES = (("derivatives", "deriv_gateway_url", "deriv_expected_login", "QKT_DERI
           ("alpaca", "alpaca_gateway_url", "alpaca_expected_login", "QKT_ALPACA_GATEWAY_KEY", "QKT_ALPACA_GUARDIAN_KEY"))
 
 
+def venues(p):
+    """Every gateway lane the profile names; a cross venue (LABEL=URL@LOGIN) enters [p] under its own two variables."""
+    found = list(VENUES)
+    for venue in (p.get("cross_venues") or "").split():
+        label, _, rest = venue.partition("=")
+        url, _, login = rest.rpartition("@")
+        p[f"cross_{label}_url"], p[f"cross_{label}_login"] = url, login
+        found.append(("cross", f"cross_{label}_url", f"cross_{label}_login", f"QKT_CROSS_{label}_KEY", f"QKT_CROSS_{label}_GUARDIAN_KEY"))
+    return found
+
+
 class Finding:
     def __init__(self, check, level, message):
         self.check, self.level, self.message = check, level, message
@@ -208,7 +219,7 @@ def check_secrets(p, world, key_file):
     for name in ("QKT_BROKER_API_KEY", "QKT_LIVE_DEMO_ORDER_APPROVAL"):
         if not env.get(name):
             missing.append(name)
-    for lane, url, login, key, guardian in VENUES:
+    for lane, url, login, key, guardian in venues(p):
         if p.get(url):
             if not p.get(login):
                 found += bad("tokens", f"the profile names {url} but not {login}")
@@ -327,7 +338,7 @@ def run_checks(p, world, key_file=None, dispatch=False, no_session=False, plan=N
             ("disk", lambda: check_disk_memory(p, world)), ("tools", lambda: check_tools(p, world)),
             ("secrets", lambda: check_secrets(p, world, key_file)), ("docker", lambda: check_docker(p, world)),
             ("corpus", lambda: check_corpus(p, world)), ("gh", lambda: check_gh(p, world))]
-    for lane, url, login, key, _ in VENUES:
+    for lane, url, login, key, _ in venues(p):
         if p.get(url):
             jobs.append((lane, lambda lane=lane, url=url, login=login, key=key: check_venue(lane, url, login, key, p, world)))
     if dispatch:

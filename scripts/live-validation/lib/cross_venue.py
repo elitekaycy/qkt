@@ -73,7 +73,7 @@ def daemon_config(venues, out, risk, case_config=None):
             brokers[v["label"].lower()] = {
                 "type": "gateway", "gateway_url": v["url"], "api_key": f"env:{v['key_env']}",
                 "expected_adapter": v["adapter"], "expected_account_login": str(v["login"]),
-                "expected_trade_mode": "demo", "chain_snapshot_seconds": 60}
+                "expected_trade_mode": "demo", "chain_snapshot_seconds": 60, "shared_account": True}
     config = {"source": "local", "data_root": f"{out}/data", "log_level": "info", "runtime": {"mode": "dev"},
               "account": {"currency": "USD"}, "starting_balance": 100000, "brokers": brokers, "risk": dict(risk),
               "state": {"enabled": True, "async": True}, "insights": {"enabled": False}}

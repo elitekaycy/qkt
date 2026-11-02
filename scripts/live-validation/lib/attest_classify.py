@@ -24,7 +24,7 @@ _INFRA = re.compile(
     r"|Network is unreachable|Temporary failure in name resolution|curl: \((6|7|18|28|35|52|56)\)"
     r"|HTTP Error 5(?!01)\d\d|\bHTTP 5(?!01)\d\d\b|Bad Gateway|Service Unavailable|Gateway Timeout"
     r"|venue link|venue_connected|venue is (down|disconnected)|venue-untradeable"
-    r"|gateway is not logged into|gateway is not healthy", re.I)
+    r"|gateway is not logged into|gateway is not healthy|no answer after \d+ attempts", re.I)
 _ENV = re.compile(
     r"No space left|Errno 28|Errno 2\]|Errno 13|Permission denied|Cannot allocate memory|command not found"
     r"|\bis required$|\bmust be set$|output already exists|required command not found", re.I)

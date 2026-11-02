@@ -50,6 +50,7 @@ attestation/
 | `expiring_option` | Derivatives lane: trade the option about to expire in place of the case's symbol (below) |
 | `settles` | Derivatives lane: the expiry settlements qkt must book before the case is judged |
 | `drills` | Derivatives lane: failures fired while the case holds, each `{kind, at_s}` timed from the first fill (below) |
+| `shared_account` | Gateway lanes: `false` for a case whose point is qkt refusing others' size on the account; every other case's broker sets `shared_account: true`, since these accounts are shared by design |
 | `venues` | Cross lane: each broker prefix the strategy trades through, `{label, type: mt5}` or `{label, type: gateway, adapter}` (below) |
 
 ## No case waits for the clock
@@ -182,7 +183,8 @@ What the replay cannot do yet: ticks are stored by bare symbol, so two venues qu
 `ALPACA:AAPL`) cannot be captured or replayed; the gateway leg's transport (requests, acks) is not captured; and no
 step of the causal chain from signal to fill is compared. The follow-up issue tracks exact-price causal-chain replay.
 
-Run it with `run-attestation-catalog.sh --lanes ...,cross --cross-venue PAPER=http://127.0.0.1:8460@paper`. The gateway
+Run it with `run-attestation-catalog.sh --lanes ...,cross --cross-venue PAPER=http://127.0.0.1:8460@paper`, or name
+`cross_venues="PAPER=http://127.0.0.1:8460@paper"` in the attestation profile. The gateway
 venue of the shipped cases is the gateway's built-in `paper` adapter (a simulated account on Deribit's public prices,
 isolated by construction), so the lane needs no testnet account.
 

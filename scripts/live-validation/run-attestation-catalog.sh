@@ -74,7 +74,7 @@ if [ -e "$out" ]; then
     cmp -s <(jq -S . "$binding") <(jq -S . "$out/binding.json") || fail "$out belongs to another build, profile or account"
 fi
 [ -x "$cli" ] || fail "qkt CLI is not executable: $cli"
-python3 "$repo_root/attestation/lib/validate.py" > /dev/null || fail "the case catalog does not validate"
+(cd "$repo_root" && python3 attestation/lib/validate.py) > /dev/null || fail "the case catalog does not validate"
 
 mkdir -p "$out/logs"
 lib="$repo_root/scripts/live-validation/lib"
