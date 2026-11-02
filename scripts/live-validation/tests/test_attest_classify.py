@@ -11,7 +11,8 @@ class ClassifyTest(unittest.TestCase):
     def test_transport_failures_are_infrastructure(self):
         for line in ("HTTP Error 503: Service Unavailable", "curl: (28) Operation timed out after 10002 milliseconds",
                      "<urlopen error [Errno 111] Connection refused>", "kill switch: The read operation timed out",
-                     "venue-untradeable: DERIBIT:BTC reported no index in 10 minutes"):
+                     "venue-untradeable: DERIBIT:BTC reported no index in 10 minutes",
+                     "runner error: qkt fetch failed: /v1/instruments: no answer after 3 attempts (timeout)"):
             self.assertEqual(c.classify([line]), c.INFRASTRUCTURE, line)
 
     def test_a_501_is_the_venue_answering_not_a_blip(self):
