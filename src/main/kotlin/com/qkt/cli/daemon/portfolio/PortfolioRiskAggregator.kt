@@ -37,7 +37,8 @@ interface ChildRiskTarget {
 /**
  * Account-level drawdown halt for a portfolio book. Refreshes a book [RiskState] (fed by summed
  * child PnL) and runs the existing drawdown halt rules; on a breach it flattens then halts every
- * child. A DAILY breach (daily-loss / daily-drawdown) auto-resumes only children whose halt still
+ * child. The flatten is sent once, for what each child holds when its engine reaches it; an entry
+ * already in flight can fill after that and stays open, because a repeated close could stack. A DAILY breach (daily-loss / daily-drawdown) auto-resumes only children whose halt still
  * matches that book breach at the next UTC midnight; a PERSISTENT breach (total / trailing
  * drawdown), or an unrelated child halt, stays latched across process restarts.
  */
@@ -124,7 +125,11 @@ class PortfolioRiskAggregator(
         childrenHalted = true
         childHaltReason = reason
         childHaltScope = scope
-        log.warn("portfolio book drawdown breached: {} — flattening and halting all children", reason)
+        log.warn(
+            "portfolio book halted: {} — closing open positions once and refusing new entries on all children; " +
+                "an entry already in flight can fill after this and stays open until an operator closes it",
+            reason,
+        )
         for (c in children) {
             runCatching { c.flatten() }.onFailure { log.warn("child flatten failed: {}", it.message) }
             if (!c.isHalted()) {

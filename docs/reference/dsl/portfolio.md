@@ -275,6 +275,10 @@ The portfolio's symbols are also the only ones whose data the portfolio rules ca
 
 Daemon-level risk rules apply to **the whole portfolio**, not per-child. If one child triggers `max-daily-loss`, the entire daemon halts — every other strategy too.
 
+**What a halted book does with open positions.** When a book's limit breaches, or its risk cannot be evaluated, it sends one close for what each child holds when that child's engine reaches it, then refuses new entries. An entry already in flight can fill after that close and stays open until you close it, so check `qkt status` after any book halt. A persistent halt holds until you resume it.
+
+**When a book halts because it cannot read risk.** Three evaluations in a row that error halt the book. An engine that answers late is not an error: the book keeps running and logs each miss, and halts only after 20 unanswered reads in a row (about two minutes with no limit checked).
+
 To express per-child risk limits, use `qkt.config.yaml`'s `risk.per_strategy` block:
 
 ```yaml

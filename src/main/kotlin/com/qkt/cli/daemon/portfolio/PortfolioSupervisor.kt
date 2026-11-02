@@ -83,26 +83,9 @@ class PortfolioSupervisor(
             Thread({
                 org.slf4j.MDC.put("strategy", ast.name)
                 try {
-                    var consecutiveFailures = 0
+                    val heartbeat = PortfolioRiskHeartbeat(agg::evaluate, agg::failClosed)
                     while (runFlag.get()) {
-                        try {
-                            agg.evaluate()
-                            consecutiveFailures = 0
-                        } catch (e: Exception) {
-                            consecutiveFailures++
-                            log.warn(
-                                "portfolio risk eval failed ({}/{}): {}",
-                                consecutiveFailures,
-                                RISK_FAILURE_THRESHOLD,
-                                e.message,
-                            )
-                            if (consecutiveFailures >= RISK_FAILURE_THRESHOLD) {
-                                agg.failClosed(
-                                    "portfolio risk evaluation failed $consecutiveFailures consecutive times: " +
-                                        "${e.message}",
-                                )
-                            }
-                        }
+                        heartbeat.beat()
                         Thread.sleep(riskIntervalMs)
                     }
                 } catch (e: InterruptedException) {
@@ -185,11 +168,7 @@ class PortfolioSupervisor(
                     ?.let(TimeWindow::parse),
             bookFeed = bookFeed,
             onGateCandle = ::onCandle,
-            sample = { endMs -> riskAggregator?.sample(endMs) },
+            sample = { endMs -> riskAggregator?.let { agg -> sampleBook(endMs, agg::sample) } },
         ).run(runFlag::get)
-    }
-
-    private companion object {
-        const val RISK_FAILURE_THRESHOLD = 3
     }
 }
