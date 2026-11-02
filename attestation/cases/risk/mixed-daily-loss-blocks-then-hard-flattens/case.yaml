@@ -1,0 +1,67 @@
+id: mixed-daily-loss-blocks-then-hard-flattens
+title: A daemon mixing a book and a standalone shares max_daily_loss, leaves positions, and hard_daily_loss flattens
+why: 'A portfolio beside standalones did not share the daily budget, and a book breach flattened its children while a
+  standalone only stopped entering (#1565). A restored loss of 40 on the standalone, once the limit drops to 20, must block
+  entries in both and flatten neither; a hard limit of 30 must then flatten both and keep them out. The limits change
+  across restarts, so nothing depends on the market. Needs #1571, a draft that holds until after v0.64.0: without it the
+  book keeps trading and hard_daily_loss does nothing.'
+status: ready
+symbols:
+- BTCUSD
+timeframes:
+- 1m
+warmup_bars:
+  1m: 3
+proves:
+- behaviour:daemon-daily-loss-mixed
+- behaviour:hard-daily-loss
+seed_risk_states:
+  atto_mix_solo:
+    realizedToday: '-40'
+also_kill:
+- atto_mix_solo
+autoload: true
+steps:
+- run: qkt list --state-dir {state}
+  wait_for: position
+  wait_count: 2
+  wait_seconds: 150
+  note: under the starting limit of 50 the standalone and the book's child both enter
+- daemon: restart
+  config_on_restart:
+    risk:
+      max_daily_loss: '20'
+  note: the daemon's one total, 40, now exceeds the limit
+- run: qkt list --state-dir {state}
+  settle_seconds: 30
+  expect_positions: 2
+  reject_log: hard_daily_loss
+  note: entries blocked; the book is not flattened by max_daily_loss on a mixed day
+- run: qkt status atto_mix_solo --state-dir {state}
+  expect_status:
+    halted: true
+  expect_stdout: daily loss .* exceeds max
+  note: the standalone names the daemon's total
+- daemon: restart
+  config_on_restart:
+    risk:
+      hard_daily_loss: '30'
+  note: realized loss alone past the hard limit trips on the first check
+- run: qkt list --state-dir {state}
+  wait_for: flat
+  wait_seconds: 60
+  expect_log: 'hard_daily_loss: loss .* exceeds'
+  note: both are flattened, the book's child included
+- run: qkt list --state-dir {state}
+  settle_seconds: 75
+  expect_positions: 0
+  expect_pending: 0
+  note: and neither enters again today
+assertions:
+- book-not-flattened-by-daily-loss
+- hard-limit-flattens
+- flat-by-magic
+budget_seconds: 480
+config:
+  book_risk:
+    capital: 1000
