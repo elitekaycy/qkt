@@ -135,7 +135,7 @@ class PreflightTest(unittest.TestCase):
     def test_the_session_estimate_is_said_up_front(self):
         self.p.update(alpaca_gateway_url="http://127.0.0.1:2", alpaca_expected_login="a")
         world = Fake({"/v1/health": {"account_login": "a", "trade_mode": "demo", "venue_connected": True, "kill_switch": {}}},
-                     now=dt.datetime(2026, 11, 3, 20, 30, tzinfo=dt.timezone.utc))
+                     now=dt.datetime(2026, 11, 3, 20, 10, tzinfo=dt.timezone.utc))
         self.assertIn("closes Tue 21:00Z", self.failed(world, no_session=False)["session-alpaca"])
 
     def test_a_resume_that_kept_the_lane_needs_no_window(self):
