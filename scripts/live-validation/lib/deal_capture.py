@@ -37,7 +37,7 @@ class DealCapture:
         """The daemon's `insights:` block that reports to this capture."""
         return {"insights": {"enabled": True, "url": f"http://127.0.0.1:{self.server.server_port}/ingest",
                              "instance_id": "attestation-capture", "token": "attestation-capture",
-                             "events": ["deal"], "flush_interval_ms": 250, "state_poll_ms": 5000, "deal_backfill_days": 1}}
+                             "events": ["state", "deal"], "flush_interval_ms": 250, "state_poll_ms": 5000, "deal_backfill_days": 1}}
 
     def close(self):
         self.server.shutdown()

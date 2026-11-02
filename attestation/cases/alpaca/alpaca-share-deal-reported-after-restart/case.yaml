@@ -23,6 +23,10 @@ drills:
   kind: qkt_restart
   down_s: 70
   capture_deals: true
+shared_account: true
+config:
+  risk:
+    measured_usage_max_qty: "1"
 assertions:
 - flat-by-strategy
 - deals-net-equals-realized
