@@ -394,7 +394,7 @@ class Run:
             raise RuntimeError(f"venue-untradeable: {from_code} has no bar in six hours")
         last = Decimal(closes[-1]["close"])
         catalog, history = rolling.with_previous_roll(catalog, history, at_ms, contracts, last)
-        if spec["outcome"] == "far_book":
+        if "far_reference" in spec:
             history = rolling.seed_far_reference(history, at_ms, contracts, last, spec["far_reference"])
         rolling.write(catalog_path, catalog)
         rolling.write(history_path, history)

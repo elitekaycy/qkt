@@ -1,0 +1,43 @@
+id: continuous-roll-restored-moves-collar
+title: A roll restored by a restart collars its legs around the stream, not its stale measured price
+why: 'A restored roll never heard the stream again, so each limit IOC leg stayed 1% around the measured price (#1610). With
+  the new contract measured 3% under the market, a long''s opening buy can never fill and the strategy stops. The gateway
+  is cut across the roll so the closing leg is out when the daemon restarts; that roll must carry on the new contract.'
+status: ready
+symbols:
+- DERIBIT:BTC_USDC@front
+timeframes:
+- 1m
+warmup_bars:
+  1m: 3
+proves:
+- behaviour:continuous-roll
+- behaviour:roll-collar
+- behaviour:roll-restored-hears-stream
+fills: 2
+replay: none
+continuous_roll:
+  root: DERIBIT:BTC_USDC
+  stream: DERIBIT:BTC_USDC@front
+  outcome: carried
+  far_reference: 0.97
+  quantity: 0.001
+  lead_seconds: 420
+  start_before_seconds: 300
+drills:
+- at_s: 0
+  before_roll_s: 5
+  kind: gateway_outage
+  seconds: 0
+  restart_after_s: 15
+  down_s: 5
+assertions:
+- flat-by-strategy
+- deals-net-equals-realized
+- roll-carried
+- roll-legs-collared
+expect_log:
+- 'rolled for atto_roll_restored'
+reject_log:
+- 'not carried for atto_roll_restored'
+budget_seconds: 600

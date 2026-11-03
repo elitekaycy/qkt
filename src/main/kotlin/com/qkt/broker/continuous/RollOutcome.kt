@@ -38,13 +38,20 @@ internal class RollRun(
     var quotes: RollQuotes = RollQuotes.NONE
 
     /**
-     * What a leg on the old contract is collared around: its last quote's price, the venue's mark, or the measured
-     * price with none heard (a restored roll). A measured price comes from a thin contract's last bar and can be
-     * percents from the market, too far for a narrow collar to fill.
+     * What a leg on the old contract is collared around: its last quote's price; with none heard (a restored roll, whose
+     * stream serves only the new contract) the new contract's quote less the measured spread; with no quote at all, the
+     * measured price. A measured price comes from a thin contract's last bar and can be percents from the market, too
+     * far for a narrow collar to fill.
      */
-    val fromReference: BigDecimal get() = quotes.from?.price?.takeIf { it.signum() > 0 } ?: fromPrice
+    val fromReference: BigDecimal
+        get() =
+            quotes.from?.price?.takeIf { it.signum() > 0 }
+                ?: fromEstimate?.takeIf { it.signum() > 0 }
+                ?: fromPrice
 
-    /** As [fromReference], for a leg on the new contract. */
+    private val fromEstimate: BigDecimal? get() = quotes.to?.let { it.price - toPrice + fromPrice }
+
+    /** What a leg on the new contract is collared around: its latest quote's price, else the measured price. */
     val toReference: BigDecimal get() = quotes.to?.price?.takeIf { it.signum() > 0 } ?: toPrice
 
     /** Hears the quotes again, keeping what the old contract last said once the stream serves the new one. */
