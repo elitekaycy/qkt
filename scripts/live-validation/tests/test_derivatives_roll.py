@@ -243,3 +243,32 @@ class CaseRun(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DrilledFillsAcrossARollTest(unittest.TestCase):
+    """judge_drilled on a drilled roll case: the engine books neither leg of a carried roll, only a refused roll's close."""
+    PREFIX = "roll:1793688600000:045166438ebe:"
+
+    def judge(self, outcome, deals, fills):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("lane_drilled", RUNNER)
+        lane = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(lane)
+        case = type("Case", (), {})()
+        case.roll = {"prefix": self.PREFIX, "outcome": outcome}
+        case.strategy_deals = lambda: deals
+        return lane.Run.judge_drilled(case, fills)
+
+    def deal(self, cid, side, price):
+        return {"client_order_id": cid, "side": side, "quantity": "0.001", "price": price}
+
+    def test_a_carried_rolls_legs_are_not_engine_fills(self):
+        deals = [self.deal("e1.1", "buy", "76545.0"), self.deal(self.PREFIX + "close.a", "sell", "76462.5"),
+                 self.deal(self.PREFIX + "open.b", "buy", "76722.5"), self.deal("e2.2", "sell", "76800.0")]
+        fills = [{"side": "BUY", "qty": "0.001", "price": "76545.0"}, {"side": "SELL", "qty": "0.001", "price": "79066.075"}]
+        self.assertEqual([], self.judge("carried", deals, fills))
+
+    def test_a_refused_rolls_close_is_the_engines_close(self):
+        deals = [self.deal("e1.1", "buy", "76545.0"), self.deal(self.PREFIX + "close.a", "sell", "76462.5")]
+        fills = [{"side": "BUY", "qty": "0.001", "price": "76545.0"}, {"side": "SELL", "qty": "0.001", "price": "76462.5"}]
+        self.assertEqual([], self.judge("leg_refused", deals, fills))

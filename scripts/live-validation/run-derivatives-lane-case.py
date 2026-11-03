@@ -302,9 +302,11 @@ class Run:
     def judge_drilled(self, fills):
         """After a drill: the venue filled exactly what qkt booked, each engine order placed at the venue once."""
         deals = self.strategy_deals()
-        if self.roll:  # the engine never sees a leg; it books a refused roll's close at the closing leg's fill
+        if self.roll:  # the engine never sees a leg; it books a refused roll's close at the closing leg's fill, while a
+            # carried roll's close is followed by its open on the new contract and neither is an engine fill
+            refused = self.roll["outcome"] != "carried"
             deals = [d for d in deals if not d["client_order_id"].startswith(self.roll["prefix"])
-                     or rolling.kind_of(d["client_order_id"]) == "close"]
+                     or (refused and rolling.kind_of(d["client_order_id"]) == "close")]
         # A continuous stream books its adjusted prices, so a roll's fills are compared by side and size; its money is
         # judged to the digit by deals-net-equals-realized.
         price = (lambda _: None) if self.roll else Decimal
