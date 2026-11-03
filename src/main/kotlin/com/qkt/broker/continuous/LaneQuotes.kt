@@ -16,6 +16,10 @@ internal data class RollQuotes(
     }
 }
 
+/** This restored roll, hearing [quotes] from now on: it saved none, and its legs must not stay on the measured prices. */
+internal fun RollRun.hearing(quotes: LaneQuotes): RollRun =
+    apply { this.quotes = quotes.forRoll(fromIndex, toIndex, null) }
+
 /**
  * The quotes of one stream's contracts, in contract prices. When [judging] (a live lane), a roll asks [forRoll] for
  * what its legs would hit: the last quote of the old contract, and the new one's in the tick that started the roll,

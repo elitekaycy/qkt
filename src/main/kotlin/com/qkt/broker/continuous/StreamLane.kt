@@ -93,7 +93,7 @@ internal class StreamLane(
         store?.load(chain.symbol)?.let { saved ->
             val restored = state.restore(saved, clock.now())
             current = restored.contractIndex
-            rolls.restore(restored.run, restored.unwinds, ::applyRoll)
+            rolls.restore(restored.run?.hearing(quotes), restored.unwinds, ::applyRoll)
         }
     }
 

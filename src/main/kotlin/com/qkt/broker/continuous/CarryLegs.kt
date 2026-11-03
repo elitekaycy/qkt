@@ -45,14 +45,14 @@ internal class CarryLegs(
         run: RollRun,
         strategyId: String,
         quantity: BigDecimal,
-    ) = leg(run, strategyId, "close", run.fromIndex, quantity.negate(), run.fromReference)
+    ) = run.refreshQuotes().let { leg(run, strategyId, "close", run.fromIndex, quantity.negate(), run.fromReference) }
 
     /** The leg opening [strategyId]'s signed [quantity] on the new contract in [run]. */
     fun opening(
         run: RollRun,
         strategyId: String,
         quantity: BigDecimal,
-    ) = leg(run, strategyId, "open", run.toIndex, quantity, run.toReference)
+    ) = run.refreshQuotes().let { leg(run, strategyId, "open", run.toIndex, quantity, run.toReference) }
 
     private fun leg(
         run: RollRun,
@@ -134,6 +134,7 @@ internal class CarryLegs(
     ) {
         val side = if (leg.side == Side.BUY) Side.SELL else Side.BUY
         val id = leg.id.replaceAfterLast(':', "unwind")
+        run.refreshQuotes()
         val unwinding = orders.order(id, leg.symbol, side, quantity, leg.strategyId, run.toReference)
         send(run, unwinding, unwound(unwinding))
     }

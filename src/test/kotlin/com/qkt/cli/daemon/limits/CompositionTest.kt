@@ -74,6 +74,8 @@ class CompositionTest {
                     flattens++
                 }
 
+                override fun unclosedLegs() = 0
+
                 override fun halt(
                     reason: String,
                     scope: HaltScope,
