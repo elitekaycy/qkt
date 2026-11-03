@@ -184,7 +184,8 @@ class Run:
     def own_deals(self, since_ms=None):
         """The venue's fills of the strategy's orders from [since_ms] (the case's start by default)."""
         since = self.started_ms if since_ms is None else since_ms
-        return self.own(self.get(f"/v1/deals?from={since}&to={self.window_to()}")["deals"])
+        to = self.window_to()
+        return scope.in_window(self.own(self.get(f"/v1/deals?from={since}&to={to}")["deals"]), since, to)
 
     def holdings(self, since_ms=None):
         """The strategy's own signed holding per venue symbol, from its deals less what the venue settled of it."""
@@ -197,6 +198,20 @@ class Run:
     def flat(self, since_ms=None):
         """flat-by-strategy: no working order of the strategy's, and its own deals (less its settlements) net flat."""
         return not self.own(self.get("/v1/orders")["orders"]) and not self.holdings(since_ms)
+
+    def preflight_clear(self, since_ms):
+        """Before a case: no working order of the strategy's, and nothing its deals since [since_ms] attribute to it
+        that the account still holds. A drill's close often carries another label (the kill switch, the guardian, a
+        sweep), so the deals alone may never net; the venue's empty position settles it (strategy_scope.account_held).
+        Once clear, the case owns the strategy and judges from now, never from the older deals."""
+        if self.own(self.get("/v1/orders")["orders"]):
+            return False
+        held = self.holdings(since_ms)
+        if held and scope.account_held(held, self.get("/v1/positions")["positions"]):
+            return False
+        self.owns_strategy = True
+        self.started_ms = int(time.time() * 1000)  # the run's own start replaces it; a sweep before then reads from here
+        return True
 
     def own_positions(self):
         """The account's positions on the symbols the strategy holds now (a drill's evidence and probe price)."""
@@ -218,9 +233,8 @@ class Run:
         # An earlier run's roll legs carry that roll's own digest, so its deals alone do not net flat: a roll case checks
         # working orders only, and its own sweep has closed whatever that run left.
         lookback = 0 if self.case.get("continuous_roll") else PREFLIGHT_LOOKBACK_MS
-        if not self.flat(int(time.time() * 1000) - lookback):
+        if not self.preflight_clear(int(time.time() * 1000) - lookback):
             raise RuntimeError(f"the strategy {self.strategy} already holds a position or a working order on the account")
-        self.owns_strategy = True  # it was flat, so whatever the strategy holds from here on is this case's
         balance = Decimal(self.get("/v1/account")["balance"])
         self.prepare(health["adapter"])
         self.run_daemon(budget)
@@ -286,7 +300,8 @@ class Run:
         """account-balance-equals-realized, or a note saying why the balance is not comparable: another user's deal
         inside the case window moved the same cash, or Deribit's daily 08:00 settlement booked the session's funding
         and fees on contracts the case never traded (it books them on every contract the account traded that day)."""
-        window = self.get(f"/v1/deals?from={self.started_ms}&to={self.ended_ms + MINUTE}")["deals"]
+        window = scope.in_window(self.get(f"/v1/deals?from={self.started_ms}&to={self.ended_ms + MINUTE}")["deals"],
+                                 self.started_ms, self.ended_ms + MINUTE)
         traded = {f["symbol"].split(":")[-1].replace("-", "_") for f in fills}
         others = sorted({f["symbol"] for f in self.account_funding() if f["symbol"].replace("-", "_") not in traded})
         note = scope.balance_note(window, self.strategy)
@@ -626,7 +641,8 @@ class Run:
     def strategy_deals(self):
         """The venue's fills of the strategy's orders over the run."""
         # From the session's start: an earlier run of the same case placed orders under the same ids' prefix.
-        deals = self.get(f"/v1/deals?from={self.started_ms}&to={self.window_to()}")["deals"]
+        to = self.window_to()
+        deals = scope.in_window(self.get(f"/v1/deals?from={self.started_ms}&to={to}")["deals"], self.started_ms, to)
         # A rule's own orders are `dsl-<strategy>-…`; one a signal sized (a plain BUY) is `ORD-<strategy>-…`.
         return self.own(deals)
 
