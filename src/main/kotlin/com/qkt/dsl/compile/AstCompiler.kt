@@ -151,7 +151,8 @@ class AstCompiler {
         val perStreamWarmup: Map<String, Int> = WarmupRequirements.compute(ast)
         val warmupGate = WarmupGate(perStreamWarmup)
 
-        val perStreamWarmupSpec: Map<WarmupStream, WarmupSpec> = perStreamWarmupSpecs(perStreamWarmup, streams)
+        val perStreamWarmupSpec: Map<WarmupStream, WarmupSpec> =
+            perStreamWarmupSpecs(perStreamWarmup, streams, ast.baskets)
 
         val compiledSchedules: List<CompiledSchedule> =
             ast.schedules.map { decl ->

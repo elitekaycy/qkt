@@ -86,3 +86,16 @@ class BasketCompositor(
         )
     }
 }
+
+/**
+ * Fold the seeded history of [members] (constituent alias to its hub key) into this index, oldest
+ * first, and return the composite candles. Only windows every constituent has count, as live.
+ */
+internal fun BasketCompositor.foldSeeded(
+    hub: CandleHub,
+    members: Map<String, HubKey>,
+): List<Candle> {
+    val barsByStart = members.mapValues { (_, key) -> hub.seededHistory(key).associateBy { it.startTime } }
+    val aligned = barsByStart.values.map { it.keys }.reduce { common, starts -> common intersect starts }
+    return aligned.sorted().mapNotNull { start -> onAligned(barsByStart.mapValues { it.value.getValue(start) }) }
+}
