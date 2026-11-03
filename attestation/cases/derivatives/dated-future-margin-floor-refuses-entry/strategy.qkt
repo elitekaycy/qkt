@@ -1,0 +1,15 @@
+STRATEGY atto_margin_floor VERSION 1
+
+SYMBOLS
+    btc = DERIBIT:BTC_USDC_30OCT26 EVERY 1m WARMUP 3 BARS
+
+RULES
+    WHEN btc.close > 0 AND POSITION.btc = 0 AND OPEN_ORDERS.btc = 0 AND TRADES.today = 0
+    THEN BUY btc SIZING 0.001
+
+    -- Adds to the holding on every bar from two minutes in: the restart's floor must refuse each one.
+    WHEN POSITION.btc != 0 AND OPEN_ORDERS.btc = 0 AND POSITION.btc.holding_duration >= 120
+    THEN BUY btc SIZING 0.001
+
+    WHEN POSITION.btc != 0 AND POSITION.btc.holding_duration >= 240
+    THEN CLOSE btc

@@ -1,0 +1,12 @@
+STRATEGY atto_dl_b VERSION 1
+
+SYMBOLS
+    btc = EXNESS:BTCUSD EVERY 1m WARMUP 3 BARS
+
+RULES
+    -- Wants a position whenever it is flat; only a halt keeps it flat once its timed exit has closed it.
+    WHEN btc.close > 0 AND POSITION.btc = 0 AND OPEN_ORDERS.btc = 0
+    THEN BUY btc SIZING 0.01 BRACKET { STOP LOSS BY 4000, TAKE PROFIT BY 8000 }
+
+    WHEN POSITION.btc != 0 AND POSITION.btc.holding_duration >= 180
+    THEN CLOSE btc

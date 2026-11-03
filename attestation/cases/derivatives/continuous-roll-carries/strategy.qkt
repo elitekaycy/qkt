@@ -1,0 +1,12 @@
+STRATEGY atto_roll_carry VERSION 1
+
+SYMBOLS
+    fut = DERIBIT:BTC_USDC@front EVERY 1m WARMUP 3 BARS
+
+RULES
+    -- The daemon starts 300 s before the roll, so this entry is held across it and exits 30 to 90 s after it.
+    WHEN fut.close > 0 AND POSITION.fut = 0 AND OPEN_ORDERS.fut = 0 AND TRADES.today = 0
+    THEN BUY fut SIZING 0.001
+
+    WHEN POSITION.fut != 0 AND POSITION.fut.holding_duration >= 300
+    THEN CLOSE fut

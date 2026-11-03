@@ -1,0 +1,15 @@
+STRATEGY atto_roll_refused VERSION 1
+
+SYMBOLS
+    fut = DERIBIT:BTC_USDC@front EVERY 1m WARMUP 3 BARS
+
+RULES
+    -- TRADES.today counts entry fills. Refused while the stream is stopped, this re-enters once resume clears the stop.
+    WHEN fut.close > 0 AND POSITION.fut = 0 AND OPEN_ORDERS.fut = 0 AND TRADES.today <= 1
+    THEN BUY fut SIZING 0.001
+
+    WHEN POSITION.fut != 0 AND TRADES.today = 1 AND POSITION.fut.holding_duration >= 240
+    THEN CLOSE fut
+
+    WHEN POSITION.fut != 0 AND TRADES.today >= 2 AND POSITION.fut.holding_duration >= 60
+    THEN CLOSE fut

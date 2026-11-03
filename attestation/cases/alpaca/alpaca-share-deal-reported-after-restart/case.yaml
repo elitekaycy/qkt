@@ -1,0 +1,36 @@
+id: alpaca-share-deal-reported-after-restart
+title: A fill older than the 60 s grace when qkt restarts is still reported, with its leg and strategy
+why: 'VGP deals carry no leg, position or realized P&L, so only what qkt booked states them, and that lived in process
+  memory: a restart before the next deal read, past the grace, dropped the deal silently (#1570). Reporting comes on only
+  with the restart, so the entry cannot have been read before it; the restart lasts 70 s, so the fill is past the grace.
+  Needs #1590: without it the entry is never reported and this case fails.'
+status: ready
+symbols:
+- ALPACA:AAPL
+timeframes:
+- 1m
+warmup_bars:
+  1m: 3
+proves:
+- behaviour:market-entry
+- behaviour:timed-exit
+- behaviour:graceful-restart
+- behaviour:deal-facts-survive-restart
+fills: 2
+replay: none
+drills:
+- at_s: 5
+  kind: qkt_restart
+  down_s: 70
+  capture_deals: true
+shared_account: true
+config:
+  risk:
+    measured_usage_max_qty: "1"
+assertions:
+- flat-by-strategy
+- deals-net-equals-realized
+- venue-fills-equal-qkt-fills
+- no-duplicate-order
+- deals-reported-after-restart
+budget_seconds: 540
