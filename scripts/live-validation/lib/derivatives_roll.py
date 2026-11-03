@@ -1,8 +1,10 @@
 """A live continuous-future roll inside one derivatives lane case, and the verdict on what it did.
 
 A roll happens at a root's policy instant: `daysBeforeExpiry` days before a contract's expiry date, at `atUtc`. Deribit
-lists a dated BTC_USDC contract for each of the next few days, so a policy of one day at the next few minutes makes the
-next roll happen inside the case's budget, on the venue's real contracts and books (`plan`). The account, the orders and
+lists a dated BTC_USDC contract for each of the next few days and weeklies after them, so a policy of N days at the next
+few minutes, N counted to the first contract the venue has bars of, makes the next roll happen inside the case's budget,
+on the venue's real contracts and books. Which contracts have bars changes with the hour (testnet charts only some), so
+the pair is chosen from what the venue serves at the case's start (`contracts_of_roll`), never from the calendar. The account, the orders and
 the venue's answers are all real; only when the roll happens is the case's choice. Its 08:00 UTC expiry is avoided on
 purpose: what the book does then is the bot2 soak's daily roll to prove, and no case can schedule it to misbehave.
 
@@ -67,20 +69,29 @@ def leg_prefix(stream, at_ms, strategy):
     return f"roll:{at_ms}:{digest}:"
 
 
-def contracts_of_roll(catalog, at_ms):
-    """The contracts `(from, to)` the roll at [at_ms] moves between: [catalog]'s contract expiring the day after it, and
-    the next one. None when the venue lists no such contract, as `{"symbol", "expiryMs"}`."""
-    listed = sorted(catalog["contracts"], key=lambda c: c["expiryMs"])
-    for index, contract in enumerate(listed[:-1]):
-        if contract["expiryMs"] // DAY_MS == at_ms // DAY_MS + 1:
-            return contract, listed[index + 1]
-    return None
+def contracts_of_roll(catalog, at_ms, priced=lambda symbol: True):
+    """The contracts `(from, to)` the roll at [at_ms] moves between, as `{"symbol", "expiryMs"}`: [catalog]'s first
+    contract expiring a calendar day or more after the roll that [priced] says the venue has 1-minute bars of, and the
+    next priced one. A venue lists contracts it serves no bars of (Deribit testnet charts only some of its dailies), and
+    a live roll is measured from both contracts' bars (LiveRollMeasurer), so an unpriced one is never part of the pair;
+    the roll then happens `days_before_expiry` days ahead of the first's expiry, which `with_policy` writes. None when
+    the venue lists no such pair."""
+    listed = [c for c in sorted(catalog["contracts"], key=lambda c: c["expiryMs"])
+              if c["expiryMs"] // DAY_MS > at_ms // DAY_MS and priced(c["symbol"])]
+    return (listed[0], listed[1]) if len(listed) > 1 else None
 
 
-def prune_catalog(catalog, at_ms, keep_days=3):
-    """[catalog] without the contracts expired over [keep_days] before the roll: `qkt fetch --rolls` fetches every roll's
-    days of bars, and the case needs only the last few rolls."""
-    return dict(catalog, contracts=[c for c in catalog["contracts"] if c["expiryMs"] >= at_ms - keep_days * DAY_MS])
+def days_before_expiry(contract, at_ms):
+    """The policy's `daysBeforeExpiry` that rolls out of [contract] on [at_ms]'s day."""
+    return contract["expiryMs"] // DAY_MS - at_ms // DAY_MS
+
+
+def catalog_of_roll(catalog, contracts, priced=lambda symbol: True):
+    """[catalog] holding only the roll's first contract and the priced ones after it: the chain the stream follows. An
+    unpriced contract left in it would be rolled into and never priced, and one expiring before the pair would put a
+    roll of its own ahead of the case's."""
+    return dict(catalog, contracts=sorted((c for c in catalog["contracts"] if c["expiryMs"] >= contracts[0]["expiryMs"]
+                                           and priced(c["symbol"])), key=lambda c: c["expiryMs"]))
 
 
 def code_of(symbol):
@@ -89,12 +100,12 @@ def code_of(symbol):
     return f"{root}-{rest}"
 
 
-def with_policy(instruments, root, at_ms):
-    """[instruments] with [root] rolling a day before expiry at [at_ms]'s time of day. A panama adjustment, as a live
+def with_policy(instruments, root, at_ms, days=1):
+    """[instruments] with [root] rolling [days] days before expiry at [at_ms]'s time of day. A panama adjustment, as a live
     order needs, and a one-hour guard: 24 hours would refuse the case's entry, its contract expiring under a day away."""
     for entry in instruments.get("futures") or []:
         if entry["root"] == root:
-            entry["roll"] = {"daysBeforeExpiry": 1, "atUtc": hhmm(at_ms), "adjust": "panama"}
+            entry["roll"] = {"daysBeforeExpiry": days, "atUtc": hhmm(at_ms), "adjust": "panama"}
             entry["expiryGuardHours"] = 1
             return instruments
     raise ValueError(f"{root} is not declared under futures: in the case's instruments.yaml")
@@ -116,24 +127,19 @@ def previous_symbol(contract):
 
 
 def with_previous_roll(catalog, history, at_ms, contracts, price):
-    """[catalog] and [history] with the roll before the case's. A stream is served only from its first measured roll, and
-    a fresh listing has dropped the contract that expired today, so without this the stream would start at the case's own
-    roll and could hold nothing across it. That contract is real and left the chain long ago; the record's two prices are
-    equal, so it moves no adjustment: it only says the stream is served from yesterday."""
+    """[catalog] and [history] with the roll before the case's, and no roll before that one. A stream is served only from
+    its first measured roll, and a live session never starts a history (LiveRollMeasurer): the contract before the
+    case's pair may have expired, may have no bars, or may have been listed too late to price, so `qkt fetch --rolls` can
+    measure nothing at all. This record is the one roll before the case's, whatever the venue lists: a contract expiring
+    the day before the pair's first, rolled out of a day before the case's roll, its two prices equal so it moves no
+    adjustment. It only says the stream is served from yesterday."""
     earlier = {"symbol": previous_symbol(contracts[0]), "expiryMs": contracts[0]["expiryMs"] - DAY_MS}
     record = {"atMs": at_ms - DAY_MS, "from": earlier["symbol"], "to": contracts[0]["symbol"],
               "fromPrice": str(price), "toPrice": str(price)}
     listed = [c for c in catalog["contracts"] if c["symbol"] != earlier["symbol"]] + [earlier]
-    rolls = [r for r in history["rolls"] if r["atMs"] != record["atMs"] or r["from"] != record["from"]] + [record]
+    rolls = [r for r in history["rolls"] if r["atMs"] > record["atMs"]] + [record]
     return (dict(catalog, contracts=sorted(listed, key=lambda c: c["expiryMs"])),
             dict(history, rolls=sorted(rolls, key=lambda r: (r["atMs"], r["from"]))))
-
-
-def has_roll(history, at_ms, contracts):
-    """Whether [history] holds the roll at [at_ms], or the one before it, which a live session extends. A session never
-    starts a history (LiveRollMeasurer), so without either the stream cannot be served."""
-    return any(r["to"] == contracts[0]["symbol"] or (r["atMs"] == at_ms and r["from"] == contracts[0]["symbol"])
-               for r in history["rolls"])
 
 
 def read(path):
