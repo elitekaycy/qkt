@@ -140,6 +140,10 @@ or a `paper` adapter one. `outcome` (`scripts/live-validation/lib/derivatives_ro
 - `leg_refused`: a `kill_switch` drill with `before_roll_s` covers only the new contract, so the gateway really refuses
   the opening leg after the closing one filled. The strategy stops flat and `qkt resume` clears the stop.
 
+`far_reference` on a `carried` case measures the new contract away from the market without refusing the roll. A
+`gateway_outage` drill with `before_roll_s` and `restart_after_s` restarts the daemon with a roll's leg out, so the restored roll must collar around the stream
+(`continuous-roll-restored-moves-collar`).
+
 A book that goes far between the check and the leg, so that a collared IOC is left unfilled by the venue, cannot be
 scheduled; the soak's 08:00 UTC roll is its proof.
 
@@ -152,7 +156,7 @@ A derivatives case may declare `drills`, fired by the runner `at_s` seconds afte
 | `kind` | What happens | Extra keys |
 |---|---|---|
 | `qkt_restart` | `qkt daemon stop`, wait, then `qkt daemon start` on the same state directory | `down_s` (15); `config`: settings merged in for the restart; `capture_deals`: report deals only from the restart on, to a capture the runner owns |
-| `gateway_outage` | The daemon reaches the gateway through a loopback TCP proxy the runner owns; the proxy cuts every connection and refuses new ones, then forwards again on the same port. The shared gateway keeps running | `seconds` (90) |
+| `gateway_outage` | The daemon reaches the gateway through a loopback TCP proxy the runner owns; the proxy cuts every connection and refuses new ones, then forwards again on the same port. The shared gateway keeps running | `seconds` (90); `restart_after_s`: restart the daemon during the outage, `down_s` later the link returns |
 | `kill_switch` | With the gateway's guardian token (`QKT_DERIV_GUARDIAN_KEY`), the switch is engaged for the whole account, a risk-adding probe order (a buy at half the price, smallest size) must be refused `423 kill_switch`, then it is released | `hold_s` (30); `before_roll_s` times it from the case's roll and covers only the new contract |
 
 On top of the case's own assertions, a drilled case passes only if every drill fired while the case held a

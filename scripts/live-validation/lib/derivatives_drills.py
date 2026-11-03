@@ -6,6 +6,7 @@ A case declares them in `case.yaml`, timed from its first fill (from its `after_
     drills:
     - {at_s: 60, kind: qkt_restart, down_s: 20}      # `qkt daemon stop`, wait, start on the same state dir
     - {at_s: 60, kind: gateway_outage, seconds: 90}  # the daemon's gateway unreachable, then back
+    - {at_s: 0, before_roll_s: 5, kind: gateway_outage, seconds: 0, restart_after_s: 15}  # restarts with a roll's leg out
     - {at_s: 60, kind: kill_switch, hold_s: 30}      # the guardian engages the kill switch, then releases it
 
 `gateway_outage` points the daemon at a loopback TCP proxy the runner owns ([TcpProxy]) and stops it
@@ -200,8 +201,19 @@ class Drills:
         began = line.mark("outage begins", seconds=int(drill.get("seconds", 90)))
         proxy.down()
         time.sleep(int(drill.get("seconds", 90)))
-        proxy.up()
-        ended = line.mark("outage ends")
+        if "restart_after_s" in drill:  # a restart while the outage holds a roll's leg out: the link returns as it stops
+            time.sleep(int(drill["restart_after_s"]))
+            line.mark("daemon stop")
+            if not self.run.stop_daemon():
+                line.problem("the daemon did not stop within 60 s of `qkt daemon stop`")
+            time.sleep(int(drill.get("down_s", 15)))
+            proxy.up()
+            ended = line.mark("outage ends")
+            self.run.start_daemon(time.time() + 150)
+            line.mark("daemon ready")
+        else:
+            proxy.up()
+            ended = line.mark("outage ends")
         down = up = None
         deadline = time.time() + RECONNECT_WAIT_S
         while time.time() < deadline:
