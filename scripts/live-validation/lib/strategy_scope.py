@@ -61,6 +61,23 @@ def holdings(deals, settled=()):
     return {symbol: quantity for symbol, quantity in held.items() if quantity != 0}
 
 
+def in_window(entries, since_ms, until_ms):
+    """The deals or records of [entries] stamped inside [since_ms, until_ms]: judging never relies on the gateway's own
+    `from`/`to` filter, so an earlier run's unbalanced deals cannot leak into a case."""
+    return [e for e in entries if since_ms <= e["time"] <= until_ms]
+
+
+def account_held(held, account_positions):
+    """What of the strategy's [held] holding (from its deals) the account can still hold: a netting account reports
+    one position per symbol, so where it reports none the strategy holds nothing, whatever its deals say (a kill
+    switch, the guardian, a positions sweep or an operator closed it under another label). Where the account holds
+    size, the deals' attribution stands: on a shared account it may be the strategy's."""
+    account = {}
+    for p in account_positions:
+        account[p["symbol"]] = account.get(p["symbol"], Decimal(0)) + abs(Decimal(p["quantity"]))
+    return {symbol: quantity for symbol, quantity in held.items() if account.get(symbol, Decimal(0)) != 0}
+
+
 def is_flat(orders, deals, settled, strategy):
     """flat-by-strategy: no working order of the strategy's, and its own deals (less its settlements) net to nothing."""
     return not own(orders, strategy) and not holdings(own(deals, strategy), settled)

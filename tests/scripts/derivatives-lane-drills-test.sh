@@ -143,7 +143,7 @@ for bad in ({"at_s": 1, "kind": "reboot"}, {"kind": "qkt_restart"}):
         pass
 print("ok a malformed drill is refused before the case runs")
 
-fill = lambda cid, side, px: {"client_order_id": cid, "side": side, "quantity": "0.0001", "price": px, "symbol": "BTC_USDC-PERPETUAL", "costs": []}
+fill = lambda cid, side, px: {"client_order_id": cid, "side": side, "quantity": "0.0001", "price": px, "symbol": "BTC_USDC-PERPETUAL", "time": 1, "costs": []}
 qkt = [{"side": "BUY", "qty": "0.0001", "price": "86000"}, {"side": "SELL", "qty": "0.0001", "price": "86100"}]
 deals[:] = [fill("dsl-s--0.a1", "buy", "86000"), fill("dsl-s--2.a2", "sell", "86100")]
 assert run.judge_drilled(qkt) == [], run.judge_drilled(qkt)

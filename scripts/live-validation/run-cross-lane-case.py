@@ -227,9 +227,8 @@ class CrossRun:
                 raise RuntimeError(f"{leg.label}: the gateway has no venue link")
             if health["kill_switch"].get("all") or health["kill_switch"].get("symbols"):
                 raise RuntimeError(f"{leg.label}: the gateway's kill switch is on: {health['kill_switch']}")
-            if not leg.flat(int(time.time() * 1000) - gateway_lane.PREFLIGHT_LOOKBACK_MS):
+            if not leg.preflight_clear(int(time.time() * 1000) - gateway_lane.PREFLIGHT_LOOKBACK_MS):
                 raise RuntimeError(f"{leg.label}: the strategy {self.strategy} already holds a position or a working order")
-            leg.owns_strategy = True  # it was flat, so whatever the strategy holds from here on is this case's
         for leg in self.gateways():
             mine = [d for d in self.case.get("drills") or [] if d["venue"] == leg.label]
             if any(d["kind"] == "kill_switch" for d in mine) and not leg.guardian:
