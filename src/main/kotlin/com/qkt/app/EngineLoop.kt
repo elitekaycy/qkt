@@ -43,6 +43,7 @@ internal class EngineLoop(
     private val control = mailbox.control
     private val tickQueue = mailbox.tickQueue
     private val terminated = mailbox.terminated
+    private val stalls = mailbox.stalls
 
     /** The `qkt-live-engine` daemon thread that runs this loop; the caller starts it. */
     fun newThread(): Thread = Thread({ run() }, "qkt-live-engine").apply { isDaemon = true }
@@ -100,6 +101,7 @@ internal class EngineLoop(
                     }
                     continue
                 }
+                val handledFromNanos = System.nanoTime()
                 when (msg) {
                     is Inbound.FeedTick -> processTick(msg)
                     is Inbound.BusEvent ->
@@ -114,7 +116,7 @@ internal class EngineLoop(
                             // ticks that were queued before it fired. Those ticks precede
                             // the heartbeat in event time: process them first, or the
                             // wall-clock close rejects them as late (#1058).
-                            while (true) processTick(tickQueue.poll() ?: break)
+                            drainTicksAheadOf(tickQueue, msg.nowMs, ::processTick)
                             for (symbol in feedSymbols) marketDataGate.isHealthy(symbol)
                             pipeline.scheduleHeartbeat(msg.nowMs, candleCloseGraceMs)
                         }.onFailure { t -> onEngineFault("schedule heartbeat", t) }
@@ -150,6 +152,7 @@ internal class EngineLoop(
                         stopGraceNanos = msg.graceNanos
                     }
                 }
+                stalls.held(msg, System.nanoTime() - handledFromNanos)
                 val deadline = stopDeadlineNanos
                 if (deadline != null && System.nanoTime() >= deadline && control.isEmpty()) {
                     running.set(false)

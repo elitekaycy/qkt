@@ -70,6 +70,8 @@ internal class RunningSessionHandle(
 
     override fun inboundQueueDepth(): Int = control.size + tickQueue.size
 
+    override fun engineStalls(): EngineStalls = mailbox.stalls.snapshot()
+
     override fun staleSymbols(): Map<String, Long> = marketDataGate.staleSymbols()
 
     override fun clockSkewedSymbols(): Map<String, Long> = marketDataGate.clockSkewedSymbols()

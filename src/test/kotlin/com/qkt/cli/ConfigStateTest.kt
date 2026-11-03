@@ -1,7 +1,7 @@
 package com.qkt.cli
 
 import com.qkt.persistence.AsyncStatePersistor
-import com.qkt.persistence.FileStatePersistor
+import com.qkt.persistence.ExcursionWriteBehind
 import com.qkt.persistence.NoopStatePersistor
 import java.nio.file.Files
 import java.nio.file.Path
@@ -52,7 +52,7 @@ class ConfigStateTest {
         val c = Config.load(cfg)
         assertThat(c.stateEnabled).isTrue
         assertThat(c.stateAsync).isFalse
-        assertThat(c.statePersistor(tmp.resolve("state"))).isInstanceOf(FileStatePersistor::class.java)
+        assertThat(c.statePersistor(tmp.resolve("state"))).isInstanceOf(ExcursionWriteBehind::class.java)
     }
 
     @Test
@@ -74,7 +74,7 @@ class ConfigStateTest {
     }
 
     @Test
-    fun `state async false produces the synchronous FileStatePersistor`(
+    fun `state async false produces the synchronous persistor, its marks written behind`(
         @TempDir tmp: Path,
     ) {
         val cfg = tmp.resolve("qkt.config.yaml")
@@ -88,7 +88,7 @@ class ConfigStateTest {
         )
         val c = Config.load(cfg)
         assertThat(c.stateAsync).isFalse
-        assertThat(c.statePersistor(tmp.resolve("state"))).isInstanceOf(FileStatePersistor::class.java)
+        assertThat(c.statePersistor(tmp.resolve("state"))).isInstanceOf(ExcursionWriteBehind::class.java)
     }
 
     @Test
