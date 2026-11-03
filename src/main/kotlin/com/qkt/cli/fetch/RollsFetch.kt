@@ -130,7 +130,8 @@ internal object RollsFetch {
                 }
             }
         }
-        val history = RollHistoryBuilder(timeframe.durationMs, nowMs, bars = bars).build(root, catalog)
+        val known = RollHistoryStore(dataRoot).read(target)?.takeIf { it.policy == policy.key }
+        val history = RollHistoryBuilder(timeframe.durationMs, nowMs, known, bars).build(root, catalog)
         RollHistoryStore(dataRoot).write(history)
         report(target, schedule, passed, history, RollHistoryStore(dataRoot).path(target))
         return ExitCodes.SUCCESS

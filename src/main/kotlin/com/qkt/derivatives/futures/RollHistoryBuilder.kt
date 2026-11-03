@@ -16,11 +16,14 @@ import java.time.LocalDate
  * contract not yet listed at the roll instant) ends everything before it, so a history is always one
  * contiguous run and never mixes eras separated by a gap. A roll that has not passed at [asOfMs]
  * ([RollPricing.hasPassed]) is not measured: it is in the future, and its record is written when it has happened, by
- * a later fetch or by the live session that reaches it ([LiveRollMeasurer]).
+ * a later fetch or by the live session that reaches it ([LiveRollMeasurer]). A roll the bars cannot price keeps its
+ * record in [known] (the history being rebuilt, of the same policy): a live session measured it from the venue's own
+ * bars, and dropping it would end the history before a roll live has traded on.
  */
 class RollHistoryBuilder(
     private val barMs: Long = 60_000L,
     private val asOfMs: Long = Long.MAX_VALUE,
+    private val known: RollHistory? = null,
     private val bars: (contract: String, day: LocalDate) -> List<Candle>,
 ) {
     /** The history of [root] over [catalog] for [selectors]. */
@@ -55,8 +58,9 @@ class RollHistoryBuilder(
         if (!RollPricing.hasPassed(t.atMs, asOfMs)) return null
         val from = schedule.contracts.getOrNull(t.fromIndex + offset) ?: return null
         val to = schedule.contracts.getOrNull(t.toIndex + offset) ?: return null
-        val fromPrice = priceAt(from.symbol, t.atMs) ?: return null
-        val toPrice = priceAt(to.symbol, t.atMs) ?: return null
+        val fromPrice = priceAt(from.symbol, t.atMs)
+        val toPrice = priceAt(to.symbol, t.atMs)
+        if (fromPrice == null || toPrice == null) return known?.find(t.atMs, from.symbol, to.symbol)
         return RollRecord(t.atMs, from.symbol, to.symbol, fromPrice.toPlainString(), toPrice.toPlainString())
     }
 

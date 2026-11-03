@@ -254,7 +254,9 @@ most). Daily bars are looked for over the week before the roll, so a Monday roll
 bar source for the venue; otherwise the history is measured from what is stored. Only rolls whose
 minute has passed are recorded: a roll still ahead is left out (the report counts it), so no record is
 priced from the bars before it. A live session prices the rolls it adds from 1m bars, at their minute,
-and takes no record dated after it started.
+and takes no record dated after it started. A rebuild keeps a record already in the history for a
+roll the stored bars cannot price, such as one a live session measured from its venue's bars, so the
+history never ends before a roll live traded on.
 
 A catalog written from a vendor archive (any venue `--catalog` has no source for) may give each
 contract's `lifetimeVolume` and `peakOpenInterest`. A continuous chain then skips delivery months that
