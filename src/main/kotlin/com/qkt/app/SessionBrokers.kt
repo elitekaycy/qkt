@@ -12,6 +12,7 @@ import com.qkt.bus.EventBus
 import com.qkt.common.Clock
 import com.qkt.derivatives.options.chain.OptionRootSymbol
 import com.qkt.derivatives.options.chain.isOptionFeed
+import com.qkt.dsl.ast.BASKET_BROKER
 import com.qkt.dsl.ast.CHAIN_BROKER
 import com.qkt.dsl.ast.HUB_BROKER
 import com.qkt.marketdata.MarketPriceTracker
@@ -60,7 +61,7 @@ internal class SessionBrokers(
             strategies.mapNotNull { (_, s) -> s as? com.qkt.dsl.compile.DslCompiledStrategy }
         val brokerSymbols = mutableMapOf<String, MutableSet<String>>()
         // A fed option root trades through its venue's account: every catalogued contract of the root
-        // routes there, including the legs a structure picks when it fires. Chain and hub streams are
+        // routes there, including the legs a structure picks when it fires. Chain, hub and basket streams are
         // read-only data, never routed to a broker, so they need no broker factory.
         val fedRoots = mutableMapOf<String, MutableSet<OptionRootSymbol>>()
         for (s in dslStrategies) {
@@ -69,6 +70,7 @@ internal class SessionBrokers(
                 when {
                     key.broker.equals(CHAIN_BROKER, ignoreCase = true) -> Unit
                     key.broker.equals(HUB_BROKER, ignoreCase = true) -> Unit
+                    key.broker.equals(BASKET_BROKER, ignoreCase = true) -> Unit
                     key.broker == OpenInterestSymbol.BROKER -> Unit
                     key.broker == BookDepthSymbol.BROKER -> Unit
                     root != null -> fedRoots.getOrPut(tradingBroker(key).lowercase()) { mutableSetOf() } += root

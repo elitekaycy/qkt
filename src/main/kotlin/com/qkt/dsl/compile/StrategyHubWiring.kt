@@ -47,6 +47,18 @@ internal class StrategyHubWiring(
             if (alias in basketAliases) continue
             for (seeded in hub.seededHistory(key)) replay.add(alias to seeded)
         }
+        // A composite is built from its constituents' seeded bars and follows them, so it reads
+        // the same-window closes. Its compositor keeps the index going into the live bars.
+        val compositors =
+            baskets.associateWith { basket ->
+                BasketCompositor(streams.getValue(basket.alias).qktSymbol, basket.constituents)
+            }
+        for ((basket, compositor) in compositors) {
+            val key = streams.getValue(basket.alias)
+            val composites = compositor.foldSeeded(hub, basket.constituents.associateWith { streams.getValue(it) })
+            if (composites.isNotEmpty()) hub.seed(key, composites)
+            for (composite in composites) replay.add(basket.alias to composite)
+        }
         // Stable sort: bars closing at the same instant keep declaration order, matching
         // the live sync-group update pass.
         replay.sortBy { it.second.endTime }
@@ -103,7 +115,7 @@ internal class StrategyHubWiring(
             }
         }
 
-        bindBaskets(hub, ctx, emit)
+        bindBaskets(compositors, hub, ctx, emit)
     }
 
     /**
@@ -115,13 +127,13 @@ internal class StrategyHubWiring(
      * publishes nothing, so `basket.close` stays Undefined until the basket is warm.
      */
     private fun bindBaskets(
+        compositors: Map<com.qkt.dsl.ast.BasketDecl, BasketCompositor>,
         hub: CandleHub,
         ctx: StrategyContext,
         emit: (Signal) -> Unit,
     ) {
-        for (basket in baskets) {
+        for ((basket, compositor) in compositors) {
             val basketKey = streams.getValue(basket.alias)
-            val compositor = BasketCompositor(basketKey.qktSymbol, basket.constituents)
             val members = basket.constituents.associateWith { streams.getValue(it) }
             val groupKey = SyncGroupKey(members = members, timeoutMs = null)
             hub.registerSyncGroup(groupKey, ctx.strategyId)

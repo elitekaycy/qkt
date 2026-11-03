@@ -8,6 +8,9 @@ package com.qkt.dsl.ast
  */
 const val HUB_BROKER: String = "HUB"
 
+/** The broker prefix of a basket's synthetic composite stream; its orders go to its constituents. */
+const val BASKET_BROKER: String = "BASKET"
+
 /** The broker prefix of option chain analytics streams (`CHAIN:DERIBIT.BTC_USDC.atm_iv.30d`). */
 const val CHAIN_BROKER: String = "CHAIN"
 
