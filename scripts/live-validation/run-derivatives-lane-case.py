@@ -357,7 +357,7 @@ class Run:
         config.update(self.case.get("config", {}))  # a soak case's demo-only settings, such as risk limits
         yaml.safe_dump(config, open(f"{self.out}/qkt.config.yaml", "w"), sort_keys=False)
         roll = self.case.get("continuous_roll")
-        if roll:  # chosen before the catalog is fetched: a roll history is built for one policy
+        if roll:  # its minute first; its contracts, and the policy's days, from the catalog and the venue's bars
             time.sleep(max(0, rolling.clear_of_expiry(int(time.time() * 1000), roll["lead_seconds"]) / 1000 - time.time()))
             at_ms = rolling.roll_at(int(time.time() * 1000), roll["lead_seconds"])
             path = f"{self.out}/data/instruments.yaml"
@@ -375,24 +375,33 @@ class Run:
         reference if the case asks for one, and waits until the daemon should start, `start_before_seconds` ahead."""
         venue, family = spec["root"].split(":")
         catalog_path = f"{self.out}/data/contracts/{venue}/{family}.json"
-        catalog = rolling.prune_catalog(rolling.read(catalog_path), at_ms)
-        rolling.write(catalog_path, catalog)
-        contracts = rolling.contracts_of_roll(catalog, at_ms)
+        priced = {}  # venue code -> its last 1m close in six hours, None when the venue serves no bar of it
+
+        def close_of(symbol):
+            code = rolling.code_of(symbol)
+            if code not in priced:
+                now = int(time.time() * 1000)
+                bars = self.get("/v1/bars?" + urllib.parse.urlencode(
+                    {"symbol": code, "window_ms": MINUTE, "from": now - 6 * 3_600_000, "to": now}))["bars"]
+                priced[code] = Decimal(bars[-1]["close"]) if bars else None
+            return priced[code]
+
+        listing = rolling.read(catalog_path)
+        contracts = rolling.contracts_of_roll(listing, at_ms, lambda symbol: close_of(symbol) is not None)
         if not contracts:
-            raise RuntimeError(f"venue-untradeable: {spec['root']} lists no contract expiring the day after {rolling.hhmm(at_ms)}")
+            raise RuntimeError(f"venue-untradeable: {spec['root']} lists no two contracts with 1m bars in six hours "
+                               f"expiring after {rolling.hhmm(at_ms)}'s day")
+        catalog = rolling.catalog_of_roll(listing, contracts, lambda symbol: close_of(symbol) is not None)
+        rolling.write(catalog_path, catalog)
+        path = f"{self.out}/data/instruments.yaml"  # the roll leaves the pair's first contract at the case's minute
+        yaml.safe_dump(rolling.with_policy(yaml.safe_load(open(path)), spec["root"], at_ms,
+                                           rolling.days_before_expiry(contracts[0], at_ms)), open(path, "w"), sort_keys=False)
         self.cli_run(["fetch", spec["root"], "--rolls", "--config", f"{self.out}/qkt.config.yaml",
                       "--data-root", f"{self.out}/data"], "rolls")
         history_path = f"{self.out}/data/contracts/{venue}/{family}.rolls.json"
         history = rolling.read(history_path)
-        if not rolling.has_roll(history, at_ms, contracts):
-            raise RuntimeError(f"venue-untradeable: no measurable roll into {contracts[0]['symbol']}: a session cannot start a history")
         from_code, to_code = rolling.code_of(contracts[0]["symbol"]), rolling.code_of(contracts[1]["symbol"])
-        now = int(time.time() * 1000)
-        closes = self.get("/v1/bars?" + urllib.parse.urlencode(
-            {"symbol": from_code, "window_ms": MINUTE, "from": now - 6 * 3_600_000, "to": now}))["bars"]
-        if not closes:
-            raise RuntimeError(f"venue-untradeable: {from_code} has no bar in six hours")
-        last = Decimal(closes[-1]["close"])
+        last = close_of(contracts[0]["symbol"])
         catalog, history = rolling.with_previous_roll(catalog, history, at_ms, contracts, last)
         if "far_reference" in spec:
             history = rolling.seed_far_reference(history, at_ms, contracts, last, spec["far_reference"])
@@ -471,10 +480,11 @@ class Run:
             raise RuntimeError(f"{root} lists no dated contract 7 to 45 days from expiry")
         # A thin venue (Deribit testnet) lists contracts nobody trades: no bars to warm up on, often no ask.
         # Trade the one that traded in the most minutes over the last six hours, the nearest on a tie.
+        # A quiet hour (a weekend night) can leave every one untraded: then the nearest the venue serves bars of.
         traded = [(self.recent_bars(code, now), -expiry, code) for expiry, code in dated]
         bars, _, code = max(traded)
-        if bars == 0:
-            raise RuntimeError(f"venue-untradeable: {root} has no dated contract 7 to 45 days out that traded in 6 hours")
+        if bars < 0:
+            raise RuntimeError(f"venue-untradeable: {root} has no dated contract 7 to 45 days out with bars in 6 hours")
         return f"{root.split(':')[0]}:{code.replace('-', '_')}"
 
     def expiring_option(self, spec):
@@ -504,10 +514,11 @@ class Run:
         return sizes
 
     def recent_bars(self, code, now):
-        """How many minutes [code] traded in over the six hours before [now] (a venue may send flat bars between)."""
+        """How many minutes [code] traded in over the six hours before [now] (a venue may send flat bars between), -1
+        when the venue serves no bar of it at all."""
         query = {"symbol": code, "window_ms": MINUTE, "from": now - 6 * 3_600_000, "to": now}
         bars = self.get("/v1/bars?" + urllib.parse.urlencode(query))["bars"]
-        return sum(1 for bar in bars if Decimal(bar.get("volume") or "0") > 0)
+        return sum(1 for bar in bars if Decimal(bar.get("volume") or "0") > 0) if bars else -1
 
     def cli_run(self, argv, name, env=None):
         log = f"{self.out}/{name}.log"
