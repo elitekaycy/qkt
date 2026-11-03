@@ -48,6 +48,7 @@ internal sealed interface OrphanMatch {
  * [OrphanMatch.Match] for the same comment quietly downgrades us to [OrphanMatch.NotOurs] —
  * the sibling is the real owner.
  */
+
 internal fun matchOrphan(
     comment: String?,
     strategyName: String,
@@ -133,4 +134,11 @@ private fun stripOcoPrefix(comment: String): String {
     if (!comment.startsWith("oco:")) return comment
     val slash = comment.indexOf('/')
     return if (slash >= 0) comment.substring(slash + 1) else comment.substring(4)
+}
+
+/** True when [comment] is a qkt order's, `dsl-…` or `ORD-…` (inside an OCO comment too); false for a manual trade. */
+internal fun isQktOrderComment(comment: String?): Boolean {
+    if (comment.isNullOrEmpty()) return false
+    val inner = stripOcoPrefix(comment)
+    return inner.startsWith(DSL_PREFIX) || inner.startsWith(SESSION_PREFIX)
 }

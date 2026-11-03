@@ -7,7 +7,7 @@ that exact broker order. Every other unattributed line fails, including one that
 import re
 
 _ACCEPTED = re.compile(r"order accepted order_id=\S* strategy_id=(\S+) broker_order_id=(\S+)")
-_DROPPED = re.compile(r"\[(\w+)\] \S+ - unattributed fill dropped: order_id=\S* broker_order_id=(\S+)")
+_DROPPED = re.compile(r"\[([\w:.-]+)\] \S+ - unattributed fill dropped: order_id=\S* broker_order_id=(\S+)")
 _NO_SESSION = "main"  # the log pattern's name for a line with no strategy context
 _NO_ORDER = "null"  # how a missing broker id prints
 

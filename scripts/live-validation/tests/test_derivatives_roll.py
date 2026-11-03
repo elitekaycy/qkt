@@ -34,7 +34,7 @@ class Planning(unittest.TestCase):
         self.assertEqual(rolling.roll_at(AT - 599_000, 600), AT + 60_000)
         self.assertEqual(rolling.hhmm(AT), "16:05")
 
-    def test_the_contracts_are_those_expiring_the_day_after_the_roll_and_the_next(self):
+    def test_the_contracts_are_the_first_expiring_after_the_rolls_day_and_the_next(self):
         frm, to = rolling.contracts_of_roll(CATALOG, AT)
         self.assertEqual((frm["symbol"], to["symbol"]), ("BTC_USDC_3NOV26", "BTC_USDC_4NOV26"))
 
@@ -71,10 +71,34 @@ class Planning(unittest.TestCase):
         self.assertEqual(written["futures"][0]["roll"], {"daysBeforeExpiry": 1, "atUtc": "16:05", "adjust": "panama"})
         self.assertEqual(written["futures"][0]["expiryGuardHours"], 1)
 
-    def test_old_contracts_are_pruned_before_the_rolls_are_measured(self):
-        kept = [c["symbol"] for c in rolling.prune_catalog(CATALOG, AT)["contracts"]]
-        self.assertNotIn("BTC_USDC_29OCT26", kept)
-        self.assertIn("BTC_USDC_2NOV26", kept)
+    def test_contracts_the_venue_serves_no_bars_of_are_skipped(self):
+        # 2026-11-03 01:57Z: Deribit testnet charted 3NOV and 6NOV but not 4NOV or 5NOV, listed days before.
+        at = 1793671020000
+        catalog = {"contracts": CATALOG["contracts"] + [{"symbol": "BTC_USDC_5NOV26", "expiryMs": EXPIRY_3NOV + 2 * DAY},
+                                                        {"symbol": "BTC_USDC_6NOV26", "expiryMs": EXPIRY_3NOV + 3 * DAY},
+                                                        {"symbol": "BTC_USDC_13NOV26", "expiryMs": EXPIRY_3NOV + 10 * DAY},
+                                                        {"symbol": "BTC_USDC_27NOV26", "expiryMs": EXPIRY_3NOV + 24 * DAY}]}
+        priced = {"BTC_USDC_3NOV26", "BTC_USDC_6NOV26", "BTC_USDC_27NOV26"}.__contains__
+        frm, to = rolling.contracts_of_roll(catalog, at, priced)
+        self.assertEqual((frm["symbol"], to["symbol"]), ("BTC_USDC_6NOV26", "BTC_USDC_27NOV26"))
+        self.assertEqual(rolling.days_before_expiry(frm, at), 3)
+        chain = [c["symbol"] for c in rolling.catalog_of_roll(catalog, (frm, to), priced)["contracts"]]
+        self.assertEqual(chain, ["BTC_USDC_6NOV26", "BTC_USDC_27NOV26"])
+        self.assertIsNone(rolling.contracts_of_roll(catalog, at, {"BTC_USDC_6NOV26"}.__contains__))
+
+    def test_the_policy_rolls_out_of_the_first_contract_at_the_cases_minute(self):
+        at = 1793671020000  # 2026-11-03T01:57Z, 6NOV26 three days ahead
+        frm = {"symbol": "BTC_USDC_6NOV26", "expiryMs": EXPIRY_3NOV + 3 * DAY}
+        days = rolling.days_before_expiry(frm, at)
+        rolled = (frm["expiryMs"] // DAY - days) * DAY + at % DAY  # RollPolicy.rollAtMs
+        self.assertEqual(rolled, at)
+        self.assertLess(rolled, frm["expiryMs"])
+
+    def test_the_roll_before_is_the_only_one_before_the_case(self):
+        contracts = rolling.contracts_of_roll(CATALOG, AT)
+        measured = {"rolls": [{"atMs": AT - 2 * DAY, "from": "BTC_USDC_29OCT26", "to": "BTC_USDC_2NOV26"}]}
+        _, history = rolling.with_previous_roll(CATALOG, measured, AT, contracts, Decimal("78000"))
+        self.assertEqual([r["atMs"] for r in history["rolls"]], [AT - DAY])
 
 
 class Collar(unittest.TestCase):
