@@ -42,7 +42,7 @@ class LaneRollPriceBandTest {
         assertThat(f.strategy().stopped).isNull()
         f.nextRetry()
 
-        assertThat((f.leg(":close") as OrderRequest.Limit).limitPrice).isEqualByComparingTo("78750")
+        assertThat((f.leg(":close") as OrderRequest.Limit).limitPrice).isEqualByComparingTo("63630")
     }
 
     @Test

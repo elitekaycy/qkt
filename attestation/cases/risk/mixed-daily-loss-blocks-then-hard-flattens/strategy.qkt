@@ -1,0 +1,6 @@
+PORTFOLIO atto_mix VERSION 1 CAPITAL 1000
+SYMBOLS
+    btc = EXNESS:BTCUSD EVERY 1m
+IMPORT 'children/atto_mix_a.qkt' AS a
+RULES
+    RUN a WEIGHT 1.0

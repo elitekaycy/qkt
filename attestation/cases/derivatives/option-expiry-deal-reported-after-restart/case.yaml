@@ -1,0 +1,41 @@
+id: option-expiry-deal-reported-after-restart
+title: A settlement older than the 60 s grace when qkt restarts is still reported as a closing deal
+why: 'A settlement has no fill at all, so what it closed is only in what qkt booked; a restart past the grace before
+  the next deal read lost it (#1570). qkt restarts 5 s after booking the expiry, stays down 70 s, and reports deals
+  only from then on. Scheduled, since Deribit expires options at 08:00 UTC. Unproven: a restart redeploys a strategy
+  whose option has left the listing, which may refuse it before any deal is read. Needs #1590.'
+status: scheduled
+release_proof: Deribit expires options only at 08:00 UTC, so no release waits for it. Replaced by LiveGatewayDealsRestartTest, alpaca-share-deal-reported-after-restart for an ordinary fill, and this case run across an expiry by the bot2 soak.
+symbols:
+- DERIBIT:BTC_USDC_6OCT26_83000_C
+timeframes:
+- 1m
+proves:
+- behaviour:option-expiry-settlement
+- behaviour:gateway-settlement-stream
+- behaviour:deal-facts-survive-restart
+fills: 1
+settles: 1
+expiring_option:
+  underlying: BTC_USDC
+  right: call
+  index_symbol: DERIBIT:BTC_USDC_PERPETUAL
+  min_minutes: 20
+  max_minutes: 150
+  in_the_money: 0.02
+  max_spread: 0.15
+replay: none
+budget_seconds: 7200
+assertions:
+- flat-by-strategy
+- deals-net-equals-realized
+- settlement-booked-once
+- settlement-at-venue-price
+- deals-reported-after-restart
+drills:
+- at_s: 5
+  after_fills: 2
+  flat: true
+  kind: qkt_restart
+  down_s: 70
+  capture_deals: true

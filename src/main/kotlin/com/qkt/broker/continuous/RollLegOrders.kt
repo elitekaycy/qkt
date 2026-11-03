@@ -1,5 +1,6 @@
 package com.qkt.broker.continuous
 
+import com.qkt.broker.ORDER_COLLAR_FRAC
 import com.qkt.common.Clock
 import com.qkt.common.Side
 import com.qkt.derivatives.futures.ContinuousChain
@@ -8,13 +9,16 @@ import com.qkt.execution.TimeInForce
 import com.qkt.instrument.TickSteps
 import java.math.BigDecimal
 
-/** Builds a roll's orders: market GTC with no [priceBand] (a backtest), a limit IOC at the collar with one. */
+/**
+ * Builds a roll's orders: market GTC with no [priceBand] (a backtest), with one (it judges far quotes before a roll) a
+ * limit IOC at [ORDER_COLLAR_FRAC] from the reference, which a venue's own price limit will accept.
+ */
 internal class RollLegOrders(
     private val clock: Clock,
     private val chainOf: () -> ContinuousChain,
     private val priceBand: BigDecimal?,
 ) {
-    /** The order under [id] for [quantity] on [symbol], whose contract's measured roll price is [reference]. */
+    /** The order under [id] for [quantity] on [symbol], collared around [reference] ([RollRun.fromReference]). */
     fun order(
         id: String,
         symbol: String,
@@ -24,8 +28,8 @@ internal class RollLegOrders(
         reference: BigDecimal,
     ): OrderRequest {
         val now = clock.now()
-        val band = priceBand ?: return OrderRequest.Market(id, symbol, side, quantity, TimeInForce.GTC, now, strategyId)
-        val limit = collarPrice(side, reference, band, chainOf().root.tickSize)
+        priceBand ?: return OrderRequest.Market(id, symbol, side, quantity, TimeInForce.GTC, now, strategyId)
+        val limit = collarPrice(side, reference, ORDER_COLLAR_FRAC, chainOf().root.tickSize)
         return OrderRequest.Limit(id, symbol, side, quantity, limit, TimeInForce.IOC, now, strategyId)
     }
 }

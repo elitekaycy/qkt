@@ -40,7 +40,6 @@ attestation/
 | `proves` | Capability names from `oracle-evidence.json`, plus free-form `behaviour:` tags |
 | `session` | `none` marks a case that trades a 24/7 market in a session-bound lane, so the market's hours do not bind it |
 | `release_proof` | Required on a `scheduled` case: why a release does not wait for it, and which proof stands in |
-| `roll_from_now` | Derivatives lane: `{root, lead_minutes}`, generate the root's roll to happen that many minutes after the case starts (`lib/roll_from_now.py`) |
 | `budget_seconds` | Hard deadline; omitted means the lane default. Never above 600 (14400 for a `scheduled` case) |
 | `steps` | Daemon/engine lanes: ordered operator commands with the exit code and state expected after each |
 | `assertions` | Named checks the runner applies, e.g. `trace-parity`, `journal-byte-exact`, `flat-by-magic` |
@@ -51,6 +50,9 @@ attestation/
 | `settles` | Derivatives lane: the expiry settlements qkt must book before the case is judged |
 | `drills` | Derivatives lane: failures fired while the case holds, each `{kind, at_s}` timed from the first fill (below) |
 | `shared_account` | Gateway lanes: `false` for a case whose point is qkt refusing others' size on the account; every other case's broker sets `shared_account: true`, since these accounts are shared by design |
+| `continuous_roll` | Derivatives lane: a roll scheduled minutes ahead that the case holds through, and what must come of it (below) |
+| `expect_log`, `reject_log` | Derivatives lane: regexes the daemon log must, or must not, match when the case ends |
+| `sibling_closes` | Daemon lanes: strategies share one magic, so an unattributed fill passes if a different session accepted that exact broker order; any other still fails |
 | `venues` | Cross lane: each broker prefix the strategy trades through, `{label, type: mt5}` or `{label, type: gateway, adapter}` (below) |
 
 ## No case waits for the clock
@@ -123,6 +125,24 @@ nothing (`replay: none`): a backtest settles at the catalog's delivery price, no
 The offline tests (`python3 -m unittest discover -s scripts/live-validation/tests`) run the whole case against
 a fake gateway and qkt: booked once passes; booked twice, at another price, or never fails.
 
+### Holding through a roll
+
+A root's roll is its policy's `atUtc`, a day before a contract's expiry, and Deribit lists a BTC_USDC contract for each of
+the next days, so a case with `continuous_roll` has its roll at any hour: at the case's start the runner picks the whole
+minute `lead_seconds` ahead (never within 15 minutes of the 08:00 UTC expiry), writes that policy into the case's
+`instruments.yaml`, fetches the catalog and measures the rolls under it, and starts the daemon `start_before_seconds`
+ahead of the roll. The contracts and books are the venue's. It runs on any gateway account listing them, a Deribit testnet
+or a `paper` adapter one. `outcome` (`scripts/live-validation/lib/derivatives_roll.py`) is one of:
+
+- `carried`: one closing and one opening leg fill, each a limit IOC inside the 25% collar as the gateway sent it;
+- `far_book`: `far_reference` seeds the new contract's measured price away from the market, so the book lies beyond the
+  collar. No leg goes, the position stays, the strategy stops and `qkt resume` fails. The reference is the fixture;
+- `leg_refused`: a `kill_switch` drill with `before_roll_s` covers only the new contract, so the gateway really refuses
+  the opening leg after the closing one filled. The strategy stops flat and `qkt resume` clears the stop.
+
+A book that goes far between the check and the leg, so that a collared IOC is left unfilled by the venue, cannot be
+scheduled; the soak's 08:00 UTC roll is its proof.
+
 ### Failure drills
 
 A derivatives case may declare `drills`, fired by the runner `at_s` seconds after the case's first fill (its
@@ -131,9 +151,9 @@ A derivatives case may declare `drills`, fired by the runner `at_s` seconds afte
 
 | `kind` | What happens | Extra keys |
 |---|---|---|
-| `qkt_restart` | `qkt daemon stop`, wait, then `qkt daemon start` on the same state directory | `down_s` (15) |
+| `qkt_restart` | `qkt daemon stop`, wait, then `qkt daemon start` on the same state directory | `down_s` (15); `config`: settings merged in for the restart; `capture_deals`: report deals only from the restart on, to a capture the runner owns |
 | `gateway_outage` | The daemon reaches the gateway through a loopback TCP proxy the runner owns; the proxy cuts every connection and refuses new ones, then forwards again on the same port. The shared gateway keeps running | `seconds` (90) |
-| `kill_switch` | With the gateway's guardian token (`QKT_DERIV_GUARDIAN_KEY`), the switch is engaged for the whole account, a risk-adding probe order (a buy at half the price, smallest size) must be refused `423 kill_switch`, then it is released | `hold_s` (30) |
+| `kill_switch` | With the gateway's guardian token (`QKT_DERIV_GUARDIAN_KEY`), the switch is engaged for the whole account, a risk-adding probe order (a buy at half the price, smallest size) must be refused `423 kill_switch`, then it is released | `hold_s` (30); `before_roll_s` times it from the case's roll and covers only the new contract |
 
 On top of the case's own assertions, a drilled case passes only if every drill fired while the case held a
 position (held none, for a `flat` drill), the venue's fills of the strategy are exactly the fills qkt booked (none lost, none booked twice:

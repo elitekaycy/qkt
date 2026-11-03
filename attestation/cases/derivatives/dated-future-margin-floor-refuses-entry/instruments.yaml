@@ -6,7 +6,3 @@ futures:
     volumeStep: 0.0001
     volumeMin: 0.0001
     takerFeeRate: 0.0005
-    roll:
-      daysBeforeExpiry: 1
-      atUtc: "08:00"
-      adjust: none

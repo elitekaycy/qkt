@@ -1,5 +1,6 @@
 package com.qkt.broker.continuous
 
+import com.qkt.broker.isVenuePriceLimit
 import com.qkt.common.Money
 import com.qkt.events.BrokerEvent
 import com.qkt.execution.OrderRequest
@@ -94,7 +95,8 @@ internal class RollLegs {
     }
 
     /** End the leg [e] refuses; returns whether it was a leg. */
-    fun onRejected(e: BrokerEvent.OrderRejected): Boolean = stopped(e.clientOrderId, e.reason)
+    fun onRejected(e: BrokerEvent.OrderRejected): Boolean =
+        stopped(e.clientOrderId, e.reason, retryable = isVenuePriceLimit(e.reason))
 
     /** End the leg [e] cancels; returns whether it was a leg. */
     fun onCancelled(e: BrokerEvent.OrderCancelled): Boolean =
