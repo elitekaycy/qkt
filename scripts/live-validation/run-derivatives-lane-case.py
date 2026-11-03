@@ -417,16 +417,18 @@ class Run:
                       "--data-root", f"{self.out}/data"], "rolls")
         history_path = f"{self.out}/data/contracts/{venue}/{family}.rolls.json"
         history = rolling.read(history_path)
+        prefetched = [r for r in history["rolls"] if r["atMs"] >= at_ms]
         from_code, to_code = rolling.code_of(contracts[0]["symbol"]), rolling.code_of(contracts[1]["symbol"])
         last = close_of(contracts[0]["symbol"])
         catalog, history = rolling.with_previous_roll(catalog, history, at_ms, contracts, last)
-        if "far_reference" in spec:
-            history = rolling.seed_far_reference(history, at_ms, contracts, last, spec["far_reference"])
         rolling.write(catalog_path, catalog)
         rolling.write(history_path, history)
+        # A daemon takes no record dated ahead of its start (#1615): the far reference goes in once it runs, as another
+        # session's live measurement of the roll would.
+        self.far_seed = (history_path, at_ms, contracts, last, spec["far_reference"]) if "far_reference" in spec else None
         self.roll = {"at_ms": at_ms, "at_utc": rolling.hhmm(at_ms), "outcome": spec["outcome"], "quantity": str(spec["quantity"]),
                      "prefix": rolling.leg_prefix(spec["stream"], at_ms, self.strategy), "from_code": from_code,
-                     "to_code": to_code, "reference": str(last)}
+                     "to_code": to_code, "reference": str(last), "prefetched": prefetched}
         for drill in self.drills.pending:
             if "before_roll_s" in drill:
                 drill["fire_at"] = at_ms / 1000 - drill["before_roll_s"]
@@ -435,6 +437,14 @@ class Run:
         if time.time() > start + int(spec.get("start_late_seconds", 30)):
             raise RuntimeError(f"preparing took too long: the daemon should have started {int(time.time() - start)} s ago")
         time.sleep(max(0, start - time.time()))
+
+    def seed_far_reference(self):
+        """Writes a far_book case's seeded record of its roll into the history the running daemon appends to."""
+        if not getattr(self, "far_seed", None):
+            return
+        path, at_ms, contracts, last, factor = self.far_seed
+        rolling.write(path, rolling.seed_far_reference(rolling.read(path), at_ms, contracts, last, factor))
+        self.far_seed = None
 
     def merge_config(self, over):
         """Deep-merges [over] into the daemon's config: the settings its next start runs with."""
@@ -475,6 +485,8 @@ class Run:
         for leg in legs:  # the collar is measured from the roll's own record: the session may have measured it live
             order = self.get("/v1/orders/" + urllib.parse.quote(leg["client_order_id"], safe=""))
             found += [f"roll-legs-collared: {p}" for p in rolling.collared_leg(order, leg, history, self.roll)]
+        if "roll-priced-live" in self.case["assertions"]:
+            found += [f"roll-priced-live: {p}" for p in rolling.priced_live(self.roll, history)]
         if "resume_exit" in spec:
             if self.resumed is None:
                 found.append("resume: the strategy never stopped, so no resume was tried")
@@ -564,6 +576,7 @@ class Run:
         deadline = time.time() + budget
         self.start_daemon(deadline)
         self.started_ms = int(time.time() * 1000)
+        self.seed_far_reference()
         while not self.done() and time.time() < deadline:
             self.drills.tick(self.live_fills())
             self.roll_tick()

@@ -74,7 +74,14 @@ internal class ContinuousWiring(
                     source,
                     candidates,
                     registry,
-                    LiveContinuousStreams(candidates, directory, store, source, clock),
+                    LiveContinuousStreams(
+                        candidates,
+                        directory,
+                        store,
+                        source,
+                        clock,
+                        streams.mapNotNull(directory::rootOfContinuous).toSet(),
+                    ),
                 )
         }
     }

@@ -251,8 +251,10 @@ qkt fetch CME:CL --rolls --tf 1d       # a root with only daily bars, e.g. from 
 Each roll is priced at each contract's last stored bar (fetched, or built into the binary store)
 closed at or before the roll instant: from 1m bars by default, or from the bars `--tf` names (1d at
 most). Daily bars are looked for over the week before the roll, so a Monday roll takes Friday's close. Days the stored bars cannot price are fetched when qkt has a
-bar source for the venue; otherwise the history is measured from what is stored. A live session prices
-the rolls it adds from 1m bars.
+bar source for the venue; otherwise the history is measured from what is stored. Only rolls whose
+minute has passed are recorded: a roll still ahead is left out (the report counts it), so no record is
+priced from the bars before it. A live session prices the rolls it adds from 1m bars, at their minute,
+and takes no record dated after it started.
 
 A catalog written from a vendor archive (any venue `--catalog` has no source for) may give each
 contract's `lifetimeVolume` and `peakOpenInterest`. A continuous chain then skips delivery months that
