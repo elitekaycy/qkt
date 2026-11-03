@@ -68,18 +68,24 @@ internal class SessionFlatten(
             val deployedIds = strategies.map { it.first }
             val venueTickets = readVenueTickets() ?: return closeLedgerTickets(strategyId, now)
             for (ticket in venueTickets) {
-                val owner =
-                    ticketAttribution.ownerOf(ticket.ticket)
-                        ?: ticketAttribution.fromComment(ticket.comment, deployedIds)
-                if (owner != strategyId) {
-                    if (owner == null) {
+                when (ownership(ticket, strategyId, deployedIds, ticketAttribution)) {
+                    TicketOwnership.OWN -> Unit
+                    TicketOwnership.OTHER_STRATEGY -> {
+                        log.info(
+                            "flatten left ticket {} on {} to the strategy that placed it",
+                            ticket.ticket,
+                            ticket.symbol,
+                        )
+                        continue
+                    }
+                    TicketOwnership.UNKNOWN -> {
                         log.error(
                             "flatten skipped unattributed ticket {} on {}; operator intervention required",
                             ticket.ticket,
                             ticket.symbol,
                         )
+                        continue
                     }
-                    continue
                 }
                 pipeline.orderManager.closePendingForSymbol(ticket.symbol, strategyId)
                 val leg = strategyPositions.legBookFor(strategyId, ticket.symbol)?.legByTicket(ticket.ticket)
@@ -165,7 +171,29 @@ internal class SessionFlatten(
     private fun Throwable.isInterruption(): Boolean =
         generateSequence(this) { it.cause }.any { it is InterruptedException }
 
-    private companion object {
+    /** Whose a venue ticket is, as one session's flatten sees it. */
+    internal enum class TicketOwnership { OWN, OTHER_STRATEGY, UNKNOWN }
+
+    internal companion object {
+        /**
+         * Sessions on one magic see each other's tickets; one recorded for, or carrying the `dsl-` marker
+         * of, another strategy is that session's to close. Only a ticket no qkt order placed is UNKNOWN.
+         */
+        fun ownership(
+            ticket: BrokerPositionTicket,
+            strategyId: String,
+            deployedIds: List<String>,
+            attribution: TicketAttribution,
+        ): TicketOwnership {
+            val owner = attribution.ownerOf(ticket.ticket) ?: attribution.fromComment(ticket.comment, deployedIds)
+            return when {
+                owner == strategyId -> TicketOwnership.OWN
+                owner != null -> TicketOwnership.OTHER_STRATEGY
+                ReconcileTicketScope.qktOrderMarker(ticket) != null -> TicketOwnership.OTHER_STRATEGY
+                else -> TicketOwnership.UNKNOWN
+            }
+        }
+
         const val VENUE_READ_ATTEMPTS: Int = 3
         const val VENUE_READ_BACKOFF_MS: Long = 500L
     }

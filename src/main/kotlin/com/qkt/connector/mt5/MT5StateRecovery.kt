@@ -35,6 +35,8 @@ class MT5StateRecovery(
      * and refuse to seed positions that two strategies could both claim. See #154.
      */
     private val siblingsLookup: () -> List<String> = { emptyList() },
+    /** A position another qkt strategy on this magic placed, e.g. `dsl-atto_mix_solo--0` seen by `atto_mix_a`. */
+    private val onSiblingPosition: (ticket: Long) -> Unit = {},
 ) {
     private val log = LoggerFactory.getLogger(MT5StateRecovery::class.java)
 
@@ -109,7 +111,7 @@ class MT5StateRecovery(
                         "within MT5's 16-char comment window.",
                 )
             }
-            OrphanMatch.NotOurs -> Unit
+            OrphanMatch.NotOurs -> if (isQktOrderComment(p.comment)) onSiblingPosition(p.ticket)
         }
     }
 
