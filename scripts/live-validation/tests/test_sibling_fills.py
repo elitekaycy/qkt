@@ -21,6 +21,11 @@ class Strays(unittest.TestCase):
         log = accepted("a", "101") + accepted("b", "202") + dropped("b", "101") + dropped("a", "202")
         self.assertEqual(strays(log, sibling_closes=True), [])
 
+    def test_a_book_child_session_name_parses(self):
+        # A portfolio child logs as `book:slot`; its sibling's close must pass like a standalone's.
+        log = accepted("atto_mix:a", "101") + accepted("solo", "202") + dropped("atto_mix:a", "202") + dropped("solo", "101")
+        self.assertEqual(strays(log, sibling_closes=True), [])
+
     def test_the_same_close_fails_without_the_option(self):
         log = accepted("a", "101") + dropped("b", "101")
         self.assertEqual(len(strays(log)), 1)

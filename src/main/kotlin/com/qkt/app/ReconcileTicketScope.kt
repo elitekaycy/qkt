@@ -55,23 +55,33 @@ internal class ReconcileTicketScope(
         }
     }
 
-    private fun qktOrderMarker(value: String?): String? {
-        if (value.isNullOrBlank()) return null
-        val marker =
-            if (value.startsWith("oco:")) {
-                value.substringAfter('/', missingDelimiterValue = "")
-            } else {
-                value
-            }
-        return marker.takeIf { it.startsWith("dsl-") }
-    }
-
     fun isPotentiallyOwnedBy(
         ticket: BrokerPositionTicket,
         strategyId: String,
     ): Boolean {
         ticketAttribution.ownerOf(ticket.ticket)?.let { return it == strategyId }
-        val marker = qktOrderMarker(ticket.clientOrderId) ?: qktOrderMarker(ticket.comment) ?: return true
+        val marker = qktOrderMarker(ticket) ?: return true
         return ticketAttribution.fromComment(marker, listOf(strategyId)) == strategyId
+    }
+
+    companion object {
+        /**
+         * The `dsl-<strategy>…` order marker a qkt order left on [ticket], from its client order id or
+         * its venue comment (an OCO comment `oco:<group>/dsl-…` carries it after the slash); null for a
+         * position no qkt strategy placed, e.g. a manual trade with an empty comment.
+         */
+        fun qktOrderMarker(ticket: BrokerPositionTicket): String? =
+            qktOrderMarker(ticket.clientOrderId) ?: qktOrderMarker(ticket.comment)
+
+        private fun qktOrderMarker(value: String?): String? {
+            if (value.isNullOrBlank()) return null
+            val marker =
+                if (value.startsWith("oco:")) {
+                    value.substringAfter('/', missingDelimiterValue = "")
+                } else {
+                    value
+                }
+            return marker.takeIf { it.startsWith("dsl-") }
+        }
     }
 }

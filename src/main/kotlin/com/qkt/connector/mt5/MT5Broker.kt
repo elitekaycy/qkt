@@ -274,10 +274,9 @@ class MT5Broker(
             seedOrphan = { ticket, orderId, strategyId ->
                 state.positionBook.attribute(ticket, MT5TicketMeta(orderId, strategyId))
             },
-            onPositionRecovered = { position ->
-                state.positionBook.setOpenedAt(position.ticket, position.openTime)
-            },
+            onPositionRecovered = { position -> state.positionBook.setOpenedAt(position.ticket, position.openTime) },
             siblingsLookup = siblingsLookup,
+            onSiblingPosition = poller::markForeign,
         )
 
     init {
