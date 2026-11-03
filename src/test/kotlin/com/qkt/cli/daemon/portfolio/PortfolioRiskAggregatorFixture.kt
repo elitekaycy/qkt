@@ -23,6 +23,13 @@ abstract class PortfolioRiskAggregatorFixture {
         var halted: String? = null
         var scope: HaltScope? = null
         var resumed = 0
+        var unclosedLegs = 0
+        var answers = true
+
+        override fun unclosedLegs(): Int {
+            check(answers) { "engine did not answer" }
+            return unclosedLegs
+        }
 
         override fun flatten() {
             flattened++

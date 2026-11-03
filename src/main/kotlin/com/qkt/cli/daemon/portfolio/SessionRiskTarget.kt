@@ -9,6 +9,12 @@ internal class SessionRiskTarget(
 ) : ChildRiskTarget {
     override fun flatten() = live.flatten()
 
+    override fun unclosedLegs(): Int {
+        if (!live.running) return 0
+        val reading = live.limitReading() ?: return 0
+        return if (reading.closing) 0 else reading.openLegs
+    }
+
     override fun halt(
         reason: String,
         scope: HaltScope,
