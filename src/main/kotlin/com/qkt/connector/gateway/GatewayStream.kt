@@ -1,6 +1,6 @@
 package com.qkt.connector.gateway
 
-import com.qkt.connector.mt5.MT5TransportJournal
+import com.qkt.connectivity.transport.TransportJournal
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -23,7 +23,7 @@ class GatewayStream(
     onConnection: (Boolean, String) -> Unit,
     initialBackoffMs: Long = 1_000,
     maxBackoffMs: Long = 30_000,
-    private val journal: MT5TransportJournal? = null,
+    private val journal: TransportJournal? = null,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
     private val lock = Any()
@@ -86,7 +86,7 @@ class GatewayStream(
     }
 
     private fun recordEvent(
-        journal: MT5TransportJournal,
+        journal: TransportJournal,
         text: String,
         event: WireEvent,
     ) {

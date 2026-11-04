@@ -1,8 +1,8 @@
 package com.qkt.connector.gateway
 
-import com.qkt.connector.mt5.MT5TransportJournal
-import com.qkt.connector.mt5.MT5TransportRecorder
-import com.qkt.connector.mt5.TransportCorrelation
+import com.qkt.connectivity.transport.TransportCorrelation
+import com.qkt.connectivity.transport.TransportJournal
+import com.qkt.connectivity.transport.TransportRecorder
 import java.io.IOException
 import java.time.Duration
 import kotlinx.serialization.KSerializer
@@ -25,7 +25,7 @@ class GatewayClient(
     private val apiKey: String,
     httpTimeoutMs: Long = 5_000,
     private val retryAttempts: Int = 3,
-    journal: MT5TransportJournal? = null,
+    journal: TransportJournal? = null,
 ) {
     private val json =
         Json {
@@ -39,7 +39,7 @@ class GatewayClient(
             .callTimeout(Duration.ofMillis(httpTimeoutMs))
             .connectTimeout(Duration.ofMillis(httpTimeoutMs))
             .readTimeout(Duration.ofMillis(httpTimeoutMs))
-            .apply { if (journal != null) addInterceptor(MT5TransportRecorder(journal, System::nanoTime)) }
+            .apply { if (journal != null) addInterceptor(TransportRecorder(journal, System::nanoTime)) }
             .build()
 
     init {

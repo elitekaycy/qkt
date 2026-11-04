@@ -1,5 +1,7 @@
 package com.qkt.connector.mt5
 
+import com.qkt.connectivity.transport.TransportJournal
+import com.qkt.connectivity.transport.TransportRecorder
 import java.math.BigDecimal
 import java.time.Duration
 import kotlinx.serialization.json.Json
@@ -22,14 +24,14 @@ class MT5Client(
     private val retryAttempts: Int = 3,
     private val apiKey: String? = null,
     private val readCache: MT5ReadCache? = null,
-    private val transportJournal: MT5TransportJournal? = null,
+    private val transportJournal: TransportJournal? = null,
     private val monotonicNanos: () -> Long = System::nanoTime,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
     private val venueTime = MT5VenueTime(serverTimeZone)
     private val responses = MT5OrderResponses(json)
     private val snapshots = MT5SnapshotParser(json, venueTime)
-    private val recorder = transportJournal?.let { MT5TransportRecorder(it, monotonicNanos) }
+    private val recorder = transportJournal?.let { TransportRecorder(it, monotonicNanos) }
     private val dispatcher =
         Dispatcher().apply {
             maxRequestsPerHost = 16

@@ -70,5 +70,4 @@
 223 src/main/kotlin/com/qkt/tools/parity/ParityDukascopyMt5Xauusd.kt
 209 src/main/kotlin/com/qkt/dsl/parse/TokenKind.kt
 206 src/main/kotlin/com/qkt/cli/observe/Routes.kt
-206 src/main/kotlin/com/qkt/connector/mt5/MT5TransportJournal.kt
 201 src/main/kotlin/com/qkt/connector/mt5/MT5BrokerProfileLoader.kt

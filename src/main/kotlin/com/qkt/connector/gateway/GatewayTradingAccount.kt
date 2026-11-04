@@ -7,7 +7,8 @@ import com.qkt.connectivity.AccountConfig
 import com.qkt.connectivity.AccountProfile
 import com.qkt.connectivity.AccountType
 import com.qkt.connectivity.TradingAccount
-import com.qkt.connector.mt5.MT5TransportJournal
+import com.qkt.connectivity.transport.TransportJournal
+import com.qkt.connectivity.transport.TransportJournalDirs
 import com.qkt.instrument.ContractCatalogSource
 import com.qkt.instrument.FundingRateSource
 import com.qkt.instrument.InstrumentRegistry
@@ -37,7 +38,7 @@ class GatewayTradingAccount internal constructor(
 
     /** The account's REST exchanges and stream events, for golden capture (`gateway-transport-journal/<LABEL>/`). */
     private val journal =
-        stateRoot?.let { MT5TransportJournal(it.resolve(TRANSPORT_JOURNAL_DIR), config.name.uppercase(), clock) }
+        stateRoot?.let { TransportJournal(it.resolve(TransportJournalDirs.GATEWAY), config.name.uppercase(), clock) }
     private val client by lazy {
         GatewayClient(settings.url, settings.apiKey, settings.httpTimeoutMs, settings.retryAttempts, journal)
     }
@@ -154,11 +155,6 @@ class GatewayTradingAccount internal constructor(
         if (opened.isInitialized()) opened.value.close()
         recording.close()
         journal?.close()
-    }
-
-    internal companion object {
-        /** Where each gateway account journals its transport under the state root. */
-        const val TRANSPORT_JOURNAL_DIR: String = "gateway-transport-journal"
     }
 }
 

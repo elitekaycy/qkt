@@ -1,7 +1,7 @@
 package com.qkt.cli.golden
 
 import com.qkt.cli.daemon.StateDir
-import com.qkt.connector.gateway.GatewayTradingAccount
+import com.qkt.connectivity.transport.TransportJournalDirs
 import java.nio.charset.StandardCharsets
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
@@ -66,7 +66,7 @@ internal fun writeGoldenBundle(
                     addJsonl(zip, file, "gateway/$relative", audit.firstTimestampMs, audit.lastTimestampMs)
                 entries.add(evidence)
             }
-            val venueRoot = stateDir.stateRoot.resolve(GatewayTradingAccount.TRANSPORT_JOURNAL_DIR)
+            val venueRoot = stateDir.stateRoot.resolve(TransportJournalDirs.GATEWAY)
             val venueEntries =
                 venueFiles.map { file ->
                     val relative = venueRoot.relativize(file).joinToString("/")

@@ -1,6 +1,7 @@
 package com.qkt.connector.mt5
 
 import com.qkt.common.FixedClock
+import com.qkt.connectivity.transport.TransportJournal
 import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.Path
@@ -22,7 +23,7 @@ class MT5TransportJournalTest {
             ),
         )
         server.start()
-        val journal = MT5TransportJournal(tmp, "demo/profile", FixedClock(1_700_000_000_000L))
+        val journal = TransportJournal(tmp, "demo/profile", FixedClock(1_700_000_000_000L))
         try {
             val client =
                 MT5Client(
@@ -55,7 +56,7 @@ class MT5TransportJournalTest {
         val server = MockWebServer()
         repeat(4) { server.enqueue(MockResponse().setResponseCode(500).setBody("""{"error":"terminal gone"}""")) }
         server.start()
-        val journal = MT5TransportJournal(tmp, "demo", FixedClock(1_700_000_000_000L))
+        val journal = TransportJournal(tmp, "demo", FixedClock(1_700_000_000_000L))
         try {
             val client =
                 MT5Client(
@@ -86,7 +87,7 @@ class MT5TransportJournalTest {
             ),
         )
         server.start()
-        val journal = MT5TransportJournal(tmp, "demo", FixedClock(1_700_000_000_000L))
+        val journal = TransportJournal(tmp, "demo", FixedClock(1_700_000_000_000L))
         try {
             val client =
                 MT5Client(

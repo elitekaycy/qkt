@@ -1,7 +1,7 @@
 package com.qkt.connector.gateway
 
 import com.qkt.common.FixedClock
-import com.qkt.connector.mt5.MT5TransportJournal
+import com.qkt.connectivity.transport.TransportJournal
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CopyOnWriteArrayList
@@ -24,7 +24,7 @@ class GatewayTransportJournalTest {
         @TempDir tmp: Path,
     ) {
         val fake = FakeGateway(listOf("BTC_USDC_PERPETUAL"))
-        val journal = MT5TransportJournal(tmp, "PAPER", FixedClock(1_790_835_377_133L))
+        val journal = TransportJournal(tmp, "PAPER", FixedClock(1_790_835_377_133L))
         val events = CopyOnWriteArrayList<WireEvent>()
         val stream = GatewayStream(fake.url, "the-key", { events += it }, {}, { _, _ -> }, journal = journal)
         try {

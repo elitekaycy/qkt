@@ -10,7 +10,7 @@ import com.qkt.cli.golden.scanTransport
 import com.qkt.cli.golden.writeGoldenBundle
 import com.qkt.common.Clock
 import com.qkt.common.SystemClock
-import com.qkt.connector.gateway.GatewayTradingAccount
+import com.qkt.connectivity.transport.TransportJournalDirs
 import java.nio.file.Path
 import java.time.Instant
 
@@ -83,7 +83,7 @@ class GoldenCommand(
                 }
             }
             assertNoDrops(transportRoot, "transport", audit.firstTimestampMs, audit.lastTimestampMs)
-            val venueRoot = stateDir.stateRoot.resolve(GatewayTradingAccount.TRANSPORT_JOURNAL_DIR)
+            val venueRoot = stateDir.stateRoot.resolve(TransportJournalDirs.GATEWAY)
             val venueFiles = jsonlFilesRecursive(venueRoot)
             assertNoDrops(venueRoot, "transport", audit.firstTimestampMs, audit.lastTimestampMs)
 

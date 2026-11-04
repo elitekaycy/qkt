@@ -1,4 +1,4 @@
-package com.qkt.connector.mt5
+package com.qkt.connectivity.transport
 
 import com.qkt.common.Clock
 import com.qkt.common.OwnerOnly
@@ -19,16 +19,16 @@ import java.util.concurrent.atomic.AtomicLong
 import org.slf4j.LoggerFactory
 
 /**
- * Asynchronous, bounded journal of MT5 gateway HTTP exchanges used for authentic
+ * Asynchronous, bounded journal of a venue connection's HTTP exchanges (and stream events) used for authentic
  * golden-session capture. Authentication headers are never recorded.
  */
-class MT5TransportJournal(
+class TransportJournal(
     private val rootDir: Path,
     profile: String,
     private val clock: Clock,
     queueCapacity: Int = 2_000,
 ) : AutoCloseable {
-    private val log = LoggerFactory.getLogger(MT5TransportJournal::class.java)
+    private val log = LoggerFactory.getLogger(TransportJournal::class.java)
     private val profileDir = profile.ifBlank { "default" }.replace(Regex("[^A-Za-z0-9._-]"), "_")
     private val queue = ArrayBlockingQueue<Line>(queueCapacity)
     private val sequence = AtomicLong(0L)
@@ -59,7 +59,7 @@ class MT5TransportJournal(
                 persistDropMarkers()
             }
             runCatching { channel?.close() }
-        }, "qkt-mt5-transport-journal-$profileDir").apply {
+        }, "qkt-transport-journal-$profileDir").apply {
             isDaemon = true
             start()
         }
@@ -85,23 +85,23 @@ class MT5TransportJournal(
                 append("{\"v\":1")
                 append(",\"ts\":").append(timestampMs)
                 append(",\"seq\":").append(sequence.getAndIncrement())
-                append(",\"profile\":").append(json(profileDir))
-                append(",\"method\":").append(json(method))
-                append(",\"path\":").append(json(path))
-                idempotencyKey?.let { append(",\"idempotencyKey\":").append(json(it)) }
-                engineOrderId?.let { append(",\"engineOrderId\":").append(json(it)) }
-                requestBody?.let { append(",\"requestBody\":").append(json(it)) }
+                append(",\"profile\":").append(jsonLiteral(profileDir))
+                append(",\"method\":").append(jsonLiteral(method))
+                append(",\"path\":").append(jsonLiteral(path))
+                idempotencyKey?.let { append(",\"idempotencyKey\":").append(jsonLiteral(it)) }
+                engineOrderId?.let { append(",\"engineOrderId\":").append(jsonLiteral(it)) }
+                requestBody?.let { append(",\"requestBody\":").append(jsonLiteral(it)) }
                 responseCode?.let { append(",\"responseCode\":").append(it) }
-                responseBody?.let { append(",\"responseBody\":").append(json(it)) }
+                responseBody?.let { append(",\"responseBody\":").append(jsonLiteral(it)) }
                 responseBytes?.takeIf { it >= 0 }?.let { append(",\"responseBytes\":").append(it) }
-                error?.let { append(",\"error\":").append(json(it)) }
+                error?.let { append(",\"error\":").append(jsonLiteral(it)) }
                 append(",\"durationMs\":").append(durationMs.coerceAtLeast(0L))
                 append("}\n")
             }.toByteArray(StandardCharsets.UTF_8)
         if (!queue.offer(Line(eventDay, line))) {
             val count = markDropped(eventDay)
             if (count == 1L || count % 1_000L == 0L) {
-                log.error("MT5 transport journal queue full for {}; dropped {} exchange(s)", profileDir, count)
+                log.error("transport journal queue full for {}; dropped {} exchange(s)", profileDir, count)
             }
         }
     }
@@ -111,7 +111,7 @@ class MT5TransportJournal(
         worker.join(5_000L)
         if (worker.isAlive) {
             worker.interrupt()
-            log.error("MT5 transport journal did not drain for {}; remaining={}", profileDir, queue.size)
+            log.error("transport journal did not drain for {}; remaining={}", profileDir, queue.size)
         }
     }
 
@@ -122,7 +122,7 @@ class MT5TransportJournal(
             while (buffer.hasRemaining()) output.write(buffer)
         } catch (error: Exception) {
             markDropped(line.day)
-            log.error("MT5 transport journal append failed for {}: {}", profileDir, error.message)
+            log.error("transport journal append failed for {}: {}", profileDir, error.message)
             runCatching { channel?.close() }
             channel = null
             day = null
@@ -153,7 +153,7 @@ class MT5TransportJournal(
                 makeOwnerOnly(marker)
                 persistedDroppedByDay[eventDay] = count
             } catch (error: Exception) {
-                log.error("MT5 transport journal could not persist drop marker for {}: {}", profileDir, error.message)
+                log.error("transport journal could not persist drop marker for {}: {}", profileDir, error.message)
             }
         }
     }
@@ -187,20 +187,4 @@ class MT5TransportJournal(
     private fun makeOwnerOnly(path: Path) {
         OwnerOnly.file(path)
     }
-
-    private fun json(value: String): String =
-        buildString {
-            append('"')
-            for (character in value) {
-                when (character) {
-                    '\\' -> append("\\\\")
-                    '"' -> append("\\\"")
-                    '\n' -> append("\\n")
-                    '\r' -> append("\\r")
-                    '\t' -> append("\\t")
-                    else -> append(character)
-                }
-            }
-            append('"')
-        }
 }

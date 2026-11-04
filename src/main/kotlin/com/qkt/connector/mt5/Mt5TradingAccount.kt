@@ -6,6 +6,7 @@ import com.qkt.connectivity.AccountConfig
 import com.qkt.connectivity.AccountProfile
 import com.qkt.connectivity.AccountType
 import com.qkt.connectivity.TradingAccount
+import com.qkt.connectivity.transport.TransportJournal
 import com.qkt.marketdata.source.MarketSource
 
 /**
@@ -19,7 +20,7 @@ class Mt5TradingAccount internal constructor(
     val profile: MT5BrokerProfile,
     private val client: MT5Client,
     private val feed: Lazy<MarketSource>,
-    private val journal: MT5TransportJournal?,
+    private val journal: TransportJournal?,
     private val accountFetcher: (MT5BrokerProfile) -> MT5AccountInfo,
     private val strategiesTrading: (String) -> List<String>,
 ) : TradingAccount {
