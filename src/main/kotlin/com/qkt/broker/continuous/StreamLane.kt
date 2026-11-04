@@ -7,6 +7,7 @@ import com.qkt.common.Clock
 import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.derivatives.futures.ContinuousChain
 import com.qkt.derivatives.futures.PriceSpace
+import com.qkt.derivatives.futures.RollQuoteTaps
 import com.qkt.events.BrokerEvent
 import com.qkt.execution.ManagedOrder
 import com.qkt.execution.OrderRequest
@@ -34,6 +35,7 @@ internal class StreamLane(
     venueFactory: (EventBus, MarketPriceTracker, PositionProvider) -> ContractVenue,
     private val store: LaneStateStore? = null,
     private val rollPriceBand: BigDecimal? = null,
+    private val rollQuoteTaps: RollQuoteTaps? = null,
 ) {
     private val chain: ContinuousChain get() = chainOf()
 
@@ -62,6 +64,7 @@ internal class StreamLane(
             fills,
             stops,
             RollRefusals(book, rollPriceBand),
+            hearsOldContract = rollQuoteTaps != null,
         )
     private val settled = LaneSettledCloses(bus, clock, chain.symbol, venue.broker, ::save, store != null)
     private val state = LaneState(chainOf, positions, stops, orders, book, legs, rolls, settled)
@@ -70,6 +73,7 @@ internal class StreamLane(
     private val recovery = LaneRecovery(clock, chainOf, venue, orders, legs, rolls, book, ::space, collared)
     private var current: Int? = null
     private val quotes = LaneQuotes(chainOf, ::space, collared)
+    private val tap = LaneRollTap(rollQuoteTaps, chainOf, rolls, quotes)
     private val legDeadline = RollLegDeadline(legs, rolls::waitingForVenue) { venue.broker.cancel(it) }
     private val spaces = HashMap<Int, PriceSpace>()
     private val submissions = LaneSubmissions(bus, chainOf, venue, orders, stops, ::space)
@@ -96,6 +100,7 @@ internal class StreamLane(
             current = restored.contractIndex
             rolls.restore(restored.run?.hearing(quotes), restored.unwinds, ::applyRoll)
         }
+        tap.sync(current, clock.now())
     }
 
     /** Has the venue take back the lane's orders after a restart, beside the engine's [engineOrders]; see [LaneRecovery]. */
@@ -163,11 +168,13 @@ internal class StreamLane(
             return index
         }
         rolls.roll(previous, index, positions, quotes.forRoll(previous, index, tick), ::applyRoll)
+        tap.sync(current, nowMs)
         return index
     }
 
     /** Applies what a roll left behind, then tells the engine of the closes and costs. */
     private fun applyRoll(outcome: RollOutcome) {
+        tap.sync(current, clock.now())
         stops.putAll(outcome.stopped)
         outcome.closes.forEach { positions.merge(it.strategyId, it.signedQuantity(), BigDecimal::add) }
         // Saved before the engine hears of it: a crash in between cannot publish the roll's closes twice.

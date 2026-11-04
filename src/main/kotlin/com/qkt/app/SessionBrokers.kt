@@ -129,6 +129,7 @@ internal class SessionBrokers(
                         continuous.laneStore,
                         continuous.rollPriceBand,
                         instance,
+                        continuous.rollQuoteTaps,
                     ) {
                         laneBus,
                         lanePrices,

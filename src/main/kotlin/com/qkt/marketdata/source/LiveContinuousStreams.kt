@@ -7,6 +7,7 @@ import com.qkt.derivatives.futures.ContinuousChains
 import com.qkt.derivatives.futures.LiveRoll
 import com.qkt.derivatives.futures.LiveRollMeasurer
 import com.qkt.derivatives.futures.PrematureRolls
+import com.qkt.derivatives.futures.RollQuoteTaps
 import com.qkt.derivatives.futures.RollTransition
 import com.qkt.instrument.ContinuousSelector
 import com.qkt.instrument.FuturesDirectory
@@ -23,7 +24,8 @@ import java.util.concurrent.ConcurrentHashMap
  * extended with it, so the stream's lane rolls on the same measurement. A root's measurements are
  * taken one at a time: `@front` and `@next` roll at the same instant, and each must append to the
  * history the other wrote. The records of [roots] dated ahead of the session's start are not taken ([PrematureRolls]):
- * the streams are served without them, so each such roll is priced live at its own minute.
+ * the streams are served without them, so each such roll is priced live at its own minute. Each feed reads
+ * the old contract its lane's roll holds on [taps] and hands that contract's quotes back through them.
  */
 class LiveContinuousStreams(
     private val chains: ContinuousChains,
@@ -32,6 +34,7 @@ class LiveContinuousStreams(
     private val account: MarketSource,
     private val clock: Clock,
     roots: Collection<String> = emptyList(),
+    private val taps: RollQuoteTaps? = null,
 ) {
     private val rootLocks = ConcurrentHashMap<String, Any>()
     private val premature = PrematureRolls.at(store, roots, clock.now())
@@ -52,6 +55,7 @@ class LiveContinuousStreams(
             ticks = account::liveTicks,
             measure = { roll -> measure(symbol, roll) },
             clock = clock,
+            taps = taps,
         )
     }
 

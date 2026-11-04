@@ -23,7 +23,8 @@ internal fun RollRun.hearing(quotes: LaneQuotes): RollRun =
 /**
  * The quotes of one stream's contracts, in contract prices. When [judging] (a live lane), a roll asks [forRoll] for
  * what its legs would hit: the last quote of the old contract, and the new one's in the tick that started the roll,
- * since by then the stream serves the new contract.
+ * since by then the stream serves the new contract. A stream quote of the old contract counts until the stream quotes
+ * the new one; after that the old contract's quotes come only from its feed read for the roll ([heardContract]).
  */
 internal class LaneQuotes(
     private val chainOf: () -> ContinuousChain,
@@ -31,12 +32,18 @@ internal class LaneQuotes(
     private val judging: Boolean,
 ) {
     private var last: Tick? = null
+    private var tapped: Tick? = null
 
     /** [tick] of the stream as a tick of contract [index], remembered as that contract's last quote. */
     fun heard(
         tick: Tick,
         index: Int,
     ): Tick = contractTick(tick, index).also { last = it }
+
+    /** [tick] of a contract the stream no longer serves, already in its prices, remembered as its last quote. */
+    fun heardContract(tick: Tick) {
+        tapped = tick
+    }
 
     /** The quotes of a roll from contract [from] to [to]; [tick] started it, null when an order did. */
     fun forRoll(
@@ -55,7 +62,12 @@ internal class LaneQuotes(
         to: Int,
     ): RollQuotes = RollQuotes(heardOn(from), heardOn(to)) { latest(from, to) }
 
-    private fun heardOn(index: Int): Tick? = last?.takeIf { it.symbol == chainOf().contractSymbol(index) }
+    private fun heardOn(index: Int): Tick? {
+        val contract = chainOf().contractSymbol(index)
+        val streamed = last?.takeIf { it.symbol == contract }
+        val read = tapped?.takeIf { it.symbol == contract } ?: return streamed
+        return if (streamed != null && streamed.timestamp > read.timestamp) streamed else read
+    }
 
     private fun contractTick(
         tick: Tick,
