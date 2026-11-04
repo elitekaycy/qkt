@@ -11,6 +11,7 @@ import com.qkt.broker.liquidation.LiquidatingVenue
 import com.qkt.bus.EventBus
 import com.qkt.common.Clock
 import com.qkt.derivatives.futures.ContinuousChains
+import com.qkt.derivatives.futures.RollQuoteTaps
 import com.qkt.events.TickEvent
 import com.qkt.execution.ManagedOrder
 import com.qkt.execution.OrderRequest
@@ -37,7 +38,8 @@ import java.math.BigDecimal
  * fraction from the contract's measured roll price, sending nothing, and sends its legs as immediate-or-cancel limits
  * at that fraction ([collarPrice]), so none can fill beyond it; a backtest passes none and sends market legs.
  *
- * A [marginAccount] is the account these streams trade on: an entry on a stream answers to its margin level.
+ * A [marginAccount] is the account these streams trade on: an entry on a stream answers to its margin level. Live,
+ * [rollQuoteTaps] bring each lane the quotes of the contract its roll closes out of once the stream serves the next.
  *
  * Orders are accepted only on streams adjusted by panama: there continuous-space P&L plus the
  * booked roll costs equals the P&L of the contract legs exactly.
@@ -58,6 +60,7 @@ class ContinuousContractBroker(
     store: LaneStateStore? = null,
     rollPriceBand: BigDecimal? = null,
     private val marginAccount: Broker? = null,
+    rollQuoteTaps: RollQuoteTaps? = null,
     venueFactory: (EventBus, MarketPriceTracker, PositionProvider) -> ContractVenue,
 ) : Broker,
     LiquidatingVenue {
@@ -73,6 +76,7 @@ class ContinuousContractBroker(
                 venueFactory,
                 store,
                 rollPriceBand,
+                rollQuoteTaps,
             )
         }
 
