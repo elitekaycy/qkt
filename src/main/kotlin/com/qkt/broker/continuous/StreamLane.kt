@@ -72,6 +72,7 @@ internal class StreamLane(
     private val quotes = LaneQuotes(chainOf, ::space, collared)
     private val legDeadline = RollLegDeadline(legs, rolls::waitingForVenue) { venue.broker.cancel(it) }
     private val spaces = HashMap<Int, PriceSpace>()
+    private val submissions = LaneSubmissions(bus, chainOf, venue, orders, stops, ::space)
 
     init {
         LaneVenueEvents(
@@ -112,23 +113,7 @@ internal class StreamLane(
     fun submit(request: OrderRequest): SubmitAck {
         val now = clock.now()
         chain.orderRefusal(now, rolls.inFlight)?.let { return bus.refuse(request, it, now) }
-        val index = requireNotNull(catchUp(now))
-        stops[request.strategyId]?.let { return bus.refuse(request, it, now) }
-        val space =
-            try {
-                space(index)
-            } catch (e: IllegalArgumentException) {
-                return bus.refuse(request, e.message ?: "${chain.symbol} cannot price contract $index", now)
-            }
-        val translated =
-            toContract(request, request.id, chain.contractSymbol(index), space)
-                ?: return bus.refuse(
-                    request,
-                    "${chain.symbol} does not accept ${request::class.simpleName} orders",
-                    now,
-                )
-        orders.add(ContinuousOrder(request, request.id, index))
-        return venue.broker.submit(translated)
+        return submissions.submit(request, requireNotNull(catchUp(now)), now)
     }
 
     /** An operator's resume: clears [strategyId]'s stop here if it is safe ([LaneStopRelease]); null when it has none. */
