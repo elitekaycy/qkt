@@ -20,7 +20,6 @@ symbol add up to carries that cause (`follows-explained-fill`). Anything else, a
 mismatch. The trace is the `trace` artifact; its `parityMismatches` counts into the attestation's parity.
 """
 import csv
-import glob
 import json
 import os
 import sys
