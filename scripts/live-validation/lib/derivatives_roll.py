@@ -186,6 +186,17 @@ def collared_leg(order, leg, history, plan):
     return collared(order, "buy", Decimal(record["toPrice"]))
 
 
+def priced_live(plan, history):
+    """What is wrong with how the roll at plan's `at_ms` was priced: `qkt fetch --rolls`, run minutes ahead of it, must
+    record none of it (`prefetched`, read right after the fetch), and the session must have recorded it at its minute."""
+    found = []
+    if plan.get("prefetched"):
+        found.append(f"qkt fetch --rolls recorded a roll that had not happened: {plan['prefetched']}")
+    if not any(r["atMs"] == plan["at_ms"] for r in history["rolls"]):
+        found.append(f"the session never recorded the roll at {plan['at_ms']}")
+    return found
+
+
 def judge(outcome, legs, holdings, plan, log, strategy):
     """What is wrong with the roll, given its venue [legs], the strategy's [holdings] and the daemon's [log]."""
     frm, to, quantity = plan["from_code"], plan["to_code"], Decimal(plan["quantity"])

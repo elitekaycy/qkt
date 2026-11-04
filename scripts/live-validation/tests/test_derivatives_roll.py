@@ -105,6 +105,13 @@ class Collar(unittest.TestCase):
     def order(self, **over):
         return {"client_order_id": "x", "side": "sell", "type": "limit", "time_in_force": "ioc", "limit_price": "58500", **over}
 
+    def test_a_roll_recorded_by_the_fetch_or_never_by_the_session_is_not_priced_live(self):
+        plan = {"at_ms": AT, "prefetched": []}
+        live = {"rolls": [{"atMs": AT, "from": "A", "to": "B", "fromPrice": "1", "toPrice": "1"}]}
+        self.assertEqual([], rolling.priced_live(plan, live))
+        self.assertTrue(rolling.priced_live(dict(plan, prefetched=live["rolls"]), live))
+        self.assertTrue(rolling.priced_live(plan, {"rolls": []}))
+
     def test_a_limit_ioc_at_the_band_passes(self):
         self.assertEqual(rolling.collared(self.order(), "sell", Decimal("78000")), [])
 
@@ -207,7 +214,8 @@ class CaseRun(unittest.TestCase):
         spec = document["continuous_roll"]
         spec.update(start_before_seconds=100_000, start_late_seconds=1_000_000, post_stop_wait_seconds=0)
         yaml.safe_dump(document, open(f"{copied}/case.yaml", "w"))
-        env = dict(os.environ, QKT_DERIV_GATEWAY_KEY="token", QKT_DERIV_GUARDIAN_KEY="guard",
+        env = dict(os.environ, QKT_ATTEST_UTC_DAY_WAIT="off", QKT_DERIV_GATEWAY_KEY="token",
+                   QKT_DERIV_GUARDIAN_KEY="guard",
                    QKT_LIVE_DEMO_ORDER_APPROVAL="LOCALHOST_DEMO_ONLY", FAKE_GATEWAY=gateway.url, FAKE_ROLL=mode,
                    FAKE_RESUME_EXIT=resume_exit)
         out = os.path.join(work, "run")

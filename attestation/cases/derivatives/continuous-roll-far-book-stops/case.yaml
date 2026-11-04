@@ -3,7 +3,8 @@ title: A book beyond the collar sends no roll leg, stops the strategy, and resum
 why: 'A roll must not trade into a book far from the measured price (#1587, #1553): no leg goes, the position stays on
   its contract, every later order of the strategy is refused, and `qkt resume` must fail and say so while it holds
   (#1561), not print resumed. A real book cannot be made far on demand, so the new contract''s measured price is seeded
-  at half the market: the book and venue are real, the reference is the fixture. The venue never answers a leg here; a
+  at half the market once the daemon runs, as another session''s live record would be (a daemon takes no record dated
+  ahead of its start, #1615): the book and venue are real, the reference is the fixture. The venue never answers a leg here; a
   collared leg left unfilled by a book that moved after this check is proven only by the soak''s 08:00 roll. The runner
   closes the held entry after judging it.'
 status: ready

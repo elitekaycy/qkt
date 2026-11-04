@@ -276,15 +276,14 @@ data class Config(
      * Returns the [com.qkt.persistence.StatePersistor] for this config, writing under
      * [stateRoot]. Layered by flag:
      *   - `state.enabled = false`              → [com.qkt.persistence.NoopStatePersistor].
-     *   - `state.enabled = true`, `async = false` → [com.qkt.persistence.FileStatePersistor] (synchronous).
+     *   - `state.enabled = true`, `async = false` → [com.qkt.persistence.FileStatePersistor], marks written behind.
      *   - `state.enabled = true`, `async = true`  → [com.qkt.persistence.AsyncStatePersistor] wrapping [com.qkt.persistence.FileStatePersistor].
      *
      * @param stateRoot directory the file persistor writes under (`<stateRoot>/<strategyId>/...`).
      */
     fun statePersistor(stateRoot: Path): com.qkt.persistence.StatePersistor {
         if (!stateEnabled) return com.qkt.persistence.NoopStatePersistor()
-        val file = com.qkt.persistence.FileStatePersistor(stateRoot)
-        return if (stateAsync) com.qkt.persistence.AsyncStatePersistor(file) else file
+        return com.qkt.persistence.fileStatePersistor(stateRoot, stateAsync)
     }
 
     /**

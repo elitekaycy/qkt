@@ -36,10 +36,8 @@ def main():
             json.dump({"root": "DERIBIT:BTC_USDC", "contracts": [{"symbol": "BTC_USDC_3NOV26", "expiryMs": expiry},
                                                                   {"symbol": "BTC_USDC_4NOV26", "expiryMs": expiry + DAY}]},
                       open(f"{directory}/BTC_USDC.json", "w"))
-        else:
-            json.dump({"root": "DERIBIT:BTC_USDC", "policy": "x", "rolls": [
-                {"atMs": at, "from": "BTC_USDC_3NOV26", "to": "BTC_USDC_4NOV26", "fromPrice": "78000", "toPrice": "78000"}]},
-                      open(f"{directory}/BTC_USDC.rolls.json", "w"))
+        else:  # qkt fetch --rolls records only rolls that have happened (#1615): the case's is still ahead
+            json.dump({"root": "DERIBIT:BTC_USDC", "policy": "x", "rolls": []}, open(f"{directory}/BTC_USDC.rolls.json", "w"))
         return 0
     if sys.argv[1] == "resume":
         print("stands or cleared")
@@ -53,13 +51,28 @@ def main():
     strategy = re.search(r"^STRATEGY\s+(\w+)", text, re.M).group(1)
     stream = "DERIBIT:BTC_USDC@front"
     os.makedirs(f"{state}/state/{strategy}", exist_ok=True)
+    at = roll_ms(os.environ["QKT_DATA_HOME"])
+    history = f"{os.environ['QKT_DATA_HOME']}/contracts/DERIBIT/BTC_USDC.rolls.json"
+    # qkt takes no record of a roll that had not happened when it started (PrematureRolls)
+    ahead_at_start = [r for r in json.load(open(history))["rolls"] if r["atMs"] >= at]
     print("daemon ready", flush=True)
     time.sleep(1)
     mode = os.environ["FAKE_ROLL"]
-    at = roll_ms(os.environ["QKT_DATA_HOME"])
+    if mode.startswith("far_book"):
+        deadline = time.time() + 5
+        while not (seeded := [r for r in json.load(open(history))["rolls"] if r["atMs"] == at]) and time.time() < deadline:
+            time.sleep(0.2)
+        if ahead_at_start or not seeded:
+            print(f"ERROR the far reference was seeded before start ({ahead_at_start}) or never ({seeded})", flush=True)
+            mode = "unseeded"
     entry = post("/test/deal", {"id": f"dsl-{strategy}--1.x", "code": "FROM", "side": "buy", "price": "78000"})
     print(f"INFO qkt.trade - trade BUY {stream} qty=0.001 px={entry['price']} realized=0", flush=True)
     realized = "0"
+    if mode in ("carried", "market_legs"):  # the session measures the roll live and appends its record
+        document = json.load(open(history))
+        document["rolls"].append({"atMs": at, "from": "BTC_USDC_3NOV26", "to": "BTC_USDC_4NOV26",
+                                  "fromPrice": "78000", "toPrice": "78000"})
+        json.dump(document, open(history, "w"))
     if mode == "carried":
         post("/test/leg", {"at": at, "strategy": strategy, "kind": "close", "code": "FROM", "side": "sell", "price": "78100", "limit": "58575"})
         post("/test/leg", {"at": at, "strategy": strategy, "kind": "open", "code": "TO", "side": "buy", "price": "78120", "limit": "97500"})

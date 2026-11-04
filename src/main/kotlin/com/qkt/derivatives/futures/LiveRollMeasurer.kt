@@ -31,11 +31,13 @@ sealed interface LiveRoll {
  * ([minuteBars]: the closed bars of a contract starting in `[fromMs, toMs)`), and appends it to the
  * root's history in [store]. A history stays one contiguous run per selector, as [ContinuousChain]
  * requires: only the roll right after the last measured one is appended; a live session never starts
- * a history (`qkt fetch --rolls` does).
+ * a history (`qkt fetch --rolls` does). A record [premature] says was written before its roll happened is no
+ * measurement: the roll is priced from the live bars and its record replaced.
  */
 class LiveRollMeasurer(
     private val minuteBars: (contract: String, fromMs: Long, toMs: Long) -> List<Candle>,
     private val store: RollHistoryStore,
+    private val premature: (RollRecord) -> Boolean = { false },
 ) {
     /** Measures [transition] of [root] (contracts from [catalog]) for [selector] and appends it. */
     fun measure(
@@ -59,10 +61,11 @@ class LiveRollMeasurer(
         ) {
             return LiveRoll.NotNext("the history was built for ${history.policy}, the root rolls ${policy.key}")
         }
-        history.find(transition.atMs, from, to)?.let { return LiveRoll.Measured(it) }
+        history.find(transition.atMs, from, to)?.takeUnless(premature)?.let { return LiveRoll.Measured(it) }
         val previous = schedule.transitions.getOrNull(schedule.transitions.indexOf(transition) - 1)
         val previousPair = previous?.let { contracts(schedule, it, selector) }
-        if (previousPair == null || history.find(previous.atMs, previousPair.first, previousPair.second) == null) {
+        val previousRecord = previousPair?.let { history.find(previous.atMs, it.first, it.second) }
+        if (previousRecord == null || premature(previousRecord)) {
             return LiveRoll.NotNext(
                 "the history lacks the roll before ${transition.atMs}; rebuild it with qkt fetch ${root.root} --rolls",
             )
@@ -76,7 +79,8 @@ class LiveRollMeasurer(
             )
         }
         val record = RollRecord(transition.atMs, from, to, fromPrice.toPlainString(), toPrice.toPlainString())
-        store.write(history.copy(rolls = (history.rolls + record).sortedWith(compareBy({ it.atMs }, { it.from }))))
+        val others = history.rolls.filterNot { it.atMs == record.atMs && it.from == from && it.to == to }
+        store.write(history.copy(rolls = (others + record).sortedWith(compareBy({ it.atMs }, { it.from }))))
         return LiveRoll.Measured(record)
     }
 

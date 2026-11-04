@@ -4,10 +4,12 @@ import com.qkt.candles.TimeWindow
 import com.qkt.cli.Args
 import com.qkt.cli.CliDataRoot
 import com.qkt.cli.ExitCodes
+import com.qkt.common.SystemClock
 import com.qkt.common.TimeRange
 import com.qkt.derivatives.futures.RollHistoryBuilder
 import com.qkt.derivatives.futures.RollPricing
 import com.qkt.derivatives.futures.RollSchedule
+import com.qkt.derivatives.futures.RollTransition
 import com.qkt.instrument.ContinuousSelector
 import com.qkt.instrument.ContractCatalogStore
 import com.qkt.instrument.FuturesRootsFile
@@ -24,7 +26,8 @@ import java.time.ZoneOffset
  * `qkt fetch VENUE:ROOT --rolls [--tf <tf>]`: measures the root's roll history from stored bars of `--tf`
  * (default 1m; a root with only daily bars, as a vendor archive gives them, uses `--tf 1d`), fetched or
  * built ([RollBars]), fetching the roll days it cannot price through [fetchDay], and writes
- * `contracts/<VENUE>/<ROOT>.rolls.json`.
+ * `contracts/<VENUE>/<ROOT>.rolls.json`. Only rolls that have passed are measured ([RollPricing.hasPassed]): a roll
+ * still ahead is priced at its own minute by the live session that reaches it, or by a later fetch.
  */
 internal object RollsFetch {
     private const val DEFAULT_TIMEFRAME = "1m"
@@ -49,7 +52,8 @@ internal object RollsFetch {
         val dataRoot = CliDataRoot.of(args)
         val store = LocalBarStore(root = dataRoot)
         val fetcher = lazy { buildFetcher(broker, args.option("config")).also { if (it == null) noSource(broker) } }
-        return run(target, dataRoot, args.option("instruments")?.let(Path::of), timeframe) { contract, day ->
+        val now = SystemClock().now()
+        return run(target, dataRoot, args.option("instruments")?.let(Path::of), timeframe, now) { contract, day ->
             fetcher.value?.let { fetchOneDay(it, store, broker, contract, day, timeframe) }
         }
     }
@@ -57,16 +61,17 @@ internal object RollsFetch {
     private fun noSource(broker: String) =
         System.err.println("qkt fetch: no bar source for $broker; measuring from stored bars only")
 
-    /** Builds and stores [target]'s roll history from [timeframe] bars; returns a process exit code. */
+    /** Builds and stores [target]'s roll history from [timeframe] bars as of [nowMs]; returns a process exit code. */
     fun run(
         target: String,
         dataRoot: Path,
         instruments: Path?,
         timeframe: TimeWindow = TimeWindow.parse(DEFAULT_TIMEFRAME),
+        nowMs: Long = SystemClock().now(),
         fetchDay: (contract: String, day: LocalDate) -> Unit,
     ): Int =
         try {
-            build(target, dataRoot, instruments, timeframe, fetchDay)
+            build(target, dataRoot, instruments, timeframe, nowMs, fetchDay)
         } catch (e: IOException) {
             failed(target, e)
         } catch (e: IllegalStateException) {
@@ -96,6 +101,7 @@ internal object RollsFetch {
         dataRoot: Path,
         instruments: Path?,
         timeframe: TimeWindow,
+        nowMs: Long,
         fetchDay: (String, LocalDate) -> Unit,
     ): Int {
         require(timeframe.durationMs <= DAY_MS) {
@@ -111,7 +117,8 @@ internal object RollsFetch {
         val stored = RollBars(dataRoot, root.venue, timeframe)
         val bars = stored::readDay
         val schedule = RollSchedule(catalog.contracts, policy)
-        for (t in schedule.transitions) {
+        val passed = schedule.transitions.filter { RollPricing.hasPassed(it.atMs, nowMs) }
+        for (t in passed) {
             val days = RollPricing.days(t.atMs, timeframe.durationMs)
             for (offset in ContinuousSelector.entries.map { it.offset }) {
                 for (index in listOf(t.fromIndex + offset, t.toIndex + offset)) {
@@ -123,24 +130,28 @@ internal object RollsFetch {
                 }
             }
         }
-        val history = RollHistoryBuilder(timeframe.durationMs, bars).build(root, catalog)
+        val known = RollHistoryStore(dataRoot).read(target)?.takeIf { it.policy == policy.key }
+        val history = RollHistoryBuilder(timeframe.durationMs, nowMs, known, bars).build(root, catalog)
         RollHistoryStore(dataRoot).write(history)
-        report(target, schedule, history, RollHistoryStore(dataRoot).path(target))
+        report(target, schedule, passed, history, RollHistoryStore(dataRoot).path(target))
         return ExitCodes.SUCCESS
     }
 
     private fun report(
         target: String,
         schedule: RollSchedule,
+        passed: List<RollTransition>,
         history: RollHistory,
         file: Path,
     ) {
         val front =
-            schedule.transitions.filter { t ->
+            passed.filter { t ->
                 history.find(t.atMs, schedule.contracts[t.fromIndex].symbol, schedule.contracts[t.toIndex].symbol) !=
                     null
             }
-        println("qkt fetch: measured ${front.size} of ${schedule.transitions.size} front rolls for $target -> $file")
+        println("qkt fetch: measured ${front.size} of ${passed.size} front rolls for $target -> $file")
+        val ahead = schedule.transitions.size - passed.size
+        if (ahead > 0) println("  $ahead roll(s) still ahead, measured once they happen")
         if (front.isEmpty()) return
         val first = Instant.ofEpochMilli(front.first().atMs)
         println("  from the $first roll to the ${Instant.ofEpochMilli(front.last().atMs)} roll")

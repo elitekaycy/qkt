@@ -30,9 +30,12 @@ steps:
   settle_seconds: 200
   expect_status:
     droppedTicks: 0
-  note: a few more bars for every copy to log, then one in the middle is read
+    engineStalls: 0
+  note: a few more bars for every copy to log, then one in the middle is read; no message held its engine thread a
+    second or more (#1609)
 assertions:
 - dropped-ticks-zero
+- engine-never-held
 - copies-log-identical-values
 autoload: true
 budget_seconds: 540

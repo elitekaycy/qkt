@@ -33,7 +33,7 @@ STUB
 
 run() {  # out-dir [deriv flags...]
     local out="$1"; shift
-    QKT_BROKER_API_KEY=x QKT_LIVE_DEMO_ORDER_APPROVAL=LOCALHOST_DEMO_ONLY bash "$fake/scripts/live-validation/run-attestation-catalog.sh" \
+    QKT_ATTEST_UTC_DAY_WAIT=off QKT_BROKER_API_KEY=x QKT_LIVE_DEMO_ORDER_APPROVAL=LOCALHOST_DEMO_ONLY bash "$fake/scripts/live-validation/run-attestation-catalog.sh" \
         --out "$out" --gateway-url http://127.0.0.1:5001 --expected-login 1 --expected-server S --magic-base 100 \
         --arm I_UNDERSTAND_DEMO_ORDER_0.01 --lanes derivatives --cli "$fake/bin/qkt" "$@"
 }

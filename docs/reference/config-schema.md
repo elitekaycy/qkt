@@ -288,7 +288,7 @@ Controls engine state persistence.
 | Key | Type | Default | Used by | Notes |
 |---|---|---|---|---|
 | `state.enabled` | boolean | `true` | daemon and live sessions | `false` disables restart recovery and fails production preflight. |
-| `state.async` | boolean | `false` | state persistor | `true` moves persistence writes to a background thread. |
+| `state.async` | boolean | `false` | state persistor | `true` moves persistence writes to a background thread. With `false` every write is synchronous except the excursion marks (MFE/MAE), the one state written from ticks: a writer thread writes the latest of each leg's behind the engine, and a restart extends them again from the downtime bars. |
 | `state.journal_retention_days` | integer | `14` | daemon | Day-files of the engine audit journal and MT5 transport journal (plain or gzipped) older than this many UTC days are deleted at daemon start and once a day. `0` keeps everything. |
 | `state.journal_compress_after_days` | integer | `1` | daemon | Closed `.jsonl` journal day-files older than this many UTC days are gzipped in place (~10x smaller); today's and yesterday's files stay plain with the default. Golden capture and retention read both forms. `0` disables compression. |
 | `state.disk_free_alert_gb` | integer | `10` | daemon and preflight | Below this much free space on the state volume the daemon logs an error and raises a `disk_space_low` alert (once per crossing; re-arms at 110% of the floor). Preflight fails production below the floor. `0` disables. |
