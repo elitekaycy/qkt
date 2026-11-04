@@ -10,10 +10,12 @@ purpose: what the book does then is the bot2 soak's daily roll to prove, and no 
 
 A case's `continuous_roll` says what must come of it:
 
-    carried      one closing and one opening leg, both collared limit IOC orders, and the strategy trades on;
+    carried      one closing and one opening leg, both limit IOC orders qkt collars 1% (ORDER_COLLAR_FRAC) around their
+                 contract's reference, and the strategy trades on;
     far_book     the new contract's reference is seeded `far_reference` x its measured price, so the book a leg would hit
-                 lies beyond the collar: no leg goes, the position stays on its contract, the strategy stops on the
-                 stream and `qkt resume` is refused. The venue's book and answers are real, the reference is the fixture;
+                 lies beyond the 25% band the lane judges quotes by before a roll: no leg goes, the position stays on
+                 its contract, the strategy stops on the stream and `qkt resume` is refused. The venue's book and
+                 answers are real, the reference is the fixture;
     leg_refused  the gateway's kill switch covers the new contract only, so the venue's own answer refuses the real
                  opening leg after the closing one filled: the position closes on the stream at that fill, the strategy
                  stops, and `qkt resume` clears the stop (nothing is left of it) and its next order reaches the venue.
@@ -28,7 +30,10 @@ from decimal import Decimal
 MINUTE_MS = 60_000
 DAY_MS = 86_400_000
 OUTCOMES = ("carried", "far_book", "leg_refused")
-BAND = Decimal("0.25")  # PreTradeControls.DEFAULT_PRICE_COLLAR_FRAC, what ContinuousWiring gives a live lane
+# PreTradeControls.DEFAULT_PRICE_COLLAR_FRAC, the band a live lane judges quotes by before a roll (RollRefusals). Each
+# leg's own collar is ORDER_COLLAR_FRAC (1%) around its contract's reference, the last quote heard, which the measured
+# price can be percents from, so a sent limit is checked against this wider band of the measured price.
+BAND = Decimal("0.25")
 
 
 def check(spec):
@@ -41,7 +46,7 @@ def check(spec):
     if not int(spec.get("lead_seconds", 0)) > int(spec.get("start_before_seconds", 0)) > 0:
         found.append("continuous_roll needs lead_seconds > start_before_seconds > 0")
     if spec.get("outcome") == "far_book" and not 0 < float(spec.get("far_reference", 0)) < 0.7:
-        found.append("continuous_roll.far_reference must put the reference beyond the 25% collar: under 0.7")
+        found.append("continuous_roll.far_reference must put the reference beyond the 25% quote band: under 0.7")
     return found
 
 
@@ -162,8 +167,9 @@ def legs_of(deals, prefix):
 
 
 def collared(order, side, reference):
-    """What is wrong with a sent leg [order]: it must be a limit IOC, its limit no further than the collar from
-    [reference] (`GET /v1/orders/{id}`, as the gateway sent it to the venue)."""
+    """What is wrong with a sent leg [order]: it must be a limit IOC, its limit within the 25% quote band ([BAND]) of
+    the measured [reference] (`GET /v1/orders/{id}`, as the gateway sent it to the venue); qkt's own collar is 1%
+    around the last quote, which the measured price can be percents from."""
     found = []
     if order.get("type") != "limit" or order.get("time_in_force") != "ioc":
         found.append(f"{order.get('client_order_id')} went as {order.get('type')}/{order.get('time_in_force')}, not limit/ioc")

@@ -134,9 +134,12 @@ minute `lead_seconds` ahead (never within 15 minutes of the 08:00 UTC expiry), w
 ahead of the roll. The contracts and books are the venue's. It runs on any gateway account listing them, a Deribit testnet
 or a `paper` adapter one. `outcome` (`scripts/live-validation/lib/derivatives_roll.py`) is one of:
 
-- `carried`: one closing and one opening leg fill, each a limit IOC inside the 25% collar as the gateway sent it;
+- `carried`: one closing and one opening leg fill, each a limit IOC as the gateway sent it. qkt collars each leg 1%
+  (`ORDER_COLLAR_FRAC`) around its contract's reference, the last quote heard; the case checks the sent limit lies within
+  the 25% quote band of the roll's measured price;
 - `far_book`: `far_reference` seeds the new contract's measured price away from the market, so the book lies beyond the
-  collar. No leg goes, the position stays, the strategy stops and `qkt resume` fails. The reference is the fixture;
+  25% band a live lane judges quotes by before any leg goes (`PreTradeControls.DEFAULT_PRICE_COLLAR_FRAC`). No leg goes,
+  the position stays, the strategy stops and `qkt resume` fails. The reference is the fixture;
 - `leg_refused`: a `kill_switch` drill with `before_roll_s` covers only the new contract, so the gateway really refuses
   the opening leg after the closing one filled. The strategy stops flat and `qkt resume` clears the stop.
 
