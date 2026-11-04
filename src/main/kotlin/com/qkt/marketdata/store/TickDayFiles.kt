@@ -5,8 +5,8 @@ import java.nio.file.Path
 import java.time.LocalDate
 
 /**
- * On-disk layout of the tick store's day files: `symbols/<symbol>/<day>.{bin,csv.gz,csv}`
- * under the store root. Resolves which encoding of a day exists (binary first), where a fetch
+ * On-disk layout of the tick store's day files: `<key dir>/<day>.{bin,csv.gz,csv}` under the store
+ * root, the key directory given by [TickStoreKeys]. Resolves which encoding of a day exists (binary first), where a fetch
  * writes a new day, and which days a symbol directory holds.
  */
 internal object TickDayFiles {
@@ -16,7 +16,7 @@ internal object TickDayFiles {
         symbol: String,
         day: LocalDate,
     ): Path? {
-        val symDir = root.resolve("symbols").resolve(symbol)
+        val symDir = TickStoreKeys.dir(root, symbol)
         val bin = symDir.resolve("$day.bin")
         val gz = symDir.resolve("$day.csv.gz")
         val flat = symDir.resolve("$day.csv")
@@ -33,7 +33,7 @@ internal object TickDayFiles {
         root: Path,
         symbol: String,
         day: LocalDate,
-    ): Path = root.resolve("symbols").resolve(symbol).resolve("$day.csv.gz")
+    ): Path = TickStoreKeys.dir(root, symbol).resolve("$day.csv.gz")
 
     /** Distinct ISO day names with a day file in [symDir], sorted ascending. */
     fun storedDays(symDir: Path): List<String> =

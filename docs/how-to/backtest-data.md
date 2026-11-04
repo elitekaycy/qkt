@@ -496,6 +496,12 @@ You can drop CSVs straight into the tick store — handy for broker-exported tic
 **Where:** `~/.qkt/data/symbols/<BARE_SYMBOL>/<YYYY-MM-DD>.csv` (one UTC day per file). The directory
 is the **bare** symbol — `XAUUSD`, not `BACKTEST:XAUUSD`. `.csv.gz` is also accepted.
 
+A venue may also keep its own ticks under `~/.qkt/data/ticks/<VENUE>/<BARE_SYMBOL>/` (same files, same
+manifest). A stream `EXNESS:AAPL` reads `ticks/EXNESS/AAPL/` when that folder exists and falls back to
+`symbols/AAPL/` otherwise, so two venues quoting the same symbol (a share CFD beside the share itself)
+replay their own prices. `qkt golden materialize` writes this layout; `qkt fetch` and `qkt data import`
+still write the bare store.
+
 **Exact format** — the header must match byte-for-byte, every row has 8 fields, timestamps are epoch
 milliseconds and **strictly non-decreasing**. `price`, `volume`, `bid`, `ask`, `bidVolume`, `askVolume`
 are each optional (leave blank); supply at least `price`, or `bid`+`ask` (mid is derived):

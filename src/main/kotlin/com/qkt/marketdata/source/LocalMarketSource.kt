@@ -16,6 +16,7 @@ import com.qkt.marketdata.openDayFeed
 import com.qkt.marketdata.store.BinaryBarStore
 import com.qkt.marketdata.store.DataStore
 import com.qkt.marketdata.store.LocalBarStore
+import com.qkt.marketdata.store.TickStoreKeys
 import java.time.Instant
 import java.time.LocalDate
 
@@ -71,7 +72,7 @@ class LocalMarketSource(
         if (storeSuppliesVolume(symbol)) capabilities + MarketSourceCapability.VOLUME else capabilities
 
     private fun storeSuppliesVolume(symbol: String): Boolean =
-        volumeBySymbol.getOrPut(symbol) { firstStoredTick(symbol.substringAfter(':'))?.volume != null }
+        volumeBySymbol.getOrPut(symbol) { firstStoredTick(TickStoreKeys.forSymbol(store.root, symbol))?.volume != null }
 
     /** First tick of the earliest non-empty day file for [storeKey], or null if the store is empty. */
     private fun firstStoredTick(storeKey: String): Tick? {
@@ -101,11 +102,10 @@ class LocalMarketSource(
         require(range.to <= now) {
             "look-ahead bias: cannot query ticks beyond current time. now=$now, requested to=${range.to}; symbol=$symbol"
         }
-        // The tick store is keyed by the bare symbol (`symbols/BTCUSDT/`), but strategies route
-        // by the broker-prefixed id (`BACKTEST:BTCUSDT`). Strip the prefix to find the file, then
-        // stamp each tick with the requested prefixed id so it matches the strategy's stream.
-        // A bare symbol (no `:`) is left unchanged. Mirrors how `bars()` splits the prefix.
-        val storeKey = symbol.substringAfter(':')
+        // Strategies route by the broker-prefixed id (`BACKTEST:BTCUSDT`); the store holds the venue's own
+        // ticks (`ticks/BACKTEST/BTCUSDT/`) or, failing that, the bare symbol's (`symbols/BTCUSDT/`). Each
+        // tick is stamped with the requested prefixed id so it matches the strategy's stream.
+        val storeKey = TickStoreKeys.forSymbol(store.root, symbol)
         return sequence {
             val days = daysCovering(range)
             for (day in days) {
