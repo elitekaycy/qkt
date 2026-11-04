@@ -14,7 +14,7 @@ import org.slf4j.LoggerFactory
  *
  * The header is [EXPECTED_HEADER], or [ARRIVAL_HEADER] for a golden capture's ticks, whose last column
  * is when each tick reached qkt live ([Tick.receivedMs], blank for a warmup tick). Throws on malformed
- * rows or non-monotonic timestamps — bad data should fail loud, not silently corrupt
+ * rows or non-monotonic timestamps (arrival times, for a golden capture's rows) — bad data should fail loud, not silently corrupt
  * the backtest.
  */
 class CsvTickFeed(
@@ -61,11 +61,13 @@ class CsvTickFeed(
                     recordCrossedQuote(e.message.orEmpty())
                     continue
                 }
-            check(tick.timestamp >= lastTimestamp) {
+            // A golden capture's rows are in live arrival order, so they rise by arrival time instead (#1625).
+            val order = tick.receivedMs ?: tick.timestamp
+            check(order >= lastTimestamp) {
                 "$path:$lineNumber: non-decreasing timestamps required " +
-                    "(got ${tick.timestamp}, last $lastTimestamp): $line"
+                    "(got $order, last $lastTimestamp): $line"
             }
-            lastTimestamp = tick.timestamp
+            lastTimestamp = order
             return tick
         }
     }

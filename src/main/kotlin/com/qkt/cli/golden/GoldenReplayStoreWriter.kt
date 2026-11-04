@@ -24,7 +24,8 @@ internal class GoldenReplayStoreWriter(
      * Write each broker symbol's ticks into its venue's store (`ticks/<LABEL>/<SYMBOL>/`), one UTC-day CSV
      * per day plus a manifest, and into the bare-symbol store (`symbols/<SYMBOL>/`) too when no other venue
      * quotes that bare symbol, so a data root read by bare symbol keeps working. Each row carries when the
-     * tick reached qkt live (`receivedMs`, blank for a warmup tick), so the replay merges venues in arrival order.
+     * tick reached qkt live (`receivedMs`, blank for a warmup tick), and a symbol's rows are written in that
+     * arrival order, so the replay sees each venue's ticks, and all venues together, in the order live qkt processed them.
      */
     fun writeTickStore(
         root: Path,
@@ -53,7 +54,7 @@ internal class GoldenReplayStoreWriter(
             val text =
                 buildString {
                     append(CsvTickFeed.ARRIVAL_HEADER).append('\n')
-                    for (record in dayRecords) {
+                    for (record in dayRecords.sortedWith(ARRIVAL_ORDER)) {
                         val tick = record.tick
                         append(tick.timestamp).append(',').append(bare).append(',')
                         append(tick.price.toPlainString()).append(',')
@@ -108,4 +109,9 @@ internal class GoldenReplayStoreWriter(
         val symbol: String,
         val window: TimeWindow,
     )
+
+    private companion object {
+        /** Live processing order: arrival time (the journal record's), then journal sequence; a warmup tick by its own time. */
+        val ARRIVAL_ORDER: Comparator<RecordedTick> = compareBy({ it.receivedMs ?: it.tick.timestamp }, { it.sequence })
+    }
 }

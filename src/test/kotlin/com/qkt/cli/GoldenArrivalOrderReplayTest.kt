@@ -80,4 +80,56 @@ class GoldenArrivalOrderReplayTest : BacktestCommandFixture() {
         assertThat(orders[0]).contains("\"orderId\":\"ORD-pair-0\"").contains("\"symbol\":\"PAPER:BTCUSD\"")
         assertThat(orders[1]).contains("\"orderId\":\"ORD-pair-1\"").contains("\"symbol\":\"EXNESS:BTCUSD\"")
     }
+
+    @Test
+    fun `a venue tick that arrived later than a newer-stamped one replays after it, as live heard it`(
+        @TempDir tmp: Path,
+    ) {
+        // PAPER's tick stamped +200 ms reaches qkt at +1500 ms, after the tick stamped +500 ms (arrived +600 ms).
+        // Live closed the bar and filled on the +500 ms tick; a replay in stamp order would fill on the other.
+        val audit =
+            listOf(
+                tick(1, day + 1_000, day + 1_000, "PAPER:BTCUSD", "100"),
+                tick(2, day + 60_600, day + 60_500, "PAPER:BTCUSD", "300"),
+                tick(3, day + 61_500, day + 60_200, "PAPER:BTCUSD", "250"),
+            )
+        val data = captureAndMaterialize(tmp, audit, transportMs = day + 30_000)
+        val strategy = tmp.resolve("one.qkt")
+        Files.writeString(
+            strategy,
+            """
+            STRATEGY one VERSION 1
+
+            SYMBOLS
+                pa = PAPER:BTCUSD EVERY 1m
+
+            RULES
+                WHEN pa.close > 0
+                THEN BUY pa SIZING 1
+            """.trimIndent() + "\n",
+        )
+        val report = tmp.resolve("report")
+
+        val (code, _, stderr) =
+            runBacktest(
+                "backtest",
+                strategy.toString(),
+                "--from",
+                "2024-01-15",
+                "--to",
+                "2024-01-16",
+                "--data-root",
+                data.toString(),
+                "--no-fetch",
+                "--allow-incomplete",
+                "--report-dir",
+                report.toString(),
+                "--json",
+            )
+
+        assertThat(code).withFailMessage("stderr=$stderr").isEqualTo(ExitCodes.SUCCESS)
+        val trades = Files.readAllLines(report.resolve("trades.csv")).drop(1).filter { it.isNotBlank() }
+        assertThat(trades).withFailMessage("trades=$trades").isNotEmpty()
+        assertThat(trades[0]).contains(",300")
+    }
 }
