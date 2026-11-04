@@ -38,18 +38,23 @@ internal class RollRun(
     var quotes: RollQuotes = RollQuotes.NONE
 
     /**
-     * What a leg on the old contract is collared around: its last quote's price; with none heard (a restored roll, whose
-     * stream serves only the new contract) the new contract's quote less the measured spread; with no quote at all, the
-     * measured price. A measured price comes from a thin contract's last bar and can be percents from the market, too
-     * far for a narrow collar to fill.
+     * What a leg on the old contract going [side] is collared around: its last quote's price. With none heard (the
+     * stream serves only the new contract, as after a restart past the roll instant) the old contract trades near the
+     * new contract's quote, or near that quote less the measured spread; a measured price comes from a thin contract's
+     * last bar and can be percents from the market, so the leg is collared around whichever of the two lets it fill,
+     * the lower to sell and the higher to buy. E.g. measured 77,797.5 -> 75,463.575 with the new contract at 77,927.5,
+     * a SELL goes around 77,927.5, not the 80,261.425 the measured spread puts the old contract at. With no quote at
+     * all, the measured price.
      */
-    val fromReference: BigDecimal
-        get() =
-            quotes.from?.price?.takeIf { it.signum() > 0 }
-                ?: fromEstimate?.takeIf { it.signum() > 0 }
-                ?: fromPrice
-
-    private val fromEstimate: BigDecimal? get() = quotes.to?.let { it.price - toPrice + fromPrice }
+    fun fromReference(side: Side): BigDecimal {
+        quotes.from
+            ?.price
+            ?.takeIf { it.signum() > 0 }
+            ?.let { return it }
+        val to = quotes.to?.price?.takeIf { it.signum() > 0 } ?: return fromPrice
+        val spreadAdjusted = (to - toPrice + fromPrice).takeIf { it.signum() > 0 } ?: return to
+        return if (side == Side.SELL) to.min(spreadAdjusted) else to.max(spreadAdjusted)
+    }
 
     /** What a leg on the new contract is collared around: its latest quote's price, else the measured price. */
     val toReference: BigDecimal get() = quotes.to?.price?.takeIf { it.signum() > 0 } ?: toPrice

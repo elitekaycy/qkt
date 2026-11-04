@@ -42,7 +42,8 @@ class LaneRollPriceBandTest {
         assertThat(f.strategy().stopped).isNull()
         f.nextRetry()
 
-        assertThat((f.leg(":close") as OrderRequest.Limit).limitPrice).isEqualByComparingTo("63630")
+        // No September quote stands: the BUY collars 1% over December's 63,800, above September's measured 63,000.
+        assertThat((f.leg(":close") as OrderRequest.Limit).limitPrice).isEqualByComparingTo("64438")
     }
 
     @Test

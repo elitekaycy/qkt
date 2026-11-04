@@ -24,7 +24,7 @@ def request(oid, side="BUY", created=T0 + 392, symbol="EXNESS:BTCUSD"):
             "partialClose": False}
 
 
-def live_bundle(path, price="77050.69", costs="0", transport=True, symbol="EXNESS:BTCUSD"):
+def live_bundle(path, price="77050.69", costs="0", transport=True, symbol="EXNESS:BTCUSD", financing=False):
     """One market buy decided at T0+392 on the T0 bar close, sent at T0+430, filled at [price] at T0+1063."""
     records = [
         engine("TickEvent", 1, T0 + 385, symbol=symbol,
@@ -40,6 +40,10 @@ def live_bundle(path, price="77050.69", costs="0", transport=True, symbol="EXNES
         engine("FillAccountedEvent", 7, T0 + 1063, orderId="o-1", symbol=symbol,
                accountedFill={"totalCostsAccount": costs, "netAccountRealized": "0"}),
     ]
+    if financing:  # a perpetual's funding the venue realized at the close, booked as a cost under no order
+        records.append(engine("FillAccountedEvent", 8, T0 + 2000, orderId="cost:funding tx-1", symbol=symbol,
+                              accountedFill={"fillSliceId": "cost:funding tx-1", "kind": "FINANCING",
+                                             "totalCostsAccount": "0", "netAccountRealized": "-0.00001379"}))
     exchange = {"v": 1, "ts": T0 + 1040, "method": "POST", "path": "/order", "engineOrderId": "o-1", "responseCode": 200,
                 "responseBody": json.dumps({"result": {"price": float(price), "order": 343,
                                                        "request": [1, 9, 0, "BTCUSDm", 0.01, 77054.59]}})}
@@ -115,6 +119,17 @@ class CausalTraceTest(unittest.TestCase):
 
         self.assertEqual({m["step"] for m in result["mismatches"]}, {"fill", "accounted"})
 
+    def test_funding_the_venue_booked_is_listed_not_compared_as_an_order(self):
+        live_bundle(self.golden, price="77054.59", financing=True)
+        replay_report(self.report)
+
+        result = ct.trace(self.golden, self.report)
+
+        self.assertEqual(result["parityMismatches"], 0, result["mismatches"])
+        self.assertEqual([o["orderId"] for o in result["orders"]], ["o-1"])
+        self.assertEqual(result["financing"], [{"id": "cost:funding tx-1", "symbol": "EXNESS:BTCUSD",
+                                                 "ts": T0 + 2000, "netRealized": "-0.00001379"}])
+
     def test_an_order_only_the_replay_placed_is_a_mismatch(self):
         live_bundle(self.golden, price="77054.59")
         replay_report(self.report, extra="o-2")
@@ -132,7 +147,7 @@ class CausalTraceTest(unittest.TestCase):
                 {"v": 1, "ts": T0 + 440, "method": "POST", "path": "/v1/orders", "engineOrderId": "o-1",
                  "responseCode": 201}) + "\n")
 
-        live, _ = ct.live_chains(self.golden)
+        live = ct.live_chains(self.golden)[0]
 
         self.assertEqual([e["path"] for e in live["o-1"]["transport"]], ["/v1/orders"])
 
