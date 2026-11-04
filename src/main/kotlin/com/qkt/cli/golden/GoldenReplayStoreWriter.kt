@@ -2,6 +2,7 @@ package com.qkt.cli.golden
 
 import com.qkt.candles.TimeWindow
 import com.qkt.common.Clock
+import com.qkt.marketdata.CsvTickFeed
 import com.qkt.marketdata.store.BinaryBarStore
 import com.qkt.marketdata.store.DayRange
 import com.qkt.marketdata.store.LocalBarStore
@@ -22,7 +23,8 @@ internal class GoldenReplayStoreWriter(
     /**
      * Write each broker symbol's ticks into its venue's store (`ticks/<LABEL>/<SYMBOL>/`), one UTC-day CSV
      * per day plus a manifest, and into the bare-symbol store (`symbols/<SYMBOL>/`) too when no other venue
-     * quotes that bare symbol, so a data root read by bare symbol keeps working.
+     * quotes that bare symbol, so a data root read by bare symbol keeps working. Each row carries when the
+     * tick reached qkt live (`receivedMs`, blank for a warmup tick), so the replay merges venues in arrival order.
      */
     fun writeTickStore(
         root: Path,
@@ -50,7 +52,7 @@ internal class GoldenReplayStoreWriter(
         for ((day, dayRecords) in byDay) {
             val text =
                 buildString {
-                    append("timestamp,symbol,price,volume,bid,ask,bidVolume,askVolume\n")
+                    append(CsvTickFeed.ARRIVAL_HEADER).append('\n')
                     for (record in dayRecords) {
                         val tick = record.tick
                         append(tick.timestamp).append(',').append(bare).append(',')
@@ -59,7 +61,8 @@ internal class GoldenReplayStoreWriter(
                         append(tick.bid?.toPlainString().orEmpty()).append(',')
                         append(tick.ask?.toPlainString().orEmpty()).append(',')
                         append(tick.bidVolume?.toPlainString().orEmpty()).append(',')
-                        append(tick.askVolume?.toPlainString().orEmpty()).append('\n')
+                        append(tick.askVolume?.toPlainString().orEmpty()).append(',')
+                        append(record.receivedMs?.toString().orEmpty()).append('\n')
                     }
                 }
             val file = dir.resolve("$day.csv")

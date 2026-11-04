@@ -13,12 +13,16 @@ internal const val CAPTURED_STREAM_CANDLE_EVENT = "CAPTURED_STREAM_CANDLE_EVENT"
 /** Bar provenance: rebuilt from warmup ticks that carry their source timeframe. */
 internal const val REHYDRATED_WARMUP_TICKS = "REHYDRATED_WARMUP_TICKS"
 
-/** One tick read from a golden engine journal, with its journal sequence and warmup origin. */
+/**
+ * One tick read from a golden engine journal, with its journal sequence and warmup origin. [receivedMs] is
+ * when a live tick reached qkt (its journal record's time); null for a warmup tick, which was seeded, not received.
+ */
 internal data class RecordedTick(
     val sequence: Long,
     val warmup: Boolean,
     val sourceTimeframeMs: Long?,
     val tick: Tick,
+    val receivedMs: Long? = null,
 )
 
 /** One bar read from (or rebuilt out of) a golden engine journal, tagged with its provenance. */
