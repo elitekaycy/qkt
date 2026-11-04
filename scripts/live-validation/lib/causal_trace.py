@@ -65,7 +65,7 @@ def live_chains(golden):
         kind = r.get("eventType", "").rsplit(".", 1)[-1]
         oid = r.get("orderId")
         if kind == "TickEvent":
-            ticks.setdefault(r["symbol"], []).append(r["tick"])
+            ticks.setdefault(r["symbol"], []).append(dict(r["tick"], receivedMs=r["ts"]))
         elif kind == "RuleDecisionEvent":
             decisions[r["decisionId"]] = {"ruleId": r.get("ruleId"), "barCloseMs": r.get("candle", {}).get("endTimeMs")}
         elif kind == "DecisionOrderLinkedEvent":
@@ -153,11 +153,13 @@ def _requested_price(chain):
     return None
 
 
-def _quote_between(ticks, side, price, from_ms, to_ms):
-    """The captured tick, between [from_ms] and [to_ms], whose quote on [side] is exactly [price]; None if there is none."""
+def _quote_between(ticks, side, price, from_ms, to_ms, received=False):
+    """The captured tick stamped (or, [received], that reached qkt) between [from_ms] and [to_ms] whose quote on
+    [side] is exactly [price]; None if there is none."""
     fields = ("ask", "price") if side == "BUY" else ("bid", "price")
     for tick in ticks:
-        if from_ms <= tick["timestampMs"] <= to_ms and any(same(tick.get(f), price) for f in fields):
+        at = (tick["timestampMs"],) + ((tick.get("receivedMs", tick["timestampMs"]),) if received else ())
+        if any(from_ms <= t <= to_ms for t in at) and any(same(tick.get(f), price) for f in fields):
             return tick
     return None
 
@@ -169,11 +171,20 @@ def _fill_cause(chain, live_fill, replay_fill, ticks):
     replay_at_request = requested is not None and same(replay_fill["price"], requested)
     replay_at_decision = _quote_between(ticks, live_fill["side"], replay_fill["price"],
                                         decided - TOLERANCE_MS, decided) is not None
-    venue_quote = _quote_between(ticks, live_fill["side"], live_fill["price"], decided, int(live_fill["ts"]))
+    venue_quote = _quote_between(ticks, live_fill["side"], live_fill["price"], decided, int(live_fill["ts"]),
+                                 received=True)
     if (replay_at_request or replay_at_decision) and venue_quote is not None:
         return {"cause": "venue-latency", "requestedPrice": str(requested) if requested is not None else None,
                 "venueQuoteAtMs": venue_quote["timestampMs"], "latencyMs": int(live_fill["ts"]) - decided}
     return None
+
+
+def _same_cost_rate(costs_a, price_a, costs_b, price_b):
+    """Whether two fills' costs are one rate of their prices (a fee on notional), to a billionth."""
+    ca, pa, cb, pb = dec(costs_a), dec(price_a), dec(costs_b), dec(price_b)
+    if None in (ca, pa, cb, pb) or not pa or not pb:
+        return False
+    return abs(ca / pa - cb / pb) <= Decimal("0.000000001")
 
 
 def compare_order(oid, live, replay, ticks, tolerance_ms):
@@ -203,12 +214,15 @@ def compare_order(oid, live, replay, ticks, tolerance_ms):
         if fl is None or fr is None:
             step["match"] = False
         else:
-            costs_l = live["accounted"][i]["totalCostsAccount"] if i < len(live.get("accounted", [])) else None
-            contract = live["accounted"][i].get("contractSize") if i < len(live.get("accounted", [])) else None
-            step["live"] = dict(fl, costs=costs_l, contractSize=contract)
+            accounted = live["accounted"][i] if i < len(live.get("accounted", [])) else {}
+            costs_l = accounted.get("totalCostsAccount")
+            step["live"] = dict(fl, costs=costs_l, contractSize=accounted.get("contractSize"),
+                                reducedExposure=accounted.get("reducedExposure"))
             shape = same(fl["side"], fr["side"]) and same(fl["quantity"], fr["quantity"])
             step["match"] = shape and same(fl["price"], fr["price"]) and same(costs_l, fr["costs"])
-            if shape and same(costs_l, fr["costs"]) and not same(fl["price"], fr["price"]):
+            # Costs charged at one rate on a different price differ only because the price does.
+            same_rate = same(costs_l, fr["costs"]) or _same_cost_rate(costs_l, fl["price"], fr["costs"], fr["price"])
+            if shape and same_rate and not same(fl["price"], fr["price"]):
                 cause = _fill_cause(live, fl, fr, ticks.get(fl.get("symbol") or request_l.get("symbol"), []))
                 if cause:
                     step["explained"], explained_price = cause, True
@@ -225,23 +239,35 @@ def compare_order(oid, live, replay, ticks, tolerance_ms):
 
 
 def explain_realized(orders):
-    """A realized PnL that differs by exactly what the explained fill-price differences of its symbol add up to (each
-    fill's price difference times its size and contract size, up to and including this fill) carries their cause."""
+    """A realized PnL that differs by exactly what explained fills account for carries their cause: a fill that adds
+    exposure owes its price difference (times size and contract size) to the fill that later reduces it, and every
+    fill's realized moves by its own cost difference (a fee on an explained price)."""
     fills = sorted(((s["live"]["ts"], o, s) for o in orders for s in o["steps"]
                     if s["step"] == "fill" and s.get("live") and s.get("replay")), key=lambda f: int(f[0]))
     owed = {}
     for _, order, step in fills:
         live, replay = step["live"], step["replay"]
-        if "explained" in step:
-            sign = 1 if live["side"] == "BUY" else -1
-            size = Decimal(str(live["quantity"])) * (dec(live.get("contractSize")) or Decimal(1))
-            owed[order["symbol"]] = owed.get(order["symbol"], Decimal(0)) + \
-                sign * (Decimal(replay["price"]) - Decimal(live["price"])) * size
+        symbol = order["symbol"]
+        explained = "explained" in step or step["match"]
+        if not explained:
+            owed[symbol] = None  # an unexplained fill: nothing downstream of it can be explained
+            continue
+        sign = 1 if live["side"] == "BUY" else -1
+        size = Decimal(str(live["quantity"])) * (dec(live.get("contractSize")) or Decimal(1))
+        moved = sign * (Decimal(replay["price"]) - Decimal(live["price"])) * size
+        cost_gap = (dec(live.get("costs")) or 0) - (dec(replay.get("costs")) or 0)
+        carried = owed.get(symbol, Decimal(0))
+        if carried is None:
+            continue
+        if live.get("reducedExposure"):
+            expected, owed[symbol] = carried + moved - cost_gap, Decimal(0)
+        else:
+            expected, owed[symbol] = -cost_gap, carried + moved
         accounted = next((s for s in order["steps"] if s["step"] == "accounted" and s["index"] == step["index"]), None)
-        if accounted is None or accounted["match"] or order["symbol"] not in owed:
+        if accounted is None or accounted["match"]:
             continue
         gap = dec(accounted["live"]["netRealized"]) - (dec(accounted["replay"]["netRealized"]) or 0)
-        if abs(gap - owed[order["symbol"]]) <= Decimal("0.00000001"):
+        if abs(gap - expected) <= Decimal("0.00000001"):
             accounted["explained"] = {"cause": "follows-explained-fill", "realizedGap": str(gap)}
 
 

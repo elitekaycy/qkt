@@ -136,11 +136,12 @@ class CausalTraceTest(unittest.TestCase):
 
         self.assertEqual([e["path"] for e in live["o-1"]["transport"]], ["/v1/orders"])
 
-    def test_a_realized_gap_is_explained_only_when_the_explained_prices_add_up_to_it(self):
+    def test_a_closing_realized_gap_is_explained_only_when_the_explained_prices_add_up_to_it(self):
         def order(oid, side, live_price, replay_price, live_realized, replay_realized, ts):
             fill = {"step": "fill", "index": 0, "match": False, "explained": {"cause": "venue-latency"},
-                    "live": {"ts": ts, "side": side, "price": live_price, "quantity": "0.01", "contractSize": "1"},
-                    "replay": {"price": replay_price}}
+                    "live": {"ts": ts, "side": side, "price": live_price, "quantity": "0.01", "contractSize": "1",
+                             "costs": "0", "reducedExposure": side == "SELL"},
+                    "replay": {"price": replay_price, "costs": "0"}}
             accounted = {"step": "accounted", "index": 0, "match": live_realized == replay_realized,
                          "live": {"netRealized": live_realized}, "replay": {"netRealized": replay_realized}}
             return {"orderId": oid, "symbol": "EXNESS:BTCUSD", "steps": [fill, accounted]}
