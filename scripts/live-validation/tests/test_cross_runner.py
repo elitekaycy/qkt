@@ -136,7 +136,8 @@ class CrossRunnerCase(unittest.TestCase):
         doc["replay"] = "none"  # a fake qkt has no golden capture; the replay rule is judged in test_cross_venue.py
         with open(f"{case}/case.yaml", "w") as file:
             yaml.safe_dump(doc, file)
-        env = dict(os.environ, QKT_LIVE_DEMO_ORDER_APPROVAL="LOCALHOST_DEMO_ONLY", QKT_BROKER_API_KEY="k",
+        env = dict(os.environ, QKT_ATTEST_UTC_DAY_WAIT="off", QKT_LIVE_DEMO_ORDER_APPROVAL="LOCALHOST_DEMO_ONLY",
+                   QKT_BROKER_API_KEY="k",
                    QKT_CROSS_PAPER_KEY="t", FAKE_MT5=mt5.url, FAKE_GATEWAY=paper.url, FAKE_CROSS=mode)
         out = os.path.join(work, "run")
         done = subprocess.run([sys.executable, RUNNER, "--case", case, "--out", out, "--gateway-url", mt5.url,

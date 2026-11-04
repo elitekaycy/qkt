@@ -210,7 +210,8 @@ class CaseRun(unittest.TestCase):
         self.addCleanup(gateway.server.server_close)
         self.addCleanup(gateway.server.shutdown)
         out = os.path.join(tempfile.mkdtemp(), "run")
-        env = dict(os.environ, QKT_DERIV_GATEWAY_KEY="token", QKT_LIVE_DEMO_ORDER_APPROVAL="LOCALHOST_DEMO_ONLY",
+        env = dict(os.environ, QKT_ATTEST_UTC_DAY_WAIT="off", QKT_DERIV_GATEWAY_KEY="token",
+                   QKT_LIVE_DEMO_ORDER_APPROVAL="LOCALHOST_DEMO_ONLY",
                    FAKE_GATEWAY=gateway.url, FAKE_SETTLE=mode)
         done = subprocess.run([sys.executable, RUNNER, "--case", CASE, "--out", out, "--gateway-url", gateway.url,
                                "--expected-login", "test-login", "--arm", "I_UNDERSTAND_DEMO_ORDER_0.01",

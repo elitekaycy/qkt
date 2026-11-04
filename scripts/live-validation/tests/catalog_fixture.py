@@ -51,7 +51,8 @@ def build(tmp, cases, lanes_yaml="lanes: {}\n"):
 def run_catalog(fake, out, lanes, extra=(), behaviours=None, env=None):
     root = os.path.dirname(fake)
     json.dump(behaviours or {}, open(os.path.join(root, "behaviours.json"), "w"))
-    full = dict(os.environ, QKT_BROKER_API_KEY="x", QKT_LIVE_DEMO_ORDER_APPROVAL="LOCALHOST_DEMO_ONLY",
+    full = dict(os.environ, QKT_ATTEST_UTC_DAY_WAIT="off", QKT_BROKER_API_KEY="x",
+                QKT_LIVE_DEMO_ORDER_APPROVAL="LOCALHOST_DEMO_ONLY",
                 STUB_ROOT=root, QKT_ATTEST_RETRY_BACKOFF="0,0,0", QKT_DERIV_GATEWAY_KEY="x", **(env or {}))
     return subprocess.run(
         ["bash", os.path.join(fake, "scripts/live-validation/run-attestation-catalog.sh"), "--out", out,

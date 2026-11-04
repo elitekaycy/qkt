@@ -197,6 +197,8 @@ class CrossRun:
         return next((leg for leg in self.legs if leg.kind == "mt5"), None)
 
     def execute(self, budget):
+        gateway_lane.await_one_utc_day(open(os.path.join(self.args.case, "strategy.qkt")).read(),
+                                       budget + gateway_lane.RUN_TAIL_S, self.case.get("id", "case"))
         self.preflight()
         self.prepare()
         self.run_daemon(budget)
