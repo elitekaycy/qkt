@@ -12,7 +12,8 @@ import org.slf4j.LoggerFactory
 /**
  * Streams ticks from a CSV file at [path]. Transparently handles `.gz` compression.
  *
- * Header is auto-detected (timestamp / symbol / price columns). Throws on malformed
+ * The header is [EXPECTED_HEADER], or [ARRIVAL_HEADER] for a golden capture's ticks, whose last column
+ * is when each tick reached qkt live ([Tick.receivedMs], blank for a warmup tick). Throws on malformed
  * rows or non-monotonic timestamps — bad data should fail loud, not silently corrupt
  * the backtest.
  */
@@ -22,15 +23,17 @@ class CsvTickFeed(
     private val reader: BufferedReader = openReader(path)
     private var lineNumber: Int = 1
     private var lastTimestamp: Long = Long.MIN_VALUE
+    private var columns: Int = BASE_COLUMNS
     var droppedCrossedQuotes: Long = 0
         private set
 
     init {
         try {
             val header = reader.readLine() ?: error("empty CSV: $path")
-            require(header == EXPECTED_HEADER) {
+            require(header == EXPECTED_HEADER || header == ARRIVAL_HEADER) {
                 "unexpected header at $path:1: got '$header', expected '$EXPECTED_HEADER'"
             }
+            if (header == ARRIVAL_HEADER) columns = BASE_COLUMNS + 1
         } catch (t: Throwable) {
             runCatching { reader.close() }
             // A truncated gzip dies inside the header read with a bare ZLIB EOF (#1375).
@@ -82,7 +85,7 @@ class CsvTickFeed(
 
     private fun parseLine(line: String): Tick {
         val cols = line.split(",")
-        check(cols.size == 8) { "$path:$lineNumber: expected 8 columns, got ${cols.size}: $line" }
+        check(cols.size == columns) { "$path:$lineNumber: expected $columns columns, got ${cols.size}: $line" }
         val ts =
             cols[0].toLongOrNull()
                 ?: error("$path:$lineNumber: invalid timestamp: '${cols[0]}'")
@@ -96,12 +99,16 @@ class CsvTickFeed(
             bidVolume = parseOpt(cols[6], "bidVolume"),
             askVolume = parseOpt(cols[7], "askVolume"),
             location = location,
+            receivedMs = if (columns > BASE_COLUMNS) parseReceived(cols[BASE_COLUMNS]) else null,
         )
     }
 
     // Single reused supplier: an inline lambda here is a fresh Function0 per row, allocated
     // purely to name the row in errors that never fire on clean data. Reads the current line.
     private val location: () -> String = { "$path:$lineNumber" }
+
+    private fun parseReceived(raw: String): Long? =
+        if (raw.isEmpty()) null else raw.toLongOrNull() ?: error("$path:$lineNumber: invalid receivedMs: '$raw'")
 
     private fun parseOpt(
         raw: String,
@@ -129,5 +136,9 @@ class CsvTickFeed(
     companion object {
         private val log = LoggerFactory.getLogger(CsvTickFeed::class.java)
         const val EXPECTED_HEADER: String = "timestamp,symbol,price,volume,bid,ask,bidVolume,askVolume"
+
+        /** [EXPECTED_HEADER] plus each tick's live arrival time, as a golden capture's ticks are written. */
+        const val ARRIVAL_HEADER: String = "$EXPECTED_HEADER,receivedMs"
+        private const val BASE_COLUMNS = 8
     }
 }

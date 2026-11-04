@@ -47,6 +47,15 @@ class CsvTickFeedTest {
     }
 
     @Test
+    fun `reads each tick's live arrival from a golden capture's arrival column`() {
+        val csv = "${CsvTickFeed.ARRIVAL_HEADER}\n1000,X,2.5,,,,,,1400\n2000,X,2.6,,,,,,"
+        CsvTickFeed(writeCsv("arrival.csv", csv)).use { feed ->
+            assertThat(feed.next()!!.receivedMs).isEqualTo(1400L)
+            assertThat(feed.next()!!.receivedMs).isNull()
+        }
+    }
+
+    @Test
     fun `parses quote rows and computes price as mid when blank`() {
         val csv = "$header\n1000,EURUSD,,,1.0841,1.0843,2,1.5"
         CsvTickFeed(writeCsv("a.csv", csv)).use { feed ->
