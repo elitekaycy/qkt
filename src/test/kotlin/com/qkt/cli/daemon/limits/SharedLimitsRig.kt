@@ -206,9 +206,13 @@ internal class SharedLimitsRig(
 internal fun com.qkt.app.LiveSessionHandle.limitReadingOrFail() =
     limitReading() ?: error("this session reports no limit reading")
 
+/**
+ * Polls [condition] until it holds. It returns the moment it does, so the deadline only bounds a real failure: it is
+ * wide enough for a loaded CI runner, where a live engine thread can take several seconds to process a bar (#1631).
+ */
 internal fun await(
     what: String,
-    timeoutMs: Long = 5_000L,
+    timeoutMs: Long = 30_000L,
     condition: () -> Boolean,
 ) {
     val deadline = System.currentTimeMillis() + timeoutMs
