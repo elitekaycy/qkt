@@ -62,6 +62,12 @@ MINUTE = 60_000
 QKT_MONEY_UNIT = Decimal("0.00000001")  # qkt Money.SCALE = 8
 FUNDING_RECONCILE_S = 90  # a gateway reconciles venue history every minute; one cycle past the last fill, with margin
 PREFLIGHT_LOOKBACK_MS = 86_400_000  # a strategy's deals over the last day must net flat before a case starts
+DAY_MS = 86_400_000
+# Past its budget a case still runs: prepare, the settle and funding-reconcile waits, a chain replay's extra bar and the
+# daemon's stop. A run longer than an hour (a soak) is not held back for the day's end.
+RUN_TAIL_S = 300
+LONGEST_DAY_BOUND_RUN_S = 3_600
+DAY_START_MARGIN_MS = 10_000
 
 
 def main():
@@ -103,6 +109,29 @@ def shared_account(case):
     """The soak and release attestation trade these accounts by design, so others' size must not refuse a case's entries.
     A case whose point is that refusal says `shared_account: false`."""
     return bool(case.get("shared_account", True))
+
+
+def utc_day_wait_ms(strategy_text, now_ms, run_s):
+    """How long a case must wait to run inside one UTC day: a strategy that re-arms on `TRADES.today` counts 0 again
+    from 00:00 UTC, so a case crossing it re-enters after its own exit and ends holding (perpetual-drill-kill-switch on
+    2026-11-03: started 23:55:07, closed 00:02:01, bought again at the 00:03 bar while the runner awaited funding).
+    0 when the strategy does not read the count, the run fits before 00:00, or the run is a soak too long to wait for.
+    The offline suites set QKT_ATTEST_UTC_DAY_WAIT=off: their fake venue has no day to cross."""
+    if os.environ.get("QKT_ATTEST_UTC_DAY_WAIT") == "off":
+        return 0
+    if not re.search(r"\bTRADES\.today\b", strategy_text) or run_s > LONGEST_DAY_BOUND_RUN_S:
+        return 0
+    day_end = (now_ms // DAY_MS + 1) * DAY_MS
+    return 0 if now_ms + run_s * 1000 < day_end else day_end + DAY_START_MARGIN_MS - now_ms
+
+
+def await_one_utc_day(strategy_text, run_s, label):
+    """Sleeps until a run of [run_s] seconds stays inside one UTC day (utc_day_wait_ms), saying why on stderr."""
+    wait = utc_day_wait_ms(strategy_text, int(time.time() * 1000), run_s)
+    if wait:
+        print(f"{label}: the strategy re-arms on TRADES.today and the run would cross 00:00 UTC; waiting "
+              f"{wait // 1000}s for the new day", file=sys.stderr, flush=True)
+        time.sleep(wait / 1000)
 
 
 class Run:
@@ -219,6 +248,8 @@ class Run:
         return [p for p in self.get("/v1/positions")["positions"] if p["symbol"] in held]
 
     def execute(self, budget):
+        text = open(os.path.join(self.args.case, "strategy.qkt")).read()
+        await_one_utc_day(text, budget + RUN_TAIL_S, self.case.get("id", "case"))
         health = self.get("/v1/health")
         if health["trade_mode"] != "demo" or str(health["account_login"]) != self.args.expected_login:
             raise RuntimeError("gateway is not the expected DEMO account")
@@ -228,8 +259,7 @@ class Run:
             raise RuntimeError(f"the gateway's kill switch is on: {health['kill_switch']}")
         if any(d["kind"] == "kill_switch" for d in self.drills.pending) and not self.drills.guardian:
             raise RuntimeError("a kill_switch drill needs the guardian token in QKT_DERIV_GUARDIAN_KEY")
-        self.strategy = re.search(r"^STRATEGY\s+(\w+)", open(os.path.join(self.args.case, "strategy.qkt")).read(),
-                                  re.M).group(1)
+        self.strategy = re.search(r"^STRATEGY\s+(\w+)", text, re.M).group(1)
         # An earlier run's roll legs carry that roll's own digest, so its deals alone do not net flat: a roll case checks
         # working orders only, and its own sweep has closed whatever that run left.
         lookback = 0 if self.case.get("continuous_roll") else PREFLIGHT_LOOKBACK_MS

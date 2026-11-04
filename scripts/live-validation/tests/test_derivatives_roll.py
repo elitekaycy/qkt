@@ -214,7 +214,8 @@ class CaseRun(unittest.TestCase):
         spec = document["continuous_roll"]
         spec.update(start_before_seconds=100_000, start_late_seconds=1_000_000, post_stop_wait_seconds=0)
         yaml.safe_dump(document, open(f"{copied}/case.yaml", "w"))
-        env = dict(os.environ, QKT_DERIV_GATEWAY_KEY="token", QKT_DERIV_GUARDIAN_KEY="guard",
+        env = dict(os.environ, QKT_ATTEST_UTC_DAY_WAIT="off", QKT_DERIV_GATEWAY_KEY="token",
+                   QKT_DERIV_GUARDIAN_KEY="guard",
                    QKT_LIVE_DEMO_ORDER_APPROVAL="LOCALHOST_DEMO_ONLY", FAKE_GATEWAY=gateway.url, FAKE_ROLL=mode,
                    FAKE_RESUME_EXIT=resume_exit)
         out = os.path.join(work, "run")
