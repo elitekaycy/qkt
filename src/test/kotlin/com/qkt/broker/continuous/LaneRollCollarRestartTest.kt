@@ -42,8 +42,9 @@ class LaneRollCollarRestartTest {
 
         val again = g.venue.sent.single() as OrderRequest.Limit
         assertThat(again.id).isEqualTo("${close.id}-2")
-        // The stream serves December at 63,800: September is that less the measured spread, 63,000.
-        assertThat(again.limitPrice).isEqualByComparingTo("63630")
+        // The stream serves December at 63,800 and September is not heard: it trades near December or near December
+        // less the measured spread, 63,000, so the BUY collars 1% over the higher of the two.
+        assertThat(again.limitPrice).isEqualByComparingTo("64438")
         g.last(again.id, g.sep, Side.BUY, "0.010", "63010")
         g.last(g.limit(":open").id, g.dec, Side.SELL, "0.010", "63790")
         assertThat(g.stop()).isNull()
@@ -65,7 +66,7 @@ class LaneRollCollarRestartTest {
 
         val again = g.venue.sent.single() as OrderRequest.Limit
         assertThat(again.id).isEqualTo("${close.id}-2")
-        assertThat(again.limitPrice).isEqualByComparingTo("63630")
+        assertThat(again.limitPrice).isEqualByComparingTo("64438")
     }
 
     @Test

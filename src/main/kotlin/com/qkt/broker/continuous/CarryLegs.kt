@@ -45,7 +45,11 @@ internal class CarryLegs(
         run: RollRun,
         strategyId: String,
         quantity: BigDecimal,
-    ) = run.refreshQuotes().let { leg(run, strategyId, "close", run.fromIndex, quantity.negate(), run.fromReference) }
+    ): OrderRequest {
+        run.refreshQuotes()
+        val side = if (quantity.signum() > 0) Side.SELL else Side.BUY
+        return leg(run, strategyId, "close", run.fromIndex, quantity.negate(), run.fromReference(side))
+    }
 
     /** The leg opening [strategyId]'s signed [quantity] on the new contract in [run]. */
     fun opening(
