@@ -23,6 +23,22 @@ class MergingTickFeedTest {
     }
 
     @Test
+    fun `ticks that carry their live arrival merge in arrival order, each feed keeping its own order`() {
+        // EXNESS stamps its tick first but it reaches qkt last; PAPER's two ticks arrive before it.
+        val exness = feed(listOf(Tick("EXNESS:X", Money.of("1"), 10L, receivedMs = 900L)))
+        val paper =
+            feed(
+                listOf(
+                    Tick("PAPER:X", Money.of("1"), 50L, receivedMs = 100L),
+                    Tick("PAPER:X", Money.of("1"), 60L, receivedMs = 950L),
+                ),
+            )
+        val m = MergingTickFeed(listOf(exness, paper))
+        val collected = generateSequence { m.next() }.toList().map { it.symbol to it.timestamp }
+        assertThat(collected).containsExactly("PAPER:X" to 50L, "EXNESS:X" to 10L, "PAPER:X" to 60L)
+    }
+
+    @Test
     fun `tie break by feed list order`() {
         val a = feed(listOf(tick("A", 5L)))
         val b = feed(listOf(tick("B", 5L)))

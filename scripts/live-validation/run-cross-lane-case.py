@@ -32,7 +32,8 @@ and is flat (or the budget ends), sweeps only its own orders and holdings, and j
   - replay-causal-trace (`replay: by-venue`): every engine order's causal chain, live (engine journal, MT5 and gateway
     transport) against the replay, agrees step by step at the exact price (lib/causal_trace.py): decision bar, risk
     request, each fill's side, size, price and costs, and the realized PnL it booked. A price difference passes only
-    with a recorded cause (the venue filled at a quote it captured after the request); the replay charges each
+    with a recorded cause (the venue filled at a quote it captured after the request, within its venue kind's latency
+    and distance bounds); the replay processes the captured ticks in arrival order and charges each
     gateway root the fee rate its venue charged live. The trace is written to OUT/evidence/trace.json.
 Writes OUT/result.json and prints one `passed|failed <id> ...` line; exits non-zero on failure.
 """

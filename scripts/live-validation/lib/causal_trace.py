@@ -5,9 +5,9 @@
 Live comes from a golden bundle: the engine journal (rule decision, decision-order link, order request, venue
 acknowledgement, fill, accounted fill), the MT5 transport journal (`gateway/`) and each gateway account's transport
 (`venues/<LABEL>/`). Replay comes from a backtest's `--report-dir` (`orders.jsonl`, `trades.csv`). Orders are joined by
-engine order id across every leg (`pair_orders`: orders several venues decide on one bar close may take swapped ids,
-live numbering them by tick arrival and a replay by tick time; such a pair is matched by intent and explained as
-`same-bar-decision-order`), and each step is compared:
+engine order id across every leg: a golden replay processes the captured ticks in the order they reached qkt live
+(their `receivedMs`), so orders several venues decide on one bar close take the ids live gave them (#1625). Each
+step is compared:
 
   - decision: the order was decided on the same bar close; the live and replay decision times may differ by at most
     the tolerance (tick delivery and processing), never by a bar;
@@ -17,7 +17,9 @@ live numbering them by tick arrival and a replay by tick time; such a pair is ma
 
 A fill price that differs is explained only by a recorded cause: the replay filled at the price the venue was asked
 for (the MT5 request price, or the decision tick's quote) and the venue filled at a quote it captured between the
-request and the fill (`venue-latency`). A realized PnL that differs by exactly what the explained price differences of its
+request and the fill (`venue-latency`), no later after the decision than `maxLatencyMs` and no further from the
+replay's price than `maxDistanceBps` of its venue kind (`VENUE_LATENCY_BOUNDS`, both recorded in the trace); a
+difference beyond either is a mismatch. A realized PnL that differs by exactly what the explained price differences of its
 symbol add up to carries that cause (`follows-explained-fill`). Anything else, and any order on one side only, is a
 mismatch. Funding a venue books under no order (an accounted fill of kind FINANCING, `cost:funding <id>`) is not
 an order: the replay simulates no venue funding, so it is listed under `financing`, never compared; the lane's funding
@@ -33,6 +35,16 @@ from decimal import Decimal, InvalidOperation
 SCHEMA = "qkt-causal-trace-v1"
 TOLERANCE_MS = 2_000
 REQUEST_KEYS = ("orderType", "symbol", "side", "qty", "timeInForce", "closesLegId", "partialClose")
+# How far a venue may fill from the replay and still be explained by latency, per venue kind (#1625): the live fill's
+# time after the decision, and its price distance from the replay's fill in basis points of the replay price. Measured
+# on the 29 retained live cases of 2026-11-04 (62 MT5 market fills, 48 gateway): MT5 fills landed 236-1097 ms after
+# the decision and every explained MT5 difference was within 2.39 bps (18.28 USD on BTCUSD, the market falling through
+# the round trip); gateway fills 18-171 ms, every explained gateway difference within 1.12 bps. Each bound holds more
+# than twice its observed maximum.
+VENUE_LATENCY_BOUNDS = {
+    "mt5": {"maxLatencyMs": 2_500, "maxDistanceBps": "5"},
+    "gateway": {"maxLatencyMs": 1_000, "maxDistanceBps": "3"},
+}
 
 
 def dec(value):
@@ -61,7 +73,8 @@ def live_chains(golden):
     with zipfile.ZipFile(golden) as zf:
         names = sorted(zf.namelist())
         engine = [r for n in names if n.startswith("engine/") for r in jsonl(zf.read(n).decode())]
-        transport = [r for n in names if n.startswith(("gateway/", "venues/")) for r in jsonl(zf.read(n).decode())]
+        transport = [dict(r, venueKind="gateway" if n.startswith("venues/") else "mt5")
+                     for n in names if n.startswith(("gateway/", "venues/")) for r in jsonl(zf.read(n).decode())]
     order = lambda oid: orders.setdefault(oid, {"orderId": oid, "fills": [], "accounted": [], "transport": []})
     for r in engine:
         kind = r.get("eventType", "").rsplit(".", 1)[-1]
@@ -169,8 +182,20 @@ def _quote_between(ticks, side, price, from_ms, to_ms, received=False):
     return None
 
 
+def _latency_bounds(chain):
+    """The venue-latency bounds of the venue that filled [chain]: its kind is where its transport was journaled (MT5
+    under `gateway/`, a gateway account under `venues/`). An order with no transport recorded takes the tightest."""
+    kind = next((e["venueKind"] for e in chain.get("transport", []) if e.get("venueKind")), None)
+    if kind in VENUE_LATENCY_BOUNDS:
+        return kind, VENUE_LATENCY_BOUNDS[kind]
+    return None, {"maxLatencyMs": min(b["maxLatencyMs"] for b in VENUE_LATENCY_BOUNDS.values()),
+                  "maxDistanceBps": str(min(Decimal(b["maxDistanceBps"]) for b in VENUE_LATENCY_BOUNDS.values()))}
+
+
 def _fill_cause(chain, live_fill, replay_fill, ticks):
-    """Why a live and a replay fill price differ, from recorded evidence only; None when nothing recorded explains it."""
+    """Why a live and a replay fill price differ, from recorded evidence only; None when nothing recorded explains it.
+    A `venue-latency` cause carries the latency and price distance it measured and the bounds of its venue kind;
+    `withinBounds` is false when either exceeds its bound, and such a difference stays a mismatch."""
     requested = _requested_price(chain)
     decided = int(chain.get("request", {}).get("createdTs") or replay_fill["ts"])
     replay_at_request = requested is not None and same(replay_fill["price"], requested)
@@ -178,10 +203,19 @@ def _fill_cause(chain, live_fill, replay_fill, ticks):
                                         decided - TOLERANCE_MS, decided) is not None
     venue_quote = _quote_between(ticks, live_fill["side"], live_fill["price"], decided, int(live_fill["ts"]),
                                  received=True)
-    if (replay_at_request or replay_at_decision) and venue_quote is not None:
-        return {"cause": "venue-latency", "requestedPrice": str(requested) if requested is not None else None,
-                "venueQuoteAtMs": venue_quote["timestampMs"], "latencyMs": int(live_fill["ts"]) - decided}
-    return None
+    if not (replay_at_request or replay_at_decision) or venue_quote is None:
+        return None
+    kind, bounds = _latency_bounds(chain)
+    latency = int(live_fill["ts"]) - decided
+    distance = abs(Decimal(live_fill["price"]) - Decimal(replay_fill["price"]))
+    bps = (distance / Decimal(replay_fill["price"]) * 10_000).quantize(Decimal("0.01"))
+    beyond = ([f"latency {latency} ms > {bounds['maxLatencyMs']} ms"] if latency > bounds["maxLatencyMs"] else []) + (
+        [f"distance {bps} bps > {bounds['maxDistanceBps']} bps"] if bps > Decimal(bounds["maxDistanceBps"]) else [])
+    return {"cause": "venue-latency", "requestedPrice": str(requested) if requested is not None else None,
+            "venueQuoteAtMs": venue_quote["timestampMs"],
+            "venueQuoteReceivedMs": venue_quote.get("receivedMs"), "latencyMs": latency, "priceDistance": str(distance),
+            "distanceBps": str(bps), "venueKind": kind, **bounds, "withinBounds": not beyond,
+            **({"beyond": beyond} if beyond else {})}
 
 
 def _same_cost_rate(costs_a, price_a, costs_b, price_b):
@@ -229,8 +263,10 @@ def compare_order(oid, live, replay, ticks, tolerance_ms):
             same_rate = same(costs_l, fr["costs"]) or _same_cost_rate(costs_l, fl["price"], fr["costs"], fr["price"])
             if shape and same_rate and not same(fl["price"], fr["price"]):
                 cause = _fill_cause(live, fl, fr, ticks.get(fl.get("symbol") or request_l.get("symbol"), []))
-                if cause:
+                if cause and cause["withinBounds"]:
                     step["explained"], explained_price = cause, True
+                elif cause:
+                    step["beyondBounds"] = cause
         steps.append(step)
     for i, accounted in enumerate(live.get("accounted", [])):
         fr = fills_r[i] if i < len(fills_r) else None
@@ -276,55 +312,14 @@ def explain_realized(orders):
             accounted["explained"] = {"cause": "follows-explained-fill", "realizedGap": str(gap)}
 
 
-def _intent(chain):
-    request = chain.get("request") or {}
-    intent = request.get("legIntent") or {}
-    qty = dec(request.get("qty"))
-    return (request.get("symbol"), request.get("side"), qty.normalize() if qty is not None else None,
-            request.get("orderType"), intent.get("kind"), request.get("closesLegId"))
-
-
-def pair_orders(live, replay, tolerance_ms):
-    """Live order id -> the replay order it is compared with. The same id when both sides placed the same order under
-    it; otherwise the replay order of the same intent (symbol, side, size, type, leg intent, closed leg) decided within
-    the tolerance of it. Orders the engine decides on one bar close for several venues take their ids in the order
-    their closing ticks are processed: live by arrival, a replay by tick time, so two venues' ids may swap."""
-    pairs = {oid: oid for oid in live if oid in replay and _intent(live[oid]) == _intent(replay[oid])}
-    taken = set(pairs.values())
-    for oid in sorted(set(live) - set(pairs)):
-        decided = (live[oid].get("request") or {}).get("createdTs")
-        for other in sorted(set(replay) - taken):
-            created = (replay[other].get("request") or {}).get("createdTs")
-            if _intent(replay[other]) == _intent(live[oid]) and decided is not None and created is not None \
-                    and abs(int(decided) - int(created)) <= tolerance_ms:
-                pairs[oid] = other
-                taken.add(other)
-                break
-    return pairs
-
-
-def _same_bar_peers(live, oid, other):
-    """Whether live order [oid] and the live order holding id [other] were decided on the same bar close."""
-    bar = lambda chain: (chain.get("decision") or {}).get("barCloseMs")
-    return other in live and bar(live[oid]) is not None and bar(live[oid]) == bar(live[other])
-
-
 def trace(golden, report_dir, tolerance_ms=TOLERANCE_MS):
     """The causal trace of a golden bundle against its replay; `parityMismatches` counts unexplained differences."""
     live, ticks, financing = live_chains(golden)
     replay = replay_chains(report_dir)
-    pairs = pair_orders(live, replay, tolerance_ms)
-    unpaired = sorted(set(replay) - set(pairs.values()))
     orders = []
-    for oid in sorted(set(live) | set(unpaired)):
-        other = pairs.get(oid, oid if oid not in live else None)
-        order = compare_order(oid, live.get(oid, {}), replay.get(other, {}) if other else {}, ticks, tolerance_ms)
-        if other and other != oid:
-            same_bar = _same_bar_peers(live, oid, other)
-            order["replayOrderId"] = other
-            order["steps"].insert(0, {"step": "order-id", "live": oid, "replay": other, "match": False, **(
-                {"explained": {"cause": "same-bar-decision-order"}} if same_bar else {})})
-        order["liveOnly"], order["replayOnly"] = oid in live and other is None, oid not in live
+    for oid in sorted(set(live) | set(replay)):
+        order = compare_order(oid, live.get(oid, {}), replay.get(oid, {}), ticks, tolerance_ms)
+        order["liveOnly"], order["replayOnly"] = oid not in replay, oid not in live
         orders.append(order)
     explain_realized(orders)
     mismatches, explained = [], []
@@ -333,8 +328,10 @@ def trace(golden, report_dir, tolerance_ms=TOLERANCE_MS):
             if not s["match"]:
                 (explained if "explained" in s else mismatches).append(
                     {"orderId": o["orderId"], "step": s["step"], "index": s.get("index"),
-                     **({"cause": s["explained"]["cause"]} if "explained" in s else {})})
-    return {"schema": SCHEMA, "toleranceMs": tolerance_ms, "orders": orders, "parityMismatches": len(mismatches),
+                     **({"cause": s["explained"]["cause"]} if "explained" in s else {}),
+                     **({"beyond": s["beyondBounds"]["beyond"]} if "beyondBounds" in s else {})})
+    return {"schema": SCHEMA, "toleranceMs": tolerance_ms, "venueLatencyBounds": VENUE_LATENCY_BOUNDS,
+            "orders": orders, "parityMismatches": len(mismatches),
             "mismatches": mismatches, "explained": explained, "financing": financing}
 
 

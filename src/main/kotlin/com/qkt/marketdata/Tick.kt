@@ -9,6 +9,8 @@ import java.math.BigDecimal
  * `price` is the canonical trade-price field; brokers and strategies should read it
  * by default. `bid`/`ask` are optional — populate when the data source exposes them.
  * `mid` and `spread` are derived properties; they return `null` when bid/ask aren't set.
+ * `receivedMs` is when the tick reached qkt live, set only on ticks replayed from a golden capture: a replay
+ * merges several symbols' ticks in that arrival order, as the live engine processed them (#1625).
  */
 data class Tick(
     val symbol: String,
@@ -19,6 +21,7 @@ data class Tick(
     val ask: BigDecimal? = null,
     val bidVolume: BigDecimal? = null,
     val askVolume: BigDecimal? = null,
+    val receivedMs: Long? = null,
 ) {
     /** Midpoint of bid+ask, or `null` if either side isn't populated. */
     val mid: BigDecimal?
