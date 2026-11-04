@@ -5,7 +5,9 @@
 Live comes from a golden bundle: the engine journal (rule decision, decision-order link, order request, venue
 acknowledgement, fill, accounted fill), the MT5 transport journal (`gateway/`) and each gateway account's transport
 (`venues/<LABEL>/`). Replay comes from a backtest's `--report-dir` (`orders.jsonl`, `trades.csv`). Orders are joined by
-engine order id across every leg, and each step is compared:
+engine order id across every leg (`pair_orders`: orders several venues decide on one bar close may take swapped ids,
+live numbering them by tick arrival and a replay by tick time; such a pair is matched by intent and explained as
+`same-bar-decision-order`), and each step is compared:
 
   - decision: the order was decided on the same bar close; the live and replay decision times may differ by at most
     the tolerance (tick delivery and processing), never by a bar;
@@ -243,12 +245,56 @@ def explain_realized(orders):
             accounted["explained"] = {"cause": "follows-explained-fill", "realizedGap": str(gap)}
 
 
+def _intent(chain):
+    request = chain.get("request") or {}
+    intent = request.get("legIntent") or {}
+    qty = dec(request.get("qty"))
+    return (request.get("symbol"), request.get("side"), qty.normalize() if qty is not None else None,
+            request.get("orderType"), intent.get("kind"), request.get("closesLegId"))
+
+
+def pair_orders(live, replay, tolerance_ms):
+    """Live order id -> the replay order it is compared with. The same id when both sides placed the same order under
+    it; otherwise the replay order of the same intent (symbol, side, size, type, leg intent, closed leg) decided within
+    the tolerance of it. Orders the engine decides on one bar close for several venues take their ids in the order
+    their closing ticks are processed: live by arrival, a replay by tick time, so two venues' ids may swap."""
+    pairs = {oid: oid for oid in live if oid in replay and _intent(live[oid]) == _intent(replay[oid])}
+    taken = set(pairs.values())
+    for oid in sorted(set(live) - set(pairs)):
+        decided = (live[oid].get("request") or {}).get("createdTs")
+        for other in sorted(set(replay) - taken):
+            created = (replay[other].get("request") or {}).get("createdTs")
+            if _intent(replay[other]) == _intent(live[oid]) and decided is not None and created is not None \
+                    and abs(int(decided) - int(created)) <= tolerance_ms:
+                pairs[oid] = other
+                taken.add(other)
+                break
+    return pairs
+
+
+def _same_bar_peers(live, oid, other):
+    """Whether live order [oid] and the live order holding id [other] were decided on the same bar close."""
+    bar = lambda chain: (chain.get("decision") or {}).get("barCloseMs")
+    return other in live and bar(live[oid]) is not None and bar(live[oid]) == bar(live[other])
+
+
 def trace(golden, report_dir, tolerance_ms=TOLERANCE_MS):
     """The causal trace of a golden bundle against its replay; `parityMismatches` counts unexplained differences."""
     live, ticks = live_chains(golden)
     replay = replay_chains(report_dir)
-    orders = [compare_order(oid, live.get(oid, {}), replay.get(oid, {}), ticks, tolerance_ms)
-              for oid in sorted(set(live) | set(replay))]
+    pairs = pair_orders(live, replay, tolerance_ms)
+    unpaired = sorted(set(replay) - set(pairs.values()))
+    orders = []
+    for oid in sorted(set(live) | set(unpaired)):
+        other = pairs.get(oid, oid if oid not in live else None)
+        order = compare_order(oid, live.get(oid, {}), replay.get(other, {}) if other else {}, ticks, tolerance_ms)
+        if other and other != oid:
+            same_bar = _same_bar_peers(live, oid, other)
+            order["replayOrderId"] = other
+            order["steps"].insert(0, {"step": "order-id", "live": oid, "replay": other, "match": False, **(
+                {"explained": {"cause": "same-bar-decision-order"}} if same_bar else {})})
+        order["liveOnly"], order["replayOnly"] = oid in live and other is None, oid not in live
+        orders.append(order)
     explain_realized(orders)
     mismatches, explained = [], []
     for o in orders:
@@ -257,7 +303,6 @@ def trace(golden, report_dir, tolerance_ms=TOLERANCE_MS):
                 (explained if "explained" in s else mismatches).append(
                     {"orderId": o["orderId"], "step": s["step"], "index": s.get("index"),
                      **({"cause": s["explained"]["cause"]} if "explained" in s else {})})
-        o["liveOnly"], o["replayOnly"] = o["orderId"] not in replay, o["orderId"] not in live
     return {"schema": SCHEMA, "toleranceMs": tolerance_ms, "orders": orders, "parityMismatches": len(mismatches),
             "mismatches": mismatches, "explained": explained}
 

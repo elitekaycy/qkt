@@ -156,6 +156,19 @@ class CausalTraceTest(unittest.TestCase):
         self.assertEqual(right[1]["steps"][1]["explained"]["cause"], "follows-explained-fill")
         self.assertNotIn("explained", wrong[1]["steps"][1])
 
+    def test_two_venues_closing_on_one_bar_may_swap_ids_and_still_pair_by_intent(self):
+        def chain(symbol, side, created, bar=None):
+            c = {"request": dict(request("x", side=side, created=created, symbol=symbol), closesLegId="leg-" + symbol),
+                 "fills": [], "accounted": [], "transport": []}
+            if bar is not None:
+                c["decision"] = {"barCloseMs": bar}
+            return c
+        live = {"c-0": chain("PAPER:P", "BUY", T0 + 190, bar=T0), "c-1": chain("EXNESS:E", "SELL", T0 + 730, bar=T0)}
+        replay = {"c-0": chain("EXNESS:E", "SELL", T0 + 59), "c-1": chain("PAPER:P", "BUY", T0 + 63)}
+
+        self.assertEqual(ct.pair_orders(live, replay, ct.TOLERANCE_MS), {"c-0": "c-1", "c-1": "c-0"})
+        self.assertTrue(ct._same_bar_peers(live, "c-0", "c-1"))
+
     def test_the_cli_writes_the_trace_and_exits_non_zero_on_a_mismatch(self):
         live_bundle(self.golden, price="77040.00")
         replay_report(self.report)
