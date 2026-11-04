@@ -1,5 +1,8 @@
 package com.qkt.connector.gateway
 
+import com.qkt.connector.mt5.MT5TransportJournal
+import com.qkt.connector.mt5.MT5TransportRecorder
+import com.qkt.connector.mt5.TransportCorrelation
 import java.io.IOException
 import java.time.Duration
 import kotlinx.serialization.KSerializer
@@ -14,13 +17,15 @@ import okhttp3.RequestBody.Companion.toRequestBody
  * [baseUrl], authenticated by [apiKey]. Reads, and submits, are tried up to [retryAttempts] times
  * on a timeout or `503`: a submit is idempotent on its `client_order_id`, so resending the same body
  * can never place a second order. `422` and `423` refuse a submit; any other error is thrown. A request
- * may take `httpTimeoutMs` in all, its wait for the answer included.
+ * may take `httpTimeoutMs` in all, its wait for the answer included. Every attempt is recorded in [journal]
+ * when one is given (never the key), an order's exchanges tagged with its engine order id.
  */
 class GatewayClient(
     private val baseUrl: String,
     private val apiKey: String,
     httpTimeoutMs: Long = 5_000,
     private val retryAttempts: Int = 3,
+    journal: MT5TransportJournal? = null,
 ) {
     private val json =
         Json {
@@ -34,6 +39,7 @@ class GatewayClient(
             .callTimeout(Duration.ofMillis(httpTimeoutMs))
             .connectTimeout(Duration.ofMillis(httpTimeoutMs))
             .readTimeout(Duration.ofMillis(httpTimeoutMs))
+            .apply { if (journal != null) addInterceptor(MT5TransportRecorder(journal, System::nanoTime)) }
             .build()
 
     init {
@@ -64,7 +70,7 @@ class GatewayClient(
 
     /** `GET /v1/orders/{id}`: the order in its current state, or null when the gateway never placed it. */
     fun order(clientOrderId: String): WireOrder? {
-        val (status, text) = send("/v1/orders/$clientOrderId") { it.get() }
+        val (status, text) = send("/v1/orders/$clientOrderId") { it.get().forOrder(clientOrderId) }
         return when (status) {
             200 -> json.decodeFromString(WireOrder.serializer(), text)
             404 -> null
@@ -107,7 +113,7 @@ class GatewayClient(
     /** `POST /v1/orders`; see the class note on retries and refusals. */
     fun submit(order: WireSubmit): GatewaySubmit {
         val body = json.encodeToString(WireSubmit.serializer(), order)
-        val (status, text) = send("/v1/orders") { it.post(body.toRequestBody(JSON)) }
+        val (status, text) = send("/v1/orders") { it.post(body.toRequestBody(JSON)).forOrder(order.clientOrderId) }
         return when (status) {
             200, 201 -> GatewaySubmit.Placed(json.decodeFromString(WireOrder.serializer(), text))
             422, 423 -> errorOf(status, text).let { GatewaySubmit.Refused(it.code, it.message) }
@@ -116,7 +122,11 @@ class GatewayClient(
     }
 
     /** `DELETE /v1/orders/{id}`: the order as it ended, `filled` when the fill won the race. */
-    fun cancel(clientOrderId: String): WireOrder = write("/v1/orders/$clientOrderId") { it.delete() }
+    fun cancel(clientOrderId: String): WireOrder =
+        write("/v1/orders/$clientOrderId") { it.delete().forOrder(clientOrderId) }
+
+    private fun Request.Builder.forOrder(clientOrderId: String) =
+        tag(TransportCorrelation::class.java, TransportCorrelation(GatewayClientIds.engineId(clientOrderId)))
 
     internal fun write(
         path: String,

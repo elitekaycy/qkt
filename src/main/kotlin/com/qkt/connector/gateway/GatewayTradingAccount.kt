@@ -7,6 +7,7 @@ import com.qkt.connectivity.AccountConfig
 import com.qkt.connectivity.AccountProfile
 import com.qkt.connectivity.AccountType
 import com.qkt.connectivity.TradingAccount
+import com.qkt.connector.mt5.MT5TransportJournal
 import com.qkt.instrument.ContractCatalogSource
 import com.qkt.instrument.FundingRateSource
 import com.qkt.instrument.InstrumentRegistry
@@ -19,6 +20,7 @@ import com.qkt.marketdata.marks.MarkHistorySource
 import com.qkt.marketdata.openinterest.OpenInterestSource
 import com.qkt.marketdata.source.MarketSource
 import com.qkt.marketdata.source.SymbolPattern
+import java.nio.file.Path
 
 /** One account on a VGP v1 gateway, opened by [GatewayConnector]. Nothing connects until it verifies or trades. */
 class GatewayTradingAccount internal constructor(
@@ -29,10 +31,15 @@ class GatewayTradingAccount internal constructor(
     private val recording: GatewayChainRecording,
     private val instruments: InstrumentRegistry?,
     private val deploysUnderway: () -> Boolean,
+    stateRoot: Path? = null,
 ) : TradingAccount {
     private val identity = GatewayIdentity(settings.adapter, settings.accountLogin, settings.tradeMode)
+
+    /** The account's REST exchanges and stream events, for golden capture (`gateway-transport-journal/<LABEL>/`). */
+    private val journal =
+        stateRoot?.let { MT5TransportJournal(it.resolve(TRANSPORT_JOURNAL_DIR), config.name.uppercase(), clock) }
     private val client by lazy {
-        GatewayClient(settings.url, settings.apiKey, settings.httpTimeoutMs, settings.retryAttempts)
+        GatewayClient(settings.url, settings.apiKey, settings.httpTimeoutMs, settings.retryAttempts, journal)
     }
     private val opened =
         lazy {
@@ -43,7 +50,7 @@ class GatewayTradingAccount internal constructor(
                 identity,
                 strategies,
                 streamFactory = { onEvent, onReset, onConnection ->
-                    GatewayStream(settings.url, settings.apiKey, onEvent, onReset, onConnection)
+                    GatewayStream(settings.url, settings.apiKey, onEvent, onReset, onConnection, journal = journal)
                 },
                 label = config.name.uppercase(),
                 sharedAccount = settings.sharedAccount,
@@ -146,6 +153,12 @@ class GatewayTradingAccount internal constructor(
     override fun close() {
         if (opened.isInitialized()) opened.value.close()
         recording.close()
+        journal?.close()
+    }
+
+    internal companion object {
+        /** Where each gateway account journals its transport under the state root. */
+        const val TRANSPORT_JOURNAL_DIR: String = "gateway-transport-journal"
     }
 }
 

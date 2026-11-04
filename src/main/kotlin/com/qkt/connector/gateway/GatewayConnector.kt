@@ -48,6 +48,7 @@ class GatewayConnector : Connector {
                 GatewayChainRecording(context.instruments, settings.chainSnapshotMs),
                 context.instruments,
                 context.deploysUnderway,
+                context.stateRoot,
             )
         }
 }

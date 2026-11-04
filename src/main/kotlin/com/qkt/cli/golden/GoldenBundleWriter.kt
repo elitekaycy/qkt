@@ -1,6 +1,7 @@
 package com.qkt.cli.golden
 
 import com.qkt.cli.daemon.StateDir
+import com.qkt.connector.gateway.GatewayTradingAccount
 import java.nio.charset.StandardCharsets
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
@@ -14,8 +15,9 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 /**
- * Writes the golden bundle zip: every engine audit file, the session's order journal and the MT5
- * transport journal clipped to the audit window, plus the manifest. The zip is built owner-only in
+ * Writes the golden bundle zip: every engine audit file, the session's order journal, the MT5
+ * transport journal and each gateway account's transport journal (`venues/<LABEL>/`) clipped to the
+ * audit window, plus the manifest. The zip is built owner-only in
  * a temp sibling and moved into place, so a failed capture never leaves a partial bundle.
  */
 internal fun writeGoldenBundle(
@@ -27,6 +29,7 @@ internal fun writeGoldenBundle(
     audit: AuditSummary,
     transportFiles: List<Path>,
     transport: TransportSummary,
+    venueFiles: List<Path>,
     createdAt: Instant,
     readOnly: Boolean,
 ) {
@@ -63,10 +66,18 @@ internal fun writeGoldenBundle(
                     addJsonl(zip, file, "gateway/$relative", audit.firstTimestampMs, audit.lastTimestampMs)
                 entries.add(evidence)
             }
+            val venueRoot = stateDir.stateRoot.resolve(GatewayTradingAccount.TRANSPORT_JOURNAL_DIR)
+            val venueEntries =
+                venueFiles.map { file ->
+                    val relative = venueRoot.relativize(file).joinToString("/")
+                    addJsonl(zip, file, "venues/$relative", audit.firstTimestampMs, audit.lastTimestampMs)
+                }
+            entries.addAll(venueEntries)
+            val venueExchanges = venueEntries.sumOf { it.records }
             putText(
                 zip,
                 "manifest.json",
-                renderCaptureManifest(session, audit, transport, createdAt, entries, readOnly),
+                renderCaptureManifest(session, audit, transport, venueExchanges, createdAt, entries, readOnly),
             )
         }
         try {

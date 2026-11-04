@@ -42,7 +42,7 @@ internal class GoldenBundleReader(
                 val evidence = element.jsonObject
                 val name = requireText(evidence, "path", "manifest.json", 1L)
                 require(names.add(name)) { "duplicate golden entry: $name" }
-                require(name.startsWith("engine/") || name.startsWith("orders/") || name.startsWith("gateway/")) {
+                require(name.split('/').first() in ENTRY_ROOTS) {
                     "unsupported golden entry path: $name"
                 }
                 require(!name.startsWith('/') && name.split('/').none { it == ".." || it.isBlank() }) {
@@ -84,4 +84,9 @@ internal class GoldenBundleReader(
         zip.getInputStream(zip.getEntry(name)).bufferedReader(StandardCharsets.UTF_8).useLines { lines ->
             lines.count { it.isNotBlank() }.toLong()
         }
+
+    private companion object {
+        /** Engine journals, the order journal, the MT5 transport journal and each gateway account's transport. */
+        val ENTRY_ROOTS = setOf("engine", "orders", "gateway", "venues")
+    }
 }
