@@ -25,7 +25,7 @@ internal object ReplayFeeds {
      * One feed per symbol in [symbols], merged when there is more than one, with the symbols it
      * synthesizes from bars ([BarFills]). Tick-resolved fills ([tickFills]) fill on real ticks, so they
      * fill at no level, except on a bar without ticks ([NoTickBars]). A symbol the source has no ticks
-     * for is synthesized from its bars even without [forceBars]; under [BrokerKind.MT5_SIM] that is
+     * for is synthesized from its bars even without [forceBars]; one of [mt5Routed] (filling on mt5-sim) is
      * refused like `--bars` is, since bar extremes carry neither MT5 trigger prices nor spread. [positionSign] reads net position signs from the
      * engine that ends up pulling this feed (bound by [Backtest.toEngine]), so each bar emits the open
      * position's adverse extreme first; unbound (fan-out shared feeds) it reads 0 and the feed keeps the
@@ -40,12 +40,12 @@ internal object ReplayFeeds {
         forceBars: Boolean,
         positionSign: (String) -> Int,
         tickFills: Boolean = false,
-        brokerKind: BrokerKind = BrokerKind.PAPER,
+        mt5Routed: Set<String> = emptySet(),
     ): Pair<TickFeed, BarFills> {
         val synthesized = mutableSetOf<String>()
         val feed = merged(source, symbols, range, barWindows, candleWindow, forceBars, positionSign, synthesized)
-        val fallback = if (forceBars) emptySet() else synthesized
-        require(brokerKind != BrokerKind.MT5_SIM || tickFills || fallback.isEmpty()) {
+        val fallback = if (forceBars) emptySet() else synthesized intersect mt5Routed
+        require(tickFills || fallback.isEmpty()) {
             "--broker mt5-sim cannot replay ${fallback.sorted()} from bars: synthetic bar extremes do not " +
                 "preserve MT5 trigger prices or market spread. Provide ticks for them, or use --bars --tick-fills"
         }
