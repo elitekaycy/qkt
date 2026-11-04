@@ -61,6 +61,16 @@ class LaneRollHearsOldContractTest {
     }
 
     @Test
+    fun `an old contract past its expiry is never read again`() {
+        f.hold(Side.SELL)
+        val taps = RollQuoteTaps()
+
+        f.restart(atMs = f.expirySep + 60_000, taps = taps)
+
+        assertThat(taps.held(f.front)).isNull()
+    }
+
+    @Test
     fun `a roll that starts live holds the old contract while its legs are out and lets it go once carried`() {
         val taps = RollQuoteTaps()
         val live = ScriptedLaneFixture(rollPriceBand = BigDecimal("0.25"), taps = taps)

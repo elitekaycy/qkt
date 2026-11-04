@@ -7,7 +7,8 @@ import com.qkt.derivatives.futures.RollQuoteTaps
  * Keeps the contract a lane's roll closes out of heard once the stream serves the next one: while a roll is in flight
  * on [rolls], or due (the lane is still on a contract the schedule has moved past, as after a restart past the roll
  * instant), the old contract is held on [taps] so the live feed reads it, and its quotes reach [quotes]. Released once
- * the roll is done. No [taps] (a backtest, or a lane with no live feed): nothing is held and nothing is heard.
+ * the roll is done, and never held past its expiry, when the venue lists it no more. No [taps] (a backtest, or a lane
+ * with no live feed): nothing is held and nothing is heard.
  */
 internal class LaneRollTap(
     private val taps: RollQuoteTaps?,
@@ -27,7 +28,7 @@ internal class LaneRollTap(
         val taps = taps ?: return
         val chain = chainOf()
         val due = current?.takeIf { on -> chain.indexAt(nowMs)?.let { it > on } == true }
-        val from = rolls.run?.fromIndex ?: due
+        val from = (rolls.run?.fromIndex ?: due)?.takeIf { nowMs < chain.schedule.contracts[it].expiryMs }
         if (from == null) taps.release(chain.symbol) else taps.hold(chain.symbol, chain.contractSymbol(from))
     }
 }
