@@ -9,6 +9,9 @@ trap 'rm -rf "$tmp"' EXIT
 test "$(grep -Fc '    branches: [dev, testing]' "$workflow")" -eq 1
 test "$(grep -Fc '    branches: [dev]' "$workflow")" -eq 1
 test "$(grep -Fc "    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'" "$workflow")" -eq 1
+# Dev runs are keyed by SHA so an older push can never cancel a newer one (#1627).
+test "$(grep -Fc "format('check-dev-{0}', github.sha)" "$workflow")" -eq 1
+test "$(grep -c '^  group: check-\${{ github.ref }}$' "$workflow")" -eq 0
 
 git init --bare --initial-branch=dev "$tmp/remote.git" >/dev/null
 git clone "$tmp/remote.git" "$tmp/work" >/dev/null 2>&1
@@ -54,8 +57,19 @@ git commit -am 'fix(ci): add newest change' >/dev/null
 newest_sha="$(git rev-parse HEAD)"
 git push origin "$newest_sha:refs/heads/dev" >/dev/null 2>&1
 
-if bash "$repo_root/scripts/promote-dev-to-testing.sh" "$dev_sha" origin >"$tmp/stale.out" 2>&1; then
-    echo 'expected stale promotion to fail' >&2
-    exit 1
-fi
-grep -F "green dev SHA $dev_sha is stale; current dev is $newest_sha" "$tmp/stale.out" >/dev/null
+# A stale green SHA skips with success and leaves testing untouched (#1627).
+bash "$repo_root/scripts/promote-dev-to-testing.sh" "$dev_sha" origin >"$tmp/stale.out" 2>&1
+grep -F "green dev SHA $dev_sha is stale; current dev is $newest_sha; skipping" "$tmp/stale.out" >/dev/null
+git fetch origin testing >/dev/null 2>&1
+test "$(git rev-parse origin/testing)" = "$promoted"
+
+# Burst in reverse arrival order: the newest run promotes, the older one that
+# finishes after it still skips, and testing ends on the newest dev head.
+bash "$repo_root/scripts/promote-dev-to-testing.sh" "$newest_sha" origin >/dev/null
+git fetch origin testing >/dev/null 2>&1
+newest_promoted="$(git rev-parse origin/testing)"
+test "$(git rev-parse "$newest_promoted^2")" = "$newest_sha"
+test "$(git rev-parse "$newest_promoted^1")" = "$promoted"
+bash "$repo_root/scripts/promote-dev-to-testing.sh" "$dev_sha" origin >/dev/null 2>&1
+git fetch origin testing >/dev/null 2>&1
+test "$(git rev-parse origin/testing)" = "$newest_promoted"

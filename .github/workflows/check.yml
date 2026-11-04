@@ -20,8 +20,14 @@ on:
   pull_request:
     branches: [dev]
 
+# A dev push gets a group of its own SHA, so no dev run is ever cancelled. GitHub
+# queues runs in webhook arrival order, not commit order: two merges seconds
+# apart can create the newer SHA's run first, and a per-branch group then let
+# the older SHA's run cancel it (#1627). Every dev run finishes instead; only
+# the run whose SHA is still dev head promotes, and a stale one skips (see
+# scripts/promote-dev-to-testing.sh). PRs and testing keep cancel-on-newer.
 concurrency:
-  group: check-${{ github.ref }}
+  group: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/dev') && format('check-dev-{0}', github.sha) || format('check-{0}', github.ref) }}
   cancel-in-progress: true
 
 jobs:
