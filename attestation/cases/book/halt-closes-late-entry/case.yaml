@@ -21,7 +21,7 @@ steps:
 - run: qkt list --state-dir {state}
   wait_log: 'portfolio book halted'
   wait_seconds: 150
-  note: the first fill's spread breaches the book's 0.05% drawdown
+  note: the first fill's spread breaches the book's 0.01% drawdown (a 0.01 BTC spread of ~$18 is ~0.018% of the $1000 book)
 - run: qkt list --state-dir {state}
   wait_for: flat
   wait_seconds: 90
@@ -37,6 +37,6 @@ assertions:
 budget_seconds: 420
 config:
   risk:
-    max_drawdown_pct: '0.05'
+    max_drawdown_pct: '0.01'
   book_risk:
     capital: 1000
