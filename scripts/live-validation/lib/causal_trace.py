@@ -19,7 +19,9 @@ A fill price that differs is explained only by a recorded cause: the replay fill
 for (the MT5 request price, or the decision tick's quote) and the venue filled at a quote it captured between the
 request and the fill (`venue-latency`). A realized PnL that differs by exactly what the explained price differences of its
 symbol add up to carries that cause (`follows-explained-fill`). Anything else, and any order on one side only, is a
-mismatch. The trace is the `trace` artifact; its `parityMismatches` counts into the attestation's parity.
+mismatch. Funding a venue books under no order (an accounted fill of kind FINANCING, `cost:funding <id>`) is not
+an order: the replay simulates no venue funding, so it is listed under `financing`, never compared; the lane's funding
+and deals-net-equals-realized checks attest it. The trace is the `trace` artifact; its `parityMismatches` counts into the attestation's parity.
 """
 import csv
 import json
@@ -55,7 +57,7 @@ def jsonl(text):
 
 def live_chains(golden):
     """Every engine order of the bundle: its decision, request, transport, fills and accounting, keyed by order id."""
-    orders, ticks, decisions, links = {}, {}, {}, {}
+    orders, ticks, decisions, links, financing = {}, {}, {}, {}, []
     with zipfile.ZipFile(golden) as zf:
         names = sorted(zf.namelist())
         engine = [r for n in names if n.startswith("engine/") for r in jsonl(zf.read(n).decode())]
@@ -76,6 +78,9 @@ def live_chains(golden):
             order(oid)["rejected"] = r.get("reason")
         elif kind in ("OrderFilled", "OrderPartiallyFilled") and oid:
             order(oid)["fills"].append(dict(r["fill"], ts=r["ts"], symbol=r.get("symbol")))
+        elif kind == "FillAccountedEvent" and r.get("accountedFill", {}).get("kind") == "FINANCING":
+            financing.append({"id": oid, "symbol": r.get("symbol"), "ts": r["ts"],
+                              "netRealized": r["accountedFill"].get("netAccountRealized")})
         elif kind == "FillAccountedEvent" and oid:
             order(oid)["accounted"].append(r["accountedFill"])
     for oid, chain in orders.items():
@@ -87,7 +92,7 @@ def live_chains(golden):
             orders[oid]["transport"].append(r)
     for series in ticks.values():
         series.sort(key=lambda t: t["timestampMs"])
-    return orders, ticks
+    return orders, ticks, financing
 
 
 def _body(text):
@@ -306,7 +311,7 @@ def _same_bar_peers(live, oid, other):
 
 def trace(golden, report_dir, tolerance_ms=TOLERANCE_MS):
     """The causal trace of a golden bundle against its replay; `parityMismatches` counts unexplained differences."""
-    live, ticks = live_chains(golden)
+    live, ticks, financing = live_chains(golden)
     replay = replay_chains(report_dir)
     pairs = pair_orders(live, replay, tolerance_ms)
     unpaired = sorted(set(replay) - set(pairs.values()))
@@ -330,7 +335,7 @@ def trace(golden, report_dir, tolerance_ms=TOLERANCE_MS):
                     {"orderId": o["orderId"], "step": s["step"], "index": s.get("index"),
                      **({"cause": s["explained"]["cause"]} if "explained" in s else {})})
     return {"schema": SCHEMA, "toleranceMs": tolerance_ms, "orders": orders, "parityMismatches": len(mismatches),
-            "mismatches": mismatches, "explained": explained}
+            "mismatches": mismatches, "explained": explained, "financing": financing}
 
 
 def main(argv):

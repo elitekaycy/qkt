@@ -447,7 +447,7 @@ class CrossRun:
             if os.path.exists(path):
                 for key, value in (yaml.safe_load(open(path)) or {}).items():
                     merged.setdefault(key, []).extend(value or [])
-        live_orders, _ = causal_trace.live_chains(f"{ev}/golden.zip")
+        live_orders = causal_trace.live_chains(f"{ev}/golden.zip")[0]
         fees = cv.venue_fee_rates(live_orders, merged.get("futures") or [])
         for root in merged.get("futures") or []:  # the fee each venue charged, not the one the case assumed
             if root["root"] in fees:
