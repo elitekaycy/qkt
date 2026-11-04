@@ -5,6 +5,7 @@ import com.qkt.marketdata.source.MarketRequest
 import com.qkt.marketdata.store.DayCompleteness
 import com.qkt.marketdata.store.DefaultDataStore
 import com.qkt.marketdata.store.TickCompletenessValidator
+import com.qkt.marketdata.store.TickStoreKeys
 import com.qkt.marketdata.store.dayList
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -78,18 +79,22 @@ class BacktestDataProvisioner(
         /** One-line bars suggestion for the missing-data error (e.g. "Bars exist ... rerun with --bars"); null omits it. */
         barsLineFor: (ProvisionStream) -> String? = { null },
     ) {
-        for (s in streams.distinctBy { it.bareSymbol }) {
-            if (fetchEnabled) prefetch(s.bareSymbol, from, to)
+        // A venue's own store (`ticks/<LABEL>/<SYMBOL>/`, e.g. a golden capture) is local evidence: validated,
+        // never fetched into. Every other stream reads and fetches the bare-symbol store, as it always has.
+        val keyed = streams.map { TickStoreKeys.forSymbol(store.root, "${it.broker}:${it.bareSymbol}") to it }
+        for ((key, s) in keyed.distinctBy { it.first }) {
+            val fetch = fetchEnabled && ':' !in key
+            if (fetch) prefetch(key, from, to)
 
-            var report = TickCompletenessValidator.validate(store, s.bareSymbol, from, to, calendarFor(s.bareSymbol))
+            var report = TickCompletenessValidator.validate(store, key, from, to, calendarFor(s.bareSymbol))
 
-            val imported = ImportedTickDays(store.root.resolve("symbols").resolve(s.bareSymbol))
-            if (report.hasHoles && fetchEnabled) {
+            val imported = ImportedTickDays(TickStoreKeys.dir(store.root, key))
+            if (report.hasHoles && fetch) {
                 // A prior interrupted fetch can leave a day partial. Delete + refetch those once; an imported
                 // day is the user's own data and is never replaced by a fetch, so its holes stand.
-                for (hole in report.holes) if (!imported.contains(hole.day)) store.dropDay(s.bareSymbol, hole.day)
-                prefetch(s.bareSymbol, from, to)
-                report = TickCompletenessValidator.validate(store, s.bareSymbol, from, to, calendarFor(s.bareSymbol))
+                for (hole in report.holes) if (!imported.contains(hole.day)) store.dropDay(key, hole.day)
+                prefetch(key, from, to)
+                report = TickCompletenessValidator.validate(store, key, from, to, calendarFor(s.bareSymbol))
             }
 
             val requested = report.days.count { it.status != DayCompleteness.Status.NON_TRADING }
@@ -102,12 +107,12 @@ class BacktestDataProvisioner(
                     else -> " (${short.size} short sessions, holiday hours, from ${short.first()})"
                 }
             progress("qkt: tick coverage ${report.symbol} $covered/$requested trading days$shortNote")
-            val stored = report.days.filter { store.dayFile(s.bareSymbol, it.day) != null }.map { it.day }
+            val stored = report.days.filter { store.dayFile(key, it.day) != null }.map { it.day }
             imported.mixLine(s.bareSymbol, stored)?.let { progress("qkt: $it") }
 
             if (report.hasHoles && !allowIncomplete) {
                 throw IncompleteDataException(
-                    IncompleteTickMessage(store).describe(s, from, to, report, barsLineFor(s), fetchEnabled),
+                    IncompleteTickMessage(store).describe(s, from, to, report, barsLineFor(s), fetch),
                 )
             }
             if (report.hasHoles) {

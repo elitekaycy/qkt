@@ -7,6 +7,7 @@ import com.qkt.connectivity.ConnectorContext
 import com.qkt.connectivity.ConnectorSpec
 import com.qkt.connectivity.ProductType
 import com.qkt.connectivity.TradingAccount
+import com.qkt.connectivity.transport.TransportJournal
 import com.qkt.connector.mt5.marketdata.Mt5MarketSource
 import com.qkt.marketdata.source.CachedHistoricalMarketSource
 import com.qkt.marketdata.source.MarketSource
@@ -61,7 +62,7 @@ class Mt5Connector(
 
         fun client(
             profile: MT5BrokerProfile,
-            journal: MT5TransportJournal?,
+            journal: TransportJournal?,
         ) = MT5Client(
             gatewayUrl = profile.gatewayUrl,
             serverTimeZone = profile.serverTimeZone,
@@ -79,7 +80,7 @@ class Mt5Connector(
             val profile = byName[cfg.name] ?: error("MT5 profile for brokers.${cfg.name} did not load")
             val journal =
                 context.stateRoot?.let {
-                    MT5TransportJournal(it.resolve(TRANSPORT_JOURNAL_DIR), profile.name, context.clock)
+                    TransportJournal(it.resolve(TRANSPORT_JOURNAL_DIR), profile.name, context.clock)
                 }
             Mt5TradingAccount(
                 config = cfg,

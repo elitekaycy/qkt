@@ -1,0 +1,43 @@
+id: same-symbol-two-venues
+title: One strategy trades the same BTC perpetual on two gateway venues beside a BTC CFD on the MT5 demo
+why: 'Two venues quoting one bare symbol (matrix K01) used to share one tick store: the golden capture refused them,
+  and a replay read one venue''s prices for both. Each venue now keeps its own ticks (ticks/<LABEL>/<SYMBOL>), so
+  only a case trading the same name on two venues shows a leg replayed on the other venue''s prices.'
+status: ready
+venues:
+- label: EXNESS
+  type: mt5
+- label: PAPER
+  type: gateway
+  adapter: paper
+- label: DERIBIT
+  type: gateway
+  adapter: deribit
+symbols:
+- EXNESS:BTCUSD
+- PAPER:BTC_USDC_PERPETUAL
+- DERIBIT:BTC_USDC_PERPETUAL
+timeframes:
+- 1m
+warmup_bars:
+  1m: 3
+proves:
+- behaviour:cross-venue-routing
+- behaviour:same-symbol-two-venues
+- behaviour:market-entry
+- behaviour:timed-exit
+fills:
+  EXNESS: 2
+  PAPER: 2
+  DERIBIT: 2
+replay: by-venue
+assertions:
+- fills-by-venue
+- flat-by-magic
+- flat-by-strategy
+- deals-net-by-venue
+- realized-total-equals-venues
+- no-engine-fault
+- replay-same-fills-by-venue
+- replay-causal-trace
+budget_seconds: 420

@@ -46,7 +46,7 @@ class ManifestStore(
     }
 
     fun write(manifest: Manifest) {
-        val symDir = root.resolve("symbols").resolve(manifest.symbol)
+        val symDir = TickStoreKeys.dir(root, manifest.symbol)
         Files.createDirectories(symDir)
         val target = symDir.resolve("manifest.json")
         // Unique temp per write so a concurrent writer to the same symbol can't clobber our scratch
@@ -75,5 +75,5 @@ class ManifestStore(
         return merged
     }
 
-    private fun manifestPath(symbol: String): Path = root.resolve("symbols").resolve(symbol).resolve("manifest.json")
+    private fun manifestPath(symbol: String): Path = TickStoreKeys.dir(root, symbol).resolve("manifest.json")
 }

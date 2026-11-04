@@ -17,12 +17,14 @@ printf '%s\n' '{"clean":true}' > "$tmp_dir/reconcile.json"
 printf '%s\n' '{"coverage":true}' > "$tmp_dir/coverage.json"
 printf '%s\n' '{"parity":true}' > "$tmp_dir/parity.json"
 printf '%s\n' '{"insights":true}' > "$tmp_dir/insights.json"
+printf '%s\n' '{"schema":"qkt-attestation-trace-v1","parityMismatches":0,"cases":{}}' > "$tmp_dir/trace.json"
 health_sha="$(sha256sum "$tmp_dir/health.jsonl" | cut -d' ' -f1)"
 journal_sha="$(sha256sum "$tmp_dir/golden.zip" | cut -d' ' -f1)"
 reconcile_sha="$(sha256sum "$tmp_dir/reconcile.json" | cut -d' ' -f1)"
 coverage_sha="$(sha256sum "$tmp_dir/coverage.json" | cut -d' ' -f1)"
 parity_sha="$(sha256sum "$tmp_dir/parity.json" | cut -d' ' -f1)"
 insights_sha="$(sha256sum "$tmp_dir/insights.json" | cut -d' ' -f1)"
+trace_sha="$(sha256sum "$tmp_dir/trace.json" | cut -d' ' -f1)"
 # The catalog evidence's own rules are tested in scripts/live-validation/tests/test_attest_resume.py; a minimal valid one here.
 python3 - "$tmp_dir/catalog.json" "$sha" <<'PY'
 import hashlib, json, sys
@@ -72,7 +74,8 @@ write_attestation() {
     "coverage": "coverage.json",
     "parity": "parity.json",
     "insights": "insights.json",
-    "catalog": "catalog.json"
+    "catalog": "catalog.json",
+    "trace": "trace.json"
   },
   "artifactSha256": {
     "health": "$health_sha",
@@ -81,7 +84,8 @@ write_attestation() {
     "coverage": "$coverage_sha",
     "parity": "$parity_sha",
     "insights": "$insights_sha",
-    "catalog": "$catalog_sha"
+    "catalog": "$catalog_sha",
+    "trace": "$trace_sha"
   }
 }
 JSON
@@ -97,6 +101,17 @@ write_attestation "2026-08-05T00:00:00Z" 0
 verify | grep -q 'paper-soak attestation valid'
 
 verify | grep -q 'live-parity'
+
+printf '%s\n' '{"schema":"qkt-attestation-trace-v1","parityMismatches":2,"cases":{}}' > "$tmp_dir/trace.json"
+trace_sha="$(sha256sum "$tmp_dir/trace.json" | cut -d' ' -f1)"
+write_attestation "2026-08-05T00:00:00Z" 0
+if verify > "$tmp_dir/trace.out" 2>&1; then
+    echo "a trace counting mismatches the parity does not must fail closed" >&2
+    exit 1
+fi
+grep -q 'trace artifact counts 2 parity mismatches' "$tmp_dir/trace.out"
+printf '%s\n' '{"schema":"qkt-attestation-trace-v1","parityMismatches":0,"cases":{}}' > "$tmp_dir/trace.json"
+trace_sha="$(sha256sum "$tmp_dir/trace.json" | cut -d' ' -f1)"
 
 write_attestation "2026-08-05T00:00:00Z" 1
 if verify > "$tmp_dir/reconcile.out" 2>&1; then

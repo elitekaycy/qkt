@@ -1,6 +1,10 @@
 package com.qkt.connector.gateway
 
+import com.qkt.connectivity.transport.TransportJournal
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 
 /**
  * The event half of a VGP v1 gateway: the `GET /v1/stream` WebSocket at [baseUrl], authenticated by
@@ -9,6 +13,7 @@ import kotlinx.serialization.json.Json
  * [onReset] with the reason before anything newer is delivered, so the caller resynchronizes from REST.
  * A dropped socket reconnects with `since=<last seq>` (and the `stream` it belongs to) after a backoff that starts at
  * [initialBackoffMs] and doubles to [maxBackoffMs]; [onConnection] hears every drop and reconnect.
+ * Every frame received is recorded in [journal] when one is given, tagged with its order's engine id.
  */
 class GatewayStream(
     baseUrl: String,
@@ -18,6 +23,7 @@ class GatewayStream(
     onConnection: (Boolean, String) -> Unit,
     initialBackoffMs: Long = 1_000,
     maxBackoffMs: Long = 30_000,
+    private val journal: TransportJournal? = null,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
     private val lock = Any()
@@ -62,6 +68,7 @@ class GatewayStream(
     /** Delivers [text]'s event; the stream's position moves only once it was handled, so a failure is resynchronized. */
     private fun receive(text: String) {
         val event = json.decodeFromString(WireEvent.serializer(), text)
+        journal?.let { recordEvent(it, text, event) }
         synchronized(lock) {
             val reason =
                 when {
@@ -76,5 +83,24 @@ class GatewayStream(
             streamId = event.stream
             lastSeq = event.seq
         }
+    }
+
+    private fun recordEvent(
+        journal: TransportJournal,
+        text: String,
+        event: WireEvent,
+    ) {
+        val clientOrderId = ((event.data as? JsonObject)?.get("client_order_id") as? JsonPrimitive)?.contentOrNull
+        journal.record(
+            method = "EVENT",
+            path = "/v1/stream",
+            requestBody = null,
+            responseCode = null,
+            responseBody = text,
+            error = null,
+            durationMs = 0L,
+            idempotencyKey = null,
+            engineOrderId = clientOrderId?.let(GatewayClientIds::engineId),
+        )
     }
 }

@@ -61,6 +61,7 @@ case "$*" in
         printf '%s\n' '{"coverage":true}' > "$out_dir/coverage.json"
         printf '%s\n' '{"parity":true}' > "$out_dir/parity.json"
         printf '%s\n' '{"insights":true}' > "$out_dir/insights.json"
+        printf '%s\n' '{"schema":"qkt-attestation-trace-v1","parityMismatches":0,"cases":{}}' > "$out_dir/trace.json"
         # A minimal valid catalog evidence; its rules are tested in scripts/live-validation/tests/test_attest_resume.py.
         python3 - "$out_dir/catalog.json" <<'PY'
 import hashlib, json, sys
@@ -83,6 +84,7 @@ PY
         coverage_sha="$(sha256sum "$out_dir/coverage.json" | cut -d' ' -f1)"
         parity_sha="$(sha256sum "$out_dir/parity.json" | cut -d' ' -f1)"
         insights_sha="$(sha256sum "$out_dir/insights.json" | cut -d' ' -f1)"
+        trace_sha="$(sha256sum "$out_dir/trace.json" | cut -d' ' -f1)"
         cat > "$out_dir/paper-soak-attestation.json" <<JSON
 {
   "schemaVersion": 1,
@@ -111,7 +113,8 @@ PY
     "coverage": "coverage.json",
     "parity": "parity.json",
     "insights": "insights.json",
-    "catalog": "catalog.json"
+    "catalog": "catalog.json",
+    "trace": "trace.json"
   },
   "artifactSha256": {
     "health": "$health_sha",
@@ -120,7 +123,8 @@ PY
     "coverage": "$coverage_sha",
     "parity": "$parity_sha",
     "insights": "$insights_sha",
-    "catalog": "$catalog_sha"
+    "catalog": "$catalog_sha",
+    "trace": "$trace_sha"
   }
 }
 JSON

@@ -110,9 +110,19 @@ events. It must contain zero `parityMismatches`, `unexplainedRejections`, and
 `unexplainedOrderOutcomes`. Runtime metrics must report zero unreconciled positions,
 zero unknown outcomes, and zero dropped ticks.
 
-Seven sibling artifacts are required and SHA-256 checked:
+Eight sibling artifacts are required and SHA-256 checked:
 
-`health`, `journal`, `reconciliation`, `coverage`, `parity`, `insights`, and `catalog`.
+`health`, `journal`, `reconciliation`, `coverage`, `parity`, `insights`, `catalog`, and `trace`.
+
+`trace` is the causal chain of every engine order, live against replay
+(`scripts/live-validation/lib/causal_trace.py`): for each wave case its golden bundle (engine journal, MT5 transport
+under `gateway/`, each gateway account's transport under `venues/<LABEL>/`) is joined by engine order id with its
+`full-ticks-mt5` replay report, and the decision bar, the approved request, each fill's side, size, price and costs
+and the realized PnL it booked are compared exactly. A price difference passes only with a recorded cause: the replay
+filled at the price the venue was asked for and the venue filled at a quote it captured after the request
+(`venue-latency`); a realized difference passes only when it is exactly what those explained prices add up to. Every
+other difference, and an order on one side only, is a parity mismatch: the trace's count is `parity.parityMismatches`,
+and the verifier refuses a bundle whose trace and parity disagree.
 
 `catalog` lists every required case and stage with each attempt that led there. The verifier refuses a bundle in which
 a ready case at this commit has no pass, a case or stage is bound to another commit, profile, account or CLI build,

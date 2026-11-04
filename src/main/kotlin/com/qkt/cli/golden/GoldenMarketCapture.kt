@@ -28,11 +28,15 @@ internal data class RecordedCandle(
     val provenance: String,
 )
 
-/** The verified market records of a golden bundle, plus the bundle manifest they were checked against. */
+/**
+ * The verified market records of a golden bundle, plus the bundle manifest they were checked against.
+ * [firstEvaluatedCandle] is the earliest-closing bar a strategy evaluated live, null when none did.
+ */
 internal data class GoldenMarketCapture(
     val manifest: JsonObject,
     val ticks: List<RecordedTick>,
     val candles: List<RecordedCandle>,
     val streamCandles: List<RecordedCandle>,
     val strategyCandleEvaluations: Long,
+    val firstEvaluatedCandle: Candle? = null,
 )

@@ -1,4 +1,4 @@
-package com.qkt.connector.mt5
+package com.qkt.connectivity.transport
 
 import okhttp3.Interceptor
 import okhttp3.Response
@@ -11,14 +11,14 @@ internal data class TransportCorrelation(
 )
 
 /**
- * Records every gateway exchange in the [MT5TransportJournal] without ever affecting the request:
+ * Records every exchange of a venue connection in the [TransportJournal] without ever affecting the request:
  * a capture failure is logged and swallowed.
  */
-internal class MT5TransportRecorder(
-    private val journal: MT5TransportJournal,
+internal class TransportRecorder(
+    private val journal: TransportJournal,
     private val monotonicNanos: () -> Long,
 ) : Interceptor {
-    private val log = LoggerFactory.getLogger(MT5Client::class.java)
+    private val log = LoggerFactory.getLogger(TransportRecorder::class.java)
 
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
@@ -84,7 +84,7 @@ internal class MT5TransportRecorder(
                 engineOrderId = request.tag(TransportCorrelation::class.java)?.engineOrderId,
             )
         }.onFailure { captureError ->
-            log.error("MT5 transport capture failed without affecting request: {}", captureError.message)
+            log.error("transport capture failed without affecting request: {}", captureError.message)
         }
     }
 
