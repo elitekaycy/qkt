@@ -24,20 +24,23 @@ def request(oid, side="BUY", created=T0 + 392, symbol="EXNESS:BTCUSD"):
             "partialClose": False}
 
 
-def live_bundle(path, price="77050.69", costs="0", transport=True, symbol="EXNESS:BTCUSD", financing=False):
-    """One market buy decided at T0+392 on the T0 bar close, sent at T0+430, filled at [price] at T0+1063."""
+def live_bundle(path, price="77050.69", costs="0", transport=True, symbol="EXNESS:BTCUSD", financing=False,
+                filled=T0 + 1063, venue_label=None):
+    """One market buy decided at T0+392 on the T0 bar close, sent at T0+430, filled at [price] at [filled]; a quote
+    asking [price] was stamped at T0+931 and reached qkt at T0+1036. Its transport is MT5's (`gateway/`), or, with
+    [venue_label], that gateway account's (`venues/<LABEL>/`)."""
     records = [
         engine("TickEvent", 1, T0 + 385, symbol=symbol,
                tick={"timestampMs": T0 + 311, "price": "77051.39", "bid": "77048.19", "ask": "77054.59"}),
         engine("TickEvent", 2, T0 + 1036, symbol=symbol,
-               tick={"timestampMs": T0 + 931, "price": "77047.49", "bid": "77044.29", "ask": "77050.69"}),
+               tick={"timestampMs": T0 + 931, "price": price, "bid": "1", "ask": price}),
         engine("RuleDecisionEvent", 3, T0 + 389, strategyId="s", decisionId="d1", ruleId="r#0",
                candle={"endTimeMs": T0}),
         engine("DecisionOrderLinkedEvent", 4, T0 + 393, orderId="o-1", decisionId="d1"),
         engine("OrderEvent", 5, T0 + 403, orderId="o-1", order=request("o-1", symbol=symbol)),
-        engine("BrokerEvent.OrderFilled", 6, T0 + 1063, orderId="o-1", symbol=symbol,
+        engine("BrokerEvent.OrderFilled", 6, filled, orderId="o-1", symbol=symbol,
                fill={"side": "BUY", "price": price, "quantity": "0.01", "brokerOrderId": "343", "partial": False}),
-        engine("FillAccountedEvent", 7, T0 + 1063, orderId="o-1", symbol=symbol,
+        engine("FillAccountedEvent", 7, filled, orderId="o-1", symbol=symbol,
                accountedFill={"totalCostsAccount": costs, "netAccountRealized": "0"}),
     ]
     if financing:  # a perpetual's funding the venue realized at the close, booked as a cost under no order
@@ -49,7 +52,11 @@ def live_bundle(path, price="77050.69", costs="0", transport=True, symbol="EXNES
                                                        "request": [1, 9, 0, "BTCUSDm", 0.01, 77054.59]}})}
     with zipfile.ZipFile(path, "w") as zf:
         zf.writestr("engine/audit-2026-11-04.jsonl", "".join(json.dumps(r) + "\n" for r in records))
-        if transport:
+        if transport and venue_label:
+            zf.writestr(f"venues/{venue_label}/transport-2026-11-04.jsonl", json.dumps(
+                {"v": 1, "ts": T0 + 440, "method": "POST", "path": "/v1/orders", "engineOrderId": "o-1",
+                 "responseCode": 201}) + "\n")
+        elif transport:
             zf.writestr("gateway/exness/transport-2026-11-04.jsonl", json.dumps(exchange) + "\n")
 
 
@@ -98,10 +105,58 @@ class CausalTraceTest(unittest.TestCase):
     def test_a_price_no_captured_quote_explains_is_a_mismatch(self):
         live_bundle(self.golden, price="77040.00")
         replay_report(self.report, price="77054.59")
+        with zipfile.ZipFile(self.golden) as zf:  # drop the captured quote at the live price
+            records = [json.loads(line) for line in zf.read("engine/audit-2026-11-04.jsonl").decode().splitlines()]
+            exchange = zf.read("gateway/exness/transport-2026-11-04.jsonl")
+        with zipfile.ZipFile(self.golden, "w") as zf:
+            zf.writestr("engine/audit-2026-11-04.jsonl", "".join(json.dumps(r) + "\n" for r in records if r["seq"] != 2))
+            zf.writestr("gateway/exness/transport-2026-11-04.jsonl", exchange)
 
         result = ct.trace(self.golden, self.report)
 
         self.assertEqual([m["step"] for m in result["mismatches"]], ["fill"])
+
+    def test_the_latency_explanation_records_what_it_measured_and_the_bounds_it_held(self):
+        live_bundle(self.golden, price="77050.69")
+        replay_report(self.report, price="77054.59")
+
+        result = ct.trace(self.golden, self.report)
+
+        cause = next(s for s in result["orders"][0]["steps"] if s["step"] == "fill")["explained"]
+        self.assertEqual((cause["venueKind"], cause["latencyMs"], cause["priceDistance"], cause["distanceBps"]),
+                         ("mt5", 1063 - 392, "3.90", "0.51"))
+        self.assertEqual((cause["maxLatencyMs"], cause["maxDistanceBps"]), (2_500, "5"))
+        self.assertEqual(cause["venueQuoteReceivedMs"], T0 + 1036)
+        self.assertEqual(result["venueLatencyBounds"], ct.VENUE_LATENCY_BOUNDS)
+
+    def test_a_venue_filling_later_than_its_latency_bound_is_a_mismatch(self):
+        live_bundle(self.golden, price="77050.69", filled=T0 + 392 + 2_501)
+        replay_report(self.report, price="77054.59")
+
+        result = ct.trace(self.golden, self.report)
+
+        fill = next(m for m in result["mismatches"] if m["step"] == "fill")
+        self.assertEqual(fill["beyond"], ["latency 2501 ms > 2500 ms"])
+
+    def test_a_venue_filling_further_than_its_distance_bound_is_a_mismatch(self):
+        live_bundle(self.golden, price="77010.00")  # 44.59 USD, 5.79 bps from the replay
+        replay_report(self.report, price="77054.59")
+
+        result = ct.trace(self.golden, self.report)
+
+        fill = next(m for m in result["mismatches"] if m["step"] == "fill")
+        self.assertEqual(fill["beyond"], ["distance 5.79 bps > 5 bps"])
+
+    def test_a_gateway_leg_is_held_to_the_gateway_bound(self):
+        replay_report(self.report, price="77054.59", created=T0 + 392)
+        live_bundle(self.golden, price="77050.69", filled=T0 + 392 + 1_001, venue_label="PAPER")
+        gateway = ct.trace(self.golden, self.report)
+        live_bundle(self.golden, price="77050.69", filled=T0 + 392 + 1_001)
+        mt5 = ct.trace(self.golden, self.report)
+
+        self.assertEqual(next(m for m in gateway["mismatches"] if m["step"] == "fill")["beyond"],
+                         ["latency 1001 ms > 1000 ms"])
+        self.assertEqual(mt5["parityMismatches"], 0, mt5["mismatches"])
 
     def test_a_decision_one_bar_early_is_a_mismatch(self):
         live_bundle(self.golden, price="77054.59")
@@ -172,21 +227,29 @@ class CausalTraceTest(unittest.TestCase):
         self.assertEqual(right[1]["steps"][1]["explained"]["cause"], "follows-explained-fill")
         self.assertNotIn("explained", wrong[1]["steps"][1])
 
-    def test_two_venues_closing_on_one_bar_may_swap_ids_and_still_pair_by_intent(self):
-        def chain(symbol, side, created, bar=None):
-            c = {"request": dict(request("x", side=side, created=created, symbol=symbol), closesLegId="leg-" + symbol),
-                 "fills": [], "accounted": [], "transport": []}
-            if bar is not None:
-                c["decision"] = {"barCloseMs": bar}
-            return c
-        live = {"c-0": chain("PAPER:P", "BUY", T0 + 190, bar=T0), "c-1": chain("EXNESS:E", "SELL", T0 + 730, bar=T0)}
-        replay = {"c-0": chain("EXNESS:E", "SELL", T0 + 59), "c-1": chain("PAPER:P", "BUY", T0 + 63)}
+    def test_orders_are_joined_by_engine_id_only(self):
+        # Two venues' orders decided on one bar close: a replay that numbered them the other way round is not paired
+        # by intent any more; the replay processes ticks in arrival order, so it numbers them as live did (#1625).
+        live_bundle(self.golden, price="77054.59")
+        replay_report(self.report)
+        with open(os.path.join(self.report, "orders.jsonl")) as file:
+            text = file.read()
+        with open(os.path.join(self.report, "orders.jsonl"), "w") as file:
+            file.write(text.replace('"o-1"', '"o-2"'))
+        with open(os.path.join(self.report, "trades.csv")) as file:
+            text = file.read()
+        with open(os.path.join(self.report, "trades.csv"), "w") as file:
+            file.write(text.replace(",o-1,o-1", ",o-2,o-2"))
 
-        self.assertEqual(ct.pair_orders(live, replay, ct.TOLERANCE_MS), {"c-0": "c-1", "c-1": "c-0"})
-        self.assertTrue(ct._same_bar_peers(live, "c-0", "c-1"))
+        result = ct.trace(self.golden, self.report)
+
+        self.assertEqual([(o["orderId"], o["liveOnly"], o["replayOnly"]) for o in result["orders"]],
+                         [("o-1", True, False), ("o-2", False, True)])
+        self.assertNotIn("same-bar-decision-order", json.dumps(result))
+        self.assertGreater(result["parityMismatches"], 0)
 
     def test_the_cli_writes_the_trace_and_exits_non_zero_on_a_mismatch(self):
-        live_bundle(self.golden, price="77040.00")
+        live_bundle(self.golden, price="77010.00")
         replay_report(self.report)
         out = os.path.join(self.tmp, "trace.json")
 

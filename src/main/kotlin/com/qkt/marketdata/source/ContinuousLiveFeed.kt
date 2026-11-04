@@ -3,6 +3,7 @@ package com.qkt.marketdata.source
 import com.qkt.common.Clock
 import com.qkt.derivatives.futures.ContinuousChain
 import com.qkt.derivatives.futures.LiveRoll
+import com.qkt.derivatives.futures.RollQuoteTaps
 import com.qkt.derivatives.futures.RollTransition
 import com.qkt.marketdata.Tick
 import com.qkt.marketdata.TickFeed
@@ -22,8 +23,10 @@ import org.slf4j.LoggerFactory
  * pair read; the ticks seen meanwhile are stale and not served. The outages of the account feed it
  * reads now are passed on, and its failure is this feed's [terminalFailureReason]. A roll the history
  * cannot take, or one still unpriced [measureForMs] after it, ends the feed with that reason: the live
- * session stops, fail-closed, until the roll is measured (`qkt fetch <ROOT> --rolls`). Not thread-safe:
- * one reader.
+ * session stops, fail-closed, until the roll is measured (`qkt fetch <ROOT> --rolls`). While the stream's
+ * lane holds an old contract on [taps] (a roll leg on it due or out, also after a restart past the roll),
+ * that contract is read too, from the next tick on, and its ticks go to [RollQuoteTaps.hear], never to the
+ * strategy. Not thread-safe: one reader.
  */
 class ContinuousLiveFeed(
     private val chain: () -> ContinuousChain,
@@ -33,10 +36,15 @@ class ContinuousLiveFeed(
     private val sleep: (Long) -> Unit = Thread::sleep,
     private val retryMs: Long = 15_000,
     private val measureForMs: Long = 600_000,
+    private val taps: RollQuoteTaps? = null,
 ) : TickFeed,
     MarketDataLifecycleFeed {
     private val log = LoggerFactory.getLogger(ContinuousLiveFeed::class.java)
     private var current = chain()
+    private val stream = current.symbol
+
+    /** The old contract read for the stream's roll ([taps]), or null. */
+    private var tapped: String? = null
 
     @Volatile private var feed: TickFeed? = null
     private var following = -1
@@ -61,11 +69,16 @@ class ContinuousLiveFeed(
 
     override fun next(): Tick? {
         while (true) {
+            if (feed != null && taps != null && taps.held(stream) != tapped) follow(following)
             val source = feed ?: follow(current.indexAt(clock.now()) ?: return end(clock.now()))
             val tick = source.next() ?: return null
             val index = current.indexAt(tick.timestamp) ?: return end(tick.timestamp)
             if (!current.covers(index)) {
                 if (!rollInto(tick.timestamp)) return null
+                continue
+            }
+            if (tick.symbol == tapped && tick.symbol != current.contractSymbol(index)) {
+                taps?.hear(stream, tick)
                 continue
             }
             if (index != following) follow(index)
@@ -78,10 +91,12 @@ class ContinuousLiveFeed(
         feed?.close()
     }
 
-    /** Reads contract [index] and the one after it from now on, passing on that feed's outages. */
+    /** Reads contract [index], the one after it and the held old one from now on, passing on that feed's outages. */
     private fun follow(index: Int): TickFeed {
         feed?.close()
-        val contracts = listOfNotNull(current.contractSymbol(index), current.contractSymbolOrNull(index + 1))
+        tapped = taps?.held(stream)
+        val contracts =
+            listOfNotNull(current.contractSymbol(index), current.contractSymbolOrNull(index + 1), tapped).distinct()
         following = index
         val next = ticks(contracts)
         (next as? MarketDataLifecycleFeed)?.let { lifecycle ->

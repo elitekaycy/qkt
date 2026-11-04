@@ -41,10 +41,11 @@ internal class RollExecutor(
     fills: ContractFillLog,
     private val stops: Map<String, String>,
     private val refusals: RollRefusals,
+    hearsOldContract: Boolean = false,
 ) {
     private val log = LoggerFactory.getLogger(RollExecutor::class.java)
     private val restingOrders = RestingOrdersAtRoll(bus, clock, chainOf, venue, orders, legs)
-    private val quoteWait = RollQuoteWait(clock, chainOf, refusals, legs.retries)
+    private val quoteWait = RollQuoteWait(clock, chainOf, refusals, legs.retries, hearsOldContract)
     private val carrying = RollCarry(clock, chainOf, venue, legs, fills, refusals.priceBand, ::whenReady)
 
     private val chain: ContinuousChain get() = chainOf()

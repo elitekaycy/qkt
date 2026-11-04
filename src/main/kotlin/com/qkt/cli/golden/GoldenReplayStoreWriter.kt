@@ -2,6 +2,7 @@ package com.qkt.cli.golden
 
 import com.qkt.candles.TimeWindow
 import com.qkt.common.Clock
+import com.qkt.marketdata.CsvTickFeed
 import com.qkt.marketdata.store.BinaryBarStore
 import com.qkt.marketdata.store.DayRange
 import com.qkt.marketdata.store.LocalBarStore
@@ -22,7 +23,9 @@ internal class GoldenReplayStoreWriter(
     /**
      * Write each broker symbol's ticks into its venue's store (`ticks/<LABEL>/<SYMBOL>/`), one UTC-day CSV
      * per day plus a manifest, and into the bare-symbol store (`symbols/<SYMBOL>/`) too when no other venue
-     * quotes that bare symbol, so a data root read by bare symbol keeps working.
+     * quotes that bare symbol, so a data root read by bare symbol keeps working. Each row carries when the
+     * tick reached qkt live (`receivedMs`, blank for a warmup tick), and a symbol's rows are written in that
+     * arrival order, so the replay sees each venue's ticks, and all venues together, in the order live qkt processed them.
      */
     fun writeTickStore(
         root: Path,
@@ -50,8 +53,8 @@ internal class GoldenReplayStoreWriter(
         for ((day, dayRecords) in byDay) {
             val text =
                 buildString {
-                    append("timestamp,symbol,price,volume,bid,ask,bidVolume,askVolume\n")
-                    for (record in dayRecords) {
+                    append(CsvTickFeed.ARRIVAL_HEADER).append('\n')
+                    for (record in dayRecords.sortedWith(ARRIVAL_ORDER)) {
                         val tick = record.tick
                         append(tick.timestamp).append(',').append(bare).append(',')
                         append(tick.price.toPlainString()).append(',')
@@ -59,7 +62,8 @@ internal class GoldenReplayStoreWriter(
                         append(tick.bid?.toPlainString().orEmpty()).append(',')
                         append(tick.ask?.toPlainString().orEmpty()).append(',')
                         append(tick.bidVolume?.toPlainString().orEmpty()).append(',')
-                        append(tick.askVolume?.toPlainString().orEmpty()).append('\n')
+                        append(tick.askVolume?.toPlainString().orEmpty()).append(',')
+                        append(record.receivedMs?.toString().orEmpty()).append('\n')
                     }
                 }
             val file = dir.resolve("$day.csv")
@@ -105,4 +109,9 @@ internal class GoldenReplayStoreWriter(
         val symbol: String,
         val window: TimeWindow,
     )
+
+    private companion object {
+        /** Live processing order: arrival time (the journal record's), then journal sequence; a warmup tick by its own time. */
+        val ARRIVAL_ORDER: Comparator<RecordedTick> = compareBy({ it.receivedMs ?: it.tick.timestamp }, { it.sequence })
+    }
 }

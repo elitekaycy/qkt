@@ -26,6 +26,24 @@ class GoldenVenueTickStoreTest {
     }
 
     @Test
+    fun `each live tick is written with when it reached qkt`(
+        @TempDir tmp: Path,
+    ) {
+        val received =
+            """{"v":1,"ts":1900,"seq":1,"eventType":"com.qkt.events.TickEvent","symbol":"EXNESS:XAUUSD",""" +
+                """"tick":{"timestampMs":1000,"price":"2000","bid":"2000","ask":"2000"}}"""
+
+        val root = captureAndMaterialize(tmp, listOf(received, journalTick(2, 2_000, "EXNESS:XAUUSD", "2001")), 1_950)
+
+        assertThat(Files.readAllLines(root.resolve("ticks/EXNESS/XAUUSD/1970-01-01.csv")))
+            .containsExactly(
+                "timestamp,symbol,price,volume,bid,ask,bidVolume,askVolume,receivedMs",
+                "1000,XAUUSD,2000,,2000,2000,,,1900",
+                "2000,XAUUSD,2001,,2001,2001,,,2000",
+            )
+    }
+
+    @Test
     fun `a bare symbol only one venue quotes is written to the bare store too`(
         @TempDir tmp: Path,
     ) {

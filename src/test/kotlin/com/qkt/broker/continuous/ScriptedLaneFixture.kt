@@ -6,6 +6,7 @@ import com.qkt.common.FixedClock
 import com.qkt.common.MonotonicSequenceGenerator
 import com.qkt.common.Side
 import com.qkt.derivatives.futures.ContinuousChains
+import com.qkt.derivatives.futures.RollQuoteTaps
 import com.qkt.events.BrokerEvent
 import com.qkt.events.TickEvent
 import com.qkt.execution.OrderRequest
@@ -37,6 +38,7 @@ internal class ScriptedLaneFixture(
     startMs: Long = Instant.parse("2024-09-19T07:45:00Z").toEpochMilli(),
     private val rollPriceBand: BigDecimal? = null,
     laneVenue: ((EventBus, FixedClock, PositionProvider) -> Broker)? = null,
+    val taps: RollQuoteTaps? = null,
 ) {
     private fun ms(iso: String) = Instant.parse(iso).toEpochMilli()
 
@@ -114,6 +116,7 @@ internal class ScriptedLaneFixture(
             ContractFillLog(),
             LaneStateStore(persistor, "owner"),
             rollPriceBand,
+            rollQuoteTaps = taps,
         ) { b, _, p ->
             venueBus = b
             lanePositions = p
@@ -140,8 +143,11 @@ internal class ScriptedLaneFixture(
         ),
     )
 
-    /** This lane after a restart at [atMs]: a new session on what this one saved. */
-    fun restart(atMs: Long = clock.time): ScriptedLaneFixture = ScriptedLaneFixture(persistor, atMs, rollPriceBand)
+    /** This lane after a restart at [atMs]: a new session on what this one saved, its old contracts heard by [taps]. */
+    fun restart(
+        atMs: Long = clock.time,
+        taps: RollQuoteTaps? = null,
+    ) = ScriptedLaneFixture(persistor, atMs, rollPriceBand, taps = taps)
 
     fun slice(
         id: String,
