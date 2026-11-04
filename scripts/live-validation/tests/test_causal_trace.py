@@ -136,6 +136,26 @@ class CausalTraceTest(unittest.TestCase):
 
         self.assertEqual([e["path"] for e in live["o-1"]["transport"]], ["/v1/orders"])
 
+    def test_a_realized_gap_is_explained_only_when_the_explained_prices_add_up_to_it(self):
+        def order(oid, side, live_price, replay_price, live_realized, replay_realized, ts):
+            fill = {"step": "fill", "index": 0, "match": False, "explained": {"cause": "venue-latency"},
+                    "live": {"ts": ts, "side": side, "price": live_price, "quantity": "0.01", "contractSize": "1"},
+                    "replay": {"price": replay_price}}
+            accounted = {"step": "accounted", "index": 0, "match": live_realized == replay_realized,
+                         "live": {"netRealized": live_realized}, "replay": {"netRealized": replay_realized}}
+            return {"orderId": oid, "symbol": "EXNESS:BTCUSD", "steps": [fill, accounted]}
+
+        right = [order("o-1", "BUY", "77050.69", "77054.59", "0", "0", 1),
+                 order("o-2", "SELL", "77052.19", "77054.82", "0.015", "0.0023", 2)]
+        wrong = [order("o-1", "BUY", "77050.69", "77054.59", "0", "0", 1),
+                 order("o-2", "SELL", "77052.19", "77054.82", "0.016", "0.0023", 2)]
+
+        ct.explain_realized(right)
+        ct.explain_realized(wrong)
+
+        self.assertEqual(right[1]["steps"][1]["explained"]["cause"], "follows-explained-fill")
+        self.assertNotIn("explained", wrong[1]["steps"][1])
+
     def test_the_cli_writes_the_trace_and_exits_non_zero_on_a_mismatch(self):
         live_bundle(self.golden, price="77040.00")
         replay_report(self.report)
