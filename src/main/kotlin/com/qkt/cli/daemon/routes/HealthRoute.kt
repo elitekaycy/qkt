@@ -36,6 +36,7 @@ internal fun handleHealth(
                 """"haltReason":${haltReason?.let { routeJson.encodeToString(String.serializer(), it) } ?: "null"},""" +
                 """"lastEventAgeMs":${ageMs ?: "null"},""" +
                 """"inboundQueueDepth":${h.live.inboundQueueDepth()},""" +
+                renderEngineStallFields(h.live.engineStalls()) +
                 """"droppedTicks":${h.live.droppedTicks}""" +
                 renderAuditJournalFields(h.live.auditJournalHealth()) +
                 "}"

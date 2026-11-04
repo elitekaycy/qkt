@@ -18,18 +18,13 @@ interface LiveSessionHandle :
     HaltReads,
     FeedLossReads,
     DailyLimitReads,
+    EngineLoadReads,
     StreamStopControl {
     /** `true` while the session's tick loop is running. */
     val running: Boolean
 
     /** Count of ticks dropped because the strategy callback couldn't keep up. */
     val droppedTicks: Long
-
-    /**
-     * Depth of the inbound engine queue (control events + buffered ticks). A growing
-     * value flags a stalled or slow engine thread before it becomes dropped ticks.
-     */
-    fun inboundQueueDepth(): Int = 0
 
     /** Symbols whose market data is currently stale, with quote age in ms (#395). */
     fun staleSymbols(): Map<String, Long> = emptyMap()

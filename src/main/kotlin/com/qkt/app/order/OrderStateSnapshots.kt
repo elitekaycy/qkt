@@ -71,12 +71,12 @@ internal class OrderStateSnapshots(
         persistor.savePendingOrdersSync(strategyId, active)
     }
 
-    /** Flushes HWM-only trailing-stop changes at the live heartbeat cadence. */
+    /** Flushes HWM-only trailing-stop changes at the live heartbeat cadence: only the strategies whose stops moved. */
     fun persistTrailingStateIfDirty() {
         if (!stops.dirty) return
         runCatching {
             for ((strategyId, snapshot) in trailingStopSnapshot(book.orders, stops)) {
-                persistor.saveTrailingStops(strategyId, snapshot)
+                persistIfChanged(strategyId, TRAILING_SLOT, snapshot, persistor::saveTrailingStops)
             }
             stops.dirty = false
         }

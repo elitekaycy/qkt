@@ -61,7 +61,10 @@ qkt fetch BINANCE_UM:BTCUSDT_240927 --tf 15m --from 2024-06-01 --to 2024-09-27
 
 For a continuous stream, give the root a roll policy in `instruments.yaml` and
 measure its rolls once with `qkt fetch BINANCE_UM:BTCUSDT --rolls` (`--tf 1d` for
-a root with only daily bars). The series is adjusted forward from the first
+a root with only daily bars). The fetch records only rolls whose minute has passed;
+a roll still ahead is priced at its own minute by the live session that reaches it,
+from the venue's bars, and appended to the history (a session ignores any record that
+was dated after it started, as an older fetch wrote them). The series is adjusted forward from the first
 measured roll; `roll.anchor` keeps a later contract at raw prices instead, for a
 panama series that would otherwise fall below zero (crude across 2020). Live, a
 continuous stream trades on a `type: gateway` account (parity rows A53-A57). A strategy whose

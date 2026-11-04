@@ -17,6 +17,16 @@ import java.time.ZoneOffset
 internal object RollPricing {
     private const val DAY_MS = 86_400_000L
     private const val DAILY_LOOKBACK_DAYS = 7L
+    private const val ROLL_MINUTE_MS = 60_000L
+
+    /**
+     * Whether a roll at [atMs] can be measured at [nowMs]: its own minute has passed, so the bars it is priced from
+     * are closed. A roll still ahead has no price yet; one priced early would take the last bars before it.
+     */
+    fun hasPassed(
+        atMs: Long,
+        nowMs: Long,
+    ): Boolean = nowMs >= atMs + ROLL_MINUTE_MS
 
     /** The UTC days a roll at [atMs] is priced from with bars [barMs] long, newest first. */
     fun days(
