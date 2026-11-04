@@ -211,7 +211,10 @@ venue (`scripts/live-validation/lib/cross_venue.py`):
   replay, agrees step by step at the exact price (`scripts/live-validation/lib/causal_trace.py`): the decision bar,
   the approved request, each fill's side, size, price and costs, the realized PnL it booked. A price difference passes
   only with a recorded cause (`venue-latency`: the replay filled at the price the venue was asked for, the venue at a
-  quote it captured after the request), a realized difference only when it is exactly what those prices add up to.
+  quote it captured after the request, no later than its venue kind's latency bound and no further than its distance
+  bound, `VENUE_LATENCY_BOUNDS`), a realized difference only when it is exactly what those prices add up to. The
+  replay processes the captured ticks in the order they reached qkt, so orders decided on one bar close for several
+  venues take the ids live gave them and orders are joined by id alone.
   The replay charges each gateway root the fee rate its venue charged live (`feeRates` in `result.json`), not the
   case's assumption. The trace is `evidence/trace.json`.
 

@@ -120,7 +120,8 @@ under `gateway/`, each gateway account's transport under `venues/<LABEL>/`) is j
 `full-ticks-mt5` replay report, and the decision bar, the approved request, each fill's side, size, price and costs
 and the realized PnL it booked are compared exactly. A price difference passes only with a recorded cause: the replay
 filled at the price the venue was asked for and the venue filled at a quote it captured after the request
-(`venue-latency`); a realized difference passes only when it is exactly what those explained prices add up to. Every
+(`venue-latency`), within its venue kind's bounds on latency after the decision and price distance from the replay
+(`VENUE_LATENCY_BOUNDS`: MT5 2500 ms and 5 bps, a gateway 1000 ms and 3 bps, recorded in the trace); a realized difference passes only when it is exactly what those explained prices add up to. Every
 other difference, and an order on one side only, is a parity mismatch: the trace's count is `parity.parityMismatches`,
 and the verifier refuses a bundle whose trace and parity disagree.
 
