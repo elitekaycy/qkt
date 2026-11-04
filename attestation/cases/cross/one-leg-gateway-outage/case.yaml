@@ -44,4 +44,5 @@ assertions:
 - venue-fills-equal-qkt-fills
 - no-duplicate-order
 - replay-same-fills-by-venue
+- replay-causal-trace
 budget_seconds: 600

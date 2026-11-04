@@ -6,11 +6,15 @@ insights-attribution scenario.
 
 CATALOG_EVIDENCE is lib/attest_resume.py's manifest: every required case and stage, the attempts that led there and the
 build they are bound to; a resumed run's bundle is judged on it exactly as a straight run's.
-Writes the seven artifacts `verify-paper-soak-attestation.py` requires plus `attestation.json`.
+Writes the eight artifacts `verify-paper-soak-attestation.py` requires plus `attestation.json`; the `trace` artifact
+is each case's causal chain, live against its full-ticks-mt5 replay (lib/causal_trace.py), and its unexplained
+differences are parity.parityMismatches.
 Every count is derived from the wave's own evidence; nothing is supplied by the caller. It
 refuses a wave whose commit is not TESTING_SHA, a case that did not pass, or a log that
 records an unknown order outcome."""
 import hashlib, json, sys, zipfile, glob, os, re, datetime, math
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "lib"))
+import causal_trace
 wave, ins, out, image, sha, catalog_evidence = sys.argv[1:7]
 suite = json.load(open(f"{wave}/suite.json"))
 assert suite["qktCommit"] == sha, (suite["qktCommit"], sha)
@@ -46,6 +50,13 @@ for cdir in sorted(glob.glob(f"{wave}/cases/*")):
                       "variant": sc.get("variant") or next((c.get("variant") for c in suite.get("cases", []) if c.get("id") == cid), None),
                       "magic": sc.get("magic")})
 assert unknown == 0, f"unknown outcomes in wave logs: {unknown}"
+traces = {}
+for cid in cases:
+    t = causal_trace.trace(f"{wave}/cases/{cid}/armed-live/evidence/golden.zip",
+                           f"{wave}/cases/{cid}/armed-live/replay/reports/full-ticks-mt5")
+    traces[cid] = {k: t[k] for k in ("parityMismatches", "mismatches", "explained", "orders")}
+trace_doc = {"schema": "qkt-attestation-trace-v1", "qktCommit": sha,
+             "parityMismatches": sum(t["parityMismatches"] for t in traces.values()), "cases": traces}
 assert len(cases) == 4
 # insights
 ir = J(glob.glob(f"{ins}/evidence/result.json")[0]) if not os.path.exists(f"{ins}/result.json") else J(f"{ins}/result.json")
@@ -57,11 +68,12 @@ parity = {"schema":"qkt-live-parity-v1","source":f"exact-testing-{sha[:8]}-{ex['
   "durationMinutes":dur_min,"timeframesTested":["1m","5m"],"strategiesTested":4,"indicatorsTested":4,"mathScenariosTested":4,
   "dslScenariosTested":8,"orderTypesTested":3,"totalTicks":totals["ticks"],"totalBars":totals["bars"],"fills":totals["fills"],
   "parityComparisons":4,"insightsEvents":ins_events,"warmupBars":totals["warmupBars"],"warmupTicks":totals["warmupTicks"],
-  "barBoundaryTransitions":totals["transitions"],"parityMismatches":0,"unexplainedRejections":0,"unexplainedOrderOutcomes":0,
+  "barBoundaryTransitions":totals["transitions"],"parityMismatches":trace_doc["parityMismatches"],"unexplainedRejections":0,"unexplainedOrderOutcomes":0,
   "cases":cases,"derivations":{"totalTicks":"sum of armed-live golden.ticks","totalBars":"sum of armed-live golden.candles",
   "warmupTicks":"sum of armed-live golden.warmupTicks","warmupBars":"sum of 'warmup: seeded hub ... bars=N' in wave daemon logs (logs/daemon.log per readonly and armed-live case)",
   "barBoundaryTransitions":"sum of readonly golden.streamCandles",
   "insightsEvents":"sum of insights telemetry ruleDecisions+submitted+accepted+filled+trades+fillAccounted",
+  "parityMismatches":"sum of the trace artifact's unexplained live/replay differences per engine order (lib/causal_trace.py)",
   "note":f"wave9 on testing {sha[:8]}; clean-rebuilt jar verified free of untracked classes; assembled by assemble_attestation.py"}}
 coverage = {"schema":"qkt-live-coverage-v1","qktCommit":sha,"image":image,"profile":profile,"cases":case_meta,"capabilityCatalog":suite["capabilityCatalog"]}
 acct = suite["account"]; final_acct = J(sorted(glob.glob(f"{wave}/cases/*/armed-live/evidence/gateway-account-final.json"))[-1])
@@ -76,9 +88,9 @@ open(f"{out}/paper-soak-catalog.json","w").write(json.dumps(evidence,indent=1)+"
 open(f"{out}/paper-soak-health.jsonl","w").write("\n".join(health_lines)+"\n")
 with zipfile.ZipFile(f"{out}/paper-soak-golden.zip","w",zipfile.ZIP_STORED) as z:
     for cid in cases: z.write(f"{wave}/cases/{cid}/armed-live/evidence/golden.zip", f"{cid}/golden.zip")
-for name,obj in (("paper-soak-parity.json",parity),("paper-soak-coverage.json",coverage),("paper-soak-reconciliation.json",recon),("paper-soak-insights.json",insights)):
+for name,obj in (("paper-soak-parity.json",parity),("paper-soak-coverage.json",coverage),("paper-soak-reconciliation.json",recon),("paper-soak-insights.json",insights),("paper-soak-trace.json",trace_doc)):
     open(f"{out}/{name}","w").write(json.dumps(obj,indent=1)+"\n")
-arts = {"health":"paper-soak-health.jsonl","journal":"paper-soak-golden.zip","reconciliation":"paper-soak-reconciliation.json","coverage":"paper-soak-coverage.json","parity":"paper-soak-parity.json","insights":"paper-soak-insights.json","catalog":"paper-soak-catalog.json"}
+arts = {"health":"paper-soak-health.jsonl","journal":"paper-soak-golden.zip","reconciliation":"paper-soak-reconciliation.json","coverage":"paper-soak-coverage.json","parity":"paper-soak-parity.json","insights":"paper-soak-insights.json","catalog":"paper-soak-catalog.json","trace":"paper-soak-trace.json"}
 att = {"schemaVersion":1,"attestationType":"live-parity","runId":ex["runId"],"inputFingerprint":ex["inputFingerprint"],"testingSha":sha,"image":image,
   "accountMode":"demo","canaryStrategy":"generated-parity-wave-four-case","status":"pass","startedAtUtc":started,"completedAtUtc":completed,
   "durationHours":max(1,math.ceil(dur_min/60)),"tradingDays":1,

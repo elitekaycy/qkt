@@ -200,10 +200,8 @@ class DaemonCommand(
             com.qkt.observe
                 .JournalRetention(
                     roots =
-                        listOf(
-                            stateDir.stateRoot.resolve("audit-journal"),
-                            stateDir.stateRoot.resolve("mt5-transport-journal"),
-                        ),
+                        com.qkt.observe.JournalRetention.STATE_JOURNAL_DIRS
+                            .map(stateDir.stateRoot::resolve),
                     retentionDays = cfg.journalRetentionDays,
                     clock = com.qkt.common.SystemClock(),
                     compressAfterDays = cfg.journalCompressAfterDays,

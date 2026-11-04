@@ -9,8 +9,9 @@ import java.nio.file.Path
 import java.time.Instant
 
 /**
- * Writes `golden-replay-manifest.json`: where the replay data came from, the replay window that
- * covers the live ticks, and how many bars each provenance contributed.
+ * Writes `golden-replay-manifest.json`: where the replay data came from, the replay window (opening on
+ * the first bar live evaluated, or on the bar holding the first live tick when nothing was evaluated),
+ * and how many bars each provenance contributed.
  */
 internal class GoldenReplayManifestWriter(
     private val bundle: Path,
@@ -30,7 +31,9 @@ internal class GoldenReplayManifestWriter(
                 .map { it.candle }
                 .filter { firstLiveMs >= it.startTime && firstLiveMs < it.endTime }
                 .map { it.startTime }
-        val fromMs = containingStarts.maxOrNull() ?: firstLiveMs
+        // Live decides from its first evaluated bar close; captured ticks before that bar only warm up,
+        // so the replay opens on that bar and never decides a close the starting daemon never saw.
+        val fromMs = capture.firstEvaluatedCandle?.startTime ?: containingStarts.maxOrNull() ?: firstLiveMs
         val toMs =
             maxOf(
                 lastLiveMs + 1L,

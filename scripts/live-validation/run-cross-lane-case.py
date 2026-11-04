@@ -26,9 +26,14 @@ and is flat (or the budget ends), sweeps only its own orders and holdings, and j
     risk-adding fill (other-venue-trades-during-kill-switch / -gateway-outage) and, a kill switch, its own venue
     still filled a reducing order (reducing-passes-during-kill);
   - replay-same-fills-by-venue (`replay: by-venue`): the session's golden capture (every venue's ticks as qkt
-    received them) replayed through one backtest, the MT5 leg on `--broker mt5-sim` and each perpetual leg on the
-    exchange simulator, makes the same fills on each venue, in order, on the same sides and sizes; each fill's price
-    difference is recorded, not judged.
+    received them, each venue in its own store) replayed through one backtest, the MT5 leg on `--broker mt5-sim` and
+    each perpetual leg on the exchange simulator, from the first bar the live session evaluated, makes the same fills
+    on each venue, in order, on the same sides and sizes;
+  - replay-causal-trace (`replay: by-venue`): every engine order's causal chain, live (engine journal, MT5 and gateway
+    transport) against the replay, agrees step by step at the exact price (lib/causal_trace.py): decision bar, risk
+    request, each fill's side, size, price and costs, and the realized PnL it booked. A price difference passes only
+    with a recorded cause (the venue filled at a quote it captured after the request); the replay charges each
+    gateway root the fee rate its venue charged live. The trace is written to OUT/evidence/trace.json.
 Writes OUT/result.json and prints one `passed|failed <id> ...` line; exits non-zero on failure.
 """
 import argparse, fcntl, glob, importlib.util, json, os, re, shutil, signal, subprocess, sys, time, types
@@ -39,6 +44,7 @@ import yaml
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "lib"))
+import causal_trace  # noqa: E402
 import cross_venue as cv  # noqa: E402
 import derivatives_drills  # noqa: E402
 
@@ -431,7 +437,7 @@ class CrossRun:
         except RuntimeError as error:
             return [f"replay-same-fills-by-venue: capture or materialize failed: {error}"]
         manifest = json.load(open(f"{data}/golden-replay-manifest.json"))
-        missing = [s for s in self.case["symbols"] if not os.path.isdir(f"{data}/symbols/{s.split(':', 1)[1]}")]
+        missing = [s for s in self.case["symbols"] if not cv.captured_ticks(data, s)]
         if missing:
             return [f"replay-same-fills-by-venue: the capture holds no ticks of {missing}"]
         if os.path.isdir(f"{self.out}/data/contracts"):
@@ -441,27 +447,39 @@ class CrossRun:
             if os.path.exists(path):
                 for key, value in (yaml.safe_load(open(path)) or {}).items():
                     merged.setdefault(key, []).extend(value or [])
+        live_orders, _ = causal_trace.live_chains(f"{ev}/golden.zip")
+        fees = cv.venue_fee_rates(live_orders, merged.get("futures") or [])
+        for root in merged.get("futures") or []:  # the fee each venue charged, not the one the case assumed
+            if root["root"] in fees:
+                root["takerFeeRate"] = fees[root["root"]]
         yaml.safe_dump(merged, open(f"{data}/instruments.yaml", "w"), sort_keys=False)
         window = manifest["replayWindow"]
         funding = []
         for leg in self.gateways():
             symbols = sorted({f["symbol"] for f in live if f["venue"] == leg.label})
             funding = funding or leg.replay_funding(data, symbols, window["fromMs"], window["toMs"])
-        report = f"{self.out}/replay.log"
+        report, report_dir = f"{self.out}/replay.log", f"{self.out}/replay-report"
         with open(report, "w") as out:
             subprocess.call([self.cli, "backtest", f"{self.out}/strategies/{self.strategy}.qkt", "--from",
                              window["fromUtc"], "--to", window["toUtc"], "--data-root", data, "--no-fetch",
                              "--allow-incomplete", "--config", f"{self.out}/qkt.config.yaml", "--instruments",
-                             f"{data}/instruments.yaml", "--broker", "mt5-sim", "--verbose", "--json", *funding],
+                             f"{data}/instruments.yaml", "--broker", "mt5-sim", "--report-dir", report_dir,
+                             "--verbose", "--json", *funding],
                             stdout=out, stderr=subprocess.STDOUT,
                             env=dict(self.env(), QKT_BROKER_API_KEY="offline", QKT_STATE_DIR=f"{self.out}/replay-state"))
         replayed = cv.parse_fills(open(report).read())
         problems, drift = cv.judge_replay_by_venue(live, replayed, self.labels)
-        self.evidence["replay"] = {"window": window, "fills": replayed, "priceDrift": drift, "funding": funding}
+        self.evidence["replay"] = {"window": window, "fills": replayed, "priceDrift": drift, "funding": funding,
+                                   "feeRates": fees}
         if not replayed:
             problems.append(f"replay-same-fills-by-venue: the replay filled nothing: "
                             f"{open(report).read().strip().splitlines()[-1:]}")
-        return problems
+            return problems
+        trace = causal_trace.trace(f"{ev}/golden.zip", report_dir)
+        json.dump(trace, open(f"{ev}/trace.json", "w"), indent=1, default=str)
+        self.evidence["replay"]["trace"] = {"path": "evidence/trace.json", "parityMismatches": trace["parityMismatches"],
+                                            "explained": trace["explained"]}
+        return problems + cv.judge_trace(trace)
 
     def cleanup(self):
         """Releases every kill switch, stops the daemon, closes the proxies and sweeps every venue it owns."""

@@ -34,4 +34,5 @@ assertions:
 - realized-total-equals-venues
 - no-engine-fault
 - replay-same-fills-by-venue
+- replay-causal-trace
 budget_seconds: 420

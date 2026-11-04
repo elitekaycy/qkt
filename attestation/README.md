@@ -200,12 +200,21 @@ venue (`scripts/live-validation/lib/cross_venue.py`):
   was down every other venue still made a risk-adding fill; a kill switch also needs `reducing-passes-during-kill`, a
   reducing fill on the killed venue inside the window;
 - `replay-same-fills-by-venue` (`replay: by-venue`): the session's golden capture, every venue's ticks as qkt received
-  them, replayed through one backtest (the MT5 leg on `--broker mt5-sim`, a perpetual leg on the exchange simulator)
-  makes the same fills on each venue, in order, side and size. Prices are recorded per venue as drift, not judged.
+  them (each venue in its own store, `ticks/<LABEL>/<SYMBOL>`), replayed through one backtest (the MT5 leg on
+  `--broker mt5-sim`, a perpetual leg on the exchange simulator) from the first bar the live session evaluated, makes
+  the same fills on each venue, in order, side and size;
+- `replay-causal-trace` (`replay: by-venue`): every engine order's causal chain, live (engine journal, the MT5
+  transport and each gateway account's REST exchanges and stream events, `venues/<LABEL>/` in the bundle) against the
+  replay, agrees step by step at the exact price (`scripts/live-validation/lib/causal_trace.py`): the decision bar,
+  the approved request, each fill's side, size, price and costs, the realized PnL it booked. A price difference passes
+  only with a recorded cause (`venue-latency`: the replay filled at the price the venue was asked for, the venue at a
+  quote it captured after the request), a realized difference only when it is exactly what those prices add up to.
+  The replay charges each gateway root the fee rate its venue charged live (`feeRates` in `result.json`), not the
+  case's assumption. The trace is `evidence/trace.json`.
 
-What the replay cannot do yet: ticks are stored by bare symbol, so two venues quoting one name (`EXNESS:AAPL` beside
-`ALPACA:AAPL`) cannot be captured or replayed; the gateway leg's transport (requests, acks) is not captured; and no
-step of the causal chain from signal to fill is compared. The follow-up issue tracks exact-price causal-chain replay.
+`same-symbol-two-venues` (matrix K01) trades the same perpetual on two gateway venues (`PAPER` and `DERIBIT`) beside
+the MT5 leg, so it needs a second venue flag, `--cross-venue DERIBIT=URL@LOGIN`, with its trader token in
+`QKT_CROSS_DERIBIT_KEY` (the attestation profile's `cross_venues` lists both).
 
 Run it with `run-attestation-catalog.sh --lanes ...,cross --cross-venue PAPER=http://127.0.0.1:8460@paper`, or name
 `cross_venues="PAPER=http://127.0.0.1:8460@paper"` in the attestation profile. The gateway

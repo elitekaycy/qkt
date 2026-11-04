@@ -37,6 +37,8 @@ WAVE_STUB = textwrap.dedent('''\
         open(f"{c}/evidence/health.jsonl", "w").write(json.dumps({"perStrategy": [{"droppedTicks": 0}]}) + "\\n")
         os.makedirs(f"{c}/logs"); open(f"{c}/logs/daemon.log", "w").write("warmup: seeded hub x bars=5\\n")
         with zipfile.ZipFile(f"{c}/armed-live/evidence/golden.zip", "w") as bundle: bundle.writestr("x", "y")
+        report = f"{c}/armed-live/replay/reports/full-ticks-mt5"; os.makedirs(report)
+        open(f"{report}/orders.jsonl", "w").close(); open(f"{report}/trades.csv", "w").write("timestamp,brokerOrderId\\n")
     dump(f"{out}/suite.json", {"qktCommit": sha, "suiteId": "s", "createdAt": z(now - dt.timedelta(minutes=15)),
          "account": {"login": 1, "server": "S", "tradeMode": 0, "currency": "USD", "balance": "1", "leverage": 1},
          "capabilityCatalog": {}, "execution": {"mode": "live", "cases": 4, "completedAt": z(now), "runId": "parity-" + os.urandom(6).hex(),

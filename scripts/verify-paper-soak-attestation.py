@@ -23,6 +23,7 @@ REQUIRED_ARTIFACTS = (
     "parity",
     "insights",
     "catalog",
+    "trace",
 )
 # Lanes a release cannot leave out; the rest are the profile's. Shadow runs inside the wave, whose evidence is the bundle.
 CORE_LANES = ("orders", "risk", "book", "engine", "daemon", "stress")
@@ -175,6 +176,19 @@ def verify_artifacts(document: dict[str, object], attestation: Path) -> None:
         digest = hashlib.sha256(artifact.read_bytes()).hexdigest()
         if digest != artifact_hashes[field]:
             fail(f"{field} artifact SHA-256 mismatch")
+    verify_trace(document, attestation.parent / str(artifacts["trace"]))
+
+
+def verify_trace(document: dict[str, object], path: Path) -> None:
+    """The causal-chain trace (live against replay, per engine order) is what parity.parityMismatches counts."""
+    trace = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(trace, dict) or trace.get("schema") != "qkt-attestation-trace-v1":
+        fail("trace artifact has the wrong schema")
+    counted = require_int(trace.get("parityMismatches"), "trace.parityMismatches")
+    parity = document["parity"]
+    assert isinstance(parity, dict)
+    if counted != parity.get("parityMismatches"):
+        fail(f"trace artifact counts {counted} parity mismatches; parity.parityMismatches is {parity.get('parityMismatches')}")
 
 
 def binding_sha(binding: object) -> str:

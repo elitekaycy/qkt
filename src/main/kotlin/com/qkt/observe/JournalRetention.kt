@@ -2,6 +2,7 @@ package com.qkt.observe
 
 import com.qkt.common.Clock
 import com.qkt.common.OwnerOnly
+import com.qkt.connectivity.transport.TransportJournalDirs
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
@@ -137,10 +138,14 @@ class JournalRetention(
         executor.shutdownNow()
     }
 
-    private companion object {
+    companion object {
+        /** The state-root directories holding day-file journals: engine audit, MT5 and gateway transport. */
+        val STATE_JOURNAL_DIRS: List<String> =
+            listOf("audit-journal", TransportJournalDirs.MT5, TransportJournalDirs.GATEWAY)
+
         private val DAY_FILE = Regex("""^[a-z]+-(\d{4}-\d{2}-\d{2})\.(jsonl|jsonl\.gz|dropped)$""")
 
-        fun dayOf(fileName: String): LocalDate? {
+        private fun dayOf(fileName: String): LocalDate? {
             val match = DAY_FILE.matchEntire(fileName) ?: return null
             return runCatching { LocalDate.parse(match.groupValues[1]) }.getOrNull()
         }
