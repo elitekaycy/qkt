@@ -109,6 +109,7 @@ class RunnerWaitsBeforeItStartsTest(LiveEnvironment):
             raise Reached()
 
         run.get = get
+        run.venue_probes, run.await_venue = (lambda: []), (lambda probes: None)  # the venue is up (test_venue_outages)
         with mock.patch("time.time", clock.time), mock.patch("time.sleep", clock.sleep), \
                 mock.patch("sys.stderr", new=open(os.devnull, "w")):
             with self.assertRaises(Reached):
@@ -125,6 +126,7 @@ class RunnerWaitsBeforeItStartsTest(LiveEnvironment):
             raise Reached()
 
         run.preflight = preflight
+        run.await_venues = lambda text: None  # the venues are up (test_venue_outages)
         with mock.patch("time.time", clock.time), mock.patch("time.sleep", clock.sleep), \
                 mock.patch("sys.stderr", new=open(os.devnull, "w")):
             with self.assertRaises(Reached):

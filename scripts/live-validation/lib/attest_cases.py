@@ -51,6 +51,22 @@ def current_run(out):
     return int(open(path).read().strip() or 1) if os.path.exists(path) else 1
 
 
+def read_result(case_dir):
+    try:
+        with open(os.path.join(case_dir, "result.json")) as stream:
+            return json.load(stream)
+    except (OSError, ValueError):
+        return {}
+
+
+def venue_evidence(result):
+    """What the attempt recorded of its venue: the waits before it started, the outage sampled during it, the earlier
+    runs' leftovers it swept first. Kept in the attempt's ledger entry and the bundle's catalog evidence."""
+    keys = {"waits": "venueWaits", "outage": "venueOutage", "leftoversSwept": "leftoversSwept",
+            "sessionClosed": "sessionClosed"}
+    return {k: result[v] for k, v in keys.items() if result.get(v)}
+
+
 def read_problems(case_dir):
     path = os.path.join(case_dir, "result.json")
     try:
@@ -80,7 +96,8 @@ def record(a):
         status = "passed" if passed else "failed"
         if wrote_none:
             problems = problems or ["the case wrote no result"]
-        cause = None if passed else classify.classify(problems, tail)
+        cause = None if passed else (classify.venue_class(read_result(a.dir), problems, tail)
+                                     or classify.classify(problems, tail))
         summary = "; ".join(problems) if problems and not passed else (tail[-1] if tail else "")
     run = current_run(a.out)
     earlier = attempts_of(a.out, a.name)
@@ -93,6 +110,9 @@ def record(a):
     binding_path = os.path.join(a.out, "binding.json")
     if os.path.exists(binding_path):
         entry["bindingSha256"] = binding_sha(json.load(open(binding_path)))
+    venue = venue_evidence(read_result(a.dir))
+    if venue:
+        entry["venue"] = venue
     if retry:
         entry["retryAfterSeconds"] = delay
     os.makedirs(os.path.join(a.out, "attempts"), exist_ok=True)
@@ -176,6 +196,20 @@ def finalize(a):
     for item in runs:
         if item.get("retried"):
             print(f"  RETRIED {item['name']}: first attempt: {item['firstAttempt']}")
+    for item in runs:
+        for e in item["attempts"]:
+            venue = e.get("venue") or {}
+            for wait in venue.get("waits") or []:
+                print(f"  VENUE-WAIT {item['name']} attempt {e['attempt']}: {wait.get('venue')} unavailable "
+                      f"{wait.get('seconds')}s from {wait.get('from')} ({wait.get('reason')})"
+                      + (" - past the maximum" if wait.get("exceeded") else ""))
+            if venue.get("outage") and e.get("class") == classify.VENUE_OUTAGE:
+                o = venue["outage"]
+                print(f"  VENUE-OUTAGE {item['name']} attempt {e['attempt']}: {o.get('unavailableSamples')} of "
+                      f"{o.get('samplesTaken')} samples unavailable {o.get('from')}..{o.get('to')} ({o.get('reason')}); "
+                      "rerun without spending an attempt")
+            if venue.get("leftoversSwept"):
+                print(f"  SWEPT {item['name']} attempt {e['attempt']}: {json.dumps(venue['leftoversSwept'])[:300]}")
     for item in runs:
         if item["status"] != "passed":
             print(f"  FAILED {item['name']} [{item.get('class')}]: {item['summary']}")

@@ -6,6 +6,13 @@ Three causes, judged from the case's own problems and its log's tail:
   behaviour       anything else, above all a failed assertion. It is the default: an unknown message is never
                   excused as the network's fault, and one assertion among transport errors makes it behaviour.
 A fourth, session, is set by the runner when a session-bound case could not run because the market closed.
+Two more come only from a gateway lane case's recorded venue evidence (lib/venue_health.py), never from its text:
+  venue-outage      the attempt failed while samples taken during it show the venue unavailable, and every problem is
+                    what an outage causes (a transport error, too few fills, not flat, a sweep that could not finish).
+                    It reruns once the venue is back without spending the case's other budgets (bounded by
+                    VENUE_RERUNS). A wrong number, a failed replay or drill is behaviour, outage or not;
+  venue-unavailable the venue stayed unavailable past the profile's wait maximum before the case could start: final, so
+                    a resumed release (lib/attest_resume.py) reruns only such cases once the venue is back.
 Retrying only ever re-runs the whole case with every assertion: no class can turn a failure into a pass.
 """
 import os
@@ -15,9 +22,13 @@ INFRASTRUCTURE = "infrastructure"
 ENVIRONMENT = "environment"
 BEHAVIOUR = "behaviour"
 SESSION = "session"
+VENUE_OUTAGE = "venue-outage"
+VENUE_UNAVAILABLE = "venue-unavailable"
 
 BEHAVIOUR_RETRIES = 1
 INFRASTRUCTURE_BACKOFF_SECONDS = (30, 60, 120)
+VENUE_RERUNS = 8  # attempts an outage may void in one run; each next one first waits for the venue (venue_health)
+VENUE_RERUN_DELAY_SECONDS = 60
 
 _INFRA = re.compile(
     r"timed out|TimeoutError|Connection refused|Connection reset|Remote end closed|RemoteDisconnected"
@@ -47,6 +58,28 @@ def _line_class(line, log_tail):
     return BEHAVIOUR
 
 
+# What a venue outage itself causes, beside transport errors: the case could not trade, close, or sweep in time.
+_OUTAGE_EFFECT = re.compile(r"^(expected \d+ fills within the budget, saw \d+|flat-by-strategy:|sweep:)")
+
+
+def venue_class(result, problems, log_tail=()):
+    """SESSION, VENUE_UNAVAILABLE or VENUE_OUTAGE when the attempt's own recorded evidence ([result]'s `sessionClosed`:
+    a venue wait took a session-bound case past its window; `venueWaits`; `venueOutage`) says so, else None. The
+    problems' text alone never makes any of them."""
+    result = result or {}
+    if result.get("sessionClosed"):
+        return SESSION
+    if any(w.get("exceeded") for w in result.get("venueWaits") or []):
+        return VENUE_UNAVAILABLE
+    outage = result.get("venueOutage") or {}
+    if not outage.get("unavailableSamples"):
+        return None
+    lines = [p for p in problems if p and p.strip()]
+    if lines and all(_OUTAGE_EFFECT.search(line) or _line_class(line, log_tail) == INFRASTRUCTURE for line in lines):
+        return VENUE_OUTAGE
+    return None
+
+
 def classify(problems, log_tail=()):
     """The class of a failed attempt, from its problems (or its last log line when it wrote none)."""
     lines = [p for p in problems if p and p.strip()] or list(log_tail)[-1:]
@@ -63,6 +96,10 @@ def next_step(cause, earlier_causes):
     """(retry?, seconds to wait first), given this run's earlier failed attempts of the case."""
     if cause == BEHAVIOUR:
         return earlier_causes.count(BEHAVIOUR) < BEHAVIOUR_RETRIES, 0
+    if cause == VENUE_OUTAGE:
+        delay = int(os.environ.get("QKT_ATTEST_VENUE_RERUN_DELAY", VENUE_RERUN_DELAY_SECONDS))
+        reruns = int(os.environ.get("QKT_ATTEST_VENUE_RERUNS", VENUE_RERUNS))
+        return earlier_causes.count(VENUE_OUTAGE) < reruns, delay
     if cause == INFRASTRUCTURE:
         used = earlier_causes.count(INFRASTRUCTURE)
         backoff = os.environ.get("QKT_ATTEST_RETRY_BACKOFF")  # the tests' way past the waits
