@@ -112,4 +112,26 @@ class AutoDeployRetrierTest {
         assertThat(retrier.pending()).isEmpty()
         assertThat(retrier.retryDue(900_000L)).isEmpty()
     }
+
+    @Test
+    fun `retryNow makes every held file due at once, as when its account answers again`() {
+        val clock = FixedClock(1_000L)
+        val deployed = mutableListOf<String>()
+        val retrier =
+            AutoDeployRetrier(
+                deploy = { name, _ -> deployed += name },
+                alreadyDeployed = { false },
+                clock = clock,
+                backoffMs = listOf(900_000L),
+                log = {},
+            )
+        retrier.schedule("soak_k33", file, "account alpaca is not verified")
+        retrier.close()
+        clock.advanceTo(5_000L)
+
+        retrier.retryNow()
+
+        assertThat(retrier.retryDue(clock.now())).containsExactly("soak_k33")
+        assertThat(deployed).containsExactly("soak_k33")
+    }
 }

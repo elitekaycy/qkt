@@ -3,6 +3,7 @@ package com.qkt.app
 import com.qkt.broker.Broker
 import com.qkt.broker.BrokerFactory
 import com.qkt.broker.CompositeBroker
+import com.qkt.broker.GatedBrokerFactory
 import com.qkt.broker.PaperBroker
 import com.qkt.broker.continuous.ContinuousContractBroker
 import com.qkt.broker.continuous.ContractFillLog
@@ -102,6 +103,8 @@ internal class SessionBrokers(
                 "Either fix the strategy's SYMBOLS prefix or add a `type: mt5` entry " +
                 "in qkt.config.yaml's brokers block for each missing prefix."
         }
+        // An account not verified yet (unreachable at daemon boot, #1642) refuses before any broker is built.
+        for (label in brokerSymbols.keys) (brokerFactories.getValue(label) as? GatedBrokerFactory)?.ensureOpen()
         // Single-strategy sessions (daemon path) propagate the strategy name so MT5 brokers
         // can correlate orphan recovery; multi-strategy sessions (LiveDemo, Main) pass null.
         val owningStrategy = strategies.singleOrNull()?.first

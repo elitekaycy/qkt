@@ -25,7 +25,7 @@ class AutoDeployRetrier(
     private val alreadyDeployed: (name: String) -> Boolean,
     private val clock: Clock = SystemClock(),
     private val backoffMs: List<Long> = DEFAULT_BACKOFF_MS,
-    private val log: (String) -> Unit = { System.err.println(it) },
+    private val log: (String) -> Unit = DaemonLog::line,
 ) : AutoCloseable {
     /** One file awaiting redeploy. */
     data class Pending(
@@ -72,6 +72,13 @@ class AutoDeployRetrier(
                     }
                 }
             }.sortedBy { it.nextAttemptAtMs }
+
+    /** Makes every pending file due now, e.g. once the account its strategy trades answers again (#1642). */
+    fun retryNow() {
+        val now = clock.now()
+        for ((name, entry) in pending) pending.replace(name, entry, entry.copy(nextAttemptAtMs = now))
+        start()
+    }
 
     /**
      * Run every retry due at [nowMs]. Returns the names that deployed. A name the operator

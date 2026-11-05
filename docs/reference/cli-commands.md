@@ -21,15 +21,30 @@ Every `qkt` subcommand. Run `qkt <command> --help` for the authoritative flag li
 | `qkt stop <name> [--flatten]` | Stop a strategy. Cascades for portfolios. `--flatten` cancels its working orders and closes its positions at market; a bracket entry that filled in part has its remainder cancelled and the filled part closed, with no stop or target sent for it. A standalone strategy's flatten is then confirmed against its book and, where the venue names its positions, the venue, for up to 2 minutes: a close the venue never took (a gateway outage) is sent again with growing gaps (1 s, 2 s, 4 s, up to 30 s). `stopped` is printed only when flat, with `"flat": true` in the answer; otherwise the command exits non-zero and says what is held and why (`"state": "not_flat"`, `"flat": false`, `held`, `detail`), though the strategy no longer trades. A holding on a [stream stopped by a failed roll](../instruments/futures.md) is answered at once, with no retries. A portfolio child's flatten is confirmed the same way with an explicit `--flatten`, and a portfolio's for each child it flattens. |
 | `qkt start <portfolio>/<child>` | Resume an operator-stopped child of a portfolio. |
 
-**Gateway outages.** At boot the daemon verifies every `brokers:` account before anything trades. An
-account whose gateway does not answer is retried every 2 s doubling to 30 s, for up to
-`QKT_PREFLIGHT_RETRY_SECONDS` (default `300`; `0` refuses at once), with one log line per retry; a
-login, server, trade-mode, currency, leverage or margin-mode mismatch is refused at once. Once
+**Gateway outages.** At boot the daemon verifies every `brokers:` account before anything trades on it. A
+login, server, trade-mode, currency, leverage or margin-mode mismatch refuses the boot at once. An account
+whose gateway does not answer does not hold the others: the daemon starts, trades on the accounts that
+verified, and keeps the strategies of the unreachable one undeployed (`qkt list` does not show them; their
+files wait as pending auto-deploys). It logs the failure at ERROR in the daemon log (`logs/main.log` in the
+state directory) and on stderr, reports `degraded` on `/health` with the account under `unverifiedAccounts`,
+and retries the account in the background every 2 s doubling to 30 s, with no deadline. When it answers with
+the expected identity its strategies deploy at once; a wrong identity keeps them stopped for good.
+(`qkt bot session` still waits for its account for up to `QKT_PREFLIGHT_RETRY_SECONDS`, default `300`;
+`0` refuses at once.) Once
 running, a strategy whose live feed stays disconnected past its reconnect budget (120 s) stops rather
 than trade on stale prices, and the daemon redeploys it from its file the way it deploys at boot
 (state recovery, position re-adoption), retrying after 1, 2, 5 and then every 15 minutes until the
 gateway is back; `/health` reports `degraded` meanwhile. Portfolio children are not redeployed this
 way.
+
+**Daemon memory.** The `qkt` launcher starts `qkt daemon` with `-XX:MaxRAMPercentage=70` (70% of the
+container's memory limit rather than the JVM's default 25%), `-XX:+HeapDumpOnOutOfMemoryError` into
+`$QKT_STATE_DIR/daemon-oom.hprof` (one file; the JVM does not overwrite it, so delete it after reading) and
+`-XX:+ExitOnOutOfMemoryError`, so an exhausted heap stops the process for its supervisor (`restart:` in
+Compose, systemd) to restart and recover, instead of trading on with failing allocations. `JAVA_OPTS` and
+`QKT_OPTS` come later on the command line and override any of these, e.g. `QKT_OPTS=-XX:MaxRAMPercentage=50`.
+An engine-loop fault caused by the JVM itself (an `OutOfMemoryError` or other `VirtualMachineError`) halts the
+strategy for the current process only; a restart clears it. Any other engine fault still halts until resumed.
 
 ## Project scaffolding
 
