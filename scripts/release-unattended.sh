@@ -63,8 +63,9 @@ cd "$repo_root"
 [ -z "$(git status --porcelain)" ] || stop "checkout is not clean"
 [ -n "$repo" ] || repo="$(git remote get-url origin | sed -E 's#(git@github.com:|https://github.com/)##; s#\.git$##')"
 
-# Everything that can already be known wrong, before waiting on CI; the session windows are judged by the attestation's
-# own preflight, once it knows when it starts.
+# Everything that can already be known wrong, before waiting on CI. Market hours are not a start gate: the attestation's
+# own preflight plans the session lanes into their windows once it knows when it starts, waits for them in process, and
+# stops only when a window is further away than the profile's session_wait_max_h.
 if [ -f scripts/live-validation/lib/attest_preflight.py ]; then
     preflight_log="$(mktemp "${TMPDIR:-/tmp}/qkt-release-preflight.XXXXXX")"
     QKT_BROKER_API_KEY="$(cat "$key_file")" QKT_LIVE_DEMO_ORDER_APPROVAL=LOCALHOST_DEMO_ONLY \

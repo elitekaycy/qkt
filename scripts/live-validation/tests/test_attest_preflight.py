@@ -147,11 +147,44 @@ class PreflightTest(unittest.TestCase):
         self.assertNotIn("runner", self.failed(world))
         self.assertIn("no self-hosted runner", self.failed(world, dispatch=True)["runner"])
 
-    def test_the_session_estimate_is_said_up_front(self):
-        self.p.update(alpaca_gateway_url="http://127.0.0.1:2", alpaca_expected_login="a")
-        world = Fake({"/v1/health": {"account_login": "a", "trade_mode": "demo", "venue_connected": True, "kill_switch": {}}},
-                     now=dt.datetime(2026, 11, 3, 20, 10, tzinfo=dt.timezone.utc))
-        self.assertIn("closes Tue 21:00Z", self.failed(world, no_session=False)["session-alpaca"])
+    def session_world(self, now, **profile):
+        self.p.update(alpaca_gateway_url="http://127.0.0.1:2", alpaca_expected_login="a", attest_stocks="true",
+                      QKT_ALPACA_GUARDIAN_KEY="x", **profile)
+        return Fake({"/v1/health": {"account_login": "a", "trade_mode": "demo", "venue_connected": True, "kill_switch": {}}},
+                    env={"QKT_BROKER_API_KEY": SECRET, "QKT_LIVE_DEMO_ORDER_APPROVAL": "x", "QKT_ALPACA_GATEWAY_KEY": SECRET,
+                         "QKT_ALPACA_GUARDIAN_KEY": SECRET}, now=now)
+
+    def sessions(self, world, plan=None):
+        out = os.path.join(self.tmp.name, "schedule.json")
+        found = pf.check_sessions(self.p, world, plan or {"leadSeconds": 32 * 60}, out)
+        return {f.check: (f.level, f.message) for f in found}, json.load(open(out))
+
+    def test_the_v0660_release_start_is_planned_not_refused(self):
+        # 2026-11-05 20:48Z, the start that was refused: the session lanes wait for Friday's open, the rest run now.
+        found, schedule = self.sessions(self.session_world(dt.datetime(2026, 11, 5, 20, 48, tzinfo=dt.timezone.utc)))
+        self.assertEqual({k: v[0] for k, v in found.items()}, {"session-alpaca": "ok", "session-stocks": "ok", "session-plan": "ok"})
+        self.assertEqual(found["session-plan"][1], "session lanes alpaca at Fri 14:30Z, stocks at Fri 14:40Z; other lanes now")
+        self.assertIsNone(schedule["holdUntilUtc"])
+        self.assertEqual([i["startUtc"] for i in schedule["lanes"]], ["2026-11-06T14:30:00Z", "2026-11-06T14:40:00Z"])
+
+    def test_the_whole_preflight_passes_at_that_hour(self):
+        world = self.session_world(dt.datetime(2026, 11, 5, 20, 48, tzinfo=dt.timezone.utc))
+        self.assertEqual({k: v for k, v in self.failed(world, no_session=False).items() if k.startswith("session")}, {})
+
+    def test_inside_the_window_the_session_lanes_go_first(self):
+        found, schedule = self.sessions(self.session_world(dt.datetime(2026, 11, 3, 15, 0, tzinfo=dt.timezone.utc)))
+        self.assertEqual([i["verdict"] for i in schedule["lanes"]], ["now", "now"])
+        self.assertIn("first, inside their window", found["session-plan"][1])
+
+    def test_a_window_beyond_the_wait_limit_fails_with_a_clear_reason(self):
+        world = self.session_world(dt.datetime(2026, 11, 5, 20, 48, tzinfo=dt.timezone.utc), session_wait_max_h="12")
+        failed = self.failed(world, no_session=False)
+        self.assertIn("past the session wait limit Fri 08:48Z", failed["session-plan"])
+        self.assertIn("raise session_wait_max_h", failed["session-plan"])
+
+    def test_a_wait_limit_that_is_not_a_number_fails(self):
+        world = self.session_world(dt.datetime(2026, 11, 5, 20, 48, tzinfo=dt.timezone.utc), session_wait_max_h="soon")
+        self.assertIn("session_wait_max_h is not a number", self.failed(world, no_session=False)["session-plan"])
 
     def test_a_resume_that_kept_the_lane_needs_no_window(self):
         self.p.update(alpaca_gateway_url="http://127.0.0.1:2", alpaca_expected_login="a")
@@ -159,6 +192,17 @@ class PreflightTest(unittest.TestCase):
         world = Fake({"/v1/health": {"account_login": "a", "trade_mode": "demo", "venue_connected": True, "kill_switch": {}}},
                      now=dt.datetime(2026, 11, 7, 3, 0, tzinfo=dt.timezone.utc))
         self.assertNotIn("session-alpaca", self.failed(world, no_session=False, plan={"reusableCases": names, "leadSeconds": 0}))
+
+    def test_a_resume_plans_only_the_cases_it_did_not_keep(self):
+        stocks = sorted(os.listdir(os.path.join(ROOT, "attestation/cases/stocks")))
+        alpaca = [f"alpaca-{c}" for c in os.listdir(os.path.join(ROOT, "attestation/cases/alpaca"))]
+        kept = alpaca + [f"stocks-{c}" for c in stocks[1:]]  # one stocks case still to pass
+        found, schedule = self.sessions(self.session_world(dt.datetime(2026, 11, 5, 20, 48, tzinfo=dt.timezone.utc)),
+                                        {"reusableCases": kept, "leadSeconds": 0})
+        self.assertEqual(found["session-alpaca"], ("ok", "nothing left to run in its window"))
+        self.assertEqual([(i["lane"], i["startUtc"]) for i in schedule["lanes"]], [("stocks", "2026-11-06T14:40:00Z")])
+        full, _ = self.sessions(self.session_world(dt.datetime(2026, 11, 5, 20, 48, tzinfo=dt.timezone.utc)), {"leadSeconds": 0})
+        self.assertLess(schedule["lanes"][0]["seconds"], json.load(open(os.path.join(self.tmp.name, "schedule.json")))["lanes"][1]["seconds"])
 
     def test_the_command_exits_non_zero_and_prints_every_reason_on_its_last_line(self):
         profile = os.path.join(self.tmp.name, "profile")

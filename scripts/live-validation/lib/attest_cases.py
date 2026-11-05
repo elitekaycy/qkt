@@ -6,7 +6,7 @@ that passed stays visible with every failure before it, and a resumed run keeps 
 record is bound to this exact build (see `reusable`).
 
     attest_cases.py record --out DIR --name N --dir CASE_OUT --log FILE --exit CODE --started ISO
-                           [--no-retry] [--require-result] [--session-closed]   prints: status class action delay
+                           [--no-retry] [--require-result] [--session-closed [--reason TEXT]]   prints: status class action delay
     attest_cases.py suffix --out DIR --name N                                   prints the next attempt's dir suffix
     attest_cases.py reusable --out DIR --binding FILE [--max-age-hours H]       prints the names to keep
     attest_cases.py finalize --out DIR --expected FILE --started ISO --cli TEXT --max-parallel N [--seconds N]
@@ -73,7 +73,7 @@ def record(a):
     status_in_result, problems = read_problems(a.dir)
     tail = log_tail(a.log)
     if a.session_closed:
-        status, cause, summary = "failed", classify.SESSION, "the market closed before this case could run"
+        status, cause, summary = "failed", classify.SESSION, a.reason or "the market closed before this case could run"
     else:
         wrote_none = a.require_result and status_in_result is None
         passed = a.exit == 0 and status_in_result in (None, "passed") and not wrote_none
@@ -198,6 +198,7 @@ def main():
     p.add_argument("--exit", type=int, required=True)
     for flag in ("--no-retry", "--require-result", "--session-closed"):
         p.add_argument(flag, action="store_true")
+    p.add_argument("--reason", help="with --session-closed: why the case could not run in its window")
     p = sub.add_parser("suffix"); p.add_argument("--out", required=True); p.add_argument("--name", required=True)
     p = sub.add_parser("reusable"); p.add_argument("--out", required=True); p.add_argument("--binding", required=True)
     p.add_argument("--max-age-hours", type=float, default=MAX_EVIDENCE_AGE_HOURS)

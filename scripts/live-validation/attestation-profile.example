@@ -28,3 +28,6 @@ data_corpus=/var/tmp/qkt-validation/data-corpus
 #preflight_min_disk_gb=5
 #preflight_min_mem_gb=4
 #preflight_max_latency_ms=1500
+# Optional: how far ahead a session lane's window (stocks, alpaca) may be, in hours. Outside its window the run does every
+# other lane now and waits for it; only a window further away than this stops the run at preflight. 72 covers a weekend.
+#session_wait_max_h=72

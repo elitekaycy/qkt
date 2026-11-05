@@ -13,7 +13,7 @@ Usage: run-attestation-catalog.sh --out DIR --gateway-url URL --expected-login N
          [--crypto-symbols]   (the shadow lane on 24/7 symbols, for a weekend run)
          [--cli PATH] [--deriv-gateway-url URL --deriv-expected-login LOGIN]
          [--bybit-gateway-url URL --bybit-expected-login LOGIN] [--alpaca-gateway-url URL --alpaca-expected-login LOGIN]
-         [--cross-venue LABEL=URL@LOGIN ...] [--binding FILE]
+         [--cross-venue LABEL=URL@LOGIN ...] [--binding FILE] [--session-wait-max-h H]
 
 Needs QKT_BROKER_API_KEY and QKT_LIVE_DEMO_ORDER_APPROVAL=LOCALHOST_DEMO_ONLY. Demo, loopback only.
 The derivatives lane (futures, perpetuals, options) runs on a VGP gateway account instead: it needs the
@@ -33,7 +33,12 @@ Every attempt of a case is recorded in DIR/attempts/<name>.jsonl (lib/attest_cas
 assertion earns one rerun; a gateway or venue failure up to three, after 30, 60 and 120 s; a missing tool, a full disk or
 a closed market none. A retry reruns the whole case, and every attempt stays in the result. --binding FILE (the build the
 evidence belongs to) lets DIR exist from an earlier run on the same binding: passed cases are kept, only the rest run.
-Session-bound lanes start first: the catalog's slowest lane must not start its window late behind the 24/7 cases.
+Session-bound lanes (stocks, alpaca: a `session` window in attestation/lanes.yaml) are planned, never refused at the
+start (lib/attest_session.py lane-plan). Inside a window they fit in, they start first, so they finish before the close.
+Outside it, every other lane runs now and the session lane waits in this process for the next window it fits in (each
+wait logged and recorded in DIR/session-waits.jsonl), up to --session-wait-max-h hours (default 72) from the start;
+past that its cases fail as `session`, by name. Whatever the plan says, no session-bound case starts unless it can
+finish before the close (attest_session.py can-start); one that cannot fails as `session` and a resumed run reruns it.
 USAGE
 }
 fail() { printf 'run-attestation-catalog: %s\n' "$1" >&2; exit 1; }
@@ -41,7 +46,7 @@ fail() { printf 'run-attestation-catalog: %s\n' "$1" >&2; exit 1; }
 out=""; gateway_url=""; expected_login=""; expected_server=""; magic_base=""; arm=""; binding=""
 lanes="shadow,orders,risk,book,engine,daemon,stress"; cli="$repo_root/build/install/qkt/bin/qkt"
 max_parallel=8; deriv_gateway_url=""; deriv_expected_login=""; bybit_gateway_url=""; bybit_expected_login=""
-alpaca_gateway_url=""; alpaca_expected_login=""; cross_venues=()
+alpaca_gateway_url=""; alpaca_expected_login=""; cross_venues=(); session_wait_max_h=72
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --out) out="${2:-}"; shift 2 ;;
@@ -62,6 +67,7 @@ while [ "$#" -gt 0 ]; do
         --alpaca-gateway-url) alpaca_gateway_url="${2:-}"; shift 2 ;;
         --alpaca-expected-login) alpaca_expected_login="${2:-}"; shift 2 ;;
         --cross-venue) cross_venues+=(--venue "${2:-}"); shift 2 ;;
+        --session-wait-max-h) session_wait_max_h="${2:-}"; shift 2 ;;
         --help|-h) usage; exit 0 ;;
         *) fail "unknown argument: $1" ;;
     esac
@@ -69,6 +75,7 @@ done
 for v in out gateway_url expected_login expected_server magic_base; do [ -n "${!v}" ] || { usage >&2; exit 2; }; done
 [ "$arm" = "I_UNDERSTAND_DEMO_ORDER_0.01" ] || fail "--arm I_UNDERSTAND_DEMO_ORDER_0.01 is required"
 [[ "$max_parallel" =~ ^[1-9][0-9]*$ ]] || fail "--max-parallel must be a positive integer"
+[[ "$session_wait_max_h" =~ ^[0-9]+([.][0-9]+)?$ ]] || fail "--session-wait-max-h must be a number of hours"
 if [ -e "$out" ]; then
     [ -n "$binding" ] && [ -f "$out/binding.json" ] || fail "output already exists: $out"
     cmp -s <(jq -S . "$binding") <(jq -S . "$out/binding.json") || fail "$out belongs to another build, profile or account"
@@ -86,6 +93,7 @@ declare -A kept=()
 if [ -n "$binding" ]; then
     while read -r name; do [ -z "$name" ] || kept["$name"]=1; done < <(cases_tool reusable --out "$out" --binding "$binding")
 fi
+for name in "${!kept[@]}"; do echo "$name"; done > "$out/kept-cases"
 expected="$out/expected-cases"; : > "$expected"
 started="$(date +%s)"; started_at="$(date -u +%FT%TZ)"
 common=(--gateway-url "$gateway_url" --expected-login "$expected_login" --expected-server "$expected_server" --cli "$cli")
@@ -121,11 +129,32 @@ gateway_case() {  # name command...   (the command takes --out last)
         sleep "$delay"
     done
 }
-# The market itself is the only limit: a session-bound case that can no longer run fails, by name, as `session`.
-can_start() { python3 "$lib/attest_session.py" can-start --lanes "$repo_root/attestation/lanes.yaml" --case-yaml "$1"; }
-session_closed() {  # name
-    cases_tool record --out "$out" --name "$1" --dir "$out/$1" --log /dev/null --exit 1 --started "$(date -u +%FT%TZ)" --session-closed > /dev/null
+# The market itself is the only limit: a session-bound case that can no longer run fails, by name, as `session`; the
+# plan only decides when each session lane runs, and this per-case check stands whatever the plan said.
+lanes_yaml="$repo_root/attestation/lanes.yaml"
+session_tool() { python3 "$lib/attest_session.py" "$@"; }
+can_start() { session_tool can-start --lanes "$lanes_yaml" --case-yaml "$1"; }
+session_closed() {  # name [reason]
+    cases_tool record --out "$out" --name "$1" --dir "$out/$1" --log /dev/null --exit 1 --started "$(date -u +%FT%TZ)" \
+        --session-closed ${2:+--reason "$2"} > /dev/null
+    printf 'session: %s did not run: %s\n' "$1" "${2:-the market closed before this case could run}"
 }
+# When each session lane runs: `none` or `now` (first, inside its window), `wait START TEXT`, or `fail TEXT`.
+session_deadline="$(session_tool deadline --hours "$session_wait_max_h")"
+lane_plan() { session_tool lane-plan --lanes "$lanes_yaml" --repo-root "$repo_root" --lane "$1" --deadline "$session_deadline" --keep-file "$out/kept-cases"; }
+declare -A session_verdict=() session_text=() session_start=()
+for lane in alpaca stocks; do
+    [[ ",$lanes," == *,"$lane",* ]] || continue
+    read -r verdict rest < <(lane_plan "$lane")
+    session_verdict["$lane"]="$verdict"
+    case "$verdict" in
+        wait) session_start["$lane"]="${rest%% *}"; session_text["$lane"]="${rest#* }" ;;
+        now) session_text["$lane"]="${rest#* }" ;;
+        fail) session_text["$lane"]="$rest" ;;
+    esac
+    [ "$verdict" = none ] || printf 'session plan: %s %s: %s\n' "$lane" "$verdict" "${session_text[$lane]}"
+done
+runs_now() { [ "${session_verdict[$1]:-none}" = none ] || [ "${session_verdict[$1]}" = now ]; }
 
 if [[ ",$lanes," == *,shadow,* ]]; then
     echo shadow >> "$expected"
@@ -146,7 +175,9 @@ run_gateway_lane() {  # lane url login key guardian
             continue
         id="$(basename "$(dirname "$case_yaml")")"
         [ -z "${kept[$lane-$id]:-}" ] || continue
-        if [ "$lane" = alpaca ] && ! can_start "$case_yaml"; then session_closed "$lane-$id"; code=1; continue; fi
+        if [ "$lane" = alpaca ] && ! can_start "$case_yaml"; then
+            session_closed "$lane-$id" "not enough of the $lane window was left to start it and finish before the close"; code=1; continue
+        fi
         gateway_case "$lane-$id" python3 "$repo_root/scripts/live-validation/run-derivatives-lane-case.py" \
             --case "$repo_root/attestation/cases/$lane/$id" \
             --gateway-url "$url" --expected-login "$login" --arm "$arm" --cli "$cli" || code=1
@@ -160,10 +191,11 @@ gateway_lane() {  # lane url login key guardian
         name="$lane-$(basename "$(dirname "$case_yaml")")"; echo "$name" >> "$expected"
         [ -n "${kept[$name]:-}" ] || pending=1
     done
-    [ "$pending" = 0 ] || launch "$lane" run_gateway_lane "$@"
+    [ "$pending" = 0 ] || ! runs_now "$lane" || launch "$lane" run_gateway_lane "$@"
 }
 # The alpaca lane's longest path decides the catalog's wall-clock, and its shares trade only while the market is
-# open, so it starts first. One case at a time on its own account: it takes one of --max-parallel's slots.
+# open, so inside its window it starts first; outside it, it waits for its window after the other lanes (below).
+# One case at a time on its own account: it takes one of --max-parallel's slots.
 if [[ ",$lanes," == *,alpaca,* ]]; then
     [ -n "$alpaca_gateway_url" ] && [ -n "$alpaca_expected_login" ] ||
         fail "--lanes alpaca needs --alpaca-gateway-url and --alpaca-expected-login"
@@ -176,23 +208,35 @@ fi
 # orders until 09:40, and only the venue's own last tick can say a holiday or an early close.
 stocks_session_open() {
     local tick now
-    python3 "$lib/in_session_window.py" "$repo_root/attestation/lanes.yaml" stocks || return 1
+    session_tool in-window --lanes "$lanes_yaml" --lane stocks || return 1
     tick="$(curl --silent --fail --max-time 10 "$gateway_url/symbol_info_tick/AAPLm" | python3 -c 'import json,sys; print(int(json.load(sys.stdin).get("time", 0)))' 2>/dev/null)" || return 1
     now="$(date +%s)"
     [ $((now - tick)) -lt 120 ]
 }
-# Whether any stocks case still has to run: a resumed run that kept them all does not need the market open.
-stocks_pending() {
-    local case_yaml
-    for case_yaml in "$repo_root/attestation/cases/stocks"/*/case.yaml; do
-        grep -q '^status: ready' "$case_yaml" || continue
-        [ -n "${kept[stocks-$(basename "$(dirname "$case_yaml")")]:-}" ] || return 0
+# Inside the window the venue's quote can still be stale (a holiday, an early close): a few minutes' grace, then the
+# lane's cases fail as `session`, named, and a resumed run reruns them in a later window.
+stocks_quote_fresh() {
+    local tries="${QKT_ATTEST_STOCK_QUOTE_TRIES:-10}"
+    while [ "$tries" -gt 0 ]; do
+        stocks_session_open && return 0
+        tries=$((tries - 1)); [ "$tries" = 0 ] || sleep 60
     done
     return 1
 }
-if [[ ",$lanes," == *,stocks,* ]] && stocks_pending && ! stocks_session_open; then
-    fail "the stocks lane needs the venue's US share session open ($(python3 -c 'import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))["lanes"]["stocks"]["session"])' "$repo_root/attestation/lanes.yaml") New York) and a fresh AAPL quote"
-fi
+# The stocks cases to run, launched together when their window lets them (now, or after the wait below).
+stocks_cases=()
+launch_stocks() {
+    local name reason=""
+    [ "${#stocks_cases[@]}" -gt 0 ] || return 0
+    stocks_quote_fresh || reason="the stocks window is open but the venue's AAPL quote is stale (a holiday or an early close)"
+    for name in "${stocks_cases[@]}"; do
+        if [ -n "$reason" ]; then session_closed "$name" "$reason"
+        elif ! can_start "${case_path[$name]}/case.yaml"; then
+            session_closed "$name" "not enough of the stocks window was left to start it and finish before the close"
+        else launch_case "$name" "$magic"; magic=$((magic + 1)); fi
+    done
+    stocks_cases=()
+}
 for lane in stocks orders risk book engine daemon stress; do
     [[ ",$lanes," == *,"$lane",* ]] || continue
     for case_yaml in "$repo_root/attestation/cases/$lane"/*/case.yaml; do
@@ -212,9 +256,12 @@ for lane in stocks orders risk book engine daemon stress; do
         fi
         case_path["$name"]="$case_dir"
         [[ "$ready" == *steps ]] && case_runner["$name"]=steps || case_runner["$name"]=orders
+        if [ "$lane" = stocks ]; then stocks_cases+=("$name"); continue; fi
         launch_case "$name" "$magic"
         magic=$((magic + 1))
     done
+    # The stocks lane goes before every other magic lane when its window is open now; otherwise it waits (below).
+    [ "$lane" != stocks ] || ! runs_now stocks || launch_stocks
 done
 if [[ ",$lanes," == *,derivatives,* ]]; then
     [ -n "$deriv_gateway_url" ] && [ -n "$deriv_expected_login" ] ||
@@ -278,16 +325,59 @@ record_round() {
 # case can fail on that contention alone. Failed cases rerun together in much quieter rounds, each logged. A case passes
 # only if its last attempt passes, its earlier failures stay in the result, and the shadow lane is never retried:
 # it is the parity evidence of one daemon's session.
-record_round
-while [ "${#again[@]}" -gt 0 ]; do
-    printf 'retrying after %ss: %s\n' "$longest" "${again[*]}"
-    sleep "$longest"
-    for name in "${again[@]}"; do
-        if [ "${name%%-*}" = stocks ] && ! stocks_session_open; then session_closed "$name"; continue; fi
-        launch_case "$name" "$magic"; magic=$((magic + 1))
-    done
+drain() {
     record_round
+    while [ "${#again[@]}" -gt 0 ]; do
+        printf 'retrying after %ss: %s\n' "$longest" "${again[*]}"
+        sleep "$longest"
+        for name in "${again[@]}"; do
+            if [ "${name%%-*}" = stocks ] && { ! stocks_session_open || ! can_start "${case_path[$name]}/case.yaml"; }; then
+                session_closed "$name" "its retry could not finish inside the stocks window"; continue
+            fi
+            launch_case "$name" "$magic"; magic=$((magic + 1))
+        done
+        record_round
+    done
+}
+drain
+
+# Session lanes the run reached outside a window they fit in: each waits, in turn by its planned start, for that window,
+# then runs. The plan is asked again after the other lanes and after every wait, so a late finish or a moved clock
+# re-plans from the moment it is; a lane that can no longer be reached in time fails its cases, by name, as `session`.
+lane_cases_pending() {  # lane: prints the lane's ready cases not kept
+    local case_yaml name
+    for case_yaml in "$repo_root/attestation/cases/$1"/*/case.yaml; do
+        [ -f "$case_yaml" ] && grep -q '^status: ready' "$case_yaml" || continue
+        name="$1-$(basename "$(dirname "$case_yaml")")"; [ -n "${kept[$name]:-}" ] || echo "$name"
+    done
+}
+later=()
+for lane in "${!session_verdict[@]}"; do
+    runs_now "$lane" || later+=("${session_start[$lane]:-0000} $lane")
 done
+if [ "${#later[@]}" -gt 0 ]; then
+    while read -r -u 3 _ lane; do
+        verdict="${session_verdict[$lane]}"; text="${session_text[$lane]}"
+        for _ in 1 2 3 4 5; do
+            [ "$verdict" = wait ] || break
+            read -r verdict rest < <(lane_plan "$lane")
+            case "$verdict" in
+                wait) session_tool wait-until --until "${rest%% *}" --lane "$lane" --reason "${rest#* }" --record "$out/session-waits.jsonl" ;;
+                fail) text="$rest" ;;
+            esac
+        done
+        if [ "$verdict" = fail ] || [ "$verdict" = wait ]; then
+            while read -r name; do session_closed "$name" "$text"; done < <(lane_cases_pending "$lane")
+            continue
+        fi
+        session_verdict["$lane"]=now
+        case "$lane" in
+            alpaca) launch alpaca run_gateway_lane alpaca "$alpaca_gateway_url" "$alpaca_expected_login" "$QKT_ALPACA_GATEWAY_KEY" "${QKT_ALPACA_GUARDIAN_KEY:-}" ;;
+            stocks) launch_stocks ;;
+        esac
+    done 3< <(printf '%s\n' "${later[@]}" | sort)
+    drain
+fi
 
 code=0
 cases_tool finalize --out "$out" --expected "$expected" --started "$started_at" \

@@ -46,6 +46,14 @@ The driver stops at once, without touching anything, when the version in `testin
 already tagged — so the timer is safe to fire on days with nothing to release. A release happens
 when a version bump has reached `testing`.
 
+Market hours are not a start condition. Started outside the stocks or Alpaca window, the attestation runs every other
+lane at once and waits, inside the same process, for the next window those lanes fit in (or holds the whole run until
+shortly before it, when a weekend would age the earlier evidence past 24 hours). One run can therefore last up to the
+profile's `session_wait_max_h` (default 72 hours): `Type=oneshot` has no start timeout, and the `flock -n` makes a
+timer firing during the wait a no-op. The planned times are in the journal (`session plan:`, `holding the run until`).
+Nothing outside the repository should retry or reschedule a session refusal: only a window beyond `session_wait_max_h`
+still stops the run, and retrying that sooner cannot help.
+
 ## Reading what happened
 
 - `journalctl -u qkt-release` — one line per stage, and `STOPPED: <reason>` or `RELEASED vX.Y.Z`.

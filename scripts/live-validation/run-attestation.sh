@@ -14,6 +14,11 @@ FILE is a shell fragment that sets:
   wave_root    bundle_root     image_repository insights_image   magic_base
   data_corpus  (a clone of elitekaycy/qkt-data-corpus, for the release proofs)
 and may set docs_data_root, the local store the docs examples read (adds them to the proofs).
+and may set session_wait_max_h (default 72): how far ahead a session lane's window (stocks, alpaca) may be. A run that
+reaches such a lane outside a window it fits in runs every other lane now and waits for the window; only a window
+further away than this stops it at preflight. When waiting would age the first evidence past the bundle's 24 h limit,
+the whole run is held until shortly before the window. Each wait is logged, written to attestation-run.json (stage
+`hold`) and carried in the bundle's catalog evidence (`sessionWaits`).
 and may set attestation_symbol=BTCUSD: the wave, the shadow lane and the insights scenario then
 run on 24/7 crypto (BTCUSD, with ETHUSD for a second symbol), so an attestation can run while FX
 and metals are closed. Unset, they trade EURUSD, GBPUSD and XAUUSD as before.
@@ -122,21 +127,37 @@ fi
 previous_tag="$(gh release view --json tagName --jq .tagName 2>/dev/null || true)"
 [ -n "$previous_tag" ] || problems+=(--also-failed "cannot find the latest release for the compatibility proof")
 cli_version=""; [ ! -x "$cli" ] || cli_version="$("$cli" --version 2>/dev/null | head -n 1 || true)"
-python3 "$lib/attest_resume.py" plan --ledger "$ledger" --sha "$sha" --profile "$profile" --login "$expected_login" \
-    --server "$expected_server" --cli-root "$cli_root" --cli-version "${cli_version:-none}" --proofs "$proofs" --wave "$wave" \
-    --insights "$ins" --catalog "$catalog" --lanes "$lanes" --repo-root "$repo_root" --previous-tag "$previous_tag" \
-    --corpus-lock "$(cut -d' ' -f1 "$repo_root/tests/data-e2e/corpus.lock" 2>/dev/null || true)" \
-    --image-id "$(docker image inspect --format '{{.Id}}' "$insights_image" 2>/dev/null || true)" --out "$plan" > "$plan.txt"
-log "$(cat "$plan.txt")"
+# Session lanes are planned, not refused (lib/attest_session.py): the preflight writes when each runs. When waiting for a
+# window would age the first evidence past the verifier's limit, the plan holds the whole run until shortly before it;
+# the hold is logged, recorded and followed by a fresh plan and preflight, since the account may have changed meanwhile.
+schedule="$wave_root/attest-$short.schedule.json"; session_waits="$wave_root/attest-$short.session-waits.jsonl"
 dispatch_flag=(); [ "$dispatch" != true ] || dispatch_flag=(--dispatch)
-checked=0
-python3 "$lib/attest_preflight.py" --profile "$profile" --repo-root "$repo_root" "${dispatch_flag[@]}" --plan "$plan" \
-    --report "$wave_root/attest-$short-preflight.json" "${problems[@]}" > "$wave_root/attest-$short-preflight.log" 2>&1 || checked=$?
-if [ "$checked" != 0 ]; then
-    cat "$wave_root/attest-$short-preflight.log" >&2
-    fail "preflight: $(tail -n 1 "$wave_root/attest-$short-preflight.log" | cut -c1-900)"
-fi
-log "$(tail -n 1 "$wave_root/attest-$short-preflight.log")"
+for pass in 1 2 3; do
+    rm -f "$schedule"
+    python3 "$lib/attest_resume.py" plan --ledger "$ledger" --sha "$sha" --profile "$profile" --login "$expected_login" \
+        --server "$expected_server" --cli-root "$cli_root" --cli-version "${cli_version:-none}" --proofs "$proofs" --wave "$wave" \
+        --insights "$ins" --catalog "$catalog" --lanes "$lanes" --repo-root "$repo_root" --previous-tag "$previous_tag" \
+        --corpus-lock "$(cut -d' ' -f1 "$repo_root/tests/data-e2e/corpus.lock" 2>/dev/null || true)" \
+        --image-id "$(docker image inspect --format '{{.Id}}' "$insights_image" 2>/dev/null || true)" --out "$plan" > "$plan.txt"
+    log "$(cat "$plan.txt")"
+    checked=0
+    python3 "$lib/attest_preflight.py" --profile "$profile" --repo-root "$repo_root" "${dispatch_flag[@]}" --plan "$plan" \
+        --schedule "$schedule" --report "$wave_root/attest-$short-preflight.json" "${problems[@]}" \
+        > "$wave_root/attest-$short-preflight.log" 2>&1 || checked=$?
+    if [ "$checked" != 0 ]; then
+        cat "$wave_root/attest-$short-preflight.log" >&2
+        fail "preflight: $(tail -n 1 "$wave_root/attest-$short-preflight.log" | cut -c1-900)"
+    fi
+    log "$(tail -n 1 "$wave_root/attest-$short-preflight.log")"
+    [ -f "$schedule" ] || break
+    log "session plan: $(jq -r .summary "$schedule")"
+    hold="$(jq -r '.holdUntilUtc // empty' "$schedule")"
+    [ -n "$hold" ] && [ "$pass" != 3 ] || break
+    why="waiting in the catalog would age the first evidence past the bundle's limit: $(jq -r .summary "$schedule")"
+    stage_write hold "until $hold: $why"
+    log "holding the run until $hold: $why"
+    python3 "$lib/attest_session.py" wait-until --until "$hold" --lane run --reason "$why" --record "$session_waits"
+done
 reuse() { [ "$(jq -r ".$1" "$plan")" = true ]; }
 
 if reuse fresh; then
@@ -227,11 +248,12 @@ fi
 
 # Any failed case fails the attestation: promotion to main means the whole catalog passed on this exact build, and
 # the bundle's catalog evidence says so case by case.
-stage_write catalog
+stage_write catalog "$( [ -f "$schedule" ] && jq -r .summary "$schedule" || true)"
 catalog_code=0
 bash scripts/live-validation/run-attestation-catalog.sh --out "$catalog" --gateway-url "$gateway_url" \
     --expected-login "$expected_login" --expected-server "$expected_server" --magic-base "$((magic_base + 100))" \
     --lanes "$lanes" "${deriv[@]}" --arm I_UNDERSTAND_DEMO_ORDER_0.01 --cli "$cli" --binding "$binding" \
+    --session-wait-max-h "${session_wait_max_h:-72}" \
     ${attestation_symbol:+--crypto-symbols} > "$catalog.log" 2>&1 || catalog_code=$?
 if [ "$catalog_code" != 0 ]; then
     if [ -f "$catalog/result.json" ]; then
@@ -263,7 +285,7 @@ bundle="$bundle_root/build-$short"; rm -rf "$bundle"
 run_id="$(jq -r .execution.runId "$wave/suite.json")"
 catalog_evidence="$wave_root/attest-$short.catalog-evidence.json"
 python3 "$lib/attest_resume.py" manifest --ledger "$ledger" --catalog "$catalog" --lanes "$lanes" --repo-root "$repo_root" \
-    --run-id "$run_id" --out "$catalog_evidence" 2> "$wave_root/assemble-$short.log" || fail "bundle refused: $(tail -n 1 "$wave_root/assemble-$short.log")"
+    --run-id "$run_id" --waits "$session_waits" --waits "$catalog/session-waits.jsonl" --out "$catalog_evidence" 2> "$wave_root/assemble-$short.log" || fail "bundle refused: $(tail -n 1 "$wave_root/assemble-$short.log")"
 python3 scripts/live-validation/assemble-attestation.py "$wave" "$ins" "$bundle" "$image_repository@$digest" "$sha" "$catalog_evidence" \
     >> "$wave_root/assemble-$short.log" 2>&1 || fail "bundle assembly failed; see assemble-$short.log: $(tail -n 1 "$wave_root/assemble-$short.log" | cut -c1-200)"
 python3 scripts/verify-paper-soak-attestation.py "$bundle/attestation.json" --expected-git-sha "$sha" \
