@@ -133,6 +133,7 @@ internal class OrderReactions(
             attachedCompletion,
             bracketFills,
             lateEntries,
+            w.timeExits,
             clock,
             ops,
             log,

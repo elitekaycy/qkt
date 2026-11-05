@@ -33,7 +33,9 @@ internal class TimeExits(
     private val strategyNetQty: ((String, String) -> BigDecimal)? = null,
 ) {
     private val closer = TimedLegCloser(book, clock, ops, closeTicketFor, openLegQuantity, strategyNetQty)
-    private val retries = TimedCloseRetries(book, closer, ops, log)
+
+    /** Resends and alerts for fired exits; told of each venue refusal ([TimedCloseRetries.refused]). */
+    val retries = TimedCloseRetries(book, closer, ops, log, armed)
     private val byId: MutableMap<String, OrderRequest.TimeExit> = mutableMapOf()
     private val deadlines: MutableMap<String, Long> = mutableMapOf()
     private val awaitingFill: MutableMap<String, String> = mutableMapOf()
@@ -47,8 +49,9 @@ internal class TimeExits(
     /** True while any time exit is waiting for its fill or its deadline. */
     fun isNotEmpty(): Boolean = byId.isNotEmpty() || !armed.isEmpty()
 
-    /** True when a waiting time exit targets [id] or its entry, so that order must stay tracked. */
-    fun targets(id: String): Boolean = byId.values.any { it.target.id == id || it.entryFillId == id }
+    /** True when a waiting time exit targets [id] or its entry, or [id] is an armed exit's last close: keep it. */
+    fun targets(id: String): Boolean =
+        byId.values.any { it.target.id == id || it.entryFillId == id } || armed.values.any { it.closeId == id }
 
     /** Starts [req]: tracks its target and dispatches it; the deadline is watched per tick. */
     fun submit(req: OrderRequest.TimeExit): SubmitAck {

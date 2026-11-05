@@ -94,6 +94,7 @@ internal class GatewayFillLegs(
     fun restore(saved: BookedDeals) {
         restore(saved.settledCloses)
         for (fill in saved.fills) {
+            GatewayClientIds.remember(fill.orderId)
             restored[fill.orderId to fill.fillId] = GatewayLegFact(fill.leg, fill.grossRealized, fill.strategyId)
             keep(fill)
         }

@@ -29,10 +29,18 @@ class RollLegIdsTest {
     }
 
     @Test
+    fun `the longest retry of a leg reaches the venue under its own id, unshortened`() {
+        val id = "${RollLegIds.base(stream, atMs, "soak_o14_roll")}:unwind-${RollLegIds.MAX_ATTEMPTS}"
+        val leg = OrderRequest.Market(id, "X", Side.BUY, BigDecimal.ONE, TimeInForce.GTC, atMs, "soak_o14_roll")
+
+        assertThat(GatewayClientIds.of(leg)).isEqualTo("$id.${atMs.toString(36)}").hasSizeLessThanOrEqualTo(45)
+    }
+
+    @Test
     fun `a leg prefix is short whatever the names`() {
         val long = "A".repeat(200)
 
-        assertThat(RollLegIds.base("$long:$long@front", atMs, long)).hasSize("roll:$atMs:".length + 12)
+        assertThat(RollLegIds.base("$long:$long@front", atMs, long)).hasSize("roll:$atMs:".length + 8)
     }
 
     @Test
