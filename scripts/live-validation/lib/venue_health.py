@@ -139,11 +139,12 @@ class Probe:
         return {"time": at, "available": True, "reason": "venue_connected; instruments open", "instruments": states}
 
 
-def await_available(probes, max_s=None, poll_s=None, sleep=time.sleep):
+def await_available(probes, max_s=None, poll_s=None, sleep=None):
     """Blocks until every probe's venue is available; returns the waits (evidence: what was down, from, to, seconds,
     samples taken). Raises VenueUnavailable once the venue has been unavailable for more than [max_s]."""
     max_s = env_seconds("QKT_ATTEST_VENUE_WAIT_MAX_S", DEFAULT_WAIT_MAX_S) if max_s is None else max_s
     poll_s = env_seconds("QKT_ATTEST_VENUE_POLL_S", DEFAULT_POLL_S) if poll_s is None else poll_s
+    sleep = sleep or time.sleep
     waits = []
     for probe in probes:
         first = probe.sample()

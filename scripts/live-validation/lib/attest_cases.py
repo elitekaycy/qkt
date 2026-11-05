@@ -62,7 +62,8 @@ def read_result(case_dir):
 def venue_evidence(result):
     """What the attempt recorded of its venue: the waits before it started, the outage sampled during it, the earlier
     runs' leftovers it swept first. Kept in the attempt's ledger entry and the bundle's catalog evidence."""
-    keys = {"waits": "venueWaits", "outage": "venueOutage", "leftoversSwept": "leftoversSwept"}
+    keys = {"waits": "venueWaits", "outage": "venueOutage", "leftoversSwept": "leftoversSwept",
+            "sessionClosed": "sessionClosed"}
     return {k: result[v] for k, v in keys.items() if result.get(v)}
 
 

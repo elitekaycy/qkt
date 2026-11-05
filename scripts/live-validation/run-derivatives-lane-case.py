@@ -46,7 +46,10 @@ Before it touches the account the case waits for its venue (lib/venue_health.py:
 QKT_ATTEST_DERIBIT_URL on a Deribit gateway, the strategy's instruments open with a fresh ticker), at most
 QKT_ATTEST_VENUE_WAIT_MAX_S, then samples it while it runs; the waits and any unavailable samples are written to the
 result (`venueWaits`, `venueOutage`) as the catalog's only grounds to rerun the attempt for free. Past the maximum it fails
-as `venue unavailable for Xh: ...`. Leftovers of an earlier run of the case's own strategy (a working order, a holding
+as `venue unavailable for Xh: ...`. A case bound to its lane's session (attestation/lanes.yaml, an alpaca share case)
+waits at most until the latest start its window allows, and after any venue wait must pass the catalog's own session
+check again (lib/attest_session.py can_start); if it no longer fits, the attempt ends as `session` (`sessionClosed` in
+the result) before the judged window opens, for the resumed release to rerun in the next window. Leftovers of an earlier run of the case's own strategy (a working order, a holding
 its own deals of the last day attribute to it that the account still holds) are swept before the judged window opens
 and written to the result (`leftoversSwept`); nobody else's order or size is touched.
 Writes OUT/result.json and prints one `passed|failed <id> ...` line; exits non-zero on failure.
@@ -62,6 +65,7 @@ import deal_capture  # noqa: E402
 import derivatives_drills  # noqa: E402
 import derivatives_roll as rolling  # noqa: E402
 import derivatives_settlement as settlement  # noqa: E402
+import attest_session  # noqa: E402
 import strategy_scope as scope  # noqa: E402
 import venue_health  # noqa: E402
 
@@ -92,9 +96,13 @@ def main():
     case["lane"] = lane if lanes.get(lane, {}).get("venue_gateway") else "derivatives"
     budget = args.budget_seconds or int(case.get("budget_seconds", lanes[case["lane"]]["budget_seconds"]))
     run = Run(args, case)
+    run.lane_config = lanes.get(lane, {})
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))  # a stopped runner still releases and sweeps
     try:
         problems = run.execute(budget)
+    except SessionClosed as error:  # a venue wait took the case past its window: nothing was touched
+        run.venue_waits, run.session_closed = error.wait, {"reason": str(error), "at": venue_health.utc(time.time() * 1000)}
+        problems = [str(error)]
     except venue_health.VenueUnavailable as error:  # the venue never came back: nothing was touched
         run.venue_waits = error.wait
         problems = [str(error)]
@@ -147,10 +155,19 @@ def await_one_utc_day(strategy_text, run_s, label):
         time.sleep(wait / 1000)
 
 
+class SessionClosed(RuntimeError):
+    """A venue wait took a session-bound case past the latest start its window allows."""
+
+    def __init__(self, reason, wait=()):
+        super().__init__(reason)
+        self.wait = list(wait)
+
+
 class Run:
     roll = capture = resumed = stopped_at = None  # class defaults: the cross lane's runner has its own __init__
-    watch = leftovers_swept = None
+    watch = leftovers_swept = session_closed = None
     venue_waits = ()
+    lane_config = {}
 
     def __init__(self, args, case):
         if args.arm != "I_UNDERSTAND_DEMO_ORDER_0.01":
@@ -303,9 +320,43 @@ class Run:
         return [venue_health.Probe(getattr(self, "label", None) or self.case.get("lane", "gateway"),
                                    self.args.gateway_url, self.key, venue_health.strategy_symbols(text))]
 
+    def session_bound(self):
+        """(seconds a venue wait may last, whether the session sets it): for a case bound to its lane's window, no
+        longer than the latest start that still finishes inside the window; None for a 24/7 case."""
+        session = self.lane_config.get("session")
+        if not session or self.case.get("session") == "none":
+            return None, False
+        now = datetime.datetime.fromtimestamp(time.time(), datetime.timezone.utc)
+        _, closes = attest_session.current_or_next_window(session, now)
+        latest = closes - datetime.timedelta(seconds=attest_session.budget_of(self.case, self.lane_config))
+        left = max((latest - now).total_seconds(), 0)
+        most = venue_health.env_seconds("QKT_ATTEST_VENUE_WAIT_MAX_S", venue_health.DEFAULT_WAIT_MAX_S)
+        return (left, True) if left < most else (most, False)
+
+    def session_fits(self):
+        """The catalog's own per-case check (attest_session.can_start), now."""
+        now = datetime.datetime.fromtimestamp(time.time(), datetime.timezone.utc)
+        return attest_session.can_start(self.case, self.lane_config, now)
+
     def await_venue(self, probes):
-        """Waits for the venue before the attempt touches anything, then samples it for the rest of the attempt."""
-        self.venue_waits = venue_health.await_available(probes)
+        """Waits for the venue before the attempt touches anything, then samples it for the rest of the attempt. A
+        session-bound case waits no longer than its window allows and, after a wait, must still fit its window."""
+        bound, by_session = self.session_bound()
+        session = self.lane_config.get("session")
+        try:
+            self.venue_waits = venue_health.await_available(probes, max_s=bound)
+        except venue_health.VenueUnavailable as error:
+            if by_session:
+                venue_health.notice(f"{self.case.get('id', 'case')}: the venue wait reached the {session} window's latest "
+                                    "start; ending the attempt as session")
+                raise SessionClosed(f"session: the venue was unavailable until past the latest start of the "
+                                    f"{session} window ({error}); rerun in the next window", error.wait)
+            raise
+        if self.venue_waits and session and self.case.get("session") != "none" and not self.session_fits():
+            venue_health.notice(f"{self.case.get('id', 'case')}: no longer fits its {session} window after the venue "
+                                "wait; ending the attempt as session")
+            raise SessionClosed(f"session: after a venue wait the case no longer fits its {session} window; "
+                                "rerun in the next window", self.venue_waits)
         self.watch = venue_health.Watch(probes).start()
 
     def end_watch(self, problems):
@@ -325,6 +376,8 @@ class Run:
             record["venueOutage"] = outage
         if self.leftovers_swept:
             record["leftoversSwept"] = self.leftovers_swept
+        if self.session_closed:
+            record["sessionClosed"] = self.session_closed
         return record
 
     def own_positions(self):

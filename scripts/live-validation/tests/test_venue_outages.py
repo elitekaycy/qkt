@@ -3,7 +3,8 @@ case's own strategy are swept before a new attempt, and nothing else on the shar
 
     python3 -m unittest discover -s scripts/live-validation/tests
 """
-import json, os, subprocess, sys, tempfile, threading, time, unittest
+import datetime as dt, importlib.util, json, os, subprocess, sys, tempfile, threading, time, unittest
+from unittest import mock
 from decimal import Decimal
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
@@ -312,6 +313,98 @@ class CatalogBudget(unittest.TestCase):
         run = self.runs()["derivatives-perp"]
         self.assertEqual((run["class"], len(run["attempts"])), (c.VENUE_UNAVAILABLE, 1))
         self.assertIn("FAILED derivatives-perp [venue-unavailable]: venue unavailable for 6.0h", done.stdout)
+
+
+_spec = importlib.util.spec_from_file_location("gateway_lane_session", expiry.RUNNER)
+gateway_lane = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(gateway_lane)
+
+
+def at(text):
+    return dt.datetime.fromisoformat(text.replace("Z", "+00:00")).timestamp()
+
+
+class Clock:
+    def __init__(self, start):
+        self.now = start
+
+    def time(self):
+        return self.now
+
+    def sleep(self, seconds):
+        self.now += seconds
+
+
+class DownUntil:
+    """A venue unavailable until [up] on the test's clock."""
+
+    def __init__(self, clock, up):
+        self.label, self.clock, self.up = "ALPACA", clock, up
+
+    def sample(self):
+        ms = int(self.clock.now * 1000)
+        if self.clock.now >= self.up:
+            return {"time": ms, "available": True, "reason": "venue_connected"}
+        return {"time": ms, "available": False, "reason": "gateway has no venue link (venue_connected false)"}
+
+
+class SessionBound(unittest.TestCase):
+    """An alpaca share case (nyse[09:30-16:00], 420 s budget) on Wednesday 2026-11-04: 16:00 New York is 21:00Z, so the
+    latest start is 20:53Z."""
+
+    def run_at(self, start, up, session=None):
+        clock = Clock(at(start))
+        run = object.__new__(gateway_lane.Run)
+        run.case = {"id": "alpaca-share-x", "lane": "alpaca", **({"session": session} if session else {})}
+        run.lane_config = {"session": "nyse[09:30-16:00]", "budget_seconds": 420, "venue_gateway": True}
+        patches = [mock.patch("time.time", clock.time), mock.patch("time.sleep", clock.sleep),
+                   mock.patch.dict(os.environ, {"QKT_ATTEST_VENUE_POLL_S": "60"}),
+                   mock.patch("sys.stderr", new=open(os.devnull, "w"))]
+        for p in patches:
+            p.start(); self.addCleanup(p.stop)
+        return run, clock, [DownUntil(clock, at(up))]
+
+    def test_the_venue_wait_is_bounded_by_the_window_and_ends_the_attempt_as_session(self):
+        run, clock, probes = self.run_at("2026-11-04T20:50:00Z", "2026-11-04T20:55:00Z")
+        self.assertEqual(run.session_bound(), (180.0, True))
+        with self.assertRaises(gateway_lane.SessionClosed) as raised:
+            run.await_venue(probes)
+        self.assertTrue(str(raised.exception).startswith("session: the venue was unavailable until past the latest start"))
+        self.assertLessEqual(clock.now, at("2026-11-04T20:54:00Z"))  # it gave up at the latest start, not at 6 h
+        self.assertTrue(raised.exception.wait[0]["exceeded"])
+        self.assertIsNone(run.watch)  # the judged window never opened
+
+    def test_after_any_venue_wait_the_catalog_s_session_check_runs_again(self):
+        run, _, probes = self.run_at("2026-11-04T20:50:00Z", "2026-11-04T20:55:00Z")
+        run.session_bound = lambda: (None, False)  # whatever bounded the wait, the window decides
+        with self.assertRaises(gateway_lane.SessionClosed) as raised:
+            run.await_venue(probes)
+        self.assertIn("no longer fits its nyse[09:30-16:00] window", str(raised.exception))
+
+    def test_a_venue_back_in_time_lets_the_case_start(self):
+        run, _, probes = self.run_at("2026-11-04T20:40:00Z", "2026-11-04T20:51:00Z")
+        run.await_venue(probes)
+        self.addCleanup(run.watch.stop)
+        self.assertEqual(run.venue_waits[0]["venue"], "ALPACA")
+
+    def test_a_24_7_case_is_bounded_only_by_the_profile(self):
+        run, _, _ = self.run_at("2026-11-04T20:50:00Z", "2026-11-04T20:55:00Z", session="none")
+        self.assertEqual(run.session_bound(), (None, False))
+
+    def test_the_attempt_is_recorded_as_session_with_its_evidence_and_not_retried(self):
+        out = tempfile.mkdtemp(); self.addCleanup(lambda: subprocess.run(["rm", "-rf", out]))
+        folder = os.path.join(out, "alpaca-share-x")
+        closed = {"reason": "session: after a venue wait ...", "at": "2026-11-04T20:55:00Z"}
+        write_result(folder, ["session: after a venue wait the case no longer fits its window"],
+                     sessionClosed=closed, venueWaits=[{"venue": "ALPACA", "seconds": 300, "exceeded": True}])
+        args = type("A", (), dict(out=out, name="alpaca-share-x", dir=folder, log="/dev/null", exit=1,
+                                  started="2026-11-04T20:50:00Z", no_retry=False, require_result=True,
+                                  session_closed=False))
+        attest_cases.record(args)
+        entry = attest_cases.attempts_of(out, "alpaca-share-x")[-1]
+        self.assertEqual(entry["class"], c.SESSION)
+        self.assertNotIn("retryAfterSeconds", entry)
+        self.assertEqual(entry["venue"]["sessionClosed"], closed)
 
 
 if __name__ == "__main__":

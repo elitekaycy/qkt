@@ -63,9 +63,12 @@ _OUTAGE_EFFECT = re.compile(r"^(expected \d+ fills within the budget, saw \d+|fl
 
 
 def venue_class(result, problems, log_tail=()):
-    """VENUE_UNAVAILABLE or VENUE_OUTAGE when the attempt's own recorded venue evidence ([result]'s `venueWaits`,
-    `venueOutage`) says so, else None. The problems' text alone never makes either."""
+    """SESSION, VENUE_UNAVAILABLE or VENUE_OUTAGE when the attempt's own recorded evidence ([result]'s `sessionClosed`:
+    a venue wait took a session-bound case past its window; `venueWaits`; `venueOutage`) says so, else None. The
+    problems' text alone never makes any of them."""
     result = result or {}
+    if result.get("sessionClosed"):
+        return SESSION
     if any(w.get("exceeded") for w in result.get("venueWaits") or []):
         return VENUE_UNAVAILABLE
     outage = result.get("venueOutage") or {}
