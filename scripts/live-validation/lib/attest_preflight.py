@@ -2,11 +2,13 @@
 """Every reason this attestation cannot finish, within the first minute, all at once, each by its true name.
 
     attest_preflight.py --profile FILE --repo-root DIR [--key-file FILE] [--dispatch] [--no-session]
-        [--plan FILE] [--also-failed TEXT ...] [--report FILE]
+        [--plan FILE] [--schedule FILE] [--also-failed TEXT ...] [--report FILE]
 
 Past stops were mostly a missing tool or a busy machine, found an hour in. "Unreachable" and "not flat" are different
 findings: a gateway that does not answer says nothing about the account. Values of secrets are never read into a message.
-Thresholds are profile settings (`preflight_min_disk_gb`, `preflight_min_mem_gb`, `preflight_max_latency_ms`).
+Thresholds are profile settings (`preflight_min_disk_gb`, `preflight_min_mem_gb`, `preflight_max_latency_ms`,
+`session_wait_max_h`). A session lane outside its window is planned, not refused (lib/attest_session.py): the check fails
+only when no window the lane fits in opens within `session_wait_max_h`.
 Exits 0 when nothing failed; prints the failures on one line at the end, for the stop message.
 """
 import argparse, concurrent.futures as cf, datetime as dt, fcntl, json, os, re, shutil, statistics, subprocess, sys, time
@@ -97,7 +99,8 @@ class World:
                 return True
 
     def now(self):
-        return dt.datetime.now(dt.timezone.utc)
+        import attest_session
+        return attest_session.now()
 
 
 def ask(world, url, key=None):
@@ -308,23 +311,41 @@ def check_gh(p, world):
     return ok("gh-auth") if code == 0 else bad("gh-auth", "gh is not authenticated")
 
 
-def check_sessions(p, world, plan):
-    """Says now, not an hour in, whether the run reaches each session-bound lane that still has cases to run."""
+def session_plan(p, world, plan):
+    """When the run reaches each session-bound lane that still has cases to run, and what it does about it."""
     import attest_session as session
     import yaml
     lanes_doc = yaml.safe_load(open(os.path.join(p["__repo_root"], "attestation/lanes.yaml")))["lanes"]
     keep, lead = set(plan.get("reusableCases") or []), int(plan.get("leadSeconds", sum(session.STAGE_SECONDS.values())))
     wanted = [lane for lane, on in (("stocks", p.get("attest_stocks") == "true"), ("alpaca", bool(p.get("alpaca_gateway_url")))) if on]
-    found = []
+    work, idle = [], []
     for lane in wanted:
         config = lanes_doc[lane]
         seconds = session.lane_seconds(config, session.lane_cases(p["__repo_root"], lane, keep))
-        if seconds == 0:
-            found += ok(f"session-{lane}", "nothing left to run in its window")
-            continue
-        reason = session.judge_lane(lane, config["session"], seconds, lead, world.now())
-        found += bad(f"session-{lane}", reason) if reason else ok(f"session-{lane}", f"fits, ~{seconds // 60} min after ~{lead // 60} min of earlier stages")
-    return found
+        (work.append((lane, config["session"], seconds)) if seconds else idle.append(lane))
+    try:
+        wait_h = float(p.get("session_wait_max_h") or session.DEFAULT_WAIT_MAX_H)
+    except ValueError:
+        wait_h = None
+    doc = session.schedule(work, lead, world.now(), wait_h if wait_h is not None else session.DEFAULT_WAIT_MAX_H)
+    doc.update(idle=idle, leadSeconds=lead, maxWaitHours=wait_h, plannedAtUtc=session.iso(world.now()))
+    if wait_h is None:
+        doc["problems"].append(f"session_wait_max_h is not a number: {p.get('session_wait_max_h')}")
+    return doc
+
+
+def check_sessions(p, world, plan, out=None):
+    """Says now, not an hour in, when the run will run each session-bound lane; fails only when it never can in time."""
+    doc = session_plan(p, world, plan)
+    if out:
+        os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
+        json.dump(doc, open(out, "w"), indent=1)
+    found = [f for lane in doc["idle"] for f in ok(f"session-{lane}", "nothing left to run in its window")]
+    for item in doc["lanes"]:
+        found += ok(f"session-{item['lane']}", item["reason"])
+    if doc["problems"]:
+        return found + bad("session-plan", "; ".join(doc["problems"]))
+    return found + ok("session-plan", doc["summary"]) if doc["lanes"] else found
 
 
 def load_profile(path):
@@ -333,7 +354,7 @@ def load_profile(path):
     return dict(item.split("=", 1) for item in text.split("\0") if "=" in item)
 
 
-def run_checks(p, world, key_file=None, dispatch=False, no_session=False, plan=None):
+def run_checks(p, world, key_file=None, dispatch=False, no_session=False, plan=None, schedule_out=None):
     jobs = [("gateway", lambda: check_gateway(p, world)), ("lock", lambda: check_lock(p, world)),
             ("disk", lambda: check_disk_memory(p, world)), ("tools", lambda: check_tools(p, world)),
             ("secrets", lambda: check_secrets(p, world, key_file)), ("docker", lambda: check_docker(p, world)),
@@ -344,7 +365,7 @@ def run_checks(p, world, key_file=None, dispatch=False, no_session=False, plan=N
     if dispatch:
         jobs.append(("runner", lambda: check_runner(p, world)))
     if not no_session:
-        jobs.append(("session", lambda: check_sessions(p, world, plan or {})))
+        jobs.append(("session", lambda: check_sessions(p, world, plan or {}, schedule_out)))
     pool = cf.ThreadPoolExecutor(max_workers=len(jobs))
     futures = {pool.submit(job): name for name, job in jobs}
     findings = []
@@ -364,13 +385,14 @@ def main():
     ap.add_argument("--profile", required=True); ap.add_argument("--repo-root", required=True)
     ap.add_argument("--key-file"); ap.add_argument("--dispatch", action="store_true")
     ap.add_argument("--no-session", action="store_true"); ap.add_argument("--plan"); ap.add_argument("--report")
+    ap.add_argument("--schedule", help="where to write the session plan (lanes, waits, any hold) as JSON")
     ap.add_argument("--also-failed", action="append", default=[])
     a = ap.parse_args()
     began = time.monotonic()
     profile = load_profile(a.profile)
     profile["__repo_root"] = a.repo_root
     plan = json.load(open(a.plan)) if a.plan else {}
-    findings = run_checks(profile, World(), a.key_file, a.dispatch, a.no_session, plan)
+    findings = run_checks(profile, World(), a.key_file, a.dispatch, a.no_session, plan, a.schedule)
     findings += [Finding("run", "fail", text) for text in a.also_failed]
     failed = [f for f in findings if f.level == "fail"]
     for finding in sorted(findings, key=lambda f: (f.level != "fail", f.level != "warn", f.check)):

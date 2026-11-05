@@ -142,8 +142,9 @@ quote can go quiet. These rules do not hide that. They make a failure quick, cor
 **Preflight.** `scripts/live-validation/lib/attest_preflight.py` runs in the first minute of `run-attestation.sh`, and
 before the CI wait in `release-unattended.sh`. It reports every failure at once: gateways (with retries), account flat
 (naming tickets, and distinct from "unreachable"), latency, disk, memory, tools, tokens, key file, Docker image,
-data corpus, runner, venue links, the account lock and each session-bound lane's window. Thresholds are proposals, not
-measured limits; set `preflight_min_disk_gb`, `preflight_min_mem_gb` or `preflight_max_latency_ms` in the profile.
+data corpus, runner, venue links, the account lock and the plan for each session-bound lane's window. Thresholds are
+proposals, not measured limits; set `preflight_min_disk_gb`, `preflight_min_mem_gb`, `preflight_max_latency_ms` or
+`session_wait_max_h` in the profile.
 
 **Failure classes** (`lib/attest_classify.py`). `infrastructure` (timeouts, 5xx, refused connections, a venue link
 down) earns up to three reruns after 30, 60 and 120 s. `behaviour`, the default and anything with a failed assertion among
@@ -165,9 +166,17 @@ to recover a lane while keeping one release's evidence from one working day. Any
 | Shadow lane in a catalog | Never kept: one daemon's session is the evidence of all its cases |
 | Insights | Kept unless the image changed |
 
-**Sessions.** The market being closed is the only limit: no case waits for an hour while its market is open. The Alpaca
-lane starts first, because it is the catalog's longest path, then stocks, and the preflight says up front whether the run
-reaches each window. An event only the venue can trigger at a fixed time is a `scheduled` case, never required by a
+**Sessions.** A release can start at any hour; the session-bound lanes (stocks, alpaca: a `session` window in
+`attestation/lanes.yaml`) are planned into their windows, not refused (`lib/attest_session.py`). The preflight says when
+the run reaches each one. Reached inside a window it fits in, a lane starts first (Alpaca, the catalog's longest path,
+then stocks), so it finishes before the close. Reached outside, every other lane runs now and the catalog waits in process
+for the next window the lane fits in. When that wait would age the first evidence past the 24-hour limit before the bundle
+(a weekend), the whole run is held until shortly before the window instead. Only a window further away than the profile's
+`session_wait_max_h` (default 72) fails the preflight. Each wait is logged with its reason and planned time, written to
+`attestation-run.json` (stage `hold`) or `<catalog>/session-waits.jsonl`, and carried in the bundle's catalog evidence as
+`sessionWaits`. The plan only orders and times lanes: no session-bound case starts unless it can finish inside its
+window, one that cannot fails as `session` by name, and the release still needs every case passed on this binding. An
+event only the venue can trigger at a fixed time is a `scheduled` case, never required by a
 release, and it must name its `release_proof` (see `attestation/README.md`).
 
 **Flakes.** `scripts/live-validation/attest-flake-report.py` reports per-case pass, fail and retry rates and reasons
