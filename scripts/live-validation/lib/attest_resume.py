@@ -94,6 +94,14 @@ def stage_holds(ledger, name, evidence, now, meta):
     return all((stage.get("meta") or {}).get(k) == v for k, v in meta.items())
 
 
+def ledger_attempt(entry):
+    """An attempt as the bundle shows it, with its venue evidence (waits, a sampled outage, leftovers swept) when any."""
+    item = {k: entry.get(k) for k in ("attempt", "run", "status", "class", "summary", "finishedAtUtc")}
+    if entry.get("venue"):
+        item["venue"] = entry["venue"]
+    return item
+
+
 def insights_result(folder):
     for path in (f"{folder}/result.json", f"{folder}/evidence/result.json"):
         if os.path.exists(path):
@@ -171,7 +179,7 @@ def manifest(a):
         entries.append({"name": name, "status": "passed", "passedAtUtc": last["finishedAtUtc"], "reused": last["run"] < run,
                         "flaky": any(e["status"] != "passed" for e in attempts), "resultSha256": last["resultSha256"],
                         "bindingSha256": last.get("bindingSha256"),
-                        "attempts": [{k: e.get(k) for k in ("attempt", "run", "status", "class", "summary", "finishedAtUtc")} for e in attempts]})
+                        "attempts": [ledger_attempt(e) for e in attempts]})
     stages = ledger["stages"]
     for name in ("proofs", "wave", "insights"):
         if stages.get(name, {}).get("status") != "passed":

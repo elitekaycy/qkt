@@ -35,6 +35,11 @@ and is flat (or the budget ends), sweeps only its own orders and holdings, and j
     with a recorded cause (the venue filled at a quote it captured after the request, within its venue kind's latency
     and distance bounds); the replay processes the captured ticks in arrival order and charges each
     gateway root the fee rate its venue charged live. The trace is written to OUT/evidence/trace.json.
+Before it touches any account the case waits for every gateway venue it names (lib/venue_health.py, as the gateway lanes
+do) and samples them while it runs; a gateway leg's leftovers of an earlier run of the case's own strategy are swept
+before the judged window opens (run-derivatives-lane-case.py's preflight_clear). The waits, the outage samples and the
+sweeps are written to the result (`venueWaits`, `venueOutage`, `leftoversSwept` by venue). The MT5 leg still refuses a
+magic that owns anything: a magic is not the case's alone across runs, so its holdings are a decision for a person.
 Writes OUT/result.json and prints one `passed|failed <id> ...` line; exits non-zero on failure.
 """
 import argparse, fcntl, glob, importlib.util, json, os, re, shutil, signal, subprocess, sys, time, types
@@ -48,6 +53,7 @@ sys.path.insert(0, os.path.join(HERE, "lib"))
 import causal_trace  # noqa: E402
 import cross_venue as cv  # noqa: E402
 import derivatives_drills  # noqa: E402
+import venue_health  # noqa: E402
 
 _spec = importlib.util.spec_from_file_location("gateway_lane", os.path.join(HERE, "run-derivatives-lane-case.py"))
 gateway_lane = importlib.util.module_from_spec(_spec)  # the gateway lanes' venue client, reused for each gateway leg
@@ -77,10 +83,14 @@ def main():
     problems = []
     try:
         problems = run.execute(budget)
+    except venue_health.VenueUnavailable as error:  # a venue never came back: nothing was touched
+        run.venue_waits = error.wait
+        problems = [str(error)]
     except Exception as error:  # the verdict is always written, whatever went wrong
         problems = [f"runner error: {error}"]
     finally:
         problems += run.cleanup()
+        run.end_watch(problems)
     return run.verdict(problems)
 
 
@@ -159,6 +169,9 @@ def gateway_leg(run, label, url, login, adapter):
 
 
 class CrossRun:
+    watch = None
+    venue_waits = ()
+
     def __init__(self, args, case):
         if args.arm != "I_UNDERSTAND_DEMO_ORDER_0.01":
             sys.exit("--arm I_UNDERSTAND_DEMO_ORDER_0.01 is required")
@@ -204,8 +217,10 @@ class CrossRun:
         return next((leg for leg in self.legs if leg.kind == "mt5"), None)
 
     def execute(self, budget):
-        gateway_lane.await_one_utc_day(open(os.path.join(self.args.case, "strategy.qkt")).read(),
-                                       budget + gateway_lane.RUN_TAIL_S, self.case.get("id", "case"))
+        text = open(os.path.join(self.args.case, "strategy.qkt")).read()
+        gateway_lane.await_one_utc_day(text, budget + gateway_lane.RUN_TAIL_S, self.case.get("id", "case"))
+        self.await_venues(text)
+        gateway_lane.await_one_utc_day(text, budget + gateway_lane.RUN_TAIL_S, self.case.get("id", "case"))
         self.preflight()
         self.prepare()
         self.run_daemon(budget)
@@ -482,6 +497,32 @@ class CrossRun:
                                             "explained": trace["explained"]}
         return problems + cv.judge_trace(trace)
 
+    def await_venues(self, text):
+        """Waits for every gateway venue before the case touches any account, then samples them while it runs."""
+        probes = [venue_health.Probe(leg.label, leg.url, leg.key, venue_health.strategy_symbols(text))
+                  for leg in self.gateways()]
+        self.venue_waits = venue_health.await_available(probes)
+        self.watch = venue_health.Watch(probes).start()
+
+    def end_watch(self, problems):
+        """Stops the venue sampling; a failed attempt takes one more sample, at the time it failed."""
+        if self.watch:
+            self.watch.stop()
+            if problems:
+                self.watch.look()
+
+    def venue_record(self):
+        record = {}
+        if self.venue_waits:
+            record["venueWaits"] = list(self.venue_waits)
+        outage = self.watch.outage() if self.watch else None
+        if outage:
+            record["venueOutage"] = outage
+        swept = {leg.label: leg.leftovers_swept for leg in self.gateways() if leg.leftovers_swept}
+        if swept:
+            record["leftoversSwept"] = swept
+        return record
+
     def cleanup(self):
         """Releases every kill switch, stops the daemon, closes the proxies and sweeps every venue it owns."""
         problems = []
@@ -509,7 +550,7 @@ class CrossRun:
         """Writes result.json and the one-line summary; the exit code."""
         result = {"schema": "qkt-attestation-cross-case-v1", "id": self.case["id"], "lane": "cross",
                   "status": "failed" if problems else "passed", "problems": problems, "magic": int(self.args.magic),
-                  **self.evidence}
+                  **self.evidence, **self.venue_record()}
         if self.drills:
             result["drills"] = {leg.label: drills.records for leg, drills in self.drills}
         os.makedirs(self.out, exist_ok=True)

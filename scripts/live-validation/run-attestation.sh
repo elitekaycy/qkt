@@ -249,12 +249,15 @@ fi
 # Any failed case fails the attestation: promotion to main means the whole catalog passed on this exact build, and
 # the bundle's catalog evidence says so case by case.
 stage_write catalog "$( [ -f "$schedule" ] && jq -r .summary "$schedule" || true)"
+# A gateway lane's venue down (a halted testnet) is waited out, at most venue_wait_max_s (profile; default 6 h), each wait
+# and each outage rerun written here through fd 3; deribit_public_url (profile) overrides the Deribit testnet API.
 catalog_code=0
-bash scripts/live-validation/run-attestation-catalog.sh --out "$catalog" --gateway-url "$gateway_url" \
+QKT_ATTEST_NOTICE_FD=3 bash scripts/live-validation/run-attestation-catalog.sh --out "$catalog" --gateway-url "$gateway_url" \
     --expected-login "$expected_login" --expected-server "$expected_server" --magic-base "$((magic_base + 100))" \
     --lanes "$lanes" "${deriv[@]}" --arm I_UNDERSTAND_DEMO_ORDER_0.01 --cli "$cli" --binding "$binding" \
     --session-wait-max-h "${session_wait_max_h:-72}" \
-    ${attestation_symbol:+--crypto-symbols} > "$catalog.log" 2>&1 || catalog_code=$?
+    --venue-wait-max "${venue_wait_max_s:-21600}" ${deribit_public_url:+--deribit-public-url "$deribit_public_url"} \
+    ${attestation_symbol:+--crypto-symbols} 3>&1 > "$catalog.log" 2>&1 || catalog_code=$?
 if [ "$catalog_code" != 0 ]; then
     if [ -f "$catalog/result.json" ]; then
         fail "attestation catalog: $(python3 "$lib/attest_cases.py" failures --result "$catalog/result.json" | cut -c1-900). Rerun on this commit repeats only what did not pass."

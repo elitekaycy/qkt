@@ -4,7 +4,8 @@ import json, os, shutil, stat, subprocess, textwrap
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
 
 # Each stub attempt appends to calls.log, then acts on behaviours.json: {"case": ["pass" | "fail:<problem>", ...]},
-# one action per attempt; the last repeats.
+# one action per attempt; the last repeats. "outage:<problem>" fails with sampled venue-outage evidence in its result,
+# "unavailable:<problem>" fails as a case whose venue wait exceeded its maximum (lib/venue_health.py).
 RUNNER = textwrap.dedent('''\
     #!/usr/bin/env python3
     import json, os, sys
@@ -18,8 +19,16 @@ RUNNER = textwrap.dedent('''\
     seen = sum(1 for line in open(f"{root}/calls.log") if line.split()[0] == case)
     act = plan[min(seen, len(plan)) - 1]
     failed = act != "pass"
-    problems = [act[5:]] if failed else []
-    json.dump({"status": "failed" if failed else "passed", "problems": problems}, open(f"{out}/result.json", "w"))
+    kind, _, text = act.partition(":")
+    problems = [text] if failed else []
+    result = {"status": "failed" if failed else "passed", "problems": problems}
+    if kind == "outage":
+        result["venueOutage"] = {"samplesTaken": 3, "unavailableSamples": 2, "reason": "gateway has no venue link",
+                                 "unavailable": [{"time": 1, "available": False, "reason": "gateway has no venue link"}]}
+    if kind == "unavailable":
+        result["venueWaits"] = [{"venue": "DERIBIT", "reason": "gateway has no venue link", "seconds": 21700,
+                                 "exceeded": True}]
+    json.dump(result, open(f"{out}/result.json", "w"))
     print(("failed " if failed else "passed ") + case + (" " + problems[0] if failed else ""))
     sys.exit(1 if failed else 0)
     ''')
