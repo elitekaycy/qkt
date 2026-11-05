@@ -1,5 +1,6 @@
 package com.qkt.cli.daemon.routes
 
+import com.qkt.cli.daemon.AccountWaitlist
 import com.qkt.cli.daemon.AutoDeployRetrier
 import com.qkt.cli.daemon.StrategyRegistry
 import com.sun.net.httpserver.HttpExchange
@@ -8,13 +9,15 @@ import kotlinx.serialization.builtins.serializer
 
 /**
  * `GET /health` — daemon liveness plus per-strategy last-event age, halt state and
- * queue depth; `degraded` while a `--load-dir` auto-deploy is still pending.
+ * queue depth; `degraded` while a `--load-dir` auto-deploy is still pending or an
+ * account has not been verified since boot (`unverifiedAccounts`, #1642).
  */
 internal fun handleHealth(
     ex: HttpExchange,
     registry: StrategyRegistry,
     startedAt: Instant,
     pendingAutoDeploys: List<AutoDeployRetrier.Pending> = emptyList(),
+    unverifiedAccounts: List<AccountWaitlist.Waiting> = emptyList(),
 ) {
     val now = Instant.now().toEpochMilli()
     val uptimeMs = now - startedAt.toEpochMilli()
@@ -49,11 +52,17 @@ internal fun handleHealth(
                 """"attempts":${p.attempts},"nextAttemptAtMs":${p.nextAttemptAtMs},""" +
                 """"lastError":${routeJson.encodeToString(String.serializer(), p.lastError)}}"""
         }
-    val status = if (pendingAutoDeploys.isEmpty()) "ok" else "degraded"
+    val unverified =
+        unverifiedAccounts.joinToString(",", "[", "]") { w ->
+            """{"account":${routeJson.encodeToString(String.serializer(), w.account)},"sinceMs":${w.sinceMs},""" +
+                """"attempts":${w.attempts},"retrying":${w.retrying},""" +
+                """"lastError":${routeJson.encodeToString(String.serializer(), w.lastError)}}"""
+        }
+    val status = if (pendingAutoDeploys.isEmpty() && unverifiedAccounts.isEmpty()) "ok" else "degraded"
     respond(
         ex,
         200,
         """{"status":"$status","strategies":${handles.size},"uptimeMs":$uptimeMs,""" +
-            """"pendingAutoDeploys":$pending,"perStrategy":$perStrategy}""",
+            """"pendingAutoDeploys":$pending,"unverifiedAccounts":$unverified,"perStrategy":$perStrategy}""",
     )
 }

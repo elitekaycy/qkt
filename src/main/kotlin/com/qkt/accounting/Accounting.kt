@@ -71,6 +71,17 @@ class AccountingEngine(
             configuredPair(from = quote, to = accountCurrency) != null
     }
 
+    /** Whether a fee in [coin] on a fill of [symbol] has a rate: identity, [symbol]'s own price, or a configured pair. */
+    fun canConvertCoin(
+        coin: String,
+        symbol: String,
+    ): Boolean {
+        val from = coin.uppercase()
+        return compatible(from, accountCurrency) ||
+            contextPair(symbol, from, accountCurrency) != null ||
+            configuredPair(from, accountCurrency) != null
+    }
+
     /** [symbol]'s quote currency: explicit when declared, else inferred from its suffix, else null. */
     fun quoteCurrencyOf(symbol: String): String? =
         currencyOf(symbol)?.uppercase() ?: QuoteCurrencyGuard.quoteOf(symbol)?.uppercase()
@@ -258,7 +269,7 @@ class AccountingEngine(
         from: String,
         to: String,
     ): Direction? {
-        val pair = currencyPair(symbol) ?: return null
+        val pair = CurrencyPair.of(symbol) ?: return null
         return when {
             pair.base == from && compatible(pair.quote, to) -> Direction.DIRECT
             compatible(pair.base, to) && pair.quote == from -> Direction.INVERSE
@@ -302,23 +313,10 @@ class AccountingEngine(
         INVERSE,
     }
 
-    private data class CurrencyPair(
-        val base: String,
-        val quote: String,
-    )
-
     private companion object {
         fun compatible(
             from: String,
             to: String,
         ): Boolean = QuoteCurrencyGuard.sameCurrency(from, to)
-
-        fun currencyPair(symbol: String): CurrencyPair? {
-            val bare = symbol.substringAfter(':').uppercase()
-            val quote = QuoteCurrencyGuard.quoteOf(bare) ?: return null
-            val base = bare.removeSuffix(quote)
-            if (base.isBlank()) return null
-            return CurrencyPair(base = base, quote = quote)
-        }
     }
 }

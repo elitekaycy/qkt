@@ -26,6 +26,7 @@ import com.qkt.marketdata.source.MarketSource
 import com.qkt.marketdata.source.MarketSourceCapability
 import com.qkt.positions.LegRole
 import com.qkt.risk.FakePnL
+import com.qkt.risk.HaltScope
 import com.qkt.risk.TestClock
 import com.qkt.strategy.Signal
 import com.qkt.strategy.StrategyContext
@@ -161,7 +162,8 @@ class LateFillSessionTest : PortfolioRiskAggregatorFixture() {
         val book = bookRiskState(FakePnL(BigDecimal.ZERO, BigDecimal.ZERO), clock)
         val aggregator = PortfolioRiskAggregator(listOf(child), book, emptyList(), clock)
 
-        aggregator.failClosed("breach")
+        book.halt("breach", HaltScope.PERSISTENT)
+        aggregator.evaluate()
         fill(sent.single()) // the entry that was in flight fills only now
         await { child.unclosedLegs() == 1 }
 

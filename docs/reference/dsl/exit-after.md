@@ -100,7 +100,14 @@ therefore stays armed until its close fills (#1360):
   (`<exit>-close-r1`, `-r2`, ...), for only what is still open of the leg. A close still working is
   waited for; a filled one ends the timer.
 - After 3 failures in a row, and again at 6, 12, ..., qkt raises the operator alert (as for rule exits,
-  see [conditions](conditions.md)) naming the strategy, symbol and position still open. Retrying goes on.
+  see [conditions](conditions.md)) naming the strategy, symbol, position still open and the venue's last
+  refusal. Retrying goes on.
+- A refusal no resend can change ends the timer at once with an `EXIT FAILED` alert instead: a gateway's
+  `invalid_request` or `unsupported`, or a close qkt cannot express for the venue. The position stays open
+  and must be closed by hand (#1643).
+- On a gateway venue every order id fits 45 characters (Bybit's limit, the strictest behind VGP): an id
+  that would not, such as a long strategy name's `-exit-close-r12`, is sent as its first characters and a
+  hash, so a timed close is never refused for its id.
 - The retry state is persisted with the timer, so a restart resumes it.
 
 Backtests are unchanged: the simulators fill every market close.

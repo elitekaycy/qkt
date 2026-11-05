@@ -351,10 +351,10 @@ Rules the contracts rely on:
 - **Credentials come from `context.secrets`**, never `System.getenv`. Refuse a missing or empty
   credential in `open` with a message naming `brokers.<name>.<field>`.
 - **`verify` fails closed.** Throw when the venue is unreachable or reports a different login,
-  environment or position mode than the config expects — the daemon then refuses to start.
-  Throw `AccountUnreachableException` (or let an `IOException` through) when the venue could not be
-  reached: the daemon's boot preflight retries that one until `QKT_PREFLIGHT_RETRY_SECONDS`
-  (default 300) runs out. Any other failure, a mismatch above all, is refused at once.
+  environment or position mode than the config expects. Throw `AccountUnreachableException` (or let
+  an `IOException` through) when the venue could not be reached: the daemon then starts without the
+  account, keeps its strategies undeployed and calls `verify` again in the background until it
+  passes. Any other failure, a mismatch above all, refuses the daemon's boot at once.
 - **`close` is idempotent** and releases what the account holds.
 - If your venue reports contract specs, a server clock, or positions recovered at startup, have
   your `Broker` also implement `InstrumentProvider`, `ServerTimeZoneProvider` or

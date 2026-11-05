@@ -38,9 +38,13 @@ internal fun handleList(
                 store = promotionStore,
                 gates = promotionGates,
             )
+        // The book's own halt: a tripped book limit, or the hold while the book cannot be read (#1640).
+        val bookHalt =
+            record.supervisor.bookHalt()?.let { HaltStatus(true, it.reason, it.scope.name, it.haltedAtMs) }
+        val haltJson = renderHaltFields(bookHalt ?: HaltStatus.NONE)
         rows.add(
             """{"name":"${record.name}","kind":"portfolio","childAliases":$aliasJson,""" +
-                """"uptimeMs":$uptime,"state":"$state"$promotionJson}""",
+                """"uptimeMs":$uptime,"state":"$state"$haltJson$promotionJson}""",
         )
     }
     for (h in registry.list()) {

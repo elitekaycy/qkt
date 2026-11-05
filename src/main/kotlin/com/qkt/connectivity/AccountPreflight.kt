@@ -37,6 +37,26 @@ class AccountPreflight(
         return directory.accounts.map { it to verify(it, deadlineAtMs) }
     }
 
+    /**
+     * The daemon's boot check (#1642): tries each of [accounts] once, in order, and reports the ones whose venue did
+     * not answer instead of waiting for them, so one gateway that is down does not hold every other account. An
+     * identity mismatch still throws at once. Nothing may trade on an [BootVerification.unreachable] account until a
+     * later [TradingAccount.verify] passes.
+     */
+    fun verifyReachable(accounts: List<TradingAccount>): BootVerification {
+        val verified = ArrayList<Pair<TradingAccount, AccountProfile>>()
+        val unreachable = ArrayList<Pair<TradingAccount, Exception>>()
+        for (account in accounts) {
+            try {
+                verified += account to account.verify()
+            } catch (e: Exception) {
+                if (!isUnreachable(e)) throw e
+                unreachable += account to e
+            }
+        }
+        return BootVerification(verified, unreachable)
+    }
+
     private fun verify(
         account: TradingAccount,
         deadlineAtMs: Long,
@@ -68,11 +88,6 @@ class AccountPreflight(
         }
     }
 
-    private fun isUnreachable(e: Throwable): Boolean =
-        generateSequence(e) { it.cause }.take(MAX_CAUSE_DEPTH).any {
-            it is AccountUnreachableException || it is IOException
-        }
-
     companion object {
         /** Env knob: seconds the boot preflight keeps retrying an unreachable account; `0` disables retries. */
         const val ENV_RETRY_SECONDS: String = "QKT_PREFLIGHT_RETRY_SECONDS"
@@ -80,6 +95,12 @@ class AccountPreflight(
         const val DEFAULT_INITIAL_BACKOFF_MS: Long = 2_000L
         const val DEFAULT_MAX_BACKOFF_MS: Long = 30_000L
         private const val MAX_CAUSE_DEPTH = 8
+
+        /** Whether [e] says the venue could not be reached, as opposed to answering with something wrong. */
+        fun isUnreachable(e: Throwable): Boolean =
+            generateSequence(e) { it.cause }.take(MAX_CAUSE_DEPTH).any {
+                it is AccountUnreachableException || it is IOException
+            }
 
         /** The preflight [env] configures: [ENV_RETRY_SECONDS] (default 300) bounds the retries. */
         fun fromEnv(env: Map<String, String> = System.getenv()): AccountPreflight {

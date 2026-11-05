@@ -67,7 +67,7 @@ internal class StartupDeploys(
         onDeployError: (name: String, message: String) -> Unit,
     ): List<FailedAutoDeploy> {
         if (!Files.isDirectory(path)) {
-            System.err.println("[WARN] --load-dir $path is not a directory; skipping")
+            DaemonLog.line("[WARN] --load-dir $path is not a directory; skipping")
             return emptyList()
         }
         val failed = ArrayList<FailedAutoDeploy>()
@@ -79,7 +79,7 @@ internal class StartupDeploys(
                     .onSuccess { println("[INFO] auto-deployed $name from $file") }
                     .onFailure { e ->
                         val message = e.message ?: e::class.java.simpleName
-                        System.err.println("[WARN] failed to auto-deploy $name: $message")
+                        DaemonLog.line("[WARN] failed to auto-deploy $name: $message")
                         failed += FailedAutoDeploy(name, file, message)
                         onDeployError(name, message)
                     }

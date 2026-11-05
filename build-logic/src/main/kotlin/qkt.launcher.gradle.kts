@@ -10,7 +10,8 @@ tasks.named<CreateStartScripts>("startScripts") {
     val findJavaUnix = rootProject.file("scripts/launcher/find-java.sh")
     val findJavaWinMain = rootProject.file("scripts/launcher/find-java-main.bat")
     val findJavaWinSubs = rootProject.file("scripts/launcher/find-java-subs.bat")
-    inputs.files(findJavaUnix, findJavaWinMain, findJavaWinSubs)
+    val daemonJvmUnix = rootProject.file("scripts/launcher/daemon-jvm.sh")
+    inputs.files(findJavaUnix, findJavaWinMain, findJavaWinSubs, daemonJvmUnix)
     doLast {
         val anchor = "# Determine the Java command to use to start the JVM.\n"
         val text = unixScript.readText()
@@ -26,6 +27,7 @@ tasks.named<CreateStartScripts>("startScripts") {
                 crlf(findJavaWinSubs.readText()),
         )
         applyLanguageServerJvmOptions(unixScript, windowsScript)
+        applyDaemonJvmOptions(unixScript, daemonJvmUnix)
     }
 }
 
@@ -53,4 +55,19 @@ fun applyLanguageServerJvmOptions(
     windowsScript.writeText(
         win.replaceFirst(winDefault, winDefault + "\r\nif \"%~1\"==\"lsp\" set DEFAULT_JVM_OPTS=$winLean"),
     )
+}
+
+// `qkt daemon` sizes its heap from the container limit, dumps the heap into the state directory and exits on the
+// first OutOfMemoryError (#1645): see scripts/launcher/daemon-jvm.sh. Placed after the qkt lsp options, which never
+// apply to the daemon. Windows hosts no daemon deploys, so the .bat launcher is unchanged.
+fun applyDaemonJvmOptions(
+    unixScript: File,
+    snippet: File,
+) {
+    val anchor = "[ \"\$1\" = lsp ] && DEFAULT_JVM_OPTS="
+    val unix = unixScript.readText()
+    val at = unix.indexOf(anchor)
+    check(at >= 0) { "the start script changed shape: the qkt daemon JVM options were not applied" }
+    val lineEnd = unix.indexOf('\n', at) + 1
+    unixScript.writeText(unix.substring(0, lineEnd) + snippet.readText() + unix.substring(lineEnd))
 }

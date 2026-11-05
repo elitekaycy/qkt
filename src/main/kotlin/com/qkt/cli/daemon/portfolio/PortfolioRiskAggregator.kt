@@ -9,40 +9,15 @@ import java.math.BigDecimal
 import java.util.concurrent.ConcurrentLinkedQueue
 import org.slf4j.LoggerFactory
 
-/** A child the book can act on when the account-level limit trips. */
-interface ChildRiskTarget {
-    /** Closes the child's open exposure. */
-    fun flatten()
-
-    /** Legs the child holds with no close working. Blocks on its engine; throws when it does not answer. */
-    fun unclosedLegs(): Int
-
-    /** Applies a halt with the book rule's [scope]. */
-    fun halt(
-        reason: String,
-        scope: HaltScope,
-    )
-
-    /** Clears the child's active global halt. */
-    fun resume()
-
-    /** True when any global halt currently suppresses the child. */
-    fun isHalted(): Boolean
-
-    /** Active global halt reason, when available. */
-    fun haltReason(): String?
-
-    /** Active global halt scope, when available. */
-    fun haltScope(): HaltScope?
-}
-
 /**
  * Account-level drawdown halt for a portfolio book. Refreshes a book [RiskState] (fed by summed
  * child PnL) and runs the existing drawdown halt rules; on a breach it flattens then halts every
  * child. That close covers what each child holds when its engine reaches it; an entry already in
  * flight that fills after it is closed by [LateFillCloser]. A DAILY breach (daily-loss / daily-drawdown) auto-resumes only children whose halt still
  * matches that book breach at the next UTC midnight; a PERSISTENT breach (total / trailing
- * drawdown), or an unrelated child halt, stays latched across process restarts.
+ * drawdown), or an unrelated child halt, stays latched across process restarts, until an operator clears it with
+ * [resumeByOperator] (`qkt resume <book>`). A book that cannot be evaluated is held off new entries by
+ * [UnreadableBookHold], not halted.
  */
 class PortfolioRiskAggregator(
     private val children: List<ChildRiskTarget>,
@@ -64,6 +39,7 @@ class PortfolioRiskAggregator(
     private var childHaltReason: String? = null
     private var childHaltScope: HaltScope? = null
     private val lateFills = LateFillCloser(clock)
+    private val unreadable = UnreadableBookHold(clock)
 
     /** Queue one child fill for the book's single risk-heartbeat writer. */
     fun recordRealized(
@@ -87,7 +63,7 @@ class PortfolioRiskAggregator(
         if (bookRiskState.halted) {
             if (!childrenHalted) {
                 haltChildren(
-                    bookRiskState.haltReason ?: "restored portfolio book halt",
+                    bookRiskState.haltReason ?: RESTORED_REASON,
                     bookRiskState.globalHaltScope() ?: HaltScope.PERSISTENT,
                 )
             } else {
@@ -99,8 +75,12 @@ class PortfolioRiskAggregator(
             resumeBookHaltedChildren()
         }
         bookRiskState.onTick()
-        val breach =
-            haltRules.firstNotNullOfOrNull { it.evaluate(bookRiskState) as? HaltDecision.Halt } ?: return
+        // The book read: a breach takes the held children over, otherwise they take entries again.
+        val breach = haltRules.firstNotNullOfOrNull { it.evaluate(bookRiskState) as? HaltDecision.Halt }
+        if (breach == null) {
+            unreadable.release()
+            return
+        }
         bookRiskState.halt(breach.reason, breach.scope)
         haltChildren(breach.reason, breach.scope)
     }
@@ -116,11 +96,49 @@ class PortfolioRiskAggregator(
         if (boundary.first(timestampMs)) onSample(timestampMs)
     }
 
-    /** Fail closed when the supervisor cannot evaluate book risk repeatedly. */
+    /**
+     * Fail closed when the supervisor cannot evaluate book risk repeatedly: hold every child off new entries until the
+     * book reads again (see [UnreadableBookHold]). A book already halted holds its children already.
+     */
     @Synchronized
     fun failClosed(reason: String) {
-        if (!bookRiskState.halted) bookRiskState.halt(reason, HaltScope.PERSISTENT)
-        if (!childrenHalted) haltChildren(reason, HaltScope.PERSISTENT)
+        if (bookRiskState.halted || childrenHalted) return
+        unreadable.hold(reason, children)
+    }
+
+    /** The book's active halt, or its unreadable hold; null when the book trades. Never waits on an evaluation. */
+    fun bookHalt(): BookHalt? {
+        if (!bookRiskState.halted) return unreadable.view()
+        return BookHalt(
+            bookRiskState.haltReason ?: RESTORED_REASON,
+            bookRiskState.globalHaltScope() ?: HaltScope.PERSISTENT,
+            bookRiskState.globalHaltedAtMs(),
+        )
+    }
+
+    /**
+     * Operator resume (`qkt resume <book>`): clears the book's halt, or its unreadable hold, and the halts it put on
+     * its children; a child halted for its own reason stays halted. Returns what was cleared, null when the book was
+     * not halted. A limit still breached halts the book again on the next evaluation.
+     */
+    @Synchronized
+    fun resumeByOperator(): BookHalt? {
+        val cleared = bookHalt() ?: return null
+        val reasons = setOfNotNull(cleared.reason, childHaltReason)
+        unreadable.release()
+        bookRiskState.resume()
+        for (child in children) {
+            if (child.isHalted() && child.haltReason() in reasons) {
+                runCatching { child.resume() }.onFailure { log.warn("child resume failed: {}", it.message) }
+            }
+        }
+        childrenHalted = false
+        bookHaltedChildren.clear()
+        childHaltReason = null
+        childHaltScope = null
+        lateFills.clear()
+        log.warn("portfolio book halt cleared by operator: {}", cleared.reason)
+        return cleared
     }
 
     private fun haltChildren(
@@ -128,6 +146,7 @@ class PortfolioRiskAggregator(
         scope: HaltScope,
     ) {
         childrenHalted = true
+        unreadable.handOver()
         childHaltReason = reason
         childHaltScope = scope
         log.warn(
@@ -139,7 +158,11 @@ class PortfolioRiskAggregator(
             runCatching { c.flatten() }.onFailure { log.warn("child flatten failed: {}", it.message) }
             lateFills.closed(c)
             // A child held only until midnight by the daemon's total must carry a persistent book breach past it.
-            if (!c.isHalted() || (scope == HaltScope.PERSISTENT && c.haltScope() == HaltScope.DAILY)) {
+            // A child only held off entries while the book was unreadable takes the breach's halt.
+            val escalates =
+                (scope == HaltScope.PERSISTENT && c.haltScope() == HaltScope.DAILY) ||
+                    (scope != HaltScope.TRANSIENT && c.haltScope() == HaltScope.TRANSIENT)
+            if (!c.isHalted() || escalates) {
                 runCatching { c.halt(reason, scope) }.onFailure { log.warn("child halt failed: {}", it.message) }
             }
             if (c.isHalted() && c.haltReason() == reason && c.haltScope() == scope) {
@@ -161,5 +184,9 @@ class PortfolioRiskAggregator(
         bookHaltedChildren.clear()
         childHaltReason = null
         childHaltScope = null
+    }
+
+    private companion object {
+        const val RESTORED_REASON = "restored portfolio book halt"
     }
 }

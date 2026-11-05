@@ -62,6 +62,9 @@ object QuoteCurrencyGuard {
     private val CRYPTO_BASES =
         setOf("BTC", "ETH", "SOL", "XRP", "BNB", "LTC", "DOGE", "ADA", "DOT", "AVAX")
 
+    /** True when [asset] is a coin qkt knows (`BTC`, `ETH`, ...), one a spot venue may take a fee in. */
+    fun isCoin(asset: String): Boolean = asset.uppercase() in CRYPTO_BASES
+
     /**
      * True when [qktSymbol] is a fiat-quoted FX/metal shape, where a missing
      * `contractSize` is a 100-100,000x PnL error. Crypto — stablecoin-quoted

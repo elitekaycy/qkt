@@ -111,6 +111,13 @@ class Fills(unittest.TestCase):
                  '"price":"1","qty":"0.001","venueCosts":"0"}', ""]
         self.assertEqual([(f["ts"], f["venue"]) for f in cv.journal_fills(lines)], [(6, "PAPER")])
 
+    def test_the_journal_counts_every_partial_slice_of_an_order(self):
+        lines = ['{"ts":6,"kind":"partially-filled","id":"ORD-a-0","symbol":"PAPER:BTC_USDC_PERPETUAL","side":"BUY",'
+                 '"price":"1","qty":"0.02","cumulative":"0.02","venueCosts":"0"}',
+                 '{"ts":7,"kind":"filled","id":"ORD-a-0","symbol":"PAPER:BTC_USDC_PERPETUAL","side":"BUY",'
+                 '"price":"1","qty":"0.01","venueCosts":"0"}']
+        self.assertEqual([(f["ts"], f["qty"]) for f in cv.journal_fills(lines)], [(6, "0.02"), (7, "0.01")])
+
 
 class Flat(unittest.TestCase):
     VENUES = [{"label": "EXNESS", "type": "mt5"}, {"label": "PAPER", "type": "gateway"}]

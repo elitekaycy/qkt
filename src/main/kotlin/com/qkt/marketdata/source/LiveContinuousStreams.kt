@@ -3,6 +3,7 @@ package com.qkt.marketdata.source
 import com.qkt.candles.TimeWindow
 import com.qkt.common.Clock
 import com.qkt.common.TimeRange
+import com.qkt.derivatives.futures.ContinuousChain
 import com.qkt.derivatives.futures.ContinuousChains
 import com.qkt.derivatives.futures.LiveRoll
 import com.qkt.derivatives.futures.LiveRollMeasurer
@@ -57,6 +58,27 @@ class LiveContinuousStreams(
             clock = clock,
             taps = taps,
         )
+    }
+
+    /**
+     * [symbol]'s chain once every roll before [toMs], and not after now, that it lacks is measured, oldest first,
+     * as its feed measures them: a read across a downtime that spanned rolls comes before the stream's first tick
+     * (the warmup, a held leg's downtime excursion), and must not stop the session before it settles what expired
+     * meanwhile (qkt#1647). A roll that cannot be measured yet is left, and the read fails on it as before.
+     */
+    fun caughtUp(
+        symbol: String,
+        toMs: Long,
+    ): ContinuousChain {
+        val endMs = minOf(toMs - 1, clock.now())
+        var chain = requireNotNull(chains.chainFor(symbol)) { "$symbol is not a continuous futures stream" }
+        for (roll in chain.schedule.transitions.filter { it.atMs <= endMs }) {
+            val index = chain.indexAt(roll.atMs) ?: continue
+            if (index <= chain.firstIndex || chain.covers(index)) continue
+            if (measure(symbol, roll) !is LiveRoll.Measured) break
+            chain = requireNotNull(chains.chainFor(symbol))
+        }
+        return chain
     }
 
     /** Measures [roll] for [symbol]'s stream and extends the chains with it. */

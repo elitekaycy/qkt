@@ -14,22 +14,37 @@ Every `qkt` subcommand. Run `qkt <command> --help` for the authoritative flag li
 | `qkt daemon status` | Health + uptime of a running daemon. |
 | `qkt deploy <file> [--as <name>]` | Deploy a strategy or portfolio. |
 | `qkt resync <file> [--as <name>] [--dry-run]` | Validate and replace a deployed strategy or portfolio under the same daemon name. |
-| `qkt list` | List deployed strategies + portfolios. STATE reads `stream_stopped` (`halted,stream_stopped` beside a halt) when a failed roll stopped a continuous stream, whose orders are then refused. `--json` keeps `state` as `running` and adds a `streamStops` list (`strategyId`, `stream`, `reason`), present only when there is a stop. |
+| `qkt list` | List deployed strategies + portfolios. STATE reads `stream_stopped` (`halted,stream_stopped` beside a halt) when a failed roll stopped a continuous stream, whose orders are then refused. `--json` keeps `state` as `running` and adds a `streamStops` list (`strategyId`, `stream`, `reason`), present only when there is a stop. A halted portfolio book reads `halted` and its reason and scope follow the table (`portfolio <book> halted (<SCOPE>): <reason>`); `--json` gives the portfolio row `halted`, `haltReason`, `haltScope`. `qkt status <book>` carries the same `halted`/`haltReason`/`haltScope`/`haltedAtMs`. |
 | `qkt status [<name>]` | Snapshot of one strategy, or all if no name given. `streamStops` names each stream refusing the strategy's orders and why; `--deep` shows the same and does not fail health for it. |
 | `qkt status --deep` | Aggregated health check: daemon + control plane + every deployed strategy. Single-screen human output. Exit 0 if all green, exit 1 with reasons if anything is unhealthy. First-thing-to-run when something feels off. |
 | `qkt logs <name> [--lines N] [--follow] [--since <iso8601>]` | Per-strategy log stream. |
 | `qkt stop <name> [--flatten]` | Stop a strategy. Cascades for portfolios. `--flatten` cancels its working orders and closes its positions at market; a bracket entry that filled in part has its remainder cancelled and the filled part closed, with no stop or target sent for it. A standalone strategy's flatten is then confirmed against its book and, where the venue names its positions, the venue, for up to 2 minutes: a close the venue never took (a gateway outage) is sent again with growing gaps (1 s, 2 s, 4 s, up to 30 s). `stopped` is printed only when flat, with `"flat": true` in the answer; otherwise the command exits non-zero and says what is held and why (`"state": "not_flat"`, `"flat": false`, `held`, `detail`), though the strategy no longer trades. A holding on a [stream stopped by a failed roll](../instruments/futures.md) is answered at once, with no retries. A portfolio child's flatten is confirmed the same way with an explicit `--flatten`, and a portfolio's for each child it flattens. |
 | `qkt start <portfolio>/<child>` | Resume an operator-stopped child of a portfolio. |
 
-**Gateway outages.** At boot the daemon verifies every `brokers:` account before anything trades. An
-account whose gateway does not answer is retried every 2 s doubling to 30 s, for up to
-`QKT_PREFLIGHT_RETRY_SECONDS` (default `300`; `0` refuses at once), with one log line per retry; a
-login, server, trade-mode, currency, leverage or margin-mode mismatch is refused at once. Once
+**Gateway outages.** At boot the daemon verifies every `brokers:` account before anything trades on it. A
+login, server, trade-mode, currency, leverage or margin-mode mismatch refuses the boot at once. An account
+whose gateway does not answer does not hold the others: the daemon starts, trades on the accounts that
+verified, and keeps the strategies of the unreachable one undeployed (`qkt list` does not show them; their
+files wait as pending auto-deploys). It logs the failure at ERROR in the daemon log (`logs/main.log` in the
+state directory) and on stderr, reports `degraded` on `/health` with the account under `unverifiedAccounts`,
+and retries the account in the background every 2 s doubling to 30 s, with no deadline. When it answers with
+the expected identity its strategies deploy at once; a wrong identity keeps them stopped for good.
+(`qkt bot session` still waits for its account for up to `QKT_PREFLIGHT_RETRY_SECONDS`, default `300`;
+`0` refuses at once.) Once
 running, a strategy whose live feed stays disconnected past its reconnect budget (120 s) stops rather
 than trade on stale prices, and the daemon redeploys it from its file the way it deploys at boot
 (state recovery, position re-adoption), retrying after 1, 2, 5 and then every 15 minutes until the
 gateway is back; `/health` reports `degraded` meanwhile. Portfolio children are not redeployed this
 way.
+
+**Daemon memory.** The `qkt` launcher starts `qkt daemon` with `-XX:MaxRAMPercentage=70` (70% of the
+container's memory limit rather than the JVM's default 25%), `-XX:+HeapDumpOnOutOfMemoryError` into
+`$QKT_STATE_DIR/daemon-oom.hprof` (one file; the JVM does not overwrite it, so delete it after reading) and
+`-XX:+ExitOnOutOfMemoryError`, so an exhausted heap stops the process for its supervisor (`restart:` in
+Compose, systemd) to restart and recover, instead of trading on with failing allocations. `JAVA_OPTS` and
+`QKT_OPTS` come later on the command line and override any of these, e.g. `QKT_OPTS=-XX:MaxRAMPercentage=50`.
+An engine-loop fault caused by the JVM itself (an `OutOfMemoryError` or other `VirtualMachineError`) halts the
+strategy for the current process only; a restart clears it. Any other engine fault still halts until resumed.
 
 ## Project scaffolding
 
@@ -196,7 +211,7 @@ and manifest hashes; use `--json` for piping compact, schema-tagged summaries.
 | `qkt promotion ...` | Record and query promotion states, approvals, waivers, and gates. |
 | `qkt incident collect [...]` | Build an incident zip with journal, log, and state evidence. |
 | `qkt halt [name]` | Pause new-order submission for one strategy, or all if no name. |
-| `qkt resume [name]` | Re-enable new-order submission, and clear the stop a failed roll left on a continuous stream when that is safe: the strategy's position and venue holding on the stream are zero, nothing is working or in flight for it, and no roll is in progress. The clear is saved. A stop that stands is reported with the reason and exits 1: JSON `state` is `stream_stopped` instead of `resumed`, with a `streamStops` list, because the strategy's orders on that stream are still refused. |
+| `qkt resume [name]` | Re-enable new-order submission, and clear the stop a failed roll left on a continuous stream when that is safe: the strategy's position and venue holding on the stream are zero, nothing is working or in flight for it, and no roll is in progress. The clear is saved. A stop that stands is reported with the reason and exits 1: JSON `state` is `stream_stopped` instead of `resumed`, with a `streamStops` list, because the strategy's orders on that stream are still refused. A portfolio name (`qkt resume <book>`) clears the book's own halt (including a persistent one restored after a restart) and the halts that book put on its children; a child halted for its own reason stays halted, and a book limit still breached halts the book again on its next evaluation. JSON `bookHalts` maps each book whose halt was cleared to that halt's reason. A child is named `<book>/<alias>` or `<book>:<alias>`: it resumes like a strategy while its book trades, and is refused with the book's reason (exit 1, HTTP 409) while its book is halted. `qkt resume` with no name clears book halts too. Every resume is journaled as an `operator_action`. |
 | `qkt kill <name> [--flatten]` | Operator kill switch: halt, cancel venue-resting pendings, optionally flatten positions. |
 | `qkt reconcile <name> [--json]` | Cron-able expected-vs-actual reconciliation check over the control plane. |
 | `qkt observe ...` | Read-only go/no-go report over the running daemon. |

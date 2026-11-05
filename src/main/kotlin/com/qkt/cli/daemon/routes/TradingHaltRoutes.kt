@@ -72,8 +72,10 @@ private fun stopJson(s: StreamStopRelease): String =
         """"cleared":${s.cleared},"stands":${jsonStringOrNull(s.stands)},"summary":${jsonString(s.summary())}}"""
 
 /**
- * `POST /resume[/{name}]` — resumes one halted strategy, or every one, and clears the stream stops that are safe to
- * clear. `state` is `resumed` only when no stop stands; otherwise `stream_stopped`, and `streamStops` says why.
+ * `POST /resume[/{name}]` — resumes one halted strategy, portfolio book or child, or every one, and clears the stream
+ * stops that are safe to clear. `state` is `resumed` only when no stop stands; otherwise `stream_stopped`, and
+ * `streamStops` says why. `bookHalts` names each portfolio book halt the resume cleared, with its reason. A child
+ * whose book is halted is refused with 409.
  */
 internal fun handleResume(
     ex: HttpExchange,
@@ -86,9 +88,14 @@ internal fun handleResume(
     if (result.unknown.isNotEmpty()) {
         return respond(ex, 404, """{"error":${jsonString("unknown name: ${result.unknown.first()}")}}""")
     }
+    result.refused.values
+        .firstOrNull()
+        ?.let { return respond(ex, 409, """{"error":${jsonString(it)}}""") }
     val stops = result.streamStops
     val state = if (stops.all { it.cleared }) "resumed" else "stream_stopped"
     val stopList = stops.joinToString(",", transform = ::stopJson)
     val stopsJson = if (stops.isEmpty()) "" else ",\"streamStops\":[$stopList]"
-    respond(ex, 200, """{"state":"$state","affected":${jsonArray(result.affected)}$stopsJson}""")
+    val books = result.bookHalts.entries.joinToString(",") { (book, why) -> "${jsonString(book)}:${jsonString(why)}" }
+    val booksJson = if (result.bookHalts.isEmpty()) "" else ",\"bookHalts\":{$books}"
+    respond(ex, 200, """{"state":"$state","affected":${jsonArray(result.affected)}$stopsJson$booksJson}""")
 }
