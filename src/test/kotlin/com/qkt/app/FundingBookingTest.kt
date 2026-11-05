@@ -161,6 +161,19 @@ class FundingBookingTest {
     }
 
     @Test
+    fun `on a shared account a session flat at a record on a held basis books none of it, the holder its part`() {
+        bind("a")
+        bind("b")
+        bus.publish(closed("a", "-1"))
+        hold("b", Side.SELL, "1.4")
+
+        bus.publish(funding("tx-held", "-2.92", "-1.46"))
+
+        assertThat(costs.map { it.strategyId to it.amount.stripTrailingZeros().toPlainString() })
+            .containsExactly("b" to "-2.8")
+    }
+
+    @Test
     fun `a close is written only for a symbol funding was heard for, so trading anything else costs no io`() {
         bind("a")
         val atStart = saved.saves

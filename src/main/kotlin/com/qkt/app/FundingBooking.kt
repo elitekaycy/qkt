@@ -22,9 +22,10 @@ import org.slf4j.LoggerFactory
  * strategy holding the perpetual is charged `amount × its signed holding / basis` as a [CostIncurred] of
  * kind [FillAccountingKind.FINANCING], the kind a backtest books funding as. A long and a short on one
  * account each get their own sign, and a part of the basis no strategy here holds (another tool's
- * position) is left unbooked. A venue that realizes a day's funding once the position is gone charges on
- * a basis of zero; the holdings strategies closed since the symbol's last funding share it then (a close
- * is written to disk only for a symbol funding was heard for, so trading anything else costs no I/O). What was
+ * position) is left unbooked, and a strategy flat at the record books none of it. A venue that realizes a
+ * day's funding once the position is gone charges on a basis of zero; only then do the holdings strategies
+ * closed since the symbol's last funding share it, when none holds it now (a close is written to disk only
+ * for a symbol funding was heard for, so trading anything else costs no I/O). What was
  * booked persists under the session's state owner, so a record heard again, from the stream or a replay
  * after a restart, is booked once, and a session books nothing funded before its first start.
  */
@@ -65,7 +66,8 @@ internal class FundingBooking(
         bus.subscribe<FundingCharged> { e ->
             funded += e.symbol
             if (e.fundedAtMs < state.sinceMs || e.fundingId in state.booked) return@subscribe
-            book(e, holdings(e.symbol, strategyIds, state.closed[e.symbol].orEmpty()))
+            val closed = if (e.basis.signum() == 0) state.closed[e.symbol].orEmpty() else emptyMap()
+            book(e, holdings(e.symbol, strategyIds, closed))
             val keepFrom = clock.now() - RETAIN_MS
             state =
                 state.copy(
@@ -76,7 +78,10 @@ internal class FundingBooking(
         }
     }
 
-    /** What each strategy holds of [symbol] now, or, when none does, what each closed since its last funding. */
+    /**
+     * What each strategy holds of [symbol] now, or, when none does, [closed]: what each closed since the last
+     * funding, handed only for a record on a basis of zero (a non-zero basis is held now, by others when not here).
+     */
     private fun holdings(
         symbol: String,
         strategyIds: List<String>,
