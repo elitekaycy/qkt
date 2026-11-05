@@ -23,7 +23,8 @@ import org.slf4j.LoggerFactory
  * first measured roll on; earlier requests are clipped (a warmup reaching back sees fewer bars).
  * Explicit contracts end at their expiry with a settlement print ([DatedContractData]). Live, a
  * continuous stream's ticks come from its feed in [live] (a live session's streams over its account),
- * each read on its own thread beside the account's other symbols. Every other symbol is served by
+ * each read on its own thread beside the account's other symbols, and a read across rolls the history lacks
+ * (a downtime spanned them) measures them first. Every other symbol is served by
  * [inner] unchanged, through the same calls and with the same per-symbol capabilities.
  */
 class ContinuousMarketSource(
@@ -81,7 +82,7 @@ class ContinuousMarketSource(
         range: TimeRange,
     ): Sequence<Candle> {
         val chain =
-            chains.chainFor(symbol) ?: return dated.bars(symbol, window, range, inner.bars(symbol, window, range))
+            caughtUp(symbol, range) ?: return dated.bars(symbol, window, range, inner.bars(symbol, window, range))
         requireBarsAvoidRolls(chain, window, range)
         return stitched(chain, range) { contract, seg ->
             inner.bars(contract, window, seg.range()).filter { it.startTime >= seg.fromMs && it.startTime < seg.toMs }
@@ -93,7 +94,7 @@ class ContinuousMarketSource(
         range: TimeRange,
     ): Sequence<Tick> {
         val chain =
-            chains.chainFor(symbol) ?: return dated.ticks(symbol, range, inner.ticks(symbol, range))
+            caughtUp(symbol, range) ?: return dated.ticks(symbol, range, inner.ticks(symbol, range))
         return stitched(chain, range) { contract, seg ->
             inner.ticks(contract, seg.range()).filter { it.timestamp >= seg.fromMs && it.timestamp < seg.toMs }
         }.flatMap { (space, ticks) -> ticks.map { it.inSpace(space, symbol) } }
@@ -109,6 +110,12 @@ class ContinuousMarketSource(
         }
         return dated.cut(symbol, inner.tickSlice(symbol, fromMs, toMs))
     }
+
+    /** [symbol]'s chain, live with every roll before [range]'s end measured ([LiveContinuousStreams.caughtUp]). */
+    private fun caughtUp(
+        symbol: String,
+        range: TimeRange,
+    ): ContinuousChain? = chains.chainFor(symbol)?.let { live?.caughtUp(symbol, range.to.toEpochMilli()) ?: it }
 
     /** Each segment's price mapping (resolved now, so gaps in the history fail at request time) and its data. */
     private fun <T> stitched(
