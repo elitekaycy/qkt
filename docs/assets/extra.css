@@ -1348,3 +1348,11 @@ body[data-md-color-primary] .md-content__inner:has(.qkt-hero) {
   .qkt-cmd__label { display: none; }
   .qkt-section__head { flex-wrap: wrap; }
 }
+
+/* Sponsor announcement bar and footer heart: GitHub Sponsors pink, readable on both palettes. */
+:root { --qkt-heart: #bf3989; }
+[data-md-color-scheme="slate"] { --qkt-heart: #db61a2; }
+.qkt-sponsor__heart { margin-right: 0.35em; }
+.qkt-sponsor__heart svg { width: 1em; height: 1em; fill: var(--qkt-heart); vertical-align: -0.125em; }
+.qkt-sponsor a { text-decoration: underline; text-underline-offset: 0.2em; }
+.md-social__link[title="Sponsor qkt"] svg { fill: var(--qkt-heart); }
