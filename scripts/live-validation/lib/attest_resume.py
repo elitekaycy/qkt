@@ -13,7 +13,7 @@ runId), the shadow lane in a catalog (one daemon's session, see attest_cases.NEV
     attest_resume.py begin --ledger F --binding F
     attest_resume.py stage --ledger F --name proofs|wave|insights --evidence FILE [--meta K=V ...] [--attempts FILE]
     attest_resume.py spend-wave --ledger F
-    attest_resume.py manifest --ledger F --catalog D --lanes CSV --repo-root D --run-id ID --out F
+    attest_resume.py manifest --ledger F --catalog D --lanes CSV --repo-root D --run-id ID [--waits FILE ...] --out F
 """
 import argparse, datetime as dt, hashlib, json, os, re, sys
 
@@ -183,8 +183,18 @@ def manifest(a):
                   "bindingSha256": cases.binding_sha(binding), "maxEvidenceAgeHours": MAX_EVIDENCE_AGE_HOURS,
                   "assembledAtUtc": cases.utc_now(), "lanes": lanes, "catalogRuns": run, "waveRunId": a.run_id,
                   "stages": {k: {f: v.get(f) for f in ("status", "completedAtUtc", "evidenceSha256", "attempts")} for k, v in stages.items()},
-                  "cases": entries})
+                  "cases": entries, "sessionWaits": session_waits(a.waits)})
     return 0
+
+
+def session_waits(paths):
+    """Every planned wait for a market window (lib/attest_session.py wait-until), in the order recorded: the audit of
+    when and why the run waited. Waiting changes nothing about what must pass."""
+    found = []
+    for path in paths or []:
+        if path and os.path.exists(path):
+            found += [json.loads(line) for line in open(path) if line.strip()]
+    return sorted(found, key=lambda w: w.get("recordedAtUtc", ""))
 
 
 def main():
@@ -208,6 +218,7 @@ def main():
     p = sub.add_parser("manifest")
     for flag in ("ledger", "catalog", "lanes", "repo-root", "run-id", "out"):
         p.add_argument(f"--{flag}", required=True)
+    p.add_argument("--waits", action="append", default=[])
     a = ap.parse_args()
     if a.command == "binding":
         return write(a.out, make_binding(a.sha, a.profile, a.login, a.server, a.cli_root, a.cli_version)) or 0

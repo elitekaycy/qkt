@@ -82,6 +82,19 @@ esac
 '''
 
 
+# The preflight's session plan, stubbed: a hold until Monday 13:43:50Z while the test clock is before it.
+HOLD_PREFLIGHT = textwrap.dedent('''\
+    import json, os, sys
+    args = sys.argv[1:]
+    now = open(os.environ["QKT_ATTEST_CLOCK_FILE"]).read().strip()
+    hold = "2026-11-09T13:43:50Z" if now < "2026-11-09T13:43:50Z" else None
+    summary = ("session lanes alpaca at Mon 14:30Z; other lanes with them" if hold
+               else "session lanes alpaca first, inside their window; other lanes now")
+    json.dump({"lanes": [], "problems": [], "holdUntilUtc": hold, "summary": summary}, open(args[args.index("--schedule") + 1], "w"))
+    print("preflight: stub")
+    ''')
+
+
 def write(path, text, executable=False):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as stream:
@@ -139,10 +152,10 @@ class Harness:
     def sha(self):
         return self.git("rev-parse", "HEAD")
 
-    def run(self, behaviours=None, dispatch=False):
+    def run(self, behaviours=None, dispatch=False, env_extra=None):
         json.dump(behaviours or {}, open(f"{self.root}/behaviours.json", "w"))
         env = dict(os.environ, PATH=f"{self.bin}:{os.environ['PATH']}", STUB_ROOT=self.root, STUB_SHA=self.sha, QKT_BROKER_API_KEY="k",
-                   QKT_LIVE_DEMO_ORDER_APPROVAL="LOCALHOST_DEMO_ONLY", QKT_ATTEST_RETRY_BACKOFF="0,0,0")
+                   QKT_LIVE_DEMO_ORDER_APPROVAL="LOCALHOST_DEMO_ONLY", QKT_ATTEST_RETRY_BACKOFF="0,0,0", **(env_extra or {}))
         command = ["bash", f"{self.repo}/{LIVE}/run-attestation.sh", "--profile", self.profile, "--attempts", "1"]
         return subprocess.run(command + (["--dispatch"] if dispatch else []), env=env, capture_output=True, text=True, cwd=self.repo)
 
@@ -210,6 +223,24 @@ class ResumeTest(unittest.TestCase):
         two = next(c for c in evidence["cases"] if c["name"] == "orders-two")
         self.assertTrue(two["flaky"]); self.assertEqual(len(two["attempts"]), 3)
         self.assertEqual({c["reused"] for c in evidence["cases"] if c["name"] != "orders-two"}, {True})
+
+    def test_a_hold_for_a_far_window_is_logged_recorded_and_carried_in_the_bundle(self):
+        # A Friday-evening start: the plan holds the whole run until shortly before Monday's window, then plans again.
+        write(f"{self.h.repo}/{LIVE}/lib/attest_preflight.py", HOLD_PREFLIGHT)
+        self.h.commit("hold preflight")
+        clock = f"{self.h.root}/clock"; write(clock, "2026-11-06T21:00:00Z")
+        done = self.h.run(env_extra={"QKT_ATTEST_CLOCK_FILE": clock})
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertIn("holding the run until 2026-11-09T13:43:50Z: waiting in the catalog would age the first evidence", done.stdout)
+        self.assertIn("session plan: session lanes alpaca first", done.stdout)  # the plan made again after the hold
+        self.assertEqual(open(clock).read(), "2026-11-09T13:43:50Z")
+        self.assertEqual(self.h.verify().returncode, 0, self.h.verify().stderr)
+        artifacts = json.load(open(self.h.bundle()))["artifacts"]
+        evidence = json.load(open(os.path.join(os.path.dirname(self.h.bundle()), artifacts["catalog"])))
+        self.assertEqual([(w["lane"], w["plannedStartUtc"], w["recordedAtUtc"]) for w in evidence["sessionWaits"]],
+                         [("run", "2026-11-09T13:43:50Z", "2026-11-06T21:00:00Z")])
+        # Waiting changes nothing about what must pass: every case still has its own pass on this build.
+        self.assertEqual({c["status"] for c in evidence["cases"]}, {"passed"})
 
     def test_a_new_commit_starts_clean(self):
         self.stopped_on_one_case()
