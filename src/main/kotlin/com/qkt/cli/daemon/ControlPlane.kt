@@ -30,6 +30,8 @@ class ControlPlane(
     private val controlToken: String? = null,
     /** `--load-dir` files still awaiting a successful auto-deploy; surfaced by `/health` (#1055). */
     private val pendingAutoDeploys: () -> List<AutoDeployRetrier.Pending> = { emptyList() },
+    /** Accounts not verified since boot, whose strategies wait; surfaced by `/health` (#1642). */
+    private val unverifiedAccounts: () -> List<AccountWaitlist.Waiting> = { emptyList() },
 ) : AutoCloseable {
     private val server: HttpServer = HttpServer.create(InetSocketAddress(bind, port), 0)
 
@@ -50,6 +52,7 @@ class ControlPlane(
                 promotionGates = promotionGates,
                 controlToken = controlToken,
                 pendingAutoDeploys = pendingAutoDeploys,
+                unverifiedAccounts = unverifiedAccounts,
             ),
         )
         server.executor = Executors.newFixedThreadPool(8)

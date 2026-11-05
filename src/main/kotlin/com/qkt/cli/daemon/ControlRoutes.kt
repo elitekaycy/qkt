@@ -47,6 +47,7 @@ object ControlRoutes {
         promotionGates: PromotionGateConfig = PromotionGateConfig.DISABLED,
         controlToken: String? = null,
         pendingAutoDeploys: () -> List<AutoDeployRetrier.Pending> = { emptyList() },
+        unverifiedAccounts: () -> List<AccountWaitlist.Waiting> = { emptyList() },
     ): HttpHandler =
         HttpHandler { ex ->
             val path = ex.requestURI.path
@@ -58,7 +59,8 @@ object ControlRoutes {
                     return@HttpHandler
                 }
                 when {
-                    method == "GET" && path == "/health" -> handleHealth(ex, registry, startedAt, pendingAutoDeploys())
+                    method == "GET" && path == "/health" ->
+                        handleHealth(ex, registry, startedAt, pendingAutoDeploys(), unverifiedAccounts())
                     method == "POST" && path == "/deploy" ->
                         handleDeploy(ex, registry, stateDir, portfolioDeployer, promotionGates)
                     method == "POST" && path == "/resync" ->

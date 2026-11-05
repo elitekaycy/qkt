@@ -5,7 +5,9 @@ import com.qkt.cli.daemon.CommandChannel
 import com.qkt.cli.daemon.ControlClient
 import com.qkt.cli.daemon.ControlPlane
 import com.qkt.cli.daemon.ControlToken
+import com.qkt.cli.daemon.DaemonAccountBoot
 import com.qkt.cli.daemon.DaemonInstanceLock
+import com.qkt.cli.daemon.DaemonLog
 import com.qkt.cli.daemon.FeedLossRedeployer
 import com.qkt.cli.daemon.OperatorJournal
 import com.qkt.cli.daemon.RegistryDaemonControl
@@ -171,21 +173,17 @@ class DaemonCommand(
                         }.map { it.name }
                 }
             } catch (e: Exception) {
-                System.err.println("qkt: broker account load failed: ${e.message}")
+                DaemonLog.line("[ERROR] qkt: broker account load failed: ${e.message}")
                 runCatching { insightsSink?.close() }
                 return ExitCodes.USER_ERROR
             }
-        val verifiedAccounts =
-            try {
-                com.qkt.connectivity.AccountPreflight
-                    .fromEnv()
-                    .verifyAll(accounts)
-            } catch (e: Exception) {
-                System.err.println("qkt: broker account preflight failed: ${e.message}")
+        val accountBoot =
+            DaemonAccountBoot.verify(accounts) ?: run {
                 runCatching { accounts.close() }
                 runCatching { insightsSink?.close() }
                 return ExitCodes.USER_ERROR
             }
+        val verifiedAccounts = accountBoot.verified
         // One calendar rule for every strategy this daemon runs: the rule a backtest follows too.
         val daemonCalendarFor: (String) -> com.qkt.common.TradingCalendar =
             CalendarResolver.live(accounts, daemonInstrumentRegistry)::calendarFor
@@ -227,7 +225,7 @@ class DaemonCommand(
         val insightsSharedDeals =
             com.qkt.observe.insights
                 .SharedDealFetch()
-        val brokerFactories: Map<String, com.qkt.broker.BrokerFactory> = accounts.orderEntry()
+        val brokerFactories = accountBoot.waitlist.gate(accounts.orderEntry())
 
         val effectiveSourceFactory: (List<String>) -> MarketSource =
             sourceFactory
@@ -340,6 +338,7 @@ class DaemonCommand(
                 promotionGates = cfg.promotionGateConfig,
                 controlToken = controlToken.value,
                 pendingAutoDeploys = { autoDeployRetrier.pending() },
+                unverifiedAccounts = accountBoot.waitlist::waiting,
             )
         plane.start()
         instanceLock.writeControlPort(plane.boundPort)
@@ -354,10 +353,7 @@ class DaemonCommand(
                 "(state file: ${stateDir.controlPortFile})",
         )
 
-        if (verifiedAccounts.isNotEmpty()) {
-            println("[INFO] broker accounts loaded: ${accounts.accounts.joinToString { it.config.name }}")
-            verifiedAccounts.forEach { (_, profile) -> println("[INFO] account: ${profile.description}") }
-        }
+        accountBoot.printLoaded(accounts)
 
         val failedAutoDeploys =
             startupDeploys.run(registry, portfolioDeployer, {
@@ -381,6 +377,8 @@ class DaemonCommand(
             autoDeployRetrier.start()
         }
         val feedLossRedeployer = FeedLossRedeployer(registry, autoDeployRetrier).also { it.start() }
+        accountBoot.waitlist.onVerified = { _, _ -> autoDeployRetrier.retryNow() }
+        accountBoot.waitlist.start()
 
         println("[INFO] daemon ready")
 
@@ -422,6 +420,7 @@ class DaemonCommand(
             runCatching { hardLimitGuard?.close() }
             runCatching { feedLossRedeployer.close() }
             runCatching { autoDeployRetrier.close() }
+            runCatching { accountBoot.waitlist.close() }
             runCatching { plane.close() }
             commandChannels.forEach { runCatching { it.close() } }
             runCatching { dailySummarySchedulers.forEach { it.close() } }
