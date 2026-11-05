@@ -275,9 +275,9 @@ The portfolio's symbols are also the only ones whose data the portfolio rules ca
 
 Daemon-level risk rules apply to **the whole portfolio**, not per-child. If one child triggers `max-daily-loss`, the entire daemon halts — every other strategy too.
 
-**What a halted book does with open positions.** When a book's limit breaches, or its risk cannot be evaluated, it sends a close for what each child holds when that child's engine reaches it, then refuses new entries. An entry already in flight that fills after that close is closed too, on a later risk heartbeat and never while a close is working. A close the venue keeps refusing is tried five more times, further apart each time, then left to you with an error, so check `qkt status` after any book halt. A persistent halt holds until you resume it.
+**What a halted book does with open positions.** When a book's limit breaches, it sends a close for what each child holds when that child's engine reaches it, then refuses new entries. An entry already in flight that fills after that close is closed too, on a later risk heartbeat and never while a close is working. A close the venue keeps refusing is tried five more times, further apart each time, then left to you with an error, so check `qkt status` after any book halt. A persistent halt holds, across restarts, until you resume it with `qkt resume <book>`, which also clears the halts the book put on its children; `qkt list` and `qkt status <book>` show a halted book with its reason.
 
-**When a book halts because it cannot read risk.** Three evaluations in a row that error halt the book. An engine that answers late is not an error: the book keeps running and logs each miss, and halts only after 20 unanswered reads in a row (about two minutes with no limit checked).
+**When a book cannot read risk.** Three evaluations in a row that error, or 20 unanswered reads in a row from a busy engine (about two minutes with no limit checked), hold the book: every child refuses new entries, keeps its open positions and their exits, and takes entries again on the first evaluation that reads the book. The hold is never saved, so a restart does not keep it; a book limit that really tripped halts the book on that first read. `qkt list` shows the hold as a `TRANSIENT` halt.
 
 To express per-child risk limits, use `qkt.config.yaml`'s `risk.per_strategy` block:
 

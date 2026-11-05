@@ -8,7 +8,8 @@ import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * Aggregates a portfolio's children `/status` bodies into one JSON object: summed
- * equity, balance, realized and unrealized PnL, plus one row per reachable child.
+ * equity, balance, realized and unrealized PnL, the book's own halt (`halted`, and
+ * `haltReason`/`haltScope`/`haltedAtMs` while halted), plus one row per reachable child.
  */
 internal fun composePortfolioStatus(
     registry: StrategyRegistry,
@@ -60,6 +61,13 @@ internal fun composePortfolioStatus(
             put("startedAt", kotlinx.serialization.json.JsonPrimitive(record.startedAt.toString()))
             put("uptimeMs", kotlinx.serialization.json.JsonPrimitive(now - record.startedAt.toEpochMilli()))
             put("supervisorRunning", kotlinx.serialization.json.JsonPrimitive(record.supervisor.running))
+            val bookHalt = record.supervisor.bookHalt()
+            put("halted", kotlinx.serialization.json.JsonPrimitive(bookHalt != null))
+            if (bookHalt != null) {
+                put("haltReason", kotlinx.serialization.json.JsonPrimitive(bookHalt.reason))
+                put("haltScope", kotlinx.serialization.json.JsonPrimitive(bookHalt.scope.name))
+                bookHalt.haltedAtMs?.let { put("haltedAtMs", kotlinx.serialization.json.JsonPrimitive(it)) }
+            }
             put("equity", kotlinx.serialization.json.JsonPrimitive(equity.toPlainString()))
             put("balance", kotlinx.serialization.json.JsonPrimitive(balance.toPlainString()))
             put("realized", kotlinx.serialization.json.JsonPrimitive(realized.toPlainString()))

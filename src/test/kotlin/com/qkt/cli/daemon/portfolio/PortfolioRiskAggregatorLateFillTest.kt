@@ -14,6 +14,11 @@ class PortfolioRiskAggregatorLateFillTest : PortfolioRiskAggregatorFixture() {
     private val book = bookRiskState(FakePnL(BigDecimal.ZERO, BigDecimal.ZERO), clock)
     private val aggregator = PortfolioRiskAggregator(listOf(child), book, emptyList(), clock)
 
+    private fun haltBook() {
+        book.halt("breach", HaltScope.PERSISTENT)
+        aggregator.evaluate()
+    }
+
     private fun beatAfter(ms: Long) {
         clock.t += ms
         aggregator.evaluate()
@@ -21,7 +26,7 @@ class PortfolioRiskAggregatorLateFillTest : PortfolioRiskAggregatorFixture() {
 
     @Test
     fun `an entry filling after the halt's close is closed`() {
-        aggregator.failClosed("breach")
+        haltBook()
         assertThat(child.flattened).isEqualTo(1)
 
         child.unclosedLegs = 1
@@ -32,7 +37,7 @@ class PortfolioRiskAggregatorLateFillTest : PortfolioRiskAggregatorFixture() {
 
     @Test
     fun `a close still working is never doubled`() {
-        aggregator.failClosed("breach")
+        haltBook()
         child.unclosedLegs = 0 // the leg is open, its close is out: the session does not count it
 
         repeat(20) { beatAfter(5_000) }
@@ -42,7 +47,7 @@ class PortfolioRiskAggregatorLateFillTest : PortfolioRiskAggregatorFixture() {
 
     @Test
     fun `a leg is left a moment for the first close to reach it before closing again`() {
-        aggregator.failClosed("breach")
+        haltBook()
         child.unclosedLegs = 1
 
         beatAfter(1_000)
@@ -52,7 +57,7 @@ class PortfolioRiskAggregatorLateFillTest : PortfolioRiskAggregatorFixture() {
 
     @Test
     fun `a close the venue keeps refusing backs off and is left to the operator`() {
-        aggregator.failClosed("breach")
+        haltBook()
         child.unclosedLegs = 1
 
         repeat(200) { beatAfter(5_000) }
@@ -62,7 +67,7 @@ class PortfolioRiskAggregatorLateFillTest : PortfolioRiskAggregatorFixture() {
 
     @Test
     fun `once flat, a later fill gets its own closes`() {
-        aggregator.failClosed("breach")
+        haltBook()
         child.unclosedLegs = 1
         repeat(200) { beatAfter(5_000) }
         child.unclosedLegs = 0
@@ -77,7 +82,7 @@ class PortfolioRiskAggregatorLateFillTest : PortfolioRiskAggregatorFixture() {
 
     @Test
     fun `a child an operator resumed on its own is left to trade`() {
-        aggregator.failClosed("breach")
+        haltBook()
         child.resume()
         child.unclosedLegs = 1
 
@@ -88,7 +93,7 @@ class PortfolioRiskAggregatorLateFillTest : PortfolioRiskAggregatorFixture() {
 
     @Test
     fun `a child that cannot answer is asked again without failing the book's evaluation`() {
-        aggregator.failClosed("breach")
+        haltBook()
         child.unclosedLegs = 1
         child.answers = false
 

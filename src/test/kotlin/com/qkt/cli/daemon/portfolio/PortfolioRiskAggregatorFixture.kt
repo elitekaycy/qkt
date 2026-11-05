@@ -39,7 +39,10 @@ abstract class PortfolioRiskAggregatorFixture {
             reason: String,
             scope: HaltScope,
         ) {
-            if (halted == null || (this.scope == HaltScope.DAILY && scope == HaltScope.PERSISTENT)) {
+            val escalates =
+                (this.scope == HaltScope.DAILY && scope == HaltScope.PERSISTENT) ||
+                    (this.scope == HaltScope.TRANSIENT && scope != HaltScope.TRANSIENT)
+            if (halted == null || escalates) {
                 halted = reason
                 this.scope = scope
             }

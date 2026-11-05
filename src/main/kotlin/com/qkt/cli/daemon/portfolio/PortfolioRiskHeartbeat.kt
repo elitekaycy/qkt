@@ -8,9 +8,10 @@ private val log = LoggerFactory.getLogger(PortfolioRiskHeartbeat::class.java)
 /**
  * One book's risk evaluations and what their failures mean. A read that errors means the book
  * cannot be judged, so [ERROR_LIMIT] in a row fail it closed. A read the engine answers late
- * says only that the engine is busy, so it does not count as an error; the book halts on slow
- * reads only after [SLOW_READ_LIMIT] in a row, each at least the 5s query timeout, about two
- * minutes in which no book limit was checked.
+ * says only that the engine is busy, so it does not count as an error; the book fails closed on
+ * slow reads only after [SLOW_READ_LIMIT] in a row, each at least the 5s query timeout, about two
+ * minutes in which no book limit was checked. Failing closed holds the children off new entries
+ * until an evaluation succeeds ([UnreadableBookHold]); it never halts the book.
  */
 internal class PortfolioRiskHeartbeat(
     private val evaluate: () -> Unit,

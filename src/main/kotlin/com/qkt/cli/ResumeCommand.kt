@@ -11,7 +11,8 @@ import kotlinx.serialization.json.jsonPrimitive
 /**
  * `qkt resume [name]` — re-enable new-order submission for one strategy, or all if no name, clearing the stops failed
  * rolls left on continuous streams where that is safe. A stop that stands fails the command, with the reason: the
- * strategy's orders on that stream are still refused.
+ * strategy's orders on that stream are still refused. A portfolio name clears the book's halt and the halts it put
+ * on its children; a child (`book/alias` or `book:alias`) whose book is halted is refused with the book's reason.
  */
 class ResumeCommand(
     private val args: Args,
@@ -30,6 +31,8 @@ class ResumeCommand(
             } catch (e: ControlClient.DaemonError) {
                 if (e.code == 404) {
                     System.err.println("qkt: error: unknown strategy: $name")
+                } else if (e.code == 409) {
+                    System.err.println("qkt: error: ${errorText(e.body)}")
                 } else {
                     System.err.println("qkt: error: resume failed (${e.code}): ${e.body}")
                 }
@@ -40,6 +43,7 @@ class ResumeCommand(
         if (args.flag("json")) {
             println(body)
         } else {
+            bookHalts(body).forEach { (book, why) -> println("[INFO] cleared the halt on portfolio $book: $why") }
             summaries.filter { it.cleared }.forEach { println("[INFO] ${it.summary}") }
             if (standing.isEmpty()) {
                 println("[INFO] resumed ${name ?: "all strategies"}")
@@ -54,6 +58,25 @@ class ResumeCommand(
         val cleared: Boolean,
         val summary: String,
     )
+
+    private fun errorText(body: String): String =
+        runCatching {
+            Json
+                .parseToJsonElement(body)
+                .jsonObject
+                .getValue("error")
+                .jsonPrimitive.content
+        }.getOrNull()
+            ?: body
+
+    private fun bookHalts(body: String): Map<String, String> =
+        runCatching {
+            Json
+                .parseToJsonElement(body)
+                .jsonObject["bookHalts"]
+                ?.jsonObject
+                ?.mapValues { it.value.jsonPrimitive.content }
+        }.getOrNull().orEmpty()
 
     private fun streamStops(body: String): List<StopSummary> =
         runCatching {
