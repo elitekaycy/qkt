@@ -27,6 +27,7 @@ internal class OrderEventHandlers(
     private val attachedCompletion: AttachedBracketCompletion,
     private val bracketFills: BracketFills,
     private val lateEntries: LateEntryExecutions,
+    private val timeExits: TimeExits,
     private val clock: Clock,
     private val ops: OrderOps,
     private val log: Logger,
@@ -78,6 +79,7 @@ internal class OrderEventHandlers(
         unarmedChildren.orEmpty().forEach { ops.cancel(it.id) }
         ocoSequencer.onRejected(e.clientOrderId)
         attachedCompletion.onEntryEnded(e.clientOrderId, OrderState.REJECTED)
+        timeExits.retries.refused(e.clientOrderId, e.reason)
     }
 
     /** An order partially filled; its first execution slice already cancels its siblings. */

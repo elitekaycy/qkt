@@ -3,14 +3,14 @@ package com.qkt.broker.continuous
 import java.security.MessageDigest
 
 /**
- * The prefix of a roll's legs for one strategy: `roll:<atMs>:<digest>`, where the digest is the first 12 hex
+ * The prefix of a roll's legs for one strategy: `roll:<atMs>:<digest>`, where the digest is the first 8 hex
  * digits of the SHA-256 of the stream, the roll time and the strategy. It is the same after a restart, differs
  * per stream, roll and strategy, and stays short whatever the names, so a leg's id plus its `:<kind>` and the
  * gateway's submit-time suffix fit VGP's 64 characters (`roll:PAPER_DERIBIT:BTC_USDC@front:<ms>:soak_o14_roll`
- * alone was 67).
+ * alone was 67), and even the last attempt's `:unwind-5` fits Bybit's 45 unshortened (#1643).
  */
 internal object RollLegIds {
-    private const val DIGEST_HEX = 12
+    private const val DIGEST_HEX = 8
 
     /** How often a leg, or a roll's look at the quotes, is tried: five times about 60 s all told. */
     const val MAX_ATTEMPTS = 5

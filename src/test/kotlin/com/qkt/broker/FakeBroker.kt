@@ -20,6 +20,9 @@ class FakeBroker(
 
     val rejectOrderIds: MutableSet<String> = mutableSetOf()
 
+    /** The reason a submit in [rejectOrderIds] is refused with. */
+    var rejectReason: String = "fake venue rejection"
+
     override fun submit(request: OrderRequest): SubmitAck {
         submits.add(request)
         if (request.id in rejectOrderIds) {
@@ -27,7 +30,7 @@ class FakeBroker(
                 BrokerEvent.OrderRejected(
                     clientOrderId = request.id,
                     brokerOrderId = request.id,
-                    reason = "fake venue rejection",
+                    reason = rejectReason,
                     timestamp = clock.now(),
                 ),
             )
@@ -35,7 +38,7 @@ class FakeBroker(
                 clientOrderId = request.id,
                 brokerOrderId = request.id,
                 accepted = false,
-                rejectReason = "fake venue rejection",
+                rejectReason = rejectReason,
             )
         }
         if (emitAcceptOnSubmit) {

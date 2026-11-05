@@ -101,7 +101,7 @@ class GatewayBroker internal constructor(
         val grid = optionGrid(request.symbol) ?: session.symbols.tick(request.symbol)?.let(::TickSteps)
         val body =
             when (val mapping = GatewayOrders.map(request, code, positions, session.account.quantity(code), grid)) {
-                is GatewayOrderMapping.Unsupported -> return refuse(request, mapping.reason)
+                is GatewayOrderMapping.Unsupported -> return refuse(request, "unsupported: ${mapping.reason}")
                 is GatewayOrderMapping.Send -> mapping.body
             }
         session.submit(request.strategyId, attachment, body) { reason -> reject(request, reason) }
